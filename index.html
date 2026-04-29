@@ -250,7 +250,21 @@ async function loadData(){
     allPOs=posSnap.docs.map(d=>({...d.data(),fbKey:d.id}));
     allPasses=gpSnap.docs.map(d=>d.data());
     if(currentPage)renderPage(currentPage);
-  }catch(e){showToast('Data load error: '+e.message,true);}
+  }catch(e){
+    if((e.code==='permission-denied'||e.message.includes('permissions'))&&auth.currentUser){
+      try{
+        await auth.currentUser.getIdToken(true);
+        const[posSnap,gpSnap]=await Promise.all([
+          getDocs(query(collection(db,'pos'),orderBy('ts','desc'))),
+          getDocs(query(collection(db,'gatepasses'),orderBy('ts','desc')))
+        ]);
+        allPOs=posSnap.docs.map(d=>({...d.data(),fbKey:d.id}));
+        allPasses=gpSnap.docs.map(d=>d.data());
+        if(currentPage)renderPage(currentPage);
+        return;
+      }catch(e2){showToast('Data load error: '+e2.message,true);}
+    }else{showToast('Data load error: '+e.message,true);}
+  }
 }
 
 async function loadBundles(poId){
