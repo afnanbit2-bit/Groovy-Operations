@@ -334,6 +334,7 @@ async function runSetup(){
   const btn=document.getElementById('setup-btn');
   const log=document.getElementById('setup-log');
   btn.disabled=true;btn.textContent='Creating accounts…';log.innerHTML='';
+  let created=0,existed=0;
   for(const user of USER_DEFS){
     try{
       const r=await fetch(`${AUTH_URL}:signUp?key=${CFG.apiKey}`,{
@@ -343,15 +344,35 @@ async function runSetup(){
       const d=await r.json();
       if(d.error&&d.error.message==='EMAIL_EXISTS'){
         log.innerHTML+=`<div style="color:#6b7280">• ${user.name} — already exists ✓</div>`;
+        existed++;
+      }else if(d.error&&d.error.message==='CONFIGURATION_NOT_FOUND'){
+        log.innerHTML=`<div style="color:#dc2626;font-weight:600;padding:10px;background:#fef2f2;border-radius:8px;border:1px solid #fca5a5;line-height:1.8">
+          ⚠️ <strong>Email/Password auth is not enabled in Firebase.</strong><br>
+          1. Open <strong>Firebase Console</strong> → your project<br>
+          2. Go to <strong>Authentication → Sign-in method</strong><br>
+          3. Enable <strong>Email/Password</strong><br>
+          4. Come back here and tap <em>Try again</em>.
+        </div>`;
+        btn.disabled=false;btn.textContent='Try again';
+        return;
       }else if(d.error){
         log.innerHTML+=`<div style="color:#dc2626">• ${user.name} — ${d.error.message}</div>`;
       }else{
         log.innerHTML+=`<div style="color:#1D9E75">• ${user.name} — created ✓</div>`;
+        created++;
       }
     }catch(e){log.innerHTML+=`<div style="color:#dc2626">• ${user.name} — ${e.message}</div>`;}
   }
-  log.innerHTML+=`<div style="margin-top:8px;font-weight:700;color:#1D9E75">Done! Go back and sign in.</div>`;
-  btn.textContent='Complete';
+  if(created+existed===USER_DEFS.length){
+    log.innerHTML+=`<div style="margin-top:8px;font-weight:700;color:#1D9E75">Done! Go back and sign in.</div>`;
+    btn.textContent='Complete';
+  }else if(created+existed>0){
+    log.innerHTML+=`<div style="margin-top:8px;font-weight:600;color:var(--amber)">Partial success — check errors above.</div>`;
+    btn.textContent='Complete';
+  }else{
+    log.innerHTML+=`<div style="margin-top:8px;font-weight:700;color:#dc2626">Setup failed. Fix errors above and try again.</div>`;
+    btn.disabled=false;btn.textContent='Try again';
+  }
 }
 
 // ══════════════════════════════════════════════
