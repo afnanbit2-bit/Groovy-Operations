@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Groovy Operations</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--dark:#1A1A2E;--red:#E94560;--bg:#F2F2F4;--surface:#fff;--border:#E5E5E7;--text:#1A1A2E;--muted:#6B7280;--green:#1D9E75;--amber:#EF9F27;--sidebar:220px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:var(--text);background:var(--bg);min-height:100vh}
+/* ── Login ── */
+#scr-login{display:none;min-height:100vh;align-items:center;justify-content:center;background:var(--dark)}
+.login-box{background:#fff;border-radius:16px;padding:2rem;width:100%;max-width:380px;margin:1rem}
+.login-logo{text-align:center;margin-bottom:1.5rem}
+.login-logo .l1{font-size:22px;font-weight:700;color:var(--dark)}
+.login-logo .l2{font-size:12px;color:var(--muted);margin-top:2px}
+.login-box input{display:block;width:100%;padding:11px 14px;border:1px solid var(--border);border-radius:9px;font-size:14px;margin-bottom:10px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none}
+.login-box input:focus{border-color:var(--red)}
+.btn-login{width:100%;padding:12px;background:var(--dark);color:#fff;border:none;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:8px;font-family:inherit}
+.btn-login:hover{opacity:.9}
+.btn-setup-link{width:100%;padding:8px;background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;font-family:inherit}
+.btn-setup-link:hover{color:var(--text)}
+/* ── Setup Screen ── */
+#scr-setup{display:none;min-height:100vh;align-items:flex-start;justify-content:center;background:var(--dark);padding:2rem 1rem;overflow-y:auto}
+.setup-box{background:#fff;border-radius:16px;padding:1.5rem;width:100%;max-width:540px}
+.setup-box h2{font-size:17px;font-weight:700;margin-bottom:4px}
+.setup-box p{font-size:12px;color:var(--muted);margin-bottom:1.25rem;line-height:1.6}
+.setup-creds{background:#f8f8f8;border-radius:8px;padding:1rem;font-size:12px;line-height:2;margin-bottom:1rem;border:1px solid var(--border)}
+.setup-creds strong{color:var(--dark)}
+#setup-log{min-height:40px;font-size:12px;line-height:1.8;margin:10px 0}
+/* ── App Shell ── */
+#scr-app{display:none;min-height:100vh;flex-direction:column}
+.topbar{background:var(--dark);height:52px;display:flex;align-items:center;padding:0 16px;gap:12px;position:sticky;top:0;z-index:100;flex-shrink:0}
+.topbar-logo{font-size:15px;font-weight:700;color:#fff;flex:1}
+.topbar-logo span{color:var(--red)}
+.topbar-user{font-size:12px;color:rgba(255,255,255,.65);display:flex;align-items:center;gap:8px}
+.topbar-name{color:#fff;font-weight:600}
+.btn-logout{background:none;border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.6);font-size:11px;padding:5px 10px;border-radius:6px;cursor:pointer;font-family:inherit}
+.btn-logout:hover{border-color:rgba(255,255,255,.5);color:#fff}
+.app-body{display:flex;flex:1;min-height:0}
+/* ── Sidebar ── */
+#sidebar{width:var(--sidebar);background:var(--surface);border-right:1px solid var(--border);flex-shrink:0;padding:12px 8px;overflow-y:auto}
+.nav-item{padding:10px 12px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);font-weight:500;margin-bottom:2px;transition:all .12s}
+.nav-item:hover{background:#F4F4F6;color:var(--text)}
+.nav-item.on{background:var(--dark);color:#fff}
+.nav-section{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:10px 12px 4px;margin-top:4px}
+/* ── Main content ── */
+#main-content{flex:1;overflow-y:auto;padding:18px 16px}
+/* ── Cards & layout ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:12px}
+.card-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.page-head{margin-bottom:16px}
+.page-title{font-size:18px;font-weight:700}
+.page-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center}
+.stat-label{font-size:11px;color:var(--muted);margin-bottom:4px}
+.stat-val{font-size:24px;font-weight:700}
+.section-title{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;margin-top:4px}
+/* ── Forms ── */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:11px;font-weight:600;color:var(--muted)}
+.field input,.field select,.field textarea{padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%;transition:border-color .15s}
+.field input:focus,.field select:focus{border-color:var(--red);background:#fff}
+.hidden{display:none}
+/* ── Buttons ── */
+.btn-primary{display:block;width:100%;padding:12px;background:var(--red);color:#fff;border:none;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:4px;transition:opacity .15s}
+.btn-primary:hover:not(:disabled){opacity:.88}
+.btn-primary:disabled{opacity:.45;cursor:not-allowed}
+.btn-outline{padding:8px 14px;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;color:var(--text)}
+.btn-outline:hover{border-color:var(--dark);color:var(--dark)}
+.btn-danger{padding:8px 14px;background:#fff;border:1px solid #fca5a5;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;color:#dc2626}
+.btn-danger:hover{background:#fef2f2}
+.btn-sm{padding:5px 10px;background:var(--dark);color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit}
+.back-btn{background:none;border:none;color:var(--red);font-size:13px;cursor:pointer;font-family:inherit;font-weight:500;padding:0;margin-bottom:10px;display:flex;align-items:center;gap:4px}
+/* ── PO rows ── */
+.po-row{display:flex;align-items:center;gap:12px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;cursor:pointer;margin-bottom:8px;transition:border-color .12s}
+.po-row:hover{border-color:var(--dark)}
+.po-img{width:56px;height:70px;flex-shrink:0;background:#f0f0f0;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.po-info{flex:1;min-width:0}
+.po-num{font-size:11px;font-weight:700;color:var(--red)}
+.po-name{font-size:14px;font-weight:600;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.po-meta{font-size:11px;color:var(--muted);margin-top:2px}
+.po-arrow{font-size:20px;color:var(--muted);flex-shrink:0}
+.stage-badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin-top:4px}
+/* ── Stage timeline ── */
+.stage-item{display:flex;gap:12px;align-items:flex-start;padding:10px 0}
+.stage-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;margin-top:2px}
+.dot-done{background:var(--green)}
+.dot-active{background:var(--red);box-shadow:0 0 0 3px rgba(233,69,96,.15)}
+.dot-pending{background:var(--border);border:2px solid #ccc}
+.stage-content{flex:1}
+.stage-label{font-size:13px;font-weight:600}
+.stage-meta{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.5}
+.stage-connector{width:2px;height:14px;background:var(--border);margin-left:6px}
+/* ── Worker view ── */
+.work-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;cursor:pointer}
+.work-card:hover{border-color:var(--dark)}
+.mark-done-btn{padding:10px 18px;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px;width:100%}
+.mark-done-btn:hover{opacity:.88}
+/* ── Image upload ── */
+.img-upload-box{border:2px dashed var(--border);border-radius:10px;aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;cursor:pointer;background:#FAFAFA;overflow:hidden;font-size:12px;color:var(--muted);text-align:center;padding:8px;transition:border-color .15s;position:relative}
+.img-upload-box:hover{border-color:var(--red)}
+/* ── Info rows ── */
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f5f5f5;font-size:13px}
+.info-row:last-child{border-bottom:none}
+.info-label{color:var(--muted);font-size:11px;font-weight:500}
+/* ── Toast ── */
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--dark);color:#fff;padding:10px 20px;border-radius:30px;font-size:13px;font-weight:500;opacity:0;transition:all .2s;pointer-events:none;white-space:nowrap;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.18)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.err{background:#dc2626}
+/* ── Empty states ── */
+.empty{text-align:center;padding:2.5rem 1rem;color:var(--muted);font-size:13px}
+/* ── Destination chips ── */
+.dest-chip{padding:4px 10px;border:1px solid var(--border);border-radius:16px;background:#fff;font-size:11px;cursor:pointer;font-family:inherit;color:var(--muted)}
+.dest-chip:hover{border-color:var(--dark);color:var(--dark)}
+/* ── Responsive ── */
+@media(max-width:600px){
+  #sidebar{display:none}
+  .stats-row{grid-template-columns:1fr 1fr}
+  .form-grid{grid-template-columns:1fr}
+  .app-body{flex-direction:column}
+  #main-content{padding:12px}
+  #mob-nav{display:flex !important}
+}
+#mob-nav{display:none;background:var(--surface);border-top:1px solid var(--border);position:fixed;bottom:0;left:0;right:0;z-index:100;padding:6px 0}
+.mob-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;padding:6px 4px;font-size:10px;color:var(--muted);cursor:pointer;font-weight:500;gap:2px}
+.mob-nav-item.on{color:var(--red)}
+</style>
+</head>
+<body>
+
+<!-- ══ LOGIN ══ -->
+<div id="scr-login">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="l1">Groovy <span style="color:var(--red)">Operations</span></div>
+      <div class="l2">Internal business platform</div>
+    </div>
+    <input id="l-user" placeholder="Username" autocomplete="username" autocapitalize="none" onkeydown="if(event.key==='Enter')document.getElementById('l-pass').focus()">
+    <input id="l-pass" type="password" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="btn-login" id="login-btn" onclick="doLogin()">Sign in</button>
+    <button class="btn-setup-link" onclick="showSetup()">First time setup</button>
+  </div>
+</div>
+
+<!-- ══ SETUP ══ -->
+<div id="scr-setup" style="display:none;min-height:100vh;align-items:flex-start;justify-content:center;background:var(--dark);padding:2rem 1rem;overflow-y:auto">
+  <div style="background:#fff;border-radius:16px;padding:1.5rem;width:100%;max-width:540px">
+    <div style="font-size:17px;font-weight:700;margin-bottom:4px">First time setup</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6">This creates all 10 user accounts in Firebase. Run once only. Make sure Firebase Authentication is enabled (Email/Password) in your Firebase Console first.</div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:6px">SETUP CODE</div>
+      <input id="setup-code" placeholder="Enter setup code: GroovyOps2024" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none">
+    </div>
+    <div style="background:#f8f8f8;border-radius:8px;padding:1rem;font-size:12px;line-height:2.2;margin-bottom:12px;border:1px solid var(--border)">
+      <div style="font-weight:700;margin-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)">Login credentials (share privately)</div>
+      <div><strong>afnan</strong> → Afnan@Ops24</div>
+      <div><strong>ammar</strong> → Ammar@Ops24</div>
+      <div><strong>mustafa</strong> → Mustafa@Ops24</div>
+      <div><strong>arfat</strong> → Arfat@Ops24</div>
+      <div><strong>raees</strong> → Raees@Ops24</div>
+      <div><strong>haris</strong> → Haris@Ops24</div>
+      <div><strong>abbas</strong> → Abbas@Ops24</div>
+      <div><strong>waqas</strong> → Waqas@Ops24</div>
+      <div><strong>asghar</strong> → Asghar@Ops24</div>
+      <div><strong>zohaib</strong> → Zohaib@Ops24</div>
+    </div>
+    <div id="setup-log" style="min-height:20px;font-size:12px;line-height:1.9;margin-bottom:10px"></div>
+    <button id="setup-btn" onclick="runSetup()" style="width:100%;padding:11px;background:var(--dark);color:#fff;border:none;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">Initialize all accounts</button>
+    <button onclick="showLogin()" style="width:100%;padding:9px;background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;font-family:inherit">← Back to login</button>
+  </div>
+</div>
+
+<!-- ══ APP ══ -->
+<div id="scr-app" style="display:none;flex-direction:column;min-height:100vh">
+  <div class="topbar">
+    <div class="topbar-logo">Groovy <span>Operations</span></div>
+    <div class="topbar-user">
+      <div><div class="topbar-name" id="user-name"></div><div style="font-size:10px" id="user-title"></div></div>
+      <button class="btn-logout" onclick="doLogout()">Sign out</button>
+    </div>
+  </div>
+  <div class="app-body">
+    <div id="sidebar"></div>
+    <div id="main-content"></div>
+  </div>
+  <div id="mob-nav"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+// ══════════════════════════════════════════════
+// CONFIG
+// ══════════════════════════════════════════════
+const CFG = {
+  apiKey: 'AIzaSyAcIrudpSPLbZMmoWMyTM1l8Z7GnxwelFw',
+  dbURL:  'https://groovy-gatepass-default-rtdb.firebaseio.com',
+};
+const SETUP_CODE = 'GroovyOps2024';
+
+// ══════════════════════════════════════════════
+// USER DEFINITIONS
+// ══════════════════════════════════════════════
+const USER_DEFS = [
+  {u:'afnan',   email:'afnan@groovy.op',   name:'Afnan',   role:'owner',   title:'Co-founder',         canPO:true,  stages:null,                  pass:'Afnan@Ops24'  },
+  {u:'ammar',   email:'ammar@groovy.op',   name:'Ammar',   role:'owner',   title:'Co-founder',         canPO:true,  stages:null,                  pass:'Ammar@Ops24'  },
+  {u:'mustafa', email:'mustafa@groovy.op', name:'Mustafa', role:'manager', title:'Operations Manager', canPO:true,  stages:null,                  pass:'Mustafa@Ops24'},
+  {u:'arfat',   email:'arfat@groovy.op',   name:'Arfat',   role:'manager', title:'Advisory',           canPO:true,  stages:null,                  pass:'Arfat@Ops24'  },
+  {u:'raees',   email:'raees@groovy.op',   name:'Raees',   role:'viewer',  title:'Store Manager',      canPO:false, stages:[],                    pass:'Raees@Ops24'  },
+  {u:'haris',   email:'haris@groovy.op',   name:'Haris',   role:'worker',  title:'QC Manager',         canPO:false, stages:['qc'],                pass:'Haris@Ops24'  },
+  {u:'abbas',   email:'abbas@groovy.op',   name:'Abbas',   role:'worker',  title:'Washing Assistant',  canPO:false, stages:['washing'],           pass:'Abbas@Ops24'  },
+  {u:'waqas',   email:'waqas@groovy.op',   name:'Waqas',   role:'worker',  title:'Stitching Incharge', canPO:false, stages:['stitching'],         pass:'Waqas@Ops24'  },
+  {u:'asghar',  email:'asghar@groovy.op',  name:'Asghar',  role:'worker',  title:'Printing Manager',   canPO:false, stages:['printing'],          pass:'Asghar@Ops24' },
+  {u:'zohaib',  email:'zohaib@groovy.op',  name:'Zohaib',  role:'worker',  title:'Cutting & Bundling', canPO:false, stages:['cutting','bundling'], pass:'Zohaib@Ops24' },
+];
+
+const STAGES = [
+  {key:'cutting',   label:'Cutting',     owner:'Zohaib', color:'#185FA5'},
+  {key:'printing',  label:'Printing QC', owner:'Asghar', color:'#854F0B'},
+  {key:'bundling',  label:'Bundling',    owner:'Zohaib', color:'#534AB7'},
+  {key:'stitching', label:'Stitching',   owner:'Waqas',  color:'#0F6E56'},
+  {key:'washing',   label:'Washing',     owner:'Abbas',  color:'#72243E'},
+  {key:'qc',        label:'Final QC',    owner:'Haris',  color:'#3B6D11'},
+];
+const STAGE_KEYS = STAGES.map(s=>s.key);
+
+// ══════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════
+let session=null, idToken=null, refreshToken=null;
+let allPOs=[], allPasses=[], currentPage='', viewingPO=null;
+let poImages={front:null,back:null}, gpRowIdx=0;
+
+// ══════════════════════════════════════════════
+// FIREBASE REST
+// ══════════════════════════════════════════════
+const AUTH_URL = `https://identitytoolkit.googleapis.com/v1/accounts`;
+const TOKEN_URL = `https://securetoken.googleapis.com/v1/token?key=${CFG.apiKey}`;
+
+async function refreshTok(){
+  try{
+    const r=await fetch(TOKEN_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`grant_type=refresh_token&refresh_token=${refreshToken}`});
+    const d=await r.json();
+    if(d.id_token){idToken=d.id_token;refreshToken=d.refresh_token;sessionStorage.setItem('rt',d.refresh_token);}
+  }catch(e){console.error('Token refresh failed',e);}
+}
+
+async function dbFetch(path,method='GET',body=null){
+  const url=`${CFG.dbURL}/${path}.json${idToken?'?auth='+idToken:''}`;
+  const opts={method,headers:{'Content-Type':'application/json'}};
+  if(body!=null)opts.body=JSON.stringify(body);
+  let r=await fetch(url,opts);
+  if(r.status===401&&idToken){await refreshTok();r=await fetch(`${CFG.dbURL}/${path}.json?auth=${idToken}`,opts);}
+  if(!r.ok)throw new Error('DB error: '+r.status);
+  return r.json();
+}
+const dbGet=(p)=>dbFetch(p);
+const dbSet=(p,d)=>dbFetch(p,'PUT',d);
+const dbUpdate=(p,d)=>dbFetch(p,'PATCH',d);
+const dbPush=(p,d)=>dbFetch(p,'POST',d);
+const dbDel=(p)=>dbFetch(p,'DELETE');
+
+async function logActivity(action,detail=''){
+  if(!session)return;
+  try{await dbPush('activity',{user:session.name,role:session.title,action,detail,ts:Date.now(),date:new Date().toLocaleDateString('en-GB')});}
+  catch(e){}
+}
+
+function showToast(msg,isErr=false){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.className='toast show'+(isErr?' err':'');
+  setTimeout(()=>t.className='toast',3200);
+}
+
+// ══════════════════════════════════════════════
+// AUTH
+// ══════════════════════════════════════════════
+async function doLogin(){
+  const u=document.getElementById('l-user').value.trim().toLowerCase();
+  const p=document.getElementById('l-pass').value;
+  const def=USER_DEFS.find(x=>x.u===u);
+  if(!def){showToast('Username not found.',true);return;}
+  const btn=document.getElementById('login-btn');
+  btn.disabled=true;btn.textContent='Signing in…';
+  try{
+    const r=await fetch(`${AUTH_URL}:signInWithPassword?key=${CFG.apiKey}`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:def.email,password:p,returnSecureToken:true})
+    });
+    const d=await r.json();
+    if(d.error){showToast('Wrong password. Try again.',true);btn.disabled=false;btn.textContent='Sign in';return;}
+    idToken=d.idToken;refreshToken=d.refreshToken;
+    sessionStorage.setItem('rt',refreshToken);
+    sessionStorage.setItem('u',u);
+    session={...def,uid:d.localId};
+    try{await dbSet(`users/${d.localId}`,{name:def.name,role:def.role,title:def.title,lastLogin:new Date().toISOString()});}catch(e){}
+    startApp();
+    logActivity('Login',`${def.name} signed in`);
+  }catch(e){showToast('Error: '+e.message,true);btn.disabled=false;btn.textContent='Sign in';}
+}
+
+function doLogout(){session=null;idToken=null;refreshToken=null;sessionStorage.clear();location.reload();}
+
+async function tryRestore(){
+  const rt=sessionStorage.getItem('rt');
+  const saved=sessionStorage.getItem('u');
+  if(!rt||!saved)return false;
+  try{
+    const r=await fetch(TOKEN_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`grant_type=refresh_token&refresh_token=${rt}`});
+    const d=await r.json();
+    if(!d.id_token)return false;
+    idToken=d.id_token;refreshToken=d.refresh_token;
+    sessionStorage.setItem('rt',refreshToken);
+    const def=USER_DEFS.find(x=>x.u===saved);
+    if(!def)return false;
+    session={...def,uid:d.user_id};
+    return true;
+  }catch(e){return false;}
+}
+
+// ══════════════════════════════════════════════
+// SETUP
+// ══════════════════════════════════════════════
+function showSetup(){document.getElementById('scr-login').style.display='none';document.getElementById('scr-setup').style.display='flex';}
+function showLogin(){document.getElementById('scr-setup').style.display='none';document.getElementById('scr-login').style.display='flex';}
+
+async function runSetup(){
+  const code=document.getElementById('setup-code').value.trim();
+  if(code!==SETUP_CODE){showToast('Wrong setup code.',true);return;}
+  const btn=document.getElementById('setup-btn');
+  const log=document.getElementById('setup-log');
+  btn.disabled=true;btn.textContent='Creating accounts…';log.innerHTML='';
+  for(const user of USER_DEFS){
+    try{
+      const r=await fetch(`${AUTH_URL}:signUp?key=${CFG.apiKey}`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({email:user.email,password:user.pass,returnSecureToken:false})
+      });
+      const d=await r.json();
+      if(d.error&&d.error.message==='EMAIL_EXISTS'){
+        log.innerHTML+=`<div style="color:#6b7280">• ${user.name} — already exists ✓</div>`;
+      }else if(d.error){
+        log.innerHTML+=`<div style="color:#dc2626">• ${user.name} — ${d.error.message}</div>`;
+      }else{
+        log.innerHTML+=`<div style="color:#1D9E75">• ${user.name} — created ✓</div>`;
+      }
+    }catch(e){log.innerHTML+=`<div style="color:#dc2626">• ${user.name} — ${e.message}</div>`;}
+  }
+  log.innerHTML+=`<div style="margin-top:8px;font-weight:700;color:#1D9E75">Done! Go back and sign in.</div>`;
+  btn.textContent='Complete';
+}
+
+// ══════════════════════════════════════════════
+// APP START & DATA
+// ══════════════════════════════════════════════
+function startApp(){
+  document.getElementById('scr-login').style.display='none';
+  document.getElementById('scr-setup').style.display='none';
+  document.getElementById('scr-app').style.display='flex';
+  document.getElementById('user-name').textContent=session.name;
+  document.getElementById('user-title').textContent=session.title;
+  buildNav();
+  loadData();
+  const defaultPage=session.role==='worker'?'my-work':'dashboard';
+  showPage(defaultPage);
+}
+
+async function loadData(){
+  try{
+    const [posData,gpData]=await Promise.all([dbGet('pos'),dbGet('gatepasses')]);
+    allPOs=posData?Object.entries(posData).map(([k,v])=>({...v,fbKey:k})).sort((a,b)=>b.ts-a.ts):[];
+    allPasses=gpData?Object.values(gpData).sort((a,b)=>b.ts-a.ts):[];
+    if(currentPage)renderPage(currentPage);
+  }catch(e){showToast('Data load error: '+e.message,true);}
+}
+
+// ══════════════════════════════════════════════
+// NAVIGATION
+// ══════════════════════════════════════════════
+function buildNav(){
+  const isOwner=session.role==='owner';
+  const canPO=session.canPO;
+  const isWorker=session.role==='worker';
+  const isViewer=session.role==='viewer';
+
+  const items=[];
+  if(!isWorker)items.push({id:'dashboard',label:'Dashboard'});
+  if(canPO)items.push({id:'po-create',label:'New PO'});
+  if(!isWorker)items.push({id:'po-registry',label:'PO Registry'});
+  if(isWorker||isViewer)items.push({id:'my-work',label:'My Work'});
+  items.push({id:'gatepass',label:'Gate Pass'});
+  if(isOwner)items.push({id:'activity',label:'Activity Log'});
+  if(isOwner)items.push({id:'users',label:'Users'});
+
+  document.getElementById('sidebar').innerHTML=items.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="showPage('${i.id}')">${i.label}</div>`).join('');
+  document.getElementById('mob-nav').innerHTML=items.slice(0,5).map(i=>`<div class="mob-nav-item" id="mobnav-${i.id}" onclick="showPage('${i.id}')">${i.label}</div>`).join('');
+}
+
+function showPage(id){
+  currentPage=id;
+  document.querySelectorAll('.nav-item,.mob-nav-item').forEach(n=>n.classList.remove('on'));
+  document.getElementById('nav-'+id)?.classList.add('on');
+  document.getElementById('mobnav-'+id)?.classList.add('on');
+  renderPage(id);
+}
+
+function renderPage(id){
+  const m=document.getElementById('main-content');
+  if(id==='dashboard')m.innerHTML=renderDashboard();
+  else if(id==='po-create')m.innerHTML=renderPOCreate();
+  else if(id==='po-registry')m.innerHTML=renderRegistry();
+  else if(id==='my-work')m.innerHTML=renderMyWork();
+  else if(id==='gatepass')m.innerHTML=renderGatePass();
+  else if(id==='activity'){loadActivity();return;}
+  else if(id==='users')m.innerHTML=renderUsers();
+  else if(id==='po-detail')renderDetailPage();
+  if(id==='gatepass'){gpRowIdx=0;['XS','S','M','L','XL'].forEach(s=>addGPRow(s,'',''));}
+}
+
+// ══════════════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════════════
+function renderDashboard(){
+  const total=allPOs.length;
+  const active=allPOs.filter(p=>p.currentStage&&p.currentStage!=='completed').length;
+  const done=allPOs.filter(p=>p.currentStage==='completed').length;
+  const today=new Date().toISOString().slice(0,10);
+  const todayCount=allPOs.filter(p=>p.createdAt===today).length;
+  const recent=allPOs.slice(0,10);
+  return `
+    <div class="page-head"><div class="page-title">Dashboard</div><div class="page-sub">Welcome back, ${session.name}</div></div>
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-label">Total POs</div><div class="stat-val">${total}</div></div>
+      <div class="stat-card"><div class="stat-label">Active</div><div class="stat-val" style="color:#185FA5">${active}</div></div>
+      <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-val" style="color:var(--green)">${done}</div></div>
+      <div class="stat-card"><div class="stat-label">Today</div><div class="stat-val" style="color:var(--red)">${todayCount}</div></div>
+    </div>
+    <div style="margin-bottom:16px">
+      <div class="section-title">Stage overview</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${STAGES.map(s=>{const c=allPOs.filter(p=>p.currentStage===s.key).length;return`<div style="flex:1;min-width:80px;padding:10px 8px;background:#fff;border:1px solid var(--border);border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:${s.color}">${c}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${s.label}</div></div>`}).join('')}
+      </div>
+    </div>
+    <div class="section-title">Recent production orders</div>
+    ${recent.length?recent.map(p=>poRowHTML(p)).join(''):'<div class="empty">No POs yet. Create the first one.</div>'}
+  `;
+}
+
+// ══════════════════════════════════════════════
+// PO ROW HTML
+// ══════════════════════════════════════════════
+function poRowHTML(p){
+  const stage=STAGES.find(s=>s.key===p.currentStage)||{label:'Completed',color:'#1D9E75'};
+  const isCompleted=p.currentStage==='completed';
+  return `<div class="po-row" onclick="openPODetail('${p.fbKey}')">
+    <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:`<span style="font-size:9px;color:#ccc">No img</span>`}</div>
+    <div class="po-info">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span class="po-num">${p.id}</span>
+        <span class="stage-badge" style="background:${isCompleted?'#dcfce7':stage.color+'20'};color:${isCompleted?'#14532d':stage.color}">${isCompleted?'Completed':stage.label}</span>
+      </div>
+      <div class="po-name">${p.name||'—'}</div>
+      <div class="po-meta">${p.qty||'?'} pcs · ${p.fabric||''} · ${p.createdBy||'—'} · ${p.createdAt||''}</div>
+    </div>
+    <div class="po-arrow">›</div>
+  </div>`;
+}
+
+// ══════════════════════════════════════════════
+// PO REGISTRY
+// ══════════════════════════════════════════════
+function renderRegistry(){
+  return `
+    <div class="page-head"><div class="page-title">PO Registry</div><div class="page-sub">${allPOs.length} production orders</div></div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <input placeholder="Search name, code, fabric…" oninput="filterPOs(this.value)" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+      <select onchange="filterStage(this.value)" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+        <option value="">All stages</option>
+        ${STAGES.map(s=>`<option value="${s.key}">${s.label}</option>`).join('')}
+        <option value="completed">Completed</option>
+      </select>
+    </div>
+    <div id="po-list-wrap">${allPOs.length?allPOs.map(p=>poRowHTML(p)).join(''):'<div class="empty">No POs yet.</div>'}</div>
+  `;
+}
+
+window.filterPOs=function(q){
+  const f=allPOs.filter(p=>!q||[p.name,p.id,p.code,p.fabric].some(v=>(v||'').toLowerCase().includes(q.toLowerCase())));
+  document.getElementById('po-list-wrap').innerHTML=f.length?f.map(p=>poRowHTML(p)).join(''):'<div class="empty">No results.</div>';
+};
+window.filterStage=function(s){
+  const f=s?allPOs.filter(p=>p.currentStage===s):allPOs;
+  document.getElementById('po-list-wrap').innerHTML=f.length?f.map(p=>poRowHTML(p)).join(''):'<div class="empty">No results.</div>';
+};
+
+// ══════════════════════════════════════════════
+// MY WORK (Worker + Viewer)
+// ══════════════════════════════════════════════
+function renderMyWork(){
+  const stages=session.stages||[];
+  if(!stages.length){
+    return `<div class="page-head"><div class="page-title">All Active Orders</div><div class="page-sub">${allPOs.filter(p=>p.currentStage!=='completed').length} in progress</div></div>${allPOs.filter(p=>p.currentStage!=='completed').map(p=>poRowHTML(p)).join('')||'<div class="empty">No active orders.</div>'}`;
+  }
+  const myPOs=allPOs.filter(p=>stages.includes(p.currentStage));
+  return `
+    <div class="page-head"><div class="page-title">My Work</div><div class="page-sub">${myPOs.length} order${myPOs.length!==1?'s':''} waiting in your stage</div></div>
+    ${myPOs.length?myPOs.map(p=>`
+      <div class="work-card">
+        <div style="display:flex;gap:14px;align-items:flex-start">
+          <div style="width:90px;height:115px;flex-shrink:0;background:#f0f0f0;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="openPODetail('${p.fbKey}')">
+            ${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:10px;color:#aaa;text-align:center;padding:4px">No image</span>'}
+          </div>
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+              <span class="po-num">${p.id}</span>
+              <span class="stage-badge" style="background:${STAGES.find(s=>s.key===p.currentStage)?.color||'#888'}20;color:${STAGES.find(s=>s.key===p.currentStage)?.color||'#888'}">${STAGES.find(s=>s.key===p.currentStage)?.label||p.currentStage}</span>
+            </div>
+            <div style="font-size:15px;font-weight:700;margin-bottom:3px">${p.name||'—'}</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:3px">${p.qty||'?'} pcs · ${p.fabric||''}</div>
+            <div style="font-size:12px;color:var(--muted)">Code: ${p.code||'—'}</div>
+            ${stages.filter(s=>s===p.currentStage).map(s=>`<button class="mark-done-btn" onclick="markDone('${p.fbKey}','${s}')">Mark ${STAGES.find(x=>x.key===s)?.label||s} done ✓</button>`).join('')}
+          </div>
+        </div>
+      </div>
+    `).join(''):`<div class="empty">No orders in your stage right now.<br>You're all caught up!</div>`}
+  `;
+}
+
+window.markDone=async function(fbKey,stageKey){
+  const po=allPOs.find(p=>p.fbKey===fbKey);
+  if(!po)return;
+  if(!session.stages?.includes(stageKey)){showToast('Not your stage.',true);return;}
+  if(po.currentStage!==stageKey){showToast('This stage is not active.',true);return;}
+  const stage=STAGES.find(s=>s.key===stageKey);
+  const notes=prompt(`Mark "${stage?.label}" done for PO ${po.id}?\n\nAdd notes (optional, press Cancel to abort):`);
+  if(notes===null)return;
+  const nextIdx=STAGE_KEYS.indexOf(stageKey)+1;
+  const nextStage=nextIdx<STAGE_KEYS.length?STAGE_KEYS[nextIdx]:'completed';
+  try{
+    await dbUpdate(`pos/${fbKey}`,{
+      currentStage:nextStage,
+      [`stages/${stageKey}/done`]:true,
+      [`stages/${stageKey}/doneAt`]:new Date().toISOString(),
+      [`stages/${stageKey}/doneBy`]:session.name,
+      [`stages/${stageKey}/notes`]:notes||'',
+    });
+    await logActivity('Stage done',`PO ${po.id} · ${stage?.label} marked done`);
+    showToast(`${stage?.label} marked done ✓`);
+    await loadData();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+// ══════════════════════════════════════════════
+// PO DETAIL
+// ══════════════════════════════════════════════
+window.openPODetail=function(fbKey){viewingPO=fbKey;currentPage='po-detail';document.querySelectorAll('.nav-item,.mob-nav-item').forEach(n=>n.classList.remove('on'));renderDetailPage();};
+
+function renderDetailPage(){
+  const po=allPOs.find(p=>p.fbKey===viewingPO);
+  if(!po){showPage('po-registry');return;}
+  const m=document.getElementById('main-content');
+  const isOwner=['owner','manager'].includes(session.role);
+  const stagesHTML=STAGES.map(s=>{
+    const sd=po.stages?.[s.key]||{};
+    const isDone=!!sd.done;
+    const isCurrent=po.currentStage===s.key;
+    const canUpdate=session.stages?.includes(s.key)&&isCurrent;
+    return `
+      <div class="stage-item">
+        <div class="stage-dot ${isDone?'dot-done':isCurrent?'dot-active':'dot-pending'}"></div>
+        <div class="stage-content" style="flex:1">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+            <div>
+              <div class="stage-label" style="color:${isDone?'var(--green)':isCurrent?'var(--red)':'var(--text)'}">${s.label}</div>
+              ${isDone?`<div class="stage-meta">✓ Done by ${sd.doneBy||'?'} · ${sd.doneAt?new Date(sd.doneAt).toLocaleDateString('en-GB'):''}</div>`:''}
+              ${isCurrent&&!isDone?`<div class="stage-meta" style="color:var(--red)">In progress — ${s.owner}'s turn</div>`:''}
+              ${!isDone&&!isCurrent?`<div class="stage-meta">Waiting · ${s.owner}</div>`:''}
+              ${sd.notes?`<div class="stage-meta" style="font-style:italic;margin-top:2px">"${sd.notes}"</div>`:''}
+              ${sd.dueDate?`<div class="stage-meta">Due: ${sd.dueDate}</div>`:''}
+            </div>
+            <div style="flex-shrink:0">
+              ${canUpdate?`<button class="mark-done-btn" style="width:auto;padding:8px 14px;font-size:12px" onclick="markDone('${po.fbKey}','${s.key}')">Mark done</button>`:''}
+              ${isOwner&&isCurrent&&!canUpdate?`<button class="btn-sm" onclick="ownerAdvance('${po.fbKey}','${s.key}')">Force advance</button>`:''}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="stage-connector"></div>
+    `;
+  }).join('');
+
+  m.innerHTML=`
+    <button class="back-btn" onclick="showPage('po-registry')">← Back to registry</button>
+    <div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+      <div><div class="page-title">PO ${po.id}</div><div class="page-sub">By ${po.createdBy||'—'} · ${po.createdAt||''}</div></div>
+      ${isOwner&&session.role==='owner'?`<button class="btn-outline" style="font-size:12px" onclick="deletePO('${po.fbKey}','${po.id}')">Delete PO</button>`:''}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div class="card" style="margin-bottom:0">
+        <div class="card-title">Product</div>
+        <div class="info-row"><span class="info-label">Name</span><span style="font-weight:500">${po.name||'—'}</span></div>
+        <div class="info-row"><span class="info-label">Code</span><span>${po.code||'—'}</span></div>
+        <div class="info-row"><span class="info-label">Pattern</span><span>${po.pattern||'—'}</span></div>
+        <div class="info-row"><span class="info-label">Total qty</span><span>${po.qty||'—'} pcs</span></div>
+        <div class="info-row"><span class="info-label">Ratio</span><span>${po.ratio||'—'}</span></div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <div class="card-title">Fabric & supply</div>
+        <div class="info-row"><span class="info-label">Fabric</span><span>${po.fabric||'—'}</span></div>
+        <div class="info-row"><span class="info-label">Code</span><span>${po.fabricCode||'—'}</span></div>
+        <div class="info-row"><span class="info-label">Store</span><span>${po.store||'—'}</span></div>
+        <div class="info-row"><span class="info-label">Rolls</span><span>${po.totalRoll||'—'}</span></div>
+        <div class="info-row"><span class="info-label">Weight</span><span>${po.totalWeight||'—'}</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Size breakdown</div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">
+        ${['XS','S','M','L','XL'].map(sz=>`<div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">${sz}</div><div style="font-size:18px;font-weight:700">${po.sizes?.[sz]||0}</div></div>`).join('')}
+      </div>
+    </div>
+    ${po.imgFront||po.imgBack?`
+    <div class="card">
+      <div class="card-title">Product images</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        ${po.imgFront?`<div><div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:500">FRONT</div><img src="${po.imgFront}" style="width:100%;border-radius:8px;max-height:320px;object-fit:cover"></div>`:''}
+        ${po.imgBack?`<div><div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:500">BACK</div><img src="${po.imgBack}" style="width:100%;border-radius:8px;max-height:320px;object-fit:cover"></div>`:''}
+      </div>
+    </div>`:''}
+    <div class="card">
+      <div class="card-title">Production timeline</div>
+      ${stagesHTML}
+      ${po.currentStage==='completed'?`<div class="stage-item"><div class="stage-dot dot-done"></div><div class="stage-content"><div class="stage-label" style="color:var(--green)">Completed ✓</div><div class="stage-meta">All stages done</div></div></div>`:''}
+    </div>
+    <div style="height:80px"></div>
+  `;
+}
+
+window.ownerAdvance=async function(fbKey,stageKey){
+  const po=allPOs.find(p=>p.fbKey===fbKey);
+  if(!po)return;
+  if(!['owner','manager'].includes(session.role)){showToast('Not authorized.',true);return;}
+  const stage=STAGES.find(s=>s.key===stageKey);
+  if(!confirm(`Force-advance "${stage?.label}" for PO ${po.id}?\nThis overrides the normal worker flow.`))return;
+  const nextIdx=STAGE_KEYS.indexOf(stageKey)+1;
+  const nextStage=nextIdx<STAGE_KEYS.length?STAGE_KEYS[nextIdx]:'completed';
+  try{
+    await dbUpdate(`pos/${fbKey}`,{
+      currentStage:nextStage,
+      [`stages/${stageKey}/done`]:true,
+      [`stages/${stageKey}/doneAt`]:new Date().toISOString(),
+      [`stages/${stageKey}/doneBy`]:session.name+' (override)',
+    });
+    await logActivity('Stage override',`PO ${po.id} · ${stage?.label} force-advanced`);
+    showToast(`Advanced to next stage ✓`);
+    await loadData();
+    renderDetailPage();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+window.deletePO=async function(fbKey,poId){
+  if(session.role!=='owner'){showToast('Owners only.',true);return;}
+  if(!confirm(`Delete PO ${poId}? This cannot be undone.`))return;
+  try{
+    await dbDel(`pos/${fbKey}`);
+    await logActivity('PO deleted',`PO ${poId} deleted`);
+    showToast(`PO ${poId} deleted`);
+    await loadData();
+    showPage('po-registry');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+// ══════════════════════════════════════════════
+// PO CREATE
+// ══════════════════════════════════════════════
+function renderPOCreate(){
+  if(!session.canPO)return'<div class="empty">You are not authorized to create production orders.</div>';
+  return`
+    <div class="page-head"><div class="page-title">New Production Order</div><div class="page-sub">All fields marked * are required</div></div>
+    <div class="card">
+      <div class="card-title">Product details</div>
+      <div class="form-grid">
+        <div class="field"><label>Product name *</label><input id="po-name" placeholder="e.g. Terry Wide-Leg Trouser"></div>
+        <div class="field"><label>Product code *</label><input id="po-code" placeholder="e.g. TWT-001"></div>
+        <div class="field"><label>Pattern</label><input id="po-pattern" placeholder="Pattern number or description"></div>
+        <div class="field"><label>Total qty (pcs) *</label><input id="po-qty" type="number" min="0" placeholder="0"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Size breakdown *</div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
+        ${['XS','S','M','L','XL'].map(sz=>`<div class="field"><label>${sz}</label><input id="sz-${sz}" type="number" min="0" value="0" oninput="updateRatio()"></div>`).join('')}
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:var(--muted)">Ratio: <span id="ratio-disp" style="font-weight:600;color:var(--text)">—</span></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Fabric & supply *</div>
+      <div class="form-grid">
+        <div class="field"><label>Fabric type *</label><input id="po-fabric" placeholder="e.g. Terry, Fleece, Denim"></div>
+        <div class="field"><label>Fabric code</label><input id="po-fabriccode" placeholder="e.g. TRY-200GSM"></div>
+        <div class="field"><label>Supply store</label><input id="po-store" placeholder="Store or supplier name"></div>
+        <div class="field"><label>Total rolls</label><input id="po-rolls" placeholder="e.g. 12"></div>
+        <div class="field"><label>Total weight</label><input id="po-weight" placeholder="e.g. 80 kg"></div>
+        <div class="field"><label>Avg per unit</label><input id="po-avg" placeholder="e.g. 800g"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Due dates per stage</div>
+      <div style="display:grid;gap:8px">
+        ${STAGES.map(s=>`<div style="display:flex;align-items:center;gap:12px"><span style="font-size:12px;font-weight:500;min-width:110px;color:var(--muted)">${s.label}</span><input type="date" id="due-${s.key}" style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:#fafafa;outline:none"></div>`).join('')}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Product images</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600">FRONT VIEW *</div>
+          <div class="img-upload-box" id="img-front-box" onclick="document.getElementById('inp-front').click()">
+            <img id="img-front-prev" style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:9px">
+            <div id="img-front-ph" style="text-align:center">
+              <div style="font-size:24px;color:#ddd;margin-bottom:4px">+</div>
+              <div>Tap to upload front</div>
+            </div>
+          </div>
+          <input type="file" id="inp-front" accept="image/*" class="hidden" onchange="handleImg(this,'front')">
+          <button onclick="clearImg('front')" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;margin-top:4px;font-family:inherit">Remove</button>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600">BACK VIEW</div>
+          <div class="img-upload-box" id="img-back-box" onclick="document.getElementById('inp-back').click()">
+            <img id="img-back-prev" style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:9px">
+            <div id="img-back-ph" style="text-align:center">
+              <div style="font-size:24px;color:#ddd;margin-bottom:4px">+</div>
+              <div>Tap to upload back</div>
+            </div>
+          </div>
+          <input type="file" id="inp-back" accept="image/*" class="hidden" onchange="handleImg(this,'back')">
+          <button onclick="clearImg('back')" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;margin-top:4px;font-family:inherit">Remove</button>
+        </div>
+      </div>
+    </div>
+    <button class="btn-primary" id="po-submit-btn" onclick="submitPO()">Create Production Order</button>
+    <div style="height:80px"></div>
+  `;
+}
+
+window.updateRatio=function(){
+  const vals=['XS','S','M','L','XL'].map(sz=>parseInt(document.getElementById('sz-'+sz)?.value)||0);
+  const nonZero=vals.filter(v=>v>0);
+  if(!nonZero.length){document.getElementById('ratio-disp').textContent='—';return;}
+  const min=Math.min(...nonZero);
+  document.getElementById('ratio-disp').textContent=vals.map(v=>v?Math.round(v/min):0).join(':');
+};
+
+function compressImage(file,maxW,q){
+  return new Promise(res=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        const ratio=Math.min(maxW/img.width,maxW/img.height,1);
+        const c=document.createElement('canvas');
+        c.width=img.width*ratio;c.height=img.height*ratio;
+        c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+        res(c.toDataURL('image/jpeg',q));
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+window.handleImg=async function(input,side){
+  const file=input.files[0];if(!file)return;
+  const compressed=await compressImage(file,400,0.5);
+  poImages[side]=compressed;
+  document.getElementById(`img-${side}-prev`).src=compressed;
+  document.getElementById(`img-${side}-prev`).style.display='block';
+  document.getElementById(`img-${side}-ph`).style.display='none';
+};
+window.clearImg=function(side){
+  poImages[side]=null;
+  document.getElementById(`img-${side}-prev`).style.display='none';
+  document.getElementById(`img-${side}-ph`).style.display='flex';
+  document.getElementById(`inp-${side}`).value='';
+};
+
+window.submitPO=async function(){
+  if(!session.canPO){showToast('Not authorized.',true);return;}
+  const name=document.getElementById('po-name')?.value.trim();
+  const code=document.getElementById('po-code')?.value.trim();
+  const qty=parseInt(document.getElementById('po-qty')?.value)||0;
+  const fabric=document.getElementById('po-fabric')?.value.trim();
+  if(!name){showToast('Product name required.',true);return;}
+  if(!code){showToast('Product code required.',true);return;}
+  if(!qty){showToast('Quantity required.',true);return;}
+  if(!fabric){showToast('Fabric type required.',true);return;}
+  if(!poImages.front){showToast('Front image is required.',true);return;}
+  const btn=document.getElementById('po-submit-btn');
+  if(btn){btn.disabled=true;btn.textContent='Creating…';}
+  try{
+    const ctr=await dbGet('po_counter')||0;
+    const nextNum=ctr+1;
+    await dbSet('po_counter',nextNum);
+    const poId='PO-'+String(nextNum).padStart(3,'0');
+    const sizes={};
+    ['XS','S','M','L','XL'].forEach(sz=>sizes[sz]=parseInt(document.getElementById('sz-'+sz)?.value)||0);
+    const stages={};
+    STAGE_KEYS.forEach(k=>stages[k]={done:false,doneAt:null,doneBy:null,dueDate:document.getElementById('due-'+k)?.value||'',notes:''});
+    const payload={
+      id:poId,ts:Date.now(),
+      name,code,
+      pattern:document.getElementById('po-pattern')?.value.trim()||'',
+      qty,sizes,
+      ratio:document.getElementById('ratio-disp')?.textContent||'',
+      fabric,
+      fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',
+      store:document.getElementById('po-store')?.value.trim()||'',
+      totalRoll:document.getElementById('po-rolls')?.value.trim()||'',
+      totalWeight:document.getElementById('po-weight')?.value.trim()||'',
+      avgPerUnit:document.getElementById('po-avg')?.value.trim()||'',
+      imgFront:poImages.front||'',
+      imgBack:poImages.back||'',
+      currentStage:'cutting',
+      stages,
+      createdBy:session.name,
+      createdAt:new Date().toISOString().slice(0,10),
+    };
+    await dbSet(`pos/${poId}`,payload);
+    await logActivity('PO created',`${poId} — ${name} (${qty} pcs)`);
+    showToast(`${poId} created ✓`);
+    poImages={front:null,back:null};
+    await loadData();
+    showPage('po-registry');
+  }catch(e){
+    showToast('Error: '+e.message,true);
+    if(btn){btn.disabled=false;btn.textContent='Create Production Order';}
+  }
+};
+
+// ══════════════════════════════════════════════
+// GATE PASS
+// ══════════════════════════════════════════════
+function renderGatePass(){
+  return`
+    <div class="page-head"><div class="page-title">Gate Pass</div></div>
+    <div class="card">
+      <div class="card-title">Issue new pass</div>
+      <div class="form-grid">
+        <div class="field"><label>Person name</label><input id="gp-name" value="${session.name}" readonly style="background:#f0f0f0;cursor:default"></div>
+        <div class="field"><label>Date</label><input id="gp-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+        <div class="field"><label>Article name *</label><input id="gp-article" placeholder="e.g. Terry Wide-Leg Trouser"></div>
+        <div class="field">
+          <label>Destination *</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+            <button type="button" class="dest-chip" onclick="setDest('Warehouse')">Warehouse</button>
+            <button type="button" class="dest-chip" onclick="setDest('Factory')">Factory</button>
+            <button type="button" class="dest-chip" onclick="setDest('Showroom')">Showroom</button>
+            <button type="button" class="dest-chip" onclick="setDest('Head Office')">Head Office</button>
+          </div>
+          <input id="gp-dest" placeholder="Or type destination…">
+        </div>
+        <div class="field"><label>Purpose</label><input id="gp-purpose" placeholder="Reason for dispatch"></div>
+        <div class="field"><label>Time</label><input id="gp-time" type="time" value="${new Date().toTimeString().slice(0,5)}"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Units by size</div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:300px">
+          <thead><tr style="background:var(--dark)"><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Size</th><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Units (pcs)</th><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Weight (kg)</th><th style="width:36px"></th></tr></thead>
+          <tbody id="gp-body"></tbody>
+        </table>
+      </div>
+      <button onclick="addGPRow()" style="width:100%;padding:9px;background:none;border:none;font-size:12px;color:var(--muted);cursor:pointer;border-top:1px solid var(--border);font-family:inherit">+ Add size</button>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px">
+        <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total units</div><div id="gp-t-units" style="font-size:18px;font-weight:700;color:#fff">0 pcs</div></div>
+        <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total weight</div><div id="gp-t-weight" style="font-size:18px;font-weight:700;color:#fff">0 kg</div></div>
+        <div style="background:var(--red);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total boras</div><div><input id="gp-boras" type="number" min="0" placeholder="0" style="background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,.35);color:#fff;font-size:18px;font-weight:700;width:60px;text-align:center;padding:0;border-radius:0;outline:none"></div></div>
+      </div>
+    </div>
+    <button class="btn-primary" onclick="submitGP()">Submit gate pass</button>
+    <div class="card" style="margin-top:12px">
+      <div class="card-title">Recent gate passes</div>
+      ${allPasses.slice(0,10).map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5;font-size:12px"><div><div style="font-weight:700;color:var(--red);font-size:11px">${p.id}</div><div style="font-weight:500">${p.article||'—'}</div><div style="color:var(--muted)">${p.name||'—'} · ${p.date||''} · ${p.dest||'—'}</div></div><div style="text-align:right;color:var(--muted);font-weight:500">${p.totalUnits} pcs</div></div>`).join('')||'<div class="empty" style="padding:1rem">No gate passes yet.</div>'}
+    </div>
+    <div style="height:80px"></div>
+  `;
+}
+
+window.setDest=function(v){document.getElementById('gp-dest').value=v;};
+
+window.addGPRow=function(size='',units='',weight=''){
+  gpRowIdx++;
+  const id='gpr'+gpRowIdx;
+  const tr=document.createElement('tr');
+  tr.id=id;tr.style.borderBottom='1px solid #f5f5f5';
+  tr.innerHTML=`<td style="padding:4px 6px"><input type="text" value="${size}" placeholder="e.g. M" style="width:68px;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" onchange="gpRecalc()"></td><td style="padding:4px 6px"><input type="number" value="${units}" min="0" placeholder="0" style="width:68px;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" oninput="gpRecalc()"></td><td style="padding:4px 6px"><input type="number" value="${weight}" min="0" step="0.1" placeholder="0" style="width:68px;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" oninput="gpRecalc()"></td><td><button onclick="document.getElementById('${id}').remove();gpRecalc()" style="background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:2px 6px">×</button></td>`;
+  document.getElementById('gp-body')?.appendChild(tr);
+  gpRecalc();
+};
+window.gpRecalc=function(){
+  let u=0,w=0;
+  document.querySelectorAll('#gp-body tr').forEach(r=>{const i=r.querySelectorAll('input');u+=parseFloat(i[1]?.value)||0;w+=parseFloat(i[2]?.value)||0;});
+  document.getElementById('gp-t-units').textContent=Math.round(u)+' pcs';
+  document.getElementById('gp-t-weight').textContent=w.toFixed(1)+' kg';
+};
+window.submitGP=async function(){
+  const article=document.getElementById('gp-article')?.value.trim();
+  const dest=document.getElementById('gp-dest')?.value.trim();
+  if(!article||!dest){showToast('Article and destination required.',true);return;}
+  const items=[];
+  document.querySelectorAll('#gp-body tr').forEach(r=>{
+    const i=r.querySelectorAll('input'),sz=i[0]?.value.trim();
+    if(sz)items.push({size:sz,units:parseFloat(i[1]?.value)||0,weight:parseFloat(i[2]?.value)||0});
+  });
+  try{
+    const ctr=await dbGet('gp_counter')||0;
+    const next=ctr+1;
+    await dbSet('gp_counter',next);
+    const gpId='GP-'+String(next).padStart(3,'0');
+    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,dest,date:document.getElementById('gp-date')?.value,time:document.getElementById('gp-time')?.value,purpose:document.getElementById('gp-purpose')?.value?.trim()||'',boras:document.getElementById('gp-boras')?.value||'0',totalUnits:items.reduce((s,r)=>s+r.units,0),totalWeight:items.reduce((s,r)=>s+r.weight,0).toFixed(1),items};
+    await dbSet('gatepasses/'+gpId,payload);
+    await logActivity('Gate pass issued',`${gpId} — ${article} to ${dest}`);
+    showToast(gpId+' issued ✓');
+    await loadData();
+    showPage('gatepass');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+// ══════════════════════════════════════════════
+// ACTIVITY LOG
+// ══════════════════════════════════════════════
+async function loadActivity(){
+  const m=document.getElementById('main-content');
+  m.innerHTML='<div class="page-head"><div class="page-title">Activity Log</div></div><div class="empty">Loading…</div>';
+  try{
+    const data=await dbGet('activity');
+    const items=data?Object.values(data).sort((a,b)=>b.ts-a.ts).slice(0,150):[];
+    m.innerHTML=`<div class="page-head"><div class="page-title">Activity Log</div><div class="page-sub">${items.length} recent actions</div></div>
+    <div class="card">
+      ${items.length?items.map(a=>`
+        <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #f5f5f5">
+          <div style="width:28px;height:28px;border-radius:50%;background:var(--dark);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0">${(a.user||'?')[0].toUpperCase()}</div>
+          <div style="flex:1">
+            <div style="font-size:13px"><strong>${a.user||'?'}</strong> <span style="color:var(--muted)">— ${a.action||''}</span></div>
+            <div style="font-size:11px;color:var(--muted)">${a.detail||''}</div>
+            <div style="font-size:10px;color:#aaa;margin-top:1px">${a.ts?new Date(a.ts).toLocaleString('en-GB'):a.date||''}</div>
+          </div>
+        </div>
+      `).join(''):'<div class="empty">No activity recorded yet.</div>'}
+    </div><div style="height:80px"></div>`;
+  }catch(e){m.innerHTML=`<div class="empty">Error loading log: ${e.message}</div>`;}
+}
+
+// ══════════════════════════════════════════════
+// USERS PAGE
+// ══════════════════════════════════════════════
+function renderUsers(){
+  if(session.role!=='owner')return'<div class="empty">Owners only.</div>';
+  return`
+    <div class="page-head"><div class="page-title">Users</div><div class="page-sub">10 accounts · Role-based access</div></div>
+    <div class="card">
+      <div class="card-title">User accounts</div>
+      ${USER_DEFS.map(u=>`
+        <div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #f5f5f5">
+          <div style="width:36px;height:36px;border-radius:50%;background:${u.role==='owner'?'var(--dark)':u.role==='manager'?'var(--red)':'var(--green)'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">${u.name[0]}</div>
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:13px">${u.name} <span style="font-size:11px;font-weight:400;color:var(--muted)">@${u.u}</span></div>
+            <div style="font-size:11px;color:var(--muted)">${u.title}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:11px;font-weight:600;color:${u.role==='owner'?'var(--dark)':u.role==='manager'?'var(--red)':'var(--green)'};text-transform:capitalize">${u.role}</div>
+            <div style="font-size:10px;color:#aaa;margin-top:1px">${u.canPO?'Can create PO':'View only'}</div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="card">
+      <div class="card-title">Stage assignments</div>
+      ${STAGES.map(s=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #f5f5f5;font-size:13px"><span style="font-weight:500">${s.label}</span><span style="font-weight:600;color:${s.color}">${s.owner}</span></div>`).join('')}
+    </div>
+    <div class="card">
+      <div class="card-title">Default passwords (change after first login)</div>
+      <div style="font-size:12px;line-height:2;color:var(--muted)">
+        ${USER_DEFS.map(u=>`<div><strong style="color:var(--text)">${u.u}</strong> → ${u.pass}</div>`).join('')}
+      </div>
+    </div>
+    <div style="height:80px"></div>
+  `;
+}
+
+// ══════════════════════════════════════════════
+// BOOT
+// ══════════════════════════════════════════════
+async function boot(){
+  const restored=await tryRestore();
+  if(restored){
+    startApp();
+  }else{
+    document.getElementById('scr-login').style.display='flex';
+  }
+}
+boot();
+</script>
+</body>
+</html>
