@@ -217,7 +217,7 @@ const STAGES=[
 ];
 const STAGE_KEYS=STAGES.map(s=>s.key);
 
-let session=null,allPOs=[],allPasses=[],currentPage='',viewingPO=null,poImages={front:null,back:null},gpRowIdx=0;
+let session=null,allPOs=[],allPasses=[],currentPage='',viewingPO=null,poImages={front:null,back:null},gpRowIdx=0,loginInProgress=false;
 let stageWorkPO=null,stageWorkStage=null,currentBundles=[],cutState={poId:null,actualQty:{},pendingBundles:[]};
 
 // ── Helpers ──
@@ -300,12 +300,15 @@ window.doLogin=async function(){
   if(!def){showToast('Username not found.',true);return;}
   const btn=document.getElementById('login-btn');
   btn.disabled=true;btn.textContent='Signing in…';
+  loginInProgress=true;
   try{
     const cred=await signInWithEmailAndPassword(auth,def.email,p);
     session={...def,uid:cred.user.uid};
+    loginInProgress=false;
     startApp();
     logActivity('Login',`${def.name} signed in`);
   }catch(e){
+    loginInProgress=false;
     showToast(e.code==='auth/wrong-password'||e.code==='auth/invalid-credential'?'Wrong password. Try again.':'Error: '+e.message,true);
     btn.disabled=false;btn.textContent='Sign in';
   }
@@ -315,6 +318,7 @@ window.doLogout=async function(){
 };
 
 onAuthStateChanged(auth,async user=>{
+  if(loginInProgress)return;
   if(user&&!session){
     const saved=sessionStorage.getItem('u');
     const def=saved?USER_DEFS.find(x=>x.u===saved):null;
