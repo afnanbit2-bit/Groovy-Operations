@@ -684,10 +684,10 @@ function renderCuttingWork(po){
       ${szs.map(sz=>{
         const tgt=po.sizes?.[sz]||0,act=parseInt(cutState.actualQty[sz])||0,diff=act-tgt;
         const cls=diff===0?'var-ok':Math.abs(diff)<=Math.ceil(tgt*0.1)?'var-warn':'var-bad';
-        return`<tr><td style="font-weight:600">${sz}</td><td>${tgt}</td><td><input type="number" min="0" value="${act}" style="width:80px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;outline:none" onchange="window.setCutQty('${sz}',this.value)"></td><td class="${cls}">${act>0?diff>=0?'+'+diff:diff:'—'}</td></tr>`;
+        return`<tr><td style="font-weight:600">${sz}</td><td>${tgt}</td><td><input type="number" min="0" value="${act}" style="width:80px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;outline:none" onchange="window.setCutQty('${sz}',this.value)"></td><td id="var-${sz}" class="${cls}">${act>0?diff>=0?'+'+diff:diff:'—'}</td></tr>`;
       }).join('')}
     </tbody></table>
-    <div style="margin-top:10px;font-size:13px">
+    <div id="cut-total-row" style="margin-top:10px;font-size:13px">
       Total: <strong>${actualTotal}</strong> actual / <strong>${target}</strong> target &nbsp;
       <span style="font-size:11px;color:var(--muted)">Allowed: ${min}–${max} pcs (80–120%)</span>
       <span style="margin-left:8px;font-weight:600;color:${rangeOk?'var(--green)':'#dc2626'}">${rangeOk?'✓ In range':'✗ Out of range'}</span>
@@ -739,21 +739,46 @@ function cutValidationOk(po){
   return cutState.pendingBundles.length>0;
 }
 
+function refreshCutPartial(po){
+  const szs=['XS','S','M','L','XL'];
+  const target=po.qty||0;
+  const actualTotal=szs.reduce((a,s)=>a+(parseInt(cutState.actualQty[s])||0),0);
+  const min=Math.ceil(target*0.8),max=Math.floor(target*1.2);
+  const rangeOk=actualTotal>=min&&actualTotal<=max;
+  // Update variance cells
+  szs.forEach(sz=>{
+    const tgt=po.sizes?.[sz]||0,act=parseInt(cutState.actualQty[sz])||0,diff=act-tgt;
+    const cls=diff===0?'var-ok':Math.abs(diff)<=Math.ceil(tgt*0.1)?'var-warn':'var-bad';
+    const cell=document.getElementById('var-'+sz);
+    if(cell){cell.className=cls;cell.textContent=act>0?(diff>=0?'+'+diff:diff):'—';}
+  });
+  // Update total row
+  const tot=document.getElementById('cut-total-row');
+  if(tot)tot.innerHTML=`Total: <strong>${actualTotal}</strong> actual / <strong>${target}</strong> target &nbsp;<span style="font-size:11px;color:var(--muted)">Allowed: ${min}–${max} pcs (80–120%)</span><span style="margin-left:8px;font-weight:600;color:${rangeOk?'var(--green)':'#dc2626'}">${rangeOk?'✓ In range':'✗ Out of range'}</span>`;
+  // Update bundle list & summary
+  const bl=document.getElementById('cut-bundle-list');if(bl)bl.innerHTML=renderCutBundleList();
+  const bs=document.getElementById('cut-bundle-summary');if(bs)bs.innerHTML=renderCutBundleSummary(po);
+  // Update done button
+  const btn=document.getElementById('cut-done-btn');if(btn)btn.disabled=!cutValidationOk(po);
+}
+
 window.setCutQty=function(sz,val){
   cutState.actualQty[sz]=parseInt(val)||0;
-  const po=allPOs.find(p=>p.fbKey===stageWorkPO);if(!po)return;
-  const m=document.getElementById('main-content');if(m)m.innerHTML=renderCuttingWork(po);
+  const po=allPOs.find(p=>p.fbKey===stageWorkPO);if(po)refreshCutPartial(po);
 };
 window.addCutBundle=function(){
-  const size=document.getElementById('bundle-size-sel').value;
-  const units=parseInt(document.getElementById('bundle-units-inp').value)||0;
+  const sel=document.getElementById('bundle-size-sel');
+  const size=sel.value;
+  const unitsInp=document.getElementById('bundle-units-inp');
+  const units=parseInt(unitsInp.value)||0;
   if(!units){showToast('Enter unit count.',true);return;}
   cutState.pendingBundles.push({tempId:Date.now()+Math.random(),size,units});
-  const po=allPOs.find(p=>p.fbKey===stageWorkPO);if(po){document.getElementById('main-content').innerHTML=renderCuttingWork(po);}
+  unitsInp.value='';unitsInp.focus();  // clear units, keep size, focus for next entry
+  const po=allPOs.find(p=>p.fbKey===stageWorkPO);if(po)refreshCutPartial(po);
 };
 window.removeCutBundle=function(tempId){
   cutState.pendingBundles=cutState.pendingBundles.filter(b=>b.tempId!==tempId);
-  const po=allPOs.find(p=>p.fbKey===stageWorkPO);if(po){document.getElementById('main-content').innerHTML=renderCuttingWork(po);}
+  const po=allPOs.find(p=>p.fbKey===stageWorkPO);if(po)refreshCutPartial(po);
 };
 
 window.markCuttingDone=async function(fbKey){
