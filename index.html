@@ -355,14 +355,16 @@ window.runSetup=async function(){
 };
 
 // ── App start & nav ──
-function startApp(){
+async function startApp(){
   document.getElementById('scr-login').style.display='none';
   document.getElementById('scr-setup').style.display='none';
   document.getElementById('scr-app').style.display='flex';
   document.getElementById('user-name').textContent=session.name;
   document.getElementById('user-title').textContent=session.title;
   sessionStorage.setItem('u',session.u);
-  buildNav();loadData();
+  buildNav();
+  if(auth.currentUser){try{await auth.currentUser.getIdToken();}catch(_){}}
+  loadData();
   showPage(session.role==='worker'?'my-work':'dashboard');
 }
 
