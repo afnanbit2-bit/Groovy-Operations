@@ -268,7 +268,7 @@ const INITIAL_ITEMS=[
 
 // ── App state ──
 let session=null, idToken=null, tokenExpiry=0;
-let allItems=[], allTransactions=[], allTemplates=[], allRequests=[];
+let allItems=[], allTransactions=[], allTemplates=[], allRequests=[], allActivePOs=[];
 let currentSection='';
 
 // ── Toast ──
@@ -530,7 +530,7 @@ function renderSection(id){
   const m=document.getElementById('main-content');
   if(id==='inventory'){m.innerHTML=renderInventory();}
   else if(id==='receive'){m.innerHTML=renderReceive();onRcvItemChange();}
-  else if(id==='issue'){m.innerHTML=renderIssue();onIssItemChange();}
+  else if(id==='issue'){m.innerHTML=renderIssue();onIssItemChange();loadActivePOs();}
   else if(id==='templates'){m.innerHTML=renderTemplates();}
   else if(id==='transactions'){m.innerHTML=renderTransactions();}
   else if(id==='dashboard'){m.innerHTML=renderDashboard();}
@@ -681,8 +681,10 @@ function renderIssue(){
       <div class="field"><label>Item *</label>
         <select id="iss-item" onchange="onIssItemChange()">${opts}</select>
       </div>
-      <div class="field" style="grid-column:1/-1"><label>PO Number *</label>
-        <input id="iss-po-ref" placeholder="e.g. PO-007" oninput="lookupManualPO(this.value)">
+      <div class="field" style="grid-column:1/-1;position:relative"><label>PO Number *</label>
+        <input id="iss-po-ref" placeholder="Type PO number or pick from list…" autocomplete="off"
+          oninput="filterPODrop(this.value)" onfocus="filterPODrop(this.value)" onblur="setTimeout(()=>hidePODrop(),200)">
+        <div id="iss-po-drop" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:220px;overflow-y:auto;margin-top:3px"></div>
         <div id="iss-po-preview" style="margin-top:8px"></div>
       </div>
       <div class="field"><label>Issued To</label>
@@ -803,16 +805,52 @@ function onIssItemChange(){
   }
 }
 
+async function loadActivePOs(){
+  try{
+    const snap=await fsList('pos',200);
+    allActivePOs=snap.filter(p=>p.currentStage&&p.currentStage!=='completed').sort((a,b)=>b.ts-a.ts);
+  }catch(e){}
+}
+
+function normPO(s){return s.replace(/[\s\-]/g,'').toLowerCase();}
+
+function filterPODrop(val){
+  const dd=document.getElementById('iss-po-drop');if(!dd)return;
+  const q=normPO(val);
+  const matches=allActivePOs.filter(p=>normPO(p.id).includes(q)||(p.name||'').toLowerCase().includes(q));
+  if(!matches.length||!val){dd.style.display='none';return;}
+  dd.style.display='block';
+  dd.innerHTML=matches.slice(0,10).map(p=>`<div onclick="selectPO('${p.id}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f5f5f5;font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
+    <span style="font-weight:700;color:var(--red)">${p.id}</span>
+    <span style="color:var(--muted);margin-left:6px;font-size:12px">${p.name||'—'} · ${p.currentStage||'—'}</span>
+  </div>`).join('');
+}
+
+function hidePODrop(){const dd=document.getElementById('iss-po-drop');if(dd)dd.style.display='none';}
+
+function selectPO(poId){
+  const inp=document.getElementById('iss-po-ref');
+  if(inp){inp.value=poId;}
+  hidePODrop();
+  lookupManualPO(poId);
+}
+
 async function lookupManualPO(raw){
   const el=document.getElementById('iss-po-preview');
   if(!el)return;
-  const poNum=raw.trim().toUpperCase();
-  if(!poNum){el.innerHTML='';return;}
+  const q=normPO(raw);
+  if(!q){el.innerHTML='';return;}
+  // Normalize input: po007 → PO-007, PO007 → PO-007
+  const normalized=raw.trim().toUpperCase().replace(/^PO[\s\-]?0*(\d+)$/,'PO-$1').replace(/^0*(\d+)$/,'PO-$1');
   el.innerHTML='<span style="font-size:12px;color:var(--muted)">Looking up…</span>';
   try{
-    const matches=await fsQueryWhere('pos','id',poNum,1);
-    if(!matches.length){el.innerHTML='<span style="font-size:12px;color:#dc2626">PO not found</span>';return;}
-    const po=matches[0];
+    // Try local cache first (fuzzy), fallback to Firestore
+    let po=allActivePOs.find(p=>normPO(p.id)===q||normPO(p.id)===normPO(normalized));
+    if(!po){
+      const matches=await fsQueryWhere('pos','id',normalized,1);
+      if(!matches.length){el.innerHTML='<span style="font-size:12px;color:#dc2626">PO not found</span>';return;}
+      po=matches[0];
+    }
     const szs=['XS','S','M','L','XL','2XL'];
     const hasCut=po.cutQty&&szs.some(s=>po.cutQty[s]>0);
     const hasSizes=po.sizes&&szs.some(s=>po.sizes[s]>0);
@@ -838,7 +876,8 @@ async function submitIssueManual(){
   const code=document.getElementById('iss-item')?.value;
   const item=allItems.find(i=>i.code===code);
   if(!item){showToast('Select an item.',true);return;}
-  const poRef=(document.getElementById('iss-po-ref')?.value||'').trim().toUpperCase();
+  const poRefRaw=(document.getElementById('iss-po-ref')?.value||'').trim().toUpperCase();
+  const poRef=poRefRaw.replace(/^PO[\s\-]?0*(\d+)$/,'PO-$1').replace(/^0*(\d+)$/,'PO-$1')||poRefRaw;
   if(!poRef){showToast('PO Number is required.',true);document.getElementById('iss-po-ref')?.focus();return;}
   const issuedTo=(document.getElementById('iss-to')?.value||'').trim();
   const purpose=(document.getElementById('iss-purpose')?.value||'').trim();
