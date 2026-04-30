@@ -1063,8 +1063,6 @@ function renderPOCreate(){
       <div class="field"><label>Fabric code</label><input id="po-fabriccode" placeholder="e.g. TRY-200GSM"></div>
       <div class="field"><label>Supply store</label><input id="po-store" placeholder="Store/supplier"></div>
       <div class="field"><label>Total rolls</label><input id="po-rolls" placeholder="e.g. 12"></div>
-      <div class="field"><label>Total weight</label><input id="po-weight" placeholder="e.g. 80 kg"></div>
-      <div class="field"><label>Avg per unit</label><input id="po-avg" placeholder="e.g. 800g"></div>
     </div>
   </div>
   <div class="card"><div class="card-title">Due dates per stage</div>
@@ -1123,7 +1121,7 @@ window.submitPO=async function(){
     const poId='PO-'+String(nextNum).padStart(3,'0');
     const sizes={};['XS','S','M','L','XL','2XL'].forEach(sz=>sizes[sz]=parseInt(document.getElementById('sz-'+sz)?.value)||0);
     const stages={};STAGE_KEYS.forEach(k=>stages[k]={done:false,doneAt:null,doneBy:null,dueDate:document.getElementById('due-'+k)?.value||'',notes:''});
-    const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',totalWeight:document.getElementById('po-weight')?.value.trim()||'',avgPerUnit:document.getElementById('po-avg')?.value.trim()||'',imgFront:poImages.front||'',imgBack:poImages.back||'',currentStage:'cutting',stages,createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
+    const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',imgFront:poImages.front||'',imgBack:poImages.back||'',currentStage:'cutting',stages,createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
     await setDoc(doc(db,'pos',poId),payload);
     await logActivity('PO created',`${poId} — ${name} (${qty} pcs)`);
     showToast(`${poId} created ✓`);poImages={front:null,back:null};await loadData();window.showPage('po-registry');
@@ -1167,6 +1165,13 @@ function renderCuttingWork(po){
       <span style="font-size:11px;color:var(--muted)">Allowed: ${min}–${max} pcs (80–120%)</span>
       <span style="margin-left:8px;font-weight:600;color:${rangeOk?'var(--green)':'#dc2626'}">${rangeOk?'✓ In range':'✗ Out of range'}</span>
     </div>
+  </div>
+  <div class="card"><div class="card-title">Fabric used</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="field"><label>Total weight (kg) *</label><input id="cut-weight" type="number" min="0" step="0.1" placeholder="e.g. 100" style="width:100%" oninput="window.calcCutAvg()"></div>
+      <div class="field"><label>Total rolls</label><input id="cut-rolls" type="number" min="0" placeholder="e.g. 12" style="width:100%"></div>
+    </div>
+    <div id="cut-avg-display" style="margin-top:6px;font-size:13px;color:var(--muted)">Enter weight to auto-calculate avg per unit</div>
   </div>
   <div class="card"><div class="card-title">Bundle entry</div>
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
@@ -1240,6 +1245,19 @@ function refreshCutPartial(po){
 window.setCutQty=function(sz,val){
   cutState.actualQty[sz]=parseInt(val)||0;
   const po=allPOs.find(p=>p.fbKey===stageWorkPO);if(po)refreshCutPartial(po);
+  window.calcCutAvg();
+};
+window.calcCutAvg=function(){
+  const wt=parseFloat(document.getElementById('cut-weight')?.value)||0;
+  const szs=['XS','S','M','L','XL','2XL'];
+  const units=szs.reduce((a,s)=>a+(parseInt(cutState.actualQty[s])||0),0);
+  const el=document.getElementById('cut-avg-display');if(!el)return;
+  if(wt>0&&units>0){
+    const avg=Math.round(wt*1000/units);
+    el.innerHTML=`<strong style="color:var(--dark)">Avg per unit: ${avg}g</strong> <span style="color:var(--muted)">(${wt}kg ÷ ${units} pcs)</span>`;
+  }else{
+    el.textContent='Enter weight to auto-calculate avg per unit';
+  }
 };
 window.addCutBundle=function(){
   const sel=document.getElementById('bundle-size-sel');
@@ -1272,7 +1290,11 @@ window.markCuttingDone=async function(fbKey){
       batch.set(doc(db,'bundles',bid),{bundleId:bid,bundleNumber:num,poId:po.id,size:b.size,units:b.units,stage:'cutting',bundlingDone:false,stitchingDone:false,qcStatus:null,qcReason:'',createdBy:session.name,createdAt:new Date().toISOString().slice(0,10),ts:Date.now()});
     }
     await batch.commit();
-    await updateDoc(doc(db,'pos',fbKey),{currentStage:'bundling',cutQty:{...cutState.actualQty},bundleIds,[`stages.cutting.done`]:true,[`stages.cutting.doneAt`]:new Date().toISOString(),[`stages.cutting.doneBy`]:session.name});
+    const cutWt=parseFloat(document.getElementById('cut-weight')?.value)||0;
+    const cutRolls=document.getElementById('cut-rolls')?.value.trim()||'';
+    const cutUnits=['XS','S','M','L','XL','2XL'].reduce((a,s)=>a+(parseInt(cutState.actualQty[s])||0),0);
+    const cutAvg=cutWt>0&&cutUnits>0?Math.round(cutWt*1000/cutUnits)+'g':'';
+    await updateDoc(doc(db,'pos',fbKey),{currentStage:'bundling',cutQty:{...cutState.actualQty},bundleIds,totalWeight:cutWt||'',totalRoll:cutRolls,avgPerUnit:cutAvg,[`stages.cutting.done`]:true,[`stages.cutting.doneAt`]:new Date().toISOString(),[`stages.cutting.doneBy`]:session.name});
     await logActivity('Stage done',`PO ${po.id} · Cutting done — ${cutState.pendingBundles.length} bundles created`);
     showToast(`Cutting done ✓ — ${cutState.pendingBundles.length} bundles`);await loadData();window.showPage('my-work');
   }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Mark Cutting Done ✓';}}
