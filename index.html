@@ -1218,9 +1218,10 @@ window.submitPO=async function(){
       const _tplSnap=await getDocs(query(collection(db,'trim_templates'),where('productCode','==',code)));
       if(!_tplSnap.empty){
         const _tpl=_tplSnap.docs[0].data();
-        const _deducted=[];
+        const _deducted=[];let _trimCost=0;
         for(const _ti of (_tpl.items||[])){
           const _tqty=Math.ceil((_ti.qtyPerPiece||1)*qty);
+          _trimCost+=(_ti.pricePerUnit||0)*_tqty;
           const _iref=doc(db,'store_items',_ti.itemCode);
           const _isnap=await getDoc(_iref);
           if(_isnap.exists()){
@@ -1236,7 +1237,10 @@ window.submitPO=async function(){
             _deducted.push(_ti.itemCode+'×'+_tqty);
           }
         }
-        if(_deducted.length)_trimNote=' — Trims: '+_deducted.join(', ');
+        if(_deducted.length){
+          if(_trimCost>0)await updateDoc(doc(db,'pos',poId),{trimCost:Math.round(_trimCost*100)/100});
+          _trimNote=' — Trims: '+_deducted.join(', ')+(_trimCost>0?` (Rs.${Math.round(_trimCost)})`:'');
+        }
       }
     }catch(_te){_trimNote=' (trim deduction failed: '+_te.message+')';}
     showToast(`${poId} created ✓${_trimNote}`);poImages={front:null,back:null};await loadData();window.showPage('po-registry');

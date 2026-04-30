@@ -1004,8 +1004,9 @@ function renderTemplates(){
             <span style="font-size:12px;color:var(--muted)">${t.productName||t.productType||'—'}</span>
           </div>
           <div style="font-size:11px;color:var(--muted);margin-top:4px;display:flex;flex-wrap:wrap;gap:6px">
-            ${(t.items||[]).map(i=>`<span style="background:#f0f0f0;padding:2px 8px;border-radius:8px">${i.itemCode} × ${i.qtyPerPiece||i.qtyPerUnit||1}/pc</span>`).join('')||'No items'}
+            ${(t.items||[]).map(i=>`<span style="background:#f0f0f0;padding:2px 8px;border-radius:8px">${i.itemCode} × ${i.qtyPerPiece||i.qtyPerUnit||1}/pc${i.pricePerUnit?` @ Rs.${i.pricePerUnit}`:''}</span>`).join('')||'No items'}
           </div>
+          ${(()=>{const tot=(t.items||[]).reduce((s,i)=>s+(i.pricePerUnit||0)*(i.qtyPerPiece||1),0);return tot?`<div style="font-size:11px;color:var(--dark);font-weight:600;margin-top:4px">Cost/pc: Rs.${tot.toFixed(2)}</div>`:''})()}
           <div style="font-size:10px;color:var(--green);margin-top:4px">⚡ Auto-deducts on PO creation</div>
         </div>
         ${isOwner?`<button class="btn-danger" onclick="deleteTemplate('${t._id}')">Delete</button>`:''}
@@ -1044,8 +1045,10 @@ function addTplRow(){
   div.innerHTML=`
     <div class="field" style="flex:2;min-width:150px"><label>Trim item</label>
       <select>${opts}</select></div>
-    <div class="field" style="width:90px"><label>Qty / piece</label>
-      <input type="number" min="0.01" step="0.01" value="1" placeholder="1"></div>
+    <div class="field" style="width:80px"><label>Qty / pc</label>
+      <input type="number" min="0.01" step="0.01" value="1" placeholder="1" class="tpl-qty"></div>
+    <div class="field" style="width:90px"><label>Price / unit</label>
+      <input type="number" min="0" step="0.01" value="" placeholder="Rs." class="tpl-price"></div>
     <button onclick="document.getElementById('${rowId}').remove()"
       style="background:none;border:none;color:#ccc;font-size:20px;cursor:pointer;align-self:flex-end;padding:0 4px;margin-bottom:2px">×</button>`;
   document.getElementById('tpl-rows')?.appendChild(div);
@@ -1060,11 +1063,13 @@ async function submitTemplate(){
   const items=[];
   rows.forEach(row=>{
     const itemSel=row.querySelector('select');
-    const qtyInp=row.querySelector('input[type=number]');
+    const qtyInp=row.querySelector('.tpl-qty');
+    const priceInp=row.querySelector('.tpl-price');
     const selOpt=itemSel?.options[itemSel.selectedIndex];
-    if(itemSel?.value)items.push({itemCode:itemSel.value,itemName:selOpt?.dataset.name||itemSel.value,qtyPerPiece:parseFloat(qtyInp?.value)||1});
+    const pricePerUnit=parseFloat(priceInp?.value)||0;
+    if(itemSel?.value)items.push({itemCode:itemSel.value,itemName:selOpt?.dataset.name||itemSel.value,qtyPerPiece:parseFloat(qtyInp?.value)||1,pricePerUnit});
   });
-  if(!confirm(`Save trim template for ${_tplProdCode} — ${_tplProdName}?\n\n${items.map(i=>`${i.itemCode} × ${i.qtyPerPiece}/pc`).join('\n')}\n\nTrims will auto-deduct from store when a PO for this product is created.`))return;
+  if(!confirm(`Save trim template for ${_tplProdCode} — ${_tplProdName}?\n\n${items.map(i=>`${i.itemCode} × ${i.qtyPerPiece}/pc @ Rs.${i.pricePerUnit||'—'}`).join('\n')}\n\nTrims will auto-deduct from store when a PO for this product is created.`))return;
   try{
     if(existing){await fsDelete('trim_templates',existing._id);allTemplates=allTemplates.filter(t=>t._id!==existing._id);}
     const id=await fsAdd('trim_templates',{productCode:_tplProdCode,productName:_tplProdName,productType:_tplProdName,items,createdBy:session.name,createdAt:Date.now()});
