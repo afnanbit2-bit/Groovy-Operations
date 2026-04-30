@@ -721,22 +721,14 @@ async function loadBundles(poId){
   }catch(e){currentBundles=[];}
 }
 
-function compressImage(file,maxW,q){
-  return new Promise(res=>{
-    const reader=new FileReader();
-    reader.onload=e=>{
-      const img=new Image();
-      img.onload=()=>{
-        const ratio=Math.min(maxW/img.width,maxW/img.height,1);
-        const c=document.createElement('canvas');
-        c.width=img.width*ratio;c.height=img.height*ratio;
-        c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-        res(c.toDataURL('image/jpeg',q));
-      };
-      img.src=e.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
+async function uploadToCloudinary(file){
+  const fd=new FormData();
+  fd.append('file',file);
+  fd.append('upload_preset','groovy-ops');
+  const r=await fetch('https://api.cloudinary.com/v1_1/deww4lpym/image/upload',{method:'POST',body:fd});
+  const d=await r.json();
+  if(!d.secure_url)throw new Error(d.error?.message||'Cloudinary upload failed');
+  return d.secure_url;
 }
 
 // ── Auth ──
@@ -1136,11 +1128,17 @@ window.updateRatio=function(){
   const nonZero=vals.filter(v=>v>0);if(!nonZero.length){document.getElementById('ratio-disp').textContent='—';return;}
   const min=Math.min(...nonZero);document.getElementById('ratio-disp').textContent=vals.map(v=>v?Math.round(v/min):0).join(':');
 };
-window.handleImg=async function(input,side){
+window.handleImg=function(input,side){
   const file=input.files[0];if(!file)return;
-  const compressed=await compressImage(file,800,0.75);
-  poImages[side]=compressed;
-  document.getElementById(`img-${side}-prev`).src=compressed;document.getElementById(`img-${side}-prev`).style.display='block';document.getElementById(`img-${side}-ph`).style.display='none';
+  // Local preview only — upload happens on submit
+  const reader=new FileReader();
+  reader.onload=e=>{
+    poImages[side]=file; // store File object for upload
+    document.getElementById(`img-${side}-prev`).src=e.target.result;
+    document.getElementById(`img-${side}-prev`).style.display='block';
+    document.getElementById(`img-${side}-ph`).style.display='none';
+  };
+  reader.readAsDataURL(file);
 };
 window.clearImg=function(side){
   poImages[side]=null;document.getElementById(`img-${side}-prev`).style.display='none';document.getElementById(`img-${side}-ph`).style.display='flex';document.getElementById(`inp-${side}`).value='';
@@ -1152,13 +1150,16 @@ window.submitPO=async function(){
   if(!qty){showToast('Quantity required.',true);return;}
   if(!fabric){showToast('Fabric type required.',true);return;}
   if(!poImages.front){showToast('Front image required.',true);return;}
-  const btn=document.getElementById('po-submit-btn');if(btn){btn.disabled=true;btn.textContent='Creating…';}
+  const btn=document.getElementById('po-submit-btn');if(btn){btn.disabled=true;btn.textContent='Uploading image…';}
   try{
+    const imgFrontUrl=await uploadToCloudinary(poImages.front);
+    const imgBackUrl=poImages.back?await uploadToCloudinary(poImages.back):'';
+    if(btn)btn.textContent='Creating…';
     const nextNum=await getNextId('pos');
     const poId='PO-'+String(nextNum).padStart(3,'0');
     const sizes={};['XS','S','M','L','XL','2XL'].forEach(sz=>sizes[sz]=parseInt(document.getElementById('sz-'+sz)?.value)||0);
     const stages={};STAGE_KEYS.forEach(k=>stages[k]={done:false,doneAt:null,doneBy:null,dueDate:document.getElementById('due-'+k)?.value||'',notes:''});
-    const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',imgFront:poImages.front||'',imgBack:poImages.back||'',currentStage:'cutting',stages,createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
+    const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',imgFront:imgFrontUrl,imgBack:imgBackUrl,currentStage:'cutting',stages,createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
     await setDoc(doc(db,'pos',poId),payload);
     await logActivity('PO created',`${poId} — ${name} (${qty} pcs)`);
     showToast(`${poId} created ✓`);poImages={front:null,back:null};await loadData();window.showPage('po-registry');
