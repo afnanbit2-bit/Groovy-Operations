@@ -186,9 +186,346 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 <div class="toast" id="toast"></div>
 
 <script>
-/* JS will be added in subsequent parts */
-window.doLogin = function(){ document.getElementById('login-btn').textContent = 'Coming soon…'; };
-window.doLogout = function(){ location.reload(); };
+'use strict';
+// ── Constants ──
+const API_KEY='AIzaSyAcIrudpSPLbZMmoWMyTM1l8Z7GnxwelFw';
+const PROJECT='groovy-gatepass';
+const FS=`https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents`;
+const AUTH_URL=`https://identitytoolkit.googleapis.com/v1/accounts`;
+const TOKEN_URL=`https://securetoken.googleapis.com/v1/token`;
+
+// ── User definitions (same as index.html) ──
+const USER_DEFS=[
+  {u:'afnan', email:'afnan@groovy.op', name:'Afnan', role:'owner',   title:'Co-founder'},
+  {u:'ammar', email:'ammar@groovy.op', name:'Ammar', role:'owner',   title:'Co-founder'},
+  {u:'mustafa',email:'mustafa@groovy.op',name:'Mustafa',role:'manager',title:'Operations Manager'},
+  {u:'arfat', email:'arfat@groovy.op', name:'Arfat', role:'manager', title:'Advisory'},
+  {u:'raees', email:'raees@groovy.op', name:'Raees', role:'store',   title:'Store Manager'},
+  {u:'haris', email:'haris@groovy.op', name:'Haris', role:'worker',  title:'QC Manager'},
+  {u:'abbas', email:'abbas@groovy.op', name:'Abbas', role:'worker',  title:'Washing Assistant'},
+  {u:'waqas', email:'waqas@groovy.op', name:'Waqas', role:'worker',  title:'Stitching Incharge'},
+  {u:'asghar',email:'asghar@groovy.op',name:'Asghar',role:'worker',  title:'Printing Manager'},
+  {u:'zohaib',email:'zohaib@groovy.op',name:'Zohaib',role:'worker',  title:'Cutting & Bundling'},
+];
+
+const CAT_LABELS={
+  neck_labels:'Neck Labels',
+  sleeve_labels:'Sleeve / Hem Labels',
+  hangtags:'Hangtags & Cap Labels',
+  patches:'PVC / Silicone Patches',
+  bottom_labels:'Bottom Labels',
+  metal_trims:'Metal Trims',
+  twill_tape:'Twill Tape',
+};
+const CAT_ORDER=['neck_labels','sleeve_labels','hangtags','patches','bottom_labels','metal_trims','twill_tape'];
+
+// ── Initial stock items ──
+const INITIAL_ITEMS=[
+  // Neck labels
+  {code:'NL1', name:'Groovy Top Label Black',          category:'neck_labels',  unit:'pcs',   sizeSpecific:true,  sizes:{S:26,M:450,L:132,XL:265},                                             lowStockThreshold:500},
+  {code:'NL2', name:'Groovy Tops Label Cream',         category:'neck_labels',  unit:'pcs',   sizeSpecific:true,  sizes:{S:750,M:1500,L:1455,XL:750},                                          lowStockThreshold:500},
+  {code:'NL3', name:'AAO Tops Label Red',              category:'neck_labels',  unit:'pcs',   sizeSpecific:true,  sizes:{XS:250,S:300,M:568,L:900,XL:652},                                     lowStockThreshold:500},
+  {code:'NL4', name:'AAO Tops Label Black',            category:'neck_labels',  unit:'pcs',   sizeSpecific:true,  sizes:{XS:0,S:0,M:0,L:0,XL:0},                                              lowStockThreshold:500},
+  {code:'NL10',name:'Groovy Outerwear Jacket Black',   category:'neck_labels',  unit:'pcs',   sizeSpecific:true,  sizes:{S:75,M:200,L:250,XL:150},                                             lowStockThreshold:500},
+  {code:'NL13',name:'Groovy Tops Label V1 Black',      category:'neck_labels',  unit:'pcs',   sizeSpecific:false, balance:3000,                                                                 lowStockThreshold:500},
+  {code:'NL14',name:'GRVY Babytee Black V1',           category:'neck_labels',  unit:'pcs',   sizeSpecific:true,  sizes:{XS:1000,S:1400,M:850,L:1145},                                         lowStockThreshold:500},
+  // Sleeve / hem labels
+  {code:'SL1', name:'GRVY BTM Hem Label',              category:'sleeve_labels',unit:'pcs',   sizeSpecific:false, balance:4300,  lowStockThreshold:500},
+  {code:'SL3', name:'GRVY Cargo V2 Iron-On Label',     category:'sleeve_labels',unit:'pcs',   sizeSpecific:false, balance:3600,  lowStockThreshold:500},
+  {code:'SL4', name:'AAO Hoodie Bottom Hem Label Red', category:'sleeve_labels',unit:'pcs',   sizeSpecific:false, balance:0,     lowStockThreshold:500},
+  {code:'SL5', name:'AAO Hoodie Bottom Hem Label Black',category:'sleeve_labels',unit:'pcs',  sizeSpecific:false, balance:0,     lowStockThreshold:500},
+  // Hangtags & cap labels
+  {code:'HT01',name:'GRVY All Product Hangtag',        category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:1000,  lowStockThreshold:500},
+  {code:'HT03',name:'GRVY Hangtag Essentials',         category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:2900,  lowStockThreshold:500},
+  {code:'HT04',name:'GRVY Hangtag Headwear',           category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:200,   lowStockThreshold:300},
+  {code:'HT05',name:'GRVY Hangtag Shirt',              category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:3100,  lowStockThreshold:500},
+  {code:'HT06',name:'GRVY Hangtag Denim',              category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:2200,  lowStockThreshold:500},
+  {code:'HW01',name:'GRVY Headwear Snap Label',        category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:500,   lowStockThreshold:300},
+  {code:'HW02',name:'GRVY Headwear Inner Label Black', category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:500,   lowStockThreshold:300},
+  {code:'HW04',name:'GRVY Headwear Care Label Satin',  category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:500,   lowStockThreshold:300},
+  {code:'TS-01',name:'Tag String',                     category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:3700,  lowStockThreshold:500},
+  // PVC / silicone patches
+  {code:'SP1', name:'Hoodie Emblem Black',             category:'patches',      unit:'pcs',   sizeSpecific:false, balance:2040,  lowStockThreshold:500},
+  {code:'SP2', name:'Hoodie Emblem White',             category:'patches',      unit:'pcs',   sizeSpecific:false, balance:1115,  lowStockThreshold:500},
+  {code:'SP3', name:'Combat Hoodie Black Badge',       category:'patches',      unit:'pcs',   sizeSpecific:false, balance:145,   lowStockThreshold:200},
+  {code:'SL8', name:'GRVY Trousers/Cargos Logo Black', category:'patches',      unit:'pcs',   sizeSpecific:false, balance:450,   lowStockThreshold:500},
+  {code:'SPW', name:'White Groovy Size Patch',         category:'patches',      unit:'pcs',   sizeSpecific:true,  sizes:{XS:300,S:200,M:800,L:700,XL:300},                                     lowStockThreshold:500},
+  {code:'SPB', name:'Black Groovy Size Patch',         category:'patches',      unit:'pcs',   sizeSpecific:true,  sizes:{XS:300,S:120,M:900,L:770,XL:250},                                     lowStockThreshold:500},
+  // Bottom labels
+  {code:'BL1', name:'GRVY Trousers/Cargos New',        category:'bottom_labels',unit:'pcs',   sizeSpecific:true,  sizes:{XXXS:720,XXS:970,XS:950,S:3250,M:2850,L:3320,XL:960,XXL:335},        lowStockThreshold:500},
+  {code:'BL2', name:'CLTRD Denim Belt B/W',            category:'bottom_labels',unit:'pcs',   sizeSpecific:true,  sizes:{'26"':490,'28"':200,'30"':825,'32"':908,'34"':500,'36"':544},          lowStockThreshold:500},
+  {code:'BL3', name:'GRVY Denim Belt Cream',           category:'bottom_labels',unit:'pcs',   sizeSpecific:true,  sizes:{'26"':100,'28"':170,'30"':20,'32"':3,'34"':147,'36"':152,'38"':100},  lowStockThreshold:500},
+  {code:'BL4', name:'GRVY Denim Belt Black',           category:'bottom_labels',unit:'pcs',   sizeSpecific:true,  sizes:{'26"':4800,'28"':4500,'30"':400,'32"':500,'34"':1000,'36"':1500,'38"':1600,'40"':810}, lowStockThreshold:500},
+  // Metal trims
+  {code:'BT1', name:'GRVY Denim Main Button',          category:'metal_trims',  unit:'pcs',   sizeSpecific:false, balance:3814,  lowStockThreshold:500},
+  {code:'BT4', name:'GRVY Main Rivett',                category:'metal_trims',  unit:'pcs',   sizeSpecific:false, balance:3800,  lowStockThreshold:500},
+  {code:'BT-SQ',name:'GRVY Square Batch',             category:'metal_trims',  unit:'pcs',   sizeSpecific:false, balance:900,   lowStockThreshold:500},
+  // Twill tape
+  {code:'TT1', name:'GRVY Twill Tape',                 category:'twill_tape',   unit:'meters', sizeSpecific:false, balance:328,  lowStockThreshold:100},
+  {code:'TT2', name:'CLTR Twill Tape',                 category:'twill_tape',   unit:'meters', sizeSpecific:false, balance:100,  lowStockThreshold:50},
+  {code:'TT3', name:'AAO Twill Tape',                  category:'twill_tape',   unit:'meters', sizeSpecific:false, balance:0,    lowStockThreshold:500},
+];
+
+// ── App state ──
+let session=null, idToken=null, tokenExpiry=0;
+let allItems=[], allTransactions=[], allTemplates=[], allRequests=[];
+let currentSection='';
+
+// ── Toast ──
+function showToast(msg,isErr=false){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.className='toast show'+(isErr?' err':'');
+  setTimeout(()=>t.className='toast',3000);
+}
+
+// ── Firestore REST value converters ──
+function fsVal(v){
+  if(v===null||v===undefined)return{nullValue:null};
+  if(typeof v==='boolean')return{booleanValue:v};
+  if(typeof v==='number')return Number.isInteger(v)?{integerValue:String(v)}:{doubleValue:v};
+  if(typeof v==='string')return{stringValue:v};
+  if(Array.isArray(v))return{arrayValue:{values:v.map(fsVal)}};
+  if(typeof v==='object')return{mapValue:{fields:toFsFields(v)}};
+  return{nullValue:null};
+}
+function toFsFields(obj){
+  const f={};
+  for(const[k,v]of Object.entries(obj))f[k]=fsVal(v);
+  return f;
+}
+function fromFsVal(v){
+  if('nullValue'in v)return null;
+  if('booleanValue'in v)return v.booleanValue;
+  if('integerValue'in v)return parseInt(v.integerValue);
+  if('doubleValue'in v)return v.doubleValue;
+  if('stringValue'in v)return v.stringValue;
+  if('arrayValue'in v)return(v.arrayValue.values||[]).map(fromFsVal);
+  if('mapValue'in v)return fromFsDoc({fields:v.mapValue.fields||{}});
+  return null;
+}
+function fromFsDoc(doc){
+  const obj={};
+  if(!doc||!doc.fields)return obj;
+  for(const[k,v]of Object.entries(doc.fields))obj[k]=fromFsVal(v);
+  if(doc.name)obj._id=doc.name.split('/').pop();
+  return obj;
+}
+
+// ── Token management ──
+async function getToken(){
+  if(idToken&&Date.now()<tokenExpiry-60000)return idToken;
+  const rt=sessionStorage.getItem('st_rt');
+  if(!rt)throw new Error('Not authenticated');
+  const r=await fetch(`${TOKEN_URL}?key=${API_KEY}`,{
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:`grant_type=refresh_token&refresh_token=${encodeURIComponent(rt)}`
+  });
+  const d=await r.json();
+  if(d.error)throw new Error(d.error.message||'Token refresh failed');
+  idToken=d.id_token;
+  tokenExpiry=Date.now()+parseInt(d.expires_in)*1000;
+  sessionStorage.setItem('st_rt',d.refresh_token);
+  return idToken;
+}
+
+// ── Firestore REST operations ──
+async function fsList(col,pageSize=300){
+  const tok=await getToken();
+  const r=await fetch(`${FS}/${col}?pageSize=${pageSize}`,{headers:{Authorization:`Bearer ${tok}`}});
+  const d=await r.json();
+  return(d.documents||[]).map(fromFsDoc);
+}
+async function fsSet(col,id,data){
+  const tok=await getToken();
+  const r=await fetch(`${FS}/${col}/${encodeURIComponent(id)}`,{
+    method:'PATCH',
+    headers:{Authorization:`Bearer ${tok}`,'Content-Type':'application/json'},
+    body:JSON.stringify({fields:toFsFields(data)})
+  });
+  if(!r.ok){const e=await r.json();throw new Error(e.error?.message||'Write failed');}
+  return true;
+}
+async function fsAdd(col,data){
+  const id=Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  await fsSet(col,id,data);
+  return id;
+}
+async function fsDelete(col,id){
+  const tok=await getToken();
+  await fetch(`${FS}/${col}/${encodeURIComponent(id)}`,{method:'DELETE',headers:{Authorization:`Bearer ${tok}`}});
+}
+async function fsQueryWhere(col,field,value,limit=50){
+  const tok=await getToken();
+  const r=await fetch(`${FS}:runQuery`,{
+    method:'POST',
+    headers:{Authorization:`Bearer ${tok}`,'Content-Type':'application/json'},
+    body:JSON.stringify({structuredQuery:{
+      from:[{collectionId:col}],
+      where:{fieldFilter:{field:{fieldPath:field},op:'EQUAL',value:fsVal(value)}},
+      limit
+    }})
+  });
+  const docs=await r.json();
+  return(Array.isArray(docs)?docs:[]).filter(d=>d.document).map(d=>fromFsDoc(d.document));
+}
+async function fsQueryOrdered(col,orderField,limit=100){
+  const tok=await getToken();
+  const r=await fetch(`${FS}:runQuery`,{
+    method:'POST',
+    headers:{Authorization:`Bearer ${tok}`,'Content-Type':'application/json'},
+    body:JSON.stringify({structuredQuery:{
+      from:[{collectionId:col}],
+      orderBy:[{field:{fieldPath:orderField},direction:'DESCENDING'}],
+      limit
+    }})
+  });
+  const docs=await r.json();
+  return(Array.isArray(docs)?docs:[]).filter(d=>d.document).map(d=>fromFsDoc(d.document));
+}
+
+// ── Auth ──
+window.doLogin=async function(){
+  const u=document.getElementById('l-user').value.trim().toLowerCase();
+  const p=document.getElementById('l-pass').value;
+  const def=USER_DEFS.find(x=>x.u===u);
+  if(!def){showToast('Username not found.',true);return;}
+  if(def.role==='worker'){showToast('Workers use the Operations app.',true);return;}
+  const btn=document.getElementById('login-btn');
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
+  try{
+    const r=await fetch(`${AUTH_URL}:signInWithPassword?key=${API_KEY}`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:def.email,password:p,returnSecureToken:true})
+    });
+    const d=await r.json();
+    if(d.error)throw new Error(d.error.message||'Sign-in failed');
+    idToken=d.idToken;
+    tokenExpiry=Date.now()+parseInt(d.expiresIn)*1000;
+    sessionStorage.setItem('st_rt',d.refreshToken);
+    sessionStorage.setItem('st_u',def.u);
+    session={...def};
+    startApp();
+  }catch(e){
+    const msg=e.message.includes('INVALID_LOGIN_CREDENTIALS')||e.message.includes('INVALID_PASSWORD')?'Wrong password. Try again.':'Error: '+e.message;
+    showToast(msg,true);
+    btn.disabled=false;btn.textContent='Sign in';
+  }
+};
+
+window.doLogout=function(){
+  sessionStorage.removeItem('st_rt');
+  sessionStorage.removeItem('st_u');
+  location.reload();
+};
+
+// ── Session restore ──
+async function tryRestoreSession(){
+  const u=sessionStorage.getItem('st_u');
+  const rt=sessionStorage.getItem('st_rt');
+  if(!u||!rt)return false;
+  const def=USER_DEFS.find(x=>x.u===u);
+  if(!def||def.role==='worker')return false;
+  try{
+    const r=await fetch(`${TOKEN_URL}?key=${API_KEY}`,{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:`grant_type=refresh_token&refresh_token=${encodeURIComponent(rt)}`
+    });
+    const d=await r.json();
+    if(d.error)return false;
+    idToken=d.id_token;
+    tokenExpiry=Date.now()+parseInt(d.expires_in)*1000;
+    sessionStorage.setItem('st_rt',d.refresh_token);
+    session={...def};
+    return true;
+  }catch{return false;}
+}
+
+// ── App start ──
+async function startApp(){
+  document.getElementById('scr-login').style.display='none';
+  document.getElementById('scr-app').style.display='flex';
+  document.getElementById('user-name').textContent=session.name;
+  document.getElementById('user-title').textContent=session.title;
+  buildNav();
+  await loadAllData();
+  showSection(session.role==='store'?'dashboard':'inventory');
+}
+
+function buildNav(){
+  const om=session.role==='owner'||session.role==='manager';
+  const items=[];
+  if(session.role==='store')items.push({id:'dashboard',label:'Dashboard'});
+  if(om)items.push({id:'inventory',label:'Inventory'});
+  items.push({id:'receive',label:'Receive Stock'});
+  items.push({id:'issue',label:'Issue Stock'});
+  if(om)items.push({id:'templates',label:'Trim Templates'});
+  if(om)items.push({id:'transactions',label:'Transactions'});
+  const nav=items.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="showSection('${i.id}')">${i.label}</div>`).join('');
+  const cross=`<div class="nav-divider"></div><div class="nav-item" onclick="location.href='index.html'">← Operations</div>`;
+  document.getElementById('sidebar').innerHTML=nav+cross;
+  document.getElementById('mob-nav').innerHTML=items.slice(0,5).map(i=>`<div class="mob-nav-item" id="mobnav-${i.id}" onclick="showSection('${i.id}')">${i.label}</div>`).join('');
+}
+
+function showSection(id){
+  currentSection=id;
+  document.querySelectorAll('.nav-item,.mob-nav-item').forEach(n=>n.classList.remove('on'));
+  document.getElementById('nav-'+id)?.classList.add('on');
+  document.getElementById('mobnav-'+id)?.classList.add('on');
+  renderSection(id);
+}
+
+async function loadAllData(){
+  try{
+    const[items,txns,templates,requests]=await Promise.all([
+      fsList('store_items'),
+      fsQueryOrdered('store_transactions','ts',100),
+      fsList('trim_templates'),
+      fsList('store_requests'),
+    ]);
+    allItems=items;
+    allTransactions=txns;
+    allTemplates=templates;
+    allRequests=requests;
+    if(!allItems.length)await preloadItems();
+  }catch(e){showToast('Load error: '+e.message,true);}
+}
+
+async function preloadItems(){
+  showToast('Initialising store items…');
+  await Promise.all(INITIAL_ITEMS.map(item=>fsSet('store_items',item.code,item).catch(()=>{})));
+  allItems=INITIAL_ITEMS.map(i=>({...i,_id:i.code}));
+  showToast('Store initialised ✓');
+}
+
+// ── Balance helpers ──
+function getBalance(item){
+  if(item.sizeSpecific)return Object.values(item.sizes||{}).reduce((s,v)=>s+(parseInt(v)||0),0);
+  return parseInt(item.balance)||0;
+}
+function getStatus(item){
+  const b=getBalance(item);
+  if(b<=0)return'red';
+  if(b<(item.lowStockThreshold||500))return'amber';
+  return'green';
+}
+function formatSizes(item){
+  return Object.entries(item.sizes||{}).map(([k,v])=>`${k}: ${v}`).join(' · ');
+}
+function todayStr(){return new Date().toISOString().split('T')[0];}
+function tsLabel(ts){return ts?new Date(ts).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';}
+function safeId(str){return(str||'').replace(/[^a-zA-Z0-9]/g,'_');}
+
+// ── Init ──
+(async()=>{
+  const ok=await tryRestoreSession();
+  if(ok){await startApp();}
+  else{document.getElementById('scr-login').style.display='flex';}
+})();
+/* renderSection and all section renderers added in Part 3 */
 </script>
 </body>
 </html>
