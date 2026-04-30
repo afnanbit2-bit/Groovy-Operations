@@ -1060,15 +1060,17 @@ async function submitTemplate(){
   if(existing&&!confirm(`A template for ${_tplProdCode} already exists. Replace it?`))return;
   const rows=document.querySelectorAll('#tpl-rows .tpl-item-row');
   if(!rows.length){showToast('Add at least one trim item.',true);return;}
-  const items=[];
+  const items=[];let _missingPrice=false;
   rows.forEach(row=>{
     const itemSel=row.querySelector('select');
     const qtyInp=row.querySelector('.tpl-qty');
     const priceInp=row.querySelector('.tpl-price');
     const selOpt=itemSel?.options[itemSel.selectedIndex];
     const pricePerUnit=parseFloat(priceInp?.value)||0;
+    if(!pricePerUnit){_missingPrice=true;priceInp?.focus();}
     if(itemSel?.value)items.push({itemCode:itemSel.value,itemName:selOpt?.dataset.name||itemSel.value,qtyPerPiece:parseFloat(qtyInp?.value)||1,pricePerUnit});
   });
+  if(_missingPrice){showToast('Price per unit is required for all items.',true);return;}
   if(!confirm(`Save trim template for ${_tplProdCode} — ${_tplProdName}?\n\n${items.map(i=>`${i.itemCode} × ${i.qtyPerPiece}/pc @ Rs.${i.pricePerUnit||'—'}`).join('\n')}\n\nTrims will auto-deduct from store when a PO for this product is created.`))return;
   try{
     if(existing){await fsDelete('trim_templates',existing._id);allTemplates=allTemplates.filter(t=>t._id!==existing._id);}
