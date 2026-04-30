@@ -717,8 +717,8 @@ async function loadData(){
 
 async function loadBundles(poId){
   try{
-    const snap=await getDocs(query(collection(db,'bundles'),where('poId','==',poId),orderBy('bundleNumber','asc')));
-    currentBundles=snap.docs.map(d=>d.data());
+    const snap=await getDocs(query(collection(db,'bundles'),where('poId','==',poId)));
+    currentBundles=snap.docs.map(d=>d.data()).sort((a,b)=>a.bundleNumber-b.bundleNumber);
   }catch(e){currentBundles=[];}
 }
 
