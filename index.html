@@ -1214,7 +1214,7 @@ function renderStageWorkPage(){
   if(!po){window.showPage('my-work');return;}
   const m=document.getElementById('main-content');
   if(stageWorkStage==='cutting')m.innerHTML=renderCuttingWork(po);
-  else if(stageWorkStage==='bundling')m.innerHTML=renderBundleStageWork(po,'bundling','bundlingDone','bundlingAt','Bundled','stitching');
+  else if(stageWorkStage==='bundling')m.innerHTML=renderBundlingWork(po);
   else if(stageWorkStage==='stitching')m.innerHTML=renderBundleStageWork(po,'stitching','stitchingDone','stitchingAt','Stitched','printing');
   else if(stageWorkStage==='printing')m.innerHTML=renderLotStageWork(po,'printing','Printing QC','washing');
   else if(stageWorkStage==='washing')m.innerHTML=renderLotStageWork(po,'washing','Washing','qc');
@@ -1380,7 +1380,171 @@ window.markCuttingDone=async function(fbKey){
   }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Mark Cutting Done ✓';}}
 };
 
-// ── Bundling / Stitching (individual bundle marking) ──
+// ── Bundling stage (damage tracking + destination split) ──
+function renderBundlingWork(po){
+  const bundles=currentBundles;
+  if(!bundles.length){
+    const isOwner=['owner','manager'].includes(session.role);
+    return`<button class="back-btn" onclick="window.showPage('my-work')">← Back to My Work</button>
+    <div class="page-head"><div class="page-title">PO ${po.id} — Bundling</div><div class="page-sub">${po.name||'—'}</div></div>
+    <div class="card"><div class="card-title">No bundles found</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:12px">Cutting stage has not created bundles for this PO yet.</div>
+      ${isOwner?`<button class="mark-done-btn" onclick="window.bundlingOverride('${po.fbKey}')">Owner override — skip to stitching</button>`:'<div style="font-size:12px;color:var(--muted)">Contact the owner to proceed.</div>'}
+    </div><div style="height:80px"></div>`;
+  }
+  const parts=po.bundlingParts&&po.bundlingParts.length?po.bundlingParts:[{name:'Full Garment',notes:'',dest:'Warehouse'}];
+  const uniqueDests=[...new Set(parts.map(p=>p.dest))];
+  // Group bundles by destination — each bundle's dest stored in bundleDamage[id]?.dest or defaults to first part's dest
+  const destGroups={};
+  uniqueDests.forEach(d=>{destGroups[d]=[];});
+  bundles.forEach(b=>{
+    const savedDest=bundleDamage[b.bundleId]?.dest;
+    const dest=savedDest||(parts[0]?.dest||'Warehouse');
+    if(!destGroups[dest])destGroups[dest]=[];
+    destGroups[dest].push(b);
+  });
+  // Damage summary calc
+  const cutTotal=['XS','S','M','L','XL','2XL'].reduce((a,s)=>a+(po.cutQty?.[s]||0),0)||po.qty||0;
+  const totalDamage=bundles.reduce((a,b)=>a+(bundleDamage[b.bundleId]?.dmg||0),0);
+  const usable=cutTotal-totalDamage;
+  const pct=cutTotal>0?totalDamage/cutTotal*100:0;
+  const pctColor=pct>1.5?'#dc2626':pct>1?'var(--amber)':'var(--green)';
+  const allBundled=bundles.every(b=>b.bundlingDone);
+  const allDamageEntered=bundles.every(b=>b.bundlingDone&&bundleDamage[b.bundleId]?.entered);
+  const canComplete=allBundled&&allDamageEntered;
+  const doneCount=bundles.filter(b=>b.bundlingDone).length;
+
+  const partsCard=parts.length>1||parts[0]?.name!=='Full Garment'?`<div class="card"><div class="card-title">Bundling instructions</div>
+    ${parts.map(p=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f5f5f5;font-size:13px">
+      <span style="font-weight:500">${p.name}</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        ${p.notes?`<span style="font-size:11px;color:var(--muted)">${p.notes}</span>`:''}
+        <span style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;${p.dest==='Printing'?'background:#185FA520;color:#185FA5':'background:#1D9E7520;color:#1D9E75'}">→ ${p.dest}</span>
+      </div>
+    </div>`).join('')}
+  </div>`:'';
+
+  const destSections=uniqueDests.map(dest=>{
+    const dBundles=destGroups[dest]||[];
+    const dDone=dBundles.filter(b=>b.bundlingDone).length;
+    const bySz={};dBundles.forEach(b=>{if(!bySz[b.size])bySz[b.size]=[];bySz[b.size].push(b);});
+    return`<div style="margin-bottom:4px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:700">→ ${dest}</span>
+        <span style="font-size:11px;padding:2px 8px;border-radius:10px;${dest==='Printing'?'background:#185FA520;color:#185FA5':'background:#1D9E7520;color:#1D9E75'}">${dDone}/${dBundles.length} bundled</span>
+        ${uniqueDests.length>1?`<div class="progress-strip" style="flex:1;max-width:120px"><div class="progress-fill" style="width:${dBundles.length?Math.round(dDone/dBundles.length*100):0}%"></div></div>`:''}
+      </div>
+      ${Object.entries(bySz).map(([sz,bList])=>`<div class="card" style="margin-bottom:8px"><div class="card-title">${sz} — ${bList.length} bundle${bList.length!==1?'s':''}</div>
+        ${bList.map(b=>{
+          const dmgVal=bundleDamage[b.bundleId]?.dmg??'';
+          const dmgEntered=bundleDamage[b.bundleId]?.entered;
+          return`<div class="bundle-item" id="bi-${b.bundleId}" style="flex-wrap:wrap;gap:8px;${b.bundlingDone?'background:#f0fdf4;border-radius:8px;padding:8px':''}">
+            <span class="bundle-num">${b.bundleId}</span>
+            <span class="bundle-size-tag">${b.size}</span>
+            <span class="bundle-units ${b.bundlingDone?'bundle-done':''}">${b.units} pcs</span>
+            <span style="flex:1"></span>
+            ${b.bundlingDone
+              ?`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                  <span style="color:var(--green);font-weight:600;font-size:12px">✓ Bundled</span>
+                  <div style="display:flex;align-items:center;gap:4px">
+                    <input type="number" min="0" max="${b.units}" placeholder="0" value="${dmgVal}" style="width:56px;padding:4px 6px;border:1px solid ${dmgEntered?'var(--green)':'var(--border)'};border-radius:6px;font-size:12px;outline:none;font-family:inherit" onchange="window.saveBundleDamage('${b.bundleId}',this.value,'${dest}','${po.fbKey}')">
+                    <span style="font-size:11px;color:var(--muted)">dmg</span>
+                  </div>
+                </div>`
+              :`<button class="qc-pass-btn" onclick="window.markBundlingDone('${b.bundleId}','${dest}','${po.fbKey}')">Mark Bundled ✓</button>`}
+          </div>`;
+        }).join('')}
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+
+  return`<button class="back-btn" onclick="window.showPage('my-work')">← Back to My Work</button>
+  <div class="page-head"><div class="page-title">PO ${po.id} — Bundling</div><div class="page-sub">${po.name||'—'}</div></div>
+  <div class="card"><div class="card-title">Bundle progress</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <span style="font-size:22px;font-weight:700;color:${allBundled?'var(--green)':'var(--dark)'}">${doneCount}/${bundles.length}</span>
+      <span style="font-size:12px;color:var(--muted)">bundles bundled</span>
+    </div>
+    <div class="progress-strip"><div class="progress-fill" style="width:${bundles.length?Math.round(doneCount/bundles.length*100):0}%"></div></div>
+    <div style="margin-top:10px;padding:10px 12px;background:#f8f8f8;border-radius:8px;font-size:12px;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center">
+      <div><div style="font-size:10px;color:var(--muted)">PO Qty</div><div style="font-weight:700">${po.qty||0}</div></div>
+      <div><div style="font-size:10px;color:var(--muted)">Cut</div><div style="font-weight:700">${cutTotal}</div></div>
+      <div><div style="font-size:10px;color:var(--muted)">Damaged</div><div style="font-weight:700;color:${pctColor}">${totalDamage}</div></div>
+      <div><div style="font-size:10px;color:var(--muted)">Usable</div><div style="font-weight:700;color:var(--green)">${usable}</div></div>
+    </div>
+    ${cutTotal>0?`<div style="margin-top:6px;font-size:11px;text-align:center;font-weight:600;color:${pctColor}">${pct.toFixed(2)}% damage rate ${pct>1.5?'⚠ Will be flagged':pct>1?'⚠ Near threshold':''}</div>`:''}
+  </div>
+  ${partsCard}
+  ${destSections}
+  <button class="mark-done-btn" id="bundling-done-btn" onclick="window.completeBundling('${po.fbKey}')" ${canComplete?'':'disabled'} style="margin-top:4px">Complete Bundling ✓</button>
+  ${!allBundled?'<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:6px">Mark all bundles done, then enter damage for each</div>':''}
+  <div style="height:80px"></div>`;
+}
+
+window.markBundlingDone=async function(bundleId,dest,poFbKey){
+  const btn=document.querySelector(`#bi-${bundleId} button`);
+  if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  try{
+    await updateDoc(doc(db,'bundles',bundleId),{bundlingDone:true,bundlingAt:new Date().toISOString(),bundlingAtBy:session.name,bundlingDest:dest});
+    const idx=currentBundles.findIndex(b=>b.bundleId===bundleId);
+    if(idx>=0)currentBundles[idx]={...currentBundles[idx],bundlingDone:true,bundlingDest:dest};
+    if(!bundleDamage[bundleId])bundleDamage[bundleId]={dmg:0,entered:false,dest};
+    const po=allPOs.find(p=>p.fbKey===poFbKey);if(po)document.getElementById('main-content').innerHTML=renderBundlingWork(po);
+  }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Mark Bundled ✓';}}
+};
+
+window.saveBundleDamage=function(bundleId,val,dest,poFbKey){
+  const dmg=parseInt(val)||0;
+  bundleDamage[bundleId]={...(bundleDamage[bundleId]||{}),dmg,entered:true,dest};
+  const po=allPOs.find(p=>p.fbKey===poFbKey);if(po)document.getElementById('main-content').innerHTML=renderBundlingWork(po);
+};
+
+window.bundlingOverride=async function(fbKey){
+  if(!['owner','manager'].includes(session.role)){showToast('Not authorized.',true);return;}
+  if(!confirm('Skip bundling stage and advance to stitching?'))return;
+  try{
+    await updateDoc(doc(db,'pos',fbKey),{currentStage:'stitching',[`stages.bundling.done`]:true,[`stages.bundling.doneAt`]:new Date().toISOString(),[`stages.bundling.doneBy`]:session.name+' (override)',[`stages.bundling.notes`]:'Skipped — no bundles'});
+    await logActivity('Stage override',`PO bundling skipped by ${session.name}`);
+    showToast('Advanced to stitching ✓');await loadData();window.showPage('my-work');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+window.completeBundling=async function(fbKey){
+  const po=allPOs.find(p=>p.fbKey===fbKey);if(!po)return;
+  const bundles=currentBundles;
+  const allBundled=bundles.every(b=>b.bundlingDone);
+  const allEntered=bundles.every(b=>bundleDamage[b.bundleId]?.entered);
+  if(!allBundled||!allEntered){showToast('Mark all bundles done and enter damage for each.',true);return;}
+  const btn=document.getElementById('bundling-done-btn');if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  try{
+    const cutTotal=['XS','S','M','L','XL','2XL'].reduce((a,s)=>a+(po.cutQty?.[s]||0),0)||po.qty||0;
+    const bySize={};
+    bundles.forEach(b=>{
+      const dmg=bundleDamage[b.bundleId]?.dmg||0;
+      bySize[b.size]=(bySize[b.size]||0)+dmg;
+    });
+    const totalDamage=Object.values(bySize).reduce((a,v)=>a+v,0);
+    const byBundle={};
+    bundles.forEach(b=>{byBundle[b.bundleId]=bundleDamage[b.bundleId]?.dmg||0;});
+    const pct=cutTotal>0?totalDamage/cutTotal*100:0;
+    const flagged=pct>1.5;
+    const damageSummary={total:totalDamage,bySize,byBundle,cutTotal,usable:cutTotal-totalDamage,pct:parseFloat(pct.toFixed(2))};
+    const batch=writeBatch(db);
+    bundles.forEach(b=>{
+      batch.update(doc(db,'bundles',b.bundleId),{bundlingDest:bundleDamage[b.bundleId]?.dest||'Warehouse',damageQty:bundleDamage[b.bundleId]?.dmg||0});
+    });
+    await batch.commit();
+    const poUpdate={currentStage:'stitching',[`stages.bundling.done`]:true,[`stages.bundling.doneAt`]:new Date().toISOString(),[`stages.bundling.doneBy`]:session.name,[`stages.bundling.notes`]:`${bundles.length} bundles · ${totalDamage} damaged · ${(cutTotal-totalDamage)} usable`,damageSummary,damagePercent:parseFloat(pct.toFixed(2))};
+    if(flagged)Object.assign(poUpdate,{damageFlagged:true});
+    await updateDoc(doc(db,'pos',fbKey),poUpdate);
+    await logActivity('Stage done',`PO ${po.id} · Bundling complete — ${cutTotal-totalDamage} usable, ${totalDamage} damaged${flagged?' ⚠ FLAGGED':''}`);
+    bundleDamage={};
+    showToast(`Bundling complete ✓ — ${cutTotal-totalDamage} usable, ${totalDamage} damaged${flagged?' ⚠ Damage flagged':''}`,flagged);
+    await loadData();window.showPage('my-work');
+  }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Complete Bundling ✓';}}
+};
+
+// ── Stitching (individual bundle marking) ──
 function renderBundleStageWork(po,stage,doneField,doneAtField,doneLabel,nextStage){
   const bundles=currentBundles;
   const doneCount=bundles.filter(b=>b[doneField]).length;
