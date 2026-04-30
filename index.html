@@ -1456,7 +1456,7 @@ function renderBundlingWork(po){
               ?`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                   <span style="color:var(--green);font-weight:600;font-size:12px">✓ Bundled</span>
                   <div style="display:flex;align-items:center;gap:4px">
-                    <input type="number" min="0" max="${b.units}" placeholder="0" value="${dmgVal}" style="width:56px;padding:4px 6px;border:1px solid ${dmgEntered?'var(--green)':'var(--border)'};border-radius:6px;font-size:12px;outline:none;font-family:inherit" onchange="window.saveBundleDamage('${b.bundleId}',this.value,'${dest}','${po.fbKey}')">
+                    <input type="number" min="0" max="${b.units}" placeholder="0" value="${dmgVal===0?'':dmgVal}" style="width:56px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:12px;outline:none;font-family:inherit" oninput="window.saveBundleDamage('${b.bundleId}',this.value||'0','${dest}','${po.fbKey}')">
                     <span style="font-size:11px;color:var(--muted)">dmg</span>
                   </div>
                 </div>`
@@ -1485,8 +1485,13 @@ function renderBundlingWork(po){
   </div>
   ${partsCard}
   ${destSections}
-  <button class="mark-done-btn" id="bundling-done-btn" onclick="window.completeBundling('${po.fbKey}')" ${canComplete?'':'disabled'} style="margin-top:4px">Complete Bundling ✓</button>
-  ${!allBundled?'<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:6px">Mark all bundles done, then enter damage for each</div>':''}
+  ${pct>1.5?`<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:10px;padding:12px 14px;margin-bottom:10px">
+    <div style="font-weight:700;color:#dc2626;font-size:13px;margin-bottom:4px">⚠ Damage Alert / نقصان کا انتباہ</div>
+    <div style="font-size:12px;color:#991b1b;margin-bottom:6px">This bundling record will be flagged for excess loss of quantity (${pct.toFixed(2)}%). A manager will be notified.</div>
+    <div style="font-size:12px;color:#991b1b;direction:rtl;text-align:right;font-family:serif">یہ بنڈلنگ ریکارڈ مقدار میں زیادہ نقصان (${pct.toFixed(2)}%) کی وجہ سے فلیگ کیا جائے گا۔ مینیجر کو اطلاع دی جائے گی۔</div>
+  </div>`:''}
+  <button class="mark-done-btn" id="bundling-done-btn" onclick="window.completeBundling('${po.fbKey}')" ${allBundled?'':'disabled'} style="margin-top:4px">Complete Bundling ✓</button>
+  ${!allBundled?'<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:6px">Mark all bundles done first — damage defaults to 0 if none</div>':''}
   <div style="height:80px"></div>`;
 }
 
@@ -1497,7 +1502,7 @@ window.markBundlingDone=async function(bundleId,dest,poFbKey){
     await updateDoc(doc(db,'bundles',bundleId),{bundlingDone:true,bundlingAt:new Date().toISOString(),bundlingAtBy:session.name,bundlingDest:dest});
     const idx=currentBundles.findIndex(b=>b.bundleId===bundleId);
     if(idx>=0)currentBundles[idx]={...currentBundles[idx],bundlingDone:true,bundlingDest:dest};
-    if(!bundleDamage[bundleId])bundleDamage[bundleId]={dmg:0,entered:false,dest};
+    if(!bundleDamage[bundleId])bundleDamage[bundleId]={dmg:0,entered:true,dest};
     const po=allPOs.find(p=>p.fbKey===poFbKey);if(po)document.getElementById('main-content').innerHTML=renderBundlingWork(po);
   }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Mark Bundled ✓';}}
 };
