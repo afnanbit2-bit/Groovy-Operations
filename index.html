@@ -1159,7 +1159,7 @@ function renderCuttingWork(po){
       ${szs.map(sz=>{
         const tgt=po.sizes?.[sz]||0,act=parseInt(cutState.actualQty[sz])||0,diff=act-tgt;
         const cls=diff===0?'var-ok':Math.abs(diff)<=Math.ceil(tgt*0.1)?'var-warn':'var-bad';
-        return`<tr><td style="font-weight:600">${sz}</td><td>${tgt}</td><td><input type="number" min="0" value="${act}" style="width:80px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;outline:none" onchange="window.setCutQty('${sz}',this.value)"></td><td id="var-${sz}" class="${cls}">${act>0?diff>=0?'+'+diff:diff:'—'}</td></tr>`;
+        return`<tr><td style="font-weight:600">${sz}</td><td>${tgt}</td><td><input type="number" min="0" value="${act}" style="width:80px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;outline:none" onfocus="if(this.value==='0')this.value=''" onblur="if(this.value==='')this.value='0'" onchange="window.setCutQty('${sz}',this.value)"></td><td id="var-${sz}" class="${cls}">${act>0?diff>=0?'+'+diff:diff:'—'}</td></tr>`;
       }).join('')}
     </tbody></table>
     <div id="cut-total-row" style="margin-top:10px;font-size:13px">
