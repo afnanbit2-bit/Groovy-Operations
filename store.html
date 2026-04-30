@@ -681,8 +681,9 @@ function renderIssue(){
       <div class="field"><label>Item *</label>
         <select id="iss-item" onchange="onIssItemChange()">${opts}</select>
       </div>
-      <div class="field"><label>PO Number *</label>
-        <input id="iss-po-ref" placeholder="e.g. PO-007">
+      <div class="field" style="grid-column:1/-1"><label>PO Number *</label>
+        <input id="iss-po-ref" placeholder="e.g. PO-007" oninput="lookupManualPO(this.value)">
+        <div id="iss-po-preview" style="margin-top:8px"></div>
       </div>
       <div class="field"><label>Issued To</label>
         <input id="iss-to" value="Waqas (Stitching)" placeholder="Issued to…">
@@ -800,6 +801,37 @@ function onIssItemChange(){
     wrap.innerHTML=`<div class="field"><label>Qty to issue (${item.unit}) · Stock: ${b}</label>
       <input type="number" id="iss-flat" min="0" max="${b}" placeholder="0"></div>`;
   }
+}
+
+async function lookupManualPO(raw){
+  const el=document.getElementById('iss-po-preview');
+  if(!el)return;
+  const poNum=raw.trim().toUpperCase();
+  if(!poNum){el.innerHTML='';return;}
+  el.innerHTML='<span style="font-size:12px;color:var(--muted)">Looking up…</span>';
+  try{
+    const matches=await fsQueryWhere('pos','id',poNum,1);
+    if(!matches.length){el.innerHTML='<span style="font-size:12px;color:#dc2626">PO not found</span>';return;}
+    const po=matches[0];
+    const szs=['XS','S','M','L','XL','2XL'];
+    const hasCut=po.cutQty&&szs.some(s=>po.cutQty[s]>0);
+    const hasSizes=po.sizes&&szs.some(s=>po.sizes[s]>0);
+    const stageLabel=po.currentStage?po.currentStage.charAt(0).toUpperCase()+po.currentStage.slice(1):'—';
+    el.innerHTML=`<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:12px 14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:4px">
+        <span style="font-weight:700;color:var(--green);font-size:13px">✓ ${po.name||po.id}</span>
+        <span style="font-size:11px;background:#1D9E7520;color:#1D9E75;padding:2px 8px;border-radius:10px;font-weight:600">${stageLabel}</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${po.qty||0} pcs total · ${po.fabric||'—'}</div>
+      ${hasCut?`<div style="margin-bottom:6px"><div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Cut Qty</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${szs.filter(s=>po.cutQty[s]>0).map(s=>`<div style="text-align:center;min-width:38px;padding:5px 8px;background:#fff;border-radius:6px;border:1px solid #86efac"><div style="font-size:9px;color:var(--muted)">${s}</div><div style="font-size:14px;font-weight:700;color:var(--dark)">${po.cutQty[s]}</div></div>`).join('')}</div>
+      </div>`:''}
+      ${hasSizes&&!hasCut?`<div><div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Order Qty (not yet cut)</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${szs.filter(s=>po.sizes[s]>0).map(s=>`<div style="text-align:center;min-width:38px;padding:5px 8px;background:#fff;border-radius:6px;border:1px solid #d1d5db"><div style="font-size:9px;color:var(--muted)">${s}</div><div style="font-size:14px;font-weight:700;color:var(--muted)">${po.sizes[s]}</div></div>`).join('')}</div>
+      </div>`:''}
+      ${!hasCut&&!hasSizes?`<div style="font-size:12px;color:var(--muted)">No size/cut data available yet.</div>`:''}
+    </div>`;
+  }catch(e){el.innerHTML=`<span style="font-size:12px;color:#dc2626">Error: ${e.message}</span>`;}
 }
 
 async function submitIssueManual(){
