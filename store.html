@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Groovy Store</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--dark:#1A1A2E;--red:#E94560;--bg:#F2F2F4;--surface:#fff;--border:#E5E5E7;--text:#1A1A2E;--muted:#6B7280;--green:#1D9E75;--amber:#EF9F27;--sidebar:220px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:var(--text);background:var(--bg);min-height:100vh}
+
+/* ── Login ── */
+#scr-login{display:none;min-height:100vh;align-items:center;justify-content:center;background:var(--dark)}
+.login-box{background:#fff;border-radius:16px;padding:2rem;width:100%;max-width:380px;margin:1rem}
+.login-logo{text-align:center;margin-bottom:1.5rem}
+.login-logo .l1{font-size:22px;font-weight:700;color:var(--dark)}
+.login-logo .l2{font-size:12px;color:var(--muted);margin-top:2px}
+.login-box input{display:block;width:100%;padding:11px 14px;border:1px solid var(--border);border-radius:9px;font-size:14px;margin-bottom:10px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none}
+.login-box input:focus{border-color:var(--red)}
+.btn-login{width:100%;padding:12px;background:var(--dark);color:#fff;border:none;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn-login:hover{opacity:.9}
+.btn-login:disabled{opacity:.5;cursor:not-allowed}
+.login-back{display:block;text-align:center;margin-top:10px;font-size:12px;color:var(--muted);text-decoration:none}
+.login-back:hover{color:var(--text)}
+
+/* ── App shell ── */
+#scr-app{display:none;min-height:100vh;flex-direction:column}
+.topbar{background:var(--dark);height:52px;display:flex;align-items:center;padding:0 16px;gap:12px;position:sticky;top:0;z-index:100;flex-shrink:0}
+.topbar-logo{font-size:15px;font-weight:700;color:#fff;flex:1}
+.topbar-logo span{color:var(--red)}
+.topbar-user{font-size:12px;color:rgba(255,255,255,.65);display:flex;align-items:center;gap:8px}
+.topbar-name{color:#fff;font-weight:600}
+.btn-logout{background:none;border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.6);font-size:11px;padding:5px 10px;border-radius:6px;cursor:pointer;font-family:inherit}
+.btn-logout:hover{border-color:rgba(255,255,255,.5);color:#fff}
+.app-body{display:flex;flex:1;min-height:0}
+#sidebar{width:var(--sidebar);background:var(--surface);border-right:1px solid var(--border);flex-shrink:0;padding:12px 8px;overflow-y:auto}
+.nav-item{padding:10px 12px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);font-weight:500;margin-bottom:2px;transition:all .12s}
+.nav-item:hover{background:#F4F4F6;color:var(--text)}
+.nav-item.on{background:var(--dark);color:#fff}
+.nav-divider{height:1px;background:var(--border);margin:8px 4px}
+#main-content{flex:1;overflow-y:auto;padding:18px 16px}
+
+/* ── Cards ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:12px}
+.card-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.page-head{margin-bottom:16px}
+.page-title{font-size:18px;font-weight:700}
+.page-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.section-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px;margin-top:4px}
+
+/* ── Forms ── */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:11px;font-weight:600;color:var(--muted)}
+.field input,.field select,.field textarea{padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%;transition:border-color .15s}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--red);background:#fff}
+.field input[readonly]{background:#f0f0f0;cursor:default}
+
+/* ── Buttons ── */
+.btn-primary{display:block;width:100%;padding:12px;background:var(--red);color:#fff;border:none;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:opacity .15s}
+.btn-primary:hover{opacity:.88}
+.btn-primary:disabled{opacity:.45;cursor:not-allowed}
+.btn-outline{padding:8px 14px;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;color:var(--text)}
+.btn-outline:hover{border-color:var(--dark);color:var(--dark)}
+.btn-sm{padding:5px 10px;background:var(--dark);color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit}
+.btn-sm:hover{opacity:.85}
+.btn-danger{padding:5px 10px;background:none;border:1px solid #fca5a5;color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit;border-radius:6px}
+.btn-danger:hover{background:#fee2e2}
+.btn-green{padding:5px 10px;background:var(--green);color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit}
+
+/* ── Inventory item cards ── */
+.item-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:16px}
+.item-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.item-card.status-red{border-left:3px solid #dc2626}
+.item-card.status-amber{border-left:3px solid var(--amber)}
+.item-card.status-green{border-left:3px solid var(--green)}
+.item-code{font-size:10px;font-weight:700;color:var(--red);letter-spacing:.05em;text-transform:uppercase}
+.item-name{font-size:13px;font-weight:600;margin-top:2px;line-height:1.3}
+.item-bal{font-size:22px;font-weight:700;margin-top:8px}
+.item-bal.red{color:#dc2626}
+.item-bal.amber{color:var(--amber)}
+.item-bal.green{color:var(--green)}
+.item-sizes{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.9}
+
+/* ── Badges ── */
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}
+.badge-green{background:#dcfce7;color:#14532d}
+.badge-amber{background:#fef3c7;color:#92400e}
+.badge-red{background:#fee2e2;color:#991b1b}
+
+/* ── Size input grid ── */
+.size-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.size-field{display:flex;flex-direction:column;gap:3px;min-width:60px;flex:1;max-width:90px}
+.size-field label{font-size:10px;font-weight:600;color:var(--muted);text-align:center}
+.size-field input{padding:7px 6px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;text-align:center;width:100%}
+.size-field input:focus{border-color:var(--red)}
+.size-field .stk{font-size:9px;color:var(--muted);text-align:center}
+
+/* ── Transaction rows ── */
+.tx-row{display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid #f5f5f5;gap:10px}
+.tx-row:last-child{border-bottom:none}
+
+/* ── Request cards ── */
+.req-card{background:#f8f8f8;border-radius:8px;padding:12px;margin-bottom:8px}
+.req-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
+
+/* ── Issue items table ── */
+.issue-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5;gap:8px;font-size:13px}
+.issue-row:last-child{border-bottom:none}
+.stock-ok{color:var(--green);font-weight:600}
+.stock-low{color:#dc2626;font-weight:600}
+
+/* ── Template item row ── */
+.tpl-item-row{display:flex;gap:8px;align-items:flex-end;margin-bottom:8px;flex-wrap:wrap;padding:8px;background:#f8f8f8;border-radius:8px}
+
+/* ── Alert banner ── */
+.alert-banner{padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.alert-red{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
+.alert-amber{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
+.alert-green{background:#dcfce7;color:#14532d;border:1px solid #86efac}
+
+/* ── Misc ── */
+.empty{text-align:center;padding:2.5rem 1rem;color:var(--muted);font-size:13px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--dark);color:#fff;padding:10px 20px;border-radius:30px;font-size:13px;font-weight:500;opacity:0;transition:all .2s;pointer-events:none;white-space:nowrap;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.18)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.err{background:#dc2626}
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f5f5f5;font-size:13px}
+.info-row:last-child{border-bottom:none}
+.info-label{font-size:11px;color:var(--muted);font-weight:500}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Responsive ── */
+@media(max-width:600px){
+  #sidebar{display:none}
+  .form-grid{grid-template-columns:1fr}
+  .app-body{flex-direction:column}
+  #main-content{padding:12px}
+  #mob-nav{display:flex !important}
+  .item-grid{grid-template-columns:1fr 1fr}
+}
+#mob-nav{display:none;background:var(--surface);border-top:1px solid var(--border);position:fixed;bottom:0;left:0;right:0;z-index:100;padding:6px 0}
+.mob-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;padding:6px 4px;font-size:10px;color:var(--muted);cursor:pointer;font-weight:500;gap:2px}
+.mob-nav-item.on{color:var(--red)}
+</style>
+</head>
+<body>
+
+<!-- ══ LOGIN ══ -->
+<div id="scr-login">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="l1">Groovy <span style="color:var(--red)">Store</span></div>
+      <div class="l2">Trim &amp; inventory management</div>
+    </div>
+    <input id="l-user" placeholder="Username" autocomplete="username" autocapitalize="none"
+           onkeydown="if(event.key==='Enter')document.getElementById('l-pass').focus()">
+    <input id="l-pass" type="password" placeholder="Password" autocomplete="current-password"
+           onkeydown="if(event.key==='Enter')window.doLogin()">
+    <button class="btn-login" id="login-btn" onclick="window.doLogin()">Sign in</button>
+    <a class="login-back" href="index.html">← Back to Operations</a>
+  </div>
+</div>
+
+<!-- ══ APP ══ -->
+<div id="scr-app">
+  <div class="topbar">
+    <div class="topbar-logo">Groovy <span>Store</span></div>
+    <div class="topbar-user">
+      <div>
+        <div class="topbar-name" id="user-name"></div>
+        <div style="font-size:10px" id="user-title"></div>
+      </div>
+      <button class="btn-logout" onclick="window.doLogout()">Sign out</button>
+    </div>
+  </div>
+  <div class="app-body">
+    <div id="sidebar"></div>
+    <div id="main-content">
+      <div class="empty">Loading…</div>
+    </div>
+  </div>
+  <div id="mob-nav"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* JS will be added in subsequent parts */
+window.doLogin = function(){ document.getElementById('login-btn').textContent = 'Coming soon…'; };
+window.doLogout = function(){ location.reload(); };
+</script>
+</body>
+</html>
