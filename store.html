@@ -462,6 +462,7 @@ function buildNav(){
   if(om)items.push({id:'inventory',label:'Inventory'});
   items.push({id:'receive',label:'Receive Stock'});
   items.push({id:'issue',label:'Issue Stock'});
+  items.push({id:'issuelog',label:'Issue Log'});
   if(om)items.push({id:'templates',label:'Trim Templates'});
   if(om)items.push({id:'transactions',label:'Transactions'});
   const nav=items.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="showSection('${i.id}')">${i.label}</div>`).join('');
@@ -482,7 +483,7 @@ async function loadAllData(){
   try{
     const[items,txns,templates,requests]=await Promise.all([
       fsList('store_items'),
-      fsQueryOrdered('store_transactions','ts',100),
+      fsQueryOrdered('store_transactions','ts',300),
       fsList('trim_templates'),
       fsList('store_requests'),
     ]);
@@ -532,6 +533,7 @@ function renderSection(id){
   else if(id==='receive'){m.innerHTML=renderReceive();onRcvItemChange();}
   else if(id==='issue'){m.innerHTML=renderIssue();onIssItemChange();loadActivePOs();}
   else if(id==='templates'){m.innerHTML=renderTemplates();}
+  else if(id==='issuelog'){_ilPage=1;_ilQ='';_ilPO='';m.innerHTML=renderIssueLog();refreshIssueLog();}
   else if(id==='transactions'){m.innerHTML=renderTransactions();}
   else if(id==='dashboard'){m.innerHTML=renderDashboard();}
 }
@@ -1031,6 +1033,65 @@ async function deleteTemplate(id){
 // ══════════════════════════════════════════
 // SECTION 5 — TRANSACTION LOG
 // ══════════════════════════════════════════
+// ── Issue Log ──
+let _ilPage=1,_ilQ='',_ilPO='';
+const IL_PER=15,IL_MAX_PAGES=5;
+
+function renderIssueLog(){
+  const issued=allTransactions.filter(t=>t.type==='issued');
+  return`<div class="page-head"><div class="page-title">Issue Log</div><div class="page-sub">${issued.length} issue record${issued.length!==1?'s':''}</div></div>
+  <div class="card">
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <input id="il-q" placeholder="Search item, name…" oninput="_ilQ=this.value;_ilPage=1;refreshIssueLog()" style="flex:1;min-width:140px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+      <input id="il-po" placeholder="Filter by PO…" oninput="_ilPO=this.value;_ilPage=1;refreshIssueLog()" style="width:110px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+    </div>
+    <div id="il-body"></div>
+    <div id="il-pager" style="display:flex;align-items:center;justify-content:center;gap:10px;padding-top:12px;border-top:1px solid #f5f5f5;margin-top:4px"></div>
+  </div>
+  <div style="height:80px"></div>`;
+}
+
+function refreshIssueLog(){
+  const ql=_ilQ.toLowerCase();
+  const poq=normPO(_ilPO);
+  let list=allTransactions.filter(t=>t.type==='issued');
+  if(ql)list=list.filter(t=>(t.itemName||'').toLowerCase().includes(ql)||(t.itemCode||'').toLowerCase().includes(ql)||(t.issuedTo||'').toLowerCase().includes(ql));
+  if(poq)list=list.filter(t=>normPO(t.poRef||t.poId||'').includes(poq));
+  const total=list.length;
+  const maxPages=Math.min(IL_MAX_PAGES,Math.ceil(total/IL_PER)||1);
+  if(_ilPage>maxPages)_ilPage=maxPages;
+  const slice=list.slice((_ilPage-1)*IL_PER,_ilPage*IL_PER);
+  const body=document.getElementById('il-body');
+  const pager=document.getElementById('il-pager');
+  if(!body)return;
+  if(!slice.length){body.innerHTML='<div class="empty">No issue records found.</div>';if(pager)pager.innerHTML='';return;}
+  body.innerHTML=slice.map(tx=>`<div class="tx-row" style="flex-direction:column;align-items:stretch;gap:6px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="font-size:10px;font-weight:700;color:var(--red)">▼ ISSUED</span>
+          <span style="font-size:11px;font-weight:700">${tx.itemCode||'—'}</span>
+          ${tx.poRef||tx.poId?`<span style="font-size:10px;font-weight:700;background:#185FA520;color:#185FA5;padding:2px 7px;border-radius:8px">${tx.poRef||tx.poId}</span>`:''}
+        </div>
+        <div style="font-size:13px;font-weight:500;margin-top:2px">${tx.itemName||'—'}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:1px">To: <strong>${tx.issuedTo||'—'}</strong>${tx.purpose?` · ${tx.purpose}`:''}${tx.notes?` · ${tx.notes}`:''}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:16px;font-weight:700;color:var(--red)">${tx.qty||0} <span style="font-size:11px;font-weight:400;color:var(--muted)">${tx.unit||'pcs'}</span></div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">${tx.date||''}</div>
+        <div style="font-size:10px;color:var(--muted)">${tx.by||'—'}</div>
+      </div>
+    </div>
+  </div>`).join('');
+  if(pager){
+    if(maxPages<=1){pager.innerHTML='';return;}
+    pager.innerHTML=`
+      <button onclick="_ilPage--;refreshIssueLog()" ${_ilPage===1?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit">← Prev</button>
+      <span style="font-size:12px;color:var(--muted)">Page ${_ilPage} of ${maxPages}</span>
+      <button onclick="_ilPage++;refreshIssueLog()" ${_ilPage===maxPages?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit">Next →</button>`;
+  }
+}
+
 function renderTransactions(){
   return`<div class="page-head"><div class="page-title">Transaction Log</div><div class="page-sub">Last ${allTransactions.length} movements</div></div>
   <div class="card">
