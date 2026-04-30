@@ -851,7 +851,7 @@ function renderPage(id){
   else if(id==='po-create')m.innerHTML=renderPOCreate();
   else if(id==='po-registry')m.innerHTML=renderRegistry();
   else if(id==='my-work')m.innerHTML=renderMyWork();
-  else if(id==='gatepass'){m.innerHTML=renderGatePass();gpRowIdx=0;['XS','S','M','L','XL'].forEach(s=>window.addGPRow(s,'',''));}
+  else if(id==='gatepass'){m.innerHTML=renderGatePass();gpRowIdx=0;['XS','S','M','L','XL','2XL'].forEach(s=>window.addGPRow(s,'',''));}
   else if(id==='activity'){loadActivity();return;}
   else if(id==='users')m.innerHTML=renderUsers();
   else if(id==='po-detail')renderDetailPage();
@@ -937,7 +937,7 @@ window.openStageWork=async function(fbKey,stage){
   }
   if(stage==='cutting'){
     const po=allPOs.find(p=>p.fbKey===fbKey);
-    if(po){cutState={poId:fbKey,actualQty:{...po.cutQty||{XS:0,S:0,M:0,L:0,XL:0}},pendingBundles:[]};}
+    if(po){cutState={poId:fbKey,actualQty:{...po.cutQty||{XS:0,S:0,M:0,L:0,XL:0,'2XL':0}},pendingBundles:[]};}
   }
   renderPage('stage-work');
 };
@@ -1000,7 +1000,7 @@ function renderDetailPage(){
   </div>
   <div class="card"><div class="card-title">Size breakdown</div>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">
-      ${['XS','S','M','L','XL'].map(sz=>`<div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">${sz}</div><div style="font-size:18px;font-weight:700">${po.sizes?.[sz]||0}</div>${po.cutQty?.[sz]!=null?`<div style="font-size:10px;color:var(--green)">Cut:${po.cutQty[sz]}</div>`:''}</div>`).join('')}
+      ${['XS','S','M','L','XL','2XL'].map(sz=>`<div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">${sz}</div><div style="font-size:18px;font-weight:700">${po.sizes?.[sz]||0}</div>${po.cutQty?.[sz]!=null?`<div style="font-size:10px;color:var(--green)">Cut:${po.cutQty[sz]}</div>`:''}</div>`).join('')}
     </div>
   </div>
   ${po.imgFront||po.imgBack?`<div class="card"><div class="card-title">Product images</div>
@@ -1053,7 +1053,7 @@ function renderPOCreate(){
   </div>
   <div class="card"><div class="card-title">Size breakdown *</div>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
-      ${['XS','S','M','L','XL'].map(sz=>`<div class="field"><label>${sz}</label><input id="sz-${sz}" type="number" min="0" value="0" onfocus="if(this.value==='0')this.value=''" onblur="if(this.value==='')this.value='0'" oninput="window.updateRatio()"></div>`).join('')}
+      ${['XS','S','M','L','XL','2XL'].map(sz=>`<div class="field"><label>${sz}</label><input id="sz-${sz}" type="number" min="0" value="0" onfocus="if(this.value==='0')this.value=''" onblur="if(this.value==='')this.value='0'" oninput="window.updateRatio()"></div>`).join('')}
     </div>
     <div style="margin-top:8px;font-size:12px;color:var(--muted)">Ratio: <span id="ratio-disp" style="font-weight:600;color:var(--text)">—</span></div>
   </div>
@@ -1097,7 +1097,7 @@ function renderPOCreate(){
 }
 
 window.updateRatio=function(){
-  const vals=['XS','S','M','L','XL'].map(sz=>parseInt(document.getElementById('sz-'+sz)?.value)||0);
+  const vals=['XS','S','M','L','XL','2XL'].map(sz=>parseInt(document.getElementById('sz-'+sz)?.value)||0);
   const nonZero=vals.filter(v=>v>0);if(!nonZero.length){document.getElementById('ratio-disp').textContent='—';return;}
   const min=Math.min(...nonZero);document.getElementById('ratio-disp').textContent=vals.map(v=>v?Math.round(v/min):0).join(':');
 };
@@ -1121,7 +1121,7 @@ window.submitPO=async function(){
   try{
     const nextNum=await getNextId('pos');
     const poId='PO-'+String(nextNum).padStart(3,'0');
-    const sizes={};['XS','S','M','L','XL'].forEach(sz=>sizes[sz]=parseInt(document.getElementById('sz-'+sz)?.value)||0);
+    const sizes={};['XS','S','M','L','XL','2XL'].forEach(sz=>sizes[sz]=parseInt(document.getElementById('sz-'+sz)?.value)||0);
     const stages={};STAGE_KEYS.forEach(k=>stages[k]={done:false,doneAt:null,doneBy:null,dueDate:document.getElementById('due-'+k)?.value||'',notes:''});
     const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',totalWeight:document.getElementById('po-weight')?.value.trim()||'',avgPerUnit:document.getElementById('po-avg')?.value.trim()||'',imgFront:poImages.front||'',imgBack:poImages.back||'',currentStage:'cutting',stages,createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
     await setDoc(doc(db,'pos',poId),payload);
@@ -1146,7 +1146,7 @@ function renderStageWorkPage(){
 
 // ── Cutting stage ──
 function renderCuttingWork(po){
-  const szs=['XS','S','M','L','XL'];
+  const szs=['XS','S','M','L','XL','2XL'];
   const target=po.qty||0;
   const actualTotal=szs.reduce((a,s)=>a+(parseInt(cutState.actualQty[s])||0),0);
   const min=Math.ceil(target*0.8),max=Math.floor(target*1.2);
@@ -1192,7 +1192,7 @@ function renderCutBundleList(){
 }
 
 function renderCutBundleSummary(po){
-  const szs=['XS','S','M','L','XL'];
+  const szs=['XS','S','M','L','XL','2XL'];
   return szs.map(sz=>{
     const actual=parseInt(cutState.actualQty[sz])||0;if(!actual)return'';
     const bundled=cutState.pendingBundles.filter(b=>b.size===sz).reduce((a,b)=>a+b.units,0);
@@ -1202,7 +1202,7 @@ function renderCutBundleSummary(po){
 }
 
 function cutValidationOk(po){
-  const szs=['XS','S','M','L','XL'];
+  const szs=['XS','S','M','L','XL','2XL'];
   const target=po.qty||0;const actualTotal=szs.reduce((a,s)=>a+(parseInt(cutState.actualQty[s])||0),0);
   const min=Math.ceil(target*0.8),max=Math.floor(target*1.2);
   if(actualTotal<min||actualTotal>max)return false;
@@ -1215,7 +1215,7 @@ function cutValidationOk(po){
 }
 
 function refreshCutPartial(po){
-  const szs=['XS','S','M','L','XL'];
+  const szs=['XS','S','M','L','XL','2XL'];
   const target=po.qty||0;
   const actualTotal=szs.reduce((a,s)=>a+(parseInt(cutState.actualQty[s])||0),0);
   const min=Math.ceil(target*0.8),max=Math.floor(target*1.2);
@@ -1489,7 +1489,7 @@ window.generatePOPdf=function(fbKey){
   y+=6;pdf.setFillColor(242,242,244);pdf.rect(M,y,W-M*2,7,'F');
   pdf.setFontSize(8);pdf.setFont(undefined,'bold');pdf.setTextColor(107,114,128);pdf.text('SIZE BREAKDOWN',M+2,y+5);
   y+=10;
-  const szs=['XS','S','M','L','XL'];const colW=(W-M*2)/szs.length;
+  const szs=['XS','S','M','L','XL','2XL'];const colW=(W-M*2)/szs.length;
   pdf.setFillColor(26,26,46);pdf.rect(M,y,W-M*2,8,'F');
   szs.forEach((sz,i)=>{pdf.setTextColor(255,255,255);pdf.setFontSize(9);pdf.setFont(undefined,'bold');pdf.text(sz,M+colW*i+colW/2,y+5,{align:'center'});});
   y+=8;pdf.setDrawColor(229,229,231);pdf.setLineWidth(0.3);
