@@ -1403,6 +1403,12 @@ function renderBundlingWork(po){
   }
   const parts=po.bundlingParts&&po.bundlingParts.length?po.bundlingParts:[{name:'Full Garment',notes:'',dest:'Warehouse'}];
   const uniqueDests=[...new Set(parts.map(p=>p.dest))];
+  // Auto-init bundleDamage for bundles already marked done (e.g. after page reload)
+  bundles.forEach(b=>{
+    if(b.bundlingDone&&!bundleDamage[b.bundleId]){
+      bundleDamage[b.bundleId]={dmg:0,entered:true,dest:b.bundlingDest||parts[0]?.dest||'Warehouse'};
+    }
+  });
   // Group bundles by destination — each bundle's dest stored in bundleDamage[id]?.dest or defaults to first part's dest
   const destGroups={};
   uniqueDests.forEach(d=>{destGroups[d]=[];});
@@ -1527,8 +1533,7 @@ window.completeBundling=async function(fbKey){
   const po=allPOs.find(p=>p.fbKey===fbKey);if(!po)return;
   const bundles=currentBundles;
   const allBundled=bundles.every(b=>b.bundlingDone);
-  const allEntered=bundles.every(b=>bundleDamage[b.bundleId]?.entered);
-  if(!allBundled||!allEntered){showToast('Mark all bundles done and enter damage for each.',true);return;}
+  if(!allBundled){showToast('Mark all bundles as bundled first.',true);return;}
   const btn=document.getElementById('bundling-done-btn');if(btn){btn.disabled=true;btn.textContent='Saving…';}
   try{
     const cutTotal=['XS','S','M','L','XL','2XL'].reduce((a,s)=>a+(po.cutQty?.[s]||0),0)||po.qty||0;
