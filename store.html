@@ -681,8 +681,8 @@ function renderIssue(){
       <div class="field"><label>Item *</label>
         <select id="iss-item" onchange="onIssItemChange()">${opts}</select>
       </div>
-      <div class="field"><label>PO Number</label>
-        <input id="iss-po-ref" placeholder="e.g. PO-007 (optional)">
+      <div class="field"><label>PO Number *</label>
+        <input id="iss-po-ref" placeholder="e.g. PO-007">
       </div>
       <div class="field"><label>Issued To</label>
         <input id="iss-to" value="Waqas (Stitching)" placeholder="Issued to…">
@@ -807,6 +807,7 @@ async function submitIssueManual(){
   const item=allItems.find(i=>i.code===code);
   if(!item){showToast('Select an item.',true);return;}
   const poRef=(document.getElementById('iss-po-ref')?.value||'').trim().toUpperCase();
+  if(!poRef){showToast('PO Number is required.',true);document.getElementById('iss-po-ref')?.focus();return;}
   const issuedTo=(document.getElementById('iss-to')?.value||'').trim();
   const purpose=(document.getElementById('iss-purpose')?.value||'').trim();
   const date=document.getElementById('iss-date')?.value||todayStr();
@@ -835,7 +836,7 @@ async function submitIssueManual(){
   try{
     await fsSet('store_items',item.code,updated);
     const txData={type:'issued',itemCode:item.code,itemName:item.name,issuedTo,purpose,date,by:session.name,ts:Date.now(),qty:totalQty,unit:item.unit};
-    if(poRef)txData.poRef=poRef;
+    txData.poRef=poRef;
     const txId=await fsAdd('store_transactions',txData);
     const idx=allItems.findIndex(i=>i.code===code);
     if(idx>=0)allItems[idx]={...updated,_id:item.code};
