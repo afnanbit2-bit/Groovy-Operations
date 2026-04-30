@@ -1586,7 +1586,8 @@ function renderBundleStageWork(po,stage,doneField,doneAtField,doneLabel,nextStag
     </div>`).join('')}
   </div>`).join('')}
   ${!bundles.length?'<div class="empty">No bundles found for this PO.</div>':''}
-  <button class="mark-done-btn" id="stage-done-btn" onclick="window.completeStage('${po.fbKey}','${stage}','${nextStage}')" ${allDone?'':'disabled'}>Complete ${stageMeta.label||stage} ✓</button>
+  ${doneCount<bundles.length&&bundles.length>0?`<div style="font-size:11px;color:var(--muted);text-align:center;margin-bottom:6px">${bundles.length-doneCount} bundle${bundles.length-doneCount!==1?'s':''} remaining — you can still complete the stage</div>`:''}
+  <button class="mark-done-btn" id="stage-done-btn" onclick="window.completeStage('${po.fbKey}','${stage}','${nextStage}')" ${bundles.length>0?'':'disabled'}>Complete ${stageMeta.label||stage} ✓</button>
   <div style="height:80px"></div>`;
 }
 
