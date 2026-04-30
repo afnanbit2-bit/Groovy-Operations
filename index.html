@@ -112,6 +112,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .qc-pass-btn:hover,.qc-fail-btn:hover{opacity:.88}
 .progress-strip{height:6px;background:var(--border);border-radius:4px;overflow:hidden;margin:8px 0}
 .progress-fill{height:100%;background:var(--green);border-radius:4px;transition:width .3s}
+/* ── Gate Pass tabs ── */
+.gp-tabs{display:flex;gap:2px;background:var(--border);padding:3px;border-radius:10px;margin-bottom:14px}
+.gp-tab{flex:1;padding:9px 10px;background:transparent;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;color:var(--muted);transition:all .15s;white-space:nowrap}
+.gp-tab.active{background:#fff;color:var(--dark);font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.1)}
+/* ── Returns badges ── */
+.ret-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}
+.ret-complete{background:#dcfce7;color:#14532d}.ret-overage{background:#fee2e2;color:#991b1b}.ret-incomplete{background:#fee2e2;color:#991b1b}
+/* ── Fabric In ── */
+.roll-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f5f5f5}
+.fab-entry-header{cursor:pointer;padding:10px 0;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #f5f5f5}
 /* ── Responsive ── */
 @media(max-width:600px){
   #sidebar{display:none}
@@ -634,6 +644,7 @@ const PRODUCT_CATALOG=[
 
 let session=null,allPOs=[],allPasses=[],currentPage='',viewingPO=null,poImages={front:null,back:null},gpRowIdx=0,loginInProgress=false,gpPage=1;
 let stageWorkPO=null,stageWorkStage=null,currentBundles=[],cutState={poId:null,actualQty:{},pendingBundles:[]};
+let gpActiveTab='outward',allReturns=[],allFabricIn=[],fabRollIdx=0;
 
 // ── Helpers ──
 function showToast(msg,isErr=false){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show'+(isErr?' err':'');setTimeout(()=>t.className='toast',3200);}
@@ -671,23 +682,31 @@ async function reserveBundleIds(n){
 
 async function loadData(){
   try{
-    const[posSnap,gpSnap]=await Promise.all([
+    const[posSnap,gpSnap,retSnap,fabSnap]=await Promise.all([
       getDocs(query(collection(db,'pos'),orderBy('ts','desc'))),
-      getDocs(query(collection(db,'gatepasses'),orderBy('ts','desc')))
+      getDocs(query(collection(db,'gatepasses'),orderBy('ts','desc'))),
+      getDocs(query(collection(db,'returns'),orderBy('ts','desc'))),
+      getDocs(query(collection(db,'fabricin'),orderBy('ts','desc')))
     ]);
     allPOs=posSnap.docs.map(d=>({...d.data(),fbKey:d.id}));
     allPasses=gpSnap.docs.map(d=>d.data());
+    allReturns=retSnap.docs.map(d=>d.data());
+    allFabricIn=fabSnap.docs.map(d=>d.data());
     if(currentPage)renderPage(currentPage);
   }catch(e){
     if((e.code==='permission-denied'||e.message.includes('permissions'))&&auth.currentUser){
       try{
         await auth.currentUser.getIdToken(true);
-        const[posSnap,gpSnap]=await Promise.all([
+        const[posSnap,gpSnap,retSnap,fabSnap]=await Promise.all([
           getDocs(query(collection(db,'pos'),orderBy('ts','desc'))),
-          getDocs(query(collection(db,'gatepasses'),orderBy('ts','desc')))
+          getDocs(query(collection(db,'gatepasses'),orderBy('ts','desc'))),
+          getDocs(query(collection(db,'returns'),orderBy('ts','desc'))),
+          getDocs(query(collection(db,'fabricin'),orderBy('ts','desc')))
         ]);
         allPOs=posSnap.docs.map(d=>({...d.data(),fbKey:d.id}));
         allPasses=gpSnap.docs.map(d=>d.data());
+        allReturns=retSnap.docs.map(d=>d.data());
+        allFabricIn=fabSnap.docs.map(d=>d.data());
         if(currentPage)renderPage(currentPage);
         return;
       }catch(e2){showToast('Data load error: '+e2.message,true);}
@@ -868,7 +887,7 @@ function renderPage(id){
   else if(id==='po-create')m.innerHTML=renderPOCreate();
   else if(id==='po-registry')m.innerHTML=renderRegistry();
   else if(id==='my-work')m.innerHTML=renderMyWork();
-  else if(id==='gatepass'){gpPage=1;m.innerHTML=renderGatePass();gpRowIdx=0;['XS','S','M','L','XL','2XL'].forEach(s=>window.addGPRow(s,'',''));renderGPPage();}
+  else if(id==='gatepass'){gpPage=1;m.innerHTML=renderGatePass();window.switchGPTab(gpActiveTab||'outward');}
   else if(id==='activity'){loadActivity();return;}
   else if(id==='users')m.innerHTML=renderUsers();
   else if(id==='po-detail')renderDetailPage();
@@ -1437,7 +1456,16 @@ window.completeQC=async function(fbKey){
 // ── Gate Pass ──
 function renderGatePass(){
   return`<div class="page-head"><div class="page-title">Gate Pass</div></div>
-  <div class="card"><div class="card-title">Issue new pass</div>
+  <div class="gp-tabs">
+    <button class="gp-tab" id="gptab-outward" onclick="window.switchGPTab('outward')">Outward</button>
+    <button class="gp-tab" id="gptab-returns" onclick="window.switchGPTab('returns')">Returns</button>
+    <button class="gp-tab" id="gptab-fabricin" onclick="window.switchGPTab('fabricin')">Fabric In</button>
+  </div>
+  <div id="gp-tab-content"></div>`;
+}
+
+function renderOutward(){
+  return`<div class="card"><div class="card-title">Issue new pass</div>
     <div class="form-grid">
       <div class="field"><label>Person name</label><input id="gp-name" value="${session.name}" readonly style="background:#f0f0f0;cursor:default"></div>
       <div class="field"><label>Date</label><input id="gp-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
@@ -1478,6 +1506,78 @@ function renderGatePass(){
     <div id="gp-list-body"></div>
     <div id="gp-pagination" style="display:flex;align-items:center;justify-content:center;gap:10px;padding-top:10px;border-top:1px solid #f5f5f5;margin-top:4px"></div>
   </div><div style="height:80px"></div>`;
+}
+
+function renderReturnsTab(){
+  const today=new Date().toISOString().split('T')[0];
+  return`<div class="card"><div class="card-title">Record return</div>
+    <div class="form-grid">
+      <div class="field"><label>Original GP Number *</label>
+        <div style="display:flex;gap:8px;align-items:flex-end">
+          <input id="ret-gp-num" placeholder="e.g. GP-001" style="flex:1" oninput="window.lookupReturnGP()">
+          <span id="ret-gp-status" style="font-size:11px;padding-bottom:10px;white-space:nowrap;flex-shrink:0"></span>
+        </div>
+      </div>
+      <div class="field"><label>Return Date</label><input id="ret-date" type="date" value="${today}"></div>
+      <div class="field" style="grid-column:1/-1"><label>Vendor *</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+          <button type="button" class="dest-chip" onclick="window.setRetVendor('Febknit')">Febknit</button>
+          <button type="button" class="dest-chip" onclick="window.setRetVendor('Al Hamd')">Al Hamd</button>
+          <button type="button" class="dest-chip" onclick="window.setRetVendor('Al Nisa')">Al Nisa</button>
+        </div>
+        <input id="ret-vendor" placeholder="Or type vendor name…">
+      </div>
+      <div class="field"><label>Article Name</label><input id="ret-article" placeholder="Auto-filled or enter manually"></div>
+      <div class="field"><label>Sent Qty (pcs)</label><input id="ret-sent-qty" type="number" min="0" placeholder="Auto-filled or enter" oninput="window.calcReturnStatus()"></div>
+      <div class="field"><label>Returned Qty (pcs) *</label><input id="ret-qty" type="number" min="0" placeholder="0" oninput="window.calcReturnStatus()"></div>
+      <div class="field"><label>Received By</label><input value="${session.name}" readonly style="background:#f0f0f0;cursor:default"></div>
+    </div>
+    <div id="ret-status-preview" style="margin:10px 0"></div>
+    <div id="ret-reason-wrap" style="display:none;margin-bottom:8px" class="field"><label>Reason for shortage *</label><input id="ret-reason" placeholder="Required for incomplete returns"></div>
+    <div class="field" style="margin-top:4px"><label>Notes</label><textarea id="ret-notes" rows="2" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%;resize:vertical" placeholder="Optional notes"></textarea></div>
+    <button class="btn-primary" style="margin-top:10px" onclick="window.submitReturn()">Save Return</button>
+  </div>
+  <div class="card" style="margin-top:12px"><div class="card-title">Returns history</div>
+    <div id="ret-list-body"></div>
+  </div>
+  <div style="height:80px"></div>`;
+}
+
+function renderFabricInTab(){
+  const today=new Date().toISOString().split('T')[0];
+  const fabTypes=['100% Poly Sublimation Jersey','Jersey Heavy','Terry Stock','Terry Fresh','Twill','Burbury 100% Cotton','Drill','Denim','Fleece','100% Cotton Cora Jersey','100% Cotton Terry Cora','PFGD Rigid','PFGD Lycra'];
+  const suppliers=['Gul Enterprises','JR Trader','Akhlaq Sublimation','Khursheed Enterprise','Daniyal Twill'];
+  return`<div class="card"><div class="card-title">Record fabric arrival</div>
+    <div class="form-grid">
+      <div class="field" style="grid-column:1/-1"><label>Supplier *</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+          ${suppliers.map(s=>`<button type="button" class="dest-chip" onclick="window.setFabSupplier('${s}')">${s}</button>`).join('')}
+        </div>
+        <input id="fab-supplier" placeholder="Or type supplier name…" oninput="window.updateFabUnit()">
+      </div>
+      <div class="field"><label>Date</label><input id="fab-date" type="date" value="${today}"></div>
+      <div class="field"><label>Fabric Type *</label>
+        <select id="fab-type"><option value="">Select type…</option>${fabTypes.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Fabric Color *</label><input id="fab-color" placeholder="e.g. Black, White, Royal Blue"></div>
+      <div class="field"><label>Received By</label><input value="${session.name}" readonly style="background:#f0f0f0;cursor:default"></div>
+      <div class="field" style="grid-column:1/-1"><label>Notes</label><textarea id="fab-notes" rows="2" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%;resize:vertical" placeholder="Optional notes"></textarea></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">Fabric rolls <span id="fab-unit-label" style="font-weight:400;color:var(--muted);font-size:11px">(kg)</span></div>
+    <div id="fab-rolls-body"></div>
+    <button onclick="window.addFabRoll()" style="width:100%;padding:9px;background:none;border:none;font-size:12px;color:var(--muted);cursor:pointer;border-top:1px solid var(--border);font-family:inherit;margin-top:4px">+ Add roll</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding:10px 14px;background:var(--dark);border-radius:8px">
+      <span style="font-size:11px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.06em">Total weight</span>
+      <span id="fab-total-weight" style="font-size:18px;font-weight:700;color:#fff">0.00 kg</span>
+    </div>
+  </div>
+  <button class="btn-primary" onclick="window.submitFabricIn()">Save Fabric Entry</button>
+  <div class="card" style="margin-top:12px"><div class="card-title">Fabric arrivals</div>
+    <div id="fab-list-body"></div>
+  </div>
+  <div style="height:80px"></div>`;
 }
 function renderGPPage(){
   const PER=15;
@@ -1535,6 +1635,257 @@ window.submitGP=async function(){
     await logActivity('Gate pass issued',`${gpId} — ${article} to ${dest}`);
     showToast(gpId+' issued ✓');await loadData();window.showPage('gatepass');
   }catch(e){showToast('Error: '+e.message,true);}
+};
+
+// ── Gate Pass tab switcher ──
+window.switchGPTab=function(tab){
+  gpActiveTab=tab;
+  document.querySelectorAll('.gp-tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('gptab-'+tab)?.classList.add('active');
+  const el=document.getElementById('gp-tab-content');
+  if(!el)return;
+  if(tab==='outward'){
+    gpRowIdx=0;
+    el.innerHTML=renderOutward();
+    ['XS','S','M','L','XL','2XL'].forEach(s=>window.addGPRow(s,'',''));
+    renderGPPage();
+  }else if(tab==='returns'){
+    el.innerHTML=renderReturnsTab();
+    renderReturnsList();
+  }else if(tab==='fabricin'){
+    fabRollIdx=0;
+    el.innerHTML=renderFabricInTab();
+    window.addFabRoll();
+    renderFabricInList();
+  }
+};
+
+// ── Returns ──
+window.setRetVendor=function(v){document.getElementById('ret-vendor').value=v;};
+
+window.lookupReturnGP=function(){
+  const gpNum=(document.getElementById('ret-gp-num')?.value||'').trim().toUpperCase();
+  const statusEl=document.getElementById('ret-gp-status');
+  if(!gpNum){if(statusEl)statusEl.textContent='';return;}
+  const gp=allPasses.find(p=>p.id===gpNum);
+  if(gp){
+    const artEl=document.getElementById('ret-article');
+    const sentEl=document.getElementById('ret-sent-qty');
+    if(artEl&&!artEl.value)artEl.value=gp.article||'';
+    if(sentEl&&!sentEl.value)sentEl.value=gp.totalUnits||'';
+    if(statusEl){statusEl.textContent='✓ Found';statusEl.style.color='var(--green)';}
+    window.calcReturnStatus();
+  }else{
+    if(statusEl){statusEl.textContent='Not found';statusEl.style.color='var(--muted)';}
+  }
+};
+
+window.calcReturnStatus=function(){
+  const sent=parseFloat(document.getElementById('ret-sent-qty')?.value)||0;
+  const returned=parseFloat(document.getElementById('ret-qty')?.value)||0;
+  const preview=document.getElementById('ret-status-preview');
+  const reasonWrap=document.getElementById('ret-reason-wrap');
+  if(!preview)return;
+  if(!sent||!returned){preview.innerHTML='';if(reasonWrap)reasonWrap.style.display='none';return;}
+  const tolerance=Math.ceil(sent*0.01);
+  if(returned>sent){
+    preview.innerHTML=`<div style="background:#fee2e2;border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:8px"><span class="ret-badge ret-overage">Overage 🔴</span><span style="font-size:12px;color:#991b1b">Returned ${returned-sent} more than sent. Please verify.</span></div>`;
+    if(reasonWrap)reasonWrap.style.display='none';
+  }else if(returned>=sent-tolerance){
+    preview.innerHTML=`<div style="background:#dcfce7;border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:8px"><span class="ret-badge ret-complete">Complete ✅</span><span style="font-size:12px;color:#14532d">Return complete. Tolerance ±${tolerance} pcs.</span></div>`;
+    if(reasonWrap)reasonWrap.style.display='none';
+  }else{
+    const shortage=sent-returned;
+    preview.innerHTML=`<div style="background:#fee2e2;border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:8px"><span class="ret-badge ret-incomplete">Incomplete Lot 🔴</span><span style="font-size:12px;color:#991b1b">Short by ${shortage} pcs. Reason required.</span></div>`;
+    if(reasonWrap)reasonWrap.style.display='block';
+  }
+};
+
+window.submitReturn=async function(){
+  const gpNum=(document.getElementById('ret-gp-num')?.value||'').trim().toUpperCase();
+  const vendor=(document.getElementById('ret-vendor')?.value||'').trim();
+  const article=(document.getElementById('ret-article')?.value||'').trim();
+  const sentQty=parseFloat(document.getElementById('ret-sent-qty')?.value)||0;
+  const returnedQty=parseFloat(document.getElementById('ret-qty')?.value)||0;
+  const date=document.getElementById('ret-date')?.value||'';
+  const notes=(document.getElementById('ret-notes')?.value||'').trim();
+  const reason=(document.getElementById('ret-reason')?.value||'').trim();
+  if(!gpNum||!vendor||!returnedQty){showToast('GP number, vendor, and returned qty are required.',true);return;}
+  const tolerance=Math.ceil(sentQty*0.01);
+  let status,shortage=0;
+  if(returnedQty>sentQty){status='Overage';}
+  else if(returnedQty>=sentQty-tolerance){status='Complete';}
+  else{
+    status='Incomplete Lot';shortage=sentQty-returnedQty;
+    if(!reason){showToast('Reason is required for incomplete returns.',true);return;}
+  }
+  try{
+    const next=await getNextId('returns');
+    const retId='RET-'+String(next).padStart(3,'0');
+    const payload={id:retId,ts:Date.now(),gpNum,vendor,article,sentQty,returnedQty,shortage,status,reason:status==='Incomplete Lot'?reason:'',date,receivedBy:session.name,notes};
+    await setDoc(doc(db,'returns',retId),payload);
+    await logActivity('Return recorded',`${retId} — ${vendor} returned ${returnedQty}/${sentQty} pcs for ${gpNum}`);
+    showToast(retId+' saved ✓');
+    const snap=await getDocs(query(collection(db,'returns'),orderBy('ts','desc')));
+    allReturns=snap.docs.map(d=>d.data());
+    window.switchGPTab('returns');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+function renderReturnsList(){
+  const body=document.getElementById('ret-list-body');
+  if(!body)return;
+  if(!allReturns.length){body.innerHTML='<div class="empty">No returns yet.</div>';return;}
+  const sorted=[...allReturns.filter(r=>r.status==='Incomplete Lot'),...allReturns.filter(r=>r.status!=='Incomplete Lot')];
+  body.innerHTML=sorted.map(r=>{
+    const bc=r.status==='Complete'?'ret-complete':r.status==='Overage'?'ret-overage':'ret-incomplete';
+    const icon=r.status==='Complete'?'✅':'🔴';
+    return`<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid #f5f5f5">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="font-weight:700;color:var(--red);font-size:11px">${r.id}</span>
+          <span class="ret-badge ${bc}">${r.status} ${icon}</span>
+        </div>
+        <div style="font-size:13px;font-weight:500;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.vendor} · ${r.article||'—'}</div>
+        <div style="font-size:11px;color:var(--muted)">${r.gpNum||'—'} · ${r.date||''} · ${r.receivedBy||'—'}</div>
+        ${r.reason?`<div style="font-size:11px;color:#dc2626;margin-top:2px">Reason: ${r.reason}</div>`:''}
+      </div>
+      <div style="text-align:right;flex-shrink:0;font-size:12px;color:var(--muted);margin-left:10px">
+        <div style="font-weight:600">${r.returnedQty||0} / ${r.sentQty||0} pcs</div>
+        ${r.shortage?`<div style="font-size:10px;color:#dc2626">Short: ${r.shortage}</div>`:''}
+      </div>
+    </div>`;
+  }).join('');}
+
+// ── Fabric In ──
+window.setFabSupplier=function(v){
+  document.getElementById('fab-supplier').value=v;
+  window.updateFabUnit();
+};
+
+window.updateFabUnit=function(){
+  const supplier=(document.getElementById('fab-supplier')?.value||'').trim();
+  const isDaniyal=supplier.toLowerCase().includes('daniyal twill');
+  const unit=isDaniyal?'m':'kg';
+  const lbl=document.getElementById('fab-unit-label');
+  if(lbl)lbl.textContent=isDaniyal?'(meters)':'(kg)';
+  document.querySelectorAll('.fab-roll-unit').forEach(el=>el.textContent=unit);
+  window.fabRecalc();
+};
+
+window.addFabRoll=function(){
+  fabRollIdx++;
+  const rollNum='R-'+String(fabRollIdx).padStart(3,'0');
+  const supplier=(document.getElementById('fab-supplier')?.value||'').trim();
+  const isDaniyal=supplier.toLowerCase().includes('daniyal twill');
+  const unit=isDaniyal?'m':'kg';
+  const id='fabroll-'+fabRollIdx;
+  const body=document.getElementById('fab-rolls-body');
+  if(!body)return;
+  const div=document.createElement('div');
+  div.id=id;div.className='roll-row';
+  div.innerHTML=`<span style="font-size:11px;font-weight:700;color:var(--dark);min-width:52px">${rollNum}</span>
+    <input type="number" min="0" step="0.01" placeholder="0" style="flex:1;max-width:120px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:#fff;outline:none;font-family:inherit" oninput="window.fabRecalc()">
+    <span class="fab-roll-unit" style="font-size:12px;color:var(--muted);min-width:24px">${unit}</span>
+    <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;flex-shrink:0;white-space:nowrap">
+      <input type="checkbox" onchange="window.onFabRollQC(this,'${rollNum}')"> QC ✓
+    </label>
+    <button onclick="document.getElementById('${id}').remove();window.fabRecalc()" style="background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:2px 6px;flex-shrink:0">×</button>`;
+  body.appendChild(div);
+  window.fabRecalc();
+};
+
+window.fabRecalc=function(){
+  let total=0;
+  document.querySelectorAll('#fab-rolls-body .roll-row').forEach(row=>{
+    const inp=row.querySelector('input[type=number]');
+    total+=parseFloat(inp?.value)||0;
+  });
+  const supplier=(document.getElementById('fab-supplier')?.value||'').trim();
+  const isDaniyal=supplier.toLowerCase().includes('daniyal twill');
+  const unit=isDaniyal?'m':'kg';
+  const el=document.getElementById('fab-total-weight');
+  if(el)el.textContent=total.toFixed(2)+' '+unit;
+};
+
+window.onFabRollQC=function(checkbox){
+  const row=checkbox.closest('.roll-row');
+  if(row)row.style.background=checkbox.checked?'#f0fdf4':'';
+};
+
+window.submitFabricIn=async function(){
+  const supplier=(document.getElementById('fab-supplier')?.value||'').trim();
+  const date=document.getElementById('fab-date')?.value||'';
+  const fabType=document.getElementById('fab-type')?.value||'';
+  const color=(document.getElementById('fab-color')?.value||'').trim();
+  const notes=(document.getElementById('fab-notes')?.value||'').trim();
+  if(!supplier||!fabType||!color){showToast('Supplier, fabric type and color are required.',true);return;}
+  const isDaniyal=supplier.toLowerCase().includes('daniyal twill');
+  const unit=isDaniyal?'m':'kg';
+  const rolls=[];
+  document.querySelectorAll('#fab-rolls-body .roll-row').forEach(row=>{
+    const spans=row.querySelectorAll('span');
+    const rollNumber=spans[0]?.textContent?.trim()||'';
+    const weightEl=row.querySelector('input[type=number]');
+    const qcEl=row.querySelector('input[type=checkbox]');
+    const weight=parseFloat(weightEl?.value)||0;
+    const qcPassed=qcEl?.checked||false;
+    if(rollNumber)rolls.push({rollNumber,weight,unit,qcPassed,qcBy:qcPassed?session.name:'',qcAt:qcPassed?Date.now():null});
+  });
+  if(!rolls.length){showToast('Add at least one roll.',true);return;}
+  const totalWeight=parseFloat(rolls.reduce((s,r)=>s+r.weight,0).toFixed(2));
+  try{
+    const next=await getNextId('fabricin');
+    const fabId='FAB-'+String(next).padStart(3,'0');
+    const payload={id:fabId,ts:Date.now(),supplier,date,fabType,color,receivedBy:session.name,notes,unit,totalWeight,rollsCount:rolls.length,rolls};
+    await setDoc(doc(db,'fabricin',fabId),payload);
+    await logActivity('Fabric In',`${fabId} — ${supplier} · ${fabType} · ${color} · ${rolls.length} rolls · ${totalWeight} ${unit}`);
+    showToast(fabId+' saved ✓');
+    const snap=await getDocs(query(collection(db,'fabricin'),orderBy('ts','desc')));
+    allFabricIn=snap.docs.map(d=>d.data());
+    window.switchGPTab('fabricin');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+function renderFabricInList(){
+  const body=document.getElementById('fab-list-body');
+  if(!body)return;
+  if(!allFabricIn.length){body.innerHTML='<div class="empty">No fabric entries yet.</div>';return;}
+  body.innerHTML=allFabricIn.map(f=>{
+    const rolls=f.rolls||[];
+    const qcDone=rolls.filter(r=>r.qcPassed).length;
+    const total=rolls.length;
+    const allQC=total>0&&qcDone===total;
+    return`<div>
+      <div class="fab-entry-header" onclick="window.toggleFabEntry('${f.id}')">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span style="font-weight:700;color:var(--red);font-size:11px">${f.id}</span>
+            <span style="font-size:11px;color:var(--muted)">${f.date||''}</span>
+          </div>
+          <div style="font-size:13px;font-weight:500;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${f.supplier} · ${f.fabType||'—'}</div>
+          <div style="font-size:11px;color:var(--muted)">${f.color||'—'} · ${f.totalWeight||0} ${f.unit||'kg'} · ${total} rolls · <span style="color:${allQC?'var(--green)':'var(--amber)'};font-weight:600">${qcDone}/${total} QC ✓</span></div>
+        </div>
+        <span id="fab-chev-${f.id}" style="color:var(--muted);font-size:18px;margin-left:8px;flex-shrink:0">›</span>
+      </div>
+      <div id="fab-rolls-${f.id}" style="display:none;padding:4px 0 8px">
+        ${rolls.map(r=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 4px;border-bottom:1px solid #f9f9f9;font-size:12px;gap:6px">
+          <span style="font-weight:600;min-width:52px">${r.rollNumber}</span>
+          <span style="flex:1">${r.weight} ${r.unit||'kg'}</span>
+          <span style="${r.qcPassed?'color:var(--green);font-weight:600':'color:var(--muted)'}">${r.qcPassed?'QC Passed ✓':'Pending QC'}</span>
+          ${r.qcPassed&&r.qcBy?`<span style="font-size:10px;color:var(--muted)">${r.qcBy}</span>`:''}
+        </div>`).join('')||'<div style="font-size:12px;color:var(--muted);padding:6px">No rolls recorded.</div>'}
+      </div>
+    </div>`;
+  }).join('');}
+
+window.toggleFabEntry=function(id){
+  const rolls=document.getElementById('fab-rolls-'+id);
+  const chev=document.getElementById('fab-chev-'+id);
+  if(!rolls)return;
+  const isOpen=rolls.style.display!=='none';
+  rolls.style.display=isOpen?'none':'block';
+  if(chev)chev.textContent=isOpen?'›':'⌄';
 };
 
 // ── PDF: PO ──
