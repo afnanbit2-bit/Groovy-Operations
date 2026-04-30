@@ -839,7 +839,190 @@ async function submitIssueManual(){
     renderSection('issue');
   }catch(e){showToast('Error: '+e.message,true);}
 }
-/* Part 4: Templates, Transactions, Raees Dashboard added next */
+// ══════════════════════════════════════════
+// SECTION 4 — TRIM TEMPLATES
+// ══════════════════════════════════════════
+let _tplRowIdx=0;
+
+function renderTemplates(){
+  const isOwnerMgr=session.role==='owner'||session.role==='manager';
+  if(!isOwnerMgr)return'<div class="empty">Owners and managers only.</div>';
+  const opts=allItems.map(i=>`<option value="${i.code}">${i.code} — ${i.name}</option>`).join('');
+  return`<div class="page-head"><div class="page-title">Trim Templates</div><div class="page-sub">Define required trims per product type</div></div>
+  <div class="card">
+    <div class="card-title">Create template</div>
+    <div class="form-grid">
+      <div class="field" style="grid-column:1/-1"><label>Product Type Name *</label>
+        <input id="tpl-name" placeholder="e.g. Terry Oversized Tee, Denim Cargo Pant">
+      </div>
+    </div>
+    <div style="margin-top:12px">
+      <div class="section-title">Trim requirements</div>
+      <div id="tpl-rows"></div>
+      <button class="btn-outline" style="width:100%;margin-top:6px" onclick="addTplRow()">+ Add trim item</button>
+    </div>
+    <button class="btn-primary" style="margin-top:10px" onclick="submitTemplate()">Save Template</button>
+  </div>
+  ${allTemplates.length?`<div class="card">
+    <div class="card-title">Saved templates (${allTemplates.length})</div>
+    ${allTemplates.map(t=>`<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid #f5f5f5">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px">${t.productType||'—'}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${(t.items||[]).map(i=>i.itemCode).join(' · ')||'No items'}</div>
+      </div>
+      <button class="btn-danger" onclick="deleteTemplate('${t._id}')">Delete</button>
+    </div>`).join('')}
+  </div>`:''}
+  <div style="height:80px"></div>`;
+}
+
+function addTplRow(){
+  _tplRowIdx++;
+  const rowId='tpl-row-'+_tplRowIdx;
+  const opts=allItems.map(i=>`<option value="${i.code}">${i.code} — ${i.name}</option>`).join('');
+  const div=document.createElement('div');
+  div.id=rowId;div.className='tpl-item-row';
+  div.innerHTML=`
+    <div class="field" style="flex:2;min-width:150px"><label>Item</label>
+      <select>${opts}</select></div>
+    <div class="field" style="flex:1;min-width:120px"><label>Calc type</label>
+      <select>
+        <option value="per_unit_flat">Per unit (flat)</option>
+        <option value="size_specific">1 per piece per size</option>
+        <option value="per_unit_measure">Per unit (measure)</option>
+      </select></div>
+    <div class="field" style="width:72px"><label>Qty/unit</label>
+      <input type="number" min="0" step="0.01" value="1"></div>
+    <button onclick="document.getElementById('${rowId}').remove()"
+      style="background:none;border:none;color:#ccc;font-size:20px;cursor:pointer;align-self:flex-end;padding:0 4px;margin-bottom:2px">×</button>`;
+  document.getElementById('tpl-rows')?.appendChild(div);
+}
+
+async function submitTemplate(){
+  const productType=(document.getElementById('tpl-name')?.value||'').trim();
+  if(!productType){showToast('Product type name required.',true);return;}
+  const rows=document.querySelectorAll('#tpl-rows .tpl-item-row');
+  if(!rows.length){showToast('Add at least one trim item.',true);return;}
+  const items=[];
+  rows.forEach(row=>{
+    const [itemSel,calcSel]=row.querySelectorAll('select');
+    const qtyInp=row.querySelector('input[type=number]');
+    if(itemSel?.value)items.push({itemCode:itemSel.value,calcType:calcSel?.value||'per_unit_flat',qtyPerUnit:parseFloat(qtyInp?.value)||1});
+  });
+  try{
+    const id=await fsAdd('trim_templates',{productType,items,createdBy:session.name,createdAt:Date.now()});
+    allTemplates.push({productType,items,createdBy:session.name,createdAt:Date.now(),_id:id});
+    showToast('Template saved ✓');
+    _tplRowIdx=0;
+    renderSection('templates');
+  }catch(e){showToast('Error: '+e.message,true);}
+}
+
+async function deleteTemplate(id){
+  if(!confirm('Delete this template? This cannot be undone.'))return;
+  try{
+    await fsDelete('trim_templates',id);
+    allTemplates=allTemplates.filter(t=>t._id!==id);
+    showToast('Template deleted');
+    renderSection('templates');
+  }catch(e){showToast('Error: '+e.message,true);}
+}
+
+// ══════════════════════════════════════════
+// SECTION 5 — TRANSACTION LOG
+// ══════════════════════════════════════════
+function renderTransactions(){
+  return`<div class="page-head"><div class="page-title">Transaction Log</div><div class="page-sub">Last ${allTransactions.length} movements</div></div>
+  <div class="card">
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <input placeholder="Filter by item code or name…" oninput="filterTx(this.value,'type')"
+        style="flex:1;min-width:140px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+      <select onchange="filterTx('','type',this.value)"
+        style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+        <option value="">All types</option>
+        <option value="received">Received</option>
+        <option value="issued">Issued</option>
+      </select>
+    </div>
+    <div id="tx-list">${txRows(allTransactions)}</div>
+  </div>
+  <div style="height:80px"></div>`;
+}
+
+function txRows(list){
+  if(!list.length)return'<div class="empty">No transactions yet.</div>';
+  return list.map(tx=>{
+    const isRcv=tx.type==='received';
+    return`<div class="tx-row">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="font-size:10px;font-weight:700;color:${isRcv?'var(--green)':'var(--red)'}">${isRcv?'▲ RECEIVED':'▼ ISSUED'}</span>
+          <span style="font-size:11px;font-weight:700">${tx.itemCode||'—'}</span>
+          ${tx.poId?`<span style="font-size:10px;background:#f0f0f0;padding:1px 6px;border-radius:8px">${tx.poId}</span>`:''}
+        </div>
+        <div style="font-size:13px;margin-top:2px">${tx.itemName||'—'}</div>
+        <div style="font-size:11px;color:var(--muted)">${isRcv?`From: ${tx.supplier||'—'}`:`To: ${tx.issuedTo||'—'}`} ${tx.purpose?`· ${tx.purpose}`:''} ${tx.notes?`· ${tx.notes}`:''}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-weight:700">${tx.qty||0} <span style="font-size:11px;font-weight:400">${tx.unit||'pcs'}</span></div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">${tx.date||''}</div>
+        <div style="font-size:10px;color:var(--muted)">${tx.by||'—'}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+let _txFilterQ='', _txFilterType='';
+function filterTx(q,_,type){
+  if(q!==undefined&&q!=='type')_txFilterQ=q;
+  if(type!==undefined)_txFilterType=type;
+  let list=allTransactions;
+  if(_txFilterQ){const ql=_txFilterQ.toLowerCase();list=list.filter(t=>(t.itemCode||'').toLowerCase().includes(ql)||(t.itemName||'').toLowerCase().includes(ql));}
+  if(_txFilterType)list=list.filter(t=>t.type===_txFilterType);
+  document.getElementById('tx-list').innerHTML=txRows(list);
+}
+
+// ══════════════════════════════════════════
+// RAEES DASHBOARD
+// ══════════════════════════════════════════
+function renderDashboard(){
+  const lowStock=allItems.filter(i=>getStatus(i)!=='green');
+  const pending=allRequests.filter(r=>r.status==='pending');
+  const recent=allTransactions.slice(0,10);
+  return`<div class="page-head"><div class="page-title">Store Dashboard</div><div class="page-sub">Welcome, ${session.name}</div></div>
+
+  ${pending.length?`<div class="card" style="border-left:3px solid var(--red)">
+    <div class="card-title">Pending Trim Requests (${pending.length})</div>
+    ${pending.map(r=>`<div class="req-card">
+      <div class="req-head">
+        <div>
+          <div style="font-weight:700;color:var(--red);font-size:13px">${r.poId||'—'}</div>
+          <div style="font-size:11px;color:var(--muted)">${r.productType||'—'}</div>
+        </div>
+        <button class="btn-sm" onclick="showSection('issue')">Issue →</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted)">${(r.requiredItems||[]).map(i=>`${i.itemCode}: ${i.quantity}`).join(' · ')||'—'}</div>
+    </div>`).join('')}
+  </div>`:`<div class="card">
+    <div class="card-title">Pending Trim Requests</div>
+    <div class="empty" style="padding:1rem">No pending requests.</div>
+  </div>`}
+
+  ${lowStock.length?`<div class="card" style="border-left:3px solid var(--amber)">
+    <div class="card-title">⚠ Low / Out of Stock (${lowStock.length})</div>
+    ${lowStock.slice(0,10).map(i=>`<div class="info-row">
+      <span><strong>${i.code}</strong> — ${i.name}</span>
+      <span class="badge badge-${getStatus(i)}">${getBalance(i)} ${i.unit}</span>
+    </div>`).join('')}
+    ${lowStock.length>10?`<div style="font-size:11px;color:var(--muted);padding-top:6px">+${lowStock.length-10} more items below threshold</div>`:''}
+  </div>`:'<div class="alert-banner alert-green">All items are in stock ✓</div>'}
+
+  <div class="card">
+    <div class="card-title">Recent Activity (last 10)</div>
+    ${recent.length?txRows(recent):'<div class="empty" style="padding:1rem">No transactions yet.</div>'}
+  </div>
+  <div style="height:80px"></div>`;
+}
 </script>
 </body>
 </html>
