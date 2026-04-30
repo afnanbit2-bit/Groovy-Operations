@@ -899,7 +899,7 @@ function renderDashboard(){
     <div class="stat-card"><div class="stat-label">Today</div><div class="stat-val" style="color:var(--red)">${todayCount}</div></div>
   </div>
   <div style="margin-bottom:16px"><div class="section-title">Stage overview</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">${STAGES.map(s=>{const c=allPOs.filter(p=>p.currentStage===s.key).length;return`<div style="flex:1;min-width:80px;padding:10px 8px;background:#fff;border:1px solid var(--border);border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:${s.color}">${c}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${s.label}</div></div>`;}).join('')}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${STAGES.map(s=>{const c=allPOs.filter(p=>p.currentStage===s.key).length;const f=allPOs.filter(p=>p.currentStage===s.key&&p.damageFlagged).length;return`<div style="flex:1;min-width:80px;padding:10px 8px;background:#fff;border:1px solid var(--border);border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:${s.color}">${c}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${s.label}</div>${f?`<div style="font-size:9px;color:#dc2626;font-weight:700;margin-top:2px">⚠ ${f} flagged</div>`:''}</div>`;}).join('')}</div>
   </div>
   <div class="section-title">Recent production orders</div>
   ${allPOs.slice(0,10).map(p=>poRowHTML(p)).join('')||'<div class="empty">No POs yet.</div>'}`;
@@ -912,7 +912,7 @@ function poRowHTML(p){
     <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:#ccc">No img</span>'}</div>
     <div class="po-info">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="po-num">${p.id}</span>
-        <span class="stage-badge" style="background:${isCompleted?'#dcfce7':stage.color+'20'};color:${isCompleted?'#14532d':stage.color}">${isCompleted?'Completed':stage.label}</span></div>
+        <span class="stage-badge" style="background:${isCompleted?'#dcfce7':stage.color+'20'};color:${isCompleted?'#14532d':stage.color}">${isCompleted?'Completed':stage.label}</span>${p.damageFlagged?`<span style="padding:2px 6px;background:#fee2e2;color:#dc2626;border-radius:6px;font-size:10px;font-weight:700">⚠ Loss</span>`:''}</div>
       <div class="po-name">${p.name||'—'}</div>
       <div class="po-meta">${p.qty||'?'} pcs · ${p.fabric||''} · ${p.createdBy||'—'} · ${p.createdAt||''}</div>
     </div><div class="po-arrow">›</div></div>`;
@@ -1033,6 +1033,15 @@ function renderDetailPage(){
       ${['XS','S','M','L','XL','2XL'].map(sz=>`<div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">${sz}</div><div style="font-size:18px;font-weight:700">${po.sizes?.[sz]||0}</div>${po.cutQty?.[sz]!=null?`<div style="font-size:10px;color:var(--green)">Cut:${po.cutQty[sz]}</div>`:''}</div>`).join('')}
     </div>
   </div>
+  ${po.damageFlagged||po.damageSummary?`<div class="card" style="border:1px solid #fca5a5"><div class="card-title" style="color:#dc2626">⚠ Damage report</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px">
+      <div style="text-align:center;padding:8px 4px;background:#fef2f2;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Cut</div><div style="font-size:16px;font-weight:700">${po.damageSummary?.cutTotal||0}</div></div>
+      <div style="text-align:center;padding:8px 4px;background:#fee2e2;border-radius:6px"><div style="font-size:10px;color:#dc2626">Damaged</div><div style="font-size:16px;font-weight:700;color:#dc2626">${po.damageSummary?.total||0}</div></div>
+      <div style="text-align:center;padding:8px 4px;background:#dcfce7;border-radius:6px"><div style="font-size:10px;color:var(--green)">Usable</div><div style="font-size:16px;font-weight:700;color:var(--green)">${po.damageSummary?.usable||0}</div></div>
+      <div style="text-align:center;padding:8px 4px;background:${(po.damagePercent||0)>1.5?'#fee2e2':'#fef9e7'};border-radius:6px"><div style="font-size:10px;color:var(--muted)">Rate</div><div style="font-size:16px;font-weight:700;color:${(po.damagePercent||0)>1.5?'#dc2626':'var(--amber)'}">${(po.damagePercent||0).toFixed(2)}%</div></div>
+    </div>
+    ${po.damageSummary?.bySize?`<div style="font-size:11px;color:var(--muted)">By size: ${Object.entries(po.damageSummary.bySize).filter(([,v])=>v>0).map(([k,v])=>`${k}: ${v}`).join(' · ')||'None'}</div>`:''}
+  </div>`:''}
   ${po.imgFront||po.imgBack?`<div class="card"><div class="card-title">Product images</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       ${po.imgFront?`<div><div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:500">FRONT</div><img src="${po.imgFront}" style="width:100%;border-radius:8px;max-height:320px;object-fit:cover"></div>`:''}
