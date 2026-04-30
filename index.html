@@ -864,7 +864,7 @@ function buildNav(){
   if(isOwner)items.push({id:'users',label:'Users'});
   const storeLink=`<div style="height:1px;background:var(--border);margin:8px 4px"></div><div class="nav-item" onclick="location.href='store.html'" style="color:var(--muted)">Store →</div>`;
   document.getElementById('sidebar').innerHTML=items.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('')+storeLink;
-  document.getElementById('mob-nav').innerHTML=items.slice(0,5).map(i=>`<div class="mob-nav-item" id="mobnav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('');
+  document.getElementById('mob-nav').innerHTML=items.slice(0,4).map(i=>`<div class="mob-nav-item" id="mobnav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('')+`<div class="mob-nav-item" onclick="location.href='store.html'">Store</div>`;
 }
 
 window.showPage=function(id){
