@@ -525,7 +525,321 @@ function safeId(str){return(str||'').replace(/[^a-zA-Z0-9]/g,'_');}
   if(ok){await startApp();}
   else{document.getElementById('scr-login').style.display='flex';}
 })();
-/* renderSection and all section renderers added in Part 3 */
+// ── Section router ──
+function renderSection(id){
+  const m=document.getElementById('main-content');
+  if(id==='inventory'){m.innerHTML=renderInventory();}
+  else if(id==='receive'){m.innerHTML=renderReceive();onRcvItemChange();}
+  else if(id==='issue'){m.innerHTML=renderIssue();onIssItemChange();}
+  else if(id==='templates'){m.innerHTML=renderTemplates();}
+  else if(id==='transactions'){m.innerHTML=renderTransactions();}
+  else if(id==='dashboard'){m.innerHTML=renderDashboard();}
+}
+
+// ══════════════════════════════════════════
+// SECTION 1 — INVENTORY DASHBOARD
+// ══════════════════════════════════════════
+function renderInventory(){
+  const lowStock=allItems.filter(i=>getStatus(i)!=='green');
+  let h=`<div class="page-head"><div class="page-title">Inventory</div><div class="page-sub">${allItems.length} items across ${Object.keys(CAT_LABELS).length} categories</div></div>`;
+  if(lowStock.length){
+    h+=`<div class="card" style="border-left:3px solid #dc2626;margin-bottom:16px">
+      <div class="card-title">⚠ Low / Out of Stock (${lowStock.length} items)</div>
+      ${lowStock.map(i=>`<div class="info-row">
+        <span><strong>${i.code}</strong> — ${i.name}</span>
+        <span class="badge badge-${getStatus(i)}">${getBalance(i)} ${i.unit}</span>
+      </div>`).join('')}
+    </div>`;
+  }
+  for(const cat of CAT_ORDER){
+    const items=allItems.filter(i=>i.category===cat);
+    if(!items.length)continue;
+    h+=`<div class="section-title">${CAT_LABELS[cat]}</div>
+    <div class="item-grid">
+      ${items.map(item=>{
+        const s=getStatus(item),b=getBalance(item);
+        return`<div class="item-card status-${s}">
+          <div class="item-code">${item.code}</div>
+          <div class="item-name">${item.name}</div>
+          <div class="item-bal ${s}">${b} <span style="font-size:12px;font-weight:400">${item.unit}</span></div>
+          ${item.sizeSpecific?`<div class="item-sizes">${formatSizes(item)}</div>`:''}
+          <div style="margin-top:8px"><span class="badge badge-${s}">${s==='green'?'In Stock':s==='amber'?'Low Stock':'Out of Stock'}</span></div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+  return h+'<div style="height:80px"></div>';
+}
+
+// ══════════════════════════════════════════
+// SECTION 2 — RECEIVE STOCK
+// ══════════════════════════════════════════
+function renderReceive(){
+  const opts=allItems.map(i=>`<option value="${i.code}">${i.code} — ${i.name}</option>`).join('');
+  return`<div class="page-head"><div class="page-title">Receive Stock</div></div>
+  <div class="card">
+    <div class="card-title">Record received stock</div>
+    <div class="form-grid">
+      <div class="field"><label>Item *</label>
+        <select id="rcv-item" onchange="onRcvItemChange()">${opts}</select>
+      </div>
+      <div class="field"><label>Supplier</label><input id="rcv-supplier" placeholder="Supplier name"></div>
+      <div class="field"><label>Date</label><input id="rcv-date" type="date" value="${todayStr()}"></div>
+      <div class="field"><label>Received By</label><input value="${session.name}" readonly></div>
+      <div class="field" style="grid-column:1/-1"><label>Notes</label>
+        <textarea id="rcv-notes" rows="2" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;font-family:inherit;outline:none;width:100%;resize:vertical" placeholder="Optional"></textarea>
+      </div>
+    </div>
+    <div id="rcv-qty-wrap" style="margin-top:12px"></div>
+    <button class="btn-primary" style="margin-top:12px" onclick="submitReceive()">Save Receipt</button>
+  </div>
+  <div style="height:80px"></div>`;
+}
+
+function onRcvItemChange(){
+  const code=document.getElementById('rcv-item')?.value;
+  const item=allItems.find(i=>i.code===code);
+  if(!item)return;
+  const wrap=document.getElementById('rcv-qty-wrap');
+  if(!wrap)return;
+  if(item.sizeSpecific){
+    wrap.innerHTML=`<div class="field"><label>Qty received per size (${item.unit})</label>
+      <div class="size-grid">${Object.keys(item.sizes||{}).map(sz=>`<div class="size-field">
+        <label>${sz}</label>
+        <input type="number" min="0" placeholder="0" id="rcv-${safeId(sz)}">
+        <div class="stk">Stk: ${item.sizes[sz]||0}</div>
+      </div>`).join('')}</div></div>`;
+  }else{
+    const b=getBalance(item);
+    wrap.innerHTML=`<div class="field"><label>Qty received (${item.unit}) · Current stock: ${b}</label>
+      <input type="number" id="rcv-flat" min="0" placeholder="0"></div>`;
+  }
+}
+
+async function submitReceive(){
+  const code=document.getElementById('rcv-item')?.value;
+  const item=allItems.find(i=>i.code===code);
+  if(!item){showToast('Select an item.',true);return;}
+  const supplier=(document.getElementById('rcv-supplier')?.value||'').trim();
+  const date=document.getElementById('rcv-date')?.value||todayStr();
+  const notes=(document.getElementById('rcv-notes')?.value||'').trim();
+  const updated={...item};
+  let totalQty=0;
+  if(item.sizeSpecific){
+    const newSizes={...item.sizes};
+    let any=false;
+    for(const sz of Object.keys(item.sizes||{})){
+      const v=parseFloat(document.getElementById('rcv-'+safeId(sz))?.value)||0;
+      if(v){newSizes[sz]=(parseInt(newSizes[sz])||0)+v;any=true;totalQty+=v;}
+    }
+    if(!any){showToast('Enter qty for at least one size.',true);return;}
+    updated.sizes=newSizes;
+  }else{
+    const v=parseFloat(document.getElementById('rcv-flat')?.value)||0;
+    if(!v){showToast('Enter quantity received.',true);return;}
+    updated.balance=(parseInt(item.balance)||0)+v;
+    totalQty=v;
+  }
+  try{
+    await fsSet('store_items',item.code,updated);
+    const txId=await fsAdd('store_transactions',{
+      type:'received',itemCode:item.code,itemName:item.name,
+      supplier,date,notes,by:session.name,ts:Date.now(),
+      qty:totalQty,unit:item.unit,
+    });
+    const idx=allItems.findIndex(i=>i.code===code);
+    if(idx>=0)allItems[idx]={...updated,_id:item.code};
+    allTransactions.unshift({type:'received',itemCode:item.code,itemName:item.name,supplier,date,notes,by:session.name,ts:Date.now(),qty:totalQty,unit:item.unit,_id:txId});
+    showToast('Stock received ✓');
+    renderSection('receive');
+  }catch(e){showToast('Error: '+e.message,true);}
+}
+
+// ══════════════════════════════════════════
+// SECTION 3 — ISSUE STOCK
+// ══════════════════════════════════════════
+let _poIssueData=null; // {po, tpl} for PO-linked issue
+
+function renderIssue(){
+  const opts=allItems.map(i=>`<option value="${i.code}">${i.code} — ${i.name}</option>`).join('');
+  return`<div class="page-head"><div class="page-title">Issue Stock</div></div>
+
+  <div class="card">
+    <div class="card-title">Issue against PO</div>
+    <div class="form-grid">
+      <div class="field"><label>PO Number</label>
+        <input id="iss-po" placeholder="e.g. PO-001" style="text-transform:uppercase" oninput="onIssPoInput(this.value.trim().toUpperCase())">
+      </div>
+      <div id="iss-po-status" style="display:flex;align-items:flex-end;padding-bottom:10px;font-size:12px;color:var(--muted)"></div>
+    </div>
+    <div id="iss-po-body"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Manual issue</div>
+    <div class="form-grid">
+      <div class="field"><label>Item *</label>
+        <select id="iss-item" onchange="onIssItemChange()">${opts}</select>
+      </div>
+      <div class="field"><label>Issued To</label>
+        <input id="iss-to" value="Waqas (Stitching)" placeholder="Issued to…">
+      </div>
+      <div class="field"><label>Purpose / Notes</label>
+        <input id="iss-purpose" placeholder="Reason for issue">
+      </div>
+      <div class="field"><label>Date</label>
+        <input id="iss-date" type="date" value="${todayStr()}">
+      </div>
+    </div>
+    <div id="iss-qty-wrap" style="margin-top:10px"></div>
+    <button class="btn-primary" style="margin-top:12px" onclick="submitIssueManual()">Issue Stock</button>
+  </div>
+  <div style="height:80px"></div>`;
+}
+
+async function onIssPoInput(poNum){
+  const statusEl=document.getElementById('iss-po-status');
+  const bodyEl=document.getElementById('iss-po-body');
+  _poIssueData=null;
+  if(!poNum){statusEl.innerHTML='';bodyEl.innerHTML='';return;}
+  statusEl.innerHTML='<span class="spinner" style="border-color:rgba(0,0,0,.2);border-top-color:var(--dark)"></span>';
+  try{
+    const matches=await fsQueryWhere('pos','id',poNum,1);
+    if(!matches.length){statusEl.innerHTML='<span style="color:var(--muted)">PO not found</span>';bodyEl.innerHTML='';return;}
+    const po=matches[0];
+    statusEl.innerHTML=`<span style="color:var(--green);font-weight:600">✓ ${po.name||po.id} · ${po.qty||0} pcs</span>`;
+    // Match trim template by product name substring
+    const tpl=allTemplates.find(t=>t.productType&&po.name&&po.name.toLowerCase().includes(t.productType.toLowerCase()));
+    if(!tpl||!tpl.items?.length){
+      bodyEl.innerHTML=`<div class="alert-banner alert-amber">No trim template found for this product. Use manual issue below or create a template first.</div>`;
+      return;
+    }
+    _poIssueData={po,tpl};
+    renderPoIssueBody(po,tpl);
+  }catch(e){statusEl.innerHTML=`<span style="color:#dc2626">Error: ${e.message}</span>`;}
+}
+
+function renderPoIssueBody(po,tpl){
+  const qty=parseInt(po.qty)||1;
+  const bodyEl=document.getElementById('iss-po-body');
+  let rows='';
+  for(const req of tpl.items){
+    const item=allItems.find(i=>i.code===req.itemCode);
+    if(!item)continue;
+    const needed=req.calcType==='per_unit_flat'?(qty*(parseFloat(req.qtyPerUnit)||1)):qty;
+    const bal=getBalance(item);
+    const ok=bal>=needed;
+    rows+=`<div class="issue-row">
+      <div style="flex:1;min-width:0">
+        <div><strong>${item.code}</strong> — ${item.name}</div>
+        <div style="font-size:11px;color:var(--muted)">Need: ${needed} ${item.unit} · Stock: <span class="${ok?'stock-ok':'stock-low'}">${bal}</span></div>
+      </div>
+      <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;flex-shrink:0">
+        <input type="checkbox" id="iss-chk-${safeId(item.code)}" ${ok?'checked':''} ${ok?'':'disabled'}>
+        Issue
+      </label>
+    </div>`;
+  }
+  bodyEl.innerHTML=rows
+    +`<button class="btn-primary" style="margin-top:10px" onclick="submitPoIssue()">Confirm issue for ${po.id}</button>`;
+}
+
+async function submitPoIssue(){
+  if(!_poIssueData){showToast('No PO loaded.',true);return;}
+  const{po,tpl}=_poIssueData;
+  const qty=parseInt(po.qty)||1;
+  const toIssue=tpl.items.filter(req=>document.getElementById('iss-chk-'+safeId(req.itemCode))?.checked);
+  if(!toIssue.length){showToast('No items selected.',true);return;}
+  try{
+    for(const req of toIssue){
+      const item=allItems.find(i=>i.code===req.itemCode);
+      if(!item)continue;
+      const needed=req.calcType==='per_unit_flat'?(qty*(parseFloat(req.qtyPerUnit)||1)):qty;
+      const updated={...item};
+      if(item.sizeSpecific){
+        const szKeys=Object.keys(item.sizes||{});
+        const perSz=Math.floor(needed/szKeys.length);
+        const newSizes={...item.sizes};
+        for(const sz of szKeys)newSizes[sz]=Math.max(0,(parseInt(newSizes[sz])||0)-perSz);
+        updated.sizes=newSizes;
+      }else{
+        updated.balance=Math.max(0,(parseInt(item.balance)||0)-needed);
+      }
+      await fsSet('store_items',item.code,updated);
+      await fsAdd('store_transactions',{type:'issued',itemCode:item.code,itemName:item.name,
+        issuedTo:'Production',purpose:`PO ${po.id}`,date:todayStr(),
+        by:session.name,ts:Date.now(),qty:needed,unit:item.unit,poId:po.id});
+      const idx=allItems.findIndex(i=>i.code===item.code);
+      if(idx>=0)allItems[idx]={...updated,_id:item.code};
+    }
+    showToast(`Items issued for ${po.id} ✓`);
+    _poIssueData=null;
+    document.getElementById('iss-po').value='';
+    document.getElementById('iss-po-status').innerHTML='';
+    document.getElementById('iss-po-body').innerHTML='';
+  }catch(e){showToast('Error: '+e.message,true);}
+}
+
+function onIssItemChange(){
+  const code=document.getElementById('iss-item')?.value;
+  const item=allItems.find(i=>i.code===code);
+  const wrap=document.getElementById('iss-qty-wrap');
+  if(!item||!wrap)return;
+  if(item.sizeSpecific){
+    wrap.innerHTML=`<div class="field"><label>Qty to issue per size (${item.unit})</label>
+      <div class="size-grid">${Object.keys(item.sizes||{}).map(sz=>`<div class="size-field">
+        <label>${sz}</label>
+        <input type="number" min="0" placeholder="0" id="iss-${safeId(sz)}">
+        <div class="stk">Stk: ${item.sizes[sz]||0}</div>
+      </div>`).join('')}</div></div>`;
+  }else{
+    const b=getBalance(item);
+    wrap.innerHTML=`<div class="field"><label>Qty to issue (${item.unit}) · Stock: ${b}</label>
+      <input type="number" id="iss-flat" min="0" max="${b}" placeholder="0"></div>`;
+  }
+}
+
+async function submitIssueManual(){
+  const code=document.getElementById('iss-item')?.value;
+  const item=allItems.find(i=>i.code===code);
+  if(!item){showToast('Select an item.',true);return;}
+  const issuedTo=(document.getElementById('iss-to')?.value||'').trim();
+  const purpose=(document.getElementById('iss-purpose')?.value||'').trim();
+  const date=document.getElementById('iss-date')?.value||todayStr();
+  const updated={...item};
+  let totalQty=0;
+  if(item.sizeSpecific){
+    const newSizes={...item.sizes};
+    let any=false;
+    for(const sz of Object.keys(item.sizes||{})){
+      const v=parseFloat(document.getElementById('iss-'+safeId(sz))?.value)||0;
+      if(v){
+        if(v>(parseInt(newSizes[sz])||0)){showToast(`Not enough stock for size ${sz}.`,true);return;}
+        newSizes[sz]=Math.max(0,(parseInt(newSizes[sz])||0)-v);
+        any=true;totalQty+=v;
+      }
+    }
+    if(!any){showToast('Enter qty for at least one size.',true);return;}
+    updated.sizes=newSizes;
+  }else{
+    const v=parseFloat(document.getElementById('iss-flat')?.value)||0;
+    if(!v){showToast('Enter quantity.',true);return;}
+    if(v>getBalance(item)){showToast('Insufficient stock.',true);return;}
+    updated.balance=Math.max(0,(parseInt(item.balance)||0)-v);
+    totalQty=v;
+  }
+  try{
+    await fsSet('store_items',item.code,updated);
+    const txId=await fsAdd('store_transactions',{type:'issued',itemCode:item.code,itemName:item.name,
+      issuedTo,purpose,date,by:session.name,ts:Date.now(),qty:totalQty,unit:item.unit});
+    const idx=allItems.findIndex(i=>i.code===code);
+    if(idx>=0)allItems[idx]={...updated,_id:item.code};
+    allTransactions.unshift({type:'issued',itemCode:item.code,itemName:item.name,issuedTo,purpose,date,by:session.name,ts:Date.now(),qty:totalQty,unit:item.unit,_id:txId});
+    showToast('Stock issued ✓');
+    renderSection('issue');
+  }catch(e){showToast('Error: '+e.message,true);}
+}
+/* Part 4: Templates, Transactions, Raees Dashboard added next */
 </script>
 </body>
 </html>
