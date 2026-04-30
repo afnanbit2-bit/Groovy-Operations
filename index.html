@@ -1493,7 +1493,9 @@ function renderGPPage(){
   body.innerHTML=slice.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5">
     <div><div style="font-weight:700;color:var(--red);font-size:11px">${p.id}</div><div style="font-size:13px;font-weight:500">${p.article||'—'}</div><div style="font-size:11px;color:var(--muted)">${p.name||'—'} · ${p.date||''} · ${p.dest||'—'}</div></div>
     <div style="display:flex;align-items:center;gap:8px"><div style="text-align:right;font-size:12px;color:var(--muted);font-weight:500">${p.totalUnits} pcs</div>
-    <button class="btn-pdf" onclick="window.generateGPPdf('${p.id}')">⬇ PDF</button></div>
+    <button class="btn-pdf" onclick="window.generateGPPdf('${p.id}')">⬇ PDF</button>
+    ${['afnan','ammar','mustafa','arfat'].includes(session?.u)?`<button onclick="window.deleteGP('${p.id}')" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>`:''}
+    </div>
   </div>`).join('')||'<div class="empty" style="padding:1rem">No gate passes yet.</div>';
   if(pg){
     if(pages<=1){pg.innerHTML='';return;}
@@ -1504,6 +1506,16 @@ function renderGPPage(){
   }
 }
 window.gpGotoPage=function(n){gpPage=n;renderGPPage();};
+window.deleteGP=async function(gpId){
+  if(!confirm(`Delete ${gpId}? This cannot be undone.`))return;
+  try{
+    await deleteDoc(doc(db,'gatepasses',gpId));
+    await logActivity('Gate pass deleted',`${gpId} deleted by ${session.name}`);
+    showToast(`${gpId} deleted`);
+    await loadData();
+    renderGPPage();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
 window.setDest=function(v){document.getElementById('gp-dest').value=v;};
 window.addGPRow=function(size='',units='',weight=''){
   gpRowIdx++;const id='gpr'+gpRowIdx;const tr=document.createElement('tr');tr.id=id;tr.style.borderBottom='1px solid #f5f5f5';
