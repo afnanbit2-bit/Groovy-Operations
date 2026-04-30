@@ -665,7 +665,7 @@ function renderIssue(){
   return`<div class="page-head"><div class="page-title">Issue Stock</div></div>
 
   <div class="card">
-    <div class="card-title">Issue against PO</div>
+    <div class="card-title">Issue against PO <span style="font-size:11px;font-weight:500;color:var(--amber);background:#FEF3C7;padding:2px 8px;border-radius:10px;margin-left:6px">Work in Progress</span></div>
     <div class="form-grid">
       <div class="field" style="grid-column:1/-1;position:relative"><label>PO Number</label>
         <input id="iss-po" placeholder="Type PO number or pick from list…" autocomplete="off"
@@ -678,7 +678,7 @@ function renderIssue(){
   </div>
 
   <div class="card">
-    <div class="card-title">Manual issue</div>
+    <div class="card-title">Manual issue <span style="font-size:11px;font-weight:600;color:#1D9E75;background:#dcfce7;padding:2px 8px;border-radius:10px;margin-left:6px">● Live</span></div>
     <div class="form-grid">
       <div class="field"><label>Item *</label>
         <select id="iss-item" onchange="onIssItemChange()">${opts}</select>
