@@ -632,7 +632,7 @@ const PRODUCT_CATALOG=[
   {code:'AH007',name:"Camel Brown Hoodie"}
 ];
 
-let session=null,allPOs=[],allPasses=[],currentPage='',viewingPO=null,poImages={front:null,back:null},gpRowIdx=0,loginInProgress=false;
+let session=null,allPOs=[],allPasses=[],currentPage='',viewingPO=null,poImages={front:null,back:null},gpRowIdx=0,loginInProgress=false,gpPage=1;
 let stageWorkPO=null,stageWorkStage=null,currentBundles=[],cutState={poId:null,actualQty:{},pendingBundles:[]};
 
 // ── Helpers ──
@@ -868,7 +868,7 @@ function renderPage(id){
   else if(id==='po-create')m.innerHTML=renderPOCreate();
   else if(id==='po-registry')m.innerHTML=renderRegistry();
   else if(id==='my-work')m.innerHTML=renderMyWork();
-  else if(id==='gatepass'){m.innerHTML=renderGatePass();gpRowIdx=0;['XS','S','M','L','XL','2XL'].forEach(s=>window.addGPRow(s,'',''));}
+  else if(id==='gatepass'){gpPage=1;m.innerHTML=renderGatePass();gpRowIdx=0;['XS','S','M','L','XL','2XL'].forEach(s=>window.addGPRow(s,'',''));renderGPPage();}
   else if(id==='activity'){loadActivity();return;}
   else if(id==='users')m.innerHTML=renderUsers();
   else if(id==='po-detail')renderDetailPage();
@@ -1474,14 +1474,36 @@ function renderGatePass(){
     </div>
   </div>
   <button class="btn-primary" onclick="window.submitGP()">Submit gate pass</button>
-  <div class="card" style="margin-top:12px"><div class="card-title">Recent gate passes</div>
-    ${allPasses.slice(0,10).map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5">
-      <div><div style="font-weight:700;color:var(--red);font-size:11px">${p.id}</div><div style="font-size:13px;font-weight:500">${p.article||'—'}</div><div style="font-size:11px;color:var(--muted)">${p.name||'—'} · ${p.date||''} · ${p.dest||'—'}</div></div>
-      <div style="display:flex;align-items:center;gap:8px"><div style="text-align:right;font-size:12px;color:var(--muted);font-weight:500">${p.totalUnits} pcs</div>
-      <button class="btn-pdf" onclick="window.generateGPPdf('${p.id}')">⬇ PDF</button></div>
-    </div>`).join('')||'<div class="empty" style="padding:1rem">No gate passes yet.</div>'}
+  <div class="card" style="margin-top:12px"><div class="card-title">Gate passes <span id="gp-count-lbl" style="font-weight:400;color:var(--muted);font-size:12px"></span></div>
+    <div id="gp-list-body"></div>
+    <div id="gp-pagination" style="display:flex;align-items:center;justify-content:center;gap:10px;padding-top:10px;border-top:1px solid #f5f5f5;margin-top:4px"></div>
   </div><div style="height:80px"></div>`;
 }
+function renderGPPage(){
+  const PER=15;
+  const total=allPasses.length;
+  const pages=Math.max(1,Math.ceil(total/PER));
+  if(gpPage>pages)gpPage=pages;
+  const slice=allPasses.slice((gpPage-1)*PER,gpPage*PER);
+  const body=document.getElementById('gp-list-body');
+  const pg=document.getElementById('gp-pagination');
+  const lbl=document.getElementById('gp-count-lbl');
+  if(!body)return;
+  if(lbl)lbl.textContent=total?`(${total} total)`:'';
+  body.innerHTML=slice.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5">
+    <div><div style="font-weight:700;color:var(--red);font-size:11px">${p.id}</div><div style="font-size:13px;font-weight:500">${p.article||'—'}</div><div style="font-size:11px;color:var(--muted)">${p.name||'—'} · ${p.date||''} · ${p.dest||'—'}</div></div>
+    <div style="display:flex;align-items:center;gap:8px"><div style="text-align:right;font-size:12px;color:var(--muted);font-weight:500">${p.totalUnits} pcs</div>
+    <button class="btn-pdf" onclick="window.generateGPPdf('${p.id}')">⬇ PDF</button></div>
+  </div>`).join('')||'<div class="empty" style="padding:1rem">No gate passes yet.</div>';
+  if(pg){
+    if(pages<=1){pg.innerHTML='';return;}
+    pg.innerHTML=`
+      <button onclick="window.gpGotoPage(${gpPage-1})" ${gpPage===1?'disabled':''} style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit;color:var(--text)">← Prev</button>
+      <span style="font-size:12px;color:var(--muted)">Page ${gpPage} of ${pages}</span>
+      <button onclick="window.gpGotoPage(${gpPage+1})" ${gpPage===pages?'disabled':''} style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit;color:var(--text)">Next →</button>`;
+  }
+}
+window.gpGotoPage=function(n){gpPage=n;renderGPPage();};
 window.setDest=function(v){document.getElementById('gp-dest').value=v;};
 window.addGPRow=function(size='',units='',weight=''){
   gpRowIdx++;const id='gpr'+gpRowIdx;const tr=document.createElement('tr');tr.id=id;tr.style.borderBottom='1px solid #f5f5f5';
