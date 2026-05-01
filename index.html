@@ -1481,8 +1481,14 @@ window._checkEmbRecipe=async function(code,name){
   let r=allRecipes.find(x=>(x.articleCode||'').toLowerCase()===(code||'').toLowerCase());
   if(!r&&name)r=allRecipes.find(x=>(x.articleName||'').toLowerCase()===(name||'').toLowerCase());
   if(!r){
-    _poEmbellishment={required:true,recipeId:null,articleCode:code,articleName:name,recipeStatus:'missing',recipeRequiredBefore:'pp_approval'};
-    statusDiv.innerHTML=`<div style="background:#fef3c7;border-radius:8px;padding:10px 12px"><div style="font-size:12px;font-weight:700;color:#92400e">Recipe Missing</div><div style="font-size:11px;color:#92400e;margin-top:3px">PO can be created. Recipe must be locked before PP approval — Ammar will be notified.</div></div>`;
+    const rm=_lookupRate(code);
+    _poEmbellishment={required:true,recipeId:null,articleCode:code,articleName:name,recipeStatus:'missing',recipeRequiredBefore:'pp_approval',rateMasterPreview:rm?{complexityTier:rm.complexityTier,ratePerPiece:rm.ratePerPiece}:null};
+    if(rm){
+      const tierLabel=TIER_INFO[rm.complexityTier]?.label||('Tier '+rm.complexityTier);
+      statusDiv.innerHTML=`<div style="background:#fef3c7;border-radius:8px;padding:10px 12px"><div style="font-size:12px;font-weight:700;color:#92400e">Recipe Missing — Rate List Preview</div><div style="font-size:11px;color:#92400e;margin-top:3px">No recipe yet. Rate List suggests: <strong>${tierLabel}</strong> · Rs. ${rm.ratePerPiece}/pc. Recipe must be created and locked before PP approval.</div></div>`;
+    }else{
+      statusDiv.innerHTML=`<div style="background:#fef3c7;border-radius:8px;padding:10px 12px"><div style="font-size:12px;font-weight:700;color:#92400e">Recipe Missing</div><div style="font-size:11px;color:#92400e;margin-top:3px">PO can be created. Recipe must be locked before PP approval — Ammar will be notified.</div></div>`;
+    }
   }else if(r.status!=='locked'){
     _poEmbellishment={required:true,recipeId:r._id,articleCode:code,articleName:r.articleName||name,recipeStatus:'draft',recipeRequiredBefore:'pp_approval'};
     const pt=(r.printing?.processTypes||[]).map(k=>PROCESS_TYPES[k]?.label||k).join(', ')||'—';
@@ -3393,6 +3399,107 @@ const TIER_INFO={
   3:{label:'Tier 3 — Advanced',     css:'tier-3', desc:'4–5 colors, double-sided, oversized'},
   4:{label:'Tier 4 — Complex',      css:'tier-4', desc:'Puff/foil/metallic, 6+ colors, all-over'}
 };
+// ── Printing Rate Master (seeded from current quarter rate list) ───────
+// Structure matches printing_rate_master Firestore collection if migrated later.
+// Keys: articleCode (uppercase), ratePerPiece, complexityTier, vendor, active
+const PRINTING_RATE_MASTER=[
+  {articleCode:'GB003',ratePerPiece:20,complexityTier:1},{articleCode:'GB002',ratePerPiece:20,complexityTier:1},
+  {articleCode:'GB016',ratePerPiece:20,complexityTier:1},{articleCode:'GB021',ratePerPiece:20,complexityTier:1},
+  {articleCode:'GB020',ratePerPiece:20,complexityTier:1},{articleCode:'GB014',ratePerPiece:20,complexityTier:1},
+  {articleCode:'GB019',ratePerPiece:20,complexityTier:1},{articleCode:'GB015',ratePerPiece:20,complexityTier:1},
+  {articleCode:'GB017',ratePerPiece:20,complexityTier:1},{articleCode:'GB010',ratePerPiece:15,complexityTier:1},
+  {articleCode:'GB012',ratePerPiece:15,complexityTier:1},{articleCode:'GB011',ratePerPiece:15,complexityTier:1},
+  {articleCode:'GB009',ratePerPiece:15,complexityTier:1},{articleCode:'GB008',ratePerPiece:15,complexityTier:1},
+  {articleCode:'GB013',ratePerPiece:15,complexityTier:1},{articleCode:'GB004',ratePerPiece:15,complexityTier:1},
+  {articleCode:'GB007',ratePerPiece:15,complexityTier:1},{articleCode:'GB006',ratePerPiece:15,complexityTier:1},
+  {articleCode:'GB005',ratePerPiece:15,complexityTier:1},{articleCode:'GB001',ratePerPiece:20,complexityTier:1},
+  {articleCode:'GB018',ratePerPiece:20,complexityTier:1},{articleCode:'GP044',ratePerPiece:50,complexityTier:1},
+  {articleCode:'GP050',ratePerPiece:50,complexityTier:1},{articleCode:'GH017',ratePerPiece:70,complexityTier:2},
+  {articleCode:'GH004',ratePerPiece:80,complexityTier:3},{articleCode:'GP047',ratePerPiece:70,complexityTier:2},
+  {articleCode:'GP014',ratePerPiece:55,complexityTier:2},{articleCode:'GP041',ratePerPiece:60,complexityTier:2},
+  {articleCode:'GP051',ratePerPiece:80,complexityTier:3},{articleCode:'GP049',ratePerPiece:50,complexityTier:2},
+  {articleCode:'GP027',ratePerPiece:80,complexityTier:3},{articleCode:'GP030',ratePerPiece:60,complexityTier:2},
+  {articleCode:'GP015',ratePerPiece:70,complexityTier:3},{articleCode:'GP005',ratePerPiece:35,complexityTier:2},
+  {articleCode:'GP048',ratePerPiece:70,complexityTier:2},{articleCode:'AP011',ratePerPiece:60,complexityTier:2},
+  {articleCode:'GP036',ratePerPiece:70,complexityTier:2},{articleCode:'GP006',ratePerPiece:15,complexityTier:1},
+  {articleCode:'GP010',ratePerPiece:40,complexityTier:2},{articleCode:'GP012',ratePerPiece:40,complexityTier:2},
+  {articleCode:'GP009',ratePerPiece:40,complexityTier:2},{articleCode:'GP011',ratePerPiece:40,complexityTier:2},
+  {articleCode:'GP039',ratePerPiece:70,complexityTier:3},{articleCode:'GP008',ratePerPiece:70,complexityTier:3},
+  {articleCode:'GP013',ratePerPiece:100,complexityTier:4},{articleCode:'GP035',ratePerPiece:50,complexityTier:2},
+  {articleCode:'GP037',ratePerPiece:70,complexityTier:2},{articleCode:'GP016',ratePerPiece:70,complexityTier:2},
+  {articleCode:'GP026',ratePerPiece:70,complexityTier:3},{articleCode:'GP017',ratePerPiece:45,complexityTier:2},
+  {articleCode:'GP046',ratePerPiece:70,complexityTier:3},{articleCode:'GP043',ratePerPiece:60,complexityTier:2},
+  {articleCode:'GP025',ratePerPiece:80,complexityTier:4},{articleCode:'GP024',ratePerPiece:100,complexityTier:4},
+  {articleCode:'GP033',ratePerPiece:80,complexityTier:3},{articleCode:'GP001',ratePerPiece:80,complexityTier:3},
+  {articleCode:'GP021',ratePerPiece:70,complexityTier:3},{articleCode:'GP029',ratePerPiece:70,complexityTier:3},
+  {articleCode:'GP019',ratePerPiece:60,complexityTier:3},{articleCode:'GP002',ratePerPiece:60,complexityTier:2},
+  {articleCode:'GP038',ratePerPiece:50,complexityTier:2},{articleCode:'GP042',ratePerPiece:55,complexityTier:2},
+  {articleCode:'GP020',ratePerPiece:70,complexityTier:3},{articleCode:'GP034',ratePerPiece:60,complexityTier:2},
+  {articleCode:'GP023',ratePerPiece:100,complexityTier:4},{articleCode:'GP031',ratePerPiece:100,complexityTier:3},
+  {articleCode:'GP007',ratePerPiece:70,complexityTier:3},{articleCode:'GP040',ratePerPiece:40,complexityTier:2},
+  {articleCode:'GP032',ratePerPiece:40,complexityTier:2},{articleCode:'GP018',ratePerPiece:40,complexityTier:2},
+  {articleCode:'GP003',ratePerPiece:40,complexityTier:1},{articleCode:'GP060',ratePerPiece:40,complexityTier:1},
+  {articleCode:'GP022',ratePerPiece:80,complexityTier:1},{articleCode:'GJ001',ratePerPiece:70,complexityTier:2},
+  {articleCode:'GJ004',ratePerPiece:70,complexityTier:2},{articleCode:'GS004',ratePerPiece:70,complexityTier:2},
+  {articleCode:'GS001',ratePerPiece:15,complexityTier:1},{articleCode:'GS002',ratePerPiece:15,complexityTier:1},
+  {articleCode:'GS003',ratePerPiece:15,complexityTier:1},{articleCode:'GTT003',ratePerPiece:40,complexityTier:1},
+  {articleCode:'GTT002',ratePerPiece:55,complexityTier:2},{articleCode:'GTT001',ratePerPiece:60,complexityTier:2},
+  {articleCode:'GTT004',ratePerPiece:60,complexityTier:3},{articleCode:'GO001',ratePerPiece:150,complexityTier:4},
+  {articleCode:'GD004',ratePerPiece:70,complexityTier:3},{articleCode:'GJ008',ratePerPiece:50,complexityTier:1},
+  {articleCode:'GH021',ratePerPiece:50,complexityTier:2},{articleCode:'GH012',ratePerPiece:55,complexityTier:2},
+  {articleCode:'GSH002',ratePerPiece:65,complexityTier:2},{articleCode:'GHZ001',ratePerPiece:150,complexityTier:4},
+  {articleCode:'GHZ002',ratePerPiece:65,complexityTier:3},{articleCode:'GHZ006',ratePerPiece:65,complexityTier:3},
+  {articleCode:'GH013',ratePerPiece:65,complexityTier:3},{articleCode:'GH023',ratePerPiece:50,complexityTier:2},
+  {articleCode:'GH019',ratePerPiece:65,complexityTier:2},{articleCode:'GH022',ratePerPiece:80,complexityTier:3},
+  {articleCode:'GH014',ratePerPiece:65,complexityTier:2},{articleCode:'GH015',ratePerPiece:65,complexityTier:2},
+  {articleCode:'GH024',ratePerPiece:65,complexityTier:2},{articleCode:'GH016',ratePerPiece:70,complexityTier:2},
+  {articleCode:'GH017',ratePerPiece:80,complexityTier:3},{articleCode:'GH018',ratePerPiece:60,complexityTier:2},
+  {articleCode:'GH020',ratePerPiece:80,complexityTier:3},{articleCode:'GST019',ratePerPiece:15,complexityTier:1},
+  {articleCode:'GST009',ratePerPiece:20,complexityTier:1},{articleCode:'GST010',ratePerPiece:20,complexityTier:1},
+  {articleCode:'GST001',ratePerPiece:20,complexityTier:1},{articleCode:'GST004',ratePerPiece:20,complexityTier:1},
+  {articleCode:'GST002',ratePerPiece:20,complexityTier:1},{articleCode:'GST003',ratePerPiece:20,complexityTier:1},
+  {articleCode:'GST005',ratePerPiece:20,complexityTier:1},{articleCode:'GST015',ratePerPiece:20,complexityTier:1},
+  {articleCode:'GST014',ratePerPiece:20,complexityTier:1},{articleCode:'GST013',ratePerPiece:35,complexityTier:3},
+  {articleCode:'GST017',ratePerPiece:20,complexityTier:1},{articleCode:'GST016',ratePerPiece:20,complexityTier:1},
+  {articleCode:'CP018',ratePerPiece:80,complexityTier:3},{articleCode:'CP002',ratePerPiece:80,complexityTier:3},
+  {articleCode:'CP003',ratePerPiece:60,complexityTier:2},{articleCode:'CP004',ratePerPiece:65,complexityTier:2},
+  {articleCode:'CP005',ratePerPiece:50,complexityTier:2},{articleCode:'CP006',ratePerPiece:50,complexityTier:2},
+  {articleCode:'CP007',ratePerPiece:50,complexityTier:2},{articleCode:'CP008',ratePerPiece:50,complexityTier:2},
+  {articleCode:'CP009',ratePerPiece:60,complexityTier:2},{articleCode:'CP010',ratePerPiece:60,complexityTier:2},
+  {articleCode:'CP011',ratePerPiece:50,complexityTier:2},{articleCode:'CP012',ratePerPiece:50,complexityTier:2},
+  {articleCode:'CP013',ratePerPiece:50,complexityTier:2},{articleCode:'CP014',ratePerPiece:50,complexityTier:2},
+  {articleCode:'CP015',ratePerPiece:70,complexityTier:3},{articleCode:'CP016',ratePerPiece:60,complexityTier:2},
+  {articleCode:'CP017',ratePerPiece:65,complexityTier:2},{articleCode:'CP001',ratePerPiece:80,complexityTier:3},
+  {articleCode:'CS002',ratePerPiece:60,complexityTier:3},{articleCode:'CS001',ratePerPiece:60,complexityTier:3},
+  {articleCode:'CD002',ratePerPiece:100,complexityTier:4},{articleCode:'AP016',ratePerPiece:60,complexityTier:2},
+  {articleCode:'AP019',ratePerPiece:70,complexityTier:2},{articleCode:'AP017',ratePerPiece:80,complexityTier:3},
+  {articleCode:'AP002',ratePerPiece:40,complexityTier:2},{articleCode:'AP001',ratePerPiece:55,complexityTier:2},
+  {articleCode:'AP003',ratePerPiece:50,complexityTier:2},{articleCode:'AP007',ratePerPiece:50,complexityTier:2},
+  {articleCode:'AP015',ratePerPiece:60,complexityTier:2},{articleCode:'AP008',ratePerPiece:55,complexityTier:2},
+  {articleCode:'AP004',ratePerPiece:50,complexityTier:2},{articleCode:'AP010',ratePerPiece:65,complexityTier:2},
+  {articleCode:'AP009',ratePerPiece:60,complexityTier:2},{articleCode:'AP005',ratePerPiece:70,complexityTier:2},
+  {articleCode:'AP013',ratePerPiece:65,complexityTier:2},{articleCode:'AP012',ratePerPiece:60,complexityTier:2},
+  {articleCode:'AP006',ratePerPiece:60,complexityTier:2},{articleCode:'AP018',ratePerPiece:40,complexityTier:2},
+  {articleCode:'ATT001',ratePerPiece:40,complexityTier:2},{articleCode:'ATT002',ratePerPiece:55,complexityTier:2},
+  {articleCode:'ATT003',ratePerPiece:50,complexityTier:2},{articleCode:'AP014',ratePerPiece:65,complexityTier:3},
+  {articleCode:'GHZ007',ratePerPiece:80,complexityTier:3},{articleCode:'GHZ012',ratePerPiece:25,complexityTier:2},
+  {articleCode:'GHZ013',ratePerPiece:25,complexityTier:2},{articleCode:'GHZ014',ratePerPiece:25,complexityTier:2},
+  {articleCode:'GHZ015',ratePerPiece:25,complexityTier:2},{articleCode:'GHZ019',ratePerPiece:25,complexityTier:2},
+  {articleCode:'GHZ022',ratePerPiece:100,complexityTier:4},{articleCode:'GST022',ratePerPiece:25,complexityTier:2},
+  {articleCode:'GST023',ratePerPiece:25,complexityTier:2},{articleCode:'GST024',ratePerPiece:25,complexityTier:2},
+  {articleCode:'GST025',ratePerPiece:25,complexityTier:2},{articleCode:'GST026',ratePerPiece:20,complexityTier:2},
+  {articleCode:'GST030',ratePerPiece:25,complexityTier:2},{articleCode:'GST029',ratePerPiece:20,complexityTier:2},
+  {articleCode:'GST032',ratePerPiece:20,complexityTier:2},{articleCode:'GST033',ratePerPiece:50,complexityTier:2},
+  {articleCode:'GST034',ratePerPiece:50,complexityTier:2},{articleCode:'GST035',ratePerPiece:50,complexityTier:2},
+  {articleCode:'GST049',ratePerPiece:70,complexityTier:3},{articleCode:'GST053',ratePerPiece:50,complexityTier:2},
+  {articleCode:'GST054',ratePerPiece:50,complexityTier:2},{articleCode:'GSO016',ratePerPiece:50,complexityTier:2},
+  {articleCode:'GP068',ratePerPiece:40,complexityTier:2},{articleCode:'GP069',ratePerPiece:40,complexityTier:2},
+  {articleCode:'GP070',ratePerPiece:40,complexityTier:2}
+].map(r=>({...r,source:'printing_rate_list',active:true}));
+function _lookupRate(code){
+  if(!code)return null;
+  return PRINTING_RATE_MASTER.find(r=>r.articleCode===code.toUpperCase().trim())||null;
+}
 const JOB_STAGES=[
   'po_received','pp_sample','pp_approval','bulk_printing','final_qc','rework','qc_bundling','stitching','final_qc_post_stitch','closed'
 ];
@@ -3781,7 +3888,7 @@ function renderRecipeCreatePage(){
 
   <div class="card"><div class="card-title">Article Identity</div>
     <div class="form-grid">
-      <div class="field"><label>Article Code *</label><input id="rc-code" placeholder="e.g. GP020" value="${e.articleCode||''}"></div>
+      <div class="field"><label>Article Code *</label><input id="rc-code" placeholder="e.g. GP020" value="${e.articleCode||''}" oninput="window._rcLookupRate(this.value)" onchange="window._rcLookupRate(this.value)"></div>
       <div class="field"><label>Article Name *</label><input id="rc-name" placeholder="e.g. GRVYBirds | Puff Printed" value="${e.articleName||''}"></div>
       <div class="field"><label>Brand</label><input id="rc-brand" placeholder="e.g. GROOVY" value="${e.brand||''}"></div>
       <div class="field"><label>Category</label>
@@ -3800,10 +3907,29 @@ function renderRecipeCreatePage(){
           </label>`).join('')}
         </div>
       </div>
+      <div id="rc-rate-status" style="grid-column:1/-1">${(()=>{
+        const rm=_lookupRate(e.articleCode||'');
+        if(!e.articleCode)return'';
+        if(rm)return`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:12px">
+          <span style="color:var(--green);font-weight:700">Rate found from Printing Rate List ✅</span>
+          <span style="color:var(--muted)">Rs. ${rm.ratePerPiece}/pc · Tier ${rm.complexityTier}</span>
+          <span style="color:var(--muted);margin-left:auto">Source: Current Quarter Rate List</span>
+        </div>`;
+        return`<div style="padding:8px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e">
+          Rate not found in Printing Rate List ⚠️ — Enter manually for now.
+        </div>`;
+      })()}</div>
       <div class="field"><label>Complexity Tier *</label>
-        <select id="rc-tier">${[1,2,3,4].map(t=>`<option value="${t}" ${(pt.complexityTier||1)==t?'selected':''}>${TIER_INFO[t].label} — ${TIER_INFO[t].desc}</option>`).join('')}</select>
+        <select id="rc-tier" onchange="window._rcMarkOverride()">${[1,2,3,4].map(t=>`<option value="${t}" ${(pt.complexityTier||1)==t?'selected':''}>${TIER_INFO[t].label} — ${TIER_INFO[t].desc}</option>`).join('')}</select>
       </div>
-      <div class="field"><label>Rate per Piece (Rs.) *</label><input id="rc-rate" type="number" min="0" step="0.5" placeholder="0.00" value="${pt.ratePerPiece||''}"></div>
+      <div class="field"><label>Rate per Piece (Rs.) *</label><input id="rc-rate" type="number" min="0" step="0.5" placeholder="0.00" value="${pt.ratePerPiece||''}" oninput="window._rcMarkOverride()"></div>
+      <div id="rc-override-row" style="grid-column:1/-1;display:${(()=>{const rm=_lookupRate(e.articleCode||'');return(rm&&(pt.ratePerPiece!==rm.ratePerPiece||pt.complexityTier!==rm.complexityTier))?'block':'none';})()}">
+        <div style="padding:7px 12px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span>Values differ from Rate List.</span>
+          <button type="button" onclick="window._rcUseRateList()" style="font-size:12px;padding:3px 10px;border:1px solid #f97316;border-radius:6px;background:none;color:#ea580c;cursor:pointer">Use Rate List Values</button>
+          <span style="margin-left:auto">Override reason: <input id="rc-override-note" placeholder="optional…" style="font-size:12px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;width:180px;outline:none" value="${pt.rateOverrideNote||''}"></span>
+        </div>
+      </div>
       <div class="field" style="grid-column:1/-1"><label>Instructions (English)</label><textarea id="rc-instr-en" rows="3" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:100%;font-family:inherit;resize:vertical;outline:none">${pt.instructionsEn||''}</textarea></div>
       <div class="field" style="grid-column:1/-1"><label>ہدایات (اردو)</label><textarea id="rc-instr-ur" rows="3" dir="rtl" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:100%;font-family:inherit;resize:vertical;outline:none;text-align:right">${pt.instructionsUr||''}</textarea></div>
     </div>
@@ -4105,6 +4231,53 @@ function collectPantones(){
   }).filter(function(p){return p.colorName;});
 }
 
+window._rcLookupRate=function(rawCode){
+  const code=(rawCode||'').trim().toUpperCase();
+  const rm=_lookupRate(code);
+  const statusEl=document.getElementById('rc-rate-status');
+  const overEl=document.getElementById('rc-override-row');
+  const tierEl=document.getElementById('rc-tier');
+  const rateEl=document.getElementById('rc-rate');
+  if(!code){if(statusEl)statusEl.innerHTML='';return;}
+  if(rm){
+    if(statusEl)statusEl.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:12px">'+
+      '<span style="color:var(--green);font-weight:700">Rate found from Printing Rate List ✅</span>'+
+      '<span style="color:var(--muted)">Rs. '+rm.ratePerPiece+'/pc · Tier '+rm.complexityTier+'</span>'+
+      '<span style="color:var(--muted);margin-left:auto">Source: Current Quarter Rate List</span>'+
+      '</div>';
+    // Auto-fill if fields are empty or match current rate list values
+    const curTier=parseInt(tierEl?.value)||1;
+    const curRate=parseFloat(rateEl?.value)||0;
+    if(!curRate||curRate===rm.ratePerPiece){if(rateEl)rateEl.value=rm.ratePerPiece;}
+    if(curTier===1||curTier===rm.complexityTier){if(tierEl)tierEl.value=rm.complexityTier;}
+    window._rcCheckOverride();
+  }else{
+    if(statusEl)statusEl.innerHTML='<div style="padding:8px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e">Rate not found in Printing Rate List ⚠️ — Enter manually for now.</div>';
+    if(overEl)overEl.style.display='none';
+  }
+};
+window._rcCheckOverride=function(){
+  const code=(document.getElementById('rc-code')?.value||'').trim().toUpperCase();
+  const rm=_lookupRate(code);
+  const overEl=document.getElementById('rc-override-row');
+  if(!rm||!overEl)return;
+  const curTier=parseInt(document.getElementById('rc-tier')?.value)||1;
+  const curRate=parseFloat(document.getElementById('rc-rate')?.value)||0;
+  const differs=(curRate&&curRate!==rm.ratePerPiece)||(curTier!==rm.complexityTier);
+  overEl.style.display=differs?'block':'none';
+};
+window._rcMarkOverride=function(){window._rcCheckOverride();};
+window._rcUseRateList=function(){
+  const code=(document.getElementById('rc-code')?.value||'').trim().toUpperCase();
+  const rm=_lookupRate(code);
+  if(!rm)return;
+  const tierEl=document.getElementById('rc-tier');
+  const rateEl=document.getElementById('rc-rate');
+  if(tierEl)tierEl.value=rm.complexityTier;
+  if(rateEl)rateEl.value=rm.ratePerPiece;
+  const overEl=document.getElementById('rc-override-row');
+  if(overEl)overEl.style.display='none';
+};
 window.saveRecipe=async function(lock=false){
   if(!canManageRecipes()){showToast('Not authorized.',true);return;}
   const code=(document.getElementById('rc-code')?.value||'').trim().toUpperCase();
@@ -4136,14 +4309,28 @@ window.saveRecipe=async function(lock=false){
       approvedPpSampleUrl:editing?.images?.approvedPpSampleUrl||'',
       closeupUrls:editing?.images?.closeupUrls||[]
     },
-    printing:{
-      required:processTypes.length>0,
-      processTypes, complexityTier:tier, ratePerPiece:rate,
-      placements:collectPlacements(),
-      pantones:collectPantones(),
-      instructionsEn:document.getElementById('rc-instr-en')?.value.trim()||'',
-      instructionsUr:document.getElementById('rc-instr-ur')?.value.trim()||''
-    },
+    printing:(()=>{
+      const rm=_lookupRate(code);
+      const overrideNote=(document.getElementById('rc-override-note')?.value||'').trim();
+      let rateSource='manual', rateMasterMatched=false, rateOverrideNote='';
+      if(rm){
+        rateMasterMatched=true;
+        const differs=(rate&&rate!==rm.ratePerPiece)||(tier!==rm.complexityTier);
+        rateSource=differs?'override':'printing_rate_list';
+        if(differs&&overrideNote)rateOverrideNote=overrideNote;
+      }
+      return{
+        required:processTypes.length>0,
+        processTypes, complexityTier:tier, ratePerPiece:rate,
+        rateSource, rateMasterMatched, rateOverrideNote,
+        rateEffectiveQuarter:'Q2-2025',
+        vendorName:rm?.vendor||editing?.printing?.vendorName||'',
+        placements:collectPlacements(),
+        pantones:collectPantones(),
+        instructionsEn:document.getElementById('rc-instr-en')?.value.trim()||'',
+        instructionsUr:document.getElementById('rc-instr-ur')?.value.trim()||''
+      };
+    })(),
     trimsStore:{enabled:false,requiredItems:[]},
     threadLogic:{enabled:false,items:[]},
     labelsLogic:{enabled:false,items:[]},
@@ -4269,6 +4456,7 @@ function renderRecipeDetailPage(){
       <div class="info-row"><span class="info-label">Process</span><span>${(pt.processTypes||[]).map(p=>processBadge(p)).join(' ')||'—'}</span></div>
       <div class="info-row"><span class="info-label">Tier</span><span>${tierBadge(pt.complexityTier||1)}</span></div>
       <div class="info-row"><span class="info-label">Rate</span><span style="font-weight:700;color:var(--dark)">${pt.ratePerPiece?'Rs. '+pt.ratePerPiece+'/pc':'Not set'}</span></div>
+      <div class="info-row"><span class="info-label">Rate Source</span><span style="font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;background:${pt.rateSource==='printing_rate_list'?'#dcfce7':pt.rateSource==='override'?'#fff7ed':'#f5f5f5'};color:${pt.rateSource==='printing_rate_list'?'#14532d':pt.rateSource==='override'?'#ea580c':'#555'}">${pt.rateSource==='printing_rate_list'?'Rate List ✅':pt.rateSource==='override'?'Override ⚠️':'Manual'}</span>${pt.rateOverrideNote?`<span style="font-size:11px;color:var(--muted);margin-left:6px">${pt.rateOverrideNote}</span>`:''}</div>
       <div class="info-row"><span class="info-label">Placements</span><span>${(pt.placements||[]).length}</span></div>
       <div class="info-row"><span class="info-label">Pantones</span><span>${(pt.pantones||[]).length}</span></div>
     </div>
