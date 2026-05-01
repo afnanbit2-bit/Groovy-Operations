@@ -3863,28 +3863,28 @@ function placementRowHTML(i,pl={}){
         ${PLACEMENT_TEMPLATES.map(t=>`<option value="${t.id}" ${tplId===t.id?'selected':''}>${t.nameEn} / ${t.nameUr}</option>`).join('')}
       </select>
     </div>
-    <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:flex-end">
-      <div class="field" style="margin-bottom:0">
+    <div style="display:flex;gap:8px;align-items:flex-end;margin-top:8px">
+      <div class="field" style="margin-bottom:0;flex:1">
         <label>Measurement / Position</label>
-        <input id="pl-${i}-mtext" placeholder="e.g. 3 inches below HPS, centered" value="${measText}">
+        <input id="pl-${i}-mtext" placeholder="Add measurement here" value="${measText}" style="width:100%">
         <div style="font-size:11px;color:var(--muted);margin-top:3px">مثلاً HPS سے 3 انچ نیچے</div>
       </div>
-      <div class="field" style="margin-bottom:0;min-width:80px">
-        <label>Unit</label>
-        <select id="pl-${i}-munit" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;width:100%">
+      <div style="flex-shrink:0;width:100px;padding-bottom:0">
+        <label style="font-size:12px;font-weight:500;color:var(--muted);display:block;margin-bottom:4px">Unit</label>
+        <select id="pl-${i}-munit" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;width:100%;height:40px">
           <option value="inch" ${mUnit==='inch'?'selected':''}>inch</option>
           <option value="cm" ${mUnit==='cm'?'selected':''}>cm</option>
         </select>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:flex-end;margin-top:8px">
-      <div class="field" style="margin-bottom:0">
+    <div style="display:flex;gap:8px;align-items:flex-end;margin-top:8px">
+      <div class="field" style="margin-bottom:0;flex:1">
         <label>Tolerance</label>
-        <input id="pl-${i}-tol" placeholder="e.g. ±0.5" value="${tolText}">
+        <input id="pl-${i}-tol" placeholder="e.g. ±0.5" value="${tolText}" style="width:100%">
       </div>
-      <div class="field" style="margin-bottom:0;min-width:80px">
-        <label>Unit</label>
-        <select id="pl-${i}-tolunit" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;width:100%">
+      <div style="flex-shrink:0;width:100px;padding-bottom:0">
+        <label style="font-size:12px;font-weight:500;color:var(--muted);display:block;margin-bottom:4px">Unit</label>
+        <select id="pl-${i}-tolunit" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;width:100%;height:40px">
           <option value="inch" ${tolUnit==='inch'?'selected':''}>inch</option>
           <option value="cm" ${tolUnit==='cm'?'selected':''}>cm</option>
         </select>
@@ -3972,7 +3972,7 @@ window._onPlTplChange=function(i){
   const wkEn=document.getElementById('pl-'+i+'-wk-en');
   const wkUr=document.getElementById('pl-'+i+'-wk-ur');
   const tolEl=document.getElementById('pl-'+i+'-tol');
-  if(mtextEl&&!mtextEl.value)mtextEl.placeholder=tpl.defaultMeasLabel||'e.g. 3 inches below HPS';
+  if(mtextEl&&!mtextEl.value)mtextEl.placeholder='Add measurement here';
   if(wkEn&&!wkEn.value)wkEn.placeholder=tpl.workerEn||'';
   if(wkUr&&!wkUr.value)wkUr.placeholder=tpl.workerUr||'';
   if(tolEl&&!tolEl.value)tolEl.placeholder=tpl.defaultTol||'±0.5 inch';
