@@ -3154,6 +3154,8 @@ async function loadStoreData(){
 }
 // Internal store navigation (maps store section IDs back to showPage)
 function renderStoreSection(id){window.showPage('store-'+id);}
+// ── Auto-open printing subnav helpers (no-op placeholders) ──
+window._printNavOpen=function(){};
 
 // ══════════════════════════════════════════════════════════════════════
 // CHUNK 1 — PRINTING / DECORATION ERP: STATE · PERMISSIONS · CONSTANTS
@@ -3674,6 +3676,11 @@ window.submitQCSuggestion=async function(recipeId){
     showToast('Suggestion submitted ✓'); renderRecipeDetailPage();
   }catch(e){showToast('Error: '+e.message,true);}
 };
+// ════════════════════════════════════════════════════════════════════
+// CHUNK 2 — PRINTING JOBS LIST · CREATE FROM PO · ASGHAR WORKER UI
+//            PP SAMPLE FLOW · PP APPROVAL / REJECTION
+// ════════════════════════════════════════════════════════════════════
+
 window.resolveQCSug=async function(recipeId,sugId,status){
   if(!canManageRecipes()){showToast('Not authorized.',true);return;}
   try{
@@ -3684,6 +3691,640 @@ window.resolveQCSug=async function(recipeId,sugId,status){
     showToast('Suggestion '+status+' ✓'); renderRecipeDetailPage();
   }catch(e){showToast('Error: '+e.message,true);}
 };
+
+// ════════════════════════════════════════════════════════════════════
+// CHUNK 2 — PRINTING JOBS LIST · CREATE FROM PO · ASGHAR WORKER UI
+//            PP SAMPLE FLOW · PP APPROVAL / REJECTION
+// ════════════════════════════════════════════════════════════════════
+
+// ── Printing Jobs Page ────────────────────────────────────────────────
+function renderPrintingJobsPage(){
+  if(!canSeePrinting())return'<div class="empty">Not authorized.</div>';
+
+  // Worker view: Asghar only sees his assigned jobs
+  if(isPrintWorker()){
+    const myJobs=allPrintingJobs.filter(j=>j.assignedTo===session.u&&j.currentStage!=='closed');
+    return`<div class="page-head"><div class="page-title">Printing Jobs / پرنٹنگ جاب</div><div class="page-sub">${myJobs.length} active job${myJobs.length!==1?'s':''} in your queue</div></div>
+    ${myJobs.length?myJobs.map(j=>printWorkerCardHTML(j)).join(''):'<div class="empty">No printing jobs in your queue right now.</div>'}`;
+  }
+
+  // Zohaib: bundling view
+  if(isBundleWorker()){
+    const myJobs=allPrintingJobs.filter(j=>['qc_bundling'].includes(j.currentStage));
+    return`<div class="page-head"><div class="page-title">QC Bundling Queue / بنڈلنگ قطار</div><div class="page-sub">${myJobs.length} lots to bundle</div></div>
+    ${myJobs.map(j=>bundlingWorkerCardHTML(j)).join('')||'<div class="empty">No bundling tasks right now.</div>'}`;
+  }
+
+  // Waqas: stitching view
+  if(isStitchWorker()){
+    const myJobs=allPrintingJobs.filter(j=>['stitching'].includes(j.currentStage));
+    return`<div class="page-head"><div class="page-title">Stitching Queue / سلائی قطار</div><div class="page-sub">${myJobs.length} lots to stitch</div></div>
+    ${myJobs.map(j=>stitchingWorkerCardHTML(j)).join('')||'<div class="empty">No stitching tasks right now.</div>'}`;
+  }
+
+  // Manager / QC / Owner: full list
+  const tabs=['active','awaiting_pp','printing','qc','done'];
+  const tabLabels={active:'All Active',awaiting_pp:'Awaiting PP',printing:'Printing',qc:'At QC',done:'Closed'};
+  const tabFilter={
+    active:  j=>j.currentStage!=='closed',
+    awaiting_pp: j=>j.currentStage==='pp_approval',
+    printing:j=>j.currentStage==='bulk_printing',
+    qc:      j=>['final_qc','rework','final_qc_post_stitch'].includes(j.currentStage),
+    done:    j=>j.currentStage==='closed'
+  };
+  const current=_jobTab||'active';
+  const list=(allPrintingJobs.filter(tabFilter[current]||tabFilter.active));
+
+  return`<div class="page-head">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+      <div><div class="page-title">Printing / Decoration</div><div class="page-sub">${allPrintingJobs.length} total jobs</div></div>
+      ${isObserver()?`<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="window.showCreateJobModal()">+ Create Job from PO</button>`:''}
+    </div>
+  </div>
+
+  <div class="tab-bar">
+    ${tabs.map(t=>`<button class="tab-btn ${current===t?'active':''}" onclick="window._setJobTab('${t}')">${tabLabels[t]}</button>`).join('')}
+  </div>
+
+  <div id="job-list-wrap">
+    ${list.length?list.map(j=>jobListCardHTML(j)).join(''):'<div class="empty">No jobs in this filter.</div>'}
+  </div>
+
+  <div id="create-job-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;overflow-y:auto;padding:2rem 1rem">
+    ${renderCreateJobModal()}
+  </div>`;
+}
+window._setJobTab=function(t){ _jobTab=t; document.getElementById('main-content').innerHTML=renderPrintingJobsPage(); };
+window.showCreateJobModal=function(){
+  const modal=document.getElementById('create-job-modal');
+  if(modal){modal.style.display='block';}
+};
+window.closeJobModal=function(){
+  const modal=document.getElementById('create-job-modal');
+  if(modal)modal.style.display='none';
+};
+
+function renderCreateJobModal(){
+  return`<div style="background:#fff;border-radius:16px;padding:1.5rem;width:100%;max-width:560px;margin:0 auto">
+    <div style="font-size:17px;font-weight:700;margin-bottom:16px">Create Printing Job from PO</div>
+
+    <div class="form-grid">
+      <div class="field" style="grid-column:1/-1"><label>PO Number *</label>
+        <input id="cj-po-num" placeholder="e.g. PO-041" list="cj-po-list">
+        <datalist id="cj-po-list">${allPOs.filter(p=>p.currentStage!=='completed').map(p=>`<option value="${p.id}">${p.id} — ${p.name}</option>`).join('')}</datalist>
+      </div>
+      <div class="field" style="grid-column:1/-1"><label>Article Code / Recipe</label>
+        <input id="cj-article-code" placeholder="e.g. GP020" oninput="window._lookupRecipe(this.value)">
+        <div id="cj-recipe-preview" style="margin-top:6px;font-size:12px;color:var(--muted)">Enter article code to auto-link recipe</div>
+      </div>
+      <div class="field"><label>Process Type *</label>
+        <select id="cj-process">${Object.entries(PROCESS_TYPES).map(([k,v])=>`<option value="${k}">${v.icon} ${v.label}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Priority *</label>
+        <select id="cj-priority"><option value="normal">Normal</option><option value="urgent">Urgent</option><option value="flexible">Flexible</option></select>
+      </div>
+      <div class="field"><label>Total Qty *</label><input id="cj-qty" type="number" min="1" placeholder="500"></div>
+      <div class="field"><label>Complexity Tier</label>
+        <select id="cj-tier">${[1,2,3,4].map(t=>`<option value="${t}">Tier ${t} — ${TIER_INFO[t].label.split('—')[1].trim()}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Rate/Piece (Rs.)</label><input id="cj-rate" type="number" min="0" step="0.5" placeholder="auto from recipe"></div>
+      <div class="field"><label>Assigned To</label>
+        <select id="cj-assigned"><option value="asghar">Asghar Ali — Printing</option><option value="external">External Vendor</option></select>
+      </div>
+      <div class="field" style="grid-column:1/-1"><label>Vendor Name (if external)</label><input id="cj-vendor" placeholder="Vendor name (leave blank for in-house)"></div>
+      <div class="field" style="grid-column:1/-1"><label>Size Breakdown (XS:S:M:L:XL:2XL)</label><input id="cj-sizes" placeholder="auto from PO or enter: 0:50:100:100:50:0"></div>
+      <div class="field" style="grid-column:1/-1"><label>Bundle Details</label><input id="cj-bundles" placeholder="e.g. 10 bundles, 50pcs each"></div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn-primary" onclick="window.createPrintingJob()">Create Job</button>
+      <button class="btn-outline" onclick="window.closeJobModal()">Cancel</button>
+    </div>
+  </div>`;
+}
+window._lookupRecipe=function(code){
+  const el=document.getElementById('cj-recipe-preview'); if(!el)return;
+  const r=allRecipes.find(x=>x.articleCode&&x.articleCode.toLowerCase()===code.trim().toLowerCase());
+  if(!r){el.innerHTML='<span style="color:var(--amber);font-weight:600">⚠ Recipe Missing — printing will be blocked until recipe is created/locked</span>';return;}
+  const pt=r.printing||{};
+  el.innerHTML=`<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px">
+    <div style="font-weight:700;color:var(--green)">✓ Recipe found — ${r.status==='locked'?'🔒 Locked':'✏️ Draft'}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:4px">${(pt.processTypes||[]).map(p=>PROCESS_TYPES[p]?.label||p).join(', ')||'No process'} · Tier ${pt.complexityTier||1} · Rs.${pt.ratePerPiece||'—'}/pc</div>
+  </div>`;
+  if(pt.complexityTier){const s=document.getElementById('cj-tier');if(s)s.value=String(pt.complexityTier);}
+  if(pt.ratePerPiece){const r2=document.getElementById('cj-rate');if(r2)r2.value=pt.ratePerPiece;}
+  if(pt.processTypes?.length){const s=document.getElementById('cj-process');if(s)s.value=pt.processTypes[0];}
+};
+
+window.createPrintingJob=async function(){
+  const poNum=(document.getElementById('cj-po-num')?.value||'').trim().toUpperCase();
+  const articleCode=(document.getElementById('cj-article-code')?.value||'').trim().toUpperCase();
+  const processType=document.getElementById('cj-process')?.value||'rubber';
+  const priority=document.getElementById('cj-priority')?.value||'normal';
+  const qty=parseInt(document.getElementById('cj-qty')?.value)||0;
+  if(!poNum||!qty){showToast('PO number and quantity required.',true);return;}
+
+  const recipe=allRecipes.find(r=>r.articleCode&&r.articleCode.toLowerCase()===articleCode.toLowerCase());
+  const tier=parseInt(document.getElementById('cj-tier')?.value)||recipe?.printing?.complexityTier||1;
+  const rate=parseFloat(document.getElementById('cj-rate')?.value)||recipe?.printing?.ratePerPiece||0;
+  const assignedTo=document.getElementById('cj-assigned')?.value||'asghar';
+  const vendor=(document.getElementById('cj-vendor')?.value||'').trim();
+  const dept=PROCESS_TYPES[processType]?.dept==='external'?('external_'+processType):'inhouse_printing';
+  const sizesRaw=(document.getElementById('cj-sizes')?.value||'').trim();
+  const sizeBreakdown=parseSizeBreakdown(sizesRaw);
+  const now=nowIso();
+  const ppMode=recipe?.status==='locked'?'repeat_article':'new_article';
+  const dueAt=calcDue('pp_sample',priority);
+
+  const payload={
+    poId:prntId(), poNumber:poNum, articleCode, articleName:recipe?.articleName||articleCode,
+    recipeId:recipe?._id||null, processType, departmentType:dept, vendorName:vendor||null,
+    totalQty:qty, sizeBreakdown, bundleDetails:document.getElementById('cj-bundles')?.value.trim()||'',
+    complexityTier:tier, ratePerPiece:rate,
+    priority, currentStage:'po_received', status:'active',
+    assignedTo, qcIncharge:'haris',
+    createdBy:session.name, createdAt:now, updatedAt:now,
+    ppRequired:true, ppMode, ppAttempts:[], ppApprovalStatus:'pending',
+    ppApprovedBy:null, ppApprovedAt:null,
+    bulkStartedAt:null, bulkCompletedAt:null, finalQcStatus:null,
+    recipeWarning:!recipe?'Recipe missing — PP blocked':recipe.status!=='locked'?'Recipe not locked yet':'',
+    handoff:{forwardedToBundlingBy:null,forwardedToBundlingAt:null,acceptedByZohaibAt:null,forwardedToStitchingBy:null,forwardedToStitchingAt:null,acceptedByWaqasAt:null,stitchingForwardedToQcAt:null},
+    stageHistory:[{stage:'po_received',by:session.name,at:now,note:'Job created'}]
+  };
+
+  try{
+    const id=prntId();
+    await setDoc(doc(db,'printing_jobs',id),payload);
+    allPrintingJobs.unshift({...payload,_id:id});
+    // Create initial SLA event
+    await addSLAEvent(id,poNum,'pp_sample',priority,'asghar',dueAt);
+    await logActivity('Printing job created',`${poNum} — ${articleCode} (${PROCESS_TYPES[processType]?.label})`);
+    showToast('Printing job created ✓');
+    window.closeJobModal();
+    window.showPage('printing-jobs');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+function parseSizeBreakdown(raw){
+  if(!raw)return{XS:0,S:0,M:0,L:0,XL:0,'2XL':0};
+  const parts=raw.split(':').map(v=>parseInt(v)||0);
+  const keys=['XS','S','M','L','XL','2XL'];
+  const out={};keys.forEach((k,i)=>out[k]=parts[i]||0);
+  return out;
+}
+
+async function addSLAEvent(jobId,poNumber,stage,priority,assignedTo,dueAt){
+  const now=nowIso();
+  const ev={printingJobId:jobId,poId:poNumber,stage,priority,assignedTo,startAt:now,dueAt,completedAt:null,status:'on_time',missedByMinutes:0,reasonRequired:false,delayReasonText:'',voiceNoteUrl:'',monetaryWithholdSuggested:0,monetaryWithholdApproved:0,approvedBy:null,notes:'',createdAt:now};
+  try{const id=prntId();await setDoc(doc(db,'sla_events',id),ev);allSLAEvents.unshift({...ev,_id:id});}catch(_){}
+}
+
+// ── Job list card (manager/QC view) ──────────────────────────────────
+function jobListCardHTML(j){
+  const sl=slaStatus(j.slaCurrentDue||null);
+  const recipe=allRecipes.find(r=>r._id===j.recipeId);
+  return`<div class="job-card sla-${sl}" onclick="window.openPrintingJob('${j._id}')">
+    <div style="display:flex;gap:10px;align-items:flex-start">
+      <div style="width:48px;height:60px;flex-shrink:0;background:#f0f0f0;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
+        ${recipe?.images?.frontUrl?`<img src="${recipe.images.frontUrl}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:9px;color:#ccc;text-align:center;padding:2px">No img</span>'}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:3px">
+          <span style="font-size:11px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</span>
+          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;background:${PRIORITY_COLORS[j.priority]+'20'};color:${PRIORITY_COLORS[j.priority]}">${(j.priority||'normal').toUpperCase()}</span>
+          ${tierBadge(j.complexityTier||1)}
+        </div>
+        <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${processBadge(j.processType)} · ${j.totalQty||'?'} pcs · ${j.assignedTo||'—'}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px">
+          <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:8px;background:#f0f0f0;color:var(--dark)">${JOB_STAGE_LABELS[j.currentStage]||j.currentStage}</span>
+          ${j.slaCurrentDue?`<span class="sla-chip ${slaChipClass(sl)}">${remainLabel(j.slaCurrentDue)}</span>`:'<span style="font-size:11px;color:var(--muted)">No SLA</span>'}
+        </div>
+        ${j.recipeWarning?`<div style="font-size:10px;color:var(--amber);margin-top:4px;font-weight:600">⚠ ${j.recipeWarning}</div>`:''}
+        ${j.ppApprovalStatus==='rejected'?`<div style="font-size:10px;color:#dc2626;margin-top:3px;font-weight:700">✗ PP Rejected — new sample required</div>`:''}
+      </div>
+    </div>
+  </div>`;
+}
+window.openPrintingJob=function(id){ viewingPrintJob=id; currentPage='printing-job-detail'; document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on')); document.getElementById('nav-printing-jobs')?.classList.add('on'); renderPrintingJobDetailPage(); };
+
+// ── Asghar worker card (simple bilingual view) ────────────────────────
+function printWorkerCardHTML(j){
+  const recipe=allRecipes.find(r=>r._id===j.recipeId);
+  const stage=j.currentStage;
+  const ppStatus=j.ppApprovalStatus;
+  const sl=slaStatus(j.slaCurrentDue||null);
+  const hasRecipe=!!recipe;
+  const recipeLocked=recipe?.status==='locked';
+
+  // Button states based on stage
+  const canPPSample=hasRecipe&&stage==='po_received';
+  const canStartBulk=stage==='pp_approval'&&ppStatus==='approved';
+  const alreadyPrinting=stage==='bulk_printing';
+  const canComplete=stage==='bulk_printing';
+  const awaitingApproval=stage==='pp_approval'&&ppStatus==='pending';
+  const ppRejected=ppStatus==='rejected';
+
+  return`<div class="work-card" style="border-radius:12px;overflow:hidden">
+    <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
+        <div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span style="font-size:12px;font-weight:800;color:var(--red)">${j.poNumber||'—'}</span>
+            <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;background:${PRIORITY_COLORS[j.priority]+'20'};color:${PRIORITY_COLORS[j.priority]}">${(j.priority||'').toUpperCase()}</span>
+            ${tierBadge(j.complexityTier||1)}
+          </div>
+          <div style="font-size:15px;font-weight:700;margin-top:3px">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
+        </div>
+        ${recipe?.images?.frontUrl?`<div style="width:52px;height:66px;border-radius:8px;overflow:hidden;flex-shrink:0"><img src="${recipe.images.frontUrl}" style="width:100%;height:100%;object-fit:cover"></div>`:''}
+      </div>
+      <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        ${processBadge(j.processType)}
+        <span style="font-size:12px;color:var(--muted)">${j.totalQty||'?'} pcs</span>
+        ${j.slaCurrentDue?`<span class="sla-chip ${slaChipClass(sl)}" style="font-size:11px">${remainLabel(j.slaCurrentDue)}</span>`:''}
+      </div>
+    </div>
+
+    ${!hasRecipe?`<div class="pp-locked-banner" style="margin:12px">
+      ⚠️ Recipe Missing / ریسیپی موجود نہیں<br>
+      <span style="font-size:11px;font-weight:400;margin-top:4px;display:block">PP sample cannot start until an authorized user creates and locks the recipe.</span>
+    </div>`:''}
+
+    ${hasRecipe&&recipe?`<div style="padding:12px 14px;border-bottom:1px solid var(--border)">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Recipe Summary / ریسیپی خلاصہ</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${processBadge(j.processType)} ${tierBadge(j.complexityTier||1)} ${recipeLocked?'<span style="font-size:10px;color:var(--green);font-weight:700">🔒 Locked</span>':'<span style="font-size:10px;color:var(--amber);font-weight:700">✏️ Draft</span>'}</div>
+      ${(recipe.printing?.placements||[]).map((pl,i)=>`<div style="font-size:12px;margin-bottom:3px">📍 <strong>${pl.name||'Placement '+(i+1)}</strong> — ${pl.side||'—'} ${pl.artworkSize?'('+pl.artworkSize+')':''}</div>`).join('')}
+      ${(recipe.printing?.pantones||[]).length?`<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">${recipe.printing.pantones.map(p=>`<span style="font-size:11px;padding:2px 8px;border-radius:8px;background:#f0f0f0">${p.colorName||p.pantoneCode||'—'}</span>`).join('')}</div>`:''}
+      ${recipe.printing?.instructionsEn?`<div style="margin-top:8px;font-size:12px;color:var(--dark);line-height:1.6">${recipe.printing.instructionsEn}</div>`:''}
+      ${recipe.printing?.instructionsUr?`<div style="margin-top:6px;font-size:14px;line-height:2;direction:rtl;text-align:right;color:var(--dark)">${recipe.printing.instructionsUr}</div>`:''}
+      ${recipe.images?.placementGuideUrl?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:600;color:var(--muted);margin-bottom:4px">PLACEMENT GUIDE / جگہ کا رہنما</div><img src="${recipe.images.placementGuideUrl}" style="width:100%;border-radius:8px;max-height:200px;object-fit:contain;background:#f0f0f0"></div>`:''}
+    </div>`:''}
+
+    <div style="padding:12px 14px">
+      ${ppRejected?`<div class="pp-locked-banner">
+        ✗ PP Rejected — New PP Required<br>
+        پی پی ریجیکٹ — نیا پی پی سیمپل چاہیے<br>
+        <span style="font-size:11px;font-weight:400;margin-top:4px;display:block">Rejection reason: ${j.ppAttempts?.[j.ppAttempts.length-1]?.rejectionReason||'—'}</span>
+      </div>`:''}
+      ${awaitingApproval?`<div style="background:#f0f9ff;border:1px solid #7dd3fc;border-radius:10px;padding:12px;color:#0369a1;font-weight:600;font-size:13px">
+        ⏳ Waiting for PP Approval / منظوری کا انتظار<br>
+        <span style="font-size:11px;font-weight:400;margin-top:4px;display:block">Bulk printing is locked until QC/manager approves your PP sample.</span>
+      </div>`:''}
+      ${canStartBulk||alreadyPrinting?`<div class="pp-approved-banner">
+        ✓ PP Approved — Lot Run Allowed<br>
+        پی پی منظور — لاٹ چلانے کی اجازت ہے
+      </div>`:''}
+
+      ${hasRecipe&&canPPSample?`
+        <div style="margin-bottom:8px;margin-top:10px">
+          <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px">PP Sample Notes (optional)</div>
+          <textarea id="pp-note-${j._id}" rows="2" placeholder="Any notes about the sample… / نوٹ…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none"></textarea>
+        </div>
+        <div style="margin-bottom:8px">
+          <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px">PP Sample Photo URL (optional)</div>
+          <input id="pp-photo-${j._id}" placeholder="Upload to Cloudinary and paste URL…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none">
+        </div>
+        <button class="worker-btn worker-btn-amber" onclick="window.submitPPSample('${j._id}')">
+          PP Sample Ready / پی پی سیمپل تیار ہے
+        </button>`:''}
+
+      ${ppRejected&&hasRecipe?`
+        <div style="margin-bottom:8px;margin-top:10px">
+          <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px">New PP Sample Notes</div>
+          <textarea id="pp-note-${j._id}" rows="2" placeholder="Notes on new sample…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none"></textarea>
+        </div>
+        <div style="margin-bottom:8px">
+          <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px">Photo URL</div>
+          <input id="pp-photo-${j._id}" placeholder="paste photo URL…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none">
+        </div>
+        <button class="worker-btn worker-btn-amber" onclick="window.submitPPSample('${j._id}')">
+          PP Sample Ready / پی پی سیمپل تیار ہے
+        </button>`:''}
+
+      ${canStartBulk?`<button class="worker-btn worker-btn-green" onclick="window.startBulkPrinting('${j._id}')">
+        Start Lot Printing / لاٹ پرنٹنگ شروع کریں
+      </button>`:''}
+
+      ${alreadyPrinting?`
+        <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+          <div class="field"><label>Printed Qty</label><input id="bulk-qty-${j._id}" type="number" min="0" placeholder="${j.totalQty||0}" style="width:100%"></div>
+          <div class="field"><label>Damaged Qty</label><input id="bulk-dmg-${j._id}" type="number" min="0" placeholder="0" style="width:100%"></div>
+        </div>
+        <div class="field" style="margin-bottom:8px"><label>Notes</label><textarea id="bulk-note-${j._id}" rows="2" placeholder="Any notes…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none"></textarea></div>
+        <button class="worker-btn worker-btn-green" onclick="window.completeBulkPrinting('${j._id}')">
+          Printing Complete / پرنٹنگ مکمل ہو گئی
+        </button>`:''}
+
+      <button class="worker-btn" style="background:#6B7280;margin-top:6px" onclick="window.showDelayForm('${j._id}')">
+        Delay Reason / تاخیر کی وجہ
+      </button>
+      <div id="delay-form-${j._id}" style="display:none;margin-top:8px">
+        <textarea id="delay-text-${j._id}" rows="2" placeholder="Explain delay / تاخیر کی وجہ بتائیں…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none;margin-bottom:6px"></textarea>
+        <button class="btn-outline" style="width:100%" onclick="window.submitDelayReason('${j._id}')">Submit Reason</button>
+      </div>
+
+      <div style="margin-top:6px;text-align:center">
+        <button style="background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;font-family:inherit" onclick="window.openPrintingJob('${j._id}')">View Full Details →</button>
+      </div>
+    </div>
+  </div>`;
+}
+window.showDelayForm=function(id){ const f=document.getElementById('delay-form-'+id); if(f)f.style.display=f.style.display==='none'?'block':'none'; };
+
+// ── Bundling / Stitching worker cards ─────────────────────────────────
+function bundlingWorkerCardHTML(j){
+  return`<div class="work-card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><div style="display:flex;gap:6px;align-items:center"><span style="font-size:12px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</span>${tierBadge(j.complexityTier||1)}</div>
+        <div style="font-size:14px;font-weight:600;margin-top:3px">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">${j.totalQty||'?'} pcs · ${processBadge(j.processType)}</div>
+      </div>
+    </div>
+    ${j.handoff?.acceptedByZohaibAt?`<div class="pp-approved-banner" style="margin-top:10px">✓ Lot accepted · Bundling in progress</div>`:''}
+    ${!j.handoff?.acceptedByZohaibAt?`<button class="worker-btn worker-btn-green" onclick="window.acceptByZohaib('${j._id}')">Accept Lot / لاٹ قبول کریں</button>`:''}
+    ${j.handoff?.acceptedByZohaibAt&&!j.handoff?.forwardedToStitchingAt?`
+      <div class="field" style="margin-top:10px"><label>Bundle Count</label><input id="bundle-count-${j._id}" type="number" min="1" placeholder="no. of bundles" style="width:100%"></div>
+      <div class="field" style="margin:8px 0"><label>Notes</label><input id="bundle-notes-${j._id}" placeholder="any notes…" style="width:100%"></div>
+      <button class="worker-btn" onclick="window.forwardToStitching('${j._id}')">Forward to Stitching / سلائی کو بھیجیں</button>`:''}
+    ${j.handoff?.forwardedToStitchingAt?`<div style="font-size:12px;color:var(--green);margin-top:8px;font-weight:600">✓ Forwarded to Stitching at ${tsLabel2(j.handoff.forwardedToStitchingAt)}</div>`:''}
+  </div>`;
+}
+function stitchingWorkerCardHTML(j){
+  return`<div class="work-card">
+    <div><div style="display:flex;gap:6px;align-items:center"><span style="font-size:12px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</span>${tierBadge(j.complexityTier||1)}</div>
+      <div style="font-size:14px;font-weight:600;margin-top:3px">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px">${j.totalQty||'?'} pcs</div>
+    </div>
+    ${!j.handoff?.acceptedByWaqasAt?`<button class="worker-btn worker-btn-green" style="margin-top:10px" onclick="window.acceptByWaqas('${j._id}')">Accept Stitching / سلائی قبول کریں</button>`:''}
+    ${j.handoff?.acceptedByWaqasAt&&!j.handoff?.stitchingForwardedToQcAt?`
+      <div class="pp-approved-banner" style="margin:10px 0">✓ Stitching in progress</div>
+      <div class="field"><label>Notes</label><input id="stitch-notes-${j._id}" placeholder="notes…" style="width:100%"></div>
+      <button class="worker-btn" onclick="window.completeStitching('${j._id}')">Stitching Complete → Return to QC / فائنل QC کو بھیجیں</button>`:''}
+    ${j.handoff?.stitchingForwardedToQcAt?`<div style="font-size:12px;color:var(--green);margin-top:8px;font-weight:600">✓ Returned to Final QC at ${tsLabel2(j.handoff.stitchingForwardedToQcAt)}</div>`:''}
+  </div>`;
+}
+
+// ── Full Job Detail Page (manager / QC) ───────────────────────────────
+function renderPrintingJobDetailPage(){
+  const m=document.getElementById('main-content');
+  const j=allPrintingJobs.find(x=>x._id===viewingPrintJob);
+  if(!j){window.showPage('printing-jobs');return;}
+  const recipe=allRecipes.find(r=>r._id===j.recipeId);
+  const qcRep=allQCReports.find(q=>q.printingJobId===j._id);
+  const billing=allPrintBilling.find(b=>b.printingJobId===j._id);
+  const commNotes=allCommNotes.filter(c=>c.linkedId===j._id);
+  const slaEvts=allSLAEvents.filter(s=>s.printingJobId===j._id);
+  const sl=slaStatus(j.slaCurrentDue||null);
+  const isExt=j.departmentType?.startsWith('external');
+
+  m.innerHTML=`<button class="back-btn" onclick="window.showPage('printing-jobs')">← Back to Jobs</button>
+  <div class="page-head">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="font-size:12px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</span>
+          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;background:${PRIORITY_COLORS[j.priority]+'20'};color:${PRIORITY_COLORS[j.priority]}">${(j.priority||'').toUpperCase()}</span>
+          ${tierBadge(j.complexityTier||1)}
+          ${processBadge(j.processType)}
+        </div>
+        <div class="page-title" style="margin-top:4px">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
+        <div class="page-sub">Created by ${j.createdBy||'—'} · ${tsLabel2(j.createdAt)}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${isExt?`<button class="btn-pdf" onclick="window.printVendorJobCard('${j._id}')">🖨 Vendor Job Card</button>`:''}
+        ${(j.currentStage==='final_qc'||j.currentStage==='rework')&&isQCWorker()?`<button class="btn-primary" style="width:auto;padding:8px 16px" onclick="window.openQCReport('${j._id}')">Enter QC Report</button>`:''}
+        ${j.currentStage==='pp_approval'&&canApproveNewPP()?`<div style="display:flex;gap:6px">
+          <button class="btn-primary" style="width:auto;padding:8px 14px;background:var(--green)" onclick="window.approvePP('${j._id}')">✓ Approve PP</button>
+          <button class="btn-primary" style="width:auto;padding:8px 14px;background:#dc2626" onclick="window.rejectPP('${j._id}')">✗ Reject PP</button>
+        </div>`:''}
+        ${j.currentStage==='pp_approval'&&j.ppMode==='repeat_article'&&isQCWorker()&&!canApproveNewPP()?`<div style="display:flex;gap:6px">
+          <button class="btn-primary" style="width:auto;padding:8px 14px;background:var(--green)" onclick="window.approvePP('${j._id}')">✓ Approve PP (Repeat)</button>
+          <button class="btn-primary" style="width:auto;padding:8px 14px;background:#dc2626" onclick="window.rejectPP('${j._id}')">✗ Reject PP</button>
+        </div>`:''}
+      </div>
+    </div>
+  </div>
+
+  ${j.recipeWarning?`<div class="alert-banner alert-amber">⚠️ ${j.recipeWarning}</div>`:''}
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+    <div class="card" style="margin-bottom:0"><div class="card-title">Job Details</div>
+      <div class="info-row"><span class="info-label">Stage</span><span style="font-weight:700">${JOB_STAGE_LABELS[j.currentStage]||j.currentStage}</span></div>
+      <div class="info-row"><span class="info-label">PP Mode</span><span>${j.ppMode==='new_article'?'New Article (high approval)':'Repeat Article (QC approval ok)'}</span></div>
+      <div class="info-row"><span class="info-label">Assigned</span><span>${j.assignedTo||'—'}</span></div>
+      <div class="info-row"><span class="info-label">Total Qty</span><span style="font-weight:700">${j.totalQty||'?'} pcs</span></div>
+      <div class="info-row"><span class="info-label">Rate</span><span>Rs. ${j.ratePerPiece||'—'}/pc</span></div>
+      ${j.vendorName?`<div class="info-row"><span class="info-label">Vendor</span><span>${j.vendorName}</span></div>`:''}
+      ${j.bulkStartedAt?`<div class="info-row"><span class="info-label">Print Started</span><span>${tsLabel2(j.bulkStartedAt)}</span></div>`:''}
+      ${j.bulkCompletedAt?`<div class="info-row"><span class="info-label">Print Done</span><span>${tsLabel2(j.bulkCompletedAt)}</span></div>`:''}
+    </div>
+    <div class="card" style="margin-bottom:0"><div class="card-title">Size Breakdown</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${Object.entries(j.sizeBreakdown||{}).filter(([,v])=>v>0).map(([k,v])=>`<div style="text-align:center;min-width:42px;padding:6px 8px;background:#f4f4f6;border-radius:6px"><div style="font-size:9px;color:var(--muted)">${k}</div><div style="font-size:16px;font-weight:700">${v}</div></div>`).join('')||'<span style="font-size:12px;color:var(--muted)">No breakdown set</span>'}
+      </div>
+      ${j.slaCurrentDue?`<div style="margin-top:10px;padding:8px;border-radius:8px;background:${sl==='ok'?'#dcfce7':sl==='near'?'#fef3c7':'#fee2e2'}">
+        <div style="font-size:10px;font-weight:700;color:var(--muted)">CURRENT SLA</div>
+        <div style="font-size:15px;font-weight:700;color:${slaColor(sl)}">${remainLabel(j.slaCurrentDue)}</div>
+      </div>`:''}
+    </div>
+  </div>
+
+  ${renderPPAttemptsCard(j)}
+  ${renderJobTimeline(j)}
+  ${renderJobComms(j,commNotes)}
+  ${renderSLACard(j,slaEvts)}
+
+  <div style="height:80px"></div>`;
+}
+
+function renderPPAttemptsCard(j){
+  const attempts=j.ppAttempts||[];
+  if(!attempts.length)return`<div class="card"><div class="card-title">PP Sample History</div><div style="font-size:12px;color:var(--muted)">No PP sample submitted yet.</div></div>`;
+  return`<div class="card"><div class="card-title">PP Sample History (${attempts.length} attempt${attempts.length>1?'s':''})</div>
+    ${attempts.map((a,i)=>`<div style="padding:10px;background:${a.status==='approved'?'#f0fdf4':a.status==='rejected'?'#fef2f2':'#f8f8f8'};border-radius:8px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-size:12px;font-weight:700">Attempt #${i+1} <span style="font-weight:400;color:var(--muted)">by ${a.submittedBy||'—'} · ${tsLabel2(a.submittedAt)}</span></div>
+          ${a.note?`<div style="font-size:12px;color:var(--dark);margin-top:3px">${a.note}</div>`:''}
+        </div>
+        <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:${a.status==='approved'?'#dcfce7':a.status==='rejected'?'#fee2e2':'#fef3c7'};color:${a.status==='approved'?'#14532d':a.status==='rejected'?'#991b1b':'#92400e'}">${(a.status||'pending').toUpperCase()}</span>
+      </div>
+      ${a.photoUrl?`<img src="${a.photoUrl}" style="width:100%;max-height:180px;object-fit:contain;border-radius:6px;margin-top:8px;background:#f0f0f0">`:''}
+      ${a.reviewedBy?`<div style="font-size:11px;color:var(--muted);margin-top:6px">${a.status==='approved'?'✓ Approved':'✗ Rejected'} by ${a.reviewedBy} · ${tsLabel2(a.reviewedAt)}</div>`:''}
+      ${a.rejectionReason?`<div style="font-size:12px;color:#dc2626;margin-top:4px">Reason: ${a.rejectionReason}</div>`:''}
+    </div>`).join('')}
+  </div>`;
+}
+
+function renderJobTimeline(j){
+  const history=j.stageHistory||[];
+  return`<div class="card"><div class="card-title">Job Timeline</div>
+    ${history.map((h,i)=>`<div class="stage-item">
+      <div class="stage-dot ${i===history.length-1?'dot-active':'dot-done'}"></div>
+      <div class="stage-content">
+        <div class="stage-label">${JOB_STAGE_LABELS[h.stage]||h.stage}</div>
+        <div class="stage-meta">${h.by||'—'} · ${tsLabel2(h.at)}${h.note?' · '+h.note:''}</div>
+      </div>
+    </div>${i<history.length-1?'<div class="stage-connector"></div>':''}`).join('')}
+  </div>`;
+}
+
+function renderJobComms(j,notes){
+  return`<div class="card"><div class="card-title">Notes & Communication</div>
+    <div style="margin-bottom:10px">
+      ${notes.length?notes.slice(0,10).map(n=>`<div class="comm-note ${n.type==='ping'?'comm-ping':''}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div style="font-size:11px;font-weight:700">${n.fromUser||'—'} ${n.toUser?'→ '+n.toUser:''} <span style="font-weight:400;color:var(--muted)">· ${tsLabel2(n.createdAt)}</span></div>
+          <span style="font-size:9px;font-weight:600;padding:1px 6px;border-radius:6px;background:#f0f0f0">${(n.type||'text').toUpperCase()}</span>
+        </div>
+        <div style="font-size:13px;margin-top:4px">${n.message||'—'}</div>
+      </div>`).join(''):'<div style="font-size:12px;color:var(--muted)">No notes yet.</div>'}
+    </div>
+    <div style="display:flex;gap:8px">
+      <input id="comm-msg-${j._id}" placeholder="Add note or ping…" style="flex:1;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none">
+      <select id="comm-type-${j._id}" style="padding:9px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#fff;outline:none">
+        <option value="text">Note</option><option value="ping">Ping</option>
+      </select>
+      <button class="btn-sm" onclick="window.addCommNote('${j._id}')">Send</button>
+    </div>
+  </div>`;
+}
+
+function renderSLACard(j,evts){
+  if(!evts.length)return'';
+  return`<div class="card"><div class="card-title">SLA Events</div>
+    ${evts.map(e=>{const sl2=slaStatus(e.dueAt);return`<div style="padding:8px 0;border-bottom:1px solid #f5f5f5">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">
+        <div><div style="font-size:12px;font-weight:600">${JOB_STAGE_LABELS[e.stage]||e.stage}</div>
+          <div style="font-size:11px;color:var(--muted)">Assigned: ${e.assignedTo||'—'} · Due: ${tsLabel2(e.dueAt)}</div>
+          ${e.delayReasonText?`<div style="font-size:11px;color:var(--amber);margin-top:2px">Delay reason: ${e.delayReasonText}</div>`:''}
+        </div>
+        <span class="sla-chip ${slaChipClass(e.completedAt?'ok':sl2)}">${e.completedAt?'Completed':remainLabel(e.dueAt)}</span>
+      </div>
+    </div>`;}).join('')}
+  </div>`;
+}
+
+// ── PP Sample Actions ──────────────────────────────────────────────────
+window.submitPPSample=async function(jobId){
+  const j=allPrintingJobs.find(x=>x._id===jobId); if(!j)return;
+  const note=(document.getElementById('pp-note-'+jobId)?.value||'').trim();
+  const photoUrl=(document.getElementById('pp-photo-'+jobId)?.value||'').trim();
+  const now=nowIso();
+  const attempt={attemptNum:(j.ppAttempts||[]).length+1,submittedBy:session.name,submittedAt:now,note,photoUrl,status:'pending',reviewedBy:null,reviewedAt:null,rejectionReason:''};
+  const newAttempts=[...(j.ppAttempts||[]),attempt];
+  const history=[...(j.stageHistory||[]),{stage:'pp_approval',by:session.name,at:now,note:`PP sample #${attempt.attemptNum} submitted`}];
+  try{
+    await updateDoc(doc(db,'printing_jobs',jobId),{ppAttempts:newAttempts,currentStage:'pp_approval',ppApprovalStatus:'pending',stageHistory:history,updatedAt:now,slaCurrentDue:calcDue('pp_approval',j.priority)});
+    const ji=allPrintingJobs.findIndex(x=>x._id===jobId);
+    if(ji>=0){allPrintingJobs[ji]={...allPrintingJobs[ji],ppAttempts:newAttempts,currentStage:'pp_approval',ppApprovalStatus:'pending',stageHistory:history,slaCurrentDue:calcDue('pp_approval',j.priority)};}
+    await addSLAEvent(jobId,j.poNumber,'pp_approval',j.priority,'haris',calcDue('pp_approval',j.priority));
+    await logActivity('PP sample submitted',`${j.poNumber} — Attempt #${attempt.attemptNum}`);
+    showToast('PP sample submitted ✓ — awaiting approval');
+    window.showPage('printing-jobs');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+window.approvePP=async function(jobId){
+  const j=allPrintingJobs.find(x=>x._id===jobId); if(!j)return;
+  if(j.ppMode==='new_article'&&!canApproveNewPP()){showToast('New article PP requires Ammar/Afnan/Arfat approval.',true);return;}
+  if(j.ppMode==='repeat_article'&&!canApproveRepeatPP()){showToast('Not authorized to approve PP.',true);return;}
+  const reason=prompt('Approval note (optional):');
+  const now=nowIso();
+  const updated=(j.ppAttempts||[]).map((a,i)=>i===j.ppAttempts.length-1?{...a,status:'approved',reviewedBy:session.name,reviewedAt:now,approvalNote:reason||''}:a);
+  const history=[...(j.stageHistory||[]),{stage:'bulk_printing',by:session.name,at:now,note:'PP approved — lot run authorized'}];
+  try{
+    await updateDoc(doc(db,'printing_jobs',jobId),{ppAttempts:updated,ppApprovalStatus:'approved',ppApprovedBy:session.name,ppApprovedAt:now,currentStage:'pp_approval',stageHistory:history,updatedAt:now,slaCurrentDue:calcDue('bulk_printing',j.priority)});
+    const ji=allPrintingJobs.findIndex(x=>x._id===jobId);
+    if(ji>=0)allPrintingJobs[ji]={...allPrintingJobs[ji],ppAttempts:updated,ppApprovalStatus:'approved',ppApprovedBy:session.name,ppApprovedAt:now,currentStage:'pp_approval'};
+    await logActivity('PP approved',`${j.poNumber} by ${session.name}`);
+    showToast('PP Approved ✓ — Asghar can now start lot printing'); renderPrintingJobDetailPage();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+window.rejectPP=async function(jobId){
+  const j=allPrintingJobs.find(x=>x._id===jobId); if(!j)return;
+  if(j.ppMode==='new_article'&&!canApproveNewPP()){showToast('Not authorized.',true);return;}
+  if(j.ppMode==='repeat_article'&&!canApproveRepeatPP()){showToast('Not authorized.',true);return;}
+  const reason=prompt('Rejection reason (required):');
+  if(!reason){showToast('Rejection reason is required.',true);return;}
+  const now=nowIso();
+  const updated=(j.ppAttempts||[]).map((a,i)=>i===j.ppAttempts.length-1?{...a,status:'rejected',reviewedBy:session.name,reviewedAt:now,rejectionReason:reason}:a);
+  const history=[...(j.stageHistory||[]),{stage:'pp_sample',by:session.name,at:now,note:'PP rejected: '+reason}];
+  try{
+    await updateDoc(doc(db,'printing_jobs',jobId),{ppAttempts:updated,ppApprovalStatus:'rejected',currentStage:'po_received',stageHistory:history,updatedAt:now,slaCurrentDue:calcDue('pp_sample',j.priority)});
+    const ji=allPrintingJobs.findIndex(x=>x._id===jobId);
+    if(ji>=0)allPrintingJobs[ji]={...allPrintingJobs[ji],ppAttempts:updated,ppApprovalStatus:'rejected',currentStage:'po_received'};
+    await logActivity('PP rejected',`${j.poNumber} — ${reason}`);
+    showToast('PP Rejected — new sample required'); renderPrintingJobDetailPage();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+// ── Bulk Printing Actions ─────────────────────────────────────────────
+window.startBulkPrinting=async function(jobId){
+  const j=allPrintingJobs.find(x=>x._id===jobId); if(!j)return;
+  if(j.ppApprovalStatus!=='approved'){showToast('PP must be approved first.',true);return;}
+  const now=nowIso();
+  const history=[...(j.stageHistory||[]),{stage:'bulk_printing',by:session.name,at:now,note:'Lot printing started'}];
+  try{
+    await updateDoc(doc(db,'printing_jobs',jobId),{currentStage:'bulk_printing',bulkStartedAt:now,stageHistory:history,updatedAt:now,slaCurrentDue:calcDue('bulk_printing',j.priority)});
+    const ji=allPrintingJobs.findIndex(x=>x._id===jobId);
+    if(ji>=0)allPrintingJobs[ji]={...allPrintingJobs[ji],currentStage:'bulk_printing',bulkStartedAt:now};
+    await addSLAEvent(jobId,j.poNumber,'bulk_printing',j.priority,'asghar',calcDue('bulk_printing',j.priority));
+    await logActivity('Bulk printing started',j.poNumber);
+    showToast('Lot printing started / لاٹ پرنٹنگ شروع ✓');
+    window.showPage('printing-jobs');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+window.completeBulkPrinting=async function(jobId){
+  const j=allPrintingJobs.find(x=>x._id===jobId); if(!j)return;
+  const printedQty=parseInt(document.getElementById('bulk-qty-'+jobId)?.value)||j.totalQty;
+  const damagedQty=parseInt(document.getElementById('bulk-dmg-'+jobId)?.value)||0;
+  const note=(document.getElementById('bulk-note-'+jobId)?.value||'').trim();
+  if(!printedQty){showToast('Enter printed quantity.',true);return;}
+  const now=nowIso();
+  const history=[...(j.stageHistory||[]),{stage:'final_qc',by:session.name,at:now,note:`Printing complete: ${printedQty} pcs printed${damagedQty?' ('+damagedQty+' damaged)':''}. ${note}`}];
+  try{
+    await updateDoc(doc(db,'printing_jobs',jobId),{currentStage:'final_qc',bulkCompletedAt:now,printedQty,damagedQty,bulkNotes:note,stageHistory:history,updatedAt:now,slaCurrentDue:calcDue('final_qc',j.priority)});
+    const ji=allPrintingJobs.findIndex(x=>x._id===jobId);
+    if(ji>=0)allPrintingJobs[ji]={...allPrintingJobs[ji],currentStage:'final_qc',bulkCompletedAt:now,printedQty,damagedQty};
+    await addSLAEvent(jobId,j.poNumber,'final_qc',j.priority,'haris',calcDue('final_qc',j.priority));
+    await logActivity('Bulk printing complete',`${j.poNumber} — ${printedQty} pcs`);
+    showToast('Printing complete ✓ — Waiting for Final QC / فائنل QC کا انتظار');
+    window.showPage('printing-jobs');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+window.submitDelayReason=async function(jobId){
+  const j=allPrintingJobs.find(x=>x._id===jobId); if(!j)return;
+  const reason=(document.getElementById('delay-text-'+jobId)?.value||'').trim();
+  if(!reason){showToast('Write a reason before submitting.',true);return;}
+  try{
+    const slaEv=allSLAEvents.find(s=>s.printingJobId===jobId&&!s.completedAt);
+    if(slaEv){await updateDoc(doc(db,'sla_events',slaEv._id),{delayReasonText:reason,reasonRequired:false});}
+    await addDoc(collection(db,'communication_notes'),{linkedType:'printing_job',linkedId:jobId,fromUser:session.name,toUser:null,toRole:'manager',type:'text',message:'DELAY REASON: '+reason,voiceNoteUrl:'',createdAt:nowIso(),readBy:[]});
+    await logActivity('Delay reason submitted',`${j.poNumber}: ${reason}`);
+    showToast('Delay reason submitted ✓');
+    const f=document.getElementById('delay-form-'+jobId); if(f)f.style.display='none';
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+window.addCommNote=async function(jobId){
+  const j=allPrintingJobs.find(x=>x._id===jobId); if(!j)return;
+  const msg=(document.getElementById('comm-msg-'+jobId)?.value||'').trim();
+  const type=document.getElementById('comm-type-'+jobId)?.value||'text';
+  if(!msg){showToast('Write a message first.',true);return;}
+  const note={linkedType:'printing_job',linkedId:jobId,fromUser:session.name,toUser:null,toRole:'all',type,message:msg,voiceNoteUrl:'',createdAt:nowIso(),readBy:[session.u]};
+  try{
+    const id=prntId();
+    await setDoc(doc(db,'communication_notes',id),note);
+    allCommNotes.unshift({...note,_id:id});
+    showToast('Note sent ✓'); renderPrintingJobDetailPage();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+window.openQCReport=function(jobId){ viewingPrintJob=jobId; currentPage='qc-report-page'; renderQCReportPage(); };
 
 </script>
 </body>
