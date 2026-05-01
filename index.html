@@ -2497,7 +2497,7 @@ function renderStoreReceive(){
   <div class="card">
     <div class="card-title">Record received stock</div>
     <div class="form-grid">
-      <div class="field"><label>Item *</label><select id="rcv-item" onchange="onRcvItemChange()">${opts}</select></div>
+      <div class="field"><label>Item *</label><select id="rcv-item" onchange="window.onRcvItemChange()">${opts}</select></div>
       <div class="field"><label>Supplier</label><input id="rcv-supplier" placeholder="Supplier name"></div>
       <div class="field"><label>Date</label><input id="rcv-date" type="date" value="${todayStr()}"></div>
       <div class="field"><label>Received By</label><input value="${session.name}" readonly></div>
@@ -2506,7 +2506,7 @@ function renderStoreReceive(){
       </div>
     </div>
     <div id="rcv-qty-wrap" style="margin-top:12px"></div>
-    <button class="btn-primary" style="margin-top:12px" onclick="submitReceive()">Save Receipt</button>
+    <button class="btn-primary" style="margin-top:12px" onclick="window.submitReceive()">Save Receipt</button>
   </div><div style="height:80px"></div>`;
 }
 function onRcvItemChange(){
@@ -2562,7 +2562,7 @@ function renderStoreIssue(){
     <div class="form-grid">
       <div class="field" style="grid-column:1/-1;position:relative"><label>PO Number</label>
         <input id="iss-po" placeholder="Type PO number or pick from list…" autocomplete="off"
-          oninput="filterPODropMain(this.value)" onfocus="filterPODropMain(this.value)" onblur="setTimeout(()=>hidePODropMain(),200)">
+          oninput="window.filterPODropMain(this.value)" onfocus="window.filterPODropMain(this.value)" onblur="setTimeout(()=>window.hidePODropMain(),200)">
         <div id="iss-po-drop-main" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:220px;overflow-y:auto;margin-top:3px"></div>
         <div id="iss-po-status" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
       </div>
@@ -2572,10 +2572,10 @@ function renderStoreIssue(){
   <div class="card">
     <div class="card-title">Manual issue <span style="font-size:11px;font-weight:600;color:#1D9E75;background:#dcfce7;padding:2px 8px;border-radius:10px;margin-left:6px">● Live</span></div>
     <div class="form-grid">
-      <div class="field"><label>Item *</label><select id="iss-item" onchange="onIssItemChange()">${opts}</select></div>
+      <div class="field"><label>Item *</label><select id="iss-item" onchange="window.onIssItemChange()">${opts}</select></div>
       <div class="field" style="grid-column:1/-1;position:relative"><label>PO Number *</label>
         <input id="iss-po-ref" placeholder="Type PO number or pick from list…" autocomplete="off"
-          oninput="filterPODrop(this.value)" onfocus="filterPODrop(this.value)" onblur="setTimeout(()=>hidePODrop(),200)">
+          oninput="window.filterPODrop(this.value)" onfocus="window.filterPODrop(this.value)" onblur="setTimeout(()=>window.hidePODrop(),200)">
         <div id="iss-po-drop" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:220px;overflow-y:auto;margin-top:3px"></div>
         <div id="iss-po-preview" style="margin-top:8px"></div>
       </div>
@@ -2584,7 +2584,7 @@ function renderStoreIssue(){
       <div class="field"><label>Date</label><input id="iss-date" type="date" value="${todayStr()}"></div>
     </div>
     <div id="iss-qty-wrap" style="margin-top:10px"></div>
-    <button class="btn-primary" style="margin-top:12px" onclick="submitIssueManual()">Issue Stock</button>
+    <button class="btn-primary" style="margin-top:12px" onclick="window.submitIssueManual()">Issue Stock</button>
   </div><div style="height:80px"></div>`;
 }
 function filterPODropMain(val){
@@ -2593,7 +2593,7 @@ function filterPODropMain(val){
   const matches=allActivePOs.filter(p=>normPO(p.id).includes(q)||(p.name||'').toLowerCase().includes(q));
   if(!matches.length||!val){dd.style.display='none';return;}
   dd.style.display='block';
-  dd.innerHTML=matches.slice(0,10).map(p=>`<div onclick="selectPOMain('${p.id}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f5f5f5;font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
+  dd.innerHTML=matches.slice(0,10).map(p=>`<div onclick="window.selectPOMain('${p.id}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f5f5f5;font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
     <span style="font-weight:700;color:var(--red)">${p.id}</span>
     <span style="color:var(--muted);margin-left:6px;font-size:12px">${p.name||'—'} · ${p.currentStage||'—'}</span>
   </div>`).join('');
@@ -2636,7 +2636,7 @@ function renderPoIssueBody(po,tpl){
         <input type="checkbox" id="iss-chk-${safeId(item.code)}" ${ok?'checked':''} ${ok?'':'disabled'}> Issue</label>
     </div>`;
   }
-  bodyEl.innerHTML=rows+`<button class="btn-primary" style="margin-top:10px" onclick="submitPoIssue()">Confirm issue for ${po.id}</button>`;
+  bodyEl.innerHTML=rows+`<button class="btn-primary" style="margin-top:10px" onclick="window.submitPoIssue()">Confirm issue for ${po.id}</button>`;
 }
 async function submitPoIssue(){
   if(!_poIssueData){showToast('No PO loaded.',true);return;}
@@ -2691,7 +2691,7 @@ function filterPODrop(val){
   const matches=allActivePOs.filter(p=>normPO(p.id).includes(q)||(p.name||'').toLowerCase().includes(q));
   if(!matches.length||!val){dd.style.display='none';return;}
   dd.style.display='block';
-  dd.innerHTML=matches.slice(0,10).map(p=>`<div onclick="selectPO('${p.id}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f5f5f5;font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
+  dd.innerHTML=matches.slice(0,10).map(p=>`<div onclick="window.selectPO('${p.id}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f5f5f5;font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
     <span style="font-weight:700;color:var(--red)">${p.id}</span>
     <span style="color:var(--muted);margin-left:6px;font-size:12px">${p.name||'—'} · ${p.currentStage||'—'}</span>
   </div>`).join('');
@@ -2769,7 +2769,7 @@ function renderStoreTemplates(){
     <div class="form-grid">
       <div class="field" style="grid-column:1/-1;position:relative"><label>Product *</label>
         <input id="tpl-prod-search" placeholder="Type product code or name e.g. GH001 or Black Hoodie…" autocomplete="off"
-          oninput="filterTplProd(this.value)" onfocus="filterTplProd(this.value)" onblur="setTimeout(()=>{const d=document.getElementById('tpl-prod-dd');if(d)d.style.display='none'},200)">
+          oninput="window.filterTplProd(this.value)" onfocus="window.filterTplProd(this.value)" onblur="setTimeout(()=>{const d=document.getElementById('tpl-prod-dd');if(d)d.style.display='none'},200)">
         <div id="tpl-prod-dd" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:220px;overflow-y:auto;margin-top:3px"></div>
         <div id="tpl-prod-sel" style="margin-top:6px;font-size:12px;color:var(--green);font-weight:600"></div>
       </div>
@@ -2777,9 +2777,9 @@ function renderStoreTemplates(){
     <div style="margin-top:12px">
       <div class="section-title" style="margin-bottom:8px">Trim requirements <span style="font-size:11px;font-weight:400;color:var(--muted)">(qty per piece × PO qty = auto-issued)</span></div>
       <div id="tpl-rows"></div>
-      <button class="btn-outline" style="width:100%;margin-top:6px" onclick="addTplRow()">+ Add trim item</button>
+      <button class="btn-outline" style="width:100%;margin-top:6px" onclick="window.addTplRow()">+ Add trim item</button>
     </div>
-    <button class="btn-primary" style="margin-top:10px" onclick="submitTemplate()">Save Template</button>
+    <button class="btn-primary" style="margin-top:10px" onclick="window.submitTemplate()">Save Template</button>
   </div>
   ${allTemplates.length?`<div class="card">
     <div class="card-title">Saved templates (${allTemplates.length})</div>
@@ -2796,7 +2796,7 @@ function renderStoreTemplates(){
           ${(()=>{const tot=(t.items||[]).reduce((s,i)=>s+(i.pricePerUnit||0)*(i.qtyPerPiece||1),0);return tot?`<div style="font-size:11px;color:var(--dark);font-weight:600;margin-top:4px">Cost/pc: Rs.${tot.toFixed(2)}</div>`:''})()}
           <div style="font-size:10px;color:var(--green);margin-top:4px">⚡ Auto-deducts on PO creation</div>
         </div>
-        ${isOwner?`<button class="btn-danger" onclick="deleteTemplate('${t._id}')">Delete</button>`:''}
+        ${isOwner?`<button class="btn-danger" onclick="window.deleteTemplate('${t._id}')">Delete</button>`:''}
       </div>
     </div>`).join('')}
   </div>`:'<div class="card"><div class="empty">No templates yet. Create one above.</div></div>'}
@@ -2809,7 +2809,7 @@ function filterTplProd(q){
   const matches=PRODUCT_CATALOG.filter(p=>p.code.toLowerCase().includes(ql)||p.name.toLowerCase().includes(ql));
   if(!matches.length){dd.style.display='none';return;}
   dd.style.display='block';
-  dd.innerHTML=matches.slice(0,12).map(p=>`<div onclick="selectTplProd('${p.code}','${p.name.replace(/'/g,'&#39;')}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f5f5f5;font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
+  dd.innerHTML=matches.slice(0,12).map(p=>`<div onclick="window.selectTplProd('${p.code}','${p.name.replace(/'/g,'&#39;')}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f5f5f5;font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
     <span style="font-weight:700;color:var(--red)">${p.code}</span>
     <span style="color:var(--muted);margin-left:8px;font-size:12px">${p.name}</span>
   </div>`).join('');
@@ -2869,12 +2869,12 @@ function renderStoreLog(){
   <div class="card">
     <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
       <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex-shrink:0">
-        <button id="il-all"  onclick="setILDir('')"          style="padding:8px 14px;font-size:12px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:var(--dark);color:#fff">All</button>
-        <button id="il-in"   onclick="setILDir('received')"  style="padding:8px 14px;font-size:12px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:#fff;color:var(--muted)">▲ Inbound</button>
-        <button id="il-out"  onclick="setILDir('issued')"    style="padding:8px 14px;font-size:12px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:#fff;color:var(--muted)">▼ Outbound</button>
+        <button id="il-all"  onclick="window.setILDir('')"          style="padding:8px 14px;font-size:12px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:var(--dark);color:#fff">All</button>
+        <button id="il-in"   onclick="window.setILDir('received')"  style="padding:8px 14px;font-size:12px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:#fff;color:var(--muted)">▲ Inbound</button>
+        <button id="il-out"  onclick="window.setILDir('issued')"    style="padding:8px 14px;font-size:12px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:#fff;color:var(--muted)">▼ Outbound</button>
       </div>
-      <input id="il-q"  placeholder="Search item, person…" oninput="_ilQ=this.value;_ilPage=1;refreshIssueLog()" style="flex:1;min-width:120px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
-      <input id="il-po" placeholder="Filter PO…"           oninput="_ilPO=this.value;_ilPage=1;refreshIssueLog()" style="width:100px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+      <input id="il-q"  placeholder="Search item, person…" oninput="window.setILQ(this.value)"  style="flex:1;min-width:120px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+      <input id="il-po" placeholder="Filter PO…"           oninput="window.setILPO(this.value)" style="width:100px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
     </div>
     <div id="il-body"></div>
     <div id="il-pager" style="display:flex;align-items:center;justify-content:center;gap:10px;padding-top:12px;border-top:1px solid #f5f5f5;margin-top:4px"></div>
@@ -2921,9 +2921,9 @@ function refreshIssueLog(){
   if(pager){
     if(maxPages<=1){pager.innerHTML='';return;}
     pager.innerHTML=`
-      <button onclick="_ilPage--;refreshIssueLog()" ${_ilPage===1?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit">← Prev</button>
+      <button onclick="window.ilPagePrev()" ${_ilPage===1?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit">← Prev</button>
       <span style="font-size:12px;color:var(--muted)">Page ${_ilPage} of ${maxPages}</span>
-      <button onclick="_ilPage++;refreshIssueLog()" ${_ilPage===maxPages?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit">Next →</button>`;
+      <button onclick="window.ilPageNext()" ${_ilPage===maxPages?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit">Next →</button>`;
   }
 }
 
@@ -3091,6 +3091,31 @@ async function loadStoreData(){
 }
 // Internal store navigation (maps store section IDs back to showPage)
 function renderStoreSection(id){window.showPage('store-'+id);}
+
+// ── Expose store functions to global scope (required for inline HTML handlers in module scope) ──
+window.onRcvItemChange=onRcvItemChange;
+window.submitReceive=submitReceive;
+window.filterPODropMain=filterPODropMain;
+window.hidePODropMain=hidePODropMain;
+window.selectPOMain=selectPOMain;
+window.submitPoIssue=submitPoIssue;
+window.onIssItemChange=onIssItemChange;
+window.loadActivePOs=loadActivePOs;
+window.filterPODrop=filterPODrop;
+window.hidePODrop=hidePODrop;
+window.selectPO=selectPO;
+window.submitIssueManual=submitIssueManual;
+window.filterTplProd=filterTplProd;
+window.selectTplProd=selectTplProd;
+window.addTplRow=addTplRow;
+window.submitTemplate=submitTemplate;
+window.deleteTemplate=deleteTemplate;
+window.setILDir=setILDir;
+window.refreshIssueLog=refreshIssueLog;
+window.setILQ=function(v){_ilQ=v;_ilPage=1;refreshIssueLog();};
+window.setILPO=function(v){_ilPO=v;_ilPage=1;refreshIssueLog();};
+window.ilPagePrev=function(){if(_ilPage>1){_ilPage--;refreshIssueLog();}};
+window.ilPageNext=function(){_ilPage++;refreshIssueLog();};
 
 </script>
 </body>
