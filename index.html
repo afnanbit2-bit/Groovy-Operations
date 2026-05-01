@@ -4016,120 +4016,217 @@ function printWorkerCardHTML(j){
   const sl=slaStatus(j.slaCurrentDue||null);
   const hasRecipe=!!recipe;
   const recipeLocked=recipe?.status==='locked';
-
-  // Button states based on stage
-  const canPPSample=hasRecipe&&stage==='po_received';
+  const canPPSample=(stage==='po_received')||(!hasRecipe&&false);
+  const ppRejected=ppStatus==='rejected'&&stage==='pp_sample';
+  const awaitingApproval=stage==='pp_approval'&&ppStatus==='pending';
   const canStartBulk=stage==='pp_approval'&&ppStatus==='approved';
   const alreadyPrinting=stage==='bulk_printing';
-  const canComplete=stage==='bulk_printing';
-  const awaitingApproval=stage==='pp_approval'&&ppStatus==='pending';
-  const ppRejected=ppStatus==='rejected';
 
-  return`<div class="work-card" style="border-radius:12px;overflow:hidden">
-    <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
-        <div>
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-            <span style="font-size:12px;font-weight:800;color:var(--red)">${j.poNumber||'—'}</span>
-            <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;background:${PRIORITY_COLORS[j.priority]+'20'};color:${PRIORITY_COLORS[j.priority]}">${(j.priority||'').toUpperCase()}</span>
+  // ── SLA block ──
+  const slaColors={ok:'#dcfce7',near:'#fef3c7',over:'#fee2e2',critical:'#fecaca'};
+  const slaText={ok:'var(--green)',near:'var(--amber)',over:'#dc2626',critical:'#7f1d1d'};
+  const slaBg=slaColors[sl]||'#f4f4f6';
+  const slaFg=slaText[sl]||'var(--muted)';
+  const slaBlock=j.slaCurrentDue?`
+    <div style="background:${slaBg};border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:${slaFg};text-transform:uppercase;letter-spacing:.06em">وقت / Time Remaining</div>
+        <div style="font-size:20px;font-weight:800;color:${slaFg};margin-top:2px">${remainLabel(j.slaCurrentDue)}</div>
+      </div>
+      <div style="text-align:right;font-size:11px;color:${slaFg};font-weight:600">${sl==='ok'?'On Time / وقت پر':sl==='near'?'Near Due / وقت قریب ہے':sl==='over'?'OVERDUE / لیٹ':'CRITICAL / فوری'}</div>
+    </div>`:'';
+
+  // ── Current Step hero block ──
+  const stepInstructions={
+    po_received:{
+      en:'Make PP Sample First',ur:'پہلے پی پی سیمپل بنائیں',
+      steps:['Check front placement / فرنٹ پلیسمنٹ چیک کریں','Check back placement / بیک پلیسمنٹ چیک کریں','Match all colors / تمام کلر میچ کریں','Print one PP sample piece / ایک پی پی سیمپل پیس پرنٹ کریں','Send physical sample to Haris (QC) / پی پی سیمپل حارث کو دیں']
+    },
+    pp_approval:{
+      en: ppStatus==='approved'?'PP Approved — Start Lot Printing':'Waiting for PP Approval',
+      ur: ppStatus==='approved'?'پی پی منظور — لاٹ پرنٹنگ شروع کریں':'پی پی منظوری کا انتظار کریں',
+      steps: ppStatus==='approved'?['PP is approved — you can start full lot / پی پی منظور ہو گیا — لاٹ شروع کریں','Follow recipe exactly / ریسیپی بالکل ویسے ہی فالو کریں','Count pieces carefully / پیس گنتے رہیں']:['Physical sample is with Haris / فزیکل سیمپل حارث کے پاس ہے','Wait for approval / منظوری کا انتظار کریں','Do not start lot printing yet / ابھی لاٹ شروع نہ کریں']
+    },
+    bulk_printing:{
+      en:'Lot Printing in Progress',ur:'لاٹ پرنٹنگ جاری ہے',
+      steps:['Print all pieces as per recipe / تمام پیس ریسیپی کے مطابق پرنٹ کریں','Count total printed pieces / کل پرنٹ پیس گنیں','Count any damaged pieces / خراب پیس الگ رکھیں','Press Complete when done / مکمل ہونے پر بٹن دبائیں']
+    }
+  };
+  const ppRejStep={en:'PP Rejected — New Sample Required',ur:'پی پی ریجیکٹ — نیا پی پی سیمپل بنائیں',steps:['See rejection reason below / نیچے وجہ پڑھیں','Fix the issue in new sample / مسئلہ ٹھیک کریں','Print a new PP sample / نیا پی پی سیمپل پرنٹ کریں','Send to Haris (QC) again / دوبارہ حارث کو دیں']};
+  const curStep=ppRejected?ppRejStep:(stepInstructions[stage]||{en:JOB_STAGE_LABELS[stage]||stage,ur:'',steps:[]});
+  const stepBlock=`
+    <div style="background:var(--dark);border-radius:12px;padding:14px;margin-bottom:12px;color:#fff">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:rgba(255,255,255,.5);margin-bottom:4px">موجودہ مرحلہ / CURRENT STEP</div>
+      <div style="font-size:17px;font-weight:800">${curStep.en}</div>
+      ${curStep.ur?`<div style="font-size:15px;font-weight:700;direction:rtl;text-align:right;margin-top:2px;color:rgba(255,255,255,.85)">${curStep.ur}</div>`:''}
+      ${curStep.steps.length?`<ol style="margin:10px 0 0 0;padding-left:18px;font-size:12px;line-height:2;color:rgba(255,255,255,.8)">${curStep.steps.map(s=>`<li>${s}</li>`).join('')}</ol>`:''}
+    </div>`;
+
+  // ── Images ──
+  const frontUrl=recipe?.images?.frontUrl||'';
+  const backUrl=recipe?.images?.backUrl||'';
+  const guideUrl=recipe?.images?.placementGuideUrl||'';
+  const imagesBlock=(frontUrl||backUrl||guideUrl)?`
+    <div style="display:flex;gap:8px;margin-bottom:12px;overflow-x:auto">
+      ${frontUrl?`<div style="flex-shrink:0"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px">FRONT / سامنے</div><img src="${frontUrl}" onclick="window.open('${frontUrl}')" style="height:110px;width:90px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--border)"></div>`:''}
+      ${backUrl?`<div style="flex-shrink:0"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px">BACK / پیچھے</div><img src="${backUrl}" onclick="window.open('${backUrl}')" style="height:110px;width:90px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--border)"></div>`:''}
+      ${guideUrl?`<div style="flex-shrink:0"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px">PLACEMENT GUIDE</div><img src="${guideUrl}" onclick="window.open('${guideUrl}')" style="height:110px;width:90px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--border)"></div>`:''}
+    </div>`:'';
+
+  // ── Qty + size breakdown ──
+  const sizes=j.sizeBreakdown||{};
+  const sizeKeys=Object.keys(sizes).filter(k=>sizes[k]>0);
+  const qtyBlock=`
+    <div style="background:#f8f8f8;border-radius:10px;padding:10px 12px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:11px;font-weight:700;color:var(--muted)">کل مقدار / TOTAL QTY</span>
+        <span style="font-size:20px;font-weight:800;color:var(--dark)">${j.totalQty||'?'} <span style="font-size:12px;font-weight:500">pcs</span></span>
+      </div>
+      ${sizeKeys.length?`<div style="display:flex;gap:5px;flex-wrap:wrap">${sizeKeys.map(k=>`<span style="padding:3px 8px;background:#fff;border:1px solid var(--border);border-radius:6px;font-size:12px;font-weight:700">${k}: ${sizes[k]}</span>`).join('')}</div>`:'<div style="font-size:11px;color:var(--muted)">Size details not available</div>'}
+    </div>`;
+
+  // ── Recipe placements as cards ──
+  const recipeLockBanner=recipeLocked?`<div style="background:#dcfce7;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;color:#14532d;margin-bottom:10px;text-align:center">Recipe Locked — Follow Exactly / ریسیپی لاک ہے — بالکل یہی فالو کریں</div>`:`<div style="background:#fef3c7;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;color:#92400e;margin-bottom:10px;text-align:center">Draft Recipe — Not yet locked / ریسیپی ابھی لاک نہیں</div>`;
+  const pantones=recipe?.printing?.pantones||[];
+  const placements=recipe?.printing?.placements||[];
+  const recipeSection=hasRecipe?`
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">ریسیپی / Recipe Summary</div>
+      ${recipeLockBanner}
+      ${placements.map(pl=>`
+        <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:7px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:5px">${pl.name||'Placement'} <span style="font-size:11px;font-weight:500;color:var(--muted)">${pl.side?'· '+pl.side:''}</span></div>
+          ${pl.artworkSize?`<div style="font-size:12px;color:var(--muted);margin-bottom:3px">Size: ${pl.artworkSize}</div>`:''}
+          ${pantones.length?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${pantones.map(p=>`<span style="font-size:11px;padding:2px 8px;background:#f0f0f0;border-radius:8px">${p.colorName||p.pantoneCode||'—'}</span>`).join('')}</div>`:''}
+        </div>`).join('')}
+      ${!placements.length&&pantones.length?`<div style="display:flex;gap:4px;flex-wrap:wrap">${pantones.map(p=>`<span style="font-size:11px;padding:2px 8px;background:#f0f0f0;border-radius:8px">${p.colorName||p.pantoneCode||'—'}</span>`).join('')}</div>`:''}
+      ${recipe.printing?.instructionsUr?`<div style="margin-top:8px;font-size:14px;line-height:2;direction:rtl;text-align:right;color:var(--dark);background:#f9f9f9;padding:8px 10px;border-radius:8px">${recipe.printing.instructionsUr}</div>`:''}
+      ${recipe.printing?.instructionsEn?`<div style="margin-top:6px;font-size:12px;color:var(--dark);line-height:1.6">${recipe.printing.instructionsEn}</div>`:''}
+    </div>`:'';
+
+  // ── No recipe warning ──
+  const noRecipeWarn=!hasRecipe?`<div style="background:#fee2e2;border-radius:10px;padding:12px;color:#dc2626;font-weight:700;font-size:13px;margin-bottom:12px;text-align:center">ریسیپی موجود نہیں<br><span style="font-size:11px;font-weight:500;margin-top:4px;display:block">Recipe Missing — PP sample cannot start. Contact Ammar.</span></div>`:'';
+
+  // ── PP photo upload (file input, no URL shown to worker) ──
+  const ppPhotoInput=`
+    <div style="margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700;color:var(--dark);margin-bottom:6px">تصویر لگائیں / Attach PP Sample Photo</div>
+      <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:2px dashed var(--border);border-radius:10px;cursor:pointer;background:#fafafa">
+        <span style="font-size:20px">📷</span>
+        <span style="font-size:13px;color:var(--muted)">تصویر لیں یا اپلوڈ کریں<br><span style="font-size:11px">Take Photo / Upload Photo</span></span>
+        <input type="file" id="pp-file-${j._id}" accept="image/*" capture="environment" style="display:none" onchange="window._ppPhotoSelected('${j._id}',this)">
+      </label>
+      <div id="pp-photo-preview-${j._id}" style="margin-top:6px;display:none"><img id="pp-photo-img-${j._id}" style="width:100%;max-height:160px;object-fit:contain;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green);font-weight:600;margin-top:3px">Photo selected / تصویر منتخب</div></div>
+      <input type="hidden" id="pp-photo-${j._id}" value="">
+    </div>`;
+
+  // ── PP note ──
+  const ppNoteInput=`
+    <div style="margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700;color:var(--dark);margin-bottom:5px">نوٹ لکھیں / Sample Notes <span style="font-size:11px;font-weight:400;color:var(--muted)">(optional)</span></div>
+      <textarea id="pp-note-${j._id}" rows="2" placeholder="کوئی بات لکھیں… / Any notes…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none"></textarea>
+    </div>`;
+
+  // ── Action area ──
+  const handoffNote=`<div style="background:#f0f9ff;border-radius:8px;padding:8px 10px;font-size:12px;color:#0369a1;margin-top:8px;font-weight:500;line-height:1.6">یہ بٹن دبانے کے بعد فزیکل پی پی سیمپل QC / حارث کو دیں۔<br><span style="font-size:11px;font-style:italic">After pressing this, send the physical PP sample to Haris (QC).</span></div>`;
+
+  let actionArea='';
+  if(hasRecipe&&(canPPSample||ppRejected)){
+    actionArea=`
+      ${ppRejected?`<div style="background:#fee2e2;border-radius:10px;padding:12px;margin-bottom:12px;color:#dc2626;font-weight:700;font-size:13px">پی پی ریجیکٹ — نیا پی پی سیمپل بنائیں<br><span style="font-size:12px;font-weight:500;margin-top:4px;display:block">وجہ: ${j.ppAttempts?.[j.ppAttempts.length-1]?.rejectionReason||'—'}</span></div>`:''}
+      ${ppNoteInput}
+      ${ppPhotoInput}
+      <button class="worker-btn worker-btn-amber" onclick="window.submitPPSample('${j._id}')">
+        پی پی سیمپل تیار ہے / PP Sample Ready
+      </button>
+      ${handoffNote}`;
+  } else if(awaitingApproval){
+    actionArea=`<div style="background:#f0f9ff;border:1px solid #7dd3fc;border-radius:10px;padding:14px;color:#0369a1;font-weight:700;font-size:14px;text-align:center">
+      منظوری کا انتظار / Waiting for Approval<br>
+      <span style="font-size:12px;font-weight:500;margin-top:4px;display:block">پی پی سیمپل حارث کے پاس ہے — منظوری آنے پر لاٹ شروع ہوگا</span>
+    </div>`;
+  } else if(canStartBulk){
+    actionArea=`<div class="pp-approved-banner">پی پی منظور — لاٹ چلانے کی اجازت ہے<br><span style="font-size:11px;font-weight:400">PP Approved — Lot Run Allowed</span></div>
+    <button class="worker-btn worker-btn-green" onclick="window.startBulkPrinting('${j._id}')">
+      لاٹ پرنٹنگ شروع کریں / Start Lot Printing
+    </button>`;
+  } else if(alreadyPrinting){
+    actionArea=`<div class="pp-approved-banner" style="margin-bottom:10px">پی پی منظور — لاٹ جاری ہے<br><span style="font-size:11px;font-weight:400">PP Approved — Printing in Progress</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+      <div class="field"><label>پرنٹ شدہ پیس / Printed Qty</label><input id="bulk-qty-${j._id}" type="number" min="0" placeholder="${j.totalQty||0}" style="width:100%"></div>
+      <div class="field"><label>خراب پیس / Damaged Qty</label><input id="bulk-dmg-${j._id}" type="number" min="0" placeholder="0" style="width:100%"></div>
+    </div>
+    <div class="field" style="margin-bottom:10px"><label>نوٹ / Notes</label><textarea id="bulk-note-${j._id}" rows="2" placeholder="کوئی بات لکھیں…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none"></textarea></div>
+    <button class="worker-btn worker-btn-green" onclick="window.completeBulkPrinting('${j._id}')">
+      پرنٹنگ مکمل ہو گئی / Printing Complete
+    </button>`;
+  } else if(!hasRecipe){
+    actionArea=noRecipeWarn;
+  }
+
+  // ── Secondary: delay + voice note ──
+  const secondaryActions=`
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn-outline" style="flex:1;font-size:12px;padding:8px 0;color:#6B7280;border-color:#e0e0e0" onclick="window.showDelayForm('${j._id}')">تاخیر کی وجہ لکھیں<br><span style="font-size:10px">Add Delay Reason</span></button>
+      <button class="btn-outline" style="flex:1;font-size:12px;padding:8px 0;color:#6B7280;border-color:#e0e0e0" onclick="window._voiceNoteWorker('${j._id}')">وائس نوٹ<br><span style="font-size:10px">Add Voice Note</span></button>
+    </div>
+    <div id="delay-form-${j._id}" style="display:none;margin-top:8px">
+      <textarea id="delay-text-${j._id}" rows="2" placeholder="تاخیر کی وجہ بتائیں… / Explain delay…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none;margin-bottom:6px;direction:rtl"></textarea>
+      <button class="btn-outline" style="width:100%" onclick="window.submitDelayReason('${j._id}')">جمع کروائیں / Submit</button>
+    </div>`;
+
+  return`<div class="work-card" style="border-radius:14px;overflow:hidden;padding:0">
+    <!-- Header -->
+    <div style="padding:14px 14px 12px;border-bottom:2px solid var(--border);background:#fff">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
+            <span style="font-size:14px;font-weight:800;color:var(--red)">${j.poNumber||'—'}</span>
+            <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;background:${(PRIORITY_COLORS[j.priority]||'#888')+'22'};color:${PRIORITY_COLORS[j.priority]||'#888'}">${(j.priority||'normal').toUpperCase()}</span>
             ${tierBadge(j.complexityTier||1)}
           </div>
-          <div style="font-size:15px;font-weight:700;margin-top:3px">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
+          <div style="font-size:16px;font-weight:800;line-height:1.25;margin-bottom:2px">${j.articleCode||'—'}</div>
+          <div style="font-size:13px;color:var(--muted)">${j.articleName||'—'}</div>
+          <div style="margin-top:4px">${processBadge(j.processType)}</div>
         </div>
-        ${recipe?.images?.frontUrl?`<div style="width:52px;height:66px;border-radius:8px;overflow:hidden;flex-shrink:0"><img src="${recipe.images.frontUrl}" style="width:100%;height:100%;object-fit:cover"></div>`:''}
-      </div>
-      <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-        ${processBadge(j.processType)}
-        <span style="font-size:12px;color:var(--muted)">${j.totalQty||'?'} pcs</span>
-        ${j.slaCurrentDue?`<span class="sla-chip ${slaChipClass(sl)}" style="font-size:11px">${remainLabel(j.slaCurrentDue)}</span>`:''}
+        ${frontUrl?`<img src="${frontUrl}" onclick="window.open('${frontUrl}')" style="width:64px;height:80px;object-fit:cover;border-radius:8px;flex-shrink:0;cursor:zoom-in;border:1px solid var(--border)">`:''}
       </div>
     </div>
 
-    ${!hasRecipe?`<div class="pp-locked-banner" style="margin:12px">
-      ⚠️ Recipe Missing / ریسیپی موجود نہیں<br>
-      <span style="font-size:11px;font-weight:400;margin-top:4px;display:block">PP sample cannot start until an authorized user creates and locks the recipe.</span>
-    </div>`:''}
-
-    ${hasRecipe&&recipe?`<div style="padding:12px 14px;border-bottom:1px solid var(--border)">
-      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Recipe Summary / ریسیپی خلاصہ</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${processBadge(j.processType)} ${tierBadge(j.complexityTier||1)} ${recipeLocked?'<span style="font-size:10px;color:var(--green);font-weight:700">🔒 Locked</span>':'<span style="font-size:10px;color:var(--amber);font-weight:700">✏️ Draft</span>'}</div>
-      ${(recipe.printing?.placements||[]).map((pl,i)=>`<div style="font-size:12px;margin-bottom:3px">📍 <strong>${pl.name||'Placement '+(i+1)}</strong> — ${pl.side||'—'} ${pl.artworkSize?'('+pl.artworkSize+')':''}</div>`).join('')}
-      ${(recipe.printing?.pantones||[]).length?`<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">${recipe.printing.pantones.map(p=>`<span style="font-size:11px;padding:2px 8px;border-radius:8px;background:#f0f0f0">${p.colorName||p.pantoneCode||'—'}</span>`).join('')}</div>`:''}
-      ${recipe.printing?.instructionsEn?`<div style="margin-top:8px;font-size:12px;color:var(--dark);line-height:1.6">${recipe.printing.instructionsEn}</div>`:''}
-      ${recipe.printing?.instructionsUr?`<div style="margin-top:6px;font-size:14px;line-height:2;direction:rtl;text-align:right;color:var(--dark)">${recipe.printing.instructionsUr}</div>`:''}
-      ${recipe.images?.placementGuideUrl?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:600;color:var(--muted);margin-bottom:4px">PLACEMENT GUIDE / جگہ کا رہنما</div><img src="${recipe.images.placementGuideUrl}" style="width:100%;border-radius:8px;max-height:200px;object-fit:contain;background:#f0f0f0"></div>`:''}
-    </div>`:''}
-
-    <div style="padding:12px 14px">
-      ${ppRejected?`<div class="pp-locked-banner">
-        ✗ PP Rejected — New PP Required<br>
-        پی پی ریجیکٹ — نیا پی پی سیمپل چاہیے<br>
-        <span style="font-size:11px;font-weight:400;margin-top:4px;display:block">Rejection reason: ${j.ppAttempts?.[j.ppAttempts.length-1]?.rejectionReason||'—'}</span>
-      </div>`:''}
-      ${awaitingApproval?`<div style="background:#f0f9ff;border:1px solid #7dd3fc;border-radius:10px;padding:12px;color:#0369a1;font-weight:600;font-size:13px">
-        ⏳ Waiting for PP Approval / منظوری کا انتظار<br>
-        <span style="font-size:11px;font-weight:400;margin-top:4px;display:block">Bulk printing is locked until QC/manager approves your PP sample.</span>
-      </div>`:''}
-      ${canStartBulk||alreadyPrinting?`<div class="pp-approved-banner">
-        ✓ PP Approved — Lot Run Allowed<br>
-        پی پی منظور — لاٹ چلانے کی اجازت ہے
-      </div>`:''}
-
-      ${hasRecipe&&canPPSample?`
-        <div style="margin-bottom:8px;margin-top:10px">
-          <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px">PP Sample Notes (optional)</div>
-          <textarea id="pp-note-${j._id}" rows="2" placeholder="Any notes about the sample… / نوٹ…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none"></textarea>
-        </div>
-        <div style="margin-bottom:8px">
-          <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px">PP Sample Photo URL (optional)</div>
-          <input id="pp-photo-${j._id}" placeholder="Upload to Cloudinary and paste URL…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none">
-        </div>
-        <button class="worker-btn worker-btn-amber" onclick="window.submitPPSample('${j._id}')">
-          PP Sample Ready / پی پی سیمپل تیار ہے
-        </button>`:''}
-
-      ${ppRejected&&hasRecipe?`
-        <div style="margin-bottom:8px;margin-top:10px">
-          <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px">New PP Sample Notes</div>
-          <textarea id="pp-note-${j._id}" rows="2" placeholder="Notes on new sample…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none"></textarea>
-        </div>
-        <div style="margin-bottom:8px">
-          <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px">Photo URL</div>
-          <input id="pp-photo-${j._id}" placeholder="paste photo URL…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none">
-        </div>
-        <button class="worker-btn worker-btn-amber" onclick="window.submitPPSample('${j._id}')">
-          PP Sample Ready / پی پی سیمپل تیار ہے
-        </button>`:''}
-
-      ${canStartBulk?`<button class="worker-btn worker-btn-green" onclick="window.startBulkPrinting('${j._id}')">
-        Start Lot Printing / لاٹ پرنٹنگ شروع کریں
-      </button>`:''}
-
-      ${alreadyPrinting?`
-        <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-          <div class="field"><label>Printed Qty</label><input id="bulk-qty-${j._id}" type="number" min="0" placeholder="${j.totalQty||0}" style="width:100%"></div>
-          <div class="field"><label>Damaged Qty</label><input id="bulk-dmg-${j._id}" type="number" min="0" placeholder="0" style="width:100%"></div>
-        </div>
-        <div class="field" style="margin-bottom:8px"><label>Notes</label><textarea id="bulk-note-${j._id}" rows="2" placeholder="Any notes…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none"></textarea></div>
-        <button class="worker-btn worker-btn-green" onclick="window.completeBulkPrinting('${j._id}')">
-          Printing Complete / پرنٹنگ مکمل ہو گئی
-        </button>`:''}
-
-      <button class="worker-btn" style="background:#6B7280;margin-top:6px" onclick="window.showDelayForm('${j._id}')">
-        Delay Reason / تاخیر کی وجہ
-      </button>
-      <div id="delay-form-${j._id}" style="display:none;margin-top:8px">
-        <textarea id="delay-text-${j._id}" rows="2" placeholder="Explain delay / تاخیر کی وجہ بتائیں…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none;margin-bottom:6px"></textarea>
-        <button class="btn-outline" style="width:100%" onclick="window.submitDelayReason('${j._id}')">Submit Reason</button>
-      </div>
-
-      <div style="margin-top:6px;text-align:center">
-        <button style="background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;font-family:inherit" onclick="window.openPrintingJob('${j._id}')">View Full Details →</button>
+    <!-- Body -->
+    <div style="padding:14px">
+      ${slaBlock}
+      ${stepBlock}
+      ${imagesBlock}
+      ${qtyBlock}
+      ${recipeSection}
+      ${actionArea}
+      ${secondaryActions}
+      <div style="margin-top:10px;text-align:center">
+        <button style="background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;font-family:inherit" onclick="window.openPrintingJob('${j._id}')">Full Details / تفصیل دیکھیں →</button>
       </div>
     </div>
   </div>`;
 }
 window.showDelayForm=function(id){ const f=document.getElementById('delay-form-'+id); if(f)f.style.display=f.style.display==='none'?'block':'none'; };
+window._ppPhotoSelected=async function(jobId,input){
+  const file=input.files?.[0]; if(!file)return;
+  const preview=document.getElementById('pp-photo-preview-'+jobId);
+  const img=document.getElementById('pp-photo-img-'+jobId);
+  const hidden=document.getElementById('pp-photo-'+jobId);
+  if(img){img.src=URL.createObjectURL(file);preview.style.display='block';}
+  try{
+    showToast('Uploading photo…');
+    const url=await uploadToCloudinary(file);
+    if(hidden)hidden.value=url;
+    showToast('Photo uploaded ✓');
+  }catch(e){showToast('Photo upload failed: '+e.message,true);if(preview)preview.style.display='none';}
+};
+window._voiceNoteWorker=function(jobId){
+  showToast('Voice note upload coming soon — use text note for now.',false);
+  const f=document.getElementById('delay-form-'+jobId);
+  if(f)f.style.display='block';
+};
 
 // ── Bundling / Stitching worker cards ─────────────────────────────────
 function bundlingWorkerCardHTML(j){
@@ -5443,7 +5540,7 @@ function renderMyWork(){
     if(!printingDataLoaded){loadPrintingData().then(()=>{const m=document.getElementById('main-content');if(m&&currentPage==='my-work')m.innerHTML=renderMyWork();});}
     const myJobs=allPrintingJobs.filter(j=>j.assignedTo===session.u&&j.currentStage!=='closed');
     if(!myJobs.length)return base||'<div class="empty">No orders in your queue right now.</div>';
-    return`<div class="page-head"><div class="page-title">My Work / میرا کام</div><div class="page-sub">${myJobs.length} printing job${myJobs.length!==1?'s':''} in queue</div></div>
+    return`<div class="page-head"><div class="page-title">Printing Work / پرنٹنگ کام</div><div class="page-sub" style="direction:rtl;text-align:right;font-size:14px">اسغر کا پرنٹنگ کام · ${myJobs.length} کام باقی ہے</div></div>
     ${myJobs.map(j=>printWorkerCardHTML(j)).join('')}`;
   }
 
