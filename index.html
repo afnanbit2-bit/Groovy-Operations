@@ -234,6 +234,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .tab-btn{flex:1;padding:8px 10px;background:transparent;border:none;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;color:var(--muted);transition:all .15s}
 .tab-btn.active{background:#fff;color:var(--dark);font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,.1)}
 @media print{#sidebar,#mob-nav,.topbar,.back-btn,.worker-btn,.btn-primary,.btn-outline,.tab-bar{display:none!important}#main-content{padding:0}}
+@media(max-width:600px){#notif-panel{right:0!important;left:0!important;width:100%!important;top:auto!important;bottom:0!important;border-radius:12px 12px 0 0!important;max-height:80vh!important}}
 </style>
 </head>
 <body>
@@ -1088,6 +1089,26 @@ async function startApp(){
   document.getElementById('user-name').textContent=session.name;
   document.getElementById('user-title').textContent=session.title;
   sessionStorage.setItem('u',session.u);
+  // Inject notification bell for owners
+  if(session.role==='owner'){
+    const topbarUser=document.querySelector('.topbar-user');
+    if(topbarUser&&!document.getElementById('notif-bell-wrap')){
+      const bell=document.createElement('div');
+      bell.id='notif-bell-wrap';
+      bell.style.cssText='position:relative;cursor:pointer;margin-right:4px;display:flex;align-items:center';
+      bell.onclick=()=>window.toggleNotifPanel();
+      bell.innerHTML=`<span style="font-size:18px;line-height:1">🔔</span><span id="notif-badge" style="display:none;position:absolute;top:-5px;right:-5px;background:#dc2626;color:#fff;border-radius:50%;width:17px;height:17px;font-size:9px;font-weight:700;align-items:center;justify-content:center">0</span>`;
+      topbarUser.insertBefore(bell,topbarUser.firstChild);
+    }
+    if(!document.getElementById('notif-panel')){
+      const panel=document.createElement('div');
+      panel.id='notif-panel';
+      panel.style.cssText='display:none;position:fixed;top:52px;right:12px;width:360px;max-height:70vh;overflow-y:auto;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.18);z-index:1000';
+      panel.innerHTML=`<div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff"><span style="font-weight:700;font-size:14px">Store Notifications</span><button onclick="window.toggleNotifPanel()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1">×</button></div><div id="notif-list"></div>`;
+      document.body.appendChild(panel);
+    }
+    loadStoreNotifications();
+  }
   buildNav();
   if(auth.currentUser){try{await auth.currentUser.getIdToken();}catch(_){}}
   if(session.role==='store'){
@@ -5762,6 +5783,179 @@ window.setILQ=function(v){_ilQ=v;_ilPage=1;refreshIssueLog();};
 window.setILPO=function(v){_ilPO=v;_ilPage=1;refreshIssueLog();};
 window.ilPagePrev=function(){if(_ilPage>1){_ilPage--;refreshIssueLog();}};
 window.ilPageNext=function(){_ilPage++;refreshIssueLog();};
+
+// ── Store notification state ──
+let storeNotifications=[];
+
+// ── Inventory CRUD helpers ──
+function _parseSizesInput(str){
+  const out={};
+  str.trim().split(/[\s,]+/).forEach(part=>{const m=part.match(/^(.+):(\d+)$/);if(m)out[m[1]]=parseInt(m[2]);});
+  return out;
+}
+function _buildItemModal(title,item,onSave){
+  let existing=document.getElementById('_item-modal');if(existing)existing.remove();
+  const cats=CAT_ORDER.map(c=>`<option value="${c}"${item&&item.category===c?' selected':''}>${CAT_LABELS[c]||c}</option>`).join('');
+  const units=['pcs','meters','kg','grams','cones','packets','100pc bundles'];
+  const unitOpts=units.map(u=>`<option${item&&item.unit===u?' selected':''}>${u}</option>`).join('');
+  const sizesStr=item&&item.sizeSpecific&&item.sizes?Object.entries(item.sizes).map(([k,v])=>`${k}:${v}`).join(' '):'';
+  const modal=document.createElement('div');
+  modal.id='_item-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=`<div style="background:#fff;border-radius:14px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 12px 48px rgba(0,0,0,.25)">
+    <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <span style="font-weight:700;font-size:15px">${title}</span>
+      <button onclick="document.getElementById('_item-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
+    </div>
+    <div style="padding:18px;display:grid;gap:12px">
+      <div class="field"><label>Code *</label><input id="_im-code" value="${item?item.code:''}" placeholder="e.g. NL5" ${item?'readonly':''}></div>
+      <div class="field"><label>Name *</label><input id="_im-name" value="${item?item.name:''}"></div>
+      <div class="field"><label>Category *</label><select id="_im-cat">${cats}</select></div>
+      <div class="field"><label>Unit *</label><select id="_im-unit">${unitOpts}</select></div>
+      <div class="field"><label>Low Stock Threshold</label><input id="_im-thresh" type="number" value="${item?item.lowStockThreshold||200:200}"></div>
+      <div style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="_im-sized" ${item&&item.sizeSpecific?'checked':''} onchange="document.getElementById('_im-sized-row').style.display=this.checked?'block':'none';document.getElementById('_im-bal-row').style.display=this.checked?'none':'block'"><label for="_im-sized" style="cursor:pointer;font-size:13px">Size-specific</label></div>
+      <div id="_im-sized-row" style="display:${item&&item.sizeSpecific?'block':'none'}">
+        <div class="field"><label>Sizes (e.g. XS:100 S:200 M:300)</label><input id="_im-sizes" value="${sizesStr}" placeholder="XS:100 S:200 M:300 L:400"></div>
+      </div>
+      <div id="_im-bal-row" style="display:${item&&item.sizeSpecific?'none':'block'}">
+        <div class="field"><label>Balance</label><input id="_im-bal" type="number" value="${item&&!item.sizeSpecific?item.balance||0:0}"></div>
+      </div>
+    </div>
+    <div style="padding:0 18px 18px"><button class="btn-primary" id="_im-save" style="width:100%">Save</button></div>
+  </div>`;
+  document.body.appendChild(modal);
+  document.getElementById('_im-save').onclick=onSave;
+  modal.addEventListener('click',e=>{if(e.target===modal)modal.remove();});
+}
+
+window.showAddItemForm=function(){
+  _buildItemModal('Add New Item',null,async()=>{
+    const code=document.getElementById('_im-code').value.trim().toUpperCase();
+    const name=document.getElementById('_im-name').value.trim();
+    if(!code||!name){showToast('Code and name are required.',true);return;}
+    const sized=document.getElementById('_im-sized').checked;
+    const item={code,name,category:document.getElementById('_im-cat').value,unit:document.getElementById('_im-unit').value,lowStockThreshold:parseInt(document.getElementById('_im-thresh').value)||200,sizeSpecific:sized};
+    if(sized){item.sizes=_parseSizesInput(document.getElementById('_im-sizes').value);}
+    else{item.balance=parseInt(document.getElementById('_im-bal').value)||0;}
+    try{
+      await fsSet('store_items',code,item);
+      const existing=allItems.findIndex(i=>i.code===code);
+      if(existing>=0)allItems[existing]={...item,_id:code};else allItems.push({...item,_id:code});
+      document.getElementById('_item-modal').remove();
+      showToast('Item added ✓');
+      window.showPage('store-inventory');
+    }catch(e){showToast('Save failed: '+e.message,true);}
+  });
+};
+
+window.editStoreItem=function(code){
+  const item=allItems.find(i=>i.code===code);if(!item)return;
+  const snap={...item};
+  _buildItemModal('Edit Item — '+code,item,async()=>{
+    const name=document.getElementById('_im-name').value.trim();
+    if(!name){showToast('Name is required.',true);return;}
+    const sized=document.getElementById('_im-sized').checked;
+    const updated={...item,name,category:document.getElementById('_im-cat').value,unit:document.getElementById('_im-unit').value,lowStockThreshold:parseInt(document.getElementById('_im-thresh').value)||200,sizeSpecific:sized};
+    if(sized){updated.sizes=_parseSizesInput(document.getElementById('_im-sizes').value);delete updated.balance;}
+    else{updated.balance=parseInt(document.getElementById('_im-bal').value)||0;delete updated.sizes;}
+    try{
+      await fsSet('store_items',code,updated);
+      const idx=allItems.findIndex(i=>i.code===code);
+      if(idx>=0)allItems[idx]={...updated,_id:code};
+      if(session.role==='store')await _notifyInventoryChange('edit',snap,updated);
+      document.getElementById('_item-modal').remove();
+      showToast('Item updated ✓');
+      window.showPage('store-inventory');
+    }catch(e){showToast('Save failed: '+e.message,true);}
+  });
+};
+
+window.deleteStoreItem=async function(code){
+  const item=allItems.find(i=>i.code===code);if(!item)return;
+  if(!confirm(`Delete ${code} — ${item.name}?\n\nThis cannot be undone.`))return;
+  try{
+    await fsDelete('store_items',code);
+    if(session.role==='store')await _notifyInventoryChange('delete',item,null);
+    allItems=allItems.filter(i=>i.code!==code);
+    showToast('Item deleted');
+    window.showPage('store-inventory');
+  }catch(e){showToast('Delete failed: '+e.message,true);}
+};
+
+async function _notifyInventoryChange(action,oldItem,newItem){
+  const changes={};
+  if(action==='edit'){
+    ['name','category','unit','balance','sizeSpecific','sizes','lowStockThreshold'].forEach(f=>{
+      if(JSON.stringify(oldItem[f])!==JSON.stringify(newItem[f]))changes[f]={old:oldItem[f],new:newItem[f]};
+    });
+  }else{changes.deletedItem=oldItem;}
+  await fsAdd('store_notifications',{
+    type:action==='edit'?'inventory_edit':'inventory_delete',
+    itemCode:oldItem.code,itemName:oldItem.name,action,
+    changedBy:session.name,changedAt:Date.now(),changes,
+    status:'unread',dismissedBy:null,dismissedAt:null,
+  });
+}
+
+// ── Notification system (owners only) ──
+async function loadStoreNotifications(){
+  if(session.role!=='owner')return;
+  try{
+    const docs=await fsQueryWhere('store_notifications','status','==','unread',50);
+    storeNotifications=docs;renderNotifBadge();
+  }catch(_){}
+}
+function renderNotifBadge(){
+  const badge=document.getElementById('notif-badge');if(!badge)return;
+  const count=storeNotifications.filter(n=>n.status==='unread').length;
+  if(count>0){badge.style.display='flex';badge.textContent=count>9?'9+':count;}
+  else{badge.style.display='none';}
+}
+function _timeAgo(ts){
+  const d=Date.now()-ts;
+  if(d<60000)return'just now';if(d<3600000)return Math.floor(d/60000)+'m ago';
+  if(d<86400000)return Math.floor(d/3600000)+'h ago';return Math.floor(d/86400000)+'d ago';
+}
+function renderNotifList(){
+  const el=document.getElementById('notif-list');if(!el)return;
+  const list=storeNotifications.filter(n=>n.status==='unread');
+  if(!list.length){el.innerHTML='<div style="padding:32px;text-align:center;color:var(--muted);font-size:13px">No pending notifications ✓</div>';return;}
+  el.innerHTML=list.map(n=>{
+    let changesHTML='';
+    if(n.action==='edit'&&n.changes){
+      const parts=Object.entries(n.changes).map(([f,v])=>`<span style="font-size:11px;background:#f5f5f5;padding:2px 6px;border-radius:4px">${f}: <span style="color:#dc2626">${JSON.stringify(v.old)}</span> → <span style="color:var(--green)">${JSON.stringify(v.new)}</span></span>`);
+      if(parts.length)changesHTML=`<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">${parts.join('')}</div>`;
+    }else if(n.action==='delete'){
+      changesHTML=`<div style="font-size:11px;color:var(--muted);margin-top:3px">Item snapshot saved</div>`;
+    }
+    return`<div style="padding:14px 16px;border-bottom:1px solid #f5f5f5">
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <span style="font-size:20px;flex-shrink:0">${n.action==='edit'?'✏️':'🗑️'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:13px">${n.action==='edit'?'Edited':'Deleted'}: ${n.itemCode} — ${n.itemName}</div>
+          ${changesHTML}
+          <div style="font-size:11px;color:var(--muted);margin-top:5px">${_timeAgo(n.changedAt)} · by ${n.changedBy}</div>
+        </div>
+      </div>
+      <button onclick="window.dismissNotif('${n._id}')" style="margin-top:10px;width:100%;padding:7px;border:1px solid var(--border);border-radius:7px;background:#fff;cursor:pointer;font-size:12px;color:var(--muted);font-family:inherit">Dismiss</button>
+    </div>`;
+  }).join('');
+}
+window.toggleNotifPanel=function(){
+  const p=document.getElementById('notif-panel');if(!p)return;
+  const open=p.style.display==='none'||!p.style.display;
+  p.style.display=open?'block':'none';
+  if(open)renderNotifList();
+};
+window.dismissNotif=async function(id){
+  const n=storeNotifications.find(x=>x._id===id);if(!n)return;
+  const{_id,...data}=n;
+  try{
+    await fsSet('store_notifications',id,{...data,status:'read',dismissedBy:session.name,dismissedAt:Date.now()});
+    storeNotifications=storeNotifications.filter(x=>x._id!==id);
+    renderNotifBadge();renderNotifList();
+  }catch(e){showToast('Dismiss failed: '+e.message,true);}
+};
 
 </script>
 </body>
