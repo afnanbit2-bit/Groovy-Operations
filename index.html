@@ -311,7 +311,7 @@ const USER_DEFS=[
   {u:'ammar',  email:'ammar@groovy.op',  name:'Ammar',  role:'owner',  title:'Co-founder',        canPO:true, stages:null,                 pass:'Ammar@Ops24'},
   {u:'mustafa',email:'mustafa@groovy.op',name:'Mustafa',role:'manager',title:'Operations Manager',canPO:true, stages:null,                 pass:'Mustafa@Ops24'},
   {u:'arfat',  email:'arfat@groovy.op',  name:'Arfat',  role:'manager',title:'Advisory',          canPO:true, stages:null,                 pass:'Arfat@Ops24'},
-  {u:'raees',  email:'raees@groovy.op',  name:'Raees',  role:'viewer', title:'Store Manager',     canPO:false,stages:[],                   pass:'Raees@Ops24'},
+  {u:'raees',  email:'raees@groovy.op',  name:'Raees',  role:'store',  title:'Store Manager',     canPO:false,stages:[],                   pass:'Raees@Ops24'},
   {u:'haris',  email:'haris@groovy.op',  name:'Haris',  role:'worker', title:'QC Manager',        canPO:false,stages:['qc'],               pass:'Haris@Ops24'},
   {u:'abbas',  email:'abbas@groovy.op',  name:'Abbas',  role:'worker', title:'Washing Assistant', canPO:false,stages:['washing'],          pass:'Abbas@Ops24'},
   {u:'waqas',  email:'waqas@groovy.op',  name:'Waqas',  role:'worker', title:'Stitching Incharge',canPO:false,stages:['stitching'],        pass:'Waqas@Ops24'},
@@ -5947,7 +5947,7 @@ async function _notifyInventoryChange(action,oldItem,newItem){
 async function loadStoreNotifications(){
   if(session.role!=='owner')return;
   try{
-    const docs=await fsQueryWhere('store_notifications','status','==','unread',50);
+    const docs=await fsQueryWhere('store_notifications','status','unread',50);
     storeNotifications=docs;renderNotifBadge();
   }catch(_){}
 }
