@@ -1034,15 +1034,14 @@ function buildNav(){
 
   const printSubItems=[];
   if(!isWorker&&!isStore){
-    printSubItems.push({id:'print-recipes',label:'Recipe Directory'});
-    printSubItems.push({id:'print-jobs',label:'Printing / Decoration'});
-    printSubItems.push({id:'print-observer',label:'Observer Tower'});
+    printSubItems.push({id:'recipe-directory',label:'Recipe Directory'});
+    printSubItems.push({id:'printing-jobs',label:'Printing / Decoration'});
+    printSubItems.push({id:'observer-tower',label:'Observer Tower'});
   }
 
   const mainNav=mainItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('');
-  const printNav=printItems.length?`<div class="nav-divider"></div><div class="nav-section-label">Decoration & Printing</div>`+printItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join(''):'';
   const storeOpen=currentPage.startsWith('store-')||isStore;
-  const printOpen=currentPage.startsWith('print-');
+  const printOpen=['recipe-directory','printing-jobs','observer-tower','recipe-create','recipe-detail','printing-job-detail','qc-report-page','billing-detail'].includes(currentPage)||currentPage.startsWith('recipe-')||currentPage.startsWith('printing-')||currentPage==='observer-tower';
   const storeNav=storeSubItems.length?`
     <div class="nav-divider"></div>
     <div class="nav-item" id="nav-store-toggle" onclick="window.toggleStoreNav()" style="display:flex;justify-content:space-between;align-items:center">
@@ -1095,7 +1094,7 @@ window.showPage=async function(id){
     const arrow=document.getElementById('store-nav-arrow');
     if(sub&&sub.style.maxHeight==='0px'){sub.style.maxHeight='300px';if(arrow)arrow.textContent='▾';}
   }
-  if(id.startsWith('print-')){
+  if(id.startsWith('recipe-')||id.startsWith('printing-')||id==='observer-tower'||id==='qc-report-page'||id==='billing-detail'){
     const sub=document.getElementById('print-subnav');
     const arrow=document.getElementById('print-nav-arrow');
     if(sub&&sub.style.maxHeight==='0px'){sub.style.maxHeight='300px';if(arrow)arrow.textContent='▾';}
@@ -1116,10 +1115,6 @@ function renderPage(id){
   else if(id==='users')m.innerHTML=renderUsers();
   else if(id==='po-detail')renderDetailPage();
   else if(id==='stage-work')renderStageWorkPage();
-  // ── Decoration & Printing pages ──
-  else if(id==='print-recipes')m.innerHTML=renderRecipeDirectory();
-  else if(id==='print-jobs')m.innerHTML=renderPrintJobs();
-  else if(id==='print-observer')m.innerHTML=renderObserverTower();
   // ── Store pages ──
   else if(id==='store-dashboard')m.innerHTML=renderStoreDashboard();
   else if(id==='store-inventory')m.innerHTML=renderInventory();
@@ -2984,34 +2979,6 @@ function refreshIssueLog(){
       <span style="font-size:12px;color:var(--muted)">Page ${_ilPage} of ${maxPages}</span>
       <button onclick="window.ilPageNext()" ${_ilPage===maxPages?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit">Next →</button>`;
   }
-}
-
-// ── Decoration & Printing pages ──
-function renderRecipeDirectory(){
-  return`<div class="page-head"><div class="page-title">Recipe Directory</div><div class="page-sub">0 articles · 0 locked</div></div>
-  <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
-    <input placeholder="Search article code or name…" style="flex:1;min-width:200px;padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
-    <select style="padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none;cursor:pointer"><option>All status</option></select>
-    <select style="padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none;cursor:pointer"><option>All tiers</option></select>
-    <button class="btn-primary">+ New Recipe</button>
-  </div>
-  <div class="card"><div class="empty">No recipes yet. Click + New Recipe to start.</div></div>
-  <div style="height:80px"></div>`;
-}
-function renderPrintJobs(){
-  return`<div class="page-head"><div class="page-title">Printing / Decoration</div><div class="page-sub">Manage screen print, embroidery & decoration jobs</div></div>
-  <div class="card"><div class="empty">No decoration jobs yet. Coming soon.</div></div>
-  <div style="height:80px"></div>`;
-}
-function renderObserverTower(){
-  const activePrint=allPOs.filter(p=>p.currentStage==='printing');
-  return`<div class="page-head"><div class="page-title">Observer Tower</div><div class="page-sub">Live view — printing & decoration floor</div></div>
-  <div class="stats-row">
-    <div class="stat-card"><div class="stat-label">In Printing</div><div class="stat-val" style="color:#185FA5">${activePrint.length}</div></div>
-    <div class="stat-card"><div class="stat-label">Flagged</div><div class="stat-val" style="color:#dc2626">${activePrint.filter(p=>p.damageFlagged).length}</div></div>
-  </div>
-  ${activePrint.length?activePrint.map(p=>poRowHTML(p)).join(''):'<div class="card"><div class="empty">No POs currently in printing stage.</div></div>'}
-  <div style="height:80px"></div>`;
 }
 
 function renderStoreDashboard(){
