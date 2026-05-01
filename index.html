@@ -186,6 +186,54 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 /* ── Store: spinner ── */
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(0,0,0,.15);border-top-color:var(--dark);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+/* ── Printing / Decoration Module ── */
+.print-nav-group{margin-top:4px}
+.nav-section-label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;padding:8px 12px 4px}
+.tier-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700}
+.tier-1{background:#dcfce7;color:#14532d}.tier-2{background:#dbeafe;color:#1e3a8a}.tier-3{background:#fef3c7;color:#92400e}.tier-4{background:#fee2e2;color:#991b1b}
+.process-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:#f0f0f0;color:var(--dark)}
+.recipe-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:8px;cursor:pointer;transition:border-color .12s}
+.recipe-card:hover{border-color:var(--dark)}
+.recipe-status-draft{color:var(--amber);font-weight:700}
+.recipe-status-locked{color:var(--green);font-weight:700}
+.recipe-status-archived{color:var(--muted);font-weight:700}
+.job-board{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;margin-bottom:16px}
+.job-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;transition:border-color .12s}
+.job-card:hover{border-color:var(--dark)}
+.job-card.sla-ok{border-left:3px solid var(--green)}
+.job-card.sla-near{border-left:3px solid var(--amber)}
+.job-card.sla-over{border-left:3px solid #dc2626}
+.job-card.sla-critical{border-left:3px solid #7f1d1d}
+.sla-chip{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700}
+.sla-ok-chip{background:#dcfce7;color:#14532d}.sla-near-chip{background:#fef3c7;color:#92400e}
+.sla-over-chip{background:#fee2e2;color:#991b1b}.sla-critical-chip{background:#7f1d1d;color:#fff}
+.worker-btn{display:block;width:100%;padding:16px;background:var(--dark);color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:10px;transition:opacity .15s;line-height:1.4;text-align:center}
+.worker-btn:hover:not(:disabled){opacity:.88}
+.worker-btn:disabled{opacity:.35;cursor:not-allowed}
+.worker-btn-green{background:var(--green)}
+.worker-btn-amber{background:var(--amber);color:#1a1a1a}
+.worker-btn-red{background:#dc2626}
+.pp-locked-banner{background:#fee2e2;border:1px solid #fca5a5;border-radius:10px;padding:14px;margin-top:10px;color:#991b1b;font-weight:600;font-size:13px}
+.pp-approved-banner{background:#dcfce7;border:1px solid #86efac;border-radius:10px;padding:14px;margin-top:10px;color:#14532d;font-weight:600;font-size:13px}
+.defect-row{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:flex-end;margin-bottom:8px;padding:10px;background:#f8f8f8;border-radius:8px}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:16px}
+.kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center}
+.kpi-val{font-size:28px;font-weight:800;margin-bottom:2px}
+.kpi-label{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.tower-cols{display:flex;gap:8px;overflow-x:auto;padding-bottom:8px}
+.tower-col{min-width:200px;flex-shrink:0}
+.tower-col-head{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:6px 10px;margin-bottom:6px}
+.placement-row{padding:10px;background:#f8f8f8;border-radius:8px;margin-bottom:8px}
+.pantone-dot{display:inline-block;width:14px;height:14px;border-radius:50%;border:1px solid #ddd;vertical-align:middle;margin-right:4px}
+.billing-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5;font-size:13px}
+.billing-row:last-child{border-bottom:none}
+.withhold-card{background:#fff8e1;border:1px solid #fcd34d;border-radius:8px;padding:12px;margin-bottom:8px}
+.comm-note{padding:10px;background:#f8f8f8;border-radius:8px;margin-bottom:6px}
+.comm-ping{background:#e0f2fe;border:1px solid #7dd3fc}
+.tab-bar{display:flex;gap:2px;background:var(--border);padding:3px;border-radius:10px;margin-bottom:14px}
+.tab-btn{flex:1;padding:8px 10px;background:transparent;border:none;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;color:var(--muted);transition:all .15s}
+.tab-btn.active{background:#fff;color:var(--dark);font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,.1)}
+@media print{#sidebar,#mob-nav,.topbar,.back-btn,.worker-btn,.btn-primary,.btn-outline,.tab-bar{display:none!important}#main-content{padding:0}}
 </style>
 </head>
 <body>
@@ -966,6 +1014,11 @@ function buildNav(){
   if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
   if(isOwner)mainItems.push({id:'activity',label:'Activity Log'});
   if(isOwner)mainItems.push({id:'users',label:'Users'});
+  // Printing module nav items
+  const printItems=[];
+  if(om||session.u==='ammar'||session.u==='haris')printItems.push({id:'recipe-directory',label:'Recipe Directory'});
+  if(om||['asghar','zohaib','waqas','haris'].includes(session.u))printItems.push({id:'printing-jobs',label:'Printing / Decoration'});
+  if(om)printItems.push({id:'observer-tower',label:'Observer Tower'});
 
   const storeSubItems=[];
   if(!isWorker){
@@ -978,6 +1031,7 @@ function buildNav(){
   }
 
   const mainNav=mainItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('');
+  const printNav=printItems.length?`<div class="nav-divider"></div><div class="nav-section-label">Decoration & Printing</div>`+printItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join(''):'';
   const storeOpen=currentPage.startsWith('store-')||isStore;
   const storeNav=storeSubItems.length?`
     <div class="nav-divider"></div>
@@ -988,7 +1042,7 @@ function buildNav(){
       ${storeSubItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:22px;font-size:12px">${i.label}</div>`).join('')}
     </div>`:'';
 
-  document.getElementById('sidebar').innerHTML=mainNav+storeNav;
+  document.getElementById('sidebar').innerHTML=mainNav+printNav+storeNav;
   // Mobile: show main items + Store shortcut
   const mobMain=isStore?storeSubItems:mainItems;
   document.getElementById('mob-nav').innerHTML=mobMain.slice(0,4).map(i=>`<div class="mob-nav-item" id="mobnav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('')
@@ -1038,6 +1092,15 @@ function renderPage(id){
   else if(id==='store-issue'){m.innerHTML=renderStoreIssue();onIssItemChange();loadActivePOs();}
   else if(id==='store-templates')m.innerHTML=renderStoreTemplates();
   else if(id==='store-log'){_ilPage=1;_ilQ='';_ilPO='';m.innerHTML=renderStoreLog();refreshIssueLog();}
+  // ── Printing module pages ──
+  else if(id==='recipe-directory'){if(!printingDataLoaded)loadPrintingData().then(()=>m.innerHTML=renderRecipeDirectory());else m.innerHTML=renderRecipeDirectory();}
+  else if(id==='recipe-create')m.innerHTML=renderRecipeCreatePage();
+  else if(id==='recipe-detail')renderRecipeDetailPage();
+  else if(id==='printing-jobs'){if(!printingDataLoaded)loadPrintingData().then(()=>m.innerHTML=renderPrintingJobsPage());else m.innerHTML=renderPrintingJobsPage();}
+  else if(id==='printing-job-detail')renderPrintingJobDetailPage();
+  else if(id==='observer-tower'){if(!printingDataLoaded)loadPrintingData().then(()=>m.innerHTML=renderObserverTower());else m.innerHTML=renderObserverTower();}
+  else if(id==='qc-report-page')renderQCReportPage();
+  else if(id==='billing-detail')renderBillingDetailPage();
 }
 
 // ── Dashboard ──
@@ -3091,6 +3154,536 @@ async function loadStoreData(){
 }
 // Internal store navigation (maps store section IDs back to showPage)
 function renderStoreSection(id){window.showPage('store-'+id);}
+
+// ══════════════════════════════════════════════════════════════════════
+// CHUNK 1 — PRINTING / DECORATION ERP: STATE · PERMISSIONS · CONSTANTS
+//            DATA LOADER · RECIPE DIRECTORY
+// ══════════════════════════════════════════════════════════════════════
+
+// ── Module state ──────────────────────────────────────────────────────
+let allRecipes=[], allPrintingJobs=[], allQCReports=[], allPrintBilling=[], allSLAEvents=[], allCommNotes=[];
+let printingDataLoaded=false;
+let viewingRecipe=null, viewingPrintJob=null, viewingQCReport=null;
+let _recipeTab='all', _jobTab='active';
+
+// ── Permission helpers ────────────────────────────────────────────────
+function _pu(){ return session&&session.u; }
+function canManageRecipes(){    return _pu()&&['ammar','afnan','arfat'].includes(session.u); }
+function canLockRecipe(){       return _pu()&&session.u==='ammar'; }
+function canApproveNewPP(){     return _pu()&&['ammar','afnan','arfat'].includes(session.u); }
+function canApproveRepeatPP(){  return _pu()&&['ammar','afnan','arfat','mustafa','haris'].includes(session.u); }
+function canApproveUrgentBypass(){ return _pu()&&['ammar','afnan','arfat','mustafa'].includes(session.u); }
+function canApproveBilling(){   return _pu()&&['ammar','afnan','arfat','mustafa'].includes(session.u); }
+function isObserver(){          return session&&(session.role==='owner'||session.role==='manager'); }
+function isPrintWorker(){       return _pu()&&session.u==='asghar'; }
+function isBundleWorker(){      return _pu()&&session.u==='zohaib'; }
+function isStitchWorker(){      return _pu()&&session.u==='waqas'; }
+function isQCWorker(){          return _pu()&&session.u==='haris'; }
+function canSeePrinting(){      return session&&(isObserver()||isPrintWorker()||isBundleWorker()||isStitchWorker()||isQCWorker()||session.u==='ammar'); }
+function canViewQCReport(){     return session&&(isObserver()||isQCWorker()||session.u==='haris'); }
+
+// ── Constants ─────────────────────────────────────────────────────────
+const PROCESS_TYPES={
+  rubber:      {label:'Rubber Print',        icon:'🖨️', dept:'inhouse'},
+  plastisol:   {label:'Screen / Plastisol',  icon:'🎨', dept:'inhouse'},
+  puff:        {label:'Puff Print',           icon:'✨', dept:'inhouse'},
+  sublimation: {label:'Sublimation',          icon:'🔥', dept:'external'},
+  embroidery:  {label:'Embroidery',           icon:'🪡', dept:'external'}
+};
+const TIER_INFO={
+  1:{label:'Tier 1 — Basic',        css:'tier-1', desc:'1 color, 1 placement, low risk'},
+  2:{label:'Tier 2 — Standard',     css:'tier-2', desc:'2–3 colors, single-sided'},
+  3:{label:'Tier 3 — Advanced',     css:'tier-3', desc:'4–5 colors, double-sided, oversized'},
+  4:{label:'Tier 4 — Complex',      css:'tier-4', desc:'Puff/foil/metallic, 6+ colors, all-over'}
+};
+const JOB_STAGES=[
+  'po_received','pp_sample','pp_approval','bulk_printing','final_qc','rework','qc_bundling','stitching','final_qc_post_stitch','closed'
+];
+const JOB_STAGE_LABELS={
+  po_received:'PO Received',       pp_sample:'PP Sample',        pp_approval:'Awaiting PP Approval',
+  bulk_printing:'Bulk Printing',   final_qc:'Final QC',         rework:'Rework',
+  qc_bundling:'QC Bundling',       stitching:'Stitching',       final_qc_post_stitch:'Final QC (Post-Stitch)',
+  closed:'Closed'
+};
+const PRIORITY_COLORS={urgent:'#dc2626', normal:'#185FA5', flexible:'#6B7280'};
+const SLA_HOURS={
+  urgent:{pp_sample:4,  pp_approval:2,  bulk_printing:8,  final_qc:4,  rework:12, qc_bundling:4, stitching:24},
+  normal:{pp_sample:8,  pp_approval:4,  bulk_printing:16, final_qc:8,  rework:24, qc_bundling:8, stitching:48},
+  flexible:{pp_sample:24,pp_approval:8, bulk_printing:32, final_qc:16, rework:48, qc_bundling:16,stitching:72}
+};
+
+// ── Defect master list ────────────────────────────────────────────────
+const DEFECT_CATS=[
+  {cat:'Placement',           nameUr:'جگہ کا مسئلہ',     types:['Wrong placement','Print too high','Print too low','Shifted left','Shifted right','Not centered','Tilted print','Front/back mismatch','Size-wise mismatch']},
+  {cat:'Color / Pantone',     nameUr:'رنگ / Pantone',    types:['Wrong Pantone','Shade mismatch','Color too dull','Color too bright','Wrong ink','Color registration mismatch','Color variation across lot']},
+  {cat:'Print Quality',       nameUr:'پرنٹ کوالٹی',       types:['Ink bleeding','Print cracking','Smudging','Poor coverage','Patchy print','Blurry edges','Uneven pressure','Misregistration','Detail loss','Peeling','Sticky/tacky print','Overcured','Undercured']},
+  {cat:'Puff Print',          nameUr:'پف پرنٹ',           types:['Puff not raised','Puff uneven','Puff cracked','Puff over-expanded','Puff too flat','Puff missing in areas']},
+  {cat:'Rubber Print',        nameUr:'ربر پرنٹ',          types:['Too hard','Too sticky','Uneven layer','Rubber cracking','Too thick','Too thin']},
+  {cat:'Plastisol/Screen',    nameUr:'پلاسٹیسول',         types:['Ink not cured','Heavy hand feel','Screen mark','Ink buildup','Rough surface','Gloss/matte mismatch']},
+  {cat:'Sublimation',         nameUr:'سبلیمیشن',          types:['Ghosting','Blurred transfer','Color fade','Heat press mark','Transfer patchiness','Wrong position']},
+  {cat:'Embroidery',          nameUr:'کڑھائی',            types:['Wrong thread color','Thread break','Loose thread','Wrong placement','Puckering','Stitch density issue','Backing issue']},
+  {cat:'Material / Garment',  nameUr:'کپڑے کا مسئلہ',    types:['Stain','Ink mark','Oil mark','Heat mark','Burn mark','Fabric damage','Shade issue','Dust mark','Distortion/stretching','White material quality issue']}
+];
+
+// ── Data loader ───────────────────────────────────────────────────────
+async function loadPrintingData(){
+  if(printingDataLoaded)return;
+  try{
+    const[recSnap,jobSnap,qcSnap,bilSnap,slaSnap,comSnap]=await Promise.all([
+      getDocs(query(collection(db,'article_recipes'),orderBy('createdAt','desc'))).catch(()=>({docs:[]})),
+      getDocs(query(collection(db,'printing_jobs'),orderBy('createdAt','desc'))).catch(()=>({docs:[]})),
+      getDocs(query(collection(db,'qc_reports'),orderBy('createdAt','desc'))).catch(()=>({docs:[]})),
+      getDocs(query(collection(db,'printing_billing'),orderBy('createdAt','desc'))).catch(()=>({docs:[]})),
+      getDocs(query(collection(db,'sla_events'),orderBy('startAt','desc'))).catch(()=>({docs:[]})),
+      getDocs(query(collection(db,'communication_notes'),orderBy('createdAt','desc'))).catch(()=>({docs:[]}))
+    ]);
+    allRecipes       = recSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    allPrintingJobs  = jobSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    allQCReports     = qcSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    allPrintBilling  = bilSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    allSLAEvents     = slaSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    allCommNotes     = comSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    printingDataLoaded=true;
+  }catch(e){ showToast('Printing data load error: '+e.message,true); }
+}
+async function refreshPrintingData(){ printingDataLoaded=false; await loadPrintingData(); }
+
+// ── Utility helpers ───────────────────────────────────────────────────
+function prntId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function nowIso(){ return new Date().toISOString(); }
+function tsLabel2(ts){ if(!ts)return'—'; const d=new Date(typeof ts==='number'?ts:ts); return d.toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }
+function slaStatus(dueAt){
+  if(!dueAt)return'ok';
+  const rem=(new Date(dueAt)-Date.now())/60000;
+  if(rem<0&&rem>-120)return'over';
+  if(rem<=-120)return'critical';
+  if(rem<60)return'near';
+  return'ok';
+}
+function slaColor(s){ return{ok:'var(--green)',near:'var(--amber)',over:'#dc2626',critical:'#7f1d1d'}[s]||'var(--muted)'; }
+function slaChipClass(s){ return{ok:'sla-ok-chip',near:'sla-near-chip',over:'sla-over-chip',critical:'sla-critical-chip'}[s]||'sla-ok-chip'; }
+function remainLabel(dueAt){
+  if(!dueAt)return'No SLA set';
+  const rem=Math.round((new Date(dueAt)-Date.now())/60000);
+  if(rem<0){ const a=Math.abs(rem); return a<60?`${a}m overdue`:`${Math.floor(a/60)}h ${a%60}m overdue`; }
+  return rem<60?`${rem}m left`:`${Math.floor(rem/60)}h ${rem%60}m left`;
+}
+function calcDue(stage,priority){ const h=SLA_HOURS[priority||'normal'][stage]||8; return new Date(Date.now()+h*3600000).toISOString(); }
+function recipeBadgeHTML(status){ const map={locked:'<span style="color:var(--green);font-weight:700">🔒 Locked</span>',draft:'<span style="color:var(--amber);font-weight:700">✏️ Draft</span>',archived:'<span style="color:var(--muted);font-weight:700">📦 Archived</span>'}; return map[status]||map.draft; }
+function tierBadge(t){ const ti=TIER_INFO[t]||TIER_INFO[1]; return`<span class="tier-badge ${ti.css}">${ti.label}</span>`; }
+function processBadge(pt){ const p=PROCESS_TYPES[pt]; return p?`<span class="process-badge">${p.icon} ${p.label}</span>`:'<span class="process-badge">—</span>'; }
+
+// ════════════════════════════════════════════
+// RECIPE DIRECTORY
+// ════════════════════════════════════════════
+
+function renderRecipeDirectory(){
+  const canCreate=canManageRecipes();
+  const q=(document.getElementById('recipe-q')||{}).value||'';
+  const list=allRecipes.filter(r=>!q||(r.articleCode||'').toLowerCase().includes(q.toLowerCase())||(r.articleName||'').toLowerCase().includes(q.toLowerCase()));
+
+  const missingWarnings=allRecipes.filter(r=>!r.printing?.ratePerPiece||!r.printing?.processTypes?.length||!r.images?.frontUrl);
+
+  return`<div class="page-head">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+      <div><div class="page-title">Recipe Directory</div><div class="page-sub">${allRecipes.length} articles · ${allRecipes.filter(r=>r.status==='locked').length} locked</div></div>
+      ${canCreate?`<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="window.showPage('recipe-create')">+ New Recipe</button>`:''}
+    </div>
+  </div>
+
+  ${missingWarnings.length?`<div class="alert-banner alert-amber" style="margin-bottom:12px">⚠ ${missingWarnings.length} recipe${missingWarnings.length>1?'s':''} missing rate, process type, or front image</div>`:''}
+
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    <input id="recipe-q" placeholder="Search article code or name…" oninput="window._filterRecipes(this.value)" value="${q}"
+      style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+    <select onchange="window._filterRecipeStatus(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+      <option value="">All status</option><option value="locked">Locked</option><option value="draft">Draft</option><option value="archived">Archived</option>
+    </select>
+    <select onchange="window._filterRecipeTier(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+      <option value="">All tiers</option>${[1,2,3,4].map(t=>`<option value="${t}">Tier ${t}</option>`).join('')}
+    </select>
+  </div>
+
+  <div id="recipe-list-wrap">
+    ${list.length?list.map(r=>recipeCardHTML(r)).join(''):'<div class="empty">No recipes yet. ${canCreate?"Click '+ New Recipe' to start.":""}</div>'}
+  </div>`;
+}
+window._filterRecipes=function(q){
+  const list=allRecipes.filter(r=>!q||(r.articleCode||'').toLowerCase().includes(q.toLowerCase())||(r.articleName||'').toLowerCase().includes(q.toLowerCase()));
+  const w=document.getElementById('recipe-list-wrap'); if(w)w.innerHTML=list.length?list.map(r=>recipeCardHTML(r)).join(''):'<div class="empty">No results.</div>';
+};
+window._filterRecipeStatus=function(s){
+  const list=s?allRecipes.filter(r=>r.status===s):allRecipes;
+  const w=document.getElementById('recipe-list-wrap'); if(w)w.innerHTML=list.length?list.map(r=>recipeCardHTML(r)).join(''):'<div class="empty">No results.</div>';
+};
+window._filterRecipeTier=function(t){
+  const list=t?allRecipes.filter(r=>String(r.printing?.complexityTier||'')===t):allRecipes;
+  const w=document.getElementById('recipe-list-wrap'); if(w)w.innerHTML=list.length?list.map(r=>recipeCardHTML(r)).join(''):'<div class="empty">No results.</div>';
+};
+
+function recipeCardHTML(r){
+  const tier=r.printing?.complexityTier||1;
+  const hasImg=!!r.images?.frontUrl;
+  const hasRate=!!r.printing?.ratePerPiece;
+  const hasPantone=(r.printing?.pantones||[]).length>0;
+  const warnings=[];
+  if(!hasImg)warnings.push('No image');
+  if(!hasRate)warnings.push('No rate');
+  if(!hasPantone)warnings.push('No Pantones');
+  if(!(r.printing?.processTypes||[]).length)warnings.push('No process');
+  return`<div class="recipe-card" onclick="window.openRecipeDetail('${r._id}')">
+    <div style="display:flex;gap:12px;align-items:flex-start">
+      <div style="width:56px;height:70px;flex-shrink:0;background:#f0f0f0;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
+        ${hasImg?`<img src="${r.images.frontUrl}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:9px;color:#ccc;text-align:center;padding:4px">No img</span>'}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
+          <span style="font-size:11px;font-weight:700;color:var(--red)">${r.articleCode||'—'}</span>
+          ${recipeBadgeHTML(r.status||'draft')}
+          ${tierBadge(tier)}
+        </div>
+        <div style="font-size:14px;font-weight:600;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.articleName||'Untitled'}</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${(r.printing?.processTypes||[]).map(pt=>processBadge(pt)).join(' ')}</div>
+        ${r.printing?.ratePerPiece?`<div style="font-size:12px;font-weight:600;color:var(--dark)">Rs. ${r.printing.ratePerPiece}/pc</div>`:''}
+        ${warnings.length?`<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${warnings.map(w=>`<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:6px;font-weight:600">⚠ ${w}</span>`).join('')}</div>`:''}
+      </div>
+      <div style="font-size:18px;color:var(--muted)">›</div>
+    </div>
+  </div>`;
+}
+window.openRecipeDetail=function(id){ viewingRecipe=id; currentPage='recipe-detail'; document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on')); document.getElementById('nav-recipe-directory')?.classList.add('on'); renderRecipeDetailPage(); };
+
+// ── Recipe Create / Edit ───────────────────────────────────────────────
+function renderRecipeCreatePage(){
+  if(!canManageRecipes())return'<div class="empty">Not authorized to create recipes.</div>';
+  const editing=viewingRecipe?allRecipes.find(r=>r._id===viewingRecipe):null;
+  const e=editing||{};
+  const pt=e.printing||{};
+  const imgs=e.images||{};
+  return`<button class="back-btn" onclick="window.showPage('recipe-directory')">← Back to Recipe Directory</button>
+  <div class="page-head"><div class="page-title">${editing?'Edit Recipe':'New Recipe'}</div><div class="page-sub">Article code is the master key</div></div>
+
+  <div class="card"><div class="card-title">Article Identity</div>
+    <div class="form-grid">
+      <div class="field"><label>Article Code *</label><input id="rc-code" placeholder="e.g. GP020" value="${e.articleCode||''}"></div>
+      <div class="field"><label>Article Name *</label><input id="rc-name" placeholder="e.g. GRVYBirds | Puff Printed" value="${e.articleName||''}"></div>
+      <div class="field"><label>Brand</label><input id="rc-brand" placeholder="e.g. GROOVY" value="${e.brand||''}"></div>
+      <div class="field"><label>Category</label>
+        <select id="rc-cat"><option value="">Select…</option>${['T-Shirt','Shirt','Hoodie','Zipper','Sweatshirt','Cargo','Trouser','Jersey','Babytee','Set','Jacket','Denim','Shorts'].map(c=>`<option value="${c}" ${e.category===c?'selected':''}>${c}</option>`).join('')}</select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card"><div class="card-title">Printing / Decoration</div>
+    <div class="form-grid">
+      <div class="field" style="grid-column:1/-1">
+        <label>Process Types (select all that apply)</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+          ${Object.entries(PROCESS_TYPES).map(([k,v])=>`<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:#fafafa">
+            <input type="checkbox" id="rc-pt-${k}" ${(pt.processTypes||[]).includes(k)?'checked':''} style="accent-color:var(--dark)"> ${v.icon} ${v.label}
+          </label>`).join('')}
+        </div>
+      </div>
+      <div class="field"><label>Complexity Tier *</label>
+        <select id="rc-tier">${[1,2,3,4].map(t=>`<option value="${t}" ${(pt.complexityTier||1)==t?'selected':''}>${TIER_INFO[t].label} — ${TIER_INFO[t].desc}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Rate per Piece (Rs.) *</label><input id="rc-rate" type="number" min="0" step="0.5" placeholder="0.00" value="${pt.ratePerPiece||''}"></div>
+      <div class="field" style="grid-column:1/-1"><label>Instructions (English)</label><textarea id="rc-instr-en" rows="3" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:100%;font-family:inherit;resize:vertical;outline:none">${pt.instructionsEn||''}</textarea></div>
+      <div class="field" style="grid-column:1/-1"><label>ہدایات (اردو)</label><textarea id="rc-instr-ur" rows="3" dir="rtl" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:100%;font-family:inherit;resize:vertical;outline:none;text-align:right">${pt.instructionsUr||''}</textarea></div>
+    </div>
+  </div>
+
+  <div class="card"><div class="card-title">Placements</div>
+    <div id="rc-placements">
+      ${(pt.placements||[]).map((pl,i)=>placementRowHTML(i,pl)).join('')}
+    </div>
+    <button type="button" class="btn-outline" style="width:100%;margin-top:6px" onclick="window.addPlacementRow()">+ Add Placement</button>
+  </div>
+
+  <div class="card"><div class="card-title">Pantone / Ink Colors</div>
+    <div id="rc-pantones">
+      ${(pt.pantones||[]).map((p,i)=>pantoneRowHTML(i,p)).join('')}
+    </div>
+    <button type="button" class="btn-outline" style="width:100%;margin-top:6px" onclick="window.addPantoneRow()">+ Add Color</button>
+  </div>
+
+  <div class="card"><div class="card-title">Product Images</div>
+    <div class="form-grid">
+      <div class="field"><label>Front Image URL</label><input id="rc-img-front" placeholder="https://…" value="${imgs.frontUrl||''}"></div>
+      <div class="field"><label>Back Image URL</label><input id="rc-img-back" placeholder="https://…" value="${imgs.backUrl||''}"></div>
+      <div class="field" style="grid-column:1/-1"><label>Placement Guide URL</label><input id="rc-img-place" placeholder="https://…" value="${imgs.placementGuideUrl||''}"></div>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted)">Tip: upload images to Cloudinary or use direct links. Approved PP sample URL can be added after first approval.</div>
+  </div>
+
+  <div style="display:flex;gap:8px;margin-top:4px">
+    <button class="btn-primary" style="flex:1" onclick="window.saveRecipe(false)">${editing?'Save Changes':'Save as Draft'}</button>
+    ${canLockRecipe()?`<button class="btn-primary" style="flex:1;background:var(--green)" onclick="window.saveRecipe(true)">Save & Lock Recipe 🔒</button>`:''}
+  </div>
+  <div style="height:80px"></div>`;
+}
+
+let _plIdx=0,_ptIdx=0;
+function placementRowHTML(i,pl={}){
+  _plIdx=Math.max(_plIdx,i+1);
+  return`<div id="pl-row-${i}" class="placement-row">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span style="font-size:11px;font-weight:700;color:var(--muted)">PLACEMENT ${i+1}</span>
+      <button type="button" onclick="document.getElementById('pl-row-${i}').remove()" style="background:none;border:none;color:#ccc;font-size:18px;cursor:pointer">×</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div class="field"><label>Name</label><input placeholder="e.g. Front Chest" value="${pl.name||''}"></div>
+      <div class="field"><label>Side</label>
+        <select>${['front','back','sleeve','leg','custom'].map(s=>`<option value="${s}" ${pl.side===s?'selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Artwork Size</label><input placeholder="e.g. 25cm × 30cm" value="${pl.artworkSize||''}"></div>
+      <div class="field"><label>Placement (from seam)</label><input placeholder="e.g. 5cm from collar" value="${pl.placementMeasurement||''}"></div>
+      <div class="field"><label>Tolerance</label><input placeholder="e.g. ±0.5cm" value="${pl.tolerance||''}"></div>
+      <div class="field"><label>Image URL</label><input placeholder="https://…" value="${pl.imageUrl||''}"></div>
+      <div class="field" style="grid-column:1/-1"><label>Notes (English)</label><input placeholder="Any special notes…" value="${pl.notesEn||''}"></div>
+      <div class="field" style="grid-column:1/-1"><label>نوٹس (اردو)</label><input dir="rtl" style="text-align:right" placeholder="خاص ہدایات…" value="${pl.notesUr||''}"></div>
+    </div>
+  </div>`;
+}
+function pantoneRowHTML(i,p={}){
+  _ptIdx=Math.max(_ptIdx,i+1);
+  return`<div id="pt-row-${i}" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:8px;align-items:flex-end;margin-bottom:8px">
+    <div class="field"><label>Color Name</label><input placeholder="e.g. Dusty Rose" value="${p.colorName||''}"></div>
+    <div class="field"><label>Pantone Code</label><input placeholder="e.g. 706 C" value="${p.pantoneCode||''}"></div>
+    <div class="field"><label>Local Ink Name</label><input placeholder="e.g. Camlin Pink 01" value="${p.localInkName||''}"></div>
+    <div class="field"><label>Notes</label><input placeholder="mixing notes…" value="${p.notes||''}"></div>
+    <button type="button" onclick="document.getElementById('pt-row-${i}').remove()" style="background:none;border:none;color:#ccc;font-size:18px;cursor:pointer;padding:0 4px;margin-bottom:2px">×</button>
+  </div>`;
+}
+window.addPlacementRow=function(){ document.getElementById('rc-placements')?.insertAdjacentHTML('beforeend',placementRowHTML(_plIdx)); _plIdx++; };
+window.addPantoneRow=function(){ document.getElementById('rc-pantones')?.insertAdjacentHTML('beforeend',pantoneRowHTML(_ptIdx)); _ptIdx++; };
+
+function collectPlacements(){
+  return Array.from(document.querySelectorAll('[id^="pl-row-"]')).map(row=>{
+    const inputs=row.querySelectorAll('input,select');
+    return{name:inputs[0]?.value||'',side:inputs[1]?.value||'front',artworkSize:inputs[2]?.value||'',placementMeasurement:inputs[3]?.value||'',tolerance:inputs[4]?.value||'',imageUrl:inputs[5]?.value||'',notesEn:inputs[6]?.value||'',notesUr:inputs[7]?.value||''};
+  }).filter(p=>p.name);
+}
+function collectPantones(){
+  return Array.from(document.querySelectorAll('[id^="pt-row-"]')).map(row=>{
+    const inputs=row.querySelectorAll('input');
+    return{colorName:inputs[0]?.value||'',pantoneCode:inputs[1]?.value||'',localInkName:inputs[2]?.value||'',notes:inputs[3]?.value||''};
+  }).filter(p=>p.colorName);
+}
+
+window.saveRecipe=async function(lock=false){
+  if(!canManageRecipes()){showToast('Not authorized.',true);return;}
+  const code=(document.getElementById('rc-code')?.value||'').trim().toUpperCase();
+  const name=(document.getElementById('rc-name')?.value||'').trim();
+  if(!code||!name){showToast('Article code and name required.',true);return;}
+  const processTypes=Object.keys(PROCESS_TYPES).filter(k=>document.getElementById('rc-pt-'+k)?.checked);
+  const tier=parseInt(document.getElementById('rc-tier')?.value)||1;
+  const rate=parseFloat(document.getElementById('rc-rate')?.value)||0;
+  if(lock&&session.u!=='ammar'){showToast('Only Ammar can lock a recipe.',true);return;}
+  if(lock&&(!rate||!processTypes.length)){showToast('Rate and process type required before locking.',true);return;}
+  const editing=viewingRecipe?allRecipes.find(r=>r._id===viewingRecipe):null;
+  const now=nowIso();
+  const payload={
+    articleCode:code, articleName:name,
+    brand:document.getElementById('rc-brand')?.value.trim()||'',
+    category:document.getElementById('rc-cat')?.value||'',
+    status:lock?'locked':(editing?.status||'draft'),
+    version:(editing?.version||0)+1,
+    recipeOwner:'ammar',
+    lockedBy:lock?session.name:editing?.lockedBy||null,
+    lockedAt:lock?(editing?.lockedAt||now):editing?.lockedAt||null,
+    createdBy:editing?.createdBy||session.name,
+    createdAt:editing?.createdAt||now,
+    updatedAt:now,
+    images:{
+      frontUrl:document.getElementById('rc-img-front')?.value.trim()||'',
+      backUrl:document.getElementById('rc-img-back')?.value.trim()||'',
+      placementGuideUrl:document.getElementById('rc-img-place')?.value.trim()||'',
+      approvedPpSampleUrl:editing?.images?.approvedPpSampleUrl||'',
+      closeupUrls:editing?.images?.closeupUrls||[]
+    },
+    printing:{
+      required:processTypes.length>0,
+      processTypes, complexityTier:tier, ratePerPiece:rate,
+      placements:collectPlacements(),
+      pantones:collectPantones(),
+      instructionsEn:document.getElementById('rc-instr-en')?.value.trim()||'',
+      instructionsUr:document.getElementById('rc-instr-ur')?.value.trim()||''
+    },
+    trimsStore:{enabled:false,requiredItems:[]},
+    threadLogic:{enabled:false,items:[]},
+    labelsLogic:{enabled:false,items:[]},
+    rawMaterialLogic:{enabled:false,fabricType:'',consumption:'',notes:''},
+    qcSuggestions:editing?.qcSuggestions||[],
+    changeHistory:[...(editing?.changeHistory||[]),{by:session.name,at:now,action:lock?'locked':'saved',note:''}]
+  };
+  try{
+    const id=editing?editing._id:prntId();
+    await setDoc(doc(db,'article_recipes',id),payload);
+    await logActivity(lock?'Recipe locked':'Recipe saved',`${code} — ${name}`);
+    if(editing){ const i=allRecipes.findIndex(r=>r._id===id); if(i>=0)allRecipes[i]={...payload,_id:id}; else allRecipes.unshift({...payload,_id:id}); }
+    else{ allRecipes.unshift({...payload,_id:id}); }
+    showToast(lock?'Recipe locked ✓':'Recipe saved ✓');
+    viewingRecipe=null; _plIdx=0; _ptIdx=0;
+    window.showPage('recipe-directory');
+  }catch(e){ showToast('Save error: '+e.message,true); }
+};
+
+// ── Recipe Detail View ────────────────────────────────────────────────
+function renderRecipeDetailPage(){
+  const m=document.getElementById('main-content');
+  const r=allRecipes.find(x=>x._id===viewingRecipe);
+  if(!r){window.showPage('recipe-directory');return;}
+  const pt=r.printing||{};
+  const imgs=r.images||{};
+  const canEdit=canManageRecipes()&&r.status!=='locked';
+  const canUnlock=session.u==='ammar'&&r.status==='locked';
+  const isLocked=r.status==='locked';
+
+  // QC Suggestion form (for QC worker)
+  const qcSugForm=isQCWorker()&&r.status!=='archived'?`
+    <div class="card"><div class="card-title">Submit QC Suggestion</div>
+      <div class="field" style="margin-bottom:8px"><textarea id="qc-sug-text" rows="3" placeholder="Describe the recipe change or quality observation…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;outline:none"></textarea></div>
+      <button class="btn-outline" onclick="window.submitQCSuggestion('${r._id}')">Submit Suggestion</button>
+    </div>`:'';
+
+  m.innerHTML=`<button class="back-btn" onclick="window.showPage('recipe-directory')">← Back to Recipe Directory</button>
+  <div class="page-head">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:12px;font-weight:700;color:var(--red)">${r.articleCode||'—'}</span>
+          ${recipeBadgeHTML(r.status||'draft')}
+          ${tierBadge(pt.complexityTier||1)}
+        </div>
+        <div class="page-title" style="margin-top:4px">${r.articleName||'Untitled'}</div>
+        <div class="page-sub">v${r.version||1} · By ${r.createdBy||'—'} · Updated ${tsLabel2(r.updatedAt)}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${canEdit?`<button class="btn-outline" onclick="window.editRecipe('${r._id}')">Edit Recipe</button>`:''}
+        ${canUnlock?`<button class="btn-outline" onclick="window.unlockRecipe('${r._id}')">🔓 Unlock</button>`:''}
+        ${canManageRecipes()&&r.status==='draft'&&session.u==='ammar'?`<button class="btn-primary" style="width:auto;padding:8px 16px;background:var(--green)" onclick="window.lockRecipe('${r._id}')">Lock Recipe 🔒</button>`:''}
+        ${isObserver()?`<button class="btn-outline" onclick="window.archiveRecipe('${r._id}')">Archive</button>`:''}
+      </div>
+    </div>
+  </div>
+
+  ${isLocked?`<div class="alert-banner alert-green">🔒 This recipe is locked. Only Ammar can unlock or edit it.</div>`:''}
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+    ${imgs.frontUrl||imgs.backUrl?`<div class="card" style="margin-bottom:0"><div class="card-title">Product Images</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        ${imgs.frontUrl?`<div><div style="font-size:10px;color:var(--muted);margin-bottom:4px;font-weight:600">FRONT</div><img src="${imgs.frontUrl}" style="width:100%;border-radius:8px;max-height:200px;object-fit:cover"></div>`:''}
+        ${imgs.backUrl?`<div><div style="font-size:10px;color:var(--muted);margin-bottom:4px;font-weight:600">BACK</div><img src="${imgs.backUrl}" style="width:100%;border-radius:8px;max-height:200px;object-fit:cover"></div>`:''}
+      </div>
+      ${imgs.approvedPpSampleUrl?`<div style="margin-top:8px"><div style="font-size:10px;color:var(--green);font-weight:600;margin-bottom:4px">✓ APPROVED PP SAMPLE</div><img src="${imgs.approvedPpSampleUrl}" style="width:100%;border-radius:8px;max-height:140px;object-fit:cover"></div>`:''}
+    </div>`:''}
+    <div class="card" style="margin-bottom:0"><div class="card-title">Printing Details</div>
+      <div class="info-row"><span class="info-label">Process</span><span>${(pt.processTypes||[]).map(p=>processBadge(p)).join(' ')||'—'}</span></div>
+      <div class="info-row"><span class="info-label">Tier</span><span>${tierBadge(pt.complexityTier||1)}</span></div>
+      <div class="info-row"><span class="info-label">Rate</span><span style="font-weight:700;color:var(--dark)">${pt.ratePerPiece?'Rs. '+pt.ratePerPiece+'/pc':'Not set'}</span></div>
+      <div class="info-row"><span class="info-label">Placements</span><span>${(pt.placements||[]).length}</span></div>
+      <div class="info-row"><span class="info-label">Pantones</span><span>${(pt.pantones||[]).length}</span></div>
+    </div>
+  </div>
+
+  ${(pt.placements||[]).length?`<div class="card"><div class="card-title">Placements</div>
+    ${pt.placements.map((pl,i)=>`<div class="placement-row" style="margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px">PLACEMENT ${i+1} — ${(pl.side||'').toUpperCase()}</div>
+      <div class="info-row"><span class="info-label">Name</span><span style="font-weight:600">${pl.name||'—'}</span></div>
+      <div class="info-row"><span class="info-label">Size</span><span>${pl.artworkSize||'—'}</span></div>
+      <div class="info-row"><span class="info-label">Position</span><span>${pl.placementMeasurement||'—'}</span></div>
+      <div class="info-row"><span class="info-label">Tolerance</span><span>${pl.tolerance||'—'}</span></div>
+      ${pl.notesEn?`<div class="info-row"><span class="info-label">Notes (EN)</span><span>${pl.notesEn}</span></div>`:''}
+      ${pl.notesUr?`<div class="info-row"><span class="info-label">نوٹس</span><span dir="rtl">${pl.notesUr}</span></div>`:''}
+      ${pl.imageUrl?`<img src="${pl.imageUrl}" style="width:100%;border-radius:8px;max-height:160px;object-fit:contain;margin-top:6px;background:#f0f0f0">`:''}
+    </div>`).join('')}
+  </div>`:''}
+
+  ${(pt.pantones||[]).length?`<div class="card"><div class="card-title">Pantone / Ink Colors</div>
+    ${pt.pantones.map(p=>`<div class="info-row">
+      <span><strong>${p.colorName||'—'}</strong>${p.pantoneCode?` <span style="font-size:11px;color:var(--muted)">(${p.pantoneCode})</span>`:''}</span>
+      <span style="font-size:12px;color:var(--muted)">${p.localInkName||'—'}${p.notes?' · '+p.notes:''}</span>
+    </div>`).join('')}
+  </div>`:''}
+
+  ${pt.instructionsEn||pt.instructionsUr?`<div class="card"><div class="card-title">Instructions / ہدایات</div>
+    ${pt.instructionsEn?`<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:4px">ENGLISH</div><div style="font-size:13px;line-height:1.7">${pt.instructionsEn}</div></div>`:''}
+    ${pt.instructionsUr?`<div><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:4px">اردو</div><div style="font-size:14px;line-height:2;direction:rtl;text-align:right">${pt.instructionsUr}</div></div>`:''}
+  </div>`:''}
+
+  ${(r.qcSuggestions||[]).length?`<div class="card"><div class="card-title">QC Suggestions (${r.qcSuggestions.length})</div>
+    ${r.qcSuggestions.map(s=>`<div style="padding:8px 0;border-bottom:1px solid #f5f5f5">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div style="flex:1"><div style="font-size:12px;font-weight:600">${s.by||'—'} <span style="color:var(--muted);font-weight:400">· ${tsLabel2(s.date)}</span></div>
+          <div style="font-size:13px;margin-top:3px">${s.note||'—'}</div>
+        </div>
+        <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${s.status==='accepted'?'#dcfce7':s.status==='rejected'?'#fee2e2':'#fef3c7'};color:${s.status==='accepted'?'#14532d':s.status==='rejected'?'#991b1b':'#92400e'}">${(s.status||'open').toUpperCase()}</span>
+      </div>
+      ${canManageRecipes()&&s.status==='open'?`<div style="display:flex;gap:6px;margin-top:6px">
+        <button class="btn-sm" style="background:var(--green)" onclick="window.resolveQCSug('${r._id}','${s.suggestionId}','accepted')">Accept</button>
+        <button class="btn-sm" style="background:#dc2626" onclick="window.resolveQCSug('${r._id}','${s.suggestionId}','rejected')">Reject</button>
+      </div>`:''}
+    </div>`).join('')}
+  </div>`:''}
+
+  ${qcSugForm}
+
+  <div style="height:80px"></div>`;
+}
+
+window.editRecipe=function(id){ viewingRecipe=id; _plIdx=0; _ptIdx=0; window.showPage('recipe-create'); };
+window.lockRecipe=async function(id){
+  if(session.u!=='ammar'){showToast('Only Ammar can lock recipes.',true);return;}
+  if(!confirm('Lock this recipe? Ammar will need to unlock it for future edits.'))return;
+  try{
+    await updateDoc(doc(db,'article_recipes',id),{status:'locked',lockedBy:session.name,lockedAt:nowIso(),updatedAt:nowIso()});
+    const r=allRecipes.find(x=>x._id===id); if(r){r.status='locked';r.lockedBy=session.name;}
+    await logActivity('Recipe locked',allRecipes.find(x=>x._id===id)?.articleCode||id);
+    showToast('Recipe locked 🔒'); renderRecipeDetailPage();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+window.unlockRecipe=async function(id){
+  if(session.u!=='ammar'){showToast('Only Ammar can unlock.',true);return;}
+  if(!confirm('Unlock recipe for editing?'))return;
+  try{
+    await updateDoc(doc(db,'article_recipes',id),{status:'draft',updatedAt:nowIso()});
+    const r=allRecipes.find(x=>x._id===id); if(r)r.status='draft';
+    showToast('Recipe unlocked ✓'); renderRecipeDetailPage();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+window.archiveRecipe=async function(id){
+  if(!isObserver()){showToast('Not authorized.',true);return;}
+  if(!confirm('Archive this recipe?'))return;
+  try{
+    await updateDoc(doc(db,'article_recipes',id),{status:'archived',updatedAt:nowIso()});
+    const r=allRecipes.find(x=>x._id===id); if(r)r.status='archived';
+    showToast('Archived'); renderRecipeDetailPage();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+window.submitQCSuggestion=async function(recipeId){
+  if(!isQCWorker()){showToast('QC only.',true);return;}
+  const note=(document.getElementById('qc-sug-text')?.value||'').trim();
+  if(!note){showToast('Write a suggestion first.',true);return;}
+  const sug={suggestionId:prntId(),by:session.name,date:nowIso(),note,status:'open',resolvedBy:null,resolvedAt:null};
+  try{
+    const r=allRecipes.find(x=>x._id===recipeId); if(!r)return;
+    const updated=[...(r.qcSuggestions||[]),sug];
+    await updateDoc(doc(db,'article_recipes',recipeId),{qcSuggestions:updated,updatedAt:nowIso()});
+    r.qcSuggestions=updated;
+    showToast('Suggestion submitted ✓'); renderRecipeDetailPage();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+window.resolveQCSug=async function(recipeId,sugId,status){
+  if(!canManageRecipes()){showToast('Not authorized.',true);return;}
+  try{
+    const r=allRecipes.find(x=>x._id===recipeId); if(!r)return;
+    const updated=(r.qcSuggestions||[]).map(s=>s.suggestionId===sugId?{...s,status,resolvedBy:session.name,resolvedAt:nowIso()}:s);
+    await updateDoc(doc(db,'article_recipes',recipeId),{qcSuggestions:updated,updatedAt:nowIso()});
+    r.qcSuggestions=updated;
+    showToast('Suggestion '+status+' ✓'); renderRecipeDetailPage();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
 
 </script>
 </body>
