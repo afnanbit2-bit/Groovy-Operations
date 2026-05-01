@@ -128,11 +128,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
   .stats-row{grid-template-columns:1fr 1fr}
   .form-grid{grid-template-columns:1fr}
   .app-body{flex-direction:column}
-  #main-content{padding:12px}
+  #main-content{padding:12px;padding-bottom:80px}
   #mob-nav{display:flex !important}
+  .job-board{grid-template-columns:1fr}
+  .item-grid{grid-template-columns:1fr 1fr}
+  .kpi-grid{grid-template-columns:repeat(3,1fr)}
+  .tab-bar,.gp-tabs{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .tab-bar::-webkit-scrollbar,.gp-tabs::-webkit-scrollbar{display:none}
+  .tab-btn,.gp-tab{flex:0 0 auto;white-space:nowrap;padding:8px 12px}
+  .card{padding:12px}
+  #user-title{display:none}
+  .defect-row{grid-template-columns:1fr 1fr!important}
+  [style*="grid-template-columns:1fr 1fr"]:not(.no-stack){grid-template-columns:1fr!important}
+  [style*="grid-template-columns:repeat(5"]{grid-template-columns:repeat(3,1fr)!important}
+  [style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,1fr)!important}
+  [style*="grid-template-columns:repeat(3,1fr)"]{grid-template-columns:1fr 1fr!important}
+  [style*="grid-template-columns:1fr 130px"]{grid-template-columns:1fr!important}
+}
+@media(max-width:400px){
+  .topbar-name{font-size:11px}
 }
 #mob-nav{display:none;background:var(--surface);border-top:1px solid var(--border);position:fixed;bottom:0;left:0;right:0;z-index:100;padding:6px 0}
-.mob-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;padding:6px 4px;font-size:10px;color:var(--muted);cursor:pointer;font-weight:500;gap:2px}
+.mob-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 2px;font-size:10px;color:var(--muted);cursor:pointer;font-weight:500;gap:2px;min-height:44px;justify-content:center}
 .mob-nav-item.on{color:var(--red)}
 /* ── Store: nav divider ── */
 .nav-divider{height:1px;background:var(--border);margin:8px 4px}
@@ -323,12 +340,12 @@ const USER_DEFS=[
   {u:'zohaib', email:'zohaib@groovy.op', name:'Zohaib', role:'worker', title:'Cutting & Bundling',canPO:false,stages:['cutting','bundling'],pass:'Zohaib@Ops24'},
 ];
 const STAGES=[
-  {key:'cutting',  label:'Cutting',    owner:'Zohaib',color:'#185FA5'},
-  {key:'printing', label:'Embellishment QC',owner:'Asghar',color:'#854F0B'},
-  {key:'bundling', label:'Bundling',   owner:'Zohaib',color:'#534AB7'},
-  {key:'stitching',label:'Stitching',  owner:'Waqas', color:'#0F6E56'},
-  {key:'washing',  label:'Washing',    owner:'Abbas', color:'#72243E'},
-  {key:'qc',       label:'Final QC',   owner:'Haris', color:'#3B6D11'},
+  {key:'cutting',  label:'Cutting',    owner:'Zohaib',color:'#111111'},
+  {key:'printing', label:'Embellishment QC',owner:'Asghar',color:'#111111'},
+  {key:'bundling', label:'Bundling',   owner:'Zohaib',color:'#111111'},
+  {key:'stitching',label:'Stitching',  owner:'Waqas', color:'#111111'},
+  {key:'washing',  label:'Washing',    owner:'Abbas', color:'#111111'},
+  {key:'qc',       label:'Final QC',   owner:'Haris', color:'#111111'},
 ];
 const STAGE_KEYS=STAGES.map(s=>s.key);
 
@@ -1183,7 +1200,7 @@ function buildNav(){
   document.getElementById('sidebar').innerHTML=mainNav+printNav+storeNav;
   // Mobile: show main items + Store shortcut
   const mobMain=isStore?storeSubItems:mainItems;
-  document.getElementById('mob-nav').innerHTML=mobMain.slice(0,4).map(i=>`<div class="mob-nav-item" id="mobnav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('')
+  document.getElementById('mob-nav').innerHTML=mobMain.slice(0,5).map(i=>`<div class="mob-nav-item" id="mobnav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('')
     +(storeSubItems.length&&!isStore?`<div class="mob-nav-item" onclick="window.showPage('store-dashboard')">Store</div>`:'');
 }
 
@@ -1258,13 +1275,13 @@ function renderPage(id){
 // ── Dashboard — extended in Chunk 5 with printing KPI strip ──
 
 function poRowHTML(p){
-  const stage=STAGES.find(s=>s.key===p.currentStage)||{label:'Completed',color:'#1D9E75'};
+  const stage=STAGES.find(s=>s.key===p.currentStage)||{label:'Completed',color:'#111111'};
   const isCompleted=p.currentStage==='completed';
   return`<div class="po-row" onclick="window.openPODetail('${p.fbKey}')">
     <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:#ccc">No img</span>'}</div>
     <div class="po-info">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="po-num">${p.id}</span>
-        <span class="stage-badge" style="background:${isCompleted?'#dcfce7':stage.color+'20'};color:${isCompleted?'#14532d':stage.color}">${isCompleted?'Completed':stage.label}</span>${p.damageFlagged?`<span style="padding:2px 6px;background:#fee2e2;color:#dc2626;border-radius:6px;font-size:10px;font-weight:700">⚠ Loss</span>`:''}</div>
+        <span class="stage-badge" style="background:${isCompleted?'#EFEFEF':'#f0f0f0'};color:#111">${isCompleted?'Completed':stage.label}</span>${p.damageFlagged?`<span style="padding:2px 6px;background:#fee2e2;color:#dc2626;border-radius:6px;font-size:10px;font-weight:700">⚠ Loss</span>`:''}</div>
       <div class="po-name">${p.name||'—'}</div>
       <div class="po-meta">${p.qty||'?'} pcs · ${p.fabric||''} · ${p.createdBy||'—'} · ${p.createdAt||''}</div>
     </div><div class="po-arrow">›</div></div>`;
@@ -1365,7 +1382,7 @@ function renderDetailPage(){
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px">
       <div style="text-align:center;padding:8px 4px;background:#fef2f2;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Cut</div><div style="font-size:16px;font-weight:700">${po.damageSummary?.cutTotal||0}</div></div>
       <div style="text-align:center;padding:8px 4px;background:#fee2e2;border-radius:6px"><div style="font-size:10px;color:#dc2626">Damaged</div><div style="font-size:16px;font-weight:700;color:#dc2626">${po.damageSummary?.total||0}</div></div>
-      <div style="text-align:center;padding:8px 4px;background:#dcfce7;border-radius:6px"><div style="font-size:10px;color:var(--green)">Usable</div><div style="font-size:16px;font-weight:700;color:var(--green)">${po.damageSummary?.usable||0}</div></div>
+      <div style="text-align:center;padding:8px 4px;background:#EFEFEF;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Usable</div><div style="font-size:16px;font-weight:700;color:#111">${po.damageSummary?.usable||0}</div></div>
       <div style="text-align:center;padding:8px 4px;background:${(po.damagePercent||0)>1.5?'#fee2e2':'#fef9e7'};border-radius:6px"><div style="font-size:10px;color:var(--muted)">Rate</div><div style="font-size:16px;font-weight:700;color:${(po.damagePercent||0)>1.5?'#dc2626':'var(--amber)'}">${(po.damagePercent||0).toFixed(2)}%</div></div>
     </div>
     ${po.damageSummary?.bySize?`<div style="font-size:11px;color:var(--muted)">By size: ${Object.entries(po.damageSummary.bySize).filter(([,v])=>v>0).map(([k,v])=>`${k}: ${v}`).join(' · ')||'None'}</div>`:''}
@@ -1489,19 +1506,19 @@ window._checkEmbRecipe=async function(code,name){
     _poEmbellishment={required:true,recipeId:null,articleCode:code,articleName:name,recipeStatus:'missing',recipeRequiredBefore:'pp_approval',rateMasterPreview:rm?{complexityTier:rm.complexityTier,ratePerPiece:rm.ratePerPiece}:null};
     if(rm){
       const tierLabel=TIER_INFO[rm.complexityTier]?.label||('Tier '+rm.complexityTier);
-      statusDiv.innerHTML=`<div style="background:#fef3c7;border-radius:8px;padding:10px 12px"><div style="font-size:12px;font-weight:700;color:#92400e">Recipe Missing — Rate List Preview</div><div style="font-size:11px;color:#92400e;margin-top:3px">No recipe yet. Rate List suggests: <strong>${tierLabel}</strong> · Rs. ${rm.ratePerPiece}/pc. Recipe must be created and locked before PP approval.</div></div>`;
+      statusDiv.innerHTML=`<div style="background:#f5f5f5;border-radius:8px;padding:10px 12px;border:1px solid #D9D9D9"><div style="font-size:12px;font-weight:700;color:#111">Recipe Missing — Rate List Preview</div><div style="font-size:11px;color:var(--muted);margin-top:3px">No recipe yet. Rate List suggests: <strong>${tierLabel}</strong> · Rs. ${rm.ratePerPiece}/pc. Recipe must be created and locked before PP approval.</div></div>`;
     }else{
-      statusDiv.innerHTML=`<div style="background:#fef3c7;border-radius:8px;padding:10px 12px"><div style="font-size:12px;font-weight:700;color:#92400e">Recipe Missing</div><div style="font-size:11px;color:#92400e;margin-top:3px">PO can be created. Recipe must be locked before PP approval — Ammar will be notified.</div></div>`;
+      statusDiv.innerHTML=`<div style="background:#f5f5f5;border-radius:8px;padding:10px 12px;border:1px solid #D9D9D9"><div style="font-size:12px;font-weight:700;color:#111">Recipe Missing</div><div style="font-size:11px;color:var(--muted);margin-top:3px">PO can be created. Recipe must be locked before PP approval — Ammar will be notified.</div></div>`;
     }
   }else if(r.status!=='locked'){
     _poEmbellishment={required:true,recipeId:r._id,articleCode:code,articleName:r.articleName||name,recipeStatus:'draft',recipeRequiredBefore:'pp_approval'};
     const pt=(r.printing?.processTypes||[]).map(k=>PROCESS_TYPES[k]?.label||k).join(', ')||'—';
-    statusDiv.innerHTML=`<div style="background:#fef3c7;border-radius:8px;padding:10px 12px"><div style="font-size:12px;font-weight:700;color:#92400e">Recipe Draft — Not Locked</div><div style="font-size:11px;color:#92400e;margin-top:3px">Recipe exists (${pt} · Tier ${r.printing?.complexityTier||'?'}) but must be locked by Ammar before PP approval.</div></div>`;
+    statusDiv.innerHTML=`<div style="background:#f5f5f5;border-radius:8px;padding:10px 12px;border:1px solid #D9D9D9"><div style="font-size:12px;font-weight:700;color:#111">Recipe Draft — Not Locked</div><div style="font-size:11px;color:var(--muted);margin-top:3px">Recipe exists (${pt} · Tier ${r.printing?.complexityTier||'?'}) but must be locked by Ammar before PP approval.</div></div>`;
   }else{
     _poEmbellishment={required:true,recipeId:r._id,articleCode:code,articleName:r.articleName||name,processType:(r.printing?.processTypes||[])[0]||'',complexityTier:r.printing?.complexityTier||1,ratePerPiece:r.printing?.ratePerPiece||0,recipeStatus:'locked',recipeRequiredBefore:'pp_approval'};
     const pt=(r.printing?.processTypes||[]).map(k=>PROCESS_TYPES[k]?.label||k).join(', ')||'—';
     const places=(r.printing?.placements||[]).map(pl=>pl.name).filter(Boolean).join(', ')||'—';
-    statusDiv.innerHTML=`<div style="background:#dcfce7;border-radius:8px;padding:10px 12px"><div style="font-size:12px;font-weight:700;color:#14532d">Recipe Found — Locked</div><div style="font-size:11px;color:var(--muted);margin-top:4px">${pt} · Tier ${r.printing?.complexityTier||'?'} · Rs.${r.printing?.ratePerPiece||0}/pc</div><div style="font-size:11px;color:var(--muted)">Placements: ${places}</div></div>`;
+    statusDiv.innerHTML=`<div style="background:#EFEFEF;border-radius:8px;padding:10px 12px;border:1px solid #D9D9D9"><div style="font-size:12px;font-weight:700;color:#111">Recipe Found — Locked</div><div style="font-size:11px;color:var(--muted);margin-top:4px">${pt} · Tier ${r.printing?.complexityTier||'?'} · Rs.${r.printing?.ratePerPiece||0}/pc</div><div style="font-size:11px;color:var(--muted)">Placements: ${places}</div></div>`;
   }
 };
 window._toggleEmbRequired=function(notRequired){
@@ -1545,17 +1562,18 @@ window.addBundlePart=function(name='',notes='',dest='Warehouse'){
   </select>
   <input placeholder="Notes (optional)" value="${notes}" style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:#fafafa;outline:none;font-family:inherit">
   <div style="display:flex;gap:4px">
-    <button type="button" onclick="window.setBPDest('${id}','Printing')" id="${id}-print" style="padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid;${dest==='Printing'?'background:#185FA520;color:#185FA5;border-color:#185FA5':'background:#fff;color:var(--muted);border-color:var(--border)'}">→ Printing</button>
-    <button type="button" onclick="window.setBPDest('${id}','Warehouse')" id="${id}-wh" style="padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid;${dest==='Warehouse'?'background:#1D9E7520;color:#1D9E75;border-color:#1D9E75':'background:#fff;color:var(--muted);border-color:var(--border)'}">→ Warehouse</button>
+    <button type="button" onclick="window.setBPDest('${id}','Printing')" id="${id}-print" style="padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid;${dest==='Printing'?'background:#EFEFEF;color:#111;border-color:#111':'background:#fff;color:var(--muted);border-color:var(--border)'}">→ Printing</button>
+    <button type="button" onclick="window.setBPDest('${id}','Warehouse')" id="${id}-wh" style="padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid;${dest==='Warehouse'?'background:#EFEFEF;color:#111;border-color:#111':'background:#fff;color:var(--muted);border-color:var(--border)'}">→ Warehouse</button>
   </div>
   <button type="button" onclick="document.getElementById('${id}').remove()" style="background:none;border:none;color:#ccc;font-size:18px;cursor:pointer;padding:2px 6px">×</button>`;
   wrap.appendChild(div);
 };
 window.setBPDest=function(rowId,dest){
   const row=document.getElementById(rowId);if(!row)return;
+  row.dataset.dest=dest;
   const pBtn=document.getElementById(rowId+'-print'),wBtn=document.getElementById(rowId+'-wh');
-  if(pBtn){pBtn.style.cssText=pBtn.style.cssText.replace(/background:[^;]+;color:[^;]+;border-color:[^;]+/,dest==='Printing'?'background:#185FA520;color:#185FA5;border-color:#185FA5':'background:#fff;color:var(--muted);border-color:var(--border)');}
-  if(wBtn){wBtn.style.cssText=wBtn.style.cssText.replace(/background:[^;]+;color:[^;]+;border-color:[^;]+/,dest==='Warehouse'?'background:#1D9E7520;color:#1D9E75;border-color:#1D9E75':'background:#fff;color:var(--muted);border-color:var(--border)');}
+  if(pBtn){pBtn.style.cssText=pBtn.style.cssText.replace(/background:[^;]+;color:[^;]+;border-color:[^;]+/,dest==='Printing'?'background:#EFEFEF;color:#111;border-color:#111':'background:#fff;color:var(--muted);border-color:var(--border)');}
+  if(wBtn){wBtn.style.cssText=wBtn.style.cssText.replace(/background:[^;]+;color:[^;]+;border-color:[^;]+/,dest==='Warehouse'?'background:#EFEFEF;color:#111;border-color:#111':'background:#fff;color:var(--muted);border-color:var(--border)');}
 };
 window.getBundleParts=function(){
   const rows=document.querySelectorAll('#bp-rows > div');
@@ -1564,7 +1582,7 @@ window.getBundleParts=function(){
     const sel=row.querySelector('select'),inp=row.querySelector('input');
     const id=row.id;
     const pBtn=document.getElementById(id+'-print');
-    const dest=pBtn&&pBtn.style.color.includes('185FA5')?'Printing':'Warehouse';
+    const dest=row.dataset.dest||(pBtn&&pBtn.style.borderColor==='rgb(17, 17, 17)'?'Printing':'Warehouse');
     return{name:sel?.value||'Full Garment',notes:inp?.value?.trim()||'',dest};
   });
 };
@@ -1848,7 +1866,7 @@ function renderBundlingWork(po){
       <span style="font-weight:500">${p.name}</span>
       <div style="display:flex;align-items:center;gap:8px">
         ${p.notes?`<span style="font-size:11px;color:var(--muted)">${p.notes}</span>`:''}
-        <span style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;${p.dest==='Printing'?'background:#185FA520;color:#185FA5':'background:#1D9E7520;color:#1D9E75'}">→ ${p.dest}</span>
+        <span style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;background:#f0f0f0;color:#111">→ ${p.dest}</span>
       </div>
     </div>`).join('')}
   </div>`:'';
@@ -1860,7 +1878,7 @@ function renderBundlingWork(po){
     return`<div style="margin-bottom:4px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
         <span style="font-size:13px;font-weight:700">→ ${dest}</span>
-        <span style="font-size:11px;padding:2px 8px;border-radius:10px;${dest==='Printing'?'background:#185FA520;color:#185FA5':'background:#1D9E7520;color:#1D9E75'}">${dDone}/${dBundles.length} bundled</span>
+        <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#f0f0f0;color:#111">${dDone}/${dBundles.length} bundled</span>
         ${uniqueDests.length>1?`<div class="progress-strip" style="flex:1;max-width:120px"><div class="progress-fill" style="width:${dBundles.length?Math.round(dDone/dBundles.length*100):0}%"></div></div>`:''}
       </div>
       ${Object.entries(bySz).map(([sz,bList])=>`<div class="card" style="margin-bottom:8px"><div class="card-title">${sz} — ${bList.length} bundle${bList.length!==1?'s':''}</div>
@@ -2056,7 +2074,7 @@ function renderQCWork(po){
   <div class="card"><div class="card-title">QC summary</div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
       <div style="text-align:center;padding:10px;background:#f4f4f6;border-radius:8px"><div style="font-size:20px;font-weight:700;color:var(--muted)">${pending}</div><div style="font-size:10px;color:var(--muted)">Pending</div></div>
-      <div style="text-align:center;padding:10px;background:#dcfce7;border-radius:8px"><div style="font-size:20px;font-weight:700;color:#14532d">${passed}</div><div style="font-size:10px;color:#14532d">Passed</div></div>
+      <div style="text-align:center;padding:10px;background:#EFEFEF;border-radius:8px"><div style="font-size:20px;font-weight:700;color:#111">${passed}</div><div style="font-size:10px;color:var(--muted)">Passed</div></div>
       <div style="text-align:center;padding:10px;background:#fef2f2;border-radius:8px"><div style="font-size:20px;font-weight:700;color:#dc2626">${failed}</div><div style="font-size:10px;color:#dc2626">Failed</div></div>
     </div>
   </div>
@@ -2334,7 +2352,7 @@ window.calcReturnStatus=function(){
     preview.innerHTML=`<div style="background:#fee2e2;border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:8px"><span class="ret-badge ret-overage">Overage 🔴</span><span style="font-size:12px;color:#991b1b">Returned ${returned-sent} more than sent. Please verify.</span></div>`;
     if(reasonWrap)reasonWrap.style.display='none';
   }else if(returned>=sent-tolerance){
-    preview.innerHTML=`<div style="background:#dcfce7;border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:8px"><span class="ret-badge ret-complete">Complete ✅</span><span style="font-size:12px;color:#14532d">Return complete. Tolerance ±${tolerance} pcs.</span></div>`;
+    preview.innerHTML=`<div style="background:#EFEFEF;border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:8px"><span class="ret-badge ret-complete">Complete ✅</span><span style="font-size:12px;color:#111">Return complete. Tolerance ±${tolerance} pcs.</span></div>`;
     if(reasonWrap)reasonWrap.style.display='none';
   }else{
     const shortage=sent-returned;
@@ -2809,7 +2827,7 @@ function renderStoreIssue(){
     <div id="iss-po-body"></div>
   </div>
   <div class="card">
-    <div class="card-title">Manual issue <span style="font-size:11px;font-weight:600;color:#1D9E75;background:#dcfce7;padding:2px 8px;border-radius:10px;margin-left:6px">● Live</span></div>
+    <div class="card-title">Manual issue <span style="font-size:11px;font-weight:600;color:#111;background:#EFEFEF;padding:2px 8px;border-radius:10px;margin-left:6px">● Live</span></div>
     <div class="form-grid">
       <div class="field"><label>Item *</label><select id="iss-item" onchange="window.onIssItemChange()">${opts}</select></div>
       <div class="field" style="grid-column:1/-1;position:relative"><label>PO Number *</label>
@@ -2955,7 +2973,7 @@ async function lookupManualPO(raw){
     el.innerHTML=`<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:12px 14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:4px">
         <span style="font-weight:700;color:var(--green);font-size:13px">✓ ${po.name||po.id}</span>
-        <span style="font-size:11px;background:#1D9E7520;color:#1D9E75;padding:2px 8px;border-radius:10px;font-weight:600">${stageLabel}</span>
+        <span style="font-size:11px;background:#f0f0f0;color:#111;padding:2px 8px;border-radius:10px;font-weight:600">${stageLabel}</span>
       </div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${po.qty||0} pcs total · ${po.fabric||'—'}</div>
       ${hasCut?`<div style="margin-bottom:6px"><div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Cut Qty</div>
@@ -3145,7 +3163,7 @@ function refreshIssueLog(){
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <span style="font-size:10px;font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${isIn?'▲ INBOUND':'▼ OUTBOUND'}</span>
           <span style="font-size:11px;font-weight:700">${tx.itemCode||'—'}</span>
-          ${tx.poRef||tx.poId?`<span style="font-size:10px;font-weight:700;background:#185FA520;color:#185FA5;padding:2px 7px;border-radius:8px">${tx.poRef||tx.poId}</span>`:''}
+          ${tx.poRef||tx.poId?`<span style="font-size:10px;font-weight:700;background:#f0f0f0;color:#111;padding:2px 7px;border-radius:8px">${tx.poRef||tx.poId}</span>`:''}
         </div>
         <div style="font-size:13px;font-weight:500;margin-top:2px">${tx.itemName||'—'}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:1px">${isIn?`From: ${tx.supplier||'—'}`:`To: ${tx.issuedTo||'—'}`}${tx.purpose?` · ${tx.purpose}`:''}${tx.notes?` · ${tx.notes}`:''}</div>
@@ -3190,10 +3208,10 @@ function renderStoreDashboard(){
     </div>`).join('')}
     ${lowStock.length>10?`<div style="font-size:11px;color:var(--muted);padding-top:6px">+${lowStock.length-10} more items below threshold</div>`:''}
   </div>`:'<div class="alert-banner alert-green">All items are in stock ✓</div>'}
-  ${(session.role==='owner'||session.role==='manager')?`<div class="card" style="border-left:3px solid #185FA5">
+  ${(session.role==='owner'||session.role==='manager')?`<div class="card" style="border-left:3px solid #111">
     <div class="card-title">Admin</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Sync all item balances from master inventory list (${INITIAL_ITEMS.length} items). Use after a full stock count.</div>
-    <button class="btn-primary" onclick="window.syncStoreItems()" style="background:#185FA5">⟳ Apply Stock Update</button>
+    <button class="btn-primary" onclick="window.syncStoreItems()">⟳ Apply Stock Update</button>
   </div>`:''}
   <div class="card">
     <div class="card-title">Recent Activity (last 10)</div>
@@ -3513,7 +3531,7 @@ const JOB_STAGE_LABELS={
   qc_bundling:'QC Bundling',       stitching:'Stitching',       final_qc_post_stitch:'Final QC (Post-Stitch)',
   closed:'Closed'
 };
-const PRIORITY_COLORS={urgent:'#dc2626', normal:'#185FA5', flexible:'#6B7280'};
+const PRIORITY_COLORS={urgent:'#000000', normal:'#111111', flexible:'#6B6B6B'};
 const PLACEMENT_TEMPLATES=[
   {id:'front_center',      nameEn:'Front Center',          nameUr:'فرنٹ سینٹر',           side:'front',        anchorType:'hps',            defaultMeasLabel:'Drop from HPS',      defaultTol:'±0.5 inch', workerEn:'Print centered on front, measure down from HPS.',        workerUr:'سامنے سینٹر میں پرنٹ کریں، HPS سے ناپیں۔'},
   {id:'front_chest',       nameEn:'Front Chest',           nameUr:'فرنٹ چیسٹ',            side:'front',        anchorType:'hps',            defaultMeasLabel:'Drop from HPS',      defaultTol:'±0.5 inch', workerEn:'Print on chest area, measure from HPS.',                 workerUr:'چیسٹ پر پرنٹ کریں، HPS سے ناپ لیں۔'},
@@ -3872,7 +3890,7 @@ function recipeCardHTML(r){
         <div style="font-size:14px;font-weight:600;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.articleName||'Untitled'}</div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${(r.printing?.processTypes||[]).map(pt=>processBadge(pt)).join(' ')}</div>
         ${r.printing?.ratePerPiece?`<div style="font-size:12px;font-weight:600;color:var(--dark)">Rs. ${r.printing.ratePerPiece}/pc</div>`:''}
-        ${warnings.length?`<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${warnings.map(w=>`<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:6px;font-weight:600">⚠ ${w}</span>`).join('')}</div>`:''}
+        ${warnings.length?`<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${warnings.map(w=>`<span style="font-size:10px;background:#f0f0f0;color:#111;padding:2px 6px;border-radius:6px;font-weight:600">⚠ ${w}</span>`).join('')}</div>`:''}
       </div>
       <div style="font-size:18px;color:var(--muted)">›</div>
     </div>
@@ -3919,7 +3937,7 @@ function renderRecipeCreatePage(){
           <span style="color:var(--muted)">Rs. ${rm.ratePerPiece}/pc · Tier ${rm.complexityTier}</span>
           <span style="color:var(--muted);margin-left:auto">Source: Current Quarter Rate List</span>
         </div>`;
-        return`<div style="padding:8px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e">
+        return`<div style="padding:8px 12px;background:#f5f5f5;border:1px solid #D9D9D9;border-radius:8px;font-size:12px;color:#555">
           Rate not found in Printing Rate List ⚠️ — Enter manually for now.
         </div>`;
       })()}</div>
@@ -3928,7 +3946,7 @@ function renderRecipeCreatePage(){
       </div>
       <div class="field"><label>Rate per Piece (Rs.) *</label><input id="rc-rate" type="number" min="0" step="0.5" placeholder="0.00" value="${pt.ratePerPiece||''}" oninput="window._rcMarkOverride()"></div>
       <div id="rc-override-row" style="grid-column:1/-1;display:${(()=>{const rm=_lookupRate(e.articleCode||'');return(rm&&(pt.ratePerPiece!==rm.ratePerPiece||pt.complexityTier!==rm.complexityTier))?'block':'none';})()}">
-        <div style="padding:7px 12px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div style="padding:7px 12px;background:#f5f5f5;border:1px solid #D9D9D9;border-radius:8px;font-size:12px;color:#555;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span>Values differ from Rate List.</span>
           <button type="button" onclick="window._rcUseRateList()" style="font-size:12px;padding:3px 10px;border:1px solid #f97316;border-radius:6px;background:none;color:#ea580c;cursor:pointer">Use Rate List Values</button>
           <span style="margin-left:auto">Override reason: <input id="rc-override-note" placeholder="optional…" style="font-size:12px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;width:180px;outline:none" value="${pt.rateOverrideNote||''}"></span>
@@ -4256,7 +4274,7 @@ window._rcLookupRate=function(rawCode){
     if(curTier===1||curTier===rm.complexityTier){if(tierEl)tierEl.value=rm.complexityTier;}
     window._rcCheckOverride();
   }else{
-    if(statusEl)statusEl.innerHTML='<div style="padding:8px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e">Rate not found in Printing Rate List ⚠️ — Enter manually for now.</div>';
+    if(statusEl)statusEl.innerHTML='<div style="padding:8px 12px;background:#f5f5f5;border:1px solid #D9D9D9;border-radius:8px;font-size:12px;color:#555">Rate not found in Printing Rate List ⚠️ — Enter manually for now.</div>';
     if(overEl)overEl.style.display='none';
   }
 };
@@ -4460,7 +4478,7 @@ function renderRecipeDetailPage(){
       <div class="info-row"><span class="info-label">Process</span><span>${(pt.processTypes||[]).map(p=>processBadge(p)).join(' ')||'—'}</span></div>
       <div class="info-row"><span class="info-label">Tier</span><span>${tierBadge(pt.complexityTier||1)}</span></div>
       <div class="info-row"><span class="info-label">Rate</span><span style="font-weight:700;color:var(--dark)">${pt.ratePerPiece?'Rs. '+pt.ratePerPiece+'/pc':'Not set'}</span></div>
-      <div class="info-row"><span class="info-label">Rate Source</span><span style="font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;background:${pt.rateSource==='printing_rate_list'?'#dcfce7':pt.rateSource==='override'?'#fff7ed':'#f5f5f5'};color:${pt.rateSource==='printing_rate_list'?'#14532d':pt.rateSource==='override'?'#ea580c':'#555'}">${pt.rateSource==='printing_rate_list'?'Rate List ✅':pt.rateSource==='override'?'Override ⚠️':'Manual'}</span>${pt.rateOverrideNote?`<span style="font-size:11px;color:var(--muted);margin-left:6px">${pt.rateOverrideNote}</span>`:''}</div>
+      <div class="info-row"><span class="info-label">Rate Source</span><span style="font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;background:#f0f0f0;color:#111">${pt.rateSource==='printing_rate_list'?'Rate List ✅':pt.rateSource==='override'?'Override ⚠️':'Manual'}</span>${pt.rateOverrideNote?`<span style="font-size:11px;color:var(--muted);margin-left:6px">${pt.rateOverrideNote}</span>`:''}</div>
       <div class="info-row"><span class="info-label">Placements</span><span>${(pt.placements||[]).length}</span></div>
       <div class="info-row"><span class="info-label">Pantones</span><span>${(pt.pantones||[]).length}</span></div>
     </div>
@@ -4486,7 +4504,7 @@ function renderRecipeDetailPage(){
         <div style="flex:1"><div style="font-size:12px;font-weight:600">${s.by||'—'} <span style="color:var(--muted);font-weight:400">· ${tsLabel2(s.date)}</span></div>
           <div style="font-size:13px;margin-top:3px">${s.note||'—'}</div>
         </div>
-        <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${s.status==='accepted'?'#dcfce7':s.status==='rejected'?'#fee2e2':'#fef3c7'};color:${s.status==='accepted'?'#14532d':s.status==='rejected'?'#991b1b':'#92400e'}">${(s.status||'open').toUpperCase()}</span>
+        <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${s.status==='rejected'?'#111':'#f0f0f0'};color:${s.status==='rejected'?'#fff':'#111'}">${(s.status||'open').toUpperCase()}</span>
       </div>
       ${canManageRecipes()&&s.status==='open'?`<div style="display:flex;gap:6px;margin-top:6px">
         <button class="btn-sm" style="background:var(--green)" onclick="window.resolveQCSug('${r._id}','${s.suggestionId}','accepted')">Accept</button>
@@ -4845,7 +4863,7 @@ function printWorkerCardHTML(j){
   const alreadyPrinting=stage==='bulk_printing';
 
   // ── SLA block ──
-  const slaColors={ok:'#dcfce7',near:'#fef3c7',over:'#fee2e2',critical:'#fecaca'};
+  const slaColors={ok:'#EFEFEF',near:'#f0f0f0',over:'#fee2e2',critical:'#fecaca'};
   const slaText={ok:'var(--green)',near:'var(--amber)',over:'#dc2626',critical:'#7f1d1d'};
   const slaBg=slaColors[sl]||'#f4f4f6';
   const slaFg=slaText[sl]||'var(--muted)';
@@ -4908,7 +4926,7 @@ function printWorkerCardHTML(j){
     </div>`;
 
   // ── Recipe placements as cards ──
-  const recipeLockBanner=recipeLocked?`<div style="background:#dcfce7;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;color:#14532d;margin-bottom:10px;text-align:center">Recipe Locked — Follow Exactly / ریسیپی لاک ہے — بالکل یہی فالو کریں</div>`:`<div style="background:#fef3c7;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;color:#92400e;margin-bottom:10px;text-align:center">Draft Recipe — Not yet locked / ریسیپی ابھی لاک نہیں</div>`;
+  const recipeLockBanner=recipeLocked?`<div style="background:#111;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;color:#fff;margin-bottom:10px;text-align:center">Recipe Locked — Follow Exactly / ریسیپی لاک ہے — بالکل یہی فالو کریں</div>`:`<div style="background:#f5f5f5;border:1px solid #D9D9D9;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;color:#555;margin-bottom:10px;text-align:center">Draft Recipe — Not yet locked / ریسیپی ابھی لاک نہیں</div>`;
   const pantones=recipe?.printing?.pantones||[];
   const placements=recipe?.printing?.placements||[];
   const recipeSection=hasRecipe?`
@@ -5147,7 +5165,7 @@ function renderPrintingJobDetailPage(){
       <div style="display:flex;flex-wrap:wrap;gap:6px">
         ${Object.entries(j.sizeBreakdown||{}).filter(([,v])=>v>0).map(([k,v])=>`<div style="text-align:center;min-width:42px;padding:6px 8px;background:#f4f4f6;border-radius:6px"><div style="font-size:9px;color:var(--muted)">${k}</div><div style="font-size:16px;font-weight:700">${v}</div></div>`).join('')||'<span style="font-size:12px;color:var(--muted)">No breakdown set</span>'}
       </div>
-      ${j.slaCurrentDue?`<div style="margin-top:10px;padding:8px;border-radius:8px;background:${sl==='ok'?'#dcfce7':sl==='near'?'#fef3c7':'#fee2e2'}">
+      ${j.slaCurrentDue?`<div style="margin-top:10px;padding:8px;border-radius:8px;background:${sl==='ok'?'#EFEFEF':sl==='near'?'#f0f0f0':'#fee2e2'}">
         <div style="font-size:10px;font-weight:700;color:var(--muted)">CURRENT SLA</div>
         <div style="font-size:15px;font-weight:700;color:${slaColor(sl)}">${remainLabel(j.slaCurrentDue)}</div>
       </div>`:''}
@@ -5172,7 +5190,7 @@ function renderPPAttemptsCard(j){
           <div style="font-size:12px;font-weight:700">Attempt #${i+1} <span style="font-weight:400;color:var(--muted)">by ${a.submittedBy||'—'} · ${tsLabel2(a.submittedAt)}</span></div>
           ${a.note?`<div style="font-size:12px;color:var(--dark);margin-top:3px">${a.note}</div>`:''}
         </div>
-        <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:${a.status==='approved'?'#dcfce7':a.status==='rejected'?'#fee2e2':'#fef3c7'};color:${a.status==='approved'?'#14532d':a.status==='rejected'?'#991b1b':'#92400e'}">${(a.status||'pending').toUpperCase()}</span>
+        <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:${a.status==='rejected'?'#111':'#f0f0f0'};color:${a.status==='rejected'?'#fff':'#111'}">${(a.status||'pending').toUpperCase()}</span>
       </div>
       ${a.photoUrl?`<img src="${a.photoUrl}" style="width:100%;max-height:180px;object-fit:contain;border-radius:6px;margin-top:8px;background:#f0f0f0">`:''}
       ${a.reviewedBy?`<div style="font-size:11px;color:var(--muted);margin-top:6px">${a.status==='approved'?'✓ Approved':'✗ Rejected'} by ${a.reviewedBy} · ${tsLabel2(a.reviewedAt)}</div>`:''}
@@ -5403,7 +5421,7 @@ function renderExistingQCReport(rep,j){
           <div style="font-size:11px;color:var(--muted)">${d.affectedQty||0} pcs · Sizes: ${(d.affectedSizes||[]).join(',')||'—'} · Resp: ${d.responsibleDepartment||'—'}</div>
         </div>
         <div style="text-align:right">
-          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;background:${d.severity==='critical'?'#fee2e2':d.severity==='major'?'#fef3c7':'#f0f0f0'};color:${d.severity==='critical'?'#991b1b':d.severity==='major'?'#92400e':'var(--dark)'}">${(d.severity||'minor').toUpperCase()}</span>
+          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;background:${d.severity==='critical'?'#111':d.severity==='major'?'#555':'#f0f0f0'};color:${d.severity==='critical'||d.severity==='major'?'#fff':'#111'}">${(d.severity||'minor').toUpperCase()}</span>
           <div style="font-size:10px;font-weight:700;color:${d.action==='accept'?'var(--green)':d.action==='reject'?'#dc2626':'var(--amber)'};margin-top:2px">${(d.action||'').toUpperCase()}</div>
         </div>
       </div>
@@ -5842,14 +5860,14 @@ function renderObserverTower(){
 
   // ── Stage columns for board ──
   const cols=[
-    {key:'po_received',    label:'PP Required',       color:'#6B7280'},
-    {key:'pp_approval',    label:'Awaiting PP',        color:'#EF9F27'},
-    {key:'bulk_printing',  label:'Printing',           color:'#185FA5'},
-    {key:'final_qc',       label:'Final QC',           color:'#854F0B'},
+    {key:'po_received',    label:'PP Required',       color:'#888'},
+    {key:'pp_approval',    label:'Awaiting PP',        color:'#555'},
+    {key:'bulk_printing',  label:'Printing',           color:'#111111'},
+    {key:'final_qc',       label:'Final QC',           color:'#111111'},
     {key:'rework',         label:'Rework',             color:'#dc2626'},
-    {key:'qc_bundling',    label:'QC Bundling',        color:'#534AB7'},
-    {key:'stitching',      label:'Stitching',          color:'#0F6E56'},
-    {key:'final_qc_post_stitch',label:'Post-Stitch QC',color:'#3B6D11'},
+    {key:'qc_bundling',    label:'QC Bundling',        color:'#111111'},
+    {key:'stitching',      label:'Stitching',          color:'#111111'},
+    {key:'final_qc_post_stitch',label:'Post-Stitch QC',color:'#111111'},
     {key:'closed',         label:'Closed',             color:'var(--green)'}
   ];
 
@@ -5882,7 +5900,7 @@ function renderObserverTower(){
       ['Withhold Q',      withholdPending.length,   'var(--amber)'],
       ['Recipe Missing',  recipeMissing.length,     '#dc2626'],
       ['Total Recipes',   allRecipes.length,        'var(--green)']
-    ].map(([l,v,c])=>`<div class="kpi-card"><div class="kpi-val" style="color:${c}">${v}</div><div class="kpi-label">${l}</div></div>`).join('')}
+    ].map(([l,v,c])=>`<div class="kpi-card"><div class="kpi-val">${v}</div><div class="kpi-label">${l}</div></div>`).join('')}
   </div>
 
   <!-- Tab bar -->
@@ -5910,10 +5928,10 @@ window._towerTab=function(tab){
   const body=document.getElementById('tower-body');
   if(!body)return;
   const cols=[
-    {key:'po_received',label:'PP Required',color:'#6B7280'},{key:'pp_approval',label:'Awaiting PP',color:'#EF9F27'},
-    {key:'bulk_printing',label:'Printing',color:'#185FA5'},{key:'final_qc',label:'Final QC',color:'#854F0B'},
-    {key:'rework',label:'Rework',color:'#dc2626'},{key:'qc_bundling',label:'QC Bundling',color:'#534AB7'},
-    {key:'stitching',label:'Stitching',color:'#0F6E56'},{key:'final_qc_post_stitch',label:'Post-Stitch QC',color:'#3B6D11'},
+    {key:'po_received',label:'PP Required',color:'#888'},{key:'pp_approval',label:'Awaiting PP',color:'#555'},
+    {key:'bulk_printing',label:'Printing',color:'#111111'},{key:'final_qc',label:'Final QC',color:'#111111'},
+    {key:'rework',label:'Rework',color:'#dc2626'},{key:'qc_bundling',label:'QC Bundling',color:'#111111'},
+    {key:'stitching',label:'Stitching',color:'#111111'},{key:'final_qc_post_stitch',label:'Post-Stitch QC',color:'#111111'},
     {key:'closed',label:'Closed',color:'var(--green)'}
   ];
   if(tab==='board')body.innerHTML=renderTowerBoard(cols,allPrintingJobs);
@@ -5991,7 +6009,7 @@ function renderTowerSLA(){
           <div style="font-size:11px;color:var(--muted)">Responsible: ${e.assignedTo||'—'} · Delay: ${e.missedByMinutes||0} min</div>
           ${e.delayReasonText?`<div style="font-size:11px;margin-top:3px">"${e.delayReasonText}"</div>`:''}
         </div>
-        <div style="text-align:right"><div style="font-size:16px;font-weight:800;color:#92400e">Rs. ${e.monetaryWithholdSuggested||0}</div><div style="font-size:10px;color:var(--muted)">Proposed</div></div>
+        <div style="text-align:right"><div style="font-size:16px;font-weight:800;color:#111">Rs. ${e.monetaryWithholdSuggested||0}</div><div style="font-size:10px;color:var(--muted)">Proposed</div></div>
       </div>
       ${isObserver()?`<div style="display:flex;gap:6px;margin-top:8px">
         <input id="wh-amt-${e._id}" type="number" value="${e.monetaryWithholdSuggested||0}" style="width:80px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;outline:none">
@@ -6046,7 +6064,7 @@ function renderTowerBilling(){
   const pending=allPrintBilling.filter(b=>['ready','pending_approval'].includes(b.status));
 
   return`<div class="stats-row" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr));margin-bottom:16px">
-    ${[['Total Gross',`Rs. ${Math.round(totalGross).toLocaleString()}`,`var(--dark)`],['Net Payable',`Rs. ${Math.round(totalNet).toLocaleString()}`,'var(--dark)'],['Approved',`Rs. ${Math.round(totalApproved).toLocaleString()}`,'var(--green)'],['Pending',pending.length+' bills','var(--amber)']].map(([l,v,c])=>`<div class="stat-card"><div class="stat-label">${l}</div><div class="stat-val" style="font-size:18px;color:${c}">${v}</div></div>`).join('')}
+    ${[['Total Gross',`Rs. ${Math.round(totalGross).toLocaleString()}`],['Net Payable',`Rs. ${Math.round(totalNet).toLocaleString()}`],['Approved',`Rs. ${Math.round(totalApproved).toLocaleString()}`],['Pending',pending.length+' bills']].map(([l,v])=>`<div class="stat-card"><div class="stat-label">${l}</div><div class="stat-val" style="font-size:18px">${v}</div></div>`).join('')}
   </div>
 
   <div class="card"><div class="card-title">All Billing Records</div>
@@ -6057,7 +6075,7 @@ function renderTowerBilling(){
         </div>
         <div style="text-align:right">
           <div style="font-size:15px;font-weight:700">Rs. ${Math.round(b.netPayable||0).toLocaleString()}</div>
-          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;background:${b.status==='approved'?'#dcfce7':b.status==='paid'?'#dcfce7':b.status==='disputed'?'#fee2e2':'#fef3c7'};color:${b.status==='approved'||b.status==='paid'?'#14532d':b.status==='disputed'?'#991b1b':'#92400e'}">${(b.status||'').replace('_',' ').toUpperCase()}</span>
+          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;background:${b.status==='disputed'?'#111':'#f0f0f0'};color:${b.status==='disputed'?'#fff':'#111'}">${(b.status||'').replace('_',' ').toUpperCase()}</span>
         </div>
       </div>
     </div>`).join(''):'<div class="empty">No billing records yet.</div>'}
@@ -6077,9 +6095,9 @@ function renderTowerRecipes(){
   const missing=allPrintingJobs.filter(j=>j.recipeWarning&&j.currentStage!=='closed');
   return`<div class="stats-row" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
     <div class="stat-card"><div class="stat-label">Total Recipes</div><div class="stat-val">${allRecipes.length}</div></div>
-    <div class="stat-card"><div class="stat-label">Locked 🔒</div><div class="stat-val" style="color:var(--green)">${locked.length}</div></div>
-    <div class="stat-card"><div class="stat-label">Draft ✏️</div><div class="stat-val" style="color:var(--amber)">${draft.length}</div></div>
-    <div class="stat-card"><div class="stat-label">Jobs No Recipe</div><div class="stat-val" style="color:#dc2626">${missing.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Locked 🔒</div><div class="stat-val">${locked.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Draft ✏️</div><div class="stat-val">${draft.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Jobs No Recipe</div><div class="stat-val">${missing.length}</div></div>
   </div>
   ${missing.length?`<div class="card" style="border:1px solid #fca5a5"><div class="card-title" style="color:#dc2626">⚠ Jobs with Missing Recipe</div>
     ${missing.map(j=>`<div class="info-row"><span style="font-weight:600">${j.poNumber} — ${j.articleCode||'No code'}</span><button class="btn-sm" onclick="window.showPage('recipe-create')">Create Recipe</button></div>`).join('')}
@@ -6405,13 +6423,13 @@ function renderMyWork(){
       const baseContent=base||'';
       return`${baseContent}<div class="page-head" style="margin-top:16px"><div class="page-title">Printing QC Queue</div><div class="page-sub">${ppJobs.length} PP pending · ${qcJobs.length} lot QC pending</div></div>
       ${ppJobs.map(j=>`<div class="work-card">
-        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="po-num">${j.poNumber||'—'}</span><span style="font-size:10px;font-weight:700;color:var(--amber);background:#fef3c7;padding:2px 7px;border-radius:8px">AWAITING PP APPROVAL</span></div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="po-num">${j.poNumber||'—'}</span><span style="font-size:10px;font-weight:700;color:#111;background:#f0f0f0;padding:2px 7px;border-radius:8px">AWAITING PP APPROVAL</span></div>
         <div style="font-size:14px;font-weight:600">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
         <div style="font-size:12px;color:var(--muted);margin-top:2px">${j.totalQty||'?'} pcs · ${j.ppMode==='repeat_article'?'Repeat Article (QC can approve)':'New Article (needs owner)'}</div>
         <button class="mark-done-btn" style="width:auto;padding:8px 16px;margin-top:8px" onclick="window.openPrintingJob('${j._id}')">Review PP Sample</button>
       </div>`).join('')}
       ${qcJobs.map(j=>`<div class="work-card">
-        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="po-num">${j.poNumber||'—'}</span><span style="font-size:10px;font-weight:700;color:#185FA5;background:#dbeafe;padding:2px 7px;border-radius:8px">QC REQUIRED</span></div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="po-num">${j.poNumber||'—'}</span><span style="font-size:10px;font-weight:700;color:#111;background:#EFEFEF;padding:2px 7px;border-radius:8px">QC REQUIRED</span></div>
         <div style="font-size:14px;font-weight:600">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
         <div style="font-size:12px;color:var(--muted);margin-top:2px">${j.printedQty||j.totalQty||'?'} pcs received</div>
         <button class="mark-done-btn" style="width:auto;padding:8px 16px;margin-top:8px" onclick="window.openQCReport('${j._id}')">Enter QC Report</button>
@@ -6431,7 +6449,7 @@ function renderMyWork(){
         </div>
         <div style="flex:1">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span class="po-num">${p.id}</span>
-            <span class="stage-badge" style="background:${STAGES.find(s=>s.key===p.currentStage)?.color||'#888'}20;color:${STAGES.find(s=>s.key===p.currentStage)?.color||'#888'}">${STAGES.find(s=>s.key===p.currentStage)?.label||p.currentStage}</span></div>
+            <span class="stage-badge" style="background:#f0f0f0;color:#111">${STAGES.find(s=>s.key===p.currentStage)?.label||p.currentStage}</span></div>
           <div style="font-size:15px;font-weight:700;margin-bottom:3px">${p.name||'—'}</div>
           <div style="font-size:12px;color:var(--muted)">${p.qty||'?'} pcs · ${p.fabric||''}</div>
           <button class="mark-done-btn" style="background:${p.currentStage==='cutting'||p.currentStage==='bundling'||p.currentStage==='stitching'||p.currentStage==='qc'?'var(--dark)':'var(--green)'}" onclick="window.openStageWork('${p.fbKey}','${p.currentStage}')">${stageLabel[p.currentStage]||'Mark Done'}</button>
@@ -6477,9 +6495,9 @@ function renderDashboard(){
   // ── Stage overview with correct production order ──
   // Cutting → Embellishments → Embellishment QC → Bundling → Stitching → Washing → Final QC
   function stageCard(label,count,color,flagged,alert){
-    const borderStyle=alert?`border:2px solid ${color}`:`border:1px solid var(--border)`;
-    return`<div style="flex:1;min-width:80px;padding:10px 8px;background:#fff;${borderStyle};border-radius:8px;text-align:center">
-      <div style="font-size:18px;font-weight:700;color:${color}">${count}</div>
+    const borderStyle=alert?`border:2px solid #111`:`border:1px solid var(--border)`;
+    return`<div style="flex:1;min-width:0;padding:10px 8px;background:#fff;${borderStyle};border-radius:8px;text-align:center">
+      <div style="font-size:16px;font-weight:700;color:#111">${count}</div>
       <div style="font-size:10px;color:var(--muted);margin-top:2px">${label}</div>
       ${flagged?`<div style="font-size:9px;color:#dc2626;font-weight:700;margin-top:2px">⚠ ${flagged} flagged</div>`:''}
     </div>`;
@@ -6512,7 +6530,7 @@ function renderDashboard(){
     </div>
     <div id="emb-ov-body" style="overflow:hidden;transition:max-height .25s;max-height:${embDefaultOpen?'200px':'0'};border-top:${embDefaultOpen?'1px solid var(--border)':'none'}">
       <div style="display:flex;gap:6px;flex-wrap:wrap;padding:12px 14px">
-        ${[['Printing',inPrinting,'#185FA5'],['Sublimation',inSubl,'#7C3AED'],['Embroidery',inEmbr,'#B45309'],['Rework Pending',inRework,inRework>0?'var(--red)':'var(--muted)'],['Overdue',overdue,overdue>0?'#dc2626':'var(--muted)']].map(([label,val,color])=>`<div style="flex:1;min-width:80px;padding:9px 8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:800;color:${color}">${val}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${label}</div></div>`).join('')}
+        ${[['Printing',inPrinting,'#111'],['Sublimation',inSubl,'#111'],['Embroidery',inEmbr,'#111'],['Rework Pending',inRework,'#111'],['Overdue',overdue,overdue>0?'#000':'var(--muted)']].map(([label,val,color])=>`<div style="flex:1;min-width:0;padding:9px 8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;text-align:center"><div style="font-size:16px;font-weight:700;color:${color}">${val}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${label}</div></div>`).join('')}
       </div>
     </div>
   </div>`:'';
@@ -6520,9 +6538,9 @@ function renderDashboard(){
   const base=`<div class="page-head"><div class="page-title">Dashboard</div><div class="page-sub">Welcome back, ${session.name}</div></div>
   <div class="stats-row">
     <div class="stat-card"><div class="stat-label">Total POs</div><div class="stat-val">${total}</div></div>
-    <div class="stat-card"><div class="stat-label">Active</div><div class="stat-val" style="color:#185FA5">${active}</div></div>
-    <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-val" style="color:var(--green)">${done}</div></div>
-    <div class="stat-card"><div class="stat-label">Today</div><div class="stat-val" style="color:var(--red)">${todayCount}</div></div>
+    <div class="stat-card"><div class="stat-label">Active</div><div class="stat-val">${active}</div></div>
+    <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-val">${done}</div></div>
+    <div class="stat-card"><div class="stat-label">Today</div><div class="stat-val">${todayCount}</div></div>
   </div>
   <div style="margin-bottom:16px">
     <div class="section-title">Stage overview</div>
@@ -6549,7 +6567,7 @@ function renderDashboard(){
   const qvJobs=activeJobs.slice(0,5);
   const jobRows=qvJobs.length?qvJobs.map(j=>{
     const sl=slaStatus(j.slaCurrentDue||null);
-    const slaBg={ok:'#dcfce7',near:'#fef3c7',over:'#fee2e2',critical:'#fecaca'}[sl]||'#f4f4f6';
+    const slaBg={ok:'#EFEFEF',near:'#f0f0f0',over:'#fee2e2',critical:'#fecaca'}[sl]||'#f4f4f6';
     const slaFg={ok:'var(--green)',near:'var(--amber)',over:'#dc2626',critical:'#7f1d1d'}[sl]||'var(--muted)';
     const procInfo=PROCESS_TYPES[j.processType]||{icon:'•',label:j.processType||'—'};
     const po=allPOs.find(p=>p.id===j.poNumber);
