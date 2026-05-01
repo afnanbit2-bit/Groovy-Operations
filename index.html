@@ -5531,6 +5531,31 @@ window.openReworkReturn=function(jobId){ viewingPrintJob=jobId; window.recordRew
 // ── Dashboard (replaces original, adds Embellishments section for observers) ──
 function renderDashboard(){
   const total=allPOs.length,active=allPOs.filter(p=>p.currentStage&&p.currentStage!=='completed').length,done=allPOs.filter(p=>p.currentStage==='completed').length,todayCount=allPOs.filter(p=>p.createdAt===new Date().toISOString().slice(0,10)).length;
+
+  // Embellishments counts (computed early so Stage Overview can include them)
+  const ACTIVE_EMB_STAGES=['po_received','pp_sample','pp_approval','bulk_printing','final_qc','rework','qc_bundling','stitching','final_qc_post_stitch'];
+  const activeJobs=isObserver()?allPrintingJobs.filter(j=>ACTIVE_EMB_STAGES.includes(j.currentStage)):[];
+  const inPrinting =activeJobs.filter(j=>['rubber','plastisol','puff'].includes(j.processType)||j.departmentType==='inhouse_printing').length;
+  const inSubl     =activeJobs.filter(j=>j.processType==='sublimation'||j.departmentType==='external_sublimation').length;
+  const inEmb      =activeJobs.filter(j=>j.processType==='embroidery'||j.departmentType==='external_embroidery').length;
+  const inQC       =activeJobs.filter(j=>['pp_approval','final_qc','rework','final_qc_post_stitch'].includes(j.currentStage)).length;
+  const inRework   =activeJobs.filter(j=>j.currentStage==='rework').length;
+  const overdue    =activeJobs.filter(j=>j.slaCurrentDue&&['over','critical'].includes(slaStatus(j.slaCurrentDue))).length;
+  // Distinct POs circulating in embellishments
+  const embPOCount =new Set(activeJobs.map(j=>j.poNumber).filter(Boolean)).size;
+
+  // Embellishments overview bar (no emojis)
+  const embOverviewBar=isObserver()?`
+  <div style="margin-bottom:16px">
+    <div class="section-title">Embellishments Overview</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      ${[['Printing',inPrinting,'#185FA5'],['Sublimation',inSubl,'#7C3AED'],['Embroidery',inEmb,'#B45309'],['Embellishment QC',inQC,'var(--amber)'],['Rework Pending',inRework,'var(--red)'],['Overdue',overdue,'#dc2626']].map(([label,val,color])=>`<div style="flex:1;min-width:90px;padding:10px 8px;background:#fff;border:1px solid var(--border);border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:${color}">${val}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${label}</div></div>`).join('')}
+    </div>
+  </div>`:'';
+
+  // Stage overview — existing PO stages + Embellishments card for observers
+  const embStageCard=isObserver()?`<div style="flex:1;min-width:80px;padding:10px 8px;background:#fff;border:2px solid #B45309;border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:#B45309">${embPOCount}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">Embellishments</div></div>`:'';
+
   const base=`<div class="page-head"><div class="page-title">Dashboard</div><div class="page-sub">Welcome back, ${session.name}</div></div>
   <div class="stats-row">
     <div class="stat-card"><div class="stat-label">Total POs</div><div class="stat-val">${total}</div></div>
@@ -5538,38 +5563,16 @@ function renderDashboard(){
     <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-val" style="color:var(--green)">${done}</div></div>
     <div class="stat-card"><div class="stat-label">Today</div><div class="stat-val" style="color:var(--red)">${todayCount}</div></div>
   </div>
+  ${embOverviewBar}
   <div style="margin-bottom:16px"><div class="section-title">Stage overview</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">${STAGES.map(s=>{const c=allPOs.filter(p=>p.currentStage===s.key).length;const f=allPOs.filter(p=>p.currentStage===s.key&&p.damageFlagged).length;return`<div style="flex:1;min-width:80px;padding:10px 8px;background:#fff;border:1px solid var(--border);border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:${s.color}">${c}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${s.label}</div>${f?`<div style="font-size:9px;color:#dc2626;font-weight:700;margin-top:2px">⚠ ${f} flagged</div>`:''}</div>`;}).join('')}</div>
-  </div>
-  <div class="section-title">Recent production orders</div>
-  ${allPOs.slice(0,10).map(p=>poRowHTML(p)).join('')||'<div class="empty">No POs yet.</div>'}`;
-  if(!isObserver())return base;
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${STAGES.map(s=>{const c=allPOs.filter(p=>p.currentStage===s.key).length;const f=allPOs.filter(p=>p.currentStage===s.key&&p.damageFlagged).length;return`<div style="flex:1;min-width:80px;padding:10px 8px;background:#fff;border:1px solid var(--border);border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:${s.color}">${c}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${s.label}</div>${f?`<div style="font-size:9px;color:#dc2626;font-weight:700;margin-top:2px">⚠ ${f} flagged</div>`:''}</div>`;}).join('')}${embStageCard}</div>
+  </div>`;
 
-  // ── Embellishments overview for observers / owners ──
-  const ACTIVE_EMB_STAGES=['po_received','pp_sample','pp_approval','bulk_printing','final_qc','rework','qc_bundling','stitching','final_qc_post_stitch'];
-  const activeJobs=allPrintingJobs.filter(j=>ACTIVE_EMB_STAGES.includes(j.currentStage));
-  const inPrinting   =activeJobs.filter(j=>['rubber','plastisol','puff'].includes(j.processType)||j.departmentType==='inhouse_printing').length;
-  const inSubl       =activeJobs.filter(j=>j.processType==='sublimation'||j.departmentType==='external_sublimation').length;
-  const inEmb        =activeJobs.filter(j=>j.processType==='embroidery'||j.departmentType==='external_embroidery').length;
-  const inQC         =activeJobs.filter(j=>['pp_approval','final_qc','rework','final_qc_post_stitch'].includes(j.currentStage)).length;
-  const inRework     =activeJobs.filter(j=>j.currentStage==='rework').length;
-  const overdue      =activeJobs.filter(j=>j.slaCurrentDue&&['over','critical'].includes(slaStatus(j.slaCurrentDue))).length;
+  if(!isObserver()){
+    return base+`<div class="section-title">Recent production orders</div>${allPOs.slice(0,10).map(p=>poRowHTML(p)).join('')||'<div class="empty">No POs yet.</div>'}`;
+  }
 
-  const embCards=[
-    ['Printing',     inPrinting, '#185FA5',  '🖨️'],
-    ['Sublimation',  inSubl,     '#7C3AED',  '🔥'],
-    ['Embroidery',   inEmb,      '#B45309',  '🪡'],
-    ['Embellishment QC', inQC,   'var(--amber)', '🔍'],
-    ['Rework Pending',inRework,  'var(--red)',   '🔄'],
-    ['Overdue',      overdue,    '#dc2626',   '⚠️'],
-  ].map(([label,val,color,icon])=>`
-    <div style="flex:1;min-width:90px;padding:10px 8px;background:#fff;border:1px solid var(--border);border-radius:8px;text-align:center">
-      <div style="font-size:18px;margin-bottom:2px">${icon}</div>
-      <div style="font-size:20px;font-weight:800;color:${color}">${val}</div>
-      <div style="font-size:10px;color:var(--muted);margin-top:2px">${label}</div>
-    </div>`).join('');
-
-  // Quick View: up to 8 most recent active jobs with rich cards
+  // Quick View job rows
   const recentJobs=activeJobs.slice(0,8);
   function embJobNextAction(j){
     const m={'po_received':'Submit PP Sample','pp_sample':'PP Sample Submitted — Awaiting Approval','pp_approval':'Approve or Reject PP Sample','bulk_printing':'Mark Bulk Printing Complete','final_qc':'Enter QC Report','rework':'Complete Rework','qc_bundling':'Accept Handoff (Zohaib)','stitching':'Complete Stitching','final_qc_post_stitch':'Final QC Review'};
@@ -5582,7 +5585,6 @@ function renderDashboard(){
     if(['final_qc','rework','final_qc_post_stitch'].includes(j.currentStage))return'Haris (QC)';
     return j.vendorName||j.assignedTo||'Asghar';
   }
-
   const jobRows=recentJobs.length?recentJobs.map(j=>{
     const sl=slaStatus(j.slaCurrentDue||null);
     const slaBg={ok:'#dcfce7',near:'#fef3c7',over:'#fee2e2',critical:'#fecaca'}[sl]||'#f4f4f6';
@@ -5594,7 +5596,7 @@ function renderDashboard(){
       <div class="po-info" style="min-width:0">
         <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
           <span class="po-num">${j.poNumber||'—'}</span>
-          <span class="process-badge">${procInfo.icon} ${procInfo.label}</span>
+          <span class="process-badge">${procInfo.label}</span>
           <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;background:${(PRIORITY_COLORS[j.priority]||'#888')+'22'};color:${PRIORITY_COLORS[j.priority]||'#888'}">${(j.priority||'normal').toUpperCase()}</span>
         </div>
         <div class="po-name">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
@@ -5608,20 +5610,15 @@ function renderDashboard(){
     </div>`;
   }).join(''):'<div class="empty">No active embellishment jobs.</div>';
 
-  const embSection=`
-  <div style="margin-top:16px">
-    <div class="section-title" style="margin-bottom:8px">Embellishments Overview</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${embCards}</div>
-
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <div class="section-title" style="margin-bottom:0">Embellishments — Quick View</div>
-      <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.showPage('observer-tower')">Observer Tower →</button>
-    </div>
-    ${jobRows}
-    ${activeJobs.length>8?`<div style="text-align:center;margin-top:6px"><button class="btn-outline" onclick="window.showPage('printing-jobs')">View all ${activeJobs.length} jobs →</button></div>`:''}
-  </div>`;
-
-  return base+embSection;
+  return base+`
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <div class="section-title" style="margin-bottom:0">Embellishments — Quick View</div>
+    <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.showPage('observer-tower')">Observer Tower →</button>
+  </div>
+  ${jobRows}
+  ${activeJobs.length>8?`<div style="text-align:center;margin-top:6px"><button class="btn-outline" onclick="window.showPage('printing-jobs')">View all ${activeJobs.length} jobs →</button></div>`:''}
+  <div class="section-title" style="margin-top:16px">Recent production orders</div>
+  ${allPOs.slice(0,10).map(p=>poRowHTML(p)).join('')||'<div class="empty">No POs yet.</div>'}`;
 }
 window._openEmbJob=function(id){const j=allPrintingJobs.find(x=>x._id===id);if(!j)return;viewingPrintJob=id;currentPage='printing-job-detail';document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));renderPrintingJobDetailPage();};
 
