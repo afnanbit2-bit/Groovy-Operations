@@ -1154,11 +1154,12 @@ function buildNav(){
   if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
   if(isOwner)mainItems.push({id:'activity',label:'Activity Log'});
   if(isOwner)mainItems.push({id:'users',label:'Users'});
-  // Printing module nav items
+  // Printing module nav items (worker-aware; used for mobile bottom nav)
   const printItems=[];
   if(om||session.u==='ammar'||session.u==='haris')printItems.push({id:'recipe-directory',label:'Recipe Directory'});
   if(om||['asghar','zohaib','waqas','haris'].includes(session.u))printItems.push({id:'printing-jobs',label:'Embellishment Jobs'});
   if(om)printItems.push({id:'observer-tower',label:'Observer Tower'});
+  if(canManageRecipes()||isQCWorker())printItems.push({id:'color-library',label:'Color Library'});
 
   const storeSubItems=[];
   if(!isWorker){
@@ -1199,9 +1200,11 @@ function buildNav(){
     </div>`:'';
 
   document.getElementById('sidebar').innerHTML=mainNav+printNav+storeNav;
-  // Mobile: show main items + Store shortcut
+  // Mobile: show main items + embellishment items + Store shortcut (horizontally scrollable)
   const mobMain=isStore?storeSubItems:mainItems;
+  const mobPrint=(!isStore&&printItems.length)?printItems.map(i=>`<div class="mob-nav-item" id="mobnav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join(''):'';
   document.getElementById('mob-nav').innerHTML=mobMain.map(i=>`<div class="mob-nav-item" id="mobnav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('')
+    +mobPrint
     +(storeSubItems.length&&!isStore?`<div class="mob-nav-item" onclick="window.showPage('store-dashboard')">Store</div>`:'');
 }
 
