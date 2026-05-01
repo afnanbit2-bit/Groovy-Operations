@@ -4326,6 +4326,471 @@ window.addCommNote=async function(jobId){
 
 window.openQCReport=function(jobId){ viewingPrintJob=jobId; currentPage='qc-report-page'; renderQCReportPage(); };
 
+// ════════════════════════════════════════════════════════════════════
+// CHUNK 3 — QC REPORT PAGE · DEFECT ENTRY · REWORK · REJECTION BOX
+//            FINAL QC OUTCOMES · FORWARD TO QC BUNDLING
+// ════════════════════════════════════════════════════════════════════
+
+let _defectRows=0;
+
+function renderQCReportPage(){
+  const m=document.getElementById('main-content');
+  if(!canViewQCReport()){m.innerHTML='<div class="empty">Not authorized.</div>';return;}
+  const j=allPrintingJobs.find(x=>x._id===viewingPrintJob);
+  if(!j){window.showPage('printing-jobs');return;}
+  const existing=allQCReports.find(q=>q.printingJobId===j._id&&q.reportType==='final_qc');
+
+  m.innerHTML=`<button class="back-btn" onclick="window.openPrintingJob('${j._id}')">← Back to Job Detail</button>
+  <div class="page-head">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+      <div><div class="page-title">QC Report — ${j.poNumber}</div>
+        <div class="page-sub">${j.articleCode||'—'} · ${j.articleName||'—'} · ${j.printedQty||j.totalQty||'?'} pcs received</div>
+      </div>
+      ${existing?`<div style="display:flex;gap:6px"><span style="font-size:12px;font-weight:700;color:${existing.final?.totalCleared>0?'var(--green)':'#dc2626'};padding:8px 14px;border:1px solid ${existing.final?.totalCleared>0?'var(--green)':'#dc2626'};border-radius:8px">Report Submitted</span></div>`:''}
+    </div>
+  </div>
+
+  ${existing?renderExistingQCReport(existing,j):renderQCReportForm(j)}
+  <div style="height:80px"></div>`;
+}
+
+function renderExistingQCReport(rep,j){
+  const f=rep.final||{};
+  return`<div class="alert-banner alert-green">✓ QC Report submitted by ${rep.submittedBy||'—'} at ${tsLabel2(rep.submittedAt)}</div>
+
+  <div class="card"><div class="card-title">QC Summary</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;margin-bottom:12px">
+      ${[['Received',rep.firstPass?.checkedQty||0,'var(--dark)'],['Clear ✓',rep.firstPass?.clearQty||0,'var(--green)'],['Rework',rep.firstPass?.reworkQty||0,'var(--amber)'],['Minor',rep.firstPass?.minorQty||0,'var(--amber)'],['Rejected',rep.firstPass?.rejectedQty||0,'#dc2626']].map(([l,v,c])=>`<div style="text-align:center;padding:10px;background:#f4f4f6;border-radius:8px"><div style="font-size:9px;color:var(--muted)">${l}</div><div style="font-size:22px;font-weight:800;color:${c}">${v}</div></div>`).join('')}
+    </div>
+    <div class="info-row"><span class="info-label">Final Approved Qty</span><span style="font-size:18px;font-weight:800;color:var(--green)">${f.totalCleared||0} pcs</span></div>
+    <div class="info-row"><span class="info-label">Total Rejected</span><span style="font-weight:700;color:#dc2626">${f.totalRejected||0} pcs</span></div>
+    <div class="info-row"><span class="info-label">Billing Approved Qty</span><span style="font-weight:700">${f.billingApprovedQty||0} pcs</span></div>
+    ${f.remarks?`<div class="info-row"><span class="info-label">Remarks</span><span>${f.remarks}</span></div>`:''}
+  </div>
+
+  ${(rep.defects||[]).length?`<div class="card"><div class="card-title">Defects Logged (${rep.defects.length})</div>
+    ${rep.defects.map(d=>`<div style="padding:8px;background:#fafafa;border-radius:8px;margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div><div style="font-size:12px;font-weight:700">${d.category} — ${d.type}</div>
+          <div style="font-size:11px;color:var(--muted)">${d.affectedQty||0} pcs · Sizes: ${(d.affectedSizes||[]).join(',')||'—'} · Resp: ${d.responsibleDepartment||'—'}</div>
+        </div>
+        <div style="text-align:right">
+          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;background:${d.severity==='critical'?'#fee2e2':d.severity==='major'?'#fef3c7':'#f0f0f0'};color:${d.severity==='critical'?'#991b1b':d.severity==='major'?'#92400e':'var(--dark)'}">${(d.severity||'minor').toUpperCase()}</span>
+          <div style="font-size:10px;font-weight:700;color:${d.action==='accept'?'var(--green)':d.action==='reject'?'#dc2626':'var(--amber)';margin-top:2px}">${(d.action||'').toUpperCase()}</div>
+        </div>
+      </div>
+      ${d.affectsBilling?'<div style="font-size:10px;color:#dc2626;margin-top:3px;font-weight:700">⚠ Affects billing</div>':''}
+    </div>`).join('')}
+  </div>`:''}
+
+  ${rep.rework?.sentQty?`<div class="card"><div class="card-title">Rework</div>
+    <div class="info-row"><span class="info-label">Sent for Rework</span><span>${rep.rework.sentQty} pcs → ${rep.rework.sentTo||'—'}</span></div>
+    <div class="info-row"><span class="info-label">Min SLA</span><span>${tsLabel2(rep.rework.minSlaDeadline)}</span></div>
+    ${rep.rework.returnedQty?`<div class="info-row"><span class="info-label">Returned</span><span>${rep.rework.returnedQty} pcs (Passed: ${rep.rework.passedAfterRework||0})</span></div>`:''}
+  </div>`:''}
+
+  ${rep.rejection?.totalRejectedQty?`<div class="card" style="border:1px solid #fca5a5"><div class="card-title" style="color:#dc2626">Rejection Box</div>
+    <div class="info-row"><span class="info-label">Box No.</span><span style="font-weight:700">${rep.rejection.rejectionBoxNo||'—'}</span></div>
+    <div class="info-row"><span class="info-label">Rejected Qty</span><span style="color:#dc2626;font-weight:700">${rep.rejection.totalRejectedQty} pcs</span></div>
+    <div class="info-row"><span class="info-label">Responsible</span><span>${rep.rejection.responsibleDept||'—'}</span></div>
+    ${rep.rejection.notes?`<div class="info-row"><span class="info-label">Notes</span><span>${rep.rejection.notes}</span></div>`:''}
+  </div>`:''}
+
+  ${isQCWorker()&&(j.currentStage==='final_qc'||j.currentStage==='rework')&&!rep.handoff?.forwardedToBundlingAt?`
+    <button class="btn-primary" style="background:var(--green)" onclick="window.forwardToQCBundling('${j._id}')">
+      ✓ Forward to QC Bundling / QC بنڈلنگ کو بھیجیں
+    </button>`:''}`;
+}
+
+function renderQCReportForm(j){
+  const sizes=['XS','S','M','L','XL','2XL'];
+  const received=j.printedQty||j.totalQty||0;
+  _defectRows=0;
+  return`<div class="card"><div class="card-title">Quantity Entry / مقدار درج کریں</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-bottom:12px">
+      ${sizes.map(sz=>`<div class="field"><label>${sz} Received</label><input id="qc-recv-${sz}" type="number" min="0" value="0" style="width:100%"></div>`).join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
+      <div class="field"><label>Total Received</label><input id="qc-total-recv" type="number" min="0" value="${received}" style="width:100%"></div>
+      <div class="field"><label>Checked Qty</label><input id="qc-checked" type="number" min="0" value="${received}" style="width:100%"></div>
+      <div class="field"><label>Clear / Approved ✓</label><input id="qc-clear" type="number" min="0" value="0" style="width:100%" oninput="window._calcQCTotals()"></div>
+      <div class="field"><label>Minor (Accept as-is)</label><input id="qc-minor" type="number" min="0" value="0" style="width:100%" oninput="window._calcQCTotals()"></div>
+      <div class="field"><label>Rework Required</label><input id="qc-rework" type="number" min="0" value="0" style="width:100%" oninput="window._calcQCTotals()"></div>
+      <div class="field"><label>Rejected / No Use</label><input id="qc-rejected" type="number" min="0" value="0" style="width:100%" oninput="window._calcQCTotals()"></div>
+    </div>
+    <div id="qc-total-display" style="margin-top:10px;font-size:13px;color:var(--muted)">Fill quantities above</div>
+  </div>
+
+  <div class="card"><div class="card-title">Bundle Records / بنڈل ریکارڈ</div>
+    <div style="overflow-x:auto">
+      <table class="cut-table"><thead><tr>
+        <th>Bundle No</th><th>Recv Qty</th><th>Date</th><th>XS</th><th>S</th><th>M</th><th>L</th><th>XL</th><th>2XL</th><th>Forwarded</th>
+      </tr></thead>
+      <tbody id="bundle-tbody">
+        <tr id="brow-1">
+          <td><input type="number" value="1" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>
+          <td><input type="number" value="0" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>
+          <td><input type="date" value="${new Date().toISOString().slice(0,10)}" style="width:110px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>
+          ${sizes.map(()=>`<td><input type="number" min="0" value="0" style="width:50px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>`).join('')}
+          <td><input type="number" min="0" value="0" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>
+        </tr>
+      </tbody></table>
+    </div>
+    <button class="btn-outline" style="margin-top:8px" onclick="window._addBundleRow()">+ Add Bundle Row</button>
+  </div>
+
+  <div class="card"><div class="card-title">Defects Log / عیب ریکارڈ</div>
+    <div id="defect-rows-wrap"></div>
+    <button class="btn-outline" style="width:100%;margin-top:6px" onclick="window.addDefectRow()">+ Add Defect</button>
+  </div>
+
+  <div class="card"><div class="card-title">Rework (if any)</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div class="field"><label>Rework Qty</label><input id="rw-qty" type="number" min="0" value="0" style="width:100%"></div>
+      <div class="field"><label>Send To</label>
+        <select id="rw-to"><option value="">Not required</option><option value="printing">Printing</option><option value="rafu">Rafu / Repair</option><option value="washing">Washing</option><option value="alteration">Alteration</option><option value="other">Other</option></select>
+      </div>
+      <div class="field"><label>Rework Deadline</label><input id="rw-deadline" type="datetime-local" style="width:100%"></div>
+      <div class="field"><label>Rework Cost Mode</label>
+        <select id="rw-cost-mode"><option value="absorbed">Absorbed Internally</option><option value="printing_billed">Billed to Printing</option><option value="manual_review">Manual Review</option></select>
+      </div>
+      <div class="field"><label>Rework Cost Amount (Rs.)</label><input id="rw-cost" type="number" min="0" value="0" style="width:100%"></div>
+    </div>
+  </div>
+
+  <div class="card"><div class="card-title">Rejection Box / ریجیکشن باکس</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div class="field"><label>Rejection Box No.</label><input id="rej-box" placeholder="e.g. RB-041" style="width:100%"></div>
+      <div class="field"><label>Responsible Dept.</label>
+        <select id="rej-dept"><option value="printing">Printing</option><option value="fabric">Fabric / Cutting</option><option value="washing">Washing</option><option value="stitching">Stitching</option><option value="vendor">External Vendor</option><option value="unknown">Unknown / Review</option></select>
+      </div>
+      <div class="field"><label>Material Cost/pc (Rs.)</label><input id="rej-mat-cost" type="number" min="0" value="0" style="width:100%"></div>
+      <div class="field" style="grid-column:1/-1"><label>Rejection Notes</label><textarea id="rej-notes" rows="2" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none" placeholder="Describe rejection reason in detail…"></textarea></div>
+    </div>
+  </div>
+
+  <div class="card"><div class="card-title">QC Outcome / نتیجہ</div>
+    <div class="field" style="margin-bottom:10px"><label>Final Outcome</label>
+      <select id="qc-outcome">
+        <option value="approved">✓ Approved for QC Bundling</option>
+        <option value="partial">⚡ Partial Approved + Rework</option>
+        <option value="rejected">✗ Rejected Full Lot</option>
+        <option value="manager_review">⚠ Needs Manager Review</option>
+      </select>
+    </div>
+    <div class="field" style="margin-bottom:10px"><label>QC Remarks</label>
+      <textarea id="qc-remarks" rows="2" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;outline:none" placeholder="Overall QC remarks…"></textarea>
+    </div>
+    <button class="btn-primary" onclick="window.submitQCReport('${j._id}')">Submit QC Report</button>
+  </div>`;
+}
+
+window._calcQCTotals=function(){
+  const cl=parseInt(document.getElementById('qc-clear')?.value)||0;
+  const mn=parseInt(document.getElementById('qc-minor')?.value)||0;
+  const rw=parseInt(document.getElementById('qc-rework')?.value)||0;
+  const rj=parseInt(document.getElementById('qc-rejected')?.value)||0;
+  const total=cl+mn+rw+rj;
+  const el=document.getElementById('qc-total-display');
+  if(el)el.innerHTML=`Total accounted: <strong>${total}</strong> pcs — Clear: <span style="color:var(--green);font-weight:700">${cl}</span> · Minor: <span style="color:var(--amber);font-weight:700">${mn}</span> · Rework: <span style="color:var(--amber);font-weight:700">${rw}</span> · Rejected: <span style="color:#dc2626;font-weight:700">${rj}</span>`;
+};
+
+let _bundleRowCount=1;
+window._addBundleRow=function(){
+  _bundleRowCount++;
+  const sizes=['XS','S','M','L','XL','2XL'];
+  const row=document.createElement('tr');row.id='brow-'+_bundleRowCount;
+  row.innerHTML=`
+    <td><input type="number" value="${_bundleRowCount}" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>
+    <td><input type="number" value="0" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>
+    <td><input type="date" value="${new Date().toISOString().slice(0,10)}" style="width:110px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>
+    ${sizes.map(()=>`<td><input type="number" min="0" value="0" style="width:50px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>`).join('')}
+    <td><input type="number" min="0" value="0" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>`;
+  document.getElementById('bundle-tbody')?.appendChild(row);
+};
+
+window.addDefectRow=function(){
+  _defectRows++;
+  const i=_defectRows;
+  const deptOpts=['Printing','Fabric','Cutting','Washing','Stitching','External Vendor','Unknown'];
+  const wrap=document.getElementById('defect-rows-wrap'); if(!wrap)return;
+  const div=document.createElement('div');div.id='def-row-'+i;div.style.cssText='padding:12px;background:#f8f8f8;border-radius:10px;margin-bottom:10px';
+  div.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span style="font-size:11px;font-weight:700;color:var(--muted)">DEFECT #${i}</span>
+      <button type="button" onclick="document.getElementById('def-row-${i}').remove()" style="background:none;border:none;color:#ccc;font-size:18px;cursor:pointer">×</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div class="field"><label>Category</label>
+        <select id="def-cat-${i}" onchange="window._updateDefectTypes(${i},this.value)">
+          ${DEFECT_CATS.map(c=>`<option value="${c.cat}">${c.cat} / ${c.nameUr}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>Type</label>
+        <select id="def-type-${i}">${(DEFECT_CATS[0]?.types||[]).map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Severity</label>
+        <select id="def-sev-${i}"><option value="minor">Minor</option><option value="major">Major</option><option value="critical">Critical</option></select>
+      </div>
+      <div class="field"><label>Affected Qty</label><input id="def-qty-${i}" type="number" min="0" value="0" style="width:100%"></div>
+      <div class="field"><label>Affected Sizes</label><input id="def-sizes-${i}" placeholder="e.g. M,L,XL" style="width:100%"></div>
+      <div class="field"><label>Bundle Nos.</label><input id="def-bundles-${i}" placeholder="e.g. 1,2,5" style="width:100%"></div>
+      <div class="field"><label>Responsible Dept.</label>
+        <select id="def-dept-${i}">${deptOpts.map(d=>`<option value="${d}">${d}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Action</label>
+        <select id="def-action-${i}"><option value="accept">Accept</option><option value="rework">Rework</option><option value="reject">Reject</option></select>
+      </div>
+      <div class="field" style="grid-column:1/-1"><label>Notes</label><input id="def-notes-${i}" placeholder="describe defect…" style="width:100%"></div>
+      <div class="field" style="grid-column:1/-1;display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="def-billing-${i}" checked style="accent-color:#dc2626">
+        <label for="def-billing-${i}" style="font-size:12px;cursor:pointer">Affects billing / billing impact</label>
+      </div>
+    </div>`;
+  wrap.appendChild(div);
+};
+
+window._updateDefectTypes=function(i,cat){
+  const sel=document.getElementById('def-type-'+i); if(!sel)return;
+  const found=DEFECT_CATS.find(c=>c.cat===cat);
+  sel.innerHTML=(found?.types||[]).map(t=>`<option value="${t}">${t}</option>`).join('');
+};
+
+function collectDefects(){
+  const defs=[];
+  document.querySelectorAll('[id^="def-row-"]').forEach(row=>{
+    const i=row.id.replace('def-row-','');
+    defs.push({
+      defectId:prntId(),
+      category:document.getElementById('def-cat-'+i)?.value||'',
+      type:document.getElementById('def-type-'+i)?.value||'',
+      severity:document.getElementById('def-sev-'+i)?.value||'minor',
+      affectedQty:parseInt(document.getElementById('def-qty-'+i)?.value)||0,
+      affectedSizes:(document.getElementById('def-sizes-'+i)?.value||'').split(',').map(s=>s.trim()).filter(Boolean),
+      affectedBundles:(document.getElementById('def-bundles-'+i)?.value||'').split(',').map(s=>s.trim()).filter(Boolean),
+      responsibleDepartment:document.getElementById('def-dept-'+i)?.value||'Printing',
+      action:document.getElementById('def-action-'+i)?.value||'rework',
+      affectsBilling:!!document.getElementById('def-billing-'+i)?.checked,
+      notes:document.getElementById('def-notes-'+i)?.value.trim()||'',
+      photoUrls:[]
+    });
+  });
+  return defs.filter(d=>d.category&&d.affectedQty>0);
+}
+
+function collectBundleRows(){
+  const rows=[];
+  document.querySelectorAll('[id^="brow-"]').forEach(row=>{
+    const inputs=row.querySelectorAll('input');
+    rows.push({
+      bundleNo:parseInt(inputs[0]?.value)||0,
+      receivingQty:parseInt(inputs[1]?.value)||0,
+      date:inputs[2]?.value||'',
+      XS:parseInt(inputs[3]?.value)||0,S:parseInt(inputs[4]?.value)||0,
+      M:parseInt(inputs[5]?.value)||0,L:parseInt(inputs[6]?.value)||0,
+      XL:parseInt(inputs[7]?.value)||0,'2XL':parseInt(inputs[8]?.value)||0,
+      totalUnitsForwarded:parseInt(inputs[9]?.value)||0
+    });
+  });
+  return rows.filter(r=>r.bundleNo>0);
+}
+
+window.submitQCReport=async function(jobId){
+  if(!canViewQCReport()){showToast('Not authorized.',true);return;}
+  const j=allPrintingJobs.find(x=>x._id===jobId); if(!j)return;
+
+  const totalRecv=parseInt(document.getElementById('qc-total-recv')?.value)||0;
+  const checkedQty=parseInt(document.getElementById('qc-checked')?.value)||0;
+  const clearQty=parseInt(document.getElementById('qc-clear')?.value)||0;
+  const minorQty=parseInt(document.getElementById('qc-minor')?.value)||0;
+  const reworkQty=parseInt(document.getElementById('qc-rework')?.value)||0;
+  const rejectedQty=parseInt(document.getElementById('qc-rejected')?.value)||0;
+
+  const rwQty=parseInt(document.getElementById('rw-qty')?.value)||0;
+  const rwTo=document.getElementById('rw-to')?.value||'';
+  const rwDeadline=document.getElementById('rw-deadline')?.value||calcDue('rework',j.priority);
+  const rwCostMode=document.getElementById('rw-cost-mode')?.value||'absorbed';
+  const rwCost=parseFloat(document.getElementById('rw-cost')?.value)||0;
+
+  const rejBoxNo=document.getElementById('rej-box')?.value.trim()||'';
+  const rejDept=document.getElementById('rej-dept')?.value||'Printing';
+  const rejMatCost=parseFloat(document.getElementById('rej-mat-cost')?.value)||0;
+  const rejNotes=document.getElementById('rej-notes')?.value.trim()||'';
+
+  const outcome=document.getElementById('qc-outcome')?.value||'approved';
+  const remarks=document.getElementById('qc-remarks')?.value.trim()||'';
+
+  const defects=collectDefects();
+  const bundleRows=collectBundleRows();
+
+  // Sizes received
+  const sizeWiseReceived={};
+  ['XS','S','M','L','XL','2XL'].forEach(sz=>{sizeWiseReceived[sz]=parseInt(document.getElementById('qc-recv-'+sz)?.value)||0;});
+
+  const finalApproved=clearQty+minorQty;
+  const now=nowIso();
+
+  const report={
+    printingJobId:jobId, poId:j.poId||jobId, poNumber:j.poNumber, lotNo:j.poNumber,
+    articleCode:j.articleCode, articleName:j.articleName, processType:j.processType,
+    reportType:'final_qc', reportNum:(j.ppAttempts?.length||0),
+    receivedQty:totalRecv, sizeWiseReceived, bundleRows,
+    firstPass:{checkedQty,clearQty,reworkQty,rejectedQty,minorQty},
+    defects,
+    rework:{sentQty:rwQty,sentTo:rwTo,sentAt:rwQty>0?now:null,minSlaDeadline:rwDeadline,returnedQty:0,passedAfterRework:0,rejectedAfterRework:0,costMode:rwCostMode,costAmount:rwCost},
+    rejection:{totalRejectedQty:rejectedQty,rejectionBoxNo:rejBoxNo,materialCostPerPiece:rejMatCost,totalMaterialCostImpact:rejMatCost*rejectedQty,responsibleDept:rejDept,notes:rejNotes},
+    final:{totalReceived:totalRecv,totalCleared:finalApproved,totalRejected:rejectedQty,billingApprovedQty:finalApproved,checkedBy:session.name,checkedAt:now,remarks,outcome},
+    submittedBy:session.name, submittedAt:now, createdAt:now
+  };
+
+  // Determine next stage
+  const nextStage=outcome==='approved'?'qc_bundling':outcome==='partial'?'rework':outcome==='rejected'?'closed':'final_qc';
+  const history=[...(j.stageHistory||[]),{stage:nextStage,by:session.name,at:now,note:`QC: ${outcome} — ${finalApproved} approved, ${rejectedQty} rejected`}];
+
+  try{
+    const repId=prntId();
+    await setDoc(doc(db,'qc_reports',repId),report);
+    allQCReports.unshift({...report,_id:repId});
+
+    await updateDoc(doc(db,'printing_jobs',jobId),{currentStage:nextStage,finalQcStatus:outcome,stageHistory:history,updatedAt:now,qcReportId:repId,slaCurrentDue:nextStage==='rework'?rwDeadline:null});
+    const ji=allPrintingJobs.findIndex(x=>x._id===jobId);
+    if(ji>=0)allPrintingJobs[ji]={...allPrintingJobs[ji],currentStage:nextStage,finalQcStatus:outcome,qcReportId:repId};
+
+    // Create billing record automatically
+    await createBillingRecord(j,report,repId);
+
+    // SLA for rework
+    if(rwQty>0&&rwTo){ await addSLAEvent(jobId,j.poNumber,'rework',j.priority,'asghar',rwDeadline); }
+
+    await logActivity('QC Report submitted',`${j.poNumber} — ${outcome} — ${finalApproved} approved`);
+    showToast('QC Report submitted ✓ — '+outcome.replace('_',' '));
+    currentPage='printing-job-detail'; renderPrintingJobDetailPage();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+async function createBillingRecord(j,report,qcReportId){
+  const ratePerPiece=j.ratePerPiece||0;
+  const firstPassApproved=report.final?.totalCleared||0;
+  const reworkPassed=report.rework?.passedAfterRework||0;
+  const finalApproved=firstPassApproved+reworkPassed;
+  const grossBill=finalApproved*ratePerPiece;
+  const rejQty=report.rejection?.totalRejectedQty||0;
+  const matImpact=report.rejection?.totalMaterialCostImpact||0;
+
+  // Billing deductions from defects marked affectsBilling
+  const deductions=(report.defects||[]).filter(d=>d.affectsBilling&&d.action==='rework').map(d=>({
+    type:'rework_cost',amount:0,reason:'Defect rework: '+d.type,linkedDefectId:d.defectId,approvedBy:null,status:'pending'
+  }));
+
+  const billing={
+    printingJobId:j._id, qcReportId, poId:j.poId||j._id, poNumber:j.poNumber,
+    articleCode:j.articleCode, articleName:j.articleName, processType:j.processType,
+    ratePerPiece, poQty:j.totalQty||0,
+    printedQty:j.printedQty||j.totalQty||0,
+    firstPassApprovedQty:firstPassApproved, reworkPassedQty:reworkPassed,
+    rejectedQty:rejQty, finalApprovedQty:finalApproved,
+    grossBill, deductions, materialCostImpact:matImpact,
+    monetaryWithhold:0, netPayable:grossBill-matImpact,
+    status:firstPassApproved>0?'ready':'pending_qc',
+    approvedBy:null, approvedAt:null, notes:'Auto-generated on QC report submission',
+    createdAt:nowIso(), updatedAt:nowIso()
+  };
+  try{
+    const id=prntId();
+    await setDoc(doc(db,'printing_billing',id),billing);
+    allPrintBilling.unshift({...billing,_id:id});
+  }catch(_){}
+}
+
+// ── Forward to QC Bundling ────────────────────────────────────────────
+window.forwardToQCBundling=async function(jobId){
+  if(!isQCWorker()&&!isObserver()){showToast('QC only.',true);return;}
+  const j=allPrintingJobs.find(x=>x._id===jobId); if(!j)return;
+  const now=nowIso();
+  const history=[...(j.stageHistory||[]),{stage:'qc_bundling',by:session.name,at:now,note:'Forwarded to QC Bundling'}];
+  try{
+    await updateDoc(doc(db,'printing_jobs',jobId),{
+      currentStage:'qc_bundling',
+      'handoff.forwardedToBundlingBy':session.name,
+      'handoff.forwardedToBundlingAt':now,
+      stageHistory:history,updatedAt:now,
+      slaCurrentDue:calcDue('qc_bundling',j.priority)
+    });
+    const ji=allPrintingJobs.findIndex(x=>x._id===jobId);
+    if(ji>=0)allPrintingJobs[ji]={...allPrintingJobs[ji],currentStage:'qc_bundling','handoff.forwardedToBundlingAt':now};
+    await logActivity('Forwarded to QC Bundling',j.poNumber);
+    showToast('Forwarded to QC Bundling / بنڈلنگ کو بھیج دیا ✓');
+    window.showPage('printing-jobs');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+function renderBillingDetailPage(){
+  const m=document.getElementById('main-content');
+  const j=allPrintingJobs.find(x=>x._id===viewingPrintJob);
+  const billing=j?allPrintBilling.find(b=>b.printingJobId===j._id):null;
+  if(!billing){m.innerHTML=`<button class="back-btn" onclick="window.openPrintingJob('${viewingPrintJob||''}')">← Back</button><div class="empty">Billing not generated yet.</div>`;return;}
+
+  const deductTotal=(billing.deductions||[]).filter(d=>d.status==='approved').reduce((s,d)=>s+d.amount,0);
+  const net=billing.grossBill-deductTotal-(billing.materialCostImpact||0)-(billing.monetaryWithhold||0);
+
+  m.innerHTML=`<button class="back-btn" onclick="window.openPrintingJob('${j._id}')">← Back to Job</button>
+  <div class="page-head"><div class="page-title">Billing — ${billing.poNumber}</div><div class="page-sub">${billing.articleCode} · ${billing.processType}</div></div>
+
+  <div class="card"><div class="card-title">Billing Calculation</div>
+    <div class="billing-row"><span>PO Quantity</span><span>${billing.poQty} pcs</span></div>
+    <div class="billing-row"><span>Printed Quantity</span><span>${billing.printedQty} pcs</span></div>
+    <div class="billing-row"><span>First Pass Approved</span><span style="color:var(--green);font-weight:700">${billing.firstPassApprovedQty} pcs</span></div>
+    <div class="billing-row"><span>Rework Passed</span><span style="color:var(--green)">${billing.reworkPassedQty} pcs</span></div>
+    <div class="billing-row"><span style="font-weight:700">Final Approved Qty</span><span style="font-size:18px;font-weight:800;color:var(--dark)">${billing.finalApprovedQty} pcs</span></div>
+    <div class="billing-row"><span>Rate / Piece</span><span>Rs. ${billing.ratePerPiece}</span></div>
+    <div class="billing-row"><span style="font-weight:600">Gross Bill</span><span style="font-size:16px;font-weight:700">Rs. ${billing.grossBill?.toFixed(0)||0}</span></div>
+    ${billing.materialCostImpact?`<div class="billing-row"><span style="color:#dc2626">Material Cost Impact (rejected)</span><span style="color:#dc2626;font-weight:700">− Rs. ${billing.materialCostImpact}</span></div>`:''}
+    ${billing.monetaryWithhold?`<div class="billing-row"><span style="color:#dc2626">SLA Monetary Withhold</span><span style="color:#dc2626;font-weight:700">− Rs. ${billing.monetaryWithhold}</span></div>`:''}
+    ${deductTotal?`<div class="billing-row"><span style="color:#dc2626">Approved Deductions</span><span style="color:#dc2626;font-weight:700">− Rs. ${deductTotal}</span></div>`:''}
+    <div class="billing-row" style="border-top:2px solid var(--dark);padding-top:12px;margin-top:4px">
+      <span style="font-size:15px;font-weight:800">NET PAYABLE</span>
+      <span style="font-size:22px;font-weight:900;color:var(--green)">Rs. ${net.toFixed(0)}</span>
+    </div>
+    <div class="billing-row"><span class="info-label">Status</span>
+      <span style="font-weight:700;padding:3px 10px;border-radius:8px;background:#f0f0f0">${(billing.status||'pending').replace('_',' ').toUpperCase()}</span>
+    </div>
+  </div>
+
+  ${(billing.deductions||[]).length?`<div class="card"><div class="card-title">Deductions</div>
+    ${billing.deductions.map(d=>`<div class="billing-row">
+      <div><div style="font-size:12px;font-weight:600">${d.type.replace('_',' ')}</div><div style="font-size:11px;color:var(--muted)">${d.reason}</div></div>
+      <div style="text-align:right"><div style="font-weight:600">Rs. ${d.amount||0}</div>
+        <div style="font-size:10px;font-weight:700;color:${d.status==='approved'?'var(--green)':d.status==='waived'?'var(--amber)':'var(--muted)'}">${d.status?.toUpperCase()}</div>
+      </div>
+    </div>`).join('')}
+  </div>`:''}
+
+  ${canApproveBilling()&&billing.status==='ready'?`<div style="display:flex;gap:8px;margin-top:4px">
+    <button class="btn-primary" style="flex:1;background:var(--green)" onclick="window.approveBilling('${billing._id}')">Approve Billing ✓</button>
+    <button class="btn-outline" style="flex:1" onclick="window.disputeBilling('${billing._id}')">Dispute / Adjust</button>
+  </div>`:''}
+  <div style="height:80px"></div>`;
+}
+
+window.approveBilling=async function(billingId){
+  if(!canApproveBilling()){showToast('Not authorized.',true);return;}
+  const b=allPrintBilling.find(x=>x._id===billingId); if(!b)return;
+  try{
+    await updateDoc(doc(db,'printing_billing',billingId),{status:'approved',approvedBy:session.name,approvedAt:nowIso(),updatedAt:nowIso()});
+    b.status='approved';b.approvedBy=session.name;
+    await logActivity('Billing approved',`${b.poNumber} — Rs.${b.netPayable?.toFixed(0)||0}`);
+    showToast('Billing approved ✓'); renderBillingDetailPage();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+window.disputeBilling=async function(billingId){
+  const note=prompt('Dispute reason / adjustment note:'); if(!note)return;
+  try{
+    await updateDoc(doc(db,'printing_billing',billingId),{status:'disputed',notes:note,updatedAt:nowIso()});
+    const b=allPrintBilling.find(x=>x._id===billingId); if(b){b.status='disputed';b.notes=note;}
+    showToast('Billing disputed — marked for review'); renderBillingDetailPage();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
 </script>
 </body>
 </html>
