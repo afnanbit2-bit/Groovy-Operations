@@ -4158,6 +4158,7 @@ function renderRecipeDetailPage(){
         ${canUnlock?`<button class="btn-outline" onclick="window.unlockRecipe('${r._id}')">🔓 Unlock</button>`:''}
         ${canManageRecipes()&&r.status==='draft'&&session.u==='ammar'?`<button class="btn-primary" style="width:auto;padding:8px 16px;background:var(--green)" onclick="window.lockRecipe('${r._id}')">Lock Recipe 🔒</button>`:''}
         ${isObserver()?`<button class="btn-outline" onclick="window.archiveRecipe('${r._id}')">Archive</button>`:''}
+        ${session.u==='ammar'?`<button class="btn-outline" style="color:#dc2626;border-color:#dc2626" onclick="window.deleteRecipe('${r._id}')">Delete</button>`:''}
       </div>
     </div>
   </div>
@@ -4242,6 +4243,19 @@ window.archiveRecipe=async function(id){
     await updateDoc(doc(db,'article_recipes',id),{status:'archived',updatedAt:nowIso()});
     const r=allRecipes.find(x=>x._id===id); if(r)r.status='archived';
     showToast('Archived'); renderRecipeDetailPage();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+window.deleteRecipe=async function(id){
+  if(session.u!=='ammar'){showToast('Only Ammar can delete recipes.',true);return;}
+  const r=allRecipes.find(x=>x._id===id);
+  if(!r)return;
+  if(!confirm('Delete recipe "'+r.articleCode+' — '+r.articleName+'"?\n\nThis cannot be undone.'))return;
+  if(!confirm('Are you sure? This permanently deletes the recipe from the database.'))return;
+  try{
+    await deleteDoc(doc(db,'article_recipes',id));
+    allRecipes=allRecipes.filter(x=>x._id!==id);
+    showToast('Recipe deleted.');
+    window.showPage('recipe-directory');
   }catch(e){showToast('Error: '+e.message,true);}
 };
 window.submitQCSuggestion=async function(recipeId){
