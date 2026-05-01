@@ -3360,6 +3360,23 @@ const JOB_STAGE_LABELS={
   closed:'Closed'
 };
 const PRIORITY_COLORS={urgent:'#dc2626', normal:'#185FA5', flexible:'#6B7280'};
+const PLACEMENT_TEMPLATES=[
+  {id:'front_center',      nameEn:'Front Center',          nameUr:'فرنٹ سینٹر',           side:'front',        anchorType:'hps',            defaultMeasLabel:'Drop from HPS',      defaultTol:'±0.5 inch', workerEn:'Print centered on front, measure down from HPS.',        workerUr:'سامنے سینٹر میں پرنٹ کریں، HPS سے ناپیں۔'},
+  {id:'front_chest',       nameEn:'Front Chest',           nameUr:'فرنٹ چیسٹ',            side:'front',        anchorType:'hps',            defaultMeasLabel:'Drop from HPS',      defaultTol:'±0.5 inch', workerEn:'Print on chest area, measure from HPS.',                 workerUr:'چیسٹ پر پرنٹ کریں، HPS سے ناپ لیں۔'},
+  {id:'front_left_chest',  nameEn:'Front Left Chest',      nameUr:'فرنٹ لیفٹ چیسٹ',      side:'front',        anchorType:'shoulder_seam',  defaultMeasLabel:'From shoulder seam', defaultTol:'±0.5 inch', workerEn:'Print on left chest, measure from shoulder seam.',        workerUr:'بائیں چیسٹ پر پرنٹ کریں۔'},
+  {id:'front_right_chest', nameEn:'Front Right Chest',     nameUr:'فرنٹ رائٹ چیسٹ',      side:'front',        anchorType:'shoulder_seam',  defaultMeasLabel:'From shoulder seam', defaultTol:'±0.5 inch', workerEn:'Print on right chest, measure from shoulder seam.',       workerUr:'دائیں چیسٹ پر پرنٹ کریں۔'},
+  {id:'full_front',        nameEn:'Full Front',            nameUr:'فل فرنٹ',              side:'front',        anchorType:'center_chest',   defaultMeasLabel:'Centered on front',  defaultTol:'±1 inch',   workerEn:'Full front print — center the artwork horizontally.',     workerUr:'پورے سامنے پرنٹ کریں — آرٹ ورک سینٹر میں ہو۔'},
+  {id:'back_center',       nameEn:'Back Center',           nameUr:'بیک سینٹر',            side:'back',         anchorType:'hps',            defaultMeasLabel:'Drop from HPS',      defaultTol:'±0.5 inch', workerEn:'Print centered on back, measure from HPS.',              workerUr:'پیچھے سینٹر میں پرنٹ کریں۔'},
+  {id:'back_neck',         nameEn:'Back Neck',             nameUr:'بیک نیک',              side:'back',         anchorType:'neck_rib',       defaultMeasLabel:'From neck rib',      defaultTol:'±0.5 inch', workerEn:'Print just below the neck rib at back.',                 workerUr:'پیچھے گلے کی پٹی کے نیچے پرنٹ کریں۔'},
+  {id:'full_back',         nameEn:'Full Back',             nameUr:'فل بیک',               side:'back',         anchorType:'center_chest',   defaultMeasLabel:'Centered on back',   defaultTol:'±1 inch',   workerEn:'Full back print — center the artwork.',                  workerUr:'پورے پیچھے پرنٹ کریں — سینٹر میں ہو۔'},
+  {id:'left_sleeve',       nameEn:'Left Sleeve',           nameUr:'لیفٹ سلیو',            side:'left_sleeve',  anchorType:'shoulder_seam',  defaultMeasLabel:'From shoulder seam', defaultTol:'±0.5 inch', workerEn:'Print on left sleeve, measure from shoulder seam.',       workerUr:'بائیں آستین پر پرنٹ کریں۔'},
+  {id:'right_sleeve',      nameEn:'Right Sleeve',          nameUr:'رائٹ سلیو',            side:'right_sleeve', anchorType:'shoulder_seam',  defaultMeasLabel:'From shoulder seam', defaultTol:'±0.5 inch', workerEn:'Print on right sleeve, measure from shoulder seam.',      workerUr:'دائیں آستین پر پرنٹ کریں۔'},
+  {id:'left_leg',          nameEn:'Left Leg',              nameUr:'لیفٹ لیگ',             side:'left_leg',     anchorType:'side_seam',      defaultMeasLabel:'From side seam',     defaultTol:'±0.5 inch', workerEn:'Print on left leg, measure from side seam.',             workerUr:'بائیں ٹانگ پر پرنٹ کریں۔'},
+  {id:'right_leg',         nameEn:'Right Leg',             nameUr:'رائٹ لیگ',             side:'right_leg',    anchorType:'side_seam',      defaultMeasLabel:'From side seam',     defaultTol:'±0.5 inch', workerEn:'Print on right leg, measure from side seam.',            workerUr:'دائیں ٹانگ پر پرنٹ کریں۔'},
+  {id:'hps_based',         nameEn:'HPS Based Placement',   nameUr:'HPS پلیسمنٹ',         side:'front',        anchorType:'hps',            defaultMeasLabel:'Drop from HPS',      defaultTol:'±0.5 inch', workerEn:'Measure carefully from HPS before placing.',             workerUr:'HPS سے ناپ کر پلیسمنٹ کریں۔'},
+  {id:'seam_based',        nameEn:'Seam Based Placement',  nameUr:'سیم بیسڈ پلیسمنٹ',    side:'custom',       anchorType:'side_seam',      defaultMeasLabel:'From seam',          defaultTol:'±0.5 inch', workerEn:'Measure from the seam as specified.',                    workerUr:'سیم سے ناپ کر پلیسمنٹ کریں۔'},
+  {id:'custom',            nameEn:'Custom Measured',       nameUr:'کسٹم ناپ والی',        side:'custom',       anchorType:'custom',         defaultMeasLabel:'Custom measurement', defaultTol:'±0.5 inch', workerEn:'Follow exact measurement specified in recipe.',          workerUr:'ریسیپی میں دی گئی ناپ فالو کریں۔'},
+];
 const SLA_HOURS={
   urgent:{pp_sample:4,  pp_approval:2,  bulk_printing:8,  final_qc:4,  rework:12, qc_bundling:4, stitching:24},
   normal:{pp_sample:8,  pp_approval:4,  bulk_printing:16, final_qc:8,  rework:24, qc_bundling:8, stitching:48},
@@ -3580,25 +3597,71 @@ function renderRecipeCreatePage(){
 let _plIdx=0,_ptIdx=0;
 function placementRowHTML(i,pl={}){
   _plIdx=Math.max(_plIdx,i+1);
+  // Backward compat: if old free-text 'name', map to 'custom' template
+  const tplId=pl.placementTemplateId||'custom';
+  const tpl=PLACEMENT_TEMPLATES.find(t=>t.id===tplId)||PLACEMENT_TEMPLATES[PLACEMENT_TEMPLATES.length-1];
+  const side=pl.side||tpl.side||'front';
+  const measLabel=pl.measurementDescriptionEn||tpl.defaultMeasLabel||'Measurement';
   return`<div id="pl-row-${i}" class="placement-row">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <span style="font-size:11px;font-weight:700;color:var(--muted)">PLACEMENT ${i+1}</span>
       <button type="button" onclick="document.getElementById('pl-row-${i}').remove()" style="background:none;border:none;color:#ccc;font-size:18px;cursor:pointer">×</button>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <div class="field"><label>Name</label><input placeholder="e.g. Front Chest" value="${pl.name||''}"></div>
-      <div class="field"><label>Side</label>
-        <select>${['front','back','sleeve','leg','custom'].map(s=>`<option value="${s}" ${pl.side===s?'selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`).join('')}</select>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div class="field" style="grid-column:1/-1">
+        <label>Placement Template *</label>
+        <select id="pl-${i}-tpl" onchange="window._onPlTplChange(${i})">
+          ${PLACEMENT_TEMPLATES.map(t=>`<option value="${t.id}" ${tplId===t.id?'selected':''}>${t.nameEn} / ${t.nameUr}</option>`).join('')}
+        </select>
       </div>
-      <div class="field"><label>Artwork Size</label><input placeholder="e.g. 25cm × 30cm" value="${pl.artworkSize||''}"></div>
-      <div class="field"><label>Placement (from seam)</label><input placeholder="e.g. 5cm from collar" value="${pl.placementMeasurement||''}"></div>
-      <div class="field"><label>Tolerance</label><input placeholder="e.g. ±0.5cm" value="${pl.tolerance||''}"></div>
-      <div class="field"><label>Image URL</label><input placeholder="https://…" value="${pl.imageUrl||''}"></div>
-      <div class="field" style="grid-column:1/-1"><label>Notes (English)</label><input placeholder="Any special notes…" value="${pl.notesEn||''}"></div>
-      <div class="field" style="grid-column:1/-1"><label>نوٹس (اردو)</label><input dir="rtl" style="text-align:right" placeholder="خاص ہدایات…" value="${pl.notesUr||''}"></div>
+      <div class="field"><label>Side</label>
+        <select id="pl-${i}-side">${['front','back','left_sleeve','right_sleeve','left_leg','right_leg','custom'].map(s=>`<option value="${s}" ${side===s?'selected':''}>${s.replace(/_/g,' ')}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Anchor Type</label>
+        <select id="pl-${i}-anchor">${['hps','neck_rib','center_chest','shoulder_seam','side_seam','bottom_hem','custom'].map(a=>`<option value="${a}" ${(pl.anchorType||tpl.anchorType)===a?'selected':''}>${a.replace(/_/g,' ')}</option>`).join('')}</select>
+      </div>
     </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div class="field"><label>Measurement Value</label><input id="pl-${i}-mval" placeholder="e.g. 3" value="${pl.measurementValue||pl.placementMeasurement||''}"></div>
+      <div class="field"><label>Unit</label>
+        <select id="pl-${i}-munit"><option value="inch" ${(pl.measurementUnit||'inch')==='inch'?'selected':''}>inch</option><option value="cm" ${pl.measurementUnit==='cm'?'selected':''}>cm</option></select>
+      </div>
+      <div class="field"><label>Position Description (EN) — ${measLabel}</label><input id="pl-${i}-desc-en" placeholder="e.g. 3 inches below HPS" value="${pl.measurementDescriptionEn||''}"></div>
+      <div class="field"><label>پوزیشن (اردو)</label><input id="pl-${i}-desc-ur" dir="rtl" style="text-align:right" placeholder="مثلاً HPS سے 3 انچ نیچے" value="${pl.measurementDescriptionUr||''}"></div>
+      <div class="field"><label>Tolerance</label><input id="pl-${i}-tol" placeholder="${tpl.defaultTol}" value="${pl.toleranceValue||pl.tolerance||''}"></div>
+      <div class="field"><label>Reference Image URL</label><input id="pl-${i}-img" placeholder="https://… (optional)" value="${pl.production?.referenceImageUrl||pl.imageUrl||''}"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div class="field"><label>Worker Instruction (EN)</label><input id="pl-${i}-wk-en" placeholder="${tpl.workerEn}" value="${pl.production?.visibleInstructionEn||pl.notesEn||''}"></div>
+      <div class="field"><label>ہدایت (اردو)</label><input id="pl-${i}-wk-ur" dir="rtl" style="text-align:right" placeholder="${tpl.workerUr}" value="${pl.production?.visibleInstructionUr||pl.notesUr||''}"></div>
+    </div>
+    <details style="margin-top:4px">
+      <summary style="font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;padding:6px 0">Technical Setup / ٹیکنیکل تفصیل ▾</summary>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+        <div class="field"><label>Artwork Size</label><input id="pl-${i}-asize" placeholder="e.g. 25cm × 30cm" value="${pl.technical?.artworkSize||pl.artworkSize||''}"></div>
+        <div class="field"><label>Screen Reference</label><input id="pl-${i}-sref" placeholder="e.g. SCR-024" value="${pl.technical?.screenReference||''}"></div>
+        <div class="field"><label>Artwork File URL</label><input id="pl-${i}-afile" placeholder="https://…" value="${pl.technical?.artworkFileUrl||''}"></div>
+        <div class="field"><label>Film Reference</label><input id="pl-${i}-film" placeholder="e.g. FILM-GP020-F1" value="${pl.technical?.filmReference||''}"></div>
+        <div class="field" style="grid-column:1/-1"><label>Print Dimension Notes</label><input id="pl-${i}-pdnotes" placeholder="Any technical print dimension notes…" value="${pl.technical?.printDimensionNotes||''}"></div>
+      </div>
+    </details>
   </div>`;
 }
+window._onPlTplChange=function(i){
+  const tplId=document.getElementById('pl-'+i+'-tpl')?.value;
+  const tpl=PLACEMENT_TEMPLATES.find(t=>t.id===tplId);
+  if(!tpl)return;
+  const sideEl=document.getElementById('pl-'+i+'-side');
+  const anchorEl=document.getElementById('pl-'+i+'-anchor');
+  if(sideEl&&tpl.side!=='custom')sideEl.value=tpl.side;
+  if(anchorEl&&tpl.anchorType!=='custom')anchorEl.value=tpl.anchorType;
+  const descEn=document.getElementById('pl-'+i+'-desc-en');
+  const wkEn=document.getElementById('pl-'+i+'-wk-en');
+  const wkUr=document.getElementById('pl-'+i+'-wk-ur');
+  if(descEn&&!descEn.value)descEn.placeholder=tpl.defaultMeasLabel;
+  if(wkEn&&!wkEn.value)wkEn.placeholder=tpl.workerEn;
+  if(wkUr&&!wkUr.value)wkUr.placeholder=tpl.workerUr;
+};
 function pantoneRowHTML(i,p={}){
   _ptIdx=Math.max(_ptIdx,i+1);
   return`<div id="pt-row-${i}" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:8px;align-items:flex-end;margin-bottom:8px">
@@ -3614,9 +3677,33 @@ window.addPantoneRow=function(){ document.getElementById('rc-pantones')?.insertA
 
 function collectPlacements(){
   return Array.from(document.querySelectorAll('[id^="pl-row-"]')).map(row=>{
-    const inputs=row.querySelectorAll('input,select');
-    return{name:inputs[0]?.value||'',side:inputs[1]?.value||'front',artworkSize:inputs[2]?.value||'',placementMeasurement:inputs[3]?.value||'',tolerance:inputs[4]?.value||'',imageUrl:inputs[5]?.value||'',notesEn:inputs[6]?.value||'',notesUr:inputs[7]?.value||''};
-  }).filter(p=>p.name);
+    const i=row.id.replace('pl-row-','');
+    const tplId=document.getElementById('pl-'+i+'-tpl')?.value||'custom';
+    const tpl=PLACEMENT_TEMPLATES.find(t=>t.id===tplId)||PLACEMENT_TEMPLATES.find(t=>t.id==='custom');
+    return{
+      placementTemplateId:tplId,
+      name:tpl?.nameEn||tplId,
+      side:document.getElementById('pl-'+i+'-side')?.value||'front',
+      anchorType:document.getElementById('pl-'+i+'-anchor')?.value||'center',
+      measurementValue:document.getElementById('pl-'+i+'-mval')?.value||'',
+      measurementUnit:document.getElementById('pl-'+i+'-munit')?.value||'cm',
+      measurementDescriptionEn:document.getElementById('pl-'+i+'-desc-en')?.value||'',
+      measurementDescriptionUr:document.getElementById('pl-'+i+'-desc-ur')?.value||'',
+      toleranceValue:document.getElementById('pl-'+i+'-tol')?.value||(tpl?.defaultTol||'±0.5cm'),
+      production:{
+        referenceImageUrl:document.getElementById('pl-'+i+'-img')?.value||'',
+        visibleInstructionEn:document.getElementById('pl-'+i+'-wk-en')?.value||(tpl?.workerEn||''),
+        visibleInstructionUr:document.getElementById('pl-'+i+'-wk-ur')?.value||(tpl?.workerUr||'')
+      },
+      technical:{
+        artworkSize:document.getElementById('pl-'+i+'-asize')?.value||'',
+        screenReference:document.getElementById('pl-'+i+'-sref')?.value||'',
+        artworkFileUrl:document.getElementById('pl-'+i+'-afile')?.value||'',
+        filmReference:document.getElementById('pl-'+i+'-film')?.value||'',
+        printDimensionNotes:document.getElementById('pl-'+i+'-pdnotes')?.value||''
+      }
+    };
+  }).filter(p=>p.placementTemplateId);
 }
 function collectPantones(){
   return Array.from(document.querySelectorAll('[id^="pt-row-"]')).map(row=>{
@@ -3684,6 +3771,60 @@ window.saveRecipe=async function(lock=false){
 };
 
 // ── Recipe Detail View ────────────────────────────────────────────────
+function _recPlacementHTML(pl,idx){
+  const tpl=PLACEMENT_TEMPLATES.find(t=>t.id===(pl.placementTemplateId||'custom'))||PLACEMENT_TEMPLATES.find(t=>t.id==='custom');
+  const plName=pl.name||tpl?.nameEn||pl.placementTemplateId||'—';
+  const side=(pl.side||'').toUpperCase()||'—';
+  const measDesc=pl.measurementDescriptionEn||pl.placementMeasurement||'';
+  const measDescUr=pl.measurementDescriptionUr||'';
+  const measVal=pl.measurementValue?`${pl.measurementValue} ${pl.measurementUnit||'cm'}`:'';
+  const tol=pl.toleranceValue||pl.tolerance||'—';
+  const refImg=pl.production?.referenceImageUrl||pl.imageUrl||'';
+  const instrEn=pl.production?.visibleInstructionEn||pl.notesEn||'';
+  const instrUr=pl.production?.visibleInstructionUr||pl.notesUr||'';
+  const techArtSize=pl.technical?.artworkSize||pl.artworkSize||'';
+  const techSRef=pl.technical?.screenReference||'';
+  const techAFile=pl.technical?.artworkFileUrl||'';
+  const techFilm=pl.technical?.filmReference||'';
+  const techPDNotes=pl.technical?.printDimensionNotes||'';
+  const wrap=c=>`<div class="placement-row" style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #f0f0f0">${c}</div>`;
+  const header=`<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px">PLACEMENT ${idx+1} — ${side}</div>
+    <div class="info-row"><span class="info-label">Placement</span><span style="font-weight:600">${plName}</span></div>`;
+  const techCollapsible=techArtSize?`<details style="margin-top:6px"><summary style="font-size:11px;color:var(--muted);cursor:pointer">Technical Details</summary><div class="info-row" style="margin-top:4px"><span class="info-label">Artwork Size</span><span>${techArtSize}</span></div></details>`:'';
+  if(isPrintWorker()){
+    return wrap(`${header}
+      ${measDesc?`<div class="info-row"><span class="info-label">Position</span><span>${measDesc}</span></div>`:''}
+      ${measVal?`<div class="info-row"><span class="info-label">Measurement</span><span style="font-weight:600">${measVal}</span></div>`:''}
+      ${instrEn?`<div style="background:#f7f7f9;padding:8px 10px;border-radius:8px;font-size:13px;margin-top:4px"><strong>Instruction:</strong> ${instrEn}</div>`:''}
+      ${instrUr?`<div style="background:#fffbeb;padding:8px 10px;border-radius:8px;font-size:14px;direction:rtl;text-align:right;margin-top:4px">${instrUr}</div>`:''}
+      ${refImg?`<img src="${refImg}" style="width:100%;border-radius:8px;max-height:160px;object-fit:contain;margin-top:6px;background:#f0f0f0">`:''}
+      ${techCollapsible}`);
+  }
+  if(isQCWorker()){
+    return wrap(`${header}
+      <div class="info-row"><span class="info-label">Tolerance</span><span style="font-weight:600;color:var(--red)">${tol}</span></div>
+      ${measDesc?`<div class="info-row"><span class="info-label">Position</span><span>${measDesc}</span></div>`:''}
+      ${measVal?`<div class="info-row"><span class="info-label">Measurement</span><span style="font-weight:600">${measVal}</span></div>`:''}
+      ${refImg?`<img src="${refImg}" style="width:100%;border-radius:8px;max-height:160px;object-fit:contain;margin-top:6px;background:#f0f0f0">`:''}
+      ${techCollapsible}`);
+  }
+  return wrap(`${header}
+    ${measDesc?`<div class="info-row"><span class="info-label">Position</span><span>${measDesc}</span></div>`:''}
+    ${measVal?`<div class="info-row"><span class="info-label">Measurement</span><span style="font-weight:600">${measVal}</span></div>`:''}
+    <div class="info-row"><span class="info-label">Tolerance</span><span>${tol}</span></div>
+    ${instrEn?`<div class="info-row"><span class="info-label">Worker Instruction</span><span>${instrEn}</span></div>`:''}
+    ${instrUr?`<div class="info-row"><span class="info-label">ہدایت</span><span dir="rtl">${instrUr}</span></div>`:''}
+    ${refImg?`<img src="${refImg}" style="width:100%;border-radius:8px;max-height:160px;object-fit:contain;margin-top:6px;background:#f0f0f0">`:''}
+    ${techArtSize||techSRef||techAFile||techFilm||techPDNotes?`<details style="margin-top:8px"><summary style="font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;padding:4px 0">Technical Setup ▾</summary>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px">
+        ${techArtSize?`<div class="info-row" style="grid-column:1/-1"><span class="info-label">Artwork Size</span><span style="font-weight:600">${techArtSize}</span></div>`:''}
+        ${techSRef?`<div class="info-row"><span class="info-label">Screen Ref</span><span>${techSRef}</span></div>`:''}
+        ${techFilm?`<div class="info-row"><span class="info-label">Film Ref</span><span>${techFilm}</span></div>`:''}
+        ${techAFile?`<div class="info-row" style="grid-column:1/-1"><span class="info-label">Artwork File</span><span style="word-break:break-all;font-size:11px">${techAFile}</span></div>`:''}
+        ${techPDNotes?`<div class="info-row" style="grid-column:1/-1"><span class="info-label">Print Dim Notes</span><span>${techPDNotes}</span></div>`:''}
+      </div>
+    </details>`:''}`);
+}
 function renderRecipeDetailPage(){
   const m=document.getElementById('main-content');
   const r=allRecipes.find(x=>x._id===viewingRecipe);
@@ -3741,17 +3882,8 @@ function renderRecipeDetailPage(){
     </div>
   </div>
 
-  ${(pt.placements||[]).length?`<div class="card"><div class="card-title">Placements</div>
-    ${pt.placements.map((pl,i)=>`<div class="placement-row" style="margin-bottom:10px">
-      <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px">PLACEMENT ${i+1} — ${(pl.side||'').toUpperCase()}</div>
-      <div class="info-row"><span class="info-label">Name</span><span style="font-weight:600">${pl.name||'—'}</span></div>
-      <div class="info-row"><span class="info-label">Size</span><span>${pl.artworkSize||'—'}</span></div>
-      <div class="info-row"><span class="info-label">Position</span><span>${pl.placementMeasurement||'—'}</span></div>
-      <div class="info-row"><span class="info-label">Tolerance</span><span>${pl.tolerance||'—'}</span></div>
-      ${pl.notesEn?`<div class="info-row"><span class="info-label">Notes (EN)</span><span>${pl.notesEn}</span></div>`:''}
-      ${pl.notesUr?`<div class="info-row"><span class="info-label">نوٹس</span><span dir="rtl">${pl.notesUr}</span></div>`:''}
-      ${pl.imageUrl?`<img src="${pl.imageUrl}" style="width:100%;border-radius:8px;max-height:160px;object-fit:contain;margin-top:6px;background:#f0f0f0">`:''}
-    </div>`).join('')}
+  ${(pt.placements||[]).length?`<div class="card"><div class="card-title">Placements (${pt.placements.length})</div>
+    ${pt.placements.map((pl,i)=>_recPlacementHTML(pl,i)).join('')}
   </div>`:''}
 
   ${(pt.pantones||[]).length?`<div class="card"><div class="card-title">Pantone / Ink Colors</div>
