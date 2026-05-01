@@ -4791,6 +4791,312 @@ window.disputeBilling=async function(billingId){
   }catch(e){showToast('Error: '+e.message,true);}
 };
 
+// ════════════════════════════════════════════════════════════════════
+// CHUNK 4 — OBSERVER CONTROL TOWER · SLA MANAGEMENT · WITHHOLD SYSTEM
+//            BILLING OVERVIEW · COMMUNICATION DASHBOARD
+// ════════════════════════════════════════════════════════════════════
+
+function renderObserverTower(){
+  if(!isObserver())return'<div class="empty">Observer access only.</div>';
+
+  // ── KPI Calculations ──
+  const active=allPrintingJobs.filter(j=>j.currentStage!=='closed');
+  const awaitingPP=allPrintingJobs.filter(j=>j.currentStage==='pp_approval'&&j.ppApprovalStatus==='pending');
+  const ppRejected=allPrintingJobs.filter(j=>j.ppApprovalStatus==='rejected'&&j.currentStage==='po_received');
+  const printing=allPrintingJobs.filter(j=>j.currentStage==='bulk_printing');
+  const awaitingQC=allPrintingJobs.filter(j=>j.currentStage==='final_qc');
+  const rework=allPrintingJobs.filter(j=>j.currentStage==='rework');
+  const overdue=allPrintingJobs.filter(j=>j.slaCurrentDue&&slaStatus(j.slaCurrentDue)!=='ok'&&j.currentStage!=='closed');
+  const totalRejected=allQCReports.reduce((s,r)=>s+(r.final?.totalRejected||0),0);
+  const billingPending=allPrintBilling.filter(b=>['ready','pending_approval'].includes(b.status));
+  const withholdPending=allSLAEvents.filter(e=>e.monetaryWithholdSuggested>0&&!e.monetaryWithholdApproved);
+  const recipeMissing=allPrintingJobs.filter(j=>j.recipeWarning&&j.currentStage!=='closed');
+
+  // ── Stage columns for board ──
+  const cols=[
+    {key:'po_received',    label:'PP Required',       color:'#6B7280'},
+    {key:'pp_approval',    label:'Awaiting PP',        color:'#EF9F27'},
+    {key:'bulk_printing',  label:'Printing',           color:'#185FA5'},
+    {key:'final_qc',       label:'Final QC',           color:'#854F0B'},
+    {key:'rework',         label:'Rework',             color:'#dc2626'},
+    {key:'qc_bundling',    label:'QC Bundling',        color:'#534AB7'},
+    {key:'stitching',      label:'Stitching',          color:'#0F6E56'},
+    {key:'final_qc_post_stitch',label:'Post-Stitch QC',color:'#3B6D11'},
+    {key:'closed',         label:'Closed',             color:'var(--green)'}
+  ];
+
+  // Active tab
+  const tab=document.getElementById('tower-tab')?.value||'board';
+
+  return`<div class="page-head">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+      <div><div class="page-title">Observer Control Tower</div>
+        <div class="page-sub">Real-time view of all decoration & printing jobs · ${active.length} active</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-outline" onclick="window._refreshTower()">↻ Refresh</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI Grid -->
+  <div class="kpi-grid" style="margin-bottom:16px">
+    ${[
+      ['Active Jobs',     active.length,          'var(--dark)'],
+      ['Awaiting PP',     awaitingPP.length,       'var(--amber)'],
+      ['PP Rejected',     ppRejected.length,       '#dc2626'],
+      ['Printing',        printing.length,          '#185FA5'],
+      ['Final QC',        awaitingQC.length,        '#854F0B'],
+      ['Rework',          rework.length,            'var(--amber)'],
+      ['Overdue',         overdue.length,           '#dc2626'],
+      ['Rejected Pcs',    totalRejected,            '#dc2626'],
+      ['Bill Pending',    billingPending.length,    'var(--amber)'],
+      ['Withhold Q',      withholdPending.length,   'var(--amber)'],
+      ['Recipe Missing',  recipeMissing.length,     '#dc2626'],
+      ['Total Recipes',   allRecipes.length,        'var(--green)']
+    ].map(([l,v,c])=>`<div class="kpi-card"><div class="kpi-val" style="color:${c}">${v}</div><div class="kpi-label">${l}</div></div>`).join('')}
+  </div>
+
+  <!-- Tab bar -->
+  <div class="tab-bar" style="margin-bottom:16px">
+    ${[['board','Job Board'],['sla','SLA / Delays'],['billing','Billing'],['recipes','Recipes'],['comms','Communications']].map(([t,l])=>`<button class="tab-btn ${(document.getElementById('tower-tab-state')?.dataset.tab||'board')===t?'active':''}" onclick="window._towerTab('${t}')">${l}</button>`).join('')}
+  </div>
+  <div id="tower-tab-state" data-tab="${(document.getElementById('tower-tab-state')?.dataset.tab||'board')}" style="display:none"></div>
+
+  <div id="tower-body">
+    ${renderTowerBoard(cols,allPrintingJobs)}
+  </div>`;
+}
+
+window._refreshTower=async function(){
+  await refreshPrintingData();
+  document.getElementById('main-content').innerHTML=renderObserverTower();
+};
+
+window._towerTab=function(tab){
+  document.getElementById('main-content').innerHTML=renderObserverTower();
+  // After render, switch tab
+  const state=document.getElementById('tower-tab-state'); if(state)state.dataset.tab=tab;
+  const tabs=document.querySelectorAll('.tab-btn');
+  tabs.forEach(b=>{b.classList.toggle('active',b.textContent.toLowerCase().replace(/[^a-z]/g,'').includes(tab.replace(/[^a-z]/g,'')));});
+  const body=document.getElementById('tower-body');
+  if(!body)return;
+  const cols=[
+    {key:'po_received',label:'PP Required',color:'#6B7280'},{key:'pp_approval',label:'Awaiting PP',color:'#EF9F27'},
+    {key:'bulk_printing',label:'Printing',color:'#185FA5'},{key:'final_qc',label:'Final QC',color:'#854F0B'},
+    {key:'rework',label:'Rework',color:'#dc2626'},{key:'qc_bundling',label:'QC Bundling',color:'#534AB7'},
+    {key:'stitching',label:'Stitching',color:'#0F6E56'},{key:'final_qc_post_stitch',label:'Post-Stitch QC',color:'#3B6D11'},
+    {key:'closed',label:'Closed',color:'var(--green)'}
+  ];
+  if(tab==='board')body.innerHTML=renderTowerBoard(cols,allPrintingJobs);
+  else if(tab==='sla')body.innerHTML=renderTowerSLA();
+  else if(tab==='billing')body.innerHTML=renderTowerBilling();
+  else if(tab==='recipes')body.innerHTML=renderTowerRecipes();
+  else if(tab==='comms')body.innerHTML=renderTowerComms();
+};
+
+// ── Board View ────────────────────────────────────────────────────────
+function renderTowerBoard(cols,jobs){
+  return`<div class="tower-cols">
+    ${cols.map(col=>{
+      const colJobs=jobs.filter(j=>j.currentStage===col.key);
+      return`<div class="tower-col">
+        <div class="tower-col-head" style="border-bottom:2px solid ${col.color};padding-bottom:6px;margin-bottom:8px">
+          ${col.label} <span style="font-size:12px;font-weight:400;color:var(--muted)">(${colJobs.length})</span>
+        </div>
+        ${colJobs.map(j=>towerJobMini(j)).join('')||'<div style="font-size:11px;color:var(--muted);padding:8px;text-align:center">—</div>'}
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function towerJobMini(j){
+  const sl=slaStatus(j.slaCurrentDue||null);
+  const recipe=allRecipes.find(r=>r._id===j.recipeId);
+  return`<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:6px;cursor:pointer;border-left:3px solid ${slaColor(sl)}" onclick="window.openPrintingJob('${j._id}')">
+    <div style="font-size:10px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</div>
+    <div style="font-size:12px;font-weight:600;margin:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${j.articleCode||'—'}</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:4px;flex-wrap:wrap">
+      <span style="font-size:10px;color:var(--muted)">${j.totalQty||0} pcs</span>
+      ${tierBadge(j.complexityTier||1)}
+    </div>
+    ${j.slaCurrentDue?`<div style="font-size:9px;font-weight:700;color:${slaColor(sl)};margin-top:3px">${remainLabel(j.slaCurrentDue)}</div>`:''}
+    ${j.ppApprovalStatus==='rejected'?'<div style="font-size:9px;color:#dc2626;font-weight:700">PP Rejected</div>':''}
+    ${j.recipeWarning?'<div style="font-size:9px;color:var(--amber);font-weight:700">⚠ Recipe Missing</div>':''}
+    <div style="font-size:9px;color:var(--muted);margin-top:2px">${j.assignedTo||'—'} · ${processBadge(j.processType)}</div>
+  </div>`;
+}
+
+// ── SLA View ──────────────────────────────────────────────────────────
+function renderTowerSLA(){
+  const evts=allSLAEvents.filter(e=>!e.completedAt).sort((a,b)=>new Date(a.dueAt)-new Date(b.dueAt));
+  const proposed=allSLAEvents.filter(e=>e.monetaryWithholdSuggested>0&&!e.monetaryWithholdApproved);
+
+  return`<div class="card"><div class="card-title">Active SLA Events (${evts.length})</div>
+    ${evts.length?evts.map(e=>{
+      const sl=slaStatus(e.dueAt);
+      return`<div style="padding:10px;background:${sl==='ok'?'#f8f8f8':sl==='near'?'#fef9e7':sl==='over'?'#fef2f2':'#7f1d1d10'};border-radius:8px;margin-bottom:8px;border-left:3px solid ${slaColor(sl)}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px">
+          <div>
+            <div style="font-size:11px;font-weight:700">${e.poId||'—'} · ${JOB_STAGE_LABELS[e.stage]||e.stage}</div>
+            <div style="font-size:11px;color:var(--muted)">Assigned: ${e.assignedTo||'—'} · Priority: ${e.priority||'—'}</div>
+            <div style="font-size:11px;color:var(--muted)">Due: ${tsLabel2(e.dueAt)}</div>
+            ${e.delayReasonText?`<div style="font-size:11px;color:var(--amber);margin-top:3px">📝 ${e.delayReasonText}</div>`:''}
+          </div>
+          <div style="text-align:right">
+            <span class="sla-chip ${slaChipClass(sl)}">${remainLabel(e.dueAt)}</span>
+            ${sl!=='ok'&&!e.delayReasonText?`<div style="font-size:9px;color:#dc2626;font-weight:700;margin-top:4px">⚠ No delay reason</div>`:''}
+          </div>
+        </div>
+        ${(sl==='over'||sl==='critical')&&isObserver()?`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn-sm" style="font-size:10px" onclick="window._proposeWithhold('${e._id}','${e.poId||''}')">Propose Withhold</button>
+          <button class="btn-sm" style="font-size:10px;background:#6B7280" onclick="window._markSLADone('${e._id}')">Mark Resolved</button>
+        </div>`:''}
+      </div>`;
+    }).join(''):'<div class="empty" style="padding:1rem">No open SLA events.</div>'}
+  </div>
+
+  ${proposed.length?`<div class="card" style="border:1px solid #fcd34d"><div class="card-title">Monetary Withhold Proposals (${proposed.length})</div>
+    ${proposed.map(e=>`<div class="withhold-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div><div style="font-size:12px;font-weight:700">${e.poId||'—'} · ${JOB_STAGE_LABELS[e.stage]||e.stage}</div>
+          <div style="font-size:11px;color:var(--muted)">Responsible: ${e.assignedTo||'—'} · Delay: ${e.missedByMinutes||0} min</div>
+          ${e.delayReasonText?`<div style="font-size:11px;margin-top:3px">"${e.delayReasonText}"</div>`:''}
+        </div>
+        <div style="text-align:right"><div style="font-size:16px;font-weight:800;color:#92400e">Rs. ${e.monetaryWithholdSuggested||0}</div><div style="font-size:10px;color:var(--muted)">Proposed</div></div>
+      </div>
+      ${isObserver()?`<div style="display:flex;gap:6px;margin-top:8px">
+        <input id="wh-amt-${e._id}" type="number" value="${e.monetaryWithholdSuggested||0}" style="width:80px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;outline:none">
+        <button class="btn-sm" style="background:var(--green);font-size:11px" onclick="window._approveWithhold('${e._id}')">Approve</button>
+        <button class="btn-sm" style="background:#6B7280;font-size:11px" onclick="window._waiveWithhold('${e._id}')">Waive</button>
+      </div>`:''}
+    </div>`).join('')}
+  </div>`:''}`;
+}
+
+window._proposeWithhold=async function(slaId,poNum){
+  const amt=prompt('Suggested withhold amount (Rs.):'); if(!amt||isNaN(amt))return;
+  try{
+    await updateDoc(doc(db,'sla_events',slaId),{monetaryWithholdSuggested:parseFloat(amt),missedByMinutes:Math.round((Date.now()-new Date(allSLAEvents.find(e=>e._id===slaId)?.dueAt).getTime())/60000)});
+    const ev=allSLAEvents.find(e=>e._id===slaId); if(ev)ev.monetaryWithholdSuggested=parseFloat(amt);
+    showToast('Withhold proposed — Rs.'+amt); window._towerTab('sla');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+window._approveWithhold=async function(slaId){
+  const amtEl=document.getElementById('wh-amt-'+slaId);
+  const amt=parseFloat(amtEl?.value)||0;
+  try{
+    await updateDoc(doc(db,'sla_events',slaId),{monetaryWithholdApproved:amt,approvedBy:session.name,status:'completed',completedAt:nowIso()});
+    const ev=allSLAEvents.find(e=>e._id===slaId); if(ev){ev.monetaryWithholdApproved=amt;ev.approvedBy=session.name;}
+    // Reflect on billing if job linked
+    const ev2=allSLAEvents.find(e=>e._id===slaId);
+    if(ev2?.printingJobId){const b=allPrintBilling.find(x=>x.printingJobId===ev2.printingJobId);if(b){b.monetaryWithhold=(b.monetaryWithhold||0)+amt;b.netPayable=(b.netPayable||0)-amt;}}
+    await logActivity('Withhold approved','Rs.'+amt+' — '+slaId);
+    showToast('Withhold approved Rs.'+amt+' ✓'); window._towerTab('sla');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+window._waiveWithhold=async function(slaId){
+  try{
+    await updateDoc(doc(db,'sla_events',slaId),{monetaryWithholdSuggested:0,status:'completed',completedAt:nowIso()});
+    const ev=allSLAEvents.find(e=>e._id===slaId); if(ev){ev.monetaryWithholdSuggested=0;}
+    showToast('Withhold waived'); window._towerTab('sla');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+window._markSLADone=async function(slaId){
+  try{
+    await updateDoc(doc(db,'sla_events',slaId),{status:'completed',completedAt:nowIso()});
+    const ev=allSLAEvents.find(e=>e._id===slaId); if(ev)ev.completedAt=nowIso();
+    showToast('SLA marked resolved'); window._towerTab('sla');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+// ── Billing Overview ──────────────────────────────────────────────────
+function renderTowerBilling(){
+  const totalGross=allPrintBilling.reduce((s,b)=>s+(b.grossBill||0),0);
+  const totalNet=allPrintBilling.reduce((s,b)=>s+(b.netPayable||0),0);
+  const totalApproved=allPrintBilling.filter(b=>b.status==='approved').reduce((s,b)=>s+(b.netPayable||0),0);
+  const pending=allPrintBilling.filter(b=>['ready','pending_approval'].includes(b.status));
+
+  return`<div class="stats-row" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr));margin-bottom:16px">
+    ${[['Total Gross',`Rs. ${Math.round(totalGross).toLocaleString()}`,`var(--dark)`],['Net Payable',`Rs. ${Math.round(totalNet).toLocaleString()}`,'var(--dark)'],['Approved',`Rs. ${Math.round(totalApproved).toLocaleString()}`,'var(--green)'],['Pending',pending.length+' bills','var(--amber)']].map(([l,v,c])=>`<div class="stat-card"><div class="stat-label">${l}</div><div class="stat-val" style="font-size:18px;color:${c}">${v}</div></div>`).join('')}
+  </div>
+
+  <div class="card"><div class="card-title">All Billing Records</div>
+    ${allPrintBilling.length?allPrintBilling.map(b=>`<div style="padding:10px 0;border-bottom:1px solid #f5f5f5;cursor:pointer" onclick="window._openBilling('${b._id}')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px">
+        <div><div style="font-size:12px;font-weight:700">${b.poNumber||'—'} — ${b.articleCode||'—'}</div>
+          <div style="font-size:11px;color:var(--muted)">${processBadge(b.processType)} · ${b.finalApprovedQty||0} pcs approved</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:15px;font-weight:700">Rs. ${Math.round(b.netPayable||0).toLocaleString()}</div>
+          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;background:${b.status==='approved'?'#dcfce7':b.status==='paid'?'#dcfce7':b.status==='disputed'?'#fee2e2':'#fef3c7'};color:${b.status==='approved'||b.status==='paid'?'#14532d':b.status==='disputed'?'#991b1b':'#92400e'}">${(b.status||'').replace('_',' ').toUpperCase()}</span>
+        </div>
+      </div>
+    </div>`).join(''):'<div class="empty">No billing records yet.</div>'}
+  </div>`;
+}
+window._openBilling=function(billingId){
+  const b=allPrintBilling.find(x=>x._id===billingId); if(!b)return;
+  viewingPrintJob=b.printingJobId;
+  currentPage='billing-detail';
+  renderBillingDetailPage();
+};
+
+// ── Recipes Overview ──────────────────────────────────────────────────
+function renderTowerRecipes(){
+  const locked=allRecipes.filter(r=>r.status==='locked');
+  const draft=allRecipes.filter(r=>r.status==='draft');
+  const missing=allPrintingJobs.filter(j=>j.recipeWarning&&j.currentStage!=='closed');
+  return`<div class="stats-row" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+    <div class="stat-card"><div class="stat-label">Total Recipes</div><div class="stat-val">${allRecipes.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Locked 🔒</div><div class="stat-val" style="color:var(--green)">${locked.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Draft ✏️</div><div class="stat-val" style="color:var(--amber)">${draft.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Jobs No Recipe</div><div class="stat-val" style="color:#dc2626">${missing.length}</div></div>
+  </div>
+  ${missing.length?`<div class="card" style="border:1px solid #fca5a5"><div class="card-title" style="color:#dc2626">⚠ Jobs with Missing Recipe</div>
+    ${missing.map(j=>`<div class="info-row"><span style="font-weight:600">${j.poNumber} — ${j.articleCode||'No code'}</span><button class="btn-sm" onclick="window.showPage('recipe-create')">Create Recipe</button></div>`).join('')}
+  </div>`:''}
+  <div class="card"><div class="card-title">All Recipes</div>
+    ${allRecipes.slice(0,20).map(r=>recipeCardHTML(r)).join('')||'<div class="empty">No recipes.</div>'}
+  </div>`;
+}
+
+// ── Communications Overview ───────────────────────────────────────────
+function renderTowerComms(){
+  const recent=allCommNotes.slice(0,30);
+  const pings=allCommNotes.filter(n=>n.type==='ping'&&!(n.readBy||[]).includes(session.u));
+  return`${pings.length?`<div class="card" style="border:1px solid #7dd3fc"><div class="card-title">🔔 Unread Pings (${pings.length})</div>
+    ${pings.map(n=>`<div class="comm-note comm-ping">
+      <div style="font-size:12px;font-weight:700">${n.fromUser||'—'} → ${n.toUser||n.toRole||'All'}</div>
+      <div style="font-size:13px;margin-top:3px">${n.message||'—'}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px">${tsLabel2(n.createdAt)}</div>
+    </div>`).join('')}
+  </div>`:''}
+  <div class="card"><div class="card-title">All Communications (last 30)</div>
+    ${recent.length?recent.map(n=>`<div class="comm-note ${n.type==='ping'?'comm-ping':''}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div style="font-size:11px;font-weight:700;color:var(--dark)">${n.fromUser||'—'} ${n.toUser?'→ '+n.toUser:''}</div>
+        <div style="display:flex;gap:4px;align-items:center">
+          <span style="font-size:9px;font-weight:600;padding:1px 6px;border-radius:6px;background:#f0f0f0">${(n.type||'text').toUpperCase()}</span>
+          <span style="font-size:10px;color:var(--muted)">${tsLabel2(n.createdAt)}</span>
+        </div>
+      </div>
+      ${n.linkedId?`<div style="font-size:10px;color:var(--muted);margin:1px 0">Job: ${allPrintingJobs.find(j=>j._id===n.linkedId)?.poNumber||n.linkedId}</div>`:''}
+      <div style="font-size:13px;margin-top:4px">${n.message||'—'}</div>
+    </div>`).join(''):'<div class="empty">No communications yet.</div>'}
+  </div>`;
+}
+
+// ── SLA update helper when advancing stages ───────────────────────────
+async function updateJobSLA(jobId,newStage,priority){
+  const dueAt=calcDue(newStage,priority);
+  try{
+    await updateDoc(doc(db,'printing_jobs',jobId),{slaCurrentDue:dueAt,updatedAt:nowIso()});
+    const ji=allPrintingJobs.findIndex(j=>j._id===jobId);
+    if(ji>=0)allPrintingJobs[ji].slaCurrentDue=dueAt;
+  }catch(_){}
+}
+
 </script>
 </body>
 </html>
