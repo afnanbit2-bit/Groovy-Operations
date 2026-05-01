@@ -3270,7 +3270,7 @@ function renderRecipeDirectory(){
   </div>
 
   <div id="recipe-list-wrap">
-    ${list.length?list.map(r=>recipeCardHTML(r)).join(''):'<div class="empty">No recipes yet. ${canCreate?"Click '+ New Recipe' to start.":""}</div>'}
+    ${list.length?list.map(r=>recipeCardHTML(r)).join(''):'<div class="empty">No recipes yet.'+(canCreate?' Click + New Recipe to start.':'')+'</div>'}
   </div>`;
 }
 window._filterRecipes=function(q){
@@ -4339,7 +4339,7 @@ function renderExistingQCReport(rep,j){
         </div>
         <div style="text-align:right">
           <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;background:${d.severity==='critical'?'#fee2e2':d.severity==='major'?'#fef3c7':'#f0f0f0'};color:${d.severity==='critical'?'#991b1b':d.severity==='major'?'#92400e':'var(--dark)'}">${(d.severity||'minor').toUpperCase()}</span>
-          <div style="font-size:10px;font-weight:700;color:${d.action==='accept'?'var(--green)':d.action==='reject'?'#dc2626':'var(--amber)';margin-top:2px}">${(d.action||'').toUpperCase()}</div>
+          <div style="font-size:10px;font-weight:700;color:${d.action==='accept'?'var(--green)':d.action==='reject'?'#dc2626':'var(--amber)'};margin-top:2px">${(d.action||'').toUpperCase()}</div>
         </div>
       </div>
       ${d.affectsBilling?'<div style="font-size:10px;color:#dc2626;margin-top:3px;font-weight:700">⚠ Affects billing</div>':''}
