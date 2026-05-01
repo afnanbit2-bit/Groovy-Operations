@@ -3844,8 +3844,14 @@ function placementRowHTML(i,pl={}){
   _plIdx=Math.max(_plIdx,i+1);
   const tplId=pl.placementTemplateId||'custom';
   const tpl=PLACEMENT_TEMPLATES.find(t=>t.id===tplId)||PLACEMENT_TEMPLATES[PLACEMENT_TEMPLATES.length-1];
-  // Backward compat: combine old structured fields into one measurementText if missing
   const measText=pl.measurementText||(pl.measurementDescriptionEn?pl.measurementDescriptionEn+(pl.measurementValue?' ('+pl.measurementValue+(pl.measurementUnit?' '+pl.measurementUnit:'')+')'  :''):'');
+  const mUnit=pl.measurementUnit||'inch';
+  // Parse legacy tolerance: "±0.5 inch" → text="±0.5", unit="inch"
+  const rawTol=pl.toleranceText||pl.toleranceValue||pl.tolerance||'';
+  const tolMatch=rawTol.match(/^(.*?)\s*(inch|cm|mm)?\s*$/i);
+  const tolText=tolMatch?tolMatch[1].trim():rawTol;
+  const tolUnit=pl.toleranceUnit||(tolMatch&&tolMatch[2]?tolMatch[2].toLowerCase():'inch');
+  const refImg=pl.production?.referenceImageUrl||pl.imageUrl||'';
   return`<div id="pl-row-${i}" class="placement-row">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <span style="font-size:11px;font-weight:700;color:var(--muted)">PLACEMENT ${i+1}</span>
@@ -3857,16 +3863,51 @@ function placementRowHTML(i,pl={}){
         ${PLACEMENT_TEMPLATES.map(t=>`<option value="${t.id}" ${tplId===t.id?'selected':''}>${t.nameEn} / ${t.nameUr}</option>`).join('')}
       </select>
     </div>
-    <div class="field">
-      <label>Measurement / Position</label>
-      <input id="pl-${i}-mtext" placeholder="e.g. 3 inches below HPS, centered" value="${measText}">
-      <div style="font-size:11px;color:var(--muted);margin-top:3px">مثلاً HPS سے 3 انچ نیچے</div>
+    <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:flex-end">
+      <div class="field" style="margin-bottom:0">
+        <label>Measurement / Position</label>
+        <input id="pl-${i}-mtext" placeholder="e.g. 3 inches below HPS, centered" value="${measText}">
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">مثلاً HPS سے 3 انچ نیچے</div>
+      </div>
+      <div class="field" style="margin-bottom:0;min-width:80px">
+        <label>Unit</label>
+        <select id="pl-${i}-munit" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;width:100%">
+          <option value="inch" ${mUnit==='inch'?'selected':''}>inch</option>
+          <option value="cm" ${mUnit==='cm'?'selected':''}>cm</option>
+        </select>
+      </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <div class="field"><label>Tolerance</label><input id="pl-${i}-tol" placeholder="${tpl.defaultTol||'±0.5 inch'}" value="${pl.toleranceValue||pl.tolerance||''}"></div>
-      <div class="field"><label>Reference Image URL</label><input id="pl-${i}-img" placeholder="https://… (optional)" value="${pl.production?.referenceImageUrl||pl.imageUrl||''}"></div>
+    <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:flex-end;margin-top:8px">
+      <div class="field" style="margin-bottom:0">
+        <label>Tolerance</label>
+        <input id="pl-${i}-tol" placeholder="e.g. ±0.5" value="${tolText}">
+      </div>
+      <div class="field" style="margin-bottom:0;min-width:80px">
+        <label>Unit</label>
+        <select id="pl-${i}-tolunit" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;width:100%">
+          <option value="inch" ${tolUnit==='inch'?'selected':''}>inch</option>
+          <option value="cm" ${tolUnit==='cm'?'selected':''}>cm</option>
+        </select>
+      </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div class="field" style="margin-top:8px">
+      <label>Placement Reference Image / پلیسمنٹ ریفرنس تصویر</label>
+      <div id="pl-${i}-img-preview" style="${refImg?'':'display:none'}margin-bottom:8px;position:relative">
+        <img id="pl-${i}-img-thumb" src="${refImg}" style="width:100%;max-height:160px;object-fit:contain;border-radius:8px;border:1px solid var(--border);background:#f9f9f9;cursor:zoom-in" onclick="this.src&&window.open(this.src)">
+        <button type="button" onclick="window._plRemoveImg(${i})" style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:14px;cursor:pointer;line-height:1">×</button>
+      </div>
+      <div id="pl-${i}-img-controls" style="${refImg?'display:none':''}">
+        <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:2px dashed var(--border);border-radius:10px;cursor:pointer;background:#fafafa;margin-bottom:6px">
+          <span style="font-size:18px">🖼️</span>
+          <span style="font-size:13px;color:var(--muted)">Upload image<br><span style="font-size:11px">Click to choose file from computer</span></span>
+          <input type="file" id="pl-${i}-img-file" accept="image/*" style="display:none" onchange="window._plUploadImg(${i},this)">
+        </label>
+        <input id="pl-${i}-img-url" type="url" placeholder="or paste image URL…" value="${refImg}" style="font-size:12px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;outline:none;width:100%" oninput="window._plUrlPreview(${i},this.value)">
+      </div>
+      <div id="pl-${i}-img-uploading" style="display:none;font-size:12px;color:var(--muted);padding:6px 0">Uploading…</div>
+      <input type="hidden" id="pl-${i}-img" value="${refImg}">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
       <div class="field"><label>Worker Instruction (EN)</label><input id="pl-${i}-wk-en" placeholder="${tpl.workerEn||'e.g. Print on chest, measure from HPS'}" value="${pl.production?.visibleInstructionEn||pl.notesEn||''}"></div>
       <div class="field"><label>ہدایت (اردو)</label><input id="pl-${i}-wk-ur" dir="rtl" style="text-align:right" placeholder="${tpl.workerUr||'مثلاً چیسٹ پر پرنٹ کریں'}" value="${pl.production?.visibleInstructionUr||pl.notesUr||''}"></div>
     </div>
@@ -3880,6 +3921,49 @@ function placementRowHTML(i,pl={}){
     </details>
   </div>`;
 }
+window._plUploadImg=async function(i,input){
+  const file=input?.files?.[0];
+  if(!file)return;
+  const upEl=document.getElementById('pl-'+i+'-img-uploading');
+  const ctrlEl=document.getElementById('pl-'+i+'-img-controls');
+  const prevEl=document.getElementById('pl-'+i+'-img-preview');
+  const thumbEl=document.getElementById('pl-'+i+'-img-thumb');
+  const hidEl=document.getElementById('pl-'+i+'-img');
+  if(upEl)upEl.style.display='block';
+  if(ctrlEl)ctrlEl.style.display='none';
+  try{
+    const url=await uploadToCloudinary(file);
+    if(hidEl)hidEl.value=url;
+    if(thumbEl){thumbEl.src=url;}
+    if(prevEl)prevEl.style.display='block';
+    if(upEl)upEl.style.display='none';
+  }catch(e){
+    if(upEl)upEl.style.display='none';
+    if(ctrlEl)ctrlEl.style.display='block';
+    showToast('Image upload failed: '+e.message,true);
+  }
+};
+window._plUrlPreview=function(i,url){
+  const hidEl=document.getElementById('pl-'+i+'-img');
+  if(hidEl)hidEl.value=url;
+  if(!url)return;
+  const thumbEl=document.getElementById('pl-'+i+'-img-thumb');
+  const prevEl=document.getElementById('pl-'+i+'-img-preview');
+  const ctrlEl=document.getElementById('pl-'+i+'-img-controls');
+  if(thumbEl)thumbEl.src=url;
+  if(prevEl)prevEl.style.display='block';
+  if(ctrlEl)ctrlEl.style.display='none';
+};
+window._plRemoveImg=function(i){
+  const hidEl=document.getElementById('pl-'+i+'-img');
+  const prevEl=document.getElementById('pl-'+i+'-img-preview');
+  const ctrlEl=document.getElementById('pl-'+i+'-img-controls');
+  const urlEl=document.getElementById('pl-'+i+'-img-url');
+  if(hidEl)hidEl.value='';
+  if(urlEl)urlEl.value='';
+  if(prevEl)prevEl.style.display='none';
+  if(ctrlEl)ctrlEl.style.display='block';
+};
 window._onPlTplChange=function(i){
   const tplId=document.getElementById('pl-'+i+'-tpl')?.value;
   const tpl=PLACEMENT_TEMPLATES.find(t=>t.id===tplId);
@@ -3980,13 +4064,20 @@ function collectPlacements(){
     const i=row.id.replace('pl-row-','');
     const tplId=document.getElementById('pl-'+i+'-tpl')?.value||'custom';
     const tpl=PLACEMENT_TEMPLATES.find(t=>t.id===tplId)||PLACEMENT_TEMPLATES.find(t=>t.id==='custom');
+    const tolVal=(document.getElementById('pl-'+i+'-tol')?.value||'').trim();
+    const tolUnit=document.getElementById('pl-'+i+'-tolunit')?.value||'inch';
     return{
       placementTemplateId:tplId,
       name:tpl?.nameEn||tplId,
+      templateNameEn:tpl?.nameEn||'',
+      templateNameUr:tpl?.nameUr||'',
       side:tpl?.side||'front',
       anchorType:tpl?.anchorType||'custom',
       measurementText:document.getElementById('pl-'+i+'-mtext')?.value||'',
-      toleranceValue:document.getElementById('pl-'+i+'-tol')?.value||(tpl?.defaultTol||'±0.5 inch'),
+      measurementUnit:document.getElementById('pl-'+i+'-munit')?.value||'inch',
+      toleranceText:tolVal,
+      toleranceUnit:tolUnit,
+      toleranceValue:tolVal?(tolVal+' '+tolUnit):'',
       production:{
         referenceImageUrl:document.getElementById('pl-'+i+'-img')?.value||'',
         visibleInstructionEn:document.getElementById('pl-'+i+'-wk-en')?.value||(tpl?.workerEn||''),
@@ -4081,41 +4172,48 @@ window.saveRecipe=async function(lock=false){
 // ── Recipe Detail View ────────────────────────────────────────────────
 function _recPlacementHTML(pl,idx){
   const tpl=PLACEMENT_TEMPLATES.find(t=>t.id===(pl.placementTemplateId||'custom'))||PLACEMENT_TEMPLATES.find(t=>t.id==='custom');
-  const plName=pl.name||tpl?.nameEn||pl.placementTemplateId||'—';
-  // measurementText is the new field; fall back to old structured fields for legacy records
+  const plName=pl.templateNameEn||pl.name||tpl?.nameEn||pl.placementTemplateId||'—';
+  const plNameUr=pl.templateNameUr||tpl?.nameUr||'';
   const meas=pl.measurementText||(pl.measurementDescriptionEn||'')+(pl.measurementValue?' · '+pl.measurementValue+(pl.measurementUnit?' '+pl.measurementUnit:''):'');
-  const tol=pl.toleranceValue||pl.tolerance||'—';
+  const mUnit=pl.measurementUnit||'';
+  // Tolerance: prefer toleranceText+toleranceUnit, fall back to toleranceValue/tolerance string
+  const tolText=pl.toleranceText||'';
+  const tolUnit=pl.toleranceUnit||'';
+  const tol=tolText?(tolText+(tolUnit?' '+tolUnit:'')):(pl.toleranceValue||pl.tolerance||'—');
   const refImg=pl.production?.referenceImageUrl||pl.imageUrl||'';
   const instrEn=pl.production?.visibleInstructionEn||pl.notesEn||'';
   const instrUr=pl.production?.visibleInstructionUr||pl.notesUr||'';
   const techArtSize=pl.technical?.artworkSize||pl.artworkSize||'';
   const techAFile=pl.technical?.artworkFileUrl||'';
   const techPDNotes=pl.technical?.printDimensionNotes||'';
+  const imgBlock=refImg
+    ?`<img src="${refImg}" onclick="window.open('${refImg}')" style="width:100%;border-radius:8px;max-height:180px;object-fit:contain;margin-top:8px;background:#f9f9f9;border:1px solid var(--border);cursor:zoom-in">`
+    :`<div style="font-size:12px;color:var(--muted);margin-top:6px;padding:10px;background:#f9f9f9;border-radius:8px;text-align:center">No placement image uploaded / پلیسمنٹ تصویر موجود نہیں</div>`;
   const wrap=c=>`<div class="placement-row" style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #f0f0f0">${c}</div>`;
   const header=`<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px">PLACEMENT ${idx+1}</div>
-    <div class="info-row"><span class="info-label">Placement</span><span style="font-weight:600">${plName}</span></div>`;
+    <div class="info-row"><span class="info-label">Placement</span><span style="font-weight:600">${plName}${plNameUr?' / '+plNameUr:''}</span></div>`;
   const techCollapsible=techArtSize?`<details style="margin-top:6px"><summary style="font-size:11px;color:var(--muted);cursor:pointer">Technical Details</summary><div class="info-row" style="margin-top:4px"><span class="info-label">Artwork Size</span><span>${techArtSize}</span></div></details>`:'';
   if(isPrintWorker()){
     return wrap(`${header}
-      ${meas?`<div class="info-row"><span class="info-label">Measurement</span><span>${meas}</span></div>`:''}
+      ${meas?`<div class="info-row"><span class="info-label">Measurement</span><span>${meas}${mUnit?' ('+mUnit+')':''}</span></div>`:''}
       ${instrEn?`<div style="background:#f7f7f9;padding:8px 10px;border-radius:8px;font-size:13px;margin-top:4px"><strong>Instruction:</strong> ${instrEn}</div>`:''}
       ${instrUr?`<div style="background:#fffbeb;padding:8px 10px;border-radius:8px;font-size:14px;direction:rtl;text-align:right;margin-top:4px">${instrUr}</div>`:''}
-      ${refImg?`<img src="${refImg}" style="width:100%;border-radius:8px;max-height:160px;object-fit:contain;margin-top:6px;background:#f0f0f0">`:''}
+      ${imgBlock}
       ${techCollapsible}`);
   }
   if(isQCWorker()){
     return wrap(`${header}
-      ${meas?`<div class="info-row"><span class="info-label">Measurement</span><span>${meas}</span></div>`:''}
-      <div class="info-row"><span class="info-label">Tolerance</span><span style="font-weight:600;color:var(--red)">${tol}</span></div>
-      ${refImg?`<img src="${refImg}" style="width:100%;border-radius:8px;max-height:160px;object-fit:contain;margin-top:6px;background:#f0f0f0">`:''}
+      ${meas?`<div class="info-row"><span class="info-label">Measurement</span><span>${meas}${mUnit?' ('+mUnit+')':''}</span></div>`:''}
+      <div class="info-row"><span class="info-label">Tolerance</span><span style="font-weight:700;color:var(--red)">${tol}</span></div>
+      ${imgBlock}
       ${techCollapsible}`);
   }
   return wrap(`${header}
-    ${meas?`<div class="info-row"><span class="info-label">Measurement</span><span>${meas}</span></div>`:''}
+    ${meas?`<div class="info-row"><span class="info-label">Measurement</span><span>${meas}${mUnit?' ('+mUnit+')':''}</span></div>`:''}
     <div class="info-row"><span class="info-label">Tolerance</span><span>${tol}</span></div>
     ${instrEn?`<div class="info-row"><span class="info-label">Worker Instruction</span><span>${instrEn}</span></div>`:''}
     ${instrUr?`<div class="info-row"><span class="info-label">ہدایت</span><span dir="rtl">${instrUr}</span></div>`:''}
-    ${refImg?`<img src="${refImg}" style="width:100%;border-radius:8px;max-height:160px;object-fit:contain;margin-top:6px;background:#f0f0f0">`:''}
+    ${imgBlock}
     ${techArtSize||techAFile||techPDNotes?`<details style="margin-top:8px"><summary style="font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;padding:4px 0">Technical Setup ▾</summary>
       <div style="margin-top:6px">
         ${techArtSize?`<div class="info-row"><span class="info-label">Artwork Size</span><span style="font-weight:600">${techArtSize}</span></div>`:''}
@@ -4633,9 +4731,11 @@ function printWorkerCardHTML(j){
       ${recipeLockBanner}
       ${placements.map(pl=>`
         <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:7px">
-          <div style="font-size:13px;font-weight:700;margin-bottom:5px">${pl.name||'Placement'}</div>
-          ${(pl.measurementText||pl.measurementDescriptionEn)?`<div style="font-size:12px;color:var(--muted);margin-bottom:3px">${pl.measurementText||pl.measurementDescriptionEn}</div>`:''}
-          ${pantones.length?`<div style="margin-top:6px">${pantones.map(p=>'<div style="display:flex;align-items:center;gap:7px;padding:4px 0"><div style="width:18px;height:18px;border-radius:4px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div><span style="font-size:12px;font-weight:600">'+(p.colorName||'—')+'</span>'+(p.localInkName?'<span style="font-size:11px;color:var(--muted)">· '+p.localInkName+'</span>':'')+'</div>').join('')}</div>`:''}
+          <div style="font-size:13px;font-weight:700;margin-bottom:4px">${pl.templateNameEn||pl.name||'Placement'}${pl.templateNameUr?' / '+pl.templateNameUr:''}</div>
+          ${(pl.measurementText||pl.measurementDescriptionEn)?`<div style="font-size:12px;color:var(--dark);margin-bottom:2px">${pl.measurementText||pl.measurementDescriptionEn}${pl.measurementUnit?' ('+pl.measurementUnit+')':''}</div>`:''}
+          ${(pl.toleranceText||pl.toleranceValue||pl.tolerance)?`<div style="font-size:11px;color:var(--muted)">Tolerance: ${pl.toleranceText?(pl.toleranceText+(pl.toleranceUnit?' '+pl.toleranceUnit:'')):(pl.toleranceValue||pl.tolerance)}</div>`:''}
+          ${(pl.production?.referenceImageUrl||pl.imageUrl)?`<img src="${pl.production?.referenceImageUrl||pl.imageUrl}" style="width:100%;max-height:120px;object-fit:contain;border-radius:8px;margin-top:6px;background:#f9f9f9;border:1px solid var(--border)">`:''}
+          ${pantones.length?`<div style="margin-top:6px">${pantones.map(p=>'<div style="display:flex;align-items:center;gap:7px;padding:3px 0"><div style="width:16px;height:16px;border-radius:4px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div><span style="font-size:12px;font-weight:600">'+(p.colorName||'—')+'</span>'+(p.localInkName?'<span style="font-size:11px;color:var(--muted)">· '+p.localInkName+'</span>':'')+'</div>').join('')}</div>`:''}
         </div>`).join('')}
       ${!placements.length&&pantones.length?`<div style="margin-top:4px">${pantones.map(p=>'<div style="display:flex;align-items:center;gap:7px;padding:4px 0"><div style="width:18px;height:18px;border-radius:4px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div><span style="font-size:12px;font-weight:600">'+(p.colorName||'—')+'</span>'+(p.localInkName?'<span style="font-size:11px;color:var(--muted)">· '+p.localInkName+'</span>':'')+'</div>').join('')}</div>`:''}
       ${recipe.printing?.instructionsUr?`<div style="margin-top:8px;font-size:14px;line-height:2;direction:rtl;text-align:right;color:var(--dark);background:#f9f9f9;padding:8px 10px;border-radius:8px">${recipe.printing.instructionsUr}</div>`:''}
