@@ -753,45 +753,139 @@ let _tplRowIdx=0,_tplProdCode='',_tplProdName='';
 let _poIssueData=null,_txFilterQ='',_txFilterType='';
 const IL_PER=15,IL_MAX_PAGES=5;
 const INITIAL_ITEMS=[
-  {code:'NL1', name:'Groovy Top Label Black',          category:'neck_labels',  unit:'pcs',   sizeSpecific:true,  sizes:{S:26,M:450,L:132,XL:265},                                             lowStockThreshold:500},
-  {code:'NL2', name:'Groovy Tops Label Cream',         category:'neck_labels',  unit:'pcs',   sizeSpecific:true,  sizes:{S:750,M:1500,L:1455,XL:750},                                          lowStockThreshold:500},
-  {code:'NL3', name:'AAO Tops Label Red',              category:'neck_labels',  unit:'pcs',   sizeSpecific:true,  sizes:{XS:250,S:300,M:568,L:900,XL:652},                                     lowStockThreshold:500},
-  {code:'NL4', name:'AAO Tops Label Black',            category:'neck_labels',  unit:'pcs',   sizeSpecific:true,  sizes:{XS:0,S:0,M:0,L:0,XL:0},                                              lowStockThreshold:500},
-  {code:'NL10',name:'Groovy Outerwear Jacket Black',   category:'neck_labels',  unit:'pcs',   sizeSpecific:true,  sizes:{S:75,M:200,L:250,XL:150},                                             lowStockThreshold:500},
-  {code:'NL13',name:'Groovy Tops Label V1 Black',      category:'neck_labels',  unit:'pcs',   sizeSpecific:false, balance:3000,                                                                 lowStockThreshold:500},
-  {code:'NL14',name:'GRVY Babytee Black V1',           category:'neck_labels',  unit:'pcs',   sizeSpecific:true,  sizes:{XS:1000,S:1400,M:850,L:1145},                                         lowStockThreshold:500},
-  {code:'SL1', name:'GRVY BTM Hem Label',              category:'sleeve_labels',unit:'pcs',   sizeSpecific:false, balance:4300,  lowStockThreshold:500},
-  {code:'SL3', name:'GRVY Cargo V2 Iron-On Label',     category:'sleeve_labels',unit:'pcs',   sizeSpecific:false, balance:3600,  lowStockThreshold:500},
-  {code:'SL4', name:'AAO Hoodie Bottom Hem Label Red', category:'sleeve_labels',unit:'pcs',   sizeSpecific:false, balance:0,     lowStockThreshold:500},
-  {code:'SL5', name:'AAO Hoodie Bottom Hem Label Black',category:'sleeve_labels',unit:'pcs',  sizeSpecific:false, balance:0,     lowStockThreshold:500},
-  {code:'HT01',name:'GRVY All Product Hangtag',        category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:1000,  lowStockThreshold:500},
-  {code:'HT03',name:'GRVY Hangtag Essentials',         category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:2900,  lowStockThreshold:500},
-  {code:'HT04',name:'GRVY Hangtag Headwear',           category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:200,   lowStockThreshold:300},
-  {code:'HT05',name:'GRVY Hangtag Shirt',              category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:3100,  lowStockThreshold:500},
-  {code:'HT06',name:'GRVY Hangtag Denim',              category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:2200,  lowStockThreshold:500},
-  {code:'HW01',name:'GRVY Headwear Snap Label',        category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:500,   lowStockThreshold:300},
-  {code:'HW02',name:'GRVY Headwear Inner Label Black', category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:500,   lowStockThreshold:300},
-  {code:'HW04',name:'GRVY Headwear Care Label Satin',  category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:500,   lowStockThreshold:300},
-  {code:'TS-01',name:'Tag String',                     category:'hangtags',     unit:'pcs',   sizeSpecific:false, balance:3700,  lowStockThreshold:500},
-  {code:'SP1', name:'Hoodie Emblem Black',             category:'patches',      unit:'pcs',   sizeSpecific:false, balance:2040,  lowStockThreshold:500},
-  {code:'SP2', name:'Hoodie Emblem White',             category:'patches',      unit:'pcs',   sizeSpecific:false, balance:1115,  lowStockThreshold:500},
-  {code:'SP3', name:'Combat Hoodie Black Badge',       category:'patches',      unit:'pcs',   sizeSpecific:false, balance:145,   lowStockThreshold:200},
-  {code:'SL8', name:'GRVY Trousers/Cargos Logo Black', category:'patches',      unit:'pcs',   sizeSpecific:false, balance:450,   lowStockThreshold:500},
-  {code:'SPW', name:'White Groovy Size Patch',         category:'patches',      unit:'pcs',   sizeSpecific:true,  sizes:{XS:300,S:200,M:800,L:700,XL:300},                                     lowStockThreshold:500},
-  {code:'SPB', name:'Black Groovy Size Patch',         category:'patches',      unit:'pcs',   sizeSpecific:true,  sizes:{XS:300,S:120,M:900,L:770,XL:250},                                     lowStockThreshold:500},
-  {code:'BL1', name:'GRVY Trousers/Cargos New',        category:'bottom_labels',unit:'pcs',   sizeSpecific:true,  sizes:{XXXS:720,XXS:970,XS:950,S:3250,M:2850,L:3320,XL:960,XXL:335},        lowStockThreshold:500},
-  {code:'BL2', name:'CLTRD Denim Belt B/W',            category:'bottom_labels',unit:'pcs',   sizeSpecific:true,  sizes:{'26"':490,'28"':200,'30"':825,'32"':908,'34"':500,'36"':544},          lowStockThreshold:500},
-  {code:'BL3', name:'GRVY Denim Belt Cream',           category:'bottom_labels',unit:'pcs',   sizeSpecific:true,  sizes:{'26"':100,'28"':170,'30"':20,'32"':3,'34"':147,'36"':152,'38"':100},  lowStockThreshold:500},
-  {code:'BL4', name:'GRVY Denim Belt Black',           category:'bottom_labels',unit:'pcs',   sizeSpecific:true,  sizes:{'26"':4800,'28"':4500,'30"':400,'32"':500,'34"':1000,'36"':1500,'38"':1600,'40"':810},lowStockThreshold:500},
-  {code:'BT1', name:'GRVY Denim Main Button',          category:'metal_trims',  unit:'pcs',   sizeSpecific:false, balance:3814,  lowStockThreshold:500},
-  {code:'BT4', name:'GRVY Main Rivett',                category:'metal_trims',  unit:'pcs',   sizeSpecific:false, balance:3800,  lowStockThreshold:500},
-  {code:'BT-SQ',name:'GRVY Square Batch',              category:'metal_trims',  unit:'pcs',   sizeSpecific:false, balance:900,   lowStockThreshold:500},
-  {code:'TT1', name:'GRVY Twill Tape',                 category:'twill_tape',   unit:'meters', sizeSpecific:false, balance:328,  lowStockThreshold:100},
-  {code:'TT2', name:'CLTR Twill Tape',                 category:'twill_tape',   unit:'meters', sizeSpecific:false, balance:100,  lowStockThreshold:50},
-  {code:'TT3', name:'AAO Twill Tape',                  category:'twill_tape',   unit:'meters', sizeSpecific:false, balance:0,    lowStockThreshold:500},
+  // ── NECK LABELS ──
+  {code:'NL1',  name:'Groovy Top Label Black',          category:'neck_labels',  unit:'pcs', sizeSpecific:true,  sizes:{XXS:424,XS:330,S:452,M:1400,L:572,XL:1880},                                        lowStockThreshold:500},
+  {code:'NL2',  name:'Groovy Tops Label Cream',         category:'neck_labels',  unit:'pcs', sizeSpecific:true,  sizes:{XS:0,S:4,M:1500,L:3000,XL:2910},                                                   lowStockThreshold:500},
+  {code:'NL3',  name:'AAO Tops Label Red',              category:'neck_labels',  unit:'pcs', sizeSpecific:true,  sizes:{XS:500,S:600,M:1136,L:1800,XL:1304},                                               lowStockThreshold:500},
+  {code:'NL4',  name:'AAO Tops Label Black',            category:'neck_labels',  unit:'pcs', sizeSpecific:true,  sizes:{S:3000,M:0,L:0,XL:0},                                                              lowStockThreshold:500},
+  {code:'NL5',  name:'CLTRD Tops Label B/W',            category:'neck_labels',  unit:'pcs', sizeSpecific:true,  sizes:{XS:4276,S:5680,M:4930,L:6184,XL:11194,XXL:1000},                                  lowStockThreshold:500},
+  {code:'NL6',  name:'CLTRD Tops Label Red',            category:'neck_labels',  unit:'pcs', sizeSpecific:true,  sizes:{XS:5280,S:7200,M:5560,L:9900,XL:21732,XXL:400},                                   lowStockThreshold:500},
+  {code:'NL7',  name:'GRVY Babytee/Woman Cream',        category:'neck_labels',  unit:'pcs', sizeSpecific:true,  sizes:{S:0,M:0,L:0,XL:0},                                                                lowStockThreshold:200},
+  {code:'NL8',  name:'GRVY Babytee/Woman Black',        category:'neck_labels',  unit:'pcs', sizeSpecific:true,  sizes:{S:0,M:0,L:0,XL:0},                                                                lowStockThreshold:200},
+  {code:'NL9',  name:'GRVY Shirting Cream Label',       category:'neck_labels',  unit:'pcs', sizeSpecific:true,  sizes:{S:340,M:464,L:500,XL:280},                                                        lowStockThreshold:200},
+  {code:'NL10', name:'Groovy Outerwear Jacket Black',   category:'neck_labels',  unit:'pcs', sizeSpecific:true,  sizes:{S:150,M:400,L:500,XL:308},                                                        lowStockThreshold:500},
+  {code:'NL13', name:'Groovy Tops Label V1 Black',      category:'neck_labels',  unit:'pcs', sizeSpecific:false, balance:3000,                                                                              lowStockThreshold:500},
+  {code:'NL13-2',name:'GROOVY Oversized Black Canvas',  category:'neck_labels',  unit:'pcs', sizeSpecific:true,  sizes:{S:4880,M:4400,L:3660,XL:5520},                                                    lowStockThreshold:500},
+  {code:'NL14', name:'GRVY Babytee Black V1',           category:'neck_labels',  unit:'pcs', sizeSpecific:true,  sizes:{XS:2000,S:2800,M:1700,L:2290},                                                    lowStockThreshold:500},
+  // ── SLEEVE & HEM LABELS ──
+  {code:'SL1',  name:'GRVY BTM Hem Label',              category:'sleeve_labels',unit:'pcs', sizeSpecific:false, balance:4100, lowStockThreshold:500},
+  {code:'SL2',  name:'CLTRD Cargo Side Label',          category:'sleeve_labels',unit:'pcs', sizeSpecific:false, balance:0,    lowStockThreshold:500},
+  {code:'SL3',  name:'GRVY Cargo V2 Iron-On Label',     category:'sleeve_labels',unit:'pcs', sizeSpecific:false, balance:3600, lowStockThreshold:500},
+  {code:'SL4',  name:'AAO Hoodie Bottom Hem Label Red', category:'sleeve_labels',unit:'pcs', sizeSpecific:false, balance:0,    lowStockThreshold:500},
+  {code:'SL5',  name:'AAO Hoodie Bottom Hem Label Black',category:'sleeve_labels',unit:'pcs',sizeSpecific:false, balance:0,    lowStockThreshold:500},
+  {code:'SL6',  name:'Groovy Shirting Flag Label',      category:'sleeve_labels',unit:'pcs', sizeSpecific:false, balance:0,    lowStockThreshold:200},
+  // ── HANGTAGS & CAP LABELS ──
+  {code:'HT01', name:'GRVY All Product Hangtag',        category:'hangtags',     unit:'pcs', sizeSpecific:false, balance:4600, lowStockThreshold:500},
+  {code:'HT03', name:'GRVY Hangtag Essentials',         category:'hangtags',     unit:'pcs', sizeSpecific:false, balance:2900, lowStockThreshold:500},
+  {code:'HT04', name:'GRVY Hangtag Headwear',           category:'hangtags',     unit:'pcs', sizeSpecific:false, balance:2900, lowStockThreshold:300},
+  {code:'HT05', name:'GRVY Hangtag Shirt',              category:'hangtags',     unit:'pcs', sizeSpecific:false, balance:3100, lowStockThreshold:500},
+  {code:'HT06', name:'GRVY Hangtag Denim',              category:'hangtags',     unit:'pcs', sizeSpecific:false, balance:2200, lowStockThreshold:500},
+  {code:'HW01', name:'GRVY Headwear Snap Label',        category:'hangtags',     unit:'pcs', sizeSpecific:false, balance:7100, lowStockThreshold:300},
+  {code:'HW02', name:'GRVY Headwear Inner Label Black', category:'hangtags',     unit:'pcs', sizeSpecific:false, balance:3600, lowStockThreshold:300},
+  {code:'HW04', name:'GRVY Headwear Care Label Satin',  category:'hangtags',     unit:'pcs', sizeSpecific:false, balance:2700, lowStockThreshold:300},
+  {code:'TS-01',name:'Tag String',                      category:'hangtags',     unit:'pcs', sizeSpecific:false, balance:6600, lowStockThreshold:500},
+  // ── PATCHES ──
+  {code:'SP1',      name:'Hoodie Emblem Black',             category:'patches',  unit:'pcs', sizeSpecific:false, balance:2640, lowStockThreshold:500},
+  {code:'SP2',      name:'Hoodie Emblem White',             category:'patches',  unit:'pcs', sizeSpecific:false, balance:1115, lowStockThreshold:500},
+  {code:'SP3',      name:'Combat Hoodie Black Badge',       category:'patches',  unit:'pcs', sizeSpecific:false, balance:145,  lowStockThreshold:200},
+  {code:'SL8',      name:'GRVY Trousers/Cargos Logo Black', category:'patches',  unit:'pcs', sizeSpecific:false, balance:900,  lowStockThreshold:500},
+  {code:'PL1-BLU',  name:'Patch Label For Shirt (Blue)',    category:'patches',  unit:'pcs', sizeSpecific:false, balance:800,  lowStockThreshold:200},
+  {code:'AAO-PL01', name:'AAO Patch Label',                 category:'patches',  unit:'pcs', sizeSpecific:false, balance:1020, lowStockThreshold:200},
+  {code:'SPW',      name:'White Groovy Size Patch',         category:'patches',  unit:'pcs', sizeSpecific:true,  sizes:{XS:600,S:400,M:1600,L:1400,XL:600},          lowStockThreshold:500},
+  {code:'SPB',      name:'Black Groovy Size Patch',         category:'patches',  unit:'pcs', sizeSpecific:true,  sizes:{XS:600,S:240,M:1800,L:1540,XL:500},          lowStockThreshold:500},
+  // ── BOTTOM LABELS ──
+  {code:'BL1',  name:'GRVY Trousers/Cargos New',        category:'bottom_labels',unit:'pcs', sizeSpecific:true,  sizes:{XXXS:1440,XXS:1940,XS:1900,S:6500,M:5700,L:6640,XL:1920,XXL:670},                lowStockThreshold:500},
+  {code:'BL2',  name:'CLTRD Denim Belt B/W',            category:'bottom_labels',unit:'pcs', sizeSpecific:true,  sizes:{'26"':980,'28"':400,'30"':1650,'32"':1816,'34"':1000,'36"':1088},                 lowStockThreshold:500},
+  {code:'BL3',  name:'GRVY Denim Belt Cream',           category:'bottom_labels',unit:'pcs', sizeSpecific:true,  sizes:{'26"':200,'28"':340,'30"':40,'32"':6,'34"':294,'36"':304,'38"':200},              lowStockThreshold:500},
+  {code:'BL4',  name:'GRVY Denim Belt Black',           category:'bottom_labels',unit:'pcs', sizeSpecific:true,  sizes:{GrvyStudio:9600,Baggy:9000,'26"':800,'28"':1000,'30"':2000,'32"':3000,'34"':3200,'36"':1620,'38"':1600}, lowStockThreshold:500},
+  {code:'BL5',  name:'CLTRD Trousers/Cargos Black',     category:'bottom_labels',unit:'pcs', sizeSpecific:false, balance:0,    lowStockThreshold:200},
+  {code:'BL6',  name:'AAO Denim Belt Red',              category:'bottom_labels',unit:'pcs', sizeSpecific:true,  sizes:{'26"':0,'28"':0,'30"':714,'32"':452,'34"':360,'36"':834,'38"':800},               lowStockThreshold:200},
+  {code:'BL7',  name:'AAO Denim Belt Black',            category:'bottom_labels',unit:'pcs', sizeSpecific:true,  sizes:{'26"':0,'28"':0,'30"':0,'32"':0,'34"':0,'36"':0,'38"':0},                        lowStockThreshold:200},
+  {code:'BL8',  name:'AAO Trousers/Cargos Red',         category:'bottom_labels',unit:'pcs', sizeSpecific:false, balance:0,    lowStockThreshold:200},
+  {code:'BL9',  name:'AAO Trousers/Cargos Black',       category:'bottom_labels',unit:'pcs', sizeSpecific:false, balance:0,    lowStockThreshold:200},
+  {code:'BL10', name:'GRVY Denim Label V1',             category:'bottom_labels',unit:'pcs', sizeSpecific:true,  sizes:{'26"':0,'28"':0,'30"':0,'32"':0,'34"':952,'36"':3062,'38"':3160},                lowStockThreshold:500},
+  {code:'BL11', name:'GRVY Trouser/Cargo Label V1',     category:'bottom_labels',unit:'pcs', sizeSpecific:true,  sizes:{S:0,M:0,L:0,XL:100},                                                             lowStockThreshold:200},
+  // ── METAL TRIMS ──
+  {code:'BT1',   name:'GRVY Denim Main Button',         category:'metal_trims',  unit:'pcs', sizeSpecific:false, balance:4714, lowStockThreshold:500},
+  {code:'BT4',   name:'GRVY Main Rivett',               category:'metal_trims',  unit:'pcs', sizeSpecific:false, balance:0,    lowStockThreshold:500},
+  {code:'BT-SQ', name:'GRVY Square Batch',              category:'metal_trims',  unit:'pcs', sizeSpecific:false, balance:900,  lowStockThreshold:500},
+  {code:'BT5',   name:'CLTRD Closed Star Eyelets',      category:'metal_trims',  unit:'pcs', sizeSpecific:false, balance:0,    lowStockThreshold:200},
+  {code:'BT6',   name:'CLTRD Puller/Zips',              category:'metal_trims',  unit:'pcs', sizeSpecific:false, balance:0,    lowStockThreshold:200},
+  {code:'BT7',   name:'GRVY Puller/Zip',                category:'metal_trims',  unit:'pcs', sizeSpecific:false, balance:0,    lowStockThreshold:200},
+  {code:'BT8',   name:'GRVY Closed Coin Eyelet',        category:'metal_trims',  unit:'pcs', sizeSpecific:false, balance:0,    lowStockThreshold:200},
+  {code:'BT9',   name:'GRVY Trouser/Hoodie Eyelet #2',  category:'metal_trims',  unit:'pcs', sizeSpecific:false, balance:0,    lowStockThreshold:200},
+  // ── TWILL TAPE ──
+  {code:'TT1',   name:'GRVY Twill Tape',                category:'twill_tape',   unit:'meters',sizeSpecific:false,balance:2213,lowStockThreshold:100},
+  {code:'TT2',   name:'CLTR Twill Tape',                category:'twill_tape',   unit:'meters',sizeSpecific:false,balance:200, lowStockThreshold:50},
+  {code:'TT3',   name:'AAO Twill Tape',                 category:'twill_tape',   unit:'meters',sizeSpecific:false,balance:0,   lowStockThreshold:50},
+  {code:'TT-WG', name:'White Twill Tape (grams)',       category:'twill_tape',   unit:'grams', sizeSpecific:true, sizes:{regular:4000,bold:5400,'off-white':4100},    lowStockThreshold:500},
+  {code:'TT-BK', name:'Black Twill Tape',               category:'twill_tape',   unit:'kg',    sizeSpecific:false,balance:18,  lowStockThreshold:5},
+  {code:'TT-WP', name:'White Twill Tape Packets (Yasir Bros)',category:'twill_tape',unit:'kg', sizeSpecific:false,balance:8,   lowStockThreshold:2},
+  // ── PACKAGING ──
+  {code:'IP1',   name:'GROOVY Inner Polythene',         category:'packaging',    unit:'pcs',   sizeSpecific:false,balance:16300,lowStockThreshold:1000},
+  {code:'IP2',   name:'Cultured Inner Polythene',       category:'packaging',    unit:'packets',sizeSpecific:false,balance:3,   lowStockThreshold:1},
+  {code:'IP3',   name:'AAO Inner Polythene',            category:'packaging',    unit:'pcs',   sizeSpecific:false,balance:94,  lowStockThreshold:100},
+  {code:'PF1',   name:'Plane Flyer',                   category:'packaging',    unit:'packets',sizeSpecific:false,balance:0,   lowStockThreshold:1},
+  {code:'OP1',   name:'GROOVY Outer Pkg SMALL',         category:'packaging',    unit:'packets',sizeSpecific:false,balance:0,   lowStockThreshold:100},
+  {code:'OP2',   name:'GROOVY Outer Pkg MEDIUM',        category:'packaging',    unit:'packets',sizeSpecific:false,balance:2400,lowStockThreshold:100},
+  {code:'OP3',   name:'GROOVY Outer Pkg LARGE',         category:'packaging',    unit:'packets',sizeSpecific:false,balance:0,   lowStockThreshold:100},
+  {code:'OP4',   name:'CULTURED Outer Pkg MEDIUM',      category:'packaging',    unit:'packets',sizeSpecific:false,balance:0,   lowStockThreshold:100},
+  {code:'OP5',   name:'AAO Outer Pkg MEDIUM',           category:'packaging',    unit:'packets',sizeSpecific:false,balance:0,   lowStockThreshold:100},
+  // ── DRAWSTRING & ELASTIC ──
+  {code:'DS1-T', name:'Black Drawstring Trouser',       category:'drawstring',   unit:'100pc bundles',sizeSpecific:false,balance:608,  lowStockThreshold:5},
+  {code:'DS1-H', name:'Black Drawstring Hoodie',        category:'drawstring',   unit:'100pc bundles',sizeSpecific:false,balance:8,    lowStockThreshold:2},
+  {code:'DS-E15',name:'Elastic 1.5 inch',               category:'drawstring',   unit:'kg',    sizeSpecific:false,balance:43,  lowStockThreshold:5},
+  {code:'DS-E2', name:'Elastic 2 inch',                 category:'drawstring',   unit:'kg',    sizeSpecific:false,balance:0,   lowStockThreshold:5},
+  {code:'DS-DP', name:'Dori Pipin',                     category:'drawstring',   unit:'pcs',   sizeSpecific:false,balance:21,  lowStockThreshold:5},
+  {code:'DC-01', name:'Topper and Dori (DC-01)',        category:'drawstring',   unit:'pcs',   sizeSpecific:true, sizes:{toppers:1000,dori:7}, lowStockThreshold:100},
+  // ── NECK RIB ──
+  {code:'NR-MB-BL',name:'Mid Black Blue',               category:'neck_rib',     unit:'pcs',   sizeSpecific:false,balance:356, lowStockThreshold:100},
+  {code:'NR-MB-Y', name:'Mid Black Yellow',             category:'neck_rib',     unit:'pcs',   sizeSpecific:false,balance:40,  lowStockThreshold:50},
+  {code:'NR-PB',   name:'Plane Black',                  category:'neck_rib',     unit:'pcs',   sizeSpecific:false,balance:2818,lowStockThreshold:200},
+  {code:'NR-MB-DY',name:'Mid Black Dark Yellow',        category:'neck_rib',     unit:'pcs',   sizeSpecific:false,balance:740, lowStockThreshold:100},
+  {code:'NR-PBL',  name:'Plane Blue',                   category:'neck_rib',     unit:'pcs',   sizeSpecific:false,balance:0,   lowStockThreshold:100},
+  {code:'NR-OW',   name:'Mid Orange White',             category:'neck_rib',     unit:'pcs',   sizeSpecific:false,balance:1472,lowStockThreshold:100},
+  {code:'NR-GB',   name:'Mid Gray Blue',                category:'neck_rib',     unit:'pcs',   sizeSpecific:false,balance:1250,lowStockThreshold:100},
+  {code:'NR-NB',   name:'Navy Rib Set',                 category:'neck_rib',     unit:'pcs',   sizeSpecific:false,balance:60,  lowStockThreshold:50},
+  {code:'NR-WCM',  name:'White Collar Mid Black',       category:'neck_rib',     unit:'pcs',   sizeSpecific:false,balance:400, lowStockThreshold:100},
+  {code:'NR-RC',   name:'Red Collar Rib Set',           category:'neck_rib',     unit:'pcs',   sizeSpecific:false,balance:240, lowStockThreshold:50},
+  {code:'NR-MBO',  name:'Mid Black Orange',             category:'neck_rib',     unit:'pcs',   sizeSpecific:false,balance:800, lowStockThreshold:100},
+  // ── BUNDLE TAGS ──
+  {code:'BND-TAG', name:'Bundle Tag',                   category:'bundle_tag',   unit:'pcs',   sizeSpecific:false,balance:5032,lowStockThreshold:500},
+  // ── ZIPS ──
+  {code:'ZP-BS25', name:'Black Silver Zip 25"',         category:'zips',         unit:'pcs',   sizeSpecific:false,balance:0,   lowStockThreshold:100},
+  {code:'ZP-PW25', name:'Plain White Zip 25"',          category:'zips',         unit:'pcs',   sizeSpecific:false,balance:0,   lowStockThreshold:100},
+  {code:'ZP-CRM',  name:'Cream Zip',                    category:'zips',         unit:'pcs',   sizeSpecific:false,balance:0,   lowStockThreshold:100},
+  {code:'ZP-BG',   name:'Black Golden Zip',             category:'zips',         unit:'pcs',   sizeSpecific:false,balance:0,   lowStockThreshold:100},
+  {code:'ZP-SM',   name:'Small Zip',                    category:'zips',         unit:'pcs',   sizeSpecific:false,balance:0,   lowStockThreshold:100},
+  {code:'ZP-NB',   name:'Navy Blue Zip',                category:'zips',         unit:'pcs',   sizeSpecific:false,balance:0,   lowStockThreshold:100},
+  // ── THREADS ──
+  {code:'THR-W',   name:'Thread White',                 category:'threads',      unit:'cones', sizeSpecific:false,balance:144, lowStockThreshold:20},
+  {code:'THR-B',   name:'Thread Black',                 category:'threads',      unit:'cones', sizeSpecific:false,balance:314, lowStockThreshold:20},
+  {code:'THR-C',   name:'Thread Cream',                 category:'threads',      unit:'cones', sizeSpecific:false,balance:254, lowStockThreshold:20},
+  {code:'THR-SG',  name:'Thread Slate Gray',            category:'threads',      unit:'cones', sizeSpecific:false,balance:124, lowStockThreshold:20},
+  {code:'THR-SB',  name:'Thread Slate Blue (40/2)',     category:'threads',      unit:'cones', sizeSpecific:false,balance:0,   lowStockThreshold:20},
+  {code:'THR-CB',  name:'Thread Chocolate Brown',       category:'threads',      unit:'cones', sizeSpecific:false,balance:0,   lowStockThreshold:20},
+  {code:'THR-LB',  name:'Thread Light Brown',           category:'threads',      unit:'cones', sizeSpecific:false,balance:0,   lowStockThreshold:20},
+  {code:'THR-DB',  name:'Thread Dark Brown',            category:'threads',      unit:'cones', sizeSpecific:false,balance:0,   lowStockThreshold:20},
+  {code:'THR-MR',  name:'Thread Maroon',                category:'threads',      unit:'cones', sizeSpecific:false,balance:0,   lowStockThreshold:20},
+  {code:'THR-LG',  name:'Thread Light Gray',            category:'threads',      unit:'cones', sizeSpecific:false,balance:101, lowStockThreshold:20},
+  {code:'THR-DG',  name:'Thread Dark Gray',             category:'threads',      unit:'cones', sizeSpecific:false,balance:198, lowStockThreshold:20},
+  {code:'THR-CC',  name:'Thread Cora Color',            category:'threads',      unit:'cones', sizeSpecific:false,balance:226, lowStockThreshold:20},
+  {code:'THR-FG',  name:'Thread Forest Green',          category:'threads',      unit:'cones', sizeSpecific:false,balance:101, lowStockThreshold:20},
+  {code:'THR-GR',  name:'Thread Green',                 category:'threads',      unit:'cones', sizeSpecific:false,balance:138, lowStockThreshold:20},
+  {code:'THR-MG',  name:'Thread Military Green',        category:'threads',      unit:'cones', sizeSpecific:false,balance:53,  lowStockThreshold:20},
+  {code:'THR-NB',  name:'Thread Navy Blue',             category:'threads',      unit:'cones', sizeSpecific:false,balance:129, lowStockThreshold:20},
+  {code:'THR-BG',  name:'Thread Burgundy',              category:'threads',      unit:'cones', sizeSpecific:false,balance:217, lowStockThreshold:20},
+  {code:'THR-WN',  name:'Thread Water Nylon Cone',      category:'threads',      unit:'cones', sizeSpecific:false,balance:93,  lowStockThreshold:20},
 ];
-const CAT_LABELS={neck_labels:'Neck Labels',sleeve_labels:'Sleeve & Hem Labels',hangtags:'Hangtags & Cap Labels',patches:'Patches',bottom_labels:'Bottom Labels',metal_trims:'Metal Trims',twill_tape:'Twill Tape'};
-const CAT_ORDER=['neck_labels','sleeve_labels','hangtags','patches','bottom_labels','metal_trims','twill_tape'];
+const CAT_LABELS={
+  neck_labels:'Neck Labels',sleeve_labels:'Sleeve & Hem Labels',hangtags:'Hangtags & Cap Labels',
+  patches:'Patches',bottom_labels:'Bottom Labels',metal_trims:'Metal Trims',twill_tape:'Twill Tape',
+  packaging:'Packaging',drawstring:'Drawstring & Elastic',neck_rib:'Neck Rib',
+  bundle_tag:'Bundle Tags',zips:'Zips',threads:'Threads',
+};
+const CAT_ORDER=['neck_labels','sleeve_labels','hangtags','patches','bottom_labels','metal_trims','twill_tape','packaging','drawstring','neck_rib','bundle_tag','zips','threads'];
 
 // ── Helpers ──
 function showToast(msg,isErr=false){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show'+(isErr?' err':'');setTimeout(()=>t.className='toast',3200);}
@@ -3005,6 +3099,11 @@ function renderStoreDashboard(){
     </div>`).join('')}
     ${lowStock.length>10?`<div style="font-size:11px;color:var(--muted);padding-top:6px">+${lowStock.length-10} more items below threshold</div>`:''}
   </div>`:'<div class="alert-banner alert-green">All items are in stock ✓</div>'}
+  ${(session.role==='owner'||session.role==='manager')?`<div class="card" style="border-left:3px solid #185FA5">
+    <div class="card-title">Admin</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Sync all item balances from master inventory list (${INITIAL_ITEMS.length} items). Use after a full stock count.</div>
+    <button class="btn-primary" onclick="window.syncStoreItems()" style="background:#185FA5">⟳ Apply Stock Update</button>
+  </div>`:''}
   <div class="card">
     <div class="card-title">Recent Activity (last 10)</div>
     ${recent.length?recent.map(tx=>{const isIn=tx.type==='received';return`<div class="tx-row">
@@ -3024,8 +3123,18 @@ function renderStoreDashboard(){
   <div style="height:80px"></div>`;
 }
 
-// ══════════════════════════════════════════
-// STORE — REST API HELPERS
+async function syncStoreItems(){
+  if(!confirm(`This will overwrite ALL store item balances with the master inventory data (${INITIAL_ITEMS.length} items).\n\nThis is a full reset — any recent receives/issues will still show in the log but balances will be set to the master values.\n\nContinue?`))return;
+  showToast('Syncing inventory…');
+  try{
+    await Promise.all(INITIAL_ITEMS.map(item=>fsSet('store_items',item.code,item).catch(e=>console.warn('Sync fail:',item.code,e))));
+    const items=await fsList('store_items');
+    allItems=items;
+    showToast(`Inventory synced ✓ — ${INITIAL_ITEMS.length} items updated`);
+    window.showPage('store-inventory');
+  }catch(e){showToast('Sync error: '+e.message,true);}
+}
+window.syncStoreItems=syncStoreItems;
 // ══════════════════════════════════════════
 const _FS_BASE=`https://firestore.googleapis.com/v1/projects/groovy-gatepass/databases/(default)/documents`;
 
