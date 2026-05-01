@@ -1032,6 +1032,7 @@ window.filterProducts=function(q){
     document.getElementById('po-name').value=p.name;
     document.getElementById('po-code').value=p.code;
     dd.style.display='none';
+    window._checkEmbRecipe(p.code,p.name);
   }));
 };
 document.addEventListener('click',e=>{
@@ -1411,6 +1412,14 @@ function renderPOCreate(){
       <div class="field"><label>Total qty (pcs) *</label><input id="po-qty" type="number" min="0" placeholder="0"></div>
     </div>
   </div>
+  <div class="card" id="emb-recipe-card">
+    <div class="card-title">Embellishment Recipe / پرنٹنگ ریسیپی</div>
+    <div id="emb-recipe-status" style="font-size:12px;color:var(--muted)">Select a product above to auto-detect its embellishment recipe.</div>
+    <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+      <input type="checkbox" id="emb-not-required" onchange="window._toggleEmbRequired(this.checked)" style="width:15px;height:15px;accent-color:var(--dark);cursor:pointer">
+      <label for="emb-not-required" style="font-size:12px;color:var(--muted);cursor:pointer">No embellishment required for this PO</label>
+    </div>
+  </div>
   <div class="card"><div class="card-title">Size breakdown *</div>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
       ${['XS','S','M','L','XL','2XL'].map(sz=>`<div class="field"><label>${sz}</label><input id="sz-${sz}" type="number" min="0" value="0" onfocus="if(this.value==='0')this.value=''" onblur="if(this.value==='')this.value='0'" oninput="window.updateRatio()"></div>`).join('')}
@@ -1459,6 +1468,42 @@ function renderPOCreate(){
   <div style="height:80px"></div>`;
 }
 
+window._checkEmbRecipe=async function(code,name){
+  const statusDiv=document.getElementById('emb-recipe-status');
+  if(!statusDiv)return;
+  const notReq=document.getElementById('emb-not-required');
+  if(notReq?.checked)return;
+  _poEmbellishment=null;
+  statusDiv.innerHTML='<div style="font-size:12px;color:var(--muted)">Checking recipe…</div>';
+  if(!printingDataLoaded){try{await loadPrintingData();}catch(e){statusDiv.innerHTML='<div style="font-size:12px;color:var(--red)">Could not load recipes.</div>';return;}}
+  let r=allRecipes.find(x=>(x.articleCode||'').toLowerCase()===(code||'').toLowerCase());
+  if(!r&&name)r=allRecipes.find(x=>(x.articleName||'').toLowerCase()===(name||'').toLowerCase());
+  if(!r){
+    _poEmbellishment={required:true,recipeId:null,articleCode:code,articleName:name,recipeStatus:'missing',recipeRequiredBefore:'pp_approval'};
+    statusDiv.innerHTML=`<div style="background:#fef3c7;border-radius:8px;padding:10px 12px"><div style="font-size:12px;font-weight:700;color:#92400e">Recipe Missing</div><div style="font-size:11px;color:#92400e;margin-top:3px">PO can be created. Recipe must be locked before PP approval — Ammar will be notified.</div></div>`;
+  }else if(r.status!=='locked'){
+    _poEmbellishment={required:true,recipeId:r._id,articleCode:code,articleName:r.articleName||name,recipeStatus:'draft',recipeRequiredBefore:'pp_approval'};
+    const pt=(r.printing?.processTypes||[]).map(k=>PROCESS_TYPES[k]?.label||k).join(', ')||'—';
+    statusDiv.innerHTML=`<div style="background:#fef3c7;border-radius:8px;padding:10px 12px"><div style="font-size:12px;font-weight:700;color:#92400e">Recipe Draft — Not Locked</div><div style="font-size:11px;color:#92400e;margin-top:3px">Recipe exists (${pt} · Tier ${r.printing?.complexityTier||'?'}) but must be locked by Ammar before PP approval.</div></div>`;
+  }else{
+    _poEmbellishment={required:true,recipeId:r._id,articleCode:code,articleName:r.articleName||name,processType:(r.printing?.processTypes||[])[0]||'',complexityTier:r.printing?.complexityTier||1,ratePerPiece:r.printing?.ratePerPiece||0,recipeStatus:'locked',recipeRequiredBefore:'pp_approval'};
+    const pt=(r.printing?.processTypes||[]).map(k=>PROCESS_TYPES[k]?.label||k).join(', ')||'—';
+    const places=(r.printing?.placements||[]).map(pl=>pl.name).filter(Boolean).join(', ')||'—';
+    statusDiv.innerHTML=`<div style="background:#dcfce7;border-radius:8px;padding:10px 12px"><div style="font-size:12px;font-weight:700;color:#14532d">Recipe Found — Locked</div><div style="font-size:11px;color:var(--muted);margin-top:4px">${pt} · Tier ${r.printing?.complexityTier||'?'} · Rs.${r.printing?.ratePerPiece||0}/pc</div><div style="font-size:11px;color:var(--muted)">Placements: ${places}</div></div>`;
+  }
+};
+window._toggleEmbRequired=function(notRequired){
+  const statusDiv=document.getElementById('emb-recipe-status');
+  if(notRequired){
+    _poEmbellishment={required:false};
+    if(statusDiv)statusDiv.innerHTML='<div style="font-size:12px;color:var(--muted)">No embellishment required for this PO.</div>';
+  }else{
+    const code=document.getElementById('po-code')?.value;
+    const name=document.getElementById('po-name')?.value;
+    if(code)window._checkEmbRecipe(code,name);
+    else{_poEmbellishment=null;if(statusDiv)statusDiv.innerHTML='<div style="font-size:12px;color:var(--muted)">Select a product above to auto-detect its embellishment recipe.</div>';}
+  }
+};
 window.updateRatio=function(){
   const vals=['XS','S','M','L','XL','2XL'].map(sz=>parseInt(document.getElementById('sz-'+sz)?.value)||0);
   const nonZero=vals.filter(v=>v>0);if(!nonZero.length){document.getElementById('ratio-disp').textContent='—';return;}
@@ -1531,9 +1576,13 @@ window.submitPO=async function(){
     const sizes={};['XS','S','M','L','XL','2XL'].forEach(sz=>sizes[sz]=parseInt(document.getElementById('sz-'+sz)?.value)||0);
     const stages={};STAGE_KEYS.forEach(k=>stages[k]={done:false,doneAt:null,doneBy:null,dueDate:document.getElementById('due-'+k)?.value||'',notes:''});
     const bundlingParts=window.getBundleParts();
-    const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',imgFront:imgFrontUrl,imgBack:imgBackUrl,currentStage:'cutting',stages,bundlingParts,createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
+    const embellishment=_poEmbellishment||{required:false};
+    const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',imgFront:imgFrontUrl,imgBack:imgBackUrl,currentStage:'cutting',stages,bundlingParts,embellishment,createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
     await setDoc(doc(db,'pos',poId),payload);
     await logActivity('PO created',`${poId} — ${name} (${qty} pcs)`);
+    if(embellishment.required&&embellishment.recipeStatus==='missing')await logActivity('Recipe Missing',`${poId} — ${embellishment.articleCode||code}: Recipe required before PP approval. Ammar notified.`).catch(()=>{});
+    if(embellishment.required&&embellishment.recipeStatus==='draft')await logActivity('Recipe Needs Lock',`${poId} — ${embellishment.articleCode||code}: Recipe exists but not locked by Ammar.`).catch(()=>{});
+    _poEmbellishment=null;
     let _trimNote='';
     try{
       const _tplSnap=await getDocs(query(collection(db,'trim_templates'),where('productCode','==',code)));
@@ -1736,6 +1785,8 @@ window.markCuttingDone=async function(fbKey){
     const cutAvg=cutWt>0&&cutUnits>0?Math.round(cutWt*1000/cutUnits)+'g':'';
     await updateDoc(doc(db,'pos',fbKey),{currentStage:'bundling',cutQty:{...cutState.actualQty},bundleIds,totalWeight:cutWt||'',totalRoll:cutRolls,avgPerUnit:cutAvg,[`stages.cutting.done`]:true,[`stages.cutting.doneAt`]:new Date().toISOString(),[`stages.cutting.doneBy`]:session.name});
     await logActivity('Stage done',`PO ${po.id} · Cutting done — ${cutState.pendingBundles.length} bundles created`);
+    // Auto-create embellishment job if PO has embellishment requirement
+    if(po.embellishment?.required)await autoCreateEmbJob({...po,cutQty:{...cutState.actualQty},bundleIds}).catch(()=>{});
     showToast(`Cutting done ✓ — ${cutState.pendingBundles.length} bundles`);await loadData();window.showPage('my-work');
   }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Mark Cutting Done ✓';}}
 };
@@ -3292,6 +3343,7 @@ window._printNavOpen=function(){};
 
 // ── Module state ──────────────────────────────────────────────────────
 let allRecipes=[], allPrintingJobs=[], allQCReports=[], allPrintBilling=[], allSLAEvents=[], allCommNotes=[];
+let _poEmbellishment=null; // set during PO create when recipe is detected
 let printingDataLoaded=false;
 let viewingRecipe=null, viewingPrintJob=null, viewingQCReport=null;
 let _recipeTab='all', _jobTab='active';
@@ -3866,7 +3918,7 @@ function renderPrintingJobsPage(){
   return`<div class="page-head">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
       <div><div class="page-title">Embellishment Jobs</div><div class="page-sub">${allPrintingJobs.length} total jobs</div></div>
-      ${isObserver()?`<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="window.showCreateJobModal()">+ Create Job from PO</button>`:''}
+      ${isObserver()?`<button class="btn-outline" style="font-size:11px;padding:6px 12px;color:var(--muted)" onclick="window.showCreateJobModal()">Admin: Link Missing Job</button>`:''}
     </div>
   </div>
 
@@ -4005,6 +4057,49 @@ async function addSLAEvent(jobId,poNumber,stage,priority,assignedTo,dueAt){
   const now=nowIso();
   const ev={printingJobId:jobId,poId:poNumber,stage,priority,assignedTo,startAt:now,dueAt,completedAt:null,status:'on_time',missedByMinutes:0,reasonRequired:false,delayReasonText:'',voiceNoteUrl:'',monetaryWithholdSuggested:0,monetaryWithholdApproved:0,approvedBy:null,notes:'',createdAt:now};
   try{const id=prntId();await setDoc(doc(db,'sla_events',id),ev);allSLAEvents.unshift({...ev,_id:id});}catch(_){}
+}
+
+// ── Auto-create embellishment job from PO (triggered on cutting completion) ──
+async function autoCreateEmbJob(po){
+  if(!po.embellishment?.required)return;
+  if(!printingDataLoaded)await loadPrintingData().catch(()=>{});
+  // Avoid duplicates
+  if(allPrintingJobs.find(j=>j.poNumber===po.id))return;
+  // Find recipe
+  const emb=po.embellishment;
+  const recipe=emb.recipeId?allRecipes.find(r=>r._id===emb.recipeId):
+    allRecipes.find(r=>(r.articleCode||'').toLowerCase()===(emb.articleCode||'').toLowerCase());
+  const processType=emb.processType||(recipe?.printing?.processTypes||[])[0]||'rubber';
+  const dept=PROCESS_TYPES[processType]?.dept==='external'?('external_'+processType):'inhouse_printing';
+  const priority='normal';
+  const now=nowIso();
+  const id=prntId();
+  const jobPayload={
+    poId:id,poNumber:po.id,
+    articleCode:emb.articleCode||po.code,
+    articleName:emb.articleName||po.name,
+    recipeId:recipe?._id||emb.recipeId||null,
+    processType,departmentType:dept,vendorName:null,
+    totalQty:po.qty||0,sizeBreakdown:po.sizes||{},bundleDetails:'',
+    complexityTier:recipe?.printing?.complexityTier||emb.complexityTier||1,
+    ratePerPiece:recipe?.printing?.ratePerPiece||emb.ratePerPiece||0,
+    priority,currentStage:'po_received',status:'active',
+    assignedTo:'asghar',qcIncharge:'haris',
+    createdBy:'System (auto-PO)',createdAt:now,updatedAt:now,
+    ppRequired:true,ppMode:recipe?.status==='locked'?'repeat_article':'new_article',
+    ppAttempts:[],ppApprovalStatus:'pending',
+    ppApprovedBy:null,ppApprovedAt:null,
+    bulkStartedAt:null,bulkCompletedAt:null,finalQcStatus:null,
+    recipeWarning:!recipe?'Recipe missing — PP blocked':recipe.status!=='locked'?'Recipe not locked yet':'',
+    handoff:{forwardedToBundlingBy:null,forwardedToBundlingAt:null,acceptedByZohaibAt:null,forwardedToStitchingBy:null,forwardedToStitchingAt:null,acceptedByWaqasAt:null,stitchingForwardedToQcAt:null},
+    stageHistory:[{stage:'po_received',by:'System',at:now,note:`Auto-created when PO ${po.id} cutting completed`}]
+  };
+  try{
+    await setDoc(doc(db,'printing_jobs',id),jobPayload);
+    allPrintingJobs.unshift({...jobPayload,_id:id});
+    await addSLAEvent(id,po.id,'pp_sample',priority,'asghar',calcDue('pp_sample',priority));
+    await logActivity('Embellishment job created',`${po.id} — ${jobPayload.articleCode} (auto from PO)`);
+  }catch(e){console.warn('autoCreateEmbJob failed:',e);}
 }
 
 // ── Job list card (manager/QC view) ──────────────────────────────────
@@ -4454,6 +4549,9 @@ window.approvePP=async function(jobId){
   const j=allPrintingJobs.find(x=>x._id===jobId); if(!j)return;
   if(j.ppMode==='new_article'&&!canApproveNewPP()){showToast('New article PP requires Ammar/Afnan/Arfat approval.',true);return;}
   if(j.ppMode==='repeat_article'&&!canApproveRepeatPP()){showToast('Not authorized to approve PP.',true);return;}
+  // Gate: recipe must be locked before PP can be approved
+  if(j.recipeWarning&&j.recipeWarning.includes('missing')){showToast('Recipe missing — PP cannot be approved until Ammar locks the recipe.',true);return;}
+  if(j.recipeWarning&&j.recipeWarning.includes('not locked')){showToast('Recipe not locked — Ammar must lock the recipe before PP approval.',true);return;}
   const reason=prompt('Approval note (optional):');
   const now=nowIso();
   const updated=(j.ppAttempts||[]).map((a,i)=>i===j.ppAttempts.length-1?{...a,status:'approved',reviewedBy:session.name,reviewedAt:now,approvalNote:reason||''}:a);
