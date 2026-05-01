@@ -840,6 +840,7 @@ async function loadData(){
     allReturns=retSnap.docs.map(d=>d.data());
     allFabricIn=fabSnap.docs.map(d=>d.data());
     if(currentPage)renderPage(currentPage);
+    if(typeof _maybeLoadPrintingData==='function')_maybeLoadPrintingData();
   }catch(e){
     if((e.code==='permission-denied'||e.message.includes('permissions'))&&auth.currentUser){
       try{
@@ -855,6 +856,7 @@ async function loadData(){
         allReturns=retSnap.docs.map(d=>d.data());
         allFabricIn=fabSnap.docs.map(d=>d.data());
         if(currentPage)renderPage(currentPage);
+        if(typeof _maybeLoadPrintingData==='function')_maybeLoadPrintingData();
         return;
       }catch(e2){showToast('Data load error: '+e2.message,true);}
     }else{showToast('Data load error: '+e.message,true);}
@@ -1103,22 +1105,7 @@ function renderPage(id){
   else if(id==='billing-detail')renderBillingDetailPage();
 }
 
-// ── Dashboard ──
-function renderDashboard(){
-  const total=allPOs.length,active=allPOs.filter(p=>p.currentStage&&p.currentStage!=='completed').length,done=allPOs.filter(p=>p.currentStage==='completed').length,todayCount=allPOs.filter(p=>p.createdAt===new Date().toISOString().slice(0,10)).length;
-  return`<div class="page-head"><div class="page-title">Dashboard</div><div class="page-sub">Welcome back, ${session.name}</div></div>
-  <div class="stats-row">
-    <div class="stat-card"><div class="stat-label">Total POs</div><div class="stat-val">${total}</div></div>
-    <div class="stat-card"><div class="stat-label">Active</div><div class="stat-val" style="color:#185FA5">${active}</div></div>
-    <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-val" style="color:var(--green)">${done}</div></div>
-    <div class="stat-card"><div class="stat-label">Today</div><div class="stat-val" style="color:var(--red)">${todayCount}</div></div>
-  </div>
-  <div style="margin-bottom:16px"><div class="section-title">Stage overview</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">${STAGES.map(s=>{const c=allPOs.filter(p=>p.currentStage===s.key).length;const f=allPOs.filter(p=>p.currentStage===s.key&&p.damageFlagged).length;return`<div style="flex:1;min-width:80px;padding:10px 8px;background:#fff;border:1px solid var(--border);border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:${s.color}">${c}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${s.label}</div>${f?`<div style="font-size:9px;color:#dc2626;font-weight:700;margin-top:2px">⚠ ${f} flagged</div>`:''}</div>`;}).join('')}</div>
-  </div>
-  <div class="section-title">Recent production orders</div>
-  ${allPOs.slice(0,10).map(p=>poRowHTML(p)).join('')||'<div class="empty">No POs yet.</div>'}`;
-}
+// ── Dashboard — extended in Chunk 5 with printing KPI strip ──
 
 function poRowHTML(p){
   const stage=STAGES.find(s=>s.key===p.currentStage)||{label:'Completed',color:'#1D9E75'};
@@ -1147,31 +1134,7 @@ function renderRegistry(){
 window.filterPOs=function(q){const f=allPOs.filter(p=>!q||[p.name,p.id,p.code,p.fabric].some(v=>(v||'').toLowerCase().includes(q.toLowerCase())));document.getElementById('po-list-wrap').innerHTML=f.length?f.map(p=>poRowHTML(p)).join(''):'<div class="empty">No results.</div>';};
 window.filterStage=function(s){const f=s?allPOs.filter(p=>p.currentStage===s):allPOs;document.getElementById('po-list-wrap').innerHTML=f.length?f.map(p=>poRowHTML(p)).join(''):'<div class="empty">No results.</div>';};
 
-// ── My Work ──
-function renderMyWork(){
-  const stages=session.stages||[];
-  if(!stages.length){
-    const active=allPOs.filter(p=>p.currentStage!=='completed');
-    return`<div class="page-head"><div class="page-title">All Active Orders</div><div class="page-sub">${active.length} in progress</div></div>${active.map(p=>poRowHTML(p)).join('')||'<div class="empty">No active orders.</div>'}`;
-  }
-  const myPOs=allPOs.filter(p=>stages.includes(p.currentStage));
-  const stageLabel={cutting:'Enter Cut Data',bundling:'Mark Bundles',stitching:'Mark Stitched',printing:'Mark Complete',washing:'Mark Complete',qc:'Perform QC'};
-  return`<div class="page-head"><div class="page-title">My Work</div><div class="page-sub">${myPOs.length} order${myPOs.length!==1?'s':''} in your queue</div></div>
-  ${myPOs.map(p=>`<div class="work-card">
-    <div style="display:flex;gap:14px;align-items:flex-start">
-      <div style="width:80px;height:104px;flex-shrink:0;background:#f0f0f0;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="window.openPODetail('${p.fbKey}')">
-        ${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:10px;color:#aaa;text-align:center;padding:4px">No image</span>'}
-      </div>
-      <div style="flex:1">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span class="po-num">${p.id}</span>
-          <span class="stage-badge" style="background:${STAGES.find(s=>s.key===p.currentStage)?.color||'#888'}20;color:${STAGES.find(s=>s.key===p.currentStage)?.color||'#888'}">${STAGES.find(s=>s.key===p.currentStage)?.label||p.currentStage}</span></div>
-        <div style="font-size:15px;font-weight:700;margin-bottom:3px">${p.name||'—'}</div>
-        <div style="font-size:12px;color:var(--muted)">${p.qty||'?'} pcs · ${p.fabric||''}</div>
-        <button class="mark-done-btn" style="background:${p.currentStage==='cutting'||p.currentStage==='bundling'||p.currentStage==='stitching'||p.currentStage==='qc'?'var(--dark)':'var(--green)'}" onclick="window.openStageWork('${p.fbKey}','${p.currentStage}')">${stageLabel[p.currentStage]||'Mark Done'}</button>
-      </div>
-    </div>
-  </div>`).join('')||'<div class="empty">No orders in your queue right now.<br>You\'re all caught up!</div>'}`;
-}
+// ── My Work — defined in Chunk 5 (printing module) to support all roles ──
 
 window.openStageWork=async function(fbKey,stage){
   stageWorkPO=fbKey;stageWorkStage=stage;currentPage='stage-work';
@@ -5095,6 +5058,379 @@ async function updateJobSLA(jobId,newStage,priority){
     const ji=allPrintingJobs.findIndex(j=>j._id===jobId);
     if(ji>=0)allPrintingJobs[ji].slaCurrentDue=dueAt;
   }catch(_){}
+}
+
+// ════════════════════════════════════════════════════════════════════
+// CHUNK 5 — HANDOFF FLOW · VENDOR JOB CARD · MY-WORK INTEGRATION
+//            REWORK RETURN FLOW · FINAL POLISH
+// ════════════════════════════════════════════════════════════════════
+
+// ── Zohaib: Accept lot from QC Bundling ──────────────────────────────
+window.acceptByZohaib=async function(jobId){
+  if(!isBundleWorker()&&!isObserver()){showToast('Bundling team only.',true);return;}
+  const j=allPrintingJobs.find(x=>x._id===jobId); if(!j)return;
+  const now=nowIso();
+  const history=[...(j.stageHistory||[]),{stage:'qc_bundling',by:session.name,at:now,note:'Lot accepted by '+session.name+' for bundling'}];
+  try{
+    await updateDoc(doc(db,'printing_jobs',jobId),{
+      'handoff.acceptedByZohaibAt':now,
+      stageHistory:history,updatedAt:now
+    });
+    const ji=allPrintingJobs.findIndex(x=>x._id===jobId);
+    if(ji>=0){allPrintingJobs[ji]={...allPrintingJobs[ji],stageHistory:history};allPrintingJobs[ji].handoff={...allPrintingJobs[ji].handoff,acceptedByZohaibAt:now};}
+    await logActivity('Lot accepted for bundling',j.poNumber+' — '+session.name);
+    showToast('Lot accepted / لاٹ قبول کر لیا ✓');
+    window.showPage('printing-jobs');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+// ── Zohaib: Forward bundled lot to Stitching ─────────────────────────
+window.forwardToStitching=async function(jobId){
+  if(!isBundleWorker()&&!isObserver()){showToast('Bundling team only.',true);return;}
+  const j=allPrintingJobs.find(x=>x._id===jobId); if(!j)return;
+  const bundleCount=parseInt(document.getElementById('bundle-count-'+jobId)?.value)||0;
+  const notes=(document.getElementById('bundle-notes-'+jobId)?.value||'').trim();
+  const now=nowIso();
+  const history=[...(j.stageHistory||[]),{stage:'stitching',by:session.name,at:now,note:`Forwarded to stitching — ${bundleCount} bundles. ${notes}`}];
+  try{
+    await updateDoc(doc(db,'printing_jobs',jobId),{
+      currentStage:'stitching',
+      'handoff.forwardedToStitchingBy':session.name,
+      'handoff.forwardedToStitchingAt':now,
+      bundleCount,bundleNotes:notes,
+      stageHistory:history,updatedAt:now,
+      slaCurrentDue:calcDue('stitching',j.priority)
+    });
+    const ji=allPrintingJobs.findIndex(x=>x._id===jobId);
+    if(ji>=0)allPrintingJobs[ji]={...allPrintingJobs[ji],currentStage:'stitching',stageHistory:history,slaCurrentDue:calcDue('stitching',j.priority)};
+    await addSLAEvent(jobId,j.poNumber,'stitching',j.priority,'waqas',calcDue('stitching',j.priority));
+    await logActivity('Forwarded to stitching',`${j.poNumber} — ${bundleCount} bundles`);
+    showToast('Forwarded to stitching / سلائی کو بھیج دیا ✓');
+    window.showPage('printing-jobs');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+// ── Waqas: Accept stitching lot ───────────────────────────────────────
+window.acceptByWaqas=async function(jobId){
+  if(!isStitchWorker()&&!isObserver()){showToast('Stitching team only.',true);return;}
+  const j=allPrintingJobs.find(x=>x._id===jobId); if(!j)return;
+  const now=nowIso();
+  const history=[...(j.stageHistory||[]),{stage:'stitching',by:session.name,at:now,note:'Stitching accepted by '+session.name}];
+  try{
+    await updateDoc(doc(db,'printing_jobs',jobId),{
+      'handoff.acceptedByWaqasAt':now,
+      stageHistory:history,updatedAt:now
+    });
+    const ji=allPrintingJobs.findIndex(x=>x._id===jobId);
+    if(ji>=0){allPrintingJobs[ji].stageHistory=history;if(!allPrintingJobs[ji].handoff)allPrintingJobs[ji].handoff={};allPrintingJobs[ji].handoff.acceptedByWaqasAt=now;}
+    await logActivity('Stitching accepted',j.poNumber+' — '+session.name);
+    showToast('Stitching accepted / سلائی قبول کر لی ✓');
+    window.showPage('printing-jobs');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+// ── Waqas: Complete stitching, return to Final QC ─────────────────────
+window.completeStitching=async function(jobId){
+  if(!isStitchWorker()&&!isObserver()){showToast('Stitching team only.',true);return;}
+  const j=allPrintingJobs.find(x=>x._id===jobId); if(!j)return;
+  const notes=(document.getElementById('stitch-notes-'+jobId)?.value||'').trim();
+  const now=nowIso();
+  const history=[...(j.stageHistory||[]),{stage:'final_qc_post_stitch',by:session.name,at:now,note:'Stitching complete — forwarded to Final QC. '+notes}];
+  try{
+    await updateDoc(doc(db,'printing_jobs',jobId),{
+      currentStage:'final_qc_post_stitch',
+      'handoff.stitchingForwardedToQcAt':now,
+      stitchingNotes:notes,
+      stageHistory:history,updatedAt:now,
+      slaCurrentDue:calcDue('final_qc',j.priority)
+    });
+    const ji=allPrintingJobs.findIndex(x=>x._id===jobId);
+    if(ji>=0)allPrintingJobs[ji]={...allPrintingJobs[ji],currentStage:'final_qc_post_stitch',stageHistory:history};
+    await addSLAEvent(jobId,j.poNumber,'final_qc',j.priority,'haris',calcDue('final_qc',j.priority));
+    await logActivity('Stitching complete — returned to QC',j.poNumber);
+    showToast('Stitching complete / فائنل QC کو بھیج دیا ✓');
+    window.showPage('printing-jobs');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+// ── Rework return: QC logs rework pass/fail after return ──────────────
+window.recordReworkReturn=async function(jobId){
+  if(!isQCWorker()&&!isObserver()){showToast('QC only.',true);return;}
+  const j=allPrintingJobs.find(x=>x._id===jobId); if(!j)return;
+  const passed=parseInt(prompt('Rework PASSED quantity:')||'0');
+  const failed=parseInt(prompt('Rework FAILED/rejected quantity:')||'0');
+  if(passed+failed===0){showToast('Enter quantities.',true);return;}
+  const now=nowIso();
+  // Update QC report rework fields
+  const rep=allQCReports.find(r=>r.printingJobId===jobId);
+  if(rep){
+    try{
+      await updateDoc(doc(db,'qc_reports',rep._id),{
+        'rework.returnedQty':passed+failed,
+        'rework.passedAfterRework':passed,
+        'rework.rejectedAfterRework':failed,
+        'final.totalCleared':(rep.final?.totalCleared||0)+passed,
+        'final.totalRejected':(rep.final?.totalRejected||0)+failed,
+        'final.billingApprovedQty':(rep.final?.billingApprovedQty||0)+passed,
+        updatedAt:now
+      });
+      // Update billing
+      const b=allPrintBilling.find(x=>x.printingJobId===jobId);
+      if(b){
+        const newFinal=(b.finalApprovedQty||0)+passed;
+        const newGross=newFinal*(b.ratePerPiece||0);
+        await updateDoc(doc(db,'printing_billing',b._id),{
+          reworkPassedQty:(b.reworkPassedQty||0)+passed,
+          finalApprovedQty:newFinal,
+          grossBill:newGross,
+          netPayable:newGross-(b.materialCostImpact||0)-(b.monetaryWithhold||0),
+          updatedAt:now
+        });
+        b.reworkPassedQty=(b.reworkPassedQty||0)+passed;b.finalApprovedQty=newFinal;b.grossBill=newGross;
+      }
+    }catch(_){}
+  }
+  // Advance to qc_bundling if any passed
+  const nextStage=passed>0?'qc_bundling':'closed';
+  const history=[...(j.stageHistory||[]),{stage:nextStage,by:session.name,at:now,note:`Rework return: ${passed} passed, ${failed} rejected`}];
+  try{
+    await updateDoc(doc(db,'printing_jobs',jobId),{currentStage:nextStage,stageHistory:history,updatedAt:now});
+    const ji=allPrintingJobs.findIndex(x=>x._id===jobId);
+    if(ji>=0)allPrintingJobs[ji]={...allPrintingJobs[ji],currentStage:nextStage,stageHistory:history};
+    await logActivity('Rework returned',`${j.poNumber} — ${passed} passed, ${failed} rejected`);
+    showToast(`Rework recorded: ${passed} passed ✓`);
+    window.showPage('printing-jobs');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+// ── Vendor Job Card (printable) ───────────────────────────────────────
+window.printVendorJobCard=function(jobId){
+  const j=allPrintingJobs.find(x=>x._id===jobId); if(!j)return;
+  const recipe=allRecipes.find(r=>r._id===j.recipeId);
+  const pt=recipe?.printing||{};
+  const sizes=j.sizeBreakdown||{};
+  const qr='VJC-'+j.poNumber+'-'+jobId.slice(0,6).toUpperCase();
+  const sizeTable=Object.entries(sizes).filter(([,v])=>v>0).map(([k,v])=>`<td style="text-align:center;padding:6px 10px;border:1px solid #ddd">${k}<br><strong>${v}</strong></td>`).join('');
+
+  const win=window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html><head><title>Vendor Job Card — ${j.poNumber}</title>
+  <style>body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Inter','Segoe UI',sans-serif;max-width:800px;margin:40px auto;padding:20px;color:#1A1A2E}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #E94560;padding-bottom:16px;margin-bottom:20px}
+  .logo{font-size:22px;font-weight:800;color:#1A1A2E}.logo span{color:#E94560}
+  .qr-box{text-align:right;font-size:12px;color:#6B7280;font-weight:700}
+  .section{margin-bottom:16px;border:1px solid #E5E5E7;border-radius:8px;padding:14px}
+  .section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#6B7280;margin-bottom:10px}
+  .row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f5f5f5;font-size:13px}
+  .row:last-child{border-bottom:none}
+  .label{color:#6B7280;font-weight:500}.val{font-weight:600}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th{background:#1A1A2E;color:rgba(255,255,255,.7);padding:8px 10px;font-size:10px;font-weight:600;text-align:left}
+  td{padding:6px 10px;border:1px solid #eee}
+  .banner{background:#1A1A2E;color:#fff;padding:12px 16px;border-radius:8px;margin-top:16px;font-size:12px;line-height:1.8}
+  .footer{margin-top:24px;border-top:1px solid #E5E5E7;padding-top:12px;font-size:11px;color:#6B7280;display:flex;justify-content:space-between}
+  @media print{.no-print{display:none}body{margin:0;padding:16px}}</style></head><body>
+
+  <div class="header">
+    <div><div class="logo">Groovy <span>Operations</span></div>
+      <div style="font-size:12px;color:#6B7280;margin-top:4px">Internal ERP — Vendor Job Card</div>
+    </div>
+    <div class="qr-box">
+      <div style="font-size:18px;font-weight:900;color:#E94560">${j.poNumber}</div>
+      <div style="margin-top:4px">${qr}</div>
+      <div>${new Date().toLocaleDateString('en-GB')}</div>
+    </div>
+  </div>
+
+  <div class="section"><div class="section-title">Job Information</div>
+    <div class="row"><span class="label">Article Code</span><span class="val">${j.articleCode||'—'}</span></div>
+    <div class="row"><span class="label">Article Name</span><span class="val">${j.articleName||'—'}</span></div>
+    <div class="row"><span class="label">Process Type</span><span class="val">${PROCESS_TYPES[j.processType]?.label||j.processType}</span></div>
+    <div class="row"><span class="label">Complexity Tier</span><span class="val">${TIER_INFO[j.complexityTier||1]?.label||'—'}</span></div>
+    <div class="row"><span class="label">Total Quantity</span><span class="val">${j.totalQty||'—'} pcs</span></div>
+    <div class="row"><span class="label">Priority</span><span class="val">${(j.priority||'normal').toUpperCase()}</span></div>
+    <div class="row"><span class="label">Vendor</span><span class="val">${j.vendorName||'In-house'}</span></div>
+    <div class="row"><span class="label">Job Reference</span><span class="val">${qr}</span></div>
+    <div class="row"><span class="label">Issue Date</span><span class="val">${new Date().toLocaleDateString('en-GB')}</span></div>
+  </div>
+
+  <div class="section"><div class="section-title">Size Breakdown</div>
+    <table><tr>${sizeTable||'<td colspan="6" style="text-align:center;color:#6B7280">No size breakdown set</td>'}</tr></table>
+  </div>
+
+  ${(pt.placements||[]).length?`<div class="section"><div class="section-title">Placements (${pt.placements.length})</div>
+    ${pt.placements.map((pl,i)=>`<div class="row"><span class="label">${i+1}. ${pl.side?.toUpperCase()||'—'} — ${pl.name||'—'}</span><span class="val">${pl.artworkSize||'—'} · ${pl.placementMeasurement||'—'}</span></div>${pl.notesEn?`<div style="font-size:11px;color:#6B7280;padding:3px 0">${pl.notesEn}</div>`:''}`).join('')}
+  </div>`:''}
+
+  ${(pt.pantones||[]).length?`<div class="section"><div class="section-title">Colors / Pantones</div>
+    <table><thead><tr><th>Color Name</th><th>Pantone Code</th><th>Local Ink</th><th>Notes</th></tr></thead>
+    <tbody>${pt.pantones.map(p=>`<tr><td>${p.colorName||'—'}</td><td>${p.pantoneCode||'—'}</td><td>${p.localInkName||'—'}</td><td>${p.notes||'—'}</td></tr>`).join('')}</tbody></table>
+  </div>`:''}
+
+  ${pt.instructionsEn?`<div class="section"><div class="section-title">Instructions</div><div style="font-size:13px;line-height:1.8">${pt.instructionsEn}</div>
+    ${pt.instructionsUr?`<div style="direction:rtl;text-align:right;font-size:14px;line-height:2;margin-top:8px;border-top:1px solid #f5f5f5;padding-top:8px">${pt.instructionsUr}</div>`:''}</div>`:''}
+
+  <div class="banner">
+    <strong>Important:</strong> This job card must accompany the lot at all times.<br>
+    Vendor is responsible for following all placement, color, and process specifications.<br>
+    All pieces must be returned with this job card attached. Gate pass required for entry/exit.
+  </div>
+
+  <div class="footer">
+    <span>Authorized by: ${session.name} — ${session.title}</span>
+    <span>Groovy Operations ERP · ${new Date().toLocaleString('en-GB')}</span>
+  </div>
+
+  <div style="margin-top:16px;border:2px dashed #E5E5E7;border-radius:8px;padding:14px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#6B7280;margin-bottom:8px">VENDOR ACKNOWLEDGEMENT</div>
+    <div style="display:flex;gap:40px">
+      <div><div style="font-size:11px;color:#6B7280">Received by (Vendor)</div><div style="border-bottom:1px solid #1A1A2E;width:160px;height:28px;margin-top:8px"></div></div>
+      <div><div style="font-size:11px;color:#6B7280">Date</div><div style="border-bottom:1px solid #1A1A2E;width:120px;height:28px;margin-top:8px"></div></div>
+      <div><div style="font-size:11px;color:#6B7280">Stamp</div><div style="border:1px dashed #ddd;width:80px;height:60px;margin-top:4px;border-radius:4px"></div></div>
+    </div>
+  </div>
+
+  <div class="no-print" style="margin-top:16px;text-align:center">
+    <button onclick="window.print()" style="padding:10px 24px;background:#1A1A2E;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-family:inherit">Print Job Card 🖨️</button>
+  </div>
+  </body></html>`);
+  win.document.close();
+};
+
+// ── My Work: unified for all roles including printing workers ─────────
+function renderMyWork(){
+  const stages=session.stages||[];
+  const base='';
+
+  // Asghar: printing jobs
+  if(isPrintWorker()){
+    if(!printingDataLoaded){loadPrintingData().then(()=>{const m=document.getElementById('main-content');if(m&&currentPage==='my-work')m.innerHTML=renderMyWork();});}
+    const myJobs=allPrintingJobs.filter(j=>j.assignedTo===session.u&&j.currentStage!=='closed');
+    if(!myJobs.length)return base||'<div class="empty">No orders in your queue right now.</div>';
+    return`<div class="page-head"><div class="page-title">My Work / میرا کام</div><div class="page-sub">${myJobs.length} printing job${myJobs.length!==1?'s':''} in queue</div></div>
+    ${myJobs.map(j=>printWorkerCardHTML(j)).join('')}`;
+  }
+
+  // Zohaib: bundling tasks
+  if(isBundleWorker()){
+    if(!printingDataLoaded){loadPrintingData().then(()=>{const m=document.getElementById('main-content');if(m&&currentPage==='my-work')m.innerHTML=renderMyWork();});}
+    const myJobs=allPrintingJobs.filter(j=>j.currentStage==='qc_bundling');
+    if(myJobs.length){
+      return`<div class="page-head"><div class="page-title">My Work</div><div class="page-sub">${myJobs.length} bundling task${myJobs.length!==1?'s':''}</div></div>
+      ${myJobs.map(j=>bundlingWorkerCardHTML(j)).join('')}`;
+    }
+  }
+
+  // Waqas: stitching tasks
+  if(isStitchWorker()){
+    if(!printingDataLoaded){loadPrintingData().then(()=>{const m=document.getElementById('main-content');if(m&&currentPage==='my-work')m.innerHTML=renderMyWork();});}
+    const myJobs=allPrintingJobs.filter(j=>j.currentStage==='stitching');
+    if(myJobs.length){
+      return`<div class="page-head"><div class="page-title">My Work</div><div class="page-sub">${myJobs.length} stitching task${myJobs.length!==1?'s':''}</div></div>
+      ${myJobs.map(j=>stitchingWorkerCardHTML(j)).join('')}`;
+    }
+  }
+
+  // Haris: QC reports needed
+  if(isQCWorker()){
+    if(!printingDataLoaded){loadPrintingData().then(()=>{const m=document.getElementById('main-content');if(m&&currentPage==='my-work')m.innerHTML=renderMyWork();});}
+    const qcJobs=allPrintingJobs.filter(j=>['final_qc','rework','final_qc_post_stitch'].includes(j.currentStage));
+    const ppJobs=allPrintingJobs.filter(j=>j.currentStage==='pp_approval'&&j.ppApprovalStatus==='pending');
+    const hasExtra=qcJobs.length||ppJobs.length;
+    if(hasExtra){
+      const baseContent=base||'';
+      return`${baseContent}<div class="page-head" style="margin-top:16px"><div class="page-title">Printing QC Queue</div><div class="page-sub">${ppJobs.length} PP pending · ${qcJobs.length} lot QC pending</div></div>
+      ${ppJobs.map(j=>`<div class="work-card">
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="po-num">${j.poNumber||'—'}</span><span style="font-size:10px;font-weight:700;color:var(--amber);background:#fef3c7;padding:2px 7px;border-radius:8px">AWAITING PP APPROVAL</span></div>
+        <div style="font-size:14px;font-weight:600">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">${j.totalQty||'?'} pcs · ${j.ppMode==='repeat_article'?'Repeat Article (QC can approve)':'New Article (needs owner)'}</div>
+        <button class="mark-done-btn" style="width:auto;padding:8px 16px;margin-top:8px" onclick="window.openPrintingJob('${j._id}')">Review PP Sample</button>
+      </div>`).join('')}
+      ${qcJobs.map(j=>`<div class="work-card">
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="po-num">${j.poNumber||'—'}</span><span style="font-size:10px;font-weight:700;color:#185FA5;background:#dbeafe;padding:2px 7px;border-radius:8px">QC REQUIRED</span></div>
+        <div style="font-size:14px;font-weight:600">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">${j.printedQty||j.totalQty||'?'} pcs received</div>
+        <button class="mark-done-btn" style="width:auto;padding:8px 16px;margin-top:8px" onclick="window.openQCReport('${j._id}')">Enter QC Report</button>
+      </div>`).join('')}`;
+    }
+  }
+
+  // Default: run original
+  if(stages.length){
+    const myPOs=allPOs.filter(p=>stages.includes(p.currentStage));
+    const stageLabel={cutting:'Enter Cut Data',bundling:'Mark Bundles',stitching:'Mark Stitched',printing:'Mark Complete',washing:'Mark Complete',qc:'Perform QC'};
+    return`<div class="page-head"><div class="page-title">My Work</div><div class="page-sub">${myPOs.length} order${myPOs.length!==1?'s':''} in your queue</div></div>
+    ${myPOs.map(p=>`<div class="work-card">
+      <div style="display:flex;gap:14px;align-items:flex-start">
+        <div style="width:80px;height:104px;flex-shrink:0;background:#f0f0f0;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="window.openPODetail('${p.fbKey}')">
+          ${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:10px;color:#aaa;text-align:center;padding:4px">No image</span>'}
+        </div>
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span class="po-num">${p.id}</span>
+            <span class="stage-badge" style="background:${STAGES.find(s=>s.key===p.currentStage)?.color||'#888'}20;color:${STAGES.find(s=>s.key===p.currentStage)?.color||'#888'}">${STAGES.find(s=>s.key===p.currentStage)?.label||p.currentStage}</span></div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:3px">${p.name||'—'}</div>
+          <div style="font-size:12px;color:var(--muted)">${p.qty||'?'} pcs · ${p.fabric||''}</div>
+          <button class="mark-done-btn" style="background:${p.currentStage==='cutting'||p.currentStage==='bundling'||p.currentStage==='stitching'||p.currentStage==='qc'?'var(--dark)':'var(--green)'}" onclick="window.openStageWork('${p.fbKey}','${p.currentStage}')">${stageLabel[p.currentStage]||'Mark Done'}</button>
+        </div>
+      </div>
+    </div>`).join('')||'<div class="empty">No orders in your queue right now.<br>You\'re all caught up!</div>'}`;
+  }
+  const active=allPOs.filter(p=>p.currentStage!=='completed');
+  return`<div class="page-head"><div class="page-title">All Active Orders</div><div class="page-sub">${active.length} in progress</div></div>${active.map(p=>poRowHTML(p)).join('')||'<div class="empty">No active orders.</div>'}`;
+}
+
+// ── Printing nav active state helper (called from showPage) ───────────
+const _origShowPage=window.showPage;
+window.showPage=async function(id){
+  // Auto-load printing data when visiting any printing page
+  if(['recipe-directory','recipe-create','recipe-detail','printing-jobs','printing-job-detail','observer-tower','qc-report-page','billing-detail'].includes(id)&&!printingDataLoaded){
+    await loadPrintingData();
+  }
+  return _origShowPage(id);
+};
+
+// ── Quick access: open rework return from job detail ──────────────────
+window.openReworkReturn=function(jobId){ viewingPrintJob=jobId; window.recordReworkReturn(jobId); };
+
+// ── Dashboard (replaces original, adds printing KPI strip for observers) ──
+function renderDashboard(){
+  const total=allPOs.length,active=allPOs.filter(p=>p.currentStage&&p.currentStage!=='completed').length,done=allPOs.filter(p=>p.currentStage==='completed').length,todayCount=allPOs.filter(p=>p.createdAt===new Date().toISOString().slice(0,10)).length;
+  const base=`<div class="page-head"><div class="page-title">Dashboard</div><div class="page-sub">Welcome back, ${session.name}</div></div>
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-label">Total POs</div><div class="stat-val">${total}</div></div>
+    <div class="stat-card"><div class="stat-label">Active</div><div class="stat-val" style="color:#185FA5">${active}</div></div>
+    <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-val" style="color:var(--green)">${done}</div></div>
+    <div class="stat-card"><div class="stat-label">Today</div><div class="stat-val" style="color:var(--red)">${todayCount}</div></div>
+  </div>
+  <div style="margin-bottom:16px"><div class="section-title">Stage overview</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${STAGES.map(s=>{const c=allPOs.filter(p=>p.currentStage===s.key).length;const f=allPOs.filter(p=>p.currentStage===s.key&&p.damageFlagged).length;return`<div style="flex:1;min-width:80px;padding:10px 8px;background:#fff;border:1px solid var(--border);border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:${s.color}">${c}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${s.label}</div>${f?`<div style="font-size:9px;color:#dc2626;font-weight:700;margin-top:2px">⚠ ${f} flagged</div>`:''}</div>`;}).join('')}</div>
+  </div>
+  <div class="section-title">Recent production orders</div>
+  ${allPOs.slice(0,10).map(p=>poRowHTML(p)).join('')||'<div class="empty">No POs yet.</div>'}`;
+  if(!isObserver())return base;
+  // Printing KPI strip for owners/managers
+  const pActive=allPrintingJobs.filter(j=>j.currentStage!=='closed').length;
+  const pOver=allPrintingJobs.filter(j=>j.slaCurrentDue&&slaStatus(j.slaCurrentDue)!=='ok'&&j.currentStage!=='closed').length;
+  const pPP=allPrintingJobs.filter(j=>j.currentStage==='pp_approval'&&j.ppApprovalStatus==='pending').length;
+  const strip=`<div class="card" style="border-left:3px solid #854F0B;margin-top:4px">
+    <div class="card-title">Printing / Decoration — Quick View</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${[['Active Jobs',pActive,'var(--dark)'],['Awaiting PP',pPP,'var(--amber)'],['Overdue SLA',pOver,'#dc2626']].map(([l,v,c])=>`<div style="flex:1;min-width:80px;padding:8px;background:#f4f4f6;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:${c}">${v}</div><div style="font-size:10px;color:var(--muted)">${l}</div></div>`).join('')}
+    </div>
+    <button class="btn-outline" style="width:100%;margin-top:10px" onclick="window.showPage('observer-tower')">Open Observer Tower →</button>
+  </div>`;
+  return base+strip;
+}
+
+// ── Printing data is loaded on demand via showPage override above ─────
+// For observers landing on the dashboard, we lazy-load printing data
+// so the KPI strip updates shortly after page load.
+// This is triggered via the existing loadData callback below.
+function _maybeLoadPrintingData(){
+  if(session&&isObserver()&&!printingDataLoaded){
+    loadPrintingData().then(()=>{
+      if(currentPage==='dashboard'){ const m=document.getElementById('main-content'); if(m)m.innerHTML=renderDashboard(); }
+    }).catch(()=>{});
+  }
 }
 
 </script>
