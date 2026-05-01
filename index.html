@@ -148,8 +148,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 @media(max-width:400px){
   .topbar-name{font-size:11px}
 }
-#mob-nav{display:none;background:var(--surface);border-top:1px solid var(--border);position:fixed;bottom:0;left:0;right:0;z-index:100;padding:6px 0}
-.mob-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 2px;font-size:10px;color:var(--muted);cursor:pointer;font-weight:500;gap:2px;min-height:44px;justify-content:center}
+#mob-nav{display:none;background:var(--surface);border-top:1px solid var(--border);position:fixed;bottom:0;left:0;right:0;z-index:100;padding:6px 0;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-wrap:nowrap}
+#mob-nav::-webkit-scrollbar{display:none}
+.mob-nav-item{flex:0 0 auto;min-width:72px;display:flex;flex-direction:column;align-items:center;padding:8px 12px;font-size:10px;color:var(--muted);cursor:pointer;font-weight:500;gap:2px;min-height:44px;justify-content:center;white-space:nowrap}
 .mob-nav-item.on{color:var(--red)}
 /* ── Store: nav divider ── */
 .nav-divider{height:1px;background:var(--border);margin:8px 4px}
@@ -1200,7 +1201,7 @@ function buildNav(){
   document.getElementById('sidebar').innerHTML=mainNav+printNav+storeNav;
   // Mobile: show main items + Store shortcut
   const mobMain=isStore?storeSubItems:mainItems;
-  document.getElementById('mob-nav').innerHTML=mobMain.slice(0,5).map(i=>`<div class="mob-nav-item" id="mobnav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('')
+  document.getElementById('mob-nav').innerHTML=mobMain.map(i=>`<div class="mob-nav-item" id="mobnav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('')
     +(storeSubItems.length&&!isStore?`<div class="mob-nav-item" onclick="window.showPage('store-dashboard')">Store</div>`:'');
 }
 
