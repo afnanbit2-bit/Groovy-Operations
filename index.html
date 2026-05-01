@@ -1120,7 +1120,7 @@ function renderPage(id){
   else if(id==='store-inventory')m.innerHTML=renderInventory();
   else if(id==='store-receive'){m.innerHTML=renderStoreReceive();onRcvItemChange();}
   else if(id==='store-issue'){m.innerHTML=renderStoreIssue();onIssItemChange();loadActivePOs();}
-  else if(id==='store-templates')m.innerHTML=renderStoreTemplates();
+  else if(id==='store-templates'){m.innerHTML=renderStoreTemplates();const _si=document.getElementById('tpl-prod-search');if(_si){_si.addEventListener('input',()=>filterTplProd(_si.value));_si.addEventListener('focus',()=>filterTplProd(_si.value));}}
   else if(id==='store-log'){_ilPage=1;_ilQ='';_ilPO='';m.innerHTML=renderStoreLog();refreshIssueLog();}
   // ── Printing module pages ──
   else if(id==='recipe-directory'){if(!printingDataLoaded)loadPrintingData().then(()=>m.innerHTML=renderRecipeDirectory());else m.innerHTML=renderRecipeDirectory();}
@@ -2823,7 +2823,7 @@ function renderStoreTemplates(){
     <div class="form-grid">
       <div class="field" style="grid-column:1/-1;position:relative"><label>Product *</label>
         <input id="tpl-prod-search" placeholder="Type product code or name e.g. GH001 or Black Hoodie…" autocomplete="off"
-          oninput="window.filterTplProd(this.value)" onfocus="window.filterTplProd(this.value)" onblur="setTimeout(()=>{const d=document.getElementById('tpl-prod-dd');if(d)d.style.display='none'},200)">
+          onblur="setTimeout(()=>{const d=document.getElementById('tpl-prod-dd');if(d)d.style.display='none'},300)">
         <div id="tpl-prod-dd" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:220px;overflow-y:auto;margin-top:3px"></div>
         <div id="tpl-prod-sel" style="margin-top:6px;font-size:12px;color:var(--green);font-weight:600"></div>
       </div>
