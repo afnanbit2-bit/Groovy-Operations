@@ -3463,6 +3463,205 @@ function tierBadge(t){ const ti=TIER_INFO[t]||TIER_INFO[1]; return`<span class="
 function processBadge(pt){ const p=PROCESS_TYPES[pt]; return p?`<span class="process-badge">${p.icon} ${p.label}</span>`:'<span class="process-badge">—</span>'; }
 
 // ════════════════════════════════════════════
+// COLOR LIBRARY HELPERS
+// ════════════════════════════════════════════
+
+function _swatchDot(hex,size){
+  size=size||16;
+  return'<span style="display:inline-block;width:'+size+'px;height:'+size+'px;border-radius:50%;background:'+(hex||'#ddd')+';border:1px solid rgba(0,0,0,.12);vertical-align:middle;flex-shrink:0"></span>';
+}
+
+function _colorChipHTML(p){
+  var hex=p.hexApprox||'#ddd';
+  var isLegacy=!p.colorLibraryId&&!p._id;
+  return'<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);margin-bottom:6px">'+
+    _swatchDot(hex,20)+
+    '<div style="flex:1;min-width:0">'+
+      '<div style="font-size:13px;font-weight:600;color:var(--dark)">'+(p.colorName||'—')+'</div>'+
+      '<div style="font-size:11px;color:var(--muted)">'+(p.pantoneCode||'')+(p.localInkName?' · '+p.localInkName:'')+'</div>'+
+      (isLegacy?'<div style="font-size:10px;color:var(--amber);font-weight:600;margin-top:1px">Legacy — not linked to Color Library</div>':'')+
+    '</div>'+
+  '</div>';
+}
+
+function _colorCardFull(c){
+  var hex=c.hexApprox||'#ddd';
+  var INK_LABELS={rubber:'Rubber',plastisol:'Plastisol',puff:'Puff',sublimation:'Sublimation',embroidery_thread:'Embroidery Thread',other:'Other'};
+  var canEdit=canManageRecipes();
+  return'<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:flex;gap:12px;align-items:flex-start">'+
+    '<div style="width:44px;height:44px;border-radius:10px;background:'+hex+';border:1px solid rgba(0,0,0,.12);flex-shrink:0"></div>'+
+    '<div style="flex:1;min-width:0">'+
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">'+
+        '<div>'+
+          '<div style="font-size:14px;font-weight:700;color:var(--dark)">'+(c.colorName||'—')+'</div>'+
+          '<div style="font-size:12px;color:var(--muted);margin-top:1px">'+(c.pantoneCode||'No Pantone code')+'</div>'+
+        '</div>'+
+        (canEdit?'<div style="display:flex;gap:6px">'+
+          '<button class="btn-sm" onclick="window.openColorModal(\''+c._id+'\')">Edit</button>'+
+          '<button class="btn-sm" style="background:'+(c.status==='archived'?'var(--green)':'#dc2626')+'" onclick="window.toggleColorArchive(\''+c._id+'\',\''+(c.status||'active')+'\')">'+
+            (c.status==='archived'?'Restore':'Archive')+'</button>'+
+        '</div>':'')+
+      '</div>'+
+      '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">'+
+        (c.localInkName?'<span style="font-size:11px;padding:2px 8px;background:#f5f5f5;border-radius:6px">'+c.localInkName+'</span>':'')+
+        (c.inkType?'<span style="font-size:11px;padding:2px 8px;background:#f0f0f0;border-radius:6px;text-transform:capitalize">'+(INK_LABELS[c.inkType]||c.inkType)+'</span>':'')+
+        (c.supplierName?'<span style="font-size:11px;padding:2px 8px;background:#f5f5f5;border-radius:6px">'+c.supplierName+'</span>':'')+
+      '</div>'+
+      (c.mixingNotes?'<div style="font-size:11px;color:var(--muted);margin-top:4px;font-style:italic">'+c.mixingNotes+'</div>':'')+
+    '</div>'+
+  '</div>';
+}
+
+function _ptDetailChipHTML(p){
+  var hex=p.hexApprox||'#ddd';
+  var isLegacy=!p.colorLibraryId;
+  var showTechnical=canManageRecipes();
+  var showWorker=isPrintWorker();
+  return'<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #f5f5f5">'+
+    '<div style="width:32px;height:32px;border-radius:7px;background:'+hex+';border:1px solid rgba(0,0,0,.12);flex-shrink:0;margin-top:2px"></div>'+
+    '<div style="flex:1;min-width:0">'+
+      '<div style="font-size:13px;font-weight:700;color:var(--dark)">'+(p.colorName||'—')+'</div>'+
+      (!showWorker?'<div style="font-size:11px;color:var(--muted)">'+(p.pantoneCode||'')+(p.localInkName?' · '+p.localInkName:'')+'</div>':'')+
+      (showWorker?'<div style="font-size:12px;color:var(--muted)">'+(p.localInkName||p.pantoneCode||'')+'</div>':'')+
+      (p.usage?'<div style="font-size:11px;padding:1px 7px;background:#f0f0f0;border-radius:5px;display:inline-block;margin-top:3px">'+p.usage+'</div>':'')+
+      ((p.articleSpecificNotes||p.notes)?'<div style="font-size:12px;color:var(--dark);margin-top:3px;font-style:italic">'+(p.articleSpecificNotes||p.notes)+'</div>':'')+
+      (isLegacy?'<div style="font-size:10px;color:var(--amber);font-weight:600;margin-top:2px">Legacy — not linked to Color Library</div>':'')+
+    '</div>'+
+  '</div>';
+}
+
+// ════════════════════════════════════════════
+// COLOR LIBRARY PAGE
+// ════════════════════════════════════════════
+
+function renderColorLibraryPage(){
+  if(!canSeePrinting()){return'<div class="empty">Not authorized.</div>';}
+  var active=allColors.filter(function(c){return c.status!=='archived';});
+  var archived=allColors.filter(function(c){return c.status==='archived';});
+  var canEdit=canManageRecipes();
+  return'<div class="page-head">'+
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">'+
+      '<div><div class="page-title">Color Library</div><div class="page-sub">'+active.length+' active color'+(active.length!==1?'s':'')+' · '+archived.length+' archived</div></div>'+
+      (canEdit?'<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+        '<button class="btn-outline" onclick="window.seedColorLibrary()">Seed Starter Colors</button>'+
+        '<button class="btn-primary" style="width:auto;padding:8px 16px" onclick="window.openColorModal(null)">+ Add Color</button>'+
+      '</div>':'')+
+    '</div>'+
+  '</div>'+
+  '<div style="font-size:11px;color:var(--muted);margin-bottom:12px;padding:8px 12px;background:#fffbeb;border-radius:8px;border:1px solid #fde68a">Digital swatches are for reference only. Final approval must match physical Pantone / ink sample.</div>'+
+  (active.length?'<div style="display:grid;gap:8px;margin-bottom:12px">'+active.map(function(c){return _colorCardFull(c);}).join('')+'</div>':'<div class="empty" style="margin-bottom:12px">No colors in library yet. Add colors or seed starter set.</div>')+
+  (archived.length?'<details style="margin-bottom:16px"><summary style="font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;padding:8px 0">Archived ('+archived.length+')</summary><div style="display:grid;gap:8px;margin-top:8px;opacity:.65">'+archived.map(function(c){return _colorCardFull(c);}).join('')+'</div></details>':'')+
+  '<div id="color-modal-container"></div>';
+}
+
+window.openColorModal=function(id){
+  var c=id?allColors.find(function(x){return x._id===id;}):null;
+  var INK_TYPES=['rubber','plastisol','puff','sublimation','embroidery_thread','other'];
+  var INK_LABELS={rubber:'Rubber',plastisol:'Plastisol',puff:'Puff',sublimation:'Sublimation',embroidery_thread:'Embroidery Thread',other:'Other'};
+  var container=document.getElementById('color-modal-container');
+  if(!container)return;
+  container.innerHTML='<div id="color-modal-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:flex-end;justify-content:center" onclick="if(event.target.id===\'color-modal-overlay\')window.closeColorModal()">'+
+    '<div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:20px;max-height:90vh;overflow-y:auto">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'+
+        '<div style="font-size:16px;font-weight:700">'+(c?'Edit Color':'Add New Color')+'</div>'+
+        '<button onclick="window.closeColorModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>'+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--amber);margin-bottom:12px;padding:7px 10px;background:#fffbeb;border-radius:8px">Digital swatch is only an approximation. Confirm with physical Pantone/ink sample.</div>'+
+      '<div class="form-grid">'+
+        '<div class="field"><label>Color Name *</label><input id="cm-name" value="'+(c&&c.colorName?c.colorName:'')+'" placeholder="e.g. Brown"></div>'+
+        '<div class="field"><label>Pantone Code</label><input id="cm-pantone" value="'+(c&&c.pantoneCode?c.pantoneCode:'')+'" placeholder="e.g. PANTONE 438 C"></div>'+
+        '<div class="field"><label>HEX Approximation</label>'+
+          '<div style="display:flex;gap:8px;align-items:center">'+
+            '<input id="cm-hex" value="'+(c&&c.hexApprox?c.hexApprox:'')+'" placeholder="#5C3317" style="flex:1" oninput="window._updateSwatchPreview()">'+
+            '<div id="cm-swatch-preview" style="width:36px;height:36px;border-radius:8px;background:'+(c&&c.hexApprox?c.hexApprox:'#ddd')+';border:1px solid var(--border);flex-shrink:0"></div>'+
+          '</div>'+
+        '</div>'+
+        '<div class="field"><label>Local Ink Name</label><input id="cm-ink" value="'+(c&&c.localInkName?c.localInkName:'')+'" placeholder="e.g. Camlin Brown 01"></div>'+
+        '<div class="field"><label>Ink Type</label>'+
+          '<select id="cm-type" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">'+
+            INK_TYPES.map(function(t){return'<option value="'+t+'"'+(c&&c.inkType===t?' selected':'')+'>'+INK_LABELS[t]+'</option>';}).join('')+
+          '</select>'+
+        '</div>'+
+        '<div class="field"><label>Supplier Name</label><input id="cm-supplier" value="'+(c&&c.supplierName?c.supplierName:'')+'" placeholder="e.g. Camlin"></div>'+
+        '<div class="field" style="grid-column:1/-1"><label>Mixing Notes</label><input id="cm-mixing" value="'+(c&&c.mixingNotes?c.mixingNotes:'')+'" placeholder="e.g. Mix red + orange 3:1"></div>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;margin-top:16px">'+
+        '<button class="btn-outline" onclick="window.closeColorModal()" style="flex:1">Cancel</button>'+
+        '<button class="btn-primary" style="flex:1" onclick="window.saveColor(\''+(id||'')+'\')">Save Color</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+};
+window.closeColorModal=function(){var el=document.getElementById('color-modal-container');if(el)el.innerHTML='';};
+window._updateSwatchPreview=function(){
+  var hex=(document.getElementById('cm-hex')||{}).value||'#ddd';
+  var prev=document.getElementById('cm-swatch-preview');
+  if(prev)prev.style.background=hex;
+};
+window.saveColor=async function(existingId){
+  if(!canManageRecipes()){showToast('Not authorized.',true);return;}
+  var name=((document.getElementById('cm-name')||{}).value||'').trim();
+  if(!name){showToast('Color name required.',true);return;}
+  var existing=existingId?allColors.find(function(c){return c._id===existingId;}):null;
+  var payload={
+    colorName:name,
+    pantoneCode:((document.getElementById('cm-pantone')||{}).value||'').trim(),
+    hexApprox:((document.getElementById('cm-hex')||{}).value||'').trim(),
+    localInkName:((document.getElementById('cm-ink')||{}).value||'').trim(),
+    inkType:(document.getElementById('cm-type')||{}).value||'rubber',
+    supplierName:((document.getElementById('cm-supplier')||{}).value||'').trim(),
+    mixingNotes:((document.getElementById('cm-mixing')||{}).value||'').trim(),
+    status:'active',
+    createdBy:existingId?(existing&&existing.createdBy||session.name):session.name,
+    createdAt:existingId?(existing&&existing.createdAt||nowIso()):nowIso(),
+    updatedAt:nowIso(),
+    approvedBy:null,
+    approvedAt:null
+  };
+  try{
+    var id=existingId||prntId();
+    await setDoc(doc(db,'color_library',id),payload);
+    var idx=allColors.findIndex(function(c){return c._id===id;});
+    if(idx>=0)allColors[idx]=Object.assign({},payload,{_id:id});
+    else allColors.unshift(Object.assign({},payload,{_id:id}));
+    showToast('Color saved.');
+    window.closeColorModal();
+    var mc=document.getElementById('main-content');
+    if(mc)mc.innerHTML=renderColorLibraryPage();
+  }catch(e){showToast('Save error: '+e.message,true);}
+};
+window.toggleColorArchive=async function(id,currentStatus){
+  if(!canManageRecipes()){showToast('Not authorized.',true);return;}
+  var newStatus=currentStatus==='archived'?'active':'archived';
+  try{
+    await updateDoc(doc(db,'color_library',id),{status:newStatus,updatedAt:nowIso()});
+    var c=allColors.find(function(x){return x._id===id;});
+    if(c)c.status=newStatus;
+    var mc=document.getElementById('main-content');
+    if(mc)mc.innerHTML=renderColorLibraryPage();
+    showToast(newStatus==='archived'?'Archived.':'Restored.');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+window.seedColorLibrary=async function(){
+  if(!canManageRecipes()){showToast('Not authorized.',true);return;}
+  if(!confirm('Seed '+GROOVY_SEED_COLORS.length+' starter colors into the Color Library? Existing colors will not be overwritten.'))return;
+  var added=0;
+  var now=nowIso();
+  for(var i=0;i<GROOVY_SEED_COLORS.length;i++){
+    var sc=GROOVY_SEED_COLORS[i];
+    if(allColors.find(function(c){return c.pantoneCode===sc.pantoneCode;}))continue;
+    var payload=Object.assign({},sc,{status:'active',createdBy:session.name,createdAt:now,updatedAt:now,approvedBy:null,approvedAt:null});
+    var newId=prntId();
+    await setDoc(doc(db,'color_library',newId),payload).catch(function(){});
+    allColors.unshift(Object.assign({},payload,{_id:newId}));
+    added++;
+  }
+  showToast(added+' color'+(added!==1?'s':'')+' added.');
+  var mc=document.getElementById('main-content');
+  if(mc)mc.innerHTML=renderColorLibraryPage();
+};
+
+// ════════════════════════════════════════════
 // RECIPE DIRECTORY
 // ════════════════════════════════════════════
 
@@ -3680,16 +3879,86 @@ window._onPlTplChange=function(i){
   if(wkEn&&!wkEn.value)wkEn.placeholder=tpl.workerEn;
   if(wkUr&&!wkUr.value)wkUr.placeholder=tpl.workerUr;
 };
-function pantoneRowHTML(i,p={}){
+function pantoneRowHTML(i,p){
+  p=p||{};
   _ptIdx=Math.max(_ptIdx,i+1);
-  return`<div id="pt-row-${i}" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:8px;align-items:flex-end;margin-bottom:8px">
-    <div class="field"><label>Color Name</label><input placeholder="e.g. Dusty Rose" value="${p.colorName||''}"></div>
-    <div class="field"><label>Pantone Code</label><input placeholder="e.g. 706 C" value="${p.pantoneCode||''}"></div>
-    <div class="field"><label>Local Ink Name</label><input placeholder="e.g. Camlin Pink 01" value="${p.localInkName||''}"></div>
-    <div class="field"><label>Notes</label><input placeholder="mixing notes…" value="${p.notes||''}"></div>
-    <button type="button" onclick="document.getElementById('pt-row-${i}').remove()" style="background:none;border:none;color:#ccc;font-size:18px;cursor:pointer;padding:0 4px;margin-bottom:2px">×</button>
-  </div>`;
+  var isLegacy=!!(p.colorName&&!p.colorLibraryId);
+  var linked=p.colorLibraryId?allColors.find(function(c){return c._id===p.colorLibraryId;}):null;
+  var displayHex=(linked&&linked.hexApprox)||p.hexApprox||'#ddd';
+  var USAGE_OPTIONS=['front graphic','back print','outline','fill','highlight','shadow','text','logo','background','other'];
+  return'<div id="pt-row-'+i+'" style="background:#fafafa;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px">'+
+    '<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px">'+
+      '<div id="pt-swatch-'+i+'" style="width:36px;height:36px;border-radius:8px;background:'+displayHex+';border:1px solid rgba(0,0,0,.12);flex-shrink:0;margin-top:4px"></div>'+
+      '<div style="flex:1;min-width:0">'+
+        (isLegacy?'<div style="font-size:10px;color:var(--amber);font-weight:600;margin-bottom:4px">Legacy color — not linked to Color Library</div>':'')+
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
+          '<input id="pt-search-'+i+'" type="text" placeholder="Search color by name or Pantone code…"'+
+            ' value="'+(p.colorName||'')+'"'+
+            ' style="flex:1;min-width:160px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none"'+
+            ' oninput="window._ptSearch('+i+')"'+
+            ' onfocus="window._ptSearch('+i+')"'+
+            ' autocomplete="off">'+
+          '<button type="button" onclick="document.getElementById(\'pt-row-'+i+'\').remove()" style="background:none;border:none;color:#ccc;font-size:20px;cursor:pointer;padding:2px 4px;flex-shrink:0">×</button>'+
+        '</div>'+
+        '<div id="pt-dropdown-'+i+'" style="position:relative;z-index:100"></div>'+
+        '<input type="hidden" id="pt-lib-id-'+i+'" value="'+(p.colorLibraryId||'')+'">'+
+        '<input type="hidden" id="pt-hex-'+i+'" value="'+displayHex+'">'+
+        '<input type="hidden" id="pt-pantone-'+i+'" value="'+(p.pantoneCode||(linked&&linked.pantoneCode)||'')+'">'+
+        '<input type="hidden" id="pt-local-ink-'+i+'" value="'+(p.localInkName||(linked&&linked.localInkName)||'')+'">'+
+        '<input type="hidden" id="pt-ink-type-'+i+'" value="'+(p.inkType||(linked&&linked.inkType)||'')+'">'+
+      '</div>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      '<div class="field" style="margin-bottom:0"><label style="font-size:11px">Usage / استعمال</label>'+
+        '<select id="pt-usage-'+i+'" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;outline:none">'+
+          '<option value="">— select usage —</option>'+
+          USAGE_OPTIONS.map(function(u){return'<option value="'+u+'"'+(p.usage===u?' selected':'')+'>'+u+'</option>';}).join('')+
+        '</select>'+
+      '</div>'+
+      '<div class="field" style="margin-bottom:0"><label style="font-size:11px">Article Notes</label>'+
+        '<input id="pt-note-'+i+'" placeholder="e.g. Do not make too bright" value="'+(p.articleSpecificNotes||p.notes||'')+'" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;outline:none;width:100%">'+
+      '</div>'+
+    '</div>'+
+    (canManageRecipes()&&!p.colorLibraryId?'<div style="margin-top:6px"><button type="button" onclick="window.openColorModal(null)" style="font-size:11px;color:var(--red);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">+ Add new color to library</button></div>':'')+
+  '</div>';
 }
+window._ptSearch=function(i){
+  var q=((document.getElementById('pt-search-'+i)||{}).value||'').toLowerCase().trim();
+  var dd=document.getElementById('pt-dropdown-'+i);
+  if(!dd)return;
+  if(!q){dd.innerHTML='';return;}
+  var matches=allColors.filter(function(c){
+    return c.status!=='archived'&&(
+      c.colorName.toLowerCase().includes(q)||
+      (c.pantoneCode||'').toLowerCase().includes(q)||
+      (c.localInkName||'').toLowerCase().includes(q)
+    );
+  }).slice(0,8);
+  if(!matches.length){
+    dd.innerHTML='<div style="font-size:12px;color:var(--muted);padding:6px 0">No matches. '+(canManageRecipes()?'<button type="button" onclick="window.openColorModal(null)" style="color:var(--red);background:none;border:none;cursor:pointer;font-size:12px;text-decoration:underline">Add to library</button>':'')+'</div>';
+    return;
+  }
+  dd.innerHTML='<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.1);margin-top:4px;overflow:hidden">'+
+    matches.map(function(c){
+      return'<div onclick="window._ptSelectColor('+i+',\''+c._id+'\')" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid #f5f5f5" onmouseover="this.style.background=\'#f9f9f9\'" onmouseout="this.style.background=\'\'">'+
+        '<div style="width:24px;height:24px;border-radius:5px;background:'+(c.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div>'+
+        '<div><div style="font-size:13px;font-weight:600">'+c.colorName+'</div><div style="font-size:11px;color:var(--muted)">'+(c.pantoneCode||'')+(c.localInkName?' · '+c.localInkName:'')+'</div></div>'+
+      '</div>';
+    }).join('')+
+  '</div>';
+};
+window._ptSelectColor=function(i,colorId){
+  var c=allColors.find(function(x){return x._id===colorId;});
+  if(!c)return;
+  var s=document.getElementById('pt-search-'+i);if(s)s.value=c.colorName;
+  var l=document.getElementById('pt-lib-id-'+i);if(l)l.value=c._id;
+  var h=document.getElementById('pt-hex-'+i);if(h)h.value=c.hexApprox||'';
+  var pt=document.getElementById('pt-pantone-'+i);if(pt)pt.value=c.pantoneCode||'';
+  var li=document.getElementById('pt-local-ink-'+i);if(li)li.value=c.localInkName||'';
+  var it=document.getElementById('pt-ink-type-'+i);if(it)it.value=c.inkType||'';
+  var sw=document.getElementById('pt-swatch-'+i);if(sw)sw.style.background=c.hexApprox||'#ddd';
+  var dd=document.getElementById('pt-dropdown-'+i);if(dd)dd.innerHTML='';
+};
 window.addPlacementRow=function(){ document.getElementById('rc-placements')?.insertAdjacentHTML('beforeend',placementRowHTML(_plIdx)); _plIdx++; };
 window.addPantoneRow=function(){ document.getElementById('rc-pantones')?.insertAdjacentHTML('beforeend',pantoneRowHTML(_ptIdx)); _ptIdx++; };
 
@@ -3724,10 +3993,23 @@ function collectPlacements(){
   }).filter(p=>p.placementTemplateId);
 }
 function collectPantones(){
-  return Array.from(document.querySelectorAll('[id^="pt-row-"]')).map(row=>{
-    const inputs=row.querySelectorAll('input');
-    return{colorName:inputs[0]?.value||'',pantoneCode:inputs[1]?.value||'',localInkName:inputs[2]?.value||'',notes:inputs[3]?.value||''};
-  }).filter(p=>p.colorName);
+  return Array.from(document.querySelectorAll('[id^="pt-row-"]')).map(function(row){
+    var i=row.id.replace('pt-row-','');
+    var colorName=((document.getElementById('pt-search-'+i)||{}).value||'').trim();
+    var libId=(document.getElementById('pt-lib-id-'+i)||{}).value||'';
+    var lib=libId?allColors.find(function(c){return c._id===libId;}):null;
+    return{
+      colorLibraryId:libId,
+      colorName:colorName||(lib&&lib.colorName)||'',
+      pantoneCode:(document.getElementById('pt-pantone-'+i)||{}).value||(lib&&lib.pantoneCode)||'',
+      hexApprox:(document.getElementById('pt-hex-'+i)||{}).value||(lib&&lib.hexApprox)||'',
+      localInkName:(document.getElementById('pt-local-ink-'+i)||{}).value||(lib&&lib.localInkName)||'',
+      inkType:(document.getElementById('pt-ink-type-'+i)||{}).value||(lib&&lib.inkType)||'',
+      usage:(document.getElementById('pt-usage-'+i)||{}).value||'',
+      articleSpecificNotes:(document.getElementById('pt-note-'+i)||{}).value||'',
+      visibleToWorker:true
+    };
+  }).filter(function(p){return p.colorName;});
 }
 
 window.saveRecipe=async function(lock=false){
@@ -3904,11 +4186,9 @@ function renderRecipeDetailPage(){
     ${pt.placements.map((pl,i)=>_recPlacementHTML(pl,i)).join('')}
   </div>`:''}
 
-  ${(pt.pantones||[]).length?`<div class="card"><div class="card-title">Pantone / Ink Colors</div>
-    ${pt.pantones.map(p=>`<div class="info-row">
-      <span><strong>${p.colorName||'—'}</strong>${p.pantoneCode?` <span style="font-size:11px;color:var(--muted)">(${p.pantoneCode})</span>`:''}</span>
-      <span style="font-size:12px;color:var(--muted)">${p.localInkName||'—'}${p.notes?' · '+p.notes:''}</span>
-    </div>`).join('')}
+  ${(pt.pantones||[]).length?`<div class="card">
+    <div class="card-title">Colors / Ink (${pt.pantones.length})</div>
+    ${pt.pantones.map(p=>_ptDetailChipHTML(p)).join('')}
   </div>`:''}
 
   ${pt.instructionsEn||pt.instructionsUr?`<div class="card"><div class="card-title">Instructions / ہدایات</div>
@@ -4342,11 +4622,15 @@ function printWorkerCardHTML(j){
         <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:7px">
           <div style="font-size:13px;font-weight:700;margin-bottom:5px">${pl.name||'Placement'} <span style="font-size:11px;font-weight:500;color:var(--muted)">${pl.side?'· '+pl.side:''}</span></div>
           ${pl.artworkSize?`<div style="font-size:12px;color:var(--muted);margin-bottom:3px">Size: ${pl.artworkSize}</div>`:''}
-          ${pantones.length?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${pantones.map(p=>`<span style="font-size:11px;padding:2px 8px;background:#f0f0f0;border-radius:8px">${p.colorName||p.pantoneCode||'—'}</span>`).join('')}</div>`:''}
+          ${pantones.length?`<div style="margin-top:6px">${pantones.map(p=>'<div style="display:flex;align-items:center;gap:7px;padding:4px 0"><div style="width:18px;height:18px;border-radius:4px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div><span style="font-size:12px;font-weight:600">'+(p.colorName||'—')+'</span>'+(p.localInkName?'<span style="font-size:11px;color:var(--muted)">· '+p.localInkName+'</span>':'')+'</div>').join('')}</div>`:''}
         </div>`).join('')}
-      ${!placements.length&&pantones.length?`<div style="display:flex;gap:4px;flex-wrap:wrap">${pantones.map(p=>`<span style="font-size:11px;padding:2px 8px;background:#f0f0f0;border-radius:8px">${p.colorName||p.pantoneCode||'—'}</span>`).join('')}</div>`:''}
+      ${!placements.length&&pantones.length?`<div style="margin-top:4px">${pantones.map(p=>'<div style="display:flex;align-items:center;gap:7px;padding:4px 0"><div style="width:18px;height:18px;border-radius:4px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div><span style="font-size:12px;font-weight:600">'+(p.colorName||'—')+'</span>'+(p.localInkName?'<span style="font-size:11px;color:var(--muted)">· '+p.localInkName+'</span>':'')+'</div>').join('')}</div>`:''}
       ${recipe.printing?.instructionsUr?`<div style="margin-top:8px;font-size:14px;line-height:2;direction:rtl;text-align:right;color:var(--dark);background:#f9f9f9;padding:8px 10px;border-radius:8px">${recipe.printing.instructionsUr}</div>`:''}
       ${recipe.printing?.instructionsEn?`<div style="margin-top:6px;font-size:12px;color:var(--dark);line-height:1.6">${recipe.printing.instructionsEn}</div>`:''}
+      ${pantones.length?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #f0f0f0">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px">رنگ / Colors to Use</div>
+        ${pantones.map(p=>'<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#f9f9f9;border-radius:8px;margin-bottom:5px"><div style="width:28px;height:28px;border-radius:6px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.12);flex-shrink:0"></div><div><div style="font-size:13px;font-weight:700">'+(p.colorName||'—')+'</div><div style="font-size:11px;color:var(--muted)">'+(p.localInkName||p.pantoneCode||'')+'</div>'+(p.articleSpecificNotes||p.notes?'<div style="font-size:11px;color:var(--dark);font-style:italic">'+(p.articleSpecificNotes||p.notes)+'</div>':'')+'</div></div>').join('')}
+      </div>`:''}
     </div>`:'';
 
   // ── No recipe warning ──
@@ -5744,8 +6028,8 @@ window.printVendorJobCard=function(jobId){
   </div>`:''}
 
   ${(pt.pantones||[]).length?`<div class="section"><div class="section-title">Colors / Pantones</div>
-    <table><thead><tr><th>Color Name</th><th>Pantone Code</th><th>Local Ink</th><th>Notes</th></tr></thead>
-    <tbody>${pt.pantones.map(p=>`<tr><td>${p.colorName||'—'}</td><td>${p.pantoneCode||'—'}</td><td>${p.localInkName||'—'}</td><td>${p.notes||'—'}</td></tr>`).join('')}</tbody></table>
+    <table><thead><tr><th>Color Name</th><th>Pantone Code</th><th>Local Ink</th><th>Usage</th><th>Notes</th></tr></thead>
+    <tbody>${pt.pantones.map(p=>`<tr><td>${p.colorName||'—'}</td><td>${p.pantoneCode||'—'}</td><td>${p.localInkName||'—'}</td><td>${p.usage||'—'}</td><td>${p.articleSpecificNotes||p.notes||'—'}</td></tr>`).join('')}</tbody></table>
   </div>`:''}
 
   ${pt.instructionsEn?`<div class="section"><div class="section-title">Instructions</div><div style="font-size:13px;line-height:1.8">${pt.instructionsEn}</div>
