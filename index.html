@@ -1132,11 +1132,12 @@ function buildNav(){
     printSubItems.push({id:'recipe-directory',label:'Recipe Directory'});
     printSubItems.push({id:'printing-jobs',label:'Embellishment Jobs'});
     printSubItems.push({id:'observer-tower',label:'Observer Tower'});
+    if(canManageRecipes()||isQCWorker())printSubItems.push({id:'color-library',label:'Color Library'});
   }
 
   const mainNav=mainItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('');
   const storeOpen=currentPage.startsWith('store-')||isStore;
-  const printOpen=['recipe-directory','printing-jobs','observer-tower','recipe-create','recipe-detail','printing-job-detail','qc-report-page','billing-detail'].includes(currentPage)||currentPage.startsWith('recipe-')||currentPage.startsWith('printing-')||currentPage==='observer-tower';
+  const printOpen=['recipe-directory','printing-jobs','observer-tower','recipe-create','recipe-detail','printing-job-detail','qc-report-page','billing-detail','color-library'].includes(currentPage)||currentPage.startsWith('recipe-')||currentPage.startsWith('printing-')||currentPage==='observer-tower';
   const storeNav=storeSubItems.length?`
     <div class="nav-divider"></div>
     <div class="nav-item" id="nav-store-toggle" onclick="window.toggleStoreNav()" style="display:flex;justify-content:space-between;align-items:center">
@@ -1226,6 +1227,7 @@ function renderPage(id){
   else if(id==='observer-tower'){if(!printingDataLoaded)loadPrintingData().then(()=>m.innerHTML=renderObserverTower());else m.innerHTML=renderObserverTower();}
   else if(id==='qc-report-page')renderQCReportPage();
   else if(id==='billing-detail')renderBillingDetailPage();
+  else if(id==='color-library'){if(!printingDataLoaded)loadPrintingData().then(()=>m.innerHTML=renderColorLibraryPage());else m.innerHTML=renderColorLibraryPage();}
 }
 
 // ── Dashboard — extended in Chunk 5 with printing KPI strip ──
@@ -3315,6 +3317,7 @@ window._printNavOpen=function(){};
 
 // ── Module state ──────────────────────────────────────────────────────
 let allRecipes=[], allPrintingJobs=[], allQCReports=[], allPrintBilling=[], allSLAEvents=[], allCommNotes=[];
+let allColors=[], colorLibLoaded=false;
 let _poEmbellishment=null; // set during PO create when recipe is detected
 let printingDataLoaded=false;
 let viewingRecipe=null, viewingPrintJob=null, viewingQCReport=null;
@@ -3344,6 +3347,18 @@ const PROCESS_TYPES={
   sublimation: {label:'Sublimation',          icon:'🔥', dept:'external'},
   embroidery:  {label:'Embroidery',           icon:'🪡', dept:'external'}
 };
+const GROOVY_SEED_COLORS=[
+  {id:'clr-001',colorName:'Brown',pantoneCode:'PANTONE 438 C',hexApprox:'#5C3317',localInkName:'Camlin Brown 01',inkType:'rubber',supplierName:'Camlin',mixingNotes:''},
+  {id:'clr-002',colorName:'Brown 2',pantoneCode:'PANTONE 7615 C',hexApprox:'#7A4020',localInkName:'Camlin Brown 02',inkType:'rubber',supplierName:'Camlin',mixingNotes:'Slightly warmer tone'},
+  {id:'clr-003',colorName:'Cool Grey',pantoneCode:'PANTONE Cool Grey 1 C',hexApprox:'#BBBCBD',localInkName:'Camlin Grey 01',inkType:'rubber',supplierName:'Camlin',mixingNotes:''},
+  {id:'clr-004',colorName:'Deep Red Orange',pantoneCode:'PANTONE 7620 C',hexApprox:'#C0392B',localInkName:'Camlin Red-Orange',inkType:'rubber',supplierName:'Camlin',mixingNotes:'Mix red + orange 3:1'},
+  {id:'clr-005',colorName:'Orange',pantoneCode:'PANTONE 172 C',hexApprox:'#F4623A',localInkName:'Camlin Orange 01',inkType:'rubber',supplierName:'Camlin',mixingNotes:''},
+  {id:'clr-006',colorName:'Orange 2',pantoneCode:'PANTONE 1575 C',hexApprox:'#F7965A',localInkName:'Camlin Orange 02',inkType:'rubber',supplierName:'Camlin',mixingNotes:'Lighter, peachy orange'},
+  {id:'clr-007',colorName:'Navy Blue',pantoneCode:'PANTONE 289 C',hexApprox:'#1B2A4A',localInkName:'Camlin Navy 01',inkType:'rubber',supplierName:'Camlin',mixingNotes:''},
+  {id:'clr-008',colorName:'White',pantoneCode:'PANTONE 11-0601 TCX',hexApprox:'#FFFFFF',localInkName:'Camlin White',inkType:'rubber',supplierName:'Camlin',mixingNotes:'Use opaque base'},
+  {id:'clr-009',colorName:'Black',pantoneCode:'PANTONE Black C',hexApprox:'#2B2B2B',localInkName:'Camlin Black',inkType:'rubber',supplierName:'Camlin',mixingNotes:''},
+  {id:'clr-010',colorName:'Forest Green',pantoneCode:'PANTONE 357 C',hexApprox:'#215732',localInkName:'Camlin Green 01',inkType:'rubber',supplierName:'Camlin',mixingNotes:''}
+];
 const TIER_INFO={
   1:{label:'Tier 1 — Basic',        css:'tier-1', desc:'1 color, 1 placement, low risk'},
   2:{label:'Tier 2 — Standard',     css:'tier-2', desc:'2–3 colors, single-sided'},
@@ -3400,13 +3415,14 @@ const DEFECT_CATS=[
 async function loadPrintingData(){
   if(printingDataLoaded)return;
   try{
-    const[recSnap,jobSnap,qcSnap,bilSnap,slaSnap,comSnap]=await Promise.all([
+    const[recSnap,jobSnap,qcSnap,bilSnap,slaSnap,comSnap,clrSnap]=await Promise.all([
       getDocs(query(collection(db,'article_recipes'),orderBy('createdAt','desc'))).catch(()=>({docs:[]})),
       getDocs(query(collection(db,'printing_jobs'),orderBy('createdAt','desc'))).catch(()=>({docs:[]})),
       getDocs(query(collection(db,'qc_reports'),orderBy('createdAt','desc'))).catch(()=>({docs:[]})),
       getDocs(query(collection(db,'printing_billing'),orderBy('createdAt','desc'))).catch(()=>({docs:[]})),
       getDocs(query(collection(db,'sla_events'),orderBy('startAt','desc'))).catch(()=>({docs:[]})),
-      getDocs(query(collection(db,'communication_notes'),orderBy('createdAt','desc'))).catch(()=>({docs:[]}))
+      getDocs(query(collection(db,'communication_notes'),orderBy('createdAt','desc'))).catch(()=>({docs:[]})),
+      getDocs(query(collection(db,'color_library'),orderBy('createdAt','desc'))).catch(()=>({docs:[]}))
     ]);
     allRecipes       = recSnap.docs.map(d=>({...d.data(),_id:d.id}));
     allPrintingJobs  = jobSnap.docs.map(d=>({...d.data(),_id:d.id}));
@@ -3414,6 +3430,8 @@ async function loadPrintingData(){
     allPrintBilling  = bilSnap.docs.map(d=>({...d.data(),_id:d.id}));
     allSLAEvents     = slaSnap.docs.map(d=>({...d.data(),_id:d.id}));
     allCommNotes     = comSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    allColors        = clrSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    colorLibLoaded=true;
     printingDataLoaded=true;
   }catch(e){ showToast('Printing data load error: '+e.message,true); }
 }
