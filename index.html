@@ -957,37 +957,64 @@ async function startApp(){
 
 function buildNav(){
   const isOwner=session.role==='owner',canPO=session.canPO,isWorker=session.role==='worker',isViewer=session.role==='viewer',isStore=session.role==='store';
-  const items=[];
-  if(!isWorker&&!isStore)items.push({id:'dashboard',label:'Dashboard'});
-  if(canPO)items.push({id:'po-create',label:'New PO'});
-  if(!isWorker&&!isStore)items.push({id:'po-registry',label:'PO Registry'});
-  if(isWorker||isViewer)items.push({id:'my-work',label:'My Work'});
-  if(!isStore)items.push({id:'gatepass',label:'Gate Pass'});
-  if(isOwner)items.push({id:'activity',label:'Activity Log'});
-  if(isOwner)items.push({id:'users',label:'Users'});
-  // ── Store section ──
+  const om=isOwner||session.role==='manager';
+  const mainItems=[];
+  if(!isWorker&&!isStore)mainItems.push({id:'dashboard',label:'Dashboard'});
+  if(canPO)mainItems.push({id:'po-create',label:'New PO'});
+  if(!isWorker&&!isStore)mainItems.push({id:'po-registry',label:'PO Registry'});
+  if(isWorker||isViewer)mainItems.push({id:'my-work',label:'My Work'});
+  if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
+  if(isOwner)mainItems.push({id:'activity',label:'Activity Log'});
+  if(isOwner)mainItems.push({id:'users',label:'Users'});
+
+  const storeSubItems=[];
   if(!isWorker){
-    items.push({id:'store-dashboard',label:'Store'});
-    if(isOwner||session.role==='manager'){
-      items.push({id:'store-inventory',label:'Inventory'});
-    }
-    items.push({id:'store-receive',label:'Receive Stock'});
-    items.push({id:'store-issue',label:'Issue Stock'});
-    items.push({id:'store-log',label:'Stock Log'});
-    if(isOwner||session.role==='manager'){
-      items.push({id:'store-templates',label:'Trim Templates'});
-    }
+    storeSubItems.push({id:'store-dashboard',label:'Dashboard'});
+    if(om)storeSubItems.push({id:'store-inventory',label:'Inventory'});
+    storeSubItems.push({id:'store-receive',label:'Receive Stock'});
+    storeSubItems.push({id:'store-issue',label:'Issue Stock'});
+    storeSubItems.push({id:'store-log',label:'Stock Log'});
+    if(om)storeSubItems.push({id:'store-templates',label:'Trim Templates'});
   }
-  const nav=items.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('');
-  document.getElementById('sidebar').innerHTML=nav;
-  document.getElementById('mob-nav').innerHTML=items.slice(0,5).map(i=>`<div class="mob-nav-item" id="mobnav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('');
+
+  const mainNav=mainItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('');
+  const storeOpen=currentPage.startsWith('store-')||isStore;
+  const storeNav=storeSubItems.length?`
+    <div class="nav-divider"></div>
+    <div class="nav-item" id="nav-store-toggle" onclick="window.toggleStoreNav()" style="display:flex;justify-content:space-between;align-items:center">
+      <span>Store</span><span id="store-nav-arrow" style="font-size:10px;transition:transform .2s">${storeOpen?'▾':'▸'}</span>
+    </div>
+    <div id="store-subnav" style="overflow:hidden;transition:max-height .2s;max-height:${storeOpen?'300px':'0'}">
+      ${storeSubItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:22px;font-size:12px">${i.label}</div>`).join('')}
+    </div>`:'';
+
+  document.getElementById('sidebar').innerHTML=mainNav+storeNav;
+  // Mobile: show main items + Store shortcut
+  const mobMain=isStore?storeSubItems:mainItems;
+  document.getElementById('mob-nav').innerHTML=mobMain.slice(0,4).map(i=>`<div class="mob-nav-item" id="mobnav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('')
+    +(storeSubItems.length&&!isStore?`<div class="mob-nav-item" onclick="window.showPage('store-dashboard')">Store</div>`:'');
 }
+
+window.toggleStoreNav=function(){
+  const sub=document.getElementById('store-subnav');
+  const arrow=document.getElementById('store-nav-arrow');
+  if(!sub)return;
+  const open=sub.style.maxHeight!=='0px'&&sub.style.maxHeight!=='0';
+  sub.style.maxHeight=open?'0':'300px';
+  if(arrow)arrow.textContent=open?'▸':'▾';
+};
 
 window.showPage=async function(id){
   currentPage=id;
   document.querySelectorAll('.nav-item,.mob-nav-item').forEach(n=>n.classList.remove('on'));
   document.getElementById('nav-'+id)?.classList.add('on');
   document.getElementById('mobnav-'+id)?.classList.add('on');
+  // Auto-open store dropdown when navigating to a store page
+  if(id.startsWith('store-')){
+    const sub=document.getElementById('store-subnav');
+    const arrow=document.getElementById('store-nav-arrow');
+    if(sub&&sub.style.maxHeight==='0px'){sub.style.maxHeight='300px';if(arrow)arrow.textContent='▾';}
+  }
   // Lazy-load store data on first store page visit
   if(id.startsWith('store-')&&!allItems.length){await loadStoreData();}
   renderPage(id);
