@@ -3863,28 +3863,28 @@ function placementRowHTML(i,pl={}){
         ${PLACEMENT_TEMPLATES.map(t=>`<option value="${t.id}" ${tplId===t.id?'selected':''}>${t.nameEn} / ${t.nameUr}</option>`).join('')}
       </select>
     </div>
-    <div style="display:flex;gap:8px;align-items:flex-end;margin-top:8px">
-      <div class="field" style="margin-bottom:0;flex:1">
+    <div style="display:grid;grid-template-columns:1fr 130px;gap:10px;align-items:end;margin-top:8px">
+      <div class="field" style="margin-bottom:0">
         <label>Measurement / Position</label>
         <input id="pl-${i}-mtext" placeholder="Add measurement here" value="${measText}" style="width:100%">
         <div style="font-size:11px;color:var(--muted);margin-top:3px">مثلاً HPS سے 3 انچ نیچے</div>
       </div>
-      <div style="flex-shrink:0;width:100px;padding-bottom:0">
-        <label style="font-size:12px;font-weight:500;color:var(--muted);display:block;margin-bottom:4px">Unit</label>
-        <select id="pl-${i}-munit" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;width:100%;height:40px">
+      <div class="field" style="margin-bottom:0">
+        <label>Unit</label>
+        <select id="pl-${i}-munit" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;width:100%">
           <option value="inch" ${mUnit==='inch'?'selected':''}>inch</option>
           <option value="cm" ${mUnit==='cm'?'selected':''}>cm</option>
         </select>
       </div>
     </div>
-    <div style="display:flex;gap:8px;align-items:flex-end;margin-top:8px">
-      <div class="field" style="margin-bottom:0;flex:1">
+    <div style="display:grid;grid-template-columns:1fr 130px;gap:10px;align-items:end;margin-top:8px">
+      <div class="field" style="margin-bottom:0">
         <label>Tolerance</label>
         <input id="pl-${i}-tol" placeholder="e.g. ±0.5" value="${tolText}" style="width:100%">
       </div>
-      <div style="flex-shrink:0;width:100px;padding-bottom:0">
-        <label style="font-size:12px;font-weight:500;color:var(--muted);display:block;margin-bottom:4px">Unit</label>
-        <select id="pl-${i}-tolunit" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;width:100%;height:40px">
+      <div class="field" style="margin-bottom:0">
+        <label>Unit</label>
+        <select id="pl-${i}-tolunit" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;width:100%">
           <option value="inch" ${tolUnit==='inch'?'selected':''}>inch</option>
           <option value="cm" ${tolUnit==='cm'?'selected':''}>cm</option>
         </select>
@@ -4005,13 +4005,7 @@ function pantoneRowHTML(i,p={}){
         '<input type="hidden" id="pt-ink-type-'+i+'" value="'+(p.inkType||(linked&&linked.inkType)||'')+'">'+
       '</div>'+
     '</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
-      '<div class="field" style="margin-bottom:0"><label style="font-size:11px">Usage / استعمال</label>'+
-        '<select id="pt-usage-'+i+'" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;outline:none">'+
-          '<option value="">— select usage —</option>'+
-          USAGE_OPTIONS.map(function(u){return'<option value="'+u+'"'+(p.usage===u?' selected':'')+'>'+u+'</option>';}).join('')+
-        '</select>'+
-      '</div>'+
+    '<div style="margin-top:6px">'+
       '<div class="field" style="margin-bottom:0"><label style="font-size:11px">Article Notes</label>'+
         '<input id="pt-note-'+i+'" placeholder="e.g. Do not make too bright" value="'+(p.articleSpecificNotes||p.notes||'')+'" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;outline:none;width:100%">'+
       '</div>'+
