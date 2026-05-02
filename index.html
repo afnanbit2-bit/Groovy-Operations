@@ -128,8 +128,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
   .stats-row{grid-template-columns:1fr 1fr}
   .form-grid{grid-template-columns:1fr}
   .app-body{flex-direction:column}
-  #main-content{padding:12px;padding-bottom:80px}
-  #mob-nav{display:flex !important}
+  #main-content{padding:12px;padding-bottom:84px}
+  body{padding-bottom:0}
+  #mob-nav{display:grid !important;grid-template-columns:repeat(5,1fr)}
+  #mob-nav.cols-3{grid-template-columns:repeat(3,1fr) !important}
   .job-board{grid-template-columns:1fr}
   .item-grid{grid-template-columns:1fr 1fr}
   .kpi-grid{grid-template-columns:repeat(3,1fr)}
@@ -148,10 +150,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 @media(max-width:400px){
   .topbar-name{font-size:11px}
 }
-#mob-nav{display:none;background:var(--surface);border-top:1px solid var(--border);position:fixed;bottom:0;left:0;right:0;z-index:100;padding:6px 0;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-wrap:nowrap}
-#mob-nav::-webkit-scrollbar{display:none}
+#mob-nav{display:none;background:var(--surface);border-top:1px solid var(--border);position:fixed;bottom:0;left:0;right:0;z-index:100;padding:8px 0 12px}
 .mob-nav-item{flex:0 0 auto;min-width:72px;display:flex;flex-direction:column;align-items:center;padding:8px 12px;font-size:10px;color:var(--muted);cursor:pointer;font-weight:500;gap:2px;min-height:44px;justify-content:center;white-space:nowrap}
 .mob-nav-item.on{color:var(--red)}
+.mob-nav-btn{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 4px;background:none;border:none;color:#6B7280;font-size:10px;font-weight:500;font-family:inherit;cursor:pointer;min-height:44px;justify-content:center}
+.mob-nav-btn .icon{font-size:20px;line-height:1;transition:transform .2s}
+.mob-nav-btn.active{color:#1A1A2E}
+.mob-nav-btn.active .icon{transform:scale(1.1)}
+.mob-nav-btn:active{opacity:.6}
+.mob-sheet-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:998;opacity:0;pointer-events:none;transition:opacity .2s}
+.mob-sheet-backdrop.open{opacity:1;pointer-events:auto}
+.mob-sheet{position:fixed;bottom:0;left:0;right:0;background:#fff;border-radius:20px 20px 0 0;z-index:999;transform:translateY(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);padding:12px 0 max(30px,env(safe-area-inset-bottom));max-height:75vh;overflow-y:auto;box-shadow:0 -8px 32px rgba(0,0,0,.18)}
+.mob-sheet.open{transform:translateY(0)}
+.mob-sheet-handle{width:40px;height:4px;background:#E5E5E7;border-radius:2px;margin:0 auto 14px}
+.mob-sheet-title{font-size:13px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:.05em;padding:0 20px 12px}
+.mob-sheet-item{display:flex;align-items:center;gap:14px;padding:14px 20px;font-size:15px;font-weight:500;border-bottom:1px solid #F3F4F6;cursor:pointer;color:var(--text);font-family:inherit;width:100%;background:none;border-left:none;border-right:none;border-top:none;text-align:left}
+.mob-sheet-item:last-child{border-bottom:none}
+.mob-sheet-item:active{background:#F9FAFB}
+.mob-sheet-item .icon{font-size:18px;width:24px;text-align:center;flex-shrink:0}
+.mob-sheet-item.active{color:#1A1A2E;background:#F4F4F4;font-weight:600}
 /* ── Store: nav divider ── */
 .nav-divider{height:1px;background:var(--border);margin:8px 4px}
 /* ── Store: buttons ── */
@@ -388,6 +405,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
     <div id="main-content"></div>
   </div>
   <div id="mob-nav"></div>
+</div>
+
+<div class="mob-sheet-backdrop" id="mob-sheet-backdrop" onclick="window.closeMobSheet()"></div>
+<div class="mob-sheet" id="mob-sheet" role="dialog" aria-modal="true">
+  <div class="mob-sheet-handle"></div>
+  <div class="mob-sheet-title" id="mob-sheet-title"></div>
+  <div id="mob-sheet-items"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -1491,12 +1515,67 @@ function buildNav(){
     </div>`:'';
 
   document.getElementById('sidebar').innerHTML=mainNav+printNav+storeNav+hrmNav;
-  // Mobile: show main items + embellishment items + Store shortcut (horizontally scrollable)
-  const mobMain=isStore?storeSubItems:mainItems;
-  const mobPrint=(!isStore&&printItems.length)?printItems.map(i=>`<div class="mob-nav-item" id="mobnav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join(''):'';
-  document.getElementById('mob-nav').innerHTML=mobMain.map(i=>`<div class="mob-nav-item" id="mobnav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('')
-    +mobPrint
-    +(storeSubItems.length&&!isStore?`<div class="mob-nav-item" onclick="window.showPage('store-dashboard')">Store</div>`:'');
+  // ── Mobile bottom nav: 5-button "More" pattern (3 buttons for workers) ──
+  _renderMobNav({isOwner,isWorker,isViewer,isStore,om,canPO,printItems,storeSubItems,hrmSubItems,mainItems});
+}
+
+function _mobNavBtn(id,icon,label,onclick){
+  return`<button class="mob-nav-btn" id="mobnav-${id}" data-mob-id="${id}" onclick="${onclick}"><span class="icon">${icon}</span><span>${label}</span></button>`;
+}
+
+function _renderMobNav(ctx){
+  const{isOwner,isWorker,isViewer,isStore,om,canPO}=ctx;
+  const mob=document.getElementById('mob-nav');
+  if(!mob)return;
+  let html='',cols=5;
+
+  if(isWorker||isViewer){
+    // Workers/viewers: 3-button nav
+    cols=3;
+    html=_mobNavBtn('my-work','🏠','My Work',"window.showPage('my-work')")
+        +_mobNavBtn('gatepass','🚪','Gate Pass',"window.showPage('gatepass')")
+        +_mobNavBtn('me','👤','Me',"window.showPage('me')");
+  } else if(isStore){
+    // Store role (Raees): 5-button store-focused
+    cols=5;
+    html=_mobNavBtn('store-dashboard','🏠','Home',"window.showPage('store-dashboard')")
+        +_mobNavBtn('store-inventory','📦','Inventory',"window.showPage('store-inventory')")
+        +_mobNavBtn('store-receive','➕','Receive',"window.showPage('store-receive')")
+        +_mobNavBtn('store-issue','📋','Issue',"window.showPage('store-issue')")
+        +_mobNavBtn('more','⋯','More','window.openStoreMoreSheet()');
+  } else {
+    // Owner / Manager: 5-button with More pattern
+    cols=5;
+    html=_mobNavBtn('dashboard','🏠','Home',"window.showPage('dashboard')")
+        +_mobNavBtn('po','📋','PO','window.openPOSheet()')
+        +_mobNavBtn('gatepass','🚪','Gate Pass',"window.showPage('gatepass')")
+        +(om?_mobNavBtn('hrm','👥','HRM','window.openHRMSheet()'):'')
+        +_mobNavBtn('more','⋯','More','window.openMoreSheet()');
+  }
+  mob.className=cols===3?'cols-3':'';
+  mob.innerHTML=html;
+  _updateMobNavActive(currentPage);
+}
+
+function _updateMobNavActive(pageId){
+  document.querySelectorAll('#mob-nav .mob-nav-btn').forEach(b=>b.classList.remove('active'));
+  // Direct page → button mapping
+  const direct=document.querySelector(`#mob-nav [data-mob-id="${pageId}"]`);
+  if(direct){direct.classList.add('active');return;}
+  // Group mappings (page belongs to a sheet group)
+  const groups={
+    'po-create':'po','po-registry':'po','po-detail':'po','stage-work':'po',
+    'attendance':'hrm','hrm-employees':'hrm','hrm-payroll':'hrm','hrm-advances':'hrm','hrm-policy':'hrm',
+    'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
+    'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-templates':'more',
+    'activity':'more','users':'more',
+    'my-work':'my-work'
+  };
+  const grp=groups[pageId];
+  if(grp){
+    const btn=document.querySelector(`#mob-nav [data-mob-id="${grp}"]`);
+    if(btn)btn.classList.add('active');
+  }
 }
 
 window.toggleStoreNav=function(){
@@ -1524,11 +1603,101 @@ window.toggleHRMNav=function(){
   if(arrow)arrow.textContent=open?'▸':'▾';
 };
 
+// ── Mobile bottom-sheet menu ──
+window.openMobSheet=function(title,items){
+  const sheet=document.getElementById('mob-sheet');
+  const back=document.getElementById('mob-sheet-backdrop');
+  const titleEl=document.getElementById('mob-sheet-title');
+  const itemsEl=document.getElementById('mob-sheet-items');
+  if(!sheet||!back||!itemsEl)return;
+  titleEl.textContent=title||'';
+  titleEl.style.display=title?'block':'none';
+  itemsEl.innerHTML=items.map(it=>{
+    const active=it.pageId&&currentPage===it.pageId?' active':'';
+    const handler=it.onClick?it.onClick:`window.showPage('${it.pageId}');window.closeMobSheet()`;
+    return`<button class="mob-sheet-item${active}" onclick="${handler}"><span class="icon">${it.icon||''}</span><span>${it.label}</span></button>`;
+  }).join('');
+  // Force reflow for transition
+  back.classList.add('open');
+  requestAnimationFrame(()=>sheet.classList.add('open'));
+};
+window.closeMobSheet=function(){
+  const sheet=document.getElementById('mob-sheet');
+  const back=document.getElementById('mob-sheet-backdrop');
+  if(sheet)sheet.classList.remove('open');
+  if(back)back.classList.remove('open');
+};
+// Close sheet on Escape
+document.addEventListener('keydown',e=>{ if(e.key==='Escape')window.closeMobSheet(); });
+// Swipe-down on handle to dismiss
+(function(){
+  let startY=null;
+  document.addEventListener('touchstart',e=>{
+    if(!e.target.classList||!e.target.classList.contains('mob-sheet-handle'))return;
+    startY=e.touches[0].clientY;
+  },{passive:true});
+  document.addEventListener('touchend',e=>{
+    if(startY==null)return;
+    const endY=(e.changedTouches&&e.changedTouches[0]?.clientY)||startY;
+    if(endY-startY>40)window.closeMobSheet();
+    startY=null;
+  });
+})();
+
+window.openPOSheet=function(){
+  const items=[];
+  if(session.canPO)items.push({icon:'➕',label:'New PO',pageId:'po-create'});
+  items.push({icon:'📋',label:'PO Registry',pageId:'po-registry'});
+  window.openMobSheet('Production Orders',items);
+};
+
+window.openHRMSheet=function(){
+  const isOM=session&&['owner','manager'].includes(session.role);
+  if(!isOM)return;
+  const items=[
+    {icon:'🕒',label:'Attendance',pageId:'attendance'},
+    {icon:'👥',label:'Employees',pageId:'hrm-employees'},
+    {icon:'💰',label:'Payroll',pageId:'hrm-payroll'},
+    {icon:'📋',label:'Advances',pageId:'hrm-advances'},
+    {icon:'⚙️',label:'Policy Engine',pageId:'hrm-policy'}
+  ];
+  window.openMobSheet('HRM',items);
+};
+
+window.openMoreSheet=function(){
+  const isOwner=session.role==='owner';
+  const om=isOwner||session.role==='manager';
+  const items=[];
+  if(session.canPO)items.push({icon:'➕',label:'New PO',pageId:'po-create'});
+  items.push({icon:'📋',label:'PO Registry',pageId:'po-registry'});
+  // Embellishments dept items (visible to owners/managers + relevant workers)
+  if(om||session.u==='ammar'||session.u==='haris')items.push({icon:'🎨',label:'Recipe Directory',pageId:'recipe-directory'});
+  if(om||['asghar','zohaib','waqas','haris'].includes(session.u))items.push({icon:'🖨',label:'Embellishment Jobs',pageId:'printing-jobs'});
+  if(om)items.push({icon:'🗼',label:'Observer Tower',pageId:'observer-tower'});
+  if(typeof canManageRecipes==='function'&&(canManageRecipes()||(typeof isQCWorker==='function'&&isQCWorker())))items.push({icon:'🎨',label:'Color Library',pageId:'color-library'});
+  // Store
+  items.push({icon:'🏬',label:'Store',pageId:'store-dashboard'});
+  // Owner-only
+  if(isOwner)items.push({icon:'📜',label:'Activity Log',pageId:'activity'});
+  if(isOwner)items.push({icon:'👤',label:'Users',pageId:'users'});
+  window.openMobSheet('More',items);
+};
+
+window.openStoreMoreSheet=function(){
+  const items=[
+    {icon:'📐',label:'Trim Templates',pageId:'store-templates'},
+    {icon:'📒',label:'Stock Log',pageId:'store-log'}
+  ];
+  window.openMobSheet('More',items);
+};
+
 window.showPage=async function(id){
   currentPage=id;
   document.querySelectorAll('.nav-item,.mob-nav-item').forEach(n=>n.classList.remove('on'));
   document.getElementById('nav-'+id)?.classList.add('on');
   document.getElementById('mobnav-'+id)?.classList.add('on');
+  if(typeof _updateMobNavActive==='function')_updateMobNavActive(id);
+  if(typeof closeMobSheet==='function')window.closeMobSheet();
   // Auto-open dropdowns when navigating to sub-pages
   if(id.startsWith('store-')){
     const sub=document.getElementById('store-subnav');
@@ -1551,6 +1720,7 @@ function renderPage(id){
   else if(id==='po-create')m.innerHTML=renderPOCreate();
   else if(id==='po-registry')m.innerHTML=renderRegistry();
   else if(id==='my-work'){m.innerHTML=renderMyWork(); if(typeof _populateWorkerHRMWidget==='function')setTimeout(_populateWorkerHRMWidget,0);}
+  else if(id==='me'){m.innerHTML=renderMePage(); if(typeof _populateWorkerHRMWidget==='function')setTimeout(_populateWorkerHRMWidget,0);}
   else if(id==='gatepass'){gpPage=1;m.innerHTML=renderGatePass();window.switchGPTab(gpActiveTab||'outward');}
   else if(id==='activity'){loadActivity();return;}
   else if(id==='users')m.innerHTML=renderUsers();
@@ -7255,6 +7425,17 @@ function _hrmEstSalary(emp,monthSummary){
 function renderHRMStub(title,msg){
   return`<div class="page-head"><div class="page-title">${title}</div><div class="page-sub">HRM module</div></div>
   <div class="card" style="text-align:center;padding:36px 18px"><div style="font-size:36px;margin-bottom:10px">🛠</div><div style="font-weight:700;margin-bottom:6px">${title}</div><div style="color:var(--muted);font-size:13px;max-width:480px;margin:0 auto">${msg}</div></div>`;
+}
+
+function renderMePage(){
+  // Personal page for workers — attendance widget + quick links
+  if(!session)return'<div class="empty">Not logged in.</div>';
+  const widget=typeof renderWorkerHRMWidget==='function'?renderWorkerHRMWidget():'';
+  const sublink=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+    <button class="btn-outline" onclick="window.showPage('my-work')" style="font-size:12px">← My Work</button>
+    <button class="btn-outline" onclick="window.showPage('gatepass')" style="font-size:12px">Gate Pass</button>
+  </div>`;
+  return widget+sublink;
 }
 
 function renderHRMDashboardWidget(){
