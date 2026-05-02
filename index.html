@@ -257,6 +257,74 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .brand-wordmark{height:24px;width:auto;max-width:210px;object-fit:contain;display:block}
 .brand-fallback{display:none;font-weight:800;font-size:15px;letter-spacing:0.08em;color:#000;text-transform:uppercase;white-space:nowrap}
 @media(max-width:600px){.topbar{height:48px;min-height:48px;padding:0 10px}.brand-strip{height:48px;max-width:190px}.brand-wordmark{height:20px;max-width:170px}.brand-fallback{font-size:13px}}
+/* ── HRM / Paygrade Dashboard ─────────────────────────────────── */
+.paygrade-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.05em}
+.paygrade-badge.p1{background:#F0F0F0;color:#555}
+.paygrade-badge.p2{background:#E6F1FB;color:#185FA5}
+.paygrade-badge.p3{background:#EAF3DE;color:#3B6D11}
+.paygrade-badge.p4{background:#FAEEDA;color:#854F0B}
+.paygrade-badge.p5{background:#1A1A2E;color:#fff}
+.hrm-greeting{padding:20px;background:linear-gradient(135deg,#1A1A2E 0%,#2D2D4E 100%);border-radius:12px;margin-bottom:16px;color:white;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.hrm-greeting .greeting-left{min-width:0}
+.hrm-greeting .greeting-name{font-size:22px;font-weight:600;line-height:1.2}
+.hrm-greeting .greeting-sub{font-size:13px;opacity:0.75;margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hrm-greeting .greeting-time{font-size:13px;opacity:0.8;font-variant-numeric:tabular-nums}
+.hrm-attendance-card,.hrm-month-card{margin-bottom:12px}
+.hrm-attendance-card .card-title,.hrm-month-card .card-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px}
+.att-status{display:flex;align-items:center;gap:10px;font-size:14px;margin-bottom:8px}
+.att-status.in-yes{color:#0F6E56}
+.att-status.in-no{color:#854F0B}
+.att-hours{font-size:13px;color:var(--muted)}
+.salary-preview{margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);font-size:13px;color:var(--text)}
+.advance-row{margin-top:6px;font-size:12px;color:var(--muted)}
+.advance-row .text-red{color:#dc2626;font-weight:700}
+.owner-kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.kpi-card{background:white;border-radius:12px;padding:16px;text-align:center;border:1px solid var(--border)}
+.kpi-card.amber{background:#FFFBEF}
+.kpi-card.red{background:#FEF4F4}
+.kpi-num{font-size:28px;font-weight:700;color:#1A1A2E}
+.kpi-label{font-size:11px;color:#6B7280;margin-top:4px}
+.kpi-icon{font-size:20px;margin-bottom:6px}
+.mgr-stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+.stat-card.mgr{padding:14px}
+.stat-card .stat-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.stat-card .stat-big{font-size:24px;font-weight:700;color:#1A1A2E;margin-top:4px}
+.stat-card .stat-big.green{color:#0F6E56}
+.stat-card .stat-sub{font-size:11px;color:var(--muted);margin-top:4px}
+.month-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
+.month-stat{text-align:center;padding:10px;border-radius:8px}
+.month-stat.green{background:#EAF3DE}
+.month-stat.amber{background:#FAEEDA}
+.month-stat.red{background:#FCEBEB}
+.month-stat .stat-num{font-size:24px;font-weight:700}
+.month-stat .stat-label{font-size:10px;margin-top:2px;color:#6B7280}
+.pulse-dot{width:10px;height:10px;border-radius:50%;background:#1D9E75;display:inline-block;animation:pulse 1.5s infinite}
+@keyframes pulse{0%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(1.4)}100%{opacity:1;transform:scale(1)}}
+.emp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.emp-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px}
+.emp-card .emp-row{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.emp-card .emp-name{font-weight:700;font-size:14px;color:var(--text)}
+.emp-card .emp-desg{font-size:12px;color:var(--muted)}
+.emp-card .emp-meta{font-size:11px;color:var(--muted);line-height:1.6}
+.emp-card .emp-actions{display:flex;gap:6px;margin-top:6px}
+.emp-card .emp-actions button{font-size:11px;padding:5px 10px}
+.hrm-modal-back{position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1500;display:flex;align-items:flex-start;justify-content:center;padding:32px 12px;overflow-y:auto}
+.hrm-modal{background:#fff;border-radius:14px;max-width:720px;width:100%;padding:22px;box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.hrm-modal h3{margin:0 0 4px 0;font-size:18px}
+.hrm-modal .sub{color:var(--muted);font-size:12px;margin-bottom:14px}
+.hrm-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.hrm-section-title{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:14px 0 6px 0;font-weight:700}
+.hrm-kv{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #eee;font-size:13px}
+.hrm-kv .k{color:var(--muted)}
+.hrm-kv .v{font-weight:600}
+.inc-log-row{padding:8px 10px;background:#fafafa;border:1px solid var(--border);border-radius:8px;font-size:12px;margin-bottom:6px}
+@media (max-width:600px){
+  .owner-kpi-strip{grid-template-columns:repeat(2,1fr)}
+  .mgr-stats-row{grid-template-columns:1fr}
+  .month-grid{grid-template-columns:repeat(3,1fr)}
+  .greeting-name{font-size:18px}
+  .hrm-grid-2{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
@@ -321,12 +389,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import{getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,runTransaction,writeBatch}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import{getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import{getDatabase,ref as rtdbRef,get as rtdbGet,child as rtdbChild}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 
 const CFG={apiKey:'AIzaSyAcIrudpSPLbZMmoWMyTM1l8Z7GnxwelFw',authDomain:'groovy-gatepass.firebaseapp.com',projectId:'groovy-gatepass',storageBucket:'groovy-gatepass.appspot.com',messagingSenderId:'986200726255',appId:'1:986200726255:web:3a263cea3e7456d73c591a',databaseURL:'https://groovy-gatepass-default-rtdb.firebaseio.com'};
 const SETUP_CODE='GroovyOps2024';
 const app=initializeApp(CFG);
 const db=getFirestore(app);
 const auth=getAuth(app);
+const rtdb=getDatabase(app);
 
 const USER_DEFS=[
   {u:'afnan',  email:'afnan@groovy.op',  name:'Afnan',  role:'owner',  title:'Co-founder',        canPO:true, stages:null,                 pass:'Afnan@Ops24'},
@@ -771,6 +841,9 @@ let gpActiveTab='outward',allReturns=[],allFabricIn=[],fabRollIdx=0;
 let bundleDamage={},bundlePartIdx=0;
 // ── Store state ──
 let allItems=[],allTransactions=[],allTemplates=[],allRequests=[],allActivePOs=[];
+// ── HRM state ──
+let allEmployees=[],allIncrementLogs=[],hrmPolicies=null,hrmDataLoaded=false;
+let _empFilterQ='',_empFilterDept='',_empFilterPay='',_empViewingId=null;
 let _ilPage=1,_ilQ='',_ilPO='',_ilDir='';
 let _tplRowIdx=0,_tplProdCode='',_tplProdName='',_tplEditId=null,_tplPage=1;
 const TPL_PER=15;
@@ -959,6 +1032,7 @@ async function loadData(){
     allFabricIn=fabSnap.docs.map(d=>d.data());
     if(currentPage)renderPage(currentPage);
     if(typeof _maybeLoadPrintingData==='function')_maybeLoadPrintingData();
+    if(typeof loadHRMData==='function')loadHRMData().then(()=>{ if(currentPage==='dashboard'||currentPage==='hrm-employees'){const m=document.getElementById('main-content');if(m&&typeof renderPage==='function')renderPage(currentPage);} });
   }catch(e){
     if((e.code==='permission-denied'||e.message.includes('permissions'))&&auth.currentUser){
       try{
@@ -986,6 +1060,181 @@ async function loadBundles(poId){
     const snap=await getDocs(query(collection(db,'bundles'),where('poId','==',poId)));
     currentBundles=snap.docs.map(d=>d.data()).sort((a,b)=>a.bundleNumber-b.bundleNumber);
   }catch(e){currentBundles=[];}
+}
+
+// ── HRM: seed data, policies, loaders ─────────────────────────
+const EMPLOYEES_SEED=[
+  { name:"Abbas Akhlaq", username:"abbas", designation:"Washing/Rider", department:"Washing", paygrade:"P1", basicSalary:30000, k40UserId:"9", advanceBalance:10000, loanBalance:0, loanMonthlyDeduction:0 },
+  { name:"Rehan Ahmed", username:"rehan", designation:"Cutting/Printing Ops", department:"Cutting", paygrade:"P3", basicSalary:50000, k40UserId:"27", advanceBalance:0, loanBalance:0 },
+  { name:"Umair", username:"umair", designation:"Fulfillment Manager", department:"Operations", paygrade:"P3", basicSalary:60000, k40UserId:"8", advanceBalance:5000, loanBalance:50000, loanMonthlyDeduction:5000 },
+  { name:"Imran Masi", username:"imran", designation:"Office Boy", department:"Operations", paygrade:"P2", basicSalary:40000, k40UserId:"7", advanceBalance:5000, loanBalance:25000, loanMonthlyDeduction:0 },
+  { name:"Shahid Qureshi", username:"shahid", designation:"Stitching Manager", department:"Stitching", paygrade:"P3", basicSalary:65000, k40UserId:"14", advanceBalance:15000, loanBalance:10000 },
+  { name:"Waqas Ahmed", username:"waqas", designation:"Stitching QC", department:"Stitching", paygrade:"P2", basicSalary:55000, k40UserId:"13", advanceBalance:0, loanBalance:50000, loanMonthlyDeduction:0 },
+  { name:"Ayaz", username:"ayaz", designation:"Loader", department:"Operations", paygrade:"P1", basicSalary:32000, k40UserId:"28", advanceBalance:5000, loanBalance:10000 },
+  { name:"Jawad", username:"jawad", designation:"QC Ops", department:"QC", paygrade:"P1", basicSalary:30000, k40UserId:"20", advanceBalance:0, loanBalance:3000 },
+  { name:"Noman Jameel", username:"noman", designation:"QC Final Manager", department:"QC", paygrade:"P3", basicSalary:50000, k40UserId:"23", advanceBalance:20000, loanBalance:50000 },
+  { name:"Usman", username:"usman", designation:"QC Ops", department:"QC", paygrade:"P2", basicSalary:35000, k40UserId:"21", advanceBalance:0, loanBalance:3000 },
+  { name:"Faizan", username:"faizan", designation:"QC Final Packing", department:"QC", paygrade:"P1", basicSalary:32000, k40UserId:"17", advanceBalance:0, loanBalance:0 },
+  { name:"Haris Basheer", username:"haris", designation:"QC Manager", department:"QC", paygrade:"P2", basicSalary:40000, k40UserId:"19", advanceBalance:22000, loanBalance:14000 },
+  { name:"Hamza", username:"hamza", designation:"CSR", department:"Operations", paygrade:"P3", basicSalary:65000, k40UserId:"4", advanceBalance:0, loanBalance:2000 },
+  { name:"Faisal Mehar", username:"faisal", designation:"Return Management", department:"Operations", paygrade:"P3", basicSalary:50000, k40UserId:"12", advanceBalance:0, loanBalance:0 },
+  { name:"Kashif", username:"kashif", designation:"Loader", department:"Operations", paygrade:"P2", basicSalary:40000, k40UserId:"25", advanceBalance:20000, loanBalance:0 },
+  { name:"Daniyal Tufail", username:"daniyal", designation:"Marketing Ops", department:"Marketing", paygrade:"P3", basicSalary:50000, k40UserId:"3", advanceBalance:0, loanBalance:20000 },
+  { name:"Abdul Basit", username:"abdulbasit", designation:"QC Final Packing", department:"QC", paygrade:"P2", basicSalary:35000, k40UserId:"31", advanceBalance:0, loanBalance:15000 },
+  { name:"Gulam Mustafa", username:"mustafa", designation:"Ecom Manager", department:"Operations", paygrade:"P5", basicSalary:145000, k40UserId:"2", advanceBalance:0, loanBalance:0 },
+  { name:"Fawad", username:"fawad", designation:"Fulfillment Ops", department:"Operations", paygrade:"P2", basicSalary:35000, k40UserId:"10", advanceBalance:2000, loanBalance:5000 },
+  { name:"Raees", username:"raees", designation:"Store Manager", department:"Store", paygrade:"P3", basicSalary:50000, k40UserId:"16", advanceBalance:0, loanBalance:18000 },
+  { name:"Umar", username:"umar", designation:"Rider", department:"Delivery", paygrade:"P1", basicSalary:40000, k40UserId:"8", advanceBalance:0, loanBalance:0 },
+  { name:"Abdul Rafay", username:"rafay", designation:"Fulfillment Ops", department:"Operations", paygrade:"P1", basicSalary:30000, k40UserId:"29", advanceBalance:0, loanBalance:0 },
+  { name:"AbdulSami", username:"abdulsami", designation:"CSR", department:"Operations", paygrade:"P3", basicSalary:50000, k40UserId:"5", advanceBalance:0, loanBalance:0 },
+  { name:"Ayaan", username:"ayaan", designation:"Fulfillment Ops", department:"Operations", paygrade:"P1", basicSalary:25000, k40UserId:"33", advanceBalance:0, loanBalance:0 },
+  { name:"Zohaib", username:"zohaib", designation:"Cutting & Bundling", department:"Cutting", paygrade:"P1", basicSalary:25000, k40UserId:"34", advanceBalance:5000, loanBalance:0 },
+  { name:"Hassan", username:"hassan", designation:"CSR", department:"Operations", paygrade:"P1", basicSalary:26000, k40UserId:"26", advanceBalance:0, loanBalance:0 },
+  { name:"Noreen", username:"noreen", designation:"QC Ops", department:"QC", paygrade:"P2", basicSalary:35000, k40UserId:"18", advanceBalance:0, loanBalance:0 },
+  { name:"Asghar Ali", username:"asghar", designation:"Printing Manager", department:"Printing", paygrade:"P2", basicSalary:40000, k40UserId:"6", advanceBalance:0, loanBalance:0 },
+  { name:"Afnan", username:"afnan", designation:"Co-Founder", department:"Management", paygrade:"P5", basicSalary:0, k40UserId:"", advanceBalance:0, loanBalance:0 },
+  { name:"Ammar", username:"ammar", designation:"Co-Founder", department:"Management", paygrade:"P5", basicSalary:0, k40UserId:"", advanceBalance:0, loanBalance:0 },
+  { name:"Arfat", username:"arfat", designation:"Advisory", department:"Management", paygrade:"P4", basicSalary:0, k40UserId:"", advanceBalance:0, loanBalance:0 }
+];
+
+const HRM_DEFAULT_POLICIES={
+  workingDaysPerMonth:30,
+  lateCountBeforeAbsent:3,
+  halfDayCountsAs:"full",
+  absentDeductionFormula:"salary_div_workingdays",
+  paygrades:{
+    P1:{label:"P1",salaryMin:0,     salaryMax:35000,  incrementPercent:8, active:false},
+    P2:{label:"P2",salaryMin:35001, salaryMax:50000,  incrementPercent:10,active:false},
+    P3:{label:"P3",salaryMin:50001, salaryMax:70000,  incrementPercent:12,active:false},
+    P4:{label:"P4",salaryMin:70001, salaryMax:100000, incrementPercent:15,active:false},
+    P5:{label:"P5",salaryMin:100001,salaryMax:999999, incrementPercent:20,active:false}
+  },
+  autoIncrementActive:false
+};
+
+async function seedEmployeesIfEmpty(){
+  try{
+    const snap=await getDocs(collection(db,'employees'));
+    if(!snap.empty)return false;
+    const today=new Date().toISOString().split('T')[0];
+    const batch=writeBatch(db);
+    for(const e of EMPLOYEES_SEED){
+      const docRef=doc(collection(db,'employees'));
+      batch.set(docRef,{
+        id:docRef.id,
+        name:e.name,
+        username:e.username,
+        designation:e.designation,
+        department:e.department,
+        paygrade:e.paygrade,
+        basicSalary:e.basicSalary||0,
+        joinDate:e.joinDate||today,
+        phone:e.phone||'',
+        cnic:e.cnic||'',
+        address:e.address||'',
+        bankAccount:e.bankAccount||'',
+        status:'active',
+        k40UserId:e.k40UserId||'',
+        advanceBalance:e.advanceBalance||0,
+        loanBalance:e.loanBalance||0,
+        loanMonthlyDeduction:e.loanMonthlyDeduction||0,
+        purchasingDeduction:e.purchasingDeduction||0,
+        notes:e.notes||'',
+        createdBy:(session&&session.name)||'system',
+        createdAt:Date.now(),
+        updatedAt:Date.now()
+      });
+    }
+    await batch.commit();
+    return true;
+  }catch(e){console.warn('seedEmployees failed:',e.message);return false;}
+}
+
+async function seedHRMPoliciesIfEmpty(){
+  try{
+    const ref=doc(db,'hrm_policies','main');
+    const snap=await getDoc(ref);
+    if(snap.exists())return false;
+    await setDoc(ref,{...HRM_DEFAULT_POLICIES,lastUpdatedBy:(session&&session.name)||'system',lastUpdatedAt:Date.now()});
+    return true;
+  }catch(e){console.warn('seedHRMPolicies failed:',e.message);return false;}
+}
+
+async function loadHRMData(){
+  try{
+    await seedEmployeesIfEmpty();
+    await seedHRMPoliciesIfEmpty();
+    const[empSnap,polSnap,incSnap]=await Promise.all([
+      getDocs(collection(db,'employees')),
+      getDoc(doc(db,'hrm_policies','main')),
+      getDocs(collection(db,'increment_logs')).catch(()=>({docs:[]}))
+    ]);
+    allEmployees=empSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    hrmPolicies=polSnap.exists()?polSnap.data():{...HRM_DEFAULT_POLICIES};
+    allIncrementLogs=incSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    hrmDataLoaded=true;
+    // Attach paygrade/employee record onto session if not yet attached
+    if(session&&!session.employee){
+      const me=allEmployees.find(x=>x.username===session.u);
+      if(me){session.employee=me;session.paygrade=me.paygrade;session.k40UserId=me.k40UserId||'';}
+    }
+  }catch(e){console.warn('loadHRMData failed:',e.message);}
+}
+
+// ── HRM attendance helpers (Realtime DB) ─────────────────────
+async function getMyAttendanceToday(k40UserId){
+  if(!k40UserId)return null;
+  try{
+    const today=new Date().toISOString().split('T')[0];
+    const snap=await rtdbGet(rtdbRef(rtdb,`attendance/${today}/${k40UserId}`));
+    if(!snap.exists())return null;
+    const punches=Object.values(snap.val()).sort((a,b)=>(a.timestamp||'').localeCompare(b.timestamp||''));
+    const firstIn=punches.find(p=>p.type==='in')||punches[0];
+    const lastPunch=punches[punches.length-1];
+    return{firstIn,lastPunch,punches};
+  }catch(e){return null;}
+}
+
+async function getMyMonthSummary(k40UserId){
+  if(!k40UserId)return{present:0,late:0,absent:0,lateCount:0};
+  try{
+    const now=new Date();
+    const yyyy=now.getFullYear(),mm=String(now.getMonth()+1).padStart(2,'0');
+    const dayOfMonth=now.getDate();
+    const policies=hrmPolicies||HRM_DEFAULT_POLICIES;
+    const lateCutoff='09:30'; // simple default — refined in policy session
+    let present=0,late=0,absent=0;
+    for(let d=1;d<=dayOfMonth;d++){
+      const dd=String(d).padStart(2,'0');
+      const date=`${yyyy}-${mm}-${dd}`;
+      const snap=await rtdbGet(rtdbRef(rtdb,`attendance/${date}/${k40UserId}`));
+      if(snap.exists()){
+        const punches=Object.values(snap.val()).sort((a,b)=>(a.timestamp||'').localeCompare(b.timestamp||''));
+        const firstIn=punches.find(p=>p.type==='in')||punches[0];
+        if(firstIn){
+          present++;
+          if(firstIn.time&&firstIn.time>lateCutoff)late++;
+        }
+      } else {
+        absent++;
+      }
+    }
+    return{present,late,absent,lateCount:late};
+  }catch(e){return{present:0,late:0,absent:0,lateCount:0};}
+}
+
+async function getFactoryNowCounts(){
+  try{
+    const snap=await rtdbGet(rtdbRef(rtdb,'attendance/live'));
+    if(!snap.exists())return{inCount:0,outCount:0};
+    const live=snap.val();
+    let inCount=0,outCount=0;
+    Object.values(live).forEach(rec=>{
+      if(rec&&rec.status==='in')inCount++;
+      else outCount++;
+    });
+    return{inCount,outCount};
+  }catch(e){return{inCount:0,outCount:0};}
 }
 
 async function uploadToCloudinary(file){
@@ -1155,6 +1404,15 @@ function buildNav(){
   if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
   if(isOwner)mainItems.push({id:'activity',label:'Activity Log'});
   if(isOwner)mainItems.push({id:'users',label:'Users'});
+
+  // HRM nav items — owners + managers only
+  const hrmSubItems=[];
+  if(om){
+    hrmSubItems.push({id:'hrm-employees',label:'👥 Employees'});
+    hrmSubItems.push({id:'hrm-payroll',label:'💰 Payroll'});
+    hrmSubItems.push({id:'hrm-advances',label:'📋 Advances'});
+    hrmSubItems.push({id:'hrm-policy',label:'⚙ Policy Engine'});
+  }
   // Printing module nav items (worker-aware; used for mobile bottom nav)
   const printItems=[];
   if(om||session.u==='ammar'||session.u==='haris')printItems.push({id:'recipe-directory',label:'Recipe Directory'});
@@ -1183,6 +1441,7 @@ function buildNav(){
   const mainNav=mainItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('');
   const storeOpen=currentPage.startsWith('store-')||isStore;
   const printOpen=['recipe-directory','printing-jobs','observer-tower','recipe-create','recipe-detail','printing-job-detail','qc-report-page','billing-detail','color-library'].includes(currentPage)||currentPage.startsWith('recipe-')||currentPage.startsWith('printing-')||currentPage==='observer-tower';
+  const hrmOpen=currentPage.startsWith('hrm-');
   const storeNav=storeSubItems.length?`
     <div class="nav-divider"></div>
     <div class="nav-item" id="nav-store-toggle" onclick="window.toggleStoreNav()" style="display:flex;justify-content:space-between;align-items:center">
@@ -1200,7 +1459,16 @@ function buildNav(){
       ${printSubItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:22px;font-size:12px">${i.label}</div>`).join('')}
     </div>`:'';
 
-  document.getElementById('sidebar').innerHTML=mainNav+printNav+storeNav;
+  const hrmNav=hrmSubItems.length?`
+    <div class="nav-divider"></div>
+    <div class="nav-item" id="nav-hrm-toggle" onclick="window.toggleHRMNav()" style="display:flex;justify-content:space-between;align-items:center">
+      <span>HRM</span><span id="hrm-nav-arrow" style="font-size:10px;transition:transform .2s">${hrmOpen?'▾':'▸'}</span>
+    </div>
+    <div id="hrm-subnav" style="overflow:hidden;transition:max-height .2s;max-height:${hrmOpen?'300px':'0'}">
+      ${hrmSubItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:22px;font-size:12px">${i.label}</div>`).join('')}
+    </div>`:'';
+
+  document.getElementById('sidebar').innerHTML=mainNav+printNav+storeNav+hrmNav;
   // Mobile: show main items + embellishment items + Store shortcut (horizontally scrollable)
   const mobMain=isStore?storeSubItems:mainItems;
   const mobPrint=(!isStore&&printItems.length)?printItems.map(i=>`<div class="mob-nav-item" id="mobnav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join(''):'';
@@ -1220,6 +1488,14 @@ window.toggleStoreNav=function(){
 window.togglePrintNav=function(){
   const sub=document.getElementById('print-subnav');
   const arrow=document.getElementById('print-nav-arrow');
+  if(!sub)return;
+  const open=sub.style.maxHeight!=='0px'&&sub.style.maxHeight!=='0';
+  sub.style.maxHeight=open?'0':'300px';
+  if(arrow)arrow.textContent=open?'▸':'▾';
+};
+window.toggleHRMNav=function(){
+  const sub=document.getElementById('hrm-subnav');
+  const arrow=document.getElementById('hrm-nav-arrow');
   if(!sub)return;
   const open=sub.style.maxHeight!=='0px'&&sub.style.maxHeight!=='0';
   sub.style.maxHeight=open?'0':'300px';
@@ -1249,7 +1525,7 @@ window.showPage=async function(id){
 
 function renderPage(id){
   const m=document.getElementById('main-content');
-  if(id==='dashboard')m.innerHTML=renderDashboard();
+  if(id==='dashboard'){m.innerHTML=renderDashboard(); if(typeof _hrmPopulateDashboard==='function')setTimeout(_hrmPopulateDashboard,0);}
   else if(id==='po-create')m.innerHTML=renderPOCreate();
   else if(id==='po-registry')m.innerHTML=renderRegistry();
   else if(id==='my-work')m.innerHTML=renderMyWork();
@@ -1275,6 +1551,11 @@ function renderPage(id){
   else if(id==='qc-report-page')renderQCReportPage();
   else if(id==='billing-detail')renderBillingDetailPage();
   else if(id==='color-library'){if(!printingDataLoaded)loadPrintingData().then(()=>m.innerHTML=renderColorLibraryPage());else m.innerHTML=renderColorLibraryPage();}
+  // ── HRM module pages ──
+  else if(id==='hrm-employees'){if(!hrmDataLoaded)loadHRMData().then(()=>m.innerHTML=renderHRMEmployeesPage());else m.innerHTML=renderHRMEmployeesPage();}
+  else if(id==='hrm-payroll'){m.innerHTML=renderHRMStub('💰 Payroll','Coming in Session 3 — full monthly payroll generation, deductions, slip exports.');}
+  else if(id==='hrm-advances'){m.innerHTML=renderHRMStub('📋 Advances','Coming in Session 4 — advance/loan request approval workflow.');}
+  else if(id==='hrm-policy'){m.innerHTML=renderHRMStub('⚙ Policy Engine','Coming in Session 4 — paygrade limits, increment policies, deduction rules.');}
 }
 
 // ── Dashboard — extended in Chunk 5 with printing KPI strip ──
@@ -6630,8 +6911,8 @@ function renderDashboard(){
     </div>
   </div>`:'';
 
-  const base=`<div class="page-head"><div class="page-title">Dashboard</div><div class="page-sub">Welcome back, ${session.name}</div></div>
-  <div class="stats-row">
+  const hrmBanner=(typeof renderHRMDashboardWidget==='function')?renderHRMDashboardWidget():'';
+  const base=`${hrmBanner}<div class="stats-row">
     <div class="stat-card"><div class="stat-label">Total POs</div><div class="stat-val">${total}</div></div>
     <div class="stat-card"><div class="stat-label">Active</div><div class="stat-val">${active}</div></div>
     <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-val">${done}</div></div>
@@ -6918,6 +7199,506 @@ window.dismissNotif=async function(id){
     storeNotifications=storeNotifications.filter(x=>x._id!==id);
     renderNotifBadge();renderNotifList();
   }catch(e){showToast('Dismiss failed: '+e.message,true);}
+};
+
+// ── HRM: Dashboard widgets, Employees page, increment workflow ──
+function _hrmGreetingTime(){
+  const h=new Date().getHours();
+  if(h<12)return'morning';
+  if(h<17)return'afternoon';
+  return'evening';
+}
+function _hrmFmtPKR(n){return'PKR '+(Number(n)||0).toLocaleString('en-PK');}
+function _hrmEstSalary(emp,monthSummary){
+  if(!emp||!emp.basicSalary)return 0;
+  const policies=hrmPolicies||HRM_DEFAULT_POLICIES;
+  const wd=policies.workingDaysPerMonth||30;
+  const dailyRate=emp.basicSalary/wd;
+  const absent=monthSummary?monthSummary.absent:0;
+  const advance=emp.advanceBalance||0;
+  const loanDed=emp.loanMonthlyDeduction||0;
+  const purchDed=emp.purchasingDeduction||0;
+  return Math.max(0,Math.round(emp.basicSalary-(absent*dailyRate)-loanDed-purchDed));
+}
+
+function renderHRMStub(title,msg){
+  return`<div class="page-head"><div class="page-title">${title}</div><div class="page-sub">HRM module</div></div>
+  <div class="card" style="text-align:center;padding:36px 18px"><div style="font-size:36px;margin-bottom:10px">🛠</div><div style="font-weight:700;margin-bottom:6px">${title}</div><div style="color:var(--muted);font-size:13px;max-width:480px;margin:0 auto">${msg}</div></div>`;
+}
+
+function renderHRMDashboardWidget(){
+  if(!session)return'';
+  const role=session.role;
+  const emp=session.employee||(allEmployees.find(e=>e.username===session.u))||null;
+  const paygrade=(emp&&emp.paygrade)||session.paygrade||'';
+  const k40=session.k40UserId||(emp&&emp.k40UserId)||'';
+  const isOwner=role==='owner';
+  const isManager=role==='manager';
+  const isWorker=role==='worker';
+  const greeting=_hrmGreetingTime();
+  const nowStr=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  const designation=(emp&&emp.designation)||session.title||'';
+  const pgClass=paygrade?paygrade.toLowerCase():'';
+  const pgBadge=paygrade?`<span class="paygrade-badge ${pgClass}">${paygrade}</span>`:'';
+
+  const greetingHTML=`<div class="hrm-greeting">
+    <div class="greeting-left">
+      <div class="greeting-name">Good ${greeting}, ${session.name} 👋</div>
+      <div class="greeting-sub">${designation}${pgBadge?' · '+pgBadge:''}</div>
+    </div>
+    <div class="greeting-time" id="hrm-clock">${nowStr}</div>
+  </div>`;
+
+  // Owner KPI strip — populated async
+  if(isOwner){
+    return`${greetingHTML}
+    <div class="owner-kpi-strip" id="owner-kpi-strip">
+      <div class="kpi-card"><div class="kpi-icon">👥</div><div class="kpi-num" id="owner-kpi-in">—</div><div class="kpi-label">Staff IN today</div></div>
+      <div class="kpi-card amber"><div class="kpi-icon">⚠</div><div class="kpi-num" id="owner-kpi-late">—</div><div class="kpi-label">Late today</div></div>
+      <div class="kpi-card"><div class="kpi-icon">📦</div><div class="kpi-num">${allPOs.filter(p=>p.currentStage&&p.currentStage!=='completed').length}</div><div class="kpi-label">Active POs</div></div>
+      <div class="kpi-card red"><div class="kpi-icon">🔔</div><div class="kpi-num" id="owner-kpi-notif">${(typeof storeNotifications!=='undefined'?storeNotifications.length:0)}</div><div class="kpi-label">Notifications</div></div>
+    </div>`;
+  }
+
+  if(isManager){
+    return`${greetingHTML}
+    <div class="mgr-stats-row" id="mgr-stats-row">
+      <div class="card stat-card mgr">
+        <div class="stat-label">Factory Now</div>
+        <div class="stat-big green" id="mgr-fac-in">—</div>
+        <div class="stat-sub" id="mgr-fac-sub">loading…</div>
+      </div>
+      <div class="card stat-card mgr">
+        <div class="stat-label">My Month</div>
+        <div class="stat-big" id="mgr-my-month">—</div>
+        <div class="stat-sub" id="mgr-my-month-sub">loading…</div>
+      </div>
+      <div class="card stat-card mgr">
+        <div class="stat-label">My Salary Est.</div>
+        <div class="stat-big" id="mgr-my-salary">—</div>
+        <div class="stat-sub">After deductions</div>
+      </div>
+    </div>`;
+  }
+
+  if(isWorker){
+    const advRow=(emp&&emp.advanceBalance>0)?`<div class="advance-row">Advance balance: <span class="text-red">${_hrmFmtPKR(emp.advanceBalance)}</span></div>`:'';
+    return`${greetingHTML}
+    <div class="card hrm-attendance-card" id="hrm-att-card">
+      <div class="card-title">Today's Attendance · حاضری</div>
+      <div class="att-status in-no" id="hrm-att-status"><span>⏳</span><span>Loading…</span></div>
+      <div class="att-hours" id="hrm-att-hours"></div>
+    </div>
+    <div class="card hrm-month-card" id="hrm-month-card">
+      <div class="card-title">This Month · اس مہینے</div>
+      <div class="month-grid">
+        <div class="month-stat green"><div class="stat-num" id="hrm-m-present">—</div><div class="stat-label">Present</div></div>
+        <div class="month-stat amber"><div class="stat-num" id="hrm-m-late">—</div><div class="stat-label">Late</div></div>
+        <div class="month-stat red"><div class="stat-num" id="hrm-m-absent">—</div><div class="stat-label">Absent</div></div>
+      </div>
+      <div class="salary-preview">Est. salary this month: <strong id="hrm-est-salary">${emp?_hrmFmtPKR(emp.basicSalary):'PKR —'}</strong></div>
+      ${advRow}
+    </div>`;
+  }
+  return greetingHTML;
+}
+
+// Async populator — runs after dashboard render to fill live attendance
+async function _hrmPopulateDashboard(){
+  if(!session)return;
+  const emp=session.employee||(allEmployees.find(e=>e.username===session.u))||null;
+  const k40=session.k40UserId||(emp&&emp.k40UserId)||'';
+  const role=session.role;
+
+  if(role==='owner'){
+    try{
+      const fac=await getFactoryNowCounts();
+      const today=new Date().toISOString().split('T')[0];
+      let lateCount=0;
+      try{
+        const snap=await rtdbGet(rtdbRef(rtdb,`attendance/${today}`));
+        if(snap.exists()){
+          const all=snap.val();
+          Object.values(all).forEach(userPunches=>{
+            const punches=Object.values(userPunches||{}).sort((a,b)=>(a.timestamp||'').localeCompare(b.timestamp||''));
+            const firstIn=punches.find(p=>p.type==='in')||punches[0];
+            if(firstIn&&firstIn.time&&firstIn.time>'09:30')lateCount++;
+          });
+        }
+      }catch(_){}
+      const elIn=document.getElementById('owner-kpi-in');if(elIn)elIn.textContent=fac.inCount;
+      const elLate=document.getElementById('owner-kpi-late');if(elLate)elLate.textContent=lateCount;
+    }catch(e){}
+    return;
+  }
+
+  if(role==='manager'){
+    try{
+      const fac=await getFactoryNowCounts();
+      const elIn=document.getElementById('mgr-fac-in');if(elIn)elIn.textContent=fac.inCount+' IN';
+      const elSub=document.getElementById('mgr-fac-sub');if(elSub)elSub.textContent=`${fac.outCount} out`;
+      if(k40){
+        const m=await getMyMonthSummary(k40);
+        const eM=document.getElementById('mgr-my-month');if(eM)eM.textContent=m.present+' days';
+        const eMS=document.getElementById('mgr-my-month-sub');if(eMS)eMS.textContent=`${m.late} late · ${m.absent} absent`;
+        const eS=document.getElementById('mgr-my-salary');if(eS&&emp)eS.textContent=_hrmFmtPKR(_hrmEstSalary(emp,m));
+      } else {
+        const eMS=document.getElementById('mgr-my-month-sub');if(eMS)eMS.textContent='No K40 ID';
+        const eS=document.getElementById('mgr-my-salary');if(eS&&emp)eS.textContent=_hrmFmtPKR(emp.basicSalary||0);
+      }
+    }catch(e){}
+    return;
+  }
+
+  if(role==='worker'){
+    if(!k40){
+      const st=document.getElementById('hrm-att-status');
+      if(st){st.className='att-status in-no';st.innerHTML='<span>—</span><span>K40 ID not set</span>';}
+      return;
+    }
+    try{
+      const att=await getMyAttendanceToday(k40);
+      const st=document.getElementById('hrm-att-status');
+      const hr=document.getElementById('hrm-att-hours');
+      if(att&&att.firstIn){
+        if(st){st.className='att-status in-yes';st.innerHTML=`<span class="pulse-dot"></span><span>Punched in at <strong>${att.firstIn.time||'—'}</strong></span>`;}
+        if(hr){
+          const start=att.firstIn.time||'';
+          const end=att.lastPunch?.time||'';
+          if(start&&end&&end>start){
+            const[h1,m1]=start.split(':').map(Number),[h2,m2]=end.split(':').map(Number);
+            const mins=(h2*60+m2)-(h1*60+m1);
+            hr.textContent=`Hours worked: ${Math.floor(mins/60)}h ${mins%60}m`;
+          } else {
+            hr.textContent=`Punches today: ${att.punches.length}`;
+          }
+        }
+      } else {
+        if(st){st.className='att-status in-no';st.innerHTML='<span>⏳</span><span>Not punched yet</span>';}
+        if(hr)hr.textContent='';
+      }
+      const m=await getMyMonthSummary(k40);
+      const e1=document.getElementById('hrm-m-present');if(e1)e1.textContent=m.present;
+      const e2=document.getElementById('hrm-m-late');if(e2)e2.textContent=m.late;
+      const e3=document.getElementById('hrm-m-absent');if(e3)e3.textContent=m.absent;
+      const eS=document.getElementById('hrm-est-salary');if(eS&&emp)eS.textContent=_hrmFmtPKR(_hrmEstSalary(emp,m));
+    }catch(e){}
+  }
+}
+
+// Dashboard widget population is triggered explicitly via renderPage('dashboard').
+
+// ── HRM Employees page ──
+function _hrmDepartments(){
+  const set=new Set();
+  allEmployees.forEach(e=>{ if(e.department)set.add(e.department); });
+  return Array.from(set).sort();
+}
+
+function renderHRMEmployeesPage(){
+  if(!session||!['owner','manager'].includes(session.role)){
+    return'<div class="empty">Owners and managers only.</div>';
+  }
+  const depts=_hrmDepartments();
+  const paygrades=['P1','P2','P3','P4','P5'];
+  const total=allEmployees.length;
+  return`<div class="page-head">
+    <div class="page-title">👥 Employees</div>
+    <div class="page-sub">${total} active staff</div>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    <input id="emp-search" placeholder="Search name, username, designation…" oninput="window.hrmFilterEmployees()" value="${_empFilterQ}" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+    <select id="emp-dept" onchange="window.hrmFilterEmployees()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+      <option value="">All departments</option>
+      ${depts.map(d=>`<option value="${d}" ${_empFilterDept===d?'selected':''}>${d}</option>`).join('')}
+    </select>
+    <select id="emp-pay" onchange="window.hrmFilterEmployees()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+      <option value="">All paygrades</option>
+      ${paygrades.map(p=>`<option value="${p}" ${_empFilterPay===p?'selected':''}>${p}</option>`).join('')}
+    </select>
+    <button class="btn-primary" onclick="window.hrmAddEmployee()" style="font-size:13px;width:auto;padding:8px 16px;margin-top:0">+ Add Employee</button>
+  </div>
+  <div id="emp-grid-wrap">${_renderEmpGrid()}</div>`;
+}
+
+function _renderEmpGrid(){
+  let list=allEmployees.slice();
+  const q=(_empFilterQ||'').toLowerCase().trim();
+  if(q)list=list.filter(e=>(e.name||'').toLowerCase().includes(q)||(e.username||'').toLowerCase().includes(q)||(e.designation||'').toLowerCase().includes(q));
+  if(_empFilterDept)list=list.filter(e=>e.department===_empFilterDept);
+  if(_empFilterPay)list=list.filter(e=>e.paygrade===_empFilterPay);
+  list.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  if(!list.length)return'<div class="empty">No employees match.</div>';
+  return`<div class="emp-grid">${list.map(e=>_empCardHTML(e)).join('')}</div>`;
+}
+
+function _empCardHTML(e){
+  const pgClass=(e.paygrade||'').toLowerCase();
+  const join=e.joinDate?new Date(e.joinDate).toLocaleDateString('en-GB',{month:'short',year:'numeric'}):'—';
+  return`<div class="emp-card">
+    <div class="emp-row">
+      <div>
+        <div class="emp-name">${e.name||'—'}</div>
+        <div class="emp-desg">${e.designation||'—'} · ${e.department||'—'}</div>
+      </div>
+      <span class="paygrade-badge ${pgClass}">${e.paygrade||'—'}</span>
+    </div>
+    <div class="emp-meta">
+      Basic: <strong>${_hrmFmtPKR(e.basicSalary)}</strong><br>
+      Joined: ${join}<br>
+      K40 ID: ${e.k40UserId||'—'}
+    </div>
+    <div class="emp-actions">
+      <button class="btn-outline" onclick="window.hrmViewEmployee('${e._id}')">View Profile</button>
+      <button class="btn-outline" onclick="window.hrmEditEmployee('${e._id}')">Edit</button>
+    </div>
+  </div>`;
+}
+
+window.hrmFilterEmployees=function(){
+  _empFilterQ=document.getElementById('emp-search')?.value||'';
+  _empFilterDept=document.getElementById('emp-dept')?.value||'';
+  _empFilterPay=document.getElementById('emp-pay')?.value||'';
+  const wrap=document.getElementById('emp-grid-wrap');
+  if(wrap)wrap.innerHTML=_renderEmpGrid();
+};
+
+window.hrmViewEmployee=function(id){
+  _empViewingId=id;
+  const e=allEmployees.find(x=>x._id===id);
+  if(!e){showToast('Employee not found.',true);return;}
+  const logs=allIncrementLogs.filter(l=>l.employeeId===id).sort((a,b)=>(b.effectiveFrom||'').localeCompare(a.effectiveFrom||''));
+  const isOwner=session.role==='owner';
+  const pgClass=(e.paygrade||'').toLowerCase();
+  const back=document.createElement('div');
+  back.className='hrm-modal-back';
+  back.id='hrm-modal-back';
+  back.onclick=ev=>{ if(ev.target===back)window.hrmCloseModal(); };
+  back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+      <div>
+        <h3>${e.name}</h3>
+        <div class="sub">${e.designation||'—'} · ${e.department||'—'} · <span class="paygrade-badge ${pgClass}">${e.paygrade||'—'}</span></div>
+      </div>
+      <button onclick="window.hrmCloseModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);line-height:1">×</button>
+    </div>
+    <div class="hrm-section-title">Personal</div>
+    <div class="hrm-grid-2">
+      <div class="hrm-kv"><span class="k">Username</span><span class="v">${e.username||'—'}</span></div>
+      <div class="hrm-kv"><span class="k">Status</span><span class="v">${e.status||'active'}</span></div>
+      <div class="hrm-kv"><span class="k">Phone</span><span class="v">${e.phone||'—'}</span></div>
+      <div class="hrm-kv"><span class="k">CNIC</span><span class="v">${e.cnic||'—'}</span></div>
+      <div class="hrm-kv"><span class="k">Address</span><span class="v">${e.address||'—'}</span></div>
+      <div class="hrm-kv"><span class="k">Bank Account</span><span class="v">${e.bankAccount||'—'}</span></div>
+      <div class="hrm-kv"><span class="k">K40 ID</span><span class="v">${e.k40UserId||'—'}</span></div>
+      <div class="hrm-kv"><span class="k">Join Date</span><span class="v">${e.joinDate||'—'}</span></div>
+    </div>
+    <div class="hrm-section-title">Salary</div>
+    <div class="hrm-grid-2">
+      <div class="hrm-kv"><span class="k">Basic Salary</span><span class="v">${_hrmFmtPKR(e.basicSalary)}</span></div>
+      <div class="hrm-kv"><span class="k">Paygrade</span><span class="v">${e.paygrade||'—'}</span></div>
+      <div class="hrm-kv"><span class="k">Advance Balance</span><span class="v">${_hrmFmtPKR(e.advanceBalance)}</span></div>
+      <div class="hrm-kv"><span class="k">Loan Balance</span><span class="v">${_hrmFmtPKR(e.loanBalance)}</span></div>
+      <div class="hrm-kv"><span class="k">Loan Monthly Ded.</span><span class="v">${_hrmFmtPKR(e.loanMonthlyDeduction)}</span></div>
+      <div class="hrm-kv"><span class="k">Purchasing Ded.</span><span class="v">${_hrmFmtPKR(e.purchasingDeduction)}</span></div>
+    </div>
+    <div class="hrm-section-title">Increment History</div>
+    <div>${logs.length?logs.map(_hrmIncLogRow).join(''):'<div class="empty" style="padding:14px">No increments recorded yet.</div>'}</div>
+    ${e.notes?`<div class="hrm-section-title">Notes</div><div style="font-size:13px;color:var(--text);background:#fafafa;padding:10px;border-radius:8px;border:1px solid var(--border)">${e.notes}</div>`:''}
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;flex-wrap:wrap">
+      ${isOwner?`<button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.hrmShowAddIncrement('${e._id}')">+ Add Increment</button>`:''}
+      <button class="btn-outline" onclick="window.hrmEditEmployee('${e._id}')">Edit</button>
+      <button class="btn-outline" onclick="window.hrmCloseModal()">Close</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+};
+
+function _hrmIncLogRow(l){
+  const dir=l.incrementAmount>=0?'+':'';
+  return`<div class="inc-log-row">
+    <strong>${l.effectiveFrom||'—'}</strong> · ${l.type||'annual'} · ${_hrmFmtPKR(l.oldSalary)} → ${_hrmFmtPKR(l.newSalary)} (${dir}${_hrmFmtPKR(l.incrementAmount)} · ${dir}${(l.incrementPercent||0).toFixed(1)}%)
+    <div style="margin-top:3px;color:var(--muted);font-size:11px">Approved by ${l.approvedBy||'—'}${l.reason?' · '+l.reason:''}${l.wasOverridden?' · <em>overridden</em>':''}</div>
+  </div>`;
+}
+
+window.hrmCloseModal=function(){
+  document.getElementById('hrm-modal-back')?.remove();
+};
+
+window.hrmAddEmployee=function(){
+  if(!['owner','manager'].includes(session.role))return showToast('Owners and managers only.',true);
+  _hrmShowEmployeeForm(null);
+};
+
+window.hrmEditEmployee=function(id){
+  if(!['owner','manager'].includes(session.role))return showToast('Owners and managers only.',true);
+  const e=allEmployees.find(x=>x._id===id);
+  if(!e)return showToast('Employee not found.',true);
+  _hrmShowEmployeeForm(e);
+};
+
+function _hrmShowEmployeeForm(e){
+  const isEdit=!!e;
+  document.getElementById('hrm-modal-back')?.remove();
+  const back=document.createElement('div');
+  back.className='hrm-modal-back';
+  back.id='hrm-modal-back';
+  back.onclick=ev=>{ if(ev.target===back)window.hrmCloseModal(); };
+  back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()">
+    <h3>${isEdit?'Edit Employee':'Add Employee'}</h3>
+    <div class="sub">${isEdit?e.name:'New staff member'}</div>
+    <div class="hrm-grid-2">
+      <div class="field"><label>Full name *</label><input id="ef-name" value="${e?.name||''}"></div>
+      <div class="field"><label>Username *</label><input id="ef-username" value="${e?.username||''}"></div>
+      <div class="field"><label>Designation</label><input id="ef-designation" value="${e?.designation||''}"></div>
+      <div class="field"><label>Department</label><input id="ef-department" value="${e?.department||''}"></div>
+      <div class="field"><label>Paygrade</label>
+        <select id="ef-paygrade">${['P1','P2','P3','P4','P5'].map(p=>`<option value="${p}" ${e?.paygrade===p?'selected':''}>${p}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Basic Salary</label><input id="ef-salary" type="number" value="${e?.basicSalary||0}"></div>
+      <div class="field"><label>Join Date</label><input id="ef-join" type="date" value="${e?.joinDate||new Date().toISOString().split('T')[0]}"></div>
+      <div class="field"><label>K40 User ID</label><input id="ef-k40" value="${e?.k40UserId||''}"></div>
+      <div class="field"><label>Phone</label><input id="ef-phone" value="${e?.phone||''}"></div>
+      <div class="field"><label>CNIC</label><input id="ef-cnic" value="${e?.cnic||''}"></div>
+      <div class="field"><label>Bank Account</label><input id="ef-bank" value="${e?.bankAccount||''}"></div>
+      <div class="field"><label>Status</label>
+        <select id="ef-status">${['active','inactive'].map(s=>`<option value="${s}" ${e?.status===s?'selected':''}>${s}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Advance Balance</label><input id="ef-adv" type="number" value="${e?.advanceBalance||0}"></div>
+      <div class="field"><label>Loan Balance</label><input id="ef-loan" type="number" value="${e?.loanBalance||0}"></div>
+      <div class="field"><label>Loan Monthly Ded.</label><input id="ef-loanmd" type="number" value="${e?.loanMonthlyDeduction||0}"></div>
+      <div class="field"><label>Purchasing Ded.</label><input id="ef-purch" type="number" value="${e?.purchasingDeduction||0}"></div>
+    </div>
+    <div class="field" style="margin-top:8px"><label>Address</label><input id="ef-address" value="${e?.address||''}"></div>
+    <div class="field"><label>Notes</label><textarea id="ef-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">${e?.notes||''}</textarea></div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.hrmSaveEmployee('${e?._id||''}')">${isEdit?'Save Changes':'Create Employee'}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+}
+
+window.hrmSaveEmployee=async function(id){
+  if(!['owner','manager'].includes(session.role))return showToast('Owners and managers only.',true);
+  const v=k=>document.getElementById(k)?.value?.trim()||'';
+  const num=k=>Number(document.getElementById(k)?.value||0);
+  const data={
+    name:v('ef-name'),
+    username:v('ef-username'),
+    designation:v('ef-designation'),
+    department:v('ef-department'),
+    paygrade:v('ef-paygrade'),
+    basicSalary:num('ef-salary'),
+    joinDate:v('ef-join'),
+    k40UserId:v('ef-k40'),
+    phone:v('ef-phone'),
+    cnic:v('ef-cnic'),
+    bankAccount:v('ef-bank'),
+    status:v('ef-status')||'active',
+    advanceBalance:num('ef-adv'),
+    loanBalance:num('ef-loan'),
+    loanMonthlyDeduction:num('ef-loanmd'),
+    purchasingDeduction:num('ef-purch'),
+    address:v('ef-address'),
+    notes:v('ef-notes'),
+    updatedAt:Date.now()
+  };
+  if(!data.name||!data.username)return showToast('Name and username are required.',true);
+  try{
+    if(id){
+      await updateDoc(doc(db,'employees',id),data);
+      const i=allEmployees.findIndex(e=>e._id===id);
+      if(i>=0)allEmployees[i]={...allEmployees[i],...data};
+      showToast('Employee updated ✓');
+    } else {
+      data.createdBy=session.name;
+      data.createdAt=Date.now();
+      const ref=doc(collection(db,'employees'));
+      data.id=ref.id;
+      await setDoc(ref,data);
+      allEmployees.push({...data,_id:ref.id});
+      showToast('Employee created ✓');
+    }
+    window.hrmCloseModal();
+    if(currentPage==='hrm-employees'){const w=document.getElementById('emp-grid-wrap');if(w)w.innerHTML=_renderEmpGrid();}
+  }catch(e){showToast('Save failed: '+e.message,true);}
+};
+
+window.hrmShowAddIncrement=function(empId){
+  if(session.role!=='owner')return showToast('Owners only.',true);
+  const e=allEmployees.find(x=>x._id===empId);if(!e)return;
+  const policies=hrmPolicies||HRM_DEFAULT_POLICIES;
+  const pg=policies.paygrades?.[e.paygrade];
+  const suggestedPct=pg?.incrementPercent||10;
+  const suggestedAmt=Math.round((e.basicSalary||0)*suggestedPct/100);
+  const suggestedNew=(e.basicSalary||0)+suggestedAmt;
+  document.getElementById('hrm-modal-back')?.remove();
+  const back=document.createElement('div');
+  back.className='hrm-modal-back';
+  back.id='hrm-modal-back';
+  back.onclick=ev=>{ if(ev.target===back)window.hrmCloseModal(); };
+  back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()" style="max-width:520px">
+    <h3>Add Increment — ${e.name}</h3>
+    <div class="sub">Current basic: <strong>${_hrmFmtPKR(e.basicSalary)}</strong> · Paygrade: <span class="paygrade-badge ${(e.paygrade||'').toLowerCase()}">${e.paygrade||'—'}</span></div>
+    <div class="field"><label>Increment Type</label>
+      <select id="inc-type">${['annual','performance','promotion','probation'].map(t=>`<option value="${t}">${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('')}</select>
+    </div>
+    <div class="field"><label>New Salary (PKR) *</label><input id="inc-new" type="number" value="${suggestedNew}"></div>
+    <div style="font-size:12px;color:var(--muted);background:#fafafa;padding:8px;border-radius:6px;border:1px dashed var(--border);margin:6px 0">
+      <strong>${e.paygrade}</strong> recommended: <strong>+${suggestedPct}%</strong> = ${_hrmFmtPKR(suggestedAmt)} → ${_hrmFmtPKR(suggestedNew)} <em>(reference only)</em>
+    </div>
+    <div class="field"><label>Effective From</label><input id="inc-eff" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+    <div class="field"><label>Reason / Notes</label><textarea id="inc-reason" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px"></textarea></div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.hrmSubmitIncrement('${empId}',${suggestedPct})">Submit Increment</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+};
+
+window.hrmSubmitIncrement=async function(empId,suggestedPct){
+  if(session.role!=='owner')return showToast('Owners only.',true);
+  const e=allEmployees.find(x=>x._id===empId);if(!e)return;
+  const newSalary=Number(document.getElementById('inc-new')?.value||0);
+  const type=document.getElementById('inc-type')?.value||'annual';
+  const effectiveFrom=document.getElementById('inc-eff')?.value||new Date().toISOString().split('T')[0];
+  const reason=document.getElementById('inc-reason')?.value?.trim()||'';
+  if(!newSalary||newSalary<=0)return showToast('Enter a valid new salary.',true);
+  const oldSalary=e.basicSalary||0;
+  const incrementAmount=newSalary-oldSalary;
+  const incrementPercent=oldSalary?(incrementAmount/oldSalary*100):0;
+  const wasOverridden=Math.abs(incrementPercent-suggestedPct)>0.5;
+  try{
+    const logRef=doc(collection(db,'increment_logs'));
+    const log={
+      id:logRef.id,
+      employeeId:empId,
+      employeeName:e.name,
+      oldSalary,
+      newSalary,
+      incrementAmount,
+      incrementPercent:Number(incrementPercent.toFixed(2)),
+      paygrade:e.paygrade,
+      paygradeSuggestedPercent:suggestedPct,
+      wasOverridden,
+      reason,
+      approvedBy:session.name,
+      approvedAt:Date.now(),
+      effectiveFrom,
+      type
+    };
+    await setDoc(logRef,log);
+    await updateDoc(doc(db,'employees',empId),{basicSalary:newSalary,updatedAt:Date.now()});
+    e.basicSalary=newSalary;
+    allIncrementLogs.push({...log,_id:logRef.id});
+    await logActivity('Increment approved',`${e.name}: ${_hrmFmtPKR(oldSalary)} → ${_hrmFmtPKR(newSalary)}`);
+    showToast('Increment recorded ✓');
+    window.hrmCloseModal();
+    window.hrmViewEmployee(empId);
+  }catch(err){showToast('Save failed: '+err.message,true);}
 };
 
 </script>
