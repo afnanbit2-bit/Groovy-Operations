@@ -6,7 +6,12 @@
 <title>Groovy Operations</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--dark:#000000;--red:#000000;--bg:#F4F4F4;--surface:#fff;--border:#D9D9D9;--text:#111111;--muted:#6B6B6B;--green:#111111;--amber:#555555;--soft:#EFEFEF;--sidebar:220px}
+:root{--dark:#000000;--red:#000000;--bg:#F4F4F4;--surface:#fff;--border:#D9D9D9;--text:#111111;--muted:#6B6B6B;--green:#111111;--amber:#555555;--soft:#EFEFEF;--sidebar:220px;
+  /* Semantic accent palette — used for HRM/operational state, not legacy widgets */
+  --accent-urgent:#7B1F2A;--accent-urgent-soft:#F6E4E5;
+  --accent-warning:#B47512;--accent-warning-soft:#FAEEDA;
+  --accent-success:#14532D;--accent-success-soft:#E6EFE9;
+  --radius-card:14px;--radius-bubble:16px}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:var(--text);background:var(--bg);min-height:100vh}
 #scr-login{display:none;min-height:100vh;align-items:center;justify-content:center;background:var(--dark)}
 .login-box{background:#fff;border-radius:16px;padding:2rem;width:100%;max-width:380px;margin:1rem}
@@ -35,7 +40,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .nav-item:hover{background:#F4F4F6;color:var(--text)}
 .nav-item.on{background:var(--dark);color:#fff}
 #main-content{flex:1;overflow-y:auto;padding:18px 16px}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:12px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);padding:14px 16px;margin-bottom:12px}
 .card-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
 .page-head{margin-bottom:16px}
 .page-title{font-size:18px;font-weight:700}
@@ -154,9 +159,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .mob-nav-item{flex:0 0 auto;min-width:72px;display:flex;flex-direction:column;align-items:center;padding:8px 12px;font-size:10px;color:var(--muted);cursor:pointer;font-weight:500;gap:2px;min-height:44px;justify-content:center;white-space:nowrap}
 .mob-nav-item.on{color:var(--red)}
 .mob-nav-btn{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 4px;background:none;border:none;color:#6B7280;font-size:10px;font-weight:500;font-family:inherit;cursor:pointer;min-height:44px;justify-content:center}
-.mob-nav-btn .icon{font-size:20px;line-height:1;transition:transform .2s}
-.mob-nav-btn.active{color:#1A1A2E}
-.mob-nav-btn.active .icon{transform:scale(1.1)}
+.mob-nav-btn .icon{display:inline-flex;align-items:center;justify-content:center;line-height:1;transition:transform .2s;color:inherit}
+.mob-nav-btn .icon svg{display:block;width:22px;height:22px;stroke:currentColor;fill:none}
+.mob-nav-btn.active{color:var(--text)}
+.mob-nav-btn.active .icon{transform:scale(1.08)}
 .mob-nav-btn:active{opacity:.6}
 .mob-sheet-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:998;opacity:0;pointer-events:none;transition:opacity .2s}
 .mob-sheet-backdrop.open{opacity:1;pointer-events:auto}
@@ -167,8 +173,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .mob-sheet-item{display:flex;align-items:center;gap:14px;padding:14px 20px;font-size:15px;font-weight:500;border-bottom:1px solid #F3F4F6;cursor:pointer;color:var(--text);font-family:inherit;width:100%;background:none;border-left:none;border-right:none;border-top:none;text-align:left}
 .mob-sheet-item:last-child{border-bottom:none}
 .mob-sheet-item:active{background:#F9FAFB}
-.mob-sheet-item .icon{font-size:18px;width:24px;text-align:center;flex-shrink:0}
-.mob-sheet-item.active{color:#1A1A2E;background:#F4F4F4;font-weight:600}
+.mob-sheet-item .icon{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--text)}
+.mob-sheet-item .icon svg{width:20px;height:20px;stroke:currentColor;fill:none;display:block}
+.mob-sheet-item.active{color:var(--text);background:var(--accent-success-soft);font-weight:600}
+.nav-item .icon{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-right:8px;vertical-align:middle;color:currentColor}
+.nav-item .icon svg{width:16px;height:16px;stroke:currentColor;fill:none;display:block}
+.page-title-icon{display:inline-flex;vertical-align:middle;margin-right:8px;color:var(--text)}
+.page-title-icon svg{width:22px;height:22px;stroke:currentColor;fill:none;display:block}
 /* ── Store: nav divider ── */
 .nav-divider{height:1px;background:var(--border);margin:8px 4px}
 /* ── Store: buttons ── */
@@ -252,7 +263,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .pp-approved-banner{background:#EFEFEF;border:1px solid #D9D9D9;border-radius:10px;padding:14px;margin-top:10px;color:#111;font-weight:600;font-size:13px}
 .defect-row{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:flex-end;margin-bottom:8px;padding:10px;background:#f8f8f8;border-radius:8px}
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:16px}
-.kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center}
+.kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-bubble);padding:12px;text-align:center}
 .kpi-val{font-size:28px;font-weight:800;margin-bottom:2px}
 .kpi-label{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
 .tower-cols{display:flex;gap:8px;overflow-x:auto;padding-bottom:8px}
@@ -281,7 +292,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .paygrade-badge.p3{background:#EAF3DE;color:#3B6D11}
 .paygrade-badge.p4{background:#FAEEDA;color:#854F0B}
 .paygrade-badge.p5{background:#1A1A2E;color:#fff}
-.hrm-greeting{padding:20px;background:linear-gradient(135deg,#1A1A2E 0%,#2D2D4E 100%);border-radius:12px;margin-bottom:16px;color:white;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.hrm-greeting{padding:20px;background:linear-gradient(135deg,#1A1A2E 0%,#2D2D4E 100%);border-radius:var(--radius-bubble);margin-bottom:16px;color:white;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .hrm-greeting .greeting-left{min-width:0}
 .hrm-greeting .greeting-name{font-size:22px;font-weight:600;line-height:1.2}
 .hrm-greeting .greeting-sub{font-size:13px;opacity:0.75;margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -289,14 +300,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .hrm-attendance-card,.hrm-month-card{margin-bottom:12px}
 .hrm-attendance-card .card-title,.hrm-month-card .card-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px}
 .att-status{display:flex;align-items:center;gap:10px;font-size:14px;margin-bottom:8px}
-.att-status.in-yes{color:#0F6E56}
-.att-status.in-no{color:#854F0B}
+.att-status.in-yes{color:var(--accent-success)}
+.att-status.in-no{color:var(--accent-warning)}
 .att-hours{font-size:13px;color:var(--muted)}
 .salary-preview{margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);font-size:13px;color:var(--text)}
 .advance-row{margin-top:6px;font-size:12px;color:var(--muted)}
 .advance-row .text-red{color:#dc2626;font-weight:700}
 .owner-kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
-.kpi-card{background:white;border-radius:12px;padding:16px;text-align:center;border:1px solid var(--border)}
+.kpi-card{background:white;border-radius:var(--radius-bubble);padding:16px;text-align:center;border:1px solid var(--border)}
+.kpi-card.amber{background:var(--accent-warning-soft);border-color:transparent}
+.kpi-card.red{background:var(--accent-urgent-soft);border-color:transparent}
+.kpi-card .kpi-icon{display:inline-flex;align-items:center;justify-content:center;color:var(--text);margin-bottom:6px}
+.kpi-card .kpi-icon svg{width:22px;height:22px;stroke:currentColor;fill:none;display:block}
+.kpi-card.amber .kpi-icon{color:var(--accent-warning)}
+.kpi-card.red .kpi-icon{color:var(--accent-urgent)}
 .kpi-card.amber{background:#FFFBEF}
 .kpi-card.red{background:#FEF4F4}
 .kpi-num{font-size:28px;font-weight:700;color:#1A1A2E}
@@ -306,7 +323,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .stat-card.mgr{padding:14px}
 .stat-card .stat-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 .stat-card .stat-big{font-size:24px;font-weight:700;color:#1A1A2E;margin-top:4px}
-.stat-card .stat-big.green{color:#0F6E56}
+.stat-card .stat-big.green{color:var(--accent-success)}
 .stat-card .stat-sub{font-size:11px;color:var(--muted);margin-top:4px}
 .month-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
 .month-stat{text-align:center;padding:10px;border-radius:8px}
@@ -315,7 +332,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .month-stat.red{background:#FCEBEB}
 .month-stat .stat-num{font-size:24px;font-weight:700}
 .month-stat .stat-label{font-size:10px;margin-top:2px;color:#6B7280}
-.pulse-dot{width:10px;height:10px;border-radius:50%;background:#1D9E75;display:inline-block;animation:pulse 1.5s infinite}
+.pulse-dot{width:10px;height:10px;border-radius:50%;background:var(--accent-success);display:inline-block;animation:pulse 1.5s infinite}
 @keyframes pulse{0%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(1.4)}100%{opacity:1;transform:scale(1)}}
 .emp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
 .emp-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px}
@@ -1453,11 +1470,11 @@ function buildNav(){
   // HRM nav items — owners + managers only
   const hrmSubItems=[];
   if(om){
-    hrmSubItems.push({id:'attendance',label:'🕒 Attendance'});
-    hrmSubItems.push({id:'hrm-employees',label:'👥 Employees'});
-    hrmSubItems.push({id:'hrm-payroll',label:'💰 Payroll'});
-    hrmSubItems.push({id:'hrm-advances',label:'📋 Advances'});
-    hrmSubItems.push({id:'hrm-policy',label:'⚙ Policy Engine'});
+    hrmSubItems.push({id:'attendance',iconName:'clock',label:'Attendance'});
+    hrmSubItems.push({id:'hrm-employees',iconName:'people',label:'Employees'});
+    hrmSubItems.push({id:'hrm-payroll',iconName:'money',label:'Payroll'});
+    hrmSubItems.push({id:'hrm-advances',iconName:'list',label:'Advances'});
+    hrmSubItems.push({id:'hrm-policy',iconName:'gear',label:'Policy Engine'});
   }
   // Printing module nav items (worker-aware; used for mobile bottom nav)
   const printItems=[];
@@ -1511,7 +1528,7 @@ function buildNav(){
       <span>HRM</span><span id="hrm-nav-arrow" style="font-size:10px;transition:transform .2s">${hrmOpen?'▾':'▸'}</span>
     </div>
     <div id="hrm-subnav" style="overflow:hidden;transition:max-height .2s;max-height:${hrmOpen?'300px':'0'}">
-      ${hrmSubItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:22px;font-size:12px">${i.label}</div>`).join('')}
+      ${hrmSubItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:22px;font-size:12px"><span class="icon">${i.iconName?_icon(i.iconName,16):''}</span>${i.label}</div>`).join('')}
     </div>`:'';
 
   document.getElementById('sidebar').innerHTML=mainNav+printNav+storeNav+hrmNav;
@@ -1519,8 +1536,36 @@ function buildNav(){
   _renderMobNav({isOwner,isWorker,isViewer,isStore,om,canPO,printItems,storeSubItems,hrmSubItems,mainItems});
 }
 
-function _mobNavBtn(id,icon,label,onclick){
-  return`<button class="mob-nav-btn" id="mobnav-${id}" data-mob-id="${id}" onclick="${onclick}"><span class="icon">${icon}</span><span>${label}</span></button>`;
+// Inline SVG icon set — monochrome line icons that inherit colour from
+// the surrounding element. 24×24 viewBox, currentColor stroke.
+function _icon(name,size){
+  size=size||20;
+  const svgs={
+    home:    '<path d="M3 11l9-8 9 8v10a2 2 0 01-2 2h-4v-7h-6v7H5a2 2 0 01-2-2V11z"/>',
+    po:      '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/>',
+    door:    '<path d="M5 3h10v18H5zM15 12h5"/><circle cx="12" cy="12" r="0.6"/>',
+    people:  '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17" cy="9" r="2.5"/><path d="M22 19c0-2.5-2-4.5-4.5-4.5"/>',
+    more:    '<circle cx="6" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="18" cy="12" r="1.5"/>',
+    plus:    '<path d="M12 5v14M5 12h14"/>',
+    box:     '<path d="M3 7l9-4 9 4v10l-9 4-9-4V7zM3 7l9 4 9-4M12 11v10"/>',
+    tray:    '<path d="M3 13h6l1 2h4l1-2h6v6H3zM3 13l3-8h12l3 8"/>',
+    clock:   '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    money:   '<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 9v6M18 9v6"/>',
+    list:    '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>',
+    gear:    '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3h0a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5h0a1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8v0a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>',
+    user:    '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>',
+    palette: '<path d="M12 3a9 9 0 100 18 3 3 0 003-3 1.5 1.5 0 011.5-1.5H18a3 3 0 003-3A9 9 0 0012 3z"/><circle cx="7.5" cy="10.5" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16.5" cy="10.5" r="1"/>',
+    print:   '<rect x="6" y="3" width="12" height="6"/><path d="M6 17H4a2 2 0 01-2-2v-3a2 2 0 012-2h16a2 2 0 012 2v3a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="7"/>',
+    shop:    '<path d="M3 9h18l-2 11H5L3 9z"/><path d="M8 9V6a4 4 0 018 0v3"/>',
+    activity:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+    eye:     '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'
+  };
+  const inner=svgs[name]||'';
+  return`<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+}
+
+function _mobNavBtn(id,iconName,label,onclick){
+  return`<button class="mob-nav-btn" id="mobnav-${id}" data-mob-id="${id}" onclick="${onclick}"><span class="icon">${_icon(iconName,22)}</span><span>${label}</span></button>`;
 }
 
 function _renderMobNav(ctx){
@@ -1532,25 +1577,25 @@ function _renderMobNav(ctx){
   if(isWorker||isViewer){
     // Workers/viewers: 3-button nav
     cols=3;
-    html=_mobNavBtn('my-work','🏠','My Work',"window.showPage('my-work')")
-        +_mobNavBtn('gatepass','🚪','Gate Pass',"window.showPage('gatepass')")
-        +_mobNavBtn('me','👤','Me',"window.showPage('me')");
+    html=_mobNavBtn('my-work','home','My Work',"window.showPage('my-work')")
+        +_mobNavBtn('gatepass','door','Gate Pass',"window.showPage('gatepass')")
+        +_mobNavBtn('me','user','Me',"window.showPage('me')");
   } else if(isStore){
     // Store role (Raees): 5-button store-focused
     cols=5;
-    html=_mobNavBtn('store-dashboard','🏠','Home',"window.showPage('store-dashboard')")
-        +_mobNavBtn('store-inventory','📦','Inventory',"window.showPage('store-inventory')")
-        +_mobNavBtn('store-receive','➕','Receive',"window.showPage('store-receive')")
-        +_mobNavBtn('store-issue','📋','Issue',"window.showPage('store-issue')")
-        +_mobNavBtn('more','⋯','More','window.openStoreMoreSheet()');
+    html=_mobNavBtn('store-dashboard','home','Home',"window.showPage('store-dashboard')")
+        +_mobNavBtn('store-inventory','box','Inventory',"window.showPage('store-inventory')")
+        +_mobNavBtn('store-receive','plus','Receive',"window.showPage('store-receive')")
+        +_mobNavBtn('store-issue','tray','Issue',"window.showPage('store-issue')")
+        +_mobNavBtn('more','more','More','window.openStoreMoreSheet()');
   } else {
     // Owner / Manager: 5-button with More pattern
     cols=5;
-    html=_mobNavBtn('dashboard','🏠','Home',"window.showPage('dashboard')")
-        +_mobNavBtn('po','📋','PO','window.openPOSheet()')
-        +_mobNavBtn('gatepass','🚪','Gate Pass',"window.showPage('gatepass')")
-        +(om?_mobNavBtn('hrm','👥','HRM','window.openHRMSheet()'):'')
-        +_mobNavBtn('more','⋯','More','window.openMoreSheet()');
+    html=_mobNavBtn('dashboard','home','Home',"window.showPage('dashboard')")
+        +_mobNavBtn('po','po','PO','window.openPOSheet()')
+        +_mobNavBtn('gatepass','door','Gate Pass',"window.showPage('gatepass')")
+        +(om?_mobNavBtn('hrm','people','HRM','window.openHRMSheet()'):'')
+        +_mobNavBtn('more','more','More','window.openMoreSheet()');
   }
   mob.className=cols===3?'cols-3':'';
   mob.innerHTML=html;
@@ -1615,7 +1660,8 @@ window.openMobSheet=function(title,items){
   itemsEl.innerHTML=items.map(it=>{
     const active=it.pageId&&currentPage===it.pageId?' active':'';
     const handler=it.onClick?it.onClick:`window.showPage('${it.pageId}');window.closeMobSheet()`;
-    return`<button class="mob-sheet-item${active}" onclick="${handler}"><span class="icon">${it.icon||''}</span><span>${it.label}</span></button>`;
+    const iconHTML=it.iconName?_icon(it.iconName,20):(it.icon||'');
+    return`<button class="mob-sheet-item${active}" onclick="${handler}"><span class="icon">${iconHTML}</span><span>${it.label}</span></button>`;
   }).join('');
   // Force reflow for transition
   back.classList.add('open');
@@ -1646,8 +1692,8 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape')window.closeMobShee
 
 window.openPOSheet=function(){
   const items=[];
-  if(session.canPO)items.push({icon:'➕',label:'New PO',pageId:'po-create'});
-  items.push({icon:'📋',label:'PO Registry',pageId:'po-registry'});
+  if(session.canPO)items.push({iconName:'plus',label:'New PO',pageId:'po-create'});
+  items.push({iconName:'po',label:'PO Registry',pageId:'po-registry'});
   window.openMobSheet('Production Orders',items);
 };
 
@@ -1655,11 +1701,11 @@ window.openHRMSheet=function(){
   const isOM=session&&['owner','manager'].includes(session.role);
   if(!isOM)return;
   const items=[
-    {icon:'🕒',label:'Attendance',pageId:'attendance'},
-    {icon:'👥',label:'Employees',pageId:'hrm-employees'},
-    {icon:'💰',label:'Payroll',pageId:'hrm-payroll'},
-    {icon:'📋',label:'Advances',pageId:'hrm-advances'},
-    {icon:'⚙️',label:'Policy Engine',pageId:'hrm-policy'}
+    {iconName:'clock',label:'Attendance',pageId:'attendance'},
+    {iconName:'people',label:'Employees',pageId:'hrm-employees'},
+    {iconName:'money',label:'Payroll',pageId:'hrm-payroll'},
+    {iconName:'list',label:'Advances',pageId:'hrm-advances'},
+    {iconName:'gear',label:'Policy Engine',pageId:'hrm-policy'}
   ];
   window.openMobSheet('HRM',items);
 };
@@ -1668,25 +1714,25 @@ window.openMoreSheet=function(){
   const isOwner=session.role==='owner';
   const om=isOwner||session.role==='manager';
   const items=[];
-  if(session.canPO)items.push({icon:'➕',label:'New PO',pageId:'po-create'});
-  items.push({icon:'📋',label:'PO Registry',pageId:'po-registry'});
+  if(session.canPO)items.push({iconName:'plus',label:'New PO',pageId:'po-create'});
+  items.push({iconName:'po',label:'PO Registry',pageId:'po-registry'});
   // Embellishments dept items (visible to owners/managers + relevant workers)
-  if(om||session.u==='ammar'||session.u==='haris')items.push({icon:'🎨',label:'Recipe Directory',pageId:'recipe-directory'});
-  if(om||['asghar','zohaib','waqas','haris'].includes(session.u))items.push({icon:'🖨',label:'Embellishment Jobs',pageId:'printing-jobs'});
-  if(om)items.push({icon:'🗼',label:'Observer Tower',pageId:'observer-tower'});
-  if(typeof canManageRecipes==='function'&&(canManageRecipes()||(typeof isQCWorker==='function'&&isQCWorker())))items.push({icon:'🎨',label:'Color Library',pageId:'color-library'});
+  if(om||session.u==='ammar'||session.u==='haris')items.push({iconName:'palette',label:'Recipe Directory',pageId:'recipe-directory'});
+  if(om||['asghar','zohaib','waqas','haris'].includes(session.u))items.push({iconName:'print',label:'Embellishment Jobs',pageId:'printing-jobs'});
+  if(om)items.push({iconName:'eye',label:'Observer Tower',pageId:'observer-tower'});
+  if(typeof canManageRecipes==='function'&&(canManageRecipes()||(typeof isQCWorker==='function'&&isQCWorker())))items.push({iconName:'palette',label:'Color Library',pageId:'color-library'});
   // Store
-  items.push({icon:'🏬',label:'Store',pageId:'store-dashboard'});
+  items.push({iconName:'shop',label:'Store',pageId:'store-dashboard'});
   // Owner-only
-  if(isOwner)items.push({icon:'📜',label:'Activity Log',pageId:'activity'});
-  if(isOwner)items.push({icon:'👤',label:'Users',pageId:'users'});
+  if(isOwner)items.push({iconName:'activity',label:'Activity Log',pageId:'activity'});
+  if(isOwner)items.push({iconName:'user',label:'Users',pageId:'users'});
   window.openMobSheet('More',items);
 };
 
 window.openStoreMoreSheet=function(){
   const items=[
-    {icon:'📐',label:'Trim Templates',pageId:'store-templates'},
-    {icon:'📒',label:'Stock Log',pageId:'store-log'}
+    {iconName:'list',label:'Trim Templates',pageId:'store-templates'},
+    {iconName:'activity',label:'Stock Log',pageId:'store-log'}
   ];
   window.openMobSheet('More',items);
 };
@@ -1746,9 +1792,9 @@ function renderPage(id){
   // ── HRM module pages ──
   else if(id==='hrm-employees'){if(!hrmDataLoaded)loadHRMData().then(()=>m.innerHTML=renderHRMEmployeesPage());else m.innerHTML=renderHRMEmployeesPage();}
   else if(id==='attendance'){if(!hrmDataLoaded)loadHRMData().then(()=>{m.innerHTML=renderAttendancePage();_attendanceAfterRender();});else{m.innerHTML=renderAttendancePage();_attendanceAfterRender();}}
-  else if(id==='hrm-payroll'){m.innerHTML=renderHRMStub('💰 Payroll','Coming in Session 3 — full monthly payroll generation, deductions, slip exports.');}
-  else if(id==='hrm-advances'){m.innerHTML=renderHRMStub('📋 Advances','Coming in Session 4 — advance/loan request approval workflow.');}
-  else if(id==='hrm-policy'){m.innerHTML=renderHRMStub('⚙ Policy Engine','Coming in Session 4 — paygrade limits, increment policies, deduction rules.');}
+  else if(id==='hrm-payroll'){m.innerHTML=renderHRMStub('Payroll','money','Coming in Session 3 — full monthly payroll generation, deductions, slip exports.');}
+  else if(id==='hrm-advances'){m.innerHTML=renderHRMStub('Advances','list','Coming in Session 4 — advance/loan request approval workflow.');}
+  else if(id==='hrm-policy'){m.innerHTML=renderHRMStub('Policy Engine','gear','Coming in Session 4 — paygrade limits, increment policies, deduction rules.');}
 }
 
 // ── Dashboard — extended in Chunk 5 with printing KPI strip ──
@@ -7422,9 +7468,12 @@ function _hrmEstSalary(emp,monthSummary){
   return Math.max(0,Math.round(emp.basicSalary-(absent*dailyRate)-loanDed-purchDed));
 }
 
-function renderHRMStub(title,msg){
-  return`<div class="page-head"><div class="page-title">${title}</div><div class="page-sub">HRM module</div></div>
-  <div class="card" style="text-align:center;padding:36px 18px"><div style="font-size:36px;margin-bottom:10px">🛠</div><div style="font-weight:700;margin-bottom:6px">${title}</div><div style="color:var(--muted);font-size:13px;max-width:480px;margin:0 auto">${msg}</div></div>`;
+function renderHRMStub(title,iconName,msg){
+  // Backwards compat: if old signature renderHRMStub(title,msg) was used,
+  // shift parameters so it still works.
+  if(typeof iconName==='string'&&msg===undefined){msg=iconName;iconName='gear';}
+  const head=`<div class="page-head"><div class="page-title"><span class="page-title-icon">${_icon(iconName,22)}</span> ${title}</div><div class="page-sub">HRM module</div></div>`;
+  return head+`<div class="card" style="text-align:center;padding:36px 18px"><div style="display:inline-flex;align-items:center;justify-content:center;color:var(--muted);margin-bottom:10px">${_icon(iconName,40)}</div><div style="font-weight:700;margin-bottom:6px">${title}</div><div style="color:var(--muted);font-size:13px;max-width:480px;margin:0 auto">${msg}</div></div>`;
 }
 
 function renderMePage(){
@@ -7465,10 +7514,10 @@ function renderHRMDashboardWidget(){
   if(isOwner){
     return`${greetingHTML}
     <div class="owner-kpi-strip" id="owner-kpi-strip">
-      <div class="kpi-card"><div class="kpi-icon">👥</div><div class="kpi-num" id="owner-kpi-in">—</div><div class="kpi-label">Staff IN today</div></div>
-      <div class="kpi-card amber"><div class="kpi-icon">⚠</div><div class="kpi-num" id="owner-kpi-late">—</div><div class="kpi-label">Late today</div></div>
-      <div class="kpi-card"><div class="kpi-icon">📦</div><div class="kpi-num">${allPOs.filter(p=>p.currentStage&&p.currentStage!=='completed').length}</div><div class="kpi-label">Active POs</div></div>
-      <div class="kpi-card red"><div class="kpi-icon">🔔</div><div class="kpi-num" id="owner-kpi-notif">${(typeof storeNotifications!=='undefined'?storeNotifications.length:0)}</div><div class="kpi-label">Notifications</div></div>
+      <div class="kpi-card"><div class="kpi-icon">${_icon('people',22)}</div><div class="kpi-num" id="owner-kpi-in">—</div><div class="kpi-label">Staff IN today</div></div>
+      <div class="kpi-card amber"><div class="kpi-icon">${_icon('clock',22)}</div><div class="kpi-num" id="owner-kpi-late">—</div><div class="kpi-label">Late today</div></div>
+      <div class="kpi-card"><div class="kpi-icon">${_icon('box',22)}</div><div class="kpi-num">${allPOs.filter(p=>p.currentStage&&p.currentStage!=='completed').length}</div><div class="kpi-label">Active POs</div></div>
+      <div class="kpi-card red"><div class="kpi-icon">${_icon('list',22)}</div><div class="kpi-num" id="owner-kpi-notif">${(typeof storeNotifications!=='undefined'?storeNotifications.length:0)}</div><div class="kpi-label">Notifications</div></div>
     </div>`;
   }
 
@@ -7599,7 +7648,7 @@ function renderHRMEmployeesPage(){
   const paygrades=['P1','P2','P3','P4','P5'];
   const total=allEmployees.length;
   return`<div class="page-head">
-    <div class="page-title">👥 Employees</div>
+    <div class="page-title"><span class="page-title-icon">${_icon('people',22)}</span> Employees</div>
     <div class="page-sub">${total} active staff</div>
   </div>
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
@@ -7969,7 +8018,7 @@ function renderWorkerHRMWidget(){
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6B7280;margin-bottom:10px">Today · آج</div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px" id="wrk-att-row">
         <span class="pulse-dot" id="wrk-att-dot" style="display:none"></span>
-        <span style="font-size:14px;font-weight:600;color:#854F0B" id="wrk-att-label">Loading…</span>
+        <span style="font-size:14px;font-weight:600;color:var(--accent-warning)" id="wrk-att-label">Loading…</span>
       </div>
       <div style="font-size:12px;color:#6B7280" id="wrk-att-hours">Hours: —</div>
     </div>
@@ -7977,8 +8026,8 @@ function renderWorkerHRMWidget(){
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6B7280;margin-bottom:10px">This Month · اس مہینے</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;text-align:center">
         <div style="background:#EAF3DE;border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:#3B6D11" id="wrk-m-present">—</div><div style="font-size:9px;color:#6B7280">Present</div></div>
-        <div style="background:#FAEEDA;border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:#854F0B" id="wrk-m-late">—</div><div style="font-size:9px;color:#6B7280">Late</div></div>
-        <div style="background:#FCEBEB;border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:#A32D2D" id="wrk-m-absent">—</div><div style="font-size:9px;color:#6B7280">Absent</div></div>
+        <div style="background:var(--accent-warning-soft);border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:var(--accent-warning)" id="wrk-m-late">—</div><div style="font-size:9px;color:#6B7280">Late</div></div>
+        <div style="background:var(--accent-urgent-soft);border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:var(--accent-urgent)" id="wrk-m-absent">—</div><div style="font-size:9px;color:#6B7280">Absent</div></div>
       </div>
     </div>
   </div>
@@ -8004,7 +8053,7 @@ async function _populateWorkerHRMWidget(){
   if(!emp){ const lbl=document.getElementById('wrk-att-label'); if(lbl)lbl.textContent='Loading employee profile…'; return; }
   const k40=emp.k40UserId||session.k40UserId||'';
   if(!k40){
-    const lbl=document.getElementById('wrk-att-label'); if(lbl){lbl.textContent='K40 ID not set';lbl.style.color='#854F0B';}
+    const lbl=document.getElementById('wrk-att-label'); if(lbl){lbl.textContent='K40 ID not set';lbl.style.color='var(--accent-warning)';}
     return;
   }
   try{
@@ -8014,7 +8063,7 @@ async function _populateWorkerHRMWidget(){
     const hrs=document.getElementById('wrk-att-hours');
     if(att&&att.firstIn){
       if(dot)dot.style.display='inline-block';
-      if(lbl){lbl.textContent=`Punched in at ${att.firstIn.time||'—'}`;lbl.style.color='#1D9E75';}
+      if(lbl){lbl.textContent=`Punched in at ${att.firstIn.time||'—'}`;lbl.style.color='var(--accent-success)';}
       if(hrs){
         const start=att.firstIn.time||'';
         const end=att.lastPunch?.time||'';
@@ -8022,7 +8071,7 @@ async function _populateWorkerHRMWidget(){
       }
     } else {
       if(dot)dot.style.display='none';
-      if(lbl){lbl.textContent='Not punched yet';lbl.style.color='#854F0B';}
+      if(lbl){lbl.textContent='Not punched yet';lbl.style.color='var(--accent-warning)';}
       if(hrs)hrs.textContent='Hours: —';
     }
     const m=await getMyMonthSummary(k40);
@@ -8053,8 +8102,8 @@ async function _populateWorkerHRMWidget(){
     if(badgeWrap){
       const lc=m.late||0;
       const badges=[];
-      if(lc>=2)badges.push(`<span style="display:inline-block;background:#FAEEDA;color:#854F0B;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin-top:4px">⚠ ${lc} lates this month</span>`);
-      if(lc>=3)badges.push(`<span style="display:inline-block;background:#FCEBEB;color:#A32D2D;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin-top:4px;margin-left:4px">🔴 Absent deducted</span>`);
+      if(lc>=2)badges.push(`<span style="display:inline-block;background:var(--accent-warning-soft);color:var(--accent-warning);font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin-top:4px">⚠ ${lc} lates this month</span>`);
+      if(lc>=3)badges.push(`<span style="display:inline-block;background:var(--accent-urgent-soft);color:var(--accent-urgent);font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin-top:4px;margin-left:4px">🔴 Absent deducted</span>`);
       badgeWrap.innerHTML=badges.join('');
     }
     const advRow=document.getElementById('wrk-advance-row');
@@ -8069,7 +8118,7 @@ function renderAttendancePage(){
   }
   const tabBtn=(id,label)=>`<button class="att-tab ${attendanceTab===id?'active':''}" onclick="window.attendanceSetTab('${id}')" style="padding:8px 18px;border:1px solid var(--border);border-bottom:${attendanceTab===id?'2px solid #1A1A2E':'1px solid var(--border)'};background:${attendanceTab===id?'#fff':'#fafafa'};font-weight:${attendanceTab===id?'700':'500'};font-size:13px;cursor:pointer;font-family:inherit;color:${attendanceTab===id?'#1A1A2E':'var(--muted)'};border-radius:8px 8px 0 0;margin-right:4px">${label}</button>`;
   const tabs=`<div style="display:flex;border-bottom:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap">${tabBtn('daily','Daily')}${tabBtn('monthly','Monthly')}</div>`;
-  const head=`<div class="page-head"><div class="page-title">🕒 Attendance · حاضری</div><div class="page-sub">${allEmployees.length} active staff</div></div>`;
+  const head=`<div class="page-head"><div class="page-title"><span class="page-title-icon">${_icon('clock',22)}</span> Attendance · حاضری</div><div class="page-sub">${allEmployees.length} active staff</div></div>`;
   const body=attendanceTab==='monthly'?renderAttendanceMonthly():renderAttendanceDaily();
   return head+tabs+`<div id="att-body">${body}</div>`;
 }
@@ -8086,9 +8135,9 @@ function renderAttendanceDaily(){
     <button onclick="window.attendanceNextDay()" class="btn-outline" ${isToday?'disabled style="opacity:.4;cursor:not-allowed"':''}>Next →</button>
   </div>
   <div class="att-summary-strip" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px" id="att-summary-strip">
-    <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:#1D9E75" id="att-tot-in">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Punched IN</div></div>
-    <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:#E94560" id="att-tot-absent">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Absent</div></div>
-    <div class="card" style="padding:16px;text-align:center;background:#FAEEDA"><div style="font-size:28px;font-weight:700;color:#854F0B" id="att-tot-late">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Late Arrivals</div></div>
+    <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:var(--accent-success)" id="att-tot-in">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Punched IN</div></div>
+    <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:var(--accent-urgent)" id="att-tot-absent">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Absent</div></div>
+    <div class="card" style="padding:16px;text-align:center;background:var(--accent-warning-soft)"><div style="font-size:28px;font-weight:700;color:var(--accent-warning)" id="att-tot-late">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Late Arrivals</div></div>
     <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:#1A1A2E">${allEmployees.length}</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Total Staff</div></div>
   </div>
   <div class="section-title">Staff Presence</div>
@@ -8226,11 +8275,11 @@ function _attEmpCardHTML(row){
   const hours=_attHoursLabel(start,end);
   const isOut=status==='out';
   const isLate=status==='late';
-  const borderColor=isLate?'#EF9F27':(isOut?'#9CA3AF':'#1D9E75');
+  const borderColor=isLate?'var(--accent-warning)':(isOut?'#9CA3AF':'var(--accent-success)');
   const statusLabel=isLate?'LATE':(isOut?'OUT':'IN');
-  const statusColor=isLate?'#854F0B':(isOut?'#555':'#1D9E75');
+  const statusColor=isLate?'var(--accent-warning)':(isOut?'#555':'var(--accent-success)');
   const dot=isOut?'':`<span class="pulse-dot"></span>`;
-  const lateBadge=isLate?`<span style="display:inline-block;background:#FAEEDA;color:#854F0B;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin-top:6px">LATE</span>`:'';
+  const lateBadge=isLate?`<span style="display:inline-block;background:var(--accent-warning-soft);color:var(--accent-warning);font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin-top:6px">LATE</span>`:'';
   return`<div class="card" style="padding:14px;border-left:3px solid ${borderColor}">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
       <div style="min-width:0"><div style="font-weight:600;font-size:14px">${emp.name}</div><div style="font-size:11px;color:#6B7280">${emp.designation||'—'}</div>${lateBadge}</div>
@@ -8246,7 +8295,7 @@ function _attPunchRow(p){
   const tint=isIn?'#F4FAEC':'#fff';
   const typeBg=isIn?'#EAF3DE':'#F0F0F0';
   const typeFg=isIn?'#3B6D11':'#555';
-  const lateLabel=(isIn&&_isLatePunch(p))?`<span style="background:#FAEEDA;color:#854F0B;font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px">LATE +${_attLateMinutes(p.time)}m</span>`:'<span style="color:var(--muted);font-size:12px">—</span>';
+  const lateLabel=(isIn&&_isLatePunch(p))?`<span style="background:var(--accent-warning-soft);color:var(--accent-warning);font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px">LATE +${_attLateMinutes(p.time)}m</span>`:'<span style="color:var(--muted);font-size:12px">—</span>';
   return`<tr style="background:${tint};border-bottom:1px solid #E5E5E7">
     <td style="padding:10px;font-weight:600">${p.time||''}</td>
     <td style="padding:10px">${p.empName||p.name||'—'}</td>
@@ -8263,17 +8312,17 @@ function _attLateBlockHTML(lates){
     const lateMins=_attLateMinutes(time);
     const monthly=monthByEmp?(monthByEmp[emp._id]?.late||0):'—';
     const monthlyNum=typeof monthly==='number'?monthly:0;
-    const badgeBg=monthlyNum>=3?'#FCEBEB':(monthlyNum>=2?'#FAEEDA':'#F0F0F0');
-    const badgeFg=monthlyNum>=3?'#A32D2D':(monthlyNum>=2?'#854F0B':'#555');
+    const badgeBg=monthlyNum>=3?'var(--accent-urgent-soft)':(monthlyNum>=2?'var(--accent-warning-soft)':'#F0F0F0');
+    const badgeFg=monthlyNum>=3?'var(--accent-urgent)':(monthlyNum>=2?'var(--accent-warning)':'#555');
     const triggered=monthlyNum>=3?' 🔴 Absent triggered':'';
     return`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #E5E5E7;gap:10px;flex-wrap:wrap">
       <div style="min-width:0"><div style="font-weight:600">${emp.name}</div><div style="font-size:12px;color:#6B7280">${emp.designation||'—'}</div></div>
-      <div style="text-align:right"><div style="color:#854F0B;font-weight:600">Arrived ${time}</div><div style="font-size:12px;color:#6B7280">Late by ${lateMins} mins</div></div>
+      <div style="text-align:right"><div style="color:var(--accent-warning);font-weight:600">Arrived ${time}</div><div style="font-size:12px;color:#6B7280">Late by ${lateMins} mins</div></div>
       <span style="background:${badgeBg};color:${badgeFg};padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600">${monthly} lates this month${triggered}</span>
     </div>`;
   }).join('');
   return`<div class="card" style="border:1px solid #EF9F27;padding:0">
-    <div class="card-title" style="color:#854F0B;padding:14px 16px 6px;font-weight:700">⚠ Late Arrivals · دیر سے آنے والے</div>
+    <div class="card-title" style="color:var(--accent-warning);padding:14px 16px 6px;font-weight:700">⚠ Late Arrivals · دیر سے آنے والے</div>
     ${items}
   </div>`;
 }
@@ -8315,8 +8364,8 @@ async function _renderAttendanceMonthly(){
     const loanDed=e.loanMonthlyDeduction||0;
     const netEst=Math.max(0,Math.round((e.basicSalary||0)-deduction-advance-loanDed));
     let rowBg='';
-    if((s.absent||0)>3)rowBg='background:#FCEBEB';
-    else if((s.late||0)>=2)rowBg='background:#FFF8E5';
+    if((s.absent||0)>3)rowBg='background:var(--accent-urgent-soft)';
+    else if((s.late||0)>=2)rowBg='background:var(--accent-warning-soft)';
     return{e,s,lateAbsentEquiv,totalDeductDays,deduction,netEst,rowBg};
   }).sort((a,b)=>(a.e.name||'').localeCompare(b.e.name||''));
 
@@ -8337,10 +8386,10 @@ async function _renderAttendanceMonthly(){
         return`<tr style="${r.rowBg};border-bottom:1px solid #E5E5E7">
           <td style="padding:10px"><div style="font-weight:600">${r.e.name}</div><div style="font-size:11px;color:var(--muted)">${r.e.designation||'—'}</div></td>
           <td style="padding:10px;text-align:center"><span class="paygrade-badge ${pgClass}">${r.e.paygrade||'—'}</span></td>
-          <td style="padding:10px;text-align:center;font-weight:600;color:#3B6D11">${r.s.present}</td>
-          <td style="padding:10px;text-align:center;color:#854F0B">${r.s.late}</td>
-          <td style="padding:10px;text-align:center;color:#854F0B">${r.lateAbsentEquiv}</td>
-          <td style="padding:10px;text-align:center;color:#A32D2D">${r.s.absent}</td>
+          <td style="padding:10px;text-align:center;font-weight:600;color:var(--accent-success)">${r.s.present}</td>
+          <td style="padding:10px;text-align:center;color:var(--accent-warning)">${r.s.late}</td>
+          <td style="padding:10px;text-align:center;color:var(--accent-warning)">${r.lateAbsentEquiv}</td>
+          <td style="padding:10px;text-align:center;color:var(--accent-urgent)">${r.s.absent}</td>
           <td style="padding:10px;text-align:center">${_hrmFmtPKR(r.deduction)}</td>
           <td style="padding:10px;text-align:center;font-weight:700">${_hrmFmtPKR(r.netEst)}</td>
         </tr>`;
