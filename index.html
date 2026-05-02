@@ -324,6 +324,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
   .month-grid{grid-template-columns:repeat(3,1fr)}
   .greeting-name{font-size:18px}
   .hrm-grid-2{grid-template-columns:1fr}
+  .attendance-grid{grid-template-columns:1fr 1fr !important}
+  .att-summary-strip{grid-template-columns:repeat(2,1fr) !important}
+  .punch-log-table th:last-child,.punch-log-table td:last-child{display:none}
+  .wrk-hrm-grid{grid-template-columns:1fr !important}
+  .att-month-table{font-size:11px}
+}
+@media (max-width:420px){
+  .attendance-grid{grid-template-columns:1fr !important}
 }
 </style>
 </head>
@@ -389,7 +397,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import{getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,runTransaction,writeBatch}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import{getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import{getDatabase,ref as rtdbRef,get as rtdbGet,child as rtdbChild}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
+import{getDatabase,ref as rtdbRef,get as rtdbGet,child as rtdbChild,onValue as rtdbOnValue,off as rtdbOff}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 
 const CFG={apiKey:'AIzaSyAcIrudpSPLbZMmoWMyTM1l8Z7GnxwelFw',authDomain:'groovy-gatepass.firebaseapp.com',projectId:'groovy-gatepass',storageBucket:'groovy-gatepass.appspot.com',messagingSenderId:'986200726255',appId:'1:986200726255:web:3a263cea3e7456d73c591a',databaseURL:'https://groovy-gatepass-default-rtdb.firebaseio.com'};
 const SETUP_CODE='GroovyOps2024';
@@ -844,6 +852,13 @@ let allItems=[],allTransactions=[],allTemplates=[],allRequests=[],allActivePOs=[
 // ── HRM state ──
 let allEmployees=[],allIncrementLogs=[],hrmPolicies=null,hrmDataLoaded=false;
 let _empFilterQ='',_empFilterDept='',_empFilterPay='',_empViewingId=null;
+// ── Attendance state ──
+const LATE_CUTOFF_HOUR=9, LATE_CUTOFF_MINUTE=30;
+const LATE_CUTOFF_STR=String(LATE_CUTOFF_HOUR).padStart(2,'0')+':'+String(LATE_CUTOFF_MINUTE).padStart(2,'0');
+let attendanceDate=new Date().toISOString().split('T')[0];
+let attendanceTab='daily',attendanceMonth=new Date().toISOString().slice(0,7);
+let liveAttendanceData={},dailyAttendanceData={},monthlyAttendanceCache={};
+let _attLiveUnsub=null,_attDayUnsub=null,_attMonthSummary=null;
 let _ilPage=1,_ilQ='',_ilPO='',_ilDir='';
 let _tplRowIdx=0,_tplProdCode='',_tplProdName='',_tplEditId=null,_tplPage=1;
 const TPL_PER=15;
@@ -1408,6 +1423,7 @@ function buildNav(){
   // HRM nav items — owners + managers only
   const hrmSubItems=[];
   if(om){
+    hrmSubItems.push({id:'attendance',label:'🕒 Attendance'});
     hrmSubItems.push({id:'hrm-employees',label:'👥 Employees'});
     hrmSubItems.push({id:'hrm-payroll',label:'💰 Payroll'});
     hrmSubItems.push({id:'hrm-advances',label:'📋 Advances'});
@@ -1528,7 +1544,7 @@ function renderPage(id){
   if(id==='dashboard'){m.innerHTML=renderDashboard(); if(typeof _hrmPopulateDashboard==='function')setTimeout(_hrmPopulateDashboard,0);}
   else if(id==='po-create')m.innerHTML=renderPOCreate();
   else if(id==='po-registry')m.innerHTML=renderRegistry();
-  else if(id==='my-work')m.innerHTML=renderMyWork();
+  else if(id==='my-work'){m.innerHTML=renderMyWork(); if(typeof _populateWorkerHRMWidget==='function')setTimeout(_populateWorkerHRMWidget,0);}
   else if(id==='gatepass'){gpPage=1;m.innerHTML=renderGatePass();window.switchGPTab(gpActiveTab||'outward');}
   else if(id==='activity'){loadActivity();return;}
   else if(id==='users')m.innerHTML=renderUsers();
@@ -1553,6 +1569,7 @@ function renderPage(id){
   else if(id==='color-library'){if(!printingDataLoaded)loadPrintingData().then(()=>m.innerHTML=renderColorLibraryPage());else m.innerHTML=renderColorLibraryPage();}
   // ── HRM module pages ──
   else if(id==='hrm-employees'){if(!hrmDataLoaded)loadHRMData().then(()=>m.innerHTML=renderHRMEmployeesPage());else m.innerHTML=renderHRMEmployeesPage();}
+  else if(id==='attendance'){if(!hrmDataLoaded)loadHRMData().then(()=>{m.innerHTML=renderAttendancePage();_attendanceAfterRender();});else{m.innerHTML=renderAttendancePage();_attendanceAfterRender();}}
   else if(id==='hrm-payroll'){m.innerHTML=renderHRMStub('💰 Payroll','Coming in Session 3 — full monthly payroll generation, deductions, slip exports.');}
   else if(id==='hrm-advances'){m.innerHTML=renderHRMStub('📋 Advances','Coming in Session 4 — advance/loan request approval workflow.');}
   else if(id==='hrm-policy'){m.innerHTML=renderHRMStub('⚙ Policy Engine','Coming in Session 4 — paygrade limits, increment policies, deduction rules.');}
@@ -6757,6 +6774,14 @@ window.printVendorJobCard=function(jobId){
 
 // ── My Work: unified for all roles including printing workers ─────────
 function renderMyWork(){
+  // Worker HRM widget — shown above all worker content. Triggers HRM load if not yet loaded.
+  if(session.role==='worker'&&!hrmDataLoaded&&typeof loadHRMData==='function'){
+    loadHRMData().then(()=>{ if(currentPage==='my-work'){const m=document.getElementById('main-content');if(m){m.innerHTML=renderMyWork();if(typeof _populateWorkerHRMWidget==='function')setTimeout(_populateWorkerHRMWidget,0);} } });
+  }
+  const hrmHeader=session.role==='worker'&&typeof renderWorkerHRMWidget==='function'?renderWorkerHRMWidget():'';
+  return hrmHeader+_renderMyWorkInner();
+}
+function _renderMyWorkInner(){
   const stages=session.stages||[];
   const base='';
 
@@ -7311,24 +7336,8 @@ async function _hrmPopulateDashboard(){
   const role=session.role;
 
   if(role==='owner'){
-    try{
-      const fac=await getFactoryNowCounts();
-      const today=new Date().toISOString().split('T')[0];
-      let lateCount=0;
-      try{
-        const snap=await rtdbGet(rtdbRef(rtdb,`attendance/${today}`));
-        if(snap.exists()){
-          const all=snap.val();
-          Object.values(all).forEach(userPunches=>{
-            const punches=Object.values(userPunches||{}).sort((a,b)=>(a.timestamp||'').localeCompare(b.timestamp||''));
-            const firstIn=punches.find(p=>p.type==='in')||punches[0];
-            if(firstIn&&firstIn.time&&firstIn.time>'09:30')lateCount++;
-          });
-        }
-      }catch(_){}
-      const elIn=document.getElementById('owner-kpi-in');if(elIn)elIn.textContent=fac.inCount;
-      const elLate=document.getElementById('owner-kpi-late');if(elLate)elLate.textContent=lateCount;
-    }catch(e){}
+    // Subscribe to live attendance + today's punches; KPIs update in real-time
+    if(typeof _ensureOwnerDashboardLive==='function')_ensureOwnerDashboardLive();
     return;
   }
 
@@ -7699,6 +7708,560 @@ window.hrmSubmitIncrement=async function(empId,suggestedPct){
     window.hrmCloseModal();
     window.hrmViewEmployee(empId);
   }catch(err){showToast('Save failed: '+err.message,true);}
+};
+
+// ── HRM Session 2: Worker my-work HRM widget + Attendance page ──
+
+function _isLatePunch(p){ return !!(p&&p.time&&p.time>LATE_CUTOFF_STR); }
+function _attDateLabel(iso){
+  if(!iso)return'';
+  const d=new Date(iso+'T00:00:00');
+  return d.toLocaleDateString('en-GB',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+}
+function _attTodayDelta(iso){
+  const today=new Date().toISOString().split('T')[0];
+  if(iso===today)return'Today';
+  const a=new Date(iso+'T00:00:00'), b=new Date(today+'T00:00:00');
+  const days=Math.round((b-a)/(1000*60*60*24));
+  if(days===1)return'Yesterday';
+  if(days>0)return`${days} days ago`;
+  if(days===-1)return'Tomorrow';
+  return`in ${-days} days`;
+}
+function _attMinutesBetween(start,end){
+  if(!start||!end||end<=start)return 0;
+  const[h1,m1]=start.split(':').map(Number),[h2,m2]=end.split(':').map(Number);
+  return(h2*60+m2)-(h1*60+m1);
+}
+function _attHoursLabel(start,end){
+  const mins=_attMinutesBetween(start,end);
+  if(!mins)return'—';
+  return`${Math.floor(mins/60)}h ${mins%60}m`;
+}
+function _attLateMinutes(time){
+  if(!time)return 0;
+  return _attMinutesBetween(LATE_CUTOFF_STR,time);
+}
+
+// Compose punches keyed by k40UserId from a snapshot of attendance/{date}
+function _attPunchesByUser(dayData){
+  const out={};
+  if(!dayData)return out;
+  Object.entries(dayData).forEach(([uid,punchMap])=>{
+    const punches=Object.values(punchMap||{}).sort((a,b)=>(a.timestamp||'').localeCompare(b.timestamp||''));
+    const firstIn=punches.find(p=>p.type==='in')||punches[0];
+    const lastPunch=punches[punches.length-1];
+    out[String(uid)]={punches,firstIn,lastPunch};
+  });
+  return out;
+}
+
+// ── Worker my-work HRM widget ──
+function renderWorkerHRMWidget(){
+  if(!session)return'';
+  const emp=session.employee||(allEmployees.find(e=>e.username===session.u))||null;
+  const greeting=_hrmGreetingTime();
+  const nowStr=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  const dateStr=new Date().toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short'});
+  const designation=(emp&&emp.designation)||session.title||'';
+  const paygrade=(emp&&emp.paygrade)||session.paygrade||'';
+  const pgClass=paygrade?paygrade.toLowerCase():'';
+  const pgBadge=paygrade?`<span class="paygrade-badge ${pgClass}">${paygrade}</span>`:'';
+  const advance=(emp&&emp.advanceBalance)||0;
+  const basic=(emp&&emp.basicSalary)||0;
+  const advanceRow=advance>0?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid #E5E5E7;font-size:12px;color:#E94560">Advance balance: ${_hrmFmtPKR(advance)}</div>`:'';
+  return`<div class="hrm-greeting" style="margin-bottom:16px">
+    <div class="greeting-left" style="min-width:0">
+      <div class="greeting-name">Good ${greeting}, ${session.name} 👋</div>
+      <div class="greeting-sub">${designation}${pgBadge?' · '+pgBadge:''}</div>
+    </div>
+    <div style="text-align:right;color:rgba(255,255,255,.6);font-size:12px" id="wrk-clock">${nowStr}<br>${dateStr}</div>
+  </div>
+  <div class="wrk-hrm-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+    <div class="card" style="padding:16px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6B7280;margin-bottom:10px">Today · آج</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px" id="wrk-att-row">
+        <span class="pulse-dot" id="wrk-att-dot" style="display:none"></span>
+        <span style="font-size:14px;font-weight:600;color:#854F0B" id="wrk-att-label">Loading…</span>
+      </div>
+      <div style="font-size:12px;color:#6B7280" id="wrk-att-hours">Hours: —</div>
+    </div>
+    <div class="card" style="padding:16px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6B7280;margin-bottom:10px">This Month · اس مہینے</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;text-align:center">
+        <div style="background:#EAF3DE;border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:#3B6D11" id="wrk-m-present">—</div><div style="font-size:9px;color:#6B7280">Present</div></div>
+        <div style="background:#FAEEDA;border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:#854F0B" id="wrk-m-late">—</div><div style="font-size:9px;color:#6B7280">Late</div></div>
+        <div style="background:#FCEBEB;border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:#A32D2D" id="wrk-m-absent">—</div><div style="font-size:9px;color:#6B7280">Absent</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="padding:16px;margin-bottom:16px;border-left:3px solid #1A1A2E">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6B7280">Estimated Salary · تخمینہ تنخواہ</div>
+        <div style="font-size:22px;font-weight:700;color:#1A1A2E;margin-top:4px" id="wrk-est-salary">${_hrmFmtPKR(basic)}</div>
+        <div style="font-size:11px;color:#6B7280;margin-top:2px" id="wrk-est-breakdown">Basic ${_hrmFmtPKR(basic)}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:#6B7280">3 lates = 1 absent</div>
+        <div id="wrk-late-badges" style="margin-top:4px"></div>
+      </div>
+    </div>
+    <div id="wrk-advance-row">${advanceRow}</div>
+  </div>`;
+}
+
+async function _populateWorkerHRMWidget(){
+  if(!session||session.role!=='worker')return;
+  const emp=session.employee||(allEmployees.find(e=>e.username===session.u))||null;
+  if(!emp){ const lbl=document.getElementById('wrk-att-label'); if(lbl)lbl.textContent='Loading employee profile…'; return; }
+  const k40=emp.k40UserId||session.k40UserId||'';
+  if(!k40){
+    const lbl=document.getElementById('wrk-att-label'); if(lbl){lbl.textContent='K40 ID not set';lbl.style.color='#854F0B';}
+    return;
+  }
+  try{
+    const att=await getMyAttendanceToday(k40);
+    const dot=document.getElementById('wrk-att-dot');
+    const lbl=document.getElementById('wrk-att-label');
+    const hrs=document.getElementById('wrk-att-hours');
+    if(att&&att.firstIn){
+      if(dot)dot.style.display='inline-block';
+      if(lbl){lbl.textContent=`Punched in at ${att.firstIn.time||'—'}`;lbl.style.color='#1D9E75';}
+      if(hrs){
+        const start=att.firstIn.time||'';
+        const end=att.lastPunch?.time||'';
+        hrs.textContent=`Hours: ${_attHoursLabel(start,end)}`;
+      }
+    } else {
+      if(dot)dot.style.display='none';
+      if(lbl){lbl.textContent='Not punched yet';lbl.style.color='#854F0B';}
+      if(hrs)hrs.textContent='Hours: —';
+    }
+    const m=await getMyMonthSummary(k40);
+    const e1=document.getElementById('wrk-m-present');if(e1)e1.textContent=m.present;
+    const e2=document.getElementById('wrk-m-late');if(e2)e2.textContent=m.late;
+    const e3=document.getElementById('wrk-m-absent');if(e3)e3.textContent=m.absent;
+
+    // Salary calc per spec: 3 lates = 1 absent equivalent
+    const basic=emp.basicSalary||0;
+    const dailyRate=basic/30;
+    const lateAbsentEquiv=Math.floor((m.late||0)/3);
+    const totalDeductionDays=(m.absent||0)+lateAbsentEquiv;
+    const advance=emp.advanceBalance||0;
+    const loanDed=emp.loanMonthlyDeduction||0;
+    const purchDed=emp.purchasingDeduction||0;
+    const deductionAmt=Math.round(totalDeductionDays*dailyRate);
+    const estimated=Math.max(0,Math.round(basic-deductionAmt-advance-loanDed-purchDed));
+    const eS=document.getElementById('wrk-est-salary');if(eS)eS.textContent=_hrmFmtPKR(estimated);
+    const eB=document.getElementById('wrk-est-breakdown');
+    if(eB){
+      const parts=[`Basic ${_hrmFmtPKR(basic)}`];
+      if(deductionAmt>0)parts.push(`− ${_hrmFmtPKR(deductionAmt)} (${totalDeductionDays}d)`);
+      if(advance>0)parts.push(`− advance ${_hrmFmtPKR(advance)}`);
+      if(loanDed>0)parts.push(`− loan ${_hrmFmtPKR(loanDed)}`);
+      eB.textContent=parts.join(' ');
+    }
+    const badgeWrap=document.getElementById('wrk-late-badges');
+    if(badgeWrap){
+      const lc=m.late||0;
+      const badges=[];
+      if(lc>=2)badges.push(`<span style="display:inline-block;background:#FAEEDA;color:#854F0B;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin-top:4px">⚠ ${lc} lates this month</span>`);
+      if(lc>=3)badges.push(`<span style="display:inline-block;background:#FCEBEB;color:#A32D2D;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin-top:4px;margin-left:4px">🔴 Absent deducted</span>`);
+      badgeWrap.innerHTML=badges.join('');
+    }
+    const advRow=document.getElementById('wrk-advance-row');
+    if(advRow)advRow.innerHTML=advance>0?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid #E5E5E7;font-size:12px;color:#E94560">Advance balance: ${_hrmFmtPKR(advance)}</div>`:'';
+  }catch(e){console.warn('worker HRM populate failed',e);}
+}
+
+// ── Attendance page ──
+function renderAttendancePage(){
+  if(!session||!['owner','manager'].includes(session.role)){
+    return'<div class="empty">Owners and managers only.</div>';
+  }
+  const tabBtn=(id,label)=>`<button class="att-tab ${attendanceTab===id?'active':''}" onclick="window.attendanceSetTab('${id}')" style="padding:8px 18px;border:1px solid var(--border);border-bottom:${attendanceTab===id?'2px solid #1A1A2E':'1px solid var(--border)'};background:${attendanceTab===id?'#fff':'#fafafa'};font-weight:${attendanceTab===id?'700':'500'};font-size:13px;cursor:pointer;font-family:inherit;color:${attendanceTab===id?'#1A1A2E':'var(--muted)'};border-radius:8px 8px 0 0;margin-right:4px">${label}</button>`;
+  const tabs=`<div style="display:flex;border-bottom:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap">${tabBtn('daily','Daily')}${tabBtn('monthly','Monthly')}</div>`;
+  const head=`<div class="page-head"><div class="page-title">🕒 Attendance · حاضری</div><div class="page-sub">${allEmployees.length} active staff</div></div>`;
+  const body=attendanceTab==='monthly'?renderAttendanceMonthly():renderAttendanceDaily();
+  return head+tabs+`<div id="att-body">${body}</div>`;
+}
+
+function renderAttendanceDaily(){
+  const today=new Date().toISOString().split('T')[0];
+  const isToday=attendanceDate===today;
+  return`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:8px;flex-wrap:wrap">
+    <button onclick="window.attendancePrevDay()" class="btn-outline">← Previous</button>
+    <div style="text-align:center;flex:1;min-width:140px">
+      <div style="font-size:18px;font-weight:600">${_attDateLabel(attendanceDate)}</div>
+      <div style="font-size:12px;color:#6B7280">${_attTodayDelta(attendanceDate)}</div>
+    </div>
+    <button onclick="window.attendanceNextDay()" class="btn-outline" ${isToday?'disabled style="opacity:.4;cursor:not-allowed"':''}>Next →</button>
+  </div>
+  <div class="att-summary-strip" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px" id="att-summary-strip">
+    <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:#1D9E75" id="att-tot-in">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Punched IN</div></div>
+    <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:#E94560" id="att-tot-absent">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Absent</div></div>
+    <div class="card" style="padding:16px;text-align:center;background:#FAEEDA"><div style="font-size:28px;font-weight:700;color:#854F0B" id="att-tot-late">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Late Arrivals</div></div>
+    <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:#1A1A2E">${allEmployees.length}</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Total Staff</div></div>
+  </div>
+  <div class="section-title">Staff Presence</div>
+  <div id="att-grid-wrap"><div class="empty">Loading attendance…</div></div>
+  ${session.role==='owner'?`<div id="att-log-wrap" style="margin-top:20px"></div><div id="att-late-wrap" style="margin-top:16px"></div>`:''}`;
+}
+
+function _attendanceAfterRender(){
+  if(currentPage!=='attendance')return;
+  if(attendanceTab==='daily'){
+    _attendanceSubscribeDaily(attendanceDate);
+    _attendanceSubscribeLive();
+  } else {
+    _attendanceUnsubscribeAll();
+    _renderAttendanceMonthly();
+  }
+}
+
+function _attendanceUnsubscribeAll(){
+  try{ if(_attLiveUnsub){const r=rtdbRef(rtdb,'attendance/live');rtdbOff(r);_attLiveUnsub=null;} }catch(_){}
+  try{ if(_attDayUnsub){const r=rtdbRef(rtdb,`attendance/${_attDayUnsub}`);rtdbOff(r);_attDayUnsub=null;} }catch(_){}
+}
+
+function _attendanceSubscribeDaily(date){
+  // Re-subscribe if date changed
+  if(_attDayUnsub&&_attDayUnsub!==date){
+    try{rtdbOff(rtdbRef(rtdb,`attendance/${_attDayUnsub}`));}catch(_){}
+    _attDayUnsub=null;
+  }
+  if(_attDayUnsub===date)return;
+  const r=rtdbRef(rtdb,`attendance/${date}`);
+  rtdbOnValue(r,snap=>{
+    dailyAttendanceData=snap.exists()?snap.val():{};
+    if(currentPage==='attendance'&&attendanceTab==='daily')_renderAttendanceDailyContent();
+  });
+  _attDayUnsub=date;
+}
+
+function _attendanceSubscribeLive(){
+  if(_attLiveUnsub)return;
+  const r=rtdbRef(rtdb,'attendance/live');
+  rtdbOnValue(r,snap=>{
+    liveAttendanceData=snap.exists()?snap.val():{};
+    // Re-render owner KPI cards on dashboard if we're there
+    if(currentPage==='dashboard'&&session&&session.role==='owner'){_updateOwnerLiveKPIs();}
+    // Re-render today's attendance (only useful if viewing today)
+    if(currentPage==='attendance'&&attendanceTab==='daily'&&attendanceDate===new Date().toISOString().split('T')[0]){
+      _renderAttendanceDailyContent();
+    }
+  });
+  _attLiveUnsub=true;
+}
+
+function _renderAttendanceDailyContent(){
+  const punchesByUser=_attPunchesByUser(dailyAttendanceData);
+  const today=new Date().toISOString().split('T')[0];
+  const isToday=attendanceDate===today;
+
+  let totalIn=0,totalLate=0,totalAbsent=0;
+  const emps=allEmployees.slice().filter(e=>e.status!=='inactive');
+  const rows=emps.map(emp=>{
+    const k40=emp.k40UserId;
+    const data=k40?punchesByUser[k40]:null;
+    let status='absent';
+    if(data&&data.firstIn){
+      status='in';
+      if(_isLatePunch(data.firstIn))status='late';
+      // If today and live data says they punched out, show 'out'
+      if(isToday&&liveAttendanceData[k40]&&liveAttendanceData[k40].status==='out')status='out';
+    }
+    if(status==='absent')totalAbsent++;
+    else{totalIn++; if(status==='late')totalLate++;}
+    return{emp,data,status};
+  });
+
+  const order={in:0,late:1,out:2,absent:3};
+  rows.sort((a,b)=>(order[a.status]-order[b.status])||(a.emp.name||'').localeCompare(b.emp.name||''));
+
+  // Update summary cards
+  const eIn=document.getElementById('att-tot-in');if(eIn)eIn.textContent=totalIn;
+  const eL=document.getElementById('att-tot-late');if(eL)eL.textContent=totalLate;
+  const eA=document.getElementById('att-tot-absent');if(eA)eA.textContent=totalAbsent;
+
+  // Render staff grid
+  const wrap=document.getElementById('att-grid-wrap');
+  if(wrap){
+    wrap.innerHTML=rows.length?`<div class="attendance-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">${rows.map(r=>_attEmpCardHTML(r)).join('')}</div>`:'<div class="empty">No employees configured.</div>';
+  }
+
+  if(session.role==='owner'){
+    // Punch log table
+    const allPunches=[];
+    Object.entries(punchesByUser).forEach(([uid,d])=>{
+      const emp=emps.find(e=>String(e.k40UserId)===String(uid));
+      const empName=emp?emp.name:`User${uid}`;
+      d.punches.forEach(p=>allPunches.push({...p,empName,k40:uid}));
+    });
+    allPunches.sort((a,b)=>(b.timestamp||'').localeCompare(a.timestamp||''));
+    const logWrap=document.getElementById('att-log-wrap');
+    if(logWrap){
+      logWrap.innerHTML=`<div class="card"><div class="card-title" style="padding:14px 16px 8px;font-weight:700">Punch Log · حاضری لاگ</div>
+        <table class="punch-log-table" style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:#1A1A2E;color:white">
+            <th style="padding:10px;text-align:left">Time</th>
+            <th style="padding:10px;text-align:left">Name</th>
+            <th style="padding:10px;text-align:left">Type</th>
+            <th style="padding:10px;text-align:left">Status</th>
+          </tr></thead>
+          <tbody>${allPunches.length?allPunches.map(_attPunchRow).join(''):'<tr><td colspan="4" style="padding:14px;color:var(--muted);text-align:center">No punches yet on this day.</td></tr>'}</tbody>
+        </table></div>`;
+    }
+    // Late list
+    const lates=rows.filter(r=>r.status==='late');
+    const lateWrap=document.getElementById('att-late-wrap');
+    if(lateWrap){
+      lateWrap.innerHTML=lates.length?_attLateBlockHTML(lates):'';
+    }
+  }
+}
+
+function _attEmpCardHTML(row){
+  const{emp,data,status}=row;
+  const pgClass=(emp.paygrade||'').toLowerCase();
+  const pgBadge=`<span class="paygrade-badge ${pgClass}">${emp.paygrade||'—'}</span>`;
+  if(status==='absent'){
+    return`<div class="card" style="padding:14px;border-left:3px solid #E5E5E7;opacity:0.75">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><div style="min-width:0"><div style="font-weight:600;font-size:14px">${emp.name}</div><div style="font-size:11px;color:#6B7280">${emp.designation||'—'}</div></div>${pgBadge}</div>
+      <div style="margin-top:10px;font-size:13px;color:#9CA3AF">Not punched</div>
+    </div>`;
+  }
+  const firstIn=data.firstIn;
+  const lastPunch=data.lastPunch;
+  const start=firstIn?.time||'';
+  const end=lastPunch?.time||'';
+  const hours=_attHoursLabel(start,end);
+  const isOut=status==='out';
+  const isLate=status==='late';
+  const borderColor=isLate?'#EF9F27':(isOut?'#9CA3AF':'#1D9E75');
+  const statusLabel=isLate?'LATE':(isOut?'OUT':'IN');
+  const statusColor=isLate?'#854F0B':(isOut?'#555':'#1D9E75');
+  const dot=isOut?'':`<span class="pulse-dot"></span>`;
+  const lateBadge=isLate?`<span style="display:inline-block;background:#FAEEDA;color:#854F0B;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin-top:6px">LATE</span>`:'';
+  return`<div class="card" style="padding:14px;border-left:3px solid ${borderColor}">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+      <div style="min-width:0"><div style="font-weight:600;font-size:14px">${emp.name}</div><div style="font-size:11px;color:#6B7280">${emp.designation||'—'}</div>${lateBadge}</div>
+      ${pgBadge}
+    </div>
+    <div style="margin-top:10px;display:flex;align-items:center;gap:6px">${dot}<span style="font-size:13px;font-weight:500;color:${statusColor}">${statusLabel}</span><span style="font-size:12px;color:#6B7280">${isOut?`out at ${end}`:`since ${start}`}</span></div>
+    <div style="font-size:12px;color:#6B7280;margin-top:4px">Hours: ${hours}</div>
+  </div>`;
+}
+
+function _attPunchRow(p){
+  const isIn=(p.type||'in').toLowerCase()==='in';
+  const tint=isIn?'#F4FAEC':'#fff';
+  const typeBg=isIn?'#EAF3DE':'#F0F0F0';
+  const typeFg=isIn?'#3B6D11':'#555';
+  const lateLabel=(isIn&&_isLatePunch(p))?`<span style="background:#FAEEDA;color:#854F0B;font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px">LATE +${_attLateMinutes(p.time)}m</span>`:'<span style="color:var(--muted);font-size:12px">—</span>';
+  return`<tr style="background:${tint};border-bottom:1px solid #E5E5E7">
+    <td style="padding:10px;font-weight:600">${p.time||''}</td>
+    <td style="padding:10px">${p.empName||p.name||'—'}</td>
+    <td style="padding:10px"><span style="background:${typeBg};color:${typeFg};padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600">${isIn?'IN':'OUT'}</span></td>
+    <td style="padding:10px">${lateLabel}</td>
+  </tr>`;
+}
+
+function _attLateBlockHTML(lates){
+  // Compute simple per-employee monthly late count from the cached month if available
+  const monthByEmp=_attMonthSummary?_attMonthSummary.byEmp:null;
+  const items=lates.map(({emp,data})=>{
+    const time=data.firstIn?.time||'';
+    const lateMins=_attLateMinutes(time);
+    const monthly=monthByEmp?(monthByEmp[emp._id]?.late||0):'—';
+    const monthlyNum=typeof monthly==='number'?monthly:0;
+    const badgeBg=monthlyNum>=3?'#FCEBEB':(monthlyNum>=2?'#FAEEDA':'#F0F0F0');
+    const badgeFg=monthlyNum>=3?'#A32D2D':(monthlyNum>=2?'#854F0B':'#555');
+    const triggered=monthlyNum>=3?' 🔴 Absent triggered':'';
+    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #E5E5E7;gap:10px;flex-wrap:wrap">
+      <div style="min-width:0"><div style="font-weight:600">${emp.name}</div><div style="font-size:12px;color:#6B7280">${emp.designation||'—'}</div></div>
+      <div style="text-align:right"><div style="color:#854F0B;font-weight:600">Arrived ${time}</div><div style="font-size:12px;color:#6B7280">Late by ${lateMins} mins</div></div>
+      <span style="background:${badgeBg};color:${badgeFg};padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600">${monthly} lates this month${triggered}</span>
+    </div>`;
+  }).join('');
+  return`<div class="card" style="border:1px solid #EF9F27;padding:0">
+    <div class="card-title" style="color:#854F0B;padding:14px 16px 6px;font-weight:700">⚠ Late Arrivals · دیر سے آنے والے</div>
+    ${items}
+  </div>`;
+}
+
+// ── Monthly view ──
+function renderAttendanceMonthly(){
+  const months=[];
+  const now=new Date();
+  for(let i=0;i<12;i++){
+    const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+    const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const lbl=d.toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+    months.push({key,lbl});
+  }
+  const selectHTML=`<select id="att-month-pick" onchange="window.attendanceSetMonth(this.value)" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">${months.map(m=>`<option value="${m.key}" ${m.key===attendanceMonth?'selected':''}>${m.lbl}</option>`).join('')}</select>`;
+  return`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:8px;flex-wrap:wrap">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font-size:13px;color:var(--muted)">Month:</span>${selectHTML}
+    </div>
+    <div style="font-size:12px;color:var(--muted)">Late→Absent rule: 3 lates count as 1 absent</div>
+  </div>
+  <div id="att-month-wrap"><div class="empty">Loading monthly attendance…</div></div>`;
+}
+
+async function _renderAttendanceMonthly(){
+  const wrap=document.getElementById('att-month-wrap');
+  if(wrap)wrap.innerHTML='<div class="empty">Loading monthly attendance…</div>';
+  const summary=await _computeMonthlyAttendance(attendanceMonth);
+  _attMonthSummary=summary;
+  const policies=hrmPolicies||HRM_DEFAULT_POLICIES;
+  const wd=policies.workingDaysPerMonth||30;
+  const rows=allEmployees.slice().filter(e=>e.status!=='inactive').map(e=>{
+    const s=summary.byEmp[e._id]||{present:0,late:0,absent:0};
+    const lateAbsentEquiv=Math.floor((s.late||0)/3);
+    const totalDeductDays=(s.absent||0)+lateAbsentEquiv;
+    const dailyRate=(e.basicSalary||0)/wd;
+    const deduction=Math.round(totalDeductDays*dailyRate);
+    const advance=e.advanceBalance||0;
+    const loanDed=e.loanMonthlyDeduction||0;
+    const netEst=Math.max(0,Math.round((e.basicSalary||0)-deduction-advance-loanDed));
+    let rowBg='';
+    if((s.absent||0)>3)rowBg='background:#FCEBEB';
+    else if((s.late||0)>=2)rowBg='background:#FFF8E5';
+    return{e,s,lateAbsentEquiv,totalDeductDays,deduction,netEst,rowBg};
+  }).sort((a,b)=>(a.e.name||'').localeCompare(b.e.name||''));
+
+  const html=`<div class="card" style="padding:0;overflow:auto">
+    <table class="att-month-table" style="width:100%;border-collapse:collapse;font-size:13px;min-width:720px">
+      <thead><tr style="background:#1A1A2E;color:white">
+        <th style="padding:10px;text-align:left">Employee</th>
+        <th style="padding:10px;text-align:center">Grade</th>
+        <th style="padding:10px;text-align:center">Present</th>
+        <th style="padding:10px;text-align:center">Late</th>
+        <th style="padding:10px;text-align:center">Late→Absent</th>
+        <th style="padding:10px;text-align:center">Absent</th>
+        <th style="padding:10px;text-align:center">Deduction</th>
+        <th style="padding:10px;text-align:center">Net Est.</th>
+      </tr></thead>
+      <tbody>${rows.map(r=>{
+        const pgClass=(r.e.paygrade||'').toLowerCase();
+        return`<tr style="${r.rowBg};border-bottom:1px solid #E5E5E7">
+          <td style="padding:10px"><div style="font-weight:600">${r.e.name}</div><div style="font-size:11px;color:var(--muted)">${r.e.designation||'—'}</div></td>
+          <td style="padding:10px;text-align:center"><span class="paygrade-badge ${pgClass}">${r.e.paygrade||'—'}</span></td>
+          <td style="padding:10px;text-align:center;font-weight:600;color:#3B6D11">${r.s.present}</td>
+          <td style="padding:10px;text-align:center;color:#854F0B">${r.s.late}</td>
+          <td style="padding:10px;text-align:center;color:#854F0B">${r.lateAbsentEquiv}</td>
+          <td style="padding:10px;text-align:center;color:#A32D2D">${r.s.absent}</td>
+          <td style="padding:10px;text-align:center">${_hrmFmtPKR(r.deduction)}</td>
+          <td style="padding:10px;text-align:center;font-weight:700">${_hrmFmtPKR(r.netEst)}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>
+  </div>`;
+  if(wrap)wrap.innerHTML=html;
+}
+
+async function _computeMonthlyAttendance(monthKey){
+  // monthKey = YYYY-MM
+  if(monthlyAttendanceCache[monthKey])return monthlyAttendanceCache[monthKey];
+  const[yyyy,mm]=monthKey.split('-').map(Number);
+  const today=new Date();
+  const isCurrent=(today.getFullYear()===yyyy&&(today.getMonth()+1)===mm);
+  const lastDay=isCurrent?today.getDate():new Date(yyyy,mm,0).getDate();
+  const byEmp={};
+  allEmployees.forEach(e=>{ byEmp[e._id]={present:0,late:0,absent:0}; });
+
+  // Read each day in parallel via .get (one network call per day; bounded ≤31)
+  const days=[];
+  for(let d=1;d<=lastDay;d++)days.push(`${monthKey}-${String(d).padStart(2,'0')}`);
+  const snaps=await Promise.all(days.map(date=>rtdbGet(rtdbRef(rtdb,`attendance/${date}`)).catch(()=>null)));
+
+  snaps.forEach(snap=>{
+    const data=snap&&snap.exists()?snap.val():{};
+    const punchesByUser=_attPunchesByUser(data);
+    allEmployees.forEach(e=>{
+      const k40=e.k40UserId;
+      const u=k40?punchesByUser[k40]:null;
+      if(u&&u.firstIn){
+        byEmp[e._id].present++;
+        if(_isLatePunch(u.firstIn))byEmp[e._id].late++;
+      } else {
+        byEmp[e._id].absent++;
+      }
+    });
+  });
+
+  const result={byEmp,monthKey};
+  monthlyAttendanceCache[monthKey]=result;
+  return result;
+}
+
+// Update owner dashboard KPIs from live data (real-time)
+function _updateOwnerLiveKPIs(){
+  if(!session||session.role!=='owner')return;
+  let inCount=0;
+  Object.values(liveAttendanceData||{}).forEach(rec=>{ if(rec&&rec.status==='in')inCount++; });
+  const elIn=document.getElementById('owner-kpi-in');if(elIn)elIn.textContent=inCount;
+  // Late count today
+  const today=new Date().toISOString().split('T')[0];
+  if(_attDayUnsub===today&&dailyAttendanceData){
+    let lateCount=0;
+    const punchesByUser=_attPunchesByUser(dailyAttendanceData);
+    Object.values(punchesByUser).forEach(d=>{ if(d.firstIn&&_isLatePunch(d.firstIn))lateCount++; });
+    const elLate=document.getElementById('owner-kpi-late');if(elLate)elLate.textContent=lateCount;
+  }
+}
+
+// ── Owner dashboard live subscription (kicks in on dashboard render) ──
+function _ensureOwnerDashboardLive(){
+  if(!session||session.role!=='owner')return;
+  // Subscribe to live presence
+  if(!_attLiveUnsub){
+    const r=rtdbRef(rtdb,'attendance/live');
+    rtdbOnValue(r,snap=>{
+      liveAttendanceData=snap.exists()?snap.val():{};
+      _updateOwnerLiveKPIs();
+    });
+    _attLiveUnsub=true;
+  }
+  // Subscribe to today's attendance (for late count)
+  const today=new Date().toISOString().split('T')[0];
+  if(_attDayUnsub!==today){
+    if(_attDayUnsub){try{rtdbOff(rtdbRef(rtdb,`attendance/${_attDayUnsub}`));}catch(_){}_attDayUnsub=null;}
+    const r=rtdbRef(rtdb,`attendance/${today}`);
+    rtdbOnValue(r,snap=>{
+      dailyAttendanceData=snap.exists()?snap.val():{};
+      _updateOwnerLiveKPIs();
+    });
+    _attDayUnsub=today;
+  }
+}
+
+// ── Window-exposed handlers ──
+window.attendanceSetTab=function(tab){
+  attendanceTab=tab;
+  const m=document.getElementById('main-content');
+  if(m){m.innerHTML=renderAttendancePage();_attendanceAfterRender();}
+};
+window.attendancePrevDay=function(){
+  const d=new Date(attendanceDate+'T00:00:00');d.setDate(d.getDate()-1);
+  attendanceDate=d.toISOString().split('T')[0];
+  const m=document.getElementById('main-content');
+  if(m){m.innerHTML=renderAttendancePage();_attendanceAfterRender();}
+};
+window.attendanceNextDay=function(){
+  const today=new Date().toISOString().split('T')[0];
+  if(attendanceDate>=today)return;
+  const d=new Date(attendanceDate+'T00:00:00');d.setDate(d.getDate()+1);
+  attendanceDate=d.toISOString().split('T')[0];
+  const m=document.getElementById('main-content');
+  if(m){m.innerHTML=renderAttendancePage();_attendanceAfterRender();}
+};
+window.attendanceSetMonth=function(key){
+  attendanceMonth=key;
+  _renderAttendanceMonthly();
 };
 
 </script>
