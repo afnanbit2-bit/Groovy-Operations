@@ -1,0 +1,8 @@
+{
+  "name": "groovy-attendance-sync",
+  "version": "1.0.0",
+  "description": "ZKTeco to Firebase attendance sync for Groovy Operations",
+  "main": "sync.js",
+  "scripts": { "start": "node sync.js" },
+  "dependencies": { "node-adodb": "^5.0.2" }
+}
