@@ -892,7 +892,11 @@ let bundleDamage={},bundlePartIdx=0;
 let allItems=[],allTransactions=[],allTemplates=[],allRequests=[],allActivePOs=[];
 // ── HRM state ──
 let allEmployees=[],allIncrementLogs=[],hrmPolicies=null,hrmDataLoaded=false;
-let _empFilterQ='',_empFilterDept='',_empFilterPay='',_empViewingId=null;
+let _empFilterQ='',_empFilterDept='',_empFilterPay='',_empFilterPending=false,_empViewingId=null;
+// ── Mustafa's task list — items raised by owners that need his attention ──
+const MUSTAFA_TASKS=[
+  {id:'set-join-dates',num:1,label:'Set join dates',detail:'31 employees were seeded with a placeholder date. Replace with each person\'s real joining date.',resolver:'pending-join-date'}
+];
 // ── Attendance state ──
 const LATE_CUTOFF_HOUR=9, LATE_CUTOFF_MINUTE=30;
 const LATE_CUTOFF_STR=String(LATE_CUTOFF_HOUR).padStart(2,'0')+':'+String(LATE_CUTOFF_MINUTE).padStart(2,'0');
@@ -7640,6 +7644,21 @@ function _hrmDepartments(){
   return Array.from(set).sort();
 }
 
+// Detect placeholder/seeded join dates: any joinDate value shared by 5+ employees
+// is almost certainly the batch-seed default, not a real joining date.
+function _provisionalJoinDateValue(){
+  const counts={};
+  allEmployees.forEach(e=>{ if(e.joinDate)counts[e.joinDate]=(counts[e.joinDate]||0)+1; });
+  let best=null,n=0;
+  Object.entries(counts).forEach(([d,c])=>{ if(c>n){best=d;n=c;} });
+  return n>=5?best:null;
+}
+function _isProvisionalJoinDate(emp,seedDate){
+  if(!emp.joinDate)return true;
+  if(seedDate===undefined)seedDate=_provisionalJoinDateValue();
+  return seedDate!=null&&emp.joinDate===seedDate;
+}
+
 function renderHRMEmployeesPage(){
   if(!session||!['owner','manager'].includes(session.role)){
     return'<div class="empty">Owners and managers only.</div>';
@@ -7647,10 +7666,23 @@ function renderHRMEmployeesPage(){
   const depts=_hrmDepartments();
   const paygrades=['P1','P2','P3','P4','P5'];
   const total=allEmployees.length;
+  const seedDate=_provisionalJoinDateValue();
+  const pendingCount=seedDate?allEmployees.filter(e=>_isProvisionalJoinDate(e,seedDate)).length:0;
+  const banner=(pendingCount>0)?`<div class="card" style="border-left:3px solid var(--accent-warning);background:var(--accent-warning-soft);padding:12px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+    <div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--accent-warning);font-weight:700">📌 Mustafa &middot; Job Item #1</div>
+      <div style="font-size:14px;font-weight:600;margin-top:2px">Set join dates &mdash; ${pendingCount} employee${pendingCount===1?'':'s'} pending</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px">Records seeded with a placeholder date. Edit each person and set their real joining date.</div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn-outline" style="font-size:12px;padding:6px 12px" onclick="window.hrmShowPendingJoin()">${_empFilterPending?'Show all':'Show pending'}</button>
+    </div>
+  </div>`:'';
   return`<div class="page-head">
     <div class="page-title"><span class="page-title-icon">${_icon('people',22)}</span> Employees</div>
     <div class="page-sub">${total} active staff</div>
   </div>
+  ${banner}
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
     <input id="emp-search" placeholder="Search name, username, designation…" oninput="window.hrmFilterEmployees()" value="${_empFilterQ}" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
     <select id="emp-dept" onchange="window.hrmFilterEmployees()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
@@ -7672,14 +7704,20 @@ function _renderEmpGrid(){
   if(q)list=list.filter(e=>(e.name||'').toLowerCase().includes(q)||(e.username||'').toLowerCase().includes(q)||(e.designation||'').toLowerCase().includes(q));
   if(_empFilterDept)list=list.filter(e=>e.department===_empFilterDept);
   if(_empFilterPay)list=list.filter(e=>e.paygrade===_empFilterPay);
+  if(_empFilterPending){
+    const seed=_provisionalJoinDateValue();
+    list=list.filter(e=>_isProvisionalJoinDate(e,seed));
+  }
   list.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   if(!list.length)return'<div class="empty">No employees match.</div>';
-  return`<div class="emp-grid">${list.map(e=>_empCardHTML(e)).join('')}</div>`;
+  const seed=_provisionalJoinDateValue();
+  return`<div class="emp-grid">${list.map(e=>_empCardHTML(e,seed)).join('')}</div>`;
 }
 
-function _empCardHTML(e){
+function _empCardHTML(e,seedDate){
   const pgClass=(e.paygrade||'').toLowerCase();
-  const join=e.joinDate?new Date(e.joinDate).toLocaleDateString('en-GB',{month:'short',year:'numeric'}):'—';
+  const provisional=_isProvisionalJoinDate(e,seedDate);
+  const join=(e.joinDate&&!provisional)?new Date(e.joinDate).toLocaleDateString('en-GB',{month:'short',year:'numeric'}):'—';
   return`<div class="emp-card">
     <div class="emp-row">
       <div>
@@ -7706,6 +7744,12 @@ window.hrmFilterEmployees=function(){
   _empFilterPay=document.getElementById('emp-pay')?.value||'';
   const wrap=document.getElementById('emp-grid-wrap');
   if(wrap)wrap.innerHTML=_renderEmpGrid();
+};
+
+window.hrmShowPendingJoin=function(){
+  _empFilterPending=!_empFilterPending;
+  const m=document.getElementById('main-content');
+  if(m)m.innerHTML=renderHRMEmployeesPage();
 };
 
 window.hrmViewEmployee=function(id){
@@ -7736,7 +7780,7 @@ window.hrmViewEmployee=function(id){
       <div class="hrm-kv"><span class="k">Address</span><span class="v">${e.address||'—'}</span></div>
       <div class="hrm-kv"><span class="k">Bank Account</span><span class="v">${e.bankAccount||'—'}</span></div>
       <div class="hrm-kv"><span class="k">K40 ID</span><span class="v">${e.k40UserId||'—'}</span></div>
-      <div class="hrm-kv"><span class="k">Join Date</span><span class="v">${e.joinDate||'—'}</span></div>
+      <div class="hrm-kv"><span class="k">Join Date</span><span class="v">${(e.joinDate&&!_isProvisionalJoinDate(e))?e.joinDate:'<em style="color:var(--muted);font-weight:500">— not set</em>'}</span></div>
     </div>
     <div class="hrm-section-title">Salary</div>
     <div class="hrm-grid-2">
@@ -7802,7 +7846,7 @@ function _hrmShowEmployeeForm(e){
         <select id="ef-paygrade">${['P1','P2','P3','P4','P5'].map(p=>`<option value="${p}" ${e?.paygrade===p?'selected':''}>${p}</option>`).join('')}</select>
       </div>
       <div class="field"><label>Basic Salary</label><input id="ef-salary" type="number" value="${e?.basicSalary||0}"></div>
-      <div class="field"><label>Join Date</label><input id="ef-join" type="date" value="${e?.joinDate||new Date().toISOString().split('T')[0]}"></div>
+      <div class="field"><label>Join Date</label><input id="ef-join" type="date" value="${e&&e.joinDate&&!_isProvisionalJoinDate(e)?e.joinDate:''}"></div>
       <div class="field"><label>K40 User ID</label><input id="ef-k40" value="${e?.k40UserId||''}"></div>
       <div class="field"><label>Phone</label><input id="ef-phone" value="${e?.phone||''}"></div>
       <div class="field"><label>CNIC</label><input id="ef-cnic" value="${e?.cnic||''}"></div>
