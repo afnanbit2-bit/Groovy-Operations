@@ -772,7 +772,8 @@ let bundleDamage={},bundlePartIdx=0;
 // ── Store state ──
 let allItems=[],allTransactions=[],allTemplates=[],allRequests=[],allActivePOs=[];
 let _ilPage=1,_ilQ='',_ilPO='',_ilDir='';
-let _tplRowIdx=0,_tplProdCode='',_tplProdName='';
+let _tplRowIdx=0,_tplProdCode='',_tplProdName='',_tplEditId=null,_tplPage=1;
+const TPL_PER=15;
 let _poIssueData=null,_txFilterQ='',_txFilterType='';
 const IL_PER=15,IL_MAX_PAGES=5;
 const INITIAL_ITEMS=[
@@ -3023,10 +3024,17 @@ async function submitIssueManual(){
 }
 
 function renderStoreTemplates(){
-  const isOwner=session.role==='owner'||session.role==='manager';
+  const canEdit=session.role==='owner'||session.role==='manager'||session.role==='store';
+  const total=allTemplates.length;
+  const maxPages=Math.ceil(total/TPL_PER)||1;
+  if(_tplPage>maxPages)_tplPage=maxPages;
+  const slice=allTemplates.slice((_tplPage-1)*TPL_PER,_tplPage*TPL_PER);
+  const editLabel=_tplEditId?'Update Template':'Save Template';
+  const editBanner=_tplEditId?`<div style="font-size:12px;background:#FEF3C7;color:#92400e;padding:6px 10px;border-radius:6px;margin-bottom:10px;font-weight:600">✏️ Editing template — make changes then click Update Template. <button onclick="window.cancelTplEdit()" style="background:none;border:none;color:#92400e;cursor:pointer;font-size:12px;text-decoration:underline;font-family:inherit">Cancel</button></div>`:'';
   return`<div class="page-head"><div class="page-title">Trim Templates</div><div class="page-sub">Auto-deducts trims from store when a PO is created</div></div>
-  <div class="card">
+  <div class="card" id="tpl-form-card">
     <div class="card-title">Create template</div>
+    ${editBanner}
     <div class="form-grid">
       <div class="field" style="grid-column:1/-1;position:relative"><label>Product *</label>
         <input id="tpl-prod-search" placeholder="Type product code or name e.g. GH001 or Black Hoodie…" autocomplete="off"
@@ -3040,11 +3048,11 @@ function renderStoreTemplates(){
       <div id="tpl-rows"></div>
       <button class="btn-outline" style="width:100%;margin-top:6px" onclick="window.addTplRow()">+ Add trim item</button>
     </div>
-    <button class="btn-primary" style="margin-top:10px" onclick="window.submitTemplate()">Save Template</button>
+    <button class="btn-primary" style="margin-top:10px" onclick="window.submitTemplate()">${editLabel}</button>
   </div>
-  ${allTemplates.length?`<div class="card">
-    <div class="card-title">Saved templates (${allTemplates.length})</div>
-    ${allTemplates.map(t=>`<div style="padding:12px 0;border-bottom:1px solid #f5f5f5">
+  ${total?`<div class="card">
+    <div class="card-title">Saved templates (${total})</div>
+    ${slice.map(t=>`<div style="padding:12px 0;border-bottom:1px solid #f5f5f5">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -3057,9 +3065,17 @@ function renderStoreTemplates(){
           ${(()=>{const tot=(t.items||[]).reduce((s,i)=>s+(i.pricePerUnit||0)*(i.qtyPerPiece||1),0);return tot?`<div style="font-size:11px;color:var(--dark);font-weight:600;margin-top:4px">Cost/pc: Rs.${tot.toFixed(2)}</div>`:''})()}
           <div style="font-size:10px;color:var(--green);margin-top:4px">⚡ Auto-deducts on PO creation</div>
         </div>
-        ${(isOwner||session.role==='store')?`<button class="btn-danger" onclick="window.deleteTemplate('${t._id}')">Delete</button>`:''}
+        ${canEdit?`<div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn-outline" style="font-size:12px;padding:5px 10px" onclick="window.editTemplate('${t._id}')">Edit</button>
+          <button class="btn-danger" style="font-size:12px;padding:5px 10px" onclick="window.deleteTemplate('${t._id}')">Delete</button>
+        </div>`:''}
       </div>
     </div>`).join('')}
+    ${maxPages>1?`<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding-top:12px;border-top:1px solid #f5f5f5;margin-top:4px">
+      <button onclick="window.tplPagePrev()" ${_tplPage===1?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit">← Prev</button>
+      <span style="font-size:12px;color:var(--muted)">Page ${_tplPage} of ${maxPages}</span>
+      <button onclick="window.tplPageNext()" ${_tplPage===maxPages?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit">Next →</button>
+    </div>`:''}
   </div>`:'<div class="card"><div class="empty">No templates yet. Create one above.</div></div>'}
   <div style="height:80px"></div>`;
 }
@@ -3096,8 +3112,6 @@ function addTplRow(){
 }
 async function submitTemplate(){
   if(!_tplProdCode){showToast('Select a product from the search.',true);document.getElementById('tpl-prod-search')?.focus();return;}
-  const existing=allTemplates.find(t=>t.productCode===_tplProdCode);
-  if(existing&&!confirm(`A template for ${_tplProdCode} already exists. Replace it?`))return;
   const rows=document.querySelectorAll('#tpl-rows .tpl-item-row');
   if(!rows.length){showToast('Add at least one trim item.',true);return;}
   const items=[];let _missingPrice=false;
@@ -3108,15 +3122,59 @@ async function submitTemplate(){
     if(itemSel?.value)items.push({itemCode:itemSel.value,itemName:selOpt?.dataset.name||itemSel.value,qtyPerPiece:parseFloat(qtyInp?.value)||1,pricePerUnit});
   });
   if(_missingPrice){showToast('Price per unit is required for all items.',true);return;}
-  if(!confirm(`Save trim template for ${_tplProdCode} — ${_tplProdName}?\n\n${items.map(i=>`${i.itemCode} × ${i.qtyPerPiece}/pc @ Rs.${i.pricePerUnit||'—'}`).join('\n')}\n\nTrims will auto-deduct from store when a PO for this product is created.`))return;
+  if(!confirm(`${_tplEditId?'Update':'Save'} trim template for ${_tplProdCode} — ${_tplProdName}?\n\n${items.map(i=>`${i.itemCode} × ${i.qtyPerPiece}/pc @ Rs.${i.pricePerUnit||'—'}`).join('\n')}`))return;
   try{
-    if(existing){await fsDelete('trim_templates',existing._id);allTemplates=allTemplates.filter(t=>t._id!==existing._id);}
-    const id=await fsAdd('trim_templates',{productCode:_tplProdCode,productName:_tplProdName,productType:_tplProdName,items,createdBy:session.name,createdAt:Date.now()});
-    allTemplates.push({productCode:_tplProdCode,productName:_tplProdName,productType:_tplProdName,items,createdBy:session.name,createdAt:Date.now(),_id:id});
-    showToast('Template saved ✓');_tplRowIdx=0;_tplProdCode='';_tplProdName='';
+    if(_tplEditId){
+      // Edit mode: update in-place
+      const payload={productCode:_tplProdCode,productName:_tplProdName,productType:_tplProdName,items,updatedBy:session.name,updatedAt:Date.now()};
+      await fsSet('trim_templates',_tplEditId,payload);
+      const idx=allTemplates.findIndex(t=>t._id===_tplEditId);
+      if(idx>-1)allTemplates[idx]={...allTemplates[idx],...payload};
+      showToast('Template updated ✓');
+    }else{
+      // Create mode: check duplicate
+      const existing=allTemplates.find(t=>t.productCode===_tplProdCode);
+      if(existing&&!confirm(`A template for ${_tplProdCode} already exists. Replace it?`))return;
+      if(existing){await fsDelete('trim_templates',existing._id);allTemplates=allTemplates.filter(t=>t._id!==existing._id);}
+      const id=await fsAdd('trim_templates',{productCode:_tplProdCode,productName:_tplProdName,productType:_tplProdName,items,createdBy:session.name,createdAt:Date.now()});
+      allTemplates.push({productCode:_tplProdCode,productName:_tplProdName,productType:_tplProdName,items,createdBy:session.name,createdAt:Date.now(),_id:id});
+      showToast('Template saved ✓');
+    }
+    _tplRowIdx=0;_tplProdCode='';_tplProdName='';_tplEditId=null;
     renderStoreSection('templates');
   }catch(e){showToast('Error: '+e.message,true);}
 }
+function editTemplate(id){
+  const t=allTemplates.find(x=>x._id===id);if(!t)return;
+  _tplEditId=id;_tplProdCode=t.productCode||'';_tplProdName=t.productName||t.productType||'';
+  renderStoreSection('templates');
+  // Pre-fill product search
+  const inp=document.getElementById('tpl-prod-search');
+  const sel=document.getElementById('tpl-prod-sel');
+  if(inp)inp.value=_tplProdCode+(_tplProdName?' — '+_tplProdName:'');
+  if(sel)sel.textContent='✓ '+_tplProdCode+' — '+_tplProdName;
+  // Pre-fill trim rows
+  const container=document.getElementById('tpl-rows');if(!container)return;
+  container.innerHTML='';_tplRowIdx=0;
+  (t.items||[]).forEach(item=>{
+    _tplRowIdx++;const rowId='tpl-row-'+_tplRowIdx;
+    const opts=allItems.map(i=>`<option value="${i.code}" data-name="${i.name}" ${i.code===item.itemCode?'selected':''}>${i.code} — ${i.name}</option>`).join('');
+    const div=document.createElement('div');div.id=rowId;div.className='tpl-item-row';
+    div.innerHTML=`
+      <div class="field" style="flex:2;min-width:150px"><label>Trim item</label><select>${opts}</select></div>
+      <div class="field" style="width:80px"><label>Qty / pc</label>
+        <input type="number" min="0.01" step="0.01" value="${item.qtyPerPiece||1}" class="tpl-qty"></div>
+      <div class="field" style="width:90px"><label>Price / unit</label>
+        <input type="number" min="0" step="0.01" value="${item.pricePerUnit||''}" placeholder="Rs." class="tpl-price"></div>
+      <button onclick="document.getElementById('${rowId}').remove()" style="background:none;border:none;color:#ccc;font-size:20px;cursor:pointer;align-self:flex-end;padding:0 4px;margin-bottom:2px">×</button>`;
+    container.appendChild(div);
+  });
+  // Scroll to form
+  document.getElementById('tpl-form-card')?.scrollIntoView({behavior:'smooth',block:'start'});
+}
+window.cancelTplEdit=function(){_tplEditId=null;_tplProdCode='';_tplProdName='';_tplRowIdx=0;renderStoreSection('templates');};
+window.tplPagePrev=function(){if(_tplPage>1){_tplPage--;renderStoreSection('templates');}};
+window.tplPageNext=function(){_tplPage++;renderStoreSection('templates');};
 async function deleteTemplate(id){
   if(!confirm('Delete this template? This cannot be undone.'))return;
   try{
@@ -6648,6 +6706,7 @@ window.selectTplProd=selectTplProd;
 window.addTplRow=addTplRow;
 window.submitTemplate=submitTemplate;
 window.deleteTemplate=deleteTemplate;
+window.editTemplate=editTemplate;
 window.setILDir=setILDir;
 window.refreshIssueLog=refreshIssueLog;
 window.setILQ=function(v){_ilQ=v;_ilPage=1;refreshIssueLog();};
