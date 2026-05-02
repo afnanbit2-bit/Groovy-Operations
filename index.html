@@ -1211,26 +1211,32 @@ async function getMyAttendanceToday(k40UserId){
 }
 
 async function getMyMonthSummary(k40UserId){
-  if(!k40UserId)return{present:0,late:0,absent:0,lateCount:0};
+  const k40=String(k40UserId==null?'':k40UserId).trim();
+  if(!k40)return{present:0,late:0,absent:0,lateCount:0};
   try{
     const now=new Date();
     const yyyy=now.getFullYear(),mm=String(now.getMonth()+1).padStart(2,'0');
     const dayOfMonth=now.getDate();
-    const policies=hrmPolicies||HRM_DEFAULT_POLICIES;
     const lateCutoff='09:30'; // simple default — refined in policy session
     let present=0,late=0,absent=0;
     for(let d=1;d<=dayOfMonth;d++){
       const dd=String(d).padStart(2,'0');
       const date=`${yyyy}-${mm}-${dd}`;
-      const snap=await rtdbGet(rtdbRef(rtdb,`attendance/${date}/${k40UserId}`));
+      const dayOfWeek=new Date(date+'T00:00:00').getDay(); // 0=Sun ... 6=Sat
+      const isSunday=dayOfWeek===0;
+      const snap=await rtdbGet(rtdbRef(rtdb,`attendance/${date}/${k40}`));
       if(snap.exists()){
-        const punches=Object.values(snap.val()).sort((a,b)=>(a.timestamp||'').localeCompare(b.timestamp||''));
-        const firstIn=punches.find(p=>p.type==='in')||punches[0];
-        if(firstIn){
+        // Any punch on the day = present (regardless of IN or OUT type)
+        const punches=Object.values(snap.val()||{}).sort((a,b)=>(a.timestamp||'').localeCompare(b.timestamp||''));
+        if(punches.length){
           present++;
-          if(firstIn.time&&firstIn.time>lateCutoff)late++;
+          const firstIn=punches.find(p=>p.type==='in')||punches[0];
+          if(firstIn&&firstIn.time&&firstIn.time>lateCutoff)late++;
+        } else if(!isSunday){
+          absent++;
         }
-      } else {
+      } else if(!isSunday){
+        // Absent only counts on working days (Mon–Sat); Sundays are off
         absent++;
       }
     }
@@ -8165,10 +8171,11 @@ async function _renderAttendanceMonthly(){
 
 async function _computeMonthlyAttendance(monthKey){
   // monthKey = YYYY-MM
-  if(monthlyAttendanceCache[monthKey])return monthlyAttendanceCache[monthKey];
   const[yyyy,mm]=monthKey.split('-').map(Number);
   const today=new Date();
   const isCurrent=(today.getFullYear()===yyyy&&(today.getMonth()+1)===mm);
+  // Don't cache the current month — it changes throughout the day
+  if(!isCurrent&&monthlyAttendanceCache[monthKey])return monthlyAttendanceCache[monthKey];
   const lastDay=isCurrent?today.getDate():new Date(yyyy,mm,0).getDate();
   const byEmp={};
   allEmployees.forEach(e=>{ byEmp[e._id]={present:0,late:0,absent:0}; });
@@ -8178,23 +8185,49 @@ async function _computeMonthlyAttendance(monthKey){
   for(let d=1;d<=lastDay;d++)days.push(`${monthKey}-${String(d).padStart(2,'0')}`);
   const snaps=await Promise.all(days.map(date=>rtdbGet(rtdbRef(rtdb,`attendance/${date}`)).catch(()=>null)));
 
-  snaps.forEach(snap=>{
-    const data=snap&&snap.exists()?snap.val():{};
+  // ── Diagnostic: surface K40 ID mismatches ──
+  const firstWithData=snaps.find(s=>s&&s.exists());
+  if(firstWithData){
+    const sampleKeys=Object.keys(firstWithData.val()||{}).map(k=>`"${k}"`);
+    const empIds=allEmployees.map(e=>({name:e.name,k40:e.k40UserId,type:typeof e.k40UserId})).filter(x=>x.k40);
+    const empKeys=empIds.map(x=>String(x.k40).trim());
+    const matched=sampleKeys.filter(k=>empKeys.includes(k.replace(/^"|"$/g,'')));
+    const unmatchedFB=sampleKeys.filter(k=>!empKeys.includes(k.replace(/^"|"$/g,'')));
+    const unmatchedEmp=empIds.filter(x=>!sampleKeys.includes(`"${String(x.k40).trim()}"`));
+    console.log('[Monthly Att]',monthKey,'sample day Firebase keys:',sampleKeys.join(', '));
+    console.log('[Monthly Att] Employee K40 IDs:',empIds);
+    console.log('[Monthly Att] Matched:',matched.length,'Unmatched in Firebase:',unmatchedFB,'Employees with no Firebase data:',unmatchedEmp.map(x=>`${x.name}(${x.k40})`));
+  } else {
+    console.log('[Monthly Att]',monthKey,'no attendance data found for any day in month');
+  }
+
+  snaps.forEach((snap,idx)=>{
+    const date=days[idx];
+    const dayOfWeek=new Date(date+'T00:00:00').getDay(); // 0=Sun ... 6=Sat
+    const isSunday=dayOfWeek===0;
+    const data=snap&&snap.exists()?snap.val():null;
     const punchesByUser=_attPunchesByUser(data);
+
     allEmployees.forEach(e=>{
-      const k40=e.k40UserId;
-      const u=k40?punchesByUser[k40]:null;
-      if(u&&u.firstIn){
+      // Robust K40 lookup: trim + stringify both sides
+      const k40=String(e.k40UserId==null?'':e.k40UserId).trim();
+      // Skip employees with no K40 device ID (typically management — not tracked by clock)
+      if(!k40)return;
+      const u=punchesByUser[k40];
+      // Present if there is at least one punch record (any type) for the day
+      const hasAnyPunch=u&&Array.isArray(u.punches)&&u.punches.length>0;
+      if(hasAnyPunch){
         byEmp[e._id].present++;
-        if(_isLatePunch(u.firstIn))byEmp[e._id].late++;
-      } else {
+        if(u.firstIn&&_isLatePunch(u.firstIn))byEmp[e._id].late++;
+      } else if(!isSunday){
+        // Absent only on working days (Mon–Sat). Sundays are off and not counted.
         byEmp[e._id].absent++;
       }
     });
   });
 
   const result={byEmp,monthKey};
-  monthlyAttendanceCache[monthKey]=result;
+  if(!isCurrent)monthlyAttendanceCache[monthKey]=result;
   return result;
 }
 
