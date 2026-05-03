@@ -107,5 +107,14 @@ service cloud.firestore {
       allow read:  if signedIn();
       allow write: if signedIn();
     }
+
+    // ── Bug Tracker ──
+    // Anyone signed in can read (workers see their own bugs filtered
+    // client-side; OM sees all). Anyone can create reports; updates
+    // (status, assign, comments, upvotes) also open to signed-in users
+    // since the actions are gated at the app layer.
+    match /bug_reports/{doc} {
+      allow read, write: if signedIn();
+    }
   }
 }

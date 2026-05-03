@@ -369,6 +369,32 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 @media (max-width:420px){
   .attendance-grid{grid-template-columns:1fr !important}
 }
+/* ── Bug Tracker ─────────────────────────────────────────── */
+#bug-report-fab{position:fixed;bottom:20px;right:20px;z-index:500;background:#1A1A2E;color:white;border:none;border-radius:50px;padding:10px 18px;box-shadow:0 4px 12px rgba(0,0,0,0.18);cursor:pointer;font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px;font-family:inherit}
+#bug-report-fab:hover{background:#2D2D4E}
+#bug-report-fab:active{transform:scale(0.96)}
+#bug-report-fab .bug-fab-icon{font-size:14px;line-height:1}
+@media (max-width:600px){
+  #bug-report-fab{bottom:80px;padding:14px;border-radius:50%}
+  #bug-report-fab .bug-fab-text{display:none}
+}
+.severity-badge{display:inline-block;padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.severity-badge.critical{background:var(--accent-urgent);color:#fff}
+.severity-badge.high{background:#C2410C;color:#fff}
+.severity-badge.medium{background:var(--accent-warning-soft);color:var(--accent-warning)}
+.severity-badge.low{background:var(--accent-success-soft);color:var(--accent-success)}
+.bug-status-badge{display:inline-block;padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.bug-status-badge.open{background:#F0F0F0;color:#555}
+.bug-status-badge.investigating{background:var(--accent-warning-soft);color:var(--accent-warning)}
+.bug-status-badge.fixed{background:var(--accent-success-soft);color:var(--accent-success)}
+.bug-status-badge.wont-fix{background:var(--accent-urgent-soft);color:var(--accent-urgent)}
+.bug-status-badge.duplicate{background:#F0F0F0;color:#9CA3AF;text-decoration:line-through}
+.bug-cat-badge{display:inline-block;padding:3px 8px;border-radius:8px;font-size:10px;font-weight:600;background:#F0F0F0;color:var(--text)}
+.filter-chip{padding:6px 14px;border:1px solid var(--border);border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;background:#fff;color:var(--muted);font-family:inherit}
+.filter-chip.active{background:#1A1A2E;color:#fff;border-color:#1A1A2E}
+.bug-card.expanded .bug-card-expanded{display:block !important}
+.bug-card.expanded .bug-arrow{transform:rotate(180deg)}
+.bug-arrow{transition:transform .2s;color:#9CA3AF}
 </style>
 </head>
 <body>
@@ -432,6 +458,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
   <div class="mob-sheet-title" id="mob-sheet-title"></div>
   <div id="mob-sheet-items"></div>
 </div>
+
+<button id="bug-report-fab" type="button" style="display:none" onclick="window.openBugReportModal()" title="Report a bug"><span class="bug-fab-icon">🐛</span><span class="bug-fab-text">Report Bug</span></button>
 
 <div class="toast" id="toast"></div>
 
@@ -906,6 +934,9 @@ let allAdvances=[],allLoans=[],allPolicyChanges=[],allHRMNotifs=[],hrmS4DataLoad
 let _advTab='pending',_advSearchQ='';
 let _loanFilter='active';
 let _hrmNotifPanelOpen=false;
+// ── Bug Tracker state ──
+let allBugs=[],bugsLoaded=false;
+let _bugFilter='all',_bugSort='severity',_bugExpanded={};
 // ── Mustafa's task list — items raised by owners that need his attention ──
 const MUSTAFA_TASKS=[
   {id:'set-join-dates',num:1,label:'Set join dates',detail:'31 employees were seeded with a placeholder date. Replace with each person\'s real joining date.',resolver:'pending-join-date'}
@@ -1447,6 +1478,11 @@ async function startApp(){
   sessionStorage.setItem('u',session.u);
   // Inject the notification bell for everyone (HRM notifs are routed by user/role).
   if(typeof _ensureNotifBell==='function')_ensureNotifBell();
+  // Show the bug-report FAB for every signed-in user
+  const bugFab=document.getElementById('bug-report-fab');
+  if(bugFab)bugFab.style.display='flex';
+  // Background-load bug reports so the dashboard widget can populate
+  if(typeof loadBugReports==='function'&&!bugsLoaded)loadBugReports().catch(()=>{});
   if(session.role==='owner'){loadStoreNotifications();}
   buildNav();
   if(auth.currentUser){try{await auth.currentUser.getIdToken();}catch(_){}}
@@ -1468,6 +1504,7 @@ function buildNav(){
   if(!isWorker&&!isStore)mainItems.push({id:'po-registry',label:'PO Registry'});
   if(isWorker||isViewer)mainItems.push({id:'my-work',label:'My Work'});
   if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
+  if(om)mainItems.push({id:'bug-tracker',label:'🐛 Bug Tracker'});
   if(isOwner)mainItems.push({id:'activity',label:'Activity Log'});
   if(isOwner)mainItems.push({id:'users',label:'Users'});
 
@@ -1618,7 +1655,7 @@ function _updateMobNavActive(pageId){
     'attendance':'hrm','hrm-employees':'hrm','hrm-payroll':'hrm','hrm-advances':'hrm','hrm-loans':'hrm','hrm-policy':'hrm',
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
     'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-templates':'more',
-    'activity':'more','users':'more',
+    'activity':'more','users':'more','bug-tracker':'more',
     'my-work':'my-work'
   };
   const grp=groups[pageId];
@@ -1730,6 +1767,7 @@ window.openMoreSheet=function(){
   // Store
   items.push({iconName:'shop',label:'Store',pageId:'store-dashboard'});
   // Owner-only
+  if(om)items.push({iconName:'list',label:'Bug Tracker',pageId:'bug-tracker'});
   if(isOwner)items.push({iconName:'activity',label:'Activity Log',pageId:'activity'});
   if(isOwner)items.push({iconName:'user',label:'Users',pageId:'users'});
   window.openMobSheet('More',items);
@@ -1776,6 +1814,10 @@ function renderPage(id){
   else if(id==='gatepass'){gpPage=1;m.innerHTML=renderGatePass();window.switchGPTab(gpActiveTab||'outward');}
   else if(id==='activity'){loadActivity();return;}
   else if(id==='users')m.innerHTML=renderUsers();
+  else if(id==='bug-tracker'){
+    if(!bugsLoaded)loadBugReports().then(()=>{m.innerHTML=renderBugTrackerPage();});
+    else m.innerHTML=renderBugTrackerPage();
+  }
   else if(id==='po-detail')renderDetailPage();
   else if(id==='stage-work')renderStageWorkPage();
   // ── Store pages ──
@@ -7544,6 +7586,7 @@ function renderHRMDashboardWidget(){
   // Owner KPI strip — populated async
   if(isOwner){
     return`${greetingHTML}
+    <div id="owner-bug-banner"></div>
     <div id="owner-payroll-alert"></div>
     <div class="owner-kpi-strip" id="owner-kpi-strip">
       <div class="kpi-card"><div class="kpi-icon">${_icon('people',22)}</div><div class="kpi-num" id="owner-kpi-in">—</div><div class="kpi-label">Staff IN today</div></div>
@@ -7608,6 +7651,7 @@ async function _hrmPopulateDashboard(){
     // Subscribe to live attendance + today's punches; KPIs update in real-time
     if(typeof _ensureOwnerDashboardLive==='function')_ensureOwnerDashboardLive();
     if(typeof _populateOwnerPayrollKPI==='function')_populateOwnerPayrollKPI();
+    if(typeof _populateOwnerBugBanner==='function')_populateOwnerBugBanner();
     return;
   }
 
@@ -10234,5 +10278,429 @@ window.policySubmitRequest=async function(){
     window.hrmCloseModal();
   }catch(e){showToast('Submit failed: '+e.message,true);}
 };
+
+// ───────────────────────────────────────────────────────────
+// Bug Tracker — internal report-a-bug pipeline
+// ───────────────────────────────────────────────────────────
+
+const BUG_PAGE_NAMES={
+  'dashboard':'Dashboard',
+  'po-create':'New PO',
+  'po-registry':'PO Registry',
+  'po-detail':'PO Detail',
+  'stage-work':'Stage Work',
+  'my-work':'My Work',
+  'me':'Worker Me',
+  'gatepass':'Gate Pass',
+  'attendance':'HRM Attendance',
+  'hrm-employees':'HRM Employees',
+  'hrm-payroll':'HRM Payroll',
+  'hrm-advances':'HRM Advances',
+  'hrm-loans':'HRM Loans',
+  'hrm-policy':'HRM Policy Engine',
+  'store-dashboard':'Store Dashboard',
+  'store-inventory':'Store Inventory',
+  'store-receive':'Store Receive',
+  'store-issue':'Store Issue',
+  'store-templates':'Trim Templates',
+  'store-log':'Store Log',
+  'recipe-directory':'Recipe Directory',
+  'recipe-create':'Recipe Create',
+  'recipe-detail':'Recipe Detail',
+  'printing-jobs':'Embellishment Jobs',
+  'printing-job-detail':'Embellishment Job Detail',
+  'observer-tower':'Observer Tower',
+  'qc-report-page':'QC Report',
+  'billing-detail':'Billing Detail',
+  'color-library':'Color Library',
+  'bug-tracker':'Bug Tracker',
+  'activity':'Activity Log',
+  'users':'Users'
+};
+function getCurrentPageName(){ return BUG_PAGE_NAMES[currentPage]||currentPage||'Unknown Page'; }
+
+async function loadBugReports(){
+  try{
+    const snap=await getDocs(query(collection(db,'bug_reports'),orderBy('reportedAt','desc'))).catch(()=>({docs:[]}));
+    allBugs=snap.docs.map(d=>({...d.data(),_id:d.id}));
+    bugsLoaded=true;
+    if(typeof _populateOwnerBugBanner==='function')_populateOwnerBugBanner();
+  }catch(e){console.warn('loadBugReports failed:',e.message);}
+}
+
+// ── Bug report modal (any signed-in user) ──
+window.openBugReportModal=function(){
+  document.getElementById('hrm-modal-back')?.remove();
+  const pageName=getCurrentPageName();
+  const device=window.innerWidth<600?'Mobile':'Desktop';
+  const back=document.createElement('div');
+  back.className='hrm-modal-back';back.id='hrm-modal-back';
+  back.onclick=ev=>{ if(ev.target===back)window.closeBugReportModal(); };
+  back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()" style="max-width:520px;padding:0;overflow:hidden">
+    <div style="background:#1A1A2E;color:white;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div style="min-width:0">
+        <div style="font-size:11px;letter-spacing:.06em;opacity:.6">REPORT A BUG · بگ رپورٹ</div>
+        <div style="margin:4px 0 0;font-size:18px;font-weight:700">Help us improve Groovy Ops</div>
+      </div>
+      <button onclick="window.closeBugReportModal()" style="background:none;border:none;color:white;font-size:24px;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div style="padding:20px">
+      <div style="background:#F9FAFB;padding:10px 12px;border-radius:8px;margin-bottom:14px;font-size:11px;color:var(--muted);line-height:1.7">
+        📍 Page: <strong style="color:var(--text)">${pageName}</strong><br>
+        👤 Reporter: ${session.name} · ${session.role}<br>
+        💻 Device: ${device}
+      </div>
+      <div class="field" style="margin-bottom:12px"><label>What went wrong? *</label><input id="bug-title" placeholder="e.g. Save button doesn't work on PO form"></div>
+      <div class="field" style="margin-bottom:12px"><label>Describe what happened</label><textarea id="bug-description" rows="3" placeholder="e.g. Clicked save, got an error message" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;background:#FAFAFA;resize:vertical"></textarea></div>
+      <div class="field" style="margin-bottom:12px"><label>What did you expect to happen?</label><textarea id="bug-expected" rows="2" placeholder="e.g. The PO should have been saved" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;background:#FAFAFA;resize:vertical"></textarea></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div class="field"><label>Category</label><select id="bug-category">
+          <option value="ui">🎨 UI / Design</option>
+          <option value="data">📊 Wrong data</option>
+          <option value="permission">🔒 Permission</option>
+          <option value="calculation">🧮 Wrong calc</option>
+          <option value="missing-feature">✨ Missing feature</option>
+          <option value="other">📝 Other</option>
+        </select></div>
+        <div class="field"><label>How urgent?</label><select id="bug-severity">
+          <option value="critical">🔴 Critical — blocks work</option>
+          <option value="high">🟠 High — causes problems</option>
+          <option value="medium" selected>🟡 Medium — annoying</option>
+          <option value="low">🟢 Low — nice to fix</option>
+        </select></div>
+      </div>
+      <div class="field" style="margin-bottom:6px"><label>Screenshot (optional, very helpful)</label><input id="bug-screenshot" type="file" accept="image/*" onchange="window._bugPreviewImg(this)"></div>
+      <div id="bug-screenshot-preview" style="display:none;margin-top:6px"><img style="max-width:100%;border-radius:6px;border:1px solid var(--border)" /></div>
+      <div id="bug-screenshot-status" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
+    </div>
+    <div style="padding:14px 20px;border-top:1px solid var(--border);background:#F9FAFB;display:flex;gap:10px">
+      <button class="btn-outline" style="flex:1" onclick="window.closeBugReportModal()">Cancel</button>
+      <button class="btn-primary" style="flex:2;width:auto;margin-top:0;padding:10px" onclick="window.submitBugReport()">Submit Bug Report</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+};
+
+window.closeBugReportModal=function(){
+  document.getElementById('hrm-modal-back')?.remove();
+};
+
+window._bugPreviewImg=function(input){
+  const wrap=document.getElementById('bug-screenshot-preview');
+  if(!wrap)return;
+  const file=input.files&&input.files[0];
+  if(!file){wrap.style.display='none';return;}
+  const img=wrap.querySelector('img');
+  img.src=URL.createObjectURL(file);
+  wrap.style.display='block';
+};
+
+window.submitBugReport=async function(){
+  const title=document.getElementById('bug-title')?.value?.trim()||'';
+  if(!title)return showToast('Please describe what went wrong.',true);
+  const desc=document.getElementById('bug-description')?.value?.trim()||'';
+  const exp=document.getElementById('bug-expected')?.value?.trim()||'';
+  const category=document.getElementById('bug-category')?.value||'other';
+  const severity=document.getElementById('bug-severity')?.value||'medium';
+  const fileInput=document.getElementById('bug-screenshot');
+  const statusEl=document.getElementById('bug-screenshot-status');
+  let screenshotUrl='';
+  if(fileInput&&fileInput.files&&fileInput.files[0]){
+    if(statusEl)statusEl.textContent='Uploading screenshot…';
+    try{
+      screenshotUrl=await uploadToCloudinary(fileInput.files[0]);
+    }catch(e){
+      if(statusEl)statusEl.textContent='Screenshot upload failed; submitting without it.';
+      screenshotUrl='';
+    }
+  }
+  const ref=doc(collection(db,'bug_reports'));
+  const data={
+    id:ref.id,
+    reportedBy:session.u,
+    reporterRole:session.role,
+    reporterName:session.name,
+    reportedAt:Date.now(),
+    pageWhereOccurred:getCurrentPageName(),
+    pageUrl:window.location.href,
+    deviceType:window.innerWidth<600?'mobile':'desktop',
+    browserInfo:(navigator.userAgent||'').slice(0,200),
+    title,
+    description:desc,
+    expectedBehavior:exp,
+    stepsToReproduce:'',
+    screenshotUrl,
+    category,
+    severity,
+    status:'open',
+    priority:3,
+    assignedTo:'',
+    resolvedBy:'',
+    resolvedAt:0,
+    resolution:'',
+    duplicateOfBugId:'',
+    comments:[],
+    upvotes:[]
+  };
+  try{
+    await setDoc(ref,data);
+    allBugs.unshift({...data,_id:ref.id});
+    // Notify owners (high priority for critical)
+    if(typeof _hrmNotify==='function'){
+      await _hrmNotify({
+        type:'bug_report',
+        title:`New bug: ${title}`,
+        message:`${session.name} (${session.role}) reported a ${severity} bug on ${data.pageWhereOccurred}.`,
+        forRole:'owner',
+        relatedTo:ref.id,
+        priority:severity==='critical'?'high':'normal',
+        actionRequired:severity==='critical',
+        actionUrl:'bug-tracker'
+      });
+    }
+    await logActivity('Bug reported',`${title} (${severity}) on ${data.pageWhereOccurred}`);
+    if(typeof _populateOwnerBugBanner==='function')_populateOwnerBugBanner();
+    showToast('Bug reported. Thank you for the feedback! 🐛');
+    window.closeBugReportModal();
+    if(currentPage==='bug-tracker'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderBugTrackerPage();}
+  }catch(e){showToast('Submit failed: '+e.message,true);}
+};
+
+// ── Bug Tracker page ──
+function renderBugTrackerPage(){
+  const isOM=session&&['owner','manager'].includes(session.role);
+  if(!isOM&&session.role!=='worker')return'<div class="empty">Restricted.</div>';
+  // Workers see only their own bugs
+  const visible=isOM?allBugs.slice():allBugs.filter(b=>b.reportedBy===session.u);
+  const open=visible.filter(b=>b.status==='open'||b.status==='investigating');
+  const critical=open.filter(b=>b.severity==='critical').length;
+  const high=open.filter(b=>b.severity==='high').length;
+  const investigating=visible.filter(b=>b.status==='investigating').length;
+  const weekAgo=Date.now()-7*86400000;
+  const fixedThisWeek=visible.filter(b=>b.status==='fixed'&&(b.resolvedAt||0)>weekAgo).length;
+  const stats=`<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px" class="bug-stats-strip">
+    <div class="card" style="padding:14px;background:var(--accent-urgent-soft)"><div style="font-size:10px;text-transform:uppercase;color:var(--accent-urgent);letter-spacing:.06em">🔴 Critical</div><div style="font-size:24px;font-weight:700;color:var(--accent-urgent);margin-top:4px">${critical}</div></div>
+    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">🟠 High</div><div style="font-size:24px;font-weight:700;margin-top:4px">${high}</div></div>
+    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">🟡 Open</div><div style="font-size:24px;font-weight:700;margin-top:4px">${open.length}</div></div>
+    <div class="card" style="padding:14px;background:var(--accent-success-soft)"><div style="font-size:10px;text-transform:uppercase;color:var(--accent-success);letter-spacing:.06em">✅ Fixed (week)</div><div style="font-size:24px;font-weight:700;color:var(--accent-success);margin-top:4px">${fixedThisWeek}</div></div>
+    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Total</div><div style="font-size:24px;font-weight:700;margin-top:4px">${visible.length}</div></div>
+  </div>`;
+  const filters=['all','open','critical','high','investigating','fixed'];
+  const filterLabels={all:'All',open:'Open',critical:'🔴 Critical',high:'🟠 High',investigating:'🔍 Investigating',fixed:'✅ Fixed'};
+  const filterBar=`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+    ${filters.map(f=>`<button class="filter-chip ${_bugFilter===f?'active':''}" onclick="window.bugSetFilter('${f}')">${filterLabels[f]}</button>`).join('')}
+    <select id="bug-sort" onchange="window.bugSetSort(this.value)" style="margin-left:auto;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#fff">
+      <option value="severity" ${_bugSort==='severity'?'selected':''}>Sort by Severity</option>
+      <option value="newest" ${_bugSort==='newest'?'selected':''}>Newest First</option>
+      <option value="oldest" ${_bugSort==='oldest'?'selected':''}>Oldest First</option>
+      <option value="upvotes" ${_bugSort==='upvotes'?'selected':''}>Most Reported</option>
+    </select>
+  </div>`;
+  return`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+    <div>
+      <div class="page-title">🐛 Bug Tracker</div>
+      <div class="page-sub">${isOM?'Internal bug reports across the app':'Your reported bugs'}</div>
+    </div>
+    <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.openBugReportModal()">+ Report Bug</button>
+  </div>
+  ${stats}${filterBar}
+  <div id="bug-list">${_renderBugList(visible)}</div>`;
+}
+
+function _renderBugList(visible){
+  let list=visible.slice();
+  if(_bugFilter==='open')list=list.filter(b=>b.status==='open'||b.status==='investigating');
+  else if(_bugFilter==='critical')list=list.filter(b=>b.severity==='critical');
+  else if(_bugFilter==='high')list=list.filter(b=>b.severity==='high');
+  else if(_bugFilter==='investigating')list=list.filter(b=>b.status==='investigating');
+  else if(_bugFilter==='fixed')list=list.filter(b=>b.status==='fixed');
+  const sevRank={critical:0,high:1,medium:2,low:3};
+  if(_bugSort==='severity')list.sort((a,b)=>(sevRank[a.severity]??99)-(sevRank[b.severity]??99)||(b.reportedAt||0)-(a.reportedAt||0));
+  else if(_bugSort==='newest')list.sort((a,b)=>(b.reportedAt||0)-(a.reportedAt||0));
+  else if(_bugSort==='oldest')list.sort((a,b)=>(a.reportedAt||0)-(b.reportedAt||0));
+  else if(_bugSort==='upvotes')list.sort((a,b)=>(b.upvotes?.length||0)-(a.upvotes?.length||0));
+  if(!list.length)return'<div class="empty">No bugs match this filter.</div>';
+  return list.map(b=>_bugCardHTML(b)).join('');
+}
+
+function _bugCardHTML(b){
+  const sevColor={critical:'var(--accent-urgent)',high:'#C2410C',medium:'var(--accent-warning)',low:'var(--accent-success)'}[b.severity]||'var(--muted)';
+  const sevIcon={critical:'🔴',high:'🟠',medium:'🟡',low:'🟢'}[b.severity]||'⚪';
+  const expanded=!!_bugExpanded[b._id];
+  const upCount=Array.isArray(b.upvotes)?b.upvotes.length:0;
+  const upActive=Array.isArray(b.upvotes)&&b.upvotes.includes(session.u);
+  const isOM=session&&['owner','manager'].includes(session.role);
+  const comments=Array.isArray(b.comments)?b.comments:[];
+  const commentsHTML=comments.length?comments.map(c=>`<div style="background:#fafafa;padding:8px 10px;border-radius:6px;margin-bottom:4px"><div style="font-size:11px;color:var(--muted)">${c.by||'—'} · ${_hrmTimeAgo(c.at)}</div><div style="font-size:13px;margin-top:2px">${(c.text||'').replace(/[<>]/g,'')}</div></div>`).join(''):'';
+  const screenshotHTML=b.screenshotUrl?`<div style="margin-bottom:14px"><img src="${b.screenshotUrl}" style="max-width:100%;border-radius:8px;border:1px solid var(--border);cursor:pointer" onclick="window.open('${b.screenshotUrl}','_blank')"></div>`:'';
+  const expectedHTML=b.expectedBehavior?`<div style="margin-bottom:14px"><div style="font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Expected</div><div style="font-size:14px">${(b.expectedBehavior||'').replace(/[<>]/g,'')}</div></div>`:'';
+  const ownerActions=isOM?`<div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--border);margin-top:10px">
+    <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.bugAssign('${b._id}')">📌 Assign</button>
+    <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.bugUpdateStatus('${b._id}','investigating')">🔍 Investigating</button>
+    <button class="btn-outline" style="font-size:11px;padding:5px 10px;color:var(--accent-success);border-color:var(--accent-success)" onclick="window.bugUpdateStatus('${b._id}','fixed')">✅ Mark Fixed</button>
+    <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.bugUpdateStatus('${b._id}','wont-fix')">❌ Won't Fix</button>
+    <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.bugMarkDuplicate('${b._id}')">🔗 Duplicate</button>
+  </div>`:'';
+  return`<div class="card bug-card ${expanded?'expanded':''}" style="padding:16px;margin-bottom:10px;border-left:3px solid ${sevColor}" id="bug-card-${b._id}">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;cursor:pointer;gap:10px;flex-wrap:wrap" onclick="window.bugToggleCard('${b._id}')">
+      <div style="flex:1;min-width:200px">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span class="severity-badge ${b.severity}">${sevIcon} ${b.severity}</span>
+          <span class="bug-status-badge ${b.status}">${b.status}</span>
+          <span class="bug-cat-badge">${b.category||'other'}</span>
+        </div>
+        <div style="font-weight:600;font-size:15px;margin-top:8px">${(b.title||'').replace(/[<>]/g,'')}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Reported by ${b.reporterName||'—'} (${b.reporterRole||'—'}) · ${_hrmTimeAgo(b.reportedAt)} · on <strong>${b.pageWhereOccurred||'—'}</strong></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button onclick="event.stopPropagation();window.bugUpvote('${b._id}')" style="background:${upActive?'var(--accent-success-soft)':'#fff'};border:1px solid ${upActive?'var(--accent-success)':'var(--border)'};border-radius:20px;padding:4px 10px;font-size:12px;cursor:pointer;color:${upActive?'var(--accent-success)':'var(--text)'}">👍 ${upCount}</button>
+        <span class="bug-arrow">▼</span>
+      </div>
+    </div>
+    <div class="bug-card-expanded" style="display:${expanded?'block':'none'};margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+      <div style="margin-bottom:14px"><div style="font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Description</div><div style="font-size:14px">${(b.description||'(none)').replace(/[<>]/g,'')}</div></div>
+      ${expectedHTML}
+      ${screenshotHTML}
+      ${b.assignedTo?`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Assigned to: <strong>${b.assignedTo}</strong></div>`:''}
+      ${b.resolution?`<div style="font-size:12px;color:var(--accent-success);margin-bottom:8px">Resolution: ${(b.resolution||'').replace(/[<>]/g,'')}</div>`:''}
+      ${b.duplicateOfBugId?`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Duplicate of: ${b.duplicateOfBugId}</div>`:''}
+      ${comments.length?`<div style="margin-bottom:10px"><div style="font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Comments (${comments.length})</div>${commentsHTML}</div>`:''}
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <input type="text" id="bug-comment-${b._id}" placeholder="Add comment…" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:#FAFAFA">
+        <button class="btn-outline" style="font-size:12px;padding:6px 14px" onclick="window.bugAddComment('${b._id}')">Send</button>
+      </div>
+      ${ownerActions}
+    </div>
+  </div>`;
+}
+
+window.bugSetFilter=function(f){_bugFilter=f;const m=document.getElementById('main-content');if(m)m.innerHTML=renderBugTrackerPage();};
+window.bugSetSort=function(s){_bugSort=s;const m=document.getElementById('main-content');if(m)m.innerHTML=renderBugTrackerPage();};
+
+window.bugToggleCard=function(id){
+  _bugExpanded[id]=!_bugExpanded[id];
+  const card=document.getElementById('bug-card-'+id);
+  if(card)card.classList.toggle('expanded',_bugExpanded[id]);
+};
+
+window.bugUpvote=async function(id){
+  const b=allBugs.find(x=>x._id===id);if(!b)return;
+  const ups=Array.isArray(b.upvotes)?b.upvotes.slice():[];
+  const me=session.u;
+  if(ups.includes(me))ups.splice(ups.indexOf(me),1); else ups.push(me);
+  try{
+    await updateDoc(doc(db,'bug_reports',id),{upvotes:ups});
+    b.upvotes=ups;
+    if(currentPage==='bug-tracker'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderBugTrackerPage();}
+  }catch(e){showToast('Upvote failed: '+e.message,true);}
+};
+
+window.bugAddComment=async function(id){
+  const input=document.getElementById('bug-comment-'+id);
+  const text=input?.value?.trim()||'';
+  if(!text)return;
+  const b=allBugs.find(x=>x._id===id);if(!b)return;
+  const comments=Array.isArray(b.comments)?b.comments.slice():[];
+  comments.push({by:session.name,at:Date.now(),text});
+  try{
+    await updateDoc(doc(db,'bug_reports',id),{comments});
+    b.comments=comments;
+    if(input)input.value='';
+    // Notify the original reporter (unless they're the commenter)
+    if(b.reportedBy&&b.reportedBy!==session.u&&typeof _hrmNotify==='function'){
+      await _hrmNotify({
+        type:'bug_comment',
+        title:'New comment on your bug report',
+        message:`${session.name}: "${text.slice(0,160)}"`,
+        forUser:b.reportedBy,
+        relatedTo:id,
+        priority:'normal',
+        actionUrl:'bug-tracker'
+      });
+    }
+    if(currentPage==='bug-tracker'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderBugTrackerPage();_bugExpanded[id]=true;const c=document.getElementById('bug-card-'+id);if(c)c.classList.add('expanded');}
+  }catch(e){showToast('Comment failed: '+e.message,true);}
+};
+
+window.bugAssign=async function(id){
+  if(!session||!['owner','manager'].includes(session.role))return showToast('Owners/managers only.',true);
+  const b=allBugs.find(x=>x._id===id);if(!b)return;
+  const who=prompt('Assign this bug to (username):',b.assignedTo||'');
+  if(who==null)return;
+  try{
+    await updateDoc(doc(db,'bug_reports',id),{assignedTo:who.trim()});
+    b.assignedTo=who.trim();
+    await logActivity('Bug assigned',`${b.title} → ${who.trim()}`);
+    showToast('Assigned ✓');
+    if(currentPage==='bug-tracker'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderBugTrackerPage();_bugExpanded[id]=true;}
+  }catch(e){showToast('Assign failed: '+e.message,true);}
+};
+
+window.bugUpdateStatus=async function(id,newStatus){
+  if(!session||!['owner','manager'].includes(session.role))return showToast('Owners/managers only.',true);
+  const b=allBugs.find(x=>x._id===id);if(!b)return;
+  let resolution='';
+  if(newStatus==='fixed'||newStatus==='wont-fix'){
+    resolution=prompt(newStatus==='fixed'?'What was fixed? (optional)':'Reason for not fixing? (optional)','')||'';
+  }
+  const update={status:newStatus};
+  if(newStatus==='fixed'){update.resolvedBy=session.name;update.resolvedAt=Date.now();update.resolution=resolution;}
+  else if(newStatus==='wont-fix'){update.resolution=resolution;update.resolvedBy=session.name;update.resolvedAt=Date.now();}
+  try{
+    await updateDoc(doc(db,'bug_reports',id),update);
+    Object.assign(b,update);
+    // Notify reporter
+    if(b.reportedBy&&typeof _hrmNotify==='function'){
+      const titles={investigating:'Your bug is being investigated',fixed:'Your bug has been fixed! ✅',"wont-fix":'Your bug report has been reviewed','open':'Your bug was reopened'};
+      await _hrmNotify({
+        type:'bug_status',
+        title:titles[newStatus]||`Bug status: ${newStatus}`,
+        message:`"${b.title}" — ${newStatus}${resolution?'. '+resolution:''}`,
+        forUser:b.reportedBy,
+        relatedTo:id,
+        priority:newStatus==='fixed'?'normal':'normal',
+        actionUrl:'bug-tracker'
+      });
+    }
+    await logActivity('Bug '+newStatus,`${b.title}${resolution?' · '+resolution:''}`);
+    showToast(`Marked ${newStatus} ✓`);
+    if(typeof _populateOwnerBugBanner==='function')_populateOwnerBugBanner();
+    if(currentPage==='bug-tracker'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderBugTrackerPage();}
+  }catch(e){showToast('Update failed: '+e.message,true);}
+};
+
+window.bugMarkDuplicate=async function(id){
+  if(!session||!['owner','manager'].includes(session.role))return showToast('Owners/managers only.',true);
+  const b=allBugs.find(x=>x._id===id);if(!b)return;
+  const dup=prompt('Duplicate of which bug ID?','');
+  if(!dup||!dup.trim())return;
+  try{
+    await updateDoc(doc(db,'bug_reports',id),{status:'duplicate',duplicateOfBugId:dup.trim(),resolvedBy:session.name,resolvedAt:Date.now()});
+    Object.assign(b,{status:'duplicate',duplicateOfBugId:dup.trim(),resolvedBy:session.name,resolvedAt:Date.now()});
+    await logActivity('Bug marked duplicate',`${b.title} → ${dup.trim()}`);
+    showToast('Marked duplicate ✓');
+    if(typeof _populateOwnerBugBanner==='function')_populateOwnerBugBanner();
+    if(currentPage==='bug-tracker'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderBugTrackerPage();}
+  }catch(e){showToast('Failed: '+e.message,true);}
+};
+
+// ── Owner dashboard widget — critical bugs banner ──
+function _populateOwnerBugBanner(){
+  if(!session||session.role!=='owner')return;
+  const wrap=document.getElementById('owner-bug-banner');
+  if(!wrap)return;
+  const openCritical=allBugs.filter(b=>b.severity==='critical'&&(b.status==='open'||b.status==='investigating')).length;
+  if(openCritical>0){
+    wrap.innerHTML=`<div class="card" style="padding:14px;margin-bottom:14px;background:var(--accent-urgent-soft);border-left:3px solid var(--accent-urgent);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;color:var(--accent-urgent);letter-spacing:.06em;font-weight:700">⚠ Critical Bugs Open</div>
+        <div style="font-size:16px;font-weight:700;margin-top:2px">${openCritical} critical bug${openCritical===1?'':'s'} need attention</div>
+      </div>
+      <button class="btn-primary" style="background:var(--accent-urgent);width:auto;padding:8px 16px;margin-top:0" onclick="window.showPage('bug-tracker')">View →</button>
+    </div>`;
+  } else {
+    wrap.innerHTML='';
+  }
+}
 
 </script>
