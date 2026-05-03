@@ -306,7 +306,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .salary-preview{margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);font-size:13px;color:var(--text)}
 .advance-row{margin-top:6px;font-size:12px;color:var(--muted)}
 .advance-row .text-red{color:#dc2626;font-weight:700}
-.owner-kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.owner-kpi-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
 .kpi-card{background:white;border-radius:var(--radius-bubble);padding:16px;text-align:center;border:1px solid var(--border)}
 .kpi-card.amber{background:var(--accent-warning-soft);border-color:transparent}
 .kpi-card.red{background:var(--accent-urgent-soft);border-color:transparent}
@@ -354,6 +354,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .inc-log-row{padding:8px 10px;background:#fafafa;border:1px solid var(--border);border-radius:8px;font-size:12px;margin-bottom:6px}
 @media (max-width:600px){
   .owner-kpi-strip{grid-template-columns:repeat(2,1fr)}
+  .payroll-summary-strip{grid-template-columns:repeat(2,1fr) !important}
+  .payroll-table{font-size:11px}
   .mgr-stats-row{grid-template-columns:1fr}
   .month-grid{grid-template-columns:repeat(3,1fr)}
   .greeting-name{font-size:18px}
@@ -434,6 +436,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 <div class="toast" id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import{getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,runTransaction,writeBatch}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -893,6 +896,11 @@ let allItems=[],allTransactions=[],allTemplates=[],allRequests=[],allActivePOs=[
 // ── HRM state ──
 let allEmployees=[],allIncrementLogs=[],hrmPolicies=null,hrmDataLoaded=false;
 let _empFilterQ='',_empFilterDept='',_empFilterPay='',_empFilterPending=false,_empViewingId=null;
+// ── Payroll state ──
+let allPayrollRuns=[],allPayslips=[],payrollDataLoaded=false;
+let _payrollMonth=new Date().toISOString().slice(0,7);
+let _payrollComputed=null; // cached calc result for current view
+let _payslipViewingId=null;
 // ── Mustafa's task list — items raised by owners that need his attention ──
 const MUSTAFA_TASKS=[
   {id:'set-join-dates',num:1,label:'Set join dates',detail:'31 employees were seeded with a placeholder date. Replace with each person\'s real joining date.',resolver:'pending-join-date'}
@@ -1233,6 +1241,8 @@ async function loadHRMData(){
     hrmPolicies=polSnap.exists()?polSnap.data():{...HRM_DEFAULT_POLICIES};
     allIncrementLogs=incSnap.docs.map(d=>({...d.data(),_id:d.id}));
     hrmDataLoaded=true;
+    // Background-load payroll data (used by worker payslip cue + owner Pending Payroll KPI)
+    if(typeof loadPayrollData==='function'&&!payrollDataLoaded){loadPayrollData().then(()=>{ if(currentPage==='dashboard'||currentPage==='my-work'||currentPage==='me'){const m=document.getElementById('main-content');if(m&&typeof renderPage==='function')renderPage(currentPage);} });}
     // Attach paygrade/employee record onto session if not yet attached
     if(session&&!session.employee){
       const me=allEmployees.find(x=>x.username===session.u);
@@ -1476,7 +1486,7 @@ function buildNav(){
   if(om){
     hrmSubItems.push({id:'attendance',iconName:'clock',label:'Attendance'});
     hrmSubItems.push({id:'hrm-employees',iconName:'people',label:'Employees'});
-    hrmSubItems.push({id:'hrm-payroll',iconName:'money',label:'Payroll'});
+    if(_canViewPayroll())hrmSubItems.push({id:'hrm-payroll',iconName:'money',label:'Payroll'});
     hrmSubItems.push({id:'hrm-advances',iconName:'list',label:'Advances'});
     hrmSubItems.push({id:'hrm-policy',iconName:'gear',label:'Policy Engine'});
   }
@@ -1796,7 +1806,11 @@ function renderPage(id){
   // ── HRM module pages ──
   else if(id==='hrm-employees'){if(!hrmDataLoaded)loadHRMData().then(()=>m.innerHTML=renderHRMEmployeesPage());else m.innerHTML=renderHRMEmployeesPage();}
   else if(id==='attendance'){if(!hrmDataLoaded)loadHRMData().then(()=>{m.innerHTML=renderAttendancePage();_attendanceAfterRender();});else{m.innerHTML=renderAttendancePage();_attendanceAfterRender();}}
-  else if(id==='hrm-payroll'){m.innerHTML=renderHRMStub('Payroll','money','Coming in Session 3 — full monthly payroll generation, deductions, slip exports.');}
+  else if(id==='hrm-payroll'){
+    if(!_canViewPayroll()){m.innerHTML='<div class="empty">Payroll is restricted to Afnan, Ammar and Mustafa.</div>';}
+    else if(!hrmDataLoaded||!payrollDataLoaded){Promise.all([hrmDataLoaded?null:loadHRMData(),payrollDataLoaded?null:loadPayrollData()]).then(()=>{m.innerHTML=renderPayrollPage();_payrollAfterRender();});}
+    else {m.innerHTML=renderPayrollPage();_payrollAfterRender();}
+  }
   else if(id==='hrm-advances'){m.innerHTML=renderHRMStub('Advances','list','Coming in Session 4 — advance/loan request approval workflow.');}
   else if(id==='hrm-policy'){m.innerHTML=renderHRMStub('Policy Engine','gear','Coming in Session 4 — paygrade limits, increment policies, deduction rules.');}
 }
@@ -7460,6 +7474,10 @@ function _hrmGreetingTime(){
   return'evening';
 }
 function _hrmFmtPKR(n){return'PKR '+(Number(n)||0).toLocaleString('en-PK');}
+// ── Payroll permission helpers ──
+// Mustafa can view payroll. Only Afnan + Ammar can process / edit / mark paid.
+function _canViewPayroll(){ return session&&['afnan','ammar','mustafa'].includes(session.u); }
+function _canProcessPayroll(){ return session&&['afnan','ammar'].includes(session.u); }
 function _hrmEstSalary(emp,monthSummary){
   if(!emp||!emp.basicSalary)return 0;
   const policies=hrmPolicies||HRM_DEFAULT_POLICIES;
@@ -7517,10 +7535,12 @@ function renderHRMDashboardWidget(){
   // Owner KPI strip — populated async
   if(isOwner){
     return`${greetingHTML}
+    <div id="owner-payroll-alert"></div>
     <div class="owner-kpi-strip" id="owner-kpi-strip">
       <div class="kpi-card"><div class="kpi-icon">${_icon('people',22)}</div><div class="kpi-num" id="owner-kpi-in">—</div><div class="kpi-label">Staff IN today</div></div>
       <div class="kpi-card amber"><div class="kpi-icon">${_icon('clock',22)}</div><div class="kpi-num" id="owner-kpi-late">—</div><div class="kpi-label">Late today</div></div>
       <div class="kpi-card"><div class="kpi-icon">${_icon('box',22)}</div><div class="kpi-num">${allPOs.filter(p=>p.currentStage&&p.currentStage!=='completed').length}</div><div class="kpi-label">Active POs</div></div>
+      <div class="kpi-card amber" style="cursor:pointer" onclick="window.showPage('hrm-payroll')"><div class="kpi-icon">${_icon('money',22)}</div><div class="kpi-num" id="owner-kpi-payroll">—</div><div class="kpi-label">Pending Payroll</div></div>
       <div class="kpi-card red"><div class="kpi-icon">${_icon('list',22)}</div><div class="kpi-num" id="owner-kpi-notif">${(typeof storeNotifications!=='undefined'?storeNotifications.length:0)}</div><div class="kpi-label">Notifications</div></div>
     </div>`;
   }
@@ -7578,6 +7598,7 @@ async function _hrmPopulateDashboard(){
   if(role==='owner'){
     // Subscribe to live attendance + today's punches; KPIs update in real-time
     if(typeof _ensureOwnerDashboardLive==='function')_ensureOwnerDashboardLive();
+    if(typeof _populateOwnerPayrollKPI==='function')_populateOwnerPayrollKPI();
     return;
   }
 
@@ -8088,6 +8109,7 @@ function renderWorkerHRMWidget(){
       </div>
     </div>
     <div id="wrk-advance-row">${advanceRow}</div>
+    <div id="wrk-payslip-cue"></div>
   </div>`;
 }
 
@@ -8152,6 +8174,25 @@ async function _populateWorkerHRMWidget(){
     }
     const advRow=document.getElementById('wrk-advance-row');
     if(advRow)advRow.innerHTML=advance>0?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid #E5E5E7;font-size:12px;color:#E94560">Advance balance: ${_hrmFmtPKR(advance)}</div>`:'';
+    // Last-month payslip cue
+    const cue=document.getElementById('wrk-payslip-cue');
+    if(cue&&payrollDataLoaded){
+      const last=_myLastPayslip();
+      if(last){
+        const status=(last.status||'draft').toUpperCase();
+        const badgeBg=last.status==='paid'?'var(--accent-success-soft)':'var(--accent-warning-soft)';
+        const badgeFg=last.status==='paid'?'var(--accent-success)':'var(--accent-warning)';
+        cue.innerHTML=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #E5E5E7;display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer" onclick="window.openPayslip('${last._id}','${last.employeeId}')">
+          <div>
+            <div style="font-size:12px;color:var(--muted)">${_payrollMonthLabel(last.month)} payslip available</div>
+            <div style="font-size:14px;font-weight:700;color:#1A1A2E">${_hrmFmtPKR(last.netPayable)} <span style="font-size:10px;font-weight:600;background:${badgeBg};color:${badgeFg};padding:2px 8px;border-radius:8px;margin-left:6px">${status}</span></div>
+          </div>
+          <span style="font-size:18px;color:var(--muted)">›</span>
+        </div>`;
+      } else {
+        cue.innerHTML='';
+      }
+    }
   }catch(e){console.warn('worker HRM populate failed',e);}
 }
 
@@ -8570,6 +8611,777 @@ window.attendanceSetMonth=function(key){
   attendanceMonth=key;
   _renderAttendanceMonthly();
 };
+
+// ───────────────────────────────────────────────────────────
+// HRM Session 3 — Payroll Engine
+// ───────────────────────────────────────────────────────────
+
+async function loadPayrollData(){
+  try{
+    const[runsSnap,slipsSnap]=await Promise.all([
+      getDocs(query(collection(db,'payroll_runs'),orderBy('month','desc'))).catch(()=>({docs:[]})),
+      getDocs(collection(db,'payslips')).catch(()=>({docs:[]}))
+    ]);
+    allPayrollRuns=runsSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    allPayslips=slipsSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    payrollDataLoaded=true;
+  }catch(e){console.warn('loadPayrollData failed:',e.message);}
+}
+
+function _payrollMonthLabel(monthKey){
+  if(!monthKey)return'—';
+  const[y,m]=monthKey.split('-').map(Number);
+  return new Date(y,m-1,1).toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+}
+
+function _payrollRunFor(monthKey){
+  return allPayrollRuns.find(r=>r.month===monthKey)||null;
+}
+
+function _payslipsFor(monthKey){
+  return allPayslips.filter(s=>s.month===monthKey).sort((a,b)=>(a.employeeName||'').localeCompare(b.employeeName||''));
+}
+
+// Calculate a payroll row for a single employee given attendance summary.
+function _computeOneRow(emp,att,policies){
+  const wd=(policies&&policies.workingDaysPerMonth)||30;
+  const present=att?(att.present||0):0;
+  const late=att?(att.late||0):0;
+  const actualAbsent=att?(att.absent||0):0;
+  const lateAbsentEquivalent=Math.floor(late/3);
+  const effectiveAbsentDays=actualAbsent+lateAbsentEquivalent;
+  const dailyRate=(emp.basicSalary||0)/wd;
+  const absentDeduction=Math.round(effectiveAbsentDays*dailyRate);
+  const grossSalary=Math.max(0,Math.round((emp.basicSalary||0)-absentDeduction));
+  const advanceDeduction=Math.max(0,Math.round(emp.advanceBalance||0));
+  const loanDeduction=Math.max(0,Math.round(emp.loanMonthlyDeduction||0));
+  const purchasingDeduction=Math.max(0,Math.round(emp.purchasingDeduction||0));
+  const otherDeductions=0;
+  const totalDeductions=advanceDeduction+loanDeduction+purchasingDeduction+otherDeductions;
+  const netPayable=Math.max(0,Math.round(grossSalary-totalDeductions));
+  return{
+    employeeId:emp._id,
+    employeeName:emp.name,
+    designation:emp.designation||'',
+    department:emp.department||'',
+    paygrade:emp.paygrade||'',
+    basicSalary:emp.basicSalary||0,
+    workingDays:wd,
+    presentDays:present,
+    lateDays:late,
+    lateAbsentEquivalent,
+    effectiveAbsentDays,
+    actualAbsentDays:actualAbsent,
+    dailyRate:Math.round(dailyRate),
+    absentDeduction,
+    grossSalary,
+    advanceDeduction,
+    loanDeduction,
+    purchasingDeduction,
+    otherDeductions,
+    totalDeductions,
+    netPayable,
+    k40UserId:emp.k40UserId||''
+  };
+}
+
+// Compute live preview rows for a month (no DB writes). Reuses
+// _computeMonthlyAttendance from the attendance module.
+async function _computePayrollForMonth(monthKey){
+  const policies=hrmPolicies||HRM_DEFAULT_POLICIES;
+  const summary=await _computeMonthlyAttendance(monthKey);
+  const rows=allEmployees.filter(e=>e.status!=='inactive').map(e=>{
+    const att=summary&&summary.byEmp&&summary.byEmp[e._id];
+    return _computeOneRow(e,att,policies);
+  }).sort((a,b)=>(a.employeeName||'').localeCompare(b.employeeName||''));
+  const totals=rows.reduce((acc,r)=>({
+    basic:acc.basic+r.basicSalary,
+    gross:acc.gross+r.grossSalary,
+    advance:acc.advance+r.advanceDeduction,
+    loan:acc.loan+r.loanDeduction,
+    other:acc.other+r.otherDeductions+r.purchasingDeduction,
+    deductions:acc.deductions+r.totalDeductions,
+    net:acc.net+r.netPayable
+  }),{basic:0,gross:0,advance:0,loan:0,other:0,deductions:0,net:0});
+  return{rows,totals,monthKey};
+}
+
+function renderPayrollPage(){
+  if(!_canViewPayroll())return'<div class="empty">Payroll is restricted to Afnan, Ammar and Mustafa.</div>';
+  const months=[];
+  const now=new Date();
+  for(let i=0;i<12;i++){
+    const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+    const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    months.push({key,lbl:d.toLocaleDateString('en-GB',{month:'long',year:'numeric'})});
+  }
+  const run=_payrollRunFor(_payrollMonth);
+  const status=run?run.status:'draft';
+  const statusBadgeBg=status==='paid'?'var(--accent-success-soft)':status==='processed'?'var(--accent-warning-soft)':'#F0F0F0';
+  const statusBadgeFg=status==='paid'?'var(--accent-success)':status==='processed'?'var(--accent-warning)':'#555';
+  const statusLabel=status==='paid'?'Paid':status==='processed'?'Processed':'Draft';
+  const canProcess=_canProcessPayroll();
+  const head=`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+    <div>
+      <div class="page-title"><span class="page-title-icon">${_icon('money',22)}</span> Payroll · تنخواہ</div>
+      <div class="page-sub">Process and manage monthly salaries</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <select id="payroll-month" onchange="window.payrollSetMonth(this.value)" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:13px">
+        ${months.map(m=>`<option value="${m.key}" ${m.key===_payrollMonth?'selected':''}>${m.lbl}</option>`).join('')}
+      </select>
+      ${canProcess?`<button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.processPayroll()">${run?'Re-process Month':'Process Month'}</button>`:''}
+    </div>
+  </div>`;
+  const summary=`<div id="payroll-summary" class="payroll-summary-strip" style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px">
+    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:#6B7280;letter-spacing:.06em">Employees</div><div style="font-size:24px;font-weight:700;margin-top:4px" id="pr-sum-count">—</div></div>
+    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:#6B7280;letter-spacing:.06em">Gross Salary</div><div style="font-size:18px;font-weight:700;margin-top:4px" id="pr-sum-gross">—</div></div>
+    <div class="card" style="padding:14px;background:var(--accent-urgent-soft)"><div style="font-size:10px;text-transform:uppercase;color:var(--accent-urgent);letter-spacing:.06em">Total Deductions</div><div style="font-size:18px;font-weight:700;margin-top:4px;color:var(--accent-urgent)" id="pr-sum-deduct">—</div></div>
+    <div class="card" style="padding:14px;background:var(--accent-success-soft)"><div style="font-size:10px;text-transform:uppercase;color:var(--accent-success);letter-spacing:.06em">Net Payable</div><div style="font-size:18px;font-weight:700;margin-top:4px;color:var(--accent-success)" id="pr-sum-net">—</div></div>
+    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:#6B7280;letter-spacing:.06em">Status</div><div style="font-size:14px;font-weight:600;margin-top:4px"><span style="background:${statusBadgeBg};color:${statusBadgeFg};padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em">${statusLabel}</span></div>${run&&run.processedAt?`<div style="font-size:10px;color:var(--muted);margin-top:6px">Processed by ${run.processedBy||'—'}<br>${new Date(run.processedAt).toLocaleString('en-GB')}</div>`:''}</div>
+  </div>`;
+  const tableShell=`<div class="card" style="padding:0;overflow:auto">
+    <table class="payroll-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:1000px">
+      <thead>
+        <tr style="background:#1A1A2E;color:white">
+          <th style="padding:10px 8px;text-align:left">#</th>
+          <th style="padding:10px 8px;text-align:left">Employee</th>
+          <th style="padding:10px 8px;text-align:left">Department</th>
+          <th style="padding:10px 8px;text-align:center">Grade</th>
+          <th style="padding:10px 8px;text-align:right">Basic</th>
+          <th style="padding:10px 8px;text-align:center">Days</th>
+          <th style="padding:10px 8px;text-align:center" title="Days present">Present</th>
+          <th style="padding:10px 8px;text-align:center" title="Effective absent (incl. late→absent)">Absent</th>
+          <th style="padding:10px 8px;text-align:right">Gross</th>
+          <th style="padding:10px 8px;text-align:right">Advance</th>
+          <th style="padding:10px 8px;text-align:right">Loan</th>
+          <th style="padding:10px 8px;text-align:right">Other</th>
+          <th style="padding:10px 8px;text-align:right;background:var(--accent-success);color:#fff">Net Salary</th>
+          <th style="padding:10px 8px;text-align:center"></th>
+        </tr>
+      </thead>
+      <tbody id="payroll-tbody"><tr><td colspan="14" style="padding:18px;text-align:center;color:var(--muted)">Loading payroll…</td></tr></tbody>
+      <tfoot id="payroll-tfoot"></tfoot>
+    </table>
+  </div>`;
+  const actions=canProcess?`<div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;flex-wrap:wrap">
+    <button class="btn-outline" onclick="window.exportPayrollPDF()" style="font-size:13px">📄 Export PDF</button>
+    <button class="btn-outline" onclick="window.exportPayrollExcel()" style="font-size:13px">📊 Export Excel</button>
+    ${run&&run.status==='processed'?`<button class="btn-primary" style="width:auto;padding:8px 18px;margin-top:0" onclick="window.markAllPaid()">Mark Month as Paid</button>`:''}
+  </div>`:'';
+  return head+summary+tableShell+actions;
+}
+
+async function _payrollAfterRender(){
+  if(currentPage!=='hrm-payroll')return;
+  const tbody=document.getElementById('payroll-tbody');
+  if(!tbody)return;
+  const run=_payrollRunFor(_payrollMonth);
+  let rows,totals;
+  if(run){
+    // Use saved payslips
+    const slips=_payslipsFor(_payrollMonth);
+    rows=slips.map(s=>({
+      ...s,
+      employeeId:s.employeeId,
+      employeeName:s.employeeName,
+      designation:s.designation,
+      department:s.department||'',
+      paygrade:s.paygrade,
+      _payslipId:s._id,
+      _status:s.status||'draft'
+    }));
+    totals=rows.reduce((a,r)=>({
+      basic:a.basic+(r.basicSalary||0),
+      gross:a.gross+(r.grossSalary||0),
+      advance:a.advance+(r.advanceDeduction||0),
+      loan:a.loan+(r.loanDeduction||0),
+      other:a.other+((r.otherDeductions||0)+(r.purchasingDeduction||0)),
+      deductions:a.deductions+(r.totalDeductions||0),
+      net:a.net+(r.netPayable||0)
+    }),{basic:0,gross:0,advance:0,loan:0,other:0,deductions:0,net:0});
+  } else {
+    // Live preview from current attendance + employee state
+    const calc=await _computePayrollForMonth(_payrollMonth);
+    rows=calc.rows;
+    totals=calc.totals;
+  }
+  _payrollComputed={rows,totals,monthKey:_payrollMonth};
+  // Summary KPI cards
+  const eC=document.getElementById('pr-sum-count');if(eC)eC.textContent=rows.length;
+  const eG=document.getElementById('pr-sum-gross');if(eG)eG.textContent=_hrmFmtPKR(totals.gross);
+  const eD=document.getElementById('pr-sum-deduct');if(eD)eD.textContent=_hrmFmtPKR(totals.deductions);
+  const eN=document.getElementById('pr-sum-net');if(eN)eN.textContent=_hrmFmtPKR(totals.net);
+  // Body rows
+  tbody.innerHTML=rows.map((r,idx)=>_payrollRowHTML(r,idx+1,!!run)).join('');
+  // Footer totals
+  const tfoot=document.getElementById('payroll-tfoot');
+  if(tfoot){
+    tfoot.innerHTML=`<tr style="background:#1A1A2E;color:white;font-weight:700">
+      <td colspan="4" style="padding:12px 8px">TOTAL</td>
+      <td style="padding:12px 8px;text-align:right">${_hrmFmtPKR(totals.basic)}</td>
+      <td colspan="3"></td>
+      <td style="padding:12px 8px;text-align:right">${_hrmFmtPKR(totals.gross)}</td>
+      <td style="padding:12px 8px;text-align:right">- ${_hrmFmtPKR(totals.advance)}</td>
+      <td style="padding:12px 8px;text-align:right">- ${_hrmFmtPKR(totals.loan)}</td>
+      <td style="padding:12px 8px;text-align:right">- ${_hrmFmtPKR(totals.other)}</td>
+      <td style="padding:12px 8px;text-align:right;background:var(--accent-success);color:#fff">${_hrmFmtPKR(totals.net)}</td>
+      <td></td>
+    </tr>`;
+  }
+}
+
+function _payrollRowHTML(r,idx,saved){
+  const pgClass=(r.paygrade||'').toLowerCase();
+  let rowBg='';
+  if((r.lateAbsentEquivalent||0)>=1&&(r.actualAbsentDays||0)>=2)rowBg='background:var(--accent-urgent-soft)';
+  else if((r.advanceDeduction||0)>0&&(r.loanDeduction||0)>0)rowBg='background:var(--accent-warning-soft)';
+  else if(idx%2===0)rowBg='background:#FAFAFA';
+  const statusBadge=saved&&r._status==='paid'?`<span style="background:var(--accent-success-soft);color:var(--accent-success);padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;letter-spacing:.04em">PAID</span>`:'';
+  return`<tr style="${rowBg};border-bottom:1px solid var(--border)">
+    <td style="padding:10px 8px">${idx}</td>
+    <td style="padding:10px 8px"><div style="font-weight:600">${r.employeeName||'—'}</div><div style="font-size:11px;color:var(--muted)">${r.designation||'—'}</div></td>
+    <td style="padding:10px 8px;color:var(--muted)">${r.department||'—'}</td>
+    <td style="padding:10px 8px;text-align:center"><span class="paygrade-badge ${pgClass}">${r.paygrade||'—'}</span></td>
+    <td style="padding:10px 8px;text-align:right">${_hrmFmtPKR(r.basicSalary)}</td>
+    <td style="padding:10px 8px;text-align:center">${r.workingDays||30}</td>
+    <td style="padding:10px 8px;text-align:center;color:var(--accent-success);font-weight:600">${r.presentDays||0}</td>
+    <td style="padding:10px 8px;text-align:center;color:var(--accent-urgent);font-weight:600">${r.effectiveAbsentDays||0}</td>
+    <td style="padding:10px 8px;text-align:right;font-weight:600">${_hrmFmtPKR(r.grossSalary)}</td>
+    <td style="padding:10px 8px;text-align:right;color:var(--accent-urgent)">${(r.advanceDeduction||0)>0?'- ':''}${_hrmFmtPKR(r.advanceDeduction)}</td>
+    <td style="padding:10px 8px;text-align:right">${(r.loanDeduction||0)>0?'- ':''}${_hrmFmtPKR(r.loanDeduction)}</td>
+    <td style="padding:10px 8px;text-align:right">${((r.otherDeductions||0)+(r.purchasingDeduction||0))>0?'- ':''}${_hrmFmtPKR((r.otherDeductions||0)+(r.purchasingDeduction||0))}</td>
+    <td style="padding:10px 8px;text-align:right;font-weight:700;background:var(--accent-success-soft);color:var(--accent-success)">${_hrmFmtPKR(r.netPayable)}</td>
+    <td style="padding:10px 8px;text-align:center;white-space:nowrap">${statusBadge} <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.openPayslip('${r._payslipId||''}','${r.employeeId}')">View</button></td>
+  </tr>`;
+}
+
+window.payrollSetMonth=function(key){
+  _payrollMonth=key;
+  const m=document.getElementById('main-content');
+  if(m){m.innerHTML=renderPayrollPage();_payrollAfterRender();}
+};
+
+window.processPayroll=async function(){
+  if(!_canProcessPayroll())return showToast('Only Afnan or Ammar can process payroll.',true);
+  const monthKey=_payrollMonth;
+  const monthLabel=_payrollMonthLabel(monthKey);
+  const existing=_payrollRunFor(monthKey);
+  const verb=existing?'Re-process':'Process';
+  if(!confirm(`${verb} payroll for ${monthLabel}?\n\nThis will calculate salaries from current attendance data and create draft payslips. No money is moved until you 'Mark Month as Paid'.`))return;
+  showToast('Processing payroll…');
+  try{
+    const calc=await _computePayrollForMonth(monthKey);
+    // Wipe any existing payslips for this month
+    if(existing){
+      const existingSlips=allPayslips.filter(s=>s.month===monthKey);
+      for(const s of existingSlips){
+        try{await deleteDoc(doc(db,'payslips',s._id));}catch(_){}
+      }
+      allPayslips=allPayslips.filter(s=>s.month!==monthKey);
+    }
+    // Create payroll_runs doc
+    const runRef=existing?doc(db,'payroll_runs',existing._id):doc(collection(db,'payroll_runs'));
+    const[yyyy,mm]=monthKey.split('-').map(Number);
+    const runData={
+      id:runRef.id,
+      month:monthKey,
+      year:yyyy,
+      monthName:new Date(yyyy,mm-1,1).toLocaleDateString('en-GB',{month:'long'}),
+      status:'processed',
+      processedBy:session.name,
+      processedAt:Date.now(),
+      totalEmployees:calc.rows.length,
+      totalGrossSalary:calc.totals.gross,
+      totalDeductions:calc.totals.deductions,
+      totalNetPayable:calc.totals.net,
+      totalAdvanceCleared:0,
+      totalLoanCleared:0,
+      notes:''
+    };
+    await setDoc(runRef,runData);
+    // Create payslips
+    const batch=writeBatch(db);
+    const newSlips=[];
+    for(const r of calc.rows){
+      const slipRef=doc(collection(db,'payslips'));
+      const slipData={
+        id:slipRef.id,
+        payrollRunId:runRef.id,
+        month:monthKey,
+        employeeId:r.employeeId,
+        employeeName:r.employeeName,
+        designation:r.designation,
+        department:r.department,
+        paygrade:r.paygrade,
+        basicSalary:r.basicSalary,
+        workingDays:r.workingDays,
+        presentDays:r.presentDays,
+        lateDays:r.lateDays,
+        lateAbsentEquivalent:r.lateAbsentEquivalent,
+        effectiveAbsentDays:r.effectiveAbsentDays,
+        actualAbsentDays:r.actualAbsentDays,
+        dailyRate:r.dailyRate,
+        absentDeduction:r.absentDeduction,
+        grossSalary:r.grossSalary,
+        advanceDeduction:r.advanceDeduction,
+        loanDeduction:r.loanDeduction,
+        purchasingDeduction:r.purchasingDeduction,
+        otherDeductions:r.otherDeductions,
+        totalDeductions:r.totalDeductions,
+        netPayable:r.netPayable,
+        status:'draft',
+        paidVia:'',
+        paidOn:'',
+        paidBy:'',
+        notes:'',
+        manualAdjustments:[]
+      };
+      batch.set(slipRef,slipData);
+      newSlips.push({...slipData,_id:slipRef.id});
+    }
+    await batch.commit();
+    // Update local state
+    if(existing){
+      const i=allPayrollRuns.findIndex(x=>x._id===existing._id);
+      if(i>=0)allPayrollRuns[i]={...runData,_id:runRef.id};
+    } else {
+      allPayrollRuns.unshift({...runData,_id:runRef.id});
+    }
+    allPayslips=allPayslips.concat(newSlips);
+    await logActivity('Payroll processed',`${monthLabel} — ${calc.rows.length} employees · ${_hrmFmtPKR(calc.totals.net)} net`);
+    showToast(`Payroll processed for ${monthLabel} · ${calc.rows.length} employees · ${_hrmFmtPKR(calc.totals.net)} net`);
+    const m=document.getElementById('main-content');
+    if(m){m.innerHTML=renderPayrollPage();_payrollAfterRender();}
+  }catch(e){showToast('Payroll error: '+e.message,true);}
+};
+
+window.markAllPaid=async function(){
+  if(!_canProcessPayroll())return showToast('Only Afnan or Ammar can mark payroll paid.',true);
+  const monthKey=_payrollMonth;
+  const run=_payrollRunFor(monthKey);
+  if(!run||run.status!=='processed')return showToast('Process the month first.',true);
+  const slips=_payslipsFor(monthKey);
+  if(!slips.length)return showToast('No payslips to mark paid.',true);
+  const totalNet=slips.reduce((s,x)=>s+(x.netPayable||0),0);
+  const totalAdv=slips.reduce((s,x)=>s+(x.advanceDeduction||0),0);
+  const totalLoan=slips.reduce((s,x)=>s+(x.loanDeduction||0),0);
+  if(!confirm(`Mark all ${slips.length} employees paid for ${_payrollMonthLabel(monthKey)}?\n\n• Each payslip status → paid\n• Advance balances cleared (− ${_hrmFmtPKR(totalAdv)})\n• Loan balances reduced (− ${_hrmFmtPKR(totalLoan)})\n• Net disbursed: ${_hrmFmtPKR(totalNet)}\n• Payroll for this month is then locked.`))return;
+  showToast('Marking payroll paid…');
+  try{
+    const paidAt=Date.now();
+    const paidOn=new Date().toISOString().split('T')[0];
+    const batch=writeBatch(db);
+    // Update payslips
+    for(const s of slips){
+      batch.update(doc(db,'payslips',s._id),{status:'paid',paidOn,paidBy:session.name,paidAt});
+    }
+    // Update employee balances
+    for(const s of slips){
+      const emp=allEmployees.find(e=>e._id===s.employeeId);
+      if(!emp)continue;
+      const newAdvance=Math.max(0,(emp.advanceBalance||0)-(s.advanceDeduction||0));
+      const newLoan=Math.max(0,(emp.loanBalance||0)-(s.loanDeduction||0));
+      batch.update(doc(db,'employees',emp._id),{advanceBalance:newAdvance,loanBalance:newLoan,updatedAt:paidAt});
+    }
+    // Update payroll_runs
+    batch.update(doc(db,'payroll_runs',run._id),{status:'paid',totalAdvanceCleared:totalAdv,totalLoanCleared:totalLoan,paidAt,paidBy:session.name});
+    await batch.commit();
+    // Local state
+    slips.forEach(s=>{ s.status='paid';s.paidOn=paidOn;s.paidBy=session.name;s.paidAt=paidAt; });
+    slips.forEach(s=>{
+      const emp=allEmployees.find(e=>e._id===s.employeeId);
+      if(emp){emp.advanceBalance=Math.max(0,(emp.advanceBalance||0)-(s.advanceDeduction||0));emp.loanBalance=Math.max(0,(emp.loanBalance||0)-(s.loanDeduction||0));}
+    });
+    const i=allPayrollRuns.findIndex(x=>x._id===run._id);
+    if(i>=0){allPayrollRuns[i]={...allPayrollRuns[i],status:'paid',totalAdvanceCleared:totalAdv,totalLoanCleared:totalLoan,paidAt,paidBy:session.name};}
+    await logActivity('Payroll paid',`${_payrollMonthLabel(monthKey)} — ${slips.length} employees · ${_hrmFmtPKR(totalNet)} net`);
+    showToast(`${slips.length} employees marked paid · ${_hrmFmtPKR(totalNet)}`);
+    const m=document.getElementById('main-content');
+    if(m){m.innerHTML=renderPayrollPage();_payrollAfterRender();}
+  }catch(e){showToast('Mark-paid failed: '+e.message,true);}
+};
+
+window.openPayslip=function(slipId,employeeId){
+  // For unprocessed months, slipId is empty — build a virtual preview from _payrollComputed
+  let slip=null;
+  if(slipId){
+    slip=allPayslips.find(s=>s._id===slipId);
+  } else if(_payrollComputed){
+    const r=_payrollComputed.rows.find(x=>x.employeeId===employeeId);
+    if(r)slip={...r,month:_payrollMonth,status:'preview',_id:''};
+  }
+  if(!slip)return showToast('Payslip not found.',true);
+  _payslipViewingId=slip._id||employeeId;
+  const monthLabel=_payrollMonthLabel(slip.month||_payrollMonth);
+  const pgClass=(slip.paygrade||'').toLowerCase();
+  const isPreview=slip.status==='preview';
+  const isPaid=slip.status==='paid';
+  const canEdit=_canProcessPayroll()&&!isPreview;
+  const canMarkPaid=_canProcessPayroll()&&!isPaid&&!isPreview;
+  document.getElementById('hrm-modal-back')?.remove();
+  const back=document.createElement('div');
+  back.className='hrm-modal-back';
+  back.id='hrm-modal-back';
+  back.onclick=ev=>{ if(ev.target===back)window.hrmCloseModal(); };
+  back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()" style="max-width:520px;padding:0;overflow:hidden">
+    <div style="background:#1A1A2E;color:white;padding:20px">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+        <div style="min-width:0">
+          <div style="font-size:11px;letter-spacing:.06em;opacity:.6">PAYSLIP · سلپ${isPreview?' · PREVIEW':''}</div>
+          <div style="margin:4px 0 0;font-size:20px;font-weight:700">${slip.employeeName||'—'}</div>
+          <div style="font-size:13px;opacity:.8">${slip.designation||'—'}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:11px;opacity:.7">${monthLabel}</div>
+          <span class="paygrade-badge ${pgClass}" style="margin-top:6px;display:inline-block">${slip.paygrade||'—'}</span>
+        </div>
+      </div>
+    </div>
+    <div style="padding:20px">
+      <div style="font-size:11px;text-transform:uppercase;color:var(--accent-success);letter-spacing:.06em;margin-bottom:8px;font-weight:700">EARNINGS · آمدنی</div>
+      <table style="width:100%;font-size:14px">
+        <tr><td style="padding:4px 0">Basic Salary</td><td style="text-align:right;padding:4px 0">${_hrmFmtPKR(slip.basicSalary)}</td></tr>
+      </table>
+    </div>
+    <div style="padding:0 20px 20px">
+      <div style="font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em;margin-bottom:8px;font-weight:700">ATTENDANCE · حاضری</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+        <div style="background:var(--accent-success-soft);padding:8px;border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:var(--accent-success)">${slip.presentDays||0}</div><div style="font-size:10px;color:#6B7280">Present</div></div>
+        <div style="background:var(--accent-warning-soft);padding:8px;border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:var(--accent-warning)">${slip.lateDays||0}</div><div style="font-size:10px;color:#6B7280">Late</div></div>
+        <div style="background:var(--accent-warning-soft);padding:8px;border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:var(--accent-warning)">${slip.lateAbsentEquivalent||0}</div><div style="font-size:10px;color:#6B7280">Late→Abs</div></div>
+        <div style="background:var(--accent-urgent-soft);padding:8px;border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:var(--accent-urgent)">${slip.actualAbsentDays||((slip.effectiveAbsentDays||0)-(slip.lateAbsentEquivalent||0))||0}</div><div style="font-size:10px;color:#6B7280">Absent</div></div>
+      </div>
+    </div>
+    <div style="padding:0 20px 20px">
+      <div style="font-size:11px;text-transform:uppercase;color:var(--accent-urgent);letter-spacing:.06em;margin-bottom:8px;font-weight:700">DEDUCTIONS · کٹوتیاں</div>
+      <table style="width:100%;font-size:14px;color:var(--accent-urgent)">
+        <tr><td style="padding:4px 0">Absent Deduction (${slip.effectiveAbsentDays||0} days × ${_hrmFmtPKR(slip.dailyRate)})</td><td style="text-align:right;padding:4px 0">- ${_hrmFmtPKR(slip.absentDeduction)}</td></tr>
+        <tr><td style="padding:4px 0">Advance Deduction</td><td style="text-align:right;padding:4px 0">- ${_hrmFmtPKR(slip.advanceDeduction)}</td></tr>
+        <tr><td style="padding:4px 0">Loan Deduction</td><td style="text-align:right;padding:4px 0">- ${_hrmFmtPKR(slip.loanDeduction)}</td></tr>
+        <tr><td style="padding:4px 0">Other / Purchasing</td><td style="text-align:right;padding:4px 0">- ${_hrmFmtPKR((slip.purchasingDeduction||0)+(slip.otherDeductions||0))}</td></tr>
+      </table>
+    </div>
+    <div style="background:var(--accent-success-soft);padding:18px 20px;border-top:2px solid var(--accent-success)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <div>
+          <div style="font-size:11px;text-transform:uppercase;color:var(--accent-success);letter-spacing:.06em;font-weight:700">NET PAYABLE</div>
+          <div style="font-size:11px;color:#6B7280;margin-top:2px">صافی قابل ادائیگی</div>
+        </div>
+        <div style="font-size:26px;font-weight:700;color:var(--accent-success)">${_hrmFmtPKR(slip.netPayable)}</div>
+      </div>
+      ${isPaid?`<div style="margin-top:8px;font-size:11px;color:var(--muted)">Paid on ${slip.paidOn||'—'} by ${slip.paidBy||'—'}</div>`:''}
+    </div>
+    <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn-outline" style="flex:1;font-size:12px" onclick="window.downloadPayslipPDF('${slip._id||''}','${employeeId||slip.employeeId}')">📄 Download</button>
+      ${canEdit?`<button class="btn-outline" style="flex:1;font-size:12px" onclick="window.editPayslip('${slip._id}')">✏ Edit</button>`:''}
+      ${canMarkPaid?`<button class="btn-primary" style="flex:1;width:auto;padding:8px 16px;margin-top:0;font-size:12px" onclick="window.markPayslipPaid('${slip._id}')">Mark Paid</button>`:''}
+      <button class="btn-outline" style="flex:1;font-size:12px" onclick="window.hrmCloseModal()">Close</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+};
+
+window.markPayslipPaid=async function(slipId){
+  if(!_canProcessPayroll())return showToast('Owners only.',true);
+  const slip=allPayslips.find(s=>s._id===slipId);
+  if(!slip)return;
+  if(slip.status==='paid')return showToast('Already paid.');
+  if(!confirm(`Mark ${slip.employeeName} paid for ${_payrollMonthLabel(slip.month)}?\nNet: ${_hrmFmtPKR(slip.netPayable)}\nAdvance cleared: ${_hrmFmtPKR(slip.advanceDeduction)}\nLoan cleared: ${_hrmFmtPKR(slip.loanDeduction)}`))return;
+  try{
+    const paidOn=new Date().toISOString().split('T')[0];
+    const paidAt=Date.now();
+    const batch=writeBatch(db);
+    batch.update(doc(db,'payslips',slipId),{status:'paid',paidOn,paidBy:session.name,paidAt});
+    const emp=allEmployees.find(e=>e._id===slip.employeeId);
+    if(emp){
+      const newAdv=Math.max(0,(emp.advanceBalance||0)-(slip.advanceDeduction||0));
+      const newLoan=Math.max(0,(emp.loanBalance||0)-(slip.loanDeduction||0));
+      batch.update(doc(db,'employees',emp._id),{advanceBalance:newAdv,loanBalance:newLoan,updatedAt:paidAt});
+      emp.advanceBalance=newAdv;emp.loanBalance=newLoan;
+    }
+    await batch.commit();
+    Object.assign(slip,{status:'paid',paidOn,paidBy:session.name,paidAt});
+    await logActivity('Payslip paid',`${slip.employeeName} · ${_hrmFmtPKR(slip.netPayable)}`);
+    showToast(`${slip.employeeName} marked paid ✓`);
+    window.hrmCloseModal();
+    if(currentPage==='hrm-payroll'){const m=document.getElementById('main-content');if(m){m.innerHTML=renderPayrollPage();_payrollAfterRender();}}
+  }catch(e){showToast('Mark paid failed: '+e.message,true);}
+};
+
+window.editPayslip=function(slipId){
+  if(!_canProcessPayroll())return showToast('Owners only.',true);
+  const s=allPayslips.find(x=>x._id===slipId);
+  if(!s)return;
+  document.getElementById('hrm-modal-back')?.remove();
+  const back=document.createElement('div');
+  back.className='hrm-modal-back';
+  back.id='hrm-modal-back';
+  back.onclick=ev=>{ if(ev.target===back)window.hrmCloseModal(); };
+  back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()" style="max-width:520px">
+    <h3>Edit Payslip — ${s.employeeName}</h3>
+    <div class="sub">${_payrollMonthLabel(s.month)} · Manual override (logs original values)</div>
+    <div class="hrm-grid-2">
+      <div class="field"><label>Present Days</label><input id="ps-present" type="number" value="${s.presentDays||0}"></div>
+      <div class="field"><label>Late Days</label><input id="ps-late" type="number" value="${s.lateDays||0}"></div>
+      <div class="field"><label>Effective Absent Days</label><input id="ps-absent" type="number" value="${s.effectiveAbsentDays||0}"></div>
+      <div class="field"><label>Advance Deduction</label><input id="ps-adv" type="number" value="${s.advanceDeduction||0}"></div>
+      <div class="field"><label>Loan Deduction</label><input id="ps-loan" type="number" value="${s.loanDeduction||0}"></div>
+      <div class="field"><label>Other Deductions</label><input id="ps-other" type="number" value="${(s.otherDeductions||0)+(s.purchasingDeduction||0)}"></div>
+      <div class="field"><label>Bonus / Add-back</label><input id="ps-bonus" type="number" value="0"></div>
+    </div>
+    <div class="field" style="margin-top:8px"><label>Reason / Notes *</label><textarea id="ps-reason" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px"></textarea></div>
+    <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">
+      <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.savePayslipEdit('${slipId}')">Save Override</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+};
+
+window.savePayslipEdit=async function(slipId){
+  if(!_canProcessPayroll())return showToast('Owners only.',true);
+  const s=allPayslips.find(x=>x._id===slipId);
+  if(!s)return;
+  const reason=document.getElementById('ps-reason')?.value?.trim()||'';
+  if(!reason)return showToast('Reason is required for manual override.',true);
+  const num=k=>Number(document.getElementById(k)?.value||0);
+  const newPresent=num('ps-present');
+  const newLate=num('ps-late');
+  const newAbsent=num('ps-absent');
+  const newAdv=num('ps-adv');
+  const newLoan=num('ps-loan');
+  const newOther=num('ps-other');
+  const bonus=num('ps-bonus');
+  const wd=s.workingDays||30;
+  const dailyRate=Math.round((s.basicSalary||0)/wd);
+  const newAbsentDed=Math.round(newAbsent*dailyRate);
+  const newGross=Math.max(0,Math.round((s.basicSalary||0)-newAbsentDed+bonus));
+  const newTotalDed=newAdv+newLoan+newOther;
+  const newNet=Math.max(0,newGross-newTotalDed);
+  const adjustments=Array.isArray(s.manualAdjustments)?s.manualAdjustments.slice():[];
+  const diff={};
+  ['presentDays','lateDays','effectiveAbsentDays','advanceDeduction','loanDeduction'].forEach((k,i)=>{
+    const newVal=[newPresent,newLate,newAbsent,newAdv,newLoan][i];
+    if(newVal!==s[k])diff[k]={old:s[k],new:newVal};
+  });
+  if(((s.otherDeductions||0)+(s.purchasingDeduction||0))!==newOther)diff.other={old:(s.otherDeductions||0)+(s.purchasingDeduction||0),new:newOther};
+  if(bonus)diff.bonus={old:0,new:bonus};
+  adjustments.push({by:session.name,at:Date.now(),reason,changes:diff});
+  const update={
+    presentDays:newPresent,
+    lateDays:newLate,
+    effectiveAbsentDays:newAbsent,
+    lateAbsentEquivalent:Math.floor(newLate/3),
+    actualAbsentDays:Math.max(0,newAbsent-Math.floor(newLate/3)),
+    absentDeduction:newAbsentDed,
+    grossSalary:newGross,
+    advanceDeduction:newAdv,
+    loanDeduction:newLoan,
+    otherDeductions:newOther,
+    purchasingDeduction:0,
+    totalDeductions:newTotalDed,
+    netPayable:newNet,
+    manualAdjustments:adjustments
+  };
+  try{
+    await updateDoc(doc(db,'payslips',slipId),update);
+    Object.assign(s,update);
+    // Recompute the run-level totals
+    const run=_payrollRunFor(s.month);
+    if(run){
+      const slips=_payslipsFor(s.month);
+      const newTotals={
+        gross:slips.reduce((a,x)=>a+(x.grossSalary||0),0),
+        deductions:slips.reduce((a,x)=>a+(x.totalDeductions||0),0),
+        net:slips.reduce((a,x)=>a+(x.netPayable||0),0)
+      };
+      await updateDoc(doc(db,'payroll_runs',run._id),{totalGrossSalary:newTotals.gross,totalDeductions:newTotals.deductions,totalNetPayable:newTotals.net});
+      Object.assign(run,{totalGrossSalary:newTotals.gross,totalDeductions:newTotals.deductions,totalNetPayable:newTotals.net});
+    }
+    await logActivity('Payslip override',`${s.employeeName} · ${reason}`);
+    showToast('Override saved ✓');
+    window.hrmCloseModal();
+    if(currentPage==='hrm-payroll'){const m=document.getElementById('main-content');if(m){m.innerHTML=renderPayrollPage();_payrollAfterRender();}}
+  }catch(e){showToast('Save failed: '+e.message,true);}
+};
+
+// ── Exports ──
+window.exportPayrollExcel=function(){
+  if(!_payrollComputed||!_payrollComputed.rows.length)return showToast('Process the month first.',true);
+  if(typeof XLSX==='undefined')return showToast('Excel library not loaded yet, retry in a moment.',true);
+  const monthLabel=_payrollMonthLabel(_payrollComputed.monthKey);
+  const header=['#','Employee','Designation','Department','Grade','Basic','Days','Present','Late','Late→Abs','Effective Absent','Daily Rate','Absent Deduction','Gross','Advance','Loan','Other','Total Deductions','Net Salary'];
+  const data=[
+    [`Groovy Operations — Salary Sheet ${monthLabel}`],
+    [],
+    header
+  ];
+  _payrollComputed.rows.forEach((r,i)=>{
+    data.push([
+      i+1,r.employeeName,r.designation,r.department,r.paygrade,r.basicSalary,r.workingDays,
+      r.presentDays,r.lateDays,r.lateAbsentEquivalent,r.effectiveAbsentDays,r.dailyRate,
+      r.absentDeduction,r.grossSalary,r.advanceDeduction,r.loanDeduction,
+      (r.otherDeductions||0)+(r.purchasingDeduction||0),r.totalDeductions,r.netPayable
+    ]);
+  });
+  const t=_payrollComputed.totals;
+  data.push([]);
+  data.push(['','TOTAL','','','','','','','','','','','',t.gross,t.advance,t.loan,t.other,t.deductions,t.net]);
+  const ws=XLSX.utils.aoa_to_sheet(data);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Salary');
+  XLSX.writeFile(wb,`Groovy-Salary-${_payrollComputed.monthKey}.xlsx`);
+};
+
+window.exportPayrollPDF=function(){
+  if(!_payrollComputed||!_payrollComputed.rows.length)return showToast('Process the month first.',true);
+  if(!window.jspdf)return showToast('PDF library not loaded yet, retry in a moment.',true);
+  const{jsPDF}=window.jspdf;
+  const pdf=new jsPDF({unit:'mm',format:'a4',orientation:'landscape'});
+  const monthLabel=_payrollMonthLabel(_payrollComputed.monthKey);
+  pdf.setFont('helvetica','bold');pdf.setFontSize(14);
+  pdf.text('Groovy Operations — Salary Sheet',14,14);
+  pdf.setFont('helvetica','normal');pdf.setFontSize(10);
+  pdf.text(monthLabel,14,20);
+  pdf.text(`Prepared by: ${session.name}`,14,25);
+  pdf.text(`Generated: ${new Date().toLocaleString('en-GB')}`,14,30);
+  // Table
+  const cols=['#','Employee','Grade','Basic','Days','P','A','Gross','Advance','Loan','Other','Net'];
+  const colWidths=[8,52,12,20,10,10,10,22,22,18,18,24];
+  let x=14,y=40;
+  pdf.setFillColor(26,26,46);pdf.setTextColor(255);pdf.setFont('helvetica','bold');pdf.setFontSize(9);
+  pdf.rect(14,y-5,colWidths.reduce((a,b)=>a+b,0),7,'F');
+  cols.forEach((c,i)=>{pdf.text(c,x+1,y);x+=colWidths[i];});
+  y+=4;pdf.setTextColor(0);pdf.setFont('helvetica','normal');pdf.setFontSize(8);
+  _payrollComputed.rows.forEach((r,idx)=>{
+    if(y>195){pdf.addPage();y=20;}
+    x=14;
+    const cells=[String(idx+1),(r.employeeName||'').slice(0,28),r.paygrade||'',_hrmFmtPKR(r.basicSalary).replace('PKR ',''),String(r.workingDays||30),String(r.presentDays||0),String(r.effectiveAbsentDays||0),_hrmFmtPKR(r.grossSalary).replace('PKR ',''),_hrmFmtPKR(r.advanceDeduction).replace('PKR ',''),_hrmFmtPKR(r.loanDeduction).replace('PKR ',''),_hrmFmtPKR((r.otherDeductions||0)+(r.purchasingDeduction||0)).replace('PKR ',''),_hrmFmtPKR(r.netPayable).replace('PKR ','')];
+    if(idx%2===0){pdf.setFillColor(248,248,248);pdf.rect(14,y-3,colWidths.reduce((a,b)=>a+b,0),5,'F');}
+    cells.forEach((c,i)=>{pdf.text(c,x+1,y);x+=colWidths[i];});
+    y+=5;
+  });
+  // Totals
+  const t=_payrollComputed.totals;
+  if(y>190){pdf.addPage();y=20;}
+  x=14;y+=2;
+  pdf.setFillColor(26,26,46);pdf.setTextColor(255);pdf.setFont('helvetica','bold');pdf.setFontSize(9);
+  pdf.rect(14,y-3,colWidths.reduce((a,b)=>a+b,0),6,'F');
+  const totals=['','TOTAL','','','','','',_hrmFmtPKR(t.gross).replace('PKR ',''),_hrmFmtPKR(t.advance).replace('PKR ',''),_hrmFmtPKR(t.loan).replace('PKR ',''),_hrmFmtPKR(t.other).replace('PKR ',''),_hrmFmtPKR(t.net).replace('PKR ','')];
+  totals.forEach((c,i)=>{pdf.text(c,x+1,y);x+=colWidths[i];});
+  y+=14;pdf.setTextColor(0);pdf.setFont('helvetica','normal');pdf.setFontSize(9);
+  pdf.text('Approved by: __________________________',14,y);
+  pdf.text(`Date: __________________`,200,y);
+  pdf.save(`Groovy-Salary-${_payrollComputed.monthKey}.pdf`);
+};
+
+window.downloadPayslipPDF=function(slipId,employeeId){
+  if(!window.jspdf)return showToast('PDF library not loaded yet.',true);
+  let slip=null;
+  if(slipId)slip=allPayslips.find(s=>s._id===slipId);
+  else if(_payrollComputed){
+    const r=_payrollComputed.rows.find(x=>x.employeeId===employeeId);
+    if(r)slip={...r,month:_payrollMonth};
+  }
+  if(!slip)return showToast('Payslip not found.',true);
+  const{jsPDF}=window.jspdf;
+  const pdf=new jsPDF({unit:'mm',format:'a4'});
+  const monthLabel=_payrollMonthLabel(slip.month||_payrollMonth);
+  // Header band
+  pdf.setFillColor(26,26,46);pdf.rect(0,0,210,30,'F');
+  pdf.setTextColor(255);pdf.setFont('helvetica','bold');pdf.setFontSize(10);
+  pdf.text('PAYSLIP · سلپ',14,12);
+  pdf.setFontSize(16);pdf.text(slip.employeeName||'—',14,21);
+  pdf.setFont('helvetica','normal');pdf.setFontSize(9);
+  pdf.text(slip.designation||'',14,27);
+  pdf.setFontSize(10);pdf.text(monthLabel,196,12,{align:'right'});
+  pdf.text(`Grade ${slip.paygrade||'—'}`,196,21,{align:'right'});
+  // Body
+  pdf.setTextColor(0);pdf.setFont('helvetica','bold');pdf.setFontSize(10);
+  pdf.text('EARNINGS · آمدنی',14,42);
+  pdf.setFont('helvetica','normal');
+  pdf.text('Basic Salary',14,49);
+  pdf.text(_hrmFmtPKR(slip.basicSalary),196,49,{align:'right'});
+  pdf.setFont('helvetica','bold');pdf.text('ATTENDANCE · حاضری',14,60);
+  pdf.setFont('helvetica','normal');
+  const att=`Present ${slip.presentDays||0}    Late ${slip.lateDays||0}    Late→Abs ${slip.lateAbsentEquivalent||0}    Absent ${slip.actualAbsentDays||0}`;
+  pdf.text(att,14,67);
+  pdf.setFont('helvetica','bold');pdf.text('DEDUCTIONS · کٹوتیاں',14,78);
+  pdf.setFont('helvetica','normal');
+  let yy=85;
+  const ded=[
+    ['Absent Deduction',slip.absentDeduction],
+    ['Advance',slip.advanceDeduction],
+    ['Loan',slip.loanDeduction],
+    ['Other / Purchasing',(slip.otherDeductions||0)+(slip.purchasingDeduction||0)]
+  ];
+  ded.forEach(([lbl,v])=>{ pdf.text(lbl,14,yy);pdf.text('- '+_hrmFmtPKR(v),196,yy,{align:'right'});yy+=6; });
+  // Net payable band
+  pdf.setFillColor(230,239,233);pdf.rect(0,yy+4,210,18,'F');
+  pdf.setFont('helvetica','bold');pdf.setFontSize(11);pdf.setTextColor(20,83,45);
+  pdf.text('NET PAYABLE · صافی قابل ادائیگی',14,yy+15);
+  pdf.setFontSize(16);
+  pdf.text(_hrmFmtPKR(slip.netPayable),196,yy+15,{align:'right'});
+  // Signature line
+  pdf.setTextColor(0);pdf.setFont('helvetica','normal');pdf.setFontSize(9);
+  pdf.text('Employee signature: __________________________',14,260);
+  pdf.text('Date: __________________',150,260);
+  pdf.save(`Payslip-${(slip.employeeName||'employee').replace(/\s+/g,'-')}-${slip.month||_payrollMonth}.pdf`);
+};
+
+// ── Worker dashboard cue: last-month payslip availability ──
+function _myLastPayslip(){
+  if(!session)return null;
+  const me=session.employee||(allEmployees.find(e=>e.username===session.u))||null;
+  if(!me)return null;
+  const mine=allPayslips.filter(s=>s.employeeId===me._id).sort((a,b)=>(b.month||'').localeCompare(a.month||''));
+  return mine[0]||null;
+}
+
+// Returns array of YYYY-MM keys for the last N months that have no
+// processed/paid payroll_run.
+function _pendingPayrollMonths(lookbackMonths){
+  lookbackMonths=lookbackMonths||3;
+  const out=[];
+  const today=new Date();
+  for(let i=1;i<=lookbackMonths;i++){
+    const d=new Date(today.getFullYear(),today.getMonth()-i,1);
+    const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const run=_payrollRunFor(key);
+    if(!run||run.status==='draft')out.push(key);
+  }
+  return out;
+}
+
+function _populateOwnerPayrollKPI(){
+  if(!session||session.role!=='owner')return;
+  if(!payrollDataLoaded){
+    // Background load + rerun once data lands
+    if(typeof loadPayrollData==='function'){loadPayrollData().then(()=>_populateOwnerPayrollKPI());}
+    return;
+  }
+  const pending=_pendingPayrollMonths(3);
+  const el=document.getElementById('owner-kpi-payroll');
+  if(el)el.textContent=pending.length;
+  // Banner: previous month not yet processed
+  const alert=document.getElementById('owner-payroll-alert');
+  if(!alert)return;
+  const today=new Date();
+  const prev=new Date(today.getFullYear(),today.getMonth()-1,1);
+  const prevKey=`${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
+  const prevRun=_payrollRunFor(prevKey);
+  if(!prevRun||prevRun.status==='draft'){
+    alert.innerHTML=`<div class="card" style="border-left:3px solid var(--accent-warning);background:var(--accent-warning-soft);padding:12px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;cursor:pointer" onclick="window.showPage('hrm-payroll')">
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--accent-warning);font-weight:700">📌 Payroll ready to process</div>
+        <div style="font-size:14px;font-weight:600;margin-top:2px">${_payrollMonthLabel(prevKey)} payroll has not been processed yet.</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">Tap to open the Payroll page and run it.</div>
+      </div>
+      <span style="font-size:18px;color:var(--muted)">›</span>
+    </div>`;
+  } else { alert.innerHTML=''; }
+}
 
 </script>
 </body>
