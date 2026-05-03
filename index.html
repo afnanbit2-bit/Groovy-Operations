@@ -8730,7 +8730,8 @@ function renderPayrollPage(){
       <select id="payroll-month" onchange="window.payrollSetMonth(this.value)" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:13px">
         ${months.map(m=>`<option value="${m.key}" ${m.key===_payrollMonth?'selected':''}>${m.lbl}</option>`).join('')}
       </select>
-      ${canProcess?`<button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.processPayroll()">${run?'Re-process Month':'Process Month'}</button>`:''}
+      ${canProcess&&(!run||run.status!=='paid')?`<button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.processPayroll()">${run?'Re-process Month':'Process Month'}</button>`:''}
+      ${canProcess&&run&&run.status==='paid'?`<span style="font-size:11px;color:var(--muted);background:var(--soft);border:1px solid var(--border);padding:8px 12px;border-radius:8px;display:inline-flex;align-items:center;gap:6px">🔒 Locked &mdash; paid ${run.paidAt?new Date(run.paidAt).toLocaleDateString('en-GB'):''}</span>`:''}
     </div>
   </div>`;
   const summary=`<div id="payroll-summary" class="payroll-summary-strip" style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px">
@@ -8867,6 +8868,22 @@ window.processPayroll=async function(){
   const monthKey=_payrollMonth;
   const monthLabel=_payrollMonthLabel(monthKey);
   const existing=_payrollRunFor(monthKey);
+  // #1B — paid lock: refuse to recompute a month that has been marked paid.
+  if(existing&&existing.status==='paid'){
+    showToast('This month is already paid and locked. Re-processing is disabled.',true);
+    return;
+  }
+  // #3 — mid-month guard: warn before processing the current month early,
+  // since un-elapsed weekdays would all count as absent.
+  const todayKey=new Date().toISOString().slice(0,7);
+  if(monthKey===todayKey){
+    const now=new Date();
+    const lastDayOfMonth=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
+    const daysRemaining=lastDayOfMonth-now.getDate();
+    if(daysRemaining>0){
+      if(!confirm(`${monthLabel} isn't over yet — ${daysRemaining} day${daysRemaining===1?'':'s'} remaining.\n\nProcessing now will count those un-elapsed days as absent for everyone, leading to over-deductions.\n\nAre you sure you want to process anyway?`))return;
+    }
+  }
   const verb=existing?'Re-process':'Process';
   if(!confirm(`${verb} payroll for ${monthLabel}?\n\nThis will calculate salaries from current attendance data and create draft payslips. No money is moved until you 'Mark Month as Paid'.`))return;
   showToast('Processing payroll…');

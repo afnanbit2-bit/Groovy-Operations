@@ -1,0 +1,87 @@
+rules_version = '2';
+// Groovy Operations — Firestore security rules
+// Mirror of what's published in the Firebase Console for the
+// `groovy-gatepass` project. Update both in lockstep when changing.
+//
+// Auth model:
+//   Owners   : afnan@groovy.op, ammar@groovy.op
+//   Managers : mustafa@groovy.op, arfat@groovy.op
+//   All other accounts created by setup are workers/store/viewer.
+//
+// Most operational tables are open to any signed-in user (matches the
+// app's runtime expectations). HRM and payroll are tightened.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function userEmail() { return request.auth.token.email; }
+    function isOwner() {
+      return signedIn() && userEmail() in ['afnan@groovy.op','ammar@groovy.op'];
+    }
+    function isManager() {
+      return signedIn() && userEmail() in ['mustafa@groovy.op','arfat@groovy.op'];
+    }
+    function isOM() { return isOwner() || isManager(); }
+
+    // ── Operational data (POs, gate passes, returns, fabric in) ──
+    match /pos/{doc}                  { allow read, write: if signedIn(); }
+    match /bundles/{doc}              { allow read, write: if signedIn(); }
+    match /gatepasses/{doc}           { allow read, write: if signedIn(); }
+    match /returns/{doc}              { allow read, write: if signedIn(); }
+    match /fabricin/{doc}             { allow read, write: if signedIn(); }
+    match /activity/{doc}             { allow read, write: if signedIn(); }
+    match /counters/{doc}             { allow read, write: if signedIn(); }
+
+    // ── Store ──
+    match /store_items/{doc}          { allow read, write: if signedIn(); }
+    match /store_transactions/{doc}   { allow read, write: if signedIn(); }
+    match /store_notifications/{doc}  { allow read, write: if signedIn(); }
+    match /trim_templates/{doc}       { allow read, write: if signedIn(); }
+
+    // ── Embellishments / printing ──
+    match /article_recipes/{doc}      { allow read, write: if signedIn(); }
+    match /printing_jobs/{doc}        { allow read, write: if signedIn(); }
+    match /qc_reports/{doc}           { allow read, write: if signedIn(); }
+    match /printing_billing/{doc}     { allow read, write: if signedIn(); }
+    match /sla_events/{doc}           { allow read, write: if signedIn(); }
+    match /communication_notes/{doc}  { allow read, write: if signedIn(); }
+    match /color_library/{doc}        { allow read, write: if signedIn(); }
+
+    // ── HRM core ──
+    // Policies + increment logs are owner+manager territory.
+    match /hrm_policies/{doc} {
+      allow read:  if isOM();
+      allow write: if isOM();
+    }
+    match /increment_logs/{doc} {
+      allow read:  if isOM();
+      allow write: if isOwner();   // only owners record increments
+    }
+
+    // Employees: any signed-in user can read (workers need to see their
+    // own paygrade + balances on their dashboard widget). Write is
+    // owner+manager. Payroll mark-paid mutates advanceBalance /
+    // loanBalance / updatedAt; this is allowed because _canProcessPayroll
+    // is owner-only at the app level, and the rule allows OM writes.
+    match /employees/{doc} {
+      allow read:  if signedIn();
+      allow write: if isOM();
+    }
+
+    // ── Payroll ──
+    // Read: owners + Mustafa (HRM nav for him is view-only).
+    // Write: owners only (Afnan, Ammar). _canProcessPayroll matches.
+    // Note: payslip read is currently open to all signed-in so the worker
+    // dashboard "Last month payslip" cue works. Tighten to per-employee
+    // self-read once we denormalise auth email onto each payslip.
+    match /payroll_runs/{doc} {
+      allow read:  if isOM();
+      allow write: if isOwner();
+    }
+    match /payslips/{doc} {
+      allow read:  if signedIn();
+      allow write: if isOwner();
+    }
+  }
+}
