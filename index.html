@@ -937,6 +937,8 @@ let _hrmNotifPanelOpen=false;
 // ── Bug Tracker state ──
 let allBugs=[],bugsLoaded=false;
 let _bugFilter='all',_bugSort='severity',_bugExpanded={};
+let _bugTab='bugs';
+let _bugExportSeverities=null,_bugExportCategories=null;
 // ── Mustafa's task list — items raised by owners that need his attention ──
 const MUSTAFA_TASKS=[
   {id:'set-join-dates',num:1,label:'Set join dates',detail:'31 employees were seeded with a placeholder date. Replace with each person\'s real joining date.',resolver:'pending-join-date'}
@@ -10489,27 +10491,58 @@ function renderBugTrackerPage(){
     <div class="card" style="padding:14px;background:var(--accent-success-soft)"><div style="font-size:10px;text-transform:uppercase;color:var(--accent-success);letter-spacing:.06em">✅ Fixed (week)</div><div style="font-size:24px;font-weight:700;color:var(--accent-success);margin-top:4px">${fixedThisWeek}</div></div>
     <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Total</div><div style="font-size:24px;font-weight:700;margin-top:4px">${visible.length}</div></div>
   </div>`;
-  const filters=['all','open','critical','high','investigating','fixed'];
-  const filterLabels={all:'All',open:'Open',critical:'🔴 Critical',high:'🟠 High',investigating:'🔍 Investigating',fixed:'✅ Fixed'};
-  const filterBar=`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
-    ${filters.map(f=>`<button class="filter-chip ${_bugFilter===f?'active':''}" onclick="window.bugSetFilter('${f}')">${filterLabels[f]}</button>`).join('')}
-    <select id="bug-sort" onchange="window.bugSetSort(this.value)" style="margin-left:auto;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#fff">
-      <option value="severity" ${_bugSort==='severity'?'selected':''}>Sort by Severity</option>
-      <option value="newest" ${_bugSort==='newest'?'selected':''}>Newest First</option>
-      <option value="oldest" ${_bugSort==='oldest'?'selected':''}>Oldest First</option>
-      <option value="upvotes" ${_bugSort==='upvotes'?'selected':''}>Most Reported</option>
-    </select>
-  </div>`;
-  return`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+
+  // Tabs (owners/managers only — workers don't need Fix Sessions)
+  const tabs=isOM?`<div style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px">
+    <button onclick="window.bugSetTab('bugs')" style="padding:10px 16px;background:none;border:none;border-bottom:2px solid ${_bugTab==='bugs'?'#1A1A2E':'transparent'};font-weight:${_bugTab==='bugs'?'700':'500'};color:${_bugTab==='bugs'?'#1A1A2E':'var(--muted)'};cursor:pointer;font-family:inherit;font-size:13px">🐛 Bugs</button>
+    <button onclick="window.bugSetTab('sessions')" style="padding:10px 16px;background:none;border:none;border-bottom:2px solid ${_bugTab==='sessions'?'#1A1A2E':'transparent'};font-weight:${_bugTab==='sessions'?'700':'500'};color:${_bugTab==='sessions'?'#1A1A2E':'var(--muted)'};cursor:pointer;font-family:inherit;font-size:13px">📦 Fix Sessions</button>
+  </div>`:'';
+
+  const head=`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
     <div>
       <div class="page-title">🐛 Bug Tracker</div>
       <div class="page-sub">${isOM?'Internal bug reports across the app':'Your reported bugs'}</div>
     </div>
     <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.openBugReportModal()">+ Report Bug</button>
   </div>
-  ${stats}${filterBar}
-  <div id="bug-list">${_renderBugList(visible)}</div>`;
+  ${stats}${tabs}`;
+
+  if(isOM&&_bugTab==='sessions')return head+_renderFixSessionsList(visible);
+
+  // Bugs tab
+  const filters=['all','open','critical','high','investigating','fixed'];
+  const filterLabels={all:'All',open:'Open',critical:'🔴 Critical',high:'🟠 High',investigating:'🔍 Investigating',fixed:'✅ Fixed'};
+  const exportableCount=isOM?_getExportableBugs(visible).length:0;
+  const exportBtn=isOM?`<button class="btn-outline" onclick="window.exportBugsForFix()" style="display:flex;align-items:center;gap:6px;margin-left:auto;padding:6px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;font-size:12px;cursor:pointer;font-family:inherit">📤 Export for Fix <span id="export-count-badge" style="background:#E94560;color:white;font-size:10px;padding:2px 6px;border-radius:10px;font-weight:700">${exportableCount}</span></button>`:'';
+  const filterBar=`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+    ${filters.map(f=>`<button class="filter-chip ${_bugFilter===f?'active':''}" onclick="window.bugSetFilter('${f}')">${filterLabels[f]}</button>`).join('')}
+    ${exportBtn}
+    <select id="bug-sort" onchange="window.bugSetSort(this.value)" style="${isOM?'':'margin-left:auto;'}padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#fff">
+      <option value="severity" ${_bugSort==='severity'?'selected':''}>Sort by Severity</option>
+      <option value="newest" ${_bugSort==='newest'?'selected':''}>Newest First</option>
+      <option value="oldest" ${_bugSort==='oldest'?'selected':''}>Oldest First</option>
+      <option value="upvotes" ${_bugSort==='upvotes'?'selected':''}>Most Reported</option>
+    </select>
+  </div>`;
+  return head+filterBar+`<div id="bug-list">${_renderBugList(visible)}</div>`;
 }
+
+// Bugs eligible for export = currently filtered visible bugs, excluding fixed/wont-fix/duplicate
+function _getExportableBugs(visible){
+  let list=(visible||allBugs).slice();
+  if(_bugFilter==='open')list=list.filter(b=>b.status==='open'||b.status==='investigating');
+  else if(_bugFilter==='critical')list=list.filter(b=>b.severity==='critical');
+  else if(_bugFilter==='high')list=list.filter(b=>b.severity==='high');
+  else if(_bugFilter==='investigating')list=list.filter(b=>b.status==='investigating');
+  else if(_bugFilter==='fixed')list=list.filter(b=>b.status==='fixed');
+  return list.filter(b=>b.status!=='fixed'&&b.status!=='wont-fix'&&b.status!=='duplicate');
+}
+
+window.bugSetTab=function(t){
+  _bugTab=t;
+  const m=document.getElementById('main-content');
+  if(m)m.innerHTML=renderBugTrackerPage();
+};
 
 function _renderBugList(visible){
   let list=visible.slice();
@@ -10538,6 +10571,12 @@ function _bugCardHTML(b){
   const commentsHTML=comments.length?comments.map(c=>`<div style="background:#fafafa;padding:8px 10px;border-radius:6px;margin-bottom:4px"><div style="font-size:11px;color:var(--muted)">${c.by||'—'} · ${_hrmTimeAgo(c.at)}</div><div style="font-size:13px;margin-top:2px">${(c.text||'').replace(/[<>]/g,'')}</div></div>`).join(''):'';
   const screenshotHTML=b.screenshotUrl?`<div style="margin-bottom:14px"><img src="${b.screenshotUrl}" style="max-width:100%;border-radius:8px;border:1px solid var(--border);cursor:pointer" onclick="window.open('${b.screenshotUrl}','_blank')"></div>`:'';
   const expectedHTML=b.expectedBehavior?`<div style="margin-bottom:14px"><div style="font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Expected</div><div style="font-size:14px">${(b.expectedBehavior||'').replace(/[<>]/g,'')}</div></div>`:'';
+  // Auto-fix detection — show badge if any comment starts with [CLAUDE_CODE_FIXED]
+  const ccComment=comments.find(c=>(c.text||'').startsWith('[CLAUDE_CODE_FIXED]'));
+  const ccBadge=ccComment?`<div style="background:#EAF3DE;padding:8px 12px;border-radius:6px;font-size:12px;color:#3B6D11;display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+    <span>🤖 Fixed by Claude Code · ${_hrmTimeAgo(ccComment.at)}</span>
+    ${b.verified?`<span style="background:#1D9E75;color:white;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">VERIFIED</span>`:(isOM?`<button class="btn-sm" style="margin-left:auto" onclick="event.stopPropagation();window.verifyFix('${b._id}')">Verify Fix</button>`:'')}
+  </div>`:'';
   const ownerActions=isOM?`<div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--border);margin-top:10px">
     <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.bugAssign('${b._id}')">📌 Assign</button>
     <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.bugUpdateStatus('${b._id}','investigating')">🔍 Investigating</button>
@@ -10562,6 +10601,7 @@ function _bugCardHTML(b){
       </div>
     </div>
     <div class="bug-card-expanded" style="display:${expanded?'block':'none'};margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+      ${ccBadge}
       <div style="margin-bottom:14px"><div style="font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Description</div><div style="font-size:14px">${(b.description||'(none)').replace(/[<>]/g,'')}</div></div>
       ${expectedHTML}
       ${screenshotHTML}
@@ -10688,23 +10728,323 @@ window.bugMarkDuplicate=async function(id){
   }catch(e){showToast('Failed: '+e.message,true);}
 };
 
-// ── Owner dashboard widget — critical bugs banner ──
+// ── Owner dashboard widget — critical bugs banner + general bug card ──
 function _populateOwnerBugBanner(){
   if(!session||session.role!=='owner')return;
   const wrap=document.getElementById('owner-bug-banner');
   if(!wrap)return;
-  const openCritical=allBugs.filter(b=>b.severity==='critical'&&(b.status==='open'||b.status==='investigating')).length;
+  const openBugs=allBugs.filter(b=>b.status==='open'||b.status==='investigating');
+  const openCritical=openBugs.filter(b=>b.severity==='critical').length;
+  const exportable=openBugs.filter(b=>!b.exportedForFix||b.status==='open').length;
+  let html='';
   if(openCritical>0){
-    wrap.innerHTML=`<div class="card" style="padding:14px;margin-bottom:14px;background:var(--accent-urgent-soft);border-left:3px solid var(--accent-urgent);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+    html+=`<div class="card" style="padding:14px;margin-bottom:14px;background:var(--accent-urgent-soft);border-left:3px solid var(--accent-urgent);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
       <div>
         <div style="font-size:11px;text-transform:uppercase;color:var(--accent-urgent);letter-spacing:.06em;font-weight:700">⚠ Critical Bugs Open</div>
         <div style="font-size:16px;font-weight:700;margin-top:2px">${openCritical} critical bug${openCritical===1?'':'s'} need attention</div>
       </div>
       <button class="btn-primary" style="background:var(--accent-urgent);width:auto;padding:8px 16px;margin-top:0" onclick="window.showPage('bug-tracker')">View →</button>
     </div>`;
-  } else {
-    wrap.innerHTML='';
   }
+  if(openBugs.length>0){
+    const showExport=openBugs.length>=5;
+    html+=`<div class="card" style="padding:14px;margin-bottom:16px;background:#F9FAFB">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:11px;text-transform:uppercase;color:#6B7280;letter-spacing:.06em">🐛 Bug Tracker</div>
+          <div style="font-size:14px;font-weight:600;margin-top:4px">${openBugs.length} open bug${openBugs.length===1?'':'s'} · ${exportable} ready to export</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn-sm" onclick="window.showPage('bug-tracker')">View All</button>
+          ${showExport?`<button class="btn-primary btn-sm" style="padding:5px 10px;font-size:11px;width:auto;margin-top:0" onclick="window.showPage('bug-tracker');setTimeout(()=>window.exportBugsForFix(),50)">Export Now</button>`:''}
+        </div>
+      </div>
+    </div>`;
+  }
+  wrap.innerHTML=html;
+}
+
+// ───────────────────────────────────────────────────────────
+// Bug Export & Batch Fix Workflow
+// ───────────────────────────────────────────────────────────
+
+window.exportBugsForFix=function(){
+  if(!session||!['owner','manager'].includes(session.role))return showToast('Owners/managers only.',true);
+  // Initialize filter state from defaults if first time
+  if(!_bugExportSeverities)_bugExportSeverities=new Set(['critical','high','medium']);
+  if(!_bugExportCategories)_bugExportCategories=new Set(['ui','data','permission','calculation']);
+  document.getElementById('hrm-modal-back')?.remove();
+  const back=document.createElement('div');
+  back.className='hrm-modal-back';back.id='hrm-modal-back';
+  back.onclick=ev=>{if(ev.target===back)window.closeBugExportModal();};
+  back.innerHTML=_bugExportModalShell();
+  document.body.appendChild(back);
+  _bugExportRefreshPreview();
+};
+
+window.closeBugExportModal=function(){
+  document.getElementById('hrm-modal-back')?.remove();
+};
+
+function _bugExportModalShell(){
+  return`<div class="hrm-modal" onclick="event.stopPropagation()" style="max-width:700px;border-radius:12px;padding:0;overflow:hidden;max-height:90vh;display:flex;flex-direction:column">
+    <div style="background:#1A1A2E;color:white;padding:16px 20px;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-size:11px;letter-spacing:.06em;opacity:.6">EXPORT BUGS FOR CLAUDE CODE</div>
+        <h3 id="export-modal-count" style="margin:4px 0 0;font-size:18px;font-weight:700">— bugs ready to fix</h3>
+      </div>
+      <button onclick="window.closeBugExportModal()" style="background:none;border:none;color:white;font-size:24px;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div style="padding:20px;flex:1;overflow-y:auto">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+        <div>
+          <label style="font-size:11px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:.04em">Severity to include</label>
+          <div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap;font-size:12px">
+            ${[['critical','🔴 Critical'],['high','🟠 High'],['medium','🟡 Medium'],['low','🟢 Low']].map(([v,lab])=>`<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" ${_bugExportSeverities.has(v)?'checked':''} onchange="window._bugExportToggleSev('${v}',this.checked)"> ${lab}</label>`).join('')}
+          </div>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:.04em">Categories</label>
+          <div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap;font-size:12px">
+            ${[['ui','UI'],['data','Data'],['permission','Permission'],['calculation','Calculation'],['missing-feature','Features'],['other','Other']].map(([v,lab])=>`<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" ${_bugExportCategories.has(v)?'checked':''} onchange="window._bugExportToggleCat('${v}',this.checked)"> ${lab}</label>`).join('')}
+          </div>
+        </div>
+      </div>
+      <div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <label style="font-size:11px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:.04em">Generated Claude Code Prompt</label>
+          <button class="btn-sm" onclick="window.copyExportText()">📋 Copy</button>
+        </div>
+        <textarea id="export-output" rows="20" readonly style="width:100%;padding:12px;border:1px solid #E5E5E7;border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:#F9FAFB;color:#1A1A2E;resize:vertical;line-height:1.5"></textarea>
+      </div>
+      <div style="background:#FAEEDA;padding:10px 12px;border-radius:6px;font-size:12px;color:#854F0B;line-height:1.5">
+        💡 <strong>How to use:</strong> Click "Copy & Mark as Exported", then paste into a fresh Claude Code session. Claude Code will fix the bugs in batches and auto-mark them as fixed in your bug tracker.
+      </div>
+    </div>
+    <div style="padding:16px 20px;border-top:1px solid #E5E5E7;background:#F9FAFB;display:flex;gap:10px">
+      <button class="btn-outline" style="flex:1" onclick="window.closeBugExportModal()">Cancel</button>
+      <button class="btn-primary" style="flex:2;width:auto;margin-top:0;padding:10px" onclick="window.copyAndMarkExported()">📋 Copy &amp; Mark as Exported</button>
+    </div>
+  </div>`;
+}
+
+window._bugExportToggleSev=function(v,on){
+  if(on)_bugExportSeverities.add(v); else _bugExportSeverities.delete(v);
+  _bugExportRefreshPreview();
+};
+window._bugExportToggleCat=function(v,on){
+  if(on)_bugExportCategories.add(v); else _bugExportCategories.delete(v);
+  _bugExportRefreshPreview();
+};
+
+function _bugExportRefreshPreview(){
+  const bugs=getFilteredBugsForExport();
+  const txt=document.getElementById('export-output');
+  if(txt)txt.value=generateExportText(bugs);
+  const cnt=document.getElementById('export-modal-count');
+  if(cnt)cnt.textContent=`${bugs.length} open bug${bugs.length===1?'':'s'} ready to fix`;
+}
+
+function getFilteredBugsForExport(){
+  return allBugs.filter(b=>
+    (b.status==='open'||b.status==='investigating')&&
+    _bugExportSeverities.has(b.severity)&&
+    _bugExportCategories.has(b.category||'other')
+  );
+}
+
+function generateExportText(bugs){
+  let txt=`# GROOVY OPERATIONS — BATCH BUG FIX SESSION
+Generated: ${new Date().toLocaleString()}
+Repo: afnanbit2-bit/Groovy-Operations
+Total bugs: ${bugs.length}
+
+## INSTRUCTIONS FOR CLAUDE CODE
+
+You are fixing ${bugs.length} bugs in index.html. Follow this exact protocol:
+
+1. **Read index.html FULLY** before making any changes
+2. **Group bugs by module** (PO, HRM, Store, Gate Pass, Attendance, etc.)
+3. **Fix one module at a time** — small targeted edits, not rewrites
+4. **After each fix**, update the bug document in Firestore collection \`bug_reports\`:
+   - Set \`status: "fixed"\`
+   - Set \`resolvedBy: "claude-code"\`
+   - Set \`resolvedAt: <ISO timestamp>\`
+   - Add to \`comments\` array: { by: "claude-code", at: "<ISO>", text: "[CLAUDE_CODE_FIXED] <description of fix>" }
+   - Set \`resolution: <what was changed>\`
+5. **Commit per module** with message: "Fix bugs: <module name> (<count> bugs)"
+6. **Push to main** at the end
+7. **Skip bugs you cannot safely fix** — leave their status as "open" and add a comment explaining why
+
+## SEVERITY ORDER
+Fix in this order: critical → high → medium → low
+
+## CRITICAL RULES
+- Do NOT rewrite existing functions — modify them surgically
+- Do NOT remove features
+- Do NOT change Firestore schema unless a bug requires it
+- Do NOT change Firebase config
+- Test mental model: "Will this break X feature that already works?"
+- If unsure, skip and comment instead of breaking things
+
+---
+
+## BUGS TO FIX (${bugs.length} total)
+
+`;
+  if(bugs.length===0){
+    txt+=`\n_No bugs match the current filter. Adjust severity/category checkboxes to include more bugs._\n`;
+    return txt;
+  }
+  const modules=groupBugsByModule(bugs);
+  for(const [moduleName,moduleBugs] of Object.entries(modules)){
+    txt+=`\n### MODULE: ${moduleName} (${moduleBugs.length} bug${moduleBugs.length===1?'':'s'})\n\n`;
+    moduleBugs.forEach(bug=>{
+      txt+=`---\n\n`;
+      txt+=`**Bug ID:** ${bug._id||bug.id||'—'}\n`;
+      txt+=`**Severity:** ${(bug.severity||'medium').toUpperCase()}\n`;
+      txt+=`**Category:** ${bug.category||'other'}\n`;
+      txt+=`**Page:** ${bug.pageWhereOccurred||'—'}\n`;
+      txt+=`**Reported by:** ${bug.reporterName||'—'} (${bug.reporterRole||'—'})\n`;
+      txt+=`**Device:** ${bug.deviceType||'—'}\n\n`;
+      txt+=`**Title:** ${bug.title||'(no title)'}\n\n`;
+      if(bug.description)txt+=`**What happened:**\n${bug.description}\n\n`;
+      if(bug.expectedBehavior)txt+=`**Expected:**\n${bug.expectedBehavior}\n\n`;
+      if(bug.screenshotUrl)txt+=`**Screenshot:** ${bug.screenshotUrl}\n\n`;
+      if(Array.isArray(bug.upvotes)&&bug.upvotes.length>0)txt+=`**Reported by ${bug.upvotes.length} other user${bug.upvotes.length===1?'':'s'}**\n\n`;
+      if(Array.isArray(bug.comments)&&bug.comments.length>0){
+        txt+=`**Comments:**\n`;
+        bug.comments.forEach(c=>{txt+=`- ${c.by||'—'}: ${c.text||''}\n`;});
+        txt+=`\n`;
+      }
+    });
+  }
+  txt+=`\n---\n\n## END OF BUG LIST\n\nProceed module by module. Mark each bug as fixed in Firestore as you go. Commit and push when complete.\n`;
+  return txt;
+}
+
+function groupBugsByModule(bugs){
+  const modules={'PO Management':[],'HRM':[],'Store':[],'Gate Pass':[],'Attendance':[],'Embellishments':[],'Other':[]};
+  bugs.forEach(bug=>{
+    const page=(bug.pageWhereOccurred||'').toLowerCase();
+    if(page.includes('attendance'))modules['Attendance'].push(bug);
+    else if(page.includes('po')||page.includes('stage work'))modules['PO Management'].push(bug);
+    else if(page.includes('hrm')||page.includes('payroll')||page.includes('employee')||page.includes('advance')||page.includes('loan')||page.includes('policy')||page.includes('my work')||page.includes('worker me'))modules['HRM'].push(bug);
+    else if(page.includes('store')||page.includes('inventory')||page.includes('trim'))modules['Store'].push(bug);
+    else if(page.includes('gate'))modules['Gate Pass'].push(bug);
+    else if(page.includes('embellishment')||page.includes('printing')||page.includes('recipe')||page.includes('observer')||page.includes('qc')||page.includes('billing')||page.includes('color library'))modules['Embellishments'].push(bug);
+    else modules['Other'].push(bug);
+  });
+  Object.keys(modules).forEach(k=>{if(modules[k].length===0)delete modules[k];});
+  return modules;
+}
+
+window.copyExportText=async function(){
+  const txt=document.getElementById('export-output')?.value||'';
+  if(!txt)return showToast('Nothing to copy.',true);
+  try{
+    await navigator.clipboard.writeText(txt);
+    showToast('Copied to clipboard ✓');
+  }catch(e){showToast('Copy failed: '+e.message,true);}
+};
+
+window.copyAndMarkExported=async function(){
+  const txt=document.getElementById('export-output')?.value||'';
+  const bugs=getFilteredBugsForExport();
+  if(bugs.length===0)return showToast('No bugs match filter.',true);
+  try{await navigator.clipboard.writeText(txt);}
+  catch(e){showToast('Copy failed: '+e.message+' — bugs not marked.',true);return;}
+  const exportSession='export-'+Date.now();
+  const exportedAt=new Date().toISOString();
+  try{
+    const batch=writeBatch(db);
+    bugs.forEach(bug=>{
+      const ref=doc(db,'bug_reports',bug._id);
+      batch.update(ref,{
+        exportedForFix:true,
+        exportedAt,
+        exportSession,
+        exportedBy:session.name,
+        status:'investigating'
+      });
+    });
+    await batch.commit();
+    bugs.forEach(bug=>{
+      Object.assign(bug,{exportedForFix:true,exportedAt,exportSession,exportedBy:session.name,status:'investigating'});
+    });
+    await logActivity('Bugs exported for fix',`${bugs.length} bugs · session ${exportSession}`);
+    showToast(`Copied ${bugs.length} bug${bugs.length===1?'':'s'} to clipboard. Paste into Claude Code now.`);
+    window.closeBugExportModal();
+    if(currentPage==='bug-tracker'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderBugTrackerPage();}
+    if(typeof _populateOwnerBugBanner==='function')_populateOwnerBugBanner();
+  }catch(e){showToast('Mark-exported failed: '+e.message,true);}
+};
+
+// ── Verify a Claude-Code-fixed bug ──
+window.verifyFix=async function(id){
+  if(!session||!['owner','manager'].includes(session.role))return showToast('Owners/managers only.',true);
+  const b=allBugs.find(x=>x._id===id);if(!b)return;
+  const ok=confirm(`Verify the fix for "${b.title}"?\n\nClick OK if the fix works.\nClick Cancel to reopen the bug.`);
+  if(ok){
+    try{
+      await updateDoc(doc(db,'bug_reports',id),{verified:true,verifiedBy:session.name,verifiedAt:Date.now()});
+      Object.assign(b,{verified:true,verifiedBy:session.name,verifiedAt:Date.now()});
+      await logActivity('Bug fix verified',b.title);
+      showToast('Verified ✓');
+    }catch(e){return showToast('Verify failed: '+e.message,true);}
+  } else {
+    const reason=prompt('Why is the fix not working?','')||'';
+    try{
+      const comments=Array.isArray(b.comments)?b.comments.slice():[];
+      comments.push({by:session.name,at:Date.now(),text:`[VERIFY FAILED] ${reason||'Fix did not work'}`});
+      await updateDoc(doc(db,'bug_reports',id),{status:'open',verified:false,resolvedBy:'',resolvedAt:0,resolution:'',comments});
+      Object.assign(b,{status:'open',verified:false,resolvedBy:'',resolvedAt:0,resolution:'',comments});
+      await logActivity('Bug reopened (verify failed)',`${b.title}${reason?' · '+reason:''}`);
+      showToast('Reopened ✓');
+    }catch(e){return showToast('Reopen failed: '+e.message,true);}
+  }
+  if(currentPage==='bug-tracker'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderBugTrackerPage();}
+};
+
+// ── Fix Sessions tab ──
+function _renderFixSessionsList(visible){
+  const sessionsMap={};
+  allBugs.forEach(b=>{
+    if(!b.exportSession)return;
+    const s=sessionsMap[b.exportSession]||(sessionsMap[b.exportSession]={id:b.exportSession,exportedAt:b.exportedAt||'',exportedBy:b.exportedBy||'',bugs:[]});
+    s.bugs.push(b);
+  });
+  const sessions=Object.values(sessionsMap).sort((a,b)=>(b.exportedAt||'').localeCompare(a.exportedAt||''));
+  if(sessions.length===0){
+    return`<div class="empty" style="padding:30px;text-align:center;color:var(--muted)">
+      <div style="font-size:32px;margin-bottom:8px">📦</div>
+      No fix sessions yet.<br>
+      <div style="font-size:12px;margin-top:6px">Click "Export for Fix" on the Bugs tab to create your first session.</div>
+    </div>`;
+  }
+  return sessions.map(s=>{
+    const total=s.bugs.length;
+    const fixedByCC=s.bugs.filter(b=>b.status==='fixed'&&Array.isArray(b.comments)&&b.comments.some(c=>(c.text||'').startsWith('[CLAUDE_CODE_FIXED]'))).length;
+    const fixedAny=s.bugs.filter(b=>b.status==='fixed').length;
+    const rate=total?Math.round(fixedAny/total*100):0;
+    const barColor=rate>=70?'#1D9E75':(rate>=40?'#C2841A':'#E94560');
+    const dt=s.exportedAt?new Date(s.exportedAt).toLocaleString():'—';
+    return`<div class="card" style="padding:16px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+        <div>
+          <div style="font-weight:600;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px">${s.id}</div>
+          <div style="font-size:12px;color:#6B7280;margin-top:2px">Exported ${dt}${s.exportedBy?' · by '+s.exportedBy:''} · ${total} bug${total===1?'':'s'} · ${fixedByCC} fixed by Claude Code</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:24px;font-weight:700;color:${barColor}">${rate}%</div>
+          <div style="font-size:11px;color:#6B7280">Fix rate</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;background:#F3F4F6;height:6px;border-radius:3px;overflow:hidden">
+        <div style="background:${barColor};height:100%;width:${rate}%"></div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 </script>
