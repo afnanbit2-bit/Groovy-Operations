@@ -901,6 +901,11 @@ let allPayrollRuns=[],allPayslips=[],payrollDataLoaded=false;
 let _payrollMonth=new Date().toISOString().slice(0,7);
 let _payrollComputed=null; // cached calc result for current view
 let _payslipViewingId=null;
+// ── HRM Session 4 state — advances, loans, policy log, notifications ──
+let allAdvances=[],allLoans=[],allPolicyChanges=[],allHRMNotifs=[],hrmS4DataLoaded=false;
+let _advTab='pending',_advSearchQ='';
+let _loanFilter='active';
+let _hrmNotifPanelOpen=false;
 // ── Mustafa's task list — items raised by owners that need his attention ──
 const MUSTAFA_TASKS=[
   {id:'set-join-dates',num:1,label:'Set join dates',detail:'31 employees were seeded with a placeholder date. Replace with each person\'s real joining date.',resolver:'pending-join-date'}
@@ -1243,6 +1248,8 @@ async function loadHRMData(){
     hrmDataLoaded=true;
     // Background-load payroll data (used by worker payslip cue + owner Pending Payroll KPI)
     if(typeof loadPayrollData==='function'&&!payrollDataLoaded){loadPayrollData().then(()=>{ if(currentPage==='dashboard'||currentPage==='my-work'||currentPage==='me'){const m=document.getElementById('main-content');if(m&&typeof renderPage==='function')renderPage(currentPage);} });}
+    // Background-load Session 4 data (HRM notifications, advances, loans, policy log)
+    if(typeof loadHRMSession4Data==='function'&&!hrmS4DataLoaded){loadHRMSession4Data().then(()=>{ if(currentPage==='dashboard'||currentPage==='my-work'||currentPage==='me'){const m=document.getElementById('main-content');if(m&&typeof renderPage==='function')renderPage(currentPage);} });}
     // Attach paygrade/employee record onto session if not yet attached
     if(session&&!session.employee){
       const me=allEmployees.find(x=>x.username===session.u);
@@ -1438,26 +1445,9 @@ async function startApp(){
   document.getElementById('user-name').textContent=session.name;
   document.getElementById('user-title').textContent=session.title;
   sessionStorage.setItem('u',session.u);
-  // Inject notification bell for owners
-  if(session.role==='owner'){
-    const topbarUser=document.querySelector('.topbar-user');
-    if(topbarUser&&!document.getElementById('notif-bell-wrap')){
-      const bell=document.createElement('div');
-      bell.id='notif-bell-wrap';
-      bell.style.cssText='position:relative;cursor:pointer;margin-right:4px;display:flex;align-items:center';
-      bell.onclick=()=>window.toggleNotifPanel();
-      bell.innerHTML=`<span style="font-size:18px;line-height:1">🔔</span><span id="notif-badge" style="display:none;position:absolute;top:-5px;right:-5px;background:#dc2626;color:#fff;border-radius:50%;width:17px;height:17px;font-size:9px;font-weight:700;align-items:center;justify-content:center">0</span>`;
-      topbarUser.insertBefore(bell,topbarUser.firstChild);
-    }
-    if(!document.getElementById('notif-panel')){
-      const panel=document.createElement('div');
-      panel.id='notif-panel';
-      panel.style.cssText='display:none;position:fixed;top:52px;right:12px;width:360px;max-height:70vh;overflow-y:auto;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.18);z-index:1000';
-      panel.innerHTML=`<div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff"><span style="font-weight:700;font-size:14px">Store Notifications</span><button onclick="window.toggleNotifPanel()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1">×</button></div><div id="notif-list"></div>`;
-      document.body.appendChild(panel);
-    }
-    loadStoreNotifications();
-  }
+  // Inject the notification bell for everyone (HRM notifs are routed by user/role).
+  if(typeof _ensureNotifBell==='function')_ensureNotifBell();
+  if(session.role==='owner'){loadStoreNotifications();}
   buildNav();
   if(auth.currentUser){try{await auth.currentUser.getIdToken();}catch(_){}}
   if(session.role==='store'){
@@ -1487,8 +1477,9 @@ function buildNav(){
     hrmSubItems.push({id:'attendance',iconName:'clock',label:'Attendance'});
     hrmSubItems.push({id:'hrm-employees',iconName:'people',label:'Employees'});
     if(_canViewPayroll())hrmSubItems.push({id:'hrm-payroll',iconName:'money',label:'Payroll'});
-    hrmSubItems.push({id:'hrm-advances',iconName:'list',label:'Advances'});
-    hrmSubItems.push({id:'hrm-policy',iconName:'gear',label:'Policy Engine'});
+    if(_canViewHRMOps())hrmSubItems.push({id:'hrm-advances',iconName:'list',label:'Advances'});
+    if(_canViewHRMOps())hrmSubItems.push({id:'hrm-loans',iconName:'money',label:'Loans'});
+    if(_canViewHRMOps())hrmSubItems.push({id:'hrm-policy',iconName:'gear',label:'Policy Engine'});
   }
   // Printing module nav items (worker-aware; used for mobile bottom nav)
   const printItems=[];
@@ -1624,7 +1615,7 @@ function _updateMobNavActive(pageId){
   // Group mappings (page belongs to a sheet group)
   const groups={
     'po-create':'po','po-registry':'po','po-detail':'po','stage-work':'po',
-    'attendance':'hrm','hrm-employees':'hrm','hrm-payroll':'hrm','hrm-advances':'hrm','hrm-policy':'hrm',
+    'attendance':'hrm','hrm-employees':'hrm','hrm-payroll':'hrm','hrm-advances':'hrm','hrm-loans':'hrm','hrm-policy':'hrm',
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
     'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-templates':'more',
     'activity':'more','users':'more',
@@ -1719,6 +1710,7 @@ window.openHRMSheet=function(){
     {iconName:'people',label:'Employees',pageId:'hrm-employees'},
     {iconName:'money',label:'Payroll',pageId:'hrm-payroll'},
     {iconName:'list',label:'Advances',pageId:'hrm-advances'},
+    {iconName:'money',label:'Loans',pageId:'hrm-loans'},
     {iconName:'gear',label:'Policy Engine',pageId:'hrm-policy'}
   ];
   window.openMobSheet('HRM',items);
@@ -1811,8 +1803,21 @@ function renderPage(id){
     else if(!hrmDataLoaded||!payrollDataLoaded){Promise.all([hrmDataLoaded?null:loadHRMData(),payrollDataLoaded?null:loadPayrollData()]).then(()=>{m.innerHTML=renderPayrollPage();_payrollAfterRender();});}
     else {m.innerHTML=renderPayrollPage();_payrollAfterRender();}
   }
-  else if(id==='hrm-advances'){m.innerHTML=renderHRMStub('Advances','list','Coming in Session 4 — advance/loan request approval workflow.');}
-  else if(id==='hrm-policy'){m.innerHTML=renderHRMStub('Policy Engine','gear','Coming in Session 4 — paygrade limits, increment policies, deduction rules.');}
+  else if(id==='hrm-advances'){
+    if(!_canViewHRMOps()){m.innerHTML='<div class="empty">Restricted to Afnan, Ammar and Mustafa.</div>';}
+    else if(!hrmDataLoaded||!hrmS4DataLoaded){Promise.all([hrmDataLoaded?null:loadHRMData(),hrmS4DataLoaded?null:loadHRMSession4Data()]).then(()=>{m.innerHTML=renderAdvancesPage();});}
+    else m.innerHTML=renderAdvancesPage();
+  }
+  else if(id==='hrm-loans'){
+    if(!_canViewHRMOps()){m.innerHTML='<div class="empty">Restricted to Afnan, Ammar and Mustafa.</div>';}
+    else if(!hrmDataLoaded||!hrmS4DataLoaded){Promise.all([hrmDataLoaded?null:loadHRMData(),hrmS4DataLoaded?null:loadHRMSession4Data()]).then(()=>{m.innerHTML=renderLoansPage();});}
+    else m.innerHTML=renderLoansPage();
+  }
+  else if(id==='hrm-policy'){
+    if(!_canViewHRMOps()){m.innerHTML='<div class="empty">Restricted to Afnan, Ammar and Mustafa.</div>';}
+    else if(!hrmDataLoaded||!hrmS4DataLoaded){Promise.all([hrmDataLoaded?null:loadHRMData(),hrmS4DataLoaded?null:loadHRMSession4Data()]).then(()=>{m.innerHTML=renderPolicyEnginePage();});}
+    else m.innerHTML=renderPolicyEnginePage();
+  }
 }
 
 // ── Dashboard — extended in Chunk 5 with printing KPI strip ──
@@ -7478,6 +7483,10 @@ function _hrmFmtPKR(n){return'PKR '+(Number(n)||0).toLocaleString('en-PK');}
 // Mustafa can view payroll. Only Afnan + Ammar can process / edit / mark paid.
 function _canViewPayroll(){ return session&&['afnan','ammar','mustafa'].includes(session.u); }
 function _canProcessPayroll(){ return session&&['afnan','ammar'].includes(session.u); }
+// Session 4 — Advances / Loans / Policy: same view tier as Payroll, owner-only for write.
+function _canViewHRMOps(){ return session&&['afnan','ammar','mustafa'].includes(session.u); }
+function _canApproveHRMOps(){ return session&&['afnan','ammar'].includes(session.u); }
+function _canEditPolicy(){ return session&&['afnan','ammar'].includes(session.u); }
 function _hrmEstSalary(emp,monthSummary){
   if(!emp||!emp.basicSalary)return 0;
   const policies=hrmPolicies||HRM_DEFAULT_POLICIES;
@@ -8110,7 +8119,9 @@ function renderWorkerHRMWidget(){
     </div>
     <div id="wrk-advance-row">${advanceRow}</div>
     <div id="wrk-payslip-cue"></div>
-  </div>`;
+  </div>
+  <div id="wrk-notif-banner"></div>
+  <div id="wrk-extra-cards"></div>`;
 }
 
 async function _populateWorkerHRMWidget(){
@@ -8193,6 +8204,37 @@ async function _populateWorkerHRMWidget(){
         cue.innerHTML='';
       }
     }
+    // Rich cards: advance / loan / last payslip
+    const extra=document.getElementById('wrk-extra-cards');
+    if(extra){
+      const cards=[];
+      if((emp.advanceBalance||0)>0){
+        cards.push(`<div class="card" style="padding:12px;margin-top:8px;border-left:3px solid var(--accent-urgent)">
+          <div style="font-size:11px;text-transform:uppercase;color:var(--accent-urgent);letter-spacing:.06em">Advance Balance</div>
+          <div style="font-size:18px;font-weight:700;margin-top:2px">${_hrmFmtPKR(emp.advanceBalance)}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">Will be deducted next payroll</div>
+        </div>`);
+      }
+      if((emp.loanBalance||0)>0){
+        cards.push(`<div class="card" style="padding:12px;margin-top:8px;border-left:3px solid var(--accent-warning)">
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <div><div style="font-size:11px;text-transform:uppercase;color:var(--accent-warning);letter-spacing:.06em">Loan Balance</div><div style="font-size:18px;font-weight:700;margin-top:2px">${_hrmFmtPKR(emp.loanBalance)}</div></div>
+            <div style="text-align:right"><div style="font-size:11px;color:var(--muted)">Monthly</div><div style="font-size:13px;font-weight:600">${_hrmFmtPKR(emp.loanMonthlyDeduction)}</div></div>
+          </div>
+        </div>`);
+      }
+      if(typeof _myLastPayslip==='function'){
+        const last=_myLastPayslip();
+        if(last&&last.status==='paid'){
+          cards.push(`<div class="card" style="padding:12px;margin-top:8px;cursor:pointer" onclick="window.openPayslip('${last._id}','${last.employeeId}')">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><div style="font-size:11px;text-transform:uppercase;color:var(--accent-success);letter-spacing:.06em">Last Payslip</div><div style="font-size:14px;font-weight:600;margin-top:2px">${_payrollMonthLabel(last.month)}</div><div style="font-size:11px;color:var(--muted);margin-top:2px">${_hrmFmtPKR(last.netPayable)} · Paid ${last.paidOn||'—'}</div></div><span style="color:var(--muted)">›</span></div>
+          </div>`);
+        }
+      }
+      extra.innerHTML=cards.join('');
+    }
+    // HRM notif banner (at top, above content)
+    if(typeof _renderWorkerNotifBanner==='function')_renderWorkerNotifBanner();
   }catch(e){console.warn('worker HRM populate failed',e);}
 }
 
@@ -9400,6 +9442,797 @@ function _populateOwnerPayrollKPI(){
   } else { alert.innerHTML=''; }
 }
 
+// ───────────────────────────────────────────────────────────
+// HRM Session 4 — Advances + Loans + Policy Engine + Notifications
+// ───────────────────────────────────────────────────────────
+
+async function loadHRMSession4Data(){
+  try{
+    const[advSnap,loanSnap,polSnap,notifSnap]=await Promise.all([
+      getDocs(query(collection(db,'advance_requests'),orderBy('requestedAt','desc'))).catch(()=>({docs:[]})),
+      getDocs(query(collection(db,'loans'),orderBy('approvedAt','desc'))).catch(()=>({docs:[]})),
+      getDocs(query(collection(db,'policy_change_log'),orderBy('changedAt','desc'))).catch(()=>({docs:[]})),
+      getDocs(query(collection(db,'hrm_notifications'),orderBy('createdAt','desc'))).catch(()=>({docs:[]}))
+    ]);
+    allAdvances=advSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    allLoans=loanSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    allPolicyChanges=polSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    allHRMNotifs=notifSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    hrmS4DataLoaded=true;
+    // Async housekeeping (non-blocking)
+    if(typeof _scheduleIncrementDueChecks==='function')_scheduleIncrementDueChecks().catch(()=>{});
+    if(typeof _renderHRMNotifBadge==='function')_renderHRMNotifBadge();
+  }catch(e){console.warn('loadHRMSession4Data failed:',e.message);}
+}
+
+function _hrmTimeAgo(ts){
+  if(!ts)return'';
+  const diff=Date.now()-ts;
+  if(diff<60000)return'just now';
+  if(diff<3600000)return Math.floor(diff/60000)+'m ago';
+  if(diff<86400000)return Math.floor(diff/3600000)+'h ago';
+  return Math.floor(diff/86400000)+'d ago';
+}
+
+// ── HRM Notifications ─────────────────────────────────────
+async function _hrmNotify(payload){
+  try{
+    const ref=doc(collection(db,'hrm_notifications'));
+    const data={
+      id:ref.id,
+      type:payload.type||'info',
+      title:payload.title||'',
+      message:payload.message||'',
+      forUser:payload.forUser||'',
+      forRole:payload.forRole||'',
+      relatedTo:payload.relatedTo||'',
+      createdAt:Date.now(),
+      readBy:[],
+      priority:payload.priority||'normal',
+      actionRequired:!!payload.actionRequired,
+      actionUrl:payload.actionUrl||''
+    };
+    await setDoc(ref,data);
+    allHRMNotifs.unshift({...data,_id:ref.id});
+    if(typeof _renderHRMNotifBadge==='function')_renderHRMNotifBadge();
+    return data;
+  }catch(e){console.warn('hrmNotify failed:',e.message);}
+}
+
+function _myHRMNotifs(){
+  if(!session)return[];
+  return allHRMNotifs.filter(n=>{
+    if((n.readBy||[]).includes(session.u))return false;
+    if(n.forUser&&n.forUser===session.u)return true;
+    if(n.forRole==='all')return true;
+    if(n.forRole==='owner'&&session.role==='owner')return true;
+    if(n.forRole==='manager'&&session.role==='manager')return true;
+    if(n.forRole==='owner_manager'&&['owner','manager'].includes(session.role))return true;
+    if(n.forRole==='store'&&session.role==='store')return true;
+    if(n.forRole==='worker'&&session.role==='worker')return true;
+    return false;
+  });
+}
+
+window.hrmDismissNotif=async function(id){
+  const n=allHRMNotifs.find(x=>x._id===id);if(!n)return;
+  const readBy=Array.isArray(n.readBy)?n.readBy.slice():[];
+  if(!readBy.includes(session.u))readBy.push(session.u);
+  try{
+    await updateDoc(doc(db,'hrm_notifications',id),{readBy});
+    n.readBy=readBy;
+    _renderHRMNotifBadge();
+    _renderHRMNotifPanel();
+    _renderWorkerNotifBanner();
+  }catch(e){showToast('Dismiss failed: '+e.message,true);}
+};
+
+function _renderHRMNotifBadge(){
+  // Combined unread count: HRM notifs + legacy storeNotifications
+  const hrm=_myHRMNotifs().length;
+  const store=Array.isArray(storeNotifications)?storeNotifications.filter(n=>n.status==='unread').length:0;
+  const total=hrm+store;
+  const badge=document.getElementById('notif-badge');
+  if(badge){badge.style.display=total>0?'flex':'none';badge.textContent=total>99?'99+':String(total);}
+}
+
+function _renderHRMNotifPanel(){
+  // Inject HRM notifs ahead of any existing store-notif content in the panel.
+  const list=document.getElementById('notif-list');
+  if(!list)return;
+  const my=_myHRMNotifs();
+  const storeUnread=Array.isArray(storeNotifications)?storeNotifications.filter(n=>n.status==='unread'):[];
+  if(!my.length&&!storeUnread.length){list.innerHTML='<div style="padding:24px 16px;text-align:center;color:var(--muted);font-size:13px">No new notifications.</div>';return;}
+  const hrmHTML=my.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).map(n=>_hrmNotifCardHTML(n)).join('');
+  // For store notifs, fall back to existing renderer if available
+  let storeHTML='';
+  if(typeof renderNotifList==='function'&&storeUnread.length){
+    // existing function rewrites the panel; we'll just call it after our HRM block
+  }
+  list.innerHTML=hrmHTML+(storeUnread.length?'<div style="padding:8px 16px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;background:#fafafa">Store</div>':'');
+  // Append store notif rendering manually so both lists coexist
+  if(storeUnread.length){
+    const wrap=document.createElement('div');
+    storeUnread.forEach(n=>{
+      const div=document.createElement('div');
+      div.style.cssText='padding:14px 16px;border-bottom:1px solid #f5f5f5';
+      div.innerHTML=`<div style="font-weight:600;font-size:13px">${n.action==='edit'?'✏️ Edited':'🗑️ Deleted'}: ${n.itemCode||''} ${n.itemName||''}</div><div style="font-size:11px;color:var(--muted);margin-top:5px">by ${n.changedBy||'—'}</div><button onclick="window.dismissNotif('${n._id}')" style="margin-top:10px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;cursor:pointer;font-size:11px;color:var(--muted)">Dismiss</button>`;
+      wrap.appendChild(div);
+    });
+    list.appendChild(wrap);
+  }
+}
+
+function _hrmNotifCardHTML(n){
+  const priColor=n.priority==='high'?'var(--accent-urgent)':n.priority==='low'?'var(--muted)':'#1A1A2E';
+  const priBg=n.priority==='high'?'var(--accent-urgent-soft)':n.priority==='low'?'#fafafa':'#fff';
+  const actionBtn=n.actionUrl?`<button onclick="window.showPage('${n.actionUrl}');window.toggleNotifPanel()" style="margin-top:8px;margin-right:6px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;cursor:pointer;font-size:11px">View</button>`:'';
+  return`<div style="padding:14px 16px;border-bottom:1px solid #f5f5f5;border-left:3px solid ${priColor};background:${priBg}">
+    <div style="display:flex;align-items:flex-start;gap:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:13px;color:${priColor}">${n.title||''}</div>
+        <div style="font-size:12px;color:var(--text);margin-top:3px;line-height:1.45">${n.message||''}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px">${_hrmTimeAgo(n.createdAt)}</div>
+        ${actionBtn}<button onclick="window.hrmDismissNotif('${n._id}')" style="margin-top:8px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;cursor:pointer;font-size:11px;color:var(--muted)">Dismiss</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// Inject the notification bell on app start for everyone (was owner-only before).
+function _ensureNotifBell(){
+  const topbarUser=document.querySelector('.topbar-user');
+  if(!topbarUser||document.getElementById('notif-bell-wrap'))return;
+  const bell=document.createElement('div');
+  bell.id='notif-bell-wrap';
+  bell.style.cssText='position:relative;cursor:pointer;margin-right:4px;display:flex;align-items:center';
+  bell.onclick=()=>window.toggleNotifPanel();
+  bell.innerHTML=`<span style="font-size:18px;line-height:1">🔔</span><span id="notif-badge" style="display:none;position:absolute;top:-5px;right:-5px;background:var(--accent-urgent);color:#fff;border-radius:50%;width:17px;height:17px;font-size:9px;font-weight:700;align-items:center;justify-content:center">0</span>`;
+  topbarUser.insertBefore(bell,topbarUser.firstChild);
+  if(!document.getElementById('notif-panel')){
+    const panel=document.createElement('div');
+    panel.id='notif-panel';
+    panel.style.cssText='display:none;position:fixed;top:52px;right:12px;width:360px;max-height:70vh;overflow-y:auto;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.18);z-index:1000';
+    panel.innerHTML=`<div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff"><span style="font-weight:700;font-size:14px">Notifications</span><button onclick="window.toggleNotifPanel()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1">×</button></div><div id="notif-list"></div>`;
+    document.body.appendChild(panel);
+  }
+}
+
+// Override the existing toggle so it renders the merged panel.
+const _origToggleNotifPanel=window.toggleNotifPanel;
+window.toggleNotifPanel=function(){
+  const p=document.getElementById('notif-panel');if(!p)return;
+  const open=p.style.display==='none'||!p.style.display;
+  p.style.display=open?'block':'none';
+  _hrmNotifPanelOpen=open;
+  if(open)_renderHRMNotifPanel();
+};
+
+// ── Increment-due detector — runs after HRM data load ──
+async function _scheduleIncrementDueChecks(){
+  if(!session||!_canViewHRMOps())return;
+  const now=new Date();
+  for(const e of allEmployees){
+    if(!e.joinDate||e.status==='inactive')continue;
+    const join=new Date(e.joinDate+'T00:00:00');
+    if(isNaN(join.getTime()))continue;
+    // Find the next anniversary
+    const nextAnniv=new Date(now.getFullYear(),join.getMonth(),join.getDate());
+    if(nextAnniv<now)nextAnniv.setFullYear(now.getFullYear()+1);
+    const daysToAnniv=Math.ceil((nextAnniv-now)/(1000*60*60*24));
+    if(daysToAnniv>30)continue;
+    // Check we haven't already created a notification for this anniversary
+    const annivKey=`increment_due_${e._id}_${nextAnniv.getFullYear()}`;
+    if(allHRMNotifs.some(n=>n.relatedTo===annivKey))continue;
+    await _hrmNotify({
+      type:'increment_due',
+      title:'Annual increment due',
+      message:`${e.name} joined ${nextAnniv.getFullYear()-join.getFullYear()-1+1} year${nextAnniv.getFullYear()-join.getFullYear()>1?'s':''} ago. Annual increment review recommended.`,
+      forRole:'owner_manager',
+      relatedTo:annivKey,
+      priority:'normal',
+      actionRequired:false,
+      actionUrl:'hrm-employees'
+    });
+  }
+}
+
+// ── Worker dashboard HRM banner: show unread HRM notifs above content ──
+function _renderWorkerNotifBanner(){
+  const wrap=document.getElementById('wrk-notif-banner');
+  if(!wrap)return;
+  const my=_myHRMNotifs().filter(n=>['policy_change','advance_approved','advance_rejected','loan_added'].includes(n.type)).slice(0,2);
+  if(!my.length){wrap.innerHTML='';return;}
+  wrap.innerHTML=my.map(n=>`<div style="background:var(--accent-warning-soft);border-radius:8px;padding:12px;margin-bottom:8px;display:flex;align-items:center;gap:10px">
+    <span style="font-size:18px">📢</span>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:13px;font-weight:600">${n.title||''}</div>
+      <div style="font-size:11px;color:var(--accent-warning);margin-top:2px">${n.message||''}</div>
+    </div>
+    <button onclick="window.hrmDismissNotif('${n._id}')" style="background:none;border:none;color:var(--accent-warning);font-size:16px;cursor:pointer">✕</button>
+  </div>`).join('');
+}
+
+// ───────────────────────────────────────────────────────────
+// ADVANCES PAGE
+// ───────────────────────────────────────────────────────────
+
+function _advanceMonthBucket(ts){
+  if(!ts)return'';
+  const d=new Date(ts);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
+function renderAdvancesPage(){
+  if(!_canViewHRMOps())return'<div class="empty">Restricted.</div>';
+  const all=allAdvances.slice();
+  const pending=all.filter(a=>a.status==='pending');
+  const thisMonth=new Date().toISOString().slice(0,7);
+  const approvedThisMonth=all.filter(a=>a.status==='approved'&&_advanceMonthBucket(a.approvedAt)===thisMonth).length;
+  const activeAdvancesTotal=allEmployees.reduce((s,e)=>s+(e.advanceBalance||0),0);
+  const clearedYTD=all.filter(a=>a.status==='paid'&&_advanceMonthBucket(a.paidOn?new Date(a.paidOn).getTime():a.approvedAt).startsWith(String(new Date().getFullYear()))).reduce((s,a)=>s+(a.amount||0),0);
+  const stats=`<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px" class="advances-stats-strip">
+    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Pending Requests</div><div style="font-size:24px;font-weight:700;color:var(--accent-warning);margin-top:4px">${pending.length}</div></div>
+    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Approved This Month</div><div style="font-size:24px;font-weight:700;color:var(--accent-success);margin-top:4px">${approvedThisMonth}</div></div>
+    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Active Advances</div><div style="font-size:18px;font-weight:700;margin-top:4px">${_hrmFmtPKR(activeAdvancesTotal)}</div></div>
+    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Cleared YTD</div><div style="font-size:18px;font-weight:700;color:var(--accent-success);margin-top:4px">${_hrmFmtPKR(clearedYTD)}</div></div>
+  </div>`;
+  const tabs=['pending','approved','rejected','paid','all'];
+  const tabBtns=tabs.map(t=>{
+    const lbl=t==='all'?'All History':t.charAt(0).toUpperCase()+t.slice(1);
+    const active=_advTab===t;
+    return`<button onclick="window.advSetTab('${t}')" style="padding:8px 16px;border:1px solid var(--border);border-bottom:${active?'2px solid #1A1A2E':'1px solid var(--border)'};background:${active?'#fff':'#fafafa'};font-weight:${active?'700':'500'};font-size:13px;cursor:pointer;font-family:inherit;color:${active?'var(--text)':'var(--muted)'};border-radius:8px 8px 0 0;margin-right:4px">${lbl}</button>`;
+  }).join('');
+  return`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+    <div>
+      <div class="page-title"><span class="page-title-icon">${_icon('list',22)}</span> Advances</div>
+      <div class="page-sub">Salary advance requests and approvals</div>
+    </div>
+    <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.advNewRequest()">+ New Advance Request</button>
+  </div>
+  ${stats}
+  <div style="display:flex;border-bottom:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap">${tabBtns}</div>
+  <div id="adv-list">${_renderAdvList()}</div>`;
+}
+
+function _renderAdvList(){
+  let list=allAdvances.slice();
+  if(_advTab!=='all')list=list.filter(a=>a.status===_advTab);
+  list.sort((a,b)=>(b.requestedAt||0)-(a.requestedAt||0));
+  if(!list.length)return'<div class="empty">No advance requests in this category.</div>';
+  return list.map(a=>_advCardHTML(a)).join('');
+}
+
+function _advCardHTML(a){
+  const emp=allEmployees.find(e=>e._id===a.employeeId);
+  const pgClass=(emp?.paygrade||'').toLowerCase();
+  const stColor={pending:'var(--accent-warning)',approved:'var(--accent-success)',rejected:'var(--accent-urgent)',paid:'var(--text)'}[a.status]||'var(--muted)';
+  const stBg={pending:'var(--accent-warning-soft)',approved:'var(--accent-success-soft)',rejected:'var(--accent-urgent-soft)',paid:'#F0F0F0'}[a.status]||'#F0F0F0';
+  const planLabel=a.monthDeductionPlan>1?`Split over ${a.monthDeductionPlan} months`:'Full deduction next month';
+  const canApprove=_canApproveHRMOps()&&a.status==='pending';
+  const canMarkPaid=_canApproveHRMOps()&&a.status==='approved'&&!a.paidOn;
+  const actions=canApprove?`<div style="display:flex;gap:6px;flex-direction:column">
+      <button class="btn-primary" style="width:auto;padding:8px 14px;margin-top:0;background:var(--accent-success)" onclick="window.advApprove('${a._id}')">✓ Approve</button>
+      <button class="btn-outline" style="color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.advReject('${a._id}')">✗ Reject</button>
+    </div>`:canMarkPaid?`<button class="btn-primary" style="width:auto;padding:8px 14px;margin-top:0" onclick="window.advMarkPaid('${a._id}')">Mark Paid</button>`:`<span style="background:${stBg};color:${stColor};padding:4px 10px;border-radius:10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;align-self:flex-start">${a.status}</span>`;
+  return`<div class="card" style="padding:16px;margin-bottom:10px;border-left:3px solid ${stColor}">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><div style="font-weight:700;font-size:15px">${a.employeeName||'—'}</div>${pgClass?`<span class="paygrade-badge ${pgClass}">${emp.paygrade}</span>`:''}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">${emp?.designation||'—'}</div>
+        <div style="margin-top:10px;font-size:14px">Requesting: <strong style="color:#1A1A2E;font-size:18px">${_hrmFmtPKR(a.amount)}</strong></div>
+        <div style="font-size:13px;color:var(--muted);margin-top:6px">Reason: ${a.reason||'—'}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px">Requested by ${a.requestedBy||'—'} · ${_hrmTimeAgo(a.requestedAt)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">Repayment: ${planLabel}</div>
+        ${a.rejectionReason?`<div style="font-size:12px;color:var(--accent-urgent);margin-top:6px">Rejection: ${a.rejectionReason}</div>`:''}
+        ${a.paidVia?`<div style="font-size:11px;color:var(--muted);margin-top:6px">Paid via ${a.paidVia} on ${a.paidOn||'—'} by ${a.paidBy||'—'}</div>`:''}
+      </div>
+      <div>${actions}</div>
+    </div>
+  </div>`;
+}
+
+window.advSetTab=function(t){_advTab=t;const w=document.getElementById('adv-list');if(w)w.innerHTML=_renderAdvList();const m=document.getElementById('main-content');if(m)m.innerHTML=renderAdvancesPage();};
+
+window.advNewRequest=function(){
+  if(!_canViewHRMOps())return;
+  document.getElementById('hrm-modal-back')?.remove();
+  const empOptions=allEmployees.filter(e=>e.status!=='inactive').sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(e=>`<option value="${e._id}">${e.name} (${e.paygrade})</option>`).join('');
+  const back=document.createElement('div');back.className='hrm-modal-back';back.id='hrm-modal-back';back.onclick=ev=>{if(ev.target===back)window.hrmCloseModal();};
+  back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()" style="max-width:480px">
+    <h3>New Advance Request</h3>
+    <div class="sub">${_canApproveHRMOps()?'Will be auto-approved (you are an owner).':'Submitted to owners for approval.'}</div>
+    <div class="field"><label>Employee *</label><select id="adv-emp">${empOptions}</select></div>
+    <div class="field"><label>Amount (PKR) *</label><input id="adv-amt" type="number" min="0"></div>
+    <div class="field"><label>Repayment Plan</label>
+      <select id="adv-plan">
+        <option value="1">Full deduction next month</option>
+        <option value="2">Split over 2 months</option>
+        <option value="3">Split over 3 months</option>
+        <option value="4">Split over 4 months</option>
+        <option value="6">Split over 6 months</option>
+      </select>
+    </div>
+    <div class="field"><label>Reason *</label><textarea id="adv-reason" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px"></textarea></div>
+    <div class="field"><label>Notes</label><input id="adv-notes"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.advSubmitRequest()">Submit</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+};
+
+window.advSubmitRequest=async function(){
+  const empId=document.getElementById('adv-emp')?.value;
+  const amount=Number(document.getElementById('adv-amt')?.value||0);
+  const reason=document.getElementById('adv-reason')?.value?.trim()||'';
+  const plan=Number(document.getElementById('adv-plan')?.value||1);
+  const notes=document.getElementById('adv-notes')?.value?.trim()||'';
+  if(!empId||!amount||!reason)return showToast('Employee, amount and reason are required.',true);
+  const emp=allEmployees.find(e=>e._id===empId);if(!emp)return;
+  const autoApprove=_canApproveHRMOps();
+  try{
+    const ref=doc(collection(db,'advance_requests'));
+    const data={
+      id:ref.id,employeeId:empId,employeeName:emp.name,amount,reason,
+      requestedBy:session.name,requestedAt:Date.now(),
+      status:autoApprove?'approved':'pending',
+      approvedBy:autoApprove?session.name:'',
+      approvedAt:autoApprove?Date.now():0,
+      rejectionReason:'',paidVia:'',paidOn:'',paidBy:'',
+      notes,monthDeductionPlan:plan,remainingBalance:amount
+    };
+    await setDoc(ref,data);
+    allAdvances.unshift({...data,_id:ref.id});
+    if(autoApprove){
+      const newBal=(emp.advanceBalance||0)+amount;
+      await updateDoc(doc(db,'employees',empId),{advanceBalance:newBal,updatedAt:Date.now()});
+      emp.advanceBalance=newBal;
+    }
+    await logActivity(autoApprove?'Advance auto-approved':'Advance requested',`${emp.name} · ${_hrmFmtPKR(amount)}`);
+    if(!autoApprove){
+      await _hrmNotify({type:'advance_request',title:`Advance request: ${emp.name}`,message:`${session.name} requested ${_hrmFmtPKR(amount)} for ${reason}.`,forRole:'owner',relatedTo:ref.id,priority:'high',actionRequired:true,actionUrl:'hrm-advances'});
+    } else {
+      await _hrmNotify({type:'advance_approved',title:'Advance approved',message:`${_hrmFmtPKR(amount)} approved. Will be deducted from your next payroll.`,forUser:emp.username,relatedTo:ref.id,priority:'normal'});
+    }
+    showToast(autoApprove?'Advance approved ✓':'Request sent to owners');
+    window.hrmCloseModal();
+    if(currentPage==='hrm-advances'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderAdvancesPage();}
+  }catch(e){showToast('Submit failed: '+e.message,true);}
+};
+
+window.advApprove=async function(id){
+  if(!_canApproveHRMOps())return showToast('Owners only.',true);
+  const a=allAdvances.find(x=>x._id===id);if(!a||a.status!=='pending')return;
+  const via=prompt('Payment method (cash / bank / easypaisa):','cash');
+  if(!via)return;
+  try{
+    const update={status:'approved',approvedBy:session.name,approvedAt:Date.now(),paidVia:via.trim().toLowerCase()};
+    await updateDoc(doc(db,'advance_requests',id),update);
+    Object.assign(a,update);
+    const emp=allEmployees.find(e=>e._id===a.employeeId);
+    if(emp){
+      const newBal=(emp.advanceBalance||0)+(a.amount||0);
+      await updateDoc(doc(db,'employees',emp._id),{advanceBalance:newBal,updatedAt:Date.now()});
+      emp.advanceBalance=newBal;
+    }
+    await _hrmNotify({type:'advance_approved',title:'Advance approved',message:`${_hrmFmtPKR(a.amount)} approved. Will be deducted from your next payroll.`,forUser:emp?.username,relatedTo:id,priority:'normal'});
+    await logActivity('Advance approved',`${a.employeeName} · ${_hrmFmtPKR(a.amount)} via ${via}`);
+    showToast('Advance approved ✓');
+    if(currentPage==='hrm-advances'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderAdvancesPage();}
+  }catch(e){showToast('Approve failed: '+e.message,true);}
+};
+
+window.advReject=async function(id){
+  if(!_canApproveHRMOps())return showToast('Owners only.',true);
+  const a=allAdvances.find(x=>x._id===id);if(!a||a.status!=='pending')return;
+  const reason=prompt('Rejection reason:','');
+  if(!reason||!reason.trim())return;
+  try{
+    const update={status:'rejected',rejectionReason:reason.trim(),approvedBy:session.name,approvedAt:Date.now()};
+    await updateDoc(doc(db,'advance_requests',id),update);
+    Object.assign(a,update);
+    const emp=allEmployees.find(e=>e._id===a.employeeId);
+    await _hrmNotify({type:'advance_rejected',title:'Advance rejected',message:`Your advance request for ${_hrmFmtPKR(a.amount)} was rejected. Reason: ${reason.trim()}`,forUser:emp?.username,relatedTo:id,priority:'high'});
+    await logActivity('Advance rejected',`${a.employeeName} · ${_hrmFmtPKR(a.amount)} · ${reason.trim()}`);
+    showToast('Advance rejected.');
+    if(currentPage==='hrm-advances'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderAdvancesPage();}
+  }catch(e){showToast('Reject failed: '+e.message,true);}
+};
+
+window.advMarkPaid=async function(id){
+  if(!_canApproveHRMOps())return showToast('Owners only.',true);
+  const a=allAdvances.find(x=>x._id===id);if(!a||a.status!=='approved')return;
+  if(!confirm(`Mark advance for ${a.employeeName} as paid (${_hrmFmtPKR(a.amount)})?`))return;
+  try{
+    const update={status:'paid',paidOn:new Date().toISOString().split('T')[0],paidBy:session.name};
+    await updateDoc(doc(db,'advance_requests',id),update);
+    Object.assign(a,update);
+    await logActivity('Advance paid',`${a.employeeName} · ${_hrmFmtPKR(a.amount)}`);
+    showToast('Marked paid ✓');
+    if(currentPage==='hrm-advances'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderAdvancesPage();}
+  }catch(e){showToast('Mark paid failed: '+e.message,true);}
+};
+
+// ───────────────────────────────────────────────────────────
+// LOANS PAGE
+// ───────────────────────────────────────────────────────────
+
+function renderLoansPage(){
+  if(!_canViewHRMOps())return'<div class="empty">Restricted.</div>';
+  const all=allLoans.slice();
+  const active=all.filter(l=>l.status==='active');
+  const totalOutstanding=active.reduce((s,l)=>s+(l.remainingBalance||0),0);
+  const ytd=all.filter(l=>l.status==='completed'&&l.endMonth&&l.endMonth.startsWith(String(new Date().getFullYear()))).reduce((s,l)=>s+(l.totalAmount||0),0);
+  const completingThisMonth=active.filter(l=>l.endMonth===new Date().toISOString().slice(0,7)).length;
+  const stats=`<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px" class="advances-stats-strip">
+    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Active Loans</div><div style="font-size:24px;font-weight:700;margin-top:4px">${active.length}</div></div>
+    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Total Outstanding</div><div style="font-size:18px;font-weight:700;color:var(--accent-urgent);margin-top:4px">${_hrmFmtPKR(totalOutstanding)}</div></div>
+    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Cleared YTD</div><div style="font-size:18px;font-weight:700;color:var(--accent-success);margin-top:4px">${_hrmFmtPKR(ytd)}</div></div>
+    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Completing This Month</div><div style="font-size:24px;font-weight:700;color:var(--accent-warning);margin-top:4px">${completingThisMonth}</div></div>
+  </div>`;
+  const filterBtns=['active','completed','paused','all'].map(t=>{
+    const lbl=t.charAt(0).toUpperCase()+t.slice(1);
+    const a=_loanFilter===t;
+    return`<button onclick="window.loanSetFilter('${t}')" style="padding:8px 16px;border:1px solid var(--border);border-bottom:${a?'2px solid #1A1A2E':'1px solid var(--border)'};background:${a?'#fff':'#fafafa'};font-weight:${a?'700':'500'};font-size:13px;cursor:pointer;font-family:inherit;color:${a?'var(--text)':'var(--muted)'};border-radius:8px 8px 0 0;margin-right:4px">${lbl}</button>`;
+  }).join('');
+  return`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+    <div>
+      <div class="page-title"><span class="page-title-icon">${_icon('money',22)}</span> Loans</div>
+      <div class="page-sub">Long-term loan tracking with monthly deductions</div>
+    </div>
+    ${_canApproveHRMOps()?`<button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.loanNew()">+ New Loan</button>`:''}
+  </div>
+  ${stats}
+  <div style="display:flex;border-bottom:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap">${filterBtns}</div>
+  <div id="loan-list">${_renderLoanList()}</div>`;
+}
+
+function _renderLoanList(){
+  let list=allLoans.slice();
+  if(_loanFilter!=='all')list=list.filter(l=>l.status===_loanFilter);
+  list.sort((a,b)=>(b.approvedAt||0)-(a.approvedAt||0));
+  if(!list.length)return'<div class="empty">No loans in this filter.</div>';
+  return list.map(l=>_loanCardHTML(l)).join('');
+}
+
+function _loanCardHTML(l){
+  const emp=allEmployees.find(e=>e._id===l.employeeId);
+  const pgClass=(emp?.paygrade||'').toLowerCase();
+  const total=l.totalAmount||0;
+  const remaining=l.remainingBalance||0;
+  const paidAmt=Math.max(0,total-remaining);
+  const pct=total?Math.min(100,Math.round(paidAmt/total*100)):0;
+  const monthsPaid=Array.isArray(l.paymentHistory)?l.paymentHistory.length:0;
+  const totalMonths=l.totalMonths||(l.monthlyDeduction?Math.ceil(total/l.monthlyDeduction):0);
+  return`<div class="card" style="padding:16px;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+      <div style="min-width:0">
+        <div style="font-weight:700">${l.employeeName||'—'}</div>
+        <div style="font-size:12px;color:var(--muted)">${emp?.designation||'—'}${pgClass?` · <span class="paygrade-badge ${pgClass}">${emp.paygrade}</span>`:''}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">REMAINING</div>
+        <div style="font-size:20px;font-weight:700;color:var(--accent-urgent)">${_hrmFmtPKR(remaining)}</div>
+      </div>
+    </div>
+    <div style="margin-top:14px;background:#F3F4F6;height:8px;border-radius:4px;overflow:hidden"><div style="background:var(--accent-success);height:100%;width:${pct}%"></div></div>
+    <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--muted);flex-wrap:wrap;gap:6px">
+      <span>Paid ${_hrmFmtPKR(paidAmt)}</span>
+      <span>${monthsPaid} of ${totalMonths} months</span>
+      <span>Total ${_hrmFmtPKR(total)}</span>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--muted)">Monthly deduction: ${_hrmFmtPKR(l.monthlyDeduction)} · Started ${l.startMonth||'—'} · Ends ${l.endMonth||'—'}</div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn-outline" style="font-size:11px;padding:6px 12px" onclick="window.loanShowHistory('${l._id}')">View Payment History</button>
+      ${_canApproveHRMOps()&&l.status==='active'?`<button class="btn-outline" style="font-size:11px;padding:6px 12px" onclick="window.loanPause('${l._id}')">Pause Loan</button>`:''}
+      ${_canApproveHRMOps()&&l.status==='paused'?`<button class="btn-outline" style="font-size:11px;padding:6px 12px" onclick="window.loanResume('${l._id}')">Resume</button>`:''}
+    </div>
+  </div>`;
+}
+
+window.loanSetFilter=function(t){_loanFilter=t;const m=document.getElementById('main-content');if(m)m.innerHTML=renderLoansPage();};
+
+window.loanNew=function(){
+  if(!_canApproveHRMOps())return showToast('Owners only.',true);
+  document.getElementById('hrm-modal-back')?.remove();
+  const empOptions=allEmployees.filter(e=>e.status!=='inactive').sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(e=>`<option value="${e._id}">${e.name} (${e.paygrade})</option>`).join('');
+  const startMonth=new Date().toISOString().slice(0,7);
+  const back=document.createElement('div');back.className='hrm-modal-back';back.id='hrm-modal-back';back.onclick=ev=>{if(ev.target===back)window.hrmCloseModal();};
+  back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()" style="max-width:480px">
+    <h3>New Loan</h3>
+    <div class="sub">Long-term loan with monthly payroll deduction</div>
+    <div class="field"><label>Employee *</label><select id="ln-emp">${empOptions}</select></div>
+    <div class="field"><label>Total Loan Amount (PKR) *</label><input id="ln-total" type="number" min="0" oninput="window._loanCalcMonths()"></div>
+    <div class="field"><label>Monthly Deduction (PKR) *</label><input id="ln-monthly" type="number" min="0" oninput="window._loanCalcMonths()"></div>
+    <div style="font-size:12px;color:var(--muted);margin:6px 0;padding:8px;background:#fafafa;border-radius:6px" id="ln-calc">Total months: —</div>
+    <div class="field"><label>Start Month</label><input id="ln-start" type="month" value="${startMonth}"></div>
+    <div class="field"><label>Reason / Notes</label><textarea id="ln-reason" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px"></textarea></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.loanSubmit()">Create Loan</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+};
+
+window._loanCalcMonths=function(){
+  const t=Number(document.getElementById('ln-total')?.value||0);
+  const m=Number(document.getElementById('ln-monthly')?.value||0);
+  const calc=document.getElementById('ln-calc');
+  if(!t||!m){calc.textContent='Total months: —';return;}
+  const months=Math.ceil(t/m);
+  calc.textContent=`Total months: ${months} (${_hrmFmtPKR(m)}/mo for ${months} months = ${_hrmFmtPKR(months*m)})`;
+};
+
+window.loanSubmit=async function(){
+  if(!_canApproveHRMOps())return showToast('Owners only.',true);
+  const empId=document.getElementById('ln-emp')?.value;
+  const total=Number(document.getElementById('ln-total')?.value||0);
+  const monthly=Number(document.getElementById('ln-monthly')?.value||0);
+  const startMonth=document.getElementById('ln-start')?.value;
+  const reason=document.getElementById('ln-reason')?.value?.trim()||'';
+  if(!empId||!total||!monthly||!startMonth)return showToast('All required fields needed.',true);
+  const emp=allEmployees.find(e=>e._id===empId);if(!emp)return;
+  const totalMonths=Math.ceil(total/monthly);
+  const[sy,sm]=startMonth.split('-').map(Number);
+  const endDate=new Date(sy,sm-1+totalMonths-1,1);
+  const endMonth=`${endDate.getFullYear()}-${String(endDate.getMonth()+1).padStart(2,'0')}`;
+  try{
+    const ref=doc(collection(db,'loans'));
+    const data={
+      id:ref.id,employeeId:empId,employeeName:emp.name,
+      totalAmount:total,monthlyDeduction:monthly,startMonth,endMonth,totalMonths,
+      reason,approvedBy:session.name,approvedAt:Date.now(),
+      status:'active',paidVia:'',paidOn:'',
+      remainingBalance:total,paymentHistory:[],notes:''
+    };
+    await setDoc(ref,data);
+    allLoans.unshift({...data,_id:ref.id});
+    await updateDoc(doc(db,'employees',empId),{loanBalance:(emp.loanBalance||0)+total,loanMonthlyDeduction:monthly,updatedAt:Date.now()});
+    emp.loanBalance=(emp.loanBalance||0)+total;
+    emp.loanMonthlyDeduction=monthly;
+    await _hrmNotify({type:'loan_added',title:'New loan added',message:`A loan of ${_hrmFmtPKR(total)} has been recorded. ${_hrmFmtPKR(monthly)}/month for ${totalMonths} months starting ${startMonth}.`,forUser:emp.username,relatedTo:ref.id,priority:'normal'});
+    await logActivity('Loan created',`${emp.name} · ${_hrmFmtPKR(total)} over ${totalMonths} months`);
+    showToast('Loan created ✓');
+    window.hrmCloseModal();
+    if(currentPage==='hrm-loans'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderLoansPage();}
+  }catch(e){showToast('Submit failed: '+e.message,true);}
+};
+
+window.loanShowHistory=function(id){
+  const l=allLoans.find(x=>x._id===id);if(!l)return;
+  document.getElementById('hrm-modal-back')?.remove();
+  const hist=Array.isArray(l.paymentHistory)?l.paymentHistory.slice().reverse():[];
+  const back=document.createElement('div');back.className='hrm-modal-back';back.id='hrm-modal-back';back.onclick=ev=>{if(ev.target===back)window.hrmCloseModal();};
+  back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()" style="max-width:520px">
+    <h3>Payment History — ${l.employeeName}</h3>
+    <div class="sub">Total ${_hrmFmtPKR(l.totalAmount)} · Remaining ${_hrmFmtPKR(l.remainingBalance)} · ${l.monthlyDeduction?_hrmFmtPKR(l.monthlyDeduction)+' /month':''}</div>
+    ${hist.length?`<table style="width:100%;font-size:13px;border-collapse:collapse;margin-top:8px">
+      <thead><tr style="background:#1A1A2E;color:#fff"><th style="padding:8px;text-align:left">Month</th><th style="padding:8px;text-align:right">Deducted</th><th style="padding:8px;text-align:right">Remaining</th></tr></thead>
+      <tbody>${hist.map(h=>`<tr style="border-bottom:1px solid #E5E5E7"><td style="padding:8px">${h.month}</td><td style="padding:8px;text-align:right">${_hrmFmtPKR(h.amountDeducted)}</td><td style="padding:8px;text-align:right">${_hrmFmtPKR(h.remainingAfter)}</td></tr>`).join('')}</tbody>
+    </table>`:'<div class="empty">No payments deducted yet.</div>'}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn-outline" onclick="window.hrmCloseModal()">Close</button></div>
+  </div>`;
+  document.body.appendChild(back);
+};
+
+window.loanPause=async function(id){
+  if(!_canApproveHRMOps())return showToast('Owners only.',true);
+  const l=allLoans.find(x=>x._id===id);if(!l)return;
+  if(!confirm(`Pause loan for ${l.employeeName}? No deductions will be taken until resumed.`))return;
+  try{
+    await updateDoc(doc(db,'loans',id),{status:'paused'});
+    l.status='paused';
+    const emp=allEmployees.find(e=>e._id===l.employeeId);
+    if(emp){await updateDoc(doc(db,'employees',emp._id),{loanMonthlyDeduction:0,updatedAt:Date.now()});emp.loanMonthlyDeduction=0;}
+    await logActivity('Loan paused',`${l.employeeName} · ${_hrmFmtPKR(l.remainingBalance)} remaining`);
+    showToast('Loan paused.');
+    if(currentPage==='hrm-loans'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderLoansPage();}
+  }catch(e){showToast('Pause failed: '+e.message,true);}
+};
+
+window.loanResume=async function(id){
+  if(!_canApproveHRMOps())return showToast('Owners only.',true);
+  const l=allLoans.find(x=>x._id===id);if(!l)return;
+  try{
+    await updateDoc(doc(db,'loans',id),{status:'active'});
+    l.status='active';
+    const emp=allEmployees.find(e=>e._id===l.employeeId);
+    if(emp){await updateDoc(doc(db,'employees',emp._id),{loanMonthlyDeduction:l.monthlyDeduction,updatedAt:Date.now()});emp.loanMonthlyDeduction=l.monthlyDeduction;}
+    await logActivity('Loan resumed',`${l.employeeName} · ${_hrmFmtPKR(l.monthlyDeduction)}/month`);
+    showToast('Loan resumed.');
+    if(currentPage==='hrm-loans'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderLoansPage();}
+  }catch(e){showToast('Resume failed: '+e.message,true);}
+};
+
+// ───────────────────────────────────────────────────────────
+// POLICY ENGINE PAGE
+// ───────────────────────────────────────────────────────────
+
+const POLICY_DEFS=[
+  {key:'workingDaysPerMonth',label:'Working Days Per Month',desc:'Used for daily rate calculation: salary ÷ working days',type:'number',def:30},
+  {key:'lateCutoffTime',label:'Late Cutoff Time',desc:'Punch-in after this is marked late',type:'time',def:'09:30'},
+  {key:'lateCountBeforeAbsent',label:'Lates Before Absent',desc:'How many lates collapse into one absent day',type:'number',def:3},
+  {key:'halfDayCountsAs',label:'Half Day Counts As',desc:'When an employee leaves early',type:'select',options:['full','half','none'],def:'full'},
+  {key:'absentDeductionFormula',label:'Absent Deduction Method',desc:'Formula for calculating absent-day deduction',type:'select',options:['salary_div_workingdays','fixed_amount'],def:'salary_div_workingdays'},
+  {key:'autoIncrementActive',label:'Auto-Increment Active',desc:'When ON, system auto-applies paygrade increments on anniversaries',type:'toggle',def:false},
+  {key:'lateCutoffActive',label:'Late Cutoff Active',desc:'When OFF, no one is ever marked late',type:'toggle',def:true}
+];
+
+function _policyValue(key){
+  const p=hrmPolicies||{};
+  if(p[key]!==undefined)return p[key];
+  const def=POLICY_DEFS.find(d=>d.key===key);
+  return def?def.def:'';
+}
+
+function renderPolicyEnginePage(){
+  if(!_canViewHRMOps())return'<div class="empty">Restricted.</div>';
+  const canEdit=_canEditPolicy();
+  const policyCards=POLICY_DEFS.map(d=>{
+    const v=_policyValue(d.key);
+    let input='';
+    if(d.type==='number')input=`<input type="number" id="pol-${d.key}" value="${v}" ${canEdit?'':'disabled'} style="width:80px;padding:6px;text-align:center;border:1px solid var(--border);border-radius:6px;font-weight:600">`;
+    else if(d.type==='time')input=`<input type="time" id="pol-${d.key}" value="${v}" ${canEdit?'':'disabled'} style="padding:6px;border:1px solid var(--border);border-radius:6px;font-weight:600">`;
+    else if(d.type==='select')input=`<select id="pol-${d.key}" ${canEdit?'':'disabled'} style="padding:6px;border:1px solid var(--border);border-radius:6px;font-weight:600">${d.options.map(o=>`<option value="${o}" ${o===v?'selected':''}>${o}</option>`).join('')}</select>`;
+    else if(d.type==='toggle')input=`<select id="pol-${d.key}" ${canEdit?'':'disabled'} style="padding:6px;border:1px solid var(--border);border-radius:6px;font-weight:600;background:${v?'var(--accent-success-soft)':'#fafafa'};color:${v?'var(--accent-success)':'var(--muted)'}"><option value="true" ${v?'selected':''}>ON</option><option value="false" ${!v?'selected':''}>OFF</option></select>`;
+    const saveBtn=canEdit?`<button class="btn-outline" style="font-size:12px;padding:6px 12px" onclick="window.policySave('${d.key}')">Save</button>`:'';
+    return`<div class="card" style="padding:14px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">
+        <div style="min-width:0;flex:1">
+          <div style="font-weight:600;font-size:14px">${d.label}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">${d.desc}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">${input}${saveBtn}</div>
+      </div>
+    </div>`;
+  }).join('');
+  // Paygrade table
+  const grades=['P1','P2','P3','P4','P5'];
+  const pg=(hrmPolicies&&hrmPolicies.paygrades)||{};
+  const paygradeRows=grades.map(g=>{
+    const row=pg[g]||{};
+    const dis=canEdit?'':'disabled';
+    return`<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:8px"><span class="paygrade-badge ${g.toLowerCase()}">${g}</span></td>
+      <td style="padding:8px;text-align:right"><input type="number" id="pg-${g}-min" value="${row.salaryMin||0}" ${dis} style="width:100px;text-align:right;padding:4px"></td>
+      <td style="padding:8px;text-align:right"><input type="number" id="pg-${g}-max" value="${row.salaryMax||0}" ${dis} style="width:100px;text-align:right;padding:4px"></td>
+      <td style="padding:8px;text-align:center"><input type="number" id="pg-${g}-pct" value="${row.incrementPercent||0}" ${dis} style="width:60px;text-align:center;padding:4px">%</td>
+      <td style="padding:8px;text-align:center"><select id="pg-${g}-active" ${dis} style="padding:4px"><option value="true" ${row.active?'selected':''}>ON</option><option value="false" ${!row.active?'selected':''}>OFF</option></select></td>
+    </tr>`;
+  }).join('');
+  const paygradeTable=`<div class="card" style="padding:16px;margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-weight:700">Paygrade Configuration · پے گریڈ</div>${canEdit?`<button class="btn-outline" style="font-size:12px;padding:6px 12px" onclick="window.policySavePaygrades()">Save Paygrades</button>`:''}</div>
+    <table style="width:100%;font-size:13px;margin-top:6px;border-collapse:collapse">
+      <thead><tr style="background:#fafafa"><th style="padding:8px;text-align:left">Grade</th><th style="padding:8px;text-align:right">Salary Min</th><th style="padding:8px;text-align:right">Salary Max</th><th style="padding:8px;text-align:center">Annual %</th><th style="padding:8px;text-align:center">Active</th></tr></thead>
+      <tbody>${paygradeRows}</tbody>
+    </table>
+    ${!hrmPolicies?.autoIncrementActive?`<div style="margin-top:12px;padding:10px;background:var(--accent-warning-soft);border-radius:6px;font-size:12px;color:var(--accent-warning)">⚠ Auto-increments are currently INACTIVE. Toggle "Auto-Increment Active" above to enable system-wide.</div>`:''}
+  </div>`;
+  // Mustafa banner
+  const banner=!canEdit?`<div class="card" style="padding:12px 14px;margin-bottom:14px;border-left:3px solid var(--accent-warning);background:var(--accent-warning-soft);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+    <div><strong>🔒 Read-only</strong><div style="font-size:12px;color:var(--muted);margin-top:2px">Only Afnan and Ammar can change policies. You can request a change.</div></div>
+    <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.policyRequestChange()">Request a change</button>
+  </div>`:'';
+  // Change log
+  const log=allPolicyChanges.slice(0,50).map(c=>`<tr style="border-bottom:1px solid var(--border)">
+    <td style="padding:8px;color:var(--muted);font-size:11px">${_hrmTimeAgo(c.changedAt)}</td>
+    <td style="padding:8px">${c.policyKey||'—'}</td>
+    <td style="padding:8px;font-size:12px"><span style="color:var(--muted)">${JSON.stringify(c.oldValue)}</span> → <strong>${JSON.stringify(c.newValue)}</strong></td>
+    <td style="padding:8px">${c.changedBy||'—'}</td>
+    <td style="padding:8px;text-align:center">${c.affectedEmployees||0}</td>
+  </tr>`).join('');
+  const logCard=`<div class="card" style="padding:0;overflow:hidden;margin-top:16px">
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700">Recent Policy Changes</div>
+    <table style="width:100%;font-size:13px;border-collapse:collapse">
+      <thead><tr style="background:#fafafa"><th style="padding:8px;text-align:left">When</th><th style="padding:8px;text-align:left">Policy</th><th style="padding:8px;text-align:left">Old → New</th><th style="padding:8px;text-align:left">Changed By</th><th style="padding:8px;text-align:center">Affected</th></tr></thead>
+      <tbody>${log||'<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--muted)">No changes recorded yet.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+  return`<div class="page-head">
+    <div class="page-title"><span class="page-title-icon">${_icon('gear',22)}</span> Policy Engine · پالیسی</div>
+    <div class="page-sub">Configurable HR rules. Changes are logged and notify affected employees.</div>
+  </div>
+  ${banner}
+  ${policyCards}
+  ${paygradeTable}
+  ${logCard}`;
+}
+
+async function _persistPolicyChange(key,oldValue,newValue,reason){
+  const affected=allEmployees.filter(e=>e.status!=='inactive').length;
+  await updateDoc(doc(db,'hrm_policies','main'),{[key]:newValue,lastUpdatedBy:session.name,lastUpdatedAt:Date.now()});
+  if(!hrmPolicies)hrmPolicies={};
+  hrmPolicies[key]=newValue;
+  // Log
+  const logRef=doc(collection(db,'policy_change_log'));
+  const logData={id:logRef.id,policyKey:key,oldValue,newValue,changedBy:session.name,changedAt:Date.now(),reason:reason||'',affectedEmployees:affected,notificationsSent:[]};
+  await setDoc(logRef,logData);
+  allPolicyChanges.unshift({...logData,_id:logRef.id});
+  // Notify all affected
+  await _hrmNotify({type:'policy_change',title:'Policy updated',message:`${key} changed from ${JSON.stringify(oldValue)} to ${JSON.stringify(newValue)}. ${reason||''}`.trim(),forRole:'all',relatedTo:logRef.id,priority:'normal'});
+  await logActivity('Policy changed',`${key}: ${JSON.stringify(oldValue)} → ${JSON.stringify(newValue)}`);
+}
+
+window.policySave=async function(key){
+  if(!_canEditPolicy())return showToast('Owners only.',true);
+  const def=POLICY_DEFS.find(d=>d.key===key);if(!def)return;
+  const el=document.getElementById('pol-'+key);if(!el)return;
+  let newVal;
+  if(def.type==='number')newVal=Number(el.value);
+  else if(def.type==='toggle')newVal=el.value==='true';
+  else newVal=el.value;
+  const oldVal=_policyValue(key);
+  if(JSON.stringify(oldVal)===JSON.stringify(newVal))return showToast('No change.');
+  const reason=prompt(`Change ${def.label}?\n${JSON.stringify(oldVal)} → ${JSON.stringify(newVal)}\n\nThis will notify all employees. Reason:`,'');
+  if(!reason||!reason.trim())return;
+  try{
+    await _persistPolicyChange(key,oldVal,newVal,reason.trim());
+    showToast('Policy saved ✓');
+    if(currentPage==='hrm-policy'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderPolicyEnginePage();}
+  }catch(e){showToast('Save failed: '+e.message,true);}
+};
+
+window.policySavePaygrades=async function(){
+  if(!_canEditPolicy())return showToast('Owners only.',true);
+  const grades=['P1','P2','P3','P4','P5'];
+  const old=hrmPolicies?.paygrades||{};
+  const updated={};
+  grades.forEach(g=>{
+    updated[g]={
+      label:g,
+      salaryMin:Number(document.getElementById('pg-'+g+'-min')?.value||0),
+      salaryMax:Number(document.getElementById('pg-'+g+'-max')?.value||0),
+      incrementPercent:Number(document.getElementById('pg-'+g+'-pct')?.value||0),
+      active:document.getElementById('pg-'+g+'-active')?.value==='true'
+    };
+  });
+  if(JSON.stringify(old)===JSON.stringify(updated))return showToast('No change.');
+  const reason=prompt('Reason for paygrade change:','');
+  if(!reason||!reason.trim())return;
+  try{
+    await _persistPolicyChange('paygrades',old,updated,reason.trim());
+    showToast('Paygrades saved ✓');
+    if(currentPage==='hrm-policy'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderPolicyEnginePage();}
+  }catch(e){showToast('Save failed: '+e.message,true);}
+};
+
+window.policyRequestChange=function(){
+  if(!_canViewHRMOps()||_canEditPolicy())return;
+  document.getElementById('hrm-modal-back')?.remove();
+  const opts=POLICY_DEFS.map(d=>`<option value="${d.key}">${d.label}</option>`).join('');
+  const back=document.createElement('div');back.className='hrm-modal-back';back.id='hrm-modal-back';back.onclick=ev=>{if(ev.target===back)window.hrmCloseModal();};
+  back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()" style="max-width:480px">
+    <h3>Request a Policy Change</h3>
+    <div class="sub">Sent to owners for review</div>
+    <div class="field"><label>Policy *</label><select id="pcr-key">${opts}</select></div>
+    <div class="field"><label>Suggested New Value *</label><input id="pcr-val"></div>
+    <div class="field"><label>Reason *</label><textarea id="pcr-reason" rows="3" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px"></textarea></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.policySubmitRequest()">Submit Request</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+};
+
+window.policySubmitRequest=async function(){
+  const key=document.getElementById('pcr-key')?.value;
+  const val=document.getElementById('pcr-val')?.value?.trim()||'';
+  const reason=document.getElementById('pcr-reason')?.value?.trim()||'';
+  if(!key||!val||!reason)return showToast('All fields required.',true);
+  try{
+    await _hrmNotify({
+      type:'policy_change_request',
+      title:`Policy change request from ${session.name}`,
+      message:`Suggested ${key} → "${val}". Reason: ${reason}`,
+      forRole:'owner',priority:'high',actionRequired:true,actionUrl:'hrm-policy'
+    });
+    await logActivity('Policy change requested',`${key} → ${val} · ${reason}`);
+    showToast('Request sent to owners');
+    window.hrmCloseModal();
+  }catch(e){showToast('Submit failed: '+e.message,true);}
+};
+
 </script>
-</body>
-</html>
