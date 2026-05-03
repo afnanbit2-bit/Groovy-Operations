@@ -83,5 +83,29 @@ service cloud.firestore {
       allow read:  if signedIn();
       allow write: if isOwner();
     }
+
+    // ── Session 4: Advances / Loans / Policy log / Notifications ──
+    // Advances: any OM can view + create requests. Only owners can
+    // change status (approve / reject / mark paid) — enforced at the
+    // app layer; rules keep write open to OM here so Mustafa can submit.
+    match /advance_requests/{doc} {
+      allow read:  if isOM();
+      allow write: if isOM();
+    }
+    match /loans/{doc} {
+      allow read:  if isOM();
+      allow write: if isOwner();   // loan approval is owner-only
+    }
+    match /policy_change_log/{doc} {
+      allow read:  if isOM();
+      allow write: if isOwner();   // only owners log changes
+    }
+    // Notifications: any signed-in user reads (so workers see their
+    // own and dismiss them). Writes any signed-in (notifications are
+    // produced by many flows; integrity is enforced by the app).
+    match /hrm_notifications/{doc} {
+      allow read:  if signedIn();
+      allow write: if signedIn();
+    }
   }
 }
