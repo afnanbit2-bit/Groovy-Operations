@@ -10409,6 +10409,7 @@ window.submitBugReport=async function(){
     if(statusEl)statusEl.textContent='Uploading screenshot…';
     try{
       screenshotUrl=await uploadToCloudinary(fileInput.files[0]);
+      if(statusEl)statusEl.textContent='';
     }catch(e){
       if(statusEl)statusEl.textContent='Screenshot upload failed; submitting without it.';
       screenshotUrl='';
@@ -10463,7 +10464,10 @@ window.submitBugReport=async function(){
     showToast('Bug reported. Thank you for the feedback! 🐛');
     window.closeBugReportModal();
     if(currentPage==='bug-tracker'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderBugTrackerPage();}
-  }catch(e){showToast('Submit failed: '+e.message,true);}
+  }catch(e){
+    if(statusEl)statusEl.textContent='';
+    showToast('Submit failed: '+e.message+' — Likely Firestore rules need publishing.',true);
+  }
 };
 
 // ── Bug Tracker page ──
