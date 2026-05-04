@@ -8291,7 +8291,8 @@ function renderAttendancePage(){
   }
   const tabBtn=(id,label)=>`<button class="att-tab ${attendanceTab===id?'active':''}" onclick="window.attendanceSetTab('${id}')" style="padding:8px 18px;border:1px solid var(--border);border-bottom:${attendanceTab===id?'2px solid #1A1A2E':'1px solid var(--border)'};background:${attendanceTab===id?'#fff':'#fafafa'};font-weight:${attendanceTab===id?'700':'500'};font-size:13px;cursor:pointer;font-family:inherit;color:${attendanceTab===id?'#1A1A2E':'var(--muted)'};border-radius:8px 8px 0 0;margin-right:4px">${label}</button>`;
   const tabs=`<div style="display:flex;border-bottom:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap">${tabBtn('daily','Daily')}${tabBtn('monthly','Monthly')}</div>`;
-  const head=`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><div><div class="page-title"><span class="page-title-icon">${_icon('clock',22)}</span> Attendance · حاضری</div><div class="page-sub">${allEmployees.length} active staff</div></div><div id="att-sync-pill" style="font-size:12px;color:var(--muted);padding:6px 10px;border:1px solid var(--border);border-radius:20px;background:#fafafa;display:flex;align-items:center;gap:6px;cursor:default" title="ZKTeco sync status">⏳ Sync: checking…</div></div>`;
+  const activeCount=allEmployees.filter(e=>e.status!=='inactive').length;
+  const head=`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><div><div class="page-title"><span class="page-title-icon">${_icon('clock',22)}</span> Attendance · حاضری</div><div class="page-sub">${activeCount} active staff</div></div><div id="att-sync-pill" style="font-size:12px;color:var(--muted);padding:6px 10px;border:1px solid var(--border);border-radius:20px;background:#fafafa;display:flex;align-items:center;gap:6px;cursor:default" title="ZKTeco sync status">⏳ Sync: checking…</div></div>`;
   const body=attendanceTab==='monthly'?renderAttendanceMonthly():renderAttendanceDaily();
   return head+tabs+`<div id="att-body">${body}</div>`;
 }
@@ -8311,7 +8312,7 @@ function renderAttendanceDaily(){
     <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:var(--accent-success)" id="att-tot-in">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Punched IN</div></div>
     <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:var(--accent-urgent)" id="att-tot-absent">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Absent</div></div>
     <div class="card" style="padding:16px;text-align:center;background:var(--accent-warning-soft)"><div style="font-size:28px;font-weight:700;color:var(--accent-warning)" id="att-tot-late">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Late Arrivals</div></div>
-    <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:#1A1A2E">${allEmployees.length}</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Total Staff</div></div>
+    <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:#1A1A2E">${allEmployees.filter(e=>e.status!=='inactive').length}</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Total Staff</div></div>
   </div>
   <div class="section-title">Staff Presence</div>
   <div id="att-grid-wrap"><div class="empty">Loading attendance…</div></div>
@@ -8392,7 +8393,12 @@ function _attendanceSubscribeDaily(date){
     try{rtdbOff(rtdbRef(rtdb,`attendance/${_attDayUnsub}`));}catch(_){}
     _attDayUnsub=null;
   }
-  if(_attDayUnsub===date)return;
+  if(_attDayUnsub===date){
+    // Already subscribed (e.g. dashboard owner-KPI listener took it first).
+    // The freshly rendered DOM is still on "Loading…" — render now from cache.
+    if(currentPage==='attendance'&&attendanceTab==='daily')_renderAttendanceDailyContent();
+    return;
+  }
   const r=rtdbRef(rtdb,`attendance/${date}`);
   rtdbOnValue(r,snap=>{
     dailyAttendanceData=snap.exists()?snap.val():{};
@@ -8402,7 +8408,14 @@ function _attendanceSubscribeDaily(date){
 }
 
 function _attendanceSubscribeLive(){
-  if(_attLiveUnsub)return;
+  if(_attLiveUnsub){
+    // Already subscribed — make sure the just-rendered attendance DOM gets the
+    // cached live state (otherwise OUT statuses don't appear until next push).
+    if(currentPage==='attendance'&&attendanceTab==='daily'&&attendanceDate===new Date().toISOString().split('T')[0]){
+      _renderAttendanceDailyContent();
+    }
+    return;
+  }
   const r=rtdbRef(rtdb,'attendance/live');
   rtdbOnValue(r,snap=>{
     liveAttendanceData=snap.exists()?snap.val():{};
