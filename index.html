@@ -8006,9 +8006,12 @@ function _hrmShowEmployeeForm(e){
     </div>
     <div class="field" style="margin-top:8px"><label>Address</label><input id="ef-address" value="${e?.address||''}"></div>
     <div class="field"><label>Notes</label><textarea id="ef-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">${e?.notes||''}</textarea></div>
-    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
-      <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
-      <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.hrmSaveEmployee('${e?._id||''}')">${isEdit?'Save Changes':'Create Employee'}</button>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:space-between;align-items:center;flex-wrap:wrap">
+      <div>${isEdit&&session.role==='owner'?`<button class="btn-outline" style="color:var(--accent-urgent);border-color:var(--accent-urgent);font-size:13px;width:auto;padding:8px 14px;margin-top:0" onclick="window.hrmDeleteEmployee('${e._id}')">Delete employee</button>`:''}</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
+        <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.hrmSaveEmployee('${e?._id||''}')">${isEdit?'Save Changes':'Create Employee'}</button>
+      </div>
     </div>
   </div>`;
   document.body.appendChild(back);
@@ -8058,6 +8061,29 @@ window.hrmSaveEmployee=async function(id){
     window.hrmCloseModal();
     if(currentPage==='hrm-employees'){const w=document.getElementById('emp-grid-wrap');if(w)w.innerHTML=_renderEmpGrid();}
   }catch(e){showToast('Save failed: '+e.message,true);}
+};
+
+window.hrmDeleteEmployee=async function(id){
+  if(!session||session.role!=='owner')return showToast('Owners only.',true);
+  const e=allEmployees.find(x=>x._id===id);
+  if(!e)return showToast('Employee not found.',true);
+  const msg=`Permanently delete ${e.name}?\n\n` +
+    `This removes the employee record from Firestore. Their historical attendance ` +
+    `(keyed by K40 ID ${e.k40UserId||'—'}) and any payslips already issued will remain, ` +
+    `but they'll disappear from the Employees list, payroll runs, and dashboards.\n\n` +
+    `If you might rehire them, hit Cancel and just set Status → inactive instead.\n\n` +
+    `Type DELETE in the next prompt to confirm.`;
+  if(!confirm(msg))return;
+  const typed=prompt(`To confirm deletion of ${e.name}, type DELETE`);
+  if(typed!=='DELETE'){showToast('Deletion cancelled.');return;}
+  try{
+    await deleteDoc(doc(db,'employees',id));
+    allEmployees=allEmployees.filter(x=>x._id!==id);
+    await logActivity('Employee deleted',`${e.name} (${e.username})`);
+    showToast(`${e.name} deleted ✓`);
+    window.hrmCloseModal();
+    if(currentPage==='hrm-employees'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderHRMEmployeesPage();}
+  }catch(err){showToast('Delete failed: '+err.message,true);}
 };
 
 window.hrmShowAddIncrement=function(empId){
