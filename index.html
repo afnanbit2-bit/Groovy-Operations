@@ -7741,9 +7741,11 @@ function renderHRMEmployeesPage(){
   }
   const depts=_hrmDepartments();
   const paygrades=['P1','P2','P3','P4','P5'];
-  const total=allEmployees.length;
+  const total=allEmployees.filter(e=>e.status!=='inactive').length;
   const seedDate=_provisionalJoinDateValue();
-  const pendingCount=seedDate?allEmployees.filter(e=>_isProvisionalJoinDate(e,seedDate)).length:0;
+  const pendingCount=seedDate?allEmployees.filter(e=>e.status!=='inactive'&&_isProvisionalJoinDate(e,seedDate)).length:0;
+  const dupeGroups=_hrmFindDuplicateEmployees();
+  const dupeExtras=dupeGroups.reduce((s,g)=>s+(g.list.length-1),0);
   const banner=(pendingCount>0)?`<div class="card" style="border-left:3px solid var(--accent-warning);background:var(--accent-warning-soft);padding:12px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
     <div>
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--accent-warning);font-weight:700">📌 Mustafa &middot; Job Item #1</div>
@@ -7754,10 +7756,21 @@ function renderHRMEmployeesPage(){
       <button class="btn-outline" style="font-size:12px;padding:6px 12px" onclick="window.hrmShowPendingJoin()">${_empFilterPending?'Show all':'Show pending'}</button>
     </div>
   </div>`:'';
+  const dupeBanner=(dupeExtras>0&&session.role==='owner')?`<div class="card" style="border-left:3px solid var(--accent-urgent);background:var(--accent-urgent-soft);padding:12px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+    <div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--accent-urgent);font-weight:700">⚠ Duplicate records detected</div>
+      <div style="font-size:14px;font-weight:600;margin-top:2px">${dupeExtras} duplicate employee record${dupeExtras===1?'':'s'} (${dupeGroups.length} username${dupeGroups.length===1?'':'s'} appear more than once)</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px">Seed must have run twice. Click below to deactivate duplicates &mdash; the best record per username is kept (one with K40 ID + join date), the rest are flipped to <code>status: inactive</code> (reversible).</div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn-primary" style="width:auto;font-size:12px;padding:6px 12px;margin-top:0" onclick="window.hrmDeactivateDuplicates()">Deactivate ${dupeExtras} duplicate${dupeExtras===1?'':'s'}</button>
+    </div>
+  </div>`:'';
   return`<div class="page-head">
     <div class="page-title"><span class="page-title-icon">${_icon('people',22)}</span> Employees</div>
     <div class="page-sub">${total} active staff</div>
   </div>
+  ${dupeBanner}
   ${banner}
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
     <input id="emp-search" placeholder="Search name, username, designation…" oninput="window.hrmFilterEmployees()" value="${_empFilterQ}" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
@@ -7775,7 +7788,7 @@ function renderHRMEmployeesPage(){
 }
 
 function _renderEmpGrid(){
-  let list=allEmployees.slice();
+  let list=allEmployees.filter(e=>e.status!=='inactive');
   const q=(_empFilterQ||'').toLowerCase().trim();
   if(q)list=list.filter(e=>(e.name||'').toLowerCase().includes(q)||(e.username||'').toLowerCase().includes(q)||(e.designation||'').toLowerCase().includes(q));
   if(_empFilterDept)list=list.filter(e=>e.department===_empFilterDept);
@@ -7813,6 +7826,62 @@ function _empCardHTML(e,seedDate){
     </div>
   </div>`;
 }
+
+// Group active employees by username (case-insensitive). Returns groups with >1 entry.
+function _hrmFindDuplicateEmployees(){
+  const byUser={};
+  for(const e of allEmployees){
+    if(e.status==='inactive')continue;
+    const key=String(e.username||'').trim().toLowerCase();
+    if(!key)continue;
+    (byUser[key]=byUser[key]||[]).push(e);
+  }
+  const groups=[];
+  for(const[username,list]of Object.entries(byUser)){
+    if(list.length>1)groups.push({username,list});
+  }
+  return groups;
+}
+
+// Pick the "keeper" from a duplicate group: prefer ones with k40UserId set,
+// then with a real (non-provisional) joinDate, then the most recently updated.
+function _hrmRankEmployeeForKeep(seedDate){
+  return(a,b)=>{
+    const ak=(a.k40UserId&&String(a.k40UserId).trim())?1:0;
+    const bk=(b.k40UserId&&String(b.k40UserId).trim())?1:0;
+    if(ak!==bk)return bk-ak;
+    const aj=(a.joinDate&&!_isProvisionalJoinDate(a,seedDate))?1:0;
+    const bj=(b.joinDate&&!_isProvisionalJoinDate(b,seedDate))?1:0;
+    if(aj!==bj)return bj-aj;
+    return(b.updatedAt||b.createdAt||0)-(a.updatedAt||a.createdAt||0);
+  };
+}
+
+window.hrmDeactivateDuplicates=async function(){
+  if(!session||session.role!=='owner'){showToast('Owners only.',true);return;}
+  const groups=_hrmFindDuplicateEmployees();
+  if(!groups.length){showToast('No duplicates found.');return;}
+  const seedDate=_provisionalJoinDateValue();
+  const rank=_hrmRankEmployeeForKeep(seedDate);
+  const toDeactivate=[];
+  for(const g of groups){
+    const sorted=g.list.slice().sort(rank);
+    for(let i=1;i<sorted.length;i++)toDeactivate.push(sorted[i]);
+  }
+  if(!confirm(`Deactivate ${toDeactivate.length} duplicate employee record${toDeactivate.length===1?'':'s'}?\n\nThe best record per username is kept; the rest are flipped to status: inactive (reversible — you can edit them later to re-activate).`))return;
+  try{
+    const batch=writeBatch(db);
+    for(const e of toDeactivate){
+      batch.update(doc(db,'employees',e._id),{status:'inactive',deactivatedReason:'duplicate cleanup',deactivatedAt:Date.now(),updatedAt:Date.now()});
+      e.status='inactive';
+    }
+    await batch.commit();
+    await logActivity('Employees deduped',`${toDeactivate.length} duplicate record(s) deactivated`);
+    showToast(`Deactivated ${toDeactivate.length} duplicate${toDeactivate.length===1?'':'s'} ✓`);
+    const m=document.getElementById('main-content');
+    if(m&&currentPage==='hrm-employees')m.innerHTML=renderHRMEmployeesPage();
+  }catch(err){showToast('Dedupe failed: '+err.message,true);}
+};
 
 window.hrmFilterEmployees=function(){
   _empFilterQ=document.getElementById('emp-search')?.value||'';
