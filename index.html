@@ -8291,7 +8291,7 @@ function renderAttendancePage(){
   }
   const tabBtn=(id,label)=>`<button class="att-tab ${attendanceTab===id?'active':''}" onclick="window.attendanceSetTab('${id}')" style="padding:8px 18px;border:1px solid var(--border);border-bottom:${attendanceTab===id?'2px solid #1A1A2E':'1px solid var(--border)'};background:${attendanceTab===id?'#fff':'#fafafa'};font-weight:${attendanceTab===id?'700':'500'};font-size:13px;cursor:pointer;font-family:inherit;color:${attendanceTab===id?'#1A1A2E':'var(--muted)'};border-radius:8px 8px 0 0;margin-right:4px">${label}</button>`;
   const tabs=`<div style="display:flex;border-bottom:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap">${tabBtn('daily','Daily')}${tabBtn('monthly','Monthly')}</div>`;
-  const head=`<div class="page-head"><div class="page-title"><span class="page-title-icon">${_icon('clock',22)}</span> Attendance · حاضری</div><div class="page-sub">${allEmployees.length} active staff</div></div>`;
+  const head=`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><div><div class="page-title"><span class="page-title-icon">${_icon('clock',22)}</span> Attendance · حاضری</div><div class="page-sub">${allEmployees.length} active staff</div></div><div id="att-sync-pill" style="font-size:12px;color:var(--muted);padding:6px 10px;border:1px solid var(--border);border-radius:20px;background:#fafafa;display:flex;align-items:center;gap:6px;cursor:default" title="ZKTeco sync status">⏳ Sync: checking…</div></div>`;
   const body=attendanceTab==='monthly'?renderAttendanceMonthly():renderAttendanceDaily();
   return head+tabs+`<div id="att-body">${body}</div>`;
 }
@@ -8320,18 +8320,70 @@ function renderAttendanceDaily(){
 
 function _attendanceAfterRender(){
   if(currentPage!=='attendance')return;
+  _attendanceSubscribeMeta();
   if(attendanceTab==='daily'){
     _attendanceSubscribeDaily(attendanceDate);
     _attendanceSubscribeLive();
   } else {
-    _attendanceUnsubscribeAll();
+    _attendanceUnsubscribeDayAndLive();
     _renderAttendanceMonthly();
   }
 }
 
-function _attendanceUnsubscribeAll(){
+function _attendanceUnsubscribeDayAndLive(){
   try{ if(_attLiveUnsub){const r=rtdbRef(rtdb,'attendance/live');rtdbOff(r);_attLiveUnsub=null;} }catch(_){}
   try{ if(_attDayUnsub){const r=rtdbRef(rtdb,`attendance/${_attDayUnsub}`);rtdbOff(r);_attDayUnsub=null;} }catch(_){}
+}
+function _attendanceUnsubscribeAll(){
+  _attendanceUnsubscribeDayAndLive();
+  try{ if(_attMetaUnsub){const r=rtdbRef(rtdb,'attendance/_meta');rtdbOff(r);_attMetaUnsub=false;} }catch(_){}
+}
+
+// Subscribe to /attendance/_meta — written by the ZKTeco sync script on every
+// attempt (success or failure). Lets the page show "last synced N min ago"
+// and surface errors when the script is alive but failing.
+let _attMetaUnsub=false,_attMetaTickInt=null;
+function _attendanceSubscribeMeta(){
+  if(!_attMetaUnsub){
+    const r=rtdbRef(rtdb,'attendance/_meta');
+    rtdbOnValue(r,snap=>{
+      const meta=snap.exists()?snap.val():null;
+      _renderAttSyncPill(meta);
+    });
+    _attMetaUnsub=true;
+  }
+  // Tick every 30s so the "X min ago" stays current even without new pushes.
+  if(_attMetaTickInt)clearInterval(_attMetaTickInt);
+  _attMetaTickInt=setInterval(()=>{
+    if(currentPage!=='attendance'){clearInterval(_attMetaTickInt);_attMetaTickInt=null;return;}
+    rtdbGet(rtdbRef(rtdb,'attendance/_meta')).then(s=>_renderAttSyncPill(s.exists()?s.val():null)).catch(()=>{});
+  },30000);
+}
+
+function _renderAttSyncPill(meta){
+  const el=document.getElementById('att-sync-pill');
+  if(!el)return;
+  if(!meta||!meta.lastSyncAt){
+    el.style.background='#FAEEDA';el.style.borderColor='#E5C07B';el.style.color='#854F0B';
+    el.innerHTML='⚠️ Sync: never ran';
+    el.title='No heartbeat from the ZKTeco sync script. Check the factory PC.';
+    return;
+  }
+  const ageMin=(Date.now()-new Date(meta.lastSyncAt).getTime())/60000;
+  const ago=ageMin<1?'just now':ageMin<60?`${Math.round(ageMin)}m ago`:ageMin<1440?`${Math.round(ageMin/60)}h ago`:`${Math.round(ageMin/1440)}d ago`;
+  if(meta.lastSyncOk===false){
+    el.style.background='#FBE7E9';el.style.borderColor='#E94560';el.style.color='#9B1B2D';
+    el.innerHTML=`🔴 Sync error · ${ago}`;
+    el.title=`Last error: ${meta.lastError||'(unknown)'}\nHost: ${meta.host||'?'}`;
+  } else if(ageMin>5){
+    el.style.background='#FAEEDA';el.style.borderColor='#E5C07B';el.style.color='#854F0B';
+    el.innerHTML=`🟠 Sync stale · ${ago}`;
+    el.title=`Sync hasn't run for ${ago}. Check the factory PC.\nHost: ${meta.host||'?'}`;
+  } else {
+    el.style.background='#EAF3DE';el.style.borderColor='#7FA85C';el.style.color='#3B6D11';
+    el.innerHTML=`🟢 Sync OK · ${ago}`;
+    el.title=`Last sync: ${new Date(meta.lastSyncAt).toLocaleString()}\nRecords: ${meta.recordsPushed||0}\nCursor: ${meta.cursor||'—'}\nHost: ${meta.host||'?'}`;
+  }
 }
 
 function _attendanceSubscribeDaily(date){
