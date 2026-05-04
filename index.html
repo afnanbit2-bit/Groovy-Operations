@@ -944,8 +944,6 @@ const MUSTAFA_TASKS=[
   {id:'set-join-dates',num:1,label:'Set join dates',detail:'31 employees were seeded with a placeholder date. Replace with each person\'s real joining date.',resolver:'pending-join-date'}
 ];
 // ── Attendance state ──
-const LATE_CUTOFF_HOUR=9, LATE_CUTOFF_MINUTE=30;
-const LATE_CUTOFF_STR=String(LATE_CUTOFF_HOUR).padStart(2,'0')+':'+String(LATE_CUTOFF_MINUTE).padStart(2,'0');
 let attendanceDate=new Date().toISOString().split('T')[0];
 let attendanceTab='daily',attendanceMonth=new Date().toISOString().slice(0,7);
 let liveAttendanceData={},dailyAttendanceData={},monthlyAttendanceCache={};
@@ -1205,6 +1203,9 @@ const EMPLOYEES_SEED=[
 
 const HRM_DEFAULT_POLICIES={
   workingDaysPerMonth:30,
+  defaultShiftStart:"09:00",
+  defaultShiftEnd:"17:00",
+  lateGraceMinutes:30,
   lateCountBeforeAbsent:3,
   halfDayCountsAs:"full",
   absentDeductionFormula:"salary_div_workingdays",
@@ -1312,7 +1313,8 @@ async function getMyMonthSummary(k40UserId){
     const now=new Date();
     const yyyy=now.getFullYear(),mm=String(now.getMonth()+1).padStart(2,'0');
     const dayOfMonth=now.getDate();
-    const lateCutoff='09:30'; // simple default — refined in policy session
+    // Resolve the employee so late cutoff respects their per-employee shiftStart.
+    const emp=allEmployees.find(e=>String(e.k40UserId||'').trim()===k40)||null;
     let present=0,late=0,absent=0;
     for(let d=1;d<=dayOfMonth;d++){
       const dd=String(d).padStart(2,'0');
@@ -1326,7 +1328,7 @@ async function getMyMonthSummary(k40UserId){
         if(punches.length){
           present++;
           const firstIn=punches.find(p=>p.type==='in')||punches[0];
-          if(firstIn&&firstIn.time&&firstIn.time>lateCutoff)late++;
+          if(_isLatePunch(firstIn,emp))late++;
         } else if(!isSunday){
           absent++;
         }
@@ -7814,6 +7816,11 @@ function _empCardHTML(e,seedDate){
   const k40Line=k40
     ?`K40 ID: ${k40}`
     :`K40 ID: <span style="display:inline-block;background:#F0F0F0;color:#555;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;letter-spacing:.04em" title="No K40 device ID — not tracked by attendance.">NOT TRACKED</span>`;
+  const shiftStart=String(e.shiftStart||'').trim();
+  const shiftEnd=String(e.shiftEnd||'').trim();
+  const shiftLine=k40&&(shiftStart||shiftEnd)
+    ?`<br>Shift: ${shiftStart||'default'}–${shiftEnd||'default'}`
+    :'';
   return`<div class="emp-card">
     <div class="emp-row">
       <div>
@@ -7825,7 +7832,7 @@ function _empCardHTML(e,seedDate){
     <div class="emp-meta">
       Basic: <strong>${_hrmFmtPKR(e.basicSalary)}</strong><br>
       Joined: ${join}<br>
-      ${k40Line}
+      ${k40Line}${shiftLine}
     </div>
     <div class="emp-actions">
       <button class="btn-outline" onclick="window.hrmViewEmployee('${e._id}')">View Profile</button>
@@ -8001,6 +8008,8 @@ function _hrmShowEmployeeForm(e){
       <div class="field"><label>Join Date</label><input id="ef-join" type="date" value="${e&&e.joinDate&&!_isProvisionalJoinDate(e)?e.joinDate:''}"></div>
       <div class="field"><label>K40 User ID</label><input id="ef-k40" value="${e?.k40UserId||''}"></div>
       <div class="field"><label>Phone</label><input id="ef-phone" value="${e?.phone||''}"></div>
+      <div class="field"><label>Shift Start <span style="font-weight:400;color:var(--muted)">(blank → ${(hrmPolicies&&hrmPolicies.defaultShiftStart)||HRM_DEFAULT_POLICIES.defaultShiftStart})</span></label><input id="ef-shift-start" type="time" value="${e?.shiftStart||''}"></div>
+      <div class="field"><label>Shift End <span style="font-weight:400;color:var(--muted)">(blank → ${(hrmPolicies&&hrmPolicies.defaultShiftEnd)||HRM_DEFAULT_POLICIES.defaultShiftEnd})</span></label><input id="ef-shift-end" type="time" value="${e?.shiftEnd||''}"></div>
       <div class="field"><label>CNIC</label><input id="ef-cnic" value="${e?.cnic||''}"></div>
       <div class="field"><label>Bank Account</label><input id="ef-bank" value="${e?.bankAccount||''}"></div>
       <div class="field"><label>Status</label>
@@ -8037,6 +8046,8 @@ window.hrmSaveEmployee=async function(id){
     basicSalary:num('ef-salary'),
     joinDate:v('ef-join'),
     k40UserId:v('ef-k40'),
+    shiftStart:v('ef-shift-start'),
+    shiftEnd:v('ef-shift-end'),
     phone:v('ef-phone'),
     cnic:v('ef-cnic'),
     bankAccount:v('ef-bank'),
@@ -8170,7 +8181,26 @@ window.hrmSubmitIncrement=async function(empId,suggestedPct){
 
 // ── HRM Session 2: Worker my-work HRM widget + Attendance page ──
 
-function _isLatePunch(p){ return !!(p&&p.time&&p.time>LATE_CUTOFF_STR); }
+// Resolve an employee's effective late cutoff = (shiftStart || policyDefault) + graceMinutes.
+// Returns "HH:MM" or null when the global lateCutoffActive toggle is OFF.
+function _attLateCutoffFor(emp){
+  const policies=hrmPolicies||HRM_DEFAULT_POLICIES;
+  if(policies.lateCutoffActive===false)return null;
+  const start=String((emp&&emp.shiftStart)||policies.defaultShiftStart||HRM_DEFAULT_POLICIES.defaultShiftStart).trim();
+  if(!/^\d{2}:\d{2}$/.test(start))return null;
+  const grace=Math.max(0,Number(policies.lateGraceMinutes!=null?policies.lateGraceMinutes:HRM_DEFAULT_POLICIES.lateGraceMinutes)||0);
+  if(!grace)return start;
+  const[h,m]=start.split(':').map(Number);
+  const total=h*60+m+grace;
+  const hh=String(Math.floor(total/60)%24).padStart(2,'0');
+  const mm=String(total%60).padStart(2,'0');
+  return`${hh}:${mm}`;
+}
+function _isLatePunch(p,emp){
+  if(!p||!p.time)return false;
+  const cut=_attLateCutoffFor(emp);
+  return!!(cut&&p.time>cut);
+}
 function _attDateLabel(iso){
   if(!iso)return'';
   const d=new Date(iso+'T00:00:00');
@@ -8196,9 +8226,11 @@ function _attHoursLabel(start,end){
   if(!mins)return'—';
   return`${Math.floor(mins/60)}h ${mins%60}m`;
 }
-function _attLateMinutes(time){
+function _attLateMinutes(time,emp){
   if(!time)return 0;
-  return _attMinutesBetween(LATE_CUTOFF_STR,time);
+  const cut=_attLateCutoffFor(emp);
+  if(!cut)return 0;
+  return _attMinutesBetween(cut,time);
 }
 
 // Compose punches keyed by k40UserId from a snapshot of attendance/{date}
@@ -8549,7 +8581,7 @@ function _renderAttendanceDailyContent(){
     let status='absent';
     if(data&&data.firstIn){
       status='in';
-      if(_isLatePunch(data.firstIn))status='late';
+      if(_isLatePunch(data.firstIn,emp))status='late';
       // If today and live data says they punched out, show 'out'
       if(isToday&&liveAttendanceData[k40]&&liveAttendanceData[k40].status==='out')status='out';
     }
@@ -8578,7 +8610,7 @@ function _renderAttendanceDailyContent(){
     Object.entries(punchesByUser).forEach(([uid,d])=>{
       const emp=emps.find(e=>String(e.k40UserId)===String(uid));
       const empName=emp?emp.name:`User${uid}`;
-      d.punches.forEach(p=>allPunches.push({...p,empName,k40:uid}));
+      d.punches.forEach(p=>allPunches.push({...p,empName,k40:uid,_emp:emp||null}));
     });
     allPunches.sort((a,b)=>(b.timestamp||'').localeCompare(a.timestamp||''));
     const logWrap=document.getElementById('att-log-wrap');
@@ -8640,7 +8672,8 @@ function _attPunchRow(p){
   const tint=isIn?'#F4FAEC':'#fff';
   const typeBg=isIn?'#EAF3DE':'#F0F0F0';
   const typeFg=isIn?'#3B6D11':'#555';
-  const lateLabel=(isIn&&_isLatePunch(p))?`<span style="background:var(--accent-warning-soft);color:var(--accent-warning);font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px">LATE +${_attLateMinutes(p.time)}m</span>`:'<span style="color:var(--muted);font-size:12px">—</span>';
+  const emp=p._emp||null;
+  const lateLabel=(isIn&&_isLatePunch(p,emp))?`<span style="background:var(--accent-warning-soft);color:var(--accent-warning);font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px">LATE +${_attLateMinutes(p.time,emp)}m</span>`:'<span style="color:var(--muted);font-size:12px">—</span>';
   return`<tr style="background:${tint};border-bottom:1px solid #E5E5E7">
     <td style="padding:10px;font-weight:600">${p.time||''}</td>
     <td style="padding:10px">${p.empName||p.name||'—'}</td>
@@ -8654,7 +8687,7 @@ function _attLateBlockHTML(lates){
   const monthByEmp=_attMonthSummary?_attMonthSummary.byEmp:null;
   const items=lates.map(({emp,data})=>{
     const time=data.firstIn?.time||'';
-    const lateMins=_attLateMinutes(time);
+    const lateMins=_attLateMinutes(time,emp);
     const monthly=monthByEmp?(monthByEmp[emp._id]?.late||0):'—';
     const monthlyNum=typeof monthly==='number'?monthly:0;
     const badgeBg=monthlyNum>=3?'var(--accent-urgent-soft)':(monthlyNum>=2?'var(--accent-warning-soft)':'#F0F0F0');
@@ -8793,7 +8826,7 @@ async function _computeMonthlyAttendance(monthKey){
       const hasAnyPunch=u&&Array.isArray(u.punches)&&u.punches.length>0;
       if(hasAnyPunch){
         byEmp[e._id].present++;
-        if(u.firstIn&&_isLatePunch(u.firstIn))byEmp[e._id].late++;
+        if(u.firstIn&&_isLatePunch(u.firstIn,e))byEmp[e._id].late++;
       } else if(!isSunday){
         // Absent only on working days (Mon–Sat). Sundays are off and not counted.
         byEmp[e._id].absent++;
@@ -8817,7 +8850,13 @@ function _updateOwnerLiveKPIs(){
   if(_attDayUnsub===today&&dailyAttendanceData){
     let lateCount=0;
     const punchesByUser=_attPunchesByUser(dailyAttendanceData);
-    Object.values(punchesByUser).forEach(d=>{ if(d.firstIn&&_isLatePunch(d.firstIn))lateCount++; });
+    const empByK40={};
+    allEmployees.forEach(e=>{const k=String(e.k40UserId||'').trim();if(k)empByK40[k]=e;});
+    Object.entries(punchesByUser).forEach(([uid,d])=>{
+      if(!d.firstIn)return;
+      const emp=empByK40[String(uid)];
+      if(emp&&_isLatePunch(d.firstIn,emp))lateCount++;
+    });
     const elLate=document.getElementById('owner-kpi-late');if(elLate)elLate.textContent=lateCount;
   }
 }
@@ -10270,7 +10309,9 @@ window.loanResume=async function(id){
 
 const POLICY_DEFS=[
   {key:'workingDaysPerMonth',label:'Working Days Per Month',desc:'Used for daily rate calculation: salary ÷ working days',type:'number',def:30},
-  {key:'lateCutoffTime',label:'Late Cutoff Time',desc:'Punch-in after this is marked late',type:'time',def:'09:30'},
+  {key:'defaultShiftStart',label:'Default Shift Start',desc:'Used when an employee has no per-employee Shift Start',type:'time',def:'09:00'},
+  {key:'defaultShiftEnd',label:'Default Shift End',desc:'Used when an employee has no per-employee Shift End',type:'time',def:'17:00'},
+  {key:'lateGraceMinutes',label:'Late Grace Minutes',desc:'Punch-in after (Shift Start + grace) is marked late',type:'number',def:30},
   {key:'lateCountBeforeAbsent',label:'Lates Before Absent',desc:'How many lates collapse into one absent day',type:'number',def:3},
   {key:'halfDayCountsAs',label:'Half Day Counts As',desc:'When an employee leaves early',type:'select',options:['full','half','none'],def:'full'},
   {key:'absentDeductionFormula',label:'Absent Deduction Method',desc:'Formula for calculating absent-day deduction',type:'select',options:['salary_div_workingdays','fixed_amount'],def:'salary_div_workingdays'},
