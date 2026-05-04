@@ -7741,9 +7741,12 @@ function renderHRMEmployeesPage(){
   }
   const depts=_hrmDepartments();
   const paygrades=['P1','P2','P3','P4','P5'];
-  const total=allEmployees.filter(e=>e.status!=='inactive').length;
+  const activeStaff=allEmployees.filter(e=>e.status!=='inactive');
+  const total=activeStaff.length;
+  const trackedCount=activeStaff.filter(e=>String(e.k40UserId||'').trim()).length;
+  const subText=trackedCount===total?`${total} active staff`:`${total} active · ${total-trackedCount} not tracked by attendance`;
   const seedDate=_provisionalJoinDateValue();
-  const pendingCount=seedDate?allEmployees.filter(e=>e.status!=='inactive'&&_isProvisionalJoinDate(e,seedDate)).length:0;
+  const pendingCount=seedDate?activeStaff.filter(e=>_isProvisionalJoinDate(e,seedDate)).length:0;
   const dupeGroups=_hrmFindDuplicateEmployees();
   const dupeExtras=dupeGroups.reduce((s,g)=>s+(g.list.length-1),0);
   const banner=(pendingCount>0)?`<div class="card" style="border-left:3px solid var(--accent-warning);background:var(--accent-warning-soft);padding:12px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
@@ -7768,7 +7771,7 @@ function renderHRMEmployeesPage(){
   </div>`:'';
   return`<div class="page-head">
     <div class="page-title"><span class="page-title-icon">${_icon('people',22)}</span> Employees</div>
-    <div class="page-sub">${total} active staff</div>
+    <div class="page-sub" title="Staff with no K40 device ID don't appear in attendance — typically co-founders/advisors who don't punch.">${subText}</div>
   </div>
   ${dupeBanner}
   ${banner}
@@ -7807,6 +7810,10 @@ function _empCardHTML(e,seedDate){
   const pgClass=(e.paygrade||'').toLowerCase();
   const provisional=_isProvisionalJoinDate(e,seedDate);
   const join=(e.joinDate&&!provisional)?new Date(e.joinDate).toLocaleDateString('en-GB',{month:'short',year:'numeric'}):'—';
+  const k40=String(e.k40UserId||'').trim();
+  const k40Line=k40
+    ?`K40 ID: ${k40}`
+    :`K40 ID: <span style="display:inline-block;background:#F0F0F0;color:#555;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;letter-spacing:.04em" title="No K40 device ID — not tracked by attendance.">NOT TRACKED</span>`;
   return`<div class="emp-card">
     <div class="emp-row">
       <div>
@@ -7818,7 +7825,7 @@ function _empCardHTML(e,seedDate){
     <div class="emp-meta">
       Basic: <strong>${_hrmFmtPKR(e.basicSalary)}</strong><br>
       Joined: ${join}<br>
-      K40 ID: ${e.k40UserId||'—'}
+      ${k40Line}
     </div>
     <div class="emp-actions">
       <button class="btn-outline" onclick="window.hrmViewEmployee('${e._id}')">View Profile</button>
@@ -8386,8 +8393,11 @@ function renderAttendancePage(){
   }
   const tabBtn=(id,label)=>`<button class="att-tab ${attendanceTab===id?'active':''}" onclick="window.attendanceSetTab('${id}')" style="padding:8px 18px;border:1px solid var(--border);border-bottom:${attendanceTab===id?'2px solid #1A1A2E':'1px solid var(--border)'};background:${attendanceTab===id?'#fff':'#fafafa'};font-weight:${attendanceTab===id?'700':'500'};font-size:13px;cursor:pointer;font-family:inherit;color:${attendanceTab===id?'#1A1A2E':'var(--muted)'};border-radius:8px 8px 0 0;margin-right:4px">${label}</button>`;
   const tabs=`<div style="display:flex;border-bottom:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap">${tabBtn('daily','Daily')}${tabBtn('monthly','Monthly')}</div>`;
-  const activeCount=allEmployees.filter(e=>e.status!=='inactive').length;
-  const head=`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><div><div class="page-title"><span class="page-title-icon">${_icon('clock',22)}</span> Attendance · حاضری</div><div class="page-sub">${activeCount} active staff</div></div><div id="att-sync-pill" style="font-size:12px;color:var(--muted);padding:6px 10px;border:1px solid var(--border);border-radius:20px;background:#fafafa;display:flex;align-items:center;gap:6px;cursor:default" title="ZKTeco sync status">⏳ Sync: checking…</div></div>`;
+  const activeStaff=allEmployees.filter(e=>e.status!=='inactive');
+  const activeCount=activeStaff.length;
+  const trackedCount=activeStaff.filter(e=>String(e.k40UserId||'').trim()).length;
+  const subText=trackedCount===activeCount?`${trackedCount} tracked staff`:`${trackedCount} tracked · ${activeCount-trackedCount} not tracked`;
+  const head=`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><div><div class="page-title"><span class="page-title-icon">${_icon('clock',22)}</span> Attendance · حاضری</div><div class="page-sub" title="Staff with no K40 device ID are not tracked by the clock and don't appear in attendance.">${subText}</div></div><div id="att-sync-pill" style="font-size:12px;color:var(--muted);padding:6px 10px;border:1px solid var(--border);border-radius:20px;background:#fafafa;display:flex;align-items:center;gap:6px;cursor:default" title="ZKTeco sync status">⏳ Sync: checking…</div></div>`;
   const body=attendanceTab==='monthly'?renderAttendanceMonthly():renderAttendanceDaily();
   return head+tabs+`<div id="att-body">${body}</div>`;
 }
@@ -8407,7 +8417,7 @@ function renderAttendanceDaily(){
     <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:var(--accent-success)" id="att-tot-in">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Punched IN</div></div>
     <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:var(--accent-urgent)" id="att-tot-absent">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Absent</div></div>
     <div class="card" style="padding:16px;text-align:center;background:var(--accent-warning-soft)"><div style="font-size:28px;font-weight:700;color:var(--accent-warning)" id="att-tot-late">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Late Arrivals</div></div>
-    <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:#1A1A2E">${allEmployees.filter(e=>e.status!=='inactive').length}</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Total Staff</div></div>
+    <div class="card" style="padding:16px;text-align:center" title="Active employees with a K40 device ID. Only these are tracked by attendance."><div style="font-size:28px;font-weight:700;color:#1A1A2E">${allEmployees.filter(e=>e.status!=='inactive'&&String(e.k40UserId||'').trim()).length}</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Tracked Staff</div></div>
   </div>
   <div class="section-title">Staff Presence</div>
   <div id="att-grid-wrap"><div class="empty">Loading attendance…</div></div>
@@ -8530,10 +8540,12 @@ function _renderAttendanceDailyContent(){
   const isToday=attendanceDate===today;
 
   let totalIn=0,totalLate=0,totalAbsent=0;
-  const emps=allEmployees.slice().filter(e=>e.status!=='inactive');
+  // Only show K40-tracked active employees. Co-founders/advisors without a
+  // device ID don't punch in and shouldn't be flagged absent.
+  const emps=allEmployees.slice().filter(e=>e.status!=='inactive'&&String(e.k40UserId||'').trim());
   const rows=emps.map(emp=>{
-    const k40=emp.k40UserId;
-    const data=k40?punchesByUser[k40]:null;
+    const k40=String(emp.k40UserId).trim();
+    const data=punchesByUser[k40];
     let status='absent';
     if(data&&data.firstIn){
       status='in';
@@ -8687,7 +8699,7 @@ async function _renderAttendanceMonthly(){
   _attMonthSummary=summary;
   const policies=hrmPolicies||HRM_DEFAULT_POLICIES;
   const wd=policies.workingDaysPerMonth||30;
-  const rows=allEmployees.slice().filter(e=>e.status!=='inactive').map(e=>{
+  const rows=allEmployees.slice().filter(e=>e.status!=='inactive'&&String(e.k40UserId||'').trim()).map(e=>{
     const s=summary.byEmp[e._id]||{present:0,late:0,absent:0};
     const lateAbsentEquiv=Math.floor((s.late||0)/3);
     const totalDeductDays=(s.absent||0)+lateAbsentEquiv;
