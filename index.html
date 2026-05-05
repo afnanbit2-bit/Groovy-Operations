@@ -918,6 +918,7 @@ const PRODUCT_CATALOG=[
 let session=null,allPOs=[],allPasses=[],currentPage='',viewingPO=null,poImages={front:null,back:null},gpRowIdx=0,loginInProgress=false,gpPage=1;
 let stageWorkPO=null,stageWorkStage=null,currentBundles=[],cutState={poId:null,actualQty:{},pendingBundles:[]};
 let gpActiveTab='outward',allReturns=[],allFabricIn=[],fabRollIdx=0;
+let allGPEditRequests=[],_gpEditRowIdx=0;
 let bundleDamage={},bundlePartIdx=0;
 // ── Store state ──
 let allItems=[],allTransactions=[],allTemplates=[],allRequests=[],allActivePOs=[];
@@ -1124,16 +1125,18 @@ async function reserveBundleIds(n){
 
 async function loadData(){
   try{
-    const[posSnap,gpSnap,retSnap,fabSnap]=await Promise.all([
+    const[posSnap,gpSnap,retSnap,fabSnap,editSnap]=await Promise.all([
       getDocs(query(collection(db,'pos'),orderBy('ts','desc'))),
       getDocs(query(collection(db,'gatepasses'),orderBy('ts','desc'))),
       getDocs(query(collection(db,'returns'),orderBy('ts','desc'))),
-      getDocs(query(collection(db,'fabricin'),orderBy('ts','desc')))
+      getDocs(query(collection(db,'fabricin'),orderBy('ts','desc'))),
+      getDocs(query(collection(db,'gatepass_edit_requests'),orderBy('ts','desc'))).catch(()=>({docs:[]}))
     ]);
     allPOs=posSnap.docs.map(d=>({...d.data(),fbKey:d.id}));
     allPasses=gpSnap.docs.map(d=>d.data());
     allReturns=retSnap.docs.map(d=>d.data());
     allFabricIn=fabSnap.docs.map(d=>d.data());
+    allGPEditRequests=editSnap.docs.map(d=>d.data());
     if(currentPage)renderPage(currentPage);
     if(typeof _maybeLoadPrintingData==='function')_maybeLoadPrintingData();
     if(typeof loadHRMData==='function')loadHRMData().then(()=>{ if(currentPage==='dashboard'||currentPage==='hrm-employees'){const m=document.getElementById('main-content');if(m&&typeof renderPage==='function')renderPage(currentPage);} });
@@ -1141,16 +1144,18 @@ async function loadData(){
     if((e.code==='permission-denied'||e.message.includes('permissions'))&&auth.currentUser){
       try{
         await auth.currentUser.getIdToken(true);
-        const[posSnap,gpSnap,retSnap,fabSnap]=await Promise.all([
+        const[posSnap,gpSnap,retSnap,fabSnap,editSnap]=await Promise.all([
           getDocs(query(collection(db,'pos'),orderBy('ts','desc'))),
           getDocs(query(collection(db,'gatepasses'),orderBy('ts','desc'))),
           getDocs(query(collection(db,'returns'),orderBy('ts','desc'))),
-          getDocs(query(collection(db,'fabricin'),orderBy('ts','desc')))
+          getDocs(query(collection(db,'fabricin'),orderBy('ts','desc'))),
+          getDocs(query(collection(db,'gatepass_edit_requests'),orderBy('ts','desc'))).catch(()=>({docs:[]}))
         ]);
         allPOs=posSnap.docs.map(d=>({...d.data(),fbKey:d.id}));
         allPasses=gpSnap.docs.map(d=>d.data());
         allReturns=retSnap.docs.map(d=>d.data());
         allFabricIn=fabSnap.docs.map(d=>d.data());
+        allGPEditRequests=editSnap.docs.map(d=>d.data());
         if(currentPage)renderPage(currentPage);
         if(typeof _maybeLoadPrintingData==='function')_maybeLoadPrintingData();
         return;
@@ -2710,6 +2715,7 @@ window.completeQC=async function(fbKey){
 // ── Gate Pass ──
 function renderGatePass(){
   return`<div class="page-head"><div class="page-title">Gate Pass</div></div>
+  <div id="gp-pending-approvals">${_renderGPPendingApprovals()}</div>
   <div class="gp-tabs">
     <button class="gp-tab" id="gptab-outward" onclick="window.switchGPTab('outward')">Outward</button>
     <button class="gp-tab" id="gptab-returns" onclick="window.switchGPTab('returns')">Returns</button>
@@ -2844,13 +2850,17 @@ function renderGPPage(){
   const lbl=document.getElementById('gp-count-lbl');
   if(!body)return;
   if(lbl)lbl.textContent=total?`(${total} total)`:'';
-  body.innerHTML=slice.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5">
-    <div><div style="font-weight:700;color:var(--red);font-size:11px">${p.id}</div><div style="font-size:13px;font-weight:500">${p.article||'—'}</div><div style="font-size:11px;color:var(--muted)">${p.name||'—'} · ${p.date||''} · ${p.dest||'—'}</div></div>
-    <div style="display:flex;align-items:center;gap:8px"><div style="text-align:right;font-size:12px;color:var(--muted);font-weight:500">${p.totalUnits} pcs</div>
+  body.innerHTML=slice.map(p=>{
+    const pend=_gpPendingFor('gp',p.id);
+    const pendBadge=pend?`<span title="${pend.action==='delete'?'Delete':'Edit'} pending approval" style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${pend.action==='delete'?'Delete':'Edit'} pending</span>`:'';
+    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5;flex-wrap:wrap;gap:8px">
+    <div><div style="font-weight:700;color:var(--red);font-size:11px">${p.id}${pendBadge}</div><div style="font-size:13px;font-weight:500">${p.article||'—'}</div><div style="font-size:11px;color:var(--muted)">${p.name||'—'} · ${p.date||''} · ${p.dest||'—'}</div></div>
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div style="text-align:right;font-size:12px;color:var(--muted);font-weight:500">${p.totalUnits} pcs</div>
     <button class="btn-pdf" onclick="window.generateGPPdf('${p.id}')">⬇ PDF</button>
-    ${['afnan','ammar','mustafa','arfat'].includes(session?.u)?`<button onclick="window.deleteGP('${p.id}')" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>`:''}
+    <button onclick="window.editGP('${p.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
+    <button onclick="window.requestDeleteGP('${p.id}')" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
     </div>
-  </div>`).join('')||'<div class="empty" style="padding:1rem">No gate passes yet.</div>';
+  </div>`;}).join('')||'<div class="empty" style="padding:1rem">No gate passes yet.</div>';
   if(pg){
     if(pages<=1){pg.innerHTML='';return;}
     pg.innerHTML=`
@@ -2860,16 +2870,6 @@ function renderGPPage(){
   }
 }
 window.gpGotoPage=function(n){gpPage=n;renderGPPage();};
-window.deleteGP=async function(gpId){
-  if(!confirm(`Delete ${gpId}? This cannot be undone.`))return;
-  try{
-    await deleteDoc(doc(db,'gatepasses',gpId));
-    await logActivity('Gate pass deleted',`${gpId} deleted by ${session.name}`);
-    showToast(`${gpId} deleted`);
-    await loadData();
-    renderGPPage();
-  }catch(e){showToast('Error: '+e.message,true);}
-};
 window.setDest=function(v){document.getElementById('gp-dest').value=v;};
 window.addGPRow=function(size='',units='',weight=''){
   gpRowIdx++;const id='gpr'+gpRowIdx;const tr=document.createElement('tr');tr.id=id;tr.style.borderBottom='1px solid #f5f5f5';
@@ -2994,19 +2994,28 @@ function renderReturnsList(){
   body.innerHTML=sorted.map(r=>{
     const bc=r.status==='Complete'?'ret-complete':r.status==='Overage'?'ret-overage':'ret-incomplete';
     const icon=r.status==='Complete'?'✅':'🔴';
-    return`<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid #f5f5f5">
+    const pend=_gpPendingFor('return',r.id);
+    const pendBadge=pend?`<span title="${pend.action==='delete'?'Delete':'Edit'} pending approval" style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px">${pend.action==='delete'?'Delete':'Edit'} pending</span>`:'';
+    return`<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid #f5f5f5;gap:10px;flex-wrap:wrap">
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <span style="font-weight:700;color:var(--red);font-size:11px">${r.id}</span>
           <span class="ret-badge ${bc}">${r.status} ${icon}</span>
+          ${pendBadge}
         </div>
         <div style="font-size:13px;font-weight:500;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.vendor} · ${r.article||'—'}</div>
         <div style="font-size:11px;color:var(--muted)">${r.gpNum||'—'} · ${r.date||''} · ${r.receivedBy||'—'}</div>
         ${r.reason?`<div style="font-size:11px;color:#dc2626;margin-top:2px">Reason: ${r.reason}</div>`:''}
       </div>
-      <div style="text-align:right;flex-shrink:0;font-size:12px;color:var(--muted);margin-left:10px">
-        <div style="font-weight:600">${r.returnedQty||0} / ${r.sentQty||0} pcs</div>
-        ${r.shortage?`<div style="font-size:10px;color:#dc2626">Short: ${r.shortage}</div>`:''}
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
+        <div style="text-align:right;font-size:12px;color:var(--muted)">
+          <div style="font-weight:600">${r.returnedQty||0} / ${r.sentQty||0} pcs</div>
+          ${r.shortage?`<div style="font-size:10px;color:#dc2626">Short: ${r.shortage}</div>`:''}
+        </div>
+        <div style="display:flex;gap:6px">
+          <button onclick="window.editReturn('${r.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
+          <button onclick="window.requestDeleteReturn('${r.id}')" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
+        </div>
       </div>
     </div>`;
   }).join('');}
@@ -3110,12 +3119,15 @@ function renderFabricInList(){
     const qcDone=rolls.filter(r=>r.qcPassed).length;
     const total=rolls.length;
     const allQC=total>0&&qcDone===total;
+    const pend=_gpPendingFor('fabric',f.id);
+    const pendBadge=pend?`<span title="${pend.action==='delete'?'Delete':'Edit'} pending approval" style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px">${pend.action==='delete'?'Delete':'Edit'} pending</span>`:'';
     return`<div>
       <div class="fab-entry-header" onclick="window.toggleFabEntry('${f.id}')">
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span style="font-weight:700;color:var(--red);font-size:11px">${f.id}</span>
             <span style="font-size:11px;color:var(--muted)">${f.date||''}</span>
+            ${pendBadge}
           </div>
           <div style="font-size:13px;font-weight:500;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${f.supplier} · ${f.fabType||'—'}</div>
           <div style="font-size:11px;color:var(--muted)">${f.color||'—'} · ${f.totalWeight||0} ${f.unit||'kg'} · ${total} rolls · <span style="color:${allQC?'var(--green)':'var(--amber)'};font-weight:600">${qcDone}/${total} QC ✓</span></div>
@@ -3129,6 +3141,10 @@ function renderFabricInList(){
           <span style="${r.qcPassed?'color:var(--green);font-weight:600':'color:var(--muted)'}">${r.qcPassed?'QC Passed ✓':'Pending QC'}</span>
           ${r.qcPassed&&r.qcBy?`<span style="font-size:10px;color:var(--muted)">${r.qcBy}</span>`:''}
         </div>`).join('')||'<div style="font-size:12px;color:var(--muted);padding:6px">No rolls recorded.</div>'}
+        <div style="display:flex;gap:6px;justify-content:flex-end;padding:8px 4px 0">
+          <button onclick="event.stopPropagation();window.editFabricIn('${f.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
+          <button onclick="event.stopPropagation();window.requestDeleteFabricIn('${f.id}')" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
+        </div>
       </div>
     </div>`;
   }).join('');}
@@ -3140,6 +3156,504 @@ window.toggleFabEntry=function(id){
   const isOpen=rolls.style.display!=='none';
   rolls.style.display=isOpen?'none':'block';
   if(chev)chev.textContent=isOpen?'›':'⌄';
+};
+
+// ── Gate Pass / Returns / Fabric In: Edit & Delete with approval ──
+function _gpCanApprove(){return session&&['owner','manager'].includes(session.role);}
+function _gpPendingFor(type,targetId){
+  return allGPEditRequests.find(r=>r&&r.status==='pending'&&r.type===type&&r.targetId===targetId);
+}
+function _gpEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function _gpRefreshActiveTab(){
+  if(gpActiveTab==='outward')renderGPPage();
+  else if(gpActiveTab==='returns')renderReturnsList();
+  else if(gpActiveTab==='fabricin')renderFabricInList();
+  const p=document.getElementById('gp-pending-approvals');
+  if(p)p.innerHTML=_renderGPPendingApprovals();
+}
+
+async function _gpSubmitEditRequest({type,targetId,action,proposedData,currentData,reason}){
+  const ref=doc(collection(db,'gatepass_edit_requests'));
+  const payload={
+    id:ref.id,
+    ts:Date.now(),
+    type,targetId,action,
+    proposedData:proposedData||null,
+    currentData:currentData||null,
+    requestedBy:session?.u||'',
+    requestedByName:session?.name||'',
+    requestedByRole:session?.role||'',
+    status:'pending',
+    reason:reason||'',
+    reviewedBy:'',reviewedByName:'',reviewedAt:0,reviewNote:''
+  };
+  await setDoc(ref,payload);
+  allGPEditRequests.unshift(payload);
+  const labelMap={gp:'Gate pass',return:'Return',fabric:'Fabric in'};
+  const verb=action==='delete'?'delete':'edit';
+  if(typeof _hrmNotify==='function'){
+    await _hrmNotify({
+      type:'gp_'+verb+'_request',
+      title:`${labelMap[type]} ${verb} request: ${targetId}`,
+      message:`${session?.name||'A user'} requested to ${verb} ${targetId}. Open the Gate Pass page to approve or reject.`,
+      forRole:'owner_manager',
+      relatedTo:ref.id,
+      priority:'high',
+      actionRequired:true,
+      actionUrl:'gatepass'
+    });
+  }
+  await logActivity(`${labelMap[type]} ${verb} requested`,`${targetId} by ${session?.name||'unknown'}`);
+  return payload;
+}
+
+// ── Edit: Gate Pass (Outward) ──
+window.editGP=function(gpId){
+  const gp=allPasses.find(p=>p.id===gpId);
+  if(!gp)return showToast('Gate pass not found.',true);
+  if(_gpPendingFor('gp',gpId))return showToast('An edit/delete is already pending approval for '+gpId,true);
+  document.getElementById('hrm-modal-back')?.remove();
+  const back=document.createElement('div');
+  back.className='hrm-modal-back';back.id='hrm-modal-back';
+  back.onclick=ev=>{if(ev.target===back)window.hrmCloseModal();};
+  const items=Array.isArray(gp.items)?gp.items:[];
+  _gpEditRowIdx=0;
+  const rowsHTML=items.map(it=>{
+    _gpEditRowIdx++;
+    const id='gpe-row-'+_gpEditRowIdx;
+    return`<tr id="${id}" style="border-bottom:1px solid #f5f5f5">
+      <td style="padding:4px 6px"><input value="${_gpEsc(it.size||'')}" style="width:70px;border:1px solid var(--border);border-radius:6px;padding:5px 6px;font-size:13px"></td>
+      <td style="padding:4px 6px"><input type="number" min="0" value="${it.units||0}" style="width:80px;border:1px solid var(--border);border-radius:6px;padding:5px 6px;font-size:13px"></td>
+      <td style="padding:4px 6px"><input type="number" min="0" step="0.1" value="${it.weight||0}" style="width:80px;border:1px solid var(--border);border-radius:6px;padding:5px 6px;font-size:13px"></td>
+      <td><button onclick="document.getElementById('${id}').remove()" style="background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:2px 6px">×</button></td>
+    </tr>`;
+  }).join('');
+  const banner=_gpCanApprove()
+    ?`<div style="background:#ecfdf5;color:#065f46;border:1px solid #bbf7d0;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Owner/Manager: changes apply immediately.</div>`
+    :`<div style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Your changes will be sent to owners/managers for approval.</div>`;
+  back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><h3>Edit Gate Pass</h3><div class="sub">${gp.id} · ${_gpEsc(gp.article||'')}</div></div>
+      <button onclick="window.hrmCloseModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);line-height:1">×</button>
+    </div>
+    ${banner}
+    <div class="hrm-grid-2">
+      <div class="field"><label>Article *</label><input id="gpe-article" value="${_gpEsc(gp.article||'')}"></div>
+      <div class="field"><label>Destination *</label><input id="gpe-dest" value="${_gpEsc(gp.dest||'')}"></div>
+      <div class="field"><label>Date</label><input id="gpe-date" type="date" value="${_gpEsc(gp.date||'')}"></div>
+      <div class="field"><label>Time</label><input id="gpe-time" type="time" value="${_gpEsc(gp.time||'')}"></div>
+      <div class="field"><label>Person</label><input id="gpe-name" value="${_gpEsc(gp.name||'')}"></div>
+      <div class="field"><label>Boras</label><input id="gpe-boras" type="number" min="0" value="${gp.boras||0}"></div>
+    </div>
+    <div class="field" style="margin-top:8px"><label>Purpose</label><input id="gpe-purpose" value="${_gpEsc(gp.purpose||'')}"></div>
+    <div style="margin-top:12px;font-weight:600;font-size:13px">Units by size</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
+      <thead><tr style="background:#fafafa"><th style="padding:6px;text-align:left;font-weight:600">Size</th><th style="padding:6px;text-align:left;font-weight:600">Units</th><th style="padding:6px;text-align:left;font-weight:600">Weight (kg)</th><th></th></tr></thead>
+      <tbody id="gpe-rows-body">${rowsHTML}</tbody>
+    </table>
+    <button onclick="window.gpEditAddRow()" style="margin-top:6px;padding:6px 12px;background:none;border:1px dashed var(--border);border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--muted)">+ Add size</button>
+    ${!_gpCanApprove()?`<div class="field" style="margin-top:12px"><label>Reason for change *</label><textarea id="gpe-reason" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px" placeholder="Required so the approver understands why."></textarea></div>`:''}
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.submitGPEdit('${gpId}')">${_gpCanApprove()?'Save Changes':'Send for Approval'}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+};
+
+window.gpEditAddRow=function(){
+  _gpEditRowIdx++;
+  const id='gpe-row-'+_gpEditRowIdx;
+  const tbody=document.getElementById('gpe-rows-body');
+  if(!tbody)return;
+  const tr=document.createElement('tr');
+  tr.id=id;tr.style.borderBottom='1px solid #f5f5f5';
+  tr.innerHTML=`<td style="padding:4px 6px"><input placeholder="e.g. M" style="width:70px;border:1px solid var(--border);border-radius:6px;padding:5px 6px;font-size:13px"></td>
+    <td style="padding:4px 6px"><input type="number" min="0" placeholder="0" style="width:80px;border:1px solid var(--border);border-radius:6px;padding:5px 6px;font-size:13px"></td>
+    <td style="padding:4px 6px"><input type="number" min="0" step="0.1" placeholder="0" style="width:80px;border:1px solid var(--border);border-radius:6px;padding:5px 6px;font-size:13px"></td>
+    <td><button onclick="document.getElementById('${id}').remove()" style="background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:2px 6px">×</button></td>`;
+  tbody.appendChild(tr);
+};
+
+function _collectGPEditPayload(){
+  const v=k=>document.getElementById(k)?.value?.trim()||'';
+  const items=[];
+  document.querySelectorAll('#gpe-rows-body tr').forEach(tr=>{
+    const ins=tr.querySelectorAll('input');
+    const sz=ins[0]?.value.trim();
+    if(!sz)return;
+    items.push({size:sz,units:parseFloat(ins[1]?.value)||0,weight:parseFloat(ins[2]?.value)||0});
+  });
+  return{
+    article:v('gpe-article'),
+    dest:v('gpe-dest'),
+    date:v('gpe-date'),
+    time:v('gpe-time'),
+    name:v('gpe-name'),
+    boras:v('gpe-boras')||'0',
+    purpose:v('gpe-purpose'),
+    items,
+    totalUnits:items.reduce((s,r)=>s+r.units,0),
+    totalWeight:items.reduce((s,r)=>s+r.weight,0).toFixed(1)
+  };
+}
+
+window.submitGPEdit=async function(gpId){
+  const gp=allPasses.find(p=>p.id===gpId);
+  if(!gp)return showToast('Gate pass not found.',true);
+  const proposed=_collectGPEditPayload();
+  if(!proposed.article||!proposed.dest)return showToast('Article and destination required.',true);
+  try{
+    if(_gpCanApprove()){
+      await updateDoc(doc(db,'gatepasses',gpId),{...proposed,updatedAt:Date.now(),updatedBy:session.name});
+      Object.assign(gp,proposed);
+      await logActivity('Gate pass edited',`${gpId} by ${session.name}`);
+      showToast(gpId+' updated ✓');
+    }else{
+      const reason=(document.getElementById('gpe-reason')?.value||'').trim();
+      if(!reason)return showToast('Reason for change is required.',true);
+      const currentData={article:gp.article,dest:gp.dest,date:gp.date,time:gp.time,name:gp.name,boras:gp.boras,purpose:gp.purpose,items:gp.items||[],totalUnits:gp.totalUnits,totalWeight:gp.totalWeight};
+      await _gpSubmitEditRequest({type:'gp',targetId:gpId,action:'edit',proposedData:proposed,currentData,reason});
+      showToast('Edit request sent for approval ✓');
+    }
+    window.hrmCloseModal();
+    _gpRefreshActiveTab();
+  }catch(e){showToast('Save failed: '+e.message,true);}
+};
+
+window.requestDeleteGP=async function(gpId){
+  const gp=allPasses.find(p=>p.id===gpId);
+  if(!gp)return showToast('Gate pass not found.',true);
+  if(_gpPendingFor('gp',gpId))return showToast('A request is already pending for '+gpId,true);
+  if(_gpCanApprove()){
+    if(!confirm(`Delete ${gpId}? This cannot be undone.`))return;
+    try{
+      await deleteDoc(doc(db,'gatepasses',gpId));
+      await logActivity('Gate pass deleted',`${gpId} deleted by ${session.name}`);
+      allPasses=allPasses.filter(p=>p.id!==gpId);
+      showToast(`${gpId} deleted`);
+      _gpRefreshActiveTab();
+    }catch(e){showToast('Error: '+e.message,true);}
+    return;
+  }
+  const reason=prompt(`Request to delete ${gpId}. Reason for deletion:`,'');
+  if(!reason||!reason.trim())return;
+  try{
+    await _gpSubmitEditRequest({type:'gp',targetId:gpId,action:'delete',currentData:gp,reason:reason.trim()});
+    showToast('Delete request sent for approval');
+    _gpRefreshActiveTab();
+  }catch(e){showToast('Request failed: '+e.message,true);}
+};
+
+// ── Edit: Returns ──
+window.editReturn=function(retId){
+  const r=allReturns.find(x=>x.id===retId);
+  if(!r)return showToast('Return not found.',true);
+  if(_gpPendingFor('return',retId))return showToast('An edit/delete is already pending for '+retId,true);
+  document.getElementById('hrm-modal-back')?.remove();
+  const back=document.createElement('div');
+  back.className='hrm-modal-back';back.id='hrm-modal-back';
+  back.onclick=ev=>{if(ev.target===back)window.hrmCloseModal();};
+  const banner=_gpCanApprove()
+    ?`<div style="background:#ecfdf5;color:#065f46;border:1px solid #bbf7d0;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Owner/Manager: changes apply immediately.</div>`
+    :`<div style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Your changes will be sent to owners/managers for approval.</div>`;
+  back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><h3>Edit Return</h3><div class="sub">${r.id} · ${_gpEsc(r.vendor||'')} · ${_gpEsc(r.article||'')}</div></div>
+      <button onclick="window.hrmCloseModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);line-height:1">×</button>
+    </div>
+    ${banner}
+    <div class="hrm-grid-2">
+      <div class="field"><label>Original GP *</label><input id="rete-gp" value="${_gpEsc(r.gpNum||'')}"></div>
+      <div class="field"><label>Vendor *</label><input id="rete-vendor" value="${_gpEsc(r.vendor||'')}"></div>
+      <div class="field"><label>Article</label><input id="rete-article" value="${_gpEsc(r.article||'')}"></div>
+      <div class="field"><label>Date</label><input id="rete-date" type="date" value="${_gpEsc(r.date||'')}"></div>
+      <div class="field"><label>Sent Qty (pcs)</label><input id="rete-sent" type="number" min="0" value="${r.sentQty||0}"></div>
+      <div class="field"><label>Returned Qty (pcs) *</label><input id="rete-ret" type="number" min="0" value="${r.returnedQty||0}"></div>
+    </div>
+    <div class="field" style="margin-top:8px"><label>Reason (if incomplete)</label><input id="rete-shortreason" value="${_gpEsc(r.reason||'')}"></div>
+    <div class="field"><label>Notes</label><textarea id="rete-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">${_gpEsc(r.notes||'')}</textarea></div>
+    ${!_gpCanApprove()?`<div class="field" style="margin-top:12px"><label>Reason for change *</label><textarea id="rete-reason" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px" placeholder="Required so the approver understands why."></textarea></div>`:''}
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.submitReturnEdit('${retId}')">${_gpCanApprove()?'Save Changes':'Send for Approval'}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+};
+
+function _collectReturnEditPayload(){
+  const v=k=>document.getElementById(k)?.value?.trim()||'';
+  const sent=parseFloat(document.getElementById('rete-sent')?.value)||0;
+  const ret=parseFloat(document.getElementById('rete-ret')?.value)||0;
+  const tolerance=Math.ceil(sent*0.01);
+  let status,shortage=0;
+  if(ret>sent){status='Overage';}
+  else if(ret>=sent-tolerance){status='Complete';}
+  else{status='Incomplete Lot';shortage=sent-ret;}
+  return{
+    gpNum:v('rete-gp').toUpperCase(),
+    vendor:v('rete-vendor'),
+    article:v('rete-article'),
+    date:v('rete-date'),
+    sentQty:sent,
+    returnedQty:ret,
+    shortage,
+    status,
+    reason:status==='Incomplete Lot'?v('rete-shortreason'):'',
+    notes:v('rete-notes')
+  };
+}
+
+window.submitReturnEdit=async function(retId){
+  const r=allReturns.find(x=>x.id===retId);
+  if(!r)return showToast('Return not found.',true);
+  const proposed=_collectReturnEditPayload();
+  if(!proposed.gpNum||!proposed.vendor||!proposed.returnedQty)return showToast('GP, vendor and returned qty are required.',true);
+  if(proposed.status==='Incomplete Lot'&&!proposed.reason)return showToast('Shortage reason is required for incomplete lots.',true);
+  try{
+    if(_gpCanApprove()){
+      await updateDoc(doc(db,'returns',retId),{...proposed,updatedAt:Date.now(),updatedBy:session.name});
+      Object.assign(r,proposed);
+      await logActivity('Return edited',`${retId} by ${session.name}`);
+      showToast(retId+' updated ✓');
+    }else{
+      const reason=(document.getElementById('rete-reason')?.value||'').trim();
+      if(!reason)return showToast('Reason for change is required.',true);
+      const currentData={gpNum:r.gpNum,vendor:r.vendor,article:r.article,date:r.date,sentQty:r.sentQty,returnedQty:r.returnedQty,shortage:r.shortage,status:r.status,reason:r.reason,notes:r.notes};
+      await _gpSubmitEditRequest({type:'return',targetId:retId,action:'edit',proposedData:proposed,currentData,reason});
+      showToast('Edit request sent for approval ✓');
+    }
+    window.hrmCloseModal();
+    _gpRefreshActiveTab();
+  }catch(e){showToast('Save failed: '+e.message,true);}
+};
+
+window.requestDeleteReturn=async function(retId){
+  const r=allReturns.find(x=>x.id===retId);
+  if(!r)return showToast('Return not found.',true);
+  if(_gpPendingFor('return',retId))return showToast('A request is already pending for '+retId,true);
+  if(_gpCanApprove()){
+    if(!confirm(`Delete ${retId}? This cannot be undone.`))return;
+    try{
+      await deleteDoc(doc(db,'returns',retId));
+      await logActivity('Return deleted',`${retId} deleted by ${session.name}`);
+      allReturns=allReturns.filter(x=>x.id!==retId);
+      showToast(`${retId} deleted`);
+      _gpRefreshActiveTab();
+    }catch(e){showToast('Error: '+e.message,true);}
+    return;
+  }
+  const reason=prompt(`Request to delete ${retId}. Reason:`,'');
+  if(!reason||!reason.trim())return;
+  try{
+    await _gpSubmitEditRequest({type:'return',targetId:retId,action:'delete',currentData:r,reason:reason.trim()});
+    showToast('Delete request sent for approval');
+    _gpRefreshActiveTab();
+  }catch(e){showToast('Request failed: '+e.message,true);}
+};
+
+// ── Edit: Fabric In ──
+window.editFabricIn=function(fabId){
+  const f=allFabricIn.find(x=>x.id===fabId);
+  if(!f)return showToast('Fabric entry not found.',true);
+  if(_gpPendingFor('fabric',fabId))return showToast('An edit/delete is already pending for '+fabId,true);
+  document.getElementById('hrm-modal-back')?.remove();
+  const back=document.createElement('div');
+  back.className='hrm-modal-back';back.id='hrm-modal-back';
+  back.onclick=ev=>{if(ev.target===back)window.hrmCloseModal();};
+  const banner=_gpCanApprove()
+    ?`<div style="background:#ecfdf5;color:#065f46;border:1px solid #bbf7d0;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Owner/Manager: changes apply immediately.</div>`
+    :`<div style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Your changes will be sent to owners/managers for approval.</div>`;
+  back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><h3>Edit Fabric Entry</h3><div class="sub">${f.id} · ${_gpEsc(f.supplier||'')}</div></div>
+      <button onclick="window.hrmCloseModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);line-height:1">×</button>
+    </div>
+    ${banner}
+    <div class="hrm-grid-2">
+      <div class="field"><label>Supplier *</label><input id="fabe-supplier" value="${_gpEsc(f.supplier||'')}"></div>
+      <div class="field"><label>Date</label><input id="fabe-date" type="date" value="${_gpEsc(f.date||'')}"></div>
+      <div class="field"><label>Fabric Type *</label><input id="fabe-type" value="${_gpEsc(f.fabType||'')}"></div>
+      <div class="field"><label>Color *</label><input id="fabe-color" value="${_gpEsc(f.color||'')}"></div>
+      <div class="field"><label>Total Weight</label><input id="fabe-totweight" type="number" min="0" step="0.01" value="${f.totalWeight||0}"></div>
+      <div class="field"><label>Unit</label><input id="fabe-unit" value="${_gpEsc(f.unit||'kg')}"></div>
+    </div>
+    <div class="field" style="margin-top:8px"><label>Notes</label><textarea id="fabe-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">${_gpEsc(f.notes||'')}</textarea></div>
+    <div style="background:#fafafa;padding:8px 12px;border-radius:8px;margin-top:8px;font-size:12px;color:var(--muted)">Note: Roll-level edits aren't supported here. Only header fields can be changed.</div>
+    ${!_gpCanApprove()?`<div class="field" style="margin-top:12px"><label>Reason for change *</label><textarea id="fabe-reason" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px" placeholder="Required so the approver understands why."></textarea></div>`:''}
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.submitFabricEdit('${fabId}')">${_gpCanApprove()?'Save Changes':'Send for Approval'}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+};
+
+function _collectFabricEditPayload(){
+  const v=k=>document.getElementById(k)?.value?.trim()||'';
+  return{
+    supplier:v('fabe-supplier'),
+    date:v('fabe-date'),
+    fabType:v('fabe-type'),
+    color:v('fabe-color'),
+    totalWeight:parseFloat(document.getElementById('fabe-totweight')?.value)||0,
+    unit:v('fabe-unit')||'kg',
+    notes:v('fabe-notes')
+  };
+}
+
+window.submitFabricEdit=async function(fabId){
+  const f=allFabricIn.find(x=>x.id===fabId);
+  if(!f)return showToast('Fabric entry not found.',true);
+  const proposed=_collectFabricEditPayload();
+  if(!proposed.supplier||!proposed.fabType||!proposed.color)return showToast('Supplier, fabric type and color are required.',true);
+  try{
+    if(_gpCanApprove()){
+      await updateDoc(doc(db,'fabricin',fabId),{...proposed,updatedAt:Date.now(),updatedBy:session.name});
+      Object.assign(f,proposed);
+      await logActivity('Fabric In edited',`${fabId} by ${session.name}`);
+      showToast(fabId+' updated ✓');
+    }else{
+      const reason=(document.getElementById('fabe-reason')?.value||'').trim();
+      if(!reason)return showToast('Reason for change is required.',true);
+      const currentData={supplier:f.supplier,date:f.date,fabType:f.fabType,color:f.color,totalWeight:f.totalWeight,unit:f.unit,notes:f.notes};
+      await _gpSubmitEditRequest({type:'fabric',targetId:fabId,action:'edit',proposedData:proposed,currentData,reason});
+      showToast('Edit request sent for approval ✓');
+    }
+    window.hrmCloseModal();
+    _gpRefreshActiveTab();
+  }catch(e){showToast('Save failed: '+e.message,true);}
+};
+
+window.requestDeleteFabricIn=async function(fabId){
+  const f=allFabricIn.find(x=>x.id===fabId);
+  if(!f)return showToast('Fabric entry not found.',true);
+  if(_gpPendingFor('fabric',fabId))return showToast('A request is already pending for '+fabId,true);
+  if(_gpCanApprove()){
+    if(!confirm(`Delete ${fabId}? This cannot be undone.`))return;
+    try{
+      await deleteDoc(doc(db,'fabricin',fabId));
+      await logActivity('Fabric In deleted',`${fabId} deleted by ${session.name}`);
+      allFabricIn=allFabricIn.filter(x=>x.id!==fabId);
+      showToast(`${fabId} deleted`);
+      _gpRefreshActiveTab();
+    }catch(e){showToast('Error: '+e.message,true);}
+    return;
+  }
+  const reason=prompt(`Request to delete ${fabId}. Reason:`,'');
+  if(!reason||!reason.trim())return;
+  try{
+    await _gpSubmitEditRequest({type:'fabric',targetId:fabId,action:'delete',currentData:f,reason:reason.trim()});
+    showToast('Delete request sent for approval');
+    _gpRefreshActiveTab();
+  }catch(e){showToast('Request failed: '+e.message,true);}
+};
+
+// ── Pending Approvals UI (owners/managers only) ──
+function _renderGPPendingApprovals(){
+  if(!_gpCanApprove())return'';
+  const pending=allGPEditRequests.filter(r=>r&&r.status==='pending');
+  if(!pending.length)return'';
+  const labelMap={gp:'Gate Pass',return:'Return',fabric:'Fabric In'};
+  return`<div class="card" style="margin-bottom:14px;border:1px solid #fde68a;background:#fffbeb">
+    <div class="card-title" style="color:#92400e">Pending approvals · ${pending.length}</div>
+    ${pending.map(r=>{
+      const verb=r.action==='delete'?'Delete':'Edit';
+      const diffHTML=r.action==='edit'?_renderGPEditDiff(r):'';
+      return`<div style="padding:10px 0;border-bottom:1px solid #fef3c7">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+          <div style="min-width:0;flex:1">
+            <div style="font-weight:700;font-size:13px">${verb} · ${labelMap[r.type]||r.type} · <span style="color:var(--red)">${_gpEsc(r.targetId)}</span></div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px">Requested by ${_gpEsc(r.requestedByName||r.requestedBy||'—')} · ${new Date(r.ts).toLocaleString()}</div>
+            ${r.reason?`<div style="font-size:12px;color:#444;margin-top:4px"><b>Reason:</b> ${_gpEsc(r.reason)}</div>`:''}
+            ${diffHTML}
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0">
+            <button onclick="window.gpApproveRequest('${r.id}')" style="padding:6px 12px;border:1px solid #16a34a;border-radius:6px;background:#16a34a;color:#fff;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">Approve</button>
+            <button onclick="window.gpRejectRequest('${r.id}')" style="padding:6px 12px;border:1px solid #dc2626;border-radius:6px;background:#fff;color:#dc2626;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">Reject</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function _renderGPEditDiff(req){
+  const cur=req.currentData||{},nu=req.proposedData||{};
+  const keys=Array.from(new Set([...Object.keys(cur),...Object.keys(nu)]));
+  const rows=keys.map(k=>{
+    const a=cur[k],b=nu[k];
+    const sa=typeof a==='object'?JSON.stringify(a):String(a==null?'':a);
+    const sb=typeof b==='object'?JSON.stringify(b):String(b==null?'':b);
+    if(sa===sb)return'';
+    return`<tr><td style="padding:3px 6px;color:var(--muted);font-weight:600;vertical-align:top">${_gpEsc(k)}</td><td style="padding:3px 6px;color:#dc2626;text-decoration:line-through;vertical-align:top;word-break:break-word">${_gpEsc(sa.length>120?sa.slice(0,120)+'…':sa)}</td><td style="padding:3px 6px;color:#16a34a;vertical-align:top;word-break:break-word">${_gpEsc(sb.length>120?sb.slice(0,120)+'…':sb)}</td></tr>`;
+  }).filter(Boolean).join('');
+  if(!rows)return'<div style="font-size:11px;color:var(--muted);margin-top:4px">No effective changes detected.</div>';
+  return`<div style="margin-top:6px;background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:#fafafa"><th style="padding:4px 6px;text-align:left;font-weight:600">Field</th><th style="padding:4px 6px;text-align:left;font-weight:600;color:#dc2626">Current</th><th style="padding:4px 6px;text-align:left;font-weight:600;color:#16a34a">Proposed</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+window.gpApproveRequest=async function(reqId){
+  if(!_gpCanApprove())return showToast('Owners/managers only.',true);
+  const r=allGPEditRequests.find(x=>x.id===reqId);
+  if(!r||r.status!=='pending')return;
+  const collMap={gp:'gatepasses',return:'returns',fabric:'fabricin'};
+  const arrMap={gp:allPasses,return:allReturns,fabric:allFabricIn};
+  const collName=collMap[r.type];
+  const arr=arrMap[r.type];
+  if(!collName||!arr)return showToast('Unknown request type.',true);
+  try{
+    if(r.action==='delete'){
+      await deleteDoc(doc(db,collName,r.targetId));
+      const i=arr.findIndex(x=>x.id===r.targetId);
+      if(i>=0)arr.splice(i,1);
+    }else{
+      await updateDoc(doc(db,collName,r.targetId),{...r.proposedData,updatedAt:Date.now(),updatedBy:session.name});
+      const i=arr.findIndex(x=>x.id===r.targetId);
+      if(i>=0)Object.assign(arr[i],r.proposedData);
+    }
+    const update={status:'approved',reviewedBy:session.u,reviewedByName:session.name,reviewedAt:Date.now()};
+    await updateDoc(doc(db,'gatepass_edit_requests',reqId),update);
+    Object.assign(r,update);
+    if(typeof _hrmNotify==='function'&&r.requestedBy){
+      await _hrmNotify({
+        type:'gp_request_approved',
+        title:`${r.action==='delete'?'Delete':'Edit'} approved: ${r.targetId}`,
+        message:`Your ${r.action} request for ${r.targetId} was approved by ${session.name}.`,
+        forUser:r.requestedBy,
+        relatedTo:reqId,
+        priority:'normal'
+      });
+    }
+    await logActivity('GP request approved',`${r.action} ${r.targetId} approved by ${session.name}`);
+    showToast('Approved ✓');
+    _gpRefreshActiveTab();
+  }catch(e){showToast('Approve failed: '+e.message,true);}
+};
+
+window.gpRejectRequest=async function(reqId){
+  if(!_gpCanApprove())return showToast('Owners/managers only.',true);
+  const r=allGPEditRequests.find(x=>x.id===reqId);
+  if(!r||r.status!=='pending')return;
+  const note=prompt('Reason for rejection (optional):','');
+  try{
+    const update={status:'rejected',reviewedBy:session.u,reviewedByName:session.name,reviewedAt:Date.now(),reviewNote:(note||'').trim()};
+    await updateDoc(doc(db,'gatepass_edit_requests',reqId),update);
+    Object.assign(r,update);
+    if(typeof _hrmNotify==='function'&&r.requestedBy){
+      await _hrmNotify({
+        type:'gp_request_rejected',
+        title:`${r.action==='delete'?'Delete':'Edit'} rejected: ${r.targetId}`,
+        message:`Your ${r.action} request for ${r.targetId} was rejected by ${session.name}.${update.reviewNote?' Reason: '+update.reviewNote:''}`,
+        forUser:r.requestedBy,
+        relatedTo:reqId,
+        priority:'high'
+      });
+    }
+    await logActivity('GP request rejected',`${r.action} ${r.targetId} rejected by ${session.name}`);
+    showToast('Rejected.');
+    _gpRefreshActiveTab();
+  }catch(e){showToast('Reject failed: '+e.message,true);}
 };
 
 // ── PDF: PO ──
