@@ -5822,6 +5822,8 @@ window.seedColorLibrary=async function(){
 
 // ── XLSX → Color Library importer ──
 var COLOR_IMPORT_PANTONE_NAMES={'109 C':'Bright Yellow','116 C':'Yellow','165 C':'Orange','172 C':'Red Orange','185 C':'Bright Red','187 C':'Crimson Red','278 C':'Sky Blue','285 C':'Royal Blue','289 C':'Navy Blue','298 C':'Light Blue','307 C':'Ocean Blue','357 C':'Forest Green','375 C':'Lime Green','410 C':'Warm Grey','429 C':'Light Cool Grey','430 C':'Cool Grey','438 C':'Brown','447 C':'Dark Olive','485 C':'Fire Red','518 C':'Plum','573 C':'Mint Green','660 C':'Cobalt Blue','680 C':'Magenta','877 C':'Metallic Silver','1575 C':'Light Orange','2289 C':'Spring Green','2310 C':'Light Pink','2655 C':'Lavender','2945 C':'Royal Blue 2','2955 C':'Dark Navy','4058 C':'Tan','4143 C':'Olive Green','4165 C':'Pale Yellow','4268 C':'Khaki','5435 C':'Pale Blue','7410 C':'Peach','7458 C':'Powder Blue','7596 C':'Tan Brown','7615 C':'Brown 2','7620 C':'Deep Red Orange','7628 C':'Burgundy','7686 C':'Slate Blue','7688 C':'Cobalt Blue 2','7689 C':'Steel Blue','7732 C':'Forest Green 2','7739 C':'Bright Green','Cool Grey 1 C':'Cool Grey 1','Cool Grey 3 C':'Cool Grey 3','Cool Grey 5 C':'Cool Grey 5','Cool Grey 8 C':'Cool Grey 8','Cool Grey 10 C':'Cool Grey 10','Pantone Red 032 C':'Bright Red','White':'White','Black':'Black','Base':'Clear Base'};
+var COLOR_IMPORT_PANTONE_HEX={'109 C':'#ffd100','116 C':'#ffcd00','165 C':'#ff671f','172 C':'#fa4616','185 C':'#e4002b','187 C':'#a6192e','278 C':'#8dc8e8','285 C':'#0072ce','289 C':'#0c2340','298 C':'#41b6e6','307 C':'#006298','357 C':'#2d5016','375 C':'#97d700','410 C':'#888b8d','429 C':'#a2aaad','430 C':'#7c878e','438 C':'#5c3317','447 C':'#3e3f2e','485 C':'#da291c','518 C':'#6e3667','573 C':'#b5e3d8','660 C':'#1f65bc','680 C':'#893b67','877 C':'#8a8d8f','1575 C':'#ff8f1c','2028 C':'#ffa382','2289 C':'#94e337','2310 C':'#ffc9dd','2655 C':'#9678d3','2945 C':'#00549a','2955 C':'#003f72','4058 C':'#b6885f','4143 C':'#4f5b2d','4165 C':'#c7c99b','4268 C':'#6f6f4d','5435 C':'#b5c5c9','7410 C':'#ffb57f','7458 C':'#6baed6','7596 C':'#a48a6f','7615 C':'#7a4020','7620 C':'#c0392b','7628 C':'#6f2c2d','7686 C':'#2d6ca2','7688 C':'#1a6fbe','7689 C':'#2c7bb6','7732 C':'#2b7339','7739 C':'#43b02a','61220 C':'#cccccc','Cool Grey 1 C':'#c8c8c8','Cool Grey 3 C':'#b8b8b8','Cool Grey 5 C':'#989898','Cool Grey 8 C':'#6f7271','Cool Grey 10 C':'#53565a','Pantone Red 032 C':'#e31c23','White':'#ffffff','Black':'#000000','Base':'#f0f0f0'};
+var COLOR_IMPORT_HEX_FALLBACK='#cccccc';
 var COLOR_IMPORT_PATTERNS=[/\bPantone\s+Red\s+\d{3}\s*C\b/gi,/\b(?:Cool|Warm)\s+Grey\s+\d{1,2}\s*C\b/gi,/\b\d{3,5}\s*C\b/gi,/\bWhite\b/gi,/\bBlack\b/gi,/\bBASE\b/gi];
 function _canonPantone(raw){
   var s=raw.trim().replace(/\s+/g,' ');
@@ -5836,6 +5838,7 @@ function _canonPantone(raw){
 }
 function _slugPantone(c){return c.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');}
 function _suggestPantoneName(code){return COLOR_IMPORT_PANTONE_NAMES[code]||('Pantone '+code);}
+function _suggestPantoneHex(code){return COLOR_IMPORT_PANTONE_HEX[code]||COLOR_IMPORT_HEX_FALLBACK;}
 function _extractPantonesFromText(text){
   var found={};
   for(var i=0;i<COLOR_IMPORT_PATTERNS.length;i++){
@@ -5883,13 +5886,17 @@ function _renderColorImportPreview(){
   var rows='';
   for(var i=0;i<n;i++){
     var p=pendingColorImport[i];
-    rows+='<div style="font-family:ui-monospace,monospace;font-size:11px;align-self:center">'+_ciEsc(p.code)+'</div>'+
+    rows+='<div style="width:24px;height:24px;border-radius:5px;background:'+_ciEsc(p.hex)+';border:1px solid rgba(0,0,0,.12);align-self:center"></div>'+
+          '<div style="align-self:center">'+
+            '<div style="font-family:ui-monospace,monospace;font-size:11px;line-height:1.2">'+_ciEsc(p.code)+'</div>'+
+            '<div style="font-family:ui-monospace,monospace;font-size:10px;color:var(--muted);line-height:1.2">'+_ciEsc(p.hex)+'</div>'+
+          '</div>'+
           '<input type="text" data-i="'+i+'" class="ci-name-edit" value="'+_ciEsc(p.name)+'" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:#fff">'+
           '<div id="ci-row-'+i+'" style="font-size:10px;color:var(--muted);align-self:center">pending</div>';
   }
   preview.innerHTML='<div style="border-top:1px solid var(--border);padding-top:10px;margin-top:8px">'+
     '<div style="font-size:12px;font-weight:600;margin-bottom:8px">'+n+' unique pantone code'+(n!==1?'s':'')+' detected</div>'+
-    '<div style="display:grid;grid-template-columns:auto 1fr auto;gap:6px 10px;max-height:280px;overflow-y:auto;padding-right:6px;align-items:center">'+rows+'</div>'+
+    '<div style="display:grid;grid-template-columns:28px auto 1fr auto;gap:6px 10px;max-height:280px;overflow-y:auto;padding-right:6px;align-items:center">'+rows+'</div>'+
     '<button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:10px" onclick="window.runColorImport()">Import to Color Library</button>'+
   '</div>';
   preview.querySelectorAll('.ci-name-edit').forEach(function(el){
@@ -5918,7 +5925,7 @@ window.parseColorXlsx=async function(){
     }
     var codes=_extractPantonesFromText(allText);
     codes.sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true});});
-    pendingColorImport=codes.map(function(c){return{code:c,name:_suggestPantoneName(c),slug:_slugPantone(c)};});
+    pendingColorImport=codes.map(function(c){return{code:c,name:_suggestPantoneName(c),hex:_suggestPantoneHex(c),slug:_slugPantone(c)};});
     _renderColorImportPreview();
   }catch(e){
     if(preview)preview.innerHTML='<div style="font-size:12px;color:#dc2626;padding:6px 0">Parse error: '+e.message+'</div>';
@@ -5948,7 +5955,7 @@ window.runColorImport=async function(){
           var payload={
             colorName:p.name,
             pantoneCode:p.code,
-            hexApprox:null,
+            hexApprox:p.hex||null,
             supplierName:'',
             mixingNotes:'',
             status:'active',
