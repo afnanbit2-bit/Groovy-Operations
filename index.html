@@ -922,6 +922,9 @@ let allGPEditRequests=[],_gpEditRowIdx=0;
 let bundleDamage={},bundlePartIdx=0;
 // ── Store state ──
 let allItems=[],allTransactions=[],allTemplates=[],allRequests=[],allActivePOs=[];
+let allStoreCategories=[];
+let _invFilterCat='all',_invSearchQ='',_invSort='category';
+let _rcvNewMode=false;
 // ── HRM state ──
 let allEmployees=[],allIncrementLogs=[],hrmPolicies=null,hrmDataLoaded=false;
 let _empFilterQ='',_empFilterDept='',_empFilterPay='',_empFilterPending=false,_empViewingId=null;
@@ -1088,6 +1091,34 @@ const CAT_LABELS={
   bundle_tag:'Bundle Tags',zips:'Zips',threads:'Threads',
 };
 const CAT_ORDER=['neck_labels','sleeve_labels','hangtags','patches','bottom_labels','metal_trims','twill_tape','packaging','drawstring','neck_rib','bundle_tag','zips','threads'];
+const CAT_PREFIX={
+  neck_labels:'NL',sleeve_labels:'SL',hangtags:'HT',patches:'PT',bottom_labels:'BL',
+  metal_trims:'BT',twill_tape:'TT',packaging:'PKG',drawstring:'DS',neck_rib:'NR',
+  bundle_tag:'BG',zips:'ZP',threads:'TH'
+};
+function _allCats(){
+  const dyn=allStoreCategories.map(c=>c.key).filter(k=>!CAT_LABELS[k]);
+  return[...CAT_ORDER,...dyn];
+}
+function _catLabel(key){
+  if(CAT_LABELS[key])return CAT_LABELS[key];
+  const c=allStoreCategories.find(x=>x.key===key);
+  return c?c.label:key;
+}
+function _catPrefix(key){
+  if(CAT_PREFIX[key])return CAT_PREFIX[key];
+  const c=allStoreCategories.find(x=>x.key===key);
+  if(c&&c.prefix)return c.prefix;
+  return(key||'').split('_').map(w=>w.slice(0,1)).join('').toUpperCase()||'IT';
+}
+function _slugifyCat(s){return(s||'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,40);}
+function _suggestNextCode(prefix){
+  if(!prefix)return'';
+  const re=new RegExp('^'+prefix.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\$&')+'(\\d+)','i');
+  let max=0;
+  for(const it of allItems){const m=(it.code||'').match(re);if(m){const n=parseInt(m[1],10);if(n>max)max=n;}}
+  return prefix+String(max+1).padStart(2,'0');
+}
 
 // ── Helpers ──
 function showToast(msg,isErr=false){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show'+(isErr?' err':'');setTimeout(()=>t.className='toast',3200);}
@@ -3827,8 +3858,12 @@ function renderUsers(){
 // ══════════════════════════════════════════
 function renderInventory(){
   const lowStock=allItems.filter(i=>getStatus(i)!=='green');
+  const cats=_allCats();
+  const catCounts={};
+  for(const c of cats)catCounts[c]=0;
+  for(const it of allItems)if(it.category&&catCounts[it.category]!=null)catCounts[it.category]++;
   let h=`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
-    <div><div class="page-title">Inventory</div><div class="page-sub">${allItems.length} items across ${Object.keys(CAT_LABELS).length} categories</div></div>
+    <div><div class="page-title">Inventory</div><div class="page-sub">${allItems.length} items across ${cats.length} categories</div></div>
     <button class="btn-primary" style="width:auto;padding:10px 18px" onclick="window.showAddItemForm()">+ Add Item</button>
   </div>`;
   if(lowStock.length){
@@ -3837,27 +3872,72 @@ function renderInventory(){
       ${lowStock.map(i=>`<div class="info-row"><span><strong>${i.code}</strong> — ${i.name}</span><span class="badge badge-${getStatus(i)}">${getBalance(i)} ${i.unit}</span></div>`).join('')}
     </div>`;
   }
-  for(const cat of CAT_ORDER){
-    const items=allItems.filter(i=>i.category===cat);
-    if(!items.length)continue;
-    h+=`<div class="section-title">${CAT_LABELS[cat]}</div><div class="item-grid">
-      ${items.map(item=>{const s=getStatus(item),b=getBalance(item);return`<div class="item-card status-${s}">
-        <div class="item-code">${item.code}</div><div class="item-name">${item.name}</div>
-        <div class="item-bal ${s}">${b} <span style="font-size:12px;font-weight:400">${item.unit}</span></div>
-        ${item.sizeSpecific?`<div class="item-sizes">${formatSizes(item)}</div>`:''}
-        <div style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span class="badge badge-${s}">${s==='green'?'In Stock':s==='amber'?'Low Stock':'Out of Stock'}</span>
-          <button onclick="window.editStoreItem('${item.code}')" style="padding:3px 8px;background:none;border:1px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--muted)" onmouseenter="this.style.borderColor='var(--dark)'" onmouseleave="this.style.borderColor='var(--border)'">Edit</button>
-          <button onclick="window.deleteStoreItem('${item.code}')" class="btn-danger" style="padding:3px 8px;font-size:11px">Delete</button>
-        </div>
-      </div>`;}).join('')}
-    </div>`;
+  const chip=(key,label,count,active)=>`<button onclick="window.invSetCat('${key}')" style="padding:6px 12px;border:1px solid ${active?'var(--dark)':'var(--border)'};border-radius:999px;background:${active?'var(--dark)':'#fff'};color:${active?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit;font-weight:${active?'600':'500'}">${label}${count!=null?` <span style="opacity:.7;font-weight:400">${count}</span>`:''}</button>`;
+  let chipsHTML=chip('all','All',allItems.length,_invFilterCat==='all');
+  for(const c of cats){
+    if(!catCounts[c])continue;
+    chipsHTML+=chip(c,_catLabel(c),catCounts[c],_invFilterCat===c);
+  }
+  h+=`<div class="card" style="margin-bottom:14px;padding:12px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0">${chipsHTML}</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="inv-search" placeholder="Search code or name…" value="${_invSearchQ.replace(/"/g,'&quot;')}" oninput="window.invSetSearch(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;outline:none;min-width:180px">
+        <select onchange="window.invSetSort(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;outline:none;background:#fff">
+          ${[['category','Sort: by category'],['az','A → Z'],['za','Z → A'],['low','Stock low → high'],['recent','Recently added']].map(([v,l])=>`<option value="${v}"${_invSort===v?' selected':''}>${l}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+  </div>`;
+  let list=allItems.slice();
+  if(_invFilterCat!=='all')list=list.filter(i=>i.category===_invFilterCat);
+  if(_invSearchQ){const q=_invSearchQ.toLowerCase();list=list.filter(i=>(i.code||'').toLowerCase().includes(q)||(i.name||'').toLowerCase().includes(q));}
+  if(_invSort==='az')list.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  else if(_invSort==='za')list.sort((a,b)=>(b.name||'').localeCompare(a.name||''));
+  else if(_invSort==='low')list.sort((a,b)=>getBalance(a)-getBalance(b));
+  else if(_invSort==='recent')list.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  const cardHTML=(item)=>{const s=getStatus(item),b=getBalance(item);return`<div class="item-card status-${s}">
+    <div class="item-code">${item.code}</div><div class="item-name">${item.name}</div>
+    <div class="item-bal ${s}">${b} <span style="font-size:12px;font-weight:400">${item.unit}</span></div>
+    ${item.sizeSpecific?`<div class="item-sizes">${formatSizes(item)}</div>`:''}
+    <div style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <span class="badge badge-${s}">${s==='green'?'In Stock':s==='amber'?'Low Stock':'Out of Stock'}</span>
+      <button onclick="window.editStoreItem('${item.code}')" style="padding:3px 8px;background:none;border:1px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--muted)" onmouseenter="this.style.borderColor='var(--dark)'" onmouseleave="this.style.borderColor='var(--border)'">Edit</button>
+      <button onclick="window.deleteStoreItem('${item.code}')" class="btn-danger" style="padding:3px 8px;font-size:11px">Delete</button>
+    </div>
+  </div>`;};
+  if(!list.length){
+    h+=`<div class="empty" style="padding:24px;text-align:center">No items match this filter.</div>`;
+  }else if(_invSort==='category'){
+    for(const cat of cats){
+      const items=list.filter(i=>i.category===cat);
+      if(!items.length)continue;
+      h+=`<div class="section-title">${_catLabel(cat)}</div><div class="item-grid">${items.map(cardHTML).join('')}</div>`;
+    }
+    const orphans=list.filter(i=>!cats.includes(i.category));
+    if(orphans.length){
+      h+=`<div class="section-title">Uncategorised</div><div class="item-grid">${orphans.map(cardHTML).join('')}</div>`;
+    }
+  }else{
+    h+=`<div class="item-grid">${list.map(cardHTML).join('')}</div>`;
   }
   return h+'<div style="height:80px"></div>';
 }
 
+window.invSetCat=function(c){_invFilterCat=c;const m=document.getElementById('main-content');if(m)m.innerHTML=renderInventory();};
+window.invSetSearch=function(v){
+  _invSearchQ=v||'';
+  clearTimeout(window._invSearchTo);
+  window._invSearchTo=setTimeout(()=>{
+    const m=document.getElementById('main-content');if(m){m.innerHTML=renderInventory();const i=document.getElementById('inv-search');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}}
+  },180);
+};
+window.invSetSort=function(v){_invSort=v;const m=document.getElementById('main-content');if(m)m.innerHTML=renderInventory();};
+
 function renderStoreReceive(){
-  const opts=allItems.map(i=>`<option value="${i.code}">${i.code} — ${i.name}</option>`).join('');
+  _rcvNewMode=false;
+  const opts=`<option value="__new__" style="font-weight:700;color:#16a34a">+ New item — not in inventory yet</option>`+
+    allItems.map(i=>`<option value="${i.code}">${i.code} — ${i.name}</option>`).join('');
   return`<div class="page-head"><div class="page-title">Receive Stock</div></div>
   <div class="card">
     <div class="card-title">Record received stock</div>
@@ -3870,14 +3950,73 @@ function renderStoreReceive(){
         <textarea id="rcv-notes" rows="2" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;font-family:inherit;outline:none;width:100%;resize:vertical" placeholder="Optional"></textarea>
       </div>
     </div>
+    <div id="rcv-new-wrap" style="margin-top:12px"></div>
     <div id="rcv-qty-wrap" style="margin-top:12px"></div>
     <button class="btn-primary" style="margin-top:12px" onclick="window.submitReceive()">Save Receipt</button>
   </div><div style="height:80px"></div>`;
 }
+
+function _rcvCatOptions(selected){
+  const items=_allCats().map(k=>`<option value="${k}"${k===selected?' selected':''}>${_catLabel(k)}</option>`).join('');
+  return`<option value="">— pick category —</option>${items}<option value="__new_cat__" style="font-weight:700;color:#16a34a">+ New category…</option>`;
+}
+
+function _rcvUnitOptions(selected){
+  const units=['pcs','meters','kg','grams','cones','packets','100pc bundles'];
+  const opts=units.map(u=>`<option value="${u}"${u===selected?' selected':''}>${u}</option>`).join('');
+  return`<option value="">— pick unit —</option>${opts}<option value="__custom__">Custom…</option>`;
+}
+
+function _renderRcvNewForm(){
+  return`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;margin-bottom:6px">
+    <div style="font-weight:700;font-size:13px;color:#065f46;margin-bottom:10px">New item — will be added to Inventory</div>
+    <div class="form-grid">
+      <div class="field"><label>Category *</label>
+        <select id="rcvn-cat" onchange="window.onRcvNewCatChange()">${_rcvCatOptions('')}</select>
+      </div>
+      <div class="field"><label>Code *</label>
+        <input id="rcvn-code" placeholder="Pick category first" style="text-transform:uppercase">
+        <div style="font-size:10px;color:var(--muted);margin-top:3px">Auto-suggested from category. Edit if needed.</div>
+      </div>
+      <div class="field" style="grid-column:1/-1"><label>Item Name *</label>
+        <input id="rcvn-name" placeholder="e.g. New Patch Label Black">
+      </div>
+      <div class="field"><label>Unit *</label>
+        <select id="rcvn-unit" onchange="window.onRcvNewUnitChange()">${_rcvUnitOptions('pcs')}</select>
+      </div>
+      <div class="field" id="rcvn-custom-unit-wrap" style="display:none"><label>Custom unit</label>
+        <input id="rcvn-custom-unit" placeholder="e.g. rolls">
+      </div>
+      <div class="field"><label>Low-stock threshold</label>
+        <input id="rcvn-thresh" type="number" min="0" value="200">
+        <div style="font-size:10px;color:var(--muted);margin-top:3px">Default 200 — change anytime in Inventory.</div>
+      </div>
+      <div class="field" style="display:flex;align-items:center;gap:8px;padding-top:22px">
+        <input type="checkbox" id="rcvn-sized" onchange="window.onRcvSizedToggle()" style="width:auto;margin:0">
+        <label for="rcvn-sized" style="margin:0;cursor:pointer;font-size:13px">Size-specific item</label>
+      </div>
+      <div class="field" id="rcvn-sizes-wrap" style="grid-column:1/-1;display:none"><label>Sizes (comma-separated, e.g. XS,S,M,L,XL)</label>
+        <input id="rcvn-sizes-list" placeholder="XS,S,M,L,XL" oninput="window.onRcvSizedListChange()">
+      </div>
+    </div>
+  </div>`;
+}
+
 function onRcvItemChange(){
   const code=document.getElementById('rcv-item')?.value;
+  const newWrap=document.getElementById('rcv-new-wrap');
+  const wrap=document.getElementById('rcv-qty-wrap');
+  if(!wrap||!newWrap)return;
+  if(code==='__new__'){
+    _rcvNewMode=true;
+    newWrap.innerHTML=_renderRcvNewForm();
+    wrap.innerHTML=`<div class="field"><label>Qty received · Pick category & unit first</label>
+      <input type="number" id="rcv-flat" min="0" placeholder="0" disabled style="background:#f5f5f5"></div>`;
+    return;
+  }
+  _rcvNewMode=false;
+  newWrap.innerHTML='';
   const item=allItems.find(i=>i.code===code);if(!item)return;
-  const wrap=document.getElementById('rcv-qty-wrap');if(!wrap)return;
   if(item.sizeSpecific){
     wrap.innerHTML=`<div class="field"><label>Qty received per size (${item.unit})</label>
       <div class="size-grid">${Object.keys(item.sizes||{}).map(sz=>`<div class="size-field"><label>${sz}</label>
@@ -3888,13 +4027,124 @@ function onRcvItemChange(){
       <input type="number" id="rcv-flat" min="0" placeholder="0"></div>`;
   }
 }
+
+window.onRcvNewCatChange=function(){
+  const sel=document.getElementById('rcvn-cat');
+  if(!sel)return;
+  const v=sel.value;
+  if(v==='__new_cat__'){
+    sel.value='';
+    window.openNewCategoryDialog((newKey)=>{
+      const sel2=document.getElementById('rcvn-cat');
+      if(!sel2)return;
+      sel2.innerHTML=_rcvCatOptions(newKey);
+      sel2.value=newKey;
+      window.onRcvNewCatChange();
+    });
+    return;
+  }
+  if(!v)return;
+  const codeEl=document.getElementById('rcvn-code');
+  if(codeEl&&!codeEl.dataset.userTouched){
+    codeEl.value=_suggestNextCode(_catPrefix(v));
+  }
+  if(codeEl){codeEl.addEventListener('input',()=>{codeEl.dataset.userTouched='1';},{once:true});}
+  _refreshRcvNewQty();
+};
+
+window.onRcvNewUnitChange=function(){
+  const sel=document.getElementById('rcvn-unit');if(!sel)return;
+  const wrap=document.getElementById('rcvn-custom-unit-wrap');
+  if(wrap)wrap.style.display=sel.value==='__custom__'?'block':'none';
+  _refreshRcvNewQty();
+};
+
+window.onRcvSizedToggle=function(){
+  const cb=document.getElementById('rcvn-sized');
+  const sw=document.getElementById('rcvn-sizes-wrap');
+  if(sw)sw.style.display=cb&&cb.checked?'block':'none';
+  _refreshRcvNewQty();
+};
+
+window.onRcvSizedListChange=function(){_refreshRcvNewQty();};
+
+function _rcvNewUnit(){
+  const u=document.getElementById('rcvn-unit')?.value||'';
+  if(u==='__custom__')return(document.getElementById('rcvn-custom-unit')?.value||'').trim();
+  return u;
+}
+
+function _refreshRcvNewQty(){
+  const wrap=document.getElementById('rcv-qty-wrap');
+  if(!wrap||!_rcvNewMode)return;
+  const unit=_rcvNewUnit()||'units';
+  const sized=document.getElementById('rcvn-sized')?.checked;
+  if(sized){
+    const list=(document.getElementById('rcvn-sizes-list')?.value||'').split(',').map(s=>s.trim()).filter(Boolean);
+    if(!list.length){wrap.innerHTML=`<div class="field"><label>Qty received · enter size list above</label><input type="number" disabled style="background:#f5f5f5" placeholder="0"></div>`;return;}
+    wrap.innerHTML=`<div class="field"><label>Qty received per size (${_gpEsc(unit)})</label>
+      <div class="size-grid">${list.map(sz=>`<div class="size-field"><label>${_gpEsc(sz)}</label>
+        <input type="number" min="0" placeholder="0" id="rcv-${safeId(sz)}">
+        <div class="stk">New</div></div>`).join('')}</div></div>`;
+  }else{
+    wrap.innerHTML=`<div class="field"><label>Qty received (${_gpEsc(unit)})</label>
+      <input type="number" id="rcv-flat" min="0" placeholder="0"></div>`;
+  }
+}
+
+async function _rcvCreateNewItem(){
+  const v=k=>(document.getElementById(k)?.value||'').trim();
+  const cat=v('rcvn-cat');
+  const code=v('rcvn-code').toUpperCase();
+  const name=v('rcvn-name');
+  const unit=_rcvNewUnit();
+  const thresh=parseInt(document.getElementById('rcvn-thresh')?.value)||200;
+  const sized=document.getElementById('rcvn-sized')?.checked;
+  if(!cat||cat==='__new_cat__')throw new Error('Pick a category for the new item.');
+  if(!code)throw new Error('New item code is required.');
+  if(!name)throw new Error('New item name is required.');
+  if(!unit)throw new Error('Pick a unit for the new item.');
+  if(allItems.some(i=>(i.code||'').toUpperCase()===code))throw new Error('Code '+code+' already exists.');
+  const item={code,name,category:cat,unit,lowStockThreshold:thresh,sizeSpecific:!!sized,createdBy:session.name,createdAt:Date.now()};
+  let totalQty=0;
+  if(sized){
+    const list=(document.getElementById('rcvn-sizes-list')?.value||'').split(',').map(s=>s.trim()).filter(Boolean);
+    if(!list.length)throw new Error('List sizes for the new item.');
+    const sizes={};let any=false;
+    for(const sz of list){
+      const qv=parseFloat(document.getElementById('rcv-'+safeId(sz))?.value)||0;
+      sizes[sz]=qv;if(qv){any=true;totalQty+=qv;}
+    }
+    if(!any)throw new Error('Enter qty for at least one size.');
+    item.sizes=sizes;
+  }else{
+    const qv=parseFloat(document.getElementById('rcv-flat')?.value)||0;
+    if(!qv)throw new Error('Enter quantity received.');
+    item.balance=qv;totalQty=qv;
+  }
+  await fsSet('store_items',code,item);
+  allItems.push({...item,_id:code});
+  await logActivity('Item added via Receive',`${code} — ${name} (${_catLabel(cat)})`);
+  return{item,totalQty};
+}
+
 async function submitReceive(){
-  const code=document.getElementById('rcv-item')?.value;
-  const item=allItems.find(i=>i.code===code);
-  if(!item){showToast('Select an item.',true);return;}
   const supplier=(document.getElementById('rcv-supplier')?.value||'').trim();
   const date=document.getElementById('rcv-date')?.value||todayStr();
   const notes=(document.getElementById('rcv-notes')?.value||'').trim();
+  if(_rcvNewMode){
+    try{
+      const{item,totalQty}=await _rcvCreateNewItem();
+      const txId=await fsAdd('store_transactions',{type:'received',itemCode:item.code,itemName:item.name,supplier,date,notes,by:session.name,ts:Date.now(),qty:totalQty,unit:item.unit,firstReceipt:true});
+      allTransactions.unshift({type:'received',itemCode:item.code,itemName:item.name,supplier,date,notes,by:session.name,ts:Date.now(),qty:totalQty,unit:item.unit,firstReceipt:true,_id:txId});
+      showToast(`${item.code} created & received ✓`);
+      renderStoreSection('receive');
+    }catch(e){showToast(e.message||'Error',true);}
+    return;
+  }
+  const code=document.getElementById('rcv-item')?.value;
+  const item=allItems.find(i=>i.code===code);
+  if(!item){showToast('Select an item.',true);return;}
   const updated={...item};let totalQty=0;
   if(item.sizeSpecific){
     const newSizes={...item.sizes};let any=false;
@@ -3918,6 +4168,69 @@ async function submitReceive(){
     showToast('Stock received ✓');renderStoreSection('receive');
   }catch(e){showToast('Error: '+e.message,true);}
 }
+
+// ── New category dialog ──
+window.openNewCategoryDialog=function(onCreated){
+  document.getElementById('_cat-modal')?.remove();
+  const modal=document.createElement('div');
+  modal.id='_cat-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2200;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=`<div style="background:#fff;border-radius:14px;width:100%;max-width:380px;box-shadow:0 12px 48px rgba(0,0,0,.25)">
+    <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <span style="font-weight:700;font-size:15px">New category</span>
+      <button onclick="document.getElementById('_cat-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
+    </div>
+    <div style="padding:16px;display:grid;gap:10px">
+      <div class="field"><label>Display label *</label>
+        <input id="_cat-label" placeholder="e.g. Cardboard Boxes" oninput="window._catLabelChanged()">
+      </div>
+      <div class="field"><label>Code prefix *</label>
+        <input id="_cat-prefix" placeholder="e.g. CB" maxlength="6" style="text-transform:uppercase">
+        <div style="font-size:10px;color:var(--muted);margin-top:3px">Used to auto-generate item codes (CB01, CB02…).</div>
+      </div>
+      <div class="field"><label>Internal key</label>
+        <input id="_cat-key" placeholder="auto" disabled style="background:#f5f5f5;color:var(--muted)">
+      </div>
+    </div>
+    <div style="padding:0 16px 16px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-outline" onclick="document.getElementById('_cat-modal').remove()">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" id="_cat-save">Create</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  document.getElementById('_cat-save').onclick=async()=>{
+    const label=(document.getElementById('_cat-label')?.value||'').trim();
+    const prefix=(document.getElementById('_cat-prefix')?.value||'').trim().toUpperCase();
+    const key=_slugifyCat(label);
+    if(!label)return showToast('Label is required.',true);
+    if(!prefix)return showToast('Code prefix is required.',true);
+    if(!key)return showToast('Could not derive a key from the label.',true);
+    if(_allCats().includes(key))return showToast('That category already exists.',true);
+    try{
+      const payload={key,label,prefix,createdBy:session.name,createdAt:Date.now()};
+      await fsSet('store_categories',key,payload);
+      allStoreCategories.push(payload);
+      document.getElementById('_cat-modal').remove();
+      showToast('Category added ✓');
+      if(typeof onCreated==='function')onCreated(key);
+    }catch(e){showToast('Save failed: '+e.message,true);}
+  };
+};
+
+window._catLabelChanged=function(){
+  const lbl=document.getElementById('_cat-label')?.value||'';
+  const keyEl=document.getElementById('_cat-key');
+  const prefEl=document.getElementById('_cat-prefix');
+  if(keyEl)keyEl.value=_slugifyCat(lbl);
+  if(prefEl&&!prefEl.dataset.userTouched){
+    const words=lbl.trim().split(/\s+/).filter(Boolean);
+    let p='';
+    if(words.length>=2)p=(words[0][0]+words[1][0]).toUpperCase();
+    else if(words.length===1)p=words[0].slice(0,2).toUpperCase();
+    prefEl.value=p;
+  }
+  if(prefEl)prefEl.addEventListener('input',()=>{prefEl.dataset.userTouched='1';},{once:true});
+};
 
 function renderStoreIssue(){
   const opts=allItems.map(i=>`<option value="${i.code}">${i.code} — ${i.name}</option>`).join('');
@@ -4544,13 +4857,15 @@ function normPO(s){return s.replace(/[\s\-]/g,'').toLowerCase();}
 // ── Store data loader (lazy — called on first store page visit) ──
 async function loadStoreData(){
   try{
-    const[items,txns,templates,requests]=await Promise.all([
+    const[items,txns,templates,requests,cats]=await Promise.all([
       fsList('store_items'),
       fsQueryOrdered('store_transactions','ts',300),
       fsList('trim_templates'),
       fsList('store_requests'),
+      fsList('store_categories').catch(()=>[]),
     ]);
     allItems=items;allTransactions=txns;allTemplates=templates;allRequests=requests;
+    allStoreCategories=Array.isArray(cats)?cats:[];
     if(!allItems.length){
       showToast('Initialising store items…');
       await Promise.all(INITIAL_ITEMS.map(item=>fsSet('store_items',item.code,item).catch(()=>{})));
@@ -7869,7 +8184,7 @@ function _parseSizesInput(str){
 }
 function _buildItemModal(title,item,onSave){
   let existing=document.getElementById('_item-modal');if(existing)existing.remove();
-  const cats=CAT_ORDER.map(c=>`<option value="${c}"${item&&item.category===c?' selected':''}>${CAT_LABELS[c]||c}</option>`).join('');
+  const cats=_allCats().map(c=>`<option value="${c}"${item&&item.category===c?' selected':''}>${_catLabel(c)}</option>`).join('')+`<option value="__new_cat__" style="font-weight:700;color:#16a34a">+ New category…</option>`;
   const units=['pcs','meters','kg','grams','cones','packets','100pc bundles'];
   const unitOpts=units.map(u=>`<option${item&&item.unit===u?' selected':''}>${u}</option>`).join('');
   const sizesStr=item&&item.sizeSpecific&&item.sizes?Object.entries(item.sizes).map(([k,v])=>`${k}:${v}`).join(' '):'';
@@ -7884,7 +8199,7 @@ function _buildItemModal(title,item,onSave){
     <div style="padding:18px;display:grid;gap:12px">
       <div class="field"><label>Code *</label><input id="_im-code" value="${item?item.code:''}" placeholder="e.g. NL5" ${item?'readonly':''}></div>
       <div class="field"><label>Name *</label><input id="_im-name" value="${item?item.name:''}"></div>
-      <div class="field"><label>Category *</label><select id="_im-cat">${cats}</select></div>
+      <div class="field"><label>Category *</label><select id="_im-cat" onchange="window._imCatChange()">${cats}</select></div>
       <div class="field"><label>Unit *</label><select id="_im-unit">${unitOpts}</select></div>
       <div class="field"><label>Low Stock Threshold</label><input id="_im-thresh" type="number" value="${item?item.lowStockThreshold||200:200}"></div>
       <div style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="_im-sized" ${item&&item.sizeSpecific?'checked':''} onchange="document.getElementById('_im-sized-row').style.display=this.checked?'block':'none';document.getElementById('_im-bal-row').style.display=this.checked?'none':'block'"><label for="_im-sized" style="cursor:pointer;font-size:13px">Size-specific</label></div>
@@ -7901,6 +8216,19 @@ function _buildItemModal(title,item,onSave){
   document.getElementById('_im-save').onclick=onSave;
   modal.addEventListener('click',e=>{if(e.target===modal)modal.remove();});
 }
+
+window._imCatChange=function(){
+  const sel=document.getElementById('_im-cat');
+  if(!sel||sel.value!=='__new_cat__')return;
+  sel.value='';
+  window.openNewCategoryDialog((newKey)=>{
+    const sel2=document.getElementById('_im-cat');
+    if(!sel2)return;
+    const cats=_allCats().map(c=>`<option value="${c}"${c===newKey?' selected':''}>${_catLabel(c)}</option>`).join('')+`<option value="__new_cat__" style="font-weight:700;color:#16a34a">+ New category…</option>`;
+    sel2.innerHTML=cats;
+    sel2.value=newKey;
+  });
+};
 
 window.showAddItemForm=function(){
   _buildItemModal('Add New Item',null,async()=>{

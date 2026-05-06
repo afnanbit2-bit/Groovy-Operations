@@ -41,6 +41,7 @@ service cloud.firestore {
     match /store_items/{doc}          { allow read, write: if signedIn(); }
     match /store_transactions/{doc}   { allow read, write: if signedIn(); }
     match /store_notifications/{doc}  { allow read, write: if signedIn(); }
+    match /store_categories/{doc}     { allow read, write: if signedIn(); }
     match /trim_templates/{doc}       { allow read, write: if signedIn(); }
 
     // ── Embellishments / printing ──
