@@ -919,6 +919,9 @@ let session=null,allPOs=[],allPasses=[],currentPage='',viewingPO=null,poImages={
 let stageWorkPO=null,stageWorkStage=null,currentBundles=[],cutState={poId:null,actualQty:{},pendingBundles:[]};
 let gpActiveTab='outward',allReturns=[],allFabricIn=[],fabRollIdx=0;
 let allGPEditRequests=[],_gpEditRowIdx=0;
+let allFabricInventory=[],allFabricMovements=[];
+let _fabInvFilter='in_stock',_fabInvSearchQ='',_fabInvDrillKey=null;
+let _gpOutwardFabRolls=[];
 let bundleDamage={},bundlePartIdx=0;
 // ── Store state ──
 let allItems=[],allTransactions=[],allTemplates=[],allRequests=[],allActivePOs=[];
@@ -1156,18 +1159,22 @@ async function reserveBundleIds(n){
 
 async function loadData(){
   try{
-    const[posSnap,gpSnap,retSnap,fabSnap,editSnap]=await Promise.all([
+    const[posSnap,gpSnap,retSnap,fabSnap,editSnap,fInvSnap,fMovSnap]=await Promise.all([
       getDocs(query(collection(db,'pos'),orderBy('ts','desc'))),
       getDocs(query(collection(db,'gatepasses'),orderBy('ts','desc'))),
       getDocs(query(collection(db,'returns'),orderBy('ts','desc'))),
       getDocs(query(collection(db,'fabricin'),orderBy('ts','desc'))),
-      getDocs(query(collection(db,'gatepass_edit_requests'),orderBy('ts','desc'))).catch(()=>({docs:[]}))
+      getDocs(query(collection(db,'gatepass_edit_requests'),orderBy('ts','desc'))).catch(()=>({docs:[]})),
+      getDocs(collection(db,'fabric_inventory')).catch(()=>({docs:[]})),
+      getDocs(query(collection(db,'fabric_movements'),orderBy('ts','desc'))).catch(()=>({docs:[]}))
     ]);
     allPOs=posSnap.docs.map(d=>({...d.data(),fbKey:d.id}));
     allPasses=gpSnap.docs.map(d=>d.data());
     allReturns=retSnap.docs.map(d=>d.data());
     allFabricIn=fabSnap.docs.map(d=>d.data());
     allGPEditRequests=editSnap.docs.map(d=>d.data());
+    allFabricInventory=fInvSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    allFabricMovements=fMovSnap.docs.map(d=>({...d.data(),_id:d.id}));
     if(currentPage)renderPage(currentPage);
     if(typeof _maybeLoadPrintingData==='function')_maybeLoadPrintingData();
     if(typeof loadHRMData==='function')loadHRMData().then(()=>{ if(currentPage==='dashboard'||currentPage==='hrm-employees'){const m=document.getElementById('main-content');if(m&&typeof renderPage==='function')renderPage(currentPage);} });
@@ -1175,18 +1182,22 @@ async function loadData(){
     if((e.code==='permission-denied'||e.message.includes('permissions'))&&auth.currentUser){
       try{
         await auth.currentUser.getIdToken(true);
-        const[posSnap,gpSnap,retSnap,fabSnap,editSnap]=await Promise.all([
+        const[posSnap,gpSnap,retSnap,fabSnap,editSnap,fInvSnap,fMovSnap]=await Promise.all([
           getDocs(query(collection(db,'pos'),orderBy('ts','desc'))),
           getDocs(query(collection(db,'gatepasses'),orderBy('ts','desc'))),
           getDocs(query(collection(db,'returns'),orderBy('ts','desc'))),
           getDocs(query(collection(db,'fabricin'),orderBy('ts','desc'))),
-          getDocs(query(collection(db,'gatepass_edit_requests'),orderBy('ts','desc'))).catch(()=>({docs:[]}))
+          getDocs(query(collection(db,'gatepass_edit_requests'),orderBy('ts','desc'))).catch(()=>({docs:[]})),
+          getDocs(collection(db,'fabric_inventory')).catch(()=>({docs:[]})),
+          getDocs(query(collection(db,'fabric_movements'),orderBy('ts','desc'))).catch(()=>({docs:[]}))
         ]);
         allPOs=posSnap.docs.map(d=>({...d.data(),fbKey:d.id}));
         allPasses=gpSnap.docs.map(d=>d.data());
         allReturns=retSnap.docs.map(d=>d.data());
         allFabricIn=fabSnap.docs.map(d=>d.data());
         allGPEditRequests=editSnap.docs.map(d=>d.data());
+        allFabricInventory=fInvSnap.docs.map(d=>({...d.data(),_id:d.id}));
+        allFabricMovements=fMovSnap.docs.map(d=>({...d.data(),_id:d.id}));
         if(currentPage)renderPage(currentPage);
         if(typeof _maybeLoadPrintingData==='function')_maybeLoadPrintingData();
         return;
@@ -1569,6 +1580,7 @@ function buildNav(){
   if(!isWorker){
     storeSubItems.push({id:'store-dashboard',label:'Dashboard'});
     storeSubItems.push({id:'store-inventory',label:'Inventory'});
+    storeSubItems.push({id:'store-fabric-inventory',label:'Fabric Inventory'});
     storeSubItems.push({id:'store-receive',label:'Receive Stock'});
     storeSubItems.push({id:'store-issue',label:'Issue Stock'});
     storeSubItems.push({id:'store-log',label:'Stock Log'});
@@ -1863,6 +1875,7 @@ function renderPage(id){
   // ── Store pages ──
   else if(id==='store-dashboard')m.innerHTML=renderStoreDashboard();
   else if(id==='store-inventory')m.innerHTML=renderInventory();
+  else if(id==='store-fabric-inventory')m.innerHTML=renderFabricInventory();
   else if(id==='store-receive'){m.innerHTML=renderStoreReceive();onRcvItemChange();}
   else if(id==='store-issue'){m.innerHTML=renderStoreIssue();onIssItemChange();loadActivePOs();}
   else if(id==='store-templates'){m.innerHTML=renderStoreTemplates();const _si=document.getElementById('tpl-prod-search');if(_si){_si.addEventListener('input',()=>filterTplProd(_si.value));_si.addEventListener('focus',()=>filterTplProd(_si.value));}}
@@ -2316,6 +2329,14 @@ function renderCuttingWork(po){
     </div>
   </div>
   <div class="card"><div class="card-title">Fabric used</div>
+    <div class="field" style="margin-bottom:10px">
+      <label>Consume from fabric stock <span style="font-weight:400;color:var(--muted)">(optional — picks rolls to deduct from inventory)</span></label>
+      <select id="cut-fab-stock" onchange="window.onCutFabStockPick()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%">
+        <option value="">— don't deduct from fabric inventory —</option>
+        ${allFabricInventory.filter(s=>(s.totalWeight||0)>0).map(s=>`<option value="${s._id}">${_gpEsc(s.fabType||'')} · ${s.gsm||0}gsm · ${_gpEsc(s.color||'')} — ${s.totalWeight} ${s.unit||'kg'} · ${s.rollsCount||0} rolls</option>`).join('')}
+      </select>
+    </div>
+    <div id="cut-fab-rolls-pick" style="margin-bottom:10px"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div class="field"><label>Total weight (kg) *</label><input id="cut-weight" type="number" min="0" step="0.1" placeholder="e.g. 100" style="width:100%" oninput="window.calcCutAvg()"></div>
       <div class="field"><label>Total rolls</label><input id="cut-rolls" type="number" min="0" placeholder="e.g. 12" style="width:100%"></div>
@@ -2423,6 +2444,36 @@ window.removeCutBundle=function(tempId){
   const po=allPOs.find(p=>p.fbKey===stageWorkPO);if(po)refreshCutPartial(po);
 };
 
+let _cutFabRolls=[];
+window.onCutFabStockPick=function(){
+  const key=document.getElementById('cut-fab-stock')?.value||'';
+  const wrap=document.getElementById('cut-fab-rolls-pick');
+  _cutFabRolls=[];
+  if(!key||!wrap){if(wrap)wrap.innerHTML='';return;}
+  const stock=allFabricInventory.find(s=>s._id===key);
+  if(!stock){wrap.innerHTML='';return;}
+  const inStock=(stock.rolls||[]).filter(r=>r.status==='in_stock');
+  if(!inStock.length){wrap.innerHTML='<div style="font-size:12px;color:var(--muted);padding:8px">No in-stock rolls.</div>';return;}
+  wrap.innerHTML=`<label style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Select rolls to consume (${inStock.length} in stock)</label>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;max-height:240px;overflow-y:auto;padding:8px;background:#fafafa;border:1px solid var(--border);border-radius:8px">
+      ${inStock.map(r=>`<label style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">
+        <input type="checkbox" data-roll="${_gpEsc(r.rollCode)}" data-weight="${r.weight||0}" onchange="window.onCutFabRollToggle()" style="margin:0">
+        <span style="font-weight:700;letter-spacing:.04em">${r.rollCode}</span>
+        <span style="color:var(--muted)">${r.weight||0} ${stock.unit||'kg'}</span>
+      </label>`).join('')}
+    </div>`;
+};
+window.onCutFabRollToggle=function(){
+  _cutFabRolls=[];let totQty=0;
+  document.querySelectorAll('#cut-fab-rolls-pick input[type=checkbox]:checked').forEach(cb=>{
+    _cutFabRolls.push({rollCode:cb.dataset.roll,weight:parseFloat(cb.dataset.weight)||0});
+    totQty+=parseFloat(cb.dataset.weight)||0;
+  });
+  const wt=document.getElementById('cut-weight');if(wt&&_cutFabRolls.length)wt.value=totQty.toFixed(2);
+  const rolls=document.getElementById('cut-rolls');if(rolls&&_cutFabRolls.length)rolls.value=_cutFabRolls.length;
+  if(typeof window.calcCutAvg==='function')window.calcCutAvg();
+};
+
 window.markCuttingDone=async function(fbKey){
   const po=allPOs.find(p=>p.fbKey===fbKey);if(!po)return;
   if(!cutValidationOk(po)){showToast('Validation failed — check quantities.',true);return;}
@@ -2443,11 +2494,23 @@ window.markCuttingDone=async function(fbKey){
     const cutRolls=document.getElementById('cut-rolls')?.value.trim()||'';
     const cutUnits=['XS','S','M','L','XL','2XL'].reduce((a,s)=>a+(parseInt(cutState.actualQty[s])||0),0);
     const cutAvg=cutWt>0&&cutUnits>0?Math.round(cutWt*1000/cutUnits)+'g':'';
-    await updateDoc(doc(db,'pos',fbKey),{currentStage:'bundling',cutQty:{...cutState.actualQty},bundleIds,totalWeight:cutWt||'',totalRoll:cutRolls,avgPerUnit:cutAvg,[`stages.cutting.done`]:true,[`stages.cutting.doneAt`]:new Date().toISOString(),[`stages.cutting.doneBy`]:session.name});
-    await logActivity('Stage done',`PO ${po.id} · Cutting done — ${cutState.pendingBundles.length} bundles created`);
-    // Auto-create embellishment job if PO has embellishment requirement
+    // Fabric inventory consumption (optional)
+    const stockKey=document.getElementById('cut-fab-stock')?.value||'';
+    let consumedFromInv=null;
+    if(stockKey&&_cutFabRolls.length){
+      const stock=allFabricInventory.find(s=>s._id===stockKey);
+      if(stock){
+        const rollCodes=_cutFabRolls.map(r=>r.rollCode);
+        await _fabInvUpsert({fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:stock.unit||'kg',removeRollCodes:rollCodes,note:`Consumed for PO ${po.id} cutting`,sourceCol:'pos',sourceId:po.id});
+        consumedFromInv={fabType:stock.fabType,gsm:stock.gsm,color:stock.color,rollCodes,qty:_cutFabRolls.reduce((s,r)=>s+r.weight,0)};
+      }
+    }
+    const poUpdate={currentStage:'bundling',cutQty:{...cutState.actualQty},bundleIds,totalWeight:cutWt||'',totalRoll:cutRolls,avgPerUnit:cutAvg,[`stages.cutting.done`]:true,[`stages.cutting.doneAt`]:new Date().toISOString(),[`stages.cutting.doneBy`]:session.name};
+    if(consumedFromInv)poUpdate.fabricConsumed=consumedFromInv;
+    await updateDoc(doc(db,'pos',fbKey),poUpdate);
+    await logActivity('Stage done',`PO ${po.id} · Cutting done — ${cutState.pendingBundles.length} bundles${consumedFromInv?` · consumed ${consumedFromInv.rollCodes.length} rolls`:''}`);
     if(po.embellishment?.required)await autoCreateEmbJob({...po,cutQty:{...cutState.actualQty},bundleIds}).catch(()=>{});
-    showToast(`Cutting done ✓ — ${cutState.pendingBundles.length} bundles`);await loadData();window.showPage('my-work');
+    showToast(`Cutting done ✓ — ${cutState.pendingBundles.length} bundles${consumedFromInv?' · fabric deducted':''}`);await loadData();window.showPage('my-work');
   }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Mark Cutting Done ✓';}}
 };
 
@@ -2771,6 +2834,9 @@ function renderOutward(){
         <input id="gp-article" placeholder="Type to search e.g. GH001 or Black Hoodie…" autocomplete="off" oninput="window.filterGPArticle(this.value)" onfocus="window.filterGPArticle(this.value)">
         <div id="gp-article-dd" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:220px;overflow-y:auto;margin-top:3px"></div>
       </div>
+      <div class="field"><label>Specification *</label>
+        <input id="gp-spec" placeholder="e.g. color / GSM / lot / variant — required">
+      </div>
       <div class="field"><label>Destination *</label>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
           <button type="button" class="dest-chip" onclick="window.setDest('FebKnit')">FebKnit</button>
@@ -2801,11 +2867,19 @@ function renderOutward(){
   </div>
   <div class="card" id="gp-fabric-card" style="display:none"><div class="card-title">Fabric details</div>
     <div class="form-grid">
+      <div class="field" style="grid-column:1/-1"><label>Pick from fabric stock *</label>
+        <select id="gp-fab-stock" onchange="window.onGPFabStockPick()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%">
+          <option value="">— pick a fabric in stock —</option>
+        </select>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Choose specific rolls below to deduct from inventory.</div>
+      </div>
+      <div class="field" style="grid-column:1/-1" id="gp-fab-rolls-pick-wrap"></div>
       <div class="field"><label>Total <span id="gp-fab-unit-label">weight (kg)</span> *</label>
-        <input id="gp-fab-qty" type="number" min="0" step="0.01" placeholder="0" oninput="window.gpFabRecalc()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%">
+        <input id="gp-fab-qty" type="number" min="0" step="0.01" placeholder="0" readonly style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#eef2ff;color:var(--text);font-family:inherit;outline:none;width:100%;font-weight:700">
+        <div style="font-size:10px;color:var(--muted);margin-top:3px">Auto-summed from selected rolls.</div>
       </div>
       <div class="field"><label>Roll count</label>
-        <input id="gp-fab-rolls" type="number" min="0" placeholder="0" oninput="window.gpFabRecalc()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%">
+        <input id="gp-fab-rolls" type="number" min="0" placeholder="0" readonly style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#eef2ff;color:var(--text);font-family:inherit;outline:none;width:100%;font-weight:700">
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
@@ -2869,10 +2943,15 @@ function renderFabricInTab(){
       </div>
       <div class="field"><label>Date</label><input id="fab-date" type="date" value="${today}"></div>
       <div class="field"><label>Fabric Type *</label>
-        <select id="fab-type"><option value="">Select type…</option>${fabTypes.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
+        <select id="fab-type" onchange="window.refreshFabCode()"><option value="">Select type…</option>${fabTypes.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
       </div>
-      <div class="field"><label>Fabric Color *</label><input id="fab-color" placeholder="e.g. Black, White, Royal Blue"></div>
+      <div class="field"><label>GSM *</label><input id="fab-gsm" type="number" min="0" placeholder="e.g. 220" onchange="window.refreshFabCode()"></div>
+      <div class="field"><label>Fabric Color *</label><input id="fab-color" placeholder="e.g. Black, White, Royal Blue" onchange="window.refreshFabCode()"></div>
       <div class="field"><label>Received By</label><input value="${session.name}" readonly style="background:#f0f0f0;cursor:default"></div>
+      <div class="field"><label>Auto fabric code</label>
+        <input id="fab-code" readonly placeholder="Pick fabric type to generate" style="background:#eef2ff;color:#1e3a8a;font-weight:700;letter-spacing:.04em">
+        <div style="font-size:10px;color:var(--muted);margin-top:3px">System-generated. Each roll will be tagged <span id="fab-code-roll-hint">CODE-R01</span>, <span id="fab-code-roll-hint-2">CODE-R02</span>…</div>
+      </div>
       <div class="field" style="grid-column:1/-1"><label>Notes</label><textarea id="fab-notes" rows="2" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%;resize:vertical" placeholder="Optional notes"></textarea></div>
     </div>
   </div>
@@ -2909,7 +2988,7 @@ function renderGPPage(){
     const fabBadge=isFab?`<span style="display:inline-block;background:#dbeafe;color:#1e40af;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">Fabric</span>`:'';
     const qtyLabel=isFab?`${p.fabricQty||0} ${p.fabricUnit||'kg'}${p.rollsCount?` · ${p.rollsCount} rolls`:''}`:`${p.totalUnits||0} pcs`;
     return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5;flex-wrap:wrap;gap:8px">
-    <div><div style="font-weight:700;color:var(--red);font-size:11px">${p.id}${fabBadge}${pendBadge}</div><div style="font-size:13px;font-weight:500">${p.article||'—'}</div><div style="font-size:11px;color:var(--muted)">${p.name||'—'} · ${p.date||''} · ${p.dest||'—'}</div></div>
+    <div><div style="font-weight:700;color:var(--red);font-size:11px">${p.id}${fabBadge}${pendBadge}</div><div style="font-size:13px;font-weight:500">${p.article||'—'}${p.spec?` <span style="font-weight:400;color:var(--muted)">· ${_gpEsc(p.spec)}</span>`:''}</div><div style="font-size:11px;color:var(--muted)">${p.name||'—'} · ${p.date||''} · ${p.dest||'—'}</div></div>
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div style="text-align:right;font-size:12px;color:var(--muted);font-weight:500">${qtyLabel}</div>
     <button class="btn-pdf" onclick="window.generateGPPdf('${p.id}')">⬇ PDF</button>
     <button onclick="window.editGP('${p.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
@@ -2946,8 +3025,61 @@ window.onGPTypeChange=function(){
     const totLbl=t==='fabric_kg'?'weight':'length';
     const lblEl=document.getElementById('gp-fab-unit-label');if(lblEl)lblEl.textContent=labelTxt;
     const totLblEl=document.getElementById('gp-fab-tot-label');if(totLblEl)totLblEl.textContent=totLbl;
+    _populateFabStockSelect(unit);
+    _gpOutwardFabRolls=[];
+    document.getElementById('gp-fab-rolls-pick-wrap').innerHTML='';
     window.gpFabRecalc();
   }
+};
+
+function _populateFabStockSelect(unit){
+  const sel=document.getElementById('gp-fab-stock');
+  if(!sel)return;
+  const stocks=allFabricInventory.filter(s=>(s.unit||'kg')===unit&&(s.totalWeight||0)>0);
+  sel.innerHTML=`<option value="">— pick a fabric in stock —</option>`+
+    stocks.map(s=>`<option value="${s._id}">${s.fabType} · ${s.gsm||0}gsm · ${s.color} — ${s.totalWeight} ${s.unit||'kg'} · ${s.rollsCount||0} rolls</option>`).join('');
+  if(!stocks.length){sel.innerHTML+=`<option disabled>No fabric in stock for this unit</option>`;}
+}
+
+window.onGPFabStockPick=function(){
+  const key=document.getElementById('gp-fab-stock')?.value||'';
+  const wrap=document.getElementById('gp-fab-rolls-pick-wrap');
+  _gpOutwardFabRolls=[];
+  if(!key||!wrap){if(wrap)wrap.innerHTML='';window.gpFabRecalc();return;}
+  const stock=allFabricInventory.find(s=>s._id===key);
+  if(!stock){wrap.innerHTML='';window.gpFabRecalc();return;}
+  const inStock=(stock.rolls||[]).filter(r=>r.status==='in_stock');
+  if(!inStock.length){wrap.innerHTML='<div style="font-size:12px;color:var(--muted);padding:8px">No in-stock rolls.</div>';window.gpFabRecalc();return;}
+  wrap.innerHTML=`<label>Select rolls to issue (${inStock.length} in stock)</label>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;max-height:240px;overflow-y:auto;padding:8px;background:#fafafa;border:1px solid var(--border);border-radius:8px">
+      ${inStock.map(r=>`<label style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">
+        <input type="checkbox" data-roll="${_gpEsc(r.rollCode)}" data-weight="${r.weight||0}" onchange="window.onGPFabRollToggle()" style="margin:0">
+        <span style="font-weight:700;letter-spacing:.04em">${r.rollCode}</span>
+        <span style="color:var(--muted)">${r.weight||0} ${stock.unit||'kg'}</span>
+      </label>`).join('')}
+    </div>
+    <div style="margin-top:6px;display:flex;gap:6px">
+      <button type="button" onclick="window.gpFabRollSelectAll(true)" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-family:inherit">Select all</button>
+      <button type="button" onclick="window.gpFabRollSelectAll(false)" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-family:inherit">Clear</button>
+    </div>`;
+  window.gpFabRecalc();
+};
+
+window.gpFabRollSelectAll=function(check){
+  document.querySelectorAll('#gp-fab-rolls-pick-wrap input[type=checkbox]').forEach(cb=>{cb.checked=!!check;});
+  window.onGPFabRollToggle();
+};
+
+window.onGPFabRollToggle=function(){
+  _gpOutwardFabRolls=[];
+  let totQty=0;
+  document.querySelectorAll('#gp-fab-rolls-pick-wrap input[type=checkbox]:checked').forEach(cb=>{
+    const code=cb.dataset.roll;const w=parseFloat(cb.dataset.weight)||0;
+    _gpOutwardFabRolls.push({rollCode:code,weight:w});totQty+=w;
+  });
+  const qtyInp=document.getElementById('gp-fab-qty');if(qtyInp)qtyInp.value=totQty.toFixed(2);
+  const rollsInp=document.getElementById('gp-fab-rolls');if(rollsInp)rollsInp.value=_gpOutwardFabRolls.length;
+  window.gpFabRecalc();
 };
 
 window.gpFabRecalc=function(){
@@ -2963,27 +3095,39 @@ window.gpFabRecalc=function(){
 
 window.submitGP=async function(){
   const article=document.getElementById('gp-article')?.value.trim(),dest=document.getElementById('gp-dest')?.value.trim();
+  const spec=document.getElementById('gp-spec')?.value.trim()||'';
   if(!article||!dest){showToast('Article and destination required.',true);return;}
+  if(!spec){showToast('Specification is required.',true);return;}
   const gpType=document.getElementById('gp-type')?.value||'garments';
   const isFabric=gpType==='fabric_kg'||gpType==='fabric_m';
   let payload;
+  let inventoryUpdate=null;
   try{
     const next=await getNextId('gatepasses');
     const gpId='GP-'+String(next).padStart(3,'0');
-    const base={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,dest,date:document.getElementById('gp-date')?.value,time:document.getElementById('gp-time')?.value,purpose:document.getElementById('gp-purpose')?.value?.trim()||''};
+    const base={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,spec,dest,date:document.getElementById('gp-date')?.value,time:document.getElementById('gp-time')?.value,purpose:document.getElementById('gp-purpose')?.value?.trim()||''};
     if(isFabric){
       const fabUnit=gpType==='fabric_m'?'meters':'kg';
+      const stockKey=document.getElementById('gp-fab-stock')?.value||'';
+      if(!stockKey){showToast('Pick a fabric stock row.',true);return;}
+      if(!_gpOutwardFabRolls.length){showToast('Select at least one roll to issue.',true);return;}
+      const stock=allFabricInventory.find(s=>s._id===stockKey);
+      if(!stock){showToast('Fabric stock not found.',true);return;}
       const fabQty=parseFloat(document.getElementById('gp-fab-qty')?.value)||0;
-      const rollsCount=parseInt(document.getElementById('gp-fab-rolls')?.value)||0;
-      if(!fabQty){showToast(`Enter total ${fabUnit==='kg'?'weight':'length'}.`,true);return;}
-      payload={...base,gpType:'fabric',fabricUnit:fabUnit,fabricQty:fabQty,rollsCount,boras:'0',items:[],totalUnits:0,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
+      const rollsCount=_gpOutwardFabRolls.length;
+      const rollCodes=_gpOutwardFabRolls.map(r=>r.rollCode);
+      payload={...base,gpType:'fabric',fabricUnit:fabUnit,fabricQty:fabQty,rollsCount,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stockKey,boras:'0',items:[],totalUnits:0,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
+      inventoryUpdate={fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:stock.unit||fabUnit,removeRollCodes:rollCodes,note:`Outward to ${dest}`,sourceCol:'gatepasses',sourceId:gpId};
     }else{
       const items=[];document.querySelectorAll('#gp-body tr').forEach(r=>{const i=r.querySelectorAll('input'),sz=i[0]?.value.trim();if(sz)items.push({size:sz,units:parseFloat(i[1]?.value)||0,weight:parseFloat(i[2]?.value)||0});});
       if(!items.length){showToast('Add at least one size row.',true);return;}
       payload={...base,gpType:'garments',boras:document.getElementById('gp-boras')?.value||'0',totalUnits:items.reduce((s,r)=>s+r.units,0),totalWeight:items.reduce((s,r)=>s+r.weight,0).toFixed(1),items};
     }
     await setDoc(doc(db,'gatepasses',gpId),payload);
-    await logActivity('Gate pass issued',`${gpId} — ${article} to ${dest}${isFabric?' (fabric)':''}`);
+    if(inventoryUpdate){
+      await _fabInvUpsert(inventoryUpdate);
+    }
+    await logActivity('Gate pass issued',`${gpId} — ${article} to ${dest}${isFabric?' (fabric · '+_gpOutwardFabRolls.length+' rolls)':''}`);
     showToast(gpId+' issued ✓');await loadData();window.showPage('gatepass');
   }catch(e){showToast('Error: '+e.message,true);}
 };
@@ -3133,22 +3277,47 @@ window.updateFabUnit=function(){
   window.fabRecalc();
 };
 
+window.refreshFabCode=function(){
+  const fabType=document.getElementById('fab-type')?.value||'';
+  const codeEl=document.getElementById('fab-code');
+  if(!codeEl)return;
+  if(!fabType){codeEl.value='';
+    const h1=document.getElementById('fab-code-roll-hint');if(h1)h1.textContent='CODE-R01';
+    const h2=document.getElementById('fab-code-roll-hint-2');if(h2)h2.textContent='CODE-R02';
+    return;
+  }
+  const prefix=_fabPrefix(fabType);
+  const code=_nextFabCodeFor(prefix);
+  codeEl.value=code;
+  const h1=document.getElementById('fab-code-roll-hint');if(h1)h1.textContent=code+'-R01';
+  const h2=document.getElementById('fab-code-roll-hint-2');if(h2)h2.textContent=code+'-R02';
+  // Re-label any existing roll rows
+  let i=0;
+  document.querySelectorAll('#fab-rolls-body .roll-row').forEach(row=>{
+    i++;
+    const rollCode=`${code}-R${String(i).padStart(2,'0')}`;
+    const lbl=row.querySelector('.fab-roll-code');
+    if(lbl)lbl.textContent=rollCode;
+  });
+};
+
 window.addFabRoll=function(){
   fabRollIdx++;
-  const rollNum='R-'+String(fabRollIdx).padStart(3,'0');
+  const fabCode=document.getElementById('fab-code')?.value||'';
+  const i=document.querySelectorAll('#fab-rolls-body .roll-row').length+1;
+  const rollCode=fabCode?`${fabCode}-R${String(i).padStart(2,'0')}`:`R-${String(fabRollIdx).padStart(3,'0')}`;
   const supplier=(document.getElementById('fab-supplier')?.value||'').trim();
-  const isDaniyal=supplier.toLowerCase().includes('daniyal twill');
-  const unit=isDaniyal?'m':'kg';
+  const unit=_fabUnitForSupplier(supplier);
   const id='fabroll-'+fabRollIdx;
   const body=document.getElementById('fab-rolls-body');
   if(!body)return;
   const div=document.createElement('div');
   div.id=id;div.className='roll-row';
-  div.innerHTML=`<span style="font-size:11px;font-weight:700;color:var(--dark);min-width:52px">${rollNum}</span>
+  div.innerHTML=`<span class="fab-roll-code" style="font-size:11px;font-weight:700;color:var(--dark);min-width:96px;letter-spacing:.04em">${rollCode}</span>
     <input type="number" min="0" step="0.01" placeholder="0" style="flex:1;max-width:120px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:#fff;outline:none;font-family:inherit" oninput="window.fabRecalc()">
     <span class="fab-roll-unit" style="font-size:12px;color:var(--muted);min-width:24px">${unit}</span>
     <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;flex-shrink:0;white-space:nowrap">
-      <input type="checkbox" onchange="window.onFabRollQC(this,'${rollNum}')"> QC ✓
+      <input type="checkbox" onchange="window.onFabRollQC(this,'${rollCode}')"> QC ✓
     </label>
     <button onclick="document.getElementById('${id}').remove();window.fabRecalc()" style="background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:2px 6px;flex-shrink:0">×</button>`;
   body.appendChild(div);
@@ -3173,36 +3342,70 @@ window.onFabRollQC=function(checkbox){
   if(row)row.style.background=checkbox.checked?'#f0fdf4':'';
 };
 
+async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,note,sourceCol,sourceId}){
+  const key=_fabInvKey(fabType,gsm,color);
+  const ref=doc(db,'fabric_inventory',key);
+  const existing=allFabricInventory.find(x=>x._id===key);
+  const rolls=Array.isArray(existing?.rolls)?existing.rolls.slice():[];
+  let totalWeight=existing?existing.totalWeight||0:0;
+  if(Array.isArray(addRolls)){
+    for(const r of addRolls){
+      rolls.push({rollCode:r.rollCode,weight:r.weight,unit:r.unit||unit,status:'in_stock',sourceFabId:r.sourceFabId||sourceId,addedAt:Date.now(),addedBy:session.name});
+      totalWeight+=r.weight||0;
+    }
+  }
+  if(Array.isArray(removeRollCodes)){
+    for(const rc of removeRollCodes){
+      const idx=rolls.findIndex(r=>r.rollCode===rc&&r.status==='in_stock');
+      if(idx>=0){
+        totalWeight-=rolls[idx].weight||0;
+        rolls[idx]={...rolls[idx],status:'issued',issuedAt:Date.now(),issuedBy:session.name,issuedTo:sourceId};
+      }
+    }
+  }
+  if(totalWeight<0)totalWeight=0;
+  const payload={key,fabType,gsm:Number(gsm)||0,color,unit:unit||'kg',rolls,totalWeight:parseFloat(totalWeight.toFixed(2)),rollsCount:rolls.filter(r=>r.status==='in_stock').length,lastMovementAt:Date.now()};
+  await setDoc(ref,payload,{merge:true});
+  if(existing)Object.assign(existing,payload);else allFabricInventory.push({...payload,_id:key});
+  // Log movement
+  const movRef=doc(collection(db,'fabric_movements'));
+  const movDoc={id:movRef.id,ts:Date.now(),type:addRolls?'in':'out',fabType,gsm:Number(gsm)||0,color,unit:unit||'kg',qty:addRolls?addRolls.reduce((s,r)=>s+(r.weight||0),0):(removeRollCodes||[]).reduce((s,rc)=>{const r=(existing?.rolls||[]).find(x=>x.rollCode===rc);return s+(r?r.weight||0:0);},0),rollCodes:addRolls?addRolls.map(r=>r.rollCode):(removeRollCodes||[]),sourceCollection:sourceCol||'',sourceId:sourceId||'',by:session.name,note:note||''};
+  await setDoc(movRef,movDoc);
+  allFabricMovements.unshift({...movDoc,_id:movRef.id});
+}
+
 window.submitFabricIn=async function(){
   const supplier=(document.getElementById('fab-supplier')?.value||'').trim();
   const date=document.getElementById('fab-date')?.value||'';
   const fabType=document.getElementById('fab-type')?.value||'';
+  const gsm=parseInt(document.getElementById('fab-gsm')?.value)||0;
   const color=(document.getElementById('fab-color')?.value||'').trim();
   const notes=(document.getElementById('fab-notes')?.value||'').trim();
-  if(!supplier||!fabType||!color){showToast('Supplier, fabric type and color are required.',true);return;}
-  const isDaniyal=supplier.toLowerCase().includes('daniyal twill');
-  const unit=isDaniyal?'m':'kg';
+  if(!supplier||!fabType||!gsm||!color){showToast('Supplier, fabric type, GSM and color are required.',true);return;}
+  const unit=_fabUnitForSupplier(supplier);
+  const fabCode=document.getElementById('fab-code')?.value||_nextFabCodeFor(_fabPrefix(fabType));
   const rolls=[];
   document.querySelectorAll('#fab-rolls-body .roll-row').forEach(row=>{
-    const spans=row.querySelectorAll('span');
-    const rollNumber=spans[0]?.textContent?.trim()||'';
+    const codeEl=row.querySelector('.fab-roll-code');
+    const rollCode=codeEl?.textContent?.trim()||'';
     const weightEl=row.querySelector('input[type=number]');
     const qcEl=row.querySelector('input[type=checkbox]');
     const weight=parseFloat(weightEl?.value)||0;
     const qcPassed=qcEl?.checked||false;
-    if(rollNumber)rolls.push({rollNumber,weight,unit,qcPassed,qcBy:qcPassed?session.name:'',qcAt:qcPassed?Date.now():null});
+    if(rollCode)rolls.push({rollCode,rollNumber:rollCode,weight,unit,qcPassed,qcBy:qcPassed?session.name:'',qcAt:qcPassed?Date.now():null});
   });
   if(!rolls.length){showToast('Add at least one roll.',true);return;}
+  if(rolls.some(r=>!r.weight)){showToast('Every roll needs a weight.',true);return;}
   const totalWeight=parseFloat(rolls.reduce((s,r)=>s+r.weight,0).toFixed(2));
   try{
     const next=await getNextId('fabricin');
     const fabId='FAB-'+String(next).padStart(3,'0');
-    const payload={id:fabId,ts:Date.now(),supplier,date,fabType,color,receivedBy:session.name,notes,unit,totalWeight,rollsCount:rolls.length,rolls};
+    const payload={id:fabId,fabCode,ts:Date.now(),supplier,date,fabType,gsm,color,receivedBy:session.name,notes,unit,totalWeight,rollsCount:rolls.length,rolls};
     await setDoc(doc(db,'fabricin',fabId),payload);
-    await logActivity('Fabric In',`${fabId} — ${supplier} · ${fabType} · ${color} · ${rolls.length} rolls · ${totalWeight} ${unit}`);
-    showToast(fabId+' saved ✓');
-    const snap=await getDocs(query(collection(db,'fabricin'),orderBy('ts','desc')));
-    allFabricIn=snap.docs.map(d=>d.data());
+    allFabricIn.unshift(payload);
+    await _fabInvUpsert({fabType,gsm,color,unit,addRolls:rolls.map(r=>({rollCode:r.rollCode,weight:r.weight,unit:r.unit,sourceFabId:fabId})),sourceCol:'fabricin',sourceId:fabId,note:`Receipt from ${supplier}`});
+    await logActivity('Fabric In',`${fabId} (${fabCode}) — ${supplier} · ${fabType} ${gsm}gsm · ${color} · ${rolls.length} rolls · ${totalWeight} ${unit}`);
+    showToast(`${fabCode} saved ✓ · added to inventory`);
     window.switchGPTab('fabricin');
   }catch(e){showToast('Error: '+e.message,true);}
 };
@@ -3223,17 +3426,18 @@ function renderFabricInList(){
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span style="font-weight:700;color:var(--red);font-size:11px">${f.id}</span>
+            ${f.fabCode?`<span style="font-weight:700;color:#1e3a8a;font-size:11px;background:#eef2ff;padding:1px 6px;border-radius:4px;letter-spacing:.04em">${f.fabCode}</span>`:''}
             <span style="font-size:11px;color:var(--muted)">${f.date||''}</span>
             ${pendBadge}
           </div>
-          <div style="font-size:13px;font-weight:500;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${f.supplier} · ${f.fabType||'—'}</div>
+          <div style="font-size:13px;font-weight:500;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${f.supplier} · ${f.fabType||'—'}${f.gsm?` · ${f.gsm}gsm`:''}</div>
           <div style="font-size:11px;color:var(--muted)">${f.color||'—'} · ${f.totalWeight||0} ${f.unit||'kg'} · ${total} rolls · <span style="color:${allQC?'var(--green)':'var(--amber)'};font-weight:600">${qcDone}/${total} QC ✓</span></div>
         </div>
         <span id="fab-chev-${f.id}" style="color:var(--muted);font-size:18px;margin-left:8px;flex-shrink:0">›</span>
       </div>
       <div id="fab-rolls-${f.id}" style="display:none;padding:4px 0 8px">
         ${rolls.map(r=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 4px;border-bottom:1px solid #f9f9f9;font-size:12px;gap:6px">
-          <span style="font-weight:600;min-width:52px">${r.rollNumber}</span>
+          <span style="font-weight:600;min-width:96px;letter-spacing:.04em">${r.rollCode||r.rollNumber}</span>
           <span style="flex:1">${r.weight} ${r.unit||'kg'}</span>
           <span style="${r.qcPassed?'color:var(--green);font-weight:600':'color:var(--muted)'}">${r.qcPassed?'QC Passed ✓':'Pending QC'}</span>
           ${r.qcPassed&&r.qcBy?`<span style="font-size:10px;color:var(--muted)">${r.qcBy}</span>`:''}
@@ -3261,6 +3465,39 @@ function _gpPendingFor(type,targetId){
   return allGPEditRequests.find(r=>r&&r.status==='pending'&&r.type===type&&r.targetId===targetId);
 }
 function _gpEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+// ── Fabric type → prefix map (for auto fabric codes & roll IDs) ──
+const FABRIC_PREFIX_MAP=[
+  [/sublimation/i,'SUB'],
+  [/jersey/i,'JRS'],
+  [/terry/i,'TRY'],
+  [/twill/i,'TWL'],
+  [/burbury/i,'BRB'],
+  [/drill/i,'DRL'],
+  [/denim/i,'DEN'],
+  [/fleece/i,'FLC'],
+  [/pfgd/i,'PFG'],
+  [/cora/i,'COR']
+];
+function _fabPrefix(fabType){
+  if(!fabType)return'FAB';
+  for(const[re,p]of FABRIC_PREFIX_MAP){if(re.test(fabType))return p;}
+  return(fabType.replace(/[^a-z]/gi,'').slice(0,3).toUpperCase()||'FAB');
+}
+function _nextFabCodeFor(prefix){
+  const re=new RegExp('^'+prefix+'-(\\d+)$','i');
+  let max=0;
+  for(const f of allFabricIn){const m=(f.fabCode||'').match(re);if(m){const n=parseInt(m[1],10);if(n>max)max=n;}}
+  return prefix+'-'+String(max+1).padStart(3,'0');
+}
+function _fabInvKey(fabType,gsm,color){
+  const t=(fabType||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+  const c=(color||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+  return `${t}__${gsm||0}gsm__${c}`;
+}
+function _fabUnitForSupplier(supplier){
+  return(supplier||'').toLowerCase().includes('daniyal twill')?'m':'kg';
+}
 function _gpRefreshActiveTab(){
   if(gpActiveTab==='outward')renderGPPage();
   else if(gpActiveTab==='returns')renderReturnsList();
@@ -3352,6 +3589,7 @@ window.editGP=function(gpId){
     ${banner}
     <div class="hrm-grid-2">
       <div class="field"><label>Article *</label><input id="gpe-article" value="${_gpEsc(gp.article||'')}"></div>
+      <div class="field"><label>Specification *</label><input id="gpe-spec" value="${_gpEsc(gp.spec||'')}"></div>
       <div class="field"><label>Destination *</label><input id="gpe-dest" value="${_gpEsc(gp.dest||'')}"></div>
       <div class="field"><label>Date</label><input id="gpe-date" type="date" value="${_gpEsc(gp.date||'')}"></div>
       <div class="field"><label>Time</label><input id="gpe-time" type="time" value="${_gpEsc(gp.time||'')}"></div>
@@ -3389,6 +3627,7 @@ function _collectGPEditPayload(){
   const isFab=v('gpe-type')==='fabric';
   const base={
     article:v('gpe-article'),
+    spec:v('gpe-spec'),
     dest:v('gpe-dest'),
     date:v('gpe-date'),
     time:v('gpe-time'),
@@ -3416,6 +3655,7 @@ window.submitGPEdit=async function(gpId){
   if(!gp)return showToast('Gate pass not found.',true);
   const proposed=_collectGPEditPayload();
   if(!proposed.article||!proposed.dest)return showToast('Article and destination required.',true);
+  if(!proposed.spec)return showToast('Specification is required.',true);
   if(proposed.gpType==='fabric'&&!proposed.fabricQty)return showToast('Enter total fabric qty.',true);
   if(proposed.gpType==='garments'&&!proposed.items.length)return showToast('Add at least one size row.',true);
   try{
@@ -3860,7 +4100,7 @@ window.generateGPPdf=function(gpId){
 
   // Info
   pdf.setFontSize(10);pdf.setFont(undefined,'normal');
-  const rows=[[`Person: ${gp.name||'—'}`,`Issued by: ${gp.issuer||gp.name||'—'}`],[`Article: ${gp.article||'—'}`,`Destination: ${gp.dest||'—'}`],[`Purpose: ${gp.purpose||'—'}`,``]];
+  const rows=[[`Person: ${gp.name||'—'}`,`Issued by: ${gp.issuer||gp.name||'—'}`],[`Article: ${gp.article||'—'}`,`Specification: ${gp.spec||'—'}`],[`Destination: ${gp.dest||'—'}`,`Purpose: ${gp.purpose||'—'}`]];
   rows.forEach(row=>{pdf.text(row[0],M,y);if(row[1])pdf.text(row[1],W/2,y);y+=7;});
   y+=4;
 
@@ -4043,6 +4283,113 @@ window.invSetSearch=function(v){
   },180);
 };
 window.invSetSort=function(v){_invSort=v;const m=document.getElementById('main-content');if(m)m.innerHTML=renderInventory();};
+
+// ── Fabric Inventory page ──
+function renderFabricInventory(){
+  if(_fabInvDrillKey){return _renderFabInvDrill(_fabInvDrillKey);}
+  const aggregates=allFabricInventory.filter(s=>s);
+  const totalKg=aggregates.filter(s=>(s.unit||'kg')==='kg').reduce((a,s)=>a+(s.totalWeight||0),0);
+  const totalM=aggregates.filter(s=>(s.unit||'kg')==='meters'||(s.unit||'kg')==='m').reduce((a,s)=>a+(s.totalWeight||0),0);
+  const totalRolls=aggregates.reduce((a,s)=>a+(s.rollsCount||0),0);
+  const filtered=aggregates.filter(s=>{
+    if(_fabInvFilter==='in_stock'&&!(s.totalWeight>0))return false;
+    if(_fabInvFilter==='empty'&&(s.totalWeight>0))return false;
+    if(_fabInvSearchQ){
+      const q=_fabInvSearchQ.toLowerCase();
+      const hay=`${s.fabType||''} ${s.color||''} ${s.gsm||''}`.toLowerCase();
+      if(!hay.includes(q))return false;
+    }
+    return true;
+  }).sort((a,b)=>(b.lastMovementAt||0)-(a.lastMovementAt||0));
+  let h=`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+    <div><div class="page-title">Fabric Inventory</div><div class="page-sub">${aggregates.length} stock rows · ${totalRolls} rolls · ${totalKg.toFixed(1)} kg${totalM?' · '+totalM.toFixed(1)+' m':''}</div></div>
+  </div>`;
+  h+=`<div class="card" style="margin-bottom:14px;padding:12px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${[['in_stock','In stock'],['empty','Out of stock'],['all','All']].map(([k,l])=>`<button onclick="window.fabInvSetFilter('${k}')" style="padding:6px 12px;border:1px solid ${_fabInvFilter===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabInvFilter===k?'var(--dark)':'#fff'};color:${_fabInvFilter===k?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${l}</button>`).join('')}
+      </div>
+      <input id="finv-search" placeholder="Search fabric type / color / GSM…" value="${_fabInvSearchQ.replace(/"/g,'&quot;')}" oninput="window.fabInvSetSearch(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;outline:none;flex:1;min-width:200px">
+    </div>
+  </div>`;
+  if(!filtered.length){
+    h+=`<div class="empty" style="padding:24px;text-align:center">No fabric inventory rows match.</div>`;
+  }else{
+    h+=`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;background:#fff">
+      <thead><tr style="background:#fafafa;border-bottom:1px solid var(--border)">
+        <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em">Fabric</th>
+        <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em">GSM</th>
+        <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em">Color</th>
+        <th style="padding:10px;text-align:right;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em">Stock</th>
+        <th style="padding:10px;text-align:right;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em">Rolls</th>
+        <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em">Last move</th>
+        <th></th>
+      </tr></thead>
+      <tbody>${filtered.map(s=>{
+        const empty=!(s.totalWeight>0);
+        return`<tr style="border-bottom:1px solid #f5f5f5${empty?';opacity:.55':''}">
+          <td style="padding:10px;font-weight:600">${_gpEsc(s.fabType||'—')}</td>
+          <td style="padding:10px">${s.gsm||'—'}</td>
+          <td style="padding:10px">${_gpEsc(s.color||'—')}</td>
+          <td style="padding:10px;text-align:right;font-weight:700;color:${empty?'#dc2626':'var(--text)'}">${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'}</td>
+          <td style="padding:10px;text-align:right;font-weight:600">${s.rollsCount||0}</td>
+          <td style="padding:10px;font-size:11px;color:var(--muted)">${s.lastMovementAt?new Date(s.lastMovementAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}):'—'}</td>
+          <td style="padding:10px;text-align:right"><button onclick="window.fabInvDrill('${s._id}')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Open</button></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>`;
+  }
+  return h+'<div style="height:80px"></div>';
+}
+
+function _renderFabInvDrill(key){
+  const s=allFabricInventory.find(x=>x._id===key);
+  if(!s){return`<div class="page-head"><div class="page-title">Not found</div></div><button class="btn-outline" onclick="window.fabInvDrill(null)">← Back</button>`;}
+  const movements=allFabricMovements.filter(m=>_fabInvKey(m.fabType,m.gsm,m.color)===key).slice(0,80);
+  const rolls=(s.rolls||[]).slice().sort((a,b)=>(a.status==='in_stock'?-1:1)-(b.status==='in_stock'?-1:1));
+  return`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+    <div><div class="page-title">${_gpEsc(s.fabType||'—')} · ${s.gsm||0}gsm · ${_gpEsc(s.color||'—')}</div>
+      <div class="page-sub">${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'} in stock · ${s.rollsCount||0} rolls · ${rolls.length} total rolls ever received</div></div>
+    <button class="btn-outline" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.fabInvDrill(null)">← Back to Fabric Inventory</button>
+  </div>
+  <div class="card" style="margin-bottom:14px"><div class="card-title">Rolls</div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:#fafafa"><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Roll Code</th><th style="padding:8px;text-align:right;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Weight</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Status</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Source</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Issued to / used by</th></tr></thead>
+      <tbody>${rolls.length?rolls.map(r=>{
+        const stColor=r.status==='in_stock'?'var(--green)':r.status==='issued'?'#dc2626':r.status==='consumed'?'#92400e':'var(--muted)';
+        return`<tr style="border-bottom:1px solid #f5f5f5"><td style="padding:8px;font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode||'—')}</td><td style="padding:8px;text-align:right">${r.weight||0} ${r.unit||s.unit||'kg'}</td><td style="padding:8px;color:${stColor};font-weight:600;text-transform:capitalize">${(r.status||'in_stock').replace('_',' ')}</td><td style="padding:8px;font-size:11px;color:var(--muted)">${_gpEsc(r.sourceFabId||'—')}</td><td style="padding:8px;font-size:11px;color:var(--muted)">${_gpEsc(r.issuedTo||r.consumedBy||'—')}</td></tr>`;
+      }).join(''):'<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--muted)">No rolls yet.</td></tr>'}</tbody>
+    </table></div>
+  </div>
+  <div class="card"><div class="card-title">Movements (${movements.length})</div>
+    ${movements.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:#fafafa"><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">When</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Type</th><th style="padding:8px;text-align:right;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Qty</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Rolls</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Source</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">By</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Note</th></tr></thead>
+      <tbody>${movements.map(m=>{
+        const tColor=m.type==='in'?'var(--green)':m.type==='out'?'#dc2626':m.type==='consume'?'#92400e':'var(--muted)';
+        return`<tr style="border-bottom:1px solid #f5f5f5">
+          <td style="padding:8px">${new Date(m.ts).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
+          <td style="padding:8px;color:${tColor};font-weight:700;text-transform:uppercase">${m.type==='in'?'+ IN':m.type==='out'?'− OUT':m.type==='consume'?'− CONSUME':m.type==='return'?'+ RETURN':m.type}</td>
+          <td style="padding:8px;text-align:right;font-weight:600">${(m.qty||0).toFixed(2)} ${m.unit||'kg'}</td>
+          <td style="padding:8px;font-size:11px;letter-spacing:.04em">${(m.rollCodes||[]).slice(0,3).map(_gpEsc).join(', ')}${(m.rollCodes||[]).length>3?` +${m.rollCodes.length-3}`:''}</td>
+          <td style="padding:8px;font-size:11px;color:var(--muted)">${_gpEsc(m.sourceCollection||'')}/${_gpEsc(m.sourceId||'')}</td>
+          <td style="padding:8px;font-size:11px;color:var(--muted)">${_gpEsc(m.by||'')}</td>
+          <td style="padding:8px;font-size:11px;color:var(--muted)">${_gpEsc(m.note||'')}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>`:'<div class="empty" style="padding:16px">No movements logged for this fabric yet.</div>'}
+  </div>
+  <div style="height:80px"></div>`;
+}
+
+window.fabInvSetFilter=function(f){_fabInvFilter=f;const m=document.getElementById('main-content');if(m)m.innerHTML=renderFabricInventory();};
+window.fabInvSetSearch=function(v){
+  _fabInvSearchQ=v||'';
+  clearTimeout(window._fabInvSearchTo);
+  window._fabInvSearchTo=setTimeout(()=>{
+    const m=document.getElementById('main-content');if(m){m.innerHTML=renderFabricInventory();const i=document.getElementById('finv-search');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}}
+  },180);
+};
+window.fabInvDrill=function(key){_fabInvDrillKey=key;const m=document.getElementById('main-content');if(m)m.innerHTML=renderFabricInventory();};
 
 function renderStoreReceive(){
   _rcvNewMode=false;
