@@ -2760,6 +2760,13 @@ function renderOutward(){
     <div class="form-grid">
       <div class="field"><label>Person name</label><input id="gp-name" value="${session.name}" readonly style="background:#f0f0f0;cursor:default"></div>
       <div class="field"><label>Date</label><input id="gp-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+      <div class="field"><label>Pass type *</label>
+        <select id="gp-type" onchange="window.onGPTypeChange()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%">
+          <option value="garments">Garments — by units (pcs)</option>
+          <option value="fabric_kg">Fabric — by weight (kg)</option>
+          <option value="fabric_m">Fabric — by length (meters)</option>
+        </select>
+      </div>
       <div class="field" style="position:relative"><label>Article name *</label>
         <input id="gp-article" placeholder="Type to search e.g. GH001 or Black Hoodie…" autocomplete="off" oninput="window.filterGPArticle(this.value)" onfocus="window.filterGPArticle(this.value)">
         <div id="gp-article-dd" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:220px;overflow-y:auto;margin-top:3px"></div>
@@ -2780,7 +2787,7 @@ function renderOutward(){
       <div class="field"><label>Time</label><input id="gp-time" type="time" value="${new Date().toTimeString().slice(0,5)}"></div>
     </div>
   </div>
-  <div class="card"><div class="card-title">Units by size</div>
+  <div class="card" id="gp-garments-card"><div class="card-title">Units by size</div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:300px">
       <thead><tr style="background:var(--dark)"><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Size</th><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Units (pcs)</th><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Weight (kg)</th><th style="width:36px"></th></tr></thead>
       <tbody id="gp-body"></tbody>
@@ -2790,6 +2797,20 @@ function renderOutward(){
       <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total units</div><div id="gp-t-units" style="font-size:18px;font-weight:700;color:#fff">0 pcs</div></div>
       <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total weight</div><div id="gp-t-weight" style="font-size:18px;font-weight:700;color:#fff">0 kg</div></div>
       <div style="background:var(--red);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total boras</div><div><input id="gp-boras" type="number" min="0" placeholder="0" style="background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,.35);color:#fff;font-size:18px;font-weight:700;width:60px;text-align:center;padding:0;border-radius:0;outline:none"></div></div>
+    </div>
+  </div>
+  <div class="card" id="gp-fabric-card" style="display:none"><div class="card-title">Fabric details</div>
+    <div class="form-grid">
+      <div class="field"><label>Total <span id="gp-fab-unit-label">weight (kg)</span> *</label>
+        <input id="gp-fab-qty" type="number" min="0" step="0.01" placeholder="0" oninput="window.gpFabRecalc()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%">
+      </div>
+      <div class="field"><label>Roll count</label>
+        <input id="gp-fab-rolls" type="number" min="0" placeholder="0" oninput="window.gpFabRecalc()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total <span id="gp-fab-tot-label">weight</span></div><div id="gp-fab-tot-display" style="font-size:18px;font-weight:700;color:#fff">0 kg</div></div>
+      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Rolls</div><div id="gp-fab-rolls-display" style="font-size:18px;font-weight:700;color:#fff">0</div></div>
     </div>
   </div>
   <button class="btn-primary" onclick="window.submitGP()">Submit gate pass</button>
@@ -2884,9 +2905,12 @@ function renderGPPage(){
   body.innerHTML=slice.map(p=>{
     const pend=_gpPendingFor('gp',p.id);
     const pendBadge=pend?`<span title="${pend.action==='delete'?'Delete':'Edit'} pending approval" style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${pend.action==='delete'?'Delete':'Edit'} pending</span>`:'';
+    const isFab=p.gpType==='fabric';
+    const fabBadge=isFab?`<span style="display:inline-block;background:#dbeafe;color:#1e40af;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">Fabric</span>`:'';
+    const qtyLabel=isFab?`${p.fabricQty||0} ${p.fabricUnit||'kg'}${p.rollsCount?` · ${p.rollsCount} rolls`:''}`:`${p.totalUnits||0} pcs`;
     return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5;flex-wrap:wrap;gap:8px">
-    <div><div style="font-weight:700;color:var(--red);font-size:11px">${p.id}${pendBadge}</div><div style="font-size:13px;font-weight:500">${p.article||'—'}</div><div style="font-size:11px;color:var(--muted)">${p.name||'—'} · ${p.date||''} · ${p.dest||'—'}</div></div>
-    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div style="text-align:right;font-size:12px;color:var(--muted);font-weight:500">${p.totalUnits} pcs</div>
+    <div><div style="font-weight:700;color:var(--red);font-size:11px">${p.id}${fabBadge}${pendBadge}</div><div style="font-size:13px;font-weight:500">${p.article||'—'}</div><div style="font-size:11px;color:var(--muted)">${p.name||'—'} · ${p.date||''} · ${p.dest||'—'}</div></div>
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div style="text-align:right;font-size:12px;color:var(--muted);font-weight:500">${qtyLabel}</div>
     <button class="btn-pdf" onclick="window.generateGPPdf('${p.id}')">⬇ PDF</button>
     <button onclick="window.editGP('${p.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
     <button onclick="window.requestDeleteGP('${p.id}')" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
@@ -2908,16 +2932,58 @@ window.addGPRow=function(size='',units='',weight=''){
   document.getElementById('gp-body')?.appendChild(tr);window.gpRecalc();
 };
 window.gpRecalc=function(){let u=0,w=0;document.querySelectorAll('#gp-body tr').forEach(r=>{const i=r.querySelectorAll('input');u+=parseFloat(i[1]?.value)||0;w+=parseFloat(i[2]?.value)||0;});document.getElementById('gp-t-units').textContent=Math.round(u)+' pcs';document.getElementById('gp-t-weight').textContent=w.toFixed(1)+' kg';};
+
+window.onGPTypeChange=function(){
+  const t=document.getElementById('gp-type')?.value||'garments';
+  const garmCard=document.getElementById('gp-garments-card');
+  const fabCard=document.getElementById('gp-fabric-card');
+  const isFab=t==='fabric_kg'||t==='fabric_m';
+  if(garmCard)garmCard.style.display=isFab?'none':'block';
+  if(fabCard)fabCard.style.display=isFab?'block':'none';
+  if(isFab){
+    const unit=t==='fabric_kg'?'kg':'meters';
+    const labelTxt=t==='fabric_kg'?'weight (kg)':'length (meters)';
+    const totLbl=t==='fabric_kg'?'weight':'length';
+    const lblEl=document.getElementById('gp-fab-unit-label');if(lblEl)lblEl.textContent=labelTxt;
+    const totLblEl=document.getElementById('gp-fab-tot-label');if(totLblEl)totLblEl.textContent=totLbl;
+    window.gpFabRecalc();
+  }
+};
+
+window.gpFabRecalc=function(){
+  const t=document.getElementById('gp-type')?.value||'garments';
+  const unit=t==='fabric_m'?'meters':'kg';
+  const qty=parseFloat(document.getElementById('gp-fab-qty')?.value)||0;
+  const rolls=parseInt(document.getElementById('gp-fab-rolls')?.value)||0;
+  const tot=document.getElementById('gp-fab-tot-display');
+  const rollsDisp=document.getElementById('gp-fab-rolls-display');
+  if(tot)tot.textContent=qty.toFixed(2)+' '+unit;
+  if(rollsDisp)rollsDisp.textContent=String(rolls);
+};
+
 window.submitGP=async function(){
   const article=document.getElementById('gp-article')?.value.trim(),dest=document.getElementById('gp-dest')?.value.trim();
   if(!article||!dest){showToast('Article and destination required.',true);return;}
-  const items=[];document.querySelectorAll('#gp-body tr').forEach(r=>{const i=r.querySelectorAll('input'),sz=i[0]?.value.trim();if(sz)items.push({size:sz,units:parseFloat(i[1]?.value)||0,weight:parseFloat(i[2]?.value)||0});});
+  const gpType=document.getElementById('gp-type')?.value||'garments';
+  const isFabric=gpType==='fabric_kg'||gpType==='fabric_m';
+  let payload;
   try{
     const next=await getNextId('gatepasses');
     const gpId='GP-'+String(next).padStart(3,'0');
-    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,dest,date:document.getElementById('gp-date')?.value,time:document.getElementById('gp-time')?.value,purpose:document.getElementById('gp-purpose')?.value?.trim()||'',boras:document.getElementById('gp-boras')?.value||'0',totalUnits:items.reduce((s,r)=>s+r.units,0),totalWeight:items.reduce((s,r)=>s+r.weight,0).toFixed(1),items};
+    const base={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,dest,date:document.getElementById('gp-date')?.value,time:document.getElementById('gp-time')?.value,purpose:document.getElementById('gp-purpose')?.value?.trim()||''};
+    if(isFabric){
+      const fabUnit=gpType==='fabric_m'?'meters':'kg';
+      const fabQty=parseFloat(document.getElementById('gp-fab-qty')?.value)||0;
+      const rollsCount=parseInt(document.getElementById('gp-fab-rolls')?.value)||0;
+      if(!fabQty){showToast(`Enter total ${fabUnit==='kg'?'weight':'length'}.`,true);return;}
+      payload={...base,gpType:'fabric',fabricUnit:fabUnit,fabricQty:fabQty,rollsCount,boras:'0',items:[],totalUnits:0,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
+    }else{
+      const items=[];document.querySelectorAll('#gp-body tr').forEach(r=>{const i=r.querySelectorAll('input'),sz=i[0]?.value.trim();if(sz)items.push({size:sz,units:parseFloat(i[1]?.value)||0,weight:parseFloat(i[2]?.value)||0});});
+      if(!items.length){showToast('Add at least one size row.',true);return;}
+      payload={...base,gpType:'garments',boras:document.getElementById('gp-boras')?.value||'0',totalUnits:items.reduce((s,r)=>s+r.units,0),totalWeight:items.reduce((s,r)=>s+r.weight,0).toFixed(1),items};
+    }
     await setDoc(doc(db,'gatepasses',gpId),payload);
-    await logActivity('Gate pass issued',`${gpId} — ${article} to ${dest}`);
+    await logActivity('Gate pass issued',`${gpId} — ${article} to ${dest}${isFabric?' (fabric)':''}`);
     showToast(gpId+' issued ✓');await loadData();window.showPage('gatepass');
   }catch(e){showToast('Error: '+e.message,true);}
 };
@@ -3262,9 +3328,25 @@ window.editGP=function(gpId){
   const banner=_gpCanApprove()
     ?`<div style="background:#ecfdf5;color:#065f46;border:1px solid #bbf7d0;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Owner/Manager: changes apply immediately.</div>`
     :`<div style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Your changes will be sent to owners/managers for approval.</div>`;
+  const isFab=gp.gpType==='fabric';
+  const fabUnit=gp.fabricUnit||'kg';
+  const sectionHTML=isFab
+    ?`<div style="margin-top:12px;font-weight:600;font-size:13px">Fabric details (${fabUnit})</div>
+      <div class="hrm-grid-2" style="margin-top:6px">
+        <div class="field"><label>Total ${fabUnit==='meters'?'length (meters)':'weight (kg)'} *</label><input id="gpe-fab-qty" type="number" min="0" step="0.01" value="${gp.fabricQty||0}"></div>
+        <div class="field"><label>Roll count</label><input id="gpe-fab-rolls" type="number" min="0" value="${gp.rollsCount||0}"></div>
+      </div>
+      <input type="hidden" id="gpe-fab-unit" value="${fabUnit}">`
+    :`<div style="margin-top:12px;font-weight:600;font-size:13px">Units by size</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
+        <thead><tr style="background:#fafafa"><th style="padding:6px;text-align:left;font-weight:600">Size</th><th style="padding:6px;text-align:left;font-weight:600">Units</th><th style="padding:6px;text-align:left;font-weight:600">Weight (kg)</th><th></th></tr></thead>
+        <tbody id="gpe-rows-body">${rowsHTML}</tbody>
+      </table>
+      <button onclick="window.gpEditAddRow()" style="margin-top:6px;padding:6px 12px;background:none;border:1px dashed var(--border);border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--muted)">+ Add size</button>`;
+  const borasField=isFab?'':`<div class="field"><label>Boras</label><input id="gpe-boras" type="number" min="0" value="${gp.boras||0}"></div>`;
   back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
-      <div><h3>Edit Gate Pass</h3><div class="sub">${gp.id} · ${_gpEsc(gp.article||'')}</div></div>
+      <div><h3>Edit Gate Pass${isFab?' (Fabric)':''}</h3><div class="sub">${gp.id} · ${_gpEsc(gp.article||'')}</div></div>
       <button onclick="window.hrmCloseModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);line-height:1">×</button>
     </div>
     ${banner}
@@ -3274,15 +3356,11 @@ window.editGP=function(gpId){
       <div class="field"><label>Date</label><input id="gpe-date" type="date" value="${_gpEsc(gp.date||'')}"></div>
       <div class="field"><label>Time</label><input id="gpe-time" type="time" value="${_gpEsc(gp.time||'')}"></div>
       <div class="field"><label>Person</label><input id="gpe-name" value="${_gpEsc(gp.name||'')}"></div>
-      <div class="field"><label>Boras</label><input id="gpe-boras" type="number" min="0" value="${gp.boras||0}"></div>
+      ${borasField}
     </div>
     <div class="field" style="margin-top:8px"><label>Purpose</label><input id="gpe-purpose" value="${_gpEsc(gp.purpose||'')}"></div>
-    <div style="margin-top:12px;font-weight:600;font-size:13px">Units by size</div>
-    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
-      <thead><tr style="background:#fafafa"><th style="padding:6px;text-align:left;font-weight:600">Size</th><th style="padding:6px;text-align:left;font-weight:600">Units</th><th style="padding:6px;text-align:left;font-weight:600">Weight (kg)</th><th></th></tr></thead>
-      <tbody id="gpe-rows-body">${rowsHTML}</tbody>
-    </table>
-    <button onclick="window.gpEditAddRow()" style="margin-top:6px;padding:6px 12px;background:none;border:1px dashed var(--border);border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--muted)">+ Add size</button>
+    <input type="hidden" id="gpe-type" value="${isFab?'fabric':'garments'}">
+    ${sectionHTML}
     ${!_gpCanApprove()?`<div class="field" style="margin-top:12px"><label>Reason for change *</label><textarea id="gpe-reason" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px" placeholder="Required so the approver understands why."></textarea></div>`:''}
     <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
       <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
@@ -3308,6 +3386,21 @@ window.gpEditAddRow=function(){
 
 function _collectGPEditPayload(){
   const v=k=>document.getElementById(k)?.value?.trim()||'';
+  const isFab=v('gpe-type')==='fabric';
+  const base={
+    article:v('gpe-article'),
+    dest:v('gpe-dest'),
+    date:v('gpe-date'),
+    time:v('gpe-time'),
+    name:v('gpe-name'),
+    purpose:v('gpe-purpose')
+  };
+  if(isFab){
+    const fabUnit=v('gpe-fab-unit')||'kg';
+    const fabQty=parseFloat(document.getElementById('gpe-fab-qty')?.value)||0;
+    const rollsCount=parseInt(document.getElementById('gpe-fab-rolls')?.value)||0;
+    return{...base,gpType:'fabric',fabricUnit:fabUnit,fabricQty:fabQty,rollsCount,boras:'0',items:[],totalUnits:0,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
+  }
   const items=[];
   document.querySelectorAll('#gpe-rows-body tr').forEach(tr=>{
     const ins=tr.querySelectorAll('input');
@@ -3315,18 +3408,7 @@ function _collectGPEditPayload(){
     if(!sz)return;
     items.push({size:sz,units:parseFloat(ins[1]?.value)||0,weight:parseFloat(ins[2]?.value)||0});
   });
-  return{
-    article:v('gpe-article'),
-    dest:v('gpe-dest'),
-    date:v('gpe-date'),
-    time:v('gpe-time'),
-    name:v('gpe-name'),
-    boras:v('gpe-boras')||'0',
-    purpose:v('gpe-purpose'),
-    items,
-    totalUnits:items.reduce((s,r)=>s+r.units,0),
-    totalWeight:items.reduce((s,r)=>s+r.weight,0).toFixed(1)
-  };
+  return{...base,gpType:'garments',boras:v('gpe-boras')||'0',items,totalUnits:items.reduce((s,r)=>s+r.units,0),totalWeight:items.reduce((s,r)=>s+r.weight,0).toFixed(1)};
 }
 
 window.submitGPEdit=async function(gpId){
@@ -3334,6 +3416,8 @@ window.submitGPEdit=async function(gpId){
   if(!gp)return showToast('Gate pass not found.',true);
   const proposed=_collectGPEditPayload();
   if(!proposed.article||!proposed.dest)return showToast('Article and destination required.',true);
+  if(proposed.gpType==='fabric'&&!proposed.fabricQty)return showToast('Enter total fabric qty.',true);
+  if(proposed.gpType==='garments'&&!proposed.items.length)return showToast('Add at least one size row.',true);
   try{
     if(_gpCanApprove()){
       await updateDoc(doc(db,'gatepasses',gpId),{...proposed,updatedAt:Date.now(),updatedBy:session.name});
@@ -3343,7 +3427,7 @@ window.submitGPEdit=async function(gpId){
     }else{
       const reason=(document.getElementById('gpe-reason')?.value||'').trim();
       if(!reason)return showToast('Reason for change is required.',true);
-      const currentData={article:gp.article,dest:gp.dest,date:gp.date,time:gp.time,name:gp.name,boras:gp.boras,purpose:gp.purpose,items:gp.items||[],totalUnits:gp.totalUnits,totalWeight:gp.totalWeight};
+      const currentData={article:gp.article,dest:gp.dest,date:gp.date,time:gp.time,name:gp.name,boras:gp.boras,purpose:gp.purpose,items:gp.items||[],totalUnits:gp.totalUnits,totalWeight:gp.totalWeight,gpType:gp.gpType||'garments',fabricUnit:gp.fabricUnit,fabricQty:gp.fabricQty,rollsCount:gp.rollsCount};
       await _gpSubmitEditRequest({type:'gp',targetId:gpId,action:'edit',proposedData:proposed,currentData,reason});
       showToast('Edit request sent for approval ✓');
     }
@@ -3780,21 +3864,32 @@ window.generateGPPdf=function(gpId){
   rows.forEach(row=>{pdf.text(row[0],M,y);if(row[1])pdf.text(row[1],W/2,y);y+=7;});
   y+=4;
 
-  // Size table header
-  pdf.setFillColor(26,26,46);pdf.rect(M,y,W-M*2,8,'F');
-  pdf.setTextColor(255,255,255);pdf.setFontSize(9);pdf.setFont(undefined,'bold');
-  pdf.text('Size',M+4,y+5);pdf.text('Units (pcs)',M+40,y+5);pdf.text('Weight (kg)',M+90,y+5);
-  y+=8;pdf.setDrawColor(229,229,231);pdf.setLineWidth(0.3);
-  (gp.items||[]).forEach(item=>{
-    pdf.setTextColor(26,26,46);pdf.setFont(undefined,'normal');pdf.setFontSize(10);
-    pdf.text(item.size||'—',M+4,y+5);pdf.text(String(item.units||0),M+40,y+5);pdf.text(String(item.weight||0),M+90,y+5);
-    pdf.line(M,y+8,W-M,y+8);y+=10;if(y>260){pdf.addPage();y=20;}
-  });
+  const isFabric=gp.gpType==='fabric';
+  if(isFabric){
+    // Fabric type label
+    pdf.setFillColor(26,26,46);pdf.rect(M,y,W-M*2,10,'F');
+    pdf.setTextColor(255,255,255);pdf.setFontSize(11);pdf.setFont(undefined,'bold');
+    pdf.text(`Fabric Pass · ${gp.fabricUnit||'kg'}`,M+4,y+7);
+    y+=14;
+  }else{
+    // Size table header
+    pdf.setFillColor(26,26,46);pdf.rect(M,y,W-M*2,8,'F');
+    pdf.setTextColor(255,255,255);pdf.setFontSize(9);pdf.setFont(undefined,'bold');
+    pdf.text('Size',M+4,y+5);pdf.text('Units (pcs)',M+40,y+5);pdf.text('Weight (kg)',M+90,y+5);
+    y+=8;pdf.setDrawColor(229,229,231);pdf.setLineWidth(0.3);
+    (gp.items||[]).forEach(item=>{
+      pdf.setTextColor(26,26,46);pdf.setFont(undefined,'normal');pdf.setFontSize(10);
+      pdf.text(item.size||'—',M+4,y+5);pdf.text(String(item.units||0),M+40,y+5);pdf.text(String(item.weight||0),M+90,y+5);
+      pdf.line(M,y+8,W-M,y+8);y+=10;if(y>260){pdf.addPage();y=20;}
+    });
+  }
 
   // Totals
   y+=4;pdf.setFillColor(242,242,244);pdf.rect(M,y,W-M*2,24,'F');
   const bw=(W-M*2)/3;
-  const tots=[['Total Units',`${gp.totalUnits||0} pcs`],['Total Weight',`${gp.totalWeight||0} kg`],['Total Boras',`${gp.boras||0}`]];
+  const tots=isFabric
+    ?[[gp.fabricUnit==='meters'?'Total Length':'Total Weight',`${gp.fabricQty||0} ${gp.fabricUnit||'kg'}`],['Rolls',`${gp.rollsCount||0}`],['Type',`Fabric`]]
+    :[['Total Units',`${gp.totalUnits||0} pcs`],['Total Weight',`${gp.totalWeight||0} kg`],['Total Boras',`${gp.boras||0}`]];
   tots.forEach(([lbl,val],i)=>{
     pdf.setTextColor(107,114,128);pdf.setFontSize(8);pdf.setFont(undefined,'bold');pdf.text(lbl,M+bw*i+bw/2,y+8,{align:'center'});
     pdf.setTextColor(26,26,46);pdf.setFontSize(14);pdf.text(val,M+bw*i+bw/2,y+18,{align:'center'});
