@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pantone Color Library Importer · Groovy Operations</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;background:#f6f6f6;color:#111;padding:24px;line-height:1.5}
+.wrap{max-width:980px;margin:0 auto}
+h1{font-size:22px;font-weight:800;margin-bottom:4px}
+.sub{color:#666;font-size:13px;margin-bottom:24px}
+.card{background:#fff;border:1px solid #e5e5e5;border-radius:12px;padding:18px 20px;margin-bottom:16px}
+.card h2{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#444;margin-bottom:10px}
+label{display:block;font-size:12px;font-weight:600;color:#444;margin-bottom:4px}
+input[type=text],input[type=password],textarea{width:100%;padding:10px 12px;border:1px solid #d4d4d4;border-radius:8px;font-family:inherit;font-size:13px;background:#fafafa;color:#111;outline:none}
+input:focus,textarea:focus{border-color:#111;background:#fff}
+textarea{resize:vertical;min-height:200px;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:12px;line-height:1.5}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px}
+.row > div{flex:1;min-width:160px}
+button{padding:10px 16px;background:#111;color:#fff;border:none;border-radius:8px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s}
+button:hover:not(:disabled){opacity:.85}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.ghost{background:#fff;color:#111;border:1px solid #d4d4d4}
+button.ghost:hover:not(:disabled){background:#f0f0f0}
+.muted{color:#777;font-size:12px}
+.tag{display:inline-block;padding:3px 9px;border-radius:10px;font-size:11px;font-weight:600;background:#f0f0f0;color:#333;margin-right:4px}
+.tag.ok{background:#e8f5ec;color:#1d6f3a}
+.tag.skip{background:#f4ecd8;color:#7a5c1a}
+.tag.err{background:#fae3e3;color:#9a1f1f}
+.preview-grid{display:grid;grid-template-columns:1fr 1.4fr 1.4fr 80px;gap:8px;align-items:center;font-size:12px}
+.preview-grid > div{padding:6px 8px;background:#fafafa;border-radius:6px}
+.preview-grid > .head{background:transparent;font-weight:700;color:#444;text-transform:uppercase;font-size:10px;letter-spacing:.05em;padding:4px 8px}
+.preview-grid input{padding:6px 8px;font-size:12px;background:#fff}
+.log{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:12px;background:#0d0d0d;color:#e8e8e8;padding:12px 14px;border-radius:8px;max-height:280px;overflow-y:auto;white-space:pre-wrap;line-height:1.5}
+.log .ok{color:#7ee291}
+.log .skip{color:#f4cf6a}
+.log .err{color:#ff7a7a}
+.summary{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12px;font-weight:600}
+.hidden{display:none}
+.bar{height:6px;background:#eee;border-radius:3px;overflow:hidden;margin-top:8px}
+.bar > div{height:100%;background:#111;width:0;transition:width .15s}
+small.note{display:block;color:#888;font-size:11px;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Pantone Color Library Importer</h1>
+  <div class="sub">Seeds new entries into <code>color_library</code> in <code>groovy-gatepass</code>. Existing colors are never modified.</div>
+
+  <!-- Sign in -->
+  <div id="auth-card" class="card">
+    <h2>1 · Sign in</h2>
+    <div class="row">
+      <div><label>Username</label><input type="text" id="li-user" autocomplete="username" placeholder="ammar"></div>
+      <div><label>Password</label><input type="password" id="li-pass" autocomplete="current-password"></div>
+      <div style="flex:0 0 auto"><button id="li-btn" onclick="window.signIn()">Sign in</button></div>
+    </div>
+    <div id="li-status" class="muted"></div>
+  </div>
+
+  <!-- Importer (hidden until signed in) -->
+  <div id="import-card" class="card hidden">
+    <h2>2 · Paste spreadsheet data</h2>
+    <small class="note">Paste copied cells from the spreadsheet (tabs, commas, or whitespace separated). Pantone codes will be auto-extracted from any column. Product names and codes are ignored.</small>
+    <textarea id="raw" placeholder="GRVY FLAMES&#9;GP007&#9;61220C&#10;Tanjiro Full Sleeves&#9;GP030&#9;307 C&#9;7686 C&#9;680 C&#9;518 C&#9;7628 C&#9;7688 C&#9;Black"></textarea>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="window.parsePreview()">Parse &amp; preview</button>
+      <button class="ghost" onclick="window.clearAll()">Clear</button>
+    </div>
+  </div>
+
+  <div id="preview-card" class="card hidden">
+    <h2>3 · Review unique colors</h2>
+    <div class="muted" id="preview-summary"></div>
+    <div id="preview-list" style="margin-top:12px"></div>
+    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button id="import-btn" onclick="window.doImport()">Import to Firestore</button>
+      <span class="muted" id="import-hint">Existing pantone codes will be skipped.</span>
+    </div>
+    <div class="bar"><div id="bar-fill"></div></div>
+  </div>
+
+  <div id="log-card" class="card hidden">
+    <h2>4 · Progress</h2>
+    <div class="summary">
+      <span><span class="tag ok" id="t-ok">0 imported</span></span>
+      <span><span class="tag skip" id="t-skip">0 skipped</span></span>
+      <span><span class="tag err" id="t-err">0 failed</span></span>
+    </div>
+    <div class="log" id="log" style="margin-top:10px"></div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const CFG = {
+  apiKey:'AIzaSyAcIrudpSPLbZMmoWMyTM1l8Z7GnxwelFw',
+  authDomain:'groovy-gatepass.firebaseapp.com',
+  projectId:'groovy-gatepass',
+  storageBucket:'groovy-gatepass.appspot.com',
+  messagingSenderId:'986200726255',
+  appId:'1:986200726255:web:3a263cea3e7456d73c591a',
+  databaseURL:'https://groovy-gatepass-default-rtdb.firebaseio.com'
+};
+const app = initializeApp(CFG);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// ── Pantone → semantic name map (best-effort; unknown codes fall back to "Pantone <code>") ──
+const PANTONE_NAMES = {
+  '109 C':'Bright Yellow','116 C':'Yellow','165 C':'Orange','172 C':'Red Orange',
+  '185 C':'Bright Red','187 C':'Crimson Red','278 C':'Sky Blue','285 C':'Royal Blue',
+  '289 C':'Navy Blue','298 C':'Light Blue','307 C':'Ocean Blue','357 C':'Forest Green',
+  '375 C':'Lime Green','410 C':'Warm Grey','429 C':'Light Cool Grey','430 C':'Cool Grey',
+  '438 C':'Brown','447 C':'Dark Olive','485 C':'Fire Red','518 C':'Plum',
+  '573 C':'Mint Green','660 C':'Cobalt Blue','680 C':'Magenta','877 C':'Metallic Silver',
+  '1575 C':'Light Orange','2028 C':'Pantone 2028 C','2289 C':'Spring Green',
+  '2310 C':'Light Pink','2655 C':'Lavender','2945 C':'Royal Blue 2','2955 C':'Dark Navy',
+  '4058 C':'Tan','4143 C':'Olive Green','4165 C':'Pale Yellow','4268 C':'Khaki',
+  '5435 C':'Pale Blue','7410 C':'Peach','7458 C':'Powder Blue','7596 C':'Tan Brown',
+  '7615 C':'Brown 2','7620 C':'Deep Red Orange','7628 C':'Burgundy','7686 C':'Slate Blue',
+  '7688 C':'Cobalt Blue 2','7689 C':'Steel Blue','7732 C':'Forest Green 2',
+  '7739 C':'Bright Green','61220 C':'Pantone 61220 C',
+  'Cool Grey 1 C':'Cool Grey 1','Cool Grey 3 C':'Cool Grey 3',
+  'Cool Grey 5 C':'Cool Grey 5','Cool Grey 8 C':'Cool Grey 8','Cool Grey 10 C':'Cool Grey 10',
+  'Pantone Red 032 C':'Bright Red',
+  'White':'White','Black':'Black','Base':'Clear Base'
+};
+
+// ── Parser: extract canonical Pantone codes from arbitrary text ──
+const PATTERNS = [
+  /\bPantone\s+Red\s+\d{3}\s*C\b/gi,
+  /\b(?:Cool|Warm)\s+Grey\s+\d{1,2}\s*C\b/gi,
+  /\b\d{3,5}\s*C\b/gi,
+  /\bWhite\b/gi,
+  /\bBlack\b/gi,
+  /\bBASE\b/gi
+];
+
+function canonicalize(raw){
+  let s = raw.trim().replace(/\s+/g,' ');
+  // White / Black always title-case
+  if(/^white$/i.test(s)) return 'White';
+  if(/^black$/i.test(s)) return 'Black';
+  if(/^base$/i.test(s)) return 'Base';
+  // Insert space before trailing C if missing: "298C" → "298 C", "Cool Grey 1C" → "Cool Grey 1 C"
+  s = s.replace(/(\d)\s*C$/i,'$1 C');
+  s = s.replace(/^pantone\s+red\s+(\d{3})\s*c$/i,'Pantone Red $1 C');
+  s = s.replace(/^cool\s+grey\s+(\d{1,2})\s*c$/i,'Cool Grey $1 C');
+  s = s.replace(/^warm\s+grey\s+(\d{1,2})\s*c$/i,'Warm Grey $1 C');
+  s = s.replace(/^(\d{3,5})\s*c$/i,'$1 C');
+  return s;
+}
+
+function extractPantones(text){
+  const found = new Set();
+  for(const re of PATTERNS){
+    const matches = text.match(re) || [];
+    for(const m of matches) found.add(canonicalize(m));
+  }
+  return [...found];
+}
+
+function suggestName(code){
+  if(PANTONE_NAMES[code]) return PANTONE_NAMES[code];
+  return 'Pantone '+code;
+}
+
+function slugify(code){
+  return code.toLowerCase()
+    .replace(/[^a-z0-9]+/g,'-')
+    .replace(/^-+|-+$/g,'');
+}
+
+// ── Sign-in ──
+let session = null;
+window.signIn = async function(){
+  const u = document.getElementById('li-user').value.trim().toLowerCase();
+  const p = document.getElementById('li-pass').value;
+  const status = document.getElementById('li-status');
+  const btn = document.getElementById('li-btn');
+  if(!u || !p){ status.textContent = 'Enter username and password.'; return; }
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  status.textContent = '';
+  try{
+    const cred = await signInWithEmailAndPassword(auth, `${u}@groovy.op`, p);
+    session = { u, uid: cred.user.uid };
+    document.getElementById('auth-card').classList.add('hidden');
+    document.getElementById('import-card').classList.remove('hidden');
+  }catch(e){
+    status.textContent = (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password')
+      ? 'Wrong username or password.' : 'Error: '+e.message;
+    btn.disabled = false; btn.textContent = 'Sign in';
+  }
+};
+
+// ── Preview ──
+let parsed = []; // [{code, name, slug}]
+window.parsePreview = function(){
+  const raw = document.getElementById('raw').value;
+  if(!raw.trim()){ alert('Paste spreadsheet data first.'); return; }
+  const codes = extractPantones(raw);
+  parsed = codes.map(c => ({ code: c, name: suggestName(c), slug: slugify(c) }))
+                .sort((a,b)=>a.code.localeCompare(b.code, undefined, {numeric:true}));
+  renderPreview();
+};
+
+function renderPreview(){
+  const card = document.getElementById('preview-card');
+  const list = document.getElementById('preview-list');
+  const summary = document.getElementById('preview-summary');
+  if(!parsed.length){
+    card.classList.remove('hidden');
+    summary.textContent = 'No Pantone codes detected.';
+    list.innerHTML = '';
+    document.getElementById('import-btn').disabled = true;
+    return;
+  }
+  summary.textContent = `${parsed.length} unique pantone code${parsed.length===1?'':'s'} detected. Edit names if needed before import.`;
+  let html = '<div class="preview-grid">'
+    + '<div class="head">Pantone code</div><div class="head">Color name</div><div class="head">Doc ID</div><div class="head">Status</div>';
+  parsed.forEach((p,i)=>{
+    html += `<div>${escapeHtml(p.code)}</div>`
+         +  `<div><input type="text" data-i="${i}" class="name-edit" value="${escapeHtml(p.name)}"></div>`
+         +  `<div class="muted">${escapeHtml(p.slug)}</div>`
+         +  `<div id="row-status-${i}" class="muted">pending</div>`;
+  });
+  html += '</div>';
+  list.innerHTML = html;
+  card.classList.remove('hidden');
+  document.getElementById('import-btn').disabled = false;
+  list.querySelectorAll('.name-edit').forEach(el=>{
+    el.addEventListener('input', e=>{
+      const i = +e.target.dataset.i;
+      parsed[i].name = e.target.value;
+    });
+  });
+}
+
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+window.clearAll = function(){
+  document.getElementById('raw').value = '';
+  parsed = [];
+  document.getElementById('preview-card').classList.add('hidden');
+  document.getElementById('log-card').classList.add('hidden');
+};
+
+// ── Import ──
+window.doImport = async function(){
+  if(!session){ alert('Sign in first.'); return; }
+  if(!parsed.length){ alert('Nothing to import.'); return; }
+  const btn = document.getElementById('import-btn');
+  btn.disabled = true; btn.textContent = 'Importing…';
+  document.getElementById('log-card').classList.remove('hidden');
+  const log = document.getElementById('log');
+  log.innerHTML = '';
+  let okCount = 0, skipCount = 0, errCount = 0;
+  const total = parsed.length;
+  for(let i=0;i<parsed.length;i++){
+    const p = parsed[i];
+    const rowEl = document.getElementById('row-status-'+i);
+    try{
+      const ref = doc(db,'color_library',p.slug);
+      const snap = await getDoc(ref);
+      if(snap.exists()){
+        skipCount++;
+        if(rowEl) rowEl.innerHTML = '<span class="tag skip">skipped</span>';
+        appendLog(`SKIP  ${p.slug} — already exists`,'skip');
+      }else{
+        const payload = {
+          colorName: p.name,
+          pantoneCode: p.code,
+          hexApprox: null,
+          localInkName: '',
+          inkType: '',
+          supplierName: '',
+          mixingNotes: '',
+          status: 'active',
+          createdBy: 'ammar',
+          createdAt: new Date().toISOString(),
+          updatedAt: null,
+          approvedBy: null,
+          approvedAt: null
+        };
+        await setDoc(ref, payload);
+        okCount++;
+        if(rowEl) rowEl.innerHTML = '<span class="tag ok">imported</span>';
+        appendLog(`OK    ${p.slug} — ${p.name}`,'ok');
+      }
+    }catch(e){
+      errCount++;
+      if(rowEl) rowEl.innerHTML = '<span class="tag err">failed</span>';
+      appendLog(`ERR   ${p.slug} — ${e.message}`,'err');
+    }
+    document.getElementById('t-ok').textContent = `${okCount} imported`;
+    document.getElementById('t-skip').textContent = `${skipCount} skipped`;
+    document.getElementById('t-err').textContent = `${errCount} failed`;
+    document.getElementById('bar-fill').style.width = (((i+1)/total)*100)+'%';
+  }
+  btn.disabled = false; btn.textContent = 'Import to Firestore';
+  appendLog(`\nDone. ${okCount} imported, ${skipCount} skipped, ${errCount} failed.`,'');
+};
+
+function appendLog(msg, cls){
+  const log = document.getElementById('log');
+  const line = document.createElement('div');
+  if(cls) line.className = cls;
+  line.textContent = msg;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+</script>
+</body>
+</html>
