@@ -3896,8 +3896,14 @@ function renderInventory(){
   else if(_invSort==='za')list.sort((a,b)=>(b.name||'').localeCompare(a.name||''));
   else if(_invSort==='low')list.sort((a,b)=>getBalance(a)-getBalance(b));
   else if(_invSort==='recent')list.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-  const cardHTML=(item)=>{const s=getStatus(item),b=getBalance(item);return`<div class="item-card status-${s}">
-    <div class="item-code">${item.code}</div><div class="item-name">${item.name}</div>
+  const cardHTML=(item)=>{const s=getStatus(item),b=getBalance(item);const img=item.imageUrl?`<div onclick="window._invImgPreview('${item.imageUrl}','${(item.code||'').replace(/'/g,'')}')" style="width:42px;height:42px;border-radius:6px;background:url('${item.imageUrl}') center/cover no-repeat,#fafafa;border:1px solid var(--border);flex-shrink:0;cursor:zoom-in"></div>`:'';return`<div class="item-card status-${s}">
+    <div style="display:flex;gap:8px;align-items:flex-start">
+      ${img}
+      <div style="min-width:0;flex:1">
+        <div class="item-code">${item.code}</div>
+        <div class="item-name">${item.name}</div>
+      </div>
+    </div>
     <div class="item-bal ${s}">${b} <span style="font-size:12px;font-weight:400">${item.unit}</span></div>
     ${item.sizeSpecific?`<div class="item-sizes">${formatSizes(item)}</div>`:''}
     <div style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -3924,6 +3930,15 @@ function renderInventory(){
   return h+'<div style="height:80px"></div>';
 }
 
+window._invImgPreview=function(url,code){
+  document.getElementById('_inv-img-lb')?.remove();
+  const lb=document.createElement('div');
+  lb.id='_inv-img-lb';
+  lb.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:2400;display:flex;align-items:center;justify-content:center;padding:24px;cursor:zoom-out';
+  lb.onclick=()=>lb.remove();
+  lb.innerHTML=`<div style="max-width:90vw;max-height:85vh;display:flex;flex-direction:column;align-items:center;gap:8px"><img src="${url}" style="max-width:100%;max-height:80vh;object-fit:contain;border-radius:8px;background:#fff"><div style="color:#fff;font-size:12px">${code||''}</div></div>`;
+  document.body.appendChild(lb);
+};
 window.invSetCat=function(c){_invFilterCat=c;const m=document.getElementById('main-content');if(m)m.innerHTML=renderInventory();};
 window.invSetSearch=function(v){
   _invSearchQ=v||'';
@@ -3981,6 +3996,15 @@ function _renderRcvNewForm(){
       <div class="field" style="grid-column:1/-1"><label>Item Name *</label>
         <input id="rcvn-name" placeholder="e.g. New Patch Label Black">
       </div>
+      <div class="field" style="grid-column:1/-1">
+        <label>Image <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+        <div style="display:flex;gap:10px;align-items:center">
+          <div id="rcvn-img-preview" style="width:54px;height:54px;border:1px solid var(--border);border-radius:8px;background:#fafafa;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:10px">No image</div>
+          <input type="file" id="rcvn-img-file" accept="image/*" style="font-size:11px;font-family:inherit" onchange="window._rcvOnImgPick(this)">
+          <input type="hidden" id="rcvn-img-url" value="">
+          <input type="hidden" id="rcvn-img-status" value="ready">
+        </div>
+      </div>
       <div class="field"><label>Unit *</label>
         <select id="rcvn-unit" onchange="window.onRcvNewUnitChange()">${_rcvUnitOptions('pcs')}</select>
       </div>
@@ -4001,6 +4025,25 @@ function _renderRcvNewForm(){
     </div>
   </div>`;
 }
+
+window._rcvOnImgPick=async function(input){
+  const file=input.files&&input.files[0];if(!file)return;
+  const status=document.getElementById('rcvn-img-status');
+  const preview=document.getElementById('rcvn-img-preview');
+  const urlField=document.getElementById('rcvn-img-url');
+  if(status)status.value='uploading';
+  if(preview){preview.style.background='#fafafa';preview.textContent='Uploading…';preview.style.color='#999';}
+  try{
+    const url=await uploadToCloudinary(file);
+    if(urlField)urlField.value=url;
+    if(preview){preview.textContent='';preview.style.backgroundImage=`url('${url}')`;preview.style.backgroundSize='cover';preview.style.backgroundPosition='center';}
+    if(status)status.value='ready';
+  }catch(e){
+    if(status)status.value='error';
+    if(preview){preview.textContent='Failed';preview.style.color='#dc2626';}
+    showToast('Upload failed: '+e.message,true);
+  }
+};
 
 function onRcvItemChange(){
   const code=document.getElementById('rcv-item')?.value;
@@ -4100,12 +4143,15 @@ async function _rcvCreateNewItem(){
   const unit=_rcvNewUnit();
   const thresh=parseInt(document.getElementById('rcvn-thresh')?.value)||200;
   const sized=document.getElementById('rcvn-sized')?.checked;
+  const imgStatus=document.getElementById('rcvn-img-status')?.value;
+  const imageUrl=document.getElementById('rcvn-img-url')?.value||'';
+  if(imgStatus==='uploading')throw new Error('Image still uploading…');
   if(!cat||cat==='__new_cat__')throw new Error('Pick a category for the new item.');
   if(!code)throw new Error('New item code is required.');
   if(!name)throw new Error('New item name is required.');
   if(!unit)throw new Error('Pick a unit for the new item.');
   if(allItems.some(i=>(i.code||'').toUpperCase()===code))throw new Error('Code '+code+' already exists.');
-  const item={code,name,category:cat,unit,lowStockThreshold:thresh,sizeSpecific:!!sized,createdBy:session.name,createdAt:Date.now()};
+  const item={code,name,category:cat,unit,lowStockThreshold:thresh,sizeSpecific:!!sized,imageUrl,createdBy:session.name,createdAt:Date.now()};
   let totalQty=0;
   if(sized){
     const list=(document.getElementById('rcvn-sizes-list')?.value||'').split(',').map(s=>s.trim()).filter(Boolean);
@@ -8188,6 +8234,7 @@ function _buildItemModal(title,item,onSave){
   const units=['pcs','meters','kg','grams','cones','packets','100pc bundles'];
   const unitOpts=units.map(u=>`<option${item&&item.unit===u?' selected':''}>${u}</option>`).join('');
   const sizesStr=item&&item.sizeSpecific&&item.sizes?Object.entries(item.sizes).map(([k,v])=>`${k}:${v}`).join(' '):'';
+  const imgUrl=item&&item.imageUrl||'';
   const modal=document.createElement('div');
   modal.id='_item-modal';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px';
@@ -8197,7 +8244,19 @@ function _buildItemModal(title,item,onSave){
       <button onclick="document.getElementById('_item-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
     </div>
     <div style="padding:18px;display:grid;gap:12px">
-      <div class="field"><label>Code *</label><input id="_im-code" value="${item?item.code:''}" placeholder="e.g. NL5" ${item?'readonly':''}></div>
+      <div class="field">
+        <label>Image <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+        <div style="display:flex;gap:10px;align-items:center">
+          <div id="_im-img-preview" style="width:64px;height:64px;border:1px solid var(--border);border-radius:8px;background:#fafafa center/cover no-repeat;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:10px;${imgUrl?`background-image:url('${imgUrl}')`:''}">${imgUrl?'':'No image'}</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <input type="file" id="_im-img-file" accept="image/*" style="font-size:11px;font-family:inherit" onchange="window._imOnImgPick(this)">
+            ${imgUrl?`<button type="button" onclick="window._imClearImg()" style="padding:4px 10px;background:#fff;border:1px solid #fca5a5;color:#dc2626;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;align-self:flex-start">Remove image</button>`:''}
+          </div>
+        </div>
+        <input type="hidden" id="_im-img-url" value="${imgUrl}">
+        <input type="hidden" id="_im-img-status" value="ready">
+      </div>
+      <div class="field"><label>Code *${item?` <span style="font-weight:400;color:var(--muted)">(rename will migrate transactions)</span>`:''}</label><input id="_im-code" value="${item?item.code:''}" placeholder="e.g. NL5" style="text-transform:uppercase"><input type="hidden" id="_im-orig-code" value="${item?item.code:''}"></div>
       <div class="field"><label>Name *</label><input id="_im-name" value="${item?item.name:''}"></div>
       <div class="field"><label>Category *</label><select id="_im-cat" onchange="window._imCatChange()">${cats}</select></div>
       <div class="field"><label>Unit *</label><select id="_im-unit">${unitOpts}</select></div>
@@ -8217,6 +8276,34 @@ function _buildItemModal(title,item,onSave){
   modal.addEventListener('click',e=>{if(e.target===modal)modal.remove();});
 }
 
+window._imOnImgPick=async function(input){
+  const file=input.files&&input.files[0];if(!file)return;
+  const status=document.getElementById('_im-img-status');
+  const preview=document.getElementById('_im-img-preview');
+  const urlField=document.getElementById('_im-img-url');
+  if(status)status.value='uploading';
+  if(preview){preview.style.background='#fafafa';preview.textContent='Uploading…';preview.style.color='#999';}
+  try{
+    const url=await uploadToCloudinary(file);
+    if(urlField)urlField.value=url;
+    if(preview){preview.textContent='';preview.style.backgroundImage=`url('${url}')`;preview.style.backgroundSize='cover';preview.style.backgroundPosition='center';}
+    if(status)status.value='ready';
+  }catch(e){
+    if(status)status.value='error';
+    if(preview){preview.textContent='Failed';preview.style.color='#dc2626';}
+    showToast('Upload failed: '+e.message,true);
+  }
+};
+
+window._imClearImg=function(){
+  const urlField=document.getElementById('_im-img-url');
+  const preview=document.getElementById('_im-img-preview');
+  const fileInp=document.getElementById('_im-img-file');
+  if(urlField)urlField.value='';
+  if(preview){preview.style.backgroundImage='';preview.textContent='No image';preview.style.color='#bbb';}
+  if(fileInp)fileInp.value='';
+};
+
 window._imCatChange=function(){
   const sel=document.getElementById('_im-cat');
   if(!sel||sel.value!=='__new_cat__')return;
@@ -8232,11 +8319,14 @@ window._imCatChange=function(){
 
 window.showAddItemForm=function(){
   _buildItemModal('Add New Item',null,async()=>{
+    if(document.getElementById('_im-img-status')?.value==='uploading')return showToast('Image still uploading…',true);
     const code=document.getElementById('_im-code').value.trim().toUpperCase();
     const name=document.getElementById('_im-name').value.trim();
     if(!code||!name){showToast('Code and name are required.',true);return;}
+    if(allItems.some(i=>(i.code||'').toUpperCase()===code))return showToast('Code '+code+' already exists.',true);
     const sized=document.getElementById('_im-sized').checked;
-    const item={code,name,category:document.getElementById('_im-cat').value,unit:document.getElementById('_im-unit').value,lowStockThreshold:parseInt(document.getElementById('_im-thresh').value)||200,sizeSpecific:sized};
+    const imageUrl=document.getElementById('_im-img-url')?.value||'';
+    const item={code,name,category:document.getElementById('_im-cat').value,unit:document.getElementById('_im-unit').value,lowStockThreshold:parseInt(document.getElementById('_im-thresh').value)||200,sizeSpecific:sized,imageUrl};
     if(sized){item.sizes=_parseSizesInput(document.getElementById('_im-sizes').value);}
     else{item.balance=parseInt(document.getElementById('_im-bal').value)||0;}
     try{
@@ -8250,23 +8340,67 @@ window.showAddItemForm=function(){
   });
 };
 
+async function _renameStoreItemCode(oldCode,newCode,newDoc){
+  await fsSet('store_items',newCode,newDoc);
+  let txCount=0;
+  for(const tx of allTransactions){
+    if((tx.itemCode||'').toUpperCase()===oldCode.toUpperCase()){
+      tx.itemCode=newCode;
+      try{if(tx._id)await fsSet('store_transactions',tx._id,tx);}catch(_){}
+      txCount++;
+    }
+  }
+  let tplCount=0;
+  for(const t of allTemplates){
+    let touched=false;
+    if(Array.isArray(t.items)){
+      for(const it of t.items){
+        if((it.code||'').toUpperCase()===oldCode.toUpperCase()){it.code=newCode;touched=true;}
+      }
+    }
+    if(touched){tplCount++;try{if(t._id)await fsSet('trim_templates',t._id,t);}catch(_){}}
+  }
+  await fsDelete('store_items',oldCode);
+  return{txCount,tplCount};
+}
+
 window.editStoreItem=function(code){
   const item=allItems.find(i=>i.code===code);if(!item)return;
   const snap={...item};
   _buildItemModal('Edit Item — '+code,item,async()=>{
+    if(document.getElementById('_im-img-status')?.value==='uploading')return showToast('Image still uploading…',true);
     const name=document.getElementById('_im-name').value.trim();
+    const newCode=(document.getElementById('_im-code')?.value||'').trim().toUpperCase();
+    const origCode=(document.getElementById('_im-orig-code')?.value||code).toUpperCase();
     if(!name){showToast('Name is required.',true);return;}
+    if(!newCode){showToast('Code is required.',true);return;}
+    const renaming=newCode!==origCode;
+    if(renaming){
+      if(allItems.some(i=>(i.code||'').toUpperCase()===newCode))return showToast('Code '+newCode+' already exists.',true);
+      if(!confirm(`Rename ${origCode} → ${newCode}?\n\nAll matching transactions and trim templates will be updated to the new code, and the old document will be removed. This can take a few seconds for items with lots of history.`))return;
+    }
     const sized=document.getElementById('_im-sized').checked;
-    const updated={...item,name,category:document.getElementById('_im-cat').value,unit:document.getElementById('_im-unit').value,lowStockThreshold:parseInt(document.getElementById('_im-thresh').value)||200,sizeSpecific:sized};
+    const imageUrl=document.getElementById('_im-img-url')?.value||'';
+    const updated={...item,code:newCode,name,category:document.getElementById('_im-cat').value,unit:document.getElementById('_im-unit').value,lowStockThreshold:parseInt(document.getElementById('_im-thresh').value)||200,sizeSpecific:sized,imageUrl};
     if(sized){updated.sizes=_parseSizesInput(document.getElementById('_im-sizes').value);delete updated.balance;}
     else{updated.balance=parseInt(document.getElementById('_im-bal').value)||0;delete updated.sizes;}
     try{
-      await fsSet('store_items',code,updated);
-      const idx=allItems.findIndex(i=>i.code===code);
-      if(idx>=0)allItems[idx]={...updated,_id:code};
-      if(session.role==='store')await _notifyInventoryChange('edit',snap,updated);
-      document.getElementById('_item-modal').remove();
-      showToast('Item updated ✓');
+      if(renaming){
+        const{txCount,tplCount}=await _renameStoreItemCode(origCode,newCode,updated);
+        const idx=allItems.findIndex(i=>(i.code||'').toUpperCase()===origCode);
+        if(idx>=0)allItems[idx]={...updated,_id:newCode};
+        await logActivity('Item renamed',`${origCode} → ${newCode} (${txCount} tx, ${tplCount} tpl)`);
+        if(session.role==='store')await _notifyInventoryChange('edit',snap,updated);
+        document.getElementById('_item-modal').remove();
+        showToast(`Renamed ✓ ${txCount} transactions migrated.`);
+      }else{
+        await fsSet('store_items',newCode,updated);
+        const idx=allItems.findIndex(i=>i.code===origCode);
+        if(idx>=0)allItems[idx]={...updated,_id:newCode};
+        if(session.role==='store')await _notifyInventoryChange('edit',snap,updated);
+        document.getElementById('_item-modal').remove();
+        showToast('Item updated ✓');
+      }
       window.showPage('store-inventory');
     }catch(e){showToast('Save failed: '+e.message,true);}
   });
