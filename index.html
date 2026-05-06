@@ -3374,7 +3374,7 @@ window._printNavOpen=function(){};
 
 // ── Module state ──────────────────────────────────────────────────────
 let allRecipes=[], allPrintingJobs=[], allQCReports=[], allPrintBilling=[], allSLAEvents=[], allCommNotes=[];
-let allColors=[], colorLibLoaded=false;
+let allColors=[], colorLibLoaded=false, pendingColorImport=[];
 let _poEmbellishment=null; // set during PO create when recipe is detected
 let printingDataLoaded=false;
 let viewingRecipe=null, viewingPrintJob=null, viewingQCReport=null;
@@ -3707,6 +3707,7 @@ function renderColorLibraryPage(){
     '</div>'+
   '</div>'+
   '<div style="font-size:11px;color:var(--muted);margin-bottom:12px;padding:8px 12px;background:#fffbeb;border-radius:8px;border:1px solid #fde68a">Digital swatches are for reference only. Final approval must match physical Pantone / ink sample.</div>'+
+  (canEdit?_renderColorImporterBlock():'')+
   (active.length?'<div style="display:grid;gap:8px;margin-bottom:12px">'+active.map(function(c){return _colorCardFull(c);}).join('')+'</div>':'<div class="empty" style="margin-bottom:12px">No colors in library yet. Add colors or seed starter set.</div>')+
   (archived.length?'<details style="margin-bottom:16px"><summary style="font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;padding:8px 0">Archived ('+archived.length+')</summary><div style="display:grid;gap:8px;margin-top:8px;opacity:.65">'+archived.map(function(c){return _colorCardFull(c);}).join('')+'</div></details>':'')+
   '<div id="color-modal-container"></div>';
@@ -3815,6 +3816,164 @@ window.seedColorLibrary=async function(){
     added++;
   }
   showToast(added+' color'+(added!==1?'s':'')+' added.');
+  var mc=document.getElementById('main-content');
+  if(mc)mc.innerHTML=renderColorLibraryPage();
+};
+
+// ── XLSX → Color Library importer ──
+var COLOR_IMPORT_PANTONE_NAMES={'109 C':'Bright Yellow','116 C':'Yellow','165 C':'Orange','172 C':'Red Orange','185 C':'Bright Red','187 C':'Crimson Red','278 C':'Sky Blue','285 C':'Royal Blue','289 C':'Navy Blue','298 C':'Light Blue','307 C':'Ocean Blue','357 C':'Forest Green','375 C':'Lime Green','410 C':'Warm Grey','429 C':'Light Cool Grey','430 C':'Cool Grey','438 C':'Brown','447 C':'Dark Olive','485 C':'Fire Red','518 C':'Plum','573 C':'Mint Green','660 C':'Cobalt Blue','680 C':'Magenta','877 C':'Metallic Silver','1575 C':'Light Orange','2289 C':'Spring Green','2310 C':'Light Pink','2655 C':'Lavender','2945 C':'Royal Blue 2','2955 C':'Dark Navy','4058 C':'Tan','4143 C':'Olive Green','4165 C':'Pale Yellow','4268 C':'Khaki','5435 C':'Pale Blue','7410 C':'Peach','7458 C':'Powder Blue','7596 C':'Tan Brown','7615 C':'Brown 2','7620 C':'Deep Red Orange','7628 C':'Burgundy','7686 C':'Slate Blue','7688 C':'Cobalt Blue 2','7689 C':'Steel Blue','7732 C':'Forest Green 2','7739 C':'Bright Green','Cool Grey 1 C':'Cool Grey 1','Cool Grey 3 C':'Cool Grey 3','Cool Grey 5 C':'Cool Grey 5','Cool Grey 8 C':'Cool Grey 8','Cool Grey 10 C':'Cool Grey 10','Pantone Red 032 C':'Bright Red','White':'White','Black':'Black','Base':'Clear Base'};
+var COLOR_IMPORT_PATTERNS=[/\bPantone\s+Red\s+\d{3}\s*C\b/gi,/\b(?:Cool|Warm)\s+Grey\s+\d{1,2}\s*C\b/gi,/\b\d{3,5}\s*C\b/gi,/\bWhite\b/gi,/\bBlack\b/gi,/\bBASE\b/gi];
+function _canonPantone(raw){
+  var s=raw.trim().replace(/\s+/g,' ');
+  if(/^white$/i.test(s))return'White';
+  if(/^black$/i.test(s))return'Black';
+  if(/^base$/i.test(s))return'Base';
+  s=s.replace(/^pantone\s+red\s+(\d{3})\s*c$/i,'Pantone Red $1 C');
+  s=s.replace(/^cool\s+grey\s+(\d{1,2})\s*c$/i,'Cool Grey $1 C');
+  s=s.replace(/^warm\s+grey\s+(\d{1,2})\s*c$/i,'Warm Grey $1 C');
+  s=s.replace(/^(\d{3,5})\s*c$/i,'$1 C');
+  return s;
+}
+function _slugPantone(c){return c.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');}
+function _suggestPantoneName(code){return COLOR_IMPORT_PANTONE_NAMES[code]||('Pantone '+code);}
+function _extractPantonesFromText(text){
+  var found={};
+  for(var i=0;i<COLOR_IMPORT_PATTERNS.length;i++){
+    var m=text.match(COLOR_IMPORT_PATTERNS[i])||[];
+    for(var j=0;j<m.length;j++)found[_canonPantone(m[j])]=true;
+  }
+  return Object.keys(found);
+}
+function _ensureSheetJS(){
+  if(window.XLSX)return Promise.resolve(window.XLSX);
+  return new Promise(function(resolve,reject){
+    var s=document.createElement('script');
+    s.src='https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js';
+    s.onload=function(){resolve(window.XLSX);};
+    s.onerror=function(){reject(new Error('Failed to load SheetJS'));};
+    document.head.appendChild(s);
+  });
+}
+function _ciEsc(s){return String(s).replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]);});}
+function _renderColorImporterBlock(){
+  return '<details id="color-import-details" style="margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px">'+
+    '<summary style="padding:12px 14px;cursor:pointer;font-size:13px;font-weight:700;list-style:none;display:flex;justify-content:space-between;align-items:center">'+
+      '<span>Bulk import from XLSX</span>'+
+      '<span style="font-size:11px;color:var(--muted);font-weight:500">Click to expand</span>'+
+    '</summary>'+
+    '<div style="padding:0 14px 14px;border-top:1px solid var(--border)">'+
+      '<div style="font-size:11px;color:var(--muted);margin:10px 0">Upload an XLSX. Pantone codes (e.g. "357 C", "Cool Grey 1C", "Pantone Red 032 C", "White", "Black", "Base") are extracted from any cell. Existing codes are skipped.</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'+
+        '<input type="file" id="color-xlsx-file" accept=".xlsx,.xls" style="font-size:12px;flex:1;min-width:180px">'+
+        '<button class="btn-outline" onclick="window.parseColorXlsx()">Parse file</button>'+
+      '</div>'+
+      '<div id="color-import-preview"></div>'+
+      '<div id="color-import-progress" style="margin-top:8px"></div>'+
+    '</div>'+
+  '</details>';
+}
+function _renderColorImportPreview(){
+  var preview=document.getElementById('color-import-preview');
+  if(!preview)return;
+  if(!pendingColorImport.length){
+    preview.innerHTML='<div style="font-size:12px;color:var(--muted);padding:6px 0">No Pantone codes detected in this file.</div>';
+    return;
+  }
+  var n=pendingColorImport.length;
+  var rows='';
+  for(var i=0;i<n;i++){
+    var p=pendingColorImport[i];
+    rows+='<div style="font-family:ui-monospace,monospace;font-size:11px;align-self:center">'+_ciEsc(p.code)+'</div>'+
+          '<input type="text" data-i="'+i+'" class="ci-name-edit" value="'+_ciEsc(p.name)+'" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:#fff">'+
+          '<div id="ci-row-'+i+'" style="font-size:10px;color:var(--muted);align-self:center">pending</div>';
+  }
+  preview.innerHTML='<div style="border-top:1px solid var(--border);padding-top:10px;margin-top:8px">'+
+    '<div style="font-size:12px;font-weight:600;margin-bottom:8px">'+n+' unique pantone code'+(n!==1?'s':'')+' detected</div>'+
+    '<div style="display:grid;grid-template-columns:auto 1fr auto;gap:6px 10px;max-height:280px;overflow-y:auto;padding-right:6px;align-items:center">'+rows+'</div>'+
+    '<button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:10px" onclick="window.runColorImport()">Import to Color Library</button>'+
+  '</div>';
+  preview.querySelectorAll('.ci-name-edit').forEach(function(el){
+    el.addEventListener('input',function(e){
+      var idx=+e.target.dataset.i;
+      if(pendingColorImport[idx])pendingColorImport[idx].name=e.target.value;
+    });
+  });
+}
+window.parseColorXlsx=async function(){
+  var fi=document.getElementById('color-xlsx-file');
+  var file=fi&&fi.files&&fi.files[0];
+  if(!file){showToast('Choose an XLSX file first.',true);return;}
+  var preview=document.getElementById('color-import-preview');
+  var prog=document.getElementById('color-import-progress');
+  if(preview)preview.innerHTML='<div style="font-size:12px;color:var(--muted);padding:6px 0">Parsing…</div>';
+  if(prog)prog.innerHTML='';
+  try{
+    var XLSX=await _ensureSheetJS();
+    var buf=await file.arrayBuffer();
+    var wb=XLSX.read(buf,{type:'array'});
+    var allText='';
+    for(var i=0;i<wb.SheetNames.length;i++){
+      var sheet=wb.Sheets[wb.SheetNames[i]];
+      allText+='\n'+XLSX.utils.sheet_to_csv(sheet,{FS:'\n'});
+    }
+    var codes=_extractPantonesFromText(allText);
+    codes.sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true});});
+    pendingColorImport=codes.map(function(c){return{code:c,name:_suggestPantoneName(c),slug:_slugPantone(c)};});
+    _renderColorImportPreview();
+  }catch(e){
+    if(preview)preview.innerHTML='<div style="font-size:12px;color:#dc2626;padding:6px 0">Parse error: '+e.message+'</div>';
+  }
+};
+window.runColorImport=async function(){
+  if(!canManageRecipes()){showToast('Not authorized.',true);return;}
+  if(!pendingColorImport.length){showToast('Parse a file first.',true);return;}
+  var prog=document.getElementById('color-import-progress');
+  var ok=0,skip=0,err=0;
+  var total=pendingColorImport.length;
+  for(var i=0;i<total;i++){
+    var p=pendingColorImport[i];
+    var rowEl=document.getElementById('ci-row-'+i);
+    try{
+      var dupe=allColors.find(function(c){return(c.pantoneCode||'').trim().toLowerCase()===p.code.toLowerCase();});
+      if(dupe){
+        skip++;
+        if(rowEl){rowEl.textContent='skipped';rowEl.style.color='#7a5c1a';}
+      }else{
+        var ref=doc(db,'color_library',p.slug);
+        var snap=await getDoc(ref);
+        if(snap.exists()){
+          skip++;
+          if(rowEl){rowEl.textContent='skipped';rowEl.style.color='#7a5c1a';}
+        }else{
+          var payload={
+            colorName:p.name,
+            pantoneCode:p.code,
+            hexApprox:null,
+            supplierName:'',
+            mixingNotes:'',
+            status:'active',
+            createdBy:'ammar',
+            createdAt:nowIso(),
+            updatedAt:null,
+            approvedBy:null,
+            approvedAt:null
+          };
+          await setDoc(ref,payload);
+          allColors.unshift(Object.assign({},payload,{_id:p.slug}));
+          ok++;
+          if(rowEl){rowEl.textContent='imported';rowEl.style.color='#1d6f3a';}
+        }
+      }
+    }catch(e){
+      err++;
+      if(rowEl){rowEl.textContent='failed';rowEl.style.color='#9a1f1f';rowEl.title=e.message;}
+    }
+    if(prog){
+      prog.innerHTML='<div style="font-size:11px;color:var(--muted);padding:4px 0">'+(i+1)+'/'+total+' processed · '+ok+' imported · '+skip+' skipped · '+err+' failed</div>';
+    }
+  }
+  showToast(ok+' added, '+skip+' skipped'+(err?', '+err+' failed':''));
+  pendingColorImport=[];
   var mc=document.getElementById('main-content');
   if(mc)mc.innerHTML=renderColorLibraryPage();
 };
