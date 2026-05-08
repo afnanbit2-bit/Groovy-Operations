@@ -1,0 +1,99 @@
+//@version=5
+// XAU/DXY Suppressed-Energy Divergence
+// Concept: when DXY makes a large move while XAU trades sideways (low range,
+// low relative volume on DXY's side), gold accumulates "suppressed energy".
+// When DXY then begins to retrace, gold often releases that energy in the
+// opposite direction. This indicator flags those release moments on the
+// XAU/USD chart.
+indicator("XAU/DXY Suppressed-Energy Divergence", shorttitle="XAU-DXY Div", overlay=true)
+
+// ─── Inputs ─────────────────────────────────────────────────────────────────
+gData = "Data"
+dxySym = input.symbol("TVC:DXX", "DXY symbol", group=gData,
+     tooltip="Symbol used to pull DXY OHLCV. Default TVC:DXX. TVC:DXY also works.")
+
+gDiv = "Divergence thresholds"
+lookback       = input.int(10,   "Lookback (bars)",                minval=2, group=gDiv)
+dxyRangeThresh = input.float(0.4,"DXY avg range threshold",        step=0.05, minval=0.0, group=gDiv,
+     tooltip="Average DXY (high-low) over the lookback must exceed this to count as a 'large DXY move'.")
+xauRangeThresh = input.float(8.0,"XAU avg range threshold",        step=0.5,  minval=0.0, group=gDiv,
+     tooltip="Average XAU (high-low) over the lookback must stay BELOW this to count as 'sideways gold'.")
+useVolume      = input.bool(true,"Require elevated DXY volume",                          group=gDiv)
+volMult        = input.float(1.0,"DXY volume multiplier vs baseline", step=0.1, minval=0.0, group=gDiv,
+     tooltip="Average DXY volume over the lookback must be at least N× the longer-term baseline (5× lookback).")
+
+gSig = "Signal"
+retraceMode    = input.string("Close vs prior close", "DXY retrace test",
+     options=["Close vs prior close", "Close vs N-bar SMA"], group=gSig)
+retraceLen     = input.int(3, "SMA length (if using SMA mode)", minval=2, group=gSig)
+
+gVis = "Visuals"
+showHL    = input.bool(true,  "Highlight divergence zone bars", group=gVis)
+hlColor   = input.color(color.new(color.yellow, 85), "Highlight color", group=gVis)
+longCol   = input.color(color.new(color.green, 0), "Long arrow color",  group=gVis)
+shortCol  = input.color(color.new(color.red,   0), "Short arrow color", group=gVis)
+
+// ─── Pull DXY data ──────────────────────────────────────────────────────────
+[dxyOpen, dxyHigh, dxyLow, dxyClose, dxyVol] = request.security(
+     dxySym, timeframe.period,
+     [open, high, low, close, volume],
+     lookahead=barmerge.lookahead_off)
+
+// ─── Range and volume measurements over the lookback window ────────────────
+dxyBarRange = dxyHigh - dxyLow
+xauBarRange = high - low
+
+dxyAvgRange = ta.sma(dxyBarRange, lookback)
+xauAvgRange = ta.sma(xauBarRange, lookback)
+
+dxyAvgVol   = ta.sma(dxyVol, lookback)
+dxyVolBase  = ta.sma(dxyVol, lookback * 5)
+volAvailable = not na(dxyAvgVol) and not na(dxyVolBase) and dxyVolBase > 0
+volOK = not useVolume or not volAvailable or dxyAvgVol >= dxyVolBase * volMult
+
+// ─── Divergence condition ──────────────────────────────────────────────────
+divergence = dxyAvgRange > dxyRangeThresh
+         and xauAvgRange < xauRangeThresh
+         and volOK
+
+// ─── Retrace test on DXY ───────────────────────────────────────────────────
+dxyRef     = retraceMode == "Close vs prior close" ? dxyClose[1] : ta.sma(dxyClose, retraceLen)
+dxyDown    = dxyClose < dxyRef     // DXY pulling back down → long gold
+dxyUp      = dxyClose > dxyRef     // DXY pushing back up   → short gold
+
+// ─── Signals: divergence active on the prior bar, retrace happens now ──────
+divPrev   = divergence[1]
+longSig   = divPrev and dxyDown
+shortSig  = divPrev and dxyUp
+
+// ─── Plots ─────────────────────────────────────────────────────────────────
+plotshape(longSig,  title="Long signal",
+     style=shape.triangleup,   location=location.belowbar,
+     color=longCol,  size=size.small, text="XAU↑")
+
+plotshape(shortSig, title="Short signal",
+     style=shape.triangledown, location=location.abovebar,
+     color=shortCol, size=size.small, text="XAU↓")
+
+bgcolor(showHL and divergence ? hlColor : na, title="Divergence zone")
+
+// ─── Alerts ────────────────────────────────────────────────────────────────
+alertcondition(longSig,  title="XAU long (DXY retrace)",
+     message="XAU/DXY suppressed-energy LONG: DXY retracing after sideways gold.")
+alertcondition(shortSig, title="XAU short (DXY retrace)",
+     message="XAU/DXY suppressed-energy SHORT: DXY rebounding after sideways gold.")
+
+// ─── Optional debug table (top-right) ──────────────────────────────────────
+showTable = input.bool(false, "Show debug table", group=gVis)
+var table dbg = table.new(position.top_right, 2, 5, border_width=1)
+if showTable and barstate.islast
+    table.cell(dbg, 0, 0, "DXY avg range", text_color=color.white, bgcolor=color.new(color.black, 30))
+    table.cell(dbg, 1, 0, str.tostring(dxyAvgRange, "#.###"))
+    table.cell(dbg, 0, 1, "XAU avg range", text_color=color.white, bgcolor=color.new(color.black, 30))
+    table.cell(dbg, 1, 1, str.tostring(xauAvgRange, "#.##"))
+    table.cell(dbg, 0, 2, "DXY vol vs base", text_color=color.white, bgcolor=color.new(color.black, 30))
+    table.cell(dbg, 1, 2, volAvailable ? str.tostring(dxyAvgVol / dxyVolBase, "#.##") + "×" : "n/a")
+    table.cell(dbg, 0, 3, "Divergence", text_color=color.white, bgcolor=color.new(color.black, 30))
+    table.cell(dbg, 1, 3, divergence ? "YES" : "no")
+    table.cell(dbg, 0, 4, "Last signal", text_color=color.white, bgcolor=color.new(color.black, 30))
+    table.cell(dbg, 1, 4, longSig ? "LONG" : shortSig ? "SHORT" : "—")
