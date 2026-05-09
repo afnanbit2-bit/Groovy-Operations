@@ -1706,7 +1706,7 @@ function _updateMobNavActive(pageId){
   const groups={
     'po-create':'po','po-registry':'po','po-detail':'po','stage-work':'po',
     'attendance':'hrm','hrm-employees':'hrm','hrm-payroll':'hrm','hrm-advances':'hrm','hrm-loans':'hrm','hrm-policy':'hrm',
-    'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
+    'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
     'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-templates':'more',
     'activity':'more','users':'more','bug-tracker':'more',
     'my-work':'my-work'
@@ -1885,6 +1885,8 @@ function renderPage(id){
   else if(id==='recipe-directory'){if(!printingDataLoaded)loadPrintingData().then(()=>{if(currentPage===id)m.innerHTML=renderRecipeDirectory();});else m.innerHTML=renderRecipeDirectory();}
   else if(id==='recipe-create')m.innerHTML=renderRecipeCreatePage();
   else if(id==='recipe-detail')renderRecipeDetailPage();
+  else if(id==='recipe-draft'){if(!printingDataLoaded)loadPrintingData().then(()=>{if(currentPage===id)m.innerHTML=renderRecipeDraftPage();});else m.innerHTML=renderRecipeDraftPage();}
+  else if(id==='recipe-draft-review'){if(!printingDataLoaded)loadPrintingData().then(()=>{if(currentPage===id)renderRecipeDraftReviewPage();});else renderRecipeDraftReviewPage();}
   else if(id==='printing-jobs'){if(!printingDataLoaded)loadPrintingData().then(()=>{if(currentPage===id)m.innerHTML=renderPrintingJobsPage();});else m.innerHTML=renderPrintingJobsPage();}
   else if(id==='printing-job-detail')renderPrintingJobDetailPage();
   else if(id==='observer-tower'){if(!printingDataLoaded)loadPrintingData().then(()=>{if(currentPage===id)m.innerHTML=renderObserverTower();});else m.innerHTML=renderObserverTower();}
@@ -5711,7 +5713,7 @@ function remainLabel(dueAt){
   return rem<60?`${rem}m left`:`${Math.floor(rem/60)}h ${rem%60}m left`;
 }
 function calcDue(stage,priority){ const h=SLA_HOURS[priority||'normal'][stage]||8; return new Date(Date.now()+h*3600000).toISOString(); }
-function recipeBadgeHTML(status){ const map={locked:'<span style="color:var(--green);font-weight:700">🔒 Locked</span>',draft:'<span style="color:var(--amber);font-weight:700">✏️ Draft</span>',archived:'<span style="color:var(--muted);font-weight:700">📦 Archived</span>'}; return map[status]||map.draft; }
+function recipeBadgeHTML(status){ const map={locked:'<span style="color:var(--green);font-weight:700">🔒 Locked</span>',active:'<span style="color:var(--green);font-weight:700">✅ Active</span>',pending_review:'<span style="color:#854F0B;font-weight:700;background:#FEF3C7;padding:2px 8px;border-radius:6px">⏳ Pending Review</span>',revision:'<span style="color:#9B1B2D;font-weight:700;background:#FBE7E9;padding:2px 8px;border-radius:6px">↩️ Revision</span>',draft:'<span style="color:var(--amber);font-weight:700">✏️ Draft</span>',archived:'<span style="color:var(--muted);font-weight:700">📦 Archived</span>'}; return map[status]||map.draft; }
 function tierBadge(t){ const ti=TIER_INFO[t]||TIER_INFO[1]; return`<span class="tier-badge ${ti.css}">${ti.label}</span>`; }
 function processBadge(pt){ const p=PROCESS_TYPES[pt]; return p?`<span class="process-badge">${p.icon} ${p.label}</span>`:'<span class="process-badge">—</span>'; }
 
@@ -6086,17 +6088,57 @@ window.runColorImport=async function(){
 
 function renderRecipeDirectory(){
   const canCreate=canManageRecipes()&&!isPrintWorker();
+  const canDraft=(isQCWorker()||canManageRecipes())&&!isPrintWorker();
+  const isOM=canManageRecipes();
   const q=(document.getElementById('recipe-q')||{}).value||'';
-  const list=allRecipes.filter(r=>!q||(r.articleCode||'').toLowerCase().includes(q.toLowerCase())||(r.articleName||'').toLowerCase().includes(q.toLowerCase()));
 
-  const missingWarnings=allRecipes.filter(r=>!r.printing?.ratePerPiece||!r.printing?.processTypes?.length||!r.images?.frontUrl);
+  const pendingDrafts=allRecipes.filter(r=>r.status==='pending_review');
+  const myRevisions=isQCWorker()?allRecipes.filter(r=>r.status==='revision'&&r.submittedBy===session.u):[];
+
+  const list=allRecipes.filter(r=>{
+    if(r.status==='pending_review'||r.status==='revision')return false;
+    if(!q)return true;
+    return(r.articleCode||'').toLowerCase().includes(q.toLowerCase())||(r.articleName||'').toLowerCase().includes(q.toLowerCase());
+  });
+
+  const missingWarnings=allRecipes.filter(r=>r.status!=='pending_review'&&r.status!=='revision'&&(!r.printing?.ratePerPiece||!r.printing?.processTypes?.length||!r.images?.frontUrl));
+  const approvedCount=allRecipes.filter(r=>r.status==='active'||r.status==='locked').length;
 
   return`<div class="page-head">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
-      <div><div class="page-title">Recipe Directory</div><div class="page-sub">${allRecipes.length} articles · ${allRecipes.filter(r=>r.status==='locked').length} locked</div></div>
-      ${canCreate?`<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="window.showPage('recipe-create')">+ New Recipe</button>`:''}
+      <div><div class="page-title">Recipe Directory</div><div class="page-sub">${allRecipes.length} articles · ${approvedCount} approved</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-outline" style="padding:9px 14px" onclick="window.printBlankRecipeSheet()">🖨️ Print Blank Sheet</button>
+        ${canDraft?`<button class="btn-outline" style="padding:9px 14px" onclick="window.openNewRecipeDraft()">+ New Recipe Draft</button>`:''}
+        ${canCreate?`<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="window.showPage('recipe-create')">+ New Recipe</button>`:''}
+      </div>
     </div>
   </div>
+
+  ${isOM&&pendingDrafts.length?`<div class="card" style="border-left:3px solid #F59E0B;margin-bottom:12px;padding:0">
+    <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-weight:700"><span style="color:#854F0B">⏳ Drafts Pending Review</span><span style="background:#F59E0B;color:#fff;font-size:11px;padding:2px 9px;border-radius:10px">${pendingDrafts.length}</span></div>
+    ${pendingDrafts.map(r=>`<div onclick="window.openRecipeDraftReview('${r._id}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-top:1px solid #f0f0f0;cursor:pointer" onmouseenter="this.style.background='#fafafa'" onmouseleave="this.style.background=''">
+      <div style="min-width:0">
+        <div style="font-weight:600;font-size:14px">${r.articleName||'Untitled'}</div>
+        <div style="font-size:11px;color:var(--muted)">${r.articleCode||'—'} · PO ${r.poNumber||'—'} · by ${r.submittedBy||r.createdBy||'—'}${r.submittedAt?' · '+new Date(r.submittedAt).toLocaleString('en-GB'):''} · ${(r.draftPlacements||[]).length} placement${(r.draftPlacements||[]).length===1?'':'s'}</div>
+      </div>
+      <div style="font-size:18px;color:var(--muted)">›</div>
+    </div>`).join('')}
+  </div>`:''}
+
+  ${myRevisions.length?`<div class="card" style="border-left:3px solid #E94560;margin-bottom:12px;padding:0">
+    <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-weight:700;color:#9B1B2D">↩️ Sent Back for Revision</div>
+    ${myRevisions.map(r=>`<div onclick="window.openRecipeDraftEdit('${r._id}')" style="padding:10px 16px;border-top:1px solid #f0f0f0;cursor:pointer" onmouseenter="this.style.background='#fafafa'" onmouseleave="this.style.background=''">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="min-width:0">
+          <div style="font-weight:600;font-size:14px">${r.articleName||'Untitled'}</div>
+          <div style="font-size:11px;color:var(--muted)">${r.articleCode||'—'} · PO ${r.poNumber||'—'}</div>
+        </div>
+        <div style="font-size:18px;color:var(--muted)">›</div>
+      </div>
+      ${r.revisionNote?`<div style="font-size:12px;color:#9B1B2D;margin-top:6px;padding:6px 10px;background:#FBE7E9;border-radius:6px">"${r.revisionNote}"</div>`:''}
+    </div>`).join('')}
+  </div>`:''}
 
   ${missingWarnings.length?`<div class="alert-banner alert-amber" style="margin-bottom:12px">⚠ ${missingWarnings.length} recipe${missingWarnings.length>1?'s':''} missing rate, process type, or front image</div>`:''}
 
@@ -6104,7 +6146,7 @@ function renderRecipeDirectory(){
     <input id="recipe-q" placeholder="Search article code or name…" oninput="window._filterRecipes(this.value)" value="${q}"
       style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
     <select onchange="window._filterRecipeStatus(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
-      <option value="">All status</option><option value="locked">Locked</option><option value="draft">Draft</option><option value="archived">Archived</option>
+      <option value="">All status</option><option value="active">Active</option><option value="locked">Locked</option><option value="draft">Draft</option><option value="archived">Archived</option>
     </select>
     <select onchange="window._filterRecipeTier(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
       <option value="">All tiers</option>${[1,2,3,4].map(t=>`<option value="${t}">Tier ${t}</option>`).join('')}
@@ -6112,7 +6154,7 @@ function renderRecipeDirectory(){
   </div>
 
   <div id="recipe-list-wrap">
-    ${list.length?list.map(r=>recipeCardHTML(r)).join(''):'<div class="empty">No recipes yet.'+(canCreate?' Click + New Recipe to start.':'')+'</div>'}
+    ${list.length?list.map(r=>recipeCardHTML(r)).join(''):'<div class="empty">No recipes yet.'+(canDraft?' Click + New Recipe Draft to start.':'')+'</div>'}
   </div>`;
 }
 window._filterRecipes=function(q){
@@ -6159,6 +6201,485 @@ function recipeCardHTML(r){
   </div>`;
 }
 window.openRecipeDetail=function(id){ viewingRecipe=id; currentPage='recipe-detail'; document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on')); document.getElementById('nav-recipe-directory')?.classList.add('on'); renderRecipeDetailPage(); };
+
+// ── Two-Tier Recipe Draft Flow (Haris submits → Ammar approves) ───────────
+const RD_PLACEMENT_TYPES=['Front Chest','Back','Left Sleeve','Right Sleeve','Left Chest','Right Chest','Bottom Hem','Collar','Custom'];
+const RD_TECHNIQUES=['Rubber Print','Screen Print','Embroidery','Sublimation'];
+let _rdIdx=0;
+
+function _rdEsc(s){ return String(s==null?'':s).replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function _rdPlacementRowHTML(i,p={}){
+  return`<div class="rd-pl-row" data-idx="${i}" style="display:grid;grid-template-columns:1.2fr 1.4fr 1fr 1.4fr auto;gap:8px;margin-bottom:8px;align-items:end">
+    <div class="field" style="margin:0"><label style="font-size:11px">Placement Type</label>
+      <select id="rd-pl-type-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+        <option value="">Select…</option>
+        ${RD_PLACEMENT_TYPES.map(t=>`<option value="${t}" ${p.placementType===t?'selected':''}>${t}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field" style="margin:0"><label style="font-size:11px">Position &amp; Size (inches)</label>
+      <input id="rd-pl-pos-${i}" placeholder='e.g. 4&quot; x 3&quot; centered' value="${_rdEsc(p.positionSize)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">
+    </div>
+    <div class="field" style="margin:0"><label style="font-size:11px">Technique</label>
+      <select id="rd-pl-tech-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+        <option value="">Select…</option>
+        ${RD_TECHNIQUES.map(t=>`<option value="${t}" ${p.technique===t?'selected':''}>${t}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field" style="margin:0"><label style="font-size:11px">Notes</label>
+      <input id="rd-pl-notes-${i}" value="${_rdEsc(p.notes)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">
+    </div>
+    <button type="button" onclick="window._rdRemovePlacement(${i})" style="padding:8px 10px;border:1px solid #fecaca;background:#fff5f5;color:#dc2626;border-radius:8px;font-size:12px;cursor:pointer;height:36px">Remove</button>
+  </div>`;
+}
+
+function _rdCollectPlacements(){
+  const out=[];
+  document.querySelectorAll('#rd-placements .rd-pl-row').forEach(row=>{
+    const i=row.getAttribute('data-idx');
+    const placementType=document.getElementById('rd-pl-type-'+i)?.value||'';
+    const positionSize=document.getElementById('rd-pl-pos-'+i)?.value?.trim()||'';
+    const technique=document.getElementById('rd-pl-tech-'+i)?.value||'';
+    const notes=document.getElementById('rd-pl-notes-'+i)?.value?.trim()||'';
+    if(placementType||positionSize||technique||notes){
+      out.push({placementType,positionSize,technique,notes,pantones:[]});
+    }
+  });
+  return out;
+}
+
+window.openNewRecipeDraft=function(){ viewingRecipe=null; _rdIdx=0; window.showPage('recipe-draft'); };
+window.openRecipeDraftEdit=function(id){ viewingRecipe=id; window.showPage('recipe-draft'); };
+window.openRecipeDraftReview=function(id){ viewingRecipe=id; currentPage='recipe-draft-review'; document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on')); document.getElementById('nav-recipe-directory')?.classList.add('on'); renderRecipeDraftReviewPage(); };
+
+window._rdSearch=function(qRaw){
+  const dd=document.getElementById('rd-search-dd'); if(!dd)return;
+  const q=(qRaw||'').trim().toLowerCase();
+  if(q.length<2){dd.style.display='none';dd.innerHTML='';return;}
+  const seen=new Set(); const results=[];
+  (typeof allPOs!=='undefined'?allPOs:[]).forEach(p=>{
+    const code=(p.code||'').toLowerCase(),name=(p.name||'').toLowerCase(),id=(p.id||'').toLowerCase();
+    if(code.includes(q)||name.includes(q)||id.includes(q)){
+      const key=(p.code||'')+'|'+(p.id||''); if(seen.has(key))return; seen.add(key);
+      results.push({articleName:p.name||'',articleCode:p.code||'',poNumber:p.id||'',totalQty:p.qty||0,fabricType:p.fabric||'',source:'PO'});
+    }
+  });
+  (allRecipes||[]).forEach(r=>{
+    if(r.status==='archived')return;
+    const code=(r.articleCode||'').toLowerCase(),name=(r.articleName||'').toLowerCase();
+    if(code.includes(q)||name.includes(q)){
+      const key=(r.articleCode||'')+'|'+(r.poNumber||'r:'+r._id); if(seen.has(key))return; seen.add(key);
+      results.push({articleName:r.articleName||'',articleCode:r.articleCode||'',poNumber:r.poNumber||'',totalQty:r.totalQty||0,fabricType:r.fabricType||'',source:'Recipe'});
+    }
+  });
+  if(!results.length){dd.innerHTML='<div style="padding:10px 12px;color:var(--muted);font-size:13px">No matches</div>';dd.style.display='block';return;}
+  dd.innerHTML=results.slice(0,10).map(m=>{
+    const data=encodeURIComponent(JSON.stringify(m));
+    return`<div onclick="window._rdPick('${data}')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
+      <div style="font-weight:600">${m.articleName||'(no name)'}</div>
+      <div style="font-size:11px;color:var(--muted)">${m.articleCode||'—'} · PO ${m.poNumber||'—'}${m.fabricType?' · '+m.fabricType:''} <span style="font-size:10px;background:#f0f0f0;padding:1px 6px;border-radius:6px;margin-left:4px">${m.source}</span></div>
+    </div>`;
+  }).join('');
+  dd.style.display='block';
+};
+
+window._rdPick=function(encoded){
+  let m; try{ m=JSON.parse(decodeURIComponent(encoded)); }catch(e){return;}
+  const setVal=(id,v)=>{ const el=document.getElementById(id); if(el)el.value=v==null?'':v; };
+  setVal('rd-articleName',m.articleName);
+  setVal('rd-articleCode',m.articleCode);
+  setVal('rd-poNumber',m.poNumber);
+  setVal('rd-totalQty',m.totalQty);
+  setVal('rd-fabricType',m.fabricType);
+  setVal('rd-search-q','');
+  const dd=document.getElementById('rd-search-dd'); if(dd){dd.style.display='none';dd.innerHTML='';}
+  const fields=document.getElementById('rd-fields'); if(fields)fields.style.display='block';
+};
+
+window._rdClear=function(){
+  ['rd-articleName','rd-articleCode','rd-poNumber','rd-totalQty','rd-fabricType','rd-search-q'].forEach(id=>{
+    const el=document.getElementById(id); if(el)el.value='';
+  });
+  const dd=document.getElementById('rd-search-dd'); if(dd){dd.style.display='none';dd.innerHTML='';}
+  const fields=document.getElementById('rd-fields'); if(fields)fields.style.display='none';
+  const sq=document.getElementById('rd-search-q'); if(sq)sq.focus();
+};
+
+window._rdAddPlacement=function(){
+  const c=document.getElementById('rd-placements'); if(!c)return;
+  const i=_rdIdx++;
+  const tmp=document.createElement('div');
+  tmp.innerHTML=_rdPlacementRowHTML(i);
+  c.appendChild(tmp.firstChild);
+};
+window._rdRemovePlacement=function(i){
+  document.querySelector('.rd-pl-row[data-idx="'+i+'"]')?.remove();
+};
+
+function renderRecipeDraftPage(){
+  if(!isQCWorker()&&!canManageRecipes())return'<div class="empty">Not authorized.</div>';
+  const editing=viewingRecipe?allRecipes.find(r=>r._id===viewingRecipe):null;
+  const isResubmit=!!(editing&&(editing.status==='revision'||editing.status==='pending_review'));
+  const initialPlacements=(editing&&(editing.draftPlacements||[]).length)?editing.draftPlacements:[{}];
+  _rdIdx=initialPlacements.length;
+  return`<button class="back-btn" onclick="window.showPage('recipe-directory')">← Back to Recipe Directory</button>
+  <div class="page-head"><div class="page-title">${isResubmit?'Edit Draft':'New Recipe Draft'}</div><div class="page-sub">${isResubmit?'Update fields and resubmit for review':'Search the article, list placements, submit for review'}</div></div>
+
+  ${isResubmit&&editing.revisionNote?`<div class="alert-banner alert-amber" style="margin-bottom:12px"><strong>Revision requested:</strong> ${_rdEsc(editing.revisionNote)}</div>`:''}
+
+  <div class="card"><div class="card-title">Article</div>
+    <div style="position:relative;margin-bottom:8px">
+      <input id="rd-search-q" placeholder="Search by article name or code…" oninput="window._rdSearch(this.value)" autocomplete="off" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">
+      <div id="rd-search-dd" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:8px;margin-top:4px;max-height:280px;overflow-y:auto;z-index:10;box-shadow:0 4px 14px rgba(0,0,0,0.08)"></div>
+    </div>
+    <div id="rd-fields" style="display:${editing?'block':'none'}">
+      <div class="form-grid">
+        <div class="field"><label>Article Name</label><input id="rd-articleName" readonly value="${_rdEsc(editing?.articleName)}" style="background:#fafafa"></div>
+        <div class="field"><label>Article Code</label><input id="rd-articleCode" readonly value="${_rdEsc(editing?.articleCode)}" style="background:#fafafa"></div>
+        <div class="field"><label>PO Number</label><input id="rd-poNumber" readonly value="${_rdEsc(editing?.poNumber)}" style="background:#fafafa"></div>
+        <div class="field"><label>Total Qty</label><input id="rd-totalQty" readonly value="${_rdEsc(editing?.totalQty)}" style="background:#fafafa"></div>
+        <div class="field"><label>Fabric Type</label><input id="rd-fabricType" readonly value="${_rdEsc(editing?.fabricType)}" style="background:#fafafa"></div>
+      </div>
+      <button type="button" class="btn-outline" style="margin-top:8px;padding:6px 14px" onclick="window._rdClear()">Clear &amp; Search Again</button>
+    </div>
+  </div>
+
+  <div class="card"><div class="card-title">Placements</div>
+    <div id="rd-placements">
+      ${initialPlacements.map((p,i)=>_rdPlacementRowHTML(i,p)).join('')}
+    </div>
+    <button type="button" class="btn-outline" style="width:100%;margin-top:8px" onclick="window._rdAddPlacement()">+ Add Placement</button>
+  </div>
+
+  <div style="display:flex;gap:8px;margin-top:4px">
+    <button class="btn-primary" style="flex:1" onclick="window.submitRecipeDraft('${editing?._id||''}')">${isResubmit?'Resubmit for Review':'Submit Draft'}</button>
+  </div>
+  <div style="height:80px"></div>`;
+}
+
+window.submitRecipeDraft=async function(existingId){
+  const articleName=document.getElementById('rd-articleName')?.value?.trim()||'';
+  const articleCode=document.getElementById('rd-articleCode')?.value?.trim()||'';
+  if(!articleName||!articleCode){showToast('Search and select an article first.',true);return;}
+  const placements=_rdCollectPlacements();
+  if(!placements.length){showToast('Add at least one placement.',true);return;}
+  const editing=existingId?allRecipes.find(r=>r._id===existingId):null;
+  const id=existingId||prntId();
+  const now=nowIso();
+  const payload={
+    articleName,articleCode,
+    poNumber:document.getElementById('rd-poNumber')?.value?.trim()||'',
+    totalQty:parseInt(document.getElementById('rd-totalQty')?.value)||0,
+    fabricType:document.getElementById('rd-fabricType')?.value?.trim()||'',
+    status:'pending_review',
+    submittedBy:session.u,
+    submittedAt:now,
+    createdBy:editing?.createdBy||session.name,
+    createdAt:editing?.createdAt||now,
+    updatedAt:now,
+    version:(editing?.version||0)+1,
+    draftPlacements:placements,
+    revisionNote:'',
+    recipeNotes:editing?.recipeNotes||'',
+    approvedBy:editing?.approvedBy||null,
+    approvedAt:editing?.approvedAt||null,
+    images:editing?.images||{frontUrl:'',backUrl:'',placementGuideUrl:'',approvedPpSampleUrl:'',closeupUrls:[]},
+    printing:editing?.printing||{required:true,processTypes:[],complexityTier:1,ratePerPiece:0,rateSource:'manual',rateMasterMatched:false,rateOverrideNote:'',rateEffectiveQuarter:'Q2-2025',vendorName:'',placements:[],pantones:[],instructionsEn:'',instructionsUr:''},
+    qcSuggestions:editing?.qcSuggestions||[],
+    changeHistory:[...(editing?.changeHistory||[]),{by:session.name,at:now,action:existingId?'resubmitted':'submitted_for_review',note:''}]
+  };
+  try{
+    await setDoc(doc(db,'article_recipes',id),payload);
+    if(editing){const i=allRecipes.findIndex(r=>r._id===id); if(i>=0)allRecipes[i]={...payload,_id:id}; else allRecipes.unshift({...payload,_id:id});}
+    else allRecipes.unshift({...payload,_id:id});
+    await logActivity(existingId?'Recipe draft resubmitted':'Recipe draft submitted',`${articleCode} — ${articleName}`);
+    if(typeof _hrmNotify==='function'){
+      await _hrmNotify({
+        type:'info',priority:'normal',
+        title:existingId?'Recipe draft resubmitted':'New recipe draft submitted',
+        message:`${existingId?'Resubmitted':'New'} draft for ${articleName} (${articleCode}) by ${session.name} — review required`,
+        forUser:'ammar', relatedTo:id, actionRequired:true, actionUrl:'recipe-directory'
+      });
+    }
+    showToast(existingId?'Resubmitted ✓':'Draft submitted ✓');
+    viewingRecipe=null; _rdIdx=0;
+    window.showPage('recipe-directory');
+  }catch(e){showToast('Submit error: '+e.message,true);}
+};
+
+// ── Draft review (Ammar) ──
+function _rdrPantoneChipHTML(i,j,pn){
+  return`<span class="rdr-pn-chip" data-pi="${i}" data-pj="${j}" data-color-id="${_rdEsc(pn.colorLibraryId)}" data-color-name="${_rdEsc(pn.colorName)}" data-pantone-code="${_rdEsc(pn.pantoneCode)}" data-hex-approx="${_rdEsc(pn.hexApprox)}" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:#f0f0f0;border-radius:14px;font-size:12px">
+    <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${pn.hexApprox||'#ccc'};border:1px solid #ddd"></span>
+    <span>${_rdEsc(pn.colorName)||'—'}${pn.pantoneCode?' · '+_rdEsc(pn.pantoneCode):''}</span>
+    <button type="button" onclick="window._rdrRemovePantone(${i},${j})" style="border:none;background:none;color:#dc2626;cursor:pointer;font-size:14px;padding:0;line-height:1">×</button>
+  </span>`;
+}
+
+function _rdrPlacementRowHTML(i,p={}){
+  const colorOpts=(typeof allColors!=='undefined'?allColors:[]).filter(c=>c.status!=='archived')
+    .map(c=>`<option value="${c._id}">${_rdEsc(c.colorName)||'—'}${c.pantoneCode?' · '+_rdEsc(c.pantoneCode):''}</option>`).join('');
+  return`<div class="rdr-pl-row" data-idx="${i}" style="border:1px solid #e5e7eb;border-radius:10px;padding:12px;margin-bottom:10px;background:#fcfcfd">
+    <div style="display:grid;grid-template-columns:1.2fr 1.4fr 1fr auto;gap:8px;align-items:end">
+      <div class="field" style="margin:0"><label style="font-size:11px">Placement Type</label>
+        <select id="rdr-pl-type-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+          <option value="">Select…</option>
+          ${RD_PLACEMENT_TYPES.map(t=>`<option value="${t}" ${p.placementType===t?'selected':''}>${t}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" style="margin:0"><label style="font-size:11px">Position &amp; Size (inches)</label>
+        <input id="rdr-pl-pos-${i}" value="${_rdEsc(p.positionSize)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">
+      </div>
+      <div class="field" style="margin:0"><label style="font-size:11px">Technique</label>
+        <select id="rdr-pl-tech-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+          <option value="">Select…</option>
+          ${RD_TECHNIQUES.map(t=>`<option value="${t}" ${p.technique===t?'selected':''}>${t}</option>`).join('')}
+        </select>
+      </div>
+      <button type="button" onclick="window._rdrRemovePlacement(${i})" style="padding:8px 10px;border:1px solid #fecaca;background:#fff5f5;color:#dc2626;border-radius:8px;font-size:12px;cursor:pointer;height:36px">Remove</button>
+    </div>
+    <div class="field" style="margin:8px 0 0"><label style="font-size:11px">Notes</label>
+      <input id="rdr-pl-notes-${i}" value="${_rdEsc(p.notes)}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">
+    </div>
+    <div style="margin-top:10px">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Pantone Colors</div>
+      <div id="rdr-pl-pantones-${i}" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+        ${(p.pantones||[]).map((pn,j)=>_rdrPantoneChipHTML(i,j,pn)).join('')}
+      </div>
+      <select onchange="window._rdrAddPantone(${i},this.value);this.value='';" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:#fff;outline:none;max-width:280px">
+        <option value="">+ Add color from library…</option>
+        ${colorOpts}
+      </select>
+    </div>
+  </div>`;
+}
+
+window._rdrAddPlacement=function(){
+  const c=document.getElementById('rdr-placements'); if(!c)return;
+  const i=_rdIdx++;
+  const tmp=document.createElement('div');
+  tmp.innerHTML=_rdrPlacementRowHTML(i);
+  c.appendChild(tmp.firstChild);
+};
+window._rdrRemovePlacement=function(i){
+  document.querySelector('.rdr-pl-row[data-idx="'+i+'"]')?.remove();
+};
+window._rdrAddPantone=function(plIdx,colorId){
+  if(!colorId)return;
+  const c=(typeof allColors!=='undefined'?allColors:[]).find(x=>x._id===colorId); if(!c)return;
+  const wrap=document.getElementById('rdr-pl-pantones-'+plIdx); if(!wrap)return;
+  const j=wrap.querySelectorAll('.rdr-pn-chip').length;
+  const pn={colorLibraryId:c._id,colorName:c.colorName||'',pantoneCode:c.pantoneCode||'',hexApprox:c.hexApprox||''};
+  const tmp=document.createElement('div');
+  tmp.innerHTML=_rdrPantoneChipHTML(plIdx,j,pn);
+  wrap.appendChild(tmp.firstChild);
+};
+window._rdrRemovePantone=function(plIdx,j){
+  const wrap=document.getElementById('rdr-pl-pantones-'+plIdx); if(!wrap)return;
+  const chip=wrap.querySelector('.rdr-pn-chip[data-pj="'+j+'"]');
+  if(chip)chip.remove();
+};
+
+function _rdrCollectPlacements(){
+  const out=[];
+  document.querySelectorAll('#rdr-placements .rdr-pl-row').forEach(row=>{
+    const i=row.getAttribute('data-idx');
+    const placementType=document.getElementById('rdr-pl-type-'+i)?.value||'';
+    const positionSize=document.getElementById('rdr-pl-pos-'+i)?.value?.trim()||'';
+    const technique=document.getElementById('rdr-pl-tech-'+i)?.value||'';
+    const notes=document.getElementById('rdr-pl-notes-'+i)?.value?.trim()||'';
+    const pantones=[];
+    document.querySelectorAll('#rdr-pl-pantones-'+i+' .rdr-pn-chip').forEach(chip=>{
+      pantones.push({
+        colorLibraryId:chip.dataset.colorId||'',
+        colorName:chip.dataset.colorName||'',
+        pantoneCode:chip.dataset.pantoneCode||'',
+        hexApprox:chip.dataset.hexApprox||''
+      });
+    });
+    if(placementType||positionSize||technique||notes||pantones.length){
+      out.push({placementType,positionSize,technique,notes,pantones});
+    }
+  });
+  return out;
+}
+
+function _rdrCollectPayload(){
+  return{
+    articleName:document.getElementById('rdr-articleName')?.value?.trim()||'',
+    articleCode:document.getElementById('rdr-articleCode')?.value?.trim()||'',
+    poNumber:document.getElementById('rdr-poNumber')?.value?.trim()||'',
+    totalQty:parseInt(document.getElementById('rdr-totalQty')?.value)||0,
+    fabricType:document.getElementById('rdr-fabricType')?.value?.trim()||'',
+    recipeNotes:document.getElementById('rdr-notes')?.value?.trim()||'',
+    draftPlacements:_rdrCollectPlacements()
+  };
+}
+
+function renderRecipeDraftReviewPage(){
+  const m=document.getElementById('main-content'); if(!m)return;
+  if(!canManageRecipes()){m.innerHTML='<div class="empty">Not authorized.</div>';return;}
+  const r=allRecipes.find(x=>x._id===viewingRecipe);
+  if(!r){window.showPage('recipe-directory');return;}
+  const placements=r.draftPlacements||[];
+  _rdIdx=placements.length;
+  m.innerHTML=`<button class="back-btn" onclick="window.showPage('recipe-directory')">← Back to Recipe Directory</button>
+  <div class="page-head">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:12px;font-weight:700;color:var(--red)">${_rdEsc(r.articleCode)||'—'}</span>
+          ${recipeBadgeHTML(r.status||'pending_review')}
+        </div>
+        <div class="page-title" style="margin-top:4px">${_rdEsc(r.articleName)||'Untitled'}</div>
+        <div class="page-sub">Submitted by ${_rdEsc(r.submittedBy||r.createdBy||'—')}${r.submittedAt?' · '+new Date(r.submittedAt).toLocaleString('en-GB'):''}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card"><div class="card-title">Article</div>
+    <div class="form-grid">
+      <div class="field"><label>Article Name</label><input id="rdr-articleName" value="${_rdEsc(r.articleName)}"></div>
+      <div class="field"><label>Article Code</label><input id="rdr-articleCode" value="${_rdEsc(r.articleCode)}"></div>
+      <div class="field"><label>PO Number</label><input id="rdr-poNumber" value="${_rdEsc(r.poNumber)}"></div>
+      <div class="field"><label>Total Qty</label><input id="rdr-totalQty" type="number" value="${r.totalQty||0}"></div>
+      <div class="field"><label>Fabric Type</label><input id="rdr-fabricType" value="${_rdEsc(r.fabricType)}"></div>
+    </div>
+  </div>
+
+  <div class="card"><div class="card-title">Placements (${placements.length})</div>
+    <div id="rdr-placements">
+      ${placements.map((p,i)=>_rdrPlacementRowHTML(i,p)).join('')}
+    </div>
+    <button type="button" class="btn-outline" style="width:100%;margin-top:8px" onclick="window._rdrAddPlacement()">+ Add Placement</button>
+  </div>
+
+  <div class="card"><div class="card-title">Recipe Notes</div>
+    <textarea id="rdr-notes" rows="3" placeholder="Overall notes for this recipe…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;outline:none">${_rdEsc(r.recipeNotes)}</textarea>
+  </div>
+
+  <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
+    <button class="btn-outline" style="flex:1;min-width:140px" onclick="window.saveDraftReview('${r._id}')">Save Changes</button>
+    <button class="btn-primary" style="flex:1;min-width:140px;background:var(--green)" onclick="window.approveRecipeDraft('${r._id}')">Approve Recipe</button>
+    <button class="btn-outline" style="flex:1;min-width:140px;color:#9B1B2D;border-color:#E94560" onclick="window.revisionRecipeDraft('${r._id}')">Send Back for Revision</button>
+  </div>
+  <div style="height:80px"></div>`;
+}
+
+window.saveDraftReview=async function(id){
+  if(!canManageRecipes()){showToast('Not authorized.',true);return;}
+  const r=allRecipes.find(x=>x._id===id); if(!r)return;
+  const c=_rdrCollectPayload();
+  const now=nowIso();
+  const updates={...c,updatedAt:now,changeHistory:[...(r.changeHistory||[]),{by:session.name,at:now,action:'edited_in_review',note:''}]};
+  try{
+    await updateDoc(doc(db,'article_recipes',id),updates);
+    Object.assign(r,updates);
+    showToast('Saved ✓');
+    renderRecipeDraftReviewPage();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+window.approveRecipeDraft=async function(id){
+  if(!canManageRecipes()){showToast('Not authorized.',true);return;}
+  if(!confirm('Approve this recipe?'))return;
+  const r=allRecipes.find(x=>x._id===id); if(!r)return;
+  const c=_rdrCollectPayload();
+  const now=nowIso();
+  const updates={...c,status:'active',approvedBy:session.u,approvedAt:now,revisionNote:'',updatedAt:now,changeHistory:[...(r.changeHistory||[]),{by:session.name,at:now,action:'approved',note:''}]};
+  try{
+    await updateDoc(doc(db,'article_recipes',id),updates);
+    Object.assign(r,updates);
+    await logActivity('Recipe approved',`${r.articleCode} — ${r.articleName}`);
+    if(typeof _hrmNotify==='function'&&r.submittedBy){
+      await _hrmNotify({type:'info',priority:'normal',title:'Recipe approved',message:`Recipe for ${r.articleName} (${r.articleCode}) has been approved by ${session.name}`,forUser:r.submittedBy,relatedTo:id,actionUrl:'recipe-directory'});
+    }
+    showToast('Recipe approved ✓');
+    viewingRecipe=null;
+    window.showPage('recipe-directory');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+window.revisionRecipeDraft=async function(id){
+  if(!canManageRecipes()){showToast('Not authorized.',true);return;}
+  const reason=(prompt('Reason for sending back for revision:')||'').trim();
+  if(!reason){showToast('Reason is required.',true);return;}
+  const r=allRecipes.find(x=>x._id===id); if(!r)return;
+  const c=_rdrCollectPayload();
+  const now=nowIso();
+  const updates={...c,status:'revision',revisionNote:reason,updatedAt:now,changeHistory:[...(r.changeHistory||[]),{by:session.name,at:now,action:'sent_for_revision',note:reason}]};
+  try{
+    await updateDoc(doc(db,'article_recipes',id),updates);
+    Object.assign(r,updates);
+    await logActivity('Recipe sent for revision',`${r.articleCode} — ${reason}`);
+    if(typeof _hrmNotify==='function'&&r.submittedBy){
+      await _hrmNotify({type:'info',priority:'high',title:'Recipe needs revision',message:`Recipe for ${r.articleName} (${r.articleCode}) needs revision — ${reason}`,forUser:r.submittedBy,relatedTo:id,actionRequired:true,actionUrl:'recipe-directory'});
+    }
+    showToast('Sent for revision ✓');
+    viewingRecipe=null;
+    window.showPage('recipe-directory');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+// ── Printable Blank Placement Sheet ──
+window.printBlankRecipeSheet=function(){
+  const win=window.open('','_blank');
+  if(!win){showToast('Popup blocked. Please allow popups.',true);return;}
+  win.document.write(`<!DOCTYPE html><html><head><title>Placement Recipe Sheet — Blank</title>
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',sans-serif;color:#000;background:#fff;margin:24px;padding:0;font-size:13px;line-height:1.5}
+    .sheet{max-width:760px;margin:0 auto;padding:20px}
+    .brand{font-size:42px;font-weight:900;letter-spacing:3px;text-align:center;margin-bottom:6px}
+    .subtitle{font-size:17px;font-weight:600;text-align:center;margin-bottom:28px;letter-spacing:.5px}
+    .meta{margin-bottom:22px}
+    .meta-row{padding:11px 0;border-bottom:1px solid #000;font-size:14px}
+    .meta-label{font-weight:700;display:inline-block;width:150px}
+    table{border-collapse:collapse;width:100%;margin-top:18px;font-size:13px}
+    th,td{border:1.5px solid #000;padding:14px 10px;text-align:left;vertical-align:middle}
+    th{background:#f0f0f0;font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.5px}
+    th.col-num{width:48px;text-align:center}
+    th.col-type{width:38%}
+    td.col-num{text-align:center;font-weight:700}
+    td.row-cell{height:34px}
+    .footer{margin-top:36px;padding-top:18px;border-top:2px solid #000;display:flex;justify-content:space-between;font-size:14px;flex-wrap:wrap;gap:24px}
+    .footer-item{flex:1;min-width:240px}
+    .footer-label{font-weight:700;display:inline-block;width:130px}
+    .footer-line{border-bottom:1px solid #000;display:inline-block;min-width:180px;padding-bottom:2px}
+    .no-print{margin-top:22px;text-align:center}
+    .no-print button{padding:10px 24px;background:#1A1A2E;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-family:inherit}
+    @media print{
+      @page{size:A4 portrait;margin:14mm}
+      body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .sheet{padding:0;max-width:none}
+      .no-print{display:none}
+      table{page-break-inside:avoid}
+    }
+  </style></head><body>
+  <div class="sheet">
+    <div class="brand">GROOVY</div>
+    <div class="subtitle">Placement Recipe Sheet</div>
+    <div class="meta">
+      <div class="meta-row"><span class="meta-label">Date:</span> _______________</div>
+      <div class="meta-row"><span class="meta-label">Article Name:</span> _______________</div>
+      <div class="meta-row"><span class="meta-label">Article Code:</span> _______________</div>
+    </div>
+    <table>
+      <thead><tr><th class="col-num">#</th><th class="col-type">Placement Type</th><th>Placement (inches)</th></tr></thead>
+      <tbody>
+        ${Array.from({length:15}).map((_,i)=>`<tr><td class="col-num row-cell">${i+1}</td><td class="row-cell"></td><td class="row-cell"></td></tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="footer">
+      <div class="footer-item"><span class="footer-label">Prepared by:</span><span class="footer-line"></span></div>
+      <div class="footer-item"><span class="footer-label">Signature:</span><span class="footer-line"></span></div>
+    </div>
+    <div class="no-print"><button onclick="window.print()">Print Sheet 🖨️</button></div>
+  </div>
+  <script>setTimeout(function(){window.print();},350);<\/script>
+  </body></html>`);
+  win.document.close();
+};
 
 // ── Recipe Create / Edit ───────────────────────────────────────────────
 function renderRecipeCreatePage(){
@@ -6755,6 +7276,24 @@ function renderRecipeDetailPage(){
     <div class="card-title">Colors / Ink (${pt.pantones.length})</div>
     ${pt.pantones.map(p=>_ptDetailChipHTML(p)).join('')}
   </div>`:''}
+
+  ${(r.draftPlacements||[]).length?`<div class="card"><div class="card-title">Placements (${r.draftPlacements.length})</div>
+    ${r.draftPlacements.map((p,i)=>`<div style="padding:10px 0;border-bottom:1px solid #f5f5f5">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+        <span style="font-size:11px;font-weight:700;color:var(--muted)">${i+1}.</span>
+        <span style="font-weight:600;font-size:14px">${_rdEsc(p.placementType)||'—'}</span>
+        ${p.technique?`<span style="font-size:11px;background:#f0f0f0;padding:2px 8px;border-radius:10px">${_rdEsc(p.technique)}</span>`:''}
+      </div>
+      ${p.positionSize?`<div style="font-size:13px;color:#1A1A2E;margin-bottom:3px"><span style="color:var(--muted);font-size:11px">Position &amp; Size:</span> ${_rdEsc(p.positionSize)}</div>`:''}
+      ${p.notes?`<div style="font-size:12px;color:var(--muted);margin-bottom:4px">${_rdEsc(p.notes)}</div>`:''}
+      ${(p.pantones||[]).length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${p.pantones.map(pn=>`<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;background:#f7f7f9;border:1px solid #eee;border-radius:14px;font-size:12px">
+        <span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${pn.hexApprox||'#ccc'};border:1px solid #ddd"></span>
+        ${_rdEsc(pn.colorName)||'—'}${pn.pantoneCode?' · '+_rdEsc(pn.pantoneCode):''}
+      </span>`).join('')}</div>`:''}
+    </div>`).join('')}
+  </div>`:''}
+
+  ${r.recipeNotes?`<div class="card"><div class="card-title">Recipe Notes</div><div style="font-size:13px;line-height:1.7">${_rdEsc(r.recipeNotes)}</div></div>`:''}
 
   ${pt.instructionsEn||pt.instructionsUr?`<div class="card"><div class="card-title">Instructions / ہدایات</div>
     ${pt.instructionsEn?`<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:4px">ENGLISH</div><div style="font-size:13px;line-height:1.7">${pt.instructionsEn}</div></div>`:''}
