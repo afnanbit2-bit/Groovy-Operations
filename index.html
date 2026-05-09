@@ -6634,37 +6634,37 @@ window.printBlankRecipeSheet=function(){
     <table>
       <thead><tr><th class="col-num">#</th><th class="col-type">Placement Type</th><th>Placement (inches)</th></tr></thead>
       <tbody>
-        ${Array.from({length:6}).map((_,i)=>`<tr><td class="col-num row-cell">${i+1}</td><td class="row-cell"></td><td class="row-cell"></td></tr>`).join('')}
+        ${Array.from({length:5}).map((_,i)=>`<tr><td class="col-num row-cell">${i+1}</td><td class="row-cell"></td><td class="row-cell"></td></tr>`).join('')}
       </tbody>
     </table>
   </div>`;
   win.document.write(`<!DOCTYPE html><html><head><title>Placement Recipe Sheet — Blank</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',sans-serif;color:#000;background:#fff;font-size:11px;line-height:1.25;padding:8mm}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',sans-serif;color:#000;background:#fff;font-size:9px;line-height:1.2;padding:5mm}
     .sheet{width:100%}
-    .head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:5px}
-    .brand{font-size:20px;font-weight:900;letter-spacing:2px}
-    .subtitle{font-size:12px;font-weight:600;letter-spacing:.5px}
-    .block{margin-bottom:5px;padding-bottom:5px;border-bottom:1px dashed #000}
+    .head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #000;padding-bottom:2px;margin-bottom:4px}
+    .brand{font-size:16px;font-weight:900;letter-spacing:2px}
+    .subtitle{font-size:10px;font-weight:600;letter-spacing:.5px}
+    .block{margin-bottom:4px;padding-bottom:4px;border-bottom:1px dashed #000}
     .block:last-of-type{border-bottom:none;margin-bottom:0;padding-bottom:0}
-    .meta{display:flex;gap:8px;font-size:11px;font-weight:600;margin-bottom:3px}
-    .meta-item{flex:1;display:flex;align-items:flex-end;gap:4px}
-    .meta-line{flex:1;border-bottom:1px solid #000;display:inline-block;height:14px}
-    table{border-collapse:collapse;width:100%;font-size:11px;table-layout:fixed}
-    th,td{border:1px solid #000;padding:1px 5px;text-align:left;vertical-align:middle}
-    th{background:#eee;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.4px;height:16px}
-    th.col-num,td.col-num{width:22px;text-align:center}
+    .meta{display:flex;gap:6px;font-size:9px;font-weight:600;margin-bottom:2px}
+    .meta-item{flex:1;display:flex;align-items:flex-end;gap:3px}
+    .meta-line{flex:1;border-bottom:1px solid #000;display:inline-block;height:12px}
+    table{border-collapse:collapse;width:100%;font-size:9px;table-layout:fixed}
+    th,td{border:1px solid #000;padding:1px 4px;text-align:left;vertical-align:middle}
+    th{background:#eee;font-weight:700;font-size:8px;text-transform:uppercase;letter-spacing:.4px;height:13px}
+    th.col-num,td.col-num{width:20px;text-align:center}
     th.col-type{width:38%}
-    td.row-cell{height:18px}
-    .footer{margin-top:6px;padding-top:5px;border-top:2px solid #000;display:flex;gap:18px;font-size:11px}
-    .footer-item{flex:1;display:flex;align-items:flex-end;gap:6px}
+    td.row-cell{height:14px}
+    .footer{margin-top:4px;padding-top:4px;border-top:2px solid #000;display:flex;gap:14px;font-size:9px}
+    .footer-item{flex:1;display:flex;align-items:flex-end;gap:5px}
     .footer-label{font-weight:700;white-space:nowrap}
-    .footer-line{flex:1;border-bottom:1px solid #000;height:14px}
-    .no-print{margin-top:10px;text-align:center}
-    .no-print button{padding:8px 18px;background:#1A1A2E;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit}
+    .footer-line{flex:1;border-bottom:1px solid #000;height:12px}
+    .no-print{margin-top:8px;text-align:center}
+    .no-print button{padding:7px 16px;background:#1A1A2E;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit}
     @media print{
-      @page{size:A4 portrait;margin:8mm}
+      @page{size:A4 portrait;margin:5mm}
       html,body{height:auto}
       body{padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
       .no-print{display:none}
@@ -6677,7 +6677,7 @@ window.printBlankRecipeSheet=function(){
       <span class="brand">GROOVY</span>
       <span class="subtitle">Placement Recipe Sheet</span>
     </div>
-    ${block()}${block()}${block()}${block()}
+    ${block()}${block()}${block()}${block()}${block()}${block()}
     <div class="footer">
       <div class="footer-item"><span class="footer-label">Prepared by:</span><span class="footer-line"></span></div>
       <div class="footer-item"><span class="footer-label">Signature:</span><span class="footer-line"></span></div>
