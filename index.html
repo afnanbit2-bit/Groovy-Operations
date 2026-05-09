@@ -9251,7 +9251,7 @@ function renderMyWork(){
   if(session.role==='worker'&&!hrmDataLoaded&&typeof loadHRMData==='function'){
     loadHRMData().then(()=>{ if(currentPage==='my-work'){const m=document.getElementById('main-content');if(m){m.innerHTML=renderMyWork();if(typeof _populateWorkerHRMWidget==='function')setTimeout(_populateWorkerHRMWidget,0);} } });
   }
-  const hrmHeader=session.role==='worker'&&typeof renderWorkerHRMWidget==='function'?renderWorkerHRMWidget():'';
+  const hrmHeader=session.role==='worker'&&session.u!=='asghar'&&typeof renderWorkerHRMWidget==='function'?renderWorkerHRMWidget():'';
   return hrmHeader+_renderMyWorkInner();
 }
 function _renderMyWorkInner(){
