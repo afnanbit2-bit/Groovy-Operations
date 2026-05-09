@@ -1582,7 +1582,7 @@ function buildNav(){
   if(!isWorker){
     storeSubItems.push({id:'store-dashboard',label:'Dashboard'});
     storeSubItems.push({id:'store-inventory',label:'Inventory'});
-    storeSubItems.push({id:'store-fabric-inventory',label:'Fabric Inventory'});
+    if(isOwner)storeSubItems.push({id:'store-fabric-inventory',label:'Fabric Inventory'});
     storeSubItems.push({id:'store-receive',label:'Receive Stock'});
     storeSubItems.push({id:'store-issue',label:'Issue Stock'});
     storeSubItems.push({id:'store-log',label:'Stock Log'});
