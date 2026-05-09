@@ -1573,7 +1573,7 @@ function buildNav(){
   }
   // Printing module nav items (worker-aware; used for mobile bottom nav)
   const printItems=[];
-  if(om||session.u==='ammar'||session.u==='haris')printItems.push({id:'recipe-directory',label:'Recipe Directory'});
+  if(om||session.u==='ammar'||session.u==='haris'||isPrintWorker())printItems.push({id:'recipe-directory',label:'Recipe Directory'});
   if(om||['asghar','zohaib','waqas','haris'].includes(session.u))printItems.push({id:'printing-jobs',label:'Embellishment Jobs'});
   if(om)printItems.push({id:'observer-tower',label:'Observer Tower'});
   if(canManageRecipes()||isQCWorker())printItems.push({id:'color-library',label:'Color Library'});
@@ -1813,7 +1813,7 @@ window.openMoreSheet=function(){
   if(session.canPO)items.push({iconName:'plus',label:'New PO',pageId:'po-create'});
   items.push({iconName:'po',label:'PO Registry',pageId:'po-registry'});
   // Embellishments dept items (visible to owners/managers + relevant workers)
-  if(om||session.u==='ammar'||session.u==='haris')items.push({iconName:'palette',label:'Recipe Directory',pageId:'recipe-directory'});
+  if(om||session.u==='ammar'||session.u==='haris'||(typeof isPrintWorker==='function'&&isPrintWorker()))items.push({iconName:'palette',label:'Recipe Directory',pageId:'recipe-directory'});
   if(om||['asghar','zohaib','waqas','haris'].includes(session.u))items.push({iconName:'print',label:'Embellishment Jobs',pageId:'printing-jobs'});
   if(om)items.push({iconName:'eye',label:'Observer Tower',pageId:'observer-tower'});
   if(typeof canManageRecipes==='function'&&(canManageRecipes()||(typeof isQCWorker==='function'&&isQCWorker())))items.push({iconName:'palette',label:'Color Library',pageId:'color-library'});
@@ -6085,7 +6085,7 @@ window.runColorImport=async function(){
 // ════════════════════════════════════════════
 
 function renderRecipeDirectory(){
-  const canCreate=canManageRecipes();
+  const canCreate=canManageRecipes()&&!isPrintWorker();
   const q=(document.getElementById('recipe-q')||{}).value||'';
   const list=allRecipes.filter(r=>!q||(r.articleCode||'').toLowerCase().includes(q.toLowerCase())||(r.articleName||'').toLowerCase().includes(q.toLowerCase()));
 
@@ -6693,12 +6693,13 @@ function renderRecipeDetailPage(){
   if(!r){window.showPage('recipe-directory');return;}
   const pt=r.printing||{};
   const imgs=r.images||{};
-  const canEdit=canManageRecipes()&&r.status!=='locked';
-  const canUnlock=session.u==='ammar'&&r.status==='locked';
+  const roView=isPrintWorker();
+  const canEdit=canManageRecipes()&&r.status!=='locked'&&!roView;
+  const canUnlock=session.u==='ammar'&&r.status==='locked'&&!roView;
   const isLocked=r.status==='locked';
 
   // QC Suggestion form (for QC worker)
-  const qcSugForm=isQCWorker()&&r.status!=='archived'?`
+  const qcSugForm=isQCWorker()&&r.status!=='archived'&&!roView?`
     <div class="card"><div class="card-title">Submit QC Suggestion</div>
       <div class="field" style="margin-bottom:8px"><textarea id="qc-sug-text" rows="3" placeholder="Describe the recipe change or quality observation…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;outline:none"></textarea></div>
       <button class="btn-outline" onclick="window.submitQCSuggestion('${r._id}')">Submit Suggestion</button>
@@ -6719,9 +6720,9 @@ function renderRecipeDetailPage(){
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${canEdit?`<button class="btn-outline" onclick="window.editRecipe('${r._id}')">Edit Recipe</button>`:''}
         ${canUnlock?`<button class="btn-outline" onclick="window.unlockRecipe('${r._id}')">🔓 Unlock</button>`:''}
-        ${canManageRecipes()&&r.status==='draft'&&session.u==='ammar'?`<button class="btn-primary" style="width:auto;padding:8px 16px;background:var(--green)" onclick="window.lockRecipe('${r._id}')">Lock Recipe 🔒</button>`:''}
-        ${isObserver()?`<button class="btn-outline" onclick="window.archiveRecipe('${r._id}')">Archive</button>`:''}
-        ${session.u==='ammar'?`<button class="btn-outline" style="color:#dc2626;border-color:#dc2626" onclick="window.deleteRecipe('${r._id}')">Delete</button>`:''}
+        ${canManageRecipes()&&r.status==='draft'&&session.u==='ammar'&&!roView?`<button class="btn-primary" style="width:auto;padding:8px 16px;background:var(--green)" onclick="window.lockRecipe('${r._id}')">Lock Recipe 🔒</button>`:''}
+        ${isObserver()&&!roView?`<button class="btn-outline" onclick="window.archiveRecipe('${r._id}')">Archive</button>`:''}
+        ${session.u==='ammar'&&!roView?`<button class="btn-outline" style="color:#dc2626;border-color:#dc2626" onclick="window.deleteRecipe('${r._id}')">Delete</button>`:''}
       </div>
     </div>
   </div>
@@ -6768,7 +6769,7 @@ function renderRecipeDetailPage(){
         </div>
         <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${s.status==='rejected'?'#111':'#f0f0f0'};color:${s.status==='rejected'?'#fff':'#111'}">${(s.status||'open').toUpperCase()}</span>
       </div>
-      ${canManageRecipes()&&s.status==='open'?`<div style="display:flex;gap:6px;margin-top:6px">
+      ${canManageRecipes()&&s.status==='open'&&!roView?`<div style="display:flex;gap:6px;margin-top:6px">
         <button class="btn-sm" style="background:var(--green)" onclick="window.resolveQCSug('${r._id}','${s.suggestionId}','accepted')">Accept</button>
         <button class="btn-sm" style="background:#dc2626" onclick="window.resolveQCSug('${r._id}','${s.suggestionId}','rejected')">Reject</button>
       </div>`:''}
