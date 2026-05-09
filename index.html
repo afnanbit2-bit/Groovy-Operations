@@ -6090,12 +6090,14 @@ function renderRecipeDirectory(){
   const canCreate=canManageRecipes()&&!isPrintWorker();
   const canDraft=(isQCWorker()||canManageRecipes())&&!isPrintWorker();
   const isOM=canManageRecipes();
+  const isAsghar=isPrintWorker();
   const q=(document.getElementById('recipe-q')||{}).value||'';
 
   const pendingDrafts=allRecipes.filter(r=>r.status==='pending_review');
   const myRevisions=isQCWorker()?allRecipes.filter(r=>r.status==='revision'&&r.submittedBy===session.u):[];
 
   const list=allRecipes.filter(r=>{
+    if(isAsghar) return r.status==='active'&&(!q||(r.articleCode||'').toLowerCase().includes(q.toLowerCase())||(r.articleName||'').toLowerCase().includes(q.toLowerCase()));
     if(r.status==='pending_review'||r.status==='revision')return false;
     if(!q)return true;
     return(r.articleCode||'').toLowerCase().includes(q.toLowerCase())||(r.articleName||'').toLowerCase().includes(q.toLowerCase());
@@ -6145,9 +6147,9 @@ function renderRecipeDirectory(){
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
     <input id="recipe-q" placeholder="Search article code or name…" oninput="window._filterRecipes(this.value)" value="${q}"
       style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
-    <select onchange="window._filterRecipeStatus(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+    ${!isAsghar?`<select onchange="window._filterRecipeStatus(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
       <option value="">All status</option><option value="active">Active</option><option value="locked">Locked</option><option value="draft">Draft</option><option value="archived">Archived</option>
-    </select>
+    </select>`:''}
     <select onchange="window._filterRecipeTier(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
       <option value="">All tiers</option>${[1,2,3,4].map(t=>`<option value="${t}">Tier ${t}</option>`).join('')}
     </select>
@@ -6158,7 +6160,11 @@ function renderRecipeDirectory(){
   </div>`;
 }
 window._filterRecipes=function(q){
-  const list=allRecipes.filter(r=>!q||(r.articleCode||'').toLowerCase().includes(q.toLowerCase())||(r.articleName||'').toLowerCase().includes(q.toLowerCase()));
+  const isAsghar=isPrintWorker();
+  const list=allRecipes.filter(r=>{
+    if(isAsghar) return r.status==='active'&&(!q||(r.articleCode||'').toLowerCase().includes(q.toLowerCase())||(r.articleName||'').toLowerCase().includes(q.toLowerCase()));
+    return !q||(r.articleCode||'').toLowerCase().includes(q.toLowerCase())||(r.articleName||'').toLowerCase().includes(q.toLowerCase());
+  });
   const w=document.getElementById('recipe-list-wrap'); if(w)w.innerHTML=list.length?list.map(r=>recipeCardHTML(r)).join(''):'<div class="empty">No results.</div>';
 };
 window._filterRecipeStatus=function(s){
@@ -6203,11 +6209,16 @@ function recipeCardHTML(r){
 window.openRecipeDetail=function(id){ viewingRecipe=id; currentPage='recipe-detail'; document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on')); document.getElementById('nav-recipe-directory')?.classList.add('on'); renderRecipeDetailPage(); };
 
 // ── Two-Tier Recipe Draft Flow (Haris submits → Ammar approves) ───────────
-const RD_PLACEMENT_TYPES=['Front Chest','Back','Left Sleeve','Right Sleeve','Left Chest','Right Chest','Bottom Hem','Collar','Custom'];
-const RD_TECHNIQUES=['Rubber Print','Screen Print','Embroidery','Sublimation'];
+const RD_PLACEMENT_TYPES=['Front Center / فرنٹ سینٹر','Front Chest / فرنٹ چیسٹ','Front Left Chest / فرنٹ لیفٹ چیسٹ','Front Right Chest / فرنٹ رائٹ چیسٹ','Full Front / فل فرنٹ','Back Center / بیک سینٹر','Back Neck / بیک نیک','Full Back / فل بیک','Left Sleeve / لیفٹ سلیو','Right Sleeve / رائٹ سلیو','Left Leg / لیفٹ لیگ','Right Leg / رائٹ لیگ','HPS Based Placement / HPS شمارت','Seam Based Placement / سیم بیسڈ شمارت','Custom Measured / کسٹم ناپ والی'];
+const RD_TECHNIQUES=['Screen Print','Puff Print','Sublimation','Embroidery'];
 let _rdIdx=0;
 
 function _rdEsc(s){ return String(s==null?'':s).replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function _draftTypeToTemplateId(placementType){
+  const nameEn=(placementType||'').split('/')[0].trim();
+  const tpl=PLACEMENT_TEMPLATES.find(t=>t.nameEn.toLowerCase()===nameEn.toLowerCase());
+  return tpl?tpl.id:'custom';
+}
 
 function _rdPlacementRowHTML(i,p={}){
   return`<div class="rd-pl-row" data-idx="${i}" style="display:grid;grid-template-columns:1.2fr 1.4fr 1fr 1.4fr auto;gap:8px;margin-bottom:8px;align-items:end">
@@ -6521,8 +6532,20 @@ function renderRecipeDraftReviewPage(){
   if(!canManageRecipes()){m.innerHTML='<div class="empty">Not authorized.</div>';return;}
   const r=allRecipes.find(x=>x._id===viewingRecipe);
   if(!r){window.showPage('recipe-directory');return;}
-  const placements=r.draftPlacements||[];
-  _rdIdx=placements.length;
+  const pt=r.printing||{};
+  const imgs=r.images||{};
+  const draftPls=r.draftPlacements||[];
+  // Map draft placements to full placement format; if Ammar already saved full placements, use those
+  const placements=(pt.placements&&pt.placements.length)?pt.placements:draftPls.map(dp=>({
+    placementTemplateId:_draftTypeToTemplateId(dp.placementType),
+    measurementText:dp.positionSize||'',
+    measurementUnit:'inch',
+    toleranceText:'',toleranceUnit:'inch',
+    production:{referenceImageUrl:'',visibleInstructionEn:dp.notes||'',visibleInstructionUr:''},
+    technical:{artworkSize:'',artworkFileUrl:'',printDimensionNotes:''}
+  }));
+  _plIdx=placements.length; _ptIdx=0;
+  const rm=_lookupRate(r.articleCode||'');
   m.innerHTML=`<button class="back-btn" onclick="window.showPage('recipe-directory')">← Back to Recipe Directory</button>
   <div class="page-head">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
@@ -6531,37 +6554,73 @@ function renderRecipeDraftReviewPage(){
           <span style="font-size:12px;font-weight:700;color:var(--red)">${_rdEsc(r.articleCode)||'—'}</span>
           ${recipeBadgeHTML(r.status||'pending_review')}
         </div>
-        <div class="page-title" style="margin-top:4px">${_rdEsc(r.articleName)||'Untitled'}</div>
-        <div class="page-sub">Submitted by ${_rdEsc(r.submittedBy||r.createdBy||'—')}${r.submittedAt?' · '+new Date(r.submittedAt).toLocaleString('en-GB'):''}</div>
+        <div class="page-title" style="margin-top:4px">Review Draft — ${_rdEsc(r.articleName)||'Untitled'}</div>
+        <div class="page-sub">Submitted by ${_rdEsc(r.submittedBy||r.createdBy||'—')}${r.submittedAt?' · '+new Date(r.submittedAt).toLocaleString('en-GB'):''} · ${draftPls.length} placement${draftPls.length===1?'':'s'} from Haris</div>
       </div>
     </div>
   </div>
 
-  <div class="card"><div class="card-title">Article</div>
+  <div class="card"><div class="card-title">Article Identity</div>
     <div class="form-grid">
-      <div class="field"><label>Article Name</label><input id="rdr-articleName" value="${_rdEsc(r.articleName)}"></div>
-      <div class="field"><label>Article Code</label><input id="rdr-articleCode" value="${_rdEsc(r.articleCode)}"></div>
-      <div class="field"><label>PO Number</label><input id="rdr-poNumber" value="${_rdEsc(r.poNumber)}"></div>
-      <div class="field"><label>Total Qty</label><input id="rdr-totalQty" type="number" value="${r.totalQty||0}"></div>
-      <div class="field"><label>Fabric Type</label><input id="rdr-fabricType" value="${_rdEsc(r.fabricType)}"></div>
+      <div class="field"><label>Article Code *</label><input id="rc-code" placeholder="e.g. GP020" value="${_rdEsc(r.articleCode)}" oninput="window._rcLookupRate(this.value)" onchange="window._rcLookupRate(this.value)"></div>
+      <div class="field"><label>Article Name *</label><input id="rc-name" value="${_rdEsc(r.articleName)}"></div>
+      <div class="field"><label>Brand</label><input id="rc-brand" value="${_rdEsc(r.brand||'')}"></div>
+      <div class="field"><label>Category</label>
+        <select id="rc-cat"><option value="">Select…</option>${['T-Shirt','Shirt','Hoodie','Zipper','Sweatshirt','Cargo','Trouser','Jersey','Babytee','Set','Jacket','Denim','Shorts'].map(c=>`<option value="${c}" ${r.category===c?'selected':''}>${c}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>PO Number</label><input id="rc-po" value="${_rdEsc(r.poNumber||'')}" style="background:#fafafa" readonly></div>
+      <div class="field"><label>Total Qty</label><input id="rc-qty" value="${r.totalQty||''}" style="background:#fafafa" readonly></div>
+      <div class="field"><label>Fabric Type</label><input id="rc-fabric" value="${_rdEsc(r.fabricType||'')}" style="background:#fafafa" readonly></div>
     </div>
   </div>
 
-  <div class="card"><div class="card-title">Placements (${placements.length})</div>
-    <div id="rdr-placements">
-      ${placements.map((p,i)=>_rdrPlacementRowHTML(i,p)).join('')}
+  <div class="card"><div class="card-title">Embellishment Details</div>
+    <div class="form-grid">
+      <div class="field" style="grid-column:1/-1">
+        <label>Process Types (select all that apply)</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+          ${Object.entries(PROCESS_TYPES).map(([k,v])=>`<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:#fafafa">
+            <input type="checkbox" id="rc-pt-${k}" ${(pt.processTypes||[]).includes(k)?'checked':''} style="accent-color:var(--dark)"> ${v.icon} ${v.label}
+          </label>`).join('')}
+        </div>
+      </div>
+      <div id="rc-rate-status" style="grid-column:1/-1">${rm?`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:12px"><span style="color:var(--green);font-weight:700">Rate found from Printing Rate List ✅</span><span style="color:var(--muted)">Rs. ${rm.ratePerPiece}/pc · Tier ${rm.complexityTier}</span></div>`:''}</div>
+      <div class="field"><label>Complexity Tier *</label>
+        <select id="rc-tier" onchange="window._rcMarkOverride()">${[1,2,3,4].map(t=>`<option value="${t}" ${(pt.complexityTier||1)==t?'selected':''}>${TIER_INFO[t].label} — ${TIER_INFO[t].desc}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Rate per Piece (Rs.) *</label><input id="rc-rate" type="number" min="0" step="0.5" placeholder="0.00" value="${pt.ratePerPiece||''}" oninput="window._rcMarkOverride()"></div>
+      <div id="rc-override-row" style="grid-column:1/-1;display:none"></div>
+      <div class="field" style="grid-column:1/-1"><label>Instructions (English)</label><textarea id="rc-instr-en" rows="3" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:100%;font-family:inherit;resize:vertical;outline:none">${_rdEsc(pt.instructionsEn||'')}</textarea></div>
+      <div class="field" style="grid-column:1/-1"><label>ہدایات (اردو)</label><textarea id="rc-instr-ur" rows="3" dir="rtl" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:100%;font-family:inherit;resize:vertical;outline:none;text-align:right">${_rdEsc(pt.instructionsUr||'')}</textarea></div>
     </div>
-    <button type="button" class="btn-outline" style="width:100%;margin-top:8px" onclick="window._rdrAddPlacement()">+ Add Placement</button>
   </div>
 
-  <div class="card"><div class="card-title">Recipe Notes</div>
-    <textarea id="rdr-notes" rows="3" placeholder="Overall notes for this recipe…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;outline:none">${_rdEsc(r.recipeNotes)}</textarea>
+  <div class="card"><div class="card-title">Placements${draftPls.length&&!pt.placements?.length?' (pre-filled from Haris\'s draft)':''}</div>
+    <div id="rc-placements">
+      ${placements.map((pl,i)=>placementRowHTML(i,pl)).join('')}
+    </div>
+    <button type="button" class="btn-outline" style="width:100%;margin-top:6px" onclick="window.addPlacementRow()">+ Add Placement</button>
+  </div>
+
+  <div class="card"><div class="card-title">Pantone / Ink Colors</div>
+    <div id="rc-pantones">
+      ${(pt.pantones||[]).map((p,i)=>pantoneRowHTML(i,p)).join('')}
+    </div>
+    <button type="button" class="btn-outline" style="width:100%;margin-top:6px" onclick="window.addPantoneRow()">+ Add Color</button>
+  </div>
+
+  <div class="card"><div class="card-title">Product Images</div>
+    <div class="form-grid">
+      <div class="field"><label>Front Image URL</label><input id="rc-img-front" placeholder="https://…" value="${_rdEsc(imgs.frontUrl||'')}"></div>
+      <div class="field"><label>Back Image URL</label><input id="rc-img-back" placeholder="https://…" value="${_rdEsc(imgs.backUrl||'')}"></div>
+      <div class="field" style="grid-column:1/-1"><label>Placement Guide URL</label><input id="rc-img-place" placeholder="https://…" value="${_rdEsc(imgs.placementGuideUrl||'')}"></div>
+    </div>
   </div>
 
   <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
     <button class="btn-outline" style="flex:1;min-width:140px" onclick="window.saveDraftReview('${r._id}')">Save Changes</button>
-    <button class="btn-primary" style="flex:1;min-width:140px;background:var(--green)" onclick="window.approveRecipeDraft('${r._id}')">Approve Recipe</button>
-    <button class="btn-outline" style="flex:1;min-width:140px;color:#9B1B2D;border-color:#E94560" onclick="window.revisionRecipeDraft('${r._id}')">Send Back for Revision</button>
+    <button class="btn-primary" style="flex:1;min-width:140px;background:var(--green)" onclick="window.approveRecipeDraft('${r._id}')">Approve &amp; Publish Recipe ✅</button>
+    <button class="btn-outline" style="flex:1;min-width:140px;color:#9B1B2D;border-color:#E94560" onclick="window.revisionRecipeDraft('${r._id}')">Send Back for Revision ↩️</button>
   </div>
   <div style="height:80px"></div>`;
 }
@@ -6569,9 +6628,23 @@ function renderRecipeDraftReviewPage(){
 window.saveDraftReview=async function(id){
   if(!canManageRecipes()){showToast('Not authorized.',true);return;}
   const r=allRecipes.find(x=>x._id===id); if(!r)return;
-  const c=_rdrCollectPayload();
+  const code=(document.getElementById('rc-code')?.value||'').trim().toUpperCase();
+  const name=(document.getElementById('rc-name')?.value||'').trim();
+  if(!code||!name){showToast('Article code and name required.',true);return;}
   const now=nowIso();
-  const updates={...c,updatedAt:now,changeHistory:[...(r.changeHistory||[]),{by:session.name,at:now,action:'edited_in_review',note:''}]};
+  const rm=_lookupRate(code);
+  const tier=parseInt(document.getElementById('rc-tier')?.value)||1;
+  const rate=parseFloat(document.getElementById('rc-rate')?.value)||0;
+  const processTypes=Object.keys(PROCESS_TYPES).filter(k=>document.getElementById('rc-pt-'+k)?.checked);
+  const updates={
+    articleCode:code,articleName:name,
+    brand:document.getElementById('rc-brand')?.value.trim()||'',
+    category:document.getElementById('rc-cat')?.value||'',
+    updatedAt:now,
+    images:{frontUrl:document.getElementById('rc-img-front')?.value.trim()||'',backUrl:document.getElementById('rc-img-back')?.value.trim()||'',placementGuideUrl:document.getElementById('rc-img-place')?.value.trim()||'',approvedPpSampleUrl:r.images?.approvedPpSampleUrl||'',closeupUrls:r.images?.closeupUrls||[]},
+    printing:{...(r.printing||{}),processTypes,complexityTier:tier,ratePerPiece:rate,placements:collectPlacements(),pantones:collectPantones(),instructionsEn:document.getElementById('rc-instr-en')?.value.trim()||'',instructionsUr:document.getElementById('rc-instr-ur')?.value.trim()||'',rateSource:rm?((rate!==rm.ratePerPiece||tier!==rm.complexityTier)?'override':'printing_rate_list'):'manual',rateMasterMatched:!!rm},
+    changeHistory:[...(r.changeHistory||[]),{by:session.name,at:now,action:'edited_in_review',note:''}]
+  };
   try{
     await updateDoc(doc(db,'article_recipes',id),updates);
     Object.assign(r,updates);
@@ -6582,20 +6655,34 @@ window.saveDraftReview=async function(id){
 
 window.approveRecipeDraft=async function(id){
   if(!canManageRecipes()){showToast('Not authorized.',true);return;}
-  if(!confirm('Approve this recipe?'))return;
+  if(!confirm('Approve and publish this recipe?'))return;
   const r=allRecipes.find(x=>x._id===id); if(!r)return;
-  const c=_rdrCollectPayload();
+  const code=(document.getElementById('rc-code')?.value||'').trim().toUpperCase();
+  const name=(document.getElementById('rc-name')?.value||'').trim();
+  if(!code||!name){showToast('Article code and name required.',true);return;}
   const now=nowIso();
-  const updates={...c,status:'active',approvedBy:session.u,approvedAt:now,revisionNote:'',updatedAt:now,changeHistory:[...(r.changeHistory||[]),{by:session.name,at:now,action:'approved',note:''}]};
+  const rm=_lookupRate(code);
+  const tier=parseInt(document.getElementById('rc-tier')?.value)||1;
+  const rate=parseFloat(document.getElementById('rc-rate')?.value)||0;
+  const processTypes=Object.keys(PROCESS_TYPES).filter(k=>document.getElementById('rc-pt-'+k)?.checked);
+  const updates={
+    articleCode:code,articleName:name,
+    brand:document.getElementById('rc-brand')?.value.trim()||'',
+    category:document.getElementById('rc-cat')?.value||'',
+    status:'active',approvedBy:session.u,approvedAt:now,revisionNote:'',updatedAt:now,
+    images:{frontUrl:document.getElementById('rc-img-front')?.value.trim()||'',backUrl:document.getElementById('rc-img-back')?.value.trim()||'',placementGuideUrl:document.getElementById('rc-img-place')?.value.trim()||'',approvedPpSampleUrl:r.images?.approvedPpSampleUrl||'',closeupUrls:r.images?.closeupUrls||[]},
+    printing:{...(r.printing||{}),processTypes,complexityTier:tier,ratePerPiece:rate,placements:collectPlacements(),pantones:collectPantones(),instructionsEn:document.getElementById('rc-instr-en')?.value.trim()||'',instructionsUr:document.getElementById('rc-instr-ur')?.value.trim()||'',rateSource:rm?((rate!==rm.ratePerPiece||tier!==rm.complexityTier)?'override':'printing_rate_list'):'manual',rateMasterMatched:!!rm},
+    changeHistory:[...(r.changeHistory||[]),{by:session.name,at:now,action:'approved',note:''}]
+  };
   try{
     await updateDoc(doc(db,'article_recipes',id),updates);
     Object.assign(r,updates);
-    await logActivity('Recipe approved',`${r.articleCode} — ${r.articleName}`);
+    await logActivity('Recipe approved',`${code} — ${name}`);
     if(typeof _hrmNotify==='function'&&r.submittedBy){
-      await _hrmNotify({type:'info',priority:'normal',title:'Recipe approved',message:`Recipe for ${r.articleName} (${r.articleCode}) has been approved by ${session.name}`,forUser:r.submittedBy,relatedTo:id,actionUrl:'recipe-directory'});
+      await _hrmNotify({type:'info',priority:'normal',title:'Recipe approved',message:`Recipe for ${name} (${code}) has been approved and published by ${session.name}`,forUser:r.submittedBy,relatedTo:id,actionUrl:'recipe-directory'});
     }
     showToast('Recipe approved ✓');
-    viewingRecipe=null;
+    viewingRecipe=null; _plIdx=0; _ptIdx=0;
     window.showPage('recipe-directory');
   }catch(e){showToast('Error: '+e.message,true);}
 };
@@ -6605,15 +6692,16 @@ window.revisionRecipeDraft=async function(id){
   const reason=(prompt('Reason for sending back for revision:')||'').trim();
   if(!reason){showToast('Reason is required.',true);return;}
   const r=allRecipes.find(x=>x._id===id); if(!r)return;
-  const c=_rdrCollectPayload();
+  const code=(document.getElementById('rc-code')?.value||r.articleCode||'').trim().toUpperCase();
+  const name=(document.getElementById('rc-name')?.value||r.articleName||'').trim();
   const now=nowIso();
-  const updates={...c,status:'revision',revisionNote:reason,updatedAt:now,changeHistory:[...(r.changeHistory||[]),{by:session.name,at:now,action:'sent_for_revision',note:reason}]};
+  const updates={status:'revision',revisionNote:reason,updatedAt:now,changeHistory:[...(r.changeHistory||[]),{by:session.name,at:now,action:'sent_for_revision',note:reason}]};
   try{
     await updateDoc(doc(db,'article_recipes',id),updates);
     Object.assign(r,updates);
-    await logActivity('Recipe sent for revision',`${r.articleCode} — ${reason}`);
+    await logActivity('Recipe sent for revision',`${code} — ${reason}`);
     if(typeof _hrmNotify==='function'&&r.submittedBy){
-      await _hrmNotify({type:'info',priority:'high',title:'Recipe needs revision',message:`Recipe for ${r.articleName} (${r.articleCode}) needs revision — ${reason}`,forUser:r.submittedBy,relatedTo:id,actionRequired:true,actionUrl:'recipe-directory'});
+      await _hrmNotify({type:'info',priority:'high',title:'Recipe needs revision',message:`Recipe for ${name} (${code}) needs revision — ${reason}`,forUser:r.submittedBy,relatedTo:id,actionRequired:true,actionUrl:'recipe-directory'});
     }
     showToast('Sent for revision ✓');
     viewingRecipe=null;
