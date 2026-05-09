@@ -4147,6 +4147,77 @@ window.generateGPPdf=function(gpId){
   pdf.save(`${gp.id}.pdf`);showToast('PDF downloaded ✓');
 };
 
+// ── PDF: Vendor Job Sheet (embroidery / sublimation outsourced jobs) ──
+window.generateJobSheetPDF=function(jobId){
+  const j=allPrintingJobs.find(x=>x._id===jobId);
+  if(!j){showToast('Job not found.',true);return;}
+  const recipe=allRecipes.find(r=>r._id===j.recipeId);
+  const jt=inferJobType(j);
+  const meta=JOB_TYPES[jt]||JOB_TYPES.printing;
+  const{jsPDF}=window.jspdf;const pdf=new jsPDF({unit:'mm',format:'a4'});
+  const W=210,M=14;let y=18;
+  // Header
+  pdf.setFillColor(17,17,17);pdf.rect(0,0,W,28,'F');
+  pdf.setTextColor(255,255,255);pdf.setFontSize(16);pdf.setFont(undefined,'bold');pdf.text('Groovy Operations',M,12);
+  pdf.setFontSize(10);pdf.setFont(undefined,'normal');pdf.setTextColor(200,200,200);pdf.text('Vendor Job Sheet — '+meta.label,M,20);
+  pdf.setFontSize(14);pdf.setFont(undefined,'bold');pdf.setTextColor(255,255,255);pdf.text(j.poNumber||'—',W-M,12,{align:'right'});
+  pdf.setFontSize(9);pdf.setFont(undefined,'normal');pdf.setTextColor(200,200,200);pdf.text(`Issued: ${new Date().toLocaleDateString('en-GB')}`,W-M,20,{align:'right'});
+  y=36;pdf.setTextColor(17,17,17);
+  // Job details
+  pdf.setFillColor(240,240,240);pdf.rect(M,y,W-M*2,7,'F');
+  pdf.setFontSize(8);pdf.setFont(undefined,'bold');pdf.setTextColor(107,114,128);pdf.text('JOB DETAILS',M+2,y+5);
+  y+=10;pdf.setTextColor(17,17,17);pdf.setFontSize(10);
+  const rows=[
+    [`Article Code: ${j.articleCode||'—'}`,                       `Article Name: ${j.articleName||'—'}`],
+    [`Job Type: ${meta.icon} ${meta.label}`,                      `Process: ${(PROCESS_TYPES[j.processType]||{}).label||j.processType||'—'}`],
+    [`Total Qty: ${j.totalQty||0} pcs`,                            `Tier: ${j.complexityTier||'—'} · Priority: ${(j.priority||'normal').toUpperCase()}`],
+    [`Vendor: ${j.vendorName||'—'}`,                               `Recipe: ${recipe?recipe.articleCode+(recipe.status==='locked'?' (Locked)':' (Draft)'):'—'}`],
+    [`Job Created: ${j.createdAt?new Date(j.createdAt).toLocaleDateString('en-GB'):'—'}`, `Created by: ${j.createdBy||'—'}`]
+  ];
+  rows.forEach(row=>{pdf.setFont(undefined,'normal');pdf.text(row[0],M,y);if(row[1])pdf.text(row[1],W/2,y);y+=6;});
+  // Size breakdown
+  y+=4;pdf.setFillColor(240,240,240);pdf.rect(M,y,W-M*2,7,'F');
+  pdf.setFontSize(8);pdf.setFont(undefined,'bold');pdf.setTextColor(107,114,128);pdf.text('SIZE BREAKDOWN',M+2,y+5);
+  y+=10;
+  const szs=['XS','S','M','L','XL','2XL'];const colW=(W-M*2)/szs.length;
+  pdf.setFillColor(17,17,17);pdf.rect(M,y,W-M*2,8,'F');
+  szs.forEach((sz,i)=>{pdf.setTextColor(255,255,255);pdf.setFontSize(9);pdf.setFont(undefined,'bold');pdf.text(sz,M+colW*i+colW/2,y+5,{align:'center'});});
+  y+=8;
+  szs.forEach((sz,i)=>{pdf.setTextColor(17,17,17);pdf.setFont(undefined,'normal');pdf.setFontSize(12);pdf.text(String((j.sizeBreakdown||{})[sz]||0),M+colW*i+colW/2,y+7,{align:'center'});});
+  y+=14;
+  // Bundle / instructions
+  if(j.bundleDetails){
+    pdf.setFillColor(240,240,240);pdf.rect(M,y,W-M*2,7,'F');
+    pdf.setFontSize(8);pdf.setFont(undefined,'bold');pdf.setTextColor(107,114,128);pdf.text('BUNDLE DETAILS / NOTES',M+2,y+5);
+    y+=10;pdf.setTextColor(17,17,17);pdf.setFont(undefined,'normal');pdf.setFontSize(10);
+    const lines=pdf.splitTextToSize(String(j.bundleDetails),W-M*2);
+    pdf.text(lines,M,y);y+=lines.length*5+4;
+  }
+  // Recipe summary (if available)
+  if(recipe&&recipe.printing){
+    if(y>230){pdf.addPage();y=20;}
+    pdf.setFillColor(240,240,240);pdf.rect(M,y,W-M*2,7,'F');
+    pdf.setFontSize(8);pdf.setFont(undefined,'bold');pdf.setTextColor(107,114,128);pdf.text('RECIPE SUMMARY',M+2,y+5);
+    y+=10;pdf.setTextColor(17,17,17);pdf.setFont(undefined,'normal');pdf.setFontSize(10);
+    const pt=recipe.printing;
+    const placements=(pt.placements||[]).map(p=>p.placementName||p.placementId||'').filter(Boolean).join(', ')||'—';
+    pdf.text(`Placements: ${placements}`,M,y);y+=6;
+    pdf.text(`Tier: ${pt.complexityTier||'—'} · Rate/pc: Rs.${pt.ratePerPiece||'—'}`,M,y);y+=6;
+  }
+  // Signature block
+  if(y>240){pdf.addPage();y=20;}
+  y+=10;const sw=(W-M*2)/2;
+  ['Issued By (Groovy)','Received By (Vendor)'].forEach((lbl,i)=>{
+    const x=M+sw*i;pdf.setDrawColor(150,150,150);pdf.setLineWidth(0.3);pdf.line(x+4,y+20,x+sw-4,y+20);
+    pdf.setTextColor(107,114,128);pdf.setFontSize(8);pdf.setFont(undefined,'normal');pdf.text(lbl,x+sw/2,y+26,{align:'center'});
+    pdf.text('Date / Signature',x+sw/2,y+31,{align:'center'});
+  });
+  // Footer
+  pdf.setTextColor(107,114,128);pdf.setFontSize(8);pdf.setFont(undefined,'normal');
+  pdf.text(`Groovy Operations · Job Sheet · ${j.poNumber||''} · Generated ${new Date().toLocaleDateString('en-GB')}`,W/2,288,{align:'center'});
+  pdf.save(`JobSheet-${j.poNumber||j._id}.pdf`);showToast('Job sheet downloaded ✓');
+};
+
 // ── Activity log ──
 async function loadActivity(){
   const m=document.getElementById('main-content');
@@ -5533,6 +5604,29 @@ const JOB_STAGE_LABELS={
   closed:'Closed'
 };
 const PRIORITY_COLORS={urgent:'#000000', normal:'#111111', flexible:'#6B6B6B'};
+const JOB_TYPES={
+  printing:    {label:'Printing (In-house)',    icon:'🖨️', hasPP:true,  stages:['awaiting_pp','printing','final_qc','rework','closed'], stageLabels:{awaiting_pp:'Awaiting PP', printing:'Printing', final_qc:'Final QC', rework:'Rework', closed:'Closed'}},
+  embroidery:  {label:'Embroidery (Outsourced)', icon:'🧵',     hasPP:true,  stages:['awaiting_pp','printing','final_qc','rework','closed'], stageLabels:{awaiting_pp:'Awaiting PP', printing:'Embroidery Job', final_qc:'Final QC', rework:'Rework', closed:'Closed'}},
+  sublimation: {label:'Sublimation (Outsourced)',icon:'🎨',     hasPP:false, stages:['printing','final_qc','rework','closed'],               stageLabels:{printing:'Sublimation Job', final_qc:'Final QC', rework:'Rework', closed:'Closed'}}
+};
+const JOB_TYPE_KEYS=['printing','embroidery','sublimation'];
+function inferJobType(j){
+  if(j&&j.jobType&&JOB_TYPES[j.jobType])return j.jobType;
+  var pt=j&&j.processType;
+  if(pt==='embroidery')return 'embroidery';
+  if(pt==='sublimation')return 'sublimation';
+  return 'printing';
+}
+// Map an underlying stage key to its swimlane bucket for the Observer Tower
+function towerLaneStage(j){
+  var s=j&&j.currentStage;
+  if(s==='closed')return 'closed';
+  if(s==='rework')return 'rework';
+  if(s==='final_qc'||s==='final_qc_post_stitch')return 'final_qc';
+  if(s==='po_received'||s==='pp_sample'||s==='pp_approval')return 'awaiting_pp';
+  // bulk_printing, qc_bundling, stitching → execution column
+  return 'printing';
+}
 const PLACEMENT_TEMPLATES=[
   {id:'front_center',      nameEn:'Front Center',          nameUr:'فرنٹ سینٹر',           side:'front',        anchorType:'hps',            defaultMeasLabel:'Drop from HPS',      defaultTol:'±0.5 inch', workerEn:'Print centered on front, measure down from HPS.',        workerUr:'سامنے سینٹر میں پرنٹ کریں، HPS سے ناپیں۔'},
   {id:'front_chest',       nameEn:'Front Chest',           nameUr:'فرنٹ چیسٹ',            side:'front',        anchorType:'hps',            defaultMeasLabel:'Drop from HPS',      defaultTol:'±0.5 inch', workerEn:'Print on chest area, measure from HPS.',                 workerUr:'چیسٹ پر پرنٹ کریں، HPS سے ناپ لیں۔'},
@@ -6830,9 +6924,15 @@ window.closeJobModal=function(){
 
 function renderCreateJobModal(){
   return`<div style="background:#fff;border-radius:16px;padding:1.5rem;width:100%;max-width:560px;margin:0 auto">
-    <div style="font-size:17px;font-weight:700;margin-bottom:16px">Create Printing Job from PO</div>
+    <div style="font-size:17px;font-weight:700;margin-bottom:16px">Create Embellishment Job from PO</div>
 
     <div class="form-grid">
+      <div class="field" style="grid-column:1/-1"><label>Job Type *</label>
+        <select id="cj-job-type" onchange="window._cjOnJobTypeChange()">
+          ${JOB_TYPE_KEYS.map(k=>`<option value="${k}">${JOB_TYPES[k].icon} ${JOB_TYPES[k].label}</option>`).join('')}
+        </select>
+        <div id="cj-job-type-hint" style="margin-top:4px;font-size:11px;color:var(--muted)">In-house rubber/screen/puff print. Pipeline: Awaiting PP → Printing → Final QC.</div>
+      </div>
       <div class="field" style="grid-column:1/-1"><label>PO Number *</label>
         <input id="cj-po-num" placeholder="e.g. PO-041" list="cj-po-list">
         <datalist id="cj-po-list">${allPOs.filter(p=>p.currentStage!=='completed').map(p=>`<option value="${p.id}">${p.id} — ${p.name}</option>`).join('')}</datalist>
@@ -6841,7 +6941,7 @@ function renderCreateJobModal(){
         <input id="cj-article-code" placeholder="e.g. GP020" oninput="window._lookupRecipe(this.value)">
         <div id="cj-recipe-preview" style="margin-top:6px;font-size:12px;color:var(--muted)">Enter article code to auto-link recipe</div>
       </div>
-      <div class="field"><label>Process Type *</label>
+      <div class="field" id="cj-process-wrap"><label>Process Type *</label>
         <select id="cj-process">${Object.entries(PROCESS_TYPES).map(([k,v])=>`<option value="${k}">${v.icon} ${v.label}</option>`).join('')}</select>
       </div>
       <div class="field"><label>Priority *</label>
@@ -6866,6 +6966,28 @@ function renderCreateJobModal(){
     </div>
   </div>`;
 }
+window._cjOnJobTypeChange=function(){
+  var jt=(document.getElementById('cj-job-type')||{}).value||'printing';
+  var procWrap=document.getElementById('cj-process-wrap');
+  var procSel=document.getElementById('cj-process');
+  var hint=document.getElementById('cj-job-type-hint');
+  var hints={
+    printing:'In-house rubber/screen/puff print. Pipeline: Awaiting PP → Printing → Final QC.',
+    embroidery:'Outsourced. Pipeline: Awaiting PP → Embroidery Job → Final QC. Print job sheet for vendor.',
+    sublimation:'Outsourced. Pipeline: Sublimation Job → Final QC. No PP step (rectified during sampling).'
+  };
+  if(hint)hint.textContent=hints[jt]||'';
+  if(jt==='embroidery'){
+    if(procSel)procSel.value='embroidery';
+    if(procWrap)procWrap.style.display='none';
+  }else if(jt==='sublimation'){
+    if(procSel)procSel.value='sublimation';
+    if(procWrap)procWrap.style.display='none';
+  }else{
+    if(procWrap)procWrap.style.display='';
+    if(procSel&&(procSel.value==='embroidery'||procSel.value==='sublimation'))procSel.value='rubber';
+  }
+};
 window._lookupRecipe=function(code){
   const el=document.getElementById('cj-recipe-preview'); if(!el)return;
   const r=allRecipes.find(x=>x.articleCode&&x.articleCode.toLowerCase()===code.trim().toLowerCase());
@@ -6883,7 +7005,10 @@ window._lookupRecipe=function(code){
 window.createPrintingJob=async function(){
   const poNum=(document.getElementById('cj-po-num')?.value||'').trim().toUpperCase();
   const articleCode=(document.getElementById('cj-article-code')?.value||'').trim().toUpperCase();
-  const processType=document.getElementById('cj-process')?.value||'rubber';
+  const jobType=(document.getElementById('cj-job-type')?.value)||'printing';
+  let processType=document.getElementById('cj-process')?.value||'rubber';
+  if(jobType==='embroidery')processType='embroidery';
+  if(jobType==='sublimation')processType='sublimation';
   const priority=document.getElementById('cj-priority')?.value||'normal';
   const qty=parseInt(document.getElementById('cj-qty')?.value)||0;
   if(!poNum||!qty){showToast('PO number and quantity required.',true);return;}
@@ -6898,22 +7023,24 @@ window.createPrintingJob=async function(){
   const sizeBreakdown=parseSizeBreakdown(sizesRaw);
   const now=nowIso();
   const ppMode=recipe?.status==='locked'?'repeat_article':'new_article';
-  const dueAt=calcDue('pp_sample',priority);
+  const skipPP=(JOB_TYPES[jobType]&&JOB_TYPES[jobType].hasPP===false);
+  const initialStage=skipPP?'bulk_printing':'po_received';
+  const initialNote=skipPP?'Job created (PP skipped — sublimation)':'Job created';
 
   const payload={
     poId:prntId(), poNumber:poNum, articleCode, articleName:recipe?.articleName||articleCode,
-    recipeId:recipe?._id||null, processType, departmentType:dept, vendorName:vendor||null,
+    recipeId:recipe?._id||null, jobType, processType, departmentType:dept, vendorName:vendor||null,
     totalQty:qty, sizeBreakdown, bundleDetails:document.getElementById('cj-bundles')?.value.trim()||'',
     complexityTier:tier, ratePerPiece:rate,
-    priority, currentStage:'po_received', status:'active',
+    priority, currentStage:initialStage, status:'active',
     assignedTo, qcIncharge:'haris',
     createdBy:session.name, createdAt:now, updatedAt:now,
-    ppRequired:true, ppMode, ppAttempts:[], ppApprovalStatus:'pending',
-    ppApprovedBy:null, ppApprovedAt:null,
-    bulkStartedAt:null, bulkCompletedAt:null, finalQcStatus:null,
+    ppRequired:!skipPP, ppMode, ppAttempts:[], ppApprovalStatus:skipPP?'approved':'pending',
+    ppApprovedBy:skipPP?session.name:null, ppApprovedAt:skipPP?now:null,
+    bulkStartedAt:skipPP?now:null, bulkCompletedAt:null, finalQcStatus:null,
     recipeWarning:!recipe?'Recipe missing — PP blocked':recipe.status!=='locked'?'Recipe not locked yet':'',
     handoff:{forwardedToBundlingBy:null,forwardedToBundlingAt:null,acceptedByZohaibAt:null,forwardedToStitchingBy:null,forwardedToStitchingAt:null,acceptedByWaqasAt:null,stitchingForwardedToQcAt:null},
-    stageHistory:[{stage:'po_received',by:session.name,at:now,note:'Job created'}]
+    stageHistory:[{stage:initialStage,by:session.name,at:now,note:initialNote}]
   };
 
   try{
@@ -6990,6 +7117,8 @@ async function autoCreateEmbJob(po){
 function jobListCardHTML(j){
   const sl=slaStatus(j.slaCurrentDue||null);
   const recipe=allRecipes.find(r=>r._id===j.recipeId);
+  const jt=inferJobType(j);
+  const isOutsourced=(jt==='embroidery'||jt==='sublimation');
   return`<div class="job-card sla-${sl}" onclick="window.openPrintingJob('${j._id}')">
     <div style="display:flex;gap:10px;align-items:flex-start">
       <div style="width:48px;height:60px;flex-shrink:0;background:#f0f0f0;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
@@ -7000,6 +7129,7 @@ function jobListCardHTML(j){
           <span style="font-size:11px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</span>
           <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;background:${PRIORITY_COLORS[j.priority]+'20'};color:${PRIORITY_COLORS[j.priority]}">${(j.priority||'normal').toUpperCase()}</span>
           ${tierBadge(j.complexityTier||1)}
+          <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:8px;background:#f0f0f0;color:var(--dark)">${JOB_TYPES[jt].icon} ${jt}</span>
         </div>
         <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${processBadge(j.processType)} · ${j.totalQty||'?'} pcs · ${j.assignedTo||'—'}</div>
@@ -7009,6 +7139,7 @@ function jobListCardHTML(j){
         </div>
         ${j.recipeWarning?`<div style="font-size:10px;color:var(--amber);margin-top:4px;font-weight:600">⚠ ${j.recipeWarning}</div>`:''}
         ${j.ppApprovalStatus==='rejected'?`<div style="font-size:10px;color:#dc2626;margin-top:3px;font-weight:700">✗ PP Rejected — new sample required</div>`:''}
+        ${isOutsourced?`<button class="btn-outline" style="width:auto;padding:5px 10px;font-size:11px;margin-top:6px" onclick="event.stopPropagation();window.generateJobSheetPDF('${j._id}')">📄 Print Job Sheet</button>`:''}
       </div>
     </div>
   </div>`;
@@ -7302,6 +7433,7 @@ function renderPrintingJobDetailPage(){
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${isExt?`<button class="btn-pdf" onclick="window.printVendorJobCard('${j._id}')">🖨 Vendor Job Card</button>`:''}
+        ${(inferJobType(j)==='embroidery'||inferJobType(j)==='sublimation')?`<button class="btn-outline" style="width:auto;padding:8px 14px" onclick="window.generateJobSheetPDF('${j._id}')">📄 Print Job Sheet (PDF)</button>`:''}
         ${(j.currentStage==='final_qc'||j.currentStage==='rework')&&isQCWorker()?`<button class="btn-primary" style="width:auto;padding:8px 16px" onclick="window.openQCReport('${j._id}')">Enter QC Report</button>`:''}
         ${j.currentStage==='pp_approval'&&canApproveNewPP()?`<div style="display:flex;gap:6px">
           <button class="btn-primary" style="width:auto;padding:8px 14px;background:var(--green)" onclick="window.approvePP('${j._id}')">✓ Approve PP</button>
@@ -8014,32 +8146,16 @@ function renderObserverTower(){
 
   // ── KPI Calculations ──
   const active=allPrintingJobs.filter(j=>j.currentStage!=='closed');
-  const awaitingPP=allPrintingJobs.filter(j=>j.currentStage==='pp_approval'&&j.ppApprovalStatus==='pending');
-  const ppRejected=allPrintingJobs.filter(j=>j.ppApprovalStatus==='rejected'&&j.currentStage==='po_received');
-  const printing=allPrintingJobs.filter(j=>j.currentStage==='bulk_printing');
-  const awaitingQC=allPrintingJobs.filter(j=>j.currentStage==='final_qc');
-  const rework=allPrintingJobs.filter(j=>j.currentStage==='rework');
   const overdue=allPrintingJobs.filter(j=>j.slaCurrentDue&&slaStatus(j.slaCurrentDue)!=='ok'&&j.currentStage!=='closed');
   const totalRejected=allQCReports.reduce((s,r)=>s+(r.final?.totalRejected||0),0);
   const billingPending=allPrintBilling.filter(b=>['ready','pending_approval'].includes(b.status));
   const withholdPending=allSLAEvents.filter(e=>e.monetaryWithholdSuggested>0&&!e.monetaryWithholdApproved);
   const recipeMissing=allPrintingJobs.filter(j=>j.recipeWarning&&j.currentStage!=='closed');
 
-  // ── Stage columns for board ──
-  const cols=[
-    {key:'po_received',    label:'PP Required',       color:'#888'},
-    {key:'pp_approval',    label:'Awaiting PP',        color:'#555'},
-    {key:'bulk_printing',  label:'Printing',           color:'#111111'},
-    {key:'final_qc',       label:'Final QC',           color:'#111111'},
-    {key:'rework',         label:'Rework',             color:'#dc2626'},
-    {key:'qc_bundling',    label:'QC Bundling',        color:'#111111'},
-    {key:'stitching',      label:'Stitching',          color:'#111111'},
-    {key:'final_qc_post_stitch',label:'Post-Stitch QC',color:'#111111'},
-    {key:'closed',         label:'Closed',             color:'var(--green)'}
-  ];
-
-  // Active tab
-  const tab=document.getElementById('tower-tab')?.value||'board';
+  // Per job-type breakdown
+  const byType=JOB_TYPE_KEYS.reduce((acc,k)=>{acc[k]={active:[],overdue:[]};return acc;},{});
+  active.forEach(j=>{ const t=inferJobType(j); if(byType[t])byType[t].active.push(j); });
+  overdue.forEach(j=>{ const t=inferJobType(j); if(byType[t])byType[t].overdue.push(j); });
 
   return`<div class="page-head">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
@@ -8052,22 +8168,23 @@ function renderObserverTower(){
     </div>
   </div>
 
-  <!-- KPI Grid -->
+  <!-- KPI Grid: per-type active + overdue, plus global -->
   <div class="kpi-grid" style="margin-bottom:16px">
+    ${JOB_TYPE_KEYS.map(k=>{
+      const meta=JOB_TYPES[k];
+      return `<div class="kpi-card"><div class="kpi-val">${byType[k].active.length}</div><div class="kpi-label">${meta.icon} ${k} active</div></div>`;
+    }).join('')}
+    ${JOB_TYPE_KEYS.map(k=>{
+      return `<div class="kpi-card"><div class="kpi-val">${byType[k].overdue.length}</div><div class="kpi-label">${k} overdue</div></div>`;
+    }).join('')}
     ${[
-      ['Active Jobs',     active.length,          'var(--dark)'],
-      ['Awaiting PP',     awaitingPP.length,       'var(--amber)'],
-      ['PP Rejected',     ppRejected.length,       '#dc2626'],
-      ['Printing',        printing.length,          '#185FA5'],
-      ['Final QC',        awaitingQC.length,        '#854F0B'],
-      ['Rework',          rework.length,            'var(--amber)'],
-      ['Overdue',         overdue.length,           '#dc2626'],
-      ['Rejected Pcs',    totalRejected,            '#dc2626'],
-      ['Bill Pending',    billingPending.length,    'var(--amber)'],
-      ['Withhold Q',      withholdPending.length,   'var(--amber)'],
-      ['Recipe Missing',  recipeMissing.length,     '#dc2626'],
-      ['Total Recipes',   allRecipes.length,        'var(--green)']
-    ].map(([l,v,c])=>`<div class="kpi-card"><div class="kpi-val">${v}</div><div class="kpi-label">${l}</div></div>`).join('')}
+      ['Total Active',    active.length],
+      ['Total Overdue',   overdue.length],
+      ['Rejected Pcs',    totalRejected],
+      ['Bill Pending',    billingPending.length],
+      ['Withhold Q',      withholdPending.length],
+      ['Recipe Missing',  recipeMissing.length]
+    ].map(([l,v])=>`<div class="kpi-card"><div class="kpi-val">${v}</div><div class="kpi-label">${l}</div></div>`).join('')}
   </div>
 
   <!-- Tab bar -->
@@ -8077,7 +8194,7 @@ function renderObserverTower(){
   <div id="tower-tab-state" data-tab="${(document.getElementById('tower-tab-state')?.dataset.tab||'board')}" style="display:none"></div>
 
   <div id="tower-body">
-    ${renderTowerBoard(cols,allPrintingJobs)}
+    ${renderTowerBoard(allPrintingJobs)}
   </div>`;
 }
 
@@ -8094,38 +8211,49 @@ window._towerTab=function(tab){
   tabs.forEach(b=>{b.classList.toggle('active',b.textContent.toLowerCase().replace(/[^a-z]/g,'').includes(tab.replace(/[^a-z]/g,'')));});
   const body=document.getElementById('tower-body');
   if(!body)return;
-  const cols=[
-    {key:'po_received',label:'PP Required',color:'#888'},{key:'pp_approval',label:'Awaiting PP',color:'#555'},
-    {key:'bulk_printing',label:'Printing',color:'#111111'},{key:'final_qc',label:'Final QC',color:'#111111'},
-    {key:'rework',label:'Rework',color:'#dc2626'},{key:'qc_bundling',label:'QC Bundling',color:'#111111'},
-    {key:'stitching',label:'Stitching',color:'#111111'},{key:'final_qc_post_stitch',label:'Post-Stitch QC',color:'#111111'},
-    {key:'closed',label:'Closed',color:'var(--green)'}
-  ];
-  if(tab==='board')body.innerHTML=renderTowerBoard(cols,allPrintingJobs);
+  if(tab==='board')body.innerHTML=renderTowerBoard(allPrintingJobs);
   else if(tab==='sla')body.innerHTML=renderTowerSLA();
   else if(tab==='billing')body.innerHTML=renderTowerBilling();
   else if(tab==='recipes')body.innerHTML=renderTowerRecipes();
   else if(tab==='comms')body.innerHTML=renderTowerComms();
 };
 
-// ── Board View ────────────────────────────────────────────────────────
-function renderTowerBoard(cols,jobs){
-  return`<div class="tower-cols">
-    ${cols.map(col=>{
-      const colJobs=jobs.filter(j=>j.currentStage===col.key);
-      return`<div class="tower-col">
+// ── Board View: 3 type-tagged swimlanes ────────────────────────────────
+function renderTowerBoard(jobs){
+  return JOB_TYPE_KEYS.map(jt=>renderTowerSwimlane(jt,jobs)).join('');
+}
+
+function renderTowerSwimlane(jobType,jobs){
+  const meta=JOB_TYPES[jobType];
+  const laneJobs=jobs.filter(j=>inferJobType(j)===jobType);
+  const stageColor={awaiting_pp:'#555',printing:'#111111',final_qc:'#111111',rework:'#dc2626',closed:'var(--green)'};
+  const cols=meta.stages.map(stage=>({
+    key:stage,
+    label:meta.stageLabels[stage]||stage,
+    color:stageColor[stage]||'#111111',
+    jobs:laneJobs.filter(j=>towerLaneStage(j)===stage)
+  }));
+  return`<div style="margin-bottom:18px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+      <div style="font-size:14px;font-weight:700">${meta.icon} ${meta.label}</div>
+      <div style="font-size:11px;color:var(--muted)">${laneJobs.filter(j=>j.currentStage!=='closed').length} active · ${laneJobs.length} total</div>
+    </div>
+    <div class="tower-cols">
+      ${cols.map(col=>`<div class="tower-col">
         <div class="tower-col-head" style="border-bottom:2px solid ${col.color};padding-bottom:6px;margin-bottom:8px">
-          ${col.label} <span style="font-size:12px;font-weight:400;color:var(--muted)">(${colJobs.length})</span>
+          ${col.label} <span style="font-size:12px;font-weight:400;color:var(--muted)">(${col.jobs.length})</span>
         </div>
-        ${colJobs.map(j=>towerJobMini(j)).join('')||'<div style="font-size:11px;color:var(--muted);padding:8px;text-align:center">—</div>'}
-      </div>`;
-    }).join('')}
+        ${col.jobs.map(j=>towerJobMini(j)).join('')||'<div style="font-size:11px;color:var(--muted);padding:8px;text-align:center">—</div>'}
+      </div>`).join('')}
+    </div>
   </div>`;
 }
 
 function towerJobMini(j){
   const sl=slaStatus(j.slaCurrentDue||null);
   const recipe=allRecipes.find(r=>r._id===j.recipeId);
+  const jt=inferJobType(j);
+  const isOutsourced=(jt==='embroidery'||jt==='sublimation');
   return`<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:6px;cursor:pointer;border-left:3px solid ${slaColor(sl)}" onclick="window.openPrintingJob('${j._id}')">
     <div style="font-size:10px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</div>
     <div style="font-size:12px;font-weight:600;margin:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${j.articleCode||'—'}</div>
@@ -8137,6 +8265,7 @@ function towerJobMini(j){
     ${j.ppApprovalStatus==='rejected'?'<div style="font-size:9px;color:#dc2626;font-weight:700">PP Rejected</div>':''}
     ${j.recipeWarning?'<div style="font-size:9px;color:var(--amber);font-weight:700">⚠ Recipe Missing</div>':''}
     <div style="font-size:9px;color:var(--muted);margin-top:2px">${j.assignedTo||'—'} · ${processBadge(j.processType)}</div>
+    ${isOutsourced?`<button style="margin-top:5px;padding:3px 8px;font-size:10px;background:#fff;border:1px solid var(--border);border-radius:5px;cursor:pointer;color:var(--dark);font-family:inherit;width:100%" onclick="event.stopPropagation();window.generateJobSheetPDF('${j._id}')">📄 Job Sheet</button>`:''}
   </div>`;
 }
 
