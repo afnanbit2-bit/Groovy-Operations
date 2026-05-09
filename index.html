@@ -9431,7 +9431,7 @@ async function _hrmPopulateDashboard(){
       const st=document.getElementById('hrm-att-status');
       const hr=document.getElementById('hrm-att-hours');
       if(att&&att.firstIn){
-        if(st){st.className='att-status in-yes';st.innerHTML=`<span class="pulse-dot"></span><span>Punched in at <strong>${att.firstIn.time||'—'}</strong></span>`;}
+        if(st){st.className='att-status in-yes';st.innerHTML=`<span class="pulse-dot"></span><span>Punched in at <strong>${formatTime12hr(att.firstIn.time)||'—'}</strong></span>`;}
         if(hr){
           const start=att.firstIn.time||'';
           const end=att.lastPunch?.time||'';
@@ -9975,6 +9975,25 @@ function _attLateMinutes(time,emp){
   if(!cut)return 0;
   return _attMinutesBetween(cut,time);
 }
+// Convert "HH:MM" / "HH:MM:SS" / ISO timestamp to 12-hour with AM/PM (e.g. "20:06" → "8:06 PM").
+// Returns the input unchanged when it can't be parsed (so "—" / "" pass through).
+function formatTime12hr(timeString){
+  if(timeString==null)return'';
+  const s=String(timeString).trim();
+  if(!s||/[ap]m\b/i.test(s))return s;
+  let h,m;
+  const hm=s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if(hm){h=parseInt(hm[1],10);m=hm[2];}
+  else{
+    const d=new Date(s);
+    if(isNaN(d.getTime()))return s;
+    h=d.getHours();m=String(d.getMinutes()).padStart(2,'0');
+  }
+  if(isNaN(h)||h<0||h>23)return s;
+  const period=h>=12?'PM':'AM';
+  let h12=h%12;if(h12===0)h12=12;
+  return`${h12}:${m} ${period}`;
+}
 
 // Compose punches keyed by k40UserId from a snapshot of attendance/{date}
 function _attPunchesByUser(dayData){
@@ -10063,7 +10082,7 @@ async function _populateWorkerHRMWidget(){
     const hrs=document.getElementById('wrk-att-hours');
     if(att&&att.firstIn){
       if(dot)dot.style.display='inline-block';
-      if(lbl){lbl.textContent=`Punched in at ${att.firstIn.time||'—'}`;lbl.style.color='var(--accent-success)';}
+      if(lbl){lbl.textContent=`Punched in at ${formatTime12hr(att.firstIn.time)||'—'}`;lbl.style.color='var(--accent-success)';}
       if(hrs){
         const start=att.firstIn.time||'';
         const end=att.lastPunch?.time||'';
@@ -10405,7 +10424,7 @@ function _attEmpCardHTML(row){
       <div style="min-width:0"><div style="font-weight:600;font-size:14px">${emp.name}</div><div style="font-size:11px;color:#6B7280">${emp.designation||'—'}</div>${lateBadge}</div>
       ${pgBadge}
     </div>
-    <div style="margin-top:10px;display:flex;align-items:center;gap:6px">${dot}<span style="font-size:13px;font-weight:500;color:${statusColor}">${statusLabel}</span><span style="font-size:12px;color:#6B7280">${isOut?`out at ${end}`:`since ${start}`}</span></div>
+    <div style="margin-top:10px;display:flex;align-items:center;gap:6px">${dot}<span style="font-size:13px;font-weight:500;color:${statusColor}">${statusLabel}</span><span style="font-size:12px;color:#6B7280">${isOut?`out at ${formatTime12hr(end)}`:`since ${formatTime12hr(start)}`}</span></div>
     <div style="font-size:12px;color:#6B7280;margin-top:4px">Hours: ${hours}</div>
   </div>`;
 }
@@ -10418,7 +10437,7 @@ function _attPunchRow(p){
   const emp=p._emp||null;
   const lateLabel=(isIn&&_isLatePunch(p,emp))?`<span style="background:var(--accent-warning-soft);color:var(--accent-warning);font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px">LATE +${_attLateMinutes(p.time,emp)}m</span>`:'<span style="color:var(--muted);font-size:12px">—</span>';
   return`<tr style="background:${tint};border-bottom:1px solid #E5E5E7">
-    <td style="padding:10px;font-weight:600">${p.time||''}</td>
+    <td style="padding:10px;font-weight:600">${formatTime12hr(p.time)}</td>
     <td style="padding:10px">${p.empName||p.name||'—'}</td>
     <td style="padding:10px"><span style="background:${typeBg};color:${typeFg};padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600">${isIn?'IN':'OUT'}</span></td>
     <td style="padding:10px">${lateLabel}</td>
@@ -10438,7 +10457,7 @@ function _attLateBlockHTML(lates){
     const triggered=monthlyNum>=3?' 🔴 Absent triggered':'';
     return`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #E5E5E7;gap:10px;flex-wrap:wrap">
       <div style="min-width:0"><div style="font-weight:600">${emp.name}</div><div style="font-size:12px;color:#6B7280">${emp.designation||'—'}</div></div>
-      <div style="text-align:right"><div style="color:var(--accent-warning);font-weight:600">Arrived ${time}</div><div style="font-size:12px;color:#6B7280">Late by ${lateMins} mins</div></div>
+      <div style="text-align:right"><div style="color:var(--accent-warning);font-weight:600">Arrived ${formatTime12hr(time)}</div><div style="font-size:12px;color:#6B7280">Late by ${lateMins} mins</div></div>
       <span style="background:${badgeBg};color:${badgeFg};padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600">${monthly} lates this month${triggered}</span>
     </div>`;
   }).join('');
