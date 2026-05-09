@@ -439,7 +439,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 <!-- ══ APP ══ -->
 <div id="scr-app" style="display:none;flex-direction:column;min-height:100vh">
   <div class="topbar">
-    <div class="topbar-logo"><div class="brand-strip"><img src="assets/groovy-operations-wordmark.png.png" alt="GROOVY Operations" class="brand-wordmark" onerror="this.style.display='none';this.nextElementSibling.style.display='inline';"/><span class="brand-fallback">GROOVY OPERATIONS</span></div></div>
+    <div class="topbar-logo" onclick="window.showPage('dashboard')" style="cursor:pointer"><div class="brand-strip"><img src="assets/groovy-operations-wordmark.png.png" alt="GROOVY Operations" class="brand-wordmark" onerror="this.style.display='none';this.nextElementSibling.style.display='inline';"/><span class="brand-fallback">GROOVY OPERATIONS</span></div></div>
     <div class="topbar-user">
       <div><div class="topbar-name" id="user-name"></div><div style="font-size:10px" id="user-title"></div></div>
       <button class="btn-logout" onclick="window.doLogout()">Sign out</button>
@@ -8163,7 +8163,7 @@ function renderObserverTower(){
         <div class="page-sub">Real-time view of all decoration & printing jobs · ${active.length} active</div>
       </div>
       <div style="display:flex;gap:8px">
-        <button class="btn-outline" onclick="window._refreshTower()">↻ Refresh</button>
+        <button class="btn-outline" onclick="window.refreshCurrentPage()">↻ Refresh</button>
       </div>
     </div>
   </div>
@@ -8201,6 +8201,14 @@ function renderObserverTower(){
 window._refreshTower=async function(){
   await refreshPrintingData();
   document.getElementById('main-content').innerHTML=renderObserverTower();
+};
+
+window.refreshCurrentPage=async function(){
+  if(currentPage==='observer-tower'||currentPage.startsWith('printing-')||currentPage.startsWith('recipe-')||currentPage==='color-library'||currentPage==='qc-report-page'||currentPage==='billing-detail'){
+    await refreshPrintingData();
+  }
+  await loadData();
+  await showPage(currentPage);
 };
 
 window._towerTab=function(tab){
@@ -8802,7 +8810,7 @@ function renderDashboard(){
     const borderStyle=alert?`border:2px solid #111`:`border:1px solid var(--border)`;
     return`<div style="flex:1;min-width:0;padding:10px 8px;background:#fff;${borderStyle};border-radius:8px;text-align:center">
       <div style="font-size:16px;font-weight:700;color:#111">${count}</div>
-      <div style="font-size:10px;color:var(--muted);margin-top:2px">${label}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px;word-break:break-word;overflow-wrap:break-word;line-height:1.3">${label}</div>
       ${flagged?`<div style="font-size:9px;color:#dc2626;font-weight:700;margin-top:2px">⚠ ${flagged} flagged</div>`:''}
     </div>`;
   }
