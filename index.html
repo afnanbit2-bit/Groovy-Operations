@@ -8206,11 +8206,26 @@ window._refreshTower=async function(){
 };
 
 window.refreshCurrentPage=async function(){
-  if(currentPage==='observer-tower'||currentPage.startsWith('printing-')||currentPage.startsWith('recipe-')||currentPage==='color-library'||currentPage==='qc-report-page'||currentPage==='billing-detail'){
-    await refreshPrintingData();
-  }
-  await loadData();
-  await showPage(currentPage);
+  const page=currentPage;
+  if(!page){await loadData();return;}
+  try{
+    if(page==='observer-tower'||page.startsWith('printing-')||page.startsWith('recipe-')||page==='color-library'||page==='qc-report-page'||page==='billing-detail'){
+      await refreshPrintingData();
+    }else if(page.startsWith('store-')){
+      if(typeof loadStoreData==='function')await loadStoreData();
+    }else if(page==='hrm-employees'){
+      if(typeof loadHRMData==='function')await loadHRMData();
+    }else if(page==='hrm-payroll'||page==='hrm-payslips'){
+      if(typeof loadPayrollData==='function')await loadPayrollData();
+    }else if(page==='hrm-advances'||page==='hrm-loans'||page==='hrm-policy'){
+      if(typeof loadHRMSession4Data==='function')await loadHRMSession4Data();
+    }else if(page==='bug-tracker'){
+      if(typeof loadBugReports==='function')await loadBugReports();
+    }else{
+      await loadData();
+    }
+  }catch(e){showToast('Refresh error: '+e.message,true);}
+  await window.showPage(page);
 };
 
 window._towerTab=function(tab){
