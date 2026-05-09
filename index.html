@@ -1589,17 +1589,16 @@ function buildNav(){
     storeSubItems.push({id:'store-templates',label:'Trim Templates'});
   }
 
-  const printSubItems=[];
-  if(!isWorker&&!isStore){
-    printSubItems.push({id:'recipe-directory',label:'Recipe Directory'});
-    printSubItems.push({id:'printing-jobs',label:'Embellishment Jobs'});
-    printSubItems.push({id:'observer-tower',label:'Observer Tower'});
-    if(canManageRecipes()||isQCWorker())printSubItems.push({id:'color-library',label:'Color Library'});
-  }
+  // Desktop sidebar uses the same worker-aware list as the mobile "More" sheet
+  // so workers (asghar, zohaib, waqas, haris) see the printing pages they're
+  // entitled to instead of a navless sidebar.
+  const printSubItems=isStore?[]:printItems;
 
   const mainNav=mainItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('');
   const storeOpen=currentPage.startsWith('store-')||isStore;
-  const printOpen=['recipe-directory','printing-jobs','observer-tower','recipe-create','recipe-detail','printing-job-detail','qc-report-page','billing-detail','color-library'].includes(currentPage)||currentPage.startsWith('recipe-')||currentPage.startsWith('printing-')||currentPage==='observer-tower';
+  // Workers have very few printing items, so default the section open for them
+  // (one extra tap to discover their only printing-jobs link feels punitive).
+  const printOpen=isWorker||['recipe-directory','printing-jobs','observer-tower','recipe-create','recipe-detail','printing-job-detail','qc-report-page','billing-detail','color-library'].includes(currentPage)||currentPage.startsWith('recipe-')||currentPage.startsWith('printing-')||currentPage==='observer-tower';
   const hrmOpen=currentPage.startsWith('hrm-');
   const storeNav=storeSubItems.length?`
     <div class="nav-divider"></div>
