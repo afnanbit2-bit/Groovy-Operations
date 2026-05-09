@@ -5605,9 +5605,9 @@ const JOB_STAGE_LABELS={
 };
 const PRIORITY_COLORS={urgent:'#000000', normal:'#111111', flexible:'#6B6B6B'};
 const JOB_TYPES={
-  printing:    {label:'Printing (In-house)',    icon:'🖨️', hasPP:true,  stages:['awaiting_pp','printing','final_qc','rework','closed'], stageLabels:{awaiting_pp:'Awaiting PP', printing:'Printing', final_qc:'Final QC', rework:'Rework', closed:'Closed'}},
-  embroidery:  {label:'Embroidery (Outsourced)', icon:'🧵',     hasPP:true,  stages:['awaiting_pp','printing','final_qc','rework','closed'], stageLabels:{awaiting_pp:'Awaiting PP', printing:'Embroidery Job', final_qc:'Final QC', rework:'Rework', closed:'Closed'}},
-  sublimation: {label:'Sublimation (Outsourced)',icon:'🎨',     hasPP:false, stages:['printing','final_qc','rework','closed'],               stageLabels:{printing:'Sublimation Job', final_qc:'Final QC', rework:'Rework', closed:'Closed'}}
+  printing:    {label:'Printing',    icon:'🖨️', hasPP:true,  stages:['awaiting_pp','printing','final_qc','rework','closed'], stageLabels:{awaiting_pp:'Awaiting PP', printing:'Printing', final_qc:'Final QC', rework:'Rework', closed:'Closed'}},
+  embroidery:  {label:'Embroidery', icon:'🧵',     hasPP:true,  stages:['awaiting_pp','printing','final_qc','rework','closed'], stageLabels:{awaiting_pp:'Awaiting PP', printing:'Embroidery Job', final_qc:'Final QC', rework:'Rework', closed:'Closed'}},
+  sublimation: {label:'Sublimation',icon:'🎨',     hasPP:false, stages:['printing','final_qc','rework','closed'],               stageLabels:{printing:'Sublimation Job', final_qc:'Final QC', rework:'Rework', closed:'Closed'}}
 };
 const JOB_TYPE_KEYS=['printing','embroidery','sublimation'];
 function inferJobType(j){
