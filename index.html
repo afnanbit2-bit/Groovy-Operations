@@ -6625,51 +6625,59 @@ window.revisionRecipeDraft=async function(id){
 window.printBlankRecipeSheet=function(){
   const win=window.open('','_blank');
   if(!win){showToast('Popup blocked. Please allow popups.',true);return;}
-  win.document.write(`<!DOCTYPE html><html><head><title>Placement Recipe Sheet — Blank</title>
-  <style>
-    *{box-sizing:border-box}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',sans-serif;color:#000;background:#fff;margin:24px;padding:0;font-size:13px;line-height:1.5}
-    .sheet{max-width:760px;margin:0 auto;padding:20px}
-    .brand{font-size:42px;font-weight:900;letter-spacing:3px;text-align:center;margin-bottom:6px}
-    .subtitle{font-size:17px;font-weight:600;text-align:center;margin-bottom:28px;letter-spacing:.5px}
-    .meta{margin-bottom:22px}
-    .meta-row{padding:11px 0;border-bottom:1px solid #000;font-size:14px}
-    .meta-label{font-weight:700;display:inline-block;width:150px}
-    table{border-collapse:collapse;width:100%;margin-top:18px;font-size:13px}
-    th,td{border:1.5px solid #000;padding:14px 10px;text-align:left;vertical-align:middle}
-    th{background:#f0f0f0;font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.5px}
-    th.col-num{width:48px;text-align:center}
-    th.col-type{width:38%}
-    td.col-num{text-align:center;font-weight:700}
-    td.row-cell{height:34px}
-    .footer{margin-top:36px;padding-top:18px;border-top:2px solid #000;display:flex;justify-content:space-between;font-size:14px;flex-wrap:wrap;gap:24px}
-    .footer-item{flex:1;min-width:240px}
-    .footer-label{font-weight:700;display:inline-block;width:130px}
-    .footer-line{border-bottom:1px solid #000;display:inline-block;min-width:180px;padding-bottom:2px}
-    .no-print{margin-top:22px;text-align:center}
-    .no-print button{padding:10px 24px;background:#1A1A2E;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-family:inherit}
-    @media print{
-      @page{size:A4 portrait;margin:14mm}
-      body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-      .sheet{padding:0;max-width:none}
-      .no-print{display:none}
-      table{page-break-inside:avoid}
-    }
-  </style></head><body>
-  <div class="sheet">
-    <div class="brand">GROOVY</div>
-    <div class="subtitle">Placement Recipe Sheet</div>
+  const block=()=>`<div class="block">
     <div class="meta">
-      <div class="meta-row"><span class="meta-label">Date:</span> _______________</div>
-      <div class="meta-row"><span class="meta-label">Article Name:</span> _______________</div>
-      <div class="meta-row"><span class="meta-label">Article Code:</span> _______________</div>
+      <div class="meta-item"><span>Date:</span><span class="meta-line"></span></div>
+      <div class="meta-item" style="flex:2.2"><span>Article Name:</span><span class="meta-line"></span></div>
+      <div class="meta-item" style="flex:1.5"><span>Article Code:</span><span class="meta-line"></span></div>
     </div>
     <table>
       <thead><tr><th class="col-num">#</th><th class="col-type">Placement Type</th><th>Placement (inches)</th></tr></thead>
       <tbody>
-        ${Array.from({length:15}).map((_,i)=>`<tr><td class="col-num row-cell">${i+1}</td><td class="row-cell"></td><td class="row-cell"></td></tr>`).join('')}
+        ${Array.from({length:6}).map((_,i)=>`<tr><td class="col-num row-cell">${i+1}</td><td class="row-cell"></td><td class="row-cell"></td></tr>`).join('')}
       </tbody>
     </table>
+  </div>`;
+  win.document.write(`<!DOCTYPE html><html><head><title>Placement Recipe Sheet — Blank</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',sans-serif;color:#000;background:#fff;font-size:11px;line-height:1.25;padding:8mm}
+    .sheet{width:100%}
+    .head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:5px}
+    .brand{font-size:20px;font-weight:900;letter-spacing:2px}
+    .subtitle{font-size:12px;font-weight:600;letter-spacing:.5px}
+    .block{margin-bottom:5px;padding-bottom:5px;border-bottom:1px dashed #000}
+    .block:last-of-type{border-bottom:none;margin-bottom:0;padding-bottom:0}
+    .meta{display:flex;gap:8px;font-size:11px;font-weight:600;margin-bottom:3px}
+    .meta-item{flex:1;display:flex;align-items:flex-end;gap:4px}
+    .meta-line{flex:1;border-bottom:1px solid #000;display:inline-block;height:14px}
+    table{border-collapse:collapse;width:100%;font-size:11px;table-layout:fixed}
+    th,td{border:1px solid #000;padding:1px 5px;text-align:left;vertical-align:middle}
+    th{background:#eee;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.4px;height:16px}
+    th.col-num,td.col-num{width:22px;text-align:center}
+    th.col-type{width:38%}
+    td.row-cell{height:18px}
+    .footer{margin-top:6px;padding-top:5px;border-top:2px solid #000;display:flex;gap:18px;font-size:11px}
+    .footer-item{flex:1;display:flex;align-items:flex-end;gap:6px}
+    .footer-label{font-weight:700;white-space:nowrap}
+    .footer-line{flex:1;border-bottom:1px solid #000;height:14px}
+    .no-print{margin-top:10px;text-align:center}
+    .no-print button{padding:8px 18px;background:#1A1A2E;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit}
+    @media print{
+      @page{size:A4 portrait;margin:8mm}
+      html,body{height:auto}
+      body{padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .no-print{display:none}
+      .block,table,.footer{page-break-inside:avoid}
+      .sheet{page-break-after:avoid}
+    }
+  </style></head><body>
+  <div class="sheet">
+    <div class="head">
+      <span class="brand">GROOVY</span>
+      <span class="subtitle">Placement Recipe Sheet</span>
+    </div>
+    ${block()}${block()}${block()}${block()}
     <div class="footer">
       <div class="footer-item"><span class="footer-label">Prepared by:</span><span class="footer-line"></span></div>
       <div class="footer-item"><span class="footer-label">Signature:</span><span class="footer-line"></span></div>
