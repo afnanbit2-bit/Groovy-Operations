@@ -1869,7 +1869,7 @@ function renderPage(id){
   else if(id==='activity'){loadActivity();return;}
   else if(id==='users')m.innerHTML=renderUsers();
   else if(id==='bug-tracker'){
-    if(!bugsLoaded)loadBugReports().then(()=>{m.innerHTML=renderBugTrackerPage();});
+    if(!bugsLoaded)loadBugReports().then(()=>{if(currentPage===id)m.innerHTML=renderBugTrackerPage();}).catch(e=>{if(currentPage===id)m.innerHTML='<div class="empty">Could not load bug reports: '+(e.message||'permission denied')+'</div>';});
     else m.innerHTML=renderBugTrackerPage();
   }
   else if(id==='po-detail')renderDetailPage();
@@ -1883,36 +1883,36 @@ function renderPage(id){
   else if(id==='store-templates'){m.innerHTML=renderStoreTemplates();const _si=document.getElementById('tpl-prod-search');if(_si){_si.addEventListener('input',()=>filterTplProd(_si.value));_si.addEventListener('focus',()=>filterTplProd(_si.value));}}
   else if(id==='store-log'){_ilPage=1;_ilQ='';_ilPO='';m.innerHTML=renderStoreLog();refreshIssueLog();}
   // ── Printing module pages ──
-  else if(id==='recipe-directory'){if(!printingDataLoaded)loadPrintingData().then(()=>m.innerHTML=renderRecipeDirectory());else m.innerHTML=renderRecipeDirectory();}
+  else if(id==='recipe-directory'){if(!printingDataLoaded)loadPrintingData().then(()=>{if(currentPage===id)m.innerHTML=renderRecipeDirectory();});else m.innerHTML=renderRecipeDirectory();}
   else if(id==='recipe-create')m.innerHTML=renderRecipeCreatePage();
   else if(id==='recipe-detail')renderRecipeDetailPage();
-  else if(id==='printing-jobs'){if(!printingDataLoaded)loadPrintingData().then(()=>m.innerHTML=renderPrintingJobsPage());else m.innerHTML=renderPrintingJobsPage();}
+  else if(id==='printing-jobs'){if(!printingDataLoaded)loadPrintingData().then(()=>{if(currentPage===id)m.innerHTML=renderPrintingJobsPage();});else m.innerHTML=renderPrintingJobsPage();}
   else if(id==='printing-job-detail')renderPrintingJobDetailPage();
-  else if(id==='observer-tower'){if(!printingDataLoaded)loadPrintingData().then(()=>m.innerHTML=renderObserverTower());else m.innerHTML=renderObserverTower();}
+  else if(id==='observer-tower'){if(!printingDataLoaded)loadPrintingData().then(()=>{if(currentPage===id)m.innerHTML=renderObserverTower();});else m.innerHTML=renderObserverTower();}
   else if(id==='qc-report-page')renderQCReportPage();
   else if(id==='billing-detail')renderBillingDetailPage();
-  else if(id==='color-library'){if(!printingDataLoaded)loadPrintingData().then(()=>m.innerHTML=renderColorLibraryPage());else m.innerHTML=renderColorLibraryPage();}
+  else if(id==='color-library'){if(!printingDataLoaded)loadPrintingData().then(()=>{if(currentPage===id)m.innerHTML=renderColorLibraryPage();});else m.innerHTML=renderColorLibraryPage();}
   // ── HRM module pages ──
-  else if(id==='hrm-employees'){if(!hrmDataLoaded)loadHRMData().then(()=>m.innerHTML=renderHRMEmployeesPage());else m.innerHTML=renderHRMEmployeesPage();}
-  else if(id==='attendance'){if(!hrmDataLoaded)loadHRMData().then(()=>{m.innerHTML=renderAttendancePage();_attendanceAfterRender();});else{m.innerHTML=renderAttendancePage();_attendanceAfterRender();}}
+  else if(id==='hrm-employees'){if(!hrmDataLoaded)loadHRMData().then(()=>{if(currentPage===id)m.innerHTML=renderHRMEmployeesPage();});else m.innerHTML=renderHRMEmployeesPage();}
+  else if(id==='attendance'){if(!hrmDataLoaded)loadHRMData().then(()=>{if(currentPage===id){m.innerHTML=renderAttendancePage();_attendanceAfterRender();}});else{m.innerHTML=renderAttendancePage();_attendanceAfterRender();}}
   else if(id==='hrm-payroll'){
     if(!_canViewPayroll()){m.innerHTML='<div class="empty">Payroll is restricted to Afnan, Ammar and Mustafa.</div>';}
-    else if(!hrmDataLoaded||!payrollDataLoaded){Promise.all([hrmDataLoaded?null:loadHRMData(),payrollDataLoaded?null:loadPayrollData()]).then(()=>{m.innerHTML=renderPayrollPage();_payrollAfterRender();});}
+    else if(!hrmDataLoaded||!payrollDataLoaded){Promise.all([hrmDataLoaded?null:loadHRMData(),payrollDataLoaded?null:loadPayrollData()]).then(()=>{if(currentPage===id){m.innerHTML=renderPayrollPage();_payrollAfterRender();}});}
     else {m.innerHTML=renderPayrollPage();_payrollAfterRender();}
   }
   else if(id==='hrm-advances'){
     if(!_canViewHRMOps()){m.innerHTML='<div class="empty">Restricted to Afnan, Ammar and Mustafa.</div>';}
-    else if(!hrmDataLoaded||!hrmS4DataLoaded){Promise.all([hrmDataLoaded?null:loadHRMData(),hrmS4DataLoaded?null:loadHRMSession4Data()]).then(()=>{m.innerHTML=renderAdvancesPage();});}
+    else if(!hrmDataLoaded||!hrmS4DataLoaded){Promise.all([hrmDataLoaded?null:loadHRMData(),hrmS4DataLoaded?null:loadHRMSession4Data()]).then(()=>{if(currentPage===id)m.innerHTML=renderAdvancesPage();});}
     else m.innerHTML=renderAdvancesPage();
   }
   else if(id==='hrm-loans'){
     if(!_canViewHRMOps()){m.innerHTML='<div class="empty">Restricted to Afnan, Ammar and Mustafa.</div>';}
-    else if(!hrmDataLoaded||!hrmS4DataLoaded){Promise.all([hrmDataLoaded?null:loadHRMData(),hrmS4DataLoaded?null:loadHRMSession4Data()]).then(()=>{m.innerHTML=renderLoansPage();});}
+    else if(!hrmDataLoaded||!hrmS4DataLoaded){Promise.all([hrmDataLoaded?null:loadHRMData(),hrmS4DataLoaded?null:loadHRMSession4Data()]).then(()=>{if(currentPage===id)m.innerHTML=renderLoansPage();});}
     else m.innerHTML=renderLoansPage();
   }
   else if(id==='hrm-policy'){
     if(!_canViewHRMOps()){m.innerHTML='<div class="empty">Restricted to Afnan, Ammar and Mustafa.</div>';}
-    else if(!hrmDataLoaded||!hrmS4DataLoaded){Promise.all([hrmDataLoaded?null:loadHRMData(),hrmS4DataLoaded?null:loadHRMSession4Data()]).then(()=>{m.innerHTML=renderPolicyEnginePage();});}
+    else if(!hrmDataLoaded||!hrmS4DataLoaded){Promise.all([hrmDataLoaded?null:loadHRMData(),hrmS4DataLoaded?null:loadHRMSession4Data()]).then(()=>{if(currentPage===id)m.innerHTML=renderPolicyEnginePage();});}
     else m.innerHTML=renderPolicyEnginePage();
   }
 }
@@ -4241,7 +4241,7 @@ async function loadActivity(){
 // ── Users page ──
 function renderUsers(){
   if(session.role!=='owner')return'<div class="empty">Owners only.</div>';
-  return`<div class="page-head"><div class="page-title">Users</div><div class="page-sub">10 accounts · Role-based access</div></div>
+  return`<div class="page-head"><div class="page-title">Users</div><div class="page-sub">${USER_DEFS.length} accounts · Role-based access</div></div>
   <div class="card"><div class="card-title">User accounts</div>
     ${USER_DEFS.map(u=>`<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #f5f5f5">
       <div style="width:36px;height:36px;border-radius:50%;background:${u.role==='owner'?'var(--dark)':u.role==='manager'?'var(--red)':'var(--green)'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">${u.name[0]}</div>
@@ -8213,7 +8213,7 @@ window.refreshCurrentPage=async function(){
       await refreshPrintingData();
     }else if(page.startsWith('store-')){
       if(typeof loadStoreData==='function')await loadStoreData();
-    }else if(page==='hrm-employees'){
+    }else if(page==='hrm-employees'||page==='attendance'){
       if(typeof loadHRMData==='function')await loadHRMData();
     }else if(page==='hrm-payroll'||page==='hrm-payslips'){
       if(typeof loadPayrollData==='function')await loadPayrollData();
@@ -8221,6 +8221,12 @@ window.refreshCurrentPage=async function(){
       if(typeof loadHRMSession4Data==='function')await loadHRMSession4Data();
     }else if(page==='bug-tracker'){
       if(typeof loadBugReports==='function')await loadBugReports();
+    }else if(page==='my-work'||page==='me'){
+      // Workers: refresh PO data + printing data (their cards use both)
+      const tasks=[loadData()];
+      if(session&&session.role==='worker'&&typeof refreshPrintingData==='function')tasks.push(refreshPrintingData());
+      if(session&&session.role==='worker'&&typeof loadHRMData==='function')tasks.push(loadHRMData());
+      await Promise.all(tasks);
     }else{
       await loadData();
     }
