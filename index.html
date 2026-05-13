@@ -467,6 +467,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script type="module">
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import{getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,runTransaction,writeBatch}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -3282,6 +3283,7 @@ window.updateFabUnit=function(){
 
 window.refreshFabCode=function(){
   const fabType=document.getElementById('fab-type')?.value||'';
+  const color=document.getElementById('fab-color')?.value||'';
   const codeEl=document.getElementById('fab-code');
   if(!codeEl)return;
   if(!fabType){codeEl.value='';
@@ -3290,17 +3292,22 @@ window.refreshFabCode=function(){
     return;
   }
   const prefix=_fabPrefix(fabType);
-  const code=_nextFabCodeFor(prefix);
+  const colorCode=color?_fabColorCode(color):'';
+  const code=_nextFabCodeFor(prefix,colorCode);
   codeEl.value=code;
   const h1=document.getElementById('fab-code-roll-hint');if(h1)h1.textContent=code+'-R01';
   const h2=document.getElementById('fab-code-roll-hint-2');if(h2)h2.textContent=code+'-R02';
-  // Re-label any existing roll rows
+  // Re-label any existing roll rows and re-render their barcodes
   let i=0;
   document.querySelectorAll('#fab-rolls-body .roll-row').forEach(row=>{
     i++;
     const rollCode=`${code}-R${String(i).padStart(2,'0')}`;
     const lbl=row.querySelector('.fab-roll-code');
     if(lbl)lbl.textContent=rollCode;
+    const qcCb=row.querySelector('input[type=checkbox]');
+    if(qcCb)qcCb.setAttribute('onchange',`window.onFabRollQC(this,'${rollCode}')`);
+    const bc=row.querySelector('.fab-roll-barcode');
+    if(bc)_renderRollBarcode(bc,rollCode);
   });
 };
 
@@ -3311,21 +3318,42 @@ window.addFabRoll=function(){
   const rollCode=fabCode?`${fabCode}-R${String(i).padStart(2,'0')}`:`R-${String(fabRollIdx).padStart(3,'0')}`;
   const supplier=(document.getElementById('fab-supplier')?.value||'').trim();
   const unit=_fabUnitForSupplier(supplier);
+  const defaultGsm=parseInt(document.getElementById('fab-gsm')?.value)||'';
   const id='fabroll-'+fabRollIdx;
   const body=document.getElementById('fab-rolls-body');
   if(!body)return;
   const div=document.createElement('div');
   div.id=id;div.className='roll-row';
-  div.innerHTML=`<span class="fab-roll-code" style="font-size:11px;font-weight:700;color:var(--dark);min-width:96px;letter-spacing:.04em">${rollCode}</span>
-    <input type="number" min="0" step="0.01" placeholder="0" style="flex:1;max-width:120px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:#fff;outline:none;font-family:inherit" oninput="window.fabRecalc()">
-    <span class="fab-roll-unit" style="font-size:12px;color:var(--muted);min-width:24px">${unit}</span>
-    <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;flex-shrink:0;white-space:nowrap">
-      <input type="checkbox" onchange="window.onFabRollQC(this,'${rollCode}')"> QC ✓
-    </label>
-    <button onclick="document.getElementById('${id}').remove();window.fabRecalc()" style="background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:2px 6px;flex-shrink:0">×</button>`;
+  div.style.flexDirection='column';div.style.alignItems='stretch';
+  div.innerHTML=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span class="fab-roll-code" style="font-size:11px;font-weight:700;color:var(--dark);min-width:108px;letter-spacing:.04em">${rollCode}</span>
+      <input type="number" class="fab-roll-weight" min="0" step="0.01" placeholder="0" style="width:88px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:#fff;outline:none;font-family:inherit" oninput="window.fabRecalc()">
+      <span class="fab-roll-unit" style="font-size:12px;color:var(--muted);min-width:24px">${unit}</span>
+      <input type="number" class="fab-roll-gsm" min="0" step="1" placeholder="GSM" value="${defaultGsm}" title="GSM for this roll" style="width:72px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:#fff;outline:none;font-family:inherit">
+      <span style="font-size:11px;color:var(--muted)">gsm</span>
+      <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;flex-shrink:0;white-space:nowrap">
+        <input type="checkbox" onchange="window.onFabRollQC(this,'${rollCode}')"> QC ✓
+      </label>
+      <button onclick="document.getElementById('${id}').remove();window.fabRecalc()" style="background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:2px 6px;flex-shrink:0">×</button>
+    </div>
+    <svg class="fab-roll-barcode" style="display:block;height:36px;margin:4px 0 0 108px"></svg>`;
   body.appendChild(div);
+  _renderRollBarcode(div.querySelector('.fab-roll-barcode'),rollCode);
   window.fabRecalc();
 };
+
+function _renderRollBarcode(svgEl,value){
+  if(!svgEl||!value)return;
+  try{
+    if(typeof JsBarcode==='function'){
+      JsBarcode(svgEl,value,{format:'CODE128',displayValue:true,fontSize:10,height:28,margin:0,width:1.4});
+    }else{
+      svgEl.outerHTML=`<span style="font-size:10px;color:var(--muted);margin-left:108px">${value}</span>`;
+    }
+  }catch(e){
+    svgEl.outerHTML=`<span style="font-size:10px;color:#dc2626;margin-left:108px">Barcode error: ${e.message}</span>`;
+  }
+}
 
 window.fabRecalc=function(){
   let total=0;
@@ -3353,7 +3381,7 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,no
   let totalWeight=existing?existing.totalWeight||0:0;
   if(Array.isArray(addRolls)){
     for(const r of addRolls){
-      rolls.push({rollCode:r.rollCode,weight:r.weight,unit:r.unit||unit,status:'in_stock',sourceFabId:r.sourceFabId||sourceId,addedAt:Date.now(),addedBy:session.name});
+      rolls.push({rollCode:r.rollCode,weight:r.weight,gsm:r.gsm||gsm||0,unit:r.unit||unit,status:'in_stock',sourceFabId:r.sourceFabId||sourceId,addedAt:Date.now(),addedBy:session.name});
       totalWeight+=r.weight||0;
     }
   }
@@ -3386,19 +3414,22 @@ window.submitFabricIn=async function(){
   const notes=(document.getElementById('fab-notes')?.value||'').trim();
   if(!supplier||!fabType||!gsm||!color){showToast('Supplier, fabric type, GSM and color are required.',true);return;}
   const unit=_fabUnitForSupplier(supplier);
-  const fabCode=document.getElementById('fab-code')?.value||_nextFabCodeFor(_fabPrefix(fabType));
+  const fabCode=document.getElementById('fab-code')?.value||_nextFabCodeFor(_fabPrefix(fabType),_fabColorCode(color));
   const rolls=[];
   document.querySelectorAll('#fab-rolls-body .roll-row').forEach(row=>{
     const codeEl=row.querySelector('.fab-roll-code');
     const rollCode=codeEl?.textContent?.trim()||'';
-    const weightEl=row.querySelector('input[type=number]');
+    const weightEl=row.querySelector('.fab-roll-weight');
+    const gsmEl=row.querySelector('.fab-roll-gsm');
     const qcEl=row.querySelector('input[type=checkbox]');
     const weight=parseFloat(weightEl?.value)||0;
+    const rollGsm=parseInt(gsmEl?.value)||gsm;
     const qcPassed=qcEl?.checked||false;
-    if(rollCode)rolls.push({rollCode,rollNumber:rollCode,weight,unit,qcPassed,qcBy:qcPassed?session.name:'',qcAt:qcPassed?Date.now():null});
+    if(rollCode)rolls.push({rollCode,rollNumber:rollCode,weight,gsm:rollGsm,unit,qcPassed,qcBy:qcPassed?session.name:'',qcAt:qcPassed?Date.now():null});
   });
   if(!rolls.length){showToast('Add at least one roll.',true);return;}
   if(rolls.some(r=>!r.weight)){showToast('Every roll needs a weight.',true);return;}
+  if(rolls.some(r=>!r.gsm)){showToast('Every roll needs a GSM.',true);return;}
   const totalWeight=parseFloat(rolls.reduce((s,r)=>s+r.weight,0).toFixed(2));
   try{
     const next=await getNextId('fabricin');
@@ -3406,7 +3437,7 @@ window.submitFabricIn=async function(){
     const payload={id:fabId,fabCode,ts:Date.now(),supplier,date,fabType,gsm,color,receivedBy:session.name,notes,unit,totalWeight,rollsCount:rolls.length,rolls};
     await setDoc(doc(db,'fabricin',fabId),payload);
     allFabricIn.unshift(payload);
-    await _fabInvUpsert({fabType,gsm,color,unit,addRolls:rolls.map(r=>({rollCode:r.rollCode,weight:r.weight,unit:r.unit,sourceFabId:fabId})),sourceCol:'fabricin',sourceId:fabId,note:`Receipt from ${supplier}`});
+    await _fabInvUpsert({fabType,gsm,color,unit,addRolls:rolls.map(r=>({rollCode:r.rollCode,weight:r.weight,gsm:r.gsm,unit:r.unit,sourceFabId:fabId})),sourceCol:'fabricin',sourceId:fabId,note:`Receipt from ${supplier}`});
     await logActivity('Fabric In',`${fabId} (${fabCode}) — ${supplier} · ${fabType} ${gsm}gsm · ${color} · ${rolls.length} rolls · ${totalWeight} ${unit}`);
     showToast(`${fabCode} saved ✓ · added to inventory`);
     window.switchGPTab('fabricin');
@@ -3439,12 +3470,20 @@ function renderFabricInList(){
         <span id="fab-chev-${f.id}" style="color:var(--muted);font-size:18px;margin-left:8px;flex-shrink:0">›</span>
       </div>
       <div id="fab-rolls-${f.id}" style="display:none;padding:4px 0 8px">
-        ${rolls.map(r=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 4px;border-bottom:1px solid #f9f9f9;font-size:12px;gap:6px">
-          <span style="font-weight:600;min-width:96px;letter-spacing:.04em">${r.rollCode||r.rollNumber}</span>
-          <span style="flex:1">${r.weight} ${r.unit||'kg'}</span>
-          <span style="${r.qcPassed?'color:var(--green);font-weight:600':'color:var(--muted)'}">${r.qcPassed?'QC Passed ✓':'Pending QC'}</span>
-          ${r.qcPassed&&r.qcBy?`<span style="font-size:10px;color:var(--muted)">${r.qcBy}</span>`:''}
-        </div>`).join('')||'<div style="font-size:12px;color:var(--muted);padding:6px">No rolls recorded.</div>'}
+        ${rolls.map(r=>{
+          const rc=r.rollCode||r.rollNumber||'';
+          const rGsm=r.gsm||f.gsm||0;
+          return`<div style="display:flex;flex-direction:column;padding:8px 4px;border-bottom:1px solid #f9f9f9;font-size:12px;gap:6px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
+              <span style="font-weight:600;min-width:128px;letter-spacing:.04em">${rc}</span>
+              <span style="flex:1;min-width:80px">${r.weight} ${r.unit||'kg'} · ${rGsm}gsm</span>
+              <span style="${r.qcPassed?'color:var(--green);font-weight:600':'color:var(--muted)'}">${r.qcPassed?'QC Passed ✓':'Pending QC'}</span>
+              ${r.qcPassed&&r.qcBy?`<span style="font-size:10px;color:var(--muted)">${r.qcBy}</span>`:''}
+              <button onclick="event.stopPropagation();window.printRollBarcode('${_gpEsc(rc)}','${_gpEsc(f.fabType||'')}','${rGsm}','${_gpEsc(f.color||'')}','${r.weight} ${r.unit||'kg'}','${_gpEsc(f.supplier||'')}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">🖨 Print</button>
+            </div>
+            <svg class="fab-roll-barcode-view" data-rc="${_gpEsc(rc)}" style="display:block;height:38px;margin-left:0"></svg>
+          </div>`;
+        }).join('')||'<div style="font-size:12px;color:var(--muted);padding:6px">No rolls recorded.</div>'}
         <div style="display:flex;gap:6px;justify-content:flex-end;padding:8px 4px 0">
           <button onclick="event.stopPropagation();window.editFabricIn('${f.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
           <button onclick="event.stopPropagation();window.requestDeleteFabricIn('${f.id}')" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
@@ -3460,6 +3499,46 @@ window.toggleFabEntry=function(id){
   const isOpen=rolls.style.display!=='none';
   rolls.style.display=isOpen?'none':'block';
   if(chev)chev.textContent=isOpen?'›':'⌄';
+  if(!isOpen){
+    rolls.querySelectorAll('svg.fab-roll-barcode-view').forEach(svg=>{
+      const rc=svg.getAttribute('data-rc')||'';
+      if(rc&&!svg.childNodes.length)_renderRollBarcode(svg,rc);
+    });
+  }
+};
+
+window.printRollBarcode=function(rollCode,fabType,gsm,color,weight,supplier){
+  const w=window.open('','_blank','width=400,height=300');
+  if(!w){showToast('Allow popups to print barcodes.',true);return;}
+  w.document.write(`<!doctype html><html><head><title>${rollCode}</title>
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
+      body{padding:14px}
+      .label{border:1px solid #000;padding:10px 12px;width:280px}
+      .row{display:flex;justify-content:space-between;font-size:11px;margin:2px 0}
+      .code{font-size:14px;font-weight:700;letter-spacing:.05em;text-align:center;margin-bottom:6px}
+      .supplier{font-size:10px;color:#444;text-align:center;margin-bottom:4px}
+      svg{display:block;margin:4px auto;width:100%}
+      @media print{body{padding:0}.label{border:none}}
+    </style></head><body>
+    <div class="label">
+      <div class="supplier">${supplier||''}</div>
+      <div class="code">${rollCode}</div>
+      <svg id="bc"></svg>
+      <div class="row"><span>Fabric:</span><strong>${fabType||''}</strong></div>
+      <div class="row"><span>Color:</span><strong>${color||''}</strong></div>
+      <div class="row"><span>GSM:</span><strong>${gsm||''}</strong></div>
+      <div class="row"><span>Weight:</span><strong>${weight||''}</strong></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
+    <script>
+      window.addEventListener('load',function(){
+        try{JsBarcode('#bc','${rollCode}',{format:'CODE128',displayValue:true,fontSize:11,height:40,margin:4,width:1.6});}catch(e){}
+        setTimeout(function(){window.print();},300);
+      });
+    <\/script>
+    </body></html>`);
+  w.document.close();
 };
 
 // ── Gate Pass / Returns / Fabric In: Edit & Delete with approval ──
@@ -3487,11 +3566,29 @@ function _fabPrefix(fabType){
   for(const[re,p]of FABRIC_PREFIX_MAP){if(re.test(fabType))return p;}
   return(fabType.replace(/[^a-z]/gi,'').slice(0,3).toUpperCase()||'FAB');
 }
-function _nextFabCodeFor(prefix){
-  const re=new RegExp('^'+prefix+'-(\\d+)$','i');
+const COLOR_CODE_MAP=[
+  [/^black$|jet ?black/i,'BLK'],[/^white$|off ?white|optic/i,'WHT'],[/grey|gray|silver/i,'GRY'],
+  [/navy/i,'NVY'],[/royal/i,'ROY'],[/sky/i,'SKY'],[/blue/i,'BLU'],
+  [/mocha|coffee|tan|camel/i,'MOC'],[/brown|choco/i,'BRN'],[/beige|cream|ivory|sand/i,'BEG'],
+  [/red|crimson|scarlet/i,'RED'],[/maroon|wine|burgundy/i,'MRN'],[/pink|rose|fuchsia/i,'PNK'],
+  [/orange/i,'ORG'],[/yellow|mustard|lemon/i,'YEL'],[/gold/i,'GLD'],
+  [/green|olive|lime|mint|sage/i,'GRN'],[/teal|turquoise/i,'TEL'],[/purple|violet|lilac/i,'PRP']
+];
+function _fabColorCode(color){
+  if(!color)return'XXX';
+  const c=String(color).trim();
+  for(const[re,p]of COLOR_CODE_MAP){if(re.test(c))return p;}
+  return(c.replace(/[^a-z]/gi,'').slice(0,3).toUpperCase()||'XXX');
+}
+function _nextFabCodeFor(prefix,colorCode){
+  const cc=colorCode||'';
+  const re=cc
+    ?new RegExp('^'+prefix+'-'+cc+'-(\\d+)$','i')
+    :new RegExp('^'+prefix+'-(\\d+)$','i');
   let max=0;
   for(const f of allFabricIn){const m=(f.fabCode||'').match(re);if(m){const n=parseInt(m[1],10);if(n>max)max=n;}}
-  return prefix+'-'+String(max+1).padStart(3,'0');
+  const seq=String(max+1).padStart(3,'0');
+  return cc?`${prefix}-${cc}-${seq}`:`${prefix}-${seq}`;
 }
 function _fabInvKey(fabType,gsm,color){
   const t=(fabType||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
