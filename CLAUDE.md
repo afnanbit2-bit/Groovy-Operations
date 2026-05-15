@@ -62,7 +62,9 @@ Firebase (the 5 hoisted blocks) lives in `window.__bootApp()` in
 
 ## Domain map — who owns what
 
-### Afnan / HRM track (Claude)
+### Afnan / HRM track (Claude) — owns `js/hrm.js`
+
+All HRM track code lives in `js/hrm.js` (was previously in `index.html`):
 
 - Employees, paygrades, increment logs (`employees`, `increment_logs`,
   `hrm_policies/main`)
@@ -77,7 +79,10 @@ Firebase (the 5 hoisted blocks) lives in `window.__bootApp()` in
 - Icon system (`_icon` SVG helper) + semantic accent palette
 - ZKTeco sync script in `attendance-sync/`
 
-### Ammar Shah / Embellishments track (Claude)
+### Ammar Shah / Embellishments track (Claude) — owns `js/embellishments.js`
+
+All embellishments track code lives in `js/embellishments.js` (was
+previously in `index.html`):
 
 - Recipe directory + create + detail (`article_recipes`)
 - Placement form (template-based, audience-specific worker views)
@@ -102,11 +107,14 @@ Firebase (the 5 hoisted blocks) lives in `window.__bootApp()` in
 ## Shared touchpoints — coordinate before changing
 
 These functions/blocks are edited by both tracks. Check the other branch
-before pushing changes here:
+before pushing changes here. **`index.html` and `js/shared.js` are the
+cross-track files — both tracks must coordinate on any change to these two
+specifically**, since they hold the shell, the router, and the nav:
 
-- `buildNav()` (`js/shared.js`) — both tracks add nav items here
-- `renderPage(id)` switch (`js/shared.js`) — both tracks add page dispatch
-  cases here
+- `buildNav()` — lives in `js/shared.js` (the router/nav code); the nav DOM
+  containers are wired in `index.html`. Both tracks add nav items here
+- `renderPage(id)` switch — lives in `js/shared.js`; both tracks add page
+  dispatch cases here
 - `loadPrintingData()` (`js/embellishments.js`) / `loadHRMData()`,
   `loadHRMSession4Data()`, `loadPayrollData()` (`js/hrm.js`) /
   `loadBugReports()` (`js/shared.js`) — be careful with order
@@ -161,9 +169,12 @@ hit Publish, hard-refresh app on phones.
 
 ## Running locally
 
-No build step. `python -m http.server` from the repo root, open
-`http://localhost:8000/`. The Firebase config in `index.html` points at
-the live `groovy-gatepass` project, so any local writes hit the same
-Firestore as production. Read-only smoke tests are safe; destructive
+The app is now multi-file (`index.html` shell + `/css/main.css` + the
+`/js/*.js` scripts), but there is still **no build step** — the files are
+served as-is. `python -m http.server` from the repo root still works
+exactly as before; open `http://localhost:8000/` (serving from the repo
+root is required so the absolute `/css/...` and `/js/...` paths resolve).
+The Firebase config in `index.html` points at the live `groovy-gatepass`
+project, so any local writes hit the same Firestore as production. Read-only smoke tests are safe; destructive
 flows (process payroll, mark paid, approve advances, mark bug fixed)
 are NOT — they mutate live data.
