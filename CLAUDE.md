@@ -1,12 +1,59 @@
 # Groovy Operations — Claude session notes
 
-Single-file SPA at `index.html`, deployed to Netlify on every push to `main`.
+Multi-file SPA, deployed to Netlify on every push to `main`.
 Two contributors: Afnan (HRM/operations side, with Claude) and Ammar Shah
 (printing/embellishments side, also with Claude on a separate session).
 
+## File architecture (split from the old single `index.html`)
+
+```
+/index.html          shell only: <head>, CSS link, body DOM (login/setup/app),
+                     CDN libs, ordered <script src> tags, and ONE inline
+                     <script type="module"> that imports the Firebase modular
+                     SDK, bridges db/auth/rtdb + all Firestore/RTDB fns onto
+                     window, then calls window.__bootApp().
+/css/main.css        all styles (extracted verbatim).
+/js/shared.js        constants, generic utils (showToast, _icon,
+                     formatTime12hr, logActivity, uploadToCloudinary), nav
+                     (buildNav, mob nav, sheets), router (showPage,
+                     renderPage), bug tracker, and window.__bootApp (holds
+                     the 5 load-order-sensitive blocks: showPage wrap,
+                     toggleNotifPanel wrap, outside-click, Escape/swipe,
+                     onAuthStateChanged).
+/js/auth.js          USER_DEFS, doLogin/doLogout, showSetup/showLogin,
+                     runSetup, startApp, renderUsers, permission helpers.
+/js/pos.js           loadData/loadBundles, PO create/registry/detail,
+                     stage work (cutting/bundling/QC), generatePOPdf.
+/js/embellishments.js Ammar's track: recipes, Observer Tower, embellishment
+                     jobs, color library, QC reports, billing,
+                     loadPrintingData, renderDashboard.
+/js/hrm.js           Afnan's track: HRM seed/load, attendance, employees,
+                     payroll, advances, loans, policy, HRM notifications.
+/js/store.js         store items/transactions/log/templates, fabric
+                     inventory, REST helpers, store notifications.
+/js/gatepass.js      gate passes, returns, fabric-in, GP edit/approval,
+                     generateGPPdf, generateJobSheetPDF.
+/js/activity.js      activity log loader.
+```
+
+Load order is fixed in `index.html`:
+`shared → auth → pos → embellishments → hrm → store → gatepass → activity`,
+then the bootstrap module. All `/js/*.js` are **plain global classic
+scripts — no `import`/`export`**. They share one global lexical scope, so
+top-level `let/const` are visible across files (declared exactly once);
+top-level `function`/`var` also become `window.*`. Firebase is the ONLY ES
+module, isolated to the bootstrap in `index.html`; everything else uses the
+`window`-bridged `db`, `auth`, `rtdb`, `setDoc`, `doc`, `collection`,
+`query`, `where`, `orderBy`, `getDocs`, `updateDoc`, … globals.
+
+Anything that ran at module load time and depended on cross-file order or
+Firebase (the 5 hoisted blocks) lives in `window.__bootApp()` in
+`shared.js`, invoked by the module **after** the Firebase→window bridge and
+**after** all classic scripts have parsed.
+
 ## Stack
 
-- Frontend: vanilla JS module in `index.html`
+- Frontend: vanilla JS (classic global scripts) — see File architecture above
 - Auth: Firebase Auth (project `groovy-gatepass`)
 - DB: Cloud Firestore + Realtime Database (RTDB used only for attendance)
 - Images: Cloudinary, unsigned preset `groovy-ops`
@@ -57,20 +104,26 @@ Two contributors: Afnan (HRM/operations side, with Claude) and Ammar Shah
 These functions/blocks are edited by both tracks. Check the other branch
 before pushing changes here:
 
-- `buildNav()` — both tracks add nav items here
-- `renderPage(id)` switch — both tracks add page dispatch cases here
-- `loadPrintingData()` / `loadHRMData()` / `loadHRMSession4Data()` /
-  `loadPayrollData()` / `loadBugReports()` — be careful with order
-- `<head>` CSS, especially `@media (max-width: 600px)` block
-- `_icon(name, size)` SVG set — add new icons rather than reusing
-- `openMobSheet({title, items})` and the More-sheet items list
-- `:root` CSS variables — accents (`--accent-urgent`, `--accent-warning`,
-  `--accent-success`) and radii (`--radius-card`, `--radius-bubble`)
+- `buildNav()` (`js/shared.js`) — both tracks add nav items here
+- `renderPage(id)` switch (`js/shared.js`) — both tracks add page dispatch
+  cases here
+- `loadPrintingData()` (`js/embellishments.js`) / `loadHRMData()`,
+  `loadHRMSession4Data()`, `loadPayrollData()` (`js/hrm.js`) /
+  `loadBugReports()` (`js/shared.js`) — be careful with order
+- `css/main.css`, especially the `@media (max-width: 600px)` block
+- `_icon(name, size)` SVG set (`js/shared.js`) — add new icons not reuse
+- `openMobSheet({title, items})` (`js/shared.js`) and the More-sheet list
+- `:root` CSS variables in `css/main.css` — accents (`--accent-urgent`,
+  `--accent-warning`, `--accent-success`) and radii (`--radius-card`,
+  `--radius-bubble`)
+- `window.__bootApp()` in `js/shared.js` — the 5 hoisted load-order blocks;
+  do not move these back inline
 
 ## Permission helpers
 
-Username-gated (not just role-gated). Defined near the top of the
-HRM section in `index.html`:
+Username-gated (not just role-gated). The HRM-ops ones (`_canViewPayroll`
+etc.) live in `js/hrm.js`; the printing/role helpers (`isObserver`,
+`isPrintWorker`, `isQCWorker`, `canManageRecipes`, …) live in `js/auth.js`:
 
 - `_canViewPayroll()` → afnan, ammar, mustafa
 - `_canProcessPayroll()` → afnan, ammar
