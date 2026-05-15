@@ -6360,55 +6360,22 @@ window.openNewRecipeDraft=function(){ viewingRecipe=null; _rdIdx=0; window.showP
 window.openRecipeDraftEdit=function(id){ viewingRecipe=id; window.showPage('recipe-draft'); };
 window.openRecipeDraftReview=function(id){ viewingRecipe=id; currentPage='recipe-draft-review'; document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on')); document.getElementById('nav-recipe-directory')?.classList.add('on'); renderRecipeDraftReviewPage(); };
 
-window._rdSearch=async function(qRaw){
+window._rdSearch=function(qRaw){
   const dd=document.getElementById('rd-search-dd'); if(!dd)return;
   const q=(qRaw||'').trim().toLowerCase();
   if(q.length<2){dd.style.display='none';dd.innerHTML='';return;}
-  // Source data is filtered client-side. POs come from loadData()'s allPOs,
-  // recipes from loadPrintingData()'s allRecipes. The draft page only triggers
-  // loadPrintingData(), so allPOs may still be empty — load it on demand here
-  // (targeted fetch, no full-page re-render) before filtering.
-  const posEmpty=!(typeof allPOs!=='undefined'&&allPOs.length);
-  const recEmpty=!(typeof allRecipes!=='undefined'&&allRecipes.length);
-  if(posEmpty||recEmpty){
-    dd.innerHTML='<div style="padding:10px 12px;color:var(--muted);font-size:13px">Loading articles…</div>';
-    dd.style.display='block';
-    try{
-      const jobs=[];
-      if(recEmpty&&typeof loadPrintingData==='function')jobs.push(loadPrintingData().catch(()=>{}));
-      if(posEmpty)jobs.push((async()=>{
-        try{
-          const snap=await getDocs(query(collection(db,'pos'),orderBy('ts','desc')));
-          allPOs=snap.docs.map(d=>({...d.data(),fbKey:d.id}));
-        }catch(_){}
-      })());
-      await Promise.all(jobs);
-    }catch(e){}
-    const curEl=document.getElementById('rd-search-q');
-    if(!curEl||(curEl.value||'').trim().toLowerCase()!==q)return; // query changed while loading
-  }
-  const seen=new Set(); const results=[];
-  (typeof allPOs!=='undefined'?allPOs:[]).forEach(p=>{
-    const code=(p.code||'').toLowerCase(),name=(p.name||'').toLowerCase(),id=(p.id||'').toLowerCase();
-    if(code.includes(q)||name.includes(q)||id.includes(q)){
-      const key=(p.code||'')+'|'+(p.id||''); if(seen.has(key))return; seen.add(key);
-      results.push({articleName:p.name||'',articleCode:p.code||'',poNumber:p.id||'',totalQty:p.qty||0,fabricType:p.fabric||'',source:'PO'});
-    }
-  });
-  (typeof allRecipes!=='undefined'?allRecipes:[]).forEach(r=>{
-    if(r.status==='archived')return;
-    const code=(r.articleCode||'').toLowerCase(),name=(r.articleName||'').toLowerCase();
-    if(code.includes(q)||name.includes(q)){
-      const key=(r.articleCode||'')+'|'+(r.poNumber||'r:'+r._id); if(seen.has(key))return; seen.add(key);
-      results.push({articleName:r.articleName||'',articleCode:r.articleCode||'',poNumber:r.poNumber||'',totalQty:r.totalQty||0,fabricType:r.fabricType||'',source:'Recipe'});
-    }
-  });
-  if(!results.length){dd.innerHTML='<div style="padding:10px 12px;color:var(--muted);font-size:13px">No articles found — check spelling or contact Ammar</div>';dd.style.display='block';return;}
-  dd.innerHTML=results.slice(0,12).map(m=>{
+  // Search the master article catalog (PRODUCT_CATALOG) — the permanent
+  // directory of every article/code ever defined, independent of any PO.
+  // It's a module-level constant always in memory; no fetch needed.
+  const cat=(typeof PRODUCT_CATALOG!=='undefined'?PRODUCT_CATALOG:[]);
+  const results=cat.filter(p=>(p.code||'').toLowerCase().includes(q)||(p.name||'').toLowerCase().includes(q)).slice(0,15);
+  if(!results.length){dd.innerHTML='<div style="padding:10px 12px;color:var(--muted);font-size:13px">Article not found — contact Ammar</div>';dd.style.display='block';return;}
+  dd.innerHTML=results.map(p=>{
+    const m={articleName:p.name||'',articleCode:p.code||''};
     const data=encodeURIComponent(JSON.stringify(m));
     return`<div onclick="window._rdPick('${data}')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
-      <div style="font-weight:600">${m.articleName||'(no name)'}</div>
-      <div style="font-size:11px;color:var(--muted)">${m.articleCode||'—'} · PO ${m.poNumber||'—'}${m.fabricType?' · '+m.fabricType:''} <span style="font-size:10px;background:#f0f0f0;padding:1px 6px;border-radius:6px;margin-left:4px">${m.source}</span></div>
+      <div style="font-weight:600">${p.name||'(no name)'}</div>
+      <div style="font-size:11px;color:var(--muted)">${p.code||'—'}</div>
     </div>`;
   }).join('');
   dd.style.display='block';
@@ -6417,11 +6384,24 @@ window._rdSearch=async function(qRaw){
 window._rdPick=function(encoded){
   let m; try{ m=JSON.parse(decodeURIComponent(encoded)); }catch(e){return;}
   const setVal=(id,v)=>{ const el=document.getElementById(id); if(el)el.value=v==null?'':v; };
+  // The master catalog only carries name+code. Best-effort enrich the extra
+  // read-only fields from already-loaded data (no fetch) so they populate when
+  // the article also has an active PO or existing recipe.
+  const code=(m.articleCode||'').toUpperCase().trim();
+  let po=m.poNumber||'',qty=m.totalQty||'',fab=m.fabricType||'';
+  if(code){
+    const poHit=(typeof allPOs!=='undefined'?allPOs:[]).find(p=>(p.code||'').toUpperCase().trim()===code);
+    if(poHit){ po=po||poHit.id||''; qty=qty||poHit.qty||''; fab=fab||poHit.fabric||''; }
+    if(!po||!qty||!fab){
+      const rHit=(typeof allRecipes!=='undefined'?allRecipes:[]).find(r=>(r.articleCode||'').toUpperCase().trim()===code);
+      if(rHit){ po=po||rHit.poNumber||''; qty=qty||rHit.totalQty||''; fab=fab||rHit.fabricType||''; }
+    }
+  }
   setVal('rd-articleName',m.articleName);
   setVal('rd-articleCode',m.articleCode);
-  setVal('rd-poNumber',m.poNumber);
-  setVal('rd-totalQty',m.totalQty);
-  setVal('rd-fabricType',m.fabricType);
+  setVal('rd-poNumber',po);
+  setVal('rd-totalQty',qty);
+  setVal('rd-fabricType',fab);
   setVal('rd-search-q','');
   const dd=document.getElementById('rd-search-dd'); if(dd){dd.style.display='none';dd.innerHTML='';}
   const fields=document.getElementById('rd-fields'); if(fields)fields.style.display='block';
