@@ -2516,7 +2516,7 @@ function _renderHRMNotifPanel(){
 function _hrmNotifCardHTML(n){
   const priColor=n.priority==='high'?'var(--accent-urgent)':n.priority==='low'?'var(--muted)':'#1A1A2E';
   const priBg=n.priority==='high'?'var(--accent-urgent-soft)':n.priority==='low'?'#fafafa':'#fff';
-  const actionBtn=n.actionUrl?`<button onclick="window.showPage('${n.actionUrl}');window.toggleNotifPanel()" style="margin-top:8px;margin-right:6px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;cursor:pointer;font-size:11px">View</button>`:'';
+  const actionBtn=n.actionUrl?`<button onclick="(window._hrmNotifAction||window.showPage)('${n.actionUrl}');window.toggleNotifPanel()" style="margin-top:8px;margin-right:6px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;cursor:pointer;font-size:11px">View</button>`:'';
   return`<div style="padding:14px 16px;border-bottom:1px solid #f5f5f5;border-left:3px solid ${priColor};background:${priBg}">
     <div style="display:flex;align-items:flex-start;gap:8px">
       <div style="flex:1;min-width:0">

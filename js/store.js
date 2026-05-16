@@ -630,7 +630,9 @@ async function submitReceive(){
     const idx=allItems.findIndex(i=>i.code===code);
     if(idx>=0)allItems[idx]={...updated,_id:item.code};
     allTransactions.unshift({type:'received',itemCode:item.code,itemName:item.name,supplier,date,notes,by:session.name,ts:Date.now(),qty:totalQty,unit:item.unit,_id:txId});
-    showToast('Stock received ✓');renderStoreSection('receive');
+    showToast('Stock received ✓');
+    _checkShortfallsOnReceive(item.code).catch(()=>{});
+    renderStoreSection('receive');
   }catch(e){showToast('Error: '+e.message,true);}
 }
 
@@ -697,9 +699,54 @@ window._catLabelChanged=function(){
   if(prefEl)prefEl.addEventListener('input',()=>{prefEl.dataset.userTouched='1';},{once:true});
 };
 
+function _miRowCells(l,idx){
+  const item=allItems.find(i=>i.code===l.itemCode);
+  const stock=item?getBalance(item):0;
+  const opts=allItems.map(i=>`<option value="${i.code}"${i.code===l.itemCode?' selected':''}>${i.code} — ${i.name}</option>`).join('');
+  return`<td><select style="width:100%;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:12px" onchange="window._miChangeItem(${idx},this.value)">
+    <option value="">— select —</option>${opts}</select></td>
+  <td style="text-align:center;font-size:12px;color:${stock>0?'var(--green)':'var(--red)'}">${l.itemCode?stock:'—'}</td>
+  <td><input type="number" min="1" value="${l.qty}" placeholder="0" style="width:80px;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:12px" onchange="window._miChangeQty(${idx},this.value)"></td>
+  <td><button onclick="window._miRemoveRow(${idx})" style="background:none;border:none;font-size:18px;color:var(--muted);cursor:pointer;padding:2px 6px">×</button></td>`;
+}
+function _miSubmitLabel(){
+  const valid=_miLines.filter(l=>l.itemCode&&parseInt(l.qty)>0);
+  if(!valid.length)return'Issue Stock';
+  const total=valid.reduce((s,l)=>s+(parseInt(l.qty)||0),0);
+  return`Issue ${valid.length} item${valid.length>1?'s':''} (${total} pcs)`;
+}
+function _miUpdateSubmitBtn(){const btn=document.getElementById('mi-submit-btn');if(btn)btn.textContent=_miSubmitLabel();}
+window._miAddRow=function(){
+  _miLines.push({itemCode:'',qty:''});
+  const tbody=document.getElementById('mi-tbody');if(!tbody)return;
+  const tr=document.createElement('tr');tr.id='mi-row-'+(_miLines.length-1);
+  tr.innerHTML=_miRowCells(_miLines[_miLines.length-1],_miLines.length-1);
+  tbody.appendChild(tr);_miUpdateSubmitBtn();
+};
+window._miRemoveRow=function(idx){
+  if(_miLines.length<=1){showToast('At least one row required.',true);return;}
+  _miLines.splice(idx,1);
+  const tbody=document.getElementById('mi-tbody');if(!tbody)return;
+  tbody.querySelectorAll('tr').forEach(r=>r.remove());
+  _miLines.forEach((l,i)=>{const tr=document.createElement('tr');tr.id='mi-row-'+i;tr.innerHTML=_miRowCells(l,i);tbody.appendChild(tr);});
+  _miUpdateSubmitBtn();
+};
+window._miChangeItem=function(idx,code){
+  _miLines[idx].itemCode=code;
+  const item=allItems.find(i=>i.code===code);
+  const row=document.getElementById('mi-row-'+idx);if(!row)return;
+  const tds=row.querySelectorAll('td');if(tds[1]){const s=item?getBalance(item):0;tds[1].textContent=code?s:'—';tds[1].style.color=s>0?'var(--green)':'var(--red)';}
+  _miUpdateSubmitBtn();
+};
+window._miChangeQty=function(idx,v){_miLines[idx].qty=v;_miUpdateSubmitBtn();};
+
 function renderStoreIssue(){
-  const opts=allItems.map(i=>`<option value="${i.code}">${i.code} — ${i.name}</option>`).join('');
+  const pirs=allPoIssueRequests.filter(r=>r.status!=='fully_issued');
+  const pirBanner=pirs.length?`<div class="alert-banner alert-amber" style="cursor:pointer" onclick="window.showPage('po-issue-list')">
+    <strong>${pirs.length} PO issue request(s) pending.</strong> <span style="text-decoration:underline">Review →</span>
+  </div>`:'';
   return`<div class="page-head"><div class="page-title">Issue Stock</div></div>
+  ${pirBanner}
   <div class="card">
     <div class="card-title">Issue against PO <span style="font-size:11px;font-weight:500;color:var(--amber);background:#FEF3C7;padding:2px 8px;border-radius:10px;margin-left:6px">Work in Progress</span></div>
     <div class="form-grid">
@@ -715,7 +762,6 @@ function renderStoreIssue(){
   <div class="card">
     <div class="card-title">Manual issue <span style="font-size:11px;font-weight:600;color:#111;background:#EFEFEF;padding:2px 8px;border-radius:10px;margin-left:6px">● Live</span></div>
     <div class="form-grid">
-      <div class="field"><label>Item *</label><select id="iss-item" onchange="window.onIssItemChange()">${opts}</select></div>
       <div class="field" style="grid-column:1/-1;position:relative"><label>PO Number *</label>
         <input id="iss-po-ref" placeholder="Type PO number or pick from list…" autocomplete="off"
           oninput="window.filterPODrop(this.value)" onfocus="window.filterPODrop(this.value)" onblur="setTimeout(()=>window.hidePODrop(),200)">
@@ -726,8 +772,21 @@ function renderStoreIssue(){
       <div class="field"><label>Purpose / Notes</label><input id="iss-purpose" placeholder="Reason for issue"></div>
       <div class="field"><label>Date</label><input id="iss-date" type="date" value="${todayStr()}"></div>
     </div>
-    <div id="iss-qty-wrap" style="margin-top:10px"></div>
-    <button class="btn-primary" style="margin-top:12px" onclick="window.submitIssueManual()">Issue Stock</button>
+    <div style="margin-top:12px">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr>
+          <th style="text-align:left;padding:6px 4px;border-bottom:2px solid var(--border);font-size:11px;color:var(--muted)">Item</th>
+          <th style="padding:6px 4px;border-bottom:2px solid var(--border);font-size:11px;color:var(--muted);text-align:center">Stock</th>
+          <th style="padding:6px 4px;border-bottom:2px solid var(--border);font-size:11px;color:var(--muted);text-align:center">Qty</th>
+          <th style="padding:6px 4px;border-bottom:2px solid var(--border);width:36px"></th>
+        </tr></thead>
+        <tbody id="mi-tbody">${_miLines.map((l,i)=>`<tr id="mi-row-${i}">${_miRowCells(l,i)}</tr>`).join('')}</tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn-outline" onclick="window._miAddRow()">+ Add item</button>
+      <button class="btn-primary" id="mi-submit-btn" style="margin-top:0" onclick="window.submitIssueManual()">${_miSubmitLabel()}</button>
+    </div>
   </div><div style="height:80px"></div>`;
 }
 function filterPODropMain(val){
@@ -807,21 +866,7 @@ async function submitPoIssue(){
     document.getElementById('iss-po-body').innerHTML='';
   }catch(e){showToast('Error: '+e.message,true);}
 }
-function onIssItemChange(){
-  const code=document.getElementById('iss-item')?.value;
-  const item=allItems.find(i=>i.code===code);
-  const wrap=document.getElementById('iss-qty-wrap');if(!item||!wrap)return;
-  if(item.sizeSpecific){
-    wrap.innerHTML=`<div class="field"><label>Qty to issue per size (${item.unit})</label>
-      <div class="size-grid">${Object.keys(item.sizes||{}).map(sz=>`<div class="size-field"><label>${sz}</label>
-        <input type="number" min="0" placeholder="0" id="iss-${safeId(sz)}">
-        <div class="stk">Stk: ${item.sizes[sz]||0}</div></div>`).join('')}</div></div>`;
-  }else{
-    const b=getBalance(item);
-    wrap.innerHTML=`<div class="field"><label>Qty to issue (${item.unit}) · Stock: ${b}</label>
-      <input type="number" id="iss-flat" min="0" max="${b}" placeholder="0"></div>`;
-  }
-}
+function onIssItemChange(){}
 async function loadActivePOs(){
   try{
     const snap=await fsList('pos',200);
@@ -871,37 +916,54 @@ async function lookupManualPO(raw){
   }catch(e){el.innerHTML=`<span style="font-size:12px;color:#dc2626">Error: ${e.message}</span>`;}
 }
 async function submitIssueManual(){
-  const code=document.getElementById('iss-item')?.value;
-  const item=allItems.find(i=>i.code===code);if(!item){showToast('Select an item.',true);return;}
   const poRefRaw=(document.getElementById('iss-po-ref')?.value||'').trim().toUpperCase();
   const poRef=poRefRaw.replace(/^PO[\s\-]?0*(\d+)$/,'PO-$1').replace(/^0*(\d+)$/,'PO-$1')||poRefRaw;
   if(!poRef){showToast('PO Number is required.',true);document.getElementById('iss-po-ref')?.focus();return;}
   const issuedTo=(document.getElementById('iss-to')?.value||'').trim();
   const purpose=(document.getElementById('iss-purpose')?.value||'').trim();
   const date=document.getElementById('iss-date')?.value||todayStr();
-  const updated={...item};let totalQty=0;
-  if(item.sizeSpecific){
-    const newSizes={...item.sizes};let any=false;
-    for(const sz of Object.keys(item.sizes||{})){
-      const v=parseFloat(document.getElementById('iss-'+safeId(sz))?.value)||0;
-      if(v){if(v>(parseInt(newSizes[sz])||0)){showToast(`Not enough stock for size ${sz}.`,true);return;}newSizes[sz]=Math.max(0,(parseInt(newSizes[sz])||0)-v);any=true;totalQty+=v;}
-    }
-    if(!any){showToast('Enter qty for at least one size.',true);return;}
-    updated.sizes=newSizes;
-  }else{
-    const v=parseFloat(document.getElementById('iss-flat')?.value)||0;
-    if(!v){showToast('Enter quantity.',true);return;}
-    if(v>getBalance(item)){showToast('Insufficient stock.',true);return;}
-    updated.balance=Math.max(0,(parseInt(item.balance)||0)-v);totalQty=v;
+  const codes=new Set();
+  for(let i=0;i<_miLines.length;i++){
+    const l=_miLines[i];
+    if(!l.itemCode){showToast(`Row ${i+1}: select an item.`,true);return;}
+    if(codes.has(l.itemCode)){showToast(`Row ${i+1}: duplicate item (${l.itemCode}).`,true);return;}
+    codes.add(l.itemCode);
+    const qty=parseFloat(l.qty)||0;
+    if(!qty){showToast(`Row ${i+1}: quantity must be > 0.`,true);return;}
+    const it=allItems.find(x=>x.code===l.itemCode);
+    if(!it){showToast(`Row ${i+1}: item ${l.itemCode} not found.`,true);return;}
+    if(!it.sizeSpecific&&qty>getBalance(it)){showToast(`Row ${i+1}: insufficient stock for ${l.itemCode} (have ${getBalance(it)}).`,true);return;}
   }
+  const btn=document.getElementById('mi-submit-btn');if(btn){btn.disabled=true;btn.textContent='Issuing…';}
+  const rollback=[];
   try{
-    await fsSet('store_items',item.code,updated);
-    const txData={type:'issued',itemCode:item.code,itemName:item.name,issuedTo,purpose,date,by:session.name,ts:Date.now(),qty:totalQty,unit:item.unit,poRef};
-    const txId=await fsAdd('store_transactions',txData);
-    const idx=allItems.findIndex(i=>i.code===code);if(idx>=0)allItems[idx]={...updated,_id:item.code};
-    allTransactions.unshift({...txData,_id:txId});
-    showToast('Stock issued ✓');renderStoreSection('issue');
-  }catch(e){showToast('Error: '+e.message,true);}
+    for(const l of _miLines){
+      const item=allItems.find(x=>x.code===l.itemCode);
+      const qty=parseFloat(l.qty);
+      const updated={...item};
+      const oldBalance=item.sizeSpecific?{...item.sizes}:item.balance;
+      if(item.sizeSpecific){
+        const ns={...item.sizes};const keys=Object.keys(ns);const per=Math.floor(qty/keys.length);
+        keys.forEach(sz=>{ns[sz]=Math.max(0,(parseInt(ns[sz])||0)-per);});
+        updated.sizes=ns;
+      }else{updated.balance=Math.max(0,(parseInt(item.balance)||0)-qty);}
+      await fsSet('store_items',item.code,updated);
+      rollback.push({item,oldBalance});
+      const txData={type:'issued',itemCode:item.code,itemName:item.name,issuedTo,purpose,date,by:session.name,ts:Date.now(),qty,unit:item.unit,poRef};
+      const txId=await fsAdd('store_transactions',txData);
+      const idx=allItems.findIndex(x=>x.code===item.code);if(idx>=0)allItems[idx]={...updated,_id:item.code};
+      allTransactions.unshift({...txData,_id:txId});
+    }
+    _miLines=[{itemCode:'',qty:''}];
+    showToast(`${rollback.length} item(s) issued ✓`);renderStoreSection('issue');
+  }catch(e){
+    for(const{item,oldBalance}of rollback){
+      const idx=allItems.findIndex(x=>x.code===item.code);
+      if(idx>=0){if(item.sizeSpecific)allItems[idx].sizes=oldBalance;else allItems[idx].balance=oldBalance;}
+    }
+    showToast('Error: '+e.message,true);
+    if(btn){btn.disabled=false;btn.textContent=_miSubmitLabel();}
+  }
 }
 
 function renderStoreTemplates(){
@@ -1162,20 +1224,21 @@ function refreshIssueLog(){
 
 function renderStoreDashboard(){
   const lowStock=allItems.filter(i=>getStatus(i)!=='green');
-  const pending=allRequests.filter(r=>r.status==='pending');
+  const pendingPirs=allPoIssueRequests.filter(r=>r.status!=='fully_issued');
   const recent=allTransactions.slice(0,10);
   return`<div class="page-head"><div class="page-title">Store Dashboard</div><div class="page-sub">Welcome, ${session.name}</div></div>
-  ${pending.length?`<div class="card" style="border-left:3px solid var(--red)">
-    <div class="card-title">Pending Trim Requests (${pending.length})</div>
-    ${pending.map(r=>`<div class="req-card">
+  ${pendingPirs.length?`<div class="card" style="border-left:3px solid var(--red)">
+    <div class="card-title">Pending PO Issue Requests (${pendingPirs.length})</div>
+    ${pendingPirs.slice(0,5).map(r=>`<div class="req-card">
       <div class="req-head">
         <div><div style="font-weight:700;color:var(--red);font-size:13px">${r.poId||'—'}</div>
-          <div style="font-size:11px;color:var(--muted)">${r.productType||'—'}</div></div>
-        <button class="btn-sm" onclick="window.showPage('store-issue')">Issue →</button>
+          <div style="font-size:11px;color:var(--muted)">${r.poName||'—'} · ${r.poQty||0} pcs</div></div>
+        <button class="btn-sm" onclick="window.openPoIssueDetail('${r.id}')">Issue →</button>
       </div>
-      <div style="font-size:11px;color:var(--muted)">${(r.requiredItems||[]).map(i=>`${i.itemCode}: ${i.quantity}`).join(' · ')||'—'}</div>
+      <div style="font-size:11px;color:var(--muted)">${(r.snapshot||[]).filter(l=>l.issued<l.required).length} item(s) remaining</div>
     </div>`).join('')}
-  </div>`:`<div class="card"><div class="card-title">Pending Trim Requests</div><div class="empty" style="padding:1rem">No pending requests.</div></div>`}
+    ${pendingPirs.length>5?`<div style="text-align:center;margin-top:6px"><button class="btn-sm" onclick="window.showPage('po-issue-list')">View all ${pendingPirs.length} requests</button></div>`:''}
+  </div>`:`<div class="card"><div class="card-title">PO Issue Requests</div><div class="empty" style="padding:1rem">No pending requests ✓</div></div>`}
   ${lowStock.length?`<div class="card" style="border-left:3px solid var(--amber)">
     <div class="card-title">⚠ Low / Out of Stock (${lowStock.length})</div>
     ${lowStock.slice(0,10).map(i=>`<div class="info-row">
@@ -1322,15 +1385,21 @@ function normPO(s){return s.replace(/[\s\-]/g,'').toLowerCase();}
 // ── Store data loader (lazy — called on first store page visit) ──
 async function loadStoreData(){
   try{
-    const[items,txns,templates,requests,cats]=await Promise.all([
+    const[items,txns,templates,requests,cats,pirs,edits,shortfalls]=await Promise.all([
       fsList('store_items'),
       fsQueryOrdered('store_transactions','ts',300),
       fsList('trim_templates'),
       fsList('store_requests'),
       fsList('store_categories').catch(()=>[]),
+      fsList('po_issue_requests').catch(()=>[]),
+      fsList('po_edit_requests').catch(()=>[]),
+      fsList('po_shortfalls').catch(()=>[]),
     ]);
     allItems=items;allTransactions=txns;allTemplates=templates;allRequests=requests;
     allStoreCategories=Array.isArray(cats)?cats:[];
+    allPoIssueRequests=Array.isArray(pirs)?pirs:[];
+    allPoEditRequests=Array.isArray(edits)?edits:[];
+    allPoShortfalls=Array.isArray(shortfalls)?shortfalls:[];
     if(!allItems.length){
       showToast('Initialising store items…');
       await Promise.all(INITIAL_ITEMS.map(item=>fsSet('store_items',item.code,item).catch(()=>{})));
@@ -1341,6 +1410,397 @@ async function loadStoreData(){
 }
 // Internal store navigation (maps store section IDs back to showPage)
 function renderStoreSection(id){window.showPage('store-'+id);}
+
+// ══════════════════════════════════════════════════════════════════════
+// PO ISSUE REQUESTS · EDIT REQUESTS · SHORTFALLS · APPROVER INBOX
+// ══════════════════════════════════════════════════════════════════════
+const _EDIT_APPROVERS=['ammar','arfat','mustafa'];
+function _canApproveEdits(){return _EDIT_APPROVERS.includes(session&&session.u);}
+function _findItem(code){return allItems.find(i=>i.code===code);}
+function _itemStockOf(code){const it=_findItem(code);return it?getBalance(it):0;}
+function _lineId(){return 'L'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function _pirLineHasOpenEdit(reqId,lineId){return allPoEditRequests.some(r=>r.issueRequestId===reqId&&r.lineId===lineId&&r.status==='pending');}
+function _pirLine(req,lineId){return(req.snapshot||[]).find(l=>l.lineId===lineId);}
+async function _notifyStoreRole(payload){
+  if(typeof _hrmNotify==='function')return _hrmNotify({forRole:'store',...payload});
+}
+async function _notifyApprovers(payload){
+  if(typeof _hrmNotify!=='function')return;
+  for(const u of _EDIT_APPROVERS){await _hrmNotify({forUser:u,...payload});}
+}
+
+async function _createPoIssueRequest(po,tpl){
+  if(!Array.isArray(allItems)||!allItems.length){try{await loadStoreData();}catch(_){}}
+  const snapshot=(tpl.items||[]).map(ti=>{
+    const needed=Math.ceil((ti.qtyPerPiece||1)*(parseInt(po.qty)||1));
+    const stock=_itemStockOf(ti.itemCode);
+    return{lineId:_lineId(),itemCode:ti.itemCode,itemName:ti.itemName||ti.itemCode,qtyPerPiece:ti.qtyPerPiece||1,required:needed,pricePerUnit:ti.pricePerUnit||0,issued:0,shortfall:Math.max(0,needed-stock)};
+  });
+  const pirId='PIR-'+po.id;
+  const pirDoc={id:pirId,poId:po.id,poName:po.name||po.id,productCode:po.code||'',poQty:parseInt(po.qty)||0,templateId:tpl._id||'',templateName:tpl.productName||tpl.productType||po.code,snapshot,status:'pending',createdBy:session.name,createdAt:Date.now()};
+  await fsSet('po_issue_requests',pirId,pirDoc);
+  allPoIssueRequests=allPoIssueRequests.filter(r=>r.id!==pirId);
+  allPoIssueRequests.unshift(pirDoc);
+  const shortLines=snapshot.filter(l=>l.shortfall>0);
+  await _notifyStoreRole({
+    type:'po_issue_request',priority:'high',
+    title:`Trim issue needed — ${po.id}`,
+    message:`${po.name||po.id} (${po.qty} pcs). ${snapshot.length} items to issue.`+(shortLines.length?` ⚠ ${shortLines.length} shortfall(s).`:''),
+    relatedTo:pirId,actionUrl:`po-issue-detail:${pirId}`
+  });
+  return pirId;
+}
+
+function renderPoIssueList(){
+  const pirs=allPoIssueRequests.filter(r=>r.status!=='fully_issued').sort((a,b)=>b.createdAt-a.createdAt);
+  return`<div class="page-head"><div class="page-title">PO Issue Requests</div></div>
+  ${!pirs.length?'<div class="card"><div class="empty" style="padding:1rem">No pending PO issue requests.</div></div>':''}
+  ${pirs.map(r=>{
+    const open=r.snapshot?r.snapshot.filter(l=>l.issued<l.required).length:0;
+    const short=r.snapshot?r.snapshot.filter(l=>l.shortfall>0).length:0;
+    const status=r.status==='partial'?'partial':'pending';
+    const statusColor=status==='partial'?'var(--amber)':'var(--red)';
+    const statusBg=status==='partial'?'#FEF3C7':'#FEE2E2';
+    return`<div class="card" style="border-left:3px solid ${statusColor};cursor:pointer" onclick="window.openPoIssueDetail('${r.id}')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">
+        <div>
+          <div style="font-weight:700;font-size:14px">${r.poId||'—'}</div>
+          <div style="font-size:12px;color:var(--muted)">${r.poName||'—'} · ${r.poQty||0} pcs</div>
+        </div>
+        <span style="font-size:11px;font-weight:700;color:${statusColor};background:${statusBg};padding:2px 10px;border-radius:10px">${status==='partial'?'Partially Issued':'Pending'}</span>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:var(--muted)">${open} item(s) pending${short?' · '+short+' shortfall(s)':''}</div>
+    </div>`;
+  }).join('')}
+  <div style="height:80px"></div>`;
+}
+
+window.openPoIssueDetail=function(reqId){_issueViewingId=reqId;window.showPage('po-issue-detail');};
+
+function renderPoIssuePickList(){
+  const req=allPoIssueRequests.find(r=>r.id===_issueViewingId);
+  if(!req)return`<button class="back-btn" onclick="window.showPage('po-issue-list')">← Back</button><div class="empty">Request not found.</div>`;
+  const editReqs=allPoEditRequests.filter(e=>e.issueRequestId===req.id&&e.status==='pending');
+  return`<button class="back-btn" onclick="window.showPage('po-issue-list')">← PO Issue Requests</button>
+  <div class="page-head"><div class="page-title">${req.poId}</div><div class="page-sub">${req.poName||'—'} · ${req.poQty||0} pcs</div></div>
+  ${editReqs.length?`<div class="alert-banner alert-amber">⚠ ${editReqs.length} edit request(s) pending approval. Affected lines are frozen.</div>`:''}
+  <div class="card">
+    <div class="card-title">Items to Issue</div>
+    ${(req.snapshot||[]).map(l=>{
+      const item=_findItem(l.itemCode);
+      const stock=item?getBalance(item):0;
+      const willIssue=Math.min(l.required-l.issued,stock);
+      const short=Math.max(0,(l.required-l.issued)-stock);
+      const frozen=_pirLineHasOpenEdit(req.id,l.lineId);
+      const done=l.issued>=l.required;
+      return`<div style="padding:10px 0;border-bottom:1px solid var(--border);${frozen?'opacity:.6;pointer-events:none':''}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">
+          <div><div style="font-weight:600;font-size:13px">${l.itemCode} — ${l.itemName}</div>
+            <div style="font-size:11px;color:var(--muted)">Needed: ${l.required} · Issued: ${l.issued} · Stock: ${stock}</div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+            ${frozen?'<span style="font-size:10px;color:var(--amber);font-weight:700">⏸ EDIT PENDING</span>':done?'<span style="font-size:10px;color:var(--green);font-weight:700">✓ DONE</span>':short?`<span style="font-size:10px;color:var(--amber);font-weight:700">Short ${short}</span>`:''}
+            ${!done&&!frozen&&_canApproveEdits()?`<button class="btn-sm" onclick="window.openLineEditModal('${req.id}','${l.lineId}')">Edit</button>`:''}
+          </div>
+        </div>
+        ${!done&&!frozen&&willIssue>0?`<div style="font-size:12px;margin-top:4px">Will issue: <strong>${willIssue}</strong></div>`:''}
+        ${short&&!done&&!frozen?`<div style="font-size:12px;color:var(--amber);margin-top:2px">Short ${short} pcs — shortfall recorded</div>`:''}
+      </div>`;
+    }).join('')}
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+      <button class="btn-primary" onclick="window.submitPoBatchIssue('${req.id}')">Issue All Available Stock</button>
+      ${_canApproveEdits()?`<button class="btn-outline" onclick="window.openAddLineModal('${req.id}')">+ Add Line</button>`:''}
+    </div>
+  </div>
+  <div style="height:80px"></div>`;
+}
+
+window.submitPoBatchIssue=async function(reqId){
+  const req=allPoIssueRequests.find(r=>r.id===reqId);
+  if(!req){showToast('Request not found.',true);return;}
+  const toIssue=(req.snapshot||[]).filter(l=>l.issued<l.required&&!_pirLineHasOpenEdit(reqId,l.lineId));
+  if(!toIssue.length){showToast('Nothing to issue (all done or frozen).',true);return;}
+  const newShortfalls=[];
+  const updatedLines=req.snapshot.map(l=>({...l}));
+  try{
+    for(const l of toIssue){
+      const item=_findItem(l.itemCode);if(!item)continue;
+      const stock=getBalance(item);
+      const qty=Math.min(l.required-l.issued,stock);
+      if(qty<=0){
+        if(l.required-l.issued>0)newShortfalls.push({poId:req.poId,issueRequestId:reqId,lineId:l.lineId,itemCode:l.itemCode,itemName:l.itemName,shortfall:l.required-l.issued,createdAt:Date.now(),status:'open'});
+        continue;
+      }
+      const updated={...item};
+      if(item.sizeSpecific){
+        const ns={...item.sizes};const keys=Object.keys(ns);const per=Math.floor(qty/keys.length);
+        keys.forEach(sz=>{ns[sz]=Math.max(0,(parseInt(ns[sz])||0)-per);});
+        updated.sizes=ns;
+      }else{updated.balance=Math.max(0,(parseInt(item.balance)||0)-qty);}
+      await fsSet('store_items',item.code,updated);
+      await fsAdd('store_transactions',{type:'issued',itemCode:item.code,itemName:item.name,issuedTo:'PO: '+req.poId,purpose:'PO trim issue',date:todayStr(),by:session.name,ts:Date.now(),qty,unit:item.unit||'pcs',poRef:req.poId});
+      const idx=allItems.findIndex(i=>i.code===item.code);if(idx>=0)allItems[idx]={...updated,_id:item.code};
+      const ul=updatedLines.find(x=>x.lineId===l.lineId);if(ul)ul.issued=ul.issued+qty;
+      const remaining=l.required-(l.issued+qty);
+      if(remaining>0)newShortfalls.push({poId:req.poId,issueRequestId:reqId,lineId:l.lineId,itemCode:l.itemCode,itemName:l.itemName,shortfall:remaining,createdAt:Date.now(),status:'open'});
+    }
+    const allDone=updatedLines.every(l=>l.issued>=l.required);
+    const newStatus=allDone?'fully_issued':'partial';
+    await fsSet('po_issue_requests',reqId,{...req,snapshot:updatedLines,status:newStatus});
+    const ri=allPoIssueRequests.findIndex(r=>r.id===reqId);
+    if(ri>=0)allPoIssueRequests[ri]={...req,snapshot:updatedLines,status:newStatus};
+    for(const sf of newShortfalls){
+      const sfId=await fsAdd('po_shortfalls',sf);
+      allPoShortfalls.push({...sf,_id:sfId});
+    }
+    showToast(allDone?'All items issued ✓':'Partial issue complete — shortfalls recorded');
+    window.showPage('po-issue-detail');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+async function _checkShortfallsOnReceive(itemCode){
+  const open=allPoShortfalls.filter(sf=>sf.itemCode===itemCode&&sf.status==='open');
+  if(!open.length)return;
+  const item=_findItem(itemCode);if(!item)return;
+  const stock=getBalance(item);
+  const byPO={};
+  for(const sf of open){if(!byPO[sf.poId])byPO[sf.poId]=[];byPO[sf.poId].push(sf);}
+  for(const[poId,sfs]of Object.entries(byPO)){
+    const total=sfs.reduce((s,sf)=>s+sf.shortfall,0);
+    if(stock>=total){
+      await _notifyStoreRole({type:'shortfall_resolved',priority:'normal',title:`Stock available for ${poId}`,message:`${itemCode} is back in stock. ${total} pcs needed for ${poId}. Review PO issue request.`,actionUrl:`po-issue-detail:PIR-${poId}`});
+    }
+  }
+}
+
+window.openLineEditModal=function(reqId,lineId){
+  const req=allPoIssueRequests.find(r=>r.id===reqId);
+  const line=req?_pirLine(req,lineId):null;
+  if(!line){showToast('Line not found.',true);return;}
+  document.getElementById('_pe-modal')?.remove();
+  const opts=allItems.map(i=>`<option value="${i.code}"${i.code===line.itemCode?' selected':''}>${i.code} — ${i.name}</option>`).join('');
+  const modal=document.createElement('div');
+  modal.id='_pe-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2200;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=`<div style="background:#fff;border-radius:14px;width:100%;max-width:420px;box-shadow:0 12px 48px rgba(0,0,0,.25)">
+    <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <span style="font-weight:700;font-size:15px">Request Line Edit</span>
+      <button onclick="document.getElementById('_pe-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
+    </div>
+    <div style="padding:16px;display:grid;gap:10px">
+      <div style="font-size:13px;color:var(--muted)">Current: <strong>${line.itemCode}</strong> — ${line.itemName} · Required: ${line.required}</div>
+      <div class="field"><label>Change type</label>
+        <select id="_pe-type" onchange="window._peTypeChange()">
+          <option value="qty">Change quantity</option>
+          <option value="swap">Swap item</option>
+          <option value="remove">Remove line</option>
+        </select>
+      </div>
+      <div id="_pe-qty-row" class="field"><label>New quantity</label><input id="_pe-qty" type="number" min="1" value="${line.required}"></div>
+      <div id="_pe-swap-row" class="field" style="display:none"><label>New item</label><select id="_pe-swap-item">${opts}</select></div>
+      <div class="field"><label>Reason *</label><input id="_pe-reason" placeholder="Why is this change needed?"></div>
+    </div>
+    <div style="padding:0 16px 16px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-outline" onclick="document.getElementById('_pe-modal').remove()">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.submitLineEditRequest('${reqId}','${lineId}')">Submit Request</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+};
+
+window._peTypeChange=function(){
+  const t=document.getElementById('_pe-type')?.value;
+  document.getElementById('_pe-qty-row').style.display=(t==='qty')?'block':'none';
+  document.getElementById('_pe-swap-row').style.display=(t==='swap')?'block':'none';
+};
+
+window.submitLineEditRequest=async function(reqId,lineId){
+  const req=allPoIssueRequests.find(r=>r.id===reqId);
+  const line=req?_pirLine(req,lineId):null;
+  if(!line){showToast('Line not found.',true);return;}
+  const type=document.getElementById('_pe-type')?.value||'qty';
+  const reason=(document.getElementById('_pe-reason')?.value||'').trim();
+  if(!reason){showToast('Reason is required.',true);return;}
+  const payload={issueRequestId:reqId,poId:req.poId,lineId,type,reason,requestedBy:session.name,createdAt:Date.now(),status:'pending',currentItemCode:line.itemCode,currentItemName:line.itemName,currentRequired:line.required};
+  if(type==='qty'){const nq=parseInt(document.getElementById('_pe-qty')?.value)||0;if(!nq){showToast('Enter quantity.',true);return;}payload.newQty=nq;}
+  if(type==='swap'){const ni=document.getElementById('_pe-swap-item')?.value;if(!ni){showToast('Select item.',true);return;}payload.newItemCode=ni;payload.newItemName=allItems.find(i=>i.code===ni)?.name||ni;}
+  try{
+    const id=await fsAdd('po_edit_requests',payload);
+    allPoEditRequests.push({...payload,_id:id});
+    await _notifyApprovers({type:'edit_request',priority:'high',title:`Edit request — ${req.poId}`,message:`${session.name} requested ${type==='qty'?'quantity change':type==='swap'?'item swap':'line removal'} for ${line.itemCode}. Reason: ${reason}`,actionUrl:`po-edit-inbox`});
+    document.getElementById('_pe-modal')?.remove();
+    showToast('Edit request submitted ✓');window.showPage('po-issue-detail');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+window.openAddLineModal=function(reqId){
+  const req=allPoIssueRequests.find(r=>r.id===reqId);
+  if(!req){showToast('Request not found.',true);return;}
+  document.getElementById('_pa-modal')?.remove();
+  const opts=allItems.map(i=>`<option value="${i.code}">${i.code} — ${i.name}</option>`).join('');
+  const modal=document.createElement('div');
+  modal.id='_pa-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2200;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=`<div style="background:#fff;border-radius:14px;width:100%;max-width:420px;box-shadow:0 12px 48px rgba(0,0,0,.25)">
+    <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <span style="font-weight:700;font-size:15px">Add Line Request</span>
+      <button onclick="document.getElementById('_pa-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
+    </div>
+    <div style="padding:16px;display:grid;gap:10px">
+      <div class="field"><label>Item *</label><select id="_pa-item">${opts}</select></div>
+      <div class="field"><label>Quantity *</label><input id="_pa-qty" type="number" min="1" placeholder="0"></div>
+      <div class="field"><label>Reason *</label><input id="_pa-reason" placeholder="Why is this item needed?"></div>
+    </div>
+    <div style="padding:0 16px 16px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-outline" onclick="document.getElementById('_pa-modal').remove()">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.submitAddLineRequest('${reqId}')">Submit Request</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+};
+
+window.submitAddLineRequest=async function(reqId){
+  const req=allPoIssueRequests.find(r=>r.id===reqId);
+  if(!req){showToast('Request not found.',true);return;}
+  const code=document.getElementById('_pa-item')?.value;
+  const qty=parseInt(document.getElementById('_pa-qty')?.value)||0;
+  const reason=(document.getElementById('_pa-reason')?.value||'').trim();
+  if(!code||!qty){showToast('Item and quantity required.',true);return;}
+  if(!reason){showToast('Reason is required.',true);return;}
+  const item=allItems.find(i=>i.code===code);
+  const payload={issueRequestId:reqId,poId:req.poId,lineId:_lineId(),type:'add',reason,requestedBy:session.name,createdAt:Date.now(),status:'pending',newItemCode:code,newItemName:item?.name||code,newQty:qty};
+  try{
+    const id=await fsAdd('po_edit_requests',payload);
+    allPoEditRequests.push({...payload,_id:id});
+    await _notifyApprovers({type:'edit_request',priority:'high',title:`Add-line request — ${req.poId}`,message:`${session.name} wants to add ${code} (${qty} pcs). Reason: ${reason}`,actionUrl:`po-edit-inbox`});
+    document.getElementById('_pa-modal')?.remove();
+    showToast('Add-line request submitted ✓');window.showPage('po-issue-detail');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+function renderPoEditInbox(){
+  if(!_canApproveEdits())return`<div class="empty">Access restricted.</div>`;
+  const pending=allPoEditRequests.filter(r=>r.status==='pending').sort((a,b)=>b.createdAt-a.createdAt);
+  const typeColor={qty:'#2563eb',swap:'#7c3aed',add:'#16a34a',remove:'#dc2626'};
+  const typeBg={qty:'#eff6ff',swap:'#f5f3ff',add:'#f0fdf4',remove:'#fef2f2'};
+  return`<div class="page-head"><div class="page-title">Edit Inbox</div><div class="page-sub">Review and approve line-item change requests</div></div>
+  ${!pending.length?'<div class="card"><div class="empty" style="padding:1rem">No pending edit requests.</div></div>':''}
+  ${pending.map(r=>{
+    const tc=typeColor[r.type]||'#111';const bg=typeBg[r.type]||'#f9f9f9';
+    return`<div class="card" style="border-left:3px solid ${tc}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">
+        <div>
+          <div style="font-weight:700;font-size:14px">${r.poId||'—'}</div>
+          <div style="font-size:12px;color:var(--muted)">Requested by ${r.requestedBy||'—'}</div>
+        </div>
+        <span style="font-size:11px;font-weight:700;color:${tc};background:${bg};padding:2px 10px;border-radius:10px;text-transform:uppercase">${r.type}</span>
+      </div>
+      <div style="margin-top:6px;font-size:13px">
+        ${r.type==='add'?`Add <strong>${r.newItemCode}</strong> × ${r.newQty}`:
+          r.type==='remove'?`Remove <strong>${r.currentItemCode}</strong>`:
+          r.type==='swap'?`Swap <strong>${r.currentItemCode}</strong> → <strong>${r.newItemCode}</strong>`:
+          `Change qty <strong>${r.currentItemCode}</strong>: ${r.currentRequired} → ${r.newQty}`}
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Reason: ${r.reason||'—'}</div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn-sm" onclick="window.openReviewModal('${r._id}')">Review</button>
+        <button class="btn-sm" style="color:#dc2626;border-color:#fca5a5" onclick="window.rejectEditRequest('${r._id}')">Reject</button>
+      </div>
+    </div>`;
+  }).join('')}
+  <div style="height:80px"></div>`;
+}
+
+window.openReviewModal=function(editId){
+  const er=allPoEditRequests.find(r=>r._id===editId);
+  if(!er){showToast('Request not found.',true);return;}
+  document.getElementById('_rv-modal')?.remove();
+  const req=allPoIssueRequests.find(r=>r.id===er.issueRequestId);
+  const tplUpdate=req&&req.templateId?`<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-top:8px;cursor:pointer"><input type="checkbox" id="_rv-update-tpl"> Also update master trim template for future POs</label>`:'';
+  let detailHTML='';
+  if(er.type==='qty')detailHTML=`<div class="field"><label>Approve qty</label><input id="_rv-qty" type="number" value="${er.newQty}" min="1"></div>`;
+  if(er.type==='swap'){const opts=allItems.map(i=>`<option value="${i.code}"${i.code===er.newItemCode?' selected':''}>${i.code} — ${i.name}</option>`).join('');detailHTML=`<div class="field"><label>Confirm swap to</label><select id="_rv-swap">${opts}</select></div>`;}
+  if(er.type==='add'){const opts2=allItems.map(i=>`<option value="${i.code}"${i.code===er.newItemCode?' selected':''}>${i.code} — ${i.name}</option>`).join('');detailHTML=`<div class="field"><label>Item</label><select id="_rv-add-item">${opts2}</select></div><div class="field"><label>Qty</label><input id="_rv-add-qty" type="number" value="${er.newQty}" min="1"></div>`;}
+  const modal=document.createElement('div');
+  modal.id='_rv-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2200;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=`<div style="background:#fff;border-radius:14px;width:100%;max-width:460px;box-shadow:0 12px 48px rgba(0,0,0,.25)">
+    <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <span style="font-weight:700;font-size:15px">Review Edit Request</span>
+      <button onclick="document.getElementById('_rv-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
+    </div>
+    <div style="padding:16px;display:grid;gap:10px">
+      <div style="font-size:13px;background:#f5f5f5;padding:10px;border-radius:8px">
+        <div><strong>${er.poId}</strong> — ${er.type} request by ${er.requestedBy}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:3px">Reason: ${er.reason}</div>
+      </div>
+      ${detailHTML}
+      <div class="field"><label>Approval note (optional)</label><input id="_rv-note" placeholder="Optional note to requestor"></div>
+      ${tplUpdate}
+    </div>
+    <div style="padding:0 16px 16px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn-outline" onclick="document.getElementById('_rv-modal').remove()">Cancel</button>
+      <button class="btn-outline" style="color:#2563eb;border-color:#93c5fd" onclick="window.decideEditRequest('${editId}',true)">Modify & Approve</button>
+      <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.decideEditRequest('${editId}',false)">Approve As-Is</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+};
+
+window.rejectEditRequest=async function(editId){
+  const er=allPoEditRequests.find(r=>r._id===editId);
+  if(!er){showToast('Request not found.',true);return;}
+  const reason=prompt('Rejection reason (required):');
+  if(!reason)return;
+  try{
+    await fsSet('po_edit_requests',editId,{...er,status:'rejected',rejectedBy:session.name,rejectedAt:Date.now(),rejectionReason:reason});
+    const i=allPoEditRequests.findIndex(r=>r._id===editId);if(i>=0)allPoEditRequests[i]={...er,status:'rejected'};
+    if(typeof _hrmNotify==='function')await _hrmNotify({forUser:er.requestedBy||'',type:'edit_rejected',title:`Edit request rejected — ${er.poId}`,message:`Your ${er.type} request for ${er.currentItemCode||er.newItemCode} was rejected. Reason: ${reason}`});
+    await logActivity('Edit request rejected',`${er.poId} — ${er.type} on ${er.currentItemCode||er.newItemCode} by ${session.name}`);
+    showToast('Request rejected');window.showPage('po-edit-inbox');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+window.decideEditRequest=async function(editId,isModify){
+  const er=allPoEditRequests.find(r=>r._id===editId);
+  if(!er){showToast('Request not found.',true);return;}
+  const req=allPoIssueRequests.find(r=>r.id===er.issueRequestId);
+  if(!req){showToast('PO request not found.',true);return;}
+  const note=(document.getElementById('_rv-note')?.value||'').trim();
+  const updateTpl=document.getElementById('_rv-update-tpl')?.checked&&req.templateId;
+  let finalItemCode=er.newItemCode,finalItemName=er.newItemName,finalQty=er.newQty;
+  if(isModify){
+    if(er.type==='qty'){finalQty=parseInt(document.getElementById('_rv-qty')?.value)||er.newQty;}
+    if(er.type==='swap'){finalItemCode=document.getElementById('_rv-swap')?.value||er.newItemCode;finalItemName=allItems.find(i=>i.code===finalItemCode)?.name||finalItemCode;}
+    if(er.type==='add'){finalItemCode=document.getElementById('_rv-add-item')?.value||er.newItemCode;finalItemName=allItems.find(i=>i.code===finalItemCode)?.name||finalItemCode;finalQty=parseInt(document.getElementById('_rv-add-qty')?.value)||er.newQty;}
+  }
+  const newSnapshot=req.snapshot.map(l=>({...l}));
+  if(er.type==='remove'){const idx=newSnapshot.findIndex(l=>l.lineId===er.lineId);if(idx>=0)newSnapshot.splice(idx,1);}
+  else if(er.type==='add'){newSnapshot.push({lineId:_lineId(),itemCode:finalItemCode,itemName:finalItemName,required:finalQty,issued:0,shortfall:0,qtyPerPiece:0,pricePerUnit:0});}
+  else{const l=newSnapshot.find(x=>x.lineId===er.lineId);if(l){if(er.type==='qty')l.required=finalQty;if(er.type==='swap'){l.itemCode=finalItemCode;l.itemName=finalItemName;}}}
+  try{
+    await fsSet('po_issue_requests',req.id,{...req,snapshot:newSnapshot});
+    const ri=allPoIssueRequests.findIndex(r=>r.id===req.id);if(ri>=0)allPoIssueRequests[ri]={...req,snapshot:newSnapshot};
+    await fsSet('po_edit_requests',editId,{...er,status:'approved',approvedBy:session.name,approvedAt:Date.now(),note});
+    const i=allPoEditRequests.findIndex(r=>r._id===editId);if(i>=0)allPoEditRequests[i]={...er,status:'approved'};
+    if(updateTpl){
+      const tpl=allTemplates.find(t=>t._id===req.templateId);
+      if(tpl){
+        const newItems=(tpl.items||[]).map(ti=>({...ti}));
+        if(er.type==='remove'){const idx=newItems.findIndex(ti=>ti.itemCode===er.currentItemCode);if(idx>=0)newItems.splice(idx,1);}
+        else if(er.type==='add')newItems.push({itemCode:finalItemCode,itemName:finalItemName,qtyPerPiece:req.poQty?finalQty/req.poQty:0,pricePerUnit:0});
+        else{const ti=newItems.find(ti=>ti.itemCode===er.currentItemCode);if(ti){if(er.type==='qty')ti.qtyPerPiece=req.poQty?finalQty/req.poQty:ti.qtyPerPiece;if(er.type==='swap'){ti.itemCode=finalItemCode;ti.itemName=finalItemName;}}}
+        await fsSet('trim_templates',tpl._id,{...tpl,items:newItems});
+        const ti2=allTemplates.findIndex(t=>t._id===tpl._id);if(ti2>=0)allTemplates[ti2]={...tpl,items:newItems};
+      }
+    }
+    if(typeof _hrmNotify==='function')await _hrmNotify({forUser:er.requestedBy||'',type:'edit_approved',title:`Edit approved — ${er.poId}`,message:`Your ${er.type} request for ${er.currentItemCode||er.newItemCode} was approved.${note?' Note: '+note:''}`});
+    await logActivity('Edit request approved',`${er.poId} — ${er.type} on ${er.currentItemCode||er.newItemCode} by ${session.name}`);
+    document.getElementById('_rv-modal')?.remove();
+    showToast('Edit approved ✓');window.showPage('po-edit-inbox');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
 // ── Auto-open printing subnav helpers (no-op placeholders) ──
 window._printNavOpen=function(){};
 
@@ -1364,6 +1824,10 @@ window.hidePODrop=hidePODrop;
 window.selectPO=selectPO;
 window.submitIssueManual=submitIssueManual;
 window.filterTplProd=filterTplProd;
+window.renderPoIssueList=renderPoIssueList;
+window.renderPoIssuePickList=renderPoIssuePickList;
+window.renderPoEditInbox=renderPoEditInbox;
+window._createPoIssueRequest=_createPoIssueRequest;
 window.selectTplProd=selectTplProd;
 window.addTplRow=addTplRow;
 window.submitTemplate=submitTemplate;

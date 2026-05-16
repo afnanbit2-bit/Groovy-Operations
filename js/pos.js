@@ -423,32 +423,13 @@ window.submitPO=async function(){
     try{
       const _tplSnap=await getDocs(query(collection(db,'trim_templates'),where('productCode','==',code)));
       if(!_tplSnap.empty){
-        const _tpl=_tplSnap.docs[0].data();
-        const _deducted=[];let _trimCost=0;
-        for(const _ti of (_tpl.items||[])){
-          const _tqty=Math.ceil((_ti.qtyPerPiece||1)*qty);
-          _trimCost+=(_ti.pricePerUnit||0)*_tqty;
-          const _iref=doc(db,'store_items',_ti.itemCode);
-          const _isnap=await getDoc(_iref);
-          if(_isnap.exists()){
-            const _id=_isnap.data();
-            if(_id.sizeSpecific&&_id.sizes){
-              const _ns={..._id.sizes};const _sk=Object.keys(_ns);const _ps=Math.floor(_tqty/_sk.length);
-              _sk.forEach(sz=>{_ns[sz]=Math.max(0,(parseInt(_ns[sz])||0)-_ps);});
-              await updateDoc(_iref,{sizes:_ns});
-            }else{
-              await updateDoc(_iref,{balance:Math.max(0,(parseInt(_id.balance)||0)-_tqty)});
-            }
-            await addDoc(collection(db,'store_transactions'),{type:'issued',itemCode:_ti.itemCode,itemName:_ti.itemName,issuedTo:'Auto — PO creation',purpose:'Trim: '+(_tpl.productName||_tpl.productType||code),date:new Date().toISOString().slice(0,10),by:session.name,ts:Date.now(),qty:_tqty,unit:_id.unit||'pcs',poRef:poId,autoIssued:true});
-            _deducted.push(_ti.itemCode+'×'+_tqty);
-          }
-        }
-        if(_deducted.length){
-          if(_trimCost>0)await updateDoc(doc(db,'pos',poId),{trimCost:Math.round(_trimCost*100)/100});
-          _trimNote=' — Trims: '+_deducted.join(', ')+(_trimCost>0?` (Rs.${Math.round(_trimCost)})`:'');
+        const _tplData={..._tplSnap.docs[0].data(),_id:_tplSnap.docs[0].id};
+        if(typeof _createPoIssueRequest==='function'){
+          await _createPoIssueRequest({id:poId,name,code,qty},_tplData);
+          _trimNote=' — Trim issue request created ✓';
         }
       }
-    }catch(_te){_trimNote=' (trim deduction failed: '+_te.message+')';}
+    }catch(_te){_trimNote=' (trim request failed: '+_te.message+')';}
     showToast(`${poId} created ✓${_trimNote}`);poImages={front:null,back:null};await loadData();window.showPage('po-registry');
   }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Create Production Order';}}
 };

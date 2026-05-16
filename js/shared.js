@@ -443,6 +443,9 @@ let bundleDamage={},bundlePartIdx=0;
 // ── Store state ──
 let allItems=[],allTransactions=[],allTemplates=[],allRequests=[],allActivePOs=[];
 let allStoreCategories=[];
+let allPoIssueRequests=[],allPoEditRequests=[],allPoShortfalls=[];
+let _issueViewingId=null;
+let _miLines=[{itemCode:'',qty:''}];
 let _invFilterCat='all',_invSearchQ='',_invSort='category';
 let _rcvNewMode=false;
 // ── HRM state ──
@@ -560,6 +563,8 @@ function buildNav(){
     storeSubItems.push({id:'store-issue',label:'Issue Stock'});
     storeSubItems.push({id:'store-log',label:'Stock Log'});
     storeSubItems.push({id:'store-templates',label:'Trim Templates'});
+    storeSubItems.push({id:'po-issue-list',label:'PO Issue Requests'});
+    if(typeof _canApproveEdits==='function'&&_canApproveEdits())storeSubItems.push({id:'po-edit-inbox',label:'Edit Inbox'});
   }
 
   // Desktop sidebar uses the same worker-aware list as the mobile "More" sheet
@@ -680,7 +685,7 @@ function _updateMobNavActive(pageId){
     'po-create':'po','po-registry':'po','po-detail':'po','stage-work':'po',
     'attendance':'hrm','hrm-employees':'hrm','hrm-payroll':'hrm','hrm-advances':'hrm','hrm-loans':'hrm','hrm-policy':'hrm',
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
-    'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-templates':'more',
+    'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-templates':'more','store-fabric-inventory':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more',
     'activity':'more','users':'more','bug-tracker':'more',
     'my-work':'my-work'
   };
@@ -787,9 +792,24 @@ window.openMoreSheet=function(){
 window.openStoreMoreSheet=function(){
   const items=[
     {iconName:'list',label:'Trim Templates',pageId:'store-templates'},
-    {iconName:'activity',label:'Stock Log',pageId:'store-log'}
+    {iconName:'activity',label:'Stock Log',pageId:'store-log'},
+    {iconName:'tray',label:'PO Issue Requests',pageId:'po-issue-list'}
   ];
+  if(typeof _canApproveEdits==='function'&&_canApproveEdits())items.push({iconName:'list',label:'Edit Inbox',pageId:'po-edit-inbox'});
   window.openMobSheet('More',items);
+};
+
+window._hrmNotifAction=function(url){
+  if(!url)return;
+  const colonIdx=url.indexOf(':');
+  if(colonIdx>-1){
+    const page=url.slice(0,colonIdx);
+    const id=url.slice(colonIdx+1);
+    if(id)_issueViewingId=id;
+    window.showPage(page);
+  }else{
+    window.showPage(url);
+  }
 };
 
 window.showPage=async function(id){
@@ -800,7 +820,7 @@ window.showPage=async function(id){
   if(typeof _updateMobNavActive==='function')_updateMobNavActive(id);
   if(typeof closeMobSheet==='function')window.closeMobSheet();
   // Auto-open dropdowns when navigating to sub-pages
-  if(id.startsWith('store-')){
+  if(id.startsWith('store-')||id.startsWith('po-issue-')||id==='po-edit-inbox'){
     const sub=document.getElementById('store-subnav');
     const arrow=document.getElementById('store-nav-arrow');
     if(sub&&sub.style.maxHeight==='0px'){sub.style.maxHeight='300px';if(arrow)arrow.textContent='▾';}
@@ -811,7 +831,7 @@ window.showPage=async function(id){
     if(sub&&sub.style.maxHeight==='0px'){sub.style.maxHeight='300px';if(arrow)arrow.textContent='▾';}
   }
   // Lazy-load store data on first store page visit
-  if(id.startsWith('store-')&&!allItems.length){await loadStoreData();}
+  if((id.startsWith('store-')||id.startsWith('po-issue-')||id==='po-edit-inbox')&&!allItems.length){await loadStoreData();}
   renderPage(id);
 };
 
@@ -839,6 +859,9 @@ function renderPage(id){
   else if(id==='store-issue'){m.innerHTML=renderStoreIssue();onIssItemChange();loadActivePOs();}
   else if(id==='store-templates'){m.innerHTML=renderStoreTemplates();const _si=document.getElementById('tpl-prod-search');if(_si){_si.addEventListener('input',()=>filterTplProd(_si.value));_si.addEventListener('focus',()=>filterTplProd(_si.value));}}
   else if(id==='store-log'){_ilPage=1;_ilQ='';_ilPO='';m.innerHTML=renderStoreLog();refreshIssueLog();}
+  else if(id==='po-issue-list'){if(!allItems.length)loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoIssueList();});else m.innerHTML=renderPoIssueList();}
+  else if(id==='po-issue-detail'){if(!allItems.length)loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoIssuePickList();});else m.innerHTML=renderPoIssuePickList();}
+  else if(id==='po-edit-inbox'){if(!allItems.length)loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoEditInbox();});else m.innerHTML=renderPoEditInbox();}
   // ── Printing module pages ──
   else if(id==='recipe-directory'){if(!printingDataLoaded)loadPrintingData().then(()=>{if(currentPage===id)m.innerHTML=renderRecipeDirectory();});else m.innerHTML=renderRecipeDirectory();}
   else if(id==='recipe-create')m.innerHTML=renderRecipeCreatePage();
