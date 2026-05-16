@@ -1247,9 +1247,9 @@ function renderStoreDashboard(){
     </div>`).join('')}
     ${lowStock.length>10?`<div style="font-size:11px;color:var(--muted);padding-top:6px">+${lowStock.length-10} more items below threshold</div>`:''}
   </div>`:'<div class="alert-banner alert-green">All items are in stock ✓</div>'}
-  ${(session.role==='owner'||session.role==='manager')?`<div class="card" style="border-left:3px solid #111">
-    <div class="card-title">Admin</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Sync all item balances from master inventory list (${INITIAL_ITEMS.length} items). Use after a full stock count.</div>
+  ${(session.u==='afnan')?`<div class="card" style="border-left:3px solid #dc2626">
+    <div class="card-title">⚠ Admin — Danger Zone</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Overwrites ALL live balances with the hardcoded master list (${INITIAL_ITEMS.length} items). Wipes any unrecorded updates Raees has made. Use only after a verified full physical count.</div>
     <button class="btn-primary" onclick="window.syncStoreItems()">⟳ Apply Stock Update</button>
   </div>`:''}
   <div class="card">
@@ -1272,12 +1272,16 @@ function renderStoreDashboard(){
 }
 
 async function syncStoreItems(){
-  if(!confirm(`This will overwrite ALL store item balances with the master inventory data (${INITIAL_ITEMS.length} items).\n\nThis is a full reset — any recent receives/issues will still show in the log but balances will be set to the master values.\n\nContinue?`))return;
+  if(!session||session.u!=='afnan'){showToast('Only Afnan can run a full stock overwrite.',true);return;}
+  const phrase=prompt(`⚠ DANGER — Full Stock Overwrite\n\nThis REPLACES all live balances for ${INITIAL_ITEMS.length} items with the hardcoded master list. Any of Raees's recent updates that are not in the master list will be permanently lost.\n\nType OVERWRITE STOCK (in caps) to confirm:`);
+  if(phrase!=='OVERWRITE STOCK'){showToast('Cancelled — phrase did not match.',true);return;}
+  if(!confirm(`Last chance. Overwrite ${INITIAL_ITEMS.length} items with master values now?`))return;
   showToast('Syncing inventory…');
   try{
     await Promise.all(INITIAL_ITEMS.map(item=>fsSet('store_items',item.code,item).catch(e=>console.warn('Sync fail:',item.code,e))));
     const items=await fsList('store_items');
     allItems=items;
+    await logActivity('⚠ Stock overwritten from master',`${INITIAL_ITEMS.length} items reset to seed values by ${session.name}`).catch(()=>{});
     showToast(`Inventory synced ✓ — ${INITIAL_ITEMS.length} items updated`);
     window.showPage('store-inventory');
   }catch(e){showToast('Sync error: '+e.message,true);}
