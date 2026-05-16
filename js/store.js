@@ -1247,10 +1247,14 @@ function renderStoreDashboard(){
     </div>`).join('')}
     ${lowStock.length>10?`<div style="font-size:11px;color:var(--muted);padding-top:6px">+${lowStock.length-10} more items below threshold</div>`:''}
   </div>`:'<div class="alert-banner alert-green">All items are in stock ✓</div>'}
-  ${(session.role==='owner'||session.role==='manager')?`<div class="card" style="border-left:3px solid #111">
-    <div class="card-title">Admin</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Sync all item balances from master inventory list (${INITIAL_ITEMS.length} items). Use after a full stock count.</div>
+  ${(session.u==='afnan')?`<div class="card" style="border-left:3px solid #dc2626">
+    <div class="card-title">⚠ Admin — Danger Zone</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Overwrites ALL live balances with the hardcoded master list (${INITIAL_ITEMS.length} items). Wipes any unrecorded updates Raees has made. Use only after a verified full physical count.</div>
     <button class="btn-primary" onclick="window.syncStoreItems()">⟳ Apply Stock Update</button>
+    <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">One-shot recovery: replays every receive/issue in <code>store_transactions</code> on top of the May-1 seed and shows you a current-vs-reconstructed comparison before any write.</div>
+      <button class="btn-sm" onclick="window.reconstructStockPreview()">↺ Preview Reconstruction</button>
+    </div>
   </div>`:''}
   <div class="card">
     <div class="card-title">Recent Activity (last 10)</div>
@@ -1272,17 +1276,177 @@ function renderStoreDashboard(){
 }
 
 async function syncStoreItems(){
-  if(!confirm(`This will overwrite ALL store item balances with the master inventory data (${INITIAL_ITEMS.length} items).\n\nThis is a full reset — any recent receives/issues will still show in the log but balances will be set to the master values.\n\nContinue?`))return;
+  if(!session||session.u!=='afnan'){showToast('Only Afnan can run a full stock overwrite.',true);return;}
+  const phrase=prompt(`⚠ DANGER — Full Stock Overwrite\n\nThis REPLACES all live balances for ${INITIAL_ITEMS.length} items with the hardcoded master list. Any of Raees's recent updates that are not in the master list will be permanently lost.\n\nType OVERWRITE STOCK (in caps) to confirm:`);
+  if(phrase!=='OVERWRITE STOCK'){showToast('Cancelled — phrase did not match.',true);return;}
+  if(!confirm(`Last chance. Overwrite ${INITIAL_ITEMS.length} items with master values now?`))return;
   showToast('Syncing inventory…');
   try{
     await Promise.all(INITIAL_ITEMS.map(item=>fsSet('store_items',item.code,item).catch(e=>console.warn('Sync fail:',item.code,e))));
     const items=await fsList('store_items');
     allItems=items;
+    await logActivity('⚠ Stock overwritten from master',`${INITIAL_ITEMS.length} items reset to seed values by ${session.name}`).catch(()=>{});
     showToast(`Inventory synced ✓ — ${INITIAL_ITEMS.length} items updated`);
     window.showPage('store-inventory');
   }catch(e){showToast('Sync error: '+e.message,true);}
 }
 window.syncStoreItems=syncStoreItems;
+
+// ══════════════════════════════════════════
+// ONE-SHOT RECONSTRUCTION FROM TRANSACTION LOG
+// Replays every store_transactions row on top of INITIAL_ITEMS (May-1
+// seed) so afnan can recover from the accidental Apply-Stock-Update
+// overwrite. Direct edits via the Edit-item dialog are NOT in the log,
+// so reconstructed totals are approximations — preview before applying.
+// ══════════════════════════════════════════
+async function _fsListAll(col,batchSize=1000){
+  const tok=await getStoreToken();
+  const out=[];let pageToken='';
+  do{
+    const url=`${_FS_BASE}/${col}?pageSize=${batchSize}${pageToken?`&pageToken=${encodeURIComponent(pageToken)}`:''}`;
+    const r=await fetch(url,{headers:{Authorization:`Bearer ${tok}`}});
+    const d=await r.json();
+    if(d.documents)out.push(...d.documents.map(fromFsDoc));
+    pageToken=d.nextPageToken||'';
+  }while(pageToken);
+  return out;
+}
+
+function _reconstructFromTxns(txns){
+  const seed=new Map();
+  for(const it of INITIAL_ITEMS)seed.set(it.code,JSON.parse(JSON.stringify(it)));
+  const recon=new Map();
+  for(const[k,v]of seed)recon.set(k,JSON.parse(JSON.stringify(v)));
+  const sorted=[...txns].sort((a,b)=>(a.ts||0)-(b.ts||0));
+  for(const tx of sorted){
+    const code=tx.itemCode;if(!code)continue;
+    const sign=tx.type==='received'?+1:tx.type==='issued'?-1:0;
+    if(!sign)continue;
+    let item=recon.get(code);
+    if(!item){
+      const cur=allItems.find(i=>i.code===code);if(!cur)continue;
+      item=JSON.parse(JSON.stringify(cur));
+      if(item.sizeSpecific&&item.sizes){for(const sz of Object.keys(item.sizes))item.sizes[sz]=0;}
+      else item.balance=0;
+      recon.set(code,item);
+    }
+    const qty=parseInt(tx.qty)||0;
+    if(item.sizeSpecific&&item.sizes){
+      const keys=Object.keys(item.sizes);if(!keys.length)continue;
+      const per=Math.floor(qty/keys.length);
+      for(const k of keys)item.sizes[k]=Math.max(0,(parseInt(item.sizes[k])||0)+sign*per);
+    }else{
+      item.balance=Math.max(0,(parseInt(item.balance)||0)+sign*qty);
+    }
+  }
+  return recon;
+}
+
+window.reconstructStockPreview=async function(){
+  if(!session||session.u!=='afnan'){showToast('Restricted to Afnan',true);return;}
+  showToast('Loading all transactions…');
+  let txns;
+  try{txns=await _fsListAll('store_transactions');}
+  catch(e){showToast('Load failed: '+e.message,true);return;}
+  const recon=_reconstructFromTxns(txns);
+  const rows=[];
+  for(const cur of allItems){
+    const r=recon.get(cur.code);
+    const curBal=getBalance(cur);
+    const reconBal=r?getBalance(r):null;
+    const delta=reconBal===null?null:reconBal-curBal;
+    rows.push({code:cur.code,name:cur.name,unit:cur.unit||'pcs',current:curBal,reconstructed:reconBal,delta,sized:!!cur.sizeSpecific,curSizes:cur.sizes||null,reconSizes:r?.sizes||null,inSeed:!!INITIAL_ITEMS.find(s=>s.code===cur.code)});
+  }
+  rows.sort((a,b)=>{
+    if(a.delta===null&&b.delta===null)return a.code.localeCompare(b.code);
+    if(a.delta===null)return 1;if(b.delta===null)return -1;
+    return Math.abs(b.delta)-Math.abs(a.delta);
+  });
+  _showReconstructionModal(rows,recon,txns.length);
+};
+
+function _showReconstructionModal(rows,recon,txCount){
+  document.getElementById('_recon-modal')?.remove();
+  const changed=rows.filter(r=>r.delta!==null&&r.delta!==0).length;
+  const noBaseline=rows.filter(r=>r.reconstructed===null).length;
+  const m=document.createElement('div');
+  m.id='_recon-modal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2300;display:flex;align-items:center;justify-content:center;padding:16px';
+  m.innerHTML=`<div style="background:#fff;border-radius:14px;width:100%;max-width:880px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 16px 56px rgba(0,0,0,.3)">
+    <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-weight:700;font-size:15px">Reconstruction Preview</div>
+        <div style="font-size:11px;color:var(--muted)">${txCount} transactions replayed · ${changed} items would change · ${noBaseline} item(s) not in May-1 seed</div>
+      </div>
+      <button onclick="document.getElementById('_recon-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
+    </div>
+    <div style="padding:10px 14px;background:#fff7ed;border-bottom:1px solid #fed7aa;font-size:12px;color:#7c2d12">
+      ⚠ This rebuild does not capture direct balance edits done via the per-item Edit dialog (those don't write to <code>store_transactions</code>). Compare numbers with Raees before hitting Apply.
+    </div>
+    <div style="overflow:auto;flex:1;padding:0 14px">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead style="position:sticky;top:0;background:#fff;border-bottom:2px solid #111">
+          <tr><th style="text-align:left;padding:8px 6px">Code</th><th style="text-align:left;padding:8px 6px">Name</th><th style="text-align:right;padding:8px 6px">Current</th><th style="text-align:right;padding:8px 6px">Reconstructed</th><th style="text-align:right;padding:8px 6px">Δ</th></tr>
+        </thead>
+        <tbody>
+        ${rows.map(r=>{
+          const dStyle=r.delta===null?'color:var(--muted)':r.delta>0?'color:#16a34a;font-weight:700':r.delta<0?'color:#dc2626;font-weight:700':'color:var(--muted)';
+          const dTxt=r.delta===null?'no seed':(r.delta>0?'+':'')+r.delta;
+          return`<tr style="border-bottom:1px solid #f0f0f0">
+            <td style="padding:6px;font-weight:700">${r.code}</td>
+            <td style="padding:6px">${r.name}${r.sized?' <span style="font-size:10px;color:var(--muted)">(sized)</span>':''}${r.inSeed?'':' <span style="font-size:10px;color:#7c2d12">[not in seed]</span>'}</td>
+            <td style="padding:6px;text-align:right">${r.current} ${r.unit}</td>
+            <td style="padding:6px;text-align:right">${r.reconstructed===null?'—':r.reconstructed+' '+r.unit}</td>
+            <td style="padding:6px;text-align:right;${dStyle}">${dTxt}</td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;align-items:center">
+      <button class="btn-sm" onclick="window._exportReconCsv()">Download CSV</button>
+      <button class="btn-sm" onclick="document.getElementById('_recon-modal').remove()">Close</button>
+      <button class="btn-primary" onclick="window._applyReconstruction()">Apply Reconstruction</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+  window._reconRows=rows;window._reconMap=recon;
+}
+
+window._exportReconCsv=function(){
+  const rows=window._reconRows||[];if(!rows.length)return;
+  const lines=['code,name,unit,current,reconstructed,delta,in_seed'];
+  for(const r of rows)lines.push([r.code,JSON.stringify(r.name),r.unit,r.current,r.reconstructed===null?'':r.reconstructed,r.delta===null?'':r.delta,r.inSeed?'yes':'no'].join(','));
+  const blob=new Blob([lines.join('\n')],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=`stock-reconstruction-${todayStr()}.csv`;a.click();
+  URL.revokeObjectURL(url);
+};
+
+window._applyReconstruction=async function(){
+  if(!session||session.u!=='afnan'){showToast('Restricted to Afnan',true);return;}
+  const recon=window._reconMap;if(!recon||!recon.size){showToast('Nothing to apply.',true);return;}
+  const phrase=prompt(`⚠ APPLY RECONSTRUCTION\n\nThis will overwrite the live balances of ${recon.size} items with the reconstructed values. Items missing from the seed are left untouched.\n\nType APPLY RECONSTRUCTION (in caps) to confirm:`);
+  if(phrase!=='APPLY RECONSTRUCTION'){showToast('Cancelled — phrase did not match.',true);return;}
+  showToast('Applying reconstruction…');
+  let ok=0,fail=0;
+  for(const cur of allItems){
+    const r=recon.get(cur.code);if(!r)continue;
+    const updated={...cur};
+    if(cur.sizeSpecific&&r.sizes)updated.sizes=r.sizes;
+    else if(!cur.sizeSpecific&&typeof r.balance==='number')updated.balance=r.balance;
+    else continue;
+    delete updated._id;
+    try{await fsSet('store_items',cur.code,updated);ok++;
+      const idx=allItems.findIndex(i=>i.code===cur.code);if(idx>=0)allItems[idx]={...updated,_id:cur.code};
+    }catch(e){fail++;console.warn('Recon write fail',cur.code,e);}
+  }
+  await logActivity('Stock reconstructed from transactions',`${ok} updated, ${fail} failed (by ${session.name})`).catch(()=>{});
+  document.getElementById('_recon-modal')?.remove();
+  showToast(`Reconstruction applied ✓ — ${ok} updated${fail?', '+fail+' failed':''}`);
+  window.showPage('store-inventory');
+};
+
 // ══════════════════════════════════════════
 const _FS_BASE=`https://firestore.googleapis.com/v1/projects/groovy-gatepass/databases/(default)/documents`;
 
