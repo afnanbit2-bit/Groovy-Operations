@@ -386,7 +386,7 @@ window.openColorModal=function(id){
         '<div class="field"><label>HEX Approximation</label>'+
           '<div style="display:flex;gap:8px;align-items:center">'+
             '<input id="cm-hex" value="'+(c&&c.hexApprox?c.hexApprox:'')+'" placeholder="#5C3317" style="flex:1" oninput="window._updateSwatchPreview()">'+
-            '<div id="cm-swatch-preview" style="width:36px;height:36px;border-radius:8px;background:'+(c&&c.hexApprox?c.hexApprox:'#ddd')+';border:1px solid var(--border);flex-shrink:0"></div>'+
+            '<input type="color" id="cm-hex-picker" title="Pick a colour" value="'+(c&&c.hexApprox&&/^#[0-9a-fA-F]{6}$/.test(c.hexApprox)?c.hexApprox.toLowerCase():'#dddddd')+'" oninput="window._cmPickHex()" style="width:40px;height:38px;padding:2px;border:1px solid var(--border);border-radius:8px;flex-shrink:0;cursor:pointer;background:var(--surface)">'+
           '</div>'+
         '</div>'+
         '<div class="field"><label>Local Ink Name</label><input id="cm-ink" value="'+(c&&c.localInkName?c.localInkName:'')+'" placeholder="e.g. Camlin Brown 01"></div>'+
@@ -407,9 +407,16 @@ window.openColorModal=function(id){
 };
 window.closeColorModal=function(){var el=document.getElementById('color-modal-container');if(el)el.innerHTML='';};
 window._updateSwatchPreview=function(){
-  var hex=(document.getElementById('cm-hex')||{}).value||'#ddd';
-  var prev=document.getElementById('cm-swatch-preview');
-  if(prev)prev.style.background=hex;
+  // text field -> picker (only when it's a valid 6-digit hex)
+  var hex=((document.getElementById('cm-hex')||{}).value||'').trim();
+  var picker=document.getElementById('cm-hex-picker');
+  if(picker&&/^#[0-9a-fA-F]{6}$/.test(hex))picker.value=hex.toLowerCase();
+};
+window._cmPickHex=function(){
+  // picker -> text field
+  var picker=document.getElementById('cm-hex-picker');
+  var hexEl=document.getElementById('cm-hex');
+  if(picker&&hexEl)hexEl.value=(picker.value||'').toUpperCase();
 };
 window.saveColor=async function(existingId){
   if(!canManageRecipes()){showToast('Not authorized.',true);return;}
