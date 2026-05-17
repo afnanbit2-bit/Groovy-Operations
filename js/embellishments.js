@@ -669,7 +669,7 @@ function renderRecipeDirectory(){
     return(r.articleCode||'').toLowerCase().includes(q.toLowerCase())||(r.articleName||'').toLowerCase().includes(q.toLowerCase());
   });
 
-  const missingWarnings=allRecipes.filter(r=>r.status!=='pending_review'&&r.status!=='revision'&&(!r.printing?.ratePerPiece||!r.printing?.processTypes?.length||!r.images?.frontUrl));
+  const missingWarnings=allRecipes.filter(r=>r.status!=='pending_review'&&r.status!=='revision'&&(!r.printing?.ratePerPiece||!r.printing?.processTypes?.length||!_recipeBestImg(r)));
   const approvedCount=allRecipes.filter(r=>r.status==='active'||r.status==='locked').length;
 
   return`<div class="page-head">
@@ -742,9 +742,17 @@ window._filterRecipeTier=function(t){
   const w=document.getElementById('recipe-list-wrap'); if(w)w.innerHTML=list.length?list.map(r=>recipeCardHTML(r)).join(''):'<div class="empty">No results.</div>';
 };
 
+function _recipeBestImg(r){
+  // Recipe-level front image, else the first placement reference image.
+  if(r&&r.images&&r.images.frontUrl)return r.images.frontUrl;
+  const pls=(r&&r.printing&&r.printing.placements)||[];
+  for(const pl of pls){const u=(pl&&pl.production&&pl.production.referenceImageUrl)||(pl&&pl.imageUrl)||'';if(u)return u;}
+  return'';
+}
 function recipeCardHTML(r){
   const tier=r.printing?.complexityTier||1;
-  const hasImg=!!r.images?.frontUrl;
+  const imgUrl=_recipeBestImg(r);
+  const hasImg=!!imgUrl;
   const hasRate=!!r.printing?.ratePerPiece;
   const hasPantone=(r.printing?.pantones||[]).length>0;
   const warnings=[];
@@ -755,7 +763,7 @@ function recipeCardHTML(r){
   return`<div class="recipe-card" onclick="window.openRecipeDetail('${r._id}')">
     <div style="display:flex;gap:12px;align-items:flex-start">
       <div style="width:56px;height:70px;flex-shrink:0;background:#f0f0f0;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
-        ${hasImg?`<img src="${r.images.frontUrl}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:9px;color:#ccc;text-align:center;padding:4px">No img</span>'}
+        ${hasImg?`<img src="${imgUrl}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:9px;color:#ccc;text-align:center;padding:4px">No img</span>'}
       </div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
