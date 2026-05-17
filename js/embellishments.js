@@ -1128,9 +1128,6 @@ function renderRecipeDraftReviewPage(){
       <div class="field"><label>Category</label>
         <select id="rc-cat"><option value="">Select…</option>${['T-Shirt','Shirt','Hoodie','Zipper','Sweatshirt','Cargo','Trouser','Jersey','Babytee','Set','Jacket','Denim','Shorts'].map(c=>`<option value="${c}" ${r.category===c?'selected':''}>${c}</option>`).join('')}</select>
       </div>
-      <div class="field"><label>PO Number</label><input id="rc-po" value="${_rdEsc(r.poNumber||'')}" style="background:#fafafa" readonly></div>
-      <div class="field"><label>Total Qty</label><input id="rc-qty" value="${r.totalQty||''}" style="background:#fafafa" readonly></div>
-      <div class="field"><label>Fabric Type</label><input id="rc-fabric" value="${_rdEsc(r.fabricType||'')}" style="background:#fafafa" readonly></div>
     </div>
   </div>
 
