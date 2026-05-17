@@ -33,10 +33,12 @@
      doc.__groovyY        → running content cursor (Y), maintained by builders
    ────────────────────────────────────────────────────────────────────────── */
 
-/* PART 5 — debug A/B toggle. Default false. Set `window.__usePrintEngine =
-   true` in the browser console to route legacy print buttons through this
-   engine's generic fallback without removing the old generators. */
-window.__usePrintEngine = (window.__usePrintEngine === true);
+/* Print engine is now the DEFAULT path for all 5 legacy PDF generators.
+   Default true. Escape hatch preserved: set `window.__usePrintEngine = false`
+   in the browser console to fall back to the old jsPDF generators (their
+   code is intact below each guard in pos.js / gatepass.js / hrm.js). An
+   explicit pre-load `window.__usePrintEngine = false` is also honored. */
+window.__usePrintEngine = (window.__usePrintEngine !== false);
 
 /* ── PART 4 — Color / font / size / layout constants ───────────────────── */
 const PRINT_COLORS = {

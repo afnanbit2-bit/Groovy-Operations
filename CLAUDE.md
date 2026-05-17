@@ -99,12 +99,14 @@ do not call jsPDF directly for new print features.**
 - **Constants:** `PRINT_COLORS`, `PRINT_FONTS`, `PRINT_SIZES`,
   `PRINT_LAYOUT` (A4 portrait in points: 595×842, 36pt margins,
   523pt content width) — declared at the top of `print-engine.js`.
-- **A/B toggle:** `window.__usePrintEngine` (default `false`). When set to
-  `true` in the console, the legacy generators — `generatePOPdf`,
-  `generateGPPdf`, `generateJobSheetPDF`, `exportPayrollPDF`,
-  `downloadPayslipPDF` — short-circuit through `printDocument` (generic)
-  instead of their old jsPDF code. Old generators are untouched and remain
-  the default; this is a non-destructive A/B path only.
+- **Default path (shipped):** `window.__usePrintEngine` now defaults to
+  `true` — all 5 legacy generators (`generatePOPdf`, `generateGPPdf`,
+  `generateJobSheetPDF`, `exportPayrollPDF`, `downloadPayslipPDF`)
+  short-circuit through `printDocument` (generic) by default. The legacy
+  jsPDF code paths are **preserved as fallback only**, intact below each
+  guard in `pos.js` / `gatepass.js` / `hrm.js`. Escape hatch: set
+  `window.__usePrintEngine = false` in the browser console (or pre-load) to
+  restore the old generators if anything breaks in production.
 
 ## Domain map — who owns what
 
