@@ -372,7 +372,7 @@ window.openColorModal=function(id){
   var INK_TYPES=['rubber','plastisol','puff','sublimation','embroidery_thread','other'];
   var INK_LABELS={rubber:'Rubber',plastisol:'Plastisol',puff:'Puff',sublimation:'Sublimation',embroidery_thread:'Embroidery Thread',other:'Other'};
   var container=document.getElementById('color-modal-container');
-  if(!container)return;
+  if(!container){container=document.createElement('div');container.id='color-modal-container';document.body.appendChild(container);}
   container.innerHTML='<div id="color-modal-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:flex-end;justify-content:center" onclick="if(event.target.id===\'color-modal-overlay\')window.closeColorModal()">'+
     '<div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:20px;max-height:90vh;overflow-y:auto">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'+
@@ -439,8 +439,10 @@ window.saveColor=async function(existingId){
     else allColors.unshift(Object.assign({},payload,{_id:id}));
     showToast('Color saved.');
     window.closeColorModal();
-    var mc=document.getElementById('main-content');
-    if(mc)mc.innerHTML=renderColorLibraryPage();
+    // Only re-render the library page if we're on it; when adding a color
+    // mid-recipe (Pantone section) keep the recipe form intact — the new
+    // color is already in allColors so the Pantone search will find it.
+    if(currentPage==='color-library'){var mc=document.getElementById('main-content');if(mc)mc.innerHTML=renderColorLibraryPage();}
   }catch(e){showToast('Save error: '+e.message,true);}
 };
 window.toggleColorArchive=async function(id,currentStatus){
