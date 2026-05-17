@@ -1,0 +1,1 @@
+GROOVY-FONT-PLACEHOLDER: replace this file with the real AptosDisplay-Bold TTF. See FONT_INSTALL.md in this directory. The print engine detects this placeholder (invalid sfnt signature) and falls back to Helvetica in generated PDFs until the real font is uploaded.

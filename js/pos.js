@@ -953,6 +953,14 @@ window.completeQC=async function(fbKey){
 // ── Gate Pass ──
 window.generatePOPdf=function(fbKey){
   const po=allPOs.find(p=>p.fbKey===fbKey);if(!po){showToast('PO not found.',true);return;}
+  if(window.__usePrintEngine&&typeof window.printDocument==='function'){
+    return window.printDocument({type:'generic',data:{
+      documentType:'Production Order',documentNumber:po.id,id:po.id,
+      title:`Production Order ${po.id}`,
+      subtitle:[po.name,po.code].filter(Boolean).join(' · '),
+      bodyHtml:`<p>Product: ${po.name||'—'} (${po.code||'—'})</p><p>Pattern: ${po.pattern||'—'}</p><p>Total Qty: ${po.qty||'—'} pcs</p><p>Ratio: ${po.ratio||'—'}</p><p>Fabric: ${po.fabric||'—'} (${po.fabricCode||'—'})</p><p>Store: ${po.store||'—'}</p><p>Current Stage: ${po.currentStage||'—'}</p><p>Created: ${po.createdAt||'—'} by ${po.createdBy||'—'}</p>`
+    }});
+  }
   const{jsPDF}=window.jspdf;const pdf=new jsPDF({unit:'mm',format:'a4'});
   const W=210,M=14;let y=18;
   // Header

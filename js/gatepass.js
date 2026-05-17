@@ -1323,6 +1323,14 @@ window.gpRejectRequest=async function(reqId){
 // ── PDF: PO ──
 window.generateGPPdf=function(gpId){
   const gp=allPasses.find(p=>p.id===gpId);if(!gp){showToast('Gate pass not found.',true);return;}
+  if(window.__usePrintEngine&&typeof window.printDocument==='function'){
+    return window.printDocument({type:'generic',data:{
+      documentType:'Gate Pass',documentNumber:gp.id,id:gp.id,
+      title:`Gate Pass ${gp.id}`,
+      subtitle:`${gp.date||'—'} · ${gp.time||'—'}`,
+      bodyHtml:`<p>Person: ${gp.name||'—'}</p><p>Issued by: ${gp.issuer||gp.name||'—'}</p><p>Article: ${gp.article||'—'}</p><p>Specification: ${gp.spec||'—'}</p><p>Destination: ${gp.dest||'—'}</p><p>Purpose: ${gp.purpose||'—'}</p><p>Type: ${gp.gpType||'—'}</p><p>Total Units: ${gp.totalUnits||0} · Total Weight: ${gp.totalWeight||0} kg</p>`
+    }});
+  }
   const{jsPDF}=window.jspdf;const pdf=new jsPDF({unit:'mm',format:'a4'});
   const W=210,M=14;let y=18;
   // Header
@@ -1389,6 +1397,14 @@ window.generateJobSheetPDF=function(jobId){
   const recipe=allRecipes.find(r=>r._id===j.recipeId);
   const jt=inferJobType(j);
   const meta=JOB_TYPES[jt]||JOB_TYPES.printing;
+  if(window.__usePrintEngine&&typeof window.printDocument==='function'){
+    return window.printDocument({type:'generic',data:{
+      documentType:'Vendor Job Sheet — '+meta.label,documentNumber:j.poNumber||'—',id:j.poNumber||j._id,
+      title:'Vendor Job Sheet — '+meta.label,
+      subtitle:[j.articleCode,j.articleName].filter(Boolean).join(' · '),
+      bodyHtml:`<p>Article: ${j.articleCode||'—'} ${j.articleName||''}</p><p>Job Type: ${meta.label}</p><p>Total Qty: ${j.totalQty||0} pcs</p><p>Tier: ${j.complexityTier||'—'}</p><p>Vendor: ${j.vendorName||'—'}</p><p>Priority: ${(j.priority||'normal').toUpperCase()}</p>`
+    }});
+  }
   const{jsPDF}=window.jspdf;const pdf=new jsPDF({unit:'mm',format:'a4'});
   const W=210,M=14;let y=18;
   // Header

@@ -1,4 +1,19 @@
 /* Groovy Operations — all styles. Extracted verbatim from index.html. */
+
+/* ── Print design system fonts (self-hosted, /assets/fonts/) ──────────────
+   Screen rendering only — the PDF engine embeds these separately via jsPDF.
+   font-display:swap so page render never blocks on font load. If the TTFs
+   are still placeholders the browser silently uses the fallback stack.
+   See /assets/fonts/FONT_INSTALL.md. */
+@font-face{font-family:'Aptos';src:url('/assets/fonts/Aptos-Regular.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Aptos';src:url('/assets/fonts/Aptos-Bold.ttf') format('truetype');font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:'Aptos';src:url('/assets/fonts/Aptos-Italic.ttf') format('truetype');font-weight:400;font-style:italic;font-display:swap}
+@font-face{font-family:'Aptos';src:url('/assets/fonts/Aptos-BoldItalic.ttf') format('truetype');font-weight:700;font-style:italic;font-display:swap}
+@font-face{font-family:'Aptos Display';src:url('/assets/fonts/AptosDisplay-Regular.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Aptos Display';src:url('/assets/fonts/AptosDisplay-Bold.ttf') format('truetype');font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:'Jameel Noori Nastaleeq';src:url('/assets/fonts/JameelNooriNastaleeq-Regular.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Jameel Noori Nastaleeq';src:url('/assets/fonts/JameelNooriNastaleeq-Bold.ttf') format('truetype');font-weight:700;font-style:normal;font-display:swap}
+
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--dark:#000000;--red:#000000;--bg:#F4F4F4;--surface:#fff;--border:#D9D9D9;--text:#111111;--muted:#6B6B6B;--green:#111111;--amber:#555555;--soft:#EFEFEF;--sidebar:220px;
   /* Semantic accent palette — used for HRM/operational state, not legacy widgets */

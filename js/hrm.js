@@ -2246,6 +2246,14 @@ window.exportPayrollExcel=function(){
 window.exportPayrollPDF=function(){
   if(!_payrollComputed||!_payrollComputed.rows.length)return showToast('Process the month first.',true);
   if(!window.jspdf)return showToast('PDF library not loaded yet, retry in a moment.',true);
+  if(window.__usePrintEngine&&typeof window.printDocument==='function'){
+    const t=_payrollComputed.totals,mk=_payrollComputed.monthKey;
+    return window.printDocument({type:'generic',data:{
+      documentType:'Salary Sheet',documentNumber:mk,id:mk,
+      title:'Salary Sheet',subtitle:_payrollMonthLabel(mk),
+      bodyHtml:`<p>Employees: ${_payrollComputed.rows.length}</p><p>Gross: ${_hrmFmtPKR(t.gross)}</p><p>Advance: ${_hrmFmtPKR(t.advance)}</p><p>Loan: ${_hrmFmtPKR(t.loan)}</p><p>Other: ${_hrmFmtPKR(t.other)}</p><p>Net Payable: ${_hrmFmtPKR(t.net)}</p><p>Prepared by: ${session.name}</p>`
+    }});
+  }
   const{jsPDF}=window.jspdf;
   const pdf=new jsPDF({unit:'mm',format:'a4',orientation:'landscape'});
   const monthLabel=_payrollMonthLabel(_payrollComputed.monthKey);
@@ -2294,6 +2302,14 @@ window.downloadPayslipPDF=function(slipId,employeeId){
     if(r)slip={...r,month:_payrollMonth};
   }
   if(!slip)return showToast('Payslip not found.',true);
+  if(window.__usePrintEngine&&typeof window.printDocument==='function'){
+    const ml=_payrollMonthLabel(slip.month||_payrollMonth);
+    return window.printDocument({type:'generic',data:{
+      documentType:'Payslip',documentNumber:slip.employeeId||slip._id||'—',id:(slip.employeeName||'payslip'),
+      title:`Payslip — ${slip.employeeName||'—'}`,subtitle:`${slip.designation||''} · ${ml}`.trim(),
+      bodyHtml:`<p>Employee: ${slip.employeeName||'—'}</p><p>Designation: ${slip.designation||'—'}</p><p>Grade: ${slip.paygrade||'—'}</p><p>Month: ${ml}</p><p>Net Payable: ${_hrmFmtPKR(slip.netPayable||0)}</p>`
+    }});
+  }
   const{jsPDF}=window.jspdf;
   const pdf=new jsPDF({unit:'mm',format:'a4'});
   const monthLabel=_payrollMonthLabel(slip.month||_payrollMonth);

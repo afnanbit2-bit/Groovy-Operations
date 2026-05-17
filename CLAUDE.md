@@ -20,6 +20,10 @@ Two contributors: Afnan (HRM/operations side, with Claude) and Ammar Shah
                      the 5 load-order-sensitive blocks: showPage wrap,
                      toggleNotifPanel wrap, outside-click, Escape/swipe,
                      onAuthStateChanged).
+/js/print-engine.js  shared print/PDF design system (foundational). Public
+                     API window.printDocument(); internal _render* components;
+                     PRINT_COLORS/FONTS/SIZES/LAYOUT constants. See "Print
+                     design system" section below.
 /js/auth.js          USER_DEFS, doLogin/doLogout, showSetup/showLogin,
                      runSetup, startApp, renderUsers, permission helpers.
 /js/pos.js           loadData/loadBundles, PO create/registry/detail,
@@ -37,8 +41,8 @@ Two contributors: Afnan (HRM/operations side, with Claude) and Ammar Shah
 ```
 
 Load order is fixed in `index.html`:
-`shared → auth → pos → embellishments → hrm → store → gatepass → activity`,
-then the bootstrap module. All `/js/*.js` are **plain global classic
+`shared → print-engine → auth → pos → embellishments → hrm → store →
+gatepass → activity`, then the bootstrap module. All `/js/*.js` are **plain global classic
 scripts — no `import`/`export`**. They share one global lexical scope, so
 top-level `let/const` are visible across files (declared exactly once);
 top-level `function`/`var` also become `window.*`. Firebase is the ONLY ES
@@ -59,6 +63,48 @@ Firebase (the 5 hoisted blocks) lives in `window.__bootApp()` in
 - Images: Cloudinary, unsigned preset `groovy-ops`
 - PDF: jsPDF · Excel: SheetJS (both via CDN)
 - Hosting: Netlify (auto-deploy on push to `main`)
+
+## Print design system
+
+Foundational shared engine for ALL print/PDF output. **Every future print
+output (Production Order, Embroidery Vendor Sheet, Sublimation Vendor Sheet,
+Gate Pass, QC Report, Placement Sheet, …) MUST route through this engine —
+do not call jsPDF directly for new print features.**
+
+- **Location:** `/js/print-engine.js` — plain global classic script, loaded
+  in `index.html` AFTER `shared.js` and BEFORE `auth.js` / all domain files.
+- **Fonts:** self-hosted in `/assets/fonts/` — Aptos (regular/bold/italic/
+  bold-italic), Aptos Display (regular/bold), Jameel Noori Nastaleeq
+  (regular/bold). `@font-face` (screen, `font-display:swap`) lives at the top
+  of `css/main.css`; the engine embeds the same TTFs into PDFs via
+  `addFileToVFS()` + `addFont()`. The committed files are **placeholders**
+  (fonts unreachable from the sandbox) — see `/assets/fonts/FONT_INSTALL.md`.
+  Until real TTFs are uploaded the engine auto-detects the invalid signature
+  and falls back to Helvetica in PDFs (nothing breaks); screen uses the CSS
+  fallback stack. Known jsPDF limit: Urdu is drawn unshaped.
+- **Public API (only global):**
+  `window.printDocument({ type, data, filename })` where `type` ∈
+  `po | embroidery-vendor | sublimation-vendor | gate-pass |
+  placement-sheet | qc-report | generic`. Only `generic` is implemented;
+  any other type logs a `console.warn` and renders the generic fallback
+  (header + optional hero title + `data.bodyHtml` as text + bilingual
+  footer). Opens the PDF in a new tab AND triggers download. Variant
+  builders are added in later prompts and must reuse the components below.
+- **Internal components (NOT global; JSDoc'd in the file):**
+  `_renderHeader`, `_renderFooter` (auto every page via `_stampFooters`),
+  `_renderSectionHeader`, `_renderBilingualLabel`, `_renderInfoTable`,
+  `_renderSignatureRow`, `_renderDivider`, `_renderTitleBlock`. They read
+  `doc.__groovyFonts` (font resolver), `doc.__groovyDocType` (footer label)
+  and maintain `doc.__groovyY` (running content cursor).
+- **Constants:** `PRINT_COLORS`, `PRINT_FONTS`, `PRINT_SIZES`,
+  `PRINT_LAYOUT` (A4 portrait in points: 595×842, 36pt margins,
+  523pt content width) — declared at the top of `print-engine.js`.
+- **A/B toggle:** `window.__usePrintEngine` (default `false`). When set to
+  `true` in the console, the legacy generators — `generatePOPdf`,
+  `generateGPPdf`, `generateJobSheetPDF`, `exportPayrollPDF`,
+  `downloadPayslipPDF` — short-circuit through `printDocument` (generic)
+  instead of their old jsPDF code. Old generators are untouched and remain
+  the default; this is a non-destructive A/B path only.
 
 ## Domain map — who owns what
 
