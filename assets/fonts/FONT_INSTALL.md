@@ -5,24 +5,25 @@ The print engine (`/js/print-engine.js`) and the screen `@font-face` rules in
 
 ## Current status (updated)
 
-Real Aptos TTFs have been **partially** uploaded. Per-family/style the engine
-embeds real fonts where present and falls back to Helvetica where a stub
-remains (validation is per file, so this mixed state is safe):
+7 of 8 fonts are now real. Only the JNN **Bold** weight remains a stub
+(bold-Urdu source not available). Validation is per file, so the engine
+embeds all real fonts and falls back to Helvetica only for that one stub:
 
 | File | State | Source |
 |---|---|---|
-| `Aptos-Regular.ttf` | ✅ real (~235 KB) | aptos.ttf |
-| `Aptos-Bold.ttf` | ✅ real (~236 KB) | aptos-bold.ttf |
-| `Aptos-BoldItalic.ttf` | ✅ real (~236 KB) | aptos-bold.ttf (bold used as bold-italic substitute) |
-| `AptosDisplay-Bold.ttf` | ✅ real (~236 KB) | aptos-black.ttf (black used for Display Bold weight) |
-| `Aptos-Italic.ttf` | ⏳ still placeholder | needs **aptos-italic.ttf** (not yet provided) |
-| `AptosDisplay-Regular.ttf` | ⏳ still placeholder | needs **aptos-semibold.ttf** (not yet provided) |
-| `JameelNooriNastaleeq-Regular.ttf` | ⏳ still placeholder | Urdu font not yet provided |
-| `JameelNooriNastaleeq-Bold.ttf` | ⏳ still placeholder | Urdu font not yet provided |
+| `Aptos-Regular.ttf` | ✅ real (~230 KB) | aptos.ttf |
+| `Aptos-Bold.ttf` | ✅ real (~230 KB) | aptos-bold.ttf |
+| `Aptos-Italic.ttf` | ✅ real (~232 KB) | aptos-italic.ttf |
+| `Aptos-BoldItalic.ttf` | ✅ real (~230 KB) | aptos-bold.ttf (bold used as bold-italic substitute) |
+| `AptosDisplay-Regular.ttf` | ✅ real (~230 KB) | aptos-semibold.ttf (semibold for Display Regular weight) |
+| `AptosDisplay-Bold.ttf` | ✅ real (~230 KB) | aptos-black.ttf (black for Display Bold weight) |
+| `JameelNooriNastaleeq-Regular.ttf` | ✅ real (~10.3 MB) | Jameel Noori Nastaleeq Regular |
+| `JameelNooriNastaleeq-Bold.ttf` | ⏳ still placeholder | bold Urdu source not available (skipped) |
 
-To finish: upload `aptos-italic.ttf` → `Aptos-Italic.ttf`,
-`aptos-semibold.ttf` → `AptosDisplay-Regular.ttf`, and the two Jameel Noori
-Nastaleeq weights. No code change needed — the engine picks them up on deploy.
+To finish: supply a Jameel Noori Nastaleeq **Bold** TTF →
+`JameelNooriNastaleeq-Bold.ttf`. No code change needed — the engine picks
+it up on deploy. (Note: the JNN Regular TTF is ~10 MB; jsPDF base64-embeds
+it into every PDF that uses Urdu, so those PDFs will be large.)
 
 ---
 
