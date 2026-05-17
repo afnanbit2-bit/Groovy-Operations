@@ -235,6 +235,54 @@ function _urduOn(doc) {
   return !!(doc && doc.__groovyUrdu);
 }
 
+/* Write a lightweight interim page into the pre-opened preview tab so it is
+   never a stark about:blank while the (possibly slow, bilingual) PDF is
+   generated. Best-effort; ignored if the blank window isn't writable. */
+function _previewLoading(win, label) {
+  if (!win) return;
+  try {
+    win.document.open();
+    win.document.write(
+      '<!doctype html><html><head><meta charset="utf-8">' +
+      '<title>' + label + ' — generating…</title><style>' +
+      'html,body{height:100%;margin:0}' +
+      'body{display:flex;align-items:center;justify-content:center;' +
+      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;' +
+      'background:#F4F4F4;color:#111}.b{text-align:center;padding:24px}' +
+      '.s{width:34px;height:34px;border:3px solid #ccc;border-top-color:#111;' +
+      'border-radius:50%;margin:0 auto 14px;animation:r .8s linear infinite}' +
+      '@keyframes r{to{transform:rotate(360deg)}}' +
+      '.t{font-size:15px;font-weight:600}.h{font-size:12px;color:#6B6B6B;margin-top:6px}' +
+      '</style></head><body><div class="b"><div class="s"></div>' +
+      '<div class="t">Generating ' + label + ' PDF…</div>' +
+      '<div class="h">Bilingual documents embed a large Urdu font — ' +
+      'this can take a few seconds.</div></div></body></html>'
+    );
+    win.document.close();
+  } catch (e) { /* not writable in some browsers — leave as-is */ }
+}
+
+/* Replace the preview tab with a readable error instead of a blank/closed
+   tab when generation fails. */
+function _previewError(win, msg) {
+  if (!win) return;
+  const safe = String(msg == null ? '' : msg).replace(/[<>&]/g, '');
+  try {
+    win.document.open();
+    win.document.write(
+      '<!doctype html><meta charset="utf-8">' +
+      '<body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;' +
+      'padding:24px;color:#7B1F2A"><h3 style="margin:0 0 8px">' +
+      'PDF generation failed</h3><div style="color:#111;font-size:13px">' +
+      safe + '</div><div style="color:#6B6B6B;font-size:12px;margin-top:10px">' +
+      'Close this tab and retry. If it persists, report it.</div></body>'
+    );
+    win.document.close();
+  } catch (e) {
+    try { win.close(); } catch (e2) { /* noop */ }
+  }
+}
+
 /* Register fetched fonts onto this jsPDF instance; build the resolver map.
    Logical family → actual jsPDF font name (Helvetica when not embedded). */
 function _registerFonts(doc, fontState) {
@@ -926,9 +974,13 @@ window.printDocument = async function (opts) {
   }
 
   // Open the preview tab synchronously NOW (before the async font fetch) so
-  // it counts as part of the click gesture and isn't popup-blocked.
+  // it counts as part of the click gesture and isn't popup-blocked. Show an
+  // interim page immediately so it's never a stark about:blank during the
+  // (slow for bilingual) font fetch + subset.
+  const _docLabel = data.documentType || _PRINT_DOC_LABELS[type] || 'Document';
   let previewWin = null;
   try { previewWin = window.open('', '_blank'); } catch (e) { previewWin = null; }
+  _previewLoading(previewWin, _docLabel);
 
   // Resolve the Urdu policy: explicit data.urduLevel wins, else the per-type
   // default, else 'minimal'. Only 'full' fetches/embeds the heavy JNN TTF.
@@ -960,7 +1012,7 @@ window.printDocument = async function (opts) {
   } catch (e) {
     console.error('[print-engine] render failed:', e);
     if (typeof showToast === 'function') showToast('PDF generation failed: ' + e.message, true);
-    try { if (previewWin) previewWin.close(); } catch (e2) { /* noop */ }
+    _previewError(previewWin, e.message);
     return;
   }
 
@@ -976,7 +1028,7 @@ window.printDocument = async function (opts) {
   } catch (e) {
     console.error('[print-engine] PDF serialization failed:', e);
     if (typeof showToast === 'function') showToast('PDF generation failed: ' + e.message, true);
-    try { if (previewWin) previewWin.close(); } catch (e2) { /* noop */ }
+    _previewError(previewWin, e.message);
     return;
   }
 

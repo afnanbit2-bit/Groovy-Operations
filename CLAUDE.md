@@ -96,8 +96,10 @@ do not call jsPDF directly for new print features.**
   registry in `printDocument`). Any not-yet-built type logs a
   `console.warn` and renders the generic fallback (header + optional hero
   title + `data.bodyHtml` as text + bilingual footer). Opens the PDF in a
-  new tab AND triggers download. Remaining variant builders reuse the
-  components below.
+  new tab AND triggers download. The pre-opened tab shows a `_previewLoading`
+  interim page (never a stark `about:blank`) during the font fetch/subset,
+  and `_previewError` renders a readable failure page instead of a
+  blank/closed tab. Remaining variant builders reuse the components below.
 - **Internal components (NOT global; JSDoc'd in the file):**
   `_renderHeader`, `_renderFooter` (auto every page via `_stampFooters`),
   `_renderSectionHeader`, `_renderBilingualLabel`, `_renderInfoTable`,
