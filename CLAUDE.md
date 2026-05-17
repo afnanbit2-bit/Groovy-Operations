@@ -90,11 +90,14 @@ do not call jsPDF directly for new print features.**
 - **Public API (only global):**
   `window.printDocument({ type, data, filename })` where `type` ∈
   `po | embroidery-vendor | sublimation-vendor | gate-pass |
-  placement-sheet | qc-report | generic`. Only `generic` is implemented;
-  any other type logs a `console.warn` and renders the generic fallback
-  (header + optional hero title + `data.bodyHtml` as text + bilingual
-  footer). Opens the PDF in a new tab AND triggers download. Variant
-  builders are added in later prompts and must reuse the components below.
+  placement-sheet | qc-report | generic`. **Implemented variants:**
+  `generic` (fallback) and ✅ **`gate-pass`** (single-page bilingual
+  transit document — `_renderGatePass`, dispatched via the `_VARIANTS`
+  registry in `printDocument`). Any not-yet-built type logs a
+  `console.warn` and renders the generic fallback (header + optional hero
+  title + `data.bodyHtml` as text + bilingual footer). Opens the PDF in a
+  new tab AND triggers download. Remaining variant builders reuse the
+  components below.
 - **Internal components (NOT global; JSDoc'd in the file):**
   `_renderHeader`, `_renderFooter` (auto every page via `_stampFooters`),
   `_renderSectionHeader`, `_renderBilingualLabel`, `_renderInfoTable`,
@@ -114,6 +117,11 @@ do not call jsPDF directly for new print features.**
   `_renderInfoTable`, `_renderSignatureRow`) silently drops its Urdu side
   (no tofu). Explicit `data.urduLevel` wins; otherwise the per-type default
   in `_PRINT_URDU_DEFAULTS` applies; an unknown type/level → `'minimal'`.
+  `gate-pass` is **forced to `'full'`** regardless of caller input (the
+  variant is inherently bilingual for gate guards/vendors). The footer Urdu
+  tail is type-aware via `_footerUr(documentType)` /
+  `_PRINT_FOOTER_UR_BY_TYPE` (Gate Pass → `گیٹ پاس — صرف اندرونی استعمال`,
+  Production Order → `پروڈکشن آرڈر …`, else generic `صرف اندرونی استعمال`).
   Resolution sets `doc.__groovyUrdu` (the `_urduOn(doc)` flag components
   read) — a `'full'` request with JNN unavailable degrades to clean
   English-only, never tofu. Font fetch is split (`_fontCacheCore` always,
@@ -123,8 +131,8 @@ do not call jsPDF directly for new print features.**
 
   | Default `urduLevel` | Types |
   |---|---|
-  | `minimal` | `generic`, `gate-pass`, `payroll-sheet`, `payslip` |
-  | `full` | `po`, `embroidery-vendor`, `sublimation-vendor`, `qc-report`, `placement-sheet` |
+  | `minimal` | `generic`, `payroll-sheet`, `payslip` |
+  | `full` | `gate-pass` (forced), `po`, `embroidery-vendor`, `sublimation-vendor`, `qc-report`, `placement-sheet` |
 
   Measured (same PO, real JNN): `minimal` ≈ 116 KB / 0 JNN fetch · `full`
   ≈ 552 KB / JNN fetched. jsPDF 2.5.1 subsets embedded TTFs so `full` is far

@@ -1324,12 +1324,13 @@ window.gpRejectRequest=async function(reqId){
 window.generateGPPdf=function(gpId){
   const gp=allPasses.find(p=>p.id===gpId);if(!gp){showToast('Gate pass not found.',true);return;}
   if(window.__usePrintEngine&&typeof window.printDocument==='function'){
-    return window.printDocument({type:'generic',data:{
+    return window.printDocument({type:'gate-pass',data:Object.assign({},gp,{
       documentType:'Gate Pass',documentNumber:gp.id,id:gp.id,
-      title:`Gate Pass ${gp.id}`,
-      subtitle:`${gp.date||'—'} · ${gp.time||'—'}`,
-      bodyHtml:`<p>Person: ${gp.name||'—'}</p><p>Issued by: ${gp.issuer||gp.name||'—'}</p><p>Article: ${gp.article||'—'}</p><p>Specification: ${gp.spec||'—'}</p><p>Destination: ${gp.dest||'—'}</p><p>Purpose: ${gp.purpose||'—'}</p><p>Type: ${gp.gpType||'—'}</p><p>Total Units: ${gp.totalUnits||0} · Total Weight: ${gp.totalWeight||0} kg</p>`
-    }});
+      issuedBy:gp.issuer||gp.name||'',
+      person:gp.name,destination:gp.dest,
+      gpType:(gp.gpType==='fabric'?'fabric-in':'outward'),
+      urduLevel:'full'
+    })});
   }
   const{jsPDF}=window.jspdf;const pdf=new jsPDF({unit:'mm',format:'a4'});
   const W=210,M=14;let y=18;

@@ -103,7 +103,7 @@ const _PRINT_DOC_LABELS = {
    Only 'full' incurs the ~14 MB base64 font payload per PDF. */
 const _PRINT_URDU_DEFAULTS = {
   'generic': 'minimal',
-  'gate-pass': 'minimal',
+  'gate-pass': 'full',
   'payroll-sheet': 'minimal',
   'payslip': 'minimal',
   'po': 'full',
@@ -113,8 +113,17 @@ const _PRINT_URDU_DEFAULTS = {
   'placement-sheet': 'full'
 };
 
-/* Fixed Urdu footer string per the print spec. */
-const _PRINT_FOOTER_UR = 'پروڈکشن آرڈر — صرف اندرونی استعمال';
+/* Urdu footer tail, keyed by the English documentType label so each
+   variant gets the right phrase (not a hardcoded "Production Order").
+   Falls back to a generic "internal use only" for unmapped types. */
+const _PRINT_FOOTER_UR = 'پروڈکشن آرڈر — صرف اندرونی استعمال'; // Production Order (default/legacy)
+const _PRINT_FOOTER_UR_BY_TYPE = {
+  'Production Order': 'پروڈکشن آرڈر — صرف اندرونی استعمال',
+  'Gate Pass': 'گیٹ پاس — صرف اندرونی استعمال'
+};
+function _footerUr(docType) {
+  return _PRINT_FOOTER_UR_BY_TYPE[docType] || 'صرف اندرونی استعمال';
+}
 
 /* Self-hosted font manifest, split so the heavy Urdu TTF is only ever
    fetched when a document actually needs it. style values match jsPDF
@@ -333,10 +342,11 @@ function _renderFooter(doc, pageNum, totalPages) {
 
   if (_urduOn(doc)) {
     // Bilingual: Urdu tail right-aligned, Latin part ending just left of it.
+    const urTail = _footerUr(dt);
     _setFont(doc, PRINT_FONTS.urdu, 'normal', PRINT_SIZES.footer, PRINT_COLORS.greyAccent);
     let urW = 0;
-    try { urW = doc.getTextWidth(_PRINT_FOOTER_UR); } catch (e) { urW = 0; }
-    doc.text(_PRINT_FOOTER_UR, R, y, { align: 'right' });
+    try { urW = doc.getTextWidth(urTail); } catch (e) { urW = 0; }
+    doc.text(urTail, R, y, { align: 'right' });
     const latin = 'GROOVY · ' + dt + ' · Internal Use Only · Confidential | ';
     _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.footer, PRINT_COLORS.greyAccent);
     doc.text(latin, R - urW, y, { align: 'right' });
@@ -656,6 +666,242 @@ function _renderGeneric(doc, data) {
   doc.__groovyY = y;
 }
 
+/* ── Gate Pass variant ─────────────────────────────────────────────────────
+   Single-page bilingual transit document. Composes the shared components
+   (_renderHeader / _renderInfoTable / _renderSectionHeader /
+   _renderBilingualLabel / _renderFooter via _stampFooters) plus a few
+   bespoke blocks (type banner, items table, signature boxes). Requires
+   urduLevel 'full' (forced in printDocument for this type). */
+
+function _gpTo12(h, mi) {
+  const ap = h >= 12 ? 'PM' : 'AM';
+  let hh = h % 12; if (hh === 0) hh = 12;
+  return hh + ':' + String(mi).padStart(2, '0') + ' ' + ap;
+}
+/* Tolerant DD - MM - YYYY formatter; unparseable → original; empty → em-dash. */
+function _gpFmtDate(v) {
+  if (v == null || v === '') return '—';
+  let d = null, m;
+  if (v instanceof Date) d = v;
+  else {
+    const s = String(v).trim();
+    if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) d = new Date(+m[1], +m[2] - 1, +m[3]);
+    else if ((m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/))) d = new Date(+m[3], +m[2] - 1, +m[1]);
+    else { const t = Date.parse(s); if (!isNaN(t)) d = new Date(t); }
+  }
+  if (!d || isNaN(d.getTime())) return String(v);
+  return String(d.getDate()).padStart(2, '0') + ' - ' +
+    String(d.getMonth() + 1).padStart(2, '0') + ' - ' + d.getFullYear();
+}
+/* Tolerant 12-hour formatter; already-12h passes through; empty → em-dash. */
+function _gpFmtTime(v) {
+  if (v == null || v === '') return '—';
+  const s = String(v).trim();
+  if (/[ap]\.?\s?m/i.test(s)) return s;
+  let m = s.match(/^(\d{1,2}):(\d{2})/);
+  if (m) return _gpTo12(+m[1], +m[2]);
+  const t = Date.parse(s);
+  if (!isNaN(t)) { const d = new Date(t); return _gpTo12(d.getHours(), d.getMinutes()); }
+  return String(v);
+}
+/* Transit-type → bilingual labels. Unknown/garments → outward (per spec). */
+function _gpTypeLabels(t) {
+  switch (String(t || '').toLowerCase()) {
+    case 'returns':
+      return { en: 'GATE PASS — RETURNS', ur: 'گیٹ پاس — واپسی', word: 'Returns' };
+    case 'fabric-in': case 'fabric_in': case 'fabric':
+      return { en: 'GATE PASS — FABRIC-IN', ur: 'گیٹ پاس — کپڑے کی آمد', word: 'Fabric-in' };
+    case 'outward': case 'garments': default:
+      return { en: 'GATE PASS — OUTWARD', ur: 'گیٹ پاس — باہر', word: 'Outward' };
+  }
+}
+function _gpDash(v) {
+  return (v == null || String(v).trim() === '') ? '—' : String(v);
+}
+
+/**
+ * Render the Gate Pass variant.
+ * @param {jsPDF} doc
+ * @param {object} data  the gate-pass record (+ documentType/documentNumber/
+ *                       id/issuedBy meta added by the caller's guard).
+ */
+function _renderGatePass(doc, data) {
+  data = data || {};
+  const L = PRINT_LAYOUT.marginLeft;
+  const W = PRINT_LAYOUT.contentWidth;
+  const R = L + W;
+  const sess = (typeof session !== 'undefined' && session) ? session : null;
+  const line = _pc(PRINT_COLORS.greyLine);
+  const shade = _pc(PRINT_COLORS.greyShade);
+
+  const issuedBy = _gpDash(data.issuedBy || data.issuer || data.name);
+  // 1) HEADER
+  _renderHeader(doc, {
+    documentType: 'Gate Pass',
+    documentNumber: data.documentNumber || data.id || '',
+    issuedDate: data.date ? _gpFmtDate(data.date) : new Date().toLocaleDateString('en-GB'),
+    issuedBy: (issuedBy === '—' && sess) ? sess.name : issuedBy
+  });
+
+  // 2) TYPE BANNER — full-width grey, centred bilingual
+  const tl = _gpTypeLabels(data.gpType);
+  let y = (doc.__groovyY || PRINT_LAYOUT.marginTop) + 12;
+  const bPad = 10, bandH = bPad + 16 + bPad;
+  doc.setFillColor(shade[0], shade[1], shade[2]);
+  doc.rect(L, y, W, bandH, 'F');
+  const baseY = y + bPad + 13;
+  _setFont(doc, PRINT_FONTS.display, 'bold', PRINT_SIZES.sectionTitle, PRINT_COLORS.text);
+  const enW = doc.getTextWidth(tl.en);
+  const sep = '  —  ';
+  const sepW = doc.getTextWidth(sep);
+  _setFont(doc, PRINT_FONTS.urdu, 'normal', 12, PRINT_COLORS.text);
+  const urW = _urduOn(doc) ? doc.getTextWidth(tl.ur) : 0;
+  const totalW = enW + (_urduOn(doc) ? sepW + urW : 0);
+  let bx = L + (W - totalW) / 2;
+  _setFont(doc, PRINT_FONTS.display, 'bold', PRINT_SIZES.sectionTitle, PRINT_COLORS.text);
+  doc.text(tl.en, bx, baseY);
+  bx += enW;
+  if (_urduOn(doc)) {
+    _setFont(doc, PRINT_FONTS.display, 'bold', PRINT_SIZES.sectionTitle, PRINT_COLORS.text);
+    doc.text(sep, bx, baseY);
+    bx += sepW;
+    _setFont(doc, PRINT_FONTS.urdu, 'normal', 12, PRINT_COLORS.text);
+    doc.text(tl.ur, bx, baseY);
+  }
+  doc.__groovyY = y + bandH;
+
+  // 3) SECTION 1 — IDENTITY TABLE
+  _renderInfoTable(doc, {
+    startY: doc.__groovyY + 12,
+    rows: [
+      { labelEn: 'Date', labelUr: 'تاریخ', value: _gpFmtDate(data.date) },
+      { labelEn: 'Time', labelUr: 'وقت', value: _gpFmtTime(data.time) },
+      { labelEn: 'Type', labelUr: 'قسم', value: tl.word },
+      { labelEn: 'Person', labelUr: 'شخص', value: _gpDash(data.person || data.recipientName || data.name) },
+      { labelEn: 'Destination', labelUr: 'منزل', value: _gpDash(data.destination || data.dest) },
+      { labelEn: 'Purpose', labelUr: 'مقصد', value: _gpDash(data.purpose) }
+    ]
+  });
+
+  // 4) SECTION 2 — ITEMS
+  _renderSectionHeader(doc, { titleEn: 'ITEMS', titleUr: 'اشیاء' });
+  const cols = [
+    { en: '#', ur: '', w: 28 },
+    { en: 'Article', ur: 'مضمون', w: 207 },
+    { en: 'Spec', ur: '', w: 120 },
+    { en: 'Units', ur: 'مقدار', w: 84 },
+    { en: 'Weight', ur: 'وزن', w: 84 }
+  ];
+  const items = Array.isArray(data.items) ? data.items : [];
+  const hdrH = 30, rowH = 22;
+  const maxY = PRINT_LAYOUT.pageHeight - PRINT_LAYOUT.marginBottom - 28;
+
+  const drawItemsHeader = (yy) => {
+    doc.setFillColor(shade[0], shade[1], shade[2]);
+    doc.rect(L, yy, W, hdrH, 'F');
+    let cx = L;
+    cols.forEach((c) => {
+      doc.setDrawColor(line[0], line[1], line[2]);
+      doc.setLineWidth(0.25);
+      doc.rect(cx, yy, c.w, hdrH, 'S');
+      _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
+      doc.text(c.en, cx + 5, yy + 12, { maxWidth: c.w - 8 });
+      if (c.ur && _urduOn(doc)) {
+        _setFont(doc, PRINT_FONTS.urdu, 'normal', 9, PRINT_COLORS.greyAccent);
+        doc.text(c.ur, cx + 5, yy + 24, { maxWidth: c.w - 8 });
+      }
+      cx += c.w;
+    });
+    return yy + hdrH;
+  };
+
+  let ty = drawItemsHeader(doc.__groovyY + 4);
+  const drawRow = (cells) => {
+    if (ty + rowH > maxY) { doc.addPage(); ty = drawItemsHeader(PRINT_LAYOUT.marginTop); }
+    let cx = L;
+    cols.forEach((c, i) => {
+      doc.setDrawColor(line[0], line[1], line[2]);
+      doc.setLineWidth(0.25);
+      doc.rect(cx, ty, c.w, rowH, 'S');
+      _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
+      const v = cells[i];
+      if (v != null && v !== '') doc.text(String(v), cx + 5, ty + 14, { maxWidth: c.w - 8 });
+      cx += c.w;
+    });
+    ty += rowH;
+  };
+
+  if (items.length) {
+    items.forEach((it, idx) => {
+      drawRow([
+        idx + 1,
+        _gpDash(it.article || data.article),
+        _gpDash(it.spec || it.size || data.spec),
+        _gpDash(it.units),
+        _gpDash(it.weight)
+      ]);
+    });
+  } else {
+    for (let i = 0; i < 4; i++) drawRow([i + 1, '', '', '', '']);
+  }
+  doc.__groovyY = ty;
+
+  // 5) SECTION 3 — REMARKS
+  _renderSectionHeader(doc, { titleEn: 'REMARKS', titleUr: 'تبصرہ' });
+  let ry = doc.__groovyY + 8;
+  const remarks = data.remarks || data.notes;
+  if (remarks && String(remarks).trim()) {
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+    const lines = doc.splitTextToSize(String(remarks).trim(), W);
+    lines.forEach((ln) => {
+      if (ry > maxY) { doc.addPage(); ry = PRINT_LAYOUT.marginTop; }
+      doc.text(ln, L, ry); ry += 15;
+    });
+  } else {
+    doc.setDrawColor(line[0], line[1], line[2]);
+    doc.setLineWidth(0.5);
+    for (let i = 0; i < 3; i++) { ry += 16; doc.line(L, ry, R, ry); }
+    ry += 6;
+  }
+  doc.__groovyY = ry;
+
+  // 6) SECTION 4 — SIGNATURE BLOCKS
+  const blockGap = 6;
+  const blockW = (W - blockGap) / 2;
+  const blockH = 96;
+  let sy = doc.__groovyY + 12;
+  if (sy + blockH + 70 > PRINT_LAYOUT.pageHeight - PRINT_LAYOUT.marginBottom) {
+    doc.addPage(); sy = PRINT_LAYOUT.marginTop;
+  }
+
+  const drawSigBlock = (bxx, byy, headEn, headUr, nameVal) => {
+    doc.setDrawColor(line[0], line[1], line[2]);
+    doc.setLineWidth(0.5);
+    doc.rect(bxx, byy, blockW, blockH, 'S');
+    const pad = 12;
+    _renderBilingualLabel(doc, { en: headEn, ur: headUr, x: bxx + pad, y: byy + pad + 9, fontSize: 11 });
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
+    doc.text('Name: ' + (nameVal && nameVal !== '—' ? nameVal : '________________'), bxx + pad, byy + pad + 33);
+    doc.text('Signature: ________________', bxx + pad, byy + pad + 53);
+    doc.text('Date: ________________', bxx + pad, byy + pad + 73);
+  };
+  drawSigBlock(L, sy, 'Issued by', 'جاری کردہ', issuedBy);
+  drawSigBlock(L + blockW + blockGap, sy, 'Received by', 'وصول کنندہ', null);
+
+  // Gate guard — centred 60% box
+  const gW = W * 0.6;
+  const gx = L + (W - gW) / 2;
+  const gy = sy + blockH + 12;
+  const gH = 58;
+  doc.setDrawColor(line[0], line[1], line[2]);
+  doc.setLineWidth(0.5);
+  doc.rect(gx, gy, gW, gH, 'S');
+  _renderBilingualLabel(doc, { en: 'Gate Guard Sign', ur: 'گیٹ گارڈ کے دستخط', x: gx + 12, y: gy + 21, fontSize: 11 });
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.bodySmall, PRINT_COLORS.greyAccent);
+  doc.text('Signature: ________________     Time: ________', gx + 12, gy + 43);
+  doc.__groovyY = gy + gH;
+}
+
 /* ── PART 2 — Public API ───────────────────────────────────────────────────
    The ONLY global this engine exposes. */
 window.printDocument = async function (opts) {
@@ -671,10 +917,12 @@ window.printDocument = async function (opts) {
 
   const known = ['po', 'embroidery-vendor', 'sublimation-vendor',
     'gate-pass', 'placement-sheet', 'qc-report', 'generic'];
-  if (type !== 'generic') {
-    console.warn("Print variant '" + type + "' not yet implemented — falling back to generic");
-  } else if (known.indexOf(type) === -1) {
+  const _VARIANTS = { 'gate-pass': _renderGatePass };
+  const render = _VARIANTS[type] || _renderGeneric;
+  if (known.indexOf(type) === -1) {
     console.warn("Unknown print type '" + type + "' — falling back to generic");
+  } else if (type !== 'generic' && !_VARIANTS[type]) {
+    console.warn("Print variant '" + type + "' not yet implemented — falling back to generic");
   }
 
   // Open the preview tab synchronously NOW (before the async font fetch) so
@@ -689,6 +937,7 @@ window.printDocument = async function (opts) {
   if (_levels.indexOf(urduLevel) === -1) {
     urduLevel = _PRINT_URDU_DEFAULTS[type] || 'minimal';
   }
+  if (type === 'gate-pass') urduLevel = 'full'; // variant requires bilingual
   const embedUrdu = (urduLevel === 'full');
 
   const { jsPDF } = window.jspdf;
@@ -706,8 +955,7 @@ window.printDocument = async function (opts) {
   doc.__groovyY = PRINT_LAYOUT.marginTop;
 
   try {
-    // Only the generic variant exists today; every type renders generic.
-    _renderGeneric(doc, data);
+    render(doc, data);
     _stampFooters(doc);
   } catch (e) {
     console.error('[print-engine] render failed:', e);
