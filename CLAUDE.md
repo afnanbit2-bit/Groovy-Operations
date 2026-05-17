@@ -77,11 +77,15 @@ do not call jsPDF directly for new print features.**
   bold-italic), Aptos Display (regular/bold), Jameel Noori Nastaleeq
   (regular/bold). `@font-face` (screen, `font-display:swap`) lives at the top
   of `css/main.css`; the engine embeds the same TTFs into PDFs via
-  `addFileToVFS()` + `addFont()`. The committed files are **placeholders**
-  (fonts unreachable from the sandbox) — see `/assets/fonts/FONT_INSTALL.md`.
-  Until real TTFs are uploaded the engine auto-detects the invalid signature
-  and falls back to Helvetica in PDFs (nothing breaks); screen uses the CSS
-  fallback stack. Known jsPDF limit: Urdu is drawn unshaped.
+  `addFileToVFS()` + `addFont()`. **Real Aptos TTFs are partially uploaded:**
+  `Aptos-Regular`, `Aptos-Bold`, `Aptos-BoldItalic` (= bold) and
+  `AptosDisplay-Bold` (= Aptos Black) are real; `Aptos-Italic`,
+  `AptosDisplay-Regular` (needs Aptos SemiBold) and both Jameel Noori
+  Nastaleeq weights are still placeholder stubs (JNN pending — no Urdu font
+  yet). Validation is per-file, so the engine embeds the real fonts and
+  falls back to Helvetica only for the remaining stubs (nothing breaks);
+  screen uses the CSS fallback stack. See `/assets/fonts/FONT_INSTALL.md`.
+  Known jsPDF limit: Urdu is drawn unshaped even once the JNN TTF lands.
 - **Public API (only global):**
   `window.printDocument({ type, data, filename })` where `type` ∈
   `po | embroidery-vendor | sublimation-vendor | gate-pass |

@@ -3,12 +3,36 @@
 The print engine (`/js/print-engine.js`) and the screen `@font-face` rules in
 `/css/main.css` expect **real TTF files** at the exact filenames below.
 
-The files currently in this directory are **placeholders** (small text stubs).
-They were committed because the fonts could not be fetched programmatically
-from this sandbox (Microsoft does not publish Aptos on an open CDN, and the
-Jameel Noori Nastaleeq mirrors are not reachable from the build network).
+## Current status (updated)
 
-Until the real fonts are uploaded:
+Real Aptos TTFs have been **partially** uploaded. Per-family/style the engine
+embeds real fonts where present and falls back to Helvetica where a stub
+remains (validation is per file, so this mixed state is safe):
+
+| File | State | Source |
+|---|---|---|
+| `Aptos-Regular.ttf` | ✅ real (~235 KB) | aptos.ttf |
+| `Aptos-Bold.ttf` | ✅ real (~236 KB) | aptos-bold.ttf |
+| `Aptos-BoldItalic.ttf` | ✅ real (~236 KB) | aptos-bold.ttf (bold used as bold-italic substitute) |
+| `AptosDisplay-Bold.ttf` | ✅ real (~236 KB) | aptos-black.ttf (black used for Display Bold weight) |
+| `Aptos-Italic.ttf` | ⏳ still placeholder | needs **aptos-italic.ttf** (not yet provided) |
+| `AptosDisplay-Regular.ttf` | ⏳ still placeholder | needs **aptos-semibold.ttf** (not yet provided) |
+| `JameelNooriNastaleeq-Regular.ttf` | ⏳ still placeholder | Urdu font not yet provided |
+| `JameelNooriNastaleeq-Bold.ttf` | ⏳ still placeholder | Urdu font not yet provided |
+
+To finish: upload `aptos-italic.ttf` → `Aptos-Italic.ttf`,
+`aptos-semibold.ttf` → `AptosDisplay-Regular.ttf`, and the two Jameel Noori
+Nastaleeq weights. No code change needed — the engine picks them up on deploy.
+
+---
+
+The remaining stub files in this directory are **placeholders** (small text
+stubs). They were committed because those fonts could not be fetched
+programmatically from this sandbox (Microsoft does not publish Aptos on an
+open CDN, and the Jameel Noori Nastaleeq mirrors are not reachable from the
+build network).
+
+While any placeholder remains, for that specific file:
 
 - Generated PDFs render correctly but in **Helvetica** (the engine detects the
   invalid placeholder signature and falls back automatically — nothing breaks).
