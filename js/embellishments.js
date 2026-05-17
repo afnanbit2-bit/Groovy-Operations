@@ -1201,6 +1201,7 @@ function renderRecipeDraftReviewPage(){
     <button class="btn-outline" style="flex:1;min-width:140px" onclick="window.saveDraftReview('${r._id}')">Save Changes</button>
     <button class="btn-primary" style="flex:1;min-width:140px;background:var(--green)" onclick="window.approveRecipeDraft('${r._id}')">Approve &amp; Publish Recipe ✅</button>
     <button class="btn-outline" style="flex:1;min-width:140px;color:#9B1B2D;border-color:#E94560" onclick="window.revisionRecipeDraft('${r._id}')">Send Back for Revision ↩️</button>
+    ${session.u==='ammar'?`<button class="btn-outline" style="flex:1;min-width:140px;color:#dc2626;border-color:#dc2626" onclick="window.deleteRecipe('${r._id}')">Delete Recipe 🗑</button>`:''}
   </div>
   <div style="height:80px"></div>`;
 }
