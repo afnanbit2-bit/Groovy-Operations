@@ -104,6 +104,32 @@ do not call jsPDF directly for new print features.**
 - **Constants:** `PRINT_COLORS`, `PRINT_FONTS`, `PRINT_SIZES`,
   `PRINT_LAYOUT` (A4 portrait in points: 595×842, 36pt margins,
   523pt content width) — declared at the top of `print-engine.js`.
+- **Conditional Urdu embedding (`data.urduLevel`):** per-document flag
+  `'none' | 'minimal' | 'full'` controlling whether the ~10 MB Jameel Noori
+  Nastaleeq TTF is fetched + embedded. `'full'` fetches/embeds JNN and
+  renders full bilingual output; `'minimal'`/`'none'` never download or
+  embed JNN — the footer is English-only (`GROOVY · {documentType} ·
+  Internal Use Only · Confidential`) and every bilingual component
+  (`_renderFooter`, `_renderSectionHeader`, `_renderBilingualLabel`,
+  `_renderInfoTable`, `_renderSignatureRow`) silently drops its Urdu side
+  (no tofu). Explicit `data.urduLevel` wins; otherwise the per-type default
+  in `_PRINT_URDU_DEFAULTS` applies; an unknown type/level → `'minimal'`.
+  Resolution sets `doc.__groovyUrdu` (the `_urduOn(doc)` flag components
+  read) — a `'full'` request with JNN unavailable degrades to clean
+  English-only, never tofu. Font fetch is split (`_fontCacheCore` always,
+  `_fontCacheUrdu` lazily only on the first `'full'`). Per-render the engine
+  serializes the PDF once and logs `[print-engine] Generated {type} PDF —
+  urduLevel: {level}, size: ~{X}KB`.
+
+  | Default `urduLevel` | Types |
+  |---|---|
+  | `minimal` | `generic`, `gate-pass`, `payroll-sheet`, `payslip` |
+  | `full` | `po`, `embroidery-vendor`, `sublimation-vendor`, `qc-report`, `placement-sheet` |
+
+  Measured (same PO, real JNN): `minimal` ≈ 116 KB / 0 JNN fetch · `full`
+  ≈ 552 KB / JNN fetched. jsPDF 2.5.1 subsets embedded TTFs so `full` is far
+  below the raw 10 MB font; the main saving from `minimal` is skipping the
+  ~10 MB **fetch** + base64 + subsetting work entirely.
 - **Default path (shipped):** `window.__usePrintEngine` now defaults to
   `true` — all 5 legacy generators (`generatePOPdf`, `generateGPPdf`,
   `generateJobSheetPDF`, `exportPayrollPDF`, `downloadPayslipPDF`)

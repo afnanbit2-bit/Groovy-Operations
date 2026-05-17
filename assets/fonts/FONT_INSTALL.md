@@ -22,8 +22,11 @@ embeds all real fonts and falls back to Helvetica only for that one stub:
 
 To finish: supply a Jameel Noori Nastaleeq **Bold** TTF →
 `JameelNooriNastaleeq-Bold.ttf`. No code change needed — the engine picks
-it up on deploy. (Note: the JNN Regular TTF is ~10 MB; jsPDF base64-embeds
-it into every PDF that uses Urdu, so those PDFs will be large.)
+it up on deploy. (Note: the JNN Regular TTF is ~10 MB. The engine only
+fetches/embeds it for documents whose `urduLevel` resolves to `'full'`;
+jsPDF then subsets it to the glyphs actually used, so a `'full'` PDF is a
+few hundred KB — not 10 MB. `'minimal'`/`'none'` documents never download
+or embed it at all.)
 
 ---
 

@@ -8,14 +8,19 @@
      window.printDocument({
        type: 'po' | 'embroidery-vendor' | 'sublimation-vendor' |
              'gate-pass' | 'placement-sheet' | 'qc-report' | 'generic',
-       data: { ... },                       // type-specific payload
+       data: { ...,                         // type-specific payload
+               urduLevel: 'none'|'minimal'|'full' },  // optional; see below
        filename: 'optional-name.pdf'        // default: {type}-{id}-{date}.pdf
      })
 
    - Uses jsPDF (loaded via CDN in index.html) at point units, A4 portrait.
-   - Embeds Aptos / Aptos Display / Jameel Noori Nastaleeq via addFileToVFS()
-     + addFont(); if the TTFs are missing/placeholders it transparently falls
-     back to Helvetica (PDF still renders, nothing breaks).
+   - Embeds Aptos / Aptos Display via addFileToVFS()+addFont() (Helvetica
+     fallback if missing). The ~10 MB Jameel Noori Nastaleeq TTF is fetched
+     and embedded ONLY when urduLevel resolves to 'full' — see the
+     _PRINT_URDU_DEFAULTS table for per-type defaults. 'minimal'/'none' never
+     download or embed JNN: the footer is English-only and every bilingual
+     component drops its Urdu side cleanly (no tofu). This keeps light
+     documents small (~tens of KB) instead of ~14 MB.
    - Opens the PDF in a new tab AND triggers a download.
    - Only the 'generic' variant is implemented. Every other `type` logs a
      console.warn and renders the generic fallback. Variant builders
@@ -87,22 +92,49 @@ const _PRINT_DOC_LABELS = {
   'generic': 'Document'
 };
 
+/* Per-document Urdu policy. `data.urduLevel` ∈ none|minimal|full overrides;
+   otherwise the per-type default below applies (unknown type → 'minimal').
+   - 'full'    → fetch + embed the (~10 MB) Jameel Noori Nastaleeq TTF and
+                 render the full bilingual document.
+   - 'minimal' → never fetch/embed JNN; footer is English-only and every
+                 bilingual component silently drops its Urdu side (no tofu).
+   - 'none'    → identical handling to 'minimal' here (no JNN, no Urdu); kept
+                 distinct so callers can express "deliberately no Urdu".
+   Only 'full' incurs the ~14 MB base64 font payload per PDF. */
+const _PRINT_URDU_DEFAULTS = {
+  'generic': 'minimal',
+  'gate-pass': 'minimal',
+  'payroll-sheet': 'minimal',
+  'payslip': 'minimal',
+  'po': 'full',
+  'embroidery-vendor': 'full',
+  'sublimation-vendor': 'full',
+  'qc-report': 'full',
+  'placement-sheet': 'full'
+};
+
 /* Fixed Urdu footer string per the print spec. */
 const _PRINT_FOOTER_UR = 'پروڈکشن آرڈر — صرف اندرونی استعمال';
 
-/* Self-hosted font manifest. style values match jsPDF addFont() styles. */
-const _PRINT_FONT_FILES = [
-  { vfs: 'Aptos-Regular.ttf',                family: PRINT_FONTS.bodyRegular, style: 'normal',     url: '/assets/fonts/Aptos-Regular.ttf' },
-  { vfs: 'Aptos-Bold.ttf',                   family: PRINT_FONTS.bodyRegular, style: 'bold',       url: '/assets/fonts/Aptos-Bold.ttf' },
-  { vfs: 'Aptos-Italic.ttf',                 family: PRINT_FONTS.bodyRegular, style: 'italic',     url: '/assets/fonts/Aptos-Italic.ttf' },
-  { vfs: 'Aptos-BoldItalic.ttf',             family: PRINT_FONTS.bodyRegular, style: 'bolditalic', url: '/assets/fonts/Aptos-BoldItalic.ttf' },
-  { vfs: 'AptosDisplay-Regular.ttf',         family: PRINT_FONTS.display,     style: 'normal',     url: '/assets/fonts/AptosDisplay-Regular.ttf' },
-  { vfs: 'AptosDisplay-Bold.ttf',            family: PRINT_FONTS.display,     style: 'bold',       url: '/assets/fonts/AptosDisplay-Bold.ttf' },
-  { vfs: 'JameelNooriNastaleeq-Regular.ttf', family: PRINT_FONTS.urdu,        style: 'normal',     url: '/assets/fonts/JameelNooriNastaleeq-Regular.ttf' },
-  { vfs: 'JameelNooriNastaleeq-Bold.ttf',    family: PRINT_FONTS.urdu,        style: 'bold',       url: '/assets/fonts/JameelNooriNastaleeq-Bold.ttf' }
+/* Self-hosted font manifest, split so the heavy Urdu TTF is only ever
+   fetched when a document actually needs it. style values match jsPDF
+   addFont() styles. */
+const _PRINT_FONT_FILES_CORE = [
+  { vfs: 'Aptos-Regular.ttf',        family: PRINT_FONTS.bodyRegular, style: 'normal',     url: '/assets/fonts/Aptos-Regular.ttf' },
+  { vfs: 'Aptos-Bold.ttf',           family: PRINT_FONTS.bodyRegular, style: 'bold',       url: '/assets/fonts/Aptos-Bold.ttf' },
+  { vfs: 'Aptos-Italic.ttf',         family: PRINT_FONTS.bodyRegular, style: 'italic',     url: '/assets/fonts/Aptos-Italic.ttf' },
+  { vfs: 'Aptos-BoldItalic.ttf',     family: PRINT_FONTS.bodyRegular, style: 'bolditalic', url: '/assets/fonts/Aptos-BoldItalic.ttf' },
+  { vfs: 'AptosDisplay-Regular.ttf', family: PRINT_FONTS.display,     style: 'normal',     url: '/assets/fonts/AptosDisplay-Regular.ttf' },
+  { vfs: 'AptosDisplay-Bold.ttf',    family: PRINT_FONTS.display,     style: 'bold',       url: '/assets/fonts/AptosDisplay-Bold.ttf' }
+];
+/* ~10 MB — fetched + embedded ONLY when urduLevel === 'full'. */
+const _PRINT_FONT_FILES_URDU = [
+  { vfs: 'JameelNooriNastaleeq-Regular.ttf', family: PRINT_FONTS.urdu, style: 'normal', url: '/assets/fonts/JameelNooriNastaleeq-Regular.ttf' },
+  { vfs: 'JameelNooriNastaleeq-Bold.ttf',    family: PRINT_FONTS.urdu, style: 'bold',   url: '/assets/fonts/JameelNooriNastaleeq-Bold.ttf' }
 ];
 
-let _printFontCache = null; // { embedded:boolean, files:[{...,ok,base64}] }
+let _fontCacheCore = null; // [{...,ok,base64}] — Aptos, fetched once
+let _fontCacheUrdu = null; // [{...,ok,base64}] — JNN, fetched once, lazily
 
 /* hex '#RRGGBB' → [r,g,b] ints. */
 function _pc(hex) {
@@ -136,17 +168,11 @@ function _isValidSfnt(bytes) {
   return tag === 'true' || tag === 'typ1' || tag === 'OTTO' || tag === 'ttcf';
 }
 
-/**
- * Fetch + validate the self-hosted fonts once, cache the result.
- * Best-effort and non-fatal: if a file is missing or a placeholder it is
- * marked `ok:false` and the engine renders that family in Helvetica.
- * @returns {Promise<{embedded:boolean, files:Array}>}
- */
-async function _ensurePrintFonts() {
-  if (_printFontCache) return _printFontCache;
-  const result = { embedded: false, files: [] };
+/* Fetch + validate one manifest. Best-effort: a missing/placeholder file is
+   marked ok:false so that family/style falls back to Helvetica. */
+async function _fetchFontSet(manifest) {
   try {
-    result.files = await Promise.all(_PRINT_FONT_FILES.map(async (f) => {
+    return await Promise.all(manifest.map(async (f) => {
       try {
         const r = await fetch(f.url, { cache: 'force-cache' });
         if (!r.ok) return Object.assign({}, f, { ok: false });
@@ -160,19 +186,44 @@ async function _ensurePrintFonts() {
         return Object.assign({}, f, { ok: false });
       }
     }));
-    result.embedded = result.files.some((f) => f.ok);
   } catch (e) {
-    result.files = _PRINT_FONT_FILES.map((f) => Object.assign({}, f, { ok: false }));
-    result.embedded = false;
+    return manifest.map((f) => Object.assign({}, f, { ok: false }));
   }
-  _printFontCache = result;
-  if (!result.embedded) {
-    console.warn(
-      '[print-engine] Custom fonts unavailable (placeholders or unreachable) — ' +
-      'PDFs will use Helvetica. See /assets/fonts/FONT_INSTALL.md.'
-    );
+}
+
+/**
+ * Ensure fonts are loaded + cached. Core (Aptos) is always loaded once. The
+ * heavy Urdu TTF is fetched (and cached) ONLY when `includeUrdu` is true —
+ * this is the whole point of conditional embedding: a 'minimal'/'none'
+ * document never triggers the ~10 MB JNN download or embed.
+ * @param {boolean} includeUrdu
+ * @returns {Promise<{embedded:boolean, urduEmbedded:boolean, files:Array}>}
+ */
+async function _ensurePrintFonts(includeUrdu) {
+  if (!_fontCacheCore) {
+    _fontCacheCore = await _fetchFontSet(_PRINT_FONT_FILES_CORE);
+    if (!_fontCacheCore.some((f) => f.ok)) {
+      console.warn(
+        '[print-engine] Custom fonts unavailable (placeholders or unreachable) — ' +
+        'PDFs will use Helvetica. See /assets/fonts/FONT_INSTALL.md.'
+      );
+    }
   }
-  return result;
+  let files = _fontCacheCore.slice();
+  let urduEmbedded = false;
+  if (includeUrdu) {
+    if (!_fontCacheUrdu) _fontCacheUrdu = await _fetchFontSet(_PRINT_FONT_FILES_URDU);
+    files = files.concat(_fontCacheUrdu);
+    urduEmbedded = _fontCacheUrdu.some((f) => f.ok);
+  }
+  return { embedded: files.some((f) => f.ok), urduEmbedded: urduEmbedded, files: files };
+}
+
+/* Whether real Urdu (JNN) is embedded on this doc. Components consult this to
+   decide whether to draw their Urdu side at all (never draw Urdu in
+   Helvetica — that produces tofu). */
+function _urduOn(doc) {
+  return !!(doc && doc.__groovyUrdu);
 }
 
 /* Register fetched fonts onto this jsPDF instance; build the resolver map.
@@ -280,16 +331,20 @@ function _renderFooter(doc, pageNum, totalPages) {
   _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.footer, PRINT_COLORS.greyAccent);
   doc.text('Page ' + pageNum + ' of ' + totalPages, L, y);
 
-  // Urdu tail first (measure width, right-align to margin).
-  _setFont(doc, PRINT_FONTS.urdu, 'normal', PRINT_SIZES.footer, PRINT_COLORS.greyAccent);
-  let urW = 0;
-  try { urW = doc.getTextWidth(_PRINT_FOOTER_UR); } catch (e) { urW = 0; }
-  doc.text(_PRINT_FOOTER_UR, R, y, { align: 'right' });
-
-  // Latin part ends just left of the Urdu tail.
-  const latin = 'GROOVY · ' + dt + ' · Internal Use Only · Confidential | ';
-  _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.footer, PRINT_COLORS.greyAccent);
-  doc.text(latin, R - urW, y, { align: 'right' });
+  if (_urduOn(doc)) {
+    // Bilingual: Urdu tail right-aligned, Latin part ending just left of it.
+    _setFont(doc, PRINT_FONTS.urdu, 'normal', PRINT_SIZES.footer, PRINT_COLORS.greyAccent);
+    let urW = 0;
+    try { urW = doc.getTextWidth(_PRINT_FOOTER_UR); } catch (e) { urW = 0; }
+    doc.text(_PRINT_FOOTER_UR, R, y, { align: 'right' });
+    const latin = 'GROOVY · ' + dt + ' · Internal Use Only · Confidential | ';
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.footer, PRINT_COLORS.greyAccent);
+    doc.text(latin, R - urW, y, { align: 'right' });
+  } else {
+    // English-only — clean, no tofu, no trailing separator.
+    const latin = 'GROOVY · ' + dt + ' · Internal Use Only · Confidential';
+    doc.text(latin, R, y, { align: 'right' });
+  }
   return y;
 }
 
@@ -321,7 +376,7 @@ function _renderSectionHeader(doc, o) {
   doc.text(en, L + pad, textY);
   let x = L + pad + (en ? doc.getTextWidth(en) : 0);
 
-  if (o.titleUr) {
+  if (o.titleUr && _urduOn(doc)) {
     _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.subsectionTitle, PRINT_COLORS.text);
     doc.text('  —  ', x, textY);
     x += doc.getTextWidth('  —  ');
@@ -359,14 +414,16 @@ function _renderBilingualLabel(doc, o) {
   doc.text(en, x, y);
   x += doc.getTextWidth(en);
 
-  const sep = ' / ';
-  doc.text(sep, x, y);
-  x += doc.getTextWidth(sep);
-
-  _setFont(doc, PRINT_FONTS.urdu, 'normal', Math.max(1, fs - 1), PRINT_COLORS.text);
-  const ur = String(o.ur || '');
-  doc.text(ur, x, y);
-  x += doc.getTextWidth(ur);
+  // Urdu side only when JNN is embedded; otherwise English-only (no tofu).
+  if (o.ur && _urduOn(doc)) {
+    const sep = ' / ';
+    doc.text(sep, x, y);
+    x += doc.getTextWidth(sep);
+    _setFont(doc, PRINT_FONTS.urdu, 'normal', Math.max(1, fs - 1), PRINT_COLORS.text);
+    const ur = String(o.ur);
+    doc.text(ur, x, y);
+    x += doc.getTextWidth(ur);
+  }
 
   return x - startX;
 }
@@ -412,7 +469,7 @@ function _renderInfoTable(doc, o) {
       doc.text(String(labelEn || ''), x + pad, y + pad + 9, {
         maxWidth: w - pad * 2
       });
-      if (labelUr) {
+      if (labelUr && _urduOn(doc)) {
         _setFont(doc, PRINT_FONTS.urdu, 'normal', PRINT_SIZES.urduSmall, PRINT_COLORS.greyAccent);
         doc.text(String(labelUr), x + pad, y + pad + 9 + 12, { maxWidth: w - pad * 2 });
       }
@@ -467,14 +524,15 @@ function _renderSignatureRow(doc, o) {
   doc.text(re, x, y);
   x += doc.getTextWidth(re);
 
-  _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
-  doc.text(' / ', x, y);
-  x += doc.getTextWidth(' / ');
-
-  _setFont(doc, PRINT_FONTS.urdu, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
-  const ru = String(o.roleUr || '');
-  doc.text(ru, x, y);
-  x += doc.getTextWidth(ru);
+  if (o.roleUr && _urduOn(doc)) {
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+    doc.text(' / ', x, y);
+    x += doc.getTextWidth(' / ');
+    _setFont(doc, PRINT_FONTS.urdu, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+    const ru = String(o.roleUr);
+    doc.text(ru, x, y);
+    x += doc.getTextWidth(ru);
+  }
 
   _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
   doc.text(')', x, y);
@@ -624,11 +682,26 @@ window.printDocument = async function (opts) {
   let previewWin = null;
   try { previewWin = window.open('', '_blank'); } catch (e) { previewWin = null; }
 
+  // Resolve the Urdu policy: explicit data.urduLevel wins, else the per-type
+  // default, else 'minimal'. Only 'full' fetches/embeds the heavy JNN TTF.
+  const _levels = ['none', 'minimal', 'full'];
+  let urduLevel = data.urduLevel;
+  if (_levels.indexOf(urduLevel) === -1) {
+    urduLevel = _PRINT_URDU_DEFAULTS[type] || 'minimal';
+  }
+  const embedUrdu = (urduLevel === 'full');
+
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
 
-  const fontState = await _ensurePrintFonts();
+  const fontState = await _ensurePrintFonts(embedUrdu);
   doc.__groovyFonts = _registerFonts(doc, fontState);
+  // Real Urdu only if 'full' AND a valid JNN actually registered; if 'full'
+  // was asked but JNN is unavailable, components degrade to English-only
+  // (clean) rather than tofu.
+  doc.__groovyUrdu = embedUrdu && fontState.urduEmbedded &&
+    (doc.__groovyFonts[PRINT_FONTS.urdu] !== 'helvetica');
+  doc.__groovyUrduLevel = urduLevel;
   doc.__groovyDocType = data.documentType || _PRINT_DOC_LABELS[type] || 'Document';
   doc.__groovyY = PRINT_LAYOUT.marginTop;
 
@@ -647,23 +720,49 @@ window.printDocument = async function (opts) {
   const idPart = data.id || data.documentNumber || 'doc';
   const filename = opts.filename || (type + '-' + idPart + '-' + stamp + '.pdf');
 
+  // Serialize ONCE — a 'full' (Urdu-embedded) PDF can be ~14 MB; doing it
+  // twice (once for preview, once for doc.save) would double the cost.
+  let blob;
   try {
-    const blob = doc.output('blob');
-    const url = URL.createObjectURL(blob);
+    blob = doc.output('blob');
+  } catch (e) {
+    console.error('[print-engine] PDF serialization failed:', e);
+    if (typeof showToast === 'function') showToast('PDF generation failed: ' + e.message, true);
+    try { if (previewWin) previewWin.close(); } catch (e2) { /* noop */ }
+    return;
+  }
+
+  const sizeKB = Math.max(1, Math.round(blob.size / 1024));
+  console.log('[print-engine] Generated ' + type + ' PDF — urduLevel: ' +
+    urduLevel + ', size: ~' + sizeKB + 'KB');
+
+  let url = null;
+  try {
+    url = URL.createObjectURL(blob);
     if (previewWin && !previewWin.closed) {
       previewWin.location = url;                  // navigate the pre-opened tab
     } else {
       window.open(url, '_blank');                 // fallback (may be blocked)
     }
-    setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
   } catch (e) {
     console.warn('[print-engine] could not open preview tab:', e);
     try { if (previewWin) previewWin.close(); } catch (e2) { /* noop */ }
   }
+  // Download from the SAME blob (no second serialization).
   try {
-    doc.save(filename);                          // trigger download
+    if (url) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } else {
+      doc.save(filename);
+    }
   } catch (e) {
-    console.error('[print-engine] download failed:', e);
+    try { doc.save(filename); } catch (e2) { console.error('[print-engine] download failed:', e2); }
   }
+  if (url) setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
   if (typeof showToast === 'function') showToast('PDF generated ✓');
 };
