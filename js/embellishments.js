@@ -1106,6 +1106,12 @@ function renderRecipeDraftReviewPage(){
   }));
   _plIdx=placements.length; _ptIdx=0;
   const rm=_lookupRate(r.articleCode||'');
+  // Auto-populate Tier/Rate from PRINTING_RATE_MASTER on load. A fresh Haris
+  // draft has printing.ratePerPiece===0; once Ammar saves, it's >0 — so a
+  // positive saved rate means he already set/overrode values: preserve them.
+  const _ptHasSaved=(parseFloat(pt.ratePerPiece)||0)>0;
+  const _rateVal=_ptHasSaved?pt.ratePerPiece:(rm?rm.ratePerPiece:'');
+  const _tierVal=_ptHasSaved?(pt.complexityTier||1):(rm?rm.complexityTier:(pt.complexityTier||1));
   m.innerHTML=`<button class="back-btn" onclick="window.showPage('recipe-directory')">← Back to Recipe Directory</button>
   <div class="page-head">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
@@ -1141,11 +1147,11 @@ function renderRecipeDraftReviewPage(){
           </label>`).join('')}
         </div>
       </div>
-      <div id="rc-rate-status" style="grid-column:1/-1">${rm?`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:12px"><span style="color:var(--green);font-weight:700">Rate found from Printing Rate List ✅</span><span style="color:var(--muted)">Rs. ${rm.ratePerPiece}/pc · Tier ${rm.complexityTier}</span></div>`:''}</div>
+      <div id="rc-rate-status" style="grid-column:1/-1">${rm?`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:12px"><span style="color:var(--green);font-weight:700">Rate found from Printing Rate List ✅</span><span style="color:var(--muted)">Rs. ${rm.ratePerPiece}/pc · Tier ${rm.complexityTier}</span></div>`:`<div style="padding:8px 12px;background:#f5f5f5;border:1px solid #D9D9D9;border-radius:8px;font-size:12px;color:#555">Article not in Rate Master — set manually</div>`}</div>
       <div class="field"><label>Complexity Tier *</label>
-        <select id="rc-tier" onchange="window._rcMarkOverride()">${[1,2,3,4].map(t=>`<option value="${t}" ${(pt.complexityTier||1)==t?'selected':''}>${TIER_INFO[t].label} — ${TIER_INFO[t].desc}</option>`).join('')}</select>
+        <select id="rc-tier" onchange="window._rcMarkOverride()">${[1,2,3,4].map(t=>`<option value="${t}" ${(_tierVal||1)==t?'selected':''}>${TIER_INFO[t].label} — ${TIER_INFO[t].desc}</option>`).join('')}</select>
       </div>
-      <div class="field"><label>Rate per Piece (Rs.) *</label><input id="rc-rate" type="number" min="0" step="0.5" placeholder="0.00" value="${pt.ratePerPiece||''}" oninput="window._rcMarkOverride()"></div>
+      <div class="field"><label>Rate per Piece (Rs.) *</label><input id="rc-rate" type="number" min="0" step="0.5" placeholder="0.00" value="${_rateVal}" oninput="window._rcMarkOverride()"></div>
       <div id="rc-override-row" style="grid-column:1/-1;display:none"></div>
       <div class="field" style="grid-column:1/-1"><label>Instructions (English)</label><textarea id="rc-instr-en" rows="3" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:100%;font-family:inherit;resize:vertical;outline:none">${_rdEsc(pt.instructionsEn||'')}</textarea></div>
       <div class="field" style="grid-column:1/-1"><label>ہدایات (اردو)</label><textarea id="rc-instr-ur" rows="3" dir="rtl" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:100%;font-family:inherit;resize:vertical;outline:none;text-align:right">${_rdEsc(pt.instructionsUr||'')}</textarea></div>
