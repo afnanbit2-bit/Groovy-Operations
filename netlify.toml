@@ -9,6 +9,19 @@
   NODE_VERSION = "18"
   SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
 
+# ── Scheduled functions (cron, UTC) ──────────────────────────────
+# 1am UTC = 6am PKT — daily inventory snapshot
+[functions."shopify-inventory-snapshot"]
+  schedule = "0 1 * * *"
+
+# Every 4 hours — incremental order sync (last 48h, skip existing)
+[functions."shopify-order-sync"]
+  schedule = "0 */4 * * *"
+
+# 2am UTC Saturday = 7am PKT — weekly close rollup
+[functions."shopify-weekly-close"]
+  schedule = "0 2 * * 6"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
