@@ -2,8 +2,10 @@ const admin = require("firebase-admin");
 
 const SHOPIFY_API_VERSION = "2026-04";
 const BATCH_LIMIT = 500;
-const TIME_BUDGET_MS = 20000;
 const BACKFILL_DAYS = 90;
+const PAGE_SIZE = 50;
+const DEADLINE_MS = 9000;
+const PAGE_RESERVE_MS = 3000;
 
 // ── Firebase Admin (cached across warm invocations) ─────────────
 let _db;
@@ -51,43 +53,19 @@ function parseNextUrl(linkHeader) {
 
 // ── Load shopify_products for denormalization ───────────────────
 async function loadProductMap(db) {
-  const snap = await db.collection("shopify_products").get();
+  const snap = await db.collection("shopify_products").select(
+    "sku", "product_title", "color", "size", "product_type"
+  ).get();
   const map = new Map();
   snap.forEach((doc) => map.set(doc.id, doc.data()));
   return map;
-}
-
-// ── Batched writer helper ───────────────────────────────────────
-function batchWriter(db) {
-  let batch = db.batch();
-  let count = 0;
-
-  return {
-    set(ref, data) {
-      batch.set(ref, data);
-      count++;
-    },
-    async flushIfFull() {
-      if (count >= BATCH_LIMIT) {
-        await batch.commit();
-        batch = db.batch();
-        count = 0;
-      }
-    },
-    async flush() {
-      if (count > 0) {
-        await batch.commit();
-        batch = db.batch();
-        count = 0;
-      }
-    },
-  };
 }
 
 // ── Handler ─────────────────────────────────────────────────────
 exports.handler = async function () {
   const start = Date.now();
   const elapsed = () => Date.now() - start;
+  const timings = {};
 
   const required = [
     "SHOPIFY_CLIENT_ID",
@@ -109,6 +87,7 @@ exports.handler = async function () {
   try {
     const syncSnap = await syncRef.get();
     const state = syncSnap.exists ? syncSnap.data() : {};
+    timings.sync_read_ms = elapsed();
 
     if (state.complete) {
       return {
@@ -124,7 +103,12 @@ exports.handler = async function () {
     }
 
     const token = await getShopifyToken();
+    timings.token_ms = elapsed();
+
     const productMap = await loadProductMap(db);
+    timings.product_map_ms = elapsed();
+    timings.product_map_size = productMap.size;
+
     const store = process.env.SHOPIFY_STORE_DOMAIN;
     const now = admin.firestore.FieldValue.serverTimestamp();
 
@@ -135,7 +119,7 @@ exports.handler = async function () {
       const minDate = new Date();
       minDate.setDate(minDate.getDate() - BACKFILL_DAYS);
       const minISO = minDate.toISOString();
-      url = `https://${store}/admin/api/${SHOPIFY_API_VERSION}/orders.json?limit=250&status=any&created_at_min=${minISO}`;
+      url = `https://${store}/admin/api/${SHOPIFY_API_VERSION}/orders.json?limit=${PAGE_SIZE}&status=any&created_at_min=${minISO}`;
       await syncRef.set(
         {
           created_at_min: minISO,
@@ -155,29 +139,39 @@ exports.handler = async function () {
     let pagesThisRun = 0;
     let unmatchedVariants = state.unmatched_variants || 0;
 
-    while (url && elapsed() < TIME_BUDGET_MS) {
+    timings.loop_start_ms = elapsed();
+
+    while (url) {
+      if (elapsed() > DEADLINE_MS - PAGE_RESERVE_MS) break;
+
+      const fetchStart = Date.now();
       const res = await fetch(url, {
         headers: { "X-Shopify-Access-Token": token },
       });
 
       if (!res.ok) {
         const text = await res.text();
+        if (res.status === 429) {
+          break;
+        }
         if (res.status === 400 && state.next_url && oldestFetched) {
           const fallbackMin = state.created_at_min;
-          url = `https://${store}/admin/api/${SHOPIFY_API_VERSION}/orders.json?limit=250&status=any&created_at_min=${fallbackMin}&created_at_max=${oldestFetched}`;
+          url = `https://${store}/admin/api/${SHOPIFY_API_VERSION}/orders.json?limit=${PAGE_SIZE}&status=any&created_at_min=${fallbackMin}&created_at_max=${oldestFetched}`;
           await syncRef.set({ next_url: null }, { merge: true });
           continue;
         }
-        throw new Error(`Shopify ${res.status}: ${text}`);
+        throw new Error(`Shopify ${res.status}: ${text.slice(0, 300)}`);
       }
 
       const body = await res.json();
       const orders = body.orders || [];
-      const writer = batchWriter(db);
+
+      let batch = db.batch();
+      let inBatch = 0;
 
       for (const order of orders) {
         const orderRef = db.collection("shopify_orders").doc(String(order.id));
-        writer.set(orderRef, {
+        batch.set(orderRef, {
           order_number: order.order_number,
           created_at: order.created_at,
           currency: order.currency,
@@ -188,22 +182,20 @@ exports.handler = async function () {
           line_item_count: (order.line_items || []).length,
           synced_at: now,
         });
-        await writer.flushIfFull();
+        inBatch++;
 
         for (const li of order.line_items || []) {
           const liRef = db
             .collection("shopify_line_items")
             .doc(`${order.id}_${li.id}`);
-
           const product = productMap.get(String(li.variant_id));
           if (!product) unmatchedVariants++;
 
-          writer.set(liRef, {
+          batch.set(liRef, {
             order_id: order.id,
             line_item_id: li.id,
             sku: (product && product.sku) || li.sku || "",
-            product_title:
-              (product && product.product_title) || li.title || "",
+            product_title: (product && product.product_title) || li.title || "",
             color: (product && product.color) || "",
             size: (product && product.size) || "",
             product_type: (product && product.product_type) || "",
@@ -213,18 +205,23 @@ exports.handler = async function () {
             financial_status: order.financial_status || "",
             synced_at: now,
           });
+          inBatch++;
           lineItemsWritten++;
-          await writer.flushIfFull();
+
+          if (inBatch >= BATCH_LIMIT) {
+            await batch.commit();
+            batch = db.batch();
+            inBatch = 0;
+          }
         }
 
         ordersProcessed++;
-
         if (!oldestFetched || order.created_at < oldestFetched) {
           oldestFetched = order.created_at;
         }
       }
 
-      await writer.flush();
+      if (inBatch > 0) await batch.commit();
 
       url = parseNextUrl(res.headers.get("link"));
       pagesThisRun++;
@@ -245,6 +242,8 @@ exports.handler = async function () {
     }
 
     const complete = !url;
+    timings.loop_end_ms = elapsed();
+
     const summary = {
       orders_processed: ordersProcessed,
       line_items_written: lineItemsWritten,
@@ -253,6 +252,7 @@ exports.handler = async function () {
       pages_this_run: pagesThisRun,
       complete,
       duration_ms: elapsed(),
+      timings,
       message: complete
         ? "Backfill complete."
         : "Time budget reached — call again to resume from checkpoint.",
@@ -278,7 +278,7 @@ exports.handler = async function () {
 
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: err.message }),
+      body: JSON.stringify({ error: err.message, timings, duration_ms: elapsed() }),
     };
   }
 };
