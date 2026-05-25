@@ -89,6 +89,7 @@ const _PRINT_DOC_LABELS = {
   'gate-pass': 'Gate Pass',
   'placement-sheet': 'Placement Sheet',
   'qc-report': 'QC Report',
+  'payslip': 'Payslip',
   'generic': 'Document'
 };
 
@@ -119,7 +120,8 @@ const _PRINT_URDU_DEFAULTS = {
 const _PRINT_FOOTER_UR = 'پروڈکشن آرڈر — صرف اندرونی استعمال'; // Production Order (default/legacy)
 const _PRINT_FOOTER_UR_BY_TYPE = {
   'Production Order': 'پروڈکشن آرڈر — صرف اندرونی استعمال',
-  'Gate Pass': 'گیٹ پاس — صرف اندرونی استعمال'
+  'Gate Pass': 'گیٹ پاس — صرف اندرونی استعمال',
+  'Payslip': 'پے سلپ — صرف اندرونی استعمال'
 };
 function _footerUr(docType) {
   return _PRINT_FOOTER_UR_BY_TYPE[docType] || 'صرف اندرونی استعمال';
@@ -950,6 +952,209 @@ function _renderGatePass(doc, data) {
   doc.__groovyY = gy + gH;
 }
 
+/* ── Payslip variant ──────────────────────────────────────────────────────
+   Professional structured payslip: employee info grid, earnings/deductions
+   side-by-side, attendance summary, prominent NET PAYABLE band. */
+
+function _psFmt(n) {
+  return 'PKR ' + (Number(n) || 0).toLocaleString('en-PK');
+}
+
+function _renderPayslip(doc, data) {
+  data = data || {};
+  var sess = (typeof session !== 'undefined' && session) ? session : null;
+  var today = new Date().toLocaleDateString('en-GB');
+  var L = PRINT_LAYOUT.marginLeft;
+  var R = PRINT_LAYOUT.pageWidth - PRINT_LAYOUT.marginRight;
+  var W = PRINT_LAYOUT.contentWidth;
+  var monthLabel = data.monthLabel || '—';
+
+  _renderHeader(doc, {
+    documentType: 'Payslip',
+    documentNumber: data.employeeId || data.id || '',
+    issuedDate: data.issuedDate || today,
+    issuedBy: data.issuedBy || (sess && sess.name) || 'system'
+  });
+
+  _renderTitleBlock(doc, {
+    title: 'Payslip — ' + (data.employeeName || '—'),
+    subtitle: [data.designation, data.department, monthLabel].filter(Boolean).join(' · '),
+    startY: doc.__groovyY
+  });
+
+  // ── Employee info grid ────────────────────────────────────────────────
+  _renderInfoTable(doc, { rows: [
+    { labelEn: 'EMPLOYEE NAME',  value: data.employeeName || '—',
+      labelEn2: 'EMPLOYEE ID',   value2: data.employeeId || '—' },
+    { labelEn: 'DEPARTMENT',     value: data.department || '—',
+      labelEn2: 'DESIGNATION',   value2: (data.designation || '—') + (data.paygrade ? '  [' + data.paygrade + ']' : '') },
+    { labelEn: 'PAY GRADE',      value: data.paygrade || '—',
+      labelEn2: 'PAY PERIOD',    value2: monthLabel }
+  ]});
+
+  // ── Earnings + Deductions side-by-side table ──────────────────────────
+  var y = (doc.__groovyY || L) + 14;
+  var colW = W / 4;
+  var rowH = 22;
+  var line = _pc(PRINT_COLORS.greyLine);
+  var shade = _pc(PRINT_COLORS.greyShade);
+  var white = _pc(PRINT_COLORS.white);
+
+  var earnings = data.earnings || [['Basic Salary', data.basicSalary || 0]];
+  var deductions = data.deductions || [];
+  var maxRows = Math.max(earnings.length, deductions.length);
+
+  // Table header
+  var headH = 24;
+  doc.setFillColor(shade[0], shade[1], shade[2]);
+  doc.rect(L, y, W, headH, 'F');
+  doc.setDrawColor(line[0], line[1], line[2]);
+  doc.setLineWidth(0.25);
+  doc.rect(L, y, W, headH, 'S');
+
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, '#14532D');
+  doc.text('Earnings', L + 6, y + 15);
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, '#14532D');
+  doc.text('Amount (PKR)', L + colW - 6, y + 15, { align: 'right' });
+
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, '#991B1B');
+  doc.text('Deductions', L + colW * 2 + 6, y + 15);
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, '#991B1B');
+  doc.text('Amount (PKR)', L + W - 6, y + 15, { align: 'right' });
+
+  // Vertical separator
+  doc.setDrawColor(line[0], line[1], line[2]);
+  doc.setLineWidth(0.5);
+  doc.line(L + colW * 2, y, L + colW * 2, y + headH + maxRows * rowH);
+
+  y += headH;
+
+  for (var i = 0; i < maxRows; i++) {
+    doc.setFillColor(white[0], white[1], white[2]);
+    doc.rect(L, y, W, rowH, 'F');
+    doc.setDrawColor(line[0], line[1], line[2]);
+    doc.setLineWidth(0.25);
+    doc.rect(L, y, colW * 2, rowH, 'S');
+    doc.rect(L + colW * 2, y, colW * 2, rowH, 'S');
+
+    if (i < earnings.length) {
+      _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+      doc.text(String(earnings[i][0] || ''), L + 6, y + 14);
+      doc.text((Number(earnings[i][1]) || 0).toLocaleString('en-PK'), L + colW * 2 - 6, y + 14, { align: 'right' });
+    }
+    if (i < deductions.length) {
+      _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+      doc.text(String(deductions[i][0] || ''), L + colW * 2 + 6, y + 14);
+      doc.text((Number(deductions[i][1]) || 0).toLocaleString('en-PK'), L + W - 6, y + 14, { align: 'right' });
+    }
+    y += rowH;
+  }
+
+  doc.__groovyY = y;
+
+  // ── Attendance summary ────────────────────────────────────────────────
+  y += 10;
+  _setFont(doc, PRINT_FONTS.display, 'bold', PRINT_SIZES.subsectionTitle, PRINT_COLORS.text);
+  doc.text('ATTENDANCE SUMMARY', L, y + 12);
+  y += 20;
+
+  var attItems = [
+    { label: 'Present',   value: data.presentDays   || 0, color: '#14532D', bg: '#DCFCE7' },
+    { label: 'Late',      value: data.lateDays       || 0, color: '#92400E', bg: '#FEF3C7' },
+    { label: 'Late→Abs', value: data.lateAbsentEquivalent || 0, color: '#92400E', bg: '#FEF3C7' },
+    { label: 'Absent',    value: data.actualAbsentDays || 0, color: '#991B1B', bg: '#FEE2E2' }
+  ];
+  var boxW = (W - 18) / 4; // 6pt gap between boxes
+  for (var a = 0; a < 4; a++) {
+    var bx = L + a * (boxW + 6);
+    var bgC = _pc(attItems[a].bg);
+    doc.setFillColor(bgC[0], bgC[1], bgC[2]);
+    doc.roundedRect(bx, y, boxW, 44, 4, 4, 'F');
+
+    _setFont(doc, PRINT_FONTS.display, 'bold', 18, attItems[a].color);
+    var numStr = String(attItems[a].value);
+    var numW = doc.getTextWidth(numStr);
+    doc.text(numStr, bx + (boxW - numW) / 2, y + 22);
+
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 8, PRINT_COLORS.greyAccent);
+    var lblW = doc.getTextWidth(attItems[a].label);
+    doc.text(attItems[a].label, bx + (boxW - lblW) / 2, y + 36);
+  }
+  y += 54;
+  doc.__groovyY = y;
+
+  // ── Earnings summary box ──────────────────────────────────────────────
+  y += 6;
+  var summBg = _pc('#F8FAFC');
+  var summBorder = _pc('#E2E8F0');
+  var summH = 8 + (earnings.length + 1) * 18 + 10;
+  doc.setFillColor(summBg[0], summBg[1], summBg[2]);
+  doc.roundedRect(L, y, W, summH, 4, 4, 'F');
+  doc.setDrawColor(summBorder[0], summBorder[1], summBorder[2]);
+  doc.setLineWidth(0.5);
+  doc.roundedRect(L, y, W, summH, 4, 4, 'S');
+
+  _setFont(doc, PRINT_FONTS.display, 'bold', PRINT_SIZES.subsectionTitle, '#14532D');
+  doc.text('Earnings Summary', L + 10, y + 16);
+  var sy = y + 28;
+
+  var gross = 0;
+  for (var e = 0; e < earnings.length; e++) {
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+    doc.text(String(earnings[e][0] || ''), L + 10, sy);
+    doc.text(_psFmt(earnings[e][1] || 0), L + W - 10, sy, { align: 'right' });
+    gross += (Number(earnings[e][1]) || 0);
+    sy += 18;
+  }
+  // Gross total line
+  var grossLineY = sy - 4;
+  doc.setDrawColor(line[0], line[1], line[2]);
+  doc.setLineWidth(0.25);
+  doc.line(L + 10, grossLineY, L + W - 10, grossLineY);
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.body, PRINT_COLORS.text);
+  doc.text('Gross Pay', L + 10, sy + 2);
+  doc.text(_psFmt(data.grossSalary || gross), L + W - 10, sy + 2, { align: 'right' });
+
+  y += summH + 8;
+  doc.__groovyY = y;
+
+  // ── NET PAYABLE band ──────────────────────────────────────────────────
+  var netH = 48;
+  var netBg = _pc('#1A1A2E');
+  doc.setFillColor(netBg[0], netBg[1], netBg[2]);
+  doc.roundedRect(L, y, W, netH, 4, 4, 'F');
+
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 10, '#FFFFFF');
+  doc.text('NET PAYABLE', L + (W / 2), y + 16, { align: 'center' });
+
+  _setFont(doc, PRINT_FONTS.display, 'bold', 22, '#FFFFFF');
+  doc.text(_psFmt(data.netPayable || 0), L + (W / 2), y + 36, { align: 'center' });
+
+  y += netH;
+
+  // ── Payment status (if paid) ──────────────────────────────────────────
+  if (data.status === 'paid' && data.paidOn) {
+    y += 8;
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 9, PRINT_COLORS.greyAccent);
+    doc.text('Paid on ' + data.paidOn + (data.paidBy ? ' by ' + data.paidBy : ''), L + (W / 2), y + 6, { align: 'center' });
+    y += 14;
+  }
+
+  // ── Footer disclaimer ─────────────────────────────────────────────────
+  y += 20;
+  if (y > PRINT_LAYOUT.pageHeight - PRINT_LAYOUT.marginBottom - 40) {
+    doc.addPage();
+    y = PRINT_LAYOUT.marginTop;
+  }
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 8, PRINT_COLORS.greyAccent);
+  doc.text(
+    'This is a computer-generated payslip and does not require a signature. For queries, contact management.',
+    L + (W / 2), y + 4, { align: 'center' }
+  );
+
+  doc.__groovyY = y + 12;
+}
+
 /* ── PART 2 — Public API ───────────────────────────────────────────────────
    The ONLY global this engine exposes. */
 window.printDocument = async function (opts) {
@@ -964,8 +1169,8 @@ window.printDocument = async function (opts) {
   }
 
   const known = ['po', 'embroidery-vendor', 'sublimation-vendor',
-    'gate-pass', 'placement-sheet', 'qc-report', 'generic'];
-  const _VARIANTS = { 'gate-pass': _renderGatePass };
+    'gate-pass', 'placement-sheet', 'qc-report', 'payslip', 'generic'];
+  const _VARIANTS = { 'gate-pass': _renderGatePass, 'payslip': _renderPayslip };
   const render = _VARIANTS[type] || _renderGeneric;
   if (known.indexOf(type) === -1) {
     console.warn("Unknown print type '" + type + "' — falling back to generic");

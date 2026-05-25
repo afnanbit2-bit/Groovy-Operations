@@ -2304,11 +2304,36 @@ window.downloadPayslipPDF=function(slipId,employeeId){
   if(!slip)return showToast('Payslip not found.',true);
   if(window.__usePrintEngine&&typeof window.printDocument==='function'){
     const ml=_payrollMonthLabel(slip.month||_payrollMonth);
-    return window.printDocument({type:'generic',data:{
-      documentType:'Payslip',documentNumber:slip.employeeId||slip._id||'—',id:(slip.employeeName||'payslip'),
-      title:`Payslip — ${slip.employeeName||'—'}`,subtitle:`${slip.designation||''} · ${ml}`.trim(),
-      bodyHtml:`<p>Employee: ${slip.employeeName||'—'}</p><p>Designation: ${slip.designation||'—'}</p><p>Grade: ${slip.paygrade||'—'}</p><p>Month: ${ml}</p><p>Net Payable: ${_hrmFmtPKR(slip.netPayable||0)}</p>`
-    }});
+    const emp=allEmployees.find(e=>e._id===slip.employeeId);
+    const earnings=[['Basic Salary',slip.basicSalary||0]];
+    const deductions=[];
+    if(slip.absentDeduction)deductions.push(['Absent Deduction ('+(slip.effectiveAbsentDays||0)+' days × '+_hrmFmtPKR(slip.dailyRate||0)+')',slip.absentDeduction]);
+    if(slip.advanceDeduction)deductions.push(['Advance Deduction',slip.advanceDeduction]);
+    if(slip.loanDeduction)deductions.push(['Loan Deduction',slip.loanDeduction]);
+    const otherDed=(slip.purchasingDeduction||0)+(slip.otherDeductions||0);
+    if(otherDed)deductions.push(['Other / Purchasing',otherDed]);
+    if(!deductions.length)deductions.push(['None',0]);
+    return window.printDocument({type:'payslip',data:{
+      employeeName:slip.employeeName||'—',
+      employeeId:slip.employeeId||slip._id||'—',
+      department:(emp&&emp.department)||slip.department||'—',
+      designation:slip.designation||'—',
+      paygrade:slip.paygrade||'—',
+      monthLabel:ml,
+      basicSalary:slip.basicSalary||0,
+      grossSalary:slip.grossSalary||slip.basicSalary||0,
+      netPayable:slip.netPayable||0,
+      presentDays:slip.presentDays||0,
+      lateDays:slip.lateDays||0,
+      lateAbsentEquivalent:slip.lateAbsentEquivalent||0,
+      actualAbsentDays:slip.actualAbsentDays||((slip.effectiveAbsentDays||0)-(slip.lateAbsentEquivalent||0))||0,
+      earnings:earnings,
+      deductions:deductions,
+      status:slip.status,
+      paidOn:slip.paidOn,
+      paidBy:slip.paidBy,
+      id:(slip.employeeName||'payslip').replace(/\s+/g,'-')
+    },filename:'Payslip-'+((slip.employeeName||'employee').replace(/\s+/g,'-'))+'-'+(slip.month||_payrollMonth)+'.pdf'});
   }
   const{jsPDF}=window.jspdf;
   const pdf=new jsPDF({unit:'mm',format:'a4'});
