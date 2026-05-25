@@ -1,0 +1,53 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "shopify_line_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "order_created_at", "order": "ASCENDING" },
+        { "fieldPath": "size", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "shopify_line_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "order_created_at", "order": "ASCENDING" },
+        { "fieldPath": "color", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "shopify_line_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "order_created_at", "order": "ASCENDING" },
+        { "fieldPath": "product_type", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "shopify_line_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "order_created_at", "order": "ASCENDING" },
+        { "fieldPath": "sku", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "shopify_line_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sku", "order": "ASCENDING" },
+        { "fieldPath": "order_created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "shopify_orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "created_at", "order": "DESCENDING" },
+        { "fieldPath": "financial_status", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

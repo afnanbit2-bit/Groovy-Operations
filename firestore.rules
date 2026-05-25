@@ -124,5 +124,35 @@ service cloud.firestore {
     match /bug_reports/{doc} {
       allow read, write: if signedIn();
     }
+
+    // ── Shopify Inventory Intelligence ──
+    // Sales + catalog data from Shopify. Server-side functions (service
+    // account) write these; app users only read. Require auth so data
+    // isn't world-readable. Write is denied to client SDKs — only the
+    // Admin SDK (Netlify Functions with service account) bypasses rules.
+    match /shopify_products/{doc} {
+      allow read:  if signedIn();
+      allow write: if false;
+    }
+    match /shopify_orders/{doc} {
+      allow read:  if signedIn();
+      allow write: if false;
+    }
+    match /shopify_line_items/{doc} {
+      allow read:  if signedIn();
+      allow write: if false;
+    }
+    match /shopify_inventory_snapshots/{doc} {
+      allow read:  if signedIn();
+      allow write: if false;
+    }
+    match /shopify_weekly_closes/{doc} {
+      allow read:  if signedIn();
+      allow write: if false;
+    }
+    match /shopify_sync_meta/{doc} {
+      allow read:  if signedIn();
+      allow write: if false;
+    }
   }
 }
