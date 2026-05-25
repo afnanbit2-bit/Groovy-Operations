@@ -1,5 +1,12 @@
+[build]
+  publish = "."
+
 [functions]
   directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+[context.production.environment]
+  NODE_VERSION = "18"
 
 [[redirects]]
   from = "/.netlify/functions/*"
