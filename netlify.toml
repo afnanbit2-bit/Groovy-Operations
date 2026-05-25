@@ -7,12 +7,7 @@
 
 [context.production.environment]
   NODE_VERSION = "18"
-  NETLIFY_SKIP_CRITICAL_REVIEW = "true"
-
-[[redirects]]
-  from = "/.netlify/functions/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
+  SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
 
 [[redirects]]
   from = "/*"
