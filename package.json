@@ -1,0 +1,8 @@
+{
+  "name": "groovy-operations",
+  "private": true,
+  "description": "Groovy Operations — Netlify Functions dependencies",
+  "dependencies": {
+    "firebase-admin": "^13.4.0"
+  }
+}
