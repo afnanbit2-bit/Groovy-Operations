@@ -1,7 +1,6 @@
 const admin = require("firebase-admin");
 
 const SHOPIFY_API_VERSION = "2026-04";
-const BATCH_LIMIT = 500;
 const BACKFILL_DAYS = 90;
 const PAGE_SIZE = 50;
 const DEADLINE_MS = 9000;
@@ -53,9 +52,10 @@ function parseNextUrl(linkHeader) {
 
 // ── Load shopify_products for denormalization ───────────────────
 async function loadProductMap(db) {
-  const snap = await db.collection("shopify_products").select(
-    "sku", "product_title", "color", "size", "product_type"
-  ).get();
+  const snap = await db
+    .collection("shopify_products")
+    .select("sku", "product_title", "color", "size", "product_type")
+    .get();
   const map = new Map();
   snap.forEach((doc) => map.set(doc.id, doc.data()));
   return map;
@@ -94,7 +94,8 @@ exports.handler = async function () {
         statusCode: 200,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: "Backfill already complete. Delete shopify_sync_meta/order_backfill to re-run.",
+          message:
+            "Backfill already complete. Delete shopify_sync_meta/order_backfill to re-run.",
           orders_processed: state.orders_processed,
           line_items_written: state.line_items_written,
           complete: true,
@@ -126,6 +127,7 @@ exports.handler = async function () {
           complete: false,
           orders_processed: 0,
           line_items_written: 0,
+          skipped_orders: 0,
           started_at: now,
           last_status: "in_progress",
         },
@@ -135,6 +137,7 @@ exports.handler = async function () {
 
     let ordersProcessed = state.orders_processed || 0;
     let lineItemsWritten = state.line_items_written || 0;
+    let skippedOrders = state.skipped_orders || 0;
     let oldestFetched = state.oldest_fetched || null;
     let pagesThisRun = 0;
     let unmatchedVariants = state.unmatched_variants || 0;
@@ -144,19 +147,15 @@ exports.handler = async function () {
     while (url) {
       if (elapsed() > DEADLINE_MS - PAGE_RESERVE_MS) break;
 
-      const fetchStart = Date.now();
       const res = await fetch(url, {
         headers: { "X-Shopify-Access-Token": token },
       });
 
       if (!res.ok) {
         const text = await res.text();
-        if (res.status === 429) {
-          break;
-        }
+        if (res.status === 429) break;
         if (res.status === 400 && state.next_url && oldestFetched) {
-          const fallbackMin = state.created_at_min;
-          url = `https://${store}/admin/api/${SHOPIFY_API_VERSION}/orders.json?limit=${PAGE_SIZE}&status=any&created_at_min=${fallbackMin}&created_at_max=${oldestFetched}`;
+          url = `https://${store}/admin/api/${SHOPIFY_API_VERSION}/orders.json?limit=${PAGE_SIZE}&status=any&created_at_min=${state.created_at_min}&created_at_max=${oldestFetched}`;
           await syncRef.set({ next_url: null }, { merge: true });
           continue;
         }
@@ -166,71 +165,96 @@ exports.handler = async function () {
       const body = await res.json();
       const orders = body.orders || [];
 
-      let batch = db.batch();
-      let inBatch = 0;
-
-      for (const order of orders) {
-        const orderRef = db.collection("shopify_orders").doc(String(order.id));
-        batch.set(orderRef, {
-          order_number: order.order_number,
-          created_at: order.created_at,
-          currency: order.currency,
-          total_price: parseFloat(order.total_price) || 0,
-          financial_status: order.financial_status || "",
-          fulfillment_status: order.fulfillment_status || null,
-          cancelled_at: order.cancelled_at || null,
-          line_item_count: (order.line_items || []).length,
-          synced_at: now,
+      // ── Skip orders already written (handles mid-page crash resume) ──
+      let existingIds = new Set();
+      if (orders.length) {
+        const refs = orders.map((o) =>
+          db.collection("shopify_orders").doc(String(o.id))
+        );
+        const snaps = await db.getAll(...refs);
+        snaps.forEach((s) => {
+          if (s.exists) existingIds.add(s.id);
         });
-        inBatch++;
+      }
 
-        for (const li of order.line_items || []) {
-          const liRef = db
-            .collection("shopify_line_items")
-            .doc(`${order.id}_${li.id}`);
-          const product = productMap.get(String(li.variant_id));
-          if (!product) unmatchedVariants++;
+      const newOrders = orders.filter(
+        (o) => !existingIds.has(String(o.id))
+      );
+      skippedOrders += orders.length - newOrders.length;
 
-          batch.set(liRef, {
-            order_id: order.id,
-            line_item_id: li.id,
-            sku: (product && product.sku) || li.sku || "",
-            product_title: (product && product.product_title) || li.title || "",
-            color: (product && product.color) || "",
-            size: (product && product.size) || "",
-            product_type: (product && product.product_type) || "",
-            quantity: li.quantity || 0,
-            price: parseFloat(li.price) || 0,
-            order_created_at: order.created_at,
-            financial_status: order.financial_status || "",
-            synced_at: now,
-          });
-          inBatch++;
-          lineItemsWritten++;
+      // ── BulkWriter for concurrent batched writes ──────────────────
+      if (newOrders.length > 0) {
+        const writer = db.bulkWriter();
 
-          if (inBatch >= BATCH_LIMIT) {
-            await batch.commit();
-            batch = db.batch();
-            inBatch = 0;
+        for (const order of newOrders) {
+          writer.set(
+            db.collection("shopify_orders").doc(String(order.id)),
+            {
+              order_number: order.order_number,
+              created_at: order.created_at,
+              currency: order.currency,
+              total_price: parseFloat(order.total_price) || 0,
+              financial_status: order.financial_status || "",
+              fulfillment_status: order.fulfillment_status || null,
+              cancelled_at: order.cancelled_at || null,
+              line_item_count: (order.line_items || []).length,
+              synced_at: now,
+            }
+          );
+
+          for (const li of order.line_items || []) {
+            const product = productMap.get(String(li.variant_id));
+            if (!product) unmatchedVariants++;
+
+            writer.set(
+              db
+                .collection("shopify_line_items")
+                .doc(`${order.id}_${li.id}`),
+              {
+                order_id: order.id,
+                line_item_id: li.id,
+                sku: (product && product.sku) || li.sku || "",
+                product_title:
+                  (product && product.product_title) || li.title || "",
+                color: (product && product.color) || "",
+                size: (product && product.size) || "",
+                product_type: (product && product.product_type) || "",
+                quantity: li.quantity || 0,
+                price: parseFloat(li.price) || 0,
+                order_created_at: order.created_at,
+                financial_status: order.financial_status || "",
+                synced_at: now,
+              }
+            );
+            lineItemsWritten++;
+          }
+
+          ordersProcessed++;
+          if (!oldestFetched || order.created_at < oldestFetched) {
+            oldestFetched = order.created_at;
           }
         }
 
-        ordersProcessed++;
+        await writer.close();
+      }
+
+      // ── Track oldest across ALL orders on the page (including skipped) ──
+      for (const order of orders) {
         if (!oldestFetched || order.created_at < oldestFetched) {
           oldestFetched = order.created_at;
         }
       }
 
-      if (inBatch > 0) await batch.commit();
-
       url = parseNextUrl(res.headers.get("link"));
       pagesThisRun++;
 
+      // ── Checkpoint after every page ───────────────────────────────
       await syncRef.set(
         {
           next_url: url || null,
           orders_processed: ordersProcessed,
           line_items_written: lineItemsWritten,
+          skipped_orders: skippedOrders,
           oldest_fetched: oldestFetched,
           unmatched_variants: unmatchedVariants,
           last_run_at: now,
@@ -244,24 +268,23 @@ exports.handler = async function () {
     const complete = !url;
     timings.loop_end_ms = elapsed();
 
-    const summary = {
-      orders_processed: ordersProcessed,
-      line_items_written: lineItemsWritten,
-      unmatched_variants: unmatchedVariants,
-      oldest_fetched: oldestFetched,
-      pages_this_run: pagesThisRun,
-      complete,
-      duration_ms: elapsed(),
-      timings,
-      message: complete
-        ? "Backfill complete."
-        : "Time budget reached — call again to resume from checkpoint.",
-    };
-
     return {
       statusCode: 200,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(summary),
+      body: JSON.stringify({
+        orders_processed: ordersProcessed,
+        line_items_written: lineItemsWritten,
+        skipped_orders: skippedOrders,
+        unmatched_variants: unmatchedVariants,
+        oldest_fetched: oldestFetched,
+        pages_this_run: pagesThisRun,
+        complete,
+        duration_ms: elapsed(),
+        timings,
+        message: complete
+          ? "Backfill complete."
+          : "Time budget reached — call again to resume from checkpoint.",
+      }),
     };
   } catch (err) {
     try {
@@ -278,7 +301,11 @@ exports.handler = async function () {
 
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: err.message, timings, duration_ms: elapsed() }),
+      body: JSON.stringify({
+        error: err.message,
+        timings,
+        duration_ms: elapsed(),
+      }),
     };
   }
 };
