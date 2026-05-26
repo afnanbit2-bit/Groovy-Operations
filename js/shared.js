@@ -687,7 +687,7 @@ function _updateMobNavActive(pageId){
     'attendance':'hrm','hrm-employees':'hrm','hrm-payroll':'hrm','hrm-advances':'hrm','hrm-loans':'hrm','hrm-policy':'hrm',
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
     'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-templates':'more','store-fabric-inventory':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more',
-    'activity':'more','users':'more','bug-tracker':'more',
+    'activity':'more','users':'more','bug-tracker':'more','shopify-intel':'more',
     'my-work':'my-work'
   };
   const grp=groups[pageId];
@@ -785,6 +785,7 @@ window.openMoreSheet=function(){
   items.push({iconName:'shop',label:'Store',pageId:'store-dashboard'});
   // Owner-only
   if(om)items.push({iconName:'list',label:'Bug Tracker',pageId:'bug-tracker'});
+  if(isOwner)items.push({iconName:'shop',label:'Inventory Intel',pageId:'shopify-intel'});
   if(isOwner)items.push({iconName:'activity',label:'Activity Log',pageId:'activity'});
   if(isOwner)items.push({iconName:'user',label:'Users',pageId:'users'});
   window.openMobSheet('More',items);
@@ -877,7 +878,7 @@ function renderPage(id){
   else if(id==='color-library'){if(!printingDataLoaded)loadPrintingData().then(()=>{if(currentPage===id)m.innerHTML=renderColorLibraryPage();});else m.innerHTML=renderColorLibraryPage();}
   // ── HRM module pages ──
   else if(id==='shopify-intel'){
-    if(!_siLoaded)loadShopifyData().then(()=>{if(currentPage===id)m.innerHTML=renderShopifyDashboard();}).catch(e=>{if(currentPage===id)m.innerHTML='<div class="empty">Could not load Shopify data: '+(e.message||e)+'</div>';});
+    if(!_siLoaded){m.innerHTML='<div class="page-head"><div class="page-title">Inventory Intelligence</div></div><div class="empty">Loading…</div>';loadShopifyData().then(()=>{if(currentPage===id)m.innerHTML=renderShopifyDashboard();}).catch(e=>{if(currentPage===id)m.innerHTML='<div class="empty">Could not load Shopify data: '+(e.message||e)+'</div>';});}
     else m.innerHTML=renderShopifyDashboard();
   }
   else if(id==='hrm-employees'){if(!hrmDataLoaded)loadHRMData().then(()=>{if(currentPage===id)m.innerHTML=renderHRMEmployeesPage();});else m.innerHTML=renderHRMEmployeesPage();}
