@@ -1,0 +1,209 @@
+═══════════════════════════════════════════════════════════════════
+  SHOPIFY FLAGGED PRODUCTS — needs_review = true
+  Generated: 2026-05-26
+  Total: 169 products (722 variants)
+═══════════════════════════════════════════════════════════════════
+
+── BREAKDOWN BY FLAG REASON ──────────────────────────────────────
+
+  option1="Size", option2 null                       133 products  (78.7%)
+  Swapped: option1="Size", option2="Color"            19 products  (11.2%)
+  option1="Title" (single-variant)                    15 products  (8.9%)
+  option1="Colors" (plural)                            2 products  (1.2%)
+  ────────────────────────────────────────────────────────────
+  TOTAL                                              169 products
+
+
+══ option1="Size", option2 null (133 products) ═ products) ═ products) ═ products) ═ products) ═
+
+  #  Product Title                                   SKU (first)           Option1 Name    Option2 Name    Status
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  1.   (GOJO) Jujutsu Kaisen Zipper                    GHZ006-S              Size            null            draft
+  2.   (Washed) Black Hoodie                           GH026-S               Size            null            active
+  3.   #55 Frost Hoodie                                GH032-S               Size            null            active
+  4.   5 Way Stitch Hoodie                             GH037-S               Size            null            active
+  5.   All Hustle No Luck                              GH024-S               Size            null            active
+  6.   Baggy Trousers | Black                          GST001-S              Size            null            active
+  7.   Baggy Trousers | Cream                          GST002-S              Size            null            active
+  8.   Baggy Trousers | Mocha Brown                    GST004-S              Size            null            active
+  9.   Baggy Trousers | Sage Green                     GST003-S              Size            null            active
+  10.  Baggy Trousers | Slate Blue                     GST005-S              Size            null            active
+  11.  Baggy Trousers | Steel Grey                     GST032-S              Size            null            active
+  12.  Berserk                                         GSH002-S              Size            null            active
+  13.  Black | Essential Zipper                        GHZ020-S              Size            null            active
+  14.  Black Cargo Trousers                            —                     Size            null            draft
+  15.  Black Essential Trouser (Winter)                GST017-S              Size            null            active
+  16.  Black Trousers                                  —                     Size            null            draft
+  17.  Black VI Cargo                                  BLCKCARGO-01          Size            null            draft
+  18.  Blade Hoodie Foam                               GH013-S               Size            null            active
+  19.  Camel Brown Hoodie                              GH009-S               Size            null            active
+  20.  Carpenter Dark Grey Denim                       —                     Size            null            active
+  21.  Carpenter Light Grey Denim                      —                     Size            null            active
+  22.  Carpenter Washed Black Denim                    —                     Size            null            active
+  23.  Charcoal Heather Grey Hoodie                    GH041-S               Size            null            active
+  24.  Cinnamon Brown Trousers                         —                     Size            null            draft
+  25.  CORE Denim | Black                              GD001-26              Size            null            active
+  26.  CORE Denim | Dark Stone                         GD014-26              Size            null            active
+  27.  CORE Denim | Stone Grey                         GD002-26              Size            null            draft
+  28.  CORE Denim | Washed Black                       GD003-28              Size            null            active
+  29.  CORE Denim | Washed Blue                        —                     Size            null            active
+  30.  CORE Denim | White Stone                        GD015-26              Size            null            active
+  31.  Cream Hoodie                                    GH007-S               Size            null            active
+  32.  Cream Washed Blank                              GB021-S               Size            null            active
+  33.  Crimson Washed Blank                            GB020-S               Size            null            active
+  34.  cross star denim blue                           —                     Size            null            active
+  35.  Dark Green Hoodie                               GH011-S               Size            null            active
+  36.  Dark Grey Hoodie                                GH005-S               Size            null            active
+  37.  Dark Grey Washed Trouser                        —                     Size            null            draft
+  38.  Dark Heather Grey | Essential Zipper            GHZ021-S              Size            null            active
+  39.  Deep Blue Cargo Trousers                        GC011-S               Size            null            active
+  40.  Deep Blue Washed Blank                          GB014-S               Size            null            active
+  41.  Dropout - Class of '25 Edition                  GH014-S               Size            null            draft
+  42.  Eden Made                                       GH020-S               Size            null            active
+  43.  Emerald Green Washed Blank                      GB019-S               Size            null            active
+  44.  Emerald Green Washed Zipper                     GHZ003-S              Size            null            draft
+  45.  Ethereal Blue Washed Zipper                     GHZ005-S              Size            null            draft
+  46.  Fade Washed Denim                               —                     Size            null            active
+  47.  Fade Washed Hoodie                              GH031-S               Size            null            active
+  48.  Fade Washed Trouser                             GST012-S              Size            null            active
+  49.  Flying Predator Zipper Hoodie                   GHZ007-S              Size            null            active
+  50.  Forest Green Trouser                            —                     Size            null            draft
+  51.  Granite | Essential Zipper                      GHZ011-S              Size            null            active
+  52.  Hidden In Plain Sight | Arctyc White            GSH004-S              Size            null            active
+  53.  Hidden In Plain Sight | Black                   GSH003-S              Size            null            active
+  54.  Hunter Green Hoodie                             GH003-S               Size            null            active
+  55.  I Hate Maths                                    GH023-S               Size            null            active
+  56.  Jorts | Dark Stone                              GJO001-26             Size            null            active
+  57.  Jorts | Hard Washed Grey                        GD008-26              Size            null            active
+  58.  Jorts | White Stone                             GJO002-26             Size            null            active
+  59.  LA Lakers                                       GP055-XS              Size            null            active
+  60.  Light Beige Trouser                             —                     Size            null            draft
+  61.  Light Blue Hoodie                               GH008-S               Size            null            draft
+  62.  Light Grey Hoodie                               GH004-S               Size            null            draft
+  63.  Light Grey Washed Trouser                       —                     Size            null            draft
+  64.  Light Khaki VI Cargo                            —                     Size            null            draft
+  65.  Make Your Own Luck                              GH022-S               Size            null            active
+  66.  Maple Brown | Essential Zipper                  GHZ010-S              Size            null            active
+  67.  Military Green VII Cargo                        GC008-S               Size            null            active
+  68.  Mint Chalk VII Cargo                            GC007-S               Size            null            active
+  69.  Mocha Brown Hoodie                              GH006-S               Size            null            active
+  70.  Mocha Brown Washed Blank                        GB015-S               Size            null            active
+  71.  Naruto Pain (Hoodie)                            GH016-S               Size            null            draft
+  72.  Navy Blue Hoodie                                GH002-S               Size            null            active
+  73.  Navy Blue Trouser                               GST029-S              Size            null            draft
+  74.  Olive Green Cargo Trousers                      —                     Size            null            draft
+  75.  Olive Green Cargo Trousers                      GC012-S               Size            null            draft
+  76.  One Piece Fire Fist Zipper                      GHZ001-S              Size            null            draft
+  77.  Pastel Pink Hoodie                              GH027-S               Size            null            active
+  78.  Piping Trouser | Black                          GST006-S              Size            null            active
+  79.  Piping Trouser | Cream                          GST007-S              Size            null            active
+  80.  Plum | Essential Zipper                         GHZ009-S              Size            null            active
+  81.  Project Rebirth Denim                           —                     Size            null            active
+  82.  Racing Green | Essential Zipper                 GHZ008-S              Size            null            active
+  83.  Rage Denim                                      GD005-26              Size            null            active
+  84.  Reverse Washed Cargo Pants                      GST031-S              Size            null            active
+  85.  Rust Orange Washed Blank                        GB018-S               Size            null            active
+  86.  Sage Green Cargo Trousers                       —                     Size            null            draft
+  87.  Shadow Grey Washed Blank                        GB017-S               Size            null            active
+  88.  Shadow Grey Washed Zipper                       GHZ004-S              Size            null            draft
+  89.  Slate Grey VII Cargo                            GC006-S               Size            null            active
+  90.  Slate Grey Washed Blank                         GB016-S               Size            null            active
+  91.  Star Denim                                      GD007-28              Size            null            active
+  92.  STAR Trouser | Black                            GST013-S              Size            null            active
+  93.  Straight Fit Trouser | Cream                    GST015-S              Size            null            draft
+  94.  Straight Fit Trouser | Slate Blue               GST014-S              Size            null            draft
+  95.  Straw Hat Club                                  GH019-S               Size            null            active
+  96.  Teal Blue Hoodie                                GH010-S               Size            null            active
+  97.  The Combat Washed Hoodie                        GH030-S               Size            null            active
+  98.  The Floral Hoodie                               GH033-S               Size            null            active
+  99.  The Good Attitude Club 2.0                      GHZ002-S              Size            null            draft
+  100. The Heritage Jacket                             GO003-S               Size            null            active
+  101. The Heritage Pants | Black                      GST027-S              Size            null            active
+  102. The Heritage Pants | Black (Summer)             GST074-S              Size            null            active
+  103. The Heritage Pants | Frost Blue                 GST021-S              Size            null            active
+  104. The Heritage Pants | Wine Red                   GST020-S              Size            null            active
+  105. The Heritage Pants | Wine Red (Summer)          GST075-S              Size            null            active
+  106. The Heritage Top | Black                        GHZ017-S              Size            null            active
+  107. The Heritage Top | Frost Blue                   GHZ018-S              Size            null            active
+  108. The Heritage Top | Wine Red                     GHZ016-S              Size            null            active
+  109. The Illusion Zipper                             GHZ022-S              Size            null            active
+  110. The Initial Hoodie                              GH029-S               Size            null            active
+  111. The Tactical Cargo | Camo                       GC010-S               Size            null            active
+  112. The Utility Sweats | Arctyc White               GST022-S              Size            null            active
+  113. The Utility Sweats | Black                      GST030-S              Size            null            active
+  114. The Utility Sweats | Granite Grey               GST025-S              Size            null            active
+  115. The Utility Sweats | Heather Green              GST024-S              Size            null            active
+  116. The Utility Sweats | Lilac                      GST023-S              Size            null            active
+  117. The Utility Top | Arctyc White                  GHZ014-S              Size            null            active
+  118. The Utility Top | Black                         GHZ019-S              Size            null            active
+  119. The Utility Top | Granite Grey                  GHZ013-S              Size            null            active
+  120. The Utility Top | Heather Green                 GHZ015-S              Size            null            active
+  121. The Utility Top | Lilac                         GHZ012-S              Size            null            active
+  122. Unity VI - Black (Winter)                       GST019-S              Size            null            active
+  123. Unity VI - Mocha Brown                          GST010-S              Size            null            active
+  124. Unity VI - Sandstone (Winter)                   GST011-S              Size            null            active
+  125. Unity VI - Slate Blue (Summer)                  GST018-S              Size            null            active
+  126. Unity VI - Slate Blue (Winter)                  —                     Size            null            archived
+  127. Unity VI - Slate Blue (Winter)                  GST009-S              Size            null            active
+  128. Utility V1 | Black Cargos                       GC001-26              Size            null            active
+  129. Utility V1 | Cream Cargos                       GC004-26              Size            null            active
+  130. Utility V1 | Grey Cargos                        GC003-26              Size            null            active
+  131. Utility V1 | Mint Green Cargos                  GC009-26              Size            null            active
+  132. Utility V1 | Mocha Brown Cargos                 GC002-26              Size            null            active
+  133. White Beard -  One Piece                        GH015-S               Size            null            active
+
+
+══ Swapped: option1="Size", option2="Color" (19 products) ═ products) ═ products) ═ products) ═ products) ═
+
+  #  Product Title                                   SKU (first)           Option1 Name    Option2 Name    Status
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  1.   ASAP ROCKY                                      GP057-XS              Size            Color           active
+  2.   Billie Eillish                                  OVERS-03              Size            Color           draft
+  3.   Chicago Bulls                                   GP061-S               Size            Color           active
+  4.   Chill Out                                       GP056-XS              Size            Color           active
+  5.   Dragon Ball Z                                   OVERS-17              Size            Color           draft
+  6.   Essential Trousers | Chalk                      GST026-S              Size            Color           active
+  7.   Evago Authentic (Exclusive)                     VRQST-5               Size            Color           draft
+  8.   GROOVY Grunge Slogan                            OVERS-22              Size            Color           draft
+  9.   GROOVY LIVING                                   GROOVY-100            Size            Color           draft
+  10.  Hyperactive Emotions                            OVERS-31              Size            Color           draft
+  11.  Intuitive                                       VQRST-007             Size            Color           draft
+  12.  It's On Flames                                  OVERS-37              Size            Color           draft
+  13.  Kakashi Exclusive                               OVERS-44              Size            Color           draft
+  14.  Kanye West (YE!)                                OVERS-50              Size            Color           draft
+  15.  Naruto Team 7                                   OVERS-99              Size            Color           draft
+  16.  Never Stopping Culture                          GH017-S               Size            Color           active
+  17.  School Ruins Creativity                         GH012-S               Size            Color           draft
+  18.  Travis Scott                                    OVERS-75              Size            Color           draft
+  19.  University Of GROOVY                            OVERS-86              Size            Color           draft
+
+
+══ option1="Title" (single-variant) (15 products) ═ products) ═ products) ═ products) ═ products) ═
+
+  #  Product Title                                   SKU (first)           Option1 Name    Option2 Name    Status
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  1.   Bundle of (2) Essential Tees                    e3dbca70-6021-4fa...  Title           null            draft
+  2.   Bundle of (2) VII Cargos                        871024b6-8adb-480...  Title           null            draft
+  3.   Bundle of (3) Cargo VII's                       CARGO-111             Title           null            draft
+  4.   Bundle of (3) Essential Tees                    7819b3ce-e234-455...  Title           null            draft
+  5.   Bundle of (3) VII Cargos                        19892ccb-e44b-43b...  Title           null            draft
+  6.   Bundle of (3) Washed Blanks                     —                     Title           null            draft
+  7.   Bundle of (3) Washed Blanks                     c51d85c2-64f3-41f...  Title           null            draft
+  8.   Bundle of (3) Washed T-Shirts                   —                     Title           null            archived
+  9.   Bundle of (4) Essential Tees                    10099f0e-3d84-4ba...  Title           null            draft
+  10.  Bundle of (5) Washed Blanks                     —                     Title           null            draft
+  11.  Bundle of (5) Washed Blanks                     b86bc4ae-1bbb-41b...  Title           null            draft
+  12.  Item Customizations                             —                     Title           null            draft
+  13.  Jade Green Washed Blank                         —                     Title           null            draft
+  14.  RIOT                                            GHW014                Title           null            draft
+  15.  Tip/Gratuity                                    TIPQUIK-TG            Title           null            active
+
+
+══ option1="Colors" (plural) (2 products) ═ products) ═ products) ═ products) ═ products) ═
+
+  #  Product Title                                   SKU (first)           Option1 Name    Option2 Name    Status
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  1.   Aim Shorts | Chocolate Brown                    GSO005-S              Colors          Size            draft
+  2.   Aim Shorts | Stone Muave                        GSO014-S              Colors          Size            draft
+
+
