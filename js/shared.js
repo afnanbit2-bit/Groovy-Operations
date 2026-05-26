@@ -534,6 +534,7 @@ function buildNav(){
   if(isWorker||isViewer)mainItems.push({id:'my-work',label:'My Work'});
   if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
   if(om)mainItems.push({id:'bug-tracker',label:'🐛 Bug Tracker'});
+  if(isOwner)mainItems.push({id:'shopify-intel',label:'Inventory Intel'});
   if(isOwner)mainItems.push({id:'activity',label:'Activity Log'});
   if(isOwner)mainItems.push({id:'users',label:'Users'});
 
@@ -875,6 +876,10 @@ function renderPage(id){
   else if(id==='billing-detail')renderBillingDetailPage();
   else if(id==='color-library'){if(!printingDataLoaded)loadPrintingData().then(()=>{if(currentPage===id)m.innerHTML=renderColorLibraryPage();});else m.innerHTML=renderColorLibraryPage();}
   // ── HRM module pages ──
+  else if(id==='shopify-intel'){
+    if(!_siLoaded)loadShopifyData().then(()=>{if(currentPage===id)m.innerHTML=renderShopifyDashboard();}).catch(e=>{if(currentPage===id)m.innerHTML='<div class="empty">Could not load Shopify data: '+(e.message||e)+'</div>';});
+    else m.innerHTML=renderShopifyDashboard();
+  }
   else if(id==='hrm-employees'){if(!hrmDataLoaded)loadHRMData().then(()=>{if(currentPage===id)m.innerHTML=renderHRMEmployeesPage();});else m.innerHTML=renderHRMEmployeesPage();}
   else if(id==='attendance'){if(!hrmDataLoaded)loadHRMData().then(()=>{if(currentPage===id){m.innerHTML=renderAttendancePage();_attendanceAfterRender();}});else{m.innerHTML=renderAttendancePage();_attendanceAfterRender();}}
   else if(id==='hrm-payroll'){
