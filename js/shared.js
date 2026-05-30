@@ -878,7 +878,7 @@ function renderPage(id){
   else if(id==='color-library'){if(!printingDataLoaded)loadPrintingData().then(()=>{if(currentPage===id)m.innerHTML=renderColorLibraryPage();});else m.innerHTML=renderColorLibraryPage();}
   // ── HRM module pages ──
   else if(id==='shopify-intel'){
-    if(!_siLoaded){m.innerHTML='<div class="page-head"><div class="page-title">Inventory Intelligence</div></div><div class="empty">Loading…</div>';loadShopifyData().then(()=>{if(currentPage===id)m.innerHTML=renderShopifyDashboard();}).catch(e=>{if(currentPage===id)m.innerHTML='<div class="empty">Could not load Shopify data: '+(e.message||e)+'</div>';});}
+    if(!_siLoaded){m.innerHTML='<div class="page-head"><div class="page-title">Inventory Intelligence</div></div><div class="empty">Loading…</div>';Promise.race([loadShopifyData(),new Promise((_,rej)=>setTimeout(()=>rej(new Error('Load timed out')),15000))]).then(()=>{if(currentPage===id)m.innerHTML=renderShopifyDashboard();}).catch(e=>{_siLoadError=(e.message||e);if(currentPage===id)m.innerHTML=renderShopifyDashboard();});}
     else m.innerHTML=renderShopifyDashboard();
   }
   else if(id==='hrm-employees'){if(!hrmDataLoaded)loadHRMData().then(()=>{if(currentPage===id)m.innerHTML=renderHRMEmployeesPage();});else m.innerHTML=renderHRMEmployeesPage();}

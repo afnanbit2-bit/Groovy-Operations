@@ -8,20 +8,32 @@ let _siProducts=[],_siOrders=[],_siLineItems=[],_siWeeklyCloses=[],_siSnapshot=n
 let _siSkuSearch='',_siSkuSort='sold7d',_siSkuDir=-1,_siSection='overview';
 let _siSeason='all';        // global season filter: 'all' | 'winter' | 'summer'
 let _siSeasonMapCache=null; // { sku: 'winter'|'summer'|'all-season' }, rebuilt on data load
+let _siLoadError=null;      // last load failure message; non-null → render error state, never zeros
+let _siCollectionsLoaded=false; // collections fetched OK once → skip re-download on snapshot-only retry
 
 // ── Data loader ─────────────────────────────────────────────────────
 async function loadShopifyData(){
-  const [pSnap,oSnap,liSnap,wcSnap]=await Promise.all([
-    getDocs(collection(db,'shopify_products')),
-    getDocs(collection(db,'shopify_orders')),
-    getDocs(collection(db,'shopify_line_items')),
-    getDocs(query(collection(db,'shopify_weekly_closes'),orderBy('week_ending','desc'))),
-  ]);
-  _siProducts=[];pSnap.forEach(d=>{const o=d.data();o._id=d.id;_siProducts.push(o);});
-  _siOrders=[];oSnap.forEach(d=>{const o=d.data();o._id=d.id;_siOrders.push(o);});
-  _siLineItems=[];liSnap.forEach(d=>{const o=d.data();o._id=d.id;_siLineItems.push(o);});
-  _siWeeklyCloses=[];wcSnap.forEach(d=>{const o=d.data();o._id=d.id;_siWeeklyCloses.push(o);});
-  _siSeasonMapCache=null; // catalog changed → rebuild SKU→season map lazily
+  _siLoadError=null;
+  // Critical collection reads — fetch once, then skip on snapshot-only retries.
+  if(!_siCollectionsLoaded){
+    try{
+      const [pSnap,oSnap,liSnap,wcSnap]=await Promise.all([
+        getDocs(collection(db,'shopify_products')),
+        getDocs(collection(db,'shopify_orders')),
+        getDocs(collection(db,'shopify_line_items')),
+        getDocs(query(collection(db,'shopify_weekly_closes'),orderBy('week_ending','desc'))),
+      ]);
+      _siProducts=[];pSnap.forEach(d=>{const o=d.data();o._id=d.id;_siProducts.push(o);});
+      _siOrders=[];oSnap.forEach(d=>{const o=d.data();o._id=d.id;_siOrders.push(o);});
+      _siLineItems=[];liSnap.forEach(d=>{const o=d.data();o._id=d.id;_siLineItems.push(o);});
+      _siWeeklyCloses=[];wcSnap.forEach(d=>{const o=d.data();o._id=d.id;_siWeeklyCloses.push(o);});
+      _siSeasonMapCache=null; // catalog changed → rebuild SKU→season map lazily
+      _siCollectionsLoaded=true;
+    }catch(err){
+      _siLoadError=(err.message||String(err));
+      return; // do NOT set _siLoaded — next visit retries
+    }
+  }
 
   const today=_siPktDate(0);
   const yesterday=_siPktDate(-1);
@@ -30,11 +42,19 @@ async function loadShopifyData(){
     let snap=await getDoc(doc(db,'shopify_inventory_snapshots',today));
     if(!snap.exists())snap=await getDoc(doc(db,'shopify_inventory_snapshots',yesterday));
     if(snap.exists())_siSnapshot=snap.data();
-  }catch(_){}
+  }catch(err){
+    _siLoadError=(err.message||String(err));
+    return; // snapshot read threw → surface error, retry next visit
+  }
   try{
     const snap=await getDoc(doc(db,'shopify_inventory_snapshots',lastWeek));
     if(snap.exists())_siPrevSnapshot=snap.data();
   }catch(_){}
+
+  if(!_siSnapshot){
+    _siLoadError='Inventory snapshot unavailable (no snapshot for today or yesterday).';
+    return; // do NOT set _siLoaded — next visit retries
+  }
 
   try{
     const s1=await getDoc(doc(db,'shopify_sync_meta','catalog_sync'));
@@ -43,7 +63,7 @@ async function loadShopifyData(){
     _siSyncMeta={catalog:s1.exists()?s1.data():{},orders:s2.exists()?s2.data():{},inventory:s3.exists()?s3.data():{}};
   }catch(_){}
 
-  _siLoaded=true;
+  _siLoaded=true; // only when collections loaded AND snapshot present
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -330,6 +350,7 @@ function _siDailyMovement(){
 // RENDER
 // ═══════════════════════════════════════════════════════════════════
 function renderShopifyDashboard(){
+  if(_siLoadError)return'<div class="page-head"><div class="page-title">Inventory Intelligence</div></div><div class="empty">⚠ Could not load inventory data: '+_siLoadError+'<br><button class="btn-primary" onclick="window._siRetry()" style="margin-top:10px">Retry</button></div>';
   if(!_siLoaded)return'<div class="empty">Loading Shopify data...</div>';
 
   const m=_siComputeMetrics();
@@ -365,6 +386,11 @@ window._siSetSeason=function(s){
   _siRefreshContent();
 };
 
+window._siRetry=function(){
+  _siLoaded=false;_siLoadError=null;
+  if(typeof window.showPage==='function')window.showPage('shopify-intel');
+};
+
 function _siTabBar(){
   const tabs=[
     {id:'overview',label:'Overview'},
@@ -374,7 +400,7 @@ function _siTabBar(){
     {id:'weekly',label:'Weekly Close'},
     {id:'advanced',label:'Advanced'},
   ];
-  return`<div class="gp-tabs" style="margin-bottom:14px">${tabs.map(t=>
+  return`<div class="gp-tabs" id="si-tab-bar" style="margin-bottom:14px">${tabs.map(t=>
     `<button class="gp-tab${_siSection===t.id?' active':''}" onclick="window._siSwitchTab('${t.id}')">${t.label}</button>`
   ).join('')}</div>`;
 }
@@ -385,10 +411,8 @@ window._siSwitchTab=function(id){
   const skuRows=_siComputeSkuTable();
   const attn=_siNeedsAttention(skuRows);
   const items7=_siRecentItems(7);
-  document.querySelectorAll('.gp-tab').forEach((t,i)=>{
-    const tabs=['overview','attention','patterns','skutable','weekly','advanced'];
-    t.classList.toggle('active',tabs[i]===id);
-  });
+  const bar=document.getElementById('si-tab-bar');
+  if(bar)bar.outerHTML=_siTabBar();
   const el=document.getElementById('si-content');
   if(el)el.innerHTML=_siRenderSection(m,skuRows,attn,items7);
 };
