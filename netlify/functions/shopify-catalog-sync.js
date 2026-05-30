@@ -140,6 +140,10 @@ exports.handler = async function () {
           price: parseFloat(v.price) || 0,
           inventory_item_id: v.inventory_item_id || null,
           product_type: product.product_type || "",
+          tags: (product.tags || "")
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean),
           status: product.status || "",
           created_at: product.created_at || "",
           last_synced_at: now,

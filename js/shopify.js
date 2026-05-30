@@ -6,6 +6,8 @@
 let _siLoaded=false;
 let _siProducts=[],_siOrders=[],_siLineItems=[],_siWeeklyCloses=[],_siSnapshot=null,_siPrevSnapshot=null,_siSyncMeta={};
 let _siSkuSearch='',_siSkuSort='sold7d',_siSkuDir=-1,_siSection='overview';
+let _siSeason='all';        // global season filter: 'all' | 'winter' | 'summer'
+let _siSeasonMapCache=null; // { sku: 'winter'|'summer'|'all-season' }, rebuilt on data load
 
 // ── Data loader ─────────────────────────────────────────────────────
 async function loadShopifyData(){
@@ -19,6 +21,7 @@ async function loadShopifyData(){
   _siOrders=[];oSnap.forEach(d=>{const o=d.data();o._id=d.id;_siOrders.push(o);});
   _siLineItems=[];liSnap.forEach(d=>{const o=d.data();o._id=d.id;_siLineItems.push(o);});
   _siWeeklyCloses=[];wcSnap.forEach(d=>{const o=d.data();o._id=d.id;_siWeeklyCloses.push(o);});
+  _siSeasonMapCache=null; // catalog changed → rebuild SKU→season map lazily
 
   const today=_siPktDate(0);
   const yesterday=_siPktDate(-1);
@@ -50,6 +53,34 @@ function _siPKR(n){if(n==null)return'—';return'PKR '+n.toLocaleString(undefine
 function _siPct(n){if(n==null||isNaN(n))return'—';return(n*100).toFixed(1)+'%';}
 function _siDaysAgo(iso){if(!iso)return null;const d=new Date(iso);const now=new Date();return Math.floor((now-d)/86400000);}
 
+// ── Season tagging ───────────────────────────────────────────────────
+// Products carry Shopify tags 'season:winter' / 'season:summer'. Anything
+// with neither is year-round ('all-season') and shows in every view.
+function _siSeasonOfTags(tags){
+  if(!Array.isArray(tags))return'all-season';
+  const lower=tags.map(t=>String(t).toLowerCase().trim());
+  if(lower.includes('season:winter'))return'winter';
+  if(lower.includes('season:summer'))return'summer';
+  return'all-season';
+}
+// Does an item's season pass the active filter? Winter/Summer views always
+// include year-round (untagged) items; 'all' includes everything.
+function _siMatchSeason(season){
+  if(_siSeason==='all')return true;
+  if(season==='all-season')return true;
+  return season===_siSeason;
+}
+// SKU → season map from the live catalog (cached per data load).
+function _siSeasonMap(){
+  if(_siSeasonMapCache)return _siSeasonMapCache;
+  const m={};
+  _siProducts.forEach(p=>{if(p.sku&&m[p.sku]===undefined)m[p.sku]=_siSeasonOfTags(p.tags);});
+  _siSeasonMapCache=m;
+  return m;
+}
+// Resolve a line item's season via the catalog (no SKU / unknown → year-round).
+function _siItemSeason(li){const m=_siSeasonMap();return(li.sku&&m[li.sku])||'all-season';}
+
 function _siLast7(){
   const d=new Date(Date.now()+5*3600000);d.setDate(d.getDate()-7);return d.toISOString().split('T')[0];
 }
@@ -59,7 +90,7 @@ function _siLast30(){
 
 function _siRecentItems(days){
   const cutoff=_siPktDate(-days);
-  return _siLineItems.filter(li=>li.order_created_at>=cutoff&&li.financial_status!=='refunded');
+  return _siLineItems.filter(li=>li.order_created_at>=cutoff&&li.financial_status!=='refunded'&&_siMatchSeason(_siItemSeason(li)));
 }
 
 // ── Computed metrics ────────────────────────────────────────────────
@@ -74,10 +105,12 @@ function _siComputeMetrics(){
   if(_siSnapshot&&_siSnapshot.items){
     const items=_siSnapshot.items;
     for(const invId in items){
-      const av=items[invId].available||0;
-      totalOnHand+=av;
       const vid=items[invId].variant_id;
       const prod=vid?_siProducts.find(p=>p._id===vid):null;
+      // year-round when no catalog match, so unmatched stock still counts
+      if(!_siMatchSeason(prod?_siSeasonOfTags(prod.tags):'all-season'))continue;
+      const av=items[invId].available||0;
+      totalOnHand+=av;
       if(prod)totalValue+=av*(prod.price||0);
     }
   }
@@ -156,13 +189,16 @@ function _siComputeSkuTable(){
     rows.push({
       sku,title:prod.product_title||'',color:prod.color||'',size:prod.size||'',
       productType:prod.product_type||'',needsReview:!!prod.needs_review,status:prod.status||'',
+      tags:prod.tags||[],season:_siSeasonOfTags(prod.tags),
       onHand,prevOnHand,weeklyDelta,s7,s30,dailyRate,daysLeft,sellThrough,
       firstSold:fs,lastSold:ls,daysSinceLastSale,refunds,totalSold:totalSoldMap[sku]||0,
-      price:prod.price||0,reorderPoint,suggestedQty
+      price:prod.price||0,reorderPoint,suggestedQty,created_at:prod.created_at||''
     });
   });
 
-  return rows;
+  // Global season filter: drop off-season SKUs so every downstream view
+  // (Needs Attention, Advanced, SKU table, size curve) is season-aware.
+  return rows.filter(r=>_siMatchSeason(r.season));
 }
 
 // ── Needs Attention cards ───────────────────────────────────────────
@@ -279,7 +315,7 @@ function _siMarkdownCandidates(rows){
 function _siDailyMovement(){
   const days={};
   const cutoff=_siPktDate(-14);
-  _siLineItems.filter(li=>li.order_created_at>=cutoff&&li.financial_status!=='refunded').forEach(li=>{
+  _siLineItems.filter(li=>li.order_created_at>=cutoff&&li.financial_status!=='refunded'&&_siMatchSeason(_siItemSeason(li))).forEach(li=>{
     const day=(li.order_created_at||'').slice(0,10);
     if(!day)return;
     if(!days[day])days[day]={units:0,revenue:0,orders:new Set()};
@@ -306,10 +342,28 @@ function renderShopifyDashboard(){
     <div class="page-sub">Shopify sales + inventory — read-only, updated every 4 hours</div>
   </div>
 
+  ${_siSeasonBar()}
   ${_siTabBar()}
   <div id="si-content">${_siRenderSection(m,skuRows,attn,items7)}</div>
   <div style="height:80px"></div>`;
 }
+
+function _siSeasonBar(){
+  const opts=[{id:'all',label:'All Seasons'},{id:'winter',label:'❄ Winter'},{id:'summer',label:'☀ Summer'}];
+  return`<div id="si-season-bar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    <span style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase">Season</span>
+    <div class="gp-tabs" style="margin:0">${opts.map(o=>
+      `<button class="gp-tab${_siSeason===o.id?' active':''}" onclick="window._siSetSeason('${o.id}')">${o.label}</button>`
+    ).join('')}</div>
+    <span style="font-size:10px;color:var(--muted)">${_siSeason==='all'?'showing all items':'in-season + year-round (untagged) items only'}</span>
+  </div>`;
+}
+window._siSetSeason=function(s){
+  _siSeason=s;
+  const bar=document.getElementById('si-season-bar');
+  if(bar)bar.outerHTML=_siSeasonBar(); // re-render so the active chip + caption stay in sync
+  _siRefreshContent();
+};
 
 function _siTabBar(){
   const tabs=[
