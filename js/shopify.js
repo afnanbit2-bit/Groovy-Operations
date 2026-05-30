@@ -6,6 +6,7 @@
 let _siLoaded=false;
 let _siProducts=[],_siOrders=[],_siLineItems=[],_siWeeklyCloses=[],_siSnapshot=null,_siPrevSnapshot=null,_siSyncMeta={};
 let _siSkuSearch='',_siSkuSort='sold7d',_siSkuDir=-1,_siSection='overview';
+let _siSkuLimit=200;        // SKU table page size; grows by 200 via Load more
 let _siSeason='all';        // global season filter: 'all' | 'winter' | 'summer'
 let _siSeasonMapCache=null; // { sku: 'winter'|'summer'|'all-season' }, rebuilt on data load
 let _siLoadError=null;      // last load failure message; non-null → render error state, never zeros
@@ -381,6 +382,7 @@ function _siSeasonBar(){
 }
 window._siSetSeason=function(s){
   _siSeason=s;
+  _siSkuLimit=200;          // restart SKU list at the top when season changes
   const bar=document.getElementById('si-season-bar');
   if(bar)bar.outerHTML=_siSeasonBar(); // re-render so the active chip + caption stay in sync
   _siRefreshContent();
@@ -593,7 +595,22 @@ function _siPatternsSection(items7,skuRows){
 }
 
 // ── SKU Table ───────────────────────────────────────────────────────
-function _siSkuTableSection(rows){
+// Shared column definitions + head builder so the sort handler can rebuild
+// the <thead> arrows without repainting (and thus recreating) the search input.
+const _SI_SKU_COLS=[
+  {key:'sku',label:'SKU'},{key:'title',label:'Product'},{key:'color',label:'Color'},{key:'size',label:'Size'},
+  {key:'onHand',label:'On Hand'},{key:'s7',label:'Sold 7d'},{key:'s30',label:'Sold 30d'},
+  {key:'daysLeft',label:'Days Left'},{key:'sellThrough',label:'Sell-Thru 7d'},
+  {key:'reorderPoint',label:'Reorder Pt'},{key:'suggestedQty',label:'Suggested'},
+  {key:'refunds',label:'Returns'},
+];
+function _siSkuHeadCells(){
+  const arrow=k=>_siSkuSort===k?(_siSkuDir>0?' ▲':' ▼'):'';
+  return _SI_SKU_COLS.map(c=>`<th style="cursor:pointer;white-space:nowrap" onclick="window._siSortSku('${c.key}')">${c.label}${arrow(c.key)}</th>`).join('');
+}
+
+// Filter + sort (reused by the shell render and the tbody-only repaint).
+function _siSkuFiltered(rows){
   let filtered=rows;
   if(_siSkuSearch){
     const q=_siSkuSearch.toLowerCase();
@@ -606,52 +623,71 @@ function _siSkuTableSection(rows){
     if(typeof va==='string')return dir*va.localeCompare(vb);
     return dir*((va||0)-(vb||0));
   });
-  const page=filtered.slice(0,200);
+  return filtered;
+}
 
-  const cols=[
-    {key:'sku',label:'SKU'},{key:'title',label:'Product'},{key:'color',label:'Color'},{key:'size',label:'Size'},
-    {key:'onHand',label:'On Hand'},{key:'s7',label:'Sold 7d'},{key:'s30',label:'Sold 30d'},
-    {key:'daysLeft',label:'Days Left'},{key:'sellThrough',label:'Sell-Thru 7d'},
-    {key:'reorderPoint',label:'Reorder Pt'},{key:'suggestedQty',label:'Suggested'},
-    {key:'refunds',label:'Returns'},
-  ];
-  const arrow=k=>_siSkuSort===k?(_siSkuDir>0?' ▲':' ▼'):'';
+// Just the <tr> rows for the current page (uses _siSkuLimit, not a hardcoded 200).
+function _siSkuRowsHtml(rows){
+  const filtered=_siSkuFiltered(rows);
+  const page=filtered.slice(0,_siSkuLimit);
+  return page.map(r=>{
+    const daysClass=r.daysLeft<=7&&r.daysLeft>0?'color:#dc2626;font-weight:700':r.daysLeft<=14&&r.daysLeft>0?'color:var(--accent-warning);font-weight:600':'';
+    const reviewBadge=r.needsReview?'<span style="display:inline-block;background:#fef3c7;color:#92400e;font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px">review</span>':'';
+    return`<tr>
+      <td style="font-weight:600;font-size:11px;white-space:nowrap">${r.sku}${reviewBadge}</td>
+      <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.title}">${r.title}</td>
+      <td style="font-size:11px">${r.color}</td>
+      <td style="font-size:11px">${r.size}</td>
+      <td style="font-weight:600">${r.onHand}</td>
+      <td>${r.s7}</td>
+      <td>${r.s30}</td>
+      <td style="${daysClass}">${r.daysLeft===999?'∞':r.daysLeft===0?'—':r.daysLeft+'d'}</td>
+      <td>${r.sellThrough!=null?_siPct(r.sellThrough):'—'}</td>
+      <td>${r.reorderPoint||'—'}</td>
+      <td>${r.suggestedQty||'—'}</td>
+      <td>${r.refunds||'—'}</td>
+    </tr>`;
+  }).join('');
+}
 
+// "Load more" button markup (empty string when nothing more to show).
+function _siSkuMoreHtml(filteredLen){
+  return filteredLen>_siSkuLimit
+    ? '<button class="btn-primary" onclick="window._siSkuLoadMore()">Load more (showing '+Math.min(_siSkuLimit,filteredLen)+' of '+filteredLen+')</button>'
+    : '';
+}
+
+function _siSkuTableSection(rows){
+  const filtered=_siSkuFiltered(rows);
+  // The search <input> and <thead> are the STATIC shell — they live outside
+  // #si-sku-tbody, so tbody-only repaints (typing / load-more) never recreate
+  // the input and never drop focus.
   return`<div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap">
     <input placeholder="Search SKU, product, color…" value="${_siSkuSearch}" oninput="window._siFilterSku(this.value)"
       style="flex:1;min-width:200px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;outline:none;font-family:inherit">
-    <div style="font-size:11px;color:var(--muted);align-self:center">${filtered.length} SKUs${filtered.length>200?' (showing 200)':''}</div>
+    <div id="si-sku-count" style="font-size:11px;color:var(--muted);align-self:center">${filtered.length} SKUs${_siSkuLimit<filtered.length?' (showing '+_siSkuLimit+')':''}</div>
   </div>
   <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Days Left and Sell-Through are estimates based on 30-day / 7-day pace. Refunded orders excluded from sales.</div>
   <div style="overflow-x:auto"><table class="cut-table" style="min-width:900px">
-    <thead><tr>${cols.map(c=>`<th style="cursor:pointer;white-space:nowrap" onclick="window._siSortSku('${c.key}')">${c.label}${arrow(c.key)}</th>`).join('')}</tr></thead>
-    <tbody>${page.map(r=>{
-      const daysClass=r.daysLeft<=7&&r.daysLeft>0?'color:#dc2626;font-weight:700':r.daysLeft<=14&&r.daysLeft>0?'color:var(--accent-warning);font-weight:600':'';
-      const reviewBadge=r.needsReview?'<span style="display:inline-block;background:#fef3c7;color:#92400e;font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px">review</span>':'';
-      return`<tr>
-        <td style="font-weight:600;font-size:11px;white-space:nowrap">${r.sku}${reviewBadge}</td>
-        <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.title}">${r.title}</td>
-        <td style="font-size:11px">${r.color}</td>
-        <td style="font-size:11px">${r.size}</td>
-        <td style="font-weight:600">${r.onHand}</td>
-        <td>${r.s7}</td>
-        <td>${r.s30}</td>
-        <td style="${daysClass}">${r.daysLeft===999?'∞':r.daysLeft===0?'—':r.daysLeft+'d'}</td>
-        <td>${r.sellThrough!=null?_siPct(r.sellThrough):'—'}</td>
-        <td>${r.reorderPoint||'—'}</td>
-        <td>${r.suggestedQty||'—'}</td>
-        <td>${r.refunds||'—'}</td>
-      </tr>`;
-    }).join('')}</tbody>
-  </table></div>`;
+    <thead><tr id="si-sku-head">${_siSkuHeadCells()}</tr></thead>
+    <tbody id="si-sku-tbody">${_siSkuRowsHtml(rows)}</tbody>
+  </table></div>
+  <div id="si-sku-more" style="margin-top:10px;text-align:center">${_siSkuMoreHtml(filtered.length)}</div>`;
 }
 
-window._siFilterSku=function(v){_siSkuSearch=v;_siRefreshContent();};
+window._siFilterSku=function(v){
+  _siSkuSearch=v; _siSkuLimit=200;          // reset paging on new search
+  clearTimeout(window._siSkuDebounce);
+  window._siSkuDebounce=setTimeout(_siRefreshSkuBody,120);  // tbody-only, input untouched → focus kept
+};
 window._siSortSku=function(k){
   if(_siSkuSort===k)_siSkuDir*=-1;
   else{_siSkuSort=k;_siSkuDir=-1;}
-  _siRefreshContent();
+  const head=document.getElementById('si-sku-head');
+  if(head)head.innerHTML=_siSkuHeadCells();  // refresh arrows without touching the input
+  _siRefreshSkuBody();
 };
+window._siSkuLoadMore=function(){ _siSkuLimit+=200; _siRefreshSkuBody(); };
 
 function _siRefreshContent(){
   const m=_siComputeMetrics();
@@ -660,6 +696,18 @@ function _siRefreshContent(){
   const items7=_siRecentItems(7);
   const el=document.getElementById('si-content');
   if(el)el.innerHTML=_siRenderSection(m,skuRows,attn,items7);
+}
+
+// Repaint ONLY the SKU table body + count + load-more — never the search input.
+function _siRefreshSkuBody(){
+  const rows=_siComputeSkuTable();
+  const filtered=_siSkuFiltered(rows);
+  const tb=document.getElementById('si-sku-tbody');
+  if(tb)tb.innerHTML=_siSkuRowsHtml(rows);
+  const cnt=document.getElementById('si-sku-count');
+  if(cnt)cnt.textContent=filtered.length+' SKUs'+(_siSkuLimit<filtered.length?' (showing '+_siSkuLimit+')':'');
+  const more=document.getElementById('si-sku-more');
+  if(more)more.innerHTML=_siSkuMoreHtml(filtered.length);
 }
 
 // ── Weekly Close ────────────────────────────────────────────────────
