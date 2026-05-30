@@ -193,6 +193,48 @@ previously in `index.html`):
 - Counters (`counters`)
 - Users (`USER_DEFS` array — owners/managers/workers)
 
+## Shopify Inventory Intelligence
+
+Read-only sales + inventory dashboard ("Inventory Intel" page). Data is
+pulled from the live Shopify store (`groovypakistan.com` / GROOVY™
+Streetwear) into `shopify_*` Firestore collections by **Netlify
+Functions** (Node, `firebase-admin`, service-account writes), then read
+client-side.
+
+- **Client (`js/shopify.js`):** `loadShopifyData()` + `renderShopifyDashboard()`.
+  Read-only — never writes. Categories are derived **dynamically** from
+  whatever `product_type` strings exist (no hardcoded category list / color
+  map); blank/whitespace types fall into an `'Unknown'` bucket. The "By
+  Category (7d)" panel is **line-item based** (keeps historical category by
+  design); Weeks-of-Supply is **catalog/product based** and skips
+  `status==='archived'` rows so the discontinued archive doesn't swamp
+  `'Unknown'`.
+- **Functions (`netlify/functions/`):** all auth to Shopify via Client
+  Credentials Grant; env vars `SHOPIFY_CLIENT_ID/SECRET`,
+  `SHOPIFY_STORE_DOMAIN`, `FIREBASE_SERVICE_ACCOUNT`.
+  - `shopify-catalog-sync.js` — **manual / on-demand HTTP function, NOT
+    scheduled.** No auth header (handler ignores the event); a plain GET
+    runs it. Trigger:
+    `https://groovyoperations.netlify.app/.netlify/functions/shopify-catalog-sync`.
+    Fetches all products (`status=active,draft,archived`) and writes **one
+    doc per variant** to `shopify_products/{variant.id}` via
+    `batch.set(...)` **without `{merge:true}`** → a re-sync **fully
+    overwrites** every doc (incl. `product_type`), so a plain re-run is the
+    backfill — no separate upsert path needed. Flags products whose options
+    aren't `Color`/`Size` (`needs_review:true`); informational only. Writes
+    a run summary to `shopify_sync_meta/catalog_sync`.
+  - `shopify-inventory-snapshot.js` — scheduled daily (`0 1 * * *`).
+  - `shopify-order-sync.js` — scheduled every 4h (`0 */4 * * *`).
+  - `shopify-weekly-close.js` — scheduled Sat (`0 2 * * 6`).
+  - `shopify-order-backfill.js` — resumable historical order backfill
+    (BulkWriter, time-budgeted to dodge 502s); `shopify-inventory.js` —
+    connection test. (Schedules live in `netlify.toml`.)
+- **Collections:** `shopify_products` (per-variant catalog), `shopify_orders`,
+  `shopify_line_items` (keep historical `product_type` by design),
+  `shopify_inventory_snapshots`, `shopify_weekly_closes`, `shopify_sync_meta`.
+  All are `read: if signedIn(); write: if false;` in `firestore.rules` —
+  only the Admin SDK (Functions) writes; clients read-only.
+
 ## Shared touchpoints — coordinate before changing
 
 These functions/blocks are edited by both tracks. Check the other branch

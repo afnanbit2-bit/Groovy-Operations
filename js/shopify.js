@@ -238,6 +238,7 @@ function _siSizeCurve(rows){
 function _siWeeksOfSupply(rows){
   const cats={};
   rows.forEach(r=>{
+    if(r.status==='archived')return; // archived products carry no product_type; keep them out of the 'Unknown' bucket
     const c=r.productType||'Unknown';
     if(!cats[c])cats[c]={onHand:0,weeklyRate:0};
     cats[c].onHand+=r.onHand;
