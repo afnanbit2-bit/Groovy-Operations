@@ -185,6 +185,23 @@ function _siByDimension(items,dim){
   return Object.entries(map).sort((a,b)=>b[1]-a[1]);
 }
 
+// ── By category, resolved against the CURRENT catalog ───────────────
+// Line items store a product_type snapshot frozen at order-sync time, so
+// historical sales collapse into 'Unknown'. Re-resolve each line item's
+// category from the live catalog by SKU (fallback: the frozen line-item
+// value, then 'Unknown'). Pure read — no data is mutated.
+function _siByCategoryLive(items){
+  const skuType={};
+  _siProducts.forEach(p=>{ if(p.sku && skuType[p.sku]===undefined) skuType[p.sku]=p.product_type||''; });
+  const map={};
+  items.forEach(li=>{
+    let k=(li.sku&&skuType[li.sku])||li.product_type||'Unknown';
+    if(typeof k!=='string'||!k.trim())k='Unknown';
+    map[k]=(map[k]||0)+(li.quantity||0);
+  });
+  return Object.entries(map).sort((a,b)=>b[1]-a[1]);
+}
+
 // ── Bar chart (pure CSS) ────────────────────────────────────────────
 function _siBarChart(data,maxBars){
   const d=data.slice(0,maxBars||15);
@@ -474,11 +491,11 @@ function _siAttentionSection(attn,skuRows){
 function _siPatternsSection(items7,skuRows){
   const bySize=_siByDimension(items7,'size');
   const byColor=_siByDimension(items7,'color');
-  const byCat=_siByDimension(items7,'product_type');
+  const byCat=_siByCategoryLive(items7);
 
   return`
   <div class="card">
-    <div class="card-title">By Category (7d)</div>
+    <div class="card-title">By Category (7d) <span style="font-size:11px;font-weight:400;color:var(--muted)">— current catalog</span></div>
     ${_siBarChart(byCat,12)}
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px" class="no-stack">
