@@ -560,7 +560,7 @@ async function _rcvCreateNewItem(){
   const code=v('rcvn-code').toUpperCase();
   const name=v('rcvn-name');
   const unit=_rcvNewUnit();
-  const thresh=parseInt(document.getElementById('rcvn-thresh')?.value)||200;
+  const thresh=_parseThreshold(document.getElementById('rcvn-thresh')?.value,200);
   const sized=document.getElementById('rcvn-sized')?.checked;
   const imgStatus=document.getElementById('rcvn-img-status')?.value;
   const imageUrl=document.getElementById('rcvn-img-url')?.value||'';
@@ -701,10 +701,19 @@ window._catLabelChanged=function(){
 
 function _miRowCells(l,idx){
   const item=allItems.find(i=>i.code===l.itemCode);
-  const stock=item?getBalance(item):0;
+  const sized=!!(item&&item.sizeSpecific);
+  // For a size-specific item the relevant stock is the chosen size's stock
+  // (total until a size is picked); for flat items it's the balance.
+  const stock=item?(sized&&l.size?(parseInt(item.sizes?.[l.size])||0):getBalance(item)):0;
   const opts=allItems.map(i=>`<option value="${i.code}"${i.code===l.itemCode?' selected':''}>${i.code} — ${i.name}</option>`).join('');
+  let sizeSelect='';
+  if(sized){
+    const szOpts=Object.keys(item.sizes||{}).map(sz=>`<option value="${sz}"${sz===l.size?' selected':''}>${sz} (${parseInt(item.sizes[sz])||0})</option>`).join('');
+    sizeSelect=`<select style="width:100%;margin-top:4px;padding:5px;border:1px solid var(--amber);border-radius:6px;font-size:12px;background:#FFFBEB" onchange="window._miChangeSize(${idx},this.value)">
+      <option value="">— select size —</option>${szOpts}</select>`;
+  }
   return`<td><select style="width:100%;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:12px" onchange="window._miChangeItem(${idx},this.value)">
-    <option value="">— select —</option>${opts}</select></td>
+    <option value="">— select —</option>${opts}</select>${sizeSelect}</td>
   <td style="text-align:center;font-size:12px;color:${stock>0?'var(--green)':'var(--red)'}">${l.itemCode?stock:'—'}</td>
   <td><input type="number" min="1" value="${l.qty}" placeholder="0" style="width:80px;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:12px" onchange="window._miChangeQty(${idx},this.value)"></td>
   <td><button onclick="window._miRemoveRow(${idx})" style="background:none;border:none;font-size:18px;color:var(--muted);cursor:pointer;padding:2px 6px">×</button></td>`;
@@ -733,9 +742,19 @@ window._miRemoveRow=function(idx){
 };
 window._miChangeItem=function(idx,code){
   _miLines[idx].itemCode=code;
-  const item=allItems.find(i=>i.code===code);
+  _miLines[idx].size='';// reset size — it belongs to the previous item
+  // Re-render the whole row so the size selector appears/disappears to match
+  // the newly-selected item (qty is preserved via the line object).
   const row=document.getElementById('mi-row-'+idx);if(!row)return;
-  const tds=row.querySelectorAll('td');if(tds[1]){const s=item?getBalance(item):0;tds[1].textContent=code?s:'—';tds[1].style.color=s>0?'var(--green)':'var(--red)';}
+  row.innerHTML=_miRowCells(_miLines[idx],idx);
+  _miUpdateSubmitBtn();
+};
+window._miChangeSize=function(idx,sz){
+  _miLines[idx].size=sz;
+  const item=allItems.find(i=>i.code===_miLines[idx].itemCode);
+  const row=document.getElementById('mi-row-'+idx);if(!row||!item)return;
+  const tds=row.querySelectorAll('td');
+  if(tds[1]){const s=sz?(parseInt(item.sizes?.[sz])||0):getBalance(item);tds[1].textContent=s;tds[1].style.color=s>0?'var(--green)':'var(--red)';}
   _miUpdateSubmitBtn();
 };
 window._miChangeQty=function(idx,v){_miLines[idx].qty=v;_miUpdateSubmitBtn();};
@@ -926,13 +945,20 @@ async function submitIssueManual(){
   for(let i=0;i<_miLines.length;i++){
     const l=_miLines[i];
     if(!l.itemCode){showToast(`Row ${i+1}: select an item.`,true);return;}
-    if(codes.has(l.itemCode)){showToast(`Row ${i+1}: duplicate item (${l.itemCode}).`,true);return;}
-    codes.add(l.itemCode);
-    const qty=parseFloat(l.qty)||0;
-    if(!qty){showToast(`Row ${i+1}: quantity must be > 0.`,true);return;}
     const it=allItems.find(x=>x.code===l.itemCode);
     if(!it){showToast(`Row ${i+1}: item ${l.itemCode} not found.`,true);return;}
-    if(!it.sizeSpecific&&qty>getBalance(it)){showToast(`Row ${i+1}: insufficient stock for ${l.itemCode} (have ${getBalance(it)}).`,true);return;}
+    // Size-specific items must name the size being issued; the same item may
+    // appear on multiple rows as long as each row is a different size.
+    if(it.sizeSpecific&&!l.size){showToast(`Row ${i+1}: pick a size for ${l.itemCode}.`,true);return;}
+    const key=l.itemCode+(it.sizeSpecific?'|'+l.size:'');
+    if(codes.has(key)){showToast(`Row ${i+1}: duplicate ${it.sizeSpecific?'item/size':'item'} (${l.itemCode}${it.sizeSpecific?' '+l.size:''}).`,true);return;}
+    codes.add(key);
+    const qty=parseFloat(l.qty)||0;
+    if(!qty){showToast(`Row ${i+1}: quantity must be > 0.`,true);return;}
+    if(it.sizeSpecific){
+      const szStock=parseInt(it.sizes?.[l.size])||0;
+      if(qty>szStock){showToast(`Row ${i+1}: insufficient ${l.size} stock for ${l.itemCode} (have ${szStock}).`,true);return;}
+    }else if(qty>getBalance(it)){showToast(`Row ${i+1}: insufficient stock for ${l.itemCode} (have ${getBalance(it)}).`,true);return;}
   }
   const btn=document.getElementById('mi-submit-btn');if(btn){btn.disabled=true;btn.textContent='Issuing…';}
   const rollback=[];
@@ -943,18 +969,20 @@ async function submitIssueManual(){
       const updated={...item};
       const oldBalance=item.sizeSpecific?{...item.sizes}:item.balance;
       if(item.sizeSpecific){
-        const ns={...item.sizes};const keys=Object.keys(ns);const per=Math.floor(qty/keys.length);
-        keys.forEach(sz=>{ns[sz]=Math.max(0,(parseInt(ns[sz])||0)-per);});
+        // Deduct from the specific size the user chose (validated above).
+        const ns={...item.sizes};
+        ns[l.size]=Math.max(0,(parseInt(ns[l.size])||0)-qty);
         updated.sizes=ns;
       }else{updated.balance=Math.max(0,(parseInt(item.balance)||0)-qty);}
       await fsSet('store_items',item.code,updated);
       rollback.push({item,oldBalance});
       const txData={type:'issued',itemCode:item.code,itemName:item.name,issuedTo,purpose,date,by:session.name,ts:Date.now(),qty,unit:item.unit,poRef};
+      if(item.sizeSpecific&&l.size)txData.size=l.size;
       const txId=await fsAdd('store_transactions',txData);
       const idx=allItems.findIndex(x=>x.code===item.code);if(idx>=0)allItems[idx]={...updated,_id:item.code};
       allTransactions.unshift({...txData,_id:txId});
     }
-    _miLines=[{itemCode:'',qty:''}];
+    _miLines=[{itemCode:'',qty:'',size:''}];
     showToast(`${rollback.length} item(s) issued ✓`);renderStoreSection('issue');
   }catch(e){
     for(const{item,oldBalance}of rollback){
@@ -1201,6 +1229,7 @@ function refreshIssueLog(){
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <span style="font-size:10px;font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${isIn?'▲ INBOUND':'▼ OUTBOUND'}</span>
           <span style="font-size:11px;font-weight:700">${tx.itemCode||'—'}</span>
+          ${tx.size?`<span style="font-size:10px;font-weight:700;background:#FEF3C7;color:#92400e;padding:2px 7px;border-radius:8px">${tx.size}</span>`:''}
           ${tx.poRef||tx.poId?`<span style="font-size:10px;font-weight:700;background:#f0f0f0;color:#111;padding:2px 7px;border-radius:8px">${tx.poRef||tx.poId}</span>`:''}
         </div>
         <div style="font-size:13px;font-weight:500;margin-top:2px">${tx.itemName||'—'}</div>
@@ -1535,10 +1564,21 @@ function getBalance(item){
   if(item.sizeSpecific)return Object.values(item.sizes||{}).reduce((s,v)=>s+(parseInt(v)||0),0);
   return parseInt(item.balance)||0;
 }
+// Parse a low-stock threshold from raw input, preserving an explicit 0
+// (0 = "never flag as low"). Blank / invalid falls back to the default.
+function _parseThreshold(v,dflt){
+  const t=parseInt(v,10);
+  return(Number.isFinite(t)&&t>=0)?t:(dflt==null?200:dflt);
+}
+// Effective threshold for an item — honours an explicit 0, only defaults
+// to 500 when no threshold has been set at all.
+function _thresholdOf(item){
+  return(item&&item.lowStockThreshold!=null)?item.lowStockThreshold:500;
+}
 function getStatus(item){
   const b=getBalance(item);
   if(b<=0)return'red';
-  if(b<(item.lowStockThreshold||500))return'amber';
+  if(b<_thresholdOf(item))return'amber';
   return'green';
 }
 function formatSizes(item){return Object.entries(item.sizes||{}).map(([k,v])=>`${k}: ${v}`).join(' · ');}
@@ -2045,7 +2085,7 @@ function _buildItemModal(title,item,onSave){
       <div class="field"><label>Name *</label><input id="_im-name" value="${item?item.name:''}"></div>
       <div class="field"><label>Category *</label><select id="_im-cat" onchange="window._imCatChange()">${cats}</select></div>
       <div class="field"><label>Unit *</label><select id="_im-unit">${unitOpts}</select></div>
-      <div class="field"><label>Low Stock Threshold</label><input id="_im-thresh" type="number" value="${item?item.lowStockThreshold||200:200}"></div>
+      <div class="field"><label>Low Stock Threshold</label><input id="_im-thresh" type="number" min="0" value="${item&&item.lowStockThreshold!=null?item.lowStockThreshold:200}"></div>
       <div style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="_im-sized" ${item&&item.sizeSpecific?'checked':''} onchange="document.getElementById('_im-sized-row').style.display=this.checked?'block':'none';document.getElementById('_im-bal-row').style.display=this.checked?'none':'block'"><label for="_im-sized" style="cursor:pointer;font-size:13px">Size-specific</label></div>
       <div id="_im-sized-row" style="display:${item&&item.sizeSpecific?'block':'none'}">
         <div class="field"><label>Sizes (e.g. XS:100 S:200 M:300)</label><input id="_im-sizes" value="${sizesStr}" placeholder="XS:100 S:200 M:300 L:400"></div>
@@ -2111,7 +2151,7 @@ window.showAddItemForm=function(){
     if(allItems.some(i=>(i.code||'').toUpperCase()===code))return showToast('Code '+code+' already exists.',true);
     const sized=document.getElementById('_im-sized').checked;
     const imageUrl=document.getElementById('_im-img-url')?.value||'';
-    const item={code,name,category:document.getElementById('_im-cat').value,unit:document.getElementById('_im-unit').value,lowStockThreshold:parseInt(document.getElementById('_im-thresh').value)||200,sizeSpecific:sized,imageUrl};
+    const item={code,name,category:document.getElementById('_im-cat').value,unit:document.getElementById('_im-unit').value,lowStockThreshold:_parseThreshold(document.getElementById('_im-thresh').value,200),sizeSpecific:sized,imageUrl};
     if(sized){item.sizes=_parseSizesInput(document.getElementById('_im-sizes').value);}
     else{item.balance=parseInt(document.getElementById('_im-bal').value)||0;}
     try{
@@ -2166,7 +2206,7 @@ window.editStoreItem=function(code){
     }
     const sized=document.getElementById('_im-sized').checked;
     const imageUrl=document.getElementById('_im-img-url')?.value||'';
-    const updated={...item,code:newCode,name,category:document.getElementById('_im-cat').value,unit:document.getElementById('_im-unit').value,lowStockThreshold:parseInt(document.getElementById('_im-thresh').value)||200,sizeSpecific:sized,imageUrl};
+    const updated={...item,code:newCode,name,category:document.getElementById('_im-cat').value,unit:document.getElementById('_im-unit').value,lowStockThreshold:_parseThreshold(document.getElementById('_im-thresh').value,200),sizeSpecific:sized,imageUrl};
     if(sized){updated.sizes=_parseSizesInput(document.getElementById('_im-sizes').value);delete updated.balance;}
     else{updated.balance=parseInt(document.getElementById('_im-bal').value)||0;delete updated.sizes;}
     try{
