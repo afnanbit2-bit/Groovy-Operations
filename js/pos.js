@@ -293,6 +293,7 @@ function renderPOCreate(){
       </div>
     </div>
   </div>
+  ${typeof fabPoReserveCard==='function'?fabPoReserveCard():''}
   <button class="btn-primary" id="po-submit-btn" onclick="window.submitPO()">Create Production Order</button>
   <div style="height:80px"></div>`;
 }
@@ -416,6 +417,7 @@ window.submitPO=async function(){
     const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',imgFront:imgFrontUrl,imgBack:imgBackUrl,currentStage:'cutting',stages,bundlingParts,embellishment,createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
     await setDoc(doc(db,'pos',poId),payload);
     await logActivity('PO created',`${poId} — ${name} (${qty} pcs)`);
+    if(typeof fabPoReserveCommit==='function'){try{await fabPoReserveCommit(poId);}catch(_re){showToast('PO saved, but fabric reservation failed: '+_re.message,true);}}
     if(embellishment.required&&embellishment.recipeStatus==='missing')await logActivity('Recipe Missing',`${poId} — ${embellishment.articleCode||code}: Recipe required before PP approval. Ammar notified.`).catch(()=>{});
     if(embellishment.required&&embellishment.recipeStatus==='draft')await logActivity('Recipe Needs Lock',`${poId} — ${embellishment.articleCode||code}: Recipe exists but not locked by Ammar.`).catch(()=>{});
     _poEmbellishment=null;

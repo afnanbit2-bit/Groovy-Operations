@@ -917,3 +917,56 @@ window.submitFabRetSupplier=async function(){
     window.switchFabRetMode('supplier');
   }catch(e){showToast('Error: '+e.message,true);}
 };
+
+// ════════════════════════════════════════════════════════════════════════
+//  Reservation (Phase 5) — called from the New PO tab (pos.js).
+//  Pick a fabric + rolls → reserved to the PO; rolls stay in stock until issued.
+// ════════════════════════════════════════════════════════════════════════
+let _poReserveRolls=[],_poReserveKey=null;
+
+window.fabPoReserveCard=function(){
+  _poReserveKey=null;_poReserveRolls=[];
+  const stocks=(typeof allFabricInventory!=='undefined'?allFabricInventory:[]).filter(s=>(s.rolls||[]).some(r=>(r.status||'in_stock')==='in_stock'));
+  return`<div class="card"><div class="card-title">Reserve fabric rolls <span style="font-weight:400;color:var(--muted);font-size:11px">optional · holds rolls in stock for this PO</span></div>
+    <div class="field"><label>Fabric</label>
+      <select id="po-resv-stock" onchange="window.fabPoReservePick()">
+        <option value="">Select fabric…</option>
+        ${stocks.map(s=>`<option value="${s._id}">${_gpEsc(s.fabType)} · ${s.gsm||0}gsm · ${_gpEsc(s.color)} — ${s.rollsCount||0} available</option>`).join('')}
+      </select>
+    </div>
+    <div id="po-resv-rolls" style="margin-top:8px"></div>
+  </div>`;
+};
+
+window.fabPoReservePick=function(){
+  const key=document.getElementById('po-resv-stock')?.value||'';
+  _poReserveKey=key;_poReserveRolls=[];
+  const wrap=document.getElementById('po-resv-rolls');if(!wrap)return;
+  if(!key){wrap.innerHTML='';return;}
+  const s=allFabricInventory.find(x=>x._id===key);
+  const avail=(s?.rolls||[]).filter(r=>(r.status||'in_stock')==='in_stock');
+  if(!avail.length){wrap.innerHTML='<div style="font-size:12px;color:var(--muted)">No available rolls.</div>';return;}
+  wrap.innerHTML=`<label style="font-size:11px;color:var(--muted)">${avail.length} available — tick to reserve</label>
+    <div style="display:grid;gap:4px;margin-top:4px">${avail.map(r=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;cursor:pointer">
+      <input type="checkbox" data-roll="${_gpEsc(r.rollCode)}" onchange="window.fabPoReserveToggle(this)">
+      <span style="font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode)}</span>
+      <span style="color:var(--muted)">${r.weight||0} ${r.unit||s.unit||'kg'}</span>
+    </label>`).join('')}</div>`;
+};
+
+window.fabPoReserveToggle=function(cb){
+  const rc=cb.dataset.roll;
+  if(cb.checked){if(!_poReserveRolls.includes(rc))_poReserveRolls.push(rc);}
+  else _poReserveRolls=_poReserveRolls.filter(x=>x!==rc);
+};
+
+window.fabPoReserveReset=function(){_poReserveKey=null;_poReserveRolls=[];};
+
+// Commit reservations after a PO doc is created. No-op if nothing picked.
+window.fabPoReserveCommit=async function(poId){
+  if(!_poReserveKey||!_poReserveRolls.length)return;
+  const s=allFabricInventory.find(x=>x._id===_poReserveKey);if(!s)return;
+  await _fabInvUpsert({fabType:s.fabType,gsm:s.gsm,color:s.color,unit:s.unit||'kg',reserveRollCodes:_poReserveRolls.slice(),reservePO:poId,note:`Reserved for ${poId}`,sourceCol:'pos',sourceId:poId});
+  await logActivity('Fabric reserved',`${_poReserveRolls.length} roll(s) reserved for ${poId}`);
+  window.fabPoReserveReset();
+};
