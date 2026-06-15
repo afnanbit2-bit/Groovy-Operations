@@ -720,8 +720,15 @@ window.requestDeleteFabricIn=async function(fabId){
 const FAB_DESTINATIONS=['FebKnit','Al-Hamd','Al-Nisa','Aqib Sublimation','JR Traders','Rahim Gul Enterprise','Khursheed Enterprise'];
 let _fabIssueRolls=[],_fabIssueKey=null;
 
+// Roll codes are stored uppercase (e.g. GRYJRS200-01-R01). Handheld scanners
+// can emit a different case (Caps-Lock state / config) or stray whitespace, so
+// every scan/lookup compares on this normalized form instead of a brittle
+// exact, case-sensitive match.
+function _normRoll(s){return String(s||'').trim().toUpperCase().replace(/\s+/g,'');}
+
 function _fabFindRoll(rollCode){
-  for(const s of allFabricInventory){const r=(s.rolls||[]).find(x=>x.rollCode===rollCode);if(r)return{stock:s,roll:r};}
+  const t=_normRoll(rollCode);
+  for(const s of allFabricInventory){const r=(s.rolls||[]).find(x=>_normRoll(x.rollCode)===t);if(r)return{stock:s,roll:r};}
   return null;
 }
 
@@ -777,16 +784,17 @@ function _fabIssueAdd(code){
   const found=_fabFindRoll(code);
   if(!found){showToast('Roll '+code+' not found.',true);return;}
   const{stock,roll}=found;
+  const rc=roll.rollCode;   // canonical stored code — ignore scanned-in case/spacing
   const st=roll.status||'in_stock';
-  if(st==='issued'){showToast(code+' is already issued.',true);return;}
-  if(st==='returned_supplier'){showToast(code+' was returned to supplier.',true);return;}
-  if(_fabIssueRolls.some(r=>r.rollCode===code)){showToast(code+' already selected.',true);return;}
+  if(st==='issued'){showToast(rc+' is already issued.',true);return;}
+  if(st==='returned_supplier'){showToast(rc+' was returned to supplier.',true);return;}
+  if(_fabIssueRolls.some(r=>r.rollCode===rc)){showToast(rc+' already selected.',true);return;}
   if(_fabIssueKey&&_fabIssueKey!==stock._id){showToast('All rolls must be from the same fabric. Clear selection to switch.',true);return;}
   const po=document.getElementById('fab-iss-po')?.value||'';
-  if(st==='reserved'&&roll.reservedPO&&po&&roll.reservedPO!==po)showToast(code+' is reserved for '+roll.reservedPO+' (issuing anyway).',false);
-  if(!roll.qcPassed)showToast(code+' has not passed QC (issuing anyway).',false);
+  if(st==='reserved'&&roll.reservedPO&&po&&roll.reservedPO!==po)showToast(rc+' is reserved for '+roll.reservedPO+' (issuing anyway).',false);
+  if(!roll.qcPassed)showToast(rc+' has not passed QC (issuing anyway).',false);
   _fabIssueKey=stock._id;
-  _fabIssueRolls.push({rollCode:code,weight:roll.weight||0,status:st});
+  _fabIssueRolls.push({rollCode:rc,weight:roll.weight||0,status:st});
   _fabIssueRenderSelected();_fabIssueSyncChecklist();
 }
 
@@ -930,9 +938,10 @@ window.fabRetVendorScan=function(){
   const inp=document.getElementById('fab-ret-scan');
   const code=(inp?.value||'').trim();
   if(!code){return;}
-  const cb=document.querySelector(`.fab-ret-cb[data-roll="${code.replace(/"/g,'')}"]`);
+  const t=_normRoll(code);
+  const cb=[...document.querySelectorAll('.fab-ret-cb')].find(c=>_normRoll(c.dataset.roll)===t);
   if(!cb){showToast(code+' is not an issued roll.',true);}
-  else{cb.checked=true;const wt=document.querySelector(`.fab-ret-wt[data-roll="${code.replace(/"/g,'')}"]`);if(wt)wt.focus();}
+  else{cb.checked=true;const wt=[...document.querySelectorAll('.fab-ret-wt')].find(w=>_normRoll(w.dataset.roll)===t);if(wt)wt.focus();}
   if(inp){inp.value='';inp.focus();}
 };
 
@@ -992,7 +1001,8 @@ window.fabSRetScan=function(){
   const inp=document.getElementById('fab-sret-scan');
   const code=(inp?.value||'').trim();
   if(!code)return;
-  const cb=document.querySelector(`.fab-sret-cb[data-roll="${code.replace(/"/g,'')}"]`);
+  const t=_normRoll(code);
+  const cb=[...document.querySelectorAll('.fab-sret-cb')].find(c=>_normRoll(c.dataset.roll)===t);
   if(!cb)showToast(code+' is not an in-stock roll.',true);else cb.checked=true;
   if(inp){inp.value='';inp.focus();}
 };
