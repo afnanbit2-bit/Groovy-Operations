@@ -37,12 +37,15 @@ window.switchFabTab=function(tab){
     window.addFabRoll();
     renderFabricInList();
   }
+  else if(tab==='issue'){
+    _fabIssueRolls=[];_fabIssueKey=null;
+    el.innerHTML=renderFabricIssueTab();
+  }
   else el.innerHTML=_fabPlaceholder(tab);
 };
 
 function _fabPlaceholder(tab){
   const map={
-    issue:['Issue','Scanner-first roll issuing (PO required) lands in Phase 3. For now use Gate Pass → Outward.'],
     returns:['Returns','Vendor→Stock and To-Supplier returns land in Phase 4.'],
     reports:['Reports','Stock / movement / wastage exports (Excel + PDF) land in Phase 6.']
   };
@@ -605,4 +608,158 @@ window.requestDeleteFabricIn=async function(fabId){
     showToast('Delete request sent for approval');
     _fabRefreshList();
   }catch(e){showToast('Request failed: '+e.message,true);}
+};
+
+// ════════════════════════════════════════════════════════════════════════
+//  Issue (Phase 3) — scanner-first roll issuing to a vendor, PO required.
+//  All rolls in one issue must belong to a single fabric stock.
+// ════════════════════════════════════════════════════════════════════════
+const FAB_DESTINATIONS=['FebKnit','Al-Hamd','Al-Nisa','Aqib Sublimation','JR Traders','Rahim Gul Enterprise','Khursheed Enterprise'];
+let _fabIssueRolls=[],_fabIssueKey=null;
+
+function _fabFindRoll(rollCode){
+  for(const s of allFabricInventory){const r=(s.rolls||[]).find(x=>x.rollCode===rollCode);if(r)return{stock:s,roll:r};}
+  return null;
+}
+
+function renderFabricIssueTab(){
+  const today=new Date().toISOString().split('T')[0];
+  const stocks=allFabricInventory.filter(s=>(s.rolls||[]).some(r=>['in_stock','reserved'].includes(r.status||'in_stock')));
+  const pos=(typeof allPOs!=='undefined'&&allPOs)||[];
+  return`<div class="card"><div class="card-title">Issue fabric to vendor</div>
+    <div class="form-grid">
+      <div class="field"><label>Production Order (PO) *</label>
+        <select id="fab-iss-po">
+          <option value="">Select PO…</option>
+          ${pos.map(p=>`<option value="${_gpEsc(p.id)}">${_gpEsc(p.id)} — ${_gpEsc(p.name||'')}${p.fabric?` · ${_gpEsc(p.fabric)}`:''}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>Date</label><input id="fab-iss-date" type="date" value="${today}"></div>
+      <div class="field" style="grid-column:1/-1"><label>Destination / Vendor *</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+          ${FAB_DESTINATIONS.map(d=>`<button type="button" class="dest-chip" onclick="document.getElementById('fab-iss-dest').value='${d}'">${d}</button>`).join('')}
+        </div>
+        <input id="fab-iss-dest" placeholder="Vendor name…">
+      </div>
+    </div>
+  </div>
+  <div class="card"><div class="card-title">Pick rolls <span style="font-weight:400;color:var(--muted);font-size:11px">scan or select — all from one fabric</span></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+      <div class="field" style="flex:1;min-width:200px;margin:0"><label>Scan roll barcode</label>
+        <input id="fab-iss-scan" placeholder="Scan or type roll code, press Enter" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();window.fabIssueScan();}">
+      </div>
+      <div class="field" style="flex:1;min-width:200px;margin:0"><label>…or pick a fabric</label>
+        <select id="fab-iss-stock" onchange="window.fabIssuePickStock()">
+          <option value="">Select fabric…</option>
+          ${stocks.map(s=>`<option value="${s._id}">${_gpEsc(s.fabType)} · ${s.gsm||0}gsm · ${_gpEsc(s.color)} — ${s.rollsCount||0} avail${s.reservedCount?` · ${s.reservedCount} reserved`:''}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div id="fab-iss-checklist"></div>
+    <div id="fab-iss-selected" style="margin-top:10px"></div>
+  </div>
+  <button class="btn-primary" onclick="window.submitFabricIssue()">Issue Fabric</button>
+  <div style="height:80px"></div>`;
+}
+
+window.fabIssueScan=function(){
+  const inp=document.getElementById('fab-iss-scan');
+  const code=(inp?.value||'').trim();
+  if(!code)return;
+  _fabIssueAdd(code);
+  if(inp){inp.value='';inp.focus();}
+};
+
+function _fabIssueAdd(code){
+  const found=_fabFindRoll(code);
+  if(!found){showToast('Roll '+code+' not found.',true);return;}
+  const{stock,roll}=found;
+  const st=roll.status||'in_stock';
+  if(st==='issued'){showToast(code+' is already issued.',true);return;}
+  if(st==='returned_supplier'){showToast(code+' was returned to supplier.',true);return;}
+  if(_fabIssueRolls.some(r=>r.rollCode===code)){showToast(code+' already selected.',true);return;}
+  if(_fabIssueKey&&_fabIssueKey!==stock._id){showToast('All rolls must be from the same fabric. Clear selection to switch.',true);return;}
+  const po=document.getElementById('fab-iss-po')?.value||'';
+  if(st==='reserved'&&roll.reservedPO&&po&&roll.reservedPO!==po)showToast(code+' is reserved for '+roll.reservedPO+' (issuing anyway).',false);
+  if(!roll.qcPassed)showToast(code+' has not passed QC (issuing anyway).',false);
+  _fabIssueKey=stock._id;
+  _fabIssueRolls.push({rollCode:code,weight:roll.weight||0,status:st});
+  _fabIssueRenderSelected();_fabIssueSyncChecklist();
+}
+
+window.fabIssuePickStock=function(){
+  const key=document.getElementById('fab-iss-stock')?.value||'';
+  const wrap=document.getElementById('fab-iss-checklist');
+  if(!wrap)return;
+  if(!key){wrap.innerHTML='';return;}
+  if(_fabIssueKey&&_fabIssueKey!==key){wrap.innerHTML='<div style="font-size:12px;color:#dc2626;padding:6px">Clear current selection to pick a different fabric.</div>';return;}
+  const stock=allFabricInventory.find(s=>s._id===key);
+  const pickable=(stock?.rolls||[]).filter(r=>['in_stock','reserved'].includes(r.status||'in_stock'));
+  if(!pickable.length){wrap.innerHTML='<div style="font-size:12px;color:var(--muted);padding:6px">No available rolls.</div>';return;}
+  wrap.innerHTML=`<label style="font-size:11px;color:var(--muted)">${pickable.length} available rolls</label>
+    <div style="display:grid;gap:4px;margin-top:4px">${pickable.map(r=>{
+      const sel=_fabIssueRolls.some(x=>x.rollCode===r.rollCode);
+      const resv=r.status==='reserved';
+      return`<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;cursor:pointer">
+        <input type="checkbox" data-roll="${_gpEsc(r.rollCode)}" ${sel?'checked':''} onchange="window.fabIssueToggle(this)">
+        <span style="font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode)}</span>
+        <span style="color:var(--muted)">${r.weight||0} ${r.unit||stock.unit||'kg'}</span>
+        ${resv?`<span style="color:var(--amber);font-size:10px">reserved ${_gpEsc(r.reservedPO||'')}</span>`:''}
+        ${r.qcPassed?'<span style="color:var(--green);font-size:10px">QC ✓</span>':'<span style="color:var(--muted);font-size:10px">no QC</span>'}
+      </label>`;
+    }).join('')}</div>`;
+};
+
+function _fabIssueSyncChecklist(){if(document.getElementById('fab-iss-stock')?.value)window.fabIssuePickStock();}
+
+window.fabIssueToggle=function(cb){
+  const code=cb.dataset.roll;
+  if(cb.checked)_fabIssueAdd(code);else window.fabIssueRemove(code);
+};
+
+window.fabIssueRemove=function(code){
+  _fabIssueRolls=_fabIssueRolls.filter(r=>r.rollCode!==code);
+  if(!_fabIssueRolls.length)_fabIssueKey=null;
+  _fabIssueRenderSelected();_fabIssueSyncChecklist();
+};
+
+function _fabIssueRenderSelected(){
+  const el=document.getElementById('fab-iss-selected');if(!el)return;
+  if(!_fabIssueRolls.length){el.innerHTML='<div class="empty" style="padding:10px">No rolls selected yet.</div>';return;}
+  const stock=allFabricInventory.find(s=>s._id===_fabIssueKey);
+  const total=_fabIssueRolls.reduce((s,r)=>s+(r.weight||0),0);
+  el.innerHTML=`<div style="font-size:11px;color:var(--muted);margin-bottom:4px">${stock?`${_gpEsc(stock.fabType)} · ${stock.gsm}gsm · ${_gpEsc(stock.color)}`:''}</div>
+    ${_fabIssueRolls.map(r=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;border-bottom:1px solid #f5f5f5;font-size:12px">
+      <span style="font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode)}${r.status==='reserved'?' <span style="color:var(--amber);font-weight:400;font-size:10px">(reserved)</span>':''}</span>
+      <span style="display:flex;gap:10px;align-items:center"><span>${r.weight||0} ${stock?.unit||'kg'}</span>
+      <button onclick="window.fabIssueRemove('${_gpEsc(r.rollCode)}')" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:14px">×</button></span>
+    </div>`).join('')}
+    <div style="display:flex;justify-content:space-between;padding:8px;margin-top:6px;background:var(--dark);border-radius:8px;color:#fff;font-size:13px"><span>${_fabIssueRolls.length} rolls</span><span style="font-weight:700">${total.toFixed(2)} ${stock?.unit||'kg'}</span></div>`;
+}
+
+window.submitFabricIssue=async function(){
+  const po=document.getElementById('fab-iss-po')?.value||'';
+  const dest=(document.getElementById('fab-iss-dest')?.value||'').trim();
+  const date=document.getElementById('fab-iss-date')?.value||'';
+  if(!po){showToast('Select a PO (required).',true);return;}
+  if(!dest){showToast('Destination/vendor is required.',true);return;}
+  if(!_fabIssueRolls.length){showToast('Select at least one roll.',true);return;}
+  const stock=allFabricInventory.find(s=>s._id===_fabIssueKey);
+  if(!stock){showToast('Fabric stock not found.',true);return;}
+  const rollCodes=_fabIssueRolls.map(r=>r.rollCode);
+  const fabUnit=stock.unit||'kg';
+  const fabQty=parseFloat(_fabIssueRolls.reduce((s,r)=>s+(r.weight||0),0).toFixed(2));
+  try{
+    const next=await getNextId('gatepasses');
+    const gpId='GP-'+String(next).padStart(3,'0');
+    const article=`${stock.fabType} ${stock.gsm||0}gsm ${stock.color}`;
+    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,spec:`PO ${po} · ${rollCodes.length} rolls`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stock._id,boras:'0',items:[],totalUnits:0,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
+    await setDoc(doc(db,'gatepasses',gpId),payload);
+    await _fabInvUpsert({fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:fabUnit,removeRollCodes:rollCodes,reservePO:po,note:`Issued to ${dest} for ${po}`,sourceCol:'gatepasses',sourceId:gpId});
+    await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to ${dest} for ${po}`);
+    showToast(`${gpId} issued ✓ · ${rollCodes.length} rolls`);
+    _fabIssueRolls=[];_fabIssueKey=null;
+    if(typeof loadData==='function')await loadData();
+    window.switchFabTab('issue');
+  }catch(e){showToast('Error: '+e.message,true);}
 };

@@ -38,8 +38,6 @@ function renderOutward(){
       <div class="field"><label>Pass type *</label>
         <select id="gp-type" onchange="window.onGPTypeChange()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%">
           <option value="garments">Garments — by units (pcs)</option>
-          <option value="fabric_kg">Fabric — by weight (kg)</option>
-          <option value="fabric_m">Fabric — by length (meters)</option>
         </select>
       </div>
       <div class="field" style="position:relative"><label>Article name *</label>
@@ -427,36 +425,66 @@ function renderReturnsList(){
     </div>`;
   }).join('');}
 
-async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,note,sourceCol,sourceId}){
+// Fabric inventory engine — one operation per call. Recomputes totals from the
+// roll array (self-correcting). Operations: addRolls (receipt) · removeRollCodes
+// (issue) · reserveRollCodes (+reservePO) · releaseRollCodes · returnRollCodes
+// (whole vendor return) · returnPartial [{parentRollCode,weight}] (mint remnant
+// + log consumed) · supplierReturnRollCodes (+reason). See FABRIC_INVENTORY_PLAN.
+async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,reserveRollCodes,reservePO,releaseRollCodes,returnRollCodes,returnPartial,supplierReturnRollCodes,reason,note,sourceCol,sourceId}){
   const key=_fabInvKey(fabType,gsm,color);
   const ref=doc(db,'fabric_inventory',key);
   const existing=allFabricInventory.find(x=>x._id===key);
-  const rolls=Array.isArray(existing?.rolls)?existing.rolls.slice():[];
-  let totalWeight=existing?existing.totalWeight||0:0;
+  const rolls=Array.isArray(existing?.rolls)?existing.rolls.map(r=>({...r})):[];
+  let movType='out',movSub='',movQty=0;const movCodes=[];
+  const findRoll=(rc,statuses)=>rolls.find(r=>r.rollCode===rc&&statuses.includes(r.status||'in_stock'));
   if(Array.isArray(addRolls)){
-    for(const r of addRolls){
-      rolls.push({rollCode:r.rollCode,weight:r.weight,gsm:r.gsm||gsm||0,unit:r.unit||unit,status:'in_stock',sourceFabId:r.sourceFabId||sourceId,addedAt:Date.now(),addedBy:session.name});
-      totalWeight+=r.weight||0;
-    }
-  }
-  if(Array.isArray(removeRollCodes)){
-    for(const rc of removeRollCodes){
-      const idx=rolls.findIndex(r=>r.rollCode===rc&&r.status==='in_stock');
-      if(idx>=0){
-        totalWeight-=rolls[idx].weight||0;
-        rolls[idx]={...rolls[idx],status:'issued',issuedAt:Date.now(),issuedBy:session.name,issuedTo:sourceId};
+    for(const r of addRolls){rolls.push({rollCode:r.rollCode,weight:r.weight,gsm:r.gsm||gsm||0,unit:r.unit||unit,status:'in_stock',sourceFabId:r.sourceFabId||sourceId,addedAt:Date.now(),addedBy:session.name});movQty+=r.weight||0;movCodes.push(r.rollCode);}
+    movType='in';movSub='receipt';
+  }else if(Array.isArray(removeRollCodes)){
+    for(const rc of removeRollCodes){const r=findRoll(rc,['in_stock','reserved']);if(r){r.status='issued';r.issuedAt=Date.now();r.issuedBy=session.name;r.issuedTo=sourceId;r.issuedPO=reservePO||r.reservedPO||'';delete r.reservedPO;movQty+=r.weight||0;movCodes.push(rc);}}
+    movType='out';movSub='issue';
+  }else if(Array.isArray(reserveRollCodes)){
+    for(const rc of reserveRollCodes){const r=findRoll(rc,['in_stock']);if(r){r.status='reserved';r.reservedPO=reservePO||'';r.reservedAt=Date.now();r.reservedBy=session.name;movQty+=r.weight||0;movCodes.push(rc);}}
+    movType='reserve';movSub='reserve';
+  }else if(Array.isArray(releaseRollCodes)){
+    for(const rc of releaseRollCodes){const r=findRoll(rc,['reserved']);if(r){r.status='in_stock';delete r.reservedPO;r.releasedAt=Date.now();movQty+=r.weight||0;movCodes.push(rc);}}
+    movType='release';movSub='release';
+  }else if(Array.isArray(returnRollCodes)){
+    for(const rc of returnRollCodes){const r=findRoll(rc,['issued']);if(r){r.status='in_stock';r.returnedAt=Date.now();r.returnedBy=session.name;delete r.issuedTo;movQty+=r.weight||0;movCodes.push(rc);}}
+    movType='in';movSub='return_in';
+  }else if(Array.isArray(returnPartial)){
+    for(const p of returnPartial){
+      const parent=findRoll(p.parentRollCode,['issued']);
+      if(parent){
+        const remCode=_nextRemnantCode(rolls,p.parentRollCode);
+        const w=parseFloat(p.weight)||0;
+        rolls.push({rollCode:remCode,weight:w,gsm:parent.gsm||gsm||0,unit:parent.unit||unit,status:'in_stock',remnant:true,parentRollCode:p.parentRollCode,sourceFabId:parent.sourceFabId,addedAt:Date.now(),addedBy:session.name});
+        parent.consumedWeight=(parent.consumedWeight||0)+Math.max(0,(parent.weight||0)-w);
+        parent.returnedRemnant=remCode;
+        movQty+=w;movCodes.push(remCode);
       }
     }
+    movType='in';movSub='return_in';
+  }else if(Array.isArray(supplierReturnRollCodes)){
+    for(const rc of supplierReturnRollCodes){const r=findRoll(rc,['in_stock']);if(r){r.status='returned_supplier';r.returnedToSupplierAt=Date.now();r.returnReason=reason||'';movQty+=r.weight||0;movCodes.push(rc);}}
+    movType='out';movSub='return_out';
   }
-  if(totalWeight<0)totalWeight=0;
-  const payload={key,fabType,gsm:Number(gsm)||0,color,unit:unit||'kg',rolls,totalWeight:parseFloat(totalWeight.toFixed(2)),rollsCount:rolls.filter(r=>r.status==='in_stock').length,lastMovementAt:Date.now()};
+  const physical=rolls.filter(r=>['in_stock','reserved'].includes(r.status||'in_stock'));
+  const totalWeight=parseFloat(physical.reduce((s,r)=>s+(r.weight||0),0).toFixed(2));
+  const payload={key,fabType,gsm:Number(gsm)||0,color,unit:unit||'kg',rolls,totalWeight,rollsCount:rolls.filter(r=>(r.status||'in_stock')==='in_stock').length,reservedCount:rolls.filter(r=>r.status==='reserved').length,lastMovementAt:Date.now()};
   await setDoc(ref,payload,{merge:true});
   if(existing)Object.assign(existing,payload);else allFabricInventory.push({...payload,_id:key});
-  // Log movement
   const movRef=doc(collection(db,'fabric_movements'));
-  const movDoc={id:movRef.id,ts:Date.now(),type:addRolls?'in':'out',fabType,gsm:Number(gsm)||0,color,unit:unit||'kg',qty:addRolls?addRolls.reduce((s,r)=>s+(r.weight||0),0):(removeRollCodes||[]).reduce((s,rc)=>{const r=(existing?.rolls||[]).find(x=>x.rollCode===rc);return s+(r?r.weight||0:0);},0),rollCodes:addRolls?addRolls.map(r=>r.rollCode):(removeRollCodes||[]),sourceCollection:sourceCol||'',sourceId:sourceId||'',by:session.name,note:note||''};
+  const movDoc={id:movRef.id,ts:Date.now(),type:movType,subtype:movSub,fabType,gsm:Number(gsm)||0,color,unit:unit||'kg',qty:parseFloat(movQty.toFixed(2)),rollCodes:movCodes,sourceCollection:sourceCol||'',sourceId:sourceId||'',by:session.name,note:note||''};
   await setDoc(movRef,movDoc);
   allFabricMovements.unshift({...movDoc,_id:movRef.id});
+  return{movCodes,movQty};
+}
+// Next free remnant suffix (-A,-B,…) for a parent roll code.
+function _nextRemnantCode(rolls,parentCode){
+  const used=new Set(rolls.map(r=>r.rollCode));
+  for(let i=0;i<26;i++){const c=`${parentCode}-${String.fromCharCode(65+i)}`;if(!used.has(c))return c;}
+  return `${parentCode}-${Date.now().toString(36).toUpperCase()}`;
 }
 
 // ── Gate Pass / Returns / Fabric In: Edit & Delete with approval ──
