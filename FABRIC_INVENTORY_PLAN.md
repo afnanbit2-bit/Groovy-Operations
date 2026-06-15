@@ -112,8 +112,8 @@ any movement ─▶ fabric_movements + activity log ; Reports read these
 - Unit mix (kg vs meters) within reports and totals.
 
 ## 6. Build phases (each shippable)
-1. ☐ `js/fabric.js` + nav + **Stock** tab (move from `store.js`).
-2. ☐ New code scheme + **Fabric In** moved in; removed from Gate Pass.
+1. ☑ `js/fabric.js` + nav + **Stock** tab (move from `store.js`).
+2. ☑ New code scheme + **Fabric In** moved in; removed from Gate Pass.
 3. ☐ **Issue** tab (scanner-first, PO-required); remove GP fabric-outward.
 4. ☐ **Returns** — vendor whole → partial/remnant + consumed → supplier-out.
 5. ☐ **Reservation** in New PO (`pos.js`).

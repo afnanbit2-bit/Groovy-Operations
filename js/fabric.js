@@ -31,12 +31,17 @@ window.switchFabTab=function(tab){
   const el=document.getElementById('fab-tab-content');
   if(!el)return;
   if(tab==='stock'){_fabInvDrillKey=null;el.innerHTML=renderFabricInventory();}
+  else if(tab==='fabricin'){
+    fabRollIdx=0;
+    el.innerHTML=renderFabricInTab();
+    window.addFabRoll();
+    renderFabricInList();
+  }
   else el.innerHTML=_fabPlaceholder(tab);
 };
 
 function _fabPlaceholder(tab){
   const map={
-    fabricin:['Fabric In','Receiving + roll barcoding moves here in Phase 2. For now use Gate Pass → Fabric In.'],
     issue:['Issue','Scanner-first roll issuing (PO required) lands in Phase 3. For now use Gate Pass → Outward.'],
     returns:['Returns','Vendor→Stock and To-Supplier returns land in Phase 4.'],
     reports:['Reports','Stock / movement / wastage exports (Excel + PDF) land in Phase 6.']
@@ -155,3 +160,449 @@ window.fabInvSetSearch=function(v){
   },180);
 };
 window.fabInvDrill=function(key){_fabInvDrillKey=key;const m=document.getElementById('fab-tab-content');if(m)m.innerHTML=renderFabricInventory();};
+
+// ════════════════════════════════════════════════════════════════════════
+//  Fabric In (Phase 2) — receiving + barcoding, moved here from gatepass.js
+//  New code scheme: COLOR + TYPE + GSM - LOT, rolls -Rnn
+//  e.g. Black Terry 220gsm, 1st delivery, roll 3  →  BLKTRY220-01-R03
+// ════════════════════════════════════════════════════════════════════════
+
+// ── Fabric type → 3-letter code (override-friendly map) ──
+const FABRIC_TYPE_MAP=[
+  [/sublimation/i,'SUB'],
+  [/jersey/i,'JRS'],
+  [/terry/i,'TRY'],
+  [/twill/i,'TWL'],
+  [/burbury/i,'BRB'],
+  [/drill/i,'DRL'],
+  [/denim/i,'DEN'],
+  [/fleece/i,'FLC'],
+  [/pfgd/i,'PFG'],
+  [/cora/i,'COR']
+];
+function _fabTypeCode(fabType){
+  if(!fabType)return'FAB';
+  for(const[re,p]of FABRIC_TYPE_MAP){if(re.test(fabType))return p;}
+  return(fabType.replace(/[^a-z]/gi,'').slice(0,3).toUpperCase()||'FAB');
+}
+// ── Colour → 3-letter code (override-friendly map) ──
+const FABRIC_COLOR_MAP=[
+  [/^black$|jet ?black/i,'BLK'],[/^white$|off ?white|optic/i,'WHT'],[/grey|gray|silver/i,'GRY'],
+  [/navy/i,'NVY'],[/royal/i,'ROY'],[/sky/i,'SKY'],[/blue/i,'BLU'],
+  [/mocha|coffee|tan|camel/i,'MOC'],[/brown|choco/i,'BRN'],[/beige|cream|ivory|sand/i,'BEG'],
+  [/red|crimson|scarlet/i,'RED'],[/maroon|wine|burgundy/i,'MRN'],[/pink|rose|fuchsia/i,'PNK'],
+  [/orange/i,'ORG'],[/yellow|mustard|lemon/i,'YEL'],[/gold/i,'GLD'],
+  [/green|olive|lime|mint|sage/i,'GRN'],[/teal|turquoise/i,'TEL'],[/purple|violet|lilac/i,'PRP']
+];
+function _fabColorCode(color){
+  if(!color)return'XXX';
+  const c=String(color).trim();
+  for(const[re,p]of FABRIC_COLOR_MAP){if(re.test(c))return p;}
+  return(c.replace(/[^a-z]/gi,'').slice(0,3).toUpperCase()||'XXX');
+}
+// Base code for a Color+Type+GSM combo, e.g. BLKTRY220
+function _fabBaseCode(fabType,gsm,color){
+  return `${_fabColorCode(color)}${_fabTypeCode(fabType)}${parseInt(gsm,10)||0}`;
+}
+// Next 2-digit lot for a base code (running per Color+Type+GSM combo)
+function _nextFabLot(baseCode){
+  const re=new RegExp('^'+baseCode+'-(\\d+)','i');
+  let max=0;
+  for(const f of allFabricIn){const m=(f.fabCode||'').match(re);if(m){const n=parseInt(m[1],10);if(n>max)max=n;}}
+  return String(max+1).padStart(2,'0');
+}
+// Full fabric code for this receipt, e.g. BLKTRY220-01
+function _nextFabCode(fabType,gsm,color){
+  const base=_fabBaseCode(fabType,gsm,color);
+  return `${base}-${_nextFabLot(base)}`;
+}
+function _fabUnitForSupplier(supplier){
+  return(supplier||'').toLowerCase().includes('daniyal twill')?'m':'kg';
+}
+
+function renderFabricInTab(){
+  const today=new Date().toISOString().split('T')[0];
+  const fabTypes=['100% Poly Sublimation Jersey','Jersey Heavy','Terry Stock','Terry Fresh','Twill','Burbury 100% Cotton','Drill','Denim','Fleece','100% Cotton Cora Jersey','100% Cotton Terry Cora','PFGD Rigid','PFGD Lycra'];
+  const suppliers=['Gul Enterprises','JR Trader','Akhlaq Sublimation','Khursheed Enterprise','Daniyal Twill'];
+  return`<div class="card"><div class="card-title">Record fabric arrival</div>
+    <div class="form-grid">
+      <div class="field" style="grid-column:1/-1"><label>Supplier *</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+          ${suppliers.map(s=>`<button type="button" class="dest-chip" onclick="window.setFabSupplier('${s}')">${s}</button>`).join('')}
+        </div>
+        <input id="fab-supplier" placeholder="Or type supplier name…" oninput="window.updateFabUnit()">
+      </div>
+      <div class="field"><label>Date</label><input id="fab-date" type="date" value="${today}"></div>
+      <div class="field"><label>Fabric Type *</label>
+        <select id="fab-type" onchange="window.refreshFabCode()"><option value="">Select type…</option>${fabTypes.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>GSM *</label><input id="fab-gsm" type="number" min="0" placeholder="e.g. 220" onchange="window.refreshFabCode()"></div>
+      <div class="field"><label>Fabric Color *</label><input id="fab-color" placeholder="e.g. Black, White, Royal Blue" onchange="window.refreshFabCode()"></div>
+      <div class="field"><label>Received By</label><input value="${session.name}" readonly style="background:#f0f0f0;cursor:default"></div>
+      <div class="field"><label>Auto fabric code</label>
+        <input id="fab-code" readonly placeholder="Pick type + GSM + color to generate" style="background:#eef2ff;color:#1e3a8a;font-weight:700;letter-spacing:.04em">
+        <div style="font-size:10px;color:var(--muted);margin-top:3px">COLOR+TYPE+GSM-LOT. Each roll tagged <span id="fab-code-roll-hint">CODE-R01</span>, <span id="fab-code-roll-hint-2">CODE-R02</span>…</div>
+      </div>
+      <div class="field" style="grid-column:1/-1"><label>Notes</label><textarea id="fab-notes" rows="2" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%;resize:vertical" placeholder="Optional notes"></textarea></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">Fabric rolls <span id="fab-unit-label" style="font-weight:400;color:var(--muted);font-size:11px">(kg)</span></div>
+    <div id="fab-rolls-body"></div>
+    <button onclick="window.addFabRoll()" style="width:100%;padding:9px;background:none;border:none;font-size:12px;color:var(--muted);cursor:pointer;border-top:1px solid var(--border);font-family:inherit;margin-top:4px">+ Add roll</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding:10px 14px;background:var(--dark);border-radius:8px">
+      <span style="font-size:11px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.06em">Total weight</span>
+      <span id="fab-total-weight" style="font-size:18px;font-weight:700;color:#fff">0.00 kg</span>
+    </div>
+  </div>
+  <button class="btn-primary" onclick="window.submitFabricIn()">Save Fabric Entry</button>
+  <div class="card" style="margin-top:12px"><div class="card-title">Fabric arrivals</div>
+    <div id="fab-list-body"></div>
+  </div>
+  <div style="height:80px"></div>`;
+}
+
+window.setFabSupplier=function(v){
+  document.getElementById('fab-supplier').value=v;
+  window.updateFabUnit();
+};
+
+window.updateFabUnit=function(){
+  const supplier=(document.getElementById('fab-supplier')?.value||'').trim();
+  const isDaniyal=supplier.toLowerCase().includes('daniyal twill');
+  const unit=isDaniyal?'m':'kg';
+  const lbl=document.getElementById('fab-unit-label');
+  if(lbl)lbl.textContent=isDaniyal?'(meters)':'(kg)';
+  document.querySelectorAll('.fab-roll-unit').forEach(el=>el.textContent=unit);
+  window.fabRecalc();
+};
+
+window.refreshFabCode=function(){
+  const fabType=document.getElementById('fab-type')?.value||'';
+  const gsm=document.getElementById('fab-gsm')?.value||'';
+  const color=document.getElementById('fab-color')?.value||'';
+  const codeEl=document.getElementById('fab-code');
+  if(!codeEl)return;
+  if(!fabType||!gsm||!color){codeEl.value='';
+    const h1=document.getElementById('fab-code-roll-hint');if(h1)h1.textContent='CODE-R01';
+    const h2=document.getElementById('fab-code-roll-hint-2');if(h2)h2.textContent='CODE-R02';
+    return;
+  }
+  const code=_nextFabCode(fabType,gsm,color);
+  codeEl.value=code;
+  const h1=document.getElementById('fab-code-roll-hint');if(h1)h1.textContent=code+'-R01';
+  const h2=document.getElementById('fab-code-roll-hint-2');if(h2)h2.textContent=code+'-R02';
+  // Re-label any existing roll rows and re-render their barcodes
+  let i=0;
+  document.querySelectorAll('#fab-rolls-body .roll-row').forEach(row=>{
+    i++;
+    const rollCode=`${code}-R${String(i).padStart(2,'0')}`;
+    const lbl=row.querySelector('.fab-roll-code');
+    if(lbl)lbl.textContent=rollCode;
+    const qcCb=row.querySelector('input[type=checkbox]');
+    if(qcCb)qcCb.setAttribute('onchange',`window.onFabRollQC(this,'${rollCode}')`);
+    const bc=row.querySelector('.fab-roll-barcode');
+    if(bc)_renderRollBarcode(bc,rollCode);
+  });
+};
+
+window.addFabRoll=function(){
+  fabRollIdx++;
+  const fabCode=document.getElementById('fab-code')?.value||'';
+  const i=document.querySelectorAll('#fab-rolls-body .roll-row').length+1;
+  const rollCode=fabCode?`${fabCode}-R${String(i).padStart(2,'0')}`:`R-${String(fabRollIdx).padStart(3,'0')}`;
+  const supplier=(document.getElementById('fab-supplier')?.value||'').trim();
+  const unit=_fabUnitForSupplier(supplier);
+  const defaultGsm=parseInt(document.getElementById('fab-gsm')?.value)||'';
+  const id='fabroll-'+fabRollIdx;
+  const body=document.getElementById('fab-rolls-body');
+  if(!body)return;
+  const div=document.createElement('div');
+  div.id=id;div.className='roll-row';
+  div.style.flexDirection='column';div.style.alignItems='stretch';
+  div.innerHTML=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span class="fab-roll-code" style="font-size:11px;font-weight:700;color:var(--dark);min-width:108px;letter-spacing:.04em">${rollCode}</span>
+      <input type="number" class="fab-roll-weight" min="0" step="0.01" placeholder="0" style="width:88px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:#fff;outline:none;font-family:inherit" oninput="window.fabRecalc()">
+      <span class="fab-roll-unit" style="font-size:12px;color:var(--muted);min-width:24px">${unit}</span>
+      <input type="number" class="fab-roll-gsm" min="0" step="1" placeholder="GSM" value="${defaultGsm}" title="GSM for this roll" style="width:72px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:#fff;outline:none;font-family:inherit">
+      <span style="font-size:11px;color:var(--muted)">gsm</span>
+      <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;flex-shrink:0;white-space:nowrap">
+        <input type="checkbox" onchange="window.onFabRollQC(this,'${rollCode}')"> QC ✓
+      </label>
+      <button onclick="document.getElementById('${id}').remove();window.fabRecalc()" style="background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:2px 6px;flex-shrink:0">×</button>
+    </div>
+    <svg class="fab-roll-barcode" style="display:block;height:36px;margin:4px 0 0 108px"></svg>`;
+  body.appendChild(div);
+  _renderRollBarcode(div.querySelector('.fab-roll-barcode'),rollCode);
+  window.fabRecalc();
+};
+
+function _renderRollBarcode(svgEl,value){
+  if(!svgEl||!value)return;
+  try{
+    if(typeof JsBarcode==='function'){
+      JsBarcode(svgEl,value,{format:'CODE128',displayValue:true,fontSize:10,height:28,margin:0,width:1.4});
+    }else{
+      svgEl.outerHTML=`<span style="font-size:10px;color:var(--muted);margin-left:108px">${value}</span>`;
+    }
+  }catch(e){
+    svgEl.outerHTML=`<span style="font-size:10px;color:#dc2626;margin-left:108px">Barcode error: ${e.message}</span>`;
+  }
+}
+
+window.fabRecalc=function(){
+  let total=0;
+  document.querySelectorAll('#fab-rolls-body .roll-row').forEach(row=>{
+    const inp=row.querySelector('input[type=number]');
+    total+=parseFloat(inp?.value)||0;
+  });
+  const supplier=(document.getElementById('fab-supplier')?.value||'').trim();
+  const isDaniyal=supplier.toLowerCase().includes('daniyal twill');
+  const unit=isDaniyal?'m':'kg';
+  const el=document.getElementById('fab-total-weight');
+  if(el)el.textContent=total.toFixed(2)+' '+unit;
+};
+
+window.onFabRollQC=function(checkbox){
+  const row=checkbox.closest('.roll-row');
+  if(row)row.style.background=checkbox.checked?'#f0fdf4':'';
+};
+
+window.submitFabricIn=async function(){
+  const supplier=(document.getElementById('fab-supplier')?.value||'').trim();
+  const date=document.getElementById('fab-date')?.value||'';
+  const fabType=document.getElementById('fab-type')?.value||'';
+  const gsm=parseInt(document.getElementById('fab-gsm')?.value)||0;
+  const color=(document.getElementById('fab-color')?.value||'').trim();
+  const notes=(document.getElementById('fab-notes')?.value||'').trim();
+  if(!supplier||!fabType||!gsm||!color){showToast('Supplier, fabric type, GSM and color are required.',true);return;}
+  const unit=_fabUnitForSupplier(supplier);
+  const fabCode=document.getElementById('fab-code')?.value||_nextFabCode(fabType,gsm,color);
+  const rolls=[];
+  document.querySelectorAll('#fab-rolls-body .roll-row').forEach(row=>{
+    const codeEl=row.querySelector('.fab-roll-code');
+    const rollCode=codeEl?.textContent?.trim()||'';
+    const weightEl=row.querySelector('.fab-roll-weight');
+    const gsmEl=row.querySelector('.fab-roll-gsm');
+    const qcEl=row.querySelector('input[type=checkbox]');
+    const weight=parseFloat(weightEl?.value)||0;
+    const rollGsm=parseInt(gsmEl?.value)||gsm;
+    const qcPassed=qcEl?.checked||false;
+    if(rollCode)rolls.push({rollCode,rollNumber:rollCode,weight,gsm:rollGsm,unit,qcPassed,qcBy:qcPassed?session.name:'',qcAt:qcPassed?Date.now():null});
+  });
+  if(!rolls.length){showToast('Add at least one roll.',true);return;}
+  if(rolls.some(r=>!r.weight)){showToast('Every roll needs a weight.',true);return;}
+  if(rolls.some(r=>!r.gsm)){showToast('Every roll needs a GSM.',true);return;}
+  const totalWeight=parseFloat(rolls.reduce((s,r)=>s+r.weight,0).toFixed(2));
+  try{
+    const next=await getNextId('fabricin');
+    const fabId='FAB-'+String(next).padStart(3,'0');
+    const payload={id:fabId,fabCode,ts:Date.now(),supplier,date,fabType,gsm,color,receivedBy:session.name,notes,unit,totalWeight,rollsCount:rolls.length,rolls};
+    await setDoc(doc(db,'fabricin',fabId),payload);
+    allFabricIn.unshift(payload);
+    await _fabInvUpsert({fabType,gsm,color,unit,addRolls:rolls.map(r=>({rollCode:r.rollCode,weight:r.weight,gsm:r.gsm,unit:r.unit,sourceFabId:fabId})),sourceCol:'fabricin',sourceId:fabId,note:`Receipt from ${supplier}`});
+    await logActivity('Fabric In',`${fabId} (${fabCode}) — ${supplier} · ${fabType} ${gsm}gsm · ${color} · ${rolls.length} rolls · ${totalWeight} ${unit}`);
+    showToast(`${fabCode} saved ✓ · added to inventory`);
+    window.switchFabTab('fabricin');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
+function renderFabricInList(){
+  const body=document.getElementById('fab-list-body');
+  if(!body)return;
+  if(!allFabricIn.length){body.innerHTML='<div class="empty">No fabric entries yet.</div>';return;}
+  body.innerHTML=allFabricIn.map(f=>{
+    const rolls=f.rolls||[];
+    const qcDone=rolls.filter(r=>r.qcPassed).length;
+    const total=rolls.length;
+    const allQC=total>0&&qcDone===total;
+    const pend=_gpPendingFor('fabric',f.id);
+    const pendBadge=pend?`<span title="${pend.action==='delete'?'Delete':'Edit'} pending approval" style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px">${pend.action==='delete'?'Delete':'Edit'} pending</span>`:'';
+    return`<div>
+      <div class="fab-entry-header" onclick="window.toggleFabEntry('${f.id}')">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span style="font-weight:700;color:var(--red);font-size:11px">${f.id}</span>
+            ${f.fabCode?`<span style="font-weight:700;color:#1e3a8a;font-size:11px;background:#eef2ff;padding:1px 6px;border-radius:4px;letter-spacing:.04em">${f.fabCode}</span>`:''}
+            <span style="font-size:11px;color:var(--muted)">${f.date||''}</span>
+            ${pendBadge}
+          </div>
+          <div style="font-size:13px;font-weight:500;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${f.supplier} · ${f.fabType||'—'}${f.gsm?` · ${f.gsm}gsm`:''}</div>
+          <div style="font-size:11px;color:var(--muted)">${f.color||'—'} · ${f.totalWeight||0} ${f.unit||'kg'} · ${total} rolls · <span style="color:${allQC?'var(--green)':'var(--amber)'};font-weight:600">${qcDone}/${total} QC ✓</span></div>
+        </div>
+        <span id="fab-chev-${f.id}" style="color:var(--muted);font-size:18px;margin-left:8px;flex-shrink:0">›</span>
+      </div>
+      <div id="fab-rolls-${f.id}" style="display:none;padding:4px 0 8px">
+        ${rolls.map(r=>{
+          const rc=r.rollCode||r.rollNumber||'';
+          const rGsm=r.gsm||f.gsm||0;
+          return`<div style="display:flex;flex-direction:column;padding:8px 4px;border-bottom:1px solid #f9f9f9;font-size:12px;gap:6px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
+              <span style="font-weight:600;min-width:128px;letter-spacing:.04em">${rc}</span>
+              <span style="flex:1;min-width:80px">${r.weight} ${r.unit||'kg'} · ${rGsm}gsm</span>
+              <span style="${r.qcPassed?'color:var(--green);font-weight:600':'color:var(--muted)'}">${r.qcPassed?'QC Passed ✓':'Pending QC'}</span>
+              ${r.qcPassed&&r.qcBy?`<span style="font-size:10px;color:var(--muted)">${r.qcBy}</span>`:''}
+              <button onclick="event.stopPropagation();window.printRollBarcode('${_gpEsc(rc)}','${_gpEsc(f.fabType||'')}','${rGsm}','${_gpEsc(f.color||'')}','${r.weight} ${r.unit||'kg'}','${_gpEsc(f.supplier||'')}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">🖨 Print</button>
+            </div>
+            <svg class="fab-roll-barcode-view" data-rc="${_gpEsc(rc)}" style="display:block;height:38px;margin-left:0"></svg>
+          </div>`;
+        }).join('')||'<div style="font-size:12px;color:var(--muted);padding:6px">No rolls recorded.</div>'}
+        <div style="display:flex;gap:6px;justify-content:flex-end;padding:8px 4px 0">
+          <button onclick="event.stopPropagation();window.editFabricIn('${f.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
+          <button onclick="event.stopPropagation();window.requestDeleteFabricIn('${f.id}')" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');}
+
+window.toggleFabEntry=function(id){
+  const rolls=document.getElementById('fab-rolls-'+id);
+  const chev=document.getElementById('fab-chev-'+id);
+  if(!rolls)return;
+  const isOpen=rolls.style.display!=='none';
+  rolls.style.display=isOpen?'none':'block';
+  if(chev)chev.textContent=isOpen?'›':'⌄';
+  if(!isOpen){
+    rolls.querySelectorAll('svg.fab-roll-barcode-view').forEach(svg=>{
+      const rc=svg.getAttribute('data-rc')||'';
+      if(rc&&!svg.childNodes.length)_renderRollBarcode(svg,rc);
+    });
+  }
+};
+
+window.printRollBarcode=function(rollCode,fabType,gsm,color,weight,supplier){
+  const w=window.open('','_blank','width=400,height=300');
+  if(!w){showToast('Allow popups to print barcodes.',true);return;}
+  w.document.write(`<!doctype html><html><head><title>${rollCode}</title>
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
+      body{padding:14px}
+      .label{border:1px solid #000;padding:10px 12px;width:280px}
+      .row{display:flex;justify-content:space-between;font-size:11px;margin:2px 0}
+      .code{font-size:14px;font-weight:700;letter-spacing:.05em;text-align:center;margin-bottom:6px}
+      .supplier{font-size:10px;color:#444;text-align:center;margin-bottom:4px}
+      svg{display:block;margin:4px auto;width:100%}
+      @media print{body{padding:0}.label{border:none}}
+    </style></head><body>
+    <div class="label">
+      <div class="supplier">${supplier||''}</div>
+      <div class="code">${rollCode}</div>
+      <svg id="bc"></svg>
+      <div class="row"><span>Fabric:</span><strong>${fabType||''}</strong></div>
+      <div class="row"><span>Color:</span><strong>${color||''}</strong></div>
+      <div class="row"><span>GSM:</span><strong>${gsm||''}</strong></div>
+      <div class="row"><span>Weight:</span><strong>${weight||''}</strong></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
+    <script>
+      window.addEventListener('load',function(){
+        try{JsBarcode('#bc','${rollCode}',{format:'CODE128',displayValue:true,fontSize:11,height:40,margin:4,width:1.6});}catch(e){}
+        setTimeout(function(){window.print();},300);
+      });
+    <\/script>
+    </body></html>`);
+  w.document.close();
+};
+
+// ── Edit / Delete fabric receipts (reuses gatepass approval globals) ──
+function _fabRefreshList(){
+  if(typeof currentPage!=='undefined'&&currentPage==='fabric-inventory'&&fabActiveTab==='fabricin'){
+    renderFabricInList();
+  }
+}
+
+window.editFabricIn=function(fabId){
+  const f=allFabricIn.find(x=>x.id===fabId);
+  if(!f)return showToast('Fabric entry not found.',true);
+  if(_gpPendingFor('fabric',fabId))return showToast('An edit/delete is already pending for '+fabId,true);
+  document.getElementById('hrm-modal-back')?.remove();
+  const back=document.createElement('div');
+  back.className='hrm-modal-back';back.id='hrm-modal-back';
+  back.onclick=ev=>{if(ev.target===back)window.hrmCloseModal();};
+  const banner=_gpCanApprove()
+    ?`<div style="background:#ecfdf5;color:#065f46;border:1px solid #bbf7d0;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Owner/Manager: changes apply immediately.</div>`
+    :`<div style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Your changes will be sent to owners/managers for approval.</div>`;
+  back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><h3>Edit Fabric Entry</h3><div class="sub">${f.id} · ${_gpEsc(f.supplier||'')}</div></div>
+      <button onclick="window.hrmCloseModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);line-height:1">×</button>
+    </div>
+    ${banner}
+    <div class="hrm-grid-2">
+      <div class="field"><label>Supplier *</label><input id="fabe-supplier" value="${_gpEsc(f.supplier||'')}"></div>
+      <div class="field"><label>Date</label><input id="fabe-date" type="date" value="${_gpEsc(f.date||'')}"></div>
+      <div class="field"><label>Fabric Type *</label><input id="fabe-type" value="${_gpEsc(f.fabType||'')}"></div>
+      <div class="field"><label>Color *</label><input id="fabe-color" value="${_gpEsc(f.color||'')}"></div>
+      <div class="field"><label>Total Weight</label><input id="fabe-totweight" type="number" min="0" step="0.01" value="${f.totalWeight||0}"></div>
+      <div class="field"><label>Unit</label><input id="fabe-unit" value="${_gpEsc(f.unit||'kg')}"></div>
+    </div>
+    <div class="field" style="margin-top:8px"><label>Notes</label><textarea id="fabe-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">${_gpEsc(f.notes||'')}</textarea></div>
+    <div style="background:#fafafa;padding:8px 12px;border-radius:8px;margin-top:8px;font-size:12px;color:var(--muted)">Note: Roll-level edits aren't supported here. Only header fields can be changed.</div>
+    ${!_gpCanApprove()?`<div class="field" style="margin-top:12px"><label>Reason for change *</label><textarea id="fabe-reason" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px" placeholder="Required so the approver understands why."></textarea></div>`:''}
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.submitFabricEdit('${fabId}')">${_gpCanApprove()?'Save Changes':'Send for Approval'}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+};
+
+function _collectFabricEditPayload(){
+  const v=k=>document.getElementById(k)?.value?.trim()||'';
+  return{
+    supplier:v('fabe-supplier'),
+    date:v('fabe-date'),
+    fabType:v('fabe-type'),
+    color:v('fabe-color'),
+    totalWeight:parseFloat(document.getElementById('fabe-totweight')?.value)||0,
+    unit:v('fabe-unit')||'kg',
+    notes:v('fabe-notes')
+  };
+}
+
+window.submitFabricEdit=async function(fabId){
+  const f=allFabricIn.find(x=>x.id===fabId);
+  if(!f)return showToast('Fabric entry not found.',true);
+  const proposed=_collectFabricEditPayload();
+  if(!proposed.supplier||!proposed.fabType||!proposed.color)return showToast('Supplier, fabric type and color are required.',true);
+  try{
+    if(_gpCanApprove()){
+      await updateDoc(doc(db,'fabricin',fabId),{...proposed,updatedAt:Date.now(),updatedBy:session.name});
+      Object.assign(f,proposed);
+      await logActivity('Fabric In edited',`${fabId} by ${session.name}`);
+      showToast(fabId+' updated ✓');
+    }else{
+      const reason=(document.getElementById('fabe-reason')?.value||'').trim();
+      if(!reason)return showToast('Reason for change is required.',true);
+      const currentData={supplier:f.supplier,date:f.date,fabType:f.fabType,color:f.color,totalWeight:f.totalWeight,unit:f.unit,notes:f.notes};
+      await _gpSubmitEditRequest({type:'fabric',targetId:fabId,action:'edit',proposedData:proposed,currentData,reason});
+      showToast('Edit request sent for approval ✓');
+    }
+    window.hrmCloseModal();
+    _fabRefreshList();
+  }catch(e){showToast('Save failed: '+e.message,true);}
+};
+
+window.requestDeleteFabricIn=async function(fabId){
+  const f=allFabricIn.find(x=>x.id===fabId);
+  if(!f)return showToast('Fabric entry not found.',true);
+  if(_gpPendingFor('fabric',fabId))return showToast('A request is already pending for '+fabId,true);
+  if(_gpCanApprove()){
+    if(!confirm(`Delete ${fabId}? This cannot be undone.`))return;
+    try{
+      await deleteDoc(doc(db,'fabricin',fabId));
+      await logActivity('Fabric In deleted',`${fabId} deleted by ${session.name}`);
+      allFabricIn=allFabricIn.filter(x=>x.id!==fabId);
+      showToast(`${fabId} deleted`);
+      _fabRefreshList();
+    }catch(e){showToast('Error: '+e.message,true);}
+    return;
+  }
+  const reason=prompt(`Request to delete ${fabId}. Reason:`,'');
+  if(!reason||!reason.trim())return;
+  try{
+    await _gpSubmitEditRequest({type:'fabric',targetId:fabId,action:'delete',currentData:f,reason:reason.trim()});
+    showToast('Delete request sent for approval');
+    _fabRefreshList();
+  }catch(e){showToast('Request failed: '+e.message,true);}
+};
