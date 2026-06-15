@@ -513,33 +513,37 @@ window.toggleFabEntry=function(id){
   }
 };
 
-// 48 × 25 mm roll label (1-across). Everything is locked inside a fixed 48mm
-// box with a fixed-width barcode, so content can never stretch/straddle even if
-// the driver hands us a wider page. Content: supplier · barcode · code · weight.
+// 2-up roll label: two identical 48×25mm labels side-by-side filling the full
+// 96mm row, matching the 2-across thermal stock (same approach as the working
+// product label). Each cell: supplier · barcode · roll code · weight.
 window.printRollBarcode=function(rollCode,fabType,gsm,color,weight,supplier){
-  const w=window.open('','_blank','width=400,height=300');
+  const w=window.open('','_blank','width=420,height=300');
   if(!w){showToast('Allow popups to print barcodes.',true);return;}
+  const cell=`<div class="label">
+      <div class="supplier">${supplier||''}</div>
+      <svg class="bc"></svg>
+      <div class="foot"><span class="code">${rollCode}</span><span class="wt">${weight||''}</span></div>
+    </div>`;
   w.document.write(`<!doctype html><html><head><title>${rollCode}</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
-      @page{size:48mm 25mm;margin:0}
-      html,body{width:48mm;height:25mm}
-      .label{width:48mm;height:25mm;padding:1mm 1.5mm;display:flex;flex-direction:column;justify-content:space-between;align-items:center;overflow:hidden}
+      @page{size:96mm 25mm;margin:0}
+      html,body{width:96mm;height:25mm}
+      .row{display:flex;width:96mm;height:25mm}
+      .label{width:48mm;height:25mm;padding:1mm 2mm;display:flex;flex-direction:column;justify-content:space-between;align-items:center;overflow:hidden}
       .supplier{font-size:6.5pt;color:#000;line-height:1.05;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-      svg#bc{width:44mm;height:10mm;display:block}
+      svg.bc{width:42mm;height:10mm;display:block}
       .foot{width:100%;display:flex;justify-content:space-between;align-items:center;font-size:6.5pt;line-height:1}
       .foot .code{font-weight:600;letter-spacing:.2px}
       .foot .wt{font-weight:700;white-space:nowrap}
     </style></head><body>
-    <div class="label">
-      <div class="supplier">${supplier||''}</div>
-      <svg id="bc"></svg>
-      <div class="foot"><span class="code">${rollCode}</span><span class="wt">${weight||''}</span></div>
-    </div>
+    <div class="row">${cell}${cell}</div>
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
     <script>
       window.addEventListener('load',function(){
-        try{JsBarcode('#bc','${rollCode}',{format:'CODE128',displayValue:false,height:34,margin:0,width:1});}catch(e){}
+        document.querySelectorAll('svg.bc').forEach(function(el){
+          try{JsBarcode(el,'${rollCode}',{format:'CODE128',displayValue:false,height:34,margin:0,width:1});}catch(e){}
+        });
         setTimeout(function(){window.print();},300);
       });
     <\/script>
