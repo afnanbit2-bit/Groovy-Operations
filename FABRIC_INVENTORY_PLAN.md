@@ -114,10 +114,16 @@ any movement ─▶ fabric_movements + activity log ; Reports read these
 ## 6. Build phases (each shippable)
 1. ☑ `js/fabric.js` + nav + **Stock** tab (move from `store.js`).
 2. ☑ New code scheme + **Fabric In** moved in; removed from Gate Pass.
-3. ☐ **Issue** tab (scanner-first, PO-required); remove GP fabric-outward.
-4. ☐ **Returns** — vendor whole → partial/remnant + consumed → supplier-out.
-5. ☐ **Reservation** in New PO (`pos.js`).
-6. ☐ **Alerts** (3-stage) + **Reports** (Excel/PDF).
-7. ☐ Remove Store entry point; cleanup + label sizing.
+3. ☑ **Issue** tab (scanner-first, PO-required); GP fabric-create options removed.
+4. ☑ **Returns** — vendor whole → partial/remnant + consumed → supplier-out.
+5. ☑ **Reservation** in New PO (`pos.js`).
+6. ☑ **Alerts** (3-stage) + **Reports** (Excel/PDF).
+7. ☑ Store entry point removed (Phase 1); 4.8×2.3cm label; cleanup.
+
+> Note on Phase 3: fully deleting the fabric path from Gate Pass would break
+> display/edit/PDF of *historical* fabric gate passes, so the fabric **create**
+> options were removed from Outward (Issue tab is the only create path) while
+> legacy record rendering stays. All builds verified at the logic/render level
+> in Node sandboxes; live in-browser smoke test still pending (Firebase auth).
 
 *This doc is the contract; update the ☐/☑ marks as each phase is verified.*

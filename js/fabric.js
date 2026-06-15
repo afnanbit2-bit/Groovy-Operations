@@ -513,33 +513,31 @@ window.toggleFabEntry=function(id){
   }
 };
 
+// 4.8cm × 2.3cm roll label: supplier · roll code · CODE128 barcode · weight
 window.printRollBarcode=function(rollCode,fabType,gsm,color,weight,supplier){
   const w=window.open('','_blank','width=400,height=300');
   if(!w){showToast('Allow popups to print barcodes.',true);return;}
   w.document.write(`<!doctype html><html><head><title>${rollCode}</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
-      body{padding:14px}
-      .label{border:1px solid #000;padding:10px 12px;width:280px}
-      .row{display:flex;justify-content:space-between;font-size:11px;margin:2px 0}
-      .code{font-size:14px;font-weight:700;letter-spacing:.05em;text-align:center;margin-bottom:6px}
-      .supplier{font-size:10px;color:#444;text-align:center;margin-bottom:4px}
-      svg{display:block;margin:4px auto;width:100%}
+      @page{size:48mm 23mm;margin:0}
+      body{padding:6px}
+      .label{width:48mm;height:23mm;border:1px solid #000;padding:1.2mm 2mm;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden}
+      .supplier{font-size:7px;color:#333;text-align:center;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      svg{display:block;width:100%;height:8mm}
+      .foot{display:flex;justify-content:space-between;align-items:center;font-size:7px}
+      .foot .wt{font-weight:700}
       @media print{body{padding:0}.label{border:none}}
     </style></head><body>
     <div class="label">
       <div class="supplier">${supplier||''}</div>
-      <div class="code">${rollCode}</div>
       <svg id="bc"></svg>
-      <div class="row"><span>Fabric:</span><strong>${fabType||''}</strong></div>
-      <div class="row"><span>Color:</span><strong>${color||''}</strong></div>
-      <div class="row"><span>GSM:</span><strong>${gsm||''}</strong></div>
-      <div class="row"><span>Weight:</span><strong>${weight||''}</strong></div>
+      <div class="foot"><span>${rollCode}</span><span class="wt">${weight||''}</span></div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
     <script>
       window.addEventListener('load',function(){
-        try{JsBarcode('#bc','${rollCode}',{format:'CODE128',displayValue:true,fontSize:11,height:40,margin:4,width:1.6});}catch(e){}
+        try{JsBarcode('#bc','${rollCode}',{format:'CODE128',displayValue:false,height:30,margin:0,width:1.2});}catch(e){}
         setTimeout(function(){window.print();},300);
       });
     <\/script>
