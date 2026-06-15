@@ -768,7 +768,7 @@ function renderFabricIssueTab(){
   <div class="card"><div class="card-title">Pick rolls <span style="font-weight:400;color:var(--muted);font-size:11px">scan or select — all from one fabric</span></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
       <div class="field" style="flex:1;min-width:200px;margin:0"><label>Scan roll barcode</label>
-        <input id="fab-iss-scan" placeholder="Scan or type roll code, press Enter" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();window.fabIssueScan();}">
+        <input id="fab-iss-scan" placeholder="Scan or type roll code, press Enter" autocomplete="off" onkeydown="if(event.key==='Enter'||(event.key==='Tab'&&this.value.trim())){event.preventDefault();window.fabIssueScan();}">
       </div>
       <div class="field" style="flex:1;min-width:200px;margin:0"><label>…or pick a fabric</label>
         <select id="fab-iss-stock" onchange="window.fabIssuePickStock()">
@@ -927,7 +927,7 @@ function renderFabRetVendor(){
   if(!issued.length)return'<div class="empty" style="padding:24px;text-align:center">No issued rolls to return.</div>';
   return`<div class="card"><div class="card-title">Return from vendor</div>
     <div class="field" style="margin-bottom:10px"><label>Scan roll to mark for return</label>
-      <input id="fab-ret-scan" placeholder="Scan or type roll code, press Enter" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();window.fabRetVendorScan();}">
+      <input id="fab-ret-scan" placeholder="Scan or type roll code, press Enter" autocomplete="off" onkeydown="if(event.key==='Enter'||(event.key==='Tab'&&this.value.trim())){event.preventDefault();window.fabRetVendorScan();}">
     </div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Tick rolls coming back. Leave return weight = issued weight for a whole roll; enter a smaller number for a partial (a remnant roll is created).</div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -995,7 +995,7 @@ function renderFabRetSupplier(){
       <div class="field"><label>Note</label><input id="fab-sret-note" placeholder="Optional detail"></div>
     </div>
     <div class="field" style="margin-bottom:10px"><label>Scan roll to select</label>
-      <input id="fab-sret-scan" placeholder="Scan or type roll code, press Enter" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();window.fabSRetScan();}">
+      <input id="fab-sret-scan" placeholder="Scan or type roll code, press Enter" autocomplete="off" onkeydown="if(event.key==='Enter'||(event.key==='Tab'&&this.value.trim())){event.preventDefault();window.fabSRetScan();}">
     </div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
       <thead><tr style="background:#fafafa"><th style="padding:6px"></th><th style="padding:6px;text-align:left">Roll</th><th style="padding:6px;text-align:left">Fabric</th><th style="padding:6px;text-align:right">Weight</th></tr></thead>
