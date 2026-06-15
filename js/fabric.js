@@ -40,6 +40,7 @@ window.switchFabTab=function(tab){
   else if(tab==='issue'){
     _fabIssueRolls=[];_fabIssueKey=null;
     el.innerHTML=renderFabricIssueTab();
+    _fabFocusScan('fab-iss-scan');
   }
   else if(tab==='returns'){
     el.innerHTML=renderFabricReturnsTab();
@@ -726,6 +727,17 @@ let _fabIssueRolls=[],_fabIssueKey=null;
 // exact, case-sensitive match.
 function _normRoll(s){return String(s||'').trim().toUpperCase().replace(/\s+/g,'');}
 
+// Drop the cursor into a scan box right after its tab renders, so a keyboard-
+// wedge scanner (the usual handheld) types straight into it with no click —
+// the point-and-scan behaviour every other ERP/courier app gives. The rAF +
+// timeout lets the freshly-set innerHTML mount before we focus.
+function _fabFocusScan(id){
+  requestAnimationFrame(()=>setTimeout(()=>{
+    const el=document.getElementById(id);
+    if(el){el.focus();try{el.select();}catch(_){}}
+  },60));
+}
+
 function _fabFindRoll(rollCode){
   const t=_normRoll(rollCode);
   for(const s of allFabricInventory){const r=(s.rolls||[]).find(x=>_normRoll(x.rollCode)===t);if(r)return{stock:s,roll:r};}
@@ -899,6 +911,7 @@ window.switchFabRetMode=function(mode){
   });
   const el=document.getElementById('fab-ret-content');if(!el)return;
   el.innerHTML=mode==='vendor'?renderFabRetVendor():renderFabRetSupplier();
+  _fabFocusScan(mode==='vendor'?'fab-ret-scan':'fab-sret-scan');
 };
 
 // Collect rolls in a given status across all stocks → [{key,stock,roll}]
