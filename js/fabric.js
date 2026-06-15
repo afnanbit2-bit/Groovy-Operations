@@ -513,12 +513,13 @@ window.toggleFabEntry=function(id){
   }
 };
 
-// 2-up roll label: two identical 48×25mm labels side-by-side filling the full
-// 96mm row, matching the 2-across thermal stock (same approach as the working
-// product label). Each cell: supplier · barcode · roll code · weight.
+// 2-up roll label: two identical 48×25mm labels with a GAP between them to match
+// the 2-across thermal stock (the physical labels have a liner gap). GAP_MM is
+// the one value to tune if the right label still drifts (raise = push it right).
 window.printRollBarcode=function(rollCode,fabType,gsm,color,weight,supplier){
-  const w=window.open('','_blank','width=420,height=300');
+  const w=window.open('','_blank','width=440,height=300');
   if(!w){showToast('Allow popups to print barcodes.',true);return;}
+  const GAP_MM=3, PAGE_W=48*2+GAP_MM;
   const cell=`<div class="label">
       <div class="supplier">${supplier||''}</div>
       <svg class="bc"></svg>
@@ -527,17 +528,18 @@ window.printRollBarcode=function(rollCode,fabType,gsm,color,weight,supplier){
   w.document.write(`<!doctype html><html><head><title>${rollCode}</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
-      @page{size:96mm 25mm;margin:0}
-      html,body{width:96mm;height:25mm}
-      .row{display:flex;width:96mm;height:25mm}
-      .label{width:48mm;height:25mm;padding:1mm 2mm;display:flex;flex-direction:column;justify-content:space-between;align-items:center;overflow:hidden}
+      @page{size:${PAGE_W}mm 25mm;margin:0}
+      html,body{width:${PAGE_W}mm;height:25mm}
+      .row{display:flex;width:${PAGE_W}mm;height:25mm}
+      .gap{flex:0 0 ${GAP_MM}mm;width:${GAP_MM}mm;height:25mm}
+      .label{flex:0 0 48mm;width:48mm;height:25mm;padding:1mm 3mm;display:flex;flex-direction:column;justify-content:space-between;align-items:center;overflow:hidden}
       .supplier{font-size:6.5pt;color:#000;line-height:1.05;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-      svg.bc{width:42mm;height:10mm;display:block}
-      .foot{width:100%;display:flex;justify-content:space-between;align-items:center;font-size:6.5pt;line-height:1}
-      .foot .code{font-weight:600;letter-spacing:.2px}
-      .foot .wt{font-weight:700;white-space:nowrap}
+      svg.bc{width:40mm;height:10mm;display:block}
+      .foot{width:100%;display:flex;justify-content:space-between;align-items:center;font-size:6pt;line-height:1}
+      .foot .code{font-weight:600;letter-spacing:.1px}
+      .foot .wt{font-weight:700;white-space:nowrap;padding-left:2px}
     </style></head><body>
-    <div class="row">${cell}${cell}</div>
+    <div class="row">${cell}<div class="gap"></div>${cell}</div>
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
     <script>
       window.addEventListener('load',function(){
