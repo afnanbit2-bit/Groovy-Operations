@@ -476,16 +476,22 @@ function renderFabricInList(){
         <span id="fab-chev-${f.id}" style="color:var(--muted);font-size:18px;margin-left:8px;flex-shrink:0">›</span>
       </div>
       <div id="fab-rolls-${f.id}" style="display:none;padding:4px 0 8px">
+        ${total?`<div style="display:flex;align-items:center;gap:10px;padding:4px 4px 8px;border-bottom:1px solid #eee;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);cursor:pointer"><input type="checkbox" id="fab-chk-all-${f.id}" onclick="event.stopPropagation();window.toggleAllRollChk('${f.id}',this)" style="cursor:pointer;width:15px;height:15px">Select all</label>
+          <button id="fab-print-sel-${f.id}" onclick="event.stopPropagation();window.printSelectedRollBarcodes('${f.id}')" disabled style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit;opacity:.5">🖨 Print selected</button>
+        </div>`:''}
         ${rolls.map(r=>{
           const rc=r.rollCode||r.rollNumber||'';
           const rGsm=r.gsm||f.gsm||0;
+          const wt=`${r.weight} ${r.unit||'kg'}`;
           return`<div style="display:flex;flex-direction:column;padding:8px 4px;border-bottom:1px solid #f9f9f9;font-size:12px;gap:6px">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
-              <span style="font-weight:600;min-width:128px;letter-spacing:.04em">${rc}</span>
-              <span style="flex:1;min-width:80px">${r.weight} ${r.unit||'kg'} · ${rGsm}gsm</span>
+              <input type="checkbox" class="fab-roll-chk" data-rc="${_gpEsc(rc)}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(f.supplier||'')}" onclick="event.stopPropagation();window.updateRollPrintCount('${f.id}')" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
+              <span style="font-weight:600;min-width:120px;letter-spacing:.04em">${rc}</span>
+              <span style="flex:1;min-width:80px">${wt} · ${rGsm}gsm</span>
               <span style="${r.qcPassed?'color:var(--green);font-weight:600':'color:var(--muted)'}">${r.qcPassed?'QC Passed ✓':'Pending QC'}</span>
               ${r.qcPassed&&r.qcBy?`<span style="font-size:10px;color:var(--muted)">${r.qcBy}</span>`:''}
-              <button onclick="event.stopPropagation();window.printRollBarcode('${_gpEsc(rc)}','${_gpEsc(f.fabType||'')}','${rGsm}','${_gpEsc(f.color||'')}','${r.weight} ${r.unit||'kg'}','${_gpEsc(f.supplier||'')}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">🖨 Print</button>
+              <button onclick="event.stopPropagation();window.printRollBarcode('${_gpEsc(rc)}','${_gpEsc(f.fabType||'')}','${rGsm}','${_gpEsc(f.color||'')}','${_gpEsc(wt)}','${_gpEsc(f.supplier||'')}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">🖨 Print</button>
             </div>
             <svg class="fab-roll-barcode-view" data-rc="${_gpEsc(rc)}" style="display:block;height:38px;margin-left:0"></svg>
           </div>`;
@@ -513,40 +519,85 @@ window.toggleFabEntry=function(id){
   }
 };
 
-// Single 48×25mm roll label (no duplicate). Locked to a fixed 48mm box, left-
-// aligned, so it lands in the left cell of the 2-across stock just like the
-// working print did — no straddle, no wasted duplicate barcode.
-window.printRollBarcode=function(rollCode,fabType,gsm,color,weight,supplier){
+// 48×25mm roll label(s). Locked to a fixed 48mm box, left-aligned, so each
+// lands in the left cell of the 2-across stock just like the working print
+// did — no straddle, no wasted duplicate barcode. Accepts an array of
+// {rollCode, weight, supplier}; each label prints on its own 48×25mm page,
+// so one print job can emit any number of roll labels back-to-back.
+function _openRollLabelsPrint(labels){
+  labels=(labels||[]).filter(l=>l&&l.rollCode);
+  if(!labels.length){showToast('Nothing to print.',true);return;}
   const w=window.open('','_blank','width=420,height=300');
   if(!w){showToast('Allow popups to print barcodes.',true);return;}
-  w.document.write(`<!doctype html><html><head><title>${rollCode}</title>
+  const title=labels.length===1?labels[0].rollCode:`${labels.length} labels`;
+  const body=labels.map(l=>`
+    <div class="label">
+      <div class="supplier">${l.supplier||''}</div>
+      <svg class="bc" data-val="${_gpEsc(l.rollCode||'')}"></svg>
+      <div class="foot"><span class="code">${l.rollCode||''}</span><span class="wt">${l.weight||''}</span></div>
+    </div>`).join('');
+  w.document.write(`<!doctype html><html><head><title>${title}</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
       @page{size:48mm 25mm;margin:0}
-      html,body{width:48mm;height:25mm}
-      .label{width:48mm;height:25mm;padding:1.5mm 3mm;display:flex;flex-direction:column;justify-content:space-between;align-items:center;overflow:hidden}
+      html,body{width:48mm}
+      .label{width:48mm;height:25mm;padding:1.5mm 3mm;display:flex;flex-direction:column;justify-content:space-between;align-items:center;overflow:hidden;page-break-after:always;break-after:page}
+      .label:last-child{page-break-after:auto;break-after:auto}
       .supplier{font-size:9pt;font-weight:700;color:#000;line-height:1.05;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
       svg.bc{width:34mm;height:8mm;display:block}
       .foot{width:100%;display:flex;justify-content:space-between;align-items:center;font-size:7pt;line-height:1}
       .foot .code{font-weight:800;letter-spacing:.1px}
       .foot .wt{font-weight:800;white-space:nowrap;padding-left:3px}
     </style></head><body>
-    <div class="label">
-      <div class="supplier">${supplier||''}</div>
-      <svg class="bc"></svg>
-      <div class="foot"><span class="code">${rollCode}</span><span class="wt">${weight||''}</span></div>
-    </div>
+    ${body}
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
     <script>
       window.addEventListener('load',function(){
         document.querySelectorAll('svg.bc').forEach(function(el){
-          try{JsBarcode(el,'${rollCode}',{format:'CODE128',displayValue:false,height:28,margin:0,width:1});}catch(e){}
+          try{JsBarcode(el,el.getAttribute('data-val'),{format:'CODE128',displayValue:false,height:28,margin:0,width:1});}catch(e){}
         });
         setTimeout(function(){window.print();},300);
       });
     <\/script>
     </body></html>`);
   w.document.close();
+}
+
+window.printRollBarcode=function(rollCode,fabType,gsm,color,weight,supplier){
+  _openRollLabelsPrint([{rollCode,weight,supplier}]);
+};
+
+// Print every checked roll in one entry's expanded list as a single job.
+window.printSelectedRollBarcodes=function(fabId){
+  const cont=document.getElementById('fab-rolls-'+fabId);
+  if(!cont)return;
+  const checked=[...cont.querySelectorAll('.fab-roll-chk:checked')];
+  if(!checked.length){showToast('Select at least one roll to print.',true);return;}
+  _openRollLabelsPrint(checked.map(c=>({
+    rollCode:c.getAttribute('data-rc'),
+    weight:c.getAttribute('data-weight'),
+    supplier:c.getAttribute('data-supplier')
+  })));
+};
+
+window.toggleAllRollChk=function(fabId,master){
+  const cont=document.getElementById('fab-rolls-'+fabId);
+  if(!cont)return;
+  cont.querySelectorAll('.fab-roll-chk').forEach(c=>{c.checked=master.checked;});
+  window.updateRollPrintCount(fabId);
+};
+
+// Refresh the "Print selected (n)" button label/enabled state + the
+// select-all box after any individual checkbox change.
+window.updateRollPrintCount=function(fabId){
+  const cont=document.getElementById('fab-rolls-'+fabId);
+  if(!cont)return;
+  const boxes=[...cont.querySelectorAll('.fab-roll-chk')];
+  const n=boxes.filter(c=>c.checked).length;
+  const btn=document.getElementById('fab-print-sel-'+fabId);
+  if(btn){btn.textContent='🖨 Print selected'+(n?` (${n})`:'');btn.disabled=!n;btn.style.opacity=n?'1':'.5';}
+  const master=document.getElementById('fab-chk-all-'+fabId);
+  if(master)master.checked=n>0&&n===boxes.length;
 };
 
 // ── Edit / Delete fabric receipts (reuses gatepass approval globals) ──
