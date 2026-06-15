@@ -45,19 +45,43 @@ window.switchFabTab=function(tab){
     el.innerHTML=renderFabricReturnsTab();
     window.switchFabRetMode(_fabRetMode||'vendor');
   }
+  else if(tab==='reports'){
+    el.innerHTML=renderFabricReportsTab();
+  }
   else el.innerHTML=_fabPlaceholder(tab);
 };
 
 function _fabPlaceholder(tab){
-  const map={
-    reports:['Reports','Stock / movement / wastage exports (Excel + PDF) land in Phase 6.']
-  };
-  const [title,msg]=map[tab]||['Coming soon',''];
   return`<div class="card" style="padding:28px;text-align:center">
-    <div class="card-title" style="justify-content:center">${title}</div>
-    <div class="empty" style="padding:8px 0 0">${msg}</div>
+    <div class="card-title" style="justify-content:center">Coming soon</div>
   </div>`;
 }
+
+// ── Stock alerts (Phase 6): 3 thresholds per fabric, colour-coded ──
+function _fabAlertCfg(s){
+  const t=(s&&s.thresholds)||{};
+  return{t1:Number(t.t1)||50,t2:Number(t.t2)||25,t3:Number(t.t3)||10};
+}
+function _fabAlertLevel(s){
+  const w=(s&&s.totalWeight)||0;const{t1,t2,t3}=_fabAlertCfg(s);
+  if(w<=0)return{label:'Out of stock',color:'#6b7280',dot:'#9ca3af'};
+  if(w<=t3)return{label:'Critical',color:'#dc2626',dot:'#dc2626'};
+  if(w<=t2)return{label:'Very low',color:'#ea580c',dot:'#ea580c'};
+  if(w<=t1)return{label:'Low',color:'#b45309',dot:'#f59e0b'};
+  return{label:'OK',color:'#16a34a',dot:'#16a34a'};
+}
+window.fabSaveAlerts=async function(key){
+  const s=allFabricInventory.find(x=>x._id===key);if(!s)return;
+  const t1=parseFloat(document.getElementById('fab-th1')?.value)||0;
+  const t2=parseFloat(document.getElementById('fab-th2')?.value)||0;
+  const t3=parseFloat(document.getElementById('fab-th3')?.value)||0;
+  try{
+    await setDoc(doc(db,'fabric_inventory',key),{thresholds:{t1,t2,t3}},{merge:true});
+    s.thresholds={t1,t2,t3};
+    showToast('Alert levels saved ✓');
+    const m=document.getElementById('fab-tab-content');if(m)m.innerHTML=renderFabricInventory();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
 
 // ── Stock tab (moved from store.js — behaviour unchanged) ──
 function renderFabricInventory(){
@@ -103,7 +127,7 @@ function renderFabricInventory(){
       <tbody>${filtered.map(s=>{
         const empty=!(s.totalWeight>0);
         return`<tr style="border-bottom:1px solid #f5f5f5${empty?';opacity:.55':''}">
-          <td style="padding:10px;font-weight:600">${_gpEsc(s.fabType||'—')}</td>
+          <td style="padding:10px;font-weight:600"><span title="${_fabAlertLevel(s).label}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${_fabAlertLevel(s).dot};margin-right:7px;vertical-align:middle"></span>${_gpEsc(s.fabType||'—')}</td>
           <td style="padding:10px">${s.gsm||'—'}</td>
           <td style="padding:10px">${_gpEsc(s.color||'—')}</td>
           <td style="padding:10px;text-align:right;font-weight:700;color:${empty?'#dc2626':'var(--text)'}">${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'}</td>
@@ -122,17 +146,30 @@ function _renderFabInvDrill(key){
   if(!s){return`<div class="page-head"><div class="page-title">Not found</div></div><button class="btn-outline" onclick="window.fabInvDrill(null)">← Back</button>`;}
   const movements=allFabricMovements.filter(m=>_fabInvKey(m.fabType,m.gsm,m.color)===key).slice(0,80);
   const rolls=(s.rolls||[]).slice().sort((a,b)=>(a.status==='in_stock'?-1:1)-(b.status==='in_stock'?-1:1));
+  const cfg=_fabAlertCfg(s),lvl=_fabAlertLevel(s);
   return`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
     <div><div class="page-title">${_gpEsc(s.fabType||'—')} · ${s.gsm||0}gsm · ${_gpEsc(s.color||'—')}</div>
-      <div class="page-sub">${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'} in stock · ${s.rollsCount||0} rolls · ${rolls.length} total rolls ever received</div></div>
+      <div class="page-sub"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${lvl.dot};margin-right:5px"></span><span style="color:${lvl.color};font-weight:600">${lvl.label}</span> · ${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'} in stock · ${s.rollsCount||0} avail${s.reservedCount?` · ${s.reservedCount} reserved`:''} · ${rolls.length} total rolls ever received</div></div>
     <button class="btn-outline" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.fabInvDrill(null)">← Back to Fabric Inventory</button>
+  </div>
+  <div class="card" style="margin-bottom:14px"><div class="card-title">Stock alerts <span style="font-weight:400;color:var(--muted);font-size:11px">3 levels (${s.unit||'kg'}) · weight at/below each level raises the flag</span></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <div class="field" style="margin:0"><label>🟠 Low ≤</label><input id="fab-th1" type="number" min="0" step="0.1" value="${cfg.t1}" style="width:96px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-family:inherit"></div>
+      <div class="field" style="margin:0"><label>🟧 Very low ≤</label><input id="fab-th2" type="number" min="0" step="0.1" value="${cfg.t2}" style="width:96px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-family:inherit"></div>
+      <div class="field" style="margin:0"><label>🔴 Critical ≤</label><input id="fab-th3" type="number" min="0" step="0.1" value="${cfg.t3}" style="width:96px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-family:inherit"></div>
+      <button class="btn-outline" style="width:auto;padding:8px 16px;margin:0" onclick="window.fabSaveAlerts('${key}')">Save levels</button>
+    </div>
   </div>
   <div class="card" style="margin-bottom:14px"><div class="card-title">Rolls</div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="background:#fafafa"><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Roll Code</th><th style="padding:8px;text-align:right;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Weight</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Status</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Source</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Issued to / used by</th></tr></thead>
       <tbody>${rolls.length?rolls.map(r=>{
-        const stColor=r.status==='in_stock'?'var(--green)':r.status==='issued'?'#dc2626':r.status==='consumed'?'#92400e':'var(--muted)';
-        return`<tr style="border-bottom:1px solid #f5f5f5"><td style="padding:8px;font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode||'—')}</td><td style="padding:8px;text-align:right">${r.weight||0} ${r.unit||s.unit||'kg'}</td><td style="padding:8px;color:${stColor};font-weight:600;text-transform:capitalize">${(r.status||'in_stock').replace('_',' ')}</td><td style="padding:8px;font-size:11px;color:var(--muted)">${_gpEsc(r.sourceFabId||'—')}</td><td style="padding:8px;font-size:11px;color:var(--muted)">${_gpEsc(r.issuedTo||r.consumedBy||'—')}</td></tr>`;
+        const st=r.status||'in_stock';
+        const stColor=st==='in_stock'?'var(--green)':st==='issued'?'#dc2626':st==='reserved'?'#d97706':st==='returned_supplier'?'#9ca3af':st==='consumed'?'#92400e':'var(--muted)';
+        const tag=r.remnant?' <span style="font-size:9px;color:#d97706">remnant</span>':'';
+        const usedBy=r.issuedPO||r.reservedPO||r.issuedTo||r.consumedBy||(st==='returned_supplier'?'supplier':'—');
+        const extra=r.consumedWeight?` · used ${r.consumedWeight}`:'';
+        return`<tr style="border-bottom:1px solid #f5f5f5"><td style="padding:8px;font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode||'—')}${tag}</td><td style="padding:8px;text-align:right">${r.weight||0} ${r.unit||s.unit||'kg'}${extra}</td><td style="padding:8px;color:${stColor};font-weight:600;text-transform:capitalize">${st.replace('_',' ')}</td><td style="padding:8px;font-size:11px;color:var(--muted)">${_gpEsc(r.sourceFabId||'—')}</td><td style="padding:8px;font-size:11px;color:var(--muted)">${_gpEsc(usedBy)}</td></tr>`;
       }).join(''):'<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--muted)">No rolls yet.</td></tr>'}</tbody>
     </table></div>
   </div>
@@ -969,4 +1006,104 @@ window.fabPoReserveCommit=async function(poId){
   await _fabInvUpsert({fabType:s.fabType,gsm:s.gsm,color:s.color,unit:s.unit||'kg',reserveRollCodes:_poReserveRolls.slice(),reservePO:poId,note:`Reserved for ${poId}`,sourceCol:'pos',sourceId:poId});
   await logActivity('Fabric reserved',`${_poReserveRolls.length} roll(s) reserved for ${poId}`);
   window.fabPoReserveReset();
+};
+
+// ════════════════════════════════════════════════════════════════════════
+//  Reports (Phase 6) — stock-on-hand, movements, per-PO wastage.
+//  Excel via SheetJS; PDF via a print-friendly window (browser print).
+// ════════════════════════════════════════════════════════════════════════
+function _fabWastageData(){
+  const byPO={};
+  allFabricInventory.forEach(s=>(s.rolls||[]).forEach(r=>{
+    const po=r.issuedPO||r.reservedPO;
+    if(!po)return;
+    if((r.status||'')==='issued'||r.consumedWeight){
+      byPO[po]=byPO[po]||{po,issued:0,consumed:0};
+      byPO[po].issued+=r.weight||0;
+      byPO[po].consumed+=r.consumedWeight||0;
+    }
+  }));
+  return Object.values(byPO).map(x=>({...x,returned:Math.max(0,x.issued-x.consumed),wastagePct:x.issued?(x.consumed/x.issued*100):0}))
+    .sort((a,b)=>b.wastagePct-a.wastagePct);
+}
+
+function renderFabricReportsTab(){
+  const rolls=allFabricInventory.reduce((a,s)=>a+(s.rolls||[]).length,0);
+  const kg=allFabricInventory.filter(s=>(s.unit||'kg')==='kg').reduce((a,s)=>a+(s.totalWeight||0),0);
+  const waste=_fabWastageData();
+  const btn=(label,fn)=>`<button class="btn-outline" style="width:auto;padding:9px 16px;margin:0" onclick="window.${fn}()">${label}</button>`;
+  return`<div class="card"><div class="card-title">Reports & exports</div>
+    <div class="page-sub" style="margin-bottom:12px">${allFabricInventory.length} fabrics · ${rolls} rolls · ${kg.toFixed(1)} kg in stock</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${btn('⬇ Stock on hand (Excel)','fabExportStock')}
+      ${btn('⬇ Movement history (Excel)','fabExportMovements')}
+      ${btn('⬇ Per-PO wastage (Excel)','fabExportWastage')}
+      ${btn('🖨 Print report (PDF)','fabPrintReport')}
+    </div>
+  </div>
+  <div class="card"><div class="card-title">Per-PO wastage</div>
+    ${waste.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:#fafafa"><th style="padding:8px;text-align:left">PO</th><th style="padding:8px;text-align:right">Issued</th><th style="padding:8px;text-align:right">Consumed</th><th style="padding:8px;text-align:right">Returned</th><th style="padding:8px;text-align:right">Wastage %</th></tr></thead>
+      <tbody>${waste.map(w=>`<tr style="border-bottom:1px solid #f5f5f5">
+        <td style="padding:8px;font-weight:700">${_gpEsc(w.po)}</td>
+        <td style="padding:8px;text-align:right">${w.issued.toFixed(2)}</td>
+        <td style="padding:8px;text-align:right">${w.consumed.toFixed(2)}</td>
+        <td style="padding:8px;text-align:right">${w.returned.toFixed(2)}</td>
+        <td style="padding:8px;text-align:right;font-weight:600;color:${w.wastagePct>15?'#dc2626':w.wastagePct>5?'#b45309':'#16a34a'}">${w.wastagePct.toFixed(1)}%</td>
+      </tr>`).join('')}</tbody>
+    </table></div>`:'<div class="empty" style="padding:16px">No issued fabric yet — wastage appears once fabric is issued and partially returned.</div>'}
+  </div><div style="height:80px"></div>`;
+}
+
+function _fabXlsx(aoa,sheetName,fileBase){
+  if(typeof XLSX==='undefined'){showToast('Excel library not loaded.',true);return;}
+  const ws=XLSX.utils.aoa_to_sheet(aoa);const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,sheetName);
+  XLSX.writeFile(wb,`${fileBase}-${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+window.fabExportStock=function(){
+  const rows=[['Fabric','GSM','Color','Roll Code','Status','Weight','Unit','Source','PO','Remnant']];
+  allFabricInventory.forEach(s=>(s.rolls||[]).forEach(r=>{
+    rows.push([s.fabType,s.gsm,s.color,r.rollCode,r.status||'in_stock',r.weight||0,r.unit||s.unit||'kg',r.sourceFabId||'',r.issuedPO||r.reservedPO||'',r.remnant?'yes':'']);
+  }));
+  _fabXlsx(rows,'Stock','Groovy-Fabric-Stock');
+};
+
+window.fabExportMovements=function(){
+  const rows=[['When','Type','Subtype','Fabric','GSM','Color','Qty','Unit','Rolls','By','Note']];
+  allFabricMovements.forEach(m=>{
+    rows.push([new Date(m.ts).toLocaleString('en-GB'),m.type,m.subtype||'',m.fabType,m.gsm,m.color,m.qty||0,m.unit||'kg',(m.rollCodes||[]).join(' '),m.by||'',m.note||'']);
+  });
+  _fabXlsx(rows,'Movements','Groovy-Fabric-Movements');
+};
+
+window.fabExportWastage=function(){
+  const rows=[['PO','Issued','Consumed','Returned','Wastage %']];
+  _fabWastageData().forEach(w=>rows.push([w.po,w.issued.toFixed(2),w.consumed.toFixed(2),w.returned.toFixed(2),w.wastagePct.toFixed(1)]));
+  _fabXlsx(rows,'Wastage','Groovy-Fabric-Wastage');
+};
+
+window.fabPrintReport=function(){
+  const w=window.open('','_blank');if(!w){showToast('Allow popups to print.',true);return;}
+  const stockRows=allFabricInventory.map(s=>{const l=_fabAlertLevel(s);return`<tr><td>${_gpEsc(s.fabType)} ${s.gsm}g ${_gpEsc(s.color)}</td><td style="text-align:right">${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'}</td><td style="text-align:right">${s.rollsCount||0}</td><td style="color:${l.color}">${l.label}</td></tr>`;}).join('');
+  const waste=_fabWastageData().map(x=>`<tr><td>${_gpEsc(x.po)}</td><td style="text-align:right">${x.issued.toFixed(2)}</td><td style="text-align:right">${x.consumed.toFixed(2)}</td><td style="text-align:right">${x.wastagePct.toFixed(1)}%</td></tr>`).join('');
+  w.document.write(`<!doctype html><html><head><title>Fabric Inventory Report</title><style>
+    body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111}
+    h1{font-size:18px;margin:0 0 4px}h2{font-size:14px;margin:20px 0 6px}
+    .sub{font-size:11px;color:#666;margin-bottom:8px}
+    table{width:100%;border-collapse:collapse;font-size:11px}
+    th,td{border-bottom:1px solid #ddd;padding:5px 6px;text-align:left}
+    th{background:#f3f3f3}
+    @media print{body{padding:0}}
+  </style></head><body>
+    <h1>Groovy — Fabric Inventory Report</h1>
+    <div class="sub">Generated ${new Date().toLocaleString('en-GB')}</div>
+    <h2>Stock on hand</h2>
+    <table><thead><tr><th>Fabric</th><th style="text-align:right">Stock</th><th style="text-align:right">Rolls</th><th>Alert</th></tr></thead><tbody>${stockRows||'<tr><td colspan="4">No stock</td></tr>'}</tbody></table>
+    <h2>Per-PO wastage</h2>
+    <table><thead><tr><th>PO</th><th style="text-align:right">Issued</th><th style="text-align:right">Consumed</th><th style="text-align:right">Wastage %</th></tr></thead><tbody>${waste||'<tr><td colspan="4">No issued fabric</td></tr>'}</tbody></table>
+    <script>window.addEventListener('load',function(){setTimeout(function(){window.print();},250);});<\/script>
+  </body></html>`);
+  w.document.close();
 };
