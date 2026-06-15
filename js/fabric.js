@@ -519,30 +519,40 @@ window.toggleFabEntry=function(id){
   }
 };
 
-// 48×25mm roll label(s). Locked to a fixed 48mm box, left-aligned, so each
-// lands in the left cell of the 2-across stock just like the working print
-// did — no straddle, no wasted duplicate barcode. Accepts an array of
-// {rollCode, weight, supplier}; each label prints on its own 48×25mm page,
-// so one print job can emit any number of roll labels back-to-back.
+// 48×25mm roll label(s) on 2-across stock. The physical row holds two 48mm
+// labels with a 2mm gutter → a 98mm-wide row. Multi-select pairs labels two
+// per row (left, right, then the next row down); an odd count leaves the last
+// right cell blank. A single label keeps the proven 48mm-wide page so the
+// per-roll Print button is byte-for-byte unchanged. Accepts an array of
+// {rollCode, weight, supplier}.
 function _openRollLabelsPrint(labels){
   labels=(labels||[]).filter(l=>l&&l.rollCode);
   if(!labels.length){showToast('Nothing to print.',true);return;}
-  const w=window.open('','_blank','width=420,height=300');
+  const w=window.open('','_blank','width=560,height=320');
   if(!w){showToast('Allow popups to print barcodes.',true);return;}
+  const twoUp=labels.length>1;     // 2-across stock only matters past 1 label
+  const pageW=twoUp?98:48;         // 48mm + 2mm gutter + 48mm
+  const per=twoUp?2:1;
   const title=labels.length===1?labels[0].rollCode:`${labels.length} labels`;
-  const body=labels.map(l=>`
+  const cell=l=>`
     <div class="label">
       <div class="supplier">${l.supplier||''}</div>
       <svg class="bc" data-val="${_gpEsc(l.rollCode||'')}"></svg>
       <div class="foot"><span class="code">${l.rollCode||''}</span><span class="wt">${l.weight||''}</span></div>
-    </div>`).join('');
+    </div>`;
+  let body='';
+  for(let i=0;i<labels.length;i+=per){
+    body+=`<div class="row">${labels.slice(i,i+per).map(cell).join('')}</div>`;
+  }
   w.document.write(`<!doctype html><html><head><title>${title}</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
-      @page{size:48mm 25mm;margin:0}
-      html,body{width:48mm}
-      .label{width:48mm;height:25mm;padding:1.5mm 3mm;display:flex;flex-direction:column;justify-content:space-between;align-items:center;overflow:hidden;page-break-after:always;break-after:page}
-      .label:last-child{page-break-after:auto;break-after:auto}
+      @page{size:${pageW}mm 25mm;margin:0}
+      html,body{width:${pageW}mm}
+      .row{width:${pageW}mm;height:25mm;display:flex;page-break-after:always;break-after:page}
+      .row:last-child{page-break-after:auto;break-after:auto}
+      ${twoUp?'.row .label:first-child{margin-right:2mm}':''}
+      .label{width:48mm;height:25mm;padding:1.5mm 3mm;display:flex;flex-direction:column;justify-content:space-between;align-items:center;overflow:hidden}
       .supplier{font-size:9pt;font-weight:700;color:#000;line-height:1.05;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
       svg.bc{width:34mm;height:8mm;display:block}
       .foot{width:100%;display:flex;justify-content:space-between;align-items:center;font-size:7pt;line-height:1}
