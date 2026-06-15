@@ -533,6 +533,7 @@ function buildNav(){
   if(!isWorker&&!isStore)mainItems.push({id:'po-registry',label:'PO Registry'});
   if(isWorker||isViewer)mainItems.push({id:'my-work',label:'My Work'});
   if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
+  if(om)mainItems.push({id:'fabric-inventory',label:'Fabric Inventory'});
   if(om)mainItems.push({id:'bug-tracker',label:'🐛 Bug Tracker'});
   if(isOwner)mainItems.push({id:'shopify-intel',label:'Inventory Intel'});
   if(isOwner)mainItems.push({id:'activity',label:'Activity Log'});
@@ -559,7 +560,6 @@ function buildNav(){
   if(!isWorker){
     storeSubItems.push({id:'store-dashboard',label:'Dashboard'});
     storeSubItems.push({id:'store-inventory',label:'Inventory'});
-    if(isOwner)storeSubItems.push({id:'store-fabric-inventory',label:'Fabric Inventory'});
     storeSubItems.push({id:'store-receive',label:'Receive Stock'});
     storeSubItems.push({id:'store-issue',label:'Issue Stock'});
     storeSubItems.push({id:'store-log',label:'Stock Log'});
@@ -686,7 +686,7 @@ function _updateMobNavActive(pageId){
     'po-create':'po','po-registry':'po','po-detail':'po','stage-work':'po',
     'attendance':'hrm','hrm-employees':'hrm','hrm-payroll':'hrm','hrm-advances':'hrm','hrm-loans':'hrm','hrm-policy':'hrm',
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
-    'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-templates':'more','store-fabric-inventory':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more',
+    'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more',
     'activity':'more','users':'more','bug-tracker':'more','shopify-intel':'more',
     'my-work':'my-work'
   };
@@ -845,6 +845,7 @@ function renderPage(id){
   else if(id==='my-work'){m.innerHTML=renderMyWork(); if(typeof _populateWorkerHRMWidget==='function')setTimeout(_populateWorkerHRMWidget,0);}
   else if(id==='me'){m.innerHTML=renderMePage(); if(typeof _populateWorkerHRMWidget==='function')setTimeout(_populateWorkerHRMWidget,0);}
   else if(id==='gatepass'){gpPage=1;m.innerHTML=renderGatePass();window.switchGPTab(gpActiveTab||'outward');}
+  else if(id==='fabric-inventory'){_fabInvDrillKey=null;m.innerHTML=renderFabricPage();window.switchFabTab('stock');}
   else if(id==='activity'){loadActivity();return;}
   else if(id==='users')m.innerHTML=renderUsers();
   else if(id==='bug-tracker'){
@@ -856,7 +857,6 @@ function renderPage(id){
   // ── Store pages ──
   else if(id==='store-dashboard')m.innerHTML=renderStoreDashboard();
   else if(id==='store-inventory')m.innerHTML=renderInventory();
-  else if(id==='store-fabric-inventory')m.innerHTML=renderFabricInventory();
   else if(id==='store-receive'){m.innerHTML=renderStoreReceive();onRcvItemChange();}
   else if(id==='store-issue'){m.innerHTML=renderStoreIssue();onIssItemChange();loadActivePOs();}
   else if(id==='store-templates'){m.innerHTML=renderStoreTemplates();const _si=document.getElementById('tpl-prod-search');if(_si){_si.addEventListener('input',()=>filterTplProd(_si.value));_si.addEventListener('focus',()=>filterTplProd(_si.value));}}
@@ -916,6 +916,7 @@ const BUG_PAGE_NAMES={
   'my-work':'My Work',
   'me':'Worker Me',
   'gatepass':'Gate Pass',
+  'fabric-inventory':'Fabric Inventory',
   'attendance':'HRM Attendance',
   'hrm-employees':'HRM Employees',
   'hrm-payroll':'HRM Payroll',
