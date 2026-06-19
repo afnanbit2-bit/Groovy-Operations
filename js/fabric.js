@@ -34,8 +34,17 @@ function _fabShowBusy(on,label){
     el.style.display='flex';
   }else if(el){el.style.display='none';}
 }
-function _fabBusyStart(label){if(_fabBusy)return false;_fabBusy=true;_fabShowBusy(true,label);return true;}
-function _fabBusyEnd(){_fabBusy=false;_fabShowBusy(false);}
+let _fabBusyTimer=null;
+function _fabBusyStart(label){
+  if(_fabBusy)return false;
+  _fabBusy=true;_fabShowBusy(true,label);
+  // Safety net: if a write/refresh ever stalls (e.g. network), force-clear the
+  // overlay so it can never permanently block the whole UI.
+  clearTimeout(_fabBusyTimer);
+  _fabBusyTimer=setTimeout(()=>{_fabBusy=false;_fabShowBusy(false);},25000);
+  return true;
+}
+function _fabBusyEnd(){_fabBusy=false;clearTimeout(_fabBusyTimer);_fabShowBusy(false);}
 
 function renderFabricPage(){
   return`<div class="page-head"><div class="page-title">Fabric Inventory</div></div>
@@ -68,6 +77,11 @@ window.switchFabTab=function(tab){
   else if(tab==='issue'){
     _fabIssueRolls=[];_fabIssueKey=null;
     el.innerHTML=renderFabricIssueTab();
+    if(_fabIssuePreselectKey){
+      const sel=document.getElementById('fab-iss-stock');
+      if(sel){sel.value=_fabIssuePreselectKey;window.fabIssuePickStock();}
+      _fabIssuePreselectKey='';
+    }
     _fabFocusScan('fab-iss-scan');
   }
   else if(tab==='returns'){
@@ -111,7 +125,8 @@ window.fabSaveAlerts=async function(key){
     await setDoc(doc(db,'fabric_inventory',key),{thresholds:{t1,t2,t3}},{merge:true});
     s.thresholds={t1,t2,t3};
     showToast('Alert levels saved ✓');
-    const m=document.getElementById('fab-tab-content');if(m)m.innerHTML=renderFabricInventory();
+    if(_fabInvDrillKey)window.fabInvDrill(key);   // re-render drill AND redraw barcodes
+    else{const m=document.getElementById('fab-tab-content');if(m)m.innerHTML=renderFabricInventory();}
   }catch(e){showToast('Error: '+e.message,true);}
 };
 
@@ -298,8 +313,8 @@ function _fabRollDetail(r){
 // Jump from the Stock drill into another fabric tab, pre-selecting this fabric
 // where the tab supports it — the "linked to fabric in / issue / returns".
 window.fabDrillJump=function(tab,key){
+  if(tab==='issue')_fabIssuePreselectKey=key||'';   // applied when the Issue tab renders
   window.switchFabTab(tab);
-  if(tab==='issue'&&key)setTimeout(()=>{const sel=document.getElementById('fab-iss-stock');if(sel){sel.value=key;window.fabIssuePickStock();sel.scrollIntoView({behavior:'smooth',block:'center'});}},60);
 };
 
 // ── Stock-drill barcode multi-print (mirrors the Fabric In select-to-print) ──
@@ -479,6 +494,9 @@ window.refreshFabCode=function(){
     const rollCode=`${code}-R${String(i).padStart(2,'0')}`;
     const lbl=row.querySelector('.fab-roll-code');
     if(lbl)lbl.textContent=rollCode;
+    // Backfill empty per-roll GSM from the form GSM (rolls added before GSM was set).
+    const gsmInp=row.querySelector('.fab-roll-gsm');
+    if(gsmInp&&!gsmInp.value)gsmInp.value=parseInt(gsm)||'';
     const qcCb=row.querySelector('input[type=checkbox]');
     if(qcCb)qcCb.setAttribute('onchange',`window.onFabRollQC(this,'${rollCode}')`);
     const bc=row.querySelector('.fab-roll-barcode');
@@ -1011,7 +1029,7 @@ window.saveFabricRoll=async function(fabId,rollCode){
 //  All rolls in one issue must belong to a single fabric stock.
 // ════════════════════════════════════════════════════════════════════════
 const FAB_DESTINATIONS=['FebKnit','Al-Hamd','Al-Nisa','Aqib Sublimation','JR Traders','Rahim Gul Enterprise','Khursheed Enterprise'];
-let _fabIssueRolls=[],_fabIssueKey=null;
+let _fabIssueRolls=[],_fabIssueKey=null,_fabIssuePreselectKey='';
 
 // Roll codes are stored uppercase (e.g. GRYJRS200-01-R01). Handheld scanners
 // can emit a different case (Caps-Lock state / config) or stray whitespace, so
@@ -1171,6 +1189,7 @@ window.submitFabricIssue=async function(){
     await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to factory for ${po} by ${session.name}`);
     showToast(`${gpId} issued ✓ · ${rollCodes.length} rolls`);
     _fabIssueRolls=[];_fabIssueKey=null;
+    _fabBusyEnd();   // drop the overlay before the (slower) refresh so the UI never stays blocked
     if(typeof loadData==='function')await loadData();
     window.switchFabTab('issue');
   }catch(e){showToast('Error: '+e.message,true);}
@@ -1285,6 +1304,7 @@ window.submitFabRetSupplier=async function(){
     await logActivity('Fabric returned to supplier',`${rows.length} roll(s) — ${fullReason} by ${session.name}`);
     showToast(`${rows.length} roll(s) returned to supplier ✓`);
     _fabSRetFilterKey='';
+    _fabBusyEnd();   // drop the overlay before the (slower) refresh
     if(typeof loadData==='function')await loadData();
     window.switchFabTab('returns');
   }catch(e){showToast('Error: '+e.message,true);}
