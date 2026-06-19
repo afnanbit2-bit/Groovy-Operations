@@ -71,7 +71,7 @@ window.switchFabTab=function(tab){
   }
   else if(tab==='returns'){
     el.innerHTML=renderFabricReturnsTab();
-    window.switchFabRetMode(_fabRetMode||'vendor');
+    _fabFocusScan('fab-sret-scan');
   }
   else if(tab==='reports'){
     el.innerHTML=renderFabricReportsTab();
@@ -236,15 +236,18 @@ function _renderFabInvDrill(key){
     ${movements.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
       <thead><tr style="background:#fafafa"><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">When</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Type</th><th style="padding:8px;text-align:right;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Qty</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Rolls</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Source</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">By</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Note</th></tr></thead>
       <tbody>${movements.map(m=>{
-        const tColor=m.type==='in'?'var(--green)':m.type==='out'?'#dc2626':m.type==='consume'?'#92400e':'var(--muted)';
+        // Return-to-supplier rows are shown in PURPLE across the whole line.
+        const isRet=m.subtype==='return_out';
+        const tColor=isRet?'#7c3aed':m.type==='in'?'var(--green)':m.type==='out'?'#dc2626':m.type==='consume'?'#92400e':'var(--muted)';
+        const noteCol=isRet?'#7c3aed':'var(--muted)';
         return`<tr style="border-bottom:1px solid #f5f5f5">
-          <td style="padding:8px">${new Date(m.ts).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
-          <td style="padding:8px;color:${tColor};font-weight:700;text-transform:uppercase">${m.type==='in'?'+ IN':m.type==='out'?'− OUT':m.type==='consume'?'− CONSUME':m.type==='return'?'+ RETURN':m.type}</td>
-          <td style="padding:8px;text-align:right;font-weight:600">${(m.qty||0).toFixed(2)} ${m.unit||'kg'}</td>
-          <td style="padding:8px;font-size:11px;letter-spacing:.04em">${(m.rollCodes||[]).slice(0,3).map(_gpEsc).join(', ')}${(m.rollCodes||[]).length>3?` +${m.rollCodes.length-3}`:''}</td>
-          <td style="padding:8px;font-size:11px;color:var(--muted)">${_gpEsc(m.sourceCollection||'')}/${_gpEsc(m.sourceId||'')}</td>
-          <td style="padding:8px;font-size:11px;color:var(--muted)">${_gpEsc(m.by||'')}</td>
-          <td style="padding:8px;font-size:11px;color:var(--muted)">${_gpEsc(m.note||'')}</td>
+          <td style="padding:8px;color:${isRet?'#7c3aed':'inherit'}">${new Date(m.ts).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
+          <td style="padding:8px;color:${tColor};font-weight:700;text-transform:uppercase">${isRet?'↩ RETURN':m.type==='in'?'+ IN':m.type==='out'?'− OUT':m.type==='consume'?'− CONSUME':m.type==='return'?'+ RETURN':m.type}</td>
+          <td style="padding:8px;text-align:right;font-weight:600;color:${isRet?'#7c3aed':'inherit'}">${(m.qty||0).toFixed(2)} ${m.unit||'kg'}</td>
+          <td style="padding:8px;font-size:11px;letter-spacing:.04em;color:${isRet?'#7c3aed':'inherit'}">${(m.rollCodes||[]).slice(0,3).map(_gpEsc).join(', ')}${(m.rollCodes||[]).length>3?` +${m.rollCodes.length-3}`:''}</td>
+          <td style="padding:8px;font-size:11px;color:${noteCol}">${_gpEsc(m.sourceCollection||'')}/${_gpEsc(m.sourceId||'')}</td>
+          <td style="padding:8px;font-size:11px;color:${noteCol}">${_gpEsc(m.by||'')}</td>
+          <td style="padding:8px;font-size:11px;color:${noteCol}">${_gpEsc(m.note||'')}</td>
         </tr>`;
       }).join('')}</tbody>
     </table></div>`:'<div class="empty" style="padding:16px">No movements logged for this fabric yet.</div>'}
@@ -282,7 +285,7 @@ function _fabRollDetail(r){
   if(r.addedAt)bits.push(`received ${d(r.addedAt)}`);
   if(st==='reserved')bits.push(`Reserved for ${_gpEsc(r.reservedPO||'—')}${r.reservedAt?` · ${d(r.reservedAt)}`:''}`);
   if(st==='issued')bits.push(`Issued${r.issuedPO?` for PO ${_gpEsc(r.issuedPO)}`:''}${r.issuedTo?` to ${_gpEsc(r.issuedTo)}`:''}${r.issuedAt?` · ${d(r.issuedAt)}`:''}${r.issuedBy?` · by ${_gpEsc(r.issuedBy)}`:''}`);
-  if(st==='returned_supplier')bits.push(`Returned to supplier${r.returnReason?` — ${_gpEsc(r.returnReason)}`:''}${r.returnedToSupplierAt?` · ${d(r.returnedToSupplierAt)}`:''}`);
+  if(st==='returned_supplier'){const sup=_fabRollSupplier(r);bits.push(`Returned to ${sup?_gpEsc(sup):'supplier'}${r.returnReason?` — ${_gpEsc(r.returnReason)}`:''}${r.returnedToSupplierAt?` · ${d(r.returnedToSupplierAt)}`:''}`);}
   if(st==='in_stock'&&r.returnedAt)bits.push(`Returned to stock ${d(r.returnedAt)}`);
   if(r.remnant&&r.parentRollCode)bits.push(`Remnant of ${_gpEsc(r.parentRollCode)}`);
   return bits.join(' · ')||'In stock';
@@ -1175,27 +1178,12 @@ window.submitFabricIssue=async function(){
 //   • Vendor → Stock: issued rolls come back; whole or partial (mints remnant)
 //   • To Supplier: in-stock rolls leave permanently with a reason
 // ════════════════════════════════════════════════════════════════════════
-let _fabRetMode='vendor';
 const FAB_RETURN_REASONS=['Defective','Wrong color','Wrong GSM','Excess','Shade variation','Other'];
+let _fabSRetFilterKey='';   // optional "pick a fabric" filter for the returns list
 
 function renderFabricReturnsTab(){
-  const seg=(m,l)=>`<button onclick="window.switchFabRetMode('${m}')" id="fabret-seg-${m}" style="flex:1;padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">${l}</button>`;
-  return`<div style="display:flex;gap:6px;margin-bottom:12px">
-    ${seg('vendor','↩ From Vendor → Stock')}${seg('supplier','↪ To Supplier (out)')}
-  </div>
-  <div id="fab-ret-content"></div>`;
+  return renderFabRetSupplier();
 }
-
-window.switchFabRetMode=function(mode){
-  _fabRetMode=mode;
-  ['vendor','supplier'].forEach(m=>{
-    const b=document.getElementById('fabret-seg-'+m);
-    if(b){const on=m===mode;b.style.background=on?'var(--dark)':'#fff';b.style.color=on?'#fff':'var(--text)';}
-  });
-  const el=document.getElementById('fab-ret-content');if(!el)return;
-  el.innerHTML=mode==='vendor'?renderFabRetVendor():renderFabRetSupplier();
-  _fabFocusScan(mode==='vendor'?'fab-ret-scan':'fab-sret-scan');
-};
 
 // Collect rolls in a given status across all stocks → [{key,stock,roll}]
 function _fabRollsByStatus(status){
@@ -1204,96 +1192,58 @@ function _fabRollsByStatus(status){
   return out;
 }
 
-// ── Vendor → Stock ──
-function renderFabRetVendor(){
-  const issued=_fabRollsByStatus('issued');
-  if(!issued.length)return'<div class="empty" style="padding:24px;text-align:center">No issued rolls to return.</div>';
-  return`<div class="card"><div class="card-title">Return from vendor</div>
-    <div class="field" style="margin-bottom:10px"><label>Scan roll to mark for return</label>
-      <input id="fab-ret-scan" placeholder="Scan or type roll code, press Enter" autocomplete="off" onkeydown="if(event.key==='Enter'||(event.key==='Tab'&&this.value.trim())){event.preventDefault();window.fabRetVendorScan();}">
-    </div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Tick rolls coming back. Leave return weight = issued weight for a whole roll; enter a smaller number for a partial (a remnant roll is created).</div>
-    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead><tr style="background:#fafafa"><th style="padding:6px"></th><th style="padding:6px;text-align:left">Roll</th><th style="padding:6px;text-align:left">Fabric</th><th style="padding:6px;text-align:right">Issued</th><th style="padding:6px;text-align:right">Return wt</th></tr></thead>
-      <tbody>${issued.map(x=>{
-        const w=x.roll.weight||0;
-        return`<tr style="border-bottom:1px solid #f5f5f5" data-row="${_gpEsc(x.roll.rollCode)}">
-          <td style="padding:6px;text-align:center"><input type="checkbox" class="fab-ret-cb" data-key="${x.key}" data-roll="${_gpEsc(x.roll.rollCode)}" data-weight="${w}"></td>
-          <td style="padding:6px;font-weight:700;letter-spacing:.04em">${_gpEsc(x.roll.rollCode)}</td>
-          <td style="padding:6px;color:var(--muted)">${_gpEsc(x.stock.fabType)} ${x.stock.gsm}g ${_gpEsc(x.stock.color)}</td>
-          <td style="padding:6px;text-align:right">${w} ${x.stock.unit||'kg'}</td>
-          <td style="padding:6px;text-align:right"><input type="number" min="0" step="0.01" value="${w}" class="fab-ret-wt" data-roll="${_gpEsc(x.roll.rollCode)}" style="width:80px;padding:5px 7px;border:1px solid var(--border);border-radius:6px;font-size:12px;text-align:right;font-family:inherit"></td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table></div>
-    <button class="btn-primary" style="margin-top:12px" onclick="window.submitFabRetVendor()">Return selected to stock</button>
-  </div><div style="height:80px"></div>`;
+// Origin supplier of a roll, auto-derived from the Fabric In receipt it came
+// from — so a return is always sent back to the supplier it arrived from.
+function _fabRollSupplier(roll){
+  const rcpt=allFabricIn.find(x=>x.id===roll.sourceFabId);
+  return rcpt?.supplier||'';
 }
-
-window.fabRetVendorScan=function(){
-  const inp=document.getElementById('fab-ret-scan');
-  const code=(inp?.value||'').trim();
-  if(!code){return;}
-  const t=_normRoll(code);
-  const cb=[...document.querySelectorAll('.fab-ret-cb')].find(c=>_normRoll(c.dataset.roll)===t);
-  if(!cb){showToast(code+' is not an issued roll.',true);}
-  else{cb.checked=true;const wt=[...document.querySelectorAll('.fab-ret-wt')].find(w=>_normRoll(w.dataset.roll)===t);if(wt)wt.focus();}
-  if(inp){inp.value='';inp.focus();}
-};
-
-window.submitFabRetVendor=async function(){
-  const rows=[...document.querySelectorAll('.fab-ret-cb:checked')];
-  if(!rows.length){showToast('Tick at least one roll.',true);return;}
-  const byKey={};
-  rows.forEach(cb=>{
-    const key=cb.dataset.key,rc=cb.dataset.roll,issuedW=parseFloat(cb.dataset.weight)||0;
-    const rw=parseFloat(document.querySelector(`.fab-ret-wt[data-roll="${rc.replace(/"/g,'')}"]`)?.value);
-    byKey[key]=byKey[key]||{whole:[],partial:[]};
-    if(isNaN(rw)||rw<=0||rw>=issuedW)byKey[key].whole.push(rc);            // full / blank / over → whole
-    else byKey[key].partial.push({parentRollCode:rc,weight:rw});           // less → remnant
-  });
-  if(!_fabBusyStart('Returning to stock…'))return;
-  try{
-    for(const key of Object.keys(byKey)){
-      const s=allFabricInventory.find(x=>x._id===key);if(!s)continue;
-      const base={fabType:s.fabType,gsm:s.gsm,color:s.color,unit:s.unit||'kg',sourceCol:'fabric_returns',sourceId:'vendor-return'};
-      if(byKey[key].whole.length)await _fabInvUpsert({...base,returnRollCodes:byKey[key].whole,note:'Vendor return (whole)'});
-      if(byKey[key].partial.length)await _fabInvUpsert({...base,returnPartial:byKey[key].partial,note:'Vendor return (partial → remnant)'});
-    }
-    await logActivity('Fabric returned from vendor',`${rows.length} roll(s) back to stock`);
-    showToast(`${rows.length} roll(s) returned ✓`);
-    if(typeof loadData==='function')await loadData();
-    window.switchFabRetMode('vendor');
-  }catch(e){showToast('Error: '+e.message,true);}
-  finally{_fabBusyEnd();}
-};
 
 // ── To Supplier ──
 function renderFabRetSupplier(){
-  const inStock=_fabRollsByStatus('in_stock');
+  let inStock=_fabRollsByStatus('in_stock');
   if(!inStock.length)return'<div class="empty" style="padding:24px;text-align:center">No in-stock rolls to return to a supplier.</div>';
-  return`<div class="card"><div class="card-title">Return to supplier</div>
+  // Distinct fabrics present (for the optional "pick a fabric" filter).
+  const fabs=[...new Map(inStock.map(x=>[x.key,x.stock])).values()].sort((a,b)=>(a.fabType||'').localeCompare(b.fabType||''));
+  if(_fabSRetFilterKey&&!fabs.some(s=>s._id===_fabSRetFilterKey))_fabSRetFilterKey='';
+  const shown=_fabSRetFilterKey?inStock.filter(x=>x.key===_fabSRetFilterKey):inStock;
+  return`<div class="card"><div class="card-title">Return to supplier <span style="font-weight:400;color:var(--muted);font-size:11px">to the supplier each roll came from — auto-picked</span></div>
     <div class="form-grid" style="margin-bottom:8px">
       <div class="field"><label>Reason *</label>
         <select id="fab-sret-reason"><option value="">Select reason…</option>${FAB_RETURN_REASONS.map(r=>`<option value="${r}">${r}</option>`).join('')}</select>
       </div>
       <div class="field"><label>Note</label><input id="fab-sret-note" placeholder="Optional detail"></div>
     </div>
-    <div class="field" style="margin-bottom:10px"><label>Scan roll to select</label>
-      <input id="fab-sret-scan" placeholder="Scan or type roll code, press Enter" autocomplete="off" onkeydown="if(event.key==='Enter'||(event.key==='Tab'&&this.value.trim())){event.preventDefault();window.fabSRetScan();}">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+      <div class="field" style="flex:1;min-width:200px;margin:0"><label>Scan roll to select</label>
+        <input id="fab-sret-scan" placeholder="Scan or type roll code, press Enter" autocomplete="off" onkeydown="if(event.key==='Enter'||(event.key==='Tab'&&this.value.trim())){event.preventDefault();window.fabSRetScan();}">
+      </div>
+      <div class="field" style="flex:1;min-width:200px;margin:0"><label>…or pick a fabric</label>
+        <select id="fab-sret-fabric" onchange="window.fabSRetFilter(this.value)">
+          <option value="">All fabrics</option>
+          ${fabs.map(s=>`<option value="${s._id}" ${_fabSRetFilterKey===s._id?'selected':''}>${_gpEsc(s.fabType)} · ${s.gsm||0}gsm · ${_gpEsc(s.color)}</option>`).join('')}
+        </select>
+      </div>
     </div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead><tr style="background:#fafafa"><th style="padding:6px"></th><th style="padding:6px;text-align:left">Roll</th><th style="padding:6px;text-align:left">Fabric</th><th style="padding:6px;text-align:right">Weight</th></tr></thead>
-      <tbody>${inStock.map(x=>`<tr style="border-bottom:1px solid #f5f5f5">
-        <td style="padding:6px;text-align:center"><input type="checkbox" class="fab-sret-cb" data-key="${x.key}" data-roll="${_gpEsc(x.roll.rollCode)}"></td>
+      <thead><tr style="background:#fafafa"><th style="padding:6px"></th><th style="padding:6px;text-align:left">Roll</th><th style="padding:6px;text-align:left">Fabric</th><th style="padding:6px;text-align:left">Supplier (origin)</th><th style="padding:6px;text-align:right">Weight</th></tr></thead>
+      <tbody>${shown.map(x=>{const sup=_fabRollSupplier(x.roll);return`<tr style="border-bottom:1px solid #f5f5f5">
+        <td style="padding:6px;text-align:center"><input type="checkbox" class="fab-sret-cb" data-key="${x.key}" data-roll="${_gpEsc(x.roll.rollCode)}" data-supplier="${_gpEsc(sup)}"></td>
         <td style="padding:6px;font-weight:700;letter-spacing:.04em">${_gpEsc(x.roll.rollCode)}${x.roll.remnant?' <span style="color:var(--amber);font-size:9px">remnant</span>':''}</td>
         <td style="padding:6px;color:var(--muted)">${_gpEsc(x.stock.fabType)} ${x.stock.gsm}g ${_gpEsc(x.stock.color)}</td>
+        <td style="padding:6px;font-weight:600;color:${sup?'var(--text)':'#dc2626'}">${sup?_gpEsc(sup):'unknown'}</td>
         <td style="padding:6px;text-align:right">${x.roll.weight||0} ${x.stock.unit||'kg'}</td>
-      </tr>`).join('')}</tbody>
+      </tr>`;}).join('')}</tbody>
     </table></div>
     <button class="btn-primary" style="margin-top:12px" onclick="window.submitFabRetSupplier()">Return selected to supplier</button>
   </div><div style="height:80px"></div>`;
 }
+
+window.fabSRetFilter=function(key){
+  _fabSRetFilterKey=key||'';
+  const el=document.getElementById('fab-tab-content');
+  if(el){el.innerHTML=renderFabricReturnsTab();_fabFocusScan('fab-sret-scan');}
+};
 
 window.fabSRetScan=function(){
   const inp=document.getElementById('fab-sret-scan');
@@ -1312,18 +1262,27 @@ window.submitFabRetSupplier=async function(){
   const rows=[...document.querySelectorAll('.fab-sret-cb:checked')];
   if(!rows.length){showToast('Tick at least one roll.',true);return;}
   const fullReason=note?`${reason} — ${note}`:reason;
+  // Group by inventory key; track the auto-picked origin supplier(s) per group
+  // so the stock log records "returned to {supplier} — {reason}".
   const byKey={};
-  rows.forEach(cb=>{(byKey[cb.dataset.key]=byKey[cb.dataset.key]||[]).push(cb.dataset.roll);});
+  rows.forEach(cb=>{
+    const k=cb.dataset.key;
+    byKey[k]=byKey[k]||{codes:[],suppliers:new Set()};
+    byKey[k].codes.push(cb.dataset.roll);
+    if(cb.dataset.supplier)byKey[k].suppliers.add(cb.dataset.supplier);
+  });
   if(!_fabBusyStart('Returning to supplier…'))return;
   try{
     for(const key of Object.keys(byKey)){
       const s=allFabricInventory.find(x=>x._id===key);if(!s)continue;
-      await _fabInvUpsert({fabType:s.fabType,gsm:s.gsm,color:s.color,unit:s.unit||'kg',supplierReturnRollCodes:byKey[key],reason:fullReason,note:`To supplier: ${fullReason}`,sourceCol:'fabric_returns',sourceId:'supplier-return'});
+      const sup=[...byKey[key].suppliers].join(', ')||'unknown supplier';
+      await _fabInvUpsert({fabType:s.fabType,gsm:s.gsm,color:s.color,unit:s.unit||'kg',supplierReturnRollCodes:byKey[key].codes,reason:fullReason,note:`Returned to ${sup} — ${fullReason} · by ${session.name}`,sourceCol:'fabric_returns',sourceId:'supplier-return'});
     }
-    await logActivity('Fabric returned to supplier',`${rows.length} roll(s) — ${fullReason}`);
+    await logActivity('Fabric returned to supplier',`${rows.length} roll(s) — ${fullReason} by ${session.name}`);
     showToast(`${rows.length} roll(s) returned to supplier ✓`);
+    _fabSRetFilterKey='';
     if(typeof loadData==='function')await loadData();
-    window.switchFabRetMode('supplier');
+    window.switchFabTab('returns');
   }catch(e){showToast('Error: '+e.message,true);}
   finally{_fabBusyEnd();}
 };
