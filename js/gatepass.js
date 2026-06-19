@@ -856,6 +856,10 @@ window.gpApproveRequest=async function(reqId){
   if(!_gpCanApprove())return showToast('Owners/managers only.',true);
   const r=allGPEditRequests.find(x=>x.id===reqId);
   if(!r||r.status!=='pending')return;
+  // Fabric deletions are owners-only — managers can approve gate-pass/return
+  // requests but not delete fabric (matches firestore.rules delete: isOwner()).
+  if(r.type==='fabric'&&r.action==='delete'&&!(session&&session.role==='owner'))
+    return showToast('Only owners (Afnan, Ammar) can approve fabric deletions.',true);
   const collMap={gp:'gatepasses',return:'returns',fabric:'fabricin'};
   const arrMap={gp:allPasses,return:allReturns,fabric:allFabricIn};
   const collName=collMap[r.type];

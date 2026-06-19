@@ -690,11 +690,16 @@ window.submitFabricEdit=async function(fabId){
   }catch(e){showToast('Save failed: '+e.message,true);}
 };
 
+// Deleting a fabric receipt is owners-only (Afnan, Ammar) — even managers go
+// through the approval request flow, and the Firestore rules enforce the same
+// (delete: if isOwner()).
+function _fabCanDelete(){return !!(session&&session.role==='owner');}
+
 window.requestDeleteFabricIn=async function(fabId){
   const f=allFabricIn.find(x=>x.id===fabId);
   if(!f)return showToast('Fabric entry not found.',true);
   if(_gpPendingFor('fabric',fabId))return showToast('A request is already pending for '+fabId,true);
-  if(_gpCanApprove()){
+  if(_fabCanDelete()){
     if(!confirm(`Delete ${fabId}? This cannot be undone.`))return;
     try{
       await deleteDoc(doc(db,'fabricin',fabId));

@@ -31,24 +31,24 @@ service cloud.firestore {
     match /returns/{doc}              { allow read, write: if signedIn(); }
     // Fabric: any signed-in user may read, add (receipts) and update (QC,
     // issue/return adjust inventory + movements). DELETE is restricted to
-    // owners+managers — the same set the app's approval flow (_gpCanApprove)
-    // already treats as approvers — so a worker/store/viewer account, or a bug
-    // running under those credentials, can never wipe fabric records. Workers
-    // still request deletion via the in-app approval flow.
+    // OWNERS ONLY (Afnan, Ammar) — not managers, not workers — so no other
+    // account, nor a bug running under their credentials, can wipe fabric
+    // records. Everyone else (incl. managers) requests deletion via the
+    // in-app approval flow, and only an owner can approve/execute it.
     match /fabricin/{doc} {
       allow read:           if signedIn();
       allow create, update: if signedIn();
-      allow delete:         if isOM();
+      allow delete:         if isOwner();
     }
     match /fabric_inventory/{doc} {
       allow read:           if signedIn();
       allow create, update: if signedIn();
-      allow delete:         if isOM();
+      allow delete:         if isOwner();
     }
     match /fabric_movements/{doc} {
       allow read:           if signedIn();
       allow create, update: if signedIn();
-      allow delete:         if isOM();
+      allow delete:         if isOwner();
     }
     // Edit/delete approval requests for gatepasses/returns/fabricin.
     // Any signed-in user can read (so they can see their own pending state)

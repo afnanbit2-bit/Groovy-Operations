@@ -60,13 +60,15 @@ Security is enforced by `firestore.rules` (in this repo — the canonical copy).
 
 Key fabric protection (added 19 June 2026):
 
-- **Fabric records cannot be deleted by worker/store/viewer accounts.**
+- **Fabric records can only be deleted by OWNERS (Afnan, Ammar).**
   `delete` on `fabricin`, `fabric_inventory`, and `fabric_movements` is
-  restricted to **owners + managers** (`isOM()`), matching the app's
-  approval flow. Reads, additions, and updates remain open to any signed-in
-  user (workers still need to add receipts, run QC, and issue/return fabric).
-- Workers who need a fabric entry removed use the **in-app delete request**,
-  which routes to an owner/manager for approval.
+  restricted to `isOwner()` — not managers, not workers — so no other account
+  (nor a bug under their credentials) can wipe fabric records. Reads,
+  additions, and updates remain open to any signed-in user (workers still
+  need to add receipts, run QC, and issue/return fabric).
+- Anyone else (including managers) who needs a fabric entry removed uses the
+  **in-app delete request**, which only an **owner** can approve and execute
+  (enforced in both the app and the rules).
 
 ---
 
