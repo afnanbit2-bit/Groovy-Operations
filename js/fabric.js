@@ -493,13 +493,14 @@ function renderFabricInList(){
               <span style="${r.qcPassed?'color:var(--green);font-weight:600':'color:var(--muted)'}">${r.qcPassed?'QC Passed ✓':'Pending QC'}</span>
               ${r.qcPassed&&r.qcBy?`<span style="font-size:10px;color:var(--muted)">${r.qcBy}</span>`:''}
               <button onclick="event.stopPropagation();window.printRollBarcode('${_gpEsc(rc)}','${_gpEsc(f.fabType||'')}','${rGsm}','${_gpEsc(f.color||'')}','${_gpEsc(wt)}','${_gpEsc(f.supplier||'')}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">🖨 Print</button>
+              ${_fabCanDelete()?`<button onclick="event.stopPropagation();window.deleteFabricRoll('${f.id}','${_gpEsc(rc)}')" title="Delete just this roll (owners only)" style="padding:3px 8px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:10px;cursor:pointer;font-family:inherit">✕ Roll</button>`:''}
             </div>
             <svg class="fab-roll-barcode-view" data-rc="${_gpEsc(rc)}" style="display:block;height:38px;margin-left:0"></svg>
           </div>`;
         }).join('')||'<div style="font-size:12px;color:var(--muted);padding:6px">No rolls recorded.</div>'}
         <div style="display:flex;gap:6px;justify-content:flex-end;padding:8px 4px 0">
           <button onclick="event.stopPropagation();window.editFabricIn('${f.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
-          <button onclick="event.stopPropagation();window.requestDeleteFabricIn('${f.id}')" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
+          <button onclick="event.stopPropagation();window.requestDeleteFabricIn('${f.id}')" title="Delete the whole receipt (all rolls)" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete entry</button>
         </div>
       </div>
     </div>`;
@@ -717,6 +718,46 @@ window.requestDeleteFabricIn=async function(fabId){
     showToast('Delete request sent for approval');
     _fabRefreshList();
   }catch(e){showToast('Request failed: '+e.message,true);}
+};
+
+// Delete a SINGLE roll from a receipt (owners only) — for a roll entered by
+// mistake, without nuking the whole entry. Only in-stock rolls can go: a roll
+// that's already issued/reserved/consumed is in use and must be handled via
+// the issue/return flows instead. If it was the entry's last roll, the empty
+// receipt is removed too.
+window.deleteFabricRoll=async function(fabId,rollCode){
+  if(!_fabCanDelete())return showToast('Only owners (Afnan, Ammar) can delete rolls.',true);
+  const f=allFabricIn.find(x=>x.id===fabId);
+  if(!f)return showToast('Fabric entry not found.',true);
+  if(_gpPendingFor('fabric',fabId))return showToast('A delete/edit is already pending for '+fabId,true);
+  const idx=(f.rolls||[]).findIndex(r=>(r.rollCode||r.rollNumber)===rollCode);
+  if(idx<0)return showToast('Roll '+rollCode+' not found in '+fabId,true);
+  // Guard: only an in-stock roll may be hard-deleted.
+  const inv=_fabFindRoll(rollCode);
+  const invStatus=inv?.roll?.status||'in_stock';
+  if(inv&&invStatus!=='in_stock')
+    return showToast(`${rollCode} is ${invStatus.replace('_',' ')} — can't delete a roll that's in use. Use Returns first.`,true);
+  if(!confirm(`Delete roll ${rollCode}? This removes just this one roll and cannot be undone.`))return;
+  try{
+    const removed=f.rolls[idx];
+    const lastOne=f.rolls.length===1;
+    // 1) pull the roll out of the receipt + recompute its totals
+    const newRolls=f.rolls.filter((_,i)=>i!==idx);
+    const newTotal=parseFloat(newRolls.reduce((s,r)=>s+(Number(r.weight)||0),0).toFixed(2));
+    if(lastOne){
+      await deleteDoc(doc(db,'fabricin',fabId));
+      allFabricIn=allFabricIn.filter(x=>x.id!==fabId);
+    }else{
+      await updateDoc(doc(db,'fabricin',fabId),{rolls:newRolls,rollsCount:newRolls.length,totalWeight:newTotal,updatedAt:Date.now(),updatedBy:session.name});
+      f.rolls=newRolls;f.rollsCount=newRolls.length;f.totalWeight=newTotal;
+    }
+    // 2) remove it from the aggregated inventory (hard splice, not an issue)
+    await _fabInvUpsert({fabType:f.fabType,gsm:f.gsm,color:f.color,unit:f.unit||removed.unit||'kg',deleteRollCodes:[rollCode],note:`Roll ${rollCode} deleted from ${fabId}`,sourceCol:'fabricin',sourceId:fabId});
+    await logActivity('Fabric roll deleted',`${rollCode} removed from ${fabId} by ${session.name}${lastOne?' (entry emptied & removed)':''}`);
+    showToast(lastOne?`${rollCode} deleted · ${fabId} had no rolls left and was removed`:`${rollCode} deleted ✓`);
+    renderFabricInList();
+    if(!lastOne)window.toggleFabEntry(fabId);   // re-expand the entry we were in
+  }catch(e){showToast('Delete failed: '+e.message,true);}
 };
 
 // ════════════════════════════════════════════════════════════════════════

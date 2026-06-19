@@ -430,7 +430,7 @@ function renderReturnsList(){
 // (issue) · reserveRollCodes (+reservePO) · releaseRollCodes · returnRollCodes
 // (whole vendor return) · returnPartial [{parentRollCode,weight}] (mint remnant
 // + log consumed) · supplierReturnRollCodes (+reason). See FABRIC_INVENTORY_PLAN.
-async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,reserveRollCodes,reservePO,releaseRollCodes,returnRollCodes,returnPartial,supplierReturnRollCodes,reason,note,sourceCol,sourceId}){
+async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,deleteRollCodes,reserveRollCodes,reservePO,releaseRollCodes,returnRollCodes,returnPartial,supplierReturnRollCodes,reason,note,sourceCol,sourceId}){
   const key=_fabInvKey(fabType,gsm,color);
   const ref=doc(db,'fabric_inventory',key);
   const existing=allFabricInventory.find(x=>x._id===key);
@@ -443,6 +443,11 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,re
   }else if(Array.isArray(removeRollCodes)){
     for(const rc of removeRollCodes){const r=findRoll(rc,['in_stock','reserved']);if(r){r.status='issued';r.issuedAt=Date.now();r.issuedBy=session.name;r.issuedTo=sourceId;r.issuedPO=reservePO||r.reservedPO||'';delete r.reservedPO;movQty+=r.weight||0;movCodes.push(rc);}}
     movType='out';movSub='issue';
+  }else if(Array.isArray(deleteRollCodes)){
+    // Hard-remove an in-stock roll entered by mistake — physically splices it
+    // out of inventory (NOT an issue/return). Only in_stock rolls qualify.
+    for(const rc of deleteRollCodes){const i=rolls.findIndex(r=>r.rollCode===rc&&(r.status||'in_stock')==='in_stock');if(i>=0){movQty+=rolls[i].weight||0;movCodes.push(rc);rolls.splice(i,1);}}
+    movType='out';movSub='delete';
   }else if(Array.isArray(reserveRollCodes)){
     for(const rc of reserveRollCodes){const r=findRoll(rc,['in_stock']);if(r){r.status='reserved';r.reservedPO=reservePO||'';r.reservedAt=Date.now();r.reservedBy=session.name;movQty+=r.weight||0;movCodes.push(rc);}}
     movType='reserve';movSub='reserve';
