@@ -10,6 +10,32 @@
 
 let fabActiveTab='stock';
 let _fabInvCatFilter='all';   // category (fabType) filter for the Stock tab
+let _fabBusy=false;           // re-entrancy guard: blocks double-submit/dupes
+
+// Animated busy overlay shown during any time-taking fabric write. The full-
+// screen overlay also blocks clicks, so a second tap can't fire the same save
+// twice (the #1 cause of duplicate entries). Used by every mutating handler.
+function _fabShowBusy(on,label){
+  let el=document.getElementById('fab-busy');
+  if(on){
+    if(!document.getElementById('fab-busy-style')){
+      const st=document.createElement('style');st.id='fab-busy-style';
+      st.textContent='@keyframes fabspin{to{transform:rotate(360deg)}}';document.head.appendChild(st);
+    }
+    if(!el){
+      el=document.createElement('div');el.id='fab-busy';
+      el.style.cssText='position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.55)';
+      el.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;gap:10px;background:#111;color:#fff;padding:16px 24px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.25)">
+        <svg width="26" height="26" viewBox="0 0 50 50" style="animation:fabspin .8s linear infinite"><circle cx="25" cy="25" r="20" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-dasharray="80 50"/></svg>
+        <span id="fab-busy-label" style="font-size:12px;letter-spacing:.02em">Working…</span></div>`;
+      document.body.appendChild(el);
+    }
+    const lbl=document.getElementById('fab-busy-label');if(lbl)lbl.textContent=label||'Working…';
+    el.style.display='flex';
+  }else if(el){el.style.display='none';}
+}
+function _fabBusyStart(label){if(_fabBusy)return false;_fabBusy=true;_fabShowBusy(true,label);return true;}
+function _fabBusyEnd(){_fabBusy=false;_fabShowBusy(false);}
 
 function renderFabricPage(){
   return`<div class="page-head"><div class="page-title">Fabric Inventory</div></div>
@@ -534,10 +560,14 @@ window.submitFabricIn=async function(){
   if(!rows.length){showToast('Add at least one roll.',true);return;}
   if(rows.some(r=>!r.weight)){showToast('Every roll needs a weight.',true);return;}
   if(rows.some(r=>!r.gsm)){showToast('Every roll needs a GSM.',true);return;}
+  if(!_fabBusyStart('Saving fabric entry…'))return;
   try{
     const baseCode=_fabBaseCode(fabType,gsm,color);
-    const lot=await _allocFabLot(baseCode);              // atomic + unique
-    const fabCode=`${baseCode}-${lot}`;
+    let lot=await _allocFabLot(baseCode);                // atomic + unique
+    let fabCode=`${baseCode}-${lot}`;
+    // Defensive: guarantee the code is unused even against loaded data.
+    let guard=0;
+    while(allFabricIn.some(f=>f.fabCode===fabCode)&&guard++<5){lot=await _allocFabLot(baseCode);fabCode=`${baseCode}-${lot}`;}
     const rolls=rows.map((r,i)=>{
       const rollCode=`${fabCode}-R${String(i+1).padStart(2,'0')}`;
       return{rollCode,rollNumber:rollCode,weight:r.weight,gsm:r.gsm,unit,qcPassed:r.qcPassed,qcBy:r.qcPassed?session.name:'',qcAt:r.qcPassed?Date.now():null};
@@ -553,6 +583,7 @@ window.submitFabricIn=async function(){
     showToast(`${fabCode} saved ✓ · added to inventory`);
     window.switchFabTab('fabricin');
   }catch(e){showToast('Error: '+e.message,true);}
+  finally{_fabBusyEnd();}
 };
 
 function renderFabricInList(){
@@ -589,15 +620,21 @@ function renderFabricInList(){
           const rc=r.rollCode||r.rollNumber||'';
           const rGsm=r.gsm||f.gsm||0;
           const wt=`${r.weight} ${r.unit||'kg'}`;
+          // Live status pulled from the Stock inventory so Fabric In stays 100%
+          // in sync with the Stock tab (issued / reserved / returned / in stock).
+          const live=_fabFindRoll(rc);
+          const liveSt=live?(live.roll.status||'in_stock'):'in_stock';
+          const stCol=liveSt==='in_stock'?'var(--green)':liveSt==='issued'?'#dc2626':liveSt==='reserved'?'#d97706':liveSt==='returned_supplier'?'#9ca3af':'var(--muted)';
           return`<div style="display:flex;flex-direction:column;padding:8px 4px;border-bottom:1px solid #f9f9f9;font-size:12px;gap:6px">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
               <input type="checkbox" class="fab-roll-chk" data-rc="${_gpEsc(rc)}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(f.supplier||'')}" onclick="event.stopPropagation();window.updateRollPrintCount('${f.id}')" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
               <span style="font-weight:600;min-width:120px;letter-spacing:.04em">${rc}</span>
               <span style="flex:1;min-width:80px">${wt} · ${rGsm}gsm</span>
-              <span style="${r.qcPassed?'color:var(--green);font-weight:600':'color:var(--muted)'}">${r.qcPassed?'QC Passed ✓':'Pending QC'}</span>
+              <span style="color:${stCol};font-weight:600;text-transform:capitalize;font-size:11px">${liveSt.replace('_',' ')}</span>
+              <span style="${r.qcPassed?'color:var(--green);font-weight:600':'color:var(--muted)'}">${r.qcPassed?'QC ✓':'Pending QC'}</span>
               ${r.qcPassed&&r.qcBy?`<span style="font-size:10px;color:var(--muted)">${r.qcBy}</span>`:''}
               <button onclick="event.stopPropagation();window.printRollBarcode('${_gpEsc(rc)}','${_gpEsc(f.fabType||'')}','${rGsm}','${_gpEsc(f.color||'')}','${_gpEsc(wt)}','${_gpEsc(f.supplier||'')}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">🖨 Print</button>
-              ${_fabCanDelete()?`<button onclick="event.stopPropagation();window.editFabricRoll('${f.id}','${_gpEsc(rc)}')" title="Edit this roll (owners only)" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">Edit</button>
+              ${_fabCanDelete()&&liveSt==='in_stock'?`<button onclick="event.stopPropagation();window.editFabricRoll('${f.id}','${_gpEsc(rc)}')" title="Edit this roll (owners only)" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">Edit</button>
               <button onclick="event.stopPropagation();window.deleteFabricRoll('${f.id}','${_gpEsc(rc)}')" title="Delete just this roll (owners only)" style="padding:3px 8px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:10px;cursor:pointer;font-family:inherit">✕ Roll</button>`:''}
             </div>
             <svg class="fab-roll-barcode-view" data-rc="${_gpEsc(rc)}" style="display:block;height:38px;margin-left:0"></svg>
@@ -824,12 +861,14 @@ window.requestDeleteFabricIn=async function(fabId){
   if(_gpPendingFor('fabric',fabId))return showToast('A request is already pending for '+fabId,true);
   if(_fabCanDelete()){
     if(!confirm(`Delete ${fabId} and all its rolls from stock? This cannot be undone.`))return;
+    if(!_fabBusyStart('Deleting receipt…'))return;
     try{
       await window._fabDeleteReceipt(fabId);
       await logActivity('Fabric In deleted',`${fabId} deleted by ${session.name}`);
       showToast(`${fabId} deleted`);
       _fabRefreshList();
     }catch(e){showToast(e.message||('Error: '+e),true);}
+    finally{_fabBusyEnd();}
     return;
   }
   const reason=prompt(`Request to delete ${fabId}. Reason:`,'');
@@ -869,6 +908,7 @@ window.deleteFabricRoll=async function(fabId,rollCode){
   const idx=f?(f.rolls||[]).findIndex(r=>(r.rollCode||r.rollNumber)===rollCode):-1;
   if(f&&idx<0&&_gpPendingFor('fabric',fabId))return showToast('A delete/edit is already pending for '+fabId,true);
   if(!confirm(`Delete roll ${rollCode}? This removes just this one roll and cannot be undone.`))return;
+  if(!_fabBusyStart('Deleting roll…'))return;
   try{
     if(f&&idx>=0){
       const lastOne=f.rolls.length===1;
@@ -893,6 +933,7 @@ window.deleteFabricRoll=async function(fabId,rollCode){
       _fabAfterRollChange(null);
     }
   }catch(e){showToast('Delete failed: '+e.message,true);}
+  finally{_fabBusyEnd();}
 };
 
 // Edit a SINGLE in-stock roll's weight / GSM / QC (owners only). Updates the
@@ -936,6 +977,7 @@ window.saveFabricRoll=async function(fabId,rollCode){
   if(!inv)return showToast('Roll not found.',true);
   if((inv.roll.status||'in_stock')!=='in_stock')return showToast(`${rollCode} is in use — can't edit.`,true);
   const st=inv.stock,f=allFabricIn.find(x=>x.id===fabId);
+  if(!_fabBusyStart('Saving roll…'))return;
   try{
     let extra={},pending=null;
     if(f){
@@ -954,6 +996,7 @@ window.saveFabricRoll=async function(fabId,rollCode){
     window.hrmCloseModal();
     _fabAfterRollChange(f?fabId:null);
   }catch(e){showToast('Save failed: '+e.message,true);}
+  finally{_fabBusyEnd();}
 };
 
 // ════════════════════════════════════════════════════════════════════════
@@ -1119,6 +1162,7 @@ window.submitFabricIssue=async function(){
   const rollCodes=_fabIssueRolls.map(r=>r.rollCode);
   const fabUnit=stock.unit||'kg';
   const fabQty=parseFloat(_fabIssueRolls.reduce((s,r)=>s+(r.weight||0),0).toFixed(2));
+  if(!_fabBusyStart('Issuing fabric…'))return;
   try{
     const next=await getNextId('gatepasses');
     const gpId='GP-'+String(next).padStart(3,'0');
@@ -1132,6 +1176,7 @@ window.submitFabricIssue=async function(){
     if(typeof loadData==='function')await loadData();
     window.switchFabTab('issue');
   }catch(e){showToast('Error: '+e.message,true);}
+  finally{_fabBusyEnd();}
 };
 
 // ════════════════════════════════════════════════════════════════════════
@@ -1216,6 +1261,7 @@ window.submitFabRetVendor=async function(){
     if(isNaN(rw)||rw<=0||rw>=issuedW)byKey[key].whole.push(rc);            // full / blank / over → whole
     else byKey[key].partial.push({parentRollCode:rc,weight:rw});           // less → remnant
   });
+  if(!_fabBusyStart('Returning to stock…'))return;
   try{
     for(const key of Object.keys(byKey)){
       const s=allFabricInventory.find(x=>x._id===key);if(!s)continue;
@@ -1228,6 +1274,7 @@ window.submitFabRetVendor=async function(){
     if(typeof loadData==='function')await loadData();
     window.switchFabRetMode('vendor');
   }catch(e){showToast('Error: '+e.message,true);}
+  finally{_fabBusyEnd();}
 };
 
 // ── To Supplier ──
@@ -1276,6 +1323,7 @@ window.submitFabRetSupplier=async function(){
   const fullReason=note?`${reason} — ${note}`:reason;
   const byKey={};
   rows.forEach(cb=>{(byKey[cb.dataset.key]=byKey[cb.dataset.key]||[]).push(cb.dataset.roll);});
+  if(!_fabBusyStart('Returning to supplier…'))return;
   try{
     for(const key of Object.keys(byKey)){
       const s=allFabricInventory.find(x=>x._id===key);if(!s)continue;
@@ -1286,6 +1334,7 @@ window.submitFabRetSupplier=async function(){
     if(typeof loadData==='function')await loadData();
     window.switchFabRetMode('supplier');
   }catch(e){showToast('Error: '+e.message,true);}
+  finally{_fabBusyEnd();}
 };
 
 // ════════════════════════════════════════════════════════════════════════
