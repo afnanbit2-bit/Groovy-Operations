@@ -1030,23 +1030,14 @@ function _fabFindRoll(rollCode){
 }
 
 function renderFabricIssueTab(){
-  const today=new Date().toISOString().split('T')[0];
   const stocks=allFabricInventory.filter(s=>(s.rolls||[]).some(r=>['in_stock','reserved'].includes(r.status||'in_stock')));
   const pos=(typeof allPOs!=='undefined'&&allPOs)||[];
-  return`<div class="card"><div class="card-title">Issue fabric to vendor</div>
+  return`<div class="card"><div class="card-title">Issue fabric to production</div>
     <div class="form-grid">
-      <div class="field"><label>Production Order (PO) *</label>
-        <select id="fab-iss-po">
-          <option value="">Select PO…</option>
-          ${pos.map(p=>`<option value="${_gpEsc(p.id)}">${_gpEsc(p.id)} — ${_gpEsc(p.name||'')}${p.fabric?` · ${_gpEsc(p.fabric)}`:''}</option>`).join('')}
-        </select>
-      </div>
-      <div class="field"><label>Date</label><input id="fab-iss-date" type="date" value="${today}"></div>
-      <div class="field" style="grid-column:1/-1"><label>Destination / Vendor *</label>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
-          ${FAB_DESTINATIONS.map(d=>`<button type="button" class="dest-chip" onclick="document.getElementById('fab-iss-dest').value='${d}'">${d}</button>`).join('')}
-        </div>
-        <input id="fab-iss-dest" placeholder="Vendor name…">
+      <div class="field" style="grid-column:1/-1"><label>Production Order (PO) *</label>
+        <input id="fab-iss-po" list="fab-iss-po-list" placeholder="Type or pick a PO number…" autocomplete="off">
+        <datalist id="fab-iss-po-list">${pos.map(p=>`<option value="${_gpEsc(p.id)}">${_gpEsc(p.name||'')}${p.fabric?` · ${_gpEsc(p.fabric)}`:''}</option>`).join('')}</datalist>
+        <div style="font-size:10px;color:var(--muted);margin-top:3px">Fabric is issued to the factory against this PO. Issuer, date &amp; time are recorded automatically.</div>
       </div>
     </div>
   </div>
@@ -1151,11 +1142,10 @@ function _fabIssueRenderSelected(){
 }
 
 window.submitFabricIssue=async function(){
-  const po=document.getElementById('fab-iss-po')?.value||'';
-  const dest=(document.getElementById('fab-iss-dest')?.value||'').trim();
-  const date=document.getElementById('fab-iss-date')?.value||'';
-  if(!po){showToast('Select a PO (required).',true);return;}
-  if(!dest){showToast('Destination/vendor is required.',true);return;}
+  const po=(document.getElementById('fab-iss-po')?.value||'').trim();
+  const dest='Factory';                                  // issued to production, not a vendor
+  const date=new Date().toISOString().split('T')[0];     // auto date
+  if(!po){showToast('Enter or pick a PO (required).',true);return;}
   if(!_fabIssueRolls.length){showToast('Select at least one roll.',true);return;}
   const stock=allFabricInventory.find(s=>s._id===_fabIssueKey);
   if(!stock){showToast('Fabric stock not found.',true);return;}
@@ -1167,10 +1157,11 @@ window.submitFabricIssue=async function(){
     const next=await getNextId('gatepasses');
     const gpId='GP-'+String(next).padStart(3,'0');
     const article=`${stock.fabType} ${stock.gsm||0}gsm ${stock.color}`;
+    // ts captures the exact issue date+time automatically.
     const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,spec:`PO ${po} · ${rollCodes.length} rolls`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stock._id,boras:'0',items:[],totalUnits:0,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
     // Gate pass + inventory decrement commit in ONE transaction.
-    await _fabInvUpsert({fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:fabUnit,removeRollCodes:rollCodes,reservePO:po,note:`Issued to ${dest} for ${po}`,sourceCol:'gatepasses',sourceId:gpId,extraWrites:[{ref:doc(db,'gatepasses',gpId),data:payload}]});
-    await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to ${dest} for ${po}`);
+    await _fabInvUpsert({fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:fabUnit,removeRollCodes:rollCodes,reservePO:po,note:`Issued to factory for ${po} by ${session.name}`,sourceCol:'gatepasses',sourceId:gpId,extraWrites:[{ref:doc(db,'gatepasses',gpId),data:payload}]});
+    await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to factory for ${po} by ${session.name}`);
     showToast(`${gpId} issued ✓ · ${rollCodes.length} rolls`);
     _fabIssueRolls=[];_fabIssueKey=null;
     if(typeof loadData==='function')await loadData();
