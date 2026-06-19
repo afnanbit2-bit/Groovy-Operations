@@ -45,10 +45,13 @@ service cloud.firestore {
       allow create, update: if signedIn();
       allow delete:         if isOwner();
     }
+    // Movement ledger = the immutable audit base for Reports/Log. Any signed-in
+    // user may APPEND a movement, but no one (not even owners) may edit or
+    // delete one — the record can never be altered or removed.
     match /fabric_movements/{doc} {
-      allow read:           if signedIn();
-      allow create, update: if signedIn();
-      allow delete:         if isOwner();
+      allow read:   if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if false;
     }
     // Edit/delete approval requests for gatepasses/returns/fabricin.
     // Any signed-in user can read (so they can see their own pending state)

@@ -45,13 +45,14 @@ function renderFabricPage(){
     <button class="gp-tab" id="fabtab-issue" onclick="window.switchFabTab('issue')">Issue</button>
     <button class="gp-tab" id="fabtab-returns" onclick="window.switchFabTab('returns')">Returns</button>
     <button class="gp-tab" id="fabtab-reports" onclick="window.switchFabTab('reports')">Reports</button>
+    <button class="gp-tab" id="fabtab-log" onclick="window.switchFabTab('log')">Log</button>
   </div>
   <div id="fab-tab-content"></div>`;
 }
 
 window.switchFabTab=function(tab){
   fabActiveTab=tab;
-  ['stock','fabricin','issue','returns','reports'].forEach(t=>{
+  ['stock','fabricin','issue','returns','reports','log'].forEach(t=>{
     const b=document.getElementById('fabtab-'+t);
     if(b)b.classList.toggle('active',t===tab);
   });
@@ -75,6 +76,9 @@ window.switchFabTab=function(tab){
   }
   else if(tab==='reports'){
     el.innerHTML=renderFabricReportsTab();
+  }
+  else if(tab==='log'){
+    el.innerHTML=renderFabricLogTab();
   }
   else el.innerHTML=_fabPlaceholder(tab);
 };
@@ -1359,33 +1363,158 @@ function _fabWastageData(){
     .sort((a,b)=>b.wastagePct-a.wastagePct);
 }
 
+// ── Reporting period (day / week / month / specific date / all) ──
+let _fabRptPeriod='today',_fabRptDate='';
+let _fabLogQ='',_fabLogAction='all';
+
+function _fabPeriodRange(){
+  const now=new Date();
+  const sod=d=>{const x=new Date(d);x.setHours(0,0,0,0);return x.getTime();};
+  const eod=d=>{const x=new Date(d);x.setHours(23,59,59,999);return x.getTime();};
+  switch(_fabRptPeriod){
+    case 'today':return{from:sod(now),to:eod(now),label:'Today · '+now.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})};
+    case '7d':return{from:sod(new Date(now.getTime()-6*864e5)),to:eod(now),label:'Last 7 days'};
+    case 'month':return{from:new Date(now.getFullYear(),now.getMonth(),1).getTime(),to:eod(now),label:now.toLocaleDateString('en-GB',{month:'long',year:'numeric'})};
+    case 'custom':{const d=_fabRptDate?new Date(_fabRptDate):now;return{from:sod(d),to:eod(d),label:d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})};}
+    default:return{from:0,to:Date.now()+864e5,label:'All time'};
+  }
+}
+
+// Display label + colour per movement subtype (returns are purple).
+function _fabActionMeta(m){
+  const s=m.subtype||'';
+  if(s==='receipt')return{label:'Received',color:'#16a34a',sign:'+'};
+  if(s==='issue')return{label:'Issued to factory',color:'#dc2626',sign:'−'};
+  if(s==='return_out')return{label:'Returned to supplier',color:'#7c3aed',sign:'−'};
+  if(s==='return_in')return{label:'Returned to stock',color:'#16a34a',sign:'+'};
+  if(s==='reserve')return{label:'Reserved',color:'#d97706',sign:''};
+  if(s==='release')return{label:'Released',color:'#0891b2',sign:''};
+  if(s==='delete')return{label:'Deleted',color:'#6b7280',sign:'−'};
+  if(s==='edit')return{label:'Edited',color:'#2563eb',sign:''};
+  return{label:(m.type||'move').toUpperCase(),color:'var(--muted)',sign:''};
+}
+function _fabParsePO(note){const m=/for\s+(\S+)\s+by/i.exec(note||'');return m?m[1]:'';}
+function _fabFmtDT(ts){return new Date(ts).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'});}
+
 function renderFabricReportsTab(){
-  const rolls=allFabricInventory.reduce((a,s)=>a+(s.rolls||[]).length,0);
+  const{from,to,label}=_fabPeriodRange();
+  const movs=allFabricMovements.filter(m=>m.ts>=from&&m.ts<=to).sort((a,b)=>b.ts-a.ts);
+  const agg=arr=>arr.reduce((o,m)=>{o.count++;o.qty+=m.qty||0;o.rolls+=(m.rollCodes||[]).length;return o;},{count:0,qty:0,rolls:0});
+  const sub=s=>movs.filter(m=>m.subtype===s);
+  const received=agg(sub('receipt')),issued=agg(sub('issue')),returned=agg(sub('return_out')),edited=agg(sub('edit')),deleted=agg(sub('delete'));
+  const fabrics=allFabricInventory.length;
+  const rollsNow=allFabricInventory.reduce((a,s)=>a+(s.rollsCount||0),0);
   const kg=allFabricInventory.filter(s=>(s.unit||'kg')==='kg').reduce((a,s)=>a+(s.totalWeight||0),0);
+  const lvls=allFabricInventory.map(_fabAlertLevel);
+  const crit=lvls.filter(l=>l.label==='Critical'||l.label==='Out of stock').length;
+  const low=lvls.filter(l=>l.label==='Low'||l.label==='Very low').length;
+  const gpById={};(typeof allPasses!=='undefined'&&allPasses?allPasses:[]).forEach(g=>{gpById[g.id]=g;});
+  const byPO={};
+  sub('issue').forEach(m=>{const g=gpById[m.sourceId];const po=(g&&g.poId)||_fabParsePO(m.note)||'—';(byPO[po]=byPO[po]||{po,qty:0,rolls:0,count:0});byPO[po].qty+=m.qty||0;byPO[po].rolls+=(m.rollCodes||[]).length;byPO[po].count++;});
+  const poRows=Object.values(byPO).sort((a,b)=>b.qty-a.qty);
+  const rets=sub('return_out');
+  const byUser={};movs.forEach(m=>{const u=m.by||'—';(byUser[u]=byUser[u]||{u,n:0});byUser[u].n++;});
+  const userRows=Object.values(byUser).sort((a,b)=>b.n-a.n);
+
+  const periods=[['today','Today'],['7d','Week'],['month','Month'],['custom','Specific date'],['all','All time']];
+  const chip=(k,l)=>`<button onclick="window.fabRptSetPeriod('${k}')" style="padding:6px 13px;border:1px solid ${_fabRptPeriod===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabRptPeriod===k?'var(--dark)':'#fff'};color:${_fabRptPeriod===k?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${l}</button>`;
+  const card=(title,c,a)=>`<div style="flex:1;min-width:150px;background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 14px">
+    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${title}</div>
+    <div style="font-size:22px;font-weight:800;color:${c};margin-top:3px">${a.qty.toFixed(1)}<span style="font-size:12px;font-weight:600;color:var(--muted)"> kg/m</span></div>
+    <div style="font-size:11px;color:var(--muted)">${a.count} events · ${a.rolls} rolls</div>
+  </div>`;
+  const btn=(l,fn)=>`<button class="btn-outline" style="width:auto;padding:9px 16px;margin:0" onclick="window.${fn}()">${l}</button>`;
   const waste=_fabWastageData();
-  const btn=(label,fn)=>`<button class="btn-outline" style="width:auto;padding:9px 16px;margin:0" onclick="window.${fn}()">${label}</button>`;
-  return`<div class="card"><div class="card-title">Reports & exports</div>
-    <div class="page-sub" style="margin-bottom:12px">${allFabricInventory.length} fabrics · ${rolls} rolls · ${kg.toFixed(1)} kg in stock</div>
+
+  return`<div class="card"><div class="card-title">Fabric report <span style="font-weight:400;color:var(--muted);font-size:11px">${label}</span></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:${_fabRptPeriod==='custom'?'8':'0'}px">
+      ${periods.map(([k,l])=>chip(k,l)).join('')}
+    </div>
+    ${_fabRptPeriod==='custom'?`<input type="date" value="${_fabRptDate||new Date().toISOString().slice(0,10)}" onchange="window.fabRptSetDate(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">`:''}
+  </div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+    ${card('Received','#16a34a',received)}
+    ${card('Issued','#dc2626',issued)}
+    ${card('Returned','#7c3aed',returned)}
+    <div style="flex:1;min-width:150px;background:var(--dark);border-radius:12px;padding:12px 14px;color:#fff">
+      <div style="font-size:11px;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.04em">Stock now</div>
+      <div style="font-size:22px;font-weight:800;margin-top:3px">${kg.toFixed(1)}<span style="font-size:12px;font-weight:600;color:rgba(255,255,255,.6)"> kg</span></div>
+      <div style="font-size:11px;color:rgba(255,255,255,.6)">${fabrics} fabrics · ${rollsNow} rolls${crit?` · <span style="color:#fca5a5">${crit} critical</span>`:''}${low?` · <span style="color:#fde68a">${low} low</span>`:''}</div>
+    </div>
+  </div>
+  <div class="card"><div class="card-title">Issued against PO <span style="font-weight:400;color:var(--muted);font-size:11px">${label}</span></div>
+    ${poRows.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:#fafafa"><th style="padding:8px;text-align:left">PO</th><th style="padding:8px;text-align:right">Issues</th><th style="padding:8px;text-align:right">Rolls</th><th style="padding:8px;text-align:right">Qty</th></tr></thead>
+      <tbody>${poRows.map(p=>`<tr style="border-bottom:1px solid #f5f5f5"><td style="padding:8px;font-weight:700">${_gpEsc(p.po)}</td><td style="padding:8px;text-align:right">${p.count}</td><td style="padding:8px;text-align:right">${p.rolls}</td><td style="padding:8px;text-align:right;font-weight:600">${p.qty.toFixed(2)}</td></tr>`).join('')}</tbody>
+    </table></div>`:'<div class="empty" style="padding:14px">No fabric issued in this period.</div>'}
+  </div>
+  <div class="card"><div class="card-title" style="color:#7c3aed">Returned to supplier <span style="font-weight:400;color:var(--muted);font-size:11px">${label}</span></div>
+    ${rets.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:#faf5ff"><th style="padding:8px;text-align:left">When</th><th style="padding:8px;text-align:left">Fabric</th><th style="padding:8px;text-align:right">Rolls</th><th style="padding:8px;text-align:right">Qty</th><th style="padding:8px;text-align:left">Detail</th></tr></thead>
+      <tbody>${rets.map(m=>`<tr style="border-bottom:1px solid #f5f5f5;color:#7c3aed"><td style="padding:8px">${_fabFmtDT(m.ts)}</td><td style="padding:8px">${_gpEsc(m.fabType)} ${m.gsm}g ${_gpEsc(m.color)}</td><td style="padding:8px;text-align:right">${(m.rollCodes||[]).length}</td><td style="padding:8px;text-align:right;font-weight:600">${(m.qty||0).toFixed(2)}</td><td style="padding:8px;font-size:11px">${_gpEsc(m.note||'')}</td></tr>`).join('')}</tbody>
+    </table></div>`:'<div class="empty" style="padding:14px">No supplier returns in this period.</div>'}
+  </div>
+  <div class="card"><div class="card-title">Activity by person <span style="font-weight:400;color:var(--muted);font-size:11px">${label} · ${movs.length} events</span></div>
+    ${userRows.length?`<div style="display:flex;gap:8px;flex-wrap:wrap">${userRows.map(u=>`<div style="background:#f7f7f7;border-radius:8px;padding:8px 12px;font-size:12px"><span style="font-weight:700">${_gpEsc(u.u)}</span> · ${u.n} actions</div>`).join('')}</div>`:'<div class="empty" style="padding:14px">No activity in this period.</div>'}
+    <div style="font-size:11px;color:var(--muted);margin-top:10px">Received ${received.count} · Issued ${issued.count} · Returned ${returned.count} · Edited ${edited.count} · Deleted ${deleted.count} — every event is in the immutable <b>Log</b> tab with name, date &amp; time.</div>
+  </div>
+  <div class="card"><div class="card-title">Per-PO wastage <span style="font-weight:400;color:var(--muted);font-size:11px">all-time</span></div>
+    ${waste.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:#fafafa"><th style="padding:8px;text-align:left">PO</th><th style="padding:8px;text-align:right">Issued</th><th style="padding:8px;text-align:right">Consumed</th><th style="padding:8px;text-align:right">Returned</th><th style="padding:8px;text-align:right">Wastage %</th></tr></thead>
+      <tbody>${waste.map(w=>`<tr style="border-bottom:1px solid #f5f5f5"><td style="padding:8px;font-weight:700">${_gpEsc(w.po)}</td><td style="padding:8px;text-align:right">${w.issued.toFixed(2)}</td><td style="padding:8px;text-align:right">${w.consumed.toFixed(2)}</td><td style="padding:8px;text-align:right">${w.returned.toFixed(2)}</td><td style="padding:8px;text-align:right;font-weight:600;color:${w.wastagePct>15?'#dc2626':w.wastagePct>5?'#b45309':'#16a34a'}">${w.wastagePct.toFixed(1)}%</td></tr>`).join('')}</tbody>
+    </table></div>`:'<div class="empty" style="padding:14px">No issued fabric yet.</div>'}
+  </div>
+  <div class="card"><div class="card-title">Exports</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       ${btn('⬇ Stock on hand (Excel)','fabExportStock')}
-      ${btn('⬇ Movement history (Excel)','fabExportMovements')}
+      ${btn('⬇ Full audit log (Excel)','fabExportMovements')}
       ${btn('⬇ Per-PO wastage (Excel)','fabExportWastage')}
       ${btn('🖨 Print report (PDF)','fabPrintReport')}
     </div>
-  </div>
-  <div class="card"><div class="card-title">Per-PO wastage</div>
-    ${waste.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead><tr style="background:#fafafa"><th style="padding:8px;text-align:left">PO</th><th style="padding:8px;text-align:right">Issued</th><th style="padding:8px;text-align:right">Consumed</th><th style="padding:8px;text-align:right">Returned</th><th style="padding:8px;text-align:right">Wastage %</th></tr></thead>
-      <tbody>${waste.map(w=>`<tr style="border-bottom:1px solid #f5f5f5">
-        <td style="padding:8px;font-weight:700">${_gpEsc(w.po)}</td>
-        <td style="padding:8px;text-align:right">${w.issued.toFixed(2)}</td>
-        <td style="padding:8px;text-align:right">${w.consumed.toFixed(2)}</td>
-        <td style="padding:8px;text-align:right">${w.returned.toFixed(2)}</td>
-        <td style="padding:8px;text-align:right;font-weight:600;color:${w.wastagePct>15?'#dc2626':w.wastagePct>5?'#b45309':'#16a34a'}">${w.wastagePct.toFixed(1)}%</td>
-      </tr>`).join('')}</tbody>
-    </table></div>`:'<div class="empty" style="padding:16px">No issued fabric yet — wastage appears once fabric is issued and partially returned.</div>'}
   </div><div style="height:80px"></div>`;
 }
+
+window.fabRptSetPeriod=function(p){_fabRptPeriod=p;const m=document.getElementById('fab-tab-content');if(m)m.innerHTML=renderFabricReportsTab();};
+window.fabRptSetDate=function(v){_fabRptDate=v;const m=document.getElementById('fab-tab-content');if(m)m.innerHTML=renderFabricReportsTab();};
+
+// ── Log tab — full, append-only, immutable audit of every fabric event ──
+function renderFabricLogTab(){
+  const q=_fabLogQ.toLowerCase();
+  let movs=allFabricMovements.slice().sort((a,b)=>b.ts-a.ts);
+  if(_fabLogAction!=='all')movs=movs.filter(m=>(m.subtype||'')===_fabLogAction);
+  if(q)movs=movs.filter(m=>`${m.fabType||''} ${m.gsm||''} ${m.color||''} ${(m.rollCodes||[]).join(' ')} ${m.by||''} ${m.note||''}`.toLowerCase().includes(q));
+  const total=movs.length;
+  const rows=movs.slice(0,400);
+  const acts=[['all','All'],['receipt','Received'],['issue','Issued'],['return_out','Returned'],['reserve','Reserved'],['edit','Edited'],['delete','Deleted']];
+  const chip=(k,l)=>`<button onclick="window.fabLogSetAction('${k}')" style="padding:5px 11px;border:1px solid ${_fabLogAction===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabLogAction===k?'var(--dark)':'#fff'};color:${_fabLogAction===k?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${l}</button>`;
+  return`<div class="card"><div class="card-title">Audit log <span style="font-weight:400;color:var(--muted);font-size:11px">append-only · every fabric event · cannot be edited or deleted</span></div>
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;color:#065f46;font-size:11px;padding:7px 11px;border-radius:8px;margin-bottom:10px">🔒 Permanent record — who did what to which fabric, with date &amp; time. Entries can never be altered or removed.</div>
+    <input id="fab-log-search" value="${_fabLogQ.replace(/"/g,'&quot;')}" oninput="window.fabLogSearch(this.value)" placeholder="Search fabric, roll, PO, person, note…" style="width:100%;padding:8px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;margin-bottom:10px">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${acts.map(([k,l])=>chip(k,l)).join('')}</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${total} event${total===1?'':'s'}${total>400?' · showing latest 400 (refine with search)':''}</div>
+    ${rows.length?rows.map(m=>{
+      const a=_fabActionMeta(m);
+      return`<div style="display:flex;flex-direction:column;gap:2px;padding:8px 2px;border-bottom:1px solid #f5f5f5">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:11px;color:var(--muted);min-width:118px">${_fabFmtDT(m.ts)}</span>
+          <span style="font-weight:700;color:${a.color};font-size:12px;min-width:130px">${a.sign} ${a.label}</span>
+          <span style="flex:1;min-width:140px;font-size:12px">${_gpEsc(m.fabType||'—')} ${m.gsm||0}g ${_gpEsc(m.color||'')}</span>
+          <span style="font-size:11px;font-weight:600">${(m.qty||0).toFixed(2)} ${m.unit||'kg'}</span>
+          <span style="font-size:11px;color:var(--muted)">by ${_gpEsc(m.by||'—')}</span>
+        </div>
+        ${(m.rollCodes||[]).length?`<div style="font-size:10px;color:var(--muted);letter-spacing:.03em">${(m.rollCodes||[]).slice(0,6).map(_gpEsc).join(', ')}${m.rollCodes.length>6?` +${m.rollCodes.length-6}`:''}</div>`:''}
+        ${m.note?`<div style="font-size:11px;color:${a.color}">${_gpEsc(m.note)}</div>`:''}
+      </div>`;
+    }).join(''):'<div class="empty" style="padding:20px;text-align:center">No matching events.</div>'}
+  </div><div style="height:80px"></div>`;
+}
+
+window.fabLogSetAction=function(a){_fabLogAction=a;const m=document.getElementById('fab-tab-content');if(m)m.innerHTML=renderFabricLogTab();};
+window.fabLogSearch=function(v){
+  _fabLogQ=v||'';
+  clearTimeout(window._fabLogTo);
+  window._fabLogTo=setTimeout(()=>{const m=document.getElementById('fab-tab-content');if(m){m.innerHTML=renderFabricLogTab();const i=document.getElementById('fab-log-search');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}}},180);
+};
 
 function _fabXlsx(aoa,sheetName,fileBase){
   if(typeof XLSX==='undefined'){showToast('Excel library not loaded.',true);return;}
