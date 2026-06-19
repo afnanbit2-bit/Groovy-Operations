@@ -427,63 +427,83 @@ function renderReturnsList(){
 
 // Fabric inventory engine — one operation per call. Recomputes totals from the
 // roll array (self-correcting). Operations: addRolls (receipt) · removeRollCodes
-// (issue) · reserveRollCodes (+reservePO) · releaseRollCodes · returnRollCodes
-// (whole vendor return) · returnPartial [{parentRollCode,weight}] (mint remnant
-// + log consumed) · supplierReturnRollCodes (+reason). See FABRIC_INVENTORY_PLAN.
-async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,deleteRollCodes,reserveRollCodes,reservePO,releaseRollCodes,returnRollCodes,returnPartial,supplierReturnRollCodes,reason,note,sourceCol,sourceId}){
+// (issue) · deleteRollCodes (hard remove) · reserveRollCodes (+reservePO) ·
+// releaseRollCodes · returnRollCodes (whole vendor return) · returnPartial
+// [{parentRollCode,weight}] (mint remnant + log consumed) ·
+// supplierReturnRollCodes (+reason). Runs in a Firestore transaction; callers
+// can pass extraWrites:[{ref,data,merge}] and extraDeletes:[ref] to commit the
+// receipt / gate-pass doc in the SAME atomic unit. See FABRIC_INVENTORY_PLAN.
+async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,deleteRollCodes,reserveRollCodes,reservePO,releaseRollCodes,returnRollCodes,returnPartial,supplierReturnRollCodes,reason,note,sourceCol,sourceId,extraWrites,extraDeletes}){
   const key=_fabInvKey(fabType,gsm,color);
-  const ref=doc(db,'fabric_inventory',key);
-  const existing=allFabricInventory.find(x=>x._id===key);
-  const rolls=Array.isArray(existing?.rolls)?existing.rolls.map(r=>({...r})):[];
-  let movType='out',movSub='',movQty=0;const movCodes=[];
-  const findRoll=(rc,statuses)=>rolls.find(r=>r.rollCode===rc&&statuses.includes(r.status||'in_stock'));
-  if(Array.isArray(addRolls)){
-    for(const r of addRolls){rolls.push({rollCode:r.rollCode,weight:r.weight,gsm:r.gsm||gsm||0,unit:r.unit||unit,status:'in_stock',sourceFabId:r.sourceFabId||sourceId,addedAt:Date.now(),addedBy:session.name});movQty+=r.weight||0;movCodes.push(r.rollCode);}
-    movType='in';movSub='receipt';
-  }else if(Array.isArray(removeRollCodes)){
-    for(const rc of removeRollCodes){const r=findRoll(rc,['in_stock','reserved']);if(r){r.status='issued';r.issuedAt=Date.now();r.issuedBy=session.name;r.issuedTo=sourceId;r.issuedPO=reservePO||r.reservedPO||'';delete r.reservedPO;movQty+=r.weight||0;movCodes.push(rc);}}
-    movType='out';movSub='issue';
-  }else if(Array.isArray(deleteRollCodes)){
-    // Hard-remove an in-stock roll entered by mistake — physically splices it
-    // out of inventory (NOT an issue/return). Only in_stock rolls qualify.
-    for(const rc of deleteRollCodes){const i=rolls.findIndex(r=>r.rollCode===rc&&(r.status||'in_stock')==='in_stock');if(i>=0){movQty+=rolls[i].weight||0;movCodes.push(rc);rolls.splice(i,1);}}
-    movType='out';movSub='delete';
-  }else if(Array.isArray(reserveRollCodes)){
-    for(const rc of reserveRollCodes){const r=findRoll(rc,['in_stock']);if(r){r.status='reserved';r.reservedPO=reservePO||'';r.reservedAt=Date.now();r.reservedBy=session.name;movQty+=r.weight||0;movCodes.push(rc);}}
-    movType='reserve';movSub='reserve';
-  }else if(Array.isArray(releaseRollCodes)){
-    for(const rc of releaseRollCodes){const r=findRoll(rc,['reserved']);if(r){r.status='in_stock';delete r.reservedPO;r.releasedAt=Date.now();movQty+=r.weight||0;movCodes.push(rc);}}
-    movType='release';movSub='release';
-  }else if(Array.isArray(returnRollCodes)){
-    for(const rc of returnRollCodes){const r=findRoll(rc,['issued']);if(r){r.status='in_stock';r.returnedAt=Date.now();r.returnedBy=session.name;delete r.issuedTo;movQty+=r.weight||0;movCodes.push(rc);}}
-    movType='in';movSub='return_in';
-  }else if(Array.isArray(returnPartial)){
-    for(const p of returnPartial){
-      const parent=findRoll(p.parentRollCode,['issued']);
-      if(parent){
-        const remCode=_nextRemnantCode(rolls,p.parentRollCode);
-        const w=parseFloat(p.weight)||0;
-        rolls.push({rollCode:remCode,weight:w,gsm:parent.gsm||gsm||0,unit:parent.unit||unit,status:'in_stock',remnant:true,parentRollCode:p.parentRollCode,sourceFabId:parent.sourceFabId,addedAt:Date.now(),addedBy:session.name});
-        parent.consumedWeight=(parent.consumedWeight||0)+Math.max(0,(parent.weight||0)-w);
-        parent.returnedRemnant=remCode;
-        movQty+=w;movCodes.push(remCode);
+  const invRef=doc(db,'fabric_inventory',key);
+  const movRef=doc(collection(db,'fabric_movements'));  // stable id across tx retries
+  let outPayload=null,outMov=null;
+  // One Firestore transaction: read the LIVE inventory fresh (not stale local
+  // memory) so concurrent receive/issue/return can't clobber each other
+  // (last-write-wins), and commit the aggregate + movement + any caller docs
+  // (receipt / gate pass) or deletes together so a mid-operation failure can't
+  // split the books.
+  await runTransaction(db,async tx=>{
+    const snap=await tx.get(invRef);
+    const rolls=Array.isArray(snap.data()?.rolls)?snap.data().rolls.map(r=>({...r})):[];
+    let movType='out',movSub='',movQty=0;const movCodes=[];
+    const findRoll=(rc,statuses)=>rolls.find(r=>r.rollCode===rc&&statuses.includes(r.status||'in_stock'));
+    if(Array.isArray(addRolls)){
+      for(const r of addRolls){rolls.push({rollCode:r.rollCode,weight:r.weight,gsm:r.gsm||gsm||0,unit:r.unit||unit,status:'in_stock',sourceFabId:r.sourceFabId||sourceId,addedAt:Date.now(),addedBy:session.name});movQty+=r.weight||0;movCodes.push(r.rollCode);}
+      movType='in';movSub='receipt';
+    }else if(Array.isArray(removeRollCodes)){
+      for(const rc of removeRollCodes){const r=findRoll(rc,['in_stock','reserved']);if(r){r.status='issued';r.issuedAt=Date.now();r.issuedBy=session.name;r.issuedTo=sourceId;r.issuedPO=reservePO||r.reservedPO||'';delete r.reservedPO;movQty+=r.weight||0;movCodes.push(rc);}}
+      movType='out';movSub='issue';
+    }else if(Array.isArray(deleteRollCodes)){
+      // Hard-remove an in-stock roll entered by mistake — physically splices it
+      // out of inventory (NOT an issue/return). Only in_stock rolls qualify.
+      for(const rc of deleteRollCodes){const i=rolls.findIndex(r=>r.rollCode===rc&&(r.status||'in_stock')==='in_stock');if(i>=0){movQty+=rolls[i].weight||0;movCodes.push(rc);rolls.splice(i,1);}}
+      movType='out';movSub='delete';
+    }else if(Array.isArray(reserveRollCodes)){
+      for(const rc of reserveRollCodes){const r=findRoll(rc,['in_stock']);if(r){r.status='reserved';r.reservedPO=reservePO||'';r.reservedAt=Date.now();r.reservedBy=session.name;movQty+=r.weight||0;movCodes.push(rc);}}
+      movType='reserve';movSub='reserve';
+    }else if(Array.isArray(releaseRollCodes)){
+      for(const rc of releaseRollCodes){const r=findRoll(rc,['reserved']);if(r){r.status='in_stock';delete r.reservedPO;r.releasedAt=Date.now();movQty+=r.weight||0;movCodes.push(rc);}}
+      movType='release';movSub='release';
+    }else if(Array.isArray(returnRollCodes)){
+      for(const rc of returnRollCodes){const r=findRoll(rc,['issued']);if(r){r.status='in_stock';r.returnedAt=Date.now();r.returnedBy=session.name;delete r.issuedTo;movQty+=r.weight||0;movCodes.push(rc);}}
+      movType='in';movSub='return_in';
+    }else if(Array.isArray(returnPartial)){
+      for(const p of returnPartial){
+        const parent=findRoll(p.parentRollCode,['issued']);
+        if(parent){
+          const remCode=_nextRemnantCode(rolls,p.parentRollCode);
+          const w=parseFloat(p.weight)||0;
+          rolls.push({rollCode:remCode,weight:w,gsm:parent.gsm||gsm||0,unit:parent.unit||unit,status:'in_stock',remnant:true,parentRollCode:p.parentRollCode,sourceFabId:parent.sourceFabId,addedAt:Date.now(),addedBy:session.name});
+          parent.consumedWeight=(parent.consumedWeight||0)+Math.max(0,(parent.weight||0)-w);
+          parent.returnedRemnant=remCode;
+          movQty+=w;movCodes.push(remCode);
+        }
       }
+      movType='in';movSub='return_in';
+    }else if(Array.isArray(supplierReturnRollCodes)){
+      for(const rc of supplierReturnRollCodes){const r=findRoll(rc,['in_stock']);if(r){r.status='returned_supplier';r.returnedToSupplierAt=Date.now();r.returnReason=reason||'';movQty+=r.weight||0;movCodes.push(rc);}}
+      movType='out';movSub='return_out';
     }
-    movType='in';movSub='return_in';
-  }else if(Array.isArray(supplierReturnRollCodes)){
-    for(const rc of supplierReturnRollCodes){const r=findRoll(rc,['in_stock']);if(r){r.status='returned_supplier';r.returnedToSupplierAt=Date.now();r.returnReason=reason||'';movQty+=r.weight||0;movCodes.push(rc);}}
-    movType='out';movSub='return_out';
-  }
-  const physical=rolls.filter(r=>['in_stock','reserved'].includes(r.status||'in_stock'));
-  const totalWeight=parseFloat(physical.reduce((s,r)=>s+(r.weight||0),0).toFixed(2));
-  const payload={key,fabType,gsm:Number(gsm)||0,color,unit:unit||'kg',rolls,totalWeight,rollsCount:rolls.filter(r=>(r.status||'in_stock')==='in_stock').length,reservedCount:rolls.filter(r=>r.status==='reserved').length,lastMovementAt:Date.now()};
-  await setDoc(ref,payload,{merge:true});
-  if(existing)Object.assign(existing,payload);else allFabricInventory.push({...payload,_id:key});
-  const movRef=doc(collection(db,'fabric_movements'));
-  const movDoc={id:movRef.id,ts:Date.now(),type:movType,subtype:movSub,fabType,gsm:Number(gsm)||0,color,unit:unit||'kg',qty:parseFloat(movQty.toFixed(2)),rollCodes:movCodes,sourceCollection:sourceCol||'',sourceId:sourceId||'',by:session.name,note:note||''};
-  await setDoc(movRef,movDoc);
-  allFabricMovements.unshift({...movDoc,_id:movRef.id});
-  return{movCodes,movQty};
+    // Aggregate: "stock" = AVAILABLE (in_stock) only, for BOTH weight and count,
+    // so the two never disagree; reserved is tracked separately (it's spoken for).
+    const inStock=rolls.filter(r=>(r.status||'in_stock')==='in_stock');
+    const reserved=rolls.filter(r=>r.status==='reserved');
+    const totalWeight=parseFloat(inStock.reduce((s,r)=>s+(r.weight||0),0).toFixed(2));
+    const reservedWeight=parseFloat(reserved.reduce((s,r)=>s+(r.weight||0),0).toFixed(2));
+    const payload={key,fabType,gsm:Number(gsm)||0,color,unit:unit||'kg',rolls,totalWeight,reservedWeight,rollsCount:inStock.length,reservedCount:reserved.length,lastMovementAt:Date.now()};
+    const movDoc={id:movRef.id,ts:Date.now(),type:movType,subtype:movSub,fabType,gsm:Number(gsm)||0,color,unit:unit||'kg',qty:parseFloat(movQty.toFixed(2)),rollCodes:movCodes,sourceCollection:sourceCol||'',sourceId:sourceId||'',by:session.name,note:note||''};
+    tx.set(invRef,payload,{merge:true});
+    tx.set(movRef,movDoc);
+    if(Array.isArray(extraWrites))for(const w of extraWrites){if(w&&w.ref&&w.data){if(w.merge)tx.set(w.ref,w.data,{merge:true});else tx.set(w.ref,w.data);}}
+    if(Array.isArray(extraDeletes))for(const dref of extraDeletes){if(dref)tx.delete(dref);}
+    outPayload=payload;outMov=movDoc;
+  });
+  // Sync in-memory caches to the committed state.
+  const existing=allFabricInventory.find(x=>x._id===key);
+  if(existing)Object.assign(existing,outPayload);else allFabricInventory.push({...outPayload,_id:key});
+  allFabricMovements.unshift({...outMov,_id:movRef.id});
+  return{movCodes:outMov.rollCodes,movQty:outMov.qty};
 }
 // Next free remnant suffix (-A,-B,…) for a parent roll code.
 function _nextRemnantCode(rolls,parentCode){
@@ -872,9 +892,15 @@ window.gpApproveRequest=async function(reqId){
   if(!collName||!arr)return showToast('Unknown request type.',true);
   try{
     if(r.action==='delete'){
-      await deleteDoc(doc(db,collName,r.targetId));
-      const i=arr.findIndex(x=>x.id===r.targetId);
-      if(i>=0)arr.splice(i,1);
+      if(r.type==='fabric'){
+        // Use the shared receipt-delete so inventory rolls are removed too
+        // (and it blocks if any roll has left stock). It also splices allFabricIn.
+        await window._fabDeleteReceipt(r.targetId);
+      }else{
+        await deleteDoc(doc(db,collName,r.targetId));
+        const i=arr.findIndex(x=>x.id===r.targetId);
+        if(i>=0)arr.splice(i,1);
+      }
     }else{
       await updateDoc(doc(db,collName,r.targetId),{...r.proposedData,updatedAt:Date.now(),updatedBy:session.name});
       const i=arr.findIndex(x=>x.id===r.targetId);

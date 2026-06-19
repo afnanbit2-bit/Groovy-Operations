@@ -131,8 +131,8 @@ function renderFabricInventory(){
           <td style="padding:10px;font-weight:600"><span title="${_fabAlertLevel(s).label}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${_fabAlertLevel(s).dot};margin-right:7px;vertical-align:middle"></span>${_gpEsc(s.fabType||'—')}</td>
           <td style="padding:10px">${s.gsm||'—'}</td>
           <td style="padding:10px">${_gpEsc(s.color||'—')}</td>
-          <td style="padding:10px;text-align:right;font-weight:700;color:${empty?'#dc2626':'var(--text)'}">${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'}</td>
-          <td style="padding:10px;text-align:right;font-weight:600">${s.rollsCount||0}</td>
+          <td style="padding:10px;text-align:right;font-weight:700;color:${empty?'#dc2626':'var(--text)'}">${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'}${s.reservedCount?`<div style="font-size:10px;color:#d97706;font-weight:500">+${(s.reservedWeight||0).toFixed(2)} reserved</div>`:''}</td>
+          <td style="padding:10px;text-align:right;font-weight:600">${s.rollsCount||0}${s.reservedCount?`<div style="font-size:10px;color:#d97706;font-weight:500">+${s.reservedCount} resv</div>`:''}</td>
           <td style="padding:10px;font-size:11px;color:var(--muted)">${s.lastMovementAt?new Date(s.lastMovementAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}):'—'}</td>
           <td style="padding:10px;text-align:right"><button onclick="window.fabInvDrill('${s._id}')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Open</button></td>
         </tr>`;
@@ -150,7 +150,7 @@ function _renderFabInvDrill(key){
   const cfg=_fabAlertCfg(s),lvl=_fabAlertLevel(s);
   return`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
     <div><div class="page-title">${_gpEsc(s.fabType||'—')} · ${s.gsm||0}gsm · ${_gpEsc(s.color||'—')}</div>
-      <div class="page-sub"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${lvl.dot};margin-right:5px"></span><span style="color:${lvl.color};font-weight:600">${lvl.label}</span> · ${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'} in stock · ${s.rollsCount||0} avail${s.reservedCount?` · ${s.reservedCount} reserved`:''} · ${rolls.length} total rolls ever received</div></div>
+      <div class="page-sub"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${lvl.dot};margin-right:5px"></span><span style="color:${lvl.color};font-weight:600">${lvl.label}</span> · ${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'} available · ${s.rollsCount||0} rolls${s.reservedCount?` · ${(s.reservedWeight||0).toFixed(2)} ${s.unit||'kg'} (${s.reservedCount}) reserved`:''} · ${rolls.length} total rolls ever received</div></div>
     <button class="btn-outline" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.fabInvDrill(null)">← Back to Fabric Inventory</button>
   </div>
   <div class="card" style="margin-bottom:14px"><div class="card-title">Stock alerts <span style="font-weight:400;color:var(--muted);font-size:11px">3 levels (${s.unit||'kg'}) · weight at/below each level raises the flag</span></div>
@@ -255,10 +255,30 @@ function _nextFabLot(baseCode){
   for(const f of allFabricIn){const m=(f.fabCode||'').match(re);if(m){const n=parseInt(m[1],10);if(n>max)max=n;}}
   return String(max+1).padStart(2,'0');
 }
-// Full fabric code for this receipt, e.g. BLKTRY220-01
+// Full fabric code for this receipt, e.g. BLKTRY220-01 (preview only).
 function _nextFabCode(fabType,gsm,color){
   const base=_fabBaseCode(fabType,gsm,color);
   return `${base}-${_nextFabLot(base)}`;
+}
+// Atomic lot allocation at save time — a transaction on counters/main keyed by
+// the base code, seeded from the highest lot already loaded. Guarantees two
+// receipts of the same fabric (even simultaneous) get distinct lots, so roll
+// codes can never collide. Returns a zero-padded lot string.
+async function _allocFabLot(baseCode){
+  const field='fablot_'+baseCode.toLowerCase();
+  const ref=doc(db,'counters','main');
+  const esc=baseCode.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const re=new RegExp('^'+esc+'-(\\d+)','i');
+  let localMax=0;
+  for(const f of allFabricIn){const m=(f.fabCode||'').match(re);if(m){const n=parseInt(m[1],10);if(n>localMax)localMax=n;}}
+  let lot=localMax+1;
+  await runTransaction(db,async tx=>{
+    const snap=await tx.get(ref);
+    const stored=snap.exists()?(snap.data()[field]||0):0;
+    lot=Math.max(stored,localMax)+1;
+    if(snap.exists())tx.update(ref,{[field]:lot});else tx.set(ref,{[field]:lot});
+  });
+  return String(lot).padStart(2,'0');
 }
 function _fabUnitForSupplier(supplier){
   return(supplier||'').toLowerCase().includes('daniyal twill')?'m':'kg';
@@ -421,30 +441,31 @@ window.submitFabricIn=async function(){
   const notes=(document.getElementById('fab-notes')?.value||'').trim();
   if(!supplier||!fabType||!gsm||!color){showToast('Supplier, fabric type, GSM and color are required.',true);return;}
   const unit=_fabUnitForSupplier(supplier);
-  const fabCode=document.getElementById('fab-code')?.value||_nextFabCode(fabType,gsm,color);
-  const rolls=[];
-  document.querySelectorAll('#fab-rolls-body .roll-row').forEach(row=>{
-    const codeEl=row.querySelector('.fab-roll-code');
-    const rollCode=codeEl?.textContent?.trim()||'';
-    const weightEl=row.querySelector('.fab-roll-weight');
-    const gsmEl=row.querySelector('.fab-roll-gsm');
-    const qcEl=row.querySelector('input[type=checkbox]');
-    const weight=parseFloat(weightEl?.value)||0;
-    const rollGsm=parseInt(gsmEl?.value)||gsm;
-    const qcPassed=qcEl?.checked||false;
-    if(rollCode)rolls.push({rollCode,rollNumber:rollCode,weight,gsm:rollGsm,unit,qcPassed,qcBy:qcPassed?session.name:'',qcAt:qcPassed?Date.now():null});
-  });
-  if(!rolls.length){showToast('Add at least one roll.',true);return;}
-  if(rolls.some(r=>!r.weight)){showToast('Every roll needs a weight.',true);return;}
-  if(rolls.some(r=>!r.gsm)){showToast('Every roll needs a GSM.',true);return;}
-  const totalWeight=parseFloat(rolls.reduce((s,r)=>s+r.weight,0).toFixed(2));
+  // Collect rows first (weight/gsm/qc). Roll CODES are assigned AFTER the atomic
+  // lot is reserved, so they always match the final fabCode and never collide.
+  const rows=[...document.querySelectorAll('#fab-rolls-body .roll-row')].map(row=>({
+    weight:parseFloat(row.querySelector('.fab-roll-weight')?.value)||0,
+    gsm:parseInt(row.querySelector('.fab-roll-gsm')?.value)||gsm,
+    qcPassed:row.querySelector('input[type=checkbox]')?.checked||false
+  }));
+  if(!rows.length){showToast('Add at least one roll.',true);return;}
+  if(rows.some(r=>!r.weight)){showToast('Every roll needs a weight.',true);return;}
+  if(rows.some(r=>!r.gsm)){showToast('Every roll needs a GSM.',true);return;}
   try{
+    const baseCode=_fabBaseCode(fabType,gsm,color);
+    const lot=await _allocFabLot(baseCode);              // atomic + unique
+    const fabCode=`${baseCode}-${lot}`;
+    const rolls=rows.map((r,i)=>{
+      const rollCode=`${fabCode}-R${String(i+1).padStart(2,'0')}`;
+      return{rollCode,rollNumber:rollCode,weight:r.weight,gsm:r.gsm,unit,qcPassed:r.qcPassed,qcBy:r.qcPassed?session.name:'',qcAt:r.qcPassed?Date.now():null};
+    });
+    const totalWeight=parseFloat(rolls.reduce((s,r)=>s+r.weight,0).toFixed(2));
     const next=await getNextId('fabricin');
     const fabId='FAB-'+String(next).padStart(3,'0');
     const payload={id:fabId,fabCode,ts:Date.now(),supplier,date,fabType,gsm,color,receivedBy:session.name,notes,unit,totalWeight,rollsCount:rolls.length,rolls};
-    await setDoc(doc(db,'fabricin',fabId),payload);
+    // Receipt doc + inventory + movement commit in ONE transaction.
+    await _fabInvUpsert({fabType,gsm,color,unit,addRolls:rolls.map(r=>({rollCode:r.rollCode,weight:r.weight,gsm:r.gsm,unit:r.unit,sourceFabId:fabId})),sourceCol:'fabricin',sourceId:fabId,note:`Receipt from ${supplier}`,extraWrites:[{ref:doc(db,'fabricin',fabId),data:payload}]});
     allFabricIn.unshift(payload);
-    await _fabInvUpsert({fabType,gsm,color,unit,addRolls:rolls.map(r=>({rollCode:r.rollCode,weight:r.weight,gsm:r.gsm,unit:r.unit,sourceFabId:fabId})),sourceCol:'fabricin',sourceId:fabId,note:`Receipt from ${supplier}`});
     await logActivity('Fabric In',`${fabId} (${fabCode}) — ${supplier} · ${fabType} ${gsm}gsm · ${color} · ${rolls.length} rolls · ${totalWeight} ${unit}`);
     showToast(`${fabCode} saved ✓ · added to inventory`);
     window.switchFabTab('fabricin');
@@ -639,13 +660,13 @@ window.editFabricIn=function(fabId){
     <div class="hrm-grid-2">
       <div class="field"><label>Supplier *</label><input id="fabe-supplier" value="${_gpEsc(f.supplier||'')}"></div>
       <div class="field"><label>Date</label><input id="fabe-date" type="date" value="${_gpEsc(f.date||'')}"></div>
-      <div class="field"><label>Fabric Type *</label><input id="fabe-type" value="${_gpEsc(f.fabType||'')}"></div>
-      <div class="field"><label>Color *</label><input id="fabe-color" value="${_gpEsc(f.color||'')}"></div>
-      <div class="field"><label>Total Weight</label><input id="fabe-totweight" type="number" min="0" step="0.01" value="${f.totalWeight||0}"></div>
-      <div class="field"><label>Unit</label><input id="fabe-unit" value="${_gpEsc(f.unit||'kg')}"></div>
+      <div class="field"><label>Fabric Type 🔒</label><input value="${_gpEsc(f.fabType||'')}" readonly style="background:#f0f0f0;cursor:not-allowed;color:var(--muted)"></div>
+      <div class="field"><label>Color 🔒</label><input value="${_gpEsc(f.color||'')}" readonly style="background:#f0f0f0;cursor:not-allowed;color:var(--muted)"></div>
+      <div class="field"><label>GSM 🔒</label><input value="${f.gsm||0}" readonly style="background:#f0f0f0;cursor:not-allowed;color:var(--muted)"></div>
+      <div class="field"><label>Total Weight 🔒</label><input value="${(f.totalWeight||0)} ${_gpEsc(f.unit||'kg')}" readonly style="background:#f0f0f0;cursor:not-allowed;color:var(--muted)"></div>
     </div>
     <div class="field" style="margin-top:8px"><label>Notes</label><textarea id="fabe-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">${_gpEsc(f.notes||'')}</textarea></div>
-    <div style="background:#fafafa;padding:8px 12px;border-radius:8px;margin-top:8px;font-size:12px;color:var(--muted)">Note: Roll-level edits aren't supported here. Only header fields can be changed.</div>
+    <div style="background:#fafafa;padding:8px 12px;border-radius:8px;margin-top:8px;font-size:12px;color:var(--muted)">🔒 Fabric type, colour, GSM, unit and weight are derived from the rolls and define this fabric's stock bucket — they can't be edited here (it would orphan stock). To fix one of those, delete a roll (or the whole receipt) and re-add it. Only supplier, date and notes are editable.</div>
     ${!_gpCanApprove()?`<div class="field" style="margin-top:12px"><label>Reason for change *</label><textarea id="fabe-reason" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px" placeholder="Required so the approver understands why."></textarea></div>`:''}
     <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
       <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
@@ -657,13 +678,11 @@ window.editFabricIn=function(fabId){
 
 function _collectFabricEditPayload(){
   const v=k=>document.getElementById(k)?.value?.trim()||'';
+  // Only the safe metadata fields — type/color/gsm/unit/weight are locked
+  // (they key the inventory bucket / are derived from rolls).
   return{
     supplier:v('fabe-supplier'),
     date:v('fabe-date'),
-    fabType:v('fabe-type'),
-    color:v('fabe-color'),
-    totalWeight:parseFloat(document.getElementById('fabe-totweight')?.value)||0,
-    unit:v('fabe-unit')||'kg',
     notes:v('fabe-notes')
   };
 }
@@ -672,7 +691,7 @@ window.submitFabricEdit=async function(fabId){
   const f=allFabricIn.find(x=>x.id===fabId);
   if(!f)return showToast('Fabric entry not found.',true);
   const proposed=_collectFabricEditPayload();
-  if(!proposed.supplier||!proposed.fabType||!proposed.color)return showToast('Supplier, fabric type and color are required.',true);
+  if(!proposed.supplier)return showToast('Supplier is required.',true);
   try{
     if(_gpCanApprove()){
       await updateDoc(doc(db,'fabricin',fabId),{...proposed,updatedAt:Date.now(),updatedBy:session.name});
@@ -682,7 +701,7 @@ window.submitFabricEdit=async function(fabId){
     }else{
       const reason=(document.getElementById('fabe-reason')?.value||'').trim();
       if(!reason)return showToast('Reason for change is required.',true);
-      const currentData={supplier:f.supplier,date:f.date,fabType:f.fabType,color:f.color,totalWeight:f.totalWeight,unit:f.unit,notes:f.notes};
+      const currentData={supplier:f.supplier,date:f.date,notes:f.notes};
       await _gpSubmitEditRequest({type:'fabric',targetId:fabId,action:'edit',proposedData:proposed,currentData,reason});
       showToast('Edit request sent for approval ✓');
     }
@@ -696,19 +715,37 @@ window.submitFabricEdit=async function(fabId){
 // (delete: if isOwner()).
 function _fabCanDelete(){return !!(session&&session.role==='owner');}
 
+// Shared receipt deletion used by BOTH the owner immediate path and the
+// approval-execution path. Removes the receipt's rolls from inventory AND
+// deletes the receipt doc in ONE transaction (no more orphaned stock), and
+// refuses if any roll has left stock (issued/reserved/returned) — those must
+// be returned first or the stock numbers would corrupt. Throws on problems so
+// callers can surface the message.
+window._fabDeleteReceipt=async function(fabId){
+  const f=allFabricIn.find(x=>x.id===fabId);
+  if(!f)throw new Error('Fabric entry '+fabId+' not found.');
+  const codes=(f.rolls||[]).map(r=>r.rollCode||r.rollNumber).filter(Boolean);
+  for(const rc of codes){
+    const inv=_fabFindRoll(rc);
+    const st=inv?.roll?.status||'in_stock';
+    if(inv&&st!=='in_stock')throw new Error(`${rc} is ${st.replace('_',' ')} — return it to stock before deleting ${fabId}.`);
+  }
+  await _fabInvUpsert({fabType:f.fabType,gsm:f.gsm,color:f.color,unit:f.unit||'kg',deleteRollCodes:codes,note:`Receipt ${fabId} deleted`,sourceCol:'fabricin',sourceId:fabId,extraDeletes:[doc(db,'fabricin',fabId)]});
+  allFabricIn=allFabricIn.filter(x=>x.id!==fabId);
+};
+
 window.requestDeleteFabricIn=async function(fabId){
   const f=allFabricIn.find(x=>x.id===fabId);
   if(!f)return showToast('Fabric entry not found.',true);
   if(_gpPendingFor('fabric',fabId))return showToast('A request is already pending for '+fabId,true);
   if(_fabCanDelete()){
-    if(!confirm(`Delete ${fabId}? This cannot be undone.`))return;
+    if(!confirm(`Delete ${fabId} and all its rolls from stock? This cannot be undone.`))return;
     try{
-      await deleteDoc(doc(db,'fabricin',fabId));
+      await window._fabDeleteReceipt(fabId);
       await logActivity('Fabric In deleted',`${fabId} deleted by ${session.name}`);
-      allFabricIn=allFabricIn.filter(x=>x.id!==fabId);
       showToast(`${fabId} deleted`);
       _fabRefreshList();
-    }catch(e){showToast('Error: '+e.message,true);}
+    }catch(e){showToast(e.message||('Error: '+e),true);}
     return;
   }
   const reason=prompt(`Request to delete ${fabId}. Reason:`,'');
@@ -741,18 +778,16 @@ window.deleteFabricRoll=async function(fabId,rollCode){
   try{
     const removed=f.rolls[idx];
     const lastOne=f.rolls.length===1;
-    // 1) pull the roll out of the receipt + recompute its totals
     const newRolls=f.rolls.filter((_,i)=>i!==idx);
     const newTotal=parseFloat(newRolls.reduce((s,r)=>s+(Number(r.weight)||0),0).toFixed(2));
-    if(lastOne){
-      await deleteDoc(doc(db,'fabricin',fabId));
-      allFabricIn=allFabricIn.filter(x=>x.id!==fabId);
-    }else{
-      await updateDoc(doc(db,'fabricin',fabId),{rolls:newRolls,rollsCount:newRolls.length,totalWeight:newTotal,updatedAt:Date.now(),updatedBy:session.name});
-      f.rolls=newRolls;f.rollsCount=newRolls.length;f.totalWeight=newTotal;
-    }
-    // 2) remove it from the aggregated inventory (hard splice, not an issue)
-    await _fabInvUpsert({fabType:f.fabType,gsm:f.gsm,color:f.color,unit:f.unit||removed.unit||'kg',deleteRollCodes:[rollCode],note:`Roll ${rollCode} deleted from ${fabId}`,sourceCol:'fabricin',sourceId:fabId});
+    // Inventory splice + receipt update/delete commit in ONE transaction.
+    const fabRef=doc(db,'fabricin',fabId);
+    const extra=lastOne
+      ?{extraDeletes:[fabRef]}
+      :{extraWrites:[{ref:fabRef,data:{rolls:newRolls,rollsCount:newRolls.length,totalWeight:newTotal,updatedAt:Date.now(),updatedBy:session.name},merge:true}]};
+    await _fabInvUpsert({fabType:f.fabType,gsm:f.gsm,color:f.color,unit:f.unit||removed.unit||'kg',deleteRollCodes:[rollCode],note:`Roll ${rollCode} deleted from ${fabId}`,sourceCol:'fabricin',sourceId:fabId,...extra});
+    if(lastOne){allFabricIn=allFabricIn.filter(x=>x.id!==fabId);}
+    else{f.rolls=newRolls;f.rollsCount=newRolls.length;f.totalWeight=newTotal;}
     await logActivity('Fabric roll deleted',`${rollCode} removed from ${fabId} by ${session.name}${lastOne?' (entry emptied & removed)':''}`);
     showToast(lastOne?`${rollCode} deleted · ${fabId} had no rolls left and was removed`:`${rollCode} deleted ✓`);
     renderFabricInList();
@@ -849,8 +884,13 @@ function _fabIssueAdd(code){
   if(_fabIssueRolls.some(r=>r.rollCode===rc)){showToast(rc+' already selected.',true);return;}
   if(_fabIssueKey&&_fabIssueKey!==stock._id){showToast('All rolls must be from the same fabric. Clear selection to switch.',true);return;}
   const po=document.getElementById('fab-iss-po')?.value||'';
-  if(st==='reserved'&&roll.reservedPO&&po&&roll.reservedPO!==po)showToast(rc+' is reserved for '+roll.reservedPO+' (issuing anyway).',false);
-  if(!roll.qcPassed)showToast(rc+' has not passed QC (issuing anyway).',false);
+  // Hard gates (must explicitly confirm) instead of silent "issuing anyway".
+  if(st==='reserved'&&roll.reservedPO&&po&&roll.reservedPO!==po){
+    if(!confirm(`${rc} is reserved for ${roll.reservedPO}, not ${po}. Issue it anyway?`))return;
+  }
+  if(!roll.qcPassed){
+    if(!confirm(`${rc} has NOT passed QC. Issue it anyway?`))return;
+  }
   _fabIssueKey=stock._id;
   _fabIssueRolls.push({rollCode:rc,weight:roll.weight||0,status:st});
   _fabIssueRenderSelected();_fabIssueSyncChecklist();
@@ -923,8 +963,8 @@ window.submitFabricIssue=async function(){
     const gpId='GP-'+String(next).padStart(3,'0');
     const article=`${stock.fabType} ${stock.gsm||0}gsm ${stock.color}`;
     const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,spec:`PO ${po} · ${rollCodes.length} rolls`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stock._id,boras:'0',items:[],totalUnits:0,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
-    await setDoc(doc(db,'gatepasses',gpId),payload);
-    await _fabInvUpsert({fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:fabUnit,removeRollCodes:rollCodes,reservePO:po,note:`Issued to ${dest} for ${po}`,sourceCol:'gatepasses',sourceId:gpId});
+    // Gate pass + inventory decrement commit in ONE transaction.
+    await _fabInvUpsert({fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:fabUnit,removeRollCodes:rollCodes,reservePO:po,note:`Issued to ${dest} for ${po}`,sourceCol:'gatepasses',sourceId:gpId,extraWrites:[{ref:doc(db,'gatepasses',gpId),data:payload}]});
     await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to ${dest} for ${po}`);
     showToast(`${gpId} issued ✓ · ${rollCodes.length} rolls`);
     _fabIssueRolls=[];_fabIssueKey=null;
