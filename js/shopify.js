@@ -12,6 +12,47 @@ let _siSeasonMapCache=null; // { sku: 'winter'|'summer'|'all-season' }, rebuilt 
 let _siLoadError=null;      // last load failure message; non-null → render error state, never zeros
 let _siCollectionsLoaded=false; // collections fetched OK once → skip re-download on snapshot-only retry
 
+// ── Skeleton loader ──────────────────────────────────────────────────
+function _siLoadingSkeleton(){
+  const statCard=()=>`<div class="stat-card">
+    <div class="si-skel" style="height:11px;width:68%;margin:0 auto 10px"></div>
+    <div class="si-skel" style="height:28px;width:52%;margin:0 auto 6px"></div>
+    <div class="si-skel" style="height:9px;width:44%;margin:0 auto"></div>
+  </div>`;
+  const widths=[88,72,95,80,65];
+  const tableRows=widths.map(w=>`<div style="display:flex;gap:10px;margin-bottom:9px">
+    <div class="si-skel" style="height:16px;width:90px;flex-shrink:0"></div>
+    <div class="si-skel" style="height:16px;flex:1;max-width:${w}%"></div>
+    <div class="si-skel" style="height:16px;width:60px;flex-shrink:0"></div>
+    <div class="si-skel" style="height:16px;width:70px;flex-shrink:0"></div>
+  </div>`).join('');
+  return`<div class="page-head">
+    <div class="page-title">Inventory Intelligence</div>
+    <div class="page-sub">Shopify sales + inventory — read-only, updated every 4 hours</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    <div class="si-skel" style="width:50px;height:14px"></div>
+    <div class="si-skel" style="width:218px;height:34px;border-radius:10px"></div>
+  </div>
+  <div class="si-skel" style="height:36px;border-radius:10px;margin-bottom:14px"></div>
+  <div class="stats-row" style="margin-bottom:16px">${[0,0,0,0].map(statCard).join('')}</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+    ${[0,0].map(()=>`<div class="card">
+      <div class="si-skel" style="height:11px;width:52%;margin-bottom:14px"></div>
+      <div class="si-skel" style="height:34px;width:36%;margin-bottom:8px"></div>
+      <div class="si-skel" style="height:10px;width:70%"></div>
+    </div>`).join('')}
+  </div>
+  <div class="card">
+    <div class="si-skel" style="height:11px;width:34%;margin-bottom:16px"></div>
+    ${tableRows}
+  </div>
+  <div class="card">
+    <div class="si-skel" style="height:11px;width:20%;margin-bottom:12px"></div>
+    <div class="si-skel" style="height:13px;width:76%"></div>
+  </div>`;
+}
+
 // ── Data loader ─────────────────────────────────────────────────────
 async function loadShopifyData(){
   _siLoadError=null;

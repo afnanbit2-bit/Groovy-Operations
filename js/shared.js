@@ -878,7 +878,7 @@ function renderPage(id){
   else if(id==='color-library'){if(!printingDataLoaded)loadPrintingData().then(()=>{if(currentPage===id)m.innerHTML=renderColorLibraryPage();});else m.innerHTML=renderColorLibraryPage();}
   // ── HRM module pages ──
   else if(id==='shopify-intel'){
-    if(!_siLoaded){m.innerHTML='<div class="page-head"><div class="page-title">Inventory Intelligence</div></div><div class="empty">Loading inventory data…</div>';const _siProm=loadShopifyData();Promise.race([_siProm,new Promise((_,rej)=>setTimeout(()=>rej(new Error('Load timed out')),90000))]).then(()=>{if(currentPage===id)m.innerHTML=renderShopifyDashboard();}).catch(e=>{_siLoadError=(e.message||e);if(currentPage===id)m.innerHTML=renderShopifyDashboard();_siProm.then(()=>{if(currentPage===id&&_siLoaded){_siLoadError=null;m.innerHTML=renderShopifyDashboard();}}).catch(()=>{});});}
+    if(!_siLoaded){m.innerHTML=_siLoadingSkeleton();const _siProm=loadShopifyData();Promise.race([_siProm,new Promise((_,rej)=>setTimeout(()=>rej(new Error('Load timed out')),90000))]).then(()=>{if(currentPage===id)m.innerHTML=renderShopifyDashboard();}).catch(e=>{_siLoadError=(e.message||e);if(currentPage===id)m.innerHTML=renderShopifyDashboard();_siProm.then(()=>{if(currentPage===id&&_siLoaded){_siLoadError=null;m.innerHTML=renderShopifyDashboard();}}).catch(()=>{});});}
     else m.innerHTML=renderShopifyDashboard();
   }
   else if(id==='hrm-employees'){if(!hrmDataLoaded)loadHRMData().then(()=>{if(currentPage===id)m.innerHTML=renderHRMEmployeesPage();});else m.innerHTML=renderHRMEmployeesPage();}
