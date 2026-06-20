@@ -293,8 +293,13 @@ function _siComputeSkuTable(){
     const reorderPoint=Math.ceil(dailyRate*14);
     const suggestedQty=dailyRate>0?Math.max(0,Math.ceil(dailyRate*30)-onHand):0;
 
+    // Normalize swapped options: some products have size in color field and vice versa
+    const _rc=(prod.color||'').trim(),_rs=(prod.size||'').trim();
+    const _normColor=_SI_KNOWN_SIZES.has(_rc.toUpperCase())?_rs:_rc;
+    const _normSize=_SI_KNOWN_SIZES.has(_rc.toUpperCase())?_rc:_rs;
+
     rows.push({
-      sku,title:prod.product_title||'',color:prod.color||'',size:prod.size||'',
+      sku,title:prod.product_title||'',color:_normColor,size:_normSize,
       productType:_siGetCustomCats()[sku]||prod.product_type||'',needsReview:!!prod.needs_review,status:prod.status||'',
       tags:prod.tags||[],season:_siSeasonOfTags(prod.tags),
       onHand,prevOnHand,weeklyDelta,s7,s30,dailyRate,daysLeft,sellThrough,
