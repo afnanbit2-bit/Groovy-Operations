@@ -902,7 +902,8 @@ function _siCatSelBar(){
       <button style="${btnSm}" onclick="window._siApplyType('bottom')">Bottom</button>
       <button style="${btnSm}" onclick="window._siApplyType('')">—</button>
     </div>
-    <button class="btn-outline" style="padding:5px 10px;font-size:11px;margin-left:auto" onclick="window._siClearSel()">Clear selection</button>
+    <button style="padding:5px 10px;font-size:11px;border-radius:6px;cursor:pointer;font-family:inherit;border:1px solid var(--border);background:#fff;font-weight:600;margin-left:auto" onclick="window._siExportSelectedCsv()">↓ Export CSV</button>
+    <button class="btn-outline" style="padding:5px 10px;font-size:11px" onclick="window._siClearSel()">Clear selection</button>
   </div>`;
 }
 function _siSkuTableSection(rows){
@@ -1011,6 +1012,23 @@ window._siClearSel=function(){
   const filtered=_siSkuFiltered(rows);
   const tb=document.getElementById('si-sku-tbody');
   if(tb){tb.innerHTML=_siGroupedBodyHtml(filtered);_siFixIndeterminate();}
+};
+window._siExportSelectedCsv=function(){
+  if(!_siSkuSelected.size)return showToast('Nothing selected.',true);
+  const rows=_siComputeSkuTable();
+  const sel=rows.filter(r=>_siSkuSelected.has(r.sku));
+  const cats=_siCustomCats||{};const seasons=_siCustomSeasons||{};const types=_siCustomTypes||{};
+  const esc=s=>'"'+(String(s||'').replace(/"/g,'""'))+'"';
+  const lines=['SKU,Product,Color,Size,On Hand,Sold 7d,Sold 30d,Weeks of Supply,Category,Season,Garment Type,Product Type'];
+  for(const r of sel){
+    const wos=r.dailyRate>0.05?(r.onHand/r.dailyRate/7).toFixed(1):'∞';
+    lines.push([esc(r.sku),esc(r.title),esc(r.color),esc(r.size||'?'),r.onHand,r.s7||0,r.s30||0,wos,esc(cats[r.sku]||r.productType||''),esc(seasons[r.sku]||''),esc(types[r.sku]||''),esc(r.productType||'')].join(','));
+  }
+  const blob=new Blob([lines.join('\n')],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=`groovy-sku-${new Date().toISOString().slice(0,10)}.csv`;a.click();
+  URL.revokeObjectURL(url);
+  showToast(`Exported ${sel.length} SKU${sel.length>1?'s':''} to CSV ✓`);
 };
 window._siToggleGroup=function(key){
   if(_siSkuExpanded.has(key))_siSkuExpanded.delete(key);else _siSkuExpanded.add(key);

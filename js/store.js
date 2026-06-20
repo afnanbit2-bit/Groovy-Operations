@@ -605,7 +605,8 @@ function _miRowCells(l,idx){
     sizeSelect=`<select style="width:100%;margin-top:4px;padding:5px;border:1px solid var(--amber);border-radius:6px;font-size:12px;background:#FFFBEB" onchange="window._miChangeSize(${idx},this.value)">
       <option value="">— select size —</option>${szOpts}</select>`;
   }
-  return`<td><select style="width:100%;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:12px" onchange="window._miChangeItem(${idx},this.value)">
+  return`<td style="padding:4px;width:28px"><input type="checkbox" class="mi-row-chk" style="cursor:pointer;width:15px;height:15px"></td>
+  <td><select style="width:100%;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:12px" onchange="window._miChangeItem(${idx},this.value)">
     <option value="">— select —</option>${opts}</select>${sizeSelect}</td>
   <td style="text-align:center;font-size:12px;color:${stock>0?'var(--green)':'var(--red)'}">${l.itemCode?stock:'—'}</td>
   <td><input type="number" min="1" value="${l.qty}" placeholder="0" style="width:80px;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:12px" onchange="window._miChangeQty(${idx},this.value)"></td>
@@ -651,6 +652,19 @@ window._miChangeSize=function(idx,sz){
   _miUpdateSubmitBtn();
 };
 window._miChangeQty=function(idx,v){_miLines[idx].qty=v;_miUpdateSubmitBtn();};
+window._miDeleteSelected=function(){
+  const tbody=document.getElementById('mi-tbody');if(!tbody)return;
+  const checked=[...tbody.querySelectorAll('.mi-row-chk:checked')];
+  if(!checked.length)return showToast('No rows selected — check a row first.',true);
+  if(_miLines.length<=checked.length)return showToast('At least one row must remain.',true);
+  const checkedRows=new Set(checked.map(cb=>cb.closest('tr')));
+  const allRows=[...tbody.querySelectorAll('tr')];
+  const keepIndices=allRows.map((r,i)=>checkedRows.has(r)?null:i).filter(i=>i!==null);
+  _miLines=keepIndices.map(i=>_miLines[i]);
+  tbody.querySelectorAll('tr').forEach(r=>r.remove());
+  _miLines.forEach((l,i)=>{const tr=document.createElement('tr');tr.id='mi-row-'+i;tr.innerHTML=_miRowCells(l,i);tbody.appendChild(tr);});
+  _miUpdateSubmitBtn();
+};
 
 function renderStoreIssue(){
   const pirs=allPoIssueRequests.filter(r=>r.status!=='fully_issued');
@@ -687,6 +701,7 @@ function renderStoreIssue(){
     <div style="margin-top:12px">
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead><tr>
+          <th style="padding:6px 4px;border-bottom:2px solid var(--border);width:28px"></th>
           <th style="text-align:left;padding:6px 4px;border-bottom:2px solid var(--border);font-size:11px;color:var(--muted)">Item</th>
           <th style="padding:6px 4px;border-bottom:2px solid var(--border);font-size:11px;color:var(--muted);text-align:center">Stock</th>
           <th style="padding:6px 4px;border-bottom:2px solid var(--border);font-size:11px;color:var(--muted);text-align:center">Qty</th>
@@ -697,6 +712,7 @@ function renderStoreIssue(){
     </div>
     <div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">
       <button class="btn-outline" onclick="window._miAddRow()">+ Add item</button>
+      <button class="btn-outline" onclick="window._miDeleteSelected()" style="color:#dc2626;border-color:#fca5a5">✕ Delete selected</button>
       <button class="btn-primary" id="mi-submit-btn" style="margin-top:0" onclick="window.submitIssueManual()">${_miSubmitLabel()}</button>
     </div>
   </div><div style="height:80px"></div>`;
@@ -2210,5 +2226,157 @@ window.dismissNotif=async function(id){
     renderNotifBadge();renderNotifList();
   }catch(e){showToast('Dismiss failed: '+e.message,true);}
 };
+
+// ══════════════════════════════════════════
+// STORE ANALYTICS — read-only digest of allTransactions + allItems
+// ══════════════════════════════════════════
+function renderStoreAnalytics(){
+  const txns=allTransactions;
+  const received=txns.filter(t=>t.type==='received');
+  const issued=txns.filter(t=>t.type==='issued');
+
+  // KPI totals
+  const totalRcvQty=received.reduce((s,t)=>s+(parseInt(t.qty)||0),0);
+  const totalIssQty=issued.reduce((s,t)=>s+(parseInt(t.qty)||0),0);
+  const poLinked=issued.filter(t=>t.poRef||t.poId).length;
+  const poLinkPct=issued.length?Math.round(100*poLinked/issued.length):0;
+  const lastTxn=txns.length?txns.reduce((a,b)=>((a.ts||0)>(b.ts||0)?a:b)):null;
+  const lastDate=lastTxn?new Date(lastTxn.ts).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'—';
+
+  // Data quality
+  const noRecipient=issued.filter(t=>!String(t.issuedTo||'').trim()).length;
+  const noPurpose=issued.filter(t=>!String(t.purpose||'').trim()).length;
+  const noDate=txns.filter(t=>!t.date).length;
+  const noPO=issued.filter(t=>!(t.poRef||t.poId)).length;
+
+  // Top items issued (by qty)
+  const issMap={};
+  for(const t of issued){
+    const k=t.itemCode||'?';
+    if(!issMap[k])issMap[k]={code:k,name:t.itemName||k,qty:0,count:0};
+    issMap[k].qty+=(parseInt(t.qty)||0);issMap[k].count++;
+  }
+  const topIssued=Object.values(issMap).sort((a,b)=>b.qty-a.qty).slice(0,10);
+
+  // Top items received (by qty)
+  const rcvMap={};
+  for(const t of received){
+    const k=t.itemCode||'?';
+    if(!rcvMap[k])rcvMap[k]={code:k,name:t.itemName||k,qty:0,count:0};
+    rcvMap[k].qty+=(parseInt(t.qty)||0);rcvMap[k].count++;
+  }
+  const topReceived=Object.values(rcvMap).sort((a,b)=>b.qty-a.qty).slice(0,10);
+
+  // Issued-to breakdown
+  const toMap={};
+  for(const t of issued){
+    const k=String(t.issuedTo||'(no recipient)').trim()||'(no recipient)';
+    toMap[k]=(toMap[k]||0)+(parseInt(t.qty)||0);
+  }
+  const topTo=Object.entries(toMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
+
+  // By-person (who enters records)
+  const byMap={};
+  for(const t of txns){const k=t.by||'—';byMap[k]=(byMap[k]||0)+1;}
+  const topBy=Object.entries(byMap).sort((a,b)=>b[1]-a[1]).slice(0,6);
+
+  // Monthly trend (last 12 months)
+  const monthMap={};
+  for(const t of txns){
+    if(!t.date)continue;
+    const m=String(t.date).slice(0,7);// YYYY-MM
+    if(!monthMap[m])monthMap[m]={month:m,in:0,out:0};
+    if(t.type==='received')monthMap[m].in+=(parseInt(t.qty)||0);
+    if(t.type==='issued')monthMap[m].out+=(parseInt(t.qty)||0);
+  }
+  const months=Object.values(monthMap).sort((a,b)=>a.month.localeCompare(b.month)).slice(-12);
+
+  // Items never issued (in stock, never had an outbound entry)
+  const issuedCodes=new Set(issued.map(t=>t.itemCode));
+  const neverIssued=allItems.filter(i=>!issuedCodes.has(i.code)&&getBalance(i)>0);
+
+  const kpi=(label,val,sub,color='var(--dark)')=>`<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
+    <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${label}</div>
+    <div style="font-size:22px;font-weight:700;color:${color}">${val}</div>
+    ${sub?`<div style="font-size:10px;color:var(--muted);margin-top:2px">${sub}</div>`:''}
+  </div>`;
+
+  const sec=(title,body)=>`<div class="card" style="margin-bottom:14px"><div class="card-title">${title}</div>${body}</div>`;
+
+  const tableRow=(a,b,c,bold=false)=>`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid #f5f5f5;font-size:12px;${bold?'font-weight:700':''}">
+    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a}</span>
+    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${b}</span>
+    <span style="flex-shrink:0;font-weight:600">${c}</span>
+  </div>`;
+
+  const qualityScore=100-Math.round(100*(noRecipient+noPurpose+noDate)/(3*Math.max(txns.length,1)));
+
+  return`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+    <div><div class="page-title">Store Analytics</div>
+    <div class="page-sub">${txns.length} total movements · ${received.length} inbound · ${issued.length} outbound</div></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px">
+    ${kpi('Receipts',received.length,totalRcvQty.toLocaleString()+' units received','var(--green)')}
+    ${kpi('Issues',issued.length,totalIssQty.toLocaleString()+' units issued','var(--red)')}
+    ${kpi('PO-linked',poLinkPct+'%',poLinked+' of '+issued.length+' issues',poLinkPct>=70?'var(--green)':'var(--amber)')}
+    ${kpi('Last movement',lastDate,lastTxn?lastTxn.itemCode:'')}
+    ${kpi('Data quality',qualityScore+'%','completeness score',qualityScore>=90?'var(--green)':qualityScore>=70?'var(--amber)':'var(--red)')}
+  </div>
+
+  ${sec('Data Quality Issues',`
+    ${noRecipient?`<div class="info-row"><span>⚠ Issues with no "Issued To"</span><span class="badge badge-red">${noRecipient}</span></div>`:''}
+    ${noPurpose?`<div class="info-row"><span>⚠ Issues with no Purpose/Notes</span><span class="badge badge-amber">${noPurpose}</span></div>`:''}
+    ${noPO?`<div class="info-row"><span>ℹ Issues with no PO reference</span><span class="badge badge-amber">${noPO}</span></div>`:''}
+    ${noDate?`<div class="info-row"><span>⚠ Transactions with no Date</span><span class="badge badge-red">${noDate}</span></div>`:''}
+    ${(!noRecipient&&!noPurpose&&!noPO&&!noDate)?'<div class="empty" style="padding:1rem">All records look complete ✓</div>':''}
+  `)}
+
+  ${sec('Monthly Trend (last 12 months)',months.length?`
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:400px">
+        <thead><tr>
+          <th style="text-align:left;padding:6px 4px;border-bottom:2px solid var(--border);font-size:10px;color:var(--muted)">Month</th>
+          <th style="text-align:right;padding:6px 4px;border-bottom:2px solid var(--border);font-size:10px;color:var(--green)">▲ Received</th>
+          <th style="text-align:right;padding:6px 4px;border-bottom:2px solid var(--border);font-size:10px;color:var(--red)">▼ Issued</th>
+          <th style="text-align:right;padding:6px 4px;border-bottom:2px solid var(--border);font-size:10px;color:var(--muted)">Net</th>
+        </tr></thead>
+        <tbody>${months.map(m=>{const net=m.in-m.out;return`<tr style="border-bottom:1px solid #f5f5f5">
+          <td style="padding:6px 4px;font-weight:600">${m.month}</td>
+          <td style="padding:6px 4px;text-align:right;color:var(--green)">+${m.in.toLocaleString()}</td>
+          <td style="padding:6px 4px;text-align:right;color:var(--red)">-${m.out.toLocaleString()}</td>
+          <td style="padding:6px 4px;text-align:right;color:${net>=0?'var(--green)':'var(--red)';font-weight:600}">${net>=0?'+':''}${net.toLocaleString()}</td>
+        </tr>`}).join('')}</tbody>
+      </table>
+    </div>`:'<div class="empty" style="padding:1rem">No dated transactions yet.</div>')}
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+    ${sec('Top 10 Most Issued (by qty)',topIssued.length?
+      topIssued.map((r,i)=>tableRow(`${i+1}. ${r.code}`,r.name,r.qty.toLocaleString()+' '+allItems.find(x=>x.code===r.code)?.unit||'pcs')).join('')
+      :'<div class="empty" style="padding:1rem">No issues yet.</div>')}
+    ${sec('Top 10 Most Received (by qty)',topReceived.length?
+      topReceived.map((r,i)=>tableRow(`${i+1}. ${r.code}`,r.name,r.qty.toLocaleString())).join('')
+      :'<div class="empty" style="padding:1rem">No receipts yet.</div>')}
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+    ${sec('Issued To (top recipients)',topTo.length?
+      topTo.map(([k,qty])=>tableRow(k,'',qty.toLocaleString()+' units')).join('')
+      :'<div class="empty" style="padding:1rem">No issue records.</div>')}
+    ${sec('Data entry by person',topBy.length?
+      topBy.map(([k,n])=>tableRow(k,'',n+' records')).join('')
+      :'<div class="empty" style="padding:1rem">No records.</div>')}
+  </div>
+
+  ${neverIssued.length?sec(`Items in stock but never issued (${neverIssued.length})`,`
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">These items have received stock but zero outbound records — may be dead stock or used outside the system.</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">
+      ${neverIssued.slice(0,30).map(i=>`<span style="background:#f5f5f5;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600">${i.code}</span>`).join('')}
+      ${neverIssued.length>30?`<span style="font-size:11px;color:var(--muted)">+${neverIssued.length-30} more</span>`:''}
+    </div>
+  `):''}
+
+  <div style="height:80px"></div>`;
+}
 
 // ── HRM: Dashboard widgets, Employees page, increment workflow ──
