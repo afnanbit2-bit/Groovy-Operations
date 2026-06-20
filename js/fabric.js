@@ -640,6 +640,7 @@ function renderFabricInList(){
         ${total?`<div style="display:flex;align-items:center;gap:10px;padding:4px 4px 8px;border-bottom:1px solid #eee;flex-wrap:wrap">
           <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);cursor:pointer"><input type="checkbox" id="fab-chk-all-${f.id}" onclick="event.stopPropagation();window.toggleAllRollChk('${f.id}',this)" style="cursor:pointer;width:15px;height:15px">Select all</label>
           <button id="fab-print-sel-${f.id}" onclick="event.stopPropagation();window.printSelectedRollBarcodes('${f.id}')" disabled style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit;opacity:.5">🖨 Print selected</button>
+          ${_fabCanDelete()?`<button id="fab-del-sel-${f.id}" onclick="event.stopPropagation();window.deleteSelectedRolls('${f.id}')" disabled style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit;opacity:.5">✕ Delete selected</button>`:''}
         </div>`:''}
         ${rolls.map(r=>{
           const rc=r.rollCode||r.rollNumber||'';
@@ -652,7 +653,7 @@ function renderFabricInList(){
           const stCol=liveSt==='in_stock'?'var(--green)':liveSt==='issued'?'#dc2626':liveSt==='reserved'?'#d97706':liveSt==='returned_supplier'?'#9ca3af':'var(--muted)';
           return`<div style="display:flex;flex-direction:column;padding:8px 4px;border-bottom:1px solid #f9f9f9;font-size:12px;gap:6px">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
-              <input type="checkbox" class="fab-roll-chk" data-rc="${_gpEsc(rc)}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(f.supplier||'')}" onclick="event.stopPropagation();window.updateRollPrintCount('${f.id}')" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
+              <input type="checkbox" class="fab-roll-chk" data-rc="${_gpEsc(rc)}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(f.supplier||'')}" data-status="${liveSt}" onclick="event.stopPropagation();window.updateRollPrintCount('${f.id}')" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
               <span style="font-weight:600;min-width:120px;letter-spacing:.04em">${rc}</span>
               <span style="flex:1;min-width:80px">${wt} · ${rGsm}gsm</span>
               <span style="color:${stCol};font-weight:600;text-transform:capitalize;font-size:11px">${liveSt.replace('_',' ')}</span>
@@ -759,6 +760,41 @@ window.printSelectedRollBarcodes=function(fabId){
   })));
 };
 
+window.deleteSelectedRolls=async function(fabId){
+  if(!_fabCanDelete())return showToast('Only owners (Afnan, Ammar) can delete rolls.',true);
+  const cont=document.getElementById('fab-rolls-'+fabId);
+  if(!cont)return;
+  const checked=[...cont.querySelectorAll('.fab-roll-chk:checked')];
+  if(!checked.length)return;
+  const stockCodes=checked.filter(c=>c.dataset.status==='in_stock').map(c=>c.getAttribute('data-rc'));
+  const skipCount=checked.length-stockCodes.length;
+  if(!stockCodes.length)return showToast('None of the selected rolls are in stock — issued/reserved rolls must be returned first.',true);
+  const msg=skipCount>0
+    ?`Delete ${stockCodes.length} in-stock roll${stockCodes.length>1?'s':''}?\n(${skipCount} issued/reserved roll${skipCount>1?'s':''} will be skipped)\n\nThis cannot be undone.`
+    :`Delete ${stockCodes.length} roll${stockCodes.length>1?'s':''}? This cannot be undone.`;
+  if(!confirm(msg))return;
+  if(!_fabBusyStart(`Deleting ${stockCodes.length} roll${stockCodes.length>1?'s':''}…`))return;
+  try{
+    const f=allFabricIn.find(x=>x.id===fabId);
+    if(!f)return showToast('Fabric entry not found.',true);
+    const newRolls=f.rolls.filter(r=>!stockCodes.includes(r.rollCode||r.rollNumber));
+    const lastAll=newRolls.length===0;
+    const newTotal=parseFloat(newRolls.reduce((s,r)=>s+(Number(r.weight)||0),0).toFixed(2));
+    const fabRef=doc(db,'fabricin',fabId);
+    const extra=lastAll
+      ?{extraDeletes:[fabRef]}
+      :{extraWrites:[{ref:fabRef,data:{rolls:newRolls,rollsCount:newRolls.length,totalWeight:newTotal,updatedAt:Date.now(),updatedBy:session.name},merge:true}]};
+    const sampleInv=_fabFindRoll(stockCodes[0]);
+    await _fabInvUpsert({fabType:f.fabType,gsm:f.gsm,color:f.color,unit:f.unit||sampleInv?.roll?.unit||'kg',deleteRollCodes:stockCodes,note:`${stockCodes.length} rolls deleted from ${fabId} by ${session.name}`,sourceCol:'fabricin',sourceId:fabId,...extra});
+    if(lastAll)allFabricIn=allFabricIn.filter(x=>x.id!==fabId);
+    else{f.rolls=newRolls;f.rollsCount=newRolls.length;f.totalWeight=newTotal;}
+    await logActivity('Fabric rolls deleted',`${stockCodes.length} roll(s) removed from ${fabId} by ${session.name}${lastAll?' (entry removed)':''}`);
+    showToast((lastAll?`${stockCodes.length} rolls deleted · ${fabId} removed`:`${stockCodes.length} roll${stockCodes.length>1?'s':''} deleted ✓`)+(skipCount?` · ${skipCount} skipped (in use)`:''));
+    _fabAfterRollChange(lastAll?null:fabId);
+  }catch(e){showToast('Delete failed: '+e.message,true);}
+  finally{_fabBusyEnd();}
+};
+
 window.toggleAllRollChk=function(fabId,master){
   const cont=document.getElementById('fab-rolls-'+fabId);
   if(!cont)return;
@@ -775,6 +811,9 @@ window.updateRollPrintCount=function(fabId){
   const n=boxes.filter(c=>c.checked).length;
   const btn=document.getElementById('fab-print-sel-'+fabId);
   if(btn){btn.textContent='🖨 Print selected'+(n?` (${n})`:'');btn.disabled=!n;btn.style.opacity=n?'1':'.5';}
+  const nDel=boxes.filter(c=>c.checked&&c.dataset.status==='in_stock').length;
+  const delBtn=document.getElementById('fab-del-sel-'+fabId);
+  if(delBtn){delBtn.textContent='✕ Delete selected'+(nDel?` (${nDel})`:'');delBtn.disabled=!nDel;delBtn.style.opacity=nDel?'1':'.5';}
   const master=document.getElementById('fab-chk-all-'+fabId);
   if(master)master.checked=n>0&&n===boxes.length;
 };
