@@ -10,9 +10,13 @@
   SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
 
 # ── Scheduled functions (cron, UTC) ──────────────────────────────
-# 1am UTC = 6am PKT — daily inventory snapshot
+# 4am UTC = 9am PKT — daily catalog sync (products + variants)
+[functions."shopify-catalog-sync"]
+  schedule = "0 4 * * *"
+
+# 5am + 5pm UTC = 10am + 10pm PKT — twice-daily inventory snapshot
 [functions."shopify-inventory-snapshot"]
-  schedule = "0 1 * * *"
+  schedule = "0 5,17 * * *"
 
 # Every 4 hours — incremental order sync (last 48h, skip existing)
 [functions."shopify-order-sync"]

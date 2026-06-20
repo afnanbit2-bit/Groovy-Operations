@@ -11,6 +11,10 @@ let _siSeason='all';        // global season filter: 'all' | 'winter' | 'summer'
 let _siSeasonMapCache=null; // { sku: 'winter'|'summer'|'all-season' }, rebuilt on data load
 let _siLoadError=null;      // last load failure message; non-null → render error state, never zeros
 let _siCollectionsLoaded=false; // collections fetched OK once → skip re-download on snapshot-only retry
+let _siSkuCatFilter='';         // active category filter in SKU table
+let _siSkuSelected=new Set();   // SKUs checked for category labeling
+let _siCustomCats=null;         // lazy-loaded from localStorage: { sku → custom category override }
+let _siProdMapCache=null;       // sku → product doc map, rebuilt lazily, cleared on catalog reload
 
 // ── Skeleton loader ──────────────────────────────────────────────────
 function _siLoadingSkeleton(){
@@ -53,6 +57,45 @@ function _siLoadingSkeleton(){
   </div>`;
 }
 
+// ── Product lookup ───────────────────────────────────────────────────
+function _siGetProd(sku){
+  if(!_siProdMapCache){_siProdMapCache={};_siProducts.forEach(p=>{if(p.sku&&!_siProdMapCache[p.sku])_siProdMapCache[p.sku]=p;});}
+  return _siProdMapCache[sku]||{};
+}
+
+// ── Custom category persistence (localStorage) ───────────────────────
+function _siGetCustomCats(){
+  if(!_siCustomCats){try{_siCustomCats=JSON.parse(localStorage.getItem('_siCustomCats')||'{}');}catch(_){_siCustomCats={};}}
+  return _siCustomCats;
+}
+function _siSaveCustomCats(){localStorage.setItem('_siCustomCats',JSON.stringify(_siCustomCats||{}));}
+
+// ── Size/color normalization (fixes products with swapped option1/option2) ──
+const _SI_KNOWN_SIZES=new Set(['XS','S','M','L','XL','2XL','XXL','3XL','XXXL','XXS','4XL','5XL','ONE SIZE','OS','FREE SIZE','ONESIZE']);
+function _siNormSize(li){
+  const s=(li.size||'').trim().toUpperCase();
+  const c=(li.color||'').trim().toUpperCase();
+  if(s&&_SI_KNOWN_SIZES.has(s))return li.size.trim();
+  if(c&&_SI_KNOWN_SIZES.has(c))return li.color.trim(); // options were swapped — color field actually has the size
+  return li.size||'Unknown';
+}
+function _siNormColor(li){
+  const s=(li.size||'').trim().toUpperCase();
+  const c=(li.color||'').trim().toUpperCase();
+  if(c&&!_SI_KNOWN_SIZES.has(c))return li.color.trim()||'Unknown';
+  if(s&&!_SI_KNOWN_SIZES.has(s))return li.size.trim()||'Unknown'; // size field actually has the color
+  return li.color||'Unknown';
+}
+function _siByNormDim(items,dim){
+  const map={};
+  items.forEach(li=>{
+    let k=dim==='size'?_siNormSize(li):_siNormColor(li);
+    if(!k||!k.trim())k='Unknown';
+    map[k]=(map[k]||0)+(li.quantity||0);
+  });
+  return Object.entries(map).sort((a,b)=>b[1]-a[1]);
+}
+
 // ── Data loader ─────────────────────────────────────────────────────
 async function loadShopifyData(){
   _siLoadError=null;
@@ -70,6 +113,7 @@ async function loadShopifyData(){
       _siLineItems=[];liSnap.forEach(d=>{const o=d.data();o._id=d.id;_siLineItems.push(o);});
       _siWeeklyCloses=[];wcSnap.forEach(d=>{const o=d.data();o._id=d.id;_siWeeklyCloses.push(o);});
       _siSeasonMapCache=null; // catalog changed → rebuild SKU→season map lazily
+      _siProdMapCache=null;   // catalog changed → rebuild product lookup lazily
       _siCollectionsLoaded=true;
     }catch(err){
       _siLoadError=(err.message||String(err));
@@ -250,7 +294,7 @@ function _siComputeSkuTable(){
 
     rows.push({
       sku,title:prod.product_title||'',color:prod.color||'',size:prod.size||'',
-      productType:prod.product_type||'',needsReview:!!prod.needs_review,status:prod.status||'',
+      productType:_siGetCustomCats()[sku]||prod.product_type||'',needsReview:!!prod.needs_review,status:prod.status||'',
       tags:prod.tags||[],season:_siSeasonOfTags(prod.tags),
       onHand,prevOnHand,weeklyDelta,s7,s30,dailyRate,daysLeft,sellThrough,
       firstSold:fs,lastSold:ls,daysSinceLastSale,refunds,totalSold:totalSoldMap[sku]||0,
@@ -610,8 +654,8 @@ function _siAttentionSection(attn,skuRows){
 
 // ── Selling Patterns ────────────────────────────────────────────────
 function _siPatternsSection(items7,skuRows){
-  const bySize=_siByDimension(items7,'size');
-  const byColor=_siByDimension(items7,'color');
+  const bySize=_siByNormDim(items7,'size');
+  const byColor=_siByNormDim(items7,'color');
   const byCat=_siByCategoryLive(items7);
 
   return`
@@ -640,6 +684,7 @@ function _siPatternsSection(items7,skuRows){
 // the <thead> arrows without repainting (and thus recreating) the search input.
 const _SI_SKU_COLS=[
   {key:'sku',label:'SKU'},{key:'title',label:'Product'},{key:'color',label:'Color'},{key:'size',label:'Size'},
+  {key:'productType',label:'Category'},
   {key:'onHand',label:'On Hand'},{key:'s7',label:'Sold 7d'},{key:'s30',label:'Sold 30d'},
   {key:'daysLeft',label:'Days Left'},{key:'sellThrough',label:'Sell-Thru 7d'},
   {key:'reorderPoint',label:'Reorder Pt'},{key:'suggestedQty',label:'Suggested'},
@@ -647,7 +692,8 @@ const _SI_SKU_COLS=[
 ];
 function _siSkuHeadCells(){
   const arrow=k=>_siSkuSort===k?(_siSkuDir>0?' ▲':' ▼'):'';
-  return _SI_SKU_COLS.map(c=>`<th style="cursor:pointer;white-space:nowrap" onclick="window._siSortSku('${c.key}')">${c.label}${arrow(c.key)}</th>`).join('');
+  const cbHead=`<th style="width:28px;padding:4px 8px"><input type="checkbox" onchange="window._siSelectAllSku(this.checked)" title="Select all visible"></th>`;
+  return cbHead+_SI_SKU_COLS.map(c=>`<th style="cursor:pointer;white-space:nowrap" onclick="window._siSortSku('${c.key}')">${c.label}${arrow(c.key)}</th>`).join('');
 }
 
 // Filter + sort (reused by the shell render and the tbody-only repaint).
@@ -657,6 +703,7 @@ function _siSkuFiltered(rows){
     const q=_siSkuSearch.toLowerCase();
     filtered=rows.filter(r=>(r.sku+' '+r.title+' '+r.color+' '+r.size+' '+r.productType).toLowerCase().includes(q));
   }
+  if(_siSkuCatFilter)filtered=filtered.filter(r=>r.productType===_siSkuCatFilter);
   const dir=_siSkuDir;
   const key=_siSkuSort;
   filtered.sort((a,b)=>{
@@ -675,10 +722,12 @@ function _siSkuRowsHtml(rows){
     const daysClass=r.daysLeft<=7&&r.daysLeft>0?'color:#dc2626;font-weight:700':r.daysLeft<=14&&r.daysLeft>0?'color:var(--accent-warning);font-weight:600':'';
     const reviewBadge=r.needsReview?'<span style="display:inline-block;background:#fef3c7;color:#92400e;font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px">review</span>':'';
     return`<tr>
+      <td style="padding:4px 8px"><input type="checkbox" value="${r.sku}" ${_siSkuSelected.has(r.sku)?'checked':''} onchange="window._siToggleSku('${r.sku}',this.checked)"></td>
       <td style="font-weight:600;font-size:11px;white-space:nowrap">${r.sku}${reviewBadge}</td>
       <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.title}">${r.title}</td>
       <td style="font-size:11px">${r.color}</td>
       <td style="font-size:11px">${r.size}</td>
+      <td style="font-size:11px">${r.productType||'—'}</td>
       <td style="font-weight:600">${r.onHand}</td>
       <td>${r.s7}</td>
       <td>${r.s30}</td>
@@ -698,18 +747,32 @@ function _siSkuMoreHtml(filteredLen){
     : '';
 }
 
+function _siCatSelBar(){
+  if(!_siSkuSelected.size)return'<div id="si-cat-bar"></div>';
+  return`<div id="si-cat-bar" style="background:var(--soft);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <span style="font-size:12px;font-weight:600">${_siSkuSelected.size} SKU${_siSkuSelected.size>1?'s':''} selected</span>
+    <input id="si-cat-input" placeholder="Category name…" style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit;outline:none;min-width:160px;background:#fff">
+    <button class="btn-primary" style="padding:7px 14px;font-size:12px;width:auto" onclick="window._siApplyCat()">Apply Category</button>
+    <button class="btn-outline" style="padding:7px 14px;font-size:12px" onclick="window._siClearSel()">Clear</button>
+  </div>`;
+}
 function _siSkuTableSection(rows){
   const filtered=_siSkuFiltered(rows);
-  // The search <input> and <thead> are the STATIC shell — they live outside
-  // #si-sku-tbody, so tbody-only repaints (typing / load-more) never recreate
-  // the input and never drop focus.
-  return`<div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap">
-    <input placeholder="Search SKU, product, color…" value="${_siSkuSearch}" oninput="window._siFilterSku(this.value)"
+  const cats=[...new Set(rows.map(r=>r.productType).filter(t=>t&&t.trim()))].sort();
+  // Search input + category dropdown are STATIC shell outside #si-sku-tbody so
+  // tbody-only repaints (typing / sort / load-more) never recreate them or drop focus.
+  return`${_siCatSelBar()}
+  <div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap">
+    <input placeholder="Search SKU, product, color, category…" value="${_siSkuSearch}" oninput="window._siFilterSku(this.value)"
       style="flex:1;min-width:200px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;outline:none;font-family:inherit">
+    <select onchange="window._siFilterCat(this.value)" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;cursor:pointer;outline:none">
+      <option value="">All Categories</option>
+      ${cats.map(c=>`<option value="${c}"${_siSkuCatFilter===c?' selected':''}>${c}</option>`).join('')}
+    </select>
     <div id="si-sku-count" style="font-size:11px;color:var(--muted);align-self:center">${filtered.length} SKUs${_siSkuLimit<filtered.length?' (showing '+_siSkuLimit+')':''}</div>
   </div>
-  <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Days Left and Sell-Through are estimates based on 30-day / 7-day pace. Refunded orders excluded from sales.</div>
-  <div style="overflow-x:auto"><table class="cut-table" style="min-width:900px">
+  <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Days Left and Sell-Through are estimates based on 30-day / 7-day pace. Refunded orders excluded. Check SKUs to assign a custom category.</div>
+  <div style="overflow-x:auto"><table class="cut-table" style="min-width:1050px">
     <thead><tr id="si-sku-head">${_siSkuHeadCells()}</tr></thead>
     <tbody id="si-sku-tbody">${_siSkuRowsHtml(rows)}</tbody>
   </table></div>
@@ -729,6 +792,31 @@ window._siSortSku=function(k){
   _siRefreshSkuBody();
 };
 window._siSkuLoadMore=function(){ _siSkuLimit+=200; _siRefreshSkuBody(); };
+window._siFilterCat=function(v){_siSkuCatFilter=v;_siSkuLimit=200;_siRefreshSkuBody();};
+window._siToggleSku=function(sku,checked){
+  if(checked)_siSkuSelected.add(sku);else _siSkuSelected.delete(sku);
+  const bar=document.getElementById('si-cat-bar');if(bar)bar.outerHTML=_siCatSelBar();
+};
+window._siSelectAllSku=function(checked){
+  const rows=_siComputeSkuTable();
+  _siSkuFiltered(rows).slice(0,_siSkuLimit).forEach(r=>checked?_siSkuSelected.add(r.sku):_siSkuSelected.delete(r.sku));
+  const tb=document.getElementById('si-sku-tbody');if(tb)tb.innerHTML=_siSkuRowsHtml(rows);
+  const bar=document.getElementById('si-cat-bar');if(bar)bar.outerHTML=_siCatSelBar();
+};
+window._siApplyCat=function(){
+  const input=document.getElementById('si-cat-input');
+  const cat=(input&&input.value.trim())||'';if(!cat)return;
+  if(!_siCustomCats)_siCustomCats={};
+  _siSkuSelected.forEach(sku=>{_siCustomCats[sku]=cat;});
+  _siSaveCustomCats();_siProdMapCache=null;_siSeasonMapCache=null;
+  _siSkuSelected.clear();_siRefreshSkuBody();
+  const bar=document.getElementById('si-cat-bar');if(bar)bar.outerHTML=_siCatSelBar();
+};
+window._siClearSel=function(){
+  _siSkuSelected.clear();
+  const bar=document.getElementById('si-cat-bar');if(bar)bar.outerHTML=_siCatSelBar();
+  const tb=document.getElementById('si-sku-tbody');if(tb)tb.innerHTML=_siSkuRowsHtml(_siComputeSkuTable());
+};
 
 function _siRefreshContent(){
   const m=_siComputeMetrics();
@@ -775,7 +863,7 @@ function _siWeeklySection(){
           <div class="stat-val">${_siFmt(wc.line_items_counted)}</div>
         </div>
       </div>
-      ${wc.top_sku?`<div style="font-size:12px;margin-bottom:4px">Top SKU: <strong>${wc.top_sku.sku}</strong> (${wc.top_sku.quantity} units)</div>`:''}
+      ${wc.top_sku?`<div style="font-size:12px;margin-bottom:4px">Top SKU: <strong>${wc.top_sku.sku}</strong>${_siGetProd(wc.top_sku.sku).product_title?` — ${_siGetProd(wc.top_sku.sku).product_title}`:''} (${wc.top_sku.quantity} units)</div>`:''}
       ${wc.top_category?`<div style="font-size:12px;margin-bottom:8px">Top Category: <strong>${wc.top_category.category}</strong> (${wc.top_category.quantity} units)</div>`:''}
       ${wc.by_category?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:4px">By Category</div>${_siBarChart(Object.entries(wc.by_category).sort((a,b)=>b[1]-a[1]),8)}</div>`:''}
     </div>`;
@@ -835,9 +923,10 @@ function _siAdvancedSection(skuRows){
     <div class="card-title">Reorder Points + Suggested Qty</div>
     <div style="font-size:10px;color:var(--muted);margin-bottom:8px">Based on 30d daily rate. Reorder point = 14 days cover. Suggested qty = 30 days cover minus on hand.</div>
     <div style="overflow-x:auto"><table class="cut-table" style="min-width:600px">
-      <thead><tr><th>SKU</th><th>Daily Rate</th><th>On Hand</th><th>Reorder Pt</th><th>Suggested Qty</th></tr></thead>
+      <thead><tr><th>SKU</th><th>Product</th><th>Daily Rate</th><th>On Hand</th><th>Reorder Pt</th><th>Suggested Qty</th></tr></thead>
       <tbody>${skuRows.filter(r=>r.suggestedQty>0).sort((a,b)=>b.suggestedQty-a.suggestedQty).slice(0,20).map(r=>`<tr>
         <td style="font-weight:600;font-size:11px">${r.sku}</td>
+        <td style="font-size:11px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.title}</td>
         <td>${r.dailyRate.toFixed(1)}/day</td>
         <td>${r.onHand}</td>
         <td>${r.reorderPoint}</td>
