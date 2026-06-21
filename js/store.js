@@ -2345,7 +2345,7 @@ function renderStoreAnalytics(){
           <td style="padding:6px 4px;font-weight:600">${m.month}</td>
           <td style="padding:6px 4px;text-align:right;color:var(--green)">+${m.in.toLocaleString()}</td>
           <td style="padding:6px 4px;text-align:right;color:var(--red)">-${m.out.toLocaleString()}</td>
-          <td style="padding:6px 4px;text-align:right;color:${net>=0?'var(--green)':'var(--red)';font-weight:600}">${net>=0?'+':''}${net.toLocaleString()}</td>
+          <td style="padding:6px 4px;text-align:right;color:${net>=0?'var(--green)':'var(--red)'};font-weight:600">${net>=0?'+':''}${net.toLocaleString()}</td>
         </tr>`}).join('')}</tbody>
       </table>
     </div>`:'<div class="empty" style="padding:1rem">No dated transactions yet.</div>')}
