@@ -5,16 +5,17 @@
    Code is byte-identical to the original single-file index.html. */
 
 const USER_DEFS=[
-  {u:'afnan',  email:'afnan@groovy.op',  name:'Afnan',  role:'owner',  title:'Co-founder',        canPO:true, stages:null,                 pass:'Afnan@Ops24'},
-  {u:'ammar',  email:'ammar@groovy.op',  name:'Ammar',  role:'owner',  title:'Co-founder',        canPO:true, stages:null,                 pass:'WA$p6AMMR'},
-  {u:'mustafa',email:'mustafa@groovy.op',name:'Mustafa',role:'manager',title:'Operations Manager',canPO:true, stages:null,                 pass:'Mustafa@Ops24'},
-  {u:'arfat',  email:'arfat@groovy.op',  name:'Arfat',  role:'manager',title:'Advisory',          canPO:true, stages:null,                 pass:'Arfat@Ops24'},
-  {u:'raees',  email:'raees@groovy.op',  name:'Raees',  role:'store',  title:'Store Manager',     canPO:false,stages:[],                   pass:'Raees@Ops24'},
-  {u:'haris',  email:'haris@groovy.op',  name:'Haris',  role:'worker', title:'QC Manager',        canPO:false,stages:['qc'],               pass:'Haris@Ops24'},
-  {u:'abbas',  email:'abbas@groovy.op',  name:'Abbas',  role:'worker', title:'Washing Assistant', canPO:false,stages:['washing'],          pass:'Abbas@Ops24'},
-  {u:'waqas',  email:'waqas@groovy.op',  name:'Waqas',  role:'worker', title:'Stitching Incharge',canPO:false,stages:['stitching'],        pass:'Waqas@Ops24'},
-  {u:'asghar', email:'asghar@groovy.op', name:'Asghar', role:'worker', title:'Printing Manager',  canPO:false,stages:['printing'],         pass:'Asghar@Ops24'},
-  {u:'zohaib', email:'zohaib@groovy.op', name:'Zohaib', role:'worker', title:'Cutting & Bundling',canPO:false,stages:['cutting','bundling'],pass:'Zohaib@Ops24'},
+  {u:'afnan',  email:'afnan@groovy.op',  name:'Afnan',  role:'owner',  title:'Co-founder',        canPO:true, canFabric:true,  stages:null,                 pass:'Afnan@Ops24'},
+  {u:'ammar',  email:'ammar@groovy.op',  name:'Ammar',  role:'owner',  title:'Co-founder',        canPO:true, canFabric:true,  stages:null,                 pass:'WA$p6AMMR'},
+  {u:'mustafa',email:'mustafa@groovy.op',name:'Mustafa',role:'manager',title:'Operations Manager',canPO:true, canFabric:true,  stages:null,                 pass:'Mustafa@Ops24'},
+  {u:'arfat',  email:'arfat@groovy.op',  name:'Arfat',  role:'manager',title:'Advisory',          canPO:true, canFabric:true,  stages:null,                 pass:'Arfat@Ops24'},
+  {u:'raees',  email:'raees@groovy.op',  name:'Raees',  role:'store',  title:'Store Manager',     canPO:false,canFabric:false, stages:[],                   pass:'Raees@Ops24'},
+  {u:'haris',  email:'haris@groovy.op',  name:'Haris',  role:'worker', title:'QC Manager',        canPO:false,canFabric:false, stages:['qc'],               pass:'Haris@Ops24'},
+  {u:'abbas',  email:'abbas@groovy.op',  name:'Abbas',  role:'worker', title:'Washing Assistant', canPO:false,canFabric:false, stages:['washing'],          pass:'Abbas@Ops24'},
+  {u:'waqas',  email:'waqas@groovy.op',  name:'Waqas',  role:'worker', title:'Stitching Incharge',canPO:false,canFabric:false, stages:['stitching'],        pass:'Waqas@Ops24'},
+  {u:'asghar', email:'asghar@groovy.op', name:'Asghar', role:'worker', title:'Printing Manager',  canPO:false,canFabric:false, stages:['printing'],         pass:'Asghar@Ops24'},
+  {u:'zohaib', email:'zohaib@groovy.op', name:'Zohaib', role:'worker', title:'Cutting & Bundling',canPO:false,canFabric:false, stages:['cutting','bundling'],pass:'Zohaib@Ops24'},
+  {u:'uzaib',  email:'uzaib@groovy.op',  name:'Uzaib',  role:'viewer', title:'Field Staff',       canPO:false,canFabric:true,  stages:[],                   pass:'uzaib@24'},
 ];
 window.doLogin=async function(){
   const u=document.getElementById('l-user').value.trim().toLowerCase();

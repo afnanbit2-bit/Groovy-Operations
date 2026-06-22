@@ -533,7 +533,7 @@ function buildNav(){
   if(!isWorker&&!isStore)mainItems.push({id:'po-registry',label:'PO Registry'});
   if(isWorker||isViewer)mainItems.push({id:'my-work',label:'My Work'});
   if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
-  if(om)mainItems.push({id:'fabric-inventory',label:'Fabric Inventory'});
+  if(om||session.canFabric)mainItems.push({id:'fabric-inventory',label:'Fabric Inventory'});
   if(om)mainItems.push({id:'bug-tracker',label:'🐛 Bug Tracker'});
   if(isOwner)mainItems.push({id:'shopify-intel',label:'Inventory Intel'});
   if(isOwner)mainItems.push({id:'activity',label:'Activity Log'});
