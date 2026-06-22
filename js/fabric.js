@@ -699,15 +699,15 @@ function _openRollLabelsPrint(labels){
   if(!labels.length){showToast('Nothing to print.',true);return;}
   const w=window.open('','_blank','width=820,height=540');
   if(!w){showToast('Allow popups to print barcodes.',true);return;}
-  // Load all persisted settings — defaults tuned to match the working 2-up thermal roll layout
-  const defW   =parseFloat(localStorage.getItem('groovy_label_w')   ||'75');
-  const defH   =parseFloat(localStorage.getItem('groovy_label_h')   ||'38');
-  const defCols=parseInt  (localStorage.getItem('groovy_label_cols')||(labels.length>1?'2':'1'));
-  const defGap =parseFloat(localStorage.getItem('groovy_label_gap') ||'0');
-  const defPad =parseFloat(localStorage.getItem('groovy_label_pad') ||'2');
-  const defRgap=parseFloat(localStorage.getItem('groovy_label_rgap')||'0.5');
-  const defBcH =parseInt  (localStorage.getItem('groovy_label_bch') ||'32');
-  const defBcW =parseFloat(localStorage.getItem('groovy_label_bcw') ||'1.2');
+  // Load all persisted settings — keyed as groovy_rl_* (v3) to avoid stale values from old UI
+  const defW   =parseFloat(localStorage.getItem('groovy_rl_w')   ||'75');
+  const defH   =parseFloat(localStorage.getItem('groovy_rl_h')   ||'38');
+  const defCols=parseInt  (localStorage.getItem('groovy_rl_cols')||(labels.length>1?'2':'1'));
+  const defGap =parseFloat(localStorage.getItem('groovy_rl_gap') ||'0');
+  const defPad =parseFloat(localStorage.getItem('groovy_rl_pad') ||'2');
+  const defRgap=parseFloat(localStorage.getItem('groovy_rl_rgap')||'0.5');
+  const defBcH =parseInt  (localStorage.getItem('groovy_rl_bch') ||'32');
+  const defBcW =parseFloat(localStorage.getItem('groovy_rl_bcw') ||'1.2');
   const pageW  =defCols*defW+(defCols-1)*defGap;
   const title  =labels.length===1?labels[0].rollCode:`${labels.length} labels`;
   // Embed label data safely as JSON for live rebuild
@@ -740,7 +740,7 @@ function _openRollLabelsPrint(labels){
       @page{size:${pageW}mm ${defH}mm;margin:0}
       html,body{width:${pageW}mm}
       .row{width:${pageW}mm;height:${defH}mm}
-      .label{width:${defW}mm;height:${defH}mm;padding:${defPad}mm ${defPad*2}mm;display:flex;flex-direction:column;gap:${defRgap}mm;overflow:hidden}
+      .label{width:${defW}mm;height:${defH}mm;padding:${defPad}mm ${defPad*2}mm;display:flex;flex-direction:column;justify-content:space-between;gap:${defRgap}mm;overflow:hidden}
       .label+.label{margin-left:${defGap}mm}
     </style>
     </head><body>
@@ -822,21 +822,21 @@ function _openRollLabelsPrint(labels){
           '@page{size:'+pw+'mm '+lh+'mm;margin:0}'+
           'html,body{width:'+pw+'mm}'+
           '.row{width:'+pw+'mm;height:'+lh+'mm}'+
-          '.label{width:'+lw+'mm;height:'+lh+'mm;padding:'+pad+'mm '+(pad*2)+'mm;display:flex;flex-direction:column;gap:'+rgap+'mm;overflow:hidden}'+
+          '.label{width:'+lw+'mm;height:'+lh+'mm;padding:'+pad+'mm '+(pad*2)+'mm;display:flex;flex-direction:column;justify-content:space-between;gap:'+rgap+'mm;overflow:hidden}'+
           '.label+.label{margin-left:'+gap+'mm}';
         document.documentElement.style.width=pw+'mm';
         document.body.style.width=pw+'mm';
         _buildRows(cols);
         _rbc();
         try{
-          localStorage.setItem('groovy_label_w',lw);
-          localStorage.setItem('groovy_label_h',lh);
-          localStorage.setItem('groovy_label_cols',cols);
-          localStorage.setItem('groovy_label_gap',gap);
-          localStorage.setItem('groovy_label_pad',pad);
-          localStorage.setItem('groovy_label_rgap',rgap);
-          localStorage.setItem('groovy_label_bch',document.getElementById('bc-h').value);
-          localStorage.setItem('groovy_label_bcw',document.getElementById('bc-w').value);
+          localStorage.setItem('groovy_rl_w',lw);
+          localStorage.setItem('groovy_rl_h',lh);
+          localStorage.setItem('groovy_rl_cols',cols);
+          localStorage.setItem('groovy_rl_gap',gap);
+          localStorage.setItem('groovy_rl_pad',pad);
+          localStorage.setItem('groovy_rl_rgap',rgap);
+          localStorage.setItem('groovy_rl_bch',document.getElementById('bc-h').value);
+          localStorage.setItem('groovy_rl_bcw',document.getElementById('bc-w').value);
         }catch(e){}
       }
       window.addEventListener('load',function(){_buildRows(${defCols});_rbc();});
