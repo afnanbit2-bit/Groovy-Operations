@@ -238,7 +238,7 @@ function _renderFabInvDrill(key){
       const canAct=_fabCanDelete()&&st==='in_stock';
       return`<div style="padding:8px 2px;border-bottom:1px solid #f5f5f5;display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <input type="checkbox" class="fab-drill-chk" data-rc="${_gpEsc(r.rollCode||'')}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(supplier)}" data-gsm="${r.gsm||s.gsm||''}" data-color="${_gpEsc(s.color||'')}" onclick="window.updateDrillPrintCount()" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
+          <input type="checkbox" class="fab-drill-chk" data-rc="${_gpEsc(r.rollCode||'')}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(supplier)}" onclick="window.updateDrillPrintCount()" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
           <span style="font-weight:700;letter-spacing:.04em;min-width:120px">${_gpEsc(r.rollCode||'—')}${r.remnant?' <span style="font-size:9px;color:#d97706">remnant</span>':''}</span>
           <span style="flex:1;min-width:70px">${wt}${r.consumedWeight?` · used ${r.consumedWeight}`:''}</span>
           <span style="color:${stColor};font-weight:600;text-transform:capitalize;font-size:11px">${st.replace('_',' ')}</span>
@@ -333,7 +333,7 @@ window.updateDrillPrintCount=function(){
 window.printSelectedDrillBarcodes=function(){
   const checked=[...document.querySelectorAll('.fab-drill-chk:checked')];
   if(!checked.length){showToast('Select at least one roll to print.',true);return;}
-  _openRollLabelsPrint(checked.map(c=>({rollCode:c.getAttribute('data-rc'),weight:c.getAttribute('data-weight'),supplier:c.getAttribute('data-supplier'),gsm:c.getAttribute('data-gsm')||'',color:c.getAttribute('data-color')||''})));
+  _openRollLabelsPrint(checked.map(c=>({rollCode:c.getAttribute('data-rc'),weight:c.getAttribute('data-weight'),supplier:c.getAttribute('data-supplier')})));
 };
 
 // ════════════════════════════════════════════════════════════════════════
@@ -640,7 +640,6 @@ function renderFabricInList(){
         ${total?`<div style="display:flex;align-items:center;gap:10px;padding:4px 4px 8px;border-bottom:1px solid #eee;flex-wrap:wrap">
           <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);cursor:pointer"><input type="checkbox" id="fab-chk-all-${f.id}" onclick="event.stopPropagation();window.toggleAllRollChk('${f.id}',this)" style="cursor:pointer;width:15px;height:15px">Select all</label>
           <button id="fab-print-sel-${f.id}" onclick="event.stopPropagation();window.printSelectedRollBarcodes('${f.id}')" disabled style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit;opacity:.5">🖨 Print selected</button>
-          ${_fabCanDelete()?`<button id="fab-del-sel-${f.id}" onclick="event.stopPropagation();window.deleteSelectedRolls('${f.id}')" disabled style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit;opacity:.5">✕ Delete selected</button>`:''}
         </div>`:''}
         ${rolls.map(r=>{
           const rc=r.rollCode||r.rollNumber||'';
@@ -653,7 +652,7 @@ function renderFabricInList(){
           const stCol=liveSt==='in_stock'?'var(--green)':liveSt==='issued'?'#dc2626':liveSt==='reserved'?'#d97706':liveSt==='returned_supplier'?'#9ca3af':'var(--muted)';
           return`<div style="display:flex;flex-direction:column;padding:8px 4px;border-bottom:1px solid #f9f9f9;font-size:12px;gap:6px">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
-              <input type="checkbox" class="fab-roll-chk" data-rc="${_gpEsc(rc)}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(f.supplier||'')}" data-gsm="${rGsm}" data-color="${_gpEsc(f.color||'')}" data-status="${liveSt}" onclick="event.stopPropagation();window.updateRollPrintCount('${f.id}')" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
+              <input type="checkbox" class="fab-roll-chk" data-rc="${_gpEsc(rc)}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(f.supplier||'')}" onclick="event.stopPropagation();window.updateRollPrintCount('${f.id}')" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
               <span style="font-weight:600;min-width:120px;letter-spacing:.04em">${rc}</span>
               <span style="flex:1;min-width:80px">${wt} · ${rGsm}gsm</span>
               <span style="color:${stCol};font-weight:600;text-transform:capitalize;font-size:11px">${liveSt.replace('_',' ')}</span>
@@ -698,26 +697,24 @@ window.toggleFabEntry=function(id){
 function _openRollLabelsPrint(labels){
   labels=(labels||[]).filter(l=>l&&l.rollCode);
   if(!labels.length){showToast('Nothing to print.',true);return;}
-  const w=window.open('','_blank','width=660,height=460');
+  const w=window.open('','_blank','width=820,height=540');
   if(!w){showToast('Allow popups to print barcodes.',true);return;}
-  const twoUp=labels.length>1;
-  const per=twoUp?2:1;
-  // Remember last-used label dimensions; default 50×30mm
-  const defW=parseFloat(localStorage.getItem('groovy_label_w')||'50');
-  const defH=parseFloat(localStorage.getItem('groovy_label_h')||'30');
-  const pageW=twoUp?(defW*2+2):defW;
-  const title=labels.length===1?labels[0].rollCode:`${labels.length} labels`;
-  const cell=l=>`
-    <div class="label">
-      <div class="sup">${l.supplier||''}</div>
-      <svg class="bc" data-val="${_gpEsc(l.rollCode||'')}"></svg>
-      <div class="rc">${l.rollCode||''}</div>
-      <div class="det">${[l.gsm?l.gsm+'gsm':'',l.color||'',l.weight||''].filter(Boolean).join(' · ')}</div>
-    </div>`;
-  let body='';
-  for(let i=0;i<labels.length;i+=per){
-    body+=`<div class="row">${labels.slice(i,i+per).map(cell).join('')}</div>`;
-  }
+  // Load all persisted settings
+  const defW   =parseFloat(localStorage.getItem('groovy_label_w')   ||'50');
+  const defH   =parseFloat(localStorage.getItem('groovy_label_h')   ||'30');
+  const defCols=parseInt  (localStorage.getItem('groovy_label_cols')||(labels.length>1?'2':'1'));
+  const defGap =parseFloat(localStorage.getItem('groovy_label_gap') ||'2');
+  const defPad =parseFloat(localStorage.getItem('groovy_label_pad') ||'1.2');
+  const defRgap=parseFloat(localStorage.getItem('groovy_label_rgap')||'0.7');
+  const defBcH =parseInt  (localStorage.getItem('groovy_label_bch') ||'26');
+  const defBcW =parseFloat(localStorage.getItem('groovy_label_bcw') ||'1.0');
+  const pageW  =defCols*defW+(defCols-1)*defGap;
+  const title  =labels.length===1?labels[0].rollCode:`${labels.length} labels`;
+  // Embed label data safely as JSON for live rebuild
+  const labelsJson=JSON.stringify(labels.map(l=>({
+    rollCode:l.rollCode||'',supplier:l.supplier||'',
+    gsm:l.gsm||'',color:l.color||'',weight:l.weight||''
+  }))).replace(/<\/script>/gi,'<\\/script>');
   w.document.write(`<!doctype html><html><head><title>${title}</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
@@ -727,40 +724,56 @@ function _openRollLabelsPrint(labels){
       .det{font-size:7pt;font-weight:600;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;flex-shrink:0;line-height:1;text-align:right}
       .row{display:flex;page-break-after:always;break-after:page}
       .row:last-child{page-break-after:auto;break-after:auto}
-      ${twoUp?'.row .label:first-child{margin-right:2mm}':''}
-      .pc{padding:10px 14px;background:#f5f5f5;border-bottom:1px solid #ddd;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-      .pc label{display:flex;align-items:center;gap:5px;font-size:11px;font-family:Arial,sans-serif}
-      .pc input[type=number]{width:54px;padding:4px 6px;border:1px solid #bbb;border-radius:5px;font-size:11px;font-family:inherit;text-align:center}
-      .pc input[type=range]{width:72px;cursor:pointer}
-      .pc .sep{width:1px;height:26px;background:#ccc;flex-shrink:0}
-      .pc .btn{padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit;font-weight:600}
+      .pc{padding:9px 12px;background:#f5f5f5;border-bottom:1px solid #ddd;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+      .grp{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+      .gt{font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;margin-right:1px}
+      .pc label{display:flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap}
+      .pc input[type=number]{width:46px;padding:3px 4px;border:1px solid #bbb;border-radius:5px;font-size:11px;font-family:inherit;text-align:center}
+      .pc input[type=range]{width:66px;cursor:pointer}
+      .sep{width:1px;height:26px;background:#ccc;flex-shrink:0}
+      .btn{padding:6px 13px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit;font-weight:600}
       @media print{.pc{display:none}}
     </style>
     <style id="dp">
       @page{size:${pageW}mm ${defH}mm;margin:0}
       html,body{width:${pageW}mm}
       .row{width:${pageW}mm;height:${defH}mm}
-      .label{width:${defW}mm;height:${defH}mm;padding:1.2mm 2.5mm;display:flex;flex-direction:column;gap:0.7mm;overflow:hidden}
+      .label{width:${defW}mm;height:${defH}mm;padding:${defPad}mm ${defPad*2}mm;display:flex;flex-direction:column;gap:${defRgap}mm;overflow:hidden}
+      .label+.label{margin-left:${defGap}mm}
     </style>
     </head><body>
     <div class="pc">
-      <strong style="font-size:12px;font-family:Arial,sans-serif">Label size</strong>
-      <label>W <input type="number" id="lw" value="${defW}" min="20" max="120" step="0.5"> mm</label>
-      <label>H <input type="number" id="lh" value="${defH}" min="15" max="80" step="0.5"> mm</label>
-      <button class="btn" style="background:#333;color:#fff" onclick="_applySize()">Apply ↺</button>
+      <div class="grp">
+        <span class="gt">Label</span>
+        <label>W <input type="number" id="lw" value="${defW}" min="20" max="120" step="0.5"> mm</label>
+        <label>H <input type="number" id="lh" value="${defH}" min="15" max="80" step="0.5"> mm</label>
+      </div>
       <div class="sep"></div>
-      <label>Barcode H <b id="hv">26</b>px
-        <input type="range" id="bc-h" min="12" max="60" value="26" step="1" oninput="document.getElementById('hv').textContent=this.value;_rbc()">
-      </label>
-      <label>Bar width <b id="wv">1.0</b>
-        <input type="range" id="bc-w" min="0.8" max="2.5" value="1.0" step="0.1" oninput="document.getElementById('wv').textContent=parseFloat(this.value).toFixed(1);_rbc()">
-      </label>
+      <div class="grp">
+        <span class="gt">Layout</span>
+        <label>Cols <input type="number" id="lcols" value="${defCols}" min="1" max="8" step="1"></label>
+        <label>Gap <input type="number" id="lgap" value="${defGap}" min="0" max="20" step="0.5"> mm</label>
+        <label>Pad <input type="number" id="lpad" value="${defPad}" min="0" max="10" step="0.1"> mm</label>
+        <label>Row-gap <input type="number" id="lrgap" value="${defRgap}" min="0" max="5" step="0.1"> mm</label>
+      </div>
+      <div class="sep"></div>
+      <div class="grp">
+        <span class="gt">Barcode</span>
+        <label>H <b id="hv">${defBcH}</b>px
+          <input type="range" id="bc-h" min="12" max="60" value="${defBcH}" step="1" oninput="document.getElementById('hv').textContent=this.value;_rbc()">
+        </label>
+        <label>Bar <b id="wv">${defBcW.toFixed(1)}</b>
+          <input type="range" id="bc-w" min="0.8" max="2.5" value="${defBcW}" step="0.1" oninput="document.getElementById('wv').textContent=parseFloat(this.value).toFixed(1);_rbc()">
+        </label>
+      </div>
+      <div class="sep"></div>
+      <button class="btn" style="background:#333;color:#fff" onclick="_applyAll()">Apply ↺</button>
       <button class="btn" style="background:#000;color:#fff" onclick="window.print()">🖨 Print</button>
     </div>
-    ${body}
+    <div id="labels-out"></div>
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
     <script>
-      var _twoUp=${twoUp};
+      var _D=${labelsJson};
       function _rbc(){
         var h=parseInt(document.getElementById('bc-h').value)||26;
         var bw=parseFloat(document.getElementById('bc-w').value)||1;
@@ -770,26 +783,54 @@ function _openRollLabelsPrint(labels){
           }catch(e){}
         });
       }
-      function _applySize(){
-        var lw=parseFloat(document.getElementById('lw').value)||50;
-        var lh=parseFloat(document.getElementById('lh').value)||30;
-        var pw=_twoUp?(lw*2+2):lw;
-        // Update @page + layout CSS live
+      function _buildRows(cols){
+        var out=document.getElementById('labels-out');
+        out.innerHTML='';
+        for(var i=0;i<_D.length;i+=cols){
+          var row=document.createElement('div');row.className='row';
+          _D.slice(i,i+cols).forEach(function(l){
+            var d=document.createElement('div');d.className='label';
+            var sup=document.createElement('div');sup.className='sup';sup.textContent=l.supplier||'';
+            var bc=document.createElementNS('http://www.w3.org/2000/svg','svg');bc.setAttribute('class','bc');bc.setAttribute('data-val',l.rollCode||'');
+            var rc=document.createElement('div');rc.className='rc';rc.textContent=l.rollCode||'';
+            var parts=[l.gsm?l.gsm+'gsm':'',l.color||'',l.weight||''].filter(Boolean);
+            var det=document.createElement('div');det.className='det';det.textContent=parts.join(' \xb7 ');
+            d.appendChild(sup);d.appendChild(bc);d.appendChild(rc);d.appendChild(det);
+            row.appendChild(d);
+          });
+          out.appendChild(row);
+        }
+      }
+      function _applyAll(){
+        var lw  =parseFloat(document.getElementById('lw').value)   ||50;
+        var lh  =parseFloat(document.getElementById('lh').value)   ||30;
+        var cols=Math.max(1,parseInt(document.getElementById('lcols').value)||2);
+        var gap =parseFloat(document.getElementById('lgap').value) ||0;
+        var pad =parseFloat(document.getElementById('lpad').value) ||1.2;
+        var rgap=parseFloat(document.getElementById('lrgap').value)||0.7;
+        var pw  =cols*lw+(cols-1)*gap;
         document.getElementById('dp').textContent=
           '@page{size:'+pw+'mm '+lh+'mm;margin:0}'+
           'html,body{width:'+pw+'mm}'+
           '.row{width:'+pw+'mm;height:'+lh+'mm}'+
-          '.label{width:'+lw+'mm;height:'+lh+'mm;padding:1.2mm 2.5mm;display:flex;flex-direction:column;gap:0.7mm;overflow:hidden}';
-        // Also set inline so repaint is immediate
+          '.label{width:'+lw+'mm;height:'+lh+'mm;padding:'+pad+'mm '+(pad*2)+'mm;display:flex;flex-direction:column;gap:'+rgap+'mm;overflow:hidden}'+
+          '.label+.label{margin-left:'+gap+'mm}';
         document.documentElement.style.width=pw+'mm';
         document.body.style.width=pw+'mm';
-        document.querySelectorAll('.row').forEach(function(r){r.style.width=pw+'mm';r.style.height=lh+'mm';});
-        document.querySelectorAll('.label').forEach(function(l){l.style.width=lw+'mm';l.style.height=lh+'mm';});
-        // Save for next print session
-        try{localStorage.setItem('groovy_label_w',lw);localStorage.setItem('groovy_label_h',lh);}catch(e){}
+        _buildRows(cols);
         _rbc();
+        try{
+          localStorage.setItem('groovy_label_w',lw);
+          localStorage.setItem('groovy_label_h',lh);
+          localStorage.setItem('groovy_label_cols',cols);
+          localStorage.setItem('groovy_label_gap',gap);
+          localStorage.setItem('groovy_label_pad',pad);
+          localStorage.setItem('groovy_label_rgap',rgap);
+          localStorage.setItem('groovy_label_bch',document.getElementById('bc-h').value);
+          localStorage.setItem('groovy_label_bcw',document.getElementById('bc-w').value);
+        }catch(e){}
       }
-      window.addEventListener('load',function(){_rbc();});
+      window.addEventListener('load',function(){_buildRows(${defCols});_rbc();});
     <\/script>
     </body></html>`);
   w.document.close();
@@ -814,41 +855,6 @@ window.printSelectedRollBarcodes=function(fabId){
   })));
 };
 
-window.deleteSelectedRolls=async function(fabId){
-  if(!_fabCanDelete())return showToast('Only owners (Afnan, Ammar) can delete rolls.',true);
-  const cont=document.getElementById('fab-rolls-'+fabId);
-  if(!cont)return;
-  const checked=[...cont.querySelectorAll('.fab-roll-chk:checked')];
-  if(!checked.length)return;
-  const stockCodes=checked.filter(c=>c.dataset.status==='in_stock').map(c=>c.getAttribute('data-rc'));
-  const skipCount=checked.length-stockCodes.length;
-  if(!stockCodes.length)return showToast('None of the selected rolls are in stock — issued/reserved rolls must be returned first.',true);
-  const msg=skipCount>0
-    ?`Delete ${stockCodes.length} in-stock roll${stockCodes.length>1?'s':''}?\n(${skipCount} issued/reserved roll${skipCount>1?'s':''} will be skipped)\n\nThis cannot be undone.`
-    :`Delete ${stockCodes.length} roll${stockCodes.length>1?'s':''}? This cannot be undone.`;
-  if(!confirm(msg))return;
-  if(!_fabBusyStart(`Deleting ${stockCodes.length} roll${stockCodes.length>1?'s':''}…`))return;
-  try{
-    const f=allFabricIn.find(x=>x.id===fabId);
-    if(!f)return showToast('Fabric entry not found.',true);
-    const newRolls=f.rolls.filter(r=>!stockCodes.includes(r.rollCode||r.rollNumber));
-    const lastAll=newRolls.length===0;
-    const newTotal=parseFloat(newRolls.reduce((s,r)=>s+(Number(r.weight)||0),0).toFixed(2));
-    const fabRef=doc(db,'fabricin',fabId);
-    const extra=lastAll
-      ?{extraDeletes:[fabRef]}
-      :{extraWrites:[{ref:fabRef,data:{rolls:newRolls,rollsCount:newRolls.length,totalWeight:newTotal,updatedAt:Date.now(),updatedBy:session.name},merge:true}]};
-    const sampleInv=_fabFindRoll(stockCodes[0]);
-    await _fabInvUpsert({fabType:f.fabType,gsm:f.gsm,color:f.color,unit:f.unit||sampleInv?.roll?.unit||'kg',deleteRollCodes:stockCodes,note:`${stockCodes.length} rolls deleted from ${fabId} by ${session.name}`,sourceCol:'fabricin',sourceId:fabId,...extra});
-    if(lastAll)allFabricIn=allFabricIn.filter(x=>x.id!==fabId);
-    else{f.rolls=newRolls;f.rollsCount=newRolls.length;f.totalWeight=newTotal;}
-    await logActivity('Fabric rolls deleted',`${stockCodes.length} roll(s) removed from ${fabId} by ${session.name}${lastAll?' (entry removed)':''}`);
-    showToast((lastAll?`${stockCodes.length} rolls deleted · ${fabId} removed`:`${stockCodes.length} roll${stockCodes.length>1?'s':''} deleted ✓`)+(skipCount?` · ${skipCount} skipped (in use)`:''));
-    _fabAfterRollChange(lastAll?null:fabId);
-  }catch(e){showToast('Delete failed: '+e.message,true);}
-  finally{_fabBusyEnd();}
-};
-
 window.toggleAllRollChk=function(fabId,master){
   const cont=document.getElementById('fab-rolls-'+fabId);
   if(!cont)return;
@@ -865,9 +871,6 @@ window.updateRollPrintCount=function(fabId){
   const n=boxes.filter(c=>c.checked).length;
   const btn=document.getElementById('fab-print-sel-'+fabId);
   if(btn){btn.textContent='🖨 Print selected'+(n?` (${n})`:'');btn.disabled=!n;btn.style.opacity=n?'1':'.5';}
-  const nDel=boxes.filter(c=>c.checked&&c.dataset.status==='in_stock').length;
-  const delBtn=document.getElementById('fab-del-sel-'+fabId);
-  if(delBtn){delBtn.textContent='✕ Delete selected'+(nDel?` (${nDel})`:'');delBtn.disabled=!nDel;delBtn.style.opacity=nDel?'1':'.5';}
   const master=document.getElementById('fab-chk-all-'+fabId);
   if(master)master.checked=n>0&&n===boxes.length;
 };
