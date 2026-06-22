@@ -16,7 +16,15 @@
       <div class="l2">Internal business platform</div>
     </div>
     <input id="l-user" placeholder="Username" autocomplete="username" autocapitalize="none" onkeydown="if(event.key==='Enter')document.getElementById('l-pass').focus()">
-    <input id="l-pass" type="password" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')window.doLogin()">
+    <div style="position:relative">
+      <input id="l-pass" type="password" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')window.doLogin()" style="padding-right:42px">
+      <button type="button" id="pass-eye-btn" onclick="window._togglePass()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:4px;color:var(--muted);display:flex;align-items:center">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none;margin-top:-4px">
+      <input type="checkbox" id="l-remember" style="width:14px;height:14px;cursor:pointer"> Remember me
+    </label>
     <button class="btn-login" id="login-btn" onclick="window.doLogin()">Sign in</button>
     <button class="btn-setup-link" onclick="window.showSetup()">First time setup</button>
   </div>
@@ -26,7 +34,7 @@
 <div id="scr-setup" style="display:none;min-height:100vh;align-items:flex-start;justify-content:center;background:var(--dark);padding:2rem 1rem;overflow-y:auto">
   <div style="background:#fff;border-radius:16px;padding:1.5rem;width:100%;max-width:540px">
     <div style="font-size:17px;font-weight:700;margin-bottom:4px">First time setup</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6">Creates all 10 accounts in Firebase Auth. Run once only. Enable Email/Password sign-in in Firebase Console first.</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6">Creates all 11 accounts in Firebase Auth. Run once only. Enable Email/Password sign-in in Firebase Console first.</div>
     <div style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:6px">SETUP CODE</div>
       <input id="setup-code" placeholder="Enter setup code: GroovyOps2024" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none">
@@ -38,6 +46,7 @@
       <div><strong>raees</strong> → Raees@Ops24</div><div><strong>haris</strong> → Haris@Ops24</div>
       <div><strong>abbas</strong> → Abbas@Ops24</div><div><strong>waqas</strong> → Waqas@Ops24</div>
       <div><strong>asghar</strong> → Asghar@Ops24</div><div><strong>zohaib</strong> → Zohaib@Ops24</div>
+      <div><strong>uzaib</strong> → uzaib@24</div>
     </div>
     <div id="setup-log"></div>
     <button id="setup-btn" onclick="window.runSetup()" style="width:100%;padding:11px;background:var(--dark);color:#fff;border:none;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">Initialize all accounts</button>
