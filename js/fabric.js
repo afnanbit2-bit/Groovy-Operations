@@ -700,14 +700,14 @@ function _openRollLabelsPrint(labels){
   const w=window.open('','_blank','width=820,height=540');
   if(!w){showToast('Allow popups to print barcodes.',true);return;}
   // Load all persisted settings — keyed as groovy_rl_* (v3) to avoid stale values from old UI
-  const defW   =parseFloat(localStorage.getItem('groovy_rl_w')   ||'75');
-  const defH   =parseFloat(localStorage.getItem('groovy_rl_h')   ||'38');
+  const defW   =parseFloat(localStorage.getItem('groovy_rl_w')   ||'50');
+  const defH   =parseFloat(localStorage.getItem('groovy_rl_h')   ||'18.5');
   const defCols=parseInt  (localStorage.getItem('groovy_rl_cols')||(labels.length>1?'2':'1'));
   const defGap =parseFloat(localStorage.getItem('groovy_rl_gap') ||'0');
   const defPad =parseFloat(localStorage.getItem('groovy_rl_pad') ||'2');
   const defRgap=parseFloat(localStorage.getItem('groovy_rl_rgap')||'0.5');
-  const defBcH =parseInt  (localStorage.getItem('groovy_rl_bch') ||'32');
-  const defBcW =parseFloat(localStorage.getItem('groovy_rl_bcw') ||'1.2');
+  const defBcH =parseInt  (localStorage.getItem('groovy_rl_bch') ||'28');
+  const defBcW =parseFloat(localStorage.getItem('groovy_rl_bcw') ||'1.0');
   const pageW  =defCols*defW+(defCols-1)*defGap;
   const title  =labels.length===1?labels[0].rollCode:`${labels.length} labels`;
   // Embed label data safely as JSON for live rebuild
