@@ -12,17 +12,21 @@
 <div id="scr-login">
   <div class="login-box">
     <div class="login-logo">
-      <div class="l1">Groovy <span style="color:var(--red)">Operations</span> v2</div>
+      <img src="assets/groovy-operations-wordmark.png.png" alt="GROOVY Operations" style="height:38px;max-width:220px;object-fit:contain;display:block;margin:0 auto 4px" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <div class="l1" style="display:none">Groovy <span style="color:var(--red)">Operations</span> v2</div>
       <div class="l2">Internal business platform</div>
     </div>
-    <input id="l-user" placeholder="Username" autocomplete="username" autocapitalize="none" onkeydown="if(event.key==='Enter')document.getElementById('l-pass').focus()">
-    <div style="position:relative">
-      <input id="l-pass" type="password" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')window.doLogin()" style="padding-right:42px">
+    <div class="login-field-label">Username</div>
+    <input id="l-user" placeholder="e.g. afnan" autocomplete="username" autocapitalize="none" onkeydown="if(event.key==='Enter')document.getElementById('l-pass').focus()">
+    <div class="login-field-label">Password</div>
+    <div style="position:relative;margin-bottom:4px">
+      <input id="l-pass" type="password" placeholder="Enter your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')window.doLogin();window._checkCapsLock(event)" onkeyup="window._checkCapsLock(event)" style="padding-right:42px;margin-bottom:0">
       <button type="button" id="pass-eye-btn" onclick="window._togglePass()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:4px;color:var(--muted);display:flex;align-items:center">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
       </button>
     </div>
-    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none;margin-top:-4px">
+    <div class="caps-warn" id="caps-warn">⇧ Caps Lock is on</div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none;margin-bottom:10px">
       <input type="checkbox" id="l-remember" style="width:14px;height:14px;cursor:pointer"> Remember me
     </label>
     <button class="btn-login" id="login-btn" onclick="window.doLogin()">Sign in</button>

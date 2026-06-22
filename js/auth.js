@@ -18,16 +18,25 @@ const USER_DEFS=[
   {u:'uzaib',  email:'uzaib@groovy.op',  name:'Uzaib',  role:'viewer', title:'Field Staff',       canPO:false,canFabric:true,  stages:[],                   pass:'uzaib@24'},
 ];
 window.doLogin=async function(){
-  const u=document.getElementById('l-user').value.trim().toLowerCase();
-  const p=document.getElementById('l-pass').value;
+  const uEl=document.getElementById('l-user');
+  const pEl=document.getElementById('l-pass');
+  const u=uEl.value.trim().toLowerCase();
+  const p=pEl.value;
+  // Empty field validation with inline highlighting
+  let valid=true;
+  if(!u){uEl.classList.add('l-error');valid=false;}else{uEl.classList.remove('l-error');}
+  if(!p){pEl.classList.add('l-error');valid=false;}else{pEl.classList.remove('l-error');}
+  if(!valid){_loginShake();showToast('Please fill in both fields.',true);return;}
   const def=USER_DEFS.find(x=>x.u===u);
-  if(!def){showToast('Username not found.',true);return;}
+  if(!def){uEl.classList.add('l-error');_loginShake();showToast('Username not found.',true);return;}
   const btn=document.getElementById('login-btn');
   btn.disabled=true;btn.textContent='Signing in…';
+  uEl.disabled=true;pEl.disabled=true;
   loginInProgress=true;
   try{
     const cred=await signInWithEmailAndPassword(auth,def.email,p);
     session={...def,uid:cred.user.uid};
+    window._loginFailCount=0;
     const _rm=document.getElementById('l-remember');
     if(_rm&&_rm.checked)localStorage.setItem('groovy_remembered_user',u);
     else localStorage.removeItem('groovy_remembered_user');
@@ -36,8 +45,18 @@ window.doLogin=async function(){
     logActivity('Login',`${def.name} signed in`);
   }catch(e){
     loginInProgress=false;
-    showToast(e.code==='auth/wrong-password'||e.code==='auth/invalid-credential'?'Wrong password. Try again.':'Error: '+e.message,true);
+    uEl.disabled=false;pEl.disabled=false;
     btn.disabled=false;btn.textContent='Sign in';
+    pEl.classList.add('l-error');
+    window._loginFailCount=(window._loginFailCount||0)+1;
+    _loginShake();
+    let msg=e.code==='auth/wrong-password'||e.code==='auth/invalid-credential'
+      ?'Wrong password. Try again.'
+      :(e.message||'').toLowerCase().includes('fetch')
+        ?'No internet connection. Check your network.'
+        :'Error: '+e.message;
+    if(window._loginFailCount>=3)msg+=' ('+window._loginFailCount+' attempts — check Caps Lock)';
+    showToast(msg,true);
   }
 };
 window.doLogout=async function(){
@@ -124,6 +143,14 @@ function renderUsers(){
 // allow read, write: if request.auth != null;
 
 // ── Login UX helpers ──
+function _loginShake(){
+  const box=document.querySelector('.login-box');
+  if(!box)return;
+  box.classList.remove('login-shake');
+  void box.offsetWidth;
+  box.classList.add('login-shake');
+  box.addEventListener('animationend',()=>box.classList.remove('login-shake'),{once:true});
+}
 window._togglePass=function(){
   const inp=document.getElementById('l-pass');
   const btn=document.getElementById('pass-eye-btn');
@@ -134,11 +161,20 @@ window._togglePass=function(){
     ?'<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'
     :'<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
 };
+window._checkCapsLock=function(e){
+  const warn=document.getElementById('caps-warn');
+  if(!warn)return;
+  if(e.getModifierState&&e.getModifierState('CapsLock'))warn.classList.add('visible');
+  else warn.classList.remove('visible');
+};
 (function(){
   const saved=localStorage.getItem('groovy_remembered_user');
   if(saved){
     const u=document.getElementById('l-user');
     if(u){u.value=saved;const r=document.getElementById('l-remember');if(r)r.checked=true;}
+    setTimeout(()=>{const p=document.getElementById('l-pass');if(p)p.focus();},60);
+  }else{
+    setTimeout(()=>{const u=document.getElementById('l-user');if(u)u.focus();},60);
   }
 })();
 
