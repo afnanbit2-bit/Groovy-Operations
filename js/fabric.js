@@ -698,11 +698,14 @@ window.toggleFabEntry=function(id){
 function _openRollLabelsPrint(labels){
   labels=(labels||[]).filter(l=>l&&l.rollCode);
   if(!labels.length){showToast('Nothing to print.',true);return;}
-  const w=window.open('','_blank','width=600,height=400');
+  const w=window.open('','_blank','width=660,height=460');
   if(!w){showToast('Allow popups to print barcodes.',true);return;}
   const twoUp=labels.length>1;
-  const pageW=twoUp?98:48;
   const per=twoUp?2:1;
+  // Remember last-used label dimensions; default 50×30mm
+  const defW=parseFloat(localStorage.getItem('groovy_label_w')||'50');
+  const defH=parseFloat(localStorage.getItem('groovy_label_h')||'30');
+  const pageW=twoUp?(defW*2+2):defW;
   const title=labels.length===1?labels[0].rollCode:`${labels.length} labels`;
   const cell=l=>`
     <div class="label">
@@ -718,41 +721,73 @@ function _openRollLabelsPrint(labels){
   w.document.write(`<!doctype html><html><head><title>${title}</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
-      @page{size:${pageW}mm 25mm;margin:0}
-      html,body{width:${pageW}mm}
-      .row{width:${pageW}mm;height:25mm;display:flex;page-break-after:always;break-after:page}
+      .sup{font-size:8.5pt;font-weight:700;color:#000;line-height:1;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
+      svg.bc{display:block;width:100%;flex:1;min-height:0}
+      .rc{font-size:7.5pt;font-weight:800;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;flex-shrink:0;line-height:1}
+      .det{font-size:7pt;font-weight:600;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;flex-shrink:0;line-height:1;text-align:right}
+      .row{display:flex;page-break-after:always;break-after:page}
       .row:last-child{page-break-after:auto;break-after:auto}
       ${twoUp?'.row .label:first-child{margin-right:2mm}':''}
-      .label{width:48mm;height:25mm;padding:1mm 2.5mm;display:flex;flex-direction:column;gap:0.6mm;overflow:hidden}
-      .sup{font-size:8pt;font-weight:700;color:#000;line-height:1;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
-      svg.bc{display:block;width:100%;flex:1;min-height:0}
-      .rc{font-size:7pt;font-weight:800;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;flex-shrink:0;line-height:1}
-      .det{font-size:6.5pt;font-weight:600;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;flex-shrink:0;line-height:1;text-align:right}
-      .pc{padding:10px 14px;background:#f5f5f5;border-bottom:1px solid #ddd;font-size:12px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
-      .pc label{display:flex;align-items:center;gap:6px;font-size:11px}
-      .pc input[type=range]{width:80px;cursor:pointer}
-      .pc button{padding:6px 14px;background:#000;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit;font-weight:600}
+      .pc{padding:10px 14px;background:#f5f5f5;border-bottom:1px solid #ddd;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+      .pc label{display:flex;align-items:center;gap:5px;font-size:11px;font-family:Arial,sans-serif}
+      .pc input[type=number]{width:54px;padding:4px 6px;border:1px solid #bbb;border-radius:5px;font-size:11px;font-family:inherit;text-align:center}
+      .pc input[type=range]{width:72px;cursor:pointer}
+      .pc .sep{width:1px;height:26px;background:#ccc;flex-shrink:0}
+      .pc .btn{padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit;font-weight:600}
       @media print{.pc{display:none}}
-    </style></head><body>
+    </style>
+    <style id="dp">
+      @page{size:${pageW}mm ${defH}mm;margin:0}
+      html,body{width:${pageW}mm}
+      .row{width:${pageW}mm;height:${defH}mm}
+      .label{width:${defW}mm;height:${defH}mm;padding:1.2mm 2.5mm;display:flex;flex-direction:column;gap:0.7mm;overflow:hidden}
+    </style>
+    </head><body>
     <div class="pc">
-      <strong style="font-size:12px">Print settings</strong>
-      <label>Height <b id="hv">28</b>px
-        <input type="range" id="bc-h" min="16" max="44" value="28" step="1" oninput="document.getElementById('hv').textContent=this.value;_rbc()">
+      <strong style="font-size:12px;font-family:Arial,sans-serif">Label size</strong>
+      <label>W <input type="number" id="lw" value="${defW}" min="20" max="120" step="0.5"> mm</label>
+      <label>H <input type="number" id="lh" value="${defH}" min="15" max="80" step="0.5"> mm</label>
+      <button class="btn" style="background:#333;color:#fff" onclick="_applySize()">Apply ↺</button>
+      <div class="sep"></div>
+      <label>Barcode H <b id="hv">26</b>px
+        <input type="range" id="bc-h" min="12" max="60" value="26" step="1" oninput="document.getElementById('hv').textContent=this.value;_rbc()">
       </label>
       <label>Bar width <b id="wv">1.0</b>
-        <input type="range" id="bc-w" min="0.8" max="2.2" value="1.0" step="0.1" oninput="document.getElementById('wv').textContent=parseFloat(this.value).toFixed(1);_rbc()">
+        <input type="range" id="bc-w" min="0.8" max="2.5" value="1.0" step="0.1" oninput="document.getElementById('wv').textContent=parseFloat(this.value).toFixed(1);_rbc()">
       </label>
-      <button onclick="window.print()">🖨 Print</button>
+      <button class="btn" style="background:#000;color:#fff" onclick="window.print()">🖨 Print</button>
     </div>
     ${body}
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
     <script>
+      var _twoUp=${twoUp};
       function _rbc(){
-        var h=parseInt(document.getElementById('bc-h').value)||28;
+        var h=parseInt(document.getElementById('bc-h').value)||26;
         var bw=parseFloat(document.getElementById('bc-w').value)||1;
         document.querySelectorAll('svg.bc').forEach(function(el){
-          try{while(el.firstChild)el.removeChild(el.firstChild);JsBarcode(el,el.getAttribute('data-val'),{format:'CODE128',displayValue:false,height:h,margin:0,width:bw});}catch(e){}
+          try{while(el.firstChild)el.removeChild(el.firstChild);
+            JsBarcode(el,el.getAttribute('data-val'),{format:'CODE128',displayValue:false,height:h,margin:0,width:bw});
+          }catch(e){}
         });
+      }
+      function _applySize(){
+        var lw=parseFloat(document.getElementById('lw').value)||50;
+        var lh=parseFloat(document.getElementById('lh').value)||30;
+        var pw=_twoUp?(lw*2+2):lw;
+        // Update @page + layout CSS live
+        document.getElementById('dp').textContent=
+          '@page{size:'+pw+'mm '+lh+'mm;margin:0}'+
+          'html,body{width:'+pw+'mm}'+
+          '.row{width:'+pw+'mm;height:'+lh+'mm}'+
+          '.label{width:'+lw+'mm;height:'+lh+'mm;padding:1.2mm 2.5mm;display:flex;flex-direction:column;gap:0.7mm;overflow:hidden}';
+        // Also set inline so repaint is immediate
+        document.documentElement.style.width=pw+'mm';
+        document.body.style.width=pw+'mm';
+        document.querySelectorAll('.row').forEach(function(r){r.style.width=pw+'mm';r.style.height=lh+'mm';});
+        document.querySelectorAll('.label').forEach(function(l){l.style.width=lw+'mm';l.style.height=lh+'mm';});
+        // Save for next print session
+        try{localStorage.setItem('groovy_label_w',lw);localStorage.setItem('groovy_label_h',lh);}catch(e){}
+        _rbc();
       }
       window.addEventListener('load',function(){_rbc();});
     <\/script>
