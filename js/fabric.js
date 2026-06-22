@@ -238,7 +238,7 @@ function _renderFabInvDrill(key){
       const canAct=_fabCanDelete()&&st==='in_stock';
       return`<div style="padding:8px 2px;border-bottom:1px solid #f5f5f5;display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <input type="checkbox" class="fab-drill-chk" data-rc="${_gpEsc(r.rollCode||'')}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(supplier)}" onclick="window.updateDrillPrintCount()" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
+          <input type="checkbox" class="fab-drill-chk" data-rc="${_gpEsc(r.rollCode||'')}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(supplier)}" data-gsm="${r.gsm||s.gsm||''}" onclick="window.updateDrillPrintCount()" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
           <span style="font-weight:700;letter-spacing:.04em;min-width:120px">${_gpEsc(r.rollCode||'—')}${r.remnant?' <span style="font-size:9px;color:#d97706">remnant</span>':''}</span>
           <span style="flex:1;min-width:70px">${wt}${r.consumedWeight?` · used ${r.consumedWeight}`:''}</span>
           <span style="color:${stColor};font-weight:600;text-transform:capitalize;font-size:11px">${st.replace('_',' ')}</span>
@@ -333,7 +333,7 @@ window.updateDrillPrintCount=function(){
 window.printSelectedDrillBarcodes=function(){
   const checked=[...document.querySelectorAll('.fab-drill-chk:checked')];
   if(!checked.length){showToast('Select at least one roll to print.',true);return;}
-  _openRollLabelsPrint(checked.map(c=>({rollCode:c.getAttribute('data-rc'),weight:c.getAttribute('data-weight'),supplier:c.getAttribute('data-supplier')})));
+  _openRollLabelsPrint(checked.map(c=>({rollCode:c.getAttribute('data-rc'),weight:c.getAttribute('data-weight'),supplier:c.getAttribute('data-supplier'),gsm:c.getAttribute('data-gsm')||''})));
 };
 
 // ════════════════════════════════════════════════════════════════════════
@@ -653,7 +653,7 @@ function renderFabricInList(){
           const stCol=liveSt==='in_stock'?'var(--green)':liveSt==='issued'?'#dc2626':liveSt==='reserved'?'#d97706':liveSt==='returned_supplier'?'#9ca3af':'var(--muted)';
           return`<div style="display:flex;flex-direction:column;padding:8px 4px;border-bottom:1px solid #f9f9f9;font-size:12px;gap:6px">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
-              <input type="checkbox" class="fab-roll-chk" data-rc="${_gpEsc(rc)}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(f.supplier||'')}" data-status="${liveSt}" onclick="event.stopPropagation();window.updateRollPrintCount('${f.id}')" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
+              <input type="checkbox" class="fab-roll-chk" data-rc="${_gpEsc(rc)}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(f.supplier||'')}" data-gsm="${rGsm}" data-status="${liveSt}" onclick="event.stopPropagation();window.updateRollPrintCount('${f.id}')" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
               <span style="font-weight:600;min-width:120px;letter-spacing:.04em">${rc}</span>
               <span style="flex:1;min-width:80px">${wt} · ${rGsm}gsm</span>
               <span style="color:${stCol};font-weight:600;text-transform:capitalize;font-size:11px">${liveSt.replace('_',' ')}</span>
@@ -698,17 +698,21 @@ window.toggleFabEntry=function(id){
 function _openRollLabelsPrint(labels){
   labels=(labels||[]).filter(l=>l&&l.rollCode);
   if(!labels.length){showToast('Nothing to print.',true);return;}
-  const w=window.open('','_blank','width=560,height=320');
+  const w=window.open('','_blank','width=600,height=400');
   if(!w){showToast('Allow popups to print barcodes.',true);return;}
-  const twoUp=labels.length>1;     // 2-across stock only matters past 1 label
-  const pageW=twoUp?98:48;         // 48mm + 2mm gutter + 48mm
+  const twoUp=labels.length>1;
+  const pageW=twoUp?98:48;
   const per=twoUp?2:1;
   const title=labels.length===1?labels[0].rollCode:`${labels.length} labels`;
   const cell=l=>`
     <div class="label">
       <div class="supplier">${l.supplier||''}</div>
       <svg class="bc" data-val="${_gpEsc(l.rollCode||'')}"></svg>
-      <div class="foot"><span class="code">${l.rollCode||''}</span><span class="wt">${l.weight||''}</span></div>
+      <div class="foot">
+        <span class="code">${l.rollCode||''}</span>
+        ${l.gsm?`<span class="gsm">${l.gsm}gsm</span>`:''}
+        <span class="wt">${l.weight||''}</span>
+      </div>
     </div>`;
   let body='';
   for(let i=0;i<labels.length;i+=per){
@@ -722,29 +726,47 @@ function _openRollLabelsPrint(labels){
       .row{width:${pageW}mm;height:25mm;display:flex;page-break-after:always;break-after:page}
       .row:last-child{page-break-after:auto;break-after:auto}
       ${twoUp?'.row .label:first-child{margin-right:2mm}':''}
-      .label{width:48mm;height:25mm;padding:1.5mm 3mm;display:flex;flex-direction:column;justify-content:space-between;align-items:center;overflow:hidden}
-      .supplier{font-size:9pt;font-weight:700;color:#000;line-height:1.05;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-      svg.bc{width:34mm;height:8mm;display:block}
-      .foot{width:100%;display:flex;justify-content:space-between;align-items:center;font-size:7pt;line-height:1}
-      .foot .code{font-weight:800;letter-spacing:.1px}
-      .foot .wt{font-weight:800;white-space:nowrap;padding-left:3px}
+      .label{width:48mm;height:25mm;padding:1.5mm 3mm;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden}
+      .supplier{font-size:9pt;font-weight:700;color:#000;line-height:1.05;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%}
+      svg.bc{display:block;width:100%;height:8mm}
+      .foot{width:100%;display:flex;justify-content:space-between;align-items:center;font-size:7pt;line-height:1;gap:2px}
+      .foot .code{font-weight:800;letter-spacing:.1px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .foot .gsm{font-weight:600;color:#555;white-space:nowrap;flex-shrink:0}
+      .foot .wt{font-weight:800;white-space:nowrap;flex-shrink:0}
+      .pc{padding:10px 14px;background:#f5f5f5;border-bottom:1px solid #ddd;font-size:12px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+      .pc label{display:flex;align-items:center;gap:6px;font-size:11px}
+      .pc input[type=range]{width:80px;cursor:pointer}
+      .pc button{padding:6px 14px;background:#000;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit;font-weight:600}
+      @media print{.pc{display:none}}
     </style></head><body>
+    <div class="pc">
+      <strong style="font-size:12px">Print settings</strong>
+      <label>Height <b id="hv">28</b>px
+        <input type="range" id="bc-h" min="16" max="44" value="28" step="1" oninput="document.getElementById('hv').textContent=this.value;_rbc()">
+      </label>
+      <label>Bar width <b id="wv">1.0</b>
+        <input type="range" id="bc-w" min="0.8" max="2.2" value="1.0" step="0.1" oninput="document.getElementById('wv').textContent=parseFloat(this.value).toFixed(1);_rbc()">
+      </label>
+      <button onclick="window.print()">🖨 Print</button>
+    </div>
     ${body}
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
     <script>
-      window.addEventListener('load',function(){
+      function _rbc(){
+        var h=parseInt(document.getElementById('bc-h').value)||28;
+        var bw=parseFloat(document.getElementById('bc-w').value)||1;
         document.querySelectorAll('svg.bc').forEach(function(el){
-          try{JsBarcode(el,el.getAttribute('data-val'),{format:'CODE128',displayValue:false,height:28,margin:0,width:1});}catch(e){}
+          try{while(el.firstChild)el.removeChild(el.firstChild);JsBarcode(el,el.getAttribute('data-val'),{format:'CODE128',displayValue:false,height:h,margin:0,width:bw});}catch(e){}
         });
-        setTimeout(function(){window.print();},300);
-      });
+      }
+      window.addEventListener('load',function(){_rbc();});
     <\/script>
     </body></html>`);
   w.document.close();
 }
 
 window.printRollBarcode=function(rollCode,fabType,gsm,color,weight,supplier){
-  _openRollLabelsPrint([{rollCode,weight,supplier}]);
+  _openRollLabelsPrint([{rollCode,weight,supplier,gsm}]);
 };
 
 // Print every checked roll in one entry's expanded list as a single job.
@@ -756,7 +778,8 @@ window.printSelectedRollBarcodes=function(fabId){
   _openRollLabelsPrint(checked.map(c=>({
     rollCode:c.getAttribute('data-rc'),
     weight:c.getAttribute('data-weight'),
-    supplier:c.getAttribute('data-supplier')
+    supplier:c.getAttribute('data-supplier'),
+    gsm:c.getAttribute('data-gsm')||''
   })));
 };
 
