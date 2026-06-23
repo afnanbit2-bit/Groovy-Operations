@@ -238,7 +238,7 @@ function _renderFabInvDrill(key){
       const canAct=_fabCanDelete()&&st==='in_stock';
       return`<div style="padding:8px 2px;border-bottom:1px solid #f5f5f5;display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <input type="checkbox" class="fab-drill-chk" data-rc="${_gpEsc(r.rollCode||'')}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(supplier)}" onclick="window.updateDrillPrintCount()" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
+          <input type="checkbox" class="fab-drill-chk" data-rc="${_gpEsc(r.rollCode||'')}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(supplier)}" data-gsm="${r.gsm||rcpt?.gsm||s.gsm||''}" data-color="${_gpEsc(r.color||rcpt?.color||s.color||'')}" onclick="window.updateDrillPrintCount()" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
           <span style="font-weight:700;letter-spacing:.04em;min-width:120px">${_gpEsc(r.rollCode||'—')}${r.remnant?' <span style="font-size:9px;color:#d97706">remnant</span>':''}</span>
           <span style="flex:1;min-width:70px">${wt}${r.consumedWeight?` · used ${r.consumedWeight}`:''}</span>
           <span style="color:${stColor};font-weight:600;text-transform:capitalize;font-size:11px">${st.replace('_',' ')}</span>
@@ -333,7 +333,7 @@ window.updateDrillPrintCount=function(){
 window.printSelectedDrillBarcodes=function(){
   const checked=[...document.querySelectorAll('.fab-drill-chk:checked')];
   if(!checked.length){showToast('Select at least one roll to print.',true);return;}
-  _openRollLabelsPrint(checked.map(c=>({rollCode:c.getAttribute('data-rc'),weight:c.getAttribute('data-weight'),supplier:c.getAttribute('data-supplier')})));
+  _openRollLabelsPrint(checked.map(c=>({rollCode:c.getAttribute('data-rc'),weight:c.getAttribute('data-weight'),supplier:c.getAttribute('data-supplier'),gsm:c.getAttribute('data-gsm')||'',color:c.getAttribute('data-color')||''})));
 };
 
 // ════════════════════════════════════════════════════════════════════════
@@ -652,7 +652,7 @@ function renderFabricInList(){
           const stCol=liveSt==='in_stock'?'var(--green)':liveSt==='issued'?'#dc2626':liveSt==='reserved'?'#d97706':liveSt==='returned_supplier'?'#9ca3af':'var(--muted)';
           return`<div style="display:flex;flex-direction:column;padding:8px 4px;border-bottom:1px solid #f9f9f9;font-size:12px;gap:6px">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
-              <input type="checkbox" class="fab-roll-chk" data-rc="${_gpEsc(rc)}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(f.supplier||'')}" onclick="event.stopPropagation();window.updateRollPrintCount('${f.id}')" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
+              <input type="checkbox" class="fab-roll-chk" data-rc="${_gpEsc(rc)}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(f.supplier||'')}" data-gsm="${rGsm}" data-color="${_gpEsc(f.color||'')}" onclick="event.stopPropagation();window.updateRollPrintCount('${f.id}')" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
               <span style="font-weight:600;min-width:120px;letter-spacing:.04em">${rc}</span>
               <span style="flex:1;min-width:80px">${wt} · ${rGsm}gsm</span>
               <span style="color:${stCol};font-weight:600;text-transform:capitalize;font-size:11px">${liveSt.replace('_',' ')}</span>
@@ -699,15 +699,15 @@ function _openRollLabelsPrint(labels){
   if(!labels.length){showToast('Nothing to print.',true);return;}
   const w=window.open('','_blank','width=820,height=540');
   if(!w){showToast('Allow popups to print barcodes.',true);return;}
-  // Load all persisted settings
-  const defW   =parseFloat(localStorage.getItem('groovy_label_w')   ||'50');
-  const defH   =parseFloat(localStorage.getItem('groovy_label_h')   ||'30');
-  const defCols=parseInt  (localStorage.getItem('groovy_label_cols')||(labels.length>1?'2':'1'));
-  const defGap =parseFloat(localStorage.getItem('groovy_label_gap') ||'2');
-  const defPad =parseFloat(localStorage.getItem('groovy_label_pad') ||'1.2');
-  const defRgap=parseFloat(localStorage.getItem('groovy_label_rgap')||'0.7');
-  const defBcH =parseInt  (localStorage.getItem('groovy_label_bch') ||'26');
-  const defBcW =parseFloat(localStorage.getItem('groovy_label_bcw') ||'1.0');
+  // Load all persisted settings — keyed as groovy_rl_* (v3) to avoid stale values from old UI
+  const defW   =parseFloat(localStorage.getItem('groovy_rl_w')   ||'50');
+  const defH   =parseFloat(localStorage.getItem('groovy_rl_h')   ||'18.5');
+  const defCols=parseInt  (localStorage.getItem('groovy_rl_cols')||(labels.length>1?'2':'1'));
+  const defGap =parseFloat(localStorage.getItem('groovy_rl_gap') ||'0');
+  const defPad =parseFloat(localStorage.getItem('groovy_rl_pad') ||'2');
+  const defRgap=parseFloat(localStorage.getItem('groovy_rl_rgap')||'0.5');
+  const defBcH =parseInt  (localStorage.getItem('groovy_rl_bch') ||'28');
+  const defBcW =parseFloat(localStorage.getItem('groovy_rl_bcw') ||'1.0');
   const pageW  =defCols*defW+(defCols-1)*defGap;
   const title  =labels.length===1?labels[0].rollCode:`${labels.length} labels`;
   // Embed label data safely as JSON for live rebuild
@@ -718,10 +718,12 @@ function _openRollLabelsPrint(labels){
   w.document.write(`<!doctype html><html><head><title>${title}</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
-      .sup{font-size:8.5pt;font-weight:700;color:#000;line-height:1;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
+      .sup{font-size:9pt;font-weight:700;color:#000;line-height:1.1;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
+      .meta{display:flex;justify-content:space-between;align-items:baseline;width:100%;flex-shrink:0;line-height:1}
+      .rc{font-size:8pt;font-weight:400;letter-spacing:.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .wt{font-size:8pt;font-weight:700;white-space:nowrap;flex-shrink:0;padding-left:3px}
       svg.bc{display:block;width:100%;flex:1;min-height:0}
-      .rc{font-size:7.5pt;font-weight:800;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;flex-shrink:0;line-height:1}
-      .det{font-size:7pt;font-weight:600;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;flex-shrink:0;line-height:1;text-align:right}
+      .det{font-size:7.5pt;font-weight:400;color:#000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;flex-shrink:0;line-height:1;text-align:left}
       .row{display:flex;page-break-after:always;break-after:page}
       .row:last-child{page-break-after:auto;break-after:auto}
       .pc{padding:9px 12px;background:#f5f5f5;border-bottom:1px solid #ddd;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -738,7 +740,7 @@ function _openRollLabelsPrint(labels){
       @page{size:${pageW}mm ${defH}mm;margin:0}
       html,body{width:${pageW}mm}
       .row{width:${pageW}mm;height:${defH}mm}
-      .label{width:${defW}mm;height:${defH}mm;padding:${defPad}mm ${defPad*2}mm;display:flex;flex-direction:column;gap:${defRgap}mm;overflow:hidden}
+      .label{width:${defW}mm;height:${defH}mm;padding:${defPad}mm ${defPad*2}mm;display:flex;flex-direction:column;justify-content:space-between;gap:${defRgap}mm;overflow:hidden}
       .label+.label{margin-left:${defGap}mm}
     </style>
     </head><body>
@@ -790,12 +792,19 @@ function _openRollLabelsPrint(labels){
           var row=document.createElement('div');row.className='row';
           _D.slice(i,i+cols).forEach(function(l){
             var d=document.createElement('div');d.className='label';
+            // Row 1: Supplier — bold, centered
             var sup=document.createElement('div');sup.className='sup';sup.textContent=l.supplier||'';
+            // Row 2: Roll code (left) + Weight bold (right)
+            var meta=document.createElement('div');meta.className='meta';
+            var rc=document.createElement('span');rc.className='rc';rc.textContent=l.rollCode||'';
+            var wt=document.createElement('span');wt.className='wt';wt.textContent=l.weight||'';
+            meta.appendChild(rc);meta.appendChild(wt);
+            // Row 3: Barcode — fills remaining height (flex:1)
             var bc=document.createElementNS('http://www.w3.org/2000/svg','svg');bc.setAttribute('class','bc');bc.setAttribute('data-val',l.rollCode||'');
-            var rc=document.createElement('div');rc.className='rc';rc.textContent=l.rollCode||'';
-            var parts=[l.gsm?l.gsm+'gsm':'',l.color||'',l.weight||''].filter(Boolean);
+            // Row 4: GSM · Color
+            var parts=[l.gsm?l.gsm+'gsm':'',l.color||''].filter(Boolean);
             var det=document.createElement('div');det.className='det';det.textContent=parts.join(' \xb7 ');
-            d.appendChild(sup);d.appendChild(bc);d.appendChild(rc);d.appendChild(det);
+            d.appendChild(sup);d.appendChild(meta);d.appendChild(bc);d.appendChild(det);
             row.appendChild(d);
           });
           out.appendChild(row);
@@ -813,21 +822,21 @@ function _openRollLabelsPrint(labels){
           '@page{size:'+pw+'mm '+lh+'mm;margin:0}'+
           'html,body{width:'+pw+'mm}'+
           '.row{width:'+pw+'mm;height:'+lh+'mm}'+
-          '.label{width:'+lw+'mm;height:'+lh+'mm;padding:'+pad+'mm '+(pad*2)+'mm;display:flex;flex-direction:column;gap:'+rgap+'mm;overflow:hidden}'+
+          '.label{width:'+lw+'mm;height:'+lh+'mm;padding:'+pad+'mm '+(pad*2)+'mm;display:flex;flex-direction:column;justify-content:space-between;gap:'+rgap+'mm;overflow:hidden}'+
           '.label+.label{margin-left:'+gap+'mm}';
         document.documentElement.style.width=pw+'mm';
         document.body.style.width=pw+'mm';
         _buildRows(cols);
         _rbc();
         try{
-          localStorage.setItem('groovy_label_w',lw);
-          localStorage.setItem('groovy_label_h',lh);
-          localStorage.setItem('groovy_label_cols',cols);
-          localStorage.setItem('groovy_label_gap',gap);
-          localStorage.setItem('groovy_label_pad',pad);
-          localStorage.setItem('groovy_label_rgap',rgap);
-          localStorage.setItem('groovy_label_bch',document.getElementById('bc-h').value);
-          localStorage.setItem('groovy_label_bcw',document.getElementById('bc-w').value);
+          localStorage.setItem('groovy_rl_w',lw);
+          localStorage.setItem('groovy_rl_h',lh);
+          localStorage.setItem('groovy_rl_cols',cols);
+          localStorage.setItem('groovy_rl_gap',gap);
+          localStorage.setItem('groovy_rl_pad',pad);
+          localStorage.setItem('groovy_rl_rgap',rgap);
+          localStorage.setItem('groovy_rl_bch',document.getElementById('bc-h').value);
+          localStorage.setItem('groovy_rl_bcw',document.getElementById('bc-w').value);
         }catch(e){}
       }
       window.addEventListener('load',function(){_buildRows(${defCols});_rbc();});

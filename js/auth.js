@@ -5,35 +5,58 @@
    Code is byte-identical to the original single-file index.html. */
 
 const USER_DEFS=[
-  {u:'afnan',  email:'afnan@groovy.op',  name:'Afnan',  role:'owner',  title:'Co-founder',        canPO:true, stages:null,                 pass:'Afnan@Ops24'},
-  {u:'ammar',  email:'ammar@groovy.op',  name:'Ammar',  role:'owner',  title:'Co-founder',        canPO:true, stages:null,                 pass:'WA$p6AMMR'},
-  {u:'mustafa',email:'mustafa@groovy.op',name:'Mustafa',role:'manager',title:'Operations Manager',canPO:true, stages:null,                 pass:'Mustafa@Ops24'},
-  {u:'arfat',  email:'arfat@groovy.op',  name:'Arfat',  role:'manager',title:'Advisory',          canPO:true, stages:null,                 pass:'Arfat@Ops24'},
-  {u:'raees',  email:'raees@groovy.op',  name:'Raees',  role:'store',  title:'Store Manager',     canPO:false,stages:[],                   pass:'Raees@Ops24'},
-  {u:'haris',  email:'haris@groovy.op',  name:'Haris',  role:'worker', title:'QC Manager',        canPO:false,stages:['qc'],               pass:'Haris@Ops24'},
-  {u:'abbas',  email:'abbas@groovy.op',  name:'Abbas',  role:'worker', title:'Washing Assistant', canPO:false,stages:['washing'],          pass:'Abbas@Ops24'},
-  {u:'waqas',  email:'waqas@groovy.op',  name:'Waqas',  role:'worker', title:'Stitching Incharge',canPO:false,stages:['stitching'],        pass:'Waqas@Ops24'},
-  {u:'asghar', email:'asghar@groovy.op', name:'Asghar', role:'worker', title:'Printing Manager',  canPO:false,stages:['printing'],         pass:'Asghar@Ops24'},
-  {u:'zohaib', email:'zohaib@groovy.op', name:'Zohaib', role:'worker', title:'Cutting & Bundling',canPO:false,stages:['cutting','bundling'],pass:'Zohaib@Ops24'},
+  {u:'afnan',  email:'afnan@groovy.op',  name:'Afnan',  role:'owner',  title:'Co-founder',        canPO:true, canFabric:true,  stages:null,                 pass:'Afnan@Ops24'},
+  {u:'ammar',  email:'ammar@groovy.op',  name:'Ammar',  role:'owner',  title:'Co-founder',        canPO:true, canFabric:true,  stages:null,                 pass:'WA$p6AMMR'},
+  {u:'mustafa',email:'mustafa@groovy.op',name:'Mustafa',role:'manager',title:'Operations Manager',canPO:true, canFabric:true,  stages:null,                 pass:'Mustafa@Ops24'},
+  {u:'arfat',  email:'arfat@groovy.op',  name:'Arfat',  role:'manager',title:'Advisory',          canPO:true, canFabric:true,  stages:null,                 pass:'Arfat@Ops24'},
+  {u:'raees',  email:'raees@groovy.op',  name:'Raees',  role:'store',  title:'Store Manager',     canPO:false,canFabric:false, stages:[],                   pass:'Raees@Ops24'},
+  {u:'haris',  email:'haris@groovy.op',  name:'Haris',  role:'worker', title:'QC Manager',        canPO:false,canFabric:false, stages:['qc'],               pass:'Haris@Ops24'},
+  {u:'abbas',  email:'abbas@groovy.op',  name:'Abbas',  role:'worker', title:'Washing Assistant', canPO:false,canFabric:false, stages:['washing'],          pass:'Abbas@Ops24'},
+  {u:'waqas',  email:'waqas@groovy.op',  name:'Waqas',  role:'worker', title:'Stitching Incharge',canPO:false,canFabric:false, stages:['stitching'],        pass:'Waqas@Ops24'},
+  {u:'asghar', email:'asghar@groovy.op', name:'Asghar', role:'worker', title:'Printing Manager',  canPO:false,canFabric:false, stages:['printing'],         pass:'Asghar@Ops24'},
+  {u:'zohaib', email:'zohaib@groovy.op', name:'Zohaib', role:'worker', title:'Cutting & Bundling',canPO:false,canFabric:false, stages:['cutting','bundling'],pass:'Zohaib@Ops24'},
+  {u:'uzaib',  email:'uzaib@groovy.op',  name:'Uzaib',  role:'viewer', title:'Field Staff',       canPO:false,canFabric:true,  stages:[],                   pass:'uzaib@24'},
 ];
 window.doLogin=async function(){
-  const u=document.getElementById('l-user').value.trim().toLowerCase();
-  const p=document.getElementById('l-pass').value;
+  const uEl=document.getElementById('l-user');
+  const pEl=document.getElementById('l-pass');
+  const u=uEl.value.trim().toLowerCase();
+  const p=pEl.value;
+  // Empty field validation with inline highlighting
+  let valid=true;
+  if(!u){uEl.classList.add('l-error');valid=false;}else{uEl.classList.remove('l-error');}
+  if(!p){pEl.classList.add('l-error');valid=false;}else{pEl.classList.remove('l-error');}
+  if(!valid){_loginShake();showToast('Please fill in both fields.',true);return;}
   const def=USER_DEFS.find(x=>x.u===u);
-  if(!def){showToast('Username not found.',true);return;}
+  if(!def){uEl.classList.add('l-error');_loginShake();showToast('Username not found.',true);return;}
   const btn=document.getElementById('login-btn');
   btn.disabled=true;btn.textContent='Signing in…';
+  uEl.disabled=true;pEl.disabled=true;
   loginInProgress=true;
   try{
     const cred=await signInWithEmailAndPassword(auth,def.email,p);
     session={...def,uid:cred.user.uid};
+    window._loginFailCount=0;
+    const _rm=document.getElementById('l-remember');
+    if(_rm&&_rm.checked)localStorage.setItem('groovy_remembered_user',u);
+    else localStorage.removeItem('groovy_remembered_user');
     loginInProgress=false;
     startApp();
     logActivity('Login',`${def.name} signed in`);
   }catch(e){
     loginInProgress=false;
-    showToast(e.code==='auth/wrong-password'||e.code==='auth/invalid-credential'?'Wrong password. Try again.':'Error: '+e.message,true);
+    uEl.disabled=false;pEl.disabled=false;
     btn.disabled=false;btn.textContent='Sign in';
+    pEl.classList.add('l-error');
+    window._loginFailCount=(window._loginFailCount||0)+1;
+    _loginShake();
+    let msg=e.code==='auth/wrong-password'||e.code==='auth/invalid-credential'
+      ?'Wrong password. Try again.'
+      :(e.message||'').toLowerCase().includes('fetch')
+        ?'No internet connection. Check your network.'
+        :'Error: '+e.message;
+    if(window._loginFailCount>=3)msg+=' ('+window._loginFailCount+' attempts — check Caps Lock)';
+    showToast(msg,true);
   }
 };
 window.doLogout=async function(){
@@ -55,7 +78,7 @@ window.runSetup=async function(){
   let created=0,existed=0;
   for(const user of USER_DEFS){
     try{
-      const r=await fetch(`${AUTH_URL}:signUp?key=${CFG.apiKey}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email,password:user.pass,returnSecureToken:false})});
+      const r=await fetch(`${AUTH_URL}:signUp?key=AIzaSyAcIrudpSPLbZMmoWMyTM1l8Z7GnxwelFw`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email,password:user.pass,returnSecureToken:false})});
       const d=await r.json();
       if(d.error&&d.error.message==='EMAIL_EXISTS'){log.innerHTML+=`<div style="color:#6b7280">• ${user.name} — already exists ✓</div>`;existed++;}
       else if(d.error&&d.error.message==='CONFIGURATION_NOT_FOUND'){
@@ -118,6 +141,42 @@ function renderUsers(){
 // Note: Firestore rules must allow authenticated reads/writes.
 // Recommended: Firebase Console → Firestore → Rules:
 // allow read, write: if request.auth != null;
+
+// ── Login UX helpers ──
+function _loginShake(){
+  const box=document.querySelector('.login-box');
+  if(!box)return;
+  box.classList.remove('login-shake');
+  void box.offsetWidth;
+  box.classList.add('login-shake');
+  box.addEventListener('animationend',()=>box.classList.remove('login-shake'),{once:true});
+}
+window._togglePass=function(){
+  const inp=document.getElementById('l-pass');
+  const btn=document.getElementById('pass-eye-btn');
+  if(!inp)return;
+  const showing=inp.type==='text';
+  inp.type=showing?'password':'text';
+  btn.innerHTML=showing
+    ?'<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'
+    :'<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+};
+window._checkCapsLock=function(e){
+  const warn=document.getElementById('caps-warn');
+  if(!warn)return;
+  if(e.getModifierState&&e.getModifierState('CapsLock'))warn.classList.add('visible');
+  else warn.classList.remove('visible');
+};
+(function(){
+  const saved=localStorage.getItem('groovy_remembered_user');
+  if(saved){
+    const u=document.getElementById('l-user');
+    if(u){u.value=saved;const r=document.getElementById('l-remember');if(r)r.checked=true;}
+    setTimeout(()=>{const p=document.getElementById('l-pass');if(p)p.focus();},60);
+  }else{
+    setTimeout(()=>{const u=document.getElementById('l-user');if(u)u.focus();},60);
+  }
+})();
 
 // ══════════════════════════════════════════
 // STORE — RENDER FUNCTIONS

@@ -65,10 +65,13 @@ function renderOutward(){
   </div>
   <div class="card" id="gp-garments-card"><div class="card-title">Units by size</div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:300px">
-      <thead><tr style="background:var(--dark)"><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Size</th><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Units (pcs)</th><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Weight (kg)</th><th style="width:36px"></th></tr></thead>
+      <thead><tr style="background:var(--dark)"><th style="width:28px;padding:8px 4px"></th><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Size</th><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Units (pcs)</th><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Weight (kg)</th><th style="width:36px"></th></tr></thead>
       <tbody id="gp-body"></tbody>
     </table></div>
-    <button onclick="window.addGPRow()" style="width:100%;padding:9px;background:none;border:none;font-size:12px;color:var(--muted);cursor:pointer;border-top:1px solid var(--border);font-family:inherit">+ Add size</button>
+    <div style="display:flex;align-items:center;border-top:1px solid var(--border)">
+      <button onclick="window.addGPRow()" style="flex:1;padding:9px;background:none;border:none;font-size:12px;color:var(--muted);cursor:pointer;font-family:inherit">+ Add size</button>
+      <button onclick="window._gpDeleteSelectedSizeRows()" style="padding:9px 14px;background:none;border:none;border-left:1px solid var(--border);font-size:12px;color:#dc2626;cursor:pointer;font-family:inherit">✕ Delete selected</button>
+    </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px">
       <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total units</div><div id="gp-t-units" style="font-size:18px;font-weight:700;color:#fff">0 pcs</div></div>
       <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total weight</div><div id="gp-t-weight" style="font-size:18px;font-weight:700;color:#fff">0 kg</div></div>
@@ -176,10 +179,17 @@ window.gpGotoPage=function(n){gpPage=n;renderGPPage();};
 window.setDest=function(v){document.getElementById('gp-dest').value=v;};
 window.addGPRow=function(size='',units='',weight=''){
   gpRowIdx++;const id='gpr'+gpRowIdx;const tr=document.createElement('tr');tr.id=id;tr.style.borderBottom='1px solid #f5f5f5';
-  tr.innerHTML=`<td style="padding:4px 6px"><input type="text" value="${size}" placeholder="e.g. M" style="width:68px;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" onchange="window.gpRecalc()"></td><td style="padding:4px 6px"><input type="number" value="${units}" min="0" placeholder="0" style="width:68px;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" oninput="window.gpRecalc()"></td><td style="padding:4px 6px"><input type="number" value="${weight}" min="0" step="0.1" placeholder="0" style="width:68px;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" oninput="window.gpRecalc()"></td><td><button onclick="document.getElementById('${id}').remove();window.gpRecalc()" style="background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:2px 6px">×</button></td>`;
+  tr.innerHTML=`<td style="padding:4px 6px;width:28px"><input type="checkbox" class="gp-size-chk" style="cursor:pointer;width:15px;height:15px"></td><td style="padding:4px 6px"><input type="text" value="${size}" placeholder="e.g. M" style="width:68px;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" onchange="window.gpRecalc()"></td><td style="padding:4px 6px"><input type="number" data-role="units" value="${units}" min="0" placeholder="0" style="width:68px;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" oninput="window.gpRecalc()"></td><td style="padding:4px 6px"><input type="number" data-role="weight" value="${weight}" min="0" step="0.1" placeholder="0" style="width:68px;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" oninput="window.gpRecalc()"></td><td><button onclick="document.getElementById('${id}').remove();window.gpRecalc()" style="background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:2px 6px">×</button></td>`;
   document.getElementById('gp-body')?.appendChild(tr);window.gpRecalc();
 };
-window.gpRecalc=function(){let u=0,w=0;document.querySelectorAll('#gp-body tr').forEach(r=>{const i=r.querySelectorAll('input');u+=parseFloat(i[1]?.value)||0;w+=parseFloat(i[2]?.value)||0;});document.getElementById('gp-t-units').textContent=Math.round(u)+' pcs';document.getElementById('gp-t-weight').textContent=w.toFixed(1)+' kg';};
+window.gpRecalc=function(){let u=0,w=0;document.querySelectorAll('#gp-body tr').forEach(r=>{const ui=r.querySelector('input[data-role="units"]');const wi=r.querySelector('input[data-role="weight"]');u+=parseFloat(ui?.value)||0;w+=parseFloat(wi?.value)||0;});document.getElementById('gp-t-units').textContent=Math.round(u)+' pcs';document.getElementById('gp-t-weight').textContent=w.toFixed(1)+' kg';};
+window._gpDeleteSelectedSizeRows=function(){
+  const checked=[...document.querySelectorAll('#gp-body .gp-size-chk:checked')];
+  if(!checked.length)return showToast('No rows selected — check a row first.',true);
+  if(!confirm(`Delete ${checked.length} row${checked.length>1?'s':''}?`))return;
+  checked.forEach(cb=>cb.closest('tr').remove());
+  window.gpRecalc();
+};
 
 window.onGPTypeChange=function(){
   const t=document.getElementById('gp-type')?.value||'garments';

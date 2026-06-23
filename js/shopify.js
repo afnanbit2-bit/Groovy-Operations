@@ -5,15 +5,18 @@
 
 let _siLoaded=false;
 let _siProducts=[],_siOrders=[],_siLineItems=[],_siWeeklyCloses=[],_siSnapshot=null,_siPrevSnapshot=null,_siSyncMeta={};
-let _siSkuSearch='',_siSkuSort='sold7d',_siSkuDir=-1,_siSection='overview';
+let _siSkuSearch='',_siSkuSort='s7',_siSkuDir=-1,_siSection='overview';
 let _siSkuLimit=200;        // SKU table page size; grows by 200 via Load more
 let _siSeason='all';        // global season filter: 'all' | 'winter' | 'summer'
 let _siSeasonMapCache=null; // { sku: 'winter'|'summer'|'all-season' }, rebuilt on data load
 let _siLoadError=null;      // last load failure message; non-null → render error state, never zeros
 let _siCollectionsLoaded=false; // collections fetched OK once → skip re-download on snapshot-only retry
 let _siSkuCatFilter='';         // active category filter in SKU table
-let _siSkuSelected=new Set();   // SKUs checked for category labeling
-let _siCustomCats=null;         // lazy-loaded from localStorage: { sku → custom category override }
+let _siSkuTypeFilter='';        // 'top'|'bottom'|'' garment type filter
+let _siSkuSelected=new Set();   // SKUs checked for labeling
+let _siCustomCats=null;         // lazy-loaded from localStorage: { sku → custom category }
+let _siCustomSeasons=null;      // lazy-loaded from localStorage: { sku → 'winter'|'summer'|'all-season' }
+let _siCustomTypes=null;        // lazy-loaded from localStorage: { sku → 'top'|'bottom' }
 let _siProdMapCache=null;       // sku → product doc map, rebuilt lazily, cleared on catalog reload
 let _siSkuExpanded=new Set();   // group keys currently expanded in the SKU table
 
@@ -70,9 +73,20 @@ function _siGetCustomCats(){
   return _siCustomCats;
 }
 function _siSaveCustomCats(){localStorage.setItem('_siCustomCats',JSON.stringify(_siCustomCats||{}));}
+function _siGetCustomSeasons(){
+  if(!_siCustomSeasons){try{_siCustomSeasons=JSON.parse(localStorage.getItem('_siCustomSeasons')||'{}');}catch(_){_siCustomSeasons={};}}
+  return _siCustomSeasons;
+}
+function _siSaveCustomSeasons(){localStorage.setItem('_siCustomSeasons',JSON.stringify(_siCustomSeasons||{}));}
+function _siGetCustomTypes(){
+  if(!_siCustomTypes){try{_siCustomTypes=JSON.parse(localStorage.getItem('_siCustomTypes')||'{}');}catch(_){_siCustomTypes={};}}
+  return _siCustomTypes;
+}
+function _siSaveCustomTypes(){localStorage.setItem('_siCustomTypes',JSON.stringify(_siCustomTypes||{}));}
 
 // ── Size/color normalization (fixes products with swapped option1/option2) ──
-const _SI_KNOWN_SIZES=new Set(['XS','S','M','L','XL','2XL','XXL','3XL','XXXL','XXS','4XL','5XL','ONE SIZE','OS','FREE SIZE','ONESIZE']);
+const _SI_KNOWN_SIZES=new Set(['XXS','XXXS','XS','S','M','L','XL','2XL','XXL','3XL','XXXL','4XL','5XL','ONE SIZE','OS','FREE SIZE','ONESIZE']);
+function _siEsc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function _siNormSize(li){
   const s=(li.size||'').trim().toUpperCase();
   const c=(li.color||'').trim().toUpperCase();
@@ -181,7 +195,8 @@ function _siMatchSeason(season){
 function _siSeasonMap(){
   if(_siSeasonMapCache)return _siSeasonMapCache;
   const m={};
-  _siProducts.forEach(p=>{if(p.sku&&m[p.sku]===undefined)m[p.sku]=_siSeasonOfTags(p.tags);});
+  const customSeasons=_siGetCustomSeasons();
+  _siProducts.forEach(p=>{if(p.sku&&m[p.sku]===undefined)m[p.sku]=customSeasons[p.sku]||_siSeasonOfTags(p.tags);});
   _siSeasonMapCache=m;
   return m;
 }
@@ -293,10 +308,16 @@ function _siComputeSkuTable(){
     const reorderPoint=Math.ceil(dailyRate*14);
     const suggestedQty=dailyRate>0?Math.max(0,Math.ceil(dailyRate*30)-onHand):0;
 
+    // Normalize swapped options: some products have size in color field and vice versa
+    const _rc=(prod.color||'').trim(),_rs=(prod.size||'').trim();
+    const _normColor=_SI_KNOWN_SIZES.has(_rc.toUpperCase())?_rs:_rc;
+    const _normSize=_SI_KNOWN_SIZES.has(_rc.toUpperCase())?_rc:_rs;
+
     rows.push({
-      sku,title:prod.product_title||'',color:prod.color||'',size:prod.size||'',
+      sku,title:prod.product_title||'',color:_normColor,size:_normSize,
       productType:_siGetCustomCats()[sku]||prod.product_type||'',needsReview:!!prod.needs_review,status:prod.status||'',
-      tags:prod.tags||[],season:_siSeasonOfTags(prod.tags),
+      tags:prod.tags||[],season:_siGetCustomSeasons()[sku]||_siSeasonOfTags(prod.tags),
+      garmentType:_siGetCustomTypes()[sku]||'',
       onHand,prevOnHand,weeklyDelta,s7,s30,dailyRate,daysLeft,sellThrough,
       firstSold:fs,lastSold:ls,daysSinceLastSale,refunds,totalSold:totalSoldMap[sku]||0,
       price:prod.price||0,reorderPoint,suggestedQty,created_at:prod.created_at||''
@@ -715,6 +736,7 @@ function _siSkuFiltered(rows){
     filtered=rows.filter(r=>(r.sku+' '+r.title+' '+r.color+' '+r.size+' '+r.productType).toLowerCase().includes(q));
   }
   if(_siSkuCatFilter)filtered=filtered.filter(r=>r.productType===_siSkuCatFilter);
+  if(_siSkuTypeFilter)filtered=filtered.filter(r=>r.garmentType===_siSkuTypeFilter);
   const dir=_siSkuDir;
   const key=_siSkuSort;
   filtered.sort((a,b)=>{
@@ -752,7 +774,7 @@ function _siSkuRowsHtml(rows){
 }
 
 // ── Product-grouped SKU table helpers ───────────────────────────────
-const _SI_SIZE_ORDER=['XS','S','M','L','XL','2XL','XXL','3XL','XXXL','XXS','4XL','5XL'];
+const _SI_SIZE_ORDER=['XXS','XS','S','M','L','XL','2XL','XXL','3XL','XXXL','4XL','5XL'];
 
 function _siGroupRows(rows){
   const groups={};
@@ -775,11 +797,11 @@ function _siGroupRows(rows){
 
 function _siSizeChips(variants){
   return variants.map(v=>{
-    const soldOut=v.onHand===0;
+    const soldOut=v.onHand<=0;
     const low=!soldOut&&v.daysLeft>0&&v.daysLeft<=14&&v.dailyRate>0.05;
     const bg=soldOut?'#fee2e2':low?'#fef3c7':'#f0f0f0';
     const clr=soldOut?'#dc2626':low?'#92400e':'#111';
-    return`<span style="padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;background:${bg};color:${clr}">${v.size||'?'}</span>`;
+    return`<span style="padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;background:${bg};color:${clr}">${_siEsc(v.size||'?')}</span>`;
   }).join(' ');
 }
 
@@ -801,7 +823,7 @@ function _siGroupedBodyHtml(filteredRows){
   return page.map(([gkey,g])=>{
     const expanded=_siSkuExpanded.has(gkey);
     const tot=g.variants.reduce((s,r)=>s+(r.onHand||0),0);
-    const anySoldOut=g.variants.some(r=>r.onHand===0);
+    const anySoldOut=g.variants.some(r=>r.onHand<=0);
     const allInStock=g.variants.every(r=>r.onHand>0);
     const totColor=allInStock?'#16a34a':anySoldOut?'#dc2626':'#111';
     const totS7=g.variants.reduce((s,r)=>s+(r.s7||0),0);
@@ -809,12 +831,16 @@ function _siGroupedBodyHtml(filteredRows){
     const minDays=Math.min(...g.variants.filter(r=>r.dailyRate>0.05).map(r=>r.daysLeft).concat([9999]));
     const minDaysStr=minDays<9999?(minDays<=7?`<span style="color:#dc2626;font-weight:700">${minDays}d</span>`:minDays<=14?`<span style="color:var(--accent-warning)">${minDays}d</span>`:`${minDays}d`):'—';
     const groupAllSel=g.variants.every(r=>_siSkuSelected.has(r.sku));
-    const gkeyEsc=gkey.replace(/"/g,'&quot;');
+    const gkeyEsc=_siEsc(gkey);
+    const gSeason=g.variants.find(v=>v.season!=='all-season')?.season||g.variants[0]?.season||'all-season';
+    const gType=g.variants.find(v=>v.garmentType)?.garmentType||'';
+    const seasonIcon=gSeason==='summer'?'<span title="Summer" style="font-size:11px;margin-right:3px">☀</span>':gSeason==='winter'?'<span title="Winter" style="font-size:11px;margin-right:3px">❄</span>':'';
+    const typeChip=gType?`<span style="background:#e0e7ff;color:#3730a3;border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700;margin-left:5px;vertical-align:middle">${_siEsc(gType.toUpperCase())}</span>`:'';
     const parent=`<tr style="cursor:pointer" data-gkey="${gkeyEsc}" onclick="window._siToggleGroup(this.dataset.gkey)">
       <td style="padding:4px 8px" onclick="event.stopPropagation()"><input type="checkbox" ${groupAllSel?'checked':''} data-gkey="${gkeyEsc}" onchange="window._siToggleGroupSel(this.dataset.gkey,this.checked)" onclick="event.stopPropagation()"></td>
-      <td style="font-weight:600;font-size:12px;padding:10px 8px;white-space:nowrap"><span style="display:inline-block;width:14px;font-size:10px;color:var(--muted)">${expanded?'▼':'▶'}</span>${g.title}</td>
-      <td style="font-size:11px;color:var(--muted)">${g.color}</td>
-      <td style="font-size:11px">${g.productType||'—'}</td>
+      <td style="font-weight:600;font-size:12px;padding:10px 8px;white-space:nowrap"><span style="display:inline-block;width:14px;font-size:10px;color:var(--muted)">${expanded?'▼':'▶'}</span>${seasonIcon}${_siEsc(g.title)}${typeChip}</td>
+      <td style="font-size:11px;color:var(--muted)">${_siEsc(g.color)}</td>
+      <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_siEsc(g.productType||'')}">${_siEsc(g.productType)||'—'}</td>
       <td style="white-space:nowrap">${_siSizeChips(g.variants)}</td>
       <td style="font-weight:700;color:${totColor}">${tot}</td>
       <td style="font-weight:600">${totS7}</td>
@@ -823,14 +849,14 @@ function _siGroupedBodyHtml(filteredRows){
       <td style="color:var(--muted)">—</td><td style="color:var(--muted)">—</td><td style="color:var(--muted)">—</td>
     </tr>`;
     const children=!expanded?'':g.variants.map(r=>{
-      const soldOut=r.onHand===0;
+      const soldOut=r.onHand<=0;
       const daysClass=r.daysLeft<=7&&r.daysLeft>0?'color:#dc2626;font-weight:700':r.daysLeft<=14&&r.daysLeft>0?'color:var(--accent-warning);font-weight:600':'';
       const daysStr=r.daysLeft===999?'∞':r.daysLeft===0?'—':`${r.daysLeft}d`;
       return`<tr style="background:#FAFAFA">
-        <td style="padding:4px 8px"><input type="checkbox" ${_siSkuSelected.has(r.sku)?'checked':''} data-sku="${r.sku}" onchange="window._siToggleSku(this.dataset.sku,this.checked)"></td>
-        <td style="font-size:10px;color:var(--muted);padding:7px 8px 7px 22px">${r.sku}</td>
+        <td style="padding:4px 8px"><input type="checkbox" ${_siSkuSelected.has(r.sku)?'checked':''} data-sku="${_siEsc(r.sku)}" onchange="window._siToggleSku(this.dataset.sku,this.checked)"></td>
+        <td style="font-size:10px;color:var(--muted);padding:7px 8px 7px 22px">${_siEsc(r.sku)}</td>
         <td></td><td></td>
-        <td style="font-weight:700;font-size:12px">${r.size||'?'}</td>
+        <td style="font-weight:700;font-size:12px">${_siEsc(r.size||'?')}</td>
         <td style="font-weight:${soldOut?'700':'600'};color:${soldOut?'#dc2626':'inherit'}">${r.onHand}</td>
         <td>${r.s7}</td><td>${r.s30}</td>
         <td style="${daysClass}">${daysStr}</td>
@@ -843,13 +869,41 @@ function _siGroupedBodyHtml(filteredRows){
   }).join('');
 }
 
+function _siFixIndeterminate(){
+  const rows=_siComputeSkuTable();
+  const groups=_siGroupRows(_siSkuFiltered(rows));
+  document.querySelectorAll('input[data-gkey]').forEach(cb=>{
+    const g=groups[cb.dataset.gkey];if(!g)return;
+    const nSel=g.variants.filter(r=>_siSkuSelected.has(r.sku)).length;
+    cb.checked=nSel===g.variants.length&&g.variants.length>0;
+    cb.indeterminate=nSel>0&&nSel<g.variants.length;
+  });
+}
+
 function _siCatSelBar(){
   if(!_siSkuSelected.size)return'<div id="si-cat-bar"></div>';
-  return`<div id="si-cat-bar" style="background:var(--soft);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-    <span style="font-size:12px;font-weight:600">${_siSkuSelected.size} SKU${_siSkuSelected.size>1?'s':''} selected</span>
-    <input id="si-cat-input" placeholder="Category name…" style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit;outline:none;min-width:160px;background:#fff">
-    <button class="btn-primary" style="padding:7px 14px;font-size:12px;width:auto" onclick="window._siApplyCat()">Apply Category</button>
-    <button class="btn-outline" style="padding:7px 14px;font-size:12px" onclick="window._siClearSel()">Clear</button>
+  const n=_siSkuSelected.size;
+  const btnSm='padding:5px 10px;font-size:11px;border-radius:6px;cursor:pointer;font-family:inherit;border:1px solid var(--border);background:#fff;font-weight:600';
+  return`<div id="si-cat-bar" style="background:var(--soft);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:12px;font-weight:700;flex-shrink:0">${n} variant${n===1?'':'s'} selected</span>
+    <div style="display:flex;gap:6px;align-items:center">
+      <input id="si-cat-input" placeholder="Category name…" onkeydown="if(event.key==='Enter')window._siApplyCat()" style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit;outline:none;min-width:150px;background:#fff">
+      <button class="btn-primary" style="padding:7px 12px;font-size:12px;width:auto" onclick="window._siApplyCat()">Apply Category</button>
+    </div>
+    <div style="display:flex;gap:4px;align-items:center">
+      <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;white-space:nowrap">Season</span>
+      <button style="${btnSm}" onclick="window._siApplySeason('summer')">☀ Summer</button>
+      <button style="${btnSm}" onclick="window._siApplySeason('winter')">❄ Winter</button>
+      <button style="${btnSm}" onclick="window._siApplySeason('all-season')">◯ Year-Round</button>
+    </div>
+    <div style="display:flex;gap:4px;align-items:center">
+      <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;white-space:nowrap">Type</span>
+      <button style="${btnSm}" onclick="window._siApplyType('top')">Top</button>
+      <button style="${btnSm}" onclick="window._siApplyType('bottom')">Bottom</button>
+      <button style="${btnSm}" onclick="window._siApplyType('')">—</button>
+    </div>
+    <button style="padding:5px 10px;font-size:11px;border-radius:6px;cursor:pointer;font-family:inherit;border:1px solid var(--border);background:#fff;font-weight:600;margin-left:auto" onclick="window._siExportSelectedCsv()">↓ Export CSV</button>
+    <button class="btn-outline" style="padding:5px 10px;font-size:11px" onclick="window._siClearSel()">Clear selection</button>
   </div>`;
 }
 function _siSkuTableSection(rows){
@@ -859,20 +913,27 @@ function _siSkuTableSection(rows){
   const cats=[...new Set(rows.map(r=>r.productType).filter(t=>t&&t.trim()))].sort();
   const countStr=totalGroups+' products · '+filtered.length+' variants'+(totalGroups>_siSkuLimit?' (showing '+_siSkuLimit+')':'');
   const moreHtml=totalGroups>_siSkuLimit?`<button class="btn-primary" onclick="window._siSkuLoadMore()">Load more (showing ${Math.min(_siSkuLimit,totalGroups)} of ${totalGroups} products)</button>`:'';
+  const typeTab=t=>t===_siSkuTypeFilter;
   return`${_siCatSelBar()}
-  <div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap">
-    <input placeholder="Search SKU, product, color, category…" value="${_siSkuSearch}" oninput="window._siFilterSku(this.value)"
+  <div style="margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap">
+    <input placeholder="Search SKU, product, color, category…" value="${_siEsc(_siSkuSearch)}" oninput="window._siFilterSku(this.value)"
       style="flex:1;min-width:200px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;outline:none;font-family:inherit">
     <select onchange="window._siFilterCat(this.value)" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;cursor:pointer;outline:none">
       <option value="">All Categories</option>
-      ${cats.map(c=>`<option value="${c}"${_siSkuCatFilter===c?' selected':''}>${c}</option>`).join('')}
+      ${cats.map(c=>`<option value="${_siEsc(c)}"${_siSkuCatFilter===c?' selected':''}>${_siEsc(c)}</option>`).join('')}
     </select>
-    <div id="si-sku-count" style="font-size:11px;color:var(--muted);align-self:center">${countStr}</div>
   </div>
-  <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Click a row to expand sizes. Green = all sizes in stock · Red = any size sold out. Check rows to assign a custom category.</div>
+  <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+    <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Type</span>
+    <button class="gp-tab${typeTab('')?' active':''}" onclick="window._siFilterType('')">All</button>
+    <button class="gp-tab${typeTab('top')?' active':''}" onclick="window._siFilterType('top')">Top</button>
+    <button class="gp-tab${typeTab('bottom')?' active':''}" onclick="window._siFilterType('bottom')">Bottom</button>
+    <span style="margin-left:auto;font-size:11px;color:var(--muted)" id="si-sku-count">${countStr}</span>
+  </div>
+  <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Click a row to expand sizes. ☀ = Summer · ❄ = Winter · <span style="background:#e0e7ff;color:#3730a3;border-radius:3px;padding:1px 4px;font-size:9px;font-weight:700">TOP</span> / <span style="background:#e0e7ff;color:#3730a3;border-radius:3px;padding:1px 4px;font-size:9px;font-weight:700">BOTTOM</span> badges from your labels. Green = all sizes in stock · Red = any sold out.</div>
   <div style="overflow-x:auto"><table class="cut-table" style="min-width:950px">
     <thead><tr id="si-sku-head">${_siSkuHeadCells()}</tr></thead>
-    <tbody id="si-sku-tbody">${_siGroupedBodyHtml(filtered)}</tbody>
+    <tbody id="si-sku-tbody">${_siGroupedBodyHtml(filtered)||(totalGroups===0?`<tr><td colspan="12" style="text-align:center;padding:32px;color:var(--muted);font-size:13px">No products match your filters</td></tr>`:'')}</tbody>
   </table></div>
   <div id="si-sku-more" style="margin-top:10px;text-align:center">${moreHtml}</div>`;
 }
@@ -883,8 +944,12 @@ window._siFilterSku=function(v){
   window._siSkuDebounce=setTimeout(_siRefreshSkuBody,120);
 };
 window._siSortSku=function(k){
-  if(_siSkuSort===k)_siSkuDir*=-1;
-  else{_siSkuSort=k;_siSkuDir=-1;}
+  if(_siSkuSort===k){_siSkuDir*=-1;}
+  else{
+    _siSkuSort=k;
+    // text columns + daysLeft: first click ascending (A→Z / lowest = most urgent)
+    _siSkuDir=new Set(['title','color','productType','daysLeft']).has(k)?1:-1;
+  }
   _siSkuExpanded.clear();
   const head=document.getElementById('si-sku-head');
   if(head)head.innerHTML=_siSkuHeadCells();
@@ -895,13 +960,15 @@ window._siFilterCat=function(v){_siSkuCatFilter=v;_siSkuLimit=200;_siSkuExpanded
 window._siToggleSku=function(sku,checked){
   if(checked)_siSkuSelected.add(sku);else _siSkuSelected.delete(sku);
   const bar=document.getElementById('si-cat-bar');if(bar)bar.outerHTML=_siCatSelBar();
+  _siFixIndeterminate();
 };
 window._siSelectAllSku=function(checked){
   const rows=_siComputeSkuTable();
   const filtered=_siSkuFiltered(rows);
   const groups=_siGroupRows(filtered);
   Object.values(groups).slice(0,_siSkuLimit).forEach(g=>g.variants.forEach(r=>checked?_siSkuSelected.add(r.sku):_siSkuSelected.delete(r.sku)));
-  const tb=document.getElementById('si-sku-tbody');if(tb)tb.innerHTML=_siGroupedBodyHtml(filtered);
+  const tb=document.getElementById('si-sku-tbody');
+  if(tb){tb.innerHTML=_siGroupedBodyHtml(filtered);_siFixIndeterminate();}
   const bar=document.getElementById('si-cat-bar');if(bar)bar.outerHTML=_siCatSelBar();
 };
 window._siApplyCat=function(){
@@ -910,22 +977,65 @@ window._siApplyCat=function(){
   if(!_siCustomCats)_siCustomCats={};
   _siSkuSelected.forEach(sku=>{_siCustomCats[sku]=cat;});
   _siSaveCustomCats();_siProdMapCache=null;_siSeasonMapCache=null;
+  _siSkuSelected.clear();_siSkuCatFilter=''; // clear filter so the new category is immediately visible
+  const rows=_siComputeSkuTable();
+  const el=document.getElementById('si-content');
+  if(el)el.innerHTML=_siSkuTableSection(rows); // full re-render so new cat appears in dropdown
+};
+window._siApplySeason=function(season){
+  if(!_siCustomSeasons)_siCustomSeasons={};
+  _siSkuSelected.forEach(sku=>{_siCustomSeasons[sku]=season;});
+  _siSaveCustomSeasons();_siSeasonMapCache=null;
   _siSkuSelected.clear();
   const rows=_siComputeSkuTable();
-  const tb=document.getElementById('si-sku-tbody');if(tb)tb.innerHTML=_siGroupedBodyHtml(_siSkuFiltered(rows));
-  const bar=document.getElementById('si-cat-bar');if(bar)bar.outerHTML=_siCatSelBar();
+  const el=document.getElementById('si-content');
+  if(el)el.innerHTML=_siSkuTableSection(rows);
+};
+window._siApplyType=function(type){
+  if(!_siCustomTypes)_siCustomTypes={};
+  _siSkuSelected.forEach(sku=>{_siCustomTypes[sku]=type||undefined;if(!type)delete _siCustomTypes[sku];});
+  _siSaveCustomTypes();
+  _siSkuSelected.clear();
+  const rows=_siComputeSkuTable();
+  const el=document.getElementById('si-content');
+  if(el)el.innerHTML=_siSkuTableSection(rows);
+};
+window._siFilterType=function(v){_siSkuTypeFilter=v;_siSkuLimit=200;_siSkuExpanded.clear();
+  const rows=_siComputeSkuTable();
+  const el=document.getElementById('si-content');
+  if(el)el.innerHTML=_siSkuTableSection(rows);
 };
 window._siClearSel=function(){
   _siSkuSelected.clear();
   const bar=document.getElementById('si-cat-bar');if(bar)bar.outerHTML=_siCatSelBar();
   const rows=_siComputeSkuTable();
-  const tb=document.getElementById('si-sku-tbody');if(tb)tb.innerHTML=_siGroupedBodyHtml(_siSkuFiltered(rows));
+  const filtered=_siSkuFiltered(rows);
+  const tb=document.getElementById('si-sku-tbody');
+  if(tb){tb.innerHTML=_siGroupedBodyHtml(filtered);_siFixIndeterminate();}
+};
+window._siExportSelectedCsv=function(){
+  if(!_siSkuSelected.size)return showToast('Nothing selected.',true);
+  const rows=_siComputeSkuTable();
+  const sel=rows.filter(r=>_siSkuSelected.has(r.sku));
+  const cats=_siCustomCats||{};const seasons=_siCustomSeasons||{};const types=_siCustomTypes||{};
+  const esc=s=>'"'+(String(s||'').replace(/"/g,'""'))+'"';
+  const lines=['SKU,Product,Color,Size,On Hand,Sold 7d,Sold 30d,Weeks of Supply,Category,Season,Garment Type,Product Type'];
+  for(const r of sel){
+    const wos=r.dailyRate>0.05?(r.onHand/r.dailyRate/7).toFixed(1):'∞';
+    lines.push([esc(r.sku),esc(r.title),esc(r.color),esc(r.size||'?'),r.onHand,r.s7||0,r.s30||0,wos,esc(cats[r.sku]||r.productType||''),esc(seasons[r.sku]||''),esc(types[r.sku]||''),esc(r.productType||'')].join(','));
+  }
+  const blob=new Blob([lines.join('\n')],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=`groovy-sku-${new Date().toISOString().slice(0,10)}.csv`;a.click();
+  URL.revokeObjectURL(url);
+  showToast(`Exported ${sel.length} SKU${sel.length>1?'s':''} to CSV ✓`);
 };
 window._siToggleGroup=function(key){
   if(_siSkuExpanded.has(key))_siSkuExpanded.delete(key);else _siSkuExpanded.add(key);
   const rows=_siComputeSkuTable();
+  const filtered=_siSkuFiltered(rows);
   const tb=document.getElementById('si-sku-tbody');
-  if(tb)tb.innerHTML=_siGroupedBodyHtml(_siSkuFiltered(rows));
+  if(tb){tb.innerHTML=_siGroupedBodyHtml(filtered);_siFixIndeterminate();}
 };
 window._siToggleGroupSel=function(key,checked){
   const rows=_siComputeSkuTable();
@@ -933,7 +1043,9 @@ window._siToggleGroupSel=function(key,checked){
   const g=groups[key];if(!g)return;
   g.variants.forEach(r=>checked?_siSkuSelected.add(r.sku):_siSkuSelected.delete(r.sku));
   const bar=document.getElementById('si-cat-bar');if(bar)bar.outerHTML=_siCatSelBar();
-  const tb=document.getElementById('si-sku-tbody');if(tb)tb.innerHTML=_siGroupedBodyHtml(_siSkuFiltered(rows));
+  const filtered=_siSkuFiltered(rows);
+  const tb=document.getElementById('si-sku-tbody');
+  if(tb){tb.innerHTML=_siGroupedBodyHtml(filtered);_siFixIndeterminate();}
 };
 
 function _siRefreshContent(){
@@ -952,7 +1064,10 @@ function _siRefreshSkuBody(){
   const groups=_siGroupRows(filtered);
   const totalGroups=Object.keys(groups).length;
   const tb=document.getElementById('si-sku-tbody');
-  if(tb)tb.innerHTML=_siGroupedBodyHtml(filtered);
+  if(tb){
+    tb.innerHTML=_siGroupedBodyHtml(filtered)||(totalGroups===0?`<tr><td colspan="12" style="text-align:center;padding:32px;color:var(--muted);font-size:13px">No products match your filters</td></tr>`:'');
+    _siFixIndeterminate();
+  }
   const cnt=document.getElementById('si-sku-count');
   if(cnt)cnt.textContent=totalGroups+' products · '+filtered.length+' variants'+(totalGroups>_siSkuLimit?' (showing '+_siSkuLimit+')':'');
   const more=document.getElementById('si-sku-more');
@@ -994,7 +1109,7 @@ function _siWeeklySection(){
 function _siAdvancedSection(skuRows){
   const wos=_siWeeksOfSupply(skuRows);
   const md=_siMarkdownCandidates(skuRows);
-  const stockouts=skuRows.filter(r=>r.onHand===0&&r.s30>0).sort((a,b)=>b.s30-a.s30).slice(0,15);
+  const stockouts=skuRows.filter(r=>r.onHand<=0&&r.s30>0).sort((a,b)=>b.s30-a.s30).slice(0,15);
   const items7=_siRecentItems(7);
   const dropPerf=_siDropPerformance(skuRows);
 

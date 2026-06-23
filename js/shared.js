@@ -533,7 +533,7 @@ function buildNav(){
   if(!isWorker&&!isStore)mainItems.push({id:'po-registry',label:'PO Registry'});
   if(isWorker||isViewer)mainItems.push({id:'my-work',label:'My Work'});
   if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
-  if(om)mainItems.push({id:'fabric-inventory',label:'Fabric Inventory'});
+  if(om||session.canFabric)mainItems.push({id:'fabric-inventory',label:'Fabric Inventory'});
   if(om)mainItems.push({id:'bug-tracker',label:'🐛 Bug Tracker'});
   if(isOwner)mainItems.push({id:'shopify-intel',label:'Inventory Intel'});
   if(isOwner)mainItems.push({id:'activity',label:'Activity Log'});
@@ -563,6 +563,7 @@ function buildNav(){
     storeSubItems.push({id:'store-receive',label:'Receive Stock'});
     storeSubItems.push({id:'store-issue',label:'Issue Stock'});
     storeSubItems.push({id:'store-log',label:'Stock Log'});
+    storeSubItems.push({id:'store-analytics',label:'Analytics'});
     storeSubItems.push({id:'store-templates',label:'Trim Templates'});
     storeSubItems.push({id:'po-issue-list',label:'PO Issue Requests'});
     if(typeof _canApproveEdits==='function'&&_canApproveEdits())storeSubItems.push({id:'po-edit-inbox',label:'Edit Inbox'});
@@ -686,7 +687,7 @@ function _updateMobNavActive(pageId){
     'po-create':'po','po-registry':'po','po-detail':'po','stage-work':'po',
     'attendance':'hrm','hrm-employees':'hrm','hrm-payroll':'hrm','hrm-advances':'hrm','hrm-loans':'hrm','hrm-policy':'hrm',
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
-    'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more',
+    'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more',
     'activity':'more','users':'more','bug-tracker':'more','shopify-intel':'more',
     'my-work':'my-work'
   };
@@ -861,6 +862,7 @@ function renderPage(id){
   else if(id==='store-issue'){m.innerHTML=renderStoreIssue();onIssItemChange();loadActivePOs();}
   else if(id==='store-templates'){m.innerHTML=renderStoreTemplates();const _si=document.getElementById('tpl-prod-search');if(_si){_si.addEventListener('input',()=>filterTplProd(_si.value));_si.addEventListener('focus',()=>filterTplProd(_si.value));}}
   else if(id==='store-log'){_ilPage=1;_ilQ='';_ilPO='';m.innerHTML=renderStoreLog();refreshIssueLog();}
+  else if(id==='store-analytics')m.innerHTML=renderStoreAnalytics();
   else if(id==='po-issue-list'){if(!allItems.length)loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoIssueList();});else m.innerHTML=renderPoIssueList();}
   else if(id==='po-issue-detail'){if(!allItems.length)loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoIssuePickList();});else m.innerHTML=renderPoIssuePickList();}
   else if(id==='po-edit-inbox'){if(!allItems.length)loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoEditInbox();});else m.innerHTML=renderPoEditInbox();}
