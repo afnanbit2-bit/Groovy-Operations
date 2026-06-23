@@ -10,6 +10,8 @@
 
 let fabActiveTab='stock';
 let _fabInvCatFilter='all';   // category (fabType) filter for the Stock tab
+let _fabInvView='vendor';     // 'vendor' | 'fabric' — By Vendor is default
+let _fabInvCollapsed=new Set(); // vendor names currently collapsed
 let _fabBusy=false;           // re-entrancy guard: blocks double-submit/dupes
 
 // Animated busy overlay shown during any time-taking fabric write. The full-
@@ -130,73 +132,182 @@ window.fabSaveAlerts=async function(key){
   }catch(e){showToast('Error: '+e.message,true);}
 };
 
-// ── Stock tab (moved from store.js — behaviour unchanged) ──
+// ── Stock tab ──
 function renderFabricInventory(){
   if(_fabInvDrillKey){return _renderFabInvDrill(_fabInvDrillKey);}
-  const aggregates=allFabricInventory.filter(s=>s);
-  const totalKg=aggregates.filter(s=>(s.unit||'kg')==='kg').reduce((a,s)=>a+(s.totalWeight||0),0);
-  const totalM=aggregates.filter(s=>(s.unit||'kg')==='meters'||(s.unit||'kg')==='m').reduce((a,s)=>a+(s.totalWeight||0),0);
-  const totalRolls=aggregates.reduce((a,s)=>a+(s.rollsCount||0),0);
-  // Categories = distinct fabric types present (for the category chip row).
-  const cats=[...new Set(aggregates.map(s=>(s.fabType||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const agg=allFabricInventory.filter(s=>s);
+  const totalKg=agg.filter(s=>(s.unit||'kg')==='kg').reduce((a,s)=>a+(s.totalWeight||0),0);
+  const totalM=agg.filter(s=>(s.unit||'kg')==='meters'||(s.unit||'kg')==='m').reduce((a,s)=>a+(s.totalWeight||0),0);
+  const totalRolls=agg.reduce((a,s)=>a+(s.rollsCount||0),0);
+  const totalReservedKg=agg.reduce((a,s)=>a+(s.reservedWeight||0),0);
+  const alertCount=agg.filter(s=>(s.totalWeight||0)>0&&_fabAlertLevel(s).label!=='OK').length;
+  const outCount=agg.filter(s=>!(s.totalWeight>0)).length;
+  const cats=[...new Set(agg.map(s=>(s.fabType||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   if(_fabInvCatFilter!=='all'&&!cats.includes(_fabInvCatFilter))_fabInvCatFilter='all';
-  const filtered=aggregates.filter(s=>{
+
+  // Vendor map — built from active (in_stock + reserved) rolls
+  const vMap={};
+  for(const s of agg){
+    for(const r of (s.rolls||[])){
+      if(!['in_stock','reserved'].includes(r.status||'in_stock'))continue;
+      const rcpt=allFabricIn.find(x=>x.id===r.sourceFabId);
+      const sup=(rcpt?.supplier||'').trim()||'Unknown';
+      if(!vMap[sup])vMap[sup]={totalWeight:0,rollsCount:0,fabricIds:new Set()};
+      vMap[sup].totalWeight+=(r.weight||0);
+      vMap[sup].rollsCount++;
+      vMap[sup].fabricIds.add(s._id);
+    }
+  }
+  const vendorNames=Object.keys(vMap).sort((a,b)=>vMap[b].totalWeight-vMap[a].totalWeight);
+
+  // Filtered list for By Fabric view
+  const filtered=agg.filter(s=>{
     if(_fabInvFilter==='in_stock'&&!(s.totalWeight>0))return false;
     if(_fabInvFilter==='empty'&&(s.totalWeight>0))return false;
     if(_fabInvCatFilter!=='all'&&(s.fabType||'').trim()!==_fabInvCatFilter)return false;
-    if(_fabInvSearchQ){
-      const q=_fabInvSearchQ.toLowerCase();
-      const hay=`${s.fabType||''} ${s.color||''} ${s.gsm||''}`.toLowerCase();
-      if(!hay.includes(q))return false;
-    }
+    if(_fabInvSearchQ){const q=_fabInvSearchQ.toLowerCase();if(!`${s.fabType||''} ${s.color||''} ${s.gsm||''}`.toLowerCase().includes(q))return false;}
     return true;
-  }).sort((a,b)=>  // grouped by category: fabType → colour → gsm
-    (a.fabType||'').localeCompare(b.fabType||'')
-    ||(a.color||'').localeCompare(b.color||'')
-    ||(a.gsm||0)-(b.gsm||0));
-  let h=`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
-    <div><div class="page-title">Fabric Inventory</div><div class="page-sub">${aggregates.length} stock rows · ${totalRolls} rolls · ${totalKg.toFixed(1)} kg${totalM?' · '+totalM.toFixed(1)+' m':''}</div></div>
+  }).sort((a,b)=>(a.fabType||'').localeCompare(b.fabType||'')||(a.color||'').localeCompare(b.color||'')||(a.gsm||0)-(b.gsm||0));
+
+  // KPI strip values
+  const kpiStock=totalKg.toFixed(1)+' kg'+(totalM?`<div style="font-size:11px;font-weight:500;color:var(--muted)">+ ${totalM.toFixed(1)} m</div>`:'');
+  const kpiAlerts=alertCount+(outCount?`<div style="font-size:11px;font-weight:500;color:var(--muted)">${outCount} empty</div>`:'');
+
+  let h=`<div class="page-head"><div class="page-title">Fabric Inventory</div></div>`;
+  h+=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:14px">
+    ${_fabKpiTile('Total Stock',kpiStock,'#2563eb')}
+    ${_fabKpiTile('Rolls',totalRolls,'#7c3aed')}
+    ${_fabKpiTile('Vendors',vendorNames.length,'#0891b2')}
+    ${_fabKpiTile('Alerts',kpiAlerts,alertCount?'#dc2626':'#16a34a')}
+    ${_fabKpiTile('Categories',cats.length,'#d97706')}
+    ${_fabKpiTile('Reserved',totalReservedKg>0?totalReservedKg.toFixed(1)+' kg':'—',totalReservedKg?'#d97706':'#d1d5db')}
   </div>`;
   h+=`<div class="card" style="margin-bottom:14px;padding:12px">
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex-shrink:0">
+        <button onclick="window.fabInvSetView('vendor')" style="padding:6px 14px;border:none;border-right:1px solid var(--border);background:${_fabInvView==='vendor'?'var(--dark)':'#fff'};color:${_fabInvView==='vendor'?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">By Vendor</button>
+        <button onclick="window.fabInvSetView('fabric')" style="padding:6px 14px;border:none;background:${_fabInvView==='fabric'?'var(--dark)':'#fff'};color:${_fabInvView==='fabric'?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">By Fabric</button>
+      </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         ${[['in_stock','In stock'],['empty','Out of stock'],['all','All']].map(([k,l])=>`<button onclick="window.fabInvSetFilter('${k}')" style="padding:6px 12px;border:1px solid ${_fabInvFilter===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabInvFilter===k?'var(--dark)':'#fff'};color:${_fabInvFilter===k?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${l}</button>`).join('')}
       </div>
-      <input id="finv-search" placeholder="Search fabric type / color / GSM…" value="${_fabInvSearchQ.replace(/"/g,'&quot;')}" oninput="window.fabInvSetSearch(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;outline:none;flex:1;min-width:200px">
+      <input id="finv-search" placeholder="Search fabric…" value="${_fabInvSearchQ.replace(/"/g,'&quot;')}" oninput="window.fabInvSetSearch(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;outline:none;flex:1;min-width:160px">
     </div>
-    ${cats.length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center">
+    ${cats.length?`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
       <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-right:2px">Category</span>
       ${[['all','All'],...cats.map(c=>[c,c])].map(([k,l])=>`<button onclick="window.fabInvSetCat('${_gpEsc(k).replace(/'/g,"\\'")}')" style="padding:5px 11px;border:1px solid ${_fabInvCatFilter===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabInvCatFilter===k?'var(--dark)':'#fff'};color:${_fabInvCatFilter===k?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${_gpEsc(l)}</button>`).join('')}
     </div>`:''}
   </div>`;
-  if(!filtered.length){
-    h+=`<div class="empty" style="padding:24px;text-align:center">No fabric inventory rows match.</div>`;
-  }else{
-    h+=`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;background:#fff">
-      <thead><tr style="background:#fafafa;border-bottom:1px solid var(--border)">
-        <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em">Fabric</th>
-        <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em">GSM</th>
-        <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em">Color</th>
-        <th style="padding:10px;text-align:right;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em">Stock</th>
-        <th style="padding:10px;text-align:right;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em">Rolls</th>
-        <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em">Last move</th>
-        <th></th>
-      </tr></thead>
-      <tbody>${filtered.map(s=>{
-        const empty=!(s.totalWeight>0);
-        return`<tr style="border-bottom:1px solid #f5f5f5${empty?';opacity:.55':''}">
-          <td style="padding:10px;font-weight:600"><span title="${_fabAlertLevel(s).label}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${_fabAlertLevel(s).dot};margin-right:7px;vertical-align:middle"></span>${_gpEsc(s.fabType||'—')}</td>
-          <td style="padding:10px">${s.gsm||'—'}</td>
-          <td style="padding:10px">${_gpEsc(s.color||'—')}</td>
-          <td style="padding:10px;text-align:right;font-weight:700;color:${empty?'#dc2626':'var(--text)'}">${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'}${s.reservedCount?`<div style="font-size:10px;color:#d97706;font-weight:500">+${(s.reservedWeight||0).toFixed(2)} reserved</div>`:''}</td>
-          <td style="padding:10px;text-align:right;font-weight:600">${s.rollsCount||0}${s.reservedCount?`<div style="font-size:10px;color:#d97706;font-weight:500">+${s.reservedCount} resv</div>`:''}</td>
-          <td style="padding:10px;font-size:11px;color:var(--muted)">${s.lastMovementAt?new Date(s.lastMovementAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}):'—'}</td>
-          <td style="padding:10px;text-align:right"><button onclick="window.fabInvDrill('${s._id}')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Open</button></td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table></div>`;
-  }
+  h+=(_fabInvView==='vendor'?_renderFabByVendor(vendorNames,vMap,agg):_renderFabByFabric(filtered,vMap));
   return h+'<div style="height:80px"></div>';
+}
+
+// KPI tile — colored top border, label + large value
+function _fabKpiTile(label,value,accent){
+  return`<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 14px;border-top:3px solid ${accent}">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px;font-weight:600">${label}</div>
+    <div style="font-size:20px;font-weight:800;color:var(--text);line-height:1;letter-spacing:-.01em">${value}</div>
+  </div>`;
+}
+
+// Mini stock-level bar scaled to 2× the "Low" threshold
+function _fabStockBar(s){
+  const w=s.totalWeight||0;
+  if(!w)return'';
+  const t1=_fabAlertCfg(s).t1||50;
+  const pct=Math.min(100,w/(t1*2)*100);
+  return`<div style="width:72px;height:3px;background:#e5e7eb;border-radius:2px;margin-top:5px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(0)}%;background:${_fabAlertLevel(s).dot};border-radius:2px"></div></div>`;
+}
+
+// By Vendor view — vendor groups, each collapsible
+function _renderFabByVendor(vendorNames,vMap,agg){
+  if(!vendorNames.length)return`<div class="empty" style="padding:32px;text-align:center">No vendor data yet. Record fabric arrivals (Fabric In tab) to see vendor breakdown.</div>`;
+  let h='';
+  for(const sup of vendorNames){
+    const v=vMap[sup];
+    const expanded=!_fabInvCollapsed.has(sup);
+    const fabrics=[...v.fabricIds].map(id=>agg.find(s=>s._id===id)).filter(Boolean).filter(s=>{
+      if(_fabInvFilter==='in_stock'&&!(s.totalWeight>0))return false;
+      if(_fabInvFilter==='empty'&&(s.totalWeight>0))return false;
+      if(_fabInvCatFilter!=='all'&&(s.fabType||'').trim()!==_fabInvCatFilter)return false;
+      if(_fabInvSearchQ){const q=_fabInvSearchQ.toLowerCase();if(!`${s.fabType||''} ${s.color||''} ${s.gsm||''}`.toLowerCase().includes(q))return false;}
+      return true;
+    }).sort((a,b)=>(a.fabType||'').localeCompare(b.fabType||'')||(a.color||'').localeCompare(b.color||'')||(a.gsm||0)-(b.gsm||0));
+    if(!fabrics.length)continue;
+    const alerts=fabrics.filter(s=>(s.totalWeight||0)>0&&_fabAlertLevel(s).label!=='OK').length;
+    h+=`<div class="card" style="margin-bottom:10px;padding:0;overflow:hidden">
+      <div onclick="window.fabInvToggleVendor('${_gpEsc(sup).replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;user-select:none;border-bottom:${expanded?'1px solid var(--border)':'none'};background:#fafafa">
+        <span style="font-size:10px;color:var(--muted);display:inline-block;transform:rotate(${expanded?'90deg':'0deg'});transition:transform .15s">▶</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:13px;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_gpEsc(sup)}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${v.totalWeight.toFixed(1)} kg · ${v.rollsCount} rolls · ${fabrics.length} fabric${fabrics.length!==1?'s':''}</div>
+        </div>
+        ${alerts?`<span style="background:#fef2f2;color:#dc2626;font-size:10px;font-weight:700;padding:3px 7px;border-radius:5px;flex-shrink:0">⚠ ${alerts} alert${alerts>1?'s':''}</span>`:''}
+      </div>
+      ${expanded?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:#fff;border-bottom:1px solid var(--border)">
+          <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Fabric</th>
+          <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">GSM</th>
+          <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Color</th>
+          <th style="padding:10px;text-align:right;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Stock</th>
+          <th style="padding:10px;text-align:right;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Rolls</th>
+          <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Status</th>
+          <th></th>
+        </tr></thead>
+        <tbody>${fabrics.map(s=>{
+          const empty=!(s.totalWeight>0);const lvl=_fabAlertLevel(s);
+          return`<tr style="border-bottom:1px solid #f5f5f5${empty?';opacity:.6':''}">
+            <td style="padding:10px;font-weight:600"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${lvl.dot};margin-right:6px;vertical-align:middle"></span>${_gpEsc(s.fabType||'—')}</td>
+            <td style="padding:10px">${s.gsm||'—'}</td>
+            <td style="padding:10px">${_gpEsc(s.color||'—')}</td>
+            <td style="padding:10px;text-align:right;font-weight:700;color:${empty?'#dc2626':'var(--text)'}">${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'}${s.reservedCount?`<div style="font-size:10px;color:#d97706;font-weight:500">+${(s.reservedWeight||0).toFixed(2)} resv</div>`:''}</td>
+            <td style="padding:10px;text-align:right;font-weight:600">${s.rollsCount||0}${s.reservedCount?`<div style="font-size:10px;color:#d97706">+${s.reservedCount}</div>`:''}</td>
+            <td style="padding:10px"><span style="font-size:11px;font-weight:600;color:${lvl.color}">${lvl.label}</span>${_fabStockBar(s)}</td>
+            <td style="padding:10px;text-align:right"><button onclick="window.fabInvDrill('${s._id}')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Open</button></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>`:''}
+    </div>`;
+  }
+  return h||`<div class="empty" style="padding:24px;text-align:center">No fabric inventory rows match.</div>`;
+}
+
+// By Fabric view — flat table with vendor chips per row
+function _renderFabByFabric(filtered,vMap){
+  if(!filtered.length)return`<div class="empty" style="padding:24px;text-align:center">No fabric inventory rows match.</div>`;
+  const fabVendors={};
+  for(const[sup,v] of Object.entries(vMap)){
+    for(const id of v.fabricIds){
+      if(!fabVendors[id])fabVendors[id]=[];
+      if(!fabVendors[id].includes(sup))fabVendors[id].push(sup);
+    }
+  }
+  return`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;background:#fff">
+    <thead><tr style="background:#fafafa;border-bottom:1px solid var(--border)">
+      <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Fabric</th>
+      <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">GSM</th>
+      <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Color</th>
+      <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Vendor</th>
+      <th style="padding:10px;text-align:right;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Stock</th>
+      <th style="padding:10px;text-align:right;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Rolls</th>
+      <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Status</th>
+      <th></th>
+    </tr></thead>
+    <tbody>${filtered.map(s=>{
+      const empty=!(s.totalWeight>0);const lvl=_fabAlertLevel(s);
+      const vendors=fabVendors[s._id]||[];
+      return`<tr style="border-bottom:1px solid #f5f5f5${empty?';opacity:.6':''}">
+        <td style="padding:10px;font-weight:600"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${lvl.dot};margin-right:6px;vertical-align:middle"></span>${_gpEsc(s.fabType||'—')}</td>
+        <td style="padding:10px">${s.gsm||'—'}</td>
+        <td style="padding:10px">${_gpEsc(s.color||'—')}</td>
+        <td style="padding:10px">${vendors.slice(0,2).map(v=>`<span style="display:inline-block;padding:2px 7px;background:#f3f4f6;border-radius:4px;margin:1px 2px 1px 0;white-space:nowrap;font-size:10px">${_gpEsc(v)}</span>`).join('')}${vendors.length>2?`<span style="font-size:11px;color:var(--muted)">+${vendors.length-2}</span>`:''}</td>
+        <td style="padding:10px;text-align:right;font-weight:700;color:${empty?'#dc2626':'var(--text)'}">${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'}${s.reservedCount?`<div style="font-size:10px;color:#d97706;font-weight:500">+${(s.reservedWeight||0).toFixed(2)} resv</div>`:''}</td>
+        <td style="padding:10px;text-align:right;font-weight:600">${s.rollsCount||0}${s.reservedCount?`<div style="font-size:10px;color:#d97706">+${s.reservedCount}</div>`:''}</td>
+        <td style="padding:10px"><span style="font-size:11px;font-weight:600;color:${lvl.color}">${lvl.label}</span>${_fabStockBar(s)}</td>
+        <td style="padding:10px;text-align:right"><button onclick="window.fabInvDrill('${s._id}')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Open</button></td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
 }
 
 function _renderFabInvDrill(key){
@@ -285,6 +396,8 @@ window.fabInvSetSearch=function(v){
   },180);
 };
 window.fabInvDrill=function(key){_fabInvDrillKey=key;const m=document.getElementById('fab-tab-content');if(m){m.innerHTML=renderFabricInventory();if(key)_fabRenderDrillBarcodes();}};
+window.fabInvSetView=function(v){_fabInvView=v;const m=document.getElementById('fab-tab-content');if(m)m.innerHTML=renderFabricInventory();};
+window.fabInvToggleVendor=function(sup){if(_fabInvCollapsed.has(sup))_fabInvCollapsed.delete(sup);else _fabInvCollapsed.add(sup);const m=document.getElementById('fab-tab-content');if(m)m.innerHTML=renderFabricInventory();};
 
 // Draw the scannable barcode into each roll's <svg> after the drill renders.
 function _fabRenderDrillBarcodes(){
