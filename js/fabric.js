@@ -12,6 +12,7 @@ let fabActiveTab='stock';
 let _fabInvCatFilter='all';   // category (fabType) filter for the Stock tab
 let _fabInvView='vendor';     // 'vendor' | 'fabric' — By Vendor is default
 let _fabInvCollapsed=new Set(); // vendor names currently collapsed
+let _fabInListPage=0;          // current page in Fabric In arrivals list (0-indexed)
 let _fabBusy=false;           // re-entrancy guard: blocks double-submit/dupes
 
 // Animated busy overlay shown during any time-taking fabric write. The full-
@@ -71,7 +72,7 @@ window.switchFabTab=function(tab){
   if(!el)return;
   if(tab==='stock'){_fabInvDrillKey=null;el.innerHTML=renderFabricInventory();}
   else if(tab==='fabricin'){
-    fabRollIdx=0;
+    fabRollIdx=0;_fabInListPage=0;
     el.innerHTML=renderFabricInTab();
     window.addFabRoll();
     renderFabricInList();
@@ -728,7 +729,11 @@ function renderFabricInList(){
   const body=document.getElementById('fab-list-body');
   if(!body)return;
   if(!allFabricIn.length){body.innerHTML='<div class="empty">No fabric entries yet.</div>';return;}
-  body.innerHTML=allFabricIn.map(f=>{
+  const _PG=10;
+  const totalPages=Math.ceil(allFabricIn.length/_PG);
+  if(_fabInListPage>=totalPages)_fabInListPage=totalPages-1;
+  const page=allFabricIn.slice(_fabInListPage*_PG,(_fabInListPage+1)*_PG);
+  body.innerHTML=page.map(f=>{
     const rolls=f.rolls||[];
     const qcDone=rolls.filter(r=>r.qcPassed).length;
     const total=rolls.length;
@@ -784,7 +789,25 @@ function renderFabricInList(){
         </div>
       </div>
     </div>`;
-  }).join('');}
+  }).join('');
+  if(totalPages>1){
+    const p=_fabInListPage;
+    body.innerHTML+=`<div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:14px 0 4px;border-top:1px solid var(--border);margin-top:4px">
+      <button onclick="window.fabInListGoPage(${p-1})" ${p===0?'disabled':''}
+        style="padding:5px 14px;border:1px solid var(--border);border-radius:7px;background:${p===0?'#f9fafb':'#fff'};color:${p===0?'var(--muted)':'var(--text)'};font-size:12px;cursor:${p===0?'default':'pointer'};font-family:inherit">← Prev</button>
+      <span style="font-size:12px;color:var(--muted)">Page <strong style="color:var(--text)">${p+1}</strong> of ${totalPages} · ${allFabricIn.length} entries</span>
+      <button onclick="window.fabInListGoPage(${p+1})" ${p===totalPages-1?'disabled':''}
+        style="padding:5px 14px;border:1px solid var(--border);border-radius:7px;background:${p===totalPages-1?'#f9fafb':'#fff'};color:${p===totalPages-1?'var(--muted)':'var(--text)'};font-size:12px;cursor:${p===totalPages-1?'default':'pointer'};font-family:inherit">Next →</button>
+    </div>`;
+  }
+}
+
+window.fabInListGoPage=function(n){
+  _fabInListPage=n;
+  renderFabricInList();
+  const card=document.querySelector('#fab-list-body');
+  if(card)card.scrollIntoView({behavior:'smooth',block:'start'});
+};
 
 window.toggleFabEntry=function(id){
   const rolls=document.getElementById('fab-rolls-'+id);
