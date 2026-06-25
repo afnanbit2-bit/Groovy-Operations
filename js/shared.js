@@ -586,7 +586,7 @@ function buildNav(){
     <div class="nav-item" id="nav-store-toggle" onclick="window.toggleStoreNav()" style="display:flex;justify-content:space-between;align-items:center">
       <span>Store</span><span id="store-nav-arrow" style="font-size:10px;transition:transform .2s">${storeOpen?'▾':'▸'}</span>
     </div>
-    <div id="store-subnav" style="overflow:hidden;transition:max-height .2s;max-height:${storeOpen?'300px':'0'}">
+    <div id="store-subnav" style="overflow:hidden;transition:max-height .2s;max-height:${storeOpen?(storeSubItems.length*40+8)+'px':'0'}">
       ${storeSubItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:22px;font-size:12px">${i.label}</div>`).join('')}
     </div>`:'';
   const printNav=printSubItems.length?`
@@ -594,7 +594,7 @@ function buildNav(){
     <div class="nav-item" id="nav-print-toggle" onclick="window.togglePrintNav()" style="display:flex;justify-content:space-between;align-items:center">
       <span>Embellishments Department</span><span id="print-nav-arrow" style="font-size:10px;transition:transform .2s">${printOpen?'▾':'▸'}</span>
     </div>
-    <div id="print-subnav" style="overflow:hidden;transition:max-height .2s;max-height:${printOpen?'300px':'0'}">
+    <div id="print-subnav" style="overflow:hidden;transition:max-height .2s;max-height:${printOpen?(printSubItems.length*40+8)+'px':'0'}">
       ${printSubItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:22px;font-size:12px">${i.label}</div>`).join('')}
     </div>`:'';
 
@@ -603,7 +603,7 @@ function buildNav(){
     <div class="nav-item" id="nav-hrm-toggle" onclick="window.toggleHRMNav()" style="display:flex;justify-content:space-between;align-items:center">
       <span>HRM</span><span id="hrm-nav-arrow" style="font-size:10px;transition:transform .2s">${hrmOpen?'▾':'▸'}</span>
     </div>
-    <div id="hrm-subnav" style="overflow:hidden;transition:max-height .2s;max-height:${hrmOpen?'300px':'0'}">
+    <div id="hrm-subnav" style="overflow:hidden;transition:max-height .2s;max-height:${hrmOpen?(hrmSubItems.length*40+8)+'px':'0'}">
       ${hrmSubItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:22px;font-size:12px"><span class="icon">${i.iconName?_icon(i.iconName,16):''}</span>${i.label}</div>`).join('')}
     </div>`:'';
 
