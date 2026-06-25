@@ -67,6 +67,12 @@ service cloud.firestore {
     match /store_categories/{doc}     { allow read, write: if signedIn(); }
     match /store_requests/{doc}       { allow read, write: if signedIn(); }
     match /trim_templates/{doc}       { allow read, write: if signedIn(); }
+    // PO issue/edit workflow + shortfall tracking, read by the Store
+    // dashboard + PO Issue Requests page. Missing rules here caused 403s
+    // on every store dashboard load.
+    match /po_issue_requests/{doc}    { allow read, write: if signedIn(); }
+    match /po_edit_requests/{doc}     { allow read, write: if signedIn(); }
+    match /po_shortfalls/{doc}        { allow read, write: if signedIn(); }
 
     // ── Store Cash Ledger ──
     // All signed-in users may read (Raees for entry, owners for insights).
