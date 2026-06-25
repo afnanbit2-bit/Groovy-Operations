@@ -15,8 +15,8 @@ let _cashTab = 'recent';
 let _cashInsightsPeriod = '';
 let _cashRecentPage = 0;
 let _cashExpenseCat = '';
-let _cashExpenseAcc = 'mcb';
-let _cashTopupAcc = 'mcb';
+let _cashExpenseAcc = 'cash';
+let _cashTopupAcc = 'cash';
 
 // ── Constants ──
 const CASH_ACCOUNTS = [
@@ -213,10 +213,10 @@ function _cashPageHTML(){
   const thisMonthExp=entries.filter(r=>r.kind==='expense'&&r.month===mo).reduce((s,r)=>s+(r.amount||0),0);
   const openFloat=allCashFloats.filter(f=>f.status==='open').reduce((s,f)=>s+(f.issued||0),0);
   const tabs=[{id:'recent',label:'Recent'},{id:'issued',label:'Issued'},{id:'byaccount',label:'Accounts'}];
-  if(_canAdminCash()) tabs.push({id:'insights',label:'Insights'});
+  if(_canViewCash()) tabs.push({id:'insights',label:'Insights'});
   let h='';
   h+=_cashKpiStrip(thisMonthExp,openFloat);
-  h+=`<div class="gp-tabs" style="margin:0 -16px;padding:0 16px;overflow-x:auto">${tabs.map(t=>`<div class="gp-tab${_cashTab===t.id?' on':''}" onclick="window._cashSetTab('${t.id}')">${t.label}</div>`).join('')}</div>`;
+  h+=`<div class="gp-tabs" style="margin:0 -16px;padding:0 16px;overflow-x:auto">${tabs.map(t=>`<div class="gp-tab${_cashTab===t.id?' active':''}" onclick="window._cashSetTab('${t.id}')">${t.label}</div>`).join('')}</div>`;
   h+=`<div id="cash-tab-body" style="padding-top:10px">`;
   if(_cashTab==='recent')         h+=_cashRecentFeed(entries);
   else if(_cashTab==='issued')    h+=_cashIssuedFeed();
@@ -252,7 +252,7 @@ function _cashKpiStrip(thisMonthExp,openFloat){
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(86px,1fr));gap:7px;margin-bottom:7px">${wallets}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:8px">
       <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 12px;border-top:3px solid #16a34a">
-        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:4px;font-weight:700">Total Float</div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:4px;font-weight:700">Net Cash</div>
         <div style="font-size:17px;font-weight:800;color:${totalBal<0?'#dc2626':'var(--text)'};line-height:1">${_fmtPKR(totalBal)}</div>
       </div>
       ${floatTile}
@@ -360,7 +360,7 @@ function _cashByAccountFeed(entries){
 
 // ── Insights (owner only) ──
 function _cashInsightsPanel(entries,period){
-  if(!_canAdminCash()) return '<div class="empty">Owners &amp; managers only.</div>';
+  if(!_canViewCash()) return '<div class="empty">Access restricted.</div>';
   const mo=period||_cashCurrentMonth();
   const months=[...new Set(entries.map(r=>r.month||'').filter(Boolean))].sort().reverse().slice(0,6);
   const sel=entries.filter(r=>r.month===mo);
@@ -425,7 +425,7 @@ function _cashInsightsPanel(entries,period){
 
 // ── Action Bar ──
 function _cashActionBar(){
-  return `<div id="cash-action-bar" style="position:fixed;bottom:62px;left:0;right:0;z-index:115;padding:8px 14px;background:rgba(255,255,255,.96);backdrop-filter:blur(10px);border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;box-shadow:0 -2px 16px rgba(0,0,0,.07)">
+  return `<div id="cash-action-bar" class="cash-action-bar">
     <button onclick="window.cashSheetExpense()" style="flex:3;height:48px;background:#dc2626;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer;letter-spacing:-.01em;box-shadow:0 2px 8px #dc262638">₨ I PAID</button>
     <button onclick="window.cashSheetTopup()" style="flex:1;height:48px;background:#16a34a;color:#fff;border:none;border-radius:12px;font-size:13px;font-weight:700;cursor:pointer">+ IN</button>
     <button onclick="window.cashSheetIssue()" style="flex:1;height:48px;background:#7c3aed;color:#fff;border:none;border-radius:12px;font-size:11px;font-weight:700;cursor:pointer">→ Issue</button>
@@ -441,7 +441,7 @@ window._cashCloneEntry=function(id){const r=allCashLedger.find(x=>x._id===id);if
 // ── EXPENSE SHEET ──
 window.cashSheetExpense=function(cloneId){
   const clone=cloneId?allCashLedger.find(r=>r._id===cloneId):null;
-  const defAcc=clone?.account||localStorage.getItem('groovy_cash_last_acc')||'mcb';
+  const defAcc=clone?.account||localStorage.getItem('groovy_cash_last_acc')||'cash';
   const defCat=clone?.category||localStorage.getItem('groovy_cash_last_cat')||'';
   window._cashExpenseCat=defCat; window._cashExpenseAcc=defAcc;
   const cats=allCashCategories.length?allCashCategories:CASH_CAT_SEED;
@@ -470,7 +470,7 @@ window.cashSheetExpense=function(cloneId){
     <input id="cash-note" type="text" placeholder="e.g. Noman, direct, Pak Gas Agency" value="${_scEsc(clone?.note||'')}"
       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:10px">
     <div id="cash-prev" style="font-size:12px;color:var(--muted);text-align:center;margin-bottom:10px;min-height:16px"></div>
-    <button id="cash-submit" onclick="window._cashDoExpense()" style="width:100%;height:50px;background:#dc2626;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">Record ₨ <span id="cash-sub-amt">—</span></button>
+    <button id="cash-submit" onclick="window._cashDoExpense()" style="width:100%;height:50px;background:#dc2626;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">Record <span id="cash-sub-amt">—</span></button>
     <button onclick="window.cashSheetTransfer(true)" style="width:100%;height:38px;background:transparent;color:#7c3aed;border:1.5px solid #7c3aed40;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer;margin-top:8px">↕ Transfer between accounts</button>
   `);
   window._cashPrev();
@@ -530,7 +530,7 @@ window._cashDoExpense=async function(){
 // ── TOPUP SHEET ──
 window.cashSheetTopup=function(cloneId){
   const clone=cloneId?allCashLedger.find(r=>r._id===cloneId):null;
-  const defAcc=clone?.account||'mcb';
+  const defAcc=clone?.account||'cash';
   window._cashTopupAcc=defAcc;
   const accChips=CASH_ACCOUNTS.map(a=>{
     const on=defAcc===a.key;
@@ -624,7 +624,7 @@ window.cashSheetIssue=function(){
   const qAmts=[1000,2000,5000,10000].map(v=>`<button onclick="window._cashIQAmt(${v})" style="flex:1;padding:8px 0;border:1px solid var(--border);border-radius:8px;background:#f9fafb;font-size:12px;font-weight:700;cursor:pointer">+${v>=1000?v/1000+'k':v}</button>`).join('');
   _cashOpenSheet('→ Issue to Person',`
     <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Issue To</div>
-    <input id="issue-payee" type="text" value="Noman" placeholder="e.g. Noman"
+    <input id="issue-payee" type="text" value="" placeholder="e.g. Noman"
       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px">
     <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">From Account</div>
     <select id="issue-acc" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:12px;box-sizing:border-box">${opts}</select>
