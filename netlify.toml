@@ -26,6 +26,19 @@
 [functions."shopify-weekly-close"]
   schedule = "0 2 * * 6"
 
+# ── Cache control ──────────────────────────────────────────────
+# index.html must always be revalidated so a new deploy's bumped
+# ?v= query strings on the JS/CSS reach the browser immediately.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
