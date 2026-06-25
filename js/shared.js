@@ -559,6 +559,7 @@ function buildNav(){
   const storeSubItems=[];
   if(!isWorker){
     storeSubItems.push({id:'store-dashboard',label:'Dashboard'});
+    if(typeof _canViewCash==='function'&&_canViewCash())storeSubItems.push({id:'store-cash-ledger',label:'💰 Cash Ledger'});
     storeSubItems.push({id:'store-inventory',label:'Inventory'});
     storeSubItems.push({id:'store-receive',label:'Receive Stock'});
     storeSubItems.push({id:'store-issue',label:'Issue Stock'});
@@ -567,7 +568,6 @@ function buildNav(){
     storeSubItems.push({id:'store-templates',label:'Trim Templates'});
     storeSubItems.push({id:'po-issue-list',label:'PO Issue Requests'});
     if(typeof _canApproveEdits==='function'&&_canApproveEdits())storeSubItems.push({id:'po-edit-inbox',label:'Edit Inbox'});
-    if(typeof _canViewCash==='function'&&_canViewCash())storeSubItems.push({id:'store-cash-ledger',label:'💰 Cash Ledger'});
   }
 
   // Desktop sidebar uses the same worker-aware list as the mobile "More" sheet
@@ -794,13 +794,14 @@ window.openMoreSheet=function(){
 };
 
 window.openStoreMoreSheet=function(){
-  const items=[
+  const items=[];
+  if(typeof _canViewCash==='function'&&_canViewCash())items.push({iconName:'activity',label:'💰 Cash Ledger',pageId:'store-cash-ledger'});
+  items.push(
     {iconName:'list',label:'Trim Templates',pageId:'store-templates'},
     {iconName:'activity',label:'Stock Log',pageId:'store-log'},
     {iconName:'tray',label:'PO Issue Requests',pageId:'po-issue-list'}
-  ];
+  );
   if(typeof _canApproveEdits==='function'&&_canApproveEdits())items.push({iconName:'list',label:'Edit Inbox',pageId:'po-edit-inbox'});
-  if(typeof _canViewCash==='function'&&_canViewCash())items.push({iconName:'activity',label:'Cash Ledger',pageId:'store-cash-ledger'});
   window.openMobSheet('More',items);
 };
 
