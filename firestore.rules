@@ -83,6 +83,7 @@ service cloud.firestore {
     match /store_cash_accounts/{doc}  { allow read, write: if signedIn(); }
     match /store_cash_floats/{doc}    { allow read, write: if signedIn(); }
     match /store_cash_categories/{doc}{ allow read, write: if signedIn(); }
+    match /store_cash_vendors/{doc}   { allow read, write: if signedIn(); }
     match /store_cash_snapshots/{doc} { allow read, write: if isOM(); }
 
     // ── Embellishments / printing ──
