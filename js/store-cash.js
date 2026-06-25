@@ -58,6 +58,11 @@ function _fmtPKR(n){
 function _cashCurrentMonth(){
   const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
 }
+function _cashPrevMonth(mo){
+  const [y,m]=mo.split('-').map(Number);
+  const d=new Date(y,m-2,1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
 
 // ── Sheet helper (uses existing mob-sheet DOM) ──
 function _cashOpenSheet(title, html){
@@ -267,27 +272,51 @@ function _cashRecentFeed(entries){
   const totalPages=Math.ceil(entries.length/PG);
   if(_cashRecentPage>=totalPages)_cashRecentPage=Math.max(0,totalPages-1);
   const page=entries.slice(_cashRecentPage*PG,(_cashRecentPage+1)*PG);
-  const rows=page.map(r=>{
-    const cat=_cashGetCategory(r.category);
-    const acc=CASH_ACCOUNTS.find(a=>a.key===r.account);
-    const dot=cat?.accent||'#6b7280';
-    const isIn=(r.kind==='topup'||r.kind==='settle');
-    const isXfer=r.kind==='transfer';
-    const sign=isIn?'+':isXfer?'↕':'-';
-    const col=isIn?'#16a34a':isXfer?'#7c3aed':'#dc2626';
-    const payeeStr=r.payee&&r.payee!=='direct'&&r.payee!=='system'?` → ${r.payee}`:'';
-    return `<div onclick="window._cashCloneEntry('${r._id}')" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer" title="Tap to repeat this entry">
-      <div style="width:9px;height:9px;border-radius:50%;background:${dot};flex-shrink:0"></div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cat?.icon||''} ${cat?.label||(r.kind==='topup'?'Top-up':r.kind==='transfer'?'Transfer':r.kind)}${payeeStr}</div>
-        <div style="font-size:11px;color:var(--muted)">${r.date||''} · ${acc?.label||r.account||''}${r.note?' · '+_scEsc(r.note):''}</div>
-      </div>
-      <div style="font-size:14px;font-weight:800;color:${col};flex-shrink:0;padding-left:6px">${sign}${_fmtPKR(r.amount)}</div>
-    </div>`;
-  }).join('');
+
+  const tod=todayStr();
+  const yd=new Date(); yd.setDate(yd.getDate()-1);
+  const yest=[yd.getFullYear(),String(yd.getMonth()+1).padStart(2,'0'),String(yd.getDate()).padStart(2,'0')].join('-');
+  function _dLabel(d){
+    if(d===tod) return 'Today';
+    if(d===yest) return 'Yesterday';
+    const dt=new Date(d+'T00:00:00');
+    return isNaN(dt)?d:dt.toLocaleDateString('en-PK',{weekday:'short',day:'numeric',month:'short'});
+  }
+
+  // Group by date preserving order
+  const groups={};const groupOrder=[];
+  for(const r of page){
+    const d=r.date||'—';
+    if(!groups[d]){groups[d]=[];groupOrder.push(d);}
+    groups[d].push(r);
+  }
+
+  let rows='';
+  for(const d of groupOrder){
+    rows+=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:10px 0 4px;margin-top:4px">${_dLabel(d)}</div>`;
+    for(const r of groups[d]){
+      const cat=_cashGetCategory(r.category);
+      const acc=CASH_ACCOUNTS.find(a=>a.key===r.account);
+      const dot=cat?.accent||'#6b7280';
+      const isIn=(r.kind==='topup'||r.kind==='settle');
+      const isXfer=r.kind==='transfer';
+      const sign=isIn?'+':isXfer?'↕':'-';
+      const col=isIn?'#16a34a':isXfer?'#7c3aed':'#dc2626';
+      const kindLabel=r.kind==='topup'?'Top-up':r.kind==='transfer'?'Transfer':r.kind==='issue'?'Issued':r.kind==='settle'?'Settled':r.kind==='adjust'?'Adjustment':r.kind;
+      const payeeStr=r.payee&&r.payee!=='direct'&&r.payee!=='system'?` · ${r.payee}`:'';
+      rows+=`<div onclick="window._cashCloneEntry('${r._id}')" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f5f5f5;cursor:pointer">
+        <div style="width:8px;height:8px;border-radius:50%;background:${dot};flex-shrink:0;margin-top:2px"></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cat?.icon?cat.icon+' ':''}${cat?.label||kindLabel}${payeeStr}</div>
+          <div style="font-size:11px;color:var(--muted)">${acc?.label||r.account||''}${r.note?' · '+_scEsc(r.note):''} · ${r.by||''}</div>
+        </div>
+        <div style="font-size:14px;font-weight:800;color:${col};flex-shrink:0;padding-left:6px">${sign}${_fmtPKR(r.amount)}</div>
+      </div>`;
+    }
+  }
   let pager='';
   if(totalPages>1){
-    pager=`<div style="display:flex;gap:8px;align-items:center;justify-content:center;padding:12px 0 4px;border-top:1px solid var(--border)">
+    pager=`<div style="display:flex;gap:8px;align-items:center;justify-content:center;padding:12px 0 4px;border-top:1px solid var(--border);margin-top:4px">
       <button onclick="window._cashPageNav(${_cashRecentPage-1})" ${_cashRecentPage===0?'disabled':''} class="btn-outline" style="padding:6px 14px;font-size:12px">← Prev</button>
       <span style="font-size:12px;color:var(--muted)">Page <strong>${_cashRecentPage+1}</strong>/${totalPages} · ${entries.length} entries</span>
       <button onclick="window._cashPageNav(${_cashRecentPage+1})" ${_cashRecentPage>=totalPages-1?'disabled':''} class="btn-outline" style="padding:6px 14px;font-size:12px">Next →</button>
@@ -358,68 +387,185 @@ function _cashByAccountFeed(entries){
   return h;
 }
 
-// ── Insights (owner only) ──
+// ── Insights ──
 function _cashInsightsPanel(entries,period){
   if(!_canViewCash()) return '<div class="empty">Access restricted.</div>';
   const mo=period||_cashCurrentMonth();
   const months=[...new Set(entries.map(r=>r.month||'').filter(Boolean))].sort().reverse().slice(0,6);
   const sel=entries.filter(r=>r.month===mo);
+  const prevMo=_cashPrevMonth(mo);
+  const prevSel=entries.filter(r=>r.month===prevMo);
+
   const expenses=sel.filter(r=>r.kind==='expense');
+  const prevExp=prevSel.filter(r=>r.kind==='expense');
+  const topups=sel.filter(r=>r.kind==='topup');
+  const prevTopups=prevSel.filter(r=>r.kind==='topup');
+
   const totalOut=expenses.reduce((s,r)=>s+(r.amount||0),0);
-  const totalIn=sel.filter(r=>r.kind==='topup').reduce((s,r)=>s+(r.amount||0),0);
+  const prevOut=prevExp.reduce((s,r)=>s+(r.amount||0),0);
+  const totalIn=topups.reduce((s,r)=>s+(r.amount||0),0);
+  const prevIn=prevTopups.reduce((s,r)=>s+(r.amount||0),0);
   const net=totalIn-totalOut;
-  // By category
-  const byCat={};
-  for(const r of expenses) byCat[r.category]=(byCat[r.category]||0)+(r.amount||0);
-  const catSorted=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
-  const maxCat=catSorted[0]?.[1]||1;
-  // By bucket
-  const byBucket={};
-  for(const r of expenses) byBucket[r.bucket||'overhead']=(byBucket[r.bucket||'overhead']||0)+(r.amount||0);
-  const BUCKET_LABEL={stock:'Stock',overhead:'Overhead',passthrough:'Pass-through',misc:'Misc'};
-  const BUCKET_COLOR={stock:'#0284c7',overhead:'#ea580c',passthrough:'#64748b',misc:'#6b7280'};
-  let h='';
-  // Period selector
-  if(months.length>1){
-    h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${months.map(m=>`<button onclick="window._cashSetPeriod('${m}')" style="padding:5px 11px;border-radius:16px;border:1.5px solid ${period===m?'#2563eb':'var(--border)'};background:${period===m?'#dbeafe':'#fff'};font-size:11px;font-weight:600;cursor:pointer;color:${period===m?'#2563eb':'var(--text)'}">${m}</button>`).join('')}</div>`;
+
+  function _delta(cur,prev,lowerGood){
+    if(!prev) return '';
+    const d=Math.round((cur-prev)/prev*100);
+    const col=(d>0)===lowerGood?'#dc2626':'#16a34a';
+    return `<div style="font-size:10px;color:${col};font-weight:700;margin-top:3px">${d>0?'▲':'▼'}${Math.abs(d)}% vs ${prevMo}</div>`;
   }
-  // KPIs
-  h+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-bottom:12px">
-    <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 12px;border-top:3px solid #16a34a"><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">In</div><div style="font-size:16px;font-weight:800;color:#16a34a">${_fmtPKR(totalIn)}</div></div>
-    <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 12px;border-top:3px solid #dc2626"><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Out</div><div style="font-size:16px;font-weight:800;color:#dc2626">${_fmtPKR(totalOut)}</div></div>
-    <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 12px;border-top:3px solid ${net>=0?'#16a34a':'#dc2626'}"><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Net</div><div style="font-size:16px;font-weight:800;color:${net>=0?'#16a34a':'#dc2626'}">${_fmtPKR(net)}</div></div>
+
+  // By category — null/undefined → '__none__' (never silently dropped)
+  const byCat={};
+  for(const r of expenses){const k=r.category||'__none__';byCat[k]=(byCat[k]||0)+(r.amount||0);}
+  const catSorted=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+
+  // By user
+  const byUser={};const userCt={};
+  for(const r of expenses){const k=r.by||'system';byUser[k]=(byUser[k]||0)+(r.amount||0);userCt[k]=(userCt[k]||0)+1;}
+  const userSorted=Object.entries(byUser).sort((a,b)=>b[1]-a[1]);
+
+  // By day
+  const byDay={};
+  for(const r of expenses){if(r.date)byDay[r.date]=(byDay[r.date]||0)+(r.amount||0);}
+  const dayMax=Math.max(...Object.values(byDay),1);
+  const dayEntries=Object.entries(byDay).sort((a,b)=>a[0].localeCompare(b[0]));
+
+  // Budget map
+  const cats=allCashCategories.length?allCashCategories:CASH_CAT_SEED;
+  const budgetOf=k=>cats.find(c=>(c.key||c._id)===k)?.monthlyBudget||0;
+  const hasBudget=cats.some(c=>(c.monthlyBudget||0)>0);
+
+  let h='';
+
+  // Month chips
+  if(months.length>1){
+    h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${months.map(m=>`<button onclick="window._cashSetPeriod('${m}')" style="padding:5px 12px;border-radius:16px;border:1.5px solid ${mo===m?'#2563eb':'var(--border)'};background:${mo===m?'#dbeafe':'#fff'};font-size:11px;font-weight:600;cursor:pointer;color:${mo===m?'#2563eb':'var(--text)'}">${m}</button>`).join('')}</div>`;
+  }
+
+  // KPI row
+  h+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+    <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px;border-top:3px solid #16a34a">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">In</div>
+      <div style="font-size:18px;font-weight:800;color:#16a34a">${_fmtPKR(totalIn)}</div>
+      ${_delta(totalIn,prevIn,false)}
+    </div>
+    <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px;border-top:3px solid #dc2626">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Out</div>
+      <div style="font-size:18px;font-weight:800;color:#dc2626">${_fmtPKR(totalOut)}</div>
+      ${_delta(totalOut,prevOut,true)}
+    </div>
+    <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px;border-top:3px solid ${net>=0?'#16a34a':'#dc2626'}">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Net</div>
+      <div style="font-size:18px;font-weight:800;color:${net>=0?'#16a34a':'#dc2626'}">${net>=0?'+':''}${_fmtPKR(net)}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:3px">${expenses.length} entries</div>
+    </div>
   </div>`;
-  // By category bars
-  if(catSorted.length){
-    h+=`<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px">
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:12px;letter-spacing:.06em">Spend by Category</div>`;
-    for(const [k,amt] of catSorted){
-      const cat=_cashGetCategory(k);
-      const pct=Math.round((amt/maxCat)*100);
-      h+=`<div style="margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
-          <span>${cat?.icon||''} ${cat?.label||k}</span>
-          <span style="font-weight:700">${_fmtPKR(amt)} <span style="color:var(--muted);font-weight:400">${totalOut?Math.round(amt/totalOut*100):0}%</span></span>
+
+  if(!expenses.length){h+=`<div class="empty" style="padding:24px 0;text-align:center">No expense entries for ${mo}.</div>`;return h;}
+
+  // ── Budget vs Actual table ──
+  h+=`<div style="background:#fff;border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px 8px;border-bottom:1px solid var(--border)">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Category Breakdown</div>
+      ${hasBudget?`<div style="font-size:10px;color:var(--muted)">Budget markers shown</div>`:''}
+    </div>`;
+
+  for(const [k,amt] of catSorted){
+    const cat=k==='__none__'
+      ? {label:'Uncategorized',icon:'❓',accent:'#6b7280'}
+      : (_cashGetCategory(k)||{label:k,icon:'·',accent:'#6b7280'});
+    const budget=budgetOf(k);
+    const shareW=totalOut?Math.min(Math.round(amt/totalOut*100),100):0;
+    const usedPct=budget>0?Math.round(amt/budget*100):null;
+    const barColor=usedPct!=null?(usedPct>100?'#dc2626':usedPct>80?'#d97706':'#16a34a'):(cat.accent||'#6b7280');
+    h+=`<div style="padding:10px 14px;border-bottom:1px solid #f5f5f5">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+        <span style="font-size:15px;flex-shrink:0">${cat.icon||'·'}</span>
+        <span style="flex:1;font-size:13px;font-weight:600">${_scEsc(cat.label)}</span>
+        <span style="font-size:13px;font-weight:800">${_fmtPKR(amt)}</span>
+        ${usedPct!=null?`<span style="font-size:10px;color:${barColor};font-weight:700;min-width:34px;text-align:right">${usedPct}%</span>`:`<span style="font-size:10px;color:var(--muted);min-width:34px;text-align:right">${totalOut?Math.round(amt/totalOut*100):0}%</span>`}
+      </div>
+      <div style="height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden;position:relative">
+        <div style="height:100%;width:${shareW}%;background:${cat.accent||'#6b7280'};border-radius:3px"></div>
+        ${budget>0?`<div style="position:absolute;top:-1px;bottom:-1px;left:${Math.min(100,Math.round(budget/totalOut*100))}%;width:2px;background:#374151;opacity:.5;border-radius:1px" title="Budget"></div>`:''}
+      </div>
+      ${usedPct!=null&&usedPct>100?`<div style="font-size:10px;color:#dc2626;font-weight:600;margin-top:3px">⚠ Over budget by ${_fmtPKR(amt-budget)}</div>`:''}
+      ${budget>0&&usedPct<=100?`<div style="font-size:10px;color:var(--muted);margin-top:3px">${_fmtPKR(budget-amt)} remaining of ${_fmtPKR(budget)} budget</div>`:''}
+    </div>`;
+  }
+  h+=`<div style="display:flex;justify-content:space-between;padding:10px 14px;background:#fafafa">
+    <span style="font-size:12px;color:var(--muted)">${catSorted.length} categories</span>
+    <span style="font-size:13px;font-weight:800">${_fmtPKR(totalOut)} total out</span>
+  </div></div>`;
+
+  // ── Daily spend chart ──
+  if(dayEntries.length){
+    h+=`<div style="background:#fff;border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden">
+      <div style="padding:12px 14px 8px;border-bottom:1px solid var(--border)">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Daily Spend — ${mo}</div>
+      </div>
+      <div style="padding:10px 14px">`;
+    for(const [d,amt] of dayEntries){
+      const day=parseInt(d.slice(8));
+      const barW=Math.round(amt/dayMax*100);
+      h+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+        <div style="font-size:10px;color:var(--muted);width:18px;text-align:right;flex-shrink:0">${day}</div>
+        <div style="flex:1;height:12px;background:#f0f0f0;border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${barW}%;background:#2563eb;border-radius:3px"></div>
         </div>
-        <div style="height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden">
-          <div style="height:100%;width:${pct}%;background:${cat?.accent||'#6b7280'};border-radius:3px;transition:width .4s"></div>
+        <div style="font-size:11px;font-weight:700;width:72px;text-align:right;flex-shrink:0">${_fmtPKR(amt)}</div>
+      </div>`;
+    }
+    h+=`</div></div>`;
+  }
+
+  // ── By person ──
+  if(userSorted.length){
+    h+=`<div style="background:#fff;border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden">
+      <div style="padding:12px 14px 8px;border-bottom:1px solid var(--border)">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">By Person</div>
+      </div>`;
+    for(const [u,amt] of userSorted){
+      const pct=totalOut>0?Math.round(amt/totalOut*100):0;
+      const barW=totalOut>0?Math.round(amt/totalOut*100):0;
+      h+=`<div style="padding:10px 14px;border-bottom:1px solid #f5f5f5">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+          <span style="font-size:13px;font-weight:600">${_scEsc(u)}</span>
+          <span style="font-size:13px;font-weight:800;color:#dc2626">${_fmtPKR(amt)}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1;height:5px;background:#f0f0f0;border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${barW}%;background:#dc2626;border-radius:3px"></div>
+          </div>
+          <span style="font-size:10px;color:var(--muted);white-space:nowrap">${userCt[u]||0} entries · ${pct}%</span>
         </div>
       </div>`;
     }
     h+=`</div>`;
   }
-  // Stock vs Overhead split
-  if(Object.keys(byBucket).length&&totalOut>0){
-    h+=`<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px">
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:10px;letter-spacing:.06em">Spend Split</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">${Object.entries(byBucket).map(([bk,amt])=>`<div style="flex:1;min-width:72px;background:${BUCKET_COLOR[bk]||'#6b7280'}15;border:1px solid ${BUCKET_COLOR[bk]||'#6b7280'}35;border-radius:8px;padding:8px 10px">
-        <div style="font-size:9px;color:var(--muted);margin-bottom:2px;text-transform:uppercase;font-weight:700">${BUCKET_LABEL[bk]||bk}</div>
-        <div style="font-size:14px;font-weight:800;color:${BUCKET_COLOR[bk]||'#6b7280'}">${_fmtPKR(amt)}</div>
-        <div style="font-size:10px;color:var(--muted)">${Math.round(amt/totalOut*100)}%</div>
-      </div>`).join('')}</div>
-    </div>`;
+
+  // ── By account used for expenses ──
+  const byAcc={};
+  for(const r of expenses){const k=r.account||'?';byAcc[k]=(byAcc[k]||0)+(r.amount||0);}
+  const accSorted=Object.entries(byAcc).sort((a,b)=>b[1]-a[1]);
+  if(accSorted.length>1){
+    h+=`<div style="background:#fff;border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden">
+      <div style="padding:12px 14px 8px;border-bottom:1px solid var(--border)">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Spend by Account</div>
+      </div>`;
+    for(const [k,amt] of accSorted){
+      const acc=CASH_ACCOUNTS.find(a=>a.key===k);
+      const pct=totalOut>0?Math.round(amt/totalOut*100):0;
+      h+=`<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #f5f5f5">
+        <div style="width:10px;height:10px;border-radius:50%;background:${acc?.accent||'#6b7280'};flex-shrink:0"></div>
+        <div style="flex:1;font-size:13px;font-weight:600">${acc?.label||k}</div>
+        <div style="font-size:11px;color:var(--muted);margin-right:4px">${pct}%</div>
+        <div style="font-size:13px;font-weight:800">${_fmtPKR(amt)}</div>
+      </div>`;
+    }
+    h+=`</div>`;
   }
-  if(!catSorted.length) h+=`<div class="empty" style="padding:24px 0">No expense entries for ${mo}.</div>`;
+
   return h;
 }
 
