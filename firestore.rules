@@ -68,6 +68,17 @@ service cloud.firestore {
     match /store_requests/{doc}       { allow read, write: if signedIn(); }
     match /trim_templates/{doc}       { allow read, write: if signedIn(); }
 
+    // ── Store Cash Ledger ──
+    // All signed-in users may read (Raees for entry, owners for insights).
+    // Write is open to any signed-in user — app-layer permissions enforce who
+    // can post which entry kinds. Ledger rows are append-only by convention;
+    // updates/deletes are disallowed at the rules layer.
+    match /store_cash_ledger/{doc}    { allow read: if signedIn(); allow create: if signedIn(); allow update, delete: if isOwner(); }
+    match /store_cash_accounts/{doc}  { allow read, write: if signedIn(); }
+    match /store_cash_floats/{doc}    { allow read, write: if signedIn(); }
+    match /store_cash_categories/{doc}{ allow read, write: if signedIn(); }
+    match /store_cash_snapshots/{doc} { allow read, write: if isOM(); }
+
     // ── Embellishments / printing ──
     match /article_recipes/{doc}      { allow read, write: if signedIn(); }
     match /printing_jobs/{doc}        { allow read, write: if signedIn(); }

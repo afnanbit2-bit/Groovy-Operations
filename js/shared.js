@@ -567,6 +567,7 @@ function buildNav(){
     storeSubItems.push({id:'store-templates',label:'Trim Templates'});
     storeSubItems.push({id:'po-issue-list',label:'PO Issue Requests'});
     if(typeof _canApproveEdits==='function'&&_canApproveEdits())storeSubItems.push({id:'po-edit-inbox',label:'Edit Inbox'});
+    if(typeof _canViewCash==='function'&&_canViewCash())storeSubItems.push({id:'store-cash-ledger',label:'💰 Cash Ledger'});
   }
 
   // Desktop sidebar uses the same worker-aware list as the mobile "More" sheet
@@ -687,7 +688,7 @@ function _updateMobNavActive(pageId){
     'po-create':'po','po-registry':'po','po-detail':'po','stage-work':'po',
     'attendance':'hrm','hrm-employees':'hrm','hrm-payroll':'hrm','hrm-advances':'hrm','hrm-loans':'hrm','hrm-policy':'hrm',
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
-    'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more',
+    'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more','store-cash-ledger':'more',
     'activity':'more','users':'more','bug-tracker':'more','shopify-intel':'more',
     'my-work':'my-work'
   };
@@ -799,6 +800,7 @@ window.openStoreMoreSheet=function(){
     {iconName:'tray',label:'PO Issue Requests',pageId:'po-issue-list'}
   ];
   if(typeof _canApproveEdits==='function'&&_canApproveEdits())items.push({iconName:'list',label:'Edit Inbox',pageId:'po-edit-inbox'});
+  if(typeof _canViewCash==='function'&&_canViewCash())items.push({iconName:'activity',label:'Cash Ledger',pageId:'store-cash-ledger'});
   window.openMobSheet('More',items);
 };
 
@@ -863,6 +865,7 @@ function renderPage(id){
   else if(id==='store-templates'){m.innerHTML=renderStoreTemplates();const _si=document.getElementById('tpl-prod-search');if(_si){_si.addEventListener('input',()=>filterTplProd(_si.value));_si.addEventListener('focus',()=>filterTplProd(_si.value));}}
   else if(id==='store-log'){_ilPage=1;_ilQ='';_ilPO='';m.innerHTML=renderStoreLog();refreshIssueLog();}
   else if(id==='store-analytics')m.innerHTML=renderStoreAnalytics();
+  else if(id==='store-cash-ledger'){if(!cashDataLoaded)loadStoreCashData().then(()=>{if(currentPage===id)m.innerHTML=renderStoreCashLedger();});else m.innerHTML=renderStoreCashLedger();}
   else if(id==='po-issue-list'){if(!allItems.length)loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoIssueList();});else m.innerHTML=renderPoIssueList();}
   else if(id==='po-issue-detail'){if(!allItems.length)loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoIssuePickList();});else m.innerHTML=renderPoIssuePickList();}
   else if(id==='po-edit-inbox'){if(!allItems.length)loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoEditInbox();});else m.innerHTML=renderPoEditInbox();}
@@ -931,6 +934,7 @@ const BUG_PAGE_NAMES={
   'store-issue':'Store Issue',
   'store-templates':'Trim Templates',
   'store-log':'Store Log',
+  'store-cash-ledger':'Cash Ledger',
   'recipe-directory':'Recipe Directory',
   'recipe-create':'Recipe Create',
   'recipe-detail':'Recipe Detail',
