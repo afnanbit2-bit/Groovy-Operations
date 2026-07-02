@@ -1320,8 +1320,8 @@ function renderFabricIssueTab(){
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
       <div class="field" style="flex:1;min-width:150px;margin:0"><label>Avg fabric consumption / unit</label>
         <div style="display:flex;gap:6px">
-          <input id="fab-iss-consumption" type="number" min="0" step="0.001" inputmode="decimal" placeholder="e.g. 0.25" oninput="window.fabIssueRecalc()" style="flex:1">
-          <select id="fab-iss-cons-unit" onchange="window.fabIssueRecalc()" style="width:88px">
+          <input id="fab-iss-consumption" type="number" min="0" step="0.001" inputmode="decimal" placeholder="e.g. 0.25" oninput="window.fabIssueRecalc()" style="flex:1;font-size:15px;padding:9px 10px">
+          <select id="fab-iss-cons-unit" onchange="window.fabIssueRecalc()" style="width:96px;font-size:15px;padding:9px 8px">
             <option value="kg">kg</option><option value="meters">meters</option>
           </select>
         </div>
@@ -1374,17 +1374,17 @@ function _fabIssueSyncSizesFromDOM(){
 function _fabIssueRenderSizes(){
   const el=document.getElementById('fab-iss-sizes'); if(!el)return;
   if(!_fabIssueSizes.length)_fabIssueSizes=[{size:'',perBundle:'',bundles:''}];
-  el.innerHTML=`<div style="display:grid;grid-template-columns:1.3fr 1fr 1fr .9fr 28px;gap:6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:0 2px 4px">
+  el.innerHTML=`<div style="display:grid;grid-template-columns:1.3fr 1fr 1fr .9fr 28px;gap:8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:0 2px 6px">
       <span>Size</span><span>Pcs / bundle</span><span>Bundles</span><span style="text-align:right">Qty</span><span></span>
     </div>`+
     _fabIssueSizes.map((s,i)=>{
       const q=(parseInt(s.perBundle)||0)*(parseInt(s.bundles)||0);
-      return`<div class="fis-row" style="display:grid;grid-template-columns:1.3fr 1fr 1fr .9fr 28px;gap:6px;align-items:center;margin-bottom:6px">
-        <input class="fis-size" value="${_gpEsc(s.size)}" placeholder="e.g. M" oninput="window.fabIssueRecalc()" style="margin:0">
-        <input class="fis-pb" type="number" min="0" inputmode="numeric" value="${_gpEsc(s.perBundle)}" placeholder="0" oninput="window.fabIssueRecalc()" style="margin:0">
-        <input class="fis-bd" type="number" min="0" inputmode="numeric" value="${_gpEsc(s.bundles)}" placeholder="0" oninput="window.fabIssueRecalc()" style="margin:0">
-        <span class="fis-qty" style="text-align:right;font-weight:700;font-size:13px">${q?q.toLocaleString():'—'}</span>
-        <button type="button" onclick="window.fabIssueRemoveSize(${i})" title="Remove" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px;padding:0">×</button>
+      return`<div class="fis-row" style="display:grid;grid-template-columns:1.3fr 1fr 1fr .9fr 28px;gap:8px;align-items:center;margin-bottom:8px">
+        <input class="fis-size" value="${_gpEsc(s.size)}" placeholder="e.g. M" oninput="window.fabIssueRecalc()" style="margin:0;font-size:15px;padding:9px 10px">
+        <input class="fis-pb" type="number" min="0" inputmode="numeric" value="${_gpEsc(s.perBundle)}" placeholder="0" oninput="window.fabIssueRecalc()" style="margin:0;font-size:15px;padding:9px 10px">
+        <input class="fis-bd" type="number" min="0" inputmode="numeric" value="${_gpEsc(s.bundles)}" placeholder="0" oninput="window.fabIssueRecalc()" style="margin:0;font-size:15px;padding:9px 10px">
+        <span class="fis-qty" style="text-align:right;font-weight:800;font-size:16px">${q?q.toLocaleString():'—'}</span>
+        <button type="button" onclick="window.fabIssueRemoveSize(${i})" title="Remove" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:20px;padding:0;line-height:1">×</button>
       </div>`;
     }).join('');
   window.fabIssueRecalc();
