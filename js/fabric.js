@@ -1305,18 +1305,23 @@ function _fabFindRoll(rollCode){
 // ── Fabric Issue Registry ──
 // Every fabric issue against a PO, with the cut (size breakdown / planned qty),
 // bundles, fabric and weight. Source = gate passes with gpType 'fabric'.
+let _fabRegPage=0,_fabRegQ='';
+const FAB_REG_PG=12;
 function _fabIssueRecords(){
   return (typeof allPasses!=='undefined'&&allPasses||[])
     .filter(g=>g.gpType==='fabric')
     .sort((a,b)=>(b.ts||0)-(a.ts||0));
 }
+function _fabRegFiltered(){
+  const f=_fabRegQ.toLowerCase();
+  return _fabIssueRecords().filter(g=>!f||[g.poId,g.articleName,g.articleCode,g.fabricType,g.fabricColor,g.id].some(v=>String(v||'').toLowerCase().includes(f)));
+}
 function _fabRegRows(issues){
-  if(!issues.length)return '<div class="empty" style="padding:24px;text-align:center">No fabric issued yet.</div>';
   return issues.map(g=>{
     const sizes=(g.sizeBreakdown||[]).filter(s=>s.qty).map(s=>`${_gpEsc(s.size||'?')}: ${s.qty} (${s.perBundle||0}×${s.bundles||0})`).join(' · ');
     return`<div style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
-        <div style="font-weight:800;font-size:15px">PO ${_gpEsc(g.poId||'—')} <span style="font-weight:600;color:var(--muted);font-size:13px">${_gpEsc(g.articleName||'')}${g.articleCode?' · '+_gpEsc(g.articleCode):''}</span></div>
+        <div style="font-size:15px"><span style="font-weight:800;color:#dc2626">PO ${_gpEsc(g.poId||'—')}</span> <span style="font-weight:600;color:var(--muted);font-size:13px">${_gpEsc(g.articleName||'')}${g.articleCode?' · '+_gpEsc(g.articleCode):''}</span></div>
         <div style="font-size:11px;color:var(--muted)">${_gpEsc(g.id||'')} · ${_gpEsc(g.date||'')}</div>
       </div>
       <div style="font-size:12px;color:var(--muted);margin-top:3px">${_gpEsc(g.fabricType||'')} ${g.fabricGsm||0}gsm ${_gpEsc(g.fabricColor||'')}</div>
@@ -1331,7 +1336,24 @@ function _fabRegRows(issues){
     </div>`;
   }).join('');
 }
+function _fabRegListHTML(){
+  const all=_fabRegFiltered();
+  if(!all.length)return '<div class="empty" style="padding:24px;text-align:center">No fabric issues found.</div>';
+  const pages=Math.ceil(all.length/FAB_REG_PG);
+  if(_fabRegPage>=pages)_fabRegPage=Math.max(0,pages-1);
+  const slice=all.slice(_fabRegPage*FAB_REG_PG,(_fabRegPage+1)*FAB_REG_PG);
+  let pager='';
+  if(pages>1){
+    pager=`<div style="display:flex;gap:8px;align-items:center;justify-content:center;padding:12px 0 4px;border-top:1px solid var(--border);margin-top:6px">
+      <button onclick="window.fabRegPage(${_fabRegPage-1})" ${_fabRegPage===0?'disabled':''} class="btn-outline" style="padding:6px 14px;font-size:12px">← Prev</button>
+      <span style="font-size:12px;color:var(--muted)">Page <strong>${_fabRegPage+1}</strong>/${pages} · ${all.length} issues</span>
+      <button onclick="window.fabRegPage(${_fabRegPage+1})" ${_fabRegPage>=pages-1?'disabled':''} class="btn-outline" style="padding:6px 14px;font-size:12px">Next →</button>
+    </div>`;
+  }
+  return _fabRegRows(slice)+pager;
+}
 function renderFabricIssueRegistry(){
+  _fabRegPage=0;_fabRegQ='';
   const issues=_fabIssueRecords();
   const totalWeight=issues.reduce((s,g)=>s+(g.fabricQty||0),0);
   const totalPcs=issues.reduce((s,g)=>s+(g.plannedQty||0),0);
@@ -1344,15 +1366,12 @@ function renderFabricIssueRegistry(){
       <div style="flex:1;background:#f4f4f6;border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">Fabric out</div><div style="font-size:18px;font-weight:800">${totalWeight.toFixed(1)}</div></div>
     </div>
     <input id="fab-reg-search" placeholder="Search PO, article, fabric…" oninput="window.fabRegFilter(this.value)" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:10px">
-    <div id="fab-reg-list">${_fabRegRows(issues)}</div>
+    <div id="fab-reg-list">${_fabRegListHTML()}</div>
   </div>
   <div style="height:60px"></div>`;
 }
-window.fabRegFilter=function(q){
-  const f=(q||'').toLowerCase();
-  const issues=_fabIssueRecords().filter(g=>!f||[g.poId,g.articleName,g.articleCode,g.fabricType,g.fabricColor,g.id].some(v=>String(v||'').toLowerCase().includes(f)));
-  const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegRows(issues);
-};
+window.fabRegPage=function(n){_fabRegPage=n;const el=document.getElementById('fab-reg-list');if(el){el.innerHTML=_fabRegListHTML();el.scrollIntoView({behavior:'smooth',block:'start'});}};
+window.fabRegFilter=function(q){_fabRegQ=q||'';_fabRegPage=0;const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();};
 window.fabExportIssueRegistry=function(){
   const issues=_fabIssueRecords();
   if(!issues.length){showToast('Nothing to export.',true);return;}
