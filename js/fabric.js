@@ -1336,7 +1336,8 @@ function renderFabricIssueRegistry(){
   const totalWeight=issues.reduce((s,g)=>s+(g.fabricQty||0),0);
   const totalPcs=issues.reduce((s,g)=>s+(g.plannedQty||0),0);
   const totalBundles=issues.reduce((s,g)=>s+(g.totalBundles||0),0);
-  return`<div class="card"><div class="card-title">Fabric Issue Registry <span style="font-weight:400;color:var(--muted);font-size:11px">${issues.length} issue${issues.length===1?'':'s'}</span></div>
+  return`<div class="card"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center">Fabric Issue Registry <span style="font-weight:400;color:var(--muted);font-size:11px">${issues.length} issue${issues.length===1?'':'s'}</span></div>
+    ${issues.length?`<button class="btn-outline" style="font-size:12px;padding:6px 14px;margin-bottom:10px" onclick="window.fabExportIssueRegistry()">⬇ Export Excel</button>`:''}
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <div style="flex:1;background:#f4f4f6;border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">Cut planned</div><div style="font-size:18px;font-weight:800">${totalPcs.toLocaleString()} pcs</div></div>
       <div style="flex:1;background:#f4f4f6;border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">Bundles</div><div style="font-size:18px;font-weight:800">${totalBundles.toLocaleString()}</div></div>
@@ -1351,6 +1352,26 @@ window.fabRegFilter=function(q){
   const f=(q||'').toLowerCase();
   const issues=_fabIssueRecords().filter(g=>!f||[g.poId,g.articleName,g.articleCode,g.fabricType,g.fabricColor,g.id].some(v=>String(v||'').toLowerCase().includes(f)));
   const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegRows(issues);
+};
+window.fabExportIssueRegistry=function(){
+  const issues=_fabIssueRecords();
+  if(!issues.length){showToast('Nothing to export.',true);return;}
+  const header=['Date','GP','PO','Article','Code','Fabric','GSM','Color','Pcs cut','Bundles','Weight','Unit','Rolls','Avg/unit','Fabric req.','Cut by size','Issued by'];
+  const rows=issues.map(g=>[
+    g.date||'',g.id||'',g.poId||'',g.articleName||'',g.articleCode||'',
+    g.fabricType||'',g.fabricGsm||0,g.fabricColor||'',
+    g.plannedQty||0,g.totalBundles||0,g.fabricQty||0,g.fabricUnit||'',g.rollsCount||0,
+    g.avgConsumption||0,g.fabricRequired||0,
+    (g.sizeBreakdown||[]).filter(s=>s.qty).map(s=>`${s.size||'?'}:${s.qty}(${s.perBundle||0}x${s.bundles||0})`).join(' | '),
+    g.issuer||g.name||''
+  ]);
+  // totals row
+  const tot=['TOTAL','','','','','','','',
+    issues.reduce((n,g)=>n+(g.plannedQty||0),0),
+    issues.reduce((n,g)=>n+(g.totalBundles||0),0),
+    issues.reduce((n,g)=>n+(g.fabricQty||0),0),'','','','','',''];
+  _fabXlsx([header,...rows,[],tot],'Fabric Issues','fabric-issue-registry');
+  showToast('Exported ✓');
 };
 
 function renderFabricIssueTab(){
