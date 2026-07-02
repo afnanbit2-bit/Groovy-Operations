@@ -55,6 +55,7 @@ function renderFabricPage(){
     <button class="gp-tab" id="fabtab-stock" onclick="window.switchFabTab('stock')">Stock</button>
     <button class="gp-tab" id="fabtab-fabricin" onclick="window.switchFabTab('fabricin')">Fabric In</button>
     <button class="gp-tab" id="fabtab-issue" onclick="window.switchFabTab('issue')">Issue</button>
+    <button class="gp-tab" id="fabtab-registry" onclick="window.switchFabTab('registry')">Issue Registry</button>
     <button class="gp-tab" id="fabtab-returns" onclick="window.switchFabTab('returns')">Returns</button>
     <button class="gp-tab" id="fabtab-reports" onclick="window.switchFabTab('reports')">Reports</button>
     <button class="gp-tab" id="fabtab-log" onclick="window.switchFabTab('log')">Log</button>
@@ -64,7 +65,7 @@ function renderFabricPage(){
 
 window.switchFabTab=function(tab){
   fabActiveTab=tab;
-  ['stock','fabricin','issue','returns','reports','log'].forEach(t=>{
+  ['stock','fabricin','issue','registry','returns','reports','log'].forEach(t=>{
     const b=document.getElementById('fabtab-'+t);
     if(b)b.classList.toggle('active',t===tab);
   });
@@ -87,6 +88,9 @@ window.switchFabTab=function(tab){
       _fabIssuePreselectKey='';
     }
     _fabFocusScan('fab-iss-scan');
+  }
+  else if(tab==='registry'){
+    el.innerHTML=renderFabricIssueRegistry();
   }
   else if(tab==='returns'){
     el.innerHTML=renderFabricReturnsTab();
@@ -1298,6 +1302,57 @@ function _fabFindRoll(rollCode){
   return null;
 }
 
+// ── Fabric Issue Registry ──
+// Every fabric issue against a PO, with the cut (size breakdown / planned qty),
+// bundles, fabric and weight. Source = gate passes with gpType 'fabric'.
+function _fabIssueRecords(){
+  return (typeof allPasses!=='undefined'&&allPasses||[])
+    .filter(g=>g.gpType==='fabric')
+    .sort((a,b)=>(b.ts||0)-(a.ts||0));
+}
+function _fabRegRows(issues){
+  if(!issues.length)return '<div class="empty" style="padding:24px;text-align:center">No fabric issued yet.</div>';
+  return issues.map(g=>{
+    const sizes=(g.sizeBreakdown||[]).filter(s=>s.qty).map(s=>`${_gpEsc(s.size||'?')}: ${s.qty} (${s.perBundle||0}×${s.bundles||0})`).join(' · ');
+    return`<div style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
+        <div style="font-weight:800;font-size:15px">PO ${_gpEsc(g.poId||'—')} <span style="font-weight:600;color:var(--muted);font-size:13px">${_gpEsc(g.articleName||'')}${g.articleCode?' · '+_gpEsc(g.articleCode):''}</span></div>
+        <div style="font-size:11px;color:var(--muted)">${_gpEsc(g.id||'')} · ${_gpEsc(g.date||'')}</div>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-top:3px">${_gpEsc(g.fabricType||'')} ${g.fabricGsm||0}gsm ${_gpEsc(g.fabricColor||'')}</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:14px">
+        <span><strong>${(g.plannedQty||0).toLocaleString()}</strong> pcs cut</span>
+        <span><strong>${g.totalBundles||0}</strong> bundles</span>
+        <span><strong>${(g.fabricQty||0).toFixed(2)}</strong> ${_gpEsc(g.fabricUnit||'kg')}</span>
+        <span style="color:var(--muted)">${g.rollsCount||0} rolls</span>
+      </div>
+      ${sizes?`<div style="font-size:12px;color:var(--muted);margin-top:7px">Cut by size: ${sizes}</div>`:''}
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Issued by ${_gpEsc(g.issuer||g.name||'')}</div>
+    </div>`;
+  }).join('');
+}
+function renderFabricIssueRegistry(){
+  const issues=_fabIssueRecords();
+  const totalWeight=issues.reduce((s,g)=>s+(g.fabricQty||0),0);
+  const totalPcs=issues.reduce((s,g)=>s+(g.plannedQty||0),0);
+  const totalBundles=issues.reduce((s,g)=>s+(g.totalBundles||0),0);
+  return`<div class="card"><div class="card-title">Fabric Issue Registry <span style="font-weight:400;color:var(--muted);font-size:11px">${issues.length} issue${issues.length===1?'':'s'}</span></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <div style="flex:1;background:#f4f4f6;border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">Cut planned</div><div style="font-size:18px;font-weight:800">${totalPcs.toLocaleString()} pcs</div></div>
+      <div style="flex:1;background:#f4f4f6;border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">Bundles</div><div style="font-size:18px;font-weight:800">${totalBundles.toLocaleString()}</div></div>
+      <div style="flex:1;background:#f4f4f6;border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">Fabric out</div><div style="font-size:18px;font-weight:800">${totalWeight.toFixed(1)}</div></div>
+    </div>
+    <input id="fab-reg-search" placeholder="Search PO, article, fabric…" oninput="window.fabRegFilter(this.value)" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:10px">
+    <div id="fab-reg-list">${_fabRegRows(issues)}</div>
+  </div>
+  <div style="height:60px"></div>`;
+}
+window.fabRegFilter=function(q){
+  const f=(q||'').toLowerCase();
+  const issues=_fabIssueRecords().filter(g=>!f||[g.poId,g.articleName,g.articleCode,g.fabricType,g.fabricColor,g.id].some(v=>String(v||'').toLowerCase().includes(f)));
+  const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegRows(issues);
+};
+
 function renderFabricIssueTab(){
   const stocks=allFabricInventory.filter(s=>(s.rolls||[]).some(r=>['in_stock','reserved'].includes(r.status||'in_stock')));
   const pos=(typeof allPOs!=='undefined'&&allPOs)||[];
@@ -1525,12 +1580,10 @@ window.submitFabricIssue=async function(){
     .filter(s=>s.size||s.perBundle||s.bundles)
     .map(s=>({...s,qty:s.perBundle*s.bundles}));
   const plannedQty=sizeBreakdown.reduce((n,s)=>n+s.qty,0);
+  const totalBundles=sizeBreakdown.reduce((n,s)=>n+(s.bundles||0),0);
   const avgConsumption=parseFloat(document.getElementById('fab-iss-consumption')?.value)||0;
   const consumptionUnit=document.getElementById('fab-iss-cons-unit')?.value||'kg';
   const fabricRequired=parseFloat((plannedQty*avgConsumption).toFixed(3));
-  // The cutting plan lives on the PO registry record, not the gate pass.
-  const poDoc=(typeof allPOs!=='undefined'&&allPOs||[]).find(x=>String(x.id)===po);
-  const hasPlan=sizeBreakdown.length>0||avgConsumption>0;
   if(!plannedQty){ if(!confirm('No cutting-plan quantities entered. Issue anyway?'))return; }
   const rollCodes=_fabIssueRolls.map(r=>r.rollCode);
   const fabUnit=stock.unit||'kg';
@@ -1540,31 +1593,12 @@ window.submitFabricIssue=async function(){
     const next=await getNextId('gatepasses');
     const gpId='GP-'+String(next).padStart(3,'0');
     const article=`${stock.fabType} ${stock.gsm||0}gsm ${stock.color}`;
-    // Gate pass carries only the transit facts (what fabric, how much, which PO).
-    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stock._id,boras:'0',items:[],totalUnits:0,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
+    // The gate pass IS the fabric-issue registry record: PO, article, the cut
+    // (size breakdown + planned qty), bundles, fabric and weight all live here.
+    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stock._id,sizeBreakdown,plannedQty,totalBundles,avgConsumption,consumptionUnit,fabricRequired,boras:'0',items:[],totalUnits:plannedQty,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
     // Gate pass + inventory decrement commit in ONE transaction.
     await _fabInvUpsert({fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:fabUnit,removeRollCodes:rollCodes,reservePO:po,note:`Issued to factory for ${po} by ${session.name}`,sourceCol:'gatepasses',sourceId:gpId,extraWrites:[{ref:doc(db,'gatepasses',gpId),data:payload}]});
-    // Persist the cutting plan to the PO record. The fabric-issued list is
-    // derived from the gate passes on the PO detail page, so only the planning
-    // data needs storing. If the PO number isn't in the registry yet, create a
-    // lightweight PO from the issue data so it shows up (and accumulates issues).
-    const cuttingPlan=hasPlan?{sizeBreakdown,plannedQty,avgConsumption,consumptionUnit,fabricRequired,fabricType:stock.fabType,fabricGsm:stock.gsm||0,fabricColor:stock.color,fabricUnit:fabUnit,lastGpId:gpId,updatedAt:Date.now(),updatedBy:session.name}:null;
-    try{
-      if(poDoc){
-        if(cuttingPlan) await updateDoc(doc(db,'pos',poDoc.fbKey),{cuttingPlan});
-      }else{
-        const STD=['XS','S','M','L','XL','2XL'];
-        const sizes={}; STD.forEach(sz=>sizes[sz]=0);
-        sizeBreakdown.forEach(s=>{const k=(s.size||'').toUpperCase().replace('XXL','2XL');if(STD.includes(k))sizes[k]+=s.qty;});
-        const stages={}; (typeof STAGE_KEYS!=='undefined'?STAGE_KEYS:[]).forEach(k=>stages[k]={done:false,doneAt:null,doneBy:null,dueDate:'',notes:''});
-        const poDocId=String(po).replace(/[\/#?%.]/g,'-');
-        const newPO={id:po,ts:Date.now(),name:articleName,code:articleCode,pattern:'',qty:plannedQty||0,sizes,ratio:'',fabric:stock.fabType||'',fabricCode:'',store:'',totalRoll:'',imgFront:'',imgBack:'',currentStage:'cutting',stages,bundlingParts:[],embellishment:{required:false},createdBy:session.name,createdAt:new Date().toISOString().slice(0,10),autoCreatedFrom:'fabric-issue'};
-        if(cuttingPlan)newPO.cuttingPlan=cuttingPlan;
-        await setDoc(doc(db,'pos',poDocId),newPO);
-        await logActivity('PO auto-created',`PO ${po} — ${articleName} (${articleCode}) created from fabric issue by ${session.name}`).catch(()=>{});
-      }
-    }catch(e){ console.warn('[fabric] PO save/create failed',e); showToast('Fabric issued, but saving to the PO registry failed: '+e.message,true); }
-    await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to factory for ${po}${plannedQty?` · plan ${plannedQty} pcs`:''} by ${session.name}`);
+    await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to factory for ${po}${plannedQty?` · cut ${plannedQty} pcs / ${totalBundles} bundles`:''} by ${session.name}`);
     showToast(`${gpId} issued ✓ · ${rollCodes.length} rolls`);
     _fabIssueRolls=[];_fabIssueKey=null;_fabIssueSizes=[{size:'',perBundle:'',bundles:''}];
     _fabBusyEnd();   // drop the overlay before the (slower) refresh so the UI never stays blocked

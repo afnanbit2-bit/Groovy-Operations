@@ -87,26 +87,32 @@ function poRowHTML(p){
     <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:#ccc">No img</span>'}</div>
     <div class="po-info">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="po-num">${p.id}</span>
-        <span class="stage-badge" style="background:${isCompleted?'#EFEFEF':'#f0f0f0'};color:#111">${isCompleted?'Completed':stage.label}</span>${p.autoCreatedFrom==='fabric-issue'?`<span title="Created from a fabric issue — open to complete product details" style="padding:2px 6px;background:#fef9e7;color:#b45309;border-radius:6px;font-size:10px;font-weight:700">Auto · fabric</span>`:''}${p.damageFlagged?`<span style="padding:2px 6px;background:#fee2e2;color:#dc2626;border-radius:6px;font-size:10px;font-weight:700">⚠ Loss</span>`:''}</div>
+        <span class="stage-badge" style="background:${isCompleted?'#EFEFEF':'#f0f0f0'};color:#111">${isCompleted?'Completed':stage.label}</span>${p.damageFlagged?`<span style="padding:2px 6px;background:#fee2e2;color:#dc2626;border-radius:6px;font-size:10px;font-weight:700">⚠ Loss</span>`:''}</div>
       <div class="po-name">${p.name||'—'}</div>
       <div class="po-meta">${p.qty||'?'} pcs · ${p.fabric||''} · ${p.createdBy||'—'} · ${p.createdAt||''}</div>
     </div><div class="po-arrow">›</div></div>`;
 }
 
 // ── Registry ──
-function _orphanFabricPOs(){
-  const existing=new Set(allPOs.map(p=>String(p.id)));
-  return [...new Set((typeof allPasses!=='undefined'&&allPasses||[])
-    .filter(g=>g.gpType==='fabric'&&g.poId).map(g=>String(g.poId)))]
-    .filter(id=>!existing.has(id));
+// One-time cleanup: remove POs that an earlier build auto-created from fabric
+// issues (flagged autoCreatedFrom). Fabric issues now live in their own
+// Fabric Issue Registry, not the PO registry.
+let _poJunkCleanupDone=false;
+function _cleanupAutoFabricPOs(){
+  if(_poJunkCleanupDone)return;
+  const junk=allPOs.filter(p=>p.autoCreatedFrom&&String(p.autoCreatedFrom).startsWith('fabric-issue'));
+  if(!junk.length){_poJunkCleanupDone=true;return;}
+  if(session.role!=='owner'&&session.role!=='manager')return; // only privileged users can delete
+  _poJunkCleanupDone=true;
+  (async()=>{
+    for(const p of junk){try{await deleteDoc(doc(db,'pos',p.fbKey));}catch(e){console.warn('[pos] junk PO delete failed',p.id,e);}}
+    await logActivity('PO cleanup',`${junk.length} auto-created fabric PO(s) removed`).catch(()=>{});
+    await loadData();if(currentPage==='po-registry')renderPage('po-registry');
+  })();
 }
 function renderRegistry(){
-  const orphans=session.canPO?_orphanFabricPOs():[];
+  _cleanupAutoFabricPOs();
   return`<div class="page-head"><div class="page-title">PO Registry</div><div class="page-sub">${allPOs.length} production orders</div></div>
-  ${orphans.length?`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#fef9e7;border:1px solid #f5e1a4;border-radius:8px;padding:10px 12px;margin-bottom:12px">
-    <span style="font-size:12px;color:#7a5b00">${orphans.length} fabric issue${orphans.length===1?'':'s'} reference a PO that isn't in the registry.</span>
-    <button class="btn-primary" style="font-size:12px;padding:6px 14px" onclick="window.importPOsFromFabric()">Import ${orphans.length} PO${orphans.length===1?'':'s'}</button>
-  </div>`:''}
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
     <input placeholder="Search name, code, fabric…" oninput="window.filterPOs(this.value)" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
     <select onchange="window.filterStage(this.value)" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
@@ -115,31 +121,6 @@ function renderRegistry(){
   </div>
   <div id="po-list-wrap">${allPOs.length?allPOs.map(p=>poRowHTML(p)).join(''):'<div class="empty">No POs yet.</div>'}</div>`;
 }
-window.importPOsFromFabric=async function(){
-  if(!session.canPO){showToast('Not authorized.',true);return;}
-  const existing=new Set(allPOs.map(p=>String(p.id)));
-  const byPo={};
-  (typeof allPasses!=='undefined'&&allPasses||[])
-    .filter(g=>g.gpType==='fabric'&&g.poId&&!existing.has(String(g.poId)))
-    .forEach(g=>{const k=String(g.poId);(byPo[k]=byPo[k]||[]).push(g);});
-  const ids=Object.keys(byPo);
-  if(!ids.length){showToast('Nothing to import.');return;}
-  if(!confirm(`Create ${ids.length} PO(s) from existing fabric issues? You can fill in the rest afterwards.`))return;
-  const STD=['XS','S','M','L','XL','2XL'];
-  let created=0;
-  for(const poNum of ids){
-    const gps=byPo[poNum].sort((a,b)=>(a.ts||0)-(b.ts||0));
-    const g=gps[gps.length-1];   // latest issue for article info
-    const sizes={};STD.forEach(s=>sizes[s]=0);
-    const stages={};(typeof STAGE_KEYS!=='undefined'?STAGE_KEYS:[]).forEach(k=>stages[k]={done:false,doneAt:null,doneBy:null,dueDate:'',notes:''});
-    const poDocId=String(poNum).replace(/[\/#?%.]/g,'-');
-    const newPO={id:poNum,ts:g.ts||Date.now(),name:g.articleName||g.article||g.fabricType||'—',code:g.articleCode||'',pattern:'',qty:0,sizes,ratio:'',fabric:g.fabricType||'',fabricCode:'',store:'',totalRoll:'',imgFront:'',imgBack:'',currentStage:'cutting',stages,bundlingParts:[],embellishment:{required:false},createdBy:session.name,createdAt:new Date().toISOString().slice(0,10),autoCreatedFrom:'fabric-issue'};
-    try{await setDoc(doc(db,'pos',poDocId),newPO);created++;}catch(e){console.warn('[pos] import PO failed',poNum,e);}
-  }
-  await logActivity('POs imported',`${created} PO(s) created from fabric issues by ${session.name}`).catch(()=>{});
-  showToast(`${created} PO(s) imported ✓`);
-  await loadData();window.showPage('po-registry');
-};
 window.filterPOs=function(q){const f=allPOs.filter(p=>!q||[p.name,p.id,p.code,p.fabric].some(v=>(v||'').toLowerCase().includes(q.toLowerCase())));document.getElementById('po-list-wrap').innerHTML=f.length?f.map(p=>poRowHTML(p)).join(''):'<div class="empty">No results.</div>';};
 window.filterStage=function(s){const f=s?allPOs.filter(p=>p.currentStage===s):allPOs;document.getElementById('po-list-wrap').innerHTML=f.length?f.map(p=>poRowHTML(p)).join(''):'<div class="empty">No results.</div>';};
 
@@ -167,11 +148,6 @@ function renderDetailPage(){
   if(!po){window.showPage('po-registry');return;}
   const m=document.getElementById('main-content');
   const isOwner=['owner','manager'].includes(session.role);
-  // Fabric issued against this PO — derived from the gate passes so every
-  // issuance (past or future) shows here without needing a stored back-log.
-  const fabIssues=(typeof allPasses!=='undefined'&&allPasses||[])
-    .filter(gp=>gp.gpType==='fabric'&&String(gp.poId)===String(po.id))
-    .sort((a,b)=>(b.ts||0)-(a.ts||0));
   const stagesHTML=STAGES.map(s=>{
     const sd=po.stages?.[s.key]||{};const isDone=!!sd.done;const isCurrent=po.currentStage===s.key;
     const canUpdate=session.stages?.includes(s.key)&&isCurrent;
@@ -225,23 +201,6 @@ function renderDetailPage(){
       ${['XS','S','M','L','XL','2XL'].map(sz=>`<div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">${sz}</div><div style="font-size:18px;font-weight:700">${po.sizes?.[sz]||0}</div>${po.cutQty?.[sz]!=null?`<div style="font-size:10px;color:var(--green)">Cut:${po.cutQty[sz]}</div>`:''}</div>`).join('')}
     </div>
   </div>
-  ${(po.cuttingPlan||fabIssues.length)?(()=>{const cp=po.cuttingPlan,u=(cp&&cp.consumptionUnit)||'kg';
-    const issuedTotal=fabIssues.reduce((n,gp)=>n+(gp.fabricQty||0),0);
-    const issuedUnit=(fabIssues[0]&&fabIssues[0].fabricUnit)||u;
-    return`<div class="card"><div class="card-title">Cutting plan &amp; fabric issued${cp&&cp.updatedBy?` <span style="font-weight:400;color:var(--muted);font-size:11px">· plan by ${cp.updatedBy}</span>`:''}</div>
-    ${cp?`${(cp.sizeBreakdown||[]).length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em"><th style="text-align:left;padding:4px 6px">Size</th><th style="text-align:left;padding:4px 6px">Pcs/bundle</th><th style="text-align:left;padding:4px 6px">Bundles</th><th style="text-align:right;padding:4px 6px">Qty</th></tr></thead>
-      <tbody>${cp.sizeBreakdown.map(s=>`<tr style="border-top:1px solid #f0f0f0"><td style="padding:5px 6px;font-weight:600">${s.size||'—'}</td><td style="padding:5px 6px">${s.perBundle||0}</td><td style="padding:5px 6px">${s.bundles||0}</td><td style="padding:5px 6px;text-align:right;font-weight:700">${(s.qty||0).toLocaleString()}</td></tr>`).join('')}</tbody>
-    </table></div>`:''}
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px">
-      <div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Planned qty</div><div style="font-size:16px;font-weight:800">${(cp.plannedQty||0).toLocaleString()}</div></div>
-      <div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Avg / unit</div><div style="font-size:16px;font-weight:800">${cp.avgConsumption||0} ${u}</div></div>
-      <div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Fabric req.</div><div style="font-size:16px;font-weight:800">${cp.fabricRequired||0} ${u}</div></div>
-    </div>`:''}
-    ${fabIssues.length?`<div style="margin-top:${cp?'12px':'0'}"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px"><span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700">Fabric issued (${fabIssues.length})</span><span style="font-size:12px;font-weight:700">${issuedTotal.toFixed(2)} ${issuedUnit} total</span></div>
-      ${fabIssues.map(gp=>`<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:6px 0;border-bottom:1px solid #f5f5f5"><span><span style="font-weight:700">${gp.id||''}</span> · ${gp.fabricType||gp.article||''}${gp.fabricGsm?` ${gp.fabricGsm}gsm`:''}${gp.fabricColor?` ${gp.fabricColor}`:''} · ${gp.rollsCount||0} rolls<div style="color:var(--muted);font-size:11px">${gp.issuer||gp.name||''}${gp.date?` · ${gp.date}`:''}</div></span><span style="font-weight:700;white-space:nowrap">${(gp.fabricQty||0).toFixed(2)} ${gp.fabricUnit||'kg'}</span></div>`).join('')}
-    </div>`:''}
-  </div>`;})():''}
   ${po.damageFlagged||po.damageSummary?`<div class="card" style="border:1px solid #fca5a5"><div class="card-title" style="color:#dc2626">⚠ Damage report</div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px">
       <div style="text-align:center;padding:8px 4px;background:#fef2f2;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Cut</div><div style="font-size:16px;font-weight:700">${po.damageSummary?.cutTotal||0}</div></div>
