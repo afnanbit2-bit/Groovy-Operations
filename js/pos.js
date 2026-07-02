@@ -87,7 +87,7 @@ function poRowHTML(p){
     <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:#ccc">No img</span>'}</div>
     <div class="po-info">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="po-num">${p.id}</span>
-        <span class="stage-badge" style="background:${isCompleted?'#EFEFEF':'#f0f0f0'};color:#111">${isCompleted?'Completed':stage.label}</span>${p.damageFlagged?`<span style="padding:2px 6px;background:#fee2e2;color:#dc2626;border-radius:6px;font-size:10px;font-weight:700">⚠ Loss</span>`:''}</div>
+        <span class="stage-badge" style="background:${isCompleted?'#EFEFEF':'#f0f0f0'};color:#111">${isCompleted?'Completed':stage.label}</span>${p.autoCreatedFrom==='fabric-issue'?`<span title="Created from a fabric issue — open to complete product details" style="padding:2px 6px;background:#fef9e7;color:#b45309;border-radius:6px;font-size:10px;font-weight:700">Auto · fabric</span>`:''}${p.damageFlagged?`<span style="padding:2px 6px;background:#fee2e2;color:#dc2626;border-radius:6px;font-size:10px;font-weight:700">⚠ Loss</span>`:''}</div>
       <div class="po-name">${p.name||'—'}</div>
       <div class="po-meta">${p.qty||'?'} pcs · ${p.fabric||''} · ${p.createdBy||'—'} · ${p.createdAt||''}</div>
     </div><div class="po-arrow">›</div></div>`;
