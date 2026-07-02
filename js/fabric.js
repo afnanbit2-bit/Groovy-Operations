@@ -1359,7 +1359,10 @@ function renderFabricIssueRegistry(){
   const totalPcs=issues.reduce((s,g)=>s+(g.plannedQty||0),0);
   const totalBundles=issues.reduce((s,g)=>s+(g.totalBundles||0),0);
   return`<div class="card"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center">Fabric Issue Registry <span style="font-weight:400;color:var(--muted);font-size:11px">${issues.length} issue${issues.length===1?'':'s'}</span></div>
-    ${issues.length?`<button class="btn-outline" style="font-size:12px;padding:6px 14px;margin-bottom:10px" onclick="window.fabExportIssueRegistry()">⬇ Export Excel</button>`:''}
+    ${issues.length?`<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <button class="btn-outline" style="font-size:12px;padding:6px 14px" onclick="window.fabExportIssueRegistry()">⬇ Export Excel</button>
+      ${['owner','manager'].includes(session.role)?`<button class="btn-outline" style="font-size:12px;padding:6px 14px;color:#dc2626;border-color:#fca5a5" onclick="window.fabRegDeleteAll()">🗑 Delete all</button>`:''}
+    </div>`:''}
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <div style="flex:1;background:#f4f4f6;border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">Cut planned</div><div style="font-size:18px;font-weight:800">${totalPcs.toLocaleString()} pcs</div></div>
       <div style="flex:1;background:#f4f4f6;border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">Bundles</div><div style="font-size:18px;font-weight:800">${totalBundles.toLocaleString()}</div></div>
@@ -1372,6 +1375,24 @@ function renderFabricIssueRegistry(){
 }
 window.fabRegPage=function(n){_fabRegPage=n;const el=document.getElementById('fab-reg-list');if(el){el.innerHTML=_fabRegListHTML();el.scrollIntoView({behavior:'smooth',block:'start'});}};
 window.fabRegFilter=function(q){_fabRegQ=q||'';_fabRegPage=0;const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();};
+window.fabRegDeleteAll=async function(){
+  if(!['owner','manager'].includes(session.role)){showToast('Owners/managers only.',true);return;}
+  const issues=_fabIssueRecords();
+  if(!issues.length){showToast('Nothing to delete.');return;}
+  if(!confirm(`Delete ALL ${issues.length} fabric issue record(s)? This clears the issue log only — fabric inventory is NOT restored. Cannot be undone.`))return;
+  if(!_fabBusyStart('Deleting…'))return;
+  let n=0;
+  for(const g of issues){
+    const key=g.id||g._id;
+    if(!key)continue;
+    try{await deleteDoc(doc(db,'gatepasses',key));n++;}catch(e){console.warn('[fabric] delete issue failed',key,e);}
+  }
+  await logActivity('Fabric issues cleared',`${n} fabric issue record(s) deleted by ${session.name}`).catch(()=>{});
+  _fabBusyEnd();
+  showToast(`${n} fabric issue(s) deleted ✓`);
+  if(typeof loadData==='function')await loadData();
+  window.switchFabTab('registry');
+};
 window.fabExportIssueRegistry=function(){
   const issues=_fabIssueRecords();
   if(!issues.length){showToast('Nothing to export.',true);return;}
