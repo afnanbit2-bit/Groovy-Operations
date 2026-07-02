@@ -1547,11 +1547,11 @@ window.submitFabricIssue=async function(){
     // Gate pass + inventory decrement commit in ONE transaction.
     await _fabInvUpsert({fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:fabUnit,removeRollCodes:rollCodes,reservePO:po,note:`Issued to factory for ${po} by ${session.name}`,sourceCol:'gatepasses',sourceId:gpId,extraWrites:[{ref:doc(db,'gatepasses',gpId),data:payload}]});
     // Persist the cutting plan + a running fabric-issued log onto the PO record.
-    if(poDoc){
+    // The fabric-issued list is derived from the gate passes on the PO detail
+    // page, so only the planning data needs storing on the PO record.
+    if(poDoc&&hasPlan){
       const cuttingPlan={sizeBreakdown,plannedQty,avgConsumption,consumptionUnit,fabricRequired,fabricType:stock.fabType,fabricGsm:stock.gsm||0,fabricColor:stock.color,fabricUnit:fabUnit,lastGpId:gpId,updatedAt:Date.now(),updatedBy:session.name};
-      const fabricIssued=Array.isArray(poDoc.fabricIssued)?poDoc.fabricIssued.slice():[];
-      fabricIssued.push({gpId,ts:Date.now(),fabType:stock.fabType,gsm:stock.gsm||0,color:stock.color,unit:fabUnit,qty:fabQty,rolls:rollCodes.length,by:session.name});
-      try{ await updateDoc(doc(db,'pos',poDoc.fbKey),{cuttingPlan,fabricIssued}); }
+      try{ await updateDoc(doc(db,'pos',poDoc.fbKey),{cuttingPlan}); }
       catch(e){ console.warn('[fabric] PO cutting-plan update failed',e); showToast('Fabric issued, but saving the plan to the PO failed: '+e.message,true); }
     }
     await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to factory for ${po}${plannedQty?` · plan ${plannedQty} pcs`:''} by ${session.name}`);

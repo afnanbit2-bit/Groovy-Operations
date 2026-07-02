@@ -131,6 +131,11 @@ function renderDetailPage(){
   if(!po){window.showPage('po-registry');return;}
   const m=document.getElementById('main-content');
   const isOwner=['owner','manager'].includes(session.role);
+  // Fabric issued against this PO — derived from the gate passes so every
+  // issuance (past or future) shows here without needing a stored back-log.
+  const fabIssues=(typeof allPasses!=='undefined'&&allPasses||[])
+    .filter(gp=>gp.gpType==='fabric'&&String(gp.poId)===String(po.id))
+    .sort((a,b)=>(b.ts||0)-(a.ts||0));
   const stagesHTML=STAGES.map(s=>{
     const sd=po.stages?.[s.key]||{};const isDone=!!sd.done;const isCurrent=po.currentStage===s.key;
     const canUpdate=session.stages?.includes(s.key)&&isCurrent;
@@ -184,8 +189,11 @@ function renderDetailPage(){
       ${['XS','S','M','L','XL','2XL'].map(sz=>`<div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">${sz}</div><div style="font-size:18px;font-weight:700">${po.sizes?.[sz]||0}</div>${po.cutQty?.[sz]!=null?`<div style="font-size:10px;color:var(--green)">Cut:${po.cutQty[sz]}</div>`:''}</div>`).join('')}
     </div>
   </div>
-  ${po.cuttingPlan?(()=>{const cp=po.cuttingPlan,u=cp.consumptionUnit||'kg';return`<div class="card"><div class="card-title">Cutting plan <span style="font-weight:400;color:var(--muted);font-size:11px">from fabric issue${cp.updatedBy?` · ${po.cuttingPlan.updatedBy}`:''}</span></div>
-    ${(cp.sizeBreakdown||[]).length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+  ${(po.cuttingPlan||fabIssues.length)?(()=>{const cp=po.cuttingPlan,u=(cp&&cp.consumptionUnit)||'kg';
+    const issuedTotal=fabIssues.reduce((n,gp)=>n+(gp.fabricQty||0),0);
+    const issuedUnit=(fabIssues[0]&&fabIssues[0].fabricUnit)||u;
+    return`<div class="card"><div class="card-title">Cutting plan &amp; fabric issued${cp&&cp.updatedBy?` <span style="font-weight:400;color:var(--muted);font-size:11px">· plan by ${cp.updatedBy}</span>`:''}</div>
+    ${cp?`${(cp.sizeBreakdown||[]).length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em"><th style="text-align:left;padding:4px 6px">Size</th><th style="text-align:left;padding:4px 6px">Pcs/bundle</th><th style="text-align:left;padding:4px 6px">Bundles</th><th style="text-align:right;padding:4px 6px">Qty</th></tr></thead>
       <tbody>${cp.sizeBreakdown.map(s=>`<tr style="border-top:1px solid #f0f0f0"><td style="padding:5px 6px;font-weight:600">${s.size||'—'}</td><td style="padding:5px 6px">${s.perBundle||0}</td><td style="padding:5px 6px">${s.bundles||0}</td><td style="padding:5px 6px;text-align:right;font-weight:700">${(s.qty||0).toLocaleString()}</td></tr>`).join('')}</tbody>
     </table></div>`:''}
@@ -193,9 +201,9 @@ function renderDetailPage(){
       <div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Planned qty</div><div style="font-size:16px;font-weight:800">${(cp.plannedQty||0).toLocaleString()}</div></div>
       <div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Avg / unit</div><div style="font-size:16px;font-weight:800">${cp.avgConsumption||0} ${u}</div></div>
       <div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Fabric req.</div><div style="font-size:16px;font-weight:800">${cp.fabricRequired||0} ${u}</div></div>
-    </div>
-    ${Array.isArray(po.fabricIssued)&&po.fabricIssued.length?`<div style="margin-top:12px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700;margin-bottom:4px">Fabric issued</div>
-      ${po.fabricIssued.map(fi=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid #f5f5f5"><span>${fi.gpId||''} · ${fi.fabType||''} ${fi.gsm||0}gsm ${fi.color||''} · ${fi.rolls||0} rolls</span><span style="font-weight:700">${fi.qty||0} ${fi.unit||'kg'}</span></div>`).join('')}
+    </div>`:''}
+    ${fabIssues.length?`<div style="margin-top:${cp?'12px':'0'}"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px"><span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700">Fabric issued (${fabIssues.length})</span><span style="font-size:12px;font-weight:700">${issuedTotal.toFixed(2)} ${issuedUnit} total</span></div>
+      ${fabIssues.map(gp=>`<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:6px 0;border-bottom:1px solid #f5f5f5"><span><span style="font-weight:700">${gp.id||''}</span> · ${gp.fabricType||gp.article||''}${gp.fabricGsm?` ${gp.fabricGsm}gsm`:''}${gp.fabricColor?` ${gp.fabricColor}`:''} · ${gp.rollsCount||0} rolls<div style="color:var(--muted);font-size:11px">${gp.issuer||gp.name||''}${gp.date?` · ${gp.date}`:''}</div></span><span style="font-weight:700;white-space:nowrap">${(gp.fabricQty||0).toFixed(2)} ${gp.fabricUnit||'kg'}</span></div>`).join('')}
     </div>`:''}
   </div>`;})():''}
   ${po.damageFlagged||po.damageSummary?`<div class="card" style="border:1px solid #fca5a5"><div class="card-title" style="color:#dc2626">⚠ Damage report</div>
