@@ -648,7 +648,9 @@ window._miChangeSize=function(idx,sz){
   const item=allItems.find(i=>i.code===_miLines[idx].itemCode);
   const row=document.getElementById('mi-row-'+idx);if(!row||!item)return;
   const tds=row.querySelectorAll('td');
-  if(tds[1]){const s=sz?(parseInt(item.sizes?.[sz])||0):getBalance(item);tds[1].textContent=s;tds[1].style.color=s>0?'var(--green)':'var(--red)';}
+  // tds[2] is the Stock cell — tds[1] is the Item cell holding the item + size
+  // selects, so writing into it would wipe those dropdowns.
+  if(tds[2]){const s=sz?(parseInt(item.sizes?.[sz])||0):getBalance(item);tds[2].textContent=s;tds[2].style.color=s>0?'var(--green)':'var(--red)';}
   _miUpdateSubmitBtn();
 };
 window._miChangeQty=function(idx,v){_miLines[idx].qty=v;_miUpdateSubmitBtn();};
