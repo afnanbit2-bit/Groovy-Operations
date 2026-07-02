@@ -123,7 +123,9 @@ async function loadStoreCashData(){
   if(cashDataLoaded) return;
   try{
     const [ledger,accounts,floats,cats,vendors]=await Promise.all([
-      fsQueryOrdered('store_cash_ledger','ts',400).catch(()=>[]),
+      // High cap: outstanding/payables, delete guards and insights iterate this
+      // in-memory list, so it must hold the full working history, not a window.
+      fsQueryOrdered('store_cash_ledger','ts',5000).catch(()=>[]),
       fsList('store_cash_accounts',30).catch(()=>[]),
       fsList('store_cash_floats',80).catch(()=>[]),
       fsList('store_cash_categories',60).catch(()=>[]),
@@ -399,7 +401,7 @@ function _cashFeedRow(r){
   let title,sub;
   if(r.kind==='expense'||r.kind==='credit_purchase'){
     title=(cat?cat.label:'Uncategorized')+(vendor&&vendor._id!=='walkin'?' · '+vendor.name:'');
-    sub=(isCredit?'ON CREDIT':(acc?acc.label:r.account||''))+(r.note?' · '+_scEsc(r.note):'');
+    sub=(isCredit?'ON CREDIT':(r.fromFloat?'Runner float':(acc?acc.label:r.account||'')))+(r.note?' · '+_scEsc(r.note):'');
   }else if(r.kind==='vendor_payment'){
     title='Paid '+(vendor?vendor.name:'vendor');
     sub=(acc?acc.label:r.account||'')+(r.note?' · '+_scEsc(r.note):'');
@@ -490,6 +492,13 @@ function _cashByAccountFeed(entries){
       ?`<button class="btn-outline" style="flex:1;font-size:12px;padding:8px" onclick="window.cashSheetNewAccount()">+ New account</button>`
       :`<button class="btn-outline" style="flex:1;font-size:12px;padding:8px" onclick="window.cashRequestAccount()">Request new account</button>`}
   </div>`;
+  if(_canAdminCash()){
+    h+=`<div style="margin-top:22px;border:1px solid #fca5a5;border-radius:10px;padding:14px;background:#fff5f5">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#dc2626;margin-bottom:4px">Danger Zone</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">Erase every ledger entry, runner float, category and vendor, and reset all account balances to zero. Use this to clear old test data before going live. This cannot be undone.</div>
+      <button class="btn-outline" style="width:100%;font-size:12px;padding:9px;color:#dc2626;border-color:#fca5a5" onclick="window.cashResetAllData()">🗑 Reset all cash data</button>
+    </div>`;
+  }
   return h;
 }
 
@@ -803,7 +812,8 @@ window.cashSheetExpense=function(cloneId){
   }
   const clone=cloneId?allCashLedger.find(r=>r._id===cloneId):null;
   const defAcc=clone?.account||localStorage.getItem('groovy_cash_last_acc')||'cash';
-  const defCat=clone?.category||localStorage.getItem('groovy_cash_last_cat')||(allCashCategories[0]._id||allCashCategories[0].key);
+  let defCat=clone?.category||localStorage.getItem('groovy_cash_last_cat')||'';
+  if(!_cashGetCategory(defCat)) defCat=allCashCategories[0]._id||allCashCategories[0].key; // drop stale/deleted id
   const defCatDoc=_cashGetCategory(defCat);
   const defVendor=clone?.vendorId||defCatDoc?.vendorId||'walkin';
   _cashExpenseCat=defCat;_cashExpenseAcc=defAcc;_cashExpenseVendor=defVendor;_cashExpenseMode=clone?.kind==='credit_purchase'?'credit':'paid';
@@ -904,7 +914,7 @@ window._cashDoExpense=async function(){
   const mode=_cashExpenseMode;
   const billPhoto=window._cashPhoto['exp-bill']||null;
   if(!amt||amt<=0){showToast('Enter an amount.',true);return;}
-  if(!cat){showToast('Pick a category.',true);return;}
+  if(!_cashGetCategory(cat)){showToast('Pick a valid category.',true);return;}
   if(mode==='credit'){
     if(vendorId==='walkin'){showToast('Credit purchases need a real vendor (not walk-in).',true);return;}
     if(!billPhoto){showToast('Bill photo is required for credit purchases.',true);return;}
@@ -1080,6 +1090,7 @@ window._cashSettlePrev=function(floatId){
 window._cashDoSettle=async function(floatId){
   const f=allCashFloats.find(x=>x._id===floatId||x.floatId===floatId);
   if(!f){showToast('Float not found.',true);return;}
+  if(f.status!=='open'){showToast('This float is already settled.',true);_cashCloseSheet();_cashReload();return;}
   const goodsVal=parseInt(document.getElementById('settle-goods')?.value)||0;
   const changeRet=parseInt(document.getElementById('settle-change')?.value)||0;
   const cat=document.getElementById('settle-cat')?.value||(allCashCategories[0]&&(allCashCategories[0]._id||allCashCategories[0].key))||null;
@@ -1091,8 +1102,19 @@ window._cashDoSettle=async function(floatId){
   if(btn){btn.disabled=true;btn.textContent='Saving…';}
   const mo=_cashCurrentMonth();
   const fid=f.floatId||f._id||floatId;
-  if(goodsVal>0) await _cashPost({kind:'expense',amount:goodsVal,account:f.account,category:cat,vendorId:catVendor,payee:f.payee,date:todayStr(),month:mo,ts:Date.now(),by:session.u||session.name,note:'Float settle'+(f.note?': '+f.note:''),floatId:fid,billPhoto});
-  if(changeRet>0) await _cashPost({kind:'settle',amount:changeRet,account:f.account,category:null,vendorId:null,payee:f.payee,date:todayStr(),month:mo,ts:Date.now(),by:session.u||session.name,note:'Change returned',floatId:fid});
+  // The account was already deducted by the full 'issue' when cash was handed
+  // out. So the goods expense here is account-neutral (account:null) — it only
+  // categorises the spend for reporting. Only the returned change flows back in.
+  let ok=true;
+  if(goodsVal>0){
+    const r=await _cashPost({kind:'expense',amount:goodsVal,account:null,category:cat,vendorId:catVendor,payee:f.payee,date:todayStr(),month:mo,ts:Date.now(),by:session.u||session.name,note:'Float settle'+(f.note?': '+f.note:''),floatId:fid,fromFloat:true,billPhoto});
+    if(!r)ok=false;
+  }
+  if(ok&&changeRet>0){
+    const r=await _cashPost({kind:'settle',amount:changeRet,account:f.account,category:null,vendorId:null,payee:f.payee,date:todayStr(),month:mo,ts:Date.now(),by:session.u||session.name,note:'Change returned',floatId:fid});
+    if(!r)ok=false;
+  }
+  if(!ok){showToast('Save failed — please try again.',true);if(btn){btn.disabled=false;btn.textContent='Settle ✓';}return;}
   const variance=f.issued-goodsVal-changeRet;
   const updated={...f,status:'settled',goodsValue:goodsVal,changeReturned:changeRet,variance,billPhoto,settledTs:Date.now(),settledBy:session.name};
   const fKey=f._id||fid;
@@ -1278,19 +1300,26 @@ window._cashCatVendorMode=function(mode){
   if(nb)nb.style.display=mode==='new'?'block':'none';
 };
 window._cashDoCategory=async function(catId){
+  const restore=catId?'Save Changes':'Create Category';
+  const fail=(msg,createdVendorId)=>{
+    // roll back a just-created inline vendor so a retry can't duplicate it
+    if(createdVendorId){fsDelete('store_cash_vendors',createdVendorId).catch(()=>{});allCashVendors=allCashVendors.filter(v=>(v._id||v.id)!==createdVendorId);}
+    showToast(msg,true);const b=document.getElementById('cat-submit');if(b){b.disabled=false;b.textContent=restore;}
+  };
   const label=(document.getElementById('cat-label')?.value||'').trim();
   if(!label){showToast('Category name is required.',true);return;}
   const budget=parseInt(document.getElementById('cat-budget')?.value)||0;
   const btn=document.getElementById('cat-submit');if(btn){btn.disabled=true;btn.textContent='Saving…';}
 
-  let vendorId;
+  let vendorId,createdVendorId=null;
   if(_cashCatVendorMode==='new'){
     const vn=(document.getElementById('cnv-name')?.value||'').trim();
-    if(!vn){showToast('Enter the new vendor name.',true);if(btn){btn.disabled=false;btn.textContent='Create Category';}return;}
+    if(!vn){fail('Enter the new vendor name.');return;}
     const vdoc={name:vn,phone:(document.getElementById('cnv-phone')?.value||'').trim(),address:(document.getElementById('cnv-address')?.value||'').trim(),productTypes:(document.getElementById('cnv-types')?.value||'').split(',').map(s=>s.trim()).filter(Boolean),creditTerms:'',openingOutstanding:0,builtin:false,createdAt:Date.now(),createdBy:session.u||session.name};
     vendorId=await fsAdd('store_cash_vendors',vdoc).catch(()=>null);
-    if(!vendorId){showToast('Vendor save failed.',true);if(btn){btn.disabled=false;btn.textContent='Create Category';}return;}
+    if(!vendorId){fail('Vendor save failed.');return;}
     allCashVendors.push({...vdoc,_id:vendorId});
+    createdVendorId=vendorId;
   }else{
     vendorId=document.getElementById('cat-vendor')?.value||'walkin';
   }
@@ -1298,13 +1327,14 @@ window._cashDoCategory=async function(catId){
   if(catId){
     const c=_cashGetCategory(catId);
     const upd={...c,label,vendorId,monthlyBudget:budget,updatedAt:Date.now()};
-    await fsSet('store_cash_categories',catId,upd).catch(()=>{});
+    const okId=await fsSet('store_cash_categories',catId,upd).then(()=>true).catch(()=>false);
+    if(!okId){fail('Save failed.',createdVendorId);return;}
     const i=allCashCategories.findIndex(x=>(x._id||x.key)===catId);if(i>=0)allCashCategories[i]={...upd,_id:catId};
     showToast('Category updated ✓');
   }else{
     const doc={label,vendorId,monthlyBudget:budget,createdAt:Date.now(),createdBy:session.u||session.name};
     const id=await fsAdd('store_cash_categories',doc).catch(()=>null);
-    if(!id){showToast('Save failed.',true);if(btn){btn.disabled=false;btn.textContent='Create Category';}return;}
+    if(!id){fail('Save failed.',createdVendorId);return;}
     allCashCategories.push({...doc,_id:id});
     showToast('Category created ✓');
   }
@@ -1401,4 +1431,47 @@ window.cashRecomputeBalances=function(){
   _cashRecalcBalances();
   showToast('Balances recomputed from ledger ✓');
   _cashReload();
+};
+
+/* ════════════════════════ RESET ALL DATA (owner only) ════════════════════════ */
+window.cashResetAllData=async function(){
+  if(!_canAdminCash()){showToast('Owners only.',true);return;}
+  const typed=prompt('This ERASES all cash entries, floats, categories and vendors, and zeroes every account balance.\n\nType RESET to confirm:');
+  if(typed!=='RESET'){showToast('Reset cancelled.');return;}
+  showToast('Resetting… please wait');
+  try{
+    // Pull the full set of docs (loaded lists may be capped) then delete each.
+    const [ledger,floats,cats,vendors]=await Promise.all([
+      fsList('store_cash_ledger',5000).catch(()=>allCashLedger),
+      fsList('store_cash_floats',5000).catch(()=>allCashFloats),
+      fsList('store_cash_categories',5000).catch(()=>allCashCategories),
+      fsList('store_cash_vendors',5000).catch(()=>allCashVendors)
+    ]);
+    const del=(col,rows,keep)=>rows
+      .map(r=>r._id||r.id||r.key)
+      .filter(id=>id&&id!==keep)
+      .map(id=>fsDelete(col,id).catch(()=>{}));
+    await Promise.all([
+      ...del('store_cash_ledger',ledger),
+      ...del('store_cash_floats',floats),
+      ...del('store_cash_categories',cats),
+      ...del('store_cash_vendors',vendors,'walkin') // keep the built-in walk-in vendor
+    ]);
+    // zero every account balance
+    for(const a of allCashAccounts){
+      const k=a._id||a.key;
+      a.balance=0;a.openingBalance=0;a.countedBalance=null;a.countedAt=null;a.countedBy=null;
+      await fsSet('store_cash_accounts',k,{balance:0,openingBalance:0,countedBalance:null,countedAt:null,countedBy:null,lastUpdated:Date.now(),lastBy:'reset:'+(session.name||'')}).catch(()=>{});
+    }
+    // reset in-memory state
+    allCashLedger=[];allCashFloats=[];allCashCategories=[];
+    allCashVendors=allCashVendors.filter(v=>(v._id||v.id)==='walkin');
+    _cashTab='recent';_cashRecentPage=0;_cashInsightsPeriod='';
+    logActivity('store-cash',`⚠ Cash data reset by ${session.name}`).catch(()=>{});
+    showToast('All cash data reset ✓');
+    _cashReload();
+  }catch(e){
+    console.error('[store-cash] reset error',e);
+    showToast('Reset failed: '+e.message,true);
+  }
 };
