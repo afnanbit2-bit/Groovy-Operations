@@ -1528,6 +1528,11 @@ window.submitFabricIssue=async function(){
   const avgConsumption=parseFloat(document.getElementById('fab-iss-consumption')?.value)||0;
   const consumptionUnit=document.getElementById('fab-iss-cons-unit')?.value||'kg';
   const fabricRequired=parseFloat((plannedQty*avgConsumption).toFixed(3));
+  // The cutting plan lives on the PO registry record, not the gate pass — so
+  // the PO must exist in the registry when there is plan data to save.
+  const poDoc=(typeof allPOs!=='undefined'&&allPOs||[]).find(x=>String(x.id)===po);
+  const hasPlan=sizeBreakdown.length>0||avgConsumption>0;
+  if(hasPlan&&!poDoc){showToast(`PO ${po} isn't in the registry — create it there first to save the cutting plan.`,true);return;}
   if(!plannedQty){ if(!confirm('No cutting-plan quantities entered. Issue anyway?'))return; }
   const rollCodes=_fabIssueRolls.map(r=>r.rollCode);
   const fabUnit=stock.unit||'kg';
@@ -1537,13 +1542,21 @@ window.submitFabricIssue=async function(){
     const next=await getNextId('gatepasses');
     const gpId='GP-'+String(next).padStart(3,'0');
     const article=`${stock.fabType} ${stock.gsm||0}gsm ${stock.color}`;
-    // ts captures the exact issue date+time automatically.
-    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stock._id,sizeBreakdown,plannedQty,avgConsumption,consumptionUnit,fabricRequired,boras:'0',items:[],totalUnits:plannedQty,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
+    // Gate pass carries only the transit facts (what fabric, how much, which PO).
+    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stock._id,boras:'0',items:[],totalUnits:0,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
     // Gate pass + inventory decrement commit in ONE transaction.
     await _fabInvUpsert({fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:fabUnit,removeRollCodes:rollCodes,reservePO:po,note:`Issued to factory for ${po} by ${session.name}`,sourceCol:'gatepasses',sourceId:gpId,extraWrites:[{ref:doc(db,'gatepasses',gpId),data:payload}]});
-    await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to factory for ${po} by ${session.name}`);
+    // Persist the cutting plan + a running fabric-issued log onto the PO record.
+    if(poDoc){
+      const cuttingPlan={sizeBreakdown,plannedQty,avgConsumption,consumptionUnit,fabricRequired,fabricType:stock.fabType,fabricGsm:stock.gsm||0,fabricColor:stock.color,fabricUnit:fabUnit,lastGpId:gpId,updatedAt:Date.now(),updatedBy:session.name};
+      const fabricIssued=Array.isArray(poDoc.fabricIssued)?poDoc.fabricIssued.slice():[];
+      fabricIssued.push({gpId,ts:Date.now(),fabType:stock.fabType,gsm:stock.gsm||0,color:stock.color,unit:fabUnit,qty:fabQty,rolls:rollCodes.length,by:session.name});
+      try{ await updateDoc(doc(db,'pos',poDoc.fbKey),{cuttingPlan,fabricIssued}); }
+      catch(e){ console.warn('[fabric] PO cutting-plan update failed',e); showToast('Fabric issued, but saving the plan to the PO failed: '+e.message,true); }
+    }
+    await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to factory for ${po}${plannedQty?` · plan ${plannedQty} pcs`:''} by ${session.name}`);
     showToast(`${gpId} issued ✓ · ${rollCodes.length} rolls`);
-    _fabIssueRolls=[];_fabIssueKey=null;
+    _fabIssueRolls=[];_fabIssueKey=null;_fabIssueSizes=[{size:'',perBundle:'',bundles:''}];
     _fabBusyEnd();   // drop the overlay before the (slower) refresh so the UI never stays blocked
     if(typeof loadData==='function')await loadData();
     window.switchFabTab('issue');

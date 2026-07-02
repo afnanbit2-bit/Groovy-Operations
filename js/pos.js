@@ -184,6 +184,20 @@ function renderDetailPage(){
       ${['XS','S','M','L','XL','2XL'].map(sz=>`<div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">${sz}</div><div style="font-size:18px;font-weight:700">${po.sizes?.[sz]||0}</div>${po.cutQty?.[sz]!=null?`<div style="font-size:10px;color:var(--green)">Cut:${po.cutQty[sz]}</div>`:''}</div>`).join('')}
     </div>
   </div>
+  ${po.cuttingPlan?(()=>{const cp=po.cuttingPlan,u=cp.consumptionUnit||'kg';return`<div class="card"><div class="card-title">Cutting plan <span style="font-weight:400;color:var(--muted);font-size:11px">from fabric issue${cp.updatedBy?` · ${po.cuttingPlan.updatedBy}`:''}</span></div>
+    ${(cp.sizeBreakdown||[]).length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em"><th style="text-align:left;padding:4px 6px">Size</th><th style="text-align:left;padding:4px 6px">Pcs/bundle</th><th style="text-align:left;padding:4px 6px">Bundles</th><th style="text-align:right;padding:4px 6px">Qty</th></tr></thead>
+      <tbody>${cp.sizeBreakdown.map(s=>`<tr style="border-top:1px solid #f0f0f0"><td style="padding:5px 6px;font-weight:600">${s.size||'—'}</td><td style="padding:5px 6px">${s.perBundle||0}</td><td style="padding:5px 6px">${s.bundles||0}</td><td style="padding:5px 6px;text-align:right;font-weight:700">${(s.qty||0).toLocaleString()}</td></tr>`).join('')}</tbody>
+    </table></div>`:''}
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px">
+      <div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Planned qty</div><div style="font-size:16px;font-weight:800">${(cp.plannedQty||0).toLocaleString()}</div></div>
+      <div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Avg / unit</div><div style="font-size:16px;font-weight:800">${cp.avgConsumption||0} ${u}</div></div>
+      <div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Fabric req.</div><div style="font-size:16px;font-weight:800">${cp.fabricRequired||0} ${u}</div></div>
+    </div>
+    ${Array.isArray(po.fabricIssued)&&po.fabricIssued.length?`<div style="margin-top:12px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700;margin-bottom:4px">Fabric issued</div>
+      ${po.fabricIssued.map(fi=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid #f5f5f5"><span>${fi.gpId||''} · ${fi.fabType||''} ${fi.gsm||0}gsm ${fi.color||''} · ${fi.rolls||0} rolls</span><span style="font-weight:700">${fi.qty||0} ${fi.unit||'kg'}</span></div>`).join('')}
+    </div>`:''}
+  </div>`;})():''}
   ${po.damageFlagged||po.damageSummary?`<div class="card" style="border:1px solid #fca5a5"><div class="card-title" style="color:#dc2626">⚠ Damage report</div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px">
       <div style="text-align:center;padding:8px 4px;background:#fef2f2;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Cut</div><div style="font-size:16px;font-weight:700">${po.damageSummary?.cutTotal||0}</div></div>
