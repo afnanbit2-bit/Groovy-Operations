@@ -144,14 +144,30 @@ async function loadStoreCashData(){
 }
 
 async function _cashSeedAccounts(){
-  const existing=new Set(allCashAccounts.map(a=>a._id||a.key));
   for(const acc of CASH_ACCOUNTS){
-    if(!existing.has(acc.key)){
+    const doc=allCashAccounts.find(a=>(a._id||a.key)===acc.key);
+    if(!doc){
       const d={key:acc.key,label:acc.label,accent:acc.accent,online:acc.online,balance:0,openingBalance:0,countedBalance:null,countedAt:null,countedBy:null,builtin:true,lastUpdated:Date.now(),lastBy:(session&&session.name)||''};
       await fsSet('store_cash_accounts',acc.key,d).catch(()=>{});
       allCashAccounts.push({...d,_id:acc.key});
+    }else if(!doc.label||!doc.accent||doc.online===undefined){
+      // Repair: fsSet replaces docs, so earlier partial balance writes stripped
+      // label/accent/online off the built-in accounts. Backfill from constant.
+      doc.label=doc.label||acc.label;doc.accent=doc.accent||acc.accent;
+      if(doc.online===undefined)doc.online=acc.online;doc.builtin=true;
+      _cashPersistAccount(doc);
     }
   }
+}
+
+// Persist the FULL account doc (fsSet does a replace, not a merge — a partial
+// write would silently delete label/accent/online). Backfills built-in metadata.
+function _cashPersistAccount(acc){
+  const k=acc._id||acc.key;
+  const base=CASH_ACCOUNTS.find(a=>a.key===k);
+  if(base){acc.label=acc.label||base.label;acc.accent=acc.accent||base.accent;if(acc.online===undefined)acc.online=base.online;acc.builtin=true;}
+  const {_id,...rest}=acc;
+  return fsSet('store_cash_accounts',k,rest).catch(()=>{});
 }
 async function _cashSeedWalkin(){
   if(!allCashVendors.some(v=>(v._id||v.id)==='walkin')){
@@ -163,14 +179,23 @@ async function _cashSeedWalkin(){
 
 // ── Accessors ──
 function _cashAllAccounts(){
-  // merge built-in order + any custom accounts created later
+  // built-in order first, then any custom accounts created later
   const seen=new Set();const out=[];
-  for(const a of CASH_ACCOUNTS){const doc=allCashAccounts.find(x=>(x._id||x.key)===a.key);out.push(doc||{...a,_id:a.key,balance:0});seen.add(a.key);}
-  for(const a of allCashAccounts){const k=a._id||a.key;if(!seen.has(k)){out.push(a);seen.add(k);}}
+  for(const a of CASH_ACCOUNTS){out.push(_cashGetAccount(a.key));seen.add(a.key);}
+  for(const a of allCashAccounts){const k=a._id||a.key;if(!seen.has(k)){out.push(_cashGetAccount(k));seen.add(k);}}
   return out;
 }
+// Always resolve label/accent from the built-in constant so a partial-write
+// wipe (see _cashPersistAccount) never surfaces as a blank / "undefined" label.
 function _cashGetAccount(key){
-  return allCashAccounts.find(a=>(a._id||a.key)===key)||CASH_ACCOUNTS.find(a=>a.key===key)||null;
+  const base=CASH_ACCOUNTS.find(a=>a.key===key);
+  const doc=allCashAccounts.find(a=>(a._id||a.key)===key);
+  if(!doc&&!base) return null;
+  const m={...(base||{}),...(doc||{}),_id:key};
+  m.label=(doc&&doc.label)||base?.label||key;
+  m.accent=(doc&&doc.accent)||base?.accent||'#111';
+  if(base) m.online=base.online;
+  return m;
 }
 function _cashGetCategory(key){
   if(!key) return null;
@@ -236,7 +261,7 @@ function _cashApplyDelta(key,delta){
   acc.balance=Math.round((acc.balance||0)+delta);
   acc.lastUpdated=Date.now();
   acc.lastBy=(session&&session.name)||'';
-  fsSet('store_cash_accounts',acc._id||key,{balance:acc.balance,lastUpdated:acc.lastUpdated,lastBy:acc.lastBy}).catch(()=>{});
+  _cashPersistAccount(acc);
 }
 
 function _cashRecalcBalances(){
@@ -259,8 +284,8 @@ function _cashRecalcBalances(){
     const derived=Math.round(bals[k]||0);
     if(a.balance!==derived){
       console.log(`[store-cash] recompute ${k}: ${a.balance} → ${derived}`);
-      a.balance=derived;
-      fsSet('store_cash_accounts',k,{balance:derived,lastUpdated:Date.now(),lastBy:'system:recompute'}).catch(()=>{});
+      a.balance=derived;a.lastUpdated=Date.now();a.lastBy='system:recompute';
+      _cashPersistAccount(a);
     }
   }
 }
@@ -1375,8 +1400,7 @@ window._cashDoCount=async function(key){
   if(Math.abs(diff)>0&&_canAdminCash()&&!reason){showToast('Enter a reason for the adjustment.',true);return;}
   const btn=document.getElementById('count-submit');if(btn){btn.disabled=true;btn.textContent='Saving…';}
   const accDoc=allCashAccounts.find(a=>(a._id||a.key)===key);
-  if(accDoc){accDoc.countedBalance=counted;accDoc.countedAt=Date.now();accDoc.countedBy=session.name;}
-  await fsSet('store_cash_accounts',key,{countedBalance:counted,countedAt:Date.now(),countedBy:session.name}).catch(()=>{});
+  if(accDoc){accDoc.countedBalance=counted;accDoc.countedAt=Date.now();accDoc.countedBy=session.name;await _cashPersistAccount(accDoc);}
   if(diff!==0&&_canAdminCash()){
     const mo=_cashCurrentMonth();
     await _cashPost({kind:'adjust',amount:diff,account:key,category:null,vendorId:null,payee:'system',date:todayStr(),month:mo,ts:Date.now(),by:session.u||session.name,adjustsReason:reason,note:'Physical count adj'});
@@ -1457,11 +1481,11 @@ window.cashResetAllData=async function(){
       ...del('store_cash_categories',cats),
       ...del('store_cash_vendors',vendors,'walkin') // keep the built-in walk-in vendor
     ]);
-    // zero every account balance
+    // zero every account balance (persist full doc so labels aren't wiped)
     for(const a of allCashAccounts){
-      const k=a._id||a.key;
       a.balance=0;a.openingBalance=0;a.countedBalance=null;a.countedAt=null;a.countedBy=null;
-      await fsSet('store_cash_accounts',k,{balance:0,openingBalance:0,countedBalance:null,countedAt:null,countedBy:null,lastUpdated:Date.now(),lastBy:'reset:'+(session.name||'')}).catch(()=>{});
+      a.lastUpdated=Date.now();a.lastBy='reset:'+(session.name||'');
+      await _cashPersistAccount(a);
     }
     // reset in-memory state
     allCashLedger=[];allCashFloats=[];allCashCategories=[];
