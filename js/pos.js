@@ -94,8 +94,19 @@ function poRowHTML(p){
 }
 
 // ── Registry ──
+function _orphanFabricPOs(){
+  const existing=new Set(allPOs.map(p=>String(p.id)));
+  return [...new Set((typeof allPasses!=='undefined'&&allPasses||[])
+    .filter(g=>g.gpType==='fabric'&&g.poId).map(g=>String(g.poId)))]
+    .filter(id=>!existing.has(id));
+}
 function renderRegistry(){
+  const orphans=session.canPO?_orphanFabricPOs():[];
   return`<div class="page-head"><div class="page-title">PO Registry</div><div class="page-sub">${allPOs.length} production orders</div></div>
+  ${orphans.length?`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#fef9e7;border:1px solid #f5e1a4;border-radius:8px;padding:10px 12px;margin-bottom:12px">
+    <span style="font-size:12px;color:#7a5b00">${orphans.length} fabric issue${orphans.length===1?'':'s'} reference a PO that isn't in the registry.</span>
+    <button class="btn-primary" style="font-size:12px;padding:6px 14px" onclick="window.importPOsFromFabric()">Import ${orphans.length} PO${orphans.length===1?'':'s'}</button>
+  </div>`:''}
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
     <input placeholder="Search name, code, fabric…" oninput="window.filterPOs(this.value)" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
     <select onchange="window.filterStage(this.value)" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
@@ -104,6 +115,31 @@ function renderRegistry(){
   </div>
   <div id="po-list-wrap">${allPOs.length?allPOs.map(p=>poRowHTML(p)).join(''):'<div class="empty">No POs yet.</div>'}</div>`;
 }
+window.importPOsFromFabric=async function(){
+  if(!session.canPO){showToast('Not authorized.',true);return;}
+  const existing=new Set(allPOs.map(p=>String(p.id)));
+  const byPo={};
+  (typeof allPasses!=='undefined'&&allPasses||[])
+    .filter(g=>g.gpType==='fabric'&&g.poId&&!existing.has(String(g.poId)))
+    .forEach(g=>{const k=String(g.poId);(byPo[k]=byPo[k]||[]).push(g);});
+  const ids=Object.keys(byPo);
+  if(!ids.length){showToast('Nothing to import.');return;}
+  if(!confirm(`Create ${ids.length} PO(s) from existing fabric issues? You can fill in the rest afterwards.`))return;
+  const STD=['XS','S','M','L','XL','2XL'];
+  let created=0;
+  for(const poNum of ids){
+    const gps=byPo[poNum].sort((a,b)=>(a.ts||0)-(b.ts||0));
+    const g=gps[gps.length-1];   // latest issue for article info
+    const sizes={};STD.forEach(s=>sizes[s]=0);
+    const stages={};(typeof STAGE_KEYS!=='undefined'?STAGE_KEYS:[]).forEach(k=>stages[k]={done:false,doneAt:null,doneBy:null,dueDate:'',notes:''});
+    const poDocId=String(poNum).replace(/[\/#?%.]/g,'-');
+    const newPO={id:poNum,ts:g.ts||Date.now(),name:g.articleName||g.article||g.fabricType||'—',code:g.articleCode||'',pattern:'',qty:0,sizes,ratio:'',fabric:g.fabricType||'',fabricCode:'',store:'',totalRoll:'',imgFront:'',imgBack:'',currentStage:'cutting',stages,bundlingParts:[],embellishment:{required:false},createdBy:session.name,createdAt:new Date().toISOString().slice(0,10),autoCreatedFrom:'fabric-issue'};
+    try{await setDoc(doc(db,'pos',poDocId),newPO);created++;}catch(e){console.warn('[pos] import PO failed',poNum,e);}
+  }
+  await logActivity('POs imported',`${created} PO(s) created from fabric issues by ${session.name}`).catch(()=>{});
+  showToast(`${created} PO(s) imported ✓`);
+  await loadData();window.showPage('po-registry');
+};
 window.filterPOs=function(q){const f=allPOs.filter(p=>!q||[p.name,p.id,p.code,p.fabric].some(v=>(v||'').toLowerCase().includes(q.toLowerCase())));document.getElementById('po-list-wrap').innerHTML=f.length?f.map(p=>poRowHTML(p)).join(''):'<div class="empty">No results.</div>';};
 window.filterStage=function(s){const f=s?allPOs.filter(p=>p.currentStage===s):allPOs;document.getElementById('po-list-wrap').innerHTML=f.length?f.map(p=>poRowHTML(p)).join(''):'<div class="empty">No results.</div>';};
 
