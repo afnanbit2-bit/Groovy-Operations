@@ -1528,11 +1528,9 @@ window.submitFabricIssue=async function(){
   const avgConsumption=parseFloat(document.getElementById('fab-iss-consumption')?.value)||0;
   const consumptionUnit=document.getElementById('fab-iss-cons-unit')?.value||'kg';
   const fabricRequired=parseFloat((plannedQty*avgConsumption).toFixed(3));
-  // The cutting plan lives on the PO registry record, not the gate pass — so
-  // the PO must exist in the registry when there is plan data to save.
+  // The cutting plan lives on the PO registry record, not the gate pass.
   const poDoc=(typeof allPOs!=='undefined'&&allPOs||[]).find(x=>String(x.id)===po);
   const hasPlan=sizeBreakdown.length>0||avgConsumption>0;
-  if(hasPlan&&!poDoc){showToast(`PO ${po} isn't in the registry — create it there first to save the cutting plan.`,true);return;}
   if(!plannedQty){ if(!confirm('No cutting-plan quantities entered. Issue anyway?'))return; }
   const rollCodes=_fabIssueRolls.map(r=>r.rollCode);
   const fabUnit=stock.unit||'kg';
@@ -1546,14 +1544,26 @@ window.submitFabricIssue=async function(){
     const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stock._id,boras:'0',items:[],totalUnits:0,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
     // Gate pass + inventory decrement commit in ONE transaction.
     await _fabInvUpsert({fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:fabUnit,removeRollCodes:rollCodes,reservePO:po,note:`Issued to factory for ${po} by ${session.name}`,sourceCol:'gatepasses',sourceId:gpId,extraWrites:[{ref:doc(db,'gatepasses',gpId),data:payload}]});
-    // Persist the cutting plan + a running fabric-issued log onto the PO record.
-    // The fabric-issued list is derived from the gate passes on the PO detail
-    // page, so only the planning data needs storing on the PO record.
-    if(poDoc&&hasPlan){
-      const cuttingPlan={sizeBreakdown,plannedQty,avgConsumption,consumptionUnit,fabricRequired,fabricType:stock.fabType,fabricGsm:stock.gsm||0,fabricColor:stock.color,fabricUnit:fabUnit,lastGpId:gpId,updatedAt:Date.now(),updatedBy:session.name};
-      try{ await updateDoc(doc(db,'pos',poDoc.fbKey),{cuttingPlan}); }
-      catch(e){ console.warn('[fabric] PO cutting-plan update failed',e); showToast('Fabric issued, but saving the plan to the PO failed: '+e.message,true); }
-    }
+    // Persist the cutting plan to the PO record. The fabric-issued list is
+    // derived from the gate passes on the PO detail page, so only the planning
+    // data needs storing. If the PO number isn't in the registry yet, create a
+    // lightweight PO from the issue data so it shows up (and accumulates issues).
+    const cuttingPlan=hasPlan?{sizeBreakdown,plannedQty,avgConsumption,consumptionUnit,fabricRequired,fabricType:stock.fabType,fabricGsm:stock.gsm||0,fabricColor:stock.color,fabricUnit:fabUnit,lastGpId:gpId,updatedAt:Date.now(),updatedBy:session.name}:null;
+    try{
+      if(poDoc){
+        if(cuttingPlan) await updateDoc(doc(db,'pos',poDoc.fbKey),{cuttingPlan});
+      }else{
+        const STD=['XS','S','M','L','XL','2XL'];
+        const sizes={}; STD.forEach(sz=>sizes[sz]=0);
+        sizeBreakdown.forEach(s=>{const k=(s.size||'').toUpperCase().replace('XXL','2XL');if(STD.includes(k))sizes[k]+=s.qty;});
+        const stages={}; (typeof STAGE_KEYS!=='undefined'?STAGE_KEYS:[]).forEach(k=>stages[k]={done:false,doneAt:null,doneBy:null,dueDate:'',notes:''});
+        const poDocId=String(po).replace(/[\/#?%.]/g,'-');
+        const newPO={id:po,ts:Date.now(),name:articleName,code:articleCode,pattern:'',qty:plannedQty||0,sizes,ratio:'',fabric:stock.fabType||'',fabricCode:'',store:'',totalRoll:'',imgFront:'',imgBack:'',currentStage:'cutting',stages,bundlingParts:[],embellishment:{required:false},createdBy:session.name,createdAt:new Date().toISOString().slice(0,10),autoCreatedFrom:'fabric-issue'};
+        if(cuttingPlan)newPO.cuttingPlan=cuttingPlan;
+        await setDoc(doc(db,'pos',poDocId),newPO);
+        await logActivity('PO auto-created',`PO ${po} — ${articleName} (${articleCode}) created from fabric issue by ${session.name}`).catch(()=>{});
+      }
+    }catch(e){ console.warn('[fabric] PO save/create failed',e); showToast('Fabric issued, but saving to the PO registry failed: '+e.message,true); }
     await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to factory for ${po}${plannedQty?` · plan ${plannedQty} pcs`:''} by ${session.name}`);
     showToast(`${gpId} issued ✓ · ${rollCodes.length} rolls`);
     _fabIssueRolls=[];_fabIssueKey=null;_fabIssueSizes=[{size:'',perBundle:'',bundles:''}];
