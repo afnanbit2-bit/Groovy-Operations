@@ -1338,8 +1338,7 @@ function _fabFindRoll(rollCode){
 // ── Fabric Issue Registry ──
 // Every fabric issue against a PO, with the cut (size breakdown / planned qty),
 // bundles, fabric and weight. Source = gate passes with gpType 'fabric'.
-let _fabRegPage=0,_fabRegQ='';
-const FAB_REG_PG=12;
+let _fabRegPage=0,_fabRegQ='',_fabRegPer=12;
 function _fabIssueRecords(){
   return (typeof allPasses!=='undefined'&&allPasses||[])
     .filter(g=>g.gpType==='fabric')
@@ -1373,22 +1372,35 @@ function _fabRegRows(issues){
         <span style="color:var(--muted)">${g.rollsCount||0} rolls</span>
       </div>
       ${sizes?`<div style="font-size:12px;color:var(--muted);margin-top:7px">Cut by size: ${sizes}</div>`:''}
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">Issued by ${_gpEsc(g.issuer||g.name||'')}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;flex-wrap:wrap">
+        <div style="font-size:11px;color:var(--muted)">Issued by ${_gpEsc(g.issuer||g.name||'')}</div>
+        ${['owner','manager'].includes(session.role)?`<div style="display:flex;gap:6px">
+          <button class="btn-outline" style="font-size:11px;padding:3px 12px" onclick="window.fabRegEdit('${_gpEsc(g.id||'')}')">Edit</button>
+          <button class="btn-outline" style="font-size:11px;padding:3px 12px;color:#dc2626;border-color:#fca5a5" onclick="window.fabRegDeleteOne('${_gpEsc(g.id||'')}')">Delete</button>
+        </div>`:''}
+      </div>
     </div>`;
   }).join('');
 }
 function _fabRegListHTML(){
   const all=_fabRegFiltered();
   if(!all.length)return '<div class="empty" style="padding:24px;text-align:center">No fabric issues found.</div>';
-  const pages=Math.ceil(all.length/FAB_REG_PG);
+  const pages=Math.ceil(all.length/_fabRegPer);
   if(_fabRegPage>=pages)_fabRegPage=Math.max(0,pages-1);
-  const slice=all.slice(_fabRegPage*FAB_REG_PG,(_fabRegPage+1)*FAB_REG_PG);
+  const slice=all.slice(_fabRegPage*_fabRegPer,(_fabRegPage+1)*_fabRegPer);
   let pager='';
   if(pages>1){
-    pager=`<div style="display:flex;gap:8px;align-items:center;justify-content:center;padding:12px 0 4px;border-top:1px solid var(--border);margin-top:6px">
-      <button onclick="window.fabRegPage(${_fabRegPage-1})" ${_fabRegPage===0?'disabled':''} class="btn-outline" style="padding:6px 14px;font-size:12px">← Prev</button>
-      <span style="font-size:12px;color:var(--muted)">Page <strong>${_fabRegPage+1}</strong>/${pages} · ${all.length} issues</span>
-      <button onclick="window.fabRegPage(${_fabRegPage+1})" ${_fabRegPage>=pages-1?'disabled':''} class="btn-outline" style="padding:6px 14px;font-size:12px">Next →</button>
+    // Numbered page buttons (windowed) + Prev/Next + jump box.
+    const btn=(p,lbl,dis,cur)=>`<button onclick="window.fabRegPage(${p})" ${dis?'disabled':''} class="btn-outline" style="padding:5px 11px;font-size:12px;${cur?'background:#111;color:#fff;border-color:#111':''}">${lbl}</button>`;
+    let nums='';const from=Math.max(0,_fabRegPage-2),to=Math.min(pages-1,_fabRegPage+2);
+    if(from>0)nums+=btn(0,'1',false,false)+(from>1?'<span style="color:var(--muted)">…</span>':'');
+    for(let p=from;p<=to;p++)nums+=btn(p,String(p+1),false,p===_fabRegPage);
+    if(to<pages-1)nums+=(to<pages-2?'<span style="color:var(--muted)">…</span>':'')+btn(pages-1,String(pages),false,false);
+    pager=`<div style="display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;padding:12px 0 4px;border-top:1px solid var(--border);margin-top:6px">
+      ${btn(_fabRegPage-1,'← Prev',_fabRegPage===0,false)}${nums}${btn(_fabRegPage+1,'Next →',_fabRegPage>=pages-1,false)}
+      <span style="font-size:12px;color:var(--muted);margin-left:6px">${all.length} issues · go to
+        <input type="number" min="1" max="${pages}" value="${_fabRegPage+1}" onchange="window.fabRegPage((parseInt(this.value)||1)-1)" style="width:52px;padding:4px;border:1px solid var(--border);border-radius:6px;font-size:12px;text-align:center">
+      </span>
     </div>`;
   }
   return _fabRegRows(slice)+pager;
@@ -1409,12 +1421,18 @@ function renderFabricIssueRegistry(){
       <div style="flex:1;background:#f4f4f6;border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">Bundles</div><div style="font-size:18px;font-weight:800">${totalBundles.toLocaleString()}</div></div>
       <div style="flex:1;background:#f4f4f6;border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">Fabric out</div><div style="font-size:18px;font-weight:800">${totalWeight.toFixed(1)}</div></div>
     </div>
-    <input id="fab-reg-search" placeholder="Search PO, article, fabric…" oninput="window.fabRegFilter(this.value)" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:10px">
+    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
+      <input id="fab-reg-search" placeholder="Search PO, article, fabric…" oninput="window.fabRegFilter(this.value)" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+      <select onchange="window.fabRegSetPer(this.value)" title="Entries per page" style="padding:10px 8px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+        ${[12,20,50,100].map(n=>`<option value="${n}"${_fabRegPer===n?' selected':''}>${n}/page</option>`).join('')}
+      </select>
+    </div>
     <div id="fab-reg-list">${_fabRegListHTML()}</div>
   </div>
   <div style="height:60px"></div>`;
 }
-window.fabRegPage=function(n){_fabRegPage=n;const el=document.getElementById('fab-reg-list');if(el){el.innerHTML=_fabRegListHTML();el.scrollIntoView({behavior:'smooth',block:'start'});}};
+window.fabRegPage=function(n){_fabRegPage=Math.max(0,n);const el=document.getElementById('fab-reg-list');if(el){el.innerHTML=_fabRegListHTML();el.scrollIntoView({behavior:'smooth',block:'start'});}};
+window.fabRegSetPer=function(v){_fabRegPer=parseInt(v)||12;_fabRegPage=0;const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();};
 window.fabRegFilter=function(q){_fabRegQ=q||'';_fabRegPage=0;const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();};
 window.fabRegDeleteAll=async function(){
   if(!['owner','manager'].includes(session.role)){showToast('Owners/managers only.',true);return;}
@@ -1431,6 +1449,104 @@ window.fabRegDeleteAll=async function(){
   await logActivity('Fabric issues cleared',`${n} fabric issue record(s) deleted by ${session.name}`).catch(()=>{});
   _fabBusyEnd();
   showToast(`${n} fabric issue(s) deleted ✓`);
+  if(typeof loadData==='function')await loadData();
+  window.switchFabTab('registry');
+};
+window.fabRegDeleteOne=async function(gpId){
+  if(!['owner','manager'].includes(session.role)){showToast('Owners/managers only.',true);return;}
+  const g=_fabIssueRecords().find(x=>x.id===gpId);if(!g){showToast('Entry not found.',true);return;}
+  if(!confirm(`Delete fabric issue ${gpId} (PO ${g.poId||'—'})? Clears the log entry only — fabric inventory is NOT restored.`))return;
+  if(!_fabBusyStart('Deleting…'))return;
+  try{ await deleteDoc(doc(db,'gatepasses',gpId));
+    await logActivity('Fabric issue deleted',`${gpId} · PO ${g.poId||''} removed by ${session.name}`).catch(()=>{});
+    showToast('Entry deleted ✓');
+  }catch(e){showToast('Delete failed: '+e.message,true);}
+  _fabBusyEnd();
+  if(typeof loadData==='function')await loadData();
+  window.switchFabTab('registry');
+};
+
+// ── Edit a fabric-issue entry (owner/manager) ──
+// Editable: PO, article name/code, and the cut (size + bundles). Fabric used
+// (rolls) is inventory-linked and shown read-only; avg re-derives from it.
+let _fabEditSizes=[],_fabEditFabUsed=0,_fabEditUnit='kg';
+function _fabModal(title,html){
+  let ov=document.getElementById('fab-modal-ov');
+  if(!ov){ov=document.createElement('div');ov.id='fab-modal-ov';ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px';ov.addEventListener('click',e=>{if(e.target===ov)window._fabModalClose();});document.body.appendChild(ov);}
+  ov.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:600px;width:100%;max-height:88vh;overflow:auto;padding:18px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div style="font-size:16px;font-weight:800">${title}</div><button onclick="window._fabModalClose()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);line-height:1">×</button></div>
+    ${html}</div>`;
+  ov.style.display='flex';
+}
+window._fabModalClose=function(){const ov=document.getElementById('fab-modal-ov');if(ov)ov.style.display='none';};
+window.fabRegEdit=function(gpId){
+  if(!['owner','manager'].includes(session.role)){showToast('Owners/managers only.',true);return;}
+  const g=_fabIssueRecords().find(x=>x.id===gpId);if(!g){showToast('Entry not found.',true);return;}
+  _fabEditFabUsed=g.fabricQty||0;_fabEditUnit=g.fabricUnit||'kg';
+  _fabEditSizes=(g.sizeBreakdown||[]).map(s=>({size:s.size||'',bundles:Array.isArray(s.bundles)?s.bundles.join('-'):String((s.perBundle&&s.bundles)?Array(s.bundles).fill(s.perBundle).join('-'):(s.qty||''))}));
+  if(!_fabEditSizes.length)_fabEditSizes=[{size:'',bundles:''}];
+  _fabModal(`Edit ${gpId}`,`
+    <div class="field"><label>PO number</label><input id="fed-po" value="${_gpEsc(g.poId||'')}" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
+    <div style="display:flex;gap:8px">
+      <div class="field" style="flex:1"><label>Article name</label><input id="fed-article" value="${_gpEsc(g.articleName||'')}" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
+      <div class="field" style="flex:1"><label>Article code</label><input id="fed-code" value="${_gpEsc(g.articleCode||'')}" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
+    </div>
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.04em;margin:6px 0 6px">Cutting — bundles per size</div>
+    <div id="fed-sizes"></div>
+    <button type="button" class="btn-outline" style="font-size:12px;padding:5px 12px;margin-top:6px" onclick="window.fabRegAddEditSize()">+ Add size</button>
+    <div style="background:#f4f4f6;border-radius:8px;padding:10px;margin-top:12px;font-size:13px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <span>Total cut: <strong id="fed-tot">0</strong> pcs · <strong id="fed-tb">0</strong> bundles</span>
+      <span>Fabric used: <strong>${(g.fabricQty||0).toFixed(2)} ${_gpEsc(_fabEditUnit)}</strong> · Avg: <strong id="fed-avg">—</strong></span>
+    </div>
+    <button class="btn-primary" style="width:100%;margin-top:14px" onclick="window._fabRegSaveEdit('${_gpEsc(gpId)}')">Save changes</button>
+  `);
+  _fabEditRenderSizes();
+};
+function _fabEditRenderSizes(){
+  const el=document.getElementById('fed-sizes');if(!el)return;
+  el.innerHTML=_fabEditSizes.map((s,i)=>`<div class="fed-row" style="display:grid;grid-template-columns:1fr 2fr .8fr 24px;gap:6px;align-items:center;margin-bottom:6px">
+    <input class="fed-size" value="${_gpEsc(s.size)}" placeholder="Size" oninput="window.fabRegEditRecalc()" style="padding:8px;border:1px solid var(--border);border-radius:7px;font-size:14px">
+    <input class="fed-bundles" value="${_gpEsc(s.bundles)}" placeholder="9-8-6-7" oninput="window.fabRegEditRecalc()" style="padding:8px;border:1px solid var(--border);border-radius:7px;font-size:14px">
+    <span class="fed-q" style="text-align:right;font-weight:700;font-size:14px">—</span>
+    <button type="button" onclick="window.fabRegRemoveEditSize(${i})" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:18px">×</button>
+  </div>`).join('');
+  window.fabRegEditRecalc();
+}
+function _fabEditSync(){
+  const rows=document.querySelectorAll('#fed-sizes .fed-row');
+  if(rows.length)_fabEditSizes=Array.from(rows).map(r=>({size:r.querySelector('.fed-size')?.value||'',bundles:r.querySelector('.fed-bundles')?.value||''}));
+}
+window.fabRegAddEditSize=function(){_fabEditSync();_fabEditSizes.push({size:'',bundles:''});_fabEditRenderSizes();};
+window.fabRegRemoveEditSize=function(i){_fabEditSync();_fabEditSizes.splice(i,1);if(!_fabEditSizes.length)_fabEditSizes=[{size:'',bundles:''}];_fabEditRenderSizes();};
+window.fabRegEditRecalc=function(){
+  let tot=0,tb=0;
+  document.querySelectorAll('#fed-sizes .fed-row').forEach(r=>{
+    const arr=_fabParseBundles(r.querySelector('.fed-bundles')?.value);const q=arr.reduce((a,b)=>a+b,0);
+    tot+=q;tb+=arr.length;const qc=r.querySelector('.fed-q');if(qc)qc.textContent=q?q.toLocaleString():'—';
+  });
+  const t=document.getElementById('fed-tot');if(t)t.textContent=tot.toLocaleString();
+  const b=document.getElementById('fed-tb');if(b)b.textContent=tb;
+  const a=document.getElementById('fed-avg');if(a)a.textContent=tot>0?(_fabEditFabUsed/tot).toFixed(4)+' '+_fabEditUnit+'/pc':'—';
+};
+window._fabRegSaveEdit=async function(gpId){
+  _fabEditSync();
+  const po=(document.getElementById('fed-po')?.value||'').trim();
+  const articleName=(document.getElementById('fed-article')?.value||'').trim();
+  const articleCode=(document.getElementById('fed-code')?.value||'').trim();
+  const sizeBreakdown=_fabEditSizes
+    .map(s=>({size:(s.size||'').trim(),bundles:_fabParseBundles(s.bundles)}))
+    .filter(s=>s.size||s.bundles.length)
+    .map(s=>({...s,bundleCount:s.bundles.length,qty:s.bundles.reduce((a,b)=>a+b,0)}));
+  const cutQty=sizeBreakdown.reduce((n,s)=>n+s.qty,0);
+  const totalBundles=sizeBreakdown.reduce((n,s)=>n+s.bundleCount,0);
+  const avgConsumption=cutQty>0?parseFloat((_fabEditFabUsed/cutQty).toFixed(4)):0;
+  if(!_fabBusyStart('Saving…'))return;
+  try{
+    await updateDoc(doc(db,'gatepasses',gpId),{poId:po,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName}`,sizeBreakdown,cutQty,plannedQty:cutQty,totalBundles,avgConsumption,totalUnits:cutQty,editedAt:Date.now(),editedBy:session.name});
+    await logActivity('Fabric issue edited',`${gpId} · PO ${po} · ${cutQty} pcs by ${session.name}`).catch(()=>{});
+    showToast('Entry updated ✓');
+  }catch(e){showToast('Save failed: '+e.message,true);_fabBusyEnd();return;}
+  _fabBusyEnd();window._fabModalClose();
   if(typeof loadData==='function')await loadData();
   window.switchFabTab('registry');
 };
