@@ -332,6 +332,7 @@ function _renderFabInvDrill(key){
     <button onclick="window.fabDrillJump('returns','${key}')" style="padding:7px 13px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--text);font-size:12px;cursor:pointer;font-family:inherit">Returns →</button>
     <button onclick="window.fabDrillJump('fabricin','${key}')" style="padding:7px 13px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--text);font-size:12px;cursor:pointer;font-family:inherit">Record arrival →</button>
     <button onclick="window.fabDrillJump('reports','${key}')" style="padding:7px 13px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--text);font-size:12px;cursor:pointer;font-family:inherit">Reports →</button>
+    ${_fabCanDelete()?`<button onclick="window.fabCorrectFabric('${key}')" style="padding:7px 13px;border:1px solid #fca5a5;border-radius:8px;background:#fff;color:#b45309;font-size:12px;cursor:pointer;font-family:inherit">✎ Correct color / type / GSM</button>`:''}
   </div>
   <div class="card" style="margin-bottom:14px"><div class="card-title">Stock alerts <span style="font-weight:400;color:var(--muted);font-size:11px">3 levels (${s.unit||'kg'}) · weight at/below each level raises the flag</span></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
@@ -1306,6 +1307,93 @@ window.saveFabricRoll=async function(fabId,rollCode){
     window.hrmCloseModal();
     _fabAfterRollChange(f?fabId:null);
   }catch(e){showToast('Save failed: '+e.message,true);}
+  finally{_fabBusyEnd();}
+};
+
+// ── Correct a whole fabric entry's color / type / GSM (owner) ──
+// Regenerates roll codes for the new combo and MOVES the in-stock rolls to the
+// correct inventory aggregate. Barcodes change → reprint. Reserved/issued rolls
+// (codes referenced elsewhere) are left in place.
+window.fabCorrectFabric=function(key){
+  if(!_fabCanDelete())return showToast('Only owners can correct a fabric entry.',true);
+  const s=allFabricInventory.find(x=>x._id===key);
+  if(!s)return showToast('Fabric not found.',true);
+  const inStock=(s.rolls||[]).filter(r=>(r.status||'in_stock')==='in_stock').length;
+  const stuck=(s.rolls||[]).length-inStock;
+  document.getElementById('hrm-modal-back')?.remove();
+  const back=document.createElement('div');
+  back.className='hrm-modal-back';back.id='hrm-modal-back';
+  back.onclick=ev=>{if(ev.target===back)window.hrmCloseModal();};
+  back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><h3>Correct fabric entry</h3><div class="sub">${_gpEsc(s.fabType||'')} · ${s.gsm||0}gsm · ${_gpEsc(s.color||'')}</div></div>
+      <button onclick="window.hrmCloseModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);line-height:1">×</button>
+    </div>
+    <div style="background:#fffbeb;border:1px solid #f5e1a4;border-radius:8px;padding:9px 11px;font-size:12px;color:#7a5b00;margin:10px 0;line-height:1.5">Fixes a wrong entry (e.g. Cream → Bottle Green). The ${inStock} in-stock roll(s) get <strong>new barcodes</strong> and move to the corrected fabric — <strong>reprint them after</strong>.${stuck?` ${stuck} reserved/issued roll(s) stay as-is (their codes are used elsewhere).`:''}</div>
+    <div class="hrm-grid-2">
+      <div class="field"><label>Fabric type</label><input id="fc-type" value="${_gpEsc(s.fabType||'')}" oninput="window._fabCorrectPrev()"></div>
+      <div class="field"><label>GSM</label><input id="fc-gsm" type="number" min="0" value="${s.gsm||0}" oninput="window._fabCorrectPrev()"></div>
+    </div>
+    <div class="field"><label>Color</label><input id="fc-color" value="${_gpEsc(s.color||'')}" placeholder="e.g. Bottle Green" oninput="window._fabCorrectPrev()"></div>
+    <div style="font-size:12px;color:var(--muted);margin:6px 0 2px">New code preview: <strong id="fc-prev" style="color:#111">—</strong></div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window._fabDoCorrect('${_gpEsc(key)}')">Apply correction</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  window._fabCorrectPrev();
+};
+window._fabCorrectPrev=function(){
+  const t=(document.getElementById('fc-type')?.value||'').trim();
+  const g=parseInt(document.getElementById('fc-gsm')?.value)||0;
+  const c=(document.getElementById('fc-color')?.value||'').trim();
+  const el=document.getElementById('fc-prev');if(!el)return;
+  el.textContent=(t&&g&&c)?`${_fabBaseCode(t,g,c)}-XX-R01 …`:'—';
+};
+window._fabDoCorrect=async function(oldKey){
+  if(!_fabCanDelete())return showToast('Owners only.',true);
+  const s=allFabricInventory.find(x=>x._id===oldKey);
+  if(!s)return showToast('Fabric not found.',true);
+  const newType=(document.getElementById('fc-type')?.value||'').trim();
+  const newColor=(document.getElementById('fc-color')?.value||'').trim();
+  const newGsm=parseInt(document.getElementById('fc-gsm')?.value)||0;
+  if(!newType||!newColor||!newGsm)return showToast('Type, GSM and color are all required.',true);
+  const newKey=_fabInvKey(newType,newGsm,newColor);
+  if(newKey===oldKey)return showToast('Nothing changed — new details match the current ones.',true);
+  const movable=(s.rolls||[]).filter(r=>(r.status||'in_stock')==='in_stock');
+  const stuck=(s.rolls||[]).length-movable.length;
+  if(!movable.length)return showToast('No in-stock rolls to correct.',true);
+  if(!confirm(`Move ${movable.length} roll(s) to ${newType} ${newGsm}gsm ${newColor}?\nTheir barcodes change and must be reprinted.${stuck?`\n${stuck} reserved/issued roll(s) will be left as-is.`:''}`))return;
+  if(!_fabBusyStart('Correcting…'))return;
+  try{
+    const unit=s.unit||'kg';
+    const base=_fabBaseCode(newType,newGsm,newColor);
+    const lot=await _allocFabLot(base);
+    const newRolls=movable.map((r,i)=>({rollCode:`${base}-${lot}-R${String(i+1).padStart(2,'0')}`,weight:r.weight,gsm:newGsm,unit,sourceFabId:r.sourceFabId}));
+    const codeMap={};movable.forEach((r,i)=>{codeMap[r.rollCode]=newRolls[i].rollCode;});
+    // 1) add corrected rolls to the NEW combo, 2) remove old codes from OLD combo.
+    await _fabInvUpsert({fabType:newType,gsm:newGsm,color:newColor,unit,addRolls:newRolls,note:`Corrected from ${s.fabType} ${s.gsm}gsm ${s.color}`,sourceCol:'fabric_inventory',sourceId:newKey});
+    try{
+      await _fabInvUpsert({fabType:s.fabType,gsm:s.gsm,color:s.color,unit,deleteRollCodes:movable.map(r=>r.rollCode),note:`Corrected to ${newColor}`,sourceCol:'fabric_inventory',sourceId:oldKey});
+    }catch(e){ showToast('Corrected rolls added, but couldn’t remove the old ones — delete the old entry manually.',true); }
+    // 3) best-effort: fix the fabricin receipt(s) so their roll list matches.
+    const fabIds=[...new Set(movable.map(r=>r.sourceFabId).filter(Boolean))];
+    for(const fid of fabIds){
+      const f=allFabricIn.find(x=>x.id===fid);if(!f)continue;
+      const nr=(f.rolls||[]).map(r=>{const oc=r.rollCode||r.rollNumber;return codeMap[oc]?{...r,rollCode:codeMap[oc],color:newColor,gsm:newGsm}:r;});
+      const allMoved=(f.rolls||[]).every(r=>codeMap[r.rollCode||r.rollNumber]);
+      const upd={rolls:nr,updatedAt:Date.now(),updatedBy:session.name};
+      if(allMoved){upd.fabType=newType;upd.gsm=newGsm;upd.color=newColor;upd.fabCode=`${base}-${lot}`;}
+      try{await updateDoc(doc(db,'fabricin',fid),upd);Object.assign(f,upd);}catch(e){console.warn('[fabric] receipt correct skipped',fid,e.message);}
+    }
+    await logActivity('Fabric corrected',`${s.fabType} ${s.gsm}gsm ${s.color} → ${newType} ${newGsm}gsm ${newColor} · ${movable.length} rolls by ${session.name}`).catch(()=>{});
+    window.hrmCloseModal();
+    showToast(`Corrected ✓ · reprint ${movable.length} barcode(s)`);
+    _fabBusyEnd();
+    if(typeof loadData==='function')await loadData();
+    window.fabInvDrill(newKey);   // jump to the corrected entry to reprint
+  }catch(e){showToast('Correction failed: '+e.message,true);}
   finally{_fabBusyEnd();}
 };
 
