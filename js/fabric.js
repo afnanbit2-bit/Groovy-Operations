@@ -866,11 +866,12 @@ function _openRollLabelsPrint(labels){
       .brand{font-size:15pt;font-weight:800;letter-spacing:.5px;line-height:1}
       .htype{font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:1.5px}
       .hsup{font-size:9.5pt;font-weight:700;max-width:46mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
-      .info{display:flex;gap:4mm;align-items:flex-end;flex-shrink:0}
+      .info{display:flex;flex-direction:column;gap:.8mm;flex-shrink:0}
+      .irow{display:flex;gap:5mm;align-items:flex-end;width:100%}
       .cell{min-width:0;overflow:hidden}
-      .k{font-size:6.5pt;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.6px;line-height:1.1}
-      .v{font-size:12pt;font-weight:800;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .v.big{font-size:15pt}
+      .k{font-size:6.5pt;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.5px;line-height:1.1}
+      .v{font-size:11pt;font-weight:800;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .v.big{font-size:13pt}
       svg.bc{display:block;width:100%;flex:1;min-height:0}
       .rc{font-size:12pt;font-weight:700;letter-spacing:1.5px;text-align:center;line-height:1;flex-shrink:0}
       .row{display:flex;page-break-after:always;break-after:page}
@@ -954,13 +955,18 @@ function _openRollLabelsPrint(labels){
             var htype=document.createElement('span');htype.className='htype';htype.textContent='FABRIC ROLL';
             var hsup=document.createElement('span');hsup.className='hsup';hsup.textContent=l.supplier||'';
             hdr.appendChild(brand);hdr.appendChild(htype);hdr.appendChild(hsup);
-            // Info row: Fabric / GSM / Color / Weight
+            // Info: Fabric on its own full-width row (can be long), then
+            // GSM / Color / Weight sharing the second row — nothing truncates.
             var info=document.createElement('div');info.className='info';
-            var f=_cell('Fabric',l.fabType||'');f.style.flex='1.5';
-            var g=_cell('GSM',l.gsm?String(l.gsm):'');g.style.flex='0.8';
-            var c=_cell('Color',l.color||'');c.style.flex='1.1';
+            var r1=document.createElement('div');r1.className='irow';
+            var f=_cell('Fabric',l.fabType||'');f.style.flex='1';
+            r1.appendChild(f);
+            var r2=document.createElement('div');r2.className='irow';
+            var g=_cell('GSM',l.gsm?String(l.gsm):'');g.style.flex='0.7';
+            var c=_cell('Color',l.color||'');c.style.flex='1.4';
             var w=_cell('Weight',l.weight||'',true);w.style.flex='1';w.style.textAlign='right';
-            info.appendChild(f);info.appendChild(g);info.appendChild(c);info.appendChild(w);
+            r2.appendChild(g);r2.appendChild(c);r2.appendChild(w);
+            info.appendChild(r1);info.appendChild(r2);
             // Barcode fills remaining height
             var bc=document.createElementNS('http://www.w3.org/2000/svg','svg');bc.setAttribute('class','bc');bc.setAttribute('data-val',l.rollCode||'');
             // Roll code text under the barcode
