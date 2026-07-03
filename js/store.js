@@ -595,27 +595,44 @@ window._catLabelChanged=function(){
 function _miRowCells(l,idx){
   const item=allItems.find(i=>i.code===l.itemCode);
   const sized=!!(item&&item.sizeSpecific);
-  // For a size-specific item the relevant stock is the chosen size's stock
-  // (total until a size is picked); for flat items it's the balance.
-  const stock=item?(sized&&l.size?(parseInt(item.sizes?.[l.size])||0):getBalance(item)):0;
   const opts=allItems.map(i=>`<option value="${i.code}"${i.code===l.itemCode?' selected':''}>${i.code} — ${i.name}</option>`).join('');
-  let sizeSelect='';
+  const G='var(--green)',R='var(--red)';
+  let stockCell='—',qtyCell='';
   if(sized){
-    const szOpts=Object.keys(item.sizes||{}).map(sz=>`<option value="${sz}"${sz===l.size?' selected':''}>${sz} (${parseInt(item.sizes[sz])||0})</option>`).join('');
-    sizeSelect=`<select style="width:100%;margin-top:4px;padding:5px;border:1px solid var(--amber);border-radius:6px;font-size:12px;background:#FFFBEB" onchange="window._miChangeSize(${idx},this.value)">
-      <option value="">— select size —</option>${szOpts}</select>`;
+    // Size-specific label: show total stock, and one qty box per size so a
+    // single row issues e.g. S=10 M=20 — each logged as its own sized movement.
+    const szKeys=Object.keys(item.sizes||{});
+    const total=szKeys.reduce((s,sz)=>s+(parseInt(item.sizes[sz])||0),0);
+    stockCell=`<span style="color:${total>0?G:R}">${total}</span>`;
+    qtyCell=`<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end">${szKeys.map(sz=>{
+      const av=parseInt(item.sizes[sz])||0;
+      const v=(l.sizeQtys&&l.sizeQtys[sz]!=null)?l.sizeQtys[sz]:'';
+      return`<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+        <span style="font-size:9px;font-weight:700;color:var(--muted)">${sz}<span style="font-weight:400;color:#bbb"> ·${av}</span></span>
+        <input type="number" min="0" value="${v}" placeholder="0" ${av>0?'':'disabled'} style="width:50px;padding:4px;border:1px solid ${av>0?'var(--border)':'#eee'};border-radius:6px;font-size:12px;text-align:center" onchange="window._miChangeSizeQty(${idx},'${sz}',this.value)"></div>`;
+    }).join('')}</div>`;
+  }else{
+    const stock=item?getBalance(item):0;
+    stockCell=item?`<span style="color:${stock>0?G:R}">${stock}</span>`:'—';
+    qtyCell=`<input type="number" min="1" value="${l.qty!=null?l.qty:''}" placeholder="0" style="width:80px;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:12px" onchange="window._miChangeQty(${idx},this.value)">`;
   }
   return`<td style="padding:4px;width:28px"><input type="checkbox" class="mi-row-chk" style="cursor:pointer;width:15px;height:15px"></td>
   <td><select style="width:100%;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:12px" onchange="window._miChangeItem(${idx},this.value)">
-    <option value="">— select —</option>${opts}</select>${sizeSelect}</td>
-  <td style="text-align:center;font-size:12px;color:${stock>0?'var(--green)':'var(--red)'}">${l.itemCode?stock:'—'}</td>
-  <td><input type="number" min="1" value="${l.qty}" placeholder="0" style="width:80px;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:12px" onchange="window._miChangeQty(${idx},this.value)"></td>
+    <option value="">— select —</option>${opts}</select></td>
+  <td style="text-align:center;font-size:12px">${l.itemCode?stockCell:'—'}</td>
+  <td style="text-align:right">${qtyCell}</td>
   <td><button onclick="window._miRemoveRow(${idx})" style="background:none;border:none;font-size:18px;color:var(--muted);cursor:pointer;padding:2px 6px">×</button></td>`;
 }
+function _miLineQty(l){
+  if(!l.itemCode)return 0;
+  const item=allItems.find(i=>i.code===l.itemCode);
+  if(item&&item.sizeSpecific)return Object.values(l.sizeQtys||{}).reduce((s,v)=>s+(parseInt(v)||0),0);
+  return parseInt(l.qty)||0;
+}
 function _miSubmitLabel(){
-  const valid=_miLines.filter(l=>l.itemCode&&parseInt(l.qty)>0);
+  const valid=_miLines.filter(l=>l.itemCode&&_miLineQty(l)>0);
   if(!valid.length)return'Issue Stock';
-  const total=valid.reduce((s,l)=>s+(parseInt(l.qty)||0),0);
+  const total=valid.reduce((s,l)=>s+_miLineQty(l),0);
   return`Issue ${valid.length} item${valid.length>1?'s':''} (${total} pcs)`;
 }
 function _miUpdateSubmitBtn(){const btn=document.getElementById('mi-submit-btn');if(btn)btn.textContent=_miSubmitLabel();}
@@ -635,22 +652,16 @@ window._miRemoveRow=function(idx){
   _miUpdateSubmitBtn();
 };
 window._miChangeItem=function(idx,code){
-  _miLines[idx].itemCode=code;
-  _miLines[idx].size='';// reset size — it belongs to the previous item
-  // Re-render the whole row so the size selector appears/disappears to match
-  // the newly-selected item (qty is preserved via the line object).
+  // Reset the line to match the new item's shape (per-size grid vs flat qty).
+  const item=allItems.find(i=>i.code===code);
+  _miLines[idx]=item&&item.sizeSpecific?{itemCode:code,sizeQtys:{}}:{itemCode:code,qty:''};
   const row=document.getElementById('mi-row-'+idx);if(!row)return;
   row.innerHTML=_miRowCells(_miLines[idx],idx);
   _miUpdateSubmitBtn();
 };
-window._miChangeSize=function(idx,sz){
-  _miLines[idx].size=sz;
-  const item=allItems.find(i=>i.code===_miLines[idx].itemCode);
-  const row=document.getElementById('mi-row-'+idx);if(!row||!item)return;
-  const tds=row.querySelectorAll('td');
-  // tds[2] is the Stock cell — tds[1] is the Item cell holding the item + size
-  // selects, so writing into it would wipe those dropdowns.
-  if(tds[2]){const s=sz?(parseInt(item.sizes?.[sz])||0):getBalance(item);tds[2].textContent=s;tds[2].style.color=s>0?'var(--green)':'var(--red)';}
+window._miChangeSizeQty=function(idx,sz,v){
+  const l=_miLines[idx];if(!l.sizeQtys)l.sizeQtys={};
+  if(v===''||v==null)delete l.sizeQtys[sz];else l.sizeQtys[sz]=v;
   _miUpdateSubmitBtn();
 };
 window._miChangeQty=function(idx,v){_miLines[idx].qty=v;_miUpdateSubmitBtn();};
@@ -853,48 +864,60 @@ async function submitIssueManual(){
   const purpose=(document.getElementById('iss-purpose')?.value||'').trim();
   const date=document.getElementById('iss-date')?.value||todayStr();
   const codes=new Set();
+  const plan=[];   // {item, entries:[{size,qty}]} for sized · {item, flatQty} for flat
   for(let i=0;i<_miLines.length;i++){
     const l=_miLines[i];
     if(!l.itemCode){showToast(`Row ${i+1}: select an item.`,true);return;}
     const it=allItems.find(x=>x.code===l.itemCode);
     if(!it){showToast(`Row ${i+1}: item ${l.itemCode} not found.`,true);return;}
-    // Size-specific items must name the size being issued; the same item may
-    // appear on multiple rows as long as each row is a different size.
-    if(it.sizeSpecific&&!l.size){showToast(`Row ${i+1}: pick a size for ${l.itemCode}.`,true);return;}
-    const key=l.itemCode+(it.sizeSpecific?'|'+l.size:'');
-    if(codes.has(key)){showToast(`Row ${i+1}: duplicate ${it.sizeSpecific?'item/size':'item'} (${l.itemCode}${it.sizeSpecific?' '+l.size:''}).`,true);return;}
-    codes.add(key);
-    const qty=parseFloat(l.qty)||0;
-    if(!qty){showToast(`Row ${i+1}: quantity must be > 0.`,true);return;}
+    if(codes.has(l.itemCode)){showToast(`Row ${i+1}: ${l.itemCode} is on another row — put all its sizes in one row.`,true);return;}
+    codes.add(l.itemCode);
     if(it.sizeSpecific){
-      const szStock=parseInt(it.sizes?.[l.size])||0;
-      if(qty>szStock){showToast(`Row ${i+1}: insufficient ${l.size} stock for ${l.itemCode} (have ${szStock}).`,true);return;}
-    }else if(qty>getBalance(it)){showToast(`Row ${i+1}: insufficient stock for ${l.itemCode} (have ${getBalance(it)}).`,true);return;}
+      const entries=Object.entries(l.sizeQtys||{}).map(([size,v])=>({size,qty:parseInt(v)||0})).filter(e=>e.qty>0);
+      if(!entries.length){showToast(`Row ${i+1}: enter a quantity for at least one size of ${l.itemCode}.`,true);return;}
+      for(const e of entries){
+        const av=parseInt(it.sizes?.[e.size])||0;
+        if(e.qty>av){showToast(`Row ${i+1}: ${l.itemCode} ${e.size} short — have ${av}, need ${e.qty}.`,true);return;}
+      }
+      plan.push({item:it,entries});
+    }else{
+      const qty=parseFloat(l.qty)||0;
+      if(!qty){showToast(`Row ${i+1}: quantity must be > 0.`,true);return;}
+      if(qty>getBalance(it)){showToast(`Row ${i+1}: insufficient stock for ${l.itemCode} (have ${getBalance(it)}).`,true);return;}
+      plan.push({item:it,flatQty:qty});
+    }
   }
   const btn=document.getElementById('mi-submit-btn');if(btn){btn.disabled=true;btn.textContent='Issuing…';}
-  const rollback=[];
+  const rollback=[];let txCount=0;
   try{
-    for(const l of _miLines){
-      const item=allItems.find(x=>x.code===l.itemCode);
-      const qty=parseFloat(l.qty);
+    for(const p of plan){
+      const item=p.item;
       const updated={...item};
       const oldBalance=item.sizeSpecific?{...item.sizes}:item.balance;
       if(item.sizeSpecific){
-        // Deduct from the specific size the user chose (validated above).
         const ns={...item.sizes};
-        ns[l.size]=Math.max(0,(parseInt(ns[l.size])||0)-qty);
+        for(const e of p.entries) ns[e.size]=Math.max(0,(parseInt(ns[e.size])||0)-e.qty);
         updated.sizes=ns;
-      }else{updated.balance=Math.max(0,(parseInt(item.balance)||0)-qty);}
-      await fsSet('store_items',item.code,updated);
-      rollback.push({item,oldBalance});
-      const txData={type:'issued',itemCode:item.code,itemName:item.name,issuedTo,purpose,date,by:session.name,ts:Date.now(),qty,unit:item.unit,poRef};
-      if(item.sizeSpecific&&l.size)txData.size=l.size;
-      const txId=await fsAdd('store_transactions',txData);
+        await fsSet('store_items',item.code,updated);
+        rollback.push({item,oldBalance});
+        // one transaction PER SIZE so the log shows S:10 · M:20 etc.
+        for(const e of p.entries){
+          const txData={type:'issued',itemCode:item.code,itemName:item.name,issuedTo,purpose,date,by:session.name,ts:Date.now(),qty:e.qty,unit:item.unit,poRef,size:e.size};
+          const txId=await fsAdd('store_transactions',txData);
+          allTransactions.unshift({...txData,_id:txId});txCount++;
+        }
+      }else{
+        updated.balance=Math.max(0,(parseInt(item.balance)||0)-p.flatQty);
+        await fsSet('store_items',item.code,updated);
+        rollback.push({item,oldBalance});
+        const txData={type:'issued',itemCode:item.code,itemName:item.name,issuedTo,purpose,date,by:session.name,ts:Date.now(),qty:p.flatQty,unit:item.unit,poRef};
+        const txId=await fsAdd('store_transactions',txData);
+        allTransactions.unshift({...txData,_id:txId});txCount++;
+      }
       const idx=allItems.findIndex(x=>x.code===item.code);if(idx>=0)allItems[idx]={...updated,_id:item.code};
-      allTransactions.unshift({...txData,_id:txId});
     }
-    _miLines=[{itemCode:'',qty:'',size:''}];
-    showToast(`${rollback.length} item(s) issued ✓`);renderStoreSection('issue');
+    _miLines=[{itemCode:'',qty:''}];
+    showToast(`${txCount} movement(s) issued ✓`);renderStoreSection('issue');
   }catch(e){
     for(const{item,oldBalance}of rollback){
       const idx=allItems.findIndex(x=>x.code===item.code);
@@ -1502,7 +1525,7 @@ async function loadStoreData(){
   try{
     const[items,txns,templates,requests,cats,pirs,edits,shortfalls]=await Promise.all([
       fsList('store_items'),
-      fsQueryOrdered('store_transactions','ts',300),
+      fsQueryOrdered('store_transactions','ts',3000),   // full movement history for the log
       fsList('trim_templates'),
       fsList('store_requests'),
       fsList('store_categories').catch(()=>[]),

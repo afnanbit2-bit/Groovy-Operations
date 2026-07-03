@@ -479,7 +479,7 @@ let _ilPage=1,_ilQ='',_ilPO='',_ilDir='';
 let _tplRowIdx=0,_tplProdCode='',_tplProdName='',_tplEditId=null,_tplPage=1;
 const TPL_PER=15;
 let _poIssueData=null,_txFilterQ='',_txFilterType='';
-const IL_PER=15,IL_MAX_PAGES=5;
+const IL_PER=15,IL_MAX_PAGES=1000;   // effectively uncapped — page through all loaded movements
 function showToast(msg,isErr=false){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show'+(isErr?' err':'');setTimeout(()=>t.className='toast',3200);}
 
 async function logActivity(action,detail=''){
