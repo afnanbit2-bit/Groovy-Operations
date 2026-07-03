@@ -1097,6 +1097,8 @@ window.cashSettleFloat=function(floatId){
     <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Change Returned (₨)</div>
     <input id="settle-change" type="number" inputmode="numeric" min="0" placeholder="0" oninput="window._cashSettlePrev('${_scEsc(floatId)}')"
       style="width:100%;font-size:22px;font-weight:800;padding:10px;border:2px solid var(--border);border-radius:10px;margin-bottom:8px;box-sizing:border-box">
+    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Change returned to <span style="font-weight:400">(where the money lands)</span></div>
+    <select id="settle-change-acc" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:10px;box-sizing:border-box">${_cashAllAccounts().map(a=>`<option value="${a._id||a.key}"${(a._id||a.key)===f.account?' selected':''}>${_scEsc(a.label)}${(a._id||a.key)===f.account?' (issued from)':''}</option>`).join('')}</select>
     <div id="settle-prev" style="font-size:12px;text-align:center;margin-bottom:12px;min-height:16px;color:var(--muted)"></div>
     <button id="settle-submit" onclick="window._cashDoSettle('${_scEsc(floatId)}')" style="width:100%;height:48px;background:#111;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">Settle ✓</button>
   `);
@@ -1136,7 +1138,11 @@ window._cashDoSettle=async function(floatId){
     if(!r)ok=false;
   }
   if(ok&&changeRet>0){
-    const r=await _cashPost({kind:'settle',amount:changeRet,account:f.account,category:null,vendorId:null,payee:f.payee,date:todayStr(),month:mo,ts:Date.now(),by:session.u||session.name,note:'Change returned',floatId:fid});
+    // Change can land in a different medium than it was issued from (e.g.
+    // issued from MCB, runner hands back physical cash → Cash account).
+    const changeAcc=document.getElementById('settle-change-acc')?.value||f.account;
+    const note=changeAcc!==f.account?`Change returned to ${_cashGetAccount(changeAcc)?.label||changeAcc}`:'Change returned';
+    const r=await _cashPost({kind:'settle',amount:changeRet,account:changeAcc,category:null,vendorId:null,payee:f.payee,date:todayStr(),month:mo,ts:Date.now(),by:session.u||session.name,note,floatId:fid});
     if(!r)ok=false;
   }
   if(!ok){showToast('Save failed — please try again.',true);if(btn){btn.disabled=false;btn.textContent='Settle ✓';}return;}
