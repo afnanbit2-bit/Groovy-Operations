@@ -355,7 +355,7 @@ function _renderFabInvDrill(key){
       const canAct=_fabCanDelete()&&st==='in_stock';
       return`<div style="padding:8px 2px;border-bottom:1px solid #f5f5f5;display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <input type="checkbox" class="fab-drill-chk" data-rc="${_gpEsc(r.rollCode||'')}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(supplier)}" data-gsm="${r.gsm||rcpt?.gsm||s.gsm||''}" data-color="${_gpEsc(r.color||rcpt?.color||s.color||'')}" onclick="window.updateDrillPrintCount()" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
+          <input type="checkbox" class="fab-drill-chk" data-rc="${_gpEsc(r.rollCode||'')}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(supplier)}" data-gsm="${r.gsm||rcpt?.gsm||s.gsm||''}" data-color="${_gpEsc(r.color||rcpt?.color||s.color||'')}" data-fabtype="${_gpEsc(s.fabType||'')}" onclick="window.updateDrillPrintCount()" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
           <span style="font-weight:700;letter-spacing:.04em;min-width:120px">${_gpEsc(r.rollCode||'—')}${r.remnant?' <span style="font-size:9px;color:#d97706">remnant</span>':''}</span>
           <span style="flex:1;min-width:70px">${wt}${r.consumedWeight?` · used ${r.consumedWeight}`:''}</span>
           <span style="color:${stColor};font-weight:600;text-transform:capitalize;font-size:11px">${st.replace('_',' ')}</span>
@@ -452,7 +452,7 @@ window.updateDrillPrintCount=function(){
 window.printSelectedDrillBarcodes=function(){
   const checked=[...document.querySelectorAll('.fab-drill-chk:checked')];
   if(!checked.length){showToast('Select at least one roll to print.',true);return;}
-  _openRollLabelsPrint(checked.map(c=>({rollCode:c.getAttribute('data-rc'),weight:c.getAttribute('data-weight'),supplier:c.getAttribute('data-supplier'),gsm:c.getAttribute('data-gsm')||'',color:c.getAttribute('data-color')||''})));
+  _openRollLabelsPrint(checked.map(c=>({rollCode:c.getAttribute('data-rc'),weight:c.getAttribute('data-weight'),supplier:c.getAttribute('data-supplier'),gsm:c.getAttribute('data-gsm')||'',color:c.getAttribute('data-color')||'',fabType:c.getAttribute('data-fabtype')||''})));
 };
 
 // ════════════════════════════════════════════════════════════════════════
@@ -775,7 +775,7 @@ function renderFabricInList(){
           const stCol=liveSt==='in_stock'?'var(--green)':liveSt==='issued'?'#dc2626':liveSt==='reserved'?'#d97706':liveSt==='returned_supplier'?'#9ca3af':'var(--muted)';
           return`<div style="display:flex;flex-direction:column;padding:8px 4px;border-bottom:1px solid #f9f9f9;font-size:12px;gap:6px">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
-              <input type="checkbox" class="fab-roll-chk" data-rc="${_gpEsc(rc)}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(f.supplier||'')}" data-gsm="${rGsm}" data-color="${_gpEsc(f.color||'')}" onclick="event.stopPropagation();window.updateRollPrintCount('${f.id}')" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
+              <input type="checkbox" class="fab-roll-chk" data-rc="${_gpEsc(rc)}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(f.supplier||'')}" data-gsm="${rGsm}" data-color="${_gpEsc(f.color||'')}" data-fabtype="${_gpEsc(f.fabType||'')}" onclick="event.stopPropagation();window.updateRollPrintCount('${f.id}')" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
               <span style="font-weight:600;min-width:120px;letter-spacing:.04em">${rc}</span>
               <span style="flex:1;min-width:80px">${wt} · ${rGsm}gsm</span>
               <span style="color:${stCol};font-weight:600;text-transform:capitalize;font-size:11px">${liveSt.replace('_',' ')}</span>
@@ -840,31 +840,39 @@ function _openRollLabelsPrint(labels){
   if(!labels.length){showToast('Nothing to print.',true);return;}
   const w=window.open('','_blank','width=820,height=540');
   if(!w){showToast('Allow popups to print barcodes.',true);return;}
-  // Load all persisted settings — keyed as groovy_rl_* (v3) to avoid stale values from old UI
-  const defW   =parseFloat(localStorage.getItem('groovy_rl_w')   ||'50');
-  const defH   =parseFloat(localStorage.getItem('groovy_rl_h')   ||'18.5');
-  const defCols=parseInt  (localStorage.getItem('groovy_rl_cols')||(labels.length>1?'2':'1'));
-  const defGap =parseFloat(localStorage.getItem('groovy_rl_gap') ||'0');
-  const defPad =parseFloat(localStorage.getItem('groovy_rl_pad') ||'2');
-  const defRgap=parseFloat(localStorage.getItem('groovy_rl_rgap')||'0.5');
-  const defBcH =parseInt  (localStorage.getItem('groovy_rl_bch') ||'28');
-  const defBcW =parseFloat(localStorage.getItem('groovy_rl_bcw') ||'1.0');
+  // Persisted settings — key namespace bumped to groovy_rl4_* so the larger
+  // 100×48mm fabric-roll label defaults take effect (old rl_* values ignored).
+  const defW   =parseFloat(localStorage.getItem('groovy_rl4_w')   ||'100');   // 10 cm wide
+  const defH   =parseFloat(localStorage.getItem('groovy_rl4_h')   ||'48');    // 4.8 cm tall
+  const defCols=parseInt  (localStorage.getItem('groovy_rl4_cols')||'1');     // 1 per row
+  const defGap =parseFloat(localStorage.getItem('groovy_rl4_gap') ||'0');
+  const defVgap=parseFloat(localStorage.getItem('groovy_rl4_vgap')||'3');     // 0.3 cm liner gap
+  const defPad =parseFloat(localStorage.getItem('groovy_rl4_pad') ||'3');
+  const defRgap=parseFloat(localStorage.getItem('groovy_rl4_rgap')||'1');
+  const defBcH =parseInt  (localStorage.getItem('groovy_rl4_bch') ||'80');
+  const defBcW =parseFloat(localStorage.getItem('groovy_rl4_bcw') ||'2.2');
   const pageW  =defCols*defW+(defCols-1)*defGap;
+  const defPitch=defH+defVgap;   // page height per label = label + inter-label gap
   const title  =labels.length===1?labels[0].rollCode:`${labels.length} labels`;
   // Embed label data safely as JSON for live rebuild
   const labelsJson=JSON.stringify(labels.map(l=>({
-    rollCode:l.rollCode||'',supplier:l.supplier||'',
+    rollCode:l.rollCode||'',supplier:l.supplier||'',fabType:l.fabType||'',
     gsm:l.gsm||'',color:l.color||'',weight:l.weight||''
   }))).replace(/<\/script>/gi,'<\\/script>');
   w.document.write(`<!doctype html><html><head><title>${title}</title>
     <style>
-      *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
-      .sup{font-size:9pt;font-weight:700;color:#000;line-height:1.1;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
-      .meta{display:flex;justify-content:space-between;align-items:baseline;width:100%;flex-shrink:0;line-height:1}
-      .rc{font-size:8pt;font-weight:400;letter-spacing:.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .wt{font-size:8pt;font-weight:700;white-space:nowrap;flex-shrink:0;padding-left:3px}
+      *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;color:#000}
+      .hdr{display:flex;align-items:baseline;justify-content:space-between;gap:4px;border-bottom:1.6px solid #000;padding-bottom:1mm;flex-shrink:0}
+      .brand{font-size:15pt;font-weight:800;letter-spacing:.5px;line-height:1}
+      .htype{font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:1.5px}
+      .hsup{font-size:9.5pt;font-weight:700;max-width:46mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+      .info{display:flex;gap:4mm;align-items:flex-end;flex-shrink:0}
+      .cell{min-width:0;overflow:hidden}
+      .k{font-size:6.5pt;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.6px;line-height:1.1}
+      .v{font-size:12pt;font-weight:800;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .v.big{font-size:15pt}
       svg.bc{display:block;width:100%;flex:1;min-height:0}
-      .det{font-size:7.5pt;font-weight:400;color:#000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;flex-shrink:0;line-height:1;text-align:left}
+      .rc{font-size:12pt;font-weight:700;letter-spacing:1.5px;text-align:center;line-height:1;flex-shrink:0}
       .row{display:flex;page-break-after:always;break-after:page}
       .row:last-child{page-break-after:auto;break-after:auto}
       .pc{padding:9px 12px;background:#f5f5f5;border-bottom:1px solid #ddd;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -878,35 +886,36 @@ function _openRollLabelsPrint(labels){
       @media print{.pc{display:none}}
     </style>
     <style id="dp">
-      @page{size:${pageW}mm ${defH}mm;margin:0}
+      @page{size:${pageW}mm ${defPitch}mm;margin:0}
       html,body{width:${pageW}mm}
-      .row{width:${pageW}mm;height:${defH}mm}
-      .label{width:${defW}mm;height:${defH}mm;padding:${defPad}mm ${defPad*2}mm;display:flex;flex-direction:column;justify-content:space-between;gap:${defRgap}mm;overflow:hidden}
+      .row{width:${pageW}mm;height:${defPitch}mm}
+      .label{width:${defW}mm;height:${defH}mm;padding:${defPad}mm ${defPad*1.5}mm;display:flex;flex-direction:column;gap:${defRgap}mm;overflow:hidden}
       .label+.label{margin-left:${defGap}mm}
     </style>
     </head><body>
     <div class="pc">
       <div class="grp">
         <span class="gt">Label</span>
-        <label>W <input type="number" id="lw" value="${defW}" min="20" max="120" step="0.5"> mm</label>
-        <label>H <input type="number" id="lh" value="${defH}" min="15" max="80" step="0.5"> mm</label>
+        <label>W <input type="number" id="lw" value="${defW}" min="20" max="200" step="0.5"> mm</label>
+        <label>H <input type="number" id="lh" value="${defH}" min="15" max="150" step="0.5"> mm</label>
       </div>
       <div class="sep"></div>
       <div class="grp">
         <span class="gt">Layout</span>
         <label>Cols <input type="number" id="lcols" value="${defCols}" min="1" max="8" step="1"></label>
         <label>Gap <input type="number" id="lgap" value="${defGap}" min="0" max="20" step="0.5"> mm</label>
-        <label>Pad <input type="number" id="lpad" value="${defPad}" min="0" max="10" step="0.1"> mm</label>
-        <label>Row-gap <input type="number" id="lrgap" value="${defRgap}" min="0" max="5" step="0.1"> mm</label>
+        <label>V-gap <input type="number" id="lvgap" value="${defVgap}" min="0" max="20" step="0.1"> mm</label>
+        <label>Pad <input type="number" id="lpad" value="${defPad}" min="0" max="12" step="0.1"> mm</label>
+        <label>Row-gap <input type="number" id="lrgap" value="${defRgap}" min="0" max="8" step="0.1"> mm</label>
       </div>
       <div class="sep"></div>
       <div class="grp">
         <span class="gt">Barcode</span>
         <label>H <b id="hv">${defBcH}</b>px
-          <input type="range" id="bc-h" min="12" max="60" value="${defBcH}" step="1" oninput="document.getElementById('hv').textContent=this.value;_rbc()">
+          <input type="range" id="bc-h" min="20" max="160" value="${defBcH}" step="1" oninput="document.getElementById('hv').textContent=this.value;_rbc()">
         </label>
         <label>Bar <b id="wv">${defBcW.toFixed(1)}</b>
-          <input type="range" id="bc-w" min="0.8" max="2.5" value="${defBcW}" step="0.1" oninput="document.getElementById('wv').textContent=parseFloat(this.value).toFixed(1);_rbc()">
+          <input type="range" id="bc-w" min="0.8" max="4" value="${defBcW}" step="0.1" oninput="document.getElementById('wv').textContent=parseFloat(this.value).toFixed(1);_rbc()">
         </label>
       </div>
       <div class="sep"></div>
@@ -926,6 +935,12 @@ function _openRollLabelsPrint(labels){
           }catch(e){}
         });
       }
+      function _cell(k,v,big){
+        var c=document.createElement('div');c.className='cell';
+        var kk=document.createElement('div');kk.className='k';kk.textContent=k;
+        var vv=document.createElement('div');vv.className='v'+(big?' big':'');vv.textContent=v||'—';
+        c.appendChild(kk);c.appendChild(vv);return c;
+      }
       function _buildRows(cols){
         var out=document.getElementById('labels-out');
         out.innerHTML='';
@@ -933,51 +948,59 @@ function _openRollLabelsPrint(labels){
           var row=document.createElement('div');row.className='row';
           _D.slice(i,i+cols).forEach(function(l){
             var d=document.createElement('div');d.className='label';
-            // Row 1: Supplier — bold, centered
-            var sup=document.createElement('div');sup.className='sup';sup.textContent=l.supplier||'';
-            // Row 2: Roll code (left) + Weight bold (right)
-            var meta=document.createElement('div');meta.className='meta';
-            var rc=document.createElement('span');rc.className='rc';rc.textContent=l.rollCode||'';
-            var wt=document.createElement('span');wt.className='wt';wt.textContent=l.weight||'';
-            meta.appendChild(rc);meta.appendChild(wt);
-            // Row 3: Barcode — fills remaining height (flex:1)
+            // Header: brand + type badge + supplier
+            var hdr=document.createElement('div');hdr.className='hdr';
+            var brand=document.createElement('span');brand.className='brand';brand.textContent='GROOVY';
+            var htype=document.createElement('span');htype.className='htype';htype.textContent='FABRIC ROLL';
+            var hsup=document.createElement('span');hsup.className='hsup';hsup.textContent=l.supplier||'';
+            hdr.appendChild(brand);hdr.appendChild(htype);hdr.appendChild(hsup);
+            // Info row: Fabric / GSM / Color / Weight
+            var info=document.createElement('div');info.className='info';
+            var f=_cell('Fabric',l.fabType||'');f.style.flex='1.5';
+            var g=_cell('GSM',l.gsm?String(l.gsm):'');g.style.flex='0.8';
+            var c=_cell('Color',l.color||'');c.style.flex='1.1';
+            var w=_cell('Weight',l.weight||'',true);w.style.flex='1';w.style.textAlign='right';
+            info.appendChild(f);info.appendChild(g);info.appendChild(c);info.appendChild(w);
+            // Barcode fills remaining height
             var bc=document.createElementNS('http://www.w3.org/2000/svg','svg');bc.setAttribute('class','bc');bc.setAttribute('data-val',l.rollCode||'');
-            // Row 4: GSM · Color
-            var parts=[l.gsm?l.gsm+'gsm':'',l.color||''].filter(Boolean);
-            var det=document.createElement('div');det.className='det';det.textContent=parts.join(' \xb7 ');
-            d.appendChild(sup);d.appendChild(meta);d.appendChild(bc);d.appendChild(det);
+            // Roll code text under the barcode
+            var rc=document.createElement('div');rc.className='rc';rc.textContent=l.rollCode||'';
+            d.appendChild(hdr);d.appendChild(info);d.appendChild(bc);d.appendChild(rc);
             row.appendChild(d);
           });
           out.appendChild(row);
         }
       }
       function _applyAll(){
-        var lw  =parseFloat(document.getElementById('lw').value)   ||50;
-        var lh  =parseFloat(document.getElementById('lh').value)   ||30;
-        var cols=Math.max(1,parseInt(document.getElementById('lcols').value)||2);
+        var lw  =parseFloat(document.getElementById('lw').value)   ||100;
+        var lh  =parseFloat(document.getElementById('lh').value)   ||48;
+        var cols=Math.max(1,parseInt(document.getElementById('lcols').value)||1);
         var gap =parseFloat(document.getElementById('lgap').value) ||0;
-        var pad =parseFloat(document.getElementById('lpad').value) ||1.2;
-        var rgap=parseFloat(document.getElementById('lrgap').value)||0.7;
+        var vgap=parseFloat(document.getElementById('lvgap').value)||0;
+        var pad =parseFloat(document.getElementById('lpad').value) ||3;
+        var rgap=parseFloat(document.getElementById('lrgap').value)||1;
         var pw  =cols*lw+(cols-1)*gap;
+        var pitch=lh+vgap;
         document.getElementById('dp').textContent=
-          '@page{size:'+pw+'mm '+lh+'mm;margin:0}'+
+          '@page{size:'+pw+'mm '+pitch+'mm;margin:0}'+
           'html,body{width:'+pw+'mm}'+
-          '.row{width:'+pw+'mm;height:'+lh+'mm}'+
-          '.label{width:'+lw+'mm;height:'+lh+'mm;padding:'+pad+'mm '+(pad*2)+'mm;display:flex;flex-direction:column;justify-content:space-between;gap:'+rgap+'mm;overflow:hidden}'+
+          '.row{width:'+pw+'mm;height:'+pitch+'mm}'+
+          '.label{width:'+lw+'mm;height:'+lh+'mm;padding:'+pad+'mm '+(pad*1.5)+'mm;display:flex;flex-direction:column;gap:'+rgap+'mm;overflow:hidden}'+
           '.label+.label{margin-left:'+gap+'mm}';
         document.documentElement.style.width=pw+'mm';
         document.body.style.width=pw+'mm';
         _buildRows(cols);
         _rbc();
         try{
-          localStorage.setItem('groovy_rl_w',lw);
-          localStorage.setItem('groovy_rl_h',lh);
-          localStorage.setItem('groovy_rl_cols',cols);
-          localStorage.setItem('groovy_rl_gap',gap);
-          localStorage.setItem('groovy_rl_pad',pad);
-          localStorage.setItem('groovy_rl_rgap',rgap);
-          localStorage.setItem('groovy_rl_bch',document.getElementById('bc-h').value);
-          localStorage.setItem('groovy_rl_bcw',document.getElementById('bc-w').value);
+          localStorage.setItem('groovy_rl4_w',lw);
+          localStorage.setItem('groovy_rl4_h',lh);
+          localStorage.setItem('groovy_rl4_cols',cols);
+          localStorage.setItem('groovy_rl4_gap',gap);
+          localStorage.setItem('groovy_rl4_vgap',vgap);
+          localStorage.setItem('groovy_rl4_pad',pad);
+          localStorage.setItem('groovy_rl4_rgap',rgap);
+          localStorage.setItem('groovy_rl4_bch',document.getElementById('bc-h').value);
+          localStorage.setItem('groovy_rl4_bcw',document.getElementById('bc-w').value);
         }catch(e){}
       }
       window.addEventListener('load',function(){_buildRows(${defCols});_rbc();});
@@ -987,7 +1010,7 @@ function _openRollLabelsPrint(labels){
 }
 
 window.printRollBarcode=function(rollCode,fabType,gsm,color,weight,supplier){
-  _openRollLabelsPrint([{rollCode,weight,supplier,gsm,color}]);
+  _openRollLabelsPrint([{rollCode,weight,supplier,gsm,color,fabType}]);
 };
 
 // Print every checked roll in one entry's expanded list as a single job.
@@ -1001,7 +1024,8 @@ window.printSelectedRollBarcodes=function(fabId){
     weight:c.getAttribute('data-weight'),
     supplier:c.getAttribute('data-supplier'),
     gsm:c.getAttribute('data-gsm')||'',
-    color:c.getAttribute('data-color')||''
+    color:c.getAttribute('data-color')||'',
+    fabType:c.getAttribute('data-fabtype')||''
   })));
 };
 
