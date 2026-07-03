@@ -1283,19 +1283,25 @@ window.saveFabricRoll=async function(fabId,rollCode){
   const st=inv.stock,f=allFabricIn.find(x=>x.id===fabId);
   if(!_fabBusyStart('Saving roll…'))return;
   try{
-    let extra={},pending=null;
+    let pending=null;
     if(f){
       const idx=(f.rolls||[]).findIndex(r=>(r.rollCode||r.rollNumber)===rollCode);
       if(idx>=0){
         const newRolls=f.rolls.map((r,i)=>i===idx?{...r,weight,gsm,qcPassed:qc,qcBy:qc?session.name:'',qcAt:qc?Date.now():null}:r);
         const newTotal=parseFloat(newRolls.reduce((a,r)=>a+(Number(r.weight)||0),0).toFixed(2));
-        extra={extraWrites:[{ref:doc(db,'fabricin',fabId),data:{rolls:newRolls,totalWeight:newTotal,updatedAt:Date.now(),updatedBy:session.name},merge:true}]};
         pending={newRolls,newTotal};
       }
     }
-    await _fabInvUpsert({fabType:st.fabType,gsm:st.gsm,color:st.color,unit:st.unit||inv.roll.unit||'kg',editRolls:[{rollCode,weight,gsm,qcPassed:qc}],note:`Roll ${rollCode} edited`,sourceCol:'fabricin',sourceId:fabId,...extra});
-    if(f&&pending){f.rolls=pending.newRolls;f.totalWeight=pending.newTotal;}
-    await logActivity('Fabric roll edited',`${rollCode} by ${session.name}`);
+    // Edit the authoritative inventory + a movement in one transaction. The
+    // receipt (fabricin) roll list is SECONDARY — update it separately and
+    // best-effort so a rules gap on fabricin-update can't block the roll edit.
+    await _fabInvUpsert({fabType:st.fabType,gsm:st.gsm,color:st.color,unit:st.unit||inv.roll.unit||'kg',editRolls:[{rollCode,weight,gsm,qcPassed:qc}],note:`Roll ${rollCode} edited`,sourceCol:'fabricin',sourceId:fabId});
+    if(f&&pending){
+      try{ await updateDoc(doc(db,'fabricin',fabId),{rolls:pending.newRolls,totalWeight:pending.newTotal,updatedAt:Date.now(),updatedBy:session.name}); }
+      catch(e){ console.warn('[fabric] receipt roll-list update skipped:',e.message); }
+      f.rolls=pending.newRolls;f.totalWeight=pending.newTotal;
+    }
+    await logActivity('Fabric roll edited',`${rollCode} by ${session.name}`).catch(()=>{});
     showToast(`${rollCode} updated ✓`);
     window.hrmCloseModal();
     _fabAfterRollChange(f?fabId:null);
