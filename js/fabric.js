@@ -1457,10 +1457,13 @@ function renderFabricIssueTab(){
         <datalist id="fab-iss-po-list">${pos.map(p=>`<option value="${_gpEsc(p.id)}">${_gpEsc(p.name||'')}${p.code?` · ${_gpEsc(p.code)}`:''}${p.fabric?` · ${_gpEsc(p.fabric)}`:''}</option>`).join('')}</datalist>
         <div style="font-size:10px;color:var(--muted);margin-top:3px">Fabric is issued to the factory against this PO. Issuer, date &amp; time are recorded automatically.</div>
       </div>
-      <div class="field"><label>Article name *</label>
-        <input id="fab-iss-article" placeholder="e.g. Oversized Tee" autocomplete="off"></div>
+      <div class="field" style="position:relative"><label>Article name *</label>
+        <input id="fab-iss-article" placeholder="Type to search product name or code…" autocomplete="off"
+          oninput="window.fabIssueProdSearch(this.value)" onfocus="window.fabIssueProdSearch(this.value)" onblur="setTimeout(()=>window.fabIssueProdHide(),200)">
+        <div id="fab-iss-prod-drop" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:240px;overflow-y:auto;margin-top:3px"></div>
+      </div>
       <div class="field"><label>Article code *</label>
-        <input id="fab-iss-code" placeholder="e.g. GRV-TEE-01" autocomplete="off"></div>
+        <input id="fab-iss-code" placeholder="Auto-filled from product (editable)" autocomplete="off"></div>
     </div>
   </div>
   <div class="card"><div class="card-title">Cutting plan <span style="font-weight:400;color:var(--muted);font-size:11px">size cut · pcs per bundle · bundles</span></div>
@@ -1500,6 +1503,26 @@ function renderFabricIssueTab(){
   <button class="btn-primary" onclick="window.submitFabricIssue()">Issue Fabric</button>
   <div style="height:80px"></div>`;
 }
+
+// Type-to-search the product catalog (same source as New PO) → fills article
+// name + code. Free text is still allowed for one-offs not in the catalog.
+window.fabIssueProdSearch=function(q){
+  const dd=document.getElementById('fab-iss-prod-drop');if(!dd)return;
+  const cat=(typeof PRODUCT_CATALOG!=='undefined'&&PRODUCT_CATALOG)||[];
+  q=(q||'').toLowerCase().trim();
+  if(!q){dd.style.display='none';return;}
+  const hits=cat.filter(p=>(p.code||'').toLowerCase().includes(q)||(p.name||'').toLowerCase().includes(q)).slice(0,18);
+  if(!hits.length){dd.innerHTML='<div style="padding:10px 12px;font-size:12px;color:var(--muted)">No catalog match — you can still type any name/code to use as-is</div>';dd.style.display='block';return;}
+  dd.innerHTML=hits.map(p=>`<div class="prod-opt" data-code="${_gpEsc(p.code||'')}" data-name="${_gpEsc(p.name||'')}" style="padding:10px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f3f4f6;display:flex;gap:10px;align-items:baseline"><span style="font-weight:700;color:var(--dark);min-width:84px;font-size:12px">${_gpEsc(p.code||'')}</span><span style="color:var(--text)">${_gpEsc(p.name||'')}</span></div>`).join('');
+  dd.style.display='block';
+  dd.querySelectorAll('.prod-opt').forEach(el=>el.addEventListener('mousedown',e=>{
+    e.preventDefault();
+    const a=document.getElementById('fab-iss-article');if(a)a.value=el.getAttribute('data-name')||'';
+    const c=document.getElementById('fab-iss-code');if(c)c.value=el.getAttribute('data-code')||'';
+    dd.style.display='none';
+  }));
+};
+window.fabIssueProdHide=function(){const dd=document.getElementById('fab-iss-prod-drop');if(dd)dd.style.display='none';};
 
 // Prefill article name/code from the chosen PO (only when there is a match).
 window.fabIssuePoChange=function(){
