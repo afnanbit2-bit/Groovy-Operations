@@ -846,7 +846,10 @@ function _openRollLabelsPrint(labels){
   const defH   =parseFloat(localStorage.getItem('groovy_rl4_h')   ||'48');    // 4.8 cm tall
   const defCols=parseInt  (localStorage.getItem('groovy_rl4_cols')||'1');     // 1 per row
   const defGap =parseFloat(localStorage.getItem('groovy_rl4_gap') ||'0');
-  const defVgap=parseFloat(localStorage.getItem('groovy_rl4_vgap')||'3');     // 0.3 cm liner gap
+  // Die-cut label printers position each label by their own gap sensor, so the
+  // page height should equal the LABEL height (48mm). Default V-gap 0. Raise it
+  // only for continuous (non-die-cut) roll stock where CSS must draw the gap.
+  const defVgap=parseFloat(localStorage.getItem('groovy_rl4_vgap')||'0');
   const defPad =parseFloat(localStorage.getItem('groovy_rl4_pad') ||'3');
   const defRgap=parseFloat(localStorage.getItem('groovy_rl4_rgap')||'1');
   const defBcH =parseInt  (localStorage.getItem('groovy_rl4_bch') ||'80');
