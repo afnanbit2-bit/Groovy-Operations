@@ -79,7 +79,7 @@ window.switchFabTab=function(tab){
     renderFabricInList();
   }
   else if(tab==='issue'){
-    _fabIssueRolls=[];_fabIssueKey=null;_fabIssueSizes=[{size:'',perBundle:'',bundles:''}];
+    _fabIssueRolls=[];_fabIssueKey=null;_fabIssueSizes=[{size:'',bundles:''}];
     el.innerHTML=renderFabricIssueTab();
     _fabIssueRenderSizes();
     if(_fabIssuePreselectKey){
@@ -1310,7 +1310,7 @@ window.saveFabricRoll=async function(fabId,rollCode){
 const FAB_DESTINATIONS=['FebKnit','Al-Hamd','Al-Nisa','Aqib Sublimation','JR Traders','Rahim Gul Enterprise','Khursheed Enterprise'];
 let _fabIssueRolls=[],_fabIssueKey=null,_fabIssuePreselectKey='';
 // Production planning rows for the Issue form: size → pcs/bundle × bundles.
-let _fabIssueSizes=[{size:'',perBundle:'',bundles:''}];
+let _fabIssueSizes=[{size:'',bundles:''}];
 
 // Roll codes are stored uppercase (e.g. GRYJRS200-01-R01). Handheld scanners
 // can emit a different case (Caps-Lock state / config) or stray whitespace, so
@@ -1349,9 +1349,16 @@ function _fabRegFiltered(){
   const f=_fabRegQ.toLowerCase();
   return _fabIssueRecords().filter(g=>!f||[g.poId,g.articleName,g.articleCode,g.fabricType,g.fabricColor,g.id].some(v=>String(v||'').toLowerCase().includes(f)));
 }
+function _fabSizeLabel(s){
+  const bl=Array.isArray(s.bundles)?s.bundles.join('-'):null;
+  return bl!=null
+    ? `${_gpEsc(s.size||'?')}: ${s.qty} [${bl}]`               // new per-bundle format
+    : `${_gpEsc(s.size||'?')}: ${s.qty} (${s.perBundle||0}×${s.bundles||0})`; // legacy
+}
 function _fabRegRows(issues){
   return issues.map(g=>{
-    const sizes=(g.sizeBreakdown||[]).filter(s=>s.qty).map(s=>`${_gpEsc(s.size||'?')}: ${s.qty} (${s.perBundle||0}×${s.bundles||0})`).join(' · ');
+    const u=_gpEsc(g.fabricUnit||'kg');
+    const sizes=(g.sizeBreakdown||[]).filter(s=>s.qty).map(_fabSizeLabel).join(' · ');
     return`<div style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
         <div style="font-size:15px"><span style="font-weight:800;color:#dc2626">PO ${_gpEsc(g.poId||'—')}</span> <span style="font-weight:600;color:var(--muted);font-size:13px">${_gpEsc(g.articleName||'')}${g.articleCode?' · '+_gpEsc(g.articleCode):''}</span></div>
@@ -1361,7 +1368,8 @@ function _fabRegRows(issues){
       <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:14px">
         <span><strong>${(g.plannedQty||0).toLocaleString()}</strong> pcs cut</span>
         <span><strong>${g.totalBundles||0}</strong> bundles</span>
-        <span><strong>${(g.fabricQty||0).toFixed(2)}</strong> ${_gpEsc(g.fabricUnit||'kg')}</span>
+        <span><strong>${(g.fabricQty||0).toFixed(2)}</strong> ${u} used</span>
+        <span><strong>${g.avgConsumption||0}</strong> ${u}/pc avg</span>
         <span style="color:var(--muted)">${g.rollsCount||0} rolls</span>
       </div>
       ${sizes?`<div style="font-size:12px;color:var(--muted);margin-top:7px">Cut by size: ${sizes}</div>`:''}
@@ -1397,7 +1405,7 @@ function renderFabricIssueRegistry(){
       ${['owner','manager'].includes(session.role)?`<button class="btn-outline" style="font-size:12px;padding:6px 14px;color:#dc2626;border-color:#fca5a5" onclick="window.fabRegDeleteAll()">🗑 Delete all</button>`:''}
     </div>`:''}
     <div style="display:flex;gap:8px;margin-bottom:10px">
-      <div style="flex:1;background:#f4f4f6;border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">Cut planned</div><div style="font-size:18px;font-weight:800">${totalPcs.toLocaleString()} pcs</div></div>
+      <div style="flex:1;background:#f4f4f6;border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">Pieces cut</div><div style="font-size:18px;font-weight:800">${totalPcs.toLocaleString()} pcs</div></div>
       <div style="flex:1;background:#f4f4f6;border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">Bundles</div><div style="font-size:18px;font-weight:800">${totalBundles.toLocaleString()}</div></div>
       <div style="flex:1;background:#f4f4f6;border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">Fabric out</div><div style="font-size:18px;font-weight:800">${totalWeight.toFixed(1)}</div></div>
     </div>
@@ -1429,20 +1437,21 @@ window.fabRegDeleteAll=async function(){
 window.fabExportIssueRegistry=function(){
   const issues=_fabIssueRecords();
   if(!issues.length){showToast('Nothing to export.',true);return;}
-  const header=['Date','GP','PO','Article','Code','Fabric','GSM','Color','Pcs cut','Bundles','Weight','Unit','Rolls','Avg/unit','Fabric req.','Cut by size','Issued by'];
+  const header=['Date','GP','PO','Article','Code','Fabric','GSM','Color','Pcs cut','Bundles','Fabric used','Unit','Rolls','Avg/unit','Cut by size (bundles)','Issued by'];
+  const bstr=s=>Array.isArray(s.bundles)?s.bundles.join('-'):`${s.perBundle||0}x${s.bundles||0}`;
   const rows=issues.map(g=>[
     g.date||'',g.id||'',g.poId||'',g.articleName||'',g.articleCode||'',
     g.fabricType||'',g.fabricGsm||0,g.fabricColor||'',
     g.plannedQty||0,g.totalBundles||0,g.fabricQty||0,g.fabricUnit||'',g.rollsCount||0,
-    g.avgConsumption||0,g.fabricRequired||0,
-    (g.sizeBreakdown||[]).filter(s=>s.qty).map(s=>`${s.size||'?'}:${s.qty}(${s.perBundle||0}x${s.bundles||0})`).join(' | '),
+    g.avgConsumption||0,
+    (g.sizeBreakdown||[]).filter(s=>s.qty).map(s=>`${s.size||'?'}:${s.qty}[${bstr(s)}]`).join(' | '),
     g.issuer||g.name||''
   ]);
   // totals row
   const tot=['TOTAL','','','','','','','',
     issues.reduce((n,g)=>n+(g.plannedQty||0),0),
     issues.reduce((n,g)=>n+(g.totalBundles||0),0),
-    issues.reduce((n,g)=>n+(g.fabricQty||0),0),'','','','','',''];
+    issues.reduce((n,g)=>n+(g.fabricQty||0),0),'','','','',''];
   _fabXlsx([header,...rows,[],tot],'Fabric Issues','fabric-issue-registry');
   showToast('Exported ✓');
 };
@@ -1466,24 +1475,20 @@ function renderFabricIssueTab(){
         <input id="fab-iss-code" placeholder="Auto-filled from product (editable)" autocomplete="off"></div>
     </div>
   </div>
-  <div class="card"><div class="card-title">Cutting plan <span style="font-weight:400;color:var(--muted);font-size:11px">size cut · pcs per bundle · bundles</span></div>
+  <div class="card"><div class="card-title">Cutting <span style="font-weight:400;color:var(--muted);font-size:11px">quantity after cutting · one number per bundle (e.g. 9-8-6-7)</span></div>
     <div id="fab-iss-sizes"></div>
     <button type="button" class="btn-outline" style="font-size:12px;padding:6px 12px;margin-top:8px" onclick="window.fabIssueAddSize()">+ Add size</button>
-    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
-      <div class="field" style="flex:1;min-width:150px;margin:0"><label>Avg fabric consumption / unit</label>
-        <div style="display:flex;gap:6px">
-          <input id="fab-iss-consumption" type="number" min="0" step="0.001" inputmode="decimal" placeholder="e.g. 0.25" oninput="window.fabIssueRecalc()" style="flex:1;font-size:15px;padding:9px 10px">
-          <select id="fab-iss-cons-unit" onchange="window.fabIssueRecalc()" style="width:96px;font-size:15px;padding:9px 8px">
-            <option value="kg">kg</option><option value="meters">meters</option>
-          </select>
-        </div>
-      </div>
-      <div class="field" style="flex:1;min-width:150px;margin:0"><label>Total quantity</label>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px">
+      <div class="field" style="flex:1;min-width:120px;margin:0"><label>Total quantity cut</label>
         <div id="fab-iss-totalqty" style="font-size:20px;font-weight:800;padding:8px 0">0 pcs</div></div>
-      <div class="field" style="flex:1;min-width:150px;margin:0"><label>Fabric required (calc)</label>
-        <div id="fab-iss-fabreq" style="font-size:20px;font-weight:800;padding:8px 0">—</div></div>
+      <div class="field" style="flex:1;min-width:120px;margin:0"><label>Total bundles</label>
+        <div id="fab-iss-totbundles" style="font-size:20px;font-weight:800;padding:8px 0">0</div></div>
+      <div class="field" style="flex:1;min-width:120px;margin:0"><label>Fabric used (rolls)</label>
+        <div id="fab-iss-fabused" style="font-size:20px;font-weight:800;padding:8px 0">—</div></div>
+      <div class="field" style="flex:1;min-width:120px;margin:0"><label>Avg / unit (auto)</label>
+        <div id="fab-iss-avg" style="font-size:20px;font-weight:800;padding:8px 0">—</div></div>
     </div>
-    <div id="fab-iss-compare" style="margin-top:4px"></div>
+    <div style="font-size:11px;color:var(--muted);margin-top:2px">Avg = fabric used ÷ pieces cut, from the rolls you pick below.</div>
   </div>
   <div class="card"><div class="card-title">Pick rolls <span style="font-weight:400;color:var(--muted);font-size:11px">scan or select — all from one fabric</span></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
@@ -1534,66 +1539,56 @@ window.fabIssuePoChange=function(){
 };
 
 // ── Cutting-plan size rows ──
+// A size's bundles are entered as separated numbers (e.g. "9-8-6-7"); parse to
+// an array of piece counts. Qty = sum, bundle count = length.
+function _fabParseBundles(str){return String(str==null?'':str).split(/[^0-9.]+/).map(x=>parseFloat(x)).filter(x=>!isNaN(x)&&x>0);}
 function _fabIssueSyncSizesFromDOM(){
   const rows=document.querySelectorAll('#fab-iss-sizes .fis-row');
   if(!rows.length)return;
   _fabIssueSizes=Array.from(rows).map(r=>({
     size:r.querySelector('.fis-size')?.value||'',
-    perBundle:r.querySelector('.fis-pb')?.value||'',
-    bundles:r.querySelector('.fis-bd')?.value||''
+    bundles:r.querySelector('.fis-bundles')?.value||''
   }));
 }
 function _fabIssueRenderSizes(){
   const el=document.getElementById('fab-iss-sizes'); if(!el)return;
-  if(!_fabIssueSizes.length)_fabIssueSizes=[{size:'',perBundle:'',bundles:''}];
-  el.innerHTML=`<div style="display:grid;grid-template-columns:1.3fr 1fr 1fr .9fr 28px;gap:8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:0 2px 6px">
-      <span>Size</span><span>Pcs / bundle</span><span>Bundles</span><span style="text-align:right">Qty</span><span></span>
+  if(!_fabIssueSizes.length)_fabIssueSizes=[{size:'',bundles:''}];
+  el.innerHTML=`<div style="display:grid;grid-template-columns:1fr 2.2fr .8fr .9fr 28px;gap:8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:0 2px 6px">
+      <span>Size</span><span>Bundles (e.g. 9-8-6-7)</span><span style="text-align:center"># Bundles</span><span style="text-align:right">Qty</span><span></span>
     </div>`+
     _fabIssueSizes.map((s,i)=>{
-      const q=(parseInt(s.perBundle)||0)*(parseInt(s.bundles)||0);
-      return`<div class="fis-row" style="display:grid;grid-template-columns:1.3fr 1fr 1fr .9fr 28px;gap:8px;align-items:center;margin-bottom:8px">
+      const arr=_fabParseBundles(s.bundles);const q=arr.reduce((a,b)=>a+b,0);
+      return`<div class="fis-row" style="display:grid;grid-template-columns:1fr 2.2fr .8fr .9fr 28px;gap:8px;align-items:center;margin-bottom:8px">
         <input class="fis-size" value="${_gpEsc(s.size)}" placeholder="e.g. M" oninput="window.fabIssueRecalc()" style="margin:0;font-size:15px;padding:9px 10px">
-        <input class="fis-pb" type="number" min="0" inputmode="numeric" value="${_gpEsc(s.perBundle)}" placeholder="0" oninput="window.fabIssueRecalc()" style="margin:0;font-size:15px;padding:9px 10px">
-        <input class="fis-bd" type="number" min="0" inputmode="numeric" value="${_gpEsc(s.bundles)}" placeholder="0" oninput="window.fabIssueRecalc()" style="margin:0;font-size:15px;padding:9px 10px">
+        <input class="fis-bundles" value="${_gpEsc(s.bundles)}" placeholder="9-8-6-7" oninput="window.fabIssueRecalc()" style="margin:0;font-size:15px;padding:9px 10px">
+        <span class="fis-nb" style="text-align:center;font-weight:700;font-size:14px;color:var(--muted)">${arr.length||'—'}</span>
         <span class="fis-qty" style="text-align:right;font-weight:800;font-size:16px">${q?q.toLocaleString():'—'}</span>
         <button type="button" onclick="window.fabIssueRemoveSize(${i})" title="Remove" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:20px;padding:0;line-height:1">×</button>
       </div>`;
     }).join('');
   window.fabIssueRecalc();
 }
-window.fabIssueAddSize=function(){_fabIssueSyncSizesFromDOM();_fabIssueSizes.push({size:'',perBundle:'',bundles:''});_fabIssueRenderSizes();};
-window.fabIssueRemoveSize=function(i){_fabIssueSyncSizesFromDOM();_fabIssueSizes.splice(i,1);if(!_fabIssueSizes.length)_fabIssueSizes=[{size:'',perBundle:'',bundles:''}];_fabIssueRenderSizes();};
+window.fabIssueAddSize=function(){_fabIssueSyncSizesFromDOM();_fabIssueSizes.push({size:'',bundles:''});_fabIssueRenderSizes();};
+window.fabIssueRemoveSize=function(i){_fabIssueSyncSizesFromDOM();_fabIssueSizes.splice(i,1);if(!_fabIssueSizes.length)_fabIssueSizes=[{size:'',bundles:''}];_fabIssueRenderSizes();};
 
-// Recompute per-row qty, total quantity, and required fabric (no re-render → keeps focus).
+// Recompute per-row qty + bundle count, totals, and the AUTO avg consumption
+// (fabric used by the picked rolls ÷ pieces cut). No re-render → keeps focus.
 window.fabIssueRecalc=function(){
-  let total=0;
+  let total=0,totBundles=0;
   document.querySelectorAll('#fab-iss-sizes .fis-row').forEach(r=>{
-    const pb=parseInt(r.querySelector('.fis-pb')?.value)||0;
-    const bd=parseInt(r.querySelector('.fis-bd')?.value)||0;
-    const q=pb*bd; total+=q;
-    const cell=r.querySelector('.fis-qty'); if(cell)cell.textContent=q?q.toLocaleString():'—';
+    const arr=_fabParseBundles(r.querySelector('.fis-bundles')?.value);
+    const q=arr.reduce((a,b)=>a+b,0); total+=q; totBundles+=arr.length;
+    const qc=r.querySelector('.fis-qty'); if(qc)qc.textContent=q?q.toLocaleString():'—';
+    const nc=r.querySelector('.fis-nb'); if(nc)nc.textContent=arr.length||'—';
   });
-  const av=parseFloat(document.getElementById('fab-iss-consumption')?.value)||0;
-  const unit=document.getElementById('fab-iss-cons-unit')?.value||'kg';
-  const req=total*av;
-  const tq=document.getElementById('fab-iss-totalqty'); if(tq)tq.textContent=total.toLocaleString()+' pcs';
-  const fr=document.getElementById('fab-iss-fabreq');   if(fr)fr.textContent=req?req.toFixed(2)+' '+unit:'—';
-  _fabIssueUpdateCompare(req,unit);
-};
-function _fabIssueUpdateCompare(req,unit){
-  const el=document.getElementById('fab-iss-compare'); if(!el)return;
-  if(!req||!_fabIssueRolls.length){el.innerHTML='';return;}
   const stock=allFabricInventory.find(s=>s._id===_fabIssueKey);
-  const selUnit=stock?.unit||'kg';
-  const sel=_fabIssueRolls.reduce((s,r)=>s+(r.weight||0),0);
-  if(selUnit!==unit){
-    el.innerHTML=`<div style="font-size:11px;color:var(--muted)">Selected rolls: <strong>${sel.toFixed(2)} ${selUnit}</strong> · required in ${unit} — units differ, compare manually.</div>`;
-    return;
-  }
-  const diff=sel-req;
-  const col=diff<0?'#dc2626':'#16a34a';
-  const lbl=diff<0?`Short by ${Math.abs(diff).toFixed(2)} ${unit}`:`${diff.toFixed(2)} ${unit} over requirement`;
-  el.innerHTML=`<div style="font-size:12px;color:${col};font-weight:600">Selected ${sel.toFixed(2)} ${unit} vs required ${req.toFixed(2)} ${unit} — ${lbl}</div>`;
+  const unit=stock?.unit||'kg';
+  const used=_fabIssueRolls.reduce((s,r)=>s+(r.weight||0),0);
+  const avg=total>0?used/total:0;
+  const tq=document.getElementById('fab-iss-totalqty'); if(tq)tq.textContent=total.toLocaleString()+' pcs';
+  const tb=document.getElementById('fab-iss-totbundles'); if(tb)tb.textContent=totBundles.toLocaleString();
+  const fu=document.getElementById('fab-iss-fabused'); if(fu)fu.textContent=used?used.toFixed(2)+' '+unit:'—';
+  const av=document.getElementById('fab-iss-avg'); if(av)av.textContent=avg?avg.toFixed(3)+' '+unit:'—';
 }
 
 window.fabIssueScan=function(){
@@ -1690,34 +1685,36 @@ window.submitFabricIssue=async function(){
   if(!_fabIssueRolls.length){showToast('Select at least one roll.',true);return;}
   const stock=allFabricInventory.find(s=>s._id===_fabIssueKey);
   if(!stock){showToast('Fabric stock not found.',true);return;}
-  // Cutting plan (size cut · pcs/bundle · bundles → auto qty)
+  // Cutting: per size, the actual pieces cut per bundle (e.g. "9-8-6-7").
   _fabIssueSyncSizesFromDOM();
   const sizeBreakdown=_fabIssueSizes
-    .map(s=>({size:(s.size||'').trim(),perBundle:parseInt(s.perBundle)||0,bundles:parseInt(s.bundles)||0}))
-    .filter(s=>s.size||s.perBundle||s.bundles)
-    .map(s=>({...s,qty:s.perBundle*s.bundles}));
-  const plannedQty=sizeBreakdown.reduce((n,s)=>n+s.qty,0);
-  const totalBundles=sizeBreakdown.reduce((n,s)=>n+(s.bundles||0),0);
-  const avgConsumption=parseFloat(document.getElementById('fab-iss-consumption')?.value)||0;
-  const consumptionUnit=document.getElementById('fab-iss-cons-unit')?.value||'kg';
-  const fabricRequired=parseFloat((plannedQty*avgConsumption).toFixed(3));
-  if(!plannedQty){ if(!confirm('No cutting-plan quantities entered. Issue anyway?'))return; }
+    .map(s=>({size:(s.size||'').trim(),bundles:_fabParseBundles(s.bundles)}))
+    .filter(s=>s.size||s.bundles.length)
+    .map(s=>({...s,bundleCount:s.bundles.length,qty:s.bundles.reduce((a,b)=>a+b,0)}));
+  const cutQty=sizeBreakdown.reduce((n,s)=>n+s.qty,0);
+  const totalBundles=sizeBreakdown.reduce((n,s)=>n+s.bundleCount,0);
+  if(!cutQty){ if(!confirm('No cut quantities entered. Issue anyway?'))return; }
   const rollCodes=_fabIssueRolls.map(r=>r.rollCode);
   const fabUnit=stock.unit||'kg';
   const fabQty=parseFloat(_fabIssueRolls.reduce((s,r)=>s+(r.weight||0),0).toFixed(2));
+  // Avg consumption is DERIVED: actual fabric used ÷ pieces cut.
+  const avgConsumption=cutQty>0?parseFloat((fabQty/cutQty).toFixed(4)):0;
+  const consumptionUnit=fabUnit;
   if(!_fabBusyStart('Issuing fabric…'))return;
   try{
     const next=await getNextId('gatepasses');
     const gpId='GP-'+String(next).padStart(3,'0');
     const article=`${stock.fabType} ${stock.gsm||0}gsm ${stock.color}`;
     // The gate pass IS the fabric-issue registry record: PO, article, the cut
-    // (size breakdown + planned qty), bundles, fabric and weight all live here.
-    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stock._id,sizeBreakdown,plannedQty,totalBundles,avgConsumption,consumptionUnit,fabricRequired,boras:'0',items:[],totalUnits:plannedQty,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
+    // (per-bundle size breakdown, qty AFTER cutting), bundles, fabric used and
+    // the auto avg consumption all live here. plannedQty kept = cutQty for
+    // existing totals; cutQty/fabricUsed explicit for clarity.
+    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,fabricUsed:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stock._id,sizeBreakdown,cutQty,plannedQty:cutQty,totalBundles,avgConsumption,consumptionUnit,boras:'0',items:[],totalUnits:cutQty,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
     // Gate pass + inventory decrement commit in ONE transaction.
     await _fabInvUpsert({fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:fabUnit,removeRollCodes:rollCodes,reservePO:po,note:`Issued to factory for ${po} by ${session.name}`,sourceCol:'gatepasses',sourceId:gpId,extraWrites:[{ref:doc(db,'gatepasses',gpId),data:payload}]});
-    await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to factory for ${po}${plannedQty?` · cut ${plannedQty} pcs / ${totalBundles} bundles`:''} by ${session.name}`);
+    await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to factory for ${po}${cutQty?` · cut ${cutQty} pcs / ${totalBundles} bundles · avg ${avgConsumption} ${fabUnit}/pc`:''} by ${session.name}`);
     showToast(`${gpId} issued ✓ · ${rollCodes.length} rolls`);
-    _fabIssueRolls=[];_fabIssueKey=null;_fabIssueSizes=[{size:'',perBundle:'',bundles:''}];
+    _fabIssueRolls=[];_fabIssueKey=null;_fabIssueSizes=[{size:'',bundles:''}];
     _fabBusyEnd();   // drop the overlay before the (slower) refresh so the UI never stays blocked
     if(typeof loadData==='function')await loadData();
     window.switchFabTab('issue');
