@@ -798,8 +798,9 @@ window.openStoreMoreSheet=function(){
   const items=[];
   if(typeof _canViewCash==='function'&&_canViewCash())items.push({iconName:'activity',label:'💰 Cash Ledger',pageId:'store-cash-ledger'});
   items.push(
-    {iconName:'list',label:'Trim Templates',pageId:'store-templates'},
     {iconName:'activity',label:'Stock Log',pageId:'store-log'},
+    {iconName:'activity',label:'Analytics',pageId:'store-analytics'},
+    {iconName:'list',label:'Trim Templates',pageId:'store-templates'},
     {iconName:'tray',label:'PO Issue Requests',pageId:'po-issue-list'}
   );
   if(typeof _canApproveEdits==='function'&&_canApproveEdits())items.push({iconName:'list',label:'Edit Inbox',pageId:'po-edit-inbox'});
