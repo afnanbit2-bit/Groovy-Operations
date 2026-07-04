@@ -778,6 +778,7 @@ window.openMoreSheet=function(){
   const items=[];
   if(session.canPO)items.push({iconName:'plus',label:'New PO',pageId:'po-create'});
   items.push({iconName:'po',label:'PO Registry',pageId:'po-registry'});
+  if(om||session.canFabric)items.push({iconName:'box',label:'Fabric Inventory',pageId:'fabric-inventory'});
   // Embellishments dept items (visible to owners/managers + relevant workers)
   if(om||session.u==='ammar'||session.u==='haris'||(typeof isPrintWorker==='function'&&isPrintWorker()))items.push({iconName:'palette',label:'Recipe Directory',pageId:'recipe-directory'});
   if(om||['asghar','zohaib','waqas','haris'].includes(session.u))items.push({iconName:'print',label:'Embellishment Jobs',pageId:'printing-jobs'});
