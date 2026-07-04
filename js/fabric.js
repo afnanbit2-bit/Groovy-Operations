@@ -1817,6 +1817,33 @@ window.dsDelete=async function(id){
   _fabBusyEnd();_dsRerender();
 };
 
+// Compact rib + drawstring low-stock summary for the Dashboard. Self-contained
+// so the dashboard (embellishments.js) only needs a one-line hook. Lazy-loads
+// drawstrings once, then re-renders the dashboard.
+function fabTrimAlertsCard(){
+  if(!(session&&(['owner','manager'].includes(session.role)||session.canFabric)))return '';
+  if(!_dsLoaded){loadDrawstrings().then(()=>{if(typeof currentPage!=='undefined'&&currentPage==='dashboard'){const m=document.getElementById('main-content');if(m&&typeof renderDashboard==='function')m.innerHTML=renderDashboard();}});}
+  const ribs=(allFabricInventory||[]).filter(s=>/rib/i.test(s.fabType||''));
+  const ribLow=ribs.filter(s=>(s.totalWeight||0)>0&&_fabAlertLevel(s).label!=='OK');
+  const ribOut=ribs.filter(s=>(s.totalWeight||0)<=0);
+  const dsLow=(allDrawstrings||[]).filter(d=>_dsAlertLevel(d).label==='Low');
+  const dsOut=(allDrawstrings||[]).filter(d=>(d.balance||0)<=0);
+  const n=ribLow.length+ribOut.length+dsLow.length+dsOut.length;
+  if(!n)return '';
+  const chip=(html,border,bg)=>`<span onclick="window.showPage('fabric-inventory')" style="cursor:pointer;font-size:11px;background:${bg};border:1px solid ${border};border-radius:8px;padding:3px 9px;white-space:nowrap">${html}</span>`;
+  const ribChips=[...ribLow.map(s=>chip(`<strong>${_gpEsc(s.fabType)} ${_gpEsc(s.color)}</strong> · ${(s.totalWeight||0).toFixed(1)}kg <span style="color:${_fabAlertLevel(s).color};font-weight:700">${_fabAlertLevel(s).label}</span>`,'#fca5a5','#fef2f2')),
+    ...ribOut.map(s=>chip(`<strong>${_gpEsc(s.fabType)} ${_gpEsc(s.color)}</strong> <span style="color:#6b7280;font-weight:700">Out</span>`,'#e5e7eb','#f9fafb'))];
+  const dsChips=[...dsLow.map(d=>chip(`Drawstring <strong>${_gpEsc(d.color)}</strong> · ${(d.balance||0).toFixed(1)}m <span style="color:#dc2626;font-weight:700">Low</span>`,'#f5e1a4','#fffbeb')),
+    ...dsOut.map(d=>chip(`Drawstring <strong>${_gpEsc(d.color)}</strong> <span style="color:#6b7280;font-weight:700">Out</span>`,'#e5e7eb','#f9fafb'))];
+  return `<div style="background:#fff;border:1px solid #fca5a5;border-radius:10px;padding:12px 14px;margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#dc2626">⚠ Rib &amp; drawstring — low / out (${n})</div>
+      <button class="btn-outline" style="font-size:11px;padding:4px 10px" onclick="window.showPage('fabric-inventory')">Fabric Inventory →</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${ribChips.join('')}${dsChips.join('')}</div>
+  </div>`;
+}
+
 function renderFabricIssueTab(){
   const stocks=allFabricInventory.filter(s=>(s.rolls||[]).some(r=>['in_stock','reserved'].includes(r.status||'in_stock')));
   const pos=(typeof allPOs!=='undefined'&&allPOs)||[];

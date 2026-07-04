@@ -4135,6 +4135,7 @@ function renderDashboard(){
   }).join(''):'<div class="empty">No active embellishment jobs.</div>';
 
   return base+`
+  ${typeof fabTrimAlertsCard==='function'?fabTrimAlertsCard():''}
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
     <div class="section-title" style="margin-bottom:0;word-break:break-word;overflow-wrap:break-word">Embellishments — Quick View</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
