@@ -56,6 +56,7 @@ function renderFabricPage(){
     <button class="gp-tab" id="fabtab-fabricin" onclick="window.switchFabTab('fabricin')">Fabric In</button>
     <button class="gp-tab" id="fabtab-issue" onclick="window.switchFabTab('issue')">Issue</button>
     <button class="gp-tab" id="fabtab-registry" onclick="window.switchFabTab('registry')">Issue Registry</button>
+    <button class="gp-tab" id="fabtab-drawstring" onclick="window.switchFabTab('drawstring')">Drawstrings</button>
     <button class="gp-tab" id="fabtab-returns" onclick="window.switchFabTab('returns')">Returns</button>
     <button class="gp-tab" id="fabtab-reports" onclick="window.switchFabTab('reports')">Reports</button>
     <button class="gp-tab" id="fabtab-log" onclick="window.switchFabTab('log')">Log</button>
@@ -65,7 +66,7 @@ function renderFabricPage(){
 
 window.switchFabTab=function(tab){
   fabActiveTab=tab;
-  ['stock','fabricin','issue','registry','returns','reports','log'].forEach(t=>{
+  ['stock','fabricin','issue','registry','drawstring','returns','reports','log'].forEach(t=>{
     const b=document.getElementById('fabtab-'+t);
     if(b)b.classList.toggle('active',t===tab);
   });
@@ -91,6 +92,9 @@ window.switchFabTab=function(tab){
   }
   else if(tab==='registry'){
     el.innerHTML=renderFabricIssueRegistry();
+  }
+  else if(tab==='drawstring'){
+    el.innerHTML=renderDrawstrings();
   }
   else if(tab==='returns'){
     el.innerHTML=renderFabricReturnsTab();
@@ -463,7 +467,13 @@ window.printSelectedDrillBarcodes=function(){
 // ════════════════════════════════════════════════════════════════════════
 
 // ── Fabric type → 3-letter code (override-friendly map) ──
+// Rib patterns first (specific) so 1x1 / 2x2 / 2x1 get distinct codes.
 const FABRIC_TYPE_MAP=[
+  [/rib.*1\s*x\s*1/i,'R11'],
+  [/rib.*2\s*x\s*2/i,'R22'],
+  [/rib.*2\s*x\s*1/i,'R21'],
+  [/rib/i,'RIB'],
+  [/drawstring/i,'DST'],
   [/sublimation/i,'SUB'],
   [/jersey/i,'JRS'],
   [/terry/i,'TRY'],
@@ -537,7 +547,7 @@ function _fabUnitForSupplier(supplier){
 
 function renderFabricInTab(){
   const today=new Date().toISOString().split('T')[0];
-  const fabTypes=['100% Poly Sublimation Jersey','Jersey Heavy','Terry Stock','Terry Fresh','Twill','Burbury 100% Cotton','Drill','Denim','Fleece','100% Cotton Cora Jersey','100% Cotton Terry Cora','PFGD Rigid','PFGD Lycra'];
+  const fabTypes=['100% Poly Sublimation Jersey','Jersey Heavy','Terry Stock','Terry Fresh','Twill','Burbury 100% Cotton','Drill','Denim','Fleece','100% Cotton Cora Jersey','100% Cotton Terry Cora','PFGD Rigid','PFGD Lycra','Rib 1x1','Rib 2x2','Rib 2x1'];
   const suppliers=['Gul Enterprises','JR Trader','Akhlaq Sublimation','Khursheed Enterprise','Daniyal Twill'];
   return`<div class="card"><div class="card-title">Record fabric arrival</div>
     <div class="form-grid">
@@ -1664,6 +1674,142 @@ window.fabExportIssueRegistry=function(){
     issues.reduce((n,g)=>n+(g.fabricQty||0),0),'','','','',''];
   _fabXlsx([header,...rows,[],tot],'Fabric Issues','fabric-issue-registry');
   showToast('Exported ✓');
+};
+
+// ════════════════════════════════════════════════════════════════════════
+//  Drawstrings — lightweight per-color inventory (meters). Dyed in-house with
+//  the fabric; used at finishing. Manual add/consume + low-stock alerts.
+// ════════════════════════════════════════════════════════════════════════
+let allDrawstrings=[],allDrawstringMoves=[],_dsLoaded=false;
+function _dsColorKey(c){return String(c||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');}
+async function loadDrawstrings(){
+  try{
+    const [dsSnap,mvSnap]=await Promise.all([
+      getDocs(collection(db,'fabric_drawstrings')),
+      getDocs(query(collection(db,'drawstring_moves'),orderBy('ts','desc'),limit(60))).catch(()=>({docs:[]}))
+    ]);
+    allDrawstrings=dsSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    allDrawstringMoves=mvSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    _dsLoaded=true;
+  }catch(e){console.error('[drawstring] load',e);}
+}
+function _dsAlertLevel(d){
+  const bal=d.balance||0,t=Number(d.threshold)||0;
+  if(bal<=0)return{label:'Out',color:'#6b7280'};
+  if(t>0&&bal<=t)return{label:'Low',color:'#dc2626'};
+  return{label:'OK',color:'#16a34a'};
+}
+function _dsRerender(){const m=document.getElementById('fab-tab-content');if(m&&fabActiveTab==='drawstring')m.innerHTML=renderDrawstrings();}
+async function _dsLog(colorKey,color,type,qty,note){
+  const mv={color,colorKey,type,qty:parseFloat(qty)||0,note:note||'',by:session.name,ts:Date.now()};
+  try{const ref=doc(collection(db,'drawstring_moves'));await setDoc(ref,{...mv,id:ref.id});allDrawstringMoves.unshift({...mv,_id:ref.id});}catch(e){console.warn('[drawstring] log',e);}
+}
+function renderDrawstrings(){
+  if(!_dsLoaded){loadDrawstrings().then(_dsRerender);return '<div style="padding:32px;text-align:center"><span class="spinner"></span><div style="margin-top:10px;color:var(--muted);font-size:13px">Loading drawstrings…</div></div>';}
+  const total=allDrawstrings.reduce((s,d)=>s+(d.balance||0),0);
+  const low=allDrawstrings.filter(d=>_dsAlertLevel(d).label==='Low').length;
+  const sorted=[...allDrawstrings].sort((a,b)=>(a.color||'').localeCompare(b.color||''));
+  let rows=sorted.map(d=>{
+    const lvl=_dsAlertLevel(d);
+    return `<div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid #f5f5f5;flex-wrap:wrap">
+      <div style="flex:1;min-width:130px"><div style="font-weight:700;font-size:14px">${_gpEsc(d.color||'—')}</div>
+        <div style="font-size:11px;color:var(--muted)">alert ≤ ${d.threshold||0} m${d.updatedBy?' · '+_gpEsc(d.updatedBy):''}</div></div>
+      <div style="text-align:right;min-width:82px"><div style="font-size:18px;font-weight:800;color:${lvl.color}">${(d.balance||0).toFixed(1)} m</div>
+        <div style="font-size:10px;font-weight:700;color:${lvl.color}">${lvl.label}</div></div>
+      <div style="display:flex;gap:6px">
+        <button class="btn-outline" style="font-size:11px;padding:5px 10px;color:#16a34a;border-color:#bbf7d0" onclick="window.dsMove('${d._id}','in')">+ Add</button>
+        <button class="btn-outline" style="font-size:11px;padding:5px 10px;color:#dc2626;border-color:#fca5a5" onclick="window.dsMove('${d._id}','out')">− Use</button>
+        <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.dsEdit('${d._id}')">Edit</button>
+      </div>
+    </div>`;
+  }).join('');
+  if(!sorted.length)rows='<div class="empty" style="padding:24px;text-align:center">No drawstring colors yet — add one to start tracking.</div>';
+  return `<div class="card"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center">Drawstrings <span style="font-weight:400;color:var(--muted);font-size:11px">${allDrawstrings.length} color${allDrawstrings.length===1?'':'s'} · ${total.toFixed(1)} m total${low?` · ${low} low`:''}</span></div>
+    <button class="btn-primary" style="background:#111;font-size:12px;padding:7px 14px;margin-bottom:10px" onclick="window.dsNewColor()">+ New color</button>
+    <div>${rows}</div>
+  </div>
+  ${allDrawstringMoves.length?`<div class="card"><div class="card-title">Recent movements</div>${allDrawstringMoves.slice(0,20).map(m=>`<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:6px 0;border-bottom:1px solid #f5f5f5"><span><strong>${_gpEsc(m.color||'')}</strong> · ${m.type==='in'?'added':'used'}${m.note?' · '+_gpEsc(m.note):''} <span style="color:var(--muted)">${_gpEsc(m.by||'')} · ${m.ts?new Date(m.ts).toLocaleDateString():''}</span></span><span style="font-weight:700;white-space:nowrap;color:${m.type==='in'?'#16a34a':'#dc2626'}">${m.type==='in'?'+':'−'}${(m.qty||0).toFixed(1)} m</span></div>`).join('')}</div>`:''}
+  <div style="height:60px"></div>`;
+}
+window.dsNewColor=function(){
+  _fabModal('New drawstring color',`
+    <div class="field"><label>Color</label><input id="ds-color" placeholder="e.g. Black" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
+    <div style="display:flex;gap:8px">
+      <div class="field" style="flex:1"><label>Starting stock (m)</label><input id="ds-bal" type="number" min="0" step="0.1" value="0" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
+      <div class="field" style="flex:1"><label>Low-stock alert ≤ (m)</label><input id="ds-thr" type="number" min="0" step="0.1" value="0" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
+    </div>
+    <button class="btn-primary" style="width:100%;margin-top:12px" onclick="window.dsSaveNew()">Create</button>`);
+};
+window.dsSaveNew=async function(){
+  const color=(document.getElementById('ds-color')?.value||'').trim();
+  if(!color)return showToast('Enter a color.',true);
+  const key=_dsColorKey(color);
+  if(allDrawstrings.some(d=>d._id===key))return showToast('That color already exists.',true);
+  const balance=parseFloat(document.getElementById('ds-bal')?.value)||0;
+  const threshold=parseFloat(document.getElementById('ds-thr')?.value)||0;
+  if(!_fabBusyStart('Saving…'))return;
+  try{
+    const d0={color,unit:'m',balance,threshold,createdAt:Date.now(),updatedAt:Date.now(),updatedBy:session.name};
+    await setDoc(doc(db,'fabric_drawstrings',key),d0);
+    allDrawstrings.push({...d0,_id:key});
+    if(balance>0)await _dsLog(key,color,'in',balance,'Opening stock');
+    showToast('Color added ✓');window._fabModalClose();
+  }catch(e){showToast('Save failed: '+e.message,true);}
+  _fabBusyEnd();_dsRerender();
+};
+window.dsMove=function(id,dir){
+  const d=allDrawstrings.find(x=>x._id===id);if(!d)return;
+  _fabModal(`${dir==='in'?'Add':'Use'} drawstring · ${_gpEsc(d.color)}`,`
+    <div style="font-size:13px;color:var(--muted);margin-bottom:10px">Current stock: <strong>${(d.balance||0).toFixed(1)} m</strong></div>
+    <div class="field"><label>Meters to ${dir==='in'?'add':'use'}</label><input id="ds-qty" type="number" min="0" step="0.1" placeholder="0" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box;font-size:17px;font-weight:700"></div>
+    <div class="field"><label>Note (optional)</label><input id="ds-note" placeholder="${dir==='in'?'e.g. dyed with PO 536':'e.g. PO 536 trousers'}" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
+    <button class="btn-primary" style="width:100%;margin-top:12px;background:${dir==='in'?'#16a34a':'#dc2626'}" onclick="window.dsDoMove('${id}','${dir}')">${dir==='in'?'Add':'Use'} meters</button>`);
+};
+window.dsDoMove=async function(id,dir){
+  const d=allDrawstrings.find(x=>x._id===id);if(!d)return;
+  const qty=parseFloat(document.getElementById('ds-qty')?.value)||0;
+  const note=(document.getElementById('ds-note')?.value||'').trim();
+  if(qty<=0)return showToast('Enter meters.',true);
+  if(dir==='out'&&qty>(d.balance||0)&&!confirm(`Only ${(d.balance||0).toFixed(1)} m in stock. Use ${qty} m anyway?`))return;
+  if(!_fabBusyStart('Saving…'))return;
+  try{
+    const nb=parseFloat(((d.balance||0)+(dir==='in'?qty:-qty)).toFixed(2));
+    await updateDoc(doc(db,'fabric_drawstrings',id),{balance:nb,updatedAt:Date.now(),updatedBy:session.name});
+    d.balance=nb;d.updatedBy=session.name;
+    await _dsLog(id,d.color,dir,qty,note);
+    showToast(`${dir==='in'?'Added':'Used'} ${qty} m ✓`);window._fabModalClose();
+  }catch(e){showToast('Save failed: '+e.message,true);}
+  _fabBusyEnd();_dsRerender();
+};
+window.dsEdit=function(id){
+  const d=allDrawstrings.find(x=>x._id===id);if(!d)return;
+  _fabModal(`Edit · ${_gpEsc(d.color)}`,`
+    <div class="field"><label>Low-stock alert ≤ (m)</label><input id="ds-ethr" type="number" min="0" step="0.1" value="${d.threshold||0}" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
+    <div class="field"><label>Correct balance (m)</label><input id="ds-ebal" type="number" step="0.1" value="${d.balance||0}" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
+    <div style="font-size:11px;color:var(--muted)">Changing the balance is a manual correction (logged).</div>
+    <button class="btn-primary" style="width:100%;margin-top:12px" onclick="window.dsSaveEdit('${id}')">Save</button>
+    ${_fabCanDelete()?`<button class="btn-outline" style="width:100%;margin-top:8px;color:#dc2626;border-color:#fca5a5" onclick="window.dsDelete('${id}')">Delete color</button>`:''}`);
+};
+window.dsSaveEdit=async function(id){
+  const d=allDrawstrings.find(x=>x._id===id);if(!d)return;
+  const thr=parseFloat(document.getElementById('ds-ethr')?.value)||0;
+  const bal=parseFloat(document.getElementById('ds-ebal')?.value);
+  if(!_fabBusyStart('Saving…'))return;
+  try{
+    const upd={threshold:thr,updatedAt:Date.now(),updatedBy:session.name};
+    if(!isNaN(bal)&&bal!==d.balance){const diff=bal-(d.balance||0);upd.balance=bal;await _dsLog(id,d.color,diff>=0?'in':'out',Math.abs(diff),'Manual correction');}
+    await updateDoc(doc(db,'fabric_drawstrings',id),upd);Object.assign(d,upd);
+    showToast('Saved ✓');window._fabModalClose();
+  }catch(e){showToast('Save failed: '+e.message,true);}
+  _fabBusyEnd();_dsRerender();
+};
+window.dsDelete=async function(id){
+  if(!_fabCanDelete())return showToast('Owners only.',true);
+  if(!confirm('Delete this drawstring color?'))return;
+  if(!_fabBusyStart('Deleting…'))return;
+  try{await deleteDoc(doc(db,'fabric_drawstrings',id));allDrawstrings=allDrawstrings.filter(x=>x._id!==id);showToast('Deleted ✓');window._fabModalClose();}
+  catch(e){showToast('Delete failed: '+e.message,true);}
+  _fabBusyEnd();_dsRerender();
 };
 
 function renderFabricIssueTab(){

@@ -53,6 +53,9 @@ service cloud.firestore {
       allow create: if signedIn();
       allow update, delete: if false;
     }
+    // Drawstrings: lightweight per-color meter balances + their movement log.
+    match /fabric_drawstrings/{doc} { allow read, write: if signedIn(); }
+    match /drawstring_moves/{doc}   { allow read: if signedIn(); allow create: if signedIn(); allow update, delete: if false; }
     // Edit/delete approval requests for gatepasses/returns/fabricin.
     // Any signed-in user can read (so they can see their own pending state)
     // and create requests; approval/rejection is gated to OM at the app layer.
