@@ -1469,7 +1469,9 @@ function _fabRegRows(issues){
         <div style="font-size:15px"><span style="font-weight:800;color:#dc2626">PO ${_gpEsc(g.poId||'—')}</span> <span style="font-weight:600;color:var(--muted);font-size:13px">${_gpEsc(g.articleName||'')}${g.articleCode?' · '+_gpEsc(g.articleCode):''}</span></div>
         <div style="font-size:11px;color:var(--muted)">${_gpEsc(g.id||'')} · ${_gpEsc(g.date||'')}</div>
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-top:3px">${_gpEsc(g.fabricType||'')} ${g.fabricGsm||0}gsm ${_gpEsc(g.fabricColor||'')}</div>
+      ${(g.fabrics&&g.fabrics.length>1)
+        ?`<div style="font-size:12px;color:var(--muted);margin-top:3px">${g.fabrics.map(f=>`<span style="display:inline-block;margin-right:10px"><strong style="color:var(--text)">${_gpEsc(f.fabType||'')} ${f.gsm||0}gsm ${_gpEsc(f.color||'')}</strong> · ${(f.weight||0).toFixed(2)}kg</span>`).join('')}</div>`
+        :`<div style="font-size:12px;color:var(--muted);margin-top:3px">${_gpEsc(g.fabricType||'')} ${g.fabricGsm||0}gsm ${_gpEsc(g.fabricColor||'')}</div>`}
       <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:14px">
         <span><strong>${(g.plannedQty||0).toLocaleString()}</strong> pcs cut</span>
         <span><strong>${g.totalBundles||0}</strong> bundles</span>
@@ -1960,7 +1962,7 @@ function renderFabricIssueTab(){
     </div>
     <div style="font-size:11px;color:var(--muted);margin-top:2px">Avg = fabric used ÷ pieces cut, from the rolls you pick below.</div>
   </div>
-  <div class="card"><div class="card-title">Pick rolls <span style="font-weight:400;color:var(--muted);font-size:11px">scan or select — all from one fabric</span></div>
+  <div class="card"><div class="card-title">Pick rolls <span style="font-weight:400;color:var(--muted);font-size:11px">scan or select — one or more fabrics (e.g. 2-tone: light + dark)</span></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
       <div class="field" style="flex:1;min-width:200px;margin:0"><label>Scan roll barcode</label>
         <input id="fab-iss-scan" placeholder="Scan or type roll code, press Enter" autocomplete="off" onkeydown="if(event.key==='Enter'||(event.key==='Tab'&&this.value.trim())){event.preventDefault();window.fabIssueScan();}">
@@ -1997,7 +1999,19 @@ function renderFabricIssueTab(){
 // ── Rib picker for the issue form (matching-color rib, issued with the fabric) ──
 let _fabRibRolls=[],_fabRibKey=null;
 function _fabRibStocks(){return allFabricInventory.filter(s=>/rib/i.test(s.fabType||'')&&(s.rolls||[]).some(r=>['in_stock','reserved'].includes(r.status||'in_stock')));}
-function _fabMainStock(){return allFabricInventory.find(x=>x._id===_fabIssueKey)||null;}
+// One issue can span MULTIPLE fabrics (2-tone / colour-block garments). Group
+// the picked rolls by fabric combo; the first group is the "primary" fabric.
+function _fabIssueGroups(){
+  const map=new Map();
+  for(const r of _fabIssueRolls){
+    const k=r.key||_fabIssueKey;if(!k)continue;
+    if(!map.has(k))map.set(k,{key:k,fabType:r.fabType,gsm:r.gsm,color:r.color,unit:r.unit||'kg',rolls:[],weight:0});
+    const g=map.get(k);g.rolls.push(r);g.weight+=r.weight||0;
+  }
+  return [...map.values()];
+}
+function _fabIssuePrimaryStock(){const g=_fabIssueGroups()[0];return g?(allFabricInventory.find(x=>x._id===g.key)||null):null;}
+function _fabMainStock(){return _fabIssuePrimaryStock()||allFabricInventory.find(x=>x._id===_fabIssueKey)||null;}
 function _fabMainWeight(){return _fabIssueRolls.reduce((a,r)=>a+(r.weight||0),0);}
 window.fabRibRecalc=function(){
   const pct=parseFloat(document.getElementById('fab-rib-pct')?.value)||0;
@@ -2124,7 +2138,7 @@ window.fabIssueRecalc=function(){
     const qc=r.querySelector('.fis-qty'); if(qc)qc.textContent=q?q.toLocaleString():'—';
     const nc=r.querySelector('.fis-nb'); if(nc)nc.textContent=arr.length||'—';
   });
-  const stock=allFabricInventory.find(s=>s._id===_fabIssueKey);
+  const stock=_fabMainStock();
   const unit=stock?.unit||'kg';
   const used=_fabIssueRolls.reduce((s,r)=>s+(r.weight||0),0);
   const avg=total>0?used/total:0;
@@ -2151,7 +2165,6 @@ function _fabIssueAdd(code){
   if(st==='issued'){showToast(rc+' is already issued.',true);return;}
   if(st==='returned_supplier'){showToast(rc+' was returned to supplier.',true);return;}
   if(_fabIssueRolls.some(r=>r.rollCode===rc)){showToast(rc+' already selected.',true);return;}
-  if(_fabIssueKey&&_fabIssueKey!==stock._id){showToast('All rolls must be from the same fabric. Clear selection to switch.',true);return;}
   const po=document.getElementById('fab-iss-po')?.value||'';
   // Hard gates (must explicitly confirm) instead of silent "issuing anyway".
   if(st==='reserved'&&roll.reservedPO&&po&&roll.reservedPO!==po){
@@ -2161,7 +2174,7 @@ function _fabIssueAdd(code){
     if(!confirm(`${rc} has NOT passed QC. Issue it anyway?`))return;
   }
   _fabIssueKey=stock._id;
-  _fabIssueRolls.push({rollCode:rc,weight:roll.weight||0,status:st});
+  _fabIssueRolls.push({rollCode:rc,weight:roll.weight||0,status:st,key:stock._id,fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:stock.unit||'kg'});
   _fabIssueRenderSelected();_fabIssueSyncChecklist();
 }
 
@@ -2170,7 +2183,6 @@ window.fabIssuePickStock=function(){
   const wrap=document.getElementById('fab-iss-checklist');
   if(!wrap)return;
   if(!key){wrap.innerHTML='';return;}
-  if(_fabIssueKey&&_fabIssueKey!==key){wrap.innerHTML='<div style="font-size:12px;color:#dc2626;padding:6px">Clear current selection to pick a different fabric.</div>';return;}
   const stock=allFabricInventory.find(s=>s._id===key);
   const pickable=(stock?.rolls||[]).filter(r=>['in_stock','reserved'].includes(r.status||'in_stock'));
   if(!pickable.length){wrap.innerHTML='<div style="font-size:12px;color:var(--muted);padding:6px">No available rolls.</div>';return;}
@@ -2204,15 +2216,23 @@ window.fabIssueRemove=function(code){
 function _fabIssueRenderSelected(){
   const el=document.getElementById('fab-iss-selected');if(!el)return;
   if(!_fabIssueRolls.length){el.innerHTML='<div class="empty" style="padding:10px">No rolls selected yet.</div>';return;}
-  const stock=allFabricInventory.find(s=>s._id===_fabIssueKey);
+  const groups=_fabIssueGroups();
   const total=_fabIssueRolls.reduce((s,r)=>s+(r.weight||0),0);
-  el.innerHTML=`<div style="font-size:11px;color:var(--muted);margin-bottom:4px">${stock?`${_gpEsc(stock.fabType)} · ${stock.gsm}gsm · ${_gpEsc(stock.color)}`:''}</div>
-    ${_fabIssueRolls.map(r=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;border-bottom:1px solid #f5f5f5;font-size:12px">
-      <span style="font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode)}${r.status==='reserved'?' <span style="color:var(--amber);font-weight:400;font-size:10px">(reserved)</span>':''}</span>
-      <span style="display:flex;gap:10px;align-items:center"><span>${r.weight||0} ${stock?.unit||'kg'}</span>
-      <button onclick="window.fabIssueRemove('${_gpEsc(r.rollCode)}')" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:14px">×</button></span>
-    </div>`).join('')}
-    <div style="display:flex;justify-content:space-between;padding:8px;margin-top:6px;background:var(--dark);border-radius:8px;color:#fff;font-size:13px"><span>${_fabIssueRolls.length} rolls</span><span style="font-weight:700">${total.toFixed(2)} ${stock?.unit||'kg'}</span></div>`;
+  const multi=groups.length>1;
+  const groupsHtml=groups.map((g,gi)=>{
+    const unit=g.unit||'kg';
+    return`<div style="border:1px solid var(--border);border-radius:9px;padding:8px 10px;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:4px">${multi?`<span style="color:var(--muted)">Fabric ${gi+1}:</span> `:''}${_gpEsc(g.fabType||'')} · ${g.gsm||0}gsm · ${_gpEsc(g.color||'')}</div>
+      ${g.rolls.map(r=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 4px;border-bottom:1px solid #f5f5f5;font-size:12px">
+        <span style="font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode)}${r.status==='reserved'?' <span style="color:var(--amber);font-weight:400;font-size:10px">(reserved)</span>':''}</span>
+        <span style="display:flex;gap:10px;align-items:center"><span>${r.weight||0} ${unit}</span>
+        <button onclick="window.fabIssueRemove('${_gpEsc(r.rollCode)}')" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:14px">×</button></span>
+      </div>`).join('')}
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);padding-top:5px"><span>${g.rolls.length} roll${g.rolls.length===1?'':'s'}</span><span style="font-weight:700;color:var(--text)">${g.weight.toFixed(2)} ${unit}</span></div>
+    </div>`;
+  }).join('');
+  el.innerHTML=`${groupsHtml}
+    <div style="display:flex;justify-content:space-between;padding:8px;background:var(--dark);border-radius:8px;color:#fff;font-size:13px"><span>${_fabIssueRolls.length} rolls${multi?` · ${groups.length} fabrics`:''}</span><span style="font-weight:700">${total.toFixed(2)} kg total</span></div>`;
   if(typeof window.fabIssueRecalc==='function')window.fabIssueRecalc();   // refresh cut totals + avg
   if(typeof _fabRibRefreshStocks==='function'){ if(!_fabRibRolls.length)_fabRibRefreshStocks(); window.fabRibRecalc&&window.fabRibRecalc(); }
 }
@@ -2227,8 +2247,11 @@ window.submitFabricIssue=async function(){
   if(!articleName){showToast('Enter the article name.',true);return;}
   if(!articleCode){showToast('Enter the article code.',true);return;}
   if(!_fabIssueRolls.length){showToast('Select at least one roll.',true);return;}
-  const stock=allFabricInventory.find(s=>s._id===_fabIssueKey);
-  if(!stock){showToast('Fabric stock not found.',true);return;}
+  // An issue can span MULTIPLE fabrics (2-tone / colour-block). Group the
+  // picked rolls by fabric combo; groups[0] is the primary fabric.
+  const groups=_fabIssueGroups().map(g=>({...g,stock:allFabricInventory.find(s=>s._id===g.key)})).filter(g=>g.stock);
+  if(!groups.length){showToast('Fabric stock not found.',true);return;}
+  const primary=groups[0].stock;
   // Cutting: per size, the actual pieces cut per bundle (e.g. "9-8-6-7").
   _fabIssueSyncSizesFromDOM();
   const sizeBreakdown=_fabIssueSizes
@@ -2241,12 +2264,14 @@ window.submitFabricIssue=async function(){
   if(!cutMaster){showToast('Select the cutting master (Hassan or Alam).',true);return;}
   if(!cutQty){ if(!confirm('No cut quantities entered. Issue anyway?'))return; }
   const rollCodes=_fabIssueRolls.map(r=>r.rollCode);
-  const fabUnit=stock.unit||'kg';
+  const fabUnit=primary.unit||'kg';
   const fabQty=parseFloat(_fabIssueRolls.reduce((s,r)=>s+(r.weight||0),0).toFixed(2));
-  // Avg consumption is DERIVED: actual fabric used ÷ pieces cut.
+  // Avg consumption is DERIVED: total fabric used (all fabrics) ÷ pieces cut.
   const avgConsumption=cutQty>0?parseFloat((fabQty/cutQty).toFixed(4)):0;
   const consumptionUnit=fabUnit;
-  // Matching-color rib issued alongside (optional).
+  // Per-fabric split (weight + its own avg) recorded on the issue.
+  const fabrics=groups.map(g=>({inventoryKey:g.key,fabType:g.stock.fabType,gsm:g.stock.gsm||0,color:g.stock.color,unit:g.stock.unit||'kg',rollCodes:g.rolls.map(r=>r.rollCode),rollsCount:g.rolls.length,weight:parseFloat((g.weight||0).toFixed(2)),avgConsumption:cutQty>0?parseFloat(((g.weight||0)/cutQty).toFixed(4)):0}));
+  // Matching-color rib issued alongside (optional) — 4% of the TOTAL fabric weight.
   const ribStock=_fabRibRolls.length?allFabricInventory.find(s=>s._id===_fabRibKey):null;
   const ribCodes=_fabRibRolls.map(r=>r.rollCode);
   const ribWeight=parseFloat(_fabRibRolls.reduce((a,r)=>a+(r.weight||0),0).toFixed(2));
@@ -2256,14 +2281,20 @@ window.submitFabricIssue=async function(){
   try{
     const next=await getNextId('gatepasses');
     const gpId='GP-'+String(next).padStart(3,'0');
-    const article=`${stock.fabType} ${stock.gsm||0}gsm ${stock.color}`;
-    // The gate pass IS the fabric-issue registry record: PO, article, the cut
-    // (per-bundle size breakdown, qty AFTER cutting), bundles, fabric used and
-    // the auto avg consumption all live here. plannedQty kept = cutQty for
-    // existing totals; cutQty/fabricUsed explicit for clarity.
-    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,fabricUsed:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stock._id,sizeBreakdown,cutQty,plannedQty:cutQty,totalBundles,avgConsumption,consumptionUnit,cutMaster,...ribData,boras:'0',items:[],totalUnits:cutQty,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
-    // Gate pass + inventory decrement commit in ONE transaction.
-    await _fabInvUpsert({fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:fabUnit,removeRollCodes:rollCodes,reservePO:po,note:`Issued to factory for ${po} by ${session.name}`,sourceCol:'gatepasses',sourceId:gpId,extraWrites:[{ref:doc(db,'gatepasses',gpId),data:payload}]});
+    const article=fabrics.length>1?fabrics.map(f=>`${f.fabType} ${f.gsm||0}gsm ${f.color}`).join(' + '):`${primary.fabType} ${primary.gsm||0}gsm ${primary.color}`;
+    // The gate pass IS the fabric-issue registry record. Top-level fabric* keep
+    // the PRIMARY (first) fabric for back-compat; fabricQty/fabricUsed are the
+    // TOTAL across all fabrics; the full per-fabric split lives in `fabrics`.
+    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls${fabrics.length>1?` · ${fabrics.length} fabrics`:''}`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,fabricUsed:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:primary.fabType,fabricGsm:primary.gsm,fabricColor:primary.color,inventoryKey:primary._id,fabrics,fabricCount:fabrics.length,sizeBreakdown,cutQty,plannedQty:cutQty,totalBundles,avgConsumption,consumptionUnit,cutMaster,...ribData,boras:'0',items:[],totalUnits:cutQty,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
+    // Decrement each fabric combo. The FIRST commits the gate-pass doc in its
+    // own transaction (atomic with the primary decrement); the rest are
+    // best-effort like rib, warning on any failure.
+    for(let i=0;i<groups.length;i++){
+      const g=groups[i];const codes=g.rolls.map(r=>r.rollCode);
+      const opts={fabType:g.stock.fabType,gsm:g.stock.gsm,color:g.stock.color,unit:g.stock.unit||fabUnit,removeRollCodes:codes,reservePO:po,note:`Issued to factory for ${po} by ${session.name}`,sourceCol:'gatepasses',sourceId:gpId};
+      if(i===0){opts.extraWrites=[{ref:doc(db,'gatepasses',gpId),data:payload}];await _fabInvUpsert(opts);}
+      else{try{await _fabInvUpsert(opts);}catch(e){showToast(`Issued, but decrement for ${g.stock.color} failed: ${e.message}`,true);}}
+    }
     // Decrement the rib inventory too (separate combo → separate transaction).
     if(ribStock&&ribCodes.length){
       try{ await _fabInvUpsert({fabType:ribStock.fabType,gsm:ribStock.gsm,color:ribStock.color,unit:ribStock.unit||'kg',removeRollCodes:ribCodes,reservePO:po,note:`Rib issued with ${article} for ${po}`,sourceCol:'gatepasses',sourceId:gpId}); }
