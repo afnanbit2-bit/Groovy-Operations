@@ -1694,6 +1694,7 @@ window.fabExportIssueRegistry=function(){
 //  the fabric; used at finishing. Manual add/consume + low-stock alerts.
 // ════════════════════════════════════════════════════════════════════════
 let allDrawstrings=[],allDrawstringMoves=[],_dsLoaded=false;
+const DS_M_PER_UNIT=1.5;   // dori: 1 unit (piece) consumes 1.5 m of drawstring
 function _dsColorKey(c){return String(c||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');}
 async function loadDrawstrings(){
   try{
@@ -1713,8 +1714,9 @@ function _dsAlertLevel(d){
   return{label:'OK',color:'#16a34a'};
 }
 function _dsRerender(){const m=document.getElementById('fab-tab-content');if(m&&fabActiveTab==='drawstring')m.innerHTML=renderDrawstrings();}
-async function _dsLog(colorKey,color,type,qty,note){
+async function _dsLog(colorKey,color,type,qty,note,units){
   const mv={color,colorKey,type,qty:parseFloat(qty)||0,note:note||'',by:session.name,ts:Date.now()};
+  if(units&&units>0)mv.units=parseFloat(units)||0;
   try{const ref=doc(collection(db,'drawstring_moves'));await setDoc(ref,{...mv,id:ref.id});allDrawstringMoves.unshift({...mv,_id:ref.id});}catch(e){console.warn('[drawstring] log',e);}
 }
 function renderDrawstrings(){
@@ -1728,6 +1730,7 @@ function renderDrawstrings(){
       <div style="flex:1;min-width:130px"><div style="font-weight:700;font-size:14px">${_gpEsc(d.color||'—')}</div>
         <div style="font-size:11px;color:var(--muted)">alert ≤ ${d.threshold||0} m${d.updatedBy?' · '+_gpEsc(d.updatedBy):''}</div></div>
       <div style="text-align:right;min-width:82px"><div style="font-size:18px;font-weight:800;color:${lvl.color}">${(d.balance||0).toFixed(1)} m</div>
+        <div style="font-size:10px;color:var(--muted)">≈ ${Math.floor((d.balance||0)/DS_M_PER_UNIT)} units</div>
         <div style="font-size:10px;font-weight:700;color:${lvl.color}">${lvl.label}</div></div>
       <div style="display:flex;gap:6px">
         <button class="btn-outline" style="font-size:11px;padding:5px 10px;color:#16a34a;border-color:#bbf7d0" onclick="window.dsMove('${d._id}','in')">+ Add</button>
@@ -1773,24 +1776,38 @@ window.dsSaveNew=async function(){
 window.dsMove=function(id,dir){
   const d=allDrawstrings.find(x=>x._id===id);if(!d)return;
   _fabModal(`${dir==='in'?'Add':'Use'} drawstring · ${_gpEsc(d.color)}`,`
-    <div style="font-size:13px;color:var(--muted);margin-bottom:10px">Current stock: <strong>${(d.balance||0).toFixed(1)} m</strong></div>
-    <div class="field"><label>Meters to ${dir==='in'?'add':'use'}</label><input id="ds-qty" type="number" min="0" step="0.1" placeholder="0" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box;font-size:17px;font-weight:700"></div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:10px">Current stock: <strong>${(d.balance||0).toFixed(1)} m</strong> · ≈ <strong>${Math.floor((d.balance||0)/DS_M_PER_UNIT)}</strong> units</div>
+    <div class="field"><label>Units (pieces)</label><input id="ds-units" type="number" min="0" step="1" placeholder="0" oninput="window._dsUnitsToM()" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box;font-size:17px;font-weight:700"></div>
+    <div style="font-size:11px;color:var(--muted);margin:-6px 0 10px">1 unit = ${DS_M_PER_UNIT} m of dori — meters auto-calculate.</div>
+    <div class="field"><label>Meters to ${dir==='in'?'add':'use'}</label><input id="ds-qty" type="number" min="0" step="0.1" placeholder="0" oninput="window._dsMToUnits()" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box;font-size:17px;font-weight:700"></div>
     <div class="field"><label>Note (optional)</label><input id="ds-note" placeholder="${dir==='in'?'e.g. dyed with PO 536':'e.g. PO 536 trousers'}" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
     <button class="btn-primary" style="width:100%;margin-top:12px;background:${dir==='in'?'#16a34a':'#dc2626'}" onclick="window.dsDoMove('${id}','${dir}')">${dir==='in'?'Add':'Use'} meters</button>`);
+};
+// Dori converter: units × 1.5 = meters. Two-way so either field drives the other.
+window._dsUnitsToM=function(){
+  const u=parseFloat(document.getElementById('ds-units')?.value);
+  const q=document.getElementById('ds-qty');
+  if(q)q.value=(!isNaN(u)&&u>0)?parseFloat((u*DS_M_PER_UNIT).toFixed(2)):'';
+};
+window._dsMToUnits=function(){
+  const m=parseFloat(document.getElementById('ds-qty')?.value);
+  const u=document.getElementById('ds-units');
+  if(u&&document.activeElement!==u)u.value=(!isNaN(m)&&m>0)?parseFloat((m/DS_M_PER_UNIT).toFixed(2)):'';
 };
 window.dsDoMove=async function(id,dir){
   const d=allDrawstrings.find(x=>x._id===id);if(!d)return;
   const qty=parseFloat(document.getElementById('ds-qty')?.value)||0;
+  const units=parseFloat(document.getElementById('ds-units')?.value)||0;
   const note=(document.getElementById('ds-note')?.value||'').trim();
-  if(qty<=0)return showToast('Enter meters.',true);
+  if(qty<=0)return showToast('Enter units or meters.',true);
   if(dir==='out'&&qty>(d.balance||0)&&!confirm(`Only ${(d.balance||0).toFixed(1)} m in stock. Use ${qty} m anyway?`))return;
   if(!_fabBusyStart('Saving…'))return;
   try{
     const nb=parseFloat(((d.balance||0)+(dir==='in'?qty:-qty)).toFixed(2));
     await updateDoc(doc(db,'fabric_drawstrings',id),{balance:nb,updatedAt:Date.now(),updatedBy:session.name});
     d.balance=nb;d.updatedBy=session.name;
-    await _dsLog(id,d.color,dir,qty,note);
-    showToast(`${dir==='in'?'Added':'Used'} ${qty} m ✓`);window._fabModalClose();
+    await _dsLog(id,d.color,dir,qty,units?`${note?note+' · ':''}${units} units`.trim():note,units);
+    showToast(`${dir==='in'?'Added':'Used'} ${qty} m${units?` (${units} units)`:''} ✓`);window._fabModalClose();
   }catch(e){showToast('Save failed: '+e.message,true);}
   _fabBusyEnd();_dsRerender();
 };
