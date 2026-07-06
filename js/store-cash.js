@@ -316,7 +316,7 @@ function _cashPageHTML(){
   const period=_cashInsightsPeriod||mo;
   const entries=allCashLedger;
   const thisMonthOut=entries.filter(r=>(r.kind==='expense'||r.kind==='credit_purchase')&&r.month===mo).reduce((s,r)=>s+(r.amount||0),0);
-  const openFloat=allCashFloats.filter(f=>f.status==='open').reduce((s,f)=>s+(f.issued||0),0);
+  const openFloat=allCashFloats.filter(f=>f.status==='open').reduce((s,f)=>s+_cashFloatOutstanding(f),0);
   const payables=_cashTotalPayables();
   const tabs=[
     {id:'recent',label:'Recent'},
@@ -456,22 +456,37 @@ function _cashFeedRow(r){
 }
 
 // ── Issued Floats ──
+// A float is settled by accounting for the whole issued amount across one OR
+// MORE bills (goods + returned change). It stays 'open' until the running total
+// reaches what was issued, then auto-closes.
+function _cashFloatSettled(f){
+  if(Array.isArray(f.settlements))return f.settlements.reduce((s,x)=>s+(x.goodsValue||0)+(x.changeReturned||0),0);
+  if(f.status==='settled')return (f.goodsValue||0)+(f.changeReturned||0)||(f.issued||0); // legacy one-shot
+  return 0;
+}
+function _cashFloatOutstanding(f){return Math.max(0,(f.issued||0)-_cashFloatSettled(f));}
 function _cashIssuedFeed(){
   const open=allCashFloats.filter(f=>f.status==='open');
   const closed=allCashFloats.filter(f=>f.status==='settled').slice(0,8);
   if(!open.length&&!closed.length) return `<div class="empty" style="padding:32px 0;text-align:center">No issued floats.<br><span style="font-size:12px;color:var(--muted)">Use <strong>Issue Cash</strong> to hand out a runner float.</span></div>`;
   const ageColor=ts=>{const d=(Date.now()-ts)/86400000;return d>7?'#dc2626':d>3?'#b45309':'#15803d';};
   const ageLabel=ts=>{ const d=Math.round((Date.now()-ts)/86400000);return d===0?'today':d+'d ago'; };
-  const openCards=open.map(f=>`<div style="background:#fff;border:1px solid #fca5a5;border-radius:10px;padding:12px 14px;margin-bottom:8px">
+  const openCards=open.map(f=>{
+    const settled=_cashFloatSettled(f), outstanding=_cashFloatOutstanding(f);
+    const pct=f.issued>0?Math.min(100,Math.round(settled/f.issued*100)):0;
+    const bills=(f.settlements||[]).filter(s=>s.billPhoto);
+    return `<div style="background:#fff;border:1px solid #fca5a5;border-radius:10px;padding:12px 14px;margin-bottom:8px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
       <div style="font-weight:700;font-size:14px">${_scEsc(f.payee)||'Runner'}
         <span style="font-size:10px;background:${ageColor(f.issuedTs)};color:#fff;padding:2px 7px;border-radius:10px;margin-left:6px">${ageLabel(f.issuedTs)}</span>
       </div>
-      <div style="font-size:16px;font-weight:800;color:#dc2626">${_fmtPKR(f.issued)}</div>
+      <div style="text-align:right"><div style="font-size:16px;font-weight:800;color:#dc2626">${_fmtPKR(outstanding)}</div><div style="font-size:10px;color:var(--muted)">left of ${_fmtPKR(f.issued)}</div></div>
     </div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:8px">From ${_scEsc(_cashGetAccount(f.account)?.label||f.account)} · ${_scEsc(f.issuedBy||'')} · ${new Date(f.issuedTs).toLocaleDateString()}${f.note?' · '+_scEsc(f.note):''}</div>
-    ${_canEntryCash()?`<button class="btn-primary" style="font-size:12px;padding:6px 16px;margin-top:0;background:#111" onclick="window.cashSettleFloat('${_scEsc(f._id)}')">Settle with bill ✓</button>`:''}
-  </div>`).join('');
+    ${settled>0?`<div style="height:6px;background:#f0f0f0;border-radius:4px;overflow:hidden;margin-bottom:6px"><div style="height:100%;width:${pct}%;background:#15803d"></div></div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Settled ${_fmtPKR(settled)} of ${_fmtPKR(f.issued)}${bills.length?` · ${bills.length} bill${bills.length>1?'s':''}: `+bills.map((b,i)=>`<a href="${b.billPhoto}" target="_blank" style="text-decoration:none">📎${i+1}</a>`).join(' '):''}</div>`:''}
+    ${_canEntryCash()?`<button class="btn-primary" style="font-size:12px;padding:6px 16px;margin-top:0;background:#111" onclick="window.cashSettleFloat('${_scEsc(f._id)}')">${settled>0?'Add bill / settle more':'Settle with bill ✓'}</button>`:''}
+  </div>`;}).join('');
   const closedSection=closed.length?`<div style="font-size:10px;color:var(--muted);margin:12px 0 4px;font-weight:700;text-transform:uppercase;letter-spacing:.06em">Recently Settled</div>`+closed.map(f=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
     <span style="color:var(--muted)">${_scEsc(f.payee)||'Runner'} · ${new Date(f.issuedTs).toLocaleDateString()}${f.billPhoto?` · <a href="${f.billPhoto}" target="_blank" style="text-decoration:none">📎</a>`:''}</span>
     <span style="font-weight:700;color:#15803d">Settled ${_fmtPKR(f.issued)}${f.variance?` (${f.variance>0?'−':'+'}${_fmtPKR(Math.abs(f.variance))})`:''}</span>
@@ -1085,11 +1100,17 @@ window.cashSettleFloat=function(floatId){
   const catOpts=allCashCategories.length
     ? allCashCategories.sort((a,b)=>(a.label||'').localeCompare(b.label||'')).map(c=>`<option value="${c._id||c.key}">${_scEsc(c.label)}</option>`).join('')
     : '';
+  const _settled=_cashFloatSettled(f), _outstanding=_cashFloatOutstanding(f);
+  const _bills=(f.settlements||[]).filter(s=>s.billPhoto);
+  const _priorHtml=_bills.length?`<div style="font-size:11px;color:var(--muted);margin-bottom:12px">Bills so far: ${_bills.map((b,i)=>`<a href="${b.billPhoto}" target="_blank" style="text-decoration:none">📎 #${i+1} ${_fmtPKR((b.goodsValue||0)+(b.changeReturned||0))}</a>`).join(' · ')}</div>`:'';
   _cashOpenSheet('Settle Float',`
-    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;line-height:1.5">
+    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;line-height:1.6">
       <strong>${_scEsc(f.payee)}</strong> was issued <strong>${_fmtPKR(f.issued)}</strong> from <strong>${_scEsc(_cashGetAccount(f.account)?.label||f.account)}</strong>
+      <div style="margin-top:6px;display:flex;justify-content:space-between"><span>Settled so far</span><strong style="color:#15803d">${_fmtPKR(_settled)}</strong></div>
+      <div style="display:flex;justify-content:space-between"><span>Still to account for</span><strong style="color:#dc2626">${_fmtPKR(_outstanding)}</strong></div>
     </div>
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Bill photo <span style="font-weight:400">(required)</span></div>
+    ${_priorHtml}
+    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Bill photo <span style="font-weight:400">(required for this entry)</span></div>
     ${_cashPhotoField('settle-bill','settle-bill-status','Attach bill / receipt')}
     <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 6px">Goods Value (₨)</div>
     <input id="settle-goods" type="number" inputmode="numeric" min="0" placeholder="0" oninput="window._cashSettlePrev('${_scEsc(floatId)}')"
@@ -1102,19 +1123,21 @@ window.cashSettleFloat=function(floatId){
     <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Change returned to <span style="font-weight:400">(where the money lands)</span></div>
     <select id="settle-change-acc" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:10px;box-sizing:border-box">${_cashAllAccounts().map(a=>`<option value="${a._id||a.key}"${(a._id||a.key)===f.account?' selected':''}>${_scEsc(a.label)}${(a._id||a.key)===f.account?' (issued from)':''}</option>`).join('')}</select>
     <div id="settle-prev" style="font-size:12px;text-align:center;margin-bottom:12px;min-height:16px;color:var(--muted)"></div>
-    <button id="settle-submit" onclick="window._cashDoSettle('${_scEsc(floatId)}')" style="width:100%;height:48px;background:#111;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">Settle ✓</button>
+    <button id="settle-submit" onclick="window._cashDoSettle('${_scEsc(floatId)}')" style="width:100%;height:48px;background:#111;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">Add bill ✓</button>
+    ${(typeof _canAdminCash==='function'&&_canAdminCash())?`<button onclick="window._cashForceCloseFloat('${_scEsc(floatId)}')" style="width:100%;margin-top:8px;height:40px;background:#fff;border:1px solid #fca5a5;color:#dc2626;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">Force-close · write off ${_fmtPKR(_outstanding)}</button>`:''}
   `);
 };
 window._cashSettlePrev=function(floatId){
   const f=allCashFloats.find(x=>x._id===floatId||x.floatId===floatId);if(!f)return;
   const g=parseInt(document.getElementById('settle-goods')?.value)||0;
   const c=parseInt(document.getElementById('settle-change')?.value)||0;
-  const v=f.issued-g-c;
+  const out=_cashFloatOutstanding(f);
+  const v=out-g-c;   // remaining outstanding AFTER this entry
   const el=document.getElementById('settle-prev');if(!el)return;
   if(g===0&&c===0){el.textContent='';return;}
-  if(v===0){el.innerHTML='<span style="color:#15803d;font-weight:700">Balances exactly ✓</span>';}
-  else if(v>0){el.innerHTML=`<span style="color:#dc2626;font-weight:700">Short by ${_fmtPKR(v)}</span> — goods+change less than issued`;}
-  else{el.innerHTML=`<span style="color:#b45309;font-weight:700">Over by ${_fmtPKR(-v)}</span> — goods+change exceed issued`;}
+  if(v===0){el.innerHTML='<span style="color:#15803d;font-weight:700">This fully settles the float ✓</span>';}
+  else if(v>0){el.innerHTML=`<span style="color:#b45309;font-weight:700">${_fmtPKR(v)} still to account for</span> after this bill — stays open`;}
+  else{el.innerHTML=`<span style="color:#dc2626;font-weight:700">Over by ${_fmtPKR(-v)}</span> — exceeds the outstanding balance`;}
 };
 window._cashDoSettle=async function(floatId){
   const f=allCashFloats.find(x=>x._id===floatId||x.floatId===floatId);
@@ -1147,14 +1170,39 @@ window._cashDoSettle=async function(floatId){
     const r=await _cashPost({kind:'settle',amount:changeRet,account:changeAcc,category:null,vendorId:null,payee:f.payee,date:todayStr(),month:mo,ts:Date.now(),by:session.u||session.name,note,floatId:fid});
     if(!r)ok=false;
   }
-  if(!ok){showToast('Save failed — please try again.',true);if(btn){btn.disabled=false;btn.textContent='Settle ✓';}return;}
-  const variance=f.issued-goodsVal-changeRet;
-  const updated={...f,status:'settled',goodsValue:goodsVal,changeReturned:changeRet,variance,billPhoto,settledTs:Date.now(),settledBy:session.name};
+  if(!ok){showToast('Save failed — please try again.',true);if(btn){btn.disabled=false;btn.textContent='Add bill ✓';}return;}
+  // Append this bill to the float's settlement log and re-total. The float stays
+  // OPEN until the running total covers the whole issued amount, then closes.
+  const changeAcc2=changeRet>0?(document.getElementById('settle-change-acc')?.value||f.account):null;
+  const settlement={ts:Date.now(),by:session.name,goodsValue:goodsVal,changeReturned:changeRet,category:cat,changeAccount:changeAcc2,billPhoto};
+  const settlements=[...(f.settlements||[]),settlement];
+  const totalSettled=settlements.reduce((s,x)=>s+(x.goodsValue||0)+(x.changeReturned||0),0);
+  const outstanding=Math.max(0,(f.issued||0)-totalSettled);
+  const closed=totalSettled>=(f.issued||0);
+  const updated={...f,settlements,billPhoto,
+    goodsValue:(f.goodsValue||0)+goodsVal,changeReturned:(f.changeReturned||0)+changeRet,
+    status:closed?'settled':'open',
+    variance:closed?((f.issued||0)-totalSettled):null,
+    settledTs:closed?Date.now():(f.settledTs||null),settledBy:closed?session.name:(f.settledBy||null),
+    lastSettleTs:Date.now(),lastSettleBy:session.name};
   const fKey=f._id||fid;
   await fsSet('store_cash_floats',fKey,updated).catch(()=>{});
   const idx=allCashFloats.findIndex(x=>x._id===fKey||x.floatId===fid);
   if(idx>=0) allCashFloats[idx]=updated;
-  showToast(variance!==0?`Settled — variance ${_fmtPKR(Math.abs(variance))}`:'Float settled ✓');
+  showToast(closed?(updated.variance?`Float settled ✓ · variance ${_fmtPKR(Math.abs(updated.variance))}`:'Float fully settled ✓'):`Bill added ✓ · ${_fmtPKR(outstanding)} still to account for`);
+  _cashCloseSheet();_cashReload();
+};
+// Owner write-off — close a float that will never be fully accounted for.
+window._cashForceCloseFloat=async function(floatId){
+  if(!(typeof _canAdminCash==='function'&&_canAdminCash())){showToast('Owners only.',true);return;}
+  const f=allCashFloats.find(x=>x._id===floatId||x.floatId===floatId);if(!f){showToast('Float not found.',true);return;}
+  const out=_cashFloatOutstanding(f);
+  if(!confirm(`Force-close this float and write off ${_fmtPKR(out)} as variance? Use only if the remaining amount will never be accounted for.`))return;
+  const fKey=f._id||f.floatId||floatId;
+  const updated={...f,status:'settled',variance:out,forceClosed:true,settledTs:Date.now(),settledBy:session.name};
+  await fsSet('store_cash_floats',fKey,updated).catch(()=>{});
+  const idx=allCashFloats.findIndex(x=>x._id===fKey||x.floatId===f.floatId);if(idx>=0)allCashFloats[idx]=updated;
+  showToast(`Float closed · wrote off ${_fmtPKR(out)}`);
   _cashCloseSheet();_cashReload();
 };
 
