@@ -1444,7 +1444,17 @@ function _fabFindRoll(rollCode){
 // ── Fabric Issue Registry ──
 // Every fabric issue against a PO, with the cut (size breakdown / planned qty),
 // bundles, fabric and weight. Source = gate passes with gpType 'fabric'.
-let _fabRegPage=0,_fabRegQ='',_fabRegPer=12;
+let _fabRegPage=0,_fabRegQ='',_fabRegPer=12,_fabRegIncompleteOnly=false;
+// Owner label palette — soft chip bg/fg + a solid dot for the picker.
+const FAB_LABEL_COLORS=[
+  {name:'Red',bg:'#fee2e2',fg:'#991b1b',dot:'#dc2626'},
+  {name:'Amber',bg:'#fef3c7',fg:'#92400e',dot:'#d97706'},
+  {name:'Green',bg:'#dcfce7',fg:'#166534',dot:'#16a34a'},
+  {name:'Blue',bg:'#dbeafe',fg:'#1e40af',dot:'#2563eb'},
+  {name:'Purple',bg:'#ede9fe',fg:'#5b21b6',dot:'#7c3aed'},
+  {name:'Grey',bg:'#f3f4f6',fg:'#374151',dot:'#6b7280'}
+];
+let _fabTagWork={id:null,incomplete:false,labels:[],colorIdx:null,_pendingText:''};
 function _fabIssueRecords(){
   return (typeof allPasses!=='undefined'&&allPasses||[])
     .filter(g=>g.gpType==='fabric')
@@ -1452,7 +1462,12 @@ function _fabIssueRecords(){
 }
 function _fabRegFiltered(){
   const f=_fabRegQ.toLowerCase();
-  return _fabIssueRecords().filter(g=>!f||[g.poId,g.articleName,g.articleCode,g.fabricType,g.fabricColor,g.id].some(v=>String(v||'').toLowerCase().includes(f)));
+  return _fabIssueRecords().filter(g=>{
+    if(_fabRegIncompleteOnly&&!g.regIncomplete)return false;
+    if(!f)return true;
+    const labelText=(g.regLabels||[]).map(l=>l.text).join(' ');
+    return [g.poId,g.articleName,g.articleCode,g.fabricType,g.fabricColor,g.id,labelText].some(v=>String(v||'').toLowerCase().includes(f));
+  });
 }
 function _fabSizeLabel(s){
   const bl=Array.isArray(s.bundles)?s.bundles.join('-'):null;
@@ -1464,9 +1479,11 @@ function _fabRegRows(issues){
   return issues.map(g=>{
     const u=_gpEsc(g.fabricUnit||'kg');
     const sizes=(g.sizeBreakdown||[]).filter(s=>s.qty).map(_fabSizeLabel).join(' · ');
-    return`<div style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px">
+    const incBadge=g.regIncomplete?'<span style="background:#fee2e2;color:#991b1b;font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;margin-left:6px;letter-spacing:.04em">INCOMPLETE</span>':'';
+    const labelChips=(g.regLabels||[]).map(l=>`<span style="background:${l.bg||'#f3f4f6'};color:${l.fg||'#374151'};font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;margin-left:6px">${_gpEsc(l.text)}</span>`).join('');
+    return`<div style="border:1px solid var(--border);${g.regIncomplete?'border-left:3px solid #dc2626;':''}border-radius:10px;padding:12px 14px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
-        <div style="font-size:15px"><span style="font-weight:800;color:#dc2626">PO ${_gpEsc(g.poId||'—')}</span> <span style="font-weight:600;color:var(--muted);font-size:13px">${_gpEsc(g.articleName||'')}${g.articleCode?' · '+_gpEsc(g.articleCode):''}</span></div>
+        <div style="font-size:15px"><span style="font-weight:800;color:#dc2626">PO ${_gpEsc(g.poId||'—')}</span> <span style="font-weight:600;color:var(--muted);font-size:13px">${_gpEsc(g.articleName||'')}${g.articleCode?' · '+_gpEsc(g.articleCode):''}</span>${incBadge}${labelChips}</div>
         <div style="font-size:11px;color:var(--muted)">${_gpEsc(g.id||'')} · ${_gpEsc(g.date||'')}</div>
       </div>
       ${(g.fabrics&&g.fabrics.length>1)
@@ -1484,6 +1501,7 @@ function _fabRegRows(issues){
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;flex-wrap:wrap">
         <div style="font-size:11px;color:var(--muted)">Issued by ${_gpEsc(g.issuer||g.name||'')}${g.cutMaster?` · Cut by <strong style="color:var(--text)">${_gpEsc(g.cutMaster)}</strong>`:''}</div>
         ${['owner','manager'].includes(session.role)?`<div style="display:flex;gap:6px">
+          ${session.role==='owner'?`<button class="btn-outline" style="font-size:11px;padding:3px 12px" onclick="window.fabRegTag('${_gpEsc(g.id||'')}')">🏷 Label</button>`:''}
           <button class="btn-outline" style="font-size:11px;padding:3px 12px" onclick="window.fabRegEdit('${_gpEsc(g.id||'')}')">Edit</button>
           <button class="btn-outline" style="font-size:11px;padding:3px 12px;color:#dc2626;border-color:#fca5a5" onclick="window.fabRegDeleteOne('${_gpEsc(g.id||'')}')">Delete</button>
         </div>`:''}
@@ -1523,6 +1541,7 @@ function renderFabricIssueRegistry(){
   return`<div class="card"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center">Fabric Issue Registry <span style="font-weight:400;color:var(--muted);font-size:11px">${issues.length} issue${issues.length===1?'':'s'}</span></div>
     ${issues.length?`<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <button class="btn-outline" style="font-size:12px;padding:6px 14px" onclick="window.fabExportIssueRegistry()">⬇ Export Excel</button>
+      <button class="btn-outline" id="fab-reg-inc-btn" style="font-size:12px;padding:6px 14px;${_fabRegIncompleteOnly?'background:#dc2626;color:#fff;border-color:#dc2626':''}" onclick="window.fabRegToggleIncomplete()">⚠ Incomplete only</button>
       ${['owner','manager'].includes(session.role)?`<button class="btn-outline" style="font-size:12px;padding:6px 14px;color:#dc2626;border-color:#fca5a5" onclick="window.fabRegDeleteAll()">🗑 Delete all</button>`:''}
     </div>`:''}
     <div style="display:flex;gap:8px;margin-bottom:10px">
@@ -1543,6 +1562,62 @@ function renderFabricIssueRegistry(){
 window.fabRegPage=function(n){_fabRegPage=Math.max(0,n);const el=document.getElementById('fab-reg-list');if(el){el.innerHTML=_fabRegListHTML();el.scrollIntoView({behavior:'smooth',block:'start'});}};
 window.fabRegSetPer=function(v){_fabRegPer=parseInt(v)||12;_fabRegPage=0;const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();};
 window.fabRegFilter=function(q){_fabRegQ=q||'';_fabRegPage=0;const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();};
+window.fabRegToggleIncomplete=function(){
+  _fabRegIncompleteOnly=!_fabRegIncompleteOnly;_fabRegPage=0;
+  const b=document.getElementById('fab-reg-inc-btn');
+  if(b)b.style.cssText=`font-size:12px;padding:6px 14px;${_fabRegIncompleteOnly?'background:#dc2626;color:#fff;border-color:#dc2626':''}`;
+  const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();
+};
+// ── Owner labels + Incomplete flag on a fabric-issue entry ──
+window.fabRegTag=function(gpId){
+  if(session.role!=='owner'){showToast('Owners only.',true);return;}
+  const g=_fabIssueRecords().find(x=>x.id===gpId);if(!g){showToast('Entry not found.',true);return;}
+  _fabTagWork={id:gpId,incomplete:!!g.regIncomplete,labels:(g.regLabels||[]).map(l=>({...l})),colorIdx:null,_pendingText:''};
+  _fabRenderTagModal();
+};
+function _fabRenderTagModal(){
+  const w=_fabTagWork;
+  const g=_fabIssueRecords().find(x=>x.id===w.id)||{};
+  const swatches=FAB_LABEL_COLORS.map((c,i)=>`<button type="button" onclick="window._fabTagPickColor(${i})" title="${c.name}" style="width:26px;height:26px;border-radius:7px;border:2px solid ${w.colorIdx===i?'#111':'transparent'};background:${c.dot};cursor:pointer"></button>`).join('');
+  const chips=w.labels.length?w.labels.map((l,i)=>`<span style="display:inline-flex;align-items:center;gap:6px;background:${l.bg};color:${l.fg};font-size:12px;font-weight:700;padding:4px 10px;border-radius:7px;margin:0 6px 6px 0">${_gpEsc(l.text)}<button onclick="window._fabTagRemove(${i})" style="background:none;border:none;color:${l.fg};cursor:pointer;font-size:15px;line-height:1;padding:0">×</button></span>`).join(''):'<span style="font-size:12px;color:var(--muted)">No labels yet.</span>';
+  _fabModal('Label · PO '+_gpEsc(g.poId||''),`
+    <label style="display:flex;align-items:center;gap:10px;font-size:14px;margin-bottom:16px;cursor:pointer">
+      <input type="checkbox" id="fab-tag-incomplete" ${w.incomplete?'checked':''} onchange="window._fabTagToggleIncomplete(this.checked)" style="width:18px;height:18px">
+      <span style="font-weight:700">Mark this issue <span style="color:#dc2626">Incomplete</span></span>
+    </label>
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px">Custom labels</div>
+    <div style="margin-bottom:12px">${chips}</div>
+    <input id="fab-tag-text" value="${_gpEsc(w._pendingText||'')}" placeholder="Label text — e.g. Urgent, Reprint, Short fabric" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:10px">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">${swatches}
+      <button type="button" class="btn-primary" style="margin:0 0 0 auto;padding:8px 14px;font-size:13px;width:auto" onclick="window._fabTagAdd()">+ Add label</button>
+    </div>
+    <button class="btn-primary" style="width:100%" onclick="window._fabTagSave()">Save</button>
+  `);
+}
+window._fabTagPickColor=function(i){_fabTagWork._pendingText=document.getElementById('fab-tag-text')?.value||'';_fabTagWork.colorIdx=i;_fabRenderTagModal();};
+window._fabTagToggleIncomplete=function(v){_fabTagWork.incomplete=!!v;};
+window._fabTagRemove=function(i){_fabTagWork._pendingText=document.getElementById('fab-tag-text')?.value||'';_fabTagWork.labels.splice(i,1);_fabRenderTagModal();};
+window._fabTagAdd=function(){
+  const t=(document.getElementById('fab-tag-text')?.value||'').trim();
+  if(!t){showToast('Enter label text.',true);return;}
+  const ci=_fabTagWork.colorIdx!=null?_fabTagWork.colorIdx:0;
+  const c=FAB_LABEL_COLORS[ci];
+  _fabTagWork.labels.push({text:t,bg:c.bg,fg:c.fg});
+  _fabTagWork.colorIdx=null;_fabTagWork._pendingText='';
+  _fabRenderTagModal();
+};
+window._fabTagSave=async function(){
+  const w=_fabTagWork;if(!w.id)return;
+  if(!_fabBusyStart('Saving…'))return;
+  try{
+    await updateDoc(doc(db,'gatepasses',w.id),{regIncomplete:!!w.incomplete,regLabels:w.labels||[]});
+    const g=(typeof allPasses!=='undefined'&&allPasses||[]).find(x=>x.id===w.id);
+    if(g){g.regIncomplete=!!w.incomplete;g.regLabels=w.labels||[];}
+    showToast('Saved ✓');window._fabModalClose();
+  }catch(e){showToast('Save failed: '+e.message,true);}
+  _fabBusyEnd();
+  const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();
+};
 // Reverse a fabric issue: flip its issued rolls (each fabric combo + rib) back
 // to in_stock. Handles multi-fabric issues (fabrics[]), legacy single-fabric
 // (top-level fabric*/rollCodes) and the matching rib. Returns rolls restocked.
@@ -1696,7 +1771,7 @@ window._fabRegSaveEdit=async function(gpId){
 window.fabExportIssueRegistry=function(){
   const issues=_fabIssueRecords();
   if(!issues.length){showToast('Nothing to export.',true);return;}
-  const header=['Date','GP','PO','Article','Code','Fabric','GSM','Color','Pcs cut','Bundles','Fabric used','Unit','Rolls','Avg/unit','Cut by size (bundles)','Rib type','Rib kg','Rib %','Cutting master','Issued by'];
+  const header=['Date','GP','PO','Article','Code','Fabric','GSM','Color','Pcs cut','Bundles','Fabric used','Unit','Rolls','Avg/unit','Cut by size (bundles)','Rib type','Rib kg','Rib %','Cutting master','Issued by','Status','Labels'];
   const bstr=s=>Array.isArray(s.bundles)?s.bundles.join('-'):`${s.perBundle||0}x${s.bundles||0}`;
   const rows=issues.map(g=>[
     g.date||'',g.id||'',g.poId||'',g.articleName||'',g.articleCode||'',
@@ -1705,14 +1780,15 @@ window.fabExportIssueRegistry=function(){
     g.avgConsumption||0,
     (g.sizeBreakdown||[]).filter(s=>s.qty).map(s=>`${s.size||'?'}:${s.qty}[${bstr(s)}]`).join(' | '),
     g.ribType?`${g.ribType} ${g.ribGsm||0}gsm ${g.ribColor||''}`:'',g.ribWeight||0,g.ribPct||0,
-    g.cutMaster||'',g.issuer||g.name||''
+    g.cutMaster||'',g.issuer||g.name||'',
+    g.regIncomplete?'Incomplete':'',(g.regLabels||[]).map(l=>l.text).join(', ')
   ]);
   // totals row
   const tot=['TOTAL','','','','','','','',
     issues.reduce((n,g)=>n+(g.plannedQty||0),0),
     issues.reduce((n,g)=>n+(g.totalBundles||0),0),
     issues.reduce((n,g)=>n+(g.fabricQty||0),0),'','','','',
-    '',issues.reduce((n,g)=>n+(g.ribWeight||0),0),'','',''];
+    '',issues.reduce((n,g)=>n+(g.ribWeight||0),0),'','','','','',''];
   _fabXlsx([header,...rows,[],tot],'Fabric Issues','fabric-issue-registry');
   showToast('Exported ✓');
 };
