@@ -850,12 +850,12 @@ function _renderGatePass(doc, data) {
       : [{ fabType: data.fabricType, gsm: data.fabricGsm, color: data.fabricColor, rollsCount: data.rollsCount, weight: data.fabricQty, unit: data.fabricUnit }];
     rowsData = fabs.map((f, i) => [i + 1, _gpDash([f.fabType, f.gsm ? f.gsm + 'gsm' : '', f.color].filter(Boolean).join(' ')), _gpDash(f.rollsCount) + ' rolls', _gpDash(f.weight) + ' ' + (f.unit || 'kg')]);
   } else if (data.gpType === 'garments' || _items.some(it => it && it.size != null)) {
-    cols = [{ en: '#', ur: '', w: 28 }, { en: 'Size', ur: 'سائز', w: 235 }, { en: 'Units', ur: 'مقدار', w: 130 }, { en: 'Weight', ur: 'وزن', w: 130 }];
-    const nz = _items.filter(it => (Number(it.units) || 0) > 0 || (Number(it.weight) || 0) > 0);
-    rowsData = (nz.length ? nz : _items).map((it, i) => [i + 1, _gpDash(it.size), _gpDash(it.units), _gpDash(it.weight)]);
+    cols = [{ en: '#', ur: '', w: 28 }, { en: 'Size', ur: 'سائز', w: 150 }, { en: 'Bundles', ur: '', w: 215 }, { en: 'Units', ur: 'مقدار', w: 130 }];
+    const nz = _items.filter(it => (Number(it.units) || 0) > 0 || (Array.isArray(it.bundles) && it.bundles.length));
+    rowsData = (nz.length ? nz : _items).map((it, i) => [i + 1, _gpDash(it.size), _gpDash(Array.isArray(it.bundles) ? it.bundles.join('-') : ''), _gpDash(it.units)]);
     const tU = _items.reduce((s, it) => s + (Number(it.units) || 0), 0);
-    const tW = _items.reduce((s, it) => s + (Number(it.weight) || 0), 0);
-    totalRow = ['', 'TOTAL', tU || '', tW ? tW.toFixed(1) : ''];
+    const tB = _items.reduce((s, it) => s + (Number(it.bundleCount) || (Array.isArray(it.bundles) ? it.bundles.length : 0)), 0);
+    totalRow = ['', 'TOTAL', tB ? tB + ' bundles' : '', tU || ''];
   } else {
     cols = [{ en: '#', ur: '', w: 28 }, { en: 'Article', ur: 'مضمون', w: 207 }, { en: 'Spec', ur: '', w: 120 }, { en: 'Units', ur: 'مقدار', w: 84 }, { en: 'Weight', ur: 'وزن', w: 84 }];
     rowsData = _items.map((it, i) => [i + 1, _gpDash(it.article || data.article), _gpDash(it.spec || it.size || data.spec), _gpDash(it.units), _gpDash(it.weight)]);

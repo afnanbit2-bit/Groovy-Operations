@@ -112,18 +112,12 @@ function renderOutward(){
         <div style="font-size:10px;color:var(--muted);margin-top:3px">Flags the pass overdue if it hasn't fully returned by this date.</div></div>
     </div>
   </div>
-  <div class="card" id="gp-garments-card"><div class="card-title">Units by size</div>
-    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:300px">
-      <thead><tr style="background:var(--dark)"><th style="width:28px;padding:8px 4px"></th><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Size</th><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Units (pcs)</th><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Weight (kg)</th><th style="width:36px"></th></tr></thead>
-      <tbody id="gp-body"></tbody>
-    </table></div>
-    <div style="display:flex;align-items:center;border-top:1px solid var(--border)">
-      <button onclick="window.addGPRow()" style="flex:1;padding:9px;background:none;border:none;font-size:12px;color:var(--muted);cursor:pointer;font-family:inherit">+ Add size</button>
-      <button onclick="window._gpDeleteSelectedSizeRows()" style="padding:9px 14px;background:none;border:none;border-left:1px solid var(--border);font-size:12px;color:#dc2626;cursor:pointer;font-family:inherit">✕ Delete selected</button>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px">
+  <div class="card" id="gp-garments-card"><div class="card-title">Units by size <span style="font-weight:400;color:var(--muted);font-size:11px">by bundle · one number per bundle (e.g. 9-8-6-7) · multiple bundles per size</span></div>
+    <div id="gp-sizes"></div>
+    <button type="button" class="btn-outline" style="font-size:12px;padding:6px 12px;margin-top:8px" onclick="window.gpAddSize()">+ Add size</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">
       <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total units</div><div id="gp-t-units" style="font-size:18px;font-weight:700;color:#fff">0 pcs</div></div>
-      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total weight</div><div id="gp-t-weight" style="font-size:18px;font-weight:700;color:#fff">0 kg</div></div>
+      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total bundles</div><div id="gp-t-bundles" style="font-size:18px;font-weight:700;color:#fff">0</div></div>
       <div style="background:var(--red);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total boras</div><div><input id="gp-boras" type="number" min="0" placeholder="0" style="background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,.35);color:#fff;font-size:18px;font-weight:700;width:60px;text-align:center;padding:0;border-radius:0;outline:none"></div></div>
     </div>
   </div>
@@ -376,18 +370,42 @@ window.gpRegExport=function(){
   showToast('Exported ✓');
 };
 window.setDest=function(v){document.getElementById('gp-dest').value=v;};
-window.addGPRow=function(size='',units='',weight=''){
-  gpRowIdx++;const id='gpr'+gpRowIdx;const tr=document.createElement('tr');tr.id=id;tr.style.borderBottom='1px solid #f5f5f5';
-  tr.innerHTML=`<td style="padding:4px 6px;width:28px"><input type="checkbox" class="gp-size-chk" style="cursor:pointer;width:15px;height:15px"></td><td style="padding:4px 6px"><input type="text" value="${size}" placeholder="e.g. M" style="width:68px;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" onchange="window.gpRecalc()"></td><td style="padding:4px 6px"><input type="number" data-role="units" value="${units}" min="0" placeholder="0" style="width:68px;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" oninput="window.gpRecalc()"></td><td style="padding:4px 6px"><input type="number" data-role="weight" value="${weight}" min="0" step="0.1" placeholder="0" style="width:68px;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" oninput="window.gpRecalc()"></td><td><button onclick="document.getElementById('${id}').remove();window.gpRecalc()" style="background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:2px 6px">×</button></td>`;
-  document.getElementById('gp-body')?.appendChild(tr);window.gpRecalc();
-};
-window.gpRecalc=function(){let u=0,w=0;document.querySelectorAll('#gp-body tr').forEach(r=>{const ui=r.querySelector('input[data-role="units"]');const wi=r.querySelector('input[data-role="weight"]');u+=parseFloat(ui?.value)||0;w+=parseFloat(wi?.value)||0;});document.getElementById('gp-t-units').textContent=Math.round(u)+' pcs';document.getElementById('gp-t-weight').textContent=w.toFixed(1)+' kg';if(window.gpSaleRecalc)window.gpSaleRecalc();};
-window._gpDeleteSelectedSizeRows=function(){
-  const checked=[...document.querySelectorAll('#gp-body .gp-size-chk:checked')];
-  if(!checked.length)return showToast('No rows selected — check a row first.',true);
-  if(!confirm(`Delete ${checked.length} row${checked.length>1?'s':''}?`))return;
-  checked.forEach(cb=>cb.closest('tr').remove());
+// Garments go out in BUNDLES (like cutting): per size, one number per bundle
+// e.g. "9-8-6-7" → 4 bundles, 30 pcs. Same model as the fabric Issue.
+let _gpSizes=[{size:'',bundles:''}];
+function _gpParseBundles(str){return typeof _fabParseBundles==='function'?_fabParseBundles(str):String(str==null?'':str).split(/[^0-9.]+/).map(x=>parseFloat(x)).filter(x=>!isNaN(x)&&x>0);}
+function _gpSyncSizesFromDOM(){
+  const rows=document.querySelectorAll('#gp-sizes .gps-row');
+  if(!rows.length)return;
+  _gpSizes=Array.from(rows).map(r=>({size:r.querySelector('.gps-size')?.value||'',bundles:r.querySelector('.gps-bundles')?.value||''}));
+}
+function _gpRenderSizes(){
+  const el=document.getElementById('gp-sizes');if(!el)return;
+  if(!_gpSizes.length)_gpSizes=[{size:'',bundles:''}];
+  el.innerHTML=`<div style="display:grid;grid-template-columns:1fr 2.2fr .8fr .9fr 28px;gap:8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:0 2px 6px"><span>Size</span><span>Bundles (e.g. 9-8-6-7)</span><span style="text-align:center"># Bundles</span><span style="text-align:right">Qty</span><span></span></div>`+
+    _gpSizes.map((s,i)=>{const arr=_gpParseBundles(s.bundles);const q=arr.reduce((a,b)=>a+b,0);
+      return`<div class="gps-row" style="display:grid;grid-template-columns:1fr 2.2fr .8fr .9fr 28px;gap:8px;align-items:center;margin-bottom:8px">
+        <input class="gps-size" value="${_gpEsc(s.size)}" placeholder="e.g. M" oninput="window.gpRecalc()" style="margin:0;font-size:15px;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box">
+        <input class="gps-bundles" value="${_gpEsc(s.bundles)}" placeholder="9-8-6-7" oninput="window.gpRecalc()" style="margin:0;font-size:15px;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box">
+        <span class="gps-nb" style="text-align:center;font-weight:700;font-size:14px;color:var(--muted)">${arr.length||'—'}</span>
+        <span class="gps-qty" style="text-align:right;font-weight:800;font-size:16px">${q?q.toLocaleString():'—'}</span>
+        <button type="button" onclick="window.gpRemoveSize(${i})" title="Remove" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:20px;padding:0;line-height:1">×</button>
+      </div>`;}).join('');
   window.gpRecalc();
+}
+window.gpAddSize=function(){_gpSyncSizesFromDOM();_gpSizes.push({size:'',bundles:''});_gpRenderSizes();};
+window.gpRemoveSize=function(i){_gpSyncSizesFromDOM();_gpSizes.splice(i,1);if(!_gpSizes.length)_gpSizes=[{size:'',bundles:''}];_gpRenderSizes();};
+window.gpRecalc=function(){
+  let tot=0,tb=0;
+  document.querySelectorAll('#gp-sizes .gps-row').forEach(r=>{
+    const arr=_gpParseBundles(r.querySelector('.gps-bundles')?.value);const q=arr.reduce((a,b)=>a+b,0);
+    tot+=q;tb+=arr.length;
+    const nc=r.querySelector('.gps-nb');if(nc)nc.textContent=arr.length||'—';
+    const qc=r.querySelector('.gps-qty');if(qc)qc.textContent=q?q.toLocaleString():'—';
+  });
+  const tu=document.getElementById('gp-t-units');if(tu)tu.textContent=tot.toLocaleString()+' pcs';
+  const tbd=document.getElementById('gp-t-bundles');if(tbd)tbd.textContent=tb.toLocaleString();
+  if(window.gpSaleRecalc)window.gpSaleRecalc();
 };
 
 window.onGPTypeChange=function(){
@@ -460,7 +478,7 @@ function _gpPopulateSaleAccounts(){
 window.gpSaleRecalc=function(){
   const kind=_gpTypeKind(_gpType);let qty=0;
   if(kind==='fabric')qty=parseFloat(document.getElementById('gp-fab-qty')?.value)||0;
-  else if(kind==='garments')document.querySelectorAll('#gp-body tr').forEach(r=>{qty+=parseFloat(r.querySelector('input[data-role="units"]')?.value)||0;});
+  else if(kind==='garments')document.querySelectorAll('#gp-sizes .gps-row').forEach(r=>{qty+=_gpParseBundles(r.querySelector('.gps-bundles')?.value).reduce((a,b)=>a+b,0);});
   else document.querySelectorAll('#gp-item-body tr').forEach(r=>{const i=r.querySelectorAll('input');qty+=parseFloat(i[1]?.value)||0;});
   const rate=parseFloat(document.getElementById('gp-sale-rate')?.value)||0;
   const tot=Math.round(qty*rate);
@@ -567,9 +585,13 @@ window.submitGP=async function(){
       const anyRet=assetItems.some(i=>i.returnable);
       payload={...base,gpType:'item',assetItems,boras:'0',items:[],totalUnits:assetItems.reduce((s,i)=>s+(i.qty||0),0),totalWeight:0,expectReturn:reason==='process'&&anyRet};
     }else{
-      const items=[];document.querySelectorAll('#gp-body tr').forEach(r=>{const sz=(r.querySelector('input[type="text"]')?.value||'').trim();if(sz)items.push({size:sz,units:parseFloat(r.querySelector('input[data-role="units"]')?.value)||0,weight:parseFloat(r.querySelector('input[data-role="weight"]')?.value)||0});});
-      if(!items.length){showToast('Add at least one size row.',true);return;}
-      payload={...base,gpType:'garments',boras:document.getElementById('gp-boras')?.value||'0',totalUnits:items.reduce((s,r)=>s+r.units,0),totalWeight:items.reduce((s,r)=>s+r.weight,0).toFixed(1),items,expectReturn:reason==='process'};
+      _gpSyncSizesFromDOM();
+      const items=_gpSizes.map(s=>({size:(s.size||'').trim(),bundles:_gpParseBundles(s.bundles)}))
+        .filter(s=>s.size&&s.bundles.length)
+        .map(s=>({...s,bundleCount:s.bundles.length,units:s.bundles.reduce((a,b)=>a+b,0)}));
+      if(!items.length){showToast('Add at least one size with bundles.',true);return;}
+      const totalBundles=items.reduce((s,r)=>s+r.bundleCount,0);
+      payload={...base,gpType:'garments',boras:document.getElementById('gp-boras')?.value||'0',totalUnits:items.reduce((s,r)=>s+r.units,0),totalBundles,totalWeight:0,items,expectReturn:reason==='process'};
     }
     if(isSale){
       const rate=parseFloat(document.getElementById('gp-sale-rate')?.value)||0;
@@ -607,7 +629,7 @@ window.switchGPTab=function(tab){
   if(tab==='outward'){
     gpRowIdx=0;
     el.innerHTML=renderOutward();
-    ['XS','S','M','L','XL','2XL'].forEach(s=>window.addGPRow(s,'',''));
+    _gpSizes=['XS','S','M','L','XL','2XL'].map(s=>({size:s,bundles:''}));_gpRenderSizes();
     window.onGPTypeChange();
     renderGPPage();
   }else if(tab==='returns'){
