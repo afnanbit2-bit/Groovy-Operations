@@ -1480,7 +1480,7 @@ function _fabRegRows(issues){
       ${sizes?`<div style="font-size:12px;color:var(--muted);margin-top:7px">Cut by size: ${sizes}</div>`:''}
       ${g.ribWeight?`<div style="font-size:12px;color:#7c3aed;margin-top:5px;font-weight:600">+ Rib: ${_gpEsc(g.ribType||'')} ${g.ribGsm||0}gsm ${_gpEsc(g.ribColor||'')} · ${(g.ribWeight||0).toFixed(2)} kg · ${g.ribRolls||0} rolls${g.ribPct?` (${g.ribPct}%)`:''}</div>`:''}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;flex-wrap:wrap">
-        <div style="font-size:11px;color:var(--muted)">Issued by ${_gpEsc(g.issuer||g.name||'')}</div>
+        <div style="font-size:11px;color:var(--muted)">Issued by ${_gpEsc(g.issuer||g.name||'')}${g.cutMaster?` · Cut by <strong style="color:var(--text)">${_gpEsc(g.cutMaster)}</strong>`:''}</div>
         ${['owner','manager'].includes(session.role)?`<div style="display:flex;gap:6px">
           <button class="btn-outline" style="font-size:11px;padding:3px 12px" onclick="window.fabRegEdit('${_gpEsc(g.id||'')}')">Edit</button>
           <button class="btn-outline" style="font-size:11px;padding:3px 12px;color:#dc2626;border-color:#fca5a5" onclick="window.fabRegDeleteOne('${_gpEsc(g.id||'')}')">Delete</button>
@@ -1598,6 +1598,13 @@ window.fabRegEdit=function(gpId){
       <div class="field" style="flex:1"><label>Article name</label><input id="fed-article" value="${_gpEsc(g.articleName||'')}" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
       <div class="field" style="flex:1"><label>Article code</label><input id="fed-code" value="${_gpEsc(g.articleCode||'')}" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
     </div>
+    <div class="field"><label>Cutting master</label>
+      <select id="fed-cutmaster" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box">
+        <option value="">Select cutting master…</option>
+        <option value="Hassan"${g.cutMaster==='Hassan'?' selected':''}>Hassan</option>
+        <option value="Alam"${g.cutMaster==='Alam'?' selected':''}>Alam</option>
+      </select>
+    </div>
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.04em;margin:6px 0 6px">Cutting — bundles per size</div>
     <div id="fed-sizes"></div>
     <button type="button" class="btn-outline" style="font-size:12px;padding:5px 12px;margin-top:6px" onclick="window.fabRegAddEditSize()">+ Add size</button>
@@ -1640,6 +1647,7 @@ window._fabRegSaveEdit=async function(gpId){
   const po=(document.getElementById('fed-po')?.value||'').trim();
   const articleName=(document.getElementById('fed-article')?.value||'').trim();
   const articleCode=(document.getElementById('fed-code')?.value||'').trim();
+  const cutMaster=document.getElementById('fed-cutmaster')?.value||'';
   const sizeBreakdown=_fabEditSizes
     .map(s=>({size:(s.size||'').trim(),bundles:_fabParseBundles(s.bundles)}))
     .filter(s=>s.size||s.bundles.length)
@@ -1649,7 +1657,7 @@ window._fabRegSaveEdit=async function(gpId){
   const avgConsumption=cutQty>0?parseFloat((_fabEditFabUsed/cutQty).toFixed(4)):0;
   if(!_fabBusyStart('Saving…'))return;
   try{
-    await updateDoc(doc(db,'gatepasses',gpId),{poId:po,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName}`,sizeBreakdown,cutQty,plannedQty:cutQty,totalBundles,avgConsumption,totalUnits:cutQty,editedAt:Date.now(),editedBy:session.name});
+    await updateDoc(doc(db,'gatepasses',gpId),{poId:po,articleName,articleCode,cutMaster,spec:`PO ${po} · ${articleCode||articleName}`,sizeBreakdown,cutQty,plannedQty:cutQty,totalBundles,avgConsumption,totalUnits:cutQty,editedAt:Date.now(),editedBy:session.name});
     await logActivity('Fabric issue edited',`${gpId} · PO ${po} · ${cutQty} pcs by ${session.name}`).catch(()=>{});
     showToast('Entry updated ✓');
   }catch(e){showToast('Save failed: '+e.message,true);_fabBusyEnd();return;}
@@ -1660,7 +1668,7 @@ window._fabRegSaveEdit=async function(gpId){
 window.fabExportIssueRegistry=function(){
   const issues=_fabIssueRecords();
   if(!issues.length){showToast('Nothing to export.',true);return;}
-  const header=['Date','GP','PO','Article','Code','Fabric','GSM','Color','Pcs cut','Bundles','Fabric used','Unit','Rolls','Avg/unit','Cut by size (bundles)','Rib type','Rib kg','Rib %','Issued by'];
+  const header=['Date','GP','PO','Article','Code','Fabric','GSM','Color','Pcs cut','Bundles','Fabric used','Unit','Rolls','Avg/unit','Cut by size (bundles)','Rib type','Rib kg','Rib %','Cutting master','Issued by'];
   const bstr=s=>Array.isArray(s.bundles)?s.bundles.join('-'):`${s.perBundle||0}x${s.bundles||0}`;
   const rows=issues.map(g=>[
     g.date||'',g.id||'',g.poId||'',g.articleName||'',g.articleCode||'',
@@ -1669,14 +1677,14 @@ window.fabExportIssueRegistry=function(){
     g.avgConsumption||0,
     (g.sizeBreakdown||[]).filter(s=>s.qty).map(s=>`${s.size||'?'}:${s.qty}[${bstr(s)}]`).join(' | '),
     g.ribType?`${g.ribType} ${g.ribGsm||0}gsm ${g.ribColor||''}`:'',g.ribWeight||0,g.ribPct||0,
-    g.issuer||g.name||''
+    g.cutMaster||'',g.issuer||g.name||''
   ]);
   // totals row
   const tot=['TOTAL','','','','','','','',
     issues.reduce((n,g)=>n+(g.plannedQty||0),0),
     issues.reduce((n,g)=>n+(g.totalBundles||0),0),
     issues.reduce((n,g)=>n+(g.fabricQty||0),0),'','','','',
-    '',issues.reduce((n,g)=>n+(g.ribWeight||0),0),'',''];
+    '',issues.reduce((n,g)=>n+(g.ribWeight||0),0),'','',''];
   _fabXlsx([header,...rows,[],tot],'Fabric Issues','fabric-issue-registry');
   showToast('Exported ✓');
 };
@@ -1864,7 +1872,14 @@ function renderFabricIssueTab(){
     </div>
   </div>
   <div class="card"><div class="card-title">Cutting <span style="font-weight:400;color:var(--muted);font-size:11px">quantity after cutting · one number per bundle (e.g. 9-8-6-7)</span></div>
-    <div id="fab-iss-sizes"></div>
+    <div class="field" style="max-width:280px"><label>Cutting master *</label>
+      <select id="fab-iss-cutmaster" style="width:100%;font-size:15px;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box">
+        <option value="">Select cutting master…</option>
+        <option value="Hassan">Hassan</option>
+        <option value="Alam">Alam</option>
+      </select>
+    </div>
+    <div id="fab-iss-sizes" style="margin-top:12px"></div>
     <button type="button" class="btn-outline" style="font-size:12px;padding:6px 12px;margin-top:8px" onclick="window.fabIssueAddSize()">+ Add size</button>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px">
       <div class="field" style="flex:1;min-width:120px;margin:0"><label>Total quantity cut</label>
@@ -2155,6 +2170,8 @@ window.submitFabricIssue=async function(){
     .map(s=>({...s,bundleCount:s.bundles.length,qty:s.bundles.reduce((a,b)=>a+b,0)}));
   const cutQty=sizeBreakdown.reduce((n,s)=>n+s.qty,0);
   const totalBundles=sizeBreakdown.reduce((n,s)=>n+s.bundleCount,0);
+  const cutMaster=document.getElementById('fab-iss-cutmaster')?.value||'';
+  if(!cutMaster){showToast('Select the cutting master (Hassan or Alam).',true);return;}
   if(!cutQty){ if(!confirm('No cut quantities entered. Issue anyway?'))return; }
   const rollCodes=_fabIssueRolls.map(r=>r.rollCode);
   const fabUnit=stock.unit||'kg';
@@ -2177,7 +2194,7 @@ window.submitFabricIssue=async function(){
     // (per-bundle size breakdown, qty AFTER cutting), bundles, fabric used and
     // the auto avg consumption all live here. plannedQty kept = cutQty for
     // existing totals; cutQty/fabricUsed explicit for clarity.
-    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,fabricUsed:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stock._id,sizeBreakdown,cutQty,plannedQty:cutQty,totalBundles,avgConsumption,consumptionUnit,...ribData,boras:'0',items:[],totalUnits:cutQty,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
+    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,fabricUsed:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stock._id,sizeBreakdown,cutQty,plannedQty:cutQty,totalBundles,avgConsumption,consumptionUnit,cutMaster,...ribData,boras:'0',items:[],totalUnits:cutQty,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
     // Gate pass + inventory decrement commit in ONE transaction.
     await _fabInvUpsert({fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:fabUnit,removeRollCodes:rollCodes,reservePO:po,note:`Issued to factory for ${po} by ${session.name}`,sourceCol:'gatepasses',sourceId:gpId,extraWrites:[{ref:doc(db,'gatepasses',gpId),data:payload}]});
     // Decrement the rib inventory too (separate combo → separate transaction).
