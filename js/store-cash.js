@@ -245,6 +245,7 @@ function _cashApplyLedgerDelta(entry,dir){
   const a=entry.amount||0;
   const k=entry.kind;
   if(k==='topup')                          _cashApplyDelta(entry.account,+a*dir);
+  else if(k==='income')                    _cashApplyDelta(entry.account,+a*dir);
   else if(k==='expense')                   _cashApplyDelta(entry.account,-a*dir);
   else if(k==='vendor_payment')            _cashApplyDelta(entry.account,-a*dir);
   else if(k==='issue')                     _cashApplyDelta(entry.account,-a*dir);
@@ -271,6 +272,7 @@ function _cashRecalcBalances(){
   for(const r of rows){
     const amt=r.amount||0;
     if(r.kind==='topup')                          bals[r.account]=(bals[r.account]||0)+amt;
+    else if(r.kind==='income')                    bals[r.account]=(bals[r.account]||0)+amt;
     else if(r.kind==='expense')                   bals[r.account]=(bals[r.account]||0)-amt;
     else if(r.kind==='vendor_payment')            bals[r.account]=(bals[r.account]||0)-amt;
     else if(r.kind==='issue')                     bals[r.account]=(bals[r.account]||0)-amt;

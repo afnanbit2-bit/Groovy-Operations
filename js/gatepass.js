@@ -4,6 +4,48 @@
    window by the bootstrap module in index.html before __bootApp() runs.
    Code is byte-identical to the original single-file index.html. */
 
+// ════════════════════════════════════════════════════════════════════════
+//  Gate Pass v2 — a pass is defined by WHAT leaves (type) × WHY (reason).
+//  Everything here is ADDITIVE: legacy passes (gpType 'garments'/'fabric',
+//  no gpReason) keep rendering + reconciling exactly as before. New optional
+//  fields: gpReason, expectReturn, expectedBack, sourceVendor, assetItems[],
+//  sale{}, returnedQty, returnStatus, closedAt.
+// ════════════════════════════════════════════════════════════════════════
+const GP_TYPE_OPTS=[['garments','Garments — by units (pcs)'],['fabric_kg','Fabric — by weight (kg)'],['item','Item / asset']];
+const GP_REASON_OPTS={
+  garments:[['process','For process — expect return'],['sale','Sale'],['other','Other / permanent out']],
+  fabric_kg:[['process','For process (wash / dye) — expect return'],['return_vendor','Return to vendor'],['sale','Sale — walk-in'],['other','Other']],
+  item:[['process','Sent out (repair) — expect return'],['other','Permanent out']]
+};
+const GP_REASON_LABEL={process:'For process',return_vendor:'Return to vendor',sale:'Sale',other:'Other'};
+const GP_RET_TOL={kg:0.02,pcs:0.01,qty:0};   // ±2% wash/dye · ±1% garments · exact items
+let _gpType='garments',_gpReason='other',_gpItemIdx=0,_gpRetSelGp=null;
+function _gpTypeKind(t){return (t==='fabric_kg'||t==='fabric_m')?'fabric':(t==='item'?'item':'garments');}
+function _gpUnitForPass(p){return p.gpType==='fabric'?(p.fabricUnit||'kg'):(p.gpType==='item'?'qty':'pcs');}
+function _gpRetUnitKey(p){return p.gpType==='fabric'?'kg':(p.gpType==='item'?'qty':'pcs');}
+function _gpSentQtyForPass(p){
+  if(p.gpType==='fabric')return parseFloat(p.fabricQty)||0;
+  if(p.gpType==='item')return (p.assetItems||[]).filter(i=>i.returnable).reduce((s,i)=>s+(parseFloat(i.qty)||0),0);
+  return parseFloat(p.totalUnits)||0;
+}
+function _gpTolFor(p){const s=_gpSentQtyForPass(p);return +(s*(GP_RET_TOL[_gpRetUnitKey(p)]||0)).toFixed(2);}
+function _gpReturnedSoFar(gpId){return allReturns.filter(r=>r.gpNum===gpId).reduce((s,r)=>s+(parseFloat(r.returnedQty)||0),0);}
+function _gpDaysOut(p){const t=p.ts||0;if(!t)return 0;return Math.floor((Date.now()-t)/86400000);}
+function _gpIsOverdue(p){if(!p.expectedBack)return false;const d=new Date(p.expectedBack+'T23:59:59');return Date.now()>d.getTime();}
+// A pass is "outstanding" when it expects a return and isn't fully back yet.
+function _gpIsOutstanding(p){
+  if(!p.expectReturn)return false;
+  const sent=_gpSentQtyForPass(p);if(sent<=0)return false;
+  return _gpReturnedSoFar(p.id) < sent - _gpTolFor(p);
+}
+function _gpReturnStatus(p){
+  const sent=_gpSentQtyForPass(p),back=_gpReturnedSoFar(p.id),tol=_gpTolFor(p);
+  if(back>sent+tol)return'Overage';
+  if(back>=sent-tol)return'Complete';
+  if(_gpIsOverdue(p))return'Overdue';
+  if(back>0)return'Partial';
+  return'Open';
+}
 
 window.filterGPArticle=function(q){
   const dd=document.getElementById('gp-article-dd');if(!dd)return;
@@ -37,8 +79,11 @@ function renderOutward(){
       <div class="field"><label>Date</label><input id="gp-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
       <div class="field"><label>Pass type *</label>
         <select id="gp-type" onchange="window.onGPTypeChange()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%">
-          <option value="garments">Garments — by units (pcs)</option>
+          ${GP_TYPE_OPTS.map(([v,l])=>`<option value="${v}"${v===_gpType?' selected':''}>${l}</option>`).join('')}
         </select>
+      </div>
+      <div class="field" style="grid-column:1/-1"><label>Reason *</label>
+        <div id="gp-reason-chips" style="display:flex;gap:6px;flex-wrap:wrap"></div>
       </div>
       <div class="field" style="position:relative"><label>Article name *</label>
         <input id="gp-article" placeholder="Type to search e.g. GH001 or Black Hoodie…" autocomplete="off" oninput="window.filterGPArticle(this.value)" onfocus="window.filterGPArticle(this.value)">
@@ -61,6 +106,9 @@ function renderOutward(){
       </div>
       <div class="field"><label>Purpose</label><input id="gp-purpose" placeholder="Reason for dispatch"></div>
       <div class="field"><label>Time</label><input id="gp-time" type="time" value="${new Date().toTimeString().slice(0,5)}"></div>
+      <div class="field" id="gp-vendor-field" style="display:none;grid-column:1/-1"><label>Purchased from — vendor to return to *</label><input id="gp-src-vendor" placeholder="Auto-suggested from the fabric's receipt — e.g. Gul Enterprises"></div>
+      <div class="field" id="gp-expback-field" style="display:none"><label>Expected back by</label><input id="gp-exp-back" type="date">
+        <div style="font-size:10px;color:var(--muted);margin-top:3px">Flags the pass overdue if it hasn't fully returned by this date.</div></div>
     </div>
   </div>
   <div class="card" id="gp-garments-card"><div class="card-title">Units by size</div>
@@ -100,7 +148,28 @@ function renderOutward(){
       <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Rolls</div><div id="gp-fab-rolls-display" style="font-size:18px;font-weight:700;color:#fff">0</div></div>
     </div>
   </div>
-  <button class="btn-primary" onclick="window.submitGP()">Submit gate pass</button>
+  <div class="card" id="gp-item-card" style="display:none"><div class="card-title">Items / assets</div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:300px">
+      <thead><tr style="background:var(--dark)"><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Item</th><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Qty</th><th style="padding:8px 10px;text-align:center;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Returnable</th><th style="width:36px"></th></tr></thead>
+      <tbody id="gp-item-body"></tbody>
+    </table></div>
+    <button onclick="window.addGPItemRow()" style="width:100%;padding:9px;background:none;border:none;border-top:1px solid var(--border);font-size:12px;color:var(--muted);cursor:pointer;font-family:inherit">+ Add item</button>
+    <div style="font-size:11px;color:var(--muted);margin-top:8px">Tick <b>Returnable</b> for anything that must come back (e.g. a machine sent for repair) — it becomes an outstanding line in Returns. One-way items don't.</div>
+  </div>
+  <div class="card" id="gp-sale-card" style="display:none"><div class="card-title">Sale — walk-in customer</div>
+    <div class="form-grid">
+      <div class="field"><label>Customer name *</label><input id="gp-sale-cust" placeholder="Walk-in customer name"></div>
+      <div class="field"><label>Phone</label><input id="gp-sale-phone" placeholder="Optional"></div>
+      <div class="field"><label>Rate (Rs per <span id="gp-sale-unit">kg</span>) *</label><input id="gp-sale-rate" type="number" min="0" step="0.01" placeholder="0" oninput="window.gpSaleRecalc()"></div>
+      <div class="field"><label>Payment received into *</label><select id="gp-sale-acc" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%"></select></div>
+    </div>
+    <div style="background:var(--dark);border-radius:9px;padding:12px;margin-top:12px;display:flex;justify-content:space-between;align-items:center;color:#fff">
+      <div style="font-size:11px;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.05em">Bill total</div>
+      <div id="gp-sale-total" style="font-size:20px;font-weight:800">Rs 0</div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:8px">On submit: prints the bill, deducts the picked rolls, and posts the amount as income to the Store Cash Ledger under “Fabric sale”.</div>
+  </div>
+  <button class="btn-primary" onclick="window.submitGP()" id="gp-submit-btn">Submit gate pass</button>
   <div class="card" style="margin-top:12px"><div class="card-title">Gate passes <span id="gp-count-lbl" style="font-weight:400;color:var(--muted);font-size:12px"></span></div>
     <div id="gp-list-body"></div>
     <div id="gp-pagination" style="display:flex;align-items:center;justify-content:center;gap:10px;padding-top:10px;border-top:1px solid #f5f5f5;margin-top:4px"></div>
@@ -108,39 +177,73 @@ function renderOutward(){
 }
 
 function renderReturnsTab(){
-  const today=new Date().toISOString().split('T')[0];
-  return`<div class="card"><div class="card-title">Record return</div>
-    <div class="form-grid">
-      <div class="field"><label>Original GP Number *</label>
-        <div style="display:flex;gap:8px;align-items:flex-end">
-          <input id="ret-gp-num" placeholder="e.g. GP-001" style="flex:1" oninput="window.lookupReturnGP()">
-          <span id="ret-gp-status" style="font-size:11px;padding-bottom:10px;white-space:nowrap;flex-shrink:0"></span>
-        </div>
-      </div>
-      <div class="field"><label>Return Date</label><input id="ret-date" type="date" value="${today}"></div>
-      <div class="field" style="grid-column:1/-1"><label>Vendor *</label>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
-          <button type="button" class="dest-chip" onclick="window.setRetVendor('Febknit')">Febknit</button>
-          <button type="button" class="dest-chip" onclick="window.setRetVendor('Al Hamd')">Al Hamd</button>
-          <button type="button" class="dest-chip" onclick="window.setRetVendor('Al Nisa')">Al Nisa</button>
-        </div>
-        <input id="ret-vendor" placeholder="Or type vendor name…">
-      </div>
-      <div class="field"><label>Article Name</label><input id="ret-article" placeholder="Auto-filled or enter manually"></div>
-      <div class="field"><label>Sent Qty (pcs)</label><input id="ret-sent-qty" type="number" min="0" placeholder="Auto-filled or enter" oninput="window.calcReturnStatus()"></div>
-      <div class="field"><label>Returned Qty (pcs) *</label><input id="ret-qty" type="number" min="0" placeholder="0" oninput="window.calcReturnStatus()"></div>
-      <div class="field"><label>Received By</label><input value="${session.name}" readonly style="background:#f0f0f0;cursor:default"></div>
-    </div>
-    <div id="ret-status-preview" style="margin:10px 0"></div>
-    <div id="ret-reason-wrap" style="display:none;margin-bottom:8px" class="field"><label>Reason for shortage *</label><input id="ret-reason" placeholder="Required for incomplete returns"></div>
-    <div class="field" style="margin-top:4px"><label>Notes</label><textarea id="ret-notes" rows="2" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%;resize:vertical" placeholder="Optional notes"></textarea></div>
-    <button class="btn-primary" style="margin-top:10px" onclick="window.submitReturn()">Save Return</button>
+  return`<div class="card"><div class="card-title">Outstanding · awaiting return</div>
+    <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:12px">A pass sent <b>For process</b> (wash / dye / stitch) or a returnable item stays open until it's fully back — it can return in <b>several partial loads across days</b>. Tap one to record a load.</div>
+    <div class="field" style="margin-bottom:12px"><label>Find by GP number</label><input id="ret-gp-find" placeholder="e.g. GP-124" oninput="window.gpFindReturn(this.value)"></div>
+    <div id="gp-outstanding"></div>
   </div>
-  <div class="card" style="margin-top:12px"><div class="card-title">Returns history</div>
-    <div id="ret-list-body"></div>
-  </div>
+  <div class="card" id="gp-ret-form-card" style="display:none"></div>
+  <div class="card"><div class="card-title">Returns history</div><div id="ret-list-body"></div></div>
   <div style="height:80px"></div>`;
 }
+function _gpRenderOutstanding(){
+  const host=document.getElementById('gp-outstanding');if(!host)return;
+  const open=allPasses.filter(_gpIsOutstanding).sort((a,b)=>(a.ts||0)-(b.ts||0));
+  if(!open.length){host.innerHTML='<div class="empty" style="padding:16px;text-align:center">Nothing outstanding — every process pass is back. ✅</div>';return;}
+  host.innerHTML=open.map(p=>{
+    const unit=_gpRetUnitKey(p),sent=_gpSentQtyForPass(p),back=_gpReturnedSoFar(p.id),bal=+(sent-back).toFixed(2);
+    const st=_gpReturnStatus(p);
+    const stColor=st==='Overdue'?'#dc2626':(st==='Partial'?'#92400e':'#6b7280');
+    const stBg=st==='Overdue'?'#fee2e2':(st==='Partial'?'#fef3c7':'#f3f4f6');
+    const age=_gpIsOverdue(p)?'<span style="color:#dc2626;font-weight:700">overdue</span>':`<span style="color:var(--muted)">${_gpDaysOut(p)}d out</span>`;
+    const pct=sent>0?Math.min(100,Math.round(back/sent*100)):0;
+    const uL=unit==='qty'?'':(' '+unit);
+    return`<div onclick="window.gpPickReturn('${p.id}')" style="border:1px solid ${_gpRetSelGp===p.id?'#111':'var(--border)'};border-radius:11px;padding:11px 13px;margin-bottom:9px;cursor:pointer">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <div><span style="font-weight:700;color:var(--red);font-size:12px">${p.id}</span> <span style="font-size:13px;font-weight:500">${_gpEsc(p.article||'')}</span><div style="font-size:11px;color:var(--muted);margin-top:1px">${_gpEsc(p.dest||'')} · ${GP_REASON_LABEL[p.gpReason]||''}</div></div>
+        <div style="text-align:right"><span style="font-size:11px;font-weight:800;padding:2px 8px;border-radius:7px;background:${stBg};color:${stColor}">${st}</span><div style="font-size:11px;margin-top:3px">${age}</div></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:9px;color:var(--muted)">
+        <span>sent <b style="color:var(--text)">${sent}${uL}</b></span><span>back <b style="color:var(--text)">${back}${uL}</b></span><span>still out <b style="color:#dc2626">${bal}${uL}</b></span>
+      </div>
+      <div style="height:7px;border-radius:5px;background:#f0f0f0;overflow:hidden;margin-top:8px"><div style="height:100%;width:${pct}%;background:#16a34a"></div></div>
+    </div>`;
+  }).join('');
+}
+window.gpFindReturn=function(v){const gp=(v||'').trim().toUpperCase();const p=allPasses.find(x=>x.id===gp);if(p&&_gpIsOutstanding(p))window.gpPickReturn(p.id);};
+window.gpPickReturn=function(gpId){
+  const p=allPasses.find(x=>x.id===gpId);if(!p){showToast('Pass not found.',true);return;}
+  if(!p.expectReturn){showToast('This pass does not expect a return.',true);return;}
+  _gpRetSelGp=gpId;_gpRenderOutstanding();
+  const unit=_gpRetUnitKey(p),sent=_gpSentQtyForPass(p),back=_gpReturnedSoFar(gpId),bal=+(sent-back).toFixed(2),tol=_gpTolFor(p);
+  const uL=unit==='qty'?'units':unit;
+  const hist=allReturns.filter(r=>r.gpNum===gpId).sort((a,b)=>(b.ts||0)-(a.ts||0));
+  const histHtml=hist.length?`<div style="margin-top:12px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:5px">Return loads</div>${hist.map(h=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--muted)">${h.date||''} · ${_gpEsc(h.receivedBy||'')}</span><span style="font-weight:700;color:#16a34a">+${h.returnedQty} ${uL}</span></div>`).join('')}</div>`:'';
+  const card=document.getElementById('gp-ret-form-card');if(!card)return;
+  card.style.display='block';
+  card.innerHTML=`<div class="card-title">Record return · ${p.id}</div>
+    <div style="background:#f7f7f8;border-radius:9px;padding:11px 13px;font-size:12.5px;margin-bottom:12px">Sent <b>${sent} ${uL}</b> · already back <b>${back} ${uL}</b> · <b style="color:#dc2626">${bal} ${uL}</b> still out. Tolerance ±${tol} ${uL}.</div>
+    <div class="form-grid">
+      <div class="field"><label>Return date</label><input id="ret2-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+      <div class="field"><label>This load (${uL}) *</label><input id="ret2-qty" type="number" min="0" step="0.01" placeholder="0" oninput="window.gpRetPreview()"></div>
+    </div>
+    <div id="ret2-preview" style="margin:8px 0"></div>
+    <div class="field"><label>Notes</label><input id="ret2-notes" placeholder="Optional — e.g. first wash lot"></div>
+    <button class="btn-primary" style="margin-top:10px" onclick="window.submitReturn()">Add return</button>
+    ${histHtml}`;
+  card.scrollIntoView({behavior:'smooth',block:'nearest'});
+};
+window.gpRetPreview=function(){
+  const p=allPasses.find(x=>x.id===_gpRetSelGp);if(!p)return;
+  const q=parseFloat(document.getElementById('ret2-qty')?.value)||0;
+  const sent=_gpSentQtyForPass(p),back=_gpReturnedSoFar(p.id),tol=_gpTolFor(p),unit=_gpRetUnitKey(p);
+  const uL=unit==='qty'?'units':unit;const el=document.getElementById('ret2-preview');if(!el)return;
+  if(!q){el.innerHTML='';return;}
+  const nb=back+q;
+  if(nb>sent+tol)el.innerHTML=`<div style="background:#fee2e2;border-radius:8px;padding:9px 11px;font-size:12px;color:#991b1b"><b>Overage</b> — ${(nb-sent).toFixed(2)} ${uL} more than sent. Verify.</div>`;
+  else if(nb>=sent-tol)el.innerHTML=`<div style="background:#dcfce7;border-radius:8px;padding:9px 11px;font-size:12px;color:#166534"><b>Will complete</b> — ${nb.toFixed(2)}/${sent} ${uL} back, pass closes.</div>`;
+  else el.innerHTML=`<div style="background:#fef3c7;border-radius:8px;padding:9px 11px;font-size:12px;color:#92400e"><b>Stays open</b> — ${(sent-nb).toFixed(2)} ${uL} still out after this load.</div>`;
+};
 
 function renderGPPage(){
   const PER=15;
@@ -156,11 +259,13 @@ function renderGPPage(){
   body.innerHTML=slice.map(p=>{
     const pend=_gpPendingFor('gp',p.id);
     const pendBadge=pend?`<span title="${pend.action==='delete'?'Delete':'Edit'} pending approval" style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${pend.action==='delete'?'Delete':'Edit'} pending</span>`:'';
-    const isFab=p.gpType==='fabric';
-    const fabBadge=isFab?`<span style="display:inline-block;background:#dbeafe;color:#1e40af;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">Fabric</span>`:'';
-    const qtyLabel=isFab?`${p.fabricQty||0} ${p.fabricUnit||'kg'}${p.rollsCount?` · ${p.rollsCount} rolls`:''}`:`${p.totalUnits||0} pcs`;
+    const isFab=p.gpType==='fabric',isItem=p.gpType==='item';
+    const typeBadge=isFab?`<span style="display:inline-block;background:#dbeafe;color:#1e40af;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">Fabric</span>`:(isItem?`<span style="display:inline-block;background:#ede9fe;color:#5b21b6;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">Item</span>`:'');
+    const reasonBadge=p.gpReason&&p.gpReason!=='other'?`<span style="display:inline-block;background:#f3f4f6;color:#374151;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${GP_REASON_LABEL[p.gpReason]||p.gpReason}</span>`:'';
+    const retBadge=p.expectReturn?(()=>{const st=_gpReturnStatus(p);const c=st==='Overdue'?'#dc2626':(st==='Partial'?'#92400e':'#6b7280');const b=st==='Overdue'?'#fee2e2':(st==='Partial'?'#fef3c7':'#f3f4f6');return `<span style="display:inline-block;background:${b};color:${c};font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px">${st}</span>`;})():(p.returnStatus==='Complete'?`<span style="display:inline-block;background:#dcfce7;color:#166534;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px">Returned</span>`:'');
+    const qtyLabel=isFab?`${p.fabricQty||0} ${p.fabricUnit||'kg'}${p.rollsCount?` · ${p.rollsCount} rolls`:''}`:(isItem?`${(p.assetItems||[]).length} item${(p.assetItems||[]).length===1?'':'s'}`:`${p.totalUnits||0} pcs`);
     return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5;flex-wrap:wrap;gap:8px">
-    <div><div style="font-weight:700;color:var(--red);font-size:11px">${p.id}${fabBadge}${pendBadge}</div><div style="font-size:13px;font-weight:500">${p.article||'—'}${p.spec?` <span style="font-weight:400;color:var(--muted)">· ${_gpEsc(p.spec)}</span>`:''}</div><div style="font-size:11px;color:var(--muted)">${p.name||'—'} · ${p.date||''} · ${p.dest||'—'}</div></div>
+    <div><div style="font-weight:700;color:var(--red);font-size:11px">${p.id}${typeBadge}${reasonBadge}${retBadge}${pendBadge}</div><div style="font-size:13px;font-weight:500">${p.article||'—'}${p.spec?` <span style="font-weight:400;color:var(--muted)">· ${_gpEsc(p.spec)}</span>`:''}</div><div style="font-size:11px;color:var(--muted)">${p.name||'—'} · ${p.date||''} · ${p.dest||'—'}</div></div>
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div style="text-align:right;font-size:12px;color:var(--muted);font-weight:500">${qtyLabel}</div>
     <button class="btn-pdf" onclick="window.generateGPPdf('${p.id}')">⬇ PDF</button>
     <button onclick="window.editGP('${p.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
@@ -182,7 +287,7 @@ window.addGPRow=function(size='',units='',weight=''){
   tr.innerHTML=`<td style="padding:4px 6px;width:28px"><input type="checkbox" class="gp-size-chk" style="cursor:pointer;width:15px;height:15px"></td><td style="padding:4px 6px"><input type="text" value="${size}" placeholder="e.g. M" style="width:68px;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" onchange="window.gpRecalc()"></td><td style="padding:4px 6px"><input type="number" data-role="units" value="${units}" min="0" placeholder="0" style="width:68px;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" oninput="window.gpRecalc()"></td><td style="padding:4px 6px"><input type="number" data-role="weight" value="${weight}" min="0" step="0.1" placeholder="0" style="width:68px;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" oninput="window.gpRecalc()"></td><td><button onclick="document.getElementById('${id}').remove();window.gpRecalc()" style="background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:2px 6px">×</button></td>`;
   document.getElementById('gp-body')?.appendChild(tr);window.gpRecalc();
 };
-window.gpRecalc=function(){let u=0,w=0;document.querySelectorAll('#gp-body tr').forEach(r=>{const ui=r.querySelector('input[data-role="units"]');const wi=r.querySelector('input[data-role="weight"]');u+=parseFloat(ui?.value)||0;w+=parseFloat(wi?.value)||0;});document.getElementById('gp-t-units').textContent=Math.round(u)+' pcs';document.getElementById('gp-t-weight').textContent=w.toFixed(1)+' kg';};
+window.gpRecalc=function(){let u=0,w=0;document.querySelectorAll('#gp-body tr').forEach(r=>{const ui=r.querySelector('input[data-role="units"]');const wi=r.querySelector('input[data-role="weight"]');u+=parseFloat(ui?.value)||0;w+=parseFloat(wi?.value)||0;});document.getElementById('gp-t-units').textContent=Math.round(u)+' pcs';document.getElementById('gp-t-weight').textContent=w.toFixed(1)+' kg';if(window.gpSaleRecalc)window.gpSaleRecalc();};
 window._gpDeleteSelectedSizeRows=function(){
   const checked=[...document.querySelectorAll('#gp-body .gp-size-chk:checked')];
   if(!checked.length)return showToast('No rows selected — check a row first.',true);
@@ -193,22 +298,80 @@ window._gpDeleteSelectedSizeRows=function(){
 
 window.onGPTypeChange=function(){
   const t=document.getElementById('gp-type')?.value||'garments';
+  _gpType=t;const kind=_gpTypeKind(t);
   const garmCard=document.getElementById('gp-garments-card');
   const fabCard=document.getElementById('gp-fabric-card');
-  const isFab=t==='fabric_kg'||t==='fabric_m';
-  if(garmCard)garmCard.style.display=isFab?'none':'block';
-  if(fabCard)fabCard.style.display=isFab?'block':'none';
-  if(isFab){
-    const unit=t==='fabric_kg'?'kg':'meters';
-    const labelTxt=t==='fabric_kg'?'weight (kg)':'length (meters)';
-    const totLbl=t==='fabric_kg'?'weight':'length';
-    const lblEl=document.getElementById('gp-fab-unit-label');if(lblEl)lblEl.textContent=labelTxt;
-    const totLblEl=document.getElementById('gp-fab-tot-label');if(totLblEl)totLblEl.textContent=totLbl;
+  const itemCard=document.getElementById('gp-item-card');
+  if(garmCard)garmCard.style.display=(kind==='garments')?'block':'none';
+  if(fabCard)fabCard.style.display=(kind==='fabric')?'block':'none';
+  if(itemCard)itemCard.style.display=(kind==='item')?'block':'none';
+  if(kind==='fabric'){
+    const unit=t==='fabric_m'?'meters':'kg';
+    const lblEl=document.getElementById('gp-fab-unit-label');if(lblEl)lblEl.textContent=unit==='kg'?'weight (kg)':'length (meters)';
+    const totLblEl=document.getElementById('gp-fab-tot-label');if(totLblEl)totLblEl.textContent=unit==='kg'?'weight':'length';
     _populateFabStockSelect(unit);
     _gpOutwardFabRolls=[];
-    document.getElementById('gp-fab-rolls-pick-wrap').innerHTML='';
+    const w=document.getElementById('gp-fab-rolls-pick-wrap');if(w)w.innerHTML='';
     window.gpFabRecalc();
   }
+  if(kind==='item'){const b=document.getElementById('gp-item-body');if(b&&!b.children.length){window.addGPItemRow();window.addGPItemRow();}}
+  const opts=GP_REASON_OPTS[t]||GP_REASON_OPTS.garments;
+  if(!opts.some(o=>o[0]===_gpReason))_gpReason=opts[0][0];
+  _gpRenderReasonChips();_gpApplyReasonFields();
+};
+
+function _gpRenderReasonChips(){
+  const host=document.getElementById('gp-reason-chips');if(!host)return;
+  const opts=GP_REASON_OPTS[_gpType]||GP_REASON_OPTS.garments;
+  host.innerHTML=opts.map(([v,l])=>`<button type="button" onclick="window.gpSetReason('${v}')" style="border:1px solid ${_gpReason===v?'#111':'var(--border)'};background:${_gpReason===v?'#111':'#fff'};color:${_gpReason===v?'#fff':'var(--text)'};border-radius:999px;padding:6px 13px;font-size:12px;cursor:pointer;font-family:inherit">${l}</button>`).join('');
+}
+window.gpSetReason=function(r){_gpReason=r;_gpRenderReasonChips();_gpApplyReasonFields();};
+
+function _gpApplyReasonFields(){
+  const kind=_gpTypeKind(_gpType);
+  const vend=document.getElementById('gp-vendor-field');
+  const exp=document.getElementById('gp-expback-field');
+  const sale=document.getElementById('gp-sale-card');
+  if(vend)vend.style.display=(_gpReason==='return_vendor'&&kind==='fabric')?'block':'none';
+  if(exp){
+    exp.style.display=(_gpReason==='process')?'block':'none';
+    const inp=document.getElementById('gp-exp-back');
+    if(inp&&_gpReason==='process'&&!inp.value){const d=new Date();d.setDate(d.getDate()+7);inp.value=d.toISOString().split('T')[0];}
+  }
+  const showSale=(_gpReason==='sale');
+  if(sale){sale.style.display=showSale?'block':'none';if(showSale)_gpPopulateSaleAccounts();}
+  const unitEl=document.getElementById('gp-sale-unit');if(unitEl)unitEl.textContent=(kind==='fabric')?(_gpType==='fabric_m'?'meter':'kg'):(kind==='item'?'item':'pc');
+  const btn=document.getElementById('gp-submit-btn');if(btn)btn.textContent=showSale?'Submit pass + print bill':'Submit gate pass';
+  if(window.gpSaleRecalc)window.gpSaleRecalc();
+}
+
+window.addGPItemRow=function(name='',qty='',returnable=false){
+  _gpItemIdx++;const id='gpi'+_gpItemIdx;const tb=document.getElementById('gp-item-body');if(!tb)return;
+  const tr=document.createElement('tr');tr.id=id;tr.style.borderBottom='1px solid #f5f5f5';
+  tr.innerHTML=`<td style="padding:4px 8px"><input type="text" value="${_gpEsc(name)}" placeholder="e.g. Office table" style="width:100%;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" oninput="window.gpSaleRecalc&&window.gpSaleRecalc()"></td>
+    <td style="padding:4px 8px"><input type="number" min="0" value="${qty}" placeholder="1" style="width:70px;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" oninput="window.gpSaleRecalc&&window.gpSaleRecalc()"></td>
+    <td style="padding:4px 8px;text-align:center"><input type="checkbox" class="gp-item-ret" ${returnable?'checked':''} style="width:15px;height:15px;cursor:pointer"></td>
+    <td><button onclick="document.getElementById('${id}').remove()" style="background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:2px 6px">×</button></td>`;
+  tb.appendChild(tr);
+};
+
+function _gpPopulateSaleAccounts(){
+  const sel=document.getElementById('gp-sale-acc');if(!sel||sel.dataset.filled)return;
+  let accs=(typeof allCashAccounts!=='undefined'&&allCashAccounts&&allCashAccounts.length)?allCashAccounts:[];
+  if(!accs.length&&typeof CASH_ACCOUNTS!=='undefined')accs=CASH_ACCOUNTS.map(a=>({_id:a.key,label:a.label}));
+  sel.innerHTML=(accs.length?accs:[{_id:'cash',label:'Cash drawer'}]).map(a=>`<option value="${a._id||a.key}">${_gpEsc(a.label||a.key)}</option>`).join('');
+  sel.dataset.filled='1';
+}
+
+window.gpSaleRecalc=function(){
+  const kind=_gpTypeKind(_gpType);let qty=0;
+  if(kind==='fabric')qty=parseFloat(document.getElementById('gp-fab-qty')?.value)||0;
+  else if(kind==='garments')document.querySelectorAll('#gp-body tr').forEach(r=>{qty+=parseFloat(r.querySelector('input[data-role="units"]')?.value)||0;});
+  else document.querySelectorAll('#gp-item-body tr').forEach(r=>{const i=r.querySelectorAll('input');qty+=parseFloat(i[1]?.value)||0;});
+  const rate=parseFloat(document.getElementById('gp-sale-rate')?.value)||0;
+  const tot=Math.round(qty*rate);
+  const el=document.getElementById('gp-sale-total');if(el)el.textContent='Rs '+tot.toLocaleString('en-US');
+  return tot;
 };
 
 function _populateFabStockSelect(unit){
@@ -258,7 +421,7 @@ window.onGPFabRollToggle=function(){
   });
   const qtyInp=document.getElementById('gp-fab-qty');if(qtyInp)qtyInp.value=totQty.toFixed(2);
   const rollsInp=document.getElementById('gp-fab-rolls');if(rollsInp)rollsInp.value=_gpOutwardFabRolls.length;
-  window.gpFabRecalc();
+  window.gpFabRecalc();if(window.gpSaleRecalc)window.gpSaleRecalc();
 };
 
 window.gpFabRecalc=function(){
@@ -275,39 +438,68 @@ window.gpFabRecalc=function(){
 window.submitGP=async function(){
   const article=document.getElementById('gp-article')?.value.trim(),dest=document.getElementById('gp-dest')?.value.trim();
   const spec=document.getElementById('gp-spec')?.value.trim()||'';
-  if(!article||!dest){showToast('Article and destination required.',true);return;}
-  if(!spec){showToast('Specification is required.',true);return;}
-  const gpType=document.getElementById('gp-type')?.value||'garments';
-  const isFabric=gpType==='fabric_kg'||gpType==='fabric_m';
-  let payload;
-  let inventoryUpdate=null;
+  const type=document.getElementById('gp-type')?.value||'garments';
+  const kind=_gpTypeKind(type);
+  const reason=_gpReason;
+  const isSale=reason==='sale';
+  const cust=document.getElementById('gp-sale-cust')?.value.trim()||'';
+  if(!article){showToast('Article / description required.',true);return;}
+  if(isSale){if(!cust){showToast('Customer name required for a sale.',true);return;}}
+  else if(!dest){showToast('Destination required.',true);return;}
+  if(kind!=='item'&&!spec){showToast('Specification is required.',true);return;}
+  if(reason==='return_vendor'&&kind==='fabric'&&!(document.getElementById('gp-src-vendor')?.value.trim())){showToast('Enter the vendor to return to.',true);return;}
+  let payload,inventoryUpdate=null,saleObj=null;
   try{
     const next=await getNextId('gatepasses');
     const gpId='GP-'+String(next).padStart(3,'0');
-    const base={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,spec,dest,date:document.getElementById('gp-date')?.value,time:document.getElementById('gp-time')?.value,purpose:document.getElementById('gp-purpose')?.value?.trim()||''};
-    if(isFabric){
-      const fabUnit=gpType==='fabric_m'?'meters':'kg';
+    const expectedBack=(reason==='process')?(document.getElementById('gp-exp-back')?.value||''):'';
+    const destFinal=isSale?(cust||dest):dest;
+    const base={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,spec,dest:destFinal,date:document.getElementById('gp-date')?.value,time:document.getElementById('gp-time')?.value,purpose:document.getElementById('gp-purpose')?.value?.trim()||'',gpReason:reason,expectedBack};
+    if(kind==='fabric'){
+      const fabUnit=type==='fabric_m'?'meters':'kg';
       const stockKey=document.getElementById('gp-fab-stock')?.value||'';
       if(!stockKey){showToast('Pick a fabric stock row.',true);return;}
-      if(!_gpOutwardFabRolls.length){showToast('Select at least one roll to issue.',true);return;}
+      if(!_gpOutwardFabRolls.length){showToast('Select at least one roll.',true);return;}
       const stock=allFabricInventory.find(s=>s._id===stockKey);
       if(!stock){showToast('Fabric stock not found.',true);return;}
       const fabQty=parseFloat(document.getElementById('gp-fab-qty')?.value)||0;
-      const rollsCount=_gpOutwardFabRolls.length;
       const rollCodes=_gpOutwardFabRolls.map(r=>r.rollCode);
-      payload={...base,gpType:'fabric',fabricUnit:fabUnit,fabricQty:fabQty,rollsCount,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stockKey,boras:'0',items:[],totalUnits:0,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
-      inventoryUpdate={fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:stock.unit||fabUnit,removeRollCodes:rollCodes,note:`Outward to ${dest}`,sourceCol:'gatepasses',sourceId:gpId};
+      payload={...base,gpType:'fabric',fabricUnit:fabUnit,fabricQty:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stockKey,boras:'0',items:[],totalUnits:0,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0,expectReturn:reason==='process'};
+      if(reason==='return_vendor')payload.sourceVendor=document.getElementById('gp-src-vendor')?.value.trim()||'';
+      inventoryUpdate={fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:stock.unit||fabUnit,removeRollCodes:rollCodes,reason,note:`GP ${gpId} · ${GP_REASON_LABEL[reason]||reason} → ${destFinal}`,sourceCol:'gatepasses',sourceId:gpId};
+    }else if(kind==='item'){
+      const assetItems=[];document.querySelectorAll('#gp-item-body tr').forEach(r=>{const i=r.querySelectorAll('input');const nm=i[0]?.value.trim();if(nm)assetItems.push({name:nm,qty:parseFloat(i[1]?.value)||0,returnable:!!r.querySelector('.gp-item-ret')?.checked});});
+      if(!assetItems.length){showToast('Add at least one item.',true);return;}
+      const anyRet=assetItems.some(i=>i.returnable);
+      payload={...base,gpType:'item',assetItems,boras:'0',items:[],totalUnits:assetItems.reduce((s,i)=>s+(i.qty||0),0),totalWeight:0,expectReturn:reason==='process'&&anyRet};
     }else{
       const items=[];document.querySelectorAll('#gp-body tr').forEach(r=>{const i=r.querySelectorAll('input'),sz=i[0]?.value.trim();if(sz)items.push({size:sz,units:parseFloat(i[1]?.value)||0,weight:parseFloat(i[2]?.value)||0});});
       if(!items.length){showToast('Add at least one size row.',true);return;}
-      payload={...base,gpType:'garments',boras:document.getElementById('gp-boras')?.value||'0',totalUnits:items.reduce((s,r)=>s+r.units,0),totalWeight:items.reduce((s,r)=>s+r.weight,0).toFixed(1),items};
+      payload={...base,gpType:'garments',boras:document.getElementById('gp-boras')?.value||'0',totalUnits:items.reduce((s,r)=>s+r.units,0),totalWeight:items.reduce((s,r)=>s+r.weight,0).toFixed(1),items,expectReturn:reason==='process'};
+    }
+    if(isSale){
+      const rate=parseFloat(document.getElementById('gp-sale-rate')?.value)||0;
+      if(rate<=0){showToast('Enter a sale rate.',true);return;}
+      const qtyForSale=(kind==='fabric')?(payload.fabricQty||0):(payload.totalUnits||0);
+      saleObj={customer:cust,phone:document.getElementById('gp-sale-phone')?.value.trim()||'',rate,amount:Math.round(qtyForSale*rate),account:document.getElementById('gp-sale-acc')?.value||'',unit:(kind==='fabric')?(payload.fabricUnit||'kg'):'pcs'};
+      payload.sale=saleObj;payload.expectReturn=false;
     }
     await setDoc(doc(db,'gatepasses',gpId),payload);
-    if(inventoryUpdate){
-      await _fabInvUpsert(inventoryUpdate);
+    if(inventoryUpdate)await _fabInvUpsert(inventoryUpdate);
+    if(isSale&&saleObj&&saleObj.amount>0){
+      try{
+        if(typeof loadStoreCashData==='function'&&typeof cashDataLoaded!=='undefined'&&!cashDataLoaded)await loadStoreCashData();
+        if(typeof _cashPost==='function'){
+          const row=await _cashPost({kind:'income',account:saleObj.account,amount:saleObj.amount,category:'Fabric sale',note:`${gpId} · ${saleObj.customer} · ${article}`,ref:gpId,by:session.name,ts:Date.now(),date:base.date||(typeof todayStr==='function'?todayStr():'')});
+          if(row&&row._id)await updateDoc(doc(db,'gatepasses',gpId),{cashLedgerId:row._id});
+        }
+      }catch(e){showToast('Pass saved, but cash post failed: '+e.message,true);}
     }
-    await logActivity('Gate pass issued',`${gpId} — ${article} to ${dest}${isFabric?' (fabric · '+_gpOutwardFabRolls.length+' rolls)':''}`);
-    showToast(gpId+' issued ✓');await loadData();window.showPage('gatepass');
+    await logActivity('Gate pass issued',`${gpId} — ${article} · ${GP_REASON_LABEL[reason]||reason} → ${destFinal}${kind==='fabric'?' (fabric · '+_gpOutwardFabRolls.length+' rolls)':''}${isSale?' · sale Rs '+(saleObj?saleObj.amount:0):''}`);
+    await loadData();
+    if(isSale&&typeof window.generateGPPdf==='function'){showToast(gpId+' issued ✓ · printing bill');window.generateGPPdf(gpId);}
+    else showToast(gpId+' issued ✓');
+    window.showPage('gatepass');
   }catch(e){showToast('Error: '+e.message,true);}
 };
 
@@ -322,82 +514,48 @@ window.switchGPTab=function(tab){
     gpRowIdx=0;
     el.innerHTML=renderOutward();
     ['XS','S','M','L','XL','2XL'].forEach(s=>window.addGPRow(s,'',''));
+    window.onGPTypeChange();
     renderGPPage();
   }else if(tab==='returns'){
+    _gpRetSelGp=null;
     el.innerHTML=renderReturnsTab();
+    _gpRenderOutstanding();
     renderReturnsList();
   }
 };
 
-// ── Returns ──
-window.setRetVendor=function(v){document.getElementById('ret-vendor').value=v;};
-
-window.lookupReturnGP=function(){
-  const gpNum=(document.getElementById('ret-gp-num')?.value||'').trim().toUpperCase();
-  const statusEl=document.getElementById('ret-gp-status');
-  if(!gpNum){if(statusEl)statusEl.textContent='';return;}
-  const gp=allPasses.find(p=>p.id===gpNum);
-  if(gp){
-    const artEl=document.getElementById('ret-article');
-    const sentEl=document.getElementById('ret-sent-qty');
-    if(artEl&&!artEl.value)artEl.value=gp.article||'';
-    if(sentEl&&!sentEl.value)sentEl.value=gp.totalUnits||'';
-    if(statusEl){statusEl.textContent='✓ Found';statusEl.style.color='var(--green)';}
-    window.calcReturnStatus();
-  }else{
-    if(statusEl){statusEl.textContent='Not found';statusEl.style.color='var(--muted)';}
-  }
-};
-
-window.calcReturnStatus=function(){
-  const sent=parseFloat(document.getElementById('ret-sent-qty')?.value)||0;
-  const returned=parseFloat(document.getElementById('ret-qty')?.value)||0;
-  const preview=document.getElementById('ret-status-preview');
-  const reasonWrap=document.getElementById('ret-reason-wrap');
-  if(!preview)return;
-  if(!sent||!returned){preview.innerHTML='';if(reasonWrap)reasonWrap.style.display='none';return;}
-  const tolerance=Math.ceil(sent*0.01);
-  if(returned>sent){
-    preview.innerHTML=`<div style="background:#fee2e2;border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:8px"><span class="ret-badge ret-overage">Overage 🔴</span><span style="font-size:12px;color:#991b1b">Returned ${returned-sent} more than sent. Please verify.</span></div>`;
-    if(reasonWrap)reasonWrap.style.display='none';
-  }else if(returned>=sent-tolerance){
-    preview.innerHTML=`<div style="background:#EFEFEF;border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:8px"><span class="ret-badge ret-complete">Complete ✅</span><span style="font-size:12px;color:#111">Return complete. Tolerance ±${tolerance} pcs.</span></div>`;
-    if(reasonWrap)reasonWrap.style.display='none';
-  }else{
-    const shortage=sent-returned;
-    preview.innerHTML=`<div style="background:#fee2e2;border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:8px"><span class="ret-badge ret-incomplete">Incomplete Lot 🔴</span><span style="font-size:12px;color:#991b1b">Short by ${shortage} pcs. Reason required.</span></div>`;
-    if(reasonWrap)reasonWrap.style.display='block';
-  }
-};
-
+// ── Returns — cumulative, multi-day, unit-aware ──
 window.submitReturn=async function(){
-  const gpNum=(document.getElementById('ret-gp-num')?.value||'').trim().toUpperCase();
-  const vendor=(document.getElementById('ret-vendor')?.value||'').trim();
-  const article=(document.getElementById('ret-article')?.value||'').trim();
-  const sentQty=parseFloat(document.getElementById('ret-sent-qty')?.value)||0;
-  const returnedQty=parseFloat(document.getElementById('ret-qty')?.value)||0;
-  const date=document.getElementById('ret-date')?.value||'';
-  const notes=(document.getElementById('ret-notes')?.value||'').trim();
-  const reason=(document.getElementById('ret-reason')?.value||'').trim();
-  if(!gpNum||!vendor||!returnedQty){showToast('GP number, vendor, and returned qty are required.',true);return;}
-  const tolerance=Math.ceil(sentQty*0.01);
-  let status,shortage=0;
-  if(returnedQty>sentQty){status='Overage';}
-  else if(returnedQty>=sentQty-tolerance){status='Complete';}
-  else{
-    status='Incomplete Lot';shortage=sentQty-returnedQty;
-    if(!reason){showToast('Reason is required for incomplete returns.',true);return;}
-  }
+  const p=allPasses.find(x=>x.id===_gpRetSelGp);
+  if(!p){showToast('Pick an outstanding pass first.',true);return;}
+  const qty=parseFloat(document.getElementById('ret2-qty')?.value)||0;
+  if(qty<=0){showToast('Enter the returned quantity.',true);return;}
+  const date=document.getElementById('ret2-date')?.value||'';
+  const notes=(document.getElementById('ret2-notes')?.value||'').trim();
+  const unit=_gpRetUnitKey(p),sent=_gpSentQtyForPass(p),tol=_gpTolFor(p);
+  const prevBack=_gpReturnedSoFar(p.id),newBack=+(prevBack+qty).toFixed(2);
+  const status=newBack>sent+tol?'Overage':(newBack>=sent-tol?'Complete':'Partial');
+  const closed=(status==='Complete'||status==='Overage');
   try{
     const next=await getNextId('returns');
     const retId='RET-'+String(next).padStart(3,'0');
-    const payload={id:retId,ts:Date.now(),gpNum,vendor,article,sentQty,returnedQty,shortage,status,reason:status==='Incomplete Lot'?reason:'',date,receivedBy:session.name,notes};
-    await setDoc(doc(db,'returns',retId),payload);
-    await logActivity('Return recorded',`${retId} — ${vendor} returned ${returnedQty}/${sentQty} pcs for ${gpNum}`);
-    showToast(retId+' saved ✓');
-    const snap=await getDocs(query(collection(db,'returns'),orderBy('ts','desc')));
-    allReturns=snap.docs.map(d=>d.data());
-    window.switchGPTab('returns');
+    const rec={id:retId,ts:Date.now(),gpNum:p.id,vendor:p.dest||'',article:p.article||'',unit,sentQty:sent,returnedQty:qty,cumulative:newBack,shortage:Math.max(0,+(sent-newBack).toFixed(2)),status,date,receivedBy:session.name,notes};
+    await setDoc(doc(db,'returns',retId),rec);
+    await updateDoc(doc(db,'gatepasses',p.id),{returnedQty:newBack,returnStatus:status,expectReturn:closed?false:true,closedAt:closed?Date.now():null});
+    // Fabric sent for a process → re-add this load's weight to inventory.
+    if(p.gpType==='fabric'&&p.fabricType&&p.gpReason==='process'){
+      try{
+        const rc=`RET-${p.id}-R${allReturns.filter(r=>r.gpNum===p.id).length+1}`;
+        await _fabInvUpsert({fabType:p.fabricType,gsm:p.fabricGsm,color:p.fabricColor,unit:p.fabricUnit||'kg',addRolls:[{rollCode:rc,weight:qty,gsm:p.fabricGsm}],note:`Returned from ${p.dest||'process'} · ${p.id}`,sourceCol:'gatepasses',sourceId:p.id});
+      }catch(e){showToast('Return saved, but stock re-add failed: '+e.message,true);}
+    }
+    await logActivity('Return recorded',`${retId} — ${p.id} +${qty} ${unit} (${newBack}/${sent}) ${status} by ${session.name}`);
+    showToast(`${retId} saved ✓ · ${status}`);
+    await loadData();
+    try{const snap=await getDocs(query(collection(db,'returns'),orderBy('ts','desc')));allReturns=snap.docs.map(d=>d.data());}catch(e){}
+    _gpRenderOutstanding();renderReturnsList();
+    if(closed){_gpRetSelGp=null;const c=document.getElementById('gp-ret-form-card');if(c)c.style.display='none';}
+    else window.gpPickReturn(p.id);
   }catch(e){showToast('Error: '+e.message,true);}
 };
 
@@ -405,27 +563,30 @@ function renderReturnsList(){
   const body=document.getElementById('ret-list-body');
   if(!body)return;
   if(!allReturns.length){body.innerHTML='<div class="empty">No returns yet.</div>';return;}
-  const sorted=[...allReturns.filter(r=>r.status==='Incomplete Lot'),...allReturns.filter(r=>r.status!=='Incomplete Lot')];
+  const sorted=[...allReturns].sort((a,b)=>(b.ts||0)-(a.ts||0));
   body.innerHTML=sorted.map(r=>{
-    const bc=r.status==='Complete'?'ret-complete':r.status==='Overage'?'ret-overage':'ret-incomplete';
-    const icon=r.status==='Complete'?'✅':'🔴';
+    const st=r.status||'';
+    const color=st==='Complete'?'#166534':(st==='Overage'?'#991b1b':(st==='Partial'?'#92400e':(st==='Incomplete Lot'?'#991b1b':'#6b7280')));
+    const bg=st==='Complete'?'#dcfce7':(st==='Overage'?'#fee2e2':(st==='Partial'?'#fef3c7':(st==='Incomplete Lot'?'#fee2e2':'#f3f4f6')));
+    const uL=r.unit==='qty'?'':(' '+(r.unit||'pcs'));
     const pend=_gpPendingFor('return',r.id);
     const pendBadge=pend?`<span title="${pend.action==='delete'?'Delete':'Edit'} pending approval" style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px">${pend.action==='delete'?'Delete':'Edit'} pending</span>`:'';
+    const cum=r.cumulative!=null?`${r.cumulative}/${r.sentQty||0}${uL}`:`${r.returnedQty||0}/${r.sentQty||0}${uL}`;
     return`<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid #f5f5f5;gap:10px;flex-wrap:wrap">
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <span style="font-weight:700;color:var(--red);font-size:11px">${r.id}</span>
-          <span class="ret-badge ${bc}">${r.status} ${icon}</span>
+          <span style="font-size:11px;font-weight:800;padding:2px 8px;border-radius:6px;background:${bg};color:${color}">${st}</span>
           ${pendBadge}
         </div>
-        <div style="font-size:13px;font-weight:500;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.vendor} · ${r.article||'—'}</div>
-        <div style="font-size:11px;color:var(--muted)">${r.gpNum||'—'} · ${r.date||''} · ${r.receivedBy||'—'}</div>
-        ${r.reason?`<div style="font-size:11px;color:#dc2626;margin-top:2px">Reason: ${r.reason}</div>`:''}
+        <div style="font-size:13px;font-weight:500;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_gpEsc(r.vendor||'')} · ${_gpEsc(r.article||'—')}</div>
+        <div style="font-size:11px;color:var(--muted)">${r.gpNum||'—'} · ${r.date||''} · ${_gpEsc(r.receivedBy||'—')}</div>
+        ${r.reason?`<div style="font-size:11px;color:#dc2626;margin-top:2px">Reason: ${_gpEsc(r.reason)}</div>`:''}
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
         <div style="text-align:right;font-size:12px;color:var(--muted)">
-          <div style="font-weight:600">${r.returnedQty||0} / ${r.sentQty||0} pcs</div>
-          ${r.shortage?`<div style="font-size:10px;color:#dc2626">Short: ${r.shortage}</div>`:''}
+          <div style="font-weight:700;color:#16a34a">+${r.returnedQty||0}${uL}</div>
+          <div style="font-size:10px">${cum}</div>
         </div>
         <div style="display:flex;gap:6px">
           <button onclick="window.editReturn('${r.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
