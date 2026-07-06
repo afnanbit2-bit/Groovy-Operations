@@ -39,6 +39,15 @@
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
+# ── ZKTeco attendance clock push (ADMS/iclock) ─────────────────
+# The clock's firmware hardcodes the /iclock/ path; route it to the
+# receiver Function. MUST sit above the SPA catch-all below.
+[[redirects]]
+  from = "/iclock/*"
+  to = "/.netlify/functions/iclock/:splat"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
