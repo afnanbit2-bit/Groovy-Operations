@@ -1543,32 +1543,58 @@ function renderFabricIssueRegistry(){
 window.fabRegPage=function(n){_fabRegPage=Math.max(0,n);const el=document.getElementById('fab-reg-list');if(el){el.innerHTML=_fabRegListHTML();el.scrollIntoView({behavior:'smooth',block:'start'});}};
 window.fabRegSetPer=function(v){_fabRegPer=parseInt(v)||12;_fabRegPage=0;const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();};
 window.fabRegFilter=function(q){_fabRegQ=q||'';_fabRegPage=0;const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();};
+// Reverse a fabric issue: flip its issued rolls (each fabric combo + rib) back
+// to in_stock. Handles multi-fabric issues (fabrics[]), legacy single-fabric
+// (top-level fabric*/rollCodes) and the matching rib. Returns rolls restocked.
+async function _fabRestockIssue(g){
+  const combos=[];
+  if(Array.isArray(g.fabrics)&&g.fabrics.length){
+    for(const f of g.fabrics)combos.push({fabType:f.fabType,gsm:f.gsm,color:f.color,unit:f.unit||g.fabricUnit||'kg',codes:f.rollCodes||[]});
+  }else if((g.rollCodes||[]).length){
+    combos.push({fabType:g.fabricType,gsm:g.fabricGsm,color:g.fabricColor,unit:g.fabricUnit||'kg',codes:g.rollCodes||[]});
+  }
+  if((g.ribRollCodes||[]).length&&g.ribType){
+    combos.push({fabType:g.ribType,gsm:g.ribGsm,color:g.ribColor,unit:'kg',codes:g.ribRollCodes});
+  }
+  let restocked=0;
+  for(const c of combos){
+    if(!c.codes.length||!c.fabType)continue;
+    try{
+      await _fabInvUpsert({fabType:c.fabType,gsm:c.gsm,color:c.color,unit:c.unit,returnRollCodes:c.codes,note:`Issue ${g.id} deleted — returned to stock by ${session.name}`,sourceCol:'gatepasses',sourceId:g.id});
+      restocked+=c.codes.length;
+    }catch(e){console.warn('[fabric] restock on delete failed',c,e);}
+  }
+  return restocked;
+}
 window.fabRegDeleteAll=async function(){
   if(!['owner','manager'].includes(session.role)){showToast('Owners/managers only.',true);return;}
   const issues=_fabIssueRecords();
   if(!issues.length){showToast('Nothing to delete.');return;}
-  if(!confirm(`Delete ALL ${issues.length} fabric issue record(s)? This clears the issue log only — fabric inventory is NOT restored. Cannot be undone.`))return;
-  if(!_fabBusyStart('Deleting…'))return;
-  let n=0;
+  if(!confirm(`Delete ALL ${issues.length} fabric issue record(s)?\n\nEvery issued roll will be RETURNED to fabric inventory (stock restored), then the records are removed. Cannot be undone.`))return;
+  if(!_fabBusyStart('Returning to stock…'))return;
+  let n=0,rolls=0;
   for(const g of issues){
     const key=g.id||g._id;
     if(!key)continue;
-    try{await deleteDoc(doc(db,'gatepasses',key));n++;}catch(e){console.warn('[fabric] delete issue failed',key,e);}
+    try{rolls+=await _fabRestockIssue(g);await deleteDoc(doc(db,'gatepasses',key));n++;}catch(e){console.warn('[fabric] delete issue failed',key,e);}
   }
-  await logActivity('Fabric issues cleared',`${n} fabric issue record(s) deleted by ${session.name}`).catch(()=>{});
+  await logActivity('Fabric issues cleared',`${n} record(s) deleted by ${session.name} · ${rolls} roll(s) returned to stock`).catch(()=>{});
   _fabBusyEnd();
-  showToast(`${n} fabric issue(s) deleted ✓`);
+  showToast(`${n} issue(s) deleted ✓ · ${rolls} roll(s) returned`);
   if(typeof loadData==='function')await loadData();
   window.switchFabTab('registry');
 };
 window.fabRegDeleteOne=async function(gpId){
   if(!['owner','manager'].includes(session.role)){showToast('Owners/managers only.',true);return;}
   const g=_fabIssueRecords().find(x=>x.id===gpId);if(!g){showToast('Entry not found.',true);return;}
-  if(!confirm(`Delete fabric issue ${gpId} (PO ${g.poId||'—'})? Clears the log entry only — fabric inventory is NOT restored.`))return;
-  if(!_fabBusyStart('Deleting…'))return;
-  try{ await deleteDoc(doc(db,'gatepasses',gpId));
-    await logActivity('Fabric issue deleted',`${gpId} · PO ${g.poId||''} removed by ${session.name}`).catch(()=>{});
-    showToast('Entry deleted ✓');
+  const rollN=(g.rollCodes||[]).length+(g.ribRollCodes||[]).length;
+  if(!confirm(`Delete fabric issue ${gpId} (PO ${g.poId||'—'})?\n\nThe ${rollN} issued roll(s) will be RETURNED to fabric inventory (stock restored), then this entry is removed.`))return;
+  if(!_fabBusyStart('Returning to stock…'))return;
+  try{
+    const restocked=await _fabRestockIssue(g);
+    await deleteDoc(doc(db,'gatepasses',gpId));
+    await logActivity('Fabric issue deleted',`${gpId} · PO ${g.poId||''} deleted by ${session.name} · ${restocked} roll(s) returned to stock`).catch(()=>{});
+    showToast(`Deleted ✓ · ${restocked} roll(s) returned to stock`);
   }catch(e){showToast('Delete failed: '+e.message,true);}
   _fabBusyEnd();
   if(typeof loadData==='function')await loadData();
