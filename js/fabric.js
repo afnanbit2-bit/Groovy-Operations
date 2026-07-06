@@ -2436,18 +2436,36 @@ function _fabPeriodRange(){
 // Display label + colour per movement subtype (returns are purple).
 function _fabActionMeta(m){
   const s=m.subtype||'';
-  if(s==='receipt')return{label:'Received',color:'#16a34a',sign:'+'};
-  if(s==='issue')return{label:'Issued to factory',color:'#dc2626',sign:'−'};
-  if(s==='return_out')return{label:'Returned to supplier',color:'#7c3aed',sign:'−'};
-  if(s==='return_in')return{label:'Returned to stock',color:'#16a34a',sign:'+'};
-  if(s==='reserve')return{label:'Reserved',color:'#d97706',sign:''};
-  if(s==='release')return{label:'Released',color:'#0891b2',sign:''};
-  if(s==='delete')return{label:'Deleted',color:'#6b7280',sign:'−'};
-  if(s==='edit')return{label:'Edited',color:'#2563eb',sign:''};
-  return{label:(m.type||'move').toUpperCase(),color:'var(--muted)',sign:''};
+  if(s==='receipt')return{label:'Received',color:'#16a34a',bg:'#f0fdf4',sign:'+'};
+  if(s==='issue')return{label:'Issued to factory',color:'#dc2626',bg:'#fef2f2',sign:'−'};
+  if(s==='return_out')return{label:'Returned to supplier',color:'#7c3aed',bg:'#faf5ff',sign:'−'};
+  if(s==='return_in')return{label:'Returned to stock',color:'#16a34a',bg:'#f0fdf4',sign:'+'};
+  if(s==='reserve')return{label:'Reserved',color:'#d97706',bg:'#fffbeb',sign:'◆'};
+  if(s==='release')return{label:'Released',color:'#0891b2',bg:'#ecfeff',sign:'○'};
+  if(s==='delete')return{label:'Deleted',color:'#6b7280',bg:'#f9fafb',sign:'✕'};
+  if(s==='edit')return{label:'Edited',color:'#2563eb',bg:'#eff6ff',sign:'✎'};
+  return{label:(m.type||'move').toUpperCase(),color:'#6b7280',bg:'#f5f5f5',sign:'•'};
 }
 function _fabParsePO(note){const m=/for\s+(\S+)\s+by/i.exec(note||'');return m?m[1]:'';}
+// Break a movement note into a PO chip, supplier chip and any real extra note,
+// so standard machine-generated notes don't duplicate the row's own labels.
+function _fabLogDetail(m){
+  const note=m.note||'';let po='',supplier='',extra='',mm;
+  if((mm=/for\s+(\S+)\s+by/i.exec(note)))po=mm[1];
+  if((mm=/from\s+(.+?)\s*$/i.exec(note))&&/^Receipt/i.test(note))supplier=mm[1].trim();
+  const isStd=/\bby\b/i.test(note)&&/^(Issued|Reserved|Released|Returned|Received)/i.test(note)||/^Receipt from/i.test(note);
+  if(note&&!isStd)extra=note;
+  return{po,supplier,extra};
+}
 function _fabFmtDT(ts){return new Date(ts).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'});}
+function _fabFmtTime(ts){return new Date(ts).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});}
+function _fabLogDayLabel(ts){
+  const d=new Date(ts),n=new Date(),s=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime();
+  const diff=Math.round((s(n)-s(d))/86400000);
+  if(diff===0)return 'Today';
+  if(diff===1)return 'Yesterday';
+  return d.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short',year:'2-digit'});
+}
 
 function renderFabricReportsTab(){
   const{from,to,label}=_fabPeriodRange();
@@ -2533,32 +2551,51 @@ window.fabRptSetDate=function(v){_fabRptDate=v;const m=document.getElementById('
 // ── Log tab — full, append-only, immutable audit of every fabric event ──
 function renderFabricLogTab(){
   const q=_fabLogQ.toLowerCase();
-  let movs=allFabricMovements.slice().sort((a,b)=>b.ts-a.ts);
-  if(_fabLogAction!=='all')movs=movs.filter(m=>(m.subtype||'')===_fabLogAction);
-  if(q)movs=movs.filter(m=>`${m.fabType||''} ${m.gsm||''} ${m.color||''} ${(m.rollCodes||[]).join(' ')} ${m.by||''} ${m.note||''}`.toLowerCase().includes(q));
+  // Apply the SEARCH filter first so the action-chip counts reflect the search.
+  let base=allFabricMovements.slice().sort((a,b)=>b.ts-a.ts);
+  if(q)base=base.filter(m=>`${m.fabType||''} ${m.gsm||''} ${m.color||''} ${(m.rollCodes||[]).join(' ')} ${m.by||''} ${m.note||''}`.toLowerCase().includes(q));
+  const counts={all:base.length};
+  for(const m of base){const s=m.subtype||'';counts[s]=(counts[s]||0)+1;}
+  let movs=(_fabLogAction!=='all')?base.filter(m=>(m.subtype||'')===_fabLogAction):base;
   const total=movs.length;
   const rows=movs.slice(0,400);
   const acts=[['all','All'],['receipt','Received'],['issue','Issued'],['return_out','Returned'],['reserve','Reserved'],['edit','Edited'],['delete','Deleted']];
-  const chip=(k,l)=>`<button onclick="window.fabLogSetAction('${k}')" style="padding:5px 11px;border:1px solid ${_fabLogAction===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabLogAction===k?'var(--dark)':'#fff'};color:${_fabLogAction===k?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${l}</button>`;
+  const chip=(k,l)=>{const on=_fabLogAction===k,c=counts[k]||0;
+    return`<button onclick="window.fabLogSetAction('${k}')" style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid ${on?'#111':'var(--border)'};border-radius:999px;background:${on?'#111':'#fff'};color:${on?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${l}<span style="font-size:10px;font-weight:700;opacity:${on?'.75':'.45'}">${c}</span></button>`;};
+  let lastDay='';
+  const body=rows.map(m=>{
+    const a=_fabActionMeta(m),{po,supplier,extra}=_fabLogDetail(m),codes=m.rollCodes||[];
+    const dl=_fabLogDayLabel(m.ts);
+    let head='';
+    if(dl!==lastDay){lastDay=dl;head=`<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:14px 2px 6px;border-bottom:1px solid var(--border);margin-bottom:2px">${dl}</div>`;}
+    return head+`<div style="display:flex;gap:11px;align-items:flex-start;padding:10px 4px;border-bottom:1px solid #f4f4f5">
+      <div style="width:30px;height:30px;border-radius:9px;background:${a.bg};color:${a.color};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0;margin-top:1px">${a.sign}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+          <span style="font-weight:700;font-size:13.5px;color:var(--text)">${_gpEsc(m.fabType||'—')} ${m.gsm||0}g ${_gpEsc(m.color||'')}</span>
+          <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:${a.color};background:${a.bg};padding:2px 7px;border-radius:6px">${a.label}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;font-size:11px;color:var(--muted)">
+          <span>${_fabFmtTime(m.ts)}</span>
+          ${po?`<span style="font-weight:700;color:var(--text);background:#f0f0f0;border-radius:5px;padding:1px 7px">PO ${_gpEsc(po)}</span>`:''}
+          ${supplier?`<span>from <span style="color:var(--text);font-weight:600">${_gpEsc(supplier)}</span></span>`:''}
+          <span>by ${_gpEsc(m.by||'—')}</span>
+        </div>
+        ${codes.length?`<div style="font-size:10px;color:#9ca3af;letter-spacing:.02em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:4px">${codes.slice(0,6).map(_gpEsc).join(' · ')}${codes.length>6?` +${codes.length-6} more`:''}</div>`:''}
+        ${extra?`<div style="font-size:11px;color:${a.color};margin-top:3px">${_gpEsc(extra)}</div>`:''}
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:14px;font-weight:800;color:${a.color};white-space:nowrap">${a.sign==='+'||a.sign==='−'?a.sign:''}${(m.qty||0).toFixed(2)}</div>
+        <div style="font-size:10px;color:var(--muted)">${m.unit||'kg'}</div>
+      </div>
+    </div>`;
+  }).join('');
   return`<div class="card"><div class="card-title">Audit log <span style="font-weight:400;color:var(--muted);font-size:11px">append-only · every fabric event · cannot be edited or deleted</span></div>
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;color:#065f46;font-size:11px;padding:7px 11px;border-radius:8px;margin-bottom:10px">🔒 Permanent record — who did what to which fabric, with date &amp; time. Entries can never be altered or removed.</div>
     <input id="fab-log-search" value="${_fabLogQ.replace(/"/g,'&quot;')}" oninput="window.fabLogSearch(this.value)" placeholder="Search fabric, roll, PO, person, note…" style="width:100%;padding:8px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;margin-bottom:10px">
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${acts.map(([k,l])=>chip(k,l)).join('')}</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${total} event${total===1?'':'s'}${total>400?' · showing latest 400 (refine with search)':''}</div>
-    ${rows.length?rows.map(m=>{
-      const a=_fabActionMeta(m);
-      return`<div style="display:flex;flex-direction:column;gap:2px;padding:8px 2px;border-bottom:1px solid #f5f5f5">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-size:11px;color:var(--muted);min-width:118px">${_fabFmtDT(m.ts)}</span>
-          <span style="font-weight:700;color:${a.color};font-size:12px;min-width:130px">${a.sign} ${a.label}</span>
-          <span style="flex:1;min-width:140px;font-size:12px">${_gpEsc(m.fabType||'—')} ${m.gsm||0}g ${_gpEsc(m.color||'')}</span>
-          <span style="font-size:11px;font-weight:600">${(m.qty||0).toFixed(2)} ${m.unit||'kg'}</span>
-          <span style="font-size:11px;color:var(--muted)">by ${_gpEsc(m.by||'—')}</span>
-        </div>
-        ${(m.rollCodes||[]).length?`<div style="font-size:10px;color:var(--muted);letter-spacing:.03em">${(m.rollCodes||[]).slice(0,6).map(_gpEsc).join(', ')}${m.rollCodes.length>6?` +${m.rollCodes.length-6}`:''}</div>`:''}
-        ${m.note?`<div style="font-size:11px;color:${a.color}">${_gpEsc(m.note)}</div>`:''}
-      </div>`;
-    }).join(''):'<div class="empty" style="padding:20px;text-align:center">No matching events.</div>'}
+    <div style="font-size:11px;color:var(--muted);margin-bottom:2px">${total} event${total===1?'':'s'}${total>400?' · showing latest 400 (refine with search)':''}</div>
+    ${rows.length?body:'<div class="empty" style="padding:20px;text-align:center">No matching events.</div>'}
   </div><div style="height:80px"></div>`;
 }
 
