@@ -68,6 +68,7 @@ function renderGatePass(){
   <div class="gp-tabs">
     <button class="gp-tab" id="gptab-outward" onclick="window.switchGPTab('outward')">Outward</button>
     <button class="gp-tab" id="gptab-returns" onclick="window.switchGPTab('returns')">Returns</button>
+    <button class="gp-tab" id="gptab-registry" onclick="window.switchGPTab('registry')">Registry</button>
   </div>
   <div id="gp-tab-content"></div>`;
 }
@@ -256,22 +257,7 @@ function renderGPPage(){
   const lbl=document.getElementById('gp-count-lbl');
   if(!body)return;
   if(lbl)lbl.textContent=total?`(${total} total)`:'';
-  body.innerHTML=slice.map(p=>{
-    const pend=_gpPendingFor('gp',p.id);
-    const pendBadge=pend?`<span title="${pend.action==='delete'?'Delete':'Edit'} pending approval" style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${pend.action==='delete'?'Delete':'Edit'} pending</span>`:'';
-    const isFab=p.gpType==='fabric',isItem=p.gpType==='item';
-    const typeBadge=isFab?`<span style="display:inline-block;background:#dbeafe;color:#1e40af;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">Fabric</span>`:(isItem?`<span style="display:inline-block;background:#ede9fe;color:#5b21b6;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">Item</span>`:'');
-    const reasonBadge=p.gpReason&&p.gpReason!=='other'?`<span style="display:inline-block;background:#f3f4f6;color:#374151;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${GP_REASON_LABEL[p.gpReason]||p.gpReason}</span>`:'';
-    const retBadge=p.expectReturn?(()=>{const st=_gpReturnStatus(p);const c=st==='Overdue'?'#dc2626':(st==='Partial'?'#92400e':'#6b7280');const b=st==='Overdue'?'#fee2e2':(st==='Partial'?'#fef3c7':'#f3f4f6');return `<span style="display:inline-block;background:${b};color:${c};font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px">${st}</span>`;})():(p.returnStatus==='Complete'?`<span style="display:inline-block;background:#dcfce7;color:#166534;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px">Returned</span>`:'');
-    const qtyLabel=isFab?`${p.fabricQty||0} ${p.fabricUnit||'kg'}${p.rollsCount?` · ${p.rollsCount} rolls`:''}`:(isItem?`${(p.assetItems||[]).length} item${(p.assetItems||[]).length===1?'':'s'}`:`${p.totalUnits||0} pcs`);
-    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5;flex-wrap:wrap;gap:8px">
-    <div><div style="font-weight:700;color:var(--red);font-size:11px">${p.id}${typeBadge}${reasonBadge}${retBadge}${pendBadge}</div><div style="font-size:13px;font-weight:500">${p.article||'—'}${p.spec?` <span style="font-weight:400;color:var(--muted)">· ${_gpEsc(p.spec)}</span>`:''}</div><div style="font-size:11px;color:var(--muted)">${p.name||'—'} · ${p.date||''} · ${p.dest||'—'}</div></div>
-    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div style="text-align:right;font-size:12px;color:var(--muted);font-weight:500">${qtyLabel}</div>
-    <button class="btn-pdf" onclick="window.generateGPPdf('${p.id}')">⬇ PDF</button>
-    <button onclick="window.editGP('${p.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
-    <button onclick="window.requestDeleteGP('${p.id}')" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
-    </div>
-  </div>`;}).join('')||'<div class="empty" style="padding:1rem">No gate passes yet.</div>';
+  body.innerHTML=slice.map(_gpPassRowHtml).join('')||'<div class="empty" style="padding:1rem">No gate passes yet.</div>';
   if(pg){
     if(pages<=1){pg.innerHTML='';return;}
     pg.innerHTML=`
@@ -281,6 +267,114 @@ function renderGPPage(){
   }
 }
 window.gpGotoPage=function(n){gpPage=n;renderGPPage();};
+
+// Shared pass-row markup, reused by the Outward list and the Registry.
+function _gpPassRowHtml(p){
+  const pend=_gpPendingFor('gp',p.id);
+  const pendBadge=pend?`<span title="${pend.action==='delete'?'Delete':'Edit'} pending approval" style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${pend.action==='delete'?'Delete':'Edit'} pending</span>`:'';
+  const isFab=p.gpType==='fabric',isItem=p.gpType==='item';
+  const typeBadge=isFab?`<span style="display:inline-block;background:#dbeafe;color:#1e40af;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">Fabric</span>`:(isItem?`<span style="display:inline-block;background:#ede9fe;color:#5b21b6;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">Item</span>`:'');
+  const reasonBadge=p.gpReason&&p.gpReason!=='other'?`<span style="display:inline-block;background:#f3f4f6;color:#374151;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${GP_REASON_LABEL[p.gpReason]||p.gpReason}</span>`:'';
+  const retBadge=p.expectReturn?(()=>{const st=_gpReturnStatus(p);const c=st==='Overdue'?'#dc2626':(st==='Partial'?'#92400e':'#6b7280');const b=st==='Overdue'?'#fee2e2':(st==='Partial'?'#fef3c7':'#f3f4f6');return `<span style="display:inline-block;background:${b};color:${c};font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px">${st}</span>`;})():(p.returnStatus==='Complete'?`<span style="display:inline-block;background:#dcfce7;color:#166534;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px">Returned</span>`:'');
+  const qtyLabel=isFab?`${p.fabricQty||0} ${p.fabricUnit||'kg'}${p.rollsCount?` · ${p.rollsCount} rolls`:''}`:(isItem?`${(p.assetItems||[]).length} item${(p.assetItems||[]).length===1?'':'s'}`:`${p.totalUnits||0} pcs`);
+  return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5;flex-wrap:wrap;gap:8px">
+    <div><div style="font-weight:700;color:var(--red);font-size:11px">${p.id}${typeBadge}${reasonBadge}${retBadge}${pendBadge}</div><div style="font-size:13px;font-weight:500">${p.article||'—'}${p.spec?` <span style="font-weight:400;color:var(--muted)">· ${_gpEsc(p.spec)}</span>`:''}</div><div style="font-size:11px;color:var(--muted)">${p.name||'—'} · ${p.date||''}${p.time?' '+p.time:''} · ${p.dest||'—'}</div></div>
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div style="text-align:right;font-size:12px;color:var(--muted);font-weight:500">${qtyLabel}</div>
+    <button class="btn-pdf" onclick="window.generateGPPdf('${p.id}')">⬇ PDF</button>
+    <button onclick="window.editGP('${p.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
+    <button onclick="window.requestDeleteGP('${p.id}')" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
+    </div>
+  </div>`;
+}
+
+// ── Registry: every pass in one searchable, filterable, exportable place ──
+let _gpRegQ='',_gpRegType='all',_gpRegReason='all',_gpRegIssuer='all',_gpRegFrom='',_gpRegTo='',_gpRegPage=1,_gpRegPer=25;
+function renderGPRegistry(){
+  const issuers=[...new Set(allPasses.map(p=>p.issuer||p.name).filter(Boolean))].sort();
+  return`<div class="card"><div class="card-title">Gate pass registry <span id="gp-reg-count" style="font-weight:400;color:var(--muted);font-size:12px"></span></div>
+    <input id="gp-reg-search" value="${_gpRegQ.replace(/"/g,'&quot;')}" oninput="window.gpRegSearch(this.value)" placeholder="Search GP #, article, spec, PO, destination, person…" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;margin-bottom:10px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <div class="field" style="margin:0;min-width:130px"><label>Type</label>
+        <select onchange="window.gpRegSet('type',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#FAFAFA;color:var(--text);font-family:inherit;width:100%">
+          ${[['all','All types'],['fabric','Fabric'],['garments','Garments'],['item','Item / asset']].map(([v,l])=>`<option value="${v}"${_gpRegType===v?' selected':''}>${l}</option>`).join('')}
+        </select></div>
+      <div class="field" style="margin:0;min-width:150px"><label>Reason</label>
+        <select onchange="window.gpRegSet('reason',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#FAFAFA;color:var(--text);font-family:inherit;width:100%">
+          ${[['all','All reasons'],['process','For process'],['return_vendor','Return to vendor'],['sale','Sale'],['other','Other']].map(([v,l])=>`<option value="${v}"${_gpRegReason===v?' selected':''}>${l}</option>`).join('')}
+        </select></div>
+      <div class="field" style="margin:0;min-width:150px"><label>Issued by</label>
+        <select onchange="window.gpRegSet('issuer',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#FAFAFA;color:var(--text);font-family:inherit;width:100%">
+          <option value="all"${_gpRegIssuer==='all'?' selected':''}>Everyone</option>
+          ${issuers.map(i=>`<option value="${_gpEsc(i)}"${_gpRegIssuer===i?' selected':''}>${_gpEsc(i)}</option>`).join('')}
+        </select></div>
+      <div class="field" style="margin:0;min-width:130px"><label>From date</label><input type="date" value="${_gpRegFrom}" onchange="window.gpRegSet('from',this.value)" style="padding:7px 9px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#FAFAFA;color:var(--text);font-family:inherit;width:100%"></div>
+      <div class="field" style="margin:0;min-width:130px"><label>To date</label><input type="date" value="${_gpRegTo}" onchange="window.gpRegSet('to',this.value)" style="padding:7px 9px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#FAFAFA;color:var(--text);font-family:inherit;width:100%"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-outline" style="font-size:12px;padding:6px 12px" onclick="window.gpRegClear()">Clear filters</button>
+        <label style="font-size:11px;color:var(--muted)">Per page
+          <select onchange="window.gpRegSet('per',this.value)" style="margin-left:4px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
+            ${[25,50,100,200].map(n=>`<option value="${n}"${_gpRegPer===n?' selected':''}>${n}</option>`).join('')}
+          </select></label>
+      </div>
+      <button class="btn-outline" style="font-size:12px;padding:6px 14px" onclick="window.gpRegExport()">⬇ Export Excel</button>
+    </div>
+    <div id="gp-reg-body"></div>
+    <div id="gp-reg-pager" style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;padding-top:10px;border-top:1px solid #f5f5f5;margin-top:4px"></div>
+  </div><div style="height:80px"></div>`;
+}
+function _gpRegFiltered(){
+  const q=_gpRegQ.toLowerCase().trim();
+  return allPasses.filter(p=>{
+    if(_gpRegType!=='all'&&(p.gpType||'garments')!==_gpRegType)return false;
+    if(_gpRegReason!=='all'&&(p.gpReason||'other')!==_gpRegReason)return false;
+    if(_gpRegIssuer!=='all'&&(p.issuer||p.name)!==_gpRegIssuer)return false;
+    if(_gpRegFrom&&(p.date||'')<_gpRegFrom)return false;
+    if(_gpRegTo&&(p.date||'')>_gpRegTo)return false;
+    if(q){const hay=`${p.id||''} ${p.article||''} ${p.spec||''} ${p.dest||''} ${p.name||''} ${p.issuer||''} ${p.poId||''} ${p.sourceVendor||''} ${GP_REASON_LABEL[p.gpReason]||''} ${p.gpType||''}`.toLowerCase();if(!hay.includes(q))return false;}
+    return true;
+  }).sort((a,b)=>(b.ts||0)-(a.ts||0));
+}
+function _gpRegRender(){
+  const body=document.getElementById('gp-reg-body');if(!body)return;
+  const all=_gpRegFiltered();
+  const total=all.length;
+  const pages=Math.max(1,Math.ceil(total/_gpRegPer));
+  if(_gpRegPage>pages)_gpRegPage=pages;
+  const slice=all.slice((_gpRegPage-1)*_gpRegPer,_gpRegPage*_gpRegPer);
+  const cnt=document.getElementById('gp-reg-count');if(cnt)cnt.textContent=`(${total} match${total===1?'':'es'} of ${allPasses.length})`;
+  body.innerHTML=slice.map(_gpPassRowHtml).join('')||'<div class="empty" style="padding:20px;text-align:center">No passes match these filters.</div>';
+  const pg=document.getElementById('gp-reg-pager');if(!pg)return;
+  if(pages<=1){pg.innerHTML='';return;}
+  const btn=(n,l,dis,cur)=>`<button onclick="window.gpRegGoto(${n})" ${dis?'disabled':''} style="padding:5px 11px;border:1px solid ${cur?'#111':'var(--border)'};border-radius:6px;background:${cur?'#111':'#fff'};color:${cur?'#fff':'var(--text)'};cursor:pointer;font-size:12px;font-family:inherit">${l}</button>`;
+  let nums='';const from=Math.max(1,_gpRegPage-2),to=Math.min(pages,_gpRegPage+2);
+  if(from>1)nums+=btn(1,'1',false,false)+(from>2?'<span style="color:var(--muted)">…</span>':'');
+  for(let n=from;n<=to;n++)nums+=btn(n,String(n),false,n===_gpRegPage);
+  if(to<pages)nums+=(to<pages-1?'<span style="color:var(--muted)">…</span>':'')+btn(pages,String(pages),false,false);
+  pg.innerHTML=`${btn(_gpRegPage-1,'← Prev',_gpRegPage===1,false)}${nums}${btn(_gpRegPage+1,'Next →',_gpRegPage===pages,false)}
+    <span style="font-size:12px;color:var(--muted);margin-left:6px">go to <input type="number" min="1" max="${pages}" value="${_gpRegPage}" onchange="window.gpRegGoto(parseInt(this.value)||1)" style="width:52px;padding:4px;border:1px solid var(--border);border-radius:6px;font-size:12px;text-align:center;font-family:inherit"></span>`;
+}
+let _gpRegTo2=null;
+window.gpRegSearch=function(v){_gpRegQ=v||'';_gpRegPage=1;clearTimeout(_gpRegTo2);_gpRegTo2=setTimeout(()=>{_gpRegRender();const i=document.getElementById('gp-reg-search');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}},160);};
+window.gpRegSet=function(k,v){if(k==='type')_gpRegType=v;else if(k==='reason')_gpRegReason=v;else if(k==='issuer')_gpRegIssuer=v;else if(k==='from')_gpRegFrom=v;else if(k==='to')_gpRegTo=v;else if(k==='per')_gpRegPer=parseInt(v)||25;_gpRegPage=1;_gpRegRender();};
+window.gpRegGoto=function(n){_gpRegPage=Math.max(1,n);_gpRegRender();};
+window.gpRegClear=function(){_gpRegQ='';_gpRegType='all';_gpRegReason='all';_gpRegIssuer='all';_gpRegFrom='';_gpRegTo='';_gpRegPage=1;const el=document.getElementById('gp-tab-content');if(el){el.innerHTML=renderGPRegistry();_gpRegRender();}};
+window.gpRegExport=function(){
+  const rows=_gpRegFiltered();
+  if(!rows.length){showToast('Nothing to export.',true);return;}
+  const header=['Date','Time','GP','Type','Reason','Article','Spec','PO','Destination','Qty','Unit','Rolls','Boras','Expected back','Return status','Issued by'];
+  const aoa=[header,...rows.map(p=>{
+    const isFab=p.gpType==='fabric',isItem=p.gpType==='item';
+    const qty=isFab?(p.fabricQty||0):(isItem?(p.totalUnits||0):(p.totalUnits||0));
+    const unit=isFab?(p.fabricUnit||'kg'):(isItem?'qty':'pcs');
+    const retSt=p.expectReturn?_gpReturnStatus(p):(p.returnStatus||'');
+    return [p.date||'',p.time||'',p.id||'',p.gpType||'garments',GP_REASON_LABEL[p.gpReason]||p.gpReason||'',p.article||'',p.spec||'',p.poId||'',p.dest||'',qty,unit,p.rollsCount||'',p.boras||'',p.expectedBack||'',retSt,p.issuer||p.name||''];
+  })];
+  if(typeof _fabXlsx==='function')_fabXlsx(aoa,'Gate Passes','gate-pass-registry');
+  else{const ws=XLSX.utils.aoa_to_sheet(aoa);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Gate Passes');XLSX.writeFile(wb,'gate-pass-registry.xlsx');}
+  showToast('Exported ✓');
+};
 window.setDest=function(v){document.getElementById('gp-dest').value=v;};
 window.addGPRow=function(size='',units='',weight=''){
   gpRowIdx++;const id='gpr'+gpRowIdx;const tr=document.createElement('tr');tr.id=id;tr.style.borderBottom='1px solid #f5f5f5';
@@ -521,6 +615,9 @@ window.switchGPTab=function(tab){
     el.innerHTML=renderReturnsTab();
     _gpRenderOutstanding();
     renderReturnsList();
+  }else if(tab==='registry'){
+    el.innerHTML=renderGPRegistry();
+    _gpRegRender();
   }
 };
 
