@@ -1786,6 +1786,10 @@ window.dsMove=function(id,dir){
       <div style="text-align:right"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">≈ units</div>
         <div style="font-size:19px;font-weight:800">${Math.floor(bal/DS_M_PER_UNIT)}</div></div>
     </div>
+    ${isIn?`
+    <div class="field" style="margin:0"><label>Meters to add</label>
+      <input id="ds-qty" type="number" min="0" step="0.1" placeholder="0" oninput="window._dsPreview()" style="width:100%;padding:12px;border:1px solid var(--border);border-radius:9px;box-sizing:border-box;font-size:19px;font-weight:700;text-align:center"></div>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px">Enter the length of dyed dori received.</div>`:`
     <div style="display:flex;align-items:flex-end;gap:10px">
       <div class="field" style="flex:1;margin:0"><label>Units (pieces)</label>
         <input id="ds-units" type="number" min="0" step="1" placeholder="0" oninput="window._dsUnitsToM()" style="width:100%;padding:11px;border:1px solid var(--border);border-radius:9px;box-sizing:border-box;font-size:18px;font-weight:700;text-align:center"></div>
@@ -1793,7 +1797,7 @@ window.dsMove=function(id,dir){
       <div class="field" style="flex:1;margin:0"><label>Meters</label>
         <input id="ds-qty" type="number" min="0" step="0.1" placeholder="0" oninput="window._dsMToUnits()" style="width:100%;padding:11px;border:1px solid var(--border);border-radius:9px;box-sizing:border-box;font-size:18px;font-weight:700;text-align:center"></div>
     </div>
-    <div style="font-size:11px;color:var(--muted);margin-top:6px">1 unit = ${DS_M_PER_UNIT} m of dori — type either box and the other fills in.</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px">1 unit = ${DS_M_PER_UNIT} m of dori — type either box and the other fills in.</div>`}
     <div id="ds-preview" style="font-size:12.5px;font-weight:700;margin-top:11px;padding:9px 12px;border-radius:8px;background:${isIn?'#f0fdf4':'#fef2f2'};color:${isIn?'#065f46':'#991b1b'}">New balance: ${bal.toFixed(1)} m · ≈ ${Math.floor(bal/DS_M_PER_UNIT)} units</div>
     <div class="field" style="margin-top:12px"><label>Note (optional)</label><input id="ds-note" placeholder="${isIn?'e.g. dyed with PO 536':'e.g. PO 536 trousers'}" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
     <button class="btn-primary" style="width:100%;margin-top:12px;background:${isIn?'#16a34a':'#dc2626'}" onclick="window.dsDoMove('${id}','${dir}')">${isIn?'Add to stock':'Use from stock'}</button>`);
@@ -1845,7 +1849,7 @@ window.dsDoMove=async function(id,dir){
   const qty=parseFloat(document.getElementById('ds-qty')?.value)||0;
   const units=parseFloat(document.getElementById('ds-units')?.value)||0;
   const note=(document.getElementById('ds-note')?.value||'').trim();
-  if(qty<=0)return showToast('Enter units or meters.',true);
+  if(qty<=0)return showToast(dir==='in'?'Enter meters to add.':'Enter units or meters.',true);
   if(dir==='out'&&qty>(d.balance||0)&&!confirm(`Only ${(d.balance||0).toFixed(1)} m in stock. Use ${qty} m anyway?`))return;
   if(!_fabBusyStart('Saving…'))return;
   try{
