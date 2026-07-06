@@ -258,6 +258,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .si-skel{background:#e8e8e8;border-radius:6px;position:relative;overflow:hidden;flex-shrink:0}
 .si-skel::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.65) 50%,transparent 100%);background-size:200% 100%;animation:si-shimmer 1.5s ease-in-out infinite}
 @keyframes si-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+/* ── Global loading system (buffer overlay · top progress bar · skeleton) ── */
+#gv-progress{position:fixed;top:0;left:0;right:0;height:3px;z-index:100000;pointer-events:none;overflow:hidden;opacity:0;transition:opacity .2s}
+#gv-progress.on{opacity:1}
+#gv-progress .gv-bar{height:100%;width:38%;background:linear-gradient(90deg,transparent,var(--dark),transparent);transform:translateX(-120%);animation:gv-barslide 1.05s ease-in-out infinite}
+@keyframes gv-barslide{0%{transform:translateX(-120%)}100%{transform:translateX(330%)}}
+#gv-overlay{position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;background:rgba(20,20,22,.34);opacity:0;pointer-events:none;transition:opacity .16s}
+#gv-overlay.on{opacity:1;pointer-events:auto}
+#gv-overlay .gv-buffer{display:flex;flex-direction:column;align-items:center;gap:11px;background:#111114;color:#fff;padding:18px 26px;border-radius:13px;box-shadow:0 12px 40px rgba(0,0,0,.4)}
+#gv-overlay .gv-buffer svg{animation:spin .8s linear infinite}
+#gv-overlay .gv-buffer-lbl{font-size:12px;letter-spacing:.02em}
+.gv-skel{background:#e8e8ec;border-radius:7px;position:relative;overflow:hidden}
+.gv-skel::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.65) 50%,transparent 100%);background-size:200% 100%;animation:si-shimmer 1.5s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){#gv-progress .gv-bar,#gv-overlay .gv-buffer svg{animation-duration:.001ms!important}}
 /* ── Printing / Decoration Module ── */
 .print-nav-group{margin-top:4px}
 .nav-section-label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;padding:8px 12px 4px}

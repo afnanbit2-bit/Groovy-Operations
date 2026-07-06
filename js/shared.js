@@ -482,6 +482,84 @@ let _poIssueData=null,_txFilterQ='',_txFilterType='';
 const IL_PER=15,IL_MAX_PAGES=1000;   // effectively uncapped — page through all loaded movements
 function showToast(msg,isErr=false){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show'+(isErr?' err':'');setTimeout(()=>t.className='toast',3200);}
 
+// ════════════════════════════════════════════════════════════════════════
+//  Global loading system — one set of loaders for every section:
+//   • Blocking buffer  (showLoader/hideLoader/withLoader) — for saves/submits
+//   • Top progress bar (auto) — background reads + page navigation
+//   • Skeleton         (gvSkeleton) — first paint of a section
+//   • Button spinner   (gvBtnBusy/gvBtnDone) — a single button's own action
+//  Auto-wired to every Firestore op in __bootApp so any slow action shows
+//  feedback with NO per-callsite changes; also exposed for explicit use.
+// ════════════════════════════════════════════════════════════════════════
+let _gvBufCount=0,_gvBufTimer=null,_gvOpCount=0,_gvBarTimer=null;
+function _gvEnsureNodes(){
+  if(!document.getElementById('gv-progress')){
+    const b=document.createElement('div');b.id='gv-progress';b.innerHTML='<div class="gv-bar"></div>';document.body.appendChild(b);
+  }
+  if(!document.getElementById('gv-overlay')){
+    const o=document.createElement('div');o.id='gv-overlay';
+    o.innerHTML='<div class="gv-buffer"><svg width="26" height="26" viewBox="0 0 50 50"><circle cx="25" cy="25" r="20" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-dasharray="80 50"/></svg><span class="gv-buffer-lbl" id="gv-buffer-lbl">Working…</span></div>';
+    document.body.appendChild(o);
+  }
+}
+// Blocking buffer overlay (ref-counted; 25s safety auto-clear).
+function showLoader(label){
+  _gvEnsureNodes();_gvBufCount++;
+  const l=document.getElementById('gv-buffer-lbl');if(l)l.textContent=label||'Working…';
+  document.getElementById('gv-overlay')?.classList.add('on');
+  clearTimeout(_gvBufTimer);_gvBufTimer=setTimeout(()=>{_gvBufCount=0;document.getElementById('gv-overlay')?.classList.remove('on');},25000);
+}
+function hideLoader(force){
+  _gvBufCount=force?0:Math.max(0,_gvBufCount-1);
+  if(_gvBufCount<=0){_gvBufCount=0;clearTimeout(_gvBufTimer);document.getElementById('gv-overlay')?.classList.remove('on');}
+}
+async function withLoader(fn,label){
+  showLoader(label);
+  try{return await(typeof fn==='function'?fn():fn);}
+  finally{hideLoader();}
+}
+// Non-blocking top progress bar (ref-counted).
+function _gvProgStart(){
+  _gvEnsureNodes();_gvOpCount++;
+  document.getElementById('gv-progress')?.classList.add('on');
+  clearTimeout(_gvBarTimer);_gvBarTimer=setTimeout(()=>{_gvOpCount=0;document.getElementById('gv-progress')?.classList.remove('on');},25000);
+}
+function _gvProgStop(){
+  _gvOpCount=Math.max(0,_gvOpCount-1);
+  if(_gvOpCount<=0){_gvOpCount=0;clearTimeout(_gvBarTimer);document.getElementById('gv-progress')?.classList.remove('on');}
+}
+function _gvProgPulse(ms){_gvProgStart();setTimeout(_gvProgStop,ms||450);}
+// Skeleton rows (shimmering placeholders) for a section's first paint.
+function gvSkeleton(rows){
+  rows=rows||4;const w1=[58,46,64,52,60,48],w2=[30,38,26,34,28,36];let out='';
+  for(let i=0;i<rows;i++)out+='<div style="display:flex;gap:12px;align-items:center;padding:11px 2px;border-bottom:1px solid #f5f5f5"><div class="gv-skel" style="width:34px;height:34px;border-radius:9px;flex-shrink:0"></div><div style="flex:1"><div class="gv-skel" style="height:11px;width:'+w1[i%6]+'%;margin-bottom:7px"></div><div class="gv-skel" style="height:9px;width:'+w2[i%6]+'%"></div></div><div class="gv-skel" style="height:15px;width:54px;flex-shrink:0"></div></div>';
+  return '<div class="card" style="padding:8px 14px">'+out+'</div>';
+}
+// Inline button spinner: lock a button + show a spinner while its action runs.
+function gvBtnBusy(btn,label){
+  if(!btn)return;btn.disabled=true;btn.dataset.gvHtml=btn.innerHTML;
+  btn.innerHTML='<span class="spinner" style="border-top-color:currentColor;vertical-align:-2px"></span>'+(label?' '+label:'');
+}
+function gvBtnDone(btn){
+  if(!btn)return;btn.disabled=false;if(btn.dataset.gvHtml!=null){btn.innerHTML=btn.dataset.gvHtml;delete btn.dataset.gvHtml;}
+}
+window.showLoader=showLoader;window.hideLoader=hideLoader;window.withLoader=withLoader;
+window.gvSkeleton=gvSkeleton;window.gvBtnBusy=gvBtnBusy;window.gvBtnDone=gvBtnDone;
+// Auto-write buffer: a save that runs >260ms raises the blocking buffer; fast
+// writes show nothing (no flicker). Skipped while the Fabric section's own
+// overlay is up, so the two never stack.
+let _gvWr=0,_gvWrTimer=null,_gvWrShown=false;
+function _gvWriteStart(){
+  _gvWr++;
+  if(_gvWr===1){clearTimeout(_gvWrTimer);_gvWrTimer=setTimeout(()=>{
+    if(_gvWr>0&&!(typeof _fabBusy!=='undefined'&&_fabBusy)){_gvWrShown=true;showLoader('Saving…');}
+  },260);}
+}
+function _gvWriteStop(){
+  _gvWr=Math.max(0,_gvWr-1);
+  if(_gvWr<=0){_gvWr=0;clearTimeout(_gvWrTimer);if(_gvWrShown){_gvWrShown=false;hideLoader();}}
+}
+
 async function logActivity(action,detail=''){
   if(!session)return;
   try{await addDoc(collection(db,'activity'),{user:session.name,role:session.title,action,detail,ts:Date.now(),date:new Date().toLocaleDateString('en-GB')});}catch(e){}
@@ -855,7 +933,7 @@ function renderPage(id){
   else if(id==='activity'){loadActivity();return;}
   else if(id==='users')m.innerHTML=renderUsers();
   else if(id==='bug-tracker'){
-    if(!bugsLoaded)loadBugReports().then(()=>{if(currentPage===id)m.innerHTML=renderBugTrackerPage();}).catch(e=>{if(currentPage===id)m.innerHTML='<div class="empty">Could not load bug reports: '+(e.message||'permission denied')+'</div>';});
+    if(!bugsLoaded){m.innerHTML=gvSkeleton(6);loadBugReports().then(()=>{if(currentPage===id)m.innerHTML=renderBugTrackerPage();}).catch(e=>{if(currentPage===id)m.innerHTML='<div class="empty">Could not load bug reports: '+(e.message||'permission denied')+'</div>';});}
     else m.innerHTML=renderBugTrackerPage();
   }
   else if(id==='po-detail')renderDetailPage();
@@ -868,10 +946,10 @@ function renderPage(id){
   else if(id==='store-templates'){m.innerHTML=renderStoreTemplates();const _si=document.getElementById('tpl-prod-search');if(_si){_si.addEventListener('input',()=>filterTplProd(_si.value));_si.addEventListener('focus',()=>filterTplProd(_si.value));}}
   else if(id==='store-log'){_ilPage=1;_ilQ='';_ilPO='';m.innerHTML=renderStoreLog();refreshIssueLog();}
   else if(id==='store-analytics')m.innerHTML=renderStoreAnalytics();
-  else if(id==='store-cash-ledger'){if(!cashDataLoaded)loadStoreCashData().then(()=>{if(currentPage===id)m.innerHTML=renderStoreCashLedger();});else m.innerHTML=renderStoreCashLedger();}
-  else if(id==='po-issue-list'){if(!allItems.length)loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoIssueList();});else m.innerHTML=renderPoIssueList();}
-  else if(id==='po-issue-detail'){if(!allItems.length)loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoIssuePickList();});else m.innerHTML=renderPoIssuePickList();}
-  else if(id==='po-edit-inbox'){if(!allItems.length)loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoEditInbox();});else m.innerHTML=renderPoEditInbox();}
+  else if(id==='store-cash-ledger'){if(!cashDataLoaded){m.innerHTML=gvSkeleton(6);loadStoreCashData().then(()=>{if(currentPage===id)m.innerHTML=renderStoreCashLedger();});}else m.innerHTML=renderStoreCashLedger();}
+  else if(id==='po-issue-list'){if(!allItems.length){m.innerHTML=gvSkeleton(6);loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoIssueList();});}else m.innerHTML=renderPoIssueList();}
+  else if(id==='po-issue-detail'){if(!allItems.length){m.innerHTML=gvSkeleton(6);loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoIssuePickList();});}else m.innerHTML=renderPoIssuePickList();}
+  else if(id==='po-edit-inbox'){if(!allItems.length){m.innerHTML=gvSkeleton(6);loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoEditInbox();});}else m.innerHTML=renderPoEditInbox();}
   // ── Printing module pages ──
   else if(id==='recipe-directory'){if(!printingDataLoaded)loadPrintingData().then(()=>{if(currentPage===id)m.innerHTML=renderRecipeDirectory();});else m.innerHTML=renderRecipeDirectory();}
   else if(id==='recipe-create')m.innerHTML=renderRecipeCreatePage();
@@ -1684,9 +1762,31 @@ function _renderFixSessionsList(visible){
 // These blocks were hoisted out of their original positions because they
 // execute at load time and depend on cross-file load order / Firebase.
 window.__bootApp=function(){
-  // showPage wrap: auto-load printing data for printing pages
+  // ── Auto-wire the global loaders to every Firestore op ──
+  // Writes (setDoc/updateDoc/addDoc/deleteDoc/runTransaction/batch.commit)
+  // raise the blocking buffer if slow; reads (getDoc/getDocs) drive the top
+  // progress bar. No call site changes needed — every section is covered.
+  (function(){
+    const wrap=(name,start,stop)=>{const o=window[name];if(typeof o!=='function'||o.__gvWrapped)return;
+      const w=function(){start();let r;try{r=o.apply(this,arguments);}catch(e){stop();throw e;}
+        return Promise.resolve(r).then(v=>{stop();return v;},e=>{stop();throw e;});};
+      w.__gvWrapped=true;window[name]=w;};
+    ['setDoc','updateDoc','addDoc','deleteDoc','runTransaction'].forEach(n=>wrap(n,_gvWriteStart,_gvWriteStop));
+    ['getDoc','getDocs'].forEach(n=>wrap(n,_gvProgStart,_gvProgStop));
+    const wb=window.writeBatch;
+    if(typeof wb==='function'&&!wb.__gvWrapped){
+      const w=function(){const b=wb.apply(this,arguments);
+        if(b&&typeof b.commit==='function'&&!b.commit.__gvWrapped){const oc=b.commit.bind(b);
+          const nc=function(){_gvWriteStart();return Promise.resolve(oc()).then(v=>{_gvWriteStop();return v;},e=>{_gvWriteStop();throw e;});};
+          nc.__gvWrapped=true;b.commit=nc;}
+        return b;};
+      w.__gvWrapped=true;window.writeBatch=w;
+    }
+  })();
+  // showPage wrap: pulse the progress bar on nav + auto-load printing data
 const _origShowPage=window.showPage;
 window.showPage=async function(id){
+  _gvProgPulse(500);
   // Auto-load printing data when visiting any printing page
   if(['recipe-directory','recipe-create','recipe-detail','printing-jobs','printing-job-detail','observer-tower','qc-report-page','billing-detail'].includes(id)&&!printingDataLoaded){
     await loadPrintingData();
