@@ -1608,6 +1608,9 @@ window._fabTagAdd=function(){
 };
 window._fabTagSave=async function(){
   const w=_fabTagWork;if(!w.id)return;
+  // Auto-add any text typed but not yet "+ Add"-ed, so typing + Save works.
+  const pend=(document.getElementById('fab-tag-text')?.value||'').trim();
+  if(pend){const ci=w.colorIdx!=null?w.colorIdx:0;const c=FAB_LABEL_COLORS[ci];w.labels.push({text:pend,bg:c.bg,fg:c.fg});}
   if(!_fabBusyStart('Saving…'))return;
   try{
     await updateDoc(doc(db,'gatepasses',w.id),{regIncomplete:!!w.incomplete,regLabels:w.labels||[]});
