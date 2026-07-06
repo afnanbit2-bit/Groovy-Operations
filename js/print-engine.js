@@ -828,6 +828,8 @@ function _renderGatePass(doc, data) {
       { labelEn: 'Time', labelUr: 'وقت', value: _gpFmtTime(data.time) },
       { labelEn: 'Type', labelUr: 'قسم', value: tl.word },
       { labelEn: 'Person', labelUr: 'شخص', value: _gpDash(data.person || data.recipientName || data.name) },
+      { labelEn: 'Article', labelUr: 'آرٹیکل', value: _gpDash(data.article || data.articleName) },
+      { labelEn: 'Spec', labelUr: '', value: _gpDash(data.spec) },
       { labelEn: 'Destination', labelUr: 'منزل', value: _gpDash(data.destination || data.dest) },
       { labelEn: 'Purpose', labelUr: 'مقصد', value: _gpDash(data.purpose) }
     ]
@@ -835,14 +837,29 @@ function _renderGatePass(doc, data) {
 
   // 4) SECTION 2 — ITEMS
   _renderSectionHeader(doc, { titleEn: 'ITEMS', titleUr: 'اشیاء' });
-  const cols = [
-    { en: '#', ur: '', w: 28 },
-    { en: 'Article', ur: 'مضمون', w: 207 },
-    { en: 'Spec', ur: '', w: 120 },
-    { en: 'Units', ur: 'مقدار', w: 84 },
-    { en: 'Weight', ur: 'وزن', w: 84 }
-  ];
-  const items = Array.isArray(data.items) ? data.items : [];
+  // Type-aware table: garments → Size/Units/Weight, item/asset → Item/Qty/
+  // Returnable, fabric → the fabric split, everything else → Article/Spec.
+  let cols, rowsData, totalRow = null;
+  const _items = Array.isArray(data.items) ? data.items : [];
+  if (data.gpType === 'item' && Array.isArray(data.assetItems)) {
+    cols = [{ en: '#', ur: '', w: 28 }, { en: 'Item', ur: 'اشیاء', w: 315 }, { en: 'Qty', ur: 'مقدار', w: 90 }, { en: 'Returnable', ur: '', w: 90 }];
+    rowsData = data.assetItems.map((it, i) => [i + 1, _gpDash(it.name), _gpDash(it.qty), it.returnable ? 'Yes' : 'No']);
+  } else if (data.gpType === 'fabric') {
+    cols = [{ en: '#', ur: '', w: 28 }, { en: 'Fabric', ur: 'کپڑا', w: 275 }, { en: 'Rolls', ur: '', w: 100 }, { en: 'Weight', ur: 'وزن', w: 120 }];
+    const fabs = (Array.isArray(data.fabrics) && data.fabrics.length) ? data.fabrics
+      : [{ fabType: data.fabricType, gsm: data.fabricGsm, color: data.fabricColor, rollsCount: data.rollsCount, weight: data.fabricQty, unit: data.fabricUnit }];
+    rowsData = fabs.map((f, i) => [i + 1, _gpDash([f.fabType, f.gsm ? f.gsm + 'gsm' : '', f.color].filter(Boolean).join(' ')), _gpDash(f.rollsCount) + ' rolls', _gpDash(f.weight) + ' ' + (f.unit || 'kg')]);
+  } else if (data.gpType === 'garments' || _items.some(it => it && it.size != null)) {
+    cols = [{ en: '#', ur: '', w: 28 }, { en: 'Size', ur: 'سائز', w: 235 }, { en: 'Units', ur: 'مقدار', w: 130 }, { en: 'Weight', ur: 'وزن', w: 130 }];
+    const nz = _items.filter(it => (Number(it.units) || 0) > 0 || (Number(it.weight) || 0) > 0);
+    rowsData = (nz.length ? nz : _items).map((it, i) => [i + 1, _gpDash(it.size), _gpDash(it.units), _gpDash(it.weight)]);
+    const tU = _items.reduce((s, it) => s + (Number(it.units) || 0), 0);
+    const tW = _items.reduce((s, it) => s + (Number(it.weight) || 0), 0);
+    totalRow = ['', 'TOTAL', tU || '', tW ? tW.toFixed(1) : ''];
+  } else {
+    cols = [{ en: '#', ur: '', w: 28 }, { en: 'Article', ur: 'مضمون', w: 207 }, { en: 'Spec', ur: '', w: 120 }, { en: 'Units', ur: 'مقدار', w: 84 }, { en: 'Weight', ur: 'وزن', w: 84 }];
+    rowsData = _items.map((it, i) => [i + 1, _gpDash(it.article || data.article), _gpDash(it.spec || it.size || data.spec), _gpDash(it.units), _gpDash(it.weight)]);
+  }
   const hdrH = 30, rowH = 22;
   const maxY = PRINT_LAYOUT.pageHeight - PRINT_LAYOUT.marginBottom - 28;
 
@@ -881,18 +898,11 @@ function _renderGatePass(doc, data) {
     ty += rowH;
   };
 
-  if (items.length) {
-    items.forEach((it, idx) => {
-      drawRow([
-        idx + 1,
-        _gpDash(it.article || data.article),
-        _gpDash(it.spec || it.size || data.spec),
-        _gpDash(it.units),
-        _gpDash(it.weight)
-      ]);
-    });
+  if (rowsData && rowsData.length) {
+    rowsData.forEach((cells) => drawRow(cells));
+    if (totalRow) drawRow(totalRow);
   } else {
-    for (let i = 0; i < 4; i++) drawRow([i + 1, '', '', '', '']);
+    for (let i = 0; i < 4; i++) drawRow([i + 1, ...cols.slice(1).map(() => '')]);
   }
   doc.__groovyY = ty;
 

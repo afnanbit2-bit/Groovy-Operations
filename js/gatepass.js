@@ -567,7 +567,7 @@ window.submitGP=async function(){
       const anyRet=assetItems.some(i=>i.returnable);
       payload={...base,gpType:'item',assetItems,boras:'0',items:[],totalUnits:assetItems.reduce((s,i)=>s+(i.qty||0),0),totalWeight:0,expectReturn:reason==='process'&&anyRet};
     }else{
-      const items=[];document.querySelectorAll('#gp-body tr').forEach(r=>{const i=r.querySelectorAll('input'),sz=i[0]?.value.trim();if(sz)items.push({size:sz,units:parseFloat(i[1]?.value)||0,weight:parseFloat(i[2]?.value)||0});});
+      const items=[];document.querySelectorAll('#gp-body tr').forEach(r=>{const sz=(r.querySelector('input[type="text"]')?.value||'').trim();if(sz)items.push({size:sz,units:parseFloat(r.querySelector('input[data-role="units"]')?.value)||0,weight:parseFloat(r.querySelector('input[data-role="weight"]')?.value)||0});});
       if(!items.length){showToast('Add at least one size row.',true);return;}
       payload={...base,gpType:'garments',boras:document.getElementById('gp-boras')?.value||'0',totalUnits:items.reduce((s,r)=>s+r.units,0),totalWeight:items.reduce((s,r)=>s+r.weight,0).toFixed(1),items,expectReturn:reason==='process'};
     }
