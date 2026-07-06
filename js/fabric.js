@@ -1578,7 +1578,7 @@ window.fabRegTag=function(gpId){
 function _fabRenderTagModal(){
   const w=_fabTagWork;
   const g=_fabIssueRecords().find(x=>x.id===w.id)||{};
-  const swatches=FAB_LABEL_COLORS.map((c,i)=>`<button type="button" onclick="window._fabTagPickColor(${i})" title="${c.name}" style="width:26px;height:26px;border-radius:7px;border:2px solid ${w.colorIdx===i?'#111':'transparent'};background:${c.dot};cursor:pointer"></button>`).join('');
+  const swatches=FAB_LABEL_COLORS.map((c,i)=>{const on=w.colorIdx===i;return`<button type="button" onclick="window._fabTagPickColor(${i})" title="${c.name}" style="width:32px;height:32px;border-radius:9px;border:2px solid #fff;background:${c.dot};cursor:pointer;box-shadow:${on?'0 0 0 3px #111':'0 0 0 1px var(--border)'};transform:${on?'scale(1.08)':'none'};transition:transform .1s;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:900;line-height:1">${on?'✓':''}</button>`;}).join('');
   const chips=w.labels.length?w.labels.map((l,i)=>`<span style="display:inline-flex;align-items:center;gap:6px;background:${l.bg};color:${l.fg};font-size:12px;font-weight:700;padding:4px 10px;border-radius:7px;margin:0 6px 6px 0">${_gpEsc(l.text)}<button onclick="window._fabTagRemove(${i})" style="background:none;border:none;color:${l.fg};cursor:pointer;font-size:15px;line-height:1;padding:0">×</button></span>`).join(''):'<span style="font-size:12px;color:var(--muted)">No labels yet.</span>';
   _fabModal('Label · PO '+_gpEsc(g.poId||''),`
     <label style="display:flex;align-items:center;gap:10px;font-size:14px;margin-bottom:16px;cursor:pointer">
