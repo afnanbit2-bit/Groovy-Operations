@@ -171,6 +171,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
   [style*="grid-template-columns:repeat(3,1fr)"]{grid-template-columns:1fr 1fr!important}
   [style*="grid-template-columns:1fr 130px"]{grid-template-columns:1fr!important}
   .cash-action-bar{left:0;bottom:62px;padding:8px 14px}
+  /* Bundle grids (fabric Issue cutting + gate-pass garments) — tighten the
+     5-column layout and let inputs shrink so they don't overflow the screen. */
+  #gp-sizes>div,#fab-iss-sizes>div{grid-template-columns:1.1fr 1.6fr .5fr .7fr 20px!important;gap:5px!important}
+  #gp-sizes input,#fab-iss-sizes input,.fis-row input,.gps-row input{font-size:13px!important;padding:8px 6px!important;min-width:0}
+  /* Any grid input can shrink below its intrinsic width on phones. */
+  .form-grid input,.form-grid select,.form-grid textarea{min-width:0}
 }
 @media(max-width:400px){
   .topbar-name{font-size:11px}
