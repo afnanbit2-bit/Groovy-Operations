@@ -1444,7 +1444,7 @@ function _fabFindRoll(rollCode){
 // ── Fabric Issue Registry ──
 // Every fabric issue against a PO, with the cut (size breakdown / planned qty),
 // bundles, fabric and weight. Source = gate passes with gpType 'fabric'.
-let _fabRegPage=0,_fabRegQ='',_fabRegPer=12,_fabRegIncompleteOnly=false;
+let _fabRegPage=0,_fabRegQ='',_fabRegPer=12,_fabRegIncompleteOnly=false,_fabRegLabelFilter='';
 // Owner label palette — soft chip bg/fg + a solid dot for the picker.
 const FAB_LABEL_COLORS=[
   {name:'Red',bg:'#fee2e2',fg:'#991b1b',dot:'#dc2626'},
@@ -1454,6 +1454,19 @@ const FAB_LABEL_COLORS=[
   {name:'Purple',bg:'#ede9fe',fg:'#5b21b6',dot:'#7c3aed'},
   {name:'Grey',bg:'#f3f4f6',fg:'#374151',dot:'#6b7280'}
 ];
+// Pre-decided labels — always available for one-tap apply (ci = palette index).
+const FAB_PRESET_LABELS=[
+  {text:'HISAB DONE',ci:2},{text:'PRINTING',ci:4},{text:'URGENT',ci:0},
+  {text:'ON HOLD',ci:1},{text:'REPRINT',ci:1},{text:'SHORT FABRIC',ci:0},{text:'READY',ci:2}
+];
+// The reusable label library = presets + every label already applied anywhere,
+// deduped by text. So a custom label becomes reusable the moment it's applied.
+function _fabAllUsedLabels(){
+  const seen=new Map();
+  FAB_PRESET_LABELS.forEach(p=>{const c=FAB_LABEL_COLORS[p.ci]||FAB_LABEL_COLORS[5];const k=p.text.toUpperCase();if(!seen.has(k))seen.set(k,{text:p.text,bg:c.bg,fg:c.fg});});
+  (typeof allPasses!=='undefined'&&allPasses||[]).forEach(g=>{if(g.gpType==='fabric')(g.regLabels||[]).forEach(l=>{const k=String(l.text||'').toUpperCase();if(k&&!seen.has(k))seen.set(k,{text:l.text,bg:l.bg||'#f3f4f6',fg:l.fg||'#374151'});});});
+  return [...seen.values()];
+}
 let _fabTagWork={id:null,incomplete:false,labels:[],colorIdx:null,_pendingText:''};
 function _fabIssueRecords(){
   return (typeof allPasses!=='undefined'&&allPasses||[])
@@ -1464,6 +1477,7 @@ function _fabRegFiltered(){
   const f=_fabRegQ.toLowerCase();
   return _fabIssueRecords().filter(g=>{
     if(_fabRegIncompleteOnly&&!g.regIncomplete)return false;
+    if(_fabRegLabelFilter){const lf=_fabRegLabelFilter.toUpperCase();if(!(g.regLabels||[]).some(l=>String(l.text||'').toUpperCase()===lf))return false;}
     if(!f)return true;
     const labelText=(g.regLabels||[]).map(l=>l.text).join(' ');
     return [g.poId,g.articleName,g.articleCode,g.fabricType,g.fabricColor,g.id,labelText].some(v=>String(v||'').toLowerCase().includes(f));
@@ -1533,7 +1547,7 @@ function _fabRegListHTML(){
   return _fabRegRows(slice)+pager;
 }
 function renderFabricIssueRegistry(){
-  _fabRegPage=0;_fabRegQ='';
+  _fabRegPage=0;_fabRegQ='';_fabRegLabelFilter='';_fabRegIncompleteOnly=false;
   const issues=_fabIssueRecords();
   const totalWeight=issues.reduce((s,g)=>s+(g.fabricQty||0),0);
   const totalPcs=issues.reduce((s,g)=>s+(g.plannedQty||0),0);
@@ -1555,6 +1569,12 @@ function renderFabricIssueRegistry(){
         ${[12,20,50,100].map(n=>`<option value="${n}"${_fabRegPer===n?' selected':''}>${n}/page</option>`).join('')}
       </select>
     </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
+      <select id="fab-reg-label-filter" onchange="window.fabRegSetLabel(this.value)" title="Filter by label" style="flex:1;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff">
+        <option value="">🏷 Filter by label — all</option>
+        ${_fabAllUsedLabels().map(l=>`<option value="${_gpEsc(l.text)}"${_fabRegLabelFilter===l.text?' selected':''}>${_gpEsc(l.text)}</option>`).join('')}
+      </select>
+    </div>
     <div id="fab-reg-list">${_fabRegListHTML()}</div>
   </div>
   <div style="height:60px"></div>`;
@@ -1562,6 +1582,7 @@ function renderFabricIssueRegistry(){
 window.fabRegPage=function(n){_fabRegPage=Math.max(0,n);const el=document.getElementById('fab-reg-list');if(el){el.innerHTML=_fabRegListHTML();el.scrollIntoView({behavior:'smooth',block:'start'});}};
 window.fabRegSetPer=function(v){_fabRegPer=parseInt(v)||12;_fabRegPage=0;const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();};
 window.fabRegFilter=function(q){_fabRegQ=q||'';_fabRegPage=0;const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();};
+window.fabRegSetLabel=function(v){_fabRegLabelFilter=v||'';_fabRegPage=0;const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();};
 window.fabRegToggleIncomplete=function(){
   _fabRegIncompleteOnly=!_fabRegIncompleteOnly;_fabRegPage=0;
   const b=document.getElementById('fab-reg-inc-btn');
@@ -1580,12 +1601,17 @@ function _fabRenderTagModal(){
   const g=_fabIssueRecords().find(x=>x.id===w.id)||{};
   const swatches=FAB_LABEL_COLORS.map((c,i)=>{const on=w.colorIdx===i;return`<button type="button" onclick="window._fabTagPickColor(${i})" title="${c.name}" style="width:32px;height:32px;border-radius:9px;border:2px solid #fff;background:${c.dot};cursor:pointer;box-shadow:${on?'0 0 0 3px #111':'0 0 0 1px var(--border)'};transform:${on?'scale(1.08)':'none'};transition:transform .1s;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:900;line-height:1">${on?'✓':''}</button>`;}).join('');
   const chips=w.labels.length?w.labels.map((l,i)=>`<span style="display:inline-flex;align-items:center;gap:6px;background:${l.bg};color:${l.fg};font-size:12px;font-weight:700;padding:4px 10px;border-radius:7px;margin:0 6px 6px 0">${_gpEsc(l.text)}<button onclick="window._fabTagRemove(${i})" style="background:none;border:none;color:${l.fg};cursor:pointer;font-size:15px;line-height:1;padding:0">×</button></span>`).join(''):'<span style="font-size:12px;color:var(--muted)">No labels yet.</span>';
+  const known=_fabAllUsedLabels();
+  const usedKeys=new Set(w.labels.map(l=>String(l.text).toUpperCase()));
+  const quick=known.map((l,i)=>{const on=usedKeys.has(l.text.toUpperCase());return`<button type="button" onclick="window._fabTagQuick(${i})" ${on?'disabled':''} style="background:${l.bg};color:${l.fg};font-size:11px;font-weight:700;padding:4px 10px;border-radius:7px;border:none;cursor:${on?'default':'pointer'};opacity:${on?'.4':'1'};margin:0 6px 6px 0">${on?'✓ ':'+ '}${_gpEsc(l.text)}</button>`;}).join('');
   _fabModal('Label · PO '+_gpEsc(g.poId||''),`
     <label style="display:flex;align-items:center;gap:10px;font-size:14px;margin-bottom:16px;cursor:pointer">
       <input type="checkbox" id="fab-tag-incomplete" ${w.incomplete?'checked':''} onchange="window._fabTagToggleIncomplete(this.checked)" style="width:18px;height:18px">
       <span style="font-weight:700">Mark this issue <span style="color:#dc2626">Incomplete</span></span>
     </label>
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px">Custom labels</div>
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px">Quick apply <span style="font-weight:400;text-transform:none">— tap to add a saved / preset label</span></div>
+    <div style="margin-bottom:14px">${quick}</div>
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px">Labels on this entry</div>
     <div style="margin-bottom:12px">${chips}</div>
     <input id="fab-tag-text" value="${_gpEsc(w._pendingText||'')}" placeholder="Label text — e.g. Urgent, Reprint, Short fabric" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:10px">
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">${swatches}
@@ -1594,6 +1620,13 @@ function _fabRenderTagModal(){
     <button class="btn-primary" style="width:100%" onclick="window._fabTagSave()">Save</button>
   `);
 }
+window._fabTagQuick=function(i){
+  const known=_fabAllUsedLabels();const l=known[i];if(!l)return;
+  if(_fabTagWork.labels.some(x=>String(x.text).toUpperCase()===l.text.toUpperCase()))return;
+  _fabTagWork._pendingText=document.getElementById('fab-tag-text')?.value||'';
+  _fabTagWork.labels.push({text:l.text,bg:l.bg,fg:l.fg});
+  _fabRenderTagModal();
+};
 window._fabTagPickColor=function(i){_fabTagWork._pendingText=document.getElementById('fab-tag-text')?.value||'';_fabTagWork.colorIdx=i;_fabRenderTagModal();};
 window._fabTagToggleIncomplete=function(v){_fabTagWork.incomplete=!!v;};
 window._fabTagRemove=function(i){_fabTagWork._pendingText=document.getElementById('fab-tag-text')?.value||'';_fabTagWork.labels.splice(i,1);_fabRenderTagModal();};
