@@ -862,14 +862,34 @@ window.openMoreSheet=function(){
   if(om||['asghar','zohaib','waqas','haris'].includes(session.u))items.push({iconName:'print',label:'Embellishment Jobs',pageId:'printing-jobs'});
   if(om)items.push({iconName:'eye',label:'Observer Tower',pageId:'observer-tower'});
   if(typeof canManageRecipes==='function'&&(canManageRecipes()||(typeof isQCWorker==='function'&&isQCWorker())))items.push({iconName:'palette',label:'Color Library',pageId:'color-library'});
-  // Store
-  items.push({iconName:'shop',label:'Store',pageId:'store-dashboard'});
+  // Store — opens a full sub-menu (Dashboard, Cash Ledger, Inventory, …)
+  items.push({iconName:'shop',label:'Store ›',onClick:'window.openStoreSubSheet()'});
   // Owner-only
   if(om)items.push({iconName:'list',label:'Bug Tracker',pageId:'bug-tracker'});
   if(isOwner)items.push({iconName:'shop',label:'Inventory Intel',pageId:'shopify-intel'});
   if(isOwner)items.push({iconName:'activity',label:'Activity Log',pageId:'activity'});
   if(isOwner)items.push({iconName:'user',label:'Users',pageId:'users'});
   window.openMobSheet('More',items);
+};
+
+// Full Store sub-menu — reached by tapping "Store ›" in the main More sheet,
+// so every store page (incl. Cash Ledger) is reachable on mobile.
+window.openStoreSubSheet=function(){
+  const items=[
+    {iconName:'home',label:'Store Dashboard',pageId:'store-dashboard'},
+    {iconName:'box',label:'Inventory',pageId:'store-inventory'},
+    {iconName:'plus',label:'Receive Stock',pageId:'store-receive'},
+    {iconName:'tray',label:'Issue Stock',pageId:'store-issue'},
+    {iconName:'activity',label:'Stock Log',pageId:'store-log'}
+  ];
+  if(typeof _canViewCash==='function'&&_canViewCash())items.push({iconName:'activity',label:'💰 Cash Ledger',pageId:'store-cash-ledger'});
+  items.push(
+    {iconName:'activity',label:'Analytics',pageId:'store-analytics'},
+    {iconName:'list',label:'Trim Templates',pageId:'store-templates'},
+    {iconName:'tray',label:'PO Issue Requests',pageId:'po-issue-list'}
+  );
+  if(typeof _canApproveEdits==='function'&&_canApproveEdits())items.push({iconName:'list',label:'Edit Inbox',pageId:'po-edit-inbox'});
+  window.openMobSheet('Store',items);
 };
 
 window.openStoreMoreSheet=function(){
