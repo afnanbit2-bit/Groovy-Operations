@@ -737,7 +737,7 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
   await runTransaction(db,async tx=>{
     const snap=await tx.get(invRef);
     const rolls=Array.isArray(snap.data()?.rolls)?snap.data().rolls.map(r=>({...r})):[];
-    let movType='out',movSub='',movQty=0;const movCodes=[];
+    let movType='out',movSub='',movQty=0;const movCodes=[];let partialLog=null;
     const findRoll=(rc,statuses)=>rolls.find(r=>r.rollCode===rc&&statuses.includes(r.status||'in_stock'));
     if(Array.isArray(addRolls)){
       for(const r of addRolls){rolls.push({rollCode:r.rollCode,weight:r.weight,gsm:r.gsm||gsm||0,unit:r.unit||unit,status:'in_stock',sourceFabId:r.sourceFabId||sourceId,addedAt:Date.now(),addedBy:session.name});movQty+=r.weight||0;movCodes.push(r.rollCode);}
@@ -752,16 +752,21 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
         // the same mechanism the Returns flow uses. Absent / >= weight → the
         // whole roll is issued exactly as before. Callers gate tiny scraps out,
         // so any positive leftover here is a real remnant worth keeping.
+        const po=reservePO||r.reservedPO||'';
         const full=r.weight||0;
         let use=full;
         if(partialUse&&partialUse[rc]!=null){const v=parseFloat(partialUse[rc]);if(!isNaN(v))use=Math.max(0,Math.min(v,full));}
         const leftover=parseFloat((full-use).toFixed(2));
         if(leftover>0){
           const remCode=_nextRemnantCode(rolls,rc);
-          rolls.push({rollCode:remCode,weight:leftover,gsm:r.gsm||gsm||0,unit:r.unit||unit,status:'in_stock',remnant:true,parentRollCode:rc,sourceFabId:r.sourceFabId,qcPassed:r.qcPassed||false,qcBy:r.qcBy||'',qcAt:r.qcAt||null,addedAt:Date.now(),addedBy:session.name});
-          r.originalWeight=full;r.weight=use;r.remnantRollCode=remCode;
+          // Remnant carries the parent's original weight, the used amount and the
+          // PO it was cut for, so every fabric view can show the full story
+          // without re-deriving it from the parent roll.
+          rolls.push({rollCode:remCode,weight:leftover,gsm:r.gsm||gsm||0,unit:r.unit||unit,status:'in_stock',remnant:true,parentRollCode:rc,parentOriginalWeight:full,parentUsedWeight:use,parentIssuedPO:po,sourceFabId:r.sourceFabId,qcPassed:r.qcPassed||false,qcBy:r.qcBy||'',qcAt:r.qcAt||null,addedAt:Date.now(),addedBy:session.name});
+          r.originalWeight=full;r.weight=use;r.remnantRollCode=remCode;r.partialIssue=true;
+          (partialLog=partialLog||[]).push({rollCode:rc,originalWeight:full,usedWeight:use,remnantRollCode:remCode,remnantWeight:leftover});
         }
-        r.status='issued';r.issuedAt=Date.now();r.issuedBy=session.name;r.issuedTo=sourceId;r.issuedPO=reservePO||r.reservedPO||'';delete r.reservedPO;
+        r.status='issued';r.issuedAt=Date.now();r.issuedBy=session.name;r.issuedTo=sourceId;r.issuedPO=po;delete r.reservedPO;
         movQty+=use;movCodes.push(rc);
       }
       movType='out';movSub='issue';
@@ -808,6 +813,7 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
     const reservedWeight=parseFloat(reserved.reduce((s,r)=>s+(r.weight||0),0).toFixed(2));
     const payload={key,fabType,gsm:Number(gsm)||0,color,unit:unit||'kg',rolls,totalWeight,reservedWeight,rollsCount:inStock.length,reservedCount:reserved.length,lastMovementAt:Date.now()};
     const movDoc={id:movRef.id,ts:Date.now(),type:movType,subtype:movSub,fabType,gsm:Number(gsm)||0,color,unit:unit||'kg',qty:parseFloat(movQty.toFixed(2)),rollCodes:movCodes,sourceCollection:sourceCol||'',sourceId:sourceId||'',by:session.name,note:note||''};
+    if(partialLog)movDoc.partialRolls=partialLog;   // per-roll partial-usage detail for the log/reports
     tx.set(invRef,payload,{merge:true});
     tx.set(movRef,movDoc);
     if(Array.isArray(extraWrites))for(const w of extraWrites){if(w&&w.ref&&w.data){if(w.merge)tx.set(w.ref,w.data,{merge:true});else tx.set(w.ref,w.data);}}

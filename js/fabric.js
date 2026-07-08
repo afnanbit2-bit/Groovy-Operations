@@ -363,8 +363,8 @@ function _renderFabInvDrill(key){
       return`<div style="padding:8px 2px;border-bottom:1px solid #f5f5f5;display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <input type="checkbox" class="fab-drill-chk" data-rc="${_gpEsc(r.rollCode||'')}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(supplier)}" data-gsm="${r.gsm||rcpt?.gsm||s.gsm||''}" data-color="${_gpEsc(r.color||rcpt?.color||s.color||'')}" data-fabtype="${_gpEsc(s.fabType||'')}" onclick="window.updateDrillPrintCount()" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
-          <span style="font-weight:700;letter-spacing:.04em;min-width:120px">${_gpEsc(r.rollCode||'—')}${r.remnant?' <span style="font-size:9px;color:#d97706">remnant</span>':''}</span>
-          <span style="flex:1;min-width:70px">${wt}${r.consumedWeight?` · used ${r.consumedWeight}`:''}</span>
+          <span style="font-weight:700;letter-spacing:.04em;min-width:120px">${_gpEsc(r.rollCode||'—')}${r.remnant?' <span style="font-size:9px;font-weight:700;color:#b45309;background:#fef3c7;padding:1px 6px;border-radius:5px;letter-spacing:.03em">REMNANT</span>':''}${(r.partialIssue||(r.originalWeight&&r.originalWeight>(r.weight||0)))?' <span style="font-size:9px;font-weight:700;color:#b45309;background:#fef3c7;padding:1px 6px;border-radius:5px;letter-spacing:.03em">PARTIAL</span>':''}</span>
+          <span style="flex:1;min-width:70px">${(r.originalWeight&&r.originalWeight>(r.weight||0))?`<b>${r.weight||0}</b> / ${r.originalWeight} ${r.unit||s.unit||'kg'} <span style="color:#b45309;font-size:11px">used</span>`:wt}${r.consumedWeight?` · used ${r.consumedWeight}`:''}</span>
           <span style="color:${stColor};font-weight:600;text-transform:capitalize;font-size:11px">${st.replace('_',' ')}</span>
           <button onclick="window.printRollBarcode('${_gpEsc(r.rollCode||'')}','${_gpEsc(s.fabType||'')}','${r.gsm||s.gsm||0}','${_gpEsc(s.color||'')}','${_gpEsc(wt)}','${_gpEsc(supplier)}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">🖨 Print</button>
           ${canAct?`<button onclick="window.editFabricRoll('${_gpEsc(r.sourceFabId||'')}','${_gpEsc(r.rollCode||'')}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">Edit</button>
@@ -390,7 +390,7 @@ function _renderFabInvDrill(key){
           <td style="padding:8px;font-size:11px;letter-spacing:.04em;color:${isRet?'#7c3aed':'inherit'}">${(m.rollCodes||[]).slice(0,3).map(_gpEsc).join(', ')}${(m.rollCodes||[]).length>3?` +${m.rollCodes.length-3}`:''}</td>
           <td style="padding:8px;font-size:11px;color:${noteCol}">${_gpEsc(m.sourceCollection||'')}/${_gpEsc(m.sourceId||'')}</td>
           <td style="padding:8px;font-size:11px;color:${noteCol}">${_gpEsc(m.by||'')}</td>
-          <td style="padding:8px;font-size:11px;color:${noteCol}">${_gpEsc(m.note||'')}</td>
+          <td style="padding:8px;font-size:11px;color:${noteCol}">${_gpEsc(m.note||'')}${(m.partialRolls&&m.partialRolls.length)?`<span style="color:#b45309;display:block;margin-top:2px">✂ ${m.partialRolls.map(pr=>`${_gpEsc(pr.rollCode)} ${pr.usedWeight}/${pr.originalWeight} used → ${_gpEsc(pr.remnantRollCode)} ${pr.remnantWeight}`).join('; ')}</span>`:''}</td>
         </tr>`;
       }).join('')}</tbody>
     </table></div>`:'<div class="empty" style="padding:16px">No movements logged for this fabric yet.</div>'}
@@ -432,7 +432,16 @@ function _fabRollDetail(r){
   if(st==='issued')bits.push(`Issued${r.issuedPO?` for PO ${_gpEsc(r.issuedPO)}`:''}${r.issuedTo?` to ${_gpEsc(r.issuedTo)}`:''}${r.issuedAt?` · ${d(r.issuedAt)}`:''}${r.issuedBy?` · by ${_gpEsc(r.issuedBy)}`:''}`);
   if(st==='returned_supplier'){const sup=_fabRollSupplier(r);bits.push(`Returned to ${sup?_gpEsc(sup):'supplier'}${r.returnReason?` — ${_gpEsc(r.returnReason)}`:''}${r.returnedToSupplierAt?` · ${d(r.returnedToSupplierAt)}`:''}`);}
   if(st==='in_stock'&&r.returnedAt)bits.push(`Returned to stock ${d(r.returnedAt)}`);
-  if(r.remnant&&r.parentRollCode)bits.push(`Remnant of ${_gpEsc(r.parentRollCode)}`);
+  const u=r.unit||'kg';
+  // Partially-issued parent roll: only part went to production; the rest became
+  // a remnant. Show the split so the record is self-explanatory.
+  if(r.partialIssue||(r.originalWeight&&r.originalWeight>(r.weight||0))){
+    bits.push(`Partially used — ${r.weight||0} of ${r.originalWeight} ${u} cut${r.issuedPO?` for PO ${_gpEsc(r.issuedPO)}`:''}${r.remnantRollCode?`, ${parseFloat(((r.originalWeight||0)-(r.weight||0)).toFixed(2))} ${u} kept as ${_gpEsc(r.remnantRollCode)}`:''}`);
+  }
+  // Remnant roll: the balance kept back from a partially-used parent.
+  if(r.remnant&&r.parentRollCode){
+    bits.push(`Remnant of ${_gpEsc(r.parentRollCode)}${r.parentOriginalWeight?` — original roll ${r.parentOriginalWeight} ${u}, ${r.parentUsedWeight||0} ${u} used${r.parentIssuedPO?` for PO ${_gpEsc(r.parentIssuedPO)}`:''}`:''}`);
+  }
   return bits.join(' · ')||'In stock';
 }
 
@@ -1512,6 +1521,7 @@ function _fabRegRows(issues){
       </div>
       ${sizes?`<div style="font-size:12px;color:var(--muted);margin-top:7px">Cut by size: ${sizes}</div>`:''}
       ${g.ribWeight?`<div style="font-size:12px;color:#7c3aed;margin-top:5px;font-weight:600">+ Rib: ${_gpEsc(g.ribType||'')} ${g.ribGsm||0}gsm ${_gpEsc(g.ribColor||'')} · ${(g.ribWeight||0).toFixed(2)} kg · ${g.ribRolls||0} rolls${g.ribPct?` (${g.ribPct}%)`:''}</div>`:''}
+      ${(g.partialRolls&&g.partialRolls.length)?`<div style="font-size:12px;color:#b45309;margin-top:5px;font-weight:600;background:#fffbeb;border:1px solid #fde68a;border-radius:7px;padding:5px 9px">✂ Partial rolls (balance kept in stock): ${g.partialRolls.map(pr=>`${_gpEsc(pr.rollCode)} — <b>${pr.usedWeight}</b> / ${pr.originalWeight} ${_gpEsc(pr.unit||'kg')} used · ${pr.remnantWeight} ${_gpEsc(pr.unit||'kg')} remnant`).join(' &nbsp;·&nbsp; ')}</div>`:''}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;flex-wrap:wrap">
         <div style="font-size:11px;color:var(--muted)">Issued by ${_gpEsc(g.issuer||g.name||'')}${g.cutMaster?` · Cut by <strong style="color:var(--text)">${_gpEsc(g.cutMaster)}</strong>`:''}</div>
         ${['owner','manager'].includes(session.role)?`<div style="display:flex;gap:6px">
@@ -2348,10 +2358,22 @@ window.fabIssueRemove=function(code){
 function _fabIssueUseHintHtml(r){
   const full=r.weight||0,unit=r.unit||'kg',use=_fabRollUse(r);
   const leftover=parseFloat((full-use).toFixed(2));
-  if(use<=0)return '<span style="color:#dc2626">Enter weight used</span>';
-  if(leftover<=0)return '<span style="color:var(--muted)">whole roll issued</span>';
-  if(leftover<FAB_REMNANT_MIN)return `<span style="color:var(--muted)">leftover ${leftover} ${unit} &lt; ${FAB_REMNANT_MIN} ${unit} — counted as used, no remnant</span>`;
-  return `<span style="color:var(--amber)">↳ ${leftover} ${unit} kept in stock as a remnant roll</span>`;
+  if(use<=0)return '<span style="color:#dc2626;font-weight:600">Enter the weight used</span>';
+  if(leftover<=0)return '<span style="color:var(--muted)">Whole roll issued — nothing kept back.</span>';
+  if(leftover<FAB_REMNANT_MIN)return `<span style="color:var(--muted)">Leftover ${leftover} ${unit} is under the ${FAB_REMNANT_MIN} ${unit} scrap cutoff — counted as used, no remnant.</span>`;
+  return `<span style="color:var(--amber);font-weight:700">↳ Partial roll · ${leftover} ${unit} stays in stock as a remnant</span>`;
+}
+// Used / remnant / scrap split bar for a picked roll.
+function _fabIssueBarHtml(r){
+  const full=r.weight||0;if(full<=0)return '';
+  const use=_fabRollUse(r),rem=_fabRollRemnant(r);
+  const scrap=Math.max(0,parseFloat((full-use-rem).toFixed(2)));
+  const p=x=>Math.max(0,Math.min(100,x/full*100));
+  return`<div style="display:flex;height:13px;border-radius:5px;overflow:hidden;border:1px solid var(--border);background:#fff" title="used ${use} · remnant ${rem} · scrap ${scrap}">
+    <div style="width:${p(use)}%;background:#dc2626"></div>
+    <div style="width:${p(rem)}%;background:#d97706"></div>
+    <div style="width:${p(scrap)}%;background:repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb 3px,#d1d5db 3px,#d1d5db 6px)"></div>
+  </div>`;
 }
 function _fabIssueRenderSelected(){
   const el=document.getElementById('fab-iss-selected');if(!el)return;
@@ -2362,20 +2384,26 @@ function _fabIssueRenderSelected(){
   const groupsHtml=groups.map((g,gi)=>{
     const unit=g.unit||'kg';
     return`<div style="border:1px solid var(--border);border-radius:9px;padding:8px 10px;margin-bottom:8px">
-      <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:4px">${multi?`<span style="color:var(--muted)">Fabric ${gi+1}:</span> `:''}${_gpEsc(g.fabType||'')} · ${g.gsm||0}gsm · ${_gpEsc(g.color||'')}</div>
-      ${g.rolls.map(r=>{const sid=_fabIssueSafeId(r.rollCode);const full=r.weight||0;return`<div style="padding:5px 2px;border-bottom:1px solid #f5f5f5;font-size:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode)}${r.status==='reserved'?' <span style="color:var(--amber);font-weight:400;font-size:10px">(reserved)</span>':''}</span>
-          <span style="display:flex;gap:6px;align-items:center">
-            <label style="font-size:10px;color:var(--muted)">used</label>
-            <input type="number" min="0" max="${full}" step="0.01" value="${_fabRollUse(r)}" id="fab-use-${sid}" title="Weight used by production" oninput="window.fabIssueSetUse('${_gpEsc(r.rollCode)}')" style="width:72px;padding:5px 7px;border:1px solid var(--border);border-radius:6px;font-size:12px;text-align:right;font-family:inherit;background:#fff">
-            <span style="color:var(--muted);white-space:nowrap">/ ${full} ${unit}</span>
-            <button onclick="window.fabIssueRemove('${_gpEsc(r.rollCode)}')" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:14px">×</button>
-          </span>
+      <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">${multi?`<span style="color:var(--muted)">Fabric ${gi+1}:</span> `:''}${_gpEsc(g.fabType||'')} · ${g.gsm||0}gsm · ${_gpEsc(g.color||'')}</div>
+      ${g.rolls.map(r=>{const sid=_fabIssueSafeId(r.rollCode);const full=r.weight||0;return`<div style="border:1px solid var(--border);border-radius:8px;padding:9px 10px;margin-bottom:7px;background:#fafafa">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px">
+          <span style="font-weight:700;letter-spacing:.04em;font-size:12.5px">${_gpEsc(r.rollCode)}${r.status==='reserved'?' <span style="color:var(--amber);font-weight:400;font-size:10px">(reserved)</span>':''}</span>
+          <button onclick="window.fabIssueRemove('${_gpEsc(r.rollCode)}')" title="Remove roll" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px;line-height:1">×</button>
         </div>
-        <div id="fab-uh-${sid}" style="font-size:10.5px;margin-top:2px">${_fabIssueUseHintHtml(r)}</div>
+        <div style="display:flex;align-items:flex-end;gap:9px;flex-wrap:wrap">
+          <div style="display:flex;flex-direction:column;gap:3px">
+            <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Used by production</label>
+            <div style="display:flex;align-items:center;gap:7px">
+              <input type="number" min="0" max="${full}" step="0.01" value="${_fabRollUse(r)}" id="fab-use-${sid}" title="Weight used by production" oninput="window.fabIssueSetUse('${_gpEsc(r.rollCode)}')" style="width:96px;padding:8px 10px;border:1px solid var(--dark);border-radius:8px;font-size:16px;font-weight:800;text-align:right;font-family:inherit;background:#fff">
+              <span style="font-size:12px;color:var(--muted)">${unit} of <b style="color:var(--text)">${full}</b> ${unit}</span>
+              <button type="button" onclick="window.fabIssueUseFull('${_gpEsc(r.rollCode)}')" title="Use the whole roll" style="padding:5px 9px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Full</button>
+            </div>
+          </div>
+        </div>
+        <div id="fab-bar-${sid}" style="margin-top:8px">${_fabIssueBarHtml(r)}</div>
+        <div id="fab-uh-${sid}" style="font-size:11px;margin-top:5px">${_fabIssueUseHintHtml(r)}</div>
       </div>`;}).join('')}
-      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);padding-top:5px"><span>${g.rolls.length} roll${g.rolls.length===1?'':'s'}</span><span style="font-weight:700;color:var(--text)" id="fab-gw-${_fabIssueSafeId(g.key)}">${g.weight.toFixed(2)} ${unit} used</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);padding-top:3px"><span>${g.rolls.length} roll${g.rolls.length===1?'':'s'}</span><span style="font-weight:700;color:var(--text)" id="fab-gw-${_fabIssueSafeId(g.key)}">${g.weight.toFixed(2)} ${unit} used</span></div>
     </div>`;
   }).join('');
   el.innerHTML=`${groupsHtml}
@@ -2386,19 +2414,27 @@ function _fabIssueRenderSelected(){
 
 // Live update when a per-roll "used" weight changes. Deliberately does NOT
 // re-render the list (that would drop input focus mid-type) — it patches the
-// row's hint, the group + grand totals, and the derived cut/avg + rib figures.
+// row's bar + hint, the group + grand totals, and the derived cut/avg + rib.
 window.fabIssueSetUse=function(code){
   const r=_fabIssueRolls.find(x=>x.rollCode===code);if(!r)return;
-  const inp=document.getElementById('fab-use-'+_fabIssueSafeId(code));
+  const sid=_fabIssueSafeId(code);
+  const inp=document.getElementById('fab-use-'+sid);
   const v=parseFloat(inp?.value);const full=r.weight||0;
   r.useWeight=isNaN(v)?full:Math.max(0,Math.min(v,full));
-  const uh=document.getElementById('fab-uh-'+_fabIssueSafeId(code));
-  if(uh)uh.innerHTML=_fabIssueUseHintHtml(r);
+  const bar=document.getElementById('fab-bar-'+sid);if(bar)bar.innerHTML=_fabIssueBarHtml(r);
+  const uh=document.getElementById('fab-uh-'+sid);if(uh)uh.innerHTML=_fabIssueUseHintHtml(r);
   _fabIssueGroups().forEach(g=>{const gw=document.getElementById('fab-gw-'+_fabIssueSafeId(g.key));if(gw)gw.textContent=g.weight.toFixed(2)+' '+(g.unit||'kg')+' used';});
   const grand=document.getElementById('fab-iss-grand');
   if(grand)grand.textContent=_fabIssueRolls.reduce((s,x)=>s+_fabRollIssuedWeight(x),0).toFixed(2)+' kg used';
   if(typeof window.fabIssueRecalc==='function')window.fabIssueRecalc();
   if(typeof window.fabRibRecalc==='function')window.fabRibRecalc();
+};
+// "Full" shortcut — reset a roll to whole-roll issue.
+window.fabIssueUseFull=function(code){
+  const r=_fabIssueRolls.find(x=>x.rollCode===code);if(!r)return;
+  r.useWeight=r.weight||0;
+  const inp=document.getElementById('fab-use-'+_fabIssueSafeId(code));if(inp)inp.value=r.useWeight;
+  window.fabIssueSetUse(code);
 };
 
 window.submitFabricIssue=async function(){
@@ -2436,7 +2472,8 @@ window.submitFabricIssue=async function(){
   // inventory engine mints a remnant roll for the balance. Sub-cutoff scraps are
   // excluded here, so those rolls decrement whole (no remnant).
   const partialUse={};
-  _fabIssueRolls.forEach(r=>{if(_fabRollRemnant(r)>0)partialUse[r.rollCode]=_fabRollUse(r);});
+  const partialRolls=[];
+  _fabIssueRolls.forEach(r=>{const rem=_fabRollRemnant(r);if(rem>0){partialUse[r.rollCode]=_fabRollUse(r);partialRolls.push({rollCode:r.rollCode,originalWeight:r.weight||0,usedWeight:_fabRollUse(r),remnantWeight:rem,unit:r.unit||'kg'});}});
   // Avg consumption is DERIVED: total fabric used (all fabrics) ÷ pieces cut.
   const avgConsumption=cutQty>0?parseFloat((fabQty/cutQty).toFixed(4)):0;
   const consumptionUnit=fabUnit;
@@ -2456,7 +2493,7 @@ window.submitFabricIssue=async function(){
     // The gate pass IS the fabric-issue registry record. Top-level fabric* keep
     // the PRIMARY (first) fabric for back-compat; fabricQty/fabricUsed are the
     // TOTAL across all fabrics; the full per-fabric split lives in `fabrics`.
-    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls${fabrics.length>1?` · ${fabrics.length} fabrics`:''}`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,fabricUsed:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:primary.fabType,fabricGsm:primary.gsm,fabricColor:primary.color,inventoryKey:primary._id,fabrics,fabricCount:fabrics.length,sizeBreakdown,cutQty,plannedQty:cutQty,totalBundles,avgConsumption,consumptionUnit,cutMaster,...ribData,boras:'0',items:[],totalUnits:cutQty,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
+    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls${fabrics.length>1?` · ${fabrics.length} fabrics`:''}`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,fabricUsed:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:primary.fabType,fabricGsm:primary.gsm,fabricColor:primary.color,inventoryKey:primary._id,fabrics,fabricCount:fabrics.length,sizeBreakdown,cutQty,plannedQty:cutQty,totalBundles,avgConsumption,consumptionUnit,cutMaster,partialRolls,partialCount:partialRolls.length,...ribData,boras:'0',items:[],totalUnits:cutQty,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
     // Decrement each fabric combo. The FIRST commits the gate-pass doc in its
     // own transaction (atomic with the primary decrement); the rest are
     // best-effort like rib, warning on any failure.
@@ -2471,7 +2508,7 @@ window.submitFabricIssue=async function(){
       try{ await _fabInvUpsert({fabType:ribStock.fabType,gsm:ribStock.gsm,color:ribStock.color,unit:ribStock.unit||'kg',removeRollCodes:ribCodes,reservePO:po,note:`Rib issued with ${article} for ${po}`,sourceCol:'gatepasses',sourceId:gpId}); }
       catch(e){ showToast('Fabric issued, but rib decrement failed: '+e.message,true); }
     }
-    await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to factory for ${po}${cutQty?` · cut ${cutQty} pcs / ${totalBundles} bundles`:''}${ribCodes.length?` · rib ${ribWeight}kg`:''} by ${session.name}`);
+    await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to factory for ${po}${cutQty?` · cut ${cutQty} pcs / ${totalBundles} bundles`:''}${partialRolls.length?` · ${partialRolls.length} partial (remnant kept)`:''}${ribCodes.length?` · rib ${ribWeight}kg`:''} by ${session.name}`);
     showToast(`${gpId} issued ✓ · ${rollCodes.length} rolls${ribCodes.length?` + ${ribCodes.length} rib`:''}`);
     _fabIssueRolls=[];_fabIssueKey=null;_fabIssueSizes=[{size:'',bundles:''}];_fabRibRolls=[];_fabRibKey=null;
     _fabBusyEnd();   // drop the overlay before the (slower) refresh so the UI never stays blocked
@@ -2661,7 +2698,10 @@ function _fabWastageData(){
     if((r.status||'')==='issued'||r.consumedWeight){
       byPO[po]=byPO[po]||{po,issued:0,consumed:0};
       byPO[po].issued+=r.weight||0;
-      byPO[po].consumed+=r.consumedWeight||0;
+      // A partially-issued roll only sent its used weight to production (the
+      // balance stayed in stock as a remnant) — so what was issued IS consumed;
+      // there is no leftover to count as returned/waste.
+      byPO[po].consumed+=(r.partialIssue||(r.originalWeight&&r.originalWeight>(r.weight||0)))?(r.weight||0):(r.consumedWeight||0);
     }
   }));
   return Object.values(byPO).map(x=>({...x,returned:Math.max(0,x.issued-x.consumed),wastagePct:x.issued?(x.consumed/x.issued*100):0}))
@@ -2834,6 +2874,7 @@ function renderFabricLogTab(){
           <span>by ${_gpEsc(m.by||'—')}</span>
         </div>
         ${codes.length?`<div style="font-size:10px;color:#9ca3af;letter-spacing:.02em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:4px">${codes.slice(0,6).map(_gpEsc).join(' · ')}${codes.length>6?` +${codes.length-6} more`:''}</div>`:''}
+        ${(m.partialRolls&&m.partialRolls.length)?`<div style="font-size:10.5px;color:#b45309;margin-top:3px">${m.partialRolls.map(pr=>`✂ ${_gpEsc(pr.rollCode)}: ${pr.usedWeight} / ${pr.originalWeight} ${m.unit||'kg'} used → remnant ${_gpEsc(pr.remnantRollCode)} (${pr.remnantWeight} ${m.unit||'kg'} back to stock)`).join('<br>')}</div>`:''}
         ${extra?`<div style="font-size:11px;color:${a.color};margin-top:3px">${_gpEsc(extra)}</div>`:''}
       </div>
       <div style="text-align:right;flex-shrink:0">
@@ -2866,17 +2907,19 @@ function _fabXlsx(aoa,sheetName,fileBase){
 }
 
 window.fabExportStock=function(){
-  const rows=[['Fabric','GSM','Color','Roll Code','Status','Weight','Unit','Source','PO','Remnant']];
+  const rows=[['Fabric','GSM','Color','Roll Code','Status','Weight','Original Wt','Unit','Source','PO','Remnant','Partially Used','Parent Roll']];
   allFabricInventory.forEach(s=>(s.rolls||[]).forEach(r=>{
-    rows.push([s.fabType,s.gsm,s.color,r.rollCode,r.status||'in_stock',r.weight||0,r.unit||s.unit||'kg',r.sourceFabId||'',r.issuedPO||r.reservedPO||'',r.remnant?'yes':'']);
+    const partial=(r.partialIssue||(r.originalWeight&&r.originalWeight>(r.weight||0)))?'yes':'';
+    rows.push([s.fabType,s.gsm,s.color,r.rollCode,r.status||'in_stock',r.weight||0,r.originalWeight||'',r.unit||s.unit||'kg',r.sourceFabId||'',r.issuedPO||r.reservedPO||r.parentIssuedPO||'',r.remnant?'yes':'',partial,r.parentRollCode||'']);
   }));
   _fabXlsx(rows,'Stock','Groovy-Fabric-Stock');
 };
 
 window.fabExportMovements=function(){
-  const rows=[['When','Type','Subtype','Fabric','GSM','Color','Qty','Unit','Rolls','By','Note']];
+  const rows=[['When','Type','Subtype','Fabric','GSM','Color','Qty','Unit','Rolls','By','Note','Partial Detail']];
   allFabricMovements.forEach(m=>{
-    rows.push([new Date(m.ts).toLocaleString('en-GB'),m.type,m.subtype||'',m.fabType,m.gsm,m.color,m.qty||0,m.unit||'kg',(m.rollCodes||[]).join(' '),m.by||'',m.note||'']);
+    const partial=(m.partialRolls||[]).map(pr=>`${pr.rollCode}:${pr.usedWeight}/${pr.originalWeight}→${pr.remnantRollCode}(${pr.remnantWeight})`).join('; ');
+    rows.push([new Date(m.ts).toLocaleString('en-GB'),m.type,m.subtype||'',m.fabType,m.gsm,m.color,m.qty||0,m.unit||'kg',(m.rollCodes||[]).join(' '),m.by||'',m.note||'',partial]);
   });
   _fabXlsx(rows,'Movements','Groovy-Fabric-Movements');
 };
