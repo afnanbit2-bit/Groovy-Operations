@@ -1206,6 +1206,8 @@ window.submitFabricEdit=async function(fabId){
 // through the approval request flow, and the Firestore rules enforce the same
 // (delete: if isOwner()).
 function _fabCanDelete(){return !!(session&&session.role==='owner');}
+// Who can label fabric-issue registry entries — owners plus Uzaib (field staff).
+function _fabCanLabel(){return !!(session&&(session.role==='owner'||session.u==='uzaib'));}
 
 // Shared receipt deletion used by BOTH the owner immediate path and the
 // approval-execution path. Removes the receipt's rolls from inventory AND
@@ -1569,10 +1571,10 @@ function _fabRegRows(issues){
       ${(g.partialRolls&&g.partialRolls.length)?`<div style="font-size:12px;color:#b45309;margin-top:5px;font-weight:600;background:#fffbeb;border:1px solid #fde68a;border-radius:7px;padding:5px 9px">✂ Partial rolls (roll stays in stock, lighter): ${g.partialRolls.map(pr=>`${_gpEsc(pr.rollCode)} — <b>${pr.usedWeight}</b> ${_gpEsc(pr.unit||'kg')} used · ${pr.weightAfter} ${_gpEsc(pr.unit||'kg')} left${pr.weightBefore?` (was ${pr.weightBefore})`:''}`).join(' &nbsp;·&nbsp; ')}</div>`:''}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;flex-wrap:wrap">
         <div style="font-size:11px;color:var(--muted)">Issued by ${_gpEsc(g.issuer||g.name||'')}${g.cutMaster?` · Cut by <strong style="color:var(--text)">${_gpEsc(g.cutMaster)}</strong>`:''}</div>
-        ${['owner','manager'].includes(session.role)?`<div style="display:flex;gap:6px">
-          ${session.role==='owner'?`<button class="btn-outline" style="font-size:11px;padding:3px 12px" onclick="window.fabRegTag('${_gpEsc(g.id||'')}')">🏷 Label</button>`:''}
-          <button class="btn-outline" style="font-size:11px;padding:3px 12px" onclick="window.fabRegEdit('${_gpEsc(g.id||'')}')">Edit</button>
-          <button class="btn-outline" style="font-size:11px;padding:3px 12px;color:#dc2626;border-color:#fca5a5" onclick="window.fabRegDeleteOne('${_gpEsc(g.id||'')}')">Delete</button>
+        ${(_fabCanLabel()||['owner','manager'].includes(session.role))?`<div style="display:flex;gap:6px">
+          ${_fabCanLabel()?`<button class="btn-outline" style="font-size:11px;padding:3px 12px" onclick="window.fabRegTag('${_gpEsc(g.id||'')}')">🏷 Label</button>`:''}
+          ${['owner','manager'].includes(session.role)?`<button class="btn-outline" style="font-size:11px;padding:3px 12px" onclick="window.fabRegEdit('${_gpEsc(g.id||'')}')">Edit</button>
+          <button class="btn-outline" style="font-size:11px;padding:3px 12px;color:#dc2626;border-color:#fca5a5" onclick="window.fabRegDeleteOne('${_gpEsc(g.id||'')}')">Delete</button>`:''}
         </div>`:''}
       </div>
     </div>`;
@@ -1646,7 +1648,7 @@ window.fabRegToggleIncomplete=function(){
 };
 // ── Owner labels + Incomplete flag on a fabric-issue entry ──
 window.fabRegTag=function(gpId){
-  if(session.role!=='owner'){showToast('Owners only.',true);return;}
+  if(!_fabCanLabel()){showToast('Not allowed.',true);return;}
   const g=_fabIssueRecords().find(x=>x.id===gpId);if(!g){showToast('Entry not found.',true);return;}
   _fabTagWork={id:gpId,incomplete:!!g.regIncomplete,labels:(g.regLabels||[]).map(l=>({...l})),colorIdx:null,_pendingText:''};
   _fabRenderTagModal();
