@@ -717,14 +717,16 @@ function renderReturnsList(){
 
 // Fabric inventory engine — one operation per call. Recomputes totals from the
 // roll array (self-correcting). Operations: addRolls (receipt) · removeRollCodes
-// (issue; optional partialUse:{rollCode:weightUsed} mints a remnant for the
-// unused balance) · deleteRollCodes (hard remove) · reserveRollCodes (+reservePO) ·
+// (issue; optional partialUse:{rollCode:weightUsed} draws only part of a roll —
+// the SAME roll stays in stock at its reduced weight with a stale-label flag +
+// consumptionLog) · relabelRollCodes (clear stale-label flag after a reprint) ·
+// deleteRollCodes (hard remove) · reserveRollCodes (+reservePO) ·
 // releaseRollCodes · returnRollCodes (whole vendor return) · returnPartial
 // [{parentRollCode,weight}] (mint remnant + log consumed) ·
 // supplierReturnRollCodes (+reason). Runs in a Firestore transaction; callers
 // can pass extraWrites:[{ref,data,merge}] and extraDeletes:[ref] to commit the
 // receipt / gate-pass doc in the SAME atomic unit. See FABRIC_INVENTORY_PLAN.
-async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,partialUse,deleteRollCodes,editRolls,reserveRollCodes,reservePO,releaseRollCodes,returnRollCodes,returnPartial,supplierReturnRollCodes,reason,note,sourceCol,sourceId,extraWrites,extraDeletes}){
+async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,partialUse,relabelRollCodes,deleteRollCodes,editRolls,reserveRollCodes,reservePO,releaseRollCodes,returnRollCodes,returnPartial,supplierReturnRollCodes,reason,note,sourceCol,sourceId,extraWrites,extraDeletes}){
   const key=_fabInvKey(fabType,gsm,color);
   const invRef=doc(db,'fabric_inventory',key);
   const movRef=doc(collection(db,'fabric_movements'));  // stable id across tx retries
@@ -746,30 +748,39 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
       for(const rc of removeRollCodes){
         const r=findRoll(rc,['in_stock','reserved']);
         if(!r)continue;
-        // Partial usage: `partialUse[rc]` (when < the roll's weight) is what
-        // production actually consumed; the balance is minted back into stock as
-        // a remnant roll (same fabric, own barcode, inherits QC + parent link) —
-        // the same mechanism the Returns flow uses. Absent / >= weight → the
-        // whole roll is issued exactly as before. Callers gate tiny scraps out,
-        // so any positive leftover here is a real remnant worth keeping.
         const po=reservePO||r.reservedPO||'';
-        const full=r.weight||0;
-        let use=full;
-        if(partialUse&&partialUse[rc]!=null){const v=parseFloat(partialUse[rc]);if(!isNaN(v))use=Math.max(0,Math.min(v,full));}
-        const leftover=parseFloat((full-use).toFixed(2));
+        const before=r.weight||0;
+        let use=before;
+        if(partialUse&&partialUse[rc]!=null){const v=parseFloat(partialUse[rc]);if(!isNaN(v))use=Math.max(0,Math.min(v,before));}
+        const leftover=parseFloat((before-use).toFixed(2));
         if(leftover>0){
-          const remCode=_nextRemnantCode(rolls,rc);
-          // Remnant carries the parent's original weight, the used amount and the
-          // PO it was cut for, so every fabric view can show the full story
-          // without re-deriving it from the parent roll.
-          rolls.push({rollCode:remCode,weight:leftover,gsm:r.gsm||gsm||0,unit:r.unit||unit,status:'in_stock',remnant:true,parentRollCode:rc,parentOriginalWeight:full,parentUsedWeight:use,parentIssuedPO:po,sourceFabId:r.sourceFabId,qcPassed:r.qcPassed||false,qcBy:r.qcBy||'',qcAt:r.qcAt||null,addedAt:Date.now(),addedBy:session.name});
-          r.originalWeight=full;r.weight=use;r.remnantRollCode=remCode;r.partialIssue=true;
-          (partialLog=partialLog||[]).push({rollCode:rc,originalWeight:full,usedWeight:use,remnantRollCode:remCode,remnantWeight:leftover});
+          // PARTIAL DRAW — only `use` went to production; the SAME roll stays in
+          // stock at its reduced weight (one physical roll, one barcode). The
+          // printed label weight is now stale → flag for reprint. A running
+          // consumption log records every PO the roll has fed. Repeat draws just
+          // shrink it further (40→20→5); no second code is ever minted.
+          r.originalWeight=r.originalWeight||before;
+          r.weight=leftover;
+          r.status='in_stock';delete r.reservedPO;
+          r.partiallyConsumed=true;
+          r.labelStale=true;
+          r.consumptionLog=Array.isArray(r.consumptionLog)?r.consumptionLog:[];
+          r.consumptionLog.push({po,weight:use,ts:Date.now(),by:session.name});
+          r.lastDrawAt=Date.now();
+          (partialLog=partialLog||[]).push({rollCode:rc,weightBefore:before,usedWeight:use,weightAfter:leftover});
+        }else{
+          // Whole roll (or a sub-scrap leftover the caller rounded up) — the roll
+          // leaves stock exactly as before.
+          r.status='issued';r.issuedAt=Date.now();r.issuedBy=session.name;r.issuedTo=sourceId;r.issuedPO=po;delete r.reservedPO;
         }
-        r.status='issued';r.issuedAt=Date.now();r.issuedBy=session.name;r.issuedTo=sourceId;r.issuedPO=po;delete r.reservedPO;
         movQty+=use;movCodes.push(rc);
       }
       movType='out';movSub='issue';
+    }else if(Array.isArray(relabelRollCodes)){
+      // Barcode/label reprinted for a partially-used roll — same code, current
+      // weight. Clears the stale-label flag; logged for the audit trail.
+      for(const rc of relabelRollCodes){const r=findRoll(rc,['in_stock']);if(r){r.labelStale=false;r.relabeledAt=Date.now();r.relabeledBy=session.name;movQty+=r.weight||0;movCodes.push(rc);}}
+      movType='adjust';movSub='relabel';
     }else if(Array.isArray(deleteRollCodes)){
       // Hard-remove an in-stock roll entered by mistake — physically splices it
       // out of inventory (NOT an issue/return). Only in_stock rolls qualify.

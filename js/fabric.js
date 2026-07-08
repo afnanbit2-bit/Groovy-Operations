@@ -154,6 +154,7 @@ function renderFabricInventory(){
   const totalReservedKg=agg.reduce((a,s)=>a+(s.reservedWeight||0),0);
   const alertCount=agg.filter(s=>(s.totalWeight||0)>0&&_fabAlertLevel(s).label!=='OK').length;
   const outCount=agg.filter(s=>!(s.totalWeight>0)).length;
+  const partialCount=agg.reduce((a,s)=>a+(s.rolls||[]).filter(r=>r.partiallyConsumed&&(r.status||'in_stock')==='in_stock').length,0);
   const cats=[...new Set(agg.map(s=>(s.fabType||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   if(_fabInvCatFilter!=='all'&&!cats.includes(_fabInvCatFilter))_fabInvCatFilter='all';
 
@@ -176,6 +177,7 @@ function renderFabricInventory(){
   const filtered=agg.filter(s=>{
     if(_fabInvFilter==='in_stock'&&!(s.totalWeight>0))return false;
     if(_fabInvFilter==='empty'&&(s.totalWeight>0))return false;
+    if(_fabInvFilter==='partial'&&!(s.rolls||[]).some(r=>r.partiallyConsumed&&(r.status||'in_stock')==='in_stock'))return false;
     if(_fabInvCatFilter!=='all'&&(s.fabType||'').trim()!==_fabInvCatFilter)return false;
     if(_fabInvSearchQ){const q=_fabInvSearchQ.toLowerCase();if(!`${s.fabType||''} ${s.color||''} ${s.gsm||''}`.toLowerCase().includes(q))return false;}
     return true;
@@ -193,7 +195,9 @@ function renderFabricInventory(){
     ${_fabKpiTile('Alerts',kpiAlerts,alertCount?'#dc2626':'#16a34a')}
     ${_fabKpiTile('Categories',cats.length,'#d97706')}
     ${_fabKpiTile('Reserved',totalReservedKg>0?totalReservedKg.toFixed(1)+' kg':'—',totalReservedKg?'#d97706':'#d1d5db')}
+    ${_fabKpiTile('Partial',partialCount||'—',partialCount?'#b45309':'#16a34a')}
   </div>`;
+  h+=_fabRelabelBannerHtml();
   h+=`<div class="card" style="margin-bottom:14px;padding:12px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
       <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex-shrink:0">
@@ -201,7 +205,7 @@ function renderFabricInventory(){
         <button onclick="window.fabInvSetView('fabric')" style="padding:6px 14px;border:none;background:${_fabInvView==='fabric'?'var(--dark)':'#fff'};color:${_fabInvView==='fabric'?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">By Fabric</button>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        ${[['in_stock','In stock'],['empty','Out of stock'],['all','All']].map(([k,l])=>`<button onclick="window.fabInvSetFilter('${k}')" style="padding:6px 12px;border:1px solid ${_fabInvFilter===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabInvFilter===k?'var(--dark)':'#fff'};color:${_fabInvFilter===k?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${l}</button>`).join('')}
+        ${[['in_stock','In stock'],['empty','Out of stock'],['partial',`Partial${partialCount?` (${partialCount})`:''}`],['all','All']].map(([k,l])=>`<button onclick="window.fabInvSetFilter('${k}')" style="padding:6px 12px;border:1px solid ${_fabInvFilter===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabInvFilter===k?(k==='partial'?'#b45309':'var(--dark)'):'#fff'};color:${_fabInvFilter===k?'#fff':(k==='partial'&&partialCount?'#b45309':'var(--text)')};font-size:12px;cursor:pointer;font-family:inherit;font-weight:${k==='partial'&&partialCount?'700':'400'}">${l}</button>`).join('')}
       </div>
       <input id="finv-search" placeholder="Search fabric…" value="${_fabInvSearchQ.replace(/"/g,'&quot;')}" oninput="window.fabInvSetSearch(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;outline:none;flex:1;min-width:160px">
     </div>
@@ -210,7 +214,7 @@ function renderFabricInventory(){
       ${[['all','All'],...cats.map(c=>[c,c])].map(([k,l])=>`<button onclick="window.fabInvSetCat('${_gpEsc(k).replace(/'/g,"\\'")}')" style="padding:5px 11px;border:1px solid ${_fabInvCatFilter===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabInvCatFilter===k?'var(--dark)':'#fff'};color:${_fabInvCatFilter===k?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${_gpEsc(l)}</button>`).join('')}
     </div>`:''}
   </div>`;
-  h+=(_fabInvView==='vendor'?_renderFabByVendor(vendorNames,vMap,agg):_renderFabByFabric(filtered,vMap));
+  h+=((_fabInvView==='vendor'&&_fabInvFilter!=='partial')?_renderFabByVendor(vendorNames,vMap,agg):_renderFabByFabric(filtered,vMap));
   return h+'<div style="height:80px"></div>';
 }
 
@@ -221,6 +225,48 @@ function _fabKpiTile(label,value,accent){
     <div style="font-size:20px;font-weight:800;color:var(--text);line-height:1;letter-spacing:-.01em">${value}</div>
   </div>`;
 }
+
+// Rolls whose physical label weight is now stale (partially used) — the reprint worklist.
+function _fabRelabelRolls(){
+  const out=[];
+  allFabricInventory.forEach(s=>(s.rolls||[]).forEach(r=>{if(r.labelStale&&(r.status||'in_stock')==='in_stock')out.push({stock:s,roll:r});}));
+  return out;
+}
+// Bold Stock-tab alert: partially-used rolls that need a label reprint.
+function _fabRelabelBannerHtml(){
+  const list=_fabRelabelRolls();
+  if(!list.length)return '';
+  return`<div style="border:2px solid #f59e0b;background:#fffbeb;border-radius:12px;padding:14px 16px;margin-bottom:14px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+      <span style="font-size:16px">⚠️</span>
+      <span style="font-weight:800;color:#b45309;font-size:14px;letter-spacing:.01em">${list.length} roll${list.length===1?'':'s'} partially used — REPRINT LABEL with the new weight</span>
+    </div>
+    <div style="font-size:12px;color:#92400e;margin-bottom:11px">These rolls were cut for a PO and now weigh less than their printed label. The barcode is unchanged — just reprint so the weight on the sticker matches.</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${list.map(({stock,roll})=>`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 10px">
+        <span style="font-weight:700;letter-spacing:.04em;font-size:12.5px">${_gpEsc(roll.rollCode)}</span>
+        <span style="font-size:12px;color:var(--muted)">${_gpEsc(stock.fabType||'')} ${stock.gsm||0}g ${_gpEsc(stock.color||'')}</span>
+        <span style="font-size:12.5px"><b>${roll.weight||0}</b> ${_gpEsc(roll.unit||stock.unit||'kg')} <span style="color:var(--muted);font-size:11px">now · was ${roll.originalWeight||roll.weight||0}</span></span>
+        <button onclick="window.fabReprintRoll('${_gpEsc(stock._id)}','${_gpEsc(roll.rollCode)}')" style="margin-left:auto;padding:6px 13px;border:none;border-radius:7px;background:#b45309;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🖨 Reprint label</button>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+// Reprint a partial roll's label — same barcode, current weight — then clear the
+// stale-label flag (logged as a relabel event) and refresh the view.
+window.fabReprintRoll=async function(key,rollCode){
+  const s=allFabricInventory.find(x=>x._id===key);if(!s)return;
+  const r=(s.rolls||[]).find(x=>x.rollCode===rollCode);if(!r)return;
+  const rcpt=allFabricIn.find(x=>x.id===r.sourceFabId);
+  const supplier=rcpt?.supplier||'';
+  _openRollLabelsPrint([{rollCode:r.rollCode,weight:`${r.weight||0} ${r.unit||s.unit||'kg'}`,supplier,gsm:r.gsm||s.gsm||'',color:s.color||'',fabType:s.fabType||''}]);
+  try{
+    await _fabInvUpsert({fabType:s.fabType,gsm:s.gsm,color:s.color,unit:s.unit||'kg',relabelRollCodes:[rollCode],note:`Label reprinted (${r.weight||0} ${r.unit||s.unit||'kg'}) by ${session.name}`,sourceCol:'fabric_inventory',sourceId:key});
+    showToast('Label reprinted ✓');
+  }catch(e){showToast('Printed, but flag update failed: '+e.message,true);}
+  if(_fabInvDrillKey)window.fabInvDrill(_fabInvDrillKey);
+  else{const m=document.getElementById('fab-tab-content');if(m&&fabActiveTab==='stock')m.innerHTML=renderFabricInventory();}
+};
 
 // Mini stock-level bar scaled to 2× the "Low" threshold
 function _fabStockBar(s){
@@ -363,10 +409,11 @@ function _renderFabInvDrill(key){
       return`<div style="padding:8px 2px;border-bottom:1px solid #f5f5f5;display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <input type="checkbox" class="fab-drill-chk" data-rc="${_gpEsc(r.rollCode||'')}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(supplier)}" data-gsm="${r.gsm||rcpt?.gsm||s.gsm||''}" data-color="${_gpEsc(r.color||rcpt?.color||s.color||'')}" data-fabtype="${_gpEsc(s.fabType||'')}" onclick="window.updateDrillPrintCount()" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
-          <span style="font-weight:700;letter-spacing:.04em;min-width:120px">${_gpEsc(r.rollCode||'—')}${r.remnant?' <span style="font-size:9px;font-weight:700;color:#b45309;background:#fef3c7;padding:1px 6px;border-radius:5px;letter-spacing:.03em">REMNANT</span>':''}${(r.partialIssue||(r.originalWeight&&r.originalWeight>(r.weight||0)))?' <span style="font-size:9px;font-weight:700;color:#b45309;background:#fef3c7;padding:1px 6px;border-radius:5px;letter-spacing:.03em">PARTIAL</span>':''}</span>
-          <span style="flex:1;min-width:70px">${(r.originalWeight&&r.originalWeight>(r.weight||0))?`<b>${r.weight||0}</b> / ${r.originalWeight} ${r.unit||s.unit||'kg'} <span style="color:#b45309;font-size:11px">used</span>`:wt}${r.consumedWeight?` · used ${r.consumedWeight}`:''}</span>
+          <span style="font-weight:700;letter-spacing:.04em;min-width:120px">${_gpEsc(r.rollCode||'—')}${(r.partiallyConsumed||(r.originalWeight&&r.originalWeight>(r.weight||0)))?' <span style="font-size:9px;font-weight:700;color:#b45309;background:#fef3c7;padding:1px 6px;border-radius:5px;letter-spacing:.03em">PARTIAL</span>':''}${r.labelStale?' <span style="font-size:9px;font-weight:800;color:#fff;background:#dc2626;padding:1px 6px;border-radius:5px;letter-spacing:.03em">REPRINT LABEL</span>':''}</span>
+          <span style="flex:1;min-width:70px">${(r.originalWeight&&r.originalWeight>(r.weight||0))?`<b>${r.weight||0}</b> / ${r.originalWeight} ${r.unit||s.unit||'kg'} <span style="color:#b45309;font-size:11px">left</span>`:wt}${r.consumedWeight?` · used ${r.consumedWeight}`:''}</span>
           <span style="color:${stColor};font-weight:600;text-transform:capitalize;font-size:11px">${st.replace('_',' ')}</span>
           <button onclick="window.printRollBarcode('${_gpEsc(r.rollCode||'')}','${_gpEsc(s.fabType||'')}','${r.gsm||s.gsm||0}','${_gpEsc(s.color||'')}','${_gpEsc(wt)}','${_gpEsc(supplier)}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">🖨 Print</button>
+          ${r.labelStale?`<button onclick="window.fabReprintRoll('${_gpEsc(key)}','${_gpEsc(r.rollCode||'')}')" title="Reprint label with the updated weight — same barcode" style="padding:3px 8px;border:none;border-radius:6px;background:#b45309;color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">🖨 Reprint (weight changed)</button>`:''}
           ${canAct?`<button onclick="window.editFabricRoll('${_gpEsc(r.sourceFabId||'')}','${_gpEsc(r.rollCode||'')}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">Edit</button>
           <button onclick="window.deleteFabricRoll('${_gpEsc(r.sourceFabId||'')}','${_gpEsc(r.rollCode||'')}')" title="Delete this roll" style="padding:3px 8px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:10px;cursor:pointer;font-family:inherit">✕</button>`:''}
         </div>
@@ -390,7 +437,7 @@ function _renderFabInvDrill(key){
           <td style="padding:8px;font-size:11px;letter-spacing:.04em;color:${isRet?'#7c3aed':'inherit'}">${(m.rollCodes||[]).slice(0,3).map(_gpEsc).join(', ')}${(m.rollCodes||[]).length>3?` +${m.rollCodes.length-3}`:''}</td>
           <td style="padding:8px;font-size:11px;color:${noteCol}">${_gpEsc(m.sourceCollection||'')}/${_gpEsc(m.sourceId||'')}</td>
           <td style="padding:8px;font-size:11px;color:${noteCol}">${_gpEsc(m.by||'')}</td>
-          <td style="padding:8px;font-size:11px;color:${noteCol}">${_gpEsc(m.note||'')}${(m.partialRolls&&m.partialRolls.length)?`<span style="color:#b45309;display:block;margin-top:2px">✂ ${m.partialRolls.map(pr=>`${_gpEsc(pr.rollCode)} ${pr.usedWeight}/${pr.originalWeight} used → ${_gpEsc(pr.remnantRollCode)} ${pr.remnantWeight}`).join('; ')}</span>`:''}</td>
+          <td style="padding:8px;font-size:11px;color:${noteCol}">${_gpEsc(m.note||'')}${(m.partialRolls&&m.partialRolls.length)?`<span style="color:#b45309;display:block;margin-top:2px">✂ ${m.partialRolls.map(pr=>`${_gpEsc(pr.rollCode)} ${pr.usedWeight} cut → ${pr.weightAfter} left`).join('; ')}</span>`:''}</td>
         </tr>`;
       }).join('')}</tbody>
     </table></div>`:'<div class="empty" style="padding:16px">No movements logged for this fabric yet.</div>'}
@@ -433,14 +480,12 @@ function _fabRollDetail(r){
   if(st==='returned_supplier'){const sup=_fabRollSupplier(r);bits.push(`Returned to ${sup?_gpEsc(sup):'supplier'}${r.returnReason?` — ${_gpEsc(r.returnReason)}`:''}${r.returnedToSupplierAt?` · ${d(r.returnedToSupplierAt)}`:''}`);}
   if(st==='in_stock'&&r.returnedAt)bits.push(`Returned to stock ${d(r.returnedAt)}`);
   const u=r.unit||'kg';
-  // Partially-issued parent roll: only part went to production; the rest became
-  // a remnant. Show the split so the record is self-explanatory.
-  if(r.partialIssue||(r.originalWeight&&r.originalWeight>(r.weight||0))){
-    bits.push(`Partially used — ${r.weight||0} of ${r.originalWeight} ${u} cut${r.issuedPO?` for PO ${_gpEsc(r.issuedPO)}`:''}${r.remnantRollCode?`, ${parseFloat(((r.originalWeight||0)-(r.weight||0)).toFixed(2))} ${u} kept as ${_gpEsc(r.remnantRollCode)}`:''}`);
-  }
-  // Remnant roll: the balance kept back from a partially-used parent.
-  if(r.remnant&&r.parentRollCode){
-    bits.push(`Remnant of ${_gpEsc(r.parentRollCode)}${r.parentOriginalWeight?` — original roll ${r.parentOriginalWeight} ${u}, ${r.parentUsedWeight||0} ${u} used${r.parentIssuedPO?` for PO ${_gpEsc(r.parentIssuedPO)}`:''}`:''}`);
+  // Partially-used roll: same roll, now lighter. Show what's left and the full
+  // draw history (each PO it fed), plus the reprint flag if the label is stale.
+  if(r.partiallyConsumed||(r.originalWeight&&r.originalWeight>(r.weight||0))){
+    const drawn=(r.consumptionLog||[]).map(c=>`${c.weight} ${u}${c.po?` → PO ${_gpEsc(c.po)}`:''}`).join(', ');
+    bits.push(`Partially used — ${r.weight||0} of ${r.originalWeight||r.weight||0} ${u} left${drawn?` · drawn: ${drawn}`:''}`);
+    if(r.labelStale)bits.push('<span style="color:#dc2626;font-weight:700">⚠ label needs reprint (weight changed)</span>');
   }
   return bits.join(' · ')||'In stock';
 }
@@ -1521,7 +1566,7 @@ function _fabRegRows(issues){
       </div>
       ${sizes?`<div style="font-size:12px;color:var(--muted);margin-top:7px">Cut by size: ${sizes}</div>`:''}
       ${g.ribWeight?`<div style="font-size:12px;color:#7c3aed;margin-top:5px;font-weight:600">+ Rib: ${_gpEsc(g.ribType||'')} ${g.ribGsm||0}gsm ${_gpEsc(g.ribColor||'')} · ${(g.ribWeight||0).toFixed(2)} kg · ${g.ribRolls||0} rolls${g.ribPct?` (${g.ribPct}%)`:''}</div>`:''}
-      ${(g.partialRolls&&g.partialRolls.length)?`<div style="font-size:12px;color:#b45309;margin-top:5px;font-weight:600;background:#fffbeb;border:1px solid #fde68a;border-radius:7px;padding:5px 9px">✂ Partial rolls (balance kept in stock): ${g.partialRolls.map(pr=>`${_gpEsc(pr.rollCode)} — <b>${pr.usedWeight}</b> / ${pr.originalWeight} ${_gpEsc(pr.unit||'kg')} used · ${pr.remnantWeight} ${_gpEsc(pr.unit||'kg')} remnant`).join(' &nbsp;·&nbsp; ')}</div>`:''}
+      ${(g.partialRolls&&g.partialRolls.length)?`<div style="font-size:12px;color:#b45309;margin-top:5px;font-weight:600;background:#fffbeb;border:1px solid #fde68a;border-radius:7px;padding:5px 9px">✂ Partial rolls (roll stays in stock, lighter): ${g.partialRolls.map(pr=>`${_gpEsc(pr.rollCode)} — <b>${pr.usedWeight}</b> ${_gpEsc(pr.unit||'kg')} used · ${pr.weightAfter} ${_gpEsc(pr.unit||'kg')} left${pr.weightBefore?` (was ${pr.weightBefore})`:''}`).join(' &nbsp;·&nbsp; ')}</div>`:''}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;flex-wrap:wrap">
         <div style="font-size:11px;color:var(--muted)">Issued by ${_gpEsc(g.issuer||g.name||'')}${g.cutMaster?` · Cut by <strong style="color:var(--text)">${_gpEsc(g.cutMaster)}</strong>`:''}</div>
         ${['owner','manager'].includes(session.role)?`<div style="display:flex;gap:6px">
@@ -2361,15 +2406,15 @@ function _fabIssueUseHintHtml(r){
   if(use<=0)return '<span style="color:#dc2626;font-weight:600">Enter the weight used</span>';
   if(leftover<=0)return '<span style="color:var(--muted)">Whole roll issued — nothing kept back.</span>';
   if(leftover<FAB_REMNANT_MIN)return `<span style="color:var(--muted)">Leftover ${leftover} ${unit} is under the ${FAB_REMNANT_MIN} ${unit} scrap cutoff — counted as used, no remnant.</span>`;
-  return `<span style="color:var(--amber);font-weight:700">↳ Partial roll · ${leftover} ${unit} stays in stock as a remnant</span>`;
+  return `<span style="color:var(--amber);font-weight:700">↳ Partial · roll stays in stock, just lighter (${leftover} ${unit} left) · reprint its label</span>`;
 }
-// Used / remnant / scrap split bar for a picked roll.
+// Used / kept-in-stock / scrap split bar for a picked roll.
 function _fabIssueBarHtml(r){
   const full=r.weight||0;if(full<=0)return '';
   const use=_fabRollUse(r),rem=_fabRollRemnant(r);
   const scrap=Math.max(0,parseFloat((full-use-rem).toFixed(2)));
   const p=x=>Math.max(0,Math.min(100,x/full*100));
-  return`<div style="display:flex;height:13px;border-radius:5px;overflow:hidden;border:1px solid var(--border);background:#fff" title="used ${use} · remnant ${rem} · scrap ${scrap}">
+  return`<div style="display:flex;height:13px;border-radius:5px;overflow:hidden;border:1px solid var(--border);background:#fff" title="used ${use} · kept in stock ${rem} · scrap ${scrap}">
     <div style="width:${p(use)}%;background:#dc2626"></div>
     <div style="width:${p(rem)}%;background:#d97706"></div>
     <div style="width:${p(scrap)}%;background:repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb 3px,#d1d5db 3px,#d1d5db 6px)"></div>
@@ -2465,15 +2510,15 @@ window.submitFabricIssue=async function(){
   if(!cutQty){ if(!confirm('No cut quantities entered. Issue anyway?'))return; }
   const rollCodes=_fabIssueRolls.map(r=>r.rollCode);
   const fabUnit=primary.unit||'kg';
-  // Fabric quantity = what production actually USED (partial rolls count only
-  // their used weight; the balance is minted back as a remnant on decrement).
+  // Fabric quantity = what production actually USED (a partial roll counts only
+  // its used weight; the roll stays in stock, lighter, for the next PO).
   const fabQty=parseFloat(_fabIssueRolls.reduce((s,r)=>s+_fabRollIssuedWeight(r),0).toFixed(2));
-  // Rolls issued for less than their full weight → {rollCode: usedWeight}. The
-  // inventory engine mints a remnant roll for the balance. Sub-cutoff scraps are
-  // excluded here, so those rolls decrement whole (no remnant).
+  // Rolls drawn for less than their full weight → {rollCode: usedWeight}. The
+  // engine shrinks the roll in place (same code, flagged for relabel). Sub-cutoff
+  // scraps are excluded here, so those rolls issue whole (no partial draw).
   const partialUse={};
   const partialRolls=[];
-  _fabIssueRolls.forEach(r=>{const rem=_fabRollRemnant(r);if(rem>0){partialUse[r.rollCode]=_fabRollUse(r);partialRolls.push({rollCode:r.rollCode,originalWeight:r.weight||0,usedWeight:_fabRollUse(r),remnantWeight:rem,unit:r.unit||'kg'});}});
+  _fabIssueRolls.forEach(r=>{const rem=_fabRollRemnant(r);if(rem>0){const use=_fabRollUse(r);partialUse[r.rollCode]=use;partialRolls.push({rollCode:r.rollCode,weightBefore:r.weight||0,usedWeight:use,weightAfter:parseFloat(((r.weight||0)-use).toFixed(2)),unit:r.unit||'kg'});}});
   // Avg consumption is DERIVED: total fabric used (all fabrics) ÷ pieces cut.
   const avgConsumption=cutQty>0?parseFloat((fabQty/cutQty).toFixed(4)):0;
   const consumptionUnit=fabUnit;
@@ -2508,7 +2553,7 @@ window.submitFabricIssue=async function(){
       try{ await _fabInvUpsert({fabType:ribStock.fabType,gsm:ribStock.gsm,color:ribStock.color,unit:ribStock.unit||'kg',removeRollCodes:ribCodes,reservePO:po,note:`Rib issued with ${article} for ${po}`,sourceCol:'gatepasses',sourceId:gpId}); }
       catch(e){ showToast('Fabric issued, but rib decrement failed: '+e.message,true); }
     }
-    await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to factory for ${po}${cutQty?` · cut ${cutQty} pcs / ${totalBundles} bundles`:''}${partialRolls.length?` · ${partialRolls.length} partial (remnant kept)`:''}${ribCodes.length?` · rib ${ribWeight}kg`:''} by ${session.name}`);
+    await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to factory for ${po}${cutQty?` · cut ${cutQty} pcs / ${totalBundles} bundles`:''}${partialRolls.length?` · ${partialRolls.length} partial (roll kept in stock)`:''}${ribCodes.length?` · rib ${ribWeight}kg`:''} by ${session.name}`);
     showToast(`${gpId} issued ✓ · ${rollCodes.length} rolls${ribCodes.length?` + ${ribCodes.length} rib`:''}`);
     _fabIssueRolls=[];_fabIssueKey=null;_fabIssueSizes=[{size:'',bundles:''}];_fabRibRolls=[];_fabRibKey=null;
     _fabBusyEnd();   // drop the overlay before the (slower) refresh so the UI never stays blocked
@@ -2692,17 +2737,13 @@ window.fabPoReserveCommit=async function(poId){
 // ════════════════════════════════════════════════════════════════════════
 function _fabWastageData(){
   const byPO={};
+  const bump=(po,iss,con)=>{if(!po)return;(byPO[po]=byPO[po]||{po,issued:0,consumed:0});byPO[po].issued+=iss;byPO[po].consumed+=con;};
   allFabricInventory.forEach(s=>(s.rolls||[]).forEach(r=>{
-    const po=r.issuedPO||r.reservedPO;
-    if(!po)return;
-    if((r.status||'')==='issued'||r.consumedWeight){
-      byPO[po]=byPO[po]||{po,issued:0,consumed:0};
-      byPO[po].issued+=r.weight||0;
-      // A partially-issued roll only sent its used weight to production (the
-      // balance stayed in stock as a remnant) — so what was issued IS consumed;
-      // there is no leftover to count as returned/waste.
-      byPO[po].consumed+=(r.partialIssue||(r.originalWeight&&r.originalWeight>(r.weight||0)))?(r.weight||0):(r.consumedWeight||0);
-    }
+    // Whole-roll issues — the roll left stock (consumed tracked via returns).
+    if((r.status||'')==='issued'||r.consumedWeight)bump(r.issuedPO||r.reservedPO,r.weight||0,r.consumedWeight||0);
+    // Partial draws — the roll stayed in stock, lighter; each logged draw went
+    // to a PO and was fully consumed (nothing returned/wasted).
+    (r.consumptionLog||[]).forEach(c=>bump(c.po,c.weight||0,c.weight||0));
   }));
   return Object.values(byPO).map(x=>({...x,returned:Math.max(0,x.issued-x.consumed),wastagePct:x.issued?(x.consumed/x.issued*100):0}))
     .sort((a,b)=>b.wastagePct-a.wastagePct);
@@ -2736,6 +2777,7 @@ function _fabActionMeta(m){
   if(s==='release')return{label:'Released',color:'#0891b2',bg:'#ecfeff',sign:'○'};
   if(s==='delete')return{label:'Deleted',color:'#6b7280',bg:'#f9fafb',sign:'✕'};
   if(s==='edit')return{label:'Edited',color:'#2563eb',bg:'#eff6ff',sign:'✎'};
+  if(s==='relabel')return{label:'Label reprinted',color:'#b45309',bg:'#fffbeb',sign:'🖨'};
   return{label:(m.type||'move').toUpperCase(),color:'#6b7280',bg:'#f5f5f5',sign:'•'};
 }
 function _fabParsePO(note){const m=/for\s+(\S+)\s+by/i.exec(note||'');return m?m[1]:'';}
@@ -2874,7 +2916,7 @@ function renderFabricLogTab(){
           <span>by ${_gpEsc(m.by||'—')}</span>
         </div>
         ${codes.length?`<div style="font-size:10px;color:#9ca3af;letter-spacing:.02em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:4px">${codes.slice(0,6).map(_gpEsc).join(' · ')}${codes.length>6?` +${codes.length-6} more`:''}</div>`:''}
-        ${(m.partialRolls&&m.partialRolls.length)?`<div style="font-size:10.5px;color:#b45309;margin-top:3px">${m.partialRolls.map(pr=>`✂ ${_gpEsc(pr.rollCode)}: ${pr.usedWeight} / ${pr.originalWeight} ${m.unit||'kg'} used → remnant ${_gpEsc(pr.remnantRollCode)} (${pr.remnantWeight} ${m.unit||'kg'} back to stock)`).join('<br>')}</div>`:''}
+        ${(m.partialRolls&&m.partialRolls.length)?`<div style="font-size:10.5px;color:#b45309;margin-top:3px">${m.partialRolls.map(pr=>`✂ ${_gpEsc(pr.rollCode)}: ${pr.usedWeight} ${m.unit||'kg'} cut · ${pr.weightAfter} ${m.unit||'kg'} left in stock (was ${pr.weightBefore})`).join('<br>')}</div>`:''}
         ${extra?`<div style="font-size:11px;color:${a.color};margin-top:3px">${_gpEsc(extra)}</div>`:''}
       </div>
       <div style="text-align:right;flex-shrink:0">
@@ -2907,10 +2949,11 @@ function _fabXlsx(aoa,sheetName,fileBase){
 }
 
 window.fabExportStock=function(){
-  const rows=[['Fabric','GSM','Color','Roll Code','Status','Weight','Original Wt','Unit','Source','PO','Remnant','Partially Used','Parent Roll']];
+  const rows=[['Fabric','GSM','Color','Roll Code','Status','Weight','Original Wt','Unit','Source','PO','Partially Used','Label Reprint','Drawn (PO:qty)']];
   allFabricInventory.forEach(s=>(s.rolls||[]).forEach(r=>{
-    const partial=(r.partialIssue||(r.originalWeight&&r.originalWeight>(r.weight||0)))?'yes':'';
-    rows.push([s.fabType,s.gsm,s.color,r.rollCode,r.status||'in_stock',r.weight||0,r.originalWeight||'',r.unit||s.unit||'kg',r.sourceFabId||'',r.issuedPO||r.reservedPO||r.parentIssuedPO||'',r.remnant?'yes':'',partial,r.parentRollCode||'']);
+    const partial=(r.partiallyConsumed||(r.originalWeight&&r.originalWeight>(r.weight||0)))?'yes':'';
+    const drawn=(r.consumptionLog||[]).map(c=>`${c.po||'?'}:${c.weight}`).join('; ');
+    rows.push([s.fabType,s.gsm,s.color,r.rollCode,r.status||'in_stock',r.weight||0,r.originalWeight||'',r.unit||s.unit||'kg',r.sourceFabId||'',r.issuedPO||r.reservedPO||'',partial,r.labelStale?'needed':'',drawn]);
   }));
   _fabXlsx(rows,'Stock','Groovy-Fabric-Stock');
 };
@@ -2918,7 +2961,7 @@ window.fabExportStock=function(){
 window.fabExportMovements=function(){
   const rows=[['When','Type','Subtype','Fabric','GSM','Color','Qty','Unit','Rolls','By','Note','Partial Detail']];
   allFabricMovements.forEach(m=>{
-    const partial=(m.partialRolls||[]).map(pr=>`${pr.rollCode}:${pr.usedWeight}/${pr.originalWeight}→${pr.remnantRollCode}(${pr.remnantWeight})`).join('; ');
+    const partial=(m.partialRolls||[]).map(pr=>`${pr.rollCode}:${pr.usedWeight}cut→${pr.weightAfter}left(was ${pr.weightBefore})`).join('; ');
     rows.push([new Date(m.ts).toLocaleString('en-GB'),m.type,m.subtype||'',m.fabType,m.gsm,m.color,m.qty||0,m.unit||'kg',(m.rollCodes||[]).join(' '),m.by||'',m.note||'',partial]);
   });
   _fabXlsx(rows,'Movements','Groovy-Fabric-Movements');
