@@ -425,8 +425,12 @@ function _cashFeedRow(r){
   const sign=isIn?'+':isXfer?'↕':'-';
   const col=isIn?'#15803d':isXfer?'#475569':'#dc2626';
   const dot=cat?_catAccent(r.category):(r.kind==='topup'?'#15803d':r.kind==='vendor_payment'?'#b45309':'#6b7280');
+  const _nItems=(r.items&&r.items.length)?` · ${r.items.length} item${r.items.length>1?'s':''}`:'';
   let title,sub;
-  if(r.kind==='expense'||r.kind==='credit_purchase'){
+  if(r.reimbursement||(r.kind==='credit_purchase'&&r.paidBy)){
+    title='Owe '+_scEsc(r.paidBy||'person')+(r.payee?' · '+_scEsc(r.payee):'');
+    sub='Reimbursement'+_nItems+(r.note?' · '+_scEsc(r.note):'');
+  }else if(r.kind==='expense'||r.kind==='credit_purchase'){
     title=(cat?cat.label:'Uncategorized')+(vendor&&vendor._id!=='walkin'?' · '+vendor.name:'');
     sub=(isCredit?'ON CREDIT':(r.fromFloat?'Runner float':(acc?acc.label:r.account||'')))+(r.note?' · '+_scEsc(r.note):'');
   }else if(r.kind==='vendor_payment'){
@@ -435,7 +439,7 @@ function _cashFeedRow(r){
   }else if(r.kind==='topup'){
     title='Money In';sub=(acc?acc.label:r.account||'')+(r.note?' · '+_scEsc(r.note):'');
   }else if(r.kind==='issue'){
-    title='Issued · '+_scEsc(r.payee||'');sub=(acc?acc.label:r.account||'')+(r.note?' · '+_scEsc(r.note):'');
+    title='Issued · '+_scEsc(r.payee||'');sub=(acc?acc.label:r.account||'')+_nItems+(r.note?' · '+_scEsc(r.note):'');
   }else if(r.kind==='settle'){
     title='Change · '+_scEsc(r.payee||'');sub=(acc?acc.label:r.account||'');
   }else if(r.kind==='transfer'){
@@ -838,10 +842,25 @@ window._cashPageNav=function(n){_cashRecentPage=n;_cashReload();const m=document
 window._cashSetPeriod=function(m){_cashInsightsPeriod=m;_cashReload();};
 window._cashRowAction=function(id){
   const r=allCashLedger.find(x=>x._id===id);if(!r)return;
+  if((r.kind==='issue'||r.reimbursement)&&r.items&&r.items.length){window._cashViewIssue(id);return;}
   if(r.kind==='expense'||r.kind==='credit_purchase')window.cashSheetExpense(id);
   else if(r.kind==='topup')window.cashSheetTopup(id);
   else if(r.kind==='vendor_payment'&&r.vendorId)window.cashVendorLedger(r.vendorId);
   else showToast('Re-open this type from the action bar.');
+};
+// Read-only breakdown of an itemized cash issue.
+window._cashViewIssue=function(id){
+  const r=allCashLedger.find(x=>x._id===id);if(!r)return;
+  const rows=(r.items||[]).map(i=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid #f5f5f5;font-size:13px"><span style="flex:1;min-width:0"><b>${_scEsc(i.name)}</b> <span style="color:var(--muted)">${i.qty} ${_scEsc(i.unit||'item')} × ${_fmtPKR(i.price)}</span></span><span style="font-weight:800">${_fmtPKR(i.total)}</span></div>`).join('');
+  const acc=_cashGetAccount(r.account);
+  const src=r.reimbursement?`Paid by ${_scEsc(r.paidBy||'—')} · owed`:(acc?_scEsc(acc.label):_scEsc(r.account||'—'));
+  _cashOpenSheet('Issue detail',`
+    <div style="font-size:14px;margin-bottom:3px"><b>${_scEsc(r.payee||'')}</b></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${src} · ${new Date(r.ts).toLocaleDateString()} · by ${_scEsc(r.by||'')}</div>
+    ${rows||'<div class="empty">No items recorded.</div>'}
+    <div style="display:flex;justify-content:space-between;background:#111;color:#fff;border-radius:10px;padding:10px 13px;margin-top:12px"><span style="font-weight:700">Total</span><span style="font-weight:800">${_fmtPKR(r.amount)}</span></div>
+    ${r.billPhoto?`<a href="${r.billPhoto}" target="_blank" style="display:block;text-align:center;margin-top:12px;color:#15803d;font-weight:700;text-decoration:none">📎 View bill photo</a>`:''}
+  `);
 };
 
 /* ════════════════════════ EXPENSE SHEET ════════════════════════ */
@@ -1052,45 +1071,124 @@ window._cashDoTransfer=async function(){
   else if(btn){btn.disabled=false;btn.textContent='↕ Transfer';}
 };
 
-/* ════════════════════════ ISSUE FLOAT SHEET ════════════════════════ */
+/* ════════════════════════ ISSUE CASH — itemized ════════════════════════ */
+// Pick a payment source (a real account, or "Other" = someone fronted the cash
+// → a reimbursement payable), name the person, attach the bill, and list every
+// item bought (qty × unit price). Posts a completed, itemized cash issue — no
+// separate settlement. Old runner floats stay in the Issued tab for history.
+let _cashIssueSrc='cash';
+let _cashIssueRowSeq=0;
 window.cashSheetIssue=function(){
-  const opts=_cashAllAccounts().map(a=>`<option value="${a._id||a.key}">${_scEsc(a.label)}</option>`).join('');
-  const qAmts=[1000,2000,5000,10000].map(v=>`<button onclick="window._cashIQAmt(${v})" style="flex:1;padding:8px 0;border:1px solid var(--border);border-radius:8px;background:#f9fafb;font-size:12px;font-weight:700;cursor:pointer">+${v>=1000?v/1000+'k':v}</button>`).join('');
-  _cashOpenSheet('Issue Cash to Runner',`
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Runner / Person</div>
-    <input id="issue-payee" type="text" value="" placeholder="Name of person taking the cash"
-      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px">
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">From Account</div>
-    <select id="issue-acc" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:12px;box-sizing:border-box">${opts}</select>
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Amount (₨)</div>
-    <input id="issue-amt" type="number" inputmode="numeric" min="1" placeholder="0"
-      style="width:100%;font-size:24px;font-weight:800;text-align:center;padding:12px;border:2px solid var(--border);border-radius:10px;margin-bottom:8px;box-sizing:border-box">
-    <div style="display:flex;gap:6px;margin-bottom:12px">${qAmts}</div>
-    <input id="issue-note" type="text" placeholder="Purpose (e.g. buying neck labels)"
-      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px">
-    <button id="issue-submit" onclick="window._cashDoIssue()" style="width:100%;height:48px;background:#111;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">→ Issue Cash</button>
+  _cashIssueSrc='cash';_cashIssueRowSeq=0;
+  delete window._cashPhoto['issue-bill'];
+  _cashOpenSheet('Issue Cash — itemized',`
+    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Payment source · pick one</div>
+    <div id="issue-src" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${_cashSrcChipsHtml()}</div>
+    <div id="issue-paidby-wrap" style="display:none;margin-bottom:12px">
+      <input id="issue-paidby" type="text" placeholder="Paid by whom? (e.g. Afnan)" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+      <div style="font-size:11px;color:#b45309;margin-top:5px">Recorded as money the store owes this person — settle later from the Vendors tab.</div>
+    </div>
+
+    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:2px 0 6px">Name of person</div>
+    <input id="issue-payee" type="text" placeholder="Person the cash / goods went to (e.g. Noman Rider)" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px">
+
+    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Bill photo</div>
+    ${_cashPhotoField('issue-bill','issue-bill-status','Attach bill photo')}
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 6px">
+      <span style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em">Items on the bill</span>
+      <span style="font-size:11px;color:var(--muted)">qty × price = line total</span>
+    </div>
+    <div id="issue-items"></div>
+    <button type="button" onclick="window._cashIssueAddItem()" style="width:100%;padding:9px;border:1.5px dashed var(--border);border-radius:9px;background:#fafafa;font-size:13px;font-weight:700;color:#111;cursor:pointer;margin-bottom:12px">+ Add item</button>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;background:#111;color:#fff;border-radius:10px;padding:11px 14px;margin-bottom:12px">
+      <span style="font-size:13px;font-weight:700">Grand total</span>
+      <span id="issue-grand" style="font-size:20px;font-weight:800">₨0</span>
+    </div>
+    <button id="issue-submit" onclick="window._cashDoIssueItemized()" style="width:100%;height:50px;background:#111;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">Record issue</button>
   `);
+  window._cashIssueAddItem();
 };
-window._cashIQAmt=function(v){const i=document.getElementById('issue-amt');if(i)i.value=(parseInt(i.value)||0)+v;};
-window._cashDoIssue=async function(){
+// Payment-source chips: every account with its live balance, plus "Other".
+function _cashSrcChipsHtml(){
+  const chip=(id,top,bottom,on,accent)=>`<button id="isrc-${id}" onclick="window._cashIssuePickSrc('${id}')" style="padding:8px 12px;border-radius:12px;border:2px solid ${on?accent:'#e5e7eb'};background:${on?accent:'#fff'};color:${on?'#fff':'#111'};font-size:12px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;line-height:1.25;gap:1px"><span>${_scEsc(top)}</span><span style="font-size:11px;font-weight:600;opacity:.72">${_scEsc(bottom)}</span></button>`;
+  const accs=_cashAllAccounts().map(a=>{const k=a._id||a.key;return chip(k,a.label,_fmtPKR(a.balance||0),_cashIssueSrc===k,'#111');}).join('');
+  return accs+chip('other','Other','someone paid',_cashIssueSrc==='other','#b45309');
+}
+window._cashIssuePickSrc=function(key){
+  _cashIssueSrc=key;
+  const box=document.getElementById('issue-src');if(box)box.innerHTML=_cashSrcChipsHtml();
+  const w=document.getElementById('issue-paidby-wrap');if(w)w.style.display=key==='other'?'block':'none';
+};
+window._cashIssueAddItem=function(){
+  const box=document.getElementById('issue-items');if(!box)return;
+  const id='irow-'+(++_cashIssueRowSeq);
+  const div=document.createElement('div');div.id=id;div.className='cash-iss-row';
+  div.style.cssText='display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px';
+  div.innerHTML=`
+    <input class="ci-name" placeholder="Item name" style="flex:2;min-width:130px;padding:8px 9px;border:1px solid var(--border);border-radius:7px;font-size:13px;box-sizing:border-box">
+    <input class="ci-qty" type="number" inputmode="decimal" min="0" step="any" placeholder="Qty" oninput="window._cashIssueRecalc()" style="width:56px;padding:8px 6px;border:1px solid var(--border);border-radius:7px;font-size:13px;text-align:center;box-sizing:border-box">
+    <select class="ci-unit" style="width:58px;padding:8px 3px;border:1px solid var(--border);border-radius:7px;font-size:12px;box-sizing:border-box"><option value="item">item</option><option value="kg">kg</option></select>
+    <span style="color:var(--muted);font-size:12px">×</span>
+    <input class="ci-price" type="number" inputmode="decimal" min="0" step="any" placeholder="Price" oninput="window._cashIssueRecalc()" style="width:74px;padding:8px 7px;border:1px solid var(--border);border-radius:7px;font-size:13px;text-align:right;box-sizing:border-box">
+    <span style="color:var(--muted);font-size:12px">=</span>
+    <span class="ci-total" style="flex:1;min-width:60px;text-align:right;font-weight:800;font-size:13px">₨0</span>
+    <button type="button" onclick="this.closest('.cash-iss-row').remove();window._cashIssueRecalc()" title="Remove item" style="background:none;border:none;color:#dc2626;font-size:16px;cursor:pointer;line-height:1">×</button>`;
+  box.appendChild(div);
+};
+window._cashIssueRecalc=function(){
+  let grand=0;
+  document.querySelectorAll('#issue-items .cash-iss-row').forEach(row=>{
+    const q=parseFloat(row.querySelector('.ci-qty')?.value)||0;
+    const p=parseFloat(row.querySelector('.ci-price')?.value)||0;
+    const t=q*p;grand+=t;
+    const el=row.querySelector('.ci-total');if(el)el.textContent=_fmtPKR(t);
+  });
+  const g=document.getElementById('issue-grand');if(g)g.textContent=_fmtPKR(grand);
+};
+window._cashDoIssueItemized=async function(){
   const payee=(document.getElementById('issue-payee')?.value||'').trim();
-  const accKey=document.getElementById('issue-acc')?.value||'cash';
-  const amt=parseInt(document.getElementById('issue-amt')?.value)||0;
-  const note=(document.getElementById('issue-note')?.value||'').trim();
-  if(!payee){showToast('Enter the runner / person name.',true);return;}
-  if(!amt||amt<=0){showToast('Enter an amount.',true);return;}
-  const btn=document.getElementById('issue-submit');
-  if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  if(!payee){showToast('Enter the name of the person.',true);return;}
+  const items=[];
+  document.querySelectorAll('#issue-items .cash-iss-row').forEach(row=>{
+    const name=(row.querySelector('.ci-name')?.value||'').trim();
+    const qty=parseFloat(row.querySelector('.ci-qty')?.value)||0;
+    const unit=row.querySelector('.ci-unit')?.value||'item';
+    const price=parseFloat(row.querySelector('.ci-price')?.value)||0;
+    if(name&&qty>0&&price>0)items.push({name,qty,unit,price,total:Math.round(qty*price)});
+  });
+  if(!items.length){showToast('Add at least one item with a qty and price.',true);return;}
+  const amount=items.reduce((s,i)=>s+i.total,0);
+  const billPhoto=window._cashPhoto['issue-bill']||null;
+  const note=items.map(i=>`${i.name} ×${i.qty}`).join(', ');
   const mo=_cashCurrentMonth();
-  const floatId=Date.now().toString(36)+Math.random().toString(36).slice(2,5);
-  const row=await _cashPost({kind:'issue',amount:amt,account:accKey,category:null,vendorId:null,payee,date:todayStr(),month:mo,ts:Date.now(),by:session.u||session.name,note,floatId});
-  if(!row){if(btn){btn.disabled=false;btn.textContent='→ Issue Cash';}return;}
-  const floatDoc={payee,issued:amt,account:accKey,issuedTs:Date.now(),issuedBy:session.name,status:'open',goodsValue:null,changeReturned:null,variance:null,billPhoto:null,floatId,note};
-  await fsSet('store_cash_floats',floatId,floatDoc).catch(()=>{});
-  allCashFloats.unshift({...floatDoc,_id:floatId});
-  showToast(`${_fmtPKR(amt)} issued to ${payee} ✓`);
+  const btn=document.getElementById('issue-submit');if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  let row;
+  if(_cashIssueSrc==='other'){
+    const paidBy=(document.getElementById('issue-paidby')?.value||'').trim();
+    if(!paidBy){showToast('Enter who paid.',true);if(btn){btn.disabled=false;btn.textContent='Record issue';}return;}
+    const funderId=await _cashFindOrCreateFunder(paidBy);
+    // Reimbursement: no account moves; posts a payable to the funder (settle it
+    // later as a vendor payment).
+    row=await _cashPost({kind:'credit_purchase',account:null,vendorId:funderId,category:null,amount,payee,items,billPhoto,paidBy,reimbursement:true,date:todayStr(),month:mo,ts:Date.now(),by:session.u||session.name,note});
+  }else{
+    row=await _cashPost({kind:'issue',account:_cashIssueSrc,category:null,vendorId:null,amount,payee,items,billPhoto,date:todayStr(),month:mo,ts:Date.now(),by:session.u||session.name,note});
+  }
+  if(!row){if(btn){btn.disabled=false;btn.textContent='Record issue';}return;}
+  showToast(`${_fmtPKR(amount)} issued to ${payee} ✓`);
   _cashCloseSheet();_cashReload();
 };
+// Find (case-insensitive) or create a lightweight vendor for a person who
+// fronted cash, so the reimbursement shows as a payable we can settle later.
+async function _cashFindOrCreateFunder(name){
+  const existing=allCashVendors.find(v=>(v.name||'').trim().toLowerCase()===name.toLowerCase());
+  if(existing)return existing._id||existing.id;
+  const doc={name,phone:'',address:'',productTypes:[],creditTerms:'',openingOutstanding:0,reimbursePerson:true,createdAt:Date.now(),createdBy:session.u||session.name};
+  const id=await fsAdd('store_cash_vendors',doc).catch(()=>null);
+  if(id)allCashVendors.push({...doc,_id:id});
+  return id;
+}
 
 /* ════════════════════════ SETTLE FLOAT ════════════════════════ */
 window.cashSettleFloat=function(floatId){
