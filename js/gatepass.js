@@ -717,13 +717,14 @@ function renderReturnsList(){
 
 // Fabric inventory engine — one operation per call. Recomputes totals from the
 // roll array (self-correcting). Operations: addRolls (receipt) · removeRollCodes
-// (issue) · deleteRollCodes (hard remove) · reserveRollCodes (+reservePO) ·
+// (issue; optional partialUse:{rollCode:weightUsed} mints a remnant for the
+// unused balance) · deleteRollCodes (hard remove) · reserveRollCodes (+reservePO) ·
 // releaseRollCodes · returnRollCodes (whole vendor return) · returnPartial
 // [{parentRollCode,weight}] (mint remnant + log consumed) ·
 // supplierReturnRollCodes (+reason). Runs in a Firestore transaction; callers
 // can pass extraWrites:[{ref,data,merge}] and extraDeletes:[ref] to commit the
 // receipt / gate-pass doc in the SAME atomic unit. See FABRIC_INVENTORY_PLAN.
-async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,deleteRollCodes,editRolls,reserveRollCodes,reservePO,releaseRollCodes,returnRollCodes,returnPartial,supplierReturnRollCodes,reason,note,sourceCol,sourceId,extraWrites,extraDeletes}){
+async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,partialUse,deleteRollCodes,editRolls,reserveRollCodes,reservePO,releaseRollCodes,returnRollCodes,returnPartial,supplierReturnRollCodes,reason,note,sourceCol,sourceId,extraWrites,extraDeletes}){
   const key=_fabInvKey(fabType,gsm,color);
   const invRef=doc(db,'fabric_inventory',key);
   const movRef=doc(collection(db,'fabric_movements'));  // stable id across tx retries
@@ -742,7 +743,27 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,de
       for(const r of addRolls){rolls.push({rollCode:r.rollCode,weight:r.weight,gsm:r.gsm||gsm||0,unit:r.unit||unit,status:'in_stock',sourceFabId:r.sourceFabId||sourceId,addedAt:Date.now(),addedBy:session.name});movQty+=r.weight||0;movCodes.push(r.rollCode);}
       movType='in';movSub='receipt';
     }else if(Array.isArray(removeRollCodes)){
-      for(const rc of removeRollCodes){const r=findRoll(rc,['in_stock','reserved']);if(r){r.status='issued';r.issuedAt=Date.now();r.issuedBy=session.name;r.issuedTo=sourceId;r.issuedPO=reservePO||r.reservedPO||'';delete r.reservedPO;movQty+=r.weight||0;movCodes.push(rc);}}
+      for(const rc of removeRollCodes){
+        const r=findRoll(rc,['in_stock','reserved']);
+        if(!r)continue;
+        // Partial usage: `partialUse[rc]` (when < the roll's weight) is what
+        // production actually consumed; the balance is minted back into stock as
+        // a remnant roll (same fabric, own barcode, inherits QC + parent link) —
+        // the same mechanism the Returns flow uses. Absent / >= weight → the
+        // whole roll is issued exactly as before. Callers gate tiny scraps out,
+        // so any positive leftover here is a real remnant worth keeping.
+        const full=r.weight||0;
+        let use=full;
+        if(partialUse&&partialUse[rc]!=null){const v=parseFloat(partialUse[rc]);if(!isNaN(v))use=Math.max(0,Math.min(v,full));}
+        const leftover=parseFloat((full-use).toFixed(2));
+        if(leftover>0){
+          const remCode=_nextRemnantCode(rolls,rc);
+          rolls.push({rollCode:remCode,weight:leftover,gsm:r.gsm||gsm||0,unit:r.unit||unit,status:'in_stock',remnant:true,parentRollCode:rc,sourceFabId:r.sourceFabId,qcPassed:r.qcPassed||false,qcBy:r.qcBy||'',qcAt:r.qcAt||null,addedAt:Date.now(),addedBy:session.name});
+          r.originalWeight=full;r.weight=use;r.remnantRollCode=remCode;
+        }
+        r.status='issued';r.issuedAt=Date.now();r.issuedBy=session.name;r.issuedTo=sourceId;r.issuedPO=reservePO||r.reservedPO||'';delete r.reservedPO;
+        movQty+=use;movCodes.push(rc);
+      }
       movType='out';movSub='issue';
     }else if(Array.isArray(deleteRollCodes)){
       // Hard-remove an in-stock roll entered by mistake — physically splices it
