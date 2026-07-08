@@ -1876,7 +1876,6 @@ function renderDrawstrings(){
         <button class="btn-outline" style="font-size:11px;padding:5px 10px;color:#16a34a;border-color:#bbf7d0" onclick="window.dsMove('${d._id}','in')">+ Add</button>
         <button class="btn-outline" style="font-size:11px;padding:5px 10px;color:#dc2626;border-color:#fca5a5" onclick="window.dsMove('${d._id}','out')">− Use</button>
         <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.dsLogView('${d._id}')">Log</button>
-        <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.dsEdit('${d._id}')">Edit</button>
         ${_fabCanDelete()?`<button class="btn-outline" style="font-size:11px;padding:5px 9px;color:#dc2626;border-color:#fca5a5" title="Delete color" onclick="window.dsDelete('${d._id}')">✕</button>`:''}
       </div>
     </div>`;
@@ -1998,28 +1997,6 @@ window.dsDoMove=async function(id,dir){
     d.balance=nb;d.updatedBy=session.name;
     await _dsLog(id,d.color,dir,qty,units?`${note?note+' · ':''}${units} units`.trim():note,units);
     showToast(`${dir==='in'?'Added':'Used'} ${qty} m${units?` (${units} units)`:''} ✓`);window._fabModalClose();
-  }catch(e){showToast('Save failed: '+e.message,true);}
-  _fabBusyEnd();_dsRerender();
-};
-window.dsEdit=function(id){
-  const d=allDrawstrings.find(x=>x._id===id);if(!d)return;
-  _fabModal(`Edit · ${_gpEsc(d.color)}`,`
-    <div class="field"><label>Low-stock alert ≤ (m)</label><input id="ds-ethr" type="number" min="0" step="0.1" value="${d.threshold||0}" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
-    <div class="field"><label>Correct balance (m)</label><input id="ds-ebal" type="number" step="0.1" value="${d.balance||0}" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
-    <div style="font-size:11px;color:var(--muted)">Changing the balance is a manual correction (logged).</div>
-    <button class="btn-primary" style="width:100%;margin-top:12px" onclick="window.dsSaveEdit('${id}')">Save</button>
-    ${_fabCanDelete()?`<button class="btn-outline" style="width:100%;margin-top:8px;color:#dc2626;border-color:#fca5a5" onclick="window.dsDelete('${id}')">Delete color</button>`:''}`);
-};
-window.dsSaveEdit=async function(id){
-  const d=allDrawstrings.find(x=>x._id===id);if(!d)return;
-  const thr=parseFloat(document.getElementById('ds-ethr')?.value)||0;
-  const bal=parseFloat(document.getElementById('ds-ebal')?.value);
-  if(!_fabBusyStart('Saving…'))return;
-  try{
-    const upd={threshold:thr,updatedAt:Date.now(),updatedBy:session.name};
-    if(!isNaN(bal)&&bal!==d.balance){const diff=bal-(d.balance||0);upd.balance=bal;await _dsLog(id,d.color,diff>=0?'in':'out',Math.abs(diff),'Manual correction');}
-    await updateDoc(doc(db,'fabric_drawstrings',id),upd);Object.assign(d,upd);
-    showToast('Saved ✓');window._fabModalClose();
   }catch(e){showToast('Save failed: '+e.message,true);}
   _fabBusyEnd();_dsRerender();
 };
