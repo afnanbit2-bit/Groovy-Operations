@@ -37,6 +37,10 @@ Two contributors: Afnan (HRM/operations side, with Claude) and Ammar Shah
                      inventory, REST helpers, store notifications.
 /js/gatepass.js      gate passes, returns, fabric-in, GP edit/approval,
                      generateGPPdf, generateJobSheetPDF.
+/js/fulfillment.js   Daily Performance track: per-day dispatch & returns
+                     entry + analytics (loadFulfillmentData,
+                     renderFulfillmentPage). Firestore `fulfillment_reports`,
+                     one doc per day (id = YYYY-MM-DD). Owners/managers only.
 /js/activity.js      activity log loader.
 ```
 
