@@ -50,6 +50,9 @@ let _fulfillTo=null;            // custom-range end   (ISO)
 let _fulfillTrend='daily';      // trend bucket: 'daily' | 'weekly' | 'monthly'
 let _fulfillMetric='shipments'; // chart metric: 'shipments' | 'value'
 let _fulfillEntryDate=null;     // ISO date currently in the entry form
+let _fulfillLogSearch='';       // Log tab search query
+let _fulfillLogPage=1;          // Log tab current page (1-based)
+let _fulfillLogPerPage=10;      // Log tab entries per page
 
 // ── Small helpers ──
 function _fnum(n){return Number(n||0).toLocaleString('en-US');}
@@ -585,37 +588,77 @@ function _fulfillRangeBar(from,to){
 // ══════════════════════════════════════════════════════════════════════
 //  LOG — date-wise list of every saved report, with PDF + edit
 // ══════════════════════════════════════════════════════════════════════
+function _fulfillLogRow(r){
+  const ds=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;
+  const da=(r.dispatchedTotal&&r.dispatchedTotal.amount)||0;
+  const rs=(r.returnsTotal&&r.returnsTotal.shipments)||0;
+  const ra=(r.returnsTotal&&r.returnsTotal.amount)||0;
+  const rr=ds?Math.round(100*rs/ds):0;
+  const who=r.enteredBy||r.updatedBy||'—';
+  return `<div class="po-row" style="cursor:default">
+    <div class="po-info">
+      <div class="po-num" style="font-size:13px">${_fulfillDayName(r.date,true)}, ${_fulfillFmtDate(r.date)}</div>
+      <div class="po-name" style="font-size:15px">${_fnum(ds)} dispatched · ${_fRs(da)}</div>
+      <div class="po-meta" style="font-size:13px">Returns ${_fnum(rs)} · ${_fRs(ra)} · Ret ${rr}% · by ${who}</div>
+    </div>
+    <div style="display:flex;gap:6px;flex-shrink:0">
+      <button class="btn-pdf" onclick="window.fulfillPdf('${r.date}')">PDF</button>
+      <button class="btn-outline" onclick="window.fulfillEditDate('${r.date}')">Edit</button>
+    </div>
+  </div>`;
+}
+
+// Rows + pagination only — re-rendered on search / page / per-page change so
+// the search box keeps focus (the shell around it is not re-rendered).
+function _fulfillLogResults(){
+  const q=_fulfillLogSearch.trim().toLowerCase();
+  let list=[...fulfillReports].sort((a,b)=>b.date.localeCompare(a.date));
+  if(q)list=list.filter(r=>{
+    const hay=`${_fulfillFmtDate(r.date)} ${_fulfillDayName(r.date,true)} ${r.date} ${r.enteredBy||r.updatedBy||''}`.toLowerCase();
+    return hay.includes(q);
+  });
+  const total=list.length;
+  const per=_fulfillLogPerPage;
+  const pages=Math.max(1,Math.ceil(total/per));
+  if(_fulfillLogPage>pages)_fulfillLogPage=pages;
+  if(_fulfillLogPage<1)_fulfillLogPage=1;
+  const start=(_fulfillLogPage-1)*per;
+  const slice=list.slice(start,start+per);
+  const from=total?start+1:0,to=Math.min(start+per,total);
+
+  const pager=`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:4px 0 12px;flex-wrap:wrap">
+    <div style="font-size:13px;color:var(--muted)">Showing ${from}–${to} of ${total}${q?' matching':' days'}</div>
+    <div style="display:flex;gap:4px;align-items:center">
+      <button class="btn-outline" ${_fulfillLogPage<=1?'disabled style="opacity:.4;cursor:not-allowed"':''} onclick="window.fulfillLogGoto(${_fulfillLogPage-1})">‹ Prev</button>
+      <span style="font-size:13px;padding:0 8px;white-space:nowrap">Page ${_fulfillLogPage} / ${pages}</span>
+      <button class="btn-outline" ${_fulfillLogPage>=pages?'disabled style="opacity:.4;cursor:not-allowed"':''} onclick="window.fulfillLogGoto(${_fulfillLogPage+1})">Next ›</button>
+    </div>
+  </div>`;
+
+  const rows=slice.length?slice.map(_fulfillLogRow).join(''):'<div class="empty">No days match your search.</div>';
+  return pager+rows;
+}
+
 function _renderFulfillLog(){
   if(!fulfillReports.length)
     return `<div class="empty">No days recorded yet.<br><br>
       <button class="btn-outline" onclick="window.switchFulfillTab('entry')">Record the first day</button></div>`;
-
-  const rows=[...fulfillReports].sort((a,b)=>b.date.localeCompare(a.date)).map(r=>{
-    const ds=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;
-    const da=(r.dispatchedTotal&&r.dispatchedTotal.amount)||0;
-    const rs=(r.returnsTotal&&r.returnsTotal.shipments)||0;
-    const ra=(r.returnsTotal&&r.returnsTotal.amount)||0;
-    const rr=ds?Math.round(100*rs/ds):0;
-    const who=r.enteredBy||r.updatedBy||'—';
-    return `<div class="po-row" style="cursor:default">
-      <div class="po-info">
-        <div class="po-num" style="font-size:13px">${_fulfillDayName(r.date,true)}, ${_fulfillFmtDate(r.date)}</div>
-        <div class="po-name" style="font-size:15px">${_fnum(ds)} dispatched · ${_fRs(da)}</div>
-        <div class="po-meta" style="font-size:13px">Returns ${_fnum(rs)} · ${_fRs(ra)} · Ret ${rr}% · by ${who}</div>
+  const sv=String(_fulfillLogSearch).replace(/"/g,'&quot;');
+  const perOpts=[10,25,50,100].map(n=>`<option value="${n}"${_fulfillLogPerPage===n?' selected':''}>${n} / page</option>`).join('');
+  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="fl-search" value="${sv}" placeholder="Search date, day, or person…" oninput="window.fulfillLogSearch(this.value)"
+          style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#FAFAFA;font-family:inherit;outline:none;min-width:230px">
+        <select onchange="window.fulfillLogPerPage(this.value)" style="padding:9px 8px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;font-family:inherit">${perOpts}</select>
       </div>
-      <div style="display:flex;gap:6px;flex-shrink:0">
-        <button class="btn-pdf" onclick="window.fulfillPdf('${r.date}')">PDF</button>
-        <button class="btn-outline" onclick="window.fulfillEditDate('${r.date}')">Edit</button>
-      </div>
-    </div>`;
-  }).join('');
-
-  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-      <div style="font-size:13px;color:var(--muted)">${fulfillReports.length} day${fulfillReports.length===1?'':'s'} recorded · newest first. Tap PDF to open/print or download any day.</div>
       <button class="btn-pdf" onclick="window.fulfillExport()" title="Export all days to Excel">⤓ Export Excel</button>
     </div>
-    ${rows}`;
+    <div id="fl-results">${_fulfillLogResults()}</div>`;
 }
+
+window.fulfillLogSearch=function(v){_fulfillLogSearch=v;_fulfillLogPage=1;const el=document.getElementById('fl-results');if(el)el.innerHTML=_fulfillLogResults();};
+window.fulfillLogPerPage=function(v){_fulfillLogPerPage=parseInt(v)||10;_fulfillLogPage=1;const el=document.getElementById('fl-results');if(el)el.innerHTML=_fulfillLogResults();};
+window.fulfillLogGoto=function(p){_fulfillLogPage=p;const el=document.getElementById('fl-results');if(el){el.innerHTML=_fulfillLogResults();const m=document.getElementById('main-content');if(m)m.scrollTop=0;}};
 
 window.fulfillEditDate=function(date){
   _fulfillEntryDate=date;
