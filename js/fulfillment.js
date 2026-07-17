@@ -40,6 +40,7 @@ let fulfillReports=[];          // cached docs, newest first
 let fulfillReportsLoaded=false;
 let _fulfillTab='analytics';    // 'analytics' | 'entry'
 let _fulfillPeriod=30;          // analytics window in days; 0 = all-time
+let _fulfillTrend='daily';      // trend chart mode: 'daily' | 'weekly'
 let _fulfillEntryDate=null;     // ISO date currently in the entry form
 
 // ── Small helpers ──
@@ -57,6 +58,95 @@ function _fulfillFmtDate(iso){
 function _fulfillCutoff(days){
   const d=new Date();d.setDate(d.getDate()-(days-1));
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function _fulfillDayName(iso,long){
+  const d=new Date(iso+'T00:00:00');
+  return isNaN(d)?'':d.toLocaleDateString('en-GB',{weekday:long?'long':'short'});
+}
+function _fulfillFmtDateShort(iso){
+  const d=new Date(iso+'T00:00:00');
+  return isNaN(d)?iso:d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
+}
+// Monday (ISO week start) of the week containing `iso`, as YYYY-MM-DD.
+function _fulfillMonday(iso){
+  const d=new Date(iso+'T00:00:00');
+  const off=(d.getDay()+6)%7; // 0=Mon … 6=Sun
+  d.setDate(d.getDate()-off);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function _niceCeil(v){
+  if(v<=5)return 5;
+  const p=Math.pow(10,Math.floor(Math.log10(v)));
+  const n=v/p;const m=n<=1?1:n<=2?2:n<=5?5:10;
+  return m*p;
+}
+// Aggregate a list of daily reports into totals + per-brand / per-courier maps.
+function _sumFulfill(list){
+  let dShip=0,dAmt=0,rShip=0,rAmt=0;const brand={},courier={};
+  const bump=(map,key,f)=>{const o=map[key]||(map[key]={dShip:0,dAmt:0,rShip:0,rAmt:0});f(o);};
+  for(const rep of list){
+    for(const row of (rep.dispatched||[])){
+      dShip+=row.shipments||0;dAmt+=row.amount||0;
+      bump(brand,row.brand,o=>{o.dShip+=row.shipments||0;o.dAmt+=row.amount||0;});
+      bump(courier,row.courier,o=>{o.dShip+=row.shipments||0;o.dAmt+=row.amount||0;});
+    }
+    for(const row of (rep.returns||[])){
+      rShip+=row.shipments||0;rAmt+=row.amount||0;
+      bump(brand,row.brand,o=>{o.rShip+=row.shipments||0;o.rAmt+=row.amount||0;});
+      bump(courier,row.courier,o=>{o.rShip+=row.shipments||0;o.rAmt+=row.amount||0;});
+    }
+  }
+  return {dShip,dAmt,rShip,rAmt,brand,courier};
+}
+// Group daily reports into ISO weeks (Mon start), sorted oldest first.
+function _fulfillWeekly(reps){
+  const map={};
+  for(const r of reps){
+    const wk=_fulfillMonday(r.date);
+    const m=map[wk]||(map[wk]={week:wk,dShip:0,dAmt:0,rShip:0,rAmt:0,days:0});
+    m.dShip+=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;
+    m.dAmt+=(r.dispatchedTotal&&r.dispatchedTotal.amount)||0;
+    m.rShip+=(r.returnsTotal&&r.returnsTotal.shipments)||0;
+    m.rAmt+=(r.returnsTotal&&r.returnsTotal.amount)||0;
+    m.days++;
+  }
+  return Object.values(map).sort((a,b)=>a.week.localeCompare(b.week));
+}
+// Small ▲/▼ % change chip. invert=true → "up" is bad (returns, return-rate).
+function _deltaChip(cur,prev,invert){
+  if(prev==null)return '';
+  if(prev===0)return cur>0?'<span style="font-size:12px;color:var(--muted)"> · new</span>':'';
+  const pct=Math.round(100*(cur-prev)/prev);
+  const arrow=pct>0?'▲':pct<0?'▼':'▬';
+  const good=pct===0?null:(invert?pct<0:pct>0);
+  const color=good===null?'var(--muted)':(good?'var(--accent-success)':'var(--accent-urgent)');
+  return `<span style="font-size:12px;font-weight:600;color:${color}"> ${arrow} ${Math.abs(pct)}%</span>`;
+}
+// Inline SVG two-line chart: Dispatched (dark) vs Returns (red). points:[{label,d,r}].
+function _fulfillLineChart(points){
+  const W=960,H=250,padL=48,padR=18,padT=20,padB=46;
+  const n=points.length;
+  const maxV=Math.max(1,...points.map(p=>Math.max(p.d||0,p.r||0)));
+  const top=_niceCeil(maxV);
+  const X=i=>n<=1?padL+(W-padL-padR)/2:padL+(i*(W-padL-padR)/(n-1));
+  const Y=v=>H-padB-((v/top)*(H-padT-padB));
+  let grid='';
+  for(let t=0;t<=4;t++){const gv=top*t/4,gy=Y(gv);
+    grid+=`<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${W-padR}" y2="${gy.toFixed(1)}" stroke="#ececec" stroke-width="1"/>`
+        +`<text x="${padL-8}" y="${(gy+4).toFixed(1)}" text-anchor="end" font-size="12" fill="#999">${_fnum(Math.round(gv))}</text>`;}
+  const poly=key=>points.map((p,i)=>`${X(i).toFixed(1)},${Y(p[key]||0).toFixed(1)}`).join(' ');
+  const dots=(key,color)=>points.map((p,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(p[key]||0).toFixed(1)}" r="${n<=16?4:2.5}" fill="${color}"/>`).join('');
+  const step=Math.max(1,Math.ceil(n/12));
+  let xlab='';points.forEach((p,i)=>{if(i%step!==0&&i!==n-1)return;xlab+=`<text x="${X(i).toFixed(1)}" y="${H-padB+18}" text-anchor="middle" font-size="12" fill="#777">${p.label}</text>`;});
+  const dLine=n>1?`<polyline points="${poly('d')}" fill="none" stroke="#111" stroke-width="2.5"/>`:'';
+  const rLine=n>1?`<polyline points="${poly('r')}" fill="none" stroke="#7B1F2A" stroke-width="2"/>`:'';
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" style="height:${H}px;display:block;max-width:100%">
+      ${grid}${dLine}${rLine}${dots('d','#111')}${dots('r','#7B1F2A')}${xlab}
+    </svg>
+    <div style="display:flex;gap:20px;justify-content:center;margin-top:8px;font-size:13px">
+      <span style="display:inline-flex;align-items:center;gap:7px"><span style="width:18px;height:3px;background:#111;display:inline-block;border-radius:2px"></span>Dispatched</span>
+      <span style="display:inline-flex;align-items:center;gap:7px"><span style="width:18px;height:3px;background:#7B1F2A;display:inline-block;border-radius:2px"></span>Returns</span>
+    </div>`;
 }
 // Owners, managers, and the dedicated fulfilment account (Umair) may view
 // and record daily performance.
@@ -121,34 +211,37 @@ function _renderFulfillEntry(){
   _fulfillEntryDate=date;
   const existing=fulfillReports.find(r=>r.date===date);
 
+  // Clear a lone "0" on focus and select the contents so the first keystroke
+  // overwrites — no more deleting the placeholder zero before typing.
+  const _focusJS="this.value==='0'&&(this.value='');this.select()";
   const rowInputs=(rows,section,saved)=>rows.map((r,i)=>{
     const s=(saved&&saved[i])||{};
     return `<tr>
-      <td style="padding:7px 8px;font-size:12px;font-weight:600">${r.brand}</td>
-      <td style="padding:7px 8px;font-size:11px;color:var(--muted)">${r.courier}</td>
+      <td style="padding:9px 8px;font-size:14px;font-weight:600">${r.brand}</td>
+      <td style="padding:9px 8px;font-size:13px;color:var(--muted)">${r.courier}</td>
       <td style="padding:5px 6px"><input type="number" min="0" inputmode="numeric" id="fd-${section}-${i}-ship"
-        value="${s.shipments!=null?s.shipments:''}" placeholder="0" oninput="window._fulfillRecalc()"
-        style="width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:7px;font-size:13px;text-align:right;background:#FAFAFA;font-family:inherit;outline:none"></td>
+        value="${s.shipments!=null?s.shipments:''}" placeholder="0" oninput="window._fulfillRecalc()" onfocus="${_focusJS}"
+        style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:7px;font-size:15px;text-align:right;background:#FAFAFA;font-family:inherit;outline:none"></td>
       <td style="padding:5px 6px"><input type="number" min="0" inputmode="numeric" id="fd-${section}-${i}-amt"
-        value="${s.amount!=null?s.amount:''}" placeholder="0" oninput="window._fulfillRecalc()"
-        style="width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:7px;font-size:13px;text-align:right;background:#FAFAFA;font-family:inherit;outline:none"></td>
+        value="${s.amount!=null?s.amount:''}" placeholder="0" oninput="window._fulfillRecalc()" onfocus="${_focusJS}"
+        style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:7px;font-size:15px;text-align:right;background:#FAFAFA;font-family:inherit;outline:none"></td>
     </tr>`;
   }).join('');
 
   const tbl=(title,rows,section,saved,accent)=>`<div class="card" style="margin-bottom:12px">
-    <div class="card-title" style="border-bottom:none;margin-bottom:6px;color:${accent}">${title}</div>
+    <div class="card-title" style="border-bottom:none;margin-bottom:6px;color:${accent};font-size:13px">${title}</div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:340px">
       <thead><tr style="text-align:left">
-        <th style="padding:6px 8px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Brand</th>
-        <th style="padding:6px 8px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Courier</th>
-        <th style="padding:6px 8px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;text-align:right">Shipments</th>
-        <th style="padding:6px 8px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;text-align:right">Amount (Rs)</th>
+        <th style="padding:6px 8px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Brand</th>
+        <th style="padding:6px 8px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Courier</th>
+        <th style="padding:6px 8px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;text-align:right">Shipments</th>
+        <th style="padding:6px 8px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;text-align:right">Amount (Rs)</th>
       </tr></thead>
       <tbody>${rowInputs(rows,section,saved)}</tbody>
       <tfoot><tr style="border-top:2px solid var(--border)">
-        <td colspan="2" style="padding:8px;font-size:12px;font-weight:700">GRAND TOTAL</td>
-        <td id="fd-${section}-tot-ship" style="padding:8px;font-size:14px;font-weight:700;text-align:right">0</td>
-        <td id="fd-${section}-tot-amt" style="padding:8px;font-size:14px;font-weight:700;text-align:right">Rs 0</td>
+        <td colspan="2" style="padding:9px;font-size:14px;font-weight:700">GRAND TOTAL</td>
+        <td id="fd-${section}-tot-ship" style="padding:9px;font-size:16px;font-weight:700;text-align:right">0</td>
+        <td id="fd-${section}-tot-amt" style="padding:9px;font-size:16px;font-weight:700;text-align:right">Rs 0</td>
       </tr></tfoot>
     </table></div>
   </div>`;
@@ -158,8 +251,8 @@ function _renderFulfillEntry(){
         <label>Report date</label>
         <input type="date" id="fd-date" value="${date}" max="${_fulfillToday()}" onchange="window.loadFulfillDate()">
       </div>
-      <div style="font-size:12px;color:${existing?'var(--accent-warning)':'var(--muted)'};padding-bottom:10px">
-        ${existing?`✎ Editing existing record for ${_fulfillFmtDate(date)}`:`New record for ${_fulfillFmtDate(date)}`}
+      <div style="font-size:14px;font-weight:600;color:${existing?'var(--accent-warning)':'var(--text)'};padding-bottom:10px">
+        ${existing?'✎ Editing ':''}${_fulfillDayName(date,true)}, ${_fulfillFmtDate(date)}
       </div>
     </div>
     ${tbl('DISPATCHED',FULFILL_DISPATCH_ROWS,'d',existing&&existing.dispatched,'var(--accent-success)')}
@@ -249,6 +342,11 @@ window.setFulfillPeriod=function(days){
   const body=document.getElementById('fulfill-body');
   if(body)body.innerHTML=_renderFulfillAnalytics();
 };
+window.setFulfillTrend=function(mode){
+  _fulfillTrend=(mode==='weekly'?'weekly':'daily');
+  const body=document.getElementById('fulfill-body');
+  if(body)body.innerHTML=_renderFulfillAnalytics();
+};
 
 function _renderFulfillAnalytics(){
   if(!fulfillReports.length)
@@ -260,110 +358,116 @@ function _renderFulfillAnalytics(){
   if(!reps.length)
     return `<div>${_fulfillPeriodChips()}<div class="empty">No reports in this window.</div></div>`;
 
-  // Aggregate totals
-  let dShip=0,dAmt=0,rShip=0,rAmt=0;
-  const brandMap={},courierMap={};
-  for(const rep of reps){
-    for(const row of (rep.dispatched||[])){
-      dShip+=row.shipments||0;dAmt+=row.amount||0;
-      const b=brandMap[row.brand]||(brandMap[row.brand]={dShip:0,dAmt:0,rShip:0,rAmt:0});
-      b.dShip+=row.shipments||0;b.dAmt+=row.amount||0;
-      const c=courierMap[row.courier]||(courierMap[row.courier]={dShip:0,dAmt:0,rShip:0,rAmt:0});
-      c.dShip+=row.shipments||0;c.dAmt+=row.amount||0;
-    }
-    for(const row of (rep.returns||[])){
-      rShip+=row.shipments||0;rAmt+=row.amount||0;
-      const b=brandMap[row.brand]||(brandMap[row.brand]={dShip:0,dAmt:0,rShip:0,rAmt:0});
-      b.rShip+=row.shipments||0;b.rAmt+=row.amount||0;
-      const c=courierMap[row.courier]||(courierMap[row.courier]={dShip:0,dAmt:0,rShip:0,rAmt:0});
-      c.rShip+=row.shipments||0;c.rAmt+=row.amount||0;
-    }
-  }
-  const days=reps.length;
-  const retRate=dShip?(100*rShip/dShip):0;
-  const avgPerDay=days?Math.round(dShip/days):0;
   const repsAsc=[...reps].sort((a,b)=>a.date.localeCompare(b.date));
-  const best=repsAsc.reduce((m,r)=>((r.dispatchedTotal&&r.dispatchedTotal.shipments||0)>(m.val)?{val:r.dispatchedTotal.shipments,date:r.date}:m),{val:0,date:null});
+  const cur=_sumFulfill(reps);
+  const days=reps.length;
+  const retRate=cur.dShip?(100*cur.rShip/cur.dShip):0;
+  const avgPerDay=days?Math.round(cur.dShip/days):0;
+  const best=repsAsc.reduce((m,r)=>{const v=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;return v>m.val?{val:v,date:r.date}:m;},{val:0,date:null});
 
-  const kpi=(label,val,sub,color='var(--dark)')=>`<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
-    <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${label}</div>
-    <div style="font-size:22px;font-weight:700;color:${color}">${val}</div>
-    ${sub?`<div style="font-size:10px;color:var(--muted);margin-top:2px">${sub}</div>`:''}
+  // ── Compare: previous equal-length window (only for fixed periods) ──
+  let prev=null,prevRate=null;
+  if(_fulfillPeriod){
+    const prevStart=_fulfillCutoff(_fulfillPeriod*2);
+    const prevReps=fulfillReports.filter(r=>r.date>=prevStart&&r.date<cutoff);
+    if(prevReps.length){prev=_sumFulfill(prevReps);prevRate=prev.dShip?100*prev.rShip/prev.dShip:0;}
+  }
+
+  const kpi=(label,val,sub,color)=>`<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px 14px;text-align:center">
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">${label}</div>
+    <div style="font-size:26px;font-weight:800;color:${color||'var(--text)'}">${val}</div>
+    ${sub?`<div style="font-size:12px;color:var(--muted);margin-top:3px">${sub}</div>`:''}
   </div>`;
-  const sec=(title,body)=>`<div class="card" style="margin-bottom:14px"><div class="card-title">${title}</div>${body}</div>`;
+  const sec=(title,body,extra)=>`<div class="card" style="margin-bottom:14px"><div class="card-title" style="font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px">${title}${extra||''}</div>${body}</div>`;
+  const th=(t,align)=>`<th style="padding:8px 6px;border-bottom:2px solid var(--border);font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;text-align:${align||'left'}">${t}</th>`;
+  const td=(v,align,extra)=>`<td style="padding:9px 6px;text-align:${align||'left'};${extra||''}">${v}</td>`;
+  const rrColor=rr=>rr>=15?'var(--accent-urgent)':rr>=8?'var(--accent-warning)':'var(--accent-success)';
 
-  // Daily trend (last 30 within window), plus a bar chart of last 14 days
-  const trend=repsAsc.slice(-30);
-  const chart=repsAsc.slice(-14);
-  const maxShip=Math.max(1,...chart.map(r=>(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0));
-  const bars=chart.map(r=>{
-    const v=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;
-    const rv=(r.returnsTotal&&r.returnsTotal.shipments)||0;
-    const h=Math.round(6+(v/maxShip)*104);
-    const dd=new Date(r.date+'T00:00:00');
-    return `<div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px" title="${_fulfillFmtDate(r.date)} — ${v} dispatched, ${rv} returned">
-      <div style="font-size:9px;color:var(--muted)">${v}</div>
-      <div style="width:70%;max-width:26px;background:var(--dark);border-radius:4px 4px 0 0;height:${h}px"></div>
-      <div style="font-size:8px;color:var(--muted);white-space:nowrap">${isNaN(dd)?'':dd.getDate()+'/'+(dd.getMonth()+1)}</div>
-    </div>`;
-  }).join('');
+  // ── Trend chart + breakdown (daily or weekly) ──
+  const isWeekly=_fulfillTrend==='weekly';
+  let points,breakdownHead,breakdownRows,trendLabel;
+  if(isWeekly){
+    const wk=_fulfillWeekly(repsAsc);
+    points=wk.map(w=>({label:_fulfillFmtDateShort(w.week),d:w.dShip,r:w.rShip}));
+    trendLabel=wk.length+' week'+(wk.length===1?'':'s');
+    breakdownHead=`${th('Week of')}${th('Days','right')}${th('Dispatched','right')}${th('Value','right')}${th('Returns','right')}${th('Ret %','right')}${th('vs prev','right')}`;
+    breakdownRows=wk.map((w,i)=>({w,prev:i>0?wk[i-1].dShip:null})).reverse().map(({w,prev})=>{
+      const rr=w.dShip?Math.round(100*w.rShip/w.dShip):0;
+      return `<tr style="border-bottom:1px solid #f5f5f5;font-size:14px">
+        ${td('Wk of '+_fulfillFmtDateShort(w.week),'left','font-weight:600;white-space:nowrap')}
+        ${td(w.days,'right','color:var(--muted)')}
+        ${td(_fnum(w.dShip),'right','font-weight:600')}
+        ${td(_fRs(w.dAmt),'right','color:var(--muted)')}
+        ${td(_fnum(w.rShip),'right')}
+        ${td(rr+'%','right','font-weight:600;color:'+rrColor(rr))}
+        ${td(_deltaChip(w.dShip,prev,false)||'<span style="color:var(--muted)">—</span>','right')}
+      </tr>`;
+    }).join('');
+  }else{
+    const daily=repsAsc.slice(-30);
+    points=daily.map(r=>({label:_fulfillFmtDateShort(r.date),d:(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0,r:(r.returnsTotal&&r.returnsTotal.shipments)||0}));
+    trendLabel='last '+daily.length+' day'+(daily.length===1?'':'s');
+    breakdownHead=`${th('Date')}${th('Day')}${th('Dispatched','right')}${th('Value','right')}${th('Returns','right')}${th('Ret %','right')}${th('vs prev','right')}`;
+    breakdownRows=daily.map((r,i)=>({r,prev:i>0?((daily[i-1].dispatchedTotal&&daily[i-1].dispatchedTotal.shipments)||0):null})).reverse().map(({r,prev})=>{
+      const ds=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;
+      const da=(r.dispatchedTotal&&r.dispatchedTotal.amount)||0;
+      const rs=(r.returnsTotal&&r.returnsTotal.shipments)||0;
+      const rr=ds?Math.round(100*rs/ds):0;
+      return `<tr style="border-bottom:1px solid #f5f5f5;font-size:14px">
+        ${td(_fulfillFmtDate(r.date),'left','font-weight:600;white-space:nowrap')}
+        ${td(_fulfillDayName(r.date),'left','color:var(--muted)')}
+        ${td(_fnum(ds),'right','font-weight:600')}
+        ${td(_fRs(da),'right','color:var(--muted)')}
+        ${td(_fnum(rs),'right')}
+        ${td(rr+'%','right','font-weight:600;color:'+rrColor(rr))}
+        ${td(_deltaChip(ds,prev,false)||'<span style="color:var(--muted)">—</span>','right')}
+      </tr>`;
+    }).join('');
+  }
 
-  const trendRows=[...trend].reverse().map(r=>{
-    const ds=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;
-    const da=(r.dispatchedTotal&&r.dispatchedTotal.amount)||0;
-    const rs=(r.returnsTotal&&r.returnsTotal.shipments)||0;
-    const rr=ds?Math.round(100*rs/ds):0;
-    return `<tr style="border-bottom:1px solid #f5f5f5">
-      <td style="padding:6px 4px;font-weight:600;white-space:nowrap">${_fulfillFmtDate(r.date)}</td>
-      <td style="padding:6px 4px;text-align:right">${_fnum(ds)}</td>
-      <td style="padding:6px 4px;text-align:right;color:var(--muted)">${_fRs(da)}</td>
-      <td style="padding:6px 4px;text-align:right">${_fnum(rs)}</td>
-      <td style="padding:6px 4px;text-align:right;font-weight:600;color:${rr>=15?'var(--accent-urgent)':rr>=8?'var(--accent-warning)':'var(--accent-success)'}">${rr}%</td>
-    </tr>`;
-  }).join('');
+  const trendToggle=`<span style="display:inline-flex;gap:4px">
+    <button class="filter-chip${!isWeekly?' active':''}" style="padding:4px 12px" onclick="window.setFulfillTrend('daily')">Daily</button>
+    <button class="filter-chip${isWeekly?' active':''}" style="padding:4px 12px" onclick="window.setFulfillTrend('weekly')">Weekly</button>
+  </span>`;
 
-  const brandRows=Object.entries(brandMap).sort((a,b)=>b[1].dShip-a[1].dShip).map(([name,v])=>{
+  const brandRows=Object.entries(cur.brand).sort((a,b)=>b[1].dShip-a[1].dShip).map(([name,v])=>{
     const rr=v.dShip?Math.round(100*v.rShip/v.dShip):0;
-    return `<tr style="border-bottom:1px solid #f5f5f5">
-      <td style="padding:6px 4px;font-weight:600">${name}</td>
-      <td style="padding:6px 4px;text-align:right">${_fnum(v.dShip)}</td>
-      <td style="padding:6px 4px;text-align:right;color:var(--muted)">${_fRs(v.dAmt)}</td>
-      <td style="padding:6px 4px;text-align:right">${_fnum(v.rShip)}</td>
-      <td style="padding:6px 4px;text-align:right;font-weight:600">${rr}%</td>
+    return `<tr style="border-bottom:1px solid #f5f5f5;font-size:14px">
+      ${td(name,'left','font-weight:600')}${td(_fnum(v.dShip),'right')}${td(_fRs(v.dAmt),'right','color:var(--muted)')}${td(_fnum(v.rShip),'right')}${td(rr+'%','right','font-weight:600')}
+    </tr>`;
+  }).join('');
+  const courierRows=Object.entries(cur.courier).sort((a,b)=>b[1].dShip-a[1].dShip).map(([name,v])=>{
+    const rr=v.dShip?Math.round(100*v.rShip/v.dShip):0;
+    return `<tr style="border-bottom:1px solid #f5f5f5;font-size:14px">
+      ${td(name,'left','font-weight:600')}${td(_fnum(v.dShip),'right')}${td(_fRs(v.dAmt),'right','color:var(--muted)')}${td(_fnum(v.rShip),'right')}${td(rr+'%','right','font-weight:600')}
     </tr>`;
   }).join('');
 
-  const courierRows=Object.entries(courierMap).sort((a,b)=>b[1].dShip-a[1].dShip).map(([name,v])=>`<tr style="border-bottom:1px solid #f5f5f5">
-      <td style="padding:6px 4px;font-weight:600">${name}</td>
-      <td style="padding:6px 4px;text-align:right">${_fnum(v.dShip)}</td>
-      <td style="padding:6px 4px;text-align:right;color:var(--muted)">${_fRs(v.dAmt)}</td>
-      <td style="padding:6px 4px;text-align:right">${_fnum(v.rShip)}</td>
-    </tr>`).join('');
-
-  const th=(t,align)=>`<th style="padding:6px 4px;border-bottom:2px solid var(--border);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;text-align:${align||'left'}">${t}</th>`;
+  const rateSub=prevRate!=null
+    ? `${(retRate-prevRate>=0?'+':'')}${(retRate-prevRate).toFixed(1)}pp vs prev`
+    : 'returns ÷ dispatched';
+  const cmpNote=prev?`<span style="font-size:12px;color:var(--muted);font-weight:500">▲▼ vs previous ${_fulfillPeriod} days</span>`:'';
 
   return `${_fulfillPeriodChips()}
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px">
-    ${kpi('Dispatched',_fnum(dShip),_fRs(dAmt)+' value','var(--accent-success)')}
-    ${kpi('Returns',_fnum(rShip),_fRs(rAmt)+' value','var(--accent-urgent)')}
-    ${kpi('Return rate',retRate.toFixed(1)+'%','returns ÷ dispatched',retRate>=15?'var(--accent-urgent)':retRate>=8?'var(--accent-warning)':'var(--accent-success)')}
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px">
+    ${kpi('Dispatched',_fnum(cur.dShip),_fRs(cur.dAmt)+' value'+(prev?_deltaChip(cur.dShip,prev.dShip,false):''),'var(--accent-success)')}
+    ${kpi('Returns',_fnum(cur.rShip),_fRs(cur.rAmt)+' value'+(prev?_deltaChip(cur.rShip,prev.rShip,true):''),'var(--accent-urgent)')}
+    ${kpi('Return rate',retRate.toFixed(1)+'%',rateSub,rrColor(retRate))}
     ${kpi('Avg / day',_fnum(avgPerDay),days+' day'+(days===1?'':'s')+' recorded')}
     ${kpi('Best day',_fnum(best.val),best.date?_fulfillFmtDate(best.date):'—')}
   </div>
 
-  ${sec('Dispatched — last '+chart.length+' recorded days',
-    `<div style="display:flex;align-items:flex-end;gap:4px;height:150px;padding-top:6px">${bars}</div>`)}
+  ${sec((isWeekly?'Weekly':'Daily')+' trend — '+trendLabel,_fulfillLineChart(points),trendToggle)}
 
-  ${sec('Daily breakdown',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:420px">
-    <thead><tr>${th('Date')}${th('Dispatched','right')}${th('Value','right')}${th('Returns','right')}${th('Ret %','right')}</tr></thead>
-    <tbody>${trendRows}</tbody></table></div>`)}
+  ${sec((isWeekly?'Weekly':'Daily')+' breakdown',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:520px">
+    <thead><tr>${breakdownHead}</tr></thead><tbody>${breakdownRows}</tbody></table></div>`,cmpNote)}
 
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
-    ${sec('By brand',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:300px">
+    ${sec('By brand',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:320px">
       <thead><tr>${th('Brand')}${th('Disp','right')}${th('Value','right')}${th('Ret','right')}${th('Ret %','right')}</tr></thead>
       <tbody>${brandRows}</tbody></table></div>`)}
-    ${sec('By courier',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:280px">
-      <thead><tr>${th('Courier')}${th('Disp','right')}${th('Value','right')}${th('Ret','right')}</tr></thead>
+    ${sec('By courier',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:320px">
+      <thead><tr>${th('Courier')}${th('Disp','right')}${th('Value','right')}${th('Ret','right')}${th('Ret %','right')}</tr></thead>
       <tbody>${courierRows}</tbody></table></div>`)}
   </div>`;
 }
@@ -392,9 +496,9 @@ function _renderFulfillLog(){
     const who=r.enteredBy||r.updatedBy||'—';
     return `<div class="po-row" style="cursor:default">
       <div class="po-info">
-        <div class="po-num">${_fulfillFmtDate(r.date)}</div>
-        <div class="po-name">${_fnum(ds)} dispatched · ${_fRs(da)}</div>
-        <div class="po-meta">Returns ${_fnum(rs)} · ${_fRs(ra)} · Ret ${rr}% · by ${who}</div>
+        <div class="po-num" style="font-size:13px">${_fulfillDayName(r.date,true)}, ${_fulfillFmtDate(r.date)}</div>
+        <div class="po-name" style="font-size:15px">${_fnum(ds)} dispatched · ${_fRs(da)}</div>
+        <div class="po-meta" style="font-size:13px">Returns ${_fnum(rs)} · ${_fRs(ra)} · Ret ${rr}% · by ${who}</div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0">
         <button class="btn-pdf" onclick="window.fulfillPdf('${r.date}')">PDF</button>
@@ -403,7 +507,7 @@ function _renderFulfillLog(){
     </div>`;
   }).join('');
 
-  return `<div style="font-size:12px;color:var(--muted);margin-bottom:10px">${fulfillReports.length} day${fulfillReports.length===1?'':'s'} recorded · newest first. Tap PDF to open/print or download any day.</div>
+  return `<div style="font-size:13px;color:var(--muted);margin-bottom:10px">${fulfillReports.length} day${fulfillReports.length===1?'':'s'} recorded · newest first. Tap PDF to open/print or download any day.</div>
     ${rows}`;
 }
 
