@@ -232,6 +232,72 @@ function _fulfillRateBar(rr,rrColor){
     <span style="font-weight:600;min-width:34px;text-align:right;color:${rrColor(rr)}">${rr}%</span>
   </div>`;
 }
+
+// Fixed colour per courier (colour follows the entity, never its rank).
+const _FULFILL_COURIER_COLORS={'POST-EX':'#7B1F2A','BLUE-EX':'#185FA5','TCS':'#B47512'};
+
+// GitHub-style month calendar heat-map of daily dispatched volume. Sequential
+// single-hue green ramp (light→dark = more). Independent of the trend toggle.
+function _fulfillCalendarHeatmap(reps){
+  const byDate={};let max=0;
+  for(const r of reps){const v=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;byDate[r.date]=v;if(v>max)max=v;}
+  const months=[...new Set(reps.map(r=>r.date.slice(0,7)))].sort();
+  const ramp=['#EDEDED','#D6E8DC','#A9CDB4','#5E9A73','#14532D'];
+  const lvl=v=>{if(!v)return 0;const q=v/max;return q<=0.25?1:q<=0.5?2:q<=0.75?3:4;};
+  const wd=['M','T','W','T','F','S','S'];
+  const grids=months.map(ym=>{
+    const y=+ym.slice(0,4),m=+ym.slice(5,7);
+    const startOff=(new Date(y,m-1,1).getDay()+6)%7;
+    const days=new Date(y,m,0).getDate();
+    let cells=wd.map(w=>`<div style="font-size:9px;color:var(--muted);text-align:center;line-height:15px">${w}</div>`).join('');
+    for(let i=0;i<startOff;i++)cells+='<div></div>';
+    for(let d=1;d<=days;d++){
+      const iso=`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const has=byDate[iso]!=null,v=byDate[iso]||0;
+      cells+=`<div title="${_fulfillFmtDate(iso)}${has?': '+_fnum(v)+' dispatched':' · no data'}" style="width:15px;height:15px;border-radius:3px;background:${ramp[lvl(v)]}"></div>`;
+    }
+    return `<div style="display:inline-block;vertical-align:top;margin:0 22px 8px 0">
+      <div style="font-size:12px;font-weight:600;margin-bottom:6px">${_fulfillMonthLabel(ym)}</div>
+      <div style="display:grid;grid-template-columns:repeat(7,15px);gap:3px">${cells}</div>
+    </div>`;
+  }).join('');
+  const legend=`<div style="display:flex;align-items:center;gap:5px;margin-top:6px;font-size:11px;color:var(--muted)">Less ${ramp.map(c=>`<span style="width:14px;height:14px;border-radius:3px;background:${c};display:inline-block"></span>`).join('')} More</div>`;
+  return `<div style="overflow-x:auto;white-space:nowrap">${grids}</div>${legend}`;
+}
+
+// Net-revenue waterfall: Dispatched value → minus Returns → Net.
+function _fulfillWaterfall(dAmt,rAmt){
+  const net=dAmt-rAmt,max=Math.max(1,dAmt),h=v=>Math.round((Math.max(0,v)/max)*130);
+  const col=(label,inner,valTxt,color)=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:5px">
+    <div style="font-size:12px;font-weight:700;color:${color}">${valTxt}</div>${inner}
+    <div style="font-size:12px;color:var(--muted)">${label}</div></div>`;
+  const bar=(height,color)=>`<div style="width:64%;max-width:76px;height:${height}px;background:${color};border-radius:4px 4px 0 0"></div>`;
+  // Returns segment hangs from the Dispatched height down to Net.
+  const retInner=`<div style="width:64%;max-width:76px;height:${h(dAmt)}px;display:flex;flex-direction:column;justify-content:flex-start" title="Returns ${_fRs(rAmt)}">
+    <div style="height:${h(rAmt)}px;background:var(--accent-urgent);border-radius:4px 4px 0 0;width:100%"></div></div>`;
+  return `<div style="display:flex;align-items:flex-end;gap:14px;height:170px;padding-top:6px">
+    ${col('Dispatched',bar(h(dAmt),'var(--accent-success)'),_fRs(dAmt),'var(--accent-success)')}
+    ${col('− Returns',retInner,'− '+_fRs(rAmt),'var(--accent-urgent)')}
+    ${col('= Net',bar(h(net),'#111'),_fRs(net),'#111')}
+  </div>`;
+}
+
+// Weekly return-rate % per courier — "is a courier getting worse?" One line per
+// courier (colour = entity). Returns {points, series, weeks}.
+function _fulfillCourierTrend(reps){
+  const weeks={};
+  for(const r of reps){
+    const wk=_fulfillMonday(r.date);const w=weeks[wk]||(weeks[wk]={});
+    for(const row of (r.dispatched||[]))(w[row.courier]=w[row.courier]||{d:0,r:0}).d+=row.shipments||0;
+    for(const row of (r.returns||[]))(w[row.courier]=w[row.courier]||{d:0,r:0}).r+=row.shipments||0;
+  }
+  const wkKeys=Object.keys(weeks).sort();
+  const totals={};for(const wk of wkKeys)for(const c in weeks[wk])totals[c]=(totals[c]||0)+weeks[wk][c].d;
+  const couriers=Object.entries(totals).filter(([,d])=>d>0).sort((a,b)=>b[1]-a[1]).map(([c])=>c);
+  const points=wkKeys.map(wk=>{const p={label:_fulfillFmtDateShort(wk)};couriers.forEach(c=>{const cc=weeks[wk][c]||{d:0,r:0};p[c]=cc.d?Math.round(100*cc.r/cc.d):0;});return p;});
+  const series=couriers.map(c=>({key:c,color:_FULFILL_COURIER_COLORS[c]||'#6B6B6B',label:c}));
+  return {points,series,weeks:wkKeys.length};
+}
 // Owners, managers, and the dedicated fulfilment account (Umair) may view
 // and record daily performance.
 function _canViewFulfillment(){return session&&(session.role==='owner'||session.role==='manager'||session.role==='fulfillment');}
