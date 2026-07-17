@@ -40,7 +40,8 @@ let fulfillReports=[];          // cached docs, newest first
 let fulfillReportsLoaded=false;
 let _fulfillTab='analytics';    // 'analytics' | 'entry'
 let _fulfillPeriod=30;          // analytics window in days; 0 = all-time
-let _fulfillTrend='daily';      // trend chart mode: 'daily' | 'weekly'
+let _fulfillTrend='daily';      // trend bucket: 'daily' | 'weekly' | 'monthly'
+let _fulfillMetric='shipments'; // chart metric: 'shipments' | 'value'
 let _fulfillEntryDate=null;     // ISO date currently in the entry form
 
 // ── Small helpers ──
@@ -111,6 +112,24 @@ function _fulfillWeekly(reps){
     m.days++;
   }
   return Object.values(map).sort((a,b)=>a.week.localeCompare(b.week));
+}
+// Group daily reports into calendar months, sorted oldest first.
+function _fulfillMonthly(reps){
+  const map={};
+  for(const r of reps){
+    const k=r.date.slice(0,7); // YYYY-MM
+    const m=map[k]||(map[k]={month:k,dShip:0,dAmt:0,rShip:0,rAmt:0,days:0});
+    m.dShip+=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;
+    m.dAmt+=(r.dispatchedTotal&&r.dispatchedTotal.amount)||0;
+    m.rShip+=(r.returnsTotal&&r.returnsTotal.shipments)||0;
+    m.rAmt+=(r.returnsTotal&&r.returnsTotal.amount)||0;
+    m.days++;
+  }
+  return Object.values(map).sort((a,b)=>a.month.localeCompare(b.month));
+}
+function _fulfillMonthLabel(ym){
+  const d=new Date(ym+'-01T00:00:00');
+  return isNaN(d)?ym:d.toLocaleDateString('en-GB',{month:'short',year:'2-digit'});
 }
 // Small ▲/▼ % change chip. invert=true → "up" is bad (returns, return-rate).
 function _deltaChip(cur,prev,invert){
@@ -343,7 +362,12 @@ window.setFulfillPeriod=function(days){
   if(body)body.innerHTML=_renderFulfillAnalytics();
 };
 window.setFulfillTrend=function(mode){
-  _fulfillTrend=(mode==='weekly'?'weekly':'daily');
+  _fulfillTrend=(['weekly','monthly'].includes(mode)?mode:'daily');
+  const body=document.getElementById('fulfill-body');
+  if(body)body.innerHTML=_renderFulfillAnalytics();
+};
+window.setFulfillMetric=function(m){
+  _fulfillMetric=(m==='value'?'value':'shipments');
   const body=document.getElementById('fulfill-body');
   if(body)body.innerHTML=_renderFulfillAnalytics();
 };
@@ -383,51 +407,55 @@ function _renderFulfillAnalytics(){
   const td=(v,align,extra)=>`<td style="padding:9px 6px;text-align:${align||'left'};${extra||''}">${v}</td>`;
   const rrColor=rr=>rr>=15?'var(--accent-urgent)':rr>=8?'var(--accent-warning)':'var(--accent-success)';
 
-  // ── Trend chart + breakdown (daily or weekly) ──
-  const isWeekly=_fulfillTrend==='weekly';
-  let points,breakdownHead,breakdownRows,trendLabel;
-  if(isWeekly){
-    const wk=_fulfillWeekly(repsAsc);
-    points=wk.map(w=>({label:_fulfillFmtDateShort(w.week),d:w.dShip,r:w.rShip}));
-    trendLabel=wk.length+' week'+(wk.length===1?'':'s');
-    breakdownHead=`${th('Week of')}${th('Days','right')}${th('Dispatched','right')}${th('Value','right')}${th('Returns','right')}${th('Ret %','right')}${th('vs prev','right')}`;
-    breakdownRows=wk.map((w,i)=>({w,prev:i>0?wk[i-1].dShip:null})).reverse().map(({w,prev})=>{
-      const rr=w.dShip?Math.round(100*w.rShip/w.dShip):0;
-      return `<tr style="border-bottom:1px solid #f5f5f5;font-size:14px">
-        ${td('Wk of '+_fulfillFmtDateShort(w.week),'left','font-weight:600;white-space:nowrap')}
-        ${td(w.days,'right','color:var(--muted)')}
-        ${td(_fnum(w.dShip),'right','font-weight:600')}
-        ${td(_fRs(w.dAmt),'right','color:var(--muted)')}
-        ${td(_fnum(w.rShip),'right')}
-        ${td(rr+'%','right','font-weight:600;color:'+rrColor(rr))}
-        ${td(_deltaChip(w.dShip,prev,false)||'<span style="color:var(--muted)">—</span>','right')}
-      </tr>`;
-    }).join('');
+  // ── Trend chart + breakdown (daily / weekly / monthly) ──
+  const mode=_fulfillTrend;
+  const isValue=_fulfillMetric==='value';
+  // Normalise the chosen mode into a common bucket shape.
+  let buckets,firstCol,firstColHdr,daily=false;
+  if(mode==='weekly'){
+    buckets=_fulfillWeekly(repsAsc).map(w=>({...w,label:'Wk of '+_fulfillFmtDateShort(w.week),chart:_fulfillFmtDateShort(w.week)}));
+    firstColHdr=th('Week of');firstCol=b=>td(b.label,'left','font-weight:600;white-space:nowrap');
+  }else if(mode==='monthly'){
+    buckets=_fulfillMonthly(repsAsc).map(m=>({...m,label:_fulfillMonthLabel(m.month),chart:_fulfillMonthLabel(m.month)}));
+    firstColHdr=th('Month');firstCol=b=>td(b.label,'left','font-weight:600;white-space:nowrap');
   }else{
-    const daily=repsAsc.slice(-30);
-    points=daily.map(r=>({label:_fulfillFmtDateShort(r.date),d:(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0,r:(r.returnsTotal&&r.returnsTotal.shipments)||0}));
-    trendLabel='last '+daily.length+' day'+(daily.length===1?'':'s');
-    breakdownHead=`${th('Date')}${th('Day')}${th('Dispatched','right')}${th('Value','right')}${th('Returns','right')}${th('Ret %','right')}${th('vs prev','right')}`;
-    breakdownRows=daily.map((r,i)=>({r,prev:i>0?((daily[i-1].dispatchedTotal&&daily[i-1].dispatchedTotal.shipments)||0):null})).reverse().map(({r,prev})=>{
-      const ds=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;
-      const da=(r.dispatchedTotal&&r.dispatchedTotal.amount)||0;
-      const rs=(r.returnsTotal&&r.returnsTotal.shipments)||0;
-      const rr=ds?Math.round(100*rs/ds):0;
-      return `<tr style="border-bottom:1px solid #f5f5f5;font-size:14px">
-        ${td(_fulfillFmtDate(r.date),'left','font-weight:600;white-space:nowrap')}
-        ${td(_fulfillDayName(r.date),'left','color:var(--muted)')}
-        ${td(_fnum(ds),'right','font-weight:600')}
-        ${td(_fRs(da),'right','color:var(--muted)')}
-        ${td(_fnum(rs),'right')}
-        ${td(rr+'%','right','font-weight:600;color:'+rrColor(rr))}
-        ${td(_deltaChip(ds,prev,false)||'<span style="color:var(--muted)">—</span>','right')}
-      </tr>`;
-    }).join('');
+    daily=true;
+    buckets=repsAsc.slice(-31).map(r=>({
+      date:r.date,label:_fulfillFmtDate(r.date),chart:_fulfillFmtDateShort(r.date),days:1,
+      dShip:(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0,dAmt:(r.dispatchedTotal&&r.dispatchedTotal.amount)||0,
+      rShip:(r.returnsTotal&&r.returnsTotal.shipments)||0,rAmt:(r.returnsTotal&&r.returnsTotal.amount)||0
+    }));
+    firstColHdr=th('Date')+th('Day');firstCol=b=>td(_fulfillFmtDate(b.date),'left','font-weight:600;white-space:nowrap')+td(_fulfillDayName(b.date),'left','color:var(--muted)');
   }
+  const unit=buckets.length+' '+(mode==='weekly'?'week':mode==='monthly'?'month':'day')+(buckets.length===1?'':'s');
+  const trendLabel=(daily?'last ':'')+unit;
 
-  const trendToggle=`<span style="display:inline-flex;gap:4px">
-    <button class="filter-chip${!isWeekly?' active':''}" style="padding:4px 12px" onclick="window.setFulfillTrend('daily')">Daily</button>
-    <button class="filter-chip${isWeekly?' active':''}" style="padding:4px 12px" onclick="window.setFulfillTrend('weekly')">Weekly</button>
+  // Chart points — metric toggle plots shipment counts or Rs value (value =
+  // net-revenue trend: gap between the two lines is the net).
+  const points=buckets.map(b=>({label:b.chart,d:isValue?b.dAmt:b.dShip,r:isValue?b.rAmt:b.rShip}));
+
+  const breakdownHead=`${firstColHdr}${th('Days','right')}${th('Dispatched','right')}${th('Value','right')}${th('Returns','right')}${th('Net','right')}${th('Ret %','right')}${th('vs prev','right')}`;
+  const cmpKey=isValue?'dAmt':'dShip';
+  const breakdownRows=buckets.map((b,i)=>({b,prev:i>0?buckets[i-1][cmpKey]:null})).reverse().map(({b,prev})=>{
+    const rr=b.dShip?Math.round(100*b.rShip/b.dShip):0;
+    const net=b.dAmt-b.rAmt;
+    return `<tr style="border-bottom:1px solid #f5f5f5;font-size:14px">
+      ${firstCol(b)}
+      ${td(b.days,'right','color:var(--muted)')}
+      ${td(_fnum(b.dShip),'right','font-weight:600')}
+      ${td(_fRs(b.dAmt),'right','color:var(--muted)')}
+      ${td(_fnum(b.rShip),'right')}
+      ${td(_fRs(net),'right','font-weight:600')}
+      ${td(rr+'%','right','font-weight:600;color:'+rrColor(rr))}
+      ${td(_deltaChip(b[cmpKey],prev,false)||'<span style="color:var(--muted)">—</span>','right')}
+    </tr>`;
+  }).join('');
+
+  const tBtn=(m,l)=>`<button class="filter-chip${mode===m?' active':''}" style="padding:4px 11px" onclick="window.setFulfillTrend('${m}')">${l}</button>`;
+  const mBtn=(m,l)=>`<button class="filter-chip${_fulfillMetric===m?' active':''}" style="padding:4px 11px" onclick="window.setFulfillMetric('${m}')">${l}</button>`;
+  const trendToggle=`<span style="display:inline-flex;gap:10px;flex-wrap:wrap">
+    <span style="display:inline-flex;gap:4px">${tBtn('daily','Daily')}${tBtn('weekly','Weekly')}${tBtn('monthly','Monthly')}</span>
+    <span style="display:inline-flex;gap:4px">${mBtn('shipments','Shipments')}${mBtn('value','Value')}</span>
   </span>`;
 
   const brandRows=Object.entries(cur.brand).sort((a,b)=>b[1].dShip-a[1].dShip).map(([name,v])=>{
@@ -446,20 +474,24 @@ function _renderFulfillAnalytics(){
   const rateSub=prevRate!=null
     ? `${(retRate-prevRate>=0?'+':'')}${(retRate-prevRate).toFixed(1)}pp vs prev`
     : 'returns ÷ dispatched';
-  const cmpNote=prev?`<span style="font-size:12px;color:var(--muted);font-weight:500">▲▼ vs previous ${_fulfillPeriod} days</span>`:'';
+  const cmpNote=prev?`<span style="font-size:12px;color:var(--muted);font-weight:500">▲▼ vs previous ${mode==='daily'?'day':mode==='weekly'?'week':'month'}</span>`:'';
+  const netVal=cur.dAmt-cur.rAmt;
+  const modeCap=mode.charAt(0).toUpperCase()+mode.slice(1);
+  const exportBtn=`<button class="btn-pdf" onclick="window.fulfillExport()" title="Export all days to Excel">⤓ Excel</button>`;
 
-  return `${_fulfillPeriodChips()}
+  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">${_fulfillPeriodChips()}${exportBtn}</div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px">
     ${kpi('Dispatched',_fnum(cur.dShip),_fRs(cur.dAmt)+' value'+(prev?_deltaChip(cur.dShip,prev.dShip,false):''),'var(--accent-success)')}
     ${kpi('Returns',_fnum(cur.rShip),_fRs(cur.rAmt)+' value'+(prev?_deltaChip(cur.rShip,prev.rShip,true):''),'var(--accent-urgent)')}
+    ${kpi('Net value',_fRs(netVal),(prev?_deltaChip(netVal,prev.dAmt-prev.rAmt,false)+' ':'')+'after returns','var(--text)')}
     ${kpi('Return rate',retRate.toFixed(1)+'%',rateSub,rrColor(retRate))}
     ${kpi('Avg / day',_fnum(avgPerDay),days+' day'+(days===1?'':'s')+' recorded')}
     ${kpi('Best day',_fnum(best.val),best.date?_fulfillFmtDate(best.date):'—')}
   </div>
 
-  ${sec((isWeekly?'Weekly':'Daily')+' trend — '+trendLabel,_fulfillLineChart(points),trendToggle)}
+  ${sec(modeCap+' trend — '+trendLabel+(isValue?' · value (Rs)':''),_fulfillLineChart(points),trendToggle)}
 
-  ${sec((isWeekly?'Weekly':'Daily')+' breakdown',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:520px">
+  ${sec(modeCap+' breakdown',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:580px">
     <thead><tr>${breakdownHead}</tr></thead><tbody>${breakdownRows}</tbody></table></div>`,cmpNote)}
 
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
@@ -507,7 +539,10 @@ function _renderFulfillLog(){
     </div>`;
   }).join('');
 
-  return `<div style="font-size:13px;color:var(--muted);margin-bottom:10px">${fulfillReports.length} day${fulfillReports.length===1?'':'s'} recorded · newest first. Tap PDF to open/print or download any day.</div>
+  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <div style="font-size:13px;color:var(--muted)">${fulfillReports.length} day${fulfillReports.length===1?'':'s'} recorded · newest first. Tap PDF to open/print or download any day.</div>
+      <button class="btn-pdf" onclick="window.fulfillExport()" title="Export all days to Excel">⤓ Export Excel</button>
+    </div>
     ${rows}`;
 }
 
@@ -516,6 +551,42 @@ window.fulfillEditDate=function(date){
   _fulfillTab='entry';
   const m=document.getElementById('main-content');
   if(m){m.innerHTML=renderFulfillmentPage();window._fulfillRecalc();}
+};
+
+// Export every recorded day to an Excel workbook (SheetJS, loaded globally).
+// Two sheets: a per-day summary and a per-line-item detail.
+window.fulfillExport=function(){
+  if(typeof XLSX==='undefined')return showToast('Excel library not loaded — retry in a moment.',true);
+  const reps=[...fulfillReports].sort((a,b)=>a.date.localeCompare(b.date));
+  if(!reps.length)return showToast('Nothing to export yet.',true);
+  const summary=reps.map(r=>{
+    const ds=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;
+    const da=(r.dispatchedTotal&&r.dispatchedTotal.amount)||0;
+    const rs=(r.returnsTotal&&r.returnsTotal.shipments)||0;
+    const ra=(r.returnsTotal&&r.returnsTotal.amount)||0;
+    return {
+      Date:r.date, Day:_fulfillDayName(r.date,true),
+      'Dispatched Shipments':ds, 'Dispatched Value':da,
+      'Returns Shipments':rs, 'Returns Value':ra,
+      'Net Value':da-ra, 'Return %':ds?Math.round(100*rs/ds):0,
+      'Entered By':r.enteredBy||r.updatedBy||''
+    };
+  });
+  const detail=[];
+  for(const r of reps){
+    (r.dispatched||[]).forEach(row=>detail.push({Date:r.date,Day:_fulfillDayName(r.date,true),Type:'Dispatched',Brand:row.brand,Courier:row.courier,Shipments:row.shipments||0,Amount:row.amount||0}));
+    (r.returns||[]).forEach(row=>detail.push({Date:r.date,Day:_fulfillDayName(r.date,true),Type:'Return',Brand:row.brand,Courier:row.courier,Shipments:row.shipments||0,Amount:row.amount||0}));
+  }
+  try{
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(summary),'Daily Summary');
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(detail),'Detail');
+    XLSX.writeFile(wb,`daily-performance-${_fulfillToday()}.xlsx`);
+    showToast(`Exported ${reps.length} day${reps.length===1?'':'s'} ✓`);
+  }catch(e){
+    console.warn('[fulfillment] export failed',e);
+    showToast('Export failed: '+(e.message||'unknown'),true);
+  }
 };
 
 // Generate (open + download) the one-day PDF via the shared print engine.
