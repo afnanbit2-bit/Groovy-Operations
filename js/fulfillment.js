@@ -298,6 +298,46 @@ function _fulfillCourierTrend(reps){
   const series=couriers.map(c=>({key:c,color:_FULFILL_COURIER_COLORS[c]||'#6B6B6B',label:c}));
   return {points,series,weeks:wkKeys.length};
 }
+
+// Return-rate → status colour (hex, for SVG fills). green ≤8 · amber 8–15 · red >15.
+function _fulfillRateColor(rr){return rr>=15?'#7B1F2A':rr>=8?'#B47512':'#14532D';}
+
+// Primary volume chart — stacked "cap on top" bars: delivered (light) + returned
+// (coloured by return-rate severity). Value on top, colour-coded rate % under each
+// bar, and a dashed average line. points:[{label,d,r,rate}]. opts.value → Rs labels.
+function _fulfillVolumeBars(points,opts){
+  opts=opts||{};
+  const isVal=!!opts.value,fmt=v=>isVal?_fRs(v):_fnum(v);
+  const n=points.length,dense=n>18;
+  const W=960,H=opts.height||255,padL=54,padR=16,padT=28,padB=dense?40:54;
+  const top=_niceCeil(Math.max(1,...points.map(p=>p.d||0)));
+  const Y=v=>H-padB-((v/top)*(H-padT-padB));
+  const slot=(W-padL-padR)/Math.max(1,n),cx=i=>padL+slot*i+slot/2;
+  const bw=Math.min(slot*0.6,48);
+  let grid='';
+  for(let t=0;t<=4;t++){const gv=top*t/4,gy=Y(gv);
+    grid+=`<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${W-padR}" y2="${gy.toFixed(1)}" stroke="#eee"/><text x="${padL-8}" y="${(gy+4).toFixed(1)}" text-anchor="end" font-size="12" fill="#aaa">${_fnum(Math.round(gv))}</text>`;}
+  const avg=points.reduce((s,p)=>s+(p.d||0),0)/Math.max(1,n),ay=Y(avg);
+  const avgLine=`<line x1="${padL}" y1="${ay.toFixed(1)}" x2="${W-padR}" y2="${ay.toFixed(1)}" stroke="#111" stroke-width="1" stroke-dasharray="4 4" opacity="0.45"/><text x="${W-padR}" y="${(ay-5).toFixed(1)}" text-anchor="end" font-size="11" fill="#666">avg ${fmt(Math.round(avg))}</text>`;
+  const step=Math.max(1,Math.ceil(n/14));
+  let bars='';
+  points.forEach((p,i)=>{
+    const c=cx(i),d=p.d||0,r=p.r||0,net=Math.max(0,d-r),col=_fulfillRateColor(p.rate);
+    const tip=`${p.label} · Dispatched ${fmt(d)} · Returns ${fmt(r)} (${p.rate}%) · Net ${fmt(net)}`;
+    bars+=`<rect x="${(c-bw/2).toFixed(1)}" y="${Y(net).toFixed(1)}" width="${bw.toFixed(1)}" height="${(Y(0)-Y(net)).toFixed(1)}" fill="#EAEAEA"><title>${tip}</title></rect>`;
+    if(d>0&&r>0)bars+=`<rect x="${(c-bw/2).toFixed(1)}" y="${Y(d).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,Y(net)-Y(d)-2).toFixed(1)}" rx="3" fill="${col}"><title>${tip}</title></rect>`;
+    if(!dense){
+      bars+=`<text x="${c.toFixed(1)}" y="${(Y(d)-6).toFixed(1)}" text-anchor="middle" font-size="11" fill="#222" font-weight="700">${fmt(d)}</text>`;
+      bars+=`<text x="${c.toFixed(1)}" y="${(H-padB+17).toFixed(1)}" text-anchor="middle" font-size="11" fill="#777">${p.label}</text>`;
+      bars+=`<text x="${c.toFixed(1)}" y="${(H-padB+32).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="${col}">${p.rate}%</text>`;
+    }else if(i%step===0||i===n-1){
+      bars+=`<text x="${c.toFixed(1)}" y="${(H-padB+17).toFixed(1)}" text-anchor="middle" font-size="11" fill="#777">${p.label}</text>`;
+    }
+  });
+  const key=(c,l)=>`<span style="display:inline-flex;align-items:center;gap:7px"><span style="width:16px;height:12px;border-radius:3px;background:${c};display:inline-block"></span>${l}</span>`;
+  const legend=`<div style="display:flex;gap:16px;justify-content:center;margin-top:8px;font-size:13px;flex-wrap:wrap">${key('#EAEAEA','Delivered')}${key('#14532D','Returned ≤8%')}${key('#B47512','8–15%')}${key('#7B1F2A','>15%')}</div>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" style="height:${H}px;display:block;max-width:100%">${grid}${avgLine}${bars}</svg>${legend}`;
+}
 // Owners, managers, and the dedicated fulfilment account (Umair) may view
 // and record daily performance.
 function _canViewFulfillment(){return session&&(session.role==='owner'||session.role==='manager'||session.role==='fulfillment');}
@@ -617,6 +657,11 @@ function _renderFulfillAnalytics(){
   const brandRows=rankRows(cur.brand);
   const courierRows=rankRows(cur.courier);
   const weekday=_fulfillWeekdayPattern(reps);
+  const calendar=_fulfillCalendarHeatmap(reps);
+  const ct=_fulfillCourierTrend(reps);
+  const courierTrend=ct.weeks>=2&&ct.series.length
+    ? _fulfillLineChart(ct.points,ct.series,{ySuffix:'%',minMax:10,height:220})
+    : '<div class="empty" style="padding:1.6rem">Need at least 2 weeks of data for a courier trend.</div>';
 
   const rateSub=prevRate!=null
     ? `${(retRate-prevRate>=0?'+':'')}${(retRate-prevRate).toFixed(1)}pp vs prev`
@@ -638,12 +683,14 @@ function _renderFulfillAnalytics(){
   </div>
 
   ${sec(modeCap+' volume — '+trendLabel+(isValue?' · value (Rs)':' · shipments'),
-    _fulfillLineChart(points,[{key:'d',color:'#111111',label:'Dispatched',area:true},{key:'r',color:'#7B1F2A',label:'Returns'}],{ySuffix:''}),trendToggle)}
+    _fulfillVolumeBars(points,{value:isValue}),trendToggle)}
 
   <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:14px;margin-bottom:14px">
     ${sec('Return rate over time (%)',_fulfillLineChart(points,[{key:'rate',color:'#B47512',label:'Return rate',area:true}],{ySuffix:'%',minMax:10,height:200}))}
     ${sec('Avg dispatched by weekday',_fulfillBarChart(weekday))}
   </div>
+
+  ${sec('Dispatch calendar — daily volume',calendar)}
 
   ${sec(modeCap+' breakdown',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:580px">
     <thead><tr>${breakdownHead}</tr></thead><tbody>${breakdownRows}</tbody></table></div>`,cmpNote)}
@@ -655,6 +702,11 @@ function _renderFulfillAnalytics(){
     ${sec('By courier · return rate',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:320px">
       <thead><tr>${th('Courier')}${th('Disp','right')}${th('Value','right')}${th('Ret','right')}${th('Ret %','right')}</tr></thead>
       <tbody>${courierRows}</tbody></table></div>`)}
+  </div>
+
+  <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:14px;margin-bottom:14px">
+    ${sec('Courier return-rate trend (weekly)',courierTrend)}
+    ${sec('Net revenue build-up',_fulfillWaterfall(cur.dAmt,cur.rAmt))}
   </div>`;
 }
 
