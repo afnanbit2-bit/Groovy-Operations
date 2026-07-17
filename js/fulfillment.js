@@ -921,10 +921,70 @@ function _renderFulfillLog(){
           style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#FAFAFA;font-family:inherit;outline:none;min-width:230px">
         <select onchange="window.fulfillLogPerPage(this.value)" style="padding:9px 8px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;font-family:inherit">${perOpts}</select>
       </div>
-      <button class="btn-pdf" onclick="window.fulfillExport()" title="Export all days to Excel">⤓ Export Excel</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${(session.role==='owner'||session.role==='manager')?`<label class="btn-pdf" style="cursor:pointer" title="Import a Dispatch/Returns Excel workbook">⤒ Import Excel<input type="file" accept=".xlsx,.xls" style="display:none" onchange="window.fulfillImport(this)"></label>`:''}
+        <button class="btn-pdf" onclick="window.fulfillExport()" title="Export all days to Excel">⤓ Export Excel</button>
+      </div>
     </div>
     <div id="fl-results">${_fulfillLogResults()}</div>`;
 }
+
+// Parse a 3-sheet Dispatch/Returns workbook (same shape as the export) into
+// per-day rows. Mirrors the server-side importer: strict date rows only, brand
+// normalisation, GRAND-TOTAL rows skipped.
+function _fulfillParseWorkbook(wb){
+  const MON={jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
+  const isDate=s=>/^\d{1,2}-[A-Za-z]{3}-\d{2}$/.test(String(s).trim());
+  const pdate=s=>{const p=String(s).trim().split('-');return `20${p[2]}-${MON[p[1].toLowerCase()]}-${String(p[0]).padStart(2,'0')}`;};
+  const canon=b=>{const s=String(b).trim().toLowerCase();return ({'groovy':'GROOVY','against':'AGAINST','cultured legacy':'Cultured Legacy','groovy/against/culture':'Groovy/Against/Culture','groovy/culture':'Groovy/Culture'})[s]||String(b).trim();};
+  const findSheet=name=>wb.SheetNames.find(n=>n.toLowerCase().indexOf(name)>-1);
+  const grid=n=>n?XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,defval:''}):[];
+  const parseLines=nm=>{const rows=grid(findSheet(nm)).slice(1);const by={};for(const r of rows){if(!isDate(r[0]))continue;const date=pdate(r[0]);const brand=String(r[1]).trim();if(brand.toUpperCase()==='GRAND TOTAL'||!brand)continue;(by[date]=by[date]||{rows:[]}).rows.push({brand:canon(r[1]),courier:String(r[2]).trim(),shipments:parseInt(r[3])||0,amount:parseFloat(r[4])||0});}return by;};
+  const disp=parseLines('dispatch'),ret=parseLines('return');
+  return {dates:[...new Set(Object.keys(disp))].sort(),disp,ret};
+}
+
+// Read the chosen workbook, confirm, and bulk-write one doc per day. A day with
+// no returns rows is saved returnsRecorded:false (not a fake 0%).
+window.fulfillImport=async function(input){
+  if(!(session.role==='owner'||session.role==='manager'))return showToast('Import is restricted to owners and managers.',true);
+  const file=input&&input.files&&input.files[0];if(!file)return;
+  if(typeof XLSX==='undefined'){input.value='';return showToast('Excel library not loaded — retry in a moment.',true);}
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+    const p=_fulfillParseWorkbook(wb);
+    if(!p.dates.length){input.value='';return showToast('No dated rows found — expected a Dispatched sheet.',true);}
+    const overwrite=p.dates.filter(d=>fulfillReports.some(r=>r.date===d)).length;
+    const msg=`Import ${p.dates.length} day(s), ${_fulfillFmtDate(p.dates[0])} → ${_fulfillFmtDate(p.dates[p.dates.length-1])}?`+(overwrite?`\n\n${overwrite} existing day(s) will be overwritten.`:'');
+    if(!confirm(msg)){input.value='';return;}
+    showToast('Importing…');
+    const now=Date.now();const batch=writeBatch(db);
+    for(const date of p.dates){
+      const dRows=(p.disp[date]&&p.disp[date].rows)||[];
+      const rRec=!!p.ret[date];
+      const rRows=(p.ret[date]&&p.ret[date].rows)||[];
+      const dS=dRows.reduce((s,x)=>s+x.shipments,0),dA=dRows.reduce((s,x)=>s+x.amount,0);
+      const rS=rRows.reduce((s,x)=>s+x.shipments,0),rA=rRows.reduce((s,x)=>s+x.amount,0);
+      batch.set(doc(db,'fulfillment_reports',date),{
+        date,dispatched:dRows,returns:rRows,
+        dispatchedTotal:{shipments:dS,amount:dA},returnsTotal:{shipments:rS,amount:rA},
+        returnsRecorded:rRec,
+        enteredBy:session.name,enteredByU:session.u,enteredAt:now,
+        updatedBy:session.name,updatedByU:session.u,updatedAt:now,source:'excel-import'
+      });
+    }
+    await batch.commit();
+    logActivity('Fulfilment import',`Imported ${p.dates.length} days from Excel (${p.dates[0]}…${p.dates[p.dates.length-1]})`);
+    await loadFulfillmentData();
+    _fulfillTab='log';
+    const m=document.getElementById('main-content');if(m)m.innerHTML=renderFulfillmentPage();
+    showToast(`Imported ${p.dates.length} day(s) ✓`);
+  }catch(e){
+    console.warn('[fulfillment] import failed',e);
+    showToast('Import failed: '+(e.message||'could not read file'),true);
+  }finally{if(input)input.value='';}
+};
 
 window.fulfillLogSearch=function(v){_fulfillLogSearch=v;_fulfillLogPage=1;const el=document.getElementById('fl-results');if(el)el.innerHTML=_fulfillLogResults();};
 window.fulfillLogPerPage=function(v){_fulfillLogPerPage=parseInt(v)||10;_fulfillLogPage=1;const el=document.getElementById('fl-results');if(el)el.innerHTML=_fulfillLogResults();};
