@@ -31,9 +31,14 @@ const FULFILL_RETURN_ROWS=[
   {brand:'GROOVY',          courier:'POST-EX'},
   {brand:'AGAINST',         courier:'POST-EX'},
   {brand:'Cultured Legacy', courier:'BLUE-EX'},
-  {brand:'Groovy',          courier:'BLUE-EX'},
+  {brand:'GROOVY',          courier:'BLUE-EX'},
   {brand:'Groovy/Culture',  courier:'TCS'},
 ];
+// The brand/courier rows currently rendered in the entry form — the fixed
+// template for a new day, or a saved record's own rows when editing (imported
+// days can carry a different return layout). Recalc + save read from here so
+// the labels shown always match what gets written.
+let _fulfillActiveRows={d:FULFILL_DISPATCH_ROWS,r:FULFILL_RETURN_ROWS};
 
 // ── Module state ──
 let fulfillReports=[];          // cached docs, newest first
@@ -255,6 +260,12 @@ function _renderFulfillEntry(){
   const date=_fulfillEntryDate||_fulfillToday();
   _fulfillEntryDate=date;
   const existing=fulfillReports.find(r=>r.date===date);
+  // Editing a saved day reuses its own brand/courier layout (imported days can
+  // differ from the default template); a new day uses the fixed template.
+  _fulfillActiveRows={
+    d:(existing&&existing.dispatched&&existing.dispatched.length)?existing.dispatched:FULFILL_DISPATCH_ROWS,
+    r:(existing&&existing.returns&&existing.returns.length)?existing.returns:FULFILL_RETURN_ROWS
+  };
 
   // Clear a lone "0" on focus and select the contents so the first keystroke
   // overwrites — no more deleting the placeholder zero before typing.
@@ -300,8 +311,8 @@ function _renderFulfillEntry(){
         ${existing?'✎ Editing ':''}${_fulfillDayName(date,true)}, ${_fulfillFmtDate(date)}
       </div>
     </div>
-    ${tbl('DISPATCHED',FULFILL_DISPATCH_ROWS,'d',existing&&existing.dispatched,'var(--accent-success)')}
-    ${tbl('RETURNS',FULFILL_RETURN_ROWS,'r',existing&&existing.returns,'var(--accent-urgent)')}
+    ${tbl('DISPATCHED',_fulfillActiveRows.d,'d',existing&&existing.dispatched,'var(--accent-success)')}
+    ${tbl('RETURNS',_fulfillActiveRows.r,'r',existing&&existing.returns,'var(--accent-urgent)')}
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn-primary" id="fd-save-btn" style="flex:1;min-width:160px" onclick="window.saveFulfillReport()">${existing?'Update record':'Save record'}</button>
       <button class="btn-outline" style="flex:1;min-width:160px;font-size:14px;font-weight:600" onclick="window.saveFulfillReport(true)">${existing?'Update':'Save'} &amp; download PDF</button>
@@ -329,8 +340,8 @@ function _fulfillReadSection(section,rows){
 }
 
 window._fulfillRecalc=function(){
-  const d=_fulfillReadSection('d',FULFILL_DISPATCH_ROWS);
-  const r=_fulfillReadSection('r',FULFILL_RETURN_ROWS);
+  const d=_fulfillReadSection('d',_fulfillActiveRows.d);
+  const r=_fulfillReadSection('r',_fulfillActiveRows.r);
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
   set('fd-d-tot-ship',_fnum(d.totShip));set('fd-d-tot-amt',_fRs(d.totAmt));
   set('fd-r-tot-ship',_fnum(r.totShip));set('fd-r-tot-amt',_fRs(r.totAmt));
@@ -340,8 +351,8 @@ window.saveFulfillReport=async function(alsoPdf){
   if(!_canEditFulfillment())return showToast('Not allowed.',true);
   const date=(document.getElementById('fd-date')||{}).value;
   if(!date)return showToast('Pick a date first.',true);
-  const d=_fulfillReadSection('d',FULFILL_DISPATCH_ROWS);
-  const r=_fulfillReadSection('r',FULFILL_RETURN_ROWS);
+  const d=_fulfillReadSection('d',_fulfillActiveRows.d);
+  const r=_fulfillReadSection('r',_fulfillActiveRows.r);
   if(d.totShip===0&&d.totAmt===0&&r.totShip===0&&r.totAmt===0)
     return showToast('Enter at least one shipment or amount.',true);
 
