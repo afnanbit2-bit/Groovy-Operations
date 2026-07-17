@@ -39,7 +39,9 @@ const FULFILL_RETURN_ROWS=[
 let fulfillReports=[];          // cached docs, newest first
 let fulfillReportsLoaded=false;
 let _fulfillTab='analytics';    // 'analytics' | 'entry'
-let _fulfillPeriod=30;          // analytics window in days; 0 = all-time
+let _fulfillRangeKey='30d';     // active range preset key (or 'custom')
+let _fulfillFrom=null;          // custom-range start (ISO) — used when key==='custom'
+let _fulfillTo=null;            // custom-range end   (ISO)
 let _fulfillTrend='daily';      // trend bucket: 'daily' | 'weekly' | 'monthly'
 let _fulfillMetric='shipments'; // chart metric: 'shipments' | 'value'
 let _fulfillEntryDate=null;     // ISO date currently in the entry form
@@ -59,6 +61,30 @@ function _fulfillFmtDate(iso){
 function _fulfillCutoff(days){
   const d=new Date();d.setDate(d.getDate()-(days-1));
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function _fulfillISO(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function _fulfillAddDays(iso,n){const d=new Date(iso+'T00:00:00');d.setDate(d.getDate()+n);return _fulfillISO(d);}
+function _fulfillDaysBetween(a,b){return Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/86400000)+1;}
+// Resolve a preset key → {from,to} (inclusive ISO bounds; null = open/all-time).
+function _fulfillPreset(key){
+  const today=_fulfillToday();
+  const now=new Date(today+'T00:00:00');
+  switch(key){
+    case 'today':     return {from:today,to:today};
+    case 'yesterday': {const y=_fulfillAddDays(today,-1);return {from:y,to:y};}
+    case '7d':        return {from:_fulfillAddDays(today,-6),to:today};
+    case '30d':       return {from:_fulfillAddDays(today,-29),to:today};
+    case '90d':       return {from:_fulfillAddDays(today,-89),to:today};
+    case 'thismonth': return {from:_fulfillISO(new Date(now.getFullYear(),now.getMonth(),1)),to:today};
+    case 'lastmonth': return {from:_fulfillISO(new Date(now.getFullYear(),now.getMonth()-1,1)),to:_fulfillISO(new Date(now.getFullYear(),now.getMonth(),0))};
+    case 'all':       return {from:null,to:null};
+    default:          return null;
+  }
+}
+// The active [from,to] for the current selection.
+function _fulfillRange(){
+  if(_fulfillRangeKey==='custom')return {from:_fulfillFrom,to:_fulfillTo};
+  return _fulfillPreset(_fulfillRangeKey)||_fulfillPreset('30d');
 }
 function _fulfillDayName(iso,long){
   const d=new Date(iso+'T00:00:00');
@@ -356,8 +382,18 @@ window.saveFulfillReport=async function(alsoPdf){
 // ══════════════════════════════════════════════════════════════════════
 //  ANALYTICS
 // ══════════════════════════════════════════════════════════════════════
-window.setFulfillPeriod=function(days){
-  _fulfillPeriod=days;
+window.setFulfillRange=function(key){
+  _fulfillRangeKey=key;
+  if(key!=='custom'){const p=_fulfillPreset(key);if(p){_fulfillFrom=p.from;_fulfillTo=p.to;}}
+  const body=document.getElementById('fulfill-body');
+  if(body)body.innerHTML=_renderFulfillAnalytics();
+};
+window.applyFulfillCustom=function(){
+  let f=(document.getElementById('fr-from')||{}).value;
+  let t=(document.getElementById('fr-to')||{}).value;
+  if(!f||!t)return showToast('Pick both a From and To date.',true);
+  if(f>t){const tmp=f;f=t;t=tmp;}
+  _fulfillRangeKey='custom';_fulfillFrom=f;_fulfillTo=t;
   const body=document.getElementById('fulfill-body');
   if(body)body.innerHTML=_renderFulfillAnalytics();
 };
@@ -377,10 +413,10 @@ function _renderFulfillAnalytics(){
     return `<div class="empty">No daily reports yet.<br><br>
       <button class="btn-outline" onclick="window.switchFulfillTab('entry')">Record the first day</button></div>`;
 
-  const cutoff=_fulfillPeriod?_fulfillCutoff(_fulfillPeriod):'0000-00-00';
-  const reps=fulfillReports.filter(r=>r.date>=cutoff);
+  const rng=_fulfillRange();const from=rng.from,to=rng.to;
+  const reps=fulfillReports.filter(r=>(from==null||r.date>=from)&&(to==null||r.date<=to));
   if(!reps.length)
-    return `<div>${_fulfillPeriodChips()}<div class="empty">No reports in this window.</div></div>`;
+    return `${_fulfillRangeBar(from,to)}<div class="empty">No reports in this date range.</div>`;
 
   const repsAsc=[...reps].sort((a,b)=>a.date.localeCompare(b.date));
   const cur=_sumFulfill(reps);
@@ -389,11 +425,13 @@ function _renderFulfillAnalytics(){
   const avgPerDay=days?Math.round(cur.dShip/days):0;
   const best=repsAsc.reduce((m,r)=>{const v=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;return v>m.val?{val:v,date:r.date}:m;},{val:0,date:null});
 
-  // ── Compare: previous equal-length window (only for fixed periods) ──
-  let prev=null,prevRate=null;
-  if(_fulfillPeriod){
-    const prevStart=_fulfillCutoff(_fulfillPeriod*2);
-    const prevReps=fulfillReports.filter(r=>r.date>=prevStart&&r.date<cutoff);
+  // ── Compare: the immediately-preceding window of equal length ──
+  let prev=null,prevRate=null,prevFrom=null,prevTo=null;
+  if(from&&to){
+    const len=_fulfillDaysBetween(from,to);
+    prevTo=_fulfillAddDays(from,-1);
+    prevFrom=_fulfillAddDays(prevTo,-(len-1));
+    const prevReps=fulfillReports.filter(r=>r.date>=prevFrom&&r.date<=prevTo);
     if(prevReps.length){prev=_sumFulfill(prevReps);prevRate=prev.dShip?100*prev.rShip/prev.dShip:0;}
   }
 
@@ -474,12 +512,13 @@ function _renderFulfillAnalytics(){
   const rateSub=prevRate!=null
     ? `${(retRate-prevRate>=0?'+':'')}${(retRate-prevRate).toFixed(1)}pp vs prev`
     : 'returns ÷ dispatched';
-  const cmpNote=prev?`<span style="font-size:12px;color:var(--muted);font-weight:500">▲▼ vs previous ${mode==='daily'?'day':mode==='weekly'?'week':'month'}</span>`:'';
+  const cmpNote=prev
+    ? `<span style="font-size:12px;color:var(--muted);font-weight:500">▲▼ vs ${_fulfillFmtDate(prevFrom)} → ${_fulfillFmtDate(prevTo)}</span>`
+    : '';
   const netVal=cur.dAmt-cur.rAmt;
   const modeCap=mode.charAt(0).toUpperCase()+mode.slice(1);
-  const exportBtn=`<button class="btn-pdf" onclick="window.fulfillExport()" title="Export all days to Excel">⤓ Excel</button>`;
 
-  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">${_fulfillPeriodChips()}${exportBtn}</div>
+  return `${_fulfillRangeBar(from,to)}
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px">
     ${kpi('Dispatched',_fnum(cur.dShip),_fRs(cur.dAmt)+' value'+(prev?_deltaChip(cur.dShip,prev.dShip,false):''),'var(--accent-success)')}
     ${kpi('Returns',_fnum(cur.rShip),_fRs(cur.rAmt)+' value'+(prev?_deltaChip(cur.rShip,prev.rShip,true):''),'var(--accent-urgent)')}
@@ -504,10 +543,31 @@ function _renderFulfillAnalytics(){
   </div>`;
 }
 
-function _fulfillPeriodChips(){
-  const opts=[[7,'7d'],[30,'30d'],[90,'90d'],[0,'All']];
-  return `<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
-    ${opts.map(([d,l])=>`<button class="filter-chip${_fulfillPeriod===d?' active':''}" onclick="window.setFulfillPeriod(${d})">${l}</button>`).join('')}
+// Date-range control: preset chips + a From/To calendar for a custom range,
+// an Excel export button, and a label showing the active range and the
+// comparison window (the equal-length period immediately before it).
+function _fulfillRangeBar(from,to){
+  const presets=[['today','Today'],['yesterday','Yesterday'],['7d','Last 7 Days'],['30d','Last 30 Days'],['90d','Last 90 Days'],['thismonth','This Month'],['lastmonth','Last Month'],['all','All']];
+  const chips=presets.map(([k,l])=>`<button class="filter-chip${_fulfillRangeKey===k?' active':''}" onclick="window.setFulfillRange('${k}')">${l}</button>`).join('');
+  const today=_fulfillToday();
+  let label,cmp='';
+  if(from&&to){
+    label=`${_fulfillFmtDate(from)} → ${_fulfillFmtDate(to)} · ${_fulfillDaysBetween(from,to)} days`;
+    const len=_fulfillDaysBetween(from,to);
+    const pTo=_fulfillAddDays(from,-1),pFrom=_fulfillAddDays(pTo,-(len-1));
+    cmp=`<span style="color:var(--muted)"> · vs ${_fulfillFmtDate(pFrom)} → ${_fulfillFmtDate(pTo)}</span>`;
+  }else{
+    label='All time';
+  }
+  return `<div style="margin-bottom:14px">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${chips}</div>
+    <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+      <div class="field" style="width:150px"><label>From</label><input type="date" id="fr-from" value="${from||''}" max="${today}"></div>
+      <div class="field" style="width:150px"><label>To</label><input type="date" id="fr-to" value="${to||''}" max="${today}"></div>
+      <button class="btn-outline" onclick="window.applyFulfillCustom()">Apply range</button>
+      <button class="btn-pdf" onclick="window.fulfillExport()" title="Export all days to Excel" style="margin-left:auto">⤓ Excel</button>
+    </div>
+    <div style="font-size:12px;color:var(--text);font-weight:600;margin-top:8px">${label}${cmp}</div>
   </div>`;
 }
 
