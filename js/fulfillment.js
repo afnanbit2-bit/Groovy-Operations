@@ -139,11 +139,13 @@ function _fulfillWeekly(reps){
   const map={};
   for(const r of reps){
     const wk=_fulfillMonday(r.date);
-    const m=map[wk]||(map[wk]={week:wk,dShip:0,dAmt:0,rShip:0,rAmt:0,days:0});
-    m.dShip+=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;
+    const m=map[wk]||(map[wk]={week:wk,dShip:0,dAmt:0,rShip:0,rAmt:0,days:0,recDisp:0});
+    const dS=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;
+    m.dShip+=dS;
     m.dAmt+=(r.dispatchedTotal&&r.dispatchedTotal.amount)||0;
     m.rShip+=(r.returnsTotal&&r.returnsTotal.shipments)||0;
     m.rAmt+=(r.returnsTotal&&r.returnsTotal.amount)||0;
+    if(r.returnsRecorded!==false)m.recDisp+=dS; // dispatched on days whose returns were recorded
     m.days++;
   }
   return Object.values(map).sort((a,b)=>a.week.localeCompare(b.week));
@@ -153,11 +155,13 @@ function _fulfillMonthly(reps){
   const map={};
   for(const r of reps){
     const k=r.date.slice(0,7); // YYYY-MM
-    const m=map[k]||(map[k]={month:k,dShip:0,dAmt:0,rShip:0,rAmt:0,days:0});
-    m.dShip+=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;
+    const m=map[k]||(map[k]={month:k,dShip:0,dAmt:0,rShip:0,rAmt:0,days:0,recDisp:0});
+    const dS=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;
+    m.dShip+=dS;
     m.dAmt+=(r.dispatchedTotal&&r.dispatchedTotal.amount)||0;
     m.rShip+=(r.returnsTotal&&r.returnsTotal.shipments)||0;
     m.rAmt+=(r.returnsTotal&&r.returnsTotal.amount)||0;
+    if(r.returnsRecorded!==false)m.recDisp+=dS;
     m.days++;
   }
   return Object.values(map).sort((a,b)=>a.month.localeCompare(b.month));
@@ -186,7 +190,7 @@ function _fulfillLineChart(points,series,opts){
   const W=960,H=opts.height||230,padL=54,padR=18,padT=18,padB=44;
   const n=points.length;
   const keys=series.map(s=>s.key);
-  const maxV=Math.max(opts.minMax||1,...points.reduce((a,p)=>{keys.forEach(k=>a.push(p[k]||0));return a;},[]));
+  const maxV=Math.max(opts.minMax||1,...points.reduce((a,p)=>{keys.forEach(k=>{if(p[k]!=null)a.push(p[k]);});return a;},[]));
   const top=_niceCeil(maxV);
   const suf=opts.ySuffix||'';
   const X=i=>n<=1?padL+(W-padL-padR)/2:padL+(i*(W-padL-padR)/(n-1));
@@ -199,10 +203,13 @@ function _fulfillLineChart(points,series,opts){
   let xlab='';points.forEach((p,i)=>{if(i%step!==0&&i!==n-1)return;xlab+=`<text x="${X(i).toFixed(1)}" y="${H-padB+18}" text-anchor="middle" font-size="12" fill="#777">${p.label}</text>`;});
   let body='';
   for(const s of series){
-    const pts=points.map((p,i)=>`${X(i).toFixed(1)},${Y(p[s.key]||0).toFixed(1)}`);
-    if(s.area&&n>1)body+=`<polygon points="${X(0).toFixed(1)},${Y(0).toFixed(1)} ${pts.join(' ')} ${X(n-1).toFixed(1)},${Y(0).toFixed(1)}" fill="${s.color}" fill-opacity="0.07"/>`;
-    if(n>1)body+=`<polyline points="${pts.join(' ')}" fill="none" stroke="${s.color}" stroke-width="${s.width||2.5}"${s.dash?` stroke-dasharray="${s.dash}"`:''}/>`;
-    body+=points.map((p,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(p[s.key]||0).toFixed(1)}" r="${n<=16?3.5:2.5}" fill="${s.color}"><title>${p.label} · ${s.label}: ${_fnum(p[s.key]||0)}${suf}</title></circle>`).join('');
+    // Only plot points that have a value; null (e.g. a not-recorded day) breaks
+    // the line and draws no dot rather than dropping to a misleading zero.
+    const valid=points.map((p,i)=>({i,v:p[s.key]})).filter(o=>o.v!=null);
+    const pts=valid.map(o=>`${X(o.i).toFixed(1)},${Y(o.v).toFixed(1)}`);
+    if(s.area&&valid.length>1)body+=`<polygon points="${X(valid[0].i).toFixed(1)},${Y(0).toFixed(1)} ${pts.join(' ')} ${X(valid[valid.length-1].i).toFixed(1)},${Y(0).toFixed(1)}" fill="${s.color}" fill-opacity="0.07"/>`;
+    if(valid.length>1)body+=`<polyline points="${pts.join(' ')}" fill="none" stroke="${s.color}" stroke-width="${s.width||2.5}"${s.dash?` stroke-dasharray="${s.dash}"`:''}/>`;
+    body+=valid.map(o=>`<circle cx="${X(o.i).toFixed(1)}" cy="${Y(o.v).toFixed(1)}" r="${n<=16?3.5:2.5}" fill="${s.color}"><title>${points[o.i].label} · ${s.label}: ${_fnum(o.v)}${suf}</title></circle>`).join('');
   }
   const legend=series.length>1?`<div style="display:flex;gap:20px;justify-content:center;margin-top:8px;font-size:13px">${series.map(s=>`<span style="display:inline-flex;align-items:center;gap:7px"><span style="width:18px;height:3px;background:${s.color};display:inline-block;border-radius:2px"></span>${s.label}</span>`).join('')}</div>`:'';
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" style="height:${H}px;display:block;max-width:100%">${grid}${body}${xlab}</svg>${legend}`;
@@ -241,22 +248,26 @@ const _FULFILL_COURIER_COLORS={'POST-EX':'#7B1F2A','BLUE-EX':'#185FA5','TCS':'#B
 // single-hue green ramp (light→dark = more). Independent of the trend toggle.
 function _fulfillCalendarHeatmap(reps,metric){
   metric=metric==='rate'?'rate':'volume';
-  const byV={},byRate={},has={};let maxV=0;
+  const byV={},byRate={},has={},rec={};let maxV=0;
   for(const r of reps){
     const v=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;
     const rs=(r.returnsTotal&&r.returnsTotal.shipments)||0;
     byV[r.date]=v;byRate[r.date]=v?Math.round(100*rs/v):0;has[r.date]=true;
+    rec[r.date]=r.returnsRecorded!==false; // returns recorded that day?
     if(v>maxV)maxV=v;
   }
   const months=[...new Set(reps.map(r=>r.date.slice(0,7)))].sort();
   const ramp=['#EDEDED','#D6E8DC','#A9CDB4','#5E9A73','#14532D'];
   const lvl=v=>{if(!v)return 0;const q=v/(maxV||1);return q<=0.25?1:q<=0.5?2:q<=0.75?3:4;};
-  // Highlighted day: busiest (volume mode) or worst return rate (rate mode).
+  // Highlighted day: busiest (volume mode) or worst return rate (rate mode,
+  // recorded days only).
   let bestDate=null,bestVal=-1;
-  for(const d in has){const val=metric==='rate'?byRate[d]:byV[d];if(val>bestVal){bestVal=val;bestDate=d;}}
-  const cellStyle=(h,v,rate)=>{
+  for(const d in has){if(metric==='rate'&&!rec[d])continue;const val=metric==='rate'?byRate[d]:byV[d];if(val>bestVal){bestVal=val;bestDate=d;}}
+  const cellStyle=(h,v,rate,recorded)=>{
     if(!h)return {bg:'#F1F1F1',fg:'#bdbdbd'};
-    if(metric==='rate')return {bg:_fulfillRateColor(rate),fg:'#fff'};
+    // In rate mode a day whose returns were never recorded is shown as no-data,
+    // not a misleading green 0%.
+    if(metric==='rate')return recorded?{bg:_fulfillRateColor(rate),fg:'#fff'}:{bg:'#F1F1F1',fg:'#bdbdbd'};
     const L=lvl(v);return {bg:ramp[L],fg:L>=3?'#fff':'#3a3a3a'};
   };
   const wd=['Mo','Tu','We','Th','Fr','Sa','Su'];
@@ -264,17 +275,17 @@ function _fulfillCalendarHeatmap(reps,metric){
     const y=+ym.slice(0,4),m=+ym.slice(5,7);
     const startOff=(new Date(y,m-1,1).getDay()+6)%7;
     const days=new Date(y,m,0).getDate();
-    let mV=0,mRw=0;
-    for(let d=1;d<=days;d++){const iso=`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;if(has[iso]){mV+=byV[iso];mRw+=(byRate[iso]/100)*byV[iso];}}
-    const mRate=mV?Math.round(100*mRw/mV):0;
+    let mV=0,mRw=0,mRecDisp=0;
+    for(let d=1;d<=days;d++){const iso=`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;if(has[iso]){mV+=byV[iso];if(rec[iso]){mRw+=(byRate[iso]/100)*byV[iso];mRecDisp+=byV[iso];}}}
+    const mRate=mRecDisp?Math.round(100*mRw/mRecDisp):0;
     const totalTxt=metric==='rate'?mRate+'% avg':_fnum(mV)+' disp';
     let cells=wd.map(w=>`<div style="font-size:10px;color:var(--muted);text-align:center;line-height:16px">${w}</div>`).join('');
     for(let i=0;i<startOff;i++)cells+='<div style="width:28px;height:28px"></div>';
     for(let d=1;d<=days;d++){
       const iso=`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-      const h=!!has[iso],v=byV[iso]||0,rate=byRate[iso]||0,st=cellStyle(h,v,rate);
+      const h=!!has[iso],v=byV[iso]||0,rate=byRate[iso]||0,recorded=rec[iso]!==false,st=cellStyle(h,v,rate,recorded);
       const ring=iso===bestDate?'box-shadow:0 0 0 2px #111;':'';
-      const tip=`${_fulfillFmtDate(iso)}${h?': '+_fnum(v)+' dispatched · '+rate+'% return':' · no data'}`;
+      const tip=`${_fulfillFmtDate(iso)}${h?': '+_fnum(v)+' dispatched · '+(recorded?rate+'% return':'returns not recorded'):' · no data'}`;
       cells+=`<div title="${tip}" style="width:28px;height:28px;border-radius:5px;background:${st.bg};color:${st.fg};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;${ring}">${d}</div>`;
     }
     return `<div style="display:inline-block;vertical-align:top;margin:0 26px 12px 0">
@@ -349,14 +360,14 @@ function _fulfillVolumeBars(points,opts){
   const step=Math.max(1,Math.ceil(n/14));
   let bars='';
   points.forEach((p,i)=>{
-    const c=cx(i),d=p.d||0,r=p.r||0,net=Math.max(0,d-r),col=_fulfillRateColor(p.rate);
-    const tip=`${p.label} · Dispatched ${fmt(d)} · Returns ${fmt(r)} (${p.rate}%) · Net ${fmt(net)}`;
+    const c=cx(i),d=p.d||0,r=p.r||0,net=Math.max(0,d-r),rateNA=p.rate==null,col=rateNA?'#999':_fulfillRateColor(p.rate);
+    const tip=`${p.label} · Dispatched ${fmt(d)} · ${rateNA?'returns not recorded':'Returns '+fmt(r)+' ('+p.rate+'%) · Net '+fmt(net)}`;
     bars+=`<rect x="${(c-bw/2).toFixed(1)}" y="${Y(net).toFixed(1)}" width="${bw.toFixed(1)}" height="${(Y(0)-Y(net)).toFixed(1)}" fill="#EAEAEA"><title>${tip}</title></rect>`;
     if(d>0&&r>0)bars+=`<rect x="${(c-bw/2).toFixed(1)}" y="${Y(d).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,Y(net)-Y(d)-2).toFixed(1)}" rx="3" fill="${col}"><title>${tip}</title></rect>`;
     if(!dense){
       bars+=`<text x="${c.toFixed(1)}" y="${(Y(d)-6).toFixed(1)}" text-anchor="middle" font-size="11" fill="#222" font-weight="700">${fmt(d)}</text>`;
       bars+=`<text x="${c.toFixed(1)}" y="${(H-padB+17).toFixed(1)}" text-anchor="middle" font-size="11" fill="#777">${p.label}</text>`;
-      bars+=`<text x="${c.toFixed(1)}" y="${(H-padB+32).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="${col}">${p.rate}%</text>`;
+      bars+=`<text x="${c.toFixed(1)}" y="${(H-padB+32).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="${col}">${rateNA?'—':p.rate+'%'}</text>`;
     }else if(i%step===0||i===n-1){
       bars+=`<text x="${c.toFixed(1)}" y="${(H-padB+17).toFixed(1)}" text-anchor="middle" font-size="11" fill="#777">${p.label}</text>`;
     }
@@ -480,6 +491,10 @@ function _renderFulfillEntry(){
     </div>
     ${tbl('DISPATCHED',_fulfillActiveRows.d,'d',existing&&existing.dispatched,'var(--accent-success)')}
     ${tbl('RETURNS',_fulfillActiveRows.r,'r',existing&&existing.returns,'var(--accent-urgent)')}
+    <label style="display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted);margin:-4px 2px 12px;cursor:pointer">
+      <input type="checkbox" id="fd-ret-na" ${existing&&existing.returnsRecorded===false?'checked':''} onchange="window._fulfillToggleRetNA()" style="width:16px;height:16px;cursor:pointer">
+      Returns not recorded for this day — exclude from return-rate averages (don't count as 0%)
+    </label>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn-primary" id="fd-save-btn" style="flex:1;min-width:160px" onclick="window.saveFulfillReport()">${existing?'Update record':'Save record'}</button>
       <button class="btn-outline" style="flex:1;min-width:160px;font-size:14px;font-weight:600" onclick="window.saveFulfillReport(true)">${existing?'Update':'Save'} &amp; download PDF</button>
@@ -506,6 +521,15 @@ function _fulfillReadSection(section,rows){
   return {rows:out,totShip:tShip,totAmt:tAmt};
 }
 
+// Toggle the "returns not recorded" state — grey out + clear the returns inputs.
+window._fulfillToggleRetNA=function(){
+  const na=!!(document.getElementById('fd-ret-na')||{}).checked;
+  _fulfillActiveRows.r.forEach((_,i)=>['ship','amt'].forEach(k=>{
+    const el=document.getElementById('fd-r-'+i+'-'+k);
+    if(el){el.disabled=na;el.style.opacity=na?0.4:1;if(na)el.value='';}
+  }));
+  window._fulfillRecalc();
+};
 window._fulfillRecalc=function(){
   const d=_fulfillReadSection('d',_fulfillActiveRows.d);
   const r=_fulfillReadSection('r',_fulfillActiveRows.r);
@@ -523,6 +547,7 @@ window.saveFulfillReport=async function(alsoPdf){
   if(d.totShip===0&&d.totAmt===0&&r.totShip===0&&r.totAmt===0)
     return showToast('Enter at least one shipment or amount.',true);
 
+  const retNA=!!(document.getElementById('fd-ret-na')||{}).checked;
   const btn=document.getElementById('fd-save-btn');
   if(btn){btn.disabled=true;btn.textContent='Saving…';}
   const existing=fulfillReports.find(x=>x.date===date);
@@ -531,6 +556,7 @@ window.saveFulfillReport=async function(alsoPdf){
     dispatched:d.rows, returns:r.rows,
     dispatchedTotal:{shipments:d.totShip,amount:d.totAmt},
     returnsTotal:{shipments:r.totShip,amount:r.totAmt},
+    returnsRecorded:!retNA,
     updatedAt:Date.now(),
     updatedBy:session.name, updatedByU:session.u,
   };
@@ -604,9 +630,13 @@ function _renderFulfillAnalytics(){
   const repsAsc=[...reps].sort((a,b)=>a.date.localeCompare(b.date));
   const cur=_sumFulfill(reps);
   const days=reps.length;
-  const retRate=cur.dShip?(100*cur.rShip/cur.dShip):0;
   const avgPerDay=days?Math.round(cur.dShip/days):0;
   const best=repsAsc.reduce((m,r)=>{const v=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;return v>m.val?{val:v,date:r.date}:m;},{val:0,date:null});
+  // Return rate over RECORDED days only — days whose returns were never entered
+  // (returnsRecorded===false) are excluded so the rate isn't optimistically diluted.
+  const _recRate=list=>{const rec=list.filter(r=>r.returnsRecorded!==false);const d=rec.reduce((s,r)=>s+((r.dispatchedTotal&&r.dispatchedTotal.shipments)||0),0);const rr=rec.reduce((s,r)=>s+((r.returnsTotal&&r.returnsTotal.shipments)||0),0);return d?100*rr/d:0;};
+  const retRate=_recRate(reps);
+  const naDays=reps.filter(r=>r.returnsRecorded===false).length;
 
   // ── Compare: the immediately-preceding window of equal length ──
   let prev=null,prevRate=null,prevFrom=null,prevTo=null;
@@ -615,7 +645,7 @@ function _renderFulfillAnalytics(){
     prevTo=_fulfillAddDays(from,-1);
     prevFrom=_fulfillAddDays(prevTo,-(len-1));
     const prevReps=fulfillReports.filter(r=>r.date>=prevFrom&&r.date<=prevTo);
-    if(prevReps.length){prev=_sumFulfill(prevReps);prevRate=prev.dShip?100*prev.rShip/prev.dShip:0;}
+    if(prevReps.length){prev=_sumFulfill(prevReps);prevRate=_recRate(prevReps);}
   }
 
   const kpi=(label,val,sub,color)=>`<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px 14px;text-align:center">
@@ -641,34 +671,37 @@ function _renderFulfillAnalytics(){
     firstColHdr=th('Month');firstCol=b=>td(b.label,'left','font-weight:600;white-space:nowrap');
   }else{
     daily=true;
-    buckets=repsAsc.slice(-31).map(r=>({
-      date:r.date,label:_fulfillFmtDate(r.date),chart:_fulfillFmtDateShort(r.date),days:1,
-      dShip:(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0,dAmt:(r.dispatchedTotal&&r.dispatchedTotal.amount)||0,
+    buckets=repsAsc.slice(-31).map(r=>{const dS=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;const recd=r.returnsRecorded!==false;return {
+      date:r.date,label:_fulfillFmtDate(r.date),chart:_fulfillFmtDateShort(r.date),days:1,rec:recd,recDisp:recd?dS:0,
+      dShip:dS,dAmt:(r.dispatchedTotal&&r.dispatchedTotal.amount)||0,
       rShip:(r.returnsTotal&&r.returnsTotal.shipments)||0,rAmt:(r.returnsTotal&&r.returnsTotal.amount)||0
-    }));
+    };});
     firstColHdr=th('Date')+th('Day');firstCol=b=>td(_fulfillFmtDate(b.date),'left','font-weight:600;white-space:nowrap')+td(_fulfillDayName(b.date),'left','color:var(--muted)');
   }
+  // Return rate per bucket, honouring not-recorded days (recDisp), → null when unknown.
+  const bucketRate=b=>{const rd=b.recDisp!=null?b.recDisp:(b.rec===false?0:b.dShip);return rd?Math.round(100*b.rShip/rd):(b.rec===false||(b.recDisp===0)?null:0);};
   const unit=buckets.length+' '+(mode==='weekly'?'week':mode==='monthly'?'month':'day')+(buckets.length===1?'':'s');
   const trendLabel=(daily?'last ':'')+unit;
 
   // Chart points — metric toggle plots shipment counts or Rs value (value =
   // net-revenue trend: gap between the two lines is the net). `rate` is the
   // shipment-based return rate for its own (separate-axis) chart.
-  const points=buckets.map(b=>({label:b.chart,d:isValue?b.dAmt:b.dShip,r:isValue?b.rAmt:b.rShip,rate:b.dShip?Math.round(100*b.rShip/b.dShip):0}));
+  const points=buckets.map(b=>({label:b.chart,d:isValue?b.dAmt:b.dShip,r:isValue?b.rAmt:b.rShip,rate:bucketRate(b)}));
 
   const breakdownHead=`${firstColHdr}${th('Days','right')}${th('Dispatched','right')}${th('Value','right')}${th('Returns','right')}${th('Net','right')}${th('Ret %','right')}${th('vs prev','right')}`;
   const cmpKey=isValue?'dAmt':'dShip';
   const breakdownRows=buckets.map((b,i)=>({b,prev:i>0?buckets[i-1][cmpKey]:null})).reverse().map(({b,prev})=>{
-    const rr=b.dShip?Math.round(100*b.rShip/b.dShip):0;
+    const rr=bucketRate(b);
     const net=b.dAmt-b.rAmt;
+    const rrCell=rr==null?'<span style="color:var(--muted)">—</span>':`<span style="font-weight:600;color:${rrColor(rr)}">${rr}%</span>`;
     return `<tr style="border-bottom:1px solid #f5f5f5;font-size:14px">
       ${firstCol(b)}
       ${td(b.days,'right','color:var(--muted)')}
       ${td(_fnum(b.dShip),'right','font-weight:600')}
       ${td(_fRs(b.dAmt),'right','color:var(--muted)')}
-      ${td(_fnum(b.rShip),'right')}
+      ${td(rr==null?'<span style="color:var(--muted)">n/a</span>':_fnum(b.rShip),'right')}
       ${td(_fRs(net),'right','font-weight:600')}
-      ${td(rr+'%','right','font-weight:600;color:'+rrColor(rr))}
+      ${td(rrCell,'right')}
       ${td(_deltaChip(b[cmpKey],prev,false)||'<span style="color:var(--muted)">—</span>','right')}
     </tr>`;
   }).join('');
@@ -699,9 +732,11 @@ function _renderFulfillAnalytics(){
     ? _fulfillLineChart(ct.points,ct.series,{ySuffix:'%',minMax:10,height:220})
     : '<div class="empty" style="padding:1.6rem">Need at least 2 weeks of data for a courier trend.</div>';
 
-  const rateSub=prevRate!=null
-    ? `${(retRate-prevRate>=0?'+':'')}${(retRate-prevRate).toFixed(1)}pp vs prev`
-    : 'returns ÷ dispatched';
+  const rateSub=naDays
+    ? `${naDays} day${naDays===1?'':'s'} not recorded`
+    : (prevRate!=null
+      ? `${(retRate-prevRate>=0?'+':'')}${(retRate-prevRate).toFixed(1)}pp vs prev`
+      : 'returns ÷ dispatched');
   const cmpNote=prev
     ? `<span style="font-size:12px;color:var(--muted);font-weight:500">▲▼ vs ${_fulfillFmtDate(prevFrom)} → ${_fulfillFmtDate(prevTo)}</span>`
     : '';
