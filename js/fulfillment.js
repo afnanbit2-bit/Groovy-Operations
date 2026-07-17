@@ -58,10 +58,13 @@ function _fulfillCutoff(days){
   const d=new Date();d.setDate(d.getDate()-(days-1));
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
-// Owners + managers may view and record. (Kept as helpers so a dedicated
-// fulfilment account can be added to the allow-list later without hunting.)
-function _canViewFulfillment(){return session&&(session.role==='owner'||session.role==='manager');}
+// Owners, managers, and the dedicated fulfilment account (Umair) may view
+// and record daily performance.
+function _canViewFulfillment(){return session&&(session.role==='owner'||session.role==='manager'||session.role==='fulfillment');}
 function _canEditFulfillment(){return _canViewFulfillment();}
+
+// Jump straight to a tab (used by Umair's 2-button mobile nav).
+window.showFulfillTab=function(tab){_fulfillTab=(tab==='entry'?'entry':'analytics');window.showPage('fulfillment');};
 
 // ── Data loading ──
 async function loadFulfillmentData(){

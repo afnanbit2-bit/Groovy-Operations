@@ -603,6 +603,13 @@ async function uploadToCloudinary(file){
 
 // ── Auth ──
 function buildNav(){
+  // Fulfilment account (Umair) — a single-purpose nav: Daily Performance only.
+  if(session.role==='fulfillment'){
+    const sb=document.getElementById('sidebar');
+    if(sb)sb.innerHTML=`<div class="nav-item on" id="nav-fulfillment" onclick="window.showPage('fulfillment')">Daily Performance</div>`;
+    _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
+    return;
+  }
   const isOwner=session.role==='owner',canPO=session.canPO,isWorker=session.role==='worker',isViewer=session.role==='viewer',isStore=session.role==='store';
   const om=isOwner||session.role==='manager';
   const mainItems=[];
@@ -728,6 +735,16 @@ function _renderMobNav(ctx){
   const mob=document.getElementById('mob-nav');
   if(!mob)return;
   let html='',cols=5;
+
+  if(session&&session.role==='fulfillment'){
+    // Fulfilment (Umair): Analytics + Record, split 50/50.
+    mob.className='';
+    mob.style.gridTemplateColumns='1fr 1fr';
+    mob.innerHTML=_mobNavBtn('fulfillment','activity','Performance',"window.showFulfillTab('analytics')")
+                 +_mobNavBtn('fulfillment-entry','plus','Record',"window.showFulfillTab('entry')");
+    _updateMobNavActive(currentPage);
+    return;
+  }
 
   if(isWorker||isViewer){
     // Workers/viewers: 3-button nav
@@ -921,6 +938,9 @@ window._hrmNotifAction=function(url){
 };
 
 window.showPage=async function(id){
+  // Fulfilment account is scoped to Daily Performance — ignore any nav to
+  // other pages (e.g. the topbar logo's dashboard link).
+  if(session&&session.role==='fulfillment'&&id!=='fulfillment')id='fulfillment';
   currentPage=id;
   document.querySelectorAll('.nav-item,.mob-nav-item').forEach(n=>n.classList.remove('on'));
   document.getElementById('nav-'+id)?.classList.add('on');

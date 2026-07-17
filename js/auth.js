@@ -16,6 +16,7 @@ const USER_DEFS=[
   {u:'asghar', email:'asghar@groovy.op', name:'Asghar', role:'worker', title:'Printing Manager',  canPO:false,canFabric:false, stages:['printing'],         pass:'Asghar@Ops24'},
   {u:'zohaib', email:'zohaib@groovy.op', name:'Zohaib', role:'worker', title:'Cutting & Bundling',canPO:false,canFabric:false, stages:['cutting','bundling'],pass:'Zohaib@Ops24'},
   {u:'uzaib',  email:'uzaib@groovy.op',  name:'Uzaib',  role:'viewer', title:'Field Staff',       canPO:false,canFabric:true,  stages:[],                   pass:'uzaib@24'},
+  {u:'umair',  email:'umair@groovy.op',  name:'Umair',  role:'fulfillment', title:'Fulfilment',    canPO:false,canFabric:false, stages:[],                   pass:'Umair@Ops24'},
 ];
 window.doLogin=async function(){
   const uEl=document.getElementById('l-user');
@@ -114,6 +115,9 @@ async function startApp(){
   if(session.role==='store'){
     loadStoreData();
     showPage('store-dashboard');
+  }else if(session.role==='fulfillment'){
+    // Fulfilment account (Umair) — scoped to Daily Performance only.
+    showPage('fulfillment');
   }else{
     loadData();
     showPage(session.role==='worker'?'my-work':'dashboard');
