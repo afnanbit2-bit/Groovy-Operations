@@ -49,6 +49,7 @@ let _fulfillFrom=null;          // custom-range start (ISO) — used when key===
 let _fulfillTo=null;            // custom-range end   (ISO)
 let _fulfillTrend='daily';      // trend bucket: 'daily' | 'weekly' | 'monthly'
 let _fulfillMetric='shipments'; // chart metric: 'shipments' | 'value'
+let _fulfillCalMetric='volume'; // calendar colouring: 'volume' | 'rate'
 let _fulfillEntryDate=null;     // ISO date currently in the entry form
 let _fulfillLogSearch='';       // Log tab search query
 let _fulfillLogPage=1;          // Log tab current page (1-based)
@@ -238,31 +239,57 @@ const _FULFILL_COURIER_COLORS={'POST-EX':'#7B1F2A','BLUE-EX':'#185FA5','TCS':'#B
 
 // GitHub-style month calendar heat-map of daily dispatched volume. Sequential
 // single-hue green ramp (light→dark = more). Independent of the trend toggle.
-function _fulfillCalendarHeatmap(reps){
-  const byDate={};let max=0;
-  for(const r of reps){const v=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;byDate[r.date]=v;if(v>max)max=v;}
+function _fulfillCalendarHeatmap(reps,metric){
+  metric=metric==='rate'?'rate':'volume';
+  const byV={},byRate={},has={};let maxV=0;
+  for(const r of reps){
+    const v=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;
+    const rs=(r.returnsTotal&&r.returnsTotal.shipments)||0;
+    byV[r.date]=v;byRate[r.date]=v?Math.round(100*rs/v):0;has[r.date]=true;
+    if(v>maxV)maxV=v;
+  }
   const months=[...new Set(reps.map(r=>r.date.slice(0,7)))].sort();
   const ramp=['#EDEDED','#D6E8DC','#A9CDB4','#5E9A73','#14532D'];
-  const lvl=v=>{if(!v)return 0;const q=v/max;return q<=0.25?1:q<=0.5?2:q<=0.75?3:4;};
-  const wd=['M','T','W','T','F','S','S'];
+  const lvl=v=>{if(!v)return 0;const q=v/(maxV||1);return q<=0.25?1:q<=0.5?2:q<=0.75?3:4;};
+  // Highlighted day: busiest (volume mode) or worst return rate (rate mode).
+  let bestDate=null,bestVal=-1;
+  for(const d in has){const val=metric==='rate'?byRate[d]:byV[d];if(val>bestVal){bestVal=val;bestDate=d;}}
+  const cellStyle=(h,v,rate)=>{
+    if(!h)return {bg:'#F1F1F1',fg:'#bdbdbd'};
+    if(metric==='rate')return {bg:_fulfillRateColor(rate),fg:'#fff'};
+    const L=lvl(v);return {bg:ramp[L],fg:L>=3?'#fff':'#3a3a3a'};
+  };
+  const wd=['Mo','Tu','We','Th','Fr','Sa','Su'];
   const grids=months.map(ym=>{
     const y=+ym.slice(0,4),m=+ym.slice(5,7);
     const startOff=(new Date(y,m-1,1).getDay()+6)%7;
     const days=new Date(y,m,0).getDate();
-    let cells=wd.map(w=>`<div style="font-size:9px;color:var(--muted);text-align:center;line-height:15px">${w}</div>`).join('');
-    for(let i=0;i<startOff;i++)cells+='<div></div>';
+    let mV=0,mRw=0;
+    for(let d=1;d<=days;d++){const iso=`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;if(has[iso]){mV+=byV[iso];mRw+=(byRate[iso]/100)*byV[iso];}}
+    const mRate=mV?Math.round(100*mRw/mV):0;
+    const totalTxt=metric==='rate'?mRate+'% avg':_fnum(mV)+' disp';
+    let cells=wd.map(w=>`<div style="font-size:10px;color:var(--muted);text-align:center;line-height:16px">${w}</div>`).join('');
+    for(let i=0;i<startOff;i++)cells+='<div style="width:28px;height:28px"></div>';
     for(let d=1;d<=days;d++){
       const iso=`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-      const has=byDate[iso]!=null,v=byDate[iso]||0;
-      cells+=`<div title="${_fulfillFmtDate(iso)}${has?': '+_fnum(v)+' dispatched':' · no data'}" style="width:15px;height:15px;border-radius:3px;background:${ramp[lvl(v)]}"></div>`;
+      const h=!!has[iso],v=byV[iso]||0,rate=byRate[iso]||0,st=cellStyle(h,v,rate);
+      const ring=iso===bestDate?'box-shadow:0 0 0 2px #111;':'';
+      const tip=`${_fulfillFmtDate(iso)}${h?': '+_fnum(v)+' dispatched · '+rate+'% return':' · no data'}`;
+      cells+=`<div title="${tip}" style="width:28px;height:28px;border-radius:5px;background:${st.bg};color:${st.fg};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;${ring}">${d}</div>`;
     }
-    return `<div style="display:inline-block;vertical-align:top;margin:0 22px 8px 0">
-      <div style="font-size:12px;font-weight:600;margin-bottom:6px">${_fulfillMonthLabel(ym)}</div>
-      <div style="display:grid;grid-template-columns:repeat(7,15px);gap:3px">${cells}</div>
+    return `<div style="display:inline-block;vertical-align:top;margin:0 26px 12px 0">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:14px;margin-bottom:6px">
+        <span style="font-size:13px;font-weight:700">${_fulfillMonthLabel(ym)}</span>
+        <span style="font-size:11px;color:var(--muted)">${totalTxt}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,28px);gap:4px">${cells}</div>
     </div>`;
   }).join('');
-  const legend=`<div style="display:flex;align-items:center;gap:5px;margin-top:6px;font-size:11px;color:var(--muted)">Less ${ramp.map(c=>`<span style="width:14px;height:14px;border-radius:3px;background:${c};display:inline-block"></span>`).join('')} More</div>`;
-  return `<div style="overflow-x:auto;white-space:nowrap">${grids}</div>${legend}`;
+  const sw=(c,l)=>`<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:14px;height:14px;border-radius:3px;background:${c};display:inline-block"></span>${l}</span>`;
+  const legend=metric==='rate'
+    ? `<div style="display:flex;align-items:center;gap:14px;margin-top:8px;font-size:11px;color:var(--muted);flex-wrap:wrap">${sw('#14532D','≤8%')}${sw('#B47512','8–15%')}${sw('#7B1F2A','>15%')}${sw('#F1F1F1','no data')}<span style="margin-left:auto">□ ring = worst day</span></div>`
+    : `<div style="display:flex;align-items:center;gap:5px;margin-top:8px;font-size:11px;color:var(--muted);flex-wrap:wrap">Less ${ramp.map(c=>`<span style="width:14px;height:14px;border-radius:3px;background:${c};display:inline-block"></span>`).join('')} More <span style="margin-left:12px">□ ring = busiest day (${_fnum(maxV)})</span></div>`;
+  return `<div style="overflow-x:auto;white-space:nowrap;padding:2px 0 4px">${grids}</div>${legend}`;
 }
 
 // Net-revenue waterfall: Dispatched value → minus Returns → Net.
@@ -558,6 +585,11 @@ window.setFulfillMetric=function(m){
   const body=document.getElementById('fulfill-body');
   if(body)body.innerHTML=_renderFulfillAnalytics();
 };
+window.setFulfillCal=function(m){
+  _fulfillCalMetric=(m==='rate'?'rate':'volume');
+  const body=document.getElementById('fulfill-body');
+  if(body)body.innerHTML=_renderFulfillAnalytics();
+};
 
 function _renderFulfillAnalytics(){
   if(!fulfillReports.length)
@@ -657,7 +689,11 @@ function _renderFulfillAnalytics(){
   const brandRows=rankRows(cur.brand);
   const courierRows=rankRows(cur.courier);
   const weekday=_fulfillWeekdayPattern(reps);
-  const calendar=_fulfillCalendarHeatmap(reps);
+  const calendar=_fulfillCalendarHeatmap(reps,_fulfillCalMetric);
+  const calToggle=`<span style="display:inline-flex;gap:4px">
+    <button class="filter-chip${_fulfillCalMetric==='volume'?' active':''}" style="padding:4px 11px" onclick="window.setFulfillCal('volume')">Volume</button>
+    <button class="filter-chip${_fulfillCalMetric==='rate'?' active':''}" style="padding:4px 11px" onclick="window.setFulfillCal('rate')">Return rate</button>
+  </span>`;
   const ct=_fulfillCourierTrend(reps);
   const courierTrend=ct.weeks>=2&&ct.series.length
     ? _fulfillLineChart(ct.points,ct.series,{ySuffix:'%',minMax:10,height:220})
@@ -690,7 +726,7 @@ function _renderFulfillAnalytics(){
     ${sec('Avg dispatched by weekday',_fulfillBarChart(weekday))}
   </div>
 
-  ${sec('Dispatch calendar — daily volume',calendar)}
+  ${sec('Dispatch calendar — '+(_fulfillCalMetric==='rate'?'return rate':'daily volume'),calendar,calToggle)}
 
   ${sec(modeCap+' breakdown',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:580px">
     <thead><tr>${breakdownHead}</tr></thead><tbody>${breakdownRows}</tbody></table></div>`,cmpNote)}
