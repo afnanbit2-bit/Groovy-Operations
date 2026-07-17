@@ -404,6 +404,22 @@ function _fulfillBody(){
         :_renderFulfillAnalytics();
 }
 
+// Is the most recent working day (yesterday, skipping Sunday) still unrecorded?
+function _fulfillMissedInfo(){
+  let day=_fulfillAddDays(_fulfillToday(),-1);
+  if(new Date(day+'T00:00:00').getDay()===0)day=_fulfillAddDays(day,-1); // skip Sunday
+  return {date:day,missed:!fulfillReports.some(r=>r.date===day)};
+}
+function _fulfillMissedBanner(){
+  if(!fulfillReports.length)return '';
+  const mi=_fulfillMissedInfo();
+  if(!mi.missed)return '';
+  return `<div style="background:var(--accent-warning-soft);border:1px solid var(--accent-warning);border-radius:10px;padding:11px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:13px;font-weight:600;color:var(--accent-warning)">⚠ ${_fulfillDayName(mi.date,true)}, ${_fulfillFmtDate(mi.date)} isn't recorded yet.</span>
+    <button class="btn-sm" onclick="window.fulfillEditDate('${mi.date}')">Record it now</button>
+  </div>`;
+}
+
 function renderFulfillmentPage(){
   if(!_canViewFulfillment())
     return '<div class="empty">Daily Performance is restricted to owners and managers.</div>';
@@ -412,10 +428,40 @@ function renderFulfillmentPage(){
     <div class="page-title">Daily Performance</div>
     <div class="page-sub">Dispatch &amp; returns — recorded per day, analysed over time</div>
   </div>
+  ${_fulfillMissedBanner()}
   <div class="tab-bar">
     ${tab('analytics','Analytics')}${tab('entry','Record Day')}${tab('log','Log')}
   </div>
   <div id="fulfill-body">${_fulfillBody()}</div>`;
+}
+
+// Owner/manager dashboard widget — injected at the top of #main-content on the
+// main dashboard (all logic here so shared.js only needs a one-line hook).
+async function _fulfillDashboardInject(){
+  if(!session||!(session.role==='owner'||session.role==='manager'))return;
+  if(typeof currentPage!=='undefined'&&currentPage!=='dashboard')return;
+  if(!fulfillReportsLoaded){try{await loadFulfillmentData();}catch(e){return;}}
+  if(typeof currentPage!=='undefined'&&currentPage!=='dashboard')return;
+  const m=document.getElementById('main-content');
+  if(!m||document.getElementById('fulfill-dash-card'))return;
+  const latest=[...fulfillReports].sort((a,b)=>b.date.localeCompare(a.date))[0];
+  const mi=_fulfillMissedInfo();
+  let lat='No days recorded yet';
+  if(latest){
+    const ds=(latest.dispatchedTotal&&latest.dispatchedTotal.shipments)||0;
+    const rate=(latest.returnsRecorded!==false&&ds)?Math.round(100*((latest.returnsTotal&&latest.returnsTotal.shipments)||0)/ds):null;
+    lat=`${_fulfillFmtDate(latest.date)} · ${_fnum(ds)} dispatched${rate!=null?' · '+rate+'% return':''}`;
+  }
+  const accent=mi.missed?'var(--accent-warning)':'var(--accent-success)';
+  const right=mi.missed
+    ? `<span style="font-size:13px;font-weight:600;color:var(--accent-warning);white-space:nowrap">⚠ ${_fulfillFmtDate(mi.date)} not recorded ›</span>`
+    : `<span style="font-size:13px;color:var(--muted);white-space:nowrap">View analytics ›</span>`;
+  const div=document.createElement('div');
+  div.id='fulfill-dash-card';
+  div.innerHTML=`<div onclick="window.showPage('fulfillment')" style="cursor:pointer;background:#fff;border:1px solid var(--border);border-left:4px solid ${accent};border-radius:12px;padding:12px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+    <div><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Daily Performance</div>
+    <div style="font-size:15px;font-weight:700;margin-top:2px">${lat}</div></div>${right}</div>`;
+  m.insertBefore(div,m.firstChild);
 }
 
 window.switchFulfillTab=function(tab){
