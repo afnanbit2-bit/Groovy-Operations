@@ -175,31 +175,62 @@ function _deltaChip(cur,prev,invert){
   const color=good===null?'var(--muted)':(good?'var(--accent-success)':'var(--accent-urgent)');
   return `<span style="font-size:12px;font-weight:600;color:${color}"> ${arrow} ${Math.abs(pct)}%</span>`;
 }
-// Inline SVG two-line chart: Dispatched (dark) vs Returns (red). points:[{label,d,r}].
-function _fulfillLineChart(points){
-  const W=960,H=250,padL=48,padR=18,padT=20,padB=46;
+// Series-driven inline SVG line chart. Every chart uses ONE y-axis (never a
+// dual axis — measures of different scale get their own chart). points carry
+// named keys; `series`=[{key,color,label,area,dash,width}]. Per-point <title>
+// gives a native hover tooltip; a legend shows for ≥2 series (a single series
+// is named by the panel title). points:[{label, <key>:num, …}].
+function _fulfillLineChart(points,series,opts){
+  opts=opts||{};
+  const W=960,H=opts.height||230,padL=54,padR=18,padT=18,padB=44;
   const n=points.length;
-  const maxV=Math.max(1,...points.map(p=>Math.max(p.d||0,p.r||0)));
+  const keys=series.map(s=>s.key);
+  const maxV=Math.max(opts.minMax||1,...points.reduce((a,p)=>{keys.forEach(k=>a.push(p[k]||0));return a;},[]));
   const top=_niceCeil(maxV);
+  const suf=opts.ySuffix||'';
   const X=i=>n<=1?padL+(W-padL-padR)/2:padL+(i*(W-padL-padR)/(n-1));
   const Y=v=>H-padB-((v/top)*(H-padT-padB));
   let grid='';
   for(let t=0;t<=4;t++){const gv=top*t/4,gy=Y(gv);
     grid+=`<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${W-padR}" y2="${gy.toFixed(1)}" stroke="#ececec" stroke-width="1"/>`
-        +`<text x="${padL-8}" y="${(gy+4).toFixed(1)}" text-anchor="end" font-size="12" fill="#999">${_fnum(Math.round(gv))}</text>`;}
-  const poly=key=>points.map((p,i)=>`${X(i).toFixed(1)},${Y(p[key]||0).toFixed(1)}`).join(' ');
-  const dots=(key,color)=>points.map((p,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(p[key]||0).toFixed(1)}" r="${n<=16?4:2.5}" fill="${color}"/>`).join('');
+        +`<text x="${padL-8}" y="${(gy+4).toFixed(1)}" text-anchor="end" font-size="12" fill="#999">${_fnum(Math.round(gv))}${suf}</text>`;}
   const step=Math.max(1,Math.ceil(n/12));
   let xlab='';points.forEach((p,i)=>{if(i%step!==0&&i!==n-1)return;xlab+=`<text x="${X(i).toFixed(1)}" y="${H-padB+18}" text-anchor="middle" font-size="12" fill="#777">${p.label}</text>`;});
-  const dLine=n>1?`<polyline points="${poly('d')}" fill="none" stroke="#111" stroke-width="2.5"/>`:'';
-  const rLine=n>1?`<polyline points="${poly('r')}" fill="none" stroke="#7B1F2A" stroke-width="2"/>`:'';
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" style="height:${H}px;display:block;max-width:100%">
-      ${grid}${dLine}${rLine}${dots('d','#111')}${dots('r','#7B1F2A')}${xlab}
-    </svg>
-    <div style="display:flex;gap:20px;justify-content:center;margin-top:8px;font-size:13px">
-      <span style="display:inline-flex;align-items:center;gap:7px"><span style="width:18px;height:3px;background:#111;display:inline-block;border-radius:2px"></span>Dispatched</span>
-      <span style="display:inline-flex;align-items:center;gap:7px"><span style="width:18px;height:3px;background:#7B1F2A;display:inline-block;border-radius:2px"></span>Returns</span>
-    </div>`;
+  let body='';
+  for(const s of series){
+    const pts=points.map((p,i)=>`${X(i).toFixed(1)},${Y(p[s.key]||0).toFixed(1)}`);
+    if(s.area&&n>1)body+=`<polygon points="${X(0).toFixed(1)},${Y(0).toFixed(1)} ${pts.join(' ')} ${X(n-1).toFixed(1)},${Y(0).toFixed(1)}" fill="${s.color}" fill-opacity="0.07"/>`;
+    if(n>1)body+=`<polyline points="${pts.join(' ')}" fill="none" stroke="${s.color}" stroke-width="${s.width||2.5}"${s.dash?` stroke-dasharray="${s.dash}"`:''}/>`;
+    body+=points.map((p,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(p[s.key]||0).toFixed(1)}" r="${n<=16?3.5:2.5}" fill="${s.color}"><title>${p.label} · ${s.label}: ${_fnum(p[s.key]||0)}${suf}</title></circle>`).join('');
+  }
+  const legend=series.length>1?`<div style="display:flex;gap:20px;justify-content:center;margin-top:8px;font-size:13px">${series.map(s=>`<span style="display:inline-flex;align-items:center;gap:7px"><span style="width:18px;height:3px;background:${s.color};display:inline-block;border-radius:2px"></span>${s.label}</span>`).join('')}</div>`:'';
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" style="height:${H}px;display:block;max-width:100%">${grid}${body}${xlab}</svg>${legend}`;
+}
+// Average dispatched shipments by weekday (Mon…Sun) — reveals the weekly rhythm.
+function _fulfillWeekdayPattern(reps){
+  const names=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const sum=[0,0,0,0,0,0,0],cnt=[0,0,0,0,0,0,0];
+  for(const r of reps){const d=new Date(r.date+'T00:00:00');if(isNaN(d))continue;const wd=(d.getDay()+6)%7;sum[wd]+=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;cnt[wd]++;}
+  return names.map((nm,i)=>({label:nm,value:cnt[i]?Math.round(sum[i]/cnt[i]):0,days:cnt[i]}));
+}
+// Simple vertical bar chart (magnitude by category). 4px rounded tops, direct labels.
+function _fulfillBarChart(bars,color){
+  color=color||'#111111';
+  const max=Math.max(1,...bars.map(b=>b.value));
+  return `<div style="display:flex;align-items:flex-end;gap:10px;height:170px;padding-top:6px">
+    ${bars.map(b=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;justify-content:flex-end" title="${b.label}: ${_fnum(b.value)} avg${b.days!=null?' · '+b.days+' day'+(b.days===1?'':'s'):''}">
+      <div style="font-size:12px;font-weight:600">${_fnum(b.value)}</div>
+      <div style="width:72%;max-width:46px;background:${b.value?color:'#e5e5e5'};border-radius:4px 4px 0 0;height:${Math.round((b.value/max)*120)}px;min-height:${b.value?2:0}px"></div>
+      <div style="font-size:12px;color:var(--muted)">${b.label}</div>
+    </div>`).join('')}
+  </div>`;
+}
+// Inline magnitude bar + status-coloured % label for the brand/courier tables.
+function _fulfillRateBar(rr,rrColor){
+  return `<div style="display:flex;align-items:center;gap:7px;justify-content:flex-end">
+    <div style="width:52px;height:6px;background:#eee;border-radius:3px;overflow:hidden"><div style="height:100%;width:${Math.min(100,rr)}%;background:${rrColor(rr)}"></div></div>
+    <span style="font-weight:600;min-width:34px;text-align:right;color:${rrColor(rr)}">${rr}%</span>
+  </div>`;
 }
 // Owners, managers, and the dedicated fulfilment account (Umair) may view
 // and record daily performance.
@@ -483,8 +514,9 @@ function _renderFulfillAnalytics(){
   const trendLabel=(daily?'last ':'')+unit;
 
   // Chart points — metric toggle plots shipment counts or Rs value (value =
-  // net-revenue trend: gap between the two lines is the net).
-  const points=buckets.map(b=>({label:b.chart,d:isValue?b.dAmt:b.dShip,r:isValue?b.rAmt:b.rShip}));
+  // net-revenue trend: gap between the two lines is the net). `rate` is the
+  // shipment-based return rate for its own (separate-axis) chart.
+  const points=buckets.map(b=>({label:b.chart,d:isValue?b.dAmt:b.dShip,r:isValue?b.rAmt:b.rShip,rate:b.dShip?Math.round(100*b.rShip/b.dShip):0}));
 
   const breakdownHead=`${firstColHdr}${th('Days','right')}${th('Dispatched','right')}${th('Value','right')}${th('Returns','right')}${th('Net','right')}${th('Ret %','right')}${th('vs prev','right')}`;
   const cmpKey=isValue?'dAmt':'dShip';
@@ -510,18 +542,15 @@ function _renderFulfillAnalytics(){
     <span style="display:inline-flex;gap:4px">${mBtn('shipments','Shipments')}${mBtn('value','Value')}</span>
   </span>`;
 
-  const brandRows=Object.entries(cur.brand).sort((a,b)=>b[1].dShip-a[1].dShip).map(([name,v])=>{
+  const rankRows=map=>Object.entries(map).sort((a,b)=>b[1].dShip-a[1].dShip).map(([name,v])=>{
     const rr=v.dShip?Math.round(100*v.rShip/v.dShip):0;
     return `<tr style="border-bottom:1px solid #f5f5f5;font-size:14px">
-      ${td(name,'left','font-weight:600')}${td(_fnum(v.dShip),'right')}${td(_fRs(v.dAmt),'right','color:var(--muted)')}${td(_fnum(v.rShip),'right')}${td(rr+'%','right','font-weight:600')}
+      ${td(name,'left','font-weight:600')}${td(_fnum(v.dShip),'right')}${td(_fRs(v.dAmt),'right','color:var(--muted)')}${td(_fnum(v.rShip),'right')}${td(_fulfillRateBar(rr,rrColor),'right')}
     </tr>`;
   }).join('');
-  const courierRows=Object.entries(cur.courier).sort((a,b)=>b[1].dShip-a[1].dShip).map(([name,v])=>{
-    const rr=v.dShip?Math.round(100*v.rShip/v.dShip):0;
-    return `<tr style="border-bottom:1px solid #f5f5f5;font-size:14px">
-      ${td(name,'left','font-weight:600')}${td(_fnum(v.dShip),'right')}${td(_fRs(v.dAmt),'right','color:var(--muted)')}${td(_fnum(v.rShip),'right')}${td(rr+'%','right','font-weight:600')}
-    </tr>`;
-  }).join('');
+  const brandRows=rankRows(cur.brand);
+  const courierRows=rankRows(cur.courier);
+  const weekday=_fulfillWeekdayPattern(reps);
 
   const rateSub=prevRate!=null
     ? `${(retRate-prevRate>=0?'+':'')}${(retRate-prevRate).toFixed(1)}pp vs prev`
@@ -542,16 +571,22 @@ function _renderFulfillAnalytics(){
     ${kpi('Best day',_fnum(best.val),best.date?_fulfillFmtDate(best.date):'—')}
   </div>
 
-  ${sec(modeCap+' trend — '+trendLabel+(isValue?' · value (Rs)':''),_fulfillLineChart(points),trendToggle)}
+  ${sec(modeCap+' volume — '+trendLabel+(isValue?' · value (Rs)':' · shipments'),
+    _fulfillLineChart(points,[{key:'d',color:'#111111',label:'Dispatched',area:true},{key:'r',color:'#7B1F2A',label:'Returns'}],{ySuffix:''}),trendToggle)}
+
+  <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:14px;margin-bottom:14px">
+    ${sec('Return rate over time (%)',_fulfillLineChart(points,[{key:'rate',color:'#B47512',label:'Return rate',area:true}],{ySuffix:'%',minMax:10,height:200}))}
+    ${sec('Avg dispatched by weekday',_fulfillBarChart(weekday))}
+  </div>
 
   ${sec(modeCap+' breakdown',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:580px">
     <thead><tr>${breakdownHead}</tr></thead><tbody>${breakdownRows}</tbody></table></div>`,cmpNote)}
 
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
-    ${sec('By brand',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:320px">
+    ${sec('By brand · return rate',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:320px">
       <thead><tr>${th('Brand')}${th('Disp','right')}${th('Value','right')}${th('Ret','right')}${th('Ret %','right')}</tr></thead>
       <tbody>${brandRows}</tbody></table></div>`)}
-    ${sec('By courier',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:320px">
+    ${sec('By courier · return rate',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:320px">
       <thead><tr>${th('Courier')}${th('Disp','right')}${th('Value','right')}${th('Ret','right')}${th('Ret %','right')}</tr></thead>
       <tbody>${courierRows}</tbody></table></div>`)}
   </div>`;
