@@ -38,9 +38,12 @@ Two contributors: Afnan (HRM/operations side, with Claude) and Ammar Shah
 /js/gatepass.js      gate passes, returns, fabric-in, GP edit/approval,
                      generateGPPdf, generateJobSheetPDF.
 /js/fulfillment.js   Daily Performance track: per-day dispatch & returns
-                     entry + analytics (loadFulfillmentData,
+                     entry + analytics + date-wise Log (loadFulfillmentData,
                      renderFulfillmentPage). Firestore `fulfillment_reports`,
-                     one doc per day (id = YYYY-MM-DD). Owners/managers only.
+                     one doc per day (id = YYYY-MM-DD). Owners/managers +
+                     the scoped `fulfillment` role (Umair). Per-day PDF via
+                     the print engine `daily-performance` variant
+                     (window.fulfillPdf).
 /js/activity.js      activity log loader.
 ```
 
@@ -137,7 +140,7 @@ do not call jsPDF directly for new print features.**
 
   | Default `urduLevel` | Types |
   |---|---|
-  | `minimal` | `generic`, `payroll-sheet`, `payslip` |
+  | `minimal` | `generic`, `payroll-sheet`, `payslip`, `daily-performance` |
   | `full` | `gate-pass` (forced), `po`, `embroidery-vendor`, `sublimation-vendor`, `qc-report`, `placement-sheet` |
 
   Measured (same PO, real JNN): `minimal` ≈ 116 KB / 0 JNN fetch · `full`

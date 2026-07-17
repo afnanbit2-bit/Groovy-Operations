@@ -90,6 +90,7 @@ const _PRINT_DOC_LABELS = {
   'placement-sheet': 'Placement Sheet',
   'qc-report': 'QC Report',
   'payslip': 'Payslip',
+  'daily-performance': 'Daily Performance',
   'generic': 'Document'
 };
 
@@ -107,6 +108,7 @@ const _PRINT_URDU_DEFAULTS = {
   'gate-pass': 'full',
   'payroll-sheet': 'minimal',
   'payslip': 'minimal',
+  'daily-performance': 'minimal',
   'po': 'full',
   'embroidery-vendor': 'full',
   'sublimation-vendor': 'full',
@@ -1165,6 +1167,92 @@ function _renderPayslip(doc, data) {
   doc.__groovyY = y + 12;
 }
 
+/* ── Daily Performance variant ─────────────────────────────────────────────
+   Single-page dispatch & returns report for one calendar day. English-only
+   (urduLevel 'minimal' by default) — this is an internal logistics sheet, no
+   Urdu needed. Draws two 4-column tables (Brand · Courier · Shipments ·
+   Amount) with grand-total rows, then a short summary block.
+   data: { dateLabel, issuedDate, issuedBy, dispatched:[{brand,courier,
+           shipments,amount}], returns:[…], dispatchedTotal:{shipments,amount},
+           returnsTotal:{…} } */
+function _dpNum(n) { return Number(n || 0).toLocaleString('en-US'); }
+
+function _dpTable(doc, rows, totals) {
+  const L = PRINT_LAYOUT.marginLeft;
+  const W = PRINT_LAYOUT.contentWidth;
+  const cols = [{ w: 205, a: 'left' }, { w: 95, a: 'left' }, { w: 108, a: 'right' }, { w: 115, a: 'right' }];
+  const xs = []; let acc = L; cols.forEach((c) => { xs.push(acc); acc += c.w; });
+  const rowH = 20;
+  let y = (doc.__groovyY || PRINT_LAYOUT.marginTop) + 2;
+  const line = _pc(PRINT_COLORS.greyLine);
+  const shade = _pc(PRINT_COLORS.greyShade);
+  const white = _pc(PRINT_COLORS.white);
+
+  const drawRow = (cells, opts) => {
+    opts = opts || {};
+    if (y + rowH > PRINT_LAYOUT.pageHeight - PRINT_LAYOUT.marginBottom - 24) {
+      doc.addPage(); y = PRINT_LAYOUT.marginTop;
+    }
+    const bg = opts.head ? shade : white;
+    doc.setFillColor(bg[0], bg[1], bg[2]);
+    doc.rect(L, y, W, rowH, 'F');
+    doc.setDrawColor(line[0], line[1], line[2]);
+    doc.setLineWidth(opts.total ? 0.8 : 0.25);
+    doc.rect(L, y, W, rowH, 'S');
+    cells.forEach((txt, i) => {
+      const bold = opts.head || opts.total;
+      const size = opts.head ? PRINT_SIZES.bodySmall : PRINT_SIZES.body;
+      const color = opts.head ? PRINT_COLORS.greyAccent : PRINT_COLORS.text;
+      _setFont(doc, PRINT_FONTS.bodyRegular, bold ? 'bold' : 'normal', size, color);
+      const c = cols[i];
+      const tx = c.a === 'right' ? xs[i] + c.w - 6 : xs[i] + 6;
+      doc.text(String(txt), tx, y + 13, { align: c.a === 'right' ? 'right' : 'left' });
+    });
+    y += rowH;
+  };
+
+  drawRow(['Brand', 'Courier', 'Shipments', 'Amount (Rs)'], { head: true });
+  (rows || []).forEach((r) => drawRow([r.brand, r.courier, _dpNum(r.shipments), _dpNum(r.amount)]));
+  drawRow(['GRAND TOTAL', '', _dpNum((totals || {}).shipments), _dpNum((totals || {}).amount)], { total: true });
+
+  doc.__groovyY = y;
+  return y;
+}
+
+function _renderDailyPerformance(doc, data) {
+  data = data || {};
+  const dateLabel = data.dateLabel || data.date || '';
+  _renderHeader(doc, {
+    documentType: 'Daily Performance',
+    documentNumber: dateLabel,
+    issuedDate: data.issuedDate || dateLabel,
+    issuedBy: data.issuedBy || '—'
+  });
+
+  _renderSectionHeader(doc, { titleEn: 'Dispatched' });
+  _dpTable(doc, data.dispatched || [], data.dispatchedTotal || { shipments: 0, amount: 0 });
+
+  _renderSectionHeader(doc, { titleEn: 'Returns' });
+  _dpTable(doc, data.returns || [], data.returnsTotal || { shipments: 0, amount: 0 });
+
+  const dS = (data.dispatchedTotal || {}).shipments || 0;
+  const dA = (data.dispatchedTotal || {}).amount || 0;
+  const rS = (data.returnsTotal || {}).shipments || 0;
+  const rA = (data.returnsTotal || {}).amount || 0;
+  const rate = dS ? ((100 * rS / dS).toFixed(1) + '%') : '—';
+
+  let y = (doc.__groovyY || PRINT_LAYOUT.marginTop) + 20;
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.body, PRINT_COLORS.text);
+  doc.text('Summary', PRINT_LAYOUT.marginLeft, y); y += 16;
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.greyAccent);
+  [
+    'Dispatched:  ' + _dpNum(dS) + ' shipments  ·  Rs ' + _dpNum(dA),
+    'Returns:  ' + _dpNum(rS) + ' shipments  ·  Rs ' + _dpNum(rA),
+    'Return rate:  ' + rate + '     ·     Net value:  Rs ' + _dpNum(dA - rA)
+  ].forEach((l) => { doc.text(l, PRINT_LAYOUT.marginLeft, y); y += 15; });
+  doc.__groovyY = y;
+}
+
 /* ── PART 2 — Public API ───────────────────────────────────────────────────
    The ONLY global this engine exposes. */
 window.printDocument = async function (opts) {
@@ -1179,8 +1267,13 @@ window.printDocument = async function (opts) {
   }
 
   const known = ['po', 'embroidery-vendor', 'sublimation-vendor',
-    'gate-pass', 'placement-sheet', 'qc-report', 'payslip', 'generic'];
-  const _VARIANTS = { 'gate-pass': _renderGatePass, 'payslip': _renderPayslip };
+    'gate-pass', 'placement-sheet', 'qc-report', 'payslip',
+    'daily-performance', 'generic'];
+  const _VARIANTS = {
+    'gate-pass': _renderGatePass,
+    'payslip': _renderPayslip,
+    'daily-performance': _renderDailyPerformance
+  };
   const render = _VARIANTS[type] || _renderGeneric;
   if (known.indexOf(type) === -1) {
     console.warn("Unknown print type '" + type + "' — falling back to generic");

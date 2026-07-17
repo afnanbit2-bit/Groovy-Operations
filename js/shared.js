@@ -737,11 +737,12 @@ function _renderMobNav(ctx){
   let html='',cols=5;
 
   if(session&&session.role==='fulfillment'){
-    // Fulfilment (Umair): Analytics + Record, split 50/50.
-    mob.className='';
-    mob.style.gridTemplateColumns='1fr 1fr';
-    mob.innerHTML=_mobNavBtn('fulfillment','activity','Performance',"window.showFulfillTab('analytics')")
-                 +_mobNavBtn('fulfillment-entry','plus','Record',"window.showFulfillTab('entry')");
+    // Fulfilment (Umair): Analytics · Record · Log.
+    mob.className='cols-3';
+    mob.style.gridTemplateColumns='';
+    mob.innerHTML=_mobNavBtn('fulfillment','activity','Analytics',"window.showFulfillTab('analytics')")
+                 +_mobNavBtn('fulfillment-entry','plus','Record',"window.showFulfillTab('entry')")
+                 +_mobNavBtn('fulfillment-log','list','Log',"window.showFulfillTab('log')");
     _updateMobNavActive(currentPage);
     return;
   }

@@ -63,8 +63,8 @@ function _fulfillCutoff(days){
 function _canViewFulfillment(){return session&&(session.role==='owner'||session.role==='manager'||session.role==='fulfillment');}
 function _canEditFulfillment(){return _canViewFulfillment();}
 
-// Jump straight to a tab (used by Umair's 2-button mobile nav).
-window.showFulfillTab=function(tab){_fulfillTab=(tab==='entry'?'entry':'analytics');window.showPage('fulfillment');};
+// Jump straight to a tab (used by Umair's mobile nav).
+window.showFulfillTab=function(tab){_fulfillTab=(['entry','log'].includes(tab)?tab:'analytics');window.showPage('fulfillment');};
 
 // ── Data loading ──
 async function loadFulfillmentData(){
@@ -80,18 +80,24 @@ async function loadFulfillmentData(){
 }
 
 // ── Page shell + tab switch ──
+function _fulfillBody(){
+  return _fulfillTab==='entry'?_renderFulfillEntry()
+        :_fulfillTab==='log'?_renderFulfillLog()
+        :_renderFulfillAnalytics();
+}
+
 function renderFulfillmentPage(){
   if(!_canViewFulfillment())
     return '<div class="empty">Daily Performance is restricted to owners and managers.</div>';
+  const tab=(id,label)=>`<button class="tab-btn${_fulfillTab===id?' active':''}" onclick="window.switchFulfillTab('${id}')">${label}</button>`;
   return `<div class="page-head">
     <div class="page-title">Daily Performance</div>
     <div class="page-sub">Dispatch &amp; returns — recorded per day, analysed over time</div>
   </div>
   <div class="tab-bar">
-    <button class="tab-btn${_fulfillTab==='analytics'?' active':''}" onclick="window.switchFulfillTab('analytics')">Analytics</button>
-    <button class="tab-btn${_fulfillTab==='entry'?' active':''}" onclick="window.switchFulfillTab('entry')">Record Day</button>
+    ${tab('analytics','Analytics')}${tab('entry','Record Day')}${tab('log','Log')}
   </div>
-  <div id="fulfill-body">${_fulfillTab==='entry'?_renderFulfillEntry():_renderFulfillAnalytics()}</div>`;
+  <div id="fulfill-body">${_fulfillBody()}</div>`;
 }
 
 window.switchFulfillTab=function(tab){
@@ -101,7 +107,7 @@ window.switchFulfillTab=function(tab){
   const btn=document.querySelector(`#main-content .tab-bar .tab-btn[onclick*="'${tab}'"]`);
   if(btn)btn.classList.add('active');
   if(!body)return;
-  body.innerHTML=tab==='entry'?_renderFulfillEntry():_renderFulfillAnalytics();
+  body.innerHTML=_fulfillBody();
   if(tab==='entry')window._fulfillRecalc();
 };
 
@@ -158,7 +164,10 @@ function _renderFulfillEntry(){
     </div>
     ${tbl('DISPATCHED',FULFILL_DISPATCH_ROWS,'d',existing&&existing.dispatched,'var(--accent-success)')}
     ${tbl('RETURNS',FULFILL_RETURN_ROWS,'r',existing&&existing.returns,'var(--accent-urgent)')}
-    <button class="btn-primary" id="fd-save-btn" onclick="window.saveFulfillReport()">${existing?'Update record':'Save record'}</button>`;
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn-primary" id="fd-save-btn" style="flex:1;min-width:160px" onclick="window.saveFulfillReport()">${existing?'Update record':'Save record'}</button>
+      <button class="btn-outline" style="flex:1;min-width:160px;font-size:14px;font-weight:600" onclick="window.saveFulfillReport(true)">${existing?'Update':'Save'} &amp; download PDF</button>
+    </div>`;
 }
 
 window.loadFulfillDate=function(){
@@ -189,7 +198,7 @@ window._fulfillRecalc=function(){
   set('fd-r-tot-ship',_fnum(r.totShip));set('fd-r-tot-amt',_fRs(r.totAmt));
 };
 
-window.saveFulfillReport=async function(){
+window.saveFulfillReport=async function(alsoPdf){
   if(!_canEditFulfillment())return showToast('Not allowed.',true);
   const date=(document.getElementById('fd-date')||{}).value;
   if(!date)return showToast('Pick a date first.',true);
@@ -221,7 +230,8 @@ window.saveFulfillReport=async function(){
     fulfillReports.sort((a,b)=>b.date.localeCompare(a.date));
     logActivity('Fulfilment report',`${existing?'Updated':'Recorded'} ${date} — ${_fnum(d.totShip)} dispatched / ${_fnum(r.totShip)} returned`);
     showToast(`Saved ${_fulfillFmtDate(date)} ✓`);
-    _fulfillTab='analytics';
+    if(alsoPdf===true)window.fulfillPdf(date);
+    _fulfillTab='log';
     const m=document.getElementById('main-content');
     if(m)m.innerHTML=renderFulfillmentPage();
   }catch(e){
@@ -364,3 +374,66 @@ function _fulfillPeriodChips(){
     ${opts.map(([d,l])=>`<button class="filter-chip${_fulfillPeriod===d?' active':''}" onclick="window.setFulfillPeriod(${d})">${l}</button>`).join('')}
   </div>`;
 }
+
+// ══════════════════════════════════════════════════════════════════════
+//  LOG — date-wise list of every saved report, with PDF + edit
+// ══════════════════════════════════════════════════════════════════════
+function _renderFulfillLog(){
+  if(!fulfillReports.length)
+    return `<div class="empty">No days recorded yet.<br><br>
+      <button class="btn-outline" onclick="window.switchFulfillTab('entry')">Record the first day</button></div>`;
+
+  const rows=[...fulfillReports].sort((a,b)=>b.date.localeCompare(a.date)).map(r=>{
+    const ds=(r.dispatchedTotal&&r.dispatchedTotal.shipments)||0;
+    const da=(r.dispatchedTotal&&r.dispatchedTotal.amount)||0;
+    const rs=(r.returnsTotal&&r.returnsTotal.shipments)||0;
+    const ra=(r.returnsTotal&&r.returnsTotal.amount)||0;
+    const rr=ds?Math.round(100*rs/ds):0;
+    const who=r.enteredBy||r.updatedBy||'—';
+    return `<div class="po-row" style="cursor:default">
+      <div class="po-info">
+        <div class="po-num">${_fulfillFmtDate(r.date)}</div>
+        <div class="po-name">${_fnum(ds)} dispatched · ${_fRs(da)}</div>
+        <div class="po-meta">Returns ${_fnum(rs)} · ${_fRs(ra)} · Ret ${rr}% · by ${who}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn-pdf" onclick="window.fulfillPdf('${r.date}')">PDF</button>
+        <button class="btn-outline" onclick="window.fulfillEditDate('${r.date}')">Edit</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div style="font-size:12px;color:var(--muted);margin-bottom:10px">${fulfillReports.length} day${fulfillReports.length===1?'':'s'} recorded · newest first. Tap PDF to open/print or download any day.</div>
+    ${rows}`;
+}
+
+window.fulfillEditDate=function(date){
+  _fulfillEntryDate=date;
+  _fulfillTab='entry';
+  const m=document.getElementById('main-content');
+  if(m){m.innerHTML=renderFulfillmentPage();window._fulfillRecalc();}
+};
+
+// Generate (open + download) the one-day PDF via the shared print engine.
+window.fulfillPdf=function(date){
+  const r=fulfillReports.find(x=>x.date===date);
+  if(!r)return showToast('Report not found.',true);
+  if(typeof printDocument!=='function')return showToast('Print engine not loaded yet — retry in a moment.',true);
+  printDocument({
+    type:'daily-performance',
+    filename:`daily-performance-${date}.pdf`,
+    data:{
+      documentType:'Daily Performance',
+      id:date,
+      date:date,
+      dateLabel:_fulfillFmtDate(date),
+      issuedDate:_fulfillFmtDate(date),
+      issuedBy:r.enteredBy||r.updatedBy||'—',
+      dispatched:r.dispatched||[],
+      returns:r.returns||[],
+      dispatchedTotal:r.dispatchedTotal||{shipments:0,amount:0},
+      returnsTotal:r.returnsTotal||{shipments:0,amount:0},
+      urduLevel:'minimal'
+    }
+  });
+};
