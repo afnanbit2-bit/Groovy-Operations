@@ -159,6 +159,35 @@ function _pc(hex) {
   ];
 }
 
+/* Load a (possibly remote) image URL into a data URL + intrinsic size so the
+   synchronous variant renderers can addImage() it. Best-effort: resolves to
+   null on CORS taint, load error, or timeout (the caller then just skips the
+   image). Cloudinary serves the CORS header, so product photos load fine. */
+function _loadImgDataURL(url) {
+  return new Promise(function (resolve) {
+    if (!url) { resolve(null); return; }
+    try {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      let done = false;
+      const finish = function (v) { if (!done) { done = true; resolve(v); } };
+      const to = setTimeout(function () { finish(null); }, 8000);
+      img.onload = function () {
+        clearTimeout(to);
+        try {
+          const c = document.createElement('canvas');
+          c.width = img.naturalWidth || img.width;
+          c.height = img.naturalHeight || img.height;
+          c.getContext('2d').drawImage(img, 0, 0);
+          finish({ dataUrl: c.toDataURL('image/jpeg', 0.85), fmt: 'JPEG', w: c.width, h: c.height });
+        } catch (e) { finish(null); }
+      };
+      img.onerror = function () { clearTimeout(to); finish(null); };
+      img.src = url;
+    } catch (e) { resolve(null); }
+  });
+}
+
 /* ArrayBuffer → base64 (chunked to avoid call-stack limits). */
 function _ab2b64(buf) {
   const bytes = new Uint8Array(buf);
@@ -1253,6 +1282,303 @@ function _renderDailyPerformance(doc, data) {
   doc.__groovyY = y;
 }
 
+/* ── Production Order variant ──────────────────────────────────────────────
+   Full manufacturing traveler / routing sheet matching the "Production Order
+   2.0" reference: header + "Department: Manufacturing", an order-info block
+   with the product photo on the right, an SLA table, the Cutting & Supply
+   Store block, then the signed per-station size grids (Cutting + Bundling,
+   Printing & Emb QC, Bundling Before Stitching, Stitching, Washing). The
+   quantity/bundle cells are intentionally left blank for hand-entry on the
+   floor; only the order header + SLA due dates are pre-filled. Bilingual
+   (urduLevel defaults to 'full'). Composes the shared _render* components and
+   two local table closures. */
+function _renderPO(doc, data) {
+  data = data || {};
+  const L = PRINT_LAYOUT.marginLeft;
+  const W = PRINT_LAYOUT.contentWidth;
+  const R = L + W;
+  const sess = (typeof session !== 'undefined' && session) ? session : null;
+  const line = _pc(PRINT_COLORS.greyLine);
+  const shade = _pc(PRINT_COLORS.greyShade);
+  const shadeL = _pc(PRINT_COLORS.greyShadeLight);
+  const maxY = PRINT_LAYOUT.pageHeight - PRINT_LAYOUT.marginBottom - 22;
+  const SIZE_ROWS = ['Small', 'Medium', 'Large', 'X-Large'];
+
+  const need = function (h) {
+    if ((doc.__groovyY || PRINT_LAYOUT.marginTop) + h > maxY) {
+      doc.addPage();
+      doc.__groovyY = PRINT_LAYOUT.marginTop;
+    }
+    return doc.__groovyY;
+  };
+
+  // Generic bordered table: cols=[{title,ur,w}], rows=array of cell arrays
+  // (null/'' → blank cell). o.shadeFirst shades+bolds the first column.
+  const tableGrid = function (cols, rows, o) {
+    o = o || {};
+    const hdrH = o.hdrH || 26, rowH = o.rowH || 20;
+    const totalW = cols.reduce(function (s, c) { return s + c.w; }, 0);
+    const drawHdr = function () {
+      const yy = doc.__groovyY;
+      doc.setFillColor(shade[0], shade[1], shade[2]);
+      doc.rect(L, yy, totalW, hdrH, 'F');
+      let cx = L;
+      cols.forEach(function (c) {
+        doc.setDrawColor(line[0], line[1], line[2]);
+        doc.setLineWidth(0.4);
+        doc.rect(cx, yy, c.w, hdrH, 'S');
+        const bilingual = c.ur && _urduOn(doc);
+        _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 9, PRINT_COLORS.text);
+        doc.text(String(c.title || ''), cx + 5, yy + (bilingual ? 11 : hdrH / 2 + 3), { maxWidth: c.w - 8 });
+        if (bilingual) {
+          _setFont(doc, PRINT_FONTS.urdu, 'normal', 9, PRINT_COLORS.greyAccent);
+          doc.text(String(c.ur), cx + 5, yy + 22, { maxWidth: c.w - 8 });
+        }
+        cx += c.w;
+      });
+      doc.__groovyY = yy + hdrH;
+    };
+    need(hdrH + rowH);
+    drawHdr();
+    rows.forEach(function (r) {
+      if (doc.__groovyY + rowH > maxY) {
+        doc.addPage();
+        doc.__groovyY = PRINT_LAYOUT.marginTop;
+        drawHdr();
+      }
+      const yy = doc.__groovyY;
+      let cx = L;
+      cols.forEach(function (c, i) {
+        if (o.shadeFirst && i === 0) {
+          doc.setFillColor(shadeL[0], shadeL[1], shadeL[2]);
+          doc.rect(cx, yy, c.w, rowH, 'F');
+        }
+        doc.setDrawColor(line[0], line[1], line[2]);
+        doc.setLineWidth(0.3);
+        doc.rect(cx, yy, c.w, rowH, 'S');
+        const v = r ? r[i] : '';
+        if (v != null && v !== '') {
+          _setFont(doc, PRINT_FONTS.bodyRegular, (o.shadeFirst && i === 0) ? 'bold' : 'normal', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
+          doc.text(String(v), cx + 5, yy + rowH / 2 + 3.5, { maxWidth: c.w - 8 });
+        }
+        cx += c.w;
+      });
+      doc.__groovyY = yy + rowH;
+    });
+  };
+
+  // "Grand Total Quantity Processed ______" line (bilingual).
+  const grandTotalLine = function () {
+    need(28);
+    const yy = doc.__groovyY + 16;
+    const en = 'Grand Total Quantity Processed';
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
+    doc.text(en, L, yy);
+    let gx = L + doc.getTextWidth(en) + 4;
+    if (_urduOn(doc)) {
+      _setFont(doc, PRINT_FONTS.urdu, 'normal', PRINT_SIZES.urduBody, PRINT_COLORS.greyAccent);
+      doc.text('مقدار مکمل کی گئی', gx, yy);
+    }
+    doc.setDrawColor(line[0], line[1], line[2]);
+    doc.setLineWidth(0.5);
+    doc.line(R - 120, yy + 2, R, yy + 2);
+    doc.__groovyY = yy + 4;
+  };
+
+  // "Signature (دستخط) : ______   With Name: ______" line.
+  const signWithName = function (owner) {
+    need(28);
+    const yy = doc.__groovyY + 18;
+    let x = L;
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+    doc.text('Signature', x, yy); x += doc.getTextWidth('Signature');
+    if (_urduOn(doc)) {
+      _setFont(doc, PRINT_FONTS.urdu, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+      doc.text(' (دستخط)', x, yy); x += doc.getTextWidth(' (دستخط)');
+    }
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+    const s = ': ________________';
+    doc.text(s, x, yy); x += doc.getTextWidth(s) + 20;
+    doc.text('With Name: ' + (owner ? owner : '________________'), x, yy);
+    doc.__groovyY = yy + 4;
+  };
+
+  // A label followed by two blank ruled lines (used for Remarks / Defects).
+  const remarksLine = function (en, ur) {
+    need(42);
+    let yy = doc.__groovyY + 18;
+    let x = L;
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+    doc.text(en, x, yy); x += doc.getTextWidth(en);
+    if (ur && _urduOn(doc)) {
+      _setFont(doc, PRINT_FONTS.urdu, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+      doc.text(' (' + ur + ')', x, yy); x += doc.getTextWidth(' (' + ur + ')');
+    }
+    doc.setDrawColor(line[0], line[1], line[2]);
+    doc.setLineWidth(0.5);
+    doc.line(x + 8, yy + 2, R, yy + 2);
+    yy += 18;
+    doc.line(L, yy + 2, R, yy + 2);
+    doc.__groovyY = yy + 4;
+  };
+
+  // 1) HEADER + department line
+  _renderHeader(doc, {
+    documentType: 'Production Order',
+    documentNumber: data.documentNumber || data.id || '',
+    issuedDate: data.issuedDate || new Date().toLocaleDateString('en-GB'),
+    issuedBy: data.issuedBy || (sess && sess.name) || '—'
+  });
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 9, PRINT_COLORS.greyAccent);
+  doc.text('Department: Manufacturing', L, doc.__groovyY + 4);
+
+  // 2) ORDER INFO BLOCK (label/value grid on the left, product photo right)
+  const im = (data.__productImg && data.__productImg.dataUrl) ? data.__productImg : null;
+  const imgW = 150, imgGap = 14;
+  const gridW = im ? (W - imgW - imgGap) : W;
+  const gy0 = (doc.__groovyY || PRINT_LAYOUT.marginTop) + 14;
+  let gy = gy0;
+  const cellH = 22;
+
+  const drawKV = function (x, w, label, value) {
+    const labW = Math.min(84, w * 0.42);
+    doc.setFillColor(shadeL[0], shadeL[1], shadeL[2]);
+    doc.rect(x, gy, labW, cellH, 'F');
+    doc.setDrawColor(line[0], line[1], line[2]);
+    doc.setLineWidth(0.3);
+    doc.rect(x, gy, labW, cellH, 'S');
+    doc.rect(x + labW, gy, w - labW, cellH, 'S');
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 8, PRINT_COLORS.text);
+    doc.text(String(label), x + 4, gy + cellH / 2 + 3, { maxWidth: labW - 6 });
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
+    doc.text(String(value == null ? '' : value), x + labW + 4, gy + cellH / 2 + 3, { maxWidth: w - labW - 8 });
+  };
+  const halfW = gridW / 2;
+  const kvRow = function (l1, v1, l2, v2) {
+    drawKV(L, halfW, l1, v1);
+    if (l2 != null) drawKV(L + halfW, gridW - halfW, l2, v2);
+    gy += cellH;
+  };
+  const kvSpan = function (l, v) {
+    drawKV(L, gridW, l, v);
+    gy += cellH;
+  };
+
+  kvRow('PO Number', data.poNumber || data.id || '', 'Start Date', data.startDate || '');
+  kvRow('Pattern # / Name', data.pattern || '', 'Issued By', data.issuedBy || '');
+  kvSpan('Article Name', data.articleName || '');
+  kvRow('Article Code', data.articleCode || '', 'Sizes', data.sizes || '');
+  kvRow('Fabric Name', data.fabricName || '', 'Fabric Code', data.fabricCode || '');
+  kvRow('Total Quantity', data.totalQty || '', 'Ratio', data.ratio || '');
+  kvRow('Total Weight / Mtr', data.totalWeight || '', 'Average Per Unit', data.avgPerUnit || '');
+
+  if (im) {
+    const boxH = gy - gy0;
+    const ar = (im.w && im.h) ? (im.w / im.h) : 0.75;
+    let dw = imgW, dh = dw / ar;
+    if (dh > boxH) { dh = boxH; dw = dh * ar; }
+    const ix = L + gridW + imgGap;
+    const ox = ix + (imgW - dw) / 2;
+    doc.setDrawColor(line[0], line[1], line[2]);
+    doc.setLineWidth(0.3);
+    doc.rect(ix, gy0, imgW, boxH, 'S');
+    try { doc.addImage(im.dataUrl, im.fmt || 'JPEG', ox, gy0, dw, dh); } catch (e) { /* skip */ }
+  }
+  doc.__groovyY = gy;
+
+  // 3) SLA TABLE
+  _renderSectionHeader(doc, { titleEn: 'SLA', titleUr: '' });
+  doc.__groovyY += 6;
+  const slaRows = (Array.isArray(data.slaRows) && data.slaRows.length)
+    ? data.slaRows
+    : [{ dept: 'Cutting' }, { dept: 'Printing' }, { dept: 'Bundling' }, { dept: 'Stitching' }, { dept: 'QC & Packing' }];
+  tableGrid(
+    [{ title: 'Department', ur: 'شعبہ', w: 150 },
+     { title: 'Receiving Signature / Date + Time', ur: '', w: 263 },
+     { title: 'Due Date', ur: 'مقررہ تاریخ', w: 110 }],
+    slaRows.map(function (r) { return [r.dept || '', '', r.due || '']; }),
+    { shadeFirst: true, rowH: 24 }
+  );
+
+  // 4) CUTTING & SUPPLY STORE (rolls left, supply checklist right)
+  _renderSectionHeader(doc, { titleEn: 'Cutting & Supply Store', titleUr: '', ownerName: 'Raees' });
+  doc.__groovyY += 6;
+  tableGrid(
+    [{ title: 'Cutting — Roll #', ur: '', w: 130 },
+     { title: 'Weight / MTR', ur: '', w: 130 },
+     { title: 'Supply Store — Item', ur: '', w: 150 },
+     { title: 'Code', ur: '', w: 113 }],
+    [['', '', 'Thread', ''],
+     ['', '', 'Size Label', ''],
+     ['', '', 'Drawstring', ''],
+     ['', '', '', '']],
+    {}
+  );
+
+  // 5) STATION — CUTTING + BUNDLING
+  _renderSectionHeader(doc, { titleEn: 'Cutting + Bundling', titleUr: 'بنڈلنگ اور ٹرانسپورٹیشن', ownerName: 'Raees' });
+  doc.__groovyY += 6;
+  tableGrid(
+    [{ title: 'Size', ur: 'سائز', w: 175 }, { title: 'Bundles', ur: '', w: 174 }, { title: 'Total', ur: '', w: 174 }],
+    SIZE_ROWS.map(function (s) { return [s, '', '']; }),
+    { shadeFirst: true }
+  );
+  grandTotalLine();
+  signWithName();
+
+  // 6) STATION — PRINTING & EMB QC
+  _renderSectionHeader(doc, { titleEn: 'Printing & Emb QC', titleUr: '', ownerName: 'Haris' });
+  doc.__groovyY += 6;
+  tableGrid(
+    [{ title: 'Size', ur: 'سائز', w: 100 },
+     { title: 'Total Passed', ur: '', w: 130 },
+     { title: 'QA Not Passed But Forwarded', ur: '', w: 173 },
+     { title: 'Rejected', ur: '', w: 120 }],
+    SIZE_ROWS.map(function (s) { return [s, '', '', '']; }).concat([['Grand Total', '', '', '']]),
+    { shadeFirst: true }
+  );
+  remarksLine('Remarks', 'تبصرے');
+
+  // 7) STATION — BUNDLING BEFORE STITCHING
+  _renderSectionHeader(doc, { titleEn: 'Bundling Before Stitching', titleUr: 'بنڈلنگ اور ٹرانسپورٹیشن', ownerName: 'Zuhaib' });
+  doc.__groovyY += 6;
+  tableGrid(
+    [{ title: 'Size', ur: 'سائز', w: 175 }, { title: 'Bundles', ur: '', w: 174 }, { title: 'Total', ur: '', w: 174 }],
+    SIZE_ROWS.map(function (s) { return [s, '', '']; }),
+    { shadeFirst: true }
+  );
+  grandTotalLine();
+  signWithName();
+
+  // 8) STATION — STITCHING
+  _renderSectionHeader(doc, { titleEn: 'Stitching', titleUr: '', ownerName: 'Waqas' });
+  doc.__groovyY += 6;
+  tableGrid(
+    [{ title: 'Date', ur: '', w: 110 },
+     { title: 'Size + Bundle', ur: '', w: 180 },
+     { title: 'OFFLINE', ur: '', w: 110 },
+     { title: 'Total', ur: '', w: 123 }],
+    [['', '', '', ''], ['', '', '', ''], ['', '', '', ''], ['', '', '', '']],
+    {}
+  );
+  signWithName('Waqas');
+  remarksLine('Defects / Remarks', 'خامیوں / تبصرے');
+
+  // 9) STATION — WASHING DEPARTMENT
+  _renderSectionHeader(doc, { titleEn: 'Washing Department', titleUr: '', ownerName: 'Abbas' });
+  doc.__groovyY += 6;
+  tableGrid(
+    [{ title: 'Date Out', ur: '', w: 131 },
+     { title: 'PCs / Kgs', ur: '', w: 130 },
+     { title: 'Date Received', ur: '', w: 132 },
+     { title: 'PCs / Kgs', ur: '', w: 130 }],
+    [['', '', '', ''], ['', '', '', ''], ['', '', '', '']],
+    {}
+  );
+  remarksLine('Defects / Remarks', 'خامیوں / تبصرے');
+  signWithName();
+}
+
 /* ── PART 2 — Public API ───────────────────────────────────────────────────
    The ONLY global this engine exposes. */
 window.printDocument = async function (opts) {
@@ -1270,6 +1596,7 @@ window.printDocument = async function (opts) {
     'gate-pass', 'placement-sheet', 'qc-report', 'payslip',
     'daily-performance', 'generic'];
   const _VARIANTS = {
+    'po': _renderPO,
     'gate-pass': _renderGatePass,
     'payslip': _renderPayslip,
     'daily-performance': _renderDailyPerformance
@@ -1313,6 +1640,13 @@ window.printDocument = async function (opts) {
   doc.__groovyUrduLevel = urduLevel;
   doc.__groovyDocType = data.documentType || _PRINT_DOC_LABELS[type] || 'Document';
   doc.__groovyY = PRINT_LAYOUT.marginTop;
+
+  // Preload the product photo (if any) into a data URL so the synchronous
+  // renderer can embed it. Best-effort — a failed/blocked load just omits it.
+  if (data && data.productImage && !data.__productImg) {
+    try { data.__productImg = await _loadImgDataURL(data.productImage); }
+    catch (e) { data.__productImg = null; }
+  }
 
   try {
     render(doc, data);

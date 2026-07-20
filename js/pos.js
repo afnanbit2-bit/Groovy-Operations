@@ -973,11 +973,20 @@ window.completeQC=async function(fbKey){
 window.generatePOPdf=function(fbKey){
   const po=allPOs.find(p=>p.fbKey===fbKey);if(!po){showToast('PO not found.',true);return;}
   if(window.__usePrintEngine&&typeof window.printDocument==='function'){
-    return window.printDocument({type:'generic',data:{
+    const sizeOrder=['XS','S','M','L','XL','2XL'];
+    const activeSizes=sizeOrder.filter(sz=>(po.sizes?.[sz]||0)>0);
+    const sizesStr=(activeSizes.length?activeSizes:sizeOrder).join('-');
+    const slaLabels={cutting:'Cutting',printing:'Printing',bundling:'Bundling',stitching:'Stitching',qc:'QC & Packing'};
+    const slaRows=Object.keys(slaLabels).map(k=>({dept:slaLabels[k],due:po.stages?.[k]?.dueDate||''}));
+    return window.printDocument({type:'po',filename:`${po.id}.pdf`,data:{
       documentType:'Production Order',documentNumber:po.id,id:po.id,
-      title:`Production Order ${po.id}`,
-      subtitle:[po.name,po.code].filter(Boolean).join(' · '),
-      bodyHtml:`<p>Product: ${po.name||'—'} (${po.code||'—'})</p><p>Pattern: ${po.pattern||'—'}</p><p>Total Qty: ${po.qty||'—'} pcs</p><p>Ratio: ${po.ratio||'—'}</p><p>Fabric: ${po.fabric||'—'} (${po.fabricCode||'—'})</p><p>Store: ${po.store||'—'}</p><p>Current Stage: ${po.currentStage||'—'}</p><p>Created: ${po.createdAt||'—'} by ${po.createdBy||'—'}</p>`
+      poNumber:po.id,startDate:po.createdAt||'',pattern:po.pattern||'',
+      articleName:po.name||'',articleCode:po.code||'',sizes:sizesStr,
+      fabricName:po.fabric||'',fabricCode:po.fabricCode||'',
+      totalQty:po.qty!=null?String(po.qty):'',ratio:po.ratio||'',
+      issuedBy:po.createdBy||'',issuedDate:po.createdAt||'',
+      totalWeight:po.totalWeight||'',avgPerUnit:po.avgPerUnit||'',
+      slaRows,productImage:po.imgFront||''
     }});
   }
   const{jsPDF}=window.jspdf;const pdf=new jsPDF({unit:'mm',format:'a4'});
