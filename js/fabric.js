@@ -2686,29 +2686,46 @@ window.submitFabRetSupplier=async function(){
 // ════════════════════════════════════════════════════════════════════════
 let _poReserveRolls=[],_poReserveKey=null;
 
-window.fabPoReserveCard=function(){
+// Unified "Fabric & supply" card for the New PO tab — inventory-first.
+// Picking a fabric from stock auto-fills type/code and lets you reserve rolls
+// inline (Total rolls auto-fills from the ticked count); the fields stay
+// editable so fabric not yet in inventory can still be entered by hand.
+window.fabPoFabricCard=function(){
   _poReserveKey=null;_poReserveRolls=[];
   const stocks=(typeof allFabricInventory!=='undefined'?allFabricInventory:[]).filter(s=>(s.rolls||[]).some(r=>(r.status||'in_stock')==='in_stock'));
-  return`<div class="card"><div class="card-title">Reserve fabric rolls <span style="font-weight:400;color:var(--muted);font-size:11px">optional · holds rolls in stock for this PO</span></div>
-    <div class="field"><label>Fabric</label>
+  return`<div class="card"><div class="card-title">Fabric &amp; supply <span style="font-weight:400;color:var(--muted);font-size:11px">* · linked to fabric inventory</span></div>
+    <div class="field"><label>Select from fabric inventory <span style="font-weight:400;color:var(--muted)">optional · auto-fills type/code &amp; reserves rolls</span></label>
       <select id="po-resv-stock" onchange="window.fabPoReservePick()">
         <option value="">Select fabric…</option>
         ${stocks.map(s=>`<option value="${s._id}">${_gpEsc(s.fabType)} · ${s.gsm||0}gsm · ${_gpEsc(s.color)} — ${s.rollsCount||0} available</option>`).join('')}
       </select>
     </div>
     <div id="po-resv-rolls" style="margin-top:8px"></div>
+    <div class="form-grid" style="margin-top:12px">
+      <div class="field"><label>Fabric type *</label><input id="po-fabric" placeholder="e.g. Terry, Fleece"></div>
+      <div class="field"><label>Fabric code</label><input id="po-fabriccode" placeholder="e.g. BLKTRY220"></div>
+      <div class="field"><label>Supply store</label><input id="po-store" placeholder="Store/supplier"></div>
+      <div class="field"><label>Total rolls <span style="font-weight:400;color:var(--muted);font-size:11px">auto from reserved</span></label><input id="po-rolls" placeholder="e.g. 12"></div>
+    </div>
+    ${stocks.length?'':'<div style="font-size:11px;color:var(--muted);margin-top:8px">No fabric in inventory yet — enter details manually above, or add stock in the Fabric Inventory section.</div>'}
   </div>`;
 };
 
 window.fabPoReservePick=function(){
   const key=document.getElementById('po-resv-stock')?.value||'';
   _poReserveKey=key;_poReserveRolls=[];
+  const s=key&&typeof allFabricInventory!=='undefined'?allFabricInventory.find(x=>x._id===key):null;
+  // Auto-fill the fabric metadata from the picked inventory bucket.
+  if(s){
+    const fEl=document.getElementById('po-fabric');if(fEl)fEl.value=s.fabType||'';
+    const cEl=document.getElementById('po-fabriccode');if(cEl)cEl.value=_fabBaseCode(s.fabType,s.gsm,s.color);
+  }
+  window.fabPoSyncRolls();
   const wrap=document.getElementById('po-resv-rolls');if(!wrap)return;
   if(!key){wrap.innerHTML='';return;}
-  const s=allFabricInventory.find(x=>x._id===key);
   const avail=(s?.rolls||[]).filter(r=>(r.status||'in_stock')==='in_stock');
-  if(!avail.length){wrap.innerHTML='<div style="font-size:12px;color:var(--muted)">No available rolls.</div>';return;}
-  wrap.innerHTML=`<label style="font-size:11px;color:var(--muted)">${avail.length} available — tick to reserve</label>
+  if(!avail.length){wrap.innerHTML='<div style="font-size:12px;color:var(--muted)">No available rolls in this stock.</div>';return;}
+  wrap.innerHTML=`<label style="font-size:11px;color:var(--muted)">${avail.length} available — tick to reserve for this PO</label>
     <div style="display:grid;gap:4px;margin-top:4px">${avail.map(r=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;cursor:pointer">
       <input type="checkbox" data-roll="${_gpEsc(r.rollCode)}" onchange="window.fabPoReserveToggle(this)">
       <span style="font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode)}</span>
@@ -2720,6 +2737,14 @@ window.fabPoReserveToggle=function(cb){
   const rc=cb.dataset.roll;
   if(cb.checked){if(!_poReserveRolls.includes(rc))_poReserveRolls.push(rc);}
   else _poReserveRolls=_poReserveRolls.filter(x=>x!==rc);
+  window.fabPoSyncRolls();
+};
+
+// Keep the Total-rolls field in step with the reserved count. Only writes when
+// rolls are actually reserved, so a purely manual entry is never clobbered.
+window.fabPoSyncRolls=function(){
+  const el=document.getElementById('po-rolls');if(!el)return;
+  if(_poReserveRolls.length)el.value=String(_poReserveRolls.length);
 };
 
 window.fabPoReserveReset=function(){_poReserveKey=null;_poReserveRolls=[];};

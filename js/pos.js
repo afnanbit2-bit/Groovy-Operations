@@ -272,14 +272,7 @@ function renderPOCreate(){
     </div>
     <div style="margin-top:8px;font-size:12px;color:var(--muted)">Ratio: <span id="ratio-disp" style="font-weight:600;color:var(--text)">—</span></div>
   </div>
-  <div class="card"><div class="card-title">Fabric & supply *</div>
-    <div class="form-grid">
-      <div class="field"><label>Fabric type *</label><input id="po-fabric" placeholder="e.g. Terry, Fleece"></div>
-      <div class="field"><label>Fabric code</label><input id="po-fabriccode" placeholder="e.g. TRY-200GSM"></div>
-      <div class="field"><label>Supply store</label><input id="po-store" placeholder="Store/supplier"></div>
-      <div class="field"><label>Total rolls</label><input id="po-rolls" placeholder="e.g. 12"></div>
-    </div>
-  </div>
+  ${typeof fabPoFabricCard==='function'?fabPoFabricCard():'<div class="card"><div class="card-title">Fabric & supply *</div><div class="form-grid"><div class="field"><label>Fabric type *</label><input id="po-fabric" placeholder="e.g. Terry, Fleece"></div><div class="field"><label>Fabric code</label><input id="po-fabriccode" placeholder="e.g. BLKTRY220"></div><div class="field"><label>Supply store</label><input id="po-store" placeholder="Store/supplier"></div><div class="field"><label>Total rolls</label><input id="po-rolls" placeholder="e.g. 12"></div></div></div>'}
   <div class="card"><div class="card-title">Bundling instructions <span style="font-size:11px;font-weight:400;color:var(--muted)">optional</span></div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Define garment parts and where they go after bundling. Default: Full Garment → Warehouse.</div>
     <div id="bp-rows"></div>
@@ -310,7 +303,6 @@ function renderPOCreate(){
       </div>
     </div>
   </div>
-  ${typeof fabPoReserveCard==='function'?fabPoReserveCard():''}
   <button class="btn-primary" id="po-submit-btn" onclick="window.submitPO()">Create Production Order</button>
   <div style="height:80px"></div>`;
 }
