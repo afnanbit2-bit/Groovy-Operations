@@ -237,7 +237,15 @@ window.ownerAdvance=async function(fbKey,stageKey){
 window.deletePO=async function(fbKey,poId){
   if(session.role!=='owner'){showToast('Owners only.',true);return;}
   if(!confirm(`Delete PO ${poId}? Cannot be undone.`))return;
-  try{await deleteDoc(doc(db,'pos',fbKey));await logActivity('PO deleted',`PO ${poId} deleted`);showToast(`PO ${poId} deleted`);await loadData();window.showPage('po-registry');}
+  try{
+    // Restock any fabric rolls still reserved for this PO before it's gone.
+    let restockNote='';
+    if(typeof fabReleaseForPO==='function'){
+      try{const n=await fabReleaseForPO(poId);if(n)restockNote=` · ${n} fabric roll(s) restocked`;}
+      catch(_re){restockNote=' · fabric restock failed: '+_re.message;}
+    }
+    await deleteDoc(doc(db,'pos',fbKey));await logActivity('PO deleted',`PO ${poId} deleted`);showToast(`PO ${poId} deleted${restockNote}`);await loadData();window.showPage('po-registry');
+  }
   catch(e){showToast('Error: '+e.message,true);}
 };
 

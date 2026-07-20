@@ -2758,6 +2758,23 @@ window.fabPoReserveCommit=async function(poId){
   window.fabPoReserveReset();
 };
 
+// Release (restock) every roll still RESERVED for a PO — used when the PO is
+// deleted. Only touches status==='reserved' rolls; rolls already issued to the
+// factory correctly stay out of stock. Groups by stock bucket, one tx each.
+// Returns the number of rolls restocked. No-op if none / inventory absent.
+window.fabReleaseForPO=async function(poId){
+  if(!poId||typeof allFabricInventory==='undefined'||!Array.isArray(allFabricInventory))return 0;
+  let released=0;
+  for(const s of allFabricInventory){
+    const codes=(s.rolls||[]).filter(r=>(r.status||'')==='reserved'&&r.reservedPO===poId).map(r=>r.rollCode);
+    if(!codes.length)continue;
+    await _fabInvUpsert({fabType:s.fabType,gsm:s.gsm,color:s.color,unit:s.unit||'kg',releaseRollCodes:codes,note:`Restocked — PO ${poId} deleted`,sourceCol:'pos',sourceId:poId});
+    released+=codes.length;
+  }
+  if(released)await logActivity('Fabric restocked',`${released} roll(s) restocked from deleted PO ${poId}`);
+  return released;
+};
+
 // ════════════════════════════════════════════════════════════════════════
 //  Reports (Phase 6) — stock-on-hand, movements, per-PO wastage.
 //  Excel via SheetJS; PDF via a print-friendly window (browser print).
