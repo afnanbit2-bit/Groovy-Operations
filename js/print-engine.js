@@ -1285,11 +1285,10 @@ function _renderDailyPerformance(doc, data) {
 /* ── Production Order variant ──────────────────────────────────────────────
    Full manufacturing traveler / routing sheet matching the "Production Order
    2.0" reference: header + "Department: Manufacturing", an order-info block
-   with the product photo on the right, an SLA table, the Cutting & Supply
-   Store block, then the signed per-station size grids (Cutting + Bundling,
-   Printing & Emb QC, Bundling Before Stitching, Stitching, Washing). The
-   quantity/bundle cells are intentionally left blank for hand-entry on the
-   floor; only the order header + SLA due dates are pre-filled. Bilingual
+   with the product photo on the right, then the signed per-station size grids
+   (Cutting + Bundling, Printing & Emb QC, Bundling Before Stitching,
+   Stitching, Washing). The quantity/bundle cells are intentionally left blank
+   for hand-entry on the floor; only the order header is pre-filled. Bilingual
    (urduLevel defaults to 'full'). Composes the shared _render* components and
    two local table closures. */
 function _renderPO(doc, data) {
@@ -1486,36 +1485,7 @@ function _renderPO(doc, data) {
   }
   doc.__groovyY = gy;
 
-  // 3) SLA TABLE
-  _renderSectionHeader(doc, { titleEn: 'SLA', titleUr: '' });
-  doc.__groovyY += 6;
-  const slaRows = (Array.isArray(data.slaRows) && data.slaRows.length)
-    ? data.slaRows
-    : [{ dept: 'Cutting' }, { dept: 'Printing' }, { dept: 'Bundling' }, { dept: 'Stitching' }, { dept: 'QC & Packing' }];
-  tableGrid(
-    [{ title: 'Department', ur: 'شعبہ', w: 150 },
-     { title: 'Receiving Signature / Date + Time', ur: '', w: 263 },
-     { title: 'Due Date', ur: 'مقررہ تاریخ', w: 110 }],
-    slaRows.map(function (r) { return [r.dept || '', '', r.due || '']; }),
-    { shadeFirst: true, rowH: 24 }
-  );
-
-  // 4) CUTTING & SUPPLY STORE (rolls left, supply checklist right)
-  _renderSectionHeader(doc, { titleEn: 'Cutting & Supply Store', titleUr: '', ownerName: 'Raees' });
-  doc.__groovyY += 6;
-  tableGrid(
-    [{ title: 'Cutting — Roll #', ur: '', w: 130 },
-     { title: 'Weight / MTR', ur: '', w: 130 },
-     { title: 'Supply Store — Item', ur: '', w: 150 },
-     { title: 'Code', ur: '', w: 113 }],
-    [['', '', 'Thread', ''],
-     ['', '', 'Size Label', ''],
-     ['', '', 'Drawstring', ''],
-     ['', '', '', '']],
-    {}
-  );
-
-  // 5) STATION — CUTTING + BUNDLING
+  // STATION — CUTTING + BUNDLING
   _renderSectionHeader(doc, { titleEn: 'Cutting + Bundling', titleUr: 'بنڈلنگ اور ٹرانسپورٹیشن', ownerName: 'Raees' });
   doc.__groovyY += 6;
   tableGrid(

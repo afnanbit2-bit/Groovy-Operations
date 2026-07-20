@@ -960,8 +960,6 @@ window.generatePOPdf=function(fbKey){
     const sizeOrder=['XS','S','M','L','XL','2XL'];
     const activeSizes=sizeOrder.filter(sz=>(po.sizes?.[sz]||0)>0);
     const sizesStr=(activeSizes.length?activeSizes:sizeOrder).join('-');
-    const slaLabels={cutting:'Cutting',printing:'Printing',bundling:'Bundling',stitching:'Stitching',qc:'QC & Packing'};
-    const slaRows=Object.keys(slaLabels).map(k=>({dept:slaLabels[k],due:po.stages?.[k]?.dueDate||''}));
     return window.printDocument({type:'po',filename:`${po.id}.pdf`,data:{
       documentType:'Production Order',documentNumber:po.id,id:po.id,
       poNumber:po.id,startDate:po.createdAt||'',pattern:po.pattern||'',
@@ -970,7 +968,7 @@ window.generatePOPdf=function(fbKey){
       totalQty:po.qty!=null?String(po.qty):'',ratio:po.ratio||'',
       issuedBy:po.createdBy||'',issuedDate:po.createdAt||'',
       totalWeight:po.totalWeight||'',avgPerUnit:po.avgPerUnit||'',
-      slaRows,productImage:po.imgFront||''
+      productImage:po.imgFront||''
     }});
   }
   const{jsPDF}=window.jspdf;const pdf=new jsPDF({unit:'mm',format:'a4'});
