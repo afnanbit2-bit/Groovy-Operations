@@ -187,7 +187,7 @@ function _deltaChip(cur,prev,invert){
 // is named by the panel title). points:[{label, <key>:num, …}].
 function _fulfillLineChart(points,series,opts){
   opts=opts||{};
-  const W=960,H=opts.height||230,padL=54,padR=18,padT=18,padB=44;
+  const W=720,H=opts.height||230,padL=54,padR=18,padT=18,padB=44;
   const n=points.length;
   const keys=series.map(s=>s.key);
   const maxV=Math.max(opts.minMax||1,...points.reduce((a,p)=>{keys.forEach(k=>{if(p[k]!=null)a.push(p[k]);});return a;},[]));
@@ -212,7 +212,8 @@ function _fulfillLineChart(points,series,opts){
     body+=valid.map(o=>`<circle cx="${X(o.i).toFixed(1)}" cy="${Y(o.v).toFixed(1)}" r="${n<=16?3.5:2.5}" fill="${s.color}"><title>${points[o.i].label} · ${s.label}: ${_fnum(o.v)}${suf}</title></circle>`).join('');
   }
   const legend=series.length>1?`<div style="display:flex;gap:20px;justify-content:center;margin-top:8px;font-size:13px">${series.map(s=>`<span style="display:inline-flex;align-items:center;gap:7px"><span style="width:18px;height:3px;background:${s.color};display:inline-block;border-radius:2px"></span>${s.label}</span>`).join('')}</div>`:'';
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" style="height:${H}px;display:block;max-width:100%">${grid}${body}${xlab}</svg>${legend}`;
+  // min-width keeps the chart legible on phones (it scrolls) instead of shrinking to nothing.
+  return `<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="height:${H}px;display:block;width:100%;min-width:560px">${grid}${body}${xlab}</svg></div>${legend}`;
 }
 // Average dispatched shipments by weekday (Mon…Sun) — reveals the weekly rhythm.
 function _fulfillWeekdayPattern(reps){
@@ -305,15 +306,16 @@ function _fulfillCalendarHeatmap(reps,metric){
 
 // Net-revenue waterfall: Dispatched value → minus Returns → Net.
 function _fulfillWaterfall(dAmt,rAmt){
-  const net=dAmt-rAmt,max=Math.max(1,dAmt),h=v=>Math.round((Math.max(0,v)/max)*130);
-  const col=(label,inner,valTxt,color)=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:5px">
-    <div style="font-size:12px;font-weight:700;color:${color}">${valTxt}</div>${inner}
+  const net=dAmt-rAmt,max=Math.max(1,dAmt),h=v=>Math.round((Math.max(0,v)/max)*112);
+  const col=(label,inner,valTxt,color)=>`<div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:5px">
+    <div style="font-size:11px;font-weight:700;color:${color};text-align:center;line-height:1.25">${valTxt}</div>${inner}
     <div style="font-size:12px;color:var(--muted)">${label}</div></div>`;
-  const bar=(height,color)=>`<div style="width:64%;max-width:76px;height:${height}px;background:${color};border-radius:4px 4px 0 0"></div>`;
+  const bar=(height,color)=>`<div style="width:66%;max-width:76px;height:${height}px;background:${color};border-radius:4px 4px 0 0"></div>`;
   // Returns segment hangs from the Dispatched height down to Net.
-  const retInner=`<div style="width:64%;max-width:76px;height:${h(dAmt)}px;display:flex;flex-direction:column;justify-content:flex-start" title="Returns ${_fRs(rAmt)}">
+  const retInner=`<div style="width:66%;max-width:76px;height:${h(dAmt)}px;display:flex;flex-direction:column;justify-content:flex-start" title="Returns ${_fRs(rAmt)}">
     <div style="height:${h(rAmt)}px;background:var(--accent-urgent);border-radius:4px 4px 0 0;width:100%"></div></div>`;
-  return `<div style="display:flex;align-items:flex-end;gap:14px;height:170px;padding-top:6px">
+  // Extra top padding gives the tallest bar's value label clearance from the card title.
+  return `<div style="display:flex;align-items:flex-end;gap:12px;height:190px;padding-top:26px">
     ${col('Dispatched',bar(h(dAmt),'var(--accent-success)'),_fRs(dAmt),'var(--accent-success)')}
     ${col('− Returns',retInner,'− '+_fRs(rAmt),'var(--accent-urgent)')}
     ${col('= Net',bar(h(net),'#111'),_fRs(net),'#111')}
@@ -347,7 +349,7 @@ function _fulfillVolumeBars(points,opts){
   opts=opts||{};
   const isVal=!!opts.value,fmt=v=>isVal?_fRs(v):_fnum(v);
   const n=points.length,dense=n>18;
-  const W=960,H=opts.height||255,padL=54,padR=16,padT=28,padB=dense?40:54;
+  const W=720,H=opts.height||255,padL=54,padR=16,padT=28,padB=dense?40:54;
   const top=_niceCeil(Math.max(1,...points.map(p=>p.d||0)));
   const Y=v=>H-padB-((v/top)*(H-padT-padB));
   const slot=(W-padL-padR)/Math.max(1,n),cx=i=>padL+slot*i+slot/2;
@@ -374,7 +376,7 @@ function _fulfillVolumeBars(points,opts){
   });
   const key=(c,l)=>`<span style="display:inline-flex;align-items:center;gap:7px"><span style="width:16px;height:12px;border-radius:3px;background:${c};display:inline-block"></span>${l}</span>`;
   const legend=`<div style="display:flex;gap:16px;justify-content:center;margin-top:8px;font-size:13px;flex-wrap:wrap">${key('#EAEAEA','Delivered')}${key('#14532D','Returned ≤8%')}${key('#B47512','8–15%')}${key('#7B1F2A','>15%')}</div>`;
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" style="height:${H}px;display:block;max-width:100%">${grid}${avgLine}${bars}</svg>${legend}`;
+  return `<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="height:${H}px;display:block;width:100%;min-width:560px">${grid}${avgLine}${bars}</svg></div>${legend}`;
 }
 // Owners, managers, and the dedicated fulfilment account (Umair) may view
 // and record daily performance.
@@ -497,25 +499,25 @@ function _renderFulfillEntry(){
   const rowInputs=(rows,section,saved)=>rows.map((r,i)=>{
     const s=(saved&&saved[i])||{};
     return `<tr>
-      <td style="padding:9px 8px;font-size:14px;font-weight:600">${r.brand}</td>
-      <td style="padding:9px 8px;font-size:13px;color:var(--muted)">${r.courier}</td>
-      <td style="padding:5px 6px"><input type="number" min="0" inputmode="numeric" id="fd-${section}-${i}-ship"
+      <td style="padding:9px 6px;font-size:13px;font-weight:600;line-height:1.25;word-break:break-word">${r.brand}</td>
+      <td style="padding:9px 4px;font-size:12px;color:var(--muted);word-break:break-word">${r.courier}</td>
+      <td style="padding:5px 4px"><input type="number" min="0" inputmode="numeric" id="fd-${section}-${i}-ship"
         value="${s.shipments!=null?s.shipments:''}" placeholder="0" oninput="window._fulfillRecalc()" onfocus="${_focusJS}"
-        style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:7px;font-size:15px;text-align:right;background:#FAFAFA;font-family:inherit;outline:none"></td>
-      <td style="padding:5px 6px"><input type="number" min="0" inputmode="numeric" id="fd-${section}-${i}-amt"
+        style="width:100%;min-width:0;padding:10px 8px;border:1px solid var(--border);border-radius:7px;font-size:15px;text-align:right;background:#FAFAFA;font-family:inherit;outline:none"></td>
+      <td style="padding:5px 4px"><input type="number" min="0" inputmode="numeric" id="fd-${section}-${i}-amt"
         value="${s.amount!=null?s.amount:''}" placeholder="0" oninput="window._fulfillRecalc()" onfocus="${_focusJS}"
-        style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:7px;font-size:15px;text-align:right;background:#FAFAFA;font-family:inherit;outline:none"></td>
+        style="width:100%;min-width:0;padding:10px 8px;border:1px solid var(--border);border-radius:7px;font-size:15px;text-align:right;background:#FAFAFA;font-family:inherit;outline:none"></td>
     </tr>`;
   }).join('');
 
   const tbl=(title,rows,section,saved,accent)=>`<div class="card" style="margin-bottom:12px">
     <div class="card-title" style="border-bottom:none;margin-bottom:6px;color:${accent};font-size:13px">${title}</div>
-    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:340px">
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;table-layout:fixed">
       <thead><tr style="text-align:left">
-        <th style="padding:6px 8px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Brand</th>
-        <th style="padding:6px 8px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Courier</th>
-        <th style="padding:6px 8px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;text-align:right">Shipments</th>
-        <th style="padding:6px 8px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;text-align:right">Amount (Rs)</th>
+        <th style="width:32%;padding:6px 6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Brand</th>
+        <th style="width:19%;padding:6px 6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Courier</th>
+        <th style="width:24%;padding:6px 4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;text-align:right">Ships</th>
+        <th style="width:25%;padding:6px 4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;text-align:right">Amount</th>
       </tr></thead>
       <tbody>${rowInputs(rows,section,saved)}</tbody>
       <tfoot><tr style="border-top:2px solid var(--border)">
@@ -802,9 +804,11 @@ function _renderFulfillAnalytics(){
   ${sec(modeCap+' volume — '+trendLabel+(isValue?' · value (Rs)':' · shipments'),
     _fulfillVolumeBars(points,{value:isValue}),trendToggle)}
 
-  <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:14px;margin-bottom:14px">
-    ${sec('Return rate over time (%)',_fulfillLineChart(points,[{key:'rate',color:'#B47512',label:'Return rate',area:true}],{ySuffix:'%',minMax:10,height:200}))}
+  ${sec('Return rate over time (%)',_fulfillLineChart(points,[{key:'rate',color:'#B47512',label:'Return rate',area:true}],{ySuffix:'%',minMax:10,height:200}))}
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
     ${sec('Avg dispatched by weekday',_fulfillBarChart(weekday))}
+    ${sec('Net revenue build-up',_fulfillWaterfall(cur.dAmt,cur.rAmt))}
   </div>
 
   ${sec('Dispatch calendar — '+(_fulfillCalMetric==='rate'?'return rate':'daily volume'),calendar,calToggle)}
@@ -821,10 +825,7 @@ function _renderFulfillAnalytics(){
       <tbody>${courierRows}</tbody></table></div>`)}
   </div>
 
-  <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:14px;margin-bottom:14px">
-    ${sec('Courier return-rate trend (weekly)',courierTrend)}
-    ${sec('Net revenue build-up',_fulfillWaterfall(cur.dAmt,cur.rAmt))}
-  </div>`;
+  ${sec('Courier return-rate trend (weekly)',courierTrend)}`;
 }
 
 // Date-range control: preset chips + a From/To calendar for a custom range,
