@@ -423,13 +423,34 @@ let _postexIdxCache=null;       // memoised per-day rollup
 let _postexSyncing=false;       // a manual "Sync now" is in flight
 let _postexError=null;          // last read error message (surfaced in the UI)
 
+// The whole collection can exceed Firestore's 10k single-query limit, and the
+// cursor helpers (startAfter) aren't bridged to window. So page by calendar
+// month instead — each month is well under 10k — querying on transactionDate
+// (a string like "2026-07-16T…", so lexical >= / < range compare works). Runs
+// the month queries in parallel. Rolling window from the integration start
+// (2026-06) through next month covers all data with headroom for backfills.
+function _postexMonths(){
+  const out=[];
+  const now=new Date();
+  let y=2026,mo=6;                              // PostEx data starts 2026-06
+  const endY=now.getFullYear(),endMo=now.getMonth()+2; // include current + next
+  while(y<endY||(y===endY&&mo<=endMo)){
+    out.push([y,mo]);
+    mo++;if(mo>12){mo=1;y++;}
+  }
+  return out;
+}
 async function loadPostexData(){
   _postexError=null;
   try{
-    // Plain limit (no orderBy) — a single-field order can silently drop docs
-    // and adds an index dependency we don't need; total volume is under the cap.
-    const snap=await getDocs(query(collection(db,'postex_orders'),limit(20000)));
-    postexOrders=snap.docs.map(d=>d.data());
+    const snaps=await Promise.all(_postexMonths().map(([y,mo])=>{
+      const lo=`${y}-${String(mo).padStart(2,'0')}-01`;
+      const hi=mo===12?`${y+1}-01-01`:`${y}-${String(mo+1).padStart(2,'0')}-01`;
+      return getDocs(query(collection(db,'postex_orders'),where('transactionDate','>=',lo),where('transactionDate','<',hi),limit(10000)));
+    }));
+    const all=[];
+    snaps.forEach(s=>s.docs.forEach(d=>all.push(d.data())));
+    postexOrders=all;
     postexOrdersLoaded=true;_postexIdxCache=null;
   }catch(e){console.warn('[fulfillment] postex load failed',e);postexOrders=[];postexOrdersLoaded=true;_postexIdxCache=null;_postexError=(e&&e.message)?e.message:String(e);}
   try{
