@@ -942,12 +942,14 @@ function _postexCPRs(){
     const cpr=o.cprNumber_1;
     if(cpr){
       withCpr++;
-      const m=map[cpr]||(map[cpr]={cpr,n:0,amount:0,reserve:0,settled:0,date:null});
+      const m=map[cpr]||(map[cpr]={cpr,n:0,amount:0,settled:0,date:null});
       m.n++;
-      m.amount+=Number(o.upfrontPayment||0);
-      m.reserve+=Number(o.reservePayment||0);
+      // Amount PostEx pays for this shipment: its upfront payment if present,
+      // else the net COD (collected − fee − tax).
+      const paid=Number(o.upfrontPayment||0)||(Number(o.cod||0)-Number(o.transactionFee||0)-Number(o.transactionTax||0));
+      m.amount+=paid;
       if(o.settle===true)m.settled++;
-      const dt=o.settlementDate||o.upfrontPaymentDate||null;
+      const dt=o.settlementDate||o.cpr1Date||null;
       if(dt&&(!m.date||String(dt)>String(m.date)))m.date=dt;
     }
   }

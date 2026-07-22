@@ -234,7 +234,7 @@ async function enrichPayments({ token, limit = 1000, concurrency = 5 }) {
   });
   const batch = candidates.slice(0, limit);
 
-  let enriched = 0, settled = 0, errors = 0, notFound = 0;
+  let enriched = 0, settled = 0, errors = 0, notFound = 0, cprFound = 0;
   let idx = 0;
   async function worker() {
     while (idx < batch.length) {
@@ -244,17 +244,21 @@ async function enrichPayments({ token, limit = 1000, concurrency = 5 }) {
         if (httpStatus === 404) { notFound++; continue; }
         const dist = data && data.dist;
         if (dist && (dist.trackingNumber || dist.orderRefNumber)) {
+          // Actual API field names are cpr1 / cpr1Date (not the PDF's
+          // cprNumber_1 / upfrontPaymentDate); cpr2 / cpr2Date carry the
+          // reserve-payment receipt. Fall back to the PDF names just in case.
           await db.collection("postex_orders").doc(c.id).set({
             settle: dist.settle === true,
             settlementDate: dist.settlementDate || null,
-            upfrontPaymentDate: dist.upfrontPaymentDate || null,
-            cprNumber_1: dist.cprNumber_1 || null,
-            reservePaymentDate: dist.reservePaymentDate || null,
-            cprNumber_2: dist.cprNumber_2 || null,
+            cprNumber_1: dist.cpr1 || dist.cprNumber_1 || null,
+            cpr1Date: dist.cpr1Date || dist.upfrontPaymentDate || null,
+            cprNumber_2: dist.cpr2 || dist.cprNumber_2 || null,
+            cpr2Date: dist.cpr2Date || dist.reservePaymentDate || null,
             cprCheckedAt: Date.now(),
           }, { merge: true });
           enriched++;
           if (dist.settle === true) settled++;
+          if (dist.cpr1 || dist.cprNumber_1) cprFound++;
         }
       } catch (e) { errors++; }
     }
@@ -266,7 +270,7 @@ async function enrichPayments({ token, limit = 1000, concurrency = 5 }) {
     scope: "payments",
     candidates: candidates.length,
     processed: batch.length,
-    enriched, settled, notFound, errors,
+    enriched, settled, cprFound, notFound, errors,
     durationMs: Date.now() - start,
   };
   await db.collection("postex_sync_meta").doc("payments_run").set(summary, { merge: true });
