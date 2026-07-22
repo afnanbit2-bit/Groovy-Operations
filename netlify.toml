@@ -28,6 +28,11 @@
 [functions."postex-sync-background"]
   schedule = "0 */4 * * *"
 
+# Daily 3am UTC = 8am PKT — enrich delivered/returned parcels with CPR /
+# payment-status data (one call per tracking number, incremental).
+[functions."postex-payments-background"]
+  schedule = "0 3 * * *"
+
 # 2am UTC Saturday = 7am PKT — weekly close rollup
 [functions."shopify-weekly-close"]
   schedule = "0 2 * * 6"

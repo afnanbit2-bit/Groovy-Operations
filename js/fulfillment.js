@@ -425,6 +425,7 @@ let _postexError=null;          // last read error message (surfaced in the UI)
 let _postexTab='overview';      // PostEx sub-tab: 'overview' | 'pipeline' | 'cohort'
 let _postexPipeMode='all';      // pipeline scope: 'all' | 'flight' (in-flight only)
 let _postexCohortPeriod='weekly'; // cohort bucket: 'weekly' | 'monthly'
+let _postexCprFetching=false;   // a manual "Fetch CPR now" is in flight
 let _postexProgressTimer=null;  // loading-bar animation interval
 let _postexProgressPct=0;       // displayed loading %
 let _postexLoadDone=0;          // month queries resolved so far
@@ -616,15 +617,16 @@ function _renderPostexTab(){
   const body=_postexTab==='pipeline'?_renderPostexPipeline()
             :_postexTab==='cohort'?_renderPostexCohort()
             :_postexTab==='cod'?_renderPostexCOD()
+            :_postexTab==='cpr'?_renderPostexCPR()
             :_renderPostexOverview();
   return `${_postexSyncBar()}
-    <div class="tab-bar" style="margin-bottom:14px;overflow-x:auto;white-space:nowrap">${sub('overview','Overview')}${sub('pipeline','Pipeline')}${sub('cohort','Return Rate')}${sub('cod','COD')}</div>
+    <div class="tab-bar" style="margin-bottom:14px;overflow-x:auto;white-space:nowrap">${sub('overview','Overview')}${sub('pipeline','Pipeline')}${sub('cohort','Return Rate')}${sub('cod','COD')}${sub('cpr','CPR')}</div>
     <div id="postex-subbody">${body}</div>`;
 }
 
 // Switch PostEx sub-tab and re-render the section body.
 window.switchPostexTab=function(tab){
-  _postexTab=(['pipeline','cohort','cod'].includes(tab)?tab:'overview');
+  _postexTab=(['pipeline','cohort','cod','cpr'].includes(tab)?tab:'overview');
   const el=document.getElementById('fulfill-body');
   if(el)el.innerHTML=_renderPostexTab();
 };
@@ -925,6 +927,94 @@ function _renderPostexCOD(){
       `<div style="font-size:12px;color:var(--muted);margin-top:8px">${_fnum(r.returnedN)} returned parcels — you neither collect their COD nor recover the reversal handling charge.</div>`)}
     <div style="font-size:11px;color:var(--muted);margin:-4px 2px 8px">Figures are summed from parcel records. Settlement releases follow PostEx's payout cycle, so "Outstanding" reflects timing as well as amounts.</div>`;
 }
+
+// ── PostEx › CPR (Cash Payment Receipt reconciliation) ──
+// Each settled parcel carries a CPR number (the PostEx receipt it was paid
+// under). Group parcels by cprNumber_1 to reconstruct each receipt — which
+// shipments it covers and the total upfront payment — so it can be checked
+// against PostEx's actual CPR invoice. Populated by postex-payments-background.
+function _postexCPRs(){
+  const map={};
+  let withCpr=0,eligible=0;
+  for(const o of postexOrders){
+    const c=o.statusCategory;
+    if(c==='delivered'||c==='returned')eligible++;
+    const cpr=o.cprNumber_1;
+    if(cpr){
+      withCpr++;
+      const m=map[cpr]||(map[cpr]={cpr,n:0,amount:0,reserve:0,settled:0,date:null});
+      m.n++;
+      m.amount+=Number(o.upfrontPayment||0);
+      m.reserve+=Number(o.reservePayment||0);
+      if(o.settle===true)m.settled++;
+      const dt=o.settlementDate||o.upfrontPaymentDate||null;
+      if(dt&&(!m.date||String(dt)>String(m.date)))m.date=dt;
+    }
+  }
+  const cprs=Object.values(map).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  return {cprs,withCpr,eligible};
+}
+function _postexCprDate(v){const s=String(v||'').slice(0,10);return /^\d{4}-\d{2}-\d{2}$/.test(s)?_fulfillFmtDate(s):'—';}
+function _renderPostexCPR(){
+  const {cprs,withCpr,eligible}=_postexCPRs();
+  const pct=eligible?Math.round(100*withCpr/eligible):0;
+  const progress=`<div class="card" style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <span style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">CPR enrichment</span>
+        <span style="font-size:12px;color:var(--muted)">${_fnum(withCpr)} of ${_fnum(eligible)} delivered/returned parcels have CPR data</span>
+      </div>
+      <div style="height:8px;background:#F0F0F0;border-radius:6px;overflow:hidden"><div style="height:100%;width:${Math.max(2,pct)}%;background:#14532D;border-radius:6px"></div></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">CPR data is fetched one parcel at a time from PostEx's Payment Status API and fills in over a few daily runs. Use <b>Fetch CPR now</b> to speed up the backfill.</div>
+      <button class="btn-sm" style="margin-top:10px" ${_postexCprFetching?'disabled':''} onclick="window.fulfillFetchCPR()">${_postexCprFetching?'Fetching…':'Fetch CPR now'}</button>
+    </div>`;
+
+  if(!cprs.length)
+    return `${progress}<div class="empty">No CPR receipts yet.<br><br>Hit <b>Fetch CPR now</b> above (or the daily run will populate them), then <b>Sync now</b> to pull the enriched data.</div>`;
+
+  const totalPaid=cprs.reduce((a,c)=>a+c.amount,0);
+  const totalShip=cprs.reduce((a,c)=>a+c.n,0);
+  const th=(t,a)=>`<th style="padding:7px 6px;border-bottom:2px solid var(--border);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;text-align:${a||'left'}">${t}</th>`;
+  const td=(v,a,x)=>`<td style="padding:8px 6px;text-align:${a||'left'};${x||''}">${v}</td>`;
+  const rows=cprs.map(c=>{
+    const full=c.settled===c.n;
+    return `<tr style="border-bottom:1px solid #f5f5f5;font-size:13.5px">
+        ${td(c.cpr,'left','font-weight:700;white-space:nowrap')}
+        ${td(_postexCprDate(c.date),'left','color:var(--muted);white-space:nowrap')}
+        ${td(_fnum(c.n),'right')}
+        ${td(_fRs(c.amount),'right','font-weight:700')}
+        ${td(`<span style="font-size:11px;color:${full?'var(--accent-success)':'var(--accent-warning)'}">${c.settled}/${c.n}</span>`,'right')}
+      </tr>`;
+  }).join('');
+  return `${progress}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+      ${_pxKpi('CPR receipts',_fnum(cprs.length),`${_fnum(totalShip)} shipments`,'#111')}
+      ${_pxKpi('Total upfront paid',_fRs(totalPaid),'across all receipts','#14532D')}
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title" style="font-size:12px">Cash Payment Receipts — newest first</div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
+        <thead><tr>${th('CPR number')}${th('Paid on')}${th('Shipments','right')}${th('Upfront amount','right')}${th('Settled','right')}</tr></thead>
+        <tbody>${rows}</tbody></table></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">Each row reconstructs one PostEx receipt from the shipments paid under it — match the amount against PostEx's CPR invoice. "Settled" = shipments on this CPR PostEx has marked paid.</div>
+    </div>`;
+}
+// Trigger the CPR/payment enrichment, then refresh once it's had time to run.
+window.fulfillFetchCPR=async function(){
+  if(_postexCprFetching)return;
+  _postexCprFetching=true;
+  const el=document.getElementById('postex-subbody');
+  if(el&&_postexTab==='cpr')el.innerHTML=_renderPostexCPR();
+  showToast('CPR fetch started — this runs in the background (~1–2 min for a batch).');
+  try{await fetch('/.netlify/functions/postex-payments-background?limit=1500');}catch(e){/* background 202 */}
+  setTimeout(async()=>{
+    postexOrdersLoaded=false;_postexLoading=null;
+    try{localStorage.removeItem(_POSTEX_CACHE_KEY);}catch(e){}
+    await loadPostexData();
+    _postexCprFetching=false;
+    if((typeof currentPage==='undefined'||currentPage==='fulfillment')&&_fulfillSection==='postex')_postexInject();
+    showToast('CPR data refreshed ✓');
+  },120000);
+};
 
 // Animate the loading bar toward real progress (month queries completing),
 // creeping smoothly so it never looks stuck; stops when the DOM is gone.

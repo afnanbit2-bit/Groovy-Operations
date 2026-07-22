@@ -194,4 +194,80 @@ async function debugFirstChunk({ token, fromDate, toDate }) {
   return { httpStatus: w.httpStatus, chunk: chunks[0], data: redact(dbg) };
 }
 
-module.exports = { getDb, syncRange, debugFirstChunk, defaultRange, isoDate, statusCategory, normalize };
+// ── Payment / CPR enrichment (section 3.14 Payment Status API) ──────
+// One call per tracking number — there is no bulk CPR endpoint — so enrich
+// incrementally: only delivered/returned parcels, only until they are settled,
+// rate-limited via a small concurrency pool. Each call returns the CPR numbers
+// (cprNumber_1 = upfront receipt, cprNumber_2 = reserve receipt), the settle
+// flag and dates, which we merge onto the parcel doc.
+const POSTEX_PAYMENT_BASE = "https://api.postex.pk/services/integration/api/order/v1/payment-status/";
+
+async function fetchPaymentStatus(token, trackingNumber) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const r = await fetch(POSTEX_PAYMENT_BASE + encodeURIComponent(trackingNumber), { method: "GET", headers: { token }, signal: ctrl.signal });
+    const data = await r.json().catch(() => ({ _nonJson: true }));
+    return { httpStatus: r.status, data };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function enrichPayments({ token, limit = 1000, concurrency = 5 }) {
+  const start = Date.now();
+  const db = getDb();
+  // Candidates: delivered/returned parcels not yet marked settled. Project only
+  // the fields we need so the scan stays cheap even at tens of thousands of docs.
+  const snap = await db.collection("postex_orders")
+    .where("statusCategory", "in", ["delivered", "returned"])
+    .select("trackingNumber", "settle")
+    .get();
+  const candidates = [];
+  snap.forEach((doc) => {
+    const d = doc.data();
+    if (d.settle === true) return;                 // already settled + enriched
+    candidates.push({ id: doc.id, trackingNumber: d.trackingNumber || doc.id });
+  });
+  const batch = candidates.slice(0, limit);
+
+  let enriched = 0, settled = 0, errors = 0, notFound = 0;
+  let idx = 0;
+  async function worker() {
+    while (idx < batch.length) {
+      const c = batch[idx++];
+      try {
+        const { httpStatus, data } = await fetchPaymentStatus(token, c.trackingNumber);
+        if (httpStatus === 404) { notFound++; continue; }
+        const dist = data && data.dist;
+        if (dist && (dist.trackingNumber || dist.orderRefNumber)) {
+          await db.collection("postex_orders").doc(c.id).set({
+            settle: dist.settle === true,
+            settlementDate: dist.settlementDate || null,
+            upfrontPaymentDate: dist.upfrontPaymentDate || null,
+            cprNumber_1: dist.cprNumber_1 || null,
+            reservePaymentDate: dist.reservePaymentDate || null,
+            cprNumber_2: dist.cprNumber_2 || null,
+            cprCheckedAt: Date.now(),
+          }, { merge: true });
+          enriched++;
+          if (dist.settle === true) settled++;
+        }
+      } catch (e) { errors++; }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, batch.length || 1) }, () => worker()));
+
+  const summary = {
+    lastRun: Date.now(),
+    scope: "payments",
+    candidates: candidates.length,
+    processed: batch.length,
+    enriched, settled, notFound, errors,
+    durationMs: Date.now() - start,
+  };
+  await db.collection("postex_sync_meta").doc("payments_run").set(summary, { merge: true });
+  return summary;
+}
+
+module.exports = { getDb, syncRange, debugFirstChunk, defaultRange, isoDate, statusCategory, normalize, enrichPayments };
