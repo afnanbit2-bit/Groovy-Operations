@@ -425,6 +425,10 @@ let _postexError=null;          // last read error message (surfaced in the UI)
 let _postexTab='overview';      // PostEx sub-tab: 'overview' | 'pipeline' | 'cohort'
 let _postexPipeMode='all';      // pipeline scope: 'all' | 'flight' (in-flight only)
 let _postexCohortPeriod='weekly'; // cohort bucket: 'weekly' | 'monthly'
+let _postexProgressTimer=null;  // loading-bar animation interval
+let _postexProgressPct=0;       // displayed loading %
+let _postexLoadDone=0;          // month queries resolved so far
+let _postexLoadTotal=1;         // month queries in flight
 
 // The whole collection can exceed Firestore's 10k single-query limit, and the
 // cursor helpers (startAfter) aren't bridged to window. So page by calendar
@@ -447,11 +451,15 @@ async function loadPostexData(){
   _postexError=null;
   try{
     // Race against a timeout so a hung read surfaces an error + retry rather
-    // than leaving the tab on "Loading…" forever.
-    const load=Promise.all(_postexMonths().map(([y,mo])=>{
+    // than leaving the tab on "Loading…" forever. Each month query bumps a
+    // counter so the loading bar reflects real progress.
+    const months=_postexMonths();
+    _postexLoadTotal=months.length;_postexLoadDone=0;
+    const load=Promise.all(months.map(([y,mo])=>{
       const lo=`${y}-${String(mo).padStart(2,'0')}-01`;
       const hi=mo===12?`${y+1}-01-01`:`${y}-${String(mo+1).padStart(2,'0')}-01`;
-      return getDocs(query(collection(db,'postex_orders'),where('transactionDate','>=',lo),where('transactionDate','<',hi),limit(10000)));
+      return getDocs(query(collection(db,'postex_orders'),where('transactionDate','>=',lo),where('transactionDate','<',hi),limit(10000)))
+        .then(s=>{_postexLoadDone++;return s;});
     }));
     const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timed out reading courier data — network may be slow. Tap Retry.')),20000));
     const snaps=await Promise.race([load,timeout]);
@@ -544,9 +552,14 @@ function _pxKpi(label,val,sub,color){
 // PostEx tab wrapper — sync bar + sub-tabs (Overview | Pipeline | …) + body.
 function _renderPostexTab(){
   if(!postexOrdersLoaded)
-    return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-      <span style="font-size:14px;color:var(--muted)">Loading PostEx courier data…</span>
-      <button class="btn-sm" onclick="window.fulfillRetryPostex()">Retry</button></div></div>`;
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+        <span style="font-size:14px;color:var(--muted)">Loading PostEx courier data… <b id="postex-progress-pct" style="color:#111">${Math.round(_postexProgressPct)||0}%</b></span>
+        <button class="btn-sm" onclick="window.fulfillRetryPostex()">Retry</button>
+      </div>
+      <div style="height:8px;background:#F0F0F0;border-radius:6px;overflow:hidden">
+        <div id="postex-progress-fill" style="height:100%;width:${Math.max(6,_postexProgressPct)}%;background:#111;border-radius:6px;transition:width .25s ease"></div>
+      </div></div>`;
   // Read failed outright (permissions, timeout, etc.).
   if(_postexError)
     return `${_postexSyncBar()}<div class="card" style="border-left:3px solid var(--accent-urgent)">
@@ -818,11 +831,31 @@ function _renderPostexCohort(){
       <div style="font-size:11px;color:var(--muted);margin-top:6px">Return % = returned ÷ (delivered + returned). "Resolved" = share of the cohort that reached an outcome; ~ marks cohorts under 90% resolved (rate still provisional).</div>`)}`;
 }
 
+// Animate the loading bar toward real progress (month queries completing),
+// creeping smoothly so it never looks stuck; stops when the DOM is gone.
+function _postexStartProgress(){
+  _postexStopProgress();
+  _postexProgressPct=6;
+  _postexProgressTimer=setInterval(()=>{
+    const f=document.getElementById('postex-progress-fill');
+    const p=document.getElementById('postex-progress-pct');
+    if(!f&&!p){_postexStopProgress();return;}          // loading DOM replaced
+    const base=10+80*(_postexLoadDone/(_postexLoadTotal||1)); // real signal
+    const ceil=Math.min(base+12,95);
+    _postexProgressPct=Math.min(ceil,_postexProgressPct+Math.max(0.6,(ceil-_postexProgressPct)*0.14));
+    if(f)f.style.width=_postexProgressPct.toFixed(0)+'%';
+    if(p)p.textContent=_postexProgressPct.toFixed(0)+'%';
+  },150);
+}
+function _postexStopProgress(){if(_postexProgressTimer){clearInterval(_postexProgressTimer);_postexProgressTimer=null;}}
+
 // After a PostEx-tab render, top up its body once data is loaded.
 async function _postexInject(){
   if(typeof currentPage!=='undefined'&&currentPage!=='fulfillment')return;
+  if(!postexOrdersLoaded)_postexStartProgress();       // animate while fetching
   try{ await _postexEnsure(); }
   catch(e){ _postexError=(e&&e.message)?e.message:String(e); postexOrdersLoaded=true; }
+  _postexStopProgress();
   if(typeof currentPage!=='undefined'&&currentPage!=='fulfillment')return;
   if(_fulfillSection!=='postex')return;
   const el=document.getElementById('fulfill-body');
@@ -836,7 +869,7 @@ function _postexSchedule(){if(typeof _postexInject==='function')setTimeout(_post
 
 // Reset + reload PostEx data (used by Retry buttons).
 window.fulfillRetryPostex=function(){
-  postexOrdersLoaded=false;_postexLoading=null;_postexError=null;_postexIdxCache=null;
+  postexOrdersLoaded=false;_postexLoading=null;_postexError=null;_postexIdxCache=null;_postexProgressPct=0;
   const el=document.getElementById('fulfill-body');
   if(el)el.innerHTML=_renderPostexTab();  // shows the loading state
   _postexSchedule();
