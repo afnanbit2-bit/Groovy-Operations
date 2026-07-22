@@ -422,8 +422,9 @@ let _postexLoading=null;        // in-flight load promise (dedupe concurrent cal
 let _postexIdxCache=null;       // memoised per-day rollup
 let _postexSyncing=false;       // a manual "Sync now" is in flight
 let _postexError=null;          // last read error message (surfaced in the UI)
-let _postexTab='overview';      // PostEx sub-tab: 'overview' | 'pipeline'
+let _postexTab='overview';      // PostEx sub-tab: 'overview' | 'pipeline' | 'cohort'
 let _postexPipeMode='all';      // pipeline scope: 'all' | 'flight' (in-flight only)
+let _postexCohortPeriod='weekly'; // cohort bucket: 'weekly' | 'monthly'
 
 // The whole collection can exceed Firestore's 10k single-query limit, and the
 // cursor helpers (startAfter) aren't bridged to window. So page by calendar
@@ -566,15 +567,15 @@ function _renderPostexTab(){
   }
 
   const sub=(id,label)=>`<button class="tab-btn${_postexTab===id?' active':''}" onclick="window.switchPostexTab('${id}')">${label}</button>`;
-  const body=_postexTab==='pipeline'?_renderPostexPipeline():_renderPostexOverview();
+  const body=_postexTab==='pipeline'?_renderPostexPipeline():_postexTab==='cohort'?_renderPostexCohort():_renderPostexOverview();
   return `${_postexSyncBar()}
-    <div class="tab-bar" style="margin-bottom:14px">${sub('overview','Overview')}${sub('pipeline','Pipeline')}</div>
+    <div class="tab-bar" style="margin-bottom:14px">${sub('overview','Overview')}${sub('pipeline','Pipeline')}${sub('cohort','Return Rate')}</div>
     <div id="postex-subbody">${body}</div>`;
 }
 
 // Switch PostEx sub-tab and re-render the section body.
 window.switchPostexTab=function(tab){
-  _postexTab=(tab==='pipeline'?'pipeline':'overview');
+  _postexTab=(['pipeline','cohort'].includes(tab)?tab:'overview');
   const el=document.getElementById('fulfill-body');
   if(el)el.innerHTML=_renderPostexTab();
 };
@@ -715,6 +716,106 @@ function _renderPostexPipeline(){
       </table></div>
       <div style="font-size:11px;color:var(--muted);margin-top:6px">Any "In transit (fallback)" row is a status with no specific stage matcher — tell me and I'll add it.</div>
     </details>`;
+}
+
+// ── PostEx › Return Rate (true cohort) ──
+// Group DISPATCHED parcels by their dispatch period (week/month) and track how
+// that cohort resolved. Return rate = returned / (delivered+returned) = of the
+// parcels that reached an outcome, the share that came back. Recent cohorts are
+// still "maturing" (many parcels unresolved), so their rate is provisional —
+// the headline "true" rate uses only cohorts that are ≥90% resolved.
+function _postexCohorts(period){
+  const idx=_postexDayIndex();                 // per dispatch-day rollup
+  const map={};
+  for(const day of Object.keys(idx)){
+    const key=period==='monthly'?day.slice(0,7):_fulfillMonday(day);
+    const m=map[key]||(map[key]={key,ship:0,delivered:0,returned:0,inTransit:0,cod:0});
+    const d=idx[day];
+    m.ship+=d.ship;m.delivered+=d.delivered;m.returned+=d.returned;m.inTransit+=d.inTransit;m.cod+=d.cod;
+  }
+  return Object.values(map).sort((a,b)=>a.key.localeCompare(b.key));
+}
+const _postexMature=c=>c.ship>0&&(c.delivered+c.returned)/c.ship>=0.9;
+window.setPostexCohortPeriod=function(p){
+  _postexCohortPeriod=(p==='monthly'?'monthly':'weekly');
+  const el=document.getElementById('postex-subbody');
+  if(el)el.innerHTML=_renderPostexCohort();
+};
+// Vertical bar chart of cohort return rate over time (immature cohorts faded).
+function _postexCohortChart(cohorts,period){
+  const rated=cohorts.filter(c=>c.delivered+c.returned>0);
+  if(!rated.length)return '<div style="font-size:13px;color:var(--muted)">Not enough resolved parcels yet to chart.</div>';
+  const rates=rated.map(c=>100*c.returned/(c.delivered+c.returned));
+  const ceil=Math.max(20,_niceCeil(Math.max(...rates)));
+  const H=118;
+  const col=c=>{
+    const resolved=c.delivered+c.returned;
+    const rate=resolved?100*c.returned/resolved:0;
+    const mature=_postexMature(c);
+    const h=Math.max(2,Math.round(H*Math.min(rate,ceil)/ceil));
+    const color=_fulfillRateColor(rate);
+    const lbl=period==='monthly'?_fulfillMonthLabel(c.key):_fulfillFmtDateShort(c.key);
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:50px">
+        <div style="font-size:12px;font-weight:700;color:${color}">${mature?'':'~'}${rate.toFixed(0)}%</div>
+        <div style="width:28px;height:${H}px;background:#F3F3F3;border-radius:5px;display:flex;align-items:flex-end;overflow:hidden">
+          <div title="${mature?'':'still maturing — '}${_fnum(c.returned)} of ${_fnum(resolved)} resolved returned" style="width:100%;height:${h}px;background:${color};opacity:${mature?1:0.4};border-radius:5px 5px 0 0"></div>
+        </div>
+        <div style="font-size:10px;color:var(--muted);text-align:center;line-height:1.1;white-space:nowrap">${lbl}</div>
+      </div>`;
+  };
+  return `<div style="overflow-x:auto"><div style="display:flex;gap:8px;align-items:flex-end;padding:4px 2px;min-width:min-content">${rated.map(col).join('')}</div></div>
+    <div style="font-size:11px;color:var(--muted);margin-top:8px">Faded/~ bars are recent cohorts still maturing (&lt;90% resolved) — their rate will move as parcels settle.</div>`;
+}
+function _renderPostexCohort(){
+  const period=_postexCohortPeriod;
+  const cohorts=_postexCohorts(period);
+  if(!cohorts.length)return '<div class="empty">No dispatched parcels yet.</div>';
+  const S=f=>cohorts.reduce((a,c)=>a+f(c),0);
+  const totShip=S(c=>c.ship),totDel=S(c=>c.delivered),totRet=S(c=>c.returned),totIn=S(c=>c.inTransit);
+  const totRes=totDel+totRet;
+  const portfolio=totRes?100*totRet/totRes:0;
+  const mature=cohorts.filter(_postexMature);
+  const mRet=mature.reduce((a,c)=>a+c.returned,0),mRes=mature.reduce((a,c)=>a+c.delivered+c.returned,0);
+  const trueRate=mRes?100*mRet/mRes:portfolio;
+  const rc=_fulfillRateColor(trueRate);
+
+  const pBtn=(p,l)=>`<button class="filter-chip${period===p?' active':''}" style="padding:4px 11px" onclick="window.setPostexCohortPeriod('${p}')">${l}</button>`;
+  const th=(t,a)=>`<th style="padding:7px 6px;border-bottom:2px solid var(--border);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;text-align:${a||'left'}">${t}</th>`;
+  const td=(v,a,x)=>`<td style="padding:8px 6px;text-align:${a||'left'};${x||''}">${v}</td>`;
+  const rows=[...cohorts].reverse().map(c=>{
+    const resolved=c.delivered+c.returned;
+    const rate=resolved?100*c.returned/resolved:null;
+    const matPct=c.ship?Math.round(100*resolved/c.ship):0;
+    const mat=_postexMature(c);
+    const lbl=period==='monthly'?_fulfillMonthLabel(c.key):'Wk '+_fulfillFmtDateShort(c.key);
+    const rateCell=rate==null?'<span style="color:var(--muted)">—</span>'
+      :`<span style="font-weight:700;color:${_fulfillRateColor(rate)}">${mat?'':'~'}${rate.toFixed(1)}%</span>`;
+    return `<tr style="border-bottom:1px solid #f5f5f5;font-size:13.5px">
+        ${td(lbl,'left','font-weight:600;white-space:nowrap')}
+        ${td(_fnum(c.ship),'right')}
+        ${td(_fnum(c.delivered),'right','color:var(--muted)')}
+        ${td(_fnum(c.returned),'right')}
+        ${td(c.inTransit?_fnum(c.inTransit):'—','right','color:var(--muted)')}
+        ${td(rateCell,'right')}
+        ${td(`<span style="font-size:11px;color:${mat?'var(--accent-success)':'var(--accent-warning)'}">${matPct}%</span>`,'right')}
+      </tr>`;
+  }).join('');
+
+  const sec=(title,body,extra)=>`<div class="card" style="margin-bottom:14px"><div class="card-title" style="font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">${title}${extra||''}</div>${body}</div>`;
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+      ${_pxKpi('True return rate',trueRate.toFixed(1)+'%',`mature cohorts · ${_fnum(mRes)} resolved`,rc)}
+      ${_pxKpi('Portfolio rate',portfolio.toFixed(1)+'%',`all ${_fnum(totRes)} resolved`,'#111')}
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:14px">
+      ${_pxKpi('Dispatched',_fnum(totShip),'in these cohorts','#111')}
+      ${_pxKpi('Returned',_fnum(totRet),'came back','#7B1F2A')}
+      ${_pxKpi('Unresolved',_fnum(totIn),'not counted yet','#B47512')}
+    </div>
+    ${sec('Return rate by dispatch '+(period==='monthly'?'month':'week'),_postexCohortChart(cohorts,period),`<span style="display:inline-flex;gap:4px">${pBtn('weekly','Weekly')}${pBtn('monthly','Monthly')}</span>`)}
+    ${sec('Cohort detail',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
+        <thead><tr>${th(period==='monthly'?'Month':'Week of')}${th('Dispatched','right')}${th('Delivered','right')}${th('Returned','right')}${th('In transit','right')}${th('Return %','right')}${th('Resolved','right')}</tr></thead>
+        <tbody>${rows}</tbody></table></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">Return % = returned ÷ (delivered + returned). "Resolved" = share of the cohort that reached an outcome; ~ marks cohorts under 90% resolved (rate still provisional).</div>`)}`;
 }
 
 // After a PostEx-tab render, top up its body once data is loaded.
