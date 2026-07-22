@@ -421,15 +421,17 @@ let postexMeta=null;            // postex_sync_meta/last_run summary
 let _postexLoading=null;        // in-flight load promise (dedupe concurrent calls)
 let _postexIdxCache=null;       // memoised per-day rollup
 let _postexSyncing=false;       // a manual "Sync now" is in flight
+let _postexError=null;          // last read error message (surfaced in the UI)
 
 async function loadPostexData(){
+  _postexError=null;
   try{
-    // No orderBy on a nullable field would drop docs; transactionDate is always
-    // present, so ordering by it keeps the most recent within the cap.
-    const snap=await getDocs(query(collection(db,'postex_orders'),orderBy('transactionDate','desc'),limit(20000)));
+    // Plain limit (no orderBy) — a single-field order can silently drop docs
+    // and adds an index dependency we don't need; total volume is under the cap.
+    const snap=await getDocs(query(collection(db,'postex_orders'),limit(20000)));
     postexOrders=snap.docs.map(d=>d.data());
     postexOrdersLoaded=true;_postexIdxCache=null;
-  }catch(e){console.warn('[fulfillment] postex load failed',e);postexOrders=[];postexOrdersLoaded=true;_postexIdxCache=null;}
+  }catch(e){console.warn('[fulfillment] postex load failed',e);postexOrders=[];postexOrdersLoaded=true;_postexIdxCache=null;_postexError=(e&&e.message)?e.message:String(e);}
   try{
     const m=await getDoc(doc(db,'postex_sync_meta','last_run'));
     postexMeta=(m&&typeof m.exists==='function'?m.exists():m&&m.exists)?m.data():null;
@@ -507,8 +509,21 @@ function _postexSyncBar(){
 function _renderPostexTab(){
   if(!postexOrdersLoaded)
     return `<div class="card"><div style="font-size:14px;color:var(--muted)">Loading PostEx courier data…</div></div>`;
-  if(!postexOrders.length)
+  // Read failed outright (usually a permissions error).
+  if(_postexError)
+    return `${_postexSyncBar()}<div class="card" style="border-left:3px solid var(--accent-urgent)">
+      <div style="font-size:14px;font-weight:800;color:var(--accent-urgent);margin-bottom:6px">Couldn't read courier data</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:6px">${_postexError}</div>
+      <div style="font-size:13px;color:var(--muted)">If this mentions <i>permissions</i>, the Firestore read rule for <code>postex_orders</code> hasn't been published yet.</div></div>`;
+  if(!postexOrders.length){
+    // The sync (Admin SDK) wrote parcels, but the client read 0 → a rules gap.
+    const wrote=postexMeta&&(postexMeta.written||postexMeta.fetched)||0;
+    if(wrote)
+      return `${_postexSyncBar()}<div class="card" style="border-left:3px solid var(--accent-warning)">
+        <div style="font-size:14px;font-weight:800;color:var(--accent-warning);margin-bottom:6px">Synced ${_fnum(wrote)} parcels — but this account can't read them yet</div>
+        <div style="font-size:13px;color:var(--muted)">The last sync wrote <b>${_fnum(wrote)}</b> parcels server-side, yet the app read back <b>0</b>. That means the <code>postex_orders</code> read rule needs publishing in the Firebase console. Once it's live, hit <b>Sync now</b> or reload.</div></div>`;
     return `${_postexSyncBar()}<div class="empty">No PostEx parcels synced yet.<br><br>Hit <b>Sync now</b> above, or the scheduled sync will pull them within a few hours.</div>`;
+  }
 
   const s=_postexOverview();
   const settled=s.delivered+s.returned;             // completed journeys
@@ -607,15 +622,14 @@ function _fulfillMissedBanner(){
   </div>`;
 }
 
-// Primary section switch (Daily Reporting ⇄ PostEx) — two friendly cards.
+// Primary section switch (Daily Reporting ⇄ PostEx) — a compact segmented pill.
 function _fulfillSectionBar(){
-  const card=(id,label,sub)=>`<button onclick="window.switchFulfillSection('${id}')"
-      style="flex:1;min-width:150px;text-align:left;padding:11px 15px;border:1.5px solid ${_fulfillSection===id?'#111':'var(--border)'};background:${_fulfillSection===id?'#111':'#fff'};color:${_fulfillSection===id?'#fff':'var(--text)'};border-radius:12px;cursor:pointer;font-family:inherit;transition:all .12s">
-      <div style="font-size:14px;font-weight:800">${label}</div>
-      <div style="font-size:11px;opacity:.7;margin-top:1px">${sub}</div></button>`;
-  return `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-      ${card('reporting','Daily Reporting','Manual dispatch & returns')}
-      ${card('postex','PostEx','Live courier data')}
+  const seg=(id,icon,label)=>`<button onclick="window.switchFulfillSection('${id}')"
+      style="display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border:none;border-radius:9px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;transition:all .12s;
+      background:${_fulfillSection===id?'#111':'transparent'};color:${_fulfillSection===id?'#fff':'var(--muted)'};box-shadow:${_fulfillSection===id?'0 1px 3px rgba(0,0,0,.18)':'none'}">
+      <span style="font-size:14px">${icon}</span>${label}</button>`;
+  return `<div style="display:inline-flex;gap:3px;background:#F0F0F0;border-radius:12px;padding:4px;margin-bottom:16px">
+      ${seg('reporting','📋','Daily Reporting')}${seg('postex','⚡','PostEx')}
     </div>`;
 }
 
