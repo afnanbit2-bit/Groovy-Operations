@@ -19,8 +19,10 @@
 const admin = require("firebase-admin");
 
 const POSTEX_BASE = "https://api.postex.pk/services/integration/api/order/v1/get-all-order";
-const LOOKBACK_DAYS = 21;   // re-pull recent orders so their status stays fresh
+const LOOKBACK_DAYS = 10;   // re-pull recent orders so their status stays fresh
 const WRITE_CHUNK = 400;    // Firestore batch cap is 500; stay under it
+const CHUNK_DAYS = 4;       // fetch the window in <=4-day slices to bound payload size
+const FETCH_TIMEOUT_MS = 6000;  // per-window fetch abort guard
 
 // ── Firebase Admin ──────────────────────────────────────────────
 let _db;
@@ -44,26 +46,41 @@ function statusCategory(s) {
   if (x.includes("unbooked")) return "pending";
   if (x.includes("delivered")) return "delivered";           // "Delivered" only (not "Out For Delivery")
   if (x.includes("return")) return "returned";               // Returned, Out For Return
-  if (x.includes("expired") || x.includes("un-assigned") || x.includes("unassigned")) return "cancelled";
+  if (x.includes("cancel") || x.includes("expired") || x.includes("un-assigned") || x.includes("unassigned")) return "cancelled";
   return "in_transit";  // Booked, Picked, Warehouse, Out For Delivery, Attempted, En-Route, Delivery Under Review
 }
 
-// Call get-all-order. The guide shows the params as a JSON body labelled "GET";
-// tenants vary, so try POST+JSON first, then GET+query, then GET+body. Returns
-// { method, httpStatus, data } of the first attempt that yields orders (or the
-// last attempt for diagnostics).
-async function fetchOrders(token, fromDate, toDate) {
-  // Confirmed via live probe: GET only, params startDate/endDate + orderStatusID.
-  const qs = `?orderStatusId=0&startDate=${fromDate}&endDate=${toDate}`;
-  const attempts = [];
+// Fetch one date window from get-all-order.
+// Confirmed via live probe: GET only, params orderStatusId (case-sensitive) +
+// startDate + endDate. A single window can return hundreds of orders, so guard
+// each call with an AbortController timeout — a hung fetch must not eat the
+// whole function budget (Netlify caps sync/scheduled invocations ~10s).
+async function fetchWindow(token, startDate, endDate) {
+  const qs = `?orderStatusId=0&startDate=${startDate}&endDate=${endDate}`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    const r = await fetch(POSTEX_BASE + qs, { method: "GET", headers: { token } });
-    const d = await r.json().catch(() => ({ _nonJson: true }));
-    attempts.push({ method: "GET", httpStatus: r.status, data: d });
-  } catch (e) {
-    attempts.push({ method: "GET", error: String(e.message || e) });
+    const r = await fetch(POSTEX_BASE + qs, { method: "GET", headers: { token }, signal: ctrl.signal });
+    const data = await r.json().catch(() => ({ _nonJson: true }));
+    return { httpStatus: r.status, data };
+  } finally {
+    clearTimeout(timer);
   }
-  return { attempts, best: attempts[0] || {} };
+}
+
+// Split an inclusive [fromDate,toDate] range into <= CHUNK_DAYS slices so no
+// single fetch pulls a huge (=slow, memory-heavy) payload. Noon anchoring
+// dodges any DST/offset edge on the day boundaries.
+function dateChunks(fromDate, toDate) {
+  const DAY = 86400000;
+  const fromMs = new Date(`${fromDate}T12:00:00`).getTime();
+  const toMs = new Date(`${toDate}T12:00:00`).getTime();
+  const out = [];
+  for (let s = fromMs; s <= toMs; s += CHUNK_DAYS * DAY) {
+    const e = Math.min(s + (CHUNK_DAYS - 1) * DAY, toMs);
+    out.push([isoDate(new Date(s)), isoDate(new Date(e))]);
+  }
+  return out;
 }
 
 // Recursively blank out customer PII so ?debug output never leaks it.
@@ -100,6 +117,7 @@ function normalize(order) {
     reversalFee: num(order.reversalFee),
     reversalTax: num(order.reversalTax),
     upfrontPayment: num(order.upfrontPayment),
+    upfrontPaymentDate: order.upfrontPaymentDate || null,   // when PostEx released COD
     reservePayment: num(order.reservePayment),
     balancePayment: num(order.balancePayment),
     invoiceDivision: num(order.invoiceDivision),
@@ -120,27 +138,48 @@ exports.handler = async function (event) {
   const today = new Date();
   const toDate = q.toDate || isoDate(today);
   const fromDate = q.fromDate || (() => { const d = new Date(today); d.setDate(d.getDate() - (LOOKBACK_DAYS - 1)); return isoDate(d); })();
+  const chunks = dateChunks(fromDate, toDate);
 
-  let result;
-  try {
-    result = await fetchOrders(token, fromDate, toDate);
-  } catch (e) {
-    return { statusCode: 502, body: JSON.stringify({ error: "PostEx request failed", detail: String(e.message || e) }) };
-  }
-  const data = (result && result.best && result.best.data) || {};
-
-  // ?debug=1 → PII-redacted, dist truncated to 2 rows so the field shape can be
-  // confirmed once without leaking customer data or dumping every order.
+  // ?debug=1 → fetch only the first (small, fast) chunk, redact PII and truncate
+  // dist to 2 rows so the field shape can be confirmed without leaking customer
+  // data, dumping every order, or risking a wide-window timeout.
   if (q.debug) {
-    const dbg = JSON.parse(JSON.stringify(data));
+    let w;
+    try {
+      w = await fetchWindow(token, chunks[0][0], chunks[0][1]);
+    } catch (e) {
+      return { statusCode: 502, body: JSON.stringify({ error: "PostEx request failed", detail: String(e.message || e) }) };
+    }
+    const dbg = JSON.parse(JSON.stringify(w.data || {}));
     if (Array.isArray(dbg.dist)) { dbg._distLength = dbg.dist.length; dbg.dist = dbg.dist.slice(0, 2); }
     return { statusCode: 200, headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ httpStatus: result && result.best && result.best.httpStatus, data: redact(dbg) }, null, 2) };
+      body: JSON.stringify({ httpStatus: w.httpStatus, chunk: chunks[0], data: redact(dbg) }, null, 2) };
   }
 
-  // dist rows may be flat orders or wrapped as { trackingResponse: {...} }.
-  const rows = Array.isArray(data.dist) ? data.dist : [];
-  const orders = rows.map((r) => (r && r.trackingResponse ? r.trackingResponse : r)).filter((o) => o && o.trackingNumber);
+  // Fetch every chunk, deduping by trackingNumber (windows are disjoint but a
+  // parcel could in theory appear twice). A failed/timed-out chunk is recorded
+  // and skipped, not fatal — partial freshness beats a hard 502.
+  const byTracking = new Map();
+  const fetchErrors = [];
+  let postexStatus = null, postexMessage = null;
+  for (const [s, e] of chunks) {
+    let w;
+    try {
+      w = await fetchWindow(token, s, e);
+    } catch (err) {
+      fetchErrors.push({ chunk: [s, e], error: String((err && err.message) || err) });
+      continue;
+    }
+    const data = w.data || {};
+    postexStatus = data.statusCode || postexStatus;
+    postexMessage = data.statusMessage || postexMessage;
+    const rows = Array.isArray(data.dist) ? data.dist : [];
+    for (const r of rows) {
+      const o = r && r.trackingResponse ? r.trackingResponse : r;   // rows may be wrapped
+      if (o && o.trackingNumber) byTracking.set(String(o.trackingNumber), o);
+    }
+  }
+  const orders = [...byTracking.values()];
 
   const db = getDb();
   const byStatus = {};
@@ -159,12 +198,13 @@ exports.handler = async function (event) {
   const summary = {
     lastRun: Date.now(),
     fromDate, toDate,
-    method: result && result.best && result.best.method,
-    postexStatus: data.statusCode || null,
-    postexMessage: data.statusMessage || null,
+    chunks: chunks.length,
+    postexStatus,
+    postexMessage,
     fetched: orders.length,
     written,
     byStatus,
+    fetchErrors,
     durationMs: Date.now() - start,
   };
   await db.collection("postex_sync_meta").doc("last_run").set(summary, { merge: true });
