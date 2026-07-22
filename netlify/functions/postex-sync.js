@@ -56,23 +56,25 @@ async function fetchOrders(token, fromDate, toDate) {
   const headers = { token, "Content-Type": "application/json" };
   const body = JSON.stringify({ orderStatusID: 0, fromDate, toDate });
   const qs = `?orderStatusID=0&fromDate=${fromDate}&toDate=${toDate}`;
-  const attempts = [
+  const plans = [
     { method: "POST+json", url: POSTEX_BASE, opts: { method: "POST", headers, body } },
     { method: "GET+query", url: POSTEX_BASE + qs, opts: { method: "GET", headers } },
-    { method: "GET+body", url: POSTEX_BASE, opts: { method: "GET", headers, body } },
   ];
-  let last = null;
-  for (const a of attempts) {
+  const attempts = [];
+  let best = null;
+  for (const a of plans) {
     try {
       const r = await fetch(a.url, a.opts);
       const d = await r.json().catch(() => ({ _nonJson: true }));
-      last = { method: a.method, httpStatus: r.status, data: d };
-      if (d && Array.isArray(d.dist) && d.dist.length) return last;
+      const at = { method: a.method, httpStatus: r.status, data: d };
+      attempts.push(at);
+      if (!best && d && Array.isArray(d.dist) && d.dist.length) best = at;
     } catch (e) {
-      last = { method: a.method, error: String(e.message || e) };
+      attempts.push({ method: a.method, error: String(e.message || e) });
     }
   }
-  return last || { method: "none", data: null };
+  if (!best) best = attempts.find((x) => x.data && Array.isArray(x.data.dist)) || attempts[0] || {};
+  return { attempts, best };
 }
 
 // Normalise one PostEx order (dropping customer PII) into a Firestore doc.
@@ -124,13 +126,13 @@ exports.handler = async function (event) {
   } catch (e) {
     return { statusCode: 502, body: JSON.stringify({ error: "PostEx request failed", detail: String(e.message || e) }) };
   }
-  const data = (result && result.data) || {};
+  const data = (result && result.best && result.best.data) || {};
 
-  // ?debug=1 → return exactly what PostEx replied (which method worked, HTTP
-  // status, and the raw response) so the shape can be confirmed once.
+  // ?debug=1 → return every attempt PostEx made (method, HTTP status, raw body)
+  // so the working shape can be confirmed once.
   if (q.debug) {
     return { statusCode: 200, headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tried: result && result.method, httpStatus: result && result.httpStatus, error: result && result.error, data }, null, 2) };
+      body: JSON.stringify({ attempts: result && result.attempts }, null, 2) };
   }
 
   // dist rows may be flat orders or wrapped as { trackingResponse: {...} }.
@@ -154,7 +156,7 @@ exports.handler = async function (event) {
   const summary = {
     lastRun: Date.now(),
     fromDate, toDate,
-    method: result && result.method,
+    method: result && result.best && result.best.method,
     postexStatus: data.statusCode || null,
     postexMessage: data.statusMessage || null,
     fetched: orders.length,
