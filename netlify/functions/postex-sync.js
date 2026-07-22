@@ -54,7 +54,7 @@ function statusCategory(s) {
 // last attempt for diagnostics).
 async function fetchOrders(token, fromDate, toDate) {
   // Confirmed via live probe: GET only, params startDate/endDate + orderStatusID.
-  const qs = `?orderStatusID=0&startDate=${fromDate}&endDate=${toDate}`;
+  const qs = `?orderStatusId=0&startDate=${fromDate}&endDate=${toDate}`;
   const attempts = [];
   try {
     const r = await fetch(POSTEX_BASE + qs, { method: "GET", headers: { token } });
