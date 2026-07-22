@@ -399,6 +399,161 @@ async function loadFulfillmentData(){
   }
 }
 
+// ══════════════════════════════════════════════════════════════════════
+//  PART 2 — PostEx courier link (READ-ONLY): dispatch auto-fill + reconcile
+//  ---------------------------------------------------------------------
+//  postex_orders is populated by the Netlify sync function (one PII-free doc
+//  per parcel). Here we only READ it, roll it up per dispatch day, and use it
+//  to (a) show courier truth beside Umair's manual entry and (b) offer a
+//  one-tap fill of the POST-EX dispatch row. Manual entry stays the source of
+//  truth — PostEx never overwrites a saved report. Returns-by-calendar-day is
+//  deliberately NOT auto-filled: PostEx exposes only an order's CURRENT status,
+//  not when it flipped, so per-day returns is cohort analysis (a later part).
+// ══════════════════════════════════════════════════════════════════════
+let postexOrders=[];            // cached postex_orders docs (read-only)
+let postexOrdersLoaded=false;
+let postexMeta=null;            // postex_sync_meta/last_run summary
+let _postexLoading=null;        // in-flight load promise (dedupe concurrent calls)
+let _postexIdxCache=null;       // memoised per-day rollup
+let _postexSyncing=false;       // a manual "Sync now" is in flight
+
+async function loadPostexData(){
+  try{
+    // No orderBy on a nullable field would drop docs; transactionDate is always
+    // present, so ordering by it keeps the most recent within the cap.
+    const snap=await getDocs(query(collection(db,'postex_orders'),orderBy('transactionDate','desc'),limit(20000)));
+    postexOrders=snap.docs.map(d=>d.data());
+    postexOrdersLoaded=true;_postexIdxCache=null;
+  }catch(e){console.warn('[fulfillment] postex load failed',e);postexOrders=[];postexOrdersLoaded=true;_postexIdxCache=null;}
+  try{
+    const m=await getDoc(doc(db,'postex_sync_meta','last_run'));
+    postexMeta=(m&&typeof m.exists==='function'?m.exists():m&&m.exists)?m.data():null;
+  }catch(e){postexMeta=null;}
+}
+// Load once per session; returns a promise that resolves when data is ready.
+function _postexEnsure(){
+  if(postexOrdersLoaded)return Promise.resolve();
+  if(!_postexLoading)_postexLoading=loadPostexData();
+  return _postexLoading;
+}
+
+// Per-day dispatch rollup keyed on the ACTUAL dispatch day (courier pickup,
+// falling back to booking date). Only 'dispatched' parcels count; the status
+// split is cohort-to-date context ("of parcels dispatched that day, N are now
+// delivered / returned / still moving"), not per-day events.
+function _postexDayIndex(){
+  if(_postexIdxCache)return _postexIdxCache;
+  const idx={};
+  for(const o of postexOrders){
+    if(!o||!o.dispatched)continue;
+    const day=String(o.orderPickupDate||o.transactionDate||'').slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(day))continue;
+    const e=idx[day]||(idx[day]={ship:0,cod:0,delivered:0,returned:0,inTransit:0});
+    e.ship++;e.cod+=Number(o.cod||0);
+    const c=o.statusCategory;
+    if(c==='delivered')e.delivered++;
+    else if(c==='returned')e.returned++;
+    else e.inTransit++;
+  }
+  _postexIdxCache=idx;return idx;
+}
+
+// Humanise a lastRun timestamp → "just now" / "12m ago" / "3h ago" / "2d ago".
+function _postexAgo(ts){
+  if(!ts)return 'never';
+  const s=Math.max(0,Math.floor((Date.now()-ts)/1000));
+  if(s<90)return 'just now';
+  const m=Math.floor(s/60);if(m<60)return m+'m ago';
+  const h=Math.floor(m/60);if(h<24)return h+'h ago';
+  return Math.floor(h/24)+'d ago';
+}
+
+// The PostEx reference card shown above the entry form for one date.
+function _postexEntryCardHTML(date){
+  if(!postexOrdersLoaded)
+    return `<div class="card" style="margin-bottom:12px;font-size:13px;color:var(--muted)">Loading PostEx courier data…</div>`;
+  const d=_postexDayIndex()[date];
+  const syncLine=postexMeta&&postexMeta.lastRun
+    ?`<span style="font-size:11px;font-weight:500;color:var(--muted)">· synced ${_postexAgo(postexMeta.lastRun)}</span>`:'';
+  const head=`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:${d?'8px':'6px'}">
+      <span style="font-size:13px;font-weight:700;color:#7B1F2A;display:flex;align-items:center;gap:6px">⚡ PostEx courier ${syncLine}</span>
+      <button class="btn-sm" ${_postexSyncing?'disabled style="opacity:.5;cursor:progress"':''} onclick="window.fulfillSyncPostex()">${_postexSyncing?'Syncing…':'Sync now'}</button>
+    </div>`;
+  if(!d)
+    return `<div class="card" style="margin-bottom:12px;border-left:3px solid var(--border)">${head}
+      <div style="font-size:13px;color:var(--muted)">No PostEx parcels dispatched on ${_fulfillFmtDate(date)}.</div></div>`;
+  // Reconcile PostEx's count against the POST-EX dispatch rows in the form now.
+  let manual=0;
+  _fulfillActiveRows.d.forEach((r,i)=>{if(String(r.courier).toUpperCase().includes('POST-EX')){manual+=parseInt((document.getElementById('fd-d-'+i+'-ship')||{}).value)||0;}});
+  const delta=manual-d.ship;
+  const recon=manual===0?`<span style="color:var(--muted)">not entered yet</span>`
+    :delta===0?`<span style="color:var(--accent-success);font-weight:700">✓ matches your entry</span>`
+    :`<span style="color:var(--accent-warning);font-weight:700">you entered ${_fnum(manual)} (${delta>0?'+':''}${_fnum(delta)} vs PostEx)</span>`;
+  const chip=(label,val,color)=>`<div style="flex:1;min-width:72px;text-align:center;padding:8px 6px;background:#FAFAFA;border-radius:8px">
+      <div style="font-size:18px;font-weight:800;color:${color}">${_fnum(val)}</div>
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">${label}</div></div>`;
+  return `<div class="card" style="margin-bottom:12px;border-left:3px solid #7B1F2A">${head}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      ${chip('Dispatched',d.ship,'#111')}
+      ${chip('Delivered',d.delivered,'#14532D')}
+      ${chip('Returned',d.returned,'#7B1F2A')}
+      ${chip('In transit',d.inTransit,'#B47512')}
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">COD value <b style="color:#111">${_fRs(d.cod)}</b> · delivered/returned counts are cohort-to-date, not events on this day</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;border-top:1px dashed var(--border);padding-top:8px">
+      <span style="font-size:12px">Your POST-EX dispatch: ${recon}</span>
+      <button class="btn-sm" onclick="window.fulfillFillFromPostex('${date}')">Fill POST-EX = ${_fnum(d.ship)}</button>
+    </div>
+  </div>`;
+}
+
+// After a fulfillment render, top up the PostEx bits once data is loaded.
+async function _postexInject(){
+  if(typeof currentPage!=='undefined'&&currentPage!=='fulfillment')return;
+  await _postexEnsure();
+  if(typeof currentPage!=='undefined'&&currentPage!=='fulfillment')return;
+  if(_fulfillTab==='entry'){
+    const el=document.getElementById('postex-entry-card');
+    if(el)el.innerHTML=_postexEntryCardHTML(_fulfillEntryDate||_fulfillToday());
+  }else if(_fulfillTab==='log'){
+    const el=document.getElementById('fl-results');
+    if(el)el.innerHTML=_fulfillLogResults();  // re-render rows so ⚡ badges appear
+  }
+}
+// Schedule an inject after the caller has set innerHTML (next tick).
+function _postexSchedule(){if(typeof _postexInject==='function')setTimeout(_postexInject,0);}
+
+// One-tap: fill the first POST-EX dispatch row from PostEx's count + COD.
+window.fulfillFillFromPostex=function(date){
+  const d=_postexDayIndex()[date];
+  if(!d)return;
+  const i=_fulfillActiveRows.d.findIndex(r=>String(r.courier).toUpperCase().includes('POST-EX'));
+  if(i<0)return showToast('No POST-EX row in this day’s layout.',true);
+  const ship=document.getElementById('fd-d-'+i+'-ship');
+  const amt=document.getElementById('fd-d-'+i+'-amt');
+  if(ship)ship.value=d.ship;
+  if(amt)amt.value=Math.round(d.cod);
+  window._fulfillRecalc();  // recalc totals + refresh the reconciliation line
+  showToast(`Filled ${_fulfillActiveRows.d[i].brand} / POST-EX = ${_fnum(d.ship)} from PostEx`);
+};
+
+// Manually trigger the background sync, then reload the cache after it finishes.
+window.fulfillSyncPostex=async function(){
+  if(_postexSyncing)return;
+  _postexSyncing=true;
+  const el=document.getElementById('postex-entry-card');
+  if(el)el.innerHTML=_postexEntryCardHTML(_fulfillEntryDate||_fulfillToday());
+  showToast('PostEx sync started — refreshing in ~90s…');
+  try{await fetch('/.netlify/functions/postex-sync-background');}catch(e){/* background returns 202/none */}
+  setTimeout(async()=>{
+    postexOrdersLoaded=false;_postexLoading=null;
+    await loadPostexData();
+    _postexSyncing=false;
+    if(typeof currentPage==='undefined'||currentPage==='fulfillment')_postexInject();
+    showToast('PostEx data refreshed ✓');
+  },90000);
+};
+
 // ── Page shell + tab switch ──
 function _fulfillBody(){
   return _fulfillTab==='entry'?_renderFulfillEntry()
@@ -426,6 +581,7 @@ function renderFulfillmentPage(){
   if(!_canViewFulfillment())
     return '<div class="empty">Daily Performance is restricted to owners and managers.</div>';
   const tab=(id,label)=>`<button class="tab-btn${_fulfillTab===id?' active':''}" onclick="window.switchFulfillTab('${id}')">${label}</button>`;
+  _postexSchedule();  // top up PostEx bits once innerHTML is set + data loaded
   return `<div class="page-head">
     <div class="page-title">Daily Performance</div>
     <div class="page-sub">Dispatch &amp; returns — recorded per day, analysed over time</div>
@@ -436,6 +592,9 @@ function renderFulfillmentPage(){
   </div>
   <div id="fulfill-body">${_fulfillBody()}</div>`;
 }
+// Note: renderFulfillmentPage() is a pure string builder; the PostEx top-up is
+// scheduled by its callers (router, switchFulfillTab, save, edit) via
+// _postexSchedule() so it runs after innerHTML is set.
 
 // Owner/manager dashboard widget — injected at the top of #main-content on the
 // main dashboard (all logic here so shared.js only needs a one-line hook).
@@ -475,6 +634,7 @@ window.switchFulfillTab=function(tab){
   if(!body)return;
   body.innerHTML=_fulfillBody();
   if(tab==='entry')window._fulfillRecalc();
+  _postexSchedule();
 };
 
 // ══════════════════════════════════════════════════════════════════════
@@ -537,6 +697,7 @@ function _renderFulfillEntry(){
         ${existing?'✎ Editing ':''}${_fulfillDayName(date,true)}, ${_fulfillFmtDate(date)}
       </div>
     </div>
+    <div id="postex-entry-card">${_postexEntryCardHTML(date)}</div>
     ${tbl('DISPATCHED',_fulfillActiveRows.d,'d',existing&&existing.dispatched,'var(--accent-success)')}
     ${tbl('RETURNS',_fulfillActiveRows.r,'r',existing&&existing.returns,'var(--accent-urgent)')}
     <label style="display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted);margin:-4px 2px 12px;cursor:pointer">
@@ -554,7 +715,7 @@ window.loadFulfillDate=function(){
   if(!el||!el.value)return;
   _fulfillEntryDate=el.value;
   const body=document.getElementById('fulfill-body');
-  if(body){body.innerHTML=_renderFulfillEntry();window._fulfillRecalc();}
+  if(body){body.innerHTML=_renderFulfillEntry();window._fulfillRecalc();_postexSchedule();}
 };
 
 function _fulfillReadSection(section,rows){
@@ -584,6 +745,9 @@ window._fulfillRecalc=function(){
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
   set('fd-d-tot-ship',_fnum(d.totShip));set('fd-d-tot-amt',_fRs(d.totAmt));
   set('fd-r-tot-ship',_fnum(r.totShip));set('fd-r-tot-amt',_fRs(r.totAmt));
+  // Keep the PostEx reconciliation line live as the POST-EX rows are typed.
+  const pc=document.getElementById('postex-entry-card');
+  if(pc&&postexOrdersLoaded)pc.innerHTML=_postexEntryCardHTML(_fulfillEntryDate||_fulfillToday());
 };
 
 window.saveFulfillReport=async function(alsoPdf){
@@ -866,9 +1030,12 @@ function _fulfillLogRow(r){
   const ra=(r.returnsTotal&&r.returnsTotal.amount)||0;
   const rr=ds?Math.round(100*rs/ds):0;
   const who=r.enteredBy||r.updatedBy||'—';
+  // ⚡ badge on days PostEx has courier data for (auto-verified against sync).
+  const px=(postexOrdersLoaded&&_postexDayIndex()[r.date])||null;
+  const badge=px?`<span title="PostEx dispatched ${_fnum(px.ship)} POST-EX parcels this day" style="font-size:10px;font-weight:700;color:#7B1F2A;background:#7B1F2A14;border-radius:5px;padding:1px 5px;margin-left:6px;white-space:nowrap">⚡ PostEx ${_fnum(px.ship)}</span>`:'';
   return `<div class="po-row" style="cursor:default">
     <div class="po-info">
-      <div class="po-num" style="font-size:13px">${_fulfillDayName(r.date,true)}, ${_fulfillFmtDate(r.date)}</div>
+      <div class="po-num" style="font-size:13px">${_fulfillDayName(r.date,true)}, ${_fulfillFmtDate(r.date)}${badge}</div>
       <div class="po-name" style="font-size:15px">${_fnum(ds)} dispatched · ${_fRs(da)}</div>
       <div class="po-meta" style="font-size:13px">Returns ${_fnum(rs)} · ${_fRs(ra)} · Ret ${rr}% · by ${who}</div>
     </div>
