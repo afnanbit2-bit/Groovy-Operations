@@ -613,15 +613,18 @@ function _renderPostexTab(){
   }
 
   const sub=(id,label)=>`<button class="tab-btn${_postexTab===id?' active':''}" onclick="window.switchPostexTab('${id}')">${label}</button>`;
-  const body=_postexTab==='pipeline'?_renderPostexPipeline():_postexTab==='cohort'?_renderPostexCohort():_renderPostexOverview();
+  const body=_postexTab==='pipeline'?_renderPostexPipeline()
+            :_postexTab==='cohort'?_renderPostexCohort()
+            :_postexTab==='cod'?_renderPostexCOD()
+            :_renderPostexOverview();
   return `${_postexSyncBar()}
-    <div class="tab-bar" style="margin-bottom:14px">${sub('overview','Overview')}${sub('pipeline','Pipeline')}${sub('cohort','Return Rate')}</div>
+    <div class="tab-bar" style="margin-bottom:14px;overflow-x:auto;white-space:nowrap">${sub('overview','Overview')}${sub('pipeline','Pipeline')}${sub('cohort','Return Rate')}${sub('cod','COD')}</div>
     <div id="postex-subbody">${body}</div>`;
 }
 
 // Switch PostEx sub-tab and re-render the section body.
 window.switchPostexTab=function(tab){
-  _postexTab=(['pipeline','cohort'].includes(tab)?tab:'overview');
+  _postexTab=(['pipeline','cohort','cod'].includes(tab)?tab:'overview');
   const el=document.getElementById('fulfill-body');
   if(el)el.innerHTML=_renderPostexTab();
 };
@@ -862,6 +865,65 @@ function _renderPostexCohort(){
         <thead><tr>${th(period==='monthly'?'Month':'Week of')}${th('Dispatched','right')}${th('Delivered','right')}${th('Returned','right')}${th('In transit','right')}${th('Return %','right')}${th('Resolved','right')}</tr></thead>
         <tbody>${rows}</tbody></table></div>
       <div style="font-size:11px;color:var(--muted);margin-top:6px">Return % = returned ÷ (delivered + returned). "Resolved" = share of the cohort that reached an outcome; ~ marks cohorts under 90% resolved (rate still provisional).</div>`)}`;
+}
+
+// ── PostEx › COD Reconciliation ──
+// The money view. COD (invoicePayment) is collected from the customer on
+// delivery; PostEx charges a delivery fee+tax on delivered parcels and a
+// reversal fee+tax on returns, then releases the net to the merchant
+// (upfrontPayment). Everything here is summed straight from the parcel docs.
+function _postexCOD(){
+  const r={collected:0,inflight:0,lost:0,delFee:0,delTax:0,revFee:0,revTax:0,
+           released:0,reserve:0,balance:0,deliveredN:0,inflightN:0,returnedN:0};
+  for(const o of postexOrders){
+    const c=o.statusCategory,cod=Number(o.cod||0);
+    if(c==='delivered'){r.collected+=cod;r.delFee+=Number(o.transactionFee||0);r.delTax+=Number(o.transactionTax||0);r.deliveredN++;}
+    else if(c==='in_transit'||c==='pending'){r.inflight+=cod;r.inflightN++;}
+    else if(c==='returned'){r.lost+=cod;r.revFee+=Number(o.reversalFee||0);r.revTax+=Number(o.reversalTax||0);r.returnedN++;}
+    r.released+=Number(o.upfrontPayment||0);
+    r.reserve+=Number(o.reservePayment||0);
+    r.balance+=Number(o.balancePayment||0);
+  }
+  r.fees=r.delFee+r.delTax+r.revFee+r.revTax;
+  r.net=r.collected-r.fees;                 // what you actually earn after PostEx charges
+  r.outstanding=r.net-r.released;           // net earned not yet released by PostEx
+  r.feeRate=r.collected?100*r.fees/r.collected:0;
+  return r;
+}
+function _renderPostexCOD(){
+  const r=_postexCOD();
+  const row=(label,val,sign,color,strong)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 2px;border-bottom:1px solid #f5f5f5;font-size:${strong?'15px':'14px'}">
+      <span style="${strong?'font-weight:800':'color:var(--muted)'}">${sign?`<span style="display:inline-block;width:14px;color:var(--muted)">${sign}</span>`:''}${label}</span>
+      <span style="font-weight:${strong?800:600};color:${color||'var(--text)'}">${_fRs(val)}</span>
+    </div>`;
+  const sec=(title,body,extra)=>`<div class="card" style="margin-bottom:14px"><div class="card-title" style="font-size:12px">${title}${extra||''}</div>${body}</div>`;
+
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+      ${_pxKpi('COD collected',_fRs(r.collected),`${_fnum(r.deliveredN)} delivered`,'#14532D')}
+      ${_pxKpi('Still to collect',_fRs(r.inflight),`${_fnum(r.inflightN)} in flight`,'#B47512')}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+      ${_pxKpi('PostEx charges',_fRs(r.fees),`${r.feeRate.toFixed(1)}% of collected`,'#7B1F2A')}
+      ${_pxKpi('Net to you',_fRs(r.net),'after all charges','#111')}
+    </div>
+    ${sec('Money breakdown — delivered COD',
+      row('Gross COD collected',r.collected,'','#14532D')+
+      row('Delivery fee',-r.delFee,'−','#7B1F2A')+
+      row('Delivery tax',-r.delTax,'−','#7B1F2A')+
+      row('Reversal fee (RTO)',-r.revFee,'−','#7B1F2A')+
+      row('Reversal tax (RTO)',-r.revTax,'−','#7B1F2A')+
+      row('Net earned',r.net,'=','#111',true)
+    )}
+    ${sec('Settlement with PostEx',
+      row('Net earned',r.net,'','#111')+
+      row('Released to you (upfront)',r.released,'','#14532D')+
+      row('Outstanding from PostEx',r.outstanding,'',r.outstanding>0?'#B47512':'#14532D',true),
+      '')}
+    ${sec('Return cost',
+      row('COD lost to returns (not collected)',r.lost,'','#7B1F2A')+
+      row('Reversal charges paid on returns',r.revFee+r.revTax,'','#7B1F2A')+
+      `<div style="font-size:12px;color:var(--muted);margin-top:8px">${_fnum(r.returnedN)} returned parcels — you neither collect their COD nor recover the reversal handling charge.</div>`)}
+    <div style="font-size:11px;color:var(--muted);margin:-4px 2px 8px">Figures are summed from parcel records. Settlement releases follow PostEx's payout cycle, so "Outstanding" reflects timing as well as amounts.</div>`;
 }
 
 // Animate the loading bar toward real progress (month queries completing),
