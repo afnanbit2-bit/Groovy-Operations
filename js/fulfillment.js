@@ -1004,16 +1004,16 @@ window.fulfillFetchCPR=async function(){
   _postexCprFetching=true;
   const el=document.getElementById('postex-subbody');
   if(el&&_postexTab==='cpr')el.innerHTML=_renderPostexCPR();
-  showToast('CPR fetch started — this runs in the background (~1–2 min for a batch).');
-  try{await fetch('/.netlify/functions/postex-payments-background?limit=1500');}catch(e){/* background 202 */}
+  showToast('CPR fetch started — a small batch runs in the background (~1 min).');
+  try{await fetch('/.netlify/functions/postex-payments-background?limit=300');}catch(e){/* background 202 */}
   setTimeout(async()=>{
     postexOrdersLoaded=false;_postexLoading=null;
     try{localStorage.removeItem(_POSTEX_CACHE_KEY);}catch(e){}
     await loadPostexData();
     _postexCprFetching=false;
     if((typeof currentPage==='undefined'||currentPage==='fulfillment')&&_fulfillSection==='postex')_postexInject();
-    showToast('CPR data refreshed ✓');
-  },120000);
+    showToast('CPR data refreshed ✓ — click again for the next batch.');
+  },75000);
 };
 
 // Animate the loading bar toward real progress (month queries completing),

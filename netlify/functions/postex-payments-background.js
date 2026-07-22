@@ -22,8 +22,8 @@ exports.handler = async function (event) {
     console.error("[postex-payments] Missing POSTEX_API_TOKEN or FIREBASE_SERVICE_ACCOUNT");
     return;
   }
-  const limit = Math.min(4000, Math.max(1, parseInt(q.limit) || 1000));
-  const concurrency = Math.min(10, Math.max(1, parseInt(q.concurrency) || 5));
+  const limit = Math.min(1000, Math.max(1, parseInt(q.limit) || 300));
+  const concurrency = Math.min(8, Math.max(1, parseInt(q.concurrency) || 4));
   try {
     const summary = await enrichPayments({ token, limit, concurrency });
     console.log("[postex-payments] done", JSON.stringify(summary));

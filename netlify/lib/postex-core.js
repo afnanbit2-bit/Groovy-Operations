@@ -273,4 +273,4 @@ async function enrichPayments({ token, limit = 1000, concurrency = 5 }) {
   return summary;
 }
 
-module.exports = { getDb, syncRange, debugFirstChunk, defaultRange, isoDate, statusCategory, normalize, enrichPayments };
+module.exports = { getDb, syncRange, debugFirstChunk, defaultRange, isoDate, statusCategory, normalize, enrichPayments, fetchPaymentStatus };
