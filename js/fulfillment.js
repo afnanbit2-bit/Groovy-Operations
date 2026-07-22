@@ -668,6 +668,19 @@ function _renderPostexPipeline(){
   }).join('');
 
   const mBtn=(m,l)=>`<button class="filter-chip${mode===m?' active':''}" style="padding:4px 11px" onclick="window.setPostexPipeMode('${m}')">${l}</button>`;
+
+  // Transparency: the exact raw PostEx status strings and where each one maps.
+  const raw={};
+  for(const o of postexOrders){const k=o.status||'(blank)';raw[k]=(raw[k]||0)+1;}
+  const rawRows=Object.entries(raw).sort((a,b)=>b[1]-a[1]).map(([k,v])=>{
+    const st=_POSTEX_PIPELINE.find(x=>x.match(String(k).toLowerCase()));
+    const label=st?st.label:'<span style="color:var(--accent-warning)">In transit (fallback)</span>';
+    return `<tr style="border-bottom:1px solid #f5f5f5;font-size:12.5px">
+        <td style="padding:5px 6px">${k}</td>
+        <td style="padding:5px 6px;color:var(--muted)">→ ${label}</td>
+        <td style="padding:5px 6px;text-align:right;font-weight:600">${_fnum(v)}</td></tr>`;
+  }).join('');
+
   return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
       ${_pxKpi('In flight now',_fnum(inFlight),'still moving','#B47512')}
       ${_pxKpi('COD in flight',_fRs(codFlight),'not yet collected','#B47512')}
@@ -684,7 +697,15 @@ function _renderPostexPipeline(){
       </div>
       ${rows||'<div style="font-size:13px;color:var(--muted)">No parcels in this view.</div>'}
       <div style="font-size:11px;color:var(--muted);margin-top:6px">• = still moving · bars scaled to the largest stage shown · % of all ${_fnum(total)} parcels</div>
-    </div>`;
+    </div>
+    <details class="card" style="margin-bottom:14px">
+      <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Raw PostEx statuses (${Object.keys(raw).length}) — verify mapping</summary>
+      <div style="overflow-x:auto;margin-top:10px"><table style="width:100%;border-collapse:collapse">
+        <thead><tr style="text-align:left"><th style="padding:5px 6px;font-size:11px;color:var(--muted)">PostEx status</th><th style="padding:5px 6px;font-size:11px;color:var(--muted)">Mapped stage</th><th style="padding:5px 6px;font-size:11px;color:var(--muted);text-align:right">Count</th></tr></thead>
+        <tbody>${rawRows}</tbody>
+      </table></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">Any "In transit (fallback)" row is a status with no specific stage matcher — tell me and I'll add it.</div>
+    </details>`;
 }
 
 // After a PostEx-tab render, top up its body once data is loaded.
