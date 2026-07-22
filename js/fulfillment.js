@@ -422,6 +422,8 @@ let _postexLoading=null;        // in-flight load promise (dedupe concurrent cal
 let _postexIdxCache=null;       // memoised per-day rollup
 let _postexSyncing=false;       // a manual "Sync now" is in flight
 let _postexError=null;          // last read error message (surfaced in the UI)
+let _postexTab='overview';      // PostEx sub-tab: 'overview' | 'pipeline'
+let _postexPipeMode='all';      // pipeline scope: 'all' | 'flight' (in-flight only)
 
 // The whole collection can exceed Firestore's 10k single-query limit, and the
 // cursor helpers (startAfter) aren't bridged to window. So page by calendar
@@ -526,7 +528,15 @@ function _postexSyncBar(){
     </div>`;
 }
 
-// PostEx tab — the API-driven courier system (built out across the parts).
+// Small KPI tile reused across PostEx views.
+function _pxKpi(label,val,sub,color){
+  return `<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:15px 14px;text-align:center">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">${label}</div>
+      <div style="font-size:24px;font-weight:800;color:${color||'var(--text)'}">${val}</div>
+      ${sub?`<div style="font-size:12px;color:var(--muted);margin-top:3px">${sub}</div>`:''}</div>`;
+}
+
+// PostEx tab wrapper — sync bar + sub-tabs (Overview | Pipeline | …) + body.
 function _renderPostexTab(){
   if(!postexOrdersLoaded)
     return `<div class="card"><div style="font-size:14px;color:var(--muted)">Loading PostEx courier data…</div></div>`;
@@ -546,17 +556,27 @@ function _renderPostexTab(){
     return `${_postexSyncBar()}<div class="empty">No PostEx parcels synced yet.<br><br>Hit <b>Sync now</b> above, or the scheduled sync will pull them within a few hours.</div>`;
   }
 
+  const sub=(id,label)=>`<button class="tab-btn${_postexTab===id?' active':''}" onclick="window.switchPostexTab('${id}')">${label}</button>`;
+  const body=_postexTab==='pipeline'?_renderPostexPipeline():_renderPostexOverview();
+  return `${_postexSyncBar()}
+    <div class="tab-bar" style="margin-bottom:14px">${sub('overview','Overview')}${sub('pipeline','Pipeline')}</div>
+    <div id="postex-subbody">${body}</div>`;
+}
+
+// Switch PostEx sub-tab and re-render the section body.
+window.switchPostexTab=function(tab){
+  _postexTab=(tab==='pipeline'?'pipeline':'overview');
+  const el=document.getElementById('fulfill-body');
+  if(el)el.innerHTML=_renderPostexTab();
+};
+
+// ── PostEx › Overview ──
+function _renderPostexOverview(){
   const s=_postexOverview();
   const settled=s.delivered+s.returned;             // completed journeys
   const delRate=settled?Math.round(100*s.delivered/settled):0;
   const retRate=settled?Math.round(100*s.returned/settled):0;
 
-  const kpi=(label,val,sub,color)=>`<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:15px 14px;text-align:center">
-      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">${label}</div>
-      <div style="font-size:24px;font-weight:800;color:${color||'var(--text)'}">${val}</div>
-      ${sub?`<div style="font-size:12px;color:var(--muted);margin-top:3px">${sub}</div>`:''}</div>`;
-
-  // Status distribution — a single stacked bar (semantic status colours).
   const segs=[
     {k:'delivered',label:'Delivered',c:'#14532D'},
     {k:'in_transit',label:'In transit',c:'#B47512'},
@@ -573,21 +593,97 @@ function _renderPostexTab(){
     </div>`;
 
   const sec=(title,body)=>`<div class="card" style="margin-bottom:14px"><div class="card-title" style="font-size:12px">${title}</div>${body}</div>`;
-
-  return `${_postexSyncBar()}
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
-      ${kpi('Total parcels',_fnum(s.total),`${_fnum(s.dispatched)} dispatched`,'#111')}
-      ${kpi('Delivered',_fnum(s.delivered),`${delRate}% of completed`,'#14532D')}
-      ${kpi('Returned',_fnum(s.returned),`${retRate}% return rate`,retRate>=15?'#7B1F2A':retRate>=8?'#B47512':'#14532D')}
-      ${kpi('In transit',_fnum(s.in_transit+s.pending),'still moving','#B47512')}
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+      ${_pxKpi('Total parcels',_fnum(s.total),`${_fnum(s.dispatched)} dispatched`,'#111')}
+      ${_pxKpi('Delivered',_fnum(s.delivered),`${delRate}% of completed`,'#14532D')}
+      ${_pxKpi('Returned',_fnum(s.returned),`${retRate}% return rate`,retRate>=15?'#7B1F2A':retRate>=8?'#B47512':'#14532D')}
+      ${_pxKpi('In transit',_fnum(s.in_transit+s.pending),'still moving','#B47512')}
     </div>
     ${sec('Status distribution — all synced parcels',bar)}
     ${sec('COD value',`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        ${kpi('Delivered (collected)',_fRs(s.codDelivered),'cash realised','#14532D')}
-        ${kpi('In flight',_fRs(s.codInTransit),'not yet collected','#B47512')}
-      </div>`)}
-    <div class="card" style="margin-bottom:14px;border:1px dashed var(--border);background:#FAFAFA">
-      <div style="font-size:13px;color:var(--muted);line-height:1.5">More PostEx views are being built here — shipment pipeline, true cohort return-rate, COD reconciliation, city &amp; SKU performance, and a command-center summary. This overview is the foundation.</div>
+        ${_pxKpi('Delivered (collected)',_fRs(s.codDelivered),'cash realised','#14532D')}
+        ${_pxKpi('In flight',_fRs(s.codInTransit),'not yet collected','#B47512')}
+      </div>`)}`;
+}
+
+// ── PostEx › Pipeline ──
+// Ordered shipment-journey stages. A parcel is placed in the first stage whose
+// matcher hits its raw PostEx status; unknown statuses fall back to their coarse
+// statusCategory so every parcel lands somewhere sensible.
+const _POSTEX_PIPELINE=[
+  {key:'unbooked', label:'Unbooked',         kind:'pre',      color:'#9CA3AF', match:s=>s.includes('unbooked')},
+  {key:'booked',   label:'Booked',           kind:'transit',  color:'#94A3B8', match:s=>s.includes('booked')&&!s.includes('un')},
+  {key:'warehouse',label:'At warehouse',     kind:'transit',  color:'#CA8A04', match:s=>s.includes('warehouse')||s.includes('picked')},
+  {key:'transit',  label:'In transit',       kind:'transit',  color:'#B47512', match:s=>s.includes('transit')||s.includes('route')||s.includes('arrived')||s.includes('on the way')||s.includes('dispatch')},
+  {key:'ofd',      label:'Out for delivery', kind:'transit',  color:'#D97706', match:s=>s.includes('out for delivery')},
+  {key:'attempted',label:'Attempted',        kind:'transit',  color:'#EA580C', match:s=>s.includes('attempt')||s.includes('under review')},
+  {key:'delivered',label:'Delivered',        kind:'delivered',color:'#14532D', match:s=>s.includes('delivered')},
+  {key:'ofr',      label:'Out for return',   kind:'rto',      color:'#B91C1C', match:s=>s.includes('out for return')},
+  {key:'returned', label:'Returned',         kind:'rto',      color:'#7B1F2A', match:s=>s.includes('return')&&!s.includes('out for')},
+  {key:'cancelled',label:'Cancelled',        kind:'cancelled',color:'#4B5563', match:s=>s.includes('cancel')||s.includes('expired')||s.includes('un-assigned')||s.includes('unassigned')},
+];
+const _POSTEX_FLIGHT_KINDS=['pre','transit'];   // non-terminal = still moving
+function _postexStageFor(o){
+  const raw=String(o.status||'').toLowerCase();
+  const hit=_POSTEX_PIPELINE.find(x=>x.match(raw));
+  if(hit)return hit.key;
+  const cat=o.statusCategory;                     // fallback by coarse category
+  return cat==='pending'?'unbooked':cat==='in_transit'?'transit':cat==='delivered'?'delivered':cat==='returned'?'returned':cat==='cancelled'?'cancelled':'transit';
+}
+function _postexPipeline(){
+  const counts={},cod={};
+  _POSTEX_PIPELINE.forEach(st=>{counts[st.key]=0;cod[st.key]=0;});
+  for(const o of postexOrders){
+    const k=_postexStageFor(o);
+    counts[k]++;cod[k]+=Number(o.cod||0);
+  }
+  return {counts,cod};
+}
+window.setPostexPipeMode=function(m){
+  _postexPipeMode=(m==='flight'?'flight':'all');
+  const el=document.getElementById('postex-subbody');
+  if(el)el.innerHTML=_renderPostexPipeline();
+};
+function _renderPostexPipeline(){
+  const {counts,cod}=_postexPipeline();
+  const total=postexOrders.length||1;
+  const byKind=k=>_POSTEX_PIPELINE.filter(s=>s.kind===k).reduce((a,s)=>a+counts[s.key],0);
+  const inFlight=_POSTEX_FLIGHT_KINDS.reduce((a,k)=>a+byKind(k),0);
+  const codFlight=_POSTEX_PIPELINE.filter(s=>_POSTEX_FLIGHT_KINDS.includes(s.kind)).reduce((a,s)=>a+cod[s.key],0);
+  const delivered=byKind('delivered'),returned=byKind('rto'),cancelled=byKind('cancelled');
+
+  const mode=_postexPipeMode;
+  const stages=_POSTEX_PIPELINE.filter(s=>counts[s.key]>0&&(mode==='all'||_POSTEX_FLIGHT_KINDS.includes(s.kind)));
+  const maxV=Math.max(1,...stages.map(s=>counts[s.key]));
+  const rows=stages.map(s=>{
+    const v=counts[s.key],pct=total?Math.round(100*v/total):0;
+    const term=!_POSTEX_FLIGHT_KINDS.includes(s.kind);
+    return `<div style="display:flex;align-items:center;gap:9px;margin-bottom:9px">
+        <div style="width:104px;flex-shrink:0;font-size:12.5px;font-weight:600;line-height:1.2">${s.label}${term?'':' <span style="color:var(--muted);font-weight:400">•</span>'}</div>
+        <div style="flex:1;min-width:0;background:#F3F3F3;border-radius:6px;height:22px;overflow:hidden">
+          <div style="width:${Math.max(2,100*v/maxV).toFixed(1)}%;background:${s.color};height:100%;border-radius:6px"></div>
+        </div>
+        <div style="width:88px;flex-shrink:0;text-align:right;font-size:12.5px"><b>${_fnum(v)}</b> <span style="color:var(--muted)">${pct}%</span></div>
+      </div>`;
+  }).join('');
+
+  const mBtn=(m,l)=>`<button class="filter-chip${mode===m?' active':''}" style="padding:4px 11px" onclick="window.setPostexPipeMode('${m}')">${l}</button>`;
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+      ${_pxKpi('In flight now',_fnum(inFlight),'still moving','#B47512')}
+      ${_pxKpi('COD in flight',_fRs(codFlight),'not yet collected','#B47512')}
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:14px">
+      ${_pxKpi('Delivered',_fnum(delivered),'terminal','#14532D')}
+      ${_pxKpi('Returned',_fnum(returned),'RTO','#7B1F2A')}
+      ${_pxKpi('Cancelled',_fnum(cancelled),'terminal','#4B5563')}
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title" style="font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        Shipment pipeline — where every parcel is now
+        <span style="display:inline-flex;gap:4px">${mBtn('all','All')}${mBtn('flight','In flight only')}</span>
+      </div>
+      ${rows||'<div style="font-size:13px;color:var(--muted)">No parcels in this view.</div>'}
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">• = still moving · bars scaled to the largest stage shown · % of all ${_fnum(total)} parcels</div>
     </div>`;
 }
 
