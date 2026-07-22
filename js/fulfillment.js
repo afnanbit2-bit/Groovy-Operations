@@ -445,11 +445,15 @@ function _postexMonths(){
 async function loadPostexData(){
   _postexError=null;
   try{
-    const snaps=await Promise.all(_postexMonths().map(([y,mo])=>{
+    // Race against a timeout so a hung read surfaces an error + retry rather
+    // than leaving the tab on "Loading…" forever.
+    const load=Promise.all(_postexMonths().map(([y,mo])=>{
       const lo=`${y}-${String(mo).padStart(2,'0')}-01`;
       const hi=mo===12?`${y+1}-01-01`:`${y}-${String(mo+1).padStart(2,'0')}-01`;
       return getDocs(query(collection(db,'postex_orders'),where('transactionDate','>=',lo),where('transactionDate','<',hi),limit(10000)));
     }));
+    const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timed out reading courier data — network may be slow. Tap Retry.')),20000));
+    const snaps=await Promise.race([load,timeout]);
     const all=[];
     snaps.forEach(s=>s.docs.forEach(d=>all.push(d.data())));
     postexOrders=all;
@@ -539,13 +543,18 @@ function _pxKpi(label,val,sub,color){
 // PostEx tab wrapper — sync bar + sub-tabs (Overview | Pipeline | …) + body.
 function _renderPostexTab(){
   if(!postexOrdersLoaded)
-    return `<div class="card"><div style="font-size:14px;color:var(--muted)">Loading PostEx courier data…</div></div>`;
-  // Read failed outright (usually a permissions error).
+    return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:14px;color:var(--muted)">Loading PostEx courier data…</span>
+      <button class="btn-sm" onclick="window.fulfillRetryPostex()">Retry</button></div></div>`;
+  // Read failed outright (permissions, timeout, etc.).
   if(_postexError)
     return `${_postexSyncBar()}<div class="card" style="border-left:3px solid var(--accent-urgent)">
       <div style="font-size:14px;font-weight:800;color:var(--accent-urgent);margin-bottom:6px">Couldn't read courier data</div>
-      <div style="font-size:13px;color:var(--muted);margin-bottom:6px">${_postexError}</div>
-      <div style="font-size:13px;color:var(--muted)">If this mentions <i>permissions</i>, the Firestore read rule for <code>postex_orders</code> hasn't been published yet.</div></div>`;
+      <div style="font-size:13px;color:var(--muted);margin-bottom:8px">${_postexError}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn-sm" onclick="window.fulfillRetryPostex()">Retry</button>
+        <span style="font-size:12px;color:var(--muted)">If this mentions <i>permissions</i>, the <code>postex_orders</code> read rule needs publishing.</span>
+      </div></div>`;
   if(!postexOrders.length){
     // The sync (Admin SDK) wrote parcels, but the client read 0 → a rules gap.
     const wrote=postexMeta&&(postexMeta.written||postexMeta.fetched)||0;
@@ -711,14 +720,26 @@ function _renderPostexPipeline(){
 // After a PostEx-tab render, top up its body once data is loaded.
 async function _postexInject(){
   if(typeof currentPage!=='undefined'&&currentPage!=='fulfillment')return;
-  await _postexEnsure();
+  try{ await _postexEnsure(); }
+  catch(e){ _postexError=(e&&e.message)?e.message:String(e); postexOrdersLoaded=true; }
   if(typeof currentPage!=='undefined'&&currentPage!=='fulfillment')return;
   if(_fulfillSection!=='postex')return;
   const el=document.getElementById('fulfill-body');
-  if(el)el.innerHTML=_renderPostexTab();
+  if(!el)return;
+  // Never let a render throw leave the tab stuck on the loading placeholder.
+  try{ el.innerHTML=_renderPostexTab(); }
+  catch(e){ el.innerHTML=`<div class="card" style="border-left:3px solid var(--accent-urgent)"><div style="font-weight:800;color:var(--accent-urgent);margin-bottom:6px">Couldn't render PostEx view</div><div style="font-size:13px;color:var(--muted);margin-bottom:8px">${(e&&e.message)||e}</div><button class="btn-sm" onclick="window.fulfillRetryPostex()">Retry</button></div>`; }
 }
 // Schedule an inject after the caller has set innerHTML (next tick).
 function _postexSchedule(){if(typeof _postexInject==='function')setTimeout(_postexInject,0);}
+
+// Reset + reload PostEx data (used by Retry buttons).
+window.fulfillRetryPostex=function(){
+  postexOrdersLoaded=false;_postexLoading=null;_postexError=null;_postexIdxCache=null;
+  const el=document.getElementById('fulfill-body');
+  if(el)el.innerHTML=_renderPostexTab();  // shows the loading state
+  _postexSchedule();
+};
 
 // Manually trigger the background sync, then reload the cache after it finishes.
 window.fulfillSyncPostex=async function(){
