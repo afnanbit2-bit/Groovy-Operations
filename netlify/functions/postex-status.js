@@ -32,6 +32,26 @@ exports.handler = async function (event) {
       const r = await fetchPaymentStatus(token, q.paydebug);
       return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(r, null, 2) };
     }
+    if (q.counts) {
+      // Diagnose the enrichment candidate query: what does the server actually
+      // see for delivered/returned parcels and their settle/CPR state?
+      const db = getDb();
+      const snap = await db.collection("postex_orders")
+        .where("statusCategory", "in", ["delivered", "returned"])
+        .select("statusCategory", "settle", "cprNumber_1", "cprCheckedAt").get();
+      const c = { queryTotal: snap.size, delivered: 0, returned: 0, settledTrue: 0, hasCpr: 0, checked: 0 };
+      snap.forEach((d) => {
+        const x = d.data();
+        if (x.statusCategory === "delivered") c.delivered++; else if (x.statusCategory === "returned") c.returned++;
+        if (x.settle === true) c.settledTrue++;
+        if (x.cprNumber_1) c.hasCpr++;
+        if (x.cprCheckedAt) c.checked++;
+      });
+      // Also a total collection count via aggregate.
+      let allCount = null;
+      try { const agg = await db.collection("postex_orders").count().get(); allCount = agg.data().count; } catch (e) {}
+      return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...c, collectionTotal: allCount }, null, 2) };
+    }
     const docId = q.payments ? "payments_run" : "last_run";
     const snap = await getDb().collection("postex_sync_meta").doc(docId).get();
     const data = snap.exists ? snap.data() : { note: `No ${docId} yet.` };
