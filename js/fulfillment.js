@@ -447,6 +447,26 @@ function _postexMonths(){
   }
   return out;
 }
+// ── Local cache (browser) ──────────────────────────────────────
+// The project's Firestore is US-hosted; pulling ~8k full parcel docs from
+// Pakistan is slow. Cache the loaded parcels in localStorage so re-opening the
+// tab is instant, and refresh in the background when the cache is getting old.
+const _POSTEX_CACHE_KEY='groovy_postex_cache_v1';
+const _POSTEX_CACHE_TTL=45*60*1000;   // trust cache without refetch (45 min)
+const _POSTEX_CACHE_STALE=10*60*1000; // silently refresh if older than this
+function _postexReadCache(){
+  try{
+    const raw=localStorage.getItem(_POSTEX_CACHE_KEY);
+    if(!raw)return null;
+    const o=JSON.parse(raw);
+    return (o&&Array.isArray(o.parcels))?o:null;
+  }catch(e){return null;}
+}
+function _postexWriteCache(){
+  try{localStorage.setItem(_POSTEX_CACHE_KEY,JSON.stringify({ts:Date.now(),parcels:postexOrders,meta:postexMeta}));}
+  catch(e){/* quota exceeded / disabled — caching is best-effort */}
+}
+
 async function loadPostexData(){
   _postexError=null;
   try{
@@ -461,21 +481,34 @@ async function loadPostexData(){
       return getDocs(query(collection(db,'postex_orders'),where('transactionDate','>=',lo),where('transactionDate','<',hi),limit(10000)))
         .then(s=>{_postexLoadDone++;return s;});
     }));
-    const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timed out reading courier data — network may be slow. Tap Retry.')),20000));
+    const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timed out reading courier data — network may be slow. Tap Retry.')),45000));
     const snaps=await Promise.race([load,timeout]);
     const all=[];
     snaps.forEach(s=>s.docs.forEach(d=>all.push(d.data())));
     postexOrders=all;
     postexOrdersLoaded=true;_postexIdxCache=null;
+    try{
+      const m=await getDoc(doc(db,'postex_sync_meta','last_run'));
+      postexMeta=(m&&typeof m.exists==='function'?m.exists():m&&m.exists)?m.data():null;
+    }catch(e){/* keep whatever meta we have */}
+    _postexWriteCache();   // persist the fresh pull for instant next open
   }catch(e){console.warn('[fulfillment] postex load failed',e);postexOrders=[];postexOrdersLoaded=true;_postexIdxCache=null;_postexError=(e&&e.message)?e.message:String(e);}
-  try{
-    const m=await getDoc(doc(db,'postex_sync_meta','last_run'));
-    postexMeta=(m&&typeof m.exists==='function'?m.exists():m&&m.exists)?m.data():null;
-  }catch(e){postexMeta=null;}
 }
-// Load once per session; returns a promise that resolves when data is ready.
+// Ensure data is ready. Instant from cache when fresh; refreshes in background
+// when the cache is stale; otherwise does a full (progress-barred) fetch.
 function _postexEnsure(){
   if(postexOrdersLoaded)return Promise.resolve();
+  const c=_postexReadCache();
+  if(c&&(Date.now()-c.ts)<_POSTEX_CACHE_TTL){
+    postexOrders=c.parcels;postexMeta=c.meta||postexMeta;postexOrdersLoaded=true;_postexIdxCache=null;
+    if((Date.now()-c.ts)>_POSTEX_CACHE_STALE&&!_postexLoading){
+      _postexLoading=loadPostexData().then(()=>{
+        _postexIdxCache=null;
+        if((typeof currentPage==='undefined'||currentPage==='fulfillment')&&_fulfillSection==='postex')_postexInject();
+      });
+    }
+    return Promise.resolve();
+  }
   if(!_postexLoading)_postexLoading=loadPostexData();
   return _postexLoading;
 }
