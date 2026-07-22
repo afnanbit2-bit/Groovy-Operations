@@ -19,8 +19,7 @@
 const admin = require("firebase-admin");
 
 const POSTEX_BASE = "https://api.postex.pk/services/integration/api/order/v1/get-all-order";
-const LOOKBACK_DAYS = 10;   // re-pull recent orders so their status stays fresh
-const WRITE_CHUNK = 400;    // Firestore batch cap is 500; stay under it
+const LOOKBACK_DAYS = 7;    // re-pull recent orders so their status stays fresh
 const CHUNK_DAYS = 4;       // fetch the window in <=4-day slices to bound payload size
 const FETCH_TIMEOUT_MS = 6000;  // per-window fetch abort guard
 
@@ -181,19 +180,19 @@ exports.handler = async function (event) {
   }
   const orders = [...byTracking.values()];
 
+  // BulkWriter streams writes with high concurrency + auto-retry — far faster
+  // than sequential batch.commit() loops, which is what timed out the run.
   const db = getDb();
   const byStatus = {};
-  let written = 0;
-  for (let i = 0; i < orders.length; i += WRITE_CHUNK) {
-    const batch = db.batch();
-    for (const o of orders.slice(i, i + WRITE_CHUNK)) {
-      const doc = normalize(o);
-      byStatus[doc.statusCategory] = (byStatus[doc.statusCategory] || 0) + 1;
-      batch.set(db.collection("postex_orders").doc(String(doc.trackingNumber)), doc, { merge: true });
-    }
-    await batch.commit();
-    written += Math.min(WRITE_CHUNK, orders.length - i);
+  const col = db.collection("postex_orders");
+  const writer = db.bulkWriter();
+  for (const o of orders) {
+    const doc = normalize(o);
+    byStatus[doc.statusCategory] = (byStatus[doc.statusCategory] || 0) + 1;
+    writer.set(col.doc(String(doc.trackingNumber)), doc, { merge: true });
   }
+  await writer.close();
+  const written = orders.length;
 
   const summary = {
     lastRun: Date.now(),
