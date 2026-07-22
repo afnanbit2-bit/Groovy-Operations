@@ -53,28 +53,29 @@ function statusCategory(s) {
 // { method, httpStatus, data } of the first attempt that yields orders (or the
 // last attempt for diagnostics).
 async function fetchOrders(token, fromDate, toDate) {
-  const headers = { token, "Content-Type": "application/json" };
-  const body = JSON.stringify({ orderStatusID: 0, fromDate, toDate });
-  const qs = `?orderStatusID=0&fromDate=${fromDate}&toDate=${toDate}`;
-  const plans = [
-    { method: "POST+json", url: POSTEX_BASE, opts: { method: "POST", headers, body } },
-    { method: "GET+query", url: POSTEX_BASE + qs, opts: { method: "GET", headers } },
-  ];
+  // Confirmed via live probe: GET only, params startDate/endDate + orderStatusID.
+  const qs = `?orderStatusID=0&startDate=${fromDate}&endDate=${toDate}`;
   const attempts = [];
-  let best = null;
-  for (const a of plans) {
-    try {
-      const r = await fetch(a.url, a.opts);
-      const d = await r.json().catch(() => ({ _nonJson: true }));
-      const at = { method: a.method, httpStatus: r.status, data: d };
-      attempts.push(at);
-      if (!best && d && Array.isArray(d.dist) && d.dist.length) best = at;
-    } catch (e) {
-      attempts.push({ method: a.method, error: String(e.message || e) });
-    }
+  try {
+    const r = await fetch(POSTEX_BASE + qs, { method: "GET", headers: { token } });
+    const d = await r.json().catch(() => ({ _nonJson: true }));
+    attempts.push({ method: "GET", httpStatus: r.status, data: d });
+  } catch (e) {
+    attempts.push({ method: "GET", error: String(e.message || e) });
   }
-  if (!best) best = attempts.find((x) => x.data && Array.isArray(x.data.dist)) || attempts[0] || {};
-  return { attempts, best };
+  return { attempts, best: attempts[0] || {} };
+}
+
+// Recursively blank out customer PII so ?debug output never leaks it.
+const _PII = new Set(["customername", "customerphone", "deliveryaddress", "phone1", "phone2", "phone3", "contactpersonname"]);
+function redact(v) {
+  if (Array.isArray(v)) return v.map(redact);
+  if (v && typeof v === "object") {
+    const o = {};
+    for (const k of Object.keys(v)) o[k] = _PII.has(k.toLowerCase()) ? "***" : redact(v[k]);
+    return o;
+  }
+  return v;
 }
 
 // Normalise one PostEx order (dropping customer PII) into a Firestore doc.
@@ -128,11 +129,13 @@ exports.handler = async function (event) {
   }
   const data = (result && result.best && result.best.data) || {};
 
-  // ?debug=1 → return every attempt PostEx made (method, HTTP status, raw body)
-  // so the working shape can be confirmed once.
+  // ?debug=1 → PII-redacted, dist truncated to 2 rows so the field shape can be
+  // confirmed once without leaking customer data or dumping every order.
   if (q.debug) {
+    const dbg = JSON.parse(JSON.stringify(data));
+    if (Array.isArray(dbg.dist)) { dbg._distLength = dbg.dist.length; dbg.dist = dbg.dist.slice(0, 2); }
     return { statusCode: 200, headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ attempts: result && result.attempts }, null, 2) };
+      body: JSON.stringify({ httpStatus: result && result.best && result.best.httpStatus, data: redact(dbg) }, null, 2) };
   }
 
   // dist rows may be flat orders or wrapped as { trackingResponse: {...} }.
