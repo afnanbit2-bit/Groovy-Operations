@@ -48,21 +48,31 @@ function statusCategory(s) {
   return "in_transit";  // Booked, Picked, Warehouse, Out For Delivery, Attempted, En-Route, Delivery Under Review
 }
 
-// Call get-all-order. The guide labels it GET with a JSON body; different PostEx
-// tenants accept GET+query or POST+JSON, so try query first then fall back.
+// Call get-all-order. The guide shows the params as a JSON body labelled "GET";
+// tenants vary, so try POST+JSON first, then GET+query, then GET+body. Returns
+// { method, httpStatus, data } of the first attempt that yields orders (or the
+// last attempt for diagnostics).
 async function fetchOrders(token, fromDate, toDate) {
   const headers = { token, "Content-Type": "application/json" };
+  const body = JSON.stringify({ orderStatusID: 0, fromDate, toDate });
   const qs = `?orderStatusID=0&fromDate=${fromDate}&toDate=${toDate}`;
-  try {
-    const r = await fetch(POSTEX_BASE + qs, { method: "GET", headers });
-    const d = await r.json().catch(() => null);
-    if (d && (d.dist || d.statusCode)) return d;
-  } catch (e) { /* fall through */ }
-  const r2 = await fetch(POSTEX_BASE, {
-    method: "POST", headers,
-    body: JSON.stringify({ orderStatusID: 0, fromDate, toDate }),
-  });
-  return r2.json();
+  const attempts = [
+    { method: "POST+json", url: POSTEX_BASE, opts: { method: "POST", headers, body } },
+    { method: "GET+query", url: POSTEX_BASE + qs, opts: { method: "GET", headers } },
+    { method: "GET+body", url: POSTEX_BASE, opts: { method: "GET", headers, body } },
+  ];
+  let last = null;
+  for (const a of attempts) {
+    try {
+      const r = await fetch(a.url, a.opts);
+      const d = await r.json().catch(() => ({ _nonJson: true }));
+      last = { method: a.method, httpStatus: r.status, data: d };
+      if (d && Array.isArray(d.dist) && d.dist.length) return last;
+    } catch (e) {
+      last = { method: a.method, error: String(e.message || e) };
+    }
+  }
+  return last || { method: "none", data: null };
 }
 
 // Normalise one PostEx order (dropping customer PII) into a Firestore doc.
@@ -108,14 +118,19 @@ exports.handler = async function (event) {
   const toDate = q.toDate || isoDate(today);
   const fromDate = q.fromDate || (() => { const d = new Date(today); d.setDate(d.getDate() - (LOOKBACK_DAYS - 1)); return isoDate(d); })();
 
-  let data;
+  let result;
   try {
-    data = await fetchOrders(token, fromDate, toDate);
+    result = await fetchOrders(token, fromDate, toDate);
   } catch (e) {
     return { statusCode: 502, body: JSON.stringify({ error: "PostEx request failed", detail: String(e.message || e) }) };
   }
-  if (!data || (data.dist == null && data.statusCode && String(data.statusCode) !== "200")) {
-    return { statusCode: 502, body: JSON.stringify({ error: "PostEx returned no data", response: data }) };
+  const data = (result && result.data) || {};
+
+  // ?debug=1 → return exactly what PostEx replied (which method worked, HTTP
+  // status, and the raw response) so the shape can be confirmed once.
+  if (q.debug) {
+    return { statusCode: 200, headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tried: result && result.method, httpStatus: result && result.httpStatus, error: result && result.error, data }, null, 2) };
   }
 
   // dist rows may be flat orders or wrapped as { trackingResponse: {...} }.
@@ -139,6 +154,9 @@ exports.handler = async function (event) {
   const summary = {
     lastRun: Date.now(),
     fromDate, toDate,
+    method: result && result.method,
+    postexStatus: data.statusCode || null,
+    postexMessage: data.statusMessage || null,
     fetched: orders.length,
     written,
     byStatus,
