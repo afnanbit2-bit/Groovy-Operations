@@ -606,7 +606,7 @@ function buildNav(){
   // Fulfilment account (Umair) — a single-purpose nav: Daily Performance only.
   if(session.role==='fulfillment'){
     const sb=document.getElementById('sidebar');
-    if(sb)sb.innerHTML=`<div class="nav-item on" id="nav-fulfillment" onclick="window.showPage('fulfillment')">Daily Performance</div>`;
+    if(sb)sb.innerHTML=`<div class="nav-item on" id="nav-fulfillment" onclick="window.showPage('fulfillment')">Courier Performance</div>`;
     _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
     return;
   }
@@ -619,7 +619,7 @@ function buildNav(){
   if(isWorker||isViewer)mainItems.push({id:'my-work',label:'My Work'});
   if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
   if(om||session.canFabric)mainItems.push({id:'fabric-inventory',label:'Fabric Inventory'});
-  if(om)mainItems.push({id:'fulfillment',label:'Daily Performance'});
+  if(om)mainItems.push({id:'fulfillment',label:'Courier Performance'});
   if(om)mainItems.push({id:'bug-tracker',label:'🐛 Bug Tracker'});
   if(isOwner)mainItems.push({id:'shopify-intel',label:'Inventory Intel'});
   if(isOwner)mainItems.push({id:'activity',label:'Activity Log'});
@@ -876,7 +876,7 @@ window.openMoreSheet=function(){
   if(session.canPO)items.push({iconName:'plus',label:'New PO',pageId:'po-create'});
   items.push({iconName:'po',label:'PO Registry',pageId:'po-registry'});
   if(om||session.canFabric)items.push({iconName:'box',label:'Fabric Inventory',pageId:'fabric-inventory'});
-  if(om)items.push({iconName:'activity',label:'Daily Performance',pageId:'fulfillment'});
+  if(om)items.push({iconName:'activity',label:'Courier Performance',pageId:'fulfillment'});
   // Embellishments dept items (visible to owners/managers + relevant workers)
   if(om||session.u==='ammar'||session.u==='haris'||(typeof isPrintWorker==='function'&&isPrintWorker()))items.push({iconName:'palette',label:'Recipe Directory',pageId:'recipe-directory'});
   if(om||['asghar','zohaib','waqas','haris'].includes(session.u))items.push({iconName:'print',label:'Embellishment Jobs',pageId:'printing-jobs'});
@@ -1047,7 +1047,7 @@ const BUG_PAGE_NAMES={
   'me':'Worker Me',
   'gatepass':'Gate Pass',
   'fabric-inventory':'Fabric Inventory',
-  'fulfillment':'Daily Performance',
+  'fulfillment':'Courier Performance',
   'attendance':'HRM Attendance',
   'hrm-employees':'HRM Employees',
   'hrm-payroll':'HRM Payroll',
