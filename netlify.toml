@@ -21,7 +21,11 @@
 # Every 4 hours — incremental order sync (last 48h, skip existing)
 [functions."shopify-order-sync"]
   schedule = "0 */4 * * *"
-[functions."postex-sync"]
+
+# Every 4 hours — read-only PostEx COD sync (14-day rolling lookback).
+# Background function (15-min budget); the PostEx API is too slow for a 10s
+# synchronous function. Check results via /.netlify/functions/postex-status.
+[functions."postex-sync-background"]
   schedule = "0 */4 * * *"
 
 # 2am UTC Saturday = 7am PKT — weekly close rollup

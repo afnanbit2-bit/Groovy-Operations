@@ -1,27 +1,24 @@
-/* postex-sync — read-only PostEx COD sync (Part 1 of the courier integration).
+/* postex-core — shared PostEx COD sync logic (read-only).
  *
- * Pulls parcels from the PostEx Merchant API "List Orders" (get-all-order)
- * endpoint for a rolling window and upserts a normalised, PII-free record per
- * parcel into Firestore `postex_orders/{trackingNumber}`. Also writes a run
- * summary to `postex_sync_meta/last_run`. This is the data foundation every
- * downstream view (pipeline, COD reconciliation, RTO, Shopify linkage) reads.
+ * Required by the Netlify functions (postex-sync-background, postex-status).
+ * Lives OUTSIDE netlify/functions so Netlify does not treat it as its own
+ * function; esbuild bundles it into each caller.
  *
- * Env vars (set in Netlify, NEVER in code):
- *   POSTEX_API_TOKEN        — the merchant `token` header value
- *   FIREBASE_SERVICE_ACCOUNT — service-account JSON (same as the shopify-* fns)
+ * Pulls parcels from the PostEx Merchant API get-all-order endpoint and
+ * upserts a normalised, PII-free record per parcel into Firestore
+ * `postex_orders/{trackingNumber}`, plus a run summary to
+ * `postex_sync_meta/last_run`. NEVER stores customer name/phone/address.
  *
- * Triggers:
- *   - scheduled (netlify.toml) every 4h — rolling LOOKBACK_DAYS window
- *   - on-demand GET with ?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD for backfill
- *
- * Read-only: this function never creates, cancels, or modifies orders in PostEx.
+ * The PostEx API is slow (a 4-day window can take >6s to respond), so this is
+ * meant to run inside a BACKGROUND function (15-min budget). Windows are split
+ * into <=CHUNK_DAYS slices, each fetched with a generous abort guard; a failed
+ * chunk is recorded and skipped, never fatal.
  */
 const admin = require("firebase-admin");
 
 const POSTEX_BASE = "https://api.postex.pk/services/integration/api/order/v1/get-all-order";
-const LOOKBACK_DAYS = 7;    // re-pull recent orders so their status stays fresh
-const CHUNK_DAYS = 4;       // fetch the window in <=4-day slices to bound payload size
-const FETCH_TIMEOUT_MS = 6000;  // per-window fetch abort guard
+const CHUNK_DAYS = 5;            // days per fetch window
+const FETCH_TIMEOUT_MS = 30000;  // per-window abort guard (background has 15 min)
 
 // ── Firebase Admin ──────────────────────────────────────────────
 let _db;
@@ -51,9 +48,7 @@ function statusCategory(s) {
 
 // Fetch one date window from get-all-order.
 // Confirmed via live probe: GET only, params orderStatusId (case-sensitive) +
-// startDate + endDate. A single window can return hundreds of orders, so guard
-// each call with an AbortController timeout — a hung fetch must not eat the
-// whole function budget (Netlify caps sync/scheduled invocations ~10s).
+// startDate + endDate.
 async function fetchWindow(token, startDate, endDate) {
   const qs = `?orderStatusId=0&startDate=${startDate}&endDate=${endDate}`;
   const ctrl = new AbortController();
@@ -67,9 +62,8 @@ async function fetchWindow(token, startDate, endDate) {
   }
 }
 
-// Split an inclusive [fromDate,toDate] range into <= CHUNK_DAYS slices so no
-// single fetch pulls a huge (=slow, memory-heavy) payload. Noon anchoring
-// dodges any DST/offset edge on the day boundaries.
+// Split an inclusive [fromDate,toDate] range into <= CHUNK_DAYS slices. Noon
+// anchoring dodges any DST/offset edge on the day boundaries.
 function dateChunks(fromDate, toDate) {
   const DAY = 86400000;
   const fromMs = new Date(`${fromDate}T12:00:00`).getTime();
@@ -126,38 +120,20 @@ function normalize(order) {
   };
 }
 
-exports.handler = async function (event) {
-  const start = Date.now();
-  const q = (event && event.queryStringParameters) || {};
-  const token = process.env.POSTEX_API_TOKEN;
-  if (!token || !process.env.FIREBASE_SERVICE_ACCOUNT) {
-    return { statusCode: 500, body: JSON.stringify({ error: "Missing POSTEX_API_TOKEN or FIREBASE_SERVICE_ACCOUNT" }) };
-  }
-
+// Default rolling window ending today, `lookbackDays` inclusive.
+function defaultRange(lookbackDays) {
   const today = new Date();
-  const toDate = q.toDate || isoDate(today);
-  const fromDate = q.fromDate || (() => { const d = new Date(today); d.setDate(d.getDate() - (LOOKBACK_DAYS - 1)); return isoDate(d); })();
+  const d = new Date(today);
+  d.setDate(d.getDate() - (lookbackDays - 1));
+  return { fromDate: isoDate(d), toDate: isoDate(today) };
+}
+
+// Fetch [fromDate,toDate] chunk-by-chunk, normalise, BulkWrite to Firestore,
+// and persist a run summary. Returns the summary object.
+async function syncRange({ token, fromDate, toDate }) {
+  const start = Date.now();
   const chunks = dateChunks(fromDate, toDate);
 
-  // ?debug=1 → fetch only the first (small, fast) chunk, redact PII and truncate
-  // dist to 2 rows so the field shape can be confirmed without leaking customer
-  // data, dumping every order, or risking a wide-window timeout.
-  if (q.debug) {
-    let w;
-    try {
-      w = await fetchWindow(token, chunks[0][0], chunks[0][1]);
-    } catch (e) {
-      return { statusCode: 502, body: JSON.stringify({ error: "PostEx request failed", detail: String(e.message || e) }) };
-    }
-    const dbg = JSON.parse(JSON.stringify(w.data || {}));
-    if (Array.isArray(dbg.dist)) { dbg._distLength = dbg.dist.length; dbg.dist = dbg.dist.slice(0, 2); }
-    return { statusCode: 200, headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ httpStatus: w.httpStatus, chunk: chunks[0], data: redact(dbg) }, null, 2) };
-  }
-
-  // Fetch every chunk, deduping by trackingNumber (windows are disjoint but a
-  // parcel could in theory appear twice). A failed/timed-out chunk is recorded
-  // and skipped, not fatal — partial freshness beats a hard 502.
   const byTracking = new Map();
   const fetchErrors = [];
   let postexStatus = null, postexMessage = null;
@@ -180,8 +156,7 @@ exports.handler = async function (event) {
   }
   const orders = [...byTracking.values()];
 
-  // BulkWriter streams writes with high concurrency + auto-retry — far faster
-  // than sequential batch.commit() loops, which is what timed out the run.
+  // BulkWriter streams writes with high concurrency + auto-retry.
   const db = getDb();
   const byStatus = {};
   const col = db.collection("postex_orders");
@@ -192,7 +167,6 @@ exports.handler = async function (event) {
     writer.set(col.doc(String(doc.trackingNumber)), doc, { merge: true });
   }
   await writer.close();
-  const written = orders.length;
 
   const summary = {
     lastRun: Date.now(),
@@ -201,12 +175,23 @@ exports.handler = async function (event) {
     postexStatus,
     postexMessage,
     fetched: orders.length,
-    written,
+    written: orders.length,
     byStatus,
     fetchErrors,
     durationMs: Date.now() - start,
   };
   await db.collection("postex_sync_meta").doc("last_run").set(summary, { merge: true });
+  return summary;
+}
 
-  return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(summary) };
-};
+// Fetch only the first chunk, PII-redacted, dist truncated to 2 rows — a fast,
+// safe shape check that fits inside a synchronous function.
+async function debugFirstChunk({ token, fromDate, toDate }) {
+  const chunks = dateChunks(fromDate, toDate);
+  const w = await fetchWindow(token, chunks[0][0], chunks[0][1]);
+  const dbg = JSON.parse(JSON.stringify(w.data || {}));
+  if (Array.isArray(dbg.dist)) { dbg._distLength = dbg.dist.length; dbg.dist = dbg.dist.slice(0, 2); }
+  return { httpStatus: w.httpStatus, chunk: chunks[0], data: redact(dbg) };
+}
+
+module.exports = { getDb, syncRange, debugFirstChunk, defaultRange, isoDate, statusCategory, normalize };
