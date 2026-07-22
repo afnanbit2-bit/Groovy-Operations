@@ -21,6 +21,8 @@
 # Every 4 hours — incremental order sync (last 48h, skip existing)
 [functions."shopify-order-sync"]
   schedule = "0 */4 * * *"
+[functions."postex-sync"]
+  schedule = "0 */4 * * *"
 
 # 2am UTC Saturday = 7am PKT — weekly close rollup
 [functions."shopify-weekly-close"]

@@ -64,6 +64,10 @@ service cloud.firestore {
     match /counters/{doc}             { allow read, write: if signedIn(); }
     // Daily fulfilment performance (dispatch & returns) — one doc per day.
     match /fulfillment_reports/{doc}  { allow read, write: if signedIn(); }
+    // PostEx courier sync — written only by the Netlify function (Admin SDK);
+    // clients read-only.
+    match /postex_orders/{doc}        { allow read: if signedIn(); allow write: if false; }
+    match /postex_sync_meta/{doc}     { allow read: if signedIn(); allow write: if false; }
 
     // ── Store ──
     match /store_items/{doc}          { allow read, write: if signedIn(); }
