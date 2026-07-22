@@ -221,14 +221,16 @@ async function enrichPayments({ token, limit = 1000, concurrency = 5 }) {
   // the fields we need so the scan stays cheap even at tens of thousands of docs.
   const snap = await db.collection("postex_orders")
     .where("statusCategory", "in", ["delivered", "returned"])
-    .select("trackingNumber", "settle", "statusCategory", "cprCheckedAt")
+    .select("trackingNumber", "statusCategory", "cprNumber_1", "cprCheckedAt")
     .get();
   const candidates = [];
   snap.forEach((doc) => {
     const d = doc.data();
-    if (d.settle === true) return;                 // already settled + enriched
-    // Returns rarely produce an upfront CPR — check once, then stop re-polling
-    // them. Deliveries keep getting rechecked until they settle.
+    // Re-fetch anything still missing its CPR number. (Keying off "settled"
+    // orphaned the parcels the earlier buggy field-mapping had already marked
+    // settled but with a null CPR.)
+    if (d.cprNumber_1) return;                     // already has its CPR — done
+    // Returns rarely produce an upfront CPR — once checked, stop re-polling.
     if (d.statusCategory === "returned" && d.cprCheckedAt) return;
     candidates.push({ id: doc.id, trackingNumber: d.trackingNumber || doc.id });
   });
