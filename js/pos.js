@@ -161,8 +161,8 @@ window._openAddProductModal=function(prefill){
   const nameVal=(prefill&&!looksLikeCode)?prefill.replace(/"/g,'&quot;'):'';
   const opts=prefixes.map(p=>`<option value="${p.prefix}">${p.prefix} — ${p.count} item${p.count===1?'':'s'} (e.g. ${String(p.example||'').replace(/"/g,'&quot;').slice(0,28)})</option>`).join('');
   const firstPrefix=prefixes.length?prefixes[0].prefix:'GB';
-  container.innerHTML='<div id="addprod-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:flex-end;justify-content:center" onclick="if(event.target.id===\'addprod-overlay\')window._closeAddProductModal()">'+
-    '<div style="background:var(--surface,#fff);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:20px;max-height:90vh;overflow-y:auto">'+
+  container.innerHTML='<div id="addprod-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px" onclick="if(event.target.id===\'addprod-overlay\')window._closeAddProductModal()">'+
+    '<div style="background:var(--surface,#fff);width:100%;max-width:460px;border-radius:16px;padding:20px;max-height:calc(100vh - 32px);overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.35)">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
         '<div style="font-size:16px;font-weight:700">Add New Product</div>'+
         '<button onclick="window._closeAddProductModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>'+
