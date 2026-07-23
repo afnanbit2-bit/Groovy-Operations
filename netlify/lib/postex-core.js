@@ -221,16 +221,16 @@ async function enrichPayments({ token, limit = 1000, concurrency = 5 }) {
   // the fields we need so the scan stays cheap even at tens of thousands of docs.
   const snap = await db.collection("postex_orders")
     .where("statusCategory", "in", ["delivered", "returned"])
-    .select("trackingNumber", "statusCategory", "cprNumber_1", "cprCheckedAt")
+    .select("trackingNumber", "statusCategory", "cprNumber_1", "cprNumber_2", "cprCheckedAt")
     .get();
   const candidates = [];
   snap.forEach((doc) => {
     const d = doc.data();
-    // Re-fetch anything still missing its CPR number. (Keying off "settled"
-    // orphaned the parcels the earlier buggy field-mapping had already marked
-    // settled but with a null CPR.)
-    if (d.cprNumber_1) return;                     // already has its CPR — done
-    // Returns rarely produce an upfront CPR — once checked, stop re-polling.
+    // A parcel's CPR can be an upfront receipt (cpr1) OR a reserve receipt
+    // (cpr2) — done once we have either. (Keying off cpr1 alone orphaned every
+    // reserve-paid parcel; keying off "settled" orphaned the buggy-mapped ones.)
+    if (d.cprNumber_1 || d.cprNumber_2) return;    // already has its CPR — done
+    // Returns rarely produce a CPR — once checked, stop re-polling.
     if (d.statusCategory === "returned" && d.cprCheckedAt) return;
     candidates.push({ id: doc.id, trackingNumber: d.trackingNumber || doc.id });
   });
@@ -260,7 +260,7 @@ async function enrichPayments({ token, limit = 1000, concurrency = 5 }) {
           }, { merge: true });
           enriched++;
           if (dist.settle === true) settled++;
-          if (dist.cpr1 || dist.cprNumber_1) cprFound++;
+          if (dist.cpr1 || dist.cpr2 || dist.cprNumber_1 || dist.cprNumber_2) cprFound++;
         }
       } catch (e) { errors++; }
     }

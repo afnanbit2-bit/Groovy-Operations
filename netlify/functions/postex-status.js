@@ -51,13 +51,15 @@ exports.handler = async function (event) {
       const db = getDb();
       const snap = await db.collection("postex_orders")
         .where("statusCategory", "in", ["delivered", "returned"])
-        .select("statusCategory", "settle", "cprNumber_1", "cprCheckedAt").get();
-      const c = { queryTotal: snap.size, delivered: 0, returned: 0, settledTrue: 0, hasCpr: 0, checked: 0 };
+        .select("statusCategory", "settle", "cprNumber_1", "cprNumber_2", "cprCheckedAt").get();
+      const c = { queryTotal: snap.size, delivered: 0, returned: 0, settledTrue: 0, hasCpr: 0, cpr1: 0, cpr2: 0, checked: 0 };
       snap.forEach((d) => {
         const x = d.data();
         if (x.statusCategory === "delivered") c.delivered++; else if (x.statusCategory === "returned") c.returned++;
         if (x.settle === true) c.settledTrue++;
-        if (x.cprNumber_1) c.hasCpr++;
+        if (x.cprNumber_1 || x.cprNumber_2) c.hasCpr++;
+        if (x.cprNumber_1) c.cpr1++;
+        if (x.cprNumber_2) c.cpr2++;
         if (x.cprCheckedAt) c.checked++;
       });
       // Also a total collection count via aggregate.

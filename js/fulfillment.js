@@ -936,22 +936,22 @@ function _renderPostexCOD(){
 function _postexCPRs(){
   const map={};
   let withCpr=0,eligible=0;
+  const add=(cpr,kind,paid,dt,settled)=>{
+    if(!cpr)return;
+    const m=map[cpr]||(map[cpr]={cpr,kind,n:0,amount:0,settled:0,date:null});
+    m.n++;m.amount+=paid;if(settled)m.settled++;
+    if(dt&&(!m.date||String(dt)>String(m.date)))m.date=dt;
+  };
+  const netCod=o=>Number(o.cod||0)-Number(o.transactionFee||0)-Number(o.transactionTax||0);
   for(const o of postexOrders){
     const c=o.statusCategory;
     if(c==='delivered'||c==='returned')eligible++;
-    const cpr=o.cprNumber_1;
-    if(cpr){
-      withCpr++;
-      const m=map[cpr]||(map[cpr]={cpr,n:0,amount:0,settled:0,date:null});
-      m.n++;
-      // Amount PostEx pays for this shipment: its upfront payment if present,
-      // else the net COD (collected − fee − tax).
-      const paid=Number(o.upfrontPayment||0)||(Number(o.cod||0)-Number(o.transactionFee||0)-Number(o.transactionTax||0));
-      m.amount+=paid;
-      if(o.settle===true)m.settled++;
-      const dt=o.settlementDate||o.cpr1Date||null;
-      if(dt&&(!m.date||String(dt)>String(m.date)))m.date=dt;
-    }
+    const has1=!!o.cprNumber_1,has2=!!o.cprNumber_2;
+    if(has1||has2)withCpr++;
+    // A parcel is paid either upfront (cpr1) or via reserve (cpr2). Amount is
+    // the matching payment field, falling back to net COD for upfront.
+    if(has1)add(o.cprNumber_1,'upfront',Number(o.upfrontPayment||0)||netCod(o),o.settlementDate||o.cpr1Date,o.settle===true);
+    if(has2)add(o.cprNumber_2,'reserve',Number(o.reservePayment||0)||Number(o.balancePayment||0)||netCod(o),o.settlementDate||o.cpr2Date,o.settle===true);
   }
   const cprs=Object.values(map).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
   return {cprs,withCpr,eligible};
@@ -979,8 +979,9 @@ function _renderPostexCPR(){
   const td=(v,a,x)=>`<td style="padding:8px 6px;text-align:${a||'left'};${x||''}">${v}</td>`;
   const rows=cprs.map(c=>{
     const full=c.settled===c.n;
+    const kindTag=c.kind==='reserve'?` <span style="font-size:10px;font-weight:600;color:#B47512;background:#B4751214;border-radius:4px;padding:1px 4px">reserve</span>`:'';
     return `<tr style="border-bottom:1px solid #f5f5f5;font-size:13.5px">
-        ${td(c.cpr,'left','font-weight:700;white-space:nowrap')}
+        ${td(c.cpr+kindTag,'left','font-weight:700;white-space:nowrap')}
         ${td(_postexCprDate(c.date),'left','color:var(--muted);white-space:nowrap')}
         ${td(_fnum(c.n),'right')}
         ${td(_fRs(c.amount),'right','font-weight:700')}
