@@ -24,6 +24,7 @@ async function loadData(){
     allFabricMovements=fMovSnap.docs.map(d=>({...d.data(),_id:d.id}));
     if(currentPage)renderPage(currentPage);
     if(typeof _maybeLoadPrintingData==='function')_maybeLoadPrintingData();
+    if(typeof loadProducts==='function')loadProducts();
     if(typeof loadHRMData==='function')loadHRMData().then(()=>{ if(currentPage==='dashboard'||currentPage==='hrm-employees'){const m=document.getElementById('main-content');if(m&&typeof renderPage==='function')renderPage(currentPage);} });
   }catch(e){
     if((e.code==='permission-denied'||e.message.includes('permissions'))&&auth.currentUser){
@@ -61,24 +62,180 @@ async function loadBundles(poId){
 }
 
 // ── HRM: seed data, policies, loaders ─────────────────────────
+
+// Load runtime-created products from Firestore `products` into
+// allCustomProducts. These are merged with the static PRODUCT_CATALOG so
+// new products added via the "New PO" form persist and are searchable
+// across sessions/users. Safe no-op on permission errors (falls back to
+// the static catalog).
+async function loadProducts(){
+  try{
+    const snap=await getDocs(collection(db,'products'));
+    allCustomProducts=snap.docs.map(d=>({...d.data(),code:d.data().code||d.id}));
+    _productsLoaded=true;
+  }catch(e){/* keep static catalog only */}
+}
+
+// Merged, de-duplicated product list: static PRODUCT_CATALOG + custom
+// products (custom wins on code collision). This is the single source the
+// PO search reads from.
+function getProductCatalog(){
+  const byCode={};
+  PRODUCT_CATALOG.forEach(p=>{byCode[p.code.toUpperCase()]={code:p.code,name:p.name};});
+  (allCustomProducts||[]).forEach(p=>{if(p&&p.code)byCode[String(p.code).toUpperCase()]={code:p.code,name:p.name,custom:true};});
+  return Object.values(byCode);
+}
+
+// Distinct code prefixes (leading letters) with usage counts + an example,
+// derived dynamically from the merged catalog — no hardcoded category list.
+function _productPrefixes(){
+  const map={};
+  getProductCatalog().forEach(p=>{
+    const m=String(p.code||'').match(/^([A-Za-z]+)/);
+    if(!m)return;
+    const pre=m[1].toUpperCase();
+    if(!map[pre])map[pre]={prefix:pre,count:0,example:p.name};
+    map[pre].count++;
+  });
+  return Object.values(map).sort((a,b)=>b.count-a.count||a.prefix.localeCompare(b.prefix));
+}
+
+// Compute the next unused code for a given prefix by scanning the merged
+// catalog: max numeric suffix + 1, zero-padded to the widest existing
+// suffix (min 3 digits). Prefix with no existing codes → PREFIX001.
+function _nextProductCode(prefix){
+  prefix=String(prefix||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(!prefix)return'';
+  let max=0,width=3;
+  getProductCatalog().forEach(p=>{
+    const m=String(p.code||'').toUpperCase().match(new RegExp('^'+prefix.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(\\d+)$'));
+    if(m){const n=parseInt(m[1],10);if(n>max)max=n;width=Math.max(width,m[1].length);}
+  });
+  return prefix+String(max+1).padStart(width,'0');
+}
+
 window.filterProducts=function(q){
   const dd=document.getElementById('po-dropdown');
   if(!dd)return;
-  q=(q||'').toLowerCase().trim();
-  if(!q){dd.style.display='none';return;}
-  const hits=PRODUCT_CATALOG.filter(p=>p.code.toLowerCase().includes(q)||p.name.toLowerCase().includes(q)).slice(0,18);
-  if(!hits.length){dd.innerHTML='<div style="padding:10px 12px;font-size:12px;color:var(--muted)">No matches found</div>';dd.style.display='block';return;}
-  dd.innerHTML=hits.map((p,i)=>`<div class="prod-opt" data-i="${PRODUCT_CATALOG.indexOf(p)}" style="padding:10px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f3f4f6;display:flex;gap:10px;align-items:baseline"><span style="font-weight:700;color:var(--dark);min-width:80px;font-size:12px">${p.code}</span><span style="color:var(--text)">${p.name}</span></div>`).join('');
+  const raw=(q||'').trim();
+  q=raw.toLowerCase();
+  const catalog=getProductCatalog();
+  const hits=q?catalog.filter(p=>p.code.toLowerCase().includes(q)||p.name.toLowerCase().includes(q)).slice(0,18):[];
+  const addRow=`<div class="prod-add" style="padding:11px 12px;cursor:pointer;font-size:13px;font-weight:600;color:var(--dark);display:flex;gap:8px;align-items:center;background:#fafafa"><span style="font-size:16px;line-height:1">+</span><span>Add new product${raw?` “${raw.replace(/"/g,'&quot;').slice(0,40)}”`:''}</span></div>`;
+  if(!q){
+    // Empty query: offer only the add-new action.
+    dd.innerHTML=addRow;
+  }else if(!hits.length){
+    dd.innerHTML='<div style="padding:10px 12px;font-size:12px;color:var(--muted)">No matches found</div>'+addRow;
+  }else{
+    dd.innerHTML=hits.map((p,i)=>`<div class="prod-opt" data-i="${catalog.indexOf(p)}" style="padding:10px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f3f4f6;display:flex;gap:10px;align-items:baseline"><span style="font-weight:700;color:var(--dark);min-width:80px;font-size:12px">${p.code}</span><span style="color:var(--text)">${p.name}</span></div>`).join('')+addRow;
+  }
   dd.style.display='block';
   dd.querySelectorAll('.prod-opt').forEach(el=>el.addEventListener('mousedown',e=>{
     e.preventDefault();
-    const p=PRODUCT_CATALOG[+el.dataset.i];
-    document.getElementById('po-search').value=p.code+' — '+p.name;
-    document.getElementById('po-name').value=p.name;
-    document.getElementById('po-code').value=p.code;
-    dd.style.display='none';
-    window._checkEmbRecipe(p.code,p.name);
+    const p=catalog[+el.dataset.i];
+    window._selectProduct(p.code,p.name);
   }));
+  const addEl=dd.querySelector('.prod-add');
+  if(addEl)addEl.addEventListener('mousedown',e=>{e.preventDefault();dd.style.display='none';window._openAddProductModal(raw);});
+};
+
+// Fill the PO form's hidden inputs from a chosen product + auto-detect recipe.
+window._selectProduct=function(code,name){
+  const s=document.getElementById('po-search'),n=document.getElementById('po-name'),c=document.getElementById('po-code'),dd=document.getElementById('po-dropdown');
+  if(s)s.value=code+' — '+name;
+  if(n)n.value=name;
+  if(c)c.value=code;
+  if(dd)dd.style.display='none';
+  window._checkEmbRecipe(code,name);
+};
+
+// ── Add-new-product modal ──
+window._openAddProductModal=function(prefill){
+  // If the typed query looks like an existing/desired code prefix, preselect it.
+  let container=document.getElementById('addprod-modal-container');
+  if(!container){container=document.createElement('div');container.id='addprod-modal-container';document.body.appendChild(container);}
+  const prefixes=_productPrefixes();
+  // Guess a name from the prefill (unless it's clearly just a code).
+  const looksLikeCode=/^[A-Za-z]{1,4}\d*$/.test((prefill||'').replace(/\s/g,''));
+  const nameVal=(prefill&&!looksLikeCode)?prefill.replace(/"/g,'&quot;'):'';
+  const opts=prefixes.map(p=>`<option value="${p.prefix}">${p.prefix} — ${p.count} item${p.count===1?'':'s'} (e.g. ${String(p.example||'').replace(/"/g,'&quot;').slice(0,28)})</option>`).join('');
+  const firstPrefix=prefixes.length?prefixes[0].prefix:'GB';
+  container.innerHTML='<div id="addprod-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:flex-end;justify-content:center" onclick="if(event.target.id===\'addprod-overlay\')window._closeAddProductModal()">'+
+    '<div style="background:var(--surface,#fff);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:20px;max-height:90vh;overflow-y:auto">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
+        '<div style="font-size:16px;font-weight:700">Add New Product</div>'+
+        '<button onclick="window._closeAddProductModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>'+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-bottom:14px">Creates a product and assigns it a code. It is saved for future POs and searchable everywhere.</div>'+
+      '<div class="field" style="margin-bottom:12px"><label>Product name *</label><input id="np-name" value="'+nameVal+'" placeholder="e.g. Olive Green Hoodie" autocomplete="off"></div>'+
+      '<div class="field" style="margin-bottom:12px"><label>Category / code prefix</label>'+
+        '<select id="np-prefix" onchange="window._npPrefixChanged()" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--surface,#fff)">'+
+          opts+'<option value="__custom__">+ New prefix…</option>'+
+        '</select>'+
+        '<input id="np-prefix-custom" oninput="window._npUpdateCode()" placeholder="New prefix e.g. GX" maxlength="5" style="display:none;margin-top:8px;text-transform:uppercase">'+
+      '</div>'+
+      '<div class="field" style="margin-bottom:6px"><label>Assigned code</label>'+
+        '<div style="display:flex;gap:8px;align-items:center">'+
+          '<input id="np-code" oninput="window._npCodeEdited=true" style="flex:1;font-weight:700;letter-spacing:.5px" autocomplete="off">'+
+          '<button type="button" onclick="window._npCodeEdited=false;window._npUpdateCode()" class="btn-outline" style="white-space:nowrap;padding:8px 12px">Auto</button>'+
+        '</div>'+
+        '<div id="np-code-hint" style="font-size:11px;color:var(--muted);margin-top:5px">Auto-assigned. Edit if you need a specific code.</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;margin-top:18px">'+
+        '<button class="btn-outline" onclick="window._closeAddProductModal()" style="flex:1">Cancel</button>'+
+        '<button class="btn-primary" id="np-save-btn" style="flex:1" onclick="window._saveNewProduct()">Save Product</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  window._npCodeEdited=false;
+  const sel=document.getElementById('np-prefix');if(sel)sel.value=firstPrefix;
+  window._npUpdateCode();
+  setTimeout(()=>{const nEl=document.getElementById('np-name');if(nEl&&!nameVal)nEl.focus();},30);
+};
+window._closeAddProductModal=function(){const el=document.getElementById('addprod-modal-container');if(el)el.innerHTML='';};
+window._npPrefixChanged=function(){
+  const sel=document.getElementById('np-prefix'),custom=document.getElementById('np-prefix-custom');
+  if(!sel)return;
+  if(sel.value==='__custom__'){if(custom){custom.style.display='block';custom.focus();}}
+  else if(custom){custom.style.display='none';}
+  window._npUpdateCode();
+};
+window._npCurrentPrefix=function(){
+  const sel=document.getElementById('np-prefix');
+  if(!sel)return'';
+  if(sel.value==='__custom__')return(document.getElementById('np-prefix-custom')?.value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  return sel.value;
+};
+window._npUpdateCode=function(){
+  if(window._npCodeEdited)return; // don't clobber a manual edit
+  const code=_nextProductCode(window._npCurrentPrefix());
+  const cEl=document.getElementById('np-code');if(cEl)cEl.value=code;
+};
+window._saveNewProduct=async function(){
+  const nameEl=document.getElementById('np-name'),codeEl=document.getElementById('np-code'),btn=document.getElementById('np-save-btn'),hint=document.getElementById('np-code-hint');
+  const name=(nameEl?.value||'').trim();
+  let code=(codeEl?.value||'').trim().toUpperCase().replace(/\s+/g,'');
+  if(!name){showToast('Product name required.',true);nameEl?.focus();return;}
+  if(!/^[A-Z0-9-]{2,}$/.test(code)){showToast('Enter a valid code (letters/numbers, e.g. GH018).',true);codeEl?.focus();return;}
+  // Uniqueness check against the merged catalog.
+  const clash=getProductCatalog().find(p=>String(p.code).toUpperCase()===code);
+  if(clash){if(hint){hint.textContent='Code '+code+' already exists ('+clash.name+'). Pick another or press Auto.';hint.style.color='var(--red,#dc2626)';}return;}
+  if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  try{
+    const payload={code,name,createdBy:session?.name||'',createdAt:new Date().toISOString().slice(0,10),ts:Date.now()};
+    await setDoc(doc(db,'products',code),payload);
+    // Update in-memory catalog immediately so it's searchable without a reload.
+    const idx=allCustomProducts.findIndex(p=>String(p.code).toUpperCase()===code);
+    if(idx>=0)allCustomProducts[idx]=payload;else allCustomProducts.push(payload);
+    await logActivity('Product added',`${code} — ${name}`).catch(()=>{});
+    window._closeAddProductModal();
+    showToast(`Product ${code} added ✓`);
+    window._selectProduct(code,name); // auto-select it in the PO form
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='Save Product';}
+    showToast('Could not save product: '+e.message,true);
+  }
 };
 function poRowHTML(p){
   const stage=STAGES.find(s=>s.key===p.currentStage)||{label:'Completed',color:'#111111'};

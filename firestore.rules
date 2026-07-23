@@ -62,6 +62,10 @@ service cloud.firestore {
     match /gatepass_edit_requests/{doc} { allow read, write: if signedIn(); }
     match /activity/{doc}             { allow read, write: if signedIn(); }
     match /counters/{doc}             { allow read, write: if signedIn(); }
+    // Custom products added from the New PO form (name + assigned code),
+    // merged with the static PRODUCT_CATALOG at runtime. Any signed-in user
+    // may read and create; edits/deletes are open (managed at the app layer).
+    match /products/{doc}             { allow read, write: if signedIn(); }
     // Daily fulfilment performance (dispatch & returns) — one doc per day.
     match /fulfillment_reports/{doc}  { allow read, write: if signedIn(); }
     // PostEx courier sync — written only by the Netlify function (Admin SDK);
