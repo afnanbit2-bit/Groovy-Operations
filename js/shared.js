@@ -1856,6 +1856,24 @@ document.addEventListener('click',e=>{
 });
   // mobile sheet: Escape to close + swipe-down to dismiss
 document.addEventListener('keydown',e=>{ if(e.key==='Escape')window.closeMobSheet(); });
+  // Backspace guard: in some browsers Backspace outside an editable field
+  // triggers "navigate back", which leaves this SPA entirely (looks like the
+  // app closing) since we don't push history entries. Allow Backspace only
+  // inside editable elements; block it everywhere else, across all pages/tabs.
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Backspace')return;
+  const t=e.target;
+  if(!t)return;
+  const tag=(t.tagName||'').toLowerCase();
+  const editable=t.isContentEditable
+    ||tag==='textarea'
+    ||tag==='select'
+    ||(tag==='input'&&!t.disabled&&!t.readOnly
+        // date/checkbox/radio/etc. inputs don't consume Backspace as text,
+        // but they also don't navigate back, so treat any <input> as editable
+      );
+  if(!editable)e.preventDefault();
+});
 // Swipe-down on handle to dismiss
 (function(){
   let startY=null;
