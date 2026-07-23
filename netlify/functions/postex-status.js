@@ -32,6 +32,19 @@ exports.handler = async function (event) {
       const r = await fetchPaymentStatus(token, q.paydebug);
       return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(r, null, 2) };
     }
+    if (q.paystuck) {
+      // Find a checked parcel that still has no cprNumber_1 and show its raw
+      // payment-status — reveals whether the CPR is in cpr2, or absent entirely.
+      const db = getDb();
+      const snap = await db.collection("postex_orders")
+        .where("statusCategory", "in", ["delivered", "returned"])
+        .select("trackingNumber", "cprNumber_1", "cprCheckedAt").limit(2000).get();
+      let tn = null;
+      snap.forEach((d) => { const x = d.data(); if (!tn && x.cprCheckedAt && !x.cprNumber_1) tn = x.trackingNumber || d.id; });
+      if (!tn) return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note: "No stuck parcel found in first 2000." }) };
+      const r = await fetchPaymentStatus(token, tn);
+      return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stuckTrackingNumber: tn, ...r }, null, 2) };
+    }
     if (q.counts) {
       // Diagnose the enrichment candidate query: what does the server actually
       // see for delivered/returned parcels and their settle/CPR state?
