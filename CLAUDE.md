@@ -289,7 +289,8 @@ in Firebase Console have NOT been republished yet. Until that's done:
 
 - Bug submissions fail with "Missing or insufficient permissions"
 - Newer collections may also fail to write (advances, loans, policy log,
-  payroll runs/slips, hrm_notifications)
+  payroll runs/slips, hrm_notifications, **`products`** — custom products
+  added from the New PO form)
 
 To fix: open
   https://console.firebase.google.com/project/groovy-gatepass/firestore/rules

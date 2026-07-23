@@ -433,6 +433,9 @@ const PRODUCT_CATALOG=[
 ];
 
 let session=null,allPOs=[],allPasses=[],currentPage='',viewingPO=null,poImages={front:null,back:null},gpRowIdx=0,loginInProgress=false,gpPage=1;
+// Custom products created at runtime (persisted in Firestore `products`),
+// merged with the static PRODUCT_CATALOG for search/select. See getProductCatalog().
+let allCustomProducts=[],_productsLoaded=false;
 let stageWorkPO=null,stageWorkStage=null,currentBundles=[],cutState={poId:null,actualQty:{},pendingBundles:[]};
 let gpActiveTab='outward',allReturns=[],allFabricIn=[],fabRollIdx=0;
 let allGPEditRequests=[],_gpEditRowIdx=0;
@@ -967,7 +970,7 @@ window.showPage=async function(id){
 function renderPage(id){
   const m=document.getElementById('main-content');
   if(id==='dashboard'){m.innerHTML=renderDashboard(); if(typeof _hrmPopulateDashboard==='function')setTimeout(_hrmPopulateDashboard,0); if(typeof _fulfillDashboardInject==='function')setTimeout(_fulfillDashboardInject,0);}
-  else if(id==='po-create')m.innerHTML=renderPOCreate();
+  else if(id==='po-create'){m.innerHTML=renderPOCreate(); if(typeof loadProducts==='function'&&!_productsLoaded)loadProducts();}
   else if(id==='po-registry')m.innerHTML=renderRegistry();
   else if(id==='my-work'){m.innerHTML=renderMyWork(); if(typeof _populateWorkerHRMWidget==='function')setTimeout(_populateWorkerHRMWidget,0);}
   else if(id==='me'){m.innerHTML=renderMePage(); if(typeof _populateWorkerHRMWidget==='function')setTimeout(_populateWorkerHRMWidget,0);}
