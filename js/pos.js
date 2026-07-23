@@ -171,9 +171,12 @@ window._openAddProductModal=function(prefill){
       '<div class="field" style="margin-bottom:12px"><label>Product name *</label><input id="np-name" value="'+nameVal+'" placeholder="e.g. Olive Green Hoodie" autocomplete="off"></div>'+
       '<div class="field" style="margin-bottom:12px"><label>Category / code prefix</label>'+
         '<select id="np-prefix" onchange="window._npPrefixChanged()" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--surface,#fff)">'+
-          opts+'<option value="__custom__">+ New prefix…</option>'+
+          opts+'<option value="__custom__">＋ Create new prefix…</option>'+
         '</select>'+
-        '<input id="np-prefix-custom" oninput="window._npUpdateCode()" placeholder="New prefix e.g. GX" maxlength="5" style="display:none;margin-top:8px;text-transform:uppercase">'+
+        '<div id="np-prefix-custom-wrap" style="display:none;margin-top:8px">'+
+          '<input id="np-prefix-custom" oninput="window._npCustomInput()" placeholder="New prefix e.g. GX" maxlength="6" autocomplete="off" style="width:100%;font-weight:700;letter-spacing:.5px;text-transform:uppercase">'+
+          '<div id="np-prefix-preview" style="font-size:11px;color:var(--muted);margin-top:5px">Letters/numbers only. A new prefix is created the moment you save this product.</div>'+
+        '</div>'+
       '</div>'+
       '<div class="field" style="margin-bottom:6px"><label>Assigned code</label>'+
         '<div style="display:flex;gap:8px;align-items:center">'+
@@ -195,11 +198,20 @@ window._openAddProductModal=function(prefill){
 };
 window._closeAddProductModal=function(){const el=document.getElementById('addprod-modal-container');if(el)el.innerHTML='';};
 window._npPrefixChanged=function(){
-  const sel=document.getElementById('np-prefix'),custom=document.getElementById('np-prefix-custom');
+  const sel=document.getElementById('np-prefix'),wrap=document.getElementById('np-prefix-custom-wrap'),custom=document.getElementById('np-prefix-custom');
   if(!sel)return;
-  if(sel.value==='__custom__'){if(custom){custom.style.display='block';custom.focus();}}
-  else if(custom){custom.style.display='none';}
+  if(sel.value==='__custom__'){if(wrap)wrap.style.display='block';if(custom)custom.focus();}
+  else if(wrap){wrap.style.display='none';}
   window._npUpdateCode();
+};
+// New-prefix input: normalise to A–Z/0–9 in place, then re-derive the code + preview.
+window._npCustomInput=function(){
+  const custom=document.getElementById('np-prefix-custom');
+  if(custom){const clean=custom.value.toUpperCase().replace(/[^A-Z0-9]/g,'');if(clean!==custom.value)custom.value=clean;}
+  window._npCodeEdited=false; // creating a new prefix always re-auto the code
+  window._npUpdateCode();
+  const pv=document.getElementById('np-prefix-preview'),pre=window._npCurrentPrefix();
+  if(pv)pv.textContent=pre?('New product will be coded '+_nextProductCode(pre)+' (and '+pre+' becomes a reusable prefix).'):'Letters/numbers only. A new prefix is created the moment you save this product.';
 };
 window._npCurrentPrefix=function(){
   const sel=document.getElementById('np-prefix');
