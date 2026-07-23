@@ -936,22 +936,25 @@ function _renderPostexCOD(){
 function _postexCPRs(){
   const map={};
   let withCpr=0,eligible=0;
-  const add=(cpr,kind,paid,dt,settled)=>{
-    if(!cpr)return;
-    const m=map[cpr]||(map[cpr]={cpr,kind,n:0,amount:0,settled:0,date:null});
-    m.n++;m.amount+=paid;if(settled)m.settled++;
-    if(dt&&(!m.date||String(dt)>String(m.date)))m.date=dt;
-  };
-  const netCod=o=>Number(o.cod||0)-Number(o.transactionFee||0)-Number(o.transactionTax||0);
   for(const o of postexOrders){
     const c=o.statusCategory;
     if(c==='delivered'||c==='returned')eligible++;
-    const has1=!!o.cprNumber_1,has2=!!o.cprNumber_2;
-    if(has1||has2)withCpr++;
-    // A parcel is paid either upfront (cpr1) or via reserve (cpr2). Amount is
-    // the matching payment field, falling back to net COD for upfront.
-    if(has1)add(o.cprNumber_1,'upfront',Number(o.upfrontPayment||0)||netCod(o),o.settlementDate||o.cpr1Date,o.settle===true);
-    if(has2)add(o.cprNumber_2,'reserve',Number(o.reservePayment||0)||Number(o.balancePayment||0)||netCod(o),o.settlementDate||o.cpr2Date,o.settle===true);
+    const cpr=o.cprNumber_1||o.cprNumber_2;      // the order's CPR (either field)
+    if(!cpr)continue;
+    withCpr++;
+    // Per-order net exactly as the CPR computes it: collected COD (0 on a
+    // return) minus PostEx's shipping charge (transactionFee) and GST
+    // (transactionTax). Delivered orders net positive; returns net negative.
+    const delivered=c==='delivered';
+    const gross=delivered?Number(o.cod||0):0;
+    const net=gross-Number(o.transactionFee||0)-Number(o.transactionTax||0);
+    const m=map[cpr]||(map[cpr]={cpr,n:0,delivered:0,returned:0,gross:0,net:0,settled:0,date:null});
+    m.n++;
+    if(delivered)m.delivered++;else if(c==='returned')m.returned++;
+    m.gross+=gross;m.net+=net;
+    if(o.settle===true)m.settled++;
+    const dt=o.settlementDate||o.cpr1Date||o.cpr2Date||null;
+    if(dt&&(!m.date||String(dt)>String(m.date)))m.date=dt;
   }
   const cprs=Object.values(map).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
   return {cprs,withCpr,eligible};
@@ -973,32 +976,30 @@ function _renderPostexCPR(){
   if(!cprs.length)
     return `${progress}<div class="empty">No CPR receipts yet.<br><br>Hit <b>Fetch CPR now</b> above (or the daily run will populate them), then <b>Sync now</b> to pull the enriched data.</div>`;
 
-  const totalPaid=cprs.reduce((a,c)=>a+c.amount,0);
+  const totalNet=cprs.reduce((a,c)=>a+c.net,0);
   const totalShip=cprs.reduce((a,c)=>a+c.n,0);
   const th=(t,a)=>`<th style="padding:7px 6px;border-bottom:2px solid var(--border);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;text-align:${a||'left'}">${t}</th>`;
   const td=(v,a,x)=>`<td style="padding:8px 6px;text-align:${a||'left'};${x||''}">${v}</td>`;
   const rows=cprs.map(c=>{
-    const full=c.settled===c.n;
-    const kindTag=c.kind==='reserve'?` <span style="font-size:10px;font-weight:600;color:#B47512;background:#B4751214;border-radius:4px;padding:1px 4px">reserve</span>`:'';
     return `<tr style="border-bottom:1px solid #f5f5f5;font-size:13.5px">
-        ${td(c.cpr+kindTag,'left','font-weight:700;white-space:nowrap')}
+        ${td(c.cpr,'left','font-weight:700;white-space:nowrap')}
         ${td(_postexCprDate(c.date),'left','color:var(--muted);white-space:nowrap')}
         ${td(_fnum(c.n),'right')}
-        ${td(_fRs(c.amount),'right','font-weight:700')}
-        ${td(`<span style="font-size:11px;color:${full?'var(--accent-success)':'var(--accent-warning)'}">${c.settled}/${c.n}</span>`,'right')}
+        ${td(`<span style="color:var(--muted)">${_fnum(c.delivered)}/${_fnum(c.returned)}</span>`,'right')}
+        ${td(_fRs(c.net),'right','font-weight:700')}
       </tr>`;
   }).join('');
   return `${progress}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
       ${_pxKpi('CPR receipts',_fnum(cprs.length),`${_fnum(totalShip)} shipments`,'#111')}
-      ${_pxKpi('Total upfront paid',_fRs(totalPaid),'across all receipts','#14532D')}
+      ${_pxKpi('Total net payout',_fRs(totalNet),'PostEx → you','#14532D')}
     </div>
     <div class="card" style="margin-bottom:14px">
       <div class="card-title" style="font-size:12px">Cash Payment Receipts — newest first</div>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
-        <thead><tr>${th('CPR number')}${th('Paid on')}${th('Shipments','right')}${th('Upfront amount','right')}${th('Settled','right')}</tr></thead>
+        <thead><tr>${th('CPR number')}${th('Paid on')}${th('Shipments','right')}${th('Del / Ret','right')}${th('Net payout','right')}</tr></thead>
         <tbody>${rows}</tbody></table></div>
-      <div style="font-size:11px;color:var(--muted);margin-top:6px">Each row reconstructs one PostEx receipt from the shipments paid under it — match the amount against PostEx's CPR invoice. "Settled" = shipments on this CPR PostEx has marked paid.</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">Net payout = collected COD − shipping − GST across a receipt's shipments (returns collect 0 but still carry charges). Match against PostEx's CPR "Net Total". Del / Ret = delivered vs returned shipments on the receipt.</div>
     </div>`;
 }
 // Trigger the CPR/payment enrichment, then refresh once it's had time to run.

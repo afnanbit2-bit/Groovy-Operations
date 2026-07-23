@@ -226,12 +226,11 @@ async function enrichPayments({ token, limit = 1000, concurrency = 5 }) {
   const candidates = [];
   snap.forEach((doc) => {
     const d = doc.data();
-    // A parcel's CPR can be an upfront receipt (cpr1) OR a reserve receipt
-    // (cpr2) — done once we have either. (Keying off cpr1 alone orphaned every
-    // reserve-paid parcel; keying off "settled" orphaned the buggy-mapped ones.)
+    // Done once we have a CPR number in either field. Returns ARE part of CPRs
+    // too (they collect 0 COD but still carry shipping+GST), so keep fetching
+    // returns until they have a CPR — their receipt lands once the return
+    // settles, which can be days after the delivery attempt.
     if (d.cprNumber_1 || d.cprNumber_2) return;    // already has its CPR — done
-    // Returns rarely produce a CPR — once checked, stop re-polling.
-    if (d.statusCategory === "returned" && d.cprCheckedAt) return;
     candidates.push({ id: doc.id, trackingNumber: d.trackingNumber || doc.id });
   });
   const batch = candidates.slice(0, limit);
