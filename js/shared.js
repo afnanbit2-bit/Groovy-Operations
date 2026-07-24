@@ -613,10 +613,11 @@ function buildNav(){
     _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
     return;
   }
-  // Packing/dispatch account (Faizan) — single-purpose nav: Packing only.
+  // Packing/dispatch account (Faizan) — Packing + B-stock cartons.
   if(session.role==='packing'){
     const sb=document.getElementById('sidebar');
-    if(sb)sb.innerHTML=`<div class="nav-item on" id="nav-packing" onclick="window.showPage('packing')">Packing</div>`;
+    if(sb)sb.innerHTML=`<div class="nav-item on" id="nav-packing" onclick="window.showPage('packing')">Packing</div>
+      <div class="nav-item" id="nav-bstock" onclick="window.showPage('bstock')">B-Stock</div>`;
     _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
     return;
   }
@@ -629,6 +630,8 @@ function buildNav(){
   if(isWorker||isViewer)mainItems.push({id:'my-work',label:'My Work'});
   // Garment QC disposition — Haris (QC manager) + owners/managers.
   if(session.u==='haris'||om)mainItems.push({id:'qc-disposition',label:'QC Disposition'});
+  // B-stock carton inventory — owners/managers view/manage.
+  if(om)mainItems.push({id:'bstock',label:'B-Stock'});
   if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
   if(om||session.canFabric)mainItems.push({id:'fabric-inventory',label:'Fabric Inventory'});
   if(om)mainItems.push({id:'fulfillment',label:'Courier Performance'});
@@ -759,10 +762,11 @@ function _renderMobNav(ctx){
     return;
   }
   if(session&&session.role==='packing'){
-    // Packing (Faizan): single Packing tab (Ready-to-Barcode arrives later).
+    // Packing (Faizan): Packing + B-stock (Ready-to-Barcode arrives later).
     mob.className='cols-3';
     mob.style.gridTemplateColumns='';
-    mob.innerHTML=_mobNavBtn('packing','box','Packing',"window.showPage('packing')");
+    mob.innerHTML=_mobNavBtn('packing','box','Packing',"window.showPage('packing')")
+                 +_mobNavBtn('bstock','tray','B-Stock',"window.showPage('bstock')");
     _updateMobNavActive(currentPage);
     return;
   }
@@ -998,6 +1002,7 @@ function renderPage(id){
   else if(id==='fabric-inventory'){_fabInvDrillKey=null;m.innerHTML=renderFabricPage();window.switchFabTab('stock');}
   else if(id==='packing')m.innerHTML=renderPacking();
   else if(id==='qc-disposition')m.innerHTML=renderQCDisposition();
+  else if(id==='bstock'){if(!_bstockLoaded){m.innerHTML=gvSkeleton(6);loadBstockData().then(()=>{if(currentPage===id)m.innerHTML=renderBstock();});}else m.innerHTML=renderBstock();}
   else if(id==='fulfillment'){if(!fulfillReportsLoaded){m.innerHTML=gvSkeleton(6);loadFulfillmentData().then(()=>{if(currentPage===id)m.innerHTML=renderFulfillmentPage();});}else m.innerHTML=renderFulfillmentPage();}
   else if(id==='activity'){loadActivity();return;}
   else if(id==='users')m.innerHTML=renderUsers();

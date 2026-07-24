@@ -384,3 +384,136 @@ window.qcResolveRework=async function(fbKey,dest){
     if(currentPage==='qc-disposition'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderQCDisposition();}
   }catch(e){showToast('Error: '+e.message,true);}
 };
+
+// ── B-stock carton inventory (Faizan / managers) ──────────────────────────
+// The bstock pool generated at QC (qcBstockBySize) is boxed into numbered
+// cartons, tagged PO · product · size, and later transferred out. Own
+// collections (lazy-loaded): bstock_items (one doc per assignment) +
+// bstock_cartons (carton meta + status). See PO_PRODUCTION_FLOW_PLAN.md §4.6.
+let allBstockItems=[];
+let allBstockCartons=[];
+let _bstockLoaded=false;
+let _bstockTab='unassigned';
+async function loadBstockData(){
+  try{
+    const[iSnap,cSnap]=await Promise.all([
+      getDocs(collection(db,'bstock_items')).catch(()=>({docs:[]})),
+      getDocs(collection(db,'bstock_cartons')).catch(()=>({docs:[]}))
+    ]);
+    allBstockItems=iSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    allBstockCartons=cSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    _bstockLoaded=true;
+  }catch(e){console.warn('[production] bstock load failed',e);}
+}
+function bstockAssignedBySize(po){
+  const out={};
+  (allBstockItems||[]).forEach(it=>{if(it.poId===po.id&&it.size)out[it.size]=(out[it.size]||0)+(Number(it.qty)||0);});
+  return out;
+}
+function bstockUnassignedBySize(po){
+  const gen=qcBstockBySize(po),asn=bstockAssignedBySize(po),out={};
+  PO_FLOW_SIZES.forEach(sz=>{const v=Math.max(0,(gen[sz]||0)-(asn[sz]||0));if(v)out[sz]=v;});
+  return out;
+}
+function _bstockOpenPOs(){
+  return (typeof allPOs!=='undefined'&&Array.isArray(allPOs)?allPOs:[]).filter(p=>_mapTotal(bstockUnassignedBySize(p))>0);
+}
+
+function renderBstock(){
+  const openCartons=allBstockCartons.filter(c=>c.status!=='transferred');
+  const totalPcs=allBstockItems.reduce((a,it)=>a+(Number(it.qty)||0),0);
+  const unas=_bstockOpenPOs().reduce((a,p)=>a+_mapTotal(bstockUnassignedBySize(p)),0);
+  return`<div class="page-head"><div class="page-title">B-Stock Inventory</div><div class="page-sub">${totalPcs} pcs boxed · ${allBstockCartons.length} carton${allBstockCartons.length!==1?'s':''} · ${unas} unassigned</div></div>
+  <div class="gp-tabs">
+    <button class="gp-tab${_bstockTab==='unassigned'?' active':''}" onclick="window.bstockTab('unassigned')">Unassigned${unas?` (${unas})`:''}</button>
+    <button class="gp-tab${_bstockTab==='cartons'?' active':''}" onclick="window.bstockTab('cartons')">Cartons${openCartons.length?` (${openCartons.length})`:''}</button>
+  </div>
+  <div id="bstock-tab-content">${_bstockTab==='cartons'?_bstockCartonsHTML():_bstockUnassignedHTML()}</div>
+  <div style="height:80px"></div>`;
+}
+function _bstockCartonOptions(){
+  const open=allBstockCartons.filter(c=>c.status!=='transferred').sort((a,b)=>(b.no||0)-(a.no||0));
+  return`<option value="">Carton…</option>${open.map(c=>`<option value="${_gpEsc(c._id)}">${_gpEsc(c.id)}</option>`).join('')}<option value="__new__">+ New carton</option>`;
+}
+function _bstockUnassignedHTML(){
+  const pos=_bstockOpenPOs();
+  if(!pos.length)return'<div class="empty" style="padding:28px;text-align:center">No unassigned B-stock. Pieces marked B-stock at QC appear here to box.</div>';
+  const canAssign=isPacking()||['owner','manager'].includes(session.role);
+  return pos.map(po=>{
+    const un=bstockUnassignedBySize(po);
+    const rows=PO_FLOW_SIZES.filter(sz=>(un[sz]||0)>0).map(sz=>`<tr style="border-bottom:1px solid #f5f5f5">
+      <td style="padding:8px;font-weight:700">${sz}</td>
+      <td style="padding:8px;text-align:center;color:#dc2626;font-weight:700">${un[sz]}</td>
+      ${canAssign?`<td style="padding:8px;text-align:right">
+        <div style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+          <input id="bs-qty-${po.fbKey}-${sz}" type="number" min="1" max="${un[sz]}" placeholder="qty" style="width:64px;padding:6px;border:1px solid var(--border);border-radius:6px;font-size:13px;text-align:center;font-family:inherit">
+          <select id="bs-carton-${po.fbKey}-${sz}" style="padding:6px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit">${_bstockCartonOptions()}</select>
+          <button class="btn-outline" style="width:auto;padding:6px 12px;margin:0" onclick="window.bstockAssign('${po.fbKey}','${sz}')">Box</button>
+        </div></td>`:'<td></td>'}
+    </tr>`).join('');
+    return`<div class="card"><div class="card-title">${po.id} <span style="font-weight:400;color:var(--muted);font-size:12px">${_gpEsc(po.name||'')} · ${_gpEsc(po.code||'')}</span></div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:#fafafa"><th style="padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--muted)">Size</th><th style="padding:8px;text-align:center;font-size:11px;text-transform:uppercase;color:var(--muted)">Unassigned</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+    </div>`;
+  }).join('');
+}
+function _bstockCartonsHTML(){
+  if(!allBstockCartons.length)return'<div class="empty" style="padding:28px;text-align:center">No cartons yet. Box some B-stock from the Unassigned tab.</div>';
+  const canTransfer=isPacking()||['owner','manager'].includes(session.role);
+  const cartons=allBstockCartons.slice().sort((a,b)=>(b.no||0)-(a.no||0));
+  return cartons.map(c=>{
+    const items=allBstockItems.filter(it=>it.cartonId===c._id);
+    const tot=items.reduce((a,it)=>a+(Number(it.qty)||0),0);
+    const transferred=c.status==='transferred';
+    return`<div class="card" style="${transferred?'opacity:.75':''}">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>${_gpEsc(c.id)} <span style="font-weight:400;color:var(--muted);font-size:12px">${tot} pcs · ${items.length} line${items.length!==1?'s':''}</span></span>
+        <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;background:${transferred?'#f0f0f0':'#dcfce7'};color:${transferred?'var(--muted)':'#16a34a'}">${transferred?'Transferred':'Open'}</span>
+      </div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">
+        <thead><tr style="background:#fafafa"><th style="padding:7px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--muted)">PO</th><th style="padding:7px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Article</th><th style="padding:7px;text-align:center;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Size</th><th style="padding:7px;text-align:center;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Qty</th><th style="padding:7px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--muted)">By</th></tr></thead>
+        <tbody>${items.map(it=>`<tr style="border-bottom:1px solid #f5f5f5"><td style="padding:7px;font-weight:600">${_gpEsc(it.poId||'')}</td><td style="padding:7px">${_gpEsc(it.productCode||it.article||'')}</td><td style="padding:7px;text-align:center;font-weight:700">${_gpEsc(it.size||'')}</td><td style="padding:7px;text-align:center;color:#dc2626;font-weight:700">${it.qty||0}</td><td style="padding:7px;color:var(--muted)">${_gpEsc(it.assignedBy||'')}</td></tr>`).join('')||'<tr><td colspan="5" style="padding:10px;text-align:center;color:var(--muted)">Empty carton</td></tr>'}</tbody>
+      </table></div>
+      ${(!transferred&&canTransfer&&items.length)?`<button class="mark-done-btn" style="width:auto;padding:8px 16px;margin-top:10px" onclick="window.bstockTransferCarton('${_gpEsc(c._id)}')">Transfer carton out →</button>`:''}
+    </div>`;
+  }).join('');
+}
+
+// ── B-stock handlers ──
+window.bstockTab=function(tab){_bstockTab=tab;const m=document.getElementById('main-content');if(m&&currentPage==='bstock')m.innerHTML=renderBstock();};
+window.bstockAssign=async function(fbKey,size){
+  const po=(typeof allPOs!=='undefined'?allPOs:[]).find(p=>p.fbKey===fbKey);if(!po){showToast('PO not found.',true);return;}
+  const qty=parseInt(document.getElementById(`bs-qty-${fbKey}-${size}`)?.value)||0;
+  const cartonSel=document.getElementById(`bs-carton-${fbKey}-${size}`)?.value||'';
+  const unas=bstockUnassignedBySize(po)[size]||0;
+  if(qty<=0){showToast('Enter a quantity.',true);return;}
+  if(qty>unas){showToast(`Only ${unas} unassigned for ${size}.`,true);return;}
+  if(!cartonSel){showToast('Choose or create a carton.',true);return;}
+  try{
+    let cartonId=cartonSel,cartonNo;
+    if(cartonSel==='__new__'){
+      const n=await getNextId('bstock_carton');
+      cartonNo='CTN-'+String(n).padStart(3,'0');cartonId=cartonNo;
+      await setDoc(doc(db,'bstock_cartons',cartonId),{id:cartonId,no:n,status:'open',createdBy:session.name,createdAt:new Date().toISOString(),ts:Date.now()});
+    }else{const c=allBstockCartons.find(x=>x._id===cartonSel);cartonNo=c?c.id:cartonSel;}
+    const itemId='BSI-'+Date.now();
+    await setDoc(doc(db,'bstock_items',itemId),{id:itemId,poId:po.id,poName:po.name||'',productCode:po.code||'',article:po.code||'',size,qty,cartonId,cartonNo,assignedBy:session.name,assignedAt:new Date().toISOString(),transferred:false,ts:Date.now()});
+    await logActivity('B-stock boxed',`${po.id} ${size}×${qty} → ${cartonNo} by ${session.name}`).catch(()=>{});
+    showToast(`${qty} ${size} → ${cartonNo} ✓`);
+    await loadBstockData();
+    const m=document.getElementById('main-content');if(m&&currentPage==='bstock')m.innerHTML=renderBstock();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+window.bstockTransferCarton=async function(cartonId){
+  if(!confirm('Mark this carton as transferred out? This closes it.'))return;
+  try{
+    const items=allBstockItems.filter(it=>it.cartonId===cartonId&&!it.transferred);
+    await updateDoc(doc(db,'bstock_cartons',cartonId),{status:'transferred',transferredAt:new Date().toISOString(),transferBy:session.name});
+    for(const it of items){await updateDoc(doc(db,'bstock_items',it._id),{transferred:true,transferredAt:new Date().toISOString()});}
+    await logActivity('B-stock carton transferred',`${cartonId} — ${items.length} line(s) by ${session.name}`).catch(()=>{});
+    showToast(`${cartonId} transferred ✓`);
+    await loadBstockData();
+    const m=document.getElementById('main-content');if(m&&currentPage==='bstock')m.innerHTML=renderBstock();
+  }catch(e){showToast('Error: '+e.message,true);}
+};
