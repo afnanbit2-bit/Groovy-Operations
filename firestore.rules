@@ -73,6 +73,15 @@ service cloud.firestore {
     match /postex_orders/{doc}        { allow read: if signedIn(); allow write: if false; }
     match /postex_sync_meta/{doc}     { allow read: if signedIn(); allow write: if false; }
 
+    // ── PO production flow (reserve → cutting → packing → QC → transfer) ──
+    // See PO_PRODUCTION_FLOW_PLAN.md. B-stock (seconds) carton inventory and
+    // booked stock-transfer receipts. Any signed-in user reads/writes; the app
+    // layer gates who does what (Faizan books transfers, Haris dispositions,
+    // managers view B-stock).
+    match /bstock_items/{doc}         { allow read, write: if signedIn(); }
+    match /bstock_cartons/{doc}       { allow read, write: if signedIn(); }
+    match /stock_transfers/{doc}      { allow read, write: if signedIn(); }
+
     // ── Store ──
     match /store_items/{doc}          { allow read, write: if signedIn(); }
     match /store_transactions/{doc}   { allow read, write: if signedIn(); }

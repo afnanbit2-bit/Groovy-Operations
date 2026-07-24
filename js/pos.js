@@ -262,6 +262,57 @@ function poRowHTML(p){
     </div><div class="po-arrow">›</div></div>`;
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+//  PO production-flow model (see PO_PRODUCTION_FLOW_PLAN.md)
+//  Pure helpers only — NO UI, NO writes. Shared by the reserve → cutting →
+//  packing → QC → transfer spine. Every helper tolerates legacy PO docs that
+//  predate the new fields, so nothing already in the registry regresses.
+// ═══════════════════════════════════════════════════════════════════════
+const PO_STATUS={RESERVED:'reserved',IN_PRODUCTION:'in_production',COMPLETE:'complete'};
+const PO_FLOW_SIZES=['XS','S','M','L','XL','2XL'];
+
+// Effective status, tolerant of legacy docs with no poStatus. A legacy PO with
+// a live stage is treated as in_production (never regressed to "reserved"); a
+// completed one as complete.
+function poStatusOf(po){
+  if(!po)return PO_STATUS.RESERVED;
+  if(po.poStatus)return po.poStatus;
+  if(po.currentStage==='completed')return PO_STATUS.COMPLETE;
+  return po.currentStage?PO_STATUS.IN_PRODUCTION:PO_STATUS.RESERVED;
+}
+
+// Sum an append-only per-size ledger (packingReceipts / stockTransfers) into a
+// {size:qty} map. Each entry: {size, qty, ...}. Tolerates an absent array.
+function _poSumBySize(entries){
+  const out={};
+  (entries||[]).forEach(e=>{ if(!e||!e.size)return; out[e.size]=(out[e.size]||0)+(Number(e.qty)||0); });
+  return out;
+}
+// Cut pieces per size — Uzaib's actual cut count (the anchor). Falls back to
+// the PO's planned size breakdown for legacy docs that never recorded a cut.
+function poCutBySize(po){
+  if(po&&po.cutBySize&&typeof po.cutBySize==='object')return {...po.cutBySize};
+  return (po&&po.sizes)?{...po.sizes}:{};
+}
+function poReceivedBySize(po){ return _poSumBySize(po&&po.packingReceipts); }
+function poTransferredBySize(po){ return _poSumBySize(po&&po.stockTransfers); }
+function _poSumMap(m){ return Object.values(m||{}).reduce((a,n)=>a+(Number(n)||0),0); }
+function poCutTotal(po){ return _poSumMap(poCutBySize(po)); }
+function poReceivedTotal(po){ return _poSumMap(poReceivedBySize(po)); }
+function poTransferredTotal(po){ return _poSumMap(poTransferredBySize(po)); }
+// Balance still owed against the anchor cut, per size (never negative).
+function poBalanceBySize(po){
+  const cut=poCutBySize(po),tr=poTransferredBySize(po),out={};
+  PO_FLOW_SIZES.forEach(sz=>{ if(cut[sz]||tr[sz])out[sz]=Math.max(0,(cut[sz]||0)-(tr[sz]||0)); });
+  return out;
+}
+// Fully received when every cut size has been received in at least its cut qty.
+function poFullyReceived(po){
+  const cut=poCutBySize(po),rec=poReceivedBySize(po);
+  const keys=Object.keys(cut).filter(sz=>cut[sz]>0);
+  return keys.length?keys.every(sz=>(rec[sz]||0)>=(cut[sz]||0)):false;
+}
+
 // ── Registry ──
 // One-time cleanup: remove POs that an earlier build auto-created from fabric
 // issues (flagged autoCreatedFrom). Fabric issues now live in their own

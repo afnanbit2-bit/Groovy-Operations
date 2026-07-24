@@ -8,7 +8,7 @@
 const SETUP_CODE='GroovyOps2024';
 
 const STAGES=[
-  {key:'cutting',  label:'Cutting',    owner:'Zohaib',color:'#111111'},
+  {key:'cutting',  label:'Cutting',    owner:'Uzaib', color:'#111111'},
   {key:'printing', label:'Embellishment QC',owner:'Asghar',color:'#111111'},
   {key:'bundling', label:'Bundling',   owner:'Zohaib',color:'#111111'},
   {key:'stitching',label:'Stitching',  owner:'Waqas', color:'#111111'},

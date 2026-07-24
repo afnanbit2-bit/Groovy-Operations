@@ -14,10 +14,14 @@ const USER_DEFS=[
   {u:'abbas',  email:'abbas@groovy.op',  name:'Abbas',  role:'worker', title:'Washing Assistant', canPO:false,canFabric:false, stages:['washing'],          pass:'Abbas@Ops24'},
   {u:'waqas',  email:'waqas@groovy.op',  name:'Waqas',  role:'worker', title:'Stitching Incharge',canPO:false,canFabric:false, stages:['stitching'],        pass:'Waqas@Ops24'},
   {u:'asghar', email:'asghar@groovy.op', name:'Asghar', role:'worker', title:'Printing Manager',  canPO:false,canFabric:false, stages:['printing'],         pass:'Asghar@Ops24'},
-  {u:'zohaib', email:'zohaib@groovy.op', name:'Zohaib', role:'worker', title:'Cutting & Bundling',canPO:false,canFabric:false, stages:['cutting','bundling'],pass:'Zohaib@Ops24'},
-  {u:'uzaib',  email:'uzaib@groovy.op',  name:'Uzaib',  role:'viewer', title:'Field Staff',       canPO:false,canFabric:true,  stages:[],                   pass:'uzaib@24'},
+  {u:'zohaib', email:'zohaib@groovy.op', name:'Zohaib', role:'worker', title:'Bundling Incharge',  canPO:false,canFabric:false, stages:['bundling'],          pass:'Zohaib@Ops24'},
+  {u:'uzaib',  email:'uzaib@groovy.op',  name:'Uzaib',  role:'viewer', title:'Cutting & Fabric',   canPO:false,canFabric:true,  stages:['cutting'],          pass:'uzaib@24'},
+  {u:'faizan', email:'faizan@groovy.op', name:'Faizan', role:'packing',title:'Packing & Dispatch', canPO:false,canFabric:false, stages:[],                   pass:'Faizan@Ops24'},
   {u:'umair',  email:'umair@groovy.op',  name:'Umair',  role:'fulfillment', title:'Fulfilment',    canPO:false,canFabric:false, stages:[],                   pass:'Umair@Ops24'},
 ];
+// Packing/dispatch role (Faizan) — receives finished pieces, runs QC handoff
+// reconciliation, and books stock transfers. Username/role gated.
+function isPacking(){ return !!(session && session.role==='packing'); }
 window.doLogin=async function(){
   const uEl=document.getElementById('l-user');
   const pEl=document.getElementById('l-pass');
