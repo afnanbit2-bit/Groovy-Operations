@@ -26,19 +26,29 @@
 | Mustafa, Arfat | manager | Full monitoring; create POs | — |
 | **Uzaib** | (cutting/fabric) | **Cutting + Fabric Inventory** — records cut output | **MOVED from Zohaib → Uzaib** |
 | Waqas | worker | Stitching | — |
-| Abbas | worker | **Garment washing / dyeing** (a real production process — NOT Haris's QC washing) | — |
+| ~~Abbas~~ | — | Garment washing/dyeing — **OUT of this flow.** ("Washing" here is only a Haris QC label, see §4.5.) | excluded |
 | **Faizan** | **NEW — packing/dispatch** | (a) Packing **receipt** of finished pieces in batches; (b) **Ready-to-Barcode** scan → **Stock Transfer Receipt** | **NEW ACCOUNT** |
-| Haris | worker (QC) | **QC disposition** of received batches | expanded role |
+| Haris | manager (QC) | **QC disposition** of received batches; records rework himself | expanded role |
 | Umair | fulfilment | Receives transfer notification → picks up | — |
+
+> Haris, Faizan and Uzaib each manage their own teams and report to Mustafa;
+> Afnan observes. Individual workers are **not** modelled — only the named
+> managers. The only new account to create is **Faizan**.
 
 ## 2. PO lifecycle — the complete journey
 
+**Tracked spine = Cutting → Packing → QC → Transfer → Pickup.** Stitching (and
+any embellishment) happen physically but are **not tracked as stages** in this
+flow — after cutting, the next tracked event is Faizan receiving pieces.
+
 ```
 [Manager] Create PO (digital + printable PDF) ─▶ PO Registry: RESERVED
-        │  reserve fabric rolls → add/select more until PO qty is fully covered
+        │  reserve fabric rolls → add/select more until PO qty is covered (optional, warn-only)
         ▼
-[Uzaib]  Release to production → CUTTING (consumes reserved fabric; records cut qty per size)
-        │        (+ embellishment / stitching / garment-wash per the PO's needs)
+[Manager] "Release to production" ─▶ poStatus: in_production, currentStage: cutting
+        ▼
+[Uzaib]  Issue fabric to production (Issue Registry) + record ACTUAL cut qty per size  ← anchor "cut" number
+        │        (stitching etc. happen physically, untracked)
         ▼
 [Faizan] PACKING RECEIPT — finished pieces received in BATCHES
         │   per size · dated/timestamped · entered-by recorded · cumulative
@@ -114,12 +124,13 @@ Append-only sub-logs (each entry: qty, size, timestamp, user):
   fabric coverage and warns (does not block — see §4.2) if under-covered. This
   is the moment a reserve order becomes a real factory job (audit-stamped:
   who released, when).
-- Uzaib records **cut output per size** ("this PO cut qty = 80"). Consumes the
-  reserved fabric (existing `markCuttingDone` consumption path).
-- **[DECISION NEEDED]** "Cutting enters output in the Fabric Inventory tab" —
-  reconcile against the existing cutting stage-work screen so we don't build two
-  competing cutting-entry UIs. Likely: keep one entry point, surfaced from both
-  the Fabric Inventory tab and the PO.
+- **Entry point = "Issue fabric to production"** in the existing Fabric **Issue
+  Registry** (Uzaib). Consumes reserved fabric (existing consumption path). That
+  issue data is **mirrored as a duplicate tab in the PO Registry** (+ overview +
+  tags). No second cutting-entry UI.
+- **Uzaib records the ACTUAL cut pieces per size** — this is the **anchor `cut`
+  number** every downstream bar reconciles against (may differ from the PO's
+  ordered qty). Received / transferred / balance are all measured against it.
 
 ### 4.4 Packing receipt — Faizan (batches)
 - Faizan sees POs whose lots have been cut; **search to identify which PO** a
@@ -148,17 +159,24 @@ Append-only sub-logs (each entry: qty, size, timestamp, user):
   (carton number)**.
 - Tracks which PO/product/size/article sits in which carton + totals.
 - **Viewable by all managers.**
+- **B-stock also moves onward later** — it gets its **own transfer / pickup**
+  (to a B-stock destination), not just parked forever. So B-stock has two
+  states: *in carton inventory* → *transferred out*. Mirrors the good-goods
+  transfer mechanism (§4.7) on a separate B-stock track.
 
 ### 4.7 Ready-to-Barcode + Stock Transfer — Faizan
 - QC-passed quantity appears in Faizan's **Ready to Barcode** section.
-- Faizan **scans the already-barcoded pieces** → generates a **Stock Transfer
-  Receipt**: **printable PDF with a summary page** (print-engine — likely a new
-  `stock-transfer` variant).
+- **Barcodes come from the ERP / product SKU** — pieces already carry the
+  existing product barcode. Groovy Ops **does not generate barcodes**; Faizan
+  simply **scans the existing barcode** to build the transfer.
+- Faizan **scans the barcoded pieces** → generates a **Stock Transfer Receipt**:
+  **printable PDF with a summary page** (print-engine — new `stock-transfer`
+  variant).
 - **Booking** the transfer records `stockTransfers[]` and fires Umair's
   notification.
-- Barcoding here = **proof of work only**. Finished-goods stock still lives in
-  the **local ERP** for now; Groovy Operations will absorb it later. **No ERP
-  integration in this phase.**
+- The scan/transfer here = **proof of work only**. Finished-goods stock still
+  lives in the **local ERP** for now; Groovy Operations will absorb it later.
+  **No ERP integration in this phase.**
 - Bar: `cut 80 · transferred 50 · balance 30`.
 
 ### 4.8 Umair pickup
@@ -175,27 +193,29 @@ Append-only sub-logs (each entry: qty, size, timestamp, user):
   sits. Each PO card shows its live per-size bars (cut / received / transferred /
   balance) and both the cutting entry and Faizan's packing entry side by side.
 
-## 5. Stage / status ordering
+## 5. Stage / status ordering — **the lean spine (DECIDED)**
 
-Existing `STAGES` (shared.js): `cutting · printing(Embellishment QC) · bundling ·
-stitching · washing · qc`.
-
-Proposed new spine (**[DECISION NEEDED]** — confirm ordering, esp. where garment
-washing and packing sit):
+Existing `STAGES` (shared.js) stay as-is for anything that still uses them, but
+**this flow tracks only the lean spine below.** Stitching / bundling /
+embellishment / garment-washing happen physically but are **not tracked as
+stages here.**
 
 ```
-RESERVED (status)
-  → cutting (Uzaib) → [printing/embellishment] → bundling → stitching
-  → [garment washing (Abbas) — when the PO needs it]
-  → packing-receipt (Faizan)
-  → qc-disposition (Haris)
-  → ready-to-barcode / stock-transfer (Faizan)
-  → with-umair (pickup)
-  → COMPLETE
+poStatus: RESERVED
+  → [manager Release] → poStatus: IN_PRODUCTION
+      → cutting (Uzaib: issue fabric + record actual cut/size)   ← anchor "cut"
+      → packing-receipt (Faizan: batches)
+      → qc-disposition (Haris)
+      → ready-to-barcode / stock-transfer (Faizan: scan ERP barcode → PDF → book)
+      → with-umair (pickup)
+  → poStatus: COMPLETE   (every size: received == cut AND fully dispositioned & transferred)
 ```
 
-Note: **Faizan appears twice** (receiving, then transfer) — two sub-views in his
-window, not two stages necessarily.
+Notes:
+- **Faizan appears twice** (receiving, then transfer) — two sub-views in his
+  window, not two stages.
+- **B-stock** runs a parallel terminal track: QC → carton inventory →
+  (later) its own transfer/pickup (§4.6).
 
 ## 6. New collections / schema (draft)
 
@@ -226,14 +246,32 @@ window, not two stages necessarily.
 - ✅ RESERVED → CUTTING trigger: **explicit manager "Release to production"**.
 - ✅ Fabric reservation before release: **optional (warn only)**.
 - ✅ Manager overview: **tabs by journey mile** (§4.9).
+- ✅ `reserved` modelled as a **`poStatus` field**, not a pseudo-stage (keeps it
+   out of the factory-stage machinery).
+- ✅ **Cutting entry = "Issue fabric to production"** via the existing Fabric
+   **Issue Registry** (Uzaib). That same issue data is **mirrored as a duplicate
+   tab inside the PO Registry** + overview + tags. No separate competing
+   cutting-entry UI is built.
+- ✅ **Abbas / garment-washing is OUT of this system.** The "washing" bucket is
+   **only a label Haris records** at QC disposition — not a production stage,
+   not Abbas's dyeing/washing.
+- ✅ **Workers are not individually modelled.** Haris, Faizan and Uzaib are each
+   reporting managers over their own teams; all report to Mustafa; Afnan
+   observes. We model only the named managers. Rework (rafu / alteration /
+   washing) is **recorded by Haris himself** — no separate worker accounts or
+   views. The **only NEW account is Faizan**; Uzaib/Haris/Umair already exist.
 
-**Still open:**
-1. `reserved` as a `poStatus` field vs. a pseudo-stage. *(rec: field — will
-   default to this unless told otherwise.)*
-2. Single cutting-output entry point (Fabric tab vs. existing stage-work screen).
-3. Stage/status **ordering** incl. garment washing + packing placement (§5).
-4. Does Haris hand rafu/alteration to other workers (own views) or work them
-   himself?
+- ✅ **Cut quantity** = **Uzaib enters actual cut pieces per size** (the anchor
+   number; may differ from ordered qty).
+- ✅ **Tracked stages** = **lean spine**: Cutting → Packing → QC → Transfer →
+   Pickup. Stitching/embellishment untracked (§5).
+- ✅ **Barcodes** = **from the ERP / product SKU** — Faizan scans existing
+   barcodes; Groovy Ops does not generate them.
+- ✅ **B-stock** = **also transferred later** (own transfer/pickup), not a pure
+   dead-end (§4.6).
+
+**All planning decisions are now resolved.** Ready to convert §10 into a
+phased, file-by-file build proposal on request.
 
 ## 10. Proposed build sequencing (once decisions locked)
 
