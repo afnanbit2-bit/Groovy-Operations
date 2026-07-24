@@ -250,13 +250,18 @@ window._saveNewProduct=async function(){
   }
 };
 function poRowHTML(p){
-  const stage=STAGES.find(s=>s.key===p.currentStage)||{label:'Completed',color:'#111111'};
-  const isCompleted=p.currentStage==='completed';
+  const st=poStatusOf(p);
+  const isReserved=st===PO_STATUS.RESERVED;
+  const isCompleted=st===PO_STATUS.COMPLETE||p.currentStage==='completed';
+  const stage=STAGES.find(s=>s.key===p.currentStage)||{label:isReserved?'Reserved':'Completed',color:'#111111'};
+  const badgeLabel=isReserved?'Reserved':isCompleted?'Completed':stage.label;
+  const badgeBg=isReserved?'#fef3c7':isCompleted?'#EFEFEF':'#f0f0f0';
+  const badgeColor=isReserved?'#b45309':'#111';
   return`<div class="po-row" onclick="window.openPODetail('${p.fbKey}')">
     <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:#ccc">No img</span>'}</div>
     <div class="po-info">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="po-num">${p.id}</span>
-        <span class="stage-badge" style="background:${isCompleted?'#EFEFEF':'#f0f0f0'};color:#111">${isCompleted?'Completed':stage.label}</span>${p.damageFlagged?`<span style="padding:2px 6px;background:#fee2e2;color:#dc2626;border-radius:6px;font-size:10px;font-weight:700">⚠ Loss</span>`:''}</div>
+        <span class="stage-badge" style="background:${badgeBg};color:${badgeColor}">${badgeLabel}</span>${p.damageFlagged?`<span style="padding:2px 6px;background:#fee2e2;color:#dc2626;border-radius:6px;font-size:10px;font-weight:700">⚠ Loss</span>`:''}</div>
       <div class="po-name">${p.name||'—'}</div>
       <div class="po-meta">${p.qty||'?'} pcs · ${p.fabric||''} · ${p.createdBy||'—'} · ${p.createdAt||''}</div>
     </div><div class="po-arrow">›</div></div>`;
@@ -332,17 +337,19 @@ function _cleanupAutoFabricPOs(){
 }
 function renderRegistry(){
   _cleanupAutoFabricPOs();
-  return`<div class="page-head"><div class="page-title">PO Registry</div><div class="page-sub">${allPOs.length} production orders</div></div>
+  const reservedCount=allPOs.filter(p=>poStatusOf(p)===PO_STATUS.RESERVED).length;
+  const sub=`${allPOs.length} production order${allPOs.length!==1?'s':''}${reservedCount?` · <span style="color:#b45309;font-weight:600">${reservedCount} reserved</span>`:''}`;
+  return`<div class="page-head"><div class="page-title">PO Registry</div><div class="page-sub">${sub}</div></div>
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
     <input placeholder="Search name, code, fabric…" oninput="window.filterPOs(this.value)" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
     <select onchange="window.filterStage(this.value)" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
-      <option value="">All stages</option>${STAGES.map(s=>`<option value="${s.key}">${s.label}</option>`).join('')}<option value="completed">Completed</option>
+      <option value="">All stages</option><option value="reserved">🟡 Reserved${reservedCount?` (${reservedCount})`:''}</option>${STAGES.map(s=>`<option value="${s.key}">${s.label}</option>`).join('')}<option value="completed">Completed</option>
     </select>
   </div>
   <div id="po-list-wrap">${allPOs.length?allPOs.map(p=>poRowHTML(p)).join(''):'<div class="empty">No POs yet.</div>'}</div>`;
 }
 window.filterPOs=function(q){const f=allPOs.filter(p=>!q||[p.name,p.id,p.code,p.fabric].some(v=>(v||'').toLowerCase().includes(q.toLowerCase())));document.getElementById('po-list-wrap').innerHTML=f.length?f.map(p=>poRowHTML(p)).join(''):'<div class="empty">No results.</div>';};
-window.filterStage=function(s){const f=s?allPOs.filter(p=>p.currentStage===s):allPOs;document.getElementById('po-list-wrap').innerHTML=f.length?f.map(p=>poRowHTML(p)).join(''):'<div class="empty">No results.</div>';};
+window.filterStage=function(s){const f=!s?allPOs:(s==='reserved'?allPOs.filter(p=>poStatusOf(p)===PO_STATUS.RESERVED):allPOs.filter(p=>p.currentStage===s));document.getElementById('po-list-wrap').innerHTML=f.length?f.map(p=>poRowHTML(p)).join(''):'<div class="empty">No results.</div>';};
 
 // ── My Work — defined in Chunk 5 (printing module) to support all roles ──
 
@@ -363,11 +370,54 @@ window.openStageWork=async function(fbKey,stage){
 // ── PO Detail ──
 window.openPODetail=function(fbKey){viewingPO=fbKey;currentPage='po-detail';document.querySelectorAll('.nav-item,.mob-nav-item').forEach(n=>n.classList.remove('on'));renderDetailPage();};
 
+// Fabric currently RESERVED for a PO (rolls + weight), read from the live
+// fabric inventory. Used for the reserve-order coverage hint / release warning.
+function _poReservedFabric(poId){
+  let rolls=0,weight=0;
+  (typeof allFabricInventory!=='undefined'&&Array.isArray(allFabricInventory)?allFabricInventory:[]).forEach(s=>{
+    (s.rolls||[]).forEach(r=>{ if((r.status||'')==='reserved'&&r.reservedPO===poId){rolls++;weight+=(Number(r.weight)||0);} });
+  });
+  return{rolls,weight};
+}
+function _poReserveSummary(po){
+  const f=_poReservedFabric(po.id);
+  if(!f.rolls)return'No fabric reserved yet — you can still release (fabric can be issued at cutting).';
+  return`${f.rolls} roll${f.rolls!==1?'s':''} · ${f.weight.toFixed(1)} kg reserved for this PO.`;
+}
+
+// Release a RESERVED reserve order into production. Manager-only. Fabric
+// coverage is optional (warn-only): if nothing is reserved, confirm first.
+// Sets poStatus → in_production and currentStage → cutting (Uzaib's queue).
+window.releaseToProduction=async function(fbKey){
+  if(!['owner','manager'].includes(session.role)){showToast('Only managers can release a PO to production.',true);return;}
+  const po=allPOs.find(p=>p.fbKey===fbKey);if(!po){showToast('PO not found.',true);return;}
+  if(poStatusOf(po)!==PO_STATUS.RESERVED){showToast('This PO is already in production.',true);return;}
+  const f=_poReservedFabric(po.id);
+  if(!f.rolls&&!confirm(`No fabric is reserved for ${po.id}. Release to production anyway?\n\nFabric can still be issued at the cutting stage.`))return;
+  try{
+    await updateDoc(doc(db,'pos',fbKey),{poStatus:PO_STATUS.IN_PRODUCTION,currentStage:'cutting',releasedBy:session.name,releasedAt:new Date().toISOString()});
+    await logActivity('PO released',`${po.id} released to production by ${session.name}`).catch(()=>{});
+    showToast(`${po.id} released to production ✓`);
+    await loadData();
+    if(currentPage==='po-detail')renderDetailPage();else if(currentPage==='po-registry')renderPage('po-registry');
+  }catch(e){showToast('Error: '+e.message,true);}
+};
+
 function renderDetailPage(){
   const po=allPOs.find(p=>p.fbKey===viewingPO);
   if(!po){window.showPage('po-registry');return;}
   const m=document.getElementById('main-content');
   const isOwner=['owner','manager'].includes(session.role);
+  const _isReserved=poStatusOf(po)===PO_STATUS.RESERVED;
+  const _reservedBanner=_isReserved?`<div class="card" style="border:2px solid #f59e0b;background:#fffbeb;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span style="font-size:18px">🟡</span>
+      <div style="flex:1;min-width:180px">
+        <div style="font-weight:800;color:#b45309;font-size:14px;letter-spacing:.01em">Reserve order — not yet in production</div>
+        <div style="font-size:12px;color:#92400e;margin-top:2px">${_poReserveSummary(po)}</div>
+      </div>
+      ${isOwner?`<button class="mark-done-btn" style="width:auto;padding:9px 18px" onclick="window.releaseToProduction('${po.fbKey}')">Release to production →</button>`:'<span style="font-size:12px;color:#92400e">A manager must release this PO.</span>'}
+    </div></div>`:'';
   const stagesHTML=STAGES.map(s=>{
     const sd=po.stages?.[s.key]||{};const isDone=!!sd.done;const isCurrent=po.currentStage===s.key;
     const canUpdate=session.stages?.includes(s.key)&&isCurrent;
@@ -400,6 +450,7 @@ function renderDetailPage(){
       ${session.role==='owner'?`<button class="btn-outline" style="font-size:12px" onclick="window.deletePO('${po.fbKey}','${po.id}')">Delete PO</button>`:''}
     </div>
   </div>
+  ${_reservedBanner}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
     <div class="card" style="margin-bottom:0"><div class="card-title">Product</div>
       <div class="info-row"><span class="info-label">Name</span><span style="font-weight:500">${po.name||'—'}</span></div>
@@ -643,7 +694,7 @@ window.submitPO=async function(){
     const stages={};STAGE_KEYS.forEach(k=>stages[k]={done:false,doneAt:null,doneBy:null,dueDate:document.getElementById('due-'+k)?.value||'',notes:''});
     const bundlingParts=window.getBundleParts();
     const embellishment=_poEmbellishment||{required:false};
-    const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',imgFront:imgFrontUrl,imgBack:imgBackUrl,currentStage:'cutting',stages,bundlingParts,embellishment,createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
+    const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',imgFront:imgFrontUrl,imgBack:imgBackUrl,poStatus:PO_STATUS.RESERVED,currentStage:null,stages,bundlingParts,embellishment,createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
     await setDoc(doc(db,'pos',poId),payload);
     await logActivity('PO created',`${poId} — ${name} (${qty} pcs)`);
     if(typeof fabPoReserveCommit==='function'){try{await fabPoReserveCommit(poId);}catch(_re){showToast('PO saved, but fabric reservation failed: '+_re.message,true);}}
