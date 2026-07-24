@@ -285,4 +285,111 @@ phased, file-by-file build proposal on request.
 8. Umair notification + pickup + PO completion.
 9. Manager tabbed PO Registry mission-control.
 10. `firestore.rules` update + publish.
-```
+
+## 11. Phased build proposal — file-by-file (for review, NOT yet built)
+
+Grounded in the current code. Each phase is independently shippable and leaves
+the app working. Real function/line anchors are noted.
+
+**File-placement recommendation:** put the new spine (packing, QC disposition,
+B-stock, transfer) in **one new classic script `js/production.js`**, loaded in
+`index.html` right after `js/fabric.js`. That is **one edit to `index.html`** —
+a cross-track file (coordinate with Ammar per CLAUDE.md) — and avoids bloating
+`pos.js` further. PO-registry and PO-create changes stay in `pos.js`; fabric
+issue changes stay in `js/fabric.js`.
+
+### Phase 0 — Foundation: roles + data model (no visible change)
+- `js/auth.js` (`USER_DEFS`, line 7): add **Faizan** `{u:'faizan', role:'packing',
+  canPO:false, canFabric:false, stages:[]}`; add helper `isPacking()`.
+- `js/shared.js` (`STAGES`, line 11): change cutting **owner Zohaib → Uzaib**.
+  (Uzaib already `canFabric:true`.)
+- `js/pos.js`: pure helpers for the **per-size ledger** + conservation math
+  (no UI). Define `poStatus` values (`reserved|in_production|complete`).
+- `firestore.rules`: pre-add `bstock_items`, `stock_transfers` (read: signedIn;
+  write: signedIn) so later phases don't 403.
+- **Acceptance:** app unchanged; Faizan can log in to an empty shell.
+
+### Phase 1 — Reserve orders + Release
+- `js/pos.js` `submitPO()` (line 577): set `poStatus:'reserved'`, **stop
+  auto-setting `currentStage:'cutting'`** (leave null until release). Keep the
+  PDF (print-engine `po`).
+- `js/pos.js` `renderPOCreate()` (line 422): surface the existing reserve picker
+  (`fabPoReservePick`, fabric.js:2714) + a **coverage meter** (reserved vs
+  required) with warn-only.
+- `js/pos.js`: new `window.releaseToProduction(poId)` — manager-only; sets
+  `poStatus:'in_production'`, `currentStage:'cutting'`, audit stamp; warns if
+  under-covered.
+- `js/pos.js` `renderRegistry()` (line 282): show reserved POs with a **Release**
+  button for managers.
+- **Acceptance:** new PO = reserved; manager Release → cutting.
+
+### Phase 2 — Uzaib cutting: issue-to-production + actual cut, mirrored tab
+- `js/fabric.js` `renderFabricIssueRegistry()` (line 1606) / issue flow: on
+  issue-to-production, consume reserved rolls **and record Uzaib's actual cut
+  pieces per size** onto the PO ledger (`cut{}`).
+- `js/pos.js` `renderRegistry()`: add an **"In Production" tab that mirrors the
+  Issue Registry** data (+ overview + tags).
+- **Acceptance:** Uzaib issues fabric + enters cut/size; anchor `cut` shows on
+  the PO and both registries.
+
+### Phase 3 — Faizan packing receipt (batches) + bars
+- `js/production.js` (new): `renderPacking()` — Faizan's view; **search POs by
+  number**, per-size **batch entry** (`{size,qty,ts,by}` → `packingReceipts[]`),
+  recompute `received`. Reusable **completion-bar** component
+  (cut / received / yet-to-receive).
+- `js/shared.js` `buildNav()` (line 608): add a **packing** nav branch (mirror
+  the `fulfillment` special-case at line 610) + `renderPage()` (line 970) case
+  `'packing'`.
+- **Acceptance:** Faizan enters dated batches per size; bars update; PO can't
+  close until `received==cut` for every size.
+
+### Phase 4 — Haris QC disposition + conservation
+- `js/production.js`: `renderQCDisposition()` — Haris; per received batch, split
+  **passed / rafu / washing / alteration / bstock**, enforce
+  `sum == received`; write `qcDispositions[]`; rework resolution →
+  `toBarcode | toBstock`. Passed → feeds Faizan Ready-to-Barcode; bstock →
+  carton inventory.
+- Nav/route for Haris (he already has nav via printing items; add a QC tab).
+- **Acceptance:** conservation enforced; passed & bstock flow correctly.
+
+### Phase 5 — B-stock carton inventory (+ later transfer)
+- `js/production.js`: `bstock_items` collection; **carton assignment**
+  (PO·product·size·article·carton); manager-viewable page/tab; a **B-stock
+  transfer/pickup** track mirroring §4.7.
+- **Acceptance:** every bstock piece carries its identity + carton; managers
+  view; can transfer later.
+
+### Phase 6 — Faizan Ready-to-Barcode + Stock Transfer PDF
+- `js/production.js`: Ready-to-Barcode sub-view — **scan ERP/SKU barcode**,
+  build transfer, **book** → `stock_transfers` (+ `stockTransfers[]`).
+- `js/print-engine.js`: new **`stock-transfer`** variant in the `_VARIANTS`
+  registry (model on `_renderGatePass`) — PDF + **summary page**.
+- **Acceptance:** booking prints a receipt PDF; `transferred` bar updates.
+
+### Phase 7 — Umair notification + pickup + completion
+- `js/production.js`: on booking, `_hrmNotify({forUser:'umair', ...})` (pattern
+  at store.js:1562) — "ready to pick from Faizan".
+- `js/fulfillment.js` / `buildNav` fulfillment branch (line 610): add Umair's
+  **ready-to-pick** view + pickup action; PO → `complete` when every size
+  `received==cut` and fully dispositioned & transferred.
+- **Acceptance:** Umair notified; pickup; PO completes.
+
+### Phase 8 — Manager tabbed PO Registry (mission-control polish)
+- `js/pos.js` `renderRegistry()`: full **tab set by journey mile** (Reserved ·
+  In Production · Packing · QC & Disposition · B-stock · Ready/Transfer · With
+  Umair · Completed); per-PO cards with all live bars + tags.
+- **Acceptance:** managers find any PO by its mile.
+
+### Phase 9 — Rules publish
+- `firestore.rules`: finalize + note the existing "rules not yet published"
+  caveat (CLAUDE.md). Publish step is manual in Firebase Console.
+
+### Cross-track / coordination notes
+- **`index.html`** (add `js/production.js` script tag) and **`js/shared.js`**
+  (`buildNav`, `renderPage`) are **cross-track files** — coordinate with Ammar
+  before pushing (CLAUDE.md §Shared touchpoints).
+- New nav/pages must be added to both desktop sidebar and mobile nav
+  (`_renderMobNav`).
+- Reuse existing infra: notifications (`_hrmNotify`), print-engine, barcode
+  render (`_renderRollBarcode`), reserve/release (`fabPoReserveCommit`,
+  `fabReleaseForPO`).
