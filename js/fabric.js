@@ -2684,77 +2684,148 @@ window.submitFabRetSupplier=async function(){
 //  Reservation (Phase 5) — called from the New PO tab (pos.js).
 //  Pick a fabric + rolls → reserved to the PO; rolls stay in stock until issued.
 // ════════════════════════════════════════════════════════════════════════
-let _poReserveRolls=[],_poReserveKey=null;
+// Multi-fabric reservation state for the New PO form. Each row = one fabric
+// bucket + the roll codes ticked to reserve. Replaces the old single-select
+// (_poReserveKey/_poReserveRolls) so a PO can reserve several fabrics at once.
+let _poFabrics=[],_poFabRowSeq=0;
 
-// Unified "Fabric & supply" card for the New PO tab — inventory-first.
-// Picking a fabric from stock auto-fills type/code and lets you reserve rolls
-// inline (Total rolls auto-fills from the ticked count); the fields stay
-// editable so fabric not yet in inventory can still be entered by hand.
-window.fabPoFabricCard=function(){
-  _poReserveKey=null;_poReserveRolls=[];
-  const stocks=(typeof allFabricInventory!=='undefined'?allFabricInventory:[]).filter(s=>(s.rolls||[]).some(r=>(r.status||'in_stock')==='in_stock'));
-  return`<div class="card"><div class="card-title">Fabric &amp; supply <span style="font-weight:400;color:var(--muted);font-size:11px">* · linked to fabric inventory</span></div>
-    <div class="field"><label>Select from fabric inventory <span style="font-weight:400;color:var(--muted)">optional · auto-fills type/code &amp; reserves rolls</span></label>
-      <select id="po-resv-stock" onchange="window.fabPoReservePick()">
+// In-stock buckets available to reserve (have ≥1 in_stock roll).
+function _fabPoStocks(){
+  return (typeof allFabricInventory!=='undefined'?allFabricInventory:[]).filter(s=>(s.rolls||[]).some(r=>(r.status||'in_stock')==='in_stock'));
+}
+
+// One fabric picker row (select + per-roll checkboxes). Registers the row in
+// _poFabrics and returns its HTML.
+function _fabPoRowHTML(){
+  const rid=++_poFabRowSeq;
+  _poFabrics.push({id:rid,key:'',rollCodes:[]});
+  const stocks=_fabPoStocks();
+  return `<div class="po-fab-row" id="po-fab-row-${rid}" style="border:1px solid var(--border);border-radius:9px;padding:9px;margin-bottom:8px;background:#fafafa">
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="po-fab-sel-${rid}" onchange="window.fabPoRowPick(${rid})" style="flex:1">
         <option value="">Select fabric…</option>
         ${stocks.map(s=>`<option value="${s._id}">${_gpEsc(s.fabType)} · ${s.gsm||0}gsm · ${_gpEsc(s.color)} — ${s.rollsCount||0} available</option>`).join('')}
       </select>
+      <button type="button" onclick="window.fabPoRemoveRow(${rid})" title="Remove fabric" style="background:none;border:none;color:#bbb;font-size:20px;cursor:pointer;padding:0 6px;line-height:1">×</button>
     </div>
-    <div id="po-resv-rolls" style="margin-top:8px"></div>
+    <div id="po-fab-rolls-${rid}" style="margin-top:6px"></div>
+  </div>`;
+}
+
+// Unified "Fabric & supply" card for the New PO tab — inventory-first, now
+// multi-fabric. Pick one or more fabrics from stock and reserve rolls on each;
+// the flat type/code/rolls fields auto-summarise the picks and stay editable
+// so fabric not yet in inventory can still be entered by hand.
+window.fabPoFabricCard=function(){
+  _poFabrics=[];_poFabRowSeq=0;
+  const stocks=_fabPoStocks();
+  const firstRow=_fabPoRowHTML();
+  return`<div class="card"><div class="card-title">Fabric &amp; supply <span style="font-weight:400;color:var(--muted);font-size:11px">* · linked to fabric inventory</span></div>
+    <div class="field"><label>Reserve from fabric inventory <span style="font-weight:400;color:var(--muted)">optional · pick one or more fabrics &amp; reserve rolls</span></label>
+      <div id="po-fab-rows">${firstRow}</div>
+      <button type="button" onclick="window.fabPoAddRow()" style="background:none;border:1px dashed var(--border);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;color:var(--dark);cursor:pointer;font-family:inherit">+ Add another fabric</button>
+      ${stocks.length?'':'<div style="font-size:11px;color:var(--muted);margin-top:8px">No fabric in inventory yet — enter details manually below, or add stock in the Fabric Inventory section.</div>'}
+    </div>
     <div class="form-grid" style="margin-top:12px">
       <div class="field"><label>Fabric type *</label><input id="po-fabric" placeholder="e.g. Terry, Fleece"></div>
       <div class="field"><label>Fabric code</label><input id="po-fabriccode" placeholder="e.g. BLKTRY220"></div>
       <div class="field"><label>Supply store</label><input id="po-store" placeholder="Store/supplier"></div>
       <div class="field"><label>Total rolls <span style="font-weight:400;color:var(--muted);font-size:11px">auto from reserved</span></label><input id="po-rolls" placeholder="e.g. 12"></div>
     </div>
-    ${stocks.length?'':'<div style="font-size:11px;color:var(--muted);margin-top:8px">No fabric in inventory yet — enter details manually above, or add stock in the Fabric Inventory section.</div>'}
   </div>`;
 };
 
-window.fabPoReservePick=function(){
-  const key=document.getElementById('po-resv-stock')?.value||'';
-  _poReserveKey=key;_poReserveRolls=[];
-  const s=key&&typeof allFabricInventory!=='undefined'?allFabricInventory.find(x=>x._id===key):null;
-  // Auto-fill the fabric metadata from the picked inventory bucket.
-  if(s){
-    const fEl=document.getElementById('po-fabric');if(fEl)fEl.value=s.fabType||'';
-    const cEl=document.getElementById('po-fabriccode');if(cEl)cEl.value=_fabBaseCode(s.fabType,s.gsm,s.color);
+// Append another fabric picker row.
+window.fabPoAddRow=function(){
+  const wrap=document.getElementById('po-fab-rows');if(!wrap)return;
+  wrap.insertAdjacentHTML('beforeend',_fabPoRowHTML());
+};
+
+// Remove a fabric row (always keeps at least one).
+window.fabPoRemoveRow=function(rid){
+  _poFabrics=_poFabrics.filter(r=>r.id!==rid);
+  const el=document.getElementById('po-fab-row-'+rid);if(el)el.remove();
+  if(!_poFabrics.length)window.fabPoAddRow();
+  window._fabPoSyncSummary();
+};
+
+// A fabric was chosen in a row → render its available rolls to tick.
+window.fabPoRowPick=function(rid){
+  const row=_poFabrics.find(r=>r.id===rid);if(!row)return;
+  const sel=document.getElementById('po-fab-sel-'+rid);
+  const key=sel?sel.value:'';
+  // Prevent the same bucket being picked in two rows.
+  if(key&&_poFabrics.some(r=>r.id!==rid&&r.key===key)){
+    showToast('That fabric is already selected in another row.',true);
+    if(sel)sel.value='';row.key='';row.rollCodes=[];
+    const w0=document.getElementById('po-fab-rolls-'+rid);if(w0)w0.innerHTML='';
+    window._fabPoSyncSummary();return;
   }
-  window.fabPoSyncRolls();
-  const wrap=document.getElementById('po-resv-rolls');if(!wrap)return;
-  if(!key){wrap.innerHTML='';return;}
-  const avail=(s?.rolls||[]).filter(r=>(r.status||'in_stock')==='in_stock');
-  if(!avail.length){wrap.innerHTML='<div style="font-size:12px;color:var(--muted)">No available rolls in this stock.</div>';return;}
-  wrap.innerHTML=`<label style="font-size:11px;color:var(--muted)">${avail.length} available — tick to reserve for this PO</label>
-    <div style="display:grid;gap:4px;margin-top:4px">${avail.map(r=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;cursor:pointer">
-      <input type="checkbox" data-roll="${_gpEsc(r.rollCode)}" onchange="window.fabPoReserveToggle(this)">
-      <span style="font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode)}</span>
-      <span style="color:var(--muted)">${r.weight||0} ${r.unit||s.unit||'kg'}</span>
-    </label>`).join('')}</div>`;
+  row.key=key;row.rollCodes=[];
+  const s=key&&typeof allFabricInventory!=='undefined'?allFabricInventory.find(x=>x._id===key):null;
+  const wrap=document.getElementById('po-fab-rolls-'+rid);
+  if(wrap){
+    if(!key)wrap.innerHTML='';
+    else{
+      const avail=(s?.rolls||[]).filter(r=>(r.status||'in_stock')==='in_stock');
+      if(!avail.length)wrap.innerHTML='<div style="font-size:12px;color:var(--muted)">No available rolls in this stock.</div>';
+      else wrap.innerHTML=`<label style="font-size:11px;color:var(--muted)">${avail.length} available — tick to reserve for this PO</label>
+        <div style="display:grid;gap:4px;margin-top:4px">${avail.map(r=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;cursor:pointer;background:#fff">
+          <input type="checkbox" data-roll="${_gpEsc(r.rollCode)}" onchange="window.fabPoRowToggle(${rid},this)">
+          <span style="font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode)}</span>
+          <span style="color:var(--muted)">${r.weight||0} ${r.unit||s.unit||'kg'}</span>
+        </label>`).join('')}</div>`;
+    }
+  }
+  window._fabPoSyncSummary();
 };
 
-window.fabPoReserveToggle=function(cb){
+// Toggle a roll's reservation within a row.
+window.fabPoRowToggle=function(rid,cb){
+  const row=_poFabrics.find(r=>r.id===rid);if(!row)return;
   const rc=cb.dataset.roll;
-  if(cb.checked){if(!_poReserveRolls.includes(rc))_poReserveRolls.push(rc);}
-  else _poReserveRolls=_poReserveRolls.filter(x=>x!==rc);
-  window.fabPoSyncRolls();
+  if(cb.checked){if(!row.rollCodes.includes(rc))row.rollCodes.push(rc);}
+  else row.rollCodes=row.rollCodes.filter(x=>x!==rc);
+  window._fabPoSyncSummary();
 };
 
-// Keep the Total-rolls field in step with the reserved count. Only writes when
-// rolls are actually reserved, so a purely manual entry is never clobbered.
-window.fabPoSyncRolls=function(){
-  const el=document.getElementById('po-rolls');if(!el)return;
-  if(_poReserveRolls.length)el.value=String(_poReserveRolls.length);
+// Mirror the picked fabrics into the flat type/code/rolls fields (comma-joined
+// for multiple). Leaves fields untouched when nothing is picked so manual
+// entry survives.
+window._fabPoSyncSummary=function(){
+  const picked=_poFabrics.filter(r=>r.key).map(r=>({row:r,s:(typeof allFabricInventory!=='undefined'?allFabricInventory:[]).find(x=>x._id===r.key)})).filter(x=>x.s);
+  if(!picked.length)return;
+  const fEl=document.getElementById('po-fabric'),cEl=document.getElementById('po-fabriccode'),rEl=document.getElementById('po-rolls');
+  const types=[...new Set(picked.map(x=>x.s.fabType).filter(Boolean))];
+  const codes=[...new Set(picked.map(x=>_fabBaseCode(x.s.fabType,x.s.gsm,x.s.color)).filter(Boolean))];
+  const totalRolls=picked.reduce((n,x)=>n+x.row.rollCodes.length,0);
+  if(fEl)fEl.value=types.join(', ');
+  if(cEl)cEl.value=codes.join(', ');
+  if(rEl&&totalRolls)rEl.value=String(totalRolls);
 };
 
-window.fabPoReserveReset=function(){_poReserveKey=null;_poReserveRolls=[];};
+// Structured list of reserved fabrics, for the PO payload's fabrics[] field.
+window.fabPoSelected=function(){
+  return _poFabrics.filter(r=>r.key&&r.rollCodes.length).map(r=>{
+    const s=(typeof allFabricInventory!=='undefined'?allFabricInventory:[]).find(x=>x._id===r.key)||{};
+    return {fabType:s.fabType||'',gsm:s.gsm||0,color:s.color||'',fabricCode:_fabBaseCode(s.fabType,s.gsm,s.color),stockKey:r.key,rolls:r.rollCodes.length,rollCodes:r.rollCodes.slice()};
+  });
+};
 
-// Commit reservations after a PO doc is created. No-op if nothing picked.
+window.fabPoReserveReset=function(){_poFabrics=[];_poFabRowSeq=0;};
+
+// Commit reservations after a PO doc is created — one _fabInvUpsert per fabric
+// bucket. No-op if nothing picked.
 window.fabPoReserveCommit=async function(poId){
-  if(!_poReserveKey||!_poReserveRolls.length)return;
-  const s=allFabricInventory.find(x=>x._id===_poReserveKey);if(!s)return;
-  await _fabInvUpsert({fabType:s.fabType,gsm:s.gsm,color:s.color,unit:s.unit||'kg',reserveRollCodes:_poReserveRolls.slice(),reservePO:poId,note:`Reserved for ${poId}`,sourceCol:'pos',sourceId:poId});
-  await logActivity('Fabric reserved',`${_poReserveRolls.length} roll(s) reserved for ${poId}`);
+  const rows=_poFabrics.filter(r=>r.key&&r.rollCodes.length);
+  if(!rows.length)return;
+  let total=0;
+  for(const row of rows){
+    const s=(typeof allFabricInventory!=='undefined'?allFabricInventory:[]).find(x=>x._id===row.key);if(!s)continue;
+    await _fabInvUpsert({fabType:s.fabType,gsm:s.gsm,color:s.color,unit:s.unit||'kg',reserveRollCodes:row.rollCodes.slice(),reservePO:poId,note:`Reserved for ${poId}`,sourceCol:'pos',sourceId:poId});
+    total+=row.rollCodes.length;
+  }
+  if(total)await logActivity('Fabric reserved',`${total} roll(s) across ${rows.length} fabric(s) reserved for ${poId}`);
   window.fabPoReserveReset();
 };
 
