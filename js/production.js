@@ -11,8 +11,24 @@
      received. Later phases add QC disposition, B-stock and stock transfers. */
 
 // ── Packing (Faizan) ──────────────────────────────────────────────────────
+let _packTab='receiving'; // 'receiving' | 'barcode'
 let _packSel=null;   // fbKey of the PO being received into, or null for the list
 let _packQ='';       // search query on the receiving list
+let _bcSel=null;     // fbKey of the PO being barcoded/transferred, or null
+let _bcQ='';         // search query on the ready-to-barcode list
+
+// Reusable cut / transferred / balance bar (shared with Umair's pickup view).
+function poTransferBar(po){
+  const cut=poCutTotal(po),tr=poTransferredTotal(po),bal=Math.max(0,cut-tr);
+  const pct=cut?Math.min(100,Math.round(tr/cut*100)):0;
+  return`<div style="margin-top:8px">
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:3px">
+      <span>cut <b style="color:var(--text)">${cut}</b> · transferred <b style="color:#2563eb">${tr}</b></span>
+      <span>${bal?`<b style="color:#b45309">${bal}</b> balance`:'<b style="color:#16a34a">complete</b>'}</span>
+    </div>
+    <div style="height:6px;background:#eef0f2;border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${bal?'#2563eb':'#16a34a'};border-radius:4px"></div></div>
+  </div>`;
+}
 
 // POs eligible for packing: released to production, actually cut, and not yet
 // fully received. Tolerates legacy in-production POs that carry a cut breakdown.
@@ -37,15 +53,24 @@ function poReceiveBar(po){
 
 function renderPacking(){
   if(_packSel){const po=(typeof allPOs!=='undefined'?allPOs:[]).find(p=>p.fbKey===_packSel);if(po)return _renderPackDetail(po);_packSel=null;}
-  return _renderPackList();
+  if(_bcSel){const po=(typeof allPOs!=='undefined'?allPOs:[]).find(p=>p.fbKey===_bcSel);if(po)return _renderBarcodeDetail(po);_bcSel=null;}
+  const recCount=_packOpenPOs().length;
+  const bcCount=_bcOpenPOs().length;
+  return`<div class="page-head"><div class="page-title">Packing</div><div class="page-sub">Receive finished pieces &amp; book stock transfers</div></div>
+  <div class="gp-tabs">
+    <button class="gp-tab${_packTab==='receiving'?' active':''}" onclick="window.packTab('receiving')">Receiving${recCount?` (${recCount})`:''}</button>
+    <button class="gp-tab${_packTab==='barcode'?' active':''}" onclick="window.packTab('barcode')">Ready to Barcode${bcCount?` (${bcCount})`:''}</button>
+  </div>
+  <div id="pack-tab-content">${_packTab==='barcode'?_barcodeListHTML():_receivingListHTML()}</div>`;
 }
+window.packTab=function(tab){_packTab=tab;const m=document.getElementById('main-content');if(m&&currentPage==='packing')m.innerHTML=renderPacking();};
 
-function _renderPackList(){
+function _receivingListHTML(){
   const all=_packOpenPOs();
   const q=_packQ.trim().toLowerCase();
   const list=q?all.filter(p=>[p.id,p.name,p.code,p.fabric].some(v=>(v||'').toLowerCase().includes(q))):all;
   const totalPend=all.reduce((a,p)=>a+Math.max(0,poCutTotal(p)-poReceivedTotal(p)),0);
-  return`<div class="page-head"><div class="page-title">Packing — Receiving</div><div class="page-sub">${all.length} PO${all.length!==1?'s':''} awaiting receipt · ${totalPend} pcs to receive</div></div>
+  return`<div style="font-size:12px;color:var(--muted);margin-bottom:10px">${all.length} PO${all.length!==1?'s':''} awaiting receipt · ${totalPend} pcs to receive</div>
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
     <input id="pack-search" placeholder="Search PO number, article, fabric…" value="${_gpEsc(_packQ)}" oninput="window.packSetSearch(this.value)" style="flex:1;min-width:180px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;outline:none">
   </div>
@@ -152,6 +177,127 @@ window.packRecord=async function(fbKey){
     await loadData();
     if(currentPage==='packing'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderPacking();}
   }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Record receipt ✓';}}
+};
+
+// ── Ready to Barcode / Stock Transfer (Faizan) ────────────────────────────
+// QC-passed (barcode-ready) pieces are scanned/counted and booked into a Stock
+// Transfer receipt (PDF). transferred is tracked per size on the PO so the
+// cut→transferred balance closes out. See PO_PRODUCTION_FLOW_PLAN.md §4.7.
+function poToBarcodeBySize(po){
+  const ready=qcBarcodeReadyBySize(po),tr=poTransferredBySize(po),out={};
+  PO_FLOW_SIZES.forEach(sz=>{const v=Math.max(0,(ready[sz]||0)-(tr[sz]||0));if(v)out[sz]=v;});
+  return out;
+}
+function _bcOpenPOs(){
+  return (typeof allPOs!=='undefined'&&Array.isArray(allPOs)?allPOs:[]).filter(p=>_mapTotal(poToBarcodeBySize(p))>0);
+}
+function _barcodeListHTML(){
+  const all=_bcOpenPOs();
+  const q=_bcQ.trim().toLowerCase();
+  const list=q?all.filter(p=>[p.id,p.name,p.code,p.fabric].some(v=>(v||'').toLowerCase().includes(q))):all;
+  const totalRdy=all.reduce((a,p)=>a+_mapTotal(poToBarcodeBySize(p)),0);
+  return`<div style="font-size:12px;color:var(--muted);margin-bottom:10px">${all.length} PO${all.length!==1?'s':''} · ${totalRdy} pcs ready to barcode &amp; transfer</div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    <input id="bc-search" placeholder="Search PO number, article…" value="${_gpEsc(_bcQ)}" oninput="window.bcSetSearch(this.value)" style="flex:1;min-width:180px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;outline:none">
+  </div>
+  ${list.length?list.map(p=>_barcodeListCard(p)).join(''):`<div class="empty" style="padding:28px;text-align:center">${all.length?'No POs match your search.':'Nothing ready to transfer. QC-passed pieces appear here.'}</div>`}
+  <div style="height:80px"></div>`;
+}
+function _barcodeListCard(p){
+  const rdy=_mapTotal(poToBarcodeBySize(p));
+  return`<div class="po-row" onclick="window.bcOpen('${p.fbKey}')" style="align-items:stretch">
+    <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:#ccc">No img</span>'}</div>
+    <div class="po-info" style="flex:1">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="po-num">${p.id}</span><span style="font-size:11px;color:var(--muted)">${_gpEsc(p.code||'')}</span></div>
+      <div class="po-name">${_gpEsc(p.name||'—')}</div>
+      <div style="margin-top:6px"><span style="font-size:11px;font-weight:700;color:#16a34a;background:#dcfce7;padding:2px 8px;border-radius:6px">${rdy} ready</span></div>
+    </div>
+    <div class="po-arrow">›</div>
+  </div>`;
+}
+function _renderBarcodeDetail(po){
+  const ready=qcBarcodeReadyBySize(po),tr=poTransferredBySize(po),avail=poToBarcodeBySize(po);
+  const sizes=PO_FLOW_SIZES.filter(sz=>(ready[sz]||0)>0||(tr[sz]||0)>0);
+  const rows=sizes.map(sz=>{
+    const rd=ready[sz]||0,t=tr[sz]||0,a=avail[sz]||0;
+    return`<tr style="border-bottom:1px solid #f5f5f5">
+      <td style="padding:9px 8px;font-weight:700">${sz}</td>
+      <td style="padding:9px 8px;text-align:center">${rd}</td>
+      <td style="padding:9px 8px;text-align:center;color:#2563eb;font-weight:600">${t}</td>
+      <td style="padding:9px 8px;text-align:center;font-weight:700;color:${a?'#16a34a':'var(--muted)'}">${a||'✓'}</td>
+      <td style="padding:9px 8px;text-align:center"><input id="bc-in-${sz}" type="number" min="0" ${a?`max="${a}"`:''} placeholder="0" ${a?'':'disabled'} style="width:72px;padding:7px 8px;border:1px solid var(--border);border-radius:7px;font-size:14px;text-align:center;font-family:inherit"></td>
+    </tr>`;
+  }).join('');
+  const totalAvail=_mapTotal(avail);
+  const transfers=(po.stockTransfers||[]);
+  const tGroups={};
+  transfers.forEach(e=>{(tGroups[e.transferId]=tGroups[e.transferId]||{ts:e.ts,by:e.by,items:[]}).items.push(e);});
+  const history=Object.keys(tGroups).sort((a,b)=>(tGroups[b].ts||'').localeCompare(tGroups[a].ts||'')).map(tid=>{
+    const g=tGroups[tid];const tot=g.items.reduce((a,e)=>a+(Number(e.qty)||0),0);
+    const when=g.ts?new Date(g.ts).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+    return`<div style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:#fafafa">
+      <div style="display:flex;justify-content:space-between;font-size:12px"><span style="font-weight:700">${_gpEsc(tid)} · ${tot} pcs</span><span style="color:var(--muted)">${when} · ${_gpEsc(g.by||'')}</span></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:3px">${g.items.map(e=>`${_gpEsc(e.size)}×${e.qty}`).join(' · ')}</div>
+    </div>`;
+  }).join('');
+  return`<button class="back-btn" onclick="window.bcBack()">← Back to Ready to Barcode</button>
+  <div class="page-head"><div class="page-title">${po.id} — Transfer</div><div class="page-sub">${_gpEsc(po.name||'—')} · ${_gpEsc(po.code||'')}</div></div>
+  <div class="card">${poTransferBar(po)}</div>
+  <div class="card"><div style="font-size:12px;color:var(--muted)">Scan the already-barcoded pieces (ERP / SKU) and enter the counted quantity per size, then book the stock transfer.</div></div>
+  <div class="card"><div class="card-title">Ready to barcode ${totalAvail?'':'<span style="color:#16a34a;font-weight:700;font-size:12px">· all transferred</span>'}</div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:#fafafa">
+        <th style="padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--muted)">Size</th>
+        <th style="padding:8px;text-align:center;font-size:11px;text-transform:uppercase;color:var(--muted)">Ready</th>
+        <th style="padding:8px;text-align:center;font-size:11px;text-transform:uppercase;color:var(--muted)">Transferred</th>
+        <th style="padding:8px;text-align:center;font-size:11px;text-transform:uppercase;color:var(--muted)">To transfer</th>
+        <th style="padding:8px;text-align:center;font-size:11px;text-transform:uppercase;color:var(--muted)">Scan qty</th>
+      </tr></thead><tbody>${rows||'<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--muted)">Nothing to transfer.</td></tr>'}</tbody>
+    </table></div>
+    ${totalAvail?`<button class="mark-done-btn" id="bc-book-btn" style="margin-top:12px" onclick="window.bookTransfer('${po.fbKey}')">Book stock transfer &amp; print ✓</button>`:''}
+  </div>
+  <div class="card"><div class="card-title">Transfer history <span style="font-weight:400;color:var(--muted);font-size:11px">${Object.keys(tGroups).length} transfer(s)</span></div>
+    ${history||'<div class="empty" style="padding:14px;text-align:center">No transfers booked yet.</div>'}
+  </div>
+  <div style="height:80px"></div>`;
+}
+window.bcSetSearch=function(v){
+  _bcQ=v||'';
+  clearTimeout(window._bcSearchTo);
+  window._bcSearchTo=setTimeout(()=>{
+    const m=document.getElementById('main-content');
+    if(m&&currentPage==='packing'){m.innerHTML=renderPacking();const i=document.getElementById('bc-search');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}}
+  },160);
+};
+window.bcOpen=function(fbKey){_bcSel=fbKey;const m=document.getElementById('main-content');if(m)m.innerHTML=renderPacking();};
+window.bcBack=function(){_bcSel=null;const m=document.getElementById('main-content');if(m)m.innerHTML=renderPacking();};
+window.bookTransfer=async function(fbKey){
+  const po=(typeof allPOs!=='undefined'?allPOs:[]).find(p=>p.fbKey===fbKey);
+  if(!po){showToast('PO not found.',true);return;}
+  const avail=poToBarcodeBySize(po);
+  const entries=[];let over=false;
+  PO_FLOW_SIZES.forEach(sz=>{const el=document.getElementById('bc-in-'+sz);if(!el)return;const q=parseInt(el.value)||0;if(q<=0)return;if(q>(avail[sz]||0))over=true;entries.push({size:sz,qty:q});});
+  if(!entries.length){showToast('Enter at least one quantity.',true);return;}
+  if(over){showToast('A size exceeds the available ready quantity.',true);return;}
+  const btn=document.getElementById('bc-book-btn');if(btn){btn.disabled=true;btn.textContent='Booking…';}
+  try{
+    const n=await getNextId('stock_transfer');
+    const transferId='STN-'+String(n).padStart(3,'0');
+    const ts=new Date().toISOString();
+    const newEntries=entries.map(e=>({id:transferId+'-'+e.size,transferId,size:e.size,qty:e.qty,ts,by:session.name}));
+    const merged=((po.stockTransfers)||[]).concat(newEntries);
+    const total=entries.reduce((a,e)=>a+e.qty,0);
+    await updateDoc(doc(db,'pos',fbKey),{stockTransfers:merged});
+    await setDoc(doc(db,'stock_transfers',transferId),{id:transferId,poId:po.id,poName:po.name||'',productCode:po.code||'',items:entries,total,by:session.name,ts,status:'booked'});
+    await logActivity('Stock transfer',`${transferId} — ${po.id} ${entries.map(e=>e.size+'×'+e.qty).join(', ')} by ${session.name}`).catch(()=>{});
+    if(typeof printDocument==='function'){
+      try{printDocument({type:'stock-transfer',data:{id:transferId,documentNumber:transferId,poId:po.id,poName:po.name||'',productCode:po.code||'',items:entries,total,fromLabel:'Packing (Faizan)',toLabel:'Warehouse',issuedBy:session.name},filename:`stock-transfer-${transferId}.pdf`});}catch(_pe){console.warn('[production] transfer print failed',_pe);}
+    }
+    // Umair notification is wired in Phase 7.
+    showToast(`${transferId} booked ✓ — ${total} pcs`);
+    await loadData();
+    if(currentPage==='packing'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderPacking();}
+  }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Book stock transfer & print ✓';}}
 };
 
 // ── QC Disposition (Haris) ────────────────────────────────────────────────

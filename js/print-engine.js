@@ -91,6 +91,7 @@ const _PRINT_DOC_LABELS = {
   'qc-report': 'QC Report',
   'payslip': 'Payslip',
   'daily-performance': 'Daily Performance',
+  'stock-transfer': 'Stock Transfer',
   'generic': 'Document'
 };
 
@@ -109,6 +110,7 @@ const _PRINT_URDU_DEFAULTS = {
   'payroll-sheet': 'minimal',
   'payslip': 'minimal',
   'daily-performance': 'minimal',
+  'stock-transfer': 'minimal',
   'po': 'full',
   'embroidery-vendor': 'full',
   'sublimation-vendor': 'full',
@@ -745,6 +747,70 @@ function _renderGeneric(doc, data) {
     doc.text('(No body content provided.)', PRINT_LAYOUT.marginLeft, y);
   }
   doc.__groovyY = y;
+}
+
+/* ── Stock Transfer variant ────────────────────────────────────────────────
+   Faizan's finished-goods handoff receipt: header + title + info table +
+   an items-by-size table with a bold total (the summary), + issue/receive
+   signatures. English-only (urduLevel 'minimal') — an internal transfer doc.
+   data: { poId, poName, productCode, items:[{size,qty}], total, fromLabel,
+           toLabel, documentNumber/id, issuedBy, issuedDate }. */
+function _renderStockTransfer(doc, data) {
+  data = data || {};
+  const sess = (typeof session !== 'undefined' && session) ? session : null;
+  const today = new Date().toLocaleDateString('en-GB');
+  const L = PRINT_LAYOUT.marginLeft, W = PRINT_LAYOUT.contentWidth;
+  const by = data.issuedBy || (sess && sess.name) || 'system';
+
+  _renderHeader(doc, {
+    documentType: doc.__groovyDocType || 'Stock Transfer',
+    documentNumber: data.documentNumber || data.id || '',
+    issuedDate: data.issuedDate || today,
+    issuedBy: by
+  });
+  _renderTitleBlock(doc, {
+    title: 'STOCK TRANSFER',
+    subtitle: (data.poId || '') + (data.poName ? ('  —  ' + data.poName) : ''),
+    startY: doc.__groovyY
+  });
+  _renderInfoTable(doc, {
+    startY: doc.__groovyY + 8,
+    rows: [
+      { labelEn: 'PO Number', value: data.poId || '—', labelEn2: 'Article', value2: data.productCode || '—' },
+      { labelEn: 'From', value: data.fromLabel || 'Packing (Faizan)', labelEn2: 'To', value2: data.toLabel || 'Warehouse' },
+      { labelEn: 'Booked by', value: by, labelEn2: 'Date', value2: data.issuedDate || today }
+    ]
+  });
+
+  _renderSectionHeader(doc, { titleEn: 'Items transferred' });
+  let y = doc.__groovyY + 4;
+  const items = data.items || [];
+  const col1 = W * 0.6;
+  const line = _pc(PRINT_COLORS.greyLine), shade = _pc(PRINT_COLORS.greyShade);
+  const rowH = 22;
+  // Header
+  doc.setFillColor(shade[0], shade[1], shade[2]); doc.rect(L, y, W, rowH, 'F');
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
+  doc.text('SIZE', L + 8, y + 14); doc.text('QTY', L + col1 + 8, y + 14);
+  y += rowH;
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+  items.forEach(function (it) {
+    if (y + rowH > PRINT_LAYOUT.pageHeight - PRINT_LAYOUT.marginBottom - 60) { doc.addPage(); y = PRINT_LAYOUT.marginTop; }
+    doc.setDrawColor(line[0], line[1], line[2]); doc.setLineWidth(0.25); doc.rect(L, y, W, rowH, 'S');
+    doc.text(String(it.size || ''), L + 8, y + 14);
+    doc.text(String(it.qty || 0), L + col1 + 8, y + 14);
+    y += rowH;
+  });
+  // Total
+  const total = data.total != null ? data.total : items.reduce(function (a, it) { return a + (Number(it.qty) || 0); }, 0);
+  doc.setFillColor(shade[0], shade[1], shade[2]); doc.rect(L, y, W, rowH, 'F');
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.body, PRINT_COLORS.text);
+  doc.text('TOTAL PIECES', L + 8, y + 14); doc.text(String(total), L + col1 + 8, y + 14);
+  y += rowH;
+  doc.__groovyY = y;
+
+  _renderSignatureRow(doc, { roleEn: 'Issued by', roleUr: '', name: by, startY: doc.__groovyY });
+  _renderSignatureRow(doc, { roleEn: 'Received by', roleUr: '', name: '', startY: doc.__groovyY });
 }
 
 /* ── Gate Pass variant ─────────────────────────────────────────────────────
@@ -1564,12 +1630,13 @@ window.printDocument = async function (opts) {
 
   const known = ['po', 'embroidery-vendor', 'sublimation-vendor',
     'gate-pass', 'placement-sheet', 'qc-report', 'payslip',
-    'daily-performance', 'generic'];
+    'daily-performance', 'stock-transfer', 'generic'];
   const _VARIANTS = {
     'po': _renderPO,
     'gate-pass': _renderGatePass,
     'payslip': _renderPayslip,
-    'daily-performance': _renderDailyPerformance
+    'daily-performance': _renderDailyPerformance,
+    'stock-transfer': _renderStockTransfer
   };
   const render = _VARIANTS[type] || _renderGeneric;
   if (known.indexOf(type) === -1) {
