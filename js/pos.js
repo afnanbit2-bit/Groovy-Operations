@@ -293,10 +293,12 @@ function _poSumBySize(entries){
   (entries||[]).forEach(e=>{ if(!e||!e.size)return; out[e.size]=(out[e.size]||0)+(Number(e.qty)||0); });
   return out;
 }
-// Cut pieces per size — Uzaib's actual cut count (the anchor). Falls back to
-// the PO's planned size breakdown for legacy docs that never recorded a cut.
+// Cut pieces per size — Uzaib's actual cut count (the anchor). Prefer the
+// explicit cutBySize, then the cutting stage's cutQty (what markCuttingDone
+// already records), then the PO's planned size breakdown for legacy docs.
 function poCutBySize(po){
   if(po&&po.cutBySize&&typeof po.cutBySize==='object')return {...po.cutBySize};
+  if(po&&po.cutQty&&typeof po.cutQty==='object')return {...po.cutQty};
   return (po&&po.sizes)?{...po.sizes}:{};
 }
 function poReceivedBySize(po){ return _poSumBySize(po&&po.packingReceipts); }
@@ -335,12 +337,28 @@ function _cleanupAutoFabricPOs(){
     await loadData();if(currentPage==='po-registry')renderPage('po-registry');
   })();
 }
+let _poRegTab='orders';
 function renderRegistry(){
   _cleanupAutoFabricPOs();
   const reservedCount=allPOs.filter(p=>poStatusOf(p)===PO_STATUS.RESERVED).length;
   const sub=`${allPOs.length} production order${allPOs.length!==1?'s':''}${reservedCount?` · <span style="color:#b45309;font-weight:600">${reservedCount} reserved</span>`:''}`;
   return`<div class="page-head"><div class="page-title">PO Registry</div><div class="page-sub">${sub}</div></div>
-  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+  <div class="gp-tabs">
+    <button class="gp-tab${_poRegTab==='orders'?' active':''}" onclick="window.switchPoRegTab('orders')">Orders</button>
+    <button class="gp-tab${_poRegTab==='cutting'?' active':''}" onclick="window.switchPoRegTab('cutting')">Cutting / Issue Registry</button>
+  </div>
+  <div id="po-reg-tab-content">${_poRegTabContent()}</div>`;
+}
+// Tab body: the Orders list, or a live mirror of the Fabric Issue Registry
+// (issue-to-production records, with the same overview + tags). See
+// PO_PRODUCTION_FLOW_PLAN.md §4.3.
+function _poRegTabContent(){
+  if(_poRegTab==='cutting')return typeof renderFabricIssueRegistry==='function'?renderFabricIssueRegistry():'<div class="empty" style="padding:24px">Fabric Issue Registry unavailable.</div>';
+  return _poRegOrdersHTML();
+}
+function _poRegOrdersHTML(){
+  const reservedCount=allPOs.filter(p=>poStatusOf(p)===PO_STATUS.RESERVED).length;
+  return`<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
     <input placeholder="Search name, code, fabric…" oninput="window.filterPOs(this.value)" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
     <select onchange="window.filterStage(this.value)" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
       <option value="">All stages</option><option value="reserved">🟡 Reserved${reservedCount?` (${reservedCount})`:''}</option>${STAGES.map(s=>`<option value="${s.key}">${s.label}</option>`).join('')}<option value="completed">Completed</option>
@@ -348,6 +366,7 @@ function renderRegistry(){
   </div>
   <div id="po-list-wrap">${allPOs.length?allPOs.map(p=>poRowHTML(p)).join(''):'<div class="empty">No POs yet.</div>'}</div>`;
 }
+window.switchPoRegTab=function(tab){_poRegTab=tab;const m=document.getElementById('main-content');if(m)m.innerHTML=renderRegistry();};
 window.filterPOs=function(q){const f=allPOs.filter(p=>!q||[p.name,p.id,p.code,p.fabric].some(v=>(v||'').toLowerCase().includes(q.toLowerCase())));document.getElementById('po-list-wrap').innerHTML=f.length?f.map(p=>poRowHTML(p)).join(''):'<div class="empty">No results.</div>';};
 window.filterStage=function(s){const f=!s?allPOs:(s==='reserved'?allPOs.filter(p=>poStatusOf(p)===PO_STATUS.RESERVED):allPOs.filter(p=>p.currentStage===s));document.getElementById('po-list-wrap').innerHTML=f.length?f.map(p=>poRowHTML(p)).join(''):'<div class="empty">No results.</div>';};
 
@@ -931,7 +950,7 @@ window.markCuttingDone=async function(fbKey){
         consumedFromInv={fabType:stock.fabType,gsm:stock.gsm,color:stock.color,rollCodes,qty:_cutFabRolls.reduce((s,r)=>s+r.weight,0)};
       }
     }
-    const poUpdate={currentStage:'bundling',cutQty:{...cutState.actualQty},bundleIds,totalWeight:cutWt||'',totalRoll:cutRolls,avgPerUnit:cutAvg,[`stages.cutting.done`]:true,[`stages.cutting.doneAt`]:new Date().toISOString(),[`stages.cutting.doneBy`]:session.name};
+    const poUpdate={currentStage:'bundling',cutQty:{...cutState.actualQty},cutBySize:{...cutState.actualQty},cutBy:session.name,cutAt:new Date().toISOString(),bundleIds,totalWeight:cutWt||'',totalRoll:cutRolls,avgPerUnit:cutAvg,[`stages.cutting.done`]:true,[`stages.cutting.doneAt`]:new Date().toISOString(),[`stages.cutting.doneBy`]:session.name};
     if(consumedFromInv)poUpdate.fabricConsumed=consumedFromInv;
     await updateDoc(doc(db,'pos',fbKey),poUpdate);
     await logActivity('Stage done',`PO ${po.id} · Cutting done — ${cutState.pendingBundles.length} bundles${consumedFromInv?` · consumed ${consumedFromInv.rollCodes.length} rolls`:''}`);
