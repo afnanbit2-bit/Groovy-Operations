@@ -613,6 +613,13 @@ function buildNav(){
     _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
     return;
   }
+  // Packing/dispatch account (Faizan) — single-purpose nav: Packing only.
+  if(session.role==='packing'){
+    const sb=document.getElementById('sidebar');
+    if(sb)sb.innerHTML=`<div class="nav-item on" id="nav-packing" onclick="window.showPage('packing')">Packing</div>`;
+    _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
+    return;
+  }
   const isOwner=session.role==='owner',canPO=session.canPO,isWorker=session.role==='worker',isViewer=session.role==='viewer',isStore=session.role==='store';
   const om=isOwner||session.role==='manager';
   const mainItems=[];
@@ -746,6 +753,14 @@ function _renderMobNav(ctx){
     mob.innerHTML=_mobNavBtn('fulfillment','activity','Analytics',"window.showFulfillTab('analytics')")
                  +_mobNavBtn('fulfillment-entry','plus','Record',"window.showFulfillTab('entry')")
                  +_mobNavBtn('fulfillment-log','list','Log',"window.showFulfillTab('log')");
+    _updateMobNavActive(currentPage);
+    return;
+  }
+  if(session&&session.role==='packing'){
+    // Packing (Faizan): single Packing tab (Ready-to-Barcode arrives later).
+    mob.className='cols-3';
+    mob.style.gridTemplateColumns='';
+    mob.innerHTML=_mobNavBtn('packing','box','Packing',"window.showPage('packing')");
     _updateMobNavActive(currentPage);
     return;
   }
@@ -976,6 +991,7 @@ function renderPage(id){
   else if(id==='me'){m.innerHTML=renderMePage(); if(typeof _populateWorkerHRMWidget==='function')setTimeout(_populateWorkerHRMWidget,0);}
   else if(id==='gatepass'){gpPage=1;m.innerHTML=renderGatePass();window.switchGPTab(gpActiveTab||'outward');}
   else if(id==='fabric-inventory'){_fabInvDrillKey=null;m.innerHTML=renderFabricPage();window.switchFabTab('stock');}
+  else if(id==='packing')m.innerHTML=renderPacking();
   else if(id==='fulfillment'){if(!fulfillReportsLoaded){m.innerHTML=gvSkeleton(6);loadFulfillmentData().then(()=>{if(currentPage===id)m.innerHTML=renderFulfillmentPage();});}else m.innerHTML=renderFulfillmentPage();}
   else if(id==='activity'){loadActivity();return;}
   else if(id==='users')m.innerHTML=renderUsers();

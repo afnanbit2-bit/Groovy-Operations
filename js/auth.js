@@ -122,6 +122,10 @@ async function startApp(){
   }else if(session.role==='fulfillment'){
     // Fulfilment account (Umair) — scoped to Daily Performance only.
     showPage('fulfillment');
+  }else if(session.role==='packing'){
+    // Packing account (Faizan) — receives finished pieces against POs.
+    loadData();
+    showPage('packing');
   }else{
     loadData();
     showPage(session.role==='worker'?'my-work':'dashboard');
