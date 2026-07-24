@@ -592,7 +592,7 @@ window.submitPO=async function(){
     const stages={};STAGE_KEYS.forEach(k=>stages[k]={done:false,doneAt:null,doneBy:null,dueDate:document.getElementById('due-'+k)?.value||'',notes:''});
     const bundlingParts=window.getBundleParts();
     const embellishment=_poEmbellishment||{required:false};
-    const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',imgFront:imgFrontUrl,imgBack:imgBackUrl,currentStage:'cutting',stages,bundlingParts,embellishment,createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
+    const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',fabrics:(typeof fabPoSelected==='function'?fabPoSelected():[]),imgFront:imgFrontUrl,imgBack:imgBackUrl,currentStage:'cutting',stages,bundlingParts,embellishment,createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
     await setDoc(doc(db,'pos',poId),payload);
     await logActivity('PO created',`${poId} — ${name} (${qty} pcs)`);
     if(typeof fabPoReserveCommit==='function'){try{await fabPoReserveCommit(poId);}catch(_re){showToast('PO saved, but fabric reservation failed: '+_re.message,true);}}
