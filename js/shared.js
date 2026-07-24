@@ -627,6 +627,8 @@ function buildNav(){
   if(canPO)mainItems.push({id:'po-create',label:'New PO'});
   if(!isWorker&&!isStore)mainItems.push({id:'po-registry',label:'PO Registry'});
   if(isWorker||isViewer)mainItems.push({id:'my-work',label:'My Work'});
+  // Garment QC disposition — Haris (QC manager) + owners/managers.
+  if(session.u==='haris'||om)mainItems.push({id:'qc-disposition',label:'QC Disposition'});
   if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
   if(om||session.canFabric)mainItems.push({id:'fabric-inventory',label:'Fabric Inventory'});
   if(om)mainItems.push({id:'fulfillment',label:'Courier Performance'});
@@ -766,10 +768,13 @@ function _renderMobNav(ctx){
   }
 
   if(isWorker||isViewer){
-    // Workers/viewers: 3-button nav
+    // Workers/viewers: 3-button nav. Haris (QC) gets a QC button in place of
+    // Gate Pass so the garment-QC disposition page is reachable on mobile.
     cols=3;
     html=_mobNavBtn('my-work','home','My Work',"window.showPage('my-work')")
-        +_mobNavBtn('gatepass','door','Gate Pass',"window.showPage('gatepass')")
+        +(session&&session.u==='haris'
+            ?_mobNavBtn('qc-disposition','list','QC',"window.showPage('qc-disposition')")
+            :_mobNavBtn('gatepass','door','Gate Pass',"window.showPage('gatepass')"))
         +_mobNavBtn('me','user','Me',"window.showPage('me')");
   } else if(isStore){
     // Store role (Raees): 5-button store-focused
@@ -992,6 +997,7 @@ function renderPage(id){
   else if(id==='gatepass'){gpPage=1;m.innerHTML=renderGatePass();window.switchGPTab(gpActiveTab||'outward');}
   else if(id==='fabric-inventory'){_fabInvDrillKey=null;m.innerHTML=renderFabricPage();window.switchFabTab('stock');}
   else if(id==='packing')m.innerHTML=renderPacking();
+  else if(id==='qc-disposition')m.innerHTML=renderQCDisposition();
   else if(id==='fulfillment'){if(!fulfillReportsLoaded){m.innerHTML=gvSkeleton(6);loadFulfillmentData().then(()=>{if(currentPage===id)m.innerHTML=renderFulfillmentPage();});}else m.innerHTML=renderFulfillmentPage();}
   else if(id==='activity'){loadActivity();return;}
   else if(id==='users')m.innerHTML=renderUsers();

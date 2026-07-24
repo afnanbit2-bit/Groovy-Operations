@@ -153,3 +153,234 @@ window.packRecord=async function(fbKey){
     if(currentPage==='packing'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderPacking();}
   }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Record receipt ✓';}}
 };
+
+// ── QC Disposition (Haris) ────────────────────────────────────────────────
+// Every received piece is accounted for. Initial disposition splits pending
+// pieces into passed / rafu / washing / alteration / bstock (conservation:
+// the split can never exceed what's still pending QC). rafu/washing/alteration
+// are rework buckets that later resolve to Barcode (fixed) or B-stock (fails).
+// Two terminal pools per size: barcode-ready (= passed + rework→barcode) and
+// bstock (= bstock + rework→bstock). See PO_PRODUCTION_FLOW_PLAN.md §4.5.
+const QC_BUCKETS=[
+  {key:'passed',    label:'QC Passed', color:'#16a34a'},
+  {key:'rafu',      label:'Rafu',      color:'#d97706'},
+  {key:'washing',   label:'Washing',   color:'#0891b2'},
+  {key:'alteration',label:'Alteration',color:'#7c3aed'},
+  {key:'bstock',    label:'B-stock',   color:'#dc2626'},
+];
+let _qcSel=null;   // fbKey of the PO being dispositioned, or null for the list
+let _qcQ='';       // search on the QC list
+let _qcSize='';    // selected size for the disposition form
+let _qcRwSize='';  // selected size for the rework-resolution form
+
+function _qcSum(po){
+  const m={};
+  ((po&&po.qcDispositions)||[]).forEach(e=>{
+    if(!e||!e.size||!e.kind)return;
+    (m[e.size]=m[e.size]||{})[e.kind]=(m[e.size][e.kind]||0)+(Number(e.qty)||0);
+  });
+  return m;
+}
+function _qz(m,size,kind){return (m[size]&&m[size][kind])||0;}
+// QC'd (initial disposition) per size = passed+rafu+washing+alteration+bstock.
+function qcDoneBySize(po){
+  const m=_qcSum(po),out={};
+  PO_FLOW_SIZES.forEach(sz=>{const v=_qz(m,sz,'passed')+_qz(m,sz,'rafu')+_qz(m,sz,'washing')+_qz(m,sz,'alteration')+_qz(m,sz,'bstock');if(v)out[sz]=v;});
+  return out;
+}
+function qcPendingBySize(po){
+  const rec=poReceivedBySize(po),done=qcDoneBySize(po),out={};
+  PO_FLOW_SIZES.forEach(sz=>{const v=Math.max(0,(rec[sz]||0)-(done[sz]||0));if(v)out[sz]=v;});
+  return out;
+}
+function qcInReworkBySize(po){
+  const m=_qcSum(po),out={};
+  PO_FLOW_SIZES.forEach(sz=>{const init=_qz(m,sz,'rafu')+_qz(m,sz,'washing')+_qz(m,sz,'alteration');const res=_qz(m,sz,'rework_to_barcode')+_qz(m,sz,'rework_to_bstock');const v=Math.max(0,init-res);if(v)out[sz]=v;});
+  return out;
+}
+// Barcode-ready pool per size = passed + rework→barcode (Phase 6 nets off transfers).
+function qcBarcodeReadyBySize(po){
+  const m=_qcSum(po),out={};
+  PO_FLOW_SIZES.forEach(sz=>{const v=_qz(m,sz,'passed')+_qz(m,sz,'rework_to_barcode');if(v)out[sz]=v;});
+  return out;
+}
+// B-stock generated per size = bstock + rework→bstock (Phase 5 assigns cartons).
+function qcBstockBySize(po){
+  const m=_qcSum(po),out={};
+  PO_FLOW_SIZES.forEach(sz=>{const v=_qz(m,sz,'bstock')+_qz(m,sz,'rework_to_bstock');if(v)out[sz]=v;});
+  return out;
+}
+function _mapTotal(m){return Object.values(m||{}).reduce((a,n)=>a+(Number(n)||0),0);}
+
+function _qcOpenPOs(){
+  return (typeof allPOs!=='undefined'&&Array.isArray(allPOs)?allPOs:[]).filter(p=>
+    poStatusOf(p)===PO_STATUS.IN_PRODUCTION && poReceivedTotal(p)>0 &&
+    (_mapTotal(qcPendingBySize(p))>0 || _mapTotal(qcInReworkBySize(p))>0)
+  );
+}
+
+function renderQCDisposition(){
+  if(_qcSel){const po=(typeof allPOs!=='undefined'?allPOs:[]).find(p=>p.fbKey===_qcSel);if(po)return _renderQCDetail(po);_qcSel=null;}
+  return _renderQCList();
+}
+function _renderQCList(){
+  const all=_qcOpenPOs();
+  const q=_qcQ.trim().toLowerCase();
+  const list=q?all.filter(p=>[p.id,p.name,p.code,p.fabric].some(v=>(v||'').toLowerCase().includes(q))):all;
+  const totalPend=all.reduce((a,p)=>a+_mapTotal(qcPendingBySize(p)),0);
+  const totalRw=all.reduce((a,p)=>a+_mapTotal(qcInReworkBySize(p)),0);
+  return`<div class="page-head"><div class="page-title">QC — Disposition</div><div class="page-sub">${all.length} PO${all.length!==1?'s':''} · ${totalPend} pending QC${totalRw?` · ${totalRw} in rework`:''}</div></div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    <input id="qc-search" placeholder="Search PO number, article, fabric…" value="${_gpEsc(_qcQ)}" oninput="window.qcSetSearch(this.value)" style="flex:1;min-width:180px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;outline:none">
+  </div>
+  ${list.length?list.map(p=>_qcListCard(p)).join(''):`<div class="empty" style="padding:28px;text-align:center">${all.length?'No POs match your search.':'Nothing awaiting QC. Received pieces from Packing appear here.'}</div>`}
+  <div style="height:80px"></div>`;
+}
+function _qcListCard(p){
+  const pend=_mapTotal(qcPendingBySize(p)),rw=_mapTotal(qcInReworkBySize(p));
+  return`<div class="po-row" onclick="window.qcOpen('${p.fbKey}')" style="align-items:stretch">
+    <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:#ccc">No img</span>'}</div>
+    <div class="po-info" style="flex:1">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="po-num">${p.id}</span><span style="font-size:11px;color:var(--muted)">${_gpEsc(p.code||'')}</span></div>
+      <div class="po-name">${_gpEsc(p.name||'—')}</div>
+      <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+        ${pend?`<span style="font-size:11px;font-weight:700;color:#b45309;background:#fef3c7;padding:2px 8px;border-radius:6px">${pend} to QC</span>`:''}
+        ${rw?`<span style="font-size:11px;font-weight:700;color:#0891b2;background:#ecfeff;padding:2px 8px;border-radius:6px">${rw} in rework</span>`:''}
+      </div>
+    </div>
+    <div class="po-arrow">›</div>
+  </div>`;
+}
+function _renderQCDetail(po){
+  const rec=poReceivedBySize(po),pend=qcPendingBySize(po),rw=qcInReworkBySize(po);
+  const bc=qcBarcodeReadyBySize(po),bs=qcBstockBySize(po);
+  const sizes=PO_FLOW_SIZES.filter(sz=>(rec[sz]||0)>0);
+  // Reconciliation table
+  const recRows=sizes.map(sz=>`<tr style="border-bottom:1px solid #f5f5f5">
+    <td style="padding:8px;font-weight:700">${sz}</td>
+    <td style="padding:8px;text-align:center">${rec[sz]||0}</td>
+    <td style="padding:8px;text-align:center;font-weight:700;color:${(pend[sz]||0)?'#b45309':'#16a34a'}">${pend[sz]||'✓'}</td>
+    <td style="padding:8px;text-align:center;color:#0891b2">${(rw[sz]||0)||'—'}</td>
+    <td style="padding:8px;text-align:center;color:#16a34a;font-weight:600">${bc[sz]||0}</td>
+    <td style="padding:8px;text-align:center;color:#dc2626;font-weight:600">${bs[sz]||0}</td>
+  </tr>`).join('');
+  // Disposition form (selected size)
+  const pendSizes=PO_FLOW_SIZES.filter(sz=>(pend[sz]||0)>0);
+  if(_qcSize&&!pendSizes.includes(_qcSize))_qcSize='';
+  if(!_qcSize&&pendSizes.length)_qcSize=pendSizes[0];
+  const dispPend=_qcSize?(pend[_qcSize]||0):0;
+  const dispForm=pendSizes.length?`
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+      <label style="font-size:12px;color:var(--muted)">Size</label>
+      <select id="qc-size" onchange="window.qcPickSize(this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px">
+        ${pendSizes.map(sz=>`<option value="${sz}"${sz===_qcSize?' selected':''}>${sz} — ${pend[sz]} pending</option>`).join('')}
+      </select>
+      <span style="font-size:12px;color:var(--muted)">Pending: <b style="color:#b45309">${dispPend}</b></span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px">
+      ${QC_BUCKETS.map(b=>`<div>
+        <label style="font-size:11px;font-weight:600;color:${b.color};display:block;margin-bottom:3px">${b.label}</label>
+        <input id="qc-in-${b.key}" type="number" min="0" max="${dispPend}" placeholder="0" oninput="window.qcCalcRemain(${dispPend})" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:7px;font-size:14px;text-align:center;font-family:inherit;box-sizing:border-box">
+      </div>`).join('')}
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:12px;color:var(--muted)">Unassigned: <b id="qc-remain" style="color:#b45309">${dispPend}</b></span>
+      <button class="mark-done-btn" id="qc-record-btn" style="width:auto;padding:9px 18px" onclick="window.qcRecord('${po.fbKey}')">Record disposition ✓</button>
+    </div>`:'<div class="empty" style="padding:12px;text-align:center">All received pieces have been QC-dispositioned.</div>';
+  // Rework-resolution form
+  const rwSizes=PO_FLOW_SIZES.filter(sz=>(rw[sz]||0)>0);
+  if(_qcRwSize&&!rwSizes.includes(_qcRwSize))_qcRwSize='';
+  if(!_qcRwSize&&rwSizes.length)_qcRwSize=rwSizes[0];
+  const rwPend=_qcRwSize?(rw[_qcRwSize]||0):0;
+  const rwForm=rwSizes.length?`
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label style="font-size:12px;color:var(--muted)">Size</label>
+      <select id="qc-rw-size" onchange="window.qcPickRwSize(this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px">
+        ${rwSizes.map(sz=>`<option value="${sz}"${sz===_qcRwSize?' selected':''}>${sz} — ${rw[sz]} in rework</option>`).join('')}
+      </select>
+      <input id="qc-rw-qty" type="number" min="0" max="${rwPend}" placeholder="qty" style="width:80px;padding:8px;border:1px solid var(--border);border-radius:7px;font-size:14px;text-align:center;font-family:inherit">
+      <button class="btn-outline" style="width:auto;padding:8px 14px;margin:0;color:#16a34a;border-color:#86efac" onclick="window.qcResolveRework('${po.fbKey}','barcode')">→ Barcode (fixed)</button>
+      <button class="btn-outline" style="width:auto;padding:8px 14px;margin:0;color:#dc2626;border-color:#fca5a5" onclick="window.qcResolveRework('${po.fbKey}','bstock')">→ B-stock</button>
+    </div>`:'<div class="empty" style="padding:12px;text-align:center">No pieces in rework.</div>';
+
+  return`<button class="back-btn" onclick="window.qcBack()">← Back to QC list</button>
+  <div class="page-head"><div class="page-title">${po.id} — QC</div><div class="page-sub">${_gpEsc(po.name||'—')} · ${_gpEsc(po.code||'')}</div></div>
+  <div class="card">${poReceiveBar(po)}</div>
+  <div class="card"><div class="card-title">Reconciliation by size</div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">
+      <thead><tr style="background:#fafafa">
+        <th style="padding:8px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Size</th>
+        <th style="padding:8px;text-align:center;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Recv</th>
+        <th style="padding:8px;text-align:center;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Pend QC</th>
+        <th style="padding:8px;text-align:center;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Rework</th>
+        <th style="padding:8px;text-align:center;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Barcode</th>
+        <th style="padding:8px;text-align:center;font-size:10.5px;text-transform:uppercase;color:var(--muted)">B-stock</th>
+      </tr></thead><tbody>${recRows}</tbody>
+    </table></div>
+  </div>
+  <div class="card"><div class="card-title">Disposition <span style="font-weight:400;color:var(--muted);font-size:11px">split pending pieces — total can't exceed pending</span></div>${dispForm}</div>
+  <div class="card"><div class="card-title">Resolve rework <span style="font-weight:400;color:var(--muted);font-size:11px">rafu / washing / alteration → fixed or B-stock</span></div>${rwForm}</div>
+  <div style="height:80px"></div>`;
+}
+
+// ── QC handlers ──
+window.qcSetSearch=function(v){
+  _qcQ=v||'';
+  clearTimeout(window._qcSearchTo);
+  window._qcSearchTo=setTimeout(()=>{
+    const m=document.getElementById('main-content');
+    if(m&&currentPage==='qc-disposition'){m.innerHTML=renderQCDisposition();const i=document.getElementById('qc-search');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}}
+  },160);
+};
+window.qcOpen=function(fbKey){_qcSel=fbKey;_qcSize='';_qcRwSize='';const m=document.getElementById('main-content');if(m)m.innerHTML=renderQCDisposition();};
+window.qcBack=function(){_qcSel=null;const m=document.getElementById('main-content');if(m)m.innerHTML=renderQCDisposition();};
+window.qcPickSize=function(sz){_qcSize=sz;const m=document.getElementById('main-content');if(m)m.innerHTML=renderQCDisposition();};
+window.qcPickRwSize=function(sz){_qcRwSize=sz;const m=document.getElementById('main-content');if(m)m.innerHTML=renderQCDisposition();};
+window.qcCalcRemain=function(pending){
+  let sum=0;QC_BUCKETS.forEach(b=>{sum+=parseInt(document.getElementById('qc-in-'+b.key)?.value)||0;});
+  const el=document.getElementById('qc-remain');const btn=document.getElementById('qc-record-btn');
+  const rem=pending-sum;
+  if(el){el.textContent=rem;el.style.color=rem<0?'#dc2626':rem===0?'#16a34a':'#b45309';}
+  if(btn){btn.disabled=(sum<=0||rem<0);btn.style.opacity=(sum<=0||rem<0)?'.5':'1';}
+};
+window.qcRecord=async function(fbKey){
+  const po=(typeof allPOs!=='undefined'?allPOs:[]).find(p=>p.fbKey===fbKey);
+  if(!po){showToast('PO not found.',true);return;}
+  const size=_qcSize;if(!size){showToast('Pick a size.',true);return;}
+  const pend=qcPendingBySize(po)[size]||0;
+  const entries=[];let sum=0;
+  QC_BUCKETS.forEach(b=>{const q=parseInt(document.getElementById('qc-in-'+b.key)?.value)||0;if(q>0){entries.push({kind:b.key,qty:q});sum+=q;}});
+  if(!sum){showToast('Enter at least one quantity.',true);return;}
+  if(sum>pend){showToast(`Total ${sum} exceeds pending ${pend}.`,true);return;}
+  const btn=document.getElementById('qc-record-btn');if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  try{
+    const ts=new Date().toISOString();const dispId='QCD-'+Date.now();
+    const newEntries=entries.map(e=>({id:dispId+'-'+e.kind,dispId,size,kind:e.kind,qty:e.qty,ts,by:session.name}));
+    const merged=((po.qcDispositions)||[]).concat(newEntries);
+    await updateDoc(doc(db,'pos',fbKey),{qcDispositions:merged});
+    await logActivity('QC disposition',`${po.id} ${size} — ${entries.map(e=>e.kind+'×'+e.qty).join(', ')} by ${session.name}`).catch(()=>{});
+    showToast(`Disposition recorded ✓ — ${sum} pcs`);
+    await loadData();
+    if(currentPage==='qc-disposition'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderQCDisposition();}
+  }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Record disposition ✓';}}
+};
+window.qcResolveRework=async function(fbKey,dest){
+  const po=(typeof allPOs!=='undefined'?allPOs:[]).find(p=>p.fbKey===fbKey);
+  if(!po){showToast('PO not found.',true);return;}
+  const size=_qcRwSize;if(!size){showToast('Pick a size.',true);return;}
+  const avail=qcInReworkBySize(po)[size]||0;
+  const qty=parseInt(document.getElementById('qc-rw-qty')?.value)||0;
+  if(qty<=0){showToast('Enter a quantity.',true);return;}
+  if(qty>avail){showToast(`Only ${avail} in rework for ${size}.`,true);return;}
+  try{
+    const ts=new Date().toISOString();const kind=dest==='barcode'?'rework_to_barcode':'rework_to_bstock';
+    const rwrId='RWR-'+Date.now();
+    const entry={id:rwrId,dispId:rwrId,size,kind,qty,ts,by:session.name};
+    const merged=((po.qcDispositions)||[]).concat([entry]);
+    await updateDoc(doc(db,'pos',fbKey),{qcDispositions:merged});
+    await logActivity('QC rework resolved',`${po.id} ${size} — ${qty} → ${dest} by ${session.name}`).catch(()=>{});
+    showToast(`${qty} ${size} resolved → ${dest==='barcode'?'Barcode':'B-stock'} ✓`);
+    await loadData();
+    if(currentPage==='qc-disposition'){const m=document.getElementById('main-content');if(m)m.innerHTML=renderQCDisposition();}
+  }catch(e){showToast('Error: '+e.message,true);}
+};
