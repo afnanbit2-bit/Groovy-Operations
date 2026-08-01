@@ -570,7 +570,7 @@ function renderPOCreate(){
     </div>
     <div style="margin-top:8px;font-size:12px;color:var(--muted)">Ratio: <span id="ratio-disp" style="font-weight:600;color:var(--text)">—</span></div>
   </div>
-  ${typeof fabPoFabricCard==='function'?fabPoFabricCard():'<div class="card"><div class="card-title">Fabric & supply *</div><div class="form-grid"><div class="field"><label>Fabric type *</label><input id="po-fabric" placeholder="e.g. Terry, Fleece"></div><div class="field"><label>Fabric code</label><input id="po-fabriccode" placeholder="e.g. BLKTRY220"></div><div class="field"><label>Supply store</label><input id="po-store" placeholder="Store/supplier"></div><div class="field"><label>Total rolls</label><input id="po-rolls" placeholder="e.g. 12"></div></div></div>'}
+  ${typeof fabPoFabricCard==='function'?fabPoFabricCard():'<div class="card"><div class="card-title">Fabric & supply <span style="font-weight:400;color:var(--muted);font-size:11px">optional</span></div><div class="form-grid"><div class="field"><label>Fabric type</label><input id="po-fabric" placeholder="e.g. Terry, Fleece"></div><div class="field"><label>Fabric code</label><input id="po-fabriccode" placeholder="e.g. BLKTRY220"></div><div class="field"><label>Supply store</label><input id="po-store" placeholder="Store/supplier"></div><div class="field"><label>Total rolls</label><input id="po-rolls" placeholder="e.g. 12"></div></div></div>'}
   <div class="card"><div class="card-title">Product images</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div>
@@ -700,7 +700,6 @@ window.submitPO=async function(){
   const name=document.getElementById('po-name')?.value.trim(),code=document.getElementById('po-code')?.value.trim(),qty=parseInt(document.getElementById('po-qty')?.value)||0,fabric=document.getElementById('po-fabric')?.value.trim();
   if(!name||!code){showToast('Select a product from the search dropdown.',true);document.getElementById('po-search')?.focus();return;}
   if(!qty){showToast('Quantity required.',true);return;}
-  if(!fabric){showToast('Fabric type required.',true);return;}
   if(!poImages.front){showToast('Front image required.',true);return;}
   const btn=document.getElementById('po-submit-btn');if(btn){btn.disabled=true;btn.textContent='Uploading image…';}
   try{

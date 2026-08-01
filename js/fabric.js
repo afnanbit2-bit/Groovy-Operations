@@ -2720,14 +2720,14 @@ window.fabPoFabricCard=function(){
   _poFabrics=[];_poFabRowSeq=0;
   const stocks=_fabPoStocks();
   const firstRow=_fabPoRowHTML();
-  return`<div class="card"><div class="card-title">Fabric &amp; supply <span style="font-weight:400;color:var(--muted);font-size:11px">* · linked to fabric inventory</span></div>
+  return`<div class="card"><div class="card-title">Fabric &amp; supply <span style="font-weight:400;color:var(--muted);font-size:11px">optional · linked to fabric inventory</span></div>
     <div class="field"><label>Reserve from fabric inventory <span style="font-weight:400;color:var(--muted)">optional · pick one or more fabrics &amp; reserve rolls</span></label>
       <div id="po-fab-rows">${firstRow}</div>
       <button type="button" onclick="window.fabPoAddRow()" style="background:none;border:1px dashed var(--border);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;color:var(--dark);cursor:pointer;font-family:inherit">+ Add another fabric</button>
       ${stocks.length?'':'<div style="font-size:11px;color:var(--muted);margin-top:8px">No fabric in inventory yet — enter details manually below, or add stock in the Fabric Inventory section.</div>'}
     </div>
     <div class="form-grid" style="margin-top:12px">
-      <div class="field"><label>Fabric type *</label><input id="po-fabric" placeholder="e.g. Terry, Fleece"></div>
+      <div class="field"><label>Fabric type</label><input id="po-fabric" placeholder="e.g. Terry, Fleece"></div>
       <div class="field"><label>Fabric code</label><input id="po-fabriccode" placeholder="e.g. BLKTRY220"></div>
       <div class="field"><label>Supply store</label><input id="po-store" placeholder="Store/supplier"></div>
       <div class="field"><label>Total rolls <span style="font-weight:400;color:var(--muted);font-size:11px">auto from reserved</span></label><input id="po-rolls" placeholder="e.g. 12"></div>
