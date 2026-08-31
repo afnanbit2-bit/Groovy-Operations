@@ -405,7 +405,8 @@ function _renderFabInvDrill(key){
       const rcpt=allFabricIn.find(x=>x.id===r.sourceFabId);
       const supplier=rcpt?.supplier||'';
       const wt=`${r.weight||0} ${r.unit||s.unit||'kg'}`;
-      const canAct=_fabCanDelete()&&st==='in_stock';
+      const canEdit=_fabCanDelete()&&['in_stock','reserved'].includes(st);
+      const canDelete=_fabCanDelete()&&st==='in_stock';
       return`<div style="padding:8px 2px;border-bottom:1px solid #f5f5f5;display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <input type="checkbox" class="fab-drill-chk" data-rc="${_gpEsc(r.rollCode||'')}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(supplier)}" data-gsm="${r.gsm||rcpt?.gsm||s.gsm||''}" data-color="${_gpEsc(r.color||rcpt?.color||s.color||'')}" data-fabtype="${_gpEsc(s.fabType||'')}" onclick="window.updateDrillPrintCount()" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
@@ -414,8 +415,8 @@ function _renderFabInvDrill(key){
           <span style="color:${stColor};font-weight:600;text-transform:capitalize;font-size:11px">${st.replace('_',' ')}</span>
           <button onclick="window.printRollBarcode('${_gpEsc(r.rollCode||'')}','${_gpEsc(s.fabType||'')}','${r.gsm||s.gsm||0}','${_gpEsc(s.color||'')}','${_gpEsc(wt)}','${_gpEsc(supplier)}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">🖨 Print</button>
           ${r.labelStale?`<button onclick="window.fabReprintRoll('${_gpEsc(key)}','${_gpEsc(r.rollCode||'')}')" title="Reprint label with the updated weight — same barcode" style="padding:3px 8px;border:none;border-radius:6px;background:#b45309;color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">🖨 Reprint (weight changed)</button>`:''}
-          ${canAct?`<button onclick="window.editFabricRoll('${_gpEsc(r.sourceFabId||'')}','${_gpEsc(r.rollCode||'')}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">Edit</button>
-          <button onclick="window.deleteFabricRoll('${_gpEsc(r.sourceFabId||'')}','${_gpEsc(r.rollCode||'')}')" title="Delete this roll" style="padding:3px 8px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:10px;cursor:pointer;font-family:inherit">✕</button>`:''}
+          ${canEdit?`<button onclick="window.editFabricRoll('${_gpEsc(r.sourceFabId||'')}','${_gpEsc(r.rollCode||'')}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">Edit</button>`:''}
+          ${canDelete?`<button onclick="window.deleteFabricRoll('${_gpEsc(r.sourceFabId||'')}','${_gpEsc(r.rollCode||'')}')" title="Delete this roll" style="padding:3px 8px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:10px;cursor:pointer;font-family:inherit">✕</button>`:''}
         </div>
         <div style="font-size:11px;color:var(--muted)">${_fabRollDetail(r)}</div>
         <svg class="fab-drill-bc" data-rc="${_gpEsc(r.rollCode||'')}" style="display:block;height:34px"></svg>
@@ -849,8 +850,8 @@ function renderFabricInList(){
               <span style="${r.qcPassed?'color:var(--green);font-weight:600':'color:var(--muted)'}">${r.qcPassed?'QC ✓':'Pending QC'}</span>
               ${r.qcPassed&&r.qcBy?`<span style="font-size:10px;color:var(--muted)">${r.qcBy}</span>`:''}
               <button onclick="event.stopPropagation();window.printRollBarcode('${_gpEsc(rc)}','${_gpEsc(f.fabType||'')}','${rGsm}','${_gpEsc(f.color||'')}','${_gpEsc(wt)}','${_gpEsc(f.supplier||'')}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">🖨 Print</button>
-              ${_fabCanDelete()&&liveSt==='in_stock'?`<button onclick="event.stopPropagation();window.editFabricRoll('${f.id}','${_gpEsc(rc)}')" title="Edit this roll (owners only)" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">Edit</button>
-              <button onclick="event.stopPropagation();window.deleteFabricRoll('${f.id}','${_gpEsc(rc)}')" title="Delete just this roll (owners only)" style="padding:3px 8px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:10px;cursor:pointer;font-family:inherit">✕ Roll</button>`:''}
+              ${_fabCanDelete()&&['in_stock','reserved'].includes(liveSt)?`<button onclick="event.stopPropagation();window.editFabricRoll('${f.id}','${_gpEsc(rc)}')" title="Edit this roll (owners only)" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">Edit</button>`:''}
+              ${_fabCanDelete()&&liveSt==='in_stock'?`<button onclick="event.stopPropagation();window.deleteFabricRoll('${f.id}','${_gpEsc(rc)}')" title="Delete just this roll (owners only)" style="padding:3px 8px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:10px;cursor:pointer;font-family:inherit">✕ Roll</button>`:''}
             </div>
             <svg class="fab-roll-barcode-view" data-rc="${_gpEsc(rc)}" style="display:block;height:38px;margin-left:0"></svg>
           </div>`;
@@ -1309,14 +1310,19 @@ window.deleteFabricRoll=async function(fabId,rollCode){
   finally{_fabBusyEnd();}
 };
 
-// Edit a SINGLE in-stock roll's weight / GSM / QC (owners only). Updates the
-// receipt roll (if any) AND the inventory roll in one transaction.
+// Edit a SINGLE in-stock OR reserved roll's weight / GSM / QC (owners only).
+// A reserved roll also gets an "Unlink from PO" option — checking it, on
+// save, drops the PO reservation and returns the roll to available stock at
+// its (possibly corrected) weight, in the same transaction as the edit.
+// Updates the receipt roll (if any) AND the inventory roll in one transaction.
 window.editFabricRoll=function(fabId,rollCode){
   if(!_fabCanDelete())return showToast('Only owners (Afnan, Ammar) can edit rolls.',true);
   const inv=_fabFindRoll(rollCode);
   if(!inv)return showToast('Roll '+rollCode+' not found.',true);
-  if((inv.roll.status||'in_stock')!=='in_stock')return showToast(`${rollCode} is in use — only in-stock rolls can be edited.`,true);
+  const rollSt=inv.roll.status||'in_stock';
+  if(!['in_stock','reserved'].includes(rollSt))return showToast(`${rollCode} is ${rollSt.replace('_',' ')} — only in-stock or reserved rolls can be edited.`,true);
   const r=inv.roll,unit=r.unit||inv.stock.unit||'kg';
+  const isReserved=rollSt==='reserved';
   document.getElementById('hrm-modal-back')?.remove();
   const back=document.createElement('div');
   back.className='hrm-modal-back';back.id='hrm-modal-back';
@@ -1326,11 +1332,13 @@ window.editFabricRoll=function(fabId,rollCode){
       <div><h3>Edit roll</h3><div class="sub">${_gpEsc(rollCode)}</div></div>
       <button onclick="window.hrmCloseModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);line-height:1">×</button>
     </div>
+    ${isReserved?`<div style="background:#fffbeb;border:1px solid #f5e1a4;border-radius:8px;padding:9px 11px;font-size:12px;color:#7a5b00;margin:10px 0">Reserved for <strong>${_gpEsc(r.reservedPO||'—')}</strong>.</div>`:''}
     <div class="hrm-grid-2">
       <div class="field"><label>Weight (${_gpEsc(unit)})</label><input id="fer-weight" type="number" min="0" step="0.01" value="${r.weight||0}"></div>
       <div class="field"><label>GSM</label><input id="fer-gsm" type="number" min="0" step="1" value="${r.gsm||inv.stock.gsm||0}"></div>
     </div>
     <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;cursor:pointer"><input type="checkbox" id="fer-qc" ${r.qcPassed?'checked':''}> QC passed</label>
+    ${isReserved?`<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;cursor:pointer;padding:8px 10px;border:1px solid #fca5a5;border-radius:8px;background:#fef2f2"><input type="checkbox" id="fer-unlink"> Unlink from ${_gpEsc(r.reservedPO||'this PO')} — return roll to available stock</label>`:''}
     <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
       <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
       <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.saveFabricRoll('${_gpEsc(fabId)}','${_gpEsc(rollCode)}')">Save</button>
@@ -1344,11 +1352,15 @@ window.saveFabricRoll=async function(fabId,rollCode){
   const weight=parseFloat(document.getElementById('fer-weight')?.value);
   const gsm=parseInt(document.getElementById('fer-gsm')?.value);
   const qc=document.getElementById('fer-qc')?.checked||false;
+  const unlink=document.getElementById('fer-unlink')?.checked||false;
   if(isNaN(weight)||weight<=0)return showToast('Enter a valid weight.',true);
   if(isNaN(gsm)||gsm<=0)return showToast('Enter a valid GSM.',true);
   const inv=_fabFindRoll(rollCode);
   if(!inv)return showToast('Roll not found.',true);
-  if((inv.roll.status||'in_stock')!=='in_stock')return showToast(`${rollCode} is in use — can't edit.`,true);
+  const rollSt=inv.roll.status||'in_stock';
+  if(!['in_stock','reserved'].includes(rollSt))return showToast(`${rollCode} is in use — can't edit.`,true);
+  const reservedPO=inv.roll.reservedPO||'';
+  if(unlink&&!confirm(`Unlink ${rollCode} from ${reservedPO||'its PO'} and return it to available stock?`))return;
   const st=inv.stock,f=allFabricIn.find(x=>x.id===fabId);
   if(!_fabBusyStart('Saving roll…'))return;
   try{
@@ -1364,14 +1376,18 @@ window.saveFabricRoll=async function(fabId,rollCode){
     // Edit the authoritative inventory + a movement in one transaction. The
     // receipt (fabricin) roll list is SECONDARY — update it separately and
     // best-effort so a rules gap on fabricin-update can't block the roll edit.
-    await _fabInvUpsert({fabType:st.fabType,gsm:st.gsm,color:st.color,unit:st.unit||inv.roll.unit||'kg',editRolls:[{rollCode,weight,gsm,qcPassed:qc}],note:`Roll ${rollCode} edited`,sourceCol:'fabricin',sourceId:fabId});
+    if(unlink&&rollSt==='reserved'){
+      await _fabInvUpsert({fabType:st.fabType,gsm:st.gsm,color:st.color,unit:st.unit||inv.roll.unit||'kg',unreserveEditRolls:[{rollCode,weight,gsm,qcPassed:qc}],note:`Roll ${rollCode} unlinked from ${reservedPO||'PO'} & restocked by ${session.name}`,sourceCol:'fabricin',sourceId:fabId});
+    }else{
+      await _fabInvUpsert({fabType:st.fabType,gsm:st.gsm,color:st.color,unit:st.unit||inv.roll.unit||'kg',editRolls:[{rollCode,weight,gsm,qcPassed:qc}],note:`Roll ${rollCode} edited`,sourceCol:'fabricin',sourceId:fabId});
+    }
     if(f&&pending){
       try{ await updateDoc(doc(db,'fabricin',fabId),{rolls:pending.newRolls,totalWeight:pending.newTotal,updatedAt:Date.now(),updatedBy:session.name}); }
       catch(e){ console.warn('[fabric] receipt roll-list update skipped:',e.message); }
       f.rolls=pending.newRolls;f.totalWeight=pending.newTotal;
     }
-    await logActivity('Fabric roll edited',`${rollCode} by ${session.name}`).catch(()=>{});
-    showToast(`${rollCode} updated ✓`);
+    await logActivity(unlink?'Fabric roll unlinked from PO':'Fabric roll edited',unlink?`${rollCode} unlinked from ${reservedPO||'PO'} & restocked by ${session.name}`:`${rollCode} by ${session.name}`).catch(()=>{});
+    showToast(unlink?`${rollCode} unlinked & restocked ✓`:`${rollCode} updated ✓`);
     window.hrmCloseModal();
     _fabAfterRollChange(f?fabId:null);
   }catch(e){showToast('Save failed: '+e.message,true);}
