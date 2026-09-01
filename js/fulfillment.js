@@ -1204,11 +1204,19 @@ function _renderFulfillEntry(){
   const date=_fulfillEntryDate||_fulfillToday();
   _fulfillEntryDate=date;
   const existing=fulfillReports.find(r=>r.date===date);
-  // Editing a saved day reuses its own brand/courier layout (imported days can
-  // differ from the default template); a new day uses the fixed template.
+  // Editing a saved day starts from its own saved rows (imported days can carry
+  // a different layout, and this keeps their values aligned by index) but tops
+  // up any brand/courier the current template has and the saved day doesn't —
+  // e.g. a courier added after that day was recorded — as blank trailing rows,
+  // so the entry form always offers every current courier going forward.
+  const _fulfillMergeRows=(saved,template)=>{
+    if(!saved||!saved.length)return template;
+    const seen=new Set(saved.map(r=>r.brand+'|'+r.courier));
+    return saved.concat(template.filter(r=>!seen.has(r.brand+'|'+r.courier)));
+  };
   _fulfillActiveRows={
-    d:(existing&&existing.dispatched&&existing.dispatched.length)?existing.dispatched:FULFILL_DISPATCH_ROWS,
-    r:(existing&&existing.returns&&existing.returns.length)?existing.returns:FULFILL_RETURN_ROWS
+    d:_fulfillMergeRows(existing&&existing.dispatched,FULFILL_DISPATCH_ROWS),
+    r:_fulfillMergeRows(existing&&existing.returns,FULFILL_RETURN_ROWS)
   };
 
   // Clear a lone "0" on focus and select the contents so the first keystroke
