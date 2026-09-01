@@ -26,9 +26,7 @@ const FULFILL_DISPATCH_ROWS=[
   {brand:'AGAINST',           courier:'POST-EX'},
   {brand:'Cultured Legacy',   courier:'BLUE-EX'},
   {brand:'Groovy/Against/Culture', courier:'TCS'},
-  {brand:'GROOVY',            courier:'BYKIA'},
-  {brand:'AGAINST',           courier:'BYKIA'},
-  {brand:'Cultured Legacy',   courier:'BYKIA'},
+  {brand:'Groovy/Against/Culture', courier:'BYKIA'},
 ];
 const FULFILL_RETURN_ROWS=[
   {brand:'GROOVY',          courier:'POST-EX'},
@@ -36,8 +34,7 @@ const FULFILL_RETURN_ROWS=[
   {brand:'Cultured Legacy', courier:'BLUE-EX'},
   {brand:'GROOVY',          courier:'BLUE-EX'},
   {brand:'Groovy/Culture',  courier:'TCS'},
-  {brand:'GROOVY',          courier:'BYKIA'},
-  {brand:'AGAINST',         courier:'BYKIA'},
+  {brand:'Groovy/Against/Culture', courier:'BYKIA'},
   {brand:'Cultured Legacy', courier:'BYKIA'},
 ];
 // The brand/courier rows currently rendered in the entry form — the fixed
