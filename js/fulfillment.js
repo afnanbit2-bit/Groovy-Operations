@@ -35,7 +35,6 @@ const FULFILL_RETURN_ROWS=[
   {brand:'GROOVY',          courier:'BLUE-EX'},
   {brand:'Groovy/Culture',  courier:'TCS'},
   {brand:'Groovy/Against/Culture', courier:'BYKIA'},
-  {brand:'Cultured Legacy', courier:'BYKIA'},
 ];
 // The brand/courier rows currently rendered in the entry form — the fixed
 // template for a new day, or a saved record's own rows when editing (imported
