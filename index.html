@@ -5,6 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Groovy Operations v2</title>
 <link rel="stylesheet" href="/css/main.css?v=20260627b">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#000000">
+<link rel="apple-touch-icon" href="/assets/icons/icon-192.png">
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(err => console.warn('[sw] registration failed:', err));
+  });
+}
+</script>
 </head>
 <body>
 
@@ -104,12 +114,24 @@
 <script src="/js/activity.js?v=20260627b"></script>
 <script type="module">
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import{getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import{initializeFirestore,persistentLocalCache,persistentMultipleTabManager,getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import{getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import{getDatabase,ref as rtdbRef,get as rtdbGet,child as rtdbChild,onValue as rtdbOnValue,off as rtdbOff}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 const app=initializeApp({apiKey:'AIzaSyAcIrudpSPLbZMmoWMyTM1l8Z7GnxwelFw',authDomain:'groovy-gatepass.firebaseapp.com',projectId:'groovy-gatepass',storageBucket:'groovy-gatepass.appspot.com',messagingSenderId:'986200726255',appId:'1:986200726255:web:3a263cea3e7456d73c591a',databaseURL:'https://groovy-gatepass-default-rtdb.firebaseio.com'});
+// Persistent local cache (IndexedDB) so reads work offline; multi-tab manager
+// lets several open tabs share one cache instead of fighting over the lock.
+// If persistence can't start (private browsing, unsupported browser, a
+// same-origin tab already holding an incompatible single-tab lock, …) fall
+// back to the default in-memory Firestore instance rather than breaking login.
+let firestoreDb;
+try{
+  firestoreDb=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})});
+}catch(e){
+  console.warn('[firestore] persistent cache unavailable, falling back to in-memory cache:',e&&e.code||e);
+  firestoreDb=getFirestore(app);
+}
 Object.assign(window,{
-  db:getFirestore(app), auth:getAuth(app), rtdb:getDatabase(app),
+  db:firestoreDb, auth:getAuth(app), rtdb:getDatabase(app),
   collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch,
   signInWithEmailAndPassword,signOut,onAuthStateChanged,
   rtdbRef,rtdbGet,rtdbChild,rtdbOnValue,rtdbOff

@@ -50,6 +50,14 @@
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
+# The service worker script itself must always be revalidated — otherwise a
+# stale sw.js could sit in the CDN/browser HTTP cache and a deploy's cache
+# version bump (and its old-cache cleanup) would never be picked up.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
 # ── ZKTeco attendance clock push (ADMS/iclock) ─────────────────
 # The clock's firmware hardcodes the /iclock/ path; route it to the
 # receiver Function. MUST sit above the SPA catch-all below.
