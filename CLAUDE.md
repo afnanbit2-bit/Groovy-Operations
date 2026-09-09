@@ -440,6 +440,36 @@ screen. **Those values are still in git history and must be treated as
 permanently compromised** — rotating them in Firebase Console is the only
 remedy, and stripping them from `HEAD` does not undo the exposure.
 
+## Realtime Database rules
+
+Canonical copy: `database.rules.json`. Publish it at
+Firebase Console → Realtime Database → Rules.
+
+```json
+{ "rules": { "attendance": { ".read": "auth != null", ".write": false } } }
+```
+
+Why this is safe, verified from the code:
+
+- **The browser never writes to RTDB.** The bootstrap in `index.html` imports
+  only `get`, `onValue`, `child`, `ref`, `off` from `firebase-database.js` —
+  no `set`/`update`/`push` exists client-side, and no `js/*.js` calls one.
+- **All writes come from `netlify/functions/iclock.js`**, the ZKTeco/ADMS
+  receiver, using `firebase-admin` with a service-account credential. The
+  Admin SDK **bypasses security rules**, so `".write": false` does not
+  affect attendance capture. `attendance-sync/` holds no credentials.
+- **Every path the app touches is under `attendance/`** — `attendance/live`,
+  `attendance/_meta`, `attendance/{date}/{k40}`. Nothing reads the root, so
+  scoping the rule to `attendance` leaves everything else denied by default.
+
+`.read` is `auth != null` (any signed-in user) because payroll reads whole
+days wholesale — `attendance/{date}` — for every employee. Per-user
+restriction would break the HRM dashboard and needs a code change first.
+
+Until Sept 2026 these rules were `{".read": true, ".write": true}` — the
+attendance data was world-readable **and world-writable**, with no login,
+which meant anyone could have altered the records payroll is computed from.
+
 ## Outstanding action — Firestore rules not yet published
 
 The repo's `firestore.rules` is the canonical version but the live rules

@@ -1,0 +1,8 @@
+{
+  "rules": {
+    "attendance": {
+      ".read": "auth != null",
+      ".write": false
+    }
+  }
+}
