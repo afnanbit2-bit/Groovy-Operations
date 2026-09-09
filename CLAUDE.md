@@ -4,6 +4,55 @@ Multi-file SPA, deployed to Netlify on every push to `main`.
 Two contributors: Afnan (HRM/operations side, with Claude) and Ammar Shah
 (printing/embellishments side, also with Claude on a separate session).
 
+## Ground rule — verify, never guess
+
+**Every factual claim must trace to a tool result, a file, or a command run
+in this session. If it wasn't verified, it does not get stated as fact.**
+
+This is a standing instruction from Afnan, not a style preference. It exists
+because of two real failures during the PWA work, both avoidable:
+
+- A Netlify preview URL was *constructed* from the branch name and handed
+  over as though it were real. It 404'd and wasted the user's time. The
+  correct URL was one API call away the entire time (see the table below).
+- A failing Netlify build was diagnosed — and a fix pushed — without ever
+  reading the actual error. It went green, but that was luck, not diagnosis.
+
+### The rules
+
+1. **Never hand over a URL, ID, path, or config value you constructed.**
+   Read it from a tool result. If you genuinely must infer one, label it
+   "inferred, unverified" in the same sentence, and verify before acting.
+2. **Never diagnose from a symptom you have not read.** No log, no
+   diagnosis. If the error text isn't in front of you, say "I can't see the
+   error, send me the last 20 lines" — do not ship a fix for a hypothesis.
+3. **Label confidence every time.** Either "verified: `<source>`" or
+   "hypothesis, unverified". Never let the second wear the first's clothes.
+4. **Verify before reporting something done**, not after being challenged.
+5. **"I don't know" and "I can't check that from here" are correct
+   answers** — always preferred over a confident guess.
+
+### Verification paths that actually work here
+
+| To check | Use |
+|---|---|
+| Deploy status + the **real** preview URL | GitHub MCP `pull_request_read`, `method:"get_status"` — returns Netlify's own `target_url` and pass/fail |
+| CI / check-run detail | `pull_request_read`, `method:"get_check_runs"` |
+| Whether something is merged | `git fetch` then `git merge-base --is-ancestor`, or `pull_request_read` `method:"get"` (`merged` field) |
+| Static files serve | `python3 -m http.server` at repo root + `curl -o /dev/null -w "%{http_code}"` |
+| JS parses | `node --check <file>` |
+| `netlify.toml` valid | `python3 -c "import tomllib;tomllib.load(open('netlify.toml','rb'))"` |
+| `manifest.json` valid | `python3 -c "import json;json.load(open('manifest.json'))"` |
+
+### Sandbox limits (verified, reproducible)
+
+The Claude sandbox **cannot reach `*.netlify.app`** — the egress proxy
+answers `403` to `CONNECT` (`connect_rejected`). The deployed site can
+therefore never be opened from a session. Check deploys via the GitHub
+status API above, and depend on the human for anything needing a real
+browser: install prompts, offline behaviour, visual confirmation.
+`api.github.com` and `firestore.googleapis.com` **are** reachable.
+
 ## File architecture (split from the old single `index.html`)
 
 ```
@@ -81,7 +130,7 @@ Firebase (the 5 hoisted blocks) lives in `window.__bootApp()` in
 The app is an installable PWA. No build step, no framework — just
 `manifest.json`, `sw.js`, and a registration snippet in each HTML page.
 
-### ⚠️ Bump `CACHE_VERSION` on every deploy that changes HTML/CSS/JS
+### Bump `CACHE_VERSION` on every deploy that changes HTML/CSS/JS
 
 `sw.js` serves precached HTML/CSS/JS **cache-first**, so phones keep
 serving the old files until the cache version changes. Edit the constant at
