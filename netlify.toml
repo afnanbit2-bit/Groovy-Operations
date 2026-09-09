@@ -1,13 +1,17 @@
 [build]
   publish = "."
 
+# Global — every context (production, deploy previews, branch deploys) builds
+# the same way. Scoped to production only, previews ran on a different Node
+# and with smart secret detection on, which flags the public Firebase web API
+# key that index.html is required to ship in the clear.
+[build.environment]
+  NODE_VERSION = "18"
+  SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
+
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-
-[context.production.environment]
-  NODE_VERSION = "18"
-  SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
 
 # ── Scheduled functions (cron, UTC) ──────────────────────────────
 # 4am UTC = 9am PKT — daily catalog sync (products + variants)
