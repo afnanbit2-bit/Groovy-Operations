@@ -12,6 +12,10 @@ Two contributors: Afnan (HRM/operations side, with Claude) and Ammar Shah
                      <script type="module"> that imports the Firebase modular
                      SDK, bridges db/auth/rtdb + all Firestore/RTDB fns onto
                      window, then calls window.__bootApp().
+/manifest.json       PWA manifest (standalone, portrait, black theme).
+                     Icons live in /assets/icons/.
+/sw.js               service worker — precache + offline caching. See
+                     "PWA / offline caching" below before editing.
 /css/main.css        all styles (extracted verbatim).
 /js/shared.js        constants, generic utils (showToast, _icon,
                      formatTime12hr, logActivity, uploadToCloudinary), nav
@@ -70,6 +74,76 @@ Firebase (the 5 hoisted blocks) lives in `window.__bootApp()` in
 - Images: Cloudinary, unsigned preset `groovy-ops`
 - PDF: jsPDF · Excel: SheetJS (both via CDN)
 - Hosting: Netlify (auto-deploy on push to `main`)
+- PWA: `manifest.json` + `sw.js` (installable, offline shell) — see below
+
+## PWA / offline caching
+
+The app is an installable PWA. No build step, no framework — just
+`manifest.json`, `sw.js`, and a registration snippet in each HTML page.
+
+### ⚠️ Bump `CACHE_VERSION` on every deploy that changes HTML/CSS/JS
+
+`sw.js` serves precached HTML/CSS/JS **cache-first**, so phones keep
+serving the old files until the cache version changes. Edit the constant at
+the top of `sw.js`:
+
+```js
+const CACHE_VERSION = 'v1';   // → 'v2', 'v3', … on each shipped change
+```
+
+Bumping it makes the new service worker delete every `groovy-ops-*` cache
+from the previous version on `activate`, then re-precache. **Forget this
+and your change silently will not reach anyone who already opened the app.**
+It costs nothing to bump it unnecessarily, so bump it when unsure.
+
+### Adding a new `/js/*.js` file
+
+Three places, or it breaks offline:
+
+1. a `<script src>` tag in `index.html` (existing load order applies)
+2. the `PRECACHE_URLS` array in `sw.js`
+3. bump `CACHE_VERSION`
+
+### How the fetch handler routes
+
+- **Cache-first** — same-origin `/`, `*.html`, `/css/*`, `/js/*`,
+  `/assets/*`, `/manifest.json`. Matched with `ignoreSearch: true`, so the
+  `?v=…` cache-busting query strings in `index.html` do not need to stay in
+  sync with `sw.js`.
+- **Network-first** (falls back to cache) — everything else, e.g. the
+  jsPDF / SheetJS / JsBarcode CDN scripts.
+- **Never intercepted** — Firebase (Firestore, RTDB, Auth, the gstatic SDK)
+  and Cloudinary. These are matched by hostname in `BYPASS_HOSTS` and pass
+  straight to the network. **Do not add Firebase or Cloudinary URLs to any
+  cache** — stale auth tokens and half-cached writes are the result.
+
+### Firestore offline persistence
+
+Every `getFirestore(app)` call site (`index.html`, `color-backfill.html`,
+`pantone-importer.html`) now uses `initializeFirestore(app, { localCache:
+persistentLocalCache({ tabManager: persistentMultipleTabManager() }) })`,
+wrapped in a `try/catch` that falls back to plain `getFirestore(app)` if
+persistence can't start (private browsing, IndexedDB unavailable). Reads
+are served from IndexedDB when offline; writes queue and sync on reconnect.
+
+### Netlify
+
+`netlify.toml` sets `Cache-Control: must-revalidate` on `/sw.js` so a stale
+copy can't mask a version bump.
+
+`NODE_VERSION` and `SECRETS_SCAN_SMART_DETECTION_ENABLED` now live in a
+global `[build.environment]`, **not `[context.production.environment]`**.
+Scoped to production, deploy previews inherited neither, and PR preview
+builds failed while `main` deployed fine — most likely secret-scanning
+tripping on the public Firebase web API key that `index.html` has to ship
+in the clear. Moving them global fixed it. Keep them global, or PR
+previews break again.
+
+### Icons
+
+`/assets/icons/icon-{192,512}.png` + `icon-maskable-512.png` are
+**placeholder** black/white "GO" monograms, generated with Pillow. Swap in
+real artwork when available; keep the same filenames and sizes.
 
 ## Print design system
 
@@ -264,6 +338,9 @@ specifically**, since they hold the shell, the router, and the nav:
   `--radius-bubble`)
 - `window.__bootApp()` in `js/shared.js` — the 5 hoisted load-order blocks;
   do not move these back inline
+- `sw.js` — the `PRECACHE_URLS` list must gain an entry whenever either
+  track adds a `/js/*.js` or `/css/*.css` file, and `CACHE_VERSION` must be
+  bumped on any shipped HTML/CSS/JS change. See "PWA / offline caching"
 
 ## Permission helpers
 
