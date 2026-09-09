@@ -5,8 +5,6 @@
    Code is byte-identical to the original single-file index.html. */
 
 
-const SETUP_CODE='GroovyOps2024';
-
 const STAGES=[
   {key:'cutting',  label:'Cutting',    owner:'Uzaib', color:'#111111'},
   {key:'printing', label:'Embellishment QC',owner:'Asghar',color:'#111111'},

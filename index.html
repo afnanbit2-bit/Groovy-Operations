@@ -40,31 +40,6 @@ if('serviceWorker' in navigator){
       <input type="checkbox" id="l-remember" style="width:14px;height:14px;cursor:pointer"> Remember me
     </label>
     <button class="btn-login" id="login-btn" onclick="window.doLogin()">Sign in</button>
-    <button class="btn-setup-link" onclick="window.showSetup()">First time setup</button>
-  </div>
-</div>
-
-<!-- ══ SETUP ══ -->
-<div id="scr-setup" style="display:none;min-height:100vh;align-items:flex-start;justify-content:center;background:var(--dark);padding:2rem 1rem;overflow-y:auto">
-  <div style="background:#fff;border-radius:16px;padding:1.5rem;width:100%;max-width:540px">
-    <div style="font-size:17px;font-weight:700;margin-bottom:4px">First time setup</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6">Creates all 12 accounts in Firebase Auth. Safe to re-run — existing accounts are skipped, only missing ones are added. Enable Email/Password sign-in in Firebase Console first.</div>
-    <div style="margin-bottom:12px">
-      <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:6px">SETUP CODE</div>
-      <input id="setup-code" placeholder="Enter setup code: GroovyOps2024" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none">
-    </div>
-    <div style="background:#f8f8f8;border-radius:8px;padding:1rem;font-size:12px;line-height:2.2;margin-bottom:12px;border:1px solid var(--border)">
-      <div style="font-weight:700;margin-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)">Login credentials (share privately)</div>
-      <div><strong>afnan</strong> → Afnan@Ops24</div><div><strong>ammar</strong> → Ammar@Ops24</div>
-      <div><strong>mustafa</strong> → Mustafa@Ops24</div><div><strong>arfat</strong> → Arfat@Ops24</div>
-      <div><strong>raees</strong> → Raees@Ops24</div><div><strong>haris</strong> → Haris@Ops24</div>
-      <div><strong>abbas</strong> → Abbas@Ops24</div><div><strong>waqas</strong> → Waqas@Ops24</div>
-      <div><strong>asghar</strong> → Asghar@Ops24</div><div><strong>zohaib</strong> → Zohaib@Ops24</div>
-      <div><strong>uzaib</strong> → uzaib@24</div><div><strong>umair</strong> → Umair@Ops24</div>
-    </div>
-    <div id="setup-log"></div>
-    <button id="setup-btn" onclick="window.runSetup()" style="width:100%;padding:11px;background:var(--dark);color:#fff;border:none;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">Initialize all accounts</button>
-    <button onclick="window.showLogin()" style="width:100%;padding:9px;background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;font-family:inherit">← Back to login</button>
   </div>
 </div>
 

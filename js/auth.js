@@ -4,20 +4,25 @@
    window by the bootstrap module in index.html before __bootApp() runs.
    Code is byte-identical to the original single-file index.html. */
 
+// Account directory: identity, role and permissions only.
+// NEVER put a password in this file. It is a public static asset served to
+// every visitor before login — anything here is readable by anyone on the
+// internet. Passwords live in Firebase Auth and nowhere else. New accounts
+// are created in the Firebase Console, then given an entry here.
 const USER_DEFS=[
-  {u:'afnan',  email:'afnan@groovy.op',  name:'Afnan',  role:'owner',  title:'Co-founder',        canPO:true, canFabric:true,  stages:null,                 pass:'Afnan@Ops24'},
-  {u:'ammar',  email:'ammar@groovy.op',  name:'Ammar',  role:'owner',  title:'Co-founder',        canPO:true, canFabric:true,  stages:null,                 pass:'WA$p6AMMR'},
-  {u:'mustafa',email:'mustafa@groovy.op',name:'Mustafa',role:'manager',title:'Operations Manager',canPO:true, canFabric:true,  stages:null,                 pass:'Mustafa@Ops24'},
-  {u:'arfat',  email:'arfat@groovy.op',  name:'Arfat',  role:'manager',title:'Advisory',          canPO:true, canFabric:true,  stages:null,                 pass:'Arfat@Ops24'},
-  {u:'raees',  email:'raees@groovy.op',  name:'Raees',  role:'store',  title:'Store Manager',     canPO:false,canFabric:false, stages:[],                   pass:'Raees@Ops24'},
-  {u:'haris',  email:'haris@groovy.op',  name:'Haris',  role:'worker', title:'QC Manager',        canPO:false,canFabric:false, stages:['qc'],               pass:'Haris@Ops24'},
-  {u:'abbas',  email:'abbas@groovy.op',  name:'Abbas',  role:'worker', title:'Washing Assistant', canPO:false,canFabric:false, stages:['washing'],          pass:'Abbas@Ops24'},
-  {u:'waqas',  email:'waqas@groovy.op',  name:'Waqas',  role:'worker', title:'Stitching Incharge',canPO:false,canFabric:false, stages:['stitching'],        pass:'Waqas@Ops24'},
-  {u:'asghar', email:'asghar@groovy.op', name:'Asghar', role:'worker', title:'Printing Manager',  canPO:false,canFabric:false, stages:['printing'],         pass:'Asghar@Ops24'},
-  {u:'zohaib', email:'zohaib@groovy.op', name:'Zohaib', role:'worker', title:'Bundling Incharge',  canPO:false,canFabric:false, stages:['bundling'],          pass:'Zohaib@Ops24'},
-  {u:'uzaib',  email:'uzaib@groovy.op',  name:'Uzaib',  role:'viewer', title:'Cutting & Fabric',   canPO:false,canFabric:true,  stages:['cutting'],          pass:'uzaib@24'},
-  {u:'faizan', email:'faizan@groovy.op', name:'Faizan', role:'packing',title:'Packing & Dispatch', canPO:false,canFabric:false, stages:[],                   pass:'Faizan@Ops24'},
-  {u:'umair',  email:'umair@groovy.op',  name:'Umair',  role:'fulfillment', title:'Fulfilment',    canPO:false,canFabric:false, stages:[],                   pass:'Umair@Ops24'},
+  {u:'afnan',  email:'afnan@groovy.op',  name:'Afnan',  role:'owner',  title:'Co-founder',        canPO:true, canFabric:true,  stages:null},
+  {u:'ammar',  email:'ammar@groovy.op',  name:'Ammar',  role:'owner',  title:'Co-founder',        canPO:true, canFabric:true,  stages:null},
+  {u:'mustafa',email:'mustafa@groovy.op',name:'Mustafa',role:'manager',title:'Operations Manager',canPO:true, canFabric:true,  stages:null},
+  {u:'arfat',  email:'arfat@groovy.op',  name:'Arfat',  role:'manager',title:'Advisory',          canPO:true, canFabric:true,  stages:null},
+  {u:'raees',  email:'raees@groovy.op',  name:'Raees',  role:'store',  title:'Store Manager',     canPO:false,canFabric:false, stages:[]},
+  {u:'haris',  email:'haris@groovy.op',  name:'Haris',  role:'worker', title:'QC Manager',        canPO:false,canFabric:false, stages:['qc']},
+  {u:'abbas',  email:'abbas@groovy.op',  name:'Abbas',  role:'worker', title:'Washing Assistant', canPO:false,canFabric:false, stages:['washing']},
+  {u:'waqas',  email:'waqas@groovy.op',  name:'Waqas',  role:'worker', title:'Stitching Incharge',canPO:false,canFabric:false, stages:['stitching']},
+  {u:'asghar', email:'asghar@groovy.op', name:'Asghar', role:'worker', title:'Printing Manager',  canPO:false,canFabric:false, stages:['printing']},
+  {u:'zohaib', email:'zohaib@groovy.op', name:'Zohaib', role:'worker', title:'Bundling Incharge',  canPO:false,canFabric:false, stages:['bundling']},
+  {u:'uzaib',  email:'uzaib@groovy.op',  name:'Uzaib',  role:'viewer', title:'Cutting & Fabric',   canPO:false,canFabric:true,  stages:['cutting']},
+  {u:'faizan', email:'faizan@groovy.op', name:'Faizan', role:'packing',title:'Packing & Dispatch', canPO:false,canFabric:false, stages:[]},
+  {u:'umair',  email:'umair@groovy.op',  name:'Umair',  role:'fulfillment', title:'Fulfilment',    canPO:false,canFabric:false, stages:[]},
 ];
 // Packing/dispatch role (Faizan) — receives finished pieces, runs QC handoff
 // reconciliation, and books stock transfers. Username/role gated.
@@ -69,39 +74,14 @@ window.doLogout=async function(){
 };
 
 
-// ── Setup ──
-window.showSetup=function(){document.getElementById('scr-login').style.display='none';document.getElementById('scr-setup').style.display='flex';};
-window.showLogin=function(){document.getElementById('scr-setup').style.display='none';document.getElementById('scr-login').style.display='flex';};
-
-window.runSetup=async function(){
-  const AUTH_URL='https://identitytoolkit.googleapis.com/v1/accounts';
-  const code=document.getElementById('setup-code').value.trim();
-  if(code!==SETUP_CODE){showToast('Wrong setup code.',true);return;}
-  const btn=document.getElementById('setup-btn');
-  const log=document.getElementById('setup-log');
-  btn.disabled=true;btn.textContent='Creating accounts…';log.innerHTML='';
-  let created=0,existed=0;
-  for(const user of USER_DEFS){
-    try{
-      const r=await fetch(`${AUTH_URL}:signUp?key=AIzaSyAcIrudpSPLbZMmoWMyTM1l8Z7GnxwelFw`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email,password:user.pass,returnSecureToken:false})});
-      const d=await r.json();
-      if(d.error&&d.error.message==='EMAIL_EXISTS'){log.innerHTML+=`<div style="color:#6b7280">• ${user.name} — already exists ✓</div>`;existed++;}
-      else if(d.error&&d.error.message==='CONFIGURATION_NOT_FOUND'){
-        log.innerHTML=`<div style="color:#dc2626;font-weight:600;padding:10px;background:#fef2f2;border-radius:8px;line-height:1.7">⚠️ <strong>Email/Password auth not enabled.</strong><br>Firebase Console → Authentication → Sign-in method → Enable Email/Password</div>`;
-        btn.disabled=false;btn.textContent='Try again';return;
-      }else if(d.error){log.innerHTML+=`<div style="color:#dc2626">• ${user.name} — ${d.error.message}</div>`;}
-      else{log.innerHTML+=`<div style="color:#1D9E75">• ${user.name} — created ✓</div>`;created++;}
-    }catch(e){log.innerHTML+=`<div style="color:#dc2626">• ${user.name} — ${e.message}</div>`;}
-  }
-  if(created+existed===USER_DEFS.length){log.innerHTML+=`<div style="margin-top:8px;font-weight:700;color:#1D9E75">Done! Go back and sign in.</div>`;btn.textContent='Complete';}
-  else if(created+existed>0){log.innerHTML+=`<div style="margin-top:8px;font-weight:600;color:var(--amber)">Partial success — check errors above.</div>`;btn.textContent='Complete';}
-  else{log.innerHTML+=`<div style="margin-top:8px;font-weight:700;color:#dc2626">Setup failed. Fix errors above and try again.</div>`;btn.disabled=false;btn.textContent='Try again';}
-};
+// The old in-app "first time setup" flow was removed: it shipped every
+// account's password to the browser in order to create them via the Auth
+// REST API. Create new accounts in the Firebase Console (Authentication →
+// Add user), then add an entry to USER_DEFS above.
 
 // ── App start & nav ──
 async function startApp(){
   document.getElementById('scr-login').style.display='none';
-  document.getElementById('scr-setup').style.display='none';
   document.getElementById('scr-app').style.display='flex';
   document.getElementById('user-name').textContent=session.name;
   document.getElementById('user-title').textContent=session.title;
@@ -145,9 +125,7 @@ function renderUsers(){
   <div class="card"><div class="card-title">Stage assignments</div>
     ${STAGES.map(s=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #f5f5f5;font-size:13px"><span style="font-weight:500">${s.label}</span><span style="font-weight:600;color:${s.color}">${s.owner}</span></div>`).join('')}
   </div>
-  <div class="card"><div class="card-title">Default passwords</div>
-    <div style="font-size:12px;line-height:2;color:var(--muted)">${USER_DEFS.map(u=>`<div><strong style="color:var(--text)">${u.u}</strong> → ${u.pass}</div>`).join('')}</div>
-  </div><div style="height:80px"></div>`;
+  <div style="height:80px"></div>`;
 }
 
 // Note: Firestore rules must allow authenticated reads/writes.

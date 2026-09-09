@@ -408,6 +408,38 @@ Plain role checks elsewhere:
 - Helpers: `isObserver()`, `isPrintWorker()`, `isStitchWorker()`,
   `isQCWorker()`, `isBundleWorker()`, `canManageRecipes()`, `canSeePrinting()`
 
+## Credentials — never in client code
+
+`js/*.js`, `css/*` and every `*.html` are **public static assets**, served
+to anyone who visits before any login happens. Anything in them is readable
+worldwide with a single `curl`. Treat them as published, always.
+
+- **`USER_DEFS` (`js/auth.js`) holds identity, role and permissions only.**
+  It must never carry a `pass:` field again. Login sends the password the
+  user typed to Firebase Auth; the app never needs to know it.
+- **There is no in-app account setup flow.** It was removed because it
+  shipped every password to the browser to create accounts over the Auth
+  REST API. To add a user: Firebase Console → Authentication → Add user,
+  then add a `USER_DEFS` entry (no password) and a `firestore.rules` entry
+  if the role needs scoping.
+- **The real secrets are server-side and must stay there** — Netlify
+  Functions read `SHOPIFY_CLIENT_SECRET`, `POSTEX_API_TOKEN` and
+  `FIREBASE_SERVICE_ACCOUNT` from `process.env`. Never move one client-side.
+- **The Firebase web API key in `index.html` is not a secret.** It is a
+  public project identifier that every Firebase web app ships. Do not try
+  to hide it — Firestore rules are what actually protect the data.
+
+Because Firestore rules grant broad access to any `signedIn()` user, a
+leaked password is a full data breach. Rules are the only real boundary.
+
+### Historical exposure (do not undo the fix)
+
+Until Sept 2026 every password sat in `js/auth.js`, plus a "Default
+passwords" card in the Users page and a credential list on the setup
+screen. **Those values are still in git history and must be treated as
+permanently compromised** — rotating them in Firebase Console is the only
+remedy, and stripping them from `HEAD` does not undo the exposure.
+
 ## Outstanding action — Firestore rules not yet published
 
 The repo's `firestore.rules` is the canonical version but the live rules
