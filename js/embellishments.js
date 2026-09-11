@@ -4079,7 +4079,8 @@ function renderDashboard(){
   </div>`:'';
 
   const hrmBanner=(typeof renderHRMDashboardWidget==='function')?renderHRMDashboardWidget():'';
-  const base=`${hrmBanner}<div class="stats-row">
+  const monitorBanner=(typeof renderMonitorDashboardWidget==='function')?renderMonitorDashboardWidget():'';
+  const base=`${hrmBanner}${monitorBanner}<div class="stats-row">
     <div class="stat-card"><div class="stat-label">Total POs</div><div class="stat-val">${total}</div></div>
     <div class="stat-card"><div class="stat-label">Active</div><div class="stat-val">${active}</div></div>
     <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-val">${done}</div></div>
