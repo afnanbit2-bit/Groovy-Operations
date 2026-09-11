@@ -438,27 +438,92 @@ Plain role checks elsewhere:
 - Helpers: `isObserver()`, `isPrintWorker()`, `isStitchWorker()`,
   `isQCWorker()`, `isBundleWorker()`, `canManageRecipes()`, `canSeePrinting()`
 
-## Monitor page — per-person activity, owner-only
+## Monitor page — owner-only oversight dashboard
 
-`js/activity.js` — `window.loadMonitor()` / page id `monitor`, nav item next
-to Activity Log and Users (added `js/shared.js`: `renderPage` dispatch,
-desktop `mainItems`, mobile `groups` map, mobile More-sheet, `BUG_PAGE_NAMES`
-— same four touchpoints every owner-only page needs, see "Shared
-touchpoints"). Reads the same `activity` collection Activity Log already
-reads (`loadActivity`), just groups it by `a.user` instead of one flat feed,
-capped at `_MONITOR_PER_PERSON_CAP` (15) rows shown per person.
+`js/activity.js` — page id `monitor`, nav item next to Activity Log and
+Users (`js/shared.js`: `renderPage` dispatch, desktop `mainItems`, mobile
+`groups` map, mobile More-sheet, `BUG_PAGE_NAMES` — same four touchpoints
+every owner-only page needs, see "Shared touchpoints"). Rebuilt Sept 2026
+per a 10-question spec round with Afnan; the brief version (flat per-person
+list, no filters) shipped first and was replaced same week — this is the
+real one. Reads the same `activity` collection Activity Log reads, fetched
+once per `loadMonitor()` call: `orderBy('ts','desc'), limit(_MONITOR_FETCH_LIMIT)`
+(1000) — deliberately a single-field query with no `where()`, so it can
+never hit a missing-composite-index error; ALL filtering (date range,
+search, person) happens client-side on that fetched set. If a selected
+range's start predates the oldest fetched item, the filter bar shows an
+honest "may be incomplete" note rather than silently under-counting.
 
-**Red-marker flagging:** `_MONITOR_WATCH_ACTIONS` (`js/activity.js`) is the
-exact set of `logActivity()` action strings tied to Mustafa's Sept 2026
-grants — fabric delete/edit/correct, loan create/pause/resume, payslip
-override/mark-paid. A row gets flagged (red left border + ⚠) only when
-`a.user==='Mustafa'` AND the action is in that set — deliberately not
-"every owner-level action by anyone," since the point is watching newly
-granted power, not re-flagging things owners have always done. If Mustafa
-(or a future grant to someone else) gets another permission widened later,
-add its exact `logActivity` action string(s) to `_MONITOR_WATCH_ACTIONS`
-and the matching username to `_MONITOR_WATCH_USER` (currently a single
-name, not an array — widen that too if watching more than one person).
+**Two views, one state machine** (`_monitorPerson` null = overview, a
+display name = drilldown into that person; `_renderMonitorPage()` picks
+based on it — every `window.monitorX()` handler mutates state then calls
+this, same full-innerHTML-rerender pattern as the rest of the app):
+
+- **Overview** — stat tiles (actions in range / active accounts / watched
+  count), a pinned "⚠ Recent watched activity" panel pulling flagged rows
+  out of the noise regardless of whose card they'd otherwise be buried in,
+  then every person as a clickable summary card (category chips, watched
+  count if any) grouped into three role tiers — Owners / Managers /
+  Everyone else (`_monitorRoleTier`, reads `USER_DEFS` from `js/auth.js`,
+  loaded before `activity.js` — matches by the activity doc's `a.user`
+  display name, not username, since that's the only identity `logActivity`
+  writes).
+- **Drilldown** — one person's log, still honoring the active date filter,
+  grouped into category sections. Logins collapse into a single "N
+  sign-ins · last …" row (`window.monitorToggleAuth`) instead of one block
+  per login — the exact problem that made the first version unusable
+  (Uzaib alone had 99 rows, nearly all logins). Every other entry starts
+  collapsed to one line, click (`window.monitorToggleEntry`, tracked by
+  Firestore doc `_id`) expands it to show the detail + timestamp.
+
+**Date filter:** `_monitorFilter={preset,from,to}` — Today / This Week /
+This Month / All Time / Custom. Custom uses two native `<input type=date>`
+(no calendar-picker library — consistent with this app's zero-new-deps
+policy) applied via `window.monitorApplyCustom()`.
+
+**Search:** debounced 180ms + refocus-after-rerender
+(`window.monitorSearchInput`) — the exact pattern already used by
+`fabInvSetSearch` etc. in `js/fabric.js`; copy that pattern for any future
+search input in this codebase, not a fresh one. Searches person names in
+overview, action/detail text in drilldown.
+
+**Categories** (`_MONITOR_CATEGORIES`, ordered — order matters, first
+match wins): Sign-in, Delete, Approve/Money, Edit, Create, Process
+(fallback). Each has a color + emoji icon used for the chips on overview
+cards and the section headers in drilldown, so the page scans visually
+without reading every line. The exact regexes were validated against every
+real `logActivity()` action string in the codebase with a throwaway node
+script before shipping (not guessed) — "Approve/Money" is checked BEFORE
+"Edit" specifically so `Edit request approved`/`rejected` land with the
+other approvals, not misfiled as a plain edit. If a new `logActivity()`
+call is added anywhere with a genuinely new verb, sanity-check which
+bucket it falls into (`_monitorCategorize`) rather than assuming.
+
+**Red-marker flagging:** `_MONITOR_WATCH_ACTIONS` is the exact set of
+`logActivity()` action strings tied to Mustafa's Sept 2026 grants — fabric
+delete/edit/correct, loan create/pause/resume, payslip override/mark-paid.
+A row/card gets flagged only when `a.user===_MONITOR_WATCH_USER` ('Mustafa')
+AND the action is in that set — deliberately not "every owner-level action
+by anyone." If another grant like this happens later, add its action
+string(s) here and widen `_MONITOR_WATCH_USER` to an array if watching more
+than one person (it's currently a single string, several places assume
+that).
+
+**Dashboard widget:** `renderMonitorDashboardWidget()` — a compact card
+(today's watched count + active-account count, click-through to Monitor),
+injected into the owner's home Dashboard. Follows the exact existing
+`renderHRMDashboardWidget` pattern: a synchronous placeholder returned by
+`renderDashboard()` in `js/embellishments.js` (guarded with
+`typeof===...==='function'`, since embellishments.js loads before
+activity.js — same reason the HRM one is guarded too), populated
+asynchronously by `_monitorPopulateDashboard()`, hooked into the
+`id==='dashboard'` dispatch in `js/shared.js` via `setTimeout(...,0)`
+alongside `_hrmPopulateDashboard` / `_fulfillDashboardInject`. Adding a
+fourth dashboard widget later means adding a fourth `typeof` guard in
+`renderDashboard()` and a fourth `setTimeout` in that same dispatch line —
+do not skip either half, or the placeholder renders and never populates
+(or worse, never renders and the populate function's `getElementById`
+silently no-ops).
 
 ## Credentials — never in client code
 

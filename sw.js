@@ -8,7 +8,7 @@
  * Bump CACHE_VERSION on every deploy that changes a precached file; the
  * activate handler deletes every cache from a prior version.
  */
-const CACHE_VERSION = 'v5';
+const CACHE_VERSION = 'v6';
 const STATIC_CACHE = `groovy-ops-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `groovy-ops-runtime-${CACHE_VERSION}`;
 const CURRENT_CACHES = [STATIC_CACHE, RUNTIME_CACHE];
