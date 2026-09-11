@@ -454,21 +454,34 @@ only **sends an email link** — it cannot set a password directly, and the
 `@groovy.op` addresses are not real inboxes, so that path is a dead end
 for this app. (Verified Sept 2026: the dialog offers nothing else.)
 
-The actual mechanism is `window.openChangePasswordModal()` (`js/auth.js`),
-wired to a "Change password" button in the topbar next to Sign out. Any
-signed-in user can open it, re-enter their CURRENT password (Firebase
+**Self-service (knows current password):** `window.openChangePasswordModal()`
+(`js/auth.js`), wired to a "Change password" button in the topbar next to
+Sign out. Any signed-in user re-enters their CURRENT password (Firebase
 requires this for a sensitive change — `reauthenticateWithCredential` +
-`EmailAuthProvider.credential`), then set a new one via `updatePassword`.
-No admin step, no server function, no email. Each of the 13 accounts must
-do this themselves — there is still no way to set another user's password
-from this app or the Console UI. (A real bulk-reset would need the Admin
-SDK server-side via `admin.auth().updateUser()`, which nothing in this repo
-currently exposes — `netlify/functions/` has no such endpoint.)
+`EmailAuthProvider.credential`), then sets a new one via `updatePassword`.
+Client SDK only, no server involved. `updatePassword`,
+`reauthenticateWithCredential`, `EmailAuthProvider` are imported from
+`firebase-auth.js` and bridged onto `window` in `index.html`, same pattern
+as the rest of the Firebase Auth API there.
 
-`updatePassword`, `reauthenticateWithCredential`, `EmailAuthProvider` are
-imported from `firebase-auth.js` and bridged onto `window` in `index.html`
-alongside the rest of the Firebase Auth API — same pattern as everything
-else there.
+**Owner reset (locked out, doesn't know current password):**
+`window.openOwnerResetModal(username)` — a "Reset password" button per row
+on the owner-only Users page (`renderUsers()` already gates the whole page
+to `session.role==='owner'`). Posts the owner's own Firebase ID token
+(`auth.currentUser.getIdToken()`) plus the target's email and a new
+password to `netlify/functions/admin-reset-password.js`. That function
+**never trusts a client-asserted role** — it calls
+`admin.auth().verifyIdToken()` server-side and checks the decoded email
+against a hardcoded `OWNER_EMAILS` list (mirrors `isOwner()` in
+`firestore.rules`) before touching anything. Only then does it call
+`admin.auth().updateUser(uid, {password})` — the Admin SDK, which is why
+this must stay server-side; it bypasses all security rules by design.
+`OWNER_EMAILS` in the function and `isOwner()` in `firestore.rules` must be
+kept in sync — a third owner added to one and not the other breaks this.
+
+The new password is shown once, client-side, then never stored or logged
+anywhere (the activity-log entry records who reset whose password, never
+the value) — the owner must copy and share it before closing the modal.
 
 ## Realtime Database rules
 

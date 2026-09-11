@@ -120,6 +120,7 @@ function renderUsers(){
       <div style="width:36px;height:36px;border-radius:50%;background:${u.role==='owner'?'var(--dark)':u.role==='manager'?'var(--red)':'var(--green)'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">${u.name[0]}</div>
       <div style="flex:1"><div style="font-weight:600;font-size:13px">${u.name} <span style="font-size:11px;font-weight:400;color:var(--muted)">@${u.u}</span></div><div style="font-size:11px;color:var(--muted)">${u.title}</div></div>
       <div style="text-align:right;flex-shrink:0"><div style="font-size:11px;font-weight:600;color:${u.role==='owner'?'var(--dark)':u.role==='manager'?'var(--red)':'var(--green)'};text-transform:capitalize">${u.role}</div><div style="font-size:10px;color:#aaa;margin-top:1px">${u.canPO?'Can create PO':'View only'}</div></div>
+      <button class="btn-outline" style="flex-shrink:0;padding:5px 10px;font-size:11px" onclick="window.openOwnerResetModal('${u.u}')">Reset password</button>
     </div>`).join('')}
   </div>
   <div class="card"><div class="card-title">Stage assignments</div>
@@ -183,6 +184,80 @@ window.submitChangePassword=async function(){
     else if(e.code==='auth/weak-password')showErr('Firebase rejected that password as too weak — try a longer one.');
     else if(e.code==='auth/requires-recent-login')showErr('For security, please sign out, sign back in, then try again.');
     else showErr('Error: '+e.message);
+  }
+};
+
+// ── Owner password reset (locked-out teammate) ──
+// Change password (above) needs the CURRENT password, so it can't help
+// someone locked out. This calls a server-side Netlify Function
+// (netlify/functions/admin-reset-password.js) that verifies the caller is
+// really an owner via their own Firebase ID token — never trust a
+// client-asserted role for something this sensitive — then uses the Admin
+// SDK to set the target's password directly. Owners page is already
+// gated to session.role==='owner' in renderUsers(); this adds no new
+// client-side gate because the function re-checks server-side regardless.
+function _genPassword(){
+  const chars='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
+  const bytes=new Uint32Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes,b=>chars[b%chars.length]).join('');
+}
+window.openOwnerResetModal=function(username){
+  const target=USER_DEFS.find(x=>x.u===username);
+  if(!target)return;
+  document.getElementById('or-modal-back')?.remove();
+  const back=document.createElement('div');
+  back.className='hrm-modal-back';back.id='or-modal-back';
+  back.dataset.targetEmail=target.email;
+  back.onclick=ev=>{ if(ev.target===back)window.closeOwnerResetModal(); };
+  back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()" style="max-width:400px">
+    <h3>Reset password</h3>
+    <div class="sub">For ${target.name} (@${target.u}) — this sets it immediately, no email involved.</div>
+    <div class="field" style="margin-bottom:8px"><label>New password</label>
+      <div style="display:flex;gap:8px">
+        <input id="or-new" type="text" autocomplete="off" placeholder="At least 8 characters" style="flex:1">
+        <button type="button" class="btn-outline" style="flex-shrink:0;padding:0 12px" onclick="document.getElementById('or-new').value=window._genPassword_()">Generate</button>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:14px;line-height:1.5">Copy this and share it with ${target.name} privately — direct message, not a group chat. It will not be shown again.</div>
+    <div id="or-error" style="display:none;color:#dc2626;font-size:12px;margin-bottom:12px;line-height:1.5"></div>
+    <div style="display:flex;gap:10px">
+      <button class="btn-outline" style="flex:1" onclick="window.closeOwnerResetModal()">Cancel</button>
+      <button class="btn-primary" id="or-submit-btn" style="flex:1;margin-top:0" onclick="window.submitOwnerReset('${target.u}')">Set password</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  document.getElementById('or-new')?.focus();
+};
+window._genPassword_=_genPassword;
+window.closeOwnerResetModal=function(){
+  document.getElementById('or-modal-back')?.remove();
+};
+window.submitOwnerReset=async function(username){
+  const target=USER_DEFS.find(x=>x.u===username);
+  const newPassword=document.getElementById('or-new').value;
+  const errEl=document.getElementById('or-error');
+  const showErr=msg=>{errEl.textContent=msg;errEl.style.display='block';};
+  errEl.style.display='none';
+  if(!target){showErr('Unknown account.');return;}
+  if(!newPassword||newPassword.length<8){showErr('Password must be at least 8 characters.');return;}
+  const btn=document.getElementById('or-submit-btn');
+  btn.disabled=true;btn.textContent='Setting…';
+  try{
+    const idToken=await auth.currentUser.getIdToken();
+    const res=await fetch('/.netlify/functions/admin-reset-password',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({idToken,targetEmail:target.email,newPassword})
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok){showErr(data.error||`Failed (${res.status}).`);btn.disabled=false;btn.textContent='Set password';return;}
+    window.closeOwnerResetModal();
+    showToast(`Password set for ${target.name}. Share it with them now — it won't be shown again.`);
+    logActivity('Password reset by owner',`${session.name} reset the password for ${target.name}`).catch(()=>{});
+  }catch(e){
+    btn.disabled=false;btn.textContent='Set password';
+    showErr('Network error: '+e.message);
   }
 };
 
