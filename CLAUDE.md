@@ -152,6 +152,32 @@ from the previous version on `activate`, then re-precache. **Forget this
 and your change silently will not reach anyone who already opened the app.**
 It costs nothing to bump it unnecessarily, so bump it when unsure.
 
+### Update banner (Sept 2026) — content updates, NOT the home-screen icon
+
+`_swWatchForUpdate(registration)` / `_showUpdateBanner()` (`js/shared.js`),
+wired from `index.html`'s registration call — `index.html` only, the main
+app; `color-backfill.html`/`pantone-importer.html` don't load `shared.js`
+and keep silent-update-on-next-visit. Since `sw.js` always calls
+`self.skipWaiting()`, a new SW takes control of every open tab on its own —
+but the HTML/JS already loaded into memory doesn't retroactively change
+until the page reloads. Without this, someone with the tab open all day
+sits on stale code with zero indication a new version even shipped.
+Detects a genuine update (not first install — checks
+`navigator.serviceWorker.controller` already exists) and shows a
+persistent bottom bar with an explicit **Refresh now** button. Never an
+automatic reload — that could wipe an in-progress form.
+
+**This does not, and cannot, force an already-installed home-screen/
+desktop icon to refresh.** Once a PWA is installed, that icon is a
+WebAPK-or-equivalent OS-level artifact (Android mints an actual APK;
+Windows/Mac create their own shortcut record) — entirely outside any web
+page's control. The browser checks periodically and may silently re-mint
+it in the background over some unpredictable timeframe. The only
+guaranteed-immediate fix for someone stuck on an old icon (e.g. everyone
+who installed before the Sept 2026 real-logo swap) is to **uninstall and
+reinstall** the app — that forces a fresh manifest fetch and icon capture.
+There is no code fix for this; don't imply there is one.
+
 ### Adding a new `/js/*.js` file
 
 Three places, or it breaks offline:

@@ -483,6 +483,47 @@ let _poIssueData=null,_txFilterQ='',_txFilterType='';
 const IL_PER=15,IL_MAX_PAGES=1000;   // effectively uncapped — page through all loaded movements
 function showToast(msg,isErr=false){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show'+(isErr?' err':'');setTimeout(()=>t.className='toast',3200);}
 
+// ── Service worker update banner ──
+// sw.js always calls self.skipWaiting() on install, so a new SW takes
+// control of every open tab on its own — but the HTML/JS already loaded
+// into memory doesn't retroactively change until the page actually
+// reloads. Without this, someone who leaves a tab open indefinitely can
+// sit on stale code silently, with no sign a newer version even shipped.
+// This shows a persistent bottom bar the moment an update is detected,
+// with an explicit "Refresh now" button — never an automatic reload,
+// since that could wipe an in-progress form (a PO, a gate pass, …).
+//
+// index.html only (the main app) — color-backfill.html and
+// pantone-importer.html are standalone tool pages that don't load
+// shared.js, so they keep silent-update-on-next-visit as before.
+//
+// Scope: this fixes staleness for HTML/CSS/JS content. It does NOT force
+// an already-installed home-screen/desktop icon image to refresh — that's
+// a WebAPK/OS-level artifact outside any web page's control. The browser
+// checks and may silently re-mint it in the background over time; the
+// only guaranteed-immediate fix for the icon specifically is to uninstall
+// and reinstall the app.
+function _swWatchForUpdate(registration){
+  if(!registration)return;
+  registration.addEventListener('updatefound',()=>{
+    const installing=registration.installing;
+    if(!installing)return;
+    installing.addEventListener('statechange',()=>{
+      if(installing.state==='installed'&&navigator.serviceWorker.controller){
+        _showUpdateBanner();
+      }
+    });
+  });
+}
+function _showUpdateBanner(){
+  if(document.getElementById('sw-update-banner'))return;
+  const bar=document.createElement('div');
+  bar.id='sw-update-banner';
+  bar.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:2000;background:#111;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:center;gap:14px;font-size:13px;box-shadow:0 -2px 12px rgba(0,0,0,.25);flex-wrap:wrap;text-align:center';
+  bar.innerHTML=`<span>A new version of Groovy Ops is available.</span><button onclick="location.reload()" style="background:#fff;color:#111;border:none;padding:7px 16px;border-radius:7px;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0">Refresh now</button>`;
+  document.body.appendChild(bar);
+}
+
 // ════════════════════════════════════════════════════════════════════════
 //  Global loading system — one set of loaders for every section:
 //   • Blocking buffer  (showLoader/hideLoader/withLoader) — for saves/submits
