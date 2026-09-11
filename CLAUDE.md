@@ -197,9 +197,22 @@ previews break again.
 
 ### Icons
 
-`/assets/icons/icon-{192,512}.png` + `icon-maskable-512.png` are
-**placeholder** black/white "GO" monograms, generated with Pillow. Swap in
-real artwork when available; keep the same filenames and sizes.
+`/assets/icons/icon-{192,512}.png` + `icon-maskable-512.png` are the real
+GROOVY wing/"G" mark (Sept 2026 — replaced the black/white "GO" placeholder).
+Source: a 1920×1080 RGBA PNG the user supplied, transparent background,
+mark itself ~880×484 after cropping to its alpha bounding box. Regenerated
+with Pillow (`Image.alpha_composite`, `LANCZOS` resize) rather than by hand:
+- `icon-192.png` / `icon-512.png` (`purpose: "any"`) — mark centered on a
+  **transparent** canvas at 80% fill (by its longer dimension).
+- `icon-maskable-512.png` (`purpose: "maskable"`) — mark centered on an
+  **opaque black** canvas (matches `manifest.json`'s `theme_color`/
+  `background_color`, both `#000000`) at a conservative **60%** fill, so it
+  stays inside Android's ~66%-diameter safe-zone circle after masking.
+
+To regenerate from a new source file: crop to `img.split()[3].getbbox()`
+(the alpha channel's bounding box) before scaling — do not skip this, the
+source file had ~800px of transparent padding on every side that would
+otherwise throw off every fill-ratio calculation above.
 
 ## Print design system
 
