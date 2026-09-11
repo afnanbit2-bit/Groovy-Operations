@@ -83,12 +83,27 @@ let _monitorPerson=null;    // display name (activity doc's `user` field), or nu
 let _monitorExpanded=new Set();      // expanded entry _ids, drilldown
 let _monitorAuthExpanded=false;      // login block expanded, drilldown (reset per person)
 
+// Neither loadMonitor() nor _monitorPopulateDashboard() had a timeout —
+// if the Firestore call genuinely never settles (the real-world cause is
+// IndexedDB's multi-tab lock, from the persistentMultipleTabManager setup
+// in index.html, getting stuck if another tab/window of the app didn't
+// close cleanly), the page sat on "Loading…" forever with no error and no
+// way out short of a manual reload. This races the fetch against a plain
+// timer so there's always an end state — success, a real error, or a
+// timeout with a retry button — never an indefinite spinner.
+function _monitorWithTimeout(promise,ms){
+  return Promise.race([
+    promise,
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')),ms))
+  ]);
+}
+
 async function loadMonitor(){
   const m=document.getElementById('main-content');
   if(!session||session.role!=='owner'){m.innerHTML='<div class="empty">Owners only.</div>';return;}
   m.innerHTML='<div class="page-head"><div class="page-title">Monitor</div></div><div class="empty">Loading…</div>';
   try{
-    const snap=await getDocs(query(collection(db,'activity'),orderBy('ts','desc'),limit(_MONITOR_FETCH_LIMIT)));
+    const snap=await _monitorWithTimeout(getDocs(query(collection(db,'activity'),orderBy('ts','desc'),limit(_MONITOR_FETCH_LIMIT))),12000);
     _monitorItems=snap.docs.map(d=>({...d.data(),_id:d.id}));
     _monitorLoaded=true;
     _monitorFilter={preset:'today',from:'',to:''};
@@ -97,7 +112,10 @@ async function loadMonitor(){
     _monitorExpanded=new Set();
     _monitorAuthExpanded=false;
     _renderMonitorPage();
-  }catch(e){m.innerHTML=`<div class="empty">Error: ${e.message}</div>`;}
+  }catch(e){
+    const timedOut=e&&e.message==='timeout';
+    m.innerHTML=`<div class="empty">${timedOut?'Taking too long to load. If another Groovy Ops tab/window is open, close it and try again.':'Error: '+_monitorEsc(e.message)}<div style="margin-top:12px"><button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.loadMonitor()">Retry</button></div></div>`;
+  }
 }
 
 function _monitorRangeMs(){
@@ -351,14 +369,19 @@ async function _monitorPopulateDashboard(){
   if(!body)return;
   try{
     const dayStart=new Date();dayStart.setHours(0,0,0,0);
-    const snap=await getDocs(query(collection(db,'activity'),orderBy('ts','desc'),limit(300)));
+    const snap=await _monitorWithTimeout(getDocs(query(collection(db,'activity'),orderBy('ts','desc'),limit(300))),12000);
     const items=snap.docs.map(d=>d.data()).filter(a=>a.ts>=dayStart.getTime());
     const watched=items.filter(a=>a.user===_MONITOR_WATCH_USER&&_MONITOR_WATCH_ACTIONS.has(a.action));
     const activePeople=new Set(items.map(a=>a.user)).size;
     body.innerHTML=watched.length
       ?`<span style="color:#dc2626;font-weight:700">⚠ ${watched.length} watched action${watched.length===1?'':'s'} from ${_MONITOR_WATCH_USER} today</span> · ${items.length} total · ${activePeople} active`
       :`${items.length} action${items.length===1?'':'s'} today · ${activePeople} active · no watched activity`;
-  }catch(e){body.textContent='Could not load.';}
+  }catch(e){
+    const timedOut=e&&e.message==='timeout';
+    body.innerHTML=timedOut
+      ?`Taking too long. <a href="#" onclick="event.preventDefault();_monitorPopulateDashboard();" style="color:inherit;text-decoration:underline">Retry</a>`
+      :'Could not load.';
+  }
 }
 
 // ── Users page ──

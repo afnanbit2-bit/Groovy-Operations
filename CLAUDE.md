@@ -564,6 +564,41 @@ do not skip either half, or the placeholder renders and never populates
 (or worse, never renders and the populate function's `getElementById`
 silently no-ops).
 
+**Fetch timeout (Sept 2026):** both `loadMonitor()` and
+`_monitorPopulateDashboard()` race their `getDocs()` call against
+`_monitorWithTimeout(promise, 12000)` — 12s, then a real error state (a
+Retry button on the full page; a "Taking too long — Retry" link on the
+dashboard widget) instead of an indefinite "Loading…". Added after Afnan
+reported Monitor stuck on "Loading…" with a stuck "Saving…" overlay
+elsewhere on the same dashboard at the same time.
+
+Investigated and ruled out before writing this fix — recorded so a future
+session doesn't re-walk the same dead ends: `sw.js`'s `BYPASS_HOSTS` is
+correct (the generic `googleapis.com` entry's `endsWith('.' + host)` check
+already covers every Google API subdomain — `firestore.`, `identitytoolkit.`,
+`securetoken.`, not just `firestore.googleapis.com` itself — so the SW was
+not intercepting Firestore traffic); the `__bootApp()` write/read wrapper
+around `setDoc`/`getDocs`/etc. (`js/shared.js`, "Auto-wire the global
+loaders") correctly calls `stop()` on both the success and failure branch
+of every wrapped call. **Neither of those had a bug.** The most likely
+real cause is `persistentMultipleTabManager`'s IndexedDB lock getting
+stuck if a previous tab/window of the app didn't close cleanly — a known
+failure mode of Firestore's persistent local cache, not something we can
+fix on the client side beyond "close other tabs and reload," which is now
+literally what the timeout message tells the user to try.
+
+**Deliberately not touched:** the shared `showLoader`/`_gvWriteStart`/
+`_gvWriteStop` write-buffer system (the "Saving…" overlay) that raised the
+second symptom. It already has its own 25s failsafe
+(`_gvBufTimer` in `showLoader`, `js/shared.js`), so a single stuck promise
+should self-clear on its own — a still-stuck state past that would need
+something re-triggering `showLoader` repeatedly (a retry loop), which
+wasn't reproducible from code alone. This is pre-existing, heavily-shared
+infrastructure that every save operation in the app depends on; patching
+it from a hypothesis risks breaking real saves everywhere. If it recurs,
+get the browser console output from the moment it happens before touching
+this code.
+
 ## Credentials — never in client code
 
 `js/*.js`, `css/*` and every `*.html` are **public static assets**, served
