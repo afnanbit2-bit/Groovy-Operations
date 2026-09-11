@@ -477,20 +477,22 @@ Until Sept 2026 these rules were `{".read": true, ".write": true}` — the
 attendance data was world-readable **and world-writable**, with no login,
 which meant anyone could have altered the records payroll is computed from.
 
-## Outstanding action — Firestore rules not yet published
+## Firestore rules — published, verified matching (Sept 2026)
 
-The repo's `firestore.rules` is the canonical version but the live rules
-in Firebase Console have NOT been republished yet. Until that's done:
+Verified: the live Console rules were pasted by the user and diffed
+byte-for-byte (identical MD5) against the repo's `firestore.rules`. They
+match. The prior note here saying they'd never been republished was stale —
+whoever last touched the Console already published this exact version.
+**Keep updating both in lockstep**, per the comment at the top of
+`firestore.rules` itself.
 
-- Bug submissions fail with "Missing or insufficient permissions"
-- Newer collections may also fail to write (advances, loans, policy log,
-  payroll runs/slips, hrm_notifications, **`products`** — custom products
-  added from the New PO form)
-
-To fix: open
-  https://console.firebase.google.com/project/groovy-gatepass/firestore/rules
-replace contents with the contents of `firestore.rules` from the repo,
-hit Publish, hard-refresh app on phones.
+**Known gap, not yet closed:** `payslips` reads are `if signedIn()` — any
+logged-in user, not just the employee it belongs to, can read any payslip.
+The rules file's own comment flags this: tightening to per-employee
+self-read needs the auth email denormalised onto each payslip doc first
+(no `employeeId` → `session.email` link exists yet to check against).
+Employee-record writes and payroll processing are already owner/manager
+gated; this is the one remaining read-scope hole.
 
 ## Branch / merge workflow
 
