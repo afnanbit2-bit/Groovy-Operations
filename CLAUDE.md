@@ -51,6 +51,13 @@ answers `403` to `CONNECT` (`connect_rejected`). The deployed site can
 therefore never be opened from a session. Check deploys via the GitHub
 status API above, and depend on the human for anything needing a real
 browser: install prompts, offline behaviour, visual confirmation.
+
+The sandbox **also cannot reach `*.firebaseio.com`** (same `connect_rejected`
+403), so live Realtime Database rules can never be verified by curling the
+REST endpoint from here — despite `firestore.googleapis.com` itself being
+reachable. To verify RTDB rules actually took effect, use Firebase Console
+→ Realtime Database → Rules → **Rules playground** (simulate an
+unauthenticated read) and have the human report the result.
 `api.github.com` and `firestore.googleapis.com` **are** reachable.
 
 ## File architecture (split from the old single `index.html`)
