@@ -1202,10 +1202,12 @@ window.submitFabricEdit=async function(fabId){
   }catch(e){showToast('Save failed: '+e.message,true);}
 };
 
-// Deleting a fabric receipt is owners-only (Afnan, Ammar) — even managers go
-// through the approval request flow, and the Firestore rules enforce the same
-// (delete: if isOwner()).
-function _fabCanDelete(){return !!(session&&session.role==='owner');}
+// Deleting/editing/correcting a fabric receipt is owners-only, PLUS Mustafa
+// by name (Sept 2026 — explicit grant, not a role-wide one: Arfat is also
+// 'manager' but does NOT get this). Every other manager/worker still goes
+// through the approval-request flow. Mirror in firestore.rules: fabricin
+// and fabric_inventory delete.
+function _fabCanDelete(){return !!(session&&(session.role==='owner'||session.u==='mustafa'));}
 // Who can label fabric-issue registry entries — owners plus Uzaib (field staff).
 function _fabCanLabel(){return !!(session&&(session.role==='owner'||session.u==='uzaib'));}
 
@@ -1271,7 +1273,7 @@ function _fabAfterRollChange(fabId){
 // remnant / inventory-only roll is removed from inventory only. Works from both
 // the Fabric In list and the Stock drill.
 window.deleteFabricRoll=async function(fabId,rollCode){
-  if(!_fabCanDelete())return showToast('Only owners (Afnan, Ammar) can delete rolls.',true);
+  if(!_fabCanDelete())return showToast('Only owners and Mustafa can delete rolls.',true);
   const inv=_fabFindRoll(rollCode);
   if(!inv)return showToast('Roll '+rollCode+' not found.',true);
   const invStatus=inv.roll.status||'in_stock';
@@ -1312,7 +1314,7 @@ window.deleteFabricRoll=async function(fabId,rollCode){
 // Edit a SINGLE in-stock roll's weight / GSM / QC (owners only). Updates the
 // receipt roll (if any) AND the inventory roll in one transaction.
 window.editFabricRoll=function(fabId,rollCode){
-  if(!_fabCanDelete())return showToast('Only owners (Afnan, Ammar) can edit rolls.',true);
+  if(!_fabCanDelete())return showToast('Only owners and Mustafa can edit rolls.',true);
   const inv=_fabFindRoll(rollCode);
   if(!inv)return showToast('Roll '+rollCode+' not found.',true);
   if((inv.roll.status||'in_stock')!=='in_stock')return showToast(`${rollCode} is in use — only in-stock rolls can be edited.`,true);
@@ -1340,7 +1342,7 @@ window.editFabricRoll=function(fabId,rollCode){
 };
 
 window.saveFabricRoll=async function(fabId,rollCode){
-  if(!_fabCanDelete())return showToast('Only owners can edit rolls.',true);
+  if(!_fabCanDelete())return showToast('Only owners and Mustafa can edit rolls.',true);
   const weight=parseFloat(document.getElementById('fer-weight')?.value);
   const gsm=parseInt(document.getElementById('fer-gsm')?.value);
   const qc=document.getElementById('fer-qc')?.checked||false;
@@ -1383,7 +1385,7 @@ window.saveFabricRoll=async function(fabId,rollCode){
 // correct inventory aggregate. Barcodes change → reprint. Reserved/issued rolls
 // (codes referenced elsewhere) are left in place.
 window.fabCorrectFabric=function(key){
-  if(!_fabCanDelete())return showToast('Only owners can correct a fabric entry.',true);
+  if(!_fabCanDelete())return showToast('Only owners and Mustafa can correct a fabric entry.',true);
   const s=allFabricInventory.find(x=>x._id===key);
   if(!s)return showToast('Fabric not found.',true);
   const inStock=(s.rolls||[]).filter(r=>(r.status||'in_stock')==='in_stock').length;
@@ -1420,7 +1422,7 @@ window._fabCorrectPrev=function(){
   el.textContent=(t&&g&&c)?`${_fabBaseCode(t,g,c)}-XX-R01 …`:'—';
 };
 window._fabDoCorrect=async function(oldKey){
-  if(!_fabCanDelete())return showToast('Owners only.',true);
+  if(!_fabCanDelete())return showToast('Only owners and Mustafa can correct a fabric entry.',true);
   const s=allFabricInventory.find(x=>x._id===oldKey);
   if(!s)return showToast('Fabric not found.',true);
   const newType=(document.getElementById('fc-type')?.value||'').trim();

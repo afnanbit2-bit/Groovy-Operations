@@ -636,6 +636,7 @@ function buildNav(){
   if(om)mainItems.push({id:'bug-tracker',label:'🐛 Bug Tracker'});
   if(isOwner)mainItems.push({id:'shopify-intel',label:'Inventory Intel'});
   if(isOwner)mainItems.push({id:'activity',label:'Activity Log'});
+  if(isOwner)mainItems.push({id:'monitor',label:'Monitor'});
   if(isOwner)mainItems.push({id:'users',label:'Users'});
 
   // HRM nav items — owners + managers only
@@ -811,7 +812,7 @@ function _updateMobNavActive(pageId){
     'attendance':'hrm','hrm-employees':'hrm','hrm-payroll':'hrm','hrm-advances':'hrm','hrm-loans':'hrm','hrm-policy':'hrm',
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
     'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more','store-cash-ledger':'more',
-    'activity':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more',
+    'activity':'more','monitor':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more',
     'my-work':'my-work'
   };
   const grp=groups[pageId];
@@ -913,6 +914,7 @@ window.openMoreSheet=function(){
   if(om)items.push({iconName:'list',label:'Bug Tracker',pageId:'bug-tracker'});
   if(isOwner)items.push({iconName:'shop',label:'Inventory Intel',pageId:'shopify-intel'});
   if(isOwner)items.push({iconName:'activity',label:'Activity Log',pageId:'activity'});
+  if(isOwner)items.push({iconName:'eye',label:'Monitor',pageId:'monitor'});
   if(isOwner)items.push({iconName:'user',label:'Users',pageId:'users'});
   window.openMobSheet('More',items);
 };
@@ -1003,6 +1005,7 @@ function renderPage(id){
   else if(id==='bstock'){if(!_bstockLoaded){m.innerHTML=gvSkeleton(6);loadBstockData().then(()=>{if(currentPage===id)m.innerHTML=renderBstock();});}else m.innerHTML=renderBstock();}
   else if(id==='fulfillment'){if(!fulfillReportsLoaded){m.innerHTML=gvSkeleton(6);loadFulfillmentData().then(()=>{if(currentPage===id)m.innerHTML=renderFulfillmentPage();});}else m.innerHTML=renderFulfillmentPage();}
   else if(id==='activity'){loadActivity();return;}
+  else if(id==='monitor'){loadMonitor();return;}
   else if(id==='users')m.innerHTML=renderUsers();
   else if(id==='bug-tracker'){
     if(!bugsLoaded){m.innerHTML=gvSkeleton(6);loadBugReports().then(()=>{if(currentPage===id)m.innerHTML=renderBugTrackerPage();}).catch(e=>{if(currentPage===id)m.innerHTML='<div class="empty">Could not load bug reports: '+(e.message||'permission denied')+'</div>';});}
@@ -1100,6 +1103,7 @@ const BUG_PAGE_NAMES={
   'color-library':'Color Library',
   'bug-tracker':'Bug Tracker',
   'activity':'Activity Log',
+  'monitor':'Monitor',
   'users':'Users'
 };
 function getCurrentPageName(){ return BUG_PAGE_NAMES[currentPage]||currentPage||'Unknown Page'; }

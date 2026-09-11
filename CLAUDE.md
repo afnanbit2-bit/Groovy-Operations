@@ -405,15 +405,60 @@ etc.) live in `js/hrm.js`; the printing/role helpers (`isObserver`,
 `isPrintWorker`, `isQCWorker`, `canManageRecipes`, …) live in `js/auth.js`:
 
 - `_canViewPayroll()` → afnan, ammar, mustafa
-- `_canProcessPayroll()` → afnan, ammar
+- `_canProcessPayroll()` → afnan, ammar — running/processing a WHOLE MONTH
+  for every employee, or marking a whole month paid. Stays owner-only.
+- `_canManagePayslips()` → afnan, ammar, mustafa (Sept 2026 grant) —
+  individual payslips only: override one value, mark ONE person paid.
+  Deliberately narrower than `_canProcessPayroll` — mirror in
+  `firestore.rules` `payslips` write.
 - `_canViewHRMOps()` → afnan, ammar, mustafa (advances/loans/policy)
-- `_canApproveHRMOps()` → afnan, ammar
+- `_canApproveHRMOps()` → afnan, ammar — **advances only** (approve/reject/
+  mark paid). Do not widen this for loans; use `_canManageLoans` instead,
+  or Mustafa also gets advance-approval power that was never asked for.
+- `_canManageLoans()` → afnan, ammar, mustafa (Sept 2026 grant). Loans have
+  no separate pending→approved step (`loanSubmit` creates one straight into
+  `'active'`) — so this covers create/pause/resume, i.e. "approve a loan"
+  in this app's actual design. Mirror in `firestore.rules` `loans` write.
 - `_canEditPolicy()` → afnan, ammar
+- `_fabCanDelete()` (`js/fabric.js`) → afnan, ammar, **mustafa by username**
+  (Sept 2026 grant) — delete/edit/correct a fabric entry or roll. Mirror in
+  `firestore.rules` `isMustafa()`, used on `fabricin`/`fabric_inventory`
+  delete.
+
+**Sept 2026 grants share one pattern, worth knowing before touching any of
+them:** each is scoped to Mustafa **by username**, not by `role==='manager'`
+— Arfat holds that same role and gets none of these three. `firestore.rules`
+mirrors this with its own `isMustafa()` function (not `isManager()`). If a
+third person ever needs one of these, add their username explicitly on
+both sides — do not switch the check to role-wide, that silently grants
+Arfat everything too.
 
 Plain role checks elsewhere:
 - `session.role === 'owner' | 'manager' | 'store' | 'worker' | 'viewer'`
 - Helpers: `isObserver()`, `isPrintWorker()`, `isStitchWorker()`,
   `isQCWorker()`, `isBundleWorker()`, `canManageRecipes()`, `canSeePrinting()`
+
+## Monitor page — per-person activity, owner-only
+
+`js/activity.js` — `window.loadMonitor()` / page id `monitor`, nav item next
+to Activity Log and Users (added `js/shared.js`: `renderPage` dispatch,
+desktop `mainItems`, mobile `groups` map, mobile More-sheet, `BUG_PAGE_NAMES`
+— same four touchpoints every owner-only page needs, see "Shared
+touchpoints"). Reads the same `activity` collection Activity Log already
+reads (`loadActivity`), just groups it by `a.user` instead of one flat feed,
+capped at `_MONITOR_PER_PERSON_CAP` (15) rows shown per person.
+
+**Red-marker flagging:** `_MONITOR_WATCH_ACTIONS` (`js/activity.js`) is the
+exact set of `logActivity()` action strings tied to Mustafa's Sept 2026
+grants — fabric delete/edit/correct, loan create/pause/resume, payslip
+override/mark-paid. A row gets flagged (red left border + ⚠) only when
+`a.user==='Mustafa'` AND the action is in that set — deliberately not
+"every owner-level action by anyone," since the point is watching newly
+granted power, not re-flagging things owners have always done. If Mustafa
+(or a future grant to someone else) gets another permission widened later,
+add its exact `logActivity` action string(s) to `_MONITOR_WATCH_ACTIONS`
+and the matching username to `_MONITOR_WATCH_USER` (currently a single
+name, not an array — widen that too if watching more than one person).
 
 ## Credentials — never in client code
 

@@ -200,12 +200,25 @@ function _hrmGreetingTime(){
 }
 function _hrmFmtPKR(n){return'PKR '+(Number(n)||0).toLocaleString('en-PK');}
 // ── Payroll permission helpers ──
-// Mustafa can view payroll. Only Afnan + Ammar can process / edit / mark paid.
+// Mustafa can view payroll. Only Afnan + Ammar can run/process a whole
+// month or mark it entirely paid (_canProcessPayroll) — that's a company-
+// wide, hard-to-reverse action. Mustafa CAN manage individual payslips
+// (override a value, mark one person paid) via _canManagePayslips — added
+// Sept 2026, scoped narrowly so his new power doesn't extend to running
+// payroll itself. Mirror in firestore.rules: payslips write.
 function _canViewPayroll(){ return session&&['afnan','ammar','mustafa'].includes(session.u); }
 function _canProcessPayroll(){ return session&&['afnan','ammar'].includes(session.u); }
-// Session 4 — Advances / Loans / Policy: same view tier as Payroll, owner-only for write.
+function _canManagePayslips(){ return session&&['afnan','ammar','mustafa'].includes(session.u); }
+// Session 4 — Advances / Loans / Policy: same view tier as Payroll.
+// Advances stay owner-only for approve/reject/mark-paid (_canApproveHRMOps,
+// unchanged) — not what was asked. Loans got their own explicit grant
+// (_canManageLoans, Sept 2026): loans have no separate pending→approved
+// step in this app (loanSubmit creates them straight into 'active'), so
+// "approve a loan" here means create/pause/resume — mirror in
+// firestore.rules: loans write.
 function _canViewHRMOps(){ return session&&['afnan','ammar','mustafa'].includes(session.u); }
 function _canApproveHRMOps(){ return session&&['afnan','ammar'].includes(session.u); }
+function _canManageLoans(){ return session&&['afnan','ammar','mustafa'].includes(session.u); }
 function _canEditPolicy(){ return session&&['afnan','ammar'].includes(session.u); }
 function _hrmEstSalary(emp,monthSummary){
   if(!emp||!emp.basicSalary)return 0;
@@ -2026,8 +2039,8 @@ window.openPayslip=function(slipId,employeeId){
   const pgClass=(slip.paygrade||'').toLowerCase();
   const isPreview=slip.status==='preview';
   const isPaid=slip.status==='paid';
-  const canEdit=_canProcessPayroll()&&!isPreview;
-  const canMarkPaid=_canProcessPayroll()&&!isPaid&&!isPreview;
+  const canEdit=_canManagePayslips()&&!isPreview;
+  const canMarkPaid=_canManagePayslips()&&!isPaid&&!isPreview;
   document.getElementById('hrm-modal-back')?.remove();
   const back=document.createElement('div');
   back.className='hrm-modal-back';
@@ -2092,7 +2105,7 @@ window.openPayslip=function(slipId,employeeId){
 };
 
 window.markPayslipPaid=async function(slipId){
-  if(!_canProcessPayroll())return showToast('Owners only.',true);
+  if(!_canManagePayslips())return showToast('Owners and Mustafa only.',true);
   const slip=allPayslips.find(s=>s._id===slipId);
   if(!slip)return;
   if(slip.status==='paid')return showToast('Already paid.');
@@ -2119,7 +2132,7 @@ window.markPayslipPaid=async function(slipId){
 };
 
 window.editPayslip=function(slipId){
-  if(!_canProcessPayroll())return showToast('Owners only.',true);
+  if(!_canManagePayslips())return showToast('Owners and Mustafa only.',true);
   const s=allPayslips.find(x=>x._id===slipId);
   if(!s)return;
   document.getElementById('hrm-modal-back')?.remove();
@@ -2149,7 +2162,7 @@ window.editPayslip=function(slipId){
 };
 
 window.savePayslipEdit=async function(slipId){
-  if(!_canProcessPayroll())return showToast('Owners only.',true);
+  if(!_canManagePayslips())return showToast('Owners and Mustafa only.',true);
   const s=allPayslips.find(x=>x._id===slipId);
   if(!s)return;
   const reason=document.getElementById('ps-reason')?.value?.trim()||'';
@@ -2864,7 +2877,7 @@ function renderLoansPage(){
       <div class="page-title"><span class="page-title-icon">${_icon('money',22)}</span> Loans</div>
       <div class="page-sub">Long-term loan tracking with monthly deductions</div>
     </div>
-    ${_canApproveHRMOps()?`<button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.loanNew()">+ New Loan</button>`:''}
+    ${_canManageLoans()?`<button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.loanNew()">+ New Loan</button>`:''}
   </div>
   ${stats}
   <div style="display:flex;border-bottom:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap">${filterBtns}</div>
@@ -2908,8 +2921,8 @@ function _loanCardHTML(l){
     <div style="margin-top:10px;font-size:12px;color:var(--muted)">Monthly deduction: ${_hrmFmtPKR(l.monthlyDeduction)} · Started ${l.startMonth||'—'} · Ends ${l.endMonth||'—'}</div>
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn-outline" style="font-size:11px;padding:6px 12px" onclick="window.loanShowHistory('${l._id}')">View Payment History</button>
-      ${_canApproveHRMOps()&&l.status==='active'?`<button class="btn-outline" style="font-size:11px;padding:6px 12px" onclick="window.loanPause('${l._id}')">Pause Loan</button>`:''}
-      ${_canApproveHRMOps()&&l.status==='paused'?`<button class="btn-outline" style="font-size:11px;padding:6px 12px" onclick="window.loanResume('${l._id}')">Resume</button>`:''}
+      ${_canManageLoans()&&l.status==='active'?`<button class="btn-outline" style="font-size:11px;padding:6px 12px" onclick="window.loanPause('${l._id}')">Pause Loan</button>`:''}
+      ${_canManageLoans()&&l.status==='paused'?`<button class="btn-outline" style="font-size:11px;padding:6px 12px" onclick="window.loanResume('${l._id}')">Resume</button>`:''}
     </div>
   </div>`;
 }
@@ -2917,7 +2930,7 @@ function _loanCardHTML(l){
 window.loanSetFilter=function(t){_loanFilter=t;const m=document.getElementById('main-content');if(m)m.innerHTML=renderLoansPage();};
 
 window.loanNew=function(){
-  if(!_canApproveHRMOps())return showToast('Owners only.',true);
+  if(!_canManageLoans())return showToast('Owners and Mustafa only.',true);
   document.getElementById('hrm-modal-back')?.remove();
   const empOptions=allEmployees.filter(e=>e.status!=='inactive').sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(e=>`<option value="${e._id}">${e.name} (${e.paygrade})</option>`).join('');
   const startMonth=new Date().toISOString().slice(0,7);
@@ -2949,7 +2962,7 @@ window._loanCalcMonths=function(){
 };
 
 window.loanSubmit=async function(){
-  if(!_canApproveHRMOps())return showToast('Owners only.',true);
+  if(!_canManageLoans())return showToast('Owners and Mustafa only.',true);
   const empId=document.getElementById('ln-emp')?.value;
   const total=Number(document.getElementById('ln-total')?.value||0);
   const monthly=Number(document.getElementById('ln-monthly')?.value||0);
@@ -3001,7 +3014,7 @@ window.loanShowHistory=function(id){
 };
 
 window.loanPause=async function(id){
-  if(!_canApproveHRMOps())return showToast('Owners only.',true);
+  if(!_canManageLoans())return showToast('Owners and Mustafa only.',true);
   const l=allLoans.find(x=>x._id===id);if(!l)return;
   if(!confirm(`Pause loan for ${l.employeeName}? No deductions will be taken until resumed.`))return;
   try{
@@ -3016,7 +3029,7 @@ window.loanPause=async function(id){
 };
 
 window.loanResume=async function(id){
-  if(!_canApproveHRMOps())return showToast('Owners only.',true);
+  if(!_canManageLoans())return showToast('Owners and Mustafa only.',true);
   const l=allLoans.find(x=>x._id===id);if(!l)return;
   try{
     await updateDoc(doc(db,'loans',id),{status:'active'});

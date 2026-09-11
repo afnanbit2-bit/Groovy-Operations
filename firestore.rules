@@ -23,6 +23,13 @@ service cloud.firestore {
       return signedIn() && userEmail() in ['mustafa@groovy.op','arfat@groovy.op'];
     }
     function isOM() { return isOwner() || isManager(); }
+    // Explicit per-person grants (Sept 2026) — deliberately NOT role-wide.
+    // Mustafa personally gets fabric delete, loan write and payslip write;
+    // Arfat (also role='manager') does NOT. Mirror in js/hrm.js and
+    // js/fabric.js (_canManageLoans, _canManagePayslips, _fabCanDelete).
+    function isMustafa() {
+      return signedIn() && userEmail() == 'mustafa@groovy.op';
+    }
 
     // ── Operational data (POs, gate passes, returns, fabric in) ──
     match /pos/{doc}                  { allow read, write: if signedIn(); }
@@ -30,20 +37,20 @@ service cloud.firestore {
     match /gatepasses/{doc}           { allow read, write: if signedIn(); }
     match /returns/{doc}              { allow read, write: if signedIn(); }
     // Fabric: any signed-in user may read, add (receipts) and update (QC,
-    // issue/return adjust inventory + movements). DELETE is restricted to
-    // OWNERS ONLY (Afnan, Ammar) — not managers, not workers — so no other
+    // issue/return adjust inventory + movements). DELETE is OWNERS + Mustafa
+    // by name (Sept 2026 grant) — no other manager, no worker, so no other
     // account, nor a bug running under their credentials, can wipe fabric
-    // records. Everyone else (incl. managers) requests deletion via the
-    // in-app approval flow, and only an owner can approve/execute it.
+    // records. Everyone else still requests deletion via the in-app
+    // approval flow, approved by an owner.
     match /fabricin/{doc} {
       allow read:           if signedIn();
       allow create, update: if signedIn();
-      allow delete:         if isOwner();
+      allow delete:         if isOwner() || isMustafa();
     }
     match /fabric_inventory/{doc} {
       allow read:           if signedIn();
       allow create, update: if signedIn();
-      allow delete:         if isOwner();
+      allow delete:         if isOwner() || isMustafa();
     }
     // Movement ledger = the immutable audit base for Reports/Log. Any signed-in
     // user may APPEND a movement, but no one (not even owners) may edit or
@@ -139,8 +146,12 @@ service cloud.firestore {
     }
 
     // ── Payroll ──
-    // Read: owners + Mustafa (HRM nav for him is view-only).
-    // Write: owners only (Afnan, Ammar). _canProcessPayroll matches.
+    // payroll_runs = running/processing a WHOLE MONTH for every employee —
+    // stays owners only (Afnan, Ammar). _canProcessPayroll matches.
+    // payslips = individual slips — owners + Mustafa can write (Sept 2026
+    // grant, matches _canManagePayslips in js/hrm.js): override a value,
+    // mark ONE person's slip paid. Deliberately narrower than payroll_runs
+    // so Mustafa's new power doesn't extend to running payroll itself.
     // Note: payslip read is currently open to all signed-in so the worker
     // dashboard "Last month payslip" cue works. Tighten to per-employee
     // self-read once we denormalise auth email onto each payslip.
@@ -150,7 +161,7 @@ service cloud.firestore {
     }
     match /payslips/{doc} {
       allow read:  if signedIn();
-      allow write: if isOwner();
+      allow write: if isOwner() || isMustafa();
     }
 
     // ── Session 4: Advances / Loans / Policy log / Notifications ──
@@ -161,9 +172,13 @@ service cloud.firestore {
       allow read:  if isOM();
       allow write: if isOM();
     }
+    // Loans have no separate pending→approved step (loanSubmit in js/hrm.js
+    // creates one straight into 'active') — so "approve a loan" here means
+    // create/pause/resume. Owners + Mustafa (Sept 2026 grant, matches
+    // _canManageLoans). Not Arfat, despite also being role='manager'.
     match /loans/{doc} {
       allow read:  if isOM();
-      allow write: if isOwner();   // loan approval is owner-only
+      allow write: if isOwner() || isMustafa();
     }
     match /policy_change_log/{doc} {
       allow read:  if isOM();
