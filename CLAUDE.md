@@ -447,6 +447,29 @@ screen. **Those values are still in git history and must be treated as
 permanently compromised** — rotating them in Firebase Console is the only
 remedy, and stripping them from `HEAD` does not undo the exposure.
 
+### Rotating a password — self-service in-app, not the Console
+
+Firebase Console's per-user "Reset password" (Authentication → Users → ⋮)
+only **sends an email link** — it cannot set a password directly, and the
+`@groovy.op` addresses are not real inboxes, so that path is a dead end
+for this app. (Verified Sept 2026: the dialog offers nothing else.)
+
+The actual mechanism is `window.openChangePasswordModal()` (`js/auth.js`),
+wired to a "Change password" button in the topbar next to Sign out. Any
+signed-in user can open it, re-enter their CURRENT password (Firebase
+requires this for a sensitive change — `reauthenticateWithCredential` +
+`EmailAuthProvider.credential`), then set a new one via `updatePassword`.
+No admin step, no server function, no email. Each of the 13 accounts must
+do this themselves — there is still no way to set another user's password
+from this app or the Console UI. (A real bulk-reset would need the Admin
+SDK server-side via `admin.auth().updateUser()`, which nothing in this repo
+currently exposes — `netlify/functions/` has no such endpoint.)
+
+`updatePassword`, `reauthenticateWithCredential`, `EmailAuthProvider` are
+imported from `firebase-auth.js` and bridged onto `window` in `index.html`
+alongside the rest of the Firebase Auth API — same pattern as everything
+else there.
+
 ## Realtime Database rules
 
 Canonical copy: `database.rules.json`. Publish it at

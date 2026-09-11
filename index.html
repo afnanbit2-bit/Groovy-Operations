@@ -49,6 +49,7 @@ if('serviceWorker' in navigator){
     <div class="topbar-logo" onclick="window.showPage('dashboard')" style="cursor:pointer"><div class="brand-strip"><img src="assets/groovy-operations-wordmark.png.png" alt="GROOVY Operations v2" class="brand-wordmark" onerror="this.style.display='none';this.nextElementSibling.style.display='inline';"/><span class="brand-fallback">GROOVY OPERATIONS</span><span class="brand-version">v2</span></div></div>
     <div class="topbar-user">
       <div><div class="topbar-name" id="user-name"></div><div style="font-size:10px" id="user-title"></div></div>
+      <button class="btn-logout" onclick="window.openChangePasswordModal()" title="Change your password">Change password</button>
       <button class="btn-logout" onclick="window.doLogout()">Sign out</button>
     </div>
   </div>
@@ -90,7 +91,7 @@ if('serviceWorker' in navigator){
 <script type="module">
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import{initializeFirestore,persistentLocalCache,persistentMultipleTabManager,getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import{getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import{getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,updatePassword,reauthenticateWithCredential,EmailAuthProvider}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import{getDatabase,ref as rtdbRef,get as rtdbGet,child as rtdbChild,onValue as rtdbOnValue,off as rtdbOff}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 const app=initializeApp({apiKey:'AIzaSyAcIrudpSPLbZMmoWMyTM1l8Z7GnxwelFw',authDomain:'groovy-gatepass.firebaseapp.com',projectId:'groovy-gatepass',storageBucket:'groovy-gatepass.appspot.com',messagingSenderId:'986200726255',appId:'1:986200726255:web:3a263cea3e7456d73c591a',databaseURL:'https://groovy-gatepass-default-rtdb.firebaseio.com'});
 // Persistent local cache (IndexedDB) so reads work offline; multi-tab manager
@@ -109,6 +110,7 @@ Object.assign(window,{
   db:firestoreDb, auth:getAuth(app), rtdb:getDatabase(app),
   collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch,
   signInWithEmailAndPassword,signOut,onAuthStateChanged,
+  updatePassword,reauthenticateWithCredential,EmailAuthProvider,
   rtdbRef,rtdbGet,rtdbChild,rtdbOnValue,rtdbOff
 });
 if(typeof window.__bootApp==='function')window.__bootApp();

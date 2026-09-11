@@ -128,6 +128,64 @@ function renderUsers(){
   <div style="height:80px"></div>`;
 }
 
+// ── Change password (any signed-in user, self-service) ──
+// Firebase Console's per-user "Reset password" only sends an email link,
+// and the @groovy.op addresses are not real inboxes — so this is the only
+// working way for anyone to change their password. Requires re-entering
+// the CURRENT password (Firebase's own rule for a sensitive change), then
+// sets the new one via the client SDK. No admin/server step needed.
+window.openChangePasswordModal=function(){
+  document.getElementById('cp-modal-back')?.remove();
+  const back=document.createElement('div');
+  back.className='hrm-modal-back';back.id='cp-modal-back';
+  back.onclick=ev=>{ if(ev.target===back)window.closeChangePasswordModal(); };
+  back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()" style="max-width:400px">
+    <h3>Change password</h3>
+    <div class="sub">Signed in as ${session.name} (@${session.u})</div>
+    <div class="field" style="margin-bottom:12px"><label>Current password</label><input id="cp-current" type="password" autocomplete="current-password"></div>
+    <div class="field" style="margin-bottom:12px"><label>New password</label><input id="cp-new" type="password" autocomplete="new-password" placeholder="At least 8 characters"></div>
+    <div class="field" style="margin-bottom:14px"><label>Confirm new password</label><input id="cp-confirm" type="password" autocomplete="new-password"></div>
+    <div id="cp-error" style="display:none;color:#dc2626;font-size:12px;margin-bottom:12px;line-height:1.5"></div>
+    <div style="display:flex;gap:10px">
+      <button class="btn-outline" style="flex:1" onclick="window.closeChangePasswordModal()">Cancel</button>
+      <button class="btn-primary" id="cp-submit-btn" style="flex:1;margin-top:0" onclick="window.submitChangePassword()">Change password</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  document.getElementById('cp-current')?.focus();
+};
+window.closeChangePasswordModal=function(){
+  document.getElementById('cp-modal-back')?.remove();
+};
+window.submitChangePassword=async function(){
+  const cur=document.getElementById('cp-current').value;
+  const next=document.getElementById('cp-new').value;
+  const confirm=document.getElementById('cp-confirm').value;
+  const errEl=document.getElementById('cp-error');
+  const showErr=msg=>{errEl.textContent=msg;errEl.style.display='block';};
+  errEl.style.display='none';
+  if(!cur||!next||!confirm){showErr('Fill in all three fields.');return;}
+  if(next.length<8){showErr('New password must be at least 8 characters.');return;}
+  if(next!==confirm){showErr('New password and confirmation do not match.');return;}
+  if(next===cur){showErr('New password must be different from your current one.');return;}
+  const btn=document.getElementById('cp-submit-btn');
+  btn.disabled=true;btn.textContent='Changing…';
+  try{
+    const cred=EmailAuthProvider.credential(session.email,cur);
+    await reauthenticateWithCredential(auth.currentUser,cred);
+    await updatePassword(auth.currentUser,next);
+    window.closeChangePasswordModal();
+    showToast('Password changed. Use your new password next time you sign in.');
+    logActivity('Password changed',`${session.name} changed their password`).catch(()=>{});
+  }catch(e){
+    btn.disabled=false;btn.textContent='Change password';
+    if(e.code==='auth/wrong-password'||e.code==='auth/invalid-credential')showErr('Current password is incorrect.');
+    else if(e.code==='auth/weak-password')showErr('Firebase rejected that password as too weak — try a longer one.');
+    else if(e.code==='auth/requires-recent-login')showErr('For security, please sign out, sign back in, then try again.');
+    else showErr('Error: '+e.message);
+  }
+};
+
 // Note: Firestore rules must allow authenticated reads/writes.
 // Recommended: Firebase Console → Firestore → Rules:
 // allow read, write: if request.auth != null;
