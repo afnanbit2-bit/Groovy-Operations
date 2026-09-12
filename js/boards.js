@@ -591,7 +591,8 @@ function _boardGalleryCardHTML(b,opts){
   const vis=b.visibility==='shared'?'TEAM':'PRIVATE';
   const subs=cards.filter(c=>c.type==='board'&&c.boardId).length;
   const crumbs=_boardsAncestors(b.id).map(a=>_boardsEsc(a.title||'Untitled board')).join(' › ');
-  return`<div class="board-gallery-card" data-board="${b.id}" onclick="window.boardsOpen('${b.id}')">
+  const tint=_boardsValidHex(b.color);
+  return`<div class="board-gallery-card" data-board="${b.id}" onclick="window.boardsOpen('${b.id}')"${tint?` style="border-top:3px solid ${tint}"`:''}>
     <div class="board-gallery-thumb">
       <div style="position:absolute;transform:scale(${scale});transform-origin:top left">
         ${cards.filter(c=>c.type==='frame').concat(cards.filter(c=>c.type!=='frame')).map(_boardMiniCardHTML).join('')}
@@ -600,7 +601,7 @@ function _boardGalleryCardHTML(b,opts){
     </div>
     <div class="board-gallery-meta">
       ${crumbs?`<div class="board-gallery-path">${crumbs} ›</div>`:''}
-      <div style="font-weight:600;font-size:13.5px">${_boardsEsc(b.title||'Untitled board')}</div>
+      <div class="board-gallery-title">${_boardsTileHTML(b,34)}<span>${_boardsEsc(b.title||'Untitled board')}</span></div>
       <div style="font-size:11px;color:var(--muted);margin-top:2px">${vis} · ${cards.length} card${cards.length===1?'':'s'}${subs?' · '+subs+' sub-board'+(subs===1?'':'s'):''} · ${_boardsEsc(b.ownerName||'')} · ${_boardsRelTime(b.updatedAt)}</div>
       ${opts.matches?`<div class="board-gallery-hit">${opts.matches} matching card${opts.matches===1?'':'s'}</div>`:''}
       ${opts.template?`<div style="margin-top:8px"><button class="btn-sm" onclick="event.stopPropagation();window.boardsUseTemplate('${b.id}')">Use template</button></div>`:''}
@@ -640,6 +641,14 @@ window.boardsCreate=async function(visibility){
     const id=await _boardsCreateDoc({visibility:visibility==='shared'?'shared':'personal'});
     boardsLoaded=false;
     logActivity('Mood board created',`${session.name} created ${visibility==='shared'?'a team':'a private'} mood board`);
+    // Name/colour/icon first, then Open — otherwise every board is called
+    // "Untitled board" and the gallery is unreadable. If the reload that
+    // makes the new board addressable fails for any reason, fall back to
+    // the old behaviour rather than leaving the user with nothing.
+    try{
+      await window.boardsRetryLoad();
+      if(moodBoards.some(x=>x.id===id)){window.boardsOpenSetup(id);return;}
+    }catch(e){}
     window.boardsOpen(id);
   }catch(e){showToast('Could not create board: '+(e.message||e),true);}
 };
@@ -808,6 +817,7 @@ function _boardsRenderCanvasAndWire(){
   const m=document.getElementById('main-content');
   if(!m)return;
   m.innerHTML=_renderBoardCanvasHTML();
+  _boardsFullscreen(true);
   // Seed the pill's last-seen value from the markup we just wrote, so
   // opening a board doesn't flash a percentage nobody asked for.
   _boardsPillZoom=_editBoard?Math.round(_editBoard.zoom*100):null;
@@ -861,13 +871,19 @@ function _renderBoardCanvasHTML(){
         <button class="tool-btn" onclick="window.boardsZoomBy(0.8)">−</button>
         <span class="zoom-readout" id="board-zoom-readout">${Math.round(b.zoom*100)}%</span>
         <button class="tool-btn" onclick="window.boardsZoomBy(1.25)">+</button>
-        <button class="tool-btn" onclick="window.boardsFitView()">Fit</button>
-        <button class="tool-btn" onclick="window.boardsResetView()">100%</button>
+        ${_boardsIsPhone()?'':`<button class="tool-btn" onclick="window.boardsFitView()">Fit</button>
+        <button class="tool-btn" onclick="window.boardsResetView()">100%</button>`}
         ${_boardsIsPhone()?'':`<button class="tool-btn${_boardsMinimapOn?' on':''}" onclick="window.boardsToggleMinimap()" title="Show the minimap">Map</button>`}
-        ${canEdit?`<button class="tool-btn${_boardsSnapGrid?' on':''}" id="board-snap-btn" onclick="window.boardsToggleSnap()" title="Snap cards to a grid while dragging">Snap</button>`:''}
+        ${canEdit&&!_boardsIsPhone()?`<button class="tool-btn${_boardsSnapGrid?' on':''}" id="board-snap-btn" onclick="window.boardsToggleSnap()" title="Snap cards to a grid while dragging">Snap</button>`:''}
         <div class="board-menu-wrap">
           <button class="tool-btn" onclick="window.boardsToggleMenu(event)" title="Board actions">⋯</button>
           <div class="board-menu" id="board-menu" style="display:none">
+            ${_boardsIsPhone()?`<button onclick="window.boardsFitView()">Fit to screen</button>
+            <button onclick="window.boardsResetView()">Zoom to 100%</button>
+            ${canEdit?`<button onclick="window.boardsToggleSnap()">${_boardsSnapGrid?'Snap to grid: on':'Snap to grid: off'}</button>`:''}
+            <button onclick="window.boardsOpenColorPicker('board','${b.id}')">Board colour…</button>
+            <button onclick="window.boardsOpenIconPicker('${b.id}')">Board icon…</button>
+            <div class="board-menu-sep"></div>`:''}
             <button onclick="window.boardsCopyBoardLink()">Copy link to board</button>
             <button onclick="window.boardsExportPNG()">Export as image (PNG)</button>
             <button onclick="window.boardsExportPDF()">Export as PDF</button>
@@ -902,8 +918,6 @@ function _renderBoardCanvasHTML(){
       <div class="board-rail" id="board-rail"></div>
       ${canEdit&&!_editCards.length?'<div class="board-empty-hint">Double-click anywhere to add a note · drop files in · paste an image with Ctrl+V</div>':''}
     </div>
-    <div class="board-sheet-back" id="board-sheet-back" style="display:none" onclick="window.boardsCloseSheet()"></div>
-    <div class="board-sheet" id="board-sheet" style="display:none"></div>
     <div class="board-fmt" id="board-fmt" style="display:none">
       <div class="board-fmt-swatches" id="board-fmt-swatches" style="display:none">
         ${_BOARDS_TEXT_COLORS.map(c=>`<button class="board-fmt-sw" style="background:${c.hex}" title="${c.label}" data-fmt="color:${c.hex}"></button>`).join('')}
@@ -1175,6 +1189,183 @@ window.boardsRemoveLabel=function(cardId,text){
   _boardsSaveDebounced();
 };
 
+// ── Board identity: colour and icon ─────────────────────────────────────
+// Afnan's Milanote gallery is read by shape and colour, not by reading
+// titles — every board is a coloured tile with an icon on it, and a new
+// board asks you for those straight away. Two plain fields on the board
+// document do it: b.color (a validated hex) and b.icon (one emoji).
+//
+// Neither is required and neither has a migration: a board without them
+// falls back to a neutral tile carrying the first letter of its title,
+// which is what every board written before this shows.
+const _BOARDS_TILE_COLORS=[
+  '#CFD3D8','#5B6472','#3FCFAF','#66C94D','#CC7A47','#F5C230','#F08A28',
+  '#F2564B','#F556B8','#A970F5','#39A9F5','#4B6BF5',
+  '#7B1F2A','#35507A','#14532D','#B47512','#7A4B7C','#3E6B6B','#111111'
+];
+function _boardsValidHex(v){
+  const h=String(v||'').trim();
+  return /^#[0-9a-fA-F]{6}$/.test(h)?h.toUpperCase():'';
+}
+// A readable foreground for an arbitrary background, so a custom colour
+// can't produce white-on-yellow. Rec. 601 luma, the usual cheap test.
+function _boardsInkOn(hex){
+  const h=_boardsValidHex(hex);
+  if(!h)return'var(--text)';
+  const r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16);
+  return(r*299+g*587+b*114)/1000>150?'#111111':'#FFFFFF';
+}
+function _boardsTileHTML(b,size){
+  const px=size||36;
+  const col=_boardsValidHex(b&&b.color);
+  const icon=String((b&&b.icon)||'').slice(0,4);
+  const letter=String((b&&b.title)||'?').trim().charAt(0).toUpperCase()||'?';
+  return`<span class="board-tile" style="width:${px}px;height:${px}px;background:${col||'var(--soft)'};color:${col?_boardsInkOn(col):'var(--muted)'};font-size:${Math.round(px*0.52)}px">${icon?_boardsEsc(icon):_boardsEsc(letter)}</span>`;
+}
+async function _boardsSaveIdentity(id,patch){
+  const b=moodBoards.find(x=>x.id===id);
+  if(!b||!_boardsCanEdit(b))return;
+  try{
+    await _qUpdate(doc(db,'mood_boards',id),Object.assign({updatedAt:Date.now(),updatedByName:session.name},patch));
+    Object.keys(patch).forEach(k=>{if(patch[k]===null)delete b[k];else b[k]=patch[k];});
+    if(_editBoard&&_editBoard.id===id)Object.keys(patch).forEach(k=>{if(patch[k]===null)delete _editBoard[k];else _editBoard[k]=patch[k];});
+    if(currentPage==='boards')_boardsRerenderGallery();
+  }catch(e){showToast('Could not save: '+(e.message||e),true);}
+}
+
+// ── Colour picker: presets, then a real custom picker ──
+// HSV sliders rather than <input type="color">, which on Android opens the
+// OS dialog and on desktop is a different dialog again — three ranges look
+// and behave the same everywhere, and their gradients are plain CSS.
+function _boardsHsvToHex(h,sv,v){
+  const S=sv/100,V=v/100;
+  const c=V*S,x=c*(1-Math.abs(((h/60)%2)-1)),m=V-c;
+  let r=0,g=0,bl=0;
+  if(h<60){r=c;g=x;}else if(h<120){r=x;g=c;}
+  else if(h<180){g=c;bl=x;}else if(h<240){g=x;bl=c;}
+  else if(h<300){r=x;bl=c;}else{r=c;bl=x;}
+  const to=n=>('0'+Math.round((n+m)*255).toString(16)).slice(-2).toUpperCase();
+  return'#'+to(r)+to(g)+to(bl);
+}
+let _boardsColorTarget=null;   // {kind:'board', id} — who the picker is for
+window.boardsOpenColorPicker=function(kind,id){
+  _boardsColorTarget={kind,id};
+  _boardsRenderColorSheet();
+};
+function _boardsRenderColorSheet(){
+  const t=_boardsColorTarget;if(!t)return;
+  const b=moodBoards.find(x=>x.id===t.id);
+  const cur=_boardsValidHex(b&&b.color);
+  _boardsOpenSheet('Colour',`
+    <div class="board-tile-swatches">
+      <button class="board-tile-sw none${cur?'':' on'}" title="No colour" onclick="window.boardsPickTileColor('')"></button>
+      ${_BOARDS_TILE_COLORS.map(c=>`<button class="board-tile-sw${cur===c?' on':''}" style="background:${c}" title="${c}" onclick="window.boardsPickTileColor('${c}')"></button>`).join('')}
+    </div>
+    <button class="board-custom-btn" onclick="window.boardsOpenCustomColor()"><span class="board-custom-wheel"></span>Custom colour…</button>`);
+}
+window.boardsPickTileColor=function(hex){
+  const t=_boardsColorTarget;if(!t)return;
+  window.boardsCloseSheet();
+  _boardsSaveIdentity(t.id,{color:_boardsValidHex(hex)||null});
+};
+window.boardsOpenCustomColor=function(){
+  const t=_boardsColorTarget;if(!t)return;
+  const b=moodBoards.find(x=>x.id===t.id);
+  const start=_boardsValidHex(b&&b.color)||'#3FCFAF';
+  _boardsOpenSheet('Select colour',`
+    <div class="board-hsv">
+      <label>Hue</label>
+      <input type="range" id="bhsv-h" min="0" max="359" value="170" oninput="window.boardsHsvInput()">
+      <label>Saturation</label>
+      <input type="range" id="bhsv-s" min="0" max="100" value="70" oninput="window.boardsHsvInput()">
+      <label>Value</label>
+      <input type="range" id="bhsv-v" min="0" max="100" value="85" oninput="window.boardsHsvInput()">
+      <div class="board-hsv-foot">
+        <button class="board-hsv-back" onclick="window.boardsOpenColorPicker('${t.kind}','${t.id}')">‹ Presets</button>
+        <span class="board-hsv-chosen">Chosen <i id="bhsv-prev" style="background:${start}"></i></span>
+        <button class="btn-sm" onclick="window.boardsHsvSet()">Set</button>
+      </div>
+    </div>`);
+  window.boardsHsvInput();
+};
+window.boardsHsvInput=function(){
+  const h=+(document.getElementById('bhsv-h')||{}).value||0;
+  const sv=+(document.getElementById('bhsv-s')||{}).value||0;
+  const v=+(document.getElementById('bhsv-v')||{}).value||0;
+  const hex=_boardsHsvToHex(h,sv,v);
+  const prev=document.getElementById('bhsv-prev');
+  if(prev)prev.style.background=hex;
+  // Each slider previews what it would do at the OTHER two's current
+  // settings — the saturation bar greys out as value drops, exactly as in
+  // the OS picker Afnan screenshotted. Pure CSS gradients, no canvas.
+  const sEl=document.getElementById('bhsv-s'),vEl=document.getElementById('bhsv-v'),hEl=document.getElementById('bhsv-h');
+  if(sEl)sEl.style.background=`linear-gradient(90deg,${_boardsHsvToHex(h,0,v)},${_boardsHsvToHex(h,100,v)})`;
+  if(vEl)vEl.style.background=`linear-gradient(90deg,#000,${_boardsHsvToHex(h,sv,100)})`;
+  if(hEl)hEl.style.background=`linear-gradient(90deg,${[0,60,120,180,240,300,359].map(x=>_boardsHsvToHex(x,sv,v)).join(',')})`;
+};
+window.boardsHsvSet=function(){
+  const t=_boardsColorTarget;if(!t)return;
+  const h=+(document.getElementById('bhsv-h')||{}).value||0;
+  const sv=+(document.getElementById('bhsv-s')||{}).value||0;
+  const v=+(document.getElementById('bhsv-v')||{}).value||0;
+  window.boardsCloseSheet();
+  _boardsSaveIdentity(t.id,{color:_boardsHsvToHex(h,sv,v)});
+};
+
+// ── Icon picker ──
+const _BOARDS_TILE_ICONS=['👖','👕','🧥','🧵','✂️','🎨','📐','📏','🏷️','📦','🚚','🏭','🧶','👟','🕶️','💎',
+  '📸','🎬','🖼️','📁','📄','📊','📌','⭐','🔥','❄️','☀️','🌧️','🌊','🌿','🏠','🏬',
+  '💡','⚡','🎯','🏆','💰','🧾','🔒','🔔','✅','⏳','🗓️','🧪','🔍','❤️','🖤','🌙'];
+let _boardsIconTarget=null;
+window.boardsOpenIconPicker=function(id){
+  _boardsIconTarget=id;
+  const b=moodBoards.find(x=>x.id===id);
+  const cur=String((b&&b.icon)||'');
+  _boardsOpenSheet('Icon',`
+    <div class="board-emoji-grid">
+      <button class="board-emoji${cur?'':' on'}" title="No icon" onclick="window.boardsPickIcon('')">—</button>
+      ${_BOARDS_TILE_ICONS.map(e=>`<button class="board-emoji${cur===e?' on':''}" onclick="window.boardsPickIcon('${e}')">${e}</button>`).join('')}
+    </div>`);
+};
+window.boardsPickIcon=function(e){
+  const id=_boardsIconTarget;if(!id)return;
+  window.boardsCloseSheet();
+  _boardsSaveIdentity(id,{icon:e||null});
+};
+
+// ── New-board setup ──
+// A board created straight into the canvas is an "Untitled board" forever
+// — that is how a gallery of them happens. Creation now offers the name,
+// colour and icon first, the way Milanote's does, and Open is one tap
+// away. It is a sheet, not a required step: dismissing it leaves a
+// perfectly good board behind.
+window.boardsOpenSetup=function(id){
+  const b=moodBoards.find(x=>x.id===id);
+  if(!b)return;
+  _boardsOpenSheet('New board',`
+    <div class="board-setup">
+      <div class="board-setup-head">${_boardsTileHTML(b,46)}
+        <input type="text" id="board-setup-name" value="${_boardsEsc(b.title||'')}" placeholder="Board name" maxlength="80">
+      </div>
+      <div class="board-setup-acts">
+        <button class="rail-btn" onclick="window.boardsSetupSave('${id}',true);window.boardsOpenColorPicker('board','${id}')">${_boardsIcon('color')}<span>Colour</span></button>
+        <button class="rail-btn" onclick="window.boardsSetupSave('${id}',true);window.boardsOpenIconPicker('${id}')">${_boardsIcon('reactions')}<span>Icon</span></button>
+        <button class="rail-btn" onclick="window.boardsSetupSave('${id}');window.boardsOpen('${id}')">${_boardsIcon('open')}<span>Open</span></button>
+      </div>
+    </div>`);
+  const inp=document.getElementById('board-setup-name');
+  if(inp){inp.focus();try{inp.select();}catch(e){}}
+};
+window.boardsSetupSave=function(id,keepOpen){
+  const inp=document.getElementById('board-setup-name');
+  const b=moodBoards.find(x=>x.id===id);
+  if(inp&&b){
+    const title=String(inp.value||'').trim()||'Untitled board';
+    if(title!==b.title)_boardsSaveIdentity(id,{title});
+  }
+  if(!keepOpen)window.boardsCloseSheet();
+};
+
 // ── The bottom sheet ────────────────────────────────────────────────────
 // Milanote's phone UI answers everything with a sheet that slides up from
 // the bottom, and it is the right shape here for the same reason: a
@@ -1184,16 +1375,19 @@ window.boardsRemoveLabel=function(cardId,text){
 window.boardsCloseSheet=function(){
   const el=document.getElementById('board-sheet');
   const bk=document.getElementById('board-sheet-back');
-  if(el){el.style.display='none';el.innerHTML='';}
-  if(bk)bk.style.display='none';
+  if(el)el.remove();
+  if(bk)bk.remove();
 };
 function _boardsOpenSheet(title,html){
-  const el=document.getElementById('board-sheet');
-  const bk=document.getElementById('board-sheet-back');
-  if(!el)return null;
+  window.boardsCloseSheet();
+  const bk=document.createElement('div');
+  bk.id='board-sheet-back';bk.className='board-sheet-back';
+  bk.addEventListener('click',()=>window.boardsCloseSheet());
+  document.body.appendChild(bk);
+  const el=document.createElement('div');
+  el.id='board-sheet';el.className='board-sheet';
   el.innerHTML=`<div class="board-sheet-head"><span>${_boardsEsc(title)}</span><button class="board-sheet-done" onclick="window.boardsCloseSheet()">Done</button></div><div class="board-sheet-body">${html}</div>`;
-  el.style.display='block';
-  if(bk)bk.style.display='block';
+  document.body.appendChild(el);
   return el;
 }
 function _boardsSelOne(){
@@ -3729,7 +3923,18 @@ function _boardsActivityStart(boardId){
     },()=>{});
   }catch(e){/* noop */}
 }
+// The canvas is a full-viewport takeover, so the page behind it must not
+// scroll — otherwise Android scrolls the whole document and the board's own
+// top bar slides off the screen (reported from a real phone, Sept 2026).
+function _boardsFullscreen(on){
+  try{
+    document.body.classList.toggle('board-fullscreen',!!on);
+    document.documentElement.classList.toggle('board-fullscreen',!!on);
+  }catch(e){}
+}
 function _boardsTeardown(){
+  _boardsFullscreen(false);
+  window.boardsCloseSheet();
   if(_editBoard)_boardsSaveNow();
   [_boardsUnsub,_boardsPresenceUnsub,_boardsCommentsUnsub,_boardsActivityUnsub].forEach(f=>{try{if(typeof f==='function')f();}catch(e){}});
   _boardsUnsub=_boardsPresenceUnsub=_boardsCommentsUnsub=_boardsActivityUnsub=null;
@@ -4409,6 +4614,8 @@ function _boardsGalleryCtxItems(b){
   const owner=!!(session&&(b.ownerUid===session.uid||session.role==='owner'));
   const items=[{act:'g:open',label:'Open'}];
   if(canEdit)items.push({act:'g:rename',label:'Rename…',hint:'F2'});
+  if(canEdit)items.push({act:'g:color',label:'Colour…'});
+  if(canEdit)items.push({act:'g:icon',label:'Icon…'});
   items.push({sep:true});
   items.push({act:'g:link',label:'Copy link to board'});
   items.push({act:'g:dup',label:'Duplicate'});
@@ -4437,6 +4644,8 @@ async function _boardsGalleryCtxRun(act,id){
   if(!b)return;
   switch(act){
     case'g:open':window.boardsOpen(id);break;
+    case'g:color':window.boardsOpenColorPicker('board',id);break;
+    case'g:icon':window.boardsOpenIconPicker(id);break;
     case'g:link':{
       const link=_boardsLinkFor(id,null);
       const ok=await _boardsCopyText(link);

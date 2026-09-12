@@ -477,7 +477,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .board-gallery-meta{padding:10px 12px}
 
 /* ── Mood Boards canvas ─────────────────────────────────────── */
-.board-canvas-wrap{position:fixed;inset:0;z-index:120;display:flex;flex-direction:column;background:var(--bg)}
+/* inset:0 sizes to the LAYOUT viewport, which on Android is taller than
+   what you can actually see — the browser UI is counted in. That left the
+   board's own top bar scrolled half off and put a page scrollbar down the
+   side of a canvas that is supposed to fill the screen. 100dvh is the
+   dynamic viewport (what is visible right now, browser chrome excluded);
+   the 100vh line above it is the fallback for anything that doesn't know
+   dvh. body.board-fullscreen (js/boards.js) stops the page behind the
+   canvas from scrolling at all, so there is nothing left to scroll. */
+.board-canvas-wrap{position:fixed;left:0;right:0;top:0;height:100vh;height:100dvh;z-index:120;display:flex;flex-direction:column;background:var(--bg);overflow:hidden}
+body.board-fullscreen{overflow:hidden;height:100vh;height:100dvh;min-height:0;overscroll-behavior:none}
+html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 /* z-index 120 is deliberate and load-bearing: .topbar is sticky at z-index
    100 and .cash-action-bar is 115, so at the original 40 the app header
    painted straight over the board's OWN top bar — back button, title,
@@ -689,6 +699,31 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 @keyframes boardLinked{0%,100%{outline-color:var(--accent-success)}50%{outline-color:transparent}}
 
 /* Minimap */
+/* Board identity — a coloured tile with an icon, the way a Milanote
+   gallery is actually read. Both fields are optional; without them the
+   tile is neutral and carries the title's first letter. */
+.board-tile{display:inline-flex;align-items:center;justify-content:center;border-radius:9px;flex-shrink:0;font-weight:700;line-height:1;border:1px solid rgba(0,0,0,.08)}
+.board-gallery-title{display:flex;align-items:center;gap:9px;font-weight:600;font-size:13.5px;min-width:0}
+.board-gallery-title span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.board-tile-swatches{display:grid;grid-template-columns:repeat(7,1fr);gap:9px;padding:2px 0 6px}
+.board-tile-sw{aspect-ratio:1;border-radius:9px;border:2px solid transparent;cursor:pointer;padding:0;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.board-tile-sw.on{border-color:var(--text)}
+.board-tile-sw.none{background:repeating-linear-gradient(45deg,var(--soft),var(--soft) 4px,var(--border) 4px,var(--border) 8px)}
+.board-custom-btn{display:flex;align-items:center;gap:10px;width:100%;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:11px;background:none;font-family:inherit;font-size:13.5px;color:var(--text);cursor:pointer}
+.board-custom-wheel{width:20px;height:20px;border-radius:50%;flex-shrink:0;background:conic-gradient(#F2564B,#F5C230,#66C94D,#3FCFAF,#39A9F5,#A970F5,#F556B8,#F2564B)}
+/* HSV sliders — plain ranges with CSS gradients, no canvas, no library */
+.board-hsv label{display:block;font-size:12px;font-weight:600;margin:10px 0 5px}
+.board-hsv input[type=range]{width:100%;height:26px;-webkit-appearance:none;appearance:none;border-radius:6px;border:1px solid var(--border);outline:none}
+.board-hsv input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:30px;border-radius:5px;background:var(--surface);border:2px solid var(--text);cursor:pointer}
+.board-hsv input[type=range]::-moz-range-thumb{width:16px;height:30px;border-radius:5px;background:var(--surface);border:2px solid var(--text);cursor:pointer}
+.board-hsv-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:16px;flex-wrap:wrap}
+.board-hsv-back{background:none;border:none;color:var(--muted);font-family:inherit;font-size:13px;cursor:pointer;padding:4px 0}
+.board-hsv-chosen{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted)}
+.board-hsv-chosen i{width:26px;height:26px;border-radius:6px;border:1px solid var(--border);display:inline-block}
+.board-setup-head{display:flex;align-items:center;gap:10px}
+.board-setup-head input{flex:1;min-width:0;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-family:inherit;font-size:15px;font-weight:600;background:var(--bg);color:var(--text);outline:none}
+.board-setup-acts{display:flex;gap:6px;margin-top:14px}
+.board-setup-acts .rail-btn{flex:1;border:1px solid var(--border)}
 /* Card labels — chips above the body, derived library, see js/boards.js */
 .board-labels{display:flex;flex-wrap:wrap;gap:3px;padding:4px 6px 0;flex-shrink:0}
 .board-label{display:inline-flex;align-items:center;font-size:9.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;padding:2px 6px;border-radius:5px;border:1px solid transparent;white-space:nowrap;background:none;font-family:inherit;cursor:default}
@@ -704,8 +739,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .board-reaction{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-family:inherit;line-height:1;padding:3px 7px;border-radius:11px;background:var(--soft);border:1px solid var(--border);color:var(--text);cursor:pointer}
 .board-reaction.mine{background:var(--dark);color:#fff;border-color:var(--dark)}
 /* The bottom sheet — Labels, Reactions, More and the phone colour picker */
-.board-sheet-back{position:absolute;inset:0;z-index:64;background:rgba(0,0,0,.32)}
-.board-sheet{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);width:380px;max-width:calc(100% - 24px);max-height:72%;overflow:auto;z-index:65;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 16px 40px rgba(0,0,0,.2)}
+.board-sheet-back{position:fixed;inset:0;z-index:419;background:rgba(0,0,0,.34)}
+.board-sheet{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);width:380px;max-width:calc(100% - 24px);max-height:72%;overflow:auto;z-index:420;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 16px 40px rgba(0,0,0,.2)}
 .board-sheet-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px;font-size:14px;font-weight:700;position:sticky;top:0;background:var(--surface);border-bottom:1px solid var(--border)}
 .board-sheet-done{background:none;border:none;color:var(--accent-urgent);font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer;padding:4px 2px}
 .board-sheet-body{padding:10px 14px 16px}
@@ -801,7 +836,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .board-share-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 14px;border-top:1px solid var(--border)}
 
 @media (max-width:560px){
-  .board-topbar #board-title-input{max-width:120px}
+  .board-topbar{padding:6px 8px;gap:6px}
+  .board-topbar #board-title-input{max-width:110px;font-size:13.5px!important}
+  .board-topbar .back-btn{padding:5px 8px;font-size:12px}
+  .board-topbar .pill{font-size:9px;padding:2px 6px}
+  .board-menu-sep{height:1px;background:var(--border);margin:4px 0}
   .board-drawer{width:100%;max-width:100%}
   /* the rail docks to the bottom and scrolls sideways on a phone */
   .board-rail{left:10px;right:10px;top:auto;bottom:12px;transform:none;flex-direction:row;max-height:none;overflow-x:auto;overflow-y:hidden;align-items:center;touch-action:pan-x}
@@ -814,7 +853,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
   .board-minimap{width:104px;height:72px;left:10px;right:auto;bottom:80px}
   .board-find{left:14px;right:14px}
   .board-zoom-pill{bottom:84px}
-  .board-fmt{position:fixed;left:0;right:0;bottom:0;transform:none;border-radius:0;border-left:none;border-right:none;border-bottom:none;max-width:none;padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
+  .board-fmt{position:fixed;left:0;right:0;bottom:0;bottom:env(safe-area-inset-bottom,0);transform:none;border-radius:0;border-left:none;border-right:none;border-bottom:none;max-width:none;padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
   .board-fmt-row{justify-content:space-between}
   .board-fmt-btn{min-width:0;flex:1;height:44px}
   /* A menu anchored to a pointer makes no sense on a touch screen — both
