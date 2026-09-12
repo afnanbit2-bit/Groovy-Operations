@@ -40,6 +40,20 @@ let _boardsClipboard=[];        // in-session card clipboard, survives moving be
 let _boardsAddCascade=0;      // so repeated "+ Card" clicks don't stack perfectly
 let _boardsDragDepth=0;       // dragenter/dragleave fire per child; count to know when we really left
 
+// Stage 4 — gallery view state. Per-viewer, never board data: a sort order
+// or a search term should not travel to someone else's screen.
+let _boardsGalleryQuery='';
+let _boardsGallerySort='updated';   // updated | opened | title | cards
+let _boardsGalleryTimer=null;
+// Stage 4 — find-within-a-board state.
+let _boardsFindOpen=false,_boardsFindQuery='',_boardsFindHits=[],_boardsFindIdx=0,_boardsFindTimer=null;
+let _boardsMenuOpen=false;          // the board "⋯" dropdown in the canvas topbar
+const _BOARDS_RECENT_KEY='groovy-boards-recent';
+const _BOARDS_RECENT_MAX=8;
+// Minimap default-on; like the snap preference it lives in localStorage
+// because it is a per-viewer convenience, not part of the board.
+let _boardsMinimapOn=(function(){try{return localStorage.getItem('groovy-boards-minimap')!=='0';}catch(e){return true;}})();
+
 const _BOARDS_GRID=20;          // snap-to-grid step, world px
 const _BOARDS_SNAP_PX=6;        // alignment-guide catch distance, SCREEN px (so it feels the same at any zoom)
 const _BOARDS_CLIP_PREFIX='groovy-board-cards:';
@@ -69,8 +83,8 @@ function _boardsCanEdit(b){
 }
 function _boardsNewCard(type){
   const id='c'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
-  const w=type==='frame'?440:type==='text'?220:type==='todo'?240:type==='file'?200:170;
-  const h=type==='frame'?320:type==='image'?120:type==='link'?120:type==='file'?110:type==='todo'?170:100;
+  const w=type==='frame'?440:type==='text'?220:type==='todo'?240:type==='file'?200:type==='board'?200:170;
+  const h=type==='frame'?320:type==='image'?120:type==='link'?120:type==='file'?110:type==='todo'?170:type==='board'?104:100;
   const base={id,type,x:80,y:80,w,h};
   if(type==='image')base.imageUrl='';
   if(type==='text')base.text='';
@@ -78,6 +92,7 @@ function _boardsNewCard(type){
   if(type==='file'){base.fileUrl='';base.fileName='';base.fileSize=0;}
   if(type==='frame')base.title='';
   if(type==='todo')base.items=[{text:'',done:false}];
+  if(type==='board'){base.boardId='';base.boardTitle='';}
   return base;
 }
 
@@ -119,6 +134,101 @@ function _boardsFormatBytes(n){
 function _boardsFileExt(name){
   const m=/\.([A-Za-z0-9]{1,6})$/.exec(name||'');
   return m?m[1].toUpperCase():'FILE';
+}
+
+// ── Nesting (Stage 4) ──────────────────────────────────────────────────
+// A board can sit inside another board. Two things express that, and BOTH
+// have to agree before a board is treated as nested:
+//   1. the child doc carries `parentId`
+//   2. the parent board still holds a `board` card pointing at the child
+//
+// Requiring both is what makes this safe to live with. Delete the link
+// card, or trash the parent, and the child immediately surfaces back in
+// the gallery at root level instead of becoming an unreachable document.
+// Nothing is written to reconcile that — it is derived on read, every
+// time, from boards already loaded. The alternative (fixing up parentId
+// whenever a link card is deleted) means a Firestore write inside an
+// undoable action, and an orphan the moment any of it fails.
+function _boardsLiveById(){
+  const m={};
+  moodBoards.forEach(b=>{m[b.id]=b;});
+  return m;
+}
+function _boardsNestedIds(){
+  const live=_boardsLiveById();
+  const nested=new Set();
+  moodBoards.forEach(b=>{
+    if(!b.parentId)return;
+    const p=live[b.parentId];
+    if(!p)return;   // parent trashed, deleted, or not readable by this viewer
+    if((p.cards||[]).some(c=>c.type==='board'&&c.boardId===b.id))nested.add(b.id);
+  });
+  return nested;
+}
+// The chain from the gallery down to this board: [root, …, parent].
+// Walks `parentId` with a visited-set guard — a cycle is only possible if
+// someone hand-edits Firestore, but an infinite loop in the topbar render
+// would take the whole page down, so it is cheap insurance.
+function _boardsAncestors(id){
+  const live=_boardsLiveById();
+  const nested=_boardsNestedIds();
+  const chain=[],seen=new Set([id]);
+  let cur=live[id];
+  while(cur&&cur.parentId&&nested.has(cur.id)&&!seen.has(cur.parentId)){
+    const p=live[cur.parentId];
+    if(!p)break;
+    chain.unshift(p);
+    seen.add(p.id);
+    cur=p;
+  }
+  return chain;
+}
+function _boardsParentOf(id){
+  const chain=_boardsAncestors(id);
+  return chain.length?chain[chain.length-1]:null;
+}
+
+// ── Recently opened (Stage 4) ──────────────────────────────────────────
+// localStorage, not board data: "recently opened" is about this person on
+// this device, and writing it to the doc would mean a Firestore write on
+// every board open plus everyone's history overwriting everyone else's.
+function _boardsRecentRead(){
+  try{
+    const raw=JSON.parse(localStorage.getItem(_BOARDS_RECENT_KEY)||'[]');
+    return Array.isArray(raw)?raw.filter(r=>r&&r.id):[];
+  }catch(e){return[];}
+}
+function _boardsRecentTouch(id){
+  try{
+    const next=[{id,ts:Date.now()}].concat(_boardsRecentRead().filter(r=>r.id!==id)).slice(0,_BOARDS_RECENT_MAX);
+    localStorage.setItem(_BOARDS_RECENT_KEY,JSON.stringify(next));
+  }catch(e){/* private browsing — recents are a convenience, never required */}
+}
+function _boardsRecentAt(id){
+  const r=_boardsRecentRead().find(x=>x.id===id);
+  return r?r.ts:0;
+}
+
+// ── Search text (Stage 4) ──────────────────────────────────────────────
+// One definition of "what text is in this card", used by BOTH the
+// find-within-a-board bar and the gallery's across-all-boards search, so
+// the two can never drift apart on which fields count.
+function _boardsCardText(c){
+  if(!c)return'';
+  const parts=[];
+  if(c.text)parts.push(c.text);
+  if(c.title)parts.push(c.title);
+  if(c.linkTitle)parts.push(c.linkTitle);
+  if(c.linkDesc)parts.push(c.linkDesc);
+  if(c.linkUrl)parts.push(c.linkUrl);
+  if(c.fileName)parts.push(c.fileName);
+  if(c.boardTitle)parts.push(c.boardTitle);
+  if(Array.isArray(c.items))c.items.forEach(i=>{if(i&&i.text)parts.push(i.text);});
+  return parts.join(' ').toLowerCase();
+}
+function _boardsMatchCount(b,q){
+  if(!q)return 0;
+  return (b.cards||[]).filter(c=>_boardsCardText(c).indexOf(q)>-1).length;
 }
 
 // ── Undo / redo ────────────────────────────────────────────────────────
@@ -184,6 +294,15 @@ function _boardsOnKeydown(e){
   if(_boardsIsEditableFocus())return;
   const k=(e.key||'').toLowerCase();
   if(e.ctrlKey||e.metaKey){
+    // Ctrl+F belongs to the board, not the browser: every card is in the
+    // DOM at once, so the native find would happily "scroll" to a card
+    // sitting off in world space where nobody can see it.
+    if(k==='f'){
+      e.preventDefault();
+      if(!_boardsFindOpen)window.boardsToggleFind();
+      else{const i=document.getElementById('board-find-input');if(i)i.focus();}
+      return;
+    }
     if(k==='z'){e.preventDefault();if(e.shiftKey)window.boardsRedoAction();else window.boardsUndoAction();return;}
     if(k==='y'){e.preventDefault();window.boardsRedoAction();return;}
     if(k==='d'){e.preventDefault();window.boardsDuplicateSelection();return;}
@@ -226,23 +345,100 @@ async function loadBoardsData(){
 }
 
 // ── Gallery ──
+// Stage 4: the gallery is no longer a flat dump of every board. Only
+// root-level boards are listed (nested ones are reached through their
+// parent), templates get their own section, and a search/sort bar sits on
+// top — eight boards fit on a screen, forty do not.
+function _boardsSortList(list){
+  const l=list.slice();
+  if(_boardsGallerySort==='title')return l.sort((a,b)=>String(a.title||'').localeCompare(String(b.title||''),undefined,{sensitivity:'base'}));
+  if(_boardsGallerySort==='cards')return l.sort((a,b)=>((b.cards||[]).length)-((a.cards||[]).length));
+  if(_boardsGallerySort==='opened')return l.sort((a,b)=>_boardsRecentAt(b.id)-_boardsRecentAt(a.id)||(b.updatedAt||0)-(a.updatedAt||0));
+  return l.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+}
+function _boardsGalleryBarHTML(){
+  const opts=[['updated','Recently updated'],['opened','Recently opened'],['title','Name A–Z'],['cards','Most cards']];
+  return`<div class="board-gallery-bar">
+    <input type="search" id="board-gallery-search" class="board-gallery-search" placeholder="Search boards and their cards…" value="${_boardsEsc(_boardsGalleryQuery)}" oninput="window.boardsGallerySearch(this)">
+    <select class="board-gallery-sort" onchange="window.boardsGallerySetSort(this.value)">
+      ${opts.map(o=>`<option value="${o[0]}"${_boardsGallerySort===o[0]?' selected':''}>${o[1]}</option>`).join('')}
+    </select>
+  </div>`;
+}
+function _boardsRecentStripHTML(){
+  const live=_boardsLiveById();
+  const recent=_boardsRecentRead().map(r=>live[r.id]).filter(Boolean).slice(0,6);
+  if(recent.length<2)return'';   // a strip of one is noise, not a shortcut
+  return`<div class="notes-section">
+    <div class="notes-section-head"><h3>Recently opened</h3></div>
+    <div class="board-recent-strip">${recent.map(b=>`<button class="board-recent-chip" onclick="window.boardsOpen('${b.id}')">${_boardsEsc(b.title||'Untitled board')}</button>`).join('')}</div>
+  </div>`;
+}
+// Searching deliberately looks at EVERY live board, nested ones included,
+// and at the text inside their cards — the whole point is "find that one
+// reference somewhere in a season's worth of boards". Card text is already
+// in memory (loadBoardsData reads whole documents), so this costs nothing
+// extra.
+function _boardsSearchResultsHTML(q){
+  const hits=moodBoards.map(b=>({b,n:_boardsMatchCount(b,q)}))
+    .filter(h=>h.n>0||String(h.b.title||'').toLowerCase().indexOf(q)>-1||String(h.b.ownerName||'').toLowerCase().indexOf(q)>-1);
+  const sorted=_boardsSortList(hits.map(h=>h.b));
+  const byId={};hits.forEach(h=>{byId[h.b.id]=h.n;});
+  return`<div class="notes-section">
+    <div class="notes-section-head"><h3>${sorted.length} result${sorted.length===1?'':'s'}</h3><button class="btn-sm outline" onclick="window.boardsGalleryClearSearch()">Clear</button></div>
+    ${sorted.length?`<div class="board-gallery-grid">${sorted.map(b=>_boardGalleryCardHTML(b,{matches:byId[b.id]||0})).join('')}</div>`:'<div class="empty">Nothing matched that.</div>'}
+  </div>`;
+}
 function renderBoardsGallery(){
-  const team=moodBoards.filter(b=>b.visibility==='shared');
-  const priv=moodBoards.filter(b=>b.visibility!=='shared');
-  return`
+  const q=_boardsGalleryQuery.trim().toLowerCase();
+  const head=`
   <button class="back-btn" onclick="window.showPage('creative-hub')">← Back to Creative Hub</button>
   <div class="page-head" style="margin-bottom:10px">
     <div><h2 style="margin:0">Mood Boards</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">Drag, resize and connect reference images, notes and links</div></div>
   </div>
+  ${_boardsGalleryBarHTML()}`;
+  if(q)return head+_boardsSearchResultsHTML(q)+_boardsTrashSectionHTML();
+
+  const nested=_boardsNestedIds();
+  const root=moodBoards.filter(b=>!nested.has(b.id));
+  const templates=_boardsSortList(root.filter(b=>b.isTemplate));
+  const rest=root.filter(b=>!b.isTemplate);
+  const team=_boardsSortList(rest.filter(b=>b.visibility==='shared'));
+  const priv=_boardsSortList(rest.filter(b=>b.visibility!=='shared'));
+  return head+`
+  ${_boardsRecentStripHTML()}
   <div class="notes-section">
     <div class="notes-section-head"><h3>TEAM</h3><button class="btn-sm" onclick="window.boardsCreate('shared')">+ New board</button></div>
-    ${team.length?`<div class="board-gallery-grid">${team.map(_boardGalleryCardHTML).join('')}</div>`:'<div class="empty">No team boards yet.</div>'}
+    ${team.length?`<div class="board-gallery-grid">${team.map(b=>_boardGalleryCardHTML(b)).join('')}</div>`:'<div class="empty">No team boards yet.</div>'}
   </div>
   <div class="notes-section">
     <div class="notes-section-head"><h3>PRIVATE</h3><button class="btn-sm outline" onclick="window.boardsCreate('personal')">+ New board</button></div>
-    ${priv.length?`<div class="board-gallery-grid">${priv.map(_boardGalleryCardHTML).join('')}</div>`:'<div class="empty">No private boards yet.</div>'}
+    ${priv.length?`<div class="board-gallery-grid">${priv.map(b=>_boardGalleryCardHTML(b)).join('')}</div>`:'<div class="empty">No private boards yet.</div>'}
   </div>
+  ${templates.length?`<div class="notes-section">
+    <div class="notes-section-head"><h3>Templates</h3><span style="font-size:11px;color:var(--muted)">Start a new board from a skeleton you already built</span></div>
+    <div class="board-gallery-grid">${templates.map(b=>_boardGalleryCardHTML(b,{template:true})).join('')}</div>
+  </div>`:''}
   ${_boardsTrashSectionHTML()}`;
+}
+// Same debounced-input + refocus-after-rerender pattern as fabInvSetSearch
+// in js/fabric.js and the Monitor page — the app already has one way of
+// doing a search box that survives a full innerHTML rerender; this is it.
+window.boardsGallerySearch=function(el){
+  _boardsGalleryQuery=el.value;
+  clearTimeout(_boardsGalleryTimer);
+  _boardsGalleryTimer=setTimeout(()=>{
+    _boardsRerenderGallery();
+    const i=document.getElementById('board-gallery-search');
+    if(i){i.focus();try{i.setSelectionRange(i.value.length,i.value.length);}catch(e){}}
+  },180);
+};
+window.boardsGalleryClearSearch=function(){_boardsGalleryQuery='';_boardsRerenderGallery();};
+window.boardsGallerySetSort=function(v){_boardsGallerySort=v;_boardsRerenderGallery();};
+function _boardsRerenderGallery(){
+  if(currentPage!=='boards')return;
+  const m=document.getElementById('main-content');
+  if(m)m.innerHTML=renderBoardsGallery();
 }
 function _boardsTrashSectionHTML(){
   if(!_boardsTrash.length)return'';
@@ -284,21 +480,28 @@ window.boardsDeleteForever=async function(id){
     if(currentPage==='boards')document.getElementById('main-content').innerHTML=renderBoardsGallery();
   }catch(e){showToast('Could not delete: '+(e.message||e),true);}
 };
-function _boardGalleryCardHTML(b){
+function _boardGalleryCardHTML(b,opts){
+  opts=opts||{};
   const cards=b.cards||[];
   const xs=cards.map(c=>c.x+c.w),ys=cards.map(c=>c.y+c.h);
   const maxX=xs.length?Math.max(...xs)+20:200,maxY=ys.length?Math.max(...ys)+20:120;
   const scale=Math.min(220/maxX,110/maxY,0.6);
   const vis=b.visibility==='shared'?'TEAM':'PRIVATE';
+  const subs=cards.filter(c=>c.type==='board'&&c.boardId).length;
+  const crumbs=_boardsAncestors(b.id).map(a=>_boardsEsc(a.title||'Untitled board')).join(' › ');
   return`<div class="board-gallery-card" onclick="window.boardsOpen('${b.id}')">
     <div class="board-gallery-thumb">
       <div style="position:absolute;transform:scale(${scale});transform-origin:top left">
         ${cards.filter(c=>c.type==='frame').concat(cards.filter(c=>c.type!=='frame')).map(_boardMiniCardHTML).join('')}
       </div>
+      ${b.isTemplate?'<span class="board-template-pill">Template</span>':''}
     </div>
     <div class="board-gallery-meta">
+      ${crumbs?`<div class="board-gallery-path">${crumbs} ›</div>`:''}
       <div style="font-weight:600;font-size:13.5px">${_boardsEsc(b.title||'Untitled board')}</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">${vis} · ${cards.length} card${cards.length===1?'':'s'} · ${_boardsEsc(b.ownerName||'')} · ${_boardsRelTime(b.updatedAt)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">${vis} · ${cards.length} card${cards.length===1?'':'s'}${subs?' · '+subs+' sub-board'+(subs===1?'':'s'):''} · ${_boardsEsc(b.ownerName||'')} · ${_boardsRelTime(b.updatedAt)}</div>
+      ${opts.matches?`<div class="board-gallery-hit">${opts.matches} matching card${opts.matches===1?'':'s'}</div>`:''}
+      ${opts.template?`<div style="margin-top:8px"><button class="btn-sm" onclick="event.stopPropagation();window.boardsUseTemplate('${b.id}')">Use template</button></div>`:''}
     </div>
   </div>`;
 }
@@ -307,25 +510,142 @@ function _boardMiniCardHTML(c){
   if(c.type==='frame')return`<div style="${base};background:rgba(0,0,0,.03)"></div>`;
   if(c.type==='image')return c.imageUrl?`<div style="${base}"><img src="${_boardsEsc(c.imageUrl)}" style="width:100%;height:100%;object-fit:cover"></div>`:`<div style="${base};background:var(--soft)"></div>`;
   if(c.type==='link'||c.type==='file')return`<div style="${base};background:var(--soft)"></div>`;
+  if(c.type==='board')return`<div style="${base};background:var(--soft);border-style:dashed"></div>`;
   return`<div style="${base};background:#fff"></div>`;
+}
+// One place that knows the shape of a board document — used by the plain
+// "+ New board" buttons, by sub-board creation and by duplicate/template.
+function _boardsBlankDoc(){
+  return{
+    title:'Untitled board',visibility:'personal',
+    ownerUid:session.uid,ownerName:session.name,ownerUsername:session.u,
+    cards:[],connectors:[],zoom:1,panX:40,panY:30,
+    createdAt:Date.now(),updatedAt:Date.now(),updatedByName:session.name
+  };
+}
+async function _boardsCreateDoc(fields){
+  const data={..._boardsBlankDoc(),...(fields||{})};
+  const ref=await addDoc(collection(db,'mood_boards'),data);
+  // Keep the in-memory list in step immediately: breadcrumbs and the
+  // nesting rules both read moodBoards, and the canvas opens before any
+  // refetch would have finished.
+  moodBoards.unshift({id:ref.id,...data});
+  return ref.id;
 }
 window.boardsCreate=async function(visibility){
   try{
-    const ref=await addDoc(collection(db,'mood_boards'),{
-      title:'Untitled board',
-      visibility:visibility==='shared'?'shared':'personal',
-      ownerUid:session.uid,ownerName:session.name,ownerUsername:session.u,
-      cards:[],connectors:[],zoom:1,panX:40,panY:30,
-      createdAt:Date.now(),updatedAt:Date.now(),updatedByName:session.name
-    });
+    const id=await _boardsCreateDoc({visibility:visibility==='shared'?'shared':'personal'});
     boardsLoaded=false;
-    logActivity('Mood board created',`${session.name} created "${visibility==='shared'?'a team':'a private'}" mood board`);
-    _boardsViewingId=ref.id;
-    window.showPage('board-canvas');
+    logActivity('Mood board created',`${session.name} created ${visibility==='shared'?'a team':'a private'} mood board`);
+    window.boardsOpen(id);
   }catch(e){showToast('Could not create board: '+(e.message||e),true);}
 };
-window.boardsOpen=function(id){_boardsViewingId=id;window.showPage('board-canvas');};
-window.boardsBack=function(){_boardsSaveNow();window.showPage('boards');};
+// A sub-board is two writes that must both land: the child document, and
+// the link card on this board that makes it reachable. The save is flushed
+// straight away rather than left to the 900ms debounce for exactly that
+// reason — a reload in between would leave the child orphaned (it would
+// surface back at root level, by design, but it would look like it moved).
+window.boardsAddChildBoard=async function(){
+  if(!_editBoard||!_boardsCanEdit(_editBoard))return;
+  _boardsMenuOpen=false;_boardsSyncMenu();
+  const p=_boardsPlacementPoint();
+  try{
+    const id=await _boardsCreateDoc({visibility:_editBoard.visibility,parentId:_editBoard.id});
+    _boardsPushUndo();
+    const nc=_boardsNewCard('board');
+    nc.x=p.x;nc.y=p.y;nc.boardId=id;nc.boardTitle='Untitled board';
+    _editCards.push(nc);
+    _boardsRenderCanvasAndWire();
+    await _boardsSaveNow();
+    boardsLoaded=false;
+    showToast('Sub-board added — open it from the card');
+  }catch(e){showToast('Could not create sub-board: '+(e.message||e),true);}
+};
+
+// ── Duplicate / templates ──────────────────────────────────────────────
+// Connectors point at card ids, so a straight copy of both arrays would
+// leave the duplicate's lines pointing at the ORIGINAL board's cards.
+// _boardsCloneCards mints fresh ids but doesn't report them, so the map is
+// built here and card-bound connectors are remapped through it; freeform
+// lines carry world coordinates and need no remapping.
+//
+// Board-link cards are deliberately NOT copied: duplicating a board that
+// contains sub-boards would either point the copy at the original's
+// children (edits in one showing up in the other) or need a recursive
+// multi-document copy with its own half-failed states. Dropping them and
+// saying so is the honest version.
+function _boardsDuplicatePayload(cards,connectors){
+  const src=(cards||[]).filter(c=>c.type!=='board');
+  const skipped=(cards||[]).length-src.length;
+  const clones=_boardsCloneCards(src,0,0);
+  const map={};
+  src.forEach((c,i)=>{map[c.id]=clones[i].id;});
+  const conns=(connectors||[]).filter(cn=>cn.free?true:(map[cn.from]&&map[cn.to]))
+    .map(cn=>cn.free?{...cn}:{...cn,from:map[cn.from],to:map[cn.to]});
+  return{cards:clones,connectors:conns,skipped};
+}
+async function _boardsDuplicateBoard(src,fields,openIt){
+  const payload=_boardsDuplicatePayload(src.cards,src.connectors);
+  const id=await _boardsCreateDoc({
+    title:(src.title||'Untitled board')+' (copy)',
+    visibility:src.visibility||'personal',
+    cards:payload.cards,connectors:payload.connectors,
+    zoom:src.zoom||1,panX:src.panX||40,panY:src.panY||30,
+    ...(fields||{})
+  });
+  boardsLoaded=false;
+  if(payload.skipped)showToast(payload.skipped+' sub-board card'+(payload.skipped===1?'':'s')+' not copied — sub-boards are not duplicated');
+  if(openIt)window.boardsOpen(id);
+  return id;
+}
+window.boardsDuplicateBoard=async function(){
+  if(!_editBoard)return;
+  _boardsMenuOpen=false;_boardsSyncMenu();
+  try{
+    await _boardsSaveNow();
+    const src={..._editBoard,cards:_boardsCardsForSave(),connectors:_editConnectors};
+    logActivity('Mood board duplicated',`${session.name} duplicated "${_editBoard.title||'Untitled board'}"`);
+    await _boardsDuplicateBoard(src,{isTemplate:false},true);
+    showToast('Board duplicated');
+  }catch(e){showToast('Could not duplicate: '+(e.message||e),true);}
+};
+// A template is an ordinary board with a flag — it stays fully editable
+// and openable, it just lists in its own gallery section and offers "Use
+// template", which is the duplicate above under a clearer name.
+window.boardsToggleTemplate=async function(){
+  if(!_editBoard||!_boardsCanEdit(_editBoard))return;
+  const next=!_editBoard.isTemplate;
+  try{
+    await updateDoc(doc(db,'mood_boards',_editBoard.id),{isTemplate:next,updatedAt:Date.now()});
+    _editBoard.isTemplate=next;
+    const idx=moodBoards.findIndex(b=>b.id===_editBoard.id);
+    if(idx>-1)moodBoards[idx].isTemplate=next;
+    boardsLoaded=false;
+    _boardsMenuOpen=false;
+    _boardsRenderCanvasAndWire();
+    showToast(next?'Saved as a template':'No longer a template');
+  }catch(e){showToast('Could not update: '+(e.message||e),true);}
+};
+window.boardsUseTemplate=async function(id){
+  const src=moodBoards.find(b=>b.id===id);
+  if(!src)return;
+  try{
+    await _boardsDuplicateBoard(src,{isTemplate:false,title:(src.title||'Untitled board')+' (copy)'},true);
+    logActivity('Mood board created from template',`${session.name} started a board from "${src.title||'Untitled board'}"`);
+  }catch(e){showToast('Could not use template: '+(e.message||e),true);}
+};
+
+window.boardsOpen=function(id){_boardsRecentTouch(id);_boardsViewingId=id;window.showPage('board-canvas');};
+// One level up, not straight to the gallery: from a sub-board that means
+// its parent board. Matches how Notes' back buttons behave (see CLAUDE.md).
+window.boardsBack=function(){
+  _boardsSaveNow();
+  const parent=_editBoard?_boardsParentOf(_editBoard.id):null;
+  if(parent)window.boardsOpen(parent.id);
+  else window.showPage('boards');
+};
+window.boardsGoto=function(id){_boardsSaveNow();window.boardsOpen(id);};
+window.boardsGotoGallery=function(){_boardsSaveNow();window.showPage('boards');};
 
 // ── Canvas ──
 async function _boardsOpenCanvas(){
@@ -339,10 +659,14 @@ async function _boardsOpenCanvas(){
       b={id:snap.id,...snap.data()};
     }catch(e){m.innerHTML='<div class="empty">Could not load board: '+(e.message||e)+'</div>';return;}
   }
-  _editBoard={id:b.id,title:b.title||'Untitled board',visibility:b.visibility||'personal',ownerUid:b.ownerUid,ownerName:b.ownerName,ownerUsername:b.ownerUsername,zoom:b.zoom||1,panX:b.panX||40,panY:b.panY||30};
+  _editBoard={id:b.id,title:b.title||'Untitled board',visibility:b.visibility||'personal',ownerUid:b.ownerUid,ownerName:b.ownerName,ownerUsername:b.ownerUsername,zoom:b.zoom||1,panX:b.panX||40,panY:b.panY||30,parentId:b.parentId||null,isTemplate:!!b.isTemplate};
   _editCards=(b.cards||[]).map(c=>{const cc={...c};delete cc._uploading;return cc;});
   _editConnectors=(b.connectors||[]).map(cn=>({...cn}));
   _boardsSelection=new Set();
+  // Find state is per board-opening too — carrying a search term from one
+  // board into the next would highlight nothing and look broken.
+  _boardsFindOpen=false;_boardsFindQuery='';_boardsFindHits=[];_boardsFindIdx=0;
+  _boardsMenuOpen=false;
   // History is per board-opening — undoing your way into a different
   // board's state would be nonsense.
   _boardsUndo=[];_boardsRedo=[];
@@ -358,32 +682,56 @@ function _boardsRenderCanvasAndWire(){
   _boardsWireStagePan();
   _boardsSyncHistoryButtons();
   _boardsRenderSelectionBar();
+  _boardsRenderMinimap();
+  _boardsApplyFindHighlight();
+  _boardsSyncMenu();
 }
 function _renderBoardCanvasHTML(){
   const b=_editBoard;
   if(!b)return'<div class="empty">No board loaded.</div>';
   const canEdit=_boardsCanEdit(b);
   const visLabel=b.visibility==='shared'?'TEAM':'PRIVATE';
+  // Breadcrumbs only appear on a nested board — on a root board the trail
+  // would just read "Boards ›" next to a back button that says the same.
+  const chain=_boardsAncestors(b.id);
+  const parent=chain.length?chain[chain.length-1]:null;
+  const crumbs=chain.length?`<div class="board-crumbs">
+      <button class="board-crumb" onclick="window.boardsGotoGallery()">Boards</button>
+      ${chain.map(a=>`<span class="board-crumb-sep">›</span><button class="board-crumb" onclick="window.boardsGoto('${a.id}')">${_boardsEsc(a.title||'Untitled board')}</button>`).join('')}
+      <span class="board-crumb-sep">›</span>
+    </div>`:'';
   return`<div class="board-canvas-wrap">
     <div class="board-topbar">
-      <div style="display:flex;align-items:center;gap:10px;min-width:0">
-        <button class="back-btn" style="margin:0" onclick="window.boardsBack()">← Boards</button>
+      <div style="display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:wrap">
+        <button class="back-btn" style="margin:0" onclick="window.boardsBack()">← ${_boardsEsc(parent?(parent.title||'Untitled board'):'Boards')}</button>
+        ${crumbs}
         <input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" placeholder="Untitled board" style="font-size:14.5px;font-weight:700;border:none;outline:none;font-family:inherit;background:transparent;max-width:240px">
         <span class="pill">${visLabel}</span>
+        ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}
         ${canEdit?`<span class="board-save-status" id="board-save-status">Saved</span>`:''}
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
         ${canEdit?`<button class="tool-btn" id="board-undo-btn" onclick="window.boardsUndoAction()" title="Undo (Ctrl+Z)" disabled>Undo</button>
         <button class="tool-btn" id="board-redo-btn" onclick="window.boardsRedoAction()" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
         <div class="tool-sep"></div>`:''}
-        ${canEdit?`<button class="tool-btn" onclick="window.boardsToggleVisibility()">Make ${b.visibility==='shared'?'Private':'Team'}</button>`:''}
+        <button class="tool-btn${_boardsFindOpen?' on':''}" onclick="window.boardsToggleFind()" title="Find cards on this board">Find</button>
         <button class="tool-btn" onclick="window.boardsZoomBy(0.8)">−</button>
         <span class="zoom-readout" id="board-zoom-readout">${Math.round(b.zoom*100)}%</span>
         <button class="tool-btn" onclick="window.boardsZoomBy(1.25)">+</button>
         <button class="tool-btn" onclick="window.boardsFitView()">Fit</button>
         <button class="tool-btn" onclick="window.boardsResetView()">100%</button>
+        <button class="tool-btn${_boardsMinimapOn?' on':''}" onclick="window.boardsToggleMinimap()" title="Show the minimap">Map</button>
         ${canEdit?`<button class="tool-btn${_boardsSnapGrid?' on':''}" id="board-snap-btn" onclick="window.boardsToggleSnap()" title="Snap cards to a grid while dragging">Snap</button>`:''}
-        ${canEdit?`<button class="tool-btn" onclick="window.boardsDelete()" style="color:var(--accent-urgent)">Delete</button>`:''}
+        <div class="board-menu-wrap">
+          <button class="tool-btn" onclick="window.boardsToggleMenu(event)" title="Board actions">⋯</button>
+          <div class="board-menu" id="board-menu" style="display:none">
+            <button onclick="window.boardsDuplicateBoard()">Duplicate board</button>
+            ${canEdit?`<button onclick="window.boardsToggleTemplate()">${b.isTemplate?'Remove from templates':'Save as template'}</button>`:''}
+            ${canEdit?`<button onclick="window.boardsAddChildBoard()">Add sub-board</button>`:''}
+            ${canEdit?`<button onclick="window.boardsToggleVisibility()">Make ${b.visibility==='shared'?'Private':'Team'}</button>`:''}
+            ${canEdit?`<button class="danger" onclick="window.boardsDelete()">Delete board</button>`:''}
+          </div>
+        </div>
       </div>
     </div>
     <div class="board-stage" id="board-stage">
@@ -394,6 +742,14 @@ function _renderBoardCanvasHTML(){
         ${_boardsRenderOrder().map(c=>_boardCardHTML(c,canEdit)).join('')}
       </div>
       <div class="board-marquee" id="board-marquee"></div>
+      ${_boardsFindOpen?`<div class="board-find" id="board-find">
+        <input type="search" id="board-find-input" placeholder="Find on this board…" value="${_boardsEsc(_boardsFindQuery)}" oninput="window.boardsFindInput(this)" onkeydown="window.boardsFindKey(event)">
+        <span class="board-find-count" id="board-find-count"></span>
+        <button class="tool-btn" onclick="window.boardsFindStep(-1)" title="Previous match">↑</button>
+        <button class="tool-btn" onclick="window.boardsFindStep(1)" title="Next match">↓</button>
+        <button class="tool-btn" onclick="window.boardsToggleFind()" title="Close">✕</button>
+      </div>`:''}
+      ${_boardsMinimapOn?`<div class="board-minimap" id="board-minimap"><div class="board-minimap-inner" id="board-minimap-inner"></div><div class="board-minimap-view" id="board-minimap-view"></div></div>`:''}
       ${canEdit?'<div class="board-selection-bar" id="board-selection-bar" style="display:none"></div>':''}
       ${canEdit?'<div class="board-dropzone" id="board-dropzone"><div>Drop files to add them to this board</div></div>':''}
       ${canEdit?`<div class="board-add-menu">
@@ -403,6 +759,7 @@ function _renderBoardCanvasHTML(){
         <button onclick="window.boardsAddCard('link')">+ Link</button>
         <button onclick="window.boardsPickFiles()">+ File</button>
         <button onclick="window.boardsAddCard('frame')">+ Frame</button>
+        <button onclick="window.boardsAddChildBoard()">+ Board</button>
         <button id="board-line-btn" class="${_boardsLineMode?'on':''}" onclick="window.boardsToggleLineMode()">↗ Line</button>
       </div>`:''}
       ${canEdit&&!_editCards.length?'<div class="board-empty-hint">Double-click anywhere to add a note · drop files in · paste an image with Ctrl+V</div>':''}
@@ -480,10 +837,22 @@ function _boardCardHTML(c,canEdit){
         :'<div class="board-card-empty">No file</div>';
       body=`<div class="board-card-body" style="padding:0">${body}</div>`;
     }
+  }else if(c.type==='board'){
+    // A link to a nested board. The title is read LIVE from moodBoards so
+    // renaming the child updates every card pointing at it; the stored
+    // boardTitle is only a fallback for a board this viewer can't read.
+    const child=_boardsLiveById()[c.boardId];
+    const title=(child&&child.title)||c.boardTitle||'Untitled board';
+    const n=child?(child.cards||[]).length:0;
+    body=`<div class="board-card-body board-subboard-body">
+      <div class="board-subboard-title">${_boardsEsc(title)}</div>
+      <div class="board-subboard-meta">${child?n+' card'+(n===1?'':'s'):'Board'}</div>
+      ${c.boardId?`<button class="board-subboard-open" onclick="event.stopPropagation();window.boardsGoto('${c.boardId}')">Open →</button>`:'<div class="board-subboard-meta">Missing board</div>'}
+    </div>`;
   }else{
     body=`<div class="board-card-body board-text-body" contenteditable="${!!canEdit}" id="board-txt-${c.id}" data-placeholder="Type a note…" oninput="window.boardsTextInput('${c.id}',this)"></div>`;
   }
-  const kind=c.type==='image'?'Image':c.type==='link'?'Link':c.type==='file'?'File':c.type==='todo'?('To-do'+(c._todoProgress?' · '+c._todoProgress:'')):'Note';
+  const kind=c.type==='image'?'Image':c.type==='link'?'Link':c.type==='file'?'File':c.type==='board'?'Board':c.type==='todo'?('To-do'+(c._todoProgress?' · '+c._todoProgress:'')):'Note';
   const sel=_boardsSelection.has(c.id)?' selected':'';
   const lock=c.locked?' locked':'';
   const tint=c.color?' tint-'+c.color:'';
@@ -521,6 +890,7 @@ function _boardsApplyTransform(){
   if(w)w.style.transform=`translate(${b.panX}px,${b.panY}px) scale(${b.zoom})`;
   const zr=document.getElementById('board-zoom-readout');
   if(zr)zr.textContent=Math.round(b.zoom*100)+'%';
+  _boardsUpdateMinimapView();
 }
 // Zoom about the centre of the viewport, not the world origin — zooming out
 // from a corner throws the content off-screen and you lose your place.
@@ -1284,6 +1654,15 @@ window.boardsAddCard=function(type){
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
 };
+// Keeps the in-memory gallery copy of THIS board in step without waiting
+// for the debounced write. Only matters for card changes the gallery
+// itself reasons about — deleting a sub-board link, which is what decides
+// whether the child board shows at root level (see _boardsNestedIds).
+function _boardsSyncLocalCards(){
+  if(!_editBoard)return;
+  const idx=moodBoards.findIndex(b=>b.id===_editBoard.id);
+  if(idx>-1)moodBoards[idx]={...moodBoards[idx],cards:_boardsCardsForSave()};
+}
 window.boardsDeleteCard=function(id){
   const c=_editCards.find(x=>x.id===id);
   if(c&&c.locked){showToast('That card is locked');return;}
@@ -1293,6 +1672,10 @@ window.boardsDeleteCard=function(id){
   _boardsSelection.delete(id);
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
+  if(c&&c.type==='board'){
+    _boardsSyncLocalCards();
+    showToast('Link removed — the sub-board itself is back in the boards list');
+  }
 };
 
 // ── Bulk actions on the selection ──────────────────────────────────────
@@ -1308,6 +1691,10 @@ window.boardsDeleteSelection=function(){
   ids.forEach(id=>_boardsSelection.delete(id));
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
+  if(removable.some(c=>c.type==='board')){
+    _boardsSyncLocalCards();
+    showToast('Sub-board links removed — those boards are back in the boards list');
+  }
   if(removable.length<sel.length)showToast('Kept '+(sel.length-removable.length)+' locked card'+(sel.length-removable.length===1?'':'s'));
 };
 // Clones land offset from the originals and become the new selection, so a
@@ -1413,6 +1800,7 @@ function _boardsPasteCards(cards){
 }
 window.boardsToggleVisibility=async function(){
   if(!_boardsCanEdit(_editBoard))return;
+  _boardsMenuOpen=false;_boardsSyncMenu();
   const next=_editBoard.visibility==='shared'?'personal':'shared';
   try{
     await updateDoc(doc(db,'mood_boards',_editBoard.id),{visibility:next,updatedAt:Date.now()});
@@ -1429,6 +1817,7 @@ window.boardsToggleVisibility=async function(){
 // because Ctrl+Z already covers it.
 window.boardsDelete=async function(){
   if(!_editBoard||!_boardsCanEdit(_editBoard))return;
+  _boardsMenuOpen=false;_boardsSyncMenu();
   if(!confirm('Move "'+(_editBoard.title||'Untitled board')+'" to Trash? You can restore it from the boards list.'))return;
   try{
     await updateDoc(doc(db,'mood_boards',_editBoard.id),{deletedAt:Date.now(),deletedByName:session.name,updatedAt:Date.now()});
@@ -1440,6 +1829,169 @@ window.boardsDelete=async function(){
     window.showPage('boards');
   }catch(e){showToast('Could not delete: '+(e.message||e),true);}
 };
+
+// ── Board menu (Stage 4) ───────────────────────────────────────────────
+// The dropdown is always in the DOM and only its display is toggled — a
+// full _boardsRenderCanvasAndWire() to open a menu would rebuild every
+// card and redraw every connector on a 46-card board just to show five
+// buttons.
+function _boardsSyncMenu(){
+  const el=document.getElementById('board-menu');
+  if(el)el.style.display=_boardsMenuOpen?'flex':'none';
+}
+window.boardsToggleMenu=function(ev){
+  if(ev)ev.stopPropagation();
+  _boardsMenuOpen=!_boardsMenuOpen;
+  _boardsSyncMenu();
+};
+// Registered once at load, like the paste/keydown handlers — the canvas
+// DOM is replaced on every render, so a listener added there would pile up.
+document.addEventListener('click',e=>{
+  if(!_boardsMenuOpen)return;
+  if(e.target&&e.target.closest&&e.target.closest('.board-menu-wrap'))return;
+  _boardsMenuOpen=false;
+  _boardsSyncMenu();
+});
+
+// ── Find within a board (Stage 4) ──────────────────────────────────────
+// Highlighting is a class toggle on existing elements, never a rerender:
+// retyping in the find box must not rebuild the canvas under the cursor.
+window.boardsToggleFind=function(){
+  _boardsFindOpen=!_boardsFindOpen;
+  if(!_boardsFindOpen){_boardsFindQuery='';_boardsFindHits=[];_boardsFindIdx=0;}
+  _boardsRenderCanvasAndWire();
+  if(_boardsFindOpen){const i=document.getElementById('board-find-input');if(i)i.focus();}
+};
+window.boardsFindInput=function(el){
+  _boardsFindQuery=el.value;
+  clearTimeout(_boardsFindTimer);
+  _boardsFindTimer=setTimeout(_boardsRunFind,180);
+};
+function _boardsRunFind(){
+  const q=_boardsFindQuery.trim().toLowerCase();
+  _boardsFindHits=q?_editCards.filter(c=>_boardsCardText(c).indexOf(q)>-1).map(c=>c.id):[];
+  _boardsFindIdx=0;
+  _boardsApplyFindHighlight();
+  if(_boardsFindHits.length)_boardsFindFocusCurrent();
+}
+function _boardsApplyFindHighlight(){
+  const stage=document.getElementById('board-stage');
+  if(!stage)return;
+  stage.querySelectorAll('.found,.found-current').forEach(el=>el.classList.remove('found','found-current'));
+  _boardsFindHits.forEach((id,i)=>{
+    const el=document.getElementById('board-card-'+id);
+    if(!el)return;
+    el.classList.add('found');
+    if(i===_boardsFindIdx)el.classList.add('found-current');
+  });
+  const cnt=document.getElementById('board-find-count');
+  if(cnt)cnt.textContent=!_boardsFindQuery.trim()?'':(_boardsFindHits.length?(_boardsFindIdx+1)+' / '+_boardsFindHits.length:'no matches');
+}
+window.boardsFindStep=function(d){
+  if(!_boardsFindHits.length)return;
+  _boardsFindIdx=(_boardsFindIdx+d+_boardsFindHits.length)%_boardsFindHits.length;
+  _boardsApplyFindHighlight();
+  _boardsFindFocusCurrent();
+};
+window.boardsFindKey=function(ev){
+  if(ev.key==='Enter'){ev.preventDefault();window.boardsFindStep(ev.shiftKey?-1:1);}
+  else if(ev.key==='Escape'){ev.preventDefault();window.boardsToggleFind();}
+};
+// Pans to the match, deliberately WITHOUT changing zoom: someone searching
+// at 19% is looking at the whole board on purpose, and yanking them to
+// 100% would lose that view.
+function _boardsFindFocusCurrent(){
+  const c=_editCards.find(x=>x.id===_boardsFindHits[_boardsFindIdx]);
+  const b=_editBoard,stage=document.getElementById('board-stage');
+  if(!c||!b||!stage)return;
+  const r=stage.getBoundingClientRect();
+  b.panX=r.width/2-(c.x+c.w/2)*b.zoom;
+  b.panY=r.height/2-(c.y+c.h/2)*b.zoom;
+  _boardsApplyTransform();
+  _boardsSaveDebounced();
+}
+
+// ── Minimap (Stage 4) ──────────────────────────────────────────────────
+// At 19% zoom on a 46-card board, "where am I" is a real question. The map
+// is built from the same cards array, so it can never go stale, and the
+// viewport rectangle is updated by _boardsApplyTransform — i.e. on every
+// pan and zoom, for the cost of setting four style properties.
+window.boardsToggleMinimap=function(){
+  _boardsMinimapOn=!_boardsMinimapOn;
+  try{localStorage.setItem('groovy-boards-minimap',_boardsMinimapOn?'1':'0');}catch(e){}
+  _boardsRenderCanvasAndWire();
+};
+function _boardsContentBounds(){
+  if(!_editCards.length)return null;
+  return{
+    minX:Math.min(..._editCards.map(c=>c.x)),
+    minY:Math.min(..._editCards.map(c=>c.y)),
+    maxX:Math.max(..._editCards.map(c=>c.x+c.w)),
+    maxY:Math.max(..._editCards.map(c=>c.y+c.h))
+  };
+}
+function _boardsRenderMinimap(){
+  const wrap=document.getElementById('board-minimap');
+  const inner=document.getElementById('board-minimap-inner');
+  if(!wrap||!inner)return;
+  const bounds=_boardsContentBounds();
+  if(!bounds){inner.innerHTML='';wrap.__mm=null;return;}
+  const pad=80;
+  const w=(bounds.maxX-bounds.minX)+pad*2,h=(bounds.maxY-bounds.minY)+pad*2;
+  const box=wrap.getBoundingClientRect();
+  const scale=Math.min((box.width||180)/w,(box.height||120)/h);
+  const ox=bounds.minX-pad,oy=bounds.minY-pad;
+  wrap.__mm={scale,ox,oy};
+  inner.innerHTML=_boardsRenderOrder().map(c=>{
+    const x=(c.x-ox)*scale,y=(c.y-oy)*scale;
+    const cw=Math.max(2,c.w*scale),ch=Math.max(2,c.h*scale);
+    const cls='mm-card'+(c.type==='frame'?' mm-frame':'')+(c.type==='image'?' mm-image':'');
+    return`<i class="${cls}" style="left:${x}px;top:${y}px;width:${cw}px;height:${ch}px"></i>`;
+  }).join('');
+  _boardsUpdateMinimapView();
+  _boardsWireMinimap();
+}
+function _boardsUpdateMinimapView(){
+  const wrap=document.getElementById('board-minimap');
+  const view=document.getElementById('board-minimap-view');
+  const stage=document.getElementById('board-stage');
+  const b=_editBoard;
+  if(!wrap||!view||!stage||!b||!wrap.__mm){if(view)view.style.display='none';return;}
+  const mm=wrap.__mm,r=stage.getBoundingClientRect();
+  view.style.display='block';
+  view.style.left=((-b.panX/b.zoom)-mm.ox)*mm.scale+'px';
+  view.style.top=((-b.panY/b.zoom)-mm.oy)*mm.scale+'px';
+  view.style.width=(r.width/b.zoom)*mm.scale+'px';
+  view.style.height=(r.height/b.zoom)*mm.scale+'px';
+}
+function _boardsWireMinimap(){
+  const wrap=document.getElementById('board-minimap');
+  if(!wrap||wrap.__wired)return;
+  wrap.__wired=true;
+  wrap.addEventListener('pointerdown',e=>{
+    e.stopPropagation();   // the stage's own pan handler must not also fire
+    const mm=wrap.__mm,b=_editBoard,stage=document.getElementById('board-stage');
+    if(!mm||!b||!stage)return;
+    const box=wrap.getBoundingClientRect();
+    function go(ev){
+      const sr=stage.getBoundingClientRect();
+      const wx=(ev.clientX-box.left)/mm.scale+mm.ox;
+      const wy=(ev.clientY-box.top)/mm.scale+mm.oy;
+      b.panX=sr.width/2-wx*b.zoom;
+      b.panY=sr.height/2-wy*b.zoom;
+      _boardsApplyTransform();
+    }
+    go(e);
+    try{wrap.setPointerCapture(e.pointerId);}catch(err){}
+    function up(){
+      wrap.removeEventListener('pointermove',go);
+      wrap.removeEventListener('pointerup',up);
+      _boardsSaveDebounced();
+    }
+    wrap.addEventListener('pointermove',go);
+    wrap.addEventListener('pointerup',up);
+  });
+}
 
 // -- save --
 // Transient per-render flags are prefixed with "_" and must never reach

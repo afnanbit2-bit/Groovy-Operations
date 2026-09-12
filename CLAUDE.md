@@ -126,9 +126,10 @@ different network access.
                      Shared/cross-track, like pos.js/gatepass.js.
 /js/boards.js        Mood Boards — Phase 2 of the Notion+Milanote module,
                      reached through the Creative Hub grid in js/notes.js.
-                     Freeform canvas: image/text/link cards, connector
-                     lines, pan/zoom, TEAM or PRIVATE. Loaded after
-                     notes.js. Shared/cross-track.
+                     Freeform canvas: image/text/link/file/to-do/frame/
+                     sub-board cards, connector lines, pan/zoom, find +
+                     minimap, nesting + templates, TEAM or PRIVATE. Loaded
+                     after notes.js. Shared/cross-track.
 ```
 
 Load order is fixed in `index.html`:
@@ -763,6 +764,76 @@ Structure: frames, to-do cards, freeform arrows, colour tags.
 - To-do item text is hydrated with `textContent` after render, exactly
   like text cards and Notes' blocks — same stored-XSS boundary, same rule:
   never interpolate user text into the HTML string.
+
+### Mood Boards — Stage 4 (Sept 2026)
+
+Scale: nesting, search, gallery tools, minimap, templates. This is the
+stage that makes forty boards usable rather than eight.
+
+- **Nesting needs BOTH halves to agree.** A board is treated as nested
+  only when the child doc carries `parentId` *and* the parent board still
+  holds a `board`-type card pointing at it (`_boardsNestedIds`). Fail
+  either test — the link card was deleted, the parent was trashed, the
+  parent isn't readable by this viewer — and the child surfaces back in
+  the gallery at root level. Nothing is written to reconcile that; it is
+  derived on read from boards already in memory. The alternative (clearing
+  `parentId` when a link card is deleted) puts a Firestore write inside an
+  undoable action and leaves an unreachable document whenever any part of
+  it fails. **There is no way to lose a board by deleting a card.**
+  `_boardsAncestors` walks the chain with a visited-set guard — a cycle is
+  only reachable by hand-editing Firestore, but an infinite loop in the
+  topbar render would take the page down.
+- **A sub-board is a card type** (`type:'board'`, holding `boardId`), so
+  it inherits drag/resize/select/undo/lock/delete like frames do. Its
+  title is read **live** from `moodBoards` at render time — renaming a
+  child updates every card pointing at it — with the stored `boardTitle`
+  only a fallback for a board this viewer can't read. Creating one writes
+  two things (the child doc, then the link card), so the save is flushed
+  immediately rather than left to the 900ms debounce.
+- **Back climbs one level** (`boardsBack` → parent board, else the
+  gallery), matching the Notes rule. Breadcrumbs render only on a nested
+  board — on a root board the trail would just repeat the back button.
+- **Duplicate remaps connectors and drops sub-board links.**
+  `_boardsCloneCards` mints new card ids but doesn't report them, so
+  `_boardsDuplicatePayload` builds the id map and rewrites card-bound
+  connectors through it (freeform lines carry world coordinates and need
+  no remapping). Board-link cards are deliberately **not** copied — the
+  alternatives are a copy that shares the original's children or a
+  recursive multi-document copy with its own half-failed states — and the
+  user is told how many were skipped rather than it happening silently.
+- **A template is an ordinary board with `isTemplate:true`** — still
+  openable and editable, just listed in its own gallery section with a
+  "Use template" button that is the duplicate above under a clearer name.
+  No separate collection, no migration.
+- **Search covers card text, not just titles**, and runs over every live
+  board including nested ones — `loadBoardsData` already reads whole
+  documents, so the card text is in memory and this costs nothing extra.
+  `_boardsCardText` is the single definition of "what text is in this
+  card", shared by the gallery search and the in-canvas Find bar so the
+  two can never disagree. Gallery search uses the debounced-input +
+  refocus-after-rerender pattern from `fabInvSetSearch`; the Find bar does
+  **not** rerender at all — it toggles `.found`/`.found-current` classes
+  on existing elements, and jumping between matches **pans without
+  changing zoom** (someone searching at 19% is looking at the whole board
+  on purpose). Ctrl+F is intercepted on the canvas: every card is in the
+  DOM at once, so the native find would "scroll" to a card sitting off in
+  world space where nobody can see it.
+- **The minimap is derived, not a snapshot** — built from the same `cards`
+  array each structural render, so it cannot go stale. The viewport
+  rectangle is updated by `_boardsApplyTransform`, i.e. on every pan and
+  zoom, for the cost of four style writes. Dragging on it pans. On/off is
+  `localStorage`, per-viewer, like the snap preference.
+- **The board "⋯" menu is always in the DOM and only its display is
+  toggled.** A full `_boardsRenderCanvasAndWire()` to open a menu would
+  rebuild every card and redraw every connector on a 46-card board just to
+  show five buttons. Its outside-click closer is registered once at load,
+  like the paste/keydown handlers — a listener added during render would
+  pile up, since the canvas DOM is replaced each time.
+- **Recently-opened lives in `localStorage`** (`groovy-boards-recent`),
+  never on the doc: it is about this person on this device, and storing it
+  on the board would mean a write on every open and everyone's history
+  overwriting everyone else's. The strip hides itself below two entries —
+  a shortcut list of one is noise.
 
 ## Shopify Inventory Intelligence
 
