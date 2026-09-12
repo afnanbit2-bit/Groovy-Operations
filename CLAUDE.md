@@ -60,6 +60,20 @@ reachable. To verify RTDB rules actually took effect, use Firebase Console
 unauthenticated read) and have the human report the result.
 `api.github.com` and `firestore.googleapis.com` **are** reachable.
 
+**Also blocked (verified Sept 2026, via both `curl` and a headless Chromium
+launch — `CONNECT tunnel failed, response 403` on all three):**
+`www.gstatic.com`, `cdnjs.cloudflare.com`, `cdn.jsdelivr.net`. This means
+the app **cannot actually boot in a browser from this sandbox at all** —
+the Firebase modular SDK loads from `gstatic.com` and jsPDF/SheetJS/
+JsBarcode from the other two, so even an unauthenticated page load never
+gets past the login screen's static HTML; `window.__bootApp()` never runs.
+A "verify in a browser" step for any UI change therefore is not possible
+from this sandbox — say so explicitly rather than skip the caveat, and
+rely on `node --check` for syntax, a local `python3 -m http.server` +
+`curl` for static-file serving, and manual trace-through for logic. Real
+UI verification needs the human, a Netlify preview, or a session with
+different network access.
+
 ## File architecture (split from the old single `index.html`)
 
 ```
