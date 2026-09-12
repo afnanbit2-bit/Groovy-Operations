@@ -53,7 +53,8 @@ const PRINT_COLORS = {
   greyLine: '#CCCCCC',
   greyShade: '#F4F4F4',
   greyShadeLight: '#F9F9F9',
-  white: '#FFFFFF'
+  white: '#FFFFFF',
+  red: '#DC2626'   // PO notes — always rendered in this color, never the default text color
 };
 const PRINT_FONTS = {
   bodyRegular: 'Aptos',
@@ -1550,6 +1551,24 @@ function _renderPO(doc, data) {
     try { doc.addImage(im.dataUrl, im.fmt || 'JPEG', ox, gy0, dw, dh); } catch (e) { /* skip */ }
   }
   doc.__groovyY = gy;
+
+  // NOTES — free text from PO creation (renderPOCreate() in js/pos.js, saved
+  // as po.notes). Always rendered in PRINT_COLORS.red so it stands out on
+  // the printed traveler to every station handling this PO, never the
+  // default body text color.
+  if (data.notes) {
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.red);
+    const label = 'Notes: ';
+    const labelW = doc.getTextWidth(label) + 2;
+    const wrapped = doc.splitTextToSize(String(data.notes), W - labelW);
+    const lineH = PRINT_SIZES.bodySmall * 1.15;
+    need(12 + wrapped.length * lineH + 6);
+    const notesY0 = doc.__groovyY + 12;
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.red);
+    doc.text(label, L, notesY0);
+    doc.text(wrapped, L + labelW, notesY0);
+    doc.__groovyY = notesY0 + (wrapped.length - 1) * lineH + 6;
+  }
 
   // STATION — CUTTING + BUNDLING
   _renderSectionHeader(doc, { titleEn: 'Cutting + Bundling', titleUr: 'بنڈلنگ اور ٹرانسپورٹیشن', ownerName: 'Raees' });
