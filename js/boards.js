@@ -202,7 +202,7 @@ function _boardCardHTML(c,canEdit){
   if(c.type==='image'){
     body=c.imageUrl
       ?`<img src="${_boardsEsc(c.imageUrl)}" style="width:100%;height:100%;object-fit:cover;display:block">`
-      :canEdit?`<div class="board-card-empty"><input type="file" accept="image/*" onchange="window.boardsUploadImage('${c.id}',this)" style="font-size:11px"></div>`
+      :canEdit?`<label class="board-card-empty" for="board-file-${c.id}">Click, or paste an image (Ctrl+V)<input type="file" id="board-file-${c.id}" accept="image/*" onchange="window.boardsUploadImage('${c.id}',this)" style="display:none"></label>`
               :`<div class="board-card-empty">No image</div>`;
     body=`<div class="board-card-body" style="padding:0">${body}</div>`;
   }else if(c.type==='link'){
@@ -222,7 +222,7 @@ function _boardCardHTML(c,canEdit){
   }
   const kind=c.type==='image'?'Image':c.type==='link'?'Link':'Note';
   const sel=c.id===_boardsSelectedCardId?' selected':'';
-  return`<div class="board-card-el${sel}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px">
+  return`<div class="board-card-el${sel}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px" onclick="window.boardsSelectCard('${c.id}')">
     <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''}>
       <span class="board-card-kind">${kind}</span>
       ${canEdit?`<button class="board-card-del" onclick="window.boardsDeleteCard('${c.id}')" title="Delete">✕</button>`:''}
@@ -306,6 +306,7 @@ function _boardsSelectCard(id){
   _boardsSelectedCardId=id;
   document.querySelectorAll('.board-card-el').forEach(el=>el.classList.toggle('selected',el.dataset.id===id));
 }
+window.boardsSelectCard=function(id){_boardsSelectCard(id);};
 
 // -- connectors --
 function _boardCardCenter(c){return{x:c.x+c.w/2,y:c.y+c.h/2};}
@@ -364,14 +365,47 @@ window.boardsLinkInput=function(id,field,val){const c=_editCards.find(x=>x.id===
 window.boardsUploadImage=async function(id,inputEl){
   const file=inputEl.files&&inputEl.files[0];
   if(!file)return;
+  await _boardsUploadFileToCard(id,file);
+};
+async function _boardsUploadFileToCard(cardId,file){
   try{
     const url=await uploadToCloudinary(file);
-    const c=_editCards.find(x=>x.id===id);if(!c)return;
+    const c=_editCards.find(x=>x.id===cardId);if(!c)return;
     c.imageUrl=url;
     _boardsRenderCanvasAndWire();
     _boardsSaveNow();
   }catch(e){showToast('Image upload failed: '+(e.message||e),true);}
-};
+}
+
+// Paste-to-add: Ctrl+V while a board is open, with an image on the
+// clipboard, either fills the currently-selected empty image card or
+// creates a new one — matches Milanote's actual paste behaviour rather
+// than requiring the file picker every time. Registered once at load
+// (not per-render) and self-gates on currentPage/_editBoard, so it never
+// stacks duplicate listeners across board visits. Only intercepts when the
+// clipboard genuinely has an image — otherwise falls through to normal
+// text paste (e.g. into a text card or a link card's fields).
+function _boardsOnPaste(e){
+  if(currentPage!=='board-canvas'||!_editBoard||!_boardsCanEdit(_editBoard))return;
+  const items=(e.clipboardData&&e.clipboardData.items)||[];
+  let imageFile=null;
+  for(const item of items){
+    if(item.type&&item.type.indexOf('image')===0){imageFile=item.getAsFile();break;}
+  }
+  if(!imageFile)return;
+  e.preventDefault();
+  let card=_editCards.find(c=>c.id===_boardsSelectedCardId&&c.type==='image'&&!c.imageUrl);
+  if(!card){
+    const b=_editBoard;
+    card=_boardsNewCard('image');
+    card.x=Math.max(20,60-b.panX/b.zoom+80);
+    card.y=Math.max(20,60-b.panY/b.zoom+80);
+    _editCards.push(card);
+    _boardsRenderCanvasAndWire();
+  }
+  _boardsUploadFileToCard(card.id,imageFile).then(()=>showToast('Image pasted'));
+}
+document.addEventListener('paste',_boardsOnPaste);
 window.boardsAddCard=function(type){
   const b=_editBoard;if(!b)return;
   const nc=_boardsNewCard(type);

@@ -496,7 +496,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .board-card-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:0 2px}
 .board-card-del:hover{color:var(--accent-urgent)}
 .board-card-body{flex:1;min-height:0;overflow:hidden;position:relative;font-size:12.5px}
-.board-card-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:11px;padding:6px}
+.board-card-empty{display:flex;align-items:center;justify-content:center;height:100%;width:100%;box-sizing:border-box;color:var(--muted);font-size:11px;line-height:1.4;text-align:center;padding:10px;cursor:pointer}
+.board-card-empty:hover{background:var(--soft);color:var(--text)}
 .board-text-body{padding:9px 10px;line-height:1.5;outline:none;overflow:auto}
 .board-text-body:empty:before{content:attr(data-placeholder);color:var(--muted)}
 .board-link-edit{display:flex;flex-direction:column;gap:5px;padding:8px}
