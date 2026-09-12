@@ -8,7 +8,7 @@
  * Bump CACHE_VERSION on every deploy that changes a precached file; the
  * activate handler deletes every cache from a prior version.
  */
-const CACHE_VERSION = 'v31';
+const CACHE_VERSION = 'v32';
 const STATIC_CACHE = `groovy-ops-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `groovy-ops-runtime-${CACHE_VERSION}`;
 // Deliberately NOT version-scoped: a Cloudinary delivery URL is immutable
@@ -44,6 +44,7 @@ const PRECACHE_URLS = [
   '/js/fulfillment.js',
   '/js/notes.js',
   '/js/boards.js',
+  '/js/profile.js',
   '/js/activity.js',
   '/assets/icons/icon-192.png',
   '/assets/icons/icon-512.png',

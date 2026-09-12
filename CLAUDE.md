@@ -118,6 +118,11 @@ different network access.
                      the scoped `fulfillment` role (Umair). Per-day PDF via
                      the print engine `daily-performance` variant
                      (window.fulfillPdf).
+/js/profile.js       Profile — one page per signed-in person (photo, chosen
+                     display name, job title, department, about) plus a team
+                     directory. Firestore `user_profiles/{uid}`. Reached from
+                     the topbar avatar, not the nav. NOTHING SENSITIVE lives
+                     here — see "Profiles" below. Loaded after boards.js.
 /js/activity.js      activity log loader.
 /js/notes.js         Creative Hub / Notes — Phase 1 of the Notion+Milanote
                      module (see "Creative Hub / Notes module" below). Hub
@@ -134,7 +139,7 @@ different network access.
 
 Load order is fixed in `index.html`:
 `shared → print-engine → auth → pos → embellishments → hrm → store →
-gatepass → notes → boards → activity`, then the bootstrap module. All
+gatepass → notes → boards → profile → activity`, then the bootstrap module. All
 `/js/*.js` are **plain global classic
 scripts — no `import`/`export`**. They share one global lexical scope, so
 top-level `let/const` are visible across files (declared exactly once);
@@ -1354,6 +1359,64 @@ for as long as the page stayed open. Now a failure is recorded in
 from overlapping. Note this hit `_gvProgStart/Stop` (the top progress bar),
 **not** the blocking "Saving…" overlay — it is not the stuck-overlay
 suspect recorded under the Monitor section.
+
+## Profiles (Sept 2026)
+
+Afnan asked for "a general Profile for each login where people can add their
+picture, change name, add document info such as CNIC number, emergency
+number, full address, as everyone I want to assign Groovy Ops to should have
+this basic respect for data entry."
+
+**The second half was raised as a problem and dropped by agreement.**
+`user_profiles` is readable by every signed-in user, so a CNIC, a home
+address or a next-of-kin number put there would be readable by every worker
+with an account — a directory, not a record. Identity documents belong in
+the HRM `employees` records, behind the owner/manager gates that already
+exist. **Do not add those fields here later without moving the collection
+behind a per-person read rule first.** The edit form says so on screen, in
+the box, because a free-form "About" field is exactly where someone will
+type their CNIC if nothing tells them not to.
+
+What a profile holds: `photoUrl`, `displayName`, `jobTitle`, `department`,
+`about` — plus `uid`, `username`, `updatedAt`.
+
+- **Keyed by Firebase uid, never by username.** A username is a display-layer
+  thing in `USER_DEFS`; the uid is the only stable identity, and it is what
+  the rule checks. `firestore.rules`: read `if signedIn()`, create/update
+  only when **the document id IS the caller's uid AND the payload's `uid`
+  agrees with it** (so nobody can write a profile for someone else, or claim
+  another uid inside their own), delete `if isOwner()` for moderation —
+  the fabricin/loans pattern.
+- **A stored photo URL is never trusted.** `_profPhotoUrl` accepts only an
+  `https://res.cloudinary.com/…` URL and nothing else, because that string
+  goes into an `<img src>`. Note the host test is anchored — a lookalike
+  like `res.cloudinary.com.evil.test` is refused. Avatars request a sized
+  `c_fill,g_face` derivative (`_profAvatarUrl`), the same trick
+  `_boardsDisplayUrl` uses; the stored URL is never rewritten.
+- **User text is hydrated with `textContent`** (`_profileHydrate`) after the
+  structure renders — same stored-XSS boundary as Notes' blocks, board cards
+  and board comments. A display name and an "about" line are written by one
+  person and read by every other one.
+- **`loadProfiles()` cannot reject**, per the rule under "Loading must never
+  hang" — `renderPage` dispatches it with no `.catch`. A denied read renders
+  an honest error card with Retry that names `firestore.rules`.
+- **The directory lists every `USER_DEFS` account**, not only those who made
+  a profile. A directory that lists only the keen is not a directory.
+- **Reached from a topbar avatar**, not a nav item — it is for everyone
+  regardless of role, and the topbar is the one surface every role sees.
+  `_profilePaintAvatar` repaints it; `profileBootstrap()` is awaited in
+  `startApp` (js/auth.js) so `session.name` is settled before the first
+  render rather than changing under the user a moment later.
+
+**A chosen display name has one knock-on, and it is handled.** `session.name`
+is what `logActivity`, board presence and board comments all write, so a
+rename follows the person everywhere — including into the `activity`
+collection, where **Monitor tiers people by matching `a.user` against
+`USER_DEFS` names**. A renamed owner would have silently dropped into
+"Everyone else". So `logActivity` (`js/shared.js`, a **cross-track file** —
+this was a one-field additive change) now also writes `u: session.u`, and
+`_monitorRoleTier(name, username)` prefers the username when the row carries
+one, falling back to name-matching for every row written before this.
 
 ## Shopify Inventory Intelligence
 

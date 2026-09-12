@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Groovy Operations v2</title>
-<link rel="stylesheet" href="/css/main.css?v=20260912s14">
+<link rel="stylesheet" href="/css/main.css?v=20260912s15">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#000000">
 <link rel="apple-touch-icon" href="/assets/icons/icon-192.png">
@@ -50,6 +50,7 @@ if('serviceWorker' in navigator){
   <div class="topbar">
     <div class="topbar-logo" onclick="window.showPage('dashboard')" style="cursor:pointer"><div class="brand-strip"><img src="assets/groovy-operations-wordmark.png.png" alt="GROOVY Operations v2" class="brand-wordmark" onerror="this.style.display='none';this.nextElementSibling.style.display='inline';"/><span class="brand-fallback">GROOVY OPERATIONS</span><span class="brand-version">v2</span></div></div>
     <div class="topbar-user">
+      <button class="topbar-avatar" id="topbar-avatar" onclick="window.showPage('profile')" title="Your profile"></button>
       <div><div class="topbar-name" id="user-name"></div><div style="font-size:10px" id="user-title"></div></div>
       <button class="btn-logout" onclick="window.openChangePasswordModal()" title="Change your password">Change password</button>
       <button class="btn-logout" onclick="window.doLogout()">Sign out</button>
@@ -76,9 +77,9 @@ if('serviceWorker' in navigator){
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
-<script src="/js/shared.js?v=20260912a"></script>
+<script src="/js/shared.js?v=20260912s15"></script>
 <script src="/js/print-engine.js?v=20260912s5"></script>
-<script src="/js/auth.js?v=20260627b"></script>
+<script src="/js/auth.js?v=20260912s15"></script>
 <script src="/js/pos.js?v=20260627b"></script>
 <script src="/js/embellishments.js?v=20260627b"></script>
 <script src="/js/hrm.js?v=20260627b"></script>
@@ -90,8 +91,9 @@ if('serviceWorker' in navigator){
 <script src="/js/shopify.js?v=20260627b"></script>
 <script src="/js/fulfillment.js?v=20260627b"></script>
 <script src="/js/notes.js?v=20260912s6b"></script>
-<script src="/js/boards.js?v=20260912s14"></script>
-<script src="/js/activity.js?v=20260627b"></script>
+<script src="/js/boards.js?v=20260912s15"></script>
+<script src="/js/profile.js?v=20260912s15"></script>
+<script src="/js/activity.js?v=20260912s15"></script>
 <script type="module">
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import{initializeFirestore,persistentLocalCache,persistentMultipleTabManager,getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch,onSnapshot}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';

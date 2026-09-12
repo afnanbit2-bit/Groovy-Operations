@@ -134,8 +134,13 @@ function _monitorRangeItems(){
   const[from,to]=_monitorRangeMs();
   return _monitorItems.filter(a=>a.ts>=from&&a.ts<=to);
 }
-function _monitorRoleTier(name){
-  const u=(typeof USER_DEFS!=='undefined'?USER_DEFS:[]).find(x=>x.name===name);
+// `username` is passed when the activity rows for this person carry one
+// (written since Profiles shipped). Matching on it survives someone
+// changing their display name; matching on the name alone does not, and
+// would quietly drop a renamed owner into "Everyone else".
+function _monitorRoleTier(name,username){
+  const defs=(typeof USER_DEFS!=='undefined'?USER_DEFS:[]);
+  const u=(username?defs.find(x=>x.u===username):null)||defs.find(x=>x.name===name);
   if(!u)return 2;
   if(u.role==='owner')return 0;
   if(u.role==='manager')return 1;
@@ -223,13 +228,17 @@ function _monitorOverviewHTML(rangeItems){
 
   let people=[...byUser.entries()];
   if(q)people=people.filter(([name])=>name.toLowerCase().includes(q));
+  // A person's rows are grouped by display name; the username comes off
+  // whichever of their rows carries one (every row written since Profiles
+  // shipped does), so a rename doesn't move them out of their tier.
+  const tierOf=entry=>_monitorRoleTier(entry[0],(entry[1].find(a=>a&&a.u)||{}).u);
   people.sort((x,y)=>{
-    const t=_monitorRoleTier(x[0])-_monitorRoleTier(y[0]);
+    const t=tierOf(x)-tierOf(y);
     if(t!==0)return t;
     return(y[1][0]?.ts||0)-(x[1][0]?.ts||0);
   });
   const tiers=[[],[],[]];
-  for(const p of people)tiers[_monitorRoleTier(p[0])].push(p);
+  for(const p of people)tiers[tierOf(p)].push(p);
 
   const cardHTML=([name,actions])=>{
     const catCounts=new Map();

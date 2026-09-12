@@ -212,6 +212,23 @@ service cloud.firestore {
     // js/notes.js filter on exactly `visibility` or `ownerUid` so every list
     // query is provably safe under these rules without needing a composite
     // index or a broader query Firestore would reject.
+    // ── User profiles (Sept 2026) ──────────────────────────────────────
+    // One doc per Firebase uid: photo, chosen display name, job title,
+    // department, a short "about". Readable by every signed-in user, which
+    // is exactly why NO identity or contact data goes in here — CNIC,
+    // address and next-of-kin were asked for and deliberately left out;
+    // they belong in `employees`, behind the owner/manager gates above.
+    // Writable only by the person themselves: the document id IS their
+    // uid, and the payload must agree with it, so nobody can write a
+    // profile for someone else or claim another uid inside their own.
+    // Owners keep delete for moderation, matching the fabricin/loans
+    // pattern elsewhere in this file. See js/profile.js.
+    match /user_profiles/{uid} {
+      allow read:          if signedIn();
+      allow create, update: if signedIn() && uid == request.auth.uid
+                            && request.resource.data.uid == request.auth.uid;
+      allow delete:        if isOwner();
+    }
     match /notes_pages/{doc} {
       allow read:   if signedIn() && (resource.data.visibility=='shared' || resource.data.ownerUid==request.auth.uid);
       allow create: if signedIn() && request.resource.data.ownerUid==request.auth.uid;

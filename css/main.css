@@ -699,6 +699,32 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 @keyframes boardLinked{0%,100%{outline-color:var(--accent-success)}50%{outline-color:transparent}}
 
 /* Minimap */
+/* Profile (js/profile.js) — photo, chosen name, job title, department,
+   about. Nothing sensitive lives here; see the file header. */
+.topbar-avatar{width:32px;height:32px;border-radius:50%;border:1px solid var(--border);background:var(--soft);color:var(--muted);font-weight:700;font-size:13px;cursor:pointer;overflow:hidden;padding:0;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:inherit}
+.topbar-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.profile-card{max-width:640px}
+.profile-head{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.profile-photo{width:88px;height:88px;border-radius:50%;object-fit:cover;border:1px solid var(--border);flex-shrink:0;display:block}
+.profile-photo-empty{display:flex;align-items:center;justify-content:center;background:var(--soft);color:var(--muted);font-size:30px;font-weight:700}
+.profile-photo-pick{position:relative;cursor:pointer;flex-shrink:0;display:block}
+.profile-photo-hint{display:block;text-align:center;font-size:10.5px;color:var(--muted);margin-top:5px}
+.profile-id{min-width:0}
+.profile-name{font-size:20px;font-weight:700;line-height:1.2;word-break:break-word}
+.profile-sub{font-size:12.5px;color:var(--muted);margin-top:3px}
+.profile-about{margin-top:14px;font-size:13.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+.profile-about:empty{display:none}
+.profile-label{display:block;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+.profile-input{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--bg);color:var(--text);outline:none;resize:vertical}
+.profile-input:focus{border-color:var(--text)}
+.profile-hint{font-size:11px;color:var(--muted);margin-top:4px}
+.profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+.profile-warn{margin-top:14px;padding:11px 12px;border:1px solid var(--accent-warning);background:var(--accent-warning-soft);border-radius:9px;font-size:12px;line-height:1.5;color:var(--text)}
+.profile-dir{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.profile-dir-row{display:flex;align-items:center;gap:10px;padding:9px;border:1px solid var(--border);border-radius:10px;min-width:0}
+.profile-dir-photo{width:38px;height:38px;border-radius:50%;object-fit:cover;border:1px solid var(--border);flex-shrink:0;font-size:14px}
+.profile-dir-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile-dir-sub{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Board identity — a coloured tile with an icon, the way a Milanote
    gallery is actually read. Both fields are optional; without them the
    tile is neutral and carries the title's first letter. */
@@ -852,6 +878,8 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
   .board-crumbs{max-width:100%}
   .board-minimap{width:104px;height:72px;left:10px;right:auto;bottom:80px}
   .board-find{left:14px;right:14px}
+  .profile-grid{grid-template-columns:1fr}
+  .profile-dir{grid-template-columns:1fr}
   .board-zoom-pill{bottom:84px}
   .board-fmt{position:fixed;left:0;right:0;bottom:0;bottom:env(safe-area-inset-bottom,0);transform:none;border-radius:0;border-left:none;border-right:none;border-bottom:none;max-width:none;padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
   .board-fmt-row{justify-content:space-between}

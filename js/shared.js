@@ -614,7 +614,12 @@ window._gvSilentSaveStart=_gvSilentSaveStart;window._gvSilentSaveStop=_gvSilentS
 
 async function logActivity(action,detail=''){
   if(!session)return;
-  try{await addDoc(collection(db,'activity'),{user:session.name,role:session.title,action,detail,ts:Date.now(),date:new Date().toLocaleDateString('en-GB')});}catch(e){}
+  // `u` (the username) is written alongside the display name because a
+  // display name is now something a person can change on their Profile —
+  // Monitor tiers people by matching a.user against USER_DEFS, and a rename
+  // would silently drop someone into "Everyone else". Rows written before
+  // this have no `u` and Monitor still falls back to matching by name.
+  try{await addDoc(collection(db,'activity'),{user:session.name,u:session.u,role:session.title,action,detail,ts:Date.now(),date:new Date().toLocaleDateString('en-GB')});}catch(e){}
 }
 
 async function getNextId(field){
@@ -1072,6 +1077,7 @@ function renderPage(id){
     if(!bugsLoaded){m.innerHTML=gvSkeleton(6);loadBugReports().then(()=>{if(currentPage===id)m.innerHTML=renderBugTrackerPage();}).catch(e=>{if(currentPage===id)m.innerHTML='<div class="empty">Could not load bug reports: '+(e.message||'permission denied')+'</div>';});}
     else m.innerHTML=renderBugTrackerPage();
   }
+  else if(id==='profile'){if(!profilesLoaded){m.innerHTML=gvSkeleton(3);loadProfiles().then(()=>{if(currentPage===id){m.innerHTML=renderProfilePage();_profileHydrate();}});}else{m.innerHTML=renderProfilePage();_profileHydrate();}}
   else if(id==='creative-hub')m.innerHTML=renderCreativeHub();
   else if(id==='notes'){if(!notesLoaded){m.innerHTML=gvSkeleton(6);loadNotesData().then(()=>{if(currentPage===id)m.innerHTML=renderNotesPage();});}else m.innerHTML=renderNotesPage();}
   else if(id==='note-detail'){_notesOpenDetail();return;}

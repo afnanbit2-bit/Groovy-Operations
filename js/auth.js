@@ -86,6 +86,11 @@ async function startApp(){
   document.getElementById('user-name').textContent=session.name;
   document.getElementById('user-title').textContent=session.title;
   sessionStorage.setItem('u',session.u);
+  // Whatever name and photo this person chose on their Profile. Awaited
+  // because session.name is what buildNav, logActivity, board presence and
+  // comments all write — picking it up after the first render would show
+  // the USER_DEFS name for a moment and then change it under them.
+  if(typeof profileBootstrap==='function'){try{await profileBootstrap();}catch(_){}}
   // Inject the notification bell for everyone (HRM notifs are routed by user/role).
   if(typeof _ensureNotifBell==='function')_ensureNotifBell();
   // Show the bug-report FAB for every signed-in user
