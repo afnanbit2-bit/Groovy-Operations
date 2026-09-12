@@ -1038,6 +1038,45 @@ labels, reactions, and the contextual left rail that changes with the
 selected element type. Our equivalent of that rail today is the floating
 selection bar; see the note in Stage 2.
 
+### The rail, headings and captions (Sept 2026)
+
+Built from Afnan's Milanote screenshots, where a left rail holds the
+add-tools and turns into per-element actions (Color / Labels / Comment /
+Preview / Rename / Caption) the moment something is selected.
+
+- **One rail, two modes** (`_boardsRenderRail`) — add-tools when nothing is
+  selected, per-type actions when something is. It **replaced both** the
+  floating selection bar and the bottom "+ card" strip: two surfaces for
+  the same actions had started to duplicate each other.
+- **The rail and the right-click menu dispatch through the SAME action
+  router** (`_boardsCtxRun`). Adding an action in one place gives it to
+  both, and they cannot drift apart — which is exactly how the old
+  selection bar and add strip ended up inconsistent.
+- The rail's host survives `innerHTML` swaps, so its listeners are wired
+  once behind a `__wired` flag. Its `pointerdown` is stopped from reaching
+  the stage — otherwise clicking the rail would start a pan and clear the
+  very selection you are acting on.
+- Icons are **local to `js/boards.js`** (`_BOARDS_ICONS`/`_boardsIcon`),
+  not added to `_icon()` in `js/shared.js` — that file is cross-track and
+  none of these are wanted elsewhere.
+- On a phone the rail docks to the bottom and scrolls sideways.
+
+**Heading cards** (`type:'heading'`) are the section banners Afnan's real
+board is organised by — dark full-bleed bar, centred bold text, tintable
+with the colour swatches. Its drag strip fades in on hover only, so it
+reads as a banner rather than another card. Text is hydrated with
+`textContent` like every other user string.
+
+**Captions** (`c.caption`) sit under an image or file card, separate from
+the file's own name. The field only exists once `caption != null`, so an
+untouched card stays clean; the rail's Caption button creates and focuses
+it. Captions are included in `_boardsCardText`, so search finds them, and
+drawn into the PNG/PDF export.
+
+Also fixed here: `_boardsPaintSelection` only repainted `.board-card-el`,
+so marquee-selecting a **frame** left it unhighlighted until the next full
+render.
+
 ### Loading must never hang (Sept 2026 — found in QA)
 
 `js/shared.js`'s `renderPage` dispatches these pages as

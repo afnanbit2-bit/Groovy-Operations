@@ -572,13 +572,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .board-stage.line-mode{cursor:crosshair}
 .board-conn-layer{color:var(--muted)}
 .board-conn-layer line.free{stroke:var(--text)}
-.board-add-menu button.on{background:var(--dark);color:#fff}
 .board-marquee{position:absolute;display:none;border:1px solid var(--text);background:rgba(17,17,17,.07);pointer-events:none;z-index:25}
 .board-guide{position:absolute;display:none;background:var(--accent-urgent);pointer-events:none;z-index:5}
 .board-guide-v{top:-4000px;height:9000px;width:1px}
 .board-guide-h{left:-4000px;width:9000px;height:1px}
-.board-selection-bar{position:absolute;top:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px 8px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.1);z-index:26;flex-wrap:wrap;max-width:calc(100% - 28px)}
-.board-sel-count{font-size:11.5px;font-weight:700;color:var(--muted);padding:0 4px;white-space:nowrap}
+/* ── The rail — add-tools when nothing is selected, per-type actions when
+   something is. Replaces the old floating selection bar and the bottom
+   "+ card" strip (one surface, one action vocabulary). ── */
+.board-rail{position:absolute;left:14px;top:50%;transform:translateY(-50%);z-index:26;display:flex;flex-direction:column;gap:2px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:6px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.12);max-height:calc(100% - 40px);overflow:auto}
+.rail-btn{display:flex;flex-direction:column;align-items:center;gap:3px;width:58px;padding:7px 2px;background:none;border:none;border-radius:9px;cursor:pointer;color:var(--text);font-family:inherit;font-size:9.5px;font-weight:600;letter-spacing:.02em}
+.rail-btn svg{width:17px;height:17px;fill:currentColor}
+.rail-btn:hover{background:var(--soft)}
+.rail-btn.on{background:var(--dark);color:#fff}
+.rail-btn.danger{color:var(--accent-urgent)}
+.rail-btn span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.rail-sep{height:1px;background:var(--border);margin:4px 6px}
+.rail-swatches{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;padding:6px 8px 8px;justify-items:center}
+.rail-count{font-size:10px;font-weight:700;color:var(--muted);text-align:center;padding:4px 0 2px}
 .tool-btn.on{background:var(--dark);color:#fff;border-color:var(--dark)}
 .board-card-el.locked{opacity:.92}
 .board-card-el.locked .board-card-head{cursor:default;background:var(--accent-warning-soft)}
@@ -590,9 +600,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .board-trash-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;border-bottom:1px solid var(--border)}
 .board-trash-row:last-child{border-bottom:none}
 .tool-btn:disabled{opacity:.4;cursor:not-allowed}
-.board-add-menu{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;max-width:calc(100% - 28px);gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.08);z-index:20}
-.board-add-menu button{background:none;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text);font-family:inherit}
-.board-add-menu button:hover{background:var(--soft)}
+/* Heading cards — the section banners Afnan's real board is organised by */
+.board-card-el.type-heading{border:none;box-shadow:0 1px 2px rgba(0,0,0,.06),0 4px 12px rgba(0,0,0,.10)}
+.board-card-el.type-heading .board-card-head{position:absolute;left:0;right:0;top:0;background:rgba(255,255,255,.14);border-bottom:none;opacity:0;transition:opacity .12s;z-index:2}
+.board-card-el.type-heading:hover .board-card-head,.board-card-el.type-heading.selected .board-card-head{opacity:1}
+.board-card-el.type-heading .board-card-kind,.board-card-el.type-heading .board-card-del{color:#fff}
+.board-heading-body{background:var(--dark);color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 16px;font-size:15px;font-weight:700;letter-spacing:.03em;line-height:1.25;outline:none;overflow:hidden}
+.board-heading-body:empty:before{content:attr(data-placeholder);color:rgba(255,255,255,.55)}
+.board-card-el.type-heading.tint-red .board-heading-body{background:var(--accent-urgent)}
+.board-card-el.type-heading.tint-amber .board-heading-body{background:var(--accent-warning)}
+.board-card-el.type-heading.tint-green .board-heading-body{background:var(--accent-success)}
+.board-card-el.type-heading.tint-blue .board-heading-body{background:var(--cat-notes)}
+.board-card-el.type-heading.tint-purple .board-heading-body{background:var(--cat-boards)}
+
+/* Captions — under an image or file, separate from the file's own name */
+.board-caption{flex-shrink:0;font-size:11px;line-height:1.4;color:var(--muted);padding:5px 9px;border-top:1px solid var(--border);outline:none;background:var(--surface);word-break:break-word}
+.board-caption:empty:before{content:attr(data-placeholder);color:var(--muted);opacity:.7}
 
 /* ── Mood Boards — Stage 4: nesting, search, gallery tools, minimap ── */
 .board-gallery-bar{display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
@@ -707,6 +730,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 @media (max-width:560px){
   .board-topbar #board-title-input{max-width:120px}
   .board-drawer{width:100%;max-width:100%}
+  /* the rail docks to the bottom and scrolls sideways on a phone */
+  .board-rail{left:10px;right:10px;top:auto;bottom:12px;transform:none;flex-direction:row;max-height:none;overflow-x:auto;overflow-y:hidden;align-items:center}
+  .rail-sep{width:1px;height:26px;margin:0 4px}
+  .rail-swatches{grid-template-columns:repeat(6,1fr);padding:0 6px;gap:6px}
+  .rail-btn{width:54px;flex-shrink:0}
+  .rail-count{padding:0 6px}
   .board-gallery-grid{grid-template-columns:1fr 1fr}
   .board-crumbs{max-width:100%}
   .board-minimap{width:120px;height:84px;bottom:136px}

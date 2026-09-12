@@ -96,14 +96,15 @@ function _boardsCanEdit(b){
 }
 function _boardsNewCard(type){
   const id='c'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
-  const w=type==='frame'?440:type==='text'?220:type==='todo'?240:type==='file'?200:type==='board'?200:170;
-  const h=type==='frame'?320:type==='image'?120:type==='link'?120:type==='file'?110:type==='todo'?170:type==='board'?104:100;
+  const w=type==='frame'?440:type==='heading'?440:type==='text'?220:type==='todo'?240:type==='file'?200:type==='board'?200:170;
+  const h=type==='frame'?320:type==='heading'?58:type==='image'?120:type==='link'?120:type==='file'?110:type==='todo'?170:type==='board'?104:100;
   const base={id,type,x:80,y:80,w,h};
   if(type==='image')base.imageUrl='';
   if(type==='text')base.text='';
   if(type==='link'){base.linkUrl='';base.linkTitle='';base.linkDesc='';}
   if(type==='file'){base.fileUrl='';base.fileName='';base.fileSize=0;}
   if(type==='frame')base.title='';
+  if(type==='heading')base.text='';
   if(type==='todo')base.items=[{text:'',done:false}];
   if(type==='board'){base.boardId='';base.boardTitle='';}
   // Provenance, shown in the right-click menu. Cards created before this
@@ -238,6 +239,7 @@ function _boardsCardText(c){
   if(c.linkDesc)parts.push(c.linkDesc);
   if(c.linkUrl)parts.push(c.linkUrl);
   if(c.fileName)parts.push(c.fileName);
+  if(c.caption)parts.push(c.caption);
   if(c.boardTitle)parts.push(c.boardTitle);
   if(Array.isArray(c.items))c.items.forEach(i=>{if(i&&i.text)parts.push(i.text);});
   return parts.join(' ').toLowerCase();
@@ -581,6 +583,7 @@ function _boardMiniCardHTML(c){
   if(c.type==='image')return c.imageUrl?`<div style="${base}"><img src="${_boardsEsc(c.imageUrl)}" style="width:100%;height:100%;object-fit:cover"></div>`:`<div style="${base};background:var(--soft)"></div>`;
   if(c.type==='link'||c.type==='file')return`<div style="${base};background:var(--soft)"></div>`;
   if(c.type==='board')return`<div style="${base};background:var(--soft);border-style:dashed"></div>`;
+  if(c.type==='heading')return`<div style="${base};background:var(--dark)"></div>`;
   return`<div style="${base};background:#fff"></div>`;
 }
 // One place that knows the shape of a board document — used by the plain
@@ -780,7 +783,7 @@ function _boardsRenderCanvasAndWire(){
   _boardsDrawConnectors();
   _boardsWireStagePan();
   _boardsSyncHistoryButtons();
-  _boardsRenderSelectionBar();
+  _boardsRenderRail();
   _boardsRenderMinimap();
   _boardsApplyFindHighlight();
   _boardsSyncMenu();
@@ -858,18 +861,8 @@ function _renderBoardCanvasHTML(){
         <button class="tool-btn" onclick="window.boardsToggleFind()" title="Close">✕</button>
       </div>`:''}
       ${_boardsMinimapOn?`<div class="board-minimap" id="board-minimap"><div class="board-minimap-inner" id="board-minimap-inner"></div><div class="board-minimap-view" id="board-minimap-view"></div></div>`:''}
-      ${canEdit?'<div class="board-selection-bar" id="board-selection-bar" style="display:none"></div>':''}
       ${canEdit?'<div class="board-dropzone" id="board-dropzone"><div>Drop files to add them to this board</div></div>':''}
-      ${canEdit?`<div class="board-add-menu">
-        <button onclick="window.boardsAddCard('image')">+ Image</button>
-        <button onclick="window.boardsAddCard('text')">+ Text</button>
-        <button onclick="window.boardsAddCard('todo')">+ To-do</button>
-        <button onclick="window.boardsAddCard('link')">+ Link</button>
-        <button onclick="window.boardsPickFiles()">+ File</button>
-        <button onclick="window.boardsAddCard('frame')">+ Frame</button>
-        <button onclick="window.boardsAddChildBoard()">+ Board</button>
-        <button id="board-line-btn" class="${_boardsLineMode?'on':''}" onclick="window.boardsToggleLineMode()">↗ Line</button>
-      </div>`:''}
+      <div class="board-rail" id="board-rail"></div>
       ${canEdit&&!_editCards.length?'<div class="board-empty-hint">Double-click anywhere to add a note · drop files in · paste an image with Ctrl+V</div>':''}
     </div>
     <div class="board-drawer" id="board-drawer" style="display:none"></div>
@@ -947,6 +940,11 @@ function _boardCardHTML(c,canEdit){
         :'<div class="board-card-empty">No file</div>';
       body=`<div class="board-card-body" style="padding:0">${body}</div>`;
     }
+  }else if(c.type==='heading'){
+    // A section banner — the thing Afnan's real Milanote board uses to
+    // title every cluster. Its drag strip fades out until hover so it
+    // reads as a banner rather than as another card.
+    body=`<div class="board-card-body board-heading-body" contenteditable="${!!canEdit}" id="board-txt-${c.id}" data-placeholder="Section title" oninput="window.boardsTextInput('${c.id}',this)"></div>`;
   }else if(c.type==='board'){
     // A link to a nested board. The title is read LIVE from moodBoards so
     // renaming the child updates every card pointing at it; the stored
@@ -962,11 +960,14 @@ function _boardCardHTML(c,canEdit){
   }else{
     body=`<div class="board-card-body board-text-body" contenteditable="${!!canEdit}" id="board-txt-${c.id}" data-placeholder="Type a note…" oninput="window.boardsTextInput('${c.id}',this)"></div>`;
   }
-  const kind=c.type==='image'?'Image':c.type==='link'?'Link':c.type==='file'?'File':c.type==='board'?'Board':c.type==='todo'?('To-do'+(c._todoProgress?' · '+c._todoProgress:'')):'Note';
+  if((c.type==='image'||c.type==='file')&&c.caption!=null){
+    body+=`<div class="board-caption" id="board-cap-${c.id}" contenteditable="${!!canEdit}" data-placeholder="Add a caption…" oninput="window.boardsCaptionInput('${c.id}',this)"></div>`;
+  }
+  const kind=c.type==='image'?'Image':c.type==='link'?'Link':c.type==='file'?'File':c.type==='board'?'Board':c.type==='heading'?'Heading':c.type==='todo'?('To-do'+(c._todoProgress?' · '+c._todoProgress:'')):'Note';
   const sel=_boardsSelection.has(c.id)?' selected':'';
   const lock=c.locked?' locked':'';
   const tint=c.color?' tint-'+c.color:'';
-  return`<div class="board-card-el${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px" onclick="window.boardsSelectCard('${c.id}',event)">
+  return`<div class="board-card-el type-${c.type}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px" onclick="window.boardsSelectCard('${c.id}',event)">
     <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''}>
       <span class="board-card-kind">${kind}${c.locked?' · Locked':''}</span>
       <span style="display:flex;align-items:center;gap:4px">
@@ -984,7 +985,11 @@ function _boardCardHTML(c,canEdit){
 // boundary as Notes' block editor. To-do item text goes the same way.
 function _boardsHydrateTextCards(){
   _editCards.forEach(c=>{
-    if(c.type==='text'){
+    if(c.caption!=null){
+      const cap=document.getElementById('board-cap-'+c.id);
+      if(cap)cap.textContent=c.caption||'';
+    }
+    if(c.type==='text'||c.type==='heading'){
       const el=document.getElementById('board-txt-'+c.id);
       if(el)el.textContent=c.text||'';
     }else if(c.type==='todo'){
@@ -1342,8 +1347,10 @@ window.boardsResizeStart=function(e,cardId){
 // to land before the rest of the stage rather than after it.
 function _boardsSelectedCards(){return _editCards.filter(c=>_boardsSelection.has(c.id));}
 function _boardsPaintSelection(){
-  document.querySelectorAll('.board-card-el').forEach(el=>el.classList.toggle('selected',_boardsSelection.has(el.dataset.id)));
-  _boardsRenderSelectionBar();
+  // .board-frame too — frames are cards, and marquee-selecting one left it
+  // unpainted until the next full render.
+  document.querySelectorAll('.board-card-el,.board-frame').forEach(el=>el.classList.toggle('selected',_boardsSelection.has(el.dataset.id)));
+  _boardsRenderRail();
 }
 function _boardsSetSelection(ids){
   _boardsSelection=new Set(ids);
@@ -1374,31 +1381,126 @@ window.boardsSelectAll=function(){_boardsSetSelection(_editCards.map(c=>c.id));}
 
 // Contextual bar — only present while something is selected, so the canvas
 // stays clean when it isn't.
-function _boardsRenderSelectionBar(){
-  const host=document.getElementById('board-selection-bar');
-  if(!host)return;
-  const sel=_boardsSelectedCards();
-  if(!sel.length||!_boardsCanEdit(_editBoard)){host.innerHTML='';host.style.display='none';return;}
-  const anyLocked=sel.some(c=>c.locked);
-  host.style.display='flex';
-  const multi=sel.length>1;
-  host.innerHTML=`
-    <span class="board-sel-count">${sel.length} selected</span>
-    <span class="board-swatches">${_BOARDS_COLORS.map(col=>`<button class="board-swatch sw-${col}" onclick="window.boardsSetColor('${col}')" title="${col==='none'?'No colour':col}"></button>`).join('')}</span>
-    ${multi?`<button class="tool-btn" onclick="window.boardsFrameSelection()" title="Wrap these in a labelled frame">Frame</button>
-    <button class="tool-btn" onclick="window.boardsStackSelection()" title="Stack vertically">Stack</button>
-    <button class="tool-btn" onclick="window.boardsGridSelection()" title="Arrange in a grid">Grid</button>`:''}
-    ${multi?'':`<button class="tool-btn" onclick="window.boardsOpenComments('${sel[0].id}')" title="Comment on this card">Comment</button>
-    <button class="tool-btn" onclick="window.boardsCopyCardLink()" title="Copy a link that opens the board on this card">Link</button>`}
-    <button class="tool-btn" onclick="window.boardsDuplicateSelection()" title="Duplicate (Ctrl+D)">Duplicate</button>
-    <button class="tool-btn" onclick="window.boardsBringToFront()" title="Bring to front">Front</button>
-    <button class="tool-btn" onclick="window.boardsSendToBack()" title="Send to back">Back</button>
-    <button class="tool-btn" onclick="window.boardsToggleLock()">${anyLocked?'Unlock':'Lock'}</button>
-    <button class="tool-btn" style="color:var(--accent-urgent)" onclick="window.boardsDeleteSelection()" title="Delete">Delete</button>
-    <button class="tool-btn" onclick="window.boardsClearSelection()" title="Clear selection (Esc)">✕</button>`;
-}
+/* ── The rail (Sept 2026) ───────────────────────────────────────────────
+   One docked surface with two modes, replacing the floating selection bar
+   AND the bottom "+ card" strip. Modelled on Milanote's left rail, which
+   Afnan sent screenshots of: it holds the add-tools when nothing is
+   selected and turns into per-type actions the moment something is —
+   Color / Comment / Rename / Caption / Preview change with the element.
 
-// -- connectors --
+   Two surfaces for the same actions had started to duplicate each other,
+   so both the rail and the right-click menu dispatch through the SAME
+   action router (_boardsCtxRun). Adding an action in one place gives it to
+   both, and they can never drift apart.
+
+   Icons are local to this file rather than added to _icon() in
+   js/shared.js — that file is cross-track (see CLAUDE.md), and none of
+   these are wanted anywhere else. */
+const _BOARDS_ICONS={
+  note:'<path d="M3 2h10v12H3z"/><path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" fill="none"/>',
+  image:'<path d="M2 3h12v10H2z" fill="none" stroke="currentColor"/><circle cx="6" cy="6.5" r="1.2"/><path d="M3 12l3.5-4 2.5 2.5L11 8l2 4z"/>',
+  todo:'<path d="M2 3h5v5H2z" fill="none" stroke="currentColor"/><path d="M3 5.5l1.4 1.4L6.4 4" fill="none" stroke="currentColor"/><path d="M9 4h5M9 7h5M2 11h12" stroke="currentColor" fill="none"/>',
+  link:'<path d="M6.5 9.5a3 3 0 010-4l1.5-1.5a3 3 0 014 4L10.8 9.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M9.5 6.5a3 3 0 010 4L8 12a3 3 0 01-4-4l1.2-1.2" fill="none" stroke="currentColor" stroke-width="1.4"/>',
+  file:'<path d="M4 1.5h5l3 3v10H4z" fill="none" stroke="currentColor"/><path d="M9 1.5v3h3" fill="none" stroke="currentColor"/>',
+  heading:'<rect x="2" y="4" width="12" height="8" rx="1"/><path d="M4.5 8h7" stroke="#fff" stroke-width="1.4"/>',
+  frame:'<rect x="2" y="3" width="12" height="10" rx="1" fill="none" stroke="currentColor"/><path d="M2 6h12" stroke="currentColor"/>',
+  board:'<rect x="2" y="3" width="12" height="10" rx="1" fill="none" stroke="currentColor"/><rect x="4" y="5.5" width="3.5" height="5" /><rect x="8.5" y="5.5" width="3.5" height="2.5"/>',
+  line:'<path d="M3 13L13 3M13 3H9M13 3v4" fill="none" stroke="currentColor" stroke-width="1.4"/>',
+  comment:'<path d="M2.5 3h11v8h-6l-3 2.5V11h-2z" fill="none" stroke="currentColor"/>',
+  rename:'<path d="M2 12.5l8.5-8.5 2 2L4 14.5H2z"/><path d="M10.5 4l2 2" stroke="currentColor"/>',
+  caption:'<rect x="2" y="2.5" width="12" height="7" rx="1" fill="none" stroke="currentColor"/><path d="M2 12h9M2 14h6" stroke="currentColor"/>',
+  replace:'<path d="M3 7a5 5 0 018-3.5M13 9a5 5 0 01-8 3.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M11 2v2.5H8.5M5 14v-2.5h2.5" fill="none" stroke="currentColor"/>',
+  download:'<path d="M8 2v8M5 7.5L8 10.5l3-3" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2.5 12.5h11" stroke="currentColor" stroke-width="1.4"/>',
+  open:'<path d="M7 3H3v10h10V9" fill="none" stroke="currentColor"/><path d="M9.5 2.5H14V7M14 2.5L8 8.5" fill="none" stroke="currentColor"/>',
+  lock:'<rect x="3" y="7" width="10" height="7" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2" fill="none" stroke="currentColor" stroke-width="1.3"/>',
+  unlock:'<rect x="3" y="7" width="10" height="7" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 014.9-.7" fill="none" stroke="currentColor" stroke-width="1.3"/>',
+  dup:'<rect x="2" y="2" width="9" height="9" rx="1" fill="none" stroke="currentColor"/><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor"/>',
+  front:'<rect x="2" y="2" width="8" height="8" rx="1" fill="none" stroke="currentColor"/><rect x="6" y="6" width="8" height="8" rx="1"/>',
+  back:'<rect x="6" y="6" width="8" height="8" rx="1" fill="none" stroke="currentColor"/><rect x="2" y="2" width="8" height="8" rx="1"/>',
+  stack:'<rect x="4" y="2" width="8" height="3" rx="1"/><rect x="4" y="6.5" width="8" height="3" rx="1"/><rect x="4" y="11" width="8" height="3" rx="1"/>',
+  grid:'<rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/>',
+  trash:'<path d="M3.5 4.5h9l-1 9.5h-7z" fill="none" stroke="currentColor"/><path d="M6 4.5V3h4v1.5M2.5 4.5h11" fill="none" stroke="currentColor"/>',
+  fit:'<path d="M2 5.5V2h3.5M14 5.5V2h-3.5M2 10.5V14h3.5M14 10.5V14h-3.5" fill="none" stroke="currentColor" stroke-width="1.3"/>'
+};
+function _boardsIcon(name){
+  return`<svg viewBox="0 0 16 16" aria-hidden="true">${_BOARDS_ICONS[name]||_BOARDS_ICONS.note}</svg>`;
+}
+function _boardsRailItems(){
+  const canEdit=_boardsCanEdit(_editBoard);
+  const sel=_boardsSelectedCards();
+  if(!sel.length){
+    if(!canEdit)return[{act:'fit',label:'Fit',icon:'fit'}];
+    return[
+      {act:'add:text',label:'Note',icon:'note'},
+      {act:'add:image',label:'Image',icon:'image'},
+      {act:'add:todo',label:'To-do',icon:'todo'},
+      {act:'add:link',label:'Link',icon:'link'},
+      {act:'file',label:'File',icon:'file'},
+      {act:'add:heading',label:'Heading',icon:'heading'},
+      {act:'add:frame',label:'Frame',icon:'frame'},
+      {act:'add:board',label:'Board',icon:'board'},
+      {act:'line',label:'Line',icon:'line',on:_boardsLineMode},
+      {sep:true},
+      {act:'comment-board',label:'Comment',icon:'comment'},
+      {act:'fit',label:'Fit',icon:'fit'}
+    ];
+  }
+  const one=sel.length===1?sel[0]:null;
+  const items=[];
+  if(canEdit)items.push({swatches:true});
+  items.push({act:'card-comment',label:'Comment',icon:'comment'});
+  if(one){
+    if(one.type==='image'||one.type==='file'){
+      if(canEdit)items.push({act:'caption',label:'Caption',icon:'caption'});
+      if(canEdit)items.push({act:'replace',label:'Replace',icon:'replace'});
+      items.push({act:'download',label:'Download',icon:'download'});
+    }
+    if(one.type==='link'&&one.linkUrl)items.push({act:'openasset',label:'Open',icon:'open'});
+    if(one.type==='board'&&one.boardId)items.push({act:'open-board',label:'Open',icon:'open'});
+    if((one.type==='frame'||one.type==='heading')&&canEdit)items.push({act:one.type==='frame'?'rename':'renameheading',label:'Rename',icon:'rename'});
+  }
+  if(!canEdit)return items;
+  if(sel.length>1){
+    items.push({sep:true});
+    items.push({act:'stack',label:'Stack',icon:'stack'});
+    items.push({act:'grid',label:'Grid',icon:'grid'});
+    items.push({act:'wrapframe',label:'Frame',icon:'frame'});
+  }
+  items.push({sep:true});
+  items.push({act:'dup',label:'Duplicate',icon:'dup'});
+  items.push({act:'front',label:'Front',icon:'front'});
+  items.push({act:'back',label:'Back',icon:'back'});
+  const locked=sel.some(c=>c.locked);
+  items.push({act:'lock',label:locked?'Unlock':'Lock',icon:locked?'unlock':'lock'});
+  items.push({sep:true});
+  items.push({act:'delete',label:'Delete',icon:'trash',danger:true});
+  return items;
+}
+function _boardsRenderRail(){
+  const host=document.getElementById('board-rail');
+  if(!host||!_editBoard)return;
+  const sel=_boardsSelectedCards();
+  host.classList.toggle('selecting',!!sel.length);
+  const items=_boardsRailItems();
+  host.innerHTML=(sel.length>1?`<div class="rail-count">${sel.length}</div>`:'')+items.map(it=>{
+    if(it.sep)return'<div class="rail-sep"></div>';
+    if(it.swatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
+    return`<button class="rail-btn${it.on?' on':''}${it.danger?' danger':''}" data-act="${it.act}" title="${_boardsEsc(it.label)}">${_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span></button>`;
+  }).join('');
+  if(host.__wired)return;
+  host.__wired=true;
+  // One delegated listener on a host that survives innerHTML swaps — and
+  // pointerdown must not reach the stage, or clicking the rail would start
+  // a pan and clear the very selection you are acting on.
+  host.addEventListener('pointerdown',e=>e.stopPropagation());
+  host.addEventListener('click',e=>{
+    const btn=e.target.closest&&e.target.closest('[data-act]');
+    if(!btn)return;
+    e.stopPropagation();
+    _boardsCtxWorld=null;
+    _boardsCtxRun(btn.getAttribute('data-act'));
+  });
+}
 function _boardCardCenter(c){return{x:c.x+c.w/2,y:c.y+c.h/2};}
 // Two kinds of connector share this layer: card-bound ({from,to}, endpoints
 // follow the cards) and freeform ({free:true,x1,y1,x2,y2}, fixed in world
@@ -1427,8 +1529,7 @@ window.boardsDeleteConnectorAt=function(i){
 };
 window.boardsToggleLineMode=function(){
   _boardsLineMode=!_boardsLineMode;
-  const btn=document.getElementById('board-line-btn');
-  if(btn)btn.classList.toggle('on',_boardsLineMode);
+  _boardsRenderRail();   // the rail owns the Line toggle's on-state now
   const stage=document.getElementById('board-stage');
   if(stage)stage.classList.toggle('line-mode',_boardsLineMode);
   showToast(_boardsLineMode?'Line mode on — drag on the canvas to draw an arrow':'Line mode off');
@@ -1471,6 +1572,12 @@ window.boardsLinkStart=function(e,cardId){
 window.boardsTitleInput=function(val){if(!_editBoard)return;_editBoard.title=val;_boardsSaveDebounced();};
 window.boardsTextInput=function(id,el){const c=_editCards.find(x=>x.id===id);if(!c)return;c.text=el.textContent;_boardsSaveDebounced();};
 window.boardsLinkInput=function(id,field,val){const c=_editCards.find(x=>x.id===id);if(!c)return;c[field]=val;_boardsSaveDebounced();};
+window.boardsCaptionInput=function(id,el){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c)return;
+  c.caption=el.textContent;
+  _boardsSaveDebounced();
+};
 window.boardsFrameTitle=function(id,val){const c=_editCards.find(x=>x.id===id);if(!c)return;c.title=val;_boardsSaveDebounced();};
 
 // ── To-do cards ────────────────────────────────────────────────────────
@@ -2346,7 +2453,8 @@ function _boardsRoundRect(ctx,x,y,w,h,r){
 }
 function _boardsExportKind(c){
   return c.type==='image'?'Image':c.type==='link'?'Link':c.type==='file'?'File'
-    :c.type==='board'?'Sub-board':c.type==='todo'?'To-do':c.type==='frame'?'Section':'Note';
+    :c.type==='board'?'Sub-board':c.type==='todo'?'To-do':c.type==='frame'?'Section'
+    :c.type==='heading'?'Heading':'Note';
 }
 function _boardsDrawCard(ctx,c,img,P){
   const stroke=c.color&&P.tint[c.color]?P.tint[c.color]:P.border;
@@ -2421,6 +2529,14 @@ function _boardsDrawCard(ctx,c,img,P){
     _boardsWrapLines(ctx,c.fileName||'File',bw-18,2).forEach((l,i)=>ctx.fillText(l,bx+9,by+38+i*14));
     ctx.fillStyle=P.muted;ctx.font='10px '+P.font;
     ctx.fillText(_boardsFormatBytes(c.fileSize),bx+9,by+bh-8);
+  }else if(c.type==='heading'){
+    ctx.fillStyle=c.color&&P.tint[c.color]?P.tint[c.color]:P.dark;
+    ctx.fillRect(bx,by,bw,bh);
+    ctx.fillStyle='#ffffff';
+    ctx.font='700 15px '+P.font;
+    const line=_boardsWrapLines(ctx,c.text||'',bw-24,1)[0]||'';
+    const tw=ctx.measureText(line).width;
+    ctx.fillText(line,bx+Math.max(10,(bw-tw)/2),by+bh/2+5);
   }else if(c.type==='board'){
     const child=_boardsLiveById()[c.boardId];
     ctx.fillStyle=P.tint.purple;ctx.fillRect(bx,by,3,bh);
@@ -2432,6 +2548,10 @@ function _boardsDrawCard(ctx,c,img,P){
     ctx.fillStyle=P.text;ctx.font='12px '+P.font;
     const maxLines=Math.max(1,Math.floor((bh-10)/16));
     _boardsWrapLines(ctx,c.text||'',bw-18,maxLines).forEach((l,i)=>ctx.fillText(l,bx+9,by+16+i*16));
+  }
+  if(c.caption){
+    ctx.fillStyle=P.muted;ctx.font='10px '+P.font;
+    ctx.fillText((_boardsWrapLines(ctx,c.caption,bw-16,1)[0])||'',bx+8,c.y+c.h-7);
   }
   ctx.restore();
   ctx.strokeStyle=stroke;ctx.lineWidth=1;
@@ -3227,6 +3347,28 @@ function _boardsCtxRun(act){
       _boardsSaveDebounced();
       break;
     }
+    case'caption':{
+      const s=_boardsSelectedCards();
+      if(s.length!==1)break;
+      const c=s[0];
+      if(c.type!=='image'&&c.type!=='file'){showToast('Captions are for images and files');break;}
+      if(c.caption==null){
+        _boardsPushUndo();
+        c.caption='';
+        _boardsRenderCanvasAndWire();
+        _boardsSaveDebounced();
+      }
+      const el=document.getElementById('board-cap-'+c.id);
+      if(el)el.focus();
+      break;
+    }
+    case'renameheading':{
+      const s=_boardsSelectedCards();
+      if(s.length!==1)break;
+      const el=document.getElementById('board-txt-'+s[0].id);
+      if(el)el.focus();
+      break;
+    }
     case'stack':window.boardsStackSelection();break;
     case'grid':window.boardsGridSelection();break;
     case'wrapframe':window.boardsFrameSelection();break;
@@ -3319,6 +3461,7 @@ function _boardsCanvasCtxItems(canEdit){
     {act:'add:todo',label:'New to-do'},
     {act:'add:link',label:'New link'},
     {act:'file',label:'New file…'},
+    {act:'add:heading',label:'New heading'},
     {act:'add:frame',label:'New frame'},
     {act:'add:board',label:'New board'},
     {act:'line',label:_boardsLineMode?'Line mode off':'Draw a line'},
@@ -3355,12 +3498,14 @@ function _boardsCardCtxItems(canEdit){
   const typed=[];
   if(one){
     if(one.type==='image'&&one.imageUrl){
+      if(canEdit)typed.push({act:'caption',label:one.caption==null?'Add a caption':'Edit caption'});
       if(canEdit)typed.push({act:'replace',label:'Replace image'});
       typed.push({act:'download',label:'Download image'});
       typed.push({act:'openasset',label:'Open original'});
     }else if(one.type==='image'&&canEdit){
       typed.push({act:'replace',label:'Add an image…'});
     }else if(one.type==='file'&&one.fileUrl){
+      if(canEdit)typed.push({act:'caption',label:one.caption==null?'Add a caption':'Edit caption'});
       if(canEdit)typed.push({act:'replace',label:'Replace file'});
       typed.push({act:'download',label:'Download'});
       typed.push({act:'openasset',label:'Open file'});
