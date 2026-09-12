@@ -789,6 +789,12 @@ which meant anyone could have altered the records payroll is computed from.
 
 ## Firestore rules — published, verified matching (Sept 2026)
 
+**Afnan's standing preference: when asked for "the rules," paste the
+complete, current `firestore.rules` file, not a diff/snippet.** He copies
+the whole thing into the Firebase Console in one paste. Read the live file
+fresh each time rather than reconstructing it from memory or from an older
+turn in the conversation.
+
 Verified: the live Console rules were pasted by the user and diffed
 byte-for-byte (identical MD5) against the repo's `firestore.rules`. They
 match. The prior note here saying they'd never been republished was stale —
