@@ -565,6 +565,11 @@ etc.) live in `js/hrm.js`; the printing/role helpers (`isObserver`,
   (Sept 2026 grant) — delete/edit/correct a fabric entry or roll. Mirror in
   `firestore.rules` `isMustafa()`, used on `fabricin`/`fabric_inventory`
   delete.
+- **Inventory Intel nav item** (`js/shared.js`, `buildNav()` +
+  `openMoreSheet()`) → owners, **+ mustafa by username** (Sept 2026 grant,
+  he's Ecom Manager). Nav-only, same shape as the Notes staged-rollout gate —
+  no `firestore.rules` mirror needed since `shopify_*` collections are
+  already `read: if signedIn()` for every role.
 
 **Sept 2026 grants share one pattern, worth knowing before touching any of
 them:** each is scoped to Mustafa **by username**, not by `role==='manager'`

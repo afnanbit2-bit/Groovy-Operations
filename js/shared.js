@@ -680,7 +680,10 @@ function buildNav(){
   if(om||session.canFabric)mainItems.push({id:'fabric-inventory',label:'Fabric Inventory'});
   if(om)mainItems.push({id:'fulfillment',label:'Courier Performance'});
   if(om)mainItems.push({id:'bug-tracker',label:'🐛 Bug Tracker'});
-  if(isOwner)mainItems.push({id:'shopify-intel',label:'Inventory Intel'});
+  // Inventory Intel: owners + Mustafa (Sept 2026 grant, by username — he's
+  // Ecom Manager; mirrors the other isMustafa()-style per-person grants, not
+  // role-wide, so Arfat doesn't get it too).
+  if(isOwner||session.u==='mustafa')mainItems.push({id:'shopify-intel',label:'Inventory Intel'});
   if(isOwner)mainItems.push({id:'activity',label:'Activity Log'});
   if(isOwner)mainItems.push({id:'monitor',label:'Monitor'});
   if(isOwner)mainItems.push({id:'users',label:'Users'});
@@ -961,7 +964,7 @@ window.openMoreSheet=function(){
   items.push({iconName:'shop',label:'Store ›',onClick:'window.openStoreSubSheet()'});
   // Owner-only
   if(om)items.push({iconName:'list',label:'Bug Tracker',pageId:'bug-tracker'});
-  if(isOwner)items.push({iconName:'shop',label:'Inventory Intel',pageId:'shopify-intel'});
+  if(isOwner||session.u==='mustafa')items.push({iconName:'shop',label:'Inventory Intel',pageId:'shopify-intel'});
   if(isOwner)items.push({iconName:'activity',label:'Activity Log',pageId:'activity'});
   if(isOwner)items.push({iconName:'eye',label:'Monitor',pageId:'monitor'});
   if(isOwner)items.push({iconName:'user',label:'Users',pageId:'users'});
