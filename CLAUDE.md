@@ -60,6 +60,20 @@ reachable. To verify RTDB rules actually took effect, use Firebase Console
 unauthenticated read) and have the human report the result.
 `api.github.com` and `firestore.googleapis.com` **are** reachable.
 
+**Also blocked (verified Sept 2026, via both `curl` and a headless Chromium
+launch — `CONNECT tunnel failed, response 403` on all three):**
+`www.gstatic.com`, `cdnjs.cloudflare.com`, `cdn.jsdelivr.net`. This means
+the app **cannot actually boot in a browser from this sandbox at all** —
+the Firebase modular SDK loads from `gstatic.com` and jsPDF/SheetJS/
+JsBarcode from the other two, so even an unauthenticated page load never
+gets past the login screen's static HTML; `window.__bootApp()` never runs.
+A "verify in a browser" step for any UI change therefore is not possible
+from this sandbox — say so explicitly rather than skip the caveat, and
+rely on `node --check` for syntax, a local `python3 -m http.server` +
+`curl` for static-file serving, and manual trace-through for logic. Real
+UI verification needs the human, a Netlify preview, or a session with
+different network access.
+
 ## File architecture (split from the old single `index.html`)
 
 ```
@@ -105,6 +119,9 @@ unauthenticated read) and have the human report the result.
                      the print engine `daily-performance` variant
                      (window.fulfillPdf).
 /js/activity.js      activity log loader.
+/js/notes.js         Notes / Wiki — Phase 1 of the Notion+Milanote module (see
+                     "Notes / Wiki module" below). Block-based pages, personal
+                     or shared. Shared/cross-track, like pos.js/gatepass.js.
 ```
 
 Load order is fixed in `index.html`:
@@ -368,6 +385,91 @@ previously in `index.html`):
 - Activity log (`activity`)
 - Counters (`counters`)
 - Users (`USER_DEFS` array — owners/managers/workers)
+
+## Notes / Wiki module (Phase 1 of Notion + Milanote, Sept 2026)
+
+Afnan asked for "a full-scale Notion + Milanote combination" inside Groovy
+Ops — a company wiki/SOPs, personal notes for anyone, design/reference mood
+boards, and project/task planning boards. Agreed approach: ship it in
+phases rather than all at once, and build the freeform canvas (Phase 2) in
+vanilla JS/SVG rather than take a dependency, consistent with this repo's
+zero-new-deps policy.
+
+**Phase 1 (shipped): `js/notes.js` — Notion-lite block pages.** Covers the
+wiki/SOPs and personal-notes use cases. Every signed-in user can create a
+page, either:
+- **`shared`** — a team wiki page, readable by any signed-in user.
+- **`personal`** — visible only to its owner (by Firebase `uid`), not even
+  to owners. Deliberately no owner override on *read* here — "personal"
+  means private. Owners keep *delete* power (matches the fabricin/loans
+  pattern elsewhere in `firestore.rules`), in case something inappropriate
+  needs removing.
+
+Firestore: one doc per page in `notes_pages`, blocks stored as a plain
+array field on the doc itself (no subcollection — simplest thing that
+works at this app's scale). Block types: `paragraph, h1, h2, bullet,
+numbered, checklist, quote, divider, image`. Notion-style typing shortcuts
+convert a block's type (`"# "`→H1, `"- "`/`"* "`→bullet, `"1. "`→numbered,
+`"[] "`→checklist, `"> "`→quote, `"---"`→divider); each block also has an
+explicit type `<select>` so the feature doesn't depend on remembering the
+shortcuts. No slash-command popup menu yet — deferred, not core to the MVP.
+
+`loadNotesData()` runs two single-field queries — `where('visibility','==','shared')`
+and `where('ownerUid','==',session.uid)` — and merges client-side, rather
+than one broad query. This is deliberate: each query maps exactly onto one
+clause of the `firestore.rules` read condition below, so Firestore can prove
+every possible result is readable and the query never gets rejected — the
+well-known Firestore gotcha is that rules are not a query filter, so a
+broader query whose safety depends on a field outside its `where` clause
+fails outright rather than silently omitting unreadable docs. Same
+"fetch once, filter client-side" spirit as Monitor's activity fetch.
+
+Block bodies are `contenteditable` and are rendered into other users' browsers
+verbatim for `shared` pages — a real stored-XSS surface, not a hypothetical
+one. `_notesRenderBlocksHTML` therefore renders block *structure* only
+(empty bodies); `_notesHydrateBlocks()` fills in the actual text afterward
+via `textContent`, never by interpolating stored text into an HTML string.
+Keep it this way — collapsing the two steps back into one template string
+to "simplify" it would reopen that hole. Everything else interpolated into
+list-view HTML (titles, owner names) goes through `_notesEsc()`.
+
+Editing does **not** follow this app's usual full-innerHTML-rerender-per-
+action pattern for every keystroke — `contenteditable` needs cursor-position
+stability, so typing mutates `_notesEditBlocks[i].text` in place via the
+`oninput` handler with no rerender; only structural edits (add/delete/
+reorder/type-change a block) call `_notesRerenderBlocks()` (scoped to the
+`#notes-blocks` container) followed by `_notesFocusBlock()` to restore the
+caret. Autosave is debounced ~900ms after the last edit
+(`_notesSaveDebounced`/`_notesSaveNow`), flushed immediately on navigating
+back or on a discrete action (checkbox toggle, image upload, visibility
+change, delete).
+
+**Nav:** "📝 Notes" is a `mainItems` entry in `buildNav()`, in the mobile
+"More" sheet for owner/manager (`openMoreSheet`) and store
+(`openStoreSubSheet`/`openStoreMoreSheet`), and (for workers/viewers, whose
+fixed 3-button mobile nav has no More button — see `_renderMobNav`) a
+button on their own "Me" page (`renderMePage()`, `js/hrm.js`). New icon:
+`notebook` in `_icon()`.
+
+**Staged rollout (Sept 2026): nav-gated to Afnan only for now.** All four
+of the pushes above are behind `if(session.u==='afnan')` — deliberately a
+single username check, not `isOwner()` and not a role, same pattern as the
+`isMustafa()`-style per-person grants already in this codebase. Afnan
+asked to dogfood it alone until the module (Phase 1 + Phase 2) is further
+along, then open it to the rest of the staff. This is a **nav-only** gate —
+`firestore.rules` still lets any signed-in user create/read pages per the
+design above, matching how this app already handles staged rollouts
+elsewhere (e.g. Shopify Intel is nav-gated to `isOwner()`, not blocked at
+the rules layer). To roll out: change these four `session.u==='afnan'`
+checks (grep `staged rollout` in `js/shared.js` and `js/hrm.js`) to
+whatever the real target audience should be — probably just removing the
+condition, matching the "for everyone" design intent above.
+
+**Not built yet (Phase 2, future):** the Milanote half — a freeform
+drag-and-drop canvas (cards, images, connector lines, pan/zoom) for mood
+boards and project/planning boards. Agreed to build it in vanilla JS/SVG
+(pointer events for drag, an SVG overlay for connector lines) rather than
+add a canvas library dependency. Not started — do not assume it exists.
 
 ## Shopify Inventory Intelligence
 
@@ -698,6 +800,12 @@ attendance data was world-readable **and world-writable**, with no login,
 which meant anyone could have altered the records payroll is computed from.
 
 ## Firestore rules — published, verified matching (Sept 2026)
+
+**Afnan's standing preference: when asked for "the rules," paste the
+complete, current `firestore.rules` file, not a diff/snippet.** He copies
+the whole thing into the Firebase Console in one paste. Read the live file
+fresh each time rather than reconstructing it from memory or from an older
+turn in the conversation.
 
 Verified: the live Console rules were pasted by the user and diffed
 byte-for-byte (identical MD5) against the repo's `firestore.rules`. They

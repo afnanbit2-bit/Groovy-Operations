@@ -201,6 +201,23 @@ service cloud.firestore {
       allow read, write: if signedIn();
     }
 
+    // ── Notes / Wiki (Phase 1 of the Notion+Milanote module, Sept 2026) ──
+    // 'shared' pages are readable by any signed-in user (team wiki/SOPs).
+    // 'personal' pages are readable ONLY by their owner (by uid) — deliberately
+    // no isOwner() override here, so a personal note is actually private, not
+    // "private except to Afnan/Ammar". Any signed-in user may create a page
+    // (personal notes are for everyone, not just OM); only the owner or an
+    // app owner may edit/delete one (owners keep cleanup power, matching the
+    // fabricin/loans delete pattern elsewhere in this file). Client queries in
+    // js/notes.js filter on exactly `visibility` or `ownerUid` so every list
+    // query is provably safe under these rules without needing a composite
+    // index or a broader query Firestore would reject.
+    match /notes_pages/{doc} {
+      allow read:   if signedIn() && (resource.data.visibility=='shared' || resource.data.ownerUid==request.auth.uid);
+      allow create: if signedIn() && request.resource.data.ownerUid==request.auth.uid;
+      allow update, delete: if signedIn() && (resource.data.ownerUid==request.auth.uid || isOwner());
+    }
+
     // ── Shopify Inventory Intelligence ──
     // Sales + catalog data from Shopify. Server-side functions (service
     // account) write these; app users only read. Require auth so data
