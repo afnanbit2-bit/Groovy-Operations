@@ -1067,6 +1067,16 @@ with the colour swatches. Its drag strip fades in on hover only, so it
 reads as a banner rather than another card. Text is hydrated with
 `textContent` like every other user string.
 
+**Card names** (`c.name`) live in the card's header, where the type label
+used to be dead text. Click it and type; clearing it `delete`s the field so
+the CSS placeholder shows the type again (IMAGE / FILE / NOTE) rather than
+leaving a blank strip. The label stops `pointerdown` from reaching the
+header, or renaming would start a drag. A named **file** card shows its
+name instead of the raw upload filename, and the name is searchable, drawn
+into exports, and reachable from the right-click menu, the rail and **F2**.
+Frames and headings keep their own in-place titles — `rename` routes by
+card type.
+
 **Captions** (`c.caption`) sit under an image or file card, separate from
 the file's own name. The field only exists once `caption != null`, so an
 untouched card stays clean; the rail's Caption button creates and focuses

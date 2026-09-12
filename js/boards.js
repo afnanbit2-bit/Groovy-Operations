@@ -238,6 +238,7 @@ function _boardsCardText(c){
   if(c.linkTitle)parts.push(c.linkTitle);
   if(c.linkDesc)parts.push(c.linkDesc);
   if(c.linkUrl)parts.push(c.linkUrl);
+  if(c.name)parts.push(c.name);
   if(c.fileName)parts.push(c.fileName);
   if(c.caption)parts.push(c.caption);
   if(c.boardTitle)parts.push(c.boardTitle);
@@ -327,6 +328,7 @@ function _boardsOnKeydown(e){
     if(k==='a'){e.preventDefault();window.boardsSelectAll();return;}
     return;   // let copy/cut/paste reach their own clipboard events
   }
+  if(k==='f2'&&_boardsSelection.size===1){e.preventDefault();_boardsCtxRun('rename');return;}
   if(k==='escape'&&_boardsSelection.size){e.preventDefault();window.boardsClearSelection();return;}
   if((k==='delete'||k==='backspace')&&_boardsSelection.size){e.preventDefault();window.boardsDeleteSelection();}
 }
@@ -930,7 +932,7 @@ function _boardCardHTML(c,canEdit){
         ${thumb?`<img class="board-file-thumb" src="${_boardsEsc(thumb)}" alt="" onerror="this.style.display='none'">`:''}
         <div class="board-file-meta">
           <span class="board-file-ext">${_boardsEsc(_boardsFileExt(c.fileName))}</span>
-          <span class="board-file-name">${_boardsEsc(c.fileName||'File')}</span>
+          <span class="board-file-name">${_boardsEsc(c.name||c.fileName||'File')}</span>
           <span class="board-file-size">${_boardsEsc(_boardsFormatBytes(c.fileSize))}</span>
         </div>
       </a>`;
@@ -969,7 +971,8 @@ function _boardCardHTML(c,canEdit){
   const tint=c.color?' tint-'+c.color:'';
   return`<div class="board-card-el type-${c.type}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px" onclick="window.boardsSelectCard('${c.id}',event)">
     <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''}>
-      <span class="board-card-kind">${kind}${c.locked?' · Locked':''}</span>
+      <span class="board-card-kind">
+        <span class="board-card-name" id="board-name-${c.id}" contenteditable="${!!canEdit}" data-placeholder="${_boardsEsc(kind)}" oninput="window.boardsCardName('${c.id}',this)" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()" title="Click to rename this card"></span>${c.locked?' · Locked':''}</span>
       <span style="display:flex;align-items:center;gap:4px">
         <button class="board-cmt-badge" id="board-cmt-${c.id}" style="display:none" title="Comments on this card" onclick="event.stopPropagation();window.boardsOpenComments('${c.id}')" onpointerdown="event.stopPropagation()"></button>
         ${canEdit&&!c.locked?`<button class="board-card-del" onclick="window.boardsDeleteCard('${c.id}')" title="Delete">✕</button>`:''}
@@ -985,6 +988,8 @@ function _boardCardHTML(c,canEdit){
 // boundary as Notes' block editor. To-do item text goes the same way.
 function _boardsHydrateTextCards(){
   _editCards.forEach(c=>{
+    const nm=document.getElementById('board-name-'+c.id);
+    if(nm)nm.textContent=c.name||'';
     if(c.caption!=null){
       const cap=document.getElementById('board-cap-'+c.id);
       if(cap)cap.textContent=c.caption||'';
@@ -1457,7 +1462,7 @@ function _boardsRailItems(){
     }
     if(one.type==='link'&&one.linkUrl)items.push({act:'openasset',label:'Open',icon:'open'});
     if(one.type==='board'&&one.boardId)items.push({act:'open-board',label:'Open',icon:'open'});
-    if((one.type==='frame'||one.type==='heading')&&canEdit)items.push({act:one.type==='frame'?'rename':'renameheading',label:'Rename',icon:'rename'});
+    if(canEdit)items.push({act:one.type==='heading'?'renameheading':'rename',label:'Rename',icon:'rename'});
   }
   if(!canEdit)return items;
   if(sel.length>1){
@@ -1572,6 +1577,18 @@ window.boardsLinkStart=function(e,cardId){
 window.boardsTitleInput=function(val){if(!_editBoard)return;_editBoard.title=val;_boardsSaveDebounced();};
 window.boardsTextInput=function(id,el){const c=_editCards.find(x=>x.id===id);if(!c)return;c.text=el.textContent;_boardsSaveDebounced();};
 window.boardsLinkInput=function(id,field,val){const c=_editCards.find(x=>x.id===id);if(!c)return;c[field]=val;_boardsSaveDebounced();};
+// The card's own name, shown in its header in place of the type label.
+// Empty means "fall back to the type label", which the CSS placeholder
+// renders — so clearing a name restores IMAGE / FILE / NOTE rather than
+// leaving a blank strip.
+window.boardsCardName=function(id,el){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c)return;
+  const v=String(el.textContent||'').replace(/\s+/g,' ').trim();
+  if(v)c.name=v.slice(0,80);
+  else delete c.name;
+  _boardsSaveDebounced();
+};
 window.boardsCaptionInput=function(id,el){
   const c=_editCards.find(x=>x.id===id);
   if(!c)return;
@@ -2477,7 +2494,7 @@ function _boardsDrawCard(ctx,c,img,P){
   ctx.fillStyle='#ffffff';ctx.fillRect(c.x,c.y,c.w,c.h);
   ctx.fillStyle=P.soft;ctx.fillRect(c.x,c.y,c.w,headH);
   ctx.fillStyle=P.muted;ctx.font='700 8.5px '+P.font;
-  ctx.fillText(_boardsExportKind(c).toUpperCase()+(c.locked?' · LOCKED':''),c.x+8,c.y+13.5);
+  ctx.fillText(String(c.name||_boardsExportKind(c)).toUpperCase()+(c.locked?' · LOCKED':''),c.x+8,c.y+13.5);
 
   if(c.type==='image'){
     if(img){
@@ -2653,7 +2670,7 @@ window.boardsExportPDF=async function(){
     kind:_boardsExportKind(c),
     text:(c.type==='todo'?(c.items||[]).map(i=>(i.done?'[x] ':'[ ] ')+(i.text||'')).join('  ·  ')
       :c.type==='link'?((c.linkTitle||'')+(c.linkUrl?'  —  '+c.linkUrl:''))
-      :c.type==='file'?(c.fileName||'')
+      :c.type==='file'?(c.name||c.fileName||'')
       :c.type==='board'?(c.boardTitle||'')
       :c.type==='frame'?(c.title||'')
       :(c.text||'')).replace(/\s+/g,' ').trim()
@@ -3329,8 +3346,28 @@ function _boardsCtxRun(act){
     case'rename':{
       const s=_boardsSelectedCards();
       if(s.length!==1)break;
-      const el=document.querySelector('#board-card-'+s[0].id+' .board-frame-title');
-      if(el){el.focus();try{el.select();}catch(e){}}
+      const c=s[0];
+      if(c.type==='frame'){
+        const el=document.querySelector('#board-card-'+c.id+' .board-frame-title');
+        if(el){el.focus();try{el.select();}catch(e){}}
+        break;
+      }
+      if(c.type==='heading'){
+        const el=document.getElementById('board-txt-'+c.id);
+        if(el)el.focus();
+        break;
+      }
+      // Every other card renames through the editable label in its header.
+      const el=document.getElementById('board-name-'+c.id);
+      if(!el)break;
+      el.focus();
+      try{
+        const r=document.createRange();
+        r.selectNodeContents(el);
+        const sel2=window.getSelection();
+        sel2.removeAllRanges();
+        sel2.addRange(r);
+      }catch(e){/* focus alone is enough */}
       break;
     }
     case'selectinside':{
@@ -3499,6 +3536,9 @@ function _boardsCardCtxItems(canEdit){
 
   // ── type-specific ──
   const typed=[];
+  if(one&&canEdit&&one.type!=='frame'&&one.type!=='heading'){
+    typed.push({act:'rename',label:one.name?'Rename card':'Name this card',hint:'F2'});
+  }
   if(one){
     if(one.type==='image'&&one.imageUrl){
       if(canEdit)typed.push({act:'caption',label:one.caption==null?'Add a caption':'Edit caption'});
