@@ -593,6 +593,72 @@ subcollection, same reasoning as `notes_pages`.
   category visibility check in `_HUB_CATEGORIES`/`onHubTileClick`, not a
   second gate inside `js/boards.js`.
 
+### Mood Boards — Stage 1 (Sept 2026)
+
+Afnan shared screenshots of the team's real Milanote boards (Winter Drop
+2027: 46 cards, 20 files, viewed at **19% zoom**, organised into labelled
+clusters, full of PDF tech packs). A 6-stage roadmap came out of that;
+Stage 1 shipped the foundations. The full staged plan lives in a tracking
+artifact — ask Afnan for the "Mood Boards Roadmap" link rather than
+re-deriving it.
+
+- **Undo/redo is snapshot-based** (`_boardsPushUndo` /
+  `_boardsStateSnapshot` / `_boardsApplySnapshot`), not a command/inverse
+  pattern: a board is tens of cards, so a JSON clone is cheap and EVERY
+  mutation becomes undoable without each one maintaining its own inverse.
+  Snapshots cover cards + connectors only — **not** pan/zoom (undoing a
+  deliberate pan is more surprising than useful) and **not** typing (the
+  browser's own contenteditable undo already handles text inside a card,
+  and `_boardsOnKeydown` deliberately does not intercept Ctrl+Z while
+  focus is in an input/textarea/contenteditable). A drag or resize pushes
+  **one** entry, lazily on the gesture's first `pointermove` — pushing on
+  `pointerdown` would leave a no-op entry for every plain click and make
+  Ctrl+Z look broken. History resets when a board is opened. **Any new
+  mutating action must call `_boardsPushUndo()` before it mutates** — that
+  is the whole contract.
+- **Board delete is a soft delete** — `deletedAt`/`deletedByName` are set
+  on the doc and `loadBoardsData()` splits results into `moodBoards`
+  (live) and `_boardsTrash`, with a Trash section in the gallery offering
+  Restore / Delete forever. The filter is client-side
+  (`all.filter(b=>!b.deletedAt)`) **not** a `where('deletedAt','==',null)`
+  query, because boards written before this shipped don't carry the field
+  at all and would vanish from such a query. Cards deliberately have **no**
+  trash of their own — Ctrl+Z covers them, and a second recovery system
+  for a one-keystroke-recoverable action is not worth its complexity.
+- **Uploads accept any file, not just images.** `_boardsUploadAny()` posts
+  to Cloudinary's `/auto/upload` (shared.js's `uploadToCloudinary()` posts
+  to `/image/upload`, which rejects PDFs). It is deliberately local to
+  boards.js rather than a widening of the shared helper, since
+  `js/shared.js` is a cross-track coordination file. A `file` card shows
+  extension / name / size and links to the asset; `_boardsPdfThumbUrl()`
+  attempts a page-1 PDF thumbnail through a Cloudinary delivery transform
+  and is **best-effort by design** — the `<img>` carries an `onerror` that
+  hides it, so an account that can't rasterise PDFs degrades to the plain
+  file card rather than a broken image.
+- **Transient card fields are `_`-prefixed and stripped before saving**
+  (`_boardsCardsForSave`). `_uploading` is the current one: a debounced
+  save firing mid-upload would otherwise persist `_uploading:true` and the
+  card would reload stuck on "Uploading…" forever. Keep that convention
+  for any future per-render flag.
+- **Multi-file drops coalesce** — dropping 20 files starts 20 parallel
+  uploads, so renders collapse into the next animation frame via
+  `_boardsRenderSoon()` and saves ride the normal 900ms autosave debounce
+  instead of firing 20 writes.
+- **Placement**: `_boardsPlacementPoint()` puts a new card in the middle
+  of the current viewport with a 6-step cascade offset. Before Stage 1
+  every new card landed on one fixed computed spot, so adding several in a
+  row silently stacked them. Double-clicking empty canvas places a note
+  exactly where you clicked.
+- **Zoom range is 10%–300%** (`_BOARDS_ZOOM_MIN`/`MAX`), widened from the
+  original 40%–200% after the 19% screenshots, and zoom is anchored to the
+  viewport centre rather than the world origin so zooming out doesn't
+  throw the content off-screen. `boardsFitView()` fits all cards on screen.
+- **Paste** handles images (always wins, even with a text card focused —
+  pasting an image into contenteditable does nothing useful anyway), URLs
+  (→ link card, title pre-filled with the hostname) and plain text (→ note
+  card). Text pasted **while a card is focused is left entirely alone** —
+  that's an ordinary text paste and hijacking it would be infuriating.
+
 ## Shopify Inventory Intelligence
 
 Read-only sales + inventory dashboard ("Inventory Intel" page). Data is
