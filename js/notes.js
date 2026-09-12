@@ -5,11 +5,14 @@
    bootstrap module in index.html — see "File architecture" in CLAUDE.md.
 
    Phase 1 of the Notion+Milanote module (see CLAUDE.md "Notes / Wiki"):
-   Notion-lite block pages. Every signed-in user can create pages, either
-   'shared' (team wiki/SOPs, readable by everyone signed in) or 'personal'
-   (readable only by the owner — a private notebook). Phase 2 (a Milanote-
-   style freeform drag/connector canvas) is a separate future module; it is
-   NOT built here.
+   Notion-lite block pages, reached through a "Creative Hub" landing page
+   (renderCreativeHub) that lists categories — Notes is the first and only
+   one for now; Phase 2's boards will be another entry in _HUB_CATEGORIES,
+   not a separate top-level nav item. Every signed-in user can create pages,
+   either 'shared' (TEAM — team wiki/SOPs, readable by everyone signed in)
+   or 'personal' (PRIVATE — readable only by the owner). Phase 2 (a
+   Milanote-style freeform drag/connector canvas) is a separate future
+   module; it is NOT built here.
 
    Firestore: one doc per page in `notes_pages`, blocks stored as a plain
    array field on the doc (no subcollection) — simplest thing that works at
@@ -19,7 +22,6 @@
 // ── State ──
 let notesLoaded=false;
 let notesPages=[];            // merged list: every 'shared' page + the signed-in user's own pages
-let _notesFilter='all';       // 'all' | 'shared' | 'mine'
 let _notesSearch='';
 let _notesViewingId=null;     // id of the page open in the detail view
 let _notesEditPage=null;      // {id,title,icon,visibility,ownerUid,ownerName,ownerUsername,createdAt,updatedAt}
@@ -81,50 +83,74 @@ async function loadNotesData(){
   notesLoaded=true;
 }
 
-// ── List view ──
-function renderNotesPage(){
-  const tabs=['all','shared','mine'].map(f=>{
-    const on=_notesFilter===f;
-    const label=f==='all'?'All':f==='shared'?'👥 Team Wiki':'🔒 Mine';
-    return`<button onclick="window.notesSetFilter('${f}')" style="padding:9px 14px;background:none;border:none;border-bottom:2px solid ${on?'#1A1A2E':'transparent'};font-weight:${on?'700':'500'};color:${on?'#1A1A2E':'var(--muted)'};cursor:pointer;font-family:inherit;font-size:13px">${label}</button>`;
-  }).join('');
+// ── Creative Hub (landing page) ──
+// A category directory. Notes (this file) is the first category; Phase 2's
+// Milanote-style boards land here as additional entries later — keep this
+// array-driven so adding one is a one-line change, not a page rewrite.
+const _HUB_CATEGORIES=[
+  {pageId:'notes',label:'Notes',desc:'Team wiki, SOPs and private notes'}
+];
+function renderCreativeHub(){
   return`
-  <div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
-    <div><h2 style="margin:0">📝 Notes</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">Team wiki, SOPs and personal notes</div></div>
-    <div style="display:flex;gap:8px">
-      <button class="btn-sm" style="background:var(--dark)" onclick="window.notesCreatePage('personal')">+ Personal Page</button>
-      <button class="btn-sm" style="background:var(--red)" onclick="window.notesCreatePage('shared')">+ Shared Page</button>
-    </div>
+  <div class="page-head" style="margin-bottom:14px">
+    <div><h2 style="margin:0">Creative Hub</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">A shared space for docs and (soon) boards</div></div>
   </div>
-  <div style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:12px">${tabs}</div>
-  <input type="text" id="notes-search" placeholder="Search notes…" value="${_notesEsc(_notesSearch)}" oninput="window.notesSearchInput(this.value)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:14px;box-sizing:border-box">
-  <div id="notes-list">${_notesRenderList()}</div>`;
-}
-
-function _notesRenderList(){
-  let list=notesPages;
-  if(_notesFilter==='shared')list=list.filter(p=>p.visibility==='shared');
-  else if(_notesFilter==='mine')list=list.filter(p=>p.ownerUid===session.uid);
-  const q=_notesSearch.trim().toLowerCase();
-  if(q)list=list.filter(p=>(p.title||'').toLowerCase().includes(q)||(p.blocks||[]).some(b=>(b.text||'').toLowerCase().includes(q)));
-  if(!list.length)return'<div class="empty">No notes yet. Create one above.</div>';
-  return list.map(p=>{
-    const vis=p.visibility==='shared'?'👥 Team Wiki':'🔒 Personal';
-    return`<div class="card" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px" onclick="window.notesOpenPage('${p.id}')">
+  <div id="hub-categories">${_HUB_CATEGORIES.map(c=>`
+    <div class="card" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px" onclick="window.showPage('${c.pageId}')">
       <div style="min-width:0">
-        <div style="font-weight:600;font-size:14px">${_notesEsc(p.icon||'📄')} ${_notesEsc(p.title||'Untitled')}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px">${vis}${p.ownerName?(' · '+_notesEsc(p.ownerName)):''}${p.updatedAt?(' · updated '+_notesRelTime(p.updatedAt)):''}</div>
+        <div style="font-weight:600;font-size:15px">${_notesEsc(c.label)}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">${_notesEsc(c.desc)}</div>
       </div>
       <div style="color:var(--muted);font-size:16px;flex-shrink:0">›</div>
-    </div>`;
-  }).join('');
+    </div>`).join('')}
+  </div>`;
 }
 
-window.notesSetFilter=function(f){_notesFilter=f;document.getElementById('main-content').innerHTML=renderNotesPage();};
+// ── Notes category: two segregated sections, TEAM and PRIVATE ──
+// Deliberately not a tab switcher — both sections are always visible at
+// once, since "segregated" was the explicit ask, not "filtered".
+function renderNotesPage(){
+  return`
+  <button class="back-btn" onclick="window.showPage('creative-hub')">← Back to Creative Hub</button>
+  <div class="page-head" style="margin-bottom:10px">
+    <div><h2 style="margin:0">Notes</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">Team wiki, SOPs and private notes</div></div>
+  </div>
+  <input type="text" id="notes-search" placeholder="Search notes…" value="${_notesEsc(_notesSearch)}" oninput="window.notesSearchInput(this.value)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:16px;box-sizing:border-box">
+  <div id="notes-sections">${_notesRenderSections()}</div>`;
+}
+
+function _notesMatches(p,q){
+  return!q||(p.title||'').toLowerCase().includes(q)||(p.blocks||[]).some(b=>(b.text||'').toLowerCase().includes(q));
+}
+function _notesRenderSections(){
+  const q=_notesSearch.trim().toLowerCase();
+  const team=notesPages.filter(p=>p.visibility==='shared'&&_notesMatches(p,q));
+  const priv=notesPages.filter(p=>p.visibility!=='shared'&&_notesMatches(p,q));
+  return`
+  <div class="notes-section">
+    <div class="notes-section-head"><h3>TEAM</h3><button class="btn-sm" onclick="window.notesCreatePage('shared')">+ New</button></div>
+    ${team.length?team.map(_notesCardHTML).join(''):'<div class="empty">No team notes yet.</div>'}
+  </div>
+  <div class="notes-section">
+    <div class="notes-section-head"><h3>PRIVATE</h3><button class="btn-sm outline" onclick="window.notesCreatePage('personal')">+ New</button></div>
+    ${priv.length?priv.map(_notesCardHTML).join(''):'<div class="empty">No private notes yet.</div>'}
+  </div>`;
+}
+function _notesCardHTML(p){
+  const vis=p.visibility==='shared'?'TEAM':'PRIVATE';
+  return`<div class="card" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px" onclick="window.notesOpenPage('${p.id}')">
+    <div style="min-width:0">
+      <div style="font-weight:600;font-size:14px">${_notesEsc(p.title||'Untitled')}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">${vis}${p.ownerName?(' · '+_notesEsc(p.ownerName)):''}${p.updatedAt?(' · updated '+_notesRelTime(p.updatedAt)):''}</div>
+    </div>
+    <div style="color:var(--muted);font-size:16px;flex-shrink:0">›</div>
+  </div>`;
+}
+
 window.notesSearchInput=function(val){
   _notesSearch=val;
   clearTimeout(_notesSearchTimer);
-  _notesSearchTimer=setTimeout(()=>{const l=document.getElementById('notes-list');if(l)l.innerHTML=_notesRenderList();},180);
+  _notesSearchTimer=setTimeout(()=>{const s=document.getElementById('notes-sections');if(s)s.innerHTML=_notesRenderSections();},180);
 };
 
 window.notesCreatePage=async function(visibility){
@@ -175,7 +201,7 @@ function renderNoteDetailPage(){
   const p=_notesEditPage;
   if(!p)return'<div class="empty">No page loaded.</div>';
   const canEdit=_notesCanEdit(p);
-  const visLabel=p.visibility==='shared'?'👥 Shared (Team Wiki)':'🔒 Personal';
+  const visLabel=p.visibility==='shared'?'TEAM':'PRIVATE';
   const updated=p.updatedAt?_notesRelTime(p.updatedAt):'';
   return`
   <button class="back-btn" onclick="window.notesBack()">← Back to Notes</button>

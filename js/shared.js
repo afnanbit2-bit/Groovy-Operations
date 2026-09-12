@@ -672,11 +672,12 @@ function buildNav(){
   // B-stock carton inventory — owners/managers view/manage.
   if(om)mainItems.push({id:'bstock',label:'B-Stock'});
   if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
-  // Staged rollout (Sept 2026): Notes is scoped to Afnan by username only
-  // (same pattern as isMustafa()-style per-person grants elsewhere) while
-  // the module is still being shaped. Change this single check — not a
-  // role, not isOwner() — to roll it out to everyone once it's ready.
-  if(session.u==='afnan')mainItems.push({id:'notes',label:'📝 Notes'});
+  // Staged rollout (Sept 2026): Creative Hub is scoped to Afnan by username
+  // only (same pattern as isMustafa()-style per-person grants elsewhere)
+  // while the module is still being shaped. Change this single check — not
+  // a role, not isOwner() — to roll it out to everyone once it's ready.
+  // No icon — deliberate, per Afnan's ask.
+  if(session.u==='afnan')mainItems.push({id:'creative-hub',label:'Creative Hub'});
   if(om||session.canFabric)mainItems.push({id:'fabric-inventory',label:'Fabric Inventory'});
   if(om)mainItems.push({id:'fulfillment',label:'Courier Performance'});
   if(om)mainItems.push({id:'bug-tracker',label:'🐛 Bug Tracker'});
@@ -780,8 +781,7 @@ function _icon(name,size){
     print:   '<rect x="6" y="3" width="12" height="6"/><path d="M6 17H4a2 2 0 01-2-2v-3a2 2 0 012-2h16a2 2 0 012 2v3a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="7"/>',
     shop:    '<path d="M3 9h18l-2 11H5L3 9z"/><path d="M8 9V6a4 4 0 018 0v3"/>',
     activity:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',
-    eye:     '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
-    notebook:'<path d="M4 4h13a2 2 0 012 2v13a1 1 0 01-1 1H6a2 2 0 01-2-2V4z"/><path d="M4 8h2M4 12h2M4 16h2M9 4v16"/>'
+    eye:     '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'
   };
   const inner=svgs[name]||'';
   return`<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
@@ -860,7 +860,7 @@ function _updateMobNavActive(pageId){
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
     'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more','store-cash-ledger':'more',
     'activity':'more','monitor':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more',
-    'notes':'more','note-detail':'more',
+    'creative-hub':'more','notes':'more','note-detail':'more',
     'my-work':'my-work'
   };
   const grp=groups[pageId];
@@ -950,7 +950,7 @@ window.openMoreSheet=function(){
   if(session.canPO)items.push({iconName:'plus',label:'New PO',pageId:'po-create'});
   items.push({iconName:'po',label:'PO Registry',pageId:'po-registry'});
   if(om||session.canFabric)items.push({iconName:'box',label:'Fabric Inventory',pageId:'fabric-inventory'});
-  if(session.u==='afnan')items.push({iconName:'notebook',label:'Notes',pageId:'notes'}); // staged rollout, see buildNav()
+  if(session.u==='afnan')items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
   if(om)items.push({iconName:'activity',label:'Courier Performance',pageId:'fulfillment'});
   // Embellishments dept items (visible to owners/managers + relevant workers)
   if(om||session.u==='ammar'||session.u==='haris'||(typeof isPrintWorker==='function'&&isPrintWorker()))items.push({iconName:'palette',label:'Recipe Directory',pageId:'recipe-directory'});
@@ -985,7 +985,7 @@ window.openStoreSubSheet=function(){
     {iconName:'tray',label:'PO Issue Requests',pageId:'po-issue-list'}
   );
   if(typeof _canApproveEdits==='function'&&_canApproveEdits())items.push({iconName:'list',label:'Edit Inbox',pageId:'po-edit-inbox'});
-  if(session.u==='afnan')items.push({iconName:'notebook',label:'Notes',pageId:'notes'}); // staged rollout, see buildNav()
+  if(session.u==='afnan')items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
   window.openMobSheet('Store',items);
 };
 
@@ -999,7 +999,7 @@ window.openStoreMoreSheet=function(){
     {iconName:'tray',label:'PO Issue Requests',pageId:'po-issue-list'}
   );
   if(typeof _canApproveEdits==='function'&&_canApproveEdits())items.push({iconName:'list',label:'Edit Inbox',pageId:'po-edit-inbox'});
-  if(session.u==='afnan')items.push({iconName:'notebook',label:'Notes',pageId:'notes'}); // staged rollout, see buildNav()
+  if(session.u==='afnan')items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
   window.openMobSheet('More',items);
 };
 
@@ -1062,6 +1062,7 @@ function renderPage(id){
     if(!bugsLoaded){m.innerHTML=gvSkeleton(6);loadBugReports().then(()=>{if(currentPage===id)m.innerHTML=renderBugTrackerPage();}).catch(e=>{if(currentPage===id)m.innerHTML='<div class="empty">Could not load bug reports: '+(e.message||'permission denied')+'</div>';});}
     else m.innerHTML=renderBugTrackerPage();
   }
+  else if(id==='creative-hub')m.innerHTML=renderCreativeHub();
   else if(id==='notes'){if(!notesLoaded){m.innerHTML=gvSkeleton(6);loadNotesData().then(()=>{if(currentPage===id)m.innerHTML=renderNotesPage();});}else m.innerHTML=renderNotesPage();}
   else if(id==='note-detail'){_notesOpenDetail();return;}
   else if(id==='po-detail')renderDetailPage();
@@ -1155,6 +1156,7 @@ const BUG_PAGE_NAMES={
   'billing-detail':'Billing Detail',
   'color-library':'Color Library',
   'bug-tracker':'Bug Tracker',
+  'creative-hub':'Creative Hub',
   'notes':'Notes',
   'note-detail':'Note Detail',
   'activity':'Activity Log',

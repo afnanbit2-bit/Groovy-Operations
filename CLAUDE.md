@@ -119,9 +119,10 @@ different network access.
                      the print engine `daily-performance` variant
                      (window.fulfillPdf).
 /js/activity.js      activity log loader.
-/js/notes.js         Notes / Wiki — Phase 1 of the Notion+Milanote module (see
-                     "Notes / Wiki module" below). Block-based pages, personal
-                     or shared. Shared/cross-track, like pos.js/gatepass.js.
+/js/notes.js         Creative Hub / Notes — Phase 1 of the Notion+Milanote
+                     module (see "Creative Hub / Notes module" below). Hub
+                     landing page + block-based pages, TEAM or PRIVATE.
+                     Shared/cross-track, like pos.js/gatepass.js.
 ```
 
 Load order is fixed in `index.html`:
@@ -386,7 +387,7 @@ previously in `index.html`):
 - Counters (`counters`)
 - Users (`USER_DEFS` array — owners/managers/workers)
 
-## Notes / Wiki module (Phase 1 of Notion + Milanote, Sept 2026)
+## Creative Hub / Notes module (Phase 1 of Notion + Milanote, Sept 2026)
 
 Afnan asked for "a full-scale Notion + Milanote combination" inside Groovy
 Ops — a company wiki/SOPs, personal notes for anyone, design/reference mood
@@ -395,15 +396,37 @@ phases rather than all at once, and build the freeform canvas (Phase 2) in
 vanilla JS/SVG rather than take a dependency, consistent with this repo's
 zero-new-deps policy.
 
+**"Creative Hub" is the top-level nav entry (no icon — deliberate), not
+"Notes".** It's a category directory (`renderCreativeHub()` in
+`js/notes.js`, driven by the `_HUB_CATEGORIES` array) so Phase 2's boards
+land as a second category entry later, not a second top-level nav item.
+Notes is the first (and currently only) category. Page hierarchy:
+`creative-hub` (hub) → `notes` (category — TEAM/PRIVATE sections) →
+`note-detail` (one page). Each level's back-button goes exactly one level
+up, not to the hub from a detail page.
+
+Note: Afnan has already flagged the Notes UI itself (the list cards, the
+block editor) as "too child-like, not professional" — a visual revamp is
+expected next. Don't take the current styling as settled; it's the first
+functional cut, not the intended final look.
+
 **Phase 1 (shipped): `js/notes.js` — Notion-lite block pages.** Covers the
 wiki/SOPs and personal-notes use cases. Every signed-in user can create a
 page, either:
-- **`shared`** — a team wiki page, readable by any signed-in user.
-- **`personal`** — visible only to its owner (by Firebase `uid`), not even
-  to owners. Deliberately no owner override on *read* here — "personal"
-  means private. Owners keep *delete* power (matches the fabricin/loans
-  pattern elsewhere in `firestore.rules`), in case something inappropriate
-  needs removing.
+- **`shared`** — a **TEAM** page, readable by any signed-in user.
+- **`personal`** — a **PRIVATE** page, visible only to its owner (by
+  Firebase `uid`), not even to owners. Deliberately no owner override on
+  *read* here — "private" means private. Owners keep *delete* power
+  (matches the fabricin/loans pattern elsewhere in `firestore.rules`), in
+  case something inappropriate needs removing.
+
+  The `notes` category page renders these as **two always-visible
+  segregated sections** — TEAM and PRIVATE, each with its own "+ New"
+  button — not a tab switcher. `firestore.rules` field is still literally
+  `'shared'`/`'personal'`; TEAM/PRIVATE is display-layer wording only
+  (`_notesCardHTML`, the detail-page visibility badge) — don't rename the
+  Firestore field to match, that would be a needless migration for a
+  cosmetic label.
 
 Firestore: one doc per page in `notes_pages`, blocks stored as a plain
 array field on the doc itself (no subcollection — simplest thing that
@@ -444,12 +467,15 @@ caret. Autosave is debounced ~900ms after the last edit
 back or on a discrete action (checkbox toggle, image upload, visibility
 change, delete).
 
-**Nav:** "📝 Notes" is a `mainItems` entry in `buildNav()`, in the mobile
-"More" sheet for owner/manager (`openMoreSheet`) and store
-(`openStoreSubSheet`/`openStoreMoreSheet`), and (for workers/viewers, whose
-fixed 3-button mobile nav has no More button — see `_renderMobNav`) a
-button on their own "Me" page (`renderMePage()`, `js/hrm.js`). New icon:
-`notebook` in `_icon()`.
+**Nav:** "Creative Hub" (plain text, no icon/emoji — deliberate, per
+Afnan) is a `mainItems` entry in `buildNav()` pointing at page id
+`creative-hub`, in the mobile "More" sheet for owner/manager
+(`openMoreSheet`) and store (`openStoreSubSheet`/`openStoreMoreSheet`), and
+(for workers/viewers, whose fixed 3-button mobile nav has no More button —
+see `_renderMobNav`) a button on their own "Me" page (`renderMePage()`,
+`js/hrm.js`). There is no dedicated icon for this module — the `notebook`
+SVG that was briefly added to `_icon()` was removed again once the nav
+entry became icon-less; don't re-add it without a reason.
 
 **Staged rollout (Sept 2026): nav-gated to Afnan only for now.** All four
 of the pushes above are behind `if(session.u==='afnan')` — deliberately a
@@ -461,9 +487,10 @@ along, then open it to the rest of the staff. This is a **nav-only** gate —
 design above, matching how this app already handles staged rollouts
 elsewhere (e.g. Shopify Intel is nav-gated to `isOwner()`, not blocked at
 the rules layer). To roll out: change these four `session.u==='afnan'`
-checks (grep `staged rollout` in `js/shared.js` and `js/hrm.js`) to
-whatever the real target audience should be — probably just removing the
-condition, matching the "for everyone" design intent above.
+checks (grep `staged rollout` in `js/shared.js`, and the one in
+`js/hrm.js`) to whatever the real target audience should be — probably
+just removing the condition, matching the "for everyone" design intent
+above.
 
 **Not built yet (Phase 2, future):** the Milanote half — a freeform
 drag-and-drop canvas (cards, images, connector lines, pan/zoom) for mood
