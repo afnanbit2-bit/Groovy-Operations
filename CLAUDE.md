@@ -105,6 +105,9 @@ unauthenticated read) and have the human report the result.
                      the print engine `daily-performance` variant
                      (window.fulfillPdf).
 /js/activity.js      activity log loader.
+/js/notes.js         Notes / Wiki — Phase 1 of the Notion+Milanote module (see
+                     "Notes / Wiki module" below). Block-based pages, personal
+                     or shared. Shared/cross-track, like pos.js/gatepass.js.
 ```
 
 Load order is fixed in `index.html`:
@@ -368,6 +371,79 @@ previously in `index.html`):
 - Activity log (`activity`)
 - Counters (`counters`)
 - Users (`USER_DEFS` array — owners/managers/workers)
+
+## Notes / Wiki module (Phase 1 of Notion + Milanote, Sept 2026)
+
+Afnan asked for "a full-scale Notion + Milanote combination" inside Groovy
+Ops — a company wiki/SOPs, personal notes for anyone, design/reference mood
+boards, and project/task planning boards. Agreed approach: ship it in
+phases rather than all at once, and build the freeform canvas (Phase 2) in
+vanilla JS/SVG rather than take a dependency, consistent with this repo's
+zero-new-deps policy.
+
+**Phase 1 (shipped): `js/notes.js` — Notion-lite block pages.** Covers the
+wiki/SOPs and personal-notes use cases. Every signed-in user can create a
+page, either:
+- **`shared`** — a team wiki page, readable by any signed-in user.
+- **`personal`** — visible only to its owner (by Firebase `uid`), not even
+  to owners. Deliberately no owner override on *read* here — "personal"
+  means private. Owners keep *delete* power (matches the fabricin/loans
+  pattern elsewhere in `firestore.rules`), in case something inappropriate
+  needs removing.
+
+Firestore: one doc per page in `notes_pages`, blocks stored as a plain
+array field on the doc itself (no subcollection — simplest thing that
+works at this app's scale). Block types: `paragraph, h1, h2, bullet,
+numbered, checklist, quote, divider, image`. Notion-style typing shortcuts
+convert a block's type (`"# "`→H1, `"- "`/`"* "`→bullet, `"1. "`→numbered,
+`"[] "`→checklist, `"> "`→quote, `"---"`→divider); each block also has an
+explicit type `<select>` so the feature doesn't depend on remembering the
+shortcuts. No slash-command popup menu yet — deferred, not core to the MVP.
+
+`loadNotesData()` runs two single-field queries — `where('visibility','==','shared')`
+and `where('ownerUid','==',session.uid)` — and merges client-side, rather
+than one broad query. This is deliberate: each query maps exactly onto one
+clause of the `firestore.rules` read condition below, so Firestore can prove
+every possible result is readable and the query never gets rejected — the
+well-known Firestore gotcha is that rules are not a query filter, so a
+broader query whose safety depends on a field outside its `where` clause
+fails outright rather than silently omitting unreadable docs. Same
+"fetch once, filter client-side" spirit as Monitor's activity fetch.
+
+Block bodies are `contenteditable` and are rendered into other users' browsers
+verbatim for `shared` pages — a real stored-XSS surface, not a hypothetical
+one. `_notesRenderBlocksHTML` therefore renders block *structure* only
+(empty bodies); `_notesHydrateBlocks()` fills in the actual text afterward
+via `textContent`, never by interpolating stored text into an HTML string.
+Keep it this way — collapsing the two steps back into one template string
+to "simplify" it would reopen that hole. Everything else interpolated into
+list-view HTML (titles, owner names) goes through `_notesEsc()`.
+
+Editing does **not** follow this app's usual full-innerHTML-rerender-per-
+action pattern for every keystroke — `contenteditable` needs cursor-position
+stability, so typing mutates `_notesEditBlocks[i].text` in place via the
+`oninput` handler with no rerender; only structural edits (add/delete/
+reorder/type-change a block) call `_notesRerenderBlocks()` (scoped to the
+`#notes-blocks` container) followed by `_notesFocusBlock()` to restore the
+caret. Autosave is debounced ~900ms after the last edit
+(`_notesSaveDebounced`/`_notesSaveNow`), flushed immediately on navigating
+back or on a discrete action (checkbox toggle, image upload, visibility
+change, delete).
+
+**Nav:** "📝 Notes" is a `mainItems` entry for everyone in `buildNav()` (not
+role-gated) and is in the mobile "More" sheet for owner/manager
+(`openMoreSheet`) and store (`openStoreSubSheet`/`openStoreMoreSheet`).
+Workers/viewers have a fixed 3-button mobile nav with **no** More button
+(see `_renderMobNav` in `js/shared.js`) — rather than restructure that
+deliberately-minimal layout, their path to Notes is a "📝 Notes" button on
+their own "Me" page (`renderMePage()`, `js/hrm.js`). New icon: `notebook`
+in `_icon()`.
+
+**Not built yet (Phase 2, future):** the Milanote half — a freeform
+drag-and-drop canvas (cards, images, connector lines, pan/zoom) for mood
+boards and project/planning boards. Agreed to build it in vanilla JS/SVG
+(pointer events for drag, an SVG overlay for connector lines) rather than
+add a canvas library dependency. Not started — do not assume it exists.
 
 ## Shopify Inventory Intelligence
 

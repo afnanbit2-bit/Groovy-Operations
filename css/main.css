@@ -437,3 +437,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .bug-card.expanded .bug-card-expanded{display:block !important}
 .bug-card.expanded .bug-arrow{transform:rotate(180deg)}
 .bug-arrow{transition:transform .2s;color:#9CA3AF}
+/* ── Notes / Wiki (Notion-lite pages, Phase 1) ─────────────── */
+.note-block{margin-bottom:6px}
+.note-block-toolbar{opacity:0}
+.note-block:hover .note-block-toolbar,.note-block:focus-within .note-block-toolbar{opacity:1}
+.note-block-body{min-height:22px;line-height:1.6;font-size:14px;outline:none}
+.note-block-body:empty:before{content:attr(data-placeholder);color:var(--muted);pointer-events:none}
+.note-type-h1{font-size:22px;font-weight:700;margin:6px 0}
+.note-type-h2{font-size:17px;font-weight:700;margin:4px 0}
+.note-type-quote{border-left:3px solid var(--border);padding-left:10px;color:var(--muted);font-style:italic}
+.note-bullet{margin-right:8px;flex-shrink:0;color:var(--muted);font-size:13px;line-height:1.7}
+@media (max-width:600px){
+  .note-block-toolbar{flex-wrap:wrap}
+}

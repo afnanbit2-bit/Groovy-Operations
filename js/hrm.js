@@ -247,6 +247,7 @@ function renderMePage(){
   const sublink=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
     <button class="btn-outline" onclick="window.showPage('my-work')" style="font-size:12px">← My Work</button>
     <button class="btn-outline" onclick="window.showPage('gatepass')" style="font-size:12px">Gate Pass</button>
+    <button class="btn-outline" onclick="window.showPage('notes')" style="font-size:12px">📝 Notes</button>
   </div>`;
   return widget+sublink;
 }
