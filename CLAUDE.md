@@ -1077,6 +1077,29 @@ Also fixed here: `_boardsPaintSelection` only repainted `.board-card-el`,
 so marquee-selecting a **frame** left it unhighlighted until the next full
 render.
 
+### Right-click on the gallery too (Sept 2026)
+
+The canvas had a context menu but the boards list did not, so the one page
+where you actually *manage* boards still gave you Chrome's menu.
+**Rename lives here in particular** — before this it was reachable only by
+opening a board and clicking its title, which is how a gallery full of
+"Untitled board" happens.
+
+- Board card → Open · Rename… · Copy link · Duplicate · Save as template ·
+  Make Team/Private · Move to Trash, plus a meta line (visibility · card
+  count · owner). Trash row → Restore · Delete forever. Empty space → New
+  team board · New private board · Refresh list.
+- **Separate router** (`_boardsGalleryCtxRun`) because these act on a board
+  BY ID, not on the open canvas — but the same menu renderer
+  (`_boardsOpenCtx`), so both menus look and behave identically. The router
+  is chosen by the `g:` prefix on the action.
+- Permissions follow `_boardsCanEdit` (so anyone can rename a TEAM board,
+  per Stage 6) while **Move to Trash stays owner-only**, matching
+  `firestore.rules`.
+- Rename uses `prompt()` — `confirm()` is already the app's idiom here, and
+  an inline editor on a card that is also a click-to-open target would
+  fight itself.
+
 ### Loading must never hang (Sept 2026 — found in QA)
 
 `js/shared.js`'s `renderPage` dispatches these pages as

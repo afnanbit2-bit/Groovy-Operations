@@ -517,7 +517,7 @@ function _boardsTrashSectionHTML(){
   return`<div class="notes-section">
     <div class="notes-section-head"><h3>Trash</h3><span style="font-size:11px;color:var(--muted)">Deleted boards are kept here until you remove them for good</span></div>
     <div class="board-trash-list">${_boardsTrash.map(b=>`
-      <div class="board-trash-row">
+      <div class="board-trash-row" data-trash="${b.id}">
         <div style="min-width:0">
           <div style="font-weight:600;font-size:13px">${_boardsEsc(b.title||'Untitled board')}</div>
           <div style="font-size:11px;color:var(--muted);margin-top:2px">${(b.cards||[]).length} card${(b.cards||[]).length===1?'':'s'} · deleted ${_boardsRelTime(b.deletedAt)}${b.deletedByName?' by '+_boardsEsc(b.deletedByName):''}</div>
@@ -561,7 +561,7 @@ function _boardGalleryCardHTML(b,opts){
   const vis=b.visibility==='shared'?'TEAM':'PRIVATE';
   const subs=cards.filter(c=>c.type==='board'&&c.boardId).length;
   const crumbs=_boardsAncestors(b.id).map(a=>_boardsEsc(a.title||'Untitled board')).join(' › ');
-  return`<div class="board-gallery-card" onclick="window.boardsOpen('${b.id}')">
+  return`<div class="board-gallery-card" data-board="${b.id}" onclick="window.boardsOpen('${b.id}')">
     <div class="board-gallery-thumb">
       <div style="position:absolute;transform:scale(${scale});transform-origin:top left">
         ${cards.filter(c=>c.type==='frame').concat(cards.filter(c=>c.type!=='frame')).map(_boardMiniCardHTML).join('')}
@@ -3256,7 +3256,7 @@ function _boardsCtxHTML(items){
     return`<button class="board-ctx-item${it.danger?' danger':''}" data-act="${it.act}">${_boardsEsc(it.label)}${it.hint?`<span class="board-ctx-hint">${_boardsEsc(it.hint)}</span>`:''}</button>`;
   }).join('');
 }
-function _boardsOpenCtx(clientX,clientY,items){
+function _boardsOpenCtx(clientX,clientY,items,galleryId){
   _boardsCloseCtx();
   const el=document.createElement('div');
   el.id=_BOARDS_CTX_ID;
@@ -3273,7 +3273,10 @@ function _boardsOpenCtx(clientX,clientY,items){
     if(!btn)return;
     const act=btn.getAttribute('data-act');
     _boardsCloseCtx();
-    _boardsCtxRun(act);
+    // Gallery actions work on a board BY ID; canvas actions work on the
+    // open board. One menu renderer, two routers.
+    if(act.indexOf('g:')===0)_boardsGalleryCtxRun(act,galleryId);
+    else _boardsCtxRun(act);
   });
 }
 function _boardsCtxRun(act){
@@ -3589,3 +3592,145 @@ document.addEventListener('pointerdown',e=>{
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape')_boardsCloseCtx();});
 window.addEventListener('blur',_boardsCloseCtx);
+
+/* ── Right-click on the GALLERY (Sept 2026) ─────────────────────────────
+   The canvas had a context menu but the boards list didn't, so the one
+   place you actually manage boards still gave you Chrome's menu. Rename
+   lives here in particular: it was previously only reachable by opening a
+   board and clicking its title, which is why a gallery full of "Untitled
+   board" was so easy to end up with.
+
+   Separate router from _boardsCtxRun because these act on a board BY ID,
+   not on the open canvas — but the same menu renderer, so the two look
+   and behave identically. */
+function _boardsGalleryCtxItems(b){
+  const canEdit=_boardsCanEdit(b);
+  const owner=!!(session&&(b.ownerUid===session.uid||session.role==='owner'));
+  const items=[{act:'g:open',label:'Open'}];
+  if(canEdit)items.push({act:'g:rename',label:'Rename…',hint:'F2'});
+  items.push({sep:true});
+  items.push({act:'g:link',label:'Copy link to board'});
+  items.push({act:'g:dup',label:'Duplicate'});
+  if(canEdit){
+    items.push({act:'g:template',label:b.isTemplate?'Remove from templates':'Save as template'});
+    items.push({act:'g:vis',label:'Make '+(b.visibility==='shared'?'Private':'Team')});
+  }
+  if(owner){
+    items.push({sep:true});
+    items.push({act:'g:trash',label:'Move to Trash',danger:true});
+  }
+  items.push({sep:true});
+  const n=(b.cards||[]).length;
+  items.push({title:(b.visibility==='shared'?'TEAM':'PRIVATE')+' · '+n+' card'+(n===1?'':'s')+(b.ownerName?' · '+b.ownerName:'')});
+  return items;
+}
+async function _boardsGalleryCtxRun(act,id){
+  const b=moodBoards.find(x=>x.id===id)||_boardsTrash.find(x=>x.id===id);
+  switch(act){
+    case'g:new:shared':window.boardsCreate('shared');return;
+    case'g:new:personal':window.boardsCreate('personal');return;
+    case'g:refresh':window.boardsRetryLoad();return;
+    case'g:restore':window.boardsRestore(id);return;
+    case'g:purge':window.boardsDeleteForever(id);return;
+  }
+  if(!b)return;
+  switch(act){
+    case'g:open':window.boardsOpen(id);break;
+    case'g:link':{
+      const link=_boardsLinkFor(id,null);
+      const ok=await _boardsCopyText(link);
+      showToast(ok?'Board link copied':link,!ok);
+      break;
+    }
+    case'g:rename':{
+      if(!_boardsCanEdit(b))return;
+      const next=prompt('Rename board',b.title||'Untitled board');
+      if(next==null)return;
+      const title=String(next).trim()||'Untitled board';
+      if(title===b.title)return;
+      try{
+        await updateDoc(doc(db,'mood_boards',id),{title,updatedAt:Date.now(),updatedByName:session.name});
+        b.title=title;
+        _boardsRerenderGallery();
+        showToast('Renamed');
+      }catch(e){showToast('Could not rename: '+(e.message||e),true);}
+      break;
+    }
+    case'g:dup':{
+      try{
+        await _boardsDuplicateBoard(b,{isTemplate:false},false);
+        await window.boardsRetryLoad();
+        showToast('Board duplicated');
+      }catch(e){showToast('Could not duplicate: '+(e.message||e),true);}
+      break;
+    }
+    case'g:template':{
+      if(!_boardsCanEdit(b))return;
+      const next=!b.isTemplate;
+      try{
+        await updateDoc(doc(db,'mood_boards',id),{isTemplate:next,updatedAt:Date.now()});
+        b.isTemplate=next;
+        _boardsRerenderGallery();
+        showToast(next?'Saved as a template':'No longer a template');
+      }catch(e){showToast('Could not update: '+(e.message||e),true);}
+      break;
+    }
+    case'g:vis':{
+      if(!_boardsCanEdit(b))return;
+      const next=b.visibility==='shared'?'personal':'shared';
+      try{
+        await updateDoc(doc(db,'mood_boards',id),{visibility:next,updatedAt:Date.now()});
+        b.visibility=next;
+        _boardsRerenderGallery();
+        showToast('Now '+(next==='shared'?'TEAM':'PRIVATE'));
+      }catch(e){showToast('Could not update: '+(e.message||e),true);}
+      break;
+    }
+    case'g:trash':{
+      if(!confirm('Move "'+(b.title||'Untitled board')+'" to Trash? You can restore it from this list.'))return;
+      try{
+        await updateDoc(doc(db,'mood_boards',id),{deletedAt:Date.now(),deletedByName:session.name,updatedAt:Date.now()});
+        logActivity('Mood board deleted',`${session.name} moved "${b.title||'Untitled board'}" to trash`);
+        await window.boardsRetryLoad();
+        showToast('Board moved to Trash');
+      }catch(e){showToast('Could not delete: '+(e.message||e),true);}
+      break;
+    }
+    default:break;
+  }
+}
+// Registered once at load, like the canvas menu's dismiss handlers.
+document.addEventListener('contextmenu',e=>{
+  if(currentPage!=='boards')return;
+  const t=e.target;
+  if(!t||!t.closest)return;
+  if(t.closest('input,textarea,select,[contenteditable="true"]'))return;   // the browser's menu belongs to fields
+  const main=t.closest('#main-content');
+  if(!main)return;
+  const trashRow=t.closest('[data-trash]');
+  if(trashRow){
+    e.preventDefault();
+    const id=trashRow.getAttribute('data-trash');
+    _boardsOpenCtx(e.clientX,e.clientY,[
+      {act:'g:restore',label:'Restore'},
+      {act:'g:purge',label:'Delete forever',danger:true}
+    ],id);
+    return;
+  }
+  const card=t.closest('[data-board]');
+  if(card){
+    const id=card.getAttribute('data-board');
+    const b=moodBoards.find(x=>x.id===id);
+    if(!b)return;
+    e.preventDefault();
+    _boardsOpenCtx(e.clientX,e.clientY,_boardsGalleryCtxItems(b),id);
+    return;
+  }
+  e.preventDefault();
+  _boardsOpenCtx(e.clientX,e.clientY,[
+    {act:'g:new:shared',label:'New team board'},
+    {act:'g:new:personal',label:'New private board'},
+    {sep:true},
+    {act:'g:refresh',label:'Refresh list'}
+  ],null);
+});
