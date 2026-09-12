@@ -995,6 +995,49 @@ owner-only, so nobody can bin a team board. `_boardsCanEdit()` and
   `onSnapshot` bridged (an old cached `index.html`, say) every listener is
   skipped and the board behaves exactly as it did in Stage 5.
 
+### Right-click menu (Sept 2026)
+
+Built from Milanote screenshots Afnan sent of the real Winter Drop 2027
+board. Three rules it holds to:
+
+- **Inside a text card, to-do item or any input, the browser's own menu
+  wins.** Spellcheck, copy and paste belong to the browser while you are
+  editing text — same reasoning as `_boardsOnKeydown` leaving Ctrl+Z alone
+  in a field.
+- **New cards land where you right-clicked**, through a one-shot
+  `_boardsNextPlacement` that `_boardsPlacementPoint()` consumes. Every
+  existing add path (menu, file picker, paste) inherits it without a
+  signature change.
+- **Right-clicking a card already in a multi-selection keeps the group**;
+  right-clicking an unselected one selects just it. Same rule as dragging.
+
+The menu is **per card type** (`_boardsCardCtxItems`): image → Replace /
+Download / Open original; file → Replace / Download / Open / Copy link;
+link → Open / Copy URL; frame → Rename / **Select contents** (reuses
+`_boardsCardsInFrame`); to-do → Tick all / Untick all; text → Copy text;
+sub-board → Open / Copy link. Shared blocks carry the real shortcuts
+(Ctrl+X/C/D, Del) so the menu teaches them.
+
+- **Cut/Copy fire `document.execCommand`** rather than duplicating logic —
+  that raises the real clipboard events `_boardsOnCopy` already handles, so
+  the system clipboard stays the single source of truth (Stage 2's rule).
+- **Download uses Cloudinary's `fl_attachment`** flag, injected into the
+  delivery URL; a non-Cloudinary URL opens as-is. Best-effort, and
+  **unverified from the sandbox**, which cannot reach res.cloudinary.com.
+- **Connector lines used to be deleted by a plain left click**, with no
+  confirmation and no other interaction. They now carry `data-conn="<i>"`,
+  are inert on click, and are deleted from their own right-click menu.
+- Cards created from here on carry `by`/`at` (who added it, when), shown at
+  the foot of the menu. Older cards don't have it and the line is omitted
+  rather than faked; `_boardsCloneCards` resets it, since a duplicate is a
+  new card, not a copy of someone else's authorship.
+
+**Still missing vs Milanote** (deliberate, not overlooked): Column and
+Table elements, board backgrounds, a standalone heading/banner card,
+labels, reactions, and the contextual left rail that changes with the
+selected element type. Our equivalent of that rail today is the floating
+selection bar; see the note in Stage 2.
+
 ### Loading must never hang (Sept 2026 — found in QA)
 
 `js/shared.js`'s `renderPage` dispatches these pages as

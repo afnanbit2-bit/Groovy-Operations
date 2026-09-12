@@ -106,6 +106,9 @@ function _boardsNewCard(type){
   if(type==='frame')base.title='';
   if(type==='todo')base.items=[{text:'',done:false}];
   if(type==='board'){base.boardId='';base.boardTitle='';}
+  // Provenance, shown in the right-click menu. Cards created before this
+  // shipped simply don't carry it and the menu omits the line.
+  if(typeof session!=='undefined'&&session){base.by=session.name||'';base.at=Date.now();}
   return base;
 }
 
@@ -1045,8 +1048,18 @@ function _boardsScreenToWorld(clientX,clientY){
 // Where a new card should land when it isn't being placed by a click:
 // the middle of what you're currently looking at, nudged a little each
 // time so repeat clicks fan out instead of stacking into one pile.
+// Set by the right-click menu so the NEXT card lands where you clicked
+// rather than in the middle of the viewport. One-shot, consumed here, so
+// every existing add path (menu, file picker, paste) inherits it without a
+// signature change.
+let _boardsNextPlacement=null;
 function _boardsPlacementPoint(){
   const b=_editBoard;
+  if(_boardsNextPlacement){
+    const p=_boardsNextPlacement;
+    _boardsNextPlacement=null;
+    return{x:p.x-90,y:p.y-40};
+  }
   const stage=document.getElementById('board-stage');
   if(!stage)return{x:80,y:80};
   const rect=stage.getBoundingClientRect();
@@ -1064,6 +1077,8 @@ function _boardsWireStagePan(){
   const stage=document.getElementById('board-stage');
   if(!stage)return;
   const canEdit=_boardsCanEdit(_editBoard);
+
+  _boardsWireContextMenu(stage);
 
   stage.addEventListener('pointerdown',e=>{
     if(e.target!==stage&&e.target.id!=='board-world')return;
@@ -1395,12 +1410,12 @@ function _boardsDrawConnectors(){
   svg.innerHTML=defs+_editConnectors.map((cn,i)=>{
     const arrow=cn.arrow?' marker-end="url(#board-arrow)"':'';
     if(cn.free){
-      return`<line class="free" x1="${cn.x1}" y1="${cn.y1}" x2="${cn.x2}" y2="${cn.y2}"${arrow} onclick="window.boardsDeleteConnectorAt(${i})"/>`;
+      return`<line class="free" data-conn="${i}" x1="${cn.x1}" y1="${cn.y1}" x2="${cn.x2}" y2="${cn.y2}"${arrow}/>`;
     }
     const from=_editCards.find(c=>c.id===cn.from),to=_editCards.find(c=>c.id===cn.to);
     if(!from||!to)return'';
     const p1=_boardCardCenter(from),p2=_boardCardCenter(to);
-    return`<line data-from="${cn.from}" data-to="${cn.to}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"${arrow} onclick="window.boardsDeleteConnectorAt(${i})"/>`;
+    return`<line data-conn="${i}" data-from="${cn.from}" data-to="${cn.to}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"${arrow}/>`;
   }).join('');
 }
 window.boardsDeleteConnectorAt=function(i){
@@ -1825,6 +1840,7 @@ function _boardsCloneCards(cards,dx,dy){
     copy.id=_boardsNewCard(c.type).id;
     copy.x=(c.x||0)+dx;copy.y=(c.y||0)+dy;
     delete copy.locked;
+    if(typeof session!=='undefined'&&session){copy.by=session.name||'';copy.at=Date.now();}
     return copy;
   });
 }
@@ -3085,3 +3101,346 @@ window.boardsSaveShare=async function(){
     showToast(picked.length?('Shared with '+picked.length+' '+(picked.length===1?'person':'people')):'Sharing removed');
   }catch(e){showToast('Could not update sharing: '+(e.message||e),true);}
 };
+
+/* ── Right-click menu (Sept 2026) ───────────────────────────────────────
+   Modelled on Milanote's, which Afnan sent a screenshot of: right-click
+   empty canvas for New Note / Link / To-do / Line / Board / Comment and
+   Select All, right-click a card for its own actions.
+
+   Three rules it holds to:
+   - **Inside a text card, to-do item or any input, the browser's own menu
+     wins.** Spellcheck suggestions, copy and paste belong to the browser
+     while you are editing text; hijacking them there is infuriating —
+     same reasoning as _boardsOnKeydown leaving Ctrl+Z alone in a field.
+   - **New cards land where you right-clicked**, via the one-shot
+     _boardsNextPlacement above, not in the middle of the screen.
+   - **Right-clicking a card that is already part of a multi-selection
+     keeps the group** (so "Duplicate" means all twelve); right-clicking
+     an unselected card selects just it first. Same rule as dragging.
+
+   It also gives connector lines a home: they used to be DELETED by a
+   plain left click, with no confirmation and no other interaction — the
+   line is now inert on click and deleted from this menu instead. */
+const _BOARDS_CTX_ID='board-ctx';
+let _boardsCtxWorld=null;   // world point the menu was opened at
+
+function _boardsCloseCtx(){
+  const el=document.getElementById(_BOARDS_CTX_ID);
+  if(el)el.remove();
+}
+function _boardsCtxHTML(items){
+  return items.map(it=>{
+    if(it.sep)return'<div class="board-ctx-sep"></div>';
+    if(it.title)return`<div class="board-ctx-title">${_boardsEsc(it.title)}</div>`;
+    if(it.swatches)return`<div class="board-ctx-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
+    return`<button class="board-ctx-item${it.danger?' danger':''}" data-act="${it.act}">${_boardsEsc(it.label)}${it.hint?`<span class="board-ctx-hint">${_boardsEsc(it.hint)}</span>`:''}</button>`;
+  }).join('');
+}
+function _boardsOpenCtx(clientX,clientY,items){
+  _boardsCloseCtx();
+  const el=document.createElement('div');
+  el.id=_BOARDS_CTX_ID;
+  el.className='board-ctx';
+  el.innerHTML=_boardsCtxHTML(items);
+  document.body.appendChild(el);
+  // Clamp inside the viewport — a menu opened near the right or bottom
+  // edge would otherwise run off-screen with no way to reach it.
+  const r=el.getBoundingClientRect();
+  el.style.left=Math.max(6,Math.min(clientX,window.innerWidth-r.width-8))+'px';
+  el.style.top=Math.max(6,Math.min(clientY,window.innerHeight-r.height-8))+'px';
+  el.addEventListener('click',ev=>{
+    const btn=ev.target.closest&&ev.target.closest('[data-act]');
+    if(!btn)return;
+    const act=btn.getAttribute('data-act');
+    _boardsCloseCtx();
+    _boardsCtxRun(act);
+  });
+}
+function _boardsCtxRun(act){
+  if(!_editBoard)return;
+  const at=_boardsCtxWorld;
+  const place=()=>{if(at)_boardsNextPlacement={x:at.x,y:at.y};};
+  if(act.indexOf('add:')===0){place();window.boardsAddCard(act.slice(4));return;}
+  if(act.indexOf('color:')===0){window.boardsSetColor(act.slice(6));return;}
+  if(act.indexOf('conn:')===0){window.boardsDeleteConnectorAt(parseInt(act.slice(5),10));return;}
+  switch(act){
+    case'file':place();window.boardsPickFiles();break;
+    case'line':window.boardsToggleLineMode();break;
+    case'paste':place();_boardsCtxPaste();break;
+    case'selectall':window.boardsSelectAll();break;
+    case'fit':window.boardsFitView();break;
+    case'reset':window.boardsResetView();break;
+    case'comment-board':window.boardsOpenComments(null);break;
+    case'card-comment':{const s=_boardsSelectedCards();if(s.length===1)window.boardsOpenComments(s[0].id);break;}
+    case'card-link':window.boardsCopyCardLink();break;
+    case'dup':window.boardsDuplicateSelection();break;
+    case'front':window.boardsBringToFront();break;
+    case'back':window.boardsSendToBack();break;
+    case'lock':window.boardsToggleLock();break;
+    case'delete':window.boardsDeleteSelection();break;
+    case'open-board':{const s=_boardsSelectedCards();if(s.length===1&&s[0].boardId)window.boardsGoto(s[0].boardId);break;}
+    case'cut':case'copy':{
+      // Our copy/cut live on the real clipboard events (see _boardsOnCopy),
+      // so the menu fires those rather than keeping a second code path.
+      let ok=false;
+      try{ok=document.execCommand(act);}catch(e){ok=false;}
+      if(!ok)showToast('Press Ctrl+'+(act==='cut'?'X':'C')+' to '+act+' these cards');
+      break;
+    }
+    case'replace':{const s=_boardsSelectedCards();if(s.length===1)_boardsReplaceAsset(s[0].id);break;}
+    case'download':{const u=_boardsAssetUrl();if(u)window.open(_boardsDownloadUrl(u),'_blank','noopener');break;}
+    case'openasset':{const u=_boardsAssetUrl();if(u)window.open(u,'_blank','noopener');break;}
+    case'copyasset':{
+      const s=_boardsSelectedCards();
+      const c=s.length===1?s[0]:null;
+      const u=c&&c.type==='board'&&c.boardId?_boardsLinkFor(c.boardId,null):_boardsAssetUrl();
+      if(!u)break;
+      _boardsCopyText(u).then(ok=>showToast(ok?'Link copied':u,!ok));
+      break;
+    }
+    case'copytext':{
+      const s=_boardsSelectedCards();
+      if(s.length===1)_boardsCopyText(s[0].text||'').then(ok=>showToast(ok?'Text copied':'Could not copy',!ok));
+      break;
+    }
+    case'rename':{
+      const s=_boardsSelectedCards();
+      if(s.length!==1)break;
+      const el=document.querySelector('#board-card-'+s[0].id+' .board-frame-title');
+      if(el){el.focus();try{el.select();}catch(e){}}
+      break;
+    }
+    case'selectinside':{
+      const s=_boardsSelectedCards();
+      if(s.length!==1||s[0].type!=='frame')break;
+      const inside=_boardsCardsInFrame(s[0]).map(c=>c.id);
+      if(!inside.length){showToast('Nothing inside that frame');break;}
+      _boardsSetSelection(inside);
+      break;
+    }
+    case'tickall':case'untickall':{
+      const s=_boardsSelectedCards();
+      if(s.length!==1||s[0].type!=='todo')break;
+      _boardsPushUndo();
+      (s[0].items||[]).forEach(i=>{i.done=(act==='tickall');});
+      _boardsRenderCanvasAndWire();
+      _boardsSaveDebounced();
+      break;
+    }
+    case'stack':window.boardsStackSelection();break;
+    case'grid':window.boardsGridSelection();break;
+    case'wrapframe':window.boardsFrameSelection();break;
+    default:break;
+  }
+}
+// Menu-driven paste can only reach the clipboard's TEXT (reading an image
+// needs navigator.clipboard.read() plus a permission prompt), so anything
+// it can't handle is answered honestly with "press Ctrl+V" rather than
+// failing silently.
+async function _boardsCtxPaste(){
+  if(!_boardsCanEdit(_editBoard))return;
+  let text='';
+  try{
+    if(navigator.clipboard&&navigator.clipboard.readText)text=await navigator.clipboard.readText();
+  }catch(e){text='';}
+  if(!text){showToast('Press Ctrl+V here to paste an image or text');return;}
+  if(text.indexOf(_BOARDS_CLIP_PREFIX)===0){
+    try{
+      const cards=JSON.parse(text.slice(_BOARDS_CLIP_PREFIX.length));
+      if(_boardsPasteCards(cards))return;
+    }catch(e){/* fall through to plain text */}
+  }
+  const trimmed=text.trim();
+  const isUrl=/^https?:\/\/\S+$/i.test(trimmed);
+  _boardsPushUndo();
+  const c=_boardsNewCard(isUrl?'link':'text');
+  const p=_boardsPlacementPoint();
+  c.x=p.x;c.y=p.y;
+  if(isUrl){
+    c.linkUrl=trimmed;
+    try{c.linkTitle=new URL(trimmed).hostname.replace(/^www\./,'');}catch(e){c.linkTitle='';}
+  }else{
+    c.text=text;
+    if(text.length>180)c.h=Math.min(320,100+Math.floor(text.length/40)*16);
+  }
+  _editCards.push(c);
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast(isUrl?'Link added':'Note added');
+}
+// The URL behind the one selected card, whatever kind it is.
+function _boardsAssetUrl(){
+  const sel=_boardsSelectedCards();
+  if(sel.length!==1)return'';
+  const c=sel[0];
+  return c.type==='image'?(c.imageUrl||''):c.type==='file'?(c.fileUrl||''):c.type==='link'?(c.linkUrl||''):'';
+}
+// Cloudinary serves an asset inline by default; fl_attachment is its
+// documented flag for "send this as a download". Best-effort — a non
+// Cloudinary URL is opened as-is, and this could not be verified from the
+// build sandbox, which cannot reach res.cloudinary.com.
+function _boardsDownloadUrl(url){
+  const u=String(url||'');
+  if(/res\.cloudinary\.com/.test(u)&&u.indexOf('/upload/')>-1&&u.indexOf('fl_attachment')===-1){
+    return u.replace('/upload/','/upload/fl_attachment/');
+  }
+  return u;
+}
+// Swap the asset on an existing image/file card. The card's own <input>
+// only exists while the card is EMPTY, so replacing needs a throwaway one.
+function _boardsReplaceAsset(cardId){
+  if(!_boardsCanEdit(_editBoard))return;
+  const c=_editCards.find(x=>x.id===cardId);
+  if(!c)return;
+  const inp=document.createElement('input');
+  inp.type='file';
+  if(c.type==='image')inp.accept='image/*';
+  inp.style.display='none';
+  document.body.appendChild(inp);
+  inp.addEventListener('change',()=>{
+    const f=inp.files&&inp.files[0];
+    if(f)_boardsUploadFileToCard(cardId,f);
+    inp.remove();
+  });
+  inp.click();
+}
+function _boardsCanvasCtxItems(canEdit){
+  if(!canEdit){
+    return[
+      {act:'selectall',label:'Select all',hint:'Ctrl+A'},
+      {sep:true},
+      {act:'fit',label:'Fit view'},
+      {act:'reset',label:'Reset zoom'}
+    ];
+  }
+  return[
+    {act:'add:text',label:'New note',hint:'Double-click'},
+    {act:'add:image',label:'New image'},
+    {act:'add:todo',label:'New to-do'},
+    {act:'add:link',label:'New link'},
+    {act:'file',label:'New file…'},
+    {act:'add:frame',label:'New frame'},
+    {act:'add:board',label:'New board'},
+    {act:'line',label:_boardsLineMode?'Line mode off':'Draw a line'},
+    {sep:true},
+    {act:'comment-board',label:'New comment'},
+    {sep:true},
+    {act:'paste',label:'Paste',hint:'Ctrl+V'},
+    {act:'selectall',label:'Select all',hint:'Ctrl+A'},
+    {sep:true},
+    {act:'fit',label:'Fit view'},
+    {act:'reset',label:'Reset zoom'}
+  ];
+}
+// Per-card-type menus, modelled on Milanote's: the common block first
+// (cut/copy/duplicate/delete with their real shortcuts), then whatever only
+// makes sense for THIS kind of card, then the shared arrange/z-order
+// actions, then who added it. An image gets Replace/Download, a file gets
+// Download and Copy link to file, a frame gets Select contents, a to-do
+// gets Tick all — the generic menu had none of that.
+function _boardsCardCtxItems(canEdit){
+  const sel=_boardsSelectedCards();
+  const one=sel.length===1?sel[0]:null;
+  const items=[];
+  if(sel.length>1)items.push({title:sel.length+' cards selected'});
+
+  if(canEdit){
+    items.push({act:'cut',label:'Cut',hint:'Ctrl X'});
+    items.push({act:'copy',label:'Copy',hint:'Ctrl C'});
+    items.push({act:'dup',label:'Duplicate',hint:'Ctrl D'});
+    items.push({act:'delete',label:'Delete',hint:'Del',danger:true});
+  }
+
+  // ── type-specific ──
+  const typed=[];
+  if(one){
+    if(one.type==='image'&&one.imageUrl){
+      if(canEdit)typed.push({act:'replace',label:'Replace image'});
+      typed.push({act:'download',label:'Download image'});
+      typed.push({act:'openasset',label:'Open original'});
+    }else if(one.type==='image'&&canEdit){
+      typed.push({act:'replace',label:'Add an image…'});
+    }else if(one.type==='file'&&one.fileUrl){
+      if(canEdit)typed.push({act:'replace',label:'Replace file'});
+      typed.push({act:'download',label:'Download'});
+      typed.push({act:'openasset',label:'Open file'});
+      typed.push({act:'copyasset',label:'Copy link to file'});
+    }else if(one.type==='file'&&canEdit){
+      typed.push({act:'replace',label:'Choose a file…'});
+    }else if(one.type==='link'&&one.linkUrl){
+      typed.push({act:'openasset',label:'Open link'});
+      typed.push({act:'copyasset',label:'Copy URL'});
+    }else if(one.type==='board'&&one.boardId){
+      typed.push({act:'open-board',label:'Open this board'});
+      typed.push({act:'copyasset',label:'Copy link to board'});
+    }else if(one.type==='frame'){
+      if(canEdit)typed.push({act:'rename',label:'Rename frame',hint:'Return'});
+      typed.push({act:'selectinside',label:'Select contents'});
+    }else if(one.type==='todo'&&canEdit){
+      typed.push({act:'tickall',label:'Tick all'});
+      typed.push({act:'untickall',label:'Untick all'});
+    }else if(one.type==='text'&&one.text){
+      typed.push({act:'copytext',label:'Copy text'});
+    }
+  }
+  if(typed.length){items.push({sep:true});typed.forEach(t=>items.push(t));}
+
+  items.push({sep:true});
+  items.push({act:'card-comment',label:'Comment'});
+  if(one)items.push({act:'card-link',label:'Copy link to card'});
+
+  if(canEdit){
+    items.push({sep:true});
+    if(sel.length>1){
+      items.push({act:'stack',label:'Stack into a column'});
+      items.push({act:'grid',label:'Arrange in a grid'});
+      items.push({act:'wrapframe',label:'Wrap in a frame'});
+      items.push({sep:true});
+    }
+    items.push({act:'lock',label:sel.some(c=>c.locked)?'Unlock position':'Lock position'});
+    items.push({act:'front',label:'Bring to front'});
+    items.push({act:'back',label:'Send to back'});
+    items.push({swatches:true});
+  }
+  // Provenance, when the card carries it (added Sept 2026 — older cards
+  // don't, and the line is simply omitted rather than faked).
+  if(one&&one.by){
+    items.push({sep:true});
+    items.push({title:'Added by '+one.by+(one.at?' · '+_boardsRelTime(one.at):'')});
+  }
+  return items;
+}
+function _boardsWireContextMenu(stage){
+  stage.addEventListener('contextmenu',e=>{
+    // Editing text? The browser's menu is the right one.
+    if(_boardsIsEditableFocus())return;
+    const t=e.target;
+    if(t&&t.closest&&t.closest('input,textarea,[contenteditable="true"]'))return;
+    const canEdit=_boardsCanEdit(_editBoard);
+    e.preventDefault();
+    _boardsCtxWorld=_boardsScreenToWorld(e.clientX,e.clientY);
+
+    const line=t&&t.closest&&t.closest('line[data-conn]');
+    if(line&&canEdit){
+      _boardsOpenCtx(e.clientX,e.clientY,[{act:'conn:'+line.getAttribute('data-conn'),label:'Delete line',danger:true}]);
+      return;
+    }
+    const cardEl=t&&t.closest&&t.closest('.board-card-el,.board-frame');
+    if(cardEl){
+      const id=cardEl.getAttribute('data-id');
+      // Keep an existing multi-selection; otherwise select just this card.
+      if(id&&!_boardsSelection.has(id))_boardsSetSelection([id]);
+      _boardsOpenCtx(e.clientX,e.clientY,_boardsCardCtxItems(canEdit));
+      return;
+    }
+    _boardsOpenCtx(e.clientX,e.clientY,_boardsCanvasCtxItems(canEdit));
+  });
+}
+// Registered once at load — the stage DOM is replaced on every render, but
+// these live on document, so they must not be re-added per render.
+document.addEventListener('pointerdown',e=>{
+  const el=document.getElementById(_BOARDS_CTX_ID);
+  if(el&&!(e.target&&e.target.closest&&e.target.closest('#'+_BOARDS_CTX_ID)))_boardsCloseCtx();
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')_boardsCloseCtx();});
+window.addEventListener('blur',_boardsCloseCtx);
