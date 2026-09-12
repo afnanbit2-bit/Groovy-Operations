@@ -217,6 +217,16 @@ service cloud.firestore {
       allow create: if signedIn() && request.resource.data.ownerUid==request.auth.uid;
       allow update, delete: if signedIn() && (resource.data.ownerUid==request.auth.uid || isOwner());
     }
+    // Mood Boards (Phase 2 of the Notion+Milanote module, Sept 2026) — the
+    // Milanote half, reached through the same Creative Hub. Identical
+    // TEAM/PRIVATE pattern to notes_pages above: 'shared' boards readable
+    // by any signed-in user, 'personal' boards readable only by their
+    // owner, no isOwner() override on read. See js/boards.js.
+    match /mood_boards/{doc} {
+      allow read:   if signedIn() && (resource.data.visibility=='shared' || resource.data.ownerUid==request.auth.uid);
+      allow create: if signedIn() && request.resource.data.ownerUid==request.auth.uid;
+      allow update, delete: if signedIn() && (resource.data.ownerUid==request.auth.uid || isOwner());
+    }
 
     // ── Shopify Inventory Intelligence ──
     // Sales + catalog data from Shopify. Server-side functions (service

@@ -4,15 +4,14 @@
    deleteDoc, query, where, collection, doc) are bridged onto window by the
    bootstrap module in index.html — see "File architecture" in CLAUDE.md.
 
-   Phase 1 of the Notion+Milanote module (see CLAUDE.md "Notes / Wiki"):
-   Notion-lite block pages, reached through a "Creative Hub" landing page
-   (renderCreativeHub) that lists categories — Notes is the first and only
-   one for now; Phase 2's boards will be another entry in _HUB_CATEGORIES,
-   not a separate top-level nav item. Every signed-in user can create pages,
-   either 'shared' (TEAM — team wiki/SOPs, readable by everyone signed in)
-   or 'personal' (PRIVATE — readable only by the owner). Phase 2 (a
-   Milanote-style freeform drag/connector canvas) is a separate future
-   module; it is NOT built here.
+   Phase 1 of the Notion+Milanote module (see CLAUDE.md "Creative Hub /
+   Notes module"): Notion-lite block pages, reached through the "Creative
+   Hub" card-grid landing page (renderCreativeHub, _HUB_CATEGORIES) also
+   defined in this file — Mood Boards (js/boards.js) is the second live
+   category; SOPs & Guidelines, Storage and Chat are 'soon' placeholder
+   tiles, not yet built. Every signed-in user can create Notes pages, either
+   'shared' (TEAM — team wiki, readable by everyone signed in) or 'personal'
+   (PRIVATE — readable only by the owner).
 
    Firestore: one doc per page in `notes_pages`, blocks stored as a plain
    array field on the doc (no subcollection) — simplest thing that works at
@@ -87,24 +86,38 @@ async function loadNotesData(){
 // A category directory. Notes (this file) is the first category; Phase 2's
 // Milanote-style boards land here as additional entries later — keep this
 // array-driven so adding one is a one-line change, not a page rewrite.
+// Card-grid hub, one tile per category. 'soon' tiles are greyed and
+// non-navigating (see onHubTileClick) — they preview the full roadmap
+// (SOPs & Guidelines, Storage, Chat) rather than only showing what's built,
+// per Afnan's explicit call. accent is a CSS var name (see css/main.css
+// :root — --cat-notes etc.), not a literal color, so both are edited in one
+// place if the palette ever changes.
 const _HUB_CATEGORIES=[
-  {pageId:'notes',label:'Notes',desc:'Team Wiki, private notes'}
+  {id:'notes',pageId:'notes',label:'Notes',desc:'Team Wiki, private notes',accent:'--cat-notes',status:'live'},
+  {id:'boards',pageId:'boards',label:'Mood Boards',desc:'Visual reference boards you drag, resize and connect',accent:'--cat-boards',status:'live'},
+  {id:'sops',label:'SOPs & Guidelines',desc:'Formal procedures with versioning',accent:'--cat-sops',status:'soon'},
+  {id:'storage',label:'Storage',desc:'Shared files and documents',accent:'--cat-storage',status:'soon'},
+  {id:'chat',label:'Chat',desc:'Team messaging',accent:'--cat-chat',status:'soon'}
 ];
 function renderCreativeHub(){
   return`
-  <div class="page-head" style="margin-bottom:14px">
-    <div><h2 style="margin:0">Creative Hub</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">A shared space for docs and (soon) boards</div></div>
+  <div class="page-head" style="margin-bottom:16px">
+    <h2 style="margin:0;font-size:30px;letter-spacing:-.01em">Creative Hub</h2>
+    <div style="color:var(--muted);font-size:13.5px;margin-top:6px">A shared space for docs and boards</div>
   </div>
-  <div id="hub-categories">${_HUB_CATEGORIES.map(c=>`
-    <div class="card" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px" onclick="window.showPage('${c.pageId}')">
-      <div style="min-width:0">
-        <div style="font-weight:600;font-size:15px">${_notesEsc(c.label)}</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:2px">${_notesEsc(c.desc)}</div>
-      </div>
-      <div style="color:var(--muted);font-size:16px;flex-shrink:0">›</div>
-    </div>`).join('')}
+  <div class="hub-grid">${_HUB_CATEGORIES.map(c=>`
+    <button class="hub-tile${c.status==='soon'?' soon':''}" style="--tile-accent:var(${c.accent})" onclick="window.onHubTileClick('${c.id}')">
+      ${c.status==='soon'?'<span class="soon-pill">Coming soon</span>':''}
+      <div class="tile-title">${_notesEsc(c.label)}</div>
+      <div class="tile-desc">${_notesEsc(c.desc)}</div>
+    </button>`).join('')}
   </div>`;
 }
+window.onHubTileClick=function(id){
+  const cat=_HUB_CATEGORIES.find(c=>c.id===id);
+  if(cat&&cat.status==='live'){window.showPage(cat.pageId);return;}
+  showToast((cat?cat.label:'This')+' — coming soon');
+};
 
 // ── Notes category: two segregated sections, TEAM and PRIVATE ──
 // Deliberately not a tab switcher — both sections are always visible at

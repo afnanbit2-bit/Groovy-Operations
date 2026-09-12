@@ -20,6 +20,10 @@
   --accent-urgent:#7B1F2A;--accent-urgent-soft:#F6E4E5;
   --accent-warning:#B47512;--accent-warning-soft:#FAEEDA;
   --accent-success:#14532D;--accent-success-soft:#E6EFE9;
+  /* Creative Hub category accents — decorative only, distinct from the
+     semantic accent palette above. Muted/dark to match this app's
+     monochrome-with-restraint brand, not a rainbow. */
+  --cat-notes:#35507A;--cat-boards:#7A4B7C;--cat-sops:#5C6B73;--cat-storage:#6B5738;--cat-chat:#3E6B6B;
   --radius-card:14px;--radius-bubble:16px}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:var(--text);background:var(--bg);min-height:100vh}
 #scr-login{display:none;min-height:100vh;align-items:center;justify-content:center;background:var(--dark)}
@@ -437,6 +441,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .bug-card.expanded .bug-card-expanded{display:block !important}
 .bug-card.expanded .bug-arrow{transform:rotate(180deg)}
 .bug-arrow{transition:transform .2s;color:#9CA3AF}
+/* ── Creative Hub (card grid) ───────────────────────────────── */
+.hub-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.hub-tile{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);padding:16px;cursor:pointer;text-align:left;position:relative;overflow:hidden;transition:transform .12s,box-shadow .12s;min-height:100px;display:flex;flex-direction:column;justify-content:flex-end;font-family:inherit}
+.hub-tile:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.08)}
+.hub-tile::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--tile-accent)}
+.hub-tile .tile-title{font-size:15px;font-weight:700;margin-bottom:3px;color:var(--text)}
+.hub-tile .tile-desc{font-size:12px;color:var(--muted);line-height:1.4}
+.hub-tile.soon{cursor:default;opacity:.55}
+.hub-tile.soon:hover{transform:none;box-shadow:none}
+.hub-tile .soon-pill{position:absolute;top:12px;right:12px;font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border:1px solid var(--border);border-radius:20px;padding:2px 8px}
+
 /* ── Creative Hub / Notes (Notion-lite pages, Phase 1) ─────── */
 .notes-section{margin-bottom:24px}
 .notes-section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
@@ -452,4 +467,52 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .note-bullet{margin-right:8px;flex-shrink:0;color:var(--muted);font-size:13px;line-height:1.7}
 @media (max-width:600px){
   .note-block-toolbar{flex-wrap:wrap}
+}
+
+/* ── Mood Boards gallery ────────────────────────────────────── */
+.board-gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.board-gallery-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);overflow:hidden;cursor:pointer;transition:transform .12s,box-shadow .12s}
+.board-gallery-card:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.08)}
+.board-gallery-thumb{height:110px;background:var(--soft);position:relative;overflow:hidden;border-bottom:1px solid var(--border)}
+.board-gallery-meta{padding:10px 12px}
+
+/* ── Mood Boards canvas ─────────────────────────────────────── */
+.board-canvas-wrap{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;background:var(--bg)}
+.board-topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:wrap}
+.pill{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;border-radius:20px;padding:3px 9px;border:1px solid var(--border);color:var(--muted)}
+.tool-btn{background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:inherit}
+.tool-btn:hover{border-color:var(--muted)}
+.zoom-readout{font-size:11px;color:var(--muted);min-width:34px;text-align:center;display:inline-block}
+.board-stage{position:relative;flex:1;overflow:hidden;cursor:grab;background-image:radial-gradient(#00000014 1px,transparent 1px);background-size:22px 22px}
+.board-stage.panning{cursor:grabbing}
+.board-world{position:absolute;left:0;top:0;transform-origin:0 0}
+.board-conn-layer{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+.board-conn-layer line{stroke:var(--muted);stroke-width:1.6;pointer-events:stroke;cursor:pointer}
+.board-conn-layer line.temp{stroke:var(--text);stroke-dasharray:4 4;pointer-events:none}
+.board-card-el{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.08);display:flex;flex-direction:column;overflow:hidden}
+.board-card-el.selected{outline:2px solid var(--text);outline-offset:1px}
+.board-card-head{background:var(--soft);border-bottom:1px solid var(--border);padding:5px 8px;display:flex;align-items:center;justify-content:space-between;cursor:grab;user-select:none;flex-shrink:0}
+.board-card-kind{font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.board-card-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:0 2px}
+.board-card-del:hover{color:var(--accent-urgent)}
+.board-card-body{flex:1;min-height:0;overflow:hidden;position:relative;font-size:12.5px}
+.board-card-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:11px;padding:6px}
+.board-text-body{padding:9px 10px;line-height:1.5;outline:none;overflow:auto}
+.board-text-body:empty:before{content:attr(data-placeholder);color:var(--muted)}
+.board-link-edit{display:flex;flex-direction:column;gap:5px;padding:8px}
+.board-link-edit input,.board-link-edit textarea{border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11.5px;font-family:inherit;resize:none}
+.board-link-edit textarea{flex:1;min-height:0}
+.link-title{padding:9px 10px 0;font-size:12.5px;font-weight:700;line-height:1.3}
+.link-desc{padding:2px 10px;font-size:11px;color:var(--muted);line-height:1.4}
+.link-url{padding:0 10px 8px;margin-top:auto;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.board-resize-handle{position:absolute;right:2px;bottom:2px;width:13px;height:13px;cursor:nwse-resize;color:var(--muted)}
+.board-resize-handle svg{width:100%;height:100%;opacity:.6}
+.board-link-handle{position:absolute;right:-7px;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:50%;background:var(--surface);border:2px solid var(--text);cursor:crosshair;opacity:0;transition:opacity .12s}
+.board-card-el:hover .board-link-handle{opacity:1}
+.board-add-menu{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);display:flex;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.08);z-index:20}
+.board-add-menu button{background:none;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text);font-family:inherit}
+.board-add-menu button:hover{background:var(--soft)}
+@media (max-width:560px){
+  .board-topbar #board-title-input{max-width:120px}
+  .board-gallery-grid{grid-template-columns:1fr 1fr}
 }

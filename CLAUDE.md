@@ -121,13 +121,20 @@ different network access.
 /js/activity.js      activity log loader.
 /js/notes.js         Creative Hub / Notes — Phase 1 of the Notion+Milanote
                      module (see "Creative Hub / Notes module" below). Hub
-                     landing page + block-based pages, TEAM or PRIVATE.
+                     landing page (shared infra, also renders Mood Boards'
+                     tile) + block-based pages, TEAM or PRIVATE.
                      Shared/cross-track, like pos.js/gatepass.js.
+/js/boards.js        Mood Boards — Phase 2 of the Notion+Milanote module,
+                     reached through the Creative Hub grid in js/notes.js.
+                     Freeform canvas: image/text/link cards, connector
+                     lines, pan/zoom, TEAM or PRIVATE. Loaded after
+                     notes.js. Shared/cross-track.
 ```
 
 Load order is fixed in `index.html`:
 `shared → print-engine → auth → pos → embellishments → hrm → store →
-gatepass → activity`, then the bootstrap module. All `/js/*.js` are **plain global classic
+gatepass → notes → boards → activity`, then the bootstrap module. All
+`/js/*.js` are **plain global classic
 scripts — no `import`/`export`**. They share one global lexical scope, so
 top-level `let/const` are visible across files (declared exactly once);
 top-level `function`/`var` also become `window.*`. Firebase is the ONLY ES
@@ -397,13 +404,23 @@ vanilla JS/SVG rather than take a dependency, consistent with this repo's
 zero-new-deps policy.
 
 **"Creative Hub" is the top-level nav entry (no icon — deliberate), not
-"Notes".** It's a category directory (`renderCreativeHub()` in
-`js/notes.js`, driven by the `_HUB_CATEGORIES` array) so Phase 2's boards
-land as a second category entry later, not a second top-level nav item.
-Notes is the first (and currently only) category. Page hierarchy:
-`creative-hub` (hub) → `notes` (category — TEAM/PRIVATE sections) →
-`note-detail` (one page). Each level's back-button goes exactly one level
-up, not to the hub from a detail page.
+"Notes".** It's a category directory — `renderCreativeHub()` + the
+card-grid CSS (`.hub-grid`/`.hub-tile`) live in `js/notes.js`/`css/main.css`
+even though Mood Boards itself is a separate file, since the hub is shared
+infrastructure both categories render into. `_HUB_CATEGORIES` (in
+`js/notes.js`) drives the grid: **Notes** and **Mood Boards** are `status:
+'live'` tiles; **SOPs & Guidelines**, **Storage** and **Chat** are `status:
+'soon'` — greyed, non-navigating, tapping one shows a short toast
+(`window.onHubTileClick`) rather than doing nothing. This is deliberate:
+the grid previews the full roadmap now rather than only showing what's
+built. Each tile gets a subtle left-edge color accent from `--cat-*` in
+`css/main.css` (`--cat-notes`, `--cat-boards`, `--cat-sops`, `--cat-storage`,
+`--cat-chat`) — decorative only, distinct from the semantic accent palette,
+still no icons/emoji anywhere in the hub. Page hierarchy: `creative-hub`
+(hub) → `notes` (TEAM/PRIVATE sections) → `note-detail` (one page), and
+separately `creative-hub` → `boards` (gallery) → `board-canvas` (one
+board). Each level's back-button goes exactly one level up, never straight
+to the hub from a leaf page.
 
 Note: Afnan has already flagged the Notes UI itself (the list cards, the
 block editor) as "too child-like, not professional" — a visual revamp is
@@ -492,11 +509,71 @@ checks (grep `staged rollout` in `js/shared.js`, and the one in
 just removing the condition, matching the "for everyone" design intent
 above.
 
-**Not built yet (Phase 2, future):** the Milanote half — a freeform
-drag-and-drop canvas (cards, images, connector lines, pan/zoom) for mood
-boards and project/planning boards. Agreed to build it in vanilla JS/SVG
-(pointer events for drag, an SVG overlay for connector lines) rather than
-add a canvas library dependency. Not started — do not assume it exists.
+**Phase 2 (shipped): `js/boards.js` — Mood Boards, the Milanote half.**
+Reached only through the Creative Hub grid (no separate top-level nav
+entry) — page ids `boards` (gallery) and `board-canvas` (one board).
+Identical TEAM/PRIVATE ownership model and `firestore.rules` pattern to
+Notes (`mood_boards` collection, same `ownerUid`/`visibility` read split,
+same two-single-field-query merge in `loadBoardsData()`). A board is a
+freeform canvas: cards (`image`, `text`, `link`) with independent
+x/y/w/h, connector lines between them, and its own pan (`panX`/`panY`)
+and `zoom`, all persisted as plain fields on the board doc — no
+subcollection, same reasoning as `notes_pages`.
+
+- **Canvas mechanics (vanilla JS/SVG, no library, per the zero-new-deps
+  policy):** `.board-world` holds a CSS `translate(panX,panY) scale(zoom)`
+  transform; cards are positioned in that same world-coordinate space via
+  `left`/`top` in px, and the connector `<svg>` (`#board-conn-layer`) is a
+  *sibling inside* `.board-world`, not a separately-transformed overlay —
+  so connector `<line>` endpoints are just each card's center in world
+  coordinates, no manual pan/zoom math needed to draw them. The only place
+  that math is needed is converting a raw pointer event to world
+  coordinates (`_boardsScreenToWorld`, used while dragging out a new
+  connector) and it's one function, reused everywhere.
+- **Drag/resize avoid full rerenders** the same way Notes' block editor
+  does — a card's `left`/`top`/`width`/`height` are written directly via
+  `el.style` during a pointer-move, with `_boardsRerenderCanvasAndWire()`
+  (a full rebuild) reserved for structural changes only (add/delete a
+  card, toggle visibility). Dragging a card doesn't lose text-card focus
+  or cause flicker for the same cursor-stability reason documented under
+  Notes above.
+- **Each card has a drag handle strip** (`.board-card-head`) separate from
+  its content — dragging always starts from the header, never from the
+  body. This avoids the click-vs-drag ambiguity a single draggable+
+  editable element would create, and was a deliberate choice over Notion's
+  "drag anywhere on the block" feel: image and link cards aren't
+  contenteditable at all, so a header-only handle is the one pattern that
+  works identically across all three card types.
+- **Link cards are manual entry** — the user types the URL, title and an
+  optional description themselves (`.board-link-edit` inputs). This was a
+  deliberate simplification, not an oversight: an auto-fetched preview
+  (og:title/og:image) needs a server-side fetch of a user-submitted URL —
+  the browser can't read another origin's HTML (CORS) — which means a new
+  Netlify Function and real SSRF surface (block internal/private
+  addresses, timeout, size-cap the response) to design carefully. Ship
+  that as a deliberate follow-up if wanted; don't casually add a
+  "quick" auto-fetch later without that hardening.
+- **Image cards use the same `uploadToCloudinary()` helper** (`js/shared.js`)
+  Notes' image blocks use — real uploaded photos, not placeholders.
+- Gallery cards (`_boardGalleryCardHTML`) show a **live scaled-down
+  preview** built from the same `cards` array as the real board (position
+  + color/image, non-interactively, `transform:scale()`), not a static
+  screenshot — so it never goes stale relative to the board's actual
+  content.
+- The canvas view (`.board-canvas-wrap`) is a `position:fixed;inset:0`
+  full-viewport takeover (`z-index:40`) rather than living inside the
+  normal `#sidebar`/`#main-content` shell — deliberate, a freeform
+  pan/zoom canvas needs the room a squeezed content column can't give it.
+  This is the first page in the app to do this; the "← Boards" back button
+  is the only way out, so don't add a second full-takeover page without
+  checking it doesn't strand someone.
+- **No separate staged-rollout gate on Mood Boards itself** — it's reached
+  only through the Creative Hub tile, which is already `session.u==='afnan'`-
+  gated, so gating it again would be redundant. If Notes and Mood Boards
+  ever need to open to different audiences (the "independent per category"
+  rollout model that was agreed on), give the hub tile itself a per-
+  category visibility check in `_HUB_CATEGORIES`/`onHubTileClick`, not a
+  second gate inside `js/boards.js`.
 
 ## Shopify Inventory Intelligence
 
