@@ -35,9 +35,18 @@ let _editCards=[];
 let _editConnectors=[];
 let _boardsSaveTimer=null;
 let _boardsCardSeq=0;
-let _boardsSelectedCardId=null;
+let _boardsSelection=new Set(); // card ids currently selected (Stage 2: many, not one)
+let _boardsClipboard=[];        // in-session card clipboard, survives moving between boards
 let _boardsAddCascade=0;      // so repeated "+ Card" clicks don't stack perfectly
 let _boardsDragDepth=0;       // dragenter/dragleave fire per child; count to know when we really left
+
+const _BOARDS_GRID=20;          // snap-to-grid step, world px
+const _BOARDS_SNAP_PX=6;        // alignment-guide catch distance, SCREEN px (so it feels the same at any zoom)
+const _BOARDS_CLIP_PREFIX='groovy-board-cards:';
+// Snap preference is a per-viewer convenience, not board data — localStorage
+// is the right home for it (it should not travel with the board to someone
+// else's screen).
+let _boardsSnapGrid=(function(){try{return localStorage.getItem('groovy-boards-snap')==='1';}catch(e){return false;}})();
 
 const _BOARDS_ZOOM_MIN=0.1;   // Afnan works at ~19% in Milanote — 40% couldn't fit a real board
 const _BOARDS_ZOOM_MAX=3;
@@ -135,17 +144,30 @@ function _boardsIsEditableFocus(){
 // the paste handler below (never stacks duplicate listeners per render).
 function _boardsOnKeydown(e){
   if(currentPage!=='board-canvas'||!_editBoard)return;
-  if(!(e.ctrlKey||e.metaKey))return;
-  const k=(e.key||'').toLowerCase();
-  if(k!=='z'&&k!=='y')return;
-  // Inside a text card or a link field, Ctrl+Z belongs to the browser's own
-  // text undo — intercepting it there would be worse than not having ours.
+  // Inside a text card or a link field every one of these belongs to the
+  // browser — Ctrl+Z is text undo, Backspace deletes a character, Ctrl+A
+  // selects the paragraph. Intercepting any of them there would be worse
+  // than not having the shortcut at all.
   if(_boardsIsEditableFocus())return;
-  e.preventDefault();
-  if(k==='y'||e.shiftKey)window.boardsRedoAction();
-  else window.boardsUndoAction();
+  const k=(e.key||'').toLowerCase();
+  if(e.ctrlKey||e.metaKey){
+    if(k==='z'){e.preventDefault();if(e.shiftKey)window.boardsRedoAction();else window.boardsUndoAction();return;}
+    if(k==='y'){e.preventDefault();window.boardsRedoAction();return;}
+    if(k==='d'){e.preventDefault();window.boardsDuplicateSelection();return;}
+    if(k==='a'){e.preventDefault();window.boardsSelectAll();return;}
+    return;   // let copy/cut/paste reach their own clipboard events
+  }
+  if(k==='escape'&&_boardsSelection.size){e.preventDefault();window.boardsClearSelection();return;}
+  if((k==='delete'||k==='backspace')&&_boardsSelection.size){e.preventDefault();window.boardsDeleteSelection();}
 }
 document.addEventListener('keydown',_boardsOnKeydown);
+window.boardsToggleSnap=function(){
+  _boardsSnapGrid=!_boardsSnapGrid;
+  try{localStorage.setItem('groovy-boards-snap',_boardsSnapGrid?'1':'0');}catch(e){}
+  const btn=document.getElementById('board-snap-btn');
+  if(btn)btn.classList.toggle('on',_boardsSnapGrid);
+  showToast(_boardsSnapGrid?'Snap to grid on':'Snap to grid off — cards align to each other instead');
+};
 
 // ── Load (gallery) ──
 // Same two-single-field-query, merge-client-side approach as loadNotesData —
@@ -286,7 +308,7 @@ async function _boardsOpenCanvas(){
   _editBoard={id:b.id,title:b.title||'Untitled board',visibility:b.visibility||'personal',ownerUid:b.ownerUid,ownerName:b.ownerName,ownerUsername:b.ownerUsername,zoom:b.zoom||1,panX:b.panX||40,panY:b.panY||30};
   _editCards=(b.cards||[]).map(c=>{const cc={...c};delete cc._uploading;return cc;});
   _editConnectors=(b.connectors||[]).map(cn=>({...cn}));
-  _boardsSelectedCardId=null;
+  _boardsSelection=new Set();
   // History is per board-opening — undoing your way into a different
   // board's state would be nonsense.
   _boardsUndo=[];_boardsRedo=[];
@@ -301,6 +323,7 @@ function _boardsRenderCanvasAndWire(){
   _boardsDrawConnectors();
   _boardsWireStagePan();
   _boardsSyncHistoryButtons();
+  _boardsRenderSelectionBar();
 }
 function _renderBoardCanvasHTML(){
   const b=_editBoard;
@@ -325,14 +348,19 @@ function _renderBoardCanvasHTML(){
         <button class="tool-btn" onclick="window.boardsZoomBy(1.25)">+</button>
         <button class="tool-btn" onclick="window.boardsFitView()">Fit</button>
         <button class="tool-btn" onclick="window.boardsResetView()">100%</button>
+        ${canEdit?`<button class="tool-btn${_boardsSnapGrid?' on':''}" id="board-snap-btn" onclick="window.boardsToggleSnap()" title="Snap cards to a grid while dragging">Snap</button>`:''}
         ${canEdit?`<button class="tool-btn" onclick="window.boardsDelete()" style="color:var(--accent-urgent)">Delete</button>`:''}
       </div>
     </div>
     <div class="board-stage" id="board-stage">
       <div class="board-world" id="board-world">
         <svg class="board-conn-layer" id="board-conn-layer" width="4000" height="3000"></svg>
+        <div class="board-guide board-guide-v" id="board-guide-v"></div>
+        <div class="board-guide board-guide-h" id="board-guide-h"></div>
         ${_editCards.map(c=>_boardCardHTML(c,canEdit)).join('')}
       </div>
+      <div class="board-marquee" id="board-marquee"></div>
+      ${canEdit?'<div class="board-selection-bar" id="board-selection-bar" style="display:none"></div>':''}
       ${canEdit?'<div class="board-dropzone" id="board-dropzone"><div>Drop files to add them to this board</div></div>':''}
       ${canEdit?`<div class="board-add-menu">
         <button onclick="window.boardsAddCard('image')">+ Image</button>
@@ -394,14 +422,15 @@ function _boardCardHTML(c,canEdit){
     body=`<div class="board-card-body board-text-body" contenteditable="${!!canEdit}" id="board-txt-${c.id}" data-placeholder="Type a note…" oninput="window.boardsTextInput('${c.id}',this)"></div>`;
   }
   const kind=c.type==='image'?'Image':c.type==='link'?'Link':c.type==='file'?'File':'Note';
-  const sel=c.id===_boardsSelectedCardId?' selected':'';
-  return`<div class="board-card-el${sel}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px" onclick="window.boardsSelectCard('${c.id}')">
+  const sel=_boardsSelection.has(c.id)?' selected':'';
+  const lock=c.locked?' locked':'';
+  return`<div class="board-card-el${sel}${lock}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px" onclick="window.boardsSelectCard('${c.id}',event)">
     <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''}>
-      <span class="board-card-kind">${kind}</span>
-      ${canEdit?`<button class="board-card-del" onclick="window.boardsDeleteCard('${c.id}')" title="Delete">✕</button>`:''}
+      <span class="board-card-kind">${kind}${c.locked?' · Locked':''}</span>
+      ${canEdit&&!c.locked?`<button class="board-card-del" onclick="window.boardsDeleteCard('${c.id}')" title="Delete">✕</button>`:''}
     </div>
     ${body}
-    ${canEdit?`<div class="board-link-handle" onpointerdown="window.boardsLinkStart(event,'${c.id}')" title="Drag to connect"></div>
+    ${canEdit&&!c.locked?`<div class="board-link-handle" onpointerdown="window.boardsLinkStart(event,'${c.id}')" title="Drag to connect"></div>
     <div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
   </div>`;
 }
@@ -483,11 +512,56 @@ function _boardsWireStagePan(){
   stage.addEventListener('pointerdown',e=>{
     if(e.target!==stage&&e.target.id!=='board-world')return;
     const b=_editBoard;
+
+    // Shift+drag on empty canvas = marquee select; plain drag still pans.
+    // Deliberately this way round rather than Milanote's (drag = marquee,
+    // space = pan): dragging IS how you pan here and has been since Stage
+    // 1, and there's no scrollbar to fall back on, so making plain drag
+    // select would strand anyone who didn't discover the modifier.
+    if(e.shiftKey&&canEdit){
+      const box=document.getElementById('board-marquee');
+      const rect=stage.getBoundingClientRect();
+      const sx=e.clientX,sy=e.clientY;
+      stage.setPointerCapture(e.pointerId);
+      if(box)box.style.display='block';
+      function mmove(ev){
+        if(!box)return;
+        const x1=Math.min(sx,ev.clientX)-rect.left,y1=Math.min(sy,ev.clientY)-rect.top;
+        box.style.left=x1+'px';box.style.top=y1+'px';
+        box.style.width=Math.abs(ev.clientX-sx)+'px';
+        box.style.height=Math.abs(ev.clientY-sy)+'px';
+      }
+      function mup(ev){
+        stage.removeEventListener('pointermove',mmove);stage.removeEventListener('pointerup',mup);
+        if(box)box.style.display='none';
+        const a=_boardsScreenToWorld(sx,sy),bb=_boardsScreenToWorld(ev.clientX,ev.clientY);
+        const x1=Math.min(a.x,bb.x),x2=Math.max(a.x,bb.x);
+        const y1=Math.min(a.y,bb.y),y2=Math.max(a.y,bb.y);
+        // A click with no drag clears instead of selecting everything.
+        if(x2-x1<3&&y2-y1<3){_boardsSetSelection([]);return;}
+        const hit=_editCards.filter(c=>c.x<x2&&c.x+c.w>x1&&c.y<y2&&c.y+c.h>y1).map(c=>c.id);
+        _boardsSetSelection(hit);
+      }
+      stage.addEventListener('pointermove',mmove);
+      stage.addEventListener('pointerup',mup);
+      return;
+    }
+
+    // Clicking empty canvas clears the selection (unless it turns into a pan).
+    let moved=false;
     const startX=e.clientX,startY=e.clientY,origX=b.panX,origY=b.panY;
     stage.classList.add('panning');
     stage.setPointerCapture(e.pointerId);
-    function move(ev){b.panX=origX+(ev.clientX-startX);b.panY=origY+(ev.clientY-startY);_boardsApplyTransform();}
-    function up(){stage.classList.remove('panning');stage.removeEventListener('pointermove',move);stage.removeEventListener('pointerup',up);_boardsSaveDebounced();}
+    function move(ev){
+      if(Math.abs(ev.clientX-startX)>3||Math.abs(ev.clientY-startY)>3)moved=true;
+      b.panX=origX+(ev.clientX-startX);b.panY=origY+(ev.clientY-startY);_boardsApplyTransform();
+    }
+    function up(){
+      stage.classList.remove('panning');
+      stage.removeEventListener('pointermove',move);stage.removeEventListener('pointerup',up);
+      if(moved)_boardsSaveDebounced();
+      else if(_boardsSelection.size)_boardsSetSelection([]);
+    }
     stage.addEventListener('pointermove',move);
     stage.addEventListener('pointerup',up);
   });
@@ -547,31 +621,95 @@ function _boardsDragHasFiles(e){
 }
 
 // -- card drag / resize --
+// Alignment guides: while dragging, look for another card whose left /
+// centre / right (or top / middle / bottom) is within a few SCREEN pixels
+// of the dragged card's, snap to it, and draw the line you snapped to.
+// Screen-space threshold, not world-space, so the catch feels identical
+// whether you're at 19% or 200%.
+function _boardsAlignDelta(moving,others,zoom){
+  const tol=_BOARDS_SNAP_PX/zoom;
+  let best={dx:0,dy:0,vx:null,hy:null,bdx:tol+1,bdy:tol+1};
+  const mx=[moving.x,moving.x+moving.w/2,moving.x+moving.w];
+  const my=[moving.y,moving.y+moving.h/2,moving.y+moving.h];
+  others.forEach(o=>{
+    const ox=[o.x,o.x+o.w/2,o.x+o.w];
+    const oy=[o.y,o.y+o.h/2,o.y+o.h];
+    mx.forEach(m=>ox.forEach(t=>{
+      const d=t-m;
+      if(Math.abs(d)<Math.abs(best.bdx)){best.bdx=d;best.dx=d;best.vx=t;}
+    }));
+    my.forEach(m=>oy.forEach(t=>{
+      const d=t-m;
+      if(Math.abs(d)<Math.abs(best.bdy)){best.bdy=d;best.dy=d;best.hy=t;}
+    }));
+  });
+  if(Math.abs(best.bdx)>tol){best.dx=0;best.vx=null;}
+  if(Math.abs(best.bdy)>tol){best.dy=0;best.hy=null;}
+  return best;
+}
+function _boardsShowGuides(vx,hy){
+  const v=document.getElementById('board-guide-v'),h=document.getElementById('board-guide-h');
+  if(v){if(vx==null)v.style.display='none';else{v.style.display='block';v.style.left=vx+'px';}}
+  if(h){if(hy==null)h.style.display='none';else{h.style.display='block';h.style.top=hy+'px';}}
+}
+function _boardsHideGuides(){_boardsShowGuides(null,null);}
+
 window.boardsCardDragStart=function(e,cardId){
   e.stopPropagation();
   const b=_editBoard;const c=_editCards.find(x=>x.id===cardId);if(!c)return;
-  _boardsSelectCard(cardId);
+  if(c.locked){showToast('Card is locked — unlock it to move it');return;}
+  _boardsSelectCard(cardId,e.shiftKey||e.ctrlKey||e.metaKey);
+  // Drag the whole selection when the grabbed card is part of one; locked
+  // cards in that selection stay put rather than blocking the rest.
+  const group=(_boardsSelection.has(cardId)?_boardsSelectedCards():[c]).filter(x=>!x.locked);
+  if(!group.length)return;
+  const origins=group.map(x=>({card:x,ox:x.x,oy:x.y}));
+  const others=_editCards.filter(x=>!group.some(g=>g.id===x.id));
   const head=e.currentTarget;
-  const startX=e.clientX,startY=e.clientY,origX=c.x,origY=c.y;
+  const startX=e.clientX,startY=e.clientY;
   let pushed=false;
   head.setPointerCapture(e.pointerId);
   function move(ev){
     // One undo entry per gesture, pushed on the first actual movement —
     // a plain click on the header shouldn't leave a no-op in the stack.
     if(!pushed){_boardsPushUndo();pushed=true;}
-    c.x=origX+(ev.clientX-startX)/b.zoom;
-    c.y=origY+(ev.clientY-startY)/b.zoom;
-    const el=document.getElementById('board-card-'+cardId);
-    if(el){el.style.left=c.x+'px';el.style.top=c.y+'px';}
-    _boardsUpdateConnectorsFor(cardId);
+    let dx=(ev.clientX-startX)/b.zoom;
+    let dy=(ev.clientY-startY)/b.zoom;
+    if(_boardsSnapGrid){
+      // Grid and alignment guides would fight each other, so grid wins
+      // outright when it's switched on.
+      dx=Math.round((origins[0].ox+dx)/_BOARDS_GRID)*_BOARDS_GRID-origins[0].ox;
+      dy=Math.round((origins[0].oy+dy)/_BOARDS_GRID)*_BOARDS_GRID-origins[0].oy;
+      _boardsHideGuides();
+    }else if(!ev.altKey){
+      // Alt suspends snapping for fine placement.
+      const lead=origins[0];
+      const probe={x:lead.ox+dx,y:lead.oy+dy,w:lead.card.w,h:lead.card.h};
+      const a=_boardsAlignDelta(probe,others,b.zoom);
+      dx+=a.dx;dy+=a.dy;
+      _boardsShowGuides(a.vx,a.hy);
+    }else{
+      _boardsHideGuides();
+    }
+    origins.forEach(o=>{
+      o.card.x=o.ox+dx;o.card.y=o.oy+dy;
+      const el=document.getElementById('board-card-'+o.card.id);
+      if(el){el.style.left=o.card.x+'px';el.style.top=o.card.y+'px';}
+      _boardsUpdateConnectorsFor(o.card.id);
+    });
   }
-  function up(){head.removeEventListener('pointermove',move);head.removeEventListener('pointerup',up);_boardsSaveDebounced();}
+  function up(){
+    head.removeEventListener('pointermove',move);head.removeEventListener('pointerup',up);
+    _boardsHideGuides();
+    if(pushed)_boardsSaveDebounced();
+  }
   head.addEventListener('pointermove',move);
   head.addEventListener('pointerup',up);
 };
 window.boardsResizeStart=function(e,cardId){
   e.stopPropagation();
   const b=_editBoard;const c=_editCards.find(x=>x.id===cardId);if(!c)return;
+  if(c.locked){showToast('Card is locked — unlock it to resize it');return;}
   const startX=e.clientX,startY=e.clientY,origW=c.w,origH=c.h;
   let pushed=false;
   const handle=e.currentTarget;handle.setPointerCapture(e.pointerId);
@@ -587,11 +725,61 @@ window.boardsResizeStart=function(e,cardId){
   handle.addEventListener('pointermove',move);
   handle.addEventListener('pointerup',up);
 };
-function _boardsSelectCard(id){
-  _boardsSelectedCardId=id;
-  document.querySelectorAll('.board-card-el').forEach(el=>el.classList.toggle('selected',el.dataset.id===id));
+// ── Selection ──────────────────────────────────────────────────────────
+// A Set of ids rather than a single one. Nearly everything in Stage 2
+// (bulk move/delete/duplicate, z-order, lock, copy) is the same code
+// whether one card or twelve are selected — which is exactly why this had
+// to land before the rest of the stage rather than after it.
+function _boardsSelectedCards(){return _editCards.filter(c=>_boardsSelection.has(c.id));}
+function _boardsPaintSelection(){
+  document.querySelectorAll('.board-card-el').forEach(el=>el.classList.toggle('selected',_boardsSelection.has(el.dataset.id)));
+  _boardsRenderSelectionBar();
 }
-window.boardsSelectCard=function(id){_boardsSelectCard(id);};
+function _boardsSetSelection(ids){
+  _boardsSelection=new Set(ids);
+  _boardsPaintSelection();
+}
+function _boardsSelectCard(id,additive){
+  if(additive){
+    if(_boardsSelection.has(id))_boardsSelection.delete(id);
+    else _boardsSelection.add(id);
+  }else{
+    // Clicking an already-multi-selected card keeps the group, so you can
+    // grab a selection of twelve by its edge and drag the lot.
+    if(_boardsSelection.has(id)&&_boardsSelection.size>1)return _boardsPaintSelection();
+    _boardsSelection=new Set([id]);
+  }
+  _boardsPaintSelection();
+}
+window.boardsSelectCard=function(id,ev){
+  // A click on the header arrives AFTER that header's pointerdown has
+  // already run boardsCardDragStart, which selects. Without this guard a
+  // shift-click on a header would toggle twice and cancel itself out.
+  if(ev&&ev.target&&ev.target.closest&&ev.target.closest('.board-card-head'))return;
+  const additive=!!(ev&&(ev.shiftKey||ev.ctrlKey||ev.metaKey));
+  _boardsSelectCard(id,additive);
+};
+window.boardsClearSelection=function(){_boardsSetSelection([]);};
+window.boardsSelectAll=function(){_boardsSetSelection(_editCards.map(c=>c.id));};
+
+// Contextual bar — only present while something is selected, so the canvas
+// stays clean when it isn't.
+function _boardsRenderSelectionBar(){
+  const host=document.getElementById('board-selection-bar');
+  if(!host)return;
+  const sel=_boardsSelectedCards();
+  if(!sel.length||!_boardsCanEdit(_editBoard)){host.innerHTML='';host.style.display='none';return;}
+  const anyLocked=sel.some(c=>c.locked);
+  host.style.display='flex';
+  host.innerHTML=`
+    <span class="board-sel-count">${sel.length} selected</span>
+    <button class="tool-btn" onclick="window.boardsDuplicateSelection()" title="Duplicate (Ctrl+D)">Duplicate</button>
+    <button class="tool-btn" onclick="window.boardsBringToFront()" title="Bring to front">Front</button>
+    <button class="tool-btn" onclick="window.boardsSendToBack()" title="Send to back">Back</button>
+    <button class="tool-btn" onclick="window.boardsToggleLock()">${anyLocked?'Unlock':'Lock'}</button>
+    <button class="tool-btn" style="color:var(--accent-urgent)" onclick="window.boardsDeleteSelection()" title="Delete">Delete</button>
+    <button class="tool-btn" onclick="window.boardsClearSelection()" title="Clear selection (Esc)">✕</button>`;
+}
 
 // -- connectors --
 function _boardCardCenter(c){return{x:c.x+c.w/2,y:c.y+c.h/2};}
@@ -773,7 +961,10 @@ function _boardsOnPaste(e){
   }
   if(imageFile){
     e.preventDefault();
-    let card=_editCards.find(c=>c.id===_boardsSelectedCardId&&c.type==='image'&&!c.imageUrl);
+    // Fill a single selected empty image card, if that's what's selected;
+    // otherwise make a new one.
+    const selected=_boardsSelectedCards();
+    let card=(selected.length===1&&selected[0].type==='image'&&!selected[0].imageUrl)?selected[0]:null;
     if(!card){
       _boardsPushUndo();
       card=_boardsNewCard('image');
@@ -789,7 +980,20 @@ function _boardsOnPaste(e){
   }
   if(_boardsIsEditableFocus())return;
   const text=((e.clipboardData&&e.clipboardData.getData('text/plain'))||'').trim();
-  if(!text)return;
+  // Cards copied from a board (possibly a different one, or another tab)
+  // come back as tagged JSON — handled before the URL/text cases.
+  if(text.indexOf(_BOARDS_CLIP_PREFIX)===0){
+    e.preventDefault();
+    let payload=null;
+    try{payload=JSON.parse(text.slice(_BOARDS_CLIP_PREFIX.length));}catch(err){payload=null;}
+    if(Array.isArray(payload)&&payload.length){_boardsPasteCards(payload);return;}
+  }
+  if(!text){
+    // Nothing usable on the system clipboard, but this session copied cards
+    // earlier (the setData call can be refused in some browsers) — fall back.
+    if(_boardsClipboard.length){e.preventDefault();_boardsPasteCards(_boardsClipboard);}
+    return;
+  }
   e.preventDefault();
   _boardsPushUndo();
   const p=_boardsPlacementPoint();
@@ -823,12 +1027,128 @@ window.boardsAddCard=function(type){
   _boardsSaveDebounced();
 };
 window.boardsDeleteCard=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(c&&c.locked){showToast('That card is locked');return;}
   _boardsPushUndo();
-  _editCards=_editCards.filter(c=>c.id!==id);
+  _editCards=_editCards.filter(x=>x.id!==id);
   _editConnectors=_editConnectors.filter(cn=>cn.from!==id&&cn.to!==id);
+  _boardsSelection.delete(id);
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
 };
+
+// ── Bulk actions on the selection ──────────────────────────────────────
+window.boardsDeleteSelection=function(){
+  if(!_boardsCanEdit(_editBoard))return;
+  const sel=_boardsSelectedCards();
+  const removable=sel.filter(c=>!c.locked);
+  if(!removable.length){showToast(sel.length?'Those cards are locked':'Nothing selected');return;}
+  _boardsPushUndo();
+  const ids=new Set(removable.map(c=>c.id));
+  _editCards=_editCards.filter(c=>!ids.has(c.id));
+  _editConnectors=_editConnectors.filter(cn=>!ids.has(cn.from)&&!ids.has(cn.to));
+  ids.forEach(id=>_boardsSelection.delete(id));
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  if(removable.length<sel.length)showToast('Kept '+(sel.length-removable.length)+' locked card'+(sel.length-removable.length===1?'':'s'));
+};
+// Clones land offset from the originals and become the new selection, so a
+// duplicate can be dragged straight into place without re-selecting it.
+function _boardsCloneCards(cards,dx,dy){
+  return cards.map(c=>{
+    const copy={};
+    Object.keys(c).forEach(k=>{if(k.charAt(0)!=='_')copy[k]=c[k];});
+    copy.id=_boardsNewCard(c.type).id;
+    copy.x=(c.x||0)+dx;copy.y=(c.y||0)+dy;
+    delete copy.locked;
+    return copy;
+  });
+}
+window.boardsDuplicateSelection=function(){
+  if(!_boardsCanEdit(_editBoard))return;
+  const sel=_boardsSelectedCards();
+  if(!sel.length)return;
+  _boardsPushUndo();
+  const clones=_boardsCloneCards(sel,24,24);
+  _editCards=_editCards.concat(clones);
+  _boardsSelection=new Set(clones.map(c=>c.id));
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+// Z-order IS array order — later in _editCards paints on top, since the
+// cards are absolutely-positioned siblings. So "bring to front" is just a
+// reorder, and nothing new has to be persisted or migrated.
+window.boardsBringToFront=function(){
+  if(!_boardsCanEdit(_editBoard))return;
+  const sel=_boardsSelectedCards();
+  if(!sel.length)return;
+  _boardsPushUndo();
+  const ids=new Set(sel.map(c=>c.id));
+  _editCards=_editCards.filter(c=>!ids.has(c.id)).concat(sel);
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+window.boardsSendToBack=function(){
+  if(!_boardsCanEdit(_editBoard))return;
+  const sel=_boardsSelectedCards();
+  if(!sel.length)return;
+  _boardsPushUndo();
+  const ids=new Set(sel.map(c=>c.id));
+  _editCards=sel.concat(_editCards.filter(c=>!ids.has(c.id)));
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+// Lock stops a finished background image or header label being nudged by
+// accident. Locked cards stay selectable — that's how you unlock them.
+window.boardsToggleLock=function(){
+  if(!_boardsCanEdit(_editBoard))return;
+  const sel=_boardsSelectedCards();
+  if(!sel.length)return;
+  _boardsPushUndo();
+  const unlocking=sel.some(c=>c.locked);
+  sel.forEach(c=>{if(unlocking)delete c.locked;else c.locked=true;});
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+
+// ── Copy / cut / paste of cards ────────────────────────────────────────
+// Cards go onto the SYSTEM clipboard as tagged JSON rather than living only
+// in a module variable. That removes the "which clipboard wins?" question
+// from the paste handler entirely — the OS clipboard is the single source
+// of truth — and it means a copy survives across tabs, not just across
+// boards in one session.
+function _boardsOnCopy(e,cut){
+  if(currentPage!=='board-canvas'||!_editBoard||!_boardsCanEdit(_editBoard))return;
+  if(_boardsIsEditableFocus())return;
+  const sel=_boardsSelectedCards();
+  if(!sel.length)return;
+  const payload=_boardsCloneCards(sel,0,0);
+  _boardsClipboard=payload;
+  try{
+    e.clipboardData.setData('text/plain',_BOARDS_CLIP_PREFIX+JSON.stringify(payload));
+    e.preventDefault();
+  }catch(err){/* keep the in-memory copy; paste still works this session */}
+  if(cut)window.boardsDeleteSelection();
+  else showToast(sel.length+' card'+(sel.length===1?'':'s')+' copied');
+}
+document.addEventListener('copy',e=>_boardsOnCopy(e,false));
+document.addEventListener('cut',e=>_boardsOnCopy(e,true));
+function _boardsPasteCards(cards){
+  if(!cards||!cards.length)return false;
+  _boardsPushUndo();
+  const p=_boardsPlacementPoint();
+  const minX=Math.min(...cards.map(c=>c.x||0));
+  const minY=Math.min(...cards.map(c=>c.y||0));
+  // Keep the copied group's internal layout, just move the whole cluster
+  // to where the new cards are being placed.
+  const clones=_boardsCloneCards(cards,p.x-minX,p.y-minY);
+  _editCards=_editCards.concat(clones);
+  _boardsSelection=new Set(clones.map(c=>c.id));
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast(clones.length+' card'+(clones.length===1?'':'s')+' pasted');
+  return true;
+}
 window.boardsToggleVisibility=async function(){
   if(!_boardsCanEdit(_editBoard))return;
   const next=_editBoard.visibility==='shared'?'personal':'shared';

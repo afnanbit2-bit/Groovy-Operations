@@ -659,6 +659,61 @@ re-deriving it.
   card). Text pasted **while a card is focused is left entirely alone** —
   that's an ordinary text paste and hijacking it would be infuriating.
 
+### Mood Boards — Stage 2 (Sept 2026)
+
+Arranging tools. Selection became a Set (`_boardsSelection`) rather than
+the single `_boardsSelectedCardId` Stage 1 had — that conversion was the
+whole point of doing multi-select first, since bulk move/delete/duplicate,
+z-order and lock are all the same code for one card or twelve.
+
+- **Marquee is Shift+drag on empty canvas; plain drag still pans.**
+  Deliberately the opposite way round from Milanote (where drag marquees
+  and space pans): dragging has *been* how you pan here since Stage 1, and
+  the stage has no scrollbars, so making plain drag select would strand
+  anyone who never found the modifier. A plain click on empty canvas that
+  doesn't turn into a pan clears the selection.
+- **Clicking a card that's already part of a multi-selection keeps the
+  group** (`_boardsSelectCard`'s early return) — that's what lets you grab
+  twelve cards by one of them and drag the lot. Shift/Ctrl-click toggles a
+  card in or out.
+- **A card's header runs selection on `pointerdown` (via
+  `boardsCardDragStart`) and the card wrapper runs it again on `click`.**
+  `window.boardsSelectCard` therefore ignores clicks originating inside
+  `.board-card-head` — without that guard a shift-click on a header
+  toggles twice and cancels itself out. Found by tracing, not in testing;
+  don't remove the guard.
+- **Z-order is array order** — later in `_editCards` paints on top, since
+  cards are absolutely-positioned siblings. "Bring to front" is a reorder
+  of that array, so no new persisted field and no migration.
+- **Snapping has two mutually exclusive modes.** Snap-to-grid (the `Snap`
+  toolbar toggle, `_BOARDS_GRID` = 20 world px) rounds positions; with it
+  off, cards align to *each other* — `_boardsAlignDelta` compares the
+  dragged card's left/centre/right and top/middle/bottom against every
+  other card's and snaps to the nearest within `_BOARDS_SNAP_PX`, drawing
+  the guide it snapped to. That threshold is in **screen** px, divided by
+  zoom at use, so the catch feels identical at 19% and at 200%. The two
+  modes would fight, so grid wins outright when on; **Alt suspends
+  snapping entirely** for fine placement. The snap preference is
+  per-viewer (`localStorage`), not board data — it shouldn't travel to
+  someone else's screen with the board.
+- **Copy/cut/paste goes through the SYSTEM clipboard**, as tagged JSON
+  (`_BOARDS_CLIP_PREFIX` + the cards). Keeping cards only in a module
+  variable would have raised "which clipboard wins on Ctrl+V?" — writing
+  to the real clipboard makes it the single source of truth, and a copy
+  then survives across tabs, not just between boards in one session.
+  `_boardsClipboard` remains as a fallback for browsers that refuse the
+  `setData` call. The paste handler checks the prefix **before** its
+  URL/plain-text cases.
+- **Locked cards** (`c.locked`) can't be dragged, resized, connected or
+  deleted, and lose their delete/resize/connect handles — but stay
+  selectable, since that's how you unlock them. Bulk delete skips them and
+  says how many it kept rather than silently dropping part of the action.
+- **Keyboard** (all ignored while focus is in an input/textarea/
+  contenteditable, where they belong to the browser): Ctrl+Z / Ctrl+Shift+Z
+  / Ctrl+Y, Ctrl+D duplicate, Ctrl+A select all, Esc clear, Delete /
+  Backspace delete selection. Ctrl+C/X/V deliberately fall through
+  `_boardsOnKeydown` untouched so they reach the real clipboard events.
+
 ## Shopify Inventory Intelligence
 
 Read-only sales + inventory dashboard ("Inventory Intel" page). Data is
