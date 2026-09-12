@@ -47,6 +47,7 @@ const _BOARDS_CLIP_PREFIX='groovy-board-cards:';
 // is the right home for it (it should not travel with the board to someone
 // else's screen).
 let _boardsSnapGrid=(function(){try{return localStorage.getItem('groovy-boards-snap')==='1';}catch(e){return false;}})();
+let _boardsLineMode=false;      // while on, dragging empty canvas draws an arrow instead of panning
 
 const _BOARDS_ZOOM_MIN=0.1;   // Afnan works at ~19% in Milanote — 40% couldn't fit a real board
 const _BOARDS_ZOOM_MAX=3;
@@ -68,14 +69,46 @@ function _boardsCanEdit(b){
 }
 function _boardsNewCard(type){
   const id='c'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
-  const w=type==='text'?220:type==='file'?200:170;
-  const h=type==='image'?120:type==='link'?120:type==='file'?110:100;
+  const w=type==='frame'?440:type==='text'?220:type==='todo'?240:type==='file'?200:170;
+  const h=type==='frame'?320:type==='image'?120:type==='link'?120:type==='file'?110:type==='todo'?170:100;
   const base={id,type,x:80,y:80,w,h};
   if(type==='image')base.imageUrl='';
   if(type==='text')base.text='';
   if(type==='link'){base.linkUrl='';base.linkTitle='';base.linkDesc='';}
   if(type==='file'){base.fileUrl='';base.fileName='';base.fileSize=0;}
+  if(type==='frame')base.title='';
+  if(type==='todo')base.items=[{text:'',done:false}];
   return base;
+}
+
+// ── Frames ─────────────────────────────────────────────────────────────
+// A frame is a titled region that groups cards — the thing Afnan's real
+// Milanote board leans on ("Classic Straight Leg", "RELAXED WIDE LEG").
+//
+// Membership is GEOMETRIC, not stored: a frame holds whatever currently
+// sits inside it, recomputed when you grab it. The alternative — a
+// frameId on every card — means maintaining membership on every drag,
+// resize, delete, undo and paste, with orphan states to reconcile when
+// any of that goes wrong. Geometric containment has none of that
+// bookkeeping, needs no migration, and matches what the user sees: if a
+// card looks like it's in the box, it's in the box.
+//
+// A frame is a CARD TYPE rather than a separate array, so it inherits
+// selection, drag, resize, undo, lock, copy and delete for free. The only
+// special-casing is render order (frames paint first, so they sit behind
+// their contents) and drag (a frame takes its contents with it).
+function _boardsCardsInFrame(frame){
+  return _editCards.filter(c=>{
+    if(c.id===frame.id)return false;
+    const cx=c.x+c.w/2,cy=c.y+c.h/2;   // centre-in-bounds: a card poking over the edge still counts
+    return cx>=frame.x&&cx<=frame.x+frame.w&&cy>=frame.y&&cy<=frame.y+frame.h;
+  });
+}
+// Frames paint first so they never cover their own contents. This also
+// quietly constrains "bring to front" on a frame — which is correct: a
+// frame that could be raised above its cards would hide them.
+function _boardsRenderOrder(){
+  return _editCards.filter(c=>c.type==='frame').concat(_editCards.filter(c=>c.type!=='frame'));
 }
 function _boardsFormatBytes(n){
   if(!n||n<0)return'';
@@ -260,7 +293,7 @@ function _boardGalleryCardHTML(b){
   return`<div class="board-gallery-card" onclick="window.boardsOpen('${b.id}')">
     <div class="board-gallery-thumb">
       <div style="position:absolute;transform:scale(${scale});transform-origin:top left">
-        ${cards.map(_boardMiniCardHTML).join('')}
+        ${cards.filter(c=>c.type==='frame').concat(cards.filter(c=>c.type!=='frame')).map(_boardMiniCardHTML).join('')}
       </div>
     </div>
     <div class="board-gallery-meta">
@@ -271,6 +304,7 @@ function _boardGalleryCardHTML(b){
 }
 function _boardMiniCardHTML(c){
   const base=`position:absolute;left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px;border-radius:6px;overflow:hidden;border:1px solid var(--border)`;
+  if(c.type==='frame')return`<div style="${base};background:rgba(0,0,0,.03)"></div>`;
   if(c.type==='image')return c.imageUrl?`<div style="${base}"><img src="${_boardsEsc(c.imageUrl)}" style="width:100%;height:100%;object-fit:cover"></div>`:`<div style="${base};background:var(--soft)"></div>`;
   if(c.type==='link'||c.type==='file')return`<div style="${base};background:var(--soft)"></div>`;
   return`<div style="${base};background:#fff"></div>`;
@@ -357,7 +391,7 @@ function _renderBoardCanvasHTML(){
         <svg class="board-conn-layer" id="board-conn-layer" width="4000" height="3000"></svg>
         <div class="board-guide board-guide-v" id="board-guide-v"></div>
         <div class="board-guide board-guide-h" id="board-guide-h"></div>
-        ${_editCards.map(c=>_boardCardHTML(c,canEdit)).join('')}
+        ${_boardsRenderOrder().map(c=>_boardCardHTML(c,canEdit)).join('')}
       </div>
       <div class="board-marquee" id="board-marquee"></div>
       ${canEdit?'<div class="board-selection-bar" id="board-selection-bar" style="display:none"></div>':''}
@@ -365,8 +399,11 @@ function _renderBoardCanvasHTML(){
       ${canEdit?`<div class="board-add-menu">
         <button onclick="window.boardsAddCard('image')">+ Image</button>
         <button onclick="window.boardsAddCard('text')">+ Text</button>
+        <button onclick="window.boardsAddCard('todo')">+ To-do</button>
         <button onclick="window.boardsAddCard('link')">+ Link</button>
         <button onclick="window.boardsPickFiles()">+ File</button>
+        <button onclick="window.boardsAddCard('frame')">+ Frame</button>
+        <button id="board-line-btn" class="${_boardsLineMode?'on':''}" onclick="window.boardsToggleLineMode()">↗ Line</button>
       </div>`:''}
       ${canEdit&&!_editCards.length?'<div class="board-empty-hint">Double-click anywhere to add a note · drop files in · paste an image with Ctrl+V</div>':''}
     </div>
@@ -374,8 +411,33 @@ function _renderBoardCanvasHTML(){
   </div>`;
 }
 function _boardCardHTML(c,canEdit){
+  // Frames get their own element entirely: a header strip you can grab,
+  // and an outlined region whose body is pointer-events:none so panning,
+  // marquee-select and the cards inside it all still work through it.
+  if(c.type==='frame'){
+    const sel=_boardsSelection.has(c.id)?' selected':'';
+    return`<div class="board-frame${sel}${c.locked?' locked':''}${c.color?' tint-'+c.color:''}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px">
+      <div class="board-frame-head" ${canEdit&&!c.locked?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''} onclick="window.boardsSelectCard('${c.id}',event)">
+        <input type="text" class="board-frame-title" value="${_boardsEsc(c.title||'')}" placeholder="Section name" ${canEdit&&!c.locked?'':'readonly'} oninput="window.boardsFrameTitle('${c.id}',this.value)" onpointerdown="event.stopPropagation()">
+        ${canEdit&&!c.locked?`<button class="board-card-del" onclick="window.boardsDeleteCard('${c.id}')" title="Delete frame (cards inside are kept)">✕</button>`:''}
+      </div>
+      ${canEdit&&!c.locked?`<div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
+    </div>`;
+  }
   let body;
-  if(c.type==='image'){
+  if(c.type==='todo'){
+    const items=c.items||[];
+    const doneN=items.filter(i=>i.done).length;
+    body=`<div class="board-card-body board-todo-body">
+      ${items.map((it,i)=>`<div class="board-todo-row">
+        <input type="checkbox" ${it.done?'checked':''} ${canEdit?'':'disabled'} onchange="window.boardsTodoToggle('${c.id}',${i},this.checked)">
+        <div class="board-todo-text${it.done?' done':''}" id="board-todo-${c.id}-${i}" contenteditable="${!!canEdit}" data-placeholder="To-do" oninput="window.boardsTodoText('${c.id}',${i},this)" onkeydown="window.boardsTodoKey(event,'${c.id}',${i})"></div>
+        ${canEdit?`<button class="board-todo-del" onclick="window.boardsTodoRemove('${c.id}',${i})" title="Remove">✕</button>`:''}
+      </div>`).join('')}
+      ${canEdit?`<button class="board-todo-add" onclick="window.boardsTodoAdd('${c.id}')">+ Add item</button>`:''}
+    </div>`;
+    c._todoProgress=items.length?doneN+'/'+items.length:'';
+  }else if(c.type==='image'){
     body=c._uploading
       ?'<div class="board-card-empty">Uploading…</div>'
       :c.imageUrl
@@ -421,10 +483,11 @@ function _boardCardHTML(c,canEdit){
   }else{
     body=`<div class="board-card-body board-text-body" contenteditable="${!!canEdit}" id="board-txt-${c.id}" data-placeholder="Type a note…" oninput="window.boardsTextInput('${c.id}',this)"></div>`;
   }
-  const kind=c.type==='image'?'Image':c.type==='link'?'Link':c.type==='file'?'File':'Note';
+  const kind=c.type==='image'?'Image':c.type==='link'?'Link':c.type==='file'?'File':c.type==='todo'?('To-do'+(c._todoProgress?' · '+c._todoProgress:'')):'Note';
   const sel=_boardsSelection.has(c.id)?' selected':'';
   const lock=c.locked?' locked':'';
-  return`<div class="board-card-el${sel}${lock}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px" onclick="window.boardsSelectCard('${c.id}',event)">
+  const tint=c.color?' tint-'+c.color:'';
+  return`<div class="board-card-el${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px" onclick="window.boardsSelectCard('${c.id}',event)">
     <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''}>
       <span class="board-card-kind">${kind}${c.locked?' · Locked':''}</span>
       ${canEdit&&!c.locked?`<button class="board-card-del" onclick="window.boardsDeleteCard('${c.id}')" title="Delete">✕</button>`:''}
@@ -434,8 +497,21 @@ function _boardCardHTML(c,canEdit){
     <div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
   </div>`;
 }
+// User-authored text is written in via textContent after the structure is
+// rendered, never interpolated into the HTML string — same stored-XSS
+// boundary as Notes' block editor. To-do item text goes the same way.
 function _boardsHydrateTextCards(){
-  _editCards.forEach(c=>{if(c.type==='text'){const el=document.getElementById('board-txt-'+c.id);if(el)el.textContent=c.text||'';}});
+  _editCards.forEach(c=>{
+    if(c.type==='text'){
+      const el=document.getElementById('board-txt-'+c.id);
+      if(el)el.textContent=c.text||'';
+    }else if(c.type==='todo'){
+      (c.items||[]).forEach((it,i)=>{
+        const el=document.getElementById('board-todo-'+c.id+'-'+i);
+        if(el)el.textContent=it.text||'';
+      });
+    }
+  });
 }
 
 // -- pan/zoom --
@@ -512,6 +588,38 @@ function _boardsWireStagePan(){
   stage.addEventListener('pointerdown',e=>{
     if(e.target!==stage&&e.target.id!=='board-world')return;
     const b=_editBoard;
+
+    // Line mode: drag anywhere empty to draw a freeform arrow. A mode
+    // rather than a modifier because it's a deliberate "now I'm annotating"
+    // action, and it leaves Shift free for marquee.
+    if(_boardsLineMode&&canEdit){
+      const svg=document.getElementById('board-conn-layer');
+      const start=_boardsScreenToWorld(e.clientX,e.clientY);
+      const temp=document.createElementNS('http://www.w3.org/2000/svg','line');
+      temp.setAttribute('class','temp');
+      temp.setAttribute('x1',start.x);temp.setAttribute('y1',start.y);
+      temp.setAttribute('x2',start.x);temp.setAttribute('y2',start.y);
+      if(svg)svg.appendChild(temp);
+      stage.setPointerCapture(e.pointerId);
+      function lmove(ev){
+        const p=_boardsScreenToWorld(ev.clientX,ev.clientY);
+        temp.setAttribute('x2',p.x);temp.setAttribute('y2',p.y);
+      }
+      function lup(ev){
+        stage.removeEventListener('pointermove',lmove);stage.removeEventListener('pointerup',lup);
+        temp.remove();
+        const end=_boardsScreenToWorld(ev.clientX,ev.clientY);
+        if(Math.abs(end.x-start.x)>6||Math.abs(end.y-start.y)>6){
+          _boardsPushUndo();
+          _editConnectors.push({free:true,arrow:true,x1:start.x,y1:start.y,x2:end.x,y2:end.y});
+          _boardsDrawConnectors();
+          _boardsSaveDebounced();
+        }
+      }
+      stage.addEventListener('pointermove',lmove);
+      stage.addEventListener('pointerup',lup);
+      return;
+    }
 
     // Shift+drag on empty canvas = marquee select; plain drag still pans.
     // Deliberately this way round rather than Milanote's (drag = marquee,
@@ -661,7 +769,14 @@ window.boardsCardDragStart=function(e,cardId){
   _boardsSelectCard(cardId,e.shiftKey||e.ctrlKey||e.metaKey);
   // Drag the whole selection when the grabbed card is part of one; locked
   // cards in that selection stay put rather than blocking the rest.
-  const group=(_boardsSelection.has(cardId)?_boardsSelectedCards():[c]).filter(x=>!x.locked);
+  let group=(_boardsSelection.has(cardId)?_boardsSelectedCards():[c]).filter(x=>!x.locked);
+  // A frame takes whatever is sitting inside it along for the ride —
+  // membership computed here, at grab time, not stored (see _boardsCardsInFrame).
+  const withFrames=new Set(group.map(g=>g.id));
+  group.filter(g=>g.type==='frame').forEach(f=>{
+    _boardsCardsInFrame(f).forEach(x=>{if(!x.locked)withFrames.add(x.id);});
+  });
+  group=_editCards.filter(x=>withFrames.has(x.id));
   if(!group.length)return;
   const origins=group.map(x=>({card:x,ox:x.x,oy:x.y}));
   const others=_editCards.filter(x=>!group.some(g=>g.id===x.id));
@@ -771,8 +886,13 @@ function _boardsRenderSelectionBar(){
   if(!sel.length||!_boardsCanEdit(_editBoard)){host.innerHTML='';host.style.display='none';return;}
   const anyLocked=sel.some(c=>c.locked);
   host.style.display='flex';
+  const multi=sel.length>1;
   host.innerHTML=`
     <span class="board-sel-count">${sel.length} selected</span>
+    <span class="board-swatches">${_BOARDS_COLORS.map(col=>`<button class="board-swatch sw-${col}" onclick="window.boardsSetColor('${col}')" title="${col==='none'?'No colour':col}"></button>`).join('')}</span>
+    ${multi?`<button class="tool-btn" onclick="window.boardsFrameSelection()" title="Wrap these in a labelled frame">Frame</button>
+    <button class="tool-btn" onclick="window.boardsStackSelection()" title="Stack vertically">Stack</button>
+    <button class="tool-btn" onclick="window.boardsGridSelection()" title="Arrange in a grid">Grid</button>`:''}
     <button class="tool-btn" onclick="window.boardsDuplicateSelection()" title="Duplicate (Ctrl+D)">Duplicate</button>
     <button class="tool-btn" onclick="window.boardsBringToFront()" title="Bring to front">Front</button>
     <button class="tool-btn" onclick="window.boardsSendToBack()" title="Send to back">Back</button>
@@ -783,15 +903,39 @@ function _boardsRenderSelectionBar(){
 
 // -- connectors --
 function _boardCardCenter(c){return{x:c.x+c.w/2,y:c.y+c.h/2};}
+// Two kinds of connector share this layer: card-bound ({from,to}, endpoints
+// follow the cards) and freeform ({free:true,x1,y1,x2,y2}, fixed in world
+// space). Both can carry `arrow:true`. Deleting is by INDEX rather than by
+// from/to, since freeform lines have no card ids to identify them.
 function _boardsDrawConnectors(){
   const svg=document.getElementById('board-conn-layer');if(!svg)return;
-  svg.innerHTML=_editConnectors.map(cn=>{
+  const defs='<defs><marker id="board-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>';
+  svg.innerHTML=defs+_editConnectors.map((cn,i)=>{
+    const arrow=cn.arrow?' marker-end="url(#board-arrow)"':'';
+    if(cn.free){
+      return`<line class="free" x1="${cn.x1}" y1="${cn.y1}" x2="${cn.x2}" y2="${cn.y2}"${arrow} onclick="window.boardsDeleteConnectorAt(${i})"/>`;
+    }
     const from=_editCards.find(c=>c.id===cn.from),to=_editCards.find(c=>c.id===cn.to);
     if(!from||!to)return'';
     const p1=_boardCardCenter(from),p2=_boardCardCenter(to);
-    return`<line data-from="${cn.from}" data-to="${cn.to}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" onclick="window.boardsDeleteConnector('${cn.from}','${cn.to}')"/>`;
+    return`<line data-from="${cn.from}" data-to="${cn.to}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"${arrow} onclick="window.boardsDeleteConnectorAt(${i})"/>`;
   }).join('');
 }
+window.boardsDeleteConnectorAt=function(i){
+  if(!_boardsCanEdit(_editBoard))return;
+  _boardsPushUndo();
+  _editConnectors.splice(i,1);
+  _boardsDrawConnectors();
+  _boardsSaveDebounced();
+};
+window.boardsToggleLineMode=function(){
+  _boardsLineMode=!_boardsLineMode;
+  const btn=document.getElementById('board-line-btn');
+  if(btn)btn.classList.toggle('on',_boardsLineMode);
+  const stage=document.getElementById('board-stage');
+  if(stage)stage.classList.toggle('line-mode',_boardsLineMode);
+  showToast(_boardsLineMode?'Line mode on — drag on the canvas to draw an arrow':'Line mode off');
+};
 function _boardsUpdateConnectorsFor(cardId){
   const svg=document.getElementById('board-conn-layer');if(!svg)return;
   const c=_editCards.find(x=>x.id===cardId);if(!c)return;
@@ -825,17 +969,131 @@ window.boardsLinkStart=function(e,cardId){
   document.addEventListener('pointermove',move);
   document.addEventListener('pointerup',up);
 };
-window.boardsDeleteConnector=function(from,to){
-  _boardsPushUndo();
-  _editConnectors=_editConnectors.filter(cn=>!(cn.from===from&&cn.to===to));
-  _boardsDrawConnectors();
-  _boardsSaveDebounced();
-};
 
 // -- card content --
 window.boardsTitleInput=function(val){if(!_editBoard)return;_editBoard.title=val;_boardsSaveDebounced();};
 window.boardsTextInput=function(id,el){const c=_editCards.find(x=>x.id===id);if(!c)return;c.text=el.textContent;_boardsSaveDebounced();};
 window.boardsLinkInput=function(id,field,val){const c=_editCards.find(x=>x.id===id);if(!c)return;c[field]=val;_boardsSaveDebounced();};
+window.boardsFrameTitle=function(id,val){const c=_editCards.find(x=>x.id===id);if(!c)return;c.title=val;_boardsSaveDebounced();};
+
+// ── To-do cards ────────────────────────────────────────────────────────
+// Text edits mutate in place with no rerender (same cursor-stability
+// reason as Notes' block editor); only structural changes — adding,
+// removing or ticking an item — rebuild, since those change the layout.
+function _boardsTodoCard(id){const c=_editCards.find(x=>x.id===id);return(c&&c.type==='todo')?c:null;}
+window.boardsTodoText=function(id,i,el){
+  const c=_boardsTodoCard(id);if(!c||!c.items[i])return;
+  c.items[i].text=el.textContent;
+  _boardsSaveDebounced();
+};
+window.boardsTodoToggle=function(id,i,done){
+  const c=_boardsTodoCard(id);if(!c||!c.items[i])return;
+  _boardsPushUndo();
+  c.items[i].done=!!done;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+window.boardsTodoAdd=function(id,at){
+  const c=_boardsTodoCard(id);if(!c)return;
+  _boardsPushUndo();
+  const idx=(typeof at==='number')?at+1:c.items.length;
+  c.items.splice(idx,0,{text:'',done:false});
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  const el=document.getElementById('board-todo-'+id+'-'+idx);
+  if(el)el.focus();
+};
+window.boardsTodoRemove=function(id,i){
+  const c=_boardsTodoCard(id);if(!c)return;
+  _boardsPushUndo();
+  c.items.splice(i,1);
+  if(!c.items.length)c.items.push({text:'',done:false});
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+window.boardsTodoKey=function(ev,id,i){
+  // Enter adds the next item and jumps to it; Backspace on an empty row
+  // removes it — the two things that make a checklist quick to type.
+  if(ev.key==='Enter'){ev.preventDefault();window.boardsTodoAdd(id,i);return;}
+  if(ev.key==='Backspace'&&!(ev.target.textContent||'').length){
+    const c=_boardsTodoCard(id);
+    if(c&&c.items.length>1){
+      ev.preventDefault();
+      window.boardsTodoRemove(id,i);
+      const prev=document.getElementById('board-todo-'+id+'-'+Math.max(0,i-1));
+      if(prev)prev.focus();
+    }
+  }
+};
+
+// ── Colour tagging ─────────────────────────────────────────────────────
+// Status coding at a glance on a 46-card board. Muted set, matching the
+// app's palette rather than bright primaries.
+const _BOARDS_COLORS=['none','red','amber','green','blue','purple'];
+window.boardsSetColor=function(color){
+  if(!_boardsCanEdit(_editBoard))return;
+  const sel=_boardsSelectedCards();
+  if(!sel.length)return;
+  _boardsPushUndo();
+  sel.forEach(c=>{if(color==='none')delete c.color;else c.color=color;});
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+
+// ── Tidy actions ───────────────────────────────────────────────────────
+// The roadmap listed "Columns (auto-stacking vertical lists)". A real
+// column container needs stored membership and would have to reposition
+// its children — which fights the deliberately membership-free frame
+// model above. These arrange-once actions deliver the actual value (tidy
+// alignment without hand-placing every card) with no new data model, and
+// compose with frames: stack, then draw a labelled frame around the
+// result. If a true container is wanted later it's a separate build.
+window.boardsStackSelection=function(){
+  if(!_boardsCanEdit(_editBoard))return;
+  const sel=_boardsSelectedCards().filter(c=>!c.locked&&c.type!=='frame');
+  if(sel.length<2)return showToast('Select at least two cards');
+  _boardsPushUndo();
+  const ordered=sel.slice().sort((a,b)=>a.y-b.y);
+  const x=Math.min(...ordered.map(c=>c.x));
+  let y=Math.min(...ordered.map(c=>c.y));
+  ordered.forEach(c=>{c.x=x;c.y=y;y+=c.h+12;});
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+window.boardsGridSelection=function(){
+  if(!_boardsCanEdit(_editBoard))return;
+  const sel=_boardsSelectedCards().filter(c=>!c.locked&&c.type!=='frame');
+  if(sel.length<2)return showToast('Select at least two cards');
+  _boardsPushUndo();
+  const ordered=sel.slice().sort((a,b)=>(a.y-b.y)||(a.x-b.x));
+  const x0=Math.min(...ordered.map(c=>c.x)),y0=Math.min(...ordered.map(c=>c.y));
+  const colW=Math.max(...ordered.map(c=>c.w))+16;
+  const rowH=Math.max(...ordered.map(c=>c.h))+16;
+  const per=Math.ceil(Math.sqrt(ordered.length));
+  ordered.forEach((c,i)=>{c.x=x0+(i%per)*colW;c.y=y0+Math.floor(i/per)*rowH;});
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+// Wrap the selection in a labelled frame — the fastest path to the
+// clustered layout Afnan's real boards use.
+window.boardsFrameSelection=function(){
+  if(!_boardsCanEdit(_editBoard))return;
+  const sel=_boardsSelectedCards().filter(c=>c.type!=='frame');
+  if(!sel.length)return showToast('Select some cards first');
+  _boardsPushUndo();
+  const pad=28,head=34;
+  const minX=Math.min(...sel.map(c=>c.x)),minY=Math.min(...sel.map(c=>c.y));
+  const maxX=Math.max(...sel.map(c=>c.x+c.w)),maxY=Math.max(...sel.map(c=>c.y+c.h));
+  const f=_boardsNewCard('frame');
+  f.x=minX-pad;f.y=minY-pad-head;
+  f.w=(maxX-minX)+pad*2;f.h=(maxY-minY)+pad*2+head;
+  _editCards.push(f);
+  _boardsSetSelection([f.id]);
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  const el=document.querySelector('#board-card-'+f.id+' .board-frame-title');
+  if(el)el.focus();
+};
 // Boards needs to accept ANY file (tech packs, spec sheets), not just
 // images. shared.js's uploadToCloudinary() posts to the /image/upload
 // endpoint, which rejects non-image types — so boards has its own call to
@@ -1054,10 +1312,14 @@ window.boardsDeleteSelection=function(){
 };
 // Clones land offset from the originals and become the new selection, so a
 // duplicate can be dragged straight into place without re-selecting it.
+// Deep clone, not a key-by-key copy: to-do cards carry an `items` array,
+// and a shallow copy would leave the duplicate sharing that array with the
+// original — ticking a box on one would tick it on both.
 function _boardsCloneCards(cards,dx,dy){
   return cards.map(c=>{
-    const copy={};
-    Object.keys(c).forEach(k=>{if(k.charAt(0)!=='_')copy[k]=c[k];});
+    const stripped={};
+    Object.keys(c).forEach(k=>{if(k.charAt(0)!=='_')stripped[k]=c[k];});
+    const copy=JSON.parse(JSON.stringify(stripped));
     copy.id=_boardsNewCard(c.type).id;
     copy.x=(c.x||0)+dx;copy.y=(c.y||0)+dy;
     delete copy.locked;

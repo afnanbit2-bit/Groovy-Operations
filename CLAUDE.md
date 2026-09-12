@@ -714,6 +714,56 @@ z-order and lock are all the same code for one card or twelve.
   Backspace delete selection. Ctrl+C/X/V deliberately fall through
   `_boardsOnKeydown` untouched so they reach the real clipboard events.
 
+### Mood Boards — Stage 3 (Sept 2026)
+
+Structure: frames, to-do cards, freeform arrows, colour tags.
+
+- **Frames are a CARD TYPE (`type:'frame'`), not a separate array** — so
+  they inherit selection, drag, resize, undo, lock, copy and delete for
+  free. The only special-casing is `_boardsRenderOrder()` (frames paint
+  first, so they sit behind their contents) and drag. That render order
+  also quietly constrains "bring to front" on a frame, which is correct: a
+  frame raised above its own cards would hide them.
+- **Frame membership is GEOMETRIC, never stored.** `_boardsCardsInFrame()`
+  returns whatever currently sits inside the frame, computed at grab time,
+  using card *centre* in bounds so a card overhanging an edge still counts.
+  The alternative — a `frameId` on every card — means maintaining
+  membership on every drag, resize, delete, undo and paste, with orphan
+  states to reconcile whenever any of that goes wrong. This has none of
+  that bookkeeping, needs no migration, and matches what the user sees.
+  Dragging a frame takes its contents; resizing deliberately does not move
+  them.
+- **A frame's body is `pointer-events:none`; only its header strip and
+  resize grip are interactive.** Without that, the frame rectangle would
+  swallow panning, marquee-select and clicks on the cards inside it.
+- **"Columns" from the roadmap shipped as arrange-once actions instead**
+  (`boardsStackSelection` / `boardsGridSelection`, plus
+  `boardsFrameSelection` to wrap a selection in a labelled frame). A real
+  column container needs stored membership and must reposition its
+  children, which fights the deliberately membership-free frame model
+  above. The actions deliver the same value — tidy alignment without
+  hand-placing cards — with no new data model, and compose with frames
+  (stack, then frame the result). **This was a substitution, flagged to
+  Afnan at the time**; if a true container is ever wanted it's a separate
+  build, not a tweak.
+- **Connectors now cover two shapes in one array**: card-bound
+  (`{from,to}`, endpoints follow the cards) and freeform
+  (`{free:true,x1,y1,x2,y2}`, fixed in world space), either with
+  `arrow:true`. Deletion is **by index** (`boardsDeleteConnectorAt`)
+  because freeform lines have no card ids to identify them — the old
+  from/to deleter was removed rather than left alongside.
+- **Line mode** (`_boardsLineMode`, the `↗ Line` button) makes dragging
+  empty canvas draw an arrow instead of panning. A mode rather than a
+  modifier: it's a deliberate "now I'm annotating" action, and it leaves
+  Shift free for marquee.
+- **`_boardsCloneCards` deep-clones via JSON.** It used to copy key by
+  key, which was fine until to-do cards arrived carrying an `items` array
+  — a shallow copy left the duplicate sharing that array with the
+  original, so ticking a box on one ticked it on both.
+- To-do item text is hydrated with `textContent` after render, exactly
+  like text cards and Notes' blocks — same stored-XSS boundary, same rule:
+  never interpolate user text into the HTML string.
+
 ## Shopify Inventory Intelligence
 
 Read-only sales + inventory dashboard ("Inventory Intel" page). Data is

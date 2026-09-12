@@ -517,6 +517,55 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .board-file-ext{font-size:9px;font-weight:700;letter-spacing:.04em;background:var(--dark);color:#fff;border-radius:4px;padding:2px 5px;flex-shrink:0}
 .board-file-name{font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
 .board-file-size{font-size:10px;color:var(--muted);flex-shrink:0}
+/* Frames: a titled region behind the cards. The body is pointer-events
+   transparent so panning, marquee-select and the cards inside all still
+   work through it; only the header strip and resize grip are interactive. */
+.board-frame{position:absolute;border:1.5px solid var(--border);border-radius:12px;background:rgba(0,0,0,.025);pointer-events:none}
+.board-frame.selected{outline:2px solid var(--text);outline-offset:1px}
+.board-frame-head{position:absolute;left:-1px;right:-1px;top:-1px;height:30px;display:flex;align-items:center;gap:4px;padding:0 6px 0 10px;background:var(--soft);border:1px solid var(--border);border-radius:12px 12px 0 0;cursor:grab;pointer-events:auto}
+.board-frame.locked .board-frame-head{cursor:default;background:var(--accent-warning-soft)}
+.board-frame-title{flex:1;min-width:0;border:none;outline:none;background:transparent;font-family:inherit;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.board-frame .board-resize-handle{pointer-events:auto}
+.board-frame.tint-red{border-color:var(--accent-urgent)}
+.board-frame.tint-amber{border-color:var(--accent-warning)}
+.board-frame.tint-green{border-color:var(--accent-success)}
+.board-frame.tint-blue{border-color:var(--cat-notes)}
+.board-frame.tint-purple{border-color:var(--cat-boards)}
+
+/* To-do cards */
+.board-todo-body{padding:6px 8px;overflow:auto}
+.board-todo-row{display:flex;align-items:flex-start;gap:6px;padding:2px 0}
+.board-todo-row input[type=checkbox]{margin-top:3px;flex-shrink:0}
+.board-todo-text{flex:1;min-width:0;font-size:12.5px;line-height:1.45;outline:none;word-break:break-word}
+.board-todo-text:empty:before{content:attr(data-placeholder);color:var(--muted)}
+.board-todo-text.done{text-decoration:line-through;color:var(--muted)}
+.board-todo-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;line-height:1;padding:2px;opacity:0;flex-shrink:0}
+.board-todo-row:hover .board-todo-del{opacity:1}
+.board-todo-add{background:none;border:none;color:var(--muted);font-family:inherit;font-size:11.5px;cursor:pointer;padding:4px 0;text-align:left}
+.board-todo-add:hover{color:var(--text)}
+
+/* Colour tags — status coding that reads at a glance on a big board */
+.board-card-el.tint-red .board-card-head{background:var(--accent-urgent-soft)}
+.board-card-el.tint-red{border-color:var(--accent-urgent)}
+.board-card-el.tint-amber .board-card-head{background:var(--accent-warning-soft)}
+.board-card-el.tint-amber{border-color:var(--accent-warning)}
+.board-card-el.tint-green .board-card-head{background:var(--accent-success-soft)}
+.board-card-el.tint-green{border-color:var(--accent-success)}
+.board-card-el.tint-blue{border-color:var(--cat-notes)}
+.board-card-el.tint-purple{border-color:var(--cat-boards)}
+.board-swatches{display:flex;gap:3px;padding:0 4px}
+.board-swatch{width:15px;height:15px;border-radius:50%;border:1px solid var(--border);cursor:pointer;padding:0}
+.board-swatch.sw-none{background:var(--surface)}
+.board-swatch.sw-red{background:var(--accent-urgent)}
+.board-swatch.sw-amber{background:var(--accent-warning)}
+.board-swatch.sw-green{background:var(--accent-success)}
+.board-swatch.sw-blue{background:var(--cat-notes)}
+.board-swatch.sw-purple{background:var(--cat-boards)}
+
+.board-stage.line-mode{cursor:crosshair}
+.board-conn-layer{color:var(--muted)}
+.board-conn-layer line.free{stroke:var(--text)}
+.board-add-menu button.on{background:var(--dark);color:#fff}
 .board-marquee{position:absolute;display:none;border:1px solid var(--text);background:rgba(17,17,17,.07);pointer-events:none;z-index:25}
 .board-guide{position:absolute;display:none;background:var(--accent-urgent);pointer-events:none;z-index:5}
 .board-guide-v{top:-4000px;height:9000px;width:1px}
