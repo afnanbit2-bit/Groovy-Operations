@@ -1110,6 +1110,62 @@ opening a board and clicking its title, which is how a gallery full of
   an inline editor on a card that is also a click-to-open target would
   fight itself.
 
+### Making it feel instant (Sept 2026 — measured, not guessed)
+
+Afnan asked for saving to be fully background with no indicator, and for
+the app to use the machine it is installed on. A live console probe (run by
+Claude in Chrome on a real board) produced the numbers these changes rest
+on: **a 1024×1536 image rendering into a 279×458 box — 3.7× per axis, ~13×
+the pixels — across 11 Cloudinary requests per load**, and **a steady 60 FPS
+while dragging**.
+
+- **Sized derivatives** (`_boardsDisplayUrl`): cards asked for the ORIGINAL
+  upload. They now request `f_auto,q_auto,w_{400|800|1200}`, bucketed by
+  card width so a handful of URLs are reused and actually hit a cache. The
+  **stored** `imageUrl` is never rewritten — the transform is derived at
+  render, so existing cards get it with no migration.
+- **`crossorigin="anonymous"` on card images.** The probe also reported
+  `crossOrigin: null`, which matters more than it looks: the exporter loads
+  the same URLs *with* CORS, and a non-CORS cache entry can be handed back
+  to that request — the classic "displays fine, taints the canvas" trap.
+  Both now share one CORS-enabled entry. If the host turns out not to send
+  the header the image would fail outright, so `boardsImgFallback` retries
+  once without the attribute: the picture still shows and only the export
+  degrades, exactly as it did before.
+- **`sw.js` caches `res.cloudinary.com`.** `BYPASS_HOSTS` listed
+  `cloudinary.com`, which covered delivery too, so every photo was
+  re-fetched on every load. Delivery URLs are immutable, so they are now
+  cache-first in a **non-version-scoped** `groovy-ops-images` cache (capped
+  at 300 entries) — version-scoping it would re-download every board photo
+  on every deploy. `api.cloudinary.com` (uploads) stays bypassed, which is
+  what the original rule was really protecting.
+- **The save indicator is gone.** No "Unsaved changes…", no "Saving…", no
+  "Saved". A progress indicator on an autosave promises the user something
+  to wait for, and there isn't one. `_boardsSetSaveStatus` now renders only
+  exceptions — `failed`, or `offline` (also driven by the `online`/`offline`
+  events, not just by a write).
+- **The merge transaction is now presence-aware.** `runTransaction` cannot
+  use the local cache: it needs a live round trip and fails offline. That
+  is the right price when someone else is on the board and pure cost when
+  nobody is — and presence already tells us which. Alone → plain
+  `updateDoc`, applied to IndexedDB instantly, synced behind you, works with
+  no signal. A peer present → the Stage 6 merge, unchanged.
+- **Every write in `js/boards.js` goes through `_qUpdate`/`_qSet`/`_qAdd`/
+  `_qDel`**, thin wrappers holding the shared write-buffer's opt-out. This
+  **reverses the earlier note** under the Notes module that one-off board
+  actions should keep the blocking overlay: Afnan asked for the module to be
+  silent, and a presence heartbeat every 25s made the old carve-out untenable
+  anyway. The counter is re-entrant, so nesting inside `_boardsSaveNow`'s own
+  opt-out is harmless.
+- **`navigator.storage.persist()`** is now requested once at load. Nothing
+  asked for it before, and Firestore's offline queue lives in the IndexedDB
+  the browser was free to evict.
+
+**Deliberately NOT done:** switching drag from `left/top` to `transform`.
+It was on the list until the probe measured a steady 60 FPS while dragging.
+Worth revisiting only if a 12-card multi-drag on a 46-card board stutters —
+measure first.
+
 ### Loading must never hang (Sept 2026 — found in QA)
 
 `js/shared.js`'s `renderPage` dispatches these pages as

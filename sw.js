@@ -8,10 +8,15 @@
  * Bump CACHE_VERSION on every deploy that changes a precached file; the
  * activate handler deletes every cache from a prior version.
  */
-const CACHE_VERSION = 'v27';
+const CACHE_VERSION = 'v28';
 const STATIC_CACHE = `groovy-ops-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `groovy-ops-runtime-${CACHE_VERSION}`;
-const CURRENT_CACHES = [STATIC_CACHE, RUNTIME_CACHE];
+// Deliberately NOT version-scoped: a Cloudinary delivery URL is immutable
+// (a new upload gets a new URL), so these survive deploys. Version-scoping
+// it would re-download every photo on a board on every release.
+const IMAGE_CACHE = 'groovy-ops-images';
+const CURRENT_CACHES = [STATIC_CACHE, RUNTIME_CACHE, IMAGE_CACHE];
+const IMAGE_CACHE_MAX = 300;
 
 // Every HTML/CSS/JS file served to the browser, plus the manifest + icons.
 // (Server-only code — netlify/functions, netlify/lib, attendance-sync — is
@@ -46,7 +51,16 @@ const PRECACHE_URLS = [
 ];
 
 // Hostnames that must always hit the live network untouched — Firebase
-// (Auth/Firestore/RTDB, including the gstatic-hosted SDK) and Cloudinary.
+// (Auth/Firestore/RTDB, including the gstatic-hosted SDK) and Cloudinary's
+// UPLOAD API.
+//
+// Note the narrowing (Sept 2026): this used to list 'cloudinary.com', which
+// covered res.cloudinary.com too, so every photo on a board was re-fetched
+// from the network on every single load — measured at 11 requests for one
+// board. Delivery URLs are immutable content, so they are now cached (see
+// isCloudinaryAsset below). api.cloudinary.com — where uploads POST — stays
+// bypassed, and the reason the original rule existed (stale auth tokens,
+// half-cached writes) applies to that endpoint, not to delivered images.
 const BYPASS_HOSTS = [
   'firestore.googleapis.com',
   'firebaseio.com',
@@ -54,11 +68,15 @@ const BYPASS_HOSTS = [
   'googleapis.com',
   'google.com',
   'gstatic.com',
-  'cloudinary.com'
+  'api.cloudinary.com'
 ];
 
 function isBypassed(url) {
   return BYPASS_HOSTS.some(host => url.hostname === host || url.hostname.endsWith('.' + host));
+}
+
+function isCloudinaryAsset(url) {
+  return url.hostname === 'res.cloudinary.com';
 }
 
 function isStaticAsset(url) {
@@ -117,6 +135,25 @@ async function cacheFirst(request) {
   }
 }
 
+// Cache-first for delivered images, with a light cap so a photo-heavy
+// board can't grow the cache without bound. Keys come back in insertion
+// order, so trimming from the front drops the oldest.
+async function cacheFirstImage(request) {
+  const cache = await caches.open(IMAGE_CACHE);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+  const res = await fetch(request);
+  if (res && res.ok && res.type !== 'opaque') {
+    cache.put(request, res.clone()).then(async () => {
+      const keys = await cache.keys();
+      if (keys.length > IMAGE_CACHE_MAX) {
+        await Promise.all(keys.slice(0, keys.length - IMAGE_CACHE_MAX).map(k => cache.delete(k)));
+      }
+    }).catch(() => {});
+  }
+  return res;
+}
+
 // Network-first: try live network, fall back to the last cached copy.
 async function networkFirst(request) {
   const cache = await caches.open(RUNTIME_CACHE);
@@ -138,7 +175,9 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
   if (isBypassed(url)) return; // never intercept Firebase/Firestore/Cloudinary
 
-  if (isStaticAsset(url)) {
+  if (isCloudinaryAsset(url)) {
+    event.respondWith(cacheFirstImage(request));
+  } else if (isStaticAsset(url)) {
     event.respondWith(cacheFirst(request));
   } else {
     event.respondWith(networkFirst(request));

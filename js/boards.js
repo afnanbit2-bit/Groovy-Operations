@@ -341,6 +341,22 @@ window.boardsToggleSnap=function(){
   showToast(_boardsSnapGrid?'Snap to grid on':'Snap to grid off — cards align to each other instead');
 };
 
+// Every write this module makes is ambient: an autosave, a presence
+// heartbeat every 25s, an activity row, a rename. None of them are worth a
+// full-screen "Saving…" block, and Afnan asked for the module to be silent
+// (Sept 2026). These wrappers hold the shared write-buffer's opt-out for
+// the duration of each call — the counter is re-entrant, so nesting inside
+// _boardsSaveNow's own opt-out is harmless.
+async function _boardsQuietWrite(fn){
+  if(typeof window._gvSilentSaveStart==='function')window._gvSilentSaveStart();
+  try{return await fn();}
+  finally{if(typeof window._gvSilentSaveStop==='function')window._gvSilentSaveStop();}
+}
+const _qUpdate=(...a)=>_boardsQuietWrite(()=>updateDoc.apply(null,a));
+const _qSet=(...a)=>_boardsQuietWrite(()=>setDoc.apply(null,a));
+const _qAdd=(...a)=>_boardsQuietWrite(()=>addDoc.apply(null,a));
+const _qDel=(...a)=>_boardsQuietWrite(()=>deleteDoc.apply(null,a));
+
 // ── Load (gallery) ──
 // Same two-single-field-query, merge-client-side approach as loadNotesData —
 // each query maps 1:1 onto a clause of the firestore.rules read condition
@@ -534,7 +550,7 @@ function _boardsTrashSectionHTML(){
 }
 window.boardsRestore=async function(id){
   try{
-    await updateDoc(doc(db,'mood_boards',id),{deletedAt:null,deletedByName:null,updatedAt:Date.now()});
+    await _qUpdate(doc(db,'mood_boards',id),{deletedAt:null,deletedByName:null,updatedAt:Date.now()});
     logActivity('Mood board restored',`${session.name} restored a mood board from trash`);
     showToast('Board restored');
     boardsLoaded=false;
@@ -546,7 +562,7 @@ window.boardsDeleteForever=async function(id){
   const b=_boardsTrash.find(x=>x.id===id);
   if(!confirm('Permanently delete "'+((b&&b.title)||'Untitled board')+'"? This cannot be undone.'))return;
   try{
-    await deleteDoc(doc(db,'mood_boards',id));
+    await _qDel(doc(db,'mood_boards',id));
     logActivity('Mood board permanently deleted',`${session.name} permanently deleted "${(b&&b.title)||'Untitled board'}"`);
     showToast('Board deleted for good');
     boardsLoaded=false;
@@ -600,7 +616,7 @@ function _boardsBlankDoc(){
 }
 async function _boardsCreateDoc(fields){
   const data={..._boardsBlankDoc(),...(fields||{})};
-  const ref=await addDoc(collection(db,'mood_boards'),data);
+  const ref=await _qAdd(collection(db,'mood_boards'),data);
   // Keep the in-memory list in step immediately: breadcrumbs and the
   // nesting rules both read moodBoards, and the canvas opens before any
   // refetch would have finished.
@@ -692,7 +708,7 @@ window.boardsToggleTemplate=async function(){
   if(!_editBoard||!_boardsCanEdit(_editBoard))return;
   const next=!_editBoard.isTemplate;
   try{
-    await updateDoc(doc(db,'mood_boards',_editBoard.id),{isTemplate:next,updatedAt:Date.now()});
+    await _qUpdate(doc(db,'mood_boards',_editBoard.id),{isTemplate:next,updatedAt:Date.now()});
     _editBoard.isTemplate=next;
     const idx=moodBoards.findIndex(b=>b.id===_editBoard.id);
     if(idx>-1)moodBoards[idx].isTemplate=next;
@@ -903,7 +919,7 @@ function _boardCardHTML(c,canEdit){
     body=c._uploading
       ?'<div class="board-card-empty">Uploading…</div>'
       :c.imageUrl
-      ?`<img src="${_boardsEsc(c.imageUrl)}" style="width:100%;height:100%;object-fit:cover;display:block">`
+      ?`<img src="${_boardsEsc(_boardsDisplayUrl(c.imageUrl,c.w))}" crossorigin="anonymous" onerror="window.boardsImgFallback(this)" data-full="${_boardsEsc(c.imageUrl)}" style="width:100%;height:100%;object-fit:cover;display:block">`
       :canEdit?`<label class="board-card-empty" for="board-file-${c.id}">Click, or paste an image (Ctrl+V)<input type="file" id="board-file-${c.id}" accept="image/*" onchange="window.boardsUploadToCard('${c.id}',this)" style="display:none"></label>`
               :`<div class="board-card-empty">No image</div>`;
     body=`<div class="board-card-body" style="padding:0">${body}</div>`;
@@ -983,6 +999,21 @@ function _boardCardHTML(c,canEdit){
     <div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
   </div>`;
 }
+// Card images carry crossorigin="anonymous" so the browser stores a
+// CORS-enabled cache entry — the SAME entry the PNG/PDF exporter needs.
+// Without it the exporter re-fetches and can be handed the non-CORS cached
+// copy, which is the classic "shows fine on the page, taints the canvas"
+// trap. If the host turns out NOT to send the header, the image would fail
+// to load entirely, so this falls back once to a plain load: the picture
+// still shows, and only the export degrades (as it already did).
+window.boardsImgFallback=function(img){
+  if(img.__fellBack)return;
+  img.__fellBack=true;
+  const full=img.getAttribute('data-full')||img.src;
+  img.removeAttribute('crossorigin');
+  img.src=full;
+};
+
 // User-authored text is written in via textContent after the structure is
 // rendered, never interpolated into the HTML string — same stored-XSS
 // boundary as Notes' block editor. To-do item text goes the same way.
@@ -1734,6 +1765,20 @@ async function _boardsUploadAny(file){
 // PDF page-1 thumbnail via a Cloudinary delivery transform. Best effort by
 // design: the caller renders it in an <img> with an onerror fallback, so an
 // account that can't rasterise PDFs just shows the plain file card.
+// Cards were rendering the ORIGINAL upload: measured in a live session at
+// 1024×1536 natural for a 279×458 box — 3.7x per axis, ~13x the pixels, on
+// every image, every load. Cloudinary resizes at the edge, so ask it for a
+// derivative instead. Bucketed widths (not the exact card width) so the
+// same few URLs are reused and actually hit a cache; the STORED url is
+// never rewritten — this is derived at render time, so existing cards get
+// it for free and nothing has to migrate.
+function _boardsDisplayUrl(url,cardW){
+  const u=String(url||'');
+  if(!/res\.cloudinary\.com/.test(u)||u.indexOf('/upload/')===-1)return u;
+  if(/\/upload\/(f_|q_|w_|c_|dpr_)/.test(u))return u;      // already transformed
+  const w=cardW<=250?400:cardW<=600?800:1200;
+  return u.replace('/upload/','/upload/f_auto,q_auto,w_'+w+'/');
+}
 function _boardsPdfThumbUrl(url){
   if(!url||!/\.pdf($|\?)/i.test(url))return'';
   if(url.indexOf('/upload/')===-1)return'';
@@ -2058,7 +2103,7 @@ window.boardsToggleVisibility=async function(){
   _boardsMenuOpen=false;_boardsSyncMenu();
   const next=_editBoard.visibility==='shared'?'personal':'shared';
   try{
-    await updateDoc(doc(db,'mood_boards',_editBoard.id),{visibility:next,updatedAt:Date.now()});
+    await _qUpdate(doc(db,'mood_boards',_editBoard.id),{visibility:next,updatedAt:Date.now()});
     _editBoard.visibility=next;
     boardsLoaded=false;
     _boardsLogBoardActivity('made the board '+(next==='shared'?'TEAM':'PRIVATE'));
@@ -2076,7 +2121,7 @@ window.boardsDelete=async function(){
   _boardsMenuOpen=false;_boardsSyncMenu();
   if(!confirm('Move "'+(_editBoard.title||'Untitled board')+'" to Trash? You can restore it from the boards list.'))return;
   try{
-    await updateDoc(doc(db,'mood_boards',_editBoard.id),{deletedAt:Date.now(),deletedByName:session.name,updatedAt:Date.now()});
+    await _qUpdate(doc(db,'mood_boards',_editBoard.id),{deletedAt:Date.now(),deletedByName:session.name,updatedAt:Date.now()});
     moodBoards=moodBoards.filter(b=>b.id!==_editBoard.id);
     boardsLoaded=false;
     logActivity('Mood board deleted',`${session.name} moved "${_editBoard.title||'Untitled board'}" to trash`);
@@ -2261,12 +2306,24 @@ function _boardsCardsForSave(){
     return out;
   });
 }
-function _boardsSetSaveStatus(text){
+// The board shows NOTHING while saving. A progress indicator on an
+// autosave is a promise that the user has something to wait for, and they
+// don't: Firestore's local cache takes the write immediately and syncs
+// behind them. Only genuine exceptions get pixels — offline, or a failure.
+function _boardsSetSaveStatus(state){
   const el=document.getElementById('board-save-status');
-  if(el)el.textContent=text;
+  if(!el)return;
+  let text='';
+  if(state==='failed')text='Save failed — will retry';
+  else if(state==='offline'||(state==='' &&typeof navigator!=='undefined'&&navigator.onLine===false))text='Offline — saved on this device';
+  el.textContent=text;
+  el.classList.toggle('warn',!!text);
 }
+// Offline is a state, not an event in the save path, so it is reflected the
+// moment the browser notices rather than on the next write.
+window.addEventListener('online',()=>{if(currentPage==='board-canvas')_boardsSetSaveStatus('');});
+window.addEventListener('offline',()=>{if(currentPage==='board-canvas')_boardsSetSaveStatus('offline');});
 function _boardsSaveDebounced(){
-  _boardsSetSaveStatus('Unsaved changes…');
   clearTimeout(_boardsSaveTimer);
   _boardsSaveTimer=setTimeout(_boardsSaveNow,900);
 }
@@ -2284,7 +2341,6 @@ function _boardsSaveDebounced(){
 async function _boardsSaveNow(){
   clearTimeout(_boardsSaveTimer);
   if(!_editBoard||!_editBoard.id||!_boardsCanEdit(_editBoard))return;
-  _boardsSetSaveStatus('Saving…');
   if(typeof window._gvSilentSaveStart==='function')window._gvSilentSaveStart();
   try{
   const{cur,changed}=_boardsLocalChanges();
@@ -2307,6 +2363,12 @@ async function _boardsSaveNow(){
   let wrote=null;
   try{
     if(typeof runTransaction!=='function')throw new Error('no transaction support');
+    // A transaction CANNOT use the local cache — it needs a live round trip,
+    // and fails outright offline. That is the right price when someone else
+    // is on the board, and pure cost when nobody is. Presence already tells
+    // us which it is, so alone we take the plain local-first write: applied
+    // to IndexedDB instantly, synced behind you, works with no signal.
+    if(!_boardsPeers.length)throw new Error('solo — local-first write');
     // Merge against the SERVER's array inside the transaction, not against
     // whatever this tab happens to hold: a card we did not touch keeps the
     // server's version, so a colleague's move survives our save even if
@@ -2331,16 +2393,15 @@ async function _boardsSaveNow(){
       return payload;
     });
   }catch(e){
-    // Offline — this is an installed PWA and phones lose signal — or a
-    // transaction that ran out of retries. Fall back to the pre-Stage-6
-    // queued write (last-writer-wins) rather than refusing to save.
+    // Either nobody else is here (the common case — see above), or we are
+    // offline, or the transaction ran out of retries. All three take the
+    // plain queued write: local-first, last-writer-wins.
     try{
       const payload={...head,cards:cur,connectors:conns};
-      await updateDoc(ref,payload);
+      await _qUpdate(ref,payload);
       wrote=payload;
-      console.warn('[boards] transactional save unavailable, wrote directly:',(e&&e.message)||e);
     }catch(e2){
-      if(_editBoard&&_editBoard.id===savingId)_boardsSetSaveStatus('Save failed');
+      if(_editBoard&&_editBoard.id===savingId)_boardsSetSaveStatus('failed');
       showToast('Could not save board: '+(e2.message||e2),true);
       return;
     }
@@ -2354,7 +2415,7 @@ async function _boardsSaveNow(){
   if(!_editBoard||_editBoard.id!==savingId)return;   // we have moved on; leave the new board's state alone
   _boardsSetBase(cur);
   _boardsConnBase=JSON.stringify(conns);
-  _boardsSetSaveStatus('Saved');
+  _boardsSetSaveStatus('');
   }finally{
     // Always released, on every path — a leaked counter would suppress the
     // app's shared "Saving…" overlay for everything else, everywhere.
@@ -2946,7 +3007,7 @@ function _boardsSubscribe(boardId){
 function _boardsPresenceStart(boardId){
   if(!_boardsLive()||!session||!session.uid)return;
   const ref=doc(db,'mood_boards',boardId,'presence',session.uid);
-  const beat=()=>{setDoc(ref,{name:session.name||'',u:session.u||'',ts:Date.now()}).catch(()=>{});};
+  const beat=()=>{_qSet(ref,{name:session.name||'',u:session.u||'',ts:Date.now()}).catch(()=>{});};
   beat();
   clearInterval(_boardsPresenceTimer);
   _boardsPresenceTimer=setInterval(beat,_BOARDS_PRESENCE_BEAT);
@@ -2999,7 +3060,7 @@ function _boardsTeardown(){
   // moved on by boardsOpen when you step into a sub-board.
   const id=_editBoard&&_editBoard.id;
   if(id&&session&&session.uid){
-    try{deleteDoc(doc(db,'mood_boards',id,'presence',session.uid)).catch(()=>{});}catch(e){}
+    try{_qDel(doc(db,'mood_boards',id,'presence',session.uid)).catch(()=>{});}catch(e){}
   }
 }
 // Leaving the canvas by ANY route (sidebar, back button, a deep link to
@@ -3048,7 +3109,7 @@ function _boardsRenderPresence(){
 function _boardsLogBoardActivity(action){
   if(!_editBoard||!session)return;
   try{
-    addDoc(collection(db,'mood_boards',_editBoard.id,'activity'),{
+    _qAdd(collection(db,'mood_boards',_editBoard.id,'activity'),{
       ts:Date.now(),byName:session.name||'',byUid:session.uid||'',action:String(action).slice(0,200)
     }).catch(()=>{});
   }catch(e){/* the feed is a record, never a blocker */}
@@ -3162,7 +3223,7 @@ window.boardsAddComment=async function(){
   const text=String((input&&input.value)||'').trim();
   if(!text||!_editBoard||!session)return;
   try{
-    await addDoc(collection(db,'mood_boards',_editBoard.id,'comments'),{
+    await _qAdd(collection(db,'mood_boards',_editBoard.id,'comments'),{
       cardId:_boardsDrawerCard||null,
       text:text.slice(0,2000),
       byUid:session.uid,byName:session.name||'',
@@ -3174,13 +3235,13 @@ window.boardsAddComment=async function(){
 };
 window.boardsResolveComment=async function(id,resolved){
   if(!_editBoard)return;
-  try{await updateDoc(doc(db,'mood_boards',_editBoard.id,'comments',id),{resolved:!!resolved});}
+  try{await _qUpdate(doc(db,'mood_boards',_editBoard.id,'comments',id),{resolved:!!resolved});}
   catch(e){showToast('Could not update comment: '+(e.message||e),true);}
 };
 window.boardsDeleteComment=async function(id){
   if(!_editBoard)return;
   if(!confirm('Delete this comment?'))return;
-  try{await deleteDoc(doc(db,'mood_boards',_editBoard.id,'comments',id));}
+  try{await _qDel(doc(db,'mood_boards',_editBoard.id,'comments',id));}
   catch(e){showToast('Could not delete comment: '+(e.message||e),true);}
 };
 
@@ -3227,7 +3288,7 @@ window.boardsSaveShare=async function(){
   if(!host||!_editBoard)return;
   const picked=Array.from(host.querySelectorAll('input[type=checkbox]')).filter(i=>i.checked).map(i=>i.value);
   try{
-    await updateDoc(doc(db,'mood_boards',_editBoard.id),{sharedWith:picked,updatedAt:Date.now()});
+    await _qUpdate(doc(db,'mood_boards',_editBoard.id),{sharedWith:picked,updatedAt:Date.now()});
     _editBoard.sharedWith=picked;
     const idx=moodBoards.findIndex(b=>b.id===_editBoard.id);
     if(idx>-1)moodBoards[idx].sharedWith=picked;
@@ -3689,7 +3750,7 @@ async function _boardsGalleryCtxRun(act,id){
       const title=String(next).trim()||'Untitled board';
       if(title===b.title)return;
       try{
-        await updateDoc(doc(db,'mood_boards',id),{title,updatedAt:Date.now(),updatedByName:session.name});
+        await _qUpdate(doc(db,'mood_boards',id),{title,updatedAt:Date.now(),updatedByName:session.name});
         b.title=title;
         _boardsRerenderGallery();
         showToast('Renamed');
@@ -3708,7 +3769,7 @@ async function _boardsGalleryCtxRun(act,id){
       if(!_boardsCanEdit(b))return;
       const next=!b.isTemplate;
       try{
-        await updateDoc(doc(db,'mood_boards',id),{isTemplate:next,updatedAt:Date.now()});
+        await _qUpdate(doc(db,'mood_boards',id),{isTemplate:next,updatedAt:Date.now()});
         b.isTemplate=next;
         _boardsRerenderGallery();
         showToast(next?'Saved as a template':'No longer a template');
@@ -3719,7 +3780,7 @@ async function _boardsGalleryCtxRun(act,id){
       if(!_boardsCanEdit(b))return;
       const next=b.visibility==='shared'?'personal':'shared';
       try{
-        await updateDoc(doc(db,'mood_boards',id),{visibility:next,updatedAt:Date.now()});
+        await _qUpdate(doc(db,'mood_boards',id),{visibility:next,updatedAt:Date.now()});
         b.visibility=next;
         _boardsRerenderGallery();
         showToast('Now '+(next==='shared'?'TEAM':'PRIVATE'));
@@ -3729,7 +3790,7 @@ async function _boardsGalleryCtxRun(act,id){
     case'g:trash':{
       if(!confirm('Move "'+(b.title||'Untitled board')+'" to Trash? You can restore it from this list.'))return;
       try{
-        await updateDoc(doc(db,'mood_boards',id),{deletedAt:Date.now(),deletedByName:session.name,updatedAt:Date.now()});
+        await _qUpdate(doc(db,'mood_boards',id),{deletedAt:Date.now(),deletedByName:session.name,updatedAt:Date.now()});
         logActivity('Mood board deleted',`${session.name} moved "${b.title||'Untitled board'}" to trash`);
         await window.boardsRetryLoad();
         showToast('Board moved to Trash');
@@ -3739,6 +3800,14 @@ async function _boardsGalleryCtxRun(act,id){
     default:break;
   }
 }
+// Ask the browser to stop evicting our IndexedDB. Firestore's offline queue
+// and its whole local cache live there, so eviction means unsynced writes
+// disappear. Nothing in the app asked for this before; it is one call and
+// it is refused silently where unsupported.
+if(typeof navigator!=='undefined'&&navigator.storage&&navigator.storage.persist){
+  navigator.storage.persisted().then(ok=>{if(!ok)return navigator.storage.persist();}).catch(()=>{});
+}
+
 // Registered once at load, like the canvas menu's dismiss handlers.
 document.addEventListener('contextmenu',e=>{
   if(currentPage!=='boards')return;
