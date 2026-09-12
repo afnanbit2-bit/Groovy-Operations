@@ -672,7 +672,11 @@ function buildNav(){
   // B-stock carton inventory — owners/managers view/manage.
   if(om)mainItems.push({id:'bstock',label:'B-Stock'});
   if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
-  mainItems.push({id:'notes',label:'📝 Notes'});
+  // Staged rollout (Sept 2026): Notes is scoped to Afnan by username only
+  // (same pattern as isMustafa()-style per-person grants elsewhere) while
+  // the module is still being shaped. Change this single check — not a
+  // role, not isOwner() — to roll it out to everyone once it's ready.
+  if(session.u==='afnan')mainItems.push({id:'notes',label:'📝 Notes'});
   if(om||session.canFabric)mainItems.push({id:'fabric-inventory',label:'Fabric Inventory'});
   if(om)mainItems.push({id:'fulfillment',label:'Courier Performance'});
   if(om)mainItems.push({id:'bug-tracker',label:'🐛 Bug Tracker'});
@@ -946,7 +950,7 @@ window.openMoreSheet=function(){
   if(session.canPO)items.push({iconName:'plus',label:'New PO',pageId:'po-create'});
   items.push({iconName:'po',label:'PO Registry',pageId:'po-registry'});
   if(om||session.canFabric)items.push({iconName:'box',label:'Fabric Inventory',pageId:'fabric-inventory'});
-  items.push({iconName:'notebook',label:'Notes',pageId:'notes'});
+  if(session.u==='afnan')items.push({iconName:'notebook',label:'Notes',pageId:'notes'}); // staged rollout, see buildNav()
   if(om)items.push({iconName:'activity',label:'Courier Performance',pageId:'fulfillment'});
   // Embellishments dept items (visible to owners/managers + relevant workers)
   if(om||session.u==='ammar'||session.u==='haris'||(typeof isPrintWorker==='function'&&isPrintWorker()))items.push({iconName:'palette',label:'Recipe Directory',pageId:'recipe-directory'});
@@ -981,7 +985,7 @@ window.openStoreSubSheet=function(){
     {iconName:'tray',label:'PO Issue Requests',pageId:'po-issue-list'}
   );
   if(typeof _canApproveEdits==='function'&&_canApproveEdits())items.push({iconName:'list',label:'Edit Inbox',pageId:'po-edit-inbox'});
-  items.push({iconName:'notebook',label:'Notes',pageId:'notes'});
+  if(session.u==='afnan')items.push({iconName:'notebook',label:'Notes',pageId:'notes'}); // staged rollout, see buildNav()
   window.openMobSheet('Store',items);
 };
 
@@ -995,7 +999,7 @@ window.openStoreMoreSheet=function(){
     {iconName:'tray',label:'PO Issue Requests',pageId:'po-issue-list'}
   );
   if(typeof _canApproveEdits==='function'&&_canApproveEdits())items.push({iconName:'list',label:'Edit Inbox',pageId:'po-edit-inbox'});
-  items.push({iconName:'notebook',label:'Notes',pageId:'notes'});
+  if(session.u==='afnan')items.push({iconName:'notebook',label:'Notes',pageId:'notes'}); // staged rollout, see buildNav()
   window.openMobSheet('More',items);
 };
 

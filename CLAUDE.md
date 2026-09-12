@@ -444,14 +444,26 @@ caret. Autosave is debounced ~900ms after the last edit
 back or on a discrete action (checkbox toggle, image upload, visibility
 change, delete).
 
-**Nav:** "📝 Notes" is a `mainItems` entry for everyone in `buildNav()` (not
-role-gated) and is in the mobile "More" sheet for owner/manager
-(`openMoreSheet`) and store (`openStoreSubSheet`/`openStoreMoreSheet`).
-Workers/viewers have a fixed 3-button mobile nav with **no** More button
-(see `_renderMobNav` in `js/shared.js`) — rather than restructure that
-deliberately-minimal layout, their path to Notes is a "📝 Notes" button on
-their own "Me" page (`renderMePage()`, `js/hrm.js`). New icon: `notebook`
-in `_icon()`.
+**Nav:** "📝 Notes" is a `mainItems` entry in `buildNav()`, in the mobile
+"More" sheet for owner/manager (`openMoreSheet`) and store
+(`openStoreSubSheet`/`openStoreMoreSheet`), and (for workers/viewers, whose
+fixed 3-button mobile nav has no More button — see `_renderMobNav`) a
+button on their own "Me" page (`renderMePage()`, `js/hrm.js`). New icon:
+`notebook` in `_icon()`.
+
+**Staged rollout (Sept 2026): nav-gated to Afnan only for now.** All four
+of the pushes above are behind `if(session.u==='afnan')` — deliberately a
+single username check, not `isOwner()` and not a role, same pattern as the
+`isMustafa()`-style per-person grants already in this codebase. Afnan
+asked to dogfood it alone until the module (Phase 1 + Phase 2) is further
+along, then open it to the rest of the staff. This is a **nav-only** gate —
+`firestore.rules` still lets any signed-in user create/read pages per the
+design above, matching how this app already handles staged rollouts
+elsewhere (e.g. Shopify Intel is nav-gated to `isOwner()`, not blocked at
+the rules layer). To roll out: change these four `session.u==='afnan'`
+checks (grep `staged rollout` in `js/shared.js` and `js/hrm.js`) to
+whatever the real target audience should be — probably just removing the
+condition, matching the "for everyone" design intent above.
 
 **Not built yet (Phase 2, future):** the Milanote half — a freeform
 drag-and-drop canvas (cards, images, connector lines, pan/zoom) for mood
