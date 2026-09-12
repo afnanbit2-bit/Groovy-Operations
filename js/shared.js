@@ -589,18 +589,28 @@ window.showLoader=showLoader;window.hideLoader=hideLoader;window.withLoader=with
 window.gvSkeleton=gvSkeleton;window.gvBtnBusy=gvBtnBusy;window.gvBtnDone=gvBtnDone;
 // Auto-write buffer: a save that runs >260ms raises the blocking buffer; fast
 // writes show nothing (no flicker). Skipped while the Fabric section's own
-// overlay is up, so the two never stack.
-let _gvWr=0,_gvWrTimer=null,_gvWrShown=false;
+// overlay is up, so the two never stack — and skipped whenever
+// _gvSilentSaveCount>0, the same opt-out generalised for any module whose
+// writes are frequent/ambient (a canvas autosaving on every drag, say) and
+// that owns its own lightweight save-status UI instead. A module wraps
+// just its own write calls with _gvSilentSaveStart()/_gvSilentSaveStop() —
+// never globally for a whole page visit — so writes elsewhere still get
+// the normal blocking "Saving…" feedback.
+let _gvWr=0,_gvWrTimer=null,_gvWrShown=false,_gvSilentSaveCount=0;
 function _gvWriteStart(){
   _gvWr++;
   if(_gvWr===1){clearTimeout(_gvWrTimer);_gvWrTimer=setTimeout(()=>{
-    if(_gvWr>0&&!(typeof _fabBusy!=='undefined'&&_fabBusy)){_gvWrShown=true;showLoader('Saving…');}
+    const silent=(typeof _fabBusy!=='undefined'&&_fabBusy)||_gvSilentSaveCount>0;
+    if(_gvWr>0&&!silent){_gvWrShown=true;showLoader('Saving…');}
   },260);}
 }
 function _gvWriteStop(){
   _gvWr=Math.max(0,_gvWr-1);
   if(_gvWr<=0){_gvWr=0;clearTimeout(_gvWrTimer);if(_gvWrShown){_gvWrShown=false;hideLoader();}}
 }
+function _gvSilentSaveStart(){_gvSilentSaveCount++;}
+function _gvSilentSaveStop(){_gvSilentSaveCount=Math.max(0,_gvSilentSaveCount-1);}
+window._gvSilentSaveStart=_gvSilentSaveStart;window._gvSilentSaveStop=_gvSilentSaveStop;
 
 async function logActivity(action,detail=''){
   if(!session)return;

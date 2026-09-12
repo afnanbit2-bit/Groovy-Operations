@@ -174,6 +174,7 @@ function _renderBoardCanvasHTML(){
         <button class="back-btn" style="margin:0" onclick="window.boardsBack()">← Boards</button>
         <input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" placeholder="Untitled board" style="font-size:14.5px;font-weight:700;border:none;outline:none;font-family:inherit;background:transparent;max-width:240px">
         <span class="pill">${visLabel}</span>
+        ${canEdit?`<span class="board-save-status" id="board-save-status">Saved</span>`:''}
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
         ${canEdit?`<button class="tool-btn" onclick="window.boardsToggleVisibility()">Make ${b.visibility==='shared'?'Private':'Team'}</button>`:''}
@@ -446,10 +447,31 @@ window.boardsDelete=async function(){
 };
 
 // -- save --
-function _boardsSaveDebounced(){clearTimeout(_boardsSaveTimer);_boardsSaveTimer=setTimeout(_boardsSaveNow,900);}
+function _boardsSetSaveStatus(text){
+  const el=document.getElementById('board-save-status');
+  if(el)el.textContent=text;
+}
+function _boardsSaveDebounced(){
+  _boardsSetSaveStatus('Unsaved changes…');
+  clearTimeout(_boardsSaveTimer);
+  _boardsSaveTimer=setTimeout(_boardsSaveNow,900);
+}
+// Autosave fires on nearly every interaction (drag, resize, pan, zoom,
+// typing) — the app's shared "Saving…" overlay (js/shared.js) is a
+// full-screen block meant for occasional, deliberate writes (submitting a
+// PO, processing payroll), not something that should flash on every card
+// nudge. _gvSilentSaveStart/Stop is the same opt-out `_fabBusy` already
+// uses to keep that overlay from stacking with Fabric's own — boards uses
+// it here so this file can own its own lightweight status text instead
+// (#board-save-status) without touching the shared overlay's behavior for
+// anyone else. Only wraps THIS function, not boardsCreate/boardsDelete/
+// boardsToggleVisibility — those are one-off, deliberate actions where the
+// normal blocking feedback is still the right call.
 async function _boardsSaveNow(){
   clearTimeout(_boardsSaveTimer);
   if(!_editBoard||!_editBoard.id||!_boardsCanEdit(_editBoard))return;
+  _boardsSetSaveStatus('Saving…');
+  if(typeof window._gvSilentSaveStart==='function')window._gvSilentSaveStart();
   try{
     await updateDoc(doc(db,'mood_boards',_editBoard.id),{
       title:_editBoard.title,
@@ -459,5 +481,11 @@ async function _boardsSaveNow(){
     });
     const idx=moodBoards.findIndex(b=>b.id===_editBoard.id);
     if(idx>-1)moodBoards[idx]={...moodBoards[idx],title:_editBoard.title,cards:_editCards,connectors:_editConnectors,updatedAt:Date.now()};
-  }catch(e){showToast('Could not save board: '+(e.message||e),true);}
+    _boardsSetSaveStatus('Saved');
+  }catch(e){
+    _boardsSetSaveStatus('Save failed');
+    showToast('Could not save board: '+(e.message||e),true);
+  }finally{
+    if(typeof window._gvSilentSaveStop==='function')window._gvSilentSaveStop();
+  }
 }

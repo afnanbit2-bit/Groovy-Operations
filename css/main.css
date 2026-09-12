@@ -480,6 +480,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .board-canvas-wrap{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;background:var(--bg)}
 .board-topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:wrap}
 .pill{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;border-radius:20px;padding:3px 9px;border:1px solid var(--border);color:var(--muted)}
+.board-save-status,.note-save-status{font-size:11px;color:var(--muted)}
 .tool-btn{background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:inherit}
 .tool-btn:hover{border-color:var(--muted)}
 .zoom-readout{font-size:11px;color:var(--muted);min-width:34px;text-align:center;display:inline-block}

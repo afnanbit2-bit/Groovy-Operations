@@ -484,6 +484,24 @@ caret. Autosave is debounced ~900ms after the last edit
 back or on a discrete action (checkbox toggle, image upload, visibility
 change, delete).
 
+**Autosave opts out of the shared blocking "Saving…" overlay** (Sept 2026
+fix — Afnan reported it popping up on every single card drag in Mood
+Boards, which is exactly the frequent/ambient write this overlay was never
+meant for). `js/shared.js`'s write-buffer already had one opt-out,
+`_fabBusy`, so a slow write during a Fabric action doesn't double up with
+Fabric's own overlay; that was generalised into `_gvSilentSaveCount` /
+`window._gvSilentSaveStart()` / `window._gvSilentSaveStop()` — any module
+wraps just its own frequent write calls with start/stop (never globally for
+a whole page visit) to suppress the blocking overlay for those writes only.
+Both `_notesSaveNow` and `_boardsSaveNow` (`js/boards.js`) use it, each
+driving its own small ambient status text instead (`#note-save-status`,
+`#board-save-status` — "Unsaved changes…" → "Saving…" → "Saved"/"Save
+failed"). Deliberately **not** wrapped: `notesCreatePage`/`notesDeletePage`/
+`notesToggleVisibility` and their board equivalents — those are one-off,
+deliberate actions where the normal blocking feedback is still correct.
+If a future module adds its own frequent autosave, use this same pair
+rather than re-deriving another opt-out.
+
 **Nav:** "Creative Hub" (plain text, no icon/emoji — deliberate, per
 Afnan) is a `mainItems` entry in `buildNav()` pointing at page id
 `creative-hub`, in the mobile "More" sheet for owner/manager

@@ -226,7 +226,7 @@ function renderNoteDetailPage(){
         ${canEdit?`<button class="btn-sm" style="background:var(--accent-urgent)" onclick="window.notesDeletePage()">Delete</button>`:''}
       </div>
     </div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:16px">${p.ownerName?('by '+_notesEsc(p.ownerName)+' · '):''}${updated?('updated '+updated):''}${!canEdit?' · read-only':''}</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:16px">${p.ownerName?('by '+_notesEsc(p.ownerName)+' · '):''}${updated?('updated '+updated):''}${!canEdit?' · read-only':''}${canEdit?' · <span class="note-save-status" id="note-save-status">Saved</span>':''}</div>
     <div id="notes-blocks">${_notesRenderBlocksHTML(_notesEditBlocks,canEdit)}</div>
     ${canEdit?`<button class="btn-sm" onclick="window.notesAddBlock()" style="margin-top:10px;background:none;border:1px dashed var(--border);color:var(--muted)">+ Add block</button>`:''}
   </div>`;
@@ -455,14 +455,25 @@ window.notesDeletePage=async function(){
   }catch(e){showToast('Could not delete: '+(e.message||e),true);}
 };
 
+function _notesSetSaveStatus(text){
+  const el=document.getElementById('note-save-status');
+  if(el)el.textContent=text;
+}
 function _notesSaveDebounced(){
+  _notesSetSaveStatus('Unsaved changes…');
   clearTimeout(_notesSaveTimer);
   _notesSaveTimer=setTimeout(_notesSaveNow,900);
 }
 
+// Autosave fires on nearly every keystroke — opts out of the shared
+// blocking "Saving…" overlay (js/shared.js) the same way js/boards.js does
+// (see its _boardsSaveNow comment), so typing doesn't get interrupted by a
+// full-screen block; #note-save-status carries the ambient feedback instead.
 async function _notesSaveNow(){
   clearTimeout(_notesSaveTimer);
   if(!_notesEditPage||!_notesEditPage.id||!_notesCanEdit(_notesEditPage))return;
+  _notesSetSaveStatus('Saving…');
+  if(typeof window._gvSilentSaveStart==='function')window._gvSilentSaveStart();
   try{
     await updateDoc(doc(db,'notes_pages',_notesEditPage.id),{
       title:_notesEditPage.title,
@@ -472,5 +483,11 @@ async function _notesSaveNow(){
     });
     const idx=notesPages.findIndex(p=>p.id===_notesEditPage.id);
     if(idx>-1){notesPages[idx].title=_notesEditPage.title;notesPages[idx].blocks=_notesEditBlocks;notesPages[idx].updatedAt=Date.now();}
-  }catch(e){showToast('Could not save note: '+(e.message||e),true);}
+    _notesSetSaveStatus('Saved');
+  }catch(e){
+    _notesSetSaveStatus('Save failed');
+    showToast('Could not save note: '+(e.message||e),true);
+  }finally{
+    if(typeof window._gvSilentSaveStop==='function')window._gvSilentSaveStop();
+  }
 }
