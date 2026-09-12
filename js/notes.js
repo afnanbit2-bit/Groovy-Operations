@@ -20,6 +20,7 @@
 
 // ── State ──
 let notesLoaded=false;
+let _notesLoadError=null;     // set when every notes query failed (see loadNotesData)
 let notesPages=[];            // merged list: every 'shared' page + the signed-in user's own pages
 let _notesSearch='';
 let _notesViewingId=null;     // id of the page open in the detail view
@@ -70,17 +71,41 @@ function _notesCanEdit(p){
 // so it never needs a composite index and never risks the classic Firestore
 // gotcha where a broader query gets rejected because a rule can't prove
 // every possible result is readable.
+// Never rejects — js/shared.js dispatches this as `loadNotesData().then(render)`
+// with no catch, so a rejected query (rules older than the app, say) would
+// otherwise leave the page on its loading skeleton forever with no message.
+// Same independent-settle treatment as loadBoardsData: one denied query does
+// not hide the pages the other one did return.
 async function loadNotesData(){
-  const[sharedSnap,mineSnap]=await Promise.all([
-    getDocs(query(collection(db,'notes_pages'),where('visibility','==','shared'))),
-    getDocs(query(collection(db,'notes_pages'),where('ownerUid','==',session.uid)))
-  ]);
+  const jobs=[
+    {name:'team pages',p:()=>getDocs(query(collection(db,'notes_pages'),where('visibility','==','shared')))},
+    {name:'your pages',p:()=>getDocs(query(collection(db,'notes_pages'),where('ownerUid','==',session.uid)))}
+  ];
+  const settled=await Promise.allSettled(jobs.map(j=>j.p()));
   const map={};
-  sharedSnap.forEach(d=>{map[d.id]={id:d.id,...d.data()};});
-  mineSnap.forEach(d=>{map[d.id]={id:d.id,...d.data()};});
+  let ok=0,firstErr='';
+  settled.forEach((r,i)=>{
+    if(r.status==='fulfilled'){ok++;r.value.forEach(d=>{map[d.id]={id:d.id,...d.data()};});}
+    else{
+      const msg=(r.reason&&(r.reason.message||r.reason.code))||String(r.reason);
+      if(!firstErr)firstErr=msg;
+      console.warn('[notes] query failed ('+jobs[i].name+'):',msg);
+    }
+  });
+  _notesLoadError=ok?null:(firstErr||'Could not read notes');
   notesPages=Object.values(map).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
   notesLoaded=true;
 }
+window.notesRetryLoad=async function(){
+  notesLoaded=false;_notesLoadError=null;
+  const m=document.getElementById('main-content');
+  if(m&&typeof gvSkeleton==='function')m.innerHTML=gvSkeleton(6);
+  await loadNotesData();
+  if(typeof currentPage!=='undefined'&&currentPage==='notes'){
+    const el=document.getElementById('main-content');
+    if(el)el.innerHTML=renderNotesPage();
+  }
+};
 
 // ── Creative Hub (landing page) ──
 // A category directory. Notes (this file) is the first category; Phase 2's
@@ -129,7 +154,12 @@ function renderNotesPage(){
     <div><h2 style="margin:0">Notes</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">Team Wiki, private notes</div></div>
   </div>
   <input type="text" id="notes-search" placeholder="Search notes…" value="${_notesEsc(_notesSearch)}" oninput="window.notesSearchInput(this.value)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:16px;box-sizing:border-box">
-  <div id="notes-sections">${_notesRenderSections()}</div>`;
+  ${_notesLoadError?`<div class="board-load-error">
+    <div style="font-weight:700;font-size:13.5px;margin-bottom:4px">Could not load notes</div>
+    <div style="font-size:12px;color:var(--muted);line-height:1.5">${_notesEsc(_notesLoadError)}</div>
+    <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-top:6px">If that says <em>missing or insufficient permissions</em>, the Firestore rules in the Firebase Console are older than this app — republish <code>firestore.rules</code>.</div>
+    <button class="btn-sm" style="margin-top:10px" onclick="window.notesRetryLoad()">Retry</button>
+  </div>`:`<div id="notes-sections">${_notesRenderSections()}</div>`}`;
 }
 
 function _notesMatches(p,q){

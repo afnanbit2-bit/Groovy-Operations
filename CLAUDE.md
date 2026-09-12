@@ -979,6 +979,43 @@ owner-only, so nobody can bin a team board. `_boardsCanEdit()` and
   `onSnapshot` bridged (an old cached `index.html`, say) every listener is
   skipped and the board behaves exactly as it did in Stage 5.
 
+### Loading must never hang (Sept 2026 — found in QA)
+
+`js/shared.js`'s `renderPage` dispatches these pages as
+`loadXData().then(render)` **with no `.catch`** (the `bug-tracker` line is
+the one exception). So any rejected query left the page on its loading
+skeleton forever, with no error anywhere on screen. Reported from a real
+session: the Mood Boards gallery stuck on grey skeleton bars while the
+console showed `Missing or insufficient permissions`.
+
+What made it reachable was Stage 6's third query. Firestore **rejects a
+query it cannot prove safe against the live rules**, and
+`where('sharedWith','array-contains',…)` is unprovable under any ruleset
+published before Stage 6 — so with an out-of-date Console the whole
+`Promise.all` rejected and took the other two queries down with it.
+
+Both loaders are now written so they **cannot reject**:
+
+- `loadBoardsData()` / `loadNotesData()` settle each query independently
+  (`Promise.allSettled`). Whatever succeeded is shown; whatever failed is
+  named. All failed → `_boardsLoadError`/`_notesLoadError` renders an
+  honest error card with a **Retry** button and says to republish
+  `firestore.rules`. Some failed → a warning strip, and the rest of the
+  module keeps working.
+- The general rule for this codebase: **a loader called from `renderPage`
+  must handle its own failure**, because the dispatch line will not.
+
+Same QA round found an unrelated live bug in `js/fabric.js`:
+`loadDrawstrings()` set `_dsLoaded=true` only on success, while both
+callers (`renderDrawstrings`, `fabTrimAlertsCard`) re-render when the load
+settles and the renderer starts another load whenever `!_dsLoaded`. Any
+failed read became a **load→render→load loop firing about once a second**
+for as long as the page stayed open. Now a failure is recorded in
+`_dsLoadErr` (shown once, with Retry) and `_dsLoading` keeps two loads
+from overlapping. Note this hit `_gvProgStart/Stop` (the top progress bar),
+**not** the blocking "Saving…" overlay — it is not the stuck-overlay
+suspect recorded under the Monitor section.
+
 ## Shopify Inventory Intelligence
 
 Read-only sales + inventory dashboard ("Inventory Intel" page). Data is

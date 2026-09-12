@@ -1893,19 +1893,38 @@ window.fabExportIssueRegistry=function(){
 //  the fabric; used at finishing. Manual add/consume + low-stock alerts.
 // ════════════════════════════════════════════════════════════════════════
 let allDrawstrings=[],allDrawstringMoves=[],_dsLoaded=false;
+// A FAILED load used to leave _dsLoaded false with nothing recorded, and
+// both callers below re-render as soon as the load settles — and the
+// renderer starts another load whenever !_dsLoaded. Any failed read (a
+// permission denial, say) therefore became a load→render→load loop firing
+// about once a second for as long as the page stayed open. These two hold
+// the failure so it is shown once and not retried until asked.
+let _dsLoadErr='',_dsLoading=null;
 const DS_M_PER_UNIT=1.5;   // dori: 1 unit (piece) consumes 1.5 m of drawstring
 function _dsColorKey(c){return String(c||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');}
 async function loadDrawstrings(){
-  try{
-    const [dsSnap,mvSnap]=await Promise.all([
-      getDocs(collection(db,'fabric_drawstrings')),
-      getDocs(query(collection(db,'drawstring_moves'),orderBy('ts','desc'),limit(300))).catch(()=>({docs:[]}))
-    ]);
-    allDrawstrings=dsSnap.docs.map(d=>({...d.data(),_id:d.id}));
-    allDrawstringMoves=mvSnap.docs.map(d=>({...d.data(),_id:d.id}));
-    _dsLoaded=true;
-  }catch(e){console.error('[drawstring] load',e);}
+  if(_dsLoading)return _dsLoading;            // never two in flight at once
+  _dsLoading=(async()=>{
+    try{
+      const [dsSnap,mvSnap]=await Promise.all([
+        getDocs(collection(db,'fabric_drawstrings')),
+        getDocs(query(collection(db,'drawstring_moves'),orderBy('ts','desc'),limit(300))).catch(()=>({docs:[]}))
+      ]);
+      allDrawstrings=dsSnap.docs.map(d=>({...d.data(),_id:d.id}));
+      allDrawstringMoves=mvSnap.docs.map(d=>({...d.data(),_id:d.id}));
+      _dsLoaded=true;_dsLoadErr='';
+    }catch(e){
+      _dsLoadErr=(e&&(e.message||e.code))||'Could not load drawstrings';
+      console.error('[drawstring] load',e);
+    }finally{_dsLoading=null;}
+  })();
+  return _dsLoading;
 }
+window.dsRetryLoad=async function(){
+  _dsLoadErr='';
+  await loadDrawstrings();
+  _dsRerender();
+};
 function _dsAlertLevel(d){
   const bal=d.balance||0,t=Number(d.threshold)||0;
   if(bal<=0)return{label:'Out',color:'#6b7280'};
@@ -1919,7 +1938,11 @@ async function _dsLog(colorKey,color,type,qty,note,units){
   try{const ref=doc(collection(db,'drawstring_moves'));await setDoc(ref,{...mv,id:ref.id});allDrawstringMoves.unshift({...mv,_id:ref.id});}catch(e){console.warn('[drawstring] log',e);}
 }
 function renderDrawstrings(){
-  if(!_dsLoaded){loadDrawstrings().then(_dsRerender);return '<div style="padding:32px;text-align:center"><span class="spinner"></span><div style="margin-top:10px;color:var(--muted);font-size:13px">Loading drawstrings…</div></div>';}
+  if(!_dsLoaded){
+    if(_dsLoadErr)return '<div class="empty" style="padding:24px;text-align:center">Could not load drawstrings: '+_gpEsc(_dsLoadErr)+'<div style="margin-top:10px"><button class="btn-sm" onclick="window.dsRetryLoad()">Retry</button></div></div>';
+    loadDrawstrings().then(_dsRerender);
+    return '<div style="padding:32px;text-align:center"><span class="spinner"></span><div style="margin-top:10px;color:var(--muted);font-size:13px">Loading drawstrings…</div></div>';
+  }
   const total=allDrawstrings.reduce((s,d)=>s+(d.balance||0),0);
   const low=allDrawstrings.filter(d=>_dsAlertLevel(d).label==='Low').length;
   const sorted=[...allDrawstrings].sort((a,b)=>(a.color||'').localeCompare(b.color||''));
@@ -2073,7 +2096,7 @@ window.dsDelete=async function(id){
 // drawstrings once, then re-renders the dashboard.
 function fabTrimAlertsCard(){
   if(!(session&&(['owner','manager'].includes(session.role)||session.canFabric)))return '';
-  if(!_dsLoaded){loadDrawstrings().then(()=>{if(typeof currentPage!=='undefined'&&currentPage==='dashboard'){const m=document.getElementById('main-content');if(m&&typeof renderDashboard==='function')m.innerHTML=renderDashboard();}});}
+  if(!_dsLoaded&&!_dsLoadErr){loadDrawstrings().then(()=>{if(typeof currentPage!=='undefined'&&currentPage==='dashboard'){const m=document.getElementById('main-content');if(m&&typeof renderDashboard==='function')m.innerHTML=renderDashboard();}});}
   const ribs=(allFabricInventory||[]).filter(s=>/rib/i.test(s.fabType||''));
   const ribLow=ribs.filter(s=>(s.totalWeight||0)>0&&_fabAlertLevel(s).label!=='OK');
   const ribOut=ribs.filter(s=>(s.totalWeight||0)<=0);

@@ -45,6 +45,8 @@ let _boardsDragDepth=0;       // dragenter/dragleave fire per child; count to kn
 let _boardsGalleryQuery='';
 let _boardsGallerySort='updated';   // updated | opened | title | cards
 let _boardsGalleryTimer=null;
+let _boardsLoadError=null;      // set when EVERY board query failed
+let _boardsLoadPartial=null;    // set when some queries failed but others worked
 // Stage 4 — find-within-a-board state.
 let _boardsFindOpen=false,_boardsFindQuery='',_boardsFindHits=[],_boardsFindIdx=0,_boardsFindTimer=null;
 let _boardsMenuOpen=false;          // the board "⋯" dropdown in the canvas topbar
@@ -336,20 +338,42 @@ window.boardsToggleSnap=function(){
 // Same two-single-field-query, merge-client-side approach as loadNotesData —
 // each query maps 1:1 onto a clause of the firestore.rules read condition
 // below, so it's always provably safe and never needs a composite index.
+// A rejected query here used to leave the gallery on its loading skeleton
+// forever: js/shared.js dispatches `loadBoardsData().then(render)` with no
+// catch, so a rejection rendered nothing and said nothing. This function
+// therefore NEVER rejects — it records what failed and lets the gallery
+// show an honest error with a Retry button.
+//
+// The queries are also settled INDEPENDENTLY. That matters because
+// Firestore rejects a query it cannot prove safe against the live rules,
+// and the third query (Stage 6's `sharedWith`) is unprovable under any
+// ruleset published before Stage 6. Sharing that fate with the other two
+// would mean an un-republished Console takes the whole module down; this
+// way the boards you own and your team's boards still load, and you get
+// told what is missing.
 async function loadBoardsData(){
   const me=_boardsMyEmail();
-  // Three single-field queries, one per clause of the firestore.rules read
-  // condition — the third (Stage 6) covers boards shared with me by name.
-  // Still no composite index and still provably safe, same discipline as
-  // the original two.
   const jobs=[
-    getDocs(query(collection(db,'mood_boards'),where('visibility','==','shared'))),
-    getDocs(query(collection(db,'mood_boards'),where('ownerUid','==',session.uid)))
+    {name:'team boards',p:()=>getDocs(query(collection(db,'mood_boards'),where('visibility','==','shared')))},
+    {name:'your boards',p:()=>getDocs(query(collection(db,'mood_boards'),where('ownerUid','==',session.uid)))}
   ];
-  if(me)jobs.push(getDocs(query(collection(db,'mood_boards'),where('sharedWith','array-contains',me))));
-  const snaps=await Promise.all(jobs);
+  if(me)jobs.push({name:'boards shared with you',p:()=>getDocs(query(collection(db,'mood_boards'),where('sharedWith','array-contains',me)))});
+  const settled=await Promise.allSettled(jobs.map(j=>j.p()));
   const map={};
-  snaps.forEach(sn=>sn.forEach(d=>{map[d.id]={id:d.id,...d.data()};}));
+  let ok=0;
+  const failed=[];
+  let firstErr='';
+  settled.forEach((r,i)=>{
+    if(r.status==='fulfilled'){ok++;r.value.forEach(d=>{map[d.id]={id:d.id,...d.data()};});}
+    else{
+      failed.push(jobs[i].name);
+      const msg=(r.reason&&(r.reason.message||r.reason.code))||String(r.reason);
+      if(!firstErr)firstErr=msg;
+      console.warn('[boards] query failed ('+jobs[i].name+'):',msg);
+    }
+  });
+  _boardsLoadError=ok?null:(firstErr||'Could not read boards');
+  _boardsLoadPartial=(ok&&failed.length)?failed.slice():null;
   const all=Object.values(map).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
   // Soft delete: a trashed board keeps its document (so it can come back)
   // and is simply filtered out of the live list. Deliberately NOT a
@@ -359,6 +383,30 @@ async function loadBoardsData(){
   moodBoards=all.filter(b=>!b.deletedAt);
   _boardsTrash=all.filter(b=>!!b.deletedAt).sort((a,b)=>(b.deletedAt||0)-(a.deletedAt||0));
   boardsLoaded=true;
+}
+window.boardsRetryLoad=async function(){
+  boardsLoaded=false;_boardsLoadError=null;_boardsLoadPartial=null;
+  const m=document.getElementById('main-content');
+  if(m&&typeof gvSkeleton==='function')m.innerHTML=gvSkeleton(6);
+  await loadBoardsData();
+  _boardsRerenderGallery();
+};
+function _boardsLoadNoticeHTML(){
+  if(_boardsLoadError){
+    return`<div class="board-load-error">
+      <div style="font-weight:700;font-size:13.5px;margin-bottom:4px">Could not load your boards</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.5">${_boardsEsc(_boardsLoadError)}</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-top:6px">If that says <em>missing or insufficient permissions</em>, the Firestore rules in the Firebase Console are older than this app — republish <code>firestore.rules</code>.</div>
+      <button class="btn-sm" style="margin-top:10px" onclick="window.boardsRetryLoad()">Retry</button>
+    </div>`;
+  }
+  if(_boardsLoadPartial){
+    return`<div class="board-load-warn">
+      Could not load: ${_boardsEsc(_boardsLoadPartial.join(', '))}. Everything else is shown. This usually means the Firestore rules in the Console are older than this app.
+      <button class="btn-sm outline" style="margin-left:8px" onclick="window.boardsRetryLoad()">Retry</button>
+    </div>`;
+  }
+  return'';
 }
 
 // ── Gallery ──
@@ -413,7 +461,9 @@ function renderBoardsGallery(){
   <div class="page-head" style="margin-bottom:10px">
     <div><h2 style="margin:0">Mood Boards</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">Drag, resize and connect reference images, notes and links</div></div>
   </div>
+  ${_boardsLoadNoticeHTML()}
   ${_boardsGalleryBarHTML()}`;
+  if(_boardsLoadError)return head;
   if(q)return head+_boardsSearchResultsHTML(q)+_boardsTrashSectionHTML();
 
   const nested=_boardsNestedIds();
