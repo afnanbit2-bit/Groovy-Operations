@@ -995,6 +995,158 @@ owner-only, so nobody can bin a team board. `_boardsCanEdit()` and
   `onSnapshot` bridged (an old cached `index.html`, say) every listener is
   skipped and the board behaves exactly as it did in Stage 5.
 
+### Mood Boards — Stage 7 (Sept 2026): the phone
+
+Afnan tested on a phone and **the canvas did not move at all**. Verified
+from code rather than guessed: there was no touch handling anywhere in the
+project — no `touch-action`, no pinch handler, no gesture code of any kind.
+The canvas runs entirely on pointer events, and without `touch-action:none`
+the browser claims a touch for its own scroll/zoom before those events ever
+form a usable stream. **Confirmed fixed on the real device.**
+
+- **`touch-action:none` on `.board-stage`** hands every touch to our
+  handlers. Scrollable descendants (`.board-text-body`, `.board-todo-body`,
+  `.board-rail`) declare their own `touch-action`, which works because the
+  spec's ancestor walk stops at the element that implements the gesture.
+- **Pinch-zoom** is the debt `touch-action:none` incurs. Pointer tracking is
+  **document-level and capture-phase** on purpose: once a gesture calls
+  `setPointerCapture`, that pointer retargets to the capturing element but
+  still propagates through `document`, so this sees every finger no matter
+  which handler owns the first one. The single-pointer pan, card drag and
+  resize all bail while `_boardsPinch` is live.
+- **Zoom detents** (`_boardsPinchZoom`): a pinch that starts below 100%
+  **stops dead at 100% with a buzz** — 100% is where a board is meant to be
+  read and you should be able to land on it exactly. Lift and pinch again
+  and the gesture is in **micro mode**: the same finger travel buys a third
+  of the zoom (`_BOARDS_MICRO_GAIN` = 0.34), so 100–200% is placeable
+  rather than something you shoot past, capped at `_BOARDS_ZOOM_TOUCH_MAX`
+  (200%) with a second buzz. **Pinching back IN is never geared down.**
+  `navigator.vibrate` is Android-only; iOS Safari has no Vibration API and
+  silently does nothing, which is the right degradation — the detent still
+  holds, you just don't feel it.
+- **Rotation** (`_boardsOnViewportChange`) holds the centre of the viewport
+  still. Crossing the phone breakpoint re-renders rather than nudging the
+  transform, since the minimap and rail layout change with it.
+- **Double-tap places a note** where you tapped. `dblclick` is not reliable
+  once the browser's own double-tap gesture is gone, so taps are paired
+  explicitly (300ms, 28px). Mouse and touch both route through
+  `_boardsAddNoteAt`.
+- **`100dvh`, not `inset:0`.** Reported after the first fix shipped: the
+  page behind the canvas still scrolled, with a scrollbar down the side and
+  the board's top bar sliding off. `inset:0` sizes to the **layout**
+  viewport, which on Android counts the browser UI. `.board-canvas-wrap` is
+  now `height:100dvh` (100vh fallback first) and `body`/`html` carry
+  `.board-fullscreen` (`overflow:hidden`) while the canvas is open. The
+  viewport meta carries `viewport-fit=cover` and
+  `interactive-widget=resizes-content`. **Anything else that goes
+  full-viewport in this app must do the same — `100vh` is a lie on a
+  phone.**
+- **The minimap is gone on phones, and so is the Map button** — not left as
+  a toggle that does nothing. It was a smudge parked between the docked rail
+  and the bug FAB. Milanote's phone view has no equivalent. Desktop is
+  unchanged. `_boardsIsPhone()` (a `matchMedia('(max-width:560px)')` check)
+  is the single place that decides.
+- **Fit / 100% / Snap move into the ⋯ menu** at phone width — the top bar
+  wrapped onto two rows and ate ~150px of a canvas that is the whole point
+  of the page.
+- **A zoom percentage surfaces over the canvas** while zooming and fades
+  (`_boardsShowZoomPill`), the way Milanote's does — the topbar readout is
+  unreadable mid-pinch with a hand over the board. It rides
+  `_boardsApplyTransform`, which also runs on every pan, so it only appears
+  when the zoom actually changed.
+
+### Rich text in note cards (Sept 2026)
+
+Notes can be bold, italic, underlined, struck, bulleted and coloured, from
+a formatting bar (`_boardsWireFmtBar`) that appears whenever a note body has
+focus — docked above the keyboard on a phone, floating on desktop.
+
+**This walks straight into the stored-XSS boundary every other user string
+in `js/boards.js` respects, so the rule is explicit: STORED MARKUP IS NEVER
+HANDED TO THE LIVE DOCUMENT.** `_boardsSanitizeRich` parses it with
+`DOMParser` into an inert document (no scripts run, no resources load
+there), rebuilds it node by node against a fixed allow-list
+(`_BOARDS_RICH_TAGS`), and only that rebuilt output is serialised back.
+Sanitising happens on **both the write and the read**, so a card written by
+an older build, another client, or by hand in the Firestore console is
+cleaned before it is ever shown. The only styling that survives is a
+literal colour — an allow-list of one is easy to audit.
+
+`c.text` stays the plain-text mirror: search, the PDF index and the PNG
+export are unchanged, and a card with no `c.rich` hydrates from it with
+`textContent` exactly as before.
+
+Formatting runs through `document.execCommand`. It is deprecated and is
+still the only API every browser implements for this; hand-rolling Range
+surgery for six commands is far more code and far more ways to corrupt a
+selection. What its markup is *allowed* to be is enforced by the sanitiser,
+not by trusting the command. **`styleWithCSS` is set per command** — on for
+colour (so it comes back as a `<span style="color:…">` the sanitiser keeps),
+off for bold (so it comes back as `<b>`). The other way round, bold would
+become a style the sanitiser strips.
+
+### Labels, reactions and the phone action bar (Sept 2026)
+
+Both were on the "deliberately missing vs Milanote" list until Afnan's phone
+screenshots showed them as first-class actions on a selected card.
+
+- **Labels** (`c.labels = [{t,c}]`) live on the card, and the board's label
+  **library is DERIVED** from whatever the cards already carry
+  (`_boardsLabelLibrary`) rather than stored anywhere — same discipline as
+  frame membership and nesting. A stored library is a second thing to keep
+  in step on every rename, delete, undo and paste, with orphan states when
+  any of that fails. Label text goes into `_boardsCardText`, so gallery
+  search, the Find bar and the PDF index get it free.
+- **Reactions** (`c.reactions = {'👍':[uid,…]}`) store **uids, not counts** —
+  the same person cannot stack one, and "did I react?" needs no second
+  field. The picker is a curated set with keyword search, not a full emoji
+  picker: a searchable index of every emoji needs a name dataset this repo
+  has no business shipping.
+- **One bottom sheet** (`_boardsOpenSheet`, created in `document.body`)
+  hosts Labels, Reactions, More, the phone colour picker, the icon picker
+  and new-board setup. A menu anchored to a pointer makes no sense on a
+  touch screen, so **the long-press context menu docks as a sheet** at phone
+  width too.
+- **The phone rail is six targets** — Color · Labels · Reactions · Comment ·
+  More · Done — and **More renders the SAME item list the right-click menu
+  builds**, through the same `_boardsCtxRun` router. That is the rule the
+  rail and the old selection bar broke before they were merged.
+- Milanote's **"Group into Column"** is now the name on the existing
+  `stack` action. There is still no stored column container here, on
+  purpose (Stage 3).
+
+**Bug found by a harness, not by testing:** both new uses of the signed-in
+user wrote `window.session`. **`session` is a top-level `let` in
+`js/shared.js` — a lexical global reachable by bare name across these
+classic scripts, never a property of `window`.** It would have read empty
+in the browser and no reaction would ever have been recorded. Use the bare
+name (or `typeof session!=='undefined'&&session`), as the rest of the file
+does.
+
+### Board colour and icon (Sept 2026)
+
+A Milanote gallery is read by colour and shape, not by reading titles. Two
+optional fields on the board document do it: **`b.color`** (a validated
+`#RRGGBB`) and **`b.icon`** (one emoji), rendered as a tile beside the title
+(`_boardsTileHTML`) and a coloured top edge on the gallery card. No
+migration — a board with neither shows a neutral tile carrying its first
+letter.
+
+- **A stored colour is never trusted.** `_boardsValidHex` only lets
+  `#RRGGBB` through, so nothing else can reach a `style` attribute;
+  `_boardsInkOn` picks black or white by Rec. 601 luma so a custom colour
+  can't produce an unreadable tile.
+- **The custom picker is hue/saturation/value sliders**, each previewing
+  what it would do at the other two's current settings — plain
+  `<input type=range>` with CSS gradients, no canvas and no library.
+  Deliberately **not** `<input type="color">`, which hands off to a
+  different OS dialog on every platform.
+- **Creating a board offers name, colour and icon first**
+  (`boardsOpenSetup`), then Open. A board created straight into the canvas
+  stays "Untitled board" forever — that is how a gallery of them happens.
+  It is a sheet, not a required step, and it falls through to the old
+  behaviour if the reload that makes the new board addressable fails.
+
 ### Right-click menu (Sept 2026)
 
 Built from Milanote screenshots Afnan sent of the real Winter Drop 2027
