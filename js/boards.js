@@ -254,6 +254,7 @@ function _boardsCardText(c){
   if(c.caption)parts.push(c.caption);
   if(c.boardTitle)parts.push(c.boardTitle);
   if(Array.isArray(c.items))c.items.forEach(i=>{if(i&&i.text)parts.push(i.text);});
+  if(Array.isArray(c.labels))c.labels.forEach(l=>{if(l&&l.t)parts.push(l.t);});
   return parts.join(' ').toLowerCase();
 }
 function _boardsMatchCount(b,q){
@@ -901,6 +902,8 @@ function _renderBoardCanvasHTML(){
       <div class="board-rail" id="board-rail"></div>
       ${canEdit&&!_editCards.length?'<div class="board-empty-hint">Double-click anywhere to add a note · drop files in · paste an image with Ctrl+V</div>':''}
     </div>
+    <div class="board-sheet-back" id="board-sheet-back" style="display:none" onclick="window.boardsCloseSheet()"></div>
+    <div class="board-sheet" id="board-sheet" style="display:none"></div>
     <div class="board-fmt" id="board-fmt" style="display:none">
       <div class="board-fmt-swatches" id="board-fmt-swatches" style="display:none">
         ${_BOARDS_TEXT_COLORS.map(c=>`<button class="board-fmt-sw" style="background:${c.hex}" title="${c.label}" data-fmt="color:${c.hex}"></button>`).join('')}
@@ -1026,7 +1029,9 @@ function _boardCardHTML(c,canEdit){
         ${canEdit&&!c.locked?`<button class="board-card-del" onclick="window.boardsDeleteCard('${c.id}')" title="Delete">✕</button>`:''}
       </span>
     </div>
+    ${_boardsLabelsHTML(c)}
     ${body}
+    ${_boardsReactionsHTML(c)}
     ${canEdit&&!c.locked?`<div class="board-link-handle" onpointerdown="window.boardsLinkStart(event,'${c.id}')" title="Drag to connect"></div>
     <div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
   </div>`;
@@ -1044,6 +1049,261 @@ window.boardsImgFallback=function(img){
   const full=img.getAttribute('data-full')||img.src;
   img.removeAttribute('crossorigin');
   img.src=full;
+};
+
+// ── Labels and reactions ────────────────────────────────────────────────
+// Both were on the "deliberately missing vs Milanote" list until Afnan sent
+// the phone screenshots showing them as first-class actions on a selected
+// card, alongside Color and Comment.
+//
+// LABELS live on the card (c.labels = [{t,c}]), and the board's label
+// "library" is DERIVED from whatever labels the cards already carry rather
+// than stored anywhere — the same discipline as frame membership and
+// nesting. A stored library means a second thing to keep in step on every
+// rename, delete, undo and paste, and orphan states when any of that fails.
+// Deriving it costs one pass over cards that are already in memory.
+//
+// REACTIONS are c.reactions = {'👍':[uid,…]} — uids, not counts, so the
+// same person cannot stack a reaction and so "did I react?" is answerable
+// without a second field. Toggling is one uid in or out of one array.
+const _BOARDS_LABEL_COLORS=['grey','red','amber','green','blue','purple'];
+// A curated set rather than a full emoji picker: a searchable index of
+// every emoji needs a name dataset this repo has no business shipping, and
+// these are the ones that actually get used on a working board.
+const _BOARDS_REACTIONS=[
+  {e:'👍',k:'thumbs up yes ok approve good'},
+  {e:'👎',k:'thumbs down no reject bad'},
+  {e:'❤️',k:'heart love'},
+  {e:'🔥',k:'fire hot great'},
+  {e:'🎉',k:'party celebrate done tada'},
+  {e:'✅',k:'check tick done approved'},
+  {e:'❌',k:'cross no wrong reject'},
+  {e:'⚠️',k:'warning careful risk'},
+  {e:'👀',k:'eyes look review watching'},
+  {e:'🤔',k:'thinking hmm question'},
+  {e:'😍',k:'love heart eyes'},
+  {e:'😂',k:'laugh funny joy'},
+  {e:'😀',k:'smile happy'},
+  {e:'😊',k:'blush happy smile'},
+  {e:'☹️',k:'sad frown unhappy'},
+  {e:'🙌',k:'hands celebrate praise'},
+  {e:'👏',k:'clap applause well done'},
+  {e:'🙏',k:'thanks please pray'},
+  {e:'💯',k:'hundred perfect'},
+  {e:'🚀',k:'rocket ship launch fast'},
+  {e:'⭐',k:'star favourite'},
+  {e:'💡',k:'idea light bulb'},
+  {e:'📌',k:'pin important'},
+  {e:'⏰',k:'time clock deadline urgent'},
+  {e:'💰',k:'money cost price'},
+  {e:'✂️',k:'cut scissors cutting'},
+  {e:'🧵',k:'thread stitch sewing'},
+  {e:'🧥',k:'jacket garment coat'},
+  {e:'👖',k:'jeans denim pants trouser'},
+  {e:'👕',k:'shirt tee tshirt'},
+  {e:'🎨',k:'colour color paint design'},
+  {e:'📏',k:'measure size ruler spec'}
+];
+function _boardsLabelsHTML(c){
+  const ls=Array.isArray(c.labels)?c.labels:[];
+  if(!ls.length)return'';
+  // Text via data-label + a textContent pass, never interpolated — same
+  // boundary as every other user string on a card.
+  return`<div class="board-labels" id="board-labels-${c.id}">${
+    ls.map((l,i)=>`<span class="board-label lc-${_BOARDS_LABEL_COLORS.indexOf(l&&l.c)>=0?l.c:'grey'}" id="board-label-${c.id}-${i}"></span>`).join('')}</div>`;
+}
+function _boardsReactionsHTML(c){
+  const r=c.reactions&&typeof c.reactions==='object'?c.reactions:null;
+  if(!r)return'';
+  const keys=Object.keys(r).filter(k=>Array.isArray(r[k])&&r[k].length);
+  if(!keys.length)return'';
+  const me=(typeof session!=='undefined'&&session&&session.uid)||'';
+  return`<div class="board-reactions">${keys.map(k=>
+    `<button class="board-reaction${r[k].indexOf(me)>=0?' mine':''}" onclick="event.stopPropagation();window.boardsToggleReaction('${c.id}',this.getAttribute('data-e'))" onpointerdown="event.stopPropagation()" data-e="${_boardsEsc(k)}">${_boardsEsc(k)} ${r[k].length}</button>`
+  ).join('')}</div>`;
+}
+// Every label the board already uses, deduplicated, most-used first — the
+// picker's suggestions, derived on read.
+function _boardsLabelLibrary(){
+  const seen=new Map();
+  _editCards.forEach(c=>(Array.isArray(c.labels)?c.labels:[]).forEach(l=>{
+    if(!l||!l.t)return;
+    const k=String(l.t).toLowerCase();
+    const hit=seen.get(k);
+    if(hit)hit.n++;else seen.set(k,{t:String(l.t),c:l.c||'grey',n:1});
+  }));
+  return Array.from(seen.values()).sort((a,b)=>b.n-a.n);
+}
+window.boardsToggleReaction=function(cardId,emoji){
+  const c=_editCards.find(x=>x.id===cardId);
+  if(!c||!_boardsCanEdit(_editBoard))return;
+  const me=(typeof session!=='undefined'&&session&&session.uid)||'';
+  if(!me)return;
+  _boardsPushUndo();
+  if(!c.reactions||typeof c.reactions!=='object')c.reactions={};
+  const who=Array.isArray(c.reactions[emoji])?c.reactions[emoji]:[];
+  const i=who.indexOf(me);
+  if(i>=0)who.splice(i,1);else who.push(me);
+  if(who.length)c.reactions[emoji]=who;else delete c.reactions[emoji];
+  if(!Object.keys(c.reactions).length)delete c.reactions;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+window.boardsAddLabel=function(cardId,text,color){
+  const c=_editCards.find(x=>x.id===cardId);
+  if(!c||!_boardsCanEdit(_editBoard))return;
+  const t=String(text||'').replace(/\s+/g,' ').trim().slice(0,28);
+  if(!t)return;
+  const ls=Array.isArray(c.labels)?c.labels:[];
+  if(ls.some(l=>l&&String(l.t).toLowerCase()===t.toLowerCase()))return;
+  _boardsPushUndo();
+  ls.push({t,c:_BOARDS_LABEL_COLORS.indexOf(color)>=0?color:'grey'});
+  c.labels=ls;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+window.boardsRemoveLabel=function(cardId,text){
+  const c=_editCards.find(x=>x.id===cardId);
+  if(!c||!_boardsCanEdit(_editBoard))return;
+  const ls=Array.isArray(c.labels)?c.labels:[];
+  const i=ls.findIndex(l=>l&&String(l.t).toLowerCase()===String(text).toLowerCase());
+  if(i<0)return;
+  _boardsPushUndo();
+  ls.splice(i,1);
+  if(ls.length)c.labels=ls;else delete c.labels;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+
+// ── The bottom sheet ────────────────────────────────────────────────────
+// Milanote's phone UI answers everything with a sheet that slides up from
+// the bottom, and it is the right shape here for the same reason: a
+// touch target list you can reach with a thumb, not a menu anchored to a
+// pointer that touch doesn't have. Labels, Reactions and More all render
+// into this one host; only their contents differ.
+window.boardsCloseSheet=function(){
+  const el=document.getElementById('board-sheet');
+  const bk=document.getElementById('board-sheet-back');
+  if(el){el.style.display='none';el.innerHTML='';}
+  if(bk)bk.style.display='none';
+};
+function _boardsOpenSheet(title,html){
+  const el=document.getElementById('board-sheet');
+  const bk=document.getElementById('board-sheet-back');
+  if(!el)return null;
+  el.innerHTML=`<div class="board-sheet-head"><span>${_boardsEsc(title)}</span><button class="board-sheet-done" onclick="window.boardsCloseSheet()">Done</button></div><div class="board-sheet-body">${html}</div>`;
+  el.style.display='block';
+  if(bk)bk.style.display='block';
+  return el;
+}
+function _boardsSelOne(){
+  const s=_boardsSelectedCards();
+  return s.length===1?s[0]:null;
+}
+
+// ── Labels ──
+window.boardsOpenLabels=function(){
+  const c=_boardsSelOne();
+  if(!c){showToast('Select one card to label it');return;}
+  _boardsRenderLabelSheet(c.id);
+};
+function _boardsRenderLabelSheet(cardId){
+  const c=_editCards.find(x=>x.id===cardId);if(!c)return;
+  const mine=Array.isArray(c.labels)?c.labels:[];
+  const lib=_boardsLabelLibrary().filter(l=>!mine.some(m=>String(m.t).toLowerCase()===l.t.toLowerCase()));
+  const el=_boardsOpenSheet('Labels',`
+    <div class="board-sheet-row" id="board-label-mine"></div>
+    ${lib.length?`<div class="board-sheet-label">Already on this board</div><div class="board-sheet-row" id="board-label-lib"></div>`:''}
+    <div class="board-sheet-label">New label</div>
+    <div class="board-label-new">
+      <input type="text" id="board-label-input" placeholder="Label name" maxlength="28" onkeydown="if(event.key==='Enter')window.boardsLabelCommit('${cardId}')">
+      <div class="board-label-swatches" id="board-label-swatches">${
+        _BOARDS_LABEL_COLORS.map((k,i)=>`<button class="board-label-sw lc-${k}${i===0?' on':''}" data-c="${k}" onclick="window.boardsLabelPickColor(this)" title="${k}"></button>`).join('')}</div>
+      <button class="btn-sm" onclick="window.boardsLabelCommit('${cardId}')">Add</button>
+    </div>`);
+  if(!el)return;
+  // Label text is written in, never interpolated.
+  const host=document.getElementById('board-label-mine');
+  if(host){
+    host.innerHTML=mine.length?mine.map((l,i)=>`<button class="board-label lc-${_BOARDS_LABEL_COLORS.indexOf(l&&l.c)>=0?l.c:'grey'} removable" id="board-lsheet-${i}" data-t=""></button>`).join(''):'<span class="board-sheet-empty">No labels on this card yet.</span>';
+    mine.forEach((l,i)=>{
+      const b=document.getElementById('board-lsheet-'+i);
+      if(!b)return;
+      b.textContent=(l.t||'')+'  ✕';
+      b.onclick=()=>{window.boardsRemoveLabel(cardId,l.t);_boardsRenderLabelSheet(cardId);};
+    });
+  }
+  const libHost=document.getElementById('board-label-lib');
+  if(libHost){
+    libHost.innerHTML=lib.map((l,i)=>`<button class="board-label lc-${l.c}" id="board-llib-${i}"></button>`).join('');
+    lib.forEach((l,i)=>{
+      const b=document.getElementById('board-llib-'+i);
+      if(!b)return;
+      b.textContent=l.t;
+      b.onclick=()=>{window.boardsAddLabel(cardId,l.t,l.c);_boardsRenderLabelSheet(cardId);};
+    });
+  }
+  const inp=document.getElementById('board-label-input');
+  if(inp)inp.focus();
+}
+window.boardsLabelPickColor=function(btn){
+  const host=document.getElementById('board-label-swatches');
+  if(host)Array.prototype.forEach.call(host.children,b=>b.classList.remove('on'));
+  btn.classList.add('on');
+};
+window.boardsLabelCommit=function(cardId){
+  const inp=document.getElementById('board-label-input');
+  const host=document.getElementById('board-label-swatches');
+  const on=host?host.querySelector('.on'):null;
+  const t=inp?inp.value:'';
+  if(!String(t).trim())return;
+  window.boardsAddLabel(cardId,t,on?on.getAttribute('data-c'):'grey');
+  _boardsRenderLabelSheet(cardId);
+};
+
+// ── Reactions ──
+window.boardsOpenReactions=function(){
+  const c=_boardsSelOne();
+  if(!c){showToast('Select one card to react to it');return;}
+  _boardsRenderReactionSheet(c.id,'');
+};
+function _boardsRenderReactionSheet(cardId,q){
+  const c=_editCards.find(x=>x.id===cardId);if(!c)return;
+  const term=String(q||'').toLowerCase().trim();
+  const list=term?_BOARDS_REACTIONS.filter(r=>r.k.indexOf(term)>=0||r.e===term):_BOARDS_REACTIONS;
+  const mine=c.reactions&&typeof c.reactions==='object'?Object.keys(c.reactions):[];
+  _boardsOpenSheet('Reactions',`
+    <input type="search" class="board-sheet-search" id="board-react-q" placeholder="Search reactions…" value="${_boardsEsc(q||'')}" oninput="window.boardsReactionSearch('${cardId}',this)">
+    ${mine.length?`<div class="board-sheet-label">On this card</div>
+    <div class="board-emoji-grid">${mine.map(e=>`<button class="board-emoji on" onclick="window.boardsToggleReaction('${cardId}','${_boardsEsc(e)}');window.boardsCloseSheet()">${_boardsEsc(e)}</button>`).join('')}</div>`:''}
+    <div class="board-sheet-label">${term?'Matching':'Frequently used'}</div>
+    <div class="board-emoji-grid">${list.length?list.map(r=>`<button class="board-emoji" onclick="window.boardsToggleReaction('${cardId}','${r.e}');window.boardsCloseSheet()">${r.e}</button>`).join(''):'<span class="board-sheet-empty">Nothing matches that.</span>'}</div>`);
+  const inp=document.getElementById('board-react-q');
+  // Same refocus-after-rerender pattern as every other search box here.
+  if(inp&&term){inp.focus();try{inp.setSelectionRange(inp.value.length,inp.value.length);}catch(e){}}
+}
+let _boardsReactTimer=null;
+window.boardsReactionSearch=function(cardId,el){
+  const v=el.value;
+  if(_boardsReactTimer)clearTimeout(_boardsReactTimer);
+  _boardsReactTimer=setTimeout(()=>_boardsRenderReactionSheet(cardId,v),160);
+};
+
+// ── More ──
+// The same items the right-click menu builds, in the same router — one
+// definition, so the phone sheet and the desktop menu cannot drift apart.
+window.boardsOpenMore=function(){
+  const items=_boardsCardCtxItems(_boardsCanEdit(_editBoard));
+  _boardsOpenSheet('More',`<div class="board-sheet-list">${items.map(it=>{
+    if(it.sep)return'<div class="board-sheet-sep"></div>';
+    if(it.title)return`<div class="board-sheet-label">${_boardsEsc(it.title)}</div>`;
+    if(it.swatches)return'';
+    return`<button class="board-sheet-item${it.danger?' danger':''}" onclick="window.boardsSheetRun('${it.act}')">${_boardsEsc(it.label)}</button>`;
+  }).join('')}</div>`);
+};
+window.boardsSheetRun=function(act){
+  window.boardsCloseSheet();
+  _boardsCtxRun(act);
 };
 
 // ── Rich text in note cards ─────────────────────────────────────────────
@@ -1129,6 +1389,10 @@ function _boardsHydrateTextCards(){
       const cap=document.getElementById('board-cap-'+c.id);
       if(cap)cap.textContent=c.caption||'';
     }
+    (Array.isArray(c.labels)?c.labels:[]).forEach((l,i)=>{
+      const el=document.getElementById('board-label-'+c.id+'-'+i);
+      if(el)el.textContent=(l&&l.t)||'';
+    });
     if(c.type==='text'||c.type==='heading'){
       _boardsSetRichInto(document.getElementById('board-txt-'+c.id),c);
     }else if(c.type==='todo'){
@@ -1844,6 +2108,11 @@ const _BOARDS_ICONS={
   stack:'<rect x="4" y="2" width="8" height="3" rx="1"/><rect x="4" y="6.5" width="8" height="3" rx="1"/><rect x="4" y="11" width="8" height="3" rx="1"/>',
   grid:'<rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/>',
   trash:'<path d="M3.5 4.5h9l-1 9.5h-7z" fill="none" stroke="currentColor"/><path d="M6 4.5V3h4v1.5M2.5 4.5h11" fill="none" stroke="currentColor"/>',
+  color:'<path d="M8 1.5C5 4.5 3 6.8 3 9a5 5 0 0010 0c0-2.2-2-4.5-5-7.5z" fill="none" stroke="currentColor" stroke-width="1.3"/>',
+  labels:'<path d="M8.5 2H14v5.5L7.5 14 2 8.5z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="11" cy="5" r="1"/>',
+  reactions:'<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6.6" r=".9"/><circle cx="10" cy="6.6" r=".9"/><path d="M5.4 9.6a3.2 3.2 0 005.2 0" fill="none" stroke="currentColor" stroke-width="1.3"/>',
+  more:'<circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/>',
+  done:'<path d="M3 8.5l3.2 3.2L13 5" fill="none" stroke="currentColor" stroke-width="1.8"/>',
   fit:'<path d="M2 5.5V2h3.5M14 5.5V2h-3.5M2 10.5V14h3.5M14 10.5V14h-3.5" fill="none" stroke="currentColor" stroke-width="1.3"/>'
 };
 function _boardsIcon(name){
@@ -1870,9 +2139,26 @@ function _boardsRailItems(){
     ];
   }
   const one=sel.length===1?sel[0]:null;
+  // On a phone the rail is a bottom bar the width of the screen: six
+  // targets fit, twenty do not. Milanote's own phone bar is exactly this
+  // shape — Color, Labels, Reactions, Comment, More, Done — and everything
+  // it leaves out lives one tap away behind More, which renders the SAME
+  // item list the right-click menu builds.
+  if(_boardsIsPhone()){
+    const ph=[];
+    if(canEdit)ph.push({act:'color',label:'Color',icon:'color'});
+    if(canEdit)ph.push({act:'labels',label:'Labels',icon:'labels'});
+    if(canEdit)ph.push({act:'reactions',label:'Reactions',icon:'reactions'});
+    if(one)ph.push({act:'card-comment',label:'Comment',icon:'comment'});
+    ph.push({act:'more',label:'More',icon:'more'});
+    ph.push({act:'deselect',label:'Done',icon:'done',done:true});
+    return ph;
+  }
   const items=[];
   if(canEdit)items.push({swatches:true});
   items.push({act:'card-comment',label:'Comment',icon:'comment'});
+  if(canEdit)items.push({act:'labels',label:'Labels',icon:'labels'});
+  if(canEdit)items.push({act:'reactions',label:'React',icon:'reactions'});
   if(one){
     if(one.type==='image'||one.type==='file'){
       if(canEdit)items.push({act:'caption',label:'Caption',icon:'caption'});
@@ -1909,7 +2195,7 @@ function _boardsRenderRail(){
   host.innerHTML=(sel.length>1?`<div class="rail-count">${sel.length}</div>`:'')+items.map(it=>{
     if(it.sep)return'<div class="rail-sep"></div>';
     if(it.swatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
-    return`<button class="rail-btn${it.on?' on':''}${it.danger?' danger':''}" data-act="${it.act}" title="${_boardsEsc(it.label)}">${_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span></button>`;
+    return`<button class="rail-btn${it.on?' on':''}${it.danger?' danger':''}${it.done?' rail-done':''}" data-act="${it.act}" title="${_boardsEsc(it.label)}">${_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span></button>`;
   }).join('');
   if(host.__wired)return;
   host.__wired=true;
@@ -3769,6 +4055,15 @@ function _boardsCtxRun(act){
     case'reset':window.boardsResetView();break;
     case'comment-board':window.boardsOpenComments(null);break;
     case'card-comment':{const s=_boardsSelectedCards();if(s.length===1)window.boardsOpenComments(s[0].id);break;}
+    case'color':{
+      _boardsOpenSheet('Colour',`<div class="board-sheet-swatches">${
+        _BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" title="${c==='none'?'No colour':c}" onclick="window.boardsSetColor('${c}');window.boardsCloseSheet()"></button>`).join('')}</div>`);
+      break;
+    }
+    case'labels':window.boardsOpenLabels();break;
+    case'reactions':window.boardsOpenReactions();break;
+    case'more':window.boardsOpenMore();break;
+    case'deselect':_boardsSetSelection([]);break;
     case'card-link':window.boardsCopyCardLink();break;
     case'dup':window.boardsDuplicateSelection();break;
     case'front':window.boardsBringToFront();break;
@@ -3990,6 +4285,11 @@ function _boardsCardCtxItems(canEdit){
     items.push({act:'dup',label:'Duplicate',hint:'Ctrl D'});
     items.push({act:'delete',label:'Delete',hint:'Del',danger:true});
   }
+  if(canEdit&&one){
+    items.push({sep:true});
+    items.push({act:'labels',label:(Array.isArray(one.labels)&&one.labels.length)?'Labels…':'Add a label…'});
+    items.push({act:'reactions',label:'React…'});
+  }
 
   // ── type-specific ──
   const typed=[];
@@ -4037,7 +4337,11 @@ function _boardsCardCtxItems(canEdit){
   if(canEdit){
     items.push({sep:true});
     if(sel.length>1){
-      items.push({act:'stack',label:'Stack into a column'});
+      // Milanote's wording for this, so anyone coming from it finds the
+      // action. There is no stored column container here on purpose
+      // (Stage 3) — stacking is the arrange-once action that gets the
+      // same tidy result.
+      items.push({act:'stack',label:'Group into Column'});
       items.push({act:'grid',label:'Arrange in a grid'});
       items.push({act:'wrapframe',label:'Wrap in a frame'});
       items.push({sep:true});
