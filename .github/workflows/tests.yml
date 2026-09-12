@@ -1,0 +1,53 @@
+# Groovy Operations — CI
+#
+# Runs on every push and pull request. No dependencies to install: the tests
+# are plain node, same zero-new-deps policy as the app.
+#
+# What this proves: the logic still holds, every js module is wired into
+# index.html AND sw.js, no credentials are in client code, every collection
+# the client touches has a firestore.rules match block, and CACHE_VERSION was
+# bumped when a precached file changed.
+#
+# What it does NOT prove: that anything looks right or works in a browser.
+# See the header of tests/harness.js. Real UI verification still needs a
+# human, a phone, or Claude in Chrome.
+name: tests
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The CACHE_VERSION guard diffs against the base, so it needs more
+          # than the default single-commit clone.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Syntax-check every shipped script
+        run: |
+          set -e
+          for f in js/*.js sw.js tests/*.js; do
+            node --check "$f"
+          done
+          echo "all scripts parse"
+
+      - name: Run the test suites
+        run: node tests/run.js
+
+      - name: CACHE_VERSION was bumped
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          node tests/check-cache-version.js "$BASE"

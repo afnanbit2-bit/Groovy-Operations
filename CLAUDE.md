@@ -539,8 +539,12 @@ SVG that was briefly added to `_icon()` was removed again once the nav
 entry became icon-less; don't re-add it without a reason.
 
 **Staged rollout (Sept 2026): nav-gated to Afnan only for now.** All four
-of the pushes above are behind `if(session.u==='afnan')` (a fifth check
-guards Mood Boards' deep links — see Stage 5 below) — deliberately a
+of the pushes above are behind `if(session.u==='afnan')`, plus the "Me" page
+button in `js/hrm.js` and the deep-link guard in `js/boards.js` — **six
+checks in total**, not five; the earlier count here missed `js/hrm.js` and
+was caught by `tests/invariants.test.js`, which now asserts the gate is
+all-or-nothing. Note the `boards.js` one is written **inverted**
+(`session.u!=='afnan'`), so a naive grep for the `===` form misses it — deliberately a
 single username check, not `isOwner()` and not a role, same pattern as the
 `isMustafa()`-style per-person grants already in this codebase. Afnan
 asked to dogfood it alone until the module (Phase 1 + Phase 2) is further
@@ -925,9 +929,10 @@ Getting a board out of the app: PNG, PDF, and deep links to one card.
   centres the card, selects it and flashes it briefly.
 - **The deep link is gated on `session.u==='afnan'` too** — it is
   navigation, and it must not be a side door into a module whose nav is
-  still Afnan-only. That makes **five** `session.u==='afnan'` checks to
-  remove at rollout (four in `js/shared.js`/`js/hrm.js` per the Creative
-  Hub section above, plus `_boardsConsumeDeepLink` in `js/boards.js`).
+  still Afnan-only. That makes **six** checks to
+  remove at rollout (four in `js/shared.js`, one in `js/hrm.js`, plus
+  `_boardsConsumeDeepLink` in `js/boards.js` — **six**, and the last is
+  written inverted as `session.u!=='afnan'`).
 
 ### Mood Boards — Stage 6 (Sept 2026): collaboration
 
@@ -1792,6 +1797,62 @@ self-read needs the auth email denormalised onto each payslip doc first
 (no `employeeId` → `session.email` link exists yet to check against).
 Employee-record writes and payroll processing are already owner/manager
 gated; this is the one remaining read-scope hole.
+
+## Tests and CI (Sept 2026)
+
+```bash
+node tests/run.js            # everything
+node tests/run.js boards     # one suite
+```
+
+`tests/` holds plain-node suites — no dependencies, same zero-new-deps
+policy as the app — and `.github/workflows/tests.yml` runs them on every
+push and pull request, for both tracks. 261 assertions at the time of
+writing. `tests/README.md` explains how to add one.
+
+**Read this before trusting a green run.** These tests prove the LOGIC still
+holds: validators, sanitisers, maths, what a menu offers, what gets written
+to Firestore, whether a loader can reject. They prove **nothing about how
+anything looks** — there is no jsdom and no browser. The board's entire top
+bar was invisible for weeks behind a wrong `z-index` and nothing here would
+have caught it. Real UI verification still needs a human, a phone, or Claude
+in Chrome.
+
+- **`tests/harness.js`** — one shared stub of the handful of browser APIs
+  the modules actually touch, plus the window-bridged Firebase globals.
+  `loadApp({files, session, phone, currentPage, globals})` loads classic
+  scripts into a `vm` context and hands back `run()`, `el()` and the
+  recorded writes/toasts/vibrations. `globals` overrides anything, which is
+  how a test makes `getDocs` throw to exercise a failure path. **Its
+  `DOMParser` is a tag-soup stub** — it is good enough to exercise an
+  allow-list walk, but an assertion about parsing itself is testing the
+  harness, not the app.
+- **`tests/invariants.test.js`** — the documented footguns, encoded. Every
+  `js/*.js` has a `<script>` tag in `index.html` AND an entry in `sw.js`
+  `PRECACHE_URLS` (the "three places or it breaks offline" rule); nothing
+  precached is missing from disk; `USER_DEFS` carries no `pass:` and no
+  service-account key or Shopify secret is in a served file; everything
+  parses and `css/main.css` / `firestore.rules` balance; the browser still
+  imports no RTDB write function and `database.rules.json` still denies
+  client writes; **every collection any `js/*.js` queries has a
+  `firestore.rules` match block** (the Stage 6 failure mode that left the
+  gallery stuck on a skeleton); and the staged-rollout gate is
+  all-or-nothing.
+- **`tests/check-cache-version.js`** — a CI guard rather than a suite,
+  because it needs git history. If a precached file changed between the base
+  ref and HEAD, `CACHE_VERSION` must have changed too. Forgetting it fails
+  *silently* in production — nothing looks wrong, the change simply never
+  reaches anyone who already opened the app — which is exactly why it is
+  worth a hard failure in CI. It abstains rather than inventing a failure
+  when there is no comparable history (a shallow clone, a first commit).
+
+**These suites were promoted from throwaway session scripts, and they have
+already earned it:** they caught the `window.session` bug that would have
+made board reactions silently record nothing, a duplicated menu entry, and
+the wrong gate count in this very file. **Earlier stage-specific harnesses
+(Stages 4-6: the save merge, the comment XSS boundary, the allSettled
+loaders) have NOT been ported yet** — porting the ones worth keeping is
+open work, not something already done.
 
 ## Branch / merge workflow
 
