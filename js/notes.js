@@ -88,7 +88,7 @@ async function loadNotesData(){
 // Milanote-style boards land here as additional entries later — keep this
 // array-driven so adding one is a one-line change, not a page rewrite.
 const _HUB_CATEGORIES=[
-  {pageId:'notes',label:'Notes',desc:'Team wiki, SOPs and private notes'}
+  {pageId:'notes',label:'Notes',desc:'Team Wiki, private notes'}
 ];
 function renderCreativeHub(){
   return`
@@ -113,7 +113,7 @@ function renderNotesPage(){
   return`
   <button class="back-btn" onclick="window.showPage('creative-hub')">← Back to Creative Hub</button>
   <div class="page-head" style="margin-bottom:10px">
-    <div><h2 style="margin:0">Notes</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">Team wiki, SOPs and private notes</div></div>
+    <div><h2 style="margin:0">Notes</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">Team Wiki, private notes</div></div>
   </div>
   <input type="text" id="notes-search" placeholder="Search notes…" value="${_notesEsc(_notesSearch)}" oninput="window.notesSearchInput(this.value)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:16px;box-sizing:border-box">
   <div id="notes-sections">${_notesRenderSections()}</div>`;
