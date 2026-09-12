@@ -55,6 +55,14 @@ const _BOARDS_RECENT_MAX=8;
 // Minimap default-on; like the snap preference it lives in localStorage
 // because it is a per-viewer convenience, not part of the board.
 let _boardsMinimapOn=(function(){try{return localStorage.getItem('groovy-boards-minimap')!=='0';}catch(e){return true;}})();
+// The minimap is a DESKTOP affordance. On a phone it was a 104x72 smudge
+// parked where a thumb rests, between the docked rail and the bug FAB —
+// Afnan's word for it was that it "looks off", and Milanote's phone view
+// has no equivalent at all. It isn't rendered below this width and the Map
+// toggle is hidden with it, rather than left as a button that does nothing.
+function _boardsIsPhone(){
+  try{return!!(window.matchMedia&&window.matchMedia('(max-width:560px)').matches);}catch(e){return false;}
+}
 
 const _BOARDS_GRID=20;          // snap-to-grid step, world px
 const _BOARDS_SNAP_PX=6;        // alignment-guide catch distance, SCREEN px (so it feels the same at any zoom)
@@ -67,6 +75,9 @@ let _boardsLineMode=false;      // while on, dragging empty canvas draws an arro
 
 const _BOARDS_ZOOM_MIN=0.1;   // Afnan works at ~19% in Milanote — 40% couldn't fit a real board
 const _BOARDS_ZOOM_MAX=3;
+const _BOARDS_ZOOM_DETENT=1;      // 100% — a pinch from below stops here, with a buzz
+const _BOARDS_ZOOM_TOUCH_MAX=2;   // 200% — as far as a pinch goes, second buzz
+const _BOARDS_MICRO_GAIN=0.34;    // above 100%, finger travel buys a third of the zoom
 
 function _boardsEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function _boardsRelTime(ts){
@@ -796,10 +807,16 @@ function _boardsRenderCanvasAndWire(){
   const m=document.getElementById('main-content');
   if(!m)return;
   m.innerHTML=_renderBoardCanvasHTML();
+  // Seed the pill's last-seen value from the markup we just wrote, so
+  // opening a board doesn't flash a percentage nobody asked for.
+  _boardsPillZoom=_editBoard?Math.round(_editBoard.zoom*100):null;
   _boardsApplyTransform();
   _boardsHydrateTextCards();
   _boardsDrawConnectors();
   _boardsWireStagePan();
+  _boardsWireFmtBar();
+  _boardsHideFmtBar();
+  _boardsSeedViewRect();
   _boardsSyncHistoryButtons();
   _boardsRenderRail();
   _boardsRenderMinimap();
@@ -845,7 +862,7 @@ function _renderBoardCanvasHTML(){
         <button class="tool-btn" onclick="window.boardsZoomBy(1.25)">+</button>
         <button class="tool-btn" onclick="window.boardsFitView()">Fit</button>
         <button class="tool-btn" onclick="window.boardsResetView()">100%</button>
-        <button class="tool-btn${_boardsMinimapOn?' on':''}" onclick="window.boardsToggleMinimap()" title="Show the minimap">Map</button>
+        ${_boardsIsPhone()?'':`<button class="tool-btn${_boardsMinimapOn?' on':''}" onclick="window.boardsToggleMinimap()" title="Show the minimap">Map</button>`}
         ${canEdit?`<button class="tool-btn${_boardsSnapGrid?' on':''}" id="board-snap-btn" onclick="window.boardsToggleSnap()" title="Snap cards to a grid while dragging">Snap</button>`:''}
         <div class="board-menu-wrap">
           <button class="tool-btn" onclick="window.boardsToggleMenu(event)" title="Board actions">⋯</button>
@@ -878,10 +895,25 @@ function _renderBoardCanvasHTML(){
         <button class="tool-btn" onclick="window.boardsFindStep(1)" title="Next match">↓</button>
         <button class="tool-btn" onclick="window.boardsToggleFind()" title="Close">✕</button>
       </div>`:''}
-      ${_boardsMinimapOn?`<div class="board-minimap" id="board-minimap"><div class="board-minimap-inner" id="board-minimap-inner"></div><div class="board-minimap-view" id="board-minimap-view"></div></div>`:''}
+      ${_boardsMinimapOn&&!_boardsIsPhone()?`<div class="board-minimap" id="board-minimap"><div class="board-minimap-inner" id="board-minimap-inner"></div><div class="board-minimap-view" id="board-minimap-view"></div></div>`:''}
+      <div class="board-zoom-pill" id="board-zoom-pill">${Math.round(b.zoom*100)}%</div>
       ${canEdit?'<div class="board-dropzone" id="board-dropzone"><div>Drop files to add them to this board</div></div>':''}
       <div class="board-rail" id="board-rail"></div>
       ${canEdit&&!_editCards.length?'<div class="board-empty-hint">Double-click anywhere to add a note · drop files in · paste an image with Ctrl+V</div>':''}
+    </div>
+    <div class="board-fmt" id="board-fmt" style="display:none">
+      <div class="board-fmt-swatches" id="board-fmt-swatches" style="display:none">
+        ${_BOARDS_TEXT_COLORS.map(c=>`<button class="board-fmt-sw" style="background:${c.hex}" title="${c.label}" data-fmt="color:${c.hex}"></button>`).join('')}
+      </div>
+      <div class="board-fmt-row">
+        <button class="board-fmt-btn" data-fmt="swatches" title="Text colour"><span class="fmt-T">T</span><i class="fmt-dot"></i></button>
+        <button class="board-fmt-btn" data-fmt="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+        <button class="board-fmt-btn" data-fmt="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+        <button class="board-fmt-btn" data-fmt="strikeThrough" title="Strikethrough"><s>S</s></button>
+        <button class="board-fmt-btn" data-fmt="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+        <button class="board-fmt-btn" data-fmt="insertUnorderedList" title="Bulleted list">☰</button>
+        <button class="board-fmt-btn board-fmt-done" data-fmt="done">Done</button>
+      </div>
     </div>
     <div class="board-drawer" id="board-drawer" style="display:none"></div>
     <div class="board-share-modal" id="board-share-modal" style="display:none"></div>
@@ -1014,9 +1046,81 @@ window.boardsImgFallback=function(img){
   img.src=full;
 };
 
+// ── Rich text in note cards ─────────────────────────────────────────────
+// Notes can be bold/italic/underlined/struck, bulleted and coloured, so a
+// card's body is no longer plain text — and that walks straight into the
+// stored-XSS boundary every other user string in this file respects, since
+// formatting means storing markup and putting it back into the DOM.
+//
+// The rule that keeps it safe: STORED MARKUP IS NEVER HANDED TO THE LIVE
+// DOCUMENT. It is parsed by DOMParser into an inert document (no scripts
+// run, no resources load there), rebuilt node by node against a fixed
+// allow-list, and only that rebuilt output is serialised back. Sanitising
+// happens on BOTH the write and the read — a card written by an older
+// build, another client, or by hand in the Firestore console is cleaned
+// before it is ever shown.
+//
+// c.text stays the plain-text mirror of the card: search, the PDF index and
+// the PNG export all read it, and a card with no c.rich hydrates from it
+// with textContent exactly as it did before any of this existed.
+const _BOARDS_RICH_TAGS={B:'b',STRONG:'b',I:'i',EM:'i',U:'u',S:'s',STRIKE:'s',DEL:'s',
+  BR:'br',DIV:'div',P:'div',UL:'ul',OL:'ol',LI:'li',SPAN:'span',FONT:'span'};
+function _boardsRichColor(node){
+  // The only styling that survives is a literal colour. Anything else in a
+  // style attribute (position, background images, url(), expressions) is
+  // dropped rather than filtered — an allow-list of one is easy to audit.
+  let c='';
+  try{c=node.style&&node.style.color?node.style.color:'';}catch(e){}
+  if(!c&&node.getAttribute)c=node.getAttribute('color')||'';
+  c=String(c||'').trim();
+  if(/^#[0-9a-f]{3}([0-9a-f]{3}([0-9a-f]{2})?)?$/i.test(c))return c;
+  if(/^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*[\d.]+\s*)?\)$/.test(c))return c;
+  return'';
+}
+function _boardsSanitizeRich(html){
+  const src=String(html||'');
+  if(!src)return'';
+  let doc;
+  try{doc=new DOMParser().parseFromString('<body>'+src+'</body>','text/html');}catch(e){return'';}
+  if(!doc||!doc.body)return'';
+  const out=doc.createElement('div');
+  (function walk(from,to,depth){
+    if(depth>12)return;   // hand-crafted deep nesting shouldn't blow the stack
+    Array.prototype.forEach.call(from.childNodes,n=>{
+      if(n.nodeType===3){to.appendChild(doc.createTextNode(n.nodeValue));return;}
+      if(n.nodeType!==1)return;
+      const tag=_BOARDS_RICH_TAGS[n.tagName];
+      if(!tag){walk(n,to,depth+1);return;}   // unknown element: keep its text, drop it
+      const el=doc.createElement(tag);
+      const col=_boardsRichColor(n);
+      if(col&&tag==='span')el.setAttribute('style','color:'+col);
+      to.appendChild(el);
+      if(tag!=='br')walk(n,el,depth+1);
+    });
+  })(doc.body,out,0);
+  return out.innerHTML;
+}
+// Does this markup carry any actual formatting, or is it just the text?
+function _boardsRichIsPlain(rich,text){
+  return _boardsStripRich(rich)===String(text||'')&&!/<(?!br\b)[a-z]/i.test(rich||'');
+}
+function _boardsStripRich(rich){
+  try{
+    const d=new DOMParser().parseFromString('<body>'+String(rich||'')+'</body>','text/html');
+    return d&&d.body?d.body.textContent:'';
+  }catch(e){return'';}
+}
+function _boardsSetRichInto(el,c){
+  if(!el)return;
+  if(c.rich)el.innerHTML=_boardsSanitizeRich(c.rich);
+  else el.textContent=c.text||'';
+}
+
 // User-authored text is written in via textContent after the structure is
 // rendered, never interpolated into the HTML string — same stored-XSS
-// boundary as Notes' block editor. To-do item text goes the same way.
+// boundary as Notes' block editor. To-do item text goes the same way;
+// formatted note bodies go through the sanitiser above, which enforces the
+// same boundary by a different route.
 function _boardsHydrateTextCards(){
   _editCards.forEach(c=>{
     const nm=document.getElementById('board-name-'+c.id);
@@ -1026,8 +1130,7 @@ function _boardsHydrateTextCards(){
       if(cap)cap.textContent=c.caption||'';
     }
     if(c.type==='text'||c.type==='heading'){
-      const el=document.getElementById('board-txt-'+c.id);
-      if(el)el.textContent=c.text||'';
+      _boardsSetRichInto(document.getElementById('board-txt-'+c.id),c);
     }else if(c.type==='todo'){
       (c.items||[]).forEach((it,i)=>{
         const el=document.getElementById('board-todo-'+c.id+'-'+i);
@@ -1044,8 +1147,30 @@ function _boardsApplyTransform(){
   if(w)w.style.transform=`translate(${b.panX}px,${b.panY}px) scale(${b.zoom})`;
   const zr=document.getElementById('board-zoom-readout');
   if(zr)zr.textContent=Math.round(b.zoom*100)+'%';
+  _boardsShowZoomPill(b.zoom);
   _boardsUpdateMinimapView();
 }
+// The zoom readout in the topbar is unreadable mid-pinch on a phone — your
+// hand is over the board and the number is in the corner. Milanote answers
+// this with a percentage that appears over the canvas while you zoom and
+// fades out after; this is that. It rides _boardsApplyTransform, which also
+// runs on every pan, so it only surfaces when the zoom ACTUALLY changed.
+let _boardsPillZoom=null,_boardsPillTimer=null;
+function _boardsShowZoomPill(zoom){
+  const pill=document.getElementById('board-zoom-pill');
+  if(!pill)return;
+  const pct=Math.round(zoom*100);
+  if(_boardsPillZoom===pct)return;
+  _boardsPillZoom=pct;
+  pill.textContent=pct+'%';
+  pill.classList.add('show');
+  if(_boardsPillTimer)clearTimeout(_boardsPillTimer);
+  _boardsPillTimer=setTimeout(()=>{pill.classList.remove('show');},1100);
+}
+// Android fires this; iOS Safari has no Vibration API at all and silently
+// does nothing, which is the correct degradation — the zoom still detents,
+// you just don't feel it.
+function _boardsBuzz(ms){try{if(navigator.vibrate)navigator.vibrate(ms);}catch(e){}}
 // Zoom about the centre of the viewport, not the world origin — zooming out
 // from a corner throws the content off-screen and you lose your place.
 window.boardsZoomBy=function(f){
@@ -1086,6 +1211,255 @@ function _boardsScreenToWorld(clientX,clientY){
   const rect=stage.getBoundingClientRect();
   return{x:(clientX-rect.left-b.panX)/b.zoom,y:(clientY-rect.top-b.panY)/b.zoom};
 }
+
+// Double-click (mouse) and double-tap (touch) both land here: a note
+// exactly where you pointed, focused and ready to type, with the formatting
+// bar already up.
+function _boardsAddNoteAt(clientX,clientY){
+  if(!_boardsCanEdit(_editBoard))return;
+  const p=_boardsScreenToWorld(clientX,clientY);
+  _boardsPushUndo();
+  const c=_boardsNewCard('text');
+  c.x=p.x-c.w/2;c.y=p.y-c.h/2;
+  _editCards.push(c);
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  const el=document.getElementById('board-txt-'+c.id);
+  if(el)el.focus();
+}
+
+// ── Rotation and viewport changes ───────────────────────────────────────
+// Turning a phone sideways changes the stage's size underneath a transform
+// expressed in screen pixels, so whatever you were looking at slides off to
+// one side. Holding the CENTRE of the viewport still is the one rule that
+// makes a rotation feel like the board stayed put. Crossing the phone
+// breakpoint also adds or removes the minimap and re-lays the rail, which
+// needs a full render rather than a transform nudge.
+let _boardsViewRect=null,_boardsWasPhone=null,_boardsViewTimer=null;
+function _boardsSeedViewRect(){
+  const stage=document.getElementById('board-stage');
+  if(!stage){_boardsViewRect=null;return;}
+  const r=stage.getBoundingClientRect();
+  _boardsViewRect={w:r.width,h:r.height};
+  _boardsWasPhone=_boardsIsPhone();
+}
+function _boardsOnViewportChange(){
+  if(currentPage!=='board-canvas')return;
+  const b=_editBoard;if(!b)return;
+  if(_boardsWasPhone!==null&&_boardsWasPhone!==_boardsIsPhone()){
+    _boardsRenderCanvasAndWire();
+    return;
+  }
+  const stage=document.getElementById('board-stage');if(!stage)return;
+  const r=stage.getBoundingClientRect();
+  const prev=_boardsViewRect;
+  _boardsViewRect={w:r.width,h:r.height};
+  if(!prev||!prev.w||!prev.h)return;
+  b.panX+=(r.width-prev.w)/2;
+  b.panY+=(r.height-prev.h)/2;
+  _boardsApplyTransform();
+}
+window.addEventListener('resize',()=>{
+  if(_boardsViewTimer)clearTimeout(_boardsViewTimer);
+  _boardsViewTimer=setTimeout(_boardsOnViewportChange,120);
+});
+window.addEventListener('orientationchange',()=>{
+  // The new dimensions aren't readable at the instant this fires.
+  setTimeout(_boardsOnViewportChange,180);
+});
+
+// ── The formatting bar ──────────────────────────────────────────────────
+// Milanote's phone view puts a text toolbar directly above the keyboard the
+// moment a note has focus — colour, bold, italic, strikethrough, underline,
+// bullets, Done. This is that bar, and it is not phone-only: the same
+// affordance is the fastest way to format on a desktop too, and one bar is
+// one thing to maintain.
+//
+// Formatting runs through document.execCommand. It is marked deprecated and
+// is still the only API every browser implements for this; the alternative
+// is hand-rolling Range surgery for six commands, which is a great deal more
+// code and a great deal more ways to corrupt a selection. What the markup it
+// produces is allowed to be is enforced on the way to storage by
+// _boardsSanitizeRich, not by trusting the command.
+const _BOARDS_TEXT_COLORS=[
+  {hex:'#111111',label:'Default'},
+  {hex:'#6B6B6B',label:'Grey'},
+  {hex:'#7B1F2A',label:'Red'},
+  {hex:'#B47512',label:'Amber'},
+  {hex:'#14532D',label:'Green'},
+  {hex:'#35507A',label:'Blue'},
+  {hex:'#7A4B7C',label:'Purple'}
+];
+let _boardsFmtTarget=null;
+function _boardsIsRichField(el){
+  return!!(el&&el.isContentEditable&&el.id&&el.id.indexOf('board-txt-')===0);
+}
+function _boardsShowFmtBar(el){
+  const bar=document.getElementById('board-fmt');if(!bar)return;
+  _boardsFmtTarget=el;
+  bar.style.display='block';
+}
+function _boardsHideFmtBar(){
+  const bar=document.getElementById('board-fmt');
+  _boardsFmtTarget=null;
+  if(bar){bar.style.display='none';const sw=document.getElementById('board-fmt-swatches');if(sw)sw.style.display='none';}
+}
+document.addEventListener('focusin',e=>{
+  if(currentPage!=='board-canvas')return;
+  if(_boardsIsRichField(e.target))_boardsShowFmtBar(e.target);
+});
+document.addEventListener('focusout',e=>{
+  if(currentPage!=='board-canvas')return;
+  if(!_boardsIsRichField(e.target))return;
+  // Pressing a bar button blurs nothing (its pointerdown is prevented), but
+  // tapping another card does — settle on the next tick and only hide if
+  // focus really has left every note body.
+  setTimeout(()=>{
+    if(!_boardsIsRichField(document.activeElement))_boardsHideFmtBar();
+  },0);
+});
+function _boardsWireFmtBar(){
+  const bar=document.getElementById('board-fmt');
+  if(!bar||bar.__wired)return;
+  bar.__wired=true;
+  // Every press must keep the caret where it is — a button that takes focus
+  // destroys the selection it is supposed to act on, and the command then
+  // silently does nothing.
+  bar.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();});
+  bar.addEventListener('mousedown',e=>e.preventDefault());
+  bar.addEventListener('click',e=>{
+    const btn=e.target.closest&&e.target.closest('[data-fmt]');
+    if(!btn)return;
+    e.preventDefault();e.stopPropagation();
+    const act=btn.getAttribute('data-fmt');
+    const target=_boardsFmtTarget;
+    if(act==='done'){if(target&&target.blur)target.blur();_boardsHideFmtBar();return;}
+    if(act==='swatches'){
+      const sw=document.getElementById('board-fmt-swatches');
+      if(sw)sw.style.display=sw.style.display==='none'?'flex':'none';
+      return;
+    }
+    if(!target)return;
+    if(target.focus)target.focus();
+    try{
+      // styleWithCSS matters per command: ON, a colour comes back as
+      // <span style="color:…"> which the sanitiser keeps; OFF, bold comes
+      // back as <b>, which it also keeps. The other way round, bold would
+      // become <span style="font-weight:bold"> and the sanitiser — which
+      // allow-lists colour and nothing else — would quietly strip it.
+      const wantCss=act.indexOf('color:')===0;
+      try{document.execCommand('styleWithCSS',false,wantCss);}catch(e2){}
+      if(wantCss)document.execCommand('foreColor',false,act.slice(6));
+      else document.execCommand(act,false,null);
+    }catch(err){}
+    // execCommand fires `input` in modern browsers, but not uniformly for
+    // every command — dispatching it ourselves is what actually guarantees
+    // the card is saved.
+    try{target.dispatchEvent(new Event('input',{bubbles:true}));}catch(err){}
+  });
+}
+
+// ── Touch: pinch-zoom and two-finger pan ────────────────────────────────
+// The canvas runs entirely on pointer events, and on a phone the browser
+// claims a touch for its own scroll/zoom before those events ever form a
+// usable stream — which is why the board did not move at all on a phone.
+// `touch-action:none` on .board-stage (css/main.css) hands every touch to
+// us instead, and that is also what removes the browser's own pinch, so the
+// pinch has to be implemented here.
+//
+// Tracking is DOCUMENT-level and capture-phase on purpose: once a gesture
+// calls setPointerCapture (the stage does for a pan, a card header does for
+// a drag), that pointer's events are retargeted to the capturing element —
+// but they still propagate through document, so this sees every finger no
+// matter which handler owns the first one.
+const _boardsTouches=new Map();
+let _boardsPinch=null;
+function _boardsPinchGeom(){
+  const pts=Array.from(_boardsTouches.values());
+  const dx=pts[1].x-pts[0].x,dy=pts[1].y-pts[0].y;
+  return{dist:Math.hypot(dx,dy)||1,cx:(pts[0].x+pts[1].x)/2,cy:(pts[0].y+pts[1].y)/2};
+}
+function _boardsPinchStart(){
+  const b=_editBoard;if(!b)return;
+  const g=_boardsPinchGeom();
+  _boardsPinch={
+    dist:g.dist,cx:g.cx,cy:g.cy,zoom:b.zoom,panX:b.panX,panY:b.panY,
+    // Which side of the 100% detent this gesture began on decides how it
+    // behaves for its whole life — see _boardsPinchZoom below.
+    micro:b.zoom>=_BOARDS_ZOOM_DETENT-0.0001,
+    buzzed100:false,buzzedMax:false
+  };
+  _boardsHideGuides();
+}
+// The zoom a pinch is allowed to reach, given where the gesture started.
+//
+// Below 100%, a pinch behaves normally but STOPS DEAD at 100% with a short
+// buzz — 100% is where a board is meant to be read, and it should be
+// possible to land on it exactly without hunting. Lift and pinch again and
+// the gesture starts in "micro" mode: the same finger travel now buys about
+// a third of the zoom, so the 100-200% range is placeable rather than
+// something you shoot straight past, and 200% is the ceiling with a second
+// buzz. Pinching back IN is never geared down — getting out of a zoom must
+// stay as quick as it ever was.
+function _boardsPinchZoom(p,ratio){
+  if(!p.micro){
+    const raw=p.zoom*ratio;
+    if(raw>=_BOARDS_ZOOM_DETENT){
+      if(!p.buzzed100){p.buzzed100=true;_boardsBuzz(14);}
+      return _BOARDS_ZOOM_DETENT;
+    }
+    return Math.max(_BOARDS_ZOOM_MIN,raw);
+  }
+  const next=ratio>=1?p.zoom*(1+(ratio-1)*_BOARDS_MICRO_GAIN):p.zoom*ratio;
+  if(next>=_BOARDS_ZOOM_TOUCH_MAX){
+    if(!p.buzzedMax){p.buzzedMax=true;_boardsBuzz([10,40,10]);}
+    return _BOARDS_ZOOM_TOUCH_MAX;
+  }
+  return Math.max(_BOARDS_ZOOM_MIN,next);
+}
+function _boardsPinchMove(){
+  const b=_editBoard,p=_boardsPinch;if(!b||!p)return;
+  const stage=document.getElementById('board-stage');if(!stage)return;
+  const rect=stage.getBoundingClientRect();
+  const g=_boardsPinchGeom();
+  const next=_boardsPinchZoom(p,g.dist/p.dist);
+  // Keep the world point that was under the starting midpoint under the
+  // CURRENT midpoint — so one gesture zooms and pans together, the way it
+  // does in every map app, instead of zooming about a fixed anchor and
+  // leaving you to chase the content afterwards.
+  const wx=(p.cx-rect.left-p.panX)/p.zoom,wy=(p.cy-rect.top-p.panY)/p.zoom;
+  b.panX=(g.cx-rect.left)-wx*next;
+  b.panY=(g.cy-rect.top)-wy*next;
+  b.zoom=next;
+  _boardsApplyTransform();
+}
+function _boardsWireTouch(){
+  function onDown(e){
+    if(e.pointerType!=='touch'||currentPage!=='board-canvas')return;
+    if(!(e.target&&e.target.closest&&e.target.closest('.board-stage')))return;
+    _boardsTouches.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(_boardsTouches.size===2)_boardsPinchStart();
+  }
+  function onMove(e){
+    if(e.pointerType!=='touch')return;
+    if(!_boardsTouches.has(e.pointerId))return;
+    _boardsTouches.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(_boardsPinch&&_boardsTouches.size>=2)_boardsPinchMove();
+  }
+  function onUp(e){
+    if(e.pointerType!=='touch')return;
+    if(!_boardsTouches.delete(e.pointerId))return;
+    if(_boardsPinch&&_boardsTouches.size<2){
+      _boardsPinch=null;
+      _boardsSaveDebounced();   // pan/zoom are board fields, worth persisting
+    }
+  }
+  document.addEventListener('pointerdown',onDown,true);
+  document.addEventListener('pointermove',onMove,true);
+  document.addEventListener('pointerup',onUp,true);
+  document.addEventListener('pointercancel',onUp,true);
+}
+_boardsWireTouch();
 // Where a new card should land when it isn't being placed by a click:
 // the middle of what you're currently looking at, nudged a little each
 // time so repeat clicks fan out instead of stacking into one pile.
@@ -1197,6 +1571,9 @@ function _boardsWireStagePan(){
     stage.classList.add('panning');
     stage.setPointerCapture(e.pointerId);
     function move(ev){
+      // A second finger turns this into a pinch, which owns pan and zoom
+      // together — the one-finger handler must stop fighting it.
+      if(_boardsPinch)return;
       if(Math.abs(ev.clientX-startX)>3||Math.abs(ev.clientY-startY)>3)moved=true;
       b.panX=origX+(ev.clientX-startX);b.panY=origY+(ev.clientY-startY);_boardsApplyTransform();
     }
@@ -1217,15 +1594,24 @@ function _boardsWireStagePan(){
   // a row buried them in a single stack.
   stage.addEventListener('dblclick',e=>{
     if(e.target!==stage&&e.target.id!=='board-world')return;
-    const p=_boardsScreenToWorld(e.clientX,e.clientY);
-    _boardsPushUndo();
-    const c=_boardsNewCard('text');
-    c.x=p.x-c.w/2;c.y=p.y-c.h/2;
-    _editCards.push(c);
-    _boardsRenderCanvasAndWire();
-    _boardsSaveDebounced();
-    const el=document.getElementById('board-txt-'+c.id);
-    if(el)el.focus();
+    _boardsAddNoteAt(e.clientX,e.clientY);
+  });
+
+  // Touch has no dblclick worth relying on once touch-action:none has taken
+  // the browser's own double-tap gesture away, so the tap pairing is done
+  // here: two taps, within 300ms and 28px of each other, on empty canvas.
+  let lastTap=0,lastX=0,lastY=0;
+  stage.addEventListener('pointerup',e=>{
+    if(e.pointerType!=='touch')return;
+    if(e.target!==stage&&e.target.id!=='board-world')return;
+    if(_boardsTouches.size)return;            // still mid-pinch
+    const now=Date.now();
+    if(now-lastTap<300&&Math.abs(e.clientX-lastX)<28&&Math.abs(e.clientY-lastY)<28){
+      lastTap=0;
+      _boardsAddNoteAt(e.clientX,e.clientY);
+      return;
+    }
+    lastTap=now;lastX=e.clientX;lastY=e.clientY;
   });
 
   // Drag files in from the desktop. dragenter/dragleave fire for every
@@ -1321,6 +1707,7 @@ window.boardsCardDragStart=function(e,cardId){
   let pushed=false;
   head.setPointerCapture(e.pointerId);
   function move(ev){
+    if(_boardsPinch)return;   // two fingers down: zooming, not dragging a card
     // One undo entry per gesture, pushed on the first actual movement —
     // a plain click on the header shouldn't leave a no-op in the stack.
     if(!pushed){_boardsPushUndo();pushed=true;}
@@ -1365,6 +1752,7 @@ window.boardsResizeStart=function(e,cardId){
   let pushed=false;
   const handle=e.currentTarget;handle.setPointerCapture(e.pointerId);
   function move(ev){
+    if(_boardsPinch)return;
     if(!pushed){_boardsPushUndo();pushed=true;}
     c.w=Math.max(90,origW+(ev.clientX-startX)/b.zoom);
     c.h=Math.max(60,origH+(ev.clientY-startY)/b.zoom);
@@ -1606,7 +1994,15 @@ window.boardsLinkStart=function(e,cardId){
 
 // -- card content --
 window.boardsTitleInput=function(val){if(!_editBoard)return;_editBoard.title=val;_boardsSaveDebounced();};
-window.boardsTextInput=function(id,el){const c=_editCards.find(x=>x.id===id);if(!c)return;c.text=el.textContent;_boardsSaveDebounced();};
+window.boardsTextInput=function(id,el){
+  const c=_editCards.find(x=>x.id===id);if(!c)return;
+  c.text=el.textContent;
+  // Only carry markup when there IS markup — an unformatted note stays a
+  // plain string on the document, exactly as every card did before.
+  const rich=_boardsSanitizeRich(el.innerHTML);
+  if(rich&&!_boardsRichIsPlain(rich,c.text))c.rich=rich;else delete c.rich;
+  _boardsSaveDebounced();
+};
 window.boardsLinkInput=function(id,field,val){const c=_editCards.find(x=>x.id===id);if(!c)return;c[field]=val;_boardsSaveDebounced();};
 // The card's own name, shown in its header in place of the type label.
 // Empty means "fall back to the type label", which the CSS placeholder

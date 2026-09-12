@@ -492,7 +492,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .tool-btn{background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:inherit}
 .tool-btn:hover{border-color:var(--muted)}
 .zoom-readout{font-size:11px;color:var(--muted);min-width:34px;text-align:center;display:inline-block}
-.board-stage{position:relative;flex:1;overflow:hidden;cursor:grab;background-image:radial-gradient(#00000014 1px,transparent 1px);background-size:22px 22px}
+.board-stage{position:relative;flex:1;overflow:hidden;cursor:grab;background-image:radial-gradient(#00000014 1px,transparent 1px);background-size:22px 22px;touch-action:none;overscroll-behavior:contain;-webkit-user-select:none}
 .board-stage.panning{cursor:grabbing}
 .board-world{position:absolute;left:0;top:0;transform-origin:0 0}
 .board-conn-layer{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
@@ -514,8 +514,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .board-card-body{flex:1;min-height:0;overflow:hidden;position:relative;font-size:12.5px}
 .board-card-empty{display:flex;align-items:center;justify-content:center;height:100%;width:100%;box-sizing:border-box;color:var(--muted);font-size:11px;line-height:1.4;text-align:center;padding:10px;cursor:pointer}
 .board-card-empty:hover{background:var(--soft);color:var(--text)}
-.board-text-body{padding:9px 10px;line-height:1.5;outline:none;overflow:auto}
+.board-text-body{padding:9px 10px;line-height:1.5;outline:none;overflow:auto;touch-action:pan-y;-webkit-user-select:text;user-select:text}
 .board-text-body:empty:before{content:attr(data-placeholder);color:var(--muted)}
+/* the global reset zeroes padding and list markers, so formatted notes need
+   their list styling back explicitly */
+.board-text-body ul{list-style:disc;padding-left:18px;margin:2px 0}
+.board-text-body ol{list-style:decimal;padding-left:20px;margin:2px 0}
+.board-text-body li{margin:1px 0}
 .board-link-edit{display:flex;flex-direction:column;gap:5px;padding:8px}
 .board-link-edit input,.board-link-edit textarea{border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11.5px;font-family:inherit;resize:none}
 .board-link-edit textarea{flex:1;min-height:0}
@@ -548,10 +553,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .board-frame.tint-purple{border-color:var(--cat-boards)}
 
 /* To-do cards */
-.board-todo-body{padding:6px 8px;overflow:auto}
+.board-todo-body{padding:6px 8px;overflow:auto;touch-action:pan-y}
 .board-todo-row{display:flex;align-items:flex-start;gap:6px;padding:2px 0}
 .board-todo-row input[type=checkbox]{margin-top:3px;flex-shrink:0}
-.board-todo-text{flex:1;min-width:0;font-size:12.5px;line-height:1.45;outline:none;word-break:break-word}
+.board-todo-text{flex:1;min-width:0;-webkit-user-select:text;user-select:text;font-size:12.5px;line-height:1.45;outline:none;word-break:break-word}
 .board-todo-text:empty:before{content:attr(data-placeholder);color:var(--muted)}
 .board-todo-text.done{text-decoration:line-through;color:var(--muted)}
 .board-todo-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;line-height:1;padding:2px;opacity:0;flex-shrink:0}
@@ -587,7 +592,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 /* ── The rail — add-tools when nothing is selected, per-type actions when
    something is. Replaces the old floating selection bar and the bottom
    "+ card" strip (one surface, one action vocabulary). ── */
-.board-rail{position:absolute;left:14px;top:50%;transform:translateY(-50%);z-index:26;display:flex;flex-direction:column;gap:2px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:6px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.12);max-height:calc(100% - 40px);overflow:auto}
+.board-rail{touch-action:pan-y;position:absolute;left:14px;top:50%;transform:translateY(-50%);z-index:26;display:flex;flex-direction:column;gap:2px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:6px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.12);max-height:calc(100% - 40px);overflow:auto}
 .rail-btn{display:flex;flex-direction:column;align-items:center;gap:3px;width:58px;padding:7px 2px;background:none;border:none;border-radius:9px;cursor:pointer;color:var(--text);font-family:inherit;font-size:9.5px;font-weight:600;letter-spacing:.02em}
 .rail-btn svg{width:17px;height:17px;fill:currentColor}
 .rail-btn:hover{background:var(--soft)}
@@ -684,6 +689,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 @keyframes boardLinked{0%,100%{outline-color:var(--accent-success)}50%{outline-color:transparent}}
 
 /* Minimap */
+/* Zoom readout over the canvas — the topbar number is unreadable mid-pinch
+   with a hand over the board, so the percentage surfaces here and fades. */
+.board-zoom-pill{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:27;background:rgba(0,0,0,.74);color:#fff;font-size:13px;font-weight:700;letter-spacing:.02em;padding:7px 14px;border-radius:8px;opacity:0;pointer-events:none;transition:opacity .18s}
+.board-zoom-pill.show{opacity:1}
+/* Text formatting bar — shown while a note body has focus. */
+.board-fmt{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:60;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 10px 28px rgba(0,0,0,.16);padding:6px;max-width:calc(100% - 24px)}
+.board-fmt-row{display:flex;align-items:center;gap:2px}
+.board-fmt-btn{min-width:44px;height:38px;padding:0 10px;background:none;border:none;border-radius:9px;cursor:pointer;color:var(--text);font-family:inherit;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;gap:2px}
+.board-fmt-btn:hover{background:var(--soft)}
+.board-fmt-btn .fmt-T{font-weight:800;font-size:16px}
+.board-fmt-btn .fmt-dot{width:6px;height:6px;border-radius:50%;background:linear-gradient(135deg,#7B1F2A,#B47512 45%,#35507A);align-self:flex-end;margin-bottom:5px}
+.board-fmt-done{color:var(--accent-urgent);font-weight:700;font-size:13.5px}
+.board-fmt-swatches{display:flex;align-items:center;gap:8px;padding:4px 6px 8px;border-bottom:1px solid var(--border);margin-bottom:4px;overflow-x:auto}
+.board-fmt-sw{width:26px;height:26px;border-radius:50%;border:1px solid var(--border);cursor:pointer;flex-shrink:0;padding:0}
 .board-minimap{position:absolute;right:14px;bottom:76px;width:180px;height:120px;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.08);z-index:22;cursor:pointer}
 .board-minimap-inner{position:absolute;inset:0}
 .board-minimap-inner .mm-card{position:absolute;background:var(--muted);opacity:.5;border-radius:1px}
@@ -739,14 +758,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
   .board-topbar #board-title-input{max-width:120px}
   .board-drawer{width:100%;max-width:100%}
   /* the rail docks to the bottom and scrolls sideways on a phone */
-  .board-rail{left:10px;right:10px;top:auto;bottom:12px;transform:none;flex-direction:row;max-height:none;overflow-x:auto;overflow-y:hidden;align-items:center}
+  .board-rail{left:10px;right:10px;top:auto;bottom:12px;transform:none;flex-direction:row;max-height:none;overflow-x:auto;overflow-y:hidden;align-items:center;touch-action:pan-x}
   .rail-sep{width:1px;height:26px;margin:0 4px}
   .rail-swatches{grid-template-columns:repeat(6,1fr);padding:0 6px;gap:6px}
   .rail-btn{width:54px;flex-shrink:0}
   .rail-count{padding:0 6px}
   .board-gallery-grid{grid-template-columns:1fr 1fr}
   .board-crumbs{max-width:100%}
-  .board-minimap{width:120px;height:84px;bottom:136px}
+  .board-minimap{width:104px;height:72px;left:10px;right:auto;bottom:80px}
   .board-find{left:14px;right:14px}
+  .board-zoom-pill{bottom:84px}
+  .board-fmt{position:fixed;left:0;right:0;bottom:0;transform:none;border-radius:0;border-left:none;border-right:none;border-bottom:none;max-width:none;padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
+  .board-fmt-row{justify-content:space-between}
+  .board-fmt-btn{min-width:0;flex:1;height:44px}
+  /* touch targets — these were all sized for a cursor */
+  .board-topbar .tool-btn{min-height:32px;padding:6px 10px}
+  .board-card-head{padding:8px}
+  .board-card-del,.board-todo-del{opacity:1;padding:6px}
+  .board-resize-handle{width:28px;height:28px;right:0;bottom:0;padding:13px 0 0 13px}
+  .board-link-handle{opacity:1;width:16px;height:16px}
   .board-find input{flex:1;min-width:0}
 }
