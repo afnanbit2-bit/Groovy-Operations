@@ -636,8 +636,48 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .board-minimap-inner .mm-image{background:var(--dark);opacity:.6}
 .board-minimap-view{position:absolute;border:1.5px solid var(--accent-urgent);background:rgba(0,0,0,.04);pointer-events:none}
 
+/* ── Mood Boards — Stage 6: presence, comments, sharing ── */
+.board-peers{display:flex;align-items:center;padding-left:6px}
+.board-peer{width:24px;height:24px;border-radius:50%;background:var(--dark);color:#fff;font-size:9.5px;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid var(--surface);margin-left:-6px}
+.board-peer.more{background:var(--soft);color:var(--muted)}
+.board-cmt-badge{background:var(--accent-warning);color:#fff;border:none;border-radius:20px;min-width:17px;height:15px;padding:0 5px;font-size:9.5px;font-weight:700;font-family:inherit;cursor:pointer;align-items:center;justify-content:center;line-height:1}
+
+/* Comments + activity drawer */
+.board-drawer{position:absolute;top:0;right:0;bottom:0;width:320px;max-width:88vw;background:var(--surface);border-left:1px solid var(--border);z-index:32;flex-direction:column;box-shadow:-8px 0 24px rgba(0,0,0,.08)}
+.board-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border)}
+.board-drawer-tabs{display:flex;gap:4px}
+.board-drawer-tabs button{background:none;border:1px solid transparent;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:600;font-family:inherit;color:var(--muted);cursor:pointer}
+.board-drawer-tabs button.on{background:var(--dark);color:#fff}
+.board-drawer-scope{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 12px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)}
+.board-drawer-list{flex:1;min-height:0;overflow:auto;padding:10px 12px}
+.board-cmt{border:1px solid var(--border);border-radius:10px;padding:9px 10px;margin-bottom:8px;background:var(--surface)}
+.board-cmt.resolved{opacity:.55}
+.board-cmt-meta{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted);margin-bottom:4px;flex-wrap:wrap}
+.board-cmt-meta strong{color:var(--text);font-size:11.5px}
+.board-cmt-jump{background:none;border:none;padding:0;font-family:inherit;font-size:10.5px;color:var(--cat-boards);cursor:pointer}
+.board-cmt-text{font-size:12.5px;line-height:1.5;word-break:break-word;white-space:pre-wrap}
+.board-cmt-actions{display:flex;gap:8px;margin-top:5px}
+.board-cmt-actions button{background:none;border:none;padding:0;font-family:inherit;font-size:10.5px;color:var(--muted);cursor:pointer}
+.board-cmt-actions button:hover{color:var(--text)}
+.board-drawer-compose{border-top:1px solid var(--border);padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.board-drawer-compose textarea{border:1px solid var(--border);border-radius:8px;padding:7px 9px;font-family:inherit;font-size:12.5px;resize:vertical;min-height:56px;background:var(--surface);color:var(--text)}
+.board-act-row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)}
+.board-act-row:last-child{border-bottom:none}
+.board-act-line{font-size:12px;line-height:1.45}
+.board-act-time{font-size:10.5px;color:var(--muted);white-space:nowrap;flex-shrink:0}
+
+/* Share modal */
+.board-share-modal{position:absolute;inset:0;background:rgba(0,0,0,.35);z-index:50;align-items:center;justify-content:center;padding:16px}
+.board-share-box{background:var(--surface);border-radius:var(--radius-card);width:360px;max-width:100%;max-height:80%;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 18px 48px rgba(0,0,0,.25)}
+.board-share-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:14px;border-bottom:1px solid var(--border)}
+.board-share-list{flex:1;min-height:0;overflow:auto;padding:6px 14px}
+.board-share-row{display:flex;align-items:center;gap:9px;padding:8px 0;font-size:12.5px;border-bottom:1px solid var(--border);cursor:pointer}
+.board-share-row:last-child{border-bottom:none}
+.board-share-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 14px;border-top:1px solid var(--border)}
+
 @media (max-width:560px){
   .board-topbar #board-title-input{max-width:120px}
+  .board-drawer{width:100%;max-width:100%}
   .board-gallery-grid{grid-template-columns:1fr 1fr}
   .board-crumbs{max-width:100%}
   .board-minimap{width:120px;height:84px;bottom:76px}

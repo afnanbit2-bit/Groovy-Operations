@@ -894,6 +894,91 @@ Getting a board out of the app: PNG, PDF, and deep links to one card.
   remove at rollout (four in `js/shared.js`/`js/hrm.js` per the Creative
   Hub section above, plus `_boardsConsumeDeepLink` in `js/boards.js`).
 
+### Mood Boards — Stage 6 (Sept 2026): collaboration
+
+The stage the roadmap flagged as an architecture change. Live sync,
+presence, comments, per-board sharing, per-board activity.
+
+**The one policy change: a TEAM board is now editable by anyone signed
+in.** It used to be editable only by whoever created it (plus app
+owners), which made live editing, presence and comments pointless —
+there could never be a second editor. PRIVATE is unchanged (owner only),
+plus anyone the board is explicitly shared with. DELETE stays
+owner-only, so nobody can bin a team board. `_boardsCanEdit()` and
+`firestore.rules` mirror each other exactly; change both or neither.
+
+- **The `cards` array stays on the board document.** Moving to a
+  per-card subcollection is the textbook answer and was rejected on
+  purpose: it means rewriting load, save, undo, export and the gallery
+  previews plus a migration, to solve a problem two people on one board
+  do not have. What the array *did* need was a save that cannot eat
+  someone else's work.
+- **Saving is a `runTransaction` that merges against the SERVER's array**,
+  not against whatever this tab holds. Cards this session changed are
+  written; every card it did not touch keeps the server's version — so a
+  colleague's move survives our save even if their update never reached
+  us. Which cards we changed is **derived, not tracked**: `_boardsBase`
+  holds a JSON snapshot of the cards as the server last had them and
+  `_boardsLocalChanges()` diffs against it. No mutation site anywhere in
+  the file has to remember to mark itself dirty — the one thing that
+  would certainly rot.
+- **Offline falls back to the old queued `updateDoc`.** Transactions need
+  connectivity; this is an installed PWA on phones. Offline you get
+  pre-Stage-6 behaviour (last-writer-wins) rather than a refusal to save.
+- **A remote update never lands mid-gesture.** `onSnapshot` merges are
+  parked while a pointer gesture is in flight or focus is inside a card,
+  and applied the moment that stops (plus a 2s safety flush). Without
+  that, a remote update yanks the card out from under the pointer or
+  resets the caret mid-word. The gesture flag is set once at the document
+  level rather than inside all six drag/resize/pan/marquee/line/minimap
+  handlers — one of them would eventually be added without it.
+- **Pan and zoom are never taken from a remote update.** They stay on the
+  document so a board opens where it was left, but applying someone
+  else's pan to your open canvas is motion sickness, not collaboration.
+- **A save in flight is guarded on the board id it belongs to.** Leaving
+  a board flushes its save and immediately opens the next one, so the
+  write can resolve when `_editBoard` is already a different board;
+  adopting that result as the new board's baseline would mark every one
+  of its cards as locally edited and the next save would overwrite a
+  colleague's concurrent change. Everything after the await checks
+  `savingId`.
+- **Presence is Firestore, not RTDB** (`mood_boards/{id}/presence/{uid}`,
+  25s heartbeat). RTDB would have meant importing client write functions
+  the app deliberately does not have and republishing
+  `database.rules.json`, whose `".write": false` is a security property
+  worth keeping. A crashed tab never deletes its row, so **staleness**
+  decides presence (70s ≈ three missed beats), not the row existing.
+  Heartbeats live in their own subcollection so they never touch the
+  board document and never wake everyone's merge logic.
+- **Sharing is by AUTH EMAIL, not uid** (`sharedWith: ['x@groovy.op']`).
+  Rules can read `request.auth.token.email` directly, and nothing in this
+  app maps a username to a Firebase uid without a directory it does not
+  have. The client adds a third single-field query
+  (`where('sharedWith','array-contains',myEmail)`), one per read clause,
+  keeping the "provably safe, no composite index" discipline.
+- **Sub-collection rules check the parent board with `get()`**, not a bare
+  `signedIn()` — a PRIVATE board's comments, activity and presence are no
+  more readable than the board itself. `get()` results are cached per rule
+  evaluation and these collections are low-volume, so it is one extra
+  document read per request.
+- **The activity feed is append-only** (`allow update, delete: if false`),
+  same principle as `fabric_movements`, and records discrete actions only
+  — never a drag, which would be noise and a write per pointer-up.
+- **Comment bodies are hydrated with `textContent`** after the structure
+  renders, exactly like text cards, to-do items and Notes' blocks. Same
+  stored-XSS boundary, same rule: never interpolate someone else's text
+  into an HTML string.
+- **`onSnapshot` had to be bridged onto `window` in `index.html`** (the
+  cross-track file) — one name added to the Firestore import and the
+  `Object.assign`. Everything else stays inside `js/boards.js`; leaving
+  the canvas by any route tears the four listeners down through a
+  `showPage` wrap, the same pattern `__bootApp` uses.
+- **Collaboration cannot actually be exercised until the module is rolled
+  out** past the Afnan-only nav gate — there is no second person who can
+  reach a board. The code degrades cleanly either way: with no
+  `onSnapshot` bridged (an old cached `index.html`, say) every listener is
+  skipped and the board behaves exactly as it did in Stage 5.
+
 ## Shopify Inventory Intelligence
 
 Read-only sales + inventory dashboard ("Inventory Intel" page). Data is
@@ -1230,9 +1315,14 @@ the whole thing into the Firebase Console in one paste. Read the live file
 fresh each time rather than reconstructing it from memory or from an older
 turn in the conversation.
 
-Verified: the live Console rules were pasted by the user and diffed
-byte-for-byte (identical MD5) against the repo's `firestore.rules`. They
-match. The prior note here saying they'd never been republished was stale —
+Verified (up to Sept 2026): the live Console rules were pasted by the user
+and diffed byte-for-byte (identical MD5) against the repo's
+`firestore.rules`. They matched. **Mood Boards Stage 6 then changed
+`mood_boards` (sharedWith, TEAM update, and the presence/comments/activity
+sub-collections), so the Console needs republishing from the repo file
+again** — until that happens, sharing and the collaboration
+sub-collections will be denied at the rules layer while the app tries to
+use them. The prior note here saying they'd never been republished was stale —
 whoever last touched the Console already published this exact version.
 **Keep updating both in lockstep**, per the comment at the top of
 `firestore.rules` itself.

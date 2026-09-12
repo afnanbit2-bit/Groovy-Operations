@@ -218,14 +218,79 @@ service cloud.firestore {
       allow update, delete: if signedIn() && (resource.data.ownerUid==request.auth.uid || isOwner());
     }
     // Mood Boards (Phase 2 of the Notion+Milanote module, Sept 2026) — the
-    // Milanote half, reached through the same Creative Hub. Identical
-    // TEAM/PRIVATE pattern to notes_pages above: 'shared' boards readable
+    // Milanote half, reached through the same Creative Hub. Same
+    // TEAM/PRIVATE pattern as notes_pages above: 'shared' boards readable
     // by any signed-in user, 'personal' boards readable only by their
     // owner, no isOwner() override on read. See js/boards.js.
+    //
+    // Stage 6 (collaboration) added two things:
+    //   1. `sharedWith` — a list of AUTH EMAILS a PRIVATE board is shared
+    //      with. Emails, not uids, because rules can read
+    //      request.auth.token.email directly and the app has no username→uid
+    //      directory to look one up from. Guarded with `in resource.data`
+    //      so boards written before this shipped (no such field) still
+    //      evaluate instead of erroring.
+    //   2. UPDATE on a 'shared' (TEAM) board is now open to any signed-in
+    //      user, not just its creator. That is what makes TEAM boards
+    //      actually collaborative — live editing, presence and comments
+    //      are meaningless if only one person can ever edit. DELETE stays
+    //      owner-only so nobody can bin a team board. Mirrored exactly by
+    //      _boardsCanEdit() in js/boards.js.
+    // Client list queries are three single-field queries (visibility,
+    // ownerUid, sharedWith array-contains), one per read clause below, so
+    // every query is provably safe without a composite index.
+    function boardShared(b)  { return 'sharedWith' in b && userEmail() in b.sharedWith; }
+    function canReadBoard(b) { return b.visibility=='shared' || b.ownerUid==request.auth.uid || boardShared(b); }
     match /mood_boards/{doc} {
-      allow read:   if signedIn() && (resource.data.visibility=='shared' || resource.data.ownerUid==request.auth.uid);
+      allow read:   if signedIn() && canReadBoard(resource.data);
       allow create: if signedIn() && request.resource.data.ownerUid==request.auth.uid;
-      allow update, delete: if signedIn() && (resource.data.ownerUid==request.auth.uid || isOwner());
+      allow update: if signedIn() && (resource.data.visibility=='shared'
+                                      || resource.data.ownerUid==request.auth.uid
+                                      || boardShared(resource.data)
+                                      || isOwner());
+      allow delete: if signedIn() && (resource.data.ownerUid==request.auth.uid || isOwner());
+
+      // ── Sub-collections (Stage 6) ──
+      // Each one checks the PARENT board with a get() rather than a bare
+      // signedIn(), so a PRIVATE board's comments, activity and presence
+      // are no more readable than the board itself. get() results are
+      // cached per rule evaluation, so this is one document read per
+      // request, and these collections are all low-volume.
+      function parentBoard() {
+        return get(/databases/$(database)/documents/mood_boards/$(doc)).data;
+      }
+      function canSeeParent() { return signedIn() && canReadBoard(parentBoard()); }
+      function canEditParent() {
+        return signedIn() && (parentBoard().visibility=='shared'
+                              || parentBoard().ownerUid==request.auth.uid
+                              || boardShared(parentBoard())
+                              || isOwner());
+      }
+
+      // Who is looking at this board right now. One doc per viewer, keyed
+      // by uid and writable only by that viewer; a heartbeat timestamp is
+      // what actually decides presence, so a crashed tab that never
+      // deletes its row simply goes stale.
+      match /presence/{uid} {
+        allow read:  if canSeeParent();
+        allow write: if canSeeParent() && uid==request.auth.uid;
+      }
+      // Comments. Anyone who can edit the board may post; the author (or
+      // an app owner) may delete; resolve/reopen is open to any editor,
+      // since resolving is a shared housekeeping action, not authorship.
+      match /comments/{cdoc} {
+        allow read:   if canSeeParent();
+        allow create: if canEditParent() && request.resource.data.byUid==request.auth.uid;
+        allow update: if canEditParent();
+        allow delete: if signedIn() && (resource.data.byUid==request.auth.uid || isOwner());
+      }
+      // Per-board activity feed — append-only, like fabric_movements:
+      // a record nobody can quietly rewrite, not even an owner.
+      match /activity/{adoc} {
+        allow read:   if canSeeParent();
+        allow create: if canEditParent() && request.resource.data.byUid==request.auth.uid;
+        allow update, delete: if false;
+      }
     }
 
     // ── Shopify Inventory Intelligence ──

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Groovy Operations v2</title>
-<link rel="stylesheet" href="/css/main.css?v=20260912s5">
+<link rel="stylesheet" href="/css/main.css?v=20260912s6">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#000000">
 <link rel="apple-touch-icon" href="/assets/icons/icon-192.png">
@@ -90,11 +90,11 @@ if('serviceWorker' in navigator){
 <script src="/js/shopify.js?v=20260627b"></script>
 <script src="/js/fulfillment.js?v=20260627b"></script>
 <script src="/js/notes.js?v=20260912b"></script>
-<script src="/js/boards.js?v=20260912s5"></script>
+<script src="/js/boards.js?v=20260912s6"></script>
 <script src="/js/activity.js?v=20260627b"></script>
 <script type="module">
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import{initializeFirestore,persistentLocalCache,persistentMultipleTabManager,getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import{initializeFirestore,persistentLocalCache,persistentMultipleTabManager,getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch,onSnapshot}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import{getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,updatePassword,reauthenticateWithCredential,EmailAuthProvider}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import{getDatabase,ref as rtdbRef,get as rtdbGet,child as rtdbChild,onValue as rtdbOnValue,off as rtdbOff}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 const app=initializeApp({apiKey:'AIzaSyAcIrudpSPLbZMmoWMyTM1l8Z7GnxwelFw',authDomain:'groovy-gatepass.firebaseapp.com',projectId:'groovy-gatepass',storageBucket:'groovy-gatepass.appspot.com',messagingSenderId:'986200726255',appId:'1:986200726255:web:3a263cea3e7456d73c591a',databaseURL:'https://groovy-gatepass-default-rtdb.firebaseio.com'});
@@ -112,7 +112,7 @@ try{
 }
 Object.assign(window,{
   db:firestoreDb, auth:getAuth(app), rtdb:getDatabase(app),
-  collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch,
+  collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch,onSnapshot,
   signInWithEmailAndPassword,signOut,onAuthStateChanged,
   updatePassword,reauthenticateWithCredential,EmailAuthProvider,
   rtdbRef,rtdbGet,rtdbChild,rtdbOnValue,rtdbOff

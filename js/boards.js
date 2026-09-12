@@ -78,8 +78,19 @@ function _boardsRelTime(ts){
   if(d<30)return d+'d ago';
   return new Date(ts).toLocaleDateString('en-GB');
 }
+// Stage 6 widened this deliberately: a TEAM board is now editable by any
+// signed-in user, not just whoever created it. Before, "TEAM" meant
+// everyone could LOOK — which makes live sync, presence and comments
+// pointless, since there could never be a second editor. PRIVATE is
+// unchanged (owner only), plus anyone the board was explicitly shared
+// with. firestore.rules mirrors this exactly.
 function _boardsCanEdit(b){
-  return!!(b&&session&&(b.ownerUid===session.uid||session.role==='owner'));
+  if(!b||!session)return false;
+  if(b.ownerUid===session.uid)return true;
+  if(session.role==='owner')return true;
+  if(b.visibility==='shared')return true;
+  const me=_boardsMyEmail();
+  return!!(me&&Array.isArray(b.sharedWith)&&b.sharedWith.indexOf(me)>-1);
 }
 function _boardsNewCard(type){
   const id='c'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
@@ -326,13 +337,19 @@ window.boardsToggleSnap=function(){
 // each query maps 1:1 onto a clause of the firestore.rules read condition
 // below, so it's always provably safe and never needs a composite index.
 async function loadBoardsData(){
-  const[sharedSnap,mineSnap]=await Promise.all([
+  const me=_boardsMyEmail();
+  // Three single-field queries, one per clause of the firestore.rules read
+  // condition — the third (Stage 6) covers boards shared with me by name.
+  // Still no composite index and still provably safe, same discipline as
+  // the original two.
+  const jobs=[
     getDocs(query(collection(db,'mood_boards'),where('visibility','==','shared'))),
     getDocs(query(collection(db,'mood_boards'),where('ownerUid','==',session.uid)))
-  ]);
+  ];
+  if(me)jobs.push(getDocs(query(collection(db,'mood_boards'),where('sharedWith','array-contains',me))));
+  const snaps=await Promise.all(jobs);
   const map={};
-  sharedSnap.forEach(d=>{map[d.id]={id:d.id,...d.data()};});
-  mineSnap.forEach(d=>{map[d.id]={id:d.id,...d.data()};});
+  snaps.forEach(sn=>sn.forEach(d=>{map[d.id]={id:d.id,...d.data()};}));
   const all=Object.values(map).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
   // Soft delete: a trashed board keeps its document (so it can come back)
   // and is simply filtered out of the live list. Deliberately NOT a
@@ -494,7 +511,7 @@ function _boardGalleryCardHTML(b,opts){
       <div style="position:absolute;transform:scale(${scale});transform-origin:top left">
         ${cards.filter(c=>c.type==='frame').concat(cards.filter(c=>c.type!=='frame')).map(_boardMiniCardHTML).join('')}
       </div>
-      ${b.isTemplate?'<span class="board-template-pill">Template</span>':''}
+      ${b.isTemplate?'<span class="board-template-pill">Template</span>':(b.sharedWith&&b.sharedWith.length?'<span class="board-template-pill">Shared</span>':'')}
     </div>
     <div class="board-gallery-meta">
       ${crumbs?`<div class="board-gallery-path">${crumbs} ›</div>`:''}
@@ -558,6 +575,7 @@ window.boardsAddChildBoard=async function(){
     _boardsRenderCanvasAndWire();
     await _boardsSaveNow();
     boardsLoaded=false;
+    _boardsLogBoardActivity('added a sub-board');
     showToast('Sub-board added — open it from the card');
   }catch(e){showToast('Could not create sub-board: '+(e.message||e),true);}
 };
@@ -623,6 +641,7 @@ window.boardsToggleTemplate=async function(){
     boardsLoaded=false;
     _boardsMenuOpen=false;
     _boardsRenderCanvasAndWire();
+    _boardsLogBoardActivity(next?'saved the board as a template':'removed the board from templates');
     showToast(next?'Saved as a template':'No longer a template');
   }catch(e){showToast('Could not update: '+(e.message||e),true);}
 };
@@ -649,6 +668,9 @@ window.boardsGotoGallery=function(){_boardsSaveNow();window.showPage('boards');}
 
 // ── Canvas ──
 async function _boardsOpenCanvas(){
+  // Stepping from a board into its sub-board never leaves the page, so the
+  // showPage teardown hook doesn't fire — do it here as well.
+  if(_editBoard){try{_boardsTeardown();}catch(e){}}
   const m=document.getElementById('main-content');
   let b=moodBoards.find(x=>x.id===_boardsViewingId);
   if(!b){
@@ -659,7 +681,7 @@ async function _boardsOpenCanvas(){
       b={id:snap.id,...snap.data()};
     }catch(e){m.innerHTML='<div class="empty">Could not load board: '+(e.message||e)+'</div>';return;}
   }
-  _editBoard={id:b.id,title:b.title||'Untitled board',visibility:b.visibility||'personal',ownerUid:b.ownerUid,ownerName:b.ownerName,ownerUsername:b.ownerUsername,zoom:b.zoom||1,panX:b.panX||40,panY:b.panY||30,parentId:b.parentId||null,isTemplate:!!b.isTemplate};
+  _editBoard={id:b.id,title:b.title||'Untitled board',visibility:b.visibility||'personal',ownerUid:b.ownerUid,ownerName:b.ownerName,ownerUsername:b.ownerUsername,zoom:b.zoom||1,panX:b.panX||40,panY:b.panY||30,parentId:b.parentId||null,isTemplate:!!b.isTemplate,sharedWith:Array.isArray(b.sharedWith)?b.sharedWith.slice():[]};
   _editCards=(b.cards||[]).map(c=>{const cc={...c};delete cc._uploading;return cc;});
   _editConnectors=(b.connectors||[]).map(cn=>({...cn}));
   _boardsSelection=new Set();
@@ -670,7 +692,18 @@ async function _boardsOpenCanvas(){
   // History is per board-opening — undoing your way into a different
   // board's state would be nonsense.
   _boardsUndo=[];_boardsRedo=[];
+  // The sync baseline: what the server has, as far as we know. Every
+  // later "did we change this card?" question is answered by diffing
+  // against it (see _boardsLocalChanges).
+  _boardsSetBase(_boardsCardsForSave());
+  _boardsConnBase=JSON.stringify(_editConnectors);
+  _boardsPeers=[];_boardsComments=[];_boardsBoardActivity=[];
+  _boardsPendingRemote=null;_boardsGestureActive=false;
   _boardsRenderCanvasAndWire();
+  _boardsSubscribe(b.id);
+  _boardsPresenceStart(b.id);
+  _boardsCommentsStart(b.id);
+  _boardsActivityStart(b.id);
   // Opened cold from a deep link, moodBoards is empty — so breadcrumbs and
   // sub-board titles would be blank. Load the list in the background and
   // re-render once it lands, unless the user is already typing in a card.
@@ -698,6 +731,9 @@ function _boardsRenderCanvasAndWire(){
   _boardsRenderMinimap();
   _boardsApplyFindHighlight();
   _boardsSyncMenu();
+  _boardsRenderPresence();
+  _boardsPaintCommentBadges();
+  _boardsRenderDrawer();
 }
 function _renderBoardCanvasHTML(){
   const b=_editBoard;
@@ -722,12 +758,14 @@ function _renderBoardCanvasHTML(){
         <span class="pill">${visLabel}</span>
         ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}
         ${canEdit?`<span class="board-save-status" id="board-save-status">Saved</span>`:''}
+        <span class="board-peers" id="board-peers" style="display:none"></span>
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
         ${canEdit?`<button class="tool-btn" id="board-undo-btn" onclick="window.boardsUndoAction()" title="Undo (Ctrl+Z)" disabled>Undo</button>
         <button class="tool-btn" id="board-redo-btn" onclick="window.boardsRedoAction()" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
         <div class="tool-sep"></div>`:''}
         <button class="tool-btn${_boardsFindOpen?' on':''}" onclick="window.boardsToggleFind()" title="Find cards on this board">Find</button>
+        <button class="tool-btn${_boardsDrawerOpen?' on':''}" id="board-cmt-btn" onclick="window.boardsToggleDrawer()" title="Comments and activity on this board">Comments</button>
         <button class="tool-btn" onclick="window.boardsZoomBy(0.8)">−</button>
         <span class="zoom-readout" id="board-zoom-readout">${Math.round(b.zoom*100)}%</span>
         <button class="tool-btn" onclick="window.boardsZoomBy(1.25)">+</button>
@@ -744,6 +782,7 @@ function _renderBoardCanvasHTML(){
             <button onclick="window.boardsDuplicateBoard()">Duplicate board</button>
             ${canEdit?`<button onclick="window.boardsToggleTemplate()">${b.isTemplate?'Remove from templates':'Save as template'}</button>`:''}
             ${canEdit?`<button onclick="window.boardsAddChildBoard()">Add sub-board</button>`:''}
+            ${canEdit?`<button onclick="window.boardsOpenShare()">Share with people…</button>`:''}
             ${canEdit?`<button onclick="window.boardsToggleVisibility()">Make ${b.visibility==='shared'?'Private':'Team'}</button>`:''}
             ${canEdit?`<button class="danger" onclick="window.boardsDelete()">Delete board</button>`:''}
           </div>
@@ -780,6 +819,8 @@ function _renderBoardCanvasHTML(){
       </div>`:''}
       ${canEdit&&!_editCards.length?'<div class="board-empty-hint">Double-click anywhere to add a note · drop files in · paste an image with Ctrl+V</div>':''}
     </div>
+    <div class="board-drawer" id="board-drawer" style="display:none"></div>
+    <div class="board-share-modal" id="board-share-modal" style="display:none"></div>
     <input type="file" id="board-file-picker" multiple style="display:none" onchange="window.boardsFilesPicked(this)">
   </div>`;
 }
@@ -875,7 +916,10 @@ function _boardCardHTML(c,canEdit){
   return`<div class="board-card-el${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px" onclick="window.boardsSelectCard('${c.id}',event)">
     <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''}>
       <span class="board-card-kind">${kind}${c.locked?' · Locked':''}</span>
-      ${canEdit&&!c.locked?`<button class="board-card-del" onclick="window.boardsDeleteCard('${c.id}')" title="Delete">✕</button>`:''}
+      <span style="display:flex;align-items:center;gap:4px">
+        <button class="board-cmt-badge" id="board-cmt-${c.id}" style="display:none" title="Comments on this card" onclick="event.stopPropagation();window.boardsOpenComments('${c.id}')" onpointerdown="event.stopPropagation()"></button>
+        ${canEdit&&!c.locked?`<button class="board-card-del" onclick="window.boardsDeleteCard('${c.id}')" title="Delete">✕</button>`:''}
+      </span>
     </div>
     ${body}
     ${canEdit&&!c.locked?`<div class="board-link-handle" onpointerdown="window.boardsLinkStart(event,'${c.id}')" title="Drag to connect"></div>
@@ -1279,7 +1323,8 @@ function _boardsRenderSelectionBar(){
     ${multi?`<button class="tool-btn" onclick="window.boardsFrameSelection()" title="Wrap these in a labelled frame">Frame</button>
     <button class="tool-btn" onclick="window.boardsStackSelection()" title="Stack vertically">Stack</button>
     <button class="tool-btn" onclick="window.boardsGridSelection()" title="Arrange in a grid">Grid</button>`:''}
-    ${multi?'':'<button class="tool-btn" onclick="window.boardsCopyCardLink()" title="Copy a link that opens the board on this card">Link</button>'}
+    ${multi?'':`<button class="tool-btn" onclick="window.boardsOpenComments('${sel[0].id}')" title="Comment on this card">Comment</button>
+    <button class="tool-btn" onclick="window.boardsCopyCardLink()" title="Copy a link that opens the board on this card">Link</button>`}
     <button class="tool-btn" onclick="window.boardsDuplicateSelection()" title="Duplicate (Ctrl+D)">Duplicate</button>
     <button class="tool-btn" onclick="window.boardsBringToFront()" title="Bring to front">Front</button>
     <button class="tool-btn" onclick="window.boardsSendToBack()" title="Send to back">Back</button>
@@ -1670,6 +1715,7 @@ window.boardsAddCard=function(type){
   _editCards.push(nc);
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
+  _boardsLogBoardActivity('added a '+(type==='todo'?'to-do':type)+' card');
 };
 // Keeps the in-memory gallery copy of THIS board in step without waiting
 // for the debounced write. Only matters for card changes the gallery
@@ -1693,6 +1739,7 @@ window.boardsDeleteCard=function(id){
     _boardsSyncLocalCards();
     showToast('Link removed — the sub-board itself is back in the boards list');
   }
+  _boardsLogBoardActivity('deleted a card');
 };
 
 // ── Bulk actions on the selection ──────────────────────────────────────
@@ -1713,6 +1760,7 @@ window.boardsDeleteSelection=function(){
     showToast('Sub-board links removed — those boards are back in the boards list');
   }
   if(removable.length<sel.length)showToast('Kept '+(sel.length-removable.length)+' locked card'+(sel.length-removable.length===1?'':'s'));
+  _boardsLogBoardActivity('deleted '+removable.length+' card'+(removable.length===1?'':'s'));
 };
 // Clones land offset from the originals and become the new selection, so a
 // duplicate can be dragged straight into place without re-selecting it.
@@ -1823,6 +1871,7 @@ window.boardsToggleVisibility=async function(){
     await updateDoc(doc(db,'mood_boards',_editBoard.id),{visibility:next,updatedAt:Date.now()});
     _editBoard.visibility=next;
     boardsLoaded=false;
+    _boardsLogBoardActivity('made the board '+(next==='shared'?'TEAM':'PRIVATE'));
     showToast('Visibility updated');
     _boardsRenderCanvasAndWire();
   }catch(e){showToast('Could not update visibility: '+(e.message||e),true);}
@@ -2048,20 +2097,77 @@ async function _boardsSaveNow(){
   _boardsSetSaveStatus('Saving…');
   if(typeof window._gvSilentSaveStart==='function')window._gvSilentSaveStart();
   try{
-    const cards=_boardsCardsForSave();
-    await updateDoc(doc(db,'mood_boards',_editBoard.id),{
-      title:_editBoard.title,
-      zoom:_editBoard.zoom,panX:_editBoard.panX,panY:_editBoard.panY,
-      cards,connectors:_editConnectors,
-      updatedAt:Date.now(),updatedByName:session.name
+  const{cur,changed}=_boardsLocalChanges();
+  const conns=_editConnectors.map(c=>({...c}));
+  const connDirty=_boardsConnDirty();
+  // The board this save belongs to. Leaving a board flushes its save and
+  // then immediately opens another one, so by the time the write resolves
+  // _editBoard can already be a DIFFERENT board — adopting this save's
+  // result as that board's sync baseline would make us think every one of
+  // its cards was locally edited, and the next save would write our copy
+  // over a colleague's concurrent change. Everything after the await is
+  // guarded on this id.
+  const savingId=_editBoard.id;
+  const ref=doc(db,'mood_boards',savingId);
+  const head={
+    title:_editBoard.title,
+    zoom:_editBoard.zoom,panX:_editBoard.panX,panY:_editBoard.panY,
+    updatedAt:Date.now(),updatedByName:session.name
+  };
+  let wrote=null;
+  try{
+    if(typeof runTransaction!=='function')throw new Error('no transaction support');
+    // Merge against the SERVER's array inside the transaction, not against
+    // whatever this tab happens to hold: a card we did not touch keeps the
+    // server's version, so a colleague's move survives our save even if
+    // their update never reached us.
+    wrote=await runTransaction(db,async tx=>{
+      const snap=await tx.get(ref);
+      const server=snap.exists()?(snap.data()||{}):{};
+      const serverCards=Array.isArray(server.cards)?server.cards:[];
+      const mineById=_boardsCardsById(cur);
+      const serverById=_boardsCardsById(serverCards);
+      const merged=[];
+      serverCards.forEach(sc=>{
+        if(changed.has(sc.id)){
+          if(mineById[sc.id])merged.push(mineById[sc.id]);   // our edit wins
+          // no local copy → we deleted it, so it stays deleted
+        }else merged.push(sc);                                // untouched by us
+      });
+      cur.forEach(mc=>{if(!serverById[mc.id]&&changed.has(mc.id))merged.push(mc);});   // created here
+      const payload={...head,cards:merged,
+        connectors:connDirty?conns:(Array.isArray(server.connectors)?server.connectors:conns)};
+      tx.update(ref,payload);
+      return payload;
     });
-    const idx=moodBoards.findIndex(b=>b.id===_editBoard.id);
-    if(idx>-1)moodBoards[idx]={...moodBoards[idx],title:_editBoard.title,cards,connectors:_editConnectors,updatedAt:Date.now()};
-    _boardsSetSaveStatus('Saved');
   }catch(e){
-    _boardsSetSaveStatus('Save failed');
-    showToast('Could not save board: '+(e.message||e),true);
+    // Offline — this is an installed PWA and phones lose signal — or a
+    // transaction that ran out of retries. Fall back to the pre-Stage-6
+    // queued write (last-writer-wins) rather than refusing to save.
+    try{
+      const payload={...head,cards:cur,connectors:conns};
+      await updateDoc(ref,payload);
+      wrote=payload;
+      console.warn('[boards] transactional save unavailable, wrote directly:',(e&&e.message)||e);
+    }catch(e2){
+      if(_editBoard&&_editBoard.id===savingId)_boardsSetSaveStatus('Save failed');
+      showToast('Could not save board: '+(e2.message||e2),true);
+      return;
+    }
+  }
+  // The new baseline is what WE hold, not the merged array: a card the
+  // server has and we have never seen is not ours to reason about — the
+  // transaction above preserves it either way, and the snapshot listener
+  // brings it in properly when it is safe to rerender.
+  const idx=moodBoards.findIndex(b=>b.id===savingId);
+  if(idx>-1)moodBoards[idx]={...moodBoards[idx],title:head.title,cards:(wrote&&wrote.cards)||cur,connectors:(wrote&&wrote.connectors)||conns,updatedAt:Date.now()};
+  if(!_editBoard||_editBoard.id!==savingId)return;   // we have moved on; leave the new board's state alone
+  _boardsSetBase(cur);
+  _boardsConnBase=JSON.stringify(conns);
+  _boardsSetSaveStatus('Saved');
   }finally{
+    // Always released, on every path — a leaked counter would suppress the
+    // app's shared "Saving…" overlay for everything else, everywhere.
     if(typeof window._gvSilentSaveStop==='function')window._gvSilentSaveStop();
   }
 }
@@ -2482,3 +2588,450 @@ function _boardsFocusCard(id){
   }
   _boardsSaveDebounced();
 }
+
+/* ── Stage 6 — collaboration ────────────────────────────────────────────
+   Live sync, presence, comments, per-board sharing and a per-board
+   activity feed. This is the stage the roadmap flagged as an architecture
+   change, so the shape of it matters more than the feature list.
+
+   WHAT CHANGED, and what deliberately did not:
+
+   The board document keeps its plain `cards` array (no per-card
+   subcollection). That call was made in Phase 2 and still holds at this
+   app's scale — moving to a subcollection now would mean rewriting load,
+   save, undo, export and the gallery previews, plus a migration, for a
+   problem two people editing one board do not actually have.
+
+   What it does need is a save that cannot silently eat someone else's
+   work. `_boardsSaveNow` now writes inside a runTransaction that reads
+   the server's card array and merges ONLY the cards this session actually
+   changed; every card we did not touch keeps whatever the server has, so
+   a colleague's move survives our save even if we never received their
+   update. Which cards we changed is DERIVED, not tracked at each mutation
+   site: `_boardsBase` holds a JSON snapshot of the cards as the server
+   last had them, and `_boardsLocalChanges()` diffs against it. That means
+   no mutation anywhere in this file has to remember to mark itself dirty
+   — the one thing that would certainly rot.
+
+   Transactions need connectivity. Offline (this is an installed PWA, and
+   people use it on phones) the transaction is skipped and the old
+   queued updateDoc is used instead — last-writer-wins, which is exactly
+   what it was before Stage 6, rather than refusing to save at all.
+
+   Incoming changes arrive on an onSnapshot listener and are merged the
+   same way (ours wins for cards we have unsaved edits on, theirs for
+   everything else). A merge NEVER lands while a drag/resize is in flight
+   or while focus is inside a card — it is parked and applied the moment
+   that stops, otherwise a remote update would yank the card out from
+   under the pointer or reset the caret mid-word. Pan and zoom are never
+   taken from a remote update at all: they live on the document so a board
+   opens where it was left, but applying someone else's pan to your open
+   canvas is motion sickness, not collaboration. */
+
+let _boardsUnsub=null,_boardsPresenceUnsub=null,_boardsCommentsUnsub=null,_boardsActivityUnsub=null;
+let _boardsPresenceTimer=null,_boardsFlushTimer=null;
+let _boardsBase={};             // cardId → JSON as the server last had it
+let _boardsConnBase='[]';       // same, for the connectors array
+let _boardsGestureActive=false; // a drag/resize is in flight — hold merges
+let _boardsPendingRemote=null;  // remote data waiting for a safe moment
+let _boardsPeers=[];            // other people on this board right now
+let _boardsComments=[];
+let _boardsBoardActivity=[];
+let _boardsDrawerOpen=false,_boardsDrawerTab='comments',_boardsDrawerCard=null;
+const _BOARDS_PRESENCE_BEAT=25000;   // heartbeat
+const _BOARDS_PRESENCE_STALE=70000;  // ~3 missed beats → treat as gone
+
+function _boardsLive(){return typeof onSnapshot==='function';}
+function _boardsMyEmail(){
+  try{if(typeof auth!=='undefined'&&auth&&auth.currentUser&&auth.currentUser.email)return String(auth.currentUser.email).toLowerCase();}catch(e){}
+  return session&&session.email?String(session.email).toLowerCase():'';
+}
+
+// ── Local-change detection ──
+function _boardsCardsById(list){
+  const m={};
+  (list||[]).forEach(c=>{m[c.id]=c;});
+  return m;
+}
+function _boardsLocalChanges(){
+  const cur=_boardsCardsForSave();
+  const changed=new Set();
+  const seen={};
+  cur.forEach(c=>{
+    const j=JSON.stringify(c);
+    seen[c.id]=j;
+    if(_boardsBase[c.id]!==j)changed.add(c.id);
+  });
+  Object.keys(_boardsBase).forEach(id=>{if(!seen[id])changed.add(id);});   // deleted locally
+  return{cur,changed};
+}
+function _boardsSetBase(cards){
+  _boardsBase={};
+  (cards||[]).forEach(c=>{_boardsBase[c.id]=JSON.stringify(c);});
+}
+function _boardsConnDirty(){return JSON.stringify(_editConnectors)!==_boardsConnBase;}
+
+// ── Merging a remote update into the open canvas ──
+function _boardsApplyRemote(data){
+  if(!data||!_editBoard)return;
+  const{changed}=_boardsLocalChanges();
+  const remoteCards=(data.cards||[]);
+  const remoteById=_boardsCardsById(remoteCards);
+  const localById=_boardsCardsById(_editCards);
+  const out=[];
+  // Server order is the base order (z-order is array order, so respecting
+  // it is what keeps everyone's stacking the same).
+  remoteCards.forEach(rc=>{
+    if(changed.has(rc.id)){
+      const lc=localById[rc.id];
+      if(lc)out.push(lc);            // we have unsaved edits on this one — ours stands
+      // no local copy: we deleted it, so it stays deleted
+    }else{
+      out.push(rc);
+      _boardsBase[rc.id]=JSON.stringify(rc);
+    }
+  });
+  // Cards we created that the server hasn't seen yet.
+  _editCards.forEach(lc=>{if(!remoteById[lc.id]&&changed.has(lc.id))out.push(lc);});
+  // Drop base entries for cards the server no longer has and we didn't touch.
+  Object.keys(_boardsBase).forEach(id=>{if(!remoteById[id]&&!changed.has(id))delete _boardsBase[id];});
+  _editCards=out;
+  if(!_boardsConnDirty()){
+    _editConnectors=(data.connectors||[]).map(c=>({...c}));
+    _boardsConnBase=JSON.stringify(_editConnectors);
+  }
+  // Title: leave it alone while it is being typed into.
+  const titleEl=document.getElementById('board-title-input');
+  if(data.title!=null&&document.activeElement!==titleEl)_editBoard.title=data.title;
+  if(data.visibility)_editBoard.visibility=data.visibility;
+  _editBoard.sharedWith=Array.isArray(data.sharedWith)?data.sharedWith.slice():[];
+  _editBoard.isTemplate=!!data.isTemplate;
+  // pan/zoom deliberately NOT taken from the remote document.
+  _boardsSelection=new Set(Array.from(_boardsSelection).filter(id=>_editCards.some(c=>c.id===id)));
+  _boardsRenderCanvasAndWire();
+}
+function _boardsRemoteSafeNow(){
+  return!_boardsGestureActive&&!_boardsIsEditableFocus();
+}
+function _boardsFlushRemote(){
+  if(!_boardsPendingRemote||!_boardsRemoteSafeNow())return;
+  const data=_boardsPendingRemote;
+  _boardsPendingRemote=null;
+  _boardsApplyRemote(data);
+}
+
+// ── Listeners ──
+function _boardsSubscribe(boardId){
+  if(!_boardsLive())return;
+  try{
+    _boardsUnsub=onSnapshot(doc(db,'mood_boards',boardId),snap=>{
+      if(!snap.exists())return;
+      // Our own write echoing back — merging it would be a no-op at best
+      // and a rerender mid-gesture at worst.
+      if(snap.metadata&&snap.metadata.hasPendingWrites)return;
+      const data=snap.data();
+      if(!_editBoard||_editBoard.id!==boardId)return;
+      if(!_boardsRemoteSafeNow()){_boardsPendingRemote=data;return;}
+      _boardsApplyRemote(data);
+    },err=>{console.warn('[boards] live sync unavailable:',err&&err.message||err);});
+  }catch(e){console.warn('[boards] live sync could not start:',e);}
+  // Safety net for a parked update whose gesture ended without another
+  // event to wake us (pointer released outside the window, say).
+  clearInterval(_boardsFlushTimer);
+  _boardsFlushTimer=setInterval(_boardsFlushRemote,2000);
+}
+function _boardsPresenceStart(boardId){
+  if(!_boardsLive()||!session||!session.uid)return;
+  const ref=doc(db,'mood_boards',boardId,'presence',session.uid);
+  const beat=()=>{setDoc(ref,{name:session.name||'',u:session.u||'',ts:Date.now()}).catch(()=>{});};
+  beat();
+  clearInterval(_boardsPresenceTimer);
+  _boardsPresenceTimer=setInterval(beat,_BOARDS_PRESENCE_BEAT);
+  try{
+    _boardsPresenceUnsub=onSnapshot(collection(db,'mood_boards',boardId,'presence'),snap=>{
+      const now=Date.now();
+      const peers=[];
+      snap.forEach(d=>{
+        const v=d.data()||{};
+        // A crashed tab never deletes its row, so staleness is what
+        // actually decides presence — not the row existing.
+        if(d.id!==session.uid&&(now-(v.ts||0))<_BOARDS_PRESENCE_STALE)peers.push({uid:d.id,name:v.name||'Someone'});
+      });
+      _boardsPeers=peers;
+      _boardsRenderPresence();
+    },()=>{});
+  }catch(e){/* presence is a nicety; never block the board on it */}
+}
+function _boardsCommentsStart(boardId){
+  if(!_boardsLive())return;
+  try{
+    _boardsCommentsUnsub=onSnapshot(query(collection(db,'mood_boards',boardId,'comments'),orderBy('ts','asc')),snap=>{
+      _boardsComments=[];
+      snap.forEach(d=>_boardsComments.push({id:d.id,...d.data()}));
+      _boardsPaintCommentBadges();
+      _boardsRenderDrawer();
+    },()=>{});
+  }catch(e){/* noop */}
+}
+function _boardsActivityStart(boardId){
+  if(!_boardsLive())return;
+  try{
+    _boardsActivityUnsub=onSnapshot(query(collection(db,'mood_boards',boardId,'activity'),orderBy('ts','desc'),limit(50)),snap=>{
+      _boardsBoardActivity=[];
+      snap.forEach(d=>_boardsBoardActivity.push({id:d.id,...d.data()}));
+      if(_boardsDrawerOpen&&_boardsDrawerTab==='activity')_boardsRenderDrawer();
+    },()=>{});
+  }catch(e){/* noop */}
+}
+function _boardsTeardown(){
+  if(_editBoard)_boardsSaveNow();
+  [_boardsUnsub,_boardsPresenceUnsub,_boardsCommentsUnsub,_boardsActivityUnsub].forEach(f=>{try{if(typeof f==='function')f();}catch(e){}});
+  _boardsUnsub=_boardsPresenceUnsub=_boardsCommentsUnsub=_boardsActivityUnsub=null;
+  clearInterval(_boardsPresenceTimer);_boardsPresenceTimer=null;
+  clearInterval(_boardsFlushTimer);_boardsFlushTimer=null;
+  _boardsPendingRemote=null;
+  _boardsPeers=[];_boardsComments=[];_boardsBoardActivity=[];
+  _boardsDrawerOpen=false;_boardsDrawerCard=null;
+  // The board we were ON — not _boardsViewingId, which has already been
+  // moved on by boardsOpen when you step into a sub-board.
+  const id=_editBoard&&_editBoard.id;
+  if(id&&session&&session.uid){
+    try{deleteDoc(doc(db,'mood_boards',id,'presence',session.uid)).catch(()=>{});}catch(e){}
+  }
+}
+// Leaving the canvas by ANY route (sidebar, back button, a deep link to
+// another page) has to tear the listeners down, and only showPage knows
+// about all of them. Same wrap-the-global pattern as the startApp hook
+// above — js/shared.js stays untouched.
+const _boardsOrigShowPage=window.showPage;
+if(typeof _boardsOrigShowPage==='function'){
+  window.showPage=async function(id){
+    if(currentPage==='board-canvas'&&id!=='board-canvas'){try{_boardsTeardown();}catch(e){console.warn('[boards] teardown failed:',e);}}
+    return _boardsOrigShowPage.apply(this,arguments);
+  };
+}
+window.addEventListener('pagehide',()=>{if(currentPage==='board-canvas'){try{_boardsTeardown();}catch(e){}}});
+
+// A pointer gesture anywhere on the stage holds remote merges off. Doing
+// this once at the document level beats setting a flag inside each of the
+// six drag/resize/pan/marquee/line/minimap handlers — one of them would
+// eventually be added without it.
+document.addEventListener('pointerdown',e=>{
+  if(currentPage!=='board-canvas')return;
+  if(e.target&&e.target.closest&&e.target.closest('.board-stage'))_boardsGestureActive=true;
+});
+document.addEventListener('pointerup',()=>{
+  if(!_boardsGestureActive)return;
+  _boardsGestureActive=false;
+  setTimeout(_boardsFlushRemote,0);
+});
+document.addEventListener('pointercancel',()=>{_boardsGestureActive=false;});
+
+// ── Presence strip ──
+function _boardsInitials(name){
+  const p=String(name||'').trim().split(/\s+/);
+  return((p[0]||'?')[0]+(p.length>1?p[p.length-1][0]:'')).toUpperCase();
+}
+function _boardsRenderPresence(){
+  const host=document.getElementById('board-peers');
+  if(!host)return;
+  if(!_boardsPeers.length){host.innerHTML='';host.style.display='none';return;}
+  host.style.display='flex';
+  host.innerHTML=_boardsPeers.slice(0,5).map(p=>`<span class="board-peer" title="${_boardsEsc(p.name)} is on this board">${_boardsEsc(_boardsInitials(p.name))}</span>`).join('')
+    +(_boardsPeers.length>5?`<span class="board-peer more">+${_boardsPeers.length-5}</span>`:'');
+}
+
+// ── Per-board activity feed ──
+function _boardsLogBoardActivity(action){
+  if(!_editBoard||!session)return;
+  try{
+    addDoc(collection(db,'mood_boards',_editBoard.id,'activity'),{
+      ts:Date.now(),byName:session.name||'',byUid:session.uid||'',action:String(action).slice(0,200)
+    }).catch(()=>{});
+  }catch(e){/* the feed is a record, never a blocker */}
+}
+
+// ── Comments ──
+function _boardsCardComments(cardId){
+  return _boardsComments.filter(c=>(c.cardId||null)===(cardId||null));
+}
+function _boardsPaintCommentBadges(){
+  const counts={};
+  _boardsComments.forEach(c=>{if(c.cardId&&!c.resolved)counts[c.cardId]=(counts[c.cardId]||0)+1;});
+  _editCards.forEach(c=>{
+    const el=document.getElementById('board-cmt-'+c.id);
+    if(!el)return;
+    const n=counts[c.id]||0;
+    el.textContent=n?String(n):'';
+    el.style.display=n?'inline-flex':'none';
+  });
+  const btn=document.getElementById('board-cmt-btn');
+  if(btn){
+    const open=_boardsComments.filter(c=>!c.resolved).length;
+    btn.textContent=open?('Comments '+open):'Comments';
+  }
+}
+window.boardsOpenComments=function(cardId){
+  _boardsDrawerCard=cardId||null;
+  _boardsDrawerTab='comments';
+  _boardsDrawerOpen=true;
+  _boardsRenderDrawer();
+  const i=document.getElementById('board-cmt-input');
+  if(i)i.focus();
+};
+window.boardsToggleDrawer=function(){
+  _boardsDrawerOpen=!_boardsDrawerOpen;
+  if(!_boardsDrawerOpen)_boardsDrawerCard=null;
+  _boardsMenuOpen=false;_boardsSyncMenu();
+  _boardsRenderDrawer();
+};
+window.boardsDrawerTab=function(tab){_boardsDrawerTab=tab;_boardsRenderDrawer();};
+window.boardsDrawerAll=function(){_boardsDrawerCard=null;_boardsRenderDrawer();};
+function _boardsRenderDrawer(){
+  const host=document.getElementById('board-drawer');
+  if(!host)return;
+  host.style.display=_boardsDrawerOpen?'flex':'none';
+  if(!_boardsDrawerOpen)return;
+  const scoped=_boardsDrawerCard?_boardsCardComments(_boardsDrawerCard):_boardsComments;
+  const rows=_boardsDrawerTab==='comments'?scoped:[];
+  const canEdit=_boardsCanEdit(_editBoard);
+  const scopeLabel=_boardsDrawerCard?'On one card':'Whole board';
+  host.innerHTML=`
+    <div class="board-drawer-head">
+      <div class="board-drawer-tabs">
+        <button class="${_boardsDrawerTab==='comments'?'on':''}" onclick="window.boardsDrawerTab('comments')">Comments</button>
+        <button class="${_boardsDrawerTab==='activity'?'on':''}" onclick="window.boardsDrawerTab('activity')">Activity</button>
+      </div>
+      <button class="tool-btn" onclick="window.boardsToggleDrawer()" title="Close">✕</button>
+    </div>
+    ${_boardsDrawerTab==='comments'?`
+      <div class="board-drawer-scope">
+        <span>${scopeLabel}</span>
+        ${_boardsDrawerCard?'<button class="tool-btn" onclick="window.boardsDrawerAll()">Show all</button>':''}
+      </div>
+      <div class="board-drawer-list" id="board-drawer-list">
+        ${rows.length?rows.map(c=>`
+          <div class="board-cmt${c.resolved?' resolved':''}">
+            <div class="board-cmt-meta">
+              <strong>${_boardsEsc(c.byName||'Someone')}</strong>
+              <span>${_boardsRelTime(c.ts)}</span>
+              ${c.cardId&&!_boardsDrawerCard?`<button class="board-cmt-jump" onclick="window.boardsCommentJump('${c.cardId}')">on a card →</button>`:''}
+            </div>
+            <div class="board-cmt-text" id="board-cmt-text-${c.id}"></div>
+            <div class="board-cmt-actions">
+              <button onclick="window.boardsResolveComment('${c.id}',${c.resolved?'false':'true'})">${c.resolved?'Reopen':'Resolve'}</button>
+              ${(session&&(c.byUid===session.uid||session.role==='owner'))?`<button onclick="window.boardsDeleteComment('${c.id}')">Delete</button>`:''}
+            </div>
+          </div>`).join(''):'<div class="empty">No comments yet.</div>'}
+      </div>
+      ${canEdit?`<div class="board-drawer-compose">
+        <textarea id="board-cmt-input" placeholder="${_boardsDrawerCard?'Comment on this card…':'Comment on this board…'}" onkeydown="window.boardsCommentKey(event)"></textarea>
+        <button class="btn-sm" onclick="window.boardsAddComment()">Post</button>
+      </div>`:''}
+    `:`
+      <div class="board-drawer-list">
+        ${_boardsBoardActivity.length?_boardsBoardActivity.map(a=>`
+          <div class="board-act-row">
+            <div class="board-act-line"><strong>${_boardsEsc(a.byName||'Someone')}</strong> ${_boardsEsc(a.action||'')}</div>
+            <div class="board-act-time">${_boardsRelTime(a.ts)}</div>
+          </div>`).join(''):'<div class="empty">Nothing recorded on this board yet.</div>'}
+      </div>`}`;
+  // Comment bodies are other people's text — written in with textContent
+  // after the structure exists, never interpolated into the HTML string.
+  // Same stored-XSS boundary as text cards and Notes' blocks.
+  if(_boardsDrawerTab==='comments'){
+    rows.forEach(c=>{
+      const el=document.getElementById('board-cmt-text-'+c.id);
+      if(el)el.textContent=c.text||'';
+    });
+  }
+}
+window.boardsCommentJump=function(cardId){
+  _boardsDrawerCard=cardId;
+  _boardsRenderDrawer();
+  _boardsFocusCard(cardId);
+};
+window.boardsCommentKey=function(ev){
+  if(ev.key==='Enter'&&(ev.ctrlKey||ev.metaKey)){ev.preventDefault();window.boardsAddComment();}
+};
+window.boardsAddComment=async function(){
+  const input=document.getElementById('board-cmt-input');
+  const text=String((input&&input.value)||'').trim();
+  if(!text||!_editBoard||!session)return;
+  try{
+    await addDoc(collection(db,'mood_boards',_editBoard.id,'comments'),{
+      cardId:_boardsDrawerCard||null,
+      text:text.slice(0,2000),
+      byUid:session.uid,byName:session.name||'',
+      ts:Date.now(),resolved:false
+    });
+    if(input)input.value='';
+    _boardsLogBoardActivity(_boardsDrawerCard?'commented on a card':'commented on the board');
+  }catch(e){showToast('Could not post comment: '+(e.message||e),true);}
+};
+window.boardsResolveComment=async function(id,resolved){
+  if(!_editBoard)return;
+  try{await updateDoc(doc(db,'mood_boards',_editBoard.id,'comments',id),{resolved:!!resolved});}
+  catch(e){showToast('Could not update comment: '+(e.message||e),true);}
+};
+window.boardsDeleteComment=async function(id){
+  if(!_editBoard)return;
+  if(!confirm('Delete this comment?'))return;
+  try{await deleteDoc(doc(db,'mood_boards',_editBoard.id,'comments',id));}
+  catch(e){showToast('Could not delete comment: '+(e.message||e),true);}
+};
+
+// ── Per-board sharing (t32) ────────────────────────────────────────────
+// Shared BY EMAIL, not uid: firestore.rules can check
+// request.auth.token.email directly, and nothing in this app maps a
+// username to a Firebase uid without a directory it does not have. The
+// client query is where('sharedWith','array-contains',myEmail) — one more
+// single-field query mapping exactly onto one clause of the read rule,
+// the same discipline loadNotesData/loadBoardsData already follow.
+window.boardsOpenShare=function(){
+  if(!_editBoard||!_boardsCanEdit(_editBoard))return;
+  _boardsMenuOpen=false;_boardsSyncMenu();
+  const host=document.getElementById('board-share-modal');
+  if(!host)return;
+  const mine=_boardsMyEmail();
+  const list=(typeof USER_DEFS!=='undefined'?USER_DEFS:[]).filter(u=>String(u.email||'').toLowerCase()!==mine);
+  const current=(_editBoard.sharedWith||[]).map(e=>String(e).toLowerCase());
+  host.style.display='flex';
+  host.innerHTML=`<div class="board-share-box">
+    <div class="board-share-head">
+      <div><div style="font-weight:700;font-size:14px">Share this board</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:2px">People you pick can open and edit it, even while it stays PRIVATE.</div></div>
+      <button class="tool-btn" onclick="window.boardsCloseShare()">✕</button>
+    </div>
+    <div class="board-share-list">
+      ${list.map(u=>`<label class="board-share-row">
+        <input type="checkbox" value="${_boardsEsc(String(u.email||'').toLowerCase())}" ${current.indexOf(String(u.email||'').toLowerCase())>-1?'checked':''}>
+        <span><strong>${_boardsEsc(u.name||u.u)}</strong> <span style="color:var(--muted)">@${_boardsEsc(u.u)}</span></span>
+      </label>`).join('')}
+    </div>
+    <div class="board-share-foot">
+      <button class="btn-sm outline" onclick="window.boardsCloseShare()">Cancel</button>
+      <button class="btn-sm" onclick="window.boardsSaveShare()">Save</button>
+    </div>
+  </div>`;
+};
+window.boardsCloseShare=function(){
+  const host=document.getElementById('board-share-modal');
+  if(host){host.style.display='none';host.innerHTML='';}
+};
+window.boardsSaveShare=async function(){
+  const host=document.getElementById('board-share-modal');
+  if(!host||!_editBoard)return;
+  const picked=Array.from(host.querySelectorAll('input[type=checkbox]')).filter(i=>i.checked).map(i=>i.value);
+  try{
+    await updateDoc(doc(db,'mood_boards',_editBoard.id),{sharedWith:picked,updatedAt:Date.now()});
+    _editBoard.sharedWith=picked;
+    const idx=moodBoards.findIndex(b=>b.id===_editBoard.id);
+    if(idx>-1)moodBoards[idx].sharedWith=picked;
+    boardsLoaded=false;
+    window.boardsCloseShare();
+    _boardsRenderCanvasAndWire();
+    _boardsLogBoardActivity(picked.length?('shared the board with '+picked.length+' '+(picked.length===1?'person':'people')):'stopped sharing the board');
+    showToast(picked.length?('Shared with '+picked.length+' '+(picked.length===1?'person':'people')):'Sharing removed');
+  }catch(e){showToast('Could not update sharing: '+(e.message||e),true);}
+};
