@@ -587,12 +587,28 @@ subcollection, same reasoning as `notes_pages`.
   screenshot — so it never goes stale relative to the board's actual
   content.
 - The canvas view (`.board-canvas-wrap`) is a `position:fixed;inset:0`
-  full-viewport takeover (`z-index:40`) rather than living inside the
+  full-viewport takeover (**`z-index:120`** — see below) rather than living inside the
   normal `#sidebar`/`#main-content` shell — deliberate, a freeform
   pan/zoom canvas needs the room a squeezed content column can't give it.
   This is the first page in the app to do this; the "← Boards" back button
   is the only way out, so don't add a second full-takeover page without
   checking it doesn't strand someone.
+  **The z-index is load-bearing and was wrong until Sept 2026.** It shipped
+  at `40`, but `.topbar` is `position:sticky; z-index:100` (and
+  `.cash-action-bar` is 115) — so the app header painted straight over the
+  board's own top bar and every control in it (back, breadcrumbs, title,
+  save status, undo/redo, Find, Comments, zoom/Fit/100%, Map, Snap and the
+  whole ⋯ menu: share, exports, duplicate, template, sub-board, delete)
+  was invisible and unclickable. Nothing looked broken — the canvas, the
+  card bar and the minimap all rendered — so it read as "those features
+  were never built". Found from a user screenshot, not from testing. Keep
+  it above 115 and below 500 (`#bug-report-fab`) so the FAB, toasts and
+  the 998+ overlays still surface over the canvas. Anything new that is
+  `position:fixed` near the top of the app has to be checked against this.
+- **`#bug-report-fab` is fixed at `bottom:20px;right:20px` with
+  `z-index:500`**, i.e. above the canvas, so anything parked in that corner
+  collides with it. The minimap sits at `bottom:76px` (`136px` on mobile,
+  where the FAB moves to `bottom:80px`) for exactly that reason.
 - **No separate staged-rollout gate on Mood Boards itself** — it's reached
   only through the Creative Hub tile, which is already `session.u==='afnan'`-
   gated, so gating it again would be redundant. If Notes and Mood Boards

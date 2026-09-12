@@ -804,7 +804,7 @@ function _renderBoardCanvasHTML(){
       <div style="display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:wrap">
         <button class="back-btn" style="margin:0" onclick="window.boardsBack()">← ${_boardsEsc(parent?(parent.title||'Untitled board'):'Boards')}</button>
         ${crumbs}
-        <input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" placeholder="Untitled board" style="font-size:14.5px;font-weight:700;border:none;outline:none;font-family:inherit;background:transparent;max-width:240px">
+        <input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" placeholder="Untitled board" title="Click to rename this board" style="font-size:14.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
         <span class="pill">${visLabel}</span>
         ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}
         ${canEdit?`<span class="board-save-status" id="board-save-status">Saved</span>`:''}
