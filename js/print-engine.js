@@ -92,6 +92,7 @@ const _PRINT_DOC_LABELS = {
   'payslip': 'Payslip',
   'daily-performance': 'Daily Performance',
   'stock-transfer': 'Stock Transfer',
+  'mood-board': 'Mood Board',
   'generic': 'Document'
 };
 
@@ -111,6 +112,7 @@ const _PRINT_URDU_DEFAULTS = {
   'payslip': 'minimal',
   'daily-performance': 'minimal',
   'stock-transfer': 'minimal',
+  'mood-board': 'minimal',
   'po': 'full',
   'embroidery-vendor': 'full',
   'sublimation-vendor': 'full',
@@ -1348,6 +1350,98 @@ function _renderDailyPerformance(doc, data) {
   doc.__groovyY = y;
 }
 
+/* ── Mood Board variant ────────────────────────────────────────────────────
+   A board exported for people who are not in the app — a vendor, the
+   factory floor, a partner. Two parts: the board itself as one picture,
+   scaled to fit the page, then a text index of every card that carries
+   text, so the PDF is searchable and readable even where the picture is
+   small.
+
+   The picture is rasterised by the CALLER (js/boards.js draws the board
+   onto a 2D canvas and passes a JPEG data URL) — this variant stays
+   synchronous like every other one, and the engine never has to know how a
+   board is drawn. English-only by default: an internal design reference
+   does not need the ~10 MB Urdu font.
+
+   data: { boardTitle, visibility, ownerName, cardCount, imageDataUrl,
+           imageW, imageH, index:[{kind,text}], indexTruncated } */
+function _renderMoodBoard(doc, data) {
+  data = data || {};
+  const L = PRINT_LAYOUT.marginLeft;
+  const W = PRINT_LAYOUT.contentWidth;
+  const sess = (typeof session !== 'undefined' && session) ? session : null;
+  const today = new Date().toLocaleDateString('en-GB');
+
+  _renderHeader(doc, {
+    documentType: 'Mood Board',
+    documentNumber: data.boardTitle || '',
+    issuedDate: data.issuedDate || today,
+    issuedBy: data.issuedBy || (sess && sess.name) || 'system'
+  });
+
+  const bits = [];
+  if (data.visibility) bits.push(data.visibility);
+  if (data.cardCount != null) bits.push(data.cardCount + ' card' + (data.cardCount === 1 ? '' : 's'));
+  if (data.ownerName) bits.push(data.ownerName);
+  _renderTitleBlock(doc, {
+    title: data.boardTitle || 'Untitled board',
+    subtitle: bits.join('  ·  '),
+    startY: doc.__groovyY
+  });
+
+  // The board picture, fitted to the content width and to whatever height
+  // is left on the page. A tall board gets its own page rather than being
+  // squeezed into a strip.
+  if (data.imageDataUrl && data.imageW && data.imageH) {
+    const ratio = data.imageH / data.imageW;
+    let y = (doc.__groovyY || PRINT_LAYOUT.marginTop) + 14;
+    let avail = PRINT_LAYOUT.pageHeight - PRINT_LAYOUT.marginBottom - 24 - y;
+    let w = W, h = W * ratio;
+    if (h > avail) {
+      const ownPage = PRINT_LAYOUT.pageHeight - PRINT_LAYOUT.marginTop - PRINT_LAYOUT.marginBottom - 24;
+      if (avail < ownPage * 0.55) {         // too little room left to be worth it
+        doc.addPage();
+        y = PRINT_LAYOUT.marginTop;
+        avail = ownPage;
+      }
+      if (h > avail) { h = avail; w = h / ratio; }
+    }
+    try {
+      doc.addImage(data.imageDataUrl, 'JPEG', L + (W - w) / 2, y, w, h);
+    } catch (e) {
+      console.warn('[print-engine] board image could not be embedded:', e);
+      _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.greyAccent);
+      doc.text('(Board image could not be embedded.)', L, y + 14);
+      h = 20;
+    }
+    doc.__groovyY = y + h;
+  }
+
+  const index = Array.isArray(data.index) ? data.index : [];
+  if (!index.length) return;
+
+  _renderSectionHeader(doc, { titleEn: 'Card index' });
+  let y = (doc.__groovyY || PRINT_LAYOUT.marginTop) + 14;
+  const maxY = PRINT_LAYOUT.pageHeight - PRINT_LAYOUT.marginBottom - 28;
+  const kindW = 74;
+  index.forEach((row) => {
+    const lines = doc.splitTextToSize(String(row.text || ''), W - kindW);
+    if (y + lines.length * 13 > maxY) { doc.addPage(); y = PRINT_LAYOUT.marginTop + 8; }
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.greyAccent);
+    doc.text(String(row.kind || '').toUpperCase(), L, y);
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
+    lines.forEach((ln, i) => { doc.text(ln, L + kindW, y + i * 13); });
+    y += lines.length * 13 + 5;
+  });
+  if (data.indexTruncated) {
+    if (y > maxY) { doc.addPage(); y = PRINT_LAYOUT.marginTop + 8; }
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.bodySmall, PRINT_COLORS.greyAccent);
+    doc.text('(Index truncated — this board has more cards than are listed here.)', L, y);
+    y += 13;
+  }
+  doc.__groovyY = y;
+}
+
 /* ── Production Order variant ──────────────────────────────────────────────
    Full manufacturing traveler / routing sheet matching the "Production Order
    2.0" reference: header + "Department: Manufacturing", an order-info block
@@ -1630,13 +1724,14 @@ window.printDocument = async function (opts) {
 
   const known = ['po', 'embroidery-vendor', 'sublimation-vendor',
     'gate-pass', 'placement-sheet', 'qc-report', 'payslip',
-    'daily-performance', 'stock-transfer', 'generic'];
+    'daily-performance', 'stock-transfer', 'mood-board', 'generic'];
   const _VARIANTS = {
     'po': _renderPO,
     'gate-pass': _renderGatePass,
     'payslip': _renderPayslip,
     'daily-performance': _renderDailyPerformance,
-    'stock-transfer': _renderStockTransfer
+    'stock-transfer': _renderStockTransfer,
+    'mood-board': _renderMoodBoard
   };
   const render = _VARIANTS[type] || _renderGeneric;
   if (known.indexOf(type) === -1) {

@@ -671,6 +671,19 @@ async function _boardsOpenCanvas(){
   // board's state would be nonsense.
   _boardsUndo=[];_boardsRedo=[];
   _boardsRenderCanvasAndWire();
+  // Opened cold from a deep link, moodBoards is empty — so breadcrumbs and
+  // sub-board titles would be blank. Load the list in the background and
+  // re-render once it lands, unless the user is already typing in a card.
+  if(!boardsLoaded){
+    loadBoardsData().then(()=>{
+      if(currentPage==='board-canvas'&&_editBoard&&_editBoard.id===b.id&&!_boardsIsEditableFocus())_boardsRenderCanvasAndWire();
+    }).catch(()=>{});
+  }
+  if(_boardsPendingFocusCard){
+    const target=_boardsPendingFocusCard;
+    _boardsPendingFocusCard=null;
+    _boardsFocusCard(target);
+  }
 }
 function _boardsRenderCanvasAndWire(){
   const m=document.getElementById('main-content');
@@ -725,6 +738,9 @@ function _renderBoardCanvasHTML(){
         <div class="board-menu-wrap">
           <button class="tool-btn" onclick="window.boardsToggleMenu(event)" title="Board actions">⋯</button>
           <div class="board-menu" id="board-menu" style="display:none">
+            <button onclick="window.boardsCopyBoardLink()">Copy link to board</button>
+            <button onclick="window.boardsExportPNG()">Export as image (PNG)</button>
+            <button onclick="window.boardsExportPDF()">Export as PDF</button>
             <button onclick="window.boardsDuplicateBoard()">Duplicate board</button>
             ${canEdit?`<button onclick="window.boardsToggleTemplate()">${b.isTemplate?'Remove from templates':'Save as template'}</button>`:''}
             ${canEdit?`<button onclick="window.boardsAddChildBoard()">Add sub-board</button>`:''}
@@ -1263,6 +1279,7 @@ function _boardsRenderSelectionBar(){
     ${multi?`<button class="tool-btn" onclick="window.boardsFrameSelection()" title="Wrap these in a labelled frame">Frame</button>
     <button class="tool-btn" onclick="window.boardsStackSelection()" title="Stack vertically">Stack</button>
     <button class="tool-btn" onclick="window.boardsGridSelection()" title="Arrange in a grid">Grid</button>`:''}
+    ${multi?'':'<button class="tool-btn" onclick="window.boardsCopyCardLink()" title="Copy a link that opens the board on this card">Link</button>'}
     <button class="tool-btn" onclick="window.boardsDuplicateSelection()" title="Duplicate (Ctrl+D)">Duplicate</button>
     <button class="tool-btn" onclick="window.boardsBringToFront()" title="Bring to front">Front</button>
     <button class="tool-btn" onclick="window.boardsSendToBack()" title="Send to back">Back</button>
@@ -2047,4 +2064,421 @@ async function _boardsSaveNow(){
   }finally{
     if(typeof window._gvSilentSaveStop==='function')window._gvSilentSaveStop();
   }
+}
+
+/* ── Stage 5 — getting a board out of the app ───────────────────────────
+   PNG and PDF export, and deep links to a single card.
+
+   Both exports share ONE renderer (_boardsRenderExportCanvas): the PDF is
+   the same picture placed on an A4 page by js/print-engine.js, plus a text
+   index of the cards. Two separate renderers would drift apart the first
+   time a card type changed.
+
+   The board is drawn by hand onto a 2D canvas rather than by rasterising
+   the live DOM — html2canvas and friends are a dependency, and this repo
+   has a zero-new-deps policy that Mood Boards has followed since Stage 1.
+   Drawing it by hand also means the export is not tied to the viewport:
+   it always covers the whole board at a sane resolution, whatever the
+   screen was showing.
+
+   CORS, honestly: an <img> drawn onto a canvas TAINTS it unless the host
+   allows cross-origin reads, and a tainted canvas refuses toBlob /
+   toDataURL outright. Every image here is a Cloudinary delivery URL and
+   is loaded with crossOrigin='anonymous', which is what makes the export
+   legal — if a picture fails that load it is drawn as a labelled
+   placeholder instead, so one un-CORS-able image degrades that one card
+   rather than killing the whole export. The count of those is reported to
+   the user. (Cloudinary's CORS headers could not be verified from the
+   build sandbox — it cannot reach res.cloudinary.com at all.) */
+
+const _BOARDS_EXPORT_MAX_PX=2600;   // longest edge of the exported bitmap
+let _boardsPendingFocusCard=null;   // card to centre on once the canvas renders
+
+function _boardsCssVar(name,fallback){
+  try{
+    const v=getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v||fallback;
+  }catch(e){return fallback;}
+}
+// Reads the real palette off the page so an export matches what the CSS
+// says today, instead of a second copy of the colours drifting in here.
+function _boardsExportPalette(){
+  let family='system-ui,-apple-system,Segoe UI,sans-serif';
+  try{family=getComputedStyle(document.body).fontFamily||family;}catch(e){}
+  return{
+    font:family,
+    border:_boardsCssVar('--border','#e2e2e2'),
+    muted:_boardsCssVar('--muted','#8a8a8a'),
+    text:_boardsCssVar('--text','#111111'),
+    soft:_boardsCssVar('--soft','#f5f5f5'),
+    dark:_boardsCssVar('--dark','#111111'),
+    tint:{
+      red:_boardsCssVar('--accent-urgent','#c0392b'),
+      amber:_boardsCssVar('--accent-warning','#c98a10'),
+      green:_boardsCssVar('--accent-success','#2e8b57'),
+      blue:_boardsCssVar('--cat-notes','#4a67c8'),
+      purple:_boardsCssVar('--cat-boards','#8455c9')
+    }
+  };
+}
+function _boardsLoadImageEl(url){
+  return new Promise(resolve=>{
+    const im=new Image();
+    im.crossOrigin='anonymous';   // without this the canvas is tainted and cannot be exported
+    im.onload=()=>resolve(im);
+    im.onerror=()=>resolve(null);
+    im.src=url;
+  });
+}
+async function _boardsPreloadImages(cards){
+  const out={};
+  await Promise.all(cards.filter(c=>c.type==='image'&&c.imageUrl)
+    .map(c=>_boardsLoadImageEl(c.imageUrl).then(im=>{out[c.id]=im;})));
+  return out;
+}
+function _boardsWrapLines(ctx,text,maxW,maxLines){
+  const words=String(text==null?'':text).split(/\s+/).filter(Boolean);
+  const lines=[];
+  let cur='';
+  words.forEach(w=>{
+    const t=cur?cur+' '+w:w;
+    if(ctx.measureText(t).width<=maxW){cur=t;return;}
+    if(cur){lines.push(cur);cur='';}
+    // A single word wider than the card (a long URL) has to be hard-broken.
+    let rest=w;
+    while(ctx.measureText(rest).width>maxW&&rest.length>1){
+      let i=rest.length;
+      while(i>1&&ctx.measureText(rest.slice(0,i)).width>maxW)i--;
+      lines.push(rest.slice(0,i));
+      rest=rest.slice(i);
+    }
+    cur=rest;
+  });
+  if(cur)lines.push(cur);
+  if(maxLines&&lines.length>maxLines){
+    const cut=lines.slice(0,maxLines);
+    cut[maxLines-1]=cut[maxLines-1].replace(/\S{0,1}$/,'…');
+    return cut;
+  }
+  return lines;
+}
+function _boardsRoundRect(ctx,x,y,w,h,r){
+  const rr=Math.min(r,w/2,h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+rr,y);
+  ctx.lineTo(x+w-rr,y);ctx.quadraticCurveTo(x+w,y,x+w,y+rr);
+  ctx.lineTo(x+w,y+h-rr);ctx.quadraticCurveTo(x+w,y+h,x+w-rr,y+h);
+  ctx.lineTo(x+rr,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-rr);
+  ctx.lineTo(x,y+rr);ctx.quadraticCurveTo(x,y,x+rr,y);
+  ctx.closePath();
+}
+function _boardsExportKind(c){
+  return c.type==='image'?'Image':c.type==='link'?'Link':c.type==='file'?'File'
+    :c.type==='board'?'Sub-board':c.type==='todo'?'To-do':c.type==='frame'?'Section':'Note';
+}
+function _boardsDrawCard(ctx,c,img,P){
+  const stroke=c.color&&P.tint[c.color]?P.tint[c.color]:P.border;
+  if(c.type==='frame'){
+    ctx.strokeStyle=stroke;ctx.lineWidth=1.5;
+    _boardsRoundRect(ctx,c.x,c.y,c.w,c.h,12);ctx.stroke();
+    ctx.fillStyle=P.soft;
+    ctx.fillRect(c.x,c.y,c.w,26);
+    ctx.strokeStyle=stroke;ctx.lineWidth=1;
+    ctx.strokeRect(c.x+0.5,c.y+0.5,c.w-1,26);
+    ctx.fillStyle=P.muted;
+    ctx.font='700 11px '+P.font;
+    ctx.fillText(String(c.title||'').toUpperCase()||'SECTION',c.x+10,c.y+18);
+    return;
+  }
+  const headH=20,bx=c.x,by=c.y+headH,bw=c.w,bh=Math.max(0,c.h-headH);
+  ctx.save();
+  _boardsRoundRect(ctx,c.x,c.y,c.w,c.h,10);
+  ctx.clip();
+  ctx.fillStyle='#ffffff';ctx.fillRect(c.x,c.y,c.w,c.h);
+  ctx.fillStyle=P.soft;ctx.fillRect(c.x,c.y,c.w,headH);
+  ctx.fillStyle=P.muted;ctx.font='700 8.5px '+P.font;
+  ctx.fillText(_boardsExportKind(c).toUpperCase()+(c.locked?' · LOCKED':''),c.x+8,c.y+13.5);
+
+  if(c.type==='image'){
+    if(img){
+      // cover-fit, same as the on-screen object-fit:cover
+      const ar=img.width/img.height,br=bw/(bh||1);
+      let sw,sh,sx,sy;
+      if(ar>br){sh=img.height;sw=sh*br;sx=(img.width-sw)/2;sy=0;}
+      else{sw=img.width;sh=sw/br;sx=0;sy=(img.height-sh)/2;}
+      try{ctx.drawImage(img,sx,sy,sw,sh,bx,by,bw,bh);}catch(e){/* drawn as empty */}
+    }else{
+      ctx.fillStyle=P.soft;ctx.fillRect(bx,by,bw,bh);
+      ctx.fillStyle=P.muted;ctx.font='10px '+P.font;
+      ctx.fillText('image unavailable',bx+8,by+bh/2);
+    }
+  }else if(c.type==='todo'){
+    ctx.font='11px '+P.font;
+    let y=by+14;
+    (c.items||[]).forEach(it=>{
+      if(y>by+bh-4)return;
+      ctx.strokeStyle=P.muted;ctx.lineWidth=1;
+      ctx.strokeRect(bx+8.5,y-8.5,9,9);
+      if(it.done){
+        ctx.beginPath();ctx.moveTo(bx+10,y-4);ctx.lineTo(bx+12.5,y-1.5);ctx.lineTo(bx+16.5,y-7);
+        ctx.strokeStyle=P.text;ctx.lineWidth=1.4;ctx.stroke();
+      }
+      ctx.fillStyle=it.done?P.muted:P.text;
+      const line=_boardsWrapLines(ctx,it.text||'',bw-30,1)[0]||'';
+      ctx.fillText(line,bx+24,y);
+      if(it.done&&line){
+        const w=ctx.measureText(line).width;
+        ctx.strokeStyle=P.muted;ctx.lineWidth=1;
+        ctx.beginPath();ctx.moveTo(bx+24,y-3.5);ctx.lineTo(bx+24+w,y-3.5);ctx.stroke();
+      }
+      y+=16;
+    });
+  }else if(c.type==='link'){
+    ctx.fillStyle=P.text;ctx.font='700 12px '+P.font;
+    ctx.fillText((_boardsWrapLines(ctx,c.linkTitle||'Untitled link',bw-18,1)[0])||'',bx+9,by+18);
+    ctx.fillStyle=P.muted;ctx.font='10px '+P.font;
+    _boardsWrapLines(ctx,c.linkDesc||'',bw-18,2).forEach((l,i)=>ctx.fillText(l,bx+9,by+34+i*13));
+    ctx.fillStyle=P.tint.blue;
+    ctx.fillText((_boardsWrapLines(ctx,c.linkUrl||'',bw-18,1)[0])||'',bx+9,by+bh-8);
+  }else if(c.type==='file'){
+    ctx.fillStyle=P.dark;
+    _boardsRoundRect(ctx,bx+9,by+10,30,13,3);ctx.fill();
+    ctx.fillStyle='#ffffff';ctx.font='700 8px '+P.font;
+    ctx.fillText(_boardsFileExt(c.fileName),bx+13,by+19.5);
+    ctx.fillStyle=P.text;ctx.font='700 11px '+P.font;
+    _boardsWrapLines(ctx,c.fileName||'File',bw-18,2).forEach((l,i)=>ctx.fillText(l,bx+9,by+38+i*14));
+    ctx.fillStyle=P.muted;ctx.font='10px '+P.font;
+    ctx.fillText(_boardsFormatBytes(c.fileSize),bx+9,by+bh-8);
+  }else if(c.type==='board'){
+    const child=_boardsLiveById()[c.boardId];
+    ctx.fillStyle=P.tint.purple;ctx.fillRect(bx,by,3,bh);
+    ctx.fillStyle=P.text;ctx.font='700 12px '+P.font;
+    ctx.fillText((_boardsWrapLines(ctx,(child&&child.title)||c.boardTitle||'Untitled board',bw-20,1)[0])||'',bx+11,by+20);
+    ctx.fillStyle=P.muted;ctx.font='10px '+P.font;
+    ctx.fillText(child?((child.cards||[]).length+' cards'):'Board',bx+11,by+36);
+  }else{
+    ctx.fillStyle=P.text;ctx.font='12px '+P.font;
+    const maxLines=Math.max(1,Math.floor((bh-10)/16));
+    _boardsWrapLines(ctx,c.text||'',bw-18,maxLines).forEach((l,i)=>ctx.fillText(l,bx+9,by+16+i*16));
+  }
+  ctx.restore();
+  ctx.strokeStyle=stroke;ctx.lineWidth=1;
+  _boardsRoundRect(ctx,c.x+0.5,c.y+0.5,c.w-1,c.h-1,10);
+  ctx.stroke();
+}
+function _boardsDrawConnector(ctx,cn,P){
+  let x1,y1,x2,y2;
+  if(cn.free){x1=cn.x1;y1=cn.y1;x2=cn.x2;y2=cn.y2;}
+  else{
+    const a=_editCards.find(c=>c.id===cn.from),b=_editCards.find(c=>c.id===cn.to);
+    if(!a||!b)return;
+    x1=a.x+a.w/2;y1=a.y+a.h/2;x2=b.x+b.w/2;y2=b.y+b.h/2;
+  }
+  ctx.strokeStyle=cn.free?P.text:P.muted;
+  ctx.lineWidth=1.6;
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+  if(cn.arrow){
+    const ang=Math.atan2(y2-y1,x2-x1),len=9;
+    ctx.beginPath();
+    ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-len*Math.cos(ang-0.4),y2-len*Math.sin(ang-0.4));
+    ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-len*Math.cos(ang+0.4),y2-len*Math.sin(ang+0.4));
+    ctx.stroke();
+  }
+}
+// Draws the WHOLE board (not the viewport) at a capped resolution.
+// Returns null — after a toast — when there is nothing to export.
+async function _boardsRenderExportCanvas(){
+  const bounds=_boardsContentBounds();
+  if(!bounds){showToast('Nothing to export yet — this board is empty');return null;}
+  const pad=48;
+  const W=(bounds.maxX-bounds.minX)+pad*2,H=(bounds.maxY-bounds.minY)+pad*2;
+  const scale=Math.min(2,_BOARDS_EXPORT_MAX_PX/Math.max(W,H));
+  const cv=document.createElement('canvas');
+  cv.width=Math.max(1,Math.round(W*scale));
+  cv.height=Math.max(1,Math.round(H*scale));
+  const ctx=cv.getContext('2d');
+  if(!ctx){showToast('This browser could not create the export canvas',true);return null;}
+  ctx.scale(scale,scale);
+  ctx.translate(-(bounds.minX-pad),-(bounds.minY-pad));
+  ctx.textBaseline='alphabetic';
+  ctx.fillStyle='#ffffff';
+  ctx.fillRect(bounds.minX-pad,bounds.minY-pad,W,H);
+  const P=_boardsExportPalette();
+  const imgs=await _boardsPreloadImages(_editCards);
+  // Connectors paint under the cards, exactly as on screen (the SVG layer
+  // is the first child of .board-world).
+  _editConnectors.forEach(cn=>_boardsDrawConnector(ctx,cn,P));
+  _boardsRenderOrder().forEach(c=>_boardsDrawCard(ctx,c,imgs[c.id],P));
+  const missing=Object.keys(imgs).filter(k=>!imgs[k]).length;
+  return{canvas:cv,missing};
+}
+function _boardsExportName(ext){
+  const t=String((_editBoard&&_editBoard.title)||'board').replace(/[^A-Za-z0-9]+/g,'-').replace(/^-|-$/g,'').toLowerCase()||'board';
+  return t+'-'+new Date().toISOString().slice(0,10)+'.'+ext;
+}
+function _boardsDownloadBlob(blob,filename){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=filename;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+window.boardsExportPNG=async function(){
+  _boardsMenuOpen=false;_boardsSyncMenu();
+  showToast('Building image…');
+  const out=await _boardsRenderExportCanvas();
+  if(!out)return;
+  try{
+    out.canvas.toBlob(blob=>{
+      if(!blob){showToast('Could not build the image',true);return;}
+      _boardsDownloadBlob(blob,_boardsExportName('png'));
+      showToast(out.missing?('Image saved — '+out.missing+' picture'+(out.missing===1?'':'s')+' could not be included'):'Image saved ✓');
+    },'image/png');
+  }catch(e){
+    // SecurityError here means a cross-origin image tainted the canvas.
+    showToast('Could not save the image: '+(e.message||e),true);
+  }
+};
+// PDF goes through js/print-engine.js like every other print output in
+// this app — see CLAUDE.md: no new feature calls jsPDF directly.
+window.boardsExportPDF=async function(){
+  _boardsMenuOpen=false;_boardsSyncMenu();
+  if(typeof window.printDocument!=='function'){showToast('Print engine not loaded yet, retry in a moment.',true);return;}
+  const out=await _boardsRenderExportCanvas();
+  if(!out)return;
+  let dataUrl=null;
+  try{
+    // JPEG, not PNG: a photo-heavy board is far smaller this way and the
+    // background is already painted white, so there is no transparency to lose.
+    dataUrl=out.canvas.toDataURL('image/jpeg',0.92);
+  }catch(e){
+    showToast('Could not render the board image: '+(e.message||e),true);
+    return;
+  }
+  const index=_editCards.filter(c=>c.type!=='image').map(c=>({
+    kind:_boardsExportKind(c),
+    text:(c.type==='todo'?(c.items||[]).map(i=>(i.done?'[x] ':'[ ] ')+(i.text||'')).join('  ·  ')
+      :c.type==='link'?((c.linkTitle||'')+(c.linkUrl?'  —  '+c.linkUrl:''))
+      :c.type==='file'?(c.fileName||'')
+      :c.type==='board'?(c.boardTitle||'')
+      :c.type==='frame'?(c.title||'')
+      :(c.text||'')).replace(/\s+/g,' ').trim()
+  })).filter(r=>r.text);
+  await window.printDocument({
+    type:'mood-board',
+    filename:_boardsExportName('pdf'),
+    data:{
+      documentNumber:_editBoard.title||'Untitled board',
+      boardTitle:_editBoard.title||'Untitled board',
+      visibility:_editBoard.visibility==='shared'?'TEAM':'PRIVATE',
+      ownerName:_editBoard.ownerName||'',
+      cardCount:_editCards.length,
+      imageDataUrl:dataUrl,
+      imageW:out.canvas.width,
+      imageH:out.canvas.height,
+      index:index.slice(0,200),
+      indexTruncated:index.length>200
+    }
+  });
+  if(out.missing)showToast(out.missing+' picture'+(out.missing===1?'':'s')+' could not be included');
+};
+
+/* ── Deep links (Stage 5) ───────────────────────────────────────────────
+   #board=<boardId>[&card=<cardId>] on the app URL. The hash is the only
+   routing this SPA has ever used, and it stays entirely inside boards.js:
+   the app's own navigation (buildNav/showPage in js/shared.js) is
+   untouched, so nothing else has to learn about URLs.
+
+   Consumed in two places — after startApp (a link opened cold, once auth
+   has resolved and session exists) and on hashchange (a link pasted while
+   the app is already open). */
+function _boardsLinkFor(boardId,cardId){
+  const base=location.origin+location.pathname;
+  return base+'#board='+encodeURIComponent(boardId)+(cardId?'&card='+encodeURIComponent(cardId):'');
+}
+async function _boardsCopyText(text){
+  try{await navigator.clipboard.writeText(text);return true;}
+  catch(e){
+    // clipboard API needs a secure context and a user gesture; the old
+    // execCommand path still works where it doesn't.
+    try{
+      const ta=document.createElement('textarea');
+      ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+      document.body.appendChild(ta);ta.select();
+      const ok=document.execCommand('copy');
+      ta.remove();
+      return ok;
+    }catch(e2){return false;}
+  }
+}
+window.boardsCopyBoardLink=async function(){
+  if(!_editBoard)return;
+  _boardsMenuOpen=false;_boardsSyncMenu();
+  const link=_boardsLinkFor(_editBoard.id,null);
+  const ok=await _boardsCopyText(link);
+  showToast(ok?'Board link copied':'Could not copy — the link is '+link,!ok);
+};
+window.boardsCopyCardLink=async function(){
+  const sel=_boardsSelectedCards();
+  if(!_editBoard||sel.length!==1){showToast('Select exactly one card to link to');return;}
+  const link=_boardsLinkFor(_editBoard.id,sel[0].id);
+  const ok=await _boardsCopyText(link);
+  showToast(ok?'Card link copied — it opens this board on that card':'Could not copy — the link is '+link,!ok);
+};
+function _boardsParseHash(){
+  const raw=String(location.hash||'').replace(/^#/,'');
+  if(!raw)return null;
+  const p={};
+  raw.split('&').forEach(kv=>{
+    const i=kv.indexOf('=');
+    if(i>0){try{p[decodeURIComponent(kv.slice(0,i))]=decodeURIComponent(kv.slice(i+1));}catch(e){}}
+  });
+  return p.board?{board:p.board,card:p.card||null}:null;
+}
+function _boardsConsumeDeepLink(){
+  const link=_boardsParseHash();
+  if(!link||!session)return false;
+  // staged rollout: Creative Hub is still Afnan-only, and a deep link is
+  // navigation — it must not be a side door into the module. Remove this
+  // with the other session.u==='afnan' checks at rollout (see CLAUDE.md).
+  if(session.u!=='afnan')return false;
+  if(currentPage==='board-canvas'&&_boardsViewingId===link.board&&!link.card)return false;
+  _boardsPendingFocusCard=link.card||null;
+  window.boardsOpen(link.board);
+  return true;
+}
+window.addEventListener('hashchange',()=>{_boardsConsumeDeepLink();});
+// Wrap startApp rather than editing js/auth.js or js/shared.js — both are
+// cross-track files, and this is the same wrap-the-global pattern
+// __bootApp already uses for showPage.
+const _boardsOrigStartApp=window.startApp;
+if(typeof _boardsOrigStartApp==='function'){
+  window.startApp=async function(){
+    const out=await _boardsOrigStartApp.apply(this,arguments);
+    try{_boardsConsumeDeepLink();}catch(e){console.warn('[boards] deep link failed:',e);}
+    return out;
+  };
+}
+// Centres the viewport on one card and flags it briefly. Zoomed further
+// out than 50% we zoom IN first — a link to a single card that lands at
+// 19% shows a speck.
+function _boardsFocusCard(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c){showToast('That card is no longer on this board');return;}
+  const b=_editBoard,stage=document.getElementById('board-stage');
+  if(!b||!stage)return;
+  const r=stage.getBoundingClientRect();
+  if(b.zoom<0.5)b.zoom=0.8;
+  b.panX=r.width/2-(c.x+c.w/2)*b.zoom;
+  b.panY=r.height/2-(c.y+c.h/2)*b.zoom;
+  _boardsApplyTransform();
+  _boardsSetSelection([id]);
+  const el=document.getElementById('board-card-'+id);
+  if(el){
+    el.classList.add('linked');
+    setTimeout(()=>{try{el.classList.remove('linked');}catch(e){}},2600);
+  }
+  _boardsSaveDebounced();
 }

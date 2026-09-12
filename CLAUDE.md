@@ -292,10 +292,16 @@ do not call jsPDF directly for new print features.**
 - **Public API (only global):**
   `window.printDocument({ type, data, filename })` where `type` ∈
   `po | embroidery-vendor | sublimation-vendor | gate-pass |
-  placement-sheet | qc-report | generic`. **Implemented variants:**
-  `generic` (fallback) and ✅ **`gate-pass`** (single-page bilingual
-  transit document — `_renderGatePass`, dispatched via the `_VARIANTS`
-  registry in `printDocument`). Any not-yet-built type logs a
+  placement-sheet | qc-report | mood-board | generic`. **Implemented
+  variants:** `generic` (fallback), ✅ **`gate-pass`** (single-page
+  bilingual transit document — `_renderGatePass`, dispatched via the
+  `_VARIANTS` registry in `printDocument`), `payslip`,
+  `daily-performance`, `stock-transfer`, `po`, and ✅ **`mood-board`**
+  (Sept 2026 — the board as one picture fitted to the page plus a text
+  index of every card carrying text; `_renderMoodBoard`). The mood-board
+  picture is rasterised by the CALLER (`js/boards.js` draws the board onto
+  a 2D canvas and passes a JPEG data URL) so the variant stays synchronous
+  like every other one and the engine never learns how a board is drawn. Any not-yet-built type logs a
   `console.warn` and renders the generic fallback (header + optional hero
   title + `data.bodyHtml` as text + bilingual footer). Opens the PDF in a
   new tab AND triggers download. The pre-opened tab shows a `_previewLoading`
@@ -335,7 +341,7 @@ do not call jsPDF directly for new print features.**
 
   | Default `urduLevel` | Types |
   |---|---|
-  | `minimal` | `generic`, `payroll-sheet`, `payslip`, `daily-performance` |
+  | `minimal` | `generic`, `payroll-sheet`, `payslip`, `daily-performance`, `stock-transfer`, `mood-board` |
   | `full` | `gate-pass` (forced), `po`, `embroidery-vendor`, `sublimation-vendor`, `qc-report`, `placement-sheet` |
 
   Measured (same PO, real JNN): `minimal` ≈ 116 KB / 0 JNN fetch · `full`
@@ -514,7 +520,8 @@ SVG that was briefly added to `_icon()` was removed again once the nav
 entry became icon-less; don't re-add it without a reason.
 
 **Staged rollout (Sept 2026): nav-gated to Afnan only for now.** All four
-of the pushes above are behind `if(session.u==='afnan')` — deliberately a
+of the pushes above are behind `if(session.u==='afnan')` (a fifth check
+guards Mood Boards' deep links — see Stage 5 below) — deliberately a
 single username check, not `isOwner()` and not a role, same pattern as the
 `isMustafa()`-style per-person grants already in this codebase. Afnan
 asked to dogfood it alone until the module (Phase 1 + Phase 2) is further
@@ -834,6 +841,58 @@ stage that makes forty boards usable rather than eight.
   on the board would mean a write on every open and everyone's history
   overwriting everyone else's. The strip hides itself below two entries —
   a shortcut list of one is noise.
+
+### Mood Boards — Stage 5 (Sept 2026)
+
+Getting a board out of the app: PNG, PDF, and deep links to one card.
+
+- **One renderer feeds both exports.** `_boardsRenderExportCanvas()` draws
+  the whole board onto a 2D canvas; the PNG *is* that canvas, and the PDF
+  is that canvas as a JPEG placed on an A4 page by the print engine. Two
+  renderers would drift apart the first time a card type changed.
+- **The board is drawn by hand, not rasterised from the DOM.**
+  html2canvas and friends are a dependency, and this module has held the
+  zero-new-deps line since Stage 1. Hand-drawing also decouples the export
+  from the viewport — it always covers the whole board at a capped
+  resolution (`_BOARDS_EXPORT_MAX_PX`), whatever the screen was showing.
+  Colours and the font stack are read off the live CSS
+  (`_boardsCssVar` / `getComputedStyle`) rather than duplicated here, so a
+  palette change can't leave the exporter behind.
+- **CORS is the whole risk in a canvas export.** An `<img>` drawn onto a
+  canvas taints it unless the host allows cross-origin reads, and a
+  tainted canvas refuses `toBlob`/`toDataURL` outright — the export would
+  fail entirely, not partially. Every image loads with
+  `crossOrigin='anonymous'`; one that fails is drawn as an "image
+  unavailable" placeholder and counted, so a single un-CORS-able picture
+  costs that one card instead of the export. **Cloudinary's CORS headers
+  could not be verified from the build sandbox** (it cannot reach
+  `res.cloudinary.com` at all) — if exports come back with grey boxes
+  where photos should be, that is what to check first, not the drawing
+  code.
+- **PDF goes through `js/print-engine.js`**, per the standing rule that no
+  new print feature calls jsPDF directly — a `mood-board` variant was
+  added to the engine (`known`, `_PRINT_DOC_LABELS`,
+  `_PRINT_URDU_DEFAULTS` → `minimal`, `_VARIANTS`, `_renderMoodBoard`).
+  **Known trade-off:** the engine builds every document A4 *portrait*, so
+  a wide board scales down hard. The card index below the picture is what
+  keeps the PDF useful (and searchable) at that size; per-type landscape
+  would mean changing the shared `new jsPDF(...)` call in `printDocument`
+  and was deliberately not done for one variant.
+- **Deep links are the app's first and only URL routing**, and they stay
+  entirely inside `boards.js`: `#board=<id>[&card=<id>]`, consumed after
+  `startApp` (a link opened cold, once auth has resolved) and on
+  `hashchange` (a link pasted into an open tab). `startApp` is *wrapped*,
+  the same wrap-the-global pattern `__bootApp` already uses for
+  `showPage`, rather than editing `js/auth.js` or `js/shared.js` — both
+  cross-track files. Nothing else in the app has to learn about URLs.
+- **A card link zooms in if it has to.** Landing at 19% would show a
+  speck, so `_boardsFocusCard` raises zoom to 80% when it is below 50%,
+  centres the card, selects it and flashes it briefly.
+- **The deep link is gated on `session.u==='afnan'` too** — it is
+  navigation, and it must not be a side door into a module whose nav is
+  still Afnan-only. That makes **five** `session.u==='afnan'` checks to
+  remove at rollout (four in `js/shared.js`/`js/hrm.js` per the Creative
+  Hub section above, plus `_boardsConsumeDeepLink` in `js/boards.js`).
 
 ## Shopify Inventory Intelligence
 
