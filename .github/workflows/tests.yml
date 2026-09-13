@@ -49,6 +49,10 @@ jobs:
       - name: Browser smoke test
         run: node tests/smoke-browser.js
 
+      # The app must render even when a Firestore read never settles.
+      - name: startApp smoke test
+        run: node tests/smoke-startapp.js
+
       - name: CACHE_VERSION was bumped
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then

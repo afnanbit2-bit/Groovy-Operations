@@ -86,11 +86,21 @@ async function startApp(){
   document.getElementById('user-name').textContent=session.name;
   document.getElementById('user-title').textContent=session.title;
   sessionStorage.setItem('u',session.u);
-  // Whatever name and photo this person chose on their Profile. Awaited
-  // because session.name is what buildNav, logActivity, board presence and
-  // comments all write — picking it up after the first render would show
-  // the USER_DEFS name for a moment and then change it under them.
-  if(typeof profileBootstrap==='function'){try{await profileBootstrap();}catch(_){}}
+  // Whatever name and photo this person chose on their Profile.
+  //
+  // NEVER AWAIT THIS. It was awaited when Profiles shipped, so that
+  // session.name was settled before the first render — and it took the
+  // whole app down: a Firestore getDoc that never SETTLES (not one that
+  // rejects — a rejection was handled) left startApp parked forever, so
+  // buildNav() and showPage() never ran. The topbar painted and everything
+  // below it stayed white. Reported from a phone, reproduced in
+  // tests/smoke-startapp.js, which now fails if anything is awaited here
+  // again.
+  //
+  // The cost of not awaiting is that a chosen display name lands a moment
+  // after the first paint. That is a flicker. The alternative was a blank
+  // app. Nothing on the critical path may wait on the network.
+  if(typeof profileBootstrap==='function'){try{profileBootstrap();}catch(_){}}
   // Inject the notification bell for everyone (HRM notifs are routed by user/role).
   if(typeof _ensureNotifBell==='function')_ensureNotifBell();
   // Show the bug-report FAB for every signed-in user

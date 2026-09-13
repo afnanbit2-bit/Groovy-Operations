@@ -311,13 +311,22 @@ function _profilePaintAvatar(){
   btn.title='Your profile';
 }
 // Loads this person's profile at sign-in. Deliberately a single-document
-// read, not the whole directory: startApp is on the critical path and the
-// directory is only needed once the Profile page is actually opened.
+// read, not the whole directory: the directory is only needed once the
+// Profile page is actually opened.
+//
+// Called WITHOUT await from startApp (js/auth.js) — see the note there.
+// It races a timeout as well, so a read that never settles cannot hold a
+// reference to this session forever; a late arrival still repaints, since
+// profileApplyToSession only touches the topbar.
+const _PROFILE_BOOT_TIMEOUT=8000;
 async function profileBootstrap(){
   if(!session||!session.uid)return;
   try{
-    const snap=await getDoc(doc(db,'user_profiles',session.uid));
-    if(snap.exists()){
+    const snap=await Promise.race([
+      getDoc(doc(db,'user_profiles',session.uid)),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('profile read timed out')),_PROFILE_BOOT_TIMEOUT))
+    ]);
+    if(snap&&snap.exists()){
       const p=Object.assign({uid:session.uid},snap.data());
       const i=userProfiles.findIndex(x=>x.uid===p.uid);
       if(i>=0)userProfiles[i]=p;else userProfiles.push(p);
