@@ -5,8 +5,9 @@
 #
 # What this proves: the logic still holds, every js module is wired into
 # index.html AND sw.js, no credentials are in client code, every collection
-# the client touches has a firestore.rules match block, and CACHE_VERSION was
-# bumped when a precached file changed.
+# the client touches has a firestore.rules match block, CACHE_VERSION was
+# bumped when a precached file changed, and every classic script loads and
+# runs in a real browser with the vendored libraries working.
 #
 # What it does NOT prove: that anything looks right or works in a browser.
 # See the header of tests/harness.js. Real UI verification still needs a
@@ -42,6 +43,11 @@ jobs:
 
       - name: Run the test suites
         run: node tests/run.js
+
+      # Only possible because the runtime libraries are vendored rather than
+      # CDN-loaded. Skips itself cleanly if the runner has no browser.
+      - name: Browser smoke test
+        run: node tests/smoke-browser.js
 
       - name: CACHE_VERSION was bumped
         run: |

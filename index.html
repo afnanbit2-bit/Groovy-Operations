@@ -74,9 +74,29 @@ if('serviceWorker' in navigator){
 
 <div class="toast" id="toast"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script>
+// Last-resort loader for a vendored library that failed to load (a bad
+// deploy, a corrupted cache entry). Reaching this means offline export is
+// already broken for this visit; getting the feature back at all beats
+// failing silently. Logged loudly because it should never happen.
+window.__vendorFallback=function(url){
+  console.error('[vendor] local copy failed to load, falling back to CDN:',url);
+  var s=document.createElement('script');s.src=url;s.async=false;
+  document.head.appendChild(s);
+};
+</script>
+
+<!-- Vendored, not CDN-loaded. These are precached by sw.js like every other
+     asset, so PDF and Excel export work offline; from a CDN they were
+     network-first and silently failed with no signal. The version is in the
+     filename, so no ?v= is needed and netlify.toml serves them immutable.
+     Provenance and the npm integrity hashes: assets/vendor/README.md.
+     onerror is a last-resort CDN fallback if a vendored file ever fails to
+     load — it arrives async, which is fine because nothing here runs until
+     someone actually exports something. -->
+<script src="/assets/vendor/jspdf-2.5.1.umd.min.js" onerror="window.__vendorFallback&&window.__vendorFallback('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')"></script>
+<script src="/assets/vendor/xlsx-0.18.5.full.min.js" onerror="window.__vendorFallback&&window.__vendorFallback('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js')"></script>
+<script src="/assets/vendor/jsbarcode-3.11.6.all.min.js" onerror="window.__vendorFallback&&window.__vendorFallback('https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js')"></script>
 <script src="/js/shared.js?v=20260912s15"></script>
 <script src="/js/print-engine.js?v=20260912s5"></script>
 <script src="/js/auth.js?v=20260912s15"></script>

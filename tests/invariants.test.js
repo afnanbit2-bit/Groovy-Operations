@@ -74,6 +74,32 @@ module.exports=function(){
   try{JSON.parse(read('database.rules.json'));}catch(e){dbRulesOk=false;}
   s.ok('database.rules.json is valid JSON',dbRulesOk);
 
+  // ── Runtime libraries are served from this origin, not a CDN ───────────
+  // A cross-origin <script> is network-first in sw.js, so it silently does
+  // not arrive with no signal — which is why PDF and Excel export used to
+  // fail offline. Vendored files live in assets/vendor (see its README) and
+  // are precached like everything else. A CDN URL is allowed ONLY inside an
+  // onerror fallback attribute, never as a src.
+  s.section('no runtime library loads from a CDN');
+  const CDN=/(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|unpkg\.com)/;
+  fs.readdirSync(ROOT).filter(f=>f.endsWith('.html')).forEach(f=>{
+    const src=read(f);
+    const srcAttrs=(src.match(/<script[^>]*\ssrc\s*=\s*"([^"]+)"/g)||[])
+      .map(t=>(/src\s*=\s*"([^"]+)"/.exec(t)||[])[1]);
+    const offenders=srcAttrs.filter(u=>CDN.test(u));
+    s.ok(f+' loads no script src from a CDN',!offenders.length,
+      offenders.length?offenders.join(', '):undefined);
+  });
+  fs.readdirSync(path.join(ROOT,'assets','vendor'))
+    .filter(f=>f.endsWith('.js')).forEach(f=>{
+      s.ok('vendored '+f+' is referenced by index.html',
+        indexHtml.indexOf('/assets/vendor/'+f)!==-1);
+      s.ok('vendored '+f+' carries its version in the filename',
+        /-\d+\.\d+\.\d+[.-]/.test(f));
+      const lic='assets/vendor/'+f.replace(/\.(umd|full|all)\.min\.js$/,'.LICENSE');
+      s.ok('vendored '+f+' ships its licence',exists(lic),exists(lic)?undefined:'missing '+lic);
+    });
+
   // ── Realtime Database stays read-only from the browser (CLAUDE.md) ──────
   // Every RTDB write comes from netlify/functions/iclock.js via the Admin
   // SDK. If a client write function ever gets imported, ".write": false

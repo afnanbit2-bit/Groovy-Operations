@@ -1,14 +1,16 @@
 /*
  * Groovy Operations — service worker.
  * Cache-first for the precached app shell (HTML/CSS/JS + icons), network-first
- * for everything else (CDN libs, any other GET). Firebase/Firestore/RTDB/Auth
+ * for everything else (any other GET). The jsPDF/SheetJS/JsBarcode libraries
+ * are no longer CDN-loaded — they are vendored under /assets/vendor and
+ * precached like every other asset. Firebase/Firestore/RTDB/Auth
  * and Cloudinary calls are never intercepted — they pass straight to the
  * network so live data and uploads always behave normally, online or not.
  *
  * Bump CACHE_VERSION on every deploy that changes a precached file; the
  * activate handler deletes every cache from a prior version.
  */
-const CACHE_VERSION = 'v32';
+const CACHE_VERSION = 'v33';
 const STATIC_CACHE = `groovy-ops-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `groovy-ops-runtime-${CACHE_VERSION}`;
 // Deliberately NOT version-scoped: a Cloudinary delivery URL is immutable
@@ -45,6 +47,12 @@ const PRECACHE_URLS = [
   '/js/notes.js',
   '/js/boards.js',
   '/js/profile.js',
+  // Vendored libraries (see assets/vendor/README.md). These are the reason
+  // PDF/Excel export now works offline: from a CDN they were cross-origin
+  // and network-first, so with no signal they simply never arrived.
+  '/assets/vendor/jspdf-2.5.1.umd.min.js',
+  '/assets/vendor/xlsx-0.18.5.full.min.js',
+  '/assets/vendor/jsbarcode-3.11.6.all.min.js',
   '/js/activity.js',
   '/assets/icons/icon-192.png',
   '/assets/icons/icon-512.png',

@@ -60,19 +60,25 @@ reachable. To verify RTDB rules actually took effect, use Firebase Console
 unauthenticated read) and have the human report the result.
 `api.github.com` and `firestore.googleapis.com` **are** reachable.
 
-**Also blocked (verified Sept 2026, via both `curl` and a headless Chromium
-launch — `CONNECT tunnel failed, response 403` on all three):**
-`www.gstatic.com`, `cdnjs.cloudflare.com`, `cdn.jsdelivr.net`. This means
-the app **cannot actually boot in a browser from this sandbox at all** —
-the Firebase modular SDK loads from `gstatic.com` and jsPDF/SheetJS/
-JsBarcode from the other two, so even an unauthenticated page load never
-gets past the login screen's static HTML; `window.__bootApp()` never runs.
-A "verify in a browser" step for any UI change therefore is not possible
-from this sandbox — say so explicitly rather than skip the caveat, and
-rely on `node --check` for syntax, a local `python3 -m http.server` +
-`curl` for static-file serving, and manual trace-through for logic. Real
-UI verification needs the human, a Netlify preview, or a session with
-different network access.
+**Blocked: `www.gstatic.com`, `cdnjs.cloudflare.com`, `cdn.jsdelivr.net`,
+`unpkg.com`, `res.cloudinary.com`** (verified Sept 2026 via `curl` and a
+headless Chromium launch). **Reachable: `api.github.com`,
+`firestore.googleapis.com`, `registry.npmjs.org`, `raw.githubusercontent.com`.**
+
+**What changed in Sept 2026:** jsPDF/SheetJS/JsBarcode are no longer loaded
+from a CDN — they are vendored under `/assets/vendor` (see "Vendored
+libraries" below), fetched from `registry.npmjs.org`, which IS reachable.
+So **`node tests/smoke-browser.js` now loads the whole app in real headless
+Chromium** (`/opt/pw-browsers/*/chrome-linux/chrome`) and verifies every
+classic script executes, every expected global exists, and all three
+libraries actually work. That was impossible before.
+
+**Still not possible: signing in or rendering a page.** The Firebase modular
+SDK loads from `gstatic.com`, which is still blocked, so `__bootApp()` never
+runs and the app stops at the login screen's static HTML. **A "verify in a
+browser" step for any UI change is therefore still NOT possible from this
+sandbox** — say so explicitly rather than skip the caveat. Real UI
+verification needs the human, a phone, or Claude in Chrome.
 
 ## File architecture (split from the old single `index.html`)
 
@@ -159,7 +165,8 @@ Firebase (the 5 hoisted blocks) lives in `window.__bootApp()` in
 - Auth: Firebase Auth (project `groovy-gatepass`)
 - DB: Cloud Firestore + Realtime Database (RTDB used only for attendance)
 - Images: Cloudinary, unsigned preset `groovy-ops`
-- PDF: jsPDF · Excel: SheetJS (both via CDN)
+- PDF: jsPDF · Excel: SheetJS · Barcodes: JsBarcode — all **vendored** in
+  `/assets/vendor`, not CDN-loaded (see below)
 - Hosting: Netlify (auto-deploy on push to `main`)
 - PWA: `manifest.json` + `sw.js` (installable, offline shell) — see below
 
@@ -223,8 +230,10 @@ Three places, or it breaks offline:
   `/assets/*`, `/manifest.json`. Matched with `ignoreSearch: true`, so the
   `?v=…` cache-busting query strings in `index.html` do not need to stay in
   sync with `sw.js`.
-- **Network-first** (falls back to cache) — everything else, e.g. the
-  jsPDF / SheetJS / JsBarcode CDN scripts.
+- **Network-first** (falls back to cache) — everything else. This used to
+  include the jsPDF / SheetJS / JsBarcode CDN scripts, which is exactly why
+  PDF and Excel export silently failed offline; they are vendored now and
+  precached like any other asset.
 - **Never intercepted** — Firebase (Firestore, RTDB, Auth, the gstatic SDK)
   and Cloudinary. These are matched by hostname in `BYPASS_HOSTS` and pass
   straight to the network. **Do not add Firebase or Cloudinary URLs to any
@@ -270,6 +279,38 @@ To regenerate from a new source file: crop to `img.split()[3].getbbox()`
 (the alpha channel's bounding box) before scaling — do not skip this, the
 source file had ~800px of transparent padding on every side that would
 otherwise throw off every fill-ratio calculation above.
+
+## Vendored libraries (Sept 2026)
+
+jsPDF, SheetJS and JsBarcode live in **`/assets/vendor`** and are served from
+this origin. They used to load from `cdnjs.cloudflare.com` and
+`cdn.jsdelivr.net`, which cost three things:
+
+1. **The PWA was not actually offline-capable.** `sw.js` routes cross-origin
+   scripts network-first, so with no signal a gate-pass PDF or a payroll
+   Excel export simply failed. They are in `PRECACHE_URLS` now.
+2. **A third-party origin could change or vanish** under a business that
+   prints gate passes and payroll from these files.
+3. **Neither CDN is reachable from this sandbox**, so no session could boot
+   the app in a browser to check anything. `tests/smoke-browser.js` can now.
+
+- **Fetched from `registry.npmjs.org`, not a CDN mirror**, and every
+  tarball's sha512 was checked against the registry's own `dist.integrity`
+  before extraction. The exact commands and the verified hashes are in
+  `assets/vendor/README.md` — redo it from there, don't improvise.
+- **The version is in the filename** (`jspdf-2.5.1.umd.min.js`), so the bytes
+  at a URL never change: `netlify.toml` serves `/assets/vendor/*` with
+  `immutable`, and they carry no `?v=` query string. **An upgrade is a new
+  file plus a changed `<script src>`, never an edit in place.** Add the new
+  path to `PRECACHE_URLS`, drop the old one, bump `CACHE_VERSION`.
+- Each library ships its licence beside it (`*.LICENSE`) — jsPDF MIT,
+  SheetJS Apache-2.0, JsBarcode MIT. `tests/invariants.test.js` fails if one
+  is missing, if a vendored file is not referenced by `index.html`, or if any
+  HTML file grows a `<script src>` pointing at a CDN again.
+- Each tag carries an **`onerror` CDN fallback**. Reaching it means offline
+  export is already broken for that visit, so it logs loudly; it exists so a
+  bad deploy degrades instead of removing the feature outright. A CDN URL
+  inside `onerror` is allowed by the invariant test; a CDN `src` is not.
 
 ## Print design system
 
@@ -1819,6 +1860,18 @@ in Chrome.
   `firestore.rules` match block** (the Stage 6 failure mode that left the
   gallery stuck on a skeleton); and the staged-rollout gate is
   all-or-nothing.
+- **`tests/smoke-browser.js`** — loads every classic script from
+  `index.html`, in the real load order, in real headless Chromium, and checks
+  they execute and define what the rest of the app expects; then makes jsPDF
+  write a PDF, SheetJS write a workbook and JsBarcode draw a barcode. It
+  catches what `node --check` cannot: a load-order break, a top-level `const`
+  declared twice across two classic scripts (they share one lexical scope), a
+  global that quietly stopped being defined. **Only possible because the
+  libraries are vendored.** It still cannot sign in — gstatic is blocked, so
+  `__bootApp()` never runs. Skips cleanly with no browser. Note it runs the
+  browser **asynchronously on purpose**: this process is also the web server,
+  and a synchronous spawn deadlocks the event loop that has to answer the
+  browser's requests — which looks exactly like a browser problem and is not.
 - **`tests/check-cache-version.js`** — a CI guard rather than a suite,
   because it needs git history. If a precached file changed between the base
   ref and HEAD, `CACHE_VERSION` must have changed too. Forgetting it fails
