@@ -212,6 +212,12 @@ service cloud.firestore {
     // js/notes.js filter on exactly `visibility` or `ownerUid` so every list
     // query is provably safe under these rules without needing a composite
     // index or a broader query Firestore would reject.
+    match /notes_pages/{doc} {
+      allow read:   if signedIn() && (resource.data.visibility=='shared' || resource.data.ownerUid==request.auth.uid);
+      allow create: if signedIn() && request.resource.data.ownerUid==request.auth.uid;
+      allow update, delete: if signedIn() && (resource.data.ownerUid==request.auth.uid || isOwner());
+    }
+
     // ── User profiles (Sept 2026) ──────────────────────────────────────
     // One doc per Firebase uid: photo, chosen display name, job title,
     // department, a short "about". Readable by every signed-in user, which
@@ -228,11 +234,6 @@ service cloud.firestore {
       allow create, update: if signedIn() && uid == request.auth.uid
                             && request.resource.data.uid == request.auth.uid;
       allow delete:        if isOwner();
-    }
-    match /notes_pages/{doc} {
-      allow read:   if signedIn() && (resource.data.visibility=='shared' || resource.data.ownerUid==request.auth.uid);
-      allow create: if signedIn() && request.resource.data.ownerUid==request.auth.uid;
-      allow update, delete: if signedIn() && (resource.data.ownerUid==request.auth.uid || isOwner());
     }
     // Mood Boards (Phase 2 of the Notion+Milanote module, Sept 2026) — the
     // Milanote half, reached through the same Creative Hub. Same
