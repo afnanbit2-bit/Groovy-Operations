@@ -75,6 +75,31 @@ if('serviceWorker' in navigator){
 <div class="toast" id="toast"></div>
 
 <script>
+// Earliest error capture — this runs before every script tag below, so a
+// script that fails to LOAD is recorded too, including js/diagnostics.js,
+// which picks this array up and is what actually shows it on screen. A
+// phone has no console; a white page with nothing on it is unfixable by
+// the person looking at it. See js/diagnostics.js.
+window.__GV_BUILD='20260913a';
+window.__gvErrors=[];
+window.addEventListener('error',function(e){
+  try{
+    if(e&&e.target&&e.target!==window&&(e.target.src||e.target.href)){
+      window.__gvErrors.push({kind:'load-failed',msg:(e.target.tagName||'?')+' failed to load',
+        extra:String(e.target.src||e.target.href),at:new Date().toISOString()});
+    }else{
+      window.__gvErrors.push({kind:'error',msg:String(e&&e.message||''),
+        extra:e&&e.filename?String(e.filename).split('/').pop()+':'+e.lineno:'',at:new Date().toISOString()});
+    }
+  }catch(_){}
+},true);
+window.addEventListener('unhandledrejection',function(e){
+  try{var r=e&&e.reason;window.__gvErrors.push({kind:'rejection',
+    msg:String(r&&r.message?r.message:r),extra:'',at:new Date().toISOString()});}catch(_){}
+});
+</script>
+
+<script>
 // Last-resort loader for a vendored library that failed to load (a bad
 // deploy, a corrupted cache entry). Reaching this means offline export is
 // already broken for this visit; getting the feature back at all beats
@@ -97,6 +122,7 @@ window.__vendorFallback=function(url){
 <script src="/assets/vendor/jspdf-2.5.1.umd.min.js" onerror="window.__vendorFallback&&window.__vendorFallback('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')"></script>
 <script src="/assets/vendor/xlsx-0.18.5.full.min.js" onerror="window.__vendorFallback&&window.__vendorFallback('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js')"></script>
 <script src="/assets/vendor/jsbarcode-3.11.6.all.min.js" onerror="window.__vendorFallback&&window.__vendorFallback('https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js')"></script>
+<script src="/js/diagnostics.js?v=20260913a"></script>
 <script src="/js/shared.js?v=20260912s15"></script>
 <script src="/js/print-engine.js?v=20260912s5"></script>
 <script src="/js/auth.js?v=20260913a"></script>

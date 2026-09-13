@@ -96,15 +96,37 @@ Object.assign(window,{
 });
 if(typeof window.__bootApp==='function')window.__bootApp();
 session={uid:'u1',name:'Afnan',u:'afnan',title:'Co-Founder',role:'owner',email:'afnan@groovy.op'};
-window.startApp();
+if(MODE==='stall'){
+  // Simulate a future regression that leaves the shell up and the body empty.
+  window.showPage=function(){return new Promise(function(){});};
+  document.getElementById('scr-app').style.display='flex';
+}else{
+  window.startApp();
+}
 }catch(e){L('SYNC THROW: '+e.message);}
 // Give it a generous window, then judge on what is actually on screen.
 setTimeout(function(){
+  // 'stall' deliberately never renders — it is testing the safety net, not
+  // the render. Asserting on rendering there would fail by design.
+  if(MODE==='stall')return;
   var nav=document.getElementById('sidebar').innerHTML.length>0;
   var body=document.getElementById('main-content').innerHTML.length>0;
   L((nav?'OK   ':'FAIL ')+'nav rendered');
   L((body?'OK   ':'FAIL ')+'main content rendered');
 },4000);
+// The safety net, checked separately: even if a future change DOES stall the
+// app, the person looking at it must be told, not left on a white page.
+// The watchdog is armed on DOMContentLoaded and fires at _GV_DIAG_STALL.
+setTimeout(function(){
+  if(MODE!=='stall')return;
+  var panel=document.getElementById('gv-diag');
+  L((panel?'OK   ':'FAIL ')+'diagnostics panel shown on a stalled app');
+  if(panel){
+    var t=panel.textContent||'';
+    L((/Clear the app cache/.test(t)?'OK   ':'FAIL ')+'offers a cache reset');
+    L((typeof window.__gvResetApp==='function'?'OK   ':'FAIL ')+'reset is callable');
+  }
+},14000);
 </script></body>`;
 
 const browser=findBrowser();
@@ -122,7 +144,7 @@ const server=http.createServer((req,res)=>{
   fs.createReadStream(file).pipe(res);
 });
 
-const MODES=['ok','reject','hang'];
+const MODES=['ok','reject','hang','stall'];
 let failed=0,done=0;
 
 server.listen(0,'127.0.0.1',()=>{
@@ -138,7 +160,7 @@ function runMode(port,mode){
     '--no-first-run','--no-default-browser-check','--disable-background-networking',
     '--disable-component-update','--disable-sync','--disable-default-apps','--disable-extensions',
     '--metrics-recording-only','--safebrowsing-disable-auto-update','--mute-audio','--no-proxy-server',
-    '--user-data-dir='+profile+'-'+mode,'--virtual-time-budget=20000','--dump-dom',
+    '--user-data-dir='+profile+'-'+mode,'--virtual-time-budget=40000','--dump-dom',
     'http://127.0.0.1:'+port+'/__startapp?mode='+mode],
     {encoding:'utf8',maxBuffer:32*1024*1024,timeout:120000},
     (err,stdout)=>report(mode,err,stdout||''));
@@ -148,7 +170,8 @@ function report(mode,err,dom){
   const m=/<pre id="out">([\s\S]*?)<\/pre>/.exec(dom);
   const raw=m?m[1].replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&quot;/g,'"'):'';
   const lines=raw.split('\n').filter(l=>l.trim()&&l.trim()!=='running');
-  const label={ok:'reads resolve',reject:'reads are DENIED by rules',hang:'reads NEVER settle'}[mode];
+  const label={ok:'reads resolve',reject:'reads are DENIED by rules',hang:'reads NEVER settle',
+    stall:'the app stalls — the user must be TOLD, not left on a white page'}[mode];
   console.log('  '+mode+' — '+label);
   if(err&&!dom){console.log('    FAIL browser failed: '+(err.message||err));failed++;}
   else if(!lines.length){console.log('    FAIL the app never reported — startApp is stuck');failed++;}

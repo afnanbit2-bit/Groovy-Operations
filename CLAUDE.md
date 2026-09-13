@@ -129,6 +129,10 @@ verification needs the human, a phone, or Claude in Chrome.
                      directory. Firestore `user_profiles/{uid}`. Reached from
                      the topbar avatar, not the nav. NOTHING SENSITIVE lives
                      here — see "Profiles" below. Loaded after boards.js.
+/js/diagnostics.js   never-a-blank-screen safety net: records every uncaught
+                     error, watches for a stalled render, and shows an
+                     on-screen panel with a cache-reset button. Loaded FIRST,
+                     before shared.js. See "Diagnostics" below.
 /js/activity.js      activity log loader.
 /js/notes.js         Creative Hub / Notes — Phase 1 of the Notion+Milanote
                      module (see "Creative Hub / Notes module" below). Hub
@@ -1850,6 +1854,55 @@ self-read needs the auth email denormalised onto each payslip doc first
 Employee-record writes and payroll processing are already owner/manager
 gated; this is the one remaining read-scope hole.
 
+## Diagnostics — never a blank screen (Sept 2026)
+
+**Written after a real incident.** Profiles shipped with
+`await profileBootstrap()` on the critical path in `startApp`, before
+`buildNav()` and `showPage()`. A Firestore `getDoc` that never **settles** —
+not one that rejects; a rejection was handled and rendered fine — parked
+`startApp` forever, so neither ever ran. The topbar painted and everything
+below it stayed white. It reached production and blocked the business.
+
+Two rules came out of it, and both are enforced by tests now:
+
+1. **Nothing on the path to the first render may wait on the network.**
+   `tests/smoke-startapp.js` runs the real `startApp` in a browser with
+   reads that resolve, reads that are denied, and reads that never settle,
+   and requires the app to render in all three. Put an `await` back in front
+   of `buildNav()` and the third case fails.
+2. **A person looking at a broken app must be told what broke.** On a phone
+   there is no console without a cable and a laptop, so a white page is
+   unfixable by the person in front of it.
+
+`js/diagnostics.js` is that second rule:
+
+- **Errors are captured from the very first byte.** A tiny inline snippet in
+  `index.html`'s `<head>` seeds `window.__gvErrors` *before any script tag*,
+  so a script that fails to **load** is recorded too — including
+  `diagnostics.js` itself. It listens in the capture phase, because a failed
+  `<script>`/`<img>` fires on the element and never reaches `window`.
+- **A watchdog** checks at 12s and 30s: if `#scr-app` is visible but
+  `#main-content` is still empty (and no `.board-canvas-wrap` has taken the
+  viewport), it shows a panel naming what happened, with the recorded
+  errors, build id, service-worker state and online status.
+- **"Clear the app cache and reload"** deletes every Cache Storage entry and
+  unregisters the service worker. A phone stuck on a bad cached build cannot
+  be fixed by reloading — the worker keeps serving the old precache — and
+  this is the only self-service escape. It deliberately does **not** touch
+  Firestore's IndexedDB, so queued offline writes survive.
+- **"Copy details"** puts the whole report on the clipboard to paste into a
+  session, with a `document.execCommand` fallback where the async clipboard
+  is refused.
+- The panel is **plain HTML with inline styles** and its details are written
+  in with `textContent` — it has to work when `css/main.css` is itself the
+  thing that failed, and an error message can contain anything.
+- `window.__gvDiagnostics()` opens it on demand; `window.__gvResetApp()` is
+  the reset on its own.
+
+**If a blank screen is ever reported again, ask for the panel's "Copy
+details" output first.** That is what it is for — it beats reproducing the
+failure somewhere else, which is what this incident cost.
+
 ## Tests and CI (Sept 2026)
 
 ```bash
@@ -1902,6 +1955,13 @@ in Chrome.
   browser **asynchronously on purpose**: this process is also the web server,
   and a synchronous spawn deadlocks the event loop that has to answer the
   browser's requests — which looks exactly like a browser problem and is not.
+- **`tests/smoke-startapp.js`** — runs the real `startApp` in a browser
+  against a stubbed Firebase bridge under four conditions: reads resolve,
+  reads are denied, **reads never settle**, and the app stalls. The first
+  three must render; the fourth must raise the diagnostics panel. This is
+  the regression test for the white-screen incident — see "Diagnostics"
+  above. Verified both ways: green with the fix, and failing the `hang` case
+  with the `await` restored.
 - **`tests/check-cache-version.js`** — a CI guard rather than a suite,
   because it needs git history. If a precached file changed between the base
   ref and HEAD, `CACHE_VERSION` must have changed too. Forgetting it fails
