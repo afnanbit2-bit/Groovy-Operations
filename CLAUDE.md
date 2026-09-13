@@ -338,22 +338,36 @@ do not call jsPDF directly for new print features.**
 - **Public API (only global):**
   `window.printDocument({ type, data, filename })` where `type` ∈
   `po | embroidery-vendor | sublimation-vendor | gate-pass |
-  placement-sheet | qc-report | mood-board | generic`. **Implemented
-  variants:** `generic` (fallback), ✅ **`gate-pass`** (single-page
-  bilingual transit document — `_renderGatePass`, dispatched via the
-  `_VARIANTS` registry in `printDocument`), `payslip`,
-  `daily-performance`, `stock-transfer`, `po`, and ✅ **`mood-board`**
-  (Sept 2026 — the board as one picture fitted to the page plus a text
-  index of every card carrying text; `_renderMoodBoard`). The mood-board
-  picture is rasterised by the CALLER (`js/boards.js` draws the board onto
-  a 2D canvas and passes a JPEG data URL) so the variant stays synchronous
-  like every other one and the engine never learns how a board is drawn. Any not-yet-built type logs a
-  `console.warn` and renders the generic fallback (header + optional hero
-  title + `data.bodyHtml` as text + bilingual footer). Opens the PDF in a
-  new tab AND triggers download. The pre-opened tab shows a `_previewLoading`
+  placement-sheet | qc-report | payslip | daily-performance |
+  stock-transfer | mood-board | generic`. **Implemented variants**
+  (verified from the `_VARIANTS` registry in `printDocument`,
+  `js/print-engine.js` — this list was stale here before, said only
+  `gate-pass` shipped): ✅ `po` (`_renderPO`), ✅ `gate-pass`
+  (`_renderGatePass`, single-page bilingual transit document), ✅
+  `payslip` (`_renderPayslip`), ✅ `daily-performance`
+  (`_renderDailyPerformance`), ✅ `stock-transfer`
+  (`_renderStockTransfer`), and ✅ **`mood-board`** (Sept 2026 — the board
+  as one picture fitted to the page plus a text index of every card
+  carrying text; `_renderMoodBoard`). The mood-board picture is rasterised
+  by the CALLER (`js/boards.js` draws the board onto a 2D canvas and
+  passes a JPEG data URL) so the variant stays synchronous like every
+  other one and the engine never learns how a board is drawn. Still not
+  built: `embroidery-vendor`, `sublimation-vendor`, `placement-sheet`,
+  `qc-report` — any of those (or an unknown type) logs a `console.warn`
+  and renders the generic fallback (header + optional hero title +
+  `data.bodyHtml` as text + bilingual footer). Opens the PDF in a new tab
+  AND triggers download. The pre-opened tab shows a `_previewLoading`
   interim page (never a stark `about:blank`) during the font fetch/subset,
   and `_previewError` renders a readable failure page instead of a
   blank/closed tab. Remaining variant builders reuse the components below.
+- **`_renderPO` — Notes (Sept 2026):** free-text field on the PO, entered in
+  `renderPOCreate()` (`js/pos.js`, `#po-notes` textarea) and saved as
+  `po.notes`. Rendered on the printed PO traveler right after the order-info
+  grid/product photo, before the station tables — always in
+  `PRINT_COLORS.red` (`#DC2626`), never the default body text color, so it
+  stands out to every station handling the PO. Also shown in red on the PO
+  detail page (`renderDetailPage()`) and in the legacy (`__usePrintEngine =
+  false`) jsPDF fallback in `generatePOPdf()`, so all three paths agree.
 - **Internal components (NOT global; JSDoc'd in the file):**
   `_renderHeader`, `_renderFooter` (auto every page via `_stampFooters`),
   `_renderSectionHeader`, `_renderBilingualLabel`, `_renderInfoTable`,
@@ -1558,6 +1572,11 @@ etc.) live in `js/hrm.js`; the printing/role helpers (`isObserver`,
   (Sept 2026 grant) — delete/edit/correct a fabric entry or roll. Mirror in
   `firestore.rules` `isMustafa()`, used on `fabricin`/`fabric_inventory`
   delete.
+- **Inventory Intel nav item** (`js/shared.js`, `buildNav()` +
+  `openMoreSheet()`) → owners, **+ mustafa by username** (Sept 2026 grant,
+  he's Ecom Manager). Nav-only, same shape as the Notes staged-rollout gate —
+  no `firestore.rules` mirror needed since `shopify_*` collections are
+  already `read: if signedIn()` for every role.
 
 **Sept 2026 grants share one pattern, worth knowing before touching any of
 them:** each is scoped to Mustafa **by username**, not by `role==='manager'`

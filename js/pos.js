@@ -491,6 +491,9 @@ function renderDetailPage(){
       ${['XS','S','M','L','XL','2XL'].map(sz=>`<div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">${sz}</div><div style="font-size:18px;font-weight:700">${po.sizes?.[sz]||0}</div>${po.cutQty?.[sz]!=null?`<div style="font-size:10px;color:var(--green)">Cut:${po.cutQty[sz]}</div>`:''}</div>`).join('')}
     </div>
   </div>
+  ${po.notes?`<div class="card"><div class="card-title">Notes</div>
+    <div style="color:#DC2626;font-weight:600;font-size:13px;white-space:pre-wrap">${_gpEsc(po.notes)}</div>
+  </div>`:''}
   ${po.damageFlagged||po.damageSummary?`<div class="card" style="border:1px solid #fca5a5"><div class="card-title" style="color:#dc2626">⚠ Damage report</div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px">
       <div style="text-align:center;padding:8px 4px;background:#fef2f2;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Cut</div><div style="font-size:16px;font-weight:700">${po.damageSummary?.cutTotal||0}</div></div>
@@ -591,6 +594,12 @@ function renderPOCreate(){
         <input type="file" id="inp-back" accept="image/*" class="hidden" onchange="window.handleImg(this,'back')">
         <button onclick="window.clearImg('back')" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;margin-top:4px;font-family:inherit">Remove</button>
       </div>
+    </div>
+  </div>
+  <div class="card"><div class="card-title">Notes</div>
+    <div class="field">
+      <label>Notes for this PO (optional) — printed in <span style="color:#DC2626;font-weight:700">red</span> on the PO copy</label>
+      <textarea id="po-notes" rows="3" placeholder="e.g. special instructions, buyer remarks…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:#DC2626;font-family:inherit;outline:none;resize:vertical"></textarea>
     </div>
   </div>
   <button class="btn-primary" id="po-submit-btn" onclick="window.submitPO()">Create Production Order</button>
@@ -713,7 +722,7 @@ window.submitPO=async function(){
     const stages={};STAGE_KEYS.forEach(k=>stages[k]={done:false,doneAt:null,doneBy:null,dueDate:document.getElementById('due-'+k)?.value||'',notes:''});
     const bundlingParts=window.getBundleParts();
     const embellishment=_poEmbellishment||{required:false};
-    const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',fabrics:(typeof fabPoSelected==='function'?fabPoSelected():[]),imgFront:imgFrontUrl,imgBack:imgBackUrl,poStatus:PO_STATUS.RESERVED,currentStage:null,stages,bundlingParts,embellishment,createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
+    const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',fabrics:(typeof fabPoSelected==='function'?fabPoSelected():[]),imgFront:imgFrontUrl,imgBack:imgBackUrl,poStatus:PO_STATUS.RESERVED,currentStage:null,stages,bundlingParts,embellishment,notes:document.getElementById('po-notes')?.value.trim()||'',createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
     await setDoc(doc(db,'pos',poId),payload);
     await logActivity('PO created',`${poId} — ${name} (${qty} pcs)`);
     if(typeof fabPoReserveCommit==='function'){try{await fabPoReserveCommit(poId);}catch(_re){showToast('PO saved, but fabric reservation failed: '+_re.message,true);}}
@@ -1266,7 +1275,7 @@ window.generatePOPdf=function(fbKey){
       totalQty:po.qty!=null?String(po.qty):'',ratio:po.ratio||'',
       issuedBy:po.createdBy||'',issuedDate:po.createdAt||'',
       totalWeight:po.totalWeight||'',avgPerUnit:po.avgPerUnit||'',
-      productImage:po.imgFront||''
+      productImage:po.imgFront||'',notes:po.notes||''
     }});
   }
   const{jsPDF}=window.jspdf;const pdf=new jsPDF({unit:'mm',format:'a4'});
@@ -1292,6 +1301,15 @@ window.generatePOPdf=function(fbKey){
   y+=10;pdf.setTextColor(26,26,46);pdf.setFontSize(10);pdf.setFont(undefined,'normal');
   const fab=[[`Fabric: ${po.fabric||'—'}`,`Code: ${po.fabricCode||'—'}`],[`Store: ${po.store||'—'}`,`Rolls: ${po.totalRoll||'—'}`],[`Weight: ${po.totalWeight||'—'}`,`Avg/unit: ${po.avgPerUnit||'—'}`]];
   fab.forEach(row=>{pdf.text(row[0],M,y);if(row[1])pdf.text(row[1],W/2,y);y+=6;});
+
+  // Notes — always red, never the default text color
+  if(po.notes){
+    y+=4;pdf.setFillColor(242,242,244);pdf.rect(M,y,W-M*2,7,'F');
+    pdf.setFontSize(8);pdf.setFont(undefined,'bold');pdf.setTextColor(107,114,128);pdf.text('NOTES',M+2,y+5);
+    y+=10;pdf.setTextColor(220,38,38);pdf.setFont(undefined,'bold');pdf.setFontSize(10);
+    const notesLines=pdf.splitTextToSize(po.notes,W-M*2);
+    notesLines.forEach(line=>{if(y>270){pdf.addPage();y=20;}pdf.text(line,M,y);y+=6;});
+  }
 
   // Size breakdown table
   y+=6;pdf.setFillColor(242,242,244);pdf.rect(M,y,W-M*2,7,'F');
