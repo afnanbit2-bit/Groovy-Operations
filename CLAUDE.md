@@ -190,6 +190,17 @@ from the previous version on `activate`, then re-precache. **Forget this
 and your change silently will not reach anyone who already opened the app.**
 It costs nothing to bump it unnecessarily, so bump it when unsure.
 
+**Cross-track collision — this has already happened once (Sept 2026).** Both
+tracks work from the same `main`, so both can bump to the *same* number for
+*different* content. Afnan's vendoring branch and Ammar's PO-notes branch
+each shipped a `v33`; whoever's service worker installed first would have
+left the other track's files uncached under a version that claimed to be
+current. **On merging, if both sides touched `CACHE_VERSION`, bump again
+past both** — the merge is new bytes and needs its own version.
+`tests/check-cache-version.js` catches it (it compares the merge against the
+previous `main` tip and sees changed files with an unchanged version), which
+is how this one was caught.
+
 ### Update banner (Sept 2026) — content updates, NOT the home-screen icon
 
 `_swWatchForUpdate(registration)` / `_showUpdateBanner()` (`js/shared.js`),
