@@ -466,7 +466,8 @@ function renderDetailPage(){
     <div><div class="page-title">PO ${po.id}</div><div class="page-sub">By ${po.createdBy||'—'} · ${po.createdAt||''}</div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn-pdf" onclick="window.generatePOPdf('${po.fbKey}')">⬇ PDF</button>
-      ${session.role==='owner'?`<button class="btn-outline" style="font-size:12px" onclick="window.deletePO('${po.fbKey}','${po.id}')">Delete PO</button>`:''}
+      ${_poCanEdit()?`<button class="btn-outline" style="font-size:12px" onclick="window.openPOEdit('${po.fbKey}')">Edit PO</button>`:''}
+      ${_poCanDelete()?`<button class="btn-outline" style="font-size:12px" onclick="window.deletePO('${po.fbKey}','${po.id}')">Delete PO</button>`:''}
     </div>
   </div>
   ${_reservedBanner}
@@ -514,6 +515,13 @@ function renderDetailPage(){
   </div><div style="height:80px"></div>`;
 }
 
+// PO edit/delete (Sept 2026 grant) — owners, + Mustafa by username. Same
+// isMustafa()-style per-person pattern as the other Sept 2026 grants
+// (fabric delete/edit, loans, payslips) — deliberately not role-wide, so
+// Arfat (also role='manager') does not get it too.
+function _poCanEdit(){return !!(session&&(session.role==='owner'||session.u==='mustafa'));}
+function _poCanDelete(){return !!(session&&(session.role==='owner'||session.u==='mustafa'));}
+
 window.ownerAdvance=async function(fbKey,stageKey){
   const po=allPOs.find(p=>p.fbKey===fbKey);if(!po)return;
   if(!['owner','manager'].includes(session.role)){showToast('Not authorized.',true);return;}
@@ -528,7 +536,7 @@ window.ownerAdvance=async function(fbKey,stageKey){
   }catch(e){showToast('Error: '+e.message,true);}
 };
 window.deletePO=async function(fbKey,poId){
-  if(session.role!=='owner'){showToast('Owners only.',true);return;}
+  if(!_poCanDelete()){showToast('Not authorized.',true);return;}
   if(!confirm(`Delete PO ${poId}? Cannot be undone.`))return;
   try{
     // Restock any fabric rolls still reserved for this PO before it's gone.
@@ -742,6 +750,82 @@ window.submitPO=async function(){
     }catch(_te){_trimNote=' (trim request failed: '+_te.message+')';}
     showToast(`${poId} created ✓${_trimNote}`);poImages={front:null,back:null};await loadData();window.showPage('po-registry');
   }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Create Production Order';}}
+};
+
+// ── PO Edit (Sept 2026) — a correction tool for clerical fields on an
+// already-created PO. Deliberately scoped: product name/code (tied to
+// embellishment recipe lookups), images and the stage timeline are NOT
+// editable here — this is not a re-run of PO creation. Fabric roll
+// reservation is untouched too; Fabric Inventory is where rolls actually
+// move. Gated by _poCanEdit() (owners + Mustafa by username).
+window.openPOEdit=function(fbKey){
+  if(!_poCanEdit()){showToast('Not authorized.',true);return;}
+  editingPO=fbKey;currentPage='po-edit';
+  document.querySelectorAll('.nav-item,.mob-nav-item').forEach(n=>n.classList.remove('on'));
+  renderPage('po-edit');
+};
+function renderPOEditPage(){
+  const po=allPOs.find(p=>p.fbKey===editingPO);
+  if(!po){window.showPage('po-registry');return'';}
+  if(!_poCanEdit())return'<div class="empty">Not authorized to edit POs.</div>';
+  return`<button class="back-btn" onclick="window.openPODetail('${po.fbKey}')">← Back to PO</button>
+  <div class="page-head"><div class="page-title">Edit PO ${po.id}</div><div class="page-sub">${_gpEsc(po.name||'—')} · ${_gpEsc(po.code||'—')} — name/code, images and the stage timeline are not editable here</div></div>
+  <div class="card"><div class="card-title">Product details</div>
+    <div class="form-grid">
+      <div class="field"><label>Pattern</label><input id="po-pattern" value="${_gpEsc(po.pattern||'')}" placeholder="Pattern number"></div>
+      <div class="field"><label>Total qty (pcs) *</label><input id="po-qty" type="number" min="0" value="${po.qty||0}"></div>
+    </div>
+  </div>
+  <div class="card"><div class="card-title">Size breakdown *</div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
+      ${['XS','S','M','L','XL','2XL'].map(sz=>`<div class="field"><label>${sz}</label><input id="sz-${sz}" type="number" min="0" value="${po.sizes?.[sz]||0}" onfocus="if(this.value==='0')this.value=''" onblur="if(this.value==='')this.value='0'" oninput="window.updateRatio()"></div>`).join('')}
+    </div>
+    <div style="margin-top:8px;font-size:12px;color:var(--muted)">Ratio: <span id="ratio-disp" style="font-weight:600;color:var(--text)">${po.ratio||'—'}</span></div>
+  </div>
+  <div class="card"><div class="card-title">Fabric & supply *</div>
+    <div class="form-grid">
+      <div class="field"><label>Fabric type *</label><input id="po-fabric" value="${_gpEsc(po.fabric||'')}" placeholder="e.g. Terry, Fleece"></div>
+      <div class="field"><label>Fabric code</label><input id="po-fabriccode" value="${_gpEsc(po.fabricCode||'')}" placeholder="e.g. BLKTRY220"></div>
+      <div class="field"><label>Supply store</label><input id="po-store" value="${_gpEsc(po.store||'')}" placeholder="Store/supplier"></div>
+      <div class="field"><label>Total rolls</label><input id="po-rolls" value="${_gpEsc(po.totalRoll||'')}" placeholder="e.g. 12"></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px">Corrects the record only — does not release or re-reserve fabric rolls. Use Fabric Inventory for that.</div>
+  </div>
+  <div class="card"><div class="card-title">Notes</div>
+    <div class="field">
+      <label>Notes for this PO (optional) — printed in <span style="color:#DC2626;font-weight:700">red</span> on the PO copy</label>
+      <textarea id="po-notes" rows="3" placeholder="e.g. special instructions, buyer remarks…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:#DC2626;font-family:inherit;outline:none;resize:vertical">${_gpEsc(po.notes||'')}</textarea>
+    </div>
+  </div>
+  <button class="btn-primary" id="po-edit-save-btn" onclick="window.savePOEdit('${po.fbKey}')">Save Changes</button>
+  <button class="btn-outline" style="margin-top:8px" onclick="window.openPODetail('${po.fbKey}')">Cancel</button>
+  <div style="height:80px"></div>`;
+}
+window.savePOEdit=async function(fbKey){
+  if(!_poCanEdit()){showToast('Not authorized.',true);return;}
+  const po=allPOs.find(p=>p.fbKey===fbKey);if(!po){showToast('PO not found.',true);return;}
+  const qty=parseInt(document.getElementById('po-qty')?.value)||0;
+  const fabric=document.getElementById('po-fabric')?.value.trim();
+  if(!qty){showToast('Quantity required.',true);return;}
+  if(!fabric){showToast('Fabric type required.',true);return;}
+  const sizes={};['XS','S','M','L','XL','2XL'].forEach(sz=>sizes[sz]=parseInt(document.getElementById('sz-'+sz)?.value)||0);
+  const updates={
+    pattern:document.getElementById('po-pattern')?.value.trim()||'',
+    qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',
+    fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',
+    store:document.getElementById('po-store')?.value.trim()||'',
+    totalRoll:document.getElementById('po-rolls')?.value.trim()||'',
+    notes:document.getElementById('po-notes')?.value.trim()||'',
+    editedBy:session.name,editedAt:new Date().toISOString()
+  };
+  const btn=document.getElementById('po-edit-save-btn');if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  try{
+    await updateDoc(doc(db,'pos',fbKey),updates);
+    await logActivity('PO edited',`${po.id} — fields updated by ${session.name}`);
+    showToast(`${po.id} updated ✓`);
+    await loadData();
+    window.openPODetail(fbKey);
+  }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Save Changes';}}
 };
 
 // ── Stage Work Page ──

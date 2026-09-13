@@ -430,7 +430,7 @@ const PRODUCT_CATALOG=[
   {code:'AH007',name:"Camel Brown Hoodie"}
 ];
 
-let session=null,allPOs=[],allPasses=[],currentPage='',viewingPO=null,poImages={front:null,back:null},gpRowIdx=0,loginInProgress=false,gpPage=1;
+let session=null,allPOs=[],allPasses=[],currentPage='',viewingPO=null,editingPO=null,poImages={front:null,back:null},gpRowIdx=0,loginInProgress=false,gpPage=1;
 // Custom products created at runtime (persisted in Firestore `products`),
 // merged with the static PRODUCT_CATALOG for search/select. See getProductCatalog().
 let allCustomProducts=[],_productsLoaded=false;
@@ -873,7 +873,7 @@ function _updateMobNavActive(pageId){
   if(direct){direct.classList.add('active');return;}
   // Group mappings (page belongs to a sheet group)
   const groups={
-    'po-create':'po','po-registry':'po','po-detail':'po','stage-work':'po',
+    'po-create':'po','po-registry':'po','po-detail':'po','po-edit':'po','stage-work':'po',
     'attendance':'hrm','hrm-employees':'hrm','hrm-payroll':'hrm','hrm-advances':'hrm','hrm-loans':'hrm','hrm-policy':'hrm',
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
     'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more','store-cash-ledger':'more',
@@ -1087,6 +1087,7 @@ function renderPage(id){
   else if(id==='boards'){if(!boardsLoaded){m.innerHTML=gvSkeleton(6);loadBoardsData().then(()=>{if(currentPage===id)m.innerHTML=renderBoardsGallery();});}else m.innerHTML=renderBoardsGallery();}
   else if(id==='board-canvas'){_boardsOpenCanvas();return;}
   else if(id==='po-detail')renderDetailPage();
+  else if(id==='po-edit')m.innerHTML=renderPOEditPage();
   else if(id==='stage-work')renderStageWorkPage();
   // ── Store pages ──
   else if(id==='store-dashboard')m.innerHTML=renderStoreDashboard();
@@ -1148,6 +1149,7 @@ const BUG_PAGE_NAMES={
   'po-create':'New PO',
   'po-registry':'PO Registry',
   'po-detail':'PO Detail',
+  'po-edit':'Edit PO',
   'stage-work':'Stage Work',
   'my-work':'My Work',
   'me':'Worker Me',
