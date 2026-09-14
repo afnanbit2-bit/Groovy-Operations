@@ -375,7 +375,7 @@ function _siBarChart(data,maxBars){
     const pct=Math.round(val/max*100);
     return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
       <div style="width:90px;font-size:11px;text-align:right;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${label}">${label}</div>
-      <div style="flex:1;height:18px;background:#f0f0f0;border-radius:4px;overflow:hidden">
+      <div style="flex:1;height:18px;background:var(--soft);border-radius:4px;overflow:hidden">
         <div style="height:100%;width:${pct}%;background:var(--text);border-radius:4px;transition:width .3s"></div>
       </div>
       <div style="width:45px;font-size:11px;font-weight:600;text-align:right">${_siFmt(val)}</div>
@@ -401,7 +401,7 @@ function _siSizeCurve(rows){
     const bars=Object.entries(data.sizes).sort((a,b)=>b[1]-a[1]).map(([sz,qty])=>{
       const pct=Math.round(qty/max*100);
       return`<span style="display:inline-flex;flex-direction:column;align-items:center;gap:2px;min-width:32px">
-        <span style="height:40px;width:20px;background:#f0f0f0;border-radius:3px;position:relative;display:flex;align-items:flex-end">
+        <span style="height:40px;width:20px;background:var(--soft);border-radius:3px;position:relative;display:flex;align-items:flex-end">
           <span style="width:100%;height:${pct}%;background:var(--text);border-radius:3px"></span>
         </span>
         <span style="font-size:9px;color:var(--muted)">${sz}</span>
@@ -852,7 +852,7 @@ function _siGroupedBodyHtml(filteredRows){
       const soldOut=r.onHand<=0;
       const daysClass=r.daysLeft<=7&&r.daysLeft>0?'color:#dc2626;font-weight:700':r.daysLeft<=14&&r.daysLeft>0?'color:var(--accent-warning);font-weight:600':'';
       const daysStr=r.daysLeft===999?'∞':r.daysLeft===0?'—':`${r.daysLeft}d`;
-      return`<tr style="background:#FAFAFA">
+      return`<tr style="background:var(--surface-2)">
         <td style="padding:4px 8px"><input type="checkbox" ${_siSkuSelected.has(r.sku)?'checked':''} data-sku="${_siEsc(r.sku)}" onchange="window._siToggleSku(this.dataset.sku,this.checked)"></td>
         <td style="font-size:10px;color:var(--muted);padding:7px 8px 7px 22px">${_siEsc(r.sku)}</td>
         <td></td><td></td>
@@ -887,7 +887,7 @@ function _siCatSelBar(){
   return`<div id="si-cat-bar" style="background:var(--soft);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <span style="font-size:12px;font-weight:700;flex-shrink:0">${n} variant${n===1?'':'s'} selected</span>
     <div style="display:flex;gap:6px;align-items:center">
-      <input id="si-cat-input" placeholder="Category name…" onkeydown="if(event.key==='Enter')window._siApplyCat()" style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit;outline:none;min-width:150px;background:#fff">
+      <input id="si-cat-input" placeholder="Category name…" onkeydown="if(event.key==='Enter')window._siApplyCat()" style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit;outline:none;min-width:150px;background:var(--surface)">
       <button class="btn-primary" style="padding:7px 12px;font-size:12px;width:auto" onclick="window._siApplyCat()">Apply Category</button>
     </div>
     <div style="display:flex;gap:4px;align-items:center">
@@ -902,7 +902,7 @@ function _siCatSelBar(){
       <button style="${btnSm}" onclick="window._siApplyType('bottom')">Bottom</button>
       <button style="${btnSm}" onclick="window._siApplyType('')">—</button>
     </div>
-    <button style="padding:5px 10px;font-size:11px;border-radius:6px;cursor:pointer;font-family:inherit;border:1px solid var(--border);background:#fff;font-weight:600;margin-left:auto" onclick="window._siExportSelectedCsv()">↓ Export CSV</button>
+    <button style="padding:5px 10px;font-size:11px;border-radius:6px;cursor:pointer;font-family:inherit;border:1px solid var(--border);background:var(--surface);font-weight:600;margin-left:auto" onclick="window._siExportSelectedCsv()">↓ Export CSV</button>
     <button class="btn-outline" style="padding:5px 10px;font-size:11px" onclick="window._siClearSel()">Clear selection</button>
   </div>`;
 }
@@ -917,8 +917,8 @@ function _siSkuTableSection(rows){
   return`${_siCatSelBar()}
   <div style="margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap">
     <input placeholder="Search SKU, product, color, category…" value="${_siEsc(_siSkuSearch)}" oninput="window._siFilterSku(this.value)"
-      style="flex:1;min-width:200px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;outline:none;font-family:inherit">
-    <select onchange="window._siFilterCat(this.value)" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;cursor:pointer;outline:none">
+      style="flex:1;min-width:200px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);outline:none;font-family:inherit">
+    <select onchange="window._siFilterCat(this.value)" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--text);font-family:inherit;cursor:pointer;outline:none">
       <option value="">All Categories</option>
       ${cats.map(c=>`<option value="${_siEsc(c)}"${_siSkuCatFilter===c?' selected':''}>${_siEsc(c)}</option>`).join('')}
     </select>

@@ -76,7 +76,13 @@ function makeDom(state){
     createRange(){return{selectNodeContents(){}};},
     createElementNS(){return el('__svg'+(state.seq++));},
     body:{appendChild(n){state.body.push(n);if(n.id)nodes[n.id]=n;return n;}},
-    documentElement:{classList:el('html').classList},
+    // The real <html> element. Tests stamp data-theme on it (js/profile.js),
+    // so it needs the attribute pair as well as classList.
+    documentElement:(()=>{const h=el('html');return{
+      classList:h.classList,
+      setAttribute:(k,v)=>{h.__attrs=h.__attrs||{};h.__attrs[k]=String(v);},
+      getAttribute:k=>(h.__attrs&&k in h.__attrs)?h.__attrs[k]:null
+    };})(),
     querySelector:()=>null,querySelectorAll:()=>[],
     addEventListener(t,fn){(state.listeners[t]=state.listeners[t]||[]).push(fn);},
     removeEventListener(){},

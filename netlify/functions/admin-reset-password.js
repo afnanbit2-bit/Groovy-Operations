@@ -10,6 +10,19 @@ const admin = require("firebase-admin");
 
 const OWNER_EMAILS = ["afnan@groovy.op", "ammar@groovy.op"]; // mirrors firestore.rules isOwner()
 
+// Sept 2026: Afnan asked for Mustafa to be able to reset other employees'
+// passwords too — but explicitly NOT his or Ammar's. Scoped by EMAIL, not
+// by role: Arfat holds the same `manager` role in USER_DEFS and gets none
+// of this, same as every other Sept 2026 grant (isMustafa() in
+// firestore.rules, _canManageLoans/_fabCanDelete in the client).
+//
+// This list is the REAL boundary. js/profile.js hides the button, but the
+// button is not what protects anything — this check is, because it runs on
+// the caller's own verified ID token where the client cannot reach it.
+const RESET_ADMIN_EMAILS = ["mustafa@groovy.op"];
+// Only an owner may reset an owner.
+const PROTECTED_EMAILS = OWNER_EMAILS;
+
 function getAdmin() {
   if (!admin.apps.length) {
     const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
@@ -52,12 +65,19 @@ exports.handler = async function (event) {
   } catch {
     return json(401, { error: "Could not verify caller identity — sign in again and retry." });
   }
-  if (!OWNER_EMAILS.includes(caller.email)) {
-    return json(403, { error: "Only owners can reset another user's password." });
+  const callerEmail = String(caller.email || "").toLowerCase();
+  const target = String(targetEmail).toLowerCase();
+  const callerIsOwner = OWNER_EMAILS.includes(callerEmail);
+  const callerIsResetAdmin = RESET_ADMIN_EMAILS.includes(callerEmail);
+  if (!callerIsOwner && !callerIsResetAdmin) {
+    return json(403, { error: "You are not allowed to reset another user's password." });
+  }
+  if (!callerIsOwner && PROTECTED_EMAILS.includes(target)) {
+    return json(403, { error: "Only an owner can reset an owner's password." });
   }
 
   try {
-    const targetUser = await app.auth().getUserByEmail(targetEmail);
+    const targetUser = await app.auth().getUserByEmail(target);
     await app.auth().updateUser(targetUser.uid, { password: newPassword });
     return json(200, { success: true });
   } catch (e) {

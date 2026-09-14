@@ -195,7 +195,7 @@ function renderInventory(){
       <div style="display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0">${chipsHTML}</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input id="inv-search" placeholder="Search code or name…" value="${_invSearchQ.replace(/"/g,'&quot;')}" oninput="window.invSetSearch(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;outline:none;min-width:180px">
-        <select onchange="window.invSetSort(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;outline:none;background:#fff">
+        <select onchange="window.invSetSort(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;outline:none;background:var(--surface)">
           ${[['category','Sort: by category'],['az','A → Z'],['za','Z → A'],['low','Stock low → high'],['recent','Recently added']].map(([v,l])=>`<option value="${v}"${_invSort===v?' selected':''}>${l}</option>`).join('')}
         </select>
       </div>
@@ -248,7 +248,7 @@ window._invImgPreview=function(url,code){
   lb.id='_inv-img-lb';
   lb.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:2400;display:flex;align-items:center;justify-content:center;padding:24px;cursor:zoom-out';
   lb.onclick=()=>lb.remove();
-  lb.innerHTML=`<div style="max-width:90vw;max-height:85vh;display:flex;flex-direction:column;align-items:center;gap:8px"><img src="${url}" style="max-width:100%;max-height:80vh;object-fit:contain;border-radius:8px;background:#fff"><div style="color:#fff;font-size:12px">${code||''}</div></div>`;
+  lb.innerHTML=`<div style="max-width:90vw;max-height:85vh;display:flex;flex-direction:column;align-items:center;gap:8px"><img src="${url}" style="max-width:100%;max-height:80vh;object-fit:contain;border-radius:8px;background:var(--surface)"><div style="color:var(--on-dark);font-size:12px">${code||''}</div></div>`;
   document.body.appendChild(lb);
 };
 window.invSetCat=function(c){_invFilterCat=c;const m=document.getElementById('main-content');if(m)m.innerHTML=renderInventory();};
@@ -274,7 +274,7 @@ function renderStoreReceive(){
       <div class="field"><label>Date</label><input id="rcv-date" type="date" value="${todayStr()}"></div>
       <div class="field"><label>Received By</label><input value="${session.name}" readonly></div>
       <div class="field" style="grid-column:1/-1"><label>Notes</label>
-        <textarea id="rcv-notes" rows="2" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;font-family:inherit;outline:none;width:100%;resize:vertical" placeholder="Optional"></textarea>
+        <textarea id="rcv-notes" rows="2" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);font-family:inherit;outline:none;width:100%;resize:vertical" placeholder="Optional"></textarea>
       </div>
     </div>
     <div id="rcv-new-wrap" style="margin-top:12px"></div>
@@ -311,7 +311,7 @@ function _renderRcvNewForm(){
       <div class="field" style="grid-column:1/-1">
         <label>Image <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
         <div style="display:flex;gap:10px;align-items:center">
-          <div id="rcvn-img-preview" style="width:54px;height:54px;border:1px solid var(--border);border-radius:8px;background:#fafafa;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:10px">No image</div>
+          <div id="rcvn-img-preview" style="width:54px;height:54px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:10px">No image</div>
           <input type="file" id="rcvn-img-file" accept="image/*" style="font-size:11px;font-family:inherit" onchange="window._rcvOnImgPick(this)">
           <input type="hidden" id="rcvn-img-url" value="">
           <input type="hidden" id="rcvn-img-status" value="ready">
@@ -366,7 +366,7 @@ function onRcvItemChange(){
     _rcvNewMode=true;
     newWrap.innerHTML=_renderRcvNewForm();
     wrap.innerHTML=`<div class="field"><label>Qty received · Pick category & unit first</label>
-      <input type="number" id="rcv-flat" min="0" placeholder="0" disabled style="background:#f5f5f5"></div>`;
+      <input type="number" id="rcv-flat" min="0" placeholder="0" disabled style="background:var(--surface-2)"></div>`;
     return;
   }
   _rcvNewMode=false;
@@ -436,7 +436,7 @@ function _refreshRcvNewQty(){
   const sized=document.getElementById('rcvn-sized')?.checked;
   if(sized){
     const list=(document.getElementById('rcvn-sizes-list')?.value||'').split(',').map(s=>s.trim()).filter(Boolean);
-    if(!list.length){wrap.innerHTML=`<div class="field"><label>Qty received · enter size list above</label><input type="number" disabled style="background:#f5f5f5" placeholder="0"></div>`;return;}
+    if(!list.length){wrap.innerHTML=`<div class="field"><label>Qty received · enter size list above</label><input type="number" disabled style="background:var(--surface-2)" placeholder="0"></div>`;return;}
     wrap.innerHTML=`<div class="field"><label>Qty received per size (${_gpEsc(unit)})</label>
       <div class="size-grid">${list.map(sz=>`<div class="size-field"><label>${_gpEsc(sz)}</label>
         <input type="number" min="0" placeholder="0" id="rcv-${safeId(sz)}">
@@ -535,7 +535,7 @@ window.openNewCategoryDialog=function(onCreated){
   const modal=document.createElement('div');
   modal.id='_cat-modal';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2200;display:flex;align-items:center;justify-content:center;padding:16px';
-  modal.innerHTML=`<div style="background:#fff;border-radius:14px;width:100%;max-width:380px;box-shadow:0 12px 48px rgba(0,0,0,.25)">
+  modal.innerHTML=`<div style="background:var(--surface);border-radius:14px;width:100%;max-width:380px;box-shadow:0 12px 48px rgba(0,0,0,.25)">
     <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
       <span style="font-weight:700;font-size:15px">New category</span>
       <button onclick="document.getElementById('_cat-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
@@ -549,7 +549,7 @@ window.openNewCategoryDialog=function(onCreated){
         <div style="font-size:10px;color:var(--muted);margin-top:3px">Used to auto-generate item codes (CB01, CB02…).</div>
       </div>
       <div class="field"><label>Internal key</label>
-        <input id="_cat-key" placeholder="auto" disabled style="background:#f5f5f5;color:var(--muted)">
+        <input id="_cat-key" placeholder="auto" disabled style="background:var(--surface-2);color:var(--muted)">
       </div>
     </div>
     <div style="padding:0 16px 16px;display:flex;gap:8px;justify-content:flex-end">
@@ -692,19 +692,19 @@ function renderStoreIssue(){
       <div class="field" style="grid-column:1/-1;position:relative"><label>PO Number</label>
         <input id="iss-po" placeholder="Type PO number or pick from list…" autocomplete="off"
           oninput="window.filterPODropMain(this.value)" onfocus="window.filterPODropMain(this.value)" onblur="setTimeout(()=>window.hidePODropMain(),200)">
-        <div id="iss-po-drop-main" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:220px;overflow-y:auto;margin-top:3px"></div>
+        <div id="iss-po-drop-main" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:220px;overflow-y:auto;margin-top:3px"></div>
         <div id="iss-po-status" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
       </div>
     </div>
     <div id="iss-po-body"></div>
   </div>
   <div class="card">
-    <div class="card-title">Manual issue <span style="font-size:11px;font-weight:600;color:#111;background:#EFEFEF;padding:2px 8px;border-radius:10px;margin-left:6px">● Live</span></div>
+    <div class="card-title">Manual issue <span style="font-size:11px;font-weight:600;color:var(--text);background:var(--soft);padding:2px 8px;border-radius:10px;margin-left:6px">● Live</span></div>
     <div class="form-grid">
       <div class="field" style="grid-column:1/-1;position:relative"><label>PO Number *</label>
         <input id="iss-po-ref" placeholder="Type PO number or pick from list…" autocomplete="off"
           oninput="window.filterPODrop(this.value)" onfocus="window.filterPODrop(this.value)" onblur="setTimeout(()=>window.hidePODrop(),200)">
-        <div id="iss-po-drop" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:220px;overflow-y:auto;margin-top:3px"></div>
+        <div id="iss-po-drop" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:220px;overflow-y:auto;margin-top:3px"></div>
         <div id="iss-po-preview" style="margin-top:8px"></div>
       </div>
       <div class="field"><label>Issued To</label><input id="iss-to" value="Waqas (Stitching)" placeholder="Issued to…"></div>
@@ -845,13 +845,13 @@ async function lookupManualPO(raw){
     el.innerHTML=`<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:12px 14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:4px">
         <span style="font-weight:700;color:var(--green);font-size:13px">✓ ${po.name||po.id}</span>
-        <span style="font-size:11px;background:#f0f0f0;color:#111;padding:2px 8px;border-radius:10px;font-weight:600">${stageLabel}</span>
+        <span style="font-size:11px;background:var(--soft);color:var(--text);padding:2px 8px;border-radius:10px;font-weight:600">${stageLabel}</span>
       </div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${po.qty||0} pcs total · ${po.fabric||'—'}</div>
       ${hasCut?`<div style="margin-bottom:6px"><div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Cut Qty</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${szs.filter(s=>po.cutQty[s]>0).map(s=>`<div style="text-align:center;min-width:38px;padding:5px 8px;background:#fff;border-radius:6px;border:1px solid #86efac"><div style="font-size:9px;color:var(--muted)">${s}</div><div style="font-size:14px;font-weight:700;color:var(--dark)">${po.cutQty[s]}</div></div>`).join('')}</div></div>`:''}
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${szs.filter(s=>po.cutQty[s]>0).map(s=>`<div style="text-align:center;min-width:38px;padding:5px 8px;background:var(--surface);border-radius:6px;border:1px solid #86efac"><div style="font-size:9px;color:var(--muted)">${s}</div><div style="font-size:14px;font-weight:700;color:var(--dark)">${po.cutQty[s]}</div></div>`).join('')}</div></div>`:''}
       ${hasSizes&&!hasCut?`<div><div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Order Qty (not yet cut)</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${szs.filter(s=>po.sizes[s]>0).map(s=>`<div style="text-align:center;min-width:38px;padding:5px 8px;background:#fff;border-radius:6px;border:1px solid #d1d5db"><div style="font-size:9px;color:var(--muted)">${s}</div><div style="font-size:14px;font-weight:700;color:var(--muted)">${po.sizes[s]}</div></div>`).join('')}</div></div>`:''}
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${szs.filter(s=>po.sizes[s]>0).map(s=>`<div style="text-align:center;min-width:38px;padding:5px 8px;background:var(--surface);border-radius:6px;border:1px solid #d1d5db"><div style="font-size:9px;color:var(--muted)">${s}</div><div style="font-size:14px;font-weight:700;color:var(--muted)">${po.sizes[s]}</div></div>`).join('')}</div></div>`:''}
       ${!hasCut&&!hasSizes?`<div style="font-size:12px;color:var(--muted)">No size/cut data available yet.</div>`:''}
     </div>`;
   }catch(e){el.innerHTML=`<span style="font-size:12px;color:#dc2626">Error: ${e.message}</span>`;}
@@ -944,7 +944,7 @@ function renderStoreTemplates(){
       <div class="field" style="grid-column:1/-1;position:relative"><label>Product *</label>
         <input id="tpl-prod-search" placeholder="Type product code or name e.g. GH001 or Black Hoodie…" autocomplete="off"
           onblur="setTimeout(()=>{const d=document.getElementById('tpl-prod-dd');if(d)d.style.display='none'},300)">
-        <div id="tpl-prod-dd" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:220px;overflow-y:auto;margin-top:3px"></div>
+        <div id="tpl-prod-dd" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:220px;overflow-y:auto;margin-top:3px"></div>
         <div id="tpl-prod-sel" style="margin-top:6px;font-size:12px;color:var(--green);font-weight:600"></div>
       </div>
     </div>
@@ -965,7 +965,7 @@ function renderStoreTemplates(){
             <span style="font-size:12px;color:var(--muted)">${t.productName||t.productType||'—'}</span>
           </div>
           <div style="font-size:11px;color:var(--muted);margin-top:4px;display:flex;flex-wrap:wrap;gap:6px">
-            ${(t.items||[]).map(i=>`<span style="background:#f0f0f0;padding:2px 8px;border-radius:8px">${i.itemCode} × ${i.qtyPerPiece||i.qtyPerUnit||1}/pc${i.pricePerUnit?` @ Rs.${i.pricePerUnit}`:''}</span>`).join('')||'No items'}
+            ${(t.items||[]).map(i=>`<span style="background:var(--soft);padding:2px 8px;border-radius:8px">${i.itemCode} × ${i.qtyPerPiece||i.qtyPerUnit||1}/pc${i.pricePerUnit?` @ Rs.${i.pricePerUnit}`:''}</span>`).join('')||'No items'}
           </div>
           ${(()=>{const tot=(t.items||[]).reduce((s,i)=>s+(i.pricePerUnit||0)*(i.qtyPerPiece||1),0);return tot?`<div style="font-size:11px;color:var(--dark);font-weight:600;margin-top:4px">Cost/pc: Rs.${tot.toFixed(2)}</div>`:''})()}
           <div style="font-size:10px;color:var(--green);margin-top:4px">⚡ Auto-deducts on PO creation</div>
@@ -977,9 +977,9 @@ function renderStoreTemplates(){
       </div>
     </div>`).join('')}
     ${maxPages>1?`<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding-top:12px;border-top:1px solid #f5f5f5;margin-top:4px">
-      <button onclick="window.tplPagePrev()" ${_tplPage===1?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit">← Prev</button>
+      <button onclick="window.tplPagePrev()" ${_tplPage===1?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:12px;font-family:inherit">← Prev</button>
       <span style="font-size:12px;color:var(--muted)">Page ${_tplPage} of ${maxPages}</span>
-      <button onclick="window.tplPageNext()" ${_tplPage===maxPages?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit">Next →</button>
+      <button onclick="window.tplPageNext()" ${_tplPage===maxPages?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:12px;font-family:inherit">Next →</button>
     </div>`:''}
   </div>`:'<div class="card"><div class="empty">No templates yet. Create one above.</div></div>'}
   <div style="height:80px"></div>`;
@@ -1007,7 +1007,7 @@ function _tplItemRowHTML(rowId,itemCode='',itemName='',qty=1,price=''){
     <div class="field" style="flex:2;min-width:150px;position:relative"><label>Trim item</label>
       <input class="tpl-item-search" placeholder="Search item code or name…" autocomplete="off"
         value="${itemCode?(itemCode+(itemName?' — '+itemName:'')):''}">
-      <div class="tpl-item-dd" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:400;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);max-height:200px;overflow-y:auto;margin-top:2px"></div>
+      <div class="tpl-item-dd" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:400;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);max-height:200px;overflow-y:auto;margin-top:2px"></div>
       <input type="hidden" class="tpl-item-code" value="${itemCode}">
       <input type="hidden" class="tpl-item-name" value="${itemName}">
     </div>
@@ -1126,12 +1126,12 @@ function renderStoreLog(){
   <div class="card">
     <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
       <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex-shrink:0">
-        <button id="il-all"  onclick="window.setILDir('')"          style="padding:8px 14px;font-size:12px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:var(--dark);color:#fff">All</button>
-        <button id="il-in"   onclick="window.setILDir('received')"  style="padding:8px 14px;font-size:12px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:#fff;color:var(--muted)">▲ Inbound</button>
-        <button id="il-out"  onclick="window.setILDir('issued')"    style="padding:8px 14px;font-size:12px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:#fff;color:var(--muted)">▼ Outbound</button>
+        <button id="il-all"  onclick="window.setILDir('')"          style="padding:8px 14px;font-size:12px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:var(--dark);color:var(--on-dark)">All</button>
+        <button id="il-in"   onclick="window.setILDir('received')"  style="padding:8px 14px;font-size:12px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:var(--surface);color:var(--muted)">▲ Inbound</button>
+        <button id="il-out"  onclick="window.setILDir('issued')"    style="padding:8px 14px;font-size:12px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:var(--surface);color:var(--muted)">▼ Outbound</button>
       </div>
-      <input id="il-q"  placeholder="Search item, person…" oninput="window.setILQ(this.value)"  style="flex:1;min-width:120px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
-      <input id="il-po" placeholder="Filter PO…"           oninput="window.setILPO(this.value)" style="width:100px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+      <input id="il-q"  placeholder="Search item, person…" oninput="window.setILQ(this.value)"  style="flex:1;min-width:120px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
+      <input id="il-po" placeholder="Filter PO…"           oninput="window.setILPO(this.value)" style="width:100px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
     </div>
     <div id="il-body"></div>
     <div id="il-pager" style="display:flex;align-items:center;justify-content:center;gap:10px;padding-top:12px;border-top:1px solid #f5f5f5;margin-top:4px"></div>
@@ -1164,7 +1164,7 @@ function refreshIssueLog(){
           <span style="font-size:10px;font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${isIn?'▲ INBOUND':'▼ OUTBOUND'}</span>
           <span style="font-size:11px;font-weight:700">${tx.itemCode||'—'}</span>
           ${tx.size?`<span style="font-size:10px;font-weight:700;background:#FEF3C7;color:#92400e;padding:2px 7px;border-radius:8px">${tx.size}</span>`:''}
-          ${tx.poRef||tx.poId?`<span style="font-size:10px;font-weight:700;background:#f0f0f0;color:#111;padding:2px 7px;border-radius:8px">${tx.poRef||tx.poId}</span>`:''}
+          ${tx.poRef||tx.poId?`<span style="font-size:10px;font-weight:700;background:var(--soft);color:var(--text);padding:2px 7px;border-radius:8px">${tx.poRef||tx.poId}</span>`:''}
         </div>
         <div style="font-size:13px;font-weight:500;margin-top:2px">${tx.itemName||'—'}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:1px">${isIn?`From: ${tx.supplier||'—'}`:`To: ${tx.issuedTo||'—'}`}${tx.purpose?` · ${tx.purpose}`:''}${tx.notes?` · ${tx.notes}`:''}</div>
@@ -1179,9 +1179,9 @@ function refreshIssueLog(){
   if(pager){
     if(maxPages<=1){pager.innerHTML='';return;}
     pager.innerHTML=`
-      <button onclick="window.ilPagePrev()" ${_ilPage===1?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit">← Prev</button>
+      <button onclick="window.ilPagePrev()" ${_ilPage===1?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:12px;font-family:inherit">← Prev</button>
       <span style="font-size:12px;color:var(--muted)">Page ${_ilPage} of ${maxPages}</span>
-      <button onclick="window.ilPageNext()" ${_ilPage===maxPages?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit">Next →</button>`;
+      <button onclick="window.ilPageNext()" ${_ilPage===maxPages?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:12px;font-family:inherit">Next →</button>`;
   }
 }
 
@@ -1335,7 +1335,7 @@ function _showReconstructionModal(rows,recon,txCount){
   const m=document.createElement('div');
   m.id='_recon-modal';
   m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2300;display:flex;align-items:center;justify-content:center;padding:16px';
-  m.innerHTML=`<div style="background:#fff;border-radius:14px;width:100%;max-width:880px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 16px 56px rgba(0,0,0,.3)">
+  m.innerHTML=`<div style="background:var(--surface);border-radius:14px;width:100%;max-width:880px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 16px 56px rgba(0,0,0,.3)">
     <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
       <div>
         <div style="font-weight:700;font-size:15px">Reconstruction Preview</div>
@@ -1348,14 +1348,14 @@ function _showReconstructionModal(rows,recon,txCount){
     </div>
     <div style="overflow:auto;flex:1;padding:0 14px">
       <table style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead style="position:sticky;top:0;background:#fff;border-bottom:2px solid #111">
+        <thead style="position:sticky;top:0;background:var(--surface);border-bottom:2px solid var(--line)">
           <tr><th style="text-align:left;padding:8px 6px">Code</th><th style="text-align:left;padding:8px 6px">Name</th><th style="text-align:right;padding:8px 6px">Current</th><th style="text-align:right;padding:8px 6px">Reconstructed</th><th style="text-align:right;padding:8px 6px">Δ</th></tr>
         </thead>
         <tbody>
         ${rows.map(r=>{
           const dStyle=r.delta===null?'color:var(--muted)':r.delta>0?'color:#16a34a;font-weight:700':r.delta<0?'color:#dc2626;font-weight:700':'color:var(--muted)';
           const dTxt=r.delta===null?'no seed':(r.delta>0?'+':'')+r.delta;
-          return`<tr style="border-bottom:1px solid #f0f0f0">
+          return`<tr style="border-bottom:1px solid var(--soft)">
             <td style="padding:6px;font-weight:700">${r.code}</td>
             <td style="padding:6px">${r.name}${r.sized?' <span style="font-size:10px;color:var(--muted)">(sized)</span>':''}${r.inSeed?'':' <span style="font-size:10px;color:#7c2d12">[not in seed]</span>'}</td>
             <td style="padding:6px;text-align:right">${r.current} ${r.unit}</td>
@@ -1720,7 +1720,7 @@ window.openLineEditModal=function(reqId,lineId){
   const modal=document.createElement('div');
   modal.id='_pe-modal';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2200;display:flex;align-items:center;justify-content:center;padding:16px';
-  modal.innerHTML=`<div style="background:#fff;border-radius:14px;width:100%;max-width:420px;box-shadow:0 12px 48px rgba(0,0,0,.25)">
+  modal.innerHTML=`<div style="background:var(--surface);border-radius:14px;width:100%;max-width:420px;box-shadow:0 12px 48px rgba(0,0,0,.25)">
     <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
       <span style="font-weight:700;font-size:15px">Request Line Edit</span>
       <button onclick="document.getElementById('_pe-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
@@ -1779,7 +1779,7 @@ window.openAddLineModal=function(reqId){
   const modal=document.createElement('div');
   modal.id='_pa-modal';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2200;display:flex;align-items:center;justify-content:center;padding:16px';
-  modal.innerHTML=`<div style="background:#fff;border-radius:14px;width:100%;max-width:420px;box-shadow:0 12px 48px rgba(0,0,0,.25)">
+  modal.innerHTML=`<div style="background:var(--surface);border-radius:14px;width:100%;max-width:420px;box-shadow:0 12px 48px rgba(0,0,0,.25)">
     <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
       <span style="font-weight:700;font-size:15px">Add Line Request</span>
       <button onclick="document.getElementById('_pa-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
@@ -1862,13 +1862,13 @@ window.openReviewModal=function(editId){
   const modal=document.createElement('div');
   modal.id='_rv-modal';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2200;display:flex;align-items:center;justify-content:center;padding:16px';
-  modal.innerHTML=`<div style="background:#fff;border-radius:14px;width:100%;max-width:460px;box-shadow:0 12px 48px rgba(0,0,0,.25)">
+  modal.innerHTML=`<div style="background:var(--surface);border-radius:14px;width:100%;max-width:460px;box-shadow:0 12px 48px rgba(0,0,0,.25)">
     <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
       <span style="font-weight:700;font-size:15px">Review Edit Request</span>
       <button onclick="document.getElementById('_rv-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
     </div>
     <div style="padding:16px;display:grid;gap:10px">
-      <div style="font-size:13px;background:#f5f5f5;padding:10px;border-radius:8px">
+      <div style="font-size:13px;background:var(--surface-2);padding:10px;border-radius:8px">
         <div><strong>${er.poId}</strong> — ${er.type} request by ${er.requestedBy}</div>
         <div style="font-size:12px;color:var(--muted);margin-top:3px">Reason: ${er.reason}</div>
       </div>
@@ -1997,7 +1997,7 @@ function _buildItemModal(title,item,onSave){
   const modal=document.createElement('div');
   modal.id='_item-modal';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px';
-  modal.innerHTML=`<div style="background:#fff;border-radius:14px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 12px 48px rgba(0,0,0,.25)">
+  modal.innerHTML=`<div style="background:var(--surface);border-radius:14px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 12px 48px rgba(0,0,0,.25)">
     <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
       <span style="font-weight:700;font-size:15px">${title}</span>
       <button onclick="document.getElementById('_item-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
@@ -2006,10 +2006,10 @@ function _buildItemModal(title,item,onSave){
       <div class="field">
         <label>Image <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
         <div style="display:flex;gap:10px;align-items:center">
-          <div id="_im-img-preview" style="width:64px;height:64px;border:1px solid var(--border);border-radius:8px;background:#fafafa center/cover no-repeat;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:10px;${imgUrl?`background-image:url('${imgUrl}')`:''}">${imgUrl?'':'No image'}</div>
+          <div id="_im-img-preview" style="width:64px;height:64px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2) center/cover no-repeat;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:10px;${imgUrl?`background-image:url('${imgUrl}')`:''}">${imgUrl?'':'No image'}</div>
           <div style="display:flex;flex-direction:column;gap:6px">
             <input type="file" id="_im-img-file" accept="image/*" style="font-size:11px;font-family:inherit" onchange="window._imOnImgPick(this)">
-            ${imgUrl?`<button type="button" onclick="window._imClearImg()" style="padding:4px 10px;background:#fff;border:1px solid #fca5a5;color:#dc2626;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;align-self:flex-start">Remove image</button>`:''}
+            ${imgUrl?`<button type="button" onclick="window._imClearImg()" style="padding:4px 10px;background:var(--surface);border:1px solid #fca5a5;color:#dc2626;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;align-self:flex-start">Remove image</button>`:''}
           </div>
         </div>
         <input type="hidden" id="_im-img-url" value="${imgUrl}">
@@ -2218,7 +2218,7 @@ function renderNotifList(){
   el.innerHTML=list.map(n=>{
     let changesHTML='';
     if(n.action==='edit'&&n.changes){
-      const parts=Object.entries(n.changes).map(([f,v])=>`<span style="font-size:11px;background:#f5f5f5;padding:2px 6px;border-radius:4px">${f}: <span style="color:#dc2626">${JSON.stringify(v.old)}</span> → <span style="color:var(--green)">${JSON.stringify(v.new)}</span></span>`);
+      const parts=Object.entries(n.changes).map(([f,v])=>`<span style="font-size:11px;background:var(--surface-2);padding:2px 6px;border-radius:4px">${f}: <span style="color:#dc2626">${JSON.stringify(v.old)}</span> → <span style="color:var(--green)">${JSON.stringify(v.new)}</span></span>`);
       if(parts.length)changesHTML=`<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">${parts.join('')}</div>`;
     }else if(n.action==='delete'){
       changesHTML=`<div style="font-size:11px;color:var(--muted);margin-top:3px">Item snapshot saved</div>`;
@@ -2232,7 +2232,7 @@ function renderNotifList(){
           <div style="font-size:11px;color:var(--muted);margin-top:5px">${_timeAgo(n.changedAt)} · by ${n.changedBy}</div>
         </div>
       </div>
-      <button onclick="window.dismissNotif('${n._id}')" style="margin-top:10px;width:100%;padding:7px;border:1px solid var(--border);border-radius:7px;background:#fff;cursor:pointer;font-size:12px;color:var(--muted);font-family:inherit">Dismiss</button>
+      <button onclick="window.dismissNotif('${n._id}')" style="margin-top:10px;width:100%;padding:7px;border:1px solid var(--border);border-radius:7px;background:var(--surface);cursor:pointer;font-size:12px;color:var(--muted);font-family:inherit">Dismiss</button>
     </div>`;
   }).join('');
 }
@@ -2320,7 +2320,7 @@ function renderStoreAnalytics(){
   const issuedCodes=new Set(issued.map(t=>t.itemCode));
   const neverIssued=allItems.filter(i=>!issuedCodes.has(i.code)&&getBalance(i)>0);
 
-  const kpi=(label,val,sub,color='var(--dark)')=>`<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
+  const kpi=(label,val,sub,color='var(--dark)')=>`<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
     <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${label}</div>
     <div style="font-size:22px;font-weight:700;color:${color}">${val}</div>
     ${sub?`<div style="font-size:10px;color:var(--muted);margin-top:2px">${sub}</div>`:''}
@@ -2396,7 +2396,7 @@ function renderStoreAnalytics(){
   ${neverIssued.length?sec(`Items in stock but never issued (${neverIssued.length})`,`
     <div style="font-size:11px;color:var(--muted);margin-bottom:8px">These items have received stock but zero outbound records — may be dead stock or used outside the system.</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px">
-      ${neverIssued.slice(0,30).map(i=>`<span style="background:#f5f5f5;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600">${i.code}</span>`).join('')}
+      ${neverIssued.slice(0,30).map(i=>`<span style="background:var(--surface-2);padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600">${i.code}</span>`).join('')}
       ${neverIssued.length>30?`<span style="font-size:11px;color:var(--muted)">+${neverIssued.length-30} more</span>`:''}
     </div>
   `):''}

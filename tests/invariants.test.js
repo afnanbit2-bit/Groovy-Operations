@@ -153,5 +153,61 @@ module.exports=function(){
       :gateCount===6?'still gated to Afnan'
       :'PARTIAL — some routes open, some shut, and nothing on screen says which');
 
+  // ── The profile admin grant lives in three places (CLAUDE.md) ──────────
+  // js/profile.js decides what the UI offers, firestore.rules decides
+  // whether the write lands, and admin-reset-password.js decides whether
+  // the password changes. Two of the three are real boundaries and the
+  // third is only a button — so they must name the same people, and the
+  // one that is easiest to forget is the server function nobody looks at.
+  s.section('the profile admin grant agrees across all three layers');
+  {
+    const prof=read('js/profile.js');
+    const fn=read('netlify/functions/admin-reset-password.js');
+    const admins=(prof.match(/const _PROFILE_ADMINS=\[([^\]]*)\]/)||[])[1]||'';
+    const prot=(prof.match(/const _PROFILE_PROTECTED=\[([^\]]*)\]/)||[])[1]||'';
+    const names=t=>(t.match(/'([a-z]+)'/g)||[]).map(x=>x.replace(/'/g,'')).sort();
+    const adminNames=names(admins), protNames=names(prot);
+    s.eq('the client grants exactly afnan, ammar, mustafa',
+      adminNames.join(','),'afnan,ammar,mustafa');
+    s.eq('and protects exactly the two owners',
+      protNames.join(','),'afnan,ammar');
+    // The rules must carry the same three, by name, and must not have been
+    // widened to isManager() — Arfat holds that role and gets none of this.
+    const block=(rules.match(/match \/user_profiles\/\{uid\}[\s\S]*?\n    \}/)||[''])[0];
+    s.ok('the rules let owners and Mustafa update someone else',
+      /isOwner\(\)\s*\|\|\s*isMustafa\(\)/.test(block));
+    s.ok('the rules stop Mustafa at an owner',
+      /isMustafa\(\)[\s\S]*?in \['afnan','ammar'\]/.test(block));
+    s.ok('the rules never widen it to isManager()',!/isManager\(\)/.test(block));
+    s.ok('an admin update cannot relabel a profile as someone else',
+      /request\.resource\.data\.username\s*==\s*resource\.data\.get\('username'/.test(block));
+    s.ok('create is still self-only',
+      /allow create:[\s\S]*?uid\s*==\s*request\.auth\.uid/.test(block));
+    // The server function is the real boundary for the password half.
+    s.ok('the function grants Mustafa a reset',/RESET_ADMIN_EMAILS\s*=\s*\[\s*"mustafa@groovy\.op"/.test(fn));
+    s.ok('and refuses him an owner',/PROTECTED_EMAILS\.includes\(target\)/.test(fn));
+    s.ok('while still verifying the caller server-side',/verifyIdToken/.test(fn));
+    s.ok('and it never trusts a role sent by the client',!/body\.role|body\.isOwner/.test(fn));
+  }
+
+  // ── Dark mode is tokens, never a filter ────────────────────────────────
+  // A non-none `filter` on <html>/<body> makes it the containing block for
+  // every position:fixed descendant, which would break the board canvas
+  // takeover, the bug FAB and every modal. The theme must therefore only
+  // redefine custom properties.
+  s.section('dark mode');
+  {
+    const css=read('css/main.css');
+    s.ok('there is a dark token block',/html\[data-theme="dark"\]\{/.test(css));
+    s.ok('the theme is stamped before the stylesheet loads',
+      read('index.html').indexOf("setAttribute('data-theme'")<read('index.html').indexOf('css/main.css'));
+    s.ok('no filter on html or body',
+      !/(^|\})\s*(html|body)[^{}]*\{[^{}]*filter:/.test(css.replace(/\n/g,'')));
+    s.ok('diagnostics.js still uses literal colours, not tokens',
+      !/var\(--(surface|text|border|bg)\)/.test(read('js/diagnostics.js')));
+    s.ok('so does print-engine.js (PDF output has no CSS)',
+      !/style="[^"]*var\(--/.test(read('js/print-engine.js')));
+  }
+
   return s;
 };

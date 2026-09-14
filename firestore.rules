@@ -224,16 +224,41 @@ service cloud.firestore {
     // is exactly why NO identity or contact data goes in here — CNIC,
     // address and next-of-kin were asked for and deliberately left out;
     // they belong in `employees`, behind the owner/manager gates above.
-    // Writable only by the person themselves: the document id IS their
-    // uid, and the payload must agree with it, so nobody can write a
-    // profile for someone else or claim another uid inside their own.
+    //
+    // CREATE is always self, and only self. The document id IS a Firebase
+    // uid, and nothing client-side maps a username to one — so an admin
+    // literally cannot mint a profile for someone else, and allowing it
+    // would only open a way to write a doc at a guessed id. Every account
+    // seeds its own row at sign-in (profileBootstrap in js/profile.js).
+    //
+    // UPDATE is self, plus the Sept 2026 admin grant Afnan asked for:
+    // owners and Mustafa may edit other people's profiles, except that
+    // Mustafa may NOT edit an owner's. Scoped by name via isOwner() /
+    // isMustafa() — never isManager(), because Arfat holds that same role
+    // and gets none of this. An admin update may not change `username`,
+    // so a profile can't be relabelled as someone else's; the client
+    // mirror is _profCanEditUser() in js/profile.js and the password half
+    // is netlify/functions/admin-reset-password.js. Change one, change all
+    // three.
+    //
     // Owners keep delete for moderation, matching the fabricin/loans
     // pattern elsewhere in this file. See js/profile.js.
     match /user_profiles/{uid} {
-      allow read:          if signedIn();
-      allow create, update: if signedIn() && uid == request.auth.uid
-                            && request.resource.data.uid == request.auth.uid;
-      allow delete:        if isOwner();
+      allow read:   if signedIn();
+      allow create: if signedIn() && uid == request.auth.uid
+                    && request.resource.data.uid == request.auth.uid;
+      allow update: if signedIn()
+                    && request.resource.data.uid == uid
+                    && (
+                      uid == request.auth.uid
+                      || (
+                        (isOwner() || isMustafa())
+                        && request.resource.data.username == resource.data.get('username','')
+                        && !(isMustafa()
+                             && resource.data.get('username','') in ['afnan','ammar'])
+                      )
+                    );
+      allow delete: if isOwner();
     }
     // Mood Boards (Phase 2 of the Notion+Milanote module, Sept 2026) — the
     // Milanote half, reached through the same Creative Hub. Same

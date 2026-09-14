@@ -315,9 +315,9 @@ function _colorCardFull(c){
         '</div>':'')+
       '</div>'+
       '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">'+
-        (c.localInkName?'<span style="font-size:11px;padding:2px 8px;background:#f5f5f5;border-radius:6px">'+c.localInkName+'</span>':'')+
-        (c.inkType?'<span style="font-size:11px;padding:2px 8px;background:#f0f0f0;border-radius:6px;text-transform:capitalize">'+(INK_LABELS[c.inkType]||c.inkType)+'</span>':'')+
-        (c.supplierName?'<span style="font-size:11px;padding:2px 8px;background:#f5f5f5;border-radius:6px">'+c.supplierName+'</span>':'')+
+        (c.localInkName?'<span style="font-size:11px;padding:2px 8px;background:var(--surface-2);border-radius:6px">'+c.localInkName+'</span>':'')+
+        (c.inkType?'<span style="font-size:11px;padding:2px 8px;background:var(--soft);border-radius:6px;text-transform:capitalize">'+(INK_LABELS[c.inkType]||c.inkType)+'</span>':'')+
+        (c.supplierName?'<span style="font-size:11px;padding:2px 8px;background:var(--surface-2);border-radius:6px">'+c.supplierName+'</span>':'')+
       '</div>'+
       (c.mixingNotes?'<div style="font-size:11px;color:var(--muted);margin-top:4px;font-style:italic">'+c.mixingNotes+'</div>':'')+
     '</div>'+
@@ -335,7 +335,7 @@ function _ptDetailChipHTML(p){
       '<div style="font-size:13px;font-weight:700;color:var(--dark)">'+(p.colorName||'—')+'</div>'+
       (!showWorker?'<div style="font-size:11px;color:var(--muted)">'+(p.pantoneCode||'')+(p.localInkName?' · '+p.localInkName:'')+'</div>':'')+
       (showWorker?'<div style="font-size:12px;color:var(--muted)">'+(p.localInkName||p.pantoneCode||'')+'</div>':'')+
-      (p.usage?'<div style="font-size:11px;padding:1px 7px;background:#f0f0f0;border-radius:5px;display:inline-block;margin-top:3px">'+p.usage+'</div>':'')+
+      (p.usage?'<div style="font-size:11px;padding:1px 7px;background:var(--soft);border-radius:5px;display:inline-block;margin-top:3px">'+p.usage+'</div>':'')+
       ((p.articleSpecificNotes||p.notes)?'<div style="font-size:12px;color:var(--dark);margin-top:3px;font-style:italic">'+(p.articleSpecificNotes||p.notes)+'</div>':'')+
       (isLegacy?'<div style="font-size:10px;color:var(--amber);font-weight:600;margin-top:2px">Legacy — not linked to Color Library</div>':'')+
     '</div>'+
@@ -554,7 +554,7 @@ function _renderColorImportPreview(){
             '<div style="font-family:ui-monospace,monospace;font-size:11px;line-height:1.2">'+_ciEsc(p.code)+'</div>'+
             '<div style="font-family:ui-monospace,monospace;font-size:10px;color:var(--muted);line-height:1.2">'+_ciEsc(p.hex)+'</div>'+
           '</div>'+
-          '<input type="text" data-i="'+i+'" class="ci-name-edit" value="'+_ciEsc(p.name)+'" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:#fff">'+
+          '<input type="text" data-i="'+i+'" class="ci-name-edit" value="'+_ciEsc(p.name)+'" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--surface)">'+
           '<div id="ci-row-'+i+'" style="font-size:10px;color:var(--muted);align-self:center">pending</div>';
   }
   preview.innerHTML='<div style="border-top:1px solid var(--border);padding-top:10px;margin-top:8px">'+
@@ -685,7 +685,7 @@ function renderRecipeDirectory(){
 
   ${isOM&&pendingDrafts.length?`<div class="card" style="border-left:3px solid #F59E0B;margin-bottom:12px;padding:0">
     <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-weight:700"><span style="color:#854F0B">⏳ Drafts Pending Review</span><span style="background:#F59E0B;color:#fff;font-size:11px;padding:2px 9px;border-radius:10px">${pendingDrafts.length}</span></div>
-    ${pendingDrafts.map(r=>`<div onclick="window.openRecipeDraftReview('${r._id}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-top:1px solid #f0f0f0;cursor:pointer" onmouseenter="this.style.background='#fafafa'" onmouseleave="this.style.background=''">
+    ${pendingDrafts.map(r=>`<div onclick="window.openRecipeDraftReview('${r._id}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-top:1px solid var(--soft);cursor:pointer" onmouseenter="this.style.background='#fafafa'" onmouseleave="this.style.background=''">
       <div style="min-width:0">
         <div style="font-weight:600;font-size:14px">${r.articleName||'Untitled'}</div>
         <div style="font-size:11px;color:var(--muted)">${r.articleCode||'—'} · PO ${r.poNumber||'—'} · by ${r.submittedBy||r.createdBy||'—'}${r.submittedAt?' · '+new Date(r.submittedAt).toLocaleString('en-GB'):''} · ${(r.draftPlacements||[]).length} placement${(r.draftPlacements||[]).length===1?'':'s'}</div>
@@ -696,7 +696,7 @@ function renderRecipeDirectory(){
 
   ${myRevisions.length?`<div class="card" style="border-left:3px solid #E94560;margin-bottom:12px;padding:0">
     <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-weight:700;color:#9B1B2D">↩️ Sent Back for Revision</div>
-    ${myRevisions.map(r=>`<div onclick="window.openRecipeDraftEdit('${r._id}')" style="padding:10px 16px;border-top:1px solid #f0f0f0;cursor:pointer" onmouseenter="this.style.background='#fafafa'" onmouseleave="this.style.background=''">
+    ${myRevisions.map(r=>`<div onclick="window.openRecipeDraftEdit('${r._id}')" style="padding:10px 16px;border-top:1px solid var(--soft);cursor:pointer" onmouseenter="this.style.background='#fafafa'" onmouseleave="this.style.background=''">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
         <div style="min-width:0">
           <div style="font-weight:600;font-size:14px">${r.articleName||'Untitled'}</div>
@@ -712,11 +712,11 @@ function renderRecipeDirectory(){
 
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
     <input id="recipe-q" placeholder="Search article code or name…" oninput="window._filterRecipes(this.value)" value="${q}"
-      style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
-    ${!isAsghar?`<select onchange="window._filterRecipeStatus(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+      style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
+    ${!isAsghar?`<select onchange="window._filterRecipeStatus(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
       <option value="">All status</option><option value="active">Active</option><option value="locked">Locked</option><option value="draft">Draft</option><option value="archived">Archived</option>
     </select>`:''}
-    <select onchange="window._filterRecipeTier(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+    <select onchange="window._filterRecipeTier(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
       <option value="">All tiers</option>${[1,2,3,4].map(t=>`<option value="${t}">Tier ${t}</option>`).join('')}
     </select>
   </div>
@@ -762,7 +762,7 @@ function recipeCardHTML(r){
   if(!(r.printing?.processTypes||[]).length)warnings.push('No process');
   return`<div class="recipe-card" onclick="window.openRecipeDetail('${r._id}')">
     <div style="display:flex;gap:12px;align-items:flex-start">
-      <div style="width:56px;height:70px;flex-shrink:0;background:#f0f0f0;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
+      <div style="width:56px;height:70px;flex-shrink:0;background:var(--soft);border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
         ${hasImg?`<img src="${imgUrl}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:9px;color:#ccc;text-align:center;padding:4px">No img</span>'}
       </div>
       <div style="flex:1;min-width:0">
@@ -774,7 +774,7 @@ function recipeCardHTML(r){
         <div style="font-size:14px;font-weight:600;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.articleName||'Untitled'}</div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${(r.printing?.processTypes||[]).map(pt=>processBadge(pt)).join(' ')}</div>
         ${r.printing?.ratePerPiece?`<div style="font-size:12px;font-weight:600;color:var(--dark)">Rs. ${r.printing.ratePerPiece}/pc</div>`:''}
-        ${warnings.length?`<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${warnings.map(w=>`<span style="font-size:10px;background:#f0f0f0;color:#111;padding:2px 6px;border-radius:6px;font-weight:600">⚠ ${w}</span>`).join('')}</div>`:''}
+        ${warnings.length?`<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${warnings.map(w=>`<span style="font-size:10px;background:var(--soft);color:var(--text);padding:2px 6px;border-radius:6px;font-weight:600">⚠ ${w}</span>`).join('')}</div>`:''}
       </div>
       <div style="font-size:18px;color:var(--muted)">›</div>
     </div>
@@ -797,7 +797,7 @@ function _draftTypeToTemplateId(placementType){
 function _rdPlacementRowHTML(i,p={}){
   return`<div class="rd-pl-row" data-idx="${i}" style="display:grid;grid-template-columns:1.2fr 1.4fr 1fr 1.4fr auto;gap:8px;margin-bottom:8px;align-items:end">
     <div class="field" style="margin:0"><label style="font-size:11px">Placement Type</label>
-      <select id="rd-pl-type-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+      <select id="rd-pl-type-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
         <option value="">Select…</option>
         ${RD_PLACEMENT_TYPES.map(t=>`<option value="${t}" ${p.placementType===t?'selected':''}>${t}</option>`).join('')}
       </select>
@@ -806,7 +806,7 @@ function _rdPlacementRowHTML(i,p={}){
       <input id="rd-pl-pos-${i}" placeholder='e.g. 4&quot; x 3&quot; centered' value="${_rdEsc(p.positionSize)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">
     </div>
     <div class="field" style="margin:0"><label style="font-size:11px">Technique</label>
-      <select id="rd-pl-tech-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+      <select id="rd-pl-tech-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
         <option value="">Select…</option>
         ${RD_TECHNIQUES.map(t=>`<option value="${t}" ${p.technique===t?'selected':''}>${t}</option>`).join('')}
       </select>
@@ -850,7 +850,7 @@ window._rdSearch=function(qRaw){
   dd.innerHTML=results.map(p=>{
     const m={articleName:p.name||'',articleCode:p.code||''};
     const data=encodeURIComponent(JSON.stringify(m));
-    return`<div onclick="window._rdPick('${data}')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
+    return`<div onclick="window._rdPick('${data}')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--soft);font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
       <div style="font-weight:600">${p.name||'(no name)'}</div>
       <div style="font-size:11px;color:var(--muted)">${p.code||'—'}</div>
     </div>`;
@@ -918,15 +918,15 @@ function renderRecipeDraftPage(){
   <div class="card"><div class="card-title">Article</div>
     <div style="position:relative;margin-bottom:8px">
       <input id="rd-search-q" placeholder="Search by article name or code…" oninput="window._rdSearch(this.value)" autocomplete="off" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">
-      <div id="rd-search-dd" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:8px;margin-top:4px;max-height:280px;overflow-y:auto;z-index:10;box-shadow:0 4px 14px rgba(0,0,0,0.08)"></div>
+      <div id="rd-search-dd" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-top:4px;max-height:280px;overflow-y:auto;z-index:10;box-shadow:0 4px 14px rgba(0,0,0,0.08)"></div>
     </div>
     <div id="rd-fields" style="display:${editing?'block':'none'}">
       <div class="form-grid">
-        <div class="field"><label>Article Name</label><input id="rd-articleName" readonly value="${_rdEsc(editing?.articleName)}" style="background:#fafafa"></div>
-        <div class="field"><label>Article Code</label><input id="rd-articleCode" readonly value="${_rdEsc(editing?.articleCode)}" style="background:#fafafa"></div>
-        <div class="field"><label>PO Number</label><input id="rd-poNumber" readonly value="${_rdEsc(editing?.poNumber)}" style="background:#fafafa"></div>
-        <div class="field"><label>Total Qty</label><input id="rd-totalQty" readonly value="${_rdEsc(editing?.totalQty)}" style="background:#fafafa"></div>
-        <div class="field"><label>Fabric Type</label><input id="rd-fabricType" readonly value="${_rdEsc(editing?.fabricType)}" style="background:#fafafa"></div>
+        <div class="field"><label>Article Name</label><input id="rd-articleName" readonly value="${_rdEsc(editing?.articleName)}" style="background:var(--surface-2)"></div>
+        <div class="field"><label>Article Code</label><input id="rd-articleCode" readonly value="${_rdEsc(editing?.articleCode)}" style="background:var(--surface-2)"></div>
+        <div class="field"><label>PO Number</label><input id="rd-poNumber" readonly value="${_rdEsc(editing?.poNumber)}" style="background:var(--surface-2)"></div>
+        <div class="field"><label>Total Qty</label><input id="rd-totalQty" readonly value="${_rdEsc(editing?.totalQty)}" style="background:var(--surface-2)"></div>
+        <div class="field"><label>Fabric Type</label><input id="rd-fabricType" readonly value="${_rdEsc(editing?.fabricType)}" style="background:var(--surface-2)"></div>
       </div>
       <button type="button" class="btn-outline" style="margin-top:8px;padding:6px 14px" onclick="window._rdClear()">Clear &amp; Search Again</button>
     </div>
@@ -997,8 +997,8 @@ window.submitRecipeDraft=async function(existingId){
 
 // ── Draft review (Ammar) ──
 function _rdrPantoneChipHTML(i,j,pn){
-  return`<span class="rdr-pn-chip" data-pi="${i}" data-pj="${j}" data-color-id="${_rdEsc(pn.colorLibraryId)}" data-color-name="${_rdEsc(pn.colorName)}" data-pantone-code="${_rdEsc(pn.pantoneCode)}" data-hex-approx="${_rdEsc(pn.hexApprox)}" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:#f0f0f0;border-radius:14px;font-size:12px">
-    <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${pn.hexApprox||'#ccc'};border:1px solid #ddd"></span>
+  return`<span class="rdr-pn-chip" data-pi="${i}" data-pj="${j}" data-color-id="${_rdEsc(pn.colorLibraryId)}" data-color-name="${_rdEsc(pn.colorName)}" data-pantone-code="${_rdEsc(pn.pantoneCode)}" data-hex-approx="${_rdEsc(pn.hexApprox)}" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:var(--soft);border-radius:14px;font-size:12px">
+    <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${pn.hexApprox||'#ccc'};border:1px solid var(--border)"></span>
     <span>${_rdEsc(pn.colorName)||'—'}${pn.pantoneCode?' · '+_rdEsc(pn.pantoneCode):''}</span>
     <button type="button" onclick="window._rdrRemovePantone(${i},${j})" style="border:none;background:none;color:#dc2626;cursor:pointer;font-size:14px;padding:0;line-height:1">×</button>
   </span>`;
@@ -1010,7 +1010,7 @@ function _rdrPlacementRowHTML(i,p={}){
   return`<div class="rdr-pl-row" data-idx="${i}" style="border:1px solid #e5e7eb;border-radius:10px;padding:12px;margin-bottom:10px;background:#fcfcfd">
     <div style="display:grid;grid-template-columns:1.2fr 1.4fr 1fr auto;gap:8px;align-items:end">
       <div class="field" style="margin:0"><label style="font-size:11px">Placement Type</label>
-        <select id="rdr-pl-type-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+        <select id="rdr-pl-type-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
           <option value="">Select…</option>
           ${RD_PLACEMENT_TYPES.map(t=>`<option value="${t}" ${p.placementType===t?'selected':''}>${t}</option>`).join('')}
         </select>
@@ -1019,7 +1019,7 @@ function _rdrPlacementRowHTML(i,p={}){
         <input id="rdr-pl-pos-${i}" value="${_rdEsc(p.positionSize)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">
       </div>
       <div class="field" style="margin:0"><label style="font-size:11px">Technique</label>
-        <select id="rdr-pl-tech-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+        <select id="rdr-pl-tech-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
           <option value="">Select…</option>
           ${RD_TECHNIQUES.map(t=>`<option value="${t}" ${p.technique===t?'selected':''}>${t}</option>`).join('')}
         </select>
@@ -1034,7 +1034,7 @@ function _rdrPlacementRowHTML(i,p={}){
       <div id="rdr-pl-pantones-${i}" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
         ${(p.pantones||[]).map((pn,j)=>_rdrPantoneChipHTML(i,j,pn)).join('')}
       </div>
-      <select onchange="window._rdrAddPantone(${i},this.value);this.value='';" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:#fff;outline:none;max-width:280px">
+      <select onchange="window._rdrAddPantone(${i},this.value);this.value='';" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--surface);outline:none;max-width:280px">
         <option value="">+ Add color from library…</option>
         ${colorOpts}
       </select>
@@ -1159,12 +1159,12 @@ function renderRecipeDraftReviewPage(){
       <div class="field" style="grid-column:1/-1">
         <label>Process Types (select all that apply)</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-          ${Object.entries(PROCESS_TYPES).map(([k,v])=>`<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:#fafafa">
+          ${Object.entries(PROCESS_TYPES).map(([k,v])=>`<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2)">
             <input type="checkbox" id="rc-pt-${k}" ${(pt.processTypes||[]).includes(k)?'checked':''} style="accent-color:var(--dark)"> ${v.icon} ${v.label}
           </label>`).join('')}
         </div>
       </div>
-      <div id="rc-rate-status" style="grid-column:1/-1">${rm?`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:12px"><span style="color:var(--green);font-weight:700">Rate found from Printing Rate List ✅</span><span style="color:var(--muted)">Rs. ${rm.ratePerPiece}/pc · Tier ${rm.complexityTier}</span></div>`:`<div style="padding:8px 12px;background:#f5f5f5;border:1px solid #D9D9D9;border-radius:8px;font-size:12px;color:#555">Article not in Rate Master — set manually</div>`}</div>
+      <div id="rc-rate-status" style="grid-column:1/-1">${rm?`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:12px"><span style="color:var(--green);font-weight:700">Rate found from Printing Rate List ✅</span><span style="color:var(--muted)">Rs. ${rm.ratePerPiece}/pc · Tier ${rm.complexityTier}</span></div>`:`<div style="padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted)">Article not in Rate Master — set manually</div>`}</div>
       <div class="field"><label>Complexity Tier *</label>
         <select id="rc-tier" onchange="window._rcMarkOverride()">${[1,2,3,4].map(t=>`<option value="${t}" ${(_tierVal||1)==t?'selected':''}>${TIER_INFO[t].label} — ${TIER_INFO[t].desc}</option>`).join('')}</select>
       </div>
@@ -1384,7 +1384,7 @@ function renderRecipeCreatePage(){
       <div class="field" style="grid-column:1/-1">
         <label>Process Types (select all that apply)</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-          ${Object.entries(PROCESS_TYPES).map(([k,v])=>`<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:#fafafa">
+          ${Object.entries(PROCESS_TYPES).map(([k,v])=>`<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2)">
             <input type="checkbox" id="rc-pt-${k}" ${(pt.processTypes||[]).includes(k)?'checked':''} style="accent-color:var(--dark)"> ${v.icon} ${v.label}
           </label>`).join('')}
         </div>
@@ -1397,7 +1397,7 @@ function renderRecipeCreatePage(){
           <span style="color:var(--muted)">Rs. ${rm.ratePerPiece}/pc · Tier ${rm.complexityTier}</span>
           <span style="color:var(--muted);margin-left:auto">Source: Current Quarter Rate List</span>
         </div>`;
-        return`<div style="padding:8px 12px;background:#f5f5f5;border:1px solid #D9D9D9;border-radius:8px;font-size:12px;color:#555">
+        return`<div style="padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted)">
           Rate not found in Printing Rate List ⚠️ — Enter manually for now.
         </div>`;
       })()}</div>
@@ -1406,7 +1406,7 @@ function renderRecipeCreatePage(){
       </div>
       <div class="field"><label>Rate per Piece (Rs.) *</label><input id="rc-rate" type="number" min="0" step="0.5" placeholder="0.00" value="${pt.ratePerPiece||''}" oninput="window._rcMarkOverride()"></div>
       <div id="rc-override-row" style="grid-column:1/-1;display:${(()=>{const rm=_lookupRate(e.articleCode||'');return(rm&&(pt.ratePerPiece!==rm.ratePerPiece||pt.complexityTier!==rm.complexityTier))?'block':'none';})()}">
-        <div style="padding:7px 12px;background:#f5f5f5;border:1px solid #D9D9D9;border-radius:8px;font-size:12px;color:#555;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div style="padding:7px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span>Values differ from Rate List.</span>
           <button type="button" onclick="window._rcUseRateList()" style="font-size:12px;padding:3px 10px;border:1px solid #f97316;border-radius:6px;background:none;color:#ea580c;cursor:pointer">Use Rate List Values</button>
           <span style="margin-left:auto">Override reason: <input id="rc-override-note" placeholder="optional…" style="font-size:12px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;width:180px;outline:none" value="${pt.rateOverrideNote||''}"></span>
@@ -1505,7 +1505,7 @@ function placementRowHTML(i,pl={}){
         <button type="button" onclick="window._plRemoveImg(${i})" style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:14px;cursor:pointer;line-height:1">×</button>
       </div>
       <div id="pl-${i}-img-controls" style="${refImg?'display:none':''}">
-        <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:2px dashed var(--border);border-radius:10px;cursor:pointer;background:#fafafa;margin-bottom:6px">
+        <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:2px dashed var(--border);border-radius:10px;cursor:pointer;background:var(--surface-2);margin-bottom:6px">
           <span style="font-size:18px">🖼️</span>
           <span style="font-size:13px;color:var(--muted)">Upload image<br><span style="font-size:11px">Click to choose file from computer</span></span>
           <input type="file" id="pl-${i}-img-file" accept="image/*" style="display:none" onchange="window._plUploadImg(${i},this)">
@@ -1591,7 +1591,7 @@ function pantoneRowHTML(i,p={}){
   var linked=p.colorLibraryId?allColors.find(function(c){return c._id===p.colorLibraryId;}):null;
   var displayHex=(linked&&linked.hexApprox)||p.hexApprox||'#ddd';
   var USAGE_OPTIONS=['front graphic','back print','outline','fill','highlight','shadow','text','logo','background','other'];
-  return'<div id="pt-row-'+i+'" style="background:#fafafa;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px">'+
+  return'<div id="pt-row-'+i+'" style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px">'+
     '<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px">'+
       '<div id="pt-swatch-'+i+'" style="width:36px;height:36px;border-radius:8px;background:'+displayHex+';border:1px solid rgba(0,0,0,.12);flex-shrink:0;margin-top:4px"></div>'+
       '<div style="flex:1;min-width:0">'+
@@ -1734,7 +1734,7 @@ window._rcLookupRate=function(rawCode){
     if(curTier===1||curTier===rm.complexityTier){if(tierEl)tierEl.value=rm.complexityTier;}
     window._rcCheckOverride();
   }else{
-    if(statusEl)statusEl.innerHTML='<div style="padding:8px 12px;background:#f5f5f5;border:1px solid #D9D9D9;border-radius:8px;font-size:12px;color:#555">Rate not found in Printing Rate List ⚠️ — Enter manually for now.</div>';
+    if(statusEl)statusEl.innerHTML='<div style="padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted)">Rate not found in Printing Rate List ⚠️ — Enter manually for now.</div>';
     if(overEl)overEl.style.display='none';
   }
 };
@@ -1852,7 +1852,7 @@ function _recPlacementHTML(pl,idx){
   const imgBlock=refImg
     ?`<img src="${refImg}" onclick="window.open('${refImg}')" style="width:100%;border-radius:8px;max-height:180px;object-fit:contain;margin-top:8px;background:#f9f9f9;border:1px solid var(--border);cursor:zoom-in">`
     :`<div style="font-size:12px;color:var(--muted);margin-top:6px;padding:10px;background:#f9f9f9;border-radius:8px;text-align:center">No placement image uploaded / پلیسمنٹ تصویر موجود نہیں</div>`;
-  const wrap=c=>`<div class="placement-row" style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #f0f0f0">${c}</div>`;
+  const wrap=c=>`<div class="placement-row" style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--soft)">${c}</div>`;
   const header=`<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px">PLACEMENT ${idx+1}</div>
     <div class="info-row"><span class="info-label">Placement</span><span style="font-weight:600">${plName}${plNameUr?' / '+plNameUr:''}</span></div>`;
   const techCollapsible=techArtSize?`<details style="margin-top:6px"><summary style="font-size:11px;color:var(--muted);cursor:pointer">Technical Details</summary><div class="info-row" style="margin-top:4px"><span class="info-label">Artwork Size</span><span>${techArtSize}</span></div></details>`:'';
@@ -1939,7 +1939,7 @@ function renderRecipeDetailPage(){
       <div class="info-row"><span class="info-label">Process</span><span>${(pt.processTypes||[]).map(p=>processBadge(p)).join(' ')||'—'}</span></div>
       <div class="info-row"><span class="info-label">Tier</span><span>${tierBadge(pt.complexityTier||1)}</span></div>
       <div class="info-row"><span class="info-label">Rate</span><span style="font-weight:700;color:var(--dark)">${pt.ratePerPiece?'Rs. '+pt.ratePerPiece+'/pc':'Not set'}</span></div>
-      <div class="info-row"><span class="info-label">Rate Source</span><span style="font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;background:#f0f0f0;color:#111">${pt.rateSource==='printing_rate_list'?'Rate List ✅':pt.rateSource==='override'?'Override ⚠️':'Manual'}</span>${pt.rateOverrideNote?`<span style="font-size:11px;color:var(--muted);margin-left:6px">${pt.rateOverrideNote}</span>`:''}</div>
+      <div class="info-row"><span class="info-label">Rate Source</span><span style="font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;background:var(--soft);color:var(--text)">${pt.rateSource==='printing_rate_list'?'Rate List ✅':pt.rateSource==='override'?'Override ⚠️':'Manual'}</span>${pt.rateOverrideNote?`<span style="font-size:11px;color:var(--muted);margin-left:6px">${pt.rateOverrideNote}</span>`:''}</div>
       <div class="info-row"><span class="info-label">Placements</span><span>${(pt.placements||[]).length}</span></div>
       <div class="info-row"><span class="info-label">Pantones</span><span>${(pt.pantones||[]).length}</span></div>
     </div>
@@ -1959,12 +1959,12 @@ function renderRecipeDetailPage(){
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
         <span style="font-size:11px;font-weight:700;color:var(--muted)">${i+1}.</span>
         <span style="font-weight:600;font-size:14px">${_rdEsc(p.placementType)||'—'}</span>
-        ${p.technique?`<span style="font-size:11px;background:#f0f0f0;padding:2px 8px;border-radius:10px">${_rdEsc(p.technique)}</span>`:''}
+        ${p.technique?`<span style="font-size:11px;background:var(--soft);padding:2px 8px;border-radius:10px">${_rdEsc(p.technique)}</span>`:''}
       </div>
       ${p.positionSize?`<div style="font-size:13px;color:#1A1A2E;margin-bottom:3px"><span style="color:var(--muted);font-size:11px">Position &amp; Size:</span> ${_rdEsc(p.positionSize)}</div>`:''}
       ${p.notes?`<div style="font-size:12px;color:var(--muted);margin-bottom:4px">${_rdEsc(p.notes)}</div>`:''}
-      ${(p.pantones||[]).length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${p.pantones.map(pn=>`<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;background:#f7f7f9;border:1px solid #eee;border-radius:14px;font-size:12px">
-        <span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${pn.hexApprox||'#ccc'};border:1px solid #ddd"></span>
+      ${(p.pantones||[]).length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${p.pantones.map(pn=>`<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;background:#f7f7f9;border:1px solid var(--soft);border-radius:14px;font-size:12px">
+        <span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${pn.hexApprox||'#ccc'};border:1px solid var(--border)"></span>
         ${_rdEsc(pn.colorName)||'—'}${pn.pantoneCode?' · '+_rdEsc(pn.pantoneCode):''}
       </span>`).join('')}</div>`:''}
     </div>`).join('')}
@@ -2141,7 +2141,7 @@ window.closeJobModal=function(){
 };
 
 function renderCreateJobModal(){
-  return`<div style="background:#fff;border-radius:16px;padding:1.5rem;width:100%;max-width:560px;margin:0 auto">
+  return`<div style="background:var(--surface);border-radius:16px;padding:1.5rem;width:100%;max-width:560px;margin:0 auto">
     <div style="font-size:17px;font-weight:700;margin-bottom:16px">Create Embellishment Job from PO</div>
 
     <div class="form-grid">
@@ -2339,7 +2339,7 @@ function jobListCardHTML(j){
   const isOutsourced=(jt==='embroidery'||jt==='sublimation');
   return`<div class="job-card sla-${sl}" onclick="window.openPrintingJob('${j._id}')">
     <div style="display:flex;gap:10px;align-items:flex-start">
-      <div style="width:48px;height:60px;flex-shrink:0;background:#f0f0f0;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
+      <div style="width:48px;height:60px;flex-shrink:0;background:var(--soft);border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
         ${recipe?.images?.frontUrl?`<img src="${recipe.images.frontUrl}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:9px;color:#ccc;text-align:center;padding:2px">No img</span>'}
       </div>
       <div style="flex:1;min-width:0">
@@ -2347,12 +2347,12 @@ function jobListCardHTML(j){
           <span style="font-size:11px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</span>
           <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;background:${PRIORITY_COLORS[j.priority]+'20'};color:${PRIORITY_COLORS[j.priority]}">${(j.priority||'normal').toUpperCase()}</span>
           ${tierBadge(j.complexityTier||1)}
-          <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:8px;background:#f0f0f0;color:var(--dark)">${JOB_TYPES[jt].icon} ${jt}</span>
+          <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:8px;background:var(--soft);color:var(--dark)">${JOB_TYPES[jt].icon} ${jt}</span>
         </div>
         <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${processBadge(j.processType)} · ${j.totalQty||'?'} pcs · ${j.assignedTo||'—'}</div>
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px">
-          <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:8px;background:#f0f0f0;color:var(--dark)">${JOB_STAGE_LABELS[j.currentStage]||j.currentStage}</span>
+          <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:8px;background:var(--soft);color:var(--dark)">${JOB_STAGE_LABELS[j.currentStage]||j.currentStage}</span>
           ${j.slaCurrentDue?`<span class="sla-chip ${slaChipClass(sl)}">${remainLabel(j.slaCurrentDue)}</span>`:'<span style="font-size:11px;color:var(--muted)">No SLA</span>'}
         </div>
         ${j.recipeWarning?`<div style="font-size:10px;color:var(--amber);margin-top:4px;font-weight:600">⚠ ${j.recipeWarning}</div>`:''}
@@ -2411,7 +2411,7 @@ function printWorkerCardHTML(j){
   const ppRejStep={en:'PP Rejected — New Sample Required',ur:'پی پی ریجیکٹ — نیا پی پی سیمپل بنائیں',steps:['See rejection reason below / نیچے وجہ پڑھیں','Fix the issue in new sample / مسئلہ ٹھیک کریں','Print a new PP sample / نیا پی پی سیمپل پرنٹ کریں','Send to Haris (QC) again / دوبارہ حارث کو دیں']};
   const curStep=ppRejected?ppRejStep:(stepInstructions[stage]||{en:JOB_STAGE_LABELS[stage]||stage,ur:'',steps:[]});
   const stepBlock=`
-    <div style="background:var(--dark);border-radius:12px;padding:14px;margin-bottom:12px;color:#fff">
+    <div style="background:var(--dark);border-radius:12px;padding:14px;margin-bottom:12px;color:var(--on-dark)">
       <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:rgba(255,255,255,.5);margin-bottom:4px">موجودہ مرحلہ / CURRENT STEP</div>
       <div style="font-size:17px;font-weight:800">${curStep.en}</div>
       ${curStep.ur?`<div style="font-size:15px;font-weight:700;direction:rtl;text-align:right;margin-top:2px;color:rgba(255,255,255,.85)">${curStep.ur}</div>`:''}
@@ -2433,16 +2433,16 @@ function printWorkerCardHTML(j){
   const sizes=j.sizeBreakdown||{};
   const sizeKeys=Object.keys(sizes).filter(k=>sizes[k]>0);
   const qtyBlock=`
-    <div style="background:#f8f8f8;border-radius:10px;padding:10px 12px;margin-bottom:12px">
+    <div style="background:var(--surface-2);border-radius:10px;padding:10px 12px;margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
         <span style="font-size:11px;font-weight:700;color:var(--muted)">کل مقدار / TOTAL QTY</span>
         <span style="font-size:20px;font-weight:800;color:var(--dark)">${j.totalQty||'?'} <span style="font-size:12px;font-weight:500">pcs</span></span>
       </div>
-      ${sizeKeys.length?`<div style="display:flex;gap:5px;flex-wrap:wrap">${sizeKeys.map(k=>`<span style="padding:3px 8px;background:#fff;border:1px solid var(--border);border-radius:6px;font-size:12px;font-weight:700">${k}: ${sizes[k]}</span>`).join('')}</div>`:'<div style="font-size:11px;color:var(--muted)">Size details not available</div>'}
+      ${sizeKeys.length?`<div style="display:flex;gap:5px;flex-wrap:wrap">${sizeKeys.map(k=>`<span style="padding:3px 8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;font-size:12px;font-weight:700">${k}: ${sizes[k]}</span>`).join('')}</div>`:'<div style="font-size:11px;color:var(--muted)">Size details not available</div>'}
     </div>`;
 
   // ── Recipe placements as cards ──
-  const recipeLockBanner=recipeLocked?`<div style="background:#111;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;color:#fff;margin-bottom:10px;text-align:center">Recipe Locked — Follow Exactly / ریسیپی لاک ہے — بالکل یہی فالو کریں</div>`:`<div style="background:#f5f5f5;border:1px solid #D9D9D9;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;color:#555;margin-bottom:10px;text-align:center">Draft Recipe — Not yet locked / ریسیپی ابھی لاک نہیں</div>`;
+  const recipeLockBanner=recipeLocked?`<div style="background:var(--dark);border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;color:var(--on-dark);margin-bottom:10px;text-align:center">Recipe Locked — Follow Exactly / ریسیپی لاک ہے — بالکل یہی فالو کریں</div>`:`<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:10px;text-align:center">Draft Recipe — Not yet locked / ریسیپی ابھی لاک نہیں</div>`;
   const pantones=recipe?.printing?.pantones||[];
   const placements=recipe?.printing?.placements||[];
   const recipeSection=hasRecipe?`
@@ -2450,7 +2450,7 @@ function printWorkerCardHTML(j){
       <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">ریسیپی / Recipe Summary</div>
       ${recipeLockBanner}
       ${placements.map(pl=>`
-        <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:7px">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:7px">
           <div style="font-size:13px;font-weight:700;margin-bottom:4px">${pl.templateNameEn||pl.name||'Placement'}${pl.templateNameUr?' / '+pl.templateNameUr:''}</div>
           ${(pl.measurementText||pl.measurementDescriptionEn)?`<div style="font-size:12px;color:var(--dark);margin-bottom:2px">${pl.measurementText||pl.measurementDescriptionEn}${pl.measurementUnit?' ('+pl.measurementUnit+')':''}</div>`:''}
           ${(pl.toleranceText||pl.toleranceValue||pl.tolerance)?`<div style="font-size:11px;color:var(--muted)">Tolerance: ${pl.toleranceText?(pl.toleranceText+(pl.toleranceUnit?' '+pl.toleranceUnit:'')):(pl.toleranceValue||pl.tolerance)}</div>`:''}
@@ -2460,7 +2460,7 @@ function printWorkerCardHTML(j){
       ${!placements.length&&pantones.length?`<div style="margin-top:4px">${pantones.map(p=>'<div style="display:flex;align-items:center;gap:7px;padding:4px 0"><div style="width:18px;height:18px;border-radius:4px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div><span style="font-size:12px;font-weight:600">'+(p.colorName||'—')+'</span>'+(p.localInkName?'<span style="font-size:11px;color:var(--muted)">· '+p.localInkName+'</span>':'')+'</div>').join('')}</div>`:''}
       ${recipe.printing?.instructionsUr?`<div style="margin-top:8px;font-size:14px;line-height:2;direction:rtl;text-align:right;color:var(--dark);background:#f9f9f9;padding:8px 10px;border-radius:8px">${recipe.printing.instructionsUr}</div>`:''}
       ${recipe.printing?.instructionsEn?`<div style="margin-top:6px;font-size:12px;color:var(--dark);line-height:1.6">${recipe.printing.instructionsEn}</div>`:''}
-      ${pantones.length?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #f0f0f0">
+      ${pantones.length?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--soft)">
         <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px">رنگ / Colors to Use</div>
         ${pantones.map(p=>'<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#f9f9f9;border-radius:8px;margin-bottom:5px"><div style="width:28px;height:28px;border-radius:6px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.12);flex-shrink:0"></div><div><div style="font-size:13px;font-weight:700">'+(p.colorName||'—')+'</div><div style="font-size:11px;color:var(--muted)">'+(p.localInkName||p.pantoneCode||'')+'</div>'+(p.articleSpecificNotes||p.notes?'<div style="font-size:11px;color:var(--dark);font-style:italic">'+(p.articleSpecificNotes||p.notes)+'</div>':'')+'</div></div>').join('')}
       </div>`:''}
@@ -2473,7 +2473,7 @@ function printWorkerCardHTML(j){
   const ppPhotoInput=`
     <div style="margin-bottom:10px">
       <div style="font-size:13px;font-weight:700;color:var(--dark);margin-bottom:6px">تصویر لگائیں / Attach PP Sample Photo</div>
-      <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:2px dashed var(--border);border-radius:10px;cursor:pointer;background:#fafafa">
+      <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:2px dashed var(--border);border-radius:10px;cursor:pointer;background:var(--surface-2)">
         <span style="font-size:20px">📷</span>
         <span style="font-size:13px;color:var(--muted)">تصویر لیں یا اپلوڈ کریں<br><span style="font-size:11px">Take Photo / Upload Photo</span></span>
         <input type="file" id="pp-file-${j._id}" accept="image/*" capture="environment" style="display:none" onchange="window._ppPhotoSelected('${j._id}',this)">
@@ -2529,8 +2529,8 @@ function printWorkerCardHTML(j){
   // ── Secondary: delay + voice note ──
   const secondaryActions=`
     <div style="display:flex;gap:8px;margin-top:12px">
-      <button class="btn-outline" style="flex:1;font-size:12px;padding:8px 0;color:#6B7280;border-color:#e0e0e0" onclick="window.showDelayForm('${j._id}')">تاخیر کی وجہ لکھیں<br><span style="font-size:10px">Add Delay Reason</span></button>
-      <button class="btn-outline" style="flex:1;font-size:12px;padding:8px 0;color:#6B7280;border-color:#e0e0e0" onclick="window._voiceNoteWorker('${j._id}')">وائس نوٹ<br><span style="font-size:10px">Add Voice Note</span></button>
+      <button class="btn-outline" style="flex:1;font-size:12px;padding:8px 0;color:var(--muted);border-color:var(--border)" onclick="window.showDelayForm('${j._id}')">تاخیر کی وجہ لکھیں<br><span style="font-size:10px">Add Delay Reason</span></button>
+      <button class="btn-outline" style="flex:1;font-size:12px;padding:8px 0;color:var(--muted);border-color:var(--border)" onclick="window._voiceNoteWorker('${j._id}')">وائس نوٹ<br><span style="font-size:10px">Add Voice Note</span></button>
     </div>
     <div id="delay-form-${j._id}" style="display:none;margin-top:8px">
       <textarea id="delay-text-${j._id}" rows="2" placeholder="تاخیر کی وجہ بتائیں… / Explain delay…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none;margin-bottom:6px;direction:rtl"></textarea>
@@ -2539,7 +2539,7 @@ function printWorkerCardHTML(j){
 
   return`<div class="work-card" style="border-radius:14px;overflow:hidden;padding:0">
     <!-- Header -->
-    <div style="padding:14px 14px 12px;border-bottom:2px solid var(--border);background:#fff">
+    <div style="padding:14px 14px 12px;border-bottom:2px solid var(--border);background:var(--surface)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <div style="flex:1;min-width:0">
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
@@ -2680,7 +2680,7 @@ function renderPrintingJobDetailPage(){
     </div>
     <div class="card" style="margin-bottom:0"><div class="card-title">Size Breakdown</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">
-        ${Object.entries(j.sizeBreakdown||{}).filter(([,v])=>v>0).map(([k,v])=>`<div style="text-align:center;min-width:42px;padding:6px 8px;background:#f4f4f6;border-radius:6px"><div style="font-size:9px;color:var(--muted)">${k}</div><div style="font-size:16px;font-weight:700">${v}</div></div>`).join('')||'<span style="font-size:12px;color:var(--muted)">No breakdown set</span>'}
+        ${Object.entries(j.sizeBreakdown||{}).filter(([,v])=>v>0).map(([k,v])=>`<div style="text-align:center;min-width:42px;padding:6px 8px;background:var(--surface-2);border-radius:6px"><div style="font-size:9px;color:var(--muted)">${k}</div><div style="font-size:16px;font-weight:700">${v}</div></div>`).join('')||'<span style="font-size:12px;color:var(--muted)">No breakdown set</span>'}
       </div>
       ${j.slaCurrentDue?`<div style="margin-top:10px;padding:8px;border-radius:8px;background:${sl==='ok'?'#EFEFEF':sl==='near'?'#f0f0f0':'#fee2e2'}">
         <div style="font-size:10px;font-weight:700;color:var(--muted)">CURRENT SLA</div>
@@ -2709,7 +2709,7 @@ function renderPPAttemptsCard(j){
         </div>
         <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:${a.status==='rejected'?'#111':'#f0f0f0'};color:${a.status==='rejected'?'#fff':'#111'}">${(a.status||'pending').toUpperCase()}</span>
       </div>
-      ${a.photoUrl?`<img src="${a.photoUrl}" style="width:100%;max-height:180px;object-fit:contain;border-radius:6px;margin-top:8px;background:#f0f0f0">`:''}
+      ${a.photoUrl?`<img src="${a.photoUrl}" style="width:100%;max-height:180px;object-fit:contain;border-radius:6px;margin-top:8px;background:var(--soft)">`:''}
       ${a.reviewedBy?`<div style="font-size:11px;color:var(--muted);margin-top:6px">${a.status==='approved'?'✓ Approved':'✗ Rejected'} by ${a.reviewedBy} · ${tsLabel2(a.reviewedAt)}</div>`:''}
       ${a.rejectionReason?`<div style="font-size:12px;color:#dc2626;margin-top:4px">Reason: ${a.rejectionReason}</div>`:''}
     </div>`).join('')}
@@ -2735,14 +2735,14 @@ function renderJobComms(j,notes){
       ${notes.length?notes.slice(0,10).map(n=>`<div class="comm-note ${n.type==='ping'?'comm-ping':''}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div style="font-size:11px;font-weight:700">${n.fromUser||'—'} ${n.toUser?'→ '+n.toUser:''} <span style="font-weight:400;color:var(--muted)">· ${tsLabel2(n.createdAt)}</span></div>
-          <span style="font-size:9px;font-weight:600;padding:1px 6px;border-radius:6px;background:#f0f0f0">${(n.type||'text').toUpperCase()}</span>
+          <span style="font-size:9px;font-weight:600;padding:1px 6px;border-radius:6px;background:var(--soft)">${(n.type||'text').toUpperCase()}</span>
         </div>
         <div style="font-size:13px;margin-top:4px">${n.message||'—'}</div>
       </div>`).join(''):'<div style="font-size:12px;color:var(--muted)">No notes yet.</div>'}
     </div>
     <div style="display:flex;gap:8px">
       <input id="comm-msg-${j._id}" placeholder="Add note or ping…" style="flex:1;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none">
-      <select id="comm-type-${j._id}" style="padding:9px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#fff;outline:none">
+      <select id="comm-type-${j._id}" style="padding:9px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--surface);outline:none">
         <option value="text">Note</option><option value="ping">Ping</option>
       </select>
       <button class="btn-sm" onclick="window.addCommNote('${j._id}')">Send</button>
@@ -2923,7 +2923,7 @@ function renderExistingQCReport(rep,j){
 
   <div class="card"><div class="card-title">QC Summary</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;margin-bottom:12px">
-      ${[['Received',rep.firstPass?.checkedQty||0,'var(--dark)'],['Clear ✓',rep.firstPass?.clearQty||0,'var(--green)'],['Rework',rep.firstPass?.reworkQty||0,'var(--amber)'],['Minor',rep.firstPass?.minorQty||0,'var(--amber)'],['Rejected',rep.firstPass?.rejectedQty||0,'#dc2626']].map(([l,v,c])=>`<div style="text-align:center;padding:10px;background:#f4f4f6;border-radius:8px"><div style="font-size:9px;color:var(--muted)">${l}</div><div style="font-size:22px;font-weight:800;color:${c}">${v}</div></div>`).join('')}
+      ${[['Received',rep.firstPass?.checkedQty||0,'var(--dark)'],['Clear ✓',rep.firstPass?.clearQty||0,'var(--green)'],['Rework',rep.firstPass?.reworkQty||0,'var(--amber)'],['Minor',rep.firstPass?.minorQty||0,'var(--amber)'],['Rejected',rep.firstPass?.rejectedQty||0,'#dc2626']].map(([l,v,c])=>`<div style="text-align:center;padding:10px;background:var(--surface-2);border-radius:8px"><div style="font-size:9px;color:var(--muted)">${l}</div><div style="font-size:22px;font-weight:800;color:${c}">${v}</div></div>`).join('')}
     </div>
     <div class="info-row"><span class="info-label">Final Approved Qty</span><span style="font-size:18px;font-weight:800;color:var(--green)">${f.totalCleared||0} pcs</span></div>
     <div class="info-row"><span class="info-label">Total Rejected</span><span style="font-weight:700;color:#dc2626">${f.totalRejected||0} pcs</span></div>
@@ -2932,7 +2932,7 @@ function renderExistingQCReport(rep,j){
   </div>
 
   ${(rep.defects||[]).length?`<div class="card"><div class="card-title">Defects Logged (${rep.defects.length})</div>
-    ${rep.defects.map(d=>`<div style="padding:8px;background:#fafafa;border-radius:8px;margin-bottom:6px">
+    ${rep.defects.map(d=>`<div style="padding:8px;background:var(--surface-2);border-radius:8px;margin-bottom:6px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div><div style="font-size:12px;font-weight:700">${d.category} — ${d.type}</div>
           <div style="font-size:11px;color:var(--muted)">${d.affectedQty||0} pcs · Sizes: ${(d.affectedSizes||[]).join(',')||'—'} · Resp: ${d.responsibleDepartment||'—'}</div>
@@ -3315,7 +3315,7 @@ function renderBillingDetailPage(){
       <span style="font-size:22px;font-weight:900;color:var(--green)">Rs. ${net.toFixed(0)}</span>
     </div>
     <div class="billing-row"><span class="info-label">Status</span>
-      <span style="font-weight:700;padding:3px 10px;border-radius:8px;background:#f0f0f0">${(billing.status||'pending').replace('_',' ').toUpperCase()}</span>
+      <span style="font-weight:700;padding:3px 10px;border-radius:8px;background:var(--soft)">${(billing.status||'pending').replace('_',' ').toUpperCase()}</span>
     </div>
   </div>
 
@@ -3512,7 +3512,7 @@ function towerJobMini(j){
     ${j.ppApprovalStatus==='rejected'?'<div style="font-size:9px;color:#dc2626;font-weight:700">PP Rejected</div>':''}
     ${j.recipeWarning?'<div style="font-size:9px;color:var(--amber);font-weight:700">⚠ Recipe Missing</div>':''}
     <div style="font-size:9px;color:var(--muted);margin-top:2px">${j.assignedTo||'—'} · ${processBadge(j.processType)}</div>
-    ${isOutsourced?`<button style="margin-top:5px;padding:3px 8px;font-size:10px;background:#fff;border:1px solid var(--border);border-radius:5px;cursor:pointer;color:var(--dark);font-family:inherit;width:100%" onclick="event.stopPropagation();window.generateJobSheetPDF('${j._id}')">📄 Job Sheet</button>`:''}
+    ${isOutsourced?`<button style="margin-top:5px;padding:3px 8px;font-size:10px;background:var(--surface);border:1px solid var(--border);border-radius:5px;cursor:pointer;color:var(--dark);font-family:inherit;width:100%" onclick="event.stopPropagation();window.generateJobSheetPDF('${j._id}')">📄 Job Sheet</button>`:''}
   </div>`;
 }
 
@@ -3552,7 +3552,7 @@ function renderTowerSLA(){
           <div style="font-size:11px;color:var(--muted)">Responsible: ${e.assignedTo||'—'} · Delay: ${e.missedByMinutes||0} min</div>
           ${e.delayReasonText?`<div style="font-size:11px;margin-top:3px">"${e.delayReasonText}"</div>`:''}
         </div>
-        <div style="text-align:right"><div style="font-size:16px;font-weight:800;color:#111">Rs. ${e.monetaryWithholdSuggested||0}</div><div style="font-size:10px;color:var(--muted)">Proposed</div></div>
+        <div style="text-align:right"><div style="font-size:16px;font-weight:800;color:var(--text)">Rs. ${e.monetaryWithholdSuggested||0}</div><div style="font-size:10px;color:var(--muted)">Proposed</div></div>
       </div>
       ${isObserver()?`<div style="display:flex;gap:6px;margin-top:8px">
         <input id="wh-amt-${e._id}" type="number" value="${e.monetaryWithholdSuggested||0}" style="width:80px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;outline:none">
@@ -3666,7 +3666,7 @@ function renderTowerComms(){
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div style="font-size:11px;font-weight:700;color:var(--dark)">${n.fromUser||'—'} ${n.toUser?'→ '+n.toUser:''}</div>
         <div style="display:flex;gap:4px;align-items:center">
-          <span style="font-size:9px;font-weight:600;padding:1px 6px;border-radius:6px;background:#f0f0f0">${(n.type||'text').toUpperCase()}</span>
+          <span style="font-size:9px;font-weight:600;padding:1px 6px;border-radius:6px;background:var(--soft)">${(n.type||'text').toUpperCase()}</span>
           <span style="font-size:10px;color:var(--muted)">${tsLabel2(n.createdAt)}</span>
         </div>
       </div>
@@ -3836,7 +3836,7 @@ window.printVendorJobCard=function(jobId){
   const pt=recipe?.printing||{};
   const sizes=j.sizeBreakdown||{};
   const qr='VJC-'+j.poNumber+'-'+jobId.slice(0,6).toUpperCase();
-  const sizeTable=Object.entries(sizes).filter(([,v])=>v>0).map(([k,v])=>`<td style="text-align:center;padding:6px 10px;border:1px solid #ddd">${k}<br><strong>${v}</strong></td>`).join('');
+  const sizeTable=Object.entries(sizes).filter(([,v])=>v>0).map(([k,v])=>`<td style="text-align:center;padding:6px 10px;border:1px solid var(--border)">${k}<br><strong>${v}</strong></td>`).join('');
 
   const win=window.open('','_blank');
   win.document.write(`<!DOCTYPE html><html><head><title>Vendor Job Card — ${j.poNumber}</title>
@@ -3858,7 +3858,7 @@ window.printVendorJobCard=function(jobId){
 
   <div class="header">
     <div><div class="logo">Groovy <span>Operations</span></div>
-      <div style="font-size:12px;color:#6B7280;margin-top:4px">Internal ERP — Vendor Job Card</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Internal ERP — Vendor Job Card</div>
     </div>
     <div class="qr-box">
       <div style="font-size:18px;font-weight:900;color:#E94560">${j.poNumber}</div>
@@ -3880,11 +3880,11 @@ window.printVendorJobCard=function(jobId){
   </div>
 
   <div class="section"><div class="section-title">Size Breakdown</div>
-    <table><tr>${sizeTable||'<td colspan="6" style="text-align:center;color:#6B7280">No size breakdown set</td>'}</tr></table>
+    <table><tr>${sizeTable||'<td colspan="6" style="text-align:center;color:var(--muted)">No size breakdown set</td>'}</tr></table>
   </div>
 
   ${(pt.placements||[]).length?`<div class="section"><div class="section-title">Placements (${pt.placements.length})</div>
-    ${pt.placements.map((pl,i)=>`<div class="row"><span class="label">${i+1}. ${pl.name||'—'}</span><span class="val">${pl.measurementText||pl.measurementDescriptionEn||pl.placementMeasurement||'—'} · tol: ${pl.toleranceValue||pl.tolerance||'—'}</span></div>${(pl.production?.visibleInstructionEn||pl.notesEn)?`<div style="font-size:11px;color:#6B7280;padding:3px 0">${pl.production?.visibleInstructionEn||pl.notesEn}</div>`:''}`).join('')}
+    ${pt.placements.map((pl,i)=>`<div class="row"><span class="label">${i+1}. ${pl.name||'—'}</span><span class="val">${pl.measurementText||pl.measurementDescriptionEn||pl.placementMeasurement||'—'} · tol: ${pl.toleranceValue||pl.tolerance||'—'}</span></div>${(pl.production?.visibleInstructionEn||pl.notesEn)?`<div style="font-size:11px;color:var(--muted);padding:3px 0">${pl.production?.visibleInstructionEn||pl.notesEn}</div>`:''}`).join('')}
   </div>`:''}
 
   ${(pt.pantones||[]).length?`<div class="section"><div class="section-title">Colors / Pantones</div>
@@ -3906,12 +3906,12 @@ window.printVendorJobCard=function(jobId){
     <span>Groovy Operations ERP · ${new Date().toLocaleString('en-GB')}</span>
   </div>
 
-  <div style="margin-top:16px;border:2px dashed #E5E5E7;border-radius:8px;padding:14px">
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#6B7280;margin-bottom:8px">VENDOR ACKNOWLEDGEMENT</div>
+  <div style="margin-top:16px;border:2px dashed var(--border);border-radius:8px;padding:14px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px">VENDOR ACKNOWLEDGEMENT</div>
     <div style="display:flex;gap:40px">
-      <div><div style="font-size:11px;color:#6B7280">Received by (Vendor)</div><div style="border-bottom:1px solid #1A1A2E;width:160px;height:28px;margin-top:8px"></div></div>
-      <div><div style="font-size:11px;color:#6B7280">Date</div><div style="border-bottom:1px solid #1A1A2E;width:120px;height:28px;margin-top:8px"></div></div>
-      <div><div style="font-size:11px;color:#6B7280">Stamp</div><div style="border:1px dashed #ddd;width:80px;height:60px;margin-top:4px;border-radius:4px"></div></div>
+      <div><div style="font-size:11px;color:var(--muted)">Received by (Vendor)</div><div style="border-bottom:1px solid #1A1A2E;width:160px;height:28px;margin-top:8px"></div></div>
+      <div><div style="font-size:11px;color:var(--muted)">Date</div><div style="border-bottom:1px solid #1A1A2E;width:120px;height:28px;margin-top:8px"></div></div>
+      <div><div style="font-size:11px;color:var(--muted)">Stamp</div><div style="border:1px dashed var(--border);width:80px;height:60px;margin-top:4px;border-radius:4px"></div></div>
     </div>
   </div>
 
@@ -3974,13 +3974,13 @@ function _renderMyWorkInner(){
       const baseContent=base||'';
       return`${baseContent}<div class="page-head" style="margin-top:16px"><div class="page-title">Printing QC Queue</div><div class="page-sub">${ppJobs.length} PP pending · ${qcJobs.length} lot QC pending</div></div>
       ${ppJobs.map(j=>`<div class="work-card">
-        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="po-num">${j.poNumber||'—'}</span><span style="font-size:10px;font-weight:700;color:#111;background:#f0f0f0;padding:2px 7px;border-radius:8px">AWAITING PP APPROVAL</span></div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="po-num">${j.poNumber||'—'}</span><span style="font-size:10px;font-weight:700;color:var(--text);background:var(--soft);padding:2px 7px;border-radius:8px">AWAITING PP APPROVAL</span></div>
         <div style="font-size:14px;font-weight:600">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
         <div style="font-size:12px;color:var(--muted);margin-top:2px">${j.totalQty||'?'} pcs · ${j.ppMode==='repeat_article'?'Repeat Article (QC can approve)':'New Article (needs owner)'}</div>
         <button class="mark-done-btn" style="width:auto;padding:8px 16px;margin-top:8px" onclick="window.openPrintingJob('${j._id}')">Review PP Sample</button>
       </div>`).join('')}
       ${qcJobs.map(j=>`<div class="work-card">
-        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="po-num">${j.poNumber||'—'}</span><span style="font-size:10px;font-weight:700;color:#111;background:#EFEFEF;padding:2px 7px;border-radius:8px">QC REQUIRED</span></div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="po-num">${j.poNumber||'—'}</span><span style="font-size:10px;font-weight:700;color:var(--text);background:var(--soft);padding:2px 7px;border-radius:8px">QC REQUIRED</span></div>
         <div style="font-size:14px;font-weight:600">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
         <div style="font-size:12px;color:var(--muted);margin-top:2px">${j.printedQty||j.totalQty||'?'} pcs received</div>
         <button class="mark-done-btn" style="width:auto;padding:8px 16px;margin-top:8px" onclick="window.openQCReport('${j._id}')">Enter QC Report</button>
@@ -3995,12 +3995,12 @@ function _renderMyWorkInner(){
     return`<div class="page-head"><div class="page-title">My Work</div><div class="page-sub">${myPOs.length} order${myPOs.length!==1?'s':''} in your queue</div></div>
     ${myPOs.map(p=>`<div class="work-card">
       <div style="display:flex;gap:14px;align-items:flex-start">
-        <div style="width:80px;height:104px;flex-shrink:0;background:#f0f0f0;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="window.openPODetail('${p.fbKey}')">
+        <div style="width:80px;height:104px;flex-shrink:0;background:var(--soft);border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="window.openPODetail('${p.fbKey}')">
           ${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:10px;color:#aaa;text-align:center;padding:4px">No image</span>'}
         </div>
         <div style="flex:1">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span class="po-num">${p.id}</span>
-            <span class="stage-badge" style="background:#f0f0f0;color:#111">${STAGES.find(s=>s.key===p.currentStage)?.label||p.currentStage}</span></div>
+            <span class="stage-badge" style="background:var(--soft);color:var(--text)">${STAGES.find(s=>s.key===p.currentStage)?.label||p.currentStage}</span></div>
           <div style="font-size:15px;font-weight:700;margin-bottom:3px">${p.name||'—'}</div>
           <div style="font-size:12px;color:var(--muted)">${p.qty||'?'} pcs · ${p.fabric||''}</div>
           <button class="mark-done-btn" style="background:${p.currentStage==='cutting'||p.currentStage==='bundling'||p.currentStage==='stitching'||p.currentStage==='qc'?'var(--dark)':'var(--green)'}" onclick="window.openStageWork('${p.fbKey}','${p.currentStage}')">${stageLabel[p.currentStage]||'Mark Done'}</button>
@@ -4039,8 +4039,8 @@ function renderDashboard(){
   // Cutting → Embellishments → Embellishment QC → Bundling → Stitching → Washing → Final QC
   function stageCard(label,count,color,flagged,alert){
     const borderStyle=alert?`border:2px solid #111`:`border:1px solid var(--border)`;
-    return`<div style="flex:1;min-width:0;padding:10px 8px;background:#fff;${borderStyle};border-radius:8px;text-align:center">
-      <div style="font-size:16px;font-weight:700;color:#111">${count}</div>
+    return`<div style="flex:1;min-width:0;padding:10px 8px;background:var(--surface);${borderStyle};border-radius:8px;text-align:center">
+      <div style="font-size:16px;font-weight:700;color:var(--text)">${count}</div>
       <div style="font-size:10px;color:var(--muted);margin-top:2px;word-break:break-word;overflow-wrap:break-word;line-height:1.3">${label}</div>
       ${flagged?`<div style="font-size:9px;color:#dc2626;font-weight:700;margin-top:2px">⚠ ${flagged} flagged</div>`:''}
     </div>`;
@@ -4063,7 +4063,7 @@ function renderDashboard(){
   const embSummaryText=`${activeJobs.length} active · ${embQCCount} QC · ${overdue} overdue`;
   const embDefaultOpen=activeJobs.length>0;
   const embOverviewSection=isObserver()?`
-  <div style="margin-bottom:16px;background:#fff;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+  <div style="margin-bottom:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer" onclick="window._toggleEmbOverview()">
       <div>
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)">Embellishments Overview</div>

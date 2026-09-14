@@ -121,7 +121,7 @@ window.filterProducts=function(q){
   q=raw.toLowerCase();
   const catalog=getProductCatalog();
   const hits=q?catalog.filter(p=>p.code.toLowerCase().includes(q)||p.name.toLowerCase().includes(q)).slice(0,18):[];
-  const addRow=`<div class="prod-add" style="padding:11px 12px;cursor:pointer;font-size:13px;font-weight:600;color:var(--dark);display:flex;gap:8px;align-items:center;background:#fafafa"><span style="font-size:16px;line-height:1">+</span><span>Add new product${raw?` “${raw.replace(/"/g,'&quot;').slice(0,40)}”`:''}</span></div>`;
+  const addRow=`<div class="prod-add" style="padding:11px 12px;cursor:pointer;font-size:13px;font-weight:600;color:var(--dark);display:flex;gap:8px;align-items:center;background:var(--surface-2)"><span style="font-size:16px;line-height:1">+</span><span>Add new product${raw?` “${raw.replace(/"/g,'&quot;').slice(0,40)}”`:''}</span></div>`;
   if(!q){
     // Empty query: offer only the add-new action.
     dd.innerHTML=addRow;
@@ -359,8 +359,8 @@ function _poRegTabContent(){
 function _poRegOrdersHTML(){
   const reservedCount=allPOs.filter(p=>poStatusOf(p)===PO_STATUS.RESERVED).length;
   return`<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-    <input placeholder="Search name, code, fabric…" oninput="window.filterPOs(this.value)" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
-    <select onchange="window.filterStage(this.value)" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+    <input placeholder="Search name, code, fabric…" oninput="window.filterPOs(this.value)" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
+    <select onchange="window.filterStage(this.value)" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
       <option value="">All stages</option><option value="reserved">🟡 Reserved${reservedCount?` (${reservedCount})`:''}</option>${STAGES.map(s=>`<option value="${s.key}">${s.label}</option>`).join('')}<option value="completed">Completed</option>
     </select>
   </div>
@@ -489,7 +489,7 @@ function renderDetailPage(){
   </div>
   <div class="card"><div class="card-title">Size breakdown</div>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">
-      ${['XS','S','M','L','XL','2XL'].map(sz=>`<div style="text-align:center;padding:8px 4px;background:#f4f4f6;border-radius:6px"><div style="font-size:10px;color:var(--muted)">${sz}</div><div style="font-size:18px;font-weight:700">${po.sizes?.[sz]||0}</div>${po.cutQty?.[sz]!=null?`<div style="font-size:10px;color:var(--green)">Cut:${po.cutQty[sz]}</div>`:''}</div>`).join('')}
+      ${['XS','S','M','L','XL','2XL'].map(sz=>`<div style="text-align:center;padding:8px 4px;background:var(--surface-2);border-radius:6px"><div style="font-size:10px;color:var(--muted)">${sz}</div><div style="font-size:18px;font-weight:700">${po.sizes?.[sz]||0}</div>${po.cutQty?.[sz]!=null?`<div style="font-size:10px;color:var(--green)">Cut:${po.cutQty[sz]}</div>`:''}</div>`).join('')}
     </div>
   </div>
   ${po.notes?`<div class="card"><div class="card-title">Notes</div>
@@ -499,7 +499,7 @@ function renderDetailPage(){
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px">
       <div style="text-align:center;padding:8px 4px;background:#fef2f2;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Cut</div><div style="font-size:16px;font-weight:700">${po.damageSummary?.cutTotal||0}</div></div>
       <div style="text-align:center;padding:8px 4px;background:#fee2e2;border-radius:6px"><div style="font-size:10px;color:#dc2626">Damaged</div><div style="font-size:16px;font-weight:700;color:#dc2626">${po.damageSummary?.total||0}</div></div>
-      <div style="text-align:center;padding:8px 4px;background:#EFEFEF;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Usable</div><div style="font-size:16px;font-weight:700;color:#111">${po.damageSummary?.usable||0}</div></div>
+      <div style="text-align:center;padding:8px 4px;background:var(--soft);border-radius:6px"><div style="font-size:10px;color:var(--muted)">Usable</div><div style="font-size:16px;font-weight:700;color:var(--text)">${po.damageSummary?.usable||0}</div></div>
       <div style="text-align:center;padding:8px 4px;background:${(po.damagePercent||0)>1.5?'#fee2e2':'#fef9e7'};border-radius:6px"><div style="font-size:10px;color:var(--muted)">Rate</div><div style="font-size:16px;font-weight:700;color:${(po.damagePercent||0)>1.5?'#dc2626':'var(--amber)'}">${(po.damagePercent||0).toFixed(2)}%</div></div>
     </div>
     ${po.damageSummary?.bySize?`<div style="font-size:11px;color:var(--muted)">By size: ${Object.entries(po.damageSummary.bySize).filter(([,v])=>v>0).map(([k,v])=>`${k}: ${v}`).join(' · ')||'None'}</div>`:''}
@@ -559,7 +559,7 @@ function renderPOCreate(){
       <div class="field" style="grid-column:1/-1;position:relative">
         <label>Product (search by name or code) *</label>
         <input id="po-search" placeholder="Type to search e.g. GH001 or Black Hoodie…" autocomplete="off" oninput="window.filterProducts(this.value)" onfocus="window.filterProducts(this.value)">
-        <div id="po-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:240px;overflow-y:auto;margin-top:3px"></div>
+        <div id="po-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:240px;overflow-y:auto;margin-top:3px"></div>
         <input type="hidden" id="po-name">
         <input type="hidden" id="po-code">
       </div>
@@ -607,7 +607,7 @@ function renderPOCreate(){
   <div class="card"><div class="card-title">Notes</div>
     <div class="field">
       <label>Notes for this PO (optional) — printed in <span style="color:#DC2626;font-weight:700">red</span> on the PO copy</label>
-      <textarea id="po-notes" rows="3" placeholder="e.g. special instructions, buyer remarks…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:#DC2626;font-family:inherit;outline:none;resize:vertical"></textarea>
+      <textarea id="po-notes" rows="3" placeholder="e.g. special instructions, buyer remarks…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:#DC2626;font-family:inherit;outline:none;resize:vertical"></textarea>
     </div>
   </div>
   <button class="btn-primary" id="po-submit-btn" onclick="window.submitPO()">Create Production Order</button>
@@ -629,19 +629,19 @@ window._checkEmbRecipe=async function(code,name){
     _poEmbellishment={required:true,recipeId:null,articleCode:code,articleName:name,recipeStatus:'missing',recipeRequiredBefore:'pp_approval',rateMasterPreview:rm?{complexityTier:rm.complexityTier,ratePerPiece:rm.ratePerPiece}:null};
     if(rm){
       const tierLabel=TIER_INFO[rm.complexityTier]?.label||('Tier '+rm.complexityTier);
-      statusDiv.innerHTML=`<div style="background:#f5f5f5;border-radius:8px;padding:10px 12px;border:1px solid #D9D9D9"><div style="font-size:12px;font-weight:700;color:#111">Recipe Missing — Rate List Preview</div><div style="font-size:11px;color:var(--muted);margin-top:3px">No recipe yet. Rate List suggests: <strong>${tierLabel}</strong> · Rs. ${rm.ratePerPiece}/pc. Recipe must be created and locked before PP approval.</div></div>`;
+      statusDiv.innerHTML=`<div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;border:1px solid var(--border)"><div style="font-size:12px;font-weight:700;color:var(--text)">Recipe Missing — Rate List Preview</div><div style="font-size:11px;color:var(--muted);margin-top:3px">No recipe yet. Rate List suggests: <strong>${tierLabel}</strong> · Rs. ${rm.ratePerPiece}/pc. Recipe must be created and locked before PP approval.</div></div>`;
     }else{
-      statusDiv.innerHTML=`<div style="background:#f5f5f5;border-radius:8px;padding:10px 12px;border:1px solid #D9D9D9"><div style="font-size:12px;font-weight:700;color:#111">Recipe Missing</div><div style="font-size:11px;color:var(--muted);margin-top:3px">PO can be created. Recipe must be locked before PP approval — Ammar will be notified.</div></div>`;
+      statusDiv.innerHTML=`<div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;border:1px solid var(--border)"><div style="font-size:12px;font-weight:700;color:var(--text)">Recipe Missing</div><div style="font-size:11px;color:var(--muted);margin-top:3px">PO can be created. Recipe must be locked before PP approval — Ammar will be notified.</div></div>`;
     }
   }else if(r.status!=='locked'){
     _poEmbellishment={required:true,recipeId:r._id,articleCode:code,articleName:r.articleName||name,recipeStatus:'draft',recipeRequiredBefore:'pp_approval'};
     const pt=(r.printing?.processTypes||[]).map(k=>PROCESS_TYPES[k]?.label||k).join(', ')||'—';
-    statusDiv.innerHTML=`<div style="background:#f5f5f5;border-radius:8px;padding:10px 12px;border:1px solid #D9D9D9"><div style="font-size:12px;font-weight:700;color:#111">Recipe Draft — Not Locked</div><div style="font-size:11px;color:var(--muted);margin-top:3px">Recipe exists (${pt} · Tier ${r.printing?.complexityTier||'?'}) but must be locked by Ammar before PP approval.</div></div>`;
+    statusDiv.innerHTML=`<div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;border:1px solid var(--border)"><div style="font-size:12px;font-weight:700;color:var(--text)">Recipe Draft — Not Locked</div><div style="font-size:11px;color:var(--muted);margin-top:3px">Recipe exists (${pt} · Tier ${r.printing?.complexityTier||'?'}) but must be locked by Ammar before PP approval.</div></div>`;
   }else{
     _poEmbellishment={required:true,recipeId:r._id,articleCode:code,articleName:r.articleName||name,processType:(r.printing?.processTypes||[])[0]||'',complexityTier:r.printing?.complexityTier||1,ratePerPiece:r.printing?.ratePerPiece||0,recipeStatus:'locked',recipeRequiredBefore:'pp_approval'};
     const pt=(r.printing?.processTypes||[]).map(k=>PROCESS_TYPES[k]?.label||k).join(', ')||'—';
     const places=(r.printing?.placements||[]).map(pl=>pl.name).filter(Boolean).join(', ')||'—';
-    statusDiv.innerHTML=`<div style="background:#EFEFEF;border-radius:8px;padding:10px 12px;border:1px solid #D9D9D9"><div style="font-size:12px;font-weight:700;color:#111">Recipe Found — Locked</div><div style="font-size:11px;color:var(--muted);margin-top:4px">${pt} · Tier ${r.printing?.complexityTier||'?'} · Rs.${r.printing?.ratePerPiece||0}/pc</div><div style="font-size:11px;color:var(--muted)">Placements: ${places}</div></div>`;
+    statusDiv.innerHTML=`<div style="background:var(--soft);border-radius:8px;padding:10px 12px;border:1px solid var(--border)"><div style="font-size:12px;font-weight:700;color:var(--text)">Recipe Found — Locked</div><div style="font-size:11px;color:var(--muted);margin-top:4px">${pt} · Tier ${r.printing?.complexityTier||'?'} · Rs.${r.printing?.ratePerPiece||0}/pc</div><div style="font-size:11px;color:var(--muted)">Placements: ${places}</div></div>`;
   }
 };
 window._toggleEmbRequired=function(notRequired){
@@ -680,13 +680,13 @@ window.addBundlePart=function(name='',notes='',dest='Warehouse'){
   const div=document.createElement('div');
   div.id=id;div.style.cssText='display:grid;grid-template-columns:1fr 1fr auto auto;gap:6px;align-items:center;margin-bottom:8px';
   const parts=['Front','Back','Sleeves','Collar','Body','Panels','Full Garment'];
-  div.innerHTML=`<select style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:#fafafa;outline:none;font-family:inherit">
+  div.innerHTML=`<select style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface-2);outline:none;font-family:inherit">
     ${parts.map(p=>`<option value="${p}" ${p===name?'selected':''}>${p}</option>`).join('')}
   </select>
-  <input placeholder="Notes (optional)" value="${notes}" style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:#fafafa;outline:none;font-family:inherit">
+  <input placeholder="Notes (optional)" value="${notes}" style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface-2);outline:none;font-family:inherit">
   <div style="display:flex;gap:4px">
-    <button type="button" onclick="window.setBPDest('${id}','Printing')" id="${id}-print" style="padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid;${dest==='Printing'?'background:#EFEFEF;color:#111;border-color:#111':'background:#fff;color:var(--muted);border-color:var(--border)'}">→ Printing</button>
-    <button type="button" onclick="window.setBPDest('${id}','Warehouse')" id="${id}-wh" style="padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid;${dest==='Warehouse'?'background:#EFEFEF;color:#111;border-color:#111':'background:#fff;color:var(--muted);border-color:var(--border)'}">→ Warehouse</button>
+    <button type="button" onclick="window.setBPDest('${id}','Printing')" id="${id}-print" style="padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid;${dest==='Printing'?'background:var(--soft);color:var(--text);border-color:var(--line)':'background:var(--surface);color:var(--muted);border-color:var(--border)'}">→ Printing</button>
+    <button type="button" onclick="window.setBPDest('${id}','Warehouse')" id="${id}-wh" style="padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid;${dest==='Warehouse'?'background:var(--soft);color:var(--text);border-color:var(--line)':'background:var(--surface);color:var(--muted);border-color:var(--border)'}">→ Warehouse</button>
   </div>
   <button type="button" onclick="document.getElementById('${id}').remove()" style="background:none;border:none;color:#ccc;font-size:18px;cursor:pointer;padding:2px 6px">×</button>`;
   wrap.appendChild(div);
@@ -794,7 +794,7 @@ function renderPOEditPage(){
   <div class="card"><div class="card-title">Notes</div>
     <div class="field">
       <label>Notes for this PO (optional) — printed in <span style="color:#DC2626;font-weight:700">red</span> on the PO copy</label>
-      <textarea id="po-notes" rows="3" placeholder="e.g. special instructions, buyer remarks…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:#DC2626;font-family:inherit;outline:none;resize:vertical">${_gpEsc(po.notes||'')}</textarea>
+      <textarea id="po-notes" rows="3" placeholder="e.g. special instructions, buyer remarks…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:#DC2626;font-family:inherit;outline:none;resize:vertical">${_gpEsc(po.notes||'')}</textarea>
     </div>
   </div>
   <button class="btn-primary" id="po-edit-save-btn" onclick="window.savePOEdit('${po.fbKey}')">Save Changes</button>
@@ -869,7 +869,7 @@ function renderCuttingWork(po){
   <div class="card"><div class="card-title">Fabric used</div>
     <div class="field" style="margin-bottom:10px">
       <label>Consume from fabric stock <span style="font-weight:400;color:var(--muted)">(optional — picks rolls to deduct from inventory)</span></label>
-      <select id="cut-fab-stock" onchange="window.onCutFabStockPick()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%">
+      <select id="cut-fab-stock" onchange="window.onCutFabStockPick()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--text);font-family:inherit;outline:none;width:100%">
         <option value="">— don't deduct from fabric inventory —</option>
         ${allFabricInventory.filter(s=>(s.totalWeight||0)>0).map(s=>`<option value="${s._id}">${_gpEsc(s.fabType||'')} · ${s.gsm||0}gsm · ${_gpEsc(s.color||'')} — ${s.totalWeight} ${s.unit||'kg'} · ${s.rollsCount||0} rolls</option>`).join('')}
       </select>
@@ -883,7 +883,7 @@ function renderCuttingWork(po){
   </div>
   <div class="card"><div class="card-title">Bundle entry</div>
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-      <select id="bundle-size-sel" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">${szs.map(s=>`<option value="${s}">${s}</option>`).join('')}</select>
+      <select id="bundle-size-sel" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">${szs.map(s=>`<option value="${s}">${s}</option>`).join('')}</select>
       <input type="number" id="bundle-units-inp" min="1" placeholder="Units" style="width:100px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">
       <button onclick="window.addCutBundle()" class="btn-sm" style="padding:9px 16px">+ Add Bundle</button>
     </div>
@@ -993,8 +993,8 @@ window.onCutFabStockPick=function(){
   const inStock=(stock.rolls||[]).filter(r=>r.status==='in_stock');
   if(!inStock.length){wrap.innerHTML='<div style="font-size:12px;color:var(--muted);padding:8px">No in-stock rolls.</div>';return;}
   wrap.innerHTML=`<label style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Select rolls to consume (${inStock.length} in stock)</label>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;max-height:240px;overflow-y:auto;padding:8px;background:#fafafa;border:1px solid var(--border);border-radius:8px">
-      ${inStock.map(r=>`<label style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;max-height:240px;overflow-y:auto;padding:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px">
+      ${inStock.map(r=>`<label style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">
         <input type="checkbox" data-roll="${_gpEsc(r.rollCode)}" data-weight="${r.weight||0}" onchange="window.onCutFabRollToggle()" style="margin:0">
         <span style="font-weight:700;letter-spacing:.04em">${r.rollCode}</span>
         <span style="color:var(--muted)">${r.weight||0} ${stock.unit||'kg'}</span>
@@ -1097,7 +1097,7 @@ function renderBundlingWork(po){
       <span style="font-weight:500">${p.name}</span>
       <div style="display:flex;align-items:center;gap:8px">
         ${p.notes?`<span style="font-size:11px;color:var(--muted)">${p.notes}</span>`:''}
-        <span style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;background:#f0f0f0;color:#111">→ ${p.dest}</span>
+        <span style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;background:var(--soft);color:var(--text)">→ ${p.dest}</span>
       </div>
     </div>`).join('')}
   </div>`:'';
@@ -1109,7 +1109,7 @@ function renderBundlingWork(po){
     return`<div style="margin-bottom:4px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
         <span style="font-size:13px;font-weight:700">→ ${dest}</span>
-        <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#f0f0f0;color:#111">${dDone}/${dBundles.length} bundled</span>
+        <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--soft);color:var(--text)">${dDone}/${dBundles.length} bundled</span>
         ${uniqueDests.length>1?`<div class="progress-strip" style="flex:1;max-width:120px"><div class="progress-fill" style="width:${dBundles.length?Math.round(dDone/dBundles.length*100):0}%"></div></div>`:''}
       </div>
       ${Object.entries(bySz).map(([sz,bList])=>`<div class="card" style="margin-bottom:8px"><div class="card-title">${sz} — ${bList.length} bundle${bList.length!==1?'s':''}</div>
@@ -1144,7 +1144,7 @@ function renderBundlingWork(po){
       <span style="font-size:12px;color:var(--muted)">bundles bundled</span>
     </div>
     <div class="progress-strip"><div class="progress-fill" style="width:${bundles.length?Math.round(doneCount/bundles.length*100):0}%"></div></div>
-    <div style="margin-top:10px;padding:10px 12px;background:#f8f8f8;border-radius:8px;font-size:12px;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center">
+    <div style="margin-top:10px;padding:10px 12px;background:var(--surface-2);border-radius:8px;font-size:12px;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center">
       <div><div style="font-size:10px;color:var(--muted)">PO Qty</div><div style="font-weight:700">${po.qty||0}</div></div>
       <div><div style="font-size:10px;color:var(--muted)">Cut</div><div style="font-weight:700">${cutTotal}</div></div>
       <div><div style="font-size:10px;color:var(--muted)">Damaged</div><div style="font-weight:700;color:${pctColor}">${totalDamage}</div></div>
@@ -1284,7 +1284,7 @@ function renderLotStageWork(po,stage,stageTitle,nextStage){
   <div class="page-head"><div class="page-title">PO ${po.id} — ${stageTitle}</div><div class="page-sub">${po.name||'—'} · ${po.qty||'?'} pcs</div></div>
   <div class="card"><div class="card-title">Bundle reference</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0">
-      ${bundles.map(b=>`<div style="padding:5px 10px;background:#f4f4f6;border-radius:8px;font-size:12px;font-weight:600">${b.bundleId} <span style="color:var(--muted);font-weight:400">${b.size} · ${b.units}pcs</span></div>`).join('')||'<div style="color:var(--muted);font-size:12px">No bundles on record.</div>'}
+      ${bundles.map(b=>`<div style="padding:5px 10px;background:var(--surface-2);border-radius:8px;font-size:12px;font-weight:600">${b.bundleId} <span style="color:var(--muted);font-weight:400">${b.size} · ${b.units}pcs</span></div>`).join('')||'<div style="color:var(--muted);font-size:12px">No bundles on record.</div>'}
     </div>
   </div>
   <div class="card"><div class="card-title">Completion</div>
@@ -1304,8 +1304,8 @@ function renderQCWork(po){
   <div class="page-head"><div class="page-title">PO ${po.id} — Final QC</div><div class="page-sub">${po.name||'—'}</div></div>
   <div class="card"><div class="card-title">QC summary</div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-      <div style="text-align:center;padding:10px;background:#f4f4f6;border-radius:8px"><div style="font-size:20px;font-weight:700;color:var(--muted)">${pending}</div><div style="font-size:10px;color:var(--muted)">Pending</div></div>
-      <div style="text-align:center;padding:10px;background:#EFEFEF;border-radius:8px"><div style="font-size:20px;font-weight:700;color:#111">${passed}</div><div style="font-size:10px;color:var(--muted)">Passed</div></div>
+      <div style="text-align:center;padding:10px;background:var(--surface-2);border-radius:8px"><div style="font-size:20px;font-weight:700;color:var(--muted)">${pending}</div><div style="font-size:10px;color:var(--muted)">Pending</div></div>
+      <div style="text-align:center;padding:10px;background:var(--soft);border-radius:8px"><div style="font-size:20px;font-weight:700;color:var(--text)">${passed}</div><div style="font-size:10px;color:var(--muted)">Passed</div></div>
       <div style="text-align:center;padding:10px;background:#fef2f2;border-radius:8px"><div style="font-size:20px;font-weight:700;color:#dc2626">${failed}</div><div style="font-size:10px;color:#dc2626">Failed</div></div>
     </div>
   </div>

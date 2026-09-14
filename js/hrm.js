@@ -466,12 +466,12 @@ function renderHRMEmployeesPage(){
   ${dupeBanner}
   ${banner}
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-    <input id="emp-search" placeholder="Search name, username, designation…" oninput="window.hrmFilterEmployees()" value="${_empFilterQ}" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
-    <select id="emp-dept" onchange="window.hrmFilterEmployees()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+    <input id="emp-search" placeholder="Search name, username, designation…" oninput="window.hrmFilterEmployees()" value="${_empFilterQ}" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
+    <select id="emp-dept" onchange="window.hrmFilterEmployees()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
       <option value="">All departments</option>
       ${depts.map(d=>`<option value="${d}" ${_empFilterDept===d?'selected':''}>${d}</option>`).join('')}
     </select>
-    <select id="emp-pay" onchange="window.hrmFilterEmployees()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">
+    <select id="emp-pay" onchange="window.hrmFilterEmployees()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
       <option value="">All paygrades</option>
       ${paygrades.map(p=>`<option value="${p}" ${_empFilterPay===p?'selected':''}>${p}</option>`).join('')}
     </select>
@@ -503,7 +503,7 @@ function _empCardHTML(e,seedDate){
   const k40=String(e.k40UserId||'').trim();
   const k40Line=k40
     ?`K40 ID: ${k40}`
-    :`K40 ID: <span style="display:inline-block;background:#F0F0F0;color:#555;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;letter-spacing:.04em" title="No K40 device ID — not tracked by attendance.">NOT TRACKED</span>`;
+    :`K40 ID: <span style="display:inline-block;background:var(--soft);color:var(--muted);font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;letter-spacing:.04em" title="No K40 device ID — not tracked by attendance.">NOT TRACKED</span>`;
   const shiftStart=String(e.shiftStart||'').trim();
   const shiftEnd=String(e.shiftEnd||'').trim();
   const shiftLine=k40&&(shiftStart||shiftEnd)
@@ -640,7 +640,7 @@ window.hrmViewEmployee=function(id){
     </div>
     <div class="hrm-section-title">Increment History</div>
     <div>${logs.length?logs.map(_hrmIncLogRow).join(''):'<div class="empty" style="padding:14px">No increments recorded yet.</div>'}</div>
-    ${e.notes?`<div class="hrm-section-title">Notes</div><div style="font-size:13px;color:var(--text);background:#fafafa;padding:10px;border-radius:8px;border:1px solid var(--border)">${e.notes}</div>`:''}
+    ${e.notes?`<div class="hrm-section-title">Notes</div><div style="font-size:13px;color:var(--text);background:var(--surface-2);padding:10px;border-radius:8px;border:1px solid var(--border)">${e.notes}</div>`:''}
     <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;flex-wrap:wrap">
       ${isOwner?`<button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.hrmShowAddIncrement('${e._id}')">+ Add Increment</button>`:''}
       <button class="btn-outline" onclick="window.hrmEditEmployee('${e._id}')">Edit</button>
@@ -812,7 +812,7 @@ window.hrmShowAddIncrement=function(empId){
       <select id="inc-type">${['annual','performance','promotion','probation'].map(t=>`<option value="${t}">${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('')}</select>
     </div>
     <div class="field"><label>New Salary (PKR) *</label><input id="inc-new" type="number" value="${suggestedNew}"></div>
-    <div style="font-size:12px;color:var(--muted);background:#fafafa;padding:8px;border-radius:6px;border:1px dashed var(--border);margin:6px 0">
+    <div style="font-size:12px;color:var(--muted);background:var(--surface-2);padding:8px;border-radius:6px;border:1px dashed var(--border);margin:6px 0">
       <strong>${e.paygrade}</strong> recommended: <strong>+${suggestedPct}%</strong> = ${_hrmFmtPKR(suggestedAmt)} → ${_hrmFmtPKR(suggestedNew)} <em>(reference only)</em>
     </div>
     <div class="field"><label>Effective From</label><input id="inc-eff" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
@@ -966,7 +966,7 @@ function renderWorkerHRMWidget(){
   const pgBadge=paygrade?`<span class="paygrade-badge ${pgClass}">${paygrade}</span>`:'';
   const advance=(emp&&emp.advanceBalance)||0;
   const basic=(emp&&emp.basicSalary)||0;
-  const advanceRow=advance>0?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid #E5E5E7;font-size:12px;color:#E94560">Advance balance: ${_hrmFmtPKR(advance)}</div>`:'';
+  const advanceRow=advance>0?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:#E94560">Advance balance: ${_hrmFmtPKR(advance)}</div>`:'';
   return`<div class="hrm-greeting" style="margin-bottom:16px">
     <div class="greeting-left" style="min-width:0">
       <div class="greeting-name">Good ${greeting}, ${session.name} 👋</div>
@@ -976,31 +976,31 @@ function renderWorkerHRMWidget(){
   </div>
   <div class="wrk-hrm-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
     <div class="card" style="padding:16px">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6B7280;margin-bottom:10px">Today · آج</div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px">Today · آج</div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px" id="wrk-att-row">
         <span class="pulse-dot" id="wrk-att-dot" style="display:none"></span>
         <span style="font-size:14px;font-weight:600;color:var(--accent-warning)" id="wrk-att-label">Loading…</span>
       </div>
-      <div style="font-size:12px;color:#6B7280" id="wrk-att-hours">Hours: —</div>
+      <div style="font-size:12px;color:var(--muted)" id="wrk-att-hours">Hours: —</div>
     </div>
     <div class="card" style="padding:16px">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6B7280;margin-bottom:10px">This Month · اس مہینے</div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px">This Month · اس مہینے</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;text-align:center">
-        <div style="background:#EAF3DE;border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:#3B6D11" id="wrk-m-present">—</div><div style="font-size:9px;color:#6B7280">Present</div></div>
-        <div style="background:var(--accent-warning-soft);border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:var(--accent-warning)" id="wrk-m-late">—</div><div style="font-size:9px;color:#6B7280">Late</div></div>
-        <div style="background:var(--accent-urgent-soft);border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:var(--accent-urgent)" id="wrk-m-absent">—</div><div style="font-size:9px;color:#6B7280">Absent</div></div>
+        <div style="background:#EAF3DE;border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:#3B6D11" id="wrk-m-present">—</div><div style="font-size:9px;color:var(--muted)">Present</div></div>
+        <div style="background:var(--accent-warning-soft);border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:var(--accent-warning)" id="wrk-m-late">—</div><div style="font-size:9px;color:var(--muted)">Late</div></div>
+        <div style="background:var(--accent-urgent-soft);border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:var(--accent-urgent)" id="wrk-m-absent">—</div><div style="font-size:9px;color:var(--muted)">Absent</div></div>
       </div>
     </div>
   </div>
   <div class="card" style="padding:16px;margin-bottom:16px;border-left:3px solid #1A1A2E">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
       <div>
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6B7280">Estimated Salary · تخمینہ تنخواہ</div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Estimated Salary · تخمینہ تنخواہ</div>
         <div style="font-size:22px;font-weight:700;color:#1A1A2E;margin-top:4px" id="wrk-est-salary">${_hrmFmtPKR(basic)}</div>
-        <div style="font-size:11px;color:#6B7280;margin-top:2px" id="wrk-est-breakdown">Basic ${_hrmFmtPKR(basic)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px" id="wrk-est-breakdown">Basic ${_hrmFmtPKR(basic)}</div>
       </div>
       <div style="text-align:right">
-        <div style="font-size:11px;color:#6B7280">3 lates = 1 absent</div>
+        <div style="font-size:11px;color:var(--muted)">3 lates = 1 absent</div>
         <div id="wrk-late-badges" style="margin-top:4px"></div>
       </div>
     </div>
@@ -1071,7 +1071,7 @@ async function _populateWorkerHRMWidget(){
       badgeWrap.innerHTML=badges.join('');
     }
     const advRow=document.getElementById('wrk-advance-row');
-    if(advRow)advRow.innerHTML=advance>0?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid #E5E5E7;font-size:12px;color:#E94560">Advance balance: ${_hrmFmtPKR(advance)}</div>`:'';
+    if(advRow)advRow.innerHTML=advance>0?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:#E94560">Advance balance: ${_hrmFmtPKR(advance)}</div>`:'';
     // Last-month payslip cue
     const cue=document.getElementById('wrk-payslip-cue');
     if(cue&&payrollDataLoaded){
@@ -1080,7 +1080,7 @@ async function _populateWorkerHRMWidget(){
         const status=(last.status||'draft').toUpperCase();
         const badgeBg=last.status==='paid'?'var(--accent-success-soft)':'var(--accent-warning-soft)';
         const badgeFg=last.status==='paid'?'var(--accent-success)':'var(--accent-warning)';
-        cue.innerHTML=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #E5E5E7;display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer" onclick="window.openPayslip('${last._id}','${last.employeeId}')">
+        cue.innerHTML=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer" onclick="window.openPayslip('${last._id}','${last.employeeId}')">
           <div>
             <div style="font-size:12px;color:var(--muted)">${_payrollMonthLabel(last.month)} payslip available</div>
             <div style="font-size:14px;font-weight:700;color:#1A1A2E">${_hrmFmtPKR(last.netPayable)} <span style="font-size:10px;font-weight:600;background:${badgeBg};color:${badgeFg};padding:2px 8px;border-radius:8px;margin-left:6px">${status}</span></div>
@@ -1136,7 +1136,7 @@ function renderAttendancePage(){
   const activeCount=activeStaff.length;
   const trackedCount=activeStaff.filter(e=>String(e.k40UserId||'').trim()).length;
   const subText=trackedCount===activeCount?`${trackedCount} tracked staff`:`${trackedCount} tracked · ${activeCount-trackedCount} not tracked`;
-  const head=`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><div><div class="page-title"><span class="page-title-icon">${_icon('clock',22)}</span> Attendance · حاضری</div><div class="page-sub" title="Staff with no K40 device ID are not tracked by the clock and don't appear in attendance.">${subText}</div></div><div id="att-sync-pill" style="font-size:12px;color:var(--muted);padding:6px 10px;border:1px solid var(--border);border-radius:20px;background:#fafafa;display:flex;align-items:center;gap:6px;cursor:default" title="ZKTeco sync status">⏳ Sync: checking…</div></div>`;
+  const head=`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px"><div><div class="page-title"><span class="page-title-icon">${_icon('clock',22)}</span> Attendance · حاضری</div><div class="page-sub" title="Staff with no K40 device ID are not tracked by the clock and don't appear in attendance.">${subText}</div></div><div id="att-sync-pill" style="font-size:12px;color:var(--muted);padding:6px 10px;border:1px solid var(--border);border-radius:20px;background:var(--surface-2);display:flex;align-items:center;gap:6px;cursor:default" title="ZKTeco sync status">⏳ Sync: checking…</div></div>`;
   const body=attendanceTab==='monthly'?renderAttendanceMonthly():renderAttendanceDaily();
   return head+tabs+`<div id="att-body">${body}</div>`;
 }
@@ -1148,15 +1148,15 @@ function renderAttendanceDaily(){
     <button onclick="window.attendancePrevDay()" class="btn-outline">← Previous</button>
     <div style="text-align:center;flex:1;min-width:140px">
       <div style="font-size:18px;font-weight:600">${_attDateLabel(attendanceDate)}</div>
-      <div style="font-size:12px;color:#6B7280">${_attTodayDelta(attendanceDate)}</div>
+      <div style="font-size:12px;color:var(--muted)">${_attTodayDelta(attendanceDate)}</div>
     </div>
     <button onclick="window.attendanceNextDay()" class="btn-outline" ${isToday?'disabled style="opacity:.4;cursor:not-allowed"':''}>Next →</button>
   </div>
   <div class="att-summary-strip" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px" id="att-summary-strip">
-    <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:var(--accent-success)" id="att-tot-in">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Punched IN</div></div>
-    <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:var(--accent-urgent)" id="att-tot-absent">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Absent</div></div>
-    <div class="card" style="padding:16px;text-align:center;background:var(--accent-warning-soft)"><div style="font-size:28px;font-weight:700;color:var(--accent-warning)" id="att-tot-late">—</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Late Arrivals</div></div>
-    <div class="card" style="padding:16px;text-align:center" title="Active employees with a K40 device ID. Only these are tracked by attendance."><div style="font-size:28px;font-weight:700;color:#1A1A2E">${allEmployees.filter(e=>e.status!=='inactive'&&String(e.k40UserId||'').trim()).length}</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Tracked Staff</div></div>
+    <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:var(--accent-success)" id="att-tot-in">—</div><div style="font-size:11px;color:var(--muted);margin-top:4px">Punched IN</div></div>
+    <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:var(--accent-urgent)" id="att-tot-absent">—</div><div style="font-size:11px;color:var(--muted);margin-top:4px">Absent</div></div>
+    <div class="card" style="padding:16px;text-align:center;background:var(--accent-warning-soft)"><div style="font-size:28px;font-weight:700;color:var(--accent-warning)" id="att-tot-late">—</div><div style="font-size:11px;color:var(--muted);margin-top:4px">Late Arrivals</div></div>
+    <div class="card" style="padding:16px;text-align:center" title="Active employees with a K40 device ID. Only these are tracked by attendance."><div style="font-size:28px;font-weight:700;color:#1A1A2E">${allEmployees.filter(e=>e.status!=='inactive'&&String(e.k40UserId||'').trim()).length}</div><div style="font-size:11px;color:var(--muted);margin-top:4px">Tracked Staff</div></div>
   </div>
   <div class="section-title">Staff Presence</div>
   <div id="att-grid-wrap"><div class="empty">Loading attendance…</div></div>
@@ -1347,9 +1347,9 @@ function _attEmpCardHTML(row){
   const pgClass=(emp.paygrade||'').toLowerCase();
   const pgBadge=`<span class="paygrade-badge ${pgClass}">${emp.paygrade||'—'}</span>`;
   if(status==='absent'){
-    return`<div class="card" style="padding:14px;border-left:3px solid #E5E5E7;opacity:0.75">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><div style="min-width:0"><div style="font-weight:600;font-size:14px">${emp.name}</div><div style="font-size:11px;color:#6B7280">${emp.designation||'—'}</div></div>${pgBadge}</div>
-      <div style="margin-top:10px;font-size:13px;color:#9CA3AF">Not punched</div>
+    return`<div class="card" style="padding:14px;border-left:3px solid var(--border);opacity:0.75">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><div style="min-width:0"><div style="font-weight:600;font-size:14px">${emp.name}</div><div style="font-size:11px;color:var(--muted)">${emp.designation||'—'}</div></div>${pgBadge}</div>
+      <div style="margin-top:10px;font-size:13px;color:var(--muted)">Not punched</div>
     </div>`;
   }
   const firstIn=data.firstIn;
@@ -1366,11 +1366,11 @@ function _attEmpCardHTML(row){
   const lateBadge=isLate?`<span style="display:inline-block;background:var(--accent-warning-soft);color:var(--accent-warning);font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin-top:6px">LATE</span>`:'';
   return`<div class="card" style="padding:14px;border-left:3px solid ${borderColor}">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-      <div style="min-width:0"><div style="font-weight:600;font-size:14px">${emp.name}</div><div style="font-size:11px;color:#6B7280">${emp.designation||'—'}</div>${lateBadge}</div>
+      <div style="min-width:0"><div style="font-weight:600;font-size:14px">${emp.name}</div><div style="font-size:11px;color:var(--muted)">${emp.designation||'—'}</div>${lateBadge}</div>
       ${pgBadge}
     </div>
-    <div style="margin-top:10px;display:flex;align-items:center;gap:6px">${dot}<span style="font-size:13px;font-weight:500;color:${statusColor}">${statusLabel}</span><span style="font-size:12px;color:#6B7280">${isOut?`out at ${formatTime12hr(end)}`:`since ${formatTime12hr(start)}`}</span></div>
-    <div style="font-size:12px;color:#6B7280;margin-top:4px">Hours: ${hours}</div>
+    <div style="margin-top:10px;display:flex;align-items:center;gap:6px">${dot}<span style="font-size:13px;font-weight:500;color:${statusColor}">${statusLabel}</span><span style="font-size:12px;color:var(--muted)">${isOut?`out at ${formatTime12hr(end)}`:`since ${formatTime12hr(start)}`}</span></div>
+    <div style="font-size:12px;color:var(--muted);margin-top:4px">Hours: ${hours}</div>
   </div>`;
 }
 
@@ -1381,7 +1381,7 @@ function _attPunchRow(p){
   const typeFg=isIn?'#3B6D11':'#555';
   const emp=p._emp||null;
   const lateLabel=(isIn&&_isLatePunch(p,emp))?`<span style="background:var(--accent-warning-soft);color:var(--accent-warning);font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px">LATE +${_attLateMinutes(p.time,emp)}m</span>`:'<span style="color:var(--muted);font-size:12px">—</span>';
-  return`<tr style="background:${tint};border-bottom:1px solid #E5E5E7">
+  return`<tr style="background:${tint};border-bottom:1px solid var(--border)">
     <td style="padding:10px;font-weight:600">${formatTime12hr(p.time)}</td>
     <td style="padding:10px">${p.empName||p.name||'—'}</td>
     <td style="padding:10px"><span style="background:${typeBg};color:${typeFg};padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600">${isIn?'IN':'OUT'}</span></td>
@@ -1400,9 +1400,9 @@ function _attLateBlockHTML(lates){
     const badgeBg=monthlyNum>=3?'var(--accent-urgent-soft)':(monthlyNum>=2?'var(--accent-warning-soft)':'#F0F0F0');
     const badgeFg=monthlyNum>=3?'var(--accent-urgent)':(monthlyNum>=2?'var(--accent-warning)':'#555');
     const triggered=monthlyNum>=3?' 🔴 Absent triggered':'';
-    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #E5E5E7;gap:10px;flex-wrap:wrap">
-      <div style="min-width:0"><div style="font-weight:600">${emp.name}</div><div style="font-size:12px;color:#6B7280">${emp.designation||'—'}</div></div>
-      <div style="text-align:right"><div style="color:var(--accent-warning);font-weight:600">Arrived ${formatTime12hr(time)}</div><div style="font-size:12px;color:#6B7280">Late by ${lateMins} mins</div></div>
+    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);gap:10px;flex-wrap:wrap">
+      <div style="min-width:0"><div style="font-weight:600">${emp.name}</div><div style="font-size:12px;color:var(--muted)">${emp.designation||'—'}</div></div>
+      <div style="text-align:right"><div style="color:var(--accent-warning);font-weight:600">Arrived ${formatTime12hr(time)}</div><div style="font-size:12px;color:var(--muted)">Late by ${lateMins} mins</div></div>
       <span style="background:${badgeBg};color:${badgeFg};padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600">${monthly} lates this month${triggered}</span>
     </div>`;
   }).join('');
@@ -1422,7 +1422,7 @@ function renderAttendanceMonthly(){
     const lbl=d.toLocaleDateString('en-GB',{month:'long',year:'numeric'});
     months.push({key,lbl});
   }
-  const selectHTML=`<select id="att-month-pick" onchange="window.attendanceSetMonth(this.value)" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;outline:none">${months.map(m=>`<option value="${m.key}" ${m.key===attendanceMonth?'selected':''}>${m.lbl}</option>`).join('')}</select>`;
+  const selectHTML=`<select id="att-month-pick" onchange="window.attendanceSetMonth(this.value)" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">${months.map(m=>`<option value="${m.key}" ${m.key===attendanceMonth?'selected':''}>${m.lbl}</option>`).join('')}</select>`;
   return`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:8px;flex-wrap:wrap">
     <div style="display:flex;align-items:center;gap:10px">
       <span style="font-size:13px;color:var(--muted)">Month:</span>${selectHTML}
@@ -1468,7 +1468,7 @@ async function _renderAttendanceMonthly(){
       </tr></thead>
       <tbody>${rows.map(r=>{
         const pgClass=(r.e.paygrade||'').toLowerCase();
-        return`<tr style="${r.rowBg};border-bottom:1px solid #E5E5E7">
+        return`<tr style="${r.rowBg};border-bottom:1px solid var(--border)">
           <td style="padding:10px"><div style="font-weight:600">${r.e.name}</div><div style="font-size:11px;color:var(--muted)">${r.e.designation||'—'}</div></td>
           <td style="padding:10px;text-align:center"><span class="paygrade-badge ${pgClass}">${r.e.paygrade||'—'}</span></td>
           <td style="padding:10px;text-align:center;font-weight:600;color:var(--accent-success)">${r.s.present}</td>
@@ -1733,7 +1733,7 @@ function renderPayrollPage(){
       <div class="page-sub">Process and manage monthly salaries</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <select id="payroll-month" onchange="window.payrollSetMonth(this.value)" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:13px">
+      <select id="payroll-month" onchange="window.payrollSetMonth(this.value)" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);font-size:13px">
         ${months.map(m=>`<option value="${m.key}" ${m.key===_payrollMonth?'selected':''}>${m.lbl}</option>`).join('')}
       </select>
       ${canProcess&&(!run||run.status!=='paid')?`<button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.processPayroll()">${run?'Re-process Month':'Process Month'}</button>`:''}
@@ -1741,11 +1741,11 @@ function renderPayrollPage(){
     </div>
   </div>`;
   const summary=`<div id="payroll-summary" class="payroll-summary-strip" style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px">
-    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:#6B7280;letter-spacing:.06em">Employees</div><div style="font-size:24px;font-weight:700;margin-top:4px" id="pr-sum-count">—</div></div>
-    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:#6B7280;letter-spacing:.06em">Gross Salary</div><div style="font-size:18px;font-weight:700;margin-top:4px" id="pr-sum-gross">—</div></div>
+    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Employees</div><div style="font-size:24px;font-weight:700;margin-top:4px" id="pr-sum-count">—</div></div>
+    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Gross Salary</div><div style="font-size:18px;font-weight:700;margin-top:4px" id="pr-sum-gross">—</div></div>
     <div class="card" style="padding:14px;background:var(--accent-urgent-soft)"><div style="font-size:10px;text-transform:uppercase;color:var(--accent-urgent);letter-spacing:.06em">Total Deductions</div><div style="font-size:18px;font-weight:700;margin-top:4px;color:var(--accent-urgent)" id="pr-sum-deduct">—</div></div>
     <div class="card" style="padding:14px;background:var(--accent-success-soft)"><div style="font-size:10px;text-transform:uppercase;color:var(--accent-success);letter-spacing:.06em">Net Payable</div><div style="font-size:18px;font-weight:700;margin-top:4px;color:var(--accent-success)" id="pr-sum-net">—</div></div>
-    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:#6B7280;letter-spacing:.06em">Status</div><div style="font-size:14px;font-weight:600;margin-top:4px"><span style="background:${statusBadgeBg};color:${statusBadgeFg};padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em">${statusLabel}</span></div>${run&&run.processedAt?`<div style="font-size:10px;color:var(--muted);margin-top:6px">Processed by ${run.processedBy||'—'}<br>${new Date(run.processedAt).toLocaleString('en-GB')}</div>`:''}</div>
+    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Status</div><div style="font-size:14px;font-weight:600;margin-top:4px"><span style="background:${statusBadgeBg};color:${statusBadgeFg};padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em">${statusLabel}</span></div>${run&&run.processedAt?`<div style="font-size:10px;color:var(--muted);margin-top:6px">Processed by ${run.processedBy||'—'}<br>${new Date(run.processedAt).toLocaleString('en-GB')}</div>`:''}</div>
   </div>`;
   const tableShell=`<div class="card" style="padding:0;overflow:auto">
     <table class="payroll-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:1000px">
@@ -1763,7 +1763,7 @@ function renderPayrollPage(){
           <th style="padding:10px 8px;text-align:right">Advance</th>
           <th style="padding:10px 8px;text-align:right">Loan</th>
           <th style="padding:10px 8px;text-align:right">Other</th>
-          <th style="padding:10px 8px;text-align:right;background:var(--accent-success);color:#fff">Net Salary</th>
+          <th style="padding:10px 8px;text-align:right;background:var(--accent-success);color:var(--on-dark)">Net Salary</th>
           <th style="padding:10px 8px;text-align:center"></th>
         </tr>
       </thead>
@@ -1832,7 +1832,7 @@ async function _payrollAfterRender(){
       <td style="padding:12px 8px;text-align:right">- ${_hrmFmtPKR(totals.advance)}</td>
       <td style="padding:12px 8px;text-align:right">- ${_hrmFmtPKR(totals.loan)}</td>
       <td style="padding:12px 8px;text-align:right">- ${_hrmFmtPKR(totals.other)}</td>
-      <td style="padding:12px 8px;text-align:right;background:var(--accent-success);color:#fff">${_hrmFmtPKR(totals.net)}</td>
+      <td style="padding:12px 8px;text-align:right;background:var(--accent-success);color:var(--on-dark)">${_hrmFmtPKR(totals.net)}</td>
       <td></td>
     </tr>`;
   }
@@ -2070,10 +2070,10 @@ window.openPayslip=function(slipId,employeeId){
     <div style="padding:0 20px 20px">
       <div style="font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em;margin-bottom:8px;font-weight:700">ATTENDANCE · حاضری</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
-        <div style="background:var(--accent-success-soft);padding:8px;border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:var(--accent-success)">${slip.presentDays||0}</div><div style="font-size:10px;color:#6B7280">Present</div></div>
-        <div style="background:var(--accent-warning-soft);padding:8px;border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:var(--accent-warning)">${slip.lateDays||0}</div><div style="font-size:10px;color:#6B7280">Late</div></div>
-        <div style="background:var(--accent-warning-soft);padding:8px;border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:var(--accent-warning)">${slip.lateAbsentEquivalent||0}</div><div style="font-size:10px;color:#6B7280">Late→Abs</div></div>
-        <div style="background:var(--accent-urgent-soft);padding:8px;border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:var(--accent-urgent)">${slip.actualAbsentDays||((slip.effectiveAbsentDays||0)-(slip.lateAbsentEquivalent||0))||0}</div><div style="font-size:10px;color:#6B7280">Absent</div></div>
+        <div style="background:var(--accent-success-soft);padding:8px;border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:var(--accent-success)">${slip.presentDays||0}</div><div style="font-size:10px;color:var(--muted)">Present</div></div>
+        <div style="background:var(--accent-warning-soft);padding:8px;border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:var(--accent-warning)">${slip.lateDays||0}</div><div style="font-size:10px;color:var(--muted)">Late</div></div>
+        <div style="background:var(--accent-warning-soft);padding:8px;border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:var(--accent-warning)">${slip.lateAbsentEquivalent||0}</div><div style="font-size:10px;color:var(--muted)">Late→Abs</div></div>
+        <div style="background:var(--accent-urgent-soft);padding:8px;border-radius:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:var(--accent-urgent)">${slip.actualAbsentDays||((slip.effectiveAbsentDays||0)-(slip.lateAbsentEquivalent||0))||0}</div><div style="font-size:10px;color:var(--muted)">Absent</div></div>
       </div>
     </div>
     <div style="padding:0 20px 20px">
@@ -2089,7 +2089,7 @@ window.openPayslip=function(slipId,employeeId){
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
         <div>
           <div style="font-size:11px;text-transform:uppercase;color:var(--accent-success);letter-spacing:.06em;font-weight:700">NET PAYABLE</div>
-          <div style="font-size:11px;color:#6B7280;margin-top:2px">صافی قابل ادائیگی</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">صافی قابل ادائیگی</div>
         </div>
         <div style="font-size:26px;font-weight:700;color:var(--accent-success)">${_hrmFmtPKR(slip.netPayable)}</div>
       </div>
@@ -2554,14 +2554,14 @@ function _renderHRMNotifPanel(){
   if(typeof renderNotifList==='function'&&storeUnread.length){
     // existing function rewrites the panel; we'll just call it after our HRM block
   }
-  list.innerHTML=hrmHTML+(storeUnread.length?'<div style="padding:8px 16px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;background:#fafafa">Store</div>':'');
+  list.innerHTML=hrmHTML+(storeUnread.length?'<div style="padding:8px 16px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;background:var(--surface-2)">Store</div>':'');
   // Append store notif rendering manually so both lists coexist
   if(storeUnread.length){
     const wrap=document.createElement('div');
     storeUnread.forEach(n=>{
       const div=document.createElement('div');
       div.style.cssText='padding:14px 16px;border-bottom:1px solid #f5f5f5';
-      div.innerHTML=`<div style="font-weight:600;font-size:13px">${n.action==='edit'?'✏️ Edited':'🗑️ Deleted'}: ${n.itemCode||''} ${n.itemName||''}</div><div style="font-size:11px;color:var(--muted);margin-top:5px">by ${n.changedBy||'—'}</div><button onclick="window.dismissNotif('${n._id}')" style="margin-top:10px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;cursor:pointer;font-size:11px;color:var(--muted)">Dismiss</button>`;
+      div.innerHTML=`<div style="font-weight:600;font-size:13px">${n.action==='edit'?'✏️ Edited':'🗑️ Deleted'}: ${n.itemCode||''} ${n.itemName||''}</div><div style="font-size:11px;color:var(--muted);margin-top:5px">by ${n.changedBy||'—'}</div><button onclick="window.dismissNotif('${n._id}')" style="margin-top:10px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface);cursor:pointer;font-size:11px;color:var(--muted)">Dismiss</button>`;
       wrap.appendChild(div);
     });
     list.appendChild(wrap);
@@ -2571,14 +2571,14 @@ function _renderHRMNotifPanel(){
 function _hrmNotifCardHTML(n){
   const priColor=n.priority==='high'?'var(--accent-urgent)':n.priority==='low'?'var(--muted)':'#1A1A2E';
   const priBg=n.priority==='high'?'var(--accent-urgent-soft)':n.priority==='low'?'#fafafa':'#fff';
-  const actionBtn=n.actionUrl?`<button onclick="(window._hrmNotifAction||window.showPage)('${n.actionUrl}');window.toggleNotifPanel()" style="margin-top:8px;margin-right:6px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;cursor:pointer;font-size:11px">View</button>`:'';
+  const actionBtn=n.actionUrl?`<button onclick="(window._hrmNotifAction||window.showPage)('${n.actionUrl}');window.toggleNotifPanel()" style="margin-top:8px;margin-right:6px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface);cursor:pointer;font-size:11px">View</button>`:'';
   return`<div style="padding:14px 16px;border-bottom:1px solid #f5f5f5;border-left:3px solid ${priColor};background:${priBg}">
     <div style="display:flex;align-items:flex-start;gap:8px">
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:13px;color:${priColor}">${n.title||''}</div>
         <div style="font-size:12px;color:var(--text);margin-top:3px;line-height:1.45">${n.message||''}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:6px">${_hrmTimeAgo(n.createdAt)}</div>
-        ${actionBtn}<button onclick="window.hrmDismissNotif('${n._id}')" style="margin-top:8px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;cursor:pointer;font-size:11px;color:var(--muted)">Dismiss</button>
+        ${actionBtn}<button onclick="window.hrmDismissNotif('${n._id}')" style="margin-top:8px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface);cursor:pointer;font-size:11px;color:var(--muted)">Dismiss</button>
       </div>
     </div>
   </div>`;
@@ -2592,13 +2592,13 @@ function _ensureNotifBell(){
   bell.id='notif-bell-wrap';
   bell.style.cssText='position:relative;cursor:pointer;margin-right:4px;display:flex;align-items:center';
   bell.onclick=()=>window.toggleNotifPanel();
-  bell.innerHTML=`<span style="font-size:18px;line-height:1">🔔</span><span id="notif-badge" style="display:none;position:absolute;top:-5px;right:-5px;background:var(--accent-urgent);color:#fff;border-radius:50%;width:17px;height:17px;font-size:9px;font-weight:700;align-items:center;justify-content:center">0</span>`;
+  bell.innerHTML=`<span style="font-size:18px;line-height:1">🔔</span><span id="notif-badge" style="display:none;position:absolute;top:-5px;right:-5px;background:var(--accent-urgent);color:var(--on-dark);border-radius:50%;width:17px;height:17px;font-size:9px;font-weight:700;align-items:center;justify-content:center">0</span>`;
   topbarUser.insertBefore(bell,topbarUser.firstChild);
   if(!document.getElementById('notif-panel')){
     const panel=document.createElement('div');
     panel.id='notif-panel';
     panel.style.cssText='display:none;position:fixed;top:52px;right:12px;width:360px;max-height:70vh;overflow-y:auto;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.18);z-index:1000';
-    panel.innerHTML=`<div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff"><span style="font-weight:700;font-size:14px">Notifications</span><button onclick="window.toggleNotifPanel()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1">×</button></div><div id="notif-list"></div>`;
+    panel.innerHTML=`<div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:var(--surface)"><span style="font-weight:700;font-size:14px">Notifications</span><button onclick="window.toggleNotifPanel()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1">×</button></div><div id="notif-list"></div>`;
     document.body.appendChild(panel);
   }
 }
@@ -2913,7 +2913,7 @@ function _loanCardHTML(l){
         <div style="font-size:20px;font-weight:700;color:var(--accent-urgent)">${_hrmFmtPKR(remaining)}</div>
       </div>
     </div>
-    <div style="margin-top:14px;background:#F3F4F6;height:8px;border-radius:4px;overflow:hidden"><div style="background:var(--accent-success);height:100%;width:${pct}%"></div></div>
+    <div style="margin-top:14px;background:var(--surface-2);height:8px;border-radius:4px;overflow:hidden"><div style="background:var(--accent-success);height:100%;width:${pct}%"></div></div>
     <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--muted);flex-wrap:wrap;gap:6px">
       <span>Paid ${_hrmFmtPKR(paidAmt)}</span>
       <span>${monthsPaid} of ${totalMonths} months</span>
@@ -2942,7 +2942,7 @@ window.loanNew=function(){
     <div class="field"><label>Employee *</label><select id="ln-emp">${empOptions}</select></div>
     <div class="field"><label>Total Loan Amount (PKR) *</label><input id="ln-total" type="number" min="0" oninput="window._loanCalcMonths()"></div>
     <div class="field"><label>Monthly Deduction (PKR) *</label><input id="ln-monthly" type="number" min="0" oninput="window._loanCalcMonths()"></div>
-    <div style="font-size:12px;color:var(--muted);margin:6px 0;padding:8px;background:#fafafa;border-radius:6px" id="ln-calc">Total months: —</div>
+    <div style="font-size:12px;color:var(--muted);margin:6px 0;padding:8px;background:var(--surface-2);border-radius:6px" id="ln-calc">Total months: —</div>
     <div class="field"><label>Start Month</label><input id="ln-start" type="month" value="${startMonth}"></div>
     <div class="field"><label>Reason / Notes</label><textarea id="ln-reason" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px"></textarea></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
@@ -3007,7 +3007,7 @@ window.loanShowHistory=function(id){
     <div class="sub">Total ${_hrmFmtPKR(l.totalAmount)} · Remaining ${_hrmFmtPKR(l.remainingBalance)} · ${l.monthlyDeduction?_hrmFmtPKR(l.monthlyDeduction)+' /month':''}</div>
     ${hist.length?`<table style="width:100%;font-size:13px;border-collapse:collapse;margin-top:8px">
       <thead><tr style="background:#1A1A2E;color:#fff"><th style="padding:8px;text-align:left">Month</th><th style="padding:8px;text-align:right">Deducted</th><th style="padding:8px;text-align:right">Remaining</th></tr></thead>
-      <tbody>${hist.map(h=>`<tr style="border-bottom:1px solid #E5E5E7"><td style="padding:8px">${h.month}</td><td style="padding:8px;text-align:right">${_hrmFmtPKR(h.amountDeducted)}</td><td style="padding:8px;text-align:right">${_hrmFmtPKR(h.remainingAfter)}</td></tr>`).join('')}</tbody>
+      <tbody>${hist.map(h=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px">${h.month}</td><td style="padding:8px;text-align:right">${_hrmFmtPKR(h.amountDeducted)}</td><td style="padding:8px;text-align:right">${_hrmFmtPKR(h.remainingAfter)}</td></tr>`).join('')}</tbody>
     </table>`:'<div class="empty">No payments deducted yet.</div>'}
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn-outline" onclick="window.hrmCloseModal()">Close</button></div>
   </div>`;
@@ -3104,7 +3104,7 @@ function renderPolicyEnginePage(){
   const paygradeTable=`<div class="card" style="padding:16px;margin-bottom:16px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-weight:700">Paygrade Configuration · پے گریڈ</div>${canEdit?`<button class="btn-outline" style="font-size:12px;padding:6px 12px" onclick="window.policySavePaygrades()">Save Paygrades</button>`:''}</div>
     <table style="width:100%;font-size:13px;margin-top:6px;border-collapse:collapse">
-      <thead><tr style="background:#fafafa"><th style="padding:8px;text-align:left">Grade</th><th style="padding:8px;text-align:right">Salary Min</th><th style="padding:8px;text-align:right">Salary Max</th><th style="padding:8px;text-align:center">Annual %</th><th style="padding:8px;text-align:center">Active</th></tr></thead>
+      <thead><tr style="background:var(--surface-2)"><th style="padding:8px;text-align:left">Grade</th><th style="padding:8px;text-align:right">Salary Min</th><th style="padding:8px;text-align:right">Salary Max</th><th style="padding:8px;text-align:center">Annual %</th><th style="padding:8px;text-align:center">Active</th></tr></thead>
       <tbody>${paygradeRows}</tbody>
     </table>
     ${!hrmPolicies?.autoIncrementActive?`<div style="margin-top:12px;padding:10px;background:var(--accent-warning-soft);border-radius:6px;font-size:12px;color:var(--accent-warning)">⚠ Auto-increments are currently INACTIVE. Toggle "Auto-Increment Active" above to enable system-wide.</div>`:''}
@@ -3125,7 +3125,7 @@ function renderPolicyEnginePage(){
   const logCard=`<div class="card" style="padding:0;overflow:hidden;margin-top:16px">
     <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700">Recent Policy Changes</div>
     <table style="width:100%;font-size:13px;border-collapse:collapse">
-      <thead><tr style="background:#fafafa"><th style="padding:8px;text-align:left">When</th><th style="padding:8px;text-align:left">Policy</th><th style="padding:8px;text-align:left">Old → New</th><th style="padding:8px;text-align:left">Changed By</th><th style="padding:8px;text-align:center">Affected</th></tr></thead>
+      <thead><tr style="background:var(--surface-2)"><th style="padding:8px;text-align:left">When</th><th style="padding:8px;text-align:left">Policy</th><th style="padding:8px;text-align:left">Old → New</th><th style="padding:8px;text-align:left">Changed By</th><th style="padding:8px;text-align:center">Affected</th></tr></thead>
       <tbody>${log||'<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--muted)">No changes recorded yet.</td></tr>'}</tbody>
     </table>
   </div>`;

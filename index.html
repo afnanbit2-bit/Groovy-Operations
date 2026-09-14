@@ -4,9 +4,26 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Groovy Operations v2</title>
-<link rel="stylesheet" href="/css/main.css?v=20260912s15">
+<!-- Theme, stamped BEFORE the stylesheet so there is no flash of the wrong
+     one on load. js/profile.js owns the toggle (Profile → Appearance) and
+     keeps following the OS while the preference is "system"; this is only
+     the first paint. Deliberately inline and tiny, like the diagnostics
+     error seed below — it must not depend on any script loading. -->
+<script>
+(function(){try{
+  var p=localStorage.getItem('groovy-theme');
+  if(p!=='dark'&&p!=='light')p='system';
+  var dark=p==='dark'||(p==='system'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);
+  var r=document.documentElement;
+  r.setAttribute('data-theme',dark?'dark':'light');
+  r.setAttribute('data-theme-pref',p);
+  window.__gvThemeDark=dark;
+}catch(e){}})();
+</script>
+<link rel="stylesheet" href="/css/main.css?v=20260914a">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#000000">
+<script>try{if(window.__gvThemeDark)document.querySelector('meta[name="theme-color"]').setAttribute('content','#0E0E10');}catch(e){}</script>
 <link rel="apple-touch-icon" href="/assets/icons/icon-192.png">
 <script>
 if('serviceWorker' in navigator){
@@ -80,7 +97,7 @@ if('serviceWorker' in navigator){
 // which picks this array up and is what actually shows it on screen. A
 // phone has no console; a white page with nothing on it is unfixable by
 // the person looking at it. See js/diagnostics.js.
-window.__GV_BUILD='20260913a';
+window.__GV_BUILD='20260914a';
 window.__gvErrors=[];
 window.addEventListener('error',function(e){
   try{
@@ -123,23 +140,23 @@ window.__vendorFallback=function(url){
 <script src="/assets/vendor/xlsx-0.18.5.full.min.js" onerror="window.__vendorFallback&&window.__vendorFallback('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js')"></script>
 <script src="/assets/vendor/jsbarcode-3.11.6.all.min.js" onerror="window.__vendorFallback&&window.__vendorFallback('https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js')"></script>
 <script src="/js/diagnostics.js?v=20260913a"></script>
-<script src="/js/shared.js?v=20260912s15"></script>
+<script src="/js/shared.js?v=20260914a"></script>
 <script src="/js/print-engine.js?v=20260912s5"></script>
 <script src="/js/auth.js?v=20260913a"></script>
-<script src="/js/pos.js?v=20260627b"></script>
-<script src="/js/embellishments.js?v=20260627b"></script>
-<script src="/js/hrm.js?v=20260627b"></script>
-<script src="/js/store.js?v=20260627b"></script>
-<script src="/js/store-cash.js?v=20260627b"></script>
-<script src="/js/gatepass.js?v=20260627b"></script>
-<script src="/js/fabric.js?v=20260912s6b"></script>
-<script src="/js/production.js?v=20260627b"></script>
-<script src="/js/shopify.js?v=20260627b"></script>
-<script src="/js/fulfillment.js?v=20260627b"></script>
+<script src="/js/pos.js?v=20260914a"></script>
+<script src="/js/embellishments.js?v=20260914a"></script>
+<script src="/js/hrm.js?v=20260914a"></script>
+<script src="/js/store.js?v=20260914a"></script>
+<script src="/js/store-cash.js?v=20260914a"></script>
+<script src="/js/gatepass.js?v=20260914a"></script>
+<script src="/js/fabric.js?v=20260914a"></script>
+<script src="/js/production.js?v=20260914a"></script>
+<script src="/js/shopify.js?v=20260914a"></script>
+<script src="/js/fulfillment.js?v=20260914a"></script>
 <script src="/js/notes.js?v=20260912s6b"></script>
-<script src="/js/boards.js?v=20260912s15"></script>
-<script src="/js/profile.js?v=20260913a"></script>
-<script src="/js/activity.js?v=20260912s15"></script>
+<script src="/js/boards.js?v=20260914a"></script>
+<script src="/js/profile.js?v=20260914a"></script>
+<script src="/js/activity.js?v=20260914a"></script>
 <script type="module">
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import{initializeFirestore,persistentLocalCache,persistentMultipleTabManager,getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch,onSnapshot}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';

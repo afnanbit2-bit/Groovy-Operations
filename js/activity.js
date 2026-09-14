@@ -12,7 +12,7 @@ async function loadActivity(){
     const items=snap.docs.map(d=>d.data());
     m.innerHTML=`<div class="page-head"><div class="page-title">Activity Log</div><div class="page-sub">${items.length} recent actions</div></div>
     <div class="card">${items.length?items.map(a=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #f5f5f5">
-      <div style="width:28px;height:28px;border-radius:50%;background:var(--dark);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0">${(a.user||'?')[0].toUpperCase()}</div>
+      <div style="width:28px;height:28px;border-radius:50%;background:var(--dark);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--on-dark);flex-shrink:0">${(a.user||'?')[0].toUpperCase()}</div>
       <div style="flex:1"><div style="font-size:13px"><strong>${a.user||'?'}</strong> <span style="color:var(--muted)">— ${a.action||''}</span></div>
         <div style="font-size:11px;color:var(--muted)">${a.detail||''}</div>
         <div style="font-size:10px;color:#aaa;margin-top:1px">${a.ts?new Date(a.ts).toLocaleString('en-GB'):a.date||''}</div>
@@ -149,7 +149,7 @@ function _monitorRoleTier(name,username){
 const _MONITOR_TIER_LABELS=['Owners','Managers','Everyone else'];
 function _monitorAvatar(name,size){
   size=size||32;
-  return`<div style="width:${size}px;height:${size}px;border-radius:50%;background:var(--dark);display:flex;align-items:center;justify-content:center;font-size:${Math.round(size*0.38)}px;font-weight:700;color:#fff;flex-shrink:0">${(name||'?')[0].toUpperCase()}</div>`;
+  return`<div style="width:${size}px;height:${size}px;border-radius:50%;background:var(--dark);display:flex;align-items:center;justify-content:center;font-size:${Math.round(size*0.38)}px;font-weight:700;color:var(--on-dark);flex-shrink:0">${(name||'?')[0].toUpperCase()}</div>`;
 }
 function _monitorFmtTime(a){ return a.ts?new Date(a.ts).toLocaleString('en-GB'):a.date||''; }
 function _monitorEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }

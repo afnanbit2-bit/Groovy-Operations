@@ -240,7 +240,7 @@ function _fulfillBarChart(bars,color){
 // Inline magnitude bar + status-coloured % label for the brand/courier tables.
 function _fulfillRateBar(rr,rrColor){
   return `<div style="display:flex;align-items:center;gap:7px;justify-content:flex-end">
-    <div style="width:52px;height:6px;background:#eee;border-radius:3px;overflow:hidden"><div style="height:100%;width:${Math.min(100,rr)}%;background:${rrColor(rr)}"></div></div>
+    <div style="width:52px;height:6px;background:var(--soft);border-radius:3px;overflow:hidden"><div style="height:100%;width:${Math.min(100,rr)}%;background:${rrColor(rr)}"></div></div>
     <span style="font-weight:600;min-width:34px;text-align:right;color:${rrColor(rr)}">${rr}%</span>
   </div>`;
 }
@@ -567,19 +567,19 @@ function _postexOverview(){
 function _postexSyncBar(){
   const when=postexMeta&&postexMeta.lastRun?_postexAgo(postexMeta.lastRun):'never';
   const n=postexOrders.length;
-  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:#111;color:#fff;border-radius:12px;padding:12px 16px;margin-bottom:14px">
+  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:var(--dark);color:var(--on-dark);border-radius:12px;padding:12px 16px;margin-bottom:14px">
       <div style="display:flex;align-items:center;gap:8px;min-width:0">
         <span style="font-size:15px">⚡</span>
         <div><div style="font-size:14px;font-weight:800">PostEx courier data</div>
         <div style="font-size:12px;opacity:.7">${_fnum(n)} parcels cached · synced ${when}</div></div>
       </div>
-      <button class="btn-sm" style="background:#fff;color:#111;border:none" ${_postexSyncing?'disabled':''} onclick="window.fulfillSyncPostex()">${_postexSyncing?'Syncing…':'Sync now'}</button>
+      <button class="btn-sm" style="background:var(--surface);color:var(--text);border:none" ${_postexSyncing?'disabled':''} onclick="window.fulfillSyncPostex()">${_postexSyncing?'Syncing…':'Sync now'}</button>
     </div>`;
 }
 
 // Small KPI tile reused across PostEx views.
 function _pxKpi(label,val,sub,color){
-  return `<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:15px 14px;text-align:center">
+  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 14px;text-align:center">
       <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">${label}</div>
       <div style="font-size:24px;font-weight:800;color:${color||'var(--text)'}">${val}</div>
       ${sub?`<div style="font-size:12px;color:var(--muted);margin-top:3px">${sub}</div>`:''}</div>`;
@@ -590,11 +590,11 @@ function _renderPostexTab(){
   if(!postexOrdersLoaded)
     return `<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-        <span style="font-size:14px;color:var(--muted)">Loading PostEx courier data… <b id="postex-progress-pct" style="color:#111">${Math.round(_postexProgressPct)||0}%</b></span>
+        <span style="font-size:14px;color:var(--muted)">Loading PostEx courier data… <b id="postex-progress-pct" style="color:var(--text)">${Math.round(_postexProgressPct)||0}%</b></span>
         <button class="btn-sm" onclick="window.fulfillRetryPostex()">Retry</button>
       </div>
-      <div style="height:8px;background:#F0F0F0;border-radius:6px;overflow:hidden">
-        <div id="postex-progress-fill" style="height:100%;width:${Math.max(6,_postexProgressPct)}%;background:#111;border-radius:6px;transition:width .25s ease"></div>
+      <div style="height:8px;background:var(--soft);border-radius:6px;overflow:hidden">
+        <div id="postex-progress-fill" style="height:100%;width:${Math.max(6,_postexProgressPct)}%;background:var(--dark);border-radius:6px;transition:width .25s ease"></div>
       </div></div>`;
   // Read failed outright (permissions, timeout, etc.).
   if(_postexError)
@@ -970,7 +970,7 @@ function _renderPostexCPR(){
         <span style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">CPR enrichment</span>
         <span style="font-size:12px;color:var(--muted)">${_fnum(withCpr)} of ${_fnum(eligible)} delivered/returned parcels have CPR data</span>
       </div>
-      <div style="height:8px;background:#F0F0F0;border-radius:6px;overflow:hidden"><div style="height:100%;width:${Math.max(2,pct)}%;background:#14532D;border-radius:6px"></div></div>
+      <div style="height:8px;background:var(--soft);border-radius:6px;overflow:hidden"><div style="height:100%;width:${Math.max(2,pct)}%;background:#14532D;border-radius:6px"></div></div>
       <div style="font-size:11px;color:var(--muted);margin-top:6px">CPR data is fetched one parcel at a time from PostEx's Payment Status API and fills in over a few daily runs. Use <b>Fetch CPR now</b> to speed up the backfill.</div>
       <button class="btn-sm" style="margin-top:10px" ${_postexCprFetching?'disabled':''} onclick="window.fulfillFetchCPR()">${_postexCprFetching?'Fetching…':'Fetch CPR now'}</button>
     </div>`;
@@ -1112,7 +1112,7 @@ function _fulfillSectionBar(){
       style="display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border:none;border-radius:9px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;transition:all .12s;
       background:${_fulfillSection===id?'#111':'transparent'};color:${_fulfillSection===id?'#fff':'var(--muted)'};box-shadow:${_fulfillSection===id?'0 1px 3px rgba(0,0,0,.18)':'none'}">
       <span style="font-size:14px">${icon}</span>${label}</button>`;
-  return `<div style="display:inline-flex;gap:3px;background:#F0F0F0;border-radius:12px;padding:4px;margin-bottom:16px">
+  return `<div style="display:inline-flex;gap:3px;background:var(--soft);border-radius:12px;padding:4px;margin-bottom:16px">
       ${seg('reporting','📋','Daily Reporting')}${seg('postex','⚡','PostEx')}
     </div>`;
 }
@@ -1174,7 +1174,7 @@ async function _fulfillDashboardInject(){
     : `<span style="font-size:13px;color:var(--muted);white-space:nowrap">View analytics ›</span>`;
   const div=document.createElement('div');
   div.id='fulfill-dash-card';
-  div.innerHTML=`<div onclick="window.showPage('fulfillment')" style="cursor:pointer;background:#fff;border:1px solid var(--border);border-left:4px solid ${accent};border-radius:12px;padding:12px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+  div.innerHTML=`<div onclick="window.showPage('fulfillment')" style="cursor:pointer;background:var(--surface);border:1px solid var(--border);border-left:4px solid ${accent};border-radius:12px;padding:12px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
     <div><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Courier Performance</div>
     <div style="font-size:15px;font-weight:700;margin-top:2px">${lat}</div></div>${right}</div>`;
   m.insertBefore(div,m.firstChild);
@@ -1225,10 +1225,10 @@ function _renderFulfillEntry(){
       <td style="padding:9px 4px;font-size:12px;color:var(--muted);word-break:break-word">${r.courier}</td>
       <td style="padding:5px 4px"><input type="number" min="0" inputmode="numeric" id="fd-${section}-${i}-ship"
         value="${s.shipments!=null?s.shipments:''}" placeholder="0" oninput="window._fulfillRecalc()" onfocus="${_focusJS}"
-        style="width:100%;min-width:0;padding:10px 8px;border:1px solid var(--border);border-radius:7px;font-size:15px;text-align:right;background:#FAFAFA;font-family:inherit;outline:none"></td>
+        style="width:100%;min-width:0;padding:10px 8px;border:1px solid var(--border);border-radius:7px;font-size:15px;text-align:right;background:var(--surface-2);font-family:inherit;outline:none"></td>
       <td style="padding:5px 4px"><input type="number" min="0" inputmode="numeric" id="fd-${section}-${i}-amt"
         value="${s.amount!=null?s.amount:''}" placeholder="0" oninput="window._fulfillRecalc()" onfocus="${_focusJS}"
-        style="width:100%;min-width:0;padding:10px 8px;border:1px solid var(--border);border-radius:7px;font-size:15px;text-align:right;background:#FAFAFA;font-family:inherit;outline:none"></td>
+        style="width:100%;min-width:0;padding:10px 8px;border:1px solid var(--border);border-radius:7px;font-size:15px;text-align:right;background:var(--surface-2);font-family:inherit;outline:none"></td>
     </tr>`;
   }).join('');
 
@@ -1418,7 +1418,7 @@ function _renderFulfillAnalytics(){
     if(prevReps.length){prev=_sumFulfill(prevReps);prevRate=_recRate(prevReps);}
   }
 
-  const kpi=(label,val,sub,color)=>`<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px 14px;text-align:center">
+  const kpi=(label,val,sub,color)=>`<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 14px;text-align:center">
     <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">${label}</div>
     <div style="font-size:26px;font-weight:800;color:${color||'var(--text)'}">${val}</div>
     ${sub?`<div style="font-size:12px;color:var(--muted);margin-top:3px">${sub}</div>`:''}
@@ -1641,8 +1641,8 @@ function _renderFulfillLog(){
   return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input id="fl-search" value="${sv}" placeholder="Search date, day, or person…" oninput="window.fulfillLogSearch(this.value)"
-          style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#FAFAFA;font-family:inherit;outline:none;min-width:230px">
-        <select onchange="window.fulfillLogPerPage(this.value)" style="padding:9px 8px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;font-family:inherit">${perOpts}</select>
+          style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface-2);font-family:inherit;outline:none;min-width:230px">
+        <select onchange="window.fulfillLogPerPage(this.value)" style="padding:9px 8px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);font-family:inherit">${perOpts}</select>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${(session.role==='owner'||session.role==='manager')?`<label class="btn-pdf" style="cursor:pointer" title="Import a Dispatch/Returns Excel workbook">⤒ Import Excel<input type="file" accept=".xlsx,.xls" style="display:none" onchange="window.fulfillImport(this)"></label>`:''}

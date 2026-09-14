@@ -76,10 +76,10 @@ function renderGatePass(){
 function renderOutward(){
   return`<div class="card"><div class="card-title">Issue new pass</div>
     <div class="form-grid">
-      <div class="field"><label>Person name</label><input id="gp-name" value="${session.name}" readonly style="background:#f0f0f0;cursor:default"></div>
+      <div class="field"><label>Person name</label><input id="gp-name" value="${session.name}" readonly style="background:var(--soft);cursor:default"></div>
       <div class="field"><label>Date</label><input id="gp-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
       <div class="field"><label>Pass type *</label>
-        <select id="gp-type" onchange="window.onGPTypeChange()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%">
+        <select id="gp-type" onchange="window.onGPTypeChange()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--text);font-family:inherit;outline:none;width:100%">
           ${GP_TYPE_OPTS.map(([v,l])=>`<option value="${v}"${v===_gpType?' selected':''}>${l}</option>`).join('')}
         </select>
       </div>
@@ -88,7 +88,7 @@ function renderOutward(){
       </div>
       <div class="field" style="position:relative"><label>Article name *</label>
         <input id="gp-article" placeholder="Type to search e.g. GH001 or Black Hoodie…" autocomplete="off" oninput="window.filterGPArticle(this.value)" onfocus="window.filterGPArticle(this.value)">
-        <div id="gp-article-dd" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:220px;overflow-y:auto;margin-top:3px"></div>
+        <div id="gp-article-dd" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:220px;overflow-y:auto;margin-top:3px"></div>
       </div>
       <div class="field"><label>Specification *</label>
         <input id="gp-spec" placeholder="e.g. color / GSM / lot / variant — required">
@@ -116,15 +116,15 @@ function renderOutward(){
     <div id="gp-sizes"></div>
     <button type="button" class="btn-outline" style="font-size:12px;padding:6px 12px;margin-top:8px" onclick="window.gpAddSize()">+ Add size</button>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">
-      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total units</div><div id="gp-t-units" style="font-size:18px;font-weight:700;color:#fff">0 pcs</div></div>
-      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total bundles</div><div id="gp-t-bundles" style="font-size:18px;font-weight:700;color:#fff">0</div></div>
-      <div style="background:var(--red);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total boras</div><div><input id="gp-boras" type="number" min="0" placeholder="0" style="background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,.35);color:#fff;font-size:18px;font-weight:700;width:60px;text-align:center;padding:0;border-radius:0;outline:none"></div></div>
+      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total units</div><div id="gp-t-units" style="font-size:18px;font-weight:700;color:var(--on-dark)">0 pcs</div></div>
+      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total bundles</div><div id="gp-t-bundles" style="font-size:18px;font-weight:700;color:var(--on-dark)">0</div></div>
+      <div style="background:var(--red);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total boras</div><div><input id="gp-boras" type="number" min="0" placeholder="0" style="background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,.35);color:var(--on-dark);font-size:18px;font-weight:700;width:60px;text-align:center;padding:0;border-radius:0;outline:none"></div></div>
     </div>
   </div>
   <div class="card" id="gp-fabric-card" style="display:none"><div class="card-title">Fabric details</div>
     <div class="form-grid">
       <div class="field" style="grid-column:1/-1"><label>Pick from fabric stock *</label>
-        <select id="gp-fab-stock" onchange="window.onGPFabStockPick()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%">
+        <select id="gp-fab-stock" onchange="window.onGPFabStockPick()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--text);font-family:inherit;outline:none;width:100%">
           <option value="">— pick a fabric in stock —</option>
         </select>
         <div style="font-size:11px;color:var(--muted);margin-top:4px">Choose specific rolls below to deduct from inventory.</div>
@@ -139,8 +139,8 @@ function renderOutward(){
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
-      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total <span id="gp-fab-tot-label">weight</span></div><div id="gp-fab-tot-display" style="font-size:18px;font-weight:700;color:#fff">0 kg</div></div>
-      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Rolls</div><div id="gp-fab-rolls-display" style="font-size:18px;font-weight:700;color:#fff">0</div></div>
+      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total <span id="gp-fab-tot-label">weight</span></div><div id="gp-fab-tot-display" style="font-size:18px;font-weight:700;color:var(--on-dark)">0 kg</div></div>
+      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Rolls</div><div id="gp-fab-rolls-display" style="font-size:18px;font-weight:700;color:var(--on-dark)">0</div></div>
     </div>
   </div>
   <div class="card" id="gp-item-card" style="display:none"><div class="card-title">Items / assets</div>
@@ -156,9 +156,9 @@ function renderOutward(){
       <div class="field"><label>Customer name *</label><input id="gp-sale-cust" placeholder="Walk-in customer name"></div>
       <div class="field"><label>Phone</label><input id="gp-sale-phone" placeholder="Optional"></div>
       <div class="field"><label>Rate (Rs per <span id="gp-sale-unit">kg</span>) *</label><input id="gp-sale-rate" type="number" min="0" step="0.01" placeholder="0" oninput="window.gpSaleRecalc()"></div>
-      <div class="field"><label>Payment received into *</label><select id="gp-sale-acc" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#FAFAFA;color:var(--text);font-family:inherit;outline:none;width:100%"></select></div>
+      <div class="field"><label>Payment received into *</label><select id="gp-sale-acc" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--text);font-family:inherit;outline:none;width:100%"></select></div>
     </div>
-    <div style="background:var(--dark);border-radius:9px;padding:12px;margin-top:12px;display:flex;justify-content:space-between;align-items:center;color:#fff">
+    <div style="background:var(--dark);border-radius:9px;padding:12px;margin-top:12px;display:flex;justify-content:space-between;align-items:center;color:var(--on-dark)">
       <div style="font-size:11px;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.05em">Bill total</div>
       <div id="gp-sale-total" style="font-size:20px;font-weight:800">Rs 0</div>
     </div>
@@ -201,7 +201,7 @@ function _gpRenderOutstanding(){
       <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:9px;color:var(--muted)">
         <span>sent <b style="color:var(--text)">${sent}${uL}</b></span><span>back <b style="color:var(--text)">${back}${uL}</b></span><span>still out <b style="color:#dc2626">${bal}${uL}</b></span>
       </div>
-      <div style="height:7px;border-radius:5px;background:#f0f0f0;overflow:hidden;margin-top:8px"><div style="height:100%;width:${pct}%;background:#16a34a"></div></div>
+      <div style="height:7px;border-radius:5px;background:var(--soft);overflow:hidden;margin-top:8px"><div style="height:100%;width:${pct}%;background:#16a34a"></div></div>
     </div>`;
   }).join('');
 }
@@ -255,9 +255,9 @@ function renderGPPage(){
   if(pg){
     if(pages<=1){pg.innerHTML='';return;}
     pg.innerHTML=`
-      <button onclick="window.gpGotoPage(${gpPage-1})" ${gpPage===1?'disabled':''} style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit;color:var(--text)">← Prev</button>
+      <button onclick="window.gpGotoPage(${gpPage-1})" ${gpPage===1?'disabled':''} style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:12px;font-family:inherit;color:var(--text)">← Prev</button>
       <span style="font-size:12px;color:var(--muted)">Page ${gpPage} of ${pages}</span>
-      <button onclick="window.gpGotoPage(${gpPage+1})" ${gpPage===pages?'disabled':''} style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit;color:var(--text)">Next →</button>`;
+      <button onclick="window.gpGotoPage(${gpPage+1})" ${gpPage===pages?'disabled':''} style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:12px;font-family:inherit;color:var(--text)">Next →</button>`;
   }
 }
 window.gpGotoPage=function(n){gpPage=n;renderGPPage();};
@@ -268,15 +268,15 @@ function _gpPassRowHtml(p){
   const pendBadge=pend?`<span title="${pend.action==='delete'?'Delete':'Edit'} pending approval" style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${pend.action==='delete'?'Delete':'Edit'} pending</span>`:'';
   const isFab=p.gpType==='fabric',isItem=p.gpType==='item';
   const typeBadge=isFab?`<span style="display:inline-block;background:#dbeafe;color:#1e40af;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">Fabric</span>`:(isItem?`<span style="display:inline-block;background:#ede9fe;color:#5b21b6;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">Item</span>`:'');
-  const reasonBadge=p.gpReason&&p.gpReason!=='other'?`<span style="display:inline-block;background:#f3f4f6;color:#374151;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${GP_REASON_LABEL[p.gpReason]||p.gpReason}</span>`:'';
+  const reasonBadge=p.gpReason&&p.gpReason!=='other'?`<span style="display:inline-block;background:var(--surface-2);color:#374151;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${GP_REASON_LABEL[p.gpReason]||p.gpReason}</span>`:'';
   const retBadge=p.expectReturn?(()=>{const st=_gpReturnStatus(p);const c=st==='Overdue'?'#dc2626':(st==='Partial'?'#92400e':'#6b7280');const b=st==='Overdue'?'#fee2e2':(st==='Partial'?'#fef3c7':'#f3f4f6');return `<span style="display:inline-block;background:${b};color:${c};font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px">${st}</span>`;})():(p.returnStatus==='Complete'?`<span style="display:inline-block;background:#dcfce7;color:#166534;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px">Returned</span>`:'');
   const qtyLabel=isFab?`${p.fabricQty||0} ${p.fabricUnit||'kg'}${p.rollsCount?` · ${p.rollsCount} rolls`:''}`:(isItem?`${(p.assetItems||[]).length} item${(p.assetItems||[]).length===1?'':'s'}`:`${p.totalUnits||0} pcs`);
   return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5;flex-wrap:wrap;gap:8px">
     <div><div style="font-weight:700;color:var(--red);font-size:11px">${p.id}${typeBadge}${reasonBadge}${retBadge}${pendBadge}</div><div style="font-size:13px;font-weight:500">${p.article||'—'}${p.spec?` <span style="font-weight:400;color:var(--muted)">· ${_gpEsc(p.spec)}</span>`:''}</div><div style="font-size:11px;color:var(--muted)">${p.name||'—'} · ${p.date||''}${p.time?' '+p.time:''} · ${p.dest||'—'}</div></div>
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div style="text-align:right;font-size:12px;color:var(--muted);font-weight:500">${qtyLabel}</div>
     <button class="btn-pdf" onclick="window.generateGPPdf('${p.id}')">⬇ PDF</button>
-    <button onclick="window.editGP('${p.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
-    <button onclick="window.requestDeleteGP('${p.id}')" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
+    <button onclick="window.editGP('${p.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
+    <button onclick="window.requestDeleteGP('${p.id}')" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:var(--surface);color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
     </div>
   </div>`;
 }
@@ -289,20 +289,20 @@ function renderGPRegistry(){
     <input id="gp-reg-search" value="${_gpRegQ.replace(/"/g,'&quot;')}" oninput="window.gpRegSearch(this.value)" placeholder="Search GP #, article, spec, PO, destination, person…" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;margin-bottom:10px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       <div class="field" style="margin:0;min-width:130px"><label>Type</label>
-        <select onchange="window.gpRegSet('type',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#FAFAFA;color:var(--text);font-family:inherit;width:100%">
+        <select onchange="window.gpRegSet('type',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--surface-2);color:var(--text);font-family:inherit;width:100%">
           ${[['all','All types'],['fabric','Fabric'],['garments','Garments'],['item','Item / asset']].map(([v,l])=>`<option value="${v}"${_gpRegType===v?' selected':''}>${l}</option>`).join('')}
         </select></div>
       <div class="field" style="margin:0;min-width:150px"><label>Reason</label>
-        <select onchange="window.gpRegSet('reason',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#FAFAFA;color:var(--text);font-family:inherit;width:100%">
+        <select onchange="window.gpRegSet('reason',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--surface-2);color:var(--text);font-family:inherit;width:100%">
           ${[['all','All reasons'],['process','For process'],['return_vendor','Return to vendor'],['sale','Sale'],['other','Other']].map(([v,l])=>`<option value="${v}"${_gpRegReason===v?' selected':''}>${l}</option>`).join('')}
         </select></div>
       <div class="field" style="margin:0;min-width:150px"><label>Issued by</label>
-        <select onchange="window.gpRegSet('issuer',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#FAFAFA;color:var(--text);font-family:inherit;width:100%">
+        <select onchange="window.gpRegSet('issuer',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--surface-2);color:var(--text);font-family:inherit;width:100%">
           <option value="all"${_gpRegIssuer==='all'?' selected':''}>Everyone</option>
           ${issuers.map(i=>`<option value="${_gpEsc(i)}"${_gpRegIssuer===i?' selected':''}>${_gpEsc(i)}</option>`).join('')}
         </select></div>
-      <div class="field" style="margin:0;min-width:130px"><label>From date</label><input type="date" value="${_gpRegFrom}" onchange="window.gpRegSet('from',this.value)" style="padding:7px 9px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#FAFAFA;color:var(--text);font-family:inherit;width:100%"></div>
-      <div class="field" style="margin:0;min-width:130px"><label>To date</label><input type="date" value="${_gpRegTo}" onchange="window.gpRegSet('to',this.value)" style="padding:7px 9px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#FAFAFA;color:var(--text);font-family:inherit;width:100%"></div>
+      <div class="field" style="margin:0;min-width:130px"><label>From date</label><input type="date" value="${_gpRegFrom}" onchange="window.gpRegSet('from',this.value)" style="padding:7px 9px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--surface-2);color:var(--text);font-family:inherit;width:100%"></div>
+      <div class="field" style="margin:0;min-width:130px"><label>To date</label><input type="date" value="${_gpRegTo}" onchange="window.gpRegSet('to',this.value)" style="padding:7px 9px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--surface-2);color:var(--text);font-family:inherit;width:100%"></div>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
       <div style="display:flex;gap:8px;align-items:center">
@@ -505,16 +505,16 @@ window.onGPFabStockPick=function(){
   const inStock=(stock.rolls||[]).filter(r=>r.status==='in_stock');
   if(!inStock.length){wrap.innerHTML='<div style="font-size:12px;color:var(--muted);padding:8px">No in-stock rolls.</div>';window.gpFabRecalc();return;}
   wrap.innerHTML=`<label>Select rolls to issue (${inStock.length} in stock)</label>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;max-height:240px;overflow-y:auto;padding:8px;background:#fafafa;border:1px solid var(--border);border-radius:8px">
-      ${inStock.map(r=>`<label style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;max-height:240px;overflow-y:auto;padding:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px">
+      ${inStock.map(r=>`<label style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">
         <input type="checkbox" data-roll="${_gpEsc(r.rollCode)}" data-weight="${r.weight||0}" onchange="window.onGPFabRollToggle()" style="margin:0">
         <span style="font-weight:700;letter-spacing:.04em">${r.rollCode}</span>
         <span style="color:var(--muted)">${r.weight||0} ${stock.unit||'kg'}</span>
       </label>`).join('')}
     </div>
     <div style="margin-top:6px;display:flex;gap:6px">
-      <button type="button" onclick="window.gpFabRollSelectAll(true)" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-family:inherit">Select all</button>
-      <button type="button" onclick="window.gpFabRollSelectAll(false)" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-family:inherit">Clear</button>
+      <button type="button" onclick="window.gpFabRollSelectAll(true)" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-family:inherit">Select all</button>
+      <button type="button" onclick="window.gpFabRollSelectAll(false)" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-family:inherit">Clear</button>
     </div>`;
   window.gpFabRecalc();
 };
@@ -708,8 +708,8 @@ function renderReturnsList(){
           <div style="font-size:10px">${cum}</div>
         </div>
         <div style="display:flex;gap:6px">
-          <button onclick="window.editReturn('${r.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
-          <button onclick="window.requestDeleteReturn('${r.id}')" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
+          <button onclick="window.editReturn('${r.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
+          <button onclick="window.requestDeleteReturn('${r.id}')" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:var(--surface);color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
         </div>
       </div>
     </div>`;
@@ -933,7 +933,7 @@ window.editGP=function(gpId){
       <input type="hidden" id="gpe-fab-unit" value="${fabUnit}">`
     :`<div style="margin-top:12px;font-weight:600;font-size:13px">Units by size</div>
       <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
-        <thead><tr style="background:#fafafa"><th style="padding:6px;text-align:left;font-weight:600">Size</th><th style="padding:6px;text-align:left;font-weight:600">Units</th><th style="padding:6px;text-align:left;font-weight:600">Weight (kg)</th><th></th></tr></thead>
+        <thead><tr style="background:var(--surface-2)"><th style="padding:6px;text-align:left;font-weight:600">Size</th><th style="padding:6px;text-align:left;font-weight:600">Units</th><th style="padding:6px;text-align:left;font-weight:600">Weight (kg)</th><th></th></tr></thead>
         <tbody id="gpe-rows-body">${rowsHTML}</tbody>
       </table>
       <button onclick="window.gpEditAddRow()" style="margin-top:6px;padding:6px 12px;background:none;border:1px dashed var(--border);border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--muted)">+ Add size</button>`;
@@ -1187,7 +1187,7 @@ function _renderGPPendingApprovals(){
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0">
             <button onclick="window.gpApproveRequest('${r.id}')" style="padding:6px 12px;border:1px solid #16a34a;border-radius:6px;background:#16a34a;color:#fff;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">Approve</button>
-            <button onclick="window.gpRejectRequest('${r.id}')" style="padding:6px 12px;border:1px solid #dc2626;border-radius:6px;background:#fff;color:#dc2626;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">Reject</button>
+            <button onclick="window.gpRejectRequest('${r.id}')" style="padding:6px 12px;border:1px solid #dc2626;border-radius:6px;background:var(--surface);color:#dc2626;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">Reject</button>
           </div>
         </div>
       </div>`;
@@ -1206,7 +1206,7 @@ function _renderGPEditDiff(req){
     return`<tr><td style="padding:3px 6px;color:var(--muted);font-weight:600;vertical-align:top">${_gpEsc(k)}</td><td style="padding:3px 6px;color:#dc2626;text-decoration:line-through;vertical-align:top;word-break:break-word">${_gpEsc(sa.length>120?sa.slice(0,120)+'…':sa)}</td><td style="padding:3px 6px;color:#16a34a;vertical-align:top;word-break:break-word">${_gpEsc(sb.length>120?sb.slice(0,120)+'…':sb)}</td></tr>`;
   }).filter(Boolean).join('');
   if(!rows)return'<div style="font-size:11px;color:var(--muted);margin-top:4px">No effective changes detected.</div>';
-  return`<div style="margin-top:6px;background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:#fafafa"><th style="padding:4px 6px;text-align:left;font-weight:600">Field</th><th style="padding:4px 6px;text-align:left;font-weight:600;color:#dc2626">Current</th><th style="padding:4px 6px;text-align:left;font-weight:600;color:#16a34a">Proposed</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return`<div style="margin-top:6px;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:var(--surface-2)"><th style="padding:4px 6px;text-align:left;font-weight:600">Field</th><th style="padding:4px 6px;text-align:left;font-weight:600;color:#dc2626">Current</th><th style="padding:4px 6px;text-align:left;font-weight:600;color:#16a34a">Proposed</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 window.gpApproveRequest=async function(reqId){

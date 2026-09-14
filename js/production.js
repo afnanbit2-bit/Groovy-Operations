@@ -72,7 +72,7 @@ function _receivingListHTML(){
   const totalPend=all.reduce((a,p)=>a+Math.max(0,poCutTotal(p)-poReceivedTotal(p)),0);
   return`<div style="font-size:12px;color:var(--muted);margin-bottom:10px">${all.length} PO${all.length!==1?'s':''} awaiting receipt · ${totalPend} pcs to receive</div>
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-    <input id="pack-search" placeholder="Search PO number, article, fabric…" value="${_gpEsc(_packQ)}" oninput="window.packSetSearch(this.value)" style="flex:1;min-width:180px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;outline:none">
+    <input id="pack-search" placeholder="Search PO number, article, fabric…" value="${_gpEsc(_packQ)}" oninput="window.packSetSearch(this.value)" style="flex:1;min-width:180px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
   </div>
   ${list.length?list.map(p=>_packListCard(p)).join(''):`<div class="empty" style="padding:28px;text-align:center">${all.length?'No POs match your search.':'Nothing to receive right now. Cut lots appear here once a PO is released and cut.'}</div>`}
   <div style="height:80px"></div>`;
@@ -110,7 +110,7 @@ function _renderPackDetail(po){
   const history=Object.keys(groups).sort((a,b)=>(groups[b].ts||'').localeCompare(groups[a].ts||'')).map(rid=>{
     const g=groups[rid];const tot=g.items.reduce((a,e)=>a+(Number(e.qty)||0),0);
     const when=g.ts?new Date(g.ts).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'';
-    return`<div style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:#fafafa">
+    return`<div style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--surface-2)">
       <div style="display:flex;justify-content:space-between;font-size:12px"><span style="font-weight:700">${tot} pcs</span><span style="color:var(--muted)">${when} · ${_gpEsc(g.by||'')}</span></div>
       <div style="font-size:12px;color:var(--muted);margin-top:3px">${g.items.map(e=>`${_gpEsc(e.size)}×${e.qty}`).join(' · ')}</div>
     </div>`;
@@ -121,7 +121,7 @@ function _renderPackDetail(po){
   <div class="card">${poReceiveBar(po)}</div>
   <div class="card"><div class="card-title">Received quantity by size ${fully?'<span style="color:#16a34a;font-weight:700;font-size:12px">· fully received</span>':''}</div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr style="background:#fafafa">
+      <thead><tr style="background:var(--surface-2)">
         <th style="padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--muted)">Size</th>
         <th style="padding:8px;text-align:center;font-size:11px;text-transform:uppercase;color:var(--muted)">Cut</th>
         <th style="padding:8px;text-align:center;font-size:11px;text-transform:uppercase;color:var(--muted)">Received</th>
@@ -198,7 +198,7 @@ function _barcodeListHTML(){
   const totalRdy=all.reduce((a,p)=>a+_mapTotal(poToBarcodeBySize(p)),0);
   return`<div style="font-size:12px;color:var(--muted);margin-bottom:10px">${all.length} PO${all.length!==1?'s':''} · ${totalRdy} pcs ready to barcode &amp; transfer</div>
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-    <input id="bc-search" placeholder="Search PO number, article…" value="${_gpEsc(_bcQ)}" oninput="window.bcSetSearch(this.value)" style="flex:1;min-width:180px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;outline:none">
+    <input id="bc-search" placeholder="Search PO number, article…" value="${_gpEsc(_bcQ)}" oninput="window.bcSetSearch(this.value)" style="flex:1;min-width:180px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
   </div>
   ${list.length?list.map(p=>_barcodeListCard(p)).join(''):`<div class="empty" style="padding:28px;text-align:center">${all.length?'No POs match your search.':'Nothing ready to transfer. QC-passed pieces appear here.'}</div>`}
   <div style="height:80px"></div>`;
@@ -235,7 +235,7 @@ function _renderBarcodeDetail(po){
   const history=Object.keys(tGroups).sort((a,b)=>(tGroups[b].ts||'').localeCompare(tGroups[a].ts||'')).map(tid=>{
     const g=tGroups[tid];const tot=g.items.reduce((a,e)=>a+(Number(e.qty)||0),0);
     const when=g.ts?new Date(g.ts).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'';
-    return`<div style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:#fafafa">
+    return`<div style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--surface-2)">
       <div style="display:flex;justify-content:space-between;font-size:12px"><span style="font-weight:700">${_gpEsc(tid)} · ${tot} pcs</span><span style="color:var(--muted)">${when} · ${_gpEsc(g.by||'')}</span></div>
       <div style="font-size:12px;color:var(--muted);margin-top:3px">${g.items.map(e=>`${_gpEsc(e.size)}×${e.qty}`).join(' · ')}</div>
     </div>`;
@@ -246,7 +246,7 @@ function _renderBarcodeDetail(po){
   <div class="card"><div style="font-size:12px;color:var(--muted)">Scan the already-barcoded pieces (ERP / SKU) and enter the counted quantity per size, then book the stock transfer.</div></div>
   <div class="card"><div class="card-title">Ready to barcode ${totalAvail?'':'<span style="color:#16a34a;font-weight:700;font-size:12px">· all transferred</span>'}</div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr style="background:#fafafa">
+      <thead><tr style="background:var(--surface-2)">
         <th style="padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--muted)">Size</th>
         <th style="padding:8px;text-align:center;font-size:11px;text-transform:uppercase;color:var(--muted)">Ready</th>
         <th style="padding:8px;text-align:center;font-size:11px;text-transform:uppercase;color:var(--muted)">Transferred</th>
@@ -377,7 +377,7 @@ function _renderQCList(){
   const totalRw=all.reduce((a,p)=>a+_mapTotal(qcInReworkBySize(p)),0);
   return`<div class="page-head"><div class="page-title">QC — Disposition</div><div class="page-sub">${all.length} PO${all.length!==1?'s':''} · ${totalPend} pending QC${totalRw?` · ${totalRw} in rework`:''}</div></div>
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-    <input id="qc-search" placeholder="Search PO number, article, fabric…" value="${_gpEsc(_qcQ)}" oninput="window.qcSetSearch(this.value)" style="flex:1;min-width:180px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;outline:none">
+    <input id="qc-search" placeholder="Search PO number, article, fabric…" value="${_gpEsc(_qcQ)}" oninput="window.qcSetSearch(this.value)" style="flex:1;min-width:180px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
   </div>
   ${list.length?list.map(p=>_qcListCard(p)).join(''):`<div class="empty" style="padding:28px;text-align:center">${all.length?'No POs match your search.':'Nothing awaiting QC. Received pieces from Packing appear here.'}</div>`}
   <div style="height:80px"></div>`;
@@ -454,7 +454,7 @@ function _renderQCDetail(po){
   <div class="card">${poReceiveBar(po)}</div>
   <div class="card"><div class="card-title">Reconciliation by size</div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">
-      <thead><tr style="background:#fafafa">
+      <thead><tr style="background:var(--surface-2)">
         <th style="padding:8px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Size</th>
         <th style="padding:8px;text-align:center;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Recv</th>
         <th style="padding:8px;text-align:center;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Pend QC</th>
@@ -599,7 +599,7 @@ function _bstockUnassignedHTML(){
     </tr>`).join('');
     return`<div class="card"><div class="card-title">${po.id} <span style="font-weight:400;color:var(--muted);font-size:12px">${_gpEsc(po.name||'')} · ${_gpEsc(po.code||'')}</span></div>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-        <thead><tr style="background:#fafafa"><th style="padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--muted)">Size</th><th style="padding:8px;text-align:center;font-size:11px;text-transform:uppercase;color:var(--muted)">Unassigned</th><th></th></tr></thead>
+        <thead><tr style="background:var(--surface-2)"><th style="padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--muted)">Size</th><th style="padding:8px;text-align:center;font-size:11px;text-transform:uppercase;color:var(--muted)">Unassigned</th><th></th></tr></thead>
         <tbody>${rows}</tbody></table></div>
     </div>`;
   }).join('');
@@ -618,7 +618,7 @@ function _bstockCartonsHTML(){
         <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;background:${transferred?'#f0f0f0':'#dcfce7'};color:${transferred?'var(--muted)':'#16a34a'}">${transferred?'Transferred':'Open'}</span>
       </div>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">
-        <thead><tr style="background:#fafafa"><th style="padding:7px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--muted)">PO</th><th style="padding:7px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Article</th><th style="padding:7px;text-align:center;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Size</th><th style="padding:7px;text-align:center;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Qty</th><th style="padding:7px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--muted)">By</th></tr></thead>
+        <thead><tr style="background:var(--surface-2)"><th style="padding:7px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--muted)">PO</th><th style="padding:7px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Article</th><th style="padding:7px;text-align:center;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Size</th><th style="padding:7px;text-align:center;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Qty</th><th style="padding:7px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--muted)">By</th></tr></thead>
         <tbody>${items.map(it=>`<tr style="border-bottom:1px solid #f5f5f5"><td style="padding:7px;font-weight:600">${_gpEsc(it.poId||'')}</td><td style="padding:7px">${_gpEsc(it.productCode||it.article||'')}</td><td style="padding:7px;text-align:center;font-weight:700">${_gpEsc(it.size||'')}</td><td style="padding:7px;text-align:center;color:#dc2626;font-weight:700">${it.qty||0}</td><td style="padding:7px;color:var(--muted)">${_gpEsc(it.assignedBy||'')}</td></tr>`).join('')||'<tr><td colspan="5" style="padding:10px;text-align:center;color:var(--muted)">Empty carton</td></tr>'}</tbody>
       </table></div>
       ${(!transferred&&canTransfer&&items.length)?`<button class="mark-done-btn" style="width:auto;padding:8px 16px;margin-top:10px" onclick="window.bstockTransferCarton('${_gpEsc(c._id)}')">Transfer carton out →</button>`:''}

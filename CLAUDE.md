@@ -1479,9 +1479,55 @@ What a profile holds: `photoUrl`, `displayName`, `jobTitle`, `department`,
   a profile. A directory that lists only the keen is not a directory.
 - **Reached from a topbar avatar**, not a nav item — it is for everyone
   regardless of role, and the topbar is the one surface every role sees.
-  `_profilePaintAvatar` repaints it; `profileBootstrap()` is awaited in
-  `startApp` (js/auth.js) so `session.name` is settled before the first
-  render rather than changing under the user a moment later.
+  `_profilePaintAvatar` repaints it; `profileBootstrap()` is called from
+  `startApp` (js/auth.js) and **never awaited** — see "Diagnostics" for the
+  white screen that cost.
+
+### Admin profile editing (Sept 2026)
+
+Afnan asked for himself, Ammar and Mustafa to edit other people's profiles
+and set their passwords, with **Mustafa explicitly unable to touch his or
+Ammar's**. `_PROFILE_ADMINS` / `_PROFILE_PROTECTED` in `js/profile.js`, and
+by USERNAME — Arfat holds Mustafa's `manager` role and gets none of it,
+same as every other Sept 2026 grant.
+
+- **Three layers have to agree, and only two of them are boundaries.**
+  `js/profile.js` decides what the UI offers (not a boundary);
+  `firestore.rules` decides whether the profile write lands; and
+  `netlify/functions/admin-reset-password.js` decides whether the password
+  actually changes, on the caller's own verified ID token. Change one,
+  change all three — `tests/invariants.test.js` now fails if they disagree.
+- **The uid problem, and the seed that solves it.** Profiles are keyed by
+  Firebase uid and nothing client-side maps a username to one. So
+  `profileBootstrap()` now **seeds `user_profiles/{uid}` with
+  `{uid, username}`** the first time someone signs in with no profile doc —
+  written by that person, under the unchanged self-create rule. That seed is
+  the only thing that makes "edit someone's profile" possible at all. It
+  fires **only on a snapshot that really came back and really doesn't
+  exist**: a read that timed out or was denied must never trigger it, or a
+  bare row lands on top of a real profile. Someone who has not signed in
+  since this shipped has no row, and the directory says "Not signed in yet"
+  rather than offering a button that cannot work — their *password* can
+  still be reset, since that path goes by email.
+- **`create` in `firestore.rules` stays self-only.** An admin cannot mint a
+  profile for someone else; allowing it would only add a way to write a doc
+  at a guessed id. `update` carries the admin clause, and an admin update
+  **may not change `username`** (`request.resource.data.username ==
+  resource.data.get('username','')`) so a profile can't be relabelled as
+  somebody else's. **This changed `firestore.rules` — it needs a republish.**
+- **The login ID is shown read-only.** Changing it means a Firebase Auth
+  account plus a `USER_DEFS` entry — a code change and a Console change, not
+  something a form can fake. The edit card says so rather than offering a
+  field that silently does nothing.
+- **Name colours** (`p.nameColor`) are a validated `#RRGGBB` on the profile,
+  rendered on the directory, the profile card and the topbar, and exposed as
+  `window.profileNameColor(username)` for the activity log / board presence /
+  comments to pick up later. Validation **reuses `_boardsValidHex` /
+  `_boardsInkOn`** from `js/boards.js` (loaded immediately before
+  `profile.js`; classic scripts share one lexical scope) rather than
+  carrying a second copy of the same rule — guarded with `typeof` so that if
+  boards.js ever fails to parse the colour is **dropped**, never passed
+  through unvalidated into a `style` attribute. Fail closed.
 
 **A chosen display name has one knock-on, and it is handled.** `session.name`
 is what `logActivity`, board presence and board comments all write, so a
@@ -1492,6 +1538,53 @@ collection, where **Monitor tiers people by matching `a.user` against
 this was a one-field additive change) now also writes `u: session.u`, and
 `_monitorRoleTier(name, username)` prefers the username when the row carries
 one, falling back to name-matching for every row written before this.
+
+## Dark mode (Sept 2026)
+
+Asked for on the Profile page; applies to the whole app. `Profile →
+Appearance` offers **Light / Dark / System**, persisted per device in
+`localStorage['groovy-theme']` — never on the profile document, since a
+theme is about the screen you are looking at, not who you are.
+
+- **`index.html`'s `<head>` stamps `data-theme` on `<html>` BEFORE the
+  stylesheet link**, so there is no flash of the wrong theme. Tiny, inline
+  and dependency-free, the same shape as the diagnostics error seed.
+  `js/profile.js` owns the toggle and keeps following the OS while the
+  preference is `system`.
+- **It is a TOKEN swap, and deliberately NOT a `filter: invert()` trick.**
+  A non-`none` `filter` on `html`/`body` makes that element the containing
+  block for every `position:fixed` descendant — it would break the board
+  canvas takeover, `#bug-report-fab`, the toasts and every modal in the app.
+  Verified reasoning, not a preference; `tests/invariants.test.js` asserts
+  no such filter exists.
+- **`--dark` and `--red` invert.** They are the app's "strong contrast
+  chip", so in dark mode they become light and `--on-dark` becomes dark —
+  every rule using the pair keeps working untouched. New tokens:
+  `--surface-2` (inputs / striped rows), `--on-dark`, `--hover`, `--line`.
+- **The sweep was property-qualified, never bare-hex.** `css/main.css` and
+  ~434 inline `style="…"` attributes across `js/*.js` had
+  `background:#fff` → `var(--surface)`, `color:#111` → `var(--text)` etc.
+  A bare-hex sweep would have turned a white foreground on a hard `#dc2626`
+  button into dark-on-red, so **`color:#fff` is only converted when nothing
+  in the same style string paints a fixed background** (a literal, a
+  `${…}`, a gradient). Reuse that guard if you sweep more.
+- **`js/diagnostics.js` and `js/print-engine.js` are deliberately
+  excluded** and must stay that way. Diagnostics has to render when
+  `css/main.css` is itself what failed, so it cannot depend on a custom
+  property; print-engine draws into a PDF, where there is no CSS at all.
+  Both are asserted in `tests/invariants.test.js`.
+- **The wordmark is inverted with a CSS `filter` on the `<img>`** — it is
+  black artwork on transparency and would vanish on a dark bar. Safe there:
+  an `<img>` has no fixed descendants.
+- **What is verified and what is not.** A headless-Chromium probe confirmed
+  every token resolves and the computed colours flip correctly in both
+  themes (body, topbar, cards, buttons, the red QC button keeping white
+  text). **Nobody has LOOKED at the app in dark mode** — the sandbox still
+  cannot sign in (gstatic is blocked), so page-by-page visual confirmation
+  needs the human. Expect leftover light patches in the corners the
+  property-qualified sweep could not reach (gradients, `el.style.x='#fff'`
+  assignments, chart and badge colours); they are a follow-up pass, best
+  done one file at a time so each can be eyeballed.
 
 ## Shopify Inventory Intelligence
 
@@ -1587,6 +1680,12 @@ etc.) live in `js/hrm.js`; the printing/role helpers (`isObserver`,
   (Sept 2026 grant) — delete/edit/correct a fabric entry or roll. Mirror in
   `firestore.rules` `isMustafa()`, used on `fabricin`/`fabric_inventory`
   delete.
+- `_profCanEditUser(username)` / `_profCanResetPassword(username)`
+  (`js/profile.js`) → afnan, ammar, mustafa may edit other people's
+  profiles; **mustafa may not edit afnan's or ammar's**. Mirrored in
+  `firestore.rules` `user_profiles` update and in
+  `netlify/functions/admin-reset-password.js` (`RESET_ADMIN_EMAILS` /
+  `PROTECTED_EMAILS`) — three layers, see "Admin profile editing".
 - **Inventory Intel nav item** (`js/shared.js`, `buildNav()` +
   `openMoreSheet()`) → owners, **+ mustafa by username** (Sept 2026 grant,
   he's Ecom Manager). Nav-only, same shape as the Notes staged-rollout gate —
@@ -1834,7 +1933,13 @@ the whole thing into the Firebase Console in one paste. Read the live file
 fresh each time rather than reconstructing it from memory or from an older
 turn in the conversation.
 
-**Republished by Afnan on 13 Sept 2026**, from the repo file at
+**A republish is OUTSTANDING as of 14 Sept 2026** — the `user_profiles`
+update rule gained the admin clause (owners + Mustafa may edit others,
+Mustafa not an owner). Until it is republished, an admin editing someone
+else's profile is refused with "Missing or insufficient permissions";
+everything else keeps working.
+
+**Last republished by Afnan on 13 Sept 2026**, from the repo file at
 `md5 95f72eb712079666da1f53acb4019ba9` — which covers Mood Boards Stage 6
 (`sharedWith`, TEAM update, the presence/comments/activity sub-collections)
 AND `user_profiles`. Both had been waiting; the Profile page's own error

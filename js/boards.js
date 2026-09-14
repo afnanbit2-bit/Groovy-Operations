@@ -615,7 +615,7 @@ function _boardMiniCardHTML(c){
   if(c.type==='link'||c.type==='file')return`<div style="${base};background:var(--soft)"></div>`;
   if(c.type==='board')return`<div style="${base};background:var(--soft);border-style:dashed"></div>`;
   if(c.type==='heading')return`<div style="${base};background:var(--dark)"></div>`;
-  return`<div style="${base};background:#fff"></div>`;
+  return`<div style="${base};background:var(--surface)"></div>`;
 }
 // One place that knows the shape of a board document — used by the plain
 // "+ New board" buttons, by sub-board creation and by duplicate/template.

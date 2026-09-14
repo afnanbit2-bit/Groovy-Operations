@@ -520,7 +520,7 @@ function _showUpdateBanner(){
   const bar=document.createElement('div');
   bar.id='sw-update-banner';
   bar.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:2000;background:#111;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:center;gap:14px;font-size:13px;box-shadow:0 -2px 12px rgba(0,0,0,.25);flex-wrap:wrap;text-align:center';
-  bar.innerHTML=`<span>A new version of Groovy Ops is available.</span><button onclick="location.reload()" style="background:#fff;color:#111;border:none;padding:7px 16px;border-radius:7px;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0">Refresh now</button>`;
+  bar.innerHTML=`<span>A new version of Groovy Ops is available.</span><button onclick="location.reload()" style="background:var(--surface);color:var(--text);border:none;padding:7px 16px;border-radius:7px;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0">Refresh now</button>`;
   document.body.appendChild(bar);
 }
 
@@ -1216,14 +1216,14 @@ window.openBugReportModal=function(){
       <button onclick="window.closeBugReportModal()" style="background:none;border:none;color:white;font-size:24px;cursor:pointer;line-height:1">×</button>
     </div>
     <div style="padding:20px">
-      <div style="background:#F9FAFB;padding:10px 12px;border-radius:8px;margin-bottom:14px;font-size:11px;color:var(--muted);line-height:1.7">
+      <div style="background:var(--surface-2);padding:10px 12px;border-radius:8px;margin-bottom:14px;font-size:11px;color:var(--muted);line-height:1.7">
         📍 Page: <strong style="color:var(--text)">${pageName}</strong><br>
         👤 Reporter: ${session.name} · ${session.role}<br>
         💻 Device: ${device}
       </div>
       <div class="field" style="margin-bottom:12px"><label>What went wrong? *</label><input id="bug-title" placeholder="e.g. Save button doesn't work on PO form"></div>
-      <div class="field" style="margin-bottom:12px"><label>Describe what happened</label><textarea id="bug-description" rows="3" placeholder="e.g. Clicked save, got an error message" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;background:#FAFAFA;resize:vertical"></textarea></div>
-      <div class="field" style="margin-bottom:12px"><label>What did you expect to happen?</label><textarea id="bug-expected" rows="2" placeholder="e.g. The PO should have been saved" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;background:#FAFAFA;resize:vertical"></textarea></div>
+      <div class="field" style="margin-bottom:12px"><label>Describe what happened</label><textarea id="bug-description" rows="3" placeholder="e.g. Clicked save, got an error message" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface-2);resize:vertical"></textarea></div>
+      <div class="field" style="margin-bottom:12px"><label>What did you expect to happen?</label><textarea id="bug-expected" rows="2" placeholder="e.g. The PO should have been saved" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface-2);resize:vertical"></textarea></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
         <div class="field"><label>Category</label><select id="bug-category">
           <option value="ui">🎨 UI / Design</option>
@@ -1244,7 +1244,7 @@ window.openBugReportModal=function(){
       <div id="bug-screenshot-preview" style="display:none;margin-top:6px"><img style="max-width:100%;border-radius:6px;border:1px solid var(--border)" /></div>
       <div id="bug-screenshot-status" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
     </div>
-    <div style="padding:14px 20px;border-top:1px solid var(--border);background:#F9FAFB;display:flex;gap:10px">
+    <div style="padding:14px 20px;border-top:1px solid var(--border);background:var(--surface-2);display:flex;gap:10px">
       <button class="btn-outline" style="flex:1" onclick="window.closeBugReportModal()">Cancel</button>
       <button class="btn-primary" style="flex:2;width:auto;margin-top:0;padding:10px" onclick="window.submitBugReport()">Submit Bug Report</button>
     </div>
@@ -1382,11 +1382,11 @@ function renderBugTrackerPage(){
   const filters=['all','open','critical','high','investigating','fixed'];
   const filterLabels={all:'All',open:'Open',critical:'🔴 Critical',high:'🟠 High',investigating:'🔍 Investigating',fixed:'✅ Fixed'};
   const exportableCount=isOM?_getExportableBugs(visible).length:0;
-  const exportBtn=isOM?`<button class="btn-outline" onclick="window.exportBugsForFix()" style="display:flex;align-items:center;gap:6px;margin-left:auto;padding:6px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;font-size:12px;cursor:pointer;font-family:inherit">📤 Export for Fix <span id="export-count-badge" style="background:#E94560;color:white;font-size:10px;padding:2px 6px;border-radius:10px;font-weight:700">${exportableCount}</span></button>`:'';
+  const exportBtn=isOM?`<button class="btn-outline" onclick="window.exportBugsForFix()" style="display:flex;align-items:center;gap:6px;margin-left:auto;padding:6px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:12px;cursor:pointer;font-family:inherit">📤 Export for Fix <span id="export-count-badge" style="background:#E94560;color:white;font-size:10px;padding:2px 6px;border-radius:10px;font-weight:700">${exportableCount}</span></button>`:'';
   const filterBar=`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
     ${filters.map(f=>`<button class="filter-chip ${_bugFilter===f?'active':''}" onclick="window.bugSetFilter('${f}')">${filterLabels[f]}</button>`).join('')}
     ${exportBtn}
-    <select id="bug-sort" onchange="window.bugSetSort(this.value)" style="${isOM?'':'margin-left:auto;'}padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#fff">
+    <select id="bug-sort" onchange="window.bugSetSort(this.value)" style="${isOM?'':'margin-left:auto;'}padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--surface)">
       <option value="severity" ${_bugSort==='severity'?'selected':''}>Sort by Severity</option>
       <option value="newest" ${_bugSort==='newest'?'selected':''}>Newest First</option>
       <option value="oldest" ${_bugSort==='oldest'?'selected':''}>Oldest First</option>
@@ -1437,7 +1437,7 @@ function _bugCardHTML(b){
   const upActive=Array.isArray(b.upvotes)&&b.upvotes.includes(session.u);
   const isOM=session&&['owner','manager'].includes(session.role);
   const comments=Array.isArray(b.comments)?b.comments:[];
-  const commentsHTML=comments.length?comments.map(c=>`<div style="background:#fafafa;padding:8px 10px;border-radius:6px;margin-bottom:4px"><div style="font-size:11px;color:var(--muted)">${c.by||'—'} · ${_hrmTimeAgo(c.at)}</div><div style="font-size:13px;margin-top:2px">${(c.text||'').replace(/[<>]/g,'')}</div></div>`).join(''):'';
+  const commentsHTML=comments.length?comments.map(c=>`<div style="background:var(--surface-2);padding:8px 10px;border-radius:6px;margin-bottom:4px"><div style="font-size:11px;color:var(--muted)">${c.by||'—'} · ${_hrmTimeAgo(c.at)}</div><div style="font-size:13px;margin-top:2px">${(c.text||'').replace(/[<>]/g,'')}</div></div>`).join(''):'';
   const screenshotHTML=b.screenshotUrl?`<div style="margin-bottom:14px"><img src="${b.screenshotUrl}" style="max-width:100%;border-radius:8px;border:1px solid var(--border);cursor:pointer" onclick="window.open('${b.screenshotUrl}','_blank')"></div>`:'';
   const expectedHTML=b.expectedBehavior?`<div style="margin-bottom:14px"><div style="font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Expected</div><div style="font-size:14px">${(b.expectedBehavior||'').replace(/[<>]/g,'')}</div></div>`:'';
   // Auto-fix detection — show badge if any comment starts with [CLAUDE_CODE_FIXED]
@@ -1479,7 +1479,7 @@ function _bugCardHTML(b){
       ${b.duplicateOfBugId?`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Duplicate of: ${b.duplicateOfBugId}</div>`:''}
       ${comments.length?`<div style="margin-bottom:10px"><div style="font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Comments (${comments.length})</div>${commentsHTML}</div>`:''}
       <div style="display:flex;gap:6px;margin-bottom:10px">
-        <input type="text" id="bug-comment-${b._id}" placeholder="Add comment…" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:#FAFAFA">
+        <input type="text" id="bug-comment-${b._id}" placeholder="Add comment…" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--surface-2)">
         <button class="btn-outline" style="font-size:12px;padding:6px 14px" onclick="window.bugAddComment('${b._id}')">Send</button>
       </div>
       ${ownerActions}
@@ -1617,10 +1617,10 @@ function _populateOwnerBugBanner(){
   }
   if(openBugs.length>0){
     const showExport=openBugs.length>=5;
-    html+=`<div class="card" style="padding:14px;margin-bottom:16px;background:#F9FAFB">
+    html+=`<div class="card" style="padding:14px;margin-bottom:16px;background:var(--surface-2)">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <div>
-          <div style="font-size:11px;text-transform:uppercase;color:#6B7280;letter-spacing:.06em">🐛 Bug Tracker</div>
+          <div style="font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">🐛 Bug Tracker</div>
           <div style="font-size:14px;font-weight:600;margin-top:4px">${openBugs.length} open bug${openBugs.length===1?'':'s'} · ${exportable} ready to export</div>
         </div>
         <div style="display:flex;gap:6px">
@@ -1684,13 +1684,13 @@ function _bugExportModalShell(){
           <label style="font-size:11px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:.04em">Generated Claude Code Prompt</label>
           <button class="btn-sm" onclick="window.copyExportText()">📋 Copy</button>
         </div>
-        <textarea id="export-output" rows="20" readonly style="width:100%;padding:12px;border:1px solid #E5E5E7;border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:#F9FAFB;color:#1A1A2E;resize:vertical;line-height:1.5"></textarea>
+        <textarea id="export-output" rows="20" readonly style="width:100%;padding:12px;border:1px solid var(--border);border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--surface-2);color:#1A1A2E;resize:vertical;line-height:1.5"></textarea>
       </div>
       <div style="background:#FAEEDA;padding:10px 12px;border-radius:6px;font-size:12px;color:#854F0B;line-height:1.5">
         💡 <strong>How to use:</strong> Click "Copy & Mark as Exported", then paste into a fresh Claude Code session. Claude Code will fix the bugs in batches and auto-mark them as fixed in your bug tracker.
       </div>
     </div>
-    <div style="padding:16px 20px;border-top:1px solid #E5E5E7;background:#F9FAFB;display:flex;gap:10px">
+    <div style="padding:16px 20px;border-top:1px solid var(--border);background:var(--surface-2);display:flex;gap:10px">
       <button class="btn-outline" style="flex:1" onclick="window.closeBugExportModal()">Cancel</button>
       <button class="btn-primary" style="flex:2;width:auto;margin-top:0;padding:10px" onclick="window.copyAndMarkExported()">📋 Copy &amp; Mark as Exported</button>
     </div>
@@ -1902,14 +1902,14 @@ function _renderFixSessionsList(visible){
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <div>
           <div style="font-weight:600;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px">${s.id}</div>
-          <div style="font-size:12px;color:#6B7280;margin-top:2px">Exported ${dt}${s.exportedBy?' · by '+s.exportedBy:''} · ${total} bug${total===1?'':'s'} · ${fixedByCC} fixed by Claude Code</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">Exported ${dt}${s.exportedBy?' · by '+s.exportedBy:''} · ${total} bug${total===1?'':'s'} · ${fixedByCC} fixed by Claude Code</div>
         </div>
         <div style="text-align:right">
           <div style="font-size:24px;font-weight:700;color:${barColor}">${rate}%</div>
-          <div style="font-size:11px;color:#6B7280">Fix rate</div>
+          <div style="font-size:11px;color:var(--muted)">Fix rate</div>
         </div>
       </div>
-      <div style="margin-top:10px;background:#F3F4F6;height:6px;border-radius:3px;overflow:hidden">
+      <div style="margin-top:10px;background:var(--surface-2);height:6px;border-radius:3px;overflow:hidden">
         <div style="background:${barColor};height:100%;width:${rate}%"></div>
       </div>
     </div>`;
