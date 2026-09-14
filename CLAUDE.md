@@ -143,8 +143,10 @@ verification needs the human, a phone, or Claude in Chrome.
                      reached through the Creative Hub grid in js/notes.js.
                      Freeform canvas: image/text/link/file/to-do/frame/
                      sub-board cards, connector lines, pan/zoom, find +
-                     minimap, nesting + templates, TEAM or PRIVATE. Loaded
-                     after notes.js. Shared/cross-track.
+                     minimap, nesting + templates, TEAM or PRIVATE. Page
+                     `boards` is HOME — itself a board, Milanote-style;
+                     `boards-all` is the flat list (templates, trash,
+                     search). Loaded after notes.js. Shared/cross-track.
 ```
 
 Load order is fixed in `index.html`:
@@ -1239,6 +1241,84 @@ The rest:
   left the menu visible and unclosable until the next render; it now reads
   the DOM as well as the flag. **The exact action that desynced them was
   not identified** — the closer no longer depends on the two agreeing.
+
+### Mood Boards — Home is a board (Sept 2026)
+
+Milanote has no "list of your boards" page: **home IS a board**, and your
+boards are cards on it you arrange like anything else. The `boards` page is
+that now — `boardsOpenHome()` resolves (or creates) this person's Home and
+hands off to the canvas, so every board tool works on the thing that
+organises boards.
+
+**The flat list stays, on its own page (`boards-all`)**, reached from
+Home's ⋯ menu. That is the Stage 4 safety net, not timidity: a board here is
+discoverable by QUERY, never only by a link, so no failed write, no deleted
+card and no broken Home can strand one. Milanote can lean on its tree
+because the tree is its only truth; ours has a query behind it.
+
+- **Home is an ordinary `mood_boards` document** with `isHome:true`,
+  private, owned by that person. **No `firestore.rules` change** — the
+  `ownerUid` clause every personal board uses already covers it. Two tabs
+  could each create one, so `_boardsMyHome()` picks the **oldest**
+  deterministically and the loser is just an empty board.
+- **`_boardsHomeSync()` reconciles on open, and the order matters.**
+  *Dedupe* first (two devices placing the same board make two cards with
+  different ids, and the Stage 6 merge keeps both — nothing can tell it is
+  one board twice; running dedupe first stops a duplicate reading as
+  "already placed"). Then *prune* cards for boards **positively known to be
+  trashed** — never one merely absent from `moodBoards`, because a partial
+  load (one of `loadBoardsData`'s three queries failing) would otherwise
+  empty someone's Home. Then *auto-place* whatever is left.
+- **Placement is SAVED, not derived.** One-time per board; after that Home
+  is an ordinary board and a card you move stays moved.
+- **Auto-place is deliberately NOT undoable** — the one exception to "every
+  mutating action calls `_boardsPushUndo()` first". It runs at open, right
+  after the history resets, and undoing it would clear cards that reappear
+  next visit: a Ctrl+Z that looks broken.
+- **Sitting on a Home is not "nested".** `_boardsNestedIds` only ever
+  follows a real `parentId`, so a board on your Home still lists at root in
+  All boards and still reaches everyone else's Home. Same reason, creating
+  a board from Home makes a **root** board with a card on Home, not a
+  sub-board — nesting it under a board only you can read would drop it out
+  of the list for you and nobody else.
+- **Deleting a board card on Home asks to trash the BOARD**, as Milanote
+  does: removing just the card is pointless, auto-place would put it back.
+  Owner-only, matching `firestore.rules`. Everywhere else, deleting a board
+  card still just unlinks a sub-board. Home itself can't be deleted,
+  renamed, shared, templated or made Team, and its top bar drops all of it.
+- Back from Home leaves the module (Creative Hub); back from a root board
+  goes to Home, or to All boards if that is where you came from
+  (`_boardsCameFromAll`).
+
+### Mood Boards — attachments: preview and download (Sept 2026)
+
+Afnan: Download opened a Chrome error page (`ERR_INVALID_RESPONSE`), Open
+showed "Failed to load PDF document". Both were `window.open()` on a
+Cloudinary URL — **navigating to an asset hands the whole outcome to the
+browser**, so you get Chrome's error page with nothing to act on.
+
+**Milanote's preview is not a custom renderer — it is the browser's own PDF
+viewer in an iframe**, which is where its page thumbnails, page counter,
+zoom, rotate, print and download come from. So `_boardsOpenPreview` fetches
+the bytes once and hands the browser a **blob: URL**. Three things at once:
+the same native viewer with no new dependency (pdf.js is one); a Download
+that opens the real Save-as dialog under the **card's** name (an
+`<a download>` pointing at a **cross-origin** URL is ignored by Chrome — a
+`blob:` one is honoured); and a readable error, because a failed `fetch`
+has a status.
+
+**The 401 hypothesis, labelled as one.** On a 401/403 for a PDF the message
+names the likely cause — Cloudinary's "Allow delivery of PDF and ZIP files"
+account setting being off. **Unverified: this sandbox cannot reach
+`res.cloudinary.com` at all.** What makes it the best hypothesis is that the
+card's page-1 thumbnail renders perfectly — Cloudinary rasterising the same
+document it will not serve. If PDFs start working after that setting is
+flipped, this was it; if not, read the status the preview now prints.
+
+Double-clicking an image or file card previews it; a plain click on a file
+card no longer navigates (ctrl/cmd-click still opens a tab). The right-click
+menu's Download and Open route through the same two functions as the card's
+own buttons, so the two cannot drift apart.
 
 ### Mood Boards — the QA retest (Sept 2026)
 
