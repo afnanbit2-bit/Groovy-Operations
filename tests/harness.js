@@ -59,7 +59,15 @@ function makeDom(state){
       querySelector:()=>null,querySelectorAll:()=>[],
       closest:()=>null,
       appendChild(n){this.children.push(n);this.childNodes.push(n);return n;},
-      addEventListener(){},removeEventListener(){},dispatchEvent(){},
+      // Element listeners are RECORDED, not discarded: the board's wheel
+      // handler lives on the stage element, and a test that can't fire it
+      // can only assert the source text, which proves nothing about what
+      // the handler does. `fire(el,type,event)` in the harness API calls
+      // them.
+      _ls:{},
+      addEventListener(t,fn,opts){(this._ls[t]=this._ls[t]||[]).push({fn,opts});},
+      removeEventListener(t,fn){if(this._ls[t])this._ls[t]=this._ls[t].filter(x=>x.fn!==fn);},
+      dispatchEvent(){},
       setPointerCapture(){},releasePointerCapture(){},
       focus(){state.activeElement=this;},blur(){if(state.activeElement===this)state.activeElement=null;},
       select(){},setSelectionRange(){},
@@ -232,6 +240,30 @@ function loadApp(opts){
     run:code=>vm.runInContext(code,ctx),
     /** An element by id, created on demand. */
     el:id=>ctx.document.getElementById(id),
+    /**
+     * Fire a listener the code under test registered on an element.
+     * Returns the event object, so a test can assert preventDefault was
+     * called — which for a wheel handler IS the behaviour: without it the
+     * browser page-zooms no matter what else the handler does.
+     */
+    fire(elementOrId,type,ev){
+      const node=typeof elementOrId==='string'?ctx.document.getElementById(elementOrId):elementOrId;
+      const e=Object.assign({
+        type,defaultPrevented:false,deltaX:0,deltaY:0,
+        ctrlKey:false,metaKey:false,shiftKey:false,altKey:false,
+        clientX:0,clientY:0,target:node,currentTarget:node,
+        preventDefault(){this.defaultPrevented=true;},
+        stopPropagation(){}
+      },ev||{});
+      ((node&&node._ls&&node._ls[type])||[]).forEach(l=>l.fn(e));
+      return e;
+    },
+    /** Listener registration options for an element, e.g. {passive:false}. */
+    listenerOpts(elementOrId,type){
+      const node=typeof elementOrId==='string'?ctx.document.getElementById(elementOrId):elementOrId;
+      const l=node&&node._ls&&node._ls[type];
+      return l&&l.length?l[0].opts:undefined;
+    },
     /** innerHTML of the last node with this id appended to document.body. */
     bodyHtml(id){
       const m=state.body.filter(x=>x.id===id);

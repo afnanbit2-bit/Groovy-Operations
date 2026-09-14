@@ -187,5 +187,131 @@ module.exports=function(){
     s.eq('closing removes the host entirely',app.bodyCount('board-sheet'),0);
   }
 
+  // ── the wheel (Sept 2026) ─────────────────────────────────────────────
+  // There was NO wheel handler in js/boards.js at all, so Ctrl+wheel fell
+  // through to the browser's page zoom and scaled the top bar, the rail,
+  // the minimap and the Report Bug button along with the canvas, while the
+  // board's own zoom readout sat unchanged. Reported by Afnan.
+  //
+  // preventDefault IS the fix — a handler that zooms the canvas but lets
+  // the event through leaves the page zooming as well.
+  {
+    const app=loadApp({files:FILES});
+    const {run}=app;
+    run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1'}`);
+    run(`_editCards=[]`);
+    run(`_boardsWireStagePan()`);
+    const stage='board-stage';
+
+    s.section('ctrl+wheel zooms the CANVAS, not the page');
+    s.eq('the listener is non-passive, or preventDefault is ignored',
+      JSON.stringify(app.listenerOpts(stage,'wheel')),'{"passive":false}');
+    let e=app.fire(stage,'wheel',{ctrlKey:true,deltaY:-100,clientX:400,clientY:300});
+    s.ok('the browser zoom is prevented',e.defaultPrevented);
+    const zIn=run(`_editBoard.zoom`);
+    s.ok('and the board zoomed IN',zIn>1,Math.round(zIn*100)+'%');
+    app.fire(stage,'wheel',{ctrlKey:true,deltaY:100,clientX:400,clientY:300});
+    s.ok('scrolling the other way zooms OUT',run(`_editBoard.zoom`)<zIn);
+    // A trackpad pinch reaches Chrome as a wheel event with ctrlKey set.
+    run(`_editBoard.zoom=1;_editBoard.panX=0;_editBoard.panY=0`);
+    app.fire(stage,'wheel',{metaKey:true,deltaY:-40,clientX:100,clientY:100});
+    s.ok('cmd+wheel works the same (macOS)',run(`_editBoard.zoom`)>1);
+
+    s.section('zoom is anchored to the cursor');
+    // The world point under the cursor must not move. Zoom about (200,150)
+    // from 1× and the same world coordinate has to map back to (200,150).
+    run(`_editBoard.zoom=1;_editBoard.panX=0;_editBoard.panY=0`);
+    const before=run(`_boardsScreenToWorld(200,150)`);
+    app.fire(stage,'wheel',{ctrlKey:true,deltaY:-100,clientX:200,clientY:150});
+    const after=run(`_boardsScreenToWorld(200,150)`);
+    s.ok('the point under the cursor stays put',
+      Math.abs(before.x-after.x)<1e-6&&Math.abs(before.y-after.y)<1e-6,
+      JSON.stringify(before)+' vs '+JSON.stringify(after));
+
+    s.section('a plain wheel pans instead');
+    run(`_editBoard.zoom=1;_editBoard.panX=0;_editBoard.panY=0`);
+    e=app.fire(stage,'wheel',{deltaY:120});
+    s.ok('it is prevented too — the page must not scroll',e.defaultPrevented);
+    s.eq('scrolling down moves the board up',run(`_editBoard.panY`),-120);
+    s.eq('and not sideways',run(`_editBoard.panX`),0);
+    s.eq('the zoom is untouched',run(`_editBoard.zoom`),1);
+    run(`_editBoard.panX=0;_editBoard.panY=0`);
+    app.fire(stage,'wheel',{deltaY:120,shiftKey:true});
+    s.eq('shift swaps the axis',run(`_editBoard.panX`),-120);
+    s.eq('leaving the other alone',run(`_editBoard.panY`),0);
+
+    s.section('zoom stays inside the board\'s own limits');
+    run(`_editBoard.zoom=_BOARDS_ZOOM_MAX`);
+    for(let i=0;i<20;i++)app.fire(stage,'wheel',{ctrlKey:true,deltaY:-100,clientX:0,clientY:0});
+    s.eq('it cannot go past the ceiling',run(`_editBoard.zoom`),run(`_BOARDS_ZOOM_MAX`));
+    run(`_editBoard.zoom=_BOARDS_ZOOM_MIN`);
+    for(let i=0;i<20;i++)app.fire(stage,'wheel',{ctrlKey:true,deltaY:100,clientX:0,clientY:0});
+    s.eq('nor below the floor',run(`_editBoard.zoom`),run(`_BOARDS_ZOOM_MIN`));
+  }
+
+  // ── the file-drop overlay must not answer an internal drag ────────────
+  // Chrome advertises a natively-dragged <img> to the drop target as
+  // carrying Files, so dragging a card's own picture raised "Drop files to
+  // add them to this board" AND cancelled the pointer stream the card drag
+  // runs on — two logics at once, which is what Afnan saw.
+  {
+    const app=loadApp({files:FILES});
+    const {run}=app;
+    const filesDrag={dataTransfer:{types:['Files'],files:[{name:'a.png'}]}};
+    s.section('a real file drop is still recognised');
+    s.eq('types carrying Files counts',run(`_boardsDragHasFiles(${JSON.stringify(filesDrag)})`),true);
+    s.eq('a plain text drag does not',
+      run(`_boardsDragHasFiles({dataTransfer:{types:['text/plain'],files:[]}})`),false);
+    s.eq('and no dataTransfer at all does not',run(`_boardsDragHasFiles({})`),false);
+
+    s.section('but not while a drag from inside the board is in flight');
+    run(`_boardsInternalDrag=true`);
+    s.eq('even one claiming to carry Files',
+      run(`_boardsDragHasFiles(${JSON.stringify(filesDrag)})`),false);
+    run(`_boardsInternalDrag=false`);
+    s.eq('and it recovers once that drag ends',
+      run(`_boardsDragHasFiles(${JSON.stringify(filesDrag)})`),true);
+  }
+
+  // ── cards must be movable ─────────────────────────────────────────────
+  {
+    const app=loadApp({files:FILES});
+    const {run}=app;
+    run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0}`);
+    const card=t=>`_boardCardHTML(${JSON.stringify({id:'c1',type:t,x:0,y:0,w:200,h:200,
+      imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',
+      fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/a.pdf',fileName:'a.pdf',
+      boardId:'b2',items:[],text:''})},true)`;
+
+    s.section('no card image can start a native browser drag');
+    s.ok('the image card',/draggable="false"/.test(run(card('image'))));
+    s.ok('the file card body',/draggable="false"/.test(run(card('file'))));
+
+    s.section('image, file and sub-board cards drag from the body too');
+    const bodyDrag=t=>{
+      const html=run(card(t));
+      const m=/<(?:div|a) class="board-card-body[^>]*>/g;
+      return (html.match(m)||[]).some(tag=>/boardsCardDragStart/.test(tag));
+    };
+    s.ok('an image card does',bodyDrag('image'));
+    s.ok('a file card does',bodyDrag('file'));
+    s.ok('a sub-board card does',bodyDrag('board'));
+    s.ok('a NOTE does not — a body drag would fight the caret',!bodyDrag('text'));
+    s.ok('nor a to-do',!bodyDrag('todo'));
+    s.ok('nor a link card, which is all inputs',!bodyDrag('link'));
+
+    s.section('every card still has its header handle');
+    ['image','file','board','text','todo','link'].forEach(t=>{
+      s.ok(t+' keeps the header drag',
+        /<div class="board-card-head" onpointerdown="window\.boardsCardDragStart/.test(run(card(t))));
+    });
+
+    s.section('a locked card is not draggable from anywhere');
+    const locked=run(`_boardCardHTML(${JSON.stringify({id:'c2',type:'image',x:0,y:0,w:200,h:200,
+      locked:true,imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg'})},true)`);
+    s.ok('the body carries no drag handler',
+      !/board-card-body[^>]*boardsCardDragStart/.test(locked));
+  }
+
   return s;
 };

@@ -1129,6 +1129,52 @@ form a usable stream. **Confirmed fixed on the real device.**
 - **Fit / 100% / Snap move into the ⋯ menu** at phone width — the top bar
   wrapped onto two rows and ate ~150px of a canvas that is the whole point
   of the page.
+### Mood Boards — the wheel and the native drag (Sept 2026)
+
+Two bugs Afnan reported from his PC, both verified from the code before a
+line was changed.
+
+- **Ctrl+wheel zoomed the BROWSER, not the board.** There was no `wheel`
+  handler in `js/boards.js` at all — grep it and you find only a CSS class
+  name — so the event fell straight through to Chrome's page zoom and
+  scaled the top bar, the rail, the minimap and the Report Bug button along
+  with the canvas, while the board's own readout sat unchanged at 40%.
+  Now: a **non-passive** `wheel` listener on `.board-stage` (passive and
+  `preventDefault()` is ignored, so the page zooms anyway — that call IS
+  the fix). Ctrl/Cmd+wheel zooms about the **cursor** via
+  `_boardsZoomAtPoint`, exponentially so a step feels the same at 19% as at
+  200%, clamped per event so a coarse mouse wheel can't jump three steps.
+  A trackpad pinch reaches Chrome as a wheel with `ctrlKey` set, so it is
+  the same branch. Plain wheel **pans** (shift swaps the axis) — a canvas
+  with no scrollbars should. A second listener on `.board-canvas-wrap`
+  catches Ctrl+wheel over the top bar and rail, skipping anything inside
+  the stage or the zoom would apply twice.
+- **Dragging a card raised the file-drop overlay instead of moving it.**
+  Card images carried no `draggable="false"`, so grabbing one started a
+  **native HTML5 image drag** — which both cancels the pointer stream our
+  card drag runs on and, because **Chrome advertises a dragged `<img>` to
+  the drop target as carrying `Files`**, raised "Drop files to add them to
+  this board". Afnan's words were "it's mixing 2 logics", which is exactly
+  right. Fixed at three levels: `draggable="false"` on every card image and
+  on the file card's `<a>` (an `<a href>` is natively draggable too);
+  `-webkit-user-drag:none` in `css/main.css` for anything that grows an
+  image later; and `_boardsInternalDrag`, set on a `dragstart` inside the
+  stage and cleared on `dragend`/`drop`, which makes `_boardsDragHasFiles`
+  refuse an internal drag whatever `dataTransfer.types` claims.
+- **Image, file and sub-board cards now drag from their BODY as well as
+  their header.** This narrows the header-only rule recorded under Phase 2
+  rather than overturning it: that rule exists because a text or to-do card
+  body holds a caret a drag would fight. These three hold nothing editable,
+  so there is no ambiguity — and "grab the picture" is the first thing
+  anyone tries. Text, to-do and link cards are unchanged, and a locked card
+  drags from nowhere.
+- `tests/harness.js` now **records element listeners** and exposes
+  `fire(el,type,event)` / `listenerOpts(el,type)`. Before this, a handler
+  attached to an element could only be tested by grepping the source, which
+  proves nothing about what it does; the wheel tests fire the real handler
+  and assert the zoom, the pan, the cursor anchoring, the clamps and
+  `preventDefault`.
+
 - **A zoom percentage surfaces over the canvas** while zooming and fades
   (`_boardsShowZoomPill`), the way Milanote's does — the topbar readout is
   unreadable mid-pinch with a hand over the board. It rides

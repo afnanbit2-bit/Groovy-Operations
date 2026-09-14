@@ -39,6 +39,7 @@ let _boardsSelection=new Set(); // card ids currently selected (Stage 2: many, n
 let _boardsClipboard=[];        // in-session card clipboard, survives moving between boards
 let _boardsAddCascade=0;      // so repeated "+ Card" clicks don't stack perfectly
 let _boardsDragDepth=0;       // dragenter/dragleave fire per child; count to know when we really left
+let _boardsInternalDrag=false;// a native drag that started inside the board, not a file arriving from the desktop
 
 // Stage 4 — gallery view state. Per-viewer, never board data: a sort order
 // or a search term should not travel to someone else's screen.
@@ -611,7 +612,7 @@ function _boardGalleryCardHTML(b,opts){
 function _boardMiniCardHTML(c){
   const base=`position:absolute;left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px;border-radius:6px;overflow:hidden;border:1px solid var(--border)`;
   if(c.type==='frame')return`<div style="${base};background:rgba(0,0,0,.03)"></div>`;
-  if(c.type==='image')return c.imageUrl?`<div style="${base}"><img src="${_boardsEsc(c.imageUrl)}" style="width:100%;height:100%;object-fit:cover"></div>`:`<div style="${base};background:var(--soft)"></div>`;
+  if(c.type==='image')return c.imageUrl?`<div style="${base}"><img src="${_boardsEsc(c.imageUrl)}" draggable="false" style="width:100%;height:100%;object-fit:cover"></div>`:`<div style="${base};background:var(--soft)"></div>`;
   if(c.type==='link'||c.type==='file')return`<div style="${base};background:var(--soft)"></div>`;
   if(c.type==='board')return`<div style="${base};background:var(--soft);border-style:dashed"></div>`;
   if(c.type==='heading')return`<div style="${base};background:var(--dark)"></div>`;
@@ -951,6 +952,14 @@ function _boardCardHTML(c,canEdit){
       ${canEdit&&!c.locked?`<div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
     </div>`;
   }
+  // Image, file and sub-board cards hold nothing editable, so dragging one
+  // by its picture has no click-vs-drag ambiguity — the header-only rule
+  // (see CLAUDE.md) exists for text and to-do cards, where a body drag
+  // would fight the caret. Reported by Afnan as "when i try to move
+  // anything it's not moving": grabbing the picture is the obvious thing
+  // to try, and it did nothing.
+  const bodyDrag=(canEdit&&!c.locked&&(c.type==='image'||c.type==='file'||c.type==='board'))
+    ?` onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:'';
   let body;
   if(c.type==='todo'){
     const items=c.items||[];
@@ -968,10 +977,10 @@ function _boardCardHTML(c,canEdit){
     body=c._uploading
       ?'<div class="board-card-empty">Uploading…</div>'
       :c.imageUrl
-      ?`<img src="${_boardsEsc(_boardsDisplayUrl(c.imageUrl,c.w))}" crossorigin="anonymous" onerror="window.boardsImgFallback(this)" data-full="${_boardsEsc(c.imageUrl)}" style="width:100%;height:100%;object-fit:cover;display:block">`
+      ?`<img src="${_boardsEsc(_boardsDisplayUrl(c.imageUrl,c.w))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" data-full="${_boardsEsc(c.imageUrl)}" style="width:100%;height:100%;object-fit:cover;display:block">`
       :canEdit?`<label class="board-card-empty" for="board-file-${c.id}">Click, or paste an image (Ctrl+V)<input type="file" id="board-file-${c.id}" accept="image/*" onchange="window.boardsUploadToCard('${c.id}',this)" style="display:none"></label>`
               :`<div class="board-card-empty">No image</div>`;
-    body=`<div class="board-card-body" style="padding:0">${body}</div>`;
+    body=`<div class="board-card-body" style="padding:0"${bodyDrag}>${body}</div>`;
   }else if(c.type==='link'){
     body=canEdit
       ?`<div class="board-card-body board-link-edit">
@@ -993,8 +1002,8 @@ function _boardCardHTML(c,canEdit){
       // <img> simply fails and onerror falls back to the plain file card —
       // never a broken image.
       const thumb=_boardsPdfThumbUrl(c.fileUrl);
-      body=`<a class="board-card-body board-file-body" href="${_boardsEsc(c.fileUrl)}" target="_blank" rel="noopener noreferrer">
-        ${thumb?`<img class="board-file-thumb" src="${_boardsEsc(thumb)}" alt="" onerror="this.style.display='none'">`:''}
+      body=`<a class="board-card-body board-file-body" href="${_boardsEsc(c.fileUrl)}" target="_blank" rel="noopener noreferrer" draggable="false"${bodyDrag}>
+        ${thumb?`<img class="board-file-thumb" src="${_boardsEsc(thumb)}" alt="" draggable="false" onerror="this.style.display='none'">`:''}
         <div class="board-file-meta">
           <span class="board-file-ext">${_boardsEsc(_boardsFileExt(c.fileName))}</span>
           <span class="board-file-name">${_boardsEsc(c.name||c.fileName||'File')}</span>
@@ -1005,7 +1014,7 @@ function _boardCardHTML(c,canEdit){
       body=canEdit
         ?`<label class="board-card-empty" for="board-fileinput-${c.id}">Click to choose a file<input type="file" id="board-fileinput-${c.id}" onchange="window.boardsUploadToCard('${c.id}',this)" style="display:none"></label>`
         :'<div class="board-card-empty">No file</div>';
-      body=`<div class="board-card-body" style="padding:0">${body}</div>`;
+      body=`<div class="board-card-body" style="padding:0"${bodyDrag}>${body}</div>`;
     }
   }else if(c.type==='heading'){
     // A section banner — the thing Afnan's real Milanote board uses to
@@ -1019,7 +1028,7 @@ function _boardCardHTML(c,canEdit){
     const child=_boardsLiveById()[c.boardId];
     const title=(child&&child.title)||c.boardTitle||'Untitled board';
     const n=child?(child.cards||[]).length:0;
-    body=`<div class="board-card-body board-subboard-body">
+    body=`<div class="board-card-body board-subboard-body"${bodyDrag}>
       <div class="board-subboard-title">${_boardsEsc(title)}</div>
       <div class="board-subboard-meta">${child?n+' card'+(n===1?'':'s'):'Board'}</div>
       ${c.boardId?`<button class="board-subboard-open" onclick="event.stopPropagation();window.boardsGoto('${c.boardId}')">Open →</button>`:'<div class="board-subboard-meta">Missing board</div>'}
@@ -1644,6 +1653,22 @@ window.boardsZoomBy=function(f){
   b.zoom=next;
   _boardsApplyTransform();_boardsSaveDebounced();
 };
+// Zoom about a POINT rather than the viewport centre — what the wheel and
+// a trackpad pinch need, so the thing under the cursor stays under it.
+// clientX/clientY are viewport coordinates; the stage rect makes them
+// stage-relative, which is the space panX/panY live in.
+function _boardsZoomAtPoint(next,clientX,clientY){
+  const b=_editBoard;if(!b)return;
+  const stage=document.getElementById('board-stage');if(!stage)return;
+  const z=Math.max(_BOARDS_ZOOM_MIN,Math.min(_BOARDS_ZOOM_MAX,next));
+  if(z===b.zoom)return;
+  const rect=stage.getBoundingClientRect();
+  const px=clientX-rect.left,py=clientY-rect.top;
+  b.panX=px-(px-b.panX)*(z/b.zoom);
+  b.panY=py-(py-b.panY)*(z/b.zoom);
+  b.zoom=z;
+  _boardsApplyTransform();_boardsSaveDebounced();
+}
 window.boardsResetView=function(){const b=_editBoard;if(!b)return;b.zoom=1;b.panX=40;b.panY=30;_boardsApplyTransform();_boardsSaveDebounced();};
 // Fit every card on screen at once — the thing you actually want on a board
 // with 40+ cards, where hunting for content by panning is hopeless.
@@ -2072,6 +2097,58 @@ function _boardsWireStagePan(){
     lastTap=now;lastX=e.clientX;lastY=e.clientY;
   });
 
+  // The wheel. Until now js/boards.js had NO wheel handler at all, so
+  // Ctrl+wheel fell straight through to the BROWSER's page zoom: the top
+  // bar, the rail, the minimap and the Report Bug button all scaled with
+  // the canvas while the board's own zoom readout sat unchanged. Reported
+  // by Afnan with a screenshot showing exactly that.
+  //
+  // Must be non-passive, or preventDefault() is ignored and the browser
+  // zooms anyway. Chrome reports a trackpad pinch as a wheel event with
+  // ctrlKey set, so the same branch covers both.
+  stage.addEventListener('wheel',e=>{
+    const b=_editBoard;if(!b)return;
+    if(_boardsPinch)return;        // two fingers own zoom and pan together
+    e.preventDefault();
+    if(e.ctrlKey||e.metaKey){
+      // Exponential so the step feels the same at 19% as at 200%, and
+      // clamped per event so a coarse mouse wheel (deltaY ±100) doesn't
+      // jump three steps at once.
+      const d=Math.max(-60,Math.min(60,e.deltaY));
+      _boardsZoomAtPoint(b.zoom*Math.exp(-d*0.0032),e.clientX,e.clientY);
+      return;
+    }
+    // Plain wheel pans, as a canvas with no scrollbars should. Shift swaps
+    // the axis, which is the convention everywhere else; a trackpad sends
+    // deltaX of its own and needs neither.
+    const dx=e.shiftKey?-(e.deltaY||0):-(e.deltaX||0);
+    const dy=e.shiftKey?0:-(e.deltaY||0);
+    if(!dx&&!dy)return;
+    b.panX+=dx;b.panY+=dy;
+    _boardsApplyTransform();_boardsSaveDebounced();
+  },{passive:false});
+
+  // The canvas is a full-viewport takeover, so Ctrl+wheel over the top bar,
+  // the rail or the minimap would still page-zoom the whole app. Catch it
+  // across the whole wrapper; the stage's own handler above has already run
+  // for anything inside it, so skip those or the zoom would apply twice.
+  const wrap=stage.closest?stage.closest('.board-canvas-wrap'):null;
+  if(wrap)wrap.addEventListener('wheel',e=>{
+    if(!_editBoard||stage.contains(e.target))return;
+    if(!(e.ctrlKey||e.metaKey))return;
+    e.preventDefault();
+    const d=Math.max(-60,Math.min(60,e.deltaY));
+    _boardsZoomAtPoint(_editBoard.zoom*Math.exp(-d*0.0032),e.clientX,e.clientY);
+  },{passive:false});
+
+  // A native drag that begins inside the board (an image, a link, a text
+  // selection) is not a file arriving from the desktop. Flag it so the
+  // drop overlay stays down, and clear it however the drag ends.
+  stage.addEventListener('dragstart',()=>{_boardsInternalDrag=true;});
+  stage.addEventListener('dragend',()=>{
+    _boardsInternalDrag=false;_boardsDragDepth=0;stage.classList.remove('dropping');
+  });
+
   // Drag files in from the desktop. dragenter/dragleave fire for every
   // child element the pointer crosses, so count depth rather than toggling
   // on each one — otherwise the overlay flickers off mid-drag.
@@ -2092,7 +2169,11 @@ function _boardsWireStagePan(){
     if(!_boardsDragDepth)stage.classList.remove('dropping');
   });
   stage.addEventListener('drop',e=>{
-    if(!_boardsDragHasFiles(e))return;
+    const internal=_boardsInternalDrag;
+    _boardsInternalDrag=false;
+    if(internal||!_boardsDragHasFiles(e)){
+      _boardsDragDepth=0;stage.classList.remove('dropping');return;
+    }
     e.preventDefault();
     _boardsDragDepth=0;
     stage.classList.remove('dropping');
@@ -2101,7 +2182,15 @@ function _boardsWireStagePan(){
     _boardsAddFiles(files,_boardsScreenToWorld(e.clientX,e.clientY));
   });
 }
+// Only a drag that came from OUTSIDE the page counts as "files being
+// dropped on this board". Chrome reports a natively-dragged <img> or <a>
+// to the drop target as carrying Files, so without the internal-drag flag
+// dragging a card's own picture raises the drop overlay — Afnan's "it's
+// mixing 2 logics". Every card image now carries draggable="false" so the
+// native drag should never start at all; this is the second line of
+// defence, and it also covers a dragged text selection.
 function _boardsDragHasFiles(e){
+  if(_boardsInternalDrag)return false;
   const dt=e.dataTransfer;
   if(!dt)return false;
   if(dt.types&&Array.prototype.indexOf.call(dt.types,'Files')>-1)return true;

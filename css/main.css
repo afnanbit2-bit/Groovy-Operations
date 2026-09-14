@@ -558,6 +558,18 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .board-conn-layer line.temp{stroke:var(--text);stroke-dasharray:4 4;pointer-events:none}
 .board-card-el{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.08);display:flex;flex-direction:column;overflow:hidden}
 .board-card-el.selected{outline:2px solid var(--text);outline-offset:1px}
+/* No native HTML5 drag anywhere inside a card. A dragged <img> or <a> both
+   cancels the pointer stream our own card drag runs on AND is advertised to
+   the drop target as carrying Files, which raised the "Drop files" overlay.
+   The draggable="false" attributes in js/boards.js are the real fix; this
+   covers anything that grows an image later. */
+.board-card-el img,.board-card-el a,.board-frame img{-webkit-user-drag:none;user-drag:none}
+/* Image, file and sub-board cards drag from their body as well as their
+   header — they hold nothing editable, so there is no click-vs-drag
+   ambiguity to protect. */
+.board-card-el.type-image .board-card-body,
+.board-card-el.type-file .board-card-body,
+.board-card-el.type-board .board-card-body{cursor:grab}
 .board-card-head{background:var(--soft);border-bottom:1px solid var(--border);padding:5px 8px;display:flex;align-items:center;justify-content:space-between;cursor:grab;user-select:none;flex-shrink:0}
 .board-card-kind{font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:3px;min-width:0}
 /* The card's name lives in its header: an editable label that falls back
