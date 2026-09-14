@@ -4,53 +4,91 @@
    window by the bootstrap module in index.html before __bootApp() runs.
    Code is byte-identical to the original single-file index.html. */
 
+/* The app's oldest and most-used loader, and until Sept 2026 the one that
+   still had the failure mode CLAUDE.md records under "Loading must never
+   hang" — four of its seven queries sat un-caught inside a Promise.all, so
+   ONE rejected read threw away all seven results. The dashboard then showed
+   zeros everywhere (0 POs, 0 gate passes, empty stage overview) and a single
+   red toast that named no collection, which is exactly what a
+   "Missing or insufficient permissions" report looks like from the outside:
+   total failure, no clue which read was refused.
+
+   Now every query settles independently. Whatever succeeded is shown,
+   whatever failed is NAMED, and a permission error is retried once behind a
+   forced token refresh — but only for the queries that actually failed,
+   rather than re-running all seven.
+
+   The three that were already `.catch()`-ed stay optional: a denial there is
+   expected for some roles and must not raise anything. */
+const _POS_LOADS=[
+  {name:'pos',                    run:()=>getDocs(query(collection(db,'pos'),orderBy('ts','desc'))),
+    apply:s=>{allPOs=s.docs.map(d=>({...d.data(),fbKey:d.id}));}},
+  {name:'gatepasses',             run:()=>getDocs(query(collection(db,'gatepasses'),orderBy('ts','desc'))),
+    apply:s=>{allPasses=s.docs.map(d=>d.data());}},
+  {name:'returns',                run:()=>getDocs(query(collection(db,'returns'),orderBy('ts','desc'))),
+    apply:s=>{allReturns=s.docs.map(d=>d.data());}},
+  {name:'fabricin',               run:()=>getDocs(query(collection(db,'fabricin'),orderBy('ts','desc'))),
+    apply:s=>{allFabricIn=s.docs.map(d=>d.data());}},
+  {name:'gatepass_edit_requests', optional:true,
+    run:()=>getDocs(query(collection(db,'gatepass_edit_requests'),orderBy('ts','desc'))),
+    apply:s=>{allGPEditRequests=s.docs.map(d=>d.data());}},
+  {name:'fabric_inventory',       optional:true,
+    run:()=>getDocs(collection(db,'fabric_inventory')),
+    apply:s=>{allFabricInventory=s.docs.map(d=>({...d.data(),_id:d.id}));}},
+  {name:'fabric_movements',       optional:true,
+    run:()=>getDocs(query(collection(db,'fabric_movements'),orderBy('ts','desc'))),
+    apply:s=>{allFabricMovements=s.docs.map(d=>({...d.data(),_id:d.id}));}}
+];
+function _posIsPermission(e){
+  return !!e&&(e.code==='permission-denied'||String(e.message||'').indexOf('permissions')>-1);
+}
+// Runs the given jobs, applies whatever came back, and returns the ones that
+// did not. Never throws.
+async function _posRunLoads(jobs){
+  const settled=await Promise.allSettled(jobs.map(j=>j.run()));
+  const failed=[];
+  settled.forEach((r,i)=>{
+    if(r.status==='fulfilled'){
+      try{jobs[i].apply(r.value);}catch(e){console.warn('[loadData] could not apply '+jobs[i].name+':',e);}
+    }else{
+      failed.push({job:jobs[i],err:r.reason});
+      console.warn('[loadData] '+jobs[i].name+' failed:',(r.reason&&(r.reason.code||r.reason.message))||r.reason);
+    }
+  });
+  return failed;
+}
 async function loadData(){
-  try{
-    const[posSnap,gpSnap,retSnap,fabSnap,editSnap,fInvSnap,fMovSnap]=await Promise.all([
-      getDocs(query(collection(db,'pos'),orderBy('ts','desc'))),
-      getDocs(query(collection(db,'gatepasses'),orderBy('ts','desc'))),
-      getDocs(query(collection(db,'returns'),orderBy('ts','desc'))),
-      getDocs(query(collection(db,'fabricin'),orderBy('ts','desc'))),
-      getDocs(query(collection(db,'gatepass_edit_requests'),orderBy('ts','desc'))).catch(()=>({docs:[]})),
-      getDocs(collection(db,'fabric_inventory')).catch(()=>({docs:[]})),
-      getDocs(query(collection(db,'fabric_movements'),orderBy('ts','desc'))).catch(()=>({docs:[]}))
-    ]);
-    allPOs=posSnap.docs.map(d=>({...d.data(),fbKey:d.id}));
-    allPasses=gpSnap.docs.map(d=>d.data());
-    allReturns=retSnap.docs.map(d=>d.data());
-    allFabricIn=fabSnap.docs.map(d=>d.data());
-    allGPEditRequests=editSnap.docs.map(d=>d.data());
-    allFabricInventory=fInvSnap.docs.map(d=>({...d.data(),_id:d.id}));
-    allFabricMovements=fMovSnap.docs.map(d=>({...d.data(),_id:d.id}));
-    if(currentPage)renderPage(currentPage);
-    if(typeof _maybeLoadPrintingData==='function')_maybeLoadPrintingData();
-    if(typeof loadProducts==='function')loadProducts();
-    if(typeof loadHRMData==='function')loadHRMData().then(()=>{ if(currentPage==='dashboard'||currentPage==='hrm-employees'){const m=document.getElementById('main-content');if(m&&typeof renderPage==='function')renderPage(currentPage);} });
-  }catch(e){
-    if((e.code==='permission-denied'||e.message.includes('permissions'))&&auth.currentUser){
-      try{
-        await auth.currentUser.getIdToken(true);
-        const[posSnap,gpSnap,retSnap,fabSnap,editSnap,fInvSnap,fMovSnap]=await Promise.all([
-          getDocs(query(collection(db,'pos'),orderBy('ts','desc'))),
-          getDocs(query(collection(db,'gatepasses'),orderBy('ts','desc'))),
-          getDocs(query(collection(db,'returns'),orderBy('ts','desc'))),
-          getDocs(query(collection(db,'fabricin'),orderBy('ts','desc'))),
-          getDocs(query(collection(db,'gatepass_edit_requests'),orderBy('ts','desc'))).catch(()=>({docs:[]})),
-          getDocs(collection(db,'fabric_inventory')).catch(()=>({docs:[]})),
-          getDocs(query(collection(db,'fabric_movements'),orderBy('ts','desc'))).catch(()=>({docs:[]}))
-        ]);
-        allPOs=posSnap.docs.map(d=>({...d.data(),fbKey:d.id}));
-        allPasses=gpSnap.docs.map(d=>d.data());
-        allReturns=retSnap.docs.map(d=>d.data());
-        allFabricIn=fabSnap.docs.map(d=>d.data());
-        allGPEditRequests=editSnap.docs.map(d=>d.data());
-        allFabricInventory=fInvSnap.docs.map(d=>({...d.data(),_id:d.id}));
-        allFabricMovements=fMovSnap.docs.map(d=>({...d.data(),_id:d.id}));
-        if(currentPage)renderPage(currentPage);
-        if(typeof _maybeLoadPrintingData==='function')_maybeLoadPrintingData();
-        return;
-      }catch(e2){showToast('Data load error: '+e2.message,true);}
-    }else{showToast('Data load error: '+e.message,true);}
+  let failed=await _posRunLoads(_POS_LOADS);
+  // One retry behind a forced token refresh, for the permission failures
+  // only. A stale ID token is the one cause this can actually fix; retrying
+  // the reads that already succeeded would just double the cost.
+  const retry=failed.filter(f=>_posIsPermission(f.err)).map(f=>f.job);
+  if(retry.length&&auth.currentUser){
+    try{
+      await auth.currentUser.getIdToken(true);
+      const still=await _posRunLoads(retry);
+      const stillIds=new Set(still.map(f=>f.job.name));
+      failed=failed.filter(f=>stillIds.has(f.job.name)||!retry.some(j=>j.name===f.job.name));
+    }catch(e){console.warn('[loadData] token refresh failed:',e);}
+  }
+  // Whatever loaded is rendered either way — a dashboard showing six of
+  // seven datasets beats a dashboard showing zeros.
+  if(currentPage&&typeof renderPage==='function')renderPage(currentPage);
+  if(typeof _maybeLoadPrintingData==='function')_maybeLoadPrintingData();
+  if(typeof loadProducts==='function')loadProducts();
+  if(typeof loadHRMData==='function')loadHRMData().then(()=>{ if(currentPage==='dashboard'||currentPage==='hrm-employees'){const m=document.getElementById('main-content');if(m&&typeof renderPage==='function')renderPage(currentPage);} });
+
+  const hard=failed.filter(f=>!f.job.optional);
+  if(hard.length){
+    // NAME the collections. "Missing or insufficient permissions" on its own
+    // is unreportable — it is the same message whichever read was refused,
+    // and the next person to see it has nothing to act on.
+    const names=hard.map(f=>f.job.name).join(', ');
+    const why=_posIsPermission(hard[0].err)
+      ?'permission denied — check the firestore.rules block for '+(hard.length===1?'that collection':'those collections')+' and that the published rules match the repo'
+      :((hard[0].err&&hard[0].err.message)||'unknown error');
+    showToast('Could not load: '+names+' ('+why+')',true);
+    console.warn('[loadData] gave up on:',names,hard.map(f=>f.err));
   }
 }
 
