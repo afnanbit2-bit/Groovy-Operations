@@ -116,8 +116,8 @@ function _boardsCanEdit(b){
 }
 function _boardsNewCard(type){
   const id='c'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
-  const w=type==='frame'?440:type==='column'?280:type==='heading'?440:type==='text'?220:type==='todo'?240:type==='file'?200:type==='board'?200:170;
-  const h=type==='frame'?320:type==='column'?160:type==='heading'?58:type==='image'?120:type==='link'?120:type==='file'?110:type==='todo'?170:type==='board'?104:100;
+  const w=type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?220:type==='todo'?240:type==='file'?200:type==='board'?200:170;
+  const h=type==='frame'?320:type==='column'?160:type==='table'?150:type==='heading'?58:type==='image'?120:type==='link'?120:type==='file'?110:type==='todo'?170:type==='board'?104:100;
   const base={id,type,x:80,y:80,w,h};
   if(type==='image')base.imageUrl='';
   if(type==='text')base.text='';
@@ -125,6 +125,10 @@ function _boardsNewCard(type){
   if(type==='file'){base.fileUrl='';base.fileName='';base.fileSize=0;}
   if(type==='frame')base.title='';
   if(type==='column')base.title='';
+  // A table starts with a header row and one body row — an empty grid with
+  // no header reads as a broken card, and adding the header afterwards is
+  // the one thing nobody thinks to look for.
+  if(type==='table'){base.rows=[['Column A','Column B'],['','']];base.head=true;}
   if(type==='heading')base.text='';
   if(type==='todo')base.items=[{text:'',done:false}];
   if(type==='board'){base.boardId='';base.boardTitle='';}
@@ -563,6 +567,7 @@ function _boardsCardText(c){
   if(c.caption)parts.push(c.caption);
   if(c.boardTitle)parts.push(c.boardTitle);
   if(Array.isArray(c.items))c.items.forEach(i=>{if(i&&i.text)parts.push(i.text);});
+  if(Array.isArray(c.rows))c.rows.forEach(r=>{if(Array.isArray(r))r.forEach(v=>{if(v)parts.push(v);});});
   if(Array.isArray(c.labels))c.labels.forEach(l=>{if(l&&l.t)parts.push(l.t);});
   return parts.join(' ').toLowerCase();
 }
@@ -861,6 +866,319 @@ const _qUpdate=(...a)=>_boardsQuietWrite(()=>updateDoc.apply(null,a));
 const _qSet=(...a)=>_boardsQuietWrite(()=>setDoc.apply(null,a));
 const _qAdd=(...a)=>_boardsQuietWrite(()=>addDoc.apply(null,a));
 const _qDel=(...a)=>_boardsQuietWrite(()=>deleteDoc.apply(null,a));
+
+/* ── Reading order, the document export and Presentation ────────────────
+   A board is a plane; a document and a slideshow are both a LINE. One
+   function turns one into the other, and both features consume it — two
+   orderings would disagree the first time anybody added a frame.
+
+   The rule: frames first (a frame is how these boards mark a section), each
+   followed by whatever sits inside it, then everything loose. Within any
+   group, cards are banded by y and sorted left-to-right inside the band —
+   plain y-sorting reads a row of four cards as four separate rows, and
+   plain x-sorting reads columns. The band is generous (120 world px)
+   because nobody aligns cards to the pixel. */
+const _BOARDS_READ_BAND=120;
+function _boardsReadSort(list){
+  return list.slice().sort((a,b)=>
+    (Math.round(a.y/_BOARDS_READ_BAND)-Math.round(b.y/_BOARDS_READ_BAND))||(a.x-b.x)||(a.y-b.y));
+}
+function _boardsReadingOrder(){
+  const out=[];
+  const used=new Set();
+  // A column already carries its own order, so it is emitted whole rather
+  // than having its children re-sorted into the surrounding flow.
+  const emit=c=>{
+    if(used.has(c.id))return;
+    used.add(c.id);
+    out.push(c);
+    if(c.type==='column')_boardsColumnChildren(c).forEach(k=>{if(!used.has(k.id)){used.add(k.id);out.push(k);}});
+  };
+  _boardsReadSort(_editCards.filter(c=>c.type==='frame')).forEach(f=>{
+    emit(f);
+    _boardsReadSort(_boardsCardsInFrame(f).filter(c=>c.type!=='frame')).forEach(emit);
+  });
+  _boardsReadSort(_editCards.filter(c=>!used.has(c.id))).forEach(emit);
+  return out;
+}
+// One card as document lines. Returns {md, html} so the two writers cannot
+// drift — they are the same walk, formatted twice.
+function _boardsCardDoc(c){
+  const esc=_boardsEsc;
+  const t=(c.text||'').trim();
+  switch(c.type){
+    case'heading':return{md:'## '+(t||'Untitled section'),html:'<h2>'+esc(t||'Untitled section')+'</h2>'};
+    case'frame':return{md:'## '+((c.title||'').trim()||'Section'),html:'<h2>'+esc((c.title||'').trim()||'Section')+'</h2>'};
+    case'column':return{md:'### '+((c.title||'').trim()||'Column'),html:'<h3>'+esc((c.title||'').trim()||'Column')+'</h3>'};
+    case'todo':{
+      const items=(c.items||[]).filter(i=>i&&(i.text||'').trim());
+      if(!items.length)return null;
+      return{md:items.map(i=>'- ['+(i.done?'x':' ')+'] '+i.text).join('\n'),
+        html:'<ul>'+items.map(i=>'<li>'+(i.done?'☑ ':'☐ ')+esc(i.text)+'</li>').join('')+'</ul>'};
+    }
+    case'table':{
+      const rows=Array.isArray(c.rows)?c.rows:[];
+      if(!rows.length)return null;
+      const head=c.head!==false;
+      const md=rows.map((r,i)=>'| '+r.map(v=>String(v||'').replace(/\|/g,'\\|')).join(' | ')+' |'
+        +((head&&i===0)?'\n|'+r.map(()=>' --- ').join('|')+'|':'')).join('\n');
+      const html='<table border="1" cellpadding="5" cellspacing="0">'+rows.map((r,i)=>
+        '<tr>'+r.map(v=>(head&&i===0)?'<th>'+esc(v||'')+'</th>':'<td>'+esc(v||'')+'</td>').join('')+'</tr>').join('')+'</table>';
+      return{md,html};
+    }
+    case'image':
+      if(!c.imageUrl)return null;
+      return{md:'!['+((c.caption||c.name||'').trim())+']('+c.imageUrl+')',
+        html:'<p><img src="'+esc(c.imageUrl)+'" style="max-width:520px"><br><i>'+esc((c.caption||c.name||'').trim())+'</i></p>'};
+    case'file':
+      if(!c.fileUrl)return null;
+      return{md:'['+((c.name||c.fileName||'File').trim())+']('+c.fileUrl+')',
+        html:'<p><a href="'+esc(c.fileUrl)+'">'+esc((c.name||c.fileName||'File').trim())+'</a></p>'};
+    case'link':
+      if(!c.linkUrl)return null;
+      return{md:'['+((c.linkTitle||c.linkUrl).trim())+']('+c.linkUrl+')'+(c.linkDesc?'  \n'+c.linkDesc:''),
+        html:'<p><a href="'+esc(c.linkUrl)+'">'+esc((c.linkTitle||c.linkUrl).trim())+'</a>'+(c.linkDesc?'<br>'+esc(c.linkDesc):'')+'</p>'};
+    case'board':return null;   // handled by the recursion, or skipped
+    default:{
+      if(!t)return null;
+      const name=(c.name||'').trim();
+      return{md:(name?'**'+name+'**  \n':'')+t,
+        html:'<p>'+(name?'<b>'+esc(name)+'</b><br>':'')+esc(t).replace(/\n/g,'<br>')+'</p>'};
+    }
+  }
+}
+// Walks this board and, optionally, the boards nested under it. `seen`
+// guards a cycle — only reachable by hand-editing Firestore, but an
+// infinite recursion here would take the page down with it.
+function _boardsDocWalk(cards,depth,subs,seen,acc){
+  const deeper=n=>depth>0?'#'.repeat(Math.min(depth,3))+n:n;
+  cards.forEach(c=>{
+    if(c.type==='board'&&c.boardId){
+      const child=_boardsLiveById()[c.boardId];
+      const title=(child&&child.title)||c.boardTitle||'Untitled board';
+      acc.md.push(deeper('## ')+title);
+      acc.html.push('<h'+Math.min(2+depth,6)+'>'+_boardsEsc(title)+'</h'+Math.min(2+depth,6)+'>');
+      if(!subs||!child||seen.has(child.id)){
+        if(!subs){
+          acc.md.push('*(sub-board — not included)*');
+          acc.html.push('<p><i>(sub-board — not included)</i></p>');
+        }
+        return;
+      }
+      seen.add(child.id);
+      // The child's cards are read by the same function, which needs them
+      // to BE the current board's cards — frame membership and column
+      // children are both computed from _editCards. Swapped and restored
+      // in a finally, so a throw anywhere below cannot leave the canvas
+      // pointing at another board's array.
+      const save=_editCards;
+      try{
+        _editCards=(child.cards||[]).slice();
+        const order=_boardsReadingOrder();
+        _boardsDocWalk(order,depth+1,subs,seen,acc);
+      }finally{_editCards=save;}
+      return;
+    }
+    const d=_boardsCardDoc(c);
+    if(!d)return;
+    acc.md.push(depth>0&&/^#/.test(d.md)?'#'+d.md:d.md);
+    acc.html.push(d.html);
+  });
+}
+function _boardsBuildDoc(includeSubs){
+  const title=(_editBoard&&_editBoard.title)||'Untitled board';
+  const acc={md:['# '+title,''],html:['<h1>'+_boardsEsc(title)+'</h1>']};
+  _boardsDocWalk(_boardsReadingOrder(),0,includeSubs,new Set([_editBoard.id]),acc);
+  const md=acc.md.join('\n\n')+'\n';
+  // Word opens an HTML file with a .doc extension and keeps the headings,
+  // lists, tables and images — which is the whole document, with no
+  // dependency. A real .docx means a ZIP writer and an OOXML template,
+  // which is a library; this repo has held the zero-new-deps line since
+  // Stage 1. Said out loud in the download toast rather than implied.
+  const html='<html xmlns:o="urn:schemas-microsoft-com:office:office" '+
+    'xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">'+
+    '<head><meta charset="utf-8"><title>'+_boardsEsc(title)+'</title>'+
+    '<style>body{font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.45}'+
+    'h1{font-size:20pt}h2{font-size:15pt}h3{font-size:12pt}'+
+    'table{border-collapse:collapse}th,td{border:1px solid #999;padding:5px}</style></head>'+
+    '<body>'+acc.html.join('\n')+'</body></html>';
+  return{title,md,html};
+}
+function _boardsSaveText(text,filename,mime){
+  const blob=new Blob([text],{type:mime});
+  const href=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=href;a.download=filename;a.style.display='none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{try{URL.revokeObjectURL(href);}catch(e){}a.remove();},10000);
+}
+window.boardsExportDoc=function(kind){
+  if(!_editBoard)return;
+  _boardsMenuOpen=false;_boardsSyncMenu();
+  const subs=_editCards.some(c=>c.type==='board'&&c.boardId)
+    ? confirm('Include the boards nested inside this one?') : false;
+  const doc=_boardsBuildDoc(subs);
+  const base=_boardsExportName(kind==='md'?'md':'doc');
+  if(kind==='md'){
+    _boardsSaveText(doc.md,base,'text/markdown;charset=utf-8');
+    showToast('Markdown downloaded');
+  }else if(kind==='txt'){
+    // Plain text is the Markdown with the syntax taken back out.
+    const txt=doc.md.replace(/^#{1,6} /gm,'').replace(/\*\*/g,'').replace(/!?\[([^\]]*)\]\(([^)]*)\)/g,'$1 ($2)');
+    _boardsSaveText(txt,_boardsExportName('txt'),'text/plain;charset=utf-8');
+    showToast('Text file downloaded');
+  }else{
+    _boardsSaveText(doc.html,base,'application/msword');
+    showToast('Word document downloaded — it is HTML inside a .doc, which Word opens normally');
+  }
+  _boardsLogBoardActivity('exported the board as a document');
+};
+
+/* ── Presentation ───────────────────────────────────────────────────────
+   Walks the SAME reading order the document export uses, so a board
+   presents in the order it reads. Frames and headings become section
+   slides; everything with content becomes a slide of its own; an empty
+   note or an unfilled image card is skipped rather than shown as a blank.
+
+   Built as its own fixed overlay rather than a mode on the canvas: the
+   canvas is a pan/zoom surface with a rail, a minimap and a tray, and
+   hiding all of that is more work — and more ways to leave it hidden —
+   than drawing a clean screen. Escape is the only way in or out, and it is
+   registered on the way in and removed on the way out, so nothing lingers. */
+let _boardsPresentIdx=0,_boardsPresentList=null;
+function _boardsPresentable(){
+  return _boardsReadingOrder().filter(c=>{
+    if(c.type==='frame'||c.type==='heading')return true;
+    if(c.type==='column')return !!(c.title||'').trim();
+    if(c.type==='image')return !!c.imageUrl;
+    if(c.type==='file')return !!c.fileUrl;
+    if(c.type==='link')return !!c.linkUrl;
+    if(c.type==='board')return !!c.boardId;
+    if(c.type==='todo')return (c.items||[]).some(i=>i&&(i.text||'').trim());
+    if(c.type==='table')return Array.isArray(c.rows)&&c.rows.length;
+    return !!(c.text||'').trim();
+  });
+}
+window.boardsPresent=function(){
+  if(!_editBoard)return;
+  _boardsMenuOpen=false;_boardsSyncMenu();
+  _boardsPresentList=_boardsPresentable();
+  if(!_boardsPresentList.length)return showToast('Nothing on this board to present yet');
+  _boardsPresentIdx=0;
+  const el=document.createElement('div');
+  el.id='board-present';
+  el.className='board-present';
+  el.innerHTML=
+    '<div class="board-present-stage" id="board-present-stage"></div>'+
+    '<div class="board-present-bar">'+
+      '<button class="tool-btn" id="bp-prev" title="Previous (←)">←</button>'+
+      '<span class="board-present-count" id="bp-count"></span>'+
+      '<button class="tool-btn" id="bp-next" title="Next (→)">→</button>'+
+      '<span class="board-present-title" id="bp-title"></span>'+
+      '<button class="tool-btn" id="bp-exit" title="Exit (Esc)">✕</button>'+
+    '</div>';
+  document.body.appendChild(el);
+  el.querySelector('#bp-title').textContent=_editBoard.title||'Untitled board';
+  el.querySelector('#bp-prev').onclick=()=>window.boardsPresentStep(-1);
+  el.querySelector('#bp-next').onclick=()=>window.boardsPresentStep(1);
+  el.querySelector('#bp-exit').onclick=window.boardsPresentExit;
+  // Clicking the slide advances, the way every slideshow does; the bar is
+  // excluded so its buttons still mean what they say.
+  el.addEventListener('click',e=>{
+    if(e.target.closest&&e.target.closest('.board-present-bar'))return;
+    window.boardsPresentStep(1);
+  });
+  document.addEventListener('keydown',_boardsPresentKey,true);
+  _boardsPresentPaint();
+  _boardsLogBoardActivity('presented the board');
+};
+window.boardsPresentExit=function(){
+  const el=document.getElementById('board-present');
+  if(el)el.remove();
+  _boardsPresentList=null;
+  document.removeEventListener('keydown',_boardsPresentKey,true);
+};
+function _boardsPresentKey(e){
+  if(!document.getElementById('board-present'))return;
+  const k=e.key;
+  if(k==='Escape'){e.preventDefault();e.stopPropagation();window.boardsPresentExit();return;}
+  if(k==='ArrowRight'||k===' '||k==='PageDown'){e.preventDefault();e.stopPropagation();window.boardsPresentStep(1);return;}
+  if(k==='ArrowLeft'||k==='PageUp'){e.preventDefault();e.stopPropagation();window.boardsPresentStep(-1);return;}
+  if(k==='Home'){e.preventDefault();_boardsPresentIdx=0;_boardsPresentPaint();return;}
+  if(k==='End'){e.preventDefault();_boardsPresentIdx=_boardsPresentList.length-1;_boardsPresentPaint();}
+}
+window.boardsPresentStep=function(d){
+  if(!_boardsPresentList)return;
+  const next=_boardsPresentIdx+d;
+  if(next<0)return;
+  if(next>=_boardsPresentList.length){window.boardsPresentExit();return;}
+  _boardsPresentIdx=next;
+  _boardsPresentPaint();
+};
+function _boardsPresentPaint(){
+  const stage=document.getElementById('board-present-stage');
+  if(!stage||!_boardsPresentList)return;
+  const c=_boardsPresentList[_boardsPresentIdx];
+  const count=document.getElementById('bp-count');
+  if(count)count.textContent=(_boardsPresentIdx+1)+' / '+_boardsPresentList.length;
+  stage.className='board-present-stage kind-'+c.type;
+  stage.innerHTML='';
+  // Structure first, user text with textContent — the same boundary as the
+  // canvas. A slide is the one place a stored string is drawn at 60px, so
+  // getting it wrong here would be the most visible XSS in the app.
+  const add=(tag,cls,text)=>{
+    const n=document.createElement(tag);
+    if(cls)n.className=cls;
+    if(text!=null)n.textContent=text;
+    stage.appendChild(n);
+    return n;
+  };
+  if(c.type==='frame'||c.type==='heading'||c.type==='column'){
+    add('div','bp-kicker','Section');
+    add('h1','bp-title',(c.type==='heading'?(c.text||''):(c.title||'')).trim()||'Untitled section');
+  }else if(c.type==='image'){
+    const im=document.createElement('img');
+    im.className='bp-img';im.src=_boardsDisplayUrl(c.imageUrl,1600);
+    im.crossOrigin='anonymous';im.alt='';
+    stage.appendChild(im);
+    if((c.caption||c.name||'').trim())add('div','bp-cap',(c.caption||c.name).trim());
+  }else if(c.type==='table'){
+    const t=document.createElement('table');
+    t.className='bp-table';
+    (c.rows||[]).forEach((row,r)=>{
+      const tr=document.createElement('tr');
+      row.forEach(v=>{
+        const cell=document.createElement((c.head!==false&&r===0)?'th':'td');
+        cell.textContent=v||'';
+        tr.appendChild(cell);
+      });
+      t.appendChild(tr);
+    });
+    stage.appendChild(t);
+  }else if(c.type==='todo'){
+    if((c.name||'').trim())add('h2','bp-sub',c.name.trim());
+    const ul=document.createElement('ul');
+    ul.className='bp-list';
+    (c.items||[]).filter(i=>i&&(i.text||'').trim()).forEach(i=>{
+      const li=document.createElement('li');
+      li.textContent=(i.done?'☑  ':'☐  ')+i.text;
+      if(i.done)li.className='done';
+      ul.appendChild(li);
+    });
+    stage.appendChild(ul);
+  }else if(c.type==='file'||c.type==='link'||c.type==='board'){
+    add('div','bp-kicker',c.type==='board'?'Sub-board':c.type==='file'?'Attachment':'Link');
+    const label=c.type==='board'
+      ?(((_boardsLiveById()[c.boardId]||{}).title)||c.boardTitle||'Untitled board')
+      :c.type==='file'?(c.name||c.fileName||'File'):(c.linkTitle||c.linkUrl||'Link');
+    add('h2','bp-sub',label);
+    if(c.type==='link'&&c.linkDesc)add('div','bp-cap',c.linkDesc);
+  }else{
+    if((c.name||'').trim())add('div','bp-kicker',c.name.trim());
+    add('div','bp-body',(c.text||'').trim());
+  }
+}
 
 // ── Load (gallery) ──
 // Same two-single-field-query, merge-client-side approach as loadNotesData —
@@ -1483,8 +1801,12 @@ function _renderBoardCanvasHTML(){
             <button onclick="window.boardsShowAll()">All boards${home?'':' (list, templates, trash)'}</button>
             <div class="board-menu-sep"></div>
             ${home?'':`<button onclick="window.boardsCopyBoardLink()">Copy link to board</button>`}
+            <button onclick="window.boardsPresent()">Present this board</button>
             <button onclick="window.boardsExportPNG()">Export as image (PNG)</button>
             <button onclick="window.boardsExportPDF()">Export as PDF</button>
+            <button onclick="window.boardsExportDoc('doc')">Export as a Word document</button>
+            <button onclick="window.boardsExportDoc('md')">Export as Markdown</button>
+            <button onclick="window.boardsExportDoc('txt')">Export as plain text</button>
             ${home?'':`<button onclick="window.boardsDuplicateBoard()">Duplicate board</button>`}
             ${canEdit&&!home?`<button onclick="window.boardsToggleTemplate()">${b.isTemplate?'Remove from templates':'Save as template'}</button>`:''}
             ${canEdit?`<button onclick="window.boardsAddChildBoard()">${home?'New board':'Add sub-board'}</button>`:''}
@@ -1653,6 +1975,24 @@ function _boardCardHTML(c,canEdit){
         :'<div class="board-card-empty">No file</div>';
       body=`<div class="board-card-body" style="padding:0"${bodyDrag}>${body}</div>`;
     }
+  }else if(c.type==='table'){
+    // Cells follow the same click/double-click rule as every other card
+    // body: contenteditable="false" until boardsBeginEdit switches exactly
+    // one on, so a single click still selects and drags the card. Text is
+    // hydrated with textContent after render — never interpolated.
+    const rows=Array.isArray(c.rows)&&c.rows.length?c.rows:[['','']];
+    body=`<div class="board-card-body board-table-body"${bodyDrag}>
+      <table class="board-table${c.head===false?'':' with-head'}">
+        ${rows.map((row,r)=>`<tr>${row.map((cell,i)=>{
+          const tag=(c.head!==false&&r===0)?'th':'td';
+          return`<${tag} id="board-td-${c.id}-${r}-${i}" contenteditable="false" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-td-${c.id}-${r}-${i}')"`:''} oninput="window.boardsTableInput('${c.id}',${r},${i},this)"></${tag}>`;
+        }).join('')}</tr>`).join('')}
+      </table>
+      ${canEdit?`<div class="board-table-add">
+        <button onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsTableAdd('${c.id}','row')" title="Add a row">+ Row</button>
+        <button onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsTableAdd('${c.id}','col')" title="Add a column">+ Col</button>
+      </div>`:''}
+    </div>`;
   }else if(c.type==='heading'){
     // A section banner — the thing Afnan's real Milanote board uses to
     // title every cluster. Its drag strip fades out until hover so it
@@ -1804,6 +2144,7 @@ const _BOARDS_MIN_BODY_H={board:66,image:90,file:96,link:96,todo:74,heading:34,t
 function _boardsMinCardH(c){
   if(!c||c.type==='frame')return 60;
   if(c.type==='column')return c.h||_BOARDS_COL_MIN_H;   // derived by _boardsLayoutColumn
+  if(c.type==='table')return Math.max(_boardsTableMinH(c),90);
   // A heading's head strip is absolutely positioned over the banner, so it
   // costs the column nothing.
   let h=c.type==='heading'?0:_BOARDS_CHROME_H.head;
@@ -2287,6 +2628,12 @@ function _boardsHydrateTextCards(){
       const el=document.getElementById('board-label-'+c.id+'-'+i);
       if(el)el.textContent=(l&&l.t)||'';
     });
+    if(c.type==='table'&&Array.isArray(c.rows)){
+      c.rows.forEach((row,r)=>row.forEach((cell,i)=>{
+        const td=document.getElementById('board-td-'+c.id+'-'+r+'-'+i);
+        if(td)td.textContent=cell||'';
+      }));
+    }
     if(c.type==='text'||c.type==='heading'){
       _boardsSetRichInto(document.getElementById('board-txt-'+c.id),c);
     }else if(c.type==='todo'){
@@ -3226,6 +3573,7 @@ const _BOARDS_ICONS={
   linestart:'<path d="M2 8h11" stroke="currentColor" fill="none"/><path d="M6 4L2 8l4 4z"/>',
   lineend:'<path d="M3 8h11" stroke="currentColor" fill="none"/><path d="M10 4l4 4-4 4z"/>',
   dashed:'<path d="M2 8h3M6.5 8h3M11 8h3" stroke="currentColor" fill="none"/>',
+  table:'<path d="M2 3h12v10H2z" fill="none" stroke="currentColor"/><path d="M2 6.5h12M6 3v10M10 3v10" stroke="currentColor" fill="none"/>',
   weight:'<path d="M2 4h12" stroke="currentColor" fill="none" stroke-width="1"/><path d="M2 8h12" stroke="currentColor" fill="none" stroke-width="2"/><path d="M2 12.5h12" stroke="currentColor" fill="none" stroke-width="3"/>',
   trash:'<path d="M3 4h10M6 4V2.5h4V4M5 4l.7 9h4.6L11 4z" fill="none" stroke="currentColor"/>',
   note:'<path d="M3 2h10v12H3z"/><path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" fill="none"/>',
@@ -3298,6 +3646,7 @@ function _boardsRailItems(){
       {act:'add:heading',label:'Heading',icon:'heading'},
       {act:'add:frame',label:'Frame',icon:'frame'},
       {act:'add:column',label:'Column',icon:'stack'},
+      {act:'add:table',label:'Table',icon:'table'},
       {act:'add:board',label:'Board',icon:'board'},
       {act:'line',label:'Line',icon:'line',on:_boardsLineMode},
       {sep:true},
@@ -3745,6 +4094,59 @@ window.boardsCardName=function(id,el){
   const v=String(el.textContent||'').replace(/\s+/g,' ').trim();
   if(v)c.name=v.slice(0,80);
   else delete c.name;
+  _boardsSaveDebounced();
+};
+/* ── Tables ─────────────────────────────────────────────────────────────
+   A plain rows[][] of strings on the card — no per-cell records and no
+   column schema. The engineering spec written from the teardown proposed
+   typed columns; that is a second data model to migrate and to validate,
+   to hold what these boards actually use a table for, which is a small
+   grid of text beside a tech pack. A typed table can be built on top of
+   this later; the reverse is not true. */
+window.boardsTableInput=function(id,r,i,el){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||!Array.isArray(c.rows)||!c.rows[r])return;
+  c.rows[r][i]=el.textContent;
+  _boardsSaveDebounced();
+};
+function _boardsTableMinH(c){
+  const rows=Array.isArray(c.rows)?c.rows.length:1;
+  return 26+rows*28+26;   // card header + rows + the +Row/+Col strip
+}
+window.boardsTableAdd=function(id,what){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.locked||!_boardsCanEdit(_editBoard))return;
+  if(!Array.isArray(c.rows)||!c.rows.length)c.rows=[['','']];
+  _boardsPushUndo();
+  if(what==='row')c.rows.push(c.rows[0].map(()=>''));
+  else c.rows.forEach(row=>row.push(''));
+  // A table that grows needs the room, or the new row is drawn outside the
+  // card and clipped away — the same class of bug the label and reaction
+  // rows caused on small cards.
+  if(what==='row')c.h=Math.max(c.h,_boardsTableMinH(c));
+  else c.w=Math.max(c.w,60+c.rows[0].length*100);
+  if(_boardsColumnOf(c))_boardsLayoutColumns();
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+window.boardsTableDrop=function(id,what){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.locked||!_boardsCanEdit(_editBoard)||!Array.isArray(c.rows))return;
+  const minRows=c.head===false?1:2;
+  if(what==='row'&&c.rows.length<=minRows)return showToast('A table needs at least one row');
+  if(what==='col'&&c.rows[0].length<=1)return showToast('A table needs at least one column');
+  _boardsPushUndo();
+  if(what==='row')c.rows.pop();else c.rows.forEach(row=>row.pop());
+  if(_boardsColumnOf(c))_boardsLayoutColumns();
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+window.boardsTableHeader=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||!_boardsCanEdit(_editBoard))return;
+  _boardsPushUndo();
+  c.head=c.head===false?true:false;
+  _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
 };
 window.boardsCaptionInput=function(id,el){
@@ -4691,6 +5093,7 @@ function _boardsExportPalette(){
     muted:_boardsCssVar('--muted','#8a8a8a'),
     text:_boardsCssVar('--text','#111111'),
     soft:_boardsCssVar('--soft','#f5f5f5'),
+    surface:_boardsCssVar('--surface','#ffffff'),
     dark:_boardsCssVar('--dark','#111111'),
     tint:{
       red:_boardsCssVar('--accent-urgent','#c0392b'),
@@ -4755,7 +5158,7 @@ function _boardsRoundRect(ctx,x,y,w,h,r){
 function _boardsExportKind(c){
   return c.type==='image'?'Image':c.type==='link'?'Link':c.type==='file'?'File'
     :c.type==='board'?'Sub-board':c.type==='todo'?'To-do':c.type==='frame'?'Section'
-    :c.type==='column'?'Column'
+    :c.type==='column'?'Column':c.type==='table'?'Table'
     :c.type==='heading'?'Heading':'Note';
 }
 function _boardsDrawCard(ctx,c,img,P){
@@ -4780,6 +5183,28 @@ function _boardsDrawCard(ctx,c,img,P){
     ctx.fillStyle=P.muted;
     ctx.font='700 11px '+P.font;
     ctx.fillText(String(c.title||'').toUpperCase()||'SECTION',c.x+10,c.y+18);
+    return;
+  }
+  if(c.type==='table'&&Array.isArray(c.rows)&&c.rows.length){
+    const hh=20,rows=c.rows.length,cols=c.rows[0].length||1;
+    const rh=Math.max(14,(c.h-hh)/rows),cw=c.w/cols;
+    ctx.save();
+    ctx.fillStyle=P.surface;ctx.strokeStyle=P.border;ctx.lineWidth=1;
+    _boardsRoundRect(ctx,c.x,c.y,c.w,c.h,10);ctx.fill();ctx.stroke();
+    ctx.beginPath();
+    for(let r=1;r<rows;r++){ctx.moveTo(c.x,c.y+hh+r*rh);ctx.lineTo(c.x+c.w,c.y+hh+r*rh);}
+    for(let i=1;i<cols;i++){ctx.moveTo(c.x+i*cw,c.y+hh);ctx.lineTo(c.x+i*cw,c.y+c.h);}
+    ctx.stroke();
+    ctx.textAlign='left';
+    c.rows.forEach((row,r)=>row.forEach((cell,i)=>{
+      ctx.fillStyle=(c.head!==false&&r===0)?P.text:P.muted;
+      ctx.font=((c.head!==false&&r===0)?'700 ':'')+'11px '+P.font;
+      ctx.save();
+      ctx.beginPath();ctx.rect(c.x+i*cw,c.y+hh+r*rh,cw,rh);ctx.clip();
+      ctx.fillText(String(cell||''),c.x+i*cw+6,c.y+hh+r*rh+rh/2+4);
+      ctx.restore();
+    }));
+    ctx.restore();
     return;
   }
   const headH=20,bx=c.x,by=c.y+headH,bw=c.w,bh=Math.max(0,c.h-headH);
@@ -4984,6 +5409,7 @@ window.boardsExportPDF=async function(){
       :c.type==='link'?((c.linkTitle||'')+(c.linkUrl?'  —  '+c.linkUrl:''))
       :c.type==='file'?(c.name||c.fileName||'')
       :c.type==='board'?(c.boardTitle||'')
+      :c.type==='table'?(Array.isArray(c.rows)?c.rows.map(r=>r.join(' | ')).join('  ·  '):'')
       :(c.type==='frame'||c.type==='column')?(c.title||'')
       :(c.text||'')).replace(/\s+/g,' ').trim()
   })).filter(r=>r.text);
@@ -5905,6 +6331,17 @@ function _boardsCtxRun(act){
   if(act.indexOf('add:')===0){place();window.boardsAddCard(act.slice(4));return;}
   if(act.indexOf('color:')===0){window.boardsSetColor(act.slice(6));return;}
   if(act.indexOf('ln:')===0){_boardsConnAction(act.slice(3));return;}
+  if(act.indexOf('tbl:')===0){
+    const one=_boardsSelOne();
+    if(!one||one.type!=='table')return;
+    const w=act.slice(4);
+    if(w==='row')window.boardsTableAdd(one.id,'row');
+    else if(w==='col')window.boardsTableAdd(one.id,'col');
+    else if(w==='-row')window.boardsTableDrop(one.id,'row');
+    else if(w==='-col')window.boardsTableDrop(one.id,'col');
+    else if(w==='head')window.boardsTableHeader(one.id);
+    return;
+  }
   if(act==='connectsel'){window.boardsConnectSelection();return;}
   if(act.indexOf('align:')===0){window.boardsAlignSelection(act.slice(6));return;}
   if(act.indexOf('dist:')===0){window.boardsDistributeSelection(act.slice(5));return;}
@@ -6324,6 +6761,7 @@ function _boardsCanvasCtxItems(canEdit){
     {act:'add:heading',label:'New heading'},
     {act:'add:frame',label:'New frame'},
     {act:'add:column',label:'New column'},
+    {act:'add:table',label:'New table'},
     {act:'add:board',label:'New board'},
     {act:'line',label:_boardsLineMode?'Line mode off':'Draw a line'},
     {sep:true},
@@ -6406,6 +6844,12 @@ function _boardsCardCtxItems(canEdit){
     }else if(one.type==='frame'){
       if(canEdit)typed.push({act:'rename',label:'Rename frame',hint:'Return'});
       typed.push({act:'selectinside',label:'Select contents'});
+    }else if(one.type==='table'&&canEdit){
+      typed.push({act:'tbl:row',label:'Add a row'});
+      typed.push({act:'tbl:col',label:'Add a column'});
+      typed.push({act:'tbl:-row',label:'Remove last row'});
+      typed.push({act:'tbl:-col',label:'Remove last column'});
+      typed.push({act:'tbl:head',label:one.head===false?'Use a header row':'No header row'});
     }else if(one.type==='todo'&&canEdit){
       typed.push({act:'tickall',label:'Tick all'});
       typed.push({act:'untickall',label:'Untick all'});

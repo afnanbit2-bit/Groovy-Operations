@@ -1104,5 +1104,112 @@ module.exports=function(){
       markup.indexOf('conn-hit')<markup.indexOf('class="conn"'));
   }
 
+  // ── tables, reading order, the document export and Presentation ───────
+  {
+    const app=loadApp({files:FILES,session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'}});
+    const {run}=app;
+    const boot=()=>run(`session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};
+      _editBoard={id:'B',title:'Winter Drop',visibility:'shared',ownerUid:'u1',zoom:1,panX:0,panY:0};
+      _editConnectors=[];_boardsSelection=new Set();_boardsConnSel=null;_boardsPeers=[];
+      moodBoards=[{id:'CH',title:'Child board',cards:[
+        {id:'ct',type:'text',text:'inside the child',x:0,y:0,w:170,h:100}],visibility:'shared',ownerUid:'u1'}];
+      _editCards=[];`);
+
+    s.section('a table is rows[][] of plain strings');
+    boot();
+    run(`window.boardsAddCard('table')`);
+    s.eq('two columns, a header and one body row',
+      run(`JSON.stringify(_editCards[0].rows)`),'[["Column A","Column B"],["",""]]');
+    s.eq('with a header by default',run(`_editCards[0].head`),true);
+    run(`window.boardsTableAdd(_editCards[0].id,'row')`);
+    s.eq('adding a row matches the column count',run(`_editCards[0].rows.length+'x'+_editCards[0].rows[2].length`),'3x2');
+    run(`window.boardsTableAdd(_editCards[0].id,'col')`);
+    s.eq('adding a column widens every row',
+      run(`_editCards[0].rows.every(r=>r.length===3)`),true);
+    // A table that grows needs the room, or the new row is drawn outside
+    // the card and clipped — the bug the label rows caused on small cards.
+    s.ok('and the card grew to fit',run(`_editCards[0].h>=_boardsTableMinH(_editCards[0])`));
+    run(`while(_editCards[0].rows.length>2)window.boardsTableDrop(_editCards[0].id,'row')`);
+    run(`window.boardsTableDrop(_editCards[0].id,'row')`);
+    s.eq('a header table never drops below the header plus one row',run(`_editCards[0].rows.length`),2);
+    run(`while(_editCards[0].rows[0].length>1)window.boardsTableDrop(_editCards[0].id,'col');
+         window.boardsTableDrop(_editCards[0].id,'col')`);
+    s.eq('and never below one column',run(`_editCards[0].rows[0].length`),1);
+    run(`_editCards[0].rows=[['Fabric','GSM'],['Drill','245']]`);
+    s.ok('cell text is searchable',/245/.test(run(`_boardsCardText(_editCards[0])`)));
+    s.ok('the markup carries no cell text — hydrated after, like every other string',
+      !/Fabric|245/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+
+    s.section('reading order: frames first, then rows left-to-right');
+    boot();
+    run(`_editCards=[
+      {id:'loose',type:'text',text:'z',x:900,y:900,w:100,h:60},
+      {id:'f',type:'frame',title:'Bottoms',x:0,y:0,w:400,h:300},
+      {id:'r1b',type:'text',text:'b',x:200,y:40,w:100,h:60},
+      {id:'r1a',type:'text',text:'a',x:20,y:50,w:100,h:60},
+      {id:'r2',type:'text',text:'c',x:20,y:200,w:100,h:60}
+    ]`);
+    s.eq('frame, then its cards banded by y and sorted by x, then the rest',
+      run(`_boardsReadingOrder().map(c=>c.id).join(',')`),'f,r1a,r1b,r2,loose');
+    // Plain y-sorting would read a row of cards as separate rows; the band
+    // is generous because nobody aligns to the pixel.
+    s.ok('a 10px difference in y does not break the row',
+      run(`_boardsReadingOrder().map(c=>c.id).join(',')`).indexOf('r1a,r1b')>-1);
+
+    s.section('a column is emitted whole, in its own order');
+    boot();
+    run(`_editCards=[
+      {id:'col',type:'column',title:'Fabric',x:0,y:0,w:280,h:200},
+      {id:'k2',type:'text',text:'2',x:12,y:150,w:256,h:60,columnId:'col'},
+      {id:'k1',type:'text',text:'1',x:12,y:60,w:256,h:60,columnId:'col'},
+      {id:'other',type:'text',text:'x',x:600,y:20,w:100,h:60}
+    ];_boardsLayoutColumns()`);
+    s.eq('the column, then its children in order, then the rest',
+      run(`_boardsReadingOrder().map(c=>c.id).join(',')`),'col,k1,k2,other');
+
+    s.section('the document export walks that same order');
+    boot();
+    run(`_editCards=[
+      {id:'h',type:'heading',text:'Bottoms',x:0,y:0,w:440,h:58},
+      {id:'n',type:'text',text:'Confirm the wash',name:'Note',x:0,y:120,w:200,h:100},
+      {id:'t',type:'todo',items:[{text:'Lab dip',done:true},{text:'Bulk',done:false}],x:0,y:240,w:240,h:170},
+      {id:'tb',type:'table',head:true,rows:[['Fabric','GSM'],['Drill','245']],x:0,y:400,w:360,h:150},
+      {id:'sb',type:'board',boardId:'CH',boardTitle:'Child board',x:0,y:560,w:200,h:104}
+    ]`);
+    const md=run(`_boardsBuildDoc(false).md`);
+    s.ok('the board title is the H1',/^# Winter Drop/.test(md));
+    s.ok('a heading card becomes an H2',/\n## Bottoms/.test(md));
+    s.ok('a to-do becomes a checklist with its state',/- \[x\] Lab dip/.test(md)&&/- \[ \] Bulk/.test(md));
+    s.ok('a table becomes a markdown table with a separator row',
+      /\| Fabric \| GSM \|/.test(md)&&/\| --- \| --- \|/.test(md));
+    s.ok('a note keeps its card name in bold',/\*\*Note\*\*/.test(md));
+    s.ok('a sub-board is named but says it was left out',/Child board/.test(md)&&/not included/.test(md));
+    const withSubs=run(`_boardsBuildDoc(true).md`);
+    s.ok('including sub-boards pulls the child cards in',/inside the child/.test(withSubs));
+    s.eq('and the canvas is left pointing at its OWN cards afterwards',
+      run(`_editCards.length`),5);
+
+    s.section('the Word file is HTML, and it escapes what it interpolates');
+    boot();
+    run(`_editCards=[{id:'x',type:'text',text:'<img src=x onerror=alert(1)>',x:0,y:0,w:200,h:100}]`);
+    const doc=run(`_boardsBuildDoc(false)`);
+    s.ok('it is a Word-openable HTML document',/schemas-microsoft-com:office:word/.test(doc.html));
+    s.ok('with the card text escaped',/&lt;img/.test(doc.html)&&!/<img src=x/.test(doc.html));
+
+    s.section('Presentation skips what has nothing to show');
+    boot();
+    run(`_editCards=[
+      {id:'h',type:'heading',text:'Bottoms',x:0,y:0,w:440,h:58},
+      {id:'empty',type:'text',text:'   ',x:0,y:120,w:200,h:100},
+      {id:'noimg',type:'image',x:0,y:240,w:170,h:120},
+      {id:'real',type:'text',text:'Confirm the wash',x:0,y:360,w:200,h:100},
+      {id:'emptytodo',type:'todo',items:[{text:'',done:false}],x:0,y:480,w:240,h:170}
+    ]`);
+    s.eq('a blank note, an unfilled image card and an empty to-do are all skipped',
+      run(`_boardsPresentable().map(c=>c.id).join(',')`),'h,real');
+    s.eq('and it presents in reading order',
+      run(`_boardsPresentable()[0].id`),'h');
+  }
+
   return s;
 };
