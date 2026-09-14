@@ -1834,17 +1834,19 @@ the whole thing into the Firebase Console in one paste. Read the live file
 fresh each time rather than reconstructing it from memory or from an older
 turn in the conversation.
 
-Verified (up to Sept 2026): the live Console rules were pasted by the user
-and diffed byte-for-byte (identical MD5) against the repo's
-`firestore.rules`. They matched. **Mood Boards Stage 6 then changed
-`mood_boards` (sharedWith, TEAM update, and the presence/comments/activity
-sub-collections), so the Console needs republishing from the repo file
-again** — until that happens, sharing and the collaboration
-sub-collections will be denied at the rules layer while the app tries to
-use them. The prior note here saying they'd never been republished was stale —
-whoever last touched the Console already published this exact version.
+**Republished by Afnan on 13 Sept 2026**, from the repo file at
+`md5 95f72eb712079666da1f53acb4019ba9` — which covers Mood Boards Stage 6
+(`sharedWith`, TEAM update, the presence/comments/activity sub-collections)
+AND `user_profiles`. Both had been waiting; the Profile page's own error
+card is what finally surfaced it.
+
 **Keep updating both in lockstep**, per the comment at the top of
-`firestore.rules` itself.
+`firestore.rules` itself. **The trigger to ask for a republish is a change
+to `firestore.rules` in the repo — check `git log -- firestore.rules`
+against the last republish recorded here rather than assuming either way.**
+`tests/invariants.test.js` catches the related mistake (a collection the
+client queries with no `match` block at all) but it cannot know what the
+Console currently holds; only the human can confirm that.
 
 **Known gap, not yet closed:** `payslips` reads are `if signedIn()` — any
 logged-in user, not just the employee it belongs to, can read any payslip.
