@@ -185,6 +185,22 @@ module.exports=function(){
       /allow create:[\s\S]*?uid\s*==\s*request\.auth\.uid/.test(block));
     // The server function is the real boundary for the password half.
     s.ok('the function grants Mustafa a reset',/RESET_ADMIN_EMAILS\s*=\s*\[\s*"mustafa@groovy\.op"/.test(fn));
+    // The seeding function is the second server-side door into profiles and
+    // has to be gated the same way — it writes user_profiles with the Admin
+    // SDK, which bypasses firestore.rules entirely.
+    const seed=read('netlify/functions/admin-seed-profiles.js');
+    s.ok('the seeder verifies the caller server-side',/verifyIdToken/.test(seed));
+    s.ok('and gates on the same two lists',
+      /OWNER_EMAILS\s*=\s*\["afnan@groovy\.op",\s*"ammar@groovy\.op"\]/.test(seed)
+      &&/SEED_ADMIN_EMAILS\s*=\s*\[\s*"mustafa@groovy\.op"\s*\]/.test(seed));
+    s.ok('it never trusts a role sent by the client',!/body\.role|body\.isOwner/.test(seed));
+    // Line-based, not one clever regex: a payload containing Date.now()
+    // has a ")" in it, which a lazy character class stops at — the first
+    // attempt at this passed nothing and would have "failed" correct code.
+    const setLines=seed.split('\n').filter(l=>l.indexOf('.set(')>-1);
+    s.ok('the seeder writes at all',setLines.length>0);
+    s.ok('and every write MERGES, so a real profile is never reset',
+      setLines.every(l=>/merge:\s*true/.test(l)),setLines.join(' | '));
     s.ok('and refuses him an owner',/PROTECTED_EMAILS\.includes\(target\)/.test(fn));
     s.ok('while still verifying the caller server-side',/verifyIdToken/.test(fn));
     s.ok('and it never trusts a role sent by the client',!/body\.role|body\.isOwner/.test(fn));

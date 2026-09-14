@@ -1614,6 +1614,27 @@ same as every other Sept 2026 grant.
   account plus a `USER_DEFS` entry — a code change and a Console change, not
   something a form can fake. The edit card says so rather than offering a
   field that silently does nothing.
+- **"Sync accounts" is the way out of the chicken-and-egg.** A profile row
+  is keyed by Firebase uid, so an admin cannot edit anyone who has not
+  signed in since profiles shipped — there is no row to write to.
+  `netlify/functions/admin-seed-profiles.js` (owners + Mustafa, verified
+  server-side on the caller's own ID token, same gate as the password
+  reset) resolves each `USER_DEFS` email to a uid with the Admin SDK and
+  writes `{uid, username}` **with `{merge:true}` always** — it seeds, it
+  never resets, and an existing profile is untouched. It reports per
+  account: created / already had one / **no Firebase Auth account** (that
+  person is in `USER_DEFS` but cannot sign in at all — worth knowing) /
+  failed. Reached from the Team card on the Profile page, admins only.
+  `tests/invariants.test.js` checks its gate and that every write merges.
+- **`_profileRerender` can never fail silently.** A throw inside
+  `renderProfilePage` used to leave the page exactly as it was, so a button
+  appeared to do nothing at all — no error, no clue, nothing the person in
+  front of it could report. It now catches, logs, and renders the message
+  on screen (built with `createElement` + `textContent`, since an error can
+  contain anything) with a Reload button. Same principle as the diagnostics
+  panel. **Any page whose repaint goes through one function should do
+  this** — it is five lines and it converts the least reportable class of
+  bug into a readable one.
 - **A directory tile is a COLUMN, and the name never shares a row with a
   button.** The first cut put identity and actions in one flex row inside a
   `minmax(220px,1fr)` tile; the actions are `flex-shrink:0` and the name is

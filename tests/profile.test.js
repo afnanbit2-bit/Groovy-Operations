@@ -304,5 +304,57 @@ module.exports=async function(){
     s.ok('the page shows the three choices',/profileSetTheme\('dark'\)/.test(run(`renderProfilePage()`)));
   }
 
+  // ── Sync accounts ─────────────────────────────────────────────────────
+  // The way out of the chicken-and-egg: a profile row is keyed by Firebase
+  // uid, so an admin cannot edit anyone who has never signed in. The server
+  // resolves email→uid with the Admin SDK and seeds the rows.
+  {
+    const admins=[['afnan','owner',true],['ammar','owner',true],
+                  ['mustafa','manager',true],['arfat','manager',false],
+                  ['uzaib','worker',false]];
+    s.section('only the profile admins are offered Sync accounts');
+    for(const [who,role,shown] of admins){
+      const app=loadApp({files:FILES,currentPage:'profile',session:asUser(who,who,role)});
+      await app.run(`loadProfiles(true)`);
+      s.eq(who,/profileSyncAccounts/.test(app.run(`renderProfilePage()`)),shown);
+    }
+
+    // And the client refuses too, not just hides the button — the server
+    // check is the real boundary, but a UI that fires a request it knows
+    // will be refused is only a worse error message.
+    const app=loadApp({files:FILES,currentPage:'profile',
+      session:asUser('uzaib','Uzaib','worker'),
+      globals:{fetch:async()=>{throw new Error('should never be called');}}});
+    await app.run(`loadProfiles(true)`);
+    await app.run(`window.profileSyncAccounts()`);
+    s.section('a non-admin cannot call it anyway');
+    s.ok('it refuses locally',app.state.toasts.join(' ').indexOf('Only owners')>=0,
+      JSON.stringify(app.state.toasts));
+  }
+
+  // ── the page can never fail silently ──────────────────────────────────
+  // A throw inside renderProfilePage used to leave the page exactly as it
+  // was, so a button appeared to do nothing at all: no error, no clue,
+  // nothing to report. That is the hardest kind of bug to get a report for.
+  {
+    const app=loadApp({files:FILES,currentPage:'profile'});
+    const {run}=app;
+    await run(`loadProfiles(true)`);
+    run(`renderProfilePage=function(){throw new Error('boom from the renderer');}`);
+    let threw=false;
+    try{run(`_profileRerender()`);}catch(e){threw=true;}
+    s.section('a render error is shown, not swallowed');
+    s.ok('the rerender itself does not throw',!threw);
+    const main=app.el('main-content');
+    const text=n=>[(n.textContent||'')].concat((n.children||[]).map(text)).join(' ');
+    const shown=text(main);
+    s.ok('the page says it hit an error',/hit an error/.test(shown),shown.slice(0,140));
+    s.ok('and names the cause',/boom from the renderer/.test(shown));
+    s.ok('offering a way out',/Reload the page/.test(shown));
+    // The message is built with createElement + textContent, never an HTML
+    // string — an error can contain anything, including someone's markup.
+    s.eq('nothing was interpolated into innerHTML',main.innerHTML,'');
+  }
+
   return s;
 };

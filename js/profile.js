@@ -304,8 +304,11 @@ function _profileDirectoryHTML(){
   if(!rows.length)return'';
   const admin=_profIsAdmin();
   return`<div class="card">
-    <div style="font-weight:700;margin-bottom:4px">Team</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${rows.length} accounts.${admin?' You can edit anyone showing an Edit button.':' Only the person themselves can edit their profile.'}</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+      <div style="font-weight:700">Team</div>
+      ${admin?`<button class="btn-sm btn-outline" id="prof-sync-btn" onclick="window.profileSyncAccounts()">Sync accounts</button>`:''}
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${rows.length} accounts.${admin?' You can edit anyone showing an Edit button. <strong>Sync accounts</strong> creates the missing profile rows so you don’t have to wait for people to sign in.':' Only the person themselves can edit their profile.'}</div>
     <div class="profile-dir">
       ${rows.map((r,i)=>{
         const photo=_profAvatarUrl(r.p.photoUrl,64);
@@ -370,11 +373,37 @@ function _profileHydrate(){
   });
 }
 
+// Every path that repaints this page goes through here, and it CANNOT be
+// allowed to fail silently. A throw inside renderProfilePage used to leave
+// the page exactly as it was, so a button appeared to do nothing at all —
+// no error, no clue, nothing to report. Same principle as the diagnostics
+// panel: a person looking at something broken must be told what broke.
 function _profileRerender(){
   const m=document.getElementById('main-content');
   if(!m)return;
-  m.innerHTML=renderProfilePage();
-  _profileHydrate();
+  try{
+    m.innerHTML=renderProfilePage();
+    _profileHydrate();
+  }catch(e){
+    const msg=(e&&(e.stack||e.message))||String(e);
+    try{console.error('[profile] render failed',e);}catch(_){}
+    const box=document.createElement('div');
+    box.className='card';
+    box.style.borderColor='var(--accent-urgent)';
+    const h=document.createElement('div');
+    h.style.cssText='font-weight:700;margin-bottom:6px';
+    h.textContent='The Profile page hit an error';
+    const p=document.createElement('pre');
+    p.style.cssText='font-size:11.5px;color:var(--muted);white-space:pre-wrap;word-break:break-word;margin:0 0 10px';
+    p.textContent=msg;      // an error message can contain anything
+    const b=document.createElement('button');
+    b.className='btn-sm';
+    b.textContent='Reload the page';
+    b.onclick=()=>location.reload();
+    box.appendChild(h);box.appendChild(p);box.appendChild(b);
+    m.innerHTML='';
+    m.appendChild(box);
+  }
 }
 
 // ── Actions ──
@@ -479,6 +508,55 @@ window.profileSave=async function(){
   }
   _profileSaving=false;
   _profileRerender();
+};
+
+// ── Sync accounts ────────────────────────────────────────────────────────
+// A profile row is normally written by each person the first time they sign
+// in, because the document id is a Firebase uid and nothing client-side can
+// turn a username into one. That leaves an admin unable to edit anyone who
+// has not logged in since profiles shipped. This asks the server to do it:
+// netlify/functions/admin-seed-profiles.js resolves each email to a uid with
+// the Admin SDK and writes {uid, username} with merge, so an existing
+// profile is never overwritten. It seeds; it does not reset.
+window.profileSyncAccounts=async function(){
+  if(!_profIsAdmin()){showToast('Only owners and the Operations Manager can do that.',true);return;}
+  const defs=(typeof USER_DEFS!=='undefined'?USER_DEFS:[]);
+  const accounts=defs.map(u=>({username:u.u,email:u.email})).filter(a=>a.username&&a.email);
+  if(!accounts.length){showToast('No accounts to sync.',true);return;}
+  const btn=document.getElementById('prof-sync-btn');
+  if(btn){btn.disabled=true;btn.textContent='Syncing…';}
+  try{
+    const idToken=await auth.currentUser.getIdToken();
+    const res=await fetch('/.netlify/functions/admin-seed-profiles',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({idToken,accounts})
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok){showToast(data.error||`Sync failed (${res.status}).`,true);return;}
+    // Say what actually happened, per account, rather than "done" — a
+    // missing Firebase Auth account is worth knowing about: that person is
+    // in USER_DEFS but cannot sign in at all.
+    const bits=[];
+    if(data.created&&data.created.length)bits.push(data.created.length+' created');
+    if(data.existing&&data.existing.length)bits.push(data.existing.length+' already had one');
+    if(data.missing&&data.missing.length)bits.push(data.missing.length+' have no Firebase account ('+data.missing.join(', ')+')');
+    if(data.failed&&data.failed.length)bits.push(data.failed.length+' failed');
+    showToast(bits.length?bits.join(' · '):'Nothing to do.',!!(data.failed&&data.failed.length));
+    if(data.missing&&data.missing.length){
+      console.warn('[profiles] no Firebase Auth account for:',data.missing);
+    }
+    if(data.failed&&data.failed.length)console.warn('[profiles] sync failures:',data.failed);
+    await loadProfiles(true);
+    logActivity('Profiles synced',`${session.name} created ${(data.created||[]).length} profile row(s)`);
+  }catch(e){
+    showToast('Network error: '+(e.message||e),true);
+  }finally{
+    if(document.getElementById('prof-sync-btn')){
+      const b=document.getElementById('prof-sync-btn');
+      b.disabled=false;b.textContent='Sync accounts';
+    }
+    _profileRerender();
+  }
 };
 
 // ── Theme ──
