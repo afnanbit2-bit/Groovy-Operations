@@ -80,7 +80,9 @@ const _BOARDS_CLIP_PREFIX='groovy-board-cards:';
 let _boardsSnapGrid=(function(){try{return localStorage.getItem('groovy-boards-snap')==='1';}catch(e){return false;}})();
 let _boardsLineMode=false;      // while on, dragging empty canvas draws an arrow instead of panning
 
-const _BOARDS_ZOOM_MIN=0.1;   // Afnan works at ~19% in Milanote — 40% couldn't fit a real board
+const _BOARDS_ZOOM_MIN=0.05;  // Milanote's own floor. Afnan works at ~19% on a real
+                              // board; 40% couldn't fit one and 10% still couldn't fit
+                              // the 398-card boards his Milanote account actually holds.
 const _BOARDS_ZOOM_MAX=3;
 const _BOARDS_ZOOM_DETENT=1;      // 100% — a pinch from below stops here, with a buzz
 const _BOARDS_ZOOM_TOUCH_MAX=2;   // 200% — as far as a pinch goes, second buzz
@@ -774,6 +776,10 @@ function _boardGalleryCardHTML(b,opts){
   const scale=Math.min(220/maxX,110/maxY,0.6);
   const vis=b.visibility==='shared'?'TEAM':'PRIVATE';
   const subs=cards.filter(c=>c.type==='board'&&c.boardId).length;
+  // Milanote's own tile reads "398 cards · 14 files" — an attachment count
+  // is what tells you a board is a reference dump rather than a sketch.
+  // Images count: on a mood board a photo IS an attachment.
+  const files=cards.filter(c=>(c.type==='file'&&c.fileUrl)||(c.type==='image'&&c.imageUrl)).length;
   const crumbs=_boardsAncestors(b.id).map(a=>_boardsEsc(a.title||'Untitled board')).join(' › ');
   const tint=_boardsValidHex(b.color);
   return`<div class="board-gallery-card" data-board="${b.id}" onclick="window.boardsOpen('${b.id}')"${tint?` style="border-top:3px solid ${tint}"`:''}>
@@ -786,7 +792,7 @@ function _boardGalleryCardHTML(b,opts){
     <div class="board-gallery-meta">
       ${crumbs?`<div class="board-gallery-path">${crumbs} ›</div>`:''}
       <div class="board-gallery-title">${_boardsTileHTML(b,34)}<span>${_boardsEsc(b.title||'Untitled board')}</span></div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">${vis} · ${cards.length} card${cards.length===1?'':'s'}${subs?' · '+subs+' sub-board'+(subs===1?'':'s'):''} · ${_boardsEsc(b.ownerName||'')} · ${_boardsRelTime(b.updatedAt)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">${vis} · ${cards.length} card${cards.length===1?'':'s'}${files?' · '+files+' file'+(files===1?'':'s'):''}${subs?' · '+subs+' sub-board'+(subs===1?'':'s'):''} · ${_boardsEsc(b.ownerName||'')} · ${_boardsRelTime(b.updatedAt)}</div>
       ${opts.matches?`<div class="board-gallery-hit">${opts.matches} matching card${opts.matches===1?'':'s'}</div>`:''}
       ${opts.template?`<div style="margin-top:8px"><button class="btn-sm" onclick="event.stopPropagation();window.boardsUseTemplate('${b.id}')">Use template</button></div>`:''}
     </div>
@@ -841,6 +847,27 @@ window.boardsCreate=async function(visibility){
 // straight away rather than left to the 900ms debounce for exactly that
 // reason — a reload in between would leave the child orphaned (it would
 // surface back at root level, by design, but it would look like it moved).
+// Adopts an EXISTING board card that never got a boardId (the rail bug
+// fixed in c15cd05 minted these; the cards it already made are still on
+// real boards and cannot heal themselves). Same two writes as
+// boardsAddChildBoard — the child doc, then the link — so the save is
+// flushed rather than left to the debounce.
+window.boardsRepairBoardCard=async function(cardId){
+  if(!_editBoard||!_boardsCanEdit(_editBoard))return;
+  const c=_editCards.find(x=>x.id===cardId);
+  if(!c||c.type!=='board')return;
+  if(c.boardId){showToast('That card already points at a board');return;}
+  try{
+    const id=await _boardsCreateDoc({visibility:_editBoard.visibility,parentId:_editBoard.id});
+    _boardsPushUndo();
+    c.boardId=id;c.boardTitle='Untitled board';
+    _boardsRenderCanvasAndWire();
+    await _boardsSaveNow();
+    boardsLoaded=false;
+    _boardsLogBoardActivity('added a sub-board');
+    showToast('Board created and linked — open it from the card');
+  }catch(e){showToast('Could not create the board: '+(e.message||e),true);}
+};
 window.boardsAddChildBoard=async function(){
   if(!_editBoard||!_boardsCanEdit(_editBoard))return;
   _boardsMenuOpen=false;_boardsSyncMenu();
@@ -942,7 +969,10 @@ window.boardsBack=function(){
   if(parent)window.boardsOpen(parent.id);
   else window.showPage('boards');
 };
-window.boardsGoto=function(id){_boardsSaveNow();window.boardsOpen(id);};
+window.boardsGoto=function(id){
+  if(!_boardsLiveById()[id]){showToast('That board is not available — it may have been deleted, or it is private to someone else');return;}
+  _boardsSaveNow();window.boardsOpen(id);
+};
 window.boardsGotoGallery=function(){_boardsSaveNow();window.showPage('boards');};
 
 // ── Canvas ──
@@ -1066,8 +1096,7 @@ function _renderBoardCanvasHTML(){
         <button class="tool-btn" onclick="window.boardsZoomBy(0.8)">−</button>
         <span class="zoom-readout" id="board-zoom-readout">${Math.round(b.zoom*100)}%</span>
         <button class="tool-btn" onclick="window.boardsZoomBy(1.25)">+</button>
-        ${_boardsIsPhone()?'':`<button class="tool-btn" onclick="window.boardsFitView()">Fit</button>
-        <button class="tool-btn" onclick="window.boardsResetView()">100%</button>`}
+        ${_boardsIsPhone()?'':`<button class="tool-btn" id="board-fit-btn" onclick="window.boardsToggleFit()" title="Fit every card on screen">Fit</button>`}
         ${_boardsIsPhone()?'':`<button class="tool-btn${_boardsMinimapOn?' on':''}" onclick="window.boardsToggleMinimap()" title="Show the minimap">Map</button>`}
         ${canEdit&&!_boardsIsPhone()?`<button class="tool-btn${_boardsSnapGrid?' on':''}" id="board-snap-btn" onclick="window.boardsToggleSnap()" title="Snap cards to a grid while dragging">Snap</button>`:''}
         <div class="board-menu-wrap">
@@ -1203,14 +1232,30 @@ function _boardCardHTML(c,canEdit){
       // <img> simply fails and onerror falls back to the plain file card —
       // never a broken image.
       const thumb=_boardsPdfThumbUrl(c.fileUrl);
-      body=`<a class="board-card-body board-file-body" href="${_boardsEsc(c.fileUrl)}" target="_blank" rel="noopener noreferrer" draggable="false"${bodyDrag}>
-        ${thumb?`<img class="board-file-thumb" src="${_boardsEsc(thumb)}" alt="" draggable="false" onerror="this.style.display='none'">`:''}
-        <div class="board-file-meta">
-          <span class="board-file-ext">${_boardsEsc(_boardsFileExt(c.fileName))}</span>
-          <span class="board-file-name">${_boardsEsc(c.name||c.fileName||'File')}</span>
-          <span class="board-file-size">${_boardsEsc(_boardsFormatBytes(c.fileSize))}</span>
+      // Open and Download are explicit buttons, not only right-click items.
+      // Milanote puts both on the card itself, and a tech pack you cannot
+      // obviously save is a tech pack nobody finds. The <a> still covers the
+      // thumbnail so the old click-anywhere-to-open habit keeps working, but
+      // it can no longer WRAP the buttons — a <button> inside an <a> is
+      // invalid and the anchor would win the click anyway.
+      // Both carry the onpointerdown guard: this body starts a card drag
+      // (see bodyDrag), and a control inside a drag handle whose pointerdown
+      // reaches the handle gets its click retargeted away — the exact bug
+      // that made the delete ✕ inert on every card for weeks.
+      body=`<div class="board-card-body board-file-body"${bodyDrag}>
+        <a class="board-file-open" href="${_boardsEsc(c.fileUrl)}" target="_blank" rel="noopener noreferrer" draggable="false">
+          ${thumb?`<img class="board-file-thumb" src="${_boardsEsc(thumb)}" alt="" draggable="false" onerror="this.style.display='none'">`:''}
+          <div class="board-file-meta">
+            <span class="board-file-ext">${_boardsEsc(_boardsFileExt(c.fileName))}</span>
+            <span class="board-file-name">${_boardsEsc(c.name||c.fileName||'File')}</span>
+            <span class="board-file-size">${_boardsEsc(_boardsFormatBytes(c.fileSize))}</span>
+          </div>
+        </a>
+        <div class="board-file-actions">
+          <button onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsFileOpen('${c.id}')">Open</button>
+          <button onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsFileDownload('${c.id}')">Download</button>
         </div>
-      </a>`;
+      </div>`;
     }else{
       body=canEdit
         ?`<label class="board-card-empty" for="board-fileinput-${c.id}">Click to choose a file<input type="file" id="board-fileinput-${c.id}" onchange="window.boardsUploadToCard('${c.id}',this)" style="display:none"></label>`
@@ -1229,22 +1274,43 @@ function _boardCardHTML(c,canEdit){
     const child=_boardsLiveById()[c.boardId];
     const title=(child&&child.title)||c.boardTitle||'Untitled board';
     const n=child?(child.cards||[]).length:0;
+    // Three states, and the broken one has to be FIXABLE. Cards minted by
+    // the old rail bug carry boardId:'' — they rendered a dead "Missing
+    // board" line with no way forward, so the card could only be deleted.
+    // A card that links to something must either link to it or offer to
+    // create it.
+    const foot=c.boardId
+      ?(child
+        ?`<button class="board-subboard-open" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsGoto('${c.boardId}')">Open →</button>`
+        :`<div class="board-subboard-meta">Not available — deleted, or private to someone else</div>`)
+      :(canEdit
+        ?`<button class="board-subboard-open" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsRepairBoardCard('${c.id}')">Create the board →</button>`
+        :`<div class="board-subboard-meta">No board linked</div>`);
     body=`<div class="board-card-body board-subboard-body"${bodyDrag}>
       <div class="board-subboard-title">${_boardsEsc(title)}</div>
-      <div class="board-subboard-meta">${child?n+' card'+(n===1?'':'s'):'Board'}</div>
-      ${c.boardId?`<button class="board-subboard-open" onclick="event.stopPropagation();window.boardsGoto('${c.boardId}')">Open →</button>`:'<div class="board-subboard-meta">Missing board</div>'}
+      <div class="board-subboard-meta">${child?n+' card'+(n===1?'':'s'):(c.boardId?'Board':'Not linked yet')}</div>
+      ${foot}
     </div>`;
   }else{
     body=`<div class="board-card-body board-text-body"${bodyDrag} contenteditable="false" id="board-txt-${c.id}" data-placeholder="Double-click to type…" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-txt-${c.id}')"`:''} oninput="window.boardsTextInput('${c.id}',this)"></div>`;
   }
   if((c.type==='image'||c.type==='file')&&c.caption!=null){
-    body+=`<div class="board-caption" id="board-cap-${c.id}" contenteditable="false" data-placeholder="Add a caption…" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-cap-${c.id}')"`:''} oninput="window.boardsCaptionInput('${c.id}',this)"></div>`;
+    // Reported twice in QA as "the caption doesn't save". It always saved —
+    // you could never TYPE. Card bodies are contenteditable="false" until
+    // boardsBeginEdit switches exactly one on, and a caption inherited the
+    // double-click rule from cards whose bodies are also drag surfaces. A
+    // caption is not: it sits OUTSIDE the body div, has no drag handler, and
+    // its placeholder reads "Add a caption…", which promises a field. So a
+    // single click opens it. Keep the ondblclick too — a double-click on a
+    // field must not be a dead gesture.
+    body+=`<div class="board-caption" id="board-cap-${c.id}" contenteditable="false" data-placeholder="Add a caption…" ${canEdit?`onclick="window.boardsBeginEdit(event,'board-cap-${c.id}')" ondblclick="window.boardsBeginEdit(event,'board-cap-${c.id}')"`:''} oninput="window.boardsCaptionInput('${c.id}',this)"></div>`;
   }
   const kind=c.type==='image'?'Image':c.type==='link'?'Link':c.type==='file'?'File':c.type==='board'?'Board':c.type==='heading'?'Heading':c.type==='todo'?('To-do'+(c._todoProgress?' · '+c._todoProgress:'')):'Note';
   const sel=_boardsSelection.has(c.id)?' selected':'';
   const lock=c.locked?' locked':'';
   const tint=c.color?' tint-'+c.color:'';
-  return`<div class="board-card-el type-${c.type}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px" onclick="window.boardsSelectCard('${c.id}',event)">
+  const drawH=Math.max(c.h,_boardsMinCardH(c));
+  return`<div class="board-card-el type-${c.type}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px" onclick="window.boardsSelectCard('${c.id}',event)">
     <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')" ondblclick="window.boardsHeadDblClick(event,'${c.id}')"`:''}>
       <span class="board-card-kind">
         <span class="board-card-name" id="board-name-${c.id}" contenteditable="false" data-placeholder="${_boardsEsc(kind)}" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-name-${c.id}')"`:''} oninput="window.boardsCardName('${c.id}',this)" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()" title="Double-click to rename this card"></span>${c.locked?' · Locked':''}</span>
@@ -1328,6 +1394,36 @@ const _BOARDS_REACTIONS=[
   {e:'🎨',k:'colour color paint design'},
   {e:'📏',k:'measure size ruler spec'}
 ];
+// Labels and reactions are flex rows in the same column as the card body,
+// so on a small card they take their height straight OUT of it. On the
+// default 104px sub-board card, one label plus one reaction left the body
+// ~50px with justify-content:center — the title was clipped away and all
+// you could read was "Board · 👍1". Reported in QA twice.
+//
+// The fix is to grow the CARD, not to overlay the rows: an overlay puts
+// them on top of the content instead of beside it, which is the same bug
+// with extra steps. Two halves, and both are needed:
+//   - the render and the resize clamp both use this minimum, so a card that
+//     was written small before this shipped displays correctly with no
+//     migration and no write;
+//   - adding a label or a reaction also raises c.h, so the stored value
+//     catches up the moment anyone touches the card.
+const _BOARDS_CHROME_H={head:26,labels:22,reactions:26,caption:24};
+const _BOARDS_MIN_BODY_H={board:66,image:90,file:96,link:96,todo:74,heading:34,text:48};
+function _boardsMinCardH(c){
+  if(!c||c.type==='frame')return 60;
+  // A heading's head strip is absolutely positioned over the banner, so it
+  // costs the column nothing.
+  let h=c.type==='heading'?0:_BOARDS_CHROME_H.head;
+  if(Array.isArray(c.labels)&&c.labels.length)h+=_BOARDS_CHROME_H.labels;
+  if(c.reactions&&Object.keys(c.reactions).length)h+=_BOARDS_CHROME_H.reactions;
+  if((c.type==='image'||c.type==='file')&&c.caption!=null)h+=_BOARDS_CHROME_H.caption;
+  return h+(_BOARDS_MIN_BODY_H[c.type]||48);
+}
+function _boardsGrowForChrome(c){
+  const min=_boardsMinCardH(c);
+  if(c&&c.h<min)c.h=min;
+}
 function _boardsLabelsHTML(c){
   const ls=Array.isArray(c.labels)?c.labels:[];
   if(!ls.length)return'';
@@ -1370,6 +1466,7 @@ window.boardsToggleReaction=function(cardId,emoji){
   if(i>=0)who.splice(i,1);else who.push(me);
   if(who.length)c.reactions[emoji]=who;else delete c.reactions[emoji];
   if(!Object.keys(c.reactions).length)delete c.reactions;
+  _boardsGrowForChrome(c);
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
 };
@@ -1383,6 +1480,7 @@ window.boardsAddLabel=function(cardId,text,color){
   _boardsPushUndo();
   ls.push({t,c:_BOARDS_LABEL_COLORS.indexOf(color)>=0?color:'grey'});
   c.labels=ls;
+  _boardsGrowForChrome(c);
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
 };
@@ -1815,9 +1913,32 @@ function _boardsApplyTransform(){
   if(w)w.style.transform=`translate(${b.panX}px,${b.panY}px) scale(${b.zoom})`;
   const zr=document.getElementById('board-zoom-readout');
   if(zr)zr.textContent=Math.round(b.zoom*100)+'%';
+  // Any transform change that ISN'T the fit itself means the view is no
+  // longer the fitted one — so the single Fit/100% button flips back to
+  // offering Fit. Deriving it here rather than clearing the flag in each of
+  // the zoom/pan entry points is the whole reason it can't go stale: every
+  // one of them ends up in this function, and a new one added later
+  // inherits it without knowing about the button.
+  if(!_boardsFitApply)_boardsFitted=false;
+  _boardsSyncFitBtn();
   _boardsShowZoomPill(b.zoom);
   _boardsUpdateMinimapView();
 }
+// Milanote shows one button here, not two: it reads "Fit" until the board
+// IS fitted and then reads "100%", so the pair of controls that do opposite
+// things never both sit there competing for the same corner.
+let _boardsFitted=false,_boardsFitApply=false;
+function _boardsSyncFitBtn(){
+  const btn=document.getElementById('board-fit-btn');
+  if(!btn)return;
+  const label=_boardsFitted?'100%':'Fit';
+  if(btn.textContent!==label)btn.textContent=label;
+  btn.title=_boardsFitted?'Back to actual size (100%)':'Fit every card on screen';
+}
+window.boardsToggleFit=function(){
+  if(_boardsFitted)window.boardsResetView();
+  else window.boardsFitView();
+};
 // The zoom readout in the topbar is unreadable mid-pinch on a phone — your
 // hand is over the board and the number is in the corner. Milanote answers
 // this with a percentage that appears over the canvas while you zoom and
@@ -1888,7 +2009,10 @@ window.boardsFitView=function(){
   b.zoom=z;
   b.panX=(rect.width-w*z)/2-minX*z;
   b.panY=(rect.height-h*z)/2-minY*z;
-  _boardsApplyTransform();_boardsSaveDebounced();
+  _boardsFitApply=true;
+  try{_boardsApplyTransform();}finally{_boardsFitApply=false;}
+  _boardsFitted=true;_boardsSyncFitBtn();
+  _boardsSaveDebounced();
 };
 function _boardsScreenToWorld(clientX,clientY){
   const b=_editBoard;const stage=document.getElementById('board-stage');
@@ -2583,7 +2707,7 @@ window.boardsResizeStart=function(e,cardId){
     if(_boardsPinch)return;
     if(!pushed){_boardsPushUndo();pushed=true;}
     c.w=Math.max(90,origW+(ev.clientX-startX)/b.zoom);
-    c.h=Math.max(60,origH+(ev.clientY-startY)/b.zoom);
+    c.h=Math.max(_boardsMinCardH(c),origH+(ev.clientY-startY)/b.zoom);
     const el=document.getElementById('board-card-'+cardId);
     if(el){el.style.width=c.w+'px';el.style.height=c.h+'px';}
     _boardsUpdateConnectorsFor(cardId);
@@ -5035,6 +5159,7 @@ function _boardsCtxRun(act){
       if(c.caption==null){
         _boardsPushUndo();
         c.caption='';
+        _boardsGrowForChrome(c);
         _boardsRenderCanvasAndWire();
         _boardsSaveDebounced();
       }
@@ -5099,6 +5224,18 @@ function _boardsAssetUrl(){
 // documented flag for "send this as a download". Best-effort — a non
 // Cloudinary URL is opened as-is, and this could not be verified from the
 // build sandbox, which cannot reach res.cloudinary.com.
+// Card-addressed versions of the right-click menu's Open/Download, for the
+// buttons on the file card itself. They take an id rather than reading the
+// selection, because clicking a button on a card that isn't selected must
+// still act on THAT card.
+window.boardsFileOpen=function(id){
+  const c=(_editCards||[]).find(x=>x.id===id);
+  if(c&&c.fileUrl)window.open(c.fileUrl,'_blank','noopener');
+};
+window.boardsFileDownload=function(id){
+  const c=(_editCards||[]).find(x=>x.id===id);
+  if(c&&c.fileUrl)window.open(_boardsDownloadUrl(c.fileUrl),'_blank','noopener');
+};
 function _boardsDownloadUrl(url){
   const u=String(url||'');
   if(/res\.cloudinary\.com/.test(u)&&u.indexOf('/upload/')>-1&&u.indexOf('fl_attachment')===-1){

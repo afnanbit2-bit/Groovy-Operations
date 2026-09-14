@@ -649,15 +649,28 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .link-title{padding:9px 10px 0;font-size:12.5px;font-weight:700;line-height:1.3}
 .link-desc{padding:2px 10px;font-size:11px;color:var(--muted);line-height:1.4}
 .link-url{padding:0 10px 8px;margin-top:auto;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.board-resize-handle{position:absolute;right:0;bottom:0;width:24px;height:24px;cursor:nwse-resize;color:var(--muted);
-  display:flex;align-items:flex-end;justify-content:flex-end;padding:0 2px 2px 0;opacity:.55;transition:opacity .12s}
-.board-resize-handle svg{width:13px;height:13px}
+/* The grip: a 30px hit area carrying a 14px glyph. Reported a second time
+   in QA as still too small at 24px — this app's own touch-target floor is
+   44px, and a corner grabber is the hardest thing on a card to hit because
+   you are aiming at a corner, not a centre. The glyph rule was also
+   DUPLICATED (a later `svg{width:100%}` silently overrode the 13px one),
+   so the drawn size never matched what the first rule asked for. */
+.board-resize-handle{position:absolute;right:0;bottom:0;width:30px;height:30px;cursor:nwse-resize;color:var(--muted);
+  display:flex;align-items:flex-end;justify-content:flex-end;padding:0 3px 3px 0;opacity:.55;transition:opacity .12s}
+.board-resize-handle svg{width:14px;height:14px;opacity:.7}
 .board-resize-handle:hover{opacity:1}
+.board-resize-handle:hover svg{opacity:1}
 .board-card-el:hover .board-resize-handle{opacity:.9}
-.board-resize-handle svg{width:100%;height:100%;opacity:.6}
 .board-link-handle{position:absolute;right:-7px;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:50%;background:var(--surface);border:2px solid var(--text);cursor:crosshair;opacity:0;transition:opacity .12s}
 .board-card-el:hover .board-link-handle{opacity:1}
-.board-file-body{display:flex;flex-direction:column;text-decoration:none;color:inherit;height:100%}
+/* The body is a plain div now: an <a> can't legally wrap the Open/Download
+   buttons, so the anchor covers only the thumbnail and meta strip. */
+.board-file-body{display:flex;flex-direction:column;height:100%}
+.board-file-open{display:flex;flex-direction:column;text-decoration:none;color:inherit;flex:1;min-height:0}
+.board-file-actions{display:flex;gap:5px;padding:5px 7px;border-top:1px solid var(--border);flex-shrink:0;background:var(--surface)}
+.board-file-actions button{flex:1;font-family:inherit;font-size:10.5px;font-weight:600;padding:4px 6px;border-radius:6px;
+  border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;white-space:nowrap}
+.board-file-actions button:hover{background:var(--hover)}
 .board-file-thumb{width:100%;flex:1;min-height:0;object-fit:cover;object-position:top;display:block;background:var(--soft)}
 .board-file-meta{padding:7px 9px;display:flex;align-items:center;gap:6px;border-top:1px solid var(--border);flex-shrink:0}
 .board-file-ext{font-size:9px;font-weight:700;letter-spacing:.04em;background:var(--dark);color:var(--on-dark);border-radius:4px;padding:2px 5px;flex-shrink:0}
@@ -1077,7 +1090,7 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
   .board-topbar .tool-btn{min-height:32px;padding:6px 10px}
   .board-card-head{padding:8px}
   .board-card-del,.board-todo-del{opacity:1;padding:6px}
-  .board-resize-handle{width:28px;height:28px;right:0;bottom:0;padding:13px 0 0 13px}
+  .board-resize-handle{width:34px;height:34px;right:0;bottom:0;padding:13px 0 0 13px}
   .board-link-handle{opacity:1;width:16px;height:16px}
   .board-find input{flex:1;min-width:0}
 }

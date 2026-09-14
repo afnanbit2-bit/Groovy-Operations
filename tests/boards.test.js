@@ -27,7 +27,7 @@ module.exports=function(){
     run(`_boardsPinchZoom(__p,12)`);
     s.eq('no second buzz while held there',state.vibrations.length,1);
     s.ok('pinching back in is unaffected',Math.abs(run(`_boardsPinchZoom(__p,0.8)`)-0.152)<1e-9);
-    s.eq('and never goes below the 10% floor',run(`_boardsPinchZoom(__p,0.01)`),0.1);
+    s.eq('and never goes below the 5% floor',run(`_boardsPinchZoom(__p,0.01)`),0.05);
 
     s.section('a pinch that starts at 100% is geared down');
     state.vibrations.length=0;
@@ -650,6 +650,73 @@ module.exports=function(){
     s.eq('twelve cards, twelve distinct spots',new Set(pts).size,12,
       JSON.stringify(pts.slice(0,5)));
 
+  }
+
+  // ── the second QA round: three things reported as STILL broken ────────
+  // Each of these was reported twice. They are cheap to assert and each one
+  // was invisible to every existing suite, which is exactly why they came
+  // back from a human instead of from CI.
+  {
+    const app=loadApp({files:FILES});
+    const {run}=app;
+    run(`_editBoard={id:'B',title:'T',visibility:'shared',ownerUid:'u1',zoom:1,panX:0,panY:0};
+         _editConnectors=[];_boardsPeers=[];_boardsSelection=new Set();
+         moodBoards=[{id:'CHILD',title:'Child',cards:[],visibility:'shared',ownerUid:'u1'}];`);
+
+    s.section('labels and reactions grow the card instead of eating the body');
+    run(`_editCards=[{id:'k',type:'board',boardId:'CHILD',x:0,y:0,w:200,h:104}]`);
+    const bare=run(`_boardsMinCardH(_editCards[0])`);
+    run(`_editCards[0].labels=[{t:'QA-LABEL',c:'grey'}];_editCards[0].reactions={'👍':['u2']}`);
+    const dressed=run(`_boardsMinCardH(_editCards[0])`);
+    s.ok('a label and a reaction raise the minimum',dressed>bare,bare+' → '+dressed);
+    s.ok('past the 104px default a sub-board card ships with',dressed>104,String(dressed));
+    const html=run(`_boardCardHTML(_editCards[0],true)`);
+    s.ok('and the card is DRAWN at the bigger height, with no write',
+      new RegExp('height:'+dressed+'px').test(html),String(dressed));
+    run(`window.boardsToggleReaction('k','🔥')`);
+    s.ok('reacting also raises the stored height',run(`_editCards[0].h`)>=dressed);
+
+    s.section('an orphan sub-board card can be repaired, not just deleted');
+    run(`_editCards=[{id:'o',type:'board',boardId:'',x:0,y:0,w:200,h:104}]`);
+    const orphan=run(`_boardCardHTML(_editCards[0],true)`);
+    s.ok('it offers to create the board',/boardsRepairBoardCard\('o'\)/.test(orphan));
+    s.ok('and no longer renders a dead "Missing board" line',!/Missing board/.test(orphan));
+    run(`_editCards=[{id:'g',type:'board',boardId:'GONE',x:0,y:0,w:200,h:104}]`);
+    const gone=run(`_boardCardHTML(_editCards[0],true)`);
+    s.ok('a link to something unreadable says WHY',/private to someone else/.test(gone));
+    s.ok('and does not offer an Open button that cannot work',!/boardsGoto/.test(gone));
+    run(`_editCards=[{id:'l',type:'board',boardId:'CHILD',x:0,y:0,w:200,h:104}]`);
+    s.ok('a real link still opens',/boardsGoto\('CHILD'\)/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+
+    s.section('a caption opens on ONE click');
+    // Reported twice as "the caption does not save". It always saved — the
+    // field was contenteditable="false" and only a double-click switched it
+    // on, so no keystroke ever reached it.
+    run(`_editCards=[{id:'i',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',caption:'',x:0,y:0,w:200,h:160}]`);
+    const cap=run(`_boardCardHTML(_editCards[0],true)`);
+    s.ok('single click begins edit',/onclick="window\.boardsBeginEdit\(event,'board-cap-i'\)"/.test(cap));
+    s.ok('double click still does too',/ondblclick="window\.boardsBeginEdit\(event,'board-cap-i'\)"/.test(cap));
+
+    s.section('a file card carries Open and Download on the card itself');
+    run(`_editCards=[{id:'f',type:'file',fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/t.pdf',fileName:'t.pdf',fileSize:10,x:0,y:0,w:200,h:140}]`);
+    const fc=run(`_boardCardHTML(_editCards[0],true)`);
+    s.ok('Open is a real button',/boardsFileOpen\('f'\)/.test(fc));
+    s.ok('Download is a real button',/boardsFileDownload\('f'\)/.test(fc));
+    // The delete ✕ was inert for weeks because its pointerdown reached the
+    // drag handle and the click was retargeted away. A file card's BODY is
+    // a drag handle, so these two need the same guard.
+    const acts=fc.slice(fc.indexOf('board-file-actions'));
+    s.eq('both stop pointerdown reaching the drag handle',
+      (acts.match(/onpointerdown="event\.stopPropagation\(\)"/g)||[]).length,2);
+    s.ok('and the anchor no longer wraps them (invalid, and it would win the click)',
+      fc.indexOf('board-file-actions')>fc.indexOf('</a>'));
+
+    s.section('Fit and 100% are one context-aware button');
+    const bar=run(`_renderBoardCanvasHTML()`);
+    s.eq('one button, not two',(bar.match(/id="board-fit-btn"/g)||[]).length,1);
+    s.ok('it routes through the toggle',/boardsToggleFit\(\)/.test(bar));
+    s.ok('and boardsResetView is no longer a top-bar button of its own',
+      !/class="tool-btn" onclick="window\.boardsResetView\(\)"/.test(bar));
   }
 
   return s;

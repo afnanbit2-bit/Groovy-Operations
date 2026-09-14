@@ -105,6 +105,32 @@ const FRAGMENTS={
     // The tray is position:absolute against the canvas wrap; give it one.
     return Promise.resolve(
       '<div style="position:relative;height:600px;width:100%">'+html+'</div>');
+  },
+  // Cards carrying every piece of chrome at once — the shape QA reported
+  // twice: a label and a reaction row stealing the body's height until the
+  // sub-board card's own title was gone, and a file card whose Open and
+  // Download buttons sit inside a body that is also a drag handle. The
+  // hit-test is the real value here: these two buttons are the exact
+  // pattern (a control inside a drag surface) that made the delete X inert.
+  'boards — a card wearing labels, reactions and captions':()=>{
+    const app=loadApp({files:['js/boards.js']});
+    app.run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
+      _editConnectors=[];_boardsSelection=new Set();
+      moodBoards=[{id:'CHILD',title:'Winter Drop 2027',cards:[{id:'x'}],visibility:'shared',ownerUid:'u1'}];
+      _editCards=[
+        {id:'sb',type:'board',boardId:'CHILD',x:10,y:10,w:200,h:104,
+         labels:[{t:'QA-LABEL',c:'grey'}],reactions:{'A':['u2']}},
+        {id:'fl',type:'file',x:10,y:210,w:200,h:140,caption:'Approved 12 Sep',
+         fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/t.pdf',
+         fileName:'winter-techpack-v4.pdf',fileSize:2841193},
+        {id:'or',type:'board',boardId:'',x:10,y:420,w:200,h:104}
+      ];`);
+    let html=app.run(`_editCards.map(c=>_boardCardHTML(c,true)).join('')`);
+    // Hydrated at runtime with textContent; written in here so it can be measured.
+    html=html.replace(/(id="board-label-sb-0"[^>]*>)/,'$1QA-LABEL')
+             .replace(/(id="board-cap-fl"[^>]*>)/,'$1Approved 12 Sep');
+    return Promise.resolve(
+      '<div style="position:relative;overflow:hidden;height:600px;width:100%">'+html+'</div>');
   }
 };
 
@@ -136,6 +162,36 @@ document.querySelectorAll('#main-content *').forEach(el=>{
     bad.push({why:'invisible text',text:own.slice(0,40),
       cls:el.className&&el.className.toString().slice(0,60),
       w:Math.round(r.width),h:Math.round(r.height)});
+  }
+});
+// Text that is laid out but painted NOWHERE: its box falls entirely outside
+// the nearest clipping ancestor. This is what "the label sits on top of the
+// title" actually was — a flex body with justify-content:center whose
+// content was taller than the box spills equally out of BOTH ends, and the
+// card's overflow:hidden erases the top one. Zero-size checks miss it
+// completely: the element has a perfectly good rect, just not one anybody
+// can see. Deliberately requires NO intersection at all, so a long note
+// whose last lines are cut off is not a finding.
+document.querySelectorAll('#main-content *').forEach(el=>{
+  if(!textOfOwn(el))return;
+  const cs=getComputedStyle(el);
+  if(cs.display==='none'||cs.visibility==='hidden')return;
+  let p=el.parentElement,clip=null;
+  while(p&&p.id!=='main-content'){
+    const pcs=getComputedStyle(p);
+    if(pcs.overflowY==='hidden'||pcs.overflowX==='hidden'){clip=p;break;}
+    p=p.parentElement;
+  }
+  if(!clip)return;
+  const r=el.getBoundingClientRect(),c=clip.getBoundingClientRect();
+  if(r.width<1||r.height<1)return;
+  const overlap=Math.max(0,Math.min(r.bottom,c.bottom)-Math.max(r.top,c.top))
+               *Math.max(0,Math.min(r.right,c.right)-Math.max(r.left,c.left));
+  if(overlap<=0){
+    bad.push({why:'text is clipped completely out of view',
+      text:textOfOwn(el).slice(0,40),
+      cls:el.className&&el.className.toString().slice(0,50),
+      clippedBy:(clip.className||clip.tagName).toString().slice(0,50)});
   }
 });
 document.querySelectorAll('#main-content .card, #main-content [class*="-row"], #main-content [class*="-tile"]').forEach(el=>{
