@@ -225,5 +225,53 @@ module.exports=function(){
       !/style="[^"]*var\(--/.test(read('js/print-engine.js')));
   }
 
+  // ── Role scoping must never swallow a chrome page ─────────────────────
+  // The fulfilment account is scoped to one page by REWRITING every id in
+  // showPage. That swallowed the topbar avatar: showPage('profile') became
+  // showPage('fulfillment'), so the page did not change, nothing was
+  // logged, no request was made, and there was no way to tell "blocked"
+  // from "broken". Reported by Afnan from a real account; reproduced and
+  // fixed by exempting the pages reached from the app chrome.
+  s.section('role scoping vs the pages reached from the app chrome');
+  {
+    const {loadApp}=require('./harness');
+    function nav(role,ids){
+      // shared.js declares its OWN top-level `let session`, which shadows a
+      // context global — so it has to be assigned inside the vm after load.
+      const app=loadApp({files:['js/shared.js'],currentPage:'fulfillment'});
+      app.run('session='+JSON.stringify({uid:'u',u:'x',name:'X',role,title:'T',email:'x@groovy.op'}));
+      app.run('renderPage=function(id){globalThis.__got=id;}');
+      const out={};
+      ids.forEach(id=>{
+        app.run('globalThis.__got=null');
+        app.run('window.showPage('+JSON.stringify(id)+')');
+        out[id]=app.run('__got');
+      });
+      return out;
+    }
+    const f=nav('fulfillment',['profile','bug-tracker','dashboard','users','fulfillment']);
+    s.eq('the avatar reaches Profile',f['profile'],'profile');
+    s.eq('and the notification panel reaches the bug tracker',f['bug-tracker'],'bug-tracker');
+    // The scoping itself must survive — this is a fix, not a removal.
+    s.eq('but the dashboard is still scoped away',f['dashboard'],'fulfillment');
+    s.eq('and so is any other page',f['users'],'fulfillment');
+    s.eq('its own page still works',f['fulfillment'],'fulfillment');
+
+    const o=nav('owner',['profile','bug-tracker','dashboard','users']);
+    s.ok('an owner is redirected nowhere',
+      Object.keys(o).every(k=>o[k]===k),JSON.stringify(o));
+
+    // Every page named in _CHROME_PAGES must actually be dispatchable, or
+    // the exemption just swaps one silent no-op for another.
+    const src=read('js/shared.js');
+    const list=(src.match(/const _CHROME_PAGES=\[([^\]]*)\]/)||[])[1]||'';
+    const pages=(list.match(/'([a-z-]+)'/g)||[]).map(x=>x.replace(/'/g,''));
+    s.ok('_CHROME_PAGES is not empty',pages.length>0,JSON.stringify(pages));
+    pages.forEach(pg=>{
+      s.ok("renderPage can actually render '"+pg+"'",
+        new RegExp("id==='"+pg+"'").test(src));
+    });
+  }
+
   return s;
 };

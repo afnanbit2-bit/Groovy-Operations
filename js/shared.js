@@ -1034,10 +1034,23 @@ window._hrmNotifAction=function(url){
   }
 };
 
+// Pages every account can reach whatever its role, because they are reached
+// from the app CHROME — the topbar avatar, the notification panel — and not
+// from the sidebar. A role-scoped nav never offers them, so a role-scoped
+// REDIRECT must never swallow them either.
+//
+// This list exists because of a real bug: the fulfilment redirect below
+// rewrote EVERY id, so clicking the profile avatar as Umair silently became
+// showPage('fulfillment') — the page did not change, nothing was logged, no
+// request was made, and there was no way for the person in front of it to
+// tell the difference between "blocked" and "broken". Anything new that is
+// reachable from the chrome rather than the sidebar belongs here.
+const _CHROME_PAGES=['profile','bug-tracker'];
 window.showPage=async function(id){
   // Fulfilment account is scoped to Daily Performance — ignore any nav to
-  // other pages (e.g. the topbar logo's dashboard link).
-  if(session&&session.role==='fulfillment'&&id!=='fulfillment')id='fulfillment';
+  // other pages (e.g. the topbar logo's dashboard link) EXCEPT the chrome
+  // pages above, which are for everyone.
+  if(session&&session.role==='fulfillment'&&id!=='fulfillment'&&_CHROME_PAGES.indexOf(id)<0)id='fulfillment';
   currentPage=id;
   document.querySelectorAll('.nav-item,.mob-nav-item').forEach(n=>n.classList.remove('on'));
   document.getElementById('nav-'+id)?.classList.add('on');

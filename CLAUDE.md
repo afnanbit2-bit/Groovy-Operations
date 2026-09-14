@@ -1574,6 +1574,19 @@ What a profile holds: `photoUrl`, `displayName`, `jobTitle`, `department`,
   a profile. A directory that lists only the keen is not a directory.
 - **Reached from a topbar avatar**, not a nav item — it is for everyone
   regardless of role, and the topbar is the one surface every role sees.
+  **That is exactly what a role-scoped redirect broke.** `showPage`
+  (`js/shared.js`) scopes the `fulfillment` account to one page by
+  REWRITING every id, so `showPage('profile')` silently became
+  `showPage('fulfillment')`: the page did not change, nothing was logged,
+  no request was made, and there was no way for the person in front of it
+  to tell "blocked" from "broken". `_CHROME_PAGES` now exempts the pages
+  reached from the app CHROME rather than the sidebar — `profile` and
+  `bug-tracker` (the notification panel's "View →"). **Anything new that
+  is reachable from the chrome belongs in that list**, and
+  `tests/invariants.test.js` checks both halves: the exempt pages get
+  through, everything else is still scoped away, and every page named in
+  `_CHROME_PAGES` is actually dispatchable by `renderPage` (or the
+  exemption just swaps one silent no-op for another).
   `_profilePaintAvatar` repaints it; `profileBootstrap()` is called from
   `startApp` (js/auth.js) and **never awaited** — see "Diagnostics" for the
   white screen that cost.
