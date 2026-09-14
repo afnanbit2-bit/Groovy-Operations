@@ -9,9 +9,15 @@
 # bumped when a precached file changed, and every classic script loads and
 # runs in a real browser with the vendored libraries working.
 #
-# What it does NOT prove: that anything looks right or works in a browser.
-# See the header of tests/harness.js. Real UI verification still needs a
-# human, a phone, or Claude in Chrome.
+# The layout check is the one thing here that can SEE a page: it renders
+# real markup with the real stylesheet in a real browser and measures it,
+# failing on text squeezed to zero width or a box that overflows itself.
+# It exists because the Profile directory shipped with every name at
+# exactly 0px wide and every logic suite stayed green.
+#
+# What it still does NOT prove: that a page looks GOOD, or that anything
+# works signed in. See the header of tests/harness.js. Real UI verification
+# still needs a human, a phone, or Claude in Chrome.
 name: tests
 
 on:
@@ -52,6 +58,10 @@ jobs:
       # The app must render even when a Firestore read never settles.
       - name: startApp smoke test
         run: node tests/smoke-startapp.js
+
+      # Measures real geometry — catches text with nowhere to go.
+      - name: Layout smoke test
+        run: node tests/smoke-layout.js
 
       - name: CACHE_VERSION was bumped
         run: |

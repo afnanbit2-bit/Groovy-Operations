@@ -291,30 +291,44 @@ function _profileAppearanceHTML(){
 function _profileDirectoryHTML(){
   // Everyone with a profile, plus everyone in USER_DEFS who hasn't made one
   // yet — a directory that only lists the keen is not a directory.
+  //
+  // LAYOUT NOTE, because this shipped wrong once: the name goes on its OWN
+  // line, above the buttons, never beside them. The first cut put identity
+  // and actions in one flex row inside a 220px tile; the actions are
+  // flex-shrink:0 and ate ~180px of it, so the name — flex:1, min-width:0 —
+  // collapsed to zero width and every row read "Not signed in yet" with no
+  // clue whose it was. Afnan's own row looked fine only because it has no
+  // buttons. Anything added to a row from here goes BELOW the identity
+  // block, not next to it.
   const rows=_profileDirRows();
   if(!rows.length)return'';
   const admin=_profIsAdmin();
   return`<div class="card">
     <div style="font-weight:700;margin-bottom:4px">Team</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${rows.length} accounts. ${admin?'You can edit the profiles marked with a button below.':'Only the person themselves can edit their profile.'}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${rows.length} accounts.${admin?' You can edit anyone showing an Edit button.':' Only the person themselves can edit their profile.'}</div>
     <div class="profile-dir">
       ${rows.map((r,i)=>{
         const photo=_profAvatarUrl(r.p.photoUrl,64);
         const col=_profHex(r.p.nameColor);
-        const canEdit=_profCanEditUser(r.username)&&r.username!==session.u;
+        const me=r.username===session.u;
+        const canEdit=_profCanEditUser(r.username)&&!me;
         const canPw=_profCanResetPassword(r.username);
         const known=!!r.p.uid;
-        return`<div class="profile-dir-row">
-          ${photo?`<img class="profile-dir-photo" src="${_profEsc(photo)}" alt="" referrerpolicy="no-referrer">`
-                 :`<div class="profile-dir-photo profile-photo-empty"${col?` style="background:${col};color:${_profInk(col)}"`:''}>${_profEsc((r.p.displayName||r.fallbackName||'?').charAt(0).toUpperCase())}</div>`}
-          <div style="min-width:0;flex:1">
-            <div class="profile-dir-name" id="prof-dir-n-${i}"${col?` style="color:${col}"`:''}></div>
-            <div class="profile-dir-sub" id="prof-dir-s-${i}"></div>
+        return`<div class="profile-dir-row${me?' is-me':''}">
+          <div class="profile-dir-top">
+            ${photo?`<img class="profile-dir-photo" src="${_profEsc(photo)}" alt="" referrerpolicy="no-referrer">`
+                   :`<div class="profile-dir-photo profile-photo-empty"${col?` style="background:${col};color:${_profInk(col)}"`:''}>${_profEsc((r.p.displayName||r.fallbackName||'?').charAt(0).toUpperCase())}</div>`}
+            <div class="profile-dir-id">
+              <div class="profile-dir-name" id="prof-dir-n-${i}"${col?` style="color:${col}"`:''}></div>
+              <div class="profile-dir-user">@${_profEsc(r.username)}${me?' <span class="profile-tag tag-me">You</span>':''}</div>
+            </div>
           </div>
+          <div class="profile-dir-sub" id="prof-dir-s-${i}"></div>
           <div class="profile-dir-actions">
+            ${known?'':`<span class="profile-tag tag-soon" title="Their Firebase account exists, but no profile row does yet — one is created the first time they sign in.">No profile yet</span>`}
+            ${me?`<button class="btn-sm" onclick="window.profileStartEdit()">Edit</button>`:''}
             ${canEdit&&known?`<button class="btn-sm" onclick="window.profileEditUser('${_profEsc(r.username)}')">Edit</button>`:''}
-            ${canEdit&&!known?`<span class="profile-hint" title="They have no profile row yet, so their Firebase uid is unknown here.">Not signed in yet</span>`:''}
-            ${canPw?`<button class="btn-sm" onclick="window.openOwnerResetModal('${_profEsc(r.username)}')">Password</button>`:''}
+            ${canPw?`<button class="btn-sm btn-outline" onclick="window.openOwnerResetModal('${_profEsc(r.username)}')">Password</button>`:''}
           </div>
         </div>`;
       }).join('')}

@@ -1565,6 +1565,18 @@ same as every other Sept 2026 grant.
   account plus a `USER_DEFS` entry — a code change and a Console change, not
   something a form can fake. The edit card says so rather than offering a
   field that silently does nothing.
+- **A directory tile is a COLUMN, and the name never shares a row with a
+  button.** The first cut put identity and actions in one flex row inside a
+  `minmax(220px,1fr)` tile; the actions are `flex-shrink:0` and the name is
+  `flex:1;min-width:0`, so the name collapsed to **zero width** on every row
+  that had buttons — only the signed-in person's own row, which has none,
+  read correctly. Every row showed an initial and "Not signed in yet" and
+  nothing else. Measured: 0px before, 177px after, same window. Each tile
+  now stacks identity → role line → actions, carries `@username` **in the
+  markup** (not only in the hydrated name) so a row is identifiable even if
+  hydration never runs, and marks your own row. `tests/smoke-layout.js`
+  fails if it regresses. **Anything added to a tile goes BELOW the identity
+  block, not beside it.**
 - **Name colours** (`p.nameColor`) are a validated `#RRGGBB` on the profile,
   rendered on the directory, the profile card and the topbar, and exposed as
   `window.profileNameColor(username)` for the activity log / board presence /
@@ -2068,13 +2080,16 @@ policy as the app — and `.github/workflows/tests.yml` runs them on every
 push and pull request, for both tracks. 261 assertions at the time of
 writing. `tests/README.md` explains how to add one.
 
-**Read this before trusting a green run.** These tests prove the LOGIC still
-holds: validators, sanitisers, maths, what a menu offers, what gets written
-to Firestore, whether a loader can reject. They prove **nothing about how
-anything looks** — there is no jsdom and no browser. The board's entire top
-bar was invisible for weeks behind a wrong `z-index` and nothing here would
-have caught it. Real UI verification still needs a human, a phone, or Claude
-in Chrome.
+**Read this before trusting a green run.** Most of these tests prove the LOGIC
+still holds: validators, sanitisers, maths, what a menu offers, what gets
+written to Firestore, whether a loader can reject. `smoke-layout.js` (Sept
+2026) adds one narrow kind of visual proof — it measures rendered geometry
+and fails on text with nowhere to go — but it only covers the fragments
+listed in its `FRAGMENTS` map, and it cannot tell you whether a page looks
+GOOD, only that its content has room to exist. Nothing here would have
+caught the board's entire top bar being invisible for weeks behind a wrong
+`z-index`. Real UI verification still needs a human, a phone, or Claude in
+Chrome.
 
 - **`tests/harness.js`** — one shared stub of the handful of browser APIs
   the modules actually touch, plus the window-bridged Firebase globals.
@@ -2115,6 +2130,21 @@ in Chrome.
   the regression test for the white-screen incident — see "Diagnostics"
   above. Verified both ways: green with the fix, and failing the `hang` case
   with the `await` restored.
+- **`tests/smoke-layout.js`** — the only thing in `tests/` that can SEE a
+  page. It renders real markup from the real modules, serves it with the
+  real stylesheet in headless Chromium, and **measures** it at 1900/1280/420
+  px in both themes, failing on any element that carries text but occupies
+  **zero width**, any box that overflows itself, and any page that scrolls
+  sideways. It exists because the Profile directory shipped with the
+  person's name and the action buttons in one flex row inside a 220px grid
+  tile: the buttons are `flex-shrink:0` and the name is `flex:1;min-width:0`,
+  so **every name rendered at exactly 0px** and no row said whose profile it
+  was — while every logic suite stayed green, because the name was in the
+  DOM the whole time. Verified both ways: it fails on the pre-fix code
+  naming the exact elements, and passes on the fix. **Add a fragment to
+  `FRAGMENTS` when a page grows a layout worth protecting** — it is cheap,
+  and this class of bug (see also the board's z-index) has cost this app
+  more than any logic error.
 - **`tests/check-cache-version.js`** — a CI guard rather than a suite,
   because it needs git history. If a precached file changed between the base
   ref and HEAD, `CACHE_VERSION` must have changed too. Forgetting it fails

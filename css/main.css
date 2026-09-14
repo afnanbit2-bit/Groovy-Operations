@@ -780,19 +780,34 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .profile-hint{font-size:11px;color:var(--muted);margin-top:4px}
 .profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
 .profile-warn{margin-top:14px;padding:11px 12px;border:1px solid var(--accent-warning);background:var(--accent-warning-soft);border-radius:9px;font-size:12px;line-height:1.5;color:var(--text)}
-.profile-dir{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
-.profile-dir-row{display:flex;align-items:center;gap:10px;padding:9px;border:1px solid var(--border);border-radius:10px;min-width:0}
-.profile-dir-photo{width:38px;height:38px;border-radius:50%;object-fit:cover;border:1px solid var(--border);flex-shrink:0;font-size:14px}
-.profile-dir-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.profile-dir-sub{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* A directory tile is a COLUMN: identity first, then the role line, then
+   the buttons. It used to be one flex row, which is how a 220px tile with
+   a Password button in it ended up showing no name at all — the actions
+   don't shrink and the name does. Keep actions on their own line. */
+.profile-dir{display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:10px}
+.profile-dir-row{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--border);border-radius:12px;min-width:0;background:var(--surface)}
+.profile-dir-row.is-me{border-color:var(--text)}
+.profile-dir-top{display:flex;align-items:center;gap:10px;min-width:0}
+.profile-dir-id{min-width:0;flex:1}
+.profile-dir-photo{width:40px;height:40px;border-radius:50%;object-fit:cover;border:1px solid var(--border);flex-shrink:0;font-size:15px}
+.profile-dir-name{font-size:14px;font-weight:700;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile-dir-name:empty::before{content:attr(data-fallback)}
+.profile-dir-user{font-size:11.5px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile-dir-sub{font-size:11.5px;color:var(--muted);line-height:1.4;word-break:break-word}
+.profile-dir-sub:empty{display:none}
+.profile-tag{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 6px;border-radius:5px;white-space:nowrap}
+.profile-tag.tag-me{background:var(--dark);color:var(--on-dark)}
+.profile-tag.tag-soon{background:var(--soft);color:var(--muted)}
 /* Admin profile editing (Sept 2026) — owners + Mustafa editing someone
    else's profile. The banner is what keeps "whose profile am I editing?"
    from being a guess. */
 .profile-card-admin{border-color:var(--text)}
 .profile-admin-banner{margin:-2px 0 14px;padding:9px 11px;border-radius:9px;background:var(--soft);border:1px solid var(--border);font-size:12.5px;line-height:1.5}
 .profile-dir-row{position:relative}
-.profile-dir-actions{display:flex;gap:6px;align-items:center;flex-shrink:0;margin-left:auto}
-.profile-dir-actions .btn-sm{padding:4px 9px;font-size:11px}
+.profile-dir-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:auto;padding-top:2px}
+.profile-dir-actions:empty{display:none}
+.profile-dir-actions .btn-sm{padding:5px 11px;font-size:11px}
+.profile-dir-actions .btn-sm.btn-outline{background:var(--surface);border:1px solid var(--border);color:var(--text)}
 .profile-readonly{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;padding:12px;border:1px dashed var(--border);border-radius:10px}
 .profile-ro-val{font-size:13px;font-weight:600;word-break:break-all}
 /* Name colour picker. The swatches are the app's own accents, not a

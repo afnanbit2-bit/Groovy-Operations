@@ -188,10 +188,29 @@ module.exports=async function(){
     await run(`loadProfiles(true)`);
     s.section('an account that has never signed in');
     s.ok('no Edit button is offered',!/profileEditUser/.test(run(`renderProfilePage()`)));
-    s.ok('it says so instead',/Not signed in yet/.test(run(`renderProfilePage()`)));
+    s.ok('it says so instead',/No profile yet/.test(run(`renderProfilePage()`)));
     run(`window.profileEditUser('uzaib')`);
     s.eq('and forcing it opens no draft',run(`_profileEdit`),null);
     s.eq('writing nothing',state.writes.length,0);
+
+    // The bug this replaced: identity and buttons shared one flex row in a
+    // 220px tile, the buttons don't shrink and the name does, so every row
+    // rendered with a zero-width name and you could not tell whose profile
+    // was whose. The name must be readable from the markup alone.
+    s.section('you can always tell whose row it is');
+    const html=run(`renderProfilePage()`);
+    s.ok('every row carries its @username in the HTML itself',
+      (html.match(/profile-dir-user/g)||[]).length===4);
+    ['afnan','ammar','mustafa','uzaib'].forEach(u=>{
+      s.ok('@'+u+' is named on the page',html.indexOf('@'+u)>-1);
+    });
+    s.ok('the name sits in its own block, not beside the buttons',
+      /profile-dir-id[\s\S]{0,200}?profile-dir-name[\s\S]*?<\/div>\s*<\/div>\s*<div class="profile-dir-sub"/.test(html));
+    run(`_profileHydrate()`);
+    const names=[0,1,2,3].map(i=>app.el('prof-dir-n-'+i).textContent);
+    s.ok('and every name hydrates, profile or not',
+      names.every(n=>n&&n.length),JSON.stringify(names));
+    s.ok('your own row is marked',/tag-me/.test(html));
   }
 
   // The seed write is the ONLY thing that puts a username→uid pair where an
