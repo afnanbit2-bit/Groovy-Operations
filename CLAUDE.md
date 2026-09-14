@@ -846,14 +846,13 @@ Structure: frames, to-do cards, freeform arrows, colour tags.
   swallow panning, marquee-select and clicks on the cards inside it.
 - **"Columns" from the roadmap shipped as arrange-once actions instead**
   (`boardsStackSelection` / `boardsGridSelection`, plus
-  `boardsFrameSelection` to wrap a selection in a labelled frame). A real
-  column container needs stored membership and must reposition its
-  children, which fights the deliberately membership-free frame model
-  above. The actions deliver the same value — tidy alignment without
-  hand-placing cards — with no new data model, and compose with frames
-  (stack, then frame the result). **This was a substitution, flagged to
-  Afnan at the time**; if a true container is ever wanted it's a separate
-  build, not a tweak.
+  `boardsFrameSelection`). **SUPERSEDED in Sept 2026 — `stack` builds a
+  REAL container now**; see "Column is a real container" below for the
+  model and for why membership had to live on the child rather than on the
+  column. `grid` and `wrapframe` are unchanged. The reasoning recorded here
+  at the time (that stored membership fights the membership-free frame
+  model) still holds *for frames* — the two containers now answer "what is
+  inside me" differently on purpose.
 - **Connectors now cover two shapes in one array**: card-bound
   (`{from,to}`, endpoints follow the cards) and freeform
   (`{free:true,x1,y1,x2,y2}`, fixed in world space), either with
@@ -1246,6 +1245,74 @@ The rest:
   the DOM as well as the flag. **The exact action that desynced them was
   not identified** — the closer no longer depends on the two agreeing.
 
+### Mood Boards — Column is a real container (Sept 2026)
+
+**This reverses the Stage 3 substitution on purpose**, at Afnan's request.
+"Group into Column" was an arrange-once action; it builds a real container
+now — one that keeps its order, moves as one, accepts drops and ungroups.
+
+**Frames stay membership-free; a column cannot be.** Geometry answers "what
+is inside this box", which is all a frame needs. A column has to own an
+ORDER and position its children from it, so membership is stored.
+
+- **Membership lives on the CHILD (`c.columnId`), never as an
+  `items:[cardId,…]` array on the column.** That array was the obvious
+  shape and is the wrong one: the Stage 6 merge is per CARD, so two people
+  each adding to the same column would both rewrite it and the later write
+  would win, silently dropping the other's insert. With `columnId`, every
+  insert is a change to a different card and the merge keeps both —
+  **joining a column never writes the column document at all.**
+- **Order is derived from the child's own `y`**, which the layout already
+  writes. No second field to keep in step, no fractional-index scheme.
+  **Ties break on card id**, so two cards that land on the same y after a
+  merge still order identically on every screen.
+- **`_boardsLayoutColumn` is idempotent, and that is load-bearing.**
+  Opening a board must not mark every card as locally changed (see
+  `_boardsLocalChanges`) and fire a write for a layout that is already
+  correct. Asserted in `tests/boards.test.js`.
+- **A stale `columnId` is INERT** — the card renders as an ordinary free
+  card. Nothing is reconciled on read, and no failed write can strand a
+  card inside an invisible box. Same discipline as nesting and frame
+  membership.
+- **Deleting a container never destroys content.** The ✕, Delete and a
+  selection delete all RELEASE the cards where they sit and say how many
+  were kept; **"Delete column and its cards" is a separate, confirmed
+  action**. That was the open question from the Milanote teardown (item
+  G9): the safe thing is the default, the destructive one is explicit.
+- **Children travelling WITH their column are not re-homed.** Found by
+  re-reading before shipping, not in testing: a dragged column puts itself
+  in `movingCols`, so it is not a valid drop target for its own children —
+  read naively that is "dropped on empty canvas" and **every card falls out
+  the moment you move the column**, or move a frame around it.
+  `_boardsDropTargets` skips them; a test guards it.
+- **A column's height is derived and a child's width comes from the
+  column**, so neither axis is draggable — a handle that silently snaps
+  back is worse than not offering that axis. Resizing reflows by writing
+  styles (`_boardsPaintColumnGeometry`), not by rebuilding the canvas: a
+  full render per `pointermove` would redraw every card and connector on a
+  46-card board.
+- **Containers never nest.** A column is not a drop target for a column or
+  a frame — one layout model is enough.
+- **Duplicate copies what is inside a column** and remaps `columnId`
+  through the same id map the connectors use; a child copied alone is
+  freed rather than left pointing at the original.
+- Columns paint behind their children (`_boardsRenderOrder`: frames,
+  columns, then everything else). Select contents reads **membership** for
+  a column and **geometry** for a frame — the one place the two containers
+  genuinely differ. The drop indicator lives inside `.board-world`, so it
+  is positioned in world coordinates with no pan/zoom maths.
+
+`tests/harness.js` gained **`confirm`/`prompt`** (recorded in `state`,
+answering yes by default, overridable through `globals`) — the app has two
+blocking dialogs and neither could be exercised before.
+
+`tests/smoke-layout.js` gained a fragment that MEASURES a laid-out column.
+**What it does not prove, checked by removing the rule:** the column's
+`pointer-events:none`. The children are painted above the column as later
+siblings, so `elementFromPoint` reaches them either way. That rule is for
+panning and marquee **through** the column background, which no layout
+measurement can see.
+
 ### Mood Boards — Home is a board (Sept 2026)
 
 Milanote has no "list of your boards" page: **home IS a board**, and your
@@ -1412,12 +1479,10 @@ rewritten on each autosave), and that is a bandwidth question, not a
 correctness one. Re-measure before reopening this; don't re-derive it from
 the same assumption.
 
-Still not built, and each is a real gap rather than an oversight: **Column
-as a true container** (blocked on what happens to a column's cards when the
-column is deleted — see Stage 3 on why membership is unstored), **Table**,
-**linear document export** (Word/Markdown, including sub-boards),
-**Presentation mode**, and **Home-as-a-board** (Milanote's home is itself a
-recursive board; ours is a flat gallery page plus a separate canvas page).
+Still not built, and each is a real gap rather than an oversight:
+**Table**, **linear document export** (Word/Markdown, including
+sub-boards), and **Presentation mode**. *Column as a true container* and
+*Home-as-a-board* have both shipped since — see their own sections.
 
 ### Mood Boards — drag to select (Sept 2026)
 
@@ -1575,9 +1640,9 @@ screenshots showed them as first-class actions on a selected card.
   More · Done — and **More renders the SAME item list the right-click menu
   builds**, through the same `_boardsCtxRun` router. That is the rule the
   rail and the old selection bar broke before they were merged.
-- Milanote's **"Group into Column"** is now the name on the existing
-  `stack` action. There is still no stored column container here, on
-  purpose (Stage 3).
+- Milanote's **"Group into Column"** is the name on the `stack` action.
+  **It builds a real container now** — see "Column is a real container";
+  this note used to say there was deliberately no stored column.
 
 **Bug found by a harness, not by testing:** both new uses of the signed-in
 user wrote `window.session`. **`session` is a top-level `let` in
