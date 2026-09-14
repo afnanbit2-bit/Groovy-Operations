@@ -1292,6 +1292,46 @@ right-click actions are missing, and there is no way to curve one.
   — same boundary as card text; a stroke colour is a fixed palette name
   mapped to a CSS variable, so nothing else reaches a style attribute.
 
+### Mood Boards — closing the line gaps (Sept 2026)
+
+Afnan ran Milanote's lines properly and reported back. Most of the round
+above already matched; four things did not.
+
+- **Dragging the body moves the line — but only a FREEFORM one.** A
+  card-bound line's endpoints ARE the two cards, so dragging it would do
+  nothing or silently break the connection; its midpoint handle still
+  curves it, the only free parameter it has. Because the bend is stored as
+  an **offset from the midpoint**, moving both endpoints carries the curve
+  with no extra work — the payoff for that storage choice.
+- **Right-click parity**: Cut / Copy / Duplicate / Delete as the shared
+  opening block (the same shape a card's menu has, so the shortcuts are
+  taught in both places), then Lock position and Bring to front / Send to
+  back. **Z-order is a reorder of `_editConnectors`** — connectors paint in
+  array order exactly like cards, so no stored field and no migration.
+  A locked line keeps its selection outline (that is how you unlock it) and
+  loses every handle plus the styling entries it cannot apply.
+- **Ctrl+C / Ctrl+V** through the real clipboard events, so the system
+  clipboard stays the single source of truth. **A separate tag
+  (`groovy-board-lines:`) rather than a shape change to the card payload** —
+  an older build in another tab still reads the card one, and a line pasted
+  into it is ignored instead of arriving as a malformed card. The id is
+  stripped on copy so a paste always mints its own. A **card-bound line
+  pastes as the shape it was DRAWN in**, flattened to freeform at its
+  current endpoints, because the cards it names may not exist on the board
+  being pasted into. Note there are **two** paste paths — the keyboard one
+  and the right-click one — and both needed it.
+- **Custom colour.** The board colour picker serves two kinds of target now
+  through one pair of helpers (`_boardsColorCurrent`/`_boardsColorApply`)
+  rather than four call sites each growing a branch. A custom line colour
+  is a literal `#RRGGBB` through `_boardsValidHex`; palette names still
+  work alongside, and anything unrecognised **falls back rather than being
+  passed through**.
+
+**Deliberately not matched:** Milanote sends a deleted line to Trash. Cards
+here have no trash either — Ctrl+Z covers them, and a second recovery
+system for a one-keystroke-recoverable action is not worth its complexity
+(Stage 1).
+
 ### Mood Boards — Table, document export and Presentation (Sept 2026)
 
 The last three Milanote gaps, shipped together because two of them share
@@ -2697,7 +2737,17 @@ Chrome.
   above. Verified both ways: green with the fix, and failing the `hang` case
   with the `await` restored.
 - **`tests/smoke-layout.js`** — the only thing in `tests/` that can SEE a
-  page. It renders real markup from the real modules, serves it with the
+  page. Since Sept 2026 it also **measures contrast**: every element
+  carrying text, against its effective background, in both themes, failing
+  below **2.2:1**. Deliberately low — this is not a WCAG audit, and a
+  stricter bar would flag every piece of muted helper text and drown the
+  finding; 2.2 is "a human cannot read this at all". It caught the dark-mode
+  toggle chips AND a bug nobody was looking for (a profile name colour at
+  1.76:1 in dark). **Two traps when editing the PROBE, which is a template
+  literal: a backtick in a comment CLOSES it, and `\d` collapses to `d` —
+  the regex then matched nothing and the check silently passed everything.
+  Verify a new check by raising its threshold until it fails, or you are
+  testing nothing.** It renders real markup from the real modules, serves it with the
   real stylesheet in headless Chromium, and **measures** it at 1900/1280/420
   px in both themes, failing on any element that carries text but occupies
   **zero width**, any box that overflows itself, any page that scrolls
