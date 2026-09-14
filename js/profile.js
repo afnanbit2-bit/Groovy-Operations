@@ -174,10 +174,18 @@ function renderProfilePage(){
 function _profileViewCardHTML(p){
   const photo=_profAvatarUrl(p.photoUrl,160);
   const col=_profHex(p.nameColor);
+  // The picture is a BUTTON, not decoration. Afnan reported "nothing happens
+  // when I click on the profile picture to edit" — and nothing did: in view
+  // mode it was a plain <img> with no handler, so the most obvious thing in
+  // the world to click was inert. It now opens the editor and goes straight
+  // to the file chooser, which is what clicking your own photo means.
   return`<div class="card profile-card">
     <div class="profile-head">
-      ${photo?`<img class="profile-photo" src="${_profEsc(photo)}" alt="" referrerpolicy="no-referrer">`
-             :`<div class="profile-photo profile-photo-empty">${_profEsc((session.name||'?').charAt(0).toUpperCase())}</div>`}
+      <button type="button" class="profile-photo-btn" onclick="window.profileChangePhoto()" title="Change your photo">
+        ${photo?`<img class="profile-photo" src="${_profEsc(photo)}" alt="" referrerpolicy="no-referrer" draggable="false">`
+               :`<div class="profile-photo profile-photo-empty">${_profEsc((session.name||'?').charAt(0).toUpperCase())}</div>`}
+        <span class="profile-photo-over">Change photo</span>
+      </button>
       <div class="profile-id">
         <div class="profile-name" id="prof-name"${col?` style="color:${col}"`:''}></div>
         <div class="profile-sub" id="prof-sub"></div>
@@ -317,9 +325,14 @@ function _profileDirectoryHTML(){
         const canEdit=_profCanEditUser(r.username)&&!me;
         const canPw=_profCanResetPassword(r.username);
         const known=!!r.p.uid;
+        // An admin can click the avatar as well as the button — clicking a
+        // person's picture to change it is the first thing anyone tries.
+        const openable=(canEdit&&known)||me;
+        const onOpen=me?'window.profileChangePhoto()'
+                      :(canEdit&&known)?`window.profileEditUser('${_profEsc(r.username)}')`:'';
         return`<div class="profile-dir-row${me?' is-me':''}">
-          <div class="profile-dir-top">
-            ${photo?`<img class="profile-dir-photo" src="${_profEsc(photo)}" alt="" referrerpolicy="no-referrer">`
+          <div class="profile-dir-top${openable?' openable':''}"${openable?` onclick="${onOpen}" title="Edit this profile"`:''}>
+            ${photo?`<img class="profile-dir-photo" src="${_profEsc(photo)}" alt="" referrerpolicy="no-referrer" draggable="false">`
                    :`<div class="profile-dir-photo profile-photo-empty"${col?` style="background:${col};color:${_profInk(col)}"`:''}>${_profEsc((r.p.displayName||r.fallbackName||'?').charAt(0).toUpperCase())}</div>`}
             <div class="profile-dir-id">
               <div class="profile-dir-name" id="prof-dir-n-${i}"${col?` style="color:${col}"`:''}></div>
@@ -414,7 +427,7 @@ window.profileRetry=async function(){
 
 // Builds the draft for one account. `username` defaults to the signed-in
 // person; anything else goes through _profCanEditUser first.
-function _profileOpenEdit(username){
+function _profileOpenEdit(username,opts){
   const defs=(typeof USER_DEFS!=='undefined'?USER_DEFS:[]);
   const def=defs.find(x=>x.u===username);
   if(!def){showToast('Unknown account.',true);return;}
@@ -432,9 +445,29 @@ function _profileOpenEdit(username){
     photoUrl:p.photoUrl||'',nameColor:_profHex(p.nameColor)
   };
   _profileRerender();
+  // Straight on to the file chooser when the photo itself was clicked. The
+  // rerender above is synchronous, so this .click() is still inside the
+  // original user gesture — a browser will not open a file dialog outside
+  // one, which is why it cannot be deferred to a timeout.
+  if(opts&&opts.pickPhoto){
+    const input=document.querySelector('.profile-photo-pick input[type=file]');
+    if(input)input.click();
+  }
 }
-window.profileStartEdit=function(){_profileOpenEdit(session.u);};
-window.profileEditUser=function(username){_profileOpenEdit(username);};
+// These are called from inline onclick attributes, where a throw goes to
+// window.onerror and the button just looks dead. Route both through the
+// same reporting the render path uses, so a failure is visible on screen
+// instead of being something only a console would have shown.
+function _profileGuard(fn){
+  try{fn();}
+  catch(e){
+    try{console.error('[profile]',e);}catch(_){}
+    showToast('Could not open the profile editor: '+((e&&e.message)||e),true);
+  }
+}
+window.profileStartEdit=function(){_profileGuard(()=>_profileOpenEdit(session.u));};
+window.profileEditUser=function(username){_profileGuard(()=>_profileOpenEdit(username));};
+window.profileChangePhoto=function(){_profileGuard(()=>_profileOpenEdit(session.u,{pickPhoto:true}));};
 window.profileCancelEdit=function(){_profileEdit=null;_profileRerender();};
 // Typing mutates the draft in place with no rerender — the same
 // cursor-stability reason Notes' block editor and the board's text cards

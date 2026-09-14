@@ -15,11 +15,15 @@
    assertion suites were all green through the whole thing, because the name
    was in the DOM the entire time; it just had nowhere to go.
 
-   The same class of failure has bitten this app before (the board's entire
-   top bar was invisible for weeks behind a z-index). So the check is
-   written generally: render a fragment, then fail on any element that
-   carries text but occupies no width, and on any container that overflows
-   itself. Add fragments to FRAGMENTS as pages grow.
+   The same class of failure has bitten this app repeatedly — the board's
+   entire top bar invisible for weeks behind a wrong z-index, the delete X
+   whose click was retargeted by a pointer capture, the profile photo that
+   was a plain <img> with no handler. So the checks are written generally:
+   render a fragment, then fail on any element that carries text but
+   occupies no width, any container that overflows itself, and any
+   CLICKABLE element that is zero-sized, pointer-events:none, or covered by
+   something else when the browser hit-tests its centre. Add fragments to
+   FRAGMENTS as pages grow.
 
    Checks each fragment at desktop, laptop and phone widths — a tile that
    fits at 1900px can still collapse at 1280px, which is the width most
@@ -145,6 +149,42 @@ if(document.documentElement.scrollWidth>innerWidth+2){
   bad.push({why:'the page scrolls sideways',
     scroll:document.documentElement.scrollWidth,viewport:innerWidth});
 }
+// A control that exists but cannot be clicked. This is the shape of nearly
+// every UI bug this app has had: the board's whole top bar behind a wrong
+// z-index, the delete X retargeted by a pointer capture, the profile photo
+// with no handler at all. Hit-test the centre of everything clickable and
+// make sure the browser would actually reach it.
+document.querySelectorAll('#main-content button, #main-content [onclick], #main-content a[href]').forEach(el=>{
+  const cs=getComputedStyle(el);
+  if(cs.display==='none'||cs.visibility==='hidden')return;
+  if(el.disabled)return;
+  const r=el.getBoundingClientRect();
+  if(r.width<1||r.height<1){
+    bad.push({why:'clickable but has no size',
+      text:(el.textContent||'').trim().slice(0,30),
+      cls:(el.className||'').toString().slice(0,50)});
+    return;
+  }
+  if(cs.pointerEvents==='none'){
+    bad.push({why:'clickable but pointer-events:none',
+      text:(el.textContent||'').trim().slice(0,30)});
+    return;
+  }
+  // Off-screen at this width is a layout question, already covered above.
+  if(r.bottom<0||r.top>innerHeight||r.right<0||r.left>innerWidth)return;
+  const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
+  // The click reaches the control if the hit IS the control, or a
+  // descendant of it (it still bubbles). Anything else means something is
+  // painted on top — INCLUDING an ancestor, which is how an ::after
+  // overlay or a mispositioned z-index swallows its own children. An
+  // earlier version of this check exempted ancestors and therefore caught
+  // nothing; it was verified by deliberately covering a button.
+  if(hit&&hit!==el&&!el.contains(hit)){
+    bad.push({why:'something else is covering this control',
+      text:(el.textContent||'').trim().slice(0,30),
+      coveredBy:(hit.tagName+'.'+(hit.className||'')).slice(0,50)});
+  }
+});
 document.getElementById('__out').textContent=JSON.stringify(bad);
 `;
 

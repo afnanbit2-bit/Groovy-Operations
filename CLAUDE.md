@@ -1626,6 +1626,22 @@ same as every other Sept 2026 grant.
   person is in `USER_DEFS` but cannot sign in at all — worth knowing) /
   failed. Reached from the Team card on the Profile page, admins only.
   `tests/invariants.test.js` checks its gate and that every write merges.
+- **The profile picture is a BUTTON.** Afnan reported "nothing happens when
+  I click the profile picture to edit" — and nothing did: in view mode it
+  was a plain `<img>` with no handler, so the most obvious control on the
+  page was inert. It now opens the editor **and** goes straight to the file
+  chooser in the same gesture (the rerender is synchronous on purpose — a
+  browser refuses a file dialog outside a user gesture, so it cannot be
+  deferred). Directory avatars are clickable too, for the same reason.
+  `window.profileStartEdit` / `profileEditUser` / `profileChangePhoto` all
+  route through `_profileGuard`, because a throw inside an inline `onclick`
+  goes to `window.onerror` and the button just looks dead.
+  **Verified in a real browser, not only the harness**: the Edit button and
+  the photo button were both hit-tested with `elementFromPoint` and clicked
+  as Umair's account — both reach their handler with no errors. The report
+  that "Edit profile" itself does nothing could not be reproduced anywhere;
+  the screenshot showed the "Refresh now" update banner still on screen, so
+  the most likely explanation is an old cached build.
 - **`_profileRerender` can never fail silently.** A throw inside
   `renderProfilePage` used to leave the page exactly as it was, so a button
   appeared to do nothing at all — no error, no clue, nothing the person in
@@ -2204,8 +2220,17 @@ Chrome.
   page. It renders real markup from the real modules, serves it with the
   real stylesheet in headless Chromium, and **measures** it at 1900/1280/420
   px in both themes, failing on any element that carries text but occupies
-  **zero width**, any box that overflows itself, and any page that scrolls
-  sideways. It exists because the Profile directory shipped with the
+  **zero width**, any box that overflows itself, any page that scrolls
+  sideways, and — since Sept 2026 — any **clickable element that the browser
+  could not actually reach**: zero-sized, `pointer-events:none`, or covered
+  by something else when `elementFromPoint` hit-tests its centre. That last
+  check is the one that matches nearly every UI bug this app has had (the
+  board's top bar behind a wrong `z-index`, the delete ✕ retargeted by a
+  pointer capture, the profile photo with no handler). **A hit is only OK
+  when it IS the control or a descendant of it** — an ANCESTOR counts as
+  covering, which is how an `::after` overlay swallows its own children; the
+  first version exempted ancestors and therefore caught nothing, found by
+  deliberately covering a button. It exists because the Profile directory shipped with the
   person's name and the action buttons in one flex row inside a 220px grid
   tile: the buttons are `flex-shrink:0` and the name is `flex:1;min-width:0`,
   so **every name rendered at exactly 0px** and no row said whose profile it

@@ -356,5 +356,37 @@ module.exports=async function(){
     s.eq('nothing was interpolated into innerHTML',main.innerHTML,'');
   }
 
+  // ── the photo is the way in ───────────────────────────────────────────
+  // Reported as "nothing happens when I click the profile picture to edit",
+  // and nothing did: in view mode it was a plain <img> with no handler at
+  // all, so the most obvious control on the page was inert.
+  {
+    const app=loadApp({files:FILES,currentPage:'profile'});
+    const {run}=app;
+    await run(`loadProfiles(true)`);
+    const view=run(`renderProfilePage()`);
+    s.section('the profile picture is a button, not decoration');
+    s.ok('it carries a click handler',/profile-photo-btn[^>]*onclick="window\.profileChangePhoto\(\)"/.test(view));
+    s.ok('and says what it does',/Change photo/.test(view));
+
+    // Clicking it must open the editor AND reach the file input in the same
+    // gesture — a browser refuses a file dialog outside one.
+    let clicked=0;
+    run(`document.querySelector=function(sel){
+      return /profile-photo-pick/.test(sel)?{click:function(){globalThis.__picked=(globalThis.__picked||0)+1;}}:null;
+    }`);
+    run(`window.profileChangePhoto()`);
+    s.ok('the editor opened',!!run(`_profileEdit`));
+    s.eq('and the file chooser was asked for, synchronously',run(`__picked||0`),1);
+
+    s.section('a failing entry point reports itself');
+    run(`_profileOpenEdit=function(){throw new Error('kaboom');}`);
+    let threw=false;
+    try{run(`window.profileStartEdit()`)}catch(e){threw=true;}
+    s.ok('the button does not throw into the void',!threw);
+    s.ok('the user is told',app.state.toasts.join(' ').indexOf('kaboom')>=0,
+      JSON.stringify(app.state.toasts.slice(-1)));
+  }
+
   return s;
 };

@@ -815,6 +815,20 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .profile-head{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
 .profile-photo{width:88px;height:88px;border-radius:50%;object-fit:cover;border:1px solid var(--border);flex-shrink:0;display:block}
 .profile-photo-empty{display:flex;align-items:center;justify-content:center;background:var(--soft);color:var(--muted);font-size:30px;font-weight:700}
+/* The view-mode photo is a real button. It had no handler at all until
+   Sept 2026, so clicking the most obvious thing on the page did nothing. */
+.profile-photo-btn{position:relative;flex-shrink:0;display:block;padding:0;border:none;
+  background:none;cursor:pointer;font-family:inherit;border-radius:50%;line-height:0}
+.profile-photo-btn:focus-visible{outline:2px solid var(--text);outline-offset:3px}
+.profile-photo-over{position:absolute;left:0;right:0;bottom:0;height:34%;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.62);color:#fff;font-size:10px;font-weight:700;
+  letter-spacing:.04em;text-transform:uppercase;line-height:1;
+  border-radius:0 0 999px 999px;opacity:0;transition:opacity .14s;pointer-events:none}
+.profile-photo-btn:hover .profile-photo-over,
+.profile-photo-btn:focus-visible .profile-photo-over{opacity:1}
+.profile-dir-top.openable{cursor:pointer;border-radius:8px}
+.profile-dir-top.openable:hover{background:var(--soft)}
 .profile-photo-pick{position:relative;cursor:pointer;flex-shrink:0;display:block}
 .profile-photo-hint{display:block;text-align:center;font-size:10.5px;color:var(--muted);margin-top:5px}
 .profile-id{min-width:0}
