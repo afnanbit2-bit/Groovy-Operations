@@ -1240,6 +1240,86 @@ The rest:
   the DOM as well as the flag. **The exact action that desynced them was
   not identified** — the closer no longer depends on the two agreeing.
 
+### Mood Boards — the QA retest (Sept 2026)
+
+Afnan retested the round above on the live site. Three fixes held (Line
+mode default, heading edit, the file card opening a tab); three findings
+came back, and all three were real. Each was invisible to every existing
+suite, which is why a human found them and CI did not.
+
+- **"Missing board" was unfixable, not just broken.** The c15cd05 fix stops
+  the rail minting a `type:'board'` card with no `boardId`; it does nothing
+  for the orphans already sitting on real boards, which render the fallback
+  title *and* a dead "Missing board" line with no Open button. A card that
+  is a LINK to something must either link to it or **offer to create it** —
+  `boardsRepairBoardCard` adopts the orphan (same two writes as
+  `boardsAddChildBoard`, flushed not debounced). A `boardId` this viewer
+  genuinely cannot read now says why instead of offering an Open button that
+  no-ops, and `boardsGoto` refuses an unloaded board out loud.
+- **The caption "never saved" because you could never type in it.** It is
+  `contenteditable="false"` like every card body, and only a double-click
+  switched it on — but a caption is not a drag surface (it sits OUTSIDE the
+  body div, has no drag handler) and its placeholder reads "Add a
+  caption…", which promises a field. **One click opens it now.** The
+  double-click rule exists for bodies that a drag would fight; don't apply
+  it to things that just look like inputs.
+- **Labels and reactions were eating the card body, not overlapping it.**
+  They are flex rows in the same column as the body. On the default 104px
+  sub-board card, one label plus one reaction left ~50px with
+  `justify-content:center` — and content taller than a *centred* flex box
+  spills out of **both** ends, so `overflow:hidden` erased the top one and
+  the title was painted nowhere. The fix grows the **card**
+  (`_boardsMinCardH`), used by the render AND the resize clamp, so cards
+  written small before this display correctly with no migration and no
+  write; adding a label/reaction/caption raises the stored `c.h` so it
+  catches up. Overlaying the rows would have been the same bug with extra
+  steps.
+- Resize grip 24px → 30px (34px on phones). A duplicated
+  `.board-resize-handle svg` rule was silently overriding the 13px glyph
+  size the rule three lines above it asked for.
+
+**`tests/smoke-layout.js` grew the check that would have caught the third
+one**: text laid out entirely outside its nearest clipping ancestor. The
+zero-size checks miss this completely — the element has a perfectly good
+rect, it just isn't one anybody can see. It requires **no intersection at
+all**, so a long note whose last lines are cut off is not a finding.
+Verified both ways: with the height fix reverted it fails and names
+`board-subboard-title`.
+
+### Mood Boards — Milanote parity (Sept 2026)
+
+From the teardown a browser-capable session ran against the real Milanote.
+Shipped: zoom floor **10% → 5%** (Milanote's own); **Fit and 100% are one
+context-aware button** (the fitted state is derived in
+`_boardsApplyTransform` rather than cleared at each zoom/pan entry point, so
+a new entry point inherits it); a **file count on gallery tiles** ("398
+cards · 14 files"); **explicit Open and Download buttons on file cards**
+(both carrying the `onpointerdown` guard — a control inside a drag surface
+whose pointerdown reaches the handle has its click retargeted away, the
+delete-✕ bug; and the `<a>` can no longer wrap them, which is invalid and
+would win the click anyway).
+
+**The whole-board `cards` array is staying, and this was measured rather
+than argued.** An engineering spec written from the teardown recommended
+per-card records as "the single most important choice", and the strongest
+case for it was Firestore's 1 MiB document cap against the 398-card board
+Afnan actually has in Milanote. Measured with representative cards built
+from `_boardsNewCard`'s real shape (3 image : 1 text : 1 file : 1 frame,
+real Cloudinary URLs, labels, reactions, rich text): **~364 bytes a card, so
+398 cards is ~0.15 MiB — 15% of the limit**, and the ceiling is somewhere
+near 2,600 cards. The cap is not the constraint it was assumed to be. What
+per-card records would actually buy is smaller writes (a 150 KB document
+rewritten on each autosave), and that is a bandwidth question, not a
+correctness one. Re-measure before reopening this; don't re-derive it from
+the same assumption.
+
+Still not built, and each is a real gap rather than an oversight: **Column
+as a true container** (blocked on what happens to a column's cards when the
+column is deleted — see Stage 3 on why membership is unstored), **Table**,
+**linear document export** (Word/Markdown, including sub-boards),
+**Presentation mode**, and **Home-as-a-board** (Milanote's home is itself a
+recursive board; ours is a flat gallery page plus a separate canvas page).
+
 ### Mood Boards — drag to select (Sept 2026)
 
 Afnan asked for Milanote's gesture: **dragging empty canvas draws a
