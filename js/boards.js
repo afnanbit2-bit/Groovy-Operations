@@ -116,14 +116,15 @@ function _boardsCanEdit(b){
 }
 function _boardsNewCard(type){
   const id='c'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
-  const w=type==='frame'?440:type==='heading'?440:type==='text'?220:type==='todo'?240:type==='file'?200:type==='board'?200:170;
-  const h=type==='frame'?320:type==='heading'?58:type==='image'?120:type==='link'?120:type==='file'?110:type==='todo'?170:type==='board'?104:100;
+  const w=type==='frame'?440:type==='column'?280:type==='heading'?440:type==='text'?220:type==='todo'?240:type==='file'?200:type==='board'?200:170;
+  const h=type==='frame'?320:type==='column'?160:type==='heading'?58:type==='image'?120:type==='link'?120:type==='file'?110:type==='todo'?170:type==='board'?104:100;
   const base={id,type,x:80,y:80,w,h};
   if(type==='image')base.imageUrl='';
   if(type==='text')base.text='';
   if(type==='link'){base.linkUrl='';base.linkTitle='';base.linkDesc='';}
   if(type==='file'){base.fileUrl='';base.fileName='';base.fileSize=0;}
   if(type==='frame')base.title='';
+  if(type==='column')base.title='';
   if(type==='heading')base.text='';
   if(type==='todo')base.items=[{text:'',done:false}];
   if(type==='board'){base.boardId='';base.boardTitle='';}
@@ -159,9 +160,162 @@ function _boardsCardsInFrame(frame){
 // Frames paint first so they never cover their own contents. This also
 // quietly constrains "bring to front" on a frame — which is correct: a
 // frame that could be raised above its cards would hide them.
+// Frames paint first (behind their contents), then COLUMNS — a column has
+// to sit behind the cards it holds for the same reason, and behind nothing
+// else. Everything after that keeps its array order, which is the z-order
+// "bring to front" reorders (Stage 2).
 function _boardsRenderOrder(){
-  return _editCards.filter(c=>c.type==='frame').concat(_editCards.filter(c=>c.type!=='frame'));
+  const rank=c=>c.type==='frame'?0:c.type==='column'?1:2;
+  return _editCards.filter(c=>rank(c)===0)
+    .concat(_editCards.filter(c=>rank(c)===1))
+    .concat(_editCards.filter(c=>rank(c)===2));
 }
+
+/* ── Columns: the one REAL container ────────────────────────────────────
+   This reverses the Stage 3 decision recorded in CLAUDE.md, deliberately.
+   Frames are membership-free because geometry is enough to answer "what is
+   inside this box". A column has to do something geometry cannot: it OWNS
+   an order and positions its children from it. So membership is stored.
+
+   WHERE it is stored is the part that matters. The obvious choice — an
+   `items:[cardId,…]` array on the column — loses cards under the Stage 6
+   merge: that merge is per CARD, so two people each adding to the same
+   column both rewrite the column's array and the later write wins,
+   silently dropping the other's insert. Instead each CHILD carries
+   `columnId`, so every insert is a change to a different card and the
+   merge keeps both.
+
+   ORDER is then derived from the child's own `y`, which the layout writes
+   — no second field to keep in step, and no fractional-index scheme. Ties
+   break on card id so two cards that land on the same y after a merge
+   still order deterministically on every screen.
+
+   A `columnId` pointing at a column that no longer exists is INERT: the
+   card renders as an ordinary free card. Nothing has to be reconciled on
+   read, and no failed write can strand a card inside an invisible box. */
+const _BOARDS_COL_PAD=12,_BOARDS_COL_HEAD=30,_BOARDS_COL_GAP=10,_BOARDS_COL_MIN_H=120;
+function _boardsIsColumn(c){return!!(c&&c.type==='column');}
+// The column a card belongs to, or null — including when columnId is stale.
+function _boardsColumnOf(c){
+  if(!c||!c.columnId)return null;
+  const col=_editCards.find(x=>x.id===c.columnId&&x.type==='column');
+  return col||null;
+}
+function _boardsColumnChildren(col){
+  if(!col)return[];
+  return _editCards.filter(c=>c.columnId===col.id&&c.id!==col.id)
+    .sort((a,b)=>(a.y-b.y)||(a.id<b.id?-1:a.id>b.id?1:0));
+}
+// Lays a column out and reports whether anything actually moved. Idempotent
+// BY DESIGN: opening a board must not mark every card as locally changed
+// (see _boardsLocalChanges) and trigger a write for a layout that is
+// already correct.
+function _boardsLayoutColumn(col){
+  if(!_boardsIsColumn(col))return false;
+  const kids=_boardsColumnChildren(col);
+  const innerW=Math.max(60,col.w-_BOARDS_COL_PAD*2);
+  let y=col.y+_BOARDS_COL_HEAD+_BOARDS_COL_PAD;
+  let changed=false;
+  kids.forEach(k=>{
+    const nx=col.x+_BOARDS_COL_PAD;
+    if(k.x!==nx){k.x=nx;changed=true;}
+    if(k.y!==y){k.y=y;changed=true;}
+    if(k.w!==innerW){k.w=innerW;changed=true;}
+    y+=k.h+_BOARDS_COL_GAP;
+  });
+  const h=Math.max(_BOARDS_COL_MIN_H,
+    (kids.length?y-_BOARDS_COL_GAP:col.y+_BOARDS_COL_HEAD+_BOARDS_COL_PAD)-col.y+_BOARDS_COL_PAD);
+  if(col.h!==h){col.h=h;changed=true;}
+  return changed;
+}
+function _boardsLayoutColumns(){
+  let changed=false;
+  _editCards.filter(_boardsIsColumn).forEach(col=>{if(_boardsLayoutColumn(col))changed=true;});
+  return changed;
+}
+// The column under a world point, topmost first (later in the array paints
+// on top). `skip` holds ids that must not match — a column being dragged
+// cannot be its own drop target.
+function _boardsColumnAt(wx,wy,skip){
+  const cols=_editCards.filter(_boardsIsColumn);
+  for(let i=cols.length-1;i>=0;i--){
+    const col=cols[i];
+    if(skip&&skip.has(col.id))continue;
+    if(col.locked)continue;
+    if(wx>=col.x&&wx<=col.x+col.w&&wy>=col.y&&wy<=col.y+col.h)return col;
+  }
+  return null;
+}
+// Where a card dropped at world-y `wy` would land, and the y that puts it
+// there. Returning a y (rather than an index) is what lets the drop reuse
+// the ordinary "sort children by y" rule with no special-casing.
+function _boardsColumnSlot(col,wy,movingId){
+  const kids=_boardsColumnChildren(col).filter(k=>k.id!==movingId);
+  let i=0;
+  for(;i<kids.length;i++){
+    if(wy<kids[i].y+kids[i].h/2)break;
+  }
+  const before=kids[i-1],after=kids[i];
+  const y=after?(before?(before.y+before.h+after.y)/2:after.y-1)
+               :(before?before.y+before.h+1:col.y+_BOARDS_COL_HEAD+_BOARDS_COL_PAD);
+  return{index:i,y,top:after?after.y-_BOARDS_COL_GAP/2:(before?before.y+before.h+_BOARDS_COL_GAP/2:col.y+_BOARDS_COL_HEAD+_BOARDS_COL_PAD)};
+}
+// What each dragged card would join if the gesture ended now. Columns and
+// frames are never themselves children — a container inside a container is
+// a second layout model, and one is enough.
+function _boardsDropTargets(group,movingCols){
+  return group.filter(c=>{
+    if(c.type==='column'||c.type==='frame')return false;
+    // A child travelling WITH its own column (the column was grabbed, or a
+    // frame around it was) has not been dragged anywhere relative to it.
+    // Without this it would look like a drop onto empty canvas — its
+    // column is in movingCols and therefore not a valid target — and every
+    // card would fall out of the column the moment the column was moved.
+    if(c.columnId&&movingCols&&movingCols.has(c.columnId))return false;
+    return true;
+  }).map(card=>{
+    const col=_boardsColumnAt(card.x+card.w/2,card.y+card.h/2,movingCols);
+    return{card,col,slot:col?_boardsColumnSlot(col,card.y+card.h/2,card.id):null};
+  });
+}
+// One line showing where the card will land. Lives inside .board-world, so
+// it is positioned in world coordinates and needs no pan/zoom maths — the
+// same trick the connector layer and the alignment guides use.
+function _boardsShowColumnDrop(drops){
+  const el=document.getElementById('board-col-drop');
+  if(!el)return;
+  const hit=drops.find(d=>d.col);
+  document.querySelectorAll('.board-column.drop-into').forEach(n=>n.classList.remove('drop-into'));
+  if(!hit){el.style.display='none';return;}
+  const host=document.getElementById('board-card-'+hit.col.id);
+  if(host)host.classList.add('drop-into');
+  el.style.display='block';
+  el.style.left=(hit.col.x+_BOARDS_COL_PAD)+'px';
+  el.style.top=hit.slot.top+'px';
+  el.style.width=Math.max(20,hit.col.w-_BOARDS_COL_PAD*2)+'px';
+}
+// Push a column's computed geometry (and its children's) straight into the
+// DOM. Same reasoning as the drag path: structural changes rebuild, pure
+// movement writes styles.
+function _boardsPaintColumnGeometry(col){
+  if(!col)return;
+  const paint=c=>{
+    const el=document.getElementById('board-card-'+c.id);
+    if(!el)return;
+    el.style.left=c.x+'px';el.style.top=c.y+'px';
+    el.style.width=c.w+'px';el.style.height=c.h+'px';
+    _boardsUpdateConnectorsFor(c.id);
+  };
+  paint(col);
+  _boardsColumnChildren(col).forEach(paint);
+}
+function _boardsHideColumnDrop(){
+  const el=document.getElementById('board-col-drop');
+  if(el)el.style.display='none';
+  document.querySelectorAll('.board-column.drop-into').forEach(n=>n.classList.remove('drop-into'));
+}
+// Detaching is a plain field delete, never a write to the column.
+function _boardsLeaveColumn(c){if(c&&c.columnId!=null)delete c.columnId;}
 function _boardsFormatBytes(n){
   if(!n||n<0)return'';
   if(n<1024)return n+' B';
@@ -931,7 +1085,7 @@ function _boardGalleryCardHTML(b,opts){
   return`<div class="board-gallery-card" data-board="${b.id}" onclick="window.boardsOpenFromAll('${b.id}')"${tint?` style="border-top:3px solid ${tint}"`:''}>
     <div class="board-gallery-thumb">
       <div style="position:absolute;transform:scale(${scale});transform-origin:top left">
-        ${cards.filter(c=>c.type==='frame').concat(cards.filter(c=>c.type!=='frame')).map(_boardMiniCardHTML).join('')}
+        ${cards.filter(c=>c.type==='frame'||c.type==='column').concat(cards.filter(c=>c.type!=='frame'&&c.type!=='column')).map(_boardMiniCardHTML).join('')}
       </div>
       ${b.isTemplate?'<span class="board-template-pill">Template</span>':(b.sharedWith&&b.sharedWith.length?'<span class="board-template-pill">Shared</span>':'')}
     </div>
@@ -946,7 +1100,7 @@ function _boardGalleryCardHTML(b,opts){
 }
 function _boardMiniCardHTML(c){
   const base=`position:absolute;left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px;border-radius:6px;overflow:hidden;border:1px solid var(--border)`;
-  if(c.type==='frame')return`<div style="${base};background:rgba(0,0,0,.03)"></div>`;
+  if(c.type==='frame'||c.type==='column')return`<div style="${base};background:rgba(0,0,0,.03)"></div>`;
   if(c.type==='image')return c.imageUrl?`<div style="${base}"><img src="${_boardsEsc(c.imageUrl)}" draggable="false" style="width:100%;height:100%;object-fit:cover"></div>`:`<div style="${base};background:var(--soft)"></div>`;
   if(c.type==='link'||c.type==='file')return`<div style="${base};background:var(--soft)"></div>`;
   if(c.type==='board')return`<div style="${base};background:var(--soft);border-style:dashed"></div>`;
@@ -1075,11 +1229,27 @@ window.boardsAddChildBoard=async function(){
 // multi-document copy with its own half-failed states. Dropping them and
 // saying so is the honest version.
 function _boardsDuplicatePayload(cards,connectors){
-  const src=(cards||[]).filter(c=>c.type!=='board');
+  let src=(cards||[]).filter(c=>c.type!=='board');
   const skipped=(cards||[]).length-src.length;
+  // Copying a column copies what is IN it. A container duplicated empty is
+  // never what anyone meant, and the alternative — a copy whose children
+  // still carry the original's columnId — would put one card in two
+  // columns at once.
+  const have=new Set(src.map(c=>c.id));
+  src.filter(c=>c.type==='column').forEach(col=>{
+    _boardsColumnChildren(col).forEach(k=>{if(!have.has(k.id)){have.add(k.id);src.push(k);}});
+  });
   const clones=_boardsCloneCards(src,0,0);
   const map={};
   src.forEach((c,i)=>{map[c.id]=clones[i].id;});
+  // Remap membership through the same id map the connectors use. A child
+  // whose column was NOT part of the copy is freed rather than left
+  // pointing at the original.
+  clones.forEach(c=>{
+    if(c.columnId==null)return;
+    if(map[c.columnId])c.columnId=map[c.columnId];
+    else delete c.columnId;
+  });
   const conns=(connectors||[]).filter(cn=>cn.free?true:(map[cn.from]&&map[cn.to]))
     .map(cn=>cn.free?{...cn}:{...cn,from:map[cn.from],to:map[cn.to]});
   return{cards:clones,connectors:conns,skipped};
@@ -1317,6 +1487,7 @@ function _renderBoardCanvasHTML(){
         <svg class="board-conn-layer" id="board-conn-layer" width="4000" height="3000"></svg>
         <div class="board-guide board-guide-v" id="board-guide-v"></div>
         <div class="board-guide board-guide-h" id="board-guide-h"></div>
+        <div class="board-col-drop" id="board-col-drop"></div>
         ${_boardsRenderOrder().map(c=>_boardCardHTML(c,canEdit)).join('')}
       </div>
       <div class="board-marquee" id="board-marquee"></div>
@@ -1357,6 +1528,22 @@ function _boardCardHTML(c,canEdit){
   // Frames get their own element entirely: a header strip you can grab,
   // and an outlined region whose body is pointer-events:none so panning,
   // marquee-select and the cards inside it all still work through it.
+  // A column renders like a frame — a grab-able header over a region whose
+  // body is pointer-events:none — but its children are ordinary sibling
+  // cards painted above it, so the body must not swallow their clicks.
+  if(c.type==='column'){
+    const sel=_boardsSelection.has(c.id)?' selected':'';
+    const n=_boardsColumnChildren(c).length;
+    return`<div class="board-column${sel}${c.locked?' locked':''}${c.color?' tint-'+c.color:''}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px">
+      <div class="board-column-head" ${canEdit&&!c.locked?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''} onclick="window.boardsSelectCard('${c.id}',event)">
+        <input type="text" class="board-column-title" value="${_boardsEsc(c.title||'')}" placeholder="Column" ${canEdit&&!c.locked?'':'readonly'} oninput="window.boardsFrameTitle('${c.id}',this.value)" onpointerdown="event.stopPropagation()">
+        <span class="board-column-count">${n}</span>
+        ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete column (cards inside are released onto the board)">✕</button>`:''}
+      </div>
+      ${n?'':'<div class="board-column-empty">Drag cards in</div>'}
+      ${canEdit&&!c.locked?`<div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')" title="Drag to set the column width"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
+    </div>`;
+  }
   if(c.type==='frame'){
     const sel=_boardsSelection.has(c.id)?' selected':'';
     return`<div class="board-frame${sel}${c.locked?' locked':''}${c.color?' tint-'+c.color:''}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px">
@@ -1603,6 +1790,7 @@ const _BOARDS_CHROME_H={head:26,labels:22,reactions:26,caption:24};
 const _BOARDS_MIN_BODY_H={board:66,image:90,file:96,link:96,todo:74,heading:34,text:48};
 function _boardsMinCardH(c){
   if(!c||c.type==='frame')return 60;
+  if(c.type==='column')return c.h||_BOARDS_COL_MIN_H;   // derived by _boardsLayoutColumn
   // A heading's head strip is absolutely positioned over the banner, so it
   // costs the column nothing.
   let h=c.type==='heading'?0:_BOARDS_CHROME_H.head;
@@ -2838,10 +3026,19 @@ window.boardsCardDragStart=function(e,cardId){
   group.filter(g=>g.type==='frame').forEach(f=>{
     _boardsCardsInFrame(f).forEach(x=>{if(!x.locked)withFrames.add(x.id);});
   });
+  // A column carries its children too — but by STORED membership, not by
+  // geometry. A frame inside the group can also pull in a column and its
+  // children; the Set means anything caught twice still moves once.
+  _editCards.filter(x=>withFrames.has(x.id)&&x.type==='column').forEach(col=>{
+    _boardsColumnChildren(col).forEach(k=>{if(!k.locked)withFrames.add(k.id);});
+  });
   group=_editCards.filter(x=>withFrames.has(x.id));
   if(!group.length)return;
   const origins=group.map(x=>({card:x,ox:x.x,oy:x.y}));
   const others=_editCards.filter(x=>!group.some(g=>g.id===x.id));
+  // A column cannot be dropped into itself, or into a column travelling
+  // with it.
+  const movingCols=new Set(group.filter(x=>x.type==='column').map(x=>x.id));
   const head=e.currentTarget;
   const startX=e.clientX,startY=e.clientY;
   let pushed=false;
@@ -2875,14 +3072,34 @@ window.boardsCardDragStart=function(e,cardId){
       if(el){el.style.left=o.card.x+'px';el.style.top=o.card.y+'px';}
       _boardsUpdateConnectorsFor(o.card.id);
     });
+    _boardsShowColumnDrop(_boardsDropTargets(group,movingCols));
   }
   function up(){
     head.removeEventListener('pointermove',move);head.removeEventListener('pointerup',up);
     _boardsHideGuides();
+    _boardsHideColumnDrop();
     // `pushed` is set on the first real pointermove, so it is exactly
     // "this was a drag, not a click".
     if(pushed)_boardsSuppressClick=true;
-    if(pushed)_boardsSaveDebounced();
+    if(pushed){
+      // Where a card ENDS decides which column it belongs to. Joining
+      // writes only the dragged card's columnId and its y — the column
+      // document is never touched, which is what keeps two people adding
+      // to the same column from overwriting each other.
+      const drops=_boardsDropTargets(group,movingCols);
+      let structural=false;
+      drops.forEach(d=>{
+        if(d.col){
+          if(d.card.columnId!==d.col.id){d.card.columnId=d.col.id;structural=true;}
+          d.card.y=d.slot.y;
+        }else if(d.card.columnId!=null){
+          _boardsLeaveColumn(d.card);structural=true;
+        }
+      });
+      const moved=_boardsLayoutColumns();
+      if(structural||moved)_boardsRenderCanvasAndWire();
+      _boardsSaveDebounced();
+    }
   }
   head.addEventListener('pointermove',move);
   head.addEventListener('pointerup',up);
@@ -2894,16 +3111,37 @@ window.boardsResizeStart=function(e,cardId){
   const startX=e.clientX,startY=e.clientY,origW=c.w,origH=c.h;
   let pushed=false;
   const handle=e.currentTarget;handle.setPointerCapture(e.pointerId);
+  // A COLUMN's height is derived from its contents and a CHILD's width is
+  // set by its column, so neither is draggable — offering a handle that
+  // silently snaps back is worse than not offering that axis at all.
+  const col=_boardsIsColumn(c),inCol=!col&&!!_boardsColumnOf(c);
   function move(ev){
     if(_boardsPinch)return;
     if(!pushed){_boardsPushUndo();pushed=true;}
-    c.w=Math.max(90,origW+(ev.clientX-startX)/b.zoom);
-    c.h=Math.max(_boardsMinCardH(c),origH+(ev.clientY-startY)/b.zoom);
+    if(!inCol)c.w=Math.max(col?140:90,origW+(ev.clientX-startX)/b.zoom);
+    if(!col)c.h=Math.max(_boardsMinCardH(c),origH+(ev.clientY-startY)/b.zoom);
+    if(col||inCol){
+      // Reflow by writing styles, not by rebuilding the canvas — a full
+      // render per pointermove would redraw every card and connector on a
+      // 46-card board for what is a handful of style writes.
+      _boardsLayoutColumns();
+      _boardsPaintColumnGeometry(col?c:_boardsColumnOf(c));
+      return;
+    }
     const el=document.getElementById('board-card-'+cardId);
     if(el){el.style.width=c.w+'px';el.style.height=c.h+'px';}
     _boardsUpdateConnectorsFor(cardId);
   }
-  function up(){handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',up);_boardsSaveDebounced();}
+  function up(){
+    handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',up);
+    if(pushed){
+      _boardsLayoutColumns();
+      // One rebuild at the END, so the empty-state label and the child
+      // count in the header catch up with whatever the reflow did.
+      _boardsRenderCanvasAndWire();
+    }
+    _boardsSaveDebounced();
+  }
   handle.addEventListener('pointermove',move);
   handle.addEventListener('pointerup',up);
 };
@@ -3010,6 +3248,7 @@ function _boardsRailItems(){
       {act:'file',label:'File',icon:'file'},
       {act:'add:heading',label:'Heading',icon:'heading'},
       {act:'add:frame',label:'Frame',icon:'frame'},
+      {act:'add:column',label:'Column',icon:'stack'},
       {act:'add:board',label:'Board',icon:'board'},
       {act:'line',label:'Line',icon:'line',on:_boardsLineMode},
       {sep:true},
@@ -3051,7 +3290,7 @@ function _boardsRailItems(){
   if(!canEdit)return items;
   if(sel.length>1){
     items.push({sep:true});
-    items.push({act:'stack',label:'Stack',icon:'stack'});
+    items.push({act:'stack',label:'Column',icon:'stack'});
     items.push({act:'grid',label:'Grid',icon:'grid'});
     items.push({act:'wrapframe',label:'Frame',icon:'frame'});
   }
@@ -3260,17 +3499,58 @@ window.boardsSetColor=function(color){
 // alignment without hand-placing every card) with no new data model, and
 // compose with frames: stack, then draw a labelled frame around the
 // result. If a true container is wanted later it's a separate build.
+// Milanote's "Group into Column". Until Sept 2026 this was an arrange-once
+// action that only lined the cards up; it builds a real container now, so
+// the group keeps its order, moves as one and accepts drops.
 window.boardsStackSelection=function(){
   if(!_boardsCanEdit(_editBoard))return;
-  const sel=_boardsSelectedCards().filter(c=>!c.locked&&c.type!=='frame');
+  const sel=_boardsSelectedCards().filter(c=>!c.locked&&c.type!=='frame'&&c.type!=='column');
   if(sel.length<2)return showToast('Select at least two cards');
   _boardsPushUndo();
   const ordered=sel.slice().sort((a,b)=>a.y-b.y);
-  const x=Math.min(...ordered.map(c=>c.x));
-  let y=Math.min(...ordered.map(c=>c.y));
-  ordered.forEach(c=>{c.x=x;c.y=y;y+=c.h+12;});
+  const col=_boardsNewCard('column');
+  col.x=Math.min(...ordered.map(c=>c.x))-_BOARDS_COL_PAD;
+  col.y=Math.min(...ordered.map(c=>c.y))-_BOARDS_COL_HEAD-_BOARDS_COL_PAD;
+  col.w=Math.max(...ordered.map(c=>c.w))+_BOARDS_COL_PAD*2;
+  // Ordered by y already, and layout re-derives order from y — so simply
+  // stamping increasing y values here is the whole "insert in this order".
+  ordered.forEach((c,i)=>{c.columnId=col.id;c.y=col.y+_BOARDS_COL_HEAD+i;});
+  _editCards.push(col);
+  _boardsLayoutColumn(col);
+  _boardsSetSelection([col.id]);
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
+  _boardsLogBoardActivity('grouped '+ordered.length+' cards into a column');
+  const el=document.querySelector('#board-card-'+col.id+' .board-column-title');
+  if(el)el.focus();
+};
+// Ungroup: the column goes, the cards stay exactly where they are.
+window.boardsReleaseColumn=function(){
+  if(!_boardsCanEdit(_editBoard))return;
+  const col=_boardsSelOne();
+  if(!col||col.type!=='column')return;
+  window.boardsDeleteCard(col.id);
+};
+// The destructive one, and the only place it is offered — separate from ✕
+// and from Delete, both of which keep the cards.
+window.boardsDeleteColumnAndCards=function(){
+  if(!_boardsCanEdit(_editBoard))return;
+  const col=_boardsSelOne();
+  if(!col||col.type!=='column')return;
+  const kids=_boardsColumnChildren(col).filter(k=>!k.locked);
+  const locked=_boardsColumnChildren(col).length-kids.length;
+  if(!confirm('Delete this column AND '+kids.length+' card'+(kids.length===1?'':'s')+' inside it? Ctrl+Z undoes it.'))return;
+  _boardsPushUndo();
+  const ids=new Set(kids.map(k=>k.id));ids.add(col.id);
+  _boardsColumnChildren(col).forEach(k=>{if(!ids.has(k.id))_boardsLeaveColumn(k);});
+  _editCards=_editCards.filter(c=>!ids.has(c.id));
+  _editConnectors=_editConnectors.filter(cn=>!ids.has(cn.from)&&!ids.has(cn.to));
+  ids.forEach(id=>_boardsSelection.delete(id));
+  _boardsLayoutColumns();
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  if(locked)showToast('Kept '+locked+' locked card'+(locked===1?'':'s'));
+  _boardsLogBoardActivity('deleted a column and '+kids.length+' cards');
 };
 window.boardsGridSelection=function(){
   if(!_boardsCanEdit(_editBoard))return;
@@ -3520,6 +3800,7 @@ window.boardsAddCard=function(type){
   const p=_boardsPlacementPoint();
   nc.x=p.x;nc.y=p.y;
   _editCards.push(nc);
+  if(type==='column')_boardsLayoutColumn(nc);
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
   _boardsLogBoardActivity('added a '+(type==='todo'?'to-do':type)+' card');
@@ -3545,12 +3826,22 @@ window.boardsDeleteCard=function(id){
   if(c&&c.type==='board'&&c.boardId&&_boardsIsHome(_editBoard)){
     window.boardsTrashLinkedBoard(c.boardId,id);return;
   }
+  // Deleting a container must never destroy content. The cards are
+  // RELEASED where they currently sit; "Delete column and its cards" is a
+  // separate, confirmed action for when you really mean both.
+  let released=0;
+  if(c&&c.type==='column'){
+    released=_boardsColumnChildren(c).length;
+    _boardsColumnChildren(c).forEach(_boardsLeaveColumn);
+  }
   _boardsPushUndo();
   _editCards=_editCards.filter(x=>x.id!==id);
   _editConnectors=_editConnectors.filter(cn=>cn.from!==id&&cn.to!==id);
   _boardsSelection.delete(id);
+  _boardsLayoutColumns();
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
+  if(released)showToast('Column removed — '+released+' card'+(released===1?'':'s')+' kept on the board');
   if(c&&c.type==='board'){
     _boardsSyncLocalCards();
     showToast('Link removed — the sub-board itself is back in the boards list');
@@ -3566,10 +3857,19 @@ window.boardsDeleteSelection=function(){
   if(!removable.length){showToast(sel.length?'Those cards are locked':'Nothing selected');return;}
   _boardsPushUndo();
   const ids=new Set(removable.map(c=>c.id));
+  // Same rule as the single delete: a column goes, its cards stay. A child
+  // being deleted alongside its column is already in `ids`, so releasing
+  // first costs nothing.
+  let released=0;
+  removable.filter(c=>c.type==='column').forEach(col=>{
+    _boardsColumnChildren(col).forEach(k=>{if(!ids.has(k.id)){_boardsLeaveColumn(k);released++;}});
+  });
   _editCards=_editCards.filter(c=>!ids.has(c.id));
   _editConnectors=_editConnectors.filter(cn=>!ids.has(cn.from)&&!ids.has(cn.to));
   ids.forEach(id=>_boardsSelection.delete(id));
+  _boardsLayoutColumns();
   _boardsRenderCanvasAndWire();
+  if(released)showToast(released+' card'+(released===1?'':'s')+' kept on the board');
   _boardsSaveDebounced();
   if(removable.some(c=>c.type==='board')){
     _boardsSyncLocalCards();
@@ -3838,7 +4138,7 @@ function _boardsRenderMinimap(){
   inner.innerHTML=_boardsRenderOrder().map(c=>{
     const x=(c.x-ox)*scale,y=(c.y-oy)*scale;
     const cw=Math.max(2,c.w*scale),ch=Math.max(2,c.h*scale);
-    const cls='mm-card'+(c.type==='frame'?' mm-frame':'')+(c.type==='image'?' mm-image':'');
+    const cls='mm-card'+(c.type==='frame'||c.type==='column'?' mm-frame':'')+(c.type==='image'?' mm-image':'');
     return`<i class="${cls}" style="left:${x}px;top:${y}px;width:${cw}px;height:${ch}px"></i>`;
   }).join('');
   _boardsUpdateMinimapView();
@@ -4128,10 +4428,21 @@ function _boardsRoundRect(ctx,x,y,w,h,r){
 function _boardsExportKind(c){
   return c.type==='image'?'Image':c.type==='link'?'Link':c.type==='file'?'File'
     :c.type==='board'?'Sub-board':c.type==='todo'?'To-do':c.type==='frame'?'Section'
+    :c.type==='column'?'Column'
     :c.type==='heading'?'Heading':'Note';
 }
 function _boardsDrawCard(ctx,c,img,P){
   const stroke=c.color&&P.tint[c.color]?P.tint[c.color]:P.border;
+  if(c.type==='column'){
+    ctx.fillStyle=P.soft;
+    _boardsRoundRect(ctx,c.x,c.y,c.w,c.h,12);ctx.fill();
+    ctx.strokeStyle=stroke;ctx.lineWidth=1.5;
+    _boardsRoundRect(ctx,c.x,c.y,c.w,c.h,12);ctx.stroke();
+    ctx.fillStyle=P.muted;
+    ctx.font='700 11px '+P.font;
+    ctx.fillText(String(c.title||'').toUpperCase()||'COLUMN',c.x+10,c.y+19);
+    return;
+  }
   if(c.type==='frame'){
     ctx.strokeStyle=stroke;ctx.lineWidth=1.5;
     _boardsRoundRect(ctx,c.x,c.y,c.w,c.h,12);ctx.stroke();
@@ -4329,7 +4640,7 @@ window.boardsExportPDF=async function(){
       :c.type==='link'?((c.linkTitle||'')+(c.linkUrl?'  —  '+c.linkUrl:''))
       :c.type==='file'?(c.name||c.fileName||'')
       :c.type==='board'?(c.boardTitle||'')
-      :c.type==='frame'?(c.title||'')
+      :(c.type==='frame'||c.type==='column')?(c.title||'')
       :(c.text||'')).replace(/\s+/g,' ').trim()
   })).filter(r=>r.text);
   await window.printDocument({
@@ -5311,8 +5622,9 @@ function _boardsCtxRun(act){
       const s=_boardsSelectedCards();
       if(s.length!==1)break;
       const c=s[0];
-      if(c.type==='frame'){
-        const el=document.querySelector('#board-card-'+c.id+' .board-frame-title');
+      if(c.type==='frame'||c.type==='column'){
+        const cls=c.type==='column'?'.board-column-title':'.board-frame-title';
+        const el=document.querySelector('#board-card-'+c.id+' '+cls);
         if(el){el.focus();try{el.select();}catch(e){}}
         break;
       }
@@ -5339,10 +5651,31 @@ function _boardsCtxRun(act){
     }
     case'selectinside':{
       const s=_boardsSelectedCards();
-      if(s.length!==1||s[0].type!=='frame')break;
-      const inside=_boardsCardsInFrame(s[0]).map(c=>c.id);
-      if(!inside.length){showToast('Nothing inside that frame');break;}
+      if(s.length!==1)break;
+      // A frame answers this geometrically, a column from its stored
+      // membership — the one place the two containers genuinely differ.
+      const inside=(s[0].type==='column'?_boardsColumnChildren(s[0])
+        :s[0].type==='frame'?_boardsCardsInFrame(s[0]):[]).map(c=>c.id);
+      if(!inside.length){showToast('Nothing inside that '+(s[0].type==='column'?'column':'frame'));break;}
       _boardsSetSelection(inside);
+      break;
+    }
+    case'col-release':window.boardsReleaseColumn();break;
+    case'col-delete-all':window.boardsDeleteColumnAndCards();break;
+    case'col-out':{
+      const s=_boardsSelectedCards().filter(c=>_boardsColumnOf(c));
+      if(!s.length)break;
+      _boardsPushUndo();
+      // Set down to the right of the column it came from, so it does not
+      // land underneath and read as having vanished.
+      s.forEach(c=>{
+        const col=_boardsColumnOf(c);
+        if(col)c.x=col.x+col.w+_BOARDS_COL_GAP*2;
+        _boardsLeaveColumn(c);
+      });
+      _boardsLayoutColumns();
+      _boardsRenderCanvasAndWire();
+      _boardsSaveDebounced();
       break;
     }
     case'tickall':case'untickall':{
@@ -5644,6 +5977,7 @@ function _boardsCanvasCtxItems(canEdit){
     {act:'file',label:'New file…'},
     {act:'add:heading',label:'New heading'},
     {act:'add:frame',label:'New frame'},
+    {act:'add:column',label:'New column'},
     {act:'add:board',label:'New board'},
     {act:'line',label:_boardsLineMode?'Line mode off':'Draw a line'},
     {sep:true},
@@ -5681,13 +6015,16 @@ function _boardsCardCtxItems(canEdit){
     // The reverse of dragging one out of the tray: take it off the board
     // but keep it. Frames and sub-boards are not stashable — a frame has
     // no content of its own, and a board link belongs with its parent.
-    if(one.type!=='frame'&&one.type!=='board'){
+    if(one.type!=='frame'&&one.type!=='board'&&one.type!=='column'){
       items.push({act:'stash',label:'Move to Unsorted'});
     }
   }
 
   // ── type-specific ──
   const typed=[];
+  if(one&&canEdit&&_boardsColumnOf(one)){
+    typed.push({act:'col-out',label:'Take out of column'});
+  }
   if(one&&canEdit&&one.type!=='frame'&&one.type!=='heading'){
     typed.push({act:'rename',label:one.name?'Rename card':'Name this card',hint:'F2'});
   }
@@ -5713,6 +6050,13 @@ function _boardsCardCtxItems(canEdit){
     }else if(one.type==='board'&&one.boardId){
       typed.push({act:'open-board',label:'Open this board'});
       typed.push({act:'copyasset',label:'Copy link to board'});
+    }else if(one.type==='column'){
+      if(canEdit)typed.push({act:'rename',label:'Rename column',hint:'Return'});
+      typed.push({act:'selectinside',label:'Select contents'});
+      if(canEdit){
+        typed.push({act:'col-release',label:'Ungroup (keep the cards)'});
+        typed.push({act:'col-delete-all',label:'Delete column and its cards',danger:true});
+      }
     }else if(one.type==='frame'){
       if(canEdit)typed.push({act:'rename',label:'Rename frame',hint:'Return'});
       typed.push({act:'selectinside',label:'Select contents'});

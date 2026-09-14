@@ -702,6 +702,35 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 /* Frames: a titled region behind the cards. The body is pointer-events
    transparent so panning, marquee-select and the cards inside all still
    work through it; only the header strip and resize grip are interactive. */
+/* A column is the one REAL container (see CLAUDE.md). Like a frame it is a
+   grab-able header over a region whose body is pointer-events:none — its
+   children are ordinary sibling cards painted ABOVE it, so a body that
+   swallowed clicks would make every card inside unusable. */
+.board-column{position:absolute;border:1.5px solid var(--border);border-radius:12px;
+  background:var(--soft);pointer-events:none;transition:border-color .12s,box-shadow .12s}
+.board-column.selected{outline:2px solid var(--text);outline-offset:1px}
+.board-column.drop-into{border-color:var(--text);box-shadow:0 0 0 3px var(--hover)}
+.board-column-head{position:absolute;left:-1px;right:-1px;top:-1px;height:30px;display:flex;
+  align-items:center;gap:6px;padding:0 6px 0 10px;background:var(--surface);
+  border:1px solid var(--border);border-radius:12px 12px 0 0;cursor:grab;pointer-events:auto}
+.board-column.locked .board-column-head{cursor:default;background:var(--accent-warning-soft)}
+.board-column-title{flex:1;min-width:0;border:none;outline:none;background:transparent;
+  font-family:inherit;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.board-column-count{flex-shrink:0;font-size:10px;font-weight:700;color:var(--muted);
+  background:var(--surface-2);border-radius:9px;padding:1px 6px;min-width:18px;text-align:center}
+.board-column-empty{position:absolute;left:0;right:0;top:38px;text-align:center;
+  font-size:11px;color:var(--muted);opacity:.7;pointer-events:none}
+.board-column .board-resize-handle{pointer-events:auto;cursor:ew-resize}
+.board-column.tint-red{border-color:var(--accent-urgent)}
+.board-column.tint-amber{border-color:var(--accent-warning)}
+.board-column.tint-green{border-color:var(--accent-success)}
+.board-column.tint-blue{border-color:var(--cat-notes)}
+.board-column.tint-purple{border-color:var(--cat-boards)}
+/* Where a dragged card will land. Inside .board-world, so it is positioned
+   in world coordinates and needs no pan/zoom maths — the same trick the
+   connector layer and the alignment guides use. */
+.board-col-drop{position:absolute;height:3px;border-radius:2px;background:var(--text);
+  display:none;pointer-events:none;z-index:3}
 .board-frame{position:absolute;border:1.5px solid var(--border);border-radius:12px;background:rgba(0,0,0,.025);pointer-events:none}
 .board-frame.selected{outline:2px solid var(--text);outline-offset:1px}
 .board-frame-head{position:absolute;left:-1px;right:-1px;top:-1px;height:30px;display:flex;align-items:center;gap:4px;padding:0 6px 0 10px;background:var(--soft);border:1px solid var(--border);border-radius:12px 12px 0 0;cursor:grab;pointer-events:auto}

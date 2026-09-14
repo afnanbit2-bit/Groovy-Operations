@@ -163,7 +163,7 @@ function loadApp(opts){
   const state={
     viewportW:opts.viewportW||1000,viewportH:opts.viewportH||600,
     seq:1,body:[],listeners:{},activeElement:null,execCommands:[],
-    toasts:[],activity:[],vibrations:[],writes:[],
+    toasts:[],activity:[],vibrations:[],writes:[],confirms:[],prompts:[],
     txCount:0,plainWriteCount:0
   };
   const {document,nodes}=makeDom(state);
@@ -204,6 +204,11 @@ function loadApp(opts){
     currentPage:opts.currentPage||'board-canvas',
     moodBoards:[],_boardsTrash:[],
     showToast(m){state.toasts.push(String(m));},
+    // The app's two blocking dialogs. Recorded so a test can assert an
+    // action ASKED, and answered "yes" by default — a test that wants the
+    // cancel path overrides confirm through `globals`.
+    confirm(m){state.confirms.push(String(m));return true;},
+    prompt(m,d){state.prompts.push(String(m));return d===undefined?'':d;},
     logActivity(a,d){state.activity.push({action:a,detail:d});},
     uploadToCloudinary:async()=>'https://res.cloudinary.com/deww4lpym/image/upload/v1/up.jpg',
     gvSkeleton:()=>'<div class="skeleton"></div>',

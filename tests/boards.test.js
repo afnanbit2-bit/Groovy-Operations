@@ -838,5 +838,153 @@ module.exports=function(){
       run(`_boardsPreviewCard({type:'file',fileUrl:'https://x/y/b.pdf',fileName:'b.pdf'}).fileUrl`),'https://x/y/b.pdf');
   }
 
+  // ── columns: the one real container ───────────────────────────────────
+  {
+    const app=loadApp({files:FILES,session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'}});
+    const {run}=app;
+    const boot=()=>run(`session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};
+      _editBoard={id:'B',title:'T',visibility:'shared',ownerUid:'u1',zoom:1,panX:0,panY:0};
+      _editConnectors=[];_boardsSelection=new Set();_boardsPeers=[];moodBoards=[];boardsLoaded=true;
+      _editCards=[
+        {id:'col',type:'column',title:'Fabric',x:100,y:100,w:280,h:160},
+        {id:'a',type:'text',text:'one',x:0,y:0,w:170,h:100,columnId:'col'},
+        {id:'b',type:'text',text:'two',x:0,y:0,w:200,h:120,columnId:'col'},
+        {id:'free',type:'text',text:'loose',x:800,y:800,w:170,h:100}
+      ];_boardsLayoutColumns();`);
+    boot();
+
+    s.section('membership is stored on the CHILD, never on the column');
+    // An items:[] array on the column would lose an insert under the
+    // Stage 6 per-card merge; a columnId per child cannot.
+    s.ok('the column carries no membership field',
+      run(`_editCards[0].items===undefined&&_editCards[0].cards===undefined`));
+    s.eq('children are found by columnId',run(`_boardsColumnChildren(_editCards[0]).map(c=>c.id).join(',')`),'a,b');
+
+    s.section('layout derives position, width and the column height');
+    s.eq('children share the column x',run(`_editCards[1].x+','+_editCards[2].x`),'112,112');
+    s.eq('and are stacked in order',run(`_editCards[1].y+','+_editCards[2].y`),'142,252');
+    s.eq('width comes from the column, not the card',run(`_editCards[1].w+','+_editCards[2].w`),'256,256');
+    s.eq('height is derived from the contents',run(`_editCards[0].h`),284);
+    // Idempotence is load-bearing: opening a board must not mark every
+    // card as locally changed and trigger a write for a correct layout.
+    s.eq('running layout again changes nothing',run(`_boardsLayoutColumns()`),false);
+
+    s.section('order is derived from y, so a merge needs no order field');
+    run(`_editCards[2].y=110`);   // as if dropped above 'a'
+    run(`_boardsLayoutColumns()`);
+    s.eq('the moved card is first now',run(`_boardsColumnChildren(_editCards[0]).map(c=>c.id).join(',')`),'b,a');
+    run(`_editCards[1].y=_editCards[2].y`);
+    s.eq('a y tie still orders deterministically',
+      run(`_boardsColumnChildren(_editCards[0]).map(c=>c.id).join(',')`),'a,b');
+
+    s.section('a stale columnId is inert, never a lost card');
+    boot();
+    run(`_editCards.push({id:'ghost',type:'text',text:'x',x:5,y:5,w:170,h:100,columnId:'gone'})`);
+    s.eq('it belongs to no column',run(`_boardsColumnOf(_editCards[4])===null`),true);
+    s.eq('and it is not dragged into anybody else',run(`_boardsColumnChildren(_editCards[0]).length`),2);
+    s.eq('layout leaves it exactly where it is',run(`(_boardsLayoutColumns(),_editCards[4].x+','+_editCards[4].y)`),'5,5');
+
+    s.section('deleting a column RELEASES its cards');
+    boot();
+    run(`window.boardsDeleteCard('col')`);
+    s.eq('the column is gone',run(`_editCards.filter(c=>c.type==='column').length`),0);
+    s.eq('both cards survive',run(`_editCards.filter(c=>c.id==='a'||c.id==='b').length`),2);
+    s.ok('and carry no dangling membership',run(`_editCards.every(c=>c.columnId===undefined)`));
+
+    s.section('deleting a SELECTION containing a column releases too');
+    boot();
+    run(`_boardsSetSelection(['col'])`);
+    run(`window.boardsDeleteSelection()`);
+    s.eq('cards kept',run(`_editCards.filter(c=>c.id==='a'||c.id==='b').length`),2);
+    s.ok('membership cleared',run(`_editCards.every(c=>c.columnId===undefined)`));
+
+    s.section('and there is a separate, confirmed way to delete both');
+    boot();
+    run(`_boardsSetSelection(['col'])`);
+    run(`window.boardsDeleteColumnAndCards()`);   // harness confirm() returns true
+    s.eq('column and children all gone',run(`_editCards.map(c=>c.id).join(',')`),'free');
+
+    s.section('Group into Column builds a real container');
+    boot();
+    run(`_editCards=[
+      {id:'x',type:'text',text:'1',x:300,y:400,w:170,h:100},
+      {id:'y',type:'text',text:'2',x:320,y:200,w:210,h:80}
+    ];_boardsSelection=new Set(['x','y']);`);
+    run(`window.boardsStackSelection()`);
+    const col=run(`_editCards.find(c=>c.type==='column')`);
+    s.ok('a column card was created',!!col);
+    s.eq('holding both, top-to-bottom by where they were',
+      run(`_boardsColumnChildren(_editCards.find(c=>c.type==='column')).map(c=>c.id).join(',')`),'y,x');
+    s.eq('the column is wide enough for the widest card',
+      run(`_editCards.find(c=>c.type==='column').w`),210+24);
+
+    s.section('a container never nests inside another container');
+    boot();
+    s.eq('a column is not a drop target for itself',
+      run(`_boardsColumnAt(200,200,new Set(['col']))===null`),true);
+    s.eq('and columns/frames are never drop candidates',
+      run(`_boardsDropTargets([_editCards[0],{id:'f',type:'frame',x:0,y:0,w:10,h:10}],new Set()).length`),0);
+
+    s.section('moving a column does NOT tip its cards out');
+    // The bug this guards: the children travel WITH the column, so their
+    // own column is in movingCols and therefore not a valid target — read
+    // naively that is "dropped on empty canvas", and every card falls out.
+    boot();
+    s.eq('children travelling with their column are not re-homed',
+      run(`_boardsDropTargets(_editCards.filter(c=>c.columnId==='col'),new Set(['col'])).length`),0);
+    s.eq('but a loose card still is',
+      run(`_boardsDropTargets([_editCards[3]],new Set(['col'])).length`),1);
+
+    s.section('a card dropped on a column joins it at the slot it landed in');
+    boot();
+    const drop=run(`(()=>{
+      const f=_editCards[3];
+      f.x=150;f.y=240;   // between the two children
+      const d=_boardsDropTargets([f],new Set())[0];
+      return d.col.id+'|'+d.slot.index;
+    })()`);
+    s.eq('target column and index',drop,'col|1');
+
+    s.section('duplicating a column copies what is inside it');
+    boot();
+    const dup=run(`JSON.stringify((()=>{
+      const p=_boardsDuplicatePayload([_editCards[0]],[]);
+      const nc=p.cards.find(c=>c.type==='column');
+      return{n:p.cards.length,kids:p.cards.filter(c=>c.columnId===nc.id).length,
+             stale:p.cards.filter(c=>c.columnId&&c.columnId==='col').length};
+    })())`);
+    s.eq('three cards, two of them children, none pointing at the original',
+      dup,'{"n":3,"kids":2,"stale":0}');
+    const orphan=run(`JSON.stringify((()=>{
+      const p=_boardsDuplicatePayload([_editCards[1]],[]);
+      return p.cards.map(c=>c.columnId===undefined);
+    })())`);
+    s.eq('copying a child alone frees the copy',orphan,'[true]');
+
+    s.section('the menu offers the container actions, and only on a column');
+    boot();
+    run(`_boardsSetSelection(['col'])`);
+    const m=run(`JSON.stringify(_boardsCardCtxItems(true).map(i=>i.act||'').filter(Boolean))`);
+    s.ok('ungroup',/col-release/.test(m));
+    s.ok('delete both, marked dangerous',/col-delete-all/.test(m));
+    s.ok('select contents',/selectinside/.test(m));
+    s.ok('a column is never stashable to Unsorted',!/stash/.test(m));
+    run(`_boardsSetSelection(['a'])`);
+    const m2=run(`JSON.stringify(_boardsCardCtxItems(true).map(i=>i.act||'').filter(Boolean))`);
+    s.ok('a child can be taken out',/col-out/.test(m2));
+    run(`_boardsSetSelection(['free'])`);
+    s.ok('a loose card cannot',
+      !/col-out/.test(run(`JSON.stringify(_boardsCardCtxItems(true).map(i=>i.act||''))`)));
+
+    s.section('select contents reads membership, not geometry');
+    boot();
+    run(`_boardsSetSelection(['col']);_boardsCtxRun('selectinside')`);
+    s.eq('exactly the children',run(`[..._boardsSelection].sort().join(',')`),'a,b');
+
+    s.section('columns paint behind their children');
+    s.eq('render order puts the column before its cards',
+      run(`_boardsRenderOrder().map(c=>c.id).join(',')`),'col,a,b,free');
+  }
+
   return s;
 };

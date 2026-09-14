@@ -112,6 +112,31 @@ const FRAGMENTS={
   // Download buttons sit inside a body that is also a drag handle. The
   // hit-test is the real value here: these two buttons are the exact
   // pattern (a control inside a drag surface) that made the delete X inert.
+  // A column and its children: the derived layout, measured. Guards the
+  // geometry (nothing clipped out of view, every control reachable) and
+  // the header strip, which is the only interactive part of the container.
+  //
+  // What it does NOT prove, checked by deliberately removing the rule: the
+  // column's `pointer-events:none`. The children are painted ABOVE the
+  // column as later siblings, so elementFromPoint reaches them either way.
+  // That rule is there so panning and marquee-select work THROUGH the
+  // column's background, which is behaviour no layout measurement sees.
+  'boards — a column and its cards':()=>{
+    const app=loadApp({files:['js/boards.js']});
+    app.run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
+      _editConnectors=[];_boardsSelection=new Set();moodBoards=[];
+      _editCards=[
+        {id:'col',type:'column',title:'Winter fabric',x:20,y:20,w:260,h:160},
+        {id:'a',type:'text',text:'Cotton drill 8.5oz',x:0,y:0,w:170,h:90,columnId:'col'},
+        {id:'b',type:'file',fileName:'swatch-card.pdf',fileSize:20480,
+         fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/s.pdf',x:0,y:0,w:170,h:130,columnId:'col'}
+      ];
+      _boardsLayoutColumns();`);
+    let html=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`);
+    html=html.replace(/(id="board-txt-a"[^>]*>)/,'$1Cotton drill 8.5oz');
+    return Promise.resolve(
+      '<div style="position:relative;overflow:hidden;height:600px;width:100%">'+html+'</div>');
+  },
   'boards — a card wearing labels, reactions and captions':()=>{
     const app=loadApp({files:['js/boards.js']});
     app.run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
