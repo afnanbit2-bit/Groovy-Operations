@@ -719,5 +719,124 @@ module.exports=function(){
       !/class="tool-btn" onclick="window\.boardsResetView\(\)"/.test(bar));
   }
 
+  // ── Home is a board ───────────────────────────────────────────────────
+  {
+    const app=loadApp({files:FILES,session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'}});
+    const {run}=app;
+    run(`session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};
+      boardsLoaded=true;_boardsTrash=[];_editConnectors=[];_boardsSelection=new Set();
+      moodBoards=[
+        {id:'H',isHome:true,ownerUid:'u1',title:'Home',cards:[],createdAt:20},
+        {id:'H2',isHome:true,ownerUid:'u1',title:'Home',cards:[],createdAt:10},
+        {id:'A',title:'Winter Drop',ownerUid:'u1',visibility:'shared',cards:[],updatedAt:5},
+        {id:'B',title:'Fabric refs',ownerUid:'u2',visibility:'shared',cards:[],updatedAt:9},
+        {id:'SUB',title:'Nested',ownerUid:'u1',visibility:'shared',parentId:'A',cards:[],updatedAt:1}
+      ];
+      moodBoards[2].cards=[{id:'link',type:'board',boardId:'SUB',x:0,y:0,w:200,h:104}];`);
+
+    s.section('one Home per person, chosen deterministically');
+    s.eq('the oldest wins, so two tabs agree',run(`_boardsMyHome().id`),'H2');
+    s.ok('and it knows a home when it sees one',run(`_boardsIsHome({isHome:true})`)===true);
+
+    s.section('auto-place puts every unplaced board on Home');
+    run(`_editBoard={id:'H2',isHome:true,ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};_editCards=[]`);
+    const n=run(`_boardsHomeAutoPlace()`);
+    s.eq('two root boards placed',n,2);
+    s.eq('and NOT the nested one, nor any Home',
+      run(`_editCards.map(c=>c.boardId).sort().join(',')`),'A,B');
+    s.eq('running it again places nothing',run(`_boardsHomeAutoPlace()`),0);
+    s.ok('cards are laid out apart from each other',
+      run(`_editCards[0].x!==_editCards[1].x||_editCards[0].y!==_editCards[1].y`));
+
+    s.section('a board nested under a real parent still lists at root elsewhere');
+    // Placing a board on Home must NOT make it "nested" — otherwise every
+    // board would vanish from All boards the moment Home picked it up.
+    s.ok('SUB is nested, A and B are not',
+      run(`(n=>n.has('SUB')&&!n.has('A')&&!n.has('B'))(_boardsNestedIds())`));
+
+    s.section('Home reconciles itself on open');
+    run(`_editCards=[
+      {id:'c1',type:'board',boardId:'A',x:0,y:0,w:200,h:124},
+      {id:'c2',type:'board',boardId:'A',x:300,y:0,w:200,h:124},
+      {id:'c3',type:'board',boardId:'B',x:0,y:200,w:200,h:124}];
+      _editConnectors=[{from:'c2',to:'c3'}]`);
+    s.eq('a duplicate card for one board is collapsed',run(`_boardsHomeDedupe()`),1);
+    s.eq('keeping the first',run(`_editCards.map(c=>c.id).join(',')`),'c1,c3');
+    s.eq('and dropping connectors that pointed at the removed card',run(`_editConnectors.length`),0);
+    run(`_boardsTrash=[{id:'B',title:'Fabric refs',deletedAt:1}];moodBoards=moodBoards.filter(b=>b.id!=='B')`);
+    s.eq('a trashed board loses its card',run(`_boardsHomePruneTrashed()`),1);
+    s.eq('leaving the rest alone',run(`_editCards.map(c=>c.boardId).join(',')`),'A');
+    // The safety rule: a board merely MISSING from moodBoards (one of the
+    // three loadBoardsData queries failed) must never be pruned, or a
+    // partial load would empty somebody's Home.
+    run(`_boardsTrash=[];moodBoards=moodBoards.filter(b=>b.id!=='A')`);
+    s.eq('but a board that is merely absent is kept',run(`_boardsHomePruneTrashed()`),0);
+    s.eq('the card survives a partial load',run(`_editCards.length`),1);
+  }
+
+  {
+    const app=loadApp({files:FILES,session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'}});
+    const {run}=app;
+    run(`session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};boardsLoaded=true;_boardsTrash=[];
+      moodBoards=[
+        {id:'H',isHome:true,ownerUid:'u1',title:'Home',cards:[],visibility:'personal'},
+        {id:'HX',isHome:true,ownerUid:'u9',title:'Home',cards:[],visibility:'personal'},
+        {id:'A',title:'Winter Drop',ownerUid:'u1',visibility:'shared',cards:[]}
+      ];`);
+    s.section('All boards never lists a Home');
+    const g=run(`renderBoardsGallery()`);
+    s.ok('the real board is there',/Winter Drop/.test(g));
+    s.ok('neither Home is',!/>Home</.test(g.replace(/← Home/g,'')));
+    s.ok('and it leads back to Home',/showPage\('boards'\)/.test(g));
+    s.ok('opening from here remembers where you came from',/boardsOpenFromAll/.test(g));
+
+    s.section('the Home top bar drops what makes no sense on it');
+    run(`_editBoard={id:'H',isHome:true,ownerUid:'u1',visibility:'personal',title:'Home',zoom:1,panX:0,panY:0};
+         _editCards=[];_editConnectors=[];_boardsSelection=new Set();_boardsPeers=[]`);
+    const hb=run(`_renderBoardCanvasHTML()`);
+    s.ok('no delete',!/boardsDelete\(\)/.test(hb));
+    s.ok('no template, no share, no visibility toggle',
+      !/boardsToggleTemplate/.test(hb)&&!/boardsOpenShare/.test(hb)&&!/boardsToggleVisibility/.test(hb));
+    s.ok('no rename field — Home is not a title you edit',!/board-title-input/.test(hb));
+    s.ok('but All boards is reachable',/boardsShowAll\(\)/.test(hb));
+    s.ok('and back leaves the module',/← Creative Hub/.test(hb));
+    run(`_editBoard={id:'A',ownerUid:'u1',visibility:'shared',title:'Winter Drop',zoom:1,panX:0,panY:0}`);
+    const nb=run(`_renderBoardCanvasHTML()`);
+    s.ok('an ordinary board keeps all of it',
+      /boardsDelete\(\)/.test(nb)&&/board-title-input/.test(nb)&&/boardsToggleVisibility/.test(nb));
+    s.ok('and its back button points at Home',/← Home/.test(nb));
+  }
+
+  // ── attachments: preview and download ─────────────────────────────────
+  {
+    const {run}=loadApp({files:FILES});
+    s.section('a download is saved under the CARD name, like Milanote');
+    const N=c=>run(`_boardsSaveNameFor(${JSON.stringify(c)})`);
+    s.eq('card name wins over the upload id',
+      N({name:'Shibuya Chino Pants - Olive',fileName:'hsvx821oewbdnjei3bvi.pdf'}),
+      'Shibuya Chino Pants - Olive.pdf');
+    s.eq('no card name falls back to the original',
+      N({fileName:'winter-techpack-v4.pdf'}),'winter-techpack-v4.pdf');
+    s.eq('characters Windows refuses are stripped',
+      N({name:'PO/077: draft?',fileName:'a.pdf'}),'PO 077 draft.pdf');
+    s.eq('the extension comes off the URL when there is no filename',
+      N({fileUrl:'https://res.cloudinary.com/x/image/upload/v1/abc.PDF'}),'file.pdf');
+
+    s.section('a refused asset says what to do about it');
+    const E=(r,pdf)=>run(`_boardsAssetErrorText(${JSON.stringify(r)},${pdf})`);
+    s.ok('401 on a PDF names the Cloudinary setting',/Allow delivery of PDF and ZIP files/.test(E({status:401},true)));
+    s.ok('and says the thumbnail still working is not a contradiction',/served as an image/.test(E({status:403},true)));
+    s.ok('a non-PDF 401 does not claim that',!/PDF and ZIP/.test(E({status:401},false)));
+    s.ok('a network failure mentions offline',/offline/.test(E({err:'Failed to fetch'},false)));
+
+    s.section('one preview path for every card type that has an asset');
+    s.eq('an image card exposes its URL as fileUrl',
+      run(`_boardsPreviewCard({type:'image',imageUrl:'https://x/y/a.png'}).fileUrl`),'https://x/y/a.png');
+    s.eq('and gets a filename from the URL',
+      run(`_boardsPreviewCard({type:'image',imageUrl:'https://x/y/a.png'}).fileName`),'a.png');
+    s.eq('a file card is unchanged',
+      run(`_boardsPreviewCard({type:'file',fileUrl:'https://x/y/b.pdf',fileName:'b.pdf'}).fileUrl`),'https://x/y/b.pdf');
+  }
+
   return s;
 };

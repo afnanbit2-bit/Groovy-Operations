@@ -191,6 +191,152 @@ function _boardsLiveById(){
   moodBoards.forEach(b=>{m[b.id]=b;});
   return m;
 }
+// ── Home is a board ────────────────────────────────────────────────────
+// Milanote has no separate "list of your boards" page: home IS a board,
+// and your boards are cards on it that you arrange like anything else.
+// This is that, with one deliberate difference — the flat gallery stays,
+// moved to its own page (`boards-all`) and reachable from Home's ⋯ menu.
+//
+// That is not timidity, it is the safety net Stage 4 already insisted on:
+// "there is no way to lose a board by deleting a card". A board is
+// discoverable by QUERY (loadBoardsData reads every board you can see),
+// never only by a link, so no failed write, no deleted card and no broken
+// Home can strand one. Milanote can rely on the tree because its tree is
+// the only truth; ours has a query behind it, and throwing that away to
+// copy the interface would be copying the wrong half.
+//
+// One Home per person: an ordinary mood_boards document carrying
+// isHome:true, private, owned by them. No rules change — it is already
+// covered by the ownerUid clause every personal board uses.
+function _boardsIsHome(b){return!!(b&&b.isHome);}
+function _boardsMyHome(){
+  if(typeof session==='undefined'||!session||!session.uid)return null;
+  // Two tabs opening Home for the first time at the same moment could each
+  // create one. Pick deterministically rather than leaving it to whichever
+  // sorted first, so both tabs agree and the loser is simply an empty board.
+  const mine=moodBoards.filter(b=>b.isHome&&b.ownerUid===session.uid);
+  if(!mine.length)return null;
+  return mine.sort((a,b)=>(a.createdAt||0)-(b.createdAt||0))[0];
+}
+async function _boardsHomeId(){
+  const mine=_boardsMyHome();
+  if(mine)return mine.id;
+  return await _boardsCreateDoc({title:'Home',visibility:'personal',isHome:true});
+}
+// Every board you can see that isn't already somewhere gets a card on Home.
+// Runs on open, and again when a cold deep-link load finally lands.
+//
+// Placement is SAVED rather than derived each time, so it is a one-time
+// migration per board and Home is an ordinary board afterwards — move a
+// card and it stays moved. A board nested under a real parent is skipped;
+// a board sitting on someone's Home is NOT "nested" (see _boardsNestedIds,
+// which only ever follows a real parentId), so it still lists at root in
+// All boards and still reaches every other person's Home.
+const _BOARDS_HOME_COLS=4,_BOARDS_HOME_W=200,_BOARDS_HOME_H=124;
+// Two devices opening Home for the first time at the same moment each place
+// the same board, and the Stage 6 merge keeps both — they are different
+// cards with different ids, so nothing can tell it is one board twice.
+// Cheaper to heal it on open than to coordinate: keep the first card for
+// each board and drop the rest. Only ever collapses exact duplicates.
+function _boardsHomeDedupe(){
+  if(!_boardsIsHome(_editBoard))return 0;
+  const seen=new Set();const drop=[];
+  _editCards.forEach(c=>{
+    if(c.type!=='board'||!c.boardId)return;
+    if(seen.has(c.boardId))drop.push(c.id);else seen.add(c.boardId);
+  });
+  if(!drop.length)return 0;
+  const gone=new Set(drop);
+  _editCards=_editCards.filter(c=>!gone.has(c.id));
+  _editConnectors=_editConnectors.filter(cn=>!gone.has(cn.from)&&!gone.has(cn.to));
+  return drop.length;
+}
+// A board moved to Trash shouldn't leave a dead card sitting on Home.
+// Prunes ONLY boards positively known to be trashed — never a board that is
+// merely absent from moodBoards, because a partial load (one of the three
+// queries failing, see loadBoardsData) would otherwise wipe Home.
+function _boardsHomePruneTrashed(){
+  if(!_boardsIsHome(_editBoard)||!boardsLoaded)return 0;
+  const trashed=new Set(_boardsTrash.map(b=>b.id));
+  if(!trashed.size)return 0;
+  const drop=_editCards.filter(c=>c.type==='board'&&c.boardId&&trashed.has(c.boardId)).map(c=>c.id);
+  if(!drop.length)return 0;
+  const gone=new Set(drop);
+  _editCards=_editCards.filter(c=>!gone.has(c.id));
+  _editConnectors=_editConnectors.filter(cn=>!gone.has(cn.from)&&!gone.has(cn.to));
+  return drop.length;
+}
+// Deliberately NOT undoable, which is the one exception to "every mutating
+// action pushes an undo entry first". It runs at open, immediately after
+// the history is reset, and undoing it would clear cards that reappear on
+// the next visit — a Ctrl+Z that looks broken. Arranging Home afterwards is
+// ordinary editing and is undoable like anything else.
+function _boardsHomeAutoPlace(){
+  if(!_boardsIsHome(_editBoard)||!boardsLoaded)return 0;
+  const have=new Set(_editCards.filter(c=>c.type==='board'&&c.boardId).map(c=>c.boardId));
+  const nested=_boardsNestedIds();
+  const missing=moodBoards.filter(b=>
+    !b.isHome&&b.id!==_editBoard.id&&!nested.has(b.id)&&!have.has(b.id));
+  if(!missing.length)return 0;
+  // Below whatever is already here, so a Home somebody has arranged is
+  // never rearranged by a board arriving later.
+  let y0=60;
+  _editCards.forEach(c=>{y0=Math.max(y0,c.y+c.h+40);});
+  missing.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  missing.forEach((b,i)=>{
+    const nc=_boardsNewCard('board');
+    nc.boardId=b.id;nc.boardTitle=b.title||'Untitled board';
+    nc.w=_BOARDS_HOME_W;nc.h=_BOARDS_HOME_H;
+    nc.x=60+(i%_BOARDS_HOME_COLS)*(_BOARDS_HOME_W+28);
+    nc.y=y0+Math.floor(i/_BOARDS_HOME_COLS)*(_BOARDS_HOME_H+28);
+    _editCards.push(nc);
+  });
+  return missing.length;
+}
+// Everything Home reconciles on open, in the order that matters: collapse
+// duplicates first (so a duplicate isn't counted as "already placed"),
+// then drop cards for trashed boards, then place whatever is left over.
+function _boardsHomeSync(){
+  const n=_boardsHomeDedupe()+_boardsHomePruneTrashed()+_boardsHomeAutoPlace();
+  return n;
+}
+// The `boards` page is Home now. Renders the gallery instead — unchanged,
+// under the same page id it always had — if Home cannot be reached, so a
+// denied read or a failed create never leaves anyone without navigation.
+window.boardsOpenHome=async function(){
+  const m=document.getElementById('main-content');
+  if(!boardsLoaded){
+    if(m)m.innerHTML=gvSkeleton(4);
+    try{await loadBoardsData();}catch(e){}
+  }
+  if(currentPage!=='boards')return;
+  if(_boardsLoadError){if(m)m.innerHTML=renderBoardsGallery();return;}
+  try{
+    // Creating Home the first time is a network write; without this the
+    // previous page stays on screen for its duration and the app looks
+    // stuck on whatever you just left.
+    if(!_boardsMyHome()&&m)m.innerHTML=gvSkeleton(4);
+    const id=await _boardsHomeId();
+    if(currentPage!=='boards')return;
+    _boardsCameFromAll=false;
+    window.boardsOpen(id);
+  }catch(e){
+    console.warn('[boards] could not open Home:',e&&(e.message||e));
+    if(currentPage==='boards'&&m){
+      m.innerHTML='<div class="notes-warn">Could not open Home ('+_boardsEsc(String(e&&(e.message||e)))+') — showing all boards instead.</div>'+renderBoardsGallery();
+    }
+  }
+};
+// Which way "back" goes from a root board: Home normally, All boards if
+// that is where you came from. Without it, opening a board from the list
+// and pressing back would drop you somewhere you have never been.
+let _boardsCameFromAll=false;
+window.boardsOpenFromAll=function(id){_boardsCameFromAll=true;window.boardsOpen(id);};
+window.boardsShowAll=function(){
+  _boardsMenuOpen=false;_boardsSyncMenu();
+  if(_editBoard)_boardsSaveNow();
+  window.showPage('boards-all');
+};
 function _boardsNestedIds(){
   const live=_boardsLiveById();
   const nested=new Set();
@@ -653,11 +799,11 @@ function _boardsGalleryBarHTML(){
 }
 function _boardsRecentStripHTML(){
   const live=_boardsLiveById();
-  const recent=_boardsRecentRead().map(r=>live[r.id]).filter(Boolean).slice(0,6);
+  const recent=_boardsRecentRead().map(r=>live[r.id]).filter(b=>b&&!b.isHome).slice(0,6);
   if(recent.length<2)return'';   // a strip of one is noise, not a shortcut
   return`<div class="notes-section">
     <div class="notes-section-head"><h3>Recently opened</h3></div>
-    <div class="board-recent-strip">${recent.map(b=>`<button class="board-recent-chip" onclick="window.boardsOpen('${b.id}')">${_boardsEsc(b.title||'Untitled board')}</button>`).join('')}</div>
+    <div class="board-recent-strip">${recent.map(b=>`<button class="board-recent-chip" onclick="window.boardsOpenFromAll('${b.id}')">${_boardsEsc(b.title||'Untitled board')}</button>`).join('')}</div>
   </div>`;
 }
 // Searching deliberately looks at EVERY live board, nested ones included,
@@ -666,7 +812,7 @@ function _boardsRecentStripHTML(){
 // in memory (loadBoardsData reads whole documents), so this costs nothing
 // extra.
 function _boardsSearchResultsHTML(q){
-  const hits=moodBoards.map(b=>({b,n:_boardsMatchCount(b,q)}))
+  const hits=moodBoards.filter(b=>!b.isHome).map(b=>({b,n:_boardsMatchCount(b,q)}))
     .filter(h=>h.n>0||String(h.b.title||'').toLowerCase().indexOf(q)>-1||String(h.b.ownerName||'').toLowerCase().indexOf(q)>-1);
   const sorted=_boardsSortList(hits.map(h=>h.b));
   const byId={};hits.forEach(h=>{byId[h.b.id]=h.n;});
@@ -678,9 +824,9 @@ function _boardsSearchResultsHTML(q){
 function renderBoardsGallery(){
   const q=_boardsGalleryQuery.trim().toLowerCase();
   const head=`
-  <button class="back-btn" onclick="window.showPage('creative-hub')">← Back to Creative Hub</button>
+  <button class="back-btn" onclick="window.showPage('boards')">← Home</button>
   <div class="page-head" style="margin-bottom:10px">
-    <div><h2 style="margin:0">Mood Boards</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">Drag, resize and connect reference images, notes and links</div></div>
+    <div><h2 style="margin:0">All boards</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">Every board you can see, including ones not on your Home. Templates and Trash live here.</div></div>
   </div>
   ${_boardsLoadNoticeHTML()}
   ${_boardsGalleryBarHTML()}`;
@@ -688,7 +834,7 @@ function renderBoardsGallery(){
   if(q)return head+_boardsSearchResultsHTML(q)+_boardsTrashSectionHTML();
 
   const nested=_boardsNestedIds();
-  const root=moodBoards.filter(b=>!nested.has(b.id));
+  const root=moodBoards.filter(b=>!nested.has(b.id)&&!b.isHome);
   const templates=_boardsSortList(root.filter(b=>b.isTemplate));
   const rest=root.filter(b=>!b.isTemplate);
   const team=_boardsSortList(rest.filter(b=>b.visibility==='shared'));
@@ -782,7 +928,7 @@ function _boardGalleryCardHTML(b,opts){
   const files=cards.filter(c=>(c.type==='file'&&c.fileUrl)||(c.type==='image'&&c.imageUrl)).length;
   const crumbs=_boardsAncestors(b.id).map(a=>_boardsEsc(a.title||'Untitled board')).join(' › ');
   const tint=_boardsValidHex(b.color);
-  return`<div class="board-gallery-card" data-board="${b.id}" onclick="window.boardsOpen('${b.id}')"${tint?` style="border-top:3px solid ${tint}"`:''}>
+  return`<div class="board-gallery-card" data-board="${b.id}" onclick="window.boardsOpenFromAll('${b.id}')"${tint?` style="border-top:3px solid ${tint}"`:''}>
     <div class="board-gallery-thumb">
       <div style="position:absolute;transform:scale(${scale});transform-origin:top left">
         ${cards.filter(c=>c.type==='frame').concat(cards.filter(c=>c.type!=='frame')).map(_boardMiniCardHTML).join('')}
@@ -858,7 +1004,9 @@ window.boardsRepairBoardCard=async function(cardId){
   if(!c||c.type!=='board')return;
   if(c.boardId){showToast('That card already points at a board');return;}
   try{
-    const id=await _boardsCreateDoc({visibility:_editBoard.visibility,parentId:_editBoard.id});
+    const id=await _boardsCreateDoc(_boardsIsHome(_editBoard)
+      ?{visibility:'personal'}
+      :{visibility:_editBoard.visibility,parentId:_editBoard.id});
     _boardsPushUndo();
     c.boardId=id;c.boardTitle='Untitled board';
     _boardsRenderCanvasAndWire();
@@ -868,12 +1016,40 @@ window.boardsRepairBoardCard=async function(cardId){
     showToast('Board created and linked — open it from the card');
   }catch(e){showToast('Could not create the board: '+(e.message||e),true);}
 };
+// Trashing a board from its card on Home. Deletion is owner-only here just
+// as it is in firestore.rules and in the gallery menu — the UI must not
+// offer what the rules will refuse.
+window.boardsTrashLinkedBoard=async function(boardId,cardId){
+  const b=_boardsLiveById()[boardId];
+  const title=(b&&b.title)||'Untitled board';
+  const owner=!!(session&&b&&(b.ownerUid===session.uid||session.role==='owner'));
+  if(!owner){showToast('Only the board’s owner can move it to Trash');return;}
+  if(!confirm('Move "'+title+'" to Trash? You can restore it from All boards.'))return;
+  try{
+    await _qUpdate(doc(db,'mood_boards',boardId),{deletedAt:Date.now(),deletedByName:session.name,updatedAt:Date.now()});
+    moodBoards=moodBoards.filter(x=>x.id!==boardId);
+    _boardsPushUndo();
+    _editCards=_editCards.filter(x=>x.id!==cardId);
+    _editConnectors=_editConnectors.filter(cn=>cn.from!==cardId&&cn.to!==cardId);
+    _boardsSelection.delete(cardId);
+    _boardsRenderCanvasAndWire();
+    await _boardsSaveNow();
+    logActivity('Mood board deleted',`${session.name} moved "${title}" to trash`);
+    showToast('Board moved to Trash');
+  }catch(e){showToast('Could not delete: '+(e.message||e),true);}
+};
 window.boardsAddChildBoard=async function(){
   if(!_editBoard||!_boardsCanEdit(_editBoard))return;
   _boardsMenuOpen=false;_boardsSyncMenu();
   const p=_boardsPlacementPoint();
+  const home=_boardsIsHome(_editBoard);
   try{
-    const id=await _boardsCreateDoc({visibility:_editBoard.visibility,parentId:_editBoard.id});
+    // On Home this is "new board", not "sub-board": setting parentId would
+    // nest it under a board only its owner can read, and it would drop out
+    // of All boards' root listing for them and nobody else.
+    const id=await _boardsCreateDoc(home
+      ?{visibility:'personal'}
+      :{visibility:_editBoard.visibility,parentId:_editBoard.id});
     _boardsPushUndo();
     const nc=_boardsNewCard('board');
     nc.x=p.x;nc.y=p.y;nc.boardId=id;nc.boardTitle='Untitled board';
@@ -881,9 +1057,9 @@ window.boardsAddChildBoard=async function(){
     _boardsRenderCanvasAndWire();
     await _boardsSaveNow();
     boardsLoaded=false;
-    _boardsLogBoardActivity('added a sub-board');
-    showToast('Sub-board added — open it from the card');
-  }catch(e){showToast('Could not create sub-board: '+(e.message||e),true);}
+    _boardsLogBoardActivity(home?'added a board':'added a sub-board');
+    showToast(home?'Board added — open it from the card':'Sub-board added — open it from the card');
+  }catch(e){showToast('Could not create '+(home?'board':'sub-board')+': '+(e.message||e),true);}
 };
 
 // ── Duplicate / templates ──────────────────────────────────────────────
@@ -965,9 +1141,13 @@ window.boardsOpen=function(id){_boardsRecentTouch(id);_boardsViewingId=id;window
 // its parent board. Matches how Notes' back buttons behave (see CLAUDE.md).
 window.boardsBack=function(){
   _boardsSaveNow();
+  // Home is the top of the tree, so from Home the only way up is out of the
+  // module entirely.
+  if(_boardsIsHome(_editBoard)){window.showPage('creative-hub');return;}
   const parent=_editBoard?_boardsParentOf(_editBoard.id):null;
-  if(parent)window.boardsOpen(parent.id);
-  else window.showPage('boards');
+  if(parent){window.boardsOpen(parent.id);return;}
+  if(_boardsCameFromAll){_boardsCameFromAll=false;window.showPage('boards-all');return;}
+  window.showPage('boards');
 };
 window.boardsGoto=function(id){
   if(!_boardsLiveById()[id]){showToast('That board is not available — it may have been deleted, or it is private to someone else');return;}
@@ -990,7 +1170,7 @@ async function _boardsOpenCanvas(){
       b={id:snap.id,...snap.data()};
     }catch(e){m.innerHTML='<div class="empty">Could not load board: '+(e.message||e)+'</div>';return;}
   }
-  _editBoard={id:b.id,title:b.title||'Untitled board',visibility:b.visibility||'personal',ownerUid:b.ownerUid,ownerName:b.ownerName,ownerUsername:b.ownerUsername,zoom:b.zoom||1,panX:b.panX||40,panY:b.panY||30,parentId:b.parentId||null,isTemplate:!!b.isTemplate,sharedWith:Array.isArray(b.sharedWith)?b.sharedWith.slice():[]};
+  _editBoard={id:b.id,title:b.title||'Untitled board',visibility:b.visibility||'personal',ownerUid:b.ownerUid,ownerName:b.ownerName,ownerUsername:b.ownerUsername,zoom:b.zoom||1,panX:b.panX||40,panY:b.panY||30,parentId:b.parentId||null,isTemplate:!!b.isTemplate,isHome:!!b.isHome,sharedWith:Array.isArray(b.sharedWith)?b.sharedWith.slice():[]};
   _editCards=(b.cards||[]).map(c=>{const cc={...c};delete cc._uploading;return cc;});
   _editConnectors=(b.connectors||[]).map(cn=>({...cn}));
   _editUnsorted=(b.unsorted||[]).map(u=>{const uu={...u};delete uu._uploading;return uu;});
@@ -1014,6 +1194,7 @@ async function _boardsOpenCanvas(){
   _boardsConnBase=JSON.stringify(_editConnectors);
   _boardsPeers=[];_boardsComments=[];_boardsBoardActivity=[];
   _boardsPendingRemote=null;_boardsGestureActive=false;
+  if(_boardsHomeSync())_boardsSaveDebounced();
   _boardsRenderCanvasAndWire();
   _boardsSubscribe(b.id);
   _boardsPresenceStart(b.id);
@@ -1024,7 +1205,11 @@ async function _boardsOpenCanvas(){
   // re-render once it lands, unless the user is already typing in a card.
   if(!boardsLoaded){
     loadBoardsData().then(()=>{
-      if(currentPage==='board-canvas'&&_editBoard&&_editBoard.id===b.id&&!_boardsIsEditableFocus())_boardsRenderCanvasAndWire();
+      if(currentPage!=='board-canvas'||!_editBoard||_editBoard.id!==b.id)return;
+      // Home opened cold (a deep link, or a reload straight onto it) had no
+      // board list to place from. Now it does.
+      if(_boardsHomeSync())_boardsSaveDebounced();
+      if(!_boardsIsEditableFocus())_boardsRenderCanvasAndWire();
     }).catch(()=>{});
   }
   if(_boardsPendingFocusCard){
@@ -1067,21 +1252,25 @@ function _renderBoardCanvasHTML(){
   const visLabel=b.visibility==='shared'?'TEAM':'PRIVATE';
   // Breadcrumbs only appear on a nested board — on a root board the trail
   // would just read "Boards ›" next to a back button that says the same.
-  const chain=_boardsAncestors(b.id);
+  const home=_boardsIsHome(b);
+  const chain=home?[]:_boardsAncestors(b.id);
   const parent=chain.length?chain[chain.length-1]:null;
+  const backLabel=home?'Creative Hub':(parent?(parent.title||'Untitled board'):(_boardsCameFromAll?'All boards':'Home'));
   const crumbs=chain.length?`<div class="board-crumbs">
-      <button class="board-crumb" onclick="window.boardsGotoGallery()">Boards</button>
+      <button class="board-crumb" onclick="window.boardsGotoGallery()">Home</button>
       ${chain.map(a=>`<span class="board-crumb-sep">›</span><button class="board-crumb" onclick="window.boardsGoto('${a.id}')">${_boardsEsc(a.title||'Untitled board')}</button>`).join('')}
       <span class="board-crumb-sep">›</span>
     </div>`:'';
   return`<div class="board-canvas-wrap">
     <div class="board-topbar">
       <div style="display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:wrap">
-        <button class="back-btn" style="margin:0" onclick="window.boardsBack()">← ${_boardsEsc(parent?(parent.title||'Untitled board'):'Boards')}</button>
+        <button class="back-btn" style="margin:0" onclick="window.boardsBack()">← ${_boardsEsc(backLabel)}</button>
         ${crumbs}
-        <input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" placeholder="Untitled board" title="Click to rename this board" style="font-size:14.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
+        ${home
+          ?`<span style="font-size:14.5px;font-weight:700">Home</span>`
+          :`<input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" placeholder="Untitled board" title="Click to rename this board" style="font-size:14.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
         <span class="pill">${visLabel}</span>
-        ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}
+        ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}`}
         ${canEdit?`<span class="board-save-status" id="board-save-status">Saved</span>`:''}
         <span class="board-peers" id="board-peers" style="display:none"></span>
       </div>
@@ -1105,18 +1294,20 @@ function _renderBoardCanvasHTML(){
             ${_boardsIsPhone()?`<button onclick="window.boardsFitView()">Fit to screen</button>
             <button onclick="window.boardsResetView()">Zoom to 100%</button>
             ${canEdit?`<button onclick="window.boardsToggleSnap()">${_boardsSnapGrid?'Snap to grid: on':'Snap to grid: off'}</button>`:''}
-            <button onclick="window.boardsOpenColorPicker('board','${b.id}')">Board colour…</button>
-            <button onclick="window.boardsOpenIconPicker('${b.id}')">Board icon…</button>
+            ${home?'':`<button onclick="window.boardsOpenColorPicker('board','${b.id}')">Board colour…</button>
+            <button onclick="window.boardsOpenIconPicker('${b.id}')">Board icon…</button>`}
             <div class="board-menu-sep"></div>`:''}
-            <button onclick="window.boardsCopyBoardLink()">Copy link to board</button>
+            <button onclick="window.boardsShowAll()">All boards${home?'':' (list, templates, trash)'}</button>
+            <div class="board-menu-sep"></div>
+            ${home?'':`<button onclick="window.boardsCopyBoardLink()">Copy link to board</button>`}
             <button onclick="window.boardsExportPNG()">Export as image (PNG)</button>
             <button onclick="window.boardsExportPDF()">Export as PDF</button>
-            <button onclick="window.boardsDuplicateBoard()">Duplicate board</button>
-            ${canEdit?`<button onclick="window.boardsToggleTemplate()">${b.isTemplate?'Remove from templates':'Save as template'}</button>`:''}
-            ${canEdit?`<button onclick="window.boardsAddChildBoard()">Add sub-board</button>`:''}
-            ${canEdit?`<button onclick="window.boardsOpenShare()">Share with people…</button>`:''}
-            ${canEdit?`<button onclick="window.boardsToggleVisibility()">Make ${b.visibility==='shared'?'Private':'Team'}</button>`:''}
-            ${canEdit?`<button class="danger" onclick="window.boardsDelete()">Delete board</button>`:''}
+            ${home?'':`<button onclick="window.boardsDuplicateBoard()">Duplicate board</button>`}
+            ${canEdit&&!home?`<button onclick="window.boardsToggleTemplate()">${b.isTemplate?'Remove from templates':'Save as template'}</button>`:''}
+            ${canEdit?`<button onclick="window.boardsAddChildBoard()">${home?'New board':'Add sub-board'}</button>`:''}
+            ${canEdit&&!home?`<button onclick="window.boardsOpenShare()">Share with people…</button>`:''}
+            ${canEdit&&!home?`<button onclick="window.boardsToggleVisibility()">Make ${b.visibility==='shared'?'Private':'Team'}</button>`:''}
+            ${canEdit&&!home?`<button class="danger" onclick="window.boardsDelete()">Delete board</button>`:''}
           </div>
         </div>
       </div>
@@ -1210,7 +1401,7 @@ function _boardCardHTML(c,canEdit){
       ?`<img src="${_boardsEsc(_boardsDisplayUrl(c.imageUrl,c.w))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" data-full="${_boardsEsc(c.imageUrl)}" style="width:100%;height:100%;object-fit:cover;display:block">`
       :canEdit?`<label class="board-card-empty" for="board-file-${c.id}">Click, or paste an image (Ctrl+V)<input type="file" id="board-file-${c.id}" accept="image/*" onchange="window.boardsUploadToCard('${c.id}',this)" style="display:none"></label>`
               :`<div class="board-card-empty">No image</div>`;
-    body=`<div class="board-card-body" style="padding:0"${bodyDrag}>${body}</div>`;
+    body=`<div class="board-card-body" style="padding:0"${bodyDrag}${c.imageUrl?` ondblclick="window.boardsFilePreview('${c.id}')"`:''}>${body}</div>`;
   }else if(c.type==='link'){
     body=canEdit
       ?`<div class="board-card-body board-link-edit">
@@ -1242,8 +1433,8 @@ function _boardCardHTML(c,canEdit){
       // (see bodyDrag), and a control inside a drag handle whose pointerdown
       // reaches the handle gets its click retargeted away — the exact bug
       // that made the delete ✕ inert on every card for weeks.
-      body=`<div class="board-card-body board-file-body"${bodyDrag}>
-        <a class="board-file-open" href="${_boardsEsc(c.fileUrl)}" target="_blank" rel="noopener noreferrer" draggable="false">
+      body=`<div class="board-card-body board-file-body"${bodyDrag} ondblclick="window.boardsFilePreview('${c.id}')">
+        <a class="board-file-open" href="${_boardsEsc(c.fileUrl)}" target="_blank" rel="noopener noreferrer" draggable="false" onclick="if(event.ctrlKey||event.metaKey)return;event.preventDefault();" title="Double-click to preview">
           ${thumb?`<img class="board-file-thumb" src="${_boardsEsc(thumb)}" alt="" draggable="false" onerror="this.style.display='none'">`:''}
           <div class="board-file-meta">
             <span class="board-file-ext">${_boardsEsc(_boardsFileExt(c.fileName))}</span>
@@ -3345,6 +3536,15 @@ function _boardsSyncLocalCards(){
 window.boardsDeleteCard=function(id){
   const c=_editCards.find(x=>x.id===id);
   if(c&&c.locked){showToast('That card is locked');return;}
+  // On Home a board card IS the board as far as anyone looking at it can
+  // tell, and removing just the card would be pointless anyway — auto-place
+  // puts it straight back on the next visit. So Home asks to trash the
+  // board, the way Milanote does, and it stays restorable from
+  // All boards → Trash. Everywhere else, deleting a board card unlinks a
+  // sub-board and leaves the board alone, exactly as before.
+  if(c&&c.type==='board'&&c.boardId&&_boardsIsHome(_editBoard)){
+    window.boardsTrashLinkedBoard(c.boardId,id);return;
+  }
   _boardsPushUndo();
   _editCards=_editCards.filter(x=>x.id!==id);
   _editConnectors=_editConnectors.filter(cn=>cn.from!==id&&cn.to!==id);
@@ -3501,6 +3701,7 @@ window.boardsToggleVisibility=async function(){
 window.boardsDelete=async function(){
   if(!_editBoard||!_boardsCanEdit(_editBoard))return;
   _boardsMenuOpen=false;_boardsSyncMenu();
+  if(_boardsIsHome(_editBoard)){showToast('Home cannot be deleted');return;}
   if(!confirm('Move "'+(_editBoard.title||'Untitled board')+'" to Trash? You can restore it from the boards list.'))return;
   try{
     await _qUpdate(doc(db,'mood_boards',_editBoard.id),{deletedAt:Date.now(),deletedByName:session.name,updatedAt:Date.now()});
@@ -5089,8 +5290,10 @@ function _boardsCtxRun(act){
       break;
     }
     case'replace':{const s=_boardsSelectedCards();if(s.length===1)_boardsReplaceAsset(s[0].id);break;}
-    case'download':{const u=_boardsAssetUrl();if(u)window.open(_boardsDownloadUrl(u),'_blank','noopener');break;}
-    case'openasset':{const u=_boardsAssetUrl();if(u)window.open(u,'_blank','noopener');break;}
+    // Through the same two functions the card's own buttons use, so the
+    // menu and the card can never behave differently.
+    case'download':{const c=_boardsSelOne();if(c&&_boardsAssetUrl())_boardsDownloadAsset(_boardsPreviewCard(c));break;}
+    case'openasset':{const c=_boardsSelOne();if(c&&_boardsAssetUrl())_boardsOpenPreview(_boardsPreviewCard(c));break;}
     case'copyasset':{
       const s=_boardsSelectedCards();
       const c=s.length===1?s[0]:null;
@@ -5214,6 +5417,17 @@ async function _boardsCtxPaste(){
   showToast(isUrl?'Link added':'Note added');
 }
 // The URL behind the one selected card, whatever kind it is.
+// The preview/download helpers read `fileUrl`; an image card keeps its URL
+// in `imageUrl` and a link card in `linkUrl`. One adapter rather than three
+// branches inside each helper.
+function _boardsPreviewCard(c){
+  const url=c.type==='image'?(c.imageUrl||''):c.type==='file'?(c.fileUrl||''):c.type==='link'?(c.linkUrl||''):'';
+  return{...c,fileUrl:url,fileName:c.fileName||(c.type==='image'?_boardsUrlTail(url):'')};
+}
+function _boardsUrlTail(u){
+  const s=String(u||'').split('?')[0];
+  return s.slice(s.lastIndexOf('/')+1);
+}
 function _boardsAssetUrl(){
   const sel=_boardsSelectedCards();
   if(sel.length!==1)return'';
@@ -5224,17 +5438,169 @@ function _boardsAssetUrl(){
 // documented flag for "send this as a download". Best-effort — a non
 // Cloudinary URL is opened as-is, and this could not be verified from the
 // build sandbox, which cannot reach res.cloudinary.com.
+/* ── Opening and downloading an attachment ──────────────────────────────
+   Both used to be window.open() on a Cloudinary URL, and both were wrong in
+   the same way: NAVIGATING to an asset hands the whole outcome to the
+   browser. Afnan saw Chrome's own error pages — "Failed to load PDF
+   document" on Open, ERR_INVALID_RESPONSE on Download — with nothing to act
+   on and no clue whose fault it was.
+
+   Milanote's preview is not a custom PDF renderer: it is the browser's own
+   viewer in an iframe, which is where its page thumbnails, page counter,
+   zoom, rotate, print and download all come from. So this fetches the bytes
+   once and hands the browser a blob: URL. That buys three things at once:
+     - the same native viewer, with no new dependency (pdf.js is one);
+     - a Download that opens the real Save-as dialog under the CARD's name,
+       which is what Milanote saves as — an <a download> to a cross-origin
+       URL is ignored by Chrome, a blob: one is honoured;
+     - a readable error. A failed fetch has a STATUS, so "Cloudinary refused
+       this (401)" can be said out loud instead of leaving a Chrome error
+       page to be interpreted.
+
+   Not verified from here: this sandbox cannot reach res.cloudinary.com at
+   all (see CLAUDE.md). The behaviour above is reasoned from the delivery
+   URL and the screenshots, not observed. */
+const _BOARDS_IMG_EXT=['jpg','jpeg','png','gif','webp','svg','bmp','avif'];
+function _boardsAssetExt(c){
+  const s=String((c&&c.fileName)||(c&&c.fileUrl)||'');
+  const m=s.split('?')[0].match(/\.([A-Za-z0-9]{1,8})$/);
+  return m?m[1].toLowerCase():'';
+}
+// Milanote saves under the card's title, not the opaque upload id. So do we,
+// falling back to the original filename. Strips the characters Windows
+// refuses in a filename, or the Save-as dialog rejects the name outright.
+function _boardsSaveNameFor(c){
+  const ext=_boardsAssetExt(c);
+  const raw=String((c&&c.fileName)||'').replace(/\.[^.]+$/,'');
+  let base=String((c&&c.name)||raw||'file').replace(/[\\/:*?"<>|\u0000-\u001f]+/g,' ').replace(/\s+/g,' ').trim();
+  if(!base)base='file';
+  return ext?base+'.'+ext:base;
+}
+async function _boardsFetchAsset(url){
+  try{
+    const res=await fetch(url,{mode:'cors',credentials:'omit'});
+    if(!res.ok)return{ok:false,status:res.status};
+    return{ok:true,blob:await res.blob()};
+  }catch(e){return{ok:false,err:(e&&(e.message||e))||'network error'};}
+}
+// What a failure most likely means, said plainly. A 401 or 403 on a PDF
+// whose page-1 thumbnail renders perfectly well is Cloudinary's "deliver PDF
+// and ZIP files" account setting, not a broken file and not a broken URL —
+// the thumbnail proves Cloudinary can read the document and is choosing not
+// to serve it.
+function _boardsAssetErrorText(r,isPdf){
+  if(r.status===401||r.status===403){
+    return'Cloudinary refused this file ('+r.status+').'+
+      (isPdf?' Delivery of PDF and ZIP files is switched off on the account — turn it on in the Cloudinary console under Settings → Security, "Allow delivery of PDF and ZIP files". The page-1 preview on the card still works because that is served as an image.':'');
+  }
+  if(r.status)return'The file could not be fetched (HTTP '+r.status+').';
+  return'The file could not be fetched: '+r.err+'. If you are offline, it has not been cached yet.';
+}
+let _boardsPreviewUrl=null;
+function _boardsClosePreview(){
+  const el=document.getElementById('board-preview');
+  if(el)el.remove();
+  if(_boardsPreviewUrl){try{URL.revokeObjectURL(_boardsPreviewUrl);}catch(e){}_boardsPreviewUrl=null;}
+  document.removeEventListener('keydown',_boardsPreviewKey,true);
+}
+function _boardsPreviewKey(e){if(e.key==='Escape'){e.stopPropagation();_boardsClosePreview();}}
+window.boardsClosePreview=_boardsClosePreview;
+async function _boardsOpenPreview(c){
+  _boardsClosePreview();
+  const name=_boardsSaveNameFor(c);
+  const ext=_boardsAssetExt(c);
+  const isPdf=ext==='pdf';
+  const isImg=_BOARDS_IMG_EXT.indexOf(ext)>=0;
+  const wrap=document.createElement('div');
+  wrap.id='board-preview';
+  wrap.className='board-preview';
+  wrap.innerHTML=
+    '<div class="board-preview-bar">'+
+      '<span class="board-preview-name" id="board-preview-name"></span>'+
+      '<span class="board-preview-acts">'+
+        '<button class="tool-btn" id="board-preview-dl">Download</button>'+
+        '<button class="tool-btn" id="board-preview-tab">Open in new tab</button>'+
+        '<button class="tool-btn" id="board-preview-x" title="Close (Esc)">✕</button>'+
+      '</span>'+
+    '</div>'+
+    '<div class="board-preview-body" id="board-preview-body"><div class="board-preview-msg">Loading…</div></div>';
+  // The filename is a user string like every other one in this file.
+  document.body.appendChild(wrap);
+  wrap.querySelector('#board-preview-name').textContent=name;
+  wrap.querySelector('#board-preview-x').onclick=_boardsClosePreview;
+  wrap.querySelector('#board-preview-tab').onclick=()=>window.open(c.fileUrl,'_blank','noopener');
+  wrap.querySelector('#board-preview-dl').onclick=()=>_boardsDownloadAsset(c);
+  wrap.addEventListener('pointerdown',e=>{if(e.target===wrap)_boardsClosePreview();});
+  document.addEventListener('keydown',_boardsPreviewKey,true);
+
+  const body=wrap.querySelector('#board-preview-body');
+  const r=await _boardsFetchAsset(c.fileUrl);
+  if(!document.getElementById('board-preview'))return;   // closed while loading
+  if(!r.ok){
+    const msg=document.createElement('div');
+    msg.className='board-preview-msg';
+    msg.textContent=_boardsAssetErrorText(r,isPdf);
+    body.innerHTML='';body.appendChild(msg);
+    return;
+  }
+  _boardsPreviewUrl=URL.createObjectURL(r.blob);
+  body.innerHTML='';
+  if(isImg){
+    const img=document.createElement('img');
+    img.className='board-preview-img';img.src=_boardsPreviewUrl;img.alt='';
+    body.appendChild(img);
+  }else if(isPdf){
+    // The browser's built-in viewer, which brings page thumbnails, the page
+    // counter, zoom, rotate, print and its own download with it.
+    const f=document.createElement('iframe');
+    f.className='board-preview-frame';f.src=_boardsPreviewUrl;f.title=name;
+    body.appendChild(f);
+  }else{
+    const msg=document.createElement('div');
+    msg.className='board-preview-msg';
+    msg.textContent='No preview for this file type — use Download.';
+    body.appendChild(msg);
+  }
+}
+// An <a download> pointing at a cross-origin URL is IGNORED by Chrome (it
+// navigates instead), which is why the old fl_attachment window.open could
+// only ever open a tab. A blob: URL is same-origin, so the attribute is
+// honoured and the real Save-as dialog appears with the name we chose.
+async function _boardsDownloadAsset(c){
+  const name=_boardsSaveNameFor(c);
+  const r=await _boardsFetchAsset(c.fileUrl);
+  if(!r.ok){
+    showToast(_boardsAssetErrorText(r,_boardsAssetExt(c)==='pdf'),true);
+    // Last resort: ask the host for an attachment and let the browser try.
+    window.open(_boardsDownloadUrl(c.fileUrl),'_blank','noopener');
+    return false;
+  }
+  const href=URL.createObjectURL(r.blob);
+  const a=document.createElement('a');
+  a.href=href;a.download=name;a.style.display='none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{try{URL.revokeObjectURL(href);}catch(e){}a.remove();},10000);
+  return true;
+}
 // Card-addressed versions of the right-click menu's Open/Download, for the
 // buttons on the file card itself. They take an id rather than reading the
 // selection, because clicking a button on a card that isn't selected must
 // still act on THAT card.
 window.boardsFileOpen=function(id){
   const c=(_editCards||[]).find(x=>x.id===id);
-  if(c&&c.fileUrl)window.open(c.fileUrl,'_blank','noopener');
+  if(c&&c.fileUrl)_boardsOpenPreview(c);
+};
+// Any card type, via the adapter — what a double-clicked image card uses.
+window.boardsFilePreview=function(id){
+  const c=(_editCards||[]).find(x=>x.id===id);
+  if(!c)return;
+  const pc=_boardsPreviewCard(c);
+  if(pc.fileUrl)_boardsOpenPreview(pc);
 };
 window.boardsFileDownload=function(id){
   const c=(_editCards||[]).find(x=>x.id===id);
-  if(c&&c.fileUrl)window.open(_boardsDownloadUrl(c.fileUrl),'_blank','noopener');
+  if(c&&c.fileUrl)_boardsDownloadAsset(c);
 };
 function _boardsDownloadUrl(url){
   const u=String(url||'');
@@ -5481,7 +5847,7 @@ async function _boardsGalleryCtxRun(act,id){
   }
   if(!b)return;
   switch(act){
-    case'g:open':window.boardsOpen(id);break;
+    case'g:open':window.boardsOpenFromAll(id);break;
     case'g:color':window.boardsOpenColorPicker('board',id);break;
     case'g:icon':window.boardsOpenIconPicker(id);break;
     case'g:link':{

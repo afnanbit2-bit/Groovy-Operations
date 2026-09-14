@@ -878,7 +878,7 @@ function _updateMobNavActive(pageId){
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
     'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more','store-cash-ledger':'more',
     'activity':'more','monitor':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more',
-    'creative-hub':'more','notes':'more','note-detail':'more','boards':'more','board-canvas':'more',
+    'creative-hub':'more','notes':'more','note-detail':'more','boards':'more','boards-all':'more','board-canvas':'more',
     'my-work':'my-work'
   };
   const grp=groups[pageId];
@@ -1097,7 +1097,13 @@ function renderPage(id){
   else if(id==='creative-hub')m.innerHTML=renderCreativeHub();
   else if(id==='notes'){if(!notesLoaded){m.innerHTML=gvSkeleton(6);loadNotesData().then(()=>{if(currentPage===id)m.innerHTML=renderNotesPage();});}else m.innerHTML=renderNotesPage();}
   else if(id==='note-detail'){_notesOpenDetail();return;}
-  else if(id==='boards'){if(!boardsLoaded){m.innerHTML=gvSkeleton(6);loadBoardsData().then(()=>{if(currentPage===id)m.innerHTML=renderBoardsGallery();});}else m.innerHTML=renderBoardsGallery();}
+  // Mood Boards' home is a BOARD, not a list — boardsOpenHome resolves (or
+  // creates) this person's Home and hands off to the canvas page. It owns
+  // its own loading and its own failure: if Home can't be reached it falls
+  // back to rendering the flat list right here, so nobody is left without
+  // navigation. The flat list lives on its own page now.
+  else if(id==='boards'){window.boardsOpenHome();}
+  else if(id==='boards-all'){if(!boardsLoaded){m.innerHTML=gvSkeleton(6);loadBoardsData().then(()=>{if(currentPage===id)m.innerHTML=renderBoardsGallery();});}else m.innerHTML=renderBoardsGallery();}
   else if(id==='board-canvas'){_boardsOpenCanvas();return;}
   else if(id==='po-detail')renderDetailPage();
   else if(id==='po-edit')m.innerHTML=renderPOEditPage();
@@ -1195,7 +1201,8 @@ const BUG_PAGE_NAMES={
   'creative-hub':'Creative Hub',
   'notes':'Notes',
   'note-detail':'Note Detail',
-  'boards':'Mood Boards',
+  'boards':'Mood Boards (Home)',
+  'boards-all':'Mood Boards — All boards',
   'board-canvas':'Mood Board Canvas',
   'activity':'Activity Log',
   'monitor':'Monitor',
