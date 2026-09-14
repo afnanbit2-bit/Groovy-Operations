@@ -1245,6 +1245,98 @@ The rest:
   the DOM as well as the flag. **The exact action that desynced them was
   not identified** — the closer no longer depends on the two agreeing.
 
+### Mood Boards — connectors: selectable, styleable, curved (Sept 2026)
+
+Afnan: lines "are not getting selected", clicking does nothing, the
+right-click actions are missing, and there is no way to curve one.
+
+- **Why they could not be clicked was GEOMETRY, not a missing handler.**
+  The stroke was 1.6 **world** px with `pointer-events:stroke`, so at his
+  68% zoom the target was about one physical pixel of a diagonal line.
+  Every connector now ships an invisible ~16px companion stroke
+  (`path.conn-hit`, emitted first) that takes the pointer events. It is in
+  world units too, so the target scales with the zoom instead of vanishing
+  at it. **Reuse this for anything else drawn as a thin stroke.**
+- **Connectors carry an `id` now.** Selection by array index silently jumps
+  to a different line the moment a delete shifts the indices. They are
+  merged wholesale rather than per item (`_boardsConnDirty`), so an id
+  costs nothing at sync time. Older connectors get one **in memory before
+  `_boardsConnBase` is taken**, so the migration never dirties a board on
+  open — asserted.
+- **Card selection and line selection are mutually exclusive.** Two kinds
+  of "the selection" at once would make Delete and the rail ambiguous.
+- **A curve is a quadratic Bezier, and the bend is stored as the APEX
+  offset (`bx`/`by`), not the control point.** The apex is where the drag
+  handle sits, so dragging is exact rather than doubled; and an **offset**
+  means a card-bound curve keeps its bend when the cards move, where a
+  stored control point would leave the curve behind. The control point is
+  derived — `mid + 2·offset`, since for a quadratic the apex is
+  `.25·p1 + .5·c + .25·p2`.
+- **Dragging an endpoint detaches a card-bound line into a freeform one**
+  and the drop decides whether it re-attaches. Anything else means an
+  endpoint you cannot move off a card. The bind targets live in the drag
+  CLOSURE: connectors are saved as plain JSON with no `_`-prefix stripping
+  of their own (that rule is for cards, `_boardsCardsForSave`), so a
+  scratch field parked on one would be written to the document.
+- **The rail's third mode** is a selected line — Color / Start / End /
+  Label / Dashed / Weight, matching Milanote's own — and the right-click
+  menu builds the same actions through the same router
+  (`_boardsConnAction`).
+- **The PNG/PDF exporter reads the same `_boardsConnGeom` the canvas
+  does**, so a curve, a weight or a second arrowhead cannot render one way
+  on screen and another in the export. Arrowheads point along the
+  **tangent** (from the control point), not the chord.
+- One `<marker>` serves both ends: `orient="auto-start-reverse"` is exactly
+  what `marker-start` needs, and `currentColor` makes the head follow the
+  line's colour. A label is an **empty `<text>` filled with `textContent`**
+  — same boundary as card text; a stroke colour is a fixed palette name
+  mapped to a CSS variable, so nothing else reaches a style attribute.
+
+### Mood Boards — Table, document export and Presentation (Sept 2026)
+
+The last three Milanote gaps, shipped together because two of them share
+one idea.
+
+**Table** is a plain `rows[][]` of strings on the card — no per-cell
+records and no column schema. The engineering spec proposed typed columns;
+that is a second data model to migrate and validate, to hold what these
+boards actually use a table for (a small grid of text beside a tech pack).
+A typed table can be built on top of this later; the reverse is not true.
+Cells follow the click/double-click rule like every card body and are
+hydrated with `textContent`. **Adding a row or column grows the card** — or
+the new row is drawn outside it and clipped, the same class of bug the
+label and reaction rows caused.
+
+**Reading order is built once and used twice** (`_boardsReadingOrder`). A
+board is a plane; a document and a slideshow are both a LINE. Two orderings
+would disagree the first time anyone added a frame. Frames first (a frame
+is how these boards mark a section), each followed by what is inside it,
+then everything loose; within a group, cards are **banded by y** (120 world
+px) and sorted left-to-right inside the band — plain y-sorting reads a row
+of four cards as four rows, plain x-sorting reads columns. A column is
+emitted whole, in the order it already owns.
+
+**Document export** — Word, Markdown, plain text, with an optional
+recursive pass through nested boards (offered only when there are any).
+**The Word file is HTML with a `.doc` extension**, which Word opens keeping
+headings, lists, tables and images. A real `.docx` means a ZIP writer and
+an OOXML template — a library, against the zero-new-deps line — and the
+download toast says so rather than implying otherwise. The recursion swaps
+`_editCards` to read a child board (frame membership and column children
+are both computed from it) and restores it in a **`finally`**, so a throw
+cannot leave the open canvas pointing at another board's array.
+
+**Presentation** walks that same order. Arrow keys, space, PageUp/Down,
+Home/End, click to advance, Escape to leave; past the last slide it exits
+rather than sticking. Cards with nothing to show are skipped rather than
+shown blank. It is **its own fixed overlay, not a mode on the canvas** —
+the canvas is a pan/zoom surface with a rail, a minimap and a tray, and
+hiding all of that is more work, and more ways to leave it hidden, than
+drawing a clean screen. Slides are built with `createElement` +
+`textContent`: a slide is the one place a stored string is drawn at 60px,
+so getting that wrong here would be the most visible XSS in the app.
+`100dvh`, not `inset:0`, for the reason the canvas takeover documents.
+
 ### Mood Boards — Column is a real container (Sept 2026)
 
 **This reverses the Stage 3 substitution on purpose**, at Afnan's request.
@@ -1479,10 +1571,11 @@ rewritten on each autosave), and that is a bandwidth question, not a
 correctness one. Re-measure before reopening this; don't re-derive it from
 the same assumption.
 
-Still not built, and each is a real gap rather than an oversight:
-**Table**, **linear document export** (Word/Markdown, including
-sub-boards), and **Presentation mode**. *Column as a true container* and
-*Home-as-a-board* have both shipped since — see their own sections.
+**Every gap on this list has since shipped** — Column as a true container,
+Home-as-a-board, Table, linear document export and Presentation each have
+their own section above. What is deliberately still missing versus
+Milanote: board **backgrounds**, and a typed/schema'd table (see the Table
+note for why the untyped one came first).
 
 ### Mood Boards — drag to select (Sept 2026)
 
