@@ -969,6 +969,11 @@ async function _boardsOpenCanvas(){
   // board into the next would highlight nothing and look broken.
   _boardsFindOpen=false;_boardsFindQuery='';_boardsFindHits=[];_boardsFindIdx=0;
   _boardsMenuOpen=false;
+  // Line mode is a MODE, and a mode that survives leaving the board is a
+  // trap: you open the next board and your first drag draws an arrow
+  // instead of doing what you meant. Reset it with the rest of the
+  // per-opening state. (Reported as "Line tool defaults to ON".)
+  _boardsLineMode=false;
   // History is per board-opening — undoing your way into a different
   // board's state would be nonsense.
   _boardsUndo=[];_boardsRedo=[];
@@ -1240,7 +1245,7 @@ function _boardCardHTML(c,canEdit){
   const lock=c.locked?' locked':'';
   const tint=c.color?' tint-'+c.color:'';
   return`<div class="board-card-el type-${c.type}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px" onclick="window.boardsSelectCard('${c.id}',event)">
-    <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''}>
+    <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')" ondblclick="window.boardsHeadDblClick(event,'${c.id}')"`:''}>
       <span class="board-card-kind">
         <span class="board-card-name" id="board-name-${c.id}" contenteditable="false" data-placeholder="${_boardsEsc(kind)}" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-name-${c.id}')"`:''} oninput="window.boardsCardName('${c.id}',this)" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()" title="Double-click to rename this card"></span>${c.locked?' · Locked':''}</span>
       <span style="display:flex;align-items:center;gap:4px">
@@ -2158,10 +2163,19 @@ function _boardsPlacementPoint(){
   if(!stage)return{x:80,y:80};
   const rect=stage.getBoundingClientRect();
   const n=(_boardsAddCascade++)%6;
-  return{
-    x:(rect.width/2-b.panX)/b.zoom-90+n*26,
-    y:(rect.height/2-b.panY)/b.zoom-60+n*26
-  };
+  let x=(rect.width/2-b.panX)/b.zoom-90+n*26;
+  let y=(rect.height/2-b.panY)/b.zoom-60+n*26;
+  // The cascade repeats every 6, so the 7th card landed exactly on the
+  // 1st — reported in QA as new cards spawning stacked. Step off anything
+  // already sitting at this spot. Bounded, because a board can be dense
+  // enough that there is no free spot and burying one card is still better
+  // than looping.
+  for(let i=0;i<40;i++){
+    const clash=_editCards.some(c=>Math.abs(c.x-x)<18&&Math.abs(c.y-y)<18);
+    if(!clash)break;
+    x+=26;y+=26;
+  }
+  return{x,y};
 }
 // All stage-level wiring. Called on every canvas render — safe to re-add
 // listeners because the whole stage element is replaced each time, so the
@@ -2463,6 +2477,34 @@ function _boardsShowGuides(vx,hy){
 }
 function _boardsHideGuides(){_boardsShowGuides(null,null);}
 
+// A card drag ends with a `click` on whatever was under the pointer. On a
+// FILE card that is an <a href>, so dragging one to reposition it opened
+// the raw Cloudinary PDF in a new tab — reported in QA. Selection already
+// happened on pointerdown, so the click after a real drag has nothing left
+// to do and is swallowed. Capture phase, so it lands before the anchor's
+// own default and before boardsSelectCard.
+let _boardsSuppressClick=false;
+document.addEventListener('click',e=>{
+  if(!_boardsSuppressClick)return;
+  _boardsSuppressClick=false;
+  e.preventDefault();
+  e.stopPropagation();
+},true);
+
+// Double-clicking a card's header opens whatever that card's primary
+// editable is. Reported in QA: the first double-click on a HEADING did
+// nothing and the text typed after it was lost — the heading's drag strip
+// sits over the top of the banner, so the first attempt lands on the strip
+// rather than the text. One rule for every type beats a special case.
+window.boardsHeadDblClick=function(ev,id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||!_boardsCanEdit(_editBoard)||c.locked)return;
+  if(ev)ev.stopPropagation();
+  if(c.type==='heading'){window.boardsBeginEdit(ev,'board-txt-'+id);return;}
+  if(c.type==='text'){window.boardsBeginEdit(ev,'board-txt-'+id);return;}
+  window.boardsBeginEdit(ev,'board-name-'+id);
+};
+
 window.boardsCardDragStart=function(e,cardId){
   e.stopPropagation();
   // A press inside whatever is currently open for editing is the user
@@ -2522,6 +2564,9 @@ window.boardsCardDragStart=function(e,cardId){
   function up(){
     head.removeEventListener('pointermove',move);head.removeEventListener('pointerup',up);
     _boardsHideGuides();
+    // `pushed` is set on the first real pointermove, so it is exactly
+    // "this was a drag, not a click".
+    if(pushed)_boardsSuppressClick=true;
     if(pushed)_boardsSaveDebounced();
   }
   head.addEventListener('pointermove',move);
@@ -3149,6 +3194,12 @@ function _boardsOnPaste(e){
 document.addEventListener('paste',_boardsOnPaste);
 window.boardsAddCard=function(type){
   const b=_editBoard;if(!b)return;
+  // A 'board' card is a LINK to a child board, so it is meaningless without
+  // one. Adding it from the rail minted a card with no boardId, which
+  // renders "Missing board" and can never be opened — an orphan by
+  // construction. The real creator already existed on the ⋯ menu; the rail
+  // just wasn't calling it.
+  if(type==='board'){window.boardsAddChildBoard();return;}
   _boardsPushUndo();
   const nc=_boardsNewCard(type);
   const p=_boardsPlacementPoint();
@@ -3355,8 +3406,17 @@ window.boardsToggleMenu=function(ev){
 // Registered once at load, like the paste/keydown handlers — the canvas
 // DOM is replaced on every render, so a listener added there would pile up.
 document.addEventListener('click',e=>{
-  if(!_boardsMenuOpen)return;
+  const el=document.getElementById('board-menu');
+  if(!el)return;
   if(e.target&&e.target.closest&&e.target.closest('.board-menu-wrap'))return;
+  // Read the DOM, not just the flag. Reported as the menu "re-opening
+  // unexpectedly": any action that clears `_boardsMenuOpen` without also
+  // calling _boardsSyncMenu() (or re-rendering) leaves the menu visible
+  // while the flag says closed — and this closer's old `if(!flag)return`
+  // then refused to close it, so it sat there until the next render. I
+  // could not pin down which action did it, so the closer no longer
+  // depends on the two staying in step.
+  if(!_boardsMenuOpen&&el.style.display==='none')return;
   _boardsMenuOpen=false;
   _boardsSyncMenu();
 });
@@ -4930,21 +4990,24 @@ function _boardsCtxRun(act){
         break;
       }
       if(c.type==='heading'){
-        const el=document.getElementById('board-txt-'+c.id);
-        if(el)el.focus();
+        window.boardsBeginEdit(null,'board-txt-'+c.id);
         break;
       }
       // Every other card renames through the editable label in its header.
-      const el=document.getElementById('board-name-'+c.id);
-      if(!el)break;
-      el.focus();
+      // boardsBeginEdit turns the element editable AND focuses it; a bare
+      // focus() does nothing on a contenteditable="false" node, which is
+      // what made Rename and Caption look like they simply did not save.
+      window.boardsBeginEdit(null,'board-name-'+c.id);
       try{
-        const r=document.createRange();
-        r.selectNodeContents(el);
-        const sel2=window.getSelection();
-        sel2.removeAllRanges();
-        sel2.addRange(r);
-      }catch(e){/* focus alone is enough */}
+        const el=document.getElementById('board-name-'+c.id);
+        if(el){
+          const r=document.createRange();
+          r.selectNodeContents(el);
+          const sel2=window.getSelection();
+          sel2.removeAllRanges();
+          sel2.addRange(r);
+        }
+      }catch(e){/* opening edit mode is the part that matters */}
       break;
     }
     case'selectinside':{
@@ -4975,15 +5038,13 @@ function _boardsCtxRun(act){
         _boardsRenderCanvasAndWire();
         _boardsSaveDebounced();
       }
-      const el=document.getElementById('board-cap-'+c.id);
-      if(el)el.focus();
+      window.boardsBeginEdit(null,'board-cap-'+c.id);
       break;
     }
     case'renameheading':{
       const s=_boardsSelectedCards();
       if(s.length!==1)break;
-      const el=document.getElementById('board-txt-'+s[0].id);
-      if(el)el.focus();
+      window.boardsBeginEdit(null,'board-txt-'+s[0].id);
       break;
     }
     case'stack':window.boardsStackSelection();break;

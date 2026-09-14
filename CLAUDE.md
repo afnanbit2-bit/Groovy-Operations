@@ -1177,6 +1177,69 @@ Three things Afnan asked for in one round. The first two were bugs.
   no content of its own, a board link belongs with its parent). Labels are
   hydrated with `textContent` like every other user string in this file.
 
+### Mood Boards — the QA round (Sept 2026)
+
+Afnan ran an exhaustive pass over a real private board — every tool, every
+menu action, every top-bar control, keyboard, Unsorted, connectors, frames,
+reactions, labels, comments, autosave — and filed eight findings. Four of
+them shared one cause, and that cause was a regression from the
+click/double-click change above.
+
+**The regression: `el.focus()` stopped meaning anything.** Card bodies now
+ship `contenteditable="false"` and exactly one element is switched on at a
+time. Four actions (`rename`, `renameheading`, `caption`, and the heading
+branch of rename) were still doing `document.getElementById(…).focus()`,
+which on a non-editable node focuses nothing typeable — **the field
+appears, you cannot type, and nothing saves.** Reported as "Image Caption
+does not save (confirmed, repeatable)". All four now call
+`window.boardsBeginEdit(null, id)`, which is the only thing that makes an
+element editable. **Any future action that wants to put a caret in a card
+must go through `boardsBeginEdit`, never `focus()`.**
+
+The rest:
+
+- **The Board tool minted an orphan.** The rail called
+  `boardsAddCard('board')`, which builds a `type:'board'` card with no
+  `boardId` — it renders "Missing board" and can never be opened. The real
+  creator, `boardsAddChildBoard()`, already existed on the ⋯ menu; the rail
+  simply wasn't calling it. `boardsAddCard` now routes `'board'` there.
+  **A card type that is a LINK to something must never be creatable
+  without the thing it links to.**
+- **Line mode survived leaving the board.** `_boardsLineMode` was reset
+  nowhere — Find, the ⋯ menu and undo history all reset on board open, and
+  this was missed — so turning it on once made every later board open in
+  arrow-drawing mode, and the first drag drew a line instead of moving a
+  card. Reported as "Line tool defaults to ON". Reset with the rest.
+- **A drag that ended on a file card opened the PDF.** A card drag ends
+  with a `click` on whatever is under the pointer, and a file card's body
+  is an `<a href>`. `_boardsSuppressClick` is armed in the drag's `up()`
+  when the gesture actually moved (`pushed`, which is set on the first real
+  `pointermove`) and swallowed by a capture-phase document listener.
+  Selection already happened on `pointerdown`, so that click had nothing
+  left to do.
+- **Double-clicking a heading often did nothing the first time**, and the
+  text typed after it was lost — the heading's drag strip sits over the top
+  of the banner, so the first attempt lands on the strip. Double-clicking
+  any card's HEADER now opens that card's primary editable (banner text for
+  a heading, the name label for everything else): one rule instead of a
+  special case.
+- **New cards spawned stacked.** `_boardsPlacementPoint`'s cascade repeats
+  every 6, so the 7th card landed exactly on the 1st. It now steps off
+  anything already within 18px, bounded at 40 tries — on a dense board,
+  burying one card beats looping.
+- **Reactions clipped a sub-board card's title away.** A card is a
+  fixed-height flex column with `overflow:hidden`, so a reactions row
+  steals height from the body; on a small card the title vanished entirely,
+  leaving "Board · Missing board · 👍1". The body yields its space
+  (`flex:1;min-height:0`) instead of the content disappearing.
+- **The resize grip was a 13px target** and the ⋯ menu could stick. The
+  grip is now a 24px hit area with a 13px glyph and a hover cue. The menu's
+  outside-click closer used to bail on `if(!_boardsMenuOpen)return`, so any
+  action that cleared the flag without also calling `_boardsSyncMenu()`
+  left the menu visible and unclosable until the next render; it now reads
+  the DOM as well as the flag. **The exact action that desynced them was
+  not identified** — the closer no longer depends on the two agreeing.
+
 ### Mood Boards — drag to select (Sept 2026)
 
 Afnan asked for Milanote's gesture: **dragging empty canvas draws a

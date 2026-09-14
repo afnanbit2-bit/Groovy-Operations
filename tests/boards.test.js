@@ -547,5 +547,110 @@ module.exports=function(){
     s.ok('but distribute is hidden on only two cards',two.indexOf('Distribute')<0);
   }
 
+  // ── the QA round (Sept 2026) ──────────────────────────────────────────
+  // Eight findings from Afnan's exhaustive pass over a real board. Several
+  // were regressions from the click/double-click change: card bodies now
+  // ship contenteditable="false", and four actions were still calling a
+  // bare el.focus(), which on a non-editable node does nothing at all —
+  // the field appeared, you could not type, and nothing saved.
+  {
+    const app=loadApp({files:FILES});
+    const {run}=app;
+    function board(){
+      run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'}`);
+      run(`_editConnectors=[];_boardsSelection=new Set()`);
+    }
+
+    s.section('rename / caption / heading open EDIT mode, not just focus');
+    // A bare focus() is the bug. These must reach boardsBeginEdit, which is
+    // the only thing that makes an element typeable.
+    const src=require('fs').readFileSync(require('path').join(__dirname,'..','js/boards.js'),'utf8');
+    const ctx=src.slice(src.indexOf('function _boardsCtxRun'));
+    ['board-cap-','board-name-'].forEach(id=>{
+      const near=ctx.slice(0,ctx.indexOf('\n}\n'));
+      s.ok("'"+id+"' is opened with boardsBeginEdit",
+        new RegExp("boardsBeginEdit\\(null,'"+id).test(near));
+    });
+    s.ok('and no action focuses a caption without opening it',
+      !/getElementById\('board-cap-'\+c\.id\);\s*\n\s*if\(el\)el\.focus\(\)/.test(src));
+
+    // End to end: open the caption editor and check the element really is
+    // editable afterwards, which is what "the text saves" depends on.
+    board();
+    run(`_editCards=[{id:'a',type:'image',x:0,y:0,w:200,h:200,imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',caption:''}]`);
+    run(`_boardsSelection=new Set(['a'])`);
+    run(`document.getElementById('main-content').innerHTML=_boardCardHTML(_editCards[0],true)`);
+    run(`_boardsCtxRun('caption')`);
+    s.eq('the caption element is editable after the action',
+      app.el('board-cap-a').getAttribute('contenteditable'),'true');
+    run(`window.boardsCaptionInput('a',{textContent:'Front print, 2026'})`);
+    s.eq('and typing into it reaches the card',run(`_editCards[0].caption`),'Front print, 2026');
+
+    s.section('the Board tool creates a REAL board, never a dead reference');
+    board();
+    run(`_editCards=[]`);
+    run(`window.boardsAddChildBoard=function(){globalThis.__child=(globalThis.__child||0)+1;}`);
+    run(`window.boardsAddCard('board')`);
+    s.eq('it calls the real sub-board creator',run(`__child||0`),1);
+    s.eq('and mints no orphan card',run(`_editCards.length`),0);
+    // Every other type still adds a card directly.
+    run(`window.boardsAddCard('text')`);
+    s.eq('a note still adds normally',run(`_editCards.length`),1);
+
+    s.section('line mode does not survive leaving a board');
+    run(`_boardsLineMode=true`);
+    const resets=/_boardsMenuOpen=false;[\s\S]{0,400}?_boardsLineMode=false;/.test(src);
+    s.ok('it is reset beside the other per-opening state',resets);
+
+    s.section('a drag that moved swallows the click it ends with');
+    // A file card's body is an <a href>, so the click a drag ends with
+    // opened the raw PDF in a new tab. Drive the real document-level
+    // capture listener rather than grepping for it.
+    const clickers=app.state.listeners['click']||[];
+    function docClick(){
+      let prevented=false;
+      clickers.forEach(fn=>{try{fn({preventDefault(){prevented=true;},
+        stopPropagation(){},target:null});}catch(e){}});
+      return prevented;
+    }
+    s.ok('a plain click is left alone',!docClick());
+    run(`_boardsSuppressClick=true`);
+    s.ok('the click right after a drag is swallowed',docClick());
+    s.ok('and only that one — the next click works again',!docClick());
+    s.ok('it is armed by a drag that moved, not by every pointerdown',
+      /if\(pushed\)_boardsSuppressClick=true;/.test(src));
+
+    s.section('double-clicking a header opens that card type\'s editable');
+    board();
+    run(`_editCards=[{id:'h',type:'heading',x:0,y:0,w:300,h:60},{id:'i',type:'image',x:0,y:0,w:200,h:200}]`);
+    run(`window.boardsBeginEdit=function(ev,id){globalThis.__opened=id;}`);
+    run(`window.boardsHeadDblClick(null,'h')`);
+    s.eq('a heading opens its banner text',run(`__opened`),'board-txt-h');
+    run(`window.boardsHeadDblClick(null,'i')`);
+    s.eq('an image opens its name',run(`__opened`),'board-name-i');
+    run(`_editCards[1].locked=true;globalThis.__opened=null`);
+    run(`window.boardsHeadDblClick(null,'i')`);
+    s.eq('a locked card opens nothing',run(`__opened`),null);
+
+    s.section('new cards never land exactly on an existing one');
+    // The cascade repeats every 6, so the 7th card used to land exactly on
+    // the 1st. Place a real card at each point so the next call has to
+    // dodge what is already there.
+    board();
+    run(`_editCards=[];_boardsAddCascade=0`);
+    const pts=[];
+    for(let i=0;i<12;i++){
+      const p=run(`_boardsPlacementPoint()`);
+      pts.push(Math.round(p.x)+','+Math.round(p.y));
+      run(`_editCards.push({id:'c'+${i},type:'text',w:180,h:120,`+
+          `x:${JSON.stringify(0)},y:0})`);
+      run(`_editCards[_editCards.length-1].x=${JSON.stringify(p.x)}`);
+      run(`_editCards[_editCards.length-1].y=${JSON.stringify(p.y)}`);
+    }
+    s.eq('twelve cards, twelve distinct spots',new Set(pts).size,12,
+      JSON.stringify(pts.slice(0,5)));
+
+  }
+
   return s;
 };
