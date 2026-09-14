@@ -61,8 +61,12 @@ unauthenticated read) and have the human report the result.
 `api.github.com` and `firestore.googleapis.com` **are** reachable.
 
 **Blocked: `www.gstatic.com`, `cdnjs.cloudflare.com`, `cdn.jsdelivr.net`,
-`unpkg.com`, `res.cloudinary.com`** (verified Sept 2026 via `curl` and a
-headless Chromium launch). **Reachable: `api.github.com`,
+`unpkg.com`, and `cloudinary.com` ENTIRELY** — not just
+`res.cloudinary.com`; `cloudinary.com/documentation` and
+`support.cloudinary.com` answer `403` to `CONNECT` as well (verified Sept
+2026 via `curl` and a headless Chromium launch). So nothing about a
+Cloudinary account, its settings or its docs can be checked from a session —
+that always needs the human. **Reachable: `api.github.com`,
 `firestore.googleapis.com`, `registry.npmjs.org`, `raw.githubusercontent.com`.**
 
 **What changed in Sept 2026:** jsPDF/SheetJS/JsBarcode are no longer loaded
@@ -1307,13 +1311,28 @@ that opens the real Save-as dialog under the **card's** name (an
 `blob:` one is honoured); and a readable error, because a failed `fetch`
 has a status.
 
-**The 401 hypothesis, labelled as one.** On a 401/403 for a PDF the message
-names the likely cause — Cloudinary's "Allow delivery of PDF and ZIP files"
-account setting being off. **Unverified: this sandbox cannot reach
-`res.cloudinary.com` at all.** What makes it the best hypothesis is that the
-card's page-1 thumbnail renders perfectly — Cloudinary rasterising the same
-document it will not serve. If PDFs start working after that setting is
-flipped, this was it; if not, read the status the preview now prints.
+**The cause was Cloudinary's account setting, and it is now CONFIRMED.**
+PDF and ZIP delivery is off by default on a free Cloudinary account, so
+`res.cloudinary.com/<cloud>/image/upload/…​.pdf` answered with an error body
+instead of the file — hence Chrome's "Failed to load PDF document", and
+`ERR_INVALID_RESPONSE` on the `fl_attachment` URL. Afnan turned it on
+(Cloudinary console → the **gear** icon at the foot of the left rail →
+**Settings → Security** → *Allow delivery of PDF and ZIP files*) and Open
+and Download both work. **Do not re-diagnose this from the code** — nothing
+in `js/boards.js` was ever wrong about the URL.
+
+The tell, worth reusing: **the card's page-1 thumbnail rendered perfectly
+the whole time.** That is Cloudinary rasterising the exact document it was
+refusing to serve, which rules out a bad upload, a bad URL and a broken file
+in one observation. The sandbox cannot reach `cloudinary.com` at all — the
+egress proxy answers `403` to `CONNECT` for the docs and support sites too,
+not just `res.cloudinary.com` — so this was reasoned from screenshots and
+then confirmed by the human, which is the only route available for anything
+Cloudinary-side.
+
+On a 401/403 for a PDF the preview still names that setting, so if the
+account is ever changed or a second environment is set up, the app says what
+to check instead of showing a browser error page.
 
 Double-clicking an image or file card previews it; a plain click on a file
 card no longer navigates (ctrl/cmd-click still opens a tab). The right-click
