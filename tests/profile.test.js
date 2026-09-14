@@ -388,5 +388,31 @@ module.exports=async function(){
       JSON.stringify(app.state.toasts.slice(-1)));
   }
 
+  s.section('a name colour is lifted for the theme it is painted on');
+  {
+    const {run}=loadApp({files:['js/boards.js','js/profile.js'],
+      session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'}});
+    const L=(hex,bg)=>run(`_profLuma.apply(null,[1,2,3].map(i=>parseInt(_profLift('${hex}',${bg}).slice(i*2-1,i*2+1),16)))`);
+    const ratio=(hex,bg)=>{const l=L(hex,bg);return (Math.max(l,bg)+0.05)/(Math.min(l,bg)+0.05);};
+    // #7B1F2A is Afnan's own, and sat at 1.76:1 on the dark surface — the
+    // bug tests/smoke-layout.js's contrast check found.
+    s.ok('a dark red clears the floor against a DARK surface',ratio('#7B1F2A',0.02)>=3.2,
+      ratio('#7B1F2A',0.02).toFixed(2));
+    s.ok('and is left essentially alone on a LIGHT one',ratio('#7B1F2A',1)>=3.2);
+    s.eq('unchanged when it already passes (normalised to lower case)',run(`_profLift('#7B1F2A',1)`),'#7b1f2a');
+    s.ok('a pale colour is DARKENED for a light surface',ratio('#FFF7A0',1)>=3.2);
+    s.ok('and the same colour is left readable on a dark one',ratio('#FFF7A0',0.02)>=3.2);
+
+    s.section('both variants are emitted, so CSS can pick per theme');
+    const st=run(`_profInkStyle('#7B1F2A')`);
+    s.ok('a light-theme ink',/--ink:#[0-9a-f]{6}/.test(st),st);
+    s.ok('and a dark-theme ink',/--ink-d:#[0-9a-f]{6}/.test(st));
+    s.ok('which differ',st.split('--ink:')[1].slice(0,7)!==st.split('--ink-d:')[1].slice(0,7));
+    s.eq('no colour, no properties',run(`_profInkStyle('')`),'');
+    // The validator still gates everything — an unvalidated string can
+    // never reach a style attribute through this path either.
+    s.eq('an invalid colour is refused before any lifting',run(`_profInkStyle('red;background:url(x)')`),'');
+  }
+
   return s;
 };

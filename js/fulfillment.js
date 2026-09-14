@@ -1110,7 +1110,7 @@ function _fulfillMissedBanner(){
 function _fulfillSectionBar(){
   const seg=(id,icon,label)=>`<button onclick="window.switchFulfillSection('${id}')"
       style="display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border:none;border-radius:9px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;transition:all .12s;
-      background:${_fulfillSection===id?'#111':'transparent'};color:${_fulfillSection===id?'#fff':'var(--muted)'};box-shadow:${_fulfillSection===id?'0 1px 3px rgba(0,0,0,.18)':'none'}">
+      background:${_fulfillSection===id?'var(--dark)':'transparent'};color:${_fulfillSection===id?'var(--on-dark)':'var(--muted)'};box-shadow:${_fulfillSection===id?'0 1px 3px rgba(0,0,0,.18)':'none'}">
       <span style="font-size:14px">${icon}</span>${label}</button>`;
   return `<div style="display:inline-flex;gap:3px;background:var(--soft);border-radius:12px;padding:4px;margin-bottom:16px">
       ${seg('reporting','📋','Daily Reporting')}${seg('postex','⚡','PostEx')}

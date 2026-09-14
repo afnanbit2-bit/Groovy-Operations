@@ -1130,7 +1130,7 @@ function renderAttendancePage(){
   if(!session||!['owner','manager'].includes(session.role)){
     return'<div class="empty">Owners and managers only.</div>';
   }
-  const tabBtn=(id,label)=>`<button class="att-tab ${attendanceTab===id?'active':''}" onclick="window.attendanceSetTab('${id}')" style="padding:8px 18px;border:1px solid var(--border);border-bottom:${attendanceTab===id?'2px solid #1A1A2E':'1px solid var(--border)'};background:${attendanceTab===id?'#fff':'#fafafa'};font-weight:${attendanceTab===id?'700':'500'};font-size:13px;cursor:pointer;font-family:inherit;color:${attendanceTab===id?'#1A1A2E':'var(--muted)'};border-radius:8px 8px 0 0;margin-right:4px">${label}</button>`;
+  const tabBtn=(id,label)=>`<button class="att-tab ${attendanceTab===id?'active':''}" onclick="window.attendanceSetTab('${id}')" style="padding:8px 18px;border:1px solid var(--border);border-bottom:${attendanceTab===id?'2px solid #1A1A2E':'1px solid var(--border)'};background:${attendanceTab===id?'var(--surface)':'var(--surface-2)'};font-weight:${attendanceTab===id?'700':'500'};font-size:13px;cursor:pointer;font-family:inherit;color:${attendanceTab===id?'var(--text)':'var(--muted)'};border-radius:8px 8px 0 0;margin-right:4px">${label}</button>`;
   const tabs=`<div style="display:flex;border-bottom:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap">${tabBtn('daily','Daily')}${tabBtn('monthly','Monthly')}</div>`;
   const activeStaff=allEmployees.filter(e=>e.status!=='inactive');
   const activeCount=activeStaff.length;
@@ -2677,7 +2677,7 @@ function renderAdvancesPage(){
   const tabBtns=tabs.map(t=>{
     const lbl=t==='all'?'All History':t.charAt(0).toUpperCase()+t.slice(1);
     const active=_advTab===t;
-    return`<button onclick="window.advSetTab('${t}')" style="padding:8px 16px;border:1px solid var(--border);border-bottom:${active?'2px solid #1A1A2E':'1px solid var(--border)'};background:${active?'#fff':'#fafafa'};font-weight:${active?'700':'500'};font-size:13px;cursor:pointer;font-family:inherit;color:${active?'var(--text)':'var(--muted)'};border-radius:8px 8px 0 0;margin-right:4px">${lbl}</button>`;
+    return`<button onclick="window.advSetTab('${t}')" style="padding:8px 16px;border:1px solid var(--border);border-bottom:${active?'2px solid #1A1A2E':'1px solid var(--border)'};background:${active?'var(--surface)':'var(--surface-2)'};font-weight:${active?'700':'500'};font-size:13px;cursor:pointer;font-family:inherit;color:${active?'var(--text)':'var(--muted)'};border-radius:8px 8px 0 0;margin-right:4px">${lbl}</button>`;
   }).join('');
   return`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
     <div>
@@ -2871,7 +2871,7 @@ function renderLoansPage(){
   const filterBtns=['active','completed','paused','all'].map(t=>{
     const lbl=t.charAt(0).toUpperCase()+t.slice(1);
     const a=_loanFilter===t;
-    return`<button onclick="window.loanSetFilter('${t}')" style="padding:8px 16px;border:1px solid var(--border);border-bottom:${a?'2px solid #1A1A2E':'1px solid var(--border)'};background:${a?'#fff':'#fafafa'};font-weight:${a?'700':'500'};font-size:13px;cursor:pointer;font-family:inherit;color:${a?'var(--text)':'var(--muted)'};border-radius:8px 8px 0 0;margin-right:4px">${lbl}</button>`;
+    return`<button onclick="window.loanSetFilter('${t}')" style="padding:8px 16px;border:1px solid var(--border);border-bottom:${a?'2px solid #1A1A2E':'1px solid var(--border)'};background:${a?'var(--surface)':'var(--surface-2)'};font-weight:${a?'700':'500'};font-size:13px;cursor:pointer;font-family:inherit;color:${a?'var(--text)':'var(--muted)'};border-radius:8px 8px 0 0;margin-right:4px">${lbl}</button>`;
   }).join('');
   return`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
     <div>
@@ -3075,7 +3075,7 @@ function renderPolicyEnginePage(){
     if(d.type==='number')input=`<input type="number" id="pol-${d.key}" value="${v}" ${canEdit?'':'disabled'} style="width:80px;padding:6px;text-align:center;border:1px solid var(--border);border-radius:6px;font-weight:600">`;
     else if(d.type==='time')input=`<input type="time" id="pol-${d.key}" value="${v}" ${canEdit?'':'disabled'} style="padding:6px;border:1px solid var(--border);border-radius:6px;font-weight:600">`;
     else if(d.type==='select')input=`<select id="pol-${d.key}" ${canEdit?'':'disabled'} style="padding:6px;border:1px solid var(--border);border-radius:6px;font-weight:600">${d.options.map(o=>`<option value="${o}" ${o===v?'selected':''}>${o}</option>`).join('')}</select>`;
-    else if(d.type==='toggle')input=`<select id="pol-${d.key}" ${canEdit?'':'disabled'} style="padding:6px;border:1px solid var(--border);border-radius:6px;font-weight:600;background:${v?'var(--accent-success-soft)':'#fafafa'};color:${v?'var(--accent-success)':'var(--muted)'}"><option value="true" ${v?'selected':''}>ON</option><option value="false" ${!v?'selected':''}>OFF</option></select>`;
+    else if(d.type==='toggle')input=`<select id="pol-${d.key}" ${canEdit?'':'disabled'} style="padding:6px;border:1px solid var(--border);border-radius:6px;font-weight:600;background:${v?'var(--accent-success-soft)':'var(--surface-2)'};color:${v?'var(--accent-success)':'var(--muted)'}"><option value="true" ${v?'selected':''}>ON</option><option value="false" ${!v?'selected':''}>OFF</option></select>`;
     const saveBtn=canEdit?`<button class="btn-outline" style="font-size:12px;padding:6px 12px" onclick="window.policySave('${d.key}')">Save</button>`:'';
     return`<div class="card" style="padding:14px;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">

@@ -696,7 +696,7 @@ function _cashInsightsPanel(entries,period){
 
   let h='';
   if(months.length>1){
-    h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${months.map(m=>`<button onclick="window._cashSetPeriod('${m}')" style="padding:5px 12px;border-radius:16px;border:1.5px solid ${mo===m?'#111':'var(--border)'};background:${mo===m?'#111':'#fff'};font-size:11px;font-weight:600;cursor:pointer;color:${mo===m?'#fff':'#111'}">${m}</button>`).join('')}</div>`;
+    h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${months.map(m=>`<button onclick="window._cashSetPeriod('${m}')" style="padding:5px 12px;border-radius:16px;border:1.5px solid ${mo===m?'#111':'var(--border)'};background:${mo===m?'var(--dark)':'var(--surface)'};font-size:11px;font-weight:600;cursor:pointer;color:${mo===m?'var(--on-dark)':'var(--text)'}">${m}</button>`).join('')}</div>`;
   }
 
   h+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
@@ -882,9 +882,9 @@ window.cashSheetExpense=function(cloneId){
 
   const catChips=[...allCashCategories].sort((a,b)=>(a.label||'').localeCompare(b.label||'')).map(c=>{
     const k=c._id||c.key;const on=defCat===k;const ac=_catAccent(k);
-    return`<button id="cc-${k}" onclick="window._cashPickCat('${k}')" style="padding:7px 12px;border-radius:20px;border:2px solid ${on?'#111':'#e5e7eb'};background:${on?'#111':'#fff'};font-size:12px;cursor:pointer;font-weight:600;color:${on?'#fff':'#111'};display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:${ac}"></span>${_scEsc(c.label)}</button>`;
+    return`<button id="cc-${k}" onclick="window._cashPickCat('${k}')" style="padding:7px 12px;border-radius:20px;border:2px solid ${on?'#111':'#e5e7eb'};background:${on?'var(--dark)':'var(--surface)'};font-size:12px;cursor:pointer;font-weight:600;color:${on?'var(--on-dark)':'var(--text)'};display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:${ac}"></span>${_scEsc(c.label)}</button>`;
   }).join('');
-  const accChips=_cashAllAccounts().map(a=>{const k=a._id||a.key;const on=defAcc===k;return`<button id="ca-${k}" onclick="window._cashPickAcc('${k}')" style="padding:7px 14px;border-radius:20px;border:2px solid ${on?'#111':'#e5e7eb'};background:${on?'#111':'#fff'};font-size:12px;cursor:pointer;font-weight:600;color:${on?'#fff':'#111'}">${_scEsc(a.label)}</button>`;}).join('');
+  const accChips=_cashAllAccounts().map(a=>{const k=a._id||a.key;const on=defAcc===k;return`<button id="ca-${k}" onclick="window._cashPickAcc('${k}')" style="padding:7px 14px;border-radius:20px;border:2px solid ${on?'#111':'#e5e7eb'};background:${on?'var(--dark)':'var(--surface)'};font-size:12px;cursor:pointer;font-weight:600;color:${on?'var(--on-dark)':'var(--text)'}">${_scEsc(a.label)}</button>`;}).join('');
   const qAmts=[100,500,1000,2000,5000].map(v=>`<button onclick="window._cashQAmt(${v})" style="flex:1;padding:8px 0;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:12px;font-weight:700;cursor:pointer">+${v>=1000?v/1000+'k':v}</button>`).join('');
 
   _cashOpenSheet('Record Expense',`
@@ -901,8 +901,8 @@ window.cashSheetExpense=function(cloneId){
 
     <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Payment</div>
     <div style="display:flex;gap:8px;margin-bottom:14px">
-      <button id="mode-paid" onclick="window._cashPickMode('paid')" style="flex:1;padding:11px;border-radius:10px;border:2px solid ${_cashExpenseMode==='paid'?'#111':'#e5e7eb'};background:${_cashExpenseMode==='paid'?'#111':'#fff'};color:${_cashExpenseMode==='paid'?'#fff':'#111'};font-size:13px;font-weight:700;cursor:pointer">Paid now</button>
-      <button id="mode-credit" onclick="window._cashPickMode('credit')" style="flex:1;padding:11px;border-radius:10px;border:2px solid ${_cashExpenseMode==='credit'?'#dc2626':'#e5e7eb'};background:${_cashExpenseMode==='credit'?'#dc2626':'#fff'};color:${_cashExpenseMode==='credit'?'#fff':'#111'};font-size:13px;font-weight:700;cursor:pointer">On credit</button>
+      <button id="mode-paid" onclick="window._cashPickMode('paid')" style="flex:1;padding:11px;border-radius:10px;border:2px solid ${_cashExpenseMode==='paid'?'#111':'#e5e7eb'};background:${_cashExpenseMode==='paid'?'var(--dark)':'var(--surface)'};color:${_cashExpenseMode==='paid'?'var(--on-dark)':'var(--text)'};font-size:13px;font-weight:700;cursor:pointer">Paid now</button>
+      <button id="mode-credit" onclick="window._cashPickMode('credit')" style="flex:1;padding:11px;border-radius:10px;border:2px solid ${_cashExpenseMode==='credit'?'#dc2626':'#e5e7eb'};background:${_cashExpenseMode==='credit'?'#dc2626':'var(--surface)'};color:${_cashExpenseMode==='credit'?'#fff':'var(--text)'};font-size:13px;font-weight:700;cursor:pointer">On credit</button>
     </div>
 
     <div id="exp-paid-block" style="display:${_cashExpenseMode==='paid'?'block':'none'}">
@@ -994,7 +994,7 @@ window.cashSheetTopup=function(cloneId){
   const clone=cloneId?allCashLedger.find(r=>r._id===cloneId):null;
   const defAcc=clone?.account||'cash';
   _cashTopupAcc=defAcc;
-  const accChips=_cashAllAccounts().map(a=>{const k=a._id||a.key;const on=defAcc===k;return`<button id="ta-${k}" onclick="window._cashPickTopupAcc('${k}')" style="padding:8px 16px;border-radius:20px;border:2px solid ${on?'#111':'#e5e7eb'};background:${on?'#111':'#fff'};font-size:13px;cursor:pointer;font-weight:600;color:${on?'#fff':'#111'}">${_scEsc(a.label)}</button>`;}).join('');
+  const accChips=_cashAllAccounts().map(a=>{const k=a._id||a.key;const on=defAcc===k;return`<button id="ta-${k}" onclick="window._cashPickTopupAcc('${k}')" style="padding:8px 16px;border-radius:20px;border:2px solid ${on?'#111':'#e5e7eb'};background:${on?'var(--dark)':'var(--surface)'};font-size:13px;cursor:pointer;font-weight:600;color:${on?'var(--on-dark)':'var(--text)'}">${_scEsc(a.label)}</button>`;}).join('');
   const qAmts=[1000,2000,5000,10000,20000].map(v=>`<button onclick="window._cashTQAmt(${v})" style="flex:1;padding:8px 0;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:12px;font-weight:700;cursor:pointer">+${v>=1000?v/1000+'k':v}</button>`).join('');
   _cashOpenSheet('Money In',`
     <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Deposit Into</div>
@@ -1112,7 +1112,7 @@ window.cashSheetIssue=function(){
 };
 // Payment-source chips: every account with its live balance, plus "Other".
 function _cashSrcChipsHtml(){
-  const chip=(id,top,bottom,on,accent)=>`<button id="isrc-${id}" onclick="window._cashIssuePickSrc('${id}')" style="padding:8px 12px;border-radius:12px;border:2px solid ${on?accent:'#e5e7eb'};background:${on?accent:'#fff'};color:${on?'#fff':'#111'};font-size:12px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;line-height:1.25;gap:1px"><span>${_scEsc(top)}</span><span style="font-size:11px;font-weight:600;opacity:.72">${_scEsc(bottom)}</span></button>`;
+  const chip=(id,top,bottom,on,accent)=>`<button id="isrc-${id}" onclick="window._cashIssuePickSrc('${id}')" style="padding:8px 12px;border-radius:12px;border:2px solid ${on?accent:'var(--border)'};background:${on?accent:'var(--surface)'};color:${on?'#fff':'var(--text)'};font-size:12px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;line-height:1.25;gap:1px"><span>${_scEsc(top)}</span><span style="font-size:11px;font-weight:600;opacity:.72">${_scEsc(bottom)}</span></button>`;
   const accs=_cashAllAccounts().map(a=>{const k=a._id||a.key;return chip(k,a.label,_fmtPKR(a.balance||0),_cashIssueSrc===k,'#111');}).join('');
   return accs+chip('other','Other','someone paid',_cashIssueSrc==='other','#b45309');
 }

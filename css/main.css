@@ -680,6 +680,19 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .board-card-el:hover .board-resize-handle{opacity:.9}
 .board-link-handle{position:absolute;right:-7px;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:50%;background:var(--surface);border:2px solid var(--text);cursor:crosshair;opacity:0;transition:opacity .12s}
 .board-card-el:hover .board-link-handle{opacity:1}
+/* A person's chosen name colour, painted as text. js/profile.js emits BOTH
+   theme variants as custom properties (see _profInkStyle) and this picks
+   one — the markup is built before it is themed, so the colour cannot be
+   resolved at render time. Follows the three-state theme rule: bare :root
+   is light, the media query covers "system", and [data-theme] wins over
+   both so the in-app toggle works in either direction. */
+.prof-ink{color:var(--ink)}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) .prof-ink{color:var(--ink-d)}
+}
+html[data-theme="dark"] .prof-ink{color:var(--ink-d)}
+html[data-theme="light"] .prof-ink{color:var(--ink)}
+
 /* Presentation. Its own fixed overlay rather than a mode on the canvas —
    see js/boards.js. 100dvh not inset:0, for the same reason the canvas
    takeover uses it: on a phone 100vh counts the browser UI and the bar

@@ -201,17 +201,17 @@ function renderFabricInventory(){
   h+=`<div class="card" style="margin-bottom:14px;padding:12px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
       <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex-shrink:0">
-        <button onclick="window.fabInvSetView('vendor')" style="padding:6px 14px;border:none;border-right:1px solid var(--border);background:${_fabInvView==='vendor'?'var(--dark)':'#fff'};color:${_fabInvView==='vendor'?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">By Vendor</button>
-        <button onclick="window.fabInvSetView('fabric')" style="padding:6px 14px;border:none;background:${_fabInvView==='fabric'?'var(--dark)':'#fff'};color:${_fabInvView==='fabric'?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">By Fabric</button>
+        <button onclick="window.fabInvSetView('vendor')" style="padding:6px 14px;border:none;border-right:1px solid var(--border);background:${_fabInvView==='vendor'?'var(--dark)':'var(--surface)'};color:${_fabInvView==='vendor'?'var(--on-dark)':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">By Vendor</button>
+        <button onclick="window.fabInvSetView('fabric')" style="padding:6px 14px;border:none;background:${_fabInvView==='fabric'?'var(--dark)':'var(--surface)'};color:${_fabInvView==='fabric'?'var(--on-dark)':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">By Fabric</button>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        ${[['in_stock','In stock'],['empty','Out of stock'],['partial',`Partial${partialCount?` (${partialCount})`:''}`],['all','All']].map(([k,l])=>`<button onclick="window.fabInvSetFilter('${k}')" style="padding:6px 12px;border:1px solid ${_fabInvFilter===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabInvFilter===k?(k==='partial'?'#b45309':'var(--dark)'):'#fff'};color:${_fabInvFilter===k?'#fff':(k==='partial'&&partialCount?'#b45309':'var(--text)')};font-size:12px;cursor:pointer;font-family:inherit;font-weight:${k==='partial'&&partialCount?'700':'400'}">${l}</button>`).join('')}
+        ${[['in_stock','In stock'],['empty','Out of stock'],['partial',`Partial${partialCount?` (${partialCount})`:''}`],['all','All']].map(([k,l])=>`<button onclick="window.fabInvSetFilter('${k}')" style="padding:6px 12px;border:1px solid ${_fabInvFilter===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabInvFilter===k?(k==='partial'?'#b45309':'var(--dark)'):'var(--surface)'};color:${_fabInvFilter===k?(k==='partial'?'#fff':'var(--on-dark)'):(k==='partial'&&partialCount?'#b45309':'var(--text)')};font-size:12px;cursor:pointer;font-family:inherit;font-weight:${k==='partial'&&partialCount?'700':'400'}">${l}</button>`).join('')}
       </div>
       <input id="finv-search" placeholder="Search fabric…" value="${_fabInvSearchQ.replace(/"/g,'&quot;')}" oninput="window.fabInvSetSearch(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;outline:none;flex:1;min-width:160px">
     </div>
     ${cats.length?`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
       <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-right:2px">Category</span>
-      ${[['all','All'],...cats.map(c=>[c,c])].map(([k,l])=>`<button onclick="window.fabInvSetCat('${_gpEsc(k).replace(/'/g,"\\'")}')" style="padding:5px 11px;border:1px solid ${_fabInvCatFilter===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabInvCatFilter===k?'var(--dark)':'#fff'};color:${_fabInvCatFilter===k?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${_gpEsc(l)}</button>`).join('')}
+      ${[['all','All'],...cats.map(c=>[c,c])].map(([k,l])=>`<button onclick="window.fabInvSetCat('${_gpEsc(k).replace(/'/g,"\\'")}')" style="padding:5px 11px;border:1px solid ${_fabInvCatFilter===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabInvCatFilter===k?'var(--dark)':'var(--surface)'};color:${_fabInvCatFilter===k?'var(--on-dark)':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${_gpEsc(l)}</button>`).join('')}
     </div>`:''}
   </div>`;
   h+=((_fabInvView==='vendor'&&_fabInvFilter!=='partial')?_renderFabByVendor(vendorNames,vMap,agg):_renderFabByFabric(filtered,vMap));
@@ -866,10 +866,10 @@ function renderFabricInList(){
     const p=_fabInListPage;
     body.innerHTML+=`<div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:14px 0 4px;border-top:1px solid var(--border);margin-top:4px">
       <button onclick="window.fabInListGoPage(${p-1})" ${p===0?'disabled':''}
-        style="padding:5px 14px;border:1px solid var(--border);border-radius:7px;background:${p===0?'#f9fafb':'#fff'};color:${p===0?'var(--muted)':'var(--text)'};font-size:12px;cursor:${p===0?'default':'pointer'};font-family:inherit">← Prev</button>
+        style="padding:5px 14px;border:1px solid var(--border);border-radius:7px;background:${p===0?'var(--surface-2)':'var(--surface)'};color:${p===0?'var(--muted)':'var(--text)'};font-size:12px;cursor:${p===0?'default':'pointer'};font-family:inherit">← Prev</button>
       <span style="font-size:12px;color:var(--muted)">Page <strong style="color:var(--text)">${p+1}</strong> of ${totalPages} · ${allFabricIn.length} entries</span>
       <button onclick="window.fabInListGoPage(${p+1})" ${p===totalPages-1?'disabled':''}
-        style="padding:5px 14px;border:1px solid var(--border);border-radius:7px;background:${p===totalPages-1?'#f9fafb':'#fff'};color:${p===totalPages-1?'var(--muted)':'var(--text)'};font-size:12px;cursor:${p===totalPages-1?'default':'pointer'};font-family:inherit">Next →</button>
+        style="padding:5px 14px;border:1px solid var(--border);border-radius:7px;background:${p===totalPages-1?'var(--surface-2)':'var(--surface)'};color:${p===totalPages-1?'var(--muted)':'var(--text)'};font-size:12px;cursor:${p===totalPages-1?'default':'pointer'};font-family:inherit">Next →</button>
     </div>`;
   }
 }
@@ -2962,7 +2962,7 @@ function renderFabricReportsTab(){
   const userRows=Object.values(byUser).sort((a,b)=>b.n-a.n);
 
   const periods=[['today','Today'],['7d','Week'],['month','Month'],['custom','Specific date'],['all','All time']];
-  const chip=(k,l)=>`<button onclick="window.fabRptSetPeriod('${k}')" style="padding:6px 13px;border:1px solid ${_fabRptPeriod===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabRptPeriod===k?'var(--dark)':'#fff'};color:${_fabRptPeriod===k?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${l}</button>`;
+  const chip=(k,l)=>`<button onclick="window.fabRptSetPeriod('${k}')" style="padding:6px 13px;border:1px solid ${_fabRptPeriod===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabRptPeriod===k?'var(--dark)':'var(--surface)'};color:${_fabRptPeriod===k?'var(--on-dark)':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${l}</button>`;
   const card=(title,c,a)=>`<div style="flex:1;min-width:150px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px">
     <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${title}</div>
     <div style="font-size:22px;font-weight:800;color:${c};margin-top:3px">${a.qty.toFixed(1)}<span style="font-size:12px;font-weight:600;color:var(--muted)"> kg/m</span></div>
@@ -3035,7 +3035,7 @@ function renderFabricLogTab(){
   const rows=movs.slice(0,400);
   const acts=[['all','All'],['receipt','Received'],['issue','Issued'],['return_out','Returned'],['reserve','Reserved'],['edit','Edited'],['delete','Deleted']];
   const chip=(k,l)=>{const on=_fabLogAction===k,c=counts[k]||0;
-    return`<button onclick="window.fabLogSetAction('${k}')" style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid ${on?'#111':'var(--border)'};border-radius:999px;background:${on?'#111':'#fff'};color:${on?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${l}<span style="font-size:10px;font-weight:700;opacity:${on?'.75':'.45'}">${c}</span></button>`;};
+    return`<button onclick="window.fabLogSetAction('${k}')" style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid ${on?'#111':'var(--border)'};border-radius:999px;background:${on?'var(--dark)':'var(--surface)'};color:${on?'var(--on-dark)':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${l}<span style="font-size:10px;font-weight:700;opacity:${on?'.75':'.45'}">${c}</span></button>`;};
   let lastDay='';
   const body=rows.map(m=>{
     const a=_fabActionMeta(m),{po,supplier,extra}=_fabLogDetail(m),codes=m.rollCodes||[];

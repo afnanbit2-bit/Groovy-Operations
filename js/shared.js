@@ -1485,7 +1485,7 @@ function _bugCardHTML(b){
         <div style="font-size:12px;color:var(--muted);margin-top:4px">Reported by ${b.reporterName||'—'} (${b.reporterRole||'—'}) · ${_hrmTimeAgo(b.reportedAt)} · on <strong>${b.pageWhereOccurred||'—'}</strong></div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
-        <button onclick="event.stopPropagation();window.bugUpvote('${b._id}')" style="background:${upActive?'var(--accent-success-soft)':'#fff'};border:1px solid ${upActive?'var(--accent-success)':'var(--border)'};border-radius:20px;padding:4px 10px;font-size:12px;cursor:pointer;color:${upActive?'var(--accent-success)':'var(--text)'}">👍 ${upCount}</button>
+        <button onclick="event.stopPropagation();window.bugUpvote('${b._id}')" style="background:${upActive?'var(--accent-success-soft)':'var(--surface)'};border:1px solid ${upActive?'var(--accent-success)':'var(--border)'};border-radius:20px;padding:4px 10px;font-size:12px;cursor:pointer;color:${upActive?'var(--accent-success)':'var(--text)'}">👍 ${upCount}</button>
         <span class="bug-arrow">▼</span>
       </div>
     </div>

@@ -171,7 +171,7 @@ function _renderMonitorPage(){
 
 function _monitorFilterBarHTML(mayBeIncomplete){
   const f=_monitorFilter;
-  const btn=(preset,label)=>`<button onclick="window.monitorSetPreset('${preset}')" style="padding:7px 13px;border:1px solid ${f.preset===preset?'var(--dark)':'var(--border)'};border-radius:8px;background:${f.preset===preset?'var(--dark)':'#fff'};color:${f.preset===preset?'#fff':'var(--text)'};font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">${label}</button>`;
+  const btn=(preset,label)=>`<button onclick="window.monitorSetPreset('${preset}')" style="padding:7px 13px;border:1px solid ${f.preset===preset?'var(--dark)':'var(--border)'};border-radius:8px;background:${f.preset===preset?'var(--dark)':'var(--surface)'};color:${f.preset===preset?'var(--on-dark)':'var(--text)'};font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">${label}</button>`;
   return`<div class="card" style="margin-bottom:14px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:${f.preset==='custom'?'10px':'0'}">
       ${btn('today','Today')}${btn('week','This Week')}${btn('month','This Month')}${btn('all','All Time')}${btn('custom','Custom ▾')}

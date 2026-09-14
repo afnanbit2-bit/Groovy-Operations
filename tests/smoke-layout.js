@@ -121,6 +121,23 @@ const FRAGMENTS={
   // column as later siblings, so elementFromPoint reaches them either way.
   // That rule is there so panning and marquee-select work THROUGH the
   // column's background, which is behaviour no layout measurement sees.
+  // The store category chips — the control Afnan reported as unreadable in
+  // dark mode, and the shape the same bug took in eight other files.
+  'store — inventory category chips':()=>{
+    const app=loadApp({files:['js/store.js'],globals:{
+      allItems:[],_invFilterCat:'all',_invSearchQ:'',_invSort:'category',
+      _catLabel:k=>k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()),
+      getStatus:()=>'ok',getBal:()=>0
+    }});
+    // Only the chip row is under test; renderInventory pulls in far more.
+    const html=app.run(`(()=>{
+      const chip=(key,label,count,active)=>\`<button style="padding:6px 12px;border:1px solid \${active?'var(--dark)':'var(--border)'};border-radius:999px;background:\${active?'var(--dark)':'var(--surface)'};color:\${active?'var(--on-dark)':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit;font-weight:\${active?'600':'500'}">\${label}\${count!=null?\` <span style="opacity:.7;font-weight:400">\${count}</span>\`:''}</button>\`;
+      const cats=[['all','All',300,true],['neck','Neck Labels',19,false],['sleeve','Sleeve & Hem Labels',6,false],['patches','Patches',7,false]];
+      return '<div class="card" style="padding:12px"><div style="display:flex;gap:6px;flex-wrap:wrap">'+
+        cats.map(c=>chip(c[0],c[1],c[2],c[3])).join('')+'</div></div>';
+    })()`);
+    return Promise.resolve(html);
+  },
   'boards — a column and its cards':()=>{
     const app=loadApp({files:['js/boards.js']});
     app.run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
@@ -217,6 +234,55 @@ document.querySelectorAll('#main-content *').forEach(el=>{
       text:textOfOwn(el).slice(0,40),
       cls:el.className&&el.className.toString().slice(0,50),
       clippedBy:(clip.className||clip.tagName).toString().slice(0,50)});
+  }
+});
+// Text you cannot READ because it is nearly the same colour as what is
+// behind it. This is the class of bug the dark-mode sweep was always going
+// to leave behind, and CLAUDE.md predicted it: the property-qualified sweep
+// converted a plain background:#fff but not one built inside a template
+// ternary, where the literal survives in the inactive branch — so toggle
+// chips across the app kept a hardcoded white under near-white text.
+// Worse in the other direction: --dark and --red INVERT, so an active chip
+// painted var(--dark) with a hardcoded color:#fff turns into white on
+// light. Both states of the same control, invisible.
+//
+// The threshold is deliberately LOW (2.2:1). This is not a WCAG audit — a
+// stricter bar would flag every piece of muted helper text in the app and
+// drown the real finding. 2.2 is "a human cannot read this at all".
+function lum(c){
+  // NB: PROBE is a template literal, so a lone backslash is eaten before
+  // the browser ever sees it — \\d here is what reaches the regex as \d.
+  const m=String(c).match(/[\\d.]+/g);
+  if(!m||m.length<3)return null;
+  if(m.length>3&&parseFloat(m[3])===0)return null;          // fully transparent
+  const f=v=>{v=parseFloat(v)/255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);};
+  return 0.2126*f(m[0])+0.7152*f(m[1])+0.0722*f(m[2]);
+}
+function bgOf(el){
+  let n=el;
+  while(n&&n!==document.documentElement){
+    const c=getComputedStyle(n).backgroundColor;
+    const l=lum(c);
+    if(l!==null)return l;
+    n=n.parentElement;
+  }
+  return lum(getComputedStyle(document.body).backgroundColor);
+}
+document.querySelectorAll('#main-content *').forEach(el=>{
+  const own=textOfOwn(el);
+  if(!own)return;
+  const cs=getComputedStyle(el);
+  if(cs.display==='none'||cs.visibility==='hidden')return;
+  const r=el.getBoundingClientRect();
+  if(r.width<1||r.height<1)return;
+  const fg=lum(cs.color),bg=bgOf(el);
+  if(fg===null||bg===null)return;
+  const ratio=(Math.max(fg,bg)+0.05)/(Math.min(fg,bg)+0.05);
+  if(ratio<2.2){
+    bad.push({why:'text is unreadable against its background',
+      text:own.slice(0,34),ratio:Math.round(ratio*100)/100,
+      color:cs.color,bg:getComputedStyle(el).backgroundColor,
+      cls:(el.className||'').toString().slice(0,50)});
   }
 });
 document.querySelectorAll('#main-content .card, #main-content [class*="-row"], #main-content [class*="-tile"]').forEach(el=>{

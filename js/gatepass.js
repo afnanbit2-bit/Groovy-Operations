@@ -341,7 +341,7 @@ function _gpRegRender(){
   body.innerHTML=slice.map(_gpPassRowHtml).join('')||'<div class="empty" style="padding:20px;text-align:center">No passes match these filters.</div>';
   const pg=document.getElementById('gp-reg-pager');if(!pg)return;
   if(pages<=1){pg.innerHTML='';return;}
-  const btn=(n,l,dis,cur)=>`<button onclick="window.gpRegGoto(${n})" ${dis?'disabled':''} style="padding:5px 11px;border:1px solid ${cur?'#111':'var(--border)'};border-radius:6px;background:${cur?'#111':'#fff'};color:${cur?'#fff':'var(--text)'};cursor:pointer;font-size:12px;font-family:inherit">${l}</button>`;
+  const btn=(n,l,dis,cur)=>`<button onclick="window.gpRegGoto(${n})" ${dis?'disabled':''} style="padding:5px 11px;border:1px solid ${cur?'#111':'var(--border)'};border-radius:6px;background:${cur?'var(--dark)':'var(--surface)'};color:${cur?'var(--on-dark)':'var(--text)'};cursor:pointer;font-size:12px;font-family:inherit">${l}</button>`;
   let nums='';const from=Math.max(1,_gpRegPage-2),to=Math.min(pages,_gpRegPage+2);
   if(from>1)nums+=btn(1,'1',false,false)+(from>2?'<span style="color:var(--muted)">…</span>':'');
   for(let n=from;n<=to;n++)nums+=btn(n,String(n),false,n===_gpRegPage);
@@ -435,7 +435,7 @@ window.onGPTypeChange=function(){
 function _gpRenderReasonChips(){
   const host=document.getElementById('gp-reason-chips');if(!host)return;
   const opts=GP_REASON_OPTS[_gpType]||GP_REASON_OPTS.garments;
-  host.innerHTML=opts.map(([v,l])=>`<button type="button" onclick="window.gpSetReason('${v}')" style="border:1px solid ${_gpReason===v?'#111':'var(--border)'};background:${_gpReason===v?'#111':'#fff'};color:${_gpReason===v?'#fff':'var(--text)'};border-radius:999px;padding:6px 13px;font-size:12px;cursor:pointer;font-family:inherit">${l}</button>`).join('');
+  host.innerHTML=opts.map(([v,l])=>`<button type="button" onclick="window.gpSetReason('${v}')" style="border:1px solid ${_gpReason===v?'#111':'var(--border)'};background:${_gpReason===v?'var(--dark)':'var(--surface)'};color:${_gpReason===v?'var(--on-dark)':'var(--text)'};border-radius:999px;padding:6px 13px;font-size:12px;cursor:pointer;font-family:inherit">${l}</button>`).join('');
 }
 window.gpSetReason=function(r){_gpReason=r;_gpRenderReasonChips();_gpApplyReasonFields();};
 

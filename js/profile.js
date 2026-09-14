@@ -80,6 +80,52 @@ function _profTrim(v,max){return String(v==null?'':v).replace(/\s+/g,' ').trim()
 function _profHex(v){return typeof _boardsValidHex==='function'?_boardsValidHex(v):'';}
 function _profInk(hex){return typeof _boardsInkOn==='function'?_boardsInkOn(hex):'var(--text)';}
 
+/* A name colour is picked ONCE and then painted as TEXT on whatever surface
+   the CURRENT theme provides. _boardsInkOn solves the other direction —
+   which ink to put ON a chosen colour — and does nothing for this one.
+   Afnan's own #7B1F2A reads cleanly on white and sits at 1.76:1 against the
+   dark surface: invisible.
+
+   Refusing the colour is the wrong answer (it is the person's choice), so it
+   is LIFTED toward the theme's foreground, keeping its hue, until it clears
+   a readable floor. In light mode the same loop darkens a colour that is too
+   pale. The stored value is never rewritten — this is derived at render, the
+   same discipline as _boardsDisplayUrl and _profAvatarUrl.
+
+   Found by the contrast check in tests/smoke-layout.js, not by looking. */
+function _profLuma(r,g,b){
+  const f=v=>{v=v/255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);};
+  return 0.2126*f(r)+0.7152*f(g)+0.0722*f(b);
+}
+// Lift `hex` away from a surface of luminance `bgL` until it is readable,
+// keeping its hue. Bounded: twelve 18% steps reach the target closely
+// enough that it always terminates, whatever the colour.
+function _profLift(h,bgL){
+  let r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16);
+  const target=bgL<0.5?255:0;
+  for(let i=0;i<12;i++){
+    const L=_profLuma(r,g,b);
+    if((Math.max(L,bgL)+0.05)/(Math.min(L,bgL)+0.05)>=3.2)break;
+    r=Math.round(r+(target-r)*0.18);
+    g=Math.round(g+(target-g)*0.18);
+    b=Math.round(b+(target-b)*0.18);
+  }
+  const hx=v=>('0'+Math.max(0,Math.min(255,v)).toString(16)).slice(-2);
+  return'#'+hx(r)+hx(g)+hx(b);
+}
+// BOTH variants are emitted as custom properties and CSS picks one per
+// theme (.prof-ink in css/main.css). Reading the live surface instead would
+// be simpler and wrong: this markup is built before it is themed — the
+// layout tests render exactly that way, and so does any pre-render — so the
+// theme is not knowable at the moment the string is made.
+// The STORED value is never rewritten; this is derived at render, the same
+// discipline as _boardsDisplayUrl and _profAvatarUrl.
+function _profInkStyle(hex){
+  const h=_profHex(hex);
+  if(!h)return'';
+  return'--ink:'+_profLift(h,1)+';--ink-d:'+_profLift(h,0.02);
+}
+
 // A Cloudinary delivery URL and nothing else. A photo URL is written into
 // an <img src> and into a CSS background, so an arbitrary stored string is
 // not something to hand over untested — same reasoning as _boardsValidHex.
@@ -187,7 +233,7 @@ function _profileViewCardHTML(p){
         <span class="profile-photo-over">Change photo</span>
       </button>
       <div class="profile-id">
-        <div class="profile-name" id="prof-name"${col?` style="color:${col}"`:''}></div>
+        <div class="profile-name${col?' prof-ink':''}" id="prof-name"${col?` style="${_profInkStyle(col)}"`:''}></div>
         <div class="profile-sub" id="prof-sub"></div>
         <div class="profile-sub" style="margin-top:4px">@${_profEsc(session.u||'')} · ${_profEsc(session.title||'')}</div>
       </div>
@@ -245,7 +291,7 @@ function _profileEditCardHTML(){
     </div>
     <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
       <input type="text" class="profile-input" style="max-width:140px" maxlength="7" placeholder="#RRGGBB" value="${_profEsc(col)}" oninput="window.profileSetNameColor(this.value,true)">
-      <span class="profile-name-preview" id="prof-col-prev" style="${col?`color:${col}`:''}"></span>
+      <span class="profile-name-preview${col?' prof-ink':''}" id="prof-col-prev" style="${col?_profInkStyle(col):''}"></span>
     </div>
 
     <label class="profile-label" style="margin-top:12px">About</label>
@@ -335,7 +381,7 @@ function _profileDirectoryHTML(){
             ${photo?`<img class="profile-dir-photo" src="${_profEsc(photo)}" alt="" referrerpolicy="no-referrer" draggable="false">`
                    :`<div class="profile-dir-photo profile-photo-empty"${col?` style="background:${col};color:${_profInk(col)}"`:''}>${_profEsc((r.p.displayName||r.fallbackName||'?').charAt(0).toUpperCase())}</div>`}
             <div class="profile-dir-id">
-              <div class="profile-dir-name" id="prof-dir-n-${i}"${col?` style="color:${col}"`:''}></div>
+              <div class="profile-dir-name${col?' prof-ink':''}" id="prof-dir-n-${i}"${col?` style="${_profInkStyle(col)}"`:''}></div>
               <div class="profile-dir-user">@${_profEsc(r.username)}${me?' <span class="profile-tag tag-me">You</span>':''}</div>
             </div>
           </div>
@@ -654,7 +700,13 @@ function profileApplyToSession(){
   session.photoUrl=p?_profPhotoUrl(p.photoUrl):'';
   session.nameColor=p?_profHex(p.nameColor):'';
   const n=document.getElementById('user-name');
-  if(n){n.textContent=session.name||'';n.style.color=session.nameColor||'';}
+  if(n){
+    n.textContent=session.name||'';
+    // Same pair, set as properties rather than a flat colour — the topbar
+    // is repainted once and then lives through every theme switch.
+    n.classList.toggle('prof-ink',!!session.nameColor);
+    n.setAttribute('style',session.nameColor?_profInkStyle(session.nameColor):'');
+  }
   _profilePaintAvatar();
 }
 function _profilePaintAvatar(){

@@ -184,7 +184,7 @@ function renderInventory(){
       ${lowStock.map(i=>`<div class="info-row"><span><strong>${i.code}</strong> — ${i.name}</span><span class="badge badge-${getStatus(i)}">${getBalance(i)} ${i.unit}</span></div>`).join('')}
     </div>`;
   }
-  const chip=(key,label,count,active)=>`<button onclick="window.invSetCat('${key}')" style="padding:6px 12px;border:1px solid ${active?'var(--dark)':'var(--border)'};border-radius:999px;background:${active?'var(--dark)':'#fff'};color:${active?'#fff':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit;font-weight:${active?'600':'500'}">${label}${count!=null?` <span style="opacity:.7;font-weight:400">${count}</span>`:''}</button>`;
+  const chip=(key,label,count,active)=>`<button onclick="window.invSetCat('${key}')" style="padding:6px 12px;border:1px solid ${active?'var(--dark)':'var(--border)'};border-radius:999px;background:${active?'var(--dark)':'var(--surface)'};color:${active?'var(--on-dark)':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit;font-weight:${active?'600':'500'}">${label}${count!=null?` <span style="opacity:.7;font-weight:400">${count}</span>`:''}</button>`;
   let chipsHTML=chip('all','All',allItems.length,_invFilterCat==='all');
   for(const c of cats){
     if(!catCounts[c])continue;
