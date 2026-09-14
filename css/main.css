@@ -554,7 +554,24 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .board-stage.panning{cursor:grabbing}
 .board-world{position:absolute;left:0;top:0;transform-origin:0 0}
 .board-conn-layer{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
-.board-conn-layer line{stroke:var(--muted);stroke-width:1.6;pointer-events:stroke;cursor:pointer}
+/* The visible stroke is 1.4–4 WORLD px, which at 20–70% zoom is about one
+   physical pixel of a diagonal line — unclickable, which is exactly what
+   Afnan reported. Every connector therefore ships an invisible companion
+   stroke that takes the pointer events instead. It is in world units too,
+   so the target scales with the zoom rather than vanishing at it. */
+.board-conn-layer path.conn-hit{stroke:transparent;stroke-width:16;fill:none;
+  pointer-events:stroke;cursor:pointer}
+.board-conn-layer path.conn{stroke:currentColor;fill:none;pointer-events:none;
+  stroke-linecap:round;color:var(--muted)}
+.board-conn-layer path.conn.free{color:var(--text)}
+.board-conn-layer path.conn.selected{color:var(--text)}
+.board-conn-layer path.conn-hit:hover+path.conn{color:var(--text)}
+.board-conn-layer circle.conn-h{fill:var(--surface);stroke:var(--text);stroke-width:2;
+  pointer-events:all;cursor:grab}
+.board-conn-layer circle.conn-h.bend{fill:var(--text)}
+.board-conn-layer text.conn-label{fill:var(--text);font-family:inherit;font-size:12px;
+  font-weight:600;paint-order:stroke;stroke:var(--surface);stroke-width:4;
+  stroke-linejoin:round;pointer-events:none;user-select:none}
 .board-conn-layer line.temp{stroke:var(--text);stroke-dasharray:4 4;pointer-events:none}
 .board-card-el{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.08);display:flex;flex-direction:column;overflow:hidden}
 .board-card-el.selected{outline:2px solid var(--text);outline-offset:1px}
@@ -775,7 +792,6 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 
 .board-stage.line-mode{cursor:crosshair}
 .board-conn-layer{color:var(--muted)}
-.board-conn-layer line.free{stroke:var(--text)}
 .board-marquee{position:absolute;display:none;border:1px solid var(--text);background:rgba(17,17,17,.07);pointer-events:none;z-index:25}
 .board-guide{position:absolute;display:none;background:var(--accent-urgent);pointer-events:none;z-index:5}
 .board-guide-v{top:-4000px;height:9000px;width:1px}

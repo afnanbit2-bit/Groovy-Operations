@@ -717,7 +717,7 @@ window.boardsConnectSelection=function(){
     // direction — connecting the same group twice would silently double up.
     const dup=_editConnectors.some(c=>!c.free&&((c.from===from&&c.to===to)||(c.from===to&&c.to===from)));
     if(dup)continue;
-    _editConnectors.push({from,to,arrow:true});
+    _editConnectors.push({id:'k'+(++_boardsCardSeq)+'_'+Date.now()+'_'+i,from,to,arrow:true});
     made++;
   }
   _boardsDrawConnectors();
@@ -822,12 +822,19 @@ function _boardsOnKeydown(e){
     }
     if(k==='z'){e.preventDefault();if(e.shiftKey)window.boardsRedoAction();else window.boardsUndoAction();return;}
     if(k==='y'){e.preventDefault();window.boardsRedoAction();return;}
-    if(k==='d'){e.preventDefault();window.boardsDuplicateSelection();return;}
+    if(k==='d'){e.preventDefault();
+      if(_boardsConnSel!==null&&!_boardsSelection.size)window.boardsDuplicateConnector(_boardsConnSel);
+      else window.boardsDuplicateSelection();
+      return;}
     if(k==='a'){e.preventDefault();window.boardsSelectAll();return;}
     return;   // let copy/cut/paste reach their own clipboard events
   }
   if(k==='f2'&&_boardsSelection.size===1){e.preventDefault();_boardsCtxRun('rename');return;}
+  if(k==='escape'&&_boardsConnSel!==null){e.preventDefault();_boardsClearConnSel();return;}
   if(k==='escape'&&_boardsSelection.size){e.preventDefault();window.boardsClearSelection();return;}
+  if((k==='delete'||k==='backspace')&&_boardsConnSel!==null&&!_boardsSelection.size){
+    e.preventDefault();window.boardsDeleteConnector(_boardsConnSel);return;
+  }
   if((k==='delete'||k==='backspace')&&_boardsSelection.size){e.preventDefault();window.boardsDeleteSelection();}
 }
 document.addEventListener('keydown',_boardsOnKeydown);
@@ -1361,6 +1368,11 @@ async function _boardsOpenCanvas(){
   // later "did we change this card?" question is answered by diffing
   // against it (see _boardsLocalChanges).
   _boardsSetBase(_boardsCardsForSave());
+  // Older connectors predate ids. Minting them here — before the baseline
+  // below — means the migration never marks the board dirty on open; the
+  // ids persist with the next write that happens for a real reason.
+  _boardsConnEnsureIds();
+  _boardsConnSel=null;
   _boardsConnBase=JSON.stringify(_editConnectors);
   _boardsPeers=[];_boardsComments=[];_boardsBoardActivity=[];
   _boardsPendingRemote=null;_boardsGestureActive=false;
@@ -1402,6 +1414,7 @@ function _boardsRenderCanvasAndWire(){
   _boardsApplyTransform();
   _boardsHydrateTextCards();
   _boardsDrawConnectors();
+  _boardsWireConnLayer(document.getElementById('board-conn-layer'));
   _boardsWireStagePan();
   _boardsWireFmtBar();
   _boardsHideFmtBar();
@@ -2717,7 +2730,7 @@ function _boardsWireStagePan(){
         const end=_boardsScreenToWorld(ev.clientX,ev.clientY);
         if(Math.abs(end.x-start.x)>6||Math.abs(end.y-start.y)>6){
           _boardsPushUndo();
-          _editConnectors.push({free:true,arrow:true,x1:start.x,y1:start.y,x2:end.x,y2:end.y});
+          _editConnectors.push({id:'k'+(++_boardsCardSeq)+'_'+Date.now(),free:true,arrow:true,x1:start.x,y1:start.y,x2:end.x,y2:end.y});
           _boardsDrawConnectors();
           _boardsSaveDebounced();
         }
@@ -3158,10 +3171,16 @@ function _boardsPaintSelection(){
   _boardsRenderRail();
 }
 function _boardsSetSelection(ids){
+  // Card selection and line selection are mutually exclusive — see
+  // _boardsSelectConn. Two kinds of "the selection" at once would make
+  // Delete and the rail ambiguous.
+  if(ids&&ids.length&&_boardsConnSel!==null){_boardsConnSel=null;_boardsDrawConnectors();}
+  else if(_boardsConnSel!==null&&(!ids||!ids.length)){_boardsConnSel=null;_boardsDrawConnectors();}
   _boardsSelection=new Set(ids);
   _boardsPaintSelection();
 }
 function _boardsSelectCard(id,additive){
+  if(_boardsConnSel!==null){_boardsConnSel=null;_boardsDrawConnectors();}
   if(additive){
     if(_boardsSelection.has(id))_boardsSelection.delete(id);
     else _boardsSelection.add(id);
@@ -3202,6 +3221,13 @@ window.boardsSelectAll=function(){_boardsSetSelection(_editCards.map(c=>c.id));}
    js/shared.js — that file is cross-track (see CLAUDE.md), and none of
    these are wanted anywhere else. */
 const _BOARDS_ICONS={
+  // Line-rail icons. Local to boards.js like the rest (js/shared.js is a
+  // cross-track file and none of these are wanted elsewhere).
+  linestart:'<path d="M2 8h11" stroke="currentColor" fill="none"/><path d="M6 4L2 8l4 4z"/>',
+  lineend:'<path d="M3 8h11" stroke="currentColor" fill="none"/><path d="M10 4l4 4-4 4z"/>',
+  dashed:'<path d="M2 8h3M6.5 8h3M11 8h3" stroke="currentColor" fill="none"/>',
+  weight:'<path d="M2 4h12" stroke="currentColor" fill="none" stroke-width="1"/><path d="M2 8h12" stroke="currentColor" fill="none" stroke-width="2"/><path d="M2 12.5h12" stroke="currentColor" fill="none" stroke-width="3"/>',
+  trash:'<path d="M3 4h10M6 4V2.5h4V4M5 4l.7 9h4.6L11 4z" fill="none" stroke="currentColor"/>',
   note:'<path d="M3 2h10v12H3z"/><path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" fill="none"/>',
   image:'<path d="M2 3h12v10H2z" fill="none" stroke="currentColor"/><circle cx="6" cy="6.5" r="1.2"/><path d="M3 12l3.5-4 2.5 2.5L11 8l2 4z"/>',
   todo:'<path d="M2 3h5v5H2z" fill="none" stroke="currentColor"/><path d="M3 5.5l1.4 1.4L6.4 4" fill="none" stroke="currentColor"/><path d="M9 4h5M9 7h5M2 11h12" stroke="currentColor" fill="none"/>',
@@ -3238,6 +3264,29 @@ function _boardsIcon(name){
 function _boardsRailItems(){
   const canEdit=_boardsCanEdit(_editBoard);
   const sel=_boardsSelectedCards();
+  // A selected LINE is the rail's third mode. Milanote's own line rail is
+  // Color / Start / End / Label / Dashed / Weight; these are the same
+  // actions the right-click menu builds, through the same router, so the
+  // two cannot drift apart.
+  if(_boardsConnSel!==null&&!sel.length){
+    const cn=_boardsConnById(_boardsConnSel);
+    if(cn){
+      const out=[];
+      if(canEdit){
+        out.push({connSwatches:cn.id});
+        out.push({act:'ln:arrowStart',label:'Start',icon:'linestart',on:!!cn.arrowStart});
+        out.push({act:'ln:arrow',label:'End',icon:'lineend',on:!!cn.arrow});
+        out.push({act:'ln:label',label:'Label',icon:'rename'});
+        out.push({act:'ln:dash',label:'Dashed',icon:'dashed',on:!!cn.dash});
+        out.push({act:'ln:weight',label:'Weight',icon:'weight'});
+        if(cn.bx||cn.by)out.push({act:'ln:straight',label:'Straight',icon:'line'});
+        out.push({sep:true});
+        out.push({act:'ln:delete',label:'Delete',icon:'trash',danger:true});
+      }
+      out.push({act:'ln:deselect',label:'Done',icon:'done',done:true});
+      return out;
+    }
+  }
   if(!sel.length){
     if(!canEdit)return[{act:'fit',label:'Fit',icon:'fit'}];
     return[
@@ -3308,11 +3357,12 @@ function _boardsRenderRail(){
   const host=document.getElementById('board-rail');
   if(!host||!_editBoard)return;
   const sel=_boardsSelectedCards();
-  host.classList.toggle('selecting',!!sel.length);
+  host.classList.toggle('selecting',!!sel.length||_boardsConnSel!==null);
   const items=_boardsRailItems();
   host.innerHTML=(sel.length>1?`<div class="rail-count">${sel.length}</div>`:'')+items.map(it=>{
     if(it.sep)return'<div class="rail-sep"></div>';
     if(it.swatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
+    if(it.connSwatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="ln:c:${c}" title="${c==='none'?'Default':c}"></button>`).join('')}</div>`;
     return`<button class="rail-btn${it.on?' on':''}${it.danger?' danger':''}${it.done?' rail-done':''}" data-act="${it.act}" title="${_boardsEsc(it.label)}">${_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span></button>`;
   }).join('');
   if(host.__wired)return;
@@ -3330,31 +3380,308 @@ function _boardsRenderRail(){
   });
 }
 function _boardCardCenter(c){return{x:c.x+c.w/2,y:c.y+c.h/2};}
-// Two kinds of connector share this layer: card-bound ({from,to}, endpoints
-// follow the cards) and freeform ({free:true,x1,y1,x2,y2}, fixed in world
-// space). Both can carry `arrow:true`. Deleting is by INDEX rather than by
-// from/to, since freeform lines have no card ids to identify them.
+
+/* ── Connectors ─────────────────────────────────────────────────────────
+   Two kinds share this layer: card-bound ({from,to}, endpoints follow the
+   cards) and freeform ({free:true,x1,y1,x2,y2}, fixed in world space).
+
+   Rewritten Sept 2026 after Afnan reported that lines "are not getting
+   selected" and carried none of the actions Milanote gives them.
+
+   THE REASON THEY COULD NOT BE CLICKED is geometry, not a missing handler:
+   the stroke was 1.6 world px with `pointer-events:stroke`, so at his 68%
+   zoom the clickable target was about one physical pixel of a diagonal
+   line. Every line now carries an invisible ~16px companion stroke that
+   takes the pointer events, which is the standard fix and the only one
+   that scales with zoom.
+
+   CURVES are a quadratic Bezier. The bend is stored as `bx`/`by` — the
+   offset of the curve's APEX from the straight-line midpoint, NOT the
+   control point. Two reasons: the apex is where the drag handle actually
+   sits, so dragging is exact rather than doubled; and storing an OFFSET
+   means a card-bound curve keeps its bend when the cards move, where a
+   stored control point would leave the curve behind. The control point is
+   derived (c = mid + 2·offset), because for a quadratic the apex is at
+   0.25·p1 + 0.5·c + 0.25·p2.
+
+   Connectors carry an `id` now. They are merged wholesale rather than per
+   item (see _boardsConnDirty), so this costs nothing at sync time, and it
+   is what lets a selection survive a delete that shifts every index. Older
+   connectors are given one IN MEMORY before _boardsConnBase is taken, so
+   the migration never dirties a board on open. */
+const _BOARDS_CONN_W={thin:1.4,normal:2.2,thick:4};
+let _boardsConnSel=null;          // id of the selected connector, or null
+function _boardsConnEnsureIds(){
+  let n=0;
+  _editConnectors.forEach(cn=>{if(!cn.id){cn.id='k'+(++_boardsCardSeq)+'_'+Date.now()+'_'+(n++);}});
+}
+function _boardsConnById(id){return _editConnectors.find(cn=>cn.id===id)||null;}
+function _boardsConnEnds(cn){
+  if(cn.free)return{p1:{x:cn.x1,y:cn.y1},p2:{x:cn.x2,y:cn.y2}};
+  const from=_editCards.find(c=>c.id===cn.from),to=_editCards.find(c=>c.id===cn.to);
+  if(!from||!to)return null;
+  return{p1:_boardCardCenter(from),p2:_boardCardCenter(to)};
+}
+// Endpoints, the apex (where the bend handle sits and the label is drawn)
+// and the derived control point, in one place so the path, the handles and
+// the label can never disagree about where the curve is.
+function _boardsConnGeom(cn){
+  const e=_boardsConnEnds(cn);
+  if(!e)return null;
+  const mid={x:(e.p1.x+e.p2.x)/2,y:(e.p1.y+e.p2.y)/2};
+  const bx=cn.bx||0,by=cn.by||0;
+  const apex={x:mid.x+bx,y:mid.y+by};
+  const ctrl={x:mid.x+bx*2,y:mid.y+by*2};
+  const bent=!!(bx||by);
+  return{...e,mid,apex,ctrl,bent,
+    d:bent?`M ${e.p1.x} ${e.p1.y} Q ${ctrl.x} ${ctrl.y} ${e.p2.x} ${e.p2.y}`
+          :`M ${e.p1.x} ${e.p1.y} L ${e.p2.x} ${e.p2.y}`};
+}
+function _boardsConnStroke(cn){
+  const map={red:'--accent-urgent',amber:'--accent-warning',green:'--accent-success',
+    blue:'--cat-notes',purple:'--cat-boards'};
+  return cn.color&&map[cn.color]?`var(${map[cn.color]})`:(cn.free?'var(--text)':'var(--muted)');
+}
 function _boardsDrawConnectors(){
   const svg=document.getElementById('board-conn-layer');if(!svg)return;
-  const defs='<defs><marker id="board-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>';
-  svg.innerHTML=defs+_editConnectors.map((cn,i)=>{
-    const arrow=cn.arrow?' marker-end="url(#board-arrow)"':'';
-    if(cn.free){
-      return`<line class="free" data-conn="${i}" x1="${cn.x1}" y1="${cn.y1}" x2="${cn.x2}" y2="${cn.y2}"${arrow}/>`;
+  // orient="auto-start-reverse" is what lets ONE marker serve both ends —
+  // the browser flips it for marker-start. `currentColor` makes the head
+  // follow the line's own colour, which is set on the path as `color`.
+  const defs='<defs><marker id="board-arrow" viewBox="0 0 10 10" refX="9" refY="5" '+
+    'markerWidth="6" markerHeight="6" orient="auto-start-reverse">'+
+    '<path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>';
+  const labels=[];
+  const body=_editConnectors.map(cn=>{
+    const g=_boardsConnGeom(cn);
+    if(!g)return'';
+    const sel=_boardsConnSel===cn.id;
+    const w=_BOARDS_CONN_W[cn.weight]||_BOARDS_CONN_W.thin;
+    const bind=cn.free?'':` data-from="${cn.from}" data-to="${cn.to}"`;
+    const marks=(cn.arrow?' marker-end="url(#board-arrow)"':'')+
+                (cn.arrowStart?' marker-start="url(#board-arrow)"':'');
+    const dash=cn.dash?' stroke-dasharray="7 6"':'';
+    let out=
+      // The hit path is FIRST and invisible: it takes the pointer events
+      // the visible stroke is too thin to catch.
+      `<path class="conn-hit" data-conn="${cn.id}"${bind} d="${g.d}"/>`+
+      `<path class="conn${cn.free?' free':''}${sel?' selected':''}" data-conn="${cn.id}"${bind} d="${g.d}"`+
+      ` style="color:${_boardsConnStroke(cn)}" stroke-width="${w}"${dash}${marks}/>`;
+    if(cn.label){
+      // Structure only — the text goes in with textContent below, like
+      // every other user string in this file.
+      out+=`<text class="conn-label" data-conn="${cn.id}" x="${g.apex.x}" y="${g.apex.y-8}" text-anchor="middle"></text>`;
+      labels.push({id:cn.id,text:cn.label});
     }
-    const from=_editCards.find(c=>c.id===cn.from),to=_editCards.find(c=>c.id===cn.to);
-    if(!from||!to)return'';
-    const p1=_boardCardCenter(from),p2=_boardCardCenter(to);
-    return`<line data-conn="${i}" data-from="${cn.from}" data-to="${cn.to}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"${arrow}/>`;
+    if(sel){
+      out+=`<circle class="conn-h" data-h="a" data-conn="${cn.id}" cx="${g.p1.x}" cy="${g.p1.y}" r="5"/>`+
+           `<circle class="conn-h" data-h="b" data-conn="${cn.id}" cx="${g.p2.x}" cy="${g.p2.y}" r="5"/>`+
+           `<circle class="conn-h bend" data-h="m" data-conn="${cn.id}" cx="${g.apex.x}" cy="${g.apex.y}" r="5"/>`;
+    }
+    return out;
   }).join('');
+  svg.innerHTML=defs+body;
+  labels.forEach(l=>{
+    const t=svg.querySelector('text.conn-label[data-conn="'+l.id+'"]');
+    if(t)t.textContent=l.text;
+  });
 }
-window.boardsDeleteConnectorAt=function(i){
+// Recompute only the paths touching this card. Every element that draws a
+// connector carries data-conn, so one pass over the layer keeps the
+// visible path, the hit path, the label and the handles in step.
+function _boardsUpdateConnectorsFor(cardId){
+  const svg=document.getElementById('board-conn-layer');if(!svg)return;
+  _editConnectors.forEach(cn=>{
+    if(cn.free||(cn.from!==cardId&&cn.to!==cardId))return;
+    const g=_boardsConnGeom(cn);if(!g)return;
+    svg.querySelectorAll('path[data-conn="'+cn.id+'"]').forEach(pth=>pth.setAttribute('d',g.d));
+    const t=svg.querySelector('text.conn-label[data-conn="'+cn.id+'"]');
+    if(t){t.setAttribute('x',g.apex.x);t.setAttribute('y',g.apex.y-8);}
+    svg.querySelectorAll('circle.conn-h[data-conn="'+cn.id+'"]').forEach(h=>{
+      const k=h.getAttribute('data-h');
+      const p=k==='a'?g.p1:k==='b'?g.p2:g.apex;
+      h.setAttribute('cx',p.x);h.setAttribute('cy',p.y);
+    });
+  });
+}
+// Selecting a line and selecting cards are mutually exclusive — the rail
+// and every keyboard shortcut act on "the selection", and two kinds of it
+// at once would make Delete ambiguous.
+function _boardsSelectConn(id){
+  if(_boardsSelection.size){_boardsSelection=new Set();_boardsPaintSelection();}
+  _boardsConnSel=id;
+  _boardsDrawConnectors();
+  _boardsRenderRail();
+}
+function _boardsClearConnSel(){
+  if(_boardsConnSel===null)return;
+  _boardsConnSel=null;
+  _boardsDrawConnectors();
+  _boardsRenderRail();
+}
+window.boardsDeleteConnector=function(id){
   if(!_boardsCanEdit(_editBoard))return;
+  const i=_editConnectors.findIndex(cn=>cn.id===id);
+  if(i<0)return;
   _boardsPushUndo();
   _editConnectors.splice(i,1);
+  if(_boardsConnSel===id)_boardsConnSel=null;
   _boardsDrawConnectors();
+  _boardsRenderRail();
   _boardsSaveDebounced();
 };
+// One setter for every line property, so the rail and the right-click menu
+// cannot drift apart on what a change actually does.
+window.boardsSetConn=function(id,patch){
+  if(!_boardsCanEdit(_editBoard))return;
+  const cn=_boardsConnById(id);if(!cn)return;
+  _boardsPushUndo();
+  Object.keys(patch).forEach(k=>{
+    if(patch[k]===null)delete cn[k];else cn[k]=patch[k];
+  });
+  _boardsDrawConnectors();
+  _boardsRenderRail();
+  _boardsSaveDebounced();
+};
+window.boardsConnLabel=function(id){
+  const cn=_boardsConnById(id);if(!cn)return;
+  const v=prompt('Label for this line',cn.label||'');
+  if(v===null)return;
+  window.boardsSetConn(id,{label:v.trim()?v.trim().slice(0,60):null});
+};
+window.boardsDuplicateConnector=function(id){
+  if(!_boardsCanEdit(_editBoard))return;
+  const cn=_boardsConnById(id);if(!cn)return;
+  _boardsPushUndo();
+  const copy=JSON.parse(JSON.stringify(cn));
+  copy.id='k'+(++_boardsCardSeq)+'_'+Date.now();
+  // A card-bound copy would sit exactly on top of the original and look
+  // like nothing happened, so it is offset as a freeform line instead.
+  const g=_boardsConnGeom(cn);
+  if(g){delete copy.from;delete copy.to;copy.free=true;
+    copy.x1=g.p1.x+24;copy.y1=g.p1.y+24;copy.x2=g.p2.x+24;copy.y2=g.p2.y+24;}
+  _editConnectors.push(copy);
+  _boardsConnSel=copy.id;
+  _boardsDrawConnectors();
+  _boardsRenderRail();
+  _boardsSaveDebounced();
+};
+// Click, right-click and the three drag handles, delegated on the layer —
+// the SVG is replaced on every redraw, so per-element listeners would be
+// rebound constantly and per-render document listeners would stack.
+function _boardsWireConnLayer(svg){
+  if(!svg||svg.__wired)return;
+  svg.__wired=true;
+  svg.addEventListener('pointerdown',e=>{
+    const h=e.target.closest&&e.target.closest('circle.conn-h');
+    if(h){_boardsConnHandleDrag(e,h);return;}
+    const p=e.target.closest&&e.target.closest('path[data-conn]');
+    if(!p)return;
+    // Stop the stage seeing this as the start of a pan or a marquee.
+    e.stopPropagation();
+    _boardsSelectConn(p.getAttribute('data-conn'));
+  });
+}
+function _boardsConnHandleDrag(e,handle){
+  e.stopPropagation();e.preventDefault();
+  if(!_boardsCanEdit(_editBoard))return;
+  const cn=_boardsConnById(handle.getAttribute('data-conn'));if(!cn)return;
+  const kind=handle.getAttribute('data-h');
+  let pushed=false;
+  // Kept in the closure, NOT on the connector. Connectors are saved as
+  // plain JSON with no _-prefix stripping of their own (that rule is for
+  // cards, see _boardsCardsForSave), so a scratch field parked on one
+  // would be written to the document and outlive the gesture.
+  let bindA=cn.free?null:cn.from,bindB=cn.free?null:cn.to;
+  handle.setPointerCapture(e.pointerId);
+  function move(ev){
+    if(!pushed){_boardsPushUndo();pushed=true;}
+    const w=_boardsScreenToWorld(ev.clientX,ev.clientY);
+    if(kind==='m'){
+      const g=_boardsConnGeom(cn);
+      if(g){cn.bx=w.x-g.mid.x;cn.by=w.y-g.mid.y;}
+    }else{
+      // Dragging an endpoint of a CARD-BOUND line detaches it into a
+      // freeform one; the drop decides whether it re-attaches. Anything
+      // else would mean an endpoint you cannot move off a card.
+      if(!cn.free){
+        const g=_boardsConnGeom(cn);
+        if(g){cn.free=true;cn.x1=g.p1.x;cn.y1=g.p1.y;cn.x2=g.p2.x;cn.y2=g.p2.y;
+          delete cn.from;delete cn.to;}
+      }
+      if(kind==='a'){cn.x1=w.x;cn.y1=w.y;}else{cn.x2=w.x;cn.y2=w.y;}
+    }
+    _boardsDrawConnectors();
+  }
+  function up(ev){
+    handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',up);
+    if(!pushed)return;
+    if(kind!=='m'){
+      // Dropped on a card? Re-bind that end to it. Both ends on cards
+      // turns the line back into a card-bound one, so it follows them.
+      const el=document.elementFromPoint(ev.clientX,ev.clientY);
+      const card=el&&el.closest?el.closest('.board-card-el,.board-frame'):null;
+      const id=card&&card.dataset?card.dataset.id:null;
+      if(id){if(kind==='a')bindA=id;else bindB=id;}
+      if(bindA&&bindB&&bindA!==bindB){
+        cn.from=bindA;cn.to=bindB;delete cn.free;
+        delete cn.x1;delete cn.y1;delete cn.x2;delete cn.y2;
+      }
+    }
+    _boardsDrawConnectors();
+    _boardsSaveDebounced();
+  }
+  handle.addEventListener('pointermove',move);
+  handle.addEventListener('pointerup',up);
+}
+// One router for every line action, reached from the rail and from the
+// right-click menu alike — the rule the card actions already follow.
+function _boardsConnAction(rest){
+  const id=_boardsConnSel;
+  if(!id)return;
+  const cn=_boardsConnById(id);if(!cn)return;
+  if(rest.indexOf('w:')===0){window.boardsSetConn(id,{weight:rest.slice(2)});return;}
+  if(rest.indexOf('c:')===0){
+    const v=rest.slice(2);
+    window.boardsSetConn(id,{color:v==='none'?null:v});return;
+  }
+  switch(rest){
+    case'arrow':window.boardsSetConn(id,{arrow:cn.arrow?null:true});break;
+    case'arrowStart':window.boardsSetConn(id,{arrowStart:cn.arrowStart?null:true});break;
+    case'dash':window.boardsSetConn(id,{dash:cn.dash?null:true});break;
+    case'straight':window.boardsSetConn(id,{bx:null,by:null});break;
+    case'weight':{
+      const order=['thin','normal','thick'];
+      const next=order[(order.indexOf(cn.weight||'thin')+1)%order.length];
+      window.boardsSetConn(id,{weight:next==='thin'?null:next});
+      showToast('Line weight: '+next);
+      break;
+    }
+    case'deselect':_boardsClearConnSel();break;
+    case'label':window.boardsConnLabel(id);break;
+    case'dup':window.boardsDuplicateConnector(id);break;
+    case'delete':window.boardsDeleteConnector(id);break;
+    default:break;
+  }
+}
+// What the rail and the right-click menu both offer for a selected line.
+function _boardsConnItems(cn,canEdit){
+  const items=[{title:cn.free?'Line':'Connector'}];
+  if(!canEdit)return items;
+  items.push({act:'ln:arrowStart',label:(cn.arrowStart?'✓ ':'')+'Arrow at the start'});
+  items.push({act:'ln:arrow',label:(cn.arrow?'✓ ':'')+'Arrow at the end'});
+  items.push({act:'ln:dash',label:(cn.dash?'✓ ':'')+'Dashed'});
+  items.push({sep:true});
+  items.push({act:'ln:w:thin',label:(!cn.weight||cn.weight==='thin'?'✓ ':'')+'Thin'});
+  items.push({act:'ln:w:normal',label:(cn.weight==='normal'?'✓ ':'')+'Medium'});
+  items.push({act:'ln:w:thick',label:(cn.weight==='thick'?'✓ ':'')+'Thick'});
+  items.push({sep:true});
+  items.push({act:'ln:label',label:cn.label?'Edit label…':'Add a label…'});
+  if(cn.bx||cn.by)items.push({act:'ln:straight',label:'Straighten'});
+  items.push({act:'ln:dup',label:'Duplicate',hint:'Ctrl D'});
+  items.push({act:'ln:delete',label:'Delete line',hint:'Del',danger:true});
+  items.push({connSwatches:cn.id});
+  return items;
+}
 window.boardsToggleLineMode=function(){
   _boardsLineMode=!_boardsLineMode;
   _boardsRenderRail();   // the rail owns the Line toggle's on-state now
@@ -3389,7 +3716,7 @@ window.boardsLinkStart=function(e,cardId){
     if(targetEl&&targetEl.dataset.id&&targetEl.dataset.id!==cardId){
       const toId=targetEl.dataset.id;
       const exists=_editConnectors.some(cn=>(cn.from===cardId&&cn.to===toId)||(cn.from===toId&&cn.to===cardId));
-      if(!exists){_boardsPushUndo();_editConnectors.push({from:cardId,to:toId});_boardsDrawConnectors();_boardsSaveDebounced();}
+      if(!exists){_boardsPushUndo();_editConnectors.push({id:'k'+(++_boardsCardSeq)+'_'+Date.now(),from:cardId,to:toId,arrow:true});_boardsDrawConnectors();_boardsSaveDebounced();}
     }
   }
   document.addEventListener('pointermove',move);
@@ -4543,26 +4870,43 @@ function _boardsDrawCard(ctx,c,img,P){
   _boardsRoundRect(ctx,c.x+0.5,c.y+0.5,c.w-1,c.h-1,10);
   ctx.stroke();
 }
+// The export reads the SAME geometry the canvas does (_boardsConnGeom), so
+// a curve, a weight or a second arrowhead can never render one way on
+// screen and another in the PNG/PDF.
 function _boardsDrawConnector(ctx,cn,P){
-  let x1,y1,x2,y2;
-  if(cn.free){x1=cn.x1;y1=cn.y1;x2=cn.x2;y2=cn.y2;}
-  else{
-    const a=_editCards.find(c=>c.id===cn.from),b=_editCards.find(c=>c.id===cn.to);
-    if(!a||!b)return;
-    x1=a.x+a.w/2;y1=a.y+a.h/2;x2=b.x+b.w/2;y2=b.y+b.h/2;
-  }
-  ctx.strokeStyle=cn.free?P.text:P.muted;
-  ctx.lineWidth=1.6;
-  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
-  if(cn.arrow){
-    const ang=Math.atan2(y2-y1,x2-x1),len=9;
+  const g=_boardsConnGeom(cn);
+  if(!g)return;
+  const tint=cn.color&&P.tint[cn.color]?P.tint[cn.color]:(cn.free?P.text:P.muted);
+  ctx.save();
+  ctx.strokeStyle=tint;
+  ctx.lineWidth=_BOARDS_CONN_W[cn.weight]||_BOARDS_CONN_W.thin;
+  ctx.setLineDash(cn.dash?[7,6]:[]);
+  ctx.beginPath();
+  ctx.moveTo(g.p1.x,g.p1.y);
+  if(g.bent)ctx.quadraticCurveTo(g.ctrl.x,g.ctrl.y,g.p2.x,g.p2.y);
+  else ctx.lineTo(g.p2.x,g.p2.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // An arrowhead points along the TANGENT at its end, which on a curve is
+  // the line from the control point — not the chord between the endpoints.
+  const head=(at,towards)=>{
+    const ang=Math.atan2(at.y-towards.y,at.x-towards.x),len=9;
     ctx.beginPath();
-    ctx.moveTo(x2,y2);
-    ctx.lineTo(x2-len*Math.cos(ang-0.4),y2-len*Math.sin(ang-0.4));
-    ctx.moveTo(x2,y2);
-    ctx.lineTo(x2-len*Math.cos(ang+0.4),y2-len*Math.sin(ang+0.4));
+    ctx.moveTo(at.x,at.y);
+    ctx.lineTo(at.x-len*Math.cos(ang-0.4),at.y-len*Math.sin(ang-0.4));
+    ctx.moveTo(at.x,at.y);
+    ctx.lineTo(at.x-len*Math.cos(ang+0.4),at.y-len*Math.sin(ang+0.4));
     ctx.stroke();
+  };
+  if(cn.arrow)head(g.p2,g.bent?g.ctrl:g.p1);
+  if(cn.arrowStart)head(g.p1,g.bent?g.ctrl:g.p2);
+  if(cn.label){
+    ctx.fillStyle=P.text;
+    ctx.font='600 12px '+P.font;
+    ctx.textAlign='center';
+    ctx.fillText(String(cn.label),g.apex.x,g.apex.y-8);
   }
+  ctx.restore();
 }
 // Draws the WHOLE board (not the viewport) at a capped resolution.
 // Returns null — after a toast — when there is nothing to export.
@@ -5143,6 +5487,7 @@ function _boardsApplyRemote(data){
   _editCards=out;
   if(!_boardsConnDirty()){
     _editConnectors=(data.connectors||[]).map(c=>({...c}));
+    _boardsConnEnsureIds();
     _boardsConnBase=JSON.stringify(_editConnectors);
   }
   // Title: leave it alone while it is being typed into.
@@ -5526,6 +5871,7 @@ function _boardsCtxHTML(items){
     if(it.sep)return'<div class="board-ctx-sep"></div>';
     if(it.title)return`<div class="board-ctx-title">${_boardsEsc(it.title)}</div>`;
     if(it.swatches)return`<div class="board-ctx-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
+    if(it.connSwatches)return`<div class="board-ctx-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="ln:c:${c}" title="${c==='none'?'Default':c}"></button>`).join('')}</div>`;
     return`<button class="board-ctx-item${it.danger?' danger':''}" data-act="${it.act}">${_boardsEsc(it.label)}${it.hint?`<span class="board-ctx-hint">${_boardsEsc(it.hint)}</span>`:''}</button>`;
   }).join('');
 }
@@ -5558,7 +5904,7 @@ function _boardsCtxRun(act){
   const place=()=>{if(at)_boardsNextPlacement={x:at.x,y:at.y};};
   if(act.indexOf('add:')===0){place();window.boardsAddCard(act.slice(4));return;}
   if(act.indexOf('color:')===0){window.boardsSetColor(act.slice(6));return;}
-  if(act.indexOf('conn:')===0){window.boardsDeleteConnectorAt(parseInt(act.slice(5),10));return;}
+  if(act.indexOf('ln:')===0){_boardsConnAction(act.slice(3));return;}
   if(act==='connectsel'){window.boardsConnectSelection();return;}
   if(act.indexOf('align:')===0){window.boardsAlignSelection(act.slice(6));return;}
   if(act.indexOf('dist:')===0){window.boardsDistributeSelection(act.slice(5));return;}
@@ -6122,10 +6468,15 @@ function _boardsWireContextMenu(stage){
     e.preventDefault();
     _boardsCtxWorld=_boardsScreenToWorld(e.clientX,e.clientY);
 
-    const line=t&&t.closest&&t.closest('line[data-conn]');
-    if(line&&canEdit){
-      _boardsOpenCtx(e.clientX,e.clientY,[{act:'conn:'+line.getAttribute('data-conn'),label:'Delete line',danger:true}]);
-      return;
+    // A line gets the same treatment a card does: right-clicking one that
+    // is not selected selects it first, so the menu always acts on what
+    // you pointed at.
+    const line=t&&t.closest&&t.closest('path[data-conn],text[data-conn],circle[data-conn]');
+    if(line){
+      const id=line.getAttribute('data-conn');
+      if(_boardsConnSel!==id)_boardsSelectConn(id);
+      const cn=_boardsConnById(id);
+      if(cn){_boardsOpenCtx(e.clientX,e.clientY,_boardsConnItems(cn,canEdit));return;}
     }
     const cardEl=t&&t.closest&&t.closest('.board-card-el,.board-frame');
     if(cardEl){

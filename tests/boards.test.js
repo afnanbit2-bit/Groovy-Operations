@@ -986,5 +986,123 @@ module.exports=function(){
       run(`_boardsRenderOrder().map(c=>c.id).join(',')`),'col,a,b,free');
   }
 
+  // ── connectors: selectable, styleable, curved ──────────────────────────
+  {
+    const app=loadApp({files:FILES,session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'}});
+    const {run}=app;
+    const boot=()=>run(`session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};
+      _editBoard={id:'B',title:'T',visibility:'shared',ownerUid:'u1',zoom:1,panX:0,panY:0};
+      _boardsSelection=new Set();_boardsPeers=[];moodBoards=[];_boardsConnSel=null;
+      _editCards=[
+        {id:'a',type:'text',text:'1',x:0,y:0,w:100,h:100},
+        {id:'b',type:'text',text:'2',x:200,y:200,w:100,h:100}
+      ];
+      _editConnectors=[{id:'L1',from:'a',to:'b',arrow:true},
+                       {free:true,x1:0,y1:0,x2:100,y2:0}];`);
+    boot();
+
+    s.section('older connectors are given ids without dirtying the board');
+    run(`_boardsConnEnsureIds()`);
+    s.ok('the one with no id now has one',run(`!!_editConnectors[1].id`));
+    s.eq('the one that had an id keeps it',run(`_editConnectors[0].id`),'L1');
+    // The ids are minted BEFORE _boardsConnBase is taken on open, so this
+    // migration never makes an untouched board look changed.
+    run(`_boardsConnBase=JSON.stringify(_editConnectors)`);
+    s.eq('and the board is not dirty afterwards',run(`_boardsConnDirty()`),false);
+
+    s.section('geometry: straight by default, quadratic when bent');
+    const g=run(`JSON.stringify((g=>({d:g.d,bent:g.bent}))(_boardsConnGeom(_editConnectors[0])))`);
+    s.eq('a straight line is a plain L path',g,'{"d":"M 50 50 L 250 250","bent":false}');
+    run(`_editConnectors[0].bx=20;_editConnectors[0].by=-40`);
+    const c=run(`JSON.stringify((g=>({apex:g.apex,ctrl:g.ctrl,bent:g.bent}))(_boardsConnGeom(_editConnectors[0])))`);
+    // The stored bend is the APEX offset, so the handle sits exactly where
+    // the curve is; the control point is derived as mid + 2·offset,
+    // because for a quadratic the apex is .25p1 + .5c + .25p2.
+    s.eq('apex is mid + the stored offset, control is mid + twice it',c,
+      '{"apex":{"x":170,"y":110},"ctrl":{"x":190,"y":70},"bent":true}');
+    s.ok('and the path is a Q curve',/^M 50 50 Q 190 70 250 250$/.test(
+      run(`_boardsConnGeom(_editConnectors[0]).d`)));
+
+    s.section('a bend is an OFFSET, so it survives the cards moving');
+    run(`_editCards[1].x=600;_editCards[1].y=600`);
+    s.eq('the bend is still the same offset from the new midpoint',
+      run(`JSON.stringify(_boardsConnGeom(_editConnectors[0]).apex)`),
+      '{"x":370,"y":310}');
+
+    s.section('selection is by id, so a delete that shifts indices is safe');
+    boot();
+    run(`_boardsConnEnsureIds();_boardsSelectConn(_editConnectors[1].id)`);
+    const keep=run(`_boardsConnSel`);
+    run(`window.boardsDeleteConnector('L1')`);
+    s.eq('the other line is still the selected one',run(`_boardsConnSel`),keep);
+    s.eq('and only one was removed',run(`_editConnectors.length`),1);
+
+    s.section('card selection and line selection are mutually exclusive');
+    boot();
+    run(`_boardsConnEnsureIds();_boardsSelectConn('L1')`);
+    s.eq('selecting a line clears the cards',run(`_boardsSelection.size`),0);
+    run(`_boardsSelectCard('a',false)`);
+    s.eq('selecting a card clears the line',run(`_boardsConnSel===null`),true);
+
+    s.section('the line rail and the right-click menu offer the same actions');
+    boot();
+    run(`_boardsConnEnsureIds();_boardsSelectConn('L1')`);
+    const rail=run(`JSON.stringify(_boardsRailItems().map(i=>i.act||(i.connSwatches?'swatches':'sep')))`);
+    const menu=run(`JSON.stringify(_boardsConnItems(_boardsConnById('L1'),true).map(i=>i.act||(i.connSwatches?'swatches':i.sep?'sep':'title')))`);
+    ['ln:arrow','ln:arrowStart','ln:dash','ln:label','ln:delete'].forEach(a=>{
+      s.ok(a+' in both',rail.indexOf(a)>-1&&menu.indexOf(a)>-1);
+    });
+    s.ok('both offer a colour row',/swatches/.test(rail)&&/swatches/.test(menu));
+
+    s.section('every line action routes through one place');
+    boot();
+    run(`_boardsConnEnsureIds();_boardsSelectConn('L1')`);
+    run(`_boardsCtxRun('ln:dash')`);
+    s.eq('dashed on',run(`_editConnectors[0].dash`),true);
+    run(`_boardsCtxRun('ln:dash')`);
+    s.eq('and off again drops the field',run(`_editConnectors[0].dash===undefined`),true);
+    run(`_boardsCtxRun('ln:w:thick')`);
+    s.eq('weight set',run(`_editConnectors[0].weight`),'thick');
+    run(`_boardsCtxRun('ln:c:red')`);
+    s.eq('colour set',run(`_editConnectors[0].color`),'red');
+    run(`_boardsCtxRun('ln:c:none')`);
+    s.eq('"none" removes it rather than storing a word',run(`_editConnectors[0].color===undefined`),true);
+    run(`_editConnectors[0].bx=10;_editConnectors[0].by=10;_boardsCtxRun('ln:straight')`);
+    s.eq('straighten clears the bend',
+      run(`_editConnectors[0].bx===undefined&&_editConnectors[0].by===undefined`),true);
+
+    s.section('a stroke colour never reaches the DOM unvalidated');
+    // The palette is a fixed name list mapped to CSS variables — a stored
+    // value that is not in it falls back rather than being written into a
+    // style attribute.
+    s.ok('a known name maps to a variable',
+      /^var\(--accent-urgent\)$/.test(run(`_boardsConnStroke({color:'red'})`)));
+    s.ok('anything else does not',
+      !/url|expression|;/.test(run(`_boardsConnStroke({color:'red;background:url(x)'})`)));
+
+    s.section('duplicating a connector detaches it so the copy is visible');
+    boot();
+    run(`_boardsConnEnsureIds();_boardsSelectConn('L1');window.boardsDuplicateConnector('L1')`);
+    s.eq('there are three now',run(`_editConnectors.length`),3);
+    const dup=run(`JSON.stringify((c=>({free:!!c.free,from:c.from,sameId:c.id==='L1'}))(_editConnectors[2]))`);
+    s.eq('the copy is freeform, offset, and has its own id',dup,'{"free":true,"sameId":false}');
+
+    s.section('a label is rendered as structure, never interpolated');
+    // Same stored-XSS boundary as card text, to-do items and comments: the
+    // <text> node is emitted EMPTY and filled with textContent afterwards.
+    // Driven through the real renderer — the harness's svg stub records
+    // what was written to innerHTML, and its querySelector returns null, so
+    // the hydration pass is a no-op and whatever is left is exactly what
+    // the markup builder produced.
+    boot();
+    run(`_boardsConnEnsureIds();_editConnectors[0].label='<img src=x onerror=alert(1)>'`);
+    run(`_boardsDrawConnectors()`);
+    const markup=app.el('board-conn-layer').innerHTML;
+    s.ok('a <text> node was emitted for the label',/<text class="conn-label"/.test(markup));
+    s.ok('carrying none of the label text',!/img src|onerror|alert/.test(markup));
+    s.ok('and the hit path is emitted BEFORE the visible one',
+      markup.indexOf('conn-hit')<markup.indexOf('class="conn"'));
+  }
+
   return s;
 };
