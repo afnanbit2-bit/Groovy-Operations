@@ -74,6 +74,10 @@ function _boardsIsPhone(){
 const _BOARDS_GRID=20;          // snap-to-grid step, world px
 const _BOARDS_SNAP_PX=6;        // alignment-guide catch distance, SCREEN px (so it feels the same at any zoom)
 const _BOARDS_CLIP_PREFIX='groovy-board-cards:';
+// A SEPARATE tag rather than a shape change to the card payload — an older
+// build in another tab still reads the card one, and a line pasted into it
+// is ignored instead of arriving as a malformed card.
+const _BOARDS_CLIP_LINE_PREFIX='groovy-board-lines:';
 // Snap preference is a per-viewer convenience, not board data — localStorage
 // is the right home for it (it should not travel with the board to someone
 // else's screen).
@@ -2293,10 +2297,23 @@ window.boardsOpenColorPicker=function(kind,id){
   _boardsColorTarget={kind,id};
   _boardsRenderColorSheet();
 };
+// The picker serves two kinds of target now: a BOARD's identity colour and
+// a LINE's stroke. Routing here keeps every call site below ignorant of the
+// difference — the alternative was four of them each growing a branch.
+function _boardsColorCurrent(){
+  const t=_boardsColorTarget;if(!t)return'';
+  if(t.kind==='conn'){const cn=_boardsConnById(t.id);return _boardsValidHex(cn&&cn.color);}
+  const b=moodBoards.find(x=>x.id===t.id);
+  return _boardsValidHex(b&&b.color);
+}
+function _boardsColorApply(hex){
+  const t=_boardsColorTarget;if(!t)return;
+  if(t.kind==='conn'){window.boardsSetConn(t.id,{color:hex||null});return;}
+  _boardsSaveIdentity(t.id,{color:hex||null});
+}
 function _boardsRenderColorSheet(){
   const t=_boardsColorTarget;if(!t)return;
-  const b=moodBoards.find(x=>x.id===t.id);
-  const cur=_boardsValidHex(b&&b.color);
+  const cur=_boardsColorCurrent();
   _boardsOpenSheet('Colour',`
     <div class="board-tile-swatches">
       <button class="board-tile-sw none${cur?'':' on'}" title="No colour" onclick="window.boardsPickTileColor('')"></button>
@@ -2305,14 +2322,13 @@ function _boardsRenderColorSheet(){
     <button class="board-custom-btn" onclick="window.boardsOpenCustomColor()"><span class="board-custom-wheel"></span>Custom colour…</button>`);
 }
 window.boardsPickTileColor=function(hex){
-  const t=_boardsColorTarget;if(!t)return;
+  if(!_boardsColorTarget)return;
   window.boardsCloseSheet();
-  _boardsSaveIdentity(t.id,{color:_boardsValidHex(hex)||null});
+  _boardsColorApply(_boardsValidHex(hex));
 };
 window.boardsOpenCustomColor=function(){
   const t=_boardsColorTarget;if(!t)return;
-  const b=moodBoards.find(x=>x.id===t.id);
-  const start=_boardsValidHex(b&&b.color)||'#3FCFAF';
+  const start=_boardsColorCurrent()||'#3FCFAF';
   _boardsOpenSheet('Select colour',`
     <div class="board-hsv">
       <label>Hue</label>
@@ -2345,12 +2361,12 @@ window.boardsHsvInput=function(){
   if(hEl)hEl.style.background=`linear-gradient(90deg,${[0,60,120,180,240,300,359].map(x=>_boardsHsvToHex(x,sv,v)).join(',')})`;
 };
 window.boardsHsvSet=function(){
-  const t=_boardsColorTarget;if(!t)return;
+  if(!_boardsColorTarget)return;
   const h=+(document.getElementById('bhsv-h')||{}).value||0;
   const sv=+(document.getElementById('bhsv-s')||{}).value||0;
   const v=+(document.getElementById('bhsv-v')||{}).value||0;
   window.boardsCloseSheet();
-  _boardsSaveIdentity(t.id,{color:_boardsHsvToHex(h,sv,v)});
+  _boardsColorApply(_boardsHsvToHex(h,sv,v));
 };
 
 // ── Icon picker ──
@@ -3629,6 +3645,7 @@ function _boardsRailItems(){
         out.push({act:'ln:weight',label:'Weight',icon:'weight'});
         if(cn.bx||cn.by)out.push({act:'ln:straight',label:'Straight',icon:'line'});
         out.push({sep:true});
+        out.push({act:'ln:lock',label:cn.locked?'Unlock':'Lock',icon:cn.locked?'unlock':'lock'});
         out.push({act:'ln:delete',label:'Delete',icon:'trash',danger:true});
       }
       out.push({act:'ln:deselect',label:'Done',icon:'done',done:true});
@@ -3789,7 +3806,14 @@ function _boardsConnGeom(cn){
 function _boardsConnStroke(cn){
   const map={red:'--accent-urgent',amber:'--accent-warning',green:'--accent-success',
     blue:'--cat-notes',purple:'--cat-boards'};
-  return cn.color&&map[cn.color]?`var(${map[cn.color]})`:(cn.free?'var(--text)':'var(--muted)');
+  if(cn.color&&map[cn.color])return`var(${map[cn.color]})`;
+  // A custom colour is stored as a literal #RRGGBB, so it goes through the
+  // same validator every other stored colour in this file does before it
+  // can reach a style attribute. Fail closed: an unrecognised value falls
+  // back to the default rather than being passed through.
+  const hex=cn.color?_boardsValidHex(cn.color):'';
+  if(hex)return hex;
+  return cn.free?'var(--text)':'var(--muted)';
 }
 function _boardsDrawConnectors(){
   const svg=document.getElementById('board-conn-layer');if(!svg)return;
@@ -3821,7 +3845,9 @@ function _boardsDrawConnectors(){
       out+=`<text class="conn-label" data-conn="${cn.id}" x="${g.apex.x}" y="${g.apex.y-8}" text-anchor="middle"></text>`;
       labels.push({id:cn.id,text:cn.label});
     }
-    if(sel){
+    // A locked line keeps its selection outline (that is how you unlock it)
+    // but loses every handle — the same rule locked cards follow.
+    if(sel&&!cn.locked){
       out+=`<circle class="conn-h" data-h="a" data-conn="${cn.id}" cx="${g.p1.x}" cy="${g.p1.y}" r="5"/>`+
            `<circle class="conn-h" data-h="b" data-conn="${cn.id}" cx="${g.p2.x}" cy="${g.p2.y}" r="5"/>`+
            `<circle class="conn-h bend" data-h="m" data-conn="${cn.id}" cx="${g.apex.x}" cy="${g.apex.y}" r="5"/>`;
@@ -3871,6 +3897,7 @@ window.boardsDeleteConnector=function(id){
   if(!_boardsCanEdit(_editBoard))return;
   const i=_editConnectors.findIndex(cn=>cn.id===id);
   if(i<0)return;
+  if(_editConnectors[i].locked){showToast('That line is locked');return;}
   _boardsPushUndo();
   _editConnectors.splice(i,1);
   if(_boardsConnSel===id)_boardsConnSel=null;
@@ -3927,13 +3954,53 @@ function _boardsWireConnLayer(svg){
     if(!p)return;
     // Stop the stage seeing this as the start of a pan or a marquee.
     e.stopPropagation();
-    _boardsSelectConn(p.getAttribute('data-conn'));
+    const id=p.getAttribute('data-conn');
+    _boardsSelectConn(id);
+    _boardsConnDrag(e,_boardsConnById(id));
   });
+}
+// Milanote repositions a line by dragging its body. Only a FREEFORM line
+// can move: a card-bound one's endpoints ARE the two cards, so dragging it
+// would either do nothing or silently break the connection. Its midpoint
+// handle still curves it, which is the only free parameter it has.
+//
+// The bend is stored as an offset from the midpoint (see _boardsConnGeom),
+// so moving both endpoints carries the curve along with no extra work.
+function _boardsConnDrag(e,cn){
+  if(!cn||!cn.free||cn.locked||!_boardsCanEdit(_editBoard))return;
+  const svg=document.getElementById('board-conn-layer');
+  const b=_editBoard;
+  if(!svg||!b)return;
+  const o={x1:cn.x1,y1:cn.y1,x2:cn.x2,y2:cn.y2};
+  const startX=e.clientX,startY=e.clientY;
+  let pushed=false;
+  try{svg.setPointerCapture(e.pointerId);}catch(err){}
+  function move(ev){
+    if(_boardsPinch)return;
+    // One undo entry per gesture, on the first real movement — a plain
+    // click to select must not leave a no-op in the stack.
+    if(!pushed){_boardsPushUndo();pushed=true;}
+    const dx=(ev.clientX-startX)/b.zoom,dy=(ev.clientY-startY)/b.zoom;
+    cn.x1=o.x1+dx;cn.y1=o.y1+dy;cn.x2=o.x2+dx;cn.y2=o.y2+dy;
+    _boardsDrawConnectors();
+  }
+  function up(){
+    svg.removeEventListener('pointermove',move);
+    svg.removeEventListener('pointerup',up);
+    if(!pushed)return;
+    // A drag ends with a click on whatever is under the pointer; swallow it,
+    // the same guard card drags use.
+    _boardsSuppressClick=true;
+    _boardsSaveDebounced();
+  }
+  svg.addEventListener('pointermove',move);
+  svg.addEventListener('pointerup',up);
 }
 function _boardsConnHandleDrag(e,handle){
   e.stopPropagation();e.preventDefault();
   if(!_boardsCanEdit(_editBoard))return;
   const cn=_boardsConnById(handle.getAttribute('data-conn'));if(!cn)return;
+  if(cn.locked)return;
   const kind=handle.getAttribute('data-h');
   let pushed=false;
   // Kept in the closure, NOT on the connector. Connectors are saved as
@@ -4006,6 +4073,29 @@ function _boardsConnAction(rest){
       break;
     }
     case'deselect':_boardsClearConnSel();break;
+    case'lock':window.boardsSetConn(id,{locked:cn.locked?null:true});
+      showToast(cn.locked?'Line unlocked':'Line locked');break;
+    // Connectors paint in array order, exactly like cards (Stage 2) — so
+    // z-order is a reorder of that array and needs no stored field.
+    case'front':case'back':{
+      const i=_editConnectors.findIndex(x=>x.id===id);
+      if(i<0)break;
+      _boardsPushUndo();
+      const[moved]=_editConnectors.splice(i,1);
+      if(rest==='front')_editConnectors.push(moved);else _editConnectors.unshift(moved);
+      _boardsDrawConnectors();
+      _boardsSaveDebounced();
+      break;
+    }
+    case'custom':window.boardsOpenColorPicker('conn',id);break;
+    case'copy':case'cut':{
+      // Fire the real clipboard event rather than duplicating the logic, so
+      // the system clipboard stays the single source of truth (Stage 2).
+      let ok=false;
+      try{ok=document.execCommand(rest);}catch(e){ok=false;}
+      if(!ok)showToast('Use Ctrl+'+(rest==='cut'?'X':'C'));
+      break;
+    }
     case'label':window.boardsConnLabel(id);break;
     case'dup':window.boardsDuplicateConnector(id);break;
     case'delete':window.boardsDeleteConnector(id);break;
@@ -4014,8 +4104,20 @@ function _boardsConnAction(rest){
 }
 // What the rail and the right-click menu both offer for a selected line.
 function _boardsConnItems(cn,canEdit){
-  const items=[{title:cn.free?'Line':'Connector'}];
+  const items=[{title:(cn.free?'Line':'Connector')+(cn.locked?' · Locked':'')}];
   if(!canEdit)return items;
+  // The same shared block a card's menu opens with, so the shortcuts are
+  // taught in both places and mean the same thing.
+  items.push({act:'ln:cut',label:'Cut',hint:'Ctrl X'});
+  items.push({act:'ln:copy',label:'Copy',hint:'Ctrl C'});
+  items.push({act:'ln:dup',label:'Duplicate',hint:'Ctrl D'});
+  items.push({act:'ln:delete',label:'Delete',hint:'Del',danger:true});
+  items.push({sep:true});
+  items.push({act:'ln:lock',label:cn.locked?'Unlock position':'Lock position'});
+  items.push({act:'ln:front',label:'Bring to front'});
+  items.push({act:'ln:back',label:'Send to back'});
+  if(cn.locked)return items;
+  items.push({sep:true});
   items.push({act:'ln:arrowStart',label:(cn.arrowStart?'✓ ':'')+'Arrow at the start'});
   items.push({act:'ln:arrow',label:(cn.arrow?'✓ ':'')+'Arrow at the end'});
   items.push({act:'ln:dash',label:(cn.dash?'✓ ':'')+'Dashed'});
@@ -4026,9 +4128,8 @@ function _boardsConnItems(cn,canEdit){
   items.push({sep:true});
   items.push({act:'ln:label',label:cn.label?'Edit label…':'Add a label…'});
   if(cn.bx||cn.by)items.push({act:'ln:straight',label:'Straighten'});
-  items.push({act:'ln:dup',label:'Duplicate',hint:'Ctrl D'});
-  items.push({act:'ln:delete',label:'Delete line',hint:'Del',danger:true});
   items.push({connSwatches:cn.id});
+  items.push({act:'ln:custom',label:'Custom colour…'});
   return items;
 }
 window.boardsToggleLineMode=function(){
@@ -4482,6 +4583,12 @@ function _boardsOnPaste(e){
   const text=((e.clipboardData&&e.clipboardData.getData('text/plain'))||'').trim();
   // Cards copied from a board (possibly a different one, or another tab)
   // come back as tagged JSON — handled before the URL/text cases.
+  if(text.indexOf(_BOARDS_CLIP_LINE_PREFIX)===0){
+    e.preventDefault();
+    let lines=null;
+    try{lines=JSON.parse(text.slice(_BOARDS_CLIP_LINE_PREFIX.length));}catch(err){lines=null;}
+    if(Array.isArray(lines)&&lines.length){_boardsPasteLines(lines);return;}
+  }
   if(text.indexOf(_BOARDS_CLIP_PREFIX)===0){
     e.preventDefault();
     let payload=null;
@@ -4491,7 +4598,8 @@ function _boardsOnPaste(e){
   if(!text){
     // Nothing usable on the system clipboard, but this session copied cards
     // earlier (the setData call can be refused in some browsers) — fall back.
-    if(_boardsClipboard.length){e.preventDefault();_boardsPasteCards(_boardsClipboard);}
+    if(_boardsClipboard.length){e.preventDefault();_boardsPasteCards(_boardsClipboard);return;}
+    if(_boardsLineClipboard.length){e.preventDefault();_boardsPasteLines(_boardsLineClipboard);}
     return;
   }
   e.preventDefault();
@@ -4681,6 +4789,22 @@ function _boardsOnCopy(e,cut){
   if(currentPage!=='board-canvas'||!_editBoard||!_boardsCanEdit(_editBoard))return;
   if(_boardsIsEditableFocus())return;
   const sel=_boardsSelectedCards();
+  // A selected LINE copies instead. The two selections are mutually
+  // exclusive (see _boardsSelectConn), so there is never a question of which.
+  if(!sel.length&&_boardsConnSel!==null){
+    const cn=_boardsConnById(_boardsConnSel);
+    if(!cn)return;
+    const one=JSON.parse(JSON.stringify(cn));
+    delete one.id;
+    _boardsLineClipboard=[one];
+    try{
+      e.clipboardData.setData('text/plain',_BOARDS_CLIP_LINE_PREFIX+JSON.stringify([one]));
+      e.preventDefault();
+    }catch(err){/* the in-memory copy still works this session */}
+    if(cut)window.boardsDeleteConnector(cn.id);
+    else showToast('Line copied');
+    return;
+  }
   if(!sel.length)return;
   const payload=_boardsCloneCards(sel,0,0);
   _boardsClipboard=payload;
@@ -4693,6 +4817,36 @@ function _boardsOnCopy(e,cut){
 }
 document.addEventListener('copy',e=>_boardsOnCopy(e,false));
 document.addEventListener('cut',e=>_boardsOnCopy(e,true));
+let _boardsLineClipboard=[];
+// Pasted lines land as FREEFORM, offset from where they were. A card-bound
+// one cannot be pasted as-is — the cards it names may not exist on this
+// board, or in this account — so it is flattened to the shape it was drawn
+// in, keeping its curve, weight, dash, arrowheads and label.
+function _boardsPasteLines(lines){
+  if(!_boardsCanEdit(_editBoard)||!lines||!lines.length)return false;
+  _boardsPushUndo();
+  let last=null;
+  lines.forEach(src=>{
+    const cn=JSON.parse(JSON.stringify(src));
+    cn.id='k'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
+    delete cn.locked;
+    if(!cn.free){
+      const g=_boardsConnGeom(src);
+      const p1=g?g.p1:{x:80,y:80},p2=g?g.p2:{x:260,y:200};
+      cn.free=true;delete cn.from;delete cn.to;
+      cn.x1=p1.x;cn.y1=p1.y;cn.x2=p2.x;cn.y2=p2.y;
+    }
+    cn.x1+=24;cn.y1+=24;cn.x2+=24;cn.y2+=24;
+    _editConnectors.push(cn);
+    last=cn.id;
+  });
+  if(last)_boardsConnSel=last;
+  _boardsDrawConnectors();
+  _boardsRenderRail();
+  _boardsSaveDebounced();
+  showToast(lines.length===1?'Line pasted':lines.length+' lines pasted');
+  return true;
+}
 function _boardsPasteCards(cards){
   if(!cards||!cards.length)return false;
   _boardsPushUndo();
@@ -6508,6 +6662,12 @@ async function _boardsCtxPaste(){
     if(navigator.clipboard&&navigator.clipboard.readText)text=await navigator.clipboard.readText();
   }catch(e){text='';}
   if(!text){showToast('Press Ctrl+V here to paste an image or text');return;}
+  if(text.indexOf(_BOARDS_CLIP_LINE_PREFIX)===0){
+    try{
+      const ls=JSON.parse(text.slice(_BOARDS_CLIP_LINE_PREFIX.length));
+      if(_boardsPasteLines(ls))return;
+    }catch(e){/* fall through to plain text */}
+  }
   if(text.indexOf(_BOARDS_CLIP_PREFIX)===0){
     try{
       const cards=JSON.parse(text.slice(_BOARDS_CLIP_PREFIX.length));

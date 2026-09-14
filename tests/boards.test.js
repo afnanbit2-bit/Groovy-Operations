@@ -1211,5 +1211,108 @@ module.exports=function(){
       run(`_boardsPresentable()[0].id`),'h');
   }
 
+  // ── the four gaps the Milanote line teardown found ────────────────────
+  {
+    const app=loadApp({files:FILES,session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'}});
+    const {run}=app;
+    const boot=()=>run(`session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};
+      _editBoard={id:'B',title:'T',visibility:'shared',ownerUid:'u1',zoom:1,panX:0,panY:0};
+      _boardsSelection=new Set();_boardsPeers=[];moodBoards=[];_boardsConnSel=null;
+      _boardsLineClipboard=[];
+      _editCards=[{id:'a',type:'text',text:'1',x:0,y:0,w:100,h:100},
+                  {id:'b',type:'text',text:'2',x:400,y:400,w:100,h:100}];
+      _editConnectors=[
+        {id:'F',free:true,x1:10,y1:20,x2:110,y2:120,arrow:true,bx:15,by:-30,label:'Flow',weight:'thick',dash:true},
+        {id:'B2',from:'a',to:'b',arrow:true}
+      ];`);
+    boot();
+
+    s.section('a freeform line drags as a whole, carrying its curve');
+    // The bend is an OFFSET from the midpoint, so moving both endpoints
+    // needs no extra work — that is the point of storing it that way.
+    const before=run(`JSON.stringify(_boardsConnGeom(_editConnectors[0]).apex)`);
+    run(`(cn=>{cn.x1+=50;cn.y1+=50;cn.x2+=50;cn.y2+=50;})(_editConnectors[0])`);
+    const after=run(`JSON.stringify(_boardsConnGeom(_editConnectors[0]).apex)`);
+    s.eq('the apex travels with the line',
+      JSON.stringify({x:JSON.parse(before).x+50,y:JSON.parse(before).y+50}),after);
+    s.eq('and the stored bend is untouched',run(`_editConnectors[0].bx+','+_editConnectors[0].by`),'15,-30');
+
+    s.section('a card-bound line is not draggable — its ends ARE the cards');
+    s.eq('drag refuses it',run(`(()=>{
+      const n=_editConnectors[1];const b4=JSON.stringify(n);
+      _boardsConnDrag({clientX:0,clientY:0,pointerId:1},n);
+      return JSON.stringify(n)===b4;})()`),true);
+    s.eq('and refuses a locked one',run(`(()=>{
+      const n=_editConnectors[0];n.locked=true;const b4=n.x1;
+      _boardsConnDrag({clientX:0,clientY:0,pointerId:1},n);
+      delete n.locked;return n.x1===b4;})()`),true);
+
+    s.section('lock, and what it takes away');
+    boot();
+    run(`_boardsConnEnsureIds();_boardsSelectConn('F');_boardsCtxRun('ln:lock')`);
+    s.eq('the line is locked',run(`_boardsConnById('F').locked`),true);
+    run(`window.boardsDeleteConnector('F')`);
+    s.eq('a locked line cannot be deleted',run(`_editConnectors.length`),2);
+    s.ok('and is told so',/locked/i.test(app.state.toasts.join(' ')));
+    run(`_boardsDrawConnectors()`);
+    const lockedSvg=app.el('board-conn-layer').innerHTML;
+    // NB `conn-hit` contains `conn-h` — the invisible hit stroke is always
+    // there, so the handle test has to be anchored on the full class.
+    s.ok('it keeps its outline but loses every handle',
+      /class="conn free selected/.test(lockedSvg)&&!/class="conn-h[" ]/.test(lockedSvg));
+    const lockedMenu=run(`JSON.stringify(_boardsConnItems(_boardsConnById('F'),true).map(i=>i.act||''))`);
+    s.ok('and the menu hides the styling it cannot apply',!/ln:dash/.test(lockedMenu));
+    s.ok('while still offering the unlock',/ln:lock/.test(lockedMenu));
+    run(`_boardsCtxRun('ln:lock')`);
+    s.ok('unlock drops the field rather than storing false',
+      run(`_boardsConnById('F').locked===undefined`));
+
+    s.section('z-order is array order, like cards');
+    boot();
+    run(`_boardsConnEnsureIds();_boardsSelectConn('F');_boardsCtxRun('ln:front')`);
+    s.eq('front moves it last, so it paints on top',run(`_editConnectors[1].id`),'F');
+    run(`_boardsCtxRun('ln:back')`);
+    s.eq('back moves it first',run(`_editConnectors[0].id`),'F');
+
+    s.section('copy and paste carry the whole line, label included');
+    boot();
+    run(`_boardsConnEnsureIds();_boardsSelectConn('F')`);
+    let written='';
+    run(`__ev={clipboardData:{setData:(t,v)=>{__w=v;}},preventDefault(){}};__w='';_boardsOnCopy(__ev,false)`);
+    written=run(`__w`);
+    s.ok('tagged as lines, not as cards',written.indexOf('groovy-board-lines:')===0,written.slice(0,24));
+    s.ok('carrying the label',/Flow/.test(written));
+    s.ok('the curve',/"bx":15/.test(written));
+    s.ok('the weight and dash',/thick/.test(written)&&/"dash":true/.test(written));
+    s.ok('and never the id — a paste mints its own',!/"id"/.test(written));
+    run(`_boardsPasteLines(JSON.parse(__w.slice('groovy-board-lines:'.length)))`);
+    s.eq('pasting adds one',run(`_editConnectors.length`),3);
+    const pasted=run(`JSON.stringify((c=>({label:c.label,bx:c.bx,dash:!!c.dash,off:c.x1-10,sameId:c.id==='F'}))(_editConnectors[2]))`);
+    s.eq('offset, styled, and its own line',pasted,'{"label":"Flow","bx":15,"dash":true,"off":24,"sameId":false}');
+    s.eq('and it becomes the selection',run(`_boardsConnSel`),run(`_editConnectors[2].id`));
+
+    s.section('a card-bound line pastes as the shape it was drawn in');
+    boot();
+    run(`_boardsConnEnsureIds();_boardsPasteLines([{from:'a',to:'b',arrow:true,label:'Bound'}])`);
+    const flat=run(`JSON.stringify((c=>({free:!!c.free,from:c.from,label:c.label}))(_editConnectors[2]))`);
+    // The cards it names may not exist on the board being pasted into.
+    s.eq('flattened to freeform, keeping its style',flat,'{"free":true,"label":"Bound"}');
+
+    s.section('a custom colour goes through the same validator');
+    boot();
+    run(`_boardsConnEnsureIds();_boardsSelectConn('F');_boardsCtxRun('ln:custom')`);
+    s.eq('the picker targets the LINE, not a board',run(`_boardsColorTarget.kind`),'conn');
+    run(`window.boardsPickTileColor('#3FCFAF')`);
+    s.eq('a valid hex is stored',run(`_boardsConnById('F').color`),'#3FCFAF');
+    s.ok('and reaches the stroke',/^#3FCFAF$/.test(run(`_boardsConnStroke(_boardsConnById('F'))`)));
+    run(`window.boardsPickTileColor('red;background:url(x)')`);
+    s.ok('anything else is refused before it can reach a style attribute',
+      run(`_boardsConnById('F').color===undefined`));
+    s.ok('falling back rather than passing it through',
+      /var\(/.test(run(`_boardsConnStroke({free:true,color:'javascript:1'})`)));
+    s.ok('a palette NAME still works alongside hexes',
+      /var\(--accent-urgent\)/.test(run(`_boardsConnStroke({color:'red'})`)));
+  }
+
   return s;
 };
