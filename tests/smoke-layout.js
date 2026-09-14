@@ -76,6 +76,31 @@ const FRAGMENTS={
       });
       return html;
     });
+  },
+  // A 280px column with a 2-up grid of thumbnails and wrapping labels —
+  // precisely the shape that crushed the Profile directory. Rendered inside
+  // a stand-in for the canvas wrap, since the real one is position:fixed.
+  'boards — Unsorted tray':()=>{
+    const app=loadApp({files:['js/boards.js']});
+    app.run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'}`);
+    app.run(`_boardsTrayOpen=true`);
+    app.run(`_editUnsorted=[
+      {id:'u1',kind:'text',text:'A note with a fairly long first line that has to wrap somewhere'},
+      {id:'u2',kind:'file',fileName:'winter-sequence-2026-techpack-final-v3.pdf',fileSize:2400000},
+      {id:'u3',kind:'link',linkUrl:'https://example.test/a',linkTitle:'example.test'},
+      {id:'u4',kind:'file',fileName:'a.pdf'}
+    ]`);
+    let html=app.run('_boardsTrayHTML(true)');
+    app.run('_boardsTrayHydrate()');
+    // Same reason as above: hydration goes into the harness's stub nodes, so
+    // the labels are written in here for the measurement.
+    ['A note with a fairly long first line that has to wrap somewhere',
+     'winter-sequence-2026-techpack-final-v3.pdf','example.test','a.pdf'].forEach((t,i)=>{
+      html=html.replace(new RegExp('(id="board-tray-l-'+i+'"[^>]*>)'),'$1'+t);
+    });
+    // The tray is position:absolute against the canvas wrap; give it one.
+    return Promise.resolve(
+      '<div style="position:relative;height:600px;width:100%">'+html+'</div>');
   }
 };
 

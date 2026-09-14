@@ -287,18 +287,41 @@ module.exports=function(){
     s.ok('the image card',/draggable="false"/.test(run(card('image'))));
     s.ok('the file card body',/draggable="false"/.test(run(card('file'))));
 
-    s.section('image, file and sub-board cards drag from the body too');
+    // Sept 2026: every body drags now, not just the three holding nothing
+    // editable. A note is only contenteditable while it is BEING edited, so
+    // a press on one is unambiguously a grab.
+    s.section('a card drags from its body, not only its header strip');
     const bodyDrag=t=>{
       const html=run(card(t));
       const m=/<(?:div|a) class="board-card-body[^>]*>/g;
       return (html.match(m)||[]).some(tag=>/boardsCardDragStart/.test(tag));
     };
-    s.ok('an image card does',bodyDrag('image'));
-    s.ok('a file card does',bodyDrag('file'));
-    s.ok('a sub-board card does',bodyDrag('board'));
-    s.ok('a NOTE does not — a body drag would fight the caret',!bodyDrag('text'));
-    s.ok('nor a to-do',!bodyDrag('todo'));
-    s.ok('nor a link card, which is all inputs',!bodyDrag('link'));
+    ['image','file','board','text','todo'].forEach(t=>{
+      s.ok('a '+t+' card does',bodyDrag(t));
+    });
+    s.ok('a link card does NOT — it is three form fields',!bodyDrag('link'));
+
+    s.section('nothing is editable until it is double-clicked');
+    ['text','todo'].forEach(t=>{
+      const html=run(card(t));
+      s.ok('a '+t+' card ships contenteditable="false"',
+        /contenteditable="false"/.test(html)&&!/contenteditable="true"/.test(html));
+      s.ok('and offers a double-click to open it',/ondblclick="window\.boardsBeginEdit/.test(html));
+    });
+    s.ok('the card name too',/board-card-name[^>]*ondblclick="window\.boardsBeginEdit/.test(run(card('image'))));
+
+    s.section('the delete ✕ can actually be clicked');
+    // It sits inside a header whose pointerdown calls setPointerCapture;
+    // without stopPropagation the capture retargets the click away from the
+    // button and nothing happens. Every other control in that header
+    // already carried the guard — these two were missed.
+    ['image','text','todo','link','file','board'].forEach(t=>{
+      s.ok('the '+t+' card ✕ stops pointerdown',
+        /<button class="board-card-del" onpointerdown="event\.stopPropagation\(\)"/.test(run(card(t))));
+    });
+    const frame=run(`_boardCardHTML(${JSON.stringify({id:'f1',type:'frame',x:0,y:0,w:300,h:300})},true)`);
+    s.ok('and so does the frame ✕',
+      /<button class="board-card-del" onpointerdown="event\.stopPropagation\(\)"/.test(frame));
 
     s.section('every card still has its header handle');
     ['image','file','board','text','todo','link'].forEach(t=>{
@@ -311,6 +334,73 @@ module.exports=function(){
       locked:true,imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg'})},true)`);
     s.ok('the body carries no drag handler',
       !/board-card-body[^>]*boardsCardDragStart/.test(locked));
+  }
+
+  // ── the Unsorted tray (Sept 2026) ─────────────────────────────────────
+  // Milanote's holding pen, per board. The rules worth pinning: it is a
+  // plain array on the board doc, open/closed is per viewer and never board
+  // data, a stashed card leaves the canvas without being destroyed, and
+  // dragging one out produces the right kind of card.
+  {
+    const app=loadApp({files:FILES});
+    const {run,state}=app;
+    run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'}`);
+    run(`_editCards=[];_editConnectors=[];_editUnsorted=[]`);
+
+    s.section('open/closed is per viewer, not board data');
+    run(`_boardsTrayOpen=true`);
+    const saved=run(`_boardsUnsortedForSave()`);
+    s.eq('an empty tray saves as an empty array',JSON.stringify(saved),'[]');
+    run(`_editUnsorted=[{id:'u1',kind:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',_uploading:true}]`);
+    const saved2=run(`_boardsUnsortedForSave()`);
+    s.ok('a transient _ flag never reaches Firestore',
+      !('_uploading' in saved2[0]),JSON.stringify(Object.keys(saved2[0])));
+    s.ok('but the real fields do',saved2[0].kind==='image'&&!!saved2[0].imageUrl);
+
+    s.section('a card sent to Unsorted leaves the board but is not destroyed');
+    run(`_editUnsorted=[]`);
+    run(`_editCards=[{id:'c1',type:'image',x:0,y:0,w:200,h:200,imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',name:'Jacket'},{id:'c2',type:'text',x:0,y:0,w:200,h:200,text:'hi'}]`);
+    run(`_editConnectors=[{from:'c1',to:'c2'}]`);
+    run(`_boardsSelection=new Set(['c1'])`);
+    run(`window.boardsTrayStash('c1')`);
+    s.eq('the card is off the canvas',run(`_editCards.length`),1);
+    s.eq('and in the tray',run(`_editUnsorted.length`),1);
+    s.eq('carrying its image',run(`_editUnsorted[0].imageUrl`),'https://res.cloudinary.com/x/image/upload/v1/a.jpg');
+    s.eq('and its name',run(`_editUnsorted[0].name`),'Jacket');
+    s.eq('its connector went with it',run(`_editConnectors.length`),0);
+    s.ok('and it is no longer selected',!run(`_boardsSelection.has('c1')`));
+
+    s.section('dragging one out makes the right kind of card');
+    const mk=(u)=>run(`_boardsCardFromTrayItem(${JSON.stringify(u)},{x:100,y:100})`);
+    const img=mk({id:'u1',kind:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',name:'Jacket'});
+    s.eq('an image item → an image card',img.type,'image');
+    s.eq('keeping its url',img.imageUrl,'https://res.cloudinary.com/x/image/upload/v1/a.jpg');
+    s.eq('and its name',img.name,'Jacket');
+    s.ok('centred on the drop point',Math.abs((img.x+img.w/2)-100)<1&&Math.abs((img.y+img.h/2)-100)<1);
+    s.eq('a file item → a file card',mk({kind:'file',fileUrl:'u',fileName:'a.pdf'}).type,'file');
+    s.eq('a link item → a link card',mk({kind:'link',linkUrl:'https://x.test'}).type,'link');
+    const txt=mk({kind:'text',text:'some words'});
+    s.eq('a text item → a note',txt.type,'text');
+    s.eq('with its words',txt.text,'some words');
+
+    s.section('a tray label is never interpolated into the HTML');
+    run(`_editUnsorted=[{id:'u1',kind:'text',text:'<img src=x onerror=alert(1)>'}]`);
+    const html=run(`_boardsTrayHTML(true)`);
+    s.ok('no raw script or handler in the markup',!/onerror=alert/.test(html));
+    s.ok('the slot exists instead',/id="board-tray-l-0"/.test(html));
+    run(`_boardsTrayHydrate()`);
+    s.eq('and hydration writes it as text',app.el('board-tray-l-0').textContent,'<img src=x onerror=alert(1)>');
+
+    s.section('the tray only renders when it is open');
+    run(`_boardsTrayOpen=false`);
+    s.eq('closed renders nothing',run(`_boardsTrayHTML(true)`),'');
+
+    s.section('a viewer who cannot edit gets no controls');
+    run(`_boardsTrayOpen=true`);
+    const ro=run(`_boardsTrayHTML(false)`);
+    s.ok('no add button',!/boardsTrayPick/.test(ro));
+    s.ok('no remove button',!/boardsTrayRemove/.test(ro));
+    s.ok('and nothing draggable out',!/boardsTrayDragStart/.test(ro));
   }
 
   return s;

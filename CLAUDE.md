@@ -1129,6 +1129,55 @@ form a usable stream. **Confirmed fixed on the real device.**
 - **Fit / 100% / Snap move into the ⋯ menu** at phone width — the top bar
   wrapped onto two rows and ate ~150px of a canvas that is the whole point
   of the page.
+### Mood Boards — click/double-click, the delete ✕, and Unsorted (Sept 2026)
+
+Three things Afnan asked for in one round. The first two were bugs.
+
+- **One click selects and moves; a double click edits.** Card bodies used to
+  be `contenteditable` permanently, so a single click dropped a caret in and
+  a card could only be moved by its header strip. Now the markup ships
+  `contenteditable="false"` and exactly ONE element is switched on at a time
+  (`_boardsEditingEl`, `window.boardsBeginEdit`). That single-element rule is
+  what keeps the rest simple: `_boardsIsEditableFocus()` and every keyboard
+  shortcut work unchanged, and `boardsCardDragStart` has one thing to check
+  before deciding a press is a grab rather than a text selection. The caret
+  is placed from the double-click coordinates via `caretRangeFromPoint`, not
+  at the start — anything else feels broken on a long note. **Escape is read
+  BEFORE the editable-focus bail** in `_boardsOnKeydown`, or it would be
+  handed to the browser and do nothing. Leaving by clicking elsewhere is one
+  document-level capture listener registered at load (not per render, which
+  would stack), excluding `.board-fmt` — the formatting bar already
+  `preventDefault`s its own mousedown to hold the selection. **Every card
+  body now drags** except `link`, which is three form fields. A brand-new
+  note or to-do item opens straight into edit mode.
+- **The delete ✕ never worked, on any card.** It sits inside a header whose
+  `onpointerdown` starts a drag and calls `setPointerCapture`; once the
+  header captures the pointer, the following `click` is retargeted to the
+  header and the button's own `onclick` never runs. The card-name span and
+  the comment badge already carried `onpointerdown="event.stopPropagation()"`
+  for exactly this reason — the two delete buttons (card and frame) were
+  simply missed. **Anything clickable inside a drag handle needs that
+  guard.**
+- **Unsorted tray** — Milanote's holding pen, per board. `b.unsorted`, a
+  plain array on the board document like `cards`; no subcollection, no
+  migration, and a board written before this has an empty tray. Open/closed
+  is per VIEWER (`localStorage`), never board data — same rule as the
+  minimap and snap. A tray item is never edited in place, only added,
+  removed or turned into a card, which is what lets the array be saved
+  whole (in `head`, beside title and pan/zoom) instead of merged item by
+  item; the remote merge adopts the server's copy unless something local is
+  still uploading. **Dragging out is pointer-based, not HTML5 drag** — the
+  stage already reads a native drag as "files from the desktop" (see
+  `_boardsInternalDrag`) and the canvas runs on pointer events throughout.
+  Dropping files ON the tray collects them; dropping on the canvas still
+  places them. **Paste goes to the tray only while the tray is OPEN** —
+  canvas paste has worked since Stage 1 and people rely on it, and an open
+  tray is a visible statement that you are collecting rather than placing,
+  so nothing is hidden. "Move to Unsorted" on the card menu is the reverse
+  of dragging one out; frames and sub-board links are excluded (a frame has
+  no content of its own, a board link belongs with its parent). Labels are
+  hydrated with `textContent` like every other user string in this file.
+
 ### Mood Boards — the wheel and the native drag (Sept 2026)
 
 Two bugs Afnan reported from his PC, both verified from the code before a

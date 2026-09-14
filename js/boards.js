@@ -33,6 +33,12 @@ let _boardsViewingId=null;    // id of the board open in the canvas view
 let _editBoard=null;          // {id,title,visibility,ownerUid,ownerName,ownerUsername,zoom,panX,panY}
 let _editCards=[];
 let _editConnectors=[];
+// The Unsorted tray (Sept 2026). Milanote's holding pen: things you have
+// collected but not placed yet. Per BOARD, stored as a plain array field on
+// the board document exactly like `cards` — same reasoning as everywhere
+// else in this file, no subcollection at this app's scale.
+let _editUnsorted=[];
+const _BOARDS_TRAY_KEY='groovy-boards-tray';   // open/closed is per VIEWER, not board data
 let _boardsSaveTimer=null;
 let _boardsCardSeq=0;
 let _boardsSelection=new Set(); // card ids currently selected (Stage 2: many, not one)
@@ -309,6 +315,70 @@ window.boardsRedoAction=function(){
   _boardsUndo.push(_boardsStateSnapshot());
   _boardsApplySnapshot(_boardsRedo.pop());
 };
+// ── Click selects, double-click edits (Sept 2026) ────────────────────────
+// Card bodies used to be contenteditable the whole time, so a single click
+// dropped a caret in and the card could only be moved by its header strip.
+// Afnan asked for Milanote's model: one click selects and drags, a double
+// click opens the text. So `contenteditable` is now "false" in the markup
+// and is turned on for exactly one element at a time, here.
+//
+// Only ONE element is ever editable, which is what makes the rest simple:
+// _boardsIsEditableFocus (and therefore every keyboard shortcut) keeps
+// working unchanged, and boardsCardDragStart has one thing to check.
+let _boardsEditingEl=null;
+window.boardsBeginEdit=function(ev,elId){
+  if(!_editBoard||!_boardsCanEdit(_editBoard))return;
+  const el=document.getElementById(elId);
+  if(!el)return;
+  const host=el.closest?el.closest('.board-card-el,.board-frame'):null;
+  const id=host&&host.dataset?host.dataset.id:null;
+  const c=id?_editCards.find(x=>x.id===id):null;
+  if(c&&c.locked){showToast('Card is locked — unlock it to edit it');return;}
+  if(ev){ev.stopPropagation();ev.preventDefault();}
+  if(_boardsEditingEl&&_boardsEditingEl!==el)_boardsEndEdit();
+  el.setAttribute('contenteditable','true');
+  _boardsEditingEl=el;
+  el.focus();
+  // Put the caret where the double-click actually landed rather than at the
+  // start of the text — anything else feels broken on a long note.
+  try{
+    if(ev&&document.caretRangeFromPoint){
+      const r=document.caretRangeFromPoint(ev.clientX,ev.clientY);
+      if(r){const sel=window.getSelection();sel.removeAllRanges();sel.addRange(r);}
+    }else if(!ev){
+      // Opened programmatically (a brand-new note or to-do item): caret at
+      // the end, which for an empty element is the only sensible place.
+      const sel=window.getSelection(),r=document.createRange();
+      r.selectNodeContents(el);r.collapse(false);
+      sel.removeAllRanges();sel.addRange(r);
+    }
+  }catch(e){}
+};
+function _boardsEndEdit(){
+  const el=_boardsEditingEl;
+  _boardsEditingEl=null;
+  if(!el)return;
+  try{
+    el.setAttribute('contenteditable','false');
+    if(document.activeElement===el)el.blur();
+  }catch(e){}
+  _boardsSaveDebounced();
+}
+window.boardsEndEdit=_boardsEndEdit;
+// Leaving edit mode by clicking elsewhere. Registered once at load, like the
+// paste and keydown handlers — a listener added during a render would pile
+// up, since the canvas DOM is replaced each time. Capture phase, so it runs
+// before the click is acted on. The formatting bar is excluded: it already
+// preventDefaults its own mousedown to keep the selection alive, and ending
+// the edit here would undo that.
+document.addEventListener('pointerdown',e=>{
+  if(!_boardsEditingEl)return;
+  const t=e.target;
+  if(t&&t.closest&&(t.closest('.board-fmt')||t.closest('.board-sheet')))return;
+  if(_boardsEditingEl.contains&&_boardsEditingEl.contains(t))return;
+  _boardsEndEdit();
+},true);
+
 function _boardsIsEditableFocus(){
   const a=document.activeElement;
   if(!a)return false;
@@ -319,6 +389,12 @@ function _boardsIsEditableFocus(){
 // the paste handler below (never stacks duplicate listeners per render).
 function _boardsOnKeydown(e){
   if(currentPage!=='board-canvas'||!_editBoard)return;
+  // Escape is the way OUT of edit mode, so it has to be read before the
+  // editable-focus bail below — otherwise it is handed to the browser and
+  // does nothing at all.
+  if(_boardsEditingEl&&(e.key==='Escape'||e.key==='Esc')){
+    e.preventDefault();_boardsEndEdit();return;
+  }
   // Inside a text card or a link field every one of these belongs to the
   // browser — Ctrl+Z is text undo, Backspace deletes a character, Ctrl+A
   // selects the paragraph. Intercepting any of them there would be worse
@@ -780,6 +856,7 @@ async function _boardsOpenCanvas(){
   _editBoard={id:b.id,title:b.title||'Untitled board',visibility:b.visibility||'personal',ownerUid:b.ownerUid,ownerName:b.ownerName,ownerUsername:b.ownerUsername,zoom:b.zoom||1,panX:b.panX||40,panY:b.panY||30,parentId:b.parentId||null,isTemplate:!!b.isTemplate,sharedWith:Array.isArray(b.sharedWith)?b.sharedWith.slice():[]};
   _editCards=(b.cards||[]).map(c=>{const cc={...c};delete cc._uploading;return cc;});
   _editConnectors=(b.connectors||[]).map(cn=>({...cn}));
+  _editUnsorted=(b.unsorted||[]).map(u=>{const uu={...u};delete uu._uploading;return uu;});
   _boardsSelection=new Set();
   // Find state is per board-opening too — carrying a search term from one
   // board into the next would highlight nothing and look broken.
@@ -819,6 +896,7 @@ function _boardsRenderCanvasAndWire(){
   if(!m)return;
   m.innerHTML=_renderBoardCanvasHTML();
   _boardsFullscreen(true);
+  _boardsTrayHydrate();
   // Seed the pill's last-seen value from the markup we just wrote, so
   // opening a board doesn't flash a percentage nobody asked for.
   _boardsPillZoom=_editBoard?Math.round(_editBoard.zoom*100):null;
@@ -869,6 +947,7 @@ function _renderBoardCanvasHTML(){
         <div class="tool-sep"></div>`:''}
         <button class="tool-btn${_boardsFindOpen?' on':''}" onclick="window.boardsToggleFind()" title="Find cards on this board">Find</button>
         <button class="tool-btn${_boardsDrawerOpen?' on':''}" id="board-cmt-btn" onclick="window.boardsToggleDrawer()" title="Comments and activity on this board">Comments</button>
+        <button class="tool-btn${_boardsTrayOpen?' on':''}" onclick="window.boardsToggleTray()" title="Unsorted — things collected but not placed yet">Unsorted${_editUnsorted.length?' '+_editUnsorted.length:''}</button>
         <button class="tool-btn" onclick="window.boardsZoomBy(0.8)">−</button>
         <span class="zoom-readout" id="board-zoom-readout">${Math.round(b.zoom*100)}%</span>
         <button class="tool-btn" onclick="window.boardsZoomBy(1.25)">+</button>
@@ -936,6 +1015,7 @@ function _renderBoardCanvasHTML(){
     <div class="board-drawer" id="board-drawer" style="display:none"></div>
     <div class="board-share-modal" id="board-share-modal" style="display:none"></div>
     <input type="file" id="board-file-picker" multiple style="display:none" onchange="window.boardsFilesPicked(this)">
+    ${_boardsTrayHTML(canEdit)}
   </div>`;
 }
 function _boardCardHTML(c,canEdit){
@@ -947,7 +1027,7 @@ function _boardCardHTML(c,canEdit){
     return`<div class="board-frame${sel}${c.locked?' locked':''}${c.color?' tint-'+c.color:''}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px">
       <div class="board-frame-head" ${canEdit&&!c.locked?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''} onclick="window.boardsSelectCard('${c.id}',event)">
         <input type="text" class="board-frame-title" value="${_boardsEsc(c.title||'')}" placeholder="Section name" ${canEdit&&!c.locked?'':'readonly'} oninput="window.boardsFrameTitle('${c.id}',this.value)" onpointerdown="event.stopPropagation()">
-        ${canEdit&&!c.locked?`<button class="board-card-del" onclick="window.boardsDeleteCard('${c.id}')" title="Delete frame (cards inside are kept)">✕</button>`:''}
+        ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete frame (cards inside are kept)">✕</button>`:''}
       </div>
       ${canEdit&&!c.locked?`<div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
     </div>`;
@@ -958,19 +1038,25 @@ function _boardCardHTML(c,canEdit){
   // would fight the caret. Reported by Afnan as "when i try to move
   // anything it's not moving": grabbing the picture is the obvious thing
   // to try, and it did nothing.
-  const bodyDrag=(canEdit&&!c.locked&&(c.type==='image'||c.type==='file'||c.type==='board'))
+  // Every card body drags now, not just the three that hold nothing
+  // editable: a note is only contenteditable while it is BEING edited
+  // (double-click), so a press on one is unambiguously a grab. Link cards
+  // are the exception — they are three form fields, and a drag starting in
+  // a text input would fight selecting the URL. boardsCardDragStart bails
+  // if the press lands inside whatever is currently being edited.
+  const bodyDrag=(canEdit&&!c.locked&&c.type!=='link')
     ?` onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:'';
   let body;
   if(c.type==='todo'){
     const items=c.items||[];
     const doneN=items.filter(i=>i.done).length;
-    body=`<div class="board-card-body board-todo-body">
+    body=`<div class="board-card-body board-todo-body"${bodyDrag}>
       ${items.map((it,i)=>`<div class="board-todo-row">
-        <input type="checkbox" ${it.done?'checked':''} ${canEdit?'':'disabled'} onchange="window.boardsTodoToggle('${c.id}',${i},this.checked)">
-        <div class="board-todo-text${it.done?' done':''}" id="board-todo-${c.id}-${i}" contenteditable="${!!canEdit}" data-placeholder="To-do" oninput="window.boardsTodoText('${c.id}',${i},this)" onkeydown="window.boardsTodoKey(event,'${c.id}',${i})"></div>
-        ${canEdit?`<button class="board-todo-del" onclick="window.boardsTodoRemove('${c.id}',${i})" title="Remove">✕</button>`:''}
+        <input type="checkbox" ${it.done?'checked':''} ${canEdit?'':'disabled'} onpointerdown="event.stopPropagation()" onchange="window.boardsTodoToggle('${c.id}',${i},this.checked)">
+        <div class="board-todo-text${it.done?' done':''}" id="board-todo-${c.id}-${i}" contenteditable="false" data-placeholder="To-do" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-todo-${c.id}-${i}')"`:''} oninput="window.boardsTodoText('${c.id}',${i},this)" onkeydown="window.boardsTodoKey(event,'${c.id}',${i})"></div>
+        ${canEdit?`<button class="board-todo-del" onpointerdown="event.stopPropagation()" onclick="window.boardsTodoRemove('${c.id}',${i})" title="Remove">✕</button>`:''}
       </div>`).join('')}
-      ${canEdit?`<button class="board-todo-add" onclick="window.boardsTodoAdd('${c.id}')">+ Add item</button>`:''}
+      ${canEdit?`<button class="board-todo-add" onpointerdown="event.stopPropagation()" onclick="window.boardsTodoAdd('${c.id}')">+ Add item</button>`:''}
     </div>`;
     c._todoProgress=items.length?doneN+'/'+items.length:'';
   }else if(c.type==='image'){
@@ -1020,7 +1106,7 @@ function _boardCardHTML(c,canEdit){
     // A section banner — the thing Afnan's real Milanote board uses to
     // title every cluster. Its drag strip fades out until hover so it
     // reads as a banner rather than as another card.
-    body=`<div class="board-card-body board-heading-body" contenteditable="${!!canEdit}" id="board-txt-${c.id}" data-placeholder="Section title" oninput="window.boardsTextInput('${c.id}',this)"></div>`;
+    body=`<div class="board-card-body board-heading-body"${bodyDrag} contenteditable="false" id="board-txt-${c.id}" data-placeholder="Section title" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-txt-${c.id}')"`:''} oninput="window.boardsTextInput('${c.id}',this)"></div>`;
   }else if(c.type==='board'){
     // A link to a nested board. The title is read LIVE from moodBoards so
     // renaming the child updates every card pointing at it; the stored
@@ -1034,10 +1120,10 @@ function _boardCardHTML(c,canEdit){
       ${c.boardId?`<button class="board-subboard-open" onclick="event.stopPropagation();window.boardsGoto('${c.boardId}')">Open →</button>`:'<div class="board-subboard-meta">Missing board</div>'}
     </div>`;
   }else{
-    body=`<div class="board-card-body board-text-body" contenteditable="${!!canEdit}" id="board-txt-${c.id}" data-placeholder="Type a note…" oninput="window.boardsTextInput('${c.id}',this)"></div>`;
+    body=`<div class="board-card-body board-text-body"${bodyDrag} contenteditable="false" id="board-txt-${c.id}" data-placeholder="Double-click to type…" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-txt-${c.id}')"`:''} oninput="window.boardsTextInput('${c.id}',this)"></div>`;
   }
   if((c.type==='image'||c.type==='file')&&c.caption!=null){
-    body+=`<div class="board-caption" id="board-cap-${c.id}" contenteditable="${!!canEdit}" data-placeholder="Add a caption…" oninput="window.boardsCaptionInput('${c.id}',this)"></div>`;
+    body+=`<div class="board-caption" id="board-cap-${c.id}" contenteditable="false" data-placeholder="Add a caption…" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-cap-${c.id}')"`:''} oninput="window.boardsCaptionInput('${c.id}',this)"></div>`;
   }
   const kind=c.type==='image'?'Image':c.type==='link'?'Link':c.type==='file'?'File':c.type==='board'?'Board':c.type==='heading'?'Heading':c.type==='todo'?('To-do'+(c._todoProgress?' · '+c._todoProgress:'')):'Note';
   const sel=_boardsSelection.has(c.id)?' selected':'';
@@ -1046,10 +1132,10 @@ function _boardCardHTML(c,canEdit){
   return`<div class="board-card-el type-${c.type}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px" onclick="window.boardsSelectCard('${c.id}',event)">
     <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''}>
       <span class="board-card-kind">
-        <span class="board-card-name" id="board-name-${c.id}" contenteditable="${!!canEdit}" data-placeholder="${_boardsEsc(kind)}" oninput="window.boardsCardName('${c.id}',this)" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()" title="Click to rename this card"></span>${c.locked?' · Locked':''}</span>
+        <span class="board-card-name" id="board-name-${c.id}" contenteditable="false" data-placeholder="${_boardsEsc(kind)}" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-name-${c.id}')"`:''} oninput="window.boardsCardName('${c.id}',this)" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()" title="Double-click to rename this card"></span>${c.locked?' · Locked':''}</span>
       <span style="display:flex;align-items:center;gap:4px">
         <button class="board-cmt-badge" id="board-cmt-${c.id}" style="display:none" title="Comments on this card" onclick="event.stopPropagation();window.boardsOpenComments('${c.id}')" onpointerdown="event.stopPropagation()"></button>
-        ${canEdit&&!c.locked?`<button class="board-card-del" onclick="window.boardsDeleteCard('${c.id}')" title="Delete">✕</button>`:''}
+        ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete">✕</button>`:''}
       </span>
     </div>
     ${_boardsLabelsHTML(c)}
@@ -1707,8 +1793,8 @@ function _boardsAddNoteAt(clientX,clientY){
   _editCards.push(c);
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
-  const el=document.getElementById('board-txt-'+c.id);
-  if(el)el.focus();
+  // Straight into edit mode: you just asked for a note, you mean to type.
+  window.boardsBeginEdit(null,'board-txt-'+c.id);
 }
 
 // ── Rotation and viewport changes ───────────────────────────────────────
@@ -2141,6 +2227,26 @@ function _boardsWireStagePan(){
     _boardsZoomAtPoint(_editBoard.zoom*Math.exp(-d*0.0032),e.clientX,e.clientY);
   },{passive:false});
 
+  // Files dropped ON THE TRAY are collected rather than placed. Its own
+  // handlers, because the stage's would turn them into cards at the drop
+  // point — which is the whole distinction the tray exists to make.
+  const tray=document.getElementById('board-tray');
+  if(tray&&canEdit){
+    tray.addEventListener('dragover',e=>{
+      if(!_boardsDragHasFiles(e))return;
+      e.preventDefault();e.stopPropagation();
+      e.dataTransfer.dropEffect='copy';
+      tray.classList.add('dropping');
+    });
+    tray.addEventListener('dragleave',()=>tray.classList.remove('dropping'));
+    tray.addEventListener('drop',e=>{
+      tray.classList.remove('dropping');
+      if(!_boardsDragHasFiles(e))return;
+      e.preventDefault();e.stopPropagation();
+      _boardsTrayAddFiles(Array.from((e.dataTransfer&&e.dataTransfer.files)||[]));
+    });
+  }
+
   // A native drag that begins inside the board (an image, a link, a text
   // selection) is not a file arriving from the desktop. Flag it so the
   // drop overlay stays down, and clear it however the drag ends.
@@ -2233,6 +2339,10 @@ function _boardsHideGuides(){_boardsShowGuides(null,null);}
 
 window.boardsCardDragStart=function(e,cardId){
   e.stopPropagation();
+  // A press inside whatever is currently open for editing is the user
+  // selecting text, not grabbing the card. stopPropagation still applies,
+  // or the stage would start panning under the selection.
+  if(_boardsEditingEl&&_boardsEditingEl.contains&&_boardsEditingEl.contains(e.target))return;
   const b=_editBoard;const c=_editCards.find(x=>x.id===cardId);if(!c)return;
   if(c.locked){showToast('Card is locked — unlock it to move it');return;}
   _boardsSelectCard(cardId,e.shiftKey||e.ctrlKey||e.metaKey);
@@ -2617,8 +2727,7 @@ window.boardsTodoAdd=function(id,at){
   c.items.splice(idx,0,{text:'',done:false});
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
-  const el=document.getElementById('board-todo-'+id+'-'+idx);
-  if(el)el.focus();
+  window.boardsBeginEdit(null,'board-todo-'+id+'-'+idx);
 };
 window.boardsTodoRemove=function(id,i){
   const c=_boardsTodoCard(id);if(!c)return;
@@ -2843,6 +2952,13 @@ window.boardsFilesPicked=function(inputEl){
 // you're editing, and hijacking it would be infuriating.
 function _boardsOnPaste(e){
   if(currentPage!=='board-canvas'||!_editBoard||!_boardsCanEdit(_editBoard))return;
+  // With the Unsorted tray open, a paste is COLLECTING, not placing — the
+  // open tray is the visible statement of that, so nothing is hidden. With
+  // it closed, paste lands on the canvas exactly as it has since Stage 1.
+  // Text pasted while a card is being edited still belongs to that card.
+  if(_boardsTrayOpen&&!_boardsEditingEl){
+    if(_boardsTrayPaste(e))return;
+  }
   const items=(e.clipboardData&&e.clipboardData.items)||[];
   let imageFile=null;
   for(const item of items){
@@ -3323,6 +3439,10 @@ async function _boardsSaveNow(){
   const head={
     title:_editBoard.title,
     zoom:_editBoard.zoom,panX:_editBoard.panX,panY:_editBoard.panY,
+    // The tray rides along with the board-level fields rather than through
+    // the card merge: a tray item is never edited in place, only added and
+    // removed, so last-writer-wins on the whole array is honest here.
+    unsorted:_boardsUnsortedForSave(),
     updatedAt:Date.now(),updatedByName:session.name
   };
   let wrote=null;
@@ -3857,6 +3977,273 @@ function _boardsFocusCard(id){
    opens where it was left, but applying someone else's pan to your open
    canvas is motion sickness, not collaboration. */
 
+/* ── Unsorted tray (Sept 2026) ─────────────────────────────────────────────
+   Afnan asked for Milanote's Unsorted: a per-board holding pen you collect
+   into and drag out of when you actually want something placed, and which
+   keeps what you never used.
+
+   Design notes worth keeping:
+
+   - It is a plain `unsorted` array on the board document, like `cards`.
+     No subcollection, no migration, and a board written before this
+     shipped simply has an empty tray.
+   - OPEN/CLOSED is per viewer (localStorage), never board data — the same
+     rule as the minimap and the snap toggle. Your colleague's tray being
+     open is not a fact about the board.
+   - Dragging out is POINTER-based, not HTML5 drag-and-drop. The stage
+     already treats a native drag as "files arriving from the desktop"
+     (see _boardsInternalDrag), and the canvas runs on pointer events
+     throughout; adding a second drag system next to it is how the two
+     would eventually disagree.
+   - A tray item is never edited in place — only added, removed, or turned
+     into a card. That is what lets the array be saved whole rather than
+     merged card-by-card.
+   - PASTE goes to the tray only while the tray is OPEN. Pasting onto the
+     canvas has worked since Stage 1 and people rely on it; the tray being
+     open is an explicit, visible statement that you are collecting rather
+     than placing.
+──────────────────────────────────────────────────────────────────────────── */
+// Read at load, exactly like the minimap and snap preferences above.
+let _boardsTrayOpen=(function(){try{return localStorage.getItem('groovy-boards-tray')==='1';}catch(e){return false;}})();
+let _boardsTrayDrag=null;      // an item being dragged out onto the canvas
+
+function _boardsUnsortedForSave(){
+  return _editUnsorted.map(u=>{
+    const o={};
+    Object.keys(u).forEach(k=>{if(k.charAt(0)!=='_')o[k]=u[k];});
+    return o;
+  });
+}
+function _boardsTrayItemId(){
+  return 'u'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+}
+// What a tray item is called in the list and in the card it becomes.
+function _boardsTrayLabel(u){
+  return u.name||u.fileName||u.linkTitle||(u.text?String(u.text).split('\n')[0].slice(0,60):'')||
+    (u.kind==='image'?'Image':u.kind==='file'?'File':u.kind==='link'?'Link':'Note');
+}
+window.boardsToggleTray=function(){
+  _boardsTrayOpen=!_boardsTrayOpen;
+  try{localStorage.setItem(_BOARDS_TRAY_KEY,_boardsTrayOpen?'1':'0');}catch(e){}
+  _boardsRenderCanvasAndWire();
+};
+window.boardsCloseTray=function(){
+  if(!_boardsTrayOpen)return;
+  _boardsTrayOpen=false;
+  try{localStorage.setItem(_BOARDS_TRAY_KEY,'0');}catch(e){}
+  _boardsRenderCanvasAndWire();
+};
+
+function _boardsTrayHTML(canEdit){
+  if(!_boardsTrayOpen)return'';
+  const n=_editUnsorted.length;
+  return`<aside class="board-tray" id="board-tray">
+    <div class="board-tray-head">
+      <span class="board-tray-title">Unsorted${n?' · '+n:''}</span>
+      <button class="tool-btn" onclick="window.boardsCloseTray()" title="Close the tray">Close</button>
+    </div>
+    ${canEdit?`<div class="board-tray-add">
+      <button class="tool-btn" onclick="window.boardsTrayPick()">+ Add files</button>
+      <span class="board-tray-hint">or paste, or drop files here</span>
+    </div>`:''}
+    <div class="board-tray-list" id="board-tray-list">
+      ${n?_editUnsorted.map((u,i)=>_boardsTrayItemHTML(u,i,canEdit)).join('')
+         :`<div class="board-tray-empty">
+             Nothing here yet.<br><br>
+             Anything you paste or drop while this is open is kept here
+             until you drag it onto the board. It stays saved if you never do.
+           </div>`}
+    </div>
+    <input type="file" id="board-tray-picker" multiple style="display:none" onchange="window.boardsTrayFilesPicked(this)">
+  </aside>`;
+}
+
+function _boardsTrayItemHTML(u,i,canEdit){
+  let thumb;
+  if(u._uploading){
+    thumb='<div class="board-tray-thumb board-tray-thumb-empty">Uploading…</div>';
+  }else if(u.kind==='image'&&u.imageUrl){
+    thumb=`<img class="board-tray-thumb" src="${_boardsEsc(_boardsDisplayUrl(u.imageUrl,400))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`;
+  }else if(u.kind==='file'){
+    const pdf=u.fileUrl?_boardsPdfThumbUrl(u.fileUrl):'';
+    thumb=pdf
+      ?`<img class="board-tray-thumb" src="${_boardsEsc(pdf)}" draggable="false" onerror="this.className='board-tray-thumb board-tray-thumb-empty';this.replaceWith(Object.assign(document.createElement('div'),{className:'board-tray-thumb board-tray-thumb-empty',textContent:'${_boardsEsc(_boardsFileExt(u.fileName))}'}))" alt="">`
+      :`<div class="board-tray-thumb board-tray-thumb-empty">${_boardsEsc(_boardsFileExt(u.fileName))}</div>`;
+  }else if(u.kind==='link'){
+    thumb='<div class="board-tray-thumb board-tray-thumb-empty">LINK</div>';
+  }else{
+    thumb='<div class="board-tray-thumb board-tray-thumb-empty">NOTE</div>';
+  }
+  // The label is written in with textContent by _boardsTrayHydrate — it can
+  // be a filename or a line of someone's note, and this file never
+  // interpolates user text into an HTML string.
+  return`<div class="board-tray-item" data-idx="${i}" title="Drag onto the board to place it"
+      ${canEdit?`onpointerdown="window.boardsTrayDragStart(event,${i})"`:''}>
+    ${thumb}
+    <div class="board-tray-label" id="board-tray-l-${i}"></div>
+    ${canEdit?`<button class="board-tray-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsTrayRemove(${i})" title="Remove from Unsorted">✕</button>`:''}
+  </div>`;
+}
+function _boardsTrayHydrate(){
+  _editUnsorted.forEach((u,i)=>{
+    const el=document.getElementById('board-tray-l-'+i);
+    if(el)el.textContent=_boardsTrayLabel(u);
+  });
+}
+
+// ── putting things IN ──
+function _boardsTrayAdd(item){
+  _editUnsorted.push(item);
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  return item;
+}
+window.boardsTrayPick=function(){
+  const el=document.getElementById('board-tray-picker');
+  if(el)el.click();
+};
+window.boardsTrayFilesPicked=function(inputEl){
+  const files=Array.from(inputEl.files||[]);
+  inputEl.value='';
+  _boardsTrayAddFiles(files);
+};
+function _boardsTrayAddFiles(files){
+  if(!_boardsCanEdit(_editBoard)||!files.length)return;
+  files.forEach(f=>{
+    const item={id:_boardsTrayItemId(),kind:_boardsIsImageFile(f)?'image':'file',
+      fileName:f.name,fileSize:f.size,at:Date.now(),
+      by:(typeof session!=='undefined'&&session&&session.name)||'',_uploading:true};
+    _editUnsorted.push(item);
+    _boardsUploadAny(f).then(res=>{
+      const live=_editUnsorted.find(x=>x.id===item.id);
+      if(!live)return;                     // removed while it was uploading
+      delete live._uploading;
+      if(live.kind==='image')live.imageUrl=res.secure_url;else live.fileUrl=res.secure_url;
+      _boardsRenderSoon();_boardsSaveDebounced();
+    }).catch(e=>{
+      _editUnsorted=_editUnsorted.filter(x=>x.id!==item.id);
+      showToast('Upload failed: '+(e.message||e),true);
+      _boardsRenderSoon();
+    });
+  });
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+}
+// A card the user no longer wants placed. The reverse of dragging one out.
+window.boardsTrayStash=function(cardId){
+  const c=_editCards.find(x=>x.id===cardId);
+  if(!c||!_boardsCanEdit(_editBoard))return;
+  _boardsPushUndo();
+  const item={id:_boardsTrayItemId(),at:Date.now(),
+    by:(typeof session!=='undefined'&&session&&session.name)||'',name:c.name||''};
+  if(c.type==='image'){item.kind='image';item.imageUrl=c.imageUrl;}
+  else if(c.type==='file'){item.kind='file';item.fileUrl=c.fileUrl;item.fileName=c.fileName;item.fileSize=c.fileSize;}
+  else if(c.type==='link'){item.kind='link';item.linkUrl=c.linkUrl;item.linkTitle=c.linkTitle;item.text=c.linkDesc||'';}
+  else{item.kind='text';item.text=c.text||'';item.rich=c.rich||'';}
+  _editUnsorted.push(item);
+  _editCards=_editCards.filter(x=>x.id!==cardId);
+  _editConnectors=_editConnectors.filter(cn=>cn.from!==cardId&&cn.to!==cardId);
+  _boardsSelection.delete(cardId);
+  if(!_boardsTrayOpen)window.boardsToggleTray();else _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast('Moved to Unsorted');
+};
+window.boardsTrayRemove=function(i){
+  const u=_editUnsorted[i];
+  if(!u||!_boardsCanEdit(_editBoard))return;
+  if(!confirm('Remove “'+_boardsTrayLabel(u)+'” from Unsorted? This cannot be undone.'))return;
+  _editUnsorted.splice(i,1);
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+
+// ── taking things OUT ──
+// One tray item becomes one card at a world point.
+function _boardsCardFromTrayItem(u,at){
+  const type=u.kind==='image'?'image':u.kind==='file'?'file':u.kind==='link'?'link':'text';
+  const c=_boardsNewCard(type);
+  c.x=at.x-c.w/2;c.y=at.y-c.h/2;
+  if(u.name)c.name=u.name;
+  if(type==='image')c.imageUrl=u.imageUrl||'';
+  else if(type==='file'){c.fileUrl=u.fileUrl||'';c.fileName=u.fileName||'';c.fileSize=u.fileSize||0;}
+  else if(type==='link'){c.linkUrl=u.linkUrl||'';c.linkTitle=u.linkTitle||'';c.linkDesc=u.text||'';}
+  else{c.text=u.text||'';if(u.rich)c.rich=u.rich;}
+  return c;
+}
+// Returns true when it consumed the paste. Mirrors _boardsOnPaste's own
+// order of preference — an image always wins, then a URL, then plain text.
+function _boardsTrayPaste(e){
+  const items=(e.clipboardData&&e.clipboardData.items)||[];
+  for(const item of items){
+    if(item.type&&item.type.indexOf('image')===0){
+      const f=item.getAsFile();
+      if(f){e.preventDefault();_boardsTrayAddFiles([f]);showToast('Added to Unsorted');return true;}
+    }
+  }
+  const text=(e.clipboardData&&e.clipboardData.getData('text/plain'))||'';
+  if(!text.trim())return false;
+  e.preventDefault();
+  const url=text.trim();
+  if(/^https?:\/\/\S+$/i.test(url)){
+    let host=url;
+    try{host=new URL(url).hostname.replace(/^www\./,'');}catch(err){}
+    _boardsTrayAdd({id:_boardsTrayItemId(),kind:'link',linkUrl:url,linkTitle:host,
+      at:Date.now(),by:(typeof session!=='undefined'&&session&&session.name)||''});
+  }else{
+    _boardsTrayAdd({id:_boardsTrayItemId(),kind:'text',text:text.slice(0,4000),
+      at:Date.now(),by:(typeof session!=='undefined'&&session&&session.name)||''});
+  }
+  showToast('Added to Unsorted');
+  return true;
+}
+window.boardsTrayDragStart=function(e,i){
+  if(!_boardsCanEdit(_editBoard))return;
+  const u=_editUnsorted[i];
+  if(!u||u._uploading)return;
+  e.stopPropagation();
+  const startX=e.clientX,startY=e.clientY;
+  const host=e.currentTarget;
+  let ghost=null;
+  host.setPointerCapture(e.pointerId);
+  function move(ev){
+    if(!ghost){
+      if(Math.abs(ev.clientX-startX)<4&&Math.abs(ev.clientY-startY)<4)return;
+      ghost=document.createElement('div');
+      ghost.className='board-tray-ghost';
+      ghost.textContent=_boardsTrayLabel(u);
+      document.body.appendChild(ghost);
+      _boardsTrayDrag={item:u,index:i};
+      const stage=document.getElementById('board-stage');
+      if(stage)stage.classList.add('tray-target');
+    }
+    ghost.style.left=ev.clientX+'px';
+    ghost.style.top=ev.clientY+'px';
+  }
+  function up(ev){
+    host.removeEventListener('pointermove',move);
+    host.removeEventListener('pointerup',up);
+    host.removeEventListener('pointercancel',up);
+    const stage=document.getElementById('board-stage');
+    if(stage)stage.classList.remove('tray-target');
+    if(ghost){ghost.remove();ghost=null;}
+    if(!_boardsTrayDrag)return;            // a plain click, not a drag
+    _boardsTrayDrag=null;
+    // Dropped back on the tray (or anywhere that isn't the canvas) → keep it.
+    const r=stage?stage.getBoundingClientRect():null;
+    const over=r&&ev.clientX>=r.left&&ev.clientX<=r.right&&ev.clientY>=r.top&&ev.clientY<=r.bottom;
+    if(!over)return;
+    _boardsPushUndo();
+    const c=_boardsCardFromTrayItem(u,_boardsScreenToWorld(ev.clientX,ev.clientY));
+    _editCards.push(c);
+    _editUnsorted=_editUnsorted.filter(x=>x.id!==u.id);
+    _boardsSetSelection([c.id]);
+    _boardsRenderCanvasAndWire();
+    _boardsSaveDebounced();
+  }
+  host.addEventListener('pointermove',move);
+  host.addEventListener('pointerup',up);
+  host.addEventListener('pointercancel',up);
+};
 let _boardsUnsub=null,_boardsPresenceUnsub=null,_boardsCommentsUnsub=null,_boardsActivityUnsub=null;
 let _boardsPresenceTimer=null,_boardsFlushTimer=null;
 let _boardsBase={};             // cardId → JSON as the server last had it
@@ -3933,6 +4320,9 @@ function _boardsApplyRemote(data){
   const titleEl=document.getElementById('board-title-input');
   if(data.title!=null&&document.activeElement!==titleEl)_editBoard.title=data.title;
   if(data.visibility)_editBoard.visibility=data.visibility;
+  // The tray, unless something here is still uploading into it — adopting
+  // the server's copy mid-upload would drop the row the upload resolves to.
+  if(!_editUnsorted.some(u=>u._uploading))_editUnsorted=(data.unsorted||[]).map(u=>({...u}));
   _editBoard.sharedWith=Array.isArray(data.sharedWith)?data.sharedWith.slice():[];
   _editBoard.isTemplate=!!data.isTemplate;
   // pan/zoom deliberately NOT taken from the remote document.
@@ -4340,6 +4730,11 @@ function _boardsCtxRun(act){
   if(act.indexOf('add:')===0){place();window.boardsAddCard(act.slice(4));return;}
   if(act.indexOf('color:')===0){window.boardsSetColor(act.slice(6));return;}
   if(act.indexOf('conn:')===0){window.boardsDeleteConnectorAt(parseInt(act.slice(5),10));return;}
+  if(act==='stash'){
+    const one=_boardsSelectedCards();
+    if(one.length===1)window.boardsTrayStash(one[0].id);
+    return;
+  }
   switch(act){
     case'file':place();window.boardsPickFiles();break;
     case'line':window.boardsToggleLineMode();break;
@@ -4583,6 +4978,12 @@ function _boardsCardCtxItems(canEdit){
     items.push({sep:true});
     items.push({act:'labels',label:(Array.isArray(one.labels)&&one.labels.length)?'Labels…':'Add a label…'});
     items.push({act:'reactions',label:'React…'});
+    // The reverse of dragging one out of the tray: take it off the board
+    // but keep it. Frames and sub-boards are not stashable — a frame has
+    // no content of its own, and a board link belongs with its parent.
+    if(one.type!=='frame'&&one.type!=='board'){
+      items.push({act:'stash',label:'Move to Unsorted'});
+    }
   }
 
   // ── type-specific ──
