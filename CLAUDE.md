@@ -2280,11 +2280,13 @@ the whole thing into the Firebase Console in one paste. Read the live file
 fresh each time rather than reconstructing it from memory or from an older
 turn in the conversation.
 
-**A republish is OUTSTANDING as of 14 Sept 2026** — the `user_profiles`
-update rule gained the admin clause (owners + Mustafa may edit others,
-Mustafa not an owner). Until it is republished, an admin editing someone
-else's profile is refused with "Missing or insufficient permissions";
-everything else keeps working.
+**No republish outstanding as of 14 Sept 2026.** Afnan republished at
+1:38 pm that day (confirmed from the Console's own rules history), from the
+repo file at `md5 e922310a963b373ba41d6dd434d276b8` — the version carrying
+the `user_profiles` admin-update clause (owners + Mustafa may edit others;
+Mustafa may not edit an owner's). `git log --oneline -1 -- firestore.rules`
+is `e3270c0`; if it ever shows something newer than that, ask for a
+republish.
 
 **Last republished by Afnan on 13 Sept 2026**, from the repo file at
 `md5 95f72eb712079666da1f53acb4019ba9` — which covers Mood Boards Stage 6
