@@ -403,5 +403,149 @@ module.exports=function(){
     s.ok('and nothing draggable out',!/boardsTrayDragStart/.test(ro));
   }
 
+  // ── drag now SELECTS, and panning must not be lost ────────────────────
+  // Afnan asked for Milanote's gesture. This reverses the Stage 2 decision,
+  // whose stated worry was that a canvas with no scrollbars strands anyone
+  // who can't pan — so the pan routes are what these tests are really for.
+  {
+    const app=loadApp({files:FILES});
+    const {run}=app;
+    function stage(){
+      run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1'}`);
+      run(`_editCards=[{id:'a',type:'text',x:0,y:0,w:50,h:50},{id:'b',type:'text',x:200,y:200,w:50,h:50}]`);
+      run(`_boardsSelection=new Set()`);
+      run(`_boardsSpaceDown=false;_boardsPanMode=false;_boardsLineMode=false`);
+      run(`_boardsWireStagePan()`);
+      return 'board-stage';
+    }
+    // Drive the real handler and report which branch it took, by watching
+    // what a following pointermove changes.
+    function gesture(down){
+      // Reset the marquee BEFORE the gesture — the handler sets display on
+      // pointerdown, so clearing it afterwards (as the first version of
+      // this helper did) reads back '' and reports no marquee for a
+      // marquee that worked perfectly.
+      app.el('board-marquee').style.display='';
+      const id=stage();
+      const el=app.el(id);
+      app.fire(el,'pointerdown',Object.assign({target:el,currentTarget:el,
+        pointerId:1,button:0,pointerType:'mouse',clientX:10,clientY:10},down));
+      const panBefore=run(`_editBoard.panX`);
+      const marqueed=app.el('board-marquee').style.display==='block';
+      ((el._ls&&el._ls.pointermove)||[]).forEach(l=>l.fn({clientX:300,clientY:300,target:el}));
+      return{panned:run(`_editBoard.panX`)!==panBefore,marqueed};
+    }
+
+    s.section('a plain mouse drag on empty canvas selects');
+    let g=gesture({});
+    s.ok('it draws a marquee',g.marqueed);
+    s.ok('and does NOT pan',!g.panned);
+
+    s.section('but every pan route still pans');
+    g=gesture({pointerType:'touch'});
+    s.ok('a finger pans — a phone has no Shift key',g.panned&&!g.marqueed);
+    g=gesture({button:1});
+    s.ok('middle-button drag pans',g.panned&&!g.marqueed);
+    run(`_boardsSpaceDown=true`);
+    const el2=app.el(stage());
+    run(`_boardsSpaceDown=true`);
+    app.fire(el2,'pointerdown',{target:el2,currentTarget:el2,pointerId:1,button:0,
+      pointerType:'mouse',clientX:10,clientY:10});
+    const pb=run(`_editBoard.panX`);
+    ((el2._ls&&el2._ls.pointermove)||[]).forEach(l=>l.fn({clientX:300,clientY:300,target:el2}));
+    s.ok('space+drag pans',run(`_editBoard.panX`)!==pb);
+    run(`_boardsSpaceDown=false`);
+
+    // The wheel is the route nobody has to discover — proved in the wheel
+    // section above, re-asserted here because it is now load-bearing.
+    const el3=app.el(stage());
+    const before=run(`_editBoard.panY`);
+    app.fire(el3,'wheel',{deltaY:120});
+    s.ok('and the wheel pans without any modifier at all',run(`_editBoard.panY`)!==before);
+
+    s.section('Shift+drag still marquees, so nothing unlearns');
+    g=gesture({shiftKey:true});
+    s.ok('marquee',g.marqueed&&!g.panned);
+
+    s.section('the Hand toggle arms panning with no key held');
+    run(`_boardsPanMode=false`);
+    run(`window.boardsTogglePan()`);
+    s.eq('it turns on',run(`_boardsPanMode`),true);
+    const id=stage();
+    run(`_boardsPanMode=true`);
+    const el4=app.el(id);
+    app.fire(el4,'pointerdown',{target:el4,currentTarget:el4,pointerId:1,button:0,
+      pointerType:'mouse',clientX:10,clientY:10});
+    const p4=run(`_editBoard.panX`);
+    ((el4._ls&&el4._ls.pointermove)||[]).forEach(l=>l.fn({clientX:300,clientY:300,target:el4}));
+    s.ok('and a plain drag pans while it is on',run(`_editBoard.panX`)!==p4);
+  }
+
+  // ── the selection actions from Milanote's menu ────────────────────────
+  {
+    const app=loadApp({files:FILES});
+    const {run}=app;
+    run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1'}`);
+
+    s.section('Connect with Lines');
+    run(`_editCards=[{id:'a',x:0,y:0,w:10,h:10},{id:'b',x:50,y:0,w:10,h:10},{id:'c',x:100,y:0,w:10,h:10}]`);
+    run(`_editConnectors=[];_boardsSelection=new Set(['a','b','c'])`);
+    run(`window.boardsConnectSelection()`);
+    s.eq('three cards make two lines',run(`_editConnectors.length`),2);
+    s.ok('in selection order',run(`_editConnectors[0].from`)==='a'&&run(`_editConnectors[0].to`)==='b');
+    // Running it twice must not stack a second line on the same pair.
+    run(`window.boardsConnectSelection()`);
+    s.eq('running it again adds nothing',run(`_editConnectors.length`),2);
+    run(`_editConnectors=[{from:'b',to:'a'}]`);
+    run(`window.boardsConnectSelection()`);
+    s.eq('and an existing line counts in either direction',run(`_editConnectors.length`),2);
+    run(`_boardsSelection=new Set(['a'])`);
+    const n=run(`_editConnectors.length`);
+    run(`window.boardsConnectSelection()`);
+    s.eq('one card connects nothing',run(`_editConnectors.length`),n);
+
+    s.section('Align');
+    const setCards=()=>run(`_editCards=[{id:'a',x:0,y:0,w:100,h:20},{id:'b',x:40,y:60,w:60,h:20},{id:'c',x:10,y:120,w:20,h:20}];_boardsSelection=new Set(['a','b','c'])`);
+    setCards();run(`window.boardsAlignSelection('left')`);
+    s.ok('left puts every x at the bounding box left',
+      run(`_editCards.every(c=>c.x===0)`));
+    setCards();run(`window.boardsAlignSelection('right')`);
+    s.ok('right lines up the right EDGES, not the x',
+      run(`_editCards.every(c=>c.x+c.w===100)`));
+    setCards();run(`window.boardsAlignSelection('hcenter')`);
+    s.ok('centre uses each card own width',
+      run(`_editCards.every(c=>Math.abs((c.x+c.w/2)-50)<1e-9)`));
+    setCards();run(`window.boardsAlignSelection('top')`);
+    s.ok('top works on the other axis',run(`_editCards.every(c=>c.y===0)`));
+    // A locked card is not moved by anything else on this board; nor here.
+    run(`_editCards=[{id:'a',x:0,y:0,w:10,h:10},{id:'b',x:80,y:0,w:10,h:10,locked:true}];_boardsSelection=new Set(['a','b'])`);
+    run(`window.boardsAlignSelection('left')`);
+    s.eq('a locked card stays put',run(`_editCards[1].x`),80);
+
+    s.section('Distribute evens the GAPS, not the positions');
+    // Different widths is the case that makes position-spacing look wrong.
+    run(`_editCards=[{id:'a',x:0,y:0,w:100,h:10},{id:'b',x:150,y:0,w:20,h:10},{id:'c',x:300,y:0,w:100,h:10}];_boardsSelection=new Set(['a','b','c'])`);
+    run(`window.boardsDistributeSelection('h')`);
+    const gaps=run(`(function(){
+      const o=_editCards.slice().sort((p,q)=>p.x-q.x);
+      return [o[1].x-(o[0].x+o[0].w), o[2].x-(o[1].x+o[1].w)];
+    })()`);
+    s.ok('the two gaps are equal',Math.abs(gaps[0]-gaps[1])<1e-9,JSON.stringify(gaps));
+    s.ok('and the outer cards never move',run(`_editCards[0].x===0&&_editCards[2].x+_editCards[2].w===400`));
+    run(`_editCards=[{id:'a',x:0,y:0,w:10,h:10},{id:'b',x:50,y:0,w:10,h:10}];_boardsSelection=new Set(['a','b'])`);
+    run(`window.boardsDistributeSelection('h')`);
+    s.eq('two cards are left alone — nothing to distribute',run(`_editCards[1].x`),50);
+
+    s.section('and they are offered on a multi-selection');
+    run(`_editCards=[{id:'a',type:'text',x:0,y:0,w:10,h:10},{id:'b',type:'text',x:9,y:9,w:10,h:10},{id:'c',type:'text',x:20,y:20,w:10,h:10}]`);
+    run(`_boardsSelection=new Set(['a','b','c'])`);
+    const labels=run(`_boardsCardCtxItems(true).map(i=>i.label||'').join('|')`);
+    ['Connect with Lines','Align left','Align middle','Distribute horizontally']
+      .forEach(l=>s.ok("the menu offers '"+l+"'",labels.indexOf(l)>=0));
+    run(`_boardsSelection=new Set(['a','b'])`);
+    const two=run(`_boardsCardCtxItems(true).map(i=>i.label||'').join('|')`);
+    s.ok('but distribute is hidden on only two cards',two.indexOf('Distribute')<0);
+  }
+
   return s;
 };

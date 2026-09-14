@@ -550,7 +550,7 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .tool-btn{background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:inherit}
 .tool-btn:hover{border-color:var(--muted)}
 .zoom-readout{font-size:11px;color:var(--muted);min-width:34px;text-align:center;display:inline-block}
-.board-stage{position:relative;flex:1;overflow:hidden;cursor:grab;background-image:radial-gradient(#00000014 1px,transparent 1px);background-size:22px 22px;touch-action:none;overscroll-behavior:contain;-webkit-user-select:none}
+.board-stage{position:relative;flex:1;overflow:hidden;cursor:crosshair;background-image:radial-gradient(#00000014 1px,transparent 1px);background-size:22px 22px;touch-action:none;overscroll-behavior:contain;-webkit-user-select:none}
 .board-stage.panning{cursor:grabbing}
 .board-world{position:absolute;left:0;top:0;transform-origin:0 0}
 .board-conn-layer{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
@@ -618,6 +618,10 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
   .board-tray{width:100%;border-left:none}
   .board-tray-list{grid-template-columns:1fr 1fr 1fr}
 }
+/* Drag on empty canvas SELECTS now, so the stage's resting cursor says so.
+   It turns back into a hand whenever a pan route is armed — space held or
+   the Hand toggle. (.board-stage.panning is already defined above.) */
+.board-stage.pan-ready{cursor:grab}
 .board-card-head{background:var(--soft);border-bottom:1px solid var(--border);padding:5px 8px;display:flex;align-items:center;justify-content:space-between;cursor:grab;user-select:none;flex-shrink:0}
 .board-card-kind{font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:3px;min-width:0}
 /* The card's name lives in its header: an editable label that falls back

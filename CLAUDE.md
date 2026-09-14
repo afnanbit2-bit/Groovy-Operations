@@ -769,12 +769,11 @@ the single `_boardsSelectedCardId` Stage 1 had — that conversion was the
 whole point of doing multi-select first, since bulk move/delete/duplicate,
 z-order and lock are all the same code for one card or twelve.
 
-- **Marquee is Shift+drag on empty canvas; plain drag still pans.**
-  Deliberately the opposite way round from Milanote (where drag marquees
-  and space pans): dragging has *been* how you pan here since Stage 1, and
-  the stage has no scrollbars, so making plain drag select would strand
-  anyone who never found the modifier. A plain click on empty canvas that
-  doesn't turn into a pan clears the selection.
+- **Marquee was Shift+drag and plain drag panned — REVERSED in Sept 2026**
+  at Afnan's request, to match Milanote. See "Drag to select" below for how
+  the original worry (a canvas with no scrollbars strands anyone who cannot
+  pan) was answered rather than ignored. A plain click on empty canvas that
+  doesn't turn into a drag still clears the selection, either way round.
 - **Clicking a card that's already part of a multi-selection keeps the
   group** (`_boardsSelectCard`'s early return) — that's what lets you grab
   twelve cards by one of them and drag the lot. Shift/Ctrl-click toggles a
@@ -1177,6 +1176,54 @@ Three things Afnan asked for in one round. The first two were bugs.
   of dragging one out; frames and sub-board links are excluded (a frame has
   no content of its own, a board link belongs with its parent). Labels are
   hydrated with `textContent` like every other user string in this file.
+
+### Mood Boards — drag to select (Sept 2026)
+
+Afnan asked for Milanote's gesture: **dragging empty canvas draws a
+selection box.** This REVERSES the Stage 2 decision above, so the thing
+that had to be got right is the reason Stage 2 chose the other way — this
+canvas has no scrollbars, so if dragging stops panning, someone who never
+finds the alternative is stranded in one corner of a board.
+
+**There are four ways to pan, and the first two need nothing discovered:**
+
+1. **The wheel / two-finger trackpad scroll** — shipped a few commits
+   earlier for an unrelated bug, which is what made this reversal safe to
+   make at all. No modifier, no mode, works immediately.
+2. **Dragging on a TOUCH screen still pans.** A phone has no Shift key and
+   rubber-banding with a finger is miserable; Milanote's own phone view
+   pans on drag too. The branch keys off `e.pointerType==='touch'`.
+3. **Space + drag**, the convention in every design tool. Held at the
+   document level, ignored while `_boardsIsEditableFocus()` (space is a
+   space), and **cleared on `window.blur`** — alt-tabbing away mid-hold
+   would otherwise leave the board stuck in pan mode with nothing on
+   screen to say why.
+4. **The ✋ Hand toggle** in the toolbar, and **middle-button drag**
+   (which `preventDefault`s to stop Chrome's autoscroll).
+
+**Shift+drag still marquees**, so nobody's muscle memory breaks. The
+stage's resting cursor is `crosshair` and becomes `grab` whenever a pan
+route is armed, so the current gesture is always visible.
+
+Also added, from the selection menu and rail in Afnan's screenshots:
+
+- **Connect with Lines** — connects the selection in sequence. Selection
+  order is insertion order (it is a `Set`), i.e. the order you clicked, the
+  only non-arbitrary order available. It **skips a pair that is already
+  connected in either direction**, so running it twice on a group does not
+  silently double every line.
+- **Align** (6 ways) and **Distribute** (h/v). Distribute evens the **gaps,
+  not the positions** — spacing by left edge looks wrong the moment two
+  cards differ in width, which on a real board is always. Both skip locked
+  cards, align needs 2+, distribute needs 3+ and the menu hides it below
+  that. They route through `_boardsCtxRun`, so the rail and the right-click
+  menu get them together and cannot drift apart.
+
+Already present and unchanged, since Afnan asked about them: dragging a
+card that is part of a selection moves the whole group
+(`boardsCardDragStart`), Delete/Backspace deletes the selection, and the
+right-click menu already carried Cut / Copy / Duplicate / Delete / Lock /
+Bring to front / Send to back — the same set Milanote shows.
 
 ### Mood Boards — the wheel and the native drag (Sept 2026)
 

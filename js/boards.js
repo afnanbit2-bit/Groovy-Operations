@@ -371,6 +371,113 @@ window.boardsEndEdit=_boardsEndEdit;
 // before the click is acted on. The formatting bar is excluded: it already
 // preventDefaults its own mousedown to keep the selection alive, and ending
 // the edit here would undo that.
+// Space = pan, while held. Registered once at load like the other
+// document-level handlers. It must NOT fire while you are typing — space is
+// a space — and it must clear on blur, or alt-tabbing away mid-hold leaves
+// the board stuck in pan mode with no way to tell.
+function _boardsSetSpace(down){
+  if(_boardsSpaceDown===down)return;
+  _boardsSpaceDown=down;
+  const stage=document.getElementById('board-stage');
+  if(stage)stage.classList.toggle('pan-ready',down||_boardsPanMode);
+}
+document.addEventListener('keydown',e=>{
+  if(currentPage!=='board-canvas'||!_editBoard)return;
+  if(e.code!=='Space'&&e.key!==' ')return;
+  if(_boardsIsEditableFocus())return;
+  e.preventDefault();
+  _boardsSetSpace(true);
+});
+document.addEventListener('keyup',e=>{
+  if(e.code==='Space'||e.key===' ')_boardsSetSpace(false);
+});
+window.addEventListener('blur',()=>_boardsSetSpace(false));
+
+// The Hand toggle, for anyone without a keyboard or who would rather not
+// hold one down.
+// ── Selection actions from Milanote's own menu and rail (Sept 2026) ──────
+// "Connect with Lines", "Alignment" and "Distribute" are what Afnan's
+// screenshots show on a multi-selection. They all take the CURRENT
+// selection and are routed through _boardsCtxRun like every other action,
+// so the rail and the right-click menu get them together and cannot drift.
+
+// Connect the selection in sequence. Selection order is insertion order
+// (it is a Set), which is the order you clicked them in — meaningful, and
+// the only order available that isn't arbitrary.
+window.boardsConnectSelection=function(){
+  const sel=_boardsSelectedCards();
+  if(sel.length<2){showToast('Select two or more cards first',true);return;}
+  _boardsPushUndo();
+  let made=0;
+  for(let i=0;i<sel.length-1;i++){
+    const from=sel[i].id,to=sel[i+1].id;
+    // Never stack a second line on a pair that already has one, in either
+    // direction — connecting the same group twice would silently double up.
+    const dup=_editConnectors.some(c=>!c.free&&((c.from===from&&c.to===to)||(c.from===to&&c.to===from)));
+    if(dup)continue;
+    _editConnectors.push({from,to,arrow:true});
+    made++;
+  }
+  _boardsDrawConnectors();
+  _boardsSaveDebounced();
+  showToast(made?('Connected '+(made+1)+' cards'):'Those cards are already connected');
+};
+
+// Align every selected card to one edge of the selection's bounding box.
+const _BOARDS_ALIGN={
+  left:  (c,bb)=>({x:bb.x1}),
+  hcenter:(c,bb)=>({x:(bb.x1+bb.x2)/2-c.w/2}),
+  right: (c,bb)=>({x:bb.x2-c.w}),
+  top:   (c,bb)=>({y:bb.y1}),
+  vcenter:(c,bb)=>({y:(bb.y1+bb.y2)/2-c.h/2}),
+  bottom:(c,bb)=>({y:bb.y2-c.h})
+};
+function _boardsSelBounds(sel){
+  return{
+    x1:Math.min(...sel.map(c=>c.x)),  y1:Math.min(...sel.map(c=>c.y)),
+    x2:Math.max(...sel.map(c=>c.x+c.w)), y2:Math.max(...sel.map(c=>c.y+c.h))
+  };
+}
+window.boardsAlignSelection=function(how){
+  const fn=_BOARDS_ALIGN[how];
+  const sel=_boardsSelectedCards().filter(c=>!c.locked);
+  if(!fn||sel.length<2){showToast('Select two or more cards first',true);return;}
+  _boardsPushUndo();
+  const bb=_boardsSelBounds(sel);
+  sel.forEach(c=>{const d=fn(c,bb);if(d.x!=null)c.x=d.x;if(d.y!=null)c.y=d.y;});
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+
+// Even the GAPS, not the positions — spacing cards evenly by their left
+// edges looks wrong the moment two cards are different widths, which on
+// this board is always.
+window.boardsDistributeSelection=function(axis){
+  const sel=_boardsSelectedCards().filter(c=>!c.locked);
+  if(sel.length<3){showToast('Select three or more cards first',true);return;}
+  _boardsPushUndo();
+  const horiz=axis!=='v';
+  const size=c=>horiz?c.w:c.h;
+  const pos=c=>horiz?c.x:c.y;
+  const ordered=sel.slice().sort((a,b)=>pos(a)-pos(b));
+  const first=ordered[0],last=ordered[ordered.length-1];
+  const span=(pos(last)+size(last))-pos(first);
+  const used=ordered.reduce((n,c)=>n+size(c),0);
+  const gap=(span-used)/(ordered.length-1);
+  let run=pos(first);
+  ordered.forEach(c=>{
+    if(horiz)c.x=run;else c.y=run;
+    run+=size(c)+gap;
+  });
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+
+window.boardsTogglePan=function(){
+  _boardsPanMode=!_boardsPanMode;
+  _boardsRenderCanvasAndWire();
+};
+
 document.addEventListener('pointerdown',e=>{
   if(!_boardsEditingEl)return;
   const t=e.target;
@@ -897,6 +1004,8 @@ function _boardsRenderCanvasAndWire(){
   m.innerHTML=_renderBoardCanvasHTML();
   _boardsFullscreen(true);
   _boardsTrayHydrate();
+  {const st=document.getElementById('board-stage');
+   if(st)st.classList.toggle('pan-ready',_boardsPanMode||_boardsSpaceDown);}
   // Seed the pill's last-seen value from the markup we just wrote, so
   // opening a board doesn't flash a percentage nobody asked for.
   _boardsPillZoom=_editBoard?Math.round(_editBoard.zoom*100):null;
@@ -948,6 +1057,7 @@ function _renderBoardCanvasHTML(){
         <button class="tool-btn${_boardsFindOpen?' on':''}" onclick="window.boardsToggleFind()" title="Find cards on this board">Find</button>
         <button class="tool-btn${_boardsDrawerOpen?' on':''}" id="board-cmt-btn" onclick="window.boardsToggleDrawer()" title="Comments and activity on this board">Comments</button>
         <button class="tool-btn${_boardsTrayOpen?' on':''}" onclick="window.boardsToggleTray()" title="Unsorted — things collected but not placed yet">Unsorted${_editUnsorted.length?' '+_editUnsorted.length:''}</button>
+        ${_boardsIsPhone()?'':`<button class="tool-btn${_boardsPanMode?' on':''}" onclick="window.boardsTogglePan()" title="Hand — drag to pan instead of select (or just hold Space)">✋</button>`}
         <button class="tool-btn" onclick="window.boardsZoomBy(0.8)">−</button>
         <span class="zoom-readout" id="board-zoom-readout">${Math.round(b.zoom*100)}%</span>
         <button class="tool-btn" onclick="window.boardsZoomBy(1.25)">+</button>
@@ -996,7 +1106,7 @@ function _renderBoardCanvasHTML(){
       <div class="board-zoom-pill" id="board-zoom-pill">${Math.round(b.zoom*100)}%</div>
       ${canEdit?'<div class="board-dropzone" id="board-dropzone"><div>Drop files to add them to this board</div></div>':''}
       <div class="board-rail" id="board-rail"></div>
-      ${canEdit&&!_editCards.length?'<div class="board-empty-hint">Double-click anywhere to add a note · drop files in · paste an image with Ctrl+V</div>':''}
+      ${canEdit&&!_editCards.length?'<div class="board-empty-hint">Double-click anywhere to add a note · drop files in · paste an image with Ctrl+V<br>Drag to select · scroll or hold Space to pan</div>':''}
     </div>
     <div class="board-fmt" id="board-fmt" style="display:none">
       <div class="board-fmt-swatches" id="board-fmt-swatches" style="display:none">
@@ -2100,12 +2210,26 @@ function _boardsWireStagePan(){
       return;
     }
 
-    // Shift+drag on empty canvas = marquee select; plain drag still pans.
-    // Deliberately this way round rather than Milanote's (drag = marquee,
-    // space = pan): dragging IS how you pan here and has been since Stage
-    // 1, and there's no scrollbar to fall back on, so making plain drag
-    // select would strand anyone who didn't discover the modifier.
-    if(e.shiftKey&&canEdit){
+    // DRAG ON EMPTY CANVAS SELECTS (Sept 2026, at Afnan's request — this
+    // REVERSES the Stage 2 decision recorded in CLAUDE.md, which had plain
+    // drag panning and Shift+drag marqueeing).
+    //
+    // The Stage 2 worry was real and had to be answered rather than
+    // ignored: this canvas has no scrollbars, so if dragging no longer
+    // pans, someone who never finds the alternative is stranded on one
+    // corner of the board. There are now FOUR ways to pan, and the first
+    // two need nothing to be discovered at all:
+    //   1. the wheel / two-finger trackpad scroll (added with the wheel
+    //      handler; shift swaps the axis)
+    //   2. dragging on a TOUCH screen — a phone keeps drag-to-pan, because
+    //      there is no Shift key and rubber-banding with a finger is
+    //      miserable. Milanote's phone view does the same.
+    //   3. space + drag, the convention in every design tool
+    //   4. the Hand toggle in the toolbar, and middle-button drag
+    // Shift+drag still marquees too, so nobody's muscle memory breaks.
+    const wantPan=(e.pointerType==='touch')||e.button===1||_boardsSpaceDown||_boardsPanMode;
+    if(e.button===1)e.preventDefault();   // stop Chrome's middle-click autoscroll
+    if(canEdit&&!wantPan){
       const box=document.getElementById('board-marquee');
       const rect=stage.getBoundingClientRect();
       const sx=e.clientX,sy=e.clientY;
@@ -2134,7 +2258,9 @@ function _boardsWireStagePan(){
       return;
     }
 
-    // Clicking empty canvas clears the selection (unless it turns into a pan).
+    // The pan branch: touch, space, the Hand toggle, or the middle button.
+    // Clicking empty canvas still clears the selection when it doesn't turn
+    // into a pan, so a stray click behaves the same either way.
     let moved=false;
     const startX=e.clientX,startY=e.clientY,origX=b.panX,origY=b.panY;
     stage.classList.add('panning');
@@ -4006,6 +4132,13 @@ function _boardsFocusCard(id){
 // Read at load, exactly like the minimap and snap preferences above.
 let _boardsTrayOpen=(function(){try{return localStorage.getItem('groovy-boards-tray')==='1';}catch(e){return false;}})();
 let _boardsTrayDrag=null;      // an item being dragged out onto the canvas
+// Drag-to-select (Sept 2026). Dragging empty canvas now draws a marquee,
+// the way Milanote does, so panning needs its own routes — see the note on
+// the stage pointerdown handler. `_boardsSpaceDown` is the held space bar;
+// `_boardsPanMode` is the Hand toggle in the toolbar, for anyone without a
+// keyboard or who would rather not hold anything.
+let _boardsSpaceDown=false;
+let _boardsPanMode=false;
 
 function _boardsUnsortedForSave(){
   return _editUnsorted.map(u=>{
@@ -4730,6 +4863,9 @@ function _boardsCtxRun(act){
   if(act.indexOf('add:')===0){place();window.boardsAddCard(act.slice(4));return;}
   if(act.indexOf('color:')===0){window.boardsSetColor(act.slice(6));return;}
   if(act.indexOf('conn:')===0){window.boardsDeleteConnectorAt(parseInt(act.slice(5),10));return;}
+  if(act==='connectsel'){window.boardsConnectSelection();return;}
+  if(act.indexOf('align:')===0){window.boardsAlignSelection(act.slice(6));return;}
+  if(act.indexOf('dist:')===0){window.boardsDistributeSelection(act.slice(5));return;}
   if(act==='stash'){
     const one=_boardsSelectedCards();
     if(one.length===1)window.boardsTrayStash(one[0].id);
@@ -5036,9 +5172,23 @@ function _boardsCardCtxItems(canEdit){
       // action. There is no stored column container here on purpose
       // (Stage 3) — stacking is the arrange-once action that gets the
       // same tidy result.
+      items.push({act:'connectsel',label:'Connect with Lines'});
       items.push({act:'stack',label:'Group into Column'});
       items.push({act:'grid',label:'Arrange in a grid'});
       items.push({act:'wrapframe',label:'Wrap in a frame'});
+      items.push({sep:true});
+      // Milanote puts Alignment and Distribute in the selection rail; the
+      // rail and this menu render the same list, so they land in both.
+      items.push({act:'align:left',label:'Align left'});
+      items.push({act:'align:hcenter',label:'Align centre'});
+      items.push({act:'align:right',label:'Align right'});
+      items.push({act:'align:top',label:'Align top'});
+      items.push({act:'align:vcenter',label:'Align middle'});
+      items.push({act:'align:bottom',label:'Align bottom'});
+      if(sel.length>2){
+        items.push({act:'dist:h',label:'Distribute horizontally'});
+        items.push({act:'dist:v',label:'Distribute vertically'});
+      }
       items.push({sep:true});
     }
     items.push({act:'lock',label:sel.some(c=>c.locked)?'Unlock position':'Lock position'});
