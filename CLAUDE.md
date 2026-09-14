@@ -1965,6 +1965,24 @@ Both loaders are now written so they **cannot reject**:
   module keeps working.
 - The general rule for this codebase: **a loader called from `renderPage`
   must handle its own failure**, because the dispatch line will not.
+- **`loadData()` (`js/pos.js`) was converted last, in Sept 2026**, after
+  Afnan's dashboard showed "Data load error: Missing or insufficient
+  permissions" with every counter at 0. It is the app's oldest and
+  most-called loader and it still had the original shape: four of its seven
+  queries un-caught inside a `Promise.all`, so ONE refused read threw away
+  all seven results. That is why the whole dashboard read zero — POs, gate
+  passes, returns and the entire stage overview — when in all likelihood a
+  single collection was refused.
+  It also made the report unactionable: **"Missing or insufficient
+  permissions" is the same string whichever read was denied**, so neither
+  the toast nor a screenshot said which one. Every query settles
+  independently now, whatever succeeded is applied and rendered, and the
+  failing collections are **named** in the toast and logged with their code.
+  The three already-`.catch()`-ed queries stay optional and silent. The
+  permission retry still forces one token refresh but re-runs **only** the
+  queries that failed. `tests/pos.test.js` covers all four behaviours.
+  **If a permission error is reported again, the toast now names the
+  collection — ask for that text first.**
 
 Same QA round found an unrelated live bug in `js/fabric.js`:
 `loadDrawstrings()` set `_dsLoaded=true` only on success, while both
