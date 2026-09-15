@@ -2749,6 +2749,55 @@ it from a hypothesis risks breaking real saves everywhere. If it recurs,
 get the browser console output from the moment it happens before touching
 this code.
 
+## Cutting / Issue Registry — the cut-date filter (Sept 2026)
+
+`PO Registry → Cutting / Issue Registry` (and the same card under Fabric
+Inventory — one function, `renderFabricIssueRegistry()` in `js/fabric.js`,
+mirrored into both). Afnan asked for a date filter "so it is easy to assess
+what got cut on what date". Presets All / Today / Yesterday / Last 7 days /
+This month / Custom, the same shape as Monitor's `_monitorFilter`.
+
+- **It filters on `g.date` — the same string the card prints — not on `ts`.**
+  `ts` is the creation time; `date` is the cut date, and Edit can change it.
+  Filtering on the displayed value is what makes the filter incapable of
+  disagreeing with what is on screen. A record with no `date` falls back to
+  its `ts` day (`_fabRegDayOf`); one with neither is excluded from a bounded
+  range — it cannot be *proved* to sit in it — but is never hidden from All.
+- **Bounds are inclusive YYYY-MM-DD strings compared as strings**
+  (`_fabRegDateBounds`), so there is no Date maths per row. `_fabRegDayStr`
+  builds a **local** day; `toISOString()` is UTC and in PKT (UTC+5) names the
+  previous day before 5am.
+- **Default is All, not Today.** This is a historical record, not a feed —
+  opening onto an empty page most mornings reads as broken.
+- **The stat tiles follow the ACTIVE filters** (`_fabRegStatsHTML`, repainted
+  by `_fabRegRepaint` on every filter change, not on paging). Headline totals
+  that still counted every issue ever cut would answer the wrong question,
+  which is the whole reason the filter exists. The caption under them says
+  what is being counted ("2 of 167 issues · Today").
+- **`_fabRegFiltered()` sorts by DAY first, then `ts` within the day.**
+  `_fabIssueRecords()` sorts on `ts` alone, so an entry whose date was
+  corrected in Edit sits away from its own day and the list grows a **second
+  header for a day it already showed**, each claiming the full day's totals.
+  Grouping by day is only coherent if the order is by day. Undated rows
+  (`''`) sort last.
+- **A day header carries the whole filtered day's roll-up, not the page's
+  slice** — "what got cut on the 14th" is a property of the day, not of where
+  the pagination fell. Weight is **split by unit** (kg / meters); adding the
+  two would be a made-up number.
+- **Export Excel exports what is on screen**, filters included, with the
+  range in the filename and the toast. A date filter you then had to re-apply
+  in Excel would defeat the point of picking one.
+- `tests/fabric.test.js` covers all of it (verified both ways: reverting the
+  day sort fails the one-header-per-day check, reverting the stats scope
+  fails four more). `tests/smoke-layout.js` gained a fragment for the filter
+  bar and day headers — same justify-between label/number row that crushed
+  the Profile directory's names to 0px.
+- **The probe now skips `<option>`/`<optgroup>`.** Chromium never lays them
+  out, so every option in a fragment reported as zero-size invisible text —
+  a false positive that would block any fragment containing a dropdown. It
+  is an **array**, not a comma-joined string: `'OPTION,OPTGROUP'.indexOf('P')`
+  is 1, which would silently exempt every `<p>` in the app.
+
 ## Credentials — never in client code
 
 `js/*.js`, `css/*` and every `*.html` are **public static assets**, served

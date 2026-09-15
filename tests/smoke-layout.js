@@ -230,6 +230,35 @@ const FRAGMENTS={
              .replace(/(id="board-cap-fl"[^>]*>)/,'$1Approved 12 Sep');
     return Promise.resolve(
       '<div style="position:relative;overflow:hidden;height:600px;width:100%">'+html+'</div>');
+  },
+  // The Cutting / Issue Registry's filter bar: a wrapping row of six preset
+  // buttons with an inline CUT DATE label, the range caption under the stat
+  // tiles, and the day headers in the list — each of which puts a label and
+  // a number in one justify-between row, the shape that crushed the Profile
+  // directory's names to 0px. Both date-bar states are rendered so the
+  // custom from/to inputs are measured too. The hit-test matters here: the
+  // presets are the controls the whole feature is operated with.
+  'cutting registry — cut-date filter':()=>{
+    const esc=x=>String(x==null?'':x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const day=n=>{const d=new Date();d.setDate(d.getDate()-n);
+      const p=v=>String(v).padStart(2,'0');
+      return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;};
+    const iss=(i,date,ts)=>({gpType:'fabric',id:'GP-34'+i,ts,date,poId:'PO-1'+i,
+      articleName:'EFFORTLESS TEE — FADED OLIVE',articleCode:'GP09'+i,
+      fabricType:'Jersey Heavy',fabricGsm:248,fabricColor:'Slate Grey',fabricUnit:'kg',
+      plannedQty:90+i,totalBundles:4,fabricQty:26.9,rollsCount:1,avgConsumption:0.2989,
+      sizeBreakdown:[{size:'S',qty:15,bundles:[15]},{size:'M',qty:30,bundles:[30]},
+                     {size:'L',qty:30,bundles:[30]},{size:'XL',qty:15,bundles:[15]}],
+      issuer:'Uzaib',cutMaster:'Hassan',regIncomplete:i===2,
+      regLabels:i===1?[{text:'PRINTING',bg:'#ede9fe',fg:'#5b21b6'}]:[]});
+    const app=loadApp({files:['js/fabric.js'],currentPage:'',globals:{
+      allPasses:[iss(1,day(0),5e3),iss(2,day(0),4e3),iss(3,day(1),3e3),iss(4,day(4),2e3)],
+      allFabricInventory:[],allFabricMovements:[],allPOs:[],_gpEsc:esc}});
+    const card=app.run('renderFabricIssueRegistry()');
+    // …and the same bar in its custom state, which the reset above clears.
+    app.run(`(_fabRegDate={preset:'custom',from:'${day(7)}',to:'${day(0)}'},1)`);
+    const custom=app.run('_fabRegDateBarHTML()');
+    return Promise.resolve(card+'<div class="card">'+custom+'</div>');
   }
 };
 
@@ -262,9 +291,17 @@ function hiddenEl(el){
   }
   return false;
 }
+// An <option> is never laid out — Chromium renders a select's list itself,
+// so every option in the document reports a 0x0 rect. Reporting them is a
+// false positive that would block any fragment containing a dropdown, and
+// it says nothing about whether the select is readable. The select ITSELF
+// is still measured, which is the part a human sees.
+// An ARRAY, not a comma-joined string: 'OPTION,OPTGROUP'.indexOf('P') is 1,
+// so a string membership test would silently exempt every <p> in the app.
+const UNLAID=['OPTION','OPTGROUP'];
 document.querySelectorAll('#main-content *').forEach(el=>{
   const cs=getComputedStyle(el);
-  if(hiddenEl(el)||cs.position==='fixed')return;
+  if(hiddenEl(el)||cs.position==='fixed'||UNLAID.indexOf(el.tagName)>-1)return;
   const own=textOfOwn(el);
   if(!own)return;
   const r=el.getBoundingClientRect();
