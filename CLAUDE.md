@@ -1445,6 +1445,87 @@ siblings, so `elementFromPoint` reaches them either way. That rule is for
 panning and marquee **through** the column background, which no layout
 measurement can see.
 
+### Mood Boards — the table, rebuilt to the Milanote spec (Sept 2026)
+
+Afnan sent a Milanote board that is itself a 9-section visual spec for our
+board tool — sidebar rail, overflow flyout, add-image panel, then table
+anatomy, cell toolbar, cell types, formulas, row/column ops and the object
+menu. **Agreed process: one milestone at a time, finish and verify before
+the next.** The milestone list, in dependency order: M1 cell model ·
+M2 table anatomy · M3 row/column ops · M4 cell types · M5 formulas ·
+M6 rail restructure + overflow flyout · M7 add-image panel · M8 object menu
+gaps. The six new card types the flyout implies (Sketch, Color, Document,
+Audio, Map, Video) are deliberately NOT in M6 — Draw especially is a whole
+drawing surface, not a card variant.
+
+**M1 — the cell model.** A cell is stored as a **bare string until it
+carries an attribute**, and becomes `{v,…}` only then. That single choice is
+what makes M3–M5 need no migration: `Auto`, the default cell type, is
+exactly what a bare string already means, so every table written before this
+reads correctly untouched. `_boardsCellWrite` **downgrades back to a string
+the moment the last attribute is cleared**, so a cell bolded and un-bolded
+leaves no object behind on a document that is rewritten on every autosave.
+**Seven call sites read `c.rows[r][i]` raw** — the hydrate, the Word/Markdown
+export, the presentation slide, the PNG/PDF canvas, the PDF index, the search
+index and the input handler — and every one would have rendered
+`[object Object]` the first time a cell grew an attribute. All go through
+`_boardsCellVal` now; nothing outside the helpers touches a cell directly.
+
+- **A cell colour is a palette NAME painted by a class, never a stored hex.**
+  The first cut validated `#RRGGBB` — wrong here, because the swatch palette
+  maps to CSS variables that INVERT with the theme, so a literal hex is
+  light-on-light in dark mode: the exact bug the embellishments sweep
+  removed one commit earlier. Six names is also a stricter allow-list than
+  validating a hex, and nothing about the background reaches a `style`
+  attribute at all.
+- **Focus is independent of edit mode** (`_boardsCellFocus`, separate from
+  `_boardsEditingEl`). Every rail action re-renders the canvas and destroys
+  the DOM the caret lived in, and the cell toolbar has to stay up while you
+  use it — focus is data, so it survives that. It is **re-derived, never
+  trusted** (`_boardsFocusedCell`): a row can be removed, the card deleted,
+  or a remote merge can shrink the table, and a stale `{id,r,i}` must not
+  paint a ring on whatever moved into those coordinates. Cleared with the
+  selection, on Escape, and per board-opening beside line mode and undo.
+- **The rail's FOURTH mode** (nothing selected / card / line / cell), through
+  the same `_boardsCtxRun` router as the other three.
+
+**M2 — table anatomy.** Default is **3 × 4, empty, `head:false`**: the A/B/C
+band labels the columns now, and a prefilled "Column A" header row would be
+a second labelling of the same thing that disagrees the moment one is
+renamed. Existing tables are untouched.
+
+- **Coordinates are DERIVED and never stored** — `_boardsColName` (A…Z, AA…)
+  and `_boardsCellRef`, with `_boardsRefToRC` as the inverse for M5's parser.
+- **They map 1:1 onto the stored array: `B1` is `rows[0][1]` whether or not
+  `head` is set**, because `head` is pure styling (row 0 renders as `<th>`)
+  and nothing else. A spreadsheet whose row 1 holds labels and whose sum
+  reads `SUM(B2:B4)` is what everyone already knows, and the grammar then
+  needs no special case anywhere. **Decided in M1, before any formula code.**
+- **The band and gutter stay visible when the table is not selected, just
+  dimmed.** Milanote raises them only on selection; ours are the reference
+  grammar for formulas, so hiding them hides the feature — and a
+  selection-only band would either reflow the table under the pointer or
+  need an overlay escaping a card that clips its own content.
+- Both are **sticky** (`top:0` / `left:0`), as is the `+Row/+Col` strip
+  (`bottom:0`). A table can legitimately be taller than its card — that is
+  why the body scrolls — and a strip that merely refuses to shrink still
+  scrolls out of reach.
+- **Not built, deliberately: the round top-right selection handle.** Our
+  cards already carry a drag header and a selection outline, and that corner
+  is where the delete ✕ lives. The bottom-right diagonal resize handle the
+  spec asks for **already exists** for every card and is clamped by
+  `_boardsMinCardH`.
+- A table can now carry a **caption**, matching the spec's table toolbar
+  (Labels · Reactions · Comment · Title · Caption); the other four were
+  already there.
+
+**`_boardsTableMinH` measures per ROW, not as a flat count** — a cell set to
+the large text size makes its whole row taller, and a flat 28px left the
+`+Row/+Col` strip hanging outside the card. **Found by `smoke-layout` the
+same day the size attribute shipped; no logic suite could have seen it**,
+and both that and the sticky strip were verified by reverting each and
+watching the check fail.
+
 ### Mood Boards — Home is a board (Sept 2026)
 
 Milanote has no "list of your boards" page: **home IS a board**, and your

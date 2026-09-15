@@ -759,6 +759,20 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-table.with-head th{background:var(--surface-2);font-weight:700;
   font-size:10.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)}
 .board-table [contenteditable="true"]{background:var(--hover);cursor:text}
+/* Spreadsheet coordinates — the A/B/C band and the 1/2/3/4 gutter. Purely
+   derived chrome: never stored, never exported, and never editable. They
+   stay visible when the table is not selected (they are the reference
+   grammar for formulas) but drop back so they read as chrome, not data. */
+.board-table .board-coord{
+  background:var(--surface-2);color:var(--muted);
+  font-size:9.5px;font-weight:700;letter-spacing:.04em;text-align:center;
+  padding:2px 3px;user-select:none;-webkit-user-select:none;
+  opacity:.5;transition:opacity .12s}
+.board-card-el.selected .board-table .board-coord{opacity:1}
+.board-table .board-coord-corner{width:22px;background:var(--surface-2)}
+.board-table tr.board-tr-coords td{height:16px;position:sticky;top:0;z-index:2}
+.board-table tr td.board-coord:first-child{position:sticky;left:0;z-index:1}
+.board-table tr.board-tr-coords td.board-coord-corner{z-index:3}
 /* The focused cell — Milanote's white focus border. A ring rather than a
    border so it does not move the 1px grid lines and reflow the table. */
 .board-table td.focused,.board-table th.focused{
@@ -771,7 +785,12 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-table .cell-bg-green{background:var(--accent-success-soft)}
 .board-table .cell-bg-blue{background:var(--cat-notes);color:var(--on-dark)}
 .board-table .cell-bg-purple{background:var(--cat-boards);color:var(--on-dark)}
-.board-table-add{display:flex;gap:5px;padding:4px 6px;flex-shrink:0;
+/* Sticky, not merely flex-shrink:0. A table can legitimately be taller
+   than its card — that is why the body scrolls — and when it is, a strip
+   that only refuses to shrink still scrolls out of reach. Found by
+   smoke-layout at phone width, where the cells wrap and the grid grows. */
+.board-table-add{position:sticky;bottom:0;z-index:2;background:var(--surface);
+  display:flex;gap:5px;padding:4px 6px;flex-shrink:0;
   border-top:1px solid var(--border);background:var(--surface)}
 .board-table-add button{flex:1;font-family:inherit;font-size:10.5px;font-weight:600;
   padding:3px 6px;border-radius:6px;border:1px solid var(--border);

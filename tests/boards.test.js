@@ -1118,18 +1118,23 @@ module.exports=function(){
     s.section('a table is rows[][] of plain strings');
     boot();
     run(`window.boardsAddCard('table')`);
-    s.eq('two columns, a header and one body row',
-      run(`JSON.stringify(_editCards[0].rows)`),'[["Column A","Column B"],["",""]]');
-    s.eq('with a header by default',run(`_editCards[0].head`),true);
+    // 3 x 4 and empty, per the spec. No prefilled "Column A" header row:
+    // the A/B/C band labels the columns now, and two labellings of the same
+    // thing would disagree the moment someone renamed one.
+    s.eq('three columns by four rows, empty',
+      run(`_editCards[0].rows.length+'x'+_editCards[0].rows[0].length`),'4x3');
+    s.ok('with nothing in them',run(`_editCards[0].rows.every(r=>r.every(v=>v===''))`));
+    s.eq('and no header row by default',run(`_editCards[0].head`),false);
     run(`window.boardsTableAdd(_editCards[0].id,'row')`);
-    s.eq('adding a row matches the column count',run(`_editCards[0].rows.length+'x'+_editCards[0].rows[2].length`),'3x2');
+    s.eq('adding a row matches the column count',run(`_editCards[0].rows.length+'x'+_editCards[0].rows[4].length`),'5x3');
     run(`window.boardsTableAdd(_editCards[0].id,'col')`);
     s.eq('adding a column widens every row',
-      run(`_editCards[0].rows.every(r=>r.length===3)`),true);
+      run(`_editCards[0].rows.every(r=>r.length===4)`),true);
     // A table that grows needs the room, or the new row is drawn outside
     // the card and clipped — the bug the label rows caused on small cards.
     s.ok('and the card grew to fit',run(`_editCards[0].h>=_boardsTableMinH(_editCards[0])`));
-    run(`while(_editCards[0].rows.length>2)window.boardsTableDrop(_editCards[0].id,'row')`);
+    run(`_editCards[0].head=true;
+         while(_editCards[0].rows.length>2)window.boardsTableDrop(_editCards[0].id,'row')`);
     run(`window.boardsTableDrop(_editCards[0].id,'row')`);
     s.eq('a header table never drops below the header plus one row',run(`_editCards[0].rows.length`),2);
     run(`while(_editCards[0].rows[0].length>1)window.boardsTableDrop(_editCards[0].id,'col');
@@ -1400,6 +1405,44 @@ module.exports=function(){
     boot();
     run(`_editCards[0].locked=true;_boardsCellFocus={id:'t',r:1,i:1};_boardsCtxRun('cell:bold')`);
     s.ok('nothing is written',run(`_boardsCellAttr(_editCards[0].rows[1][1],'b')===undefined`));
+
+    s.section('coordinates are derived, never stored');
+    // Display-only: the letter comes from the column index, the number from
+    // the row index. Nothing to migrate and nothing that can go stale.
+    s.eq('A is the first column',run(`_boardsColName(0)`),'A');
+    s.eq('Z is the 26th',run(`_boardsColName(25)`),'Z');
+    s.eq('and it carries past Z rather than running out',run(`_boardsColName(26)`),'AA');
+    s.eq('deep into two letters',run(`_boardsColName(27)+' '+_boardsColName(51)+' '+_boardsColName(52)`),'AB AZ BA');
+    s.eq('a reference is the pair',run(`_boardsCellRef(3,1)`),'B4');
+
+    s.section('the reference grammar maps 1:1 onto the stored array');
+    // B1 is rows[0][1] whether or not `head` is set — head is pure styling.
+    // M5's parser then needs no special case anywhere.
+    s.eq('B1 is row 0',run(`JSON.stringify(_boardsRefToRC('B1'))`),'{"r":0,"i":1}');
+    s.eq('lower case too',run(`JSON.stringify(_boardsRefToRC('b1'))`),'{"r":0,"i":1}');
+    s.eq('two letters',run(`JSON.stringify(_boardsRefToRC('AA2'))`),'{"r":1,"i":26}');
+    s.ok('it round-trips',run(`(()=>{for(let r=0;r<40;r++)for(let i=0;i<60;i++){
+      const x=_boardsRefToRC(_boardsCellRef(r,i));if(!x||x.r!==r||x.i!==i)return false;}return true;})()`));
+    s.ok('and anything that is not a reference is null',
+      run(`_boardsRefToRC('B0')===null&&_boardsRefToRC('')===null&&_boardsRefToRC('1B')===null
+        &&_boardsRefToRC('B1:B4')===null`));
+
+    s.section('the band and the gutter are rendered, not stored');
+    boot();
+    const html=run(`_boardCardHTML(_editCards[0],true)`);
+    s.ok('the column band is there',/board-tr-coords/.test(html)&&/>A</.test(html)&&/>B</.test(html));
+    s.ok('and the row gutter',/board-coord">1</.test(html)&&/board-coord">2</.test(html));
+    s.ok('nothing of it reaches the document',
+      run(`JSON.stringify(_editCards[0]).indexOf('coord')<0`));
+    s.ok('the card reserves the band height so a new row is never clipped',
+      run(`_boardsTableMinH(_editCards[0])>=26+20+2*28+26`));
+
+    s.section('a table can carry a caption, per the spec toolbar');
+    boot();
+    run(`_boardsCtxRun('caption')`);
+    s.eq('the field is created',run(`typeof _editCards[0].caption`),'string');
+    s.ok('the rail offers it',/"act":"caption"/.test(run(`JSON.stringify(_boardsRailItems())`)));
+    s.ok('and it is drawn',/board-cap-t/.test(run(`_boardCardHTML(_editCards[0],true)`)));
   }
 
   return s;

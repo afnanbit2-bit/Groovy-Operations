@@ -121,7 +121,7 @@ function _boardsCanEdit(b){
 function _boardsNewCard(type){
   const id='c'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
   const w=type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?220:type==='todo'?240:type==='file'?200:type==='board'?200:170;
-  const h=type==='frame'?320:type==='column'?160:type==='table'?150:type==='heading'?58:type==='image'?120:type==='link'?120:type==='file'?110:type==='todo'?170:type==='board'?104:100;
+  const h=type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?120:type==='link'?120:type==='file'?110:type==='todo'?170:type==='board'?104:100;
   const base={id,type,x:80,y:80,w,h};
   if(type==='image')base.imageUrl='';
   if(type==='text')base.text='';
@@ -132,7 +132,10 @@ function _boardsNewCard(type){
   // A table starts with a header row and one body row — an empty grid with
   // no header reads as a broken card, and adding the header afterwards is
   // the one thing nobody thinks to look for.
-  if(type==='table'){base.rows=[['Column A','Column B'],['','']];base.head=true;}
+  if(type==='table'){
+    base.rows=[['','',''],['','',''],['','',''],['','','']];
+    base.head=false;
+  }
   if(type==='heading')base.text='';
   if(type==='todo')base.items=[{text:'',done:false}];
   if(type==='board'){base.boardId='';base.boardTitle='';}
@@ -1998,9 +2001,19 @@ function _boardCardHTML(c,canEdit){
     // one on, so a single click still selects and drags the card. Text is
     // hydrated with textContent after render — never interpolated.
     const rows=Array.isArray(c.rows)&&c.rows.length?c.rows:[['','']];
+    const ncols=(rows[0]||[]).length;
+    // The A/B/C band and the 1/2/3/4 gutter. Milanote raises them only
+    // while the table is selected; ours are always present and simply
+    // DIMMED when it is not. Two reasons: they are the reference grammar
+    // for formulas, so hiding them hides the feature, and showing them
+    // only on selection would either reflow the table under the pointer or
+    // need an overlay escaping a card that clips its own content.
     body=`<div class="board-card-body board-table-body"${bodyDrag}>
       <table class="board-table${c.head===false?'':' with-head'}">
-        ${rows.map((row,r)=>`<tr>${row.map((cell,i)=>{
+        <tr class="board-tr-coords"><td class="board-coord board-coord-corner"></td>${
+          Array.from({length:ncols},(_,i)=>`<td class="board-coord">${_boardsColName(i)}</td>`).join('')
+        }</tr>
+        ${rows.map((row,r)=>`<tr><td class="board-coord">${r+1}</td>${row.map((cell,i)=>{
           const tag=(c.head!==false&&r===0)?'th':'td';
           const st=_boardsCellStyle(cell);
           const foc=_boardsCellFocus&&_boardsCellFocus.id===c.id&&_boardsCellFocus.r===r&&_boardsCellFocus.i===i;
@@ -2044,7 +2057,7 @@ function _boardCardHTML(c,canEdit){
   }else{
     body=`<div class="board-card-body board-text-body"${bodyDrag} contenteditable="false" id="board-txt-${c.id}" data-placeholder="Double-click to type…" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-txt-${c.id}')"`:''} oninput="window.boardsTextInput('${c.id}',this)"></div>`;
   }
-  if((c.type==='image'||c.type==='file')&&c.caption!=null){
+  if((c.type==='image'||c.type==='file'||c.type==='table')&&c.caption!=null){
     // Reported twice in QA as "the caption doesn't save". It always saved —
     // you could never TYPE. Card bodies are contenteditable="false" until
     // boardsBeginEdit switches exactly one on, and a caption inherited the
@@ -2169,7 +2182,7 @@ function _boardsMinCardH(c){
   let h=c.type==='heading'?0:_BOARDS_CHROME_H.head;
   if(Array.isArray(c.labels)&&c.labels.length)h+=_BOARDS_CHROME_H.labels;
   if(c.reactions&&Object.keys(c.reactions).length)h+=_BOARDS_CHROME_H.reactions;
-  if((c.type==='image'||c.type==='file')&&c.caption!=null)h+=_BOARDS_CHROME_H.caption;
+  if((c.type==='image'||c.type==='file'||c.type==='table')&&c.caption!=null)h+=_BOARDS_CHROME_H.caption;
   return h+(_BOARDS_MIN_BODY_H[c.type]||48);
 }
 function _boardsGrowForChrome(c){
@@ -3733,6 +3746,7 @@ function _boardsRailItems(){
   if(canEdit)items.push({act:'labels',label:'Labels',icon:'labels'});
   if(canEdit)items.push({act:'reactions',label:'React',icon:'reactions'});
   if(one){
+    if(one.type==='table'&&canEdit)items.push({act:'caption',label:'Caption',icon:'caption'});
     if(one.type==='image'||one.type==='file'){
       if(canEdit)items.push({act:'caption',label:'Caption',icon:'caption'});
       if(canEdit)items.push({act:'replace',label:'Replace',icon:'replace'});
@@ -4260,6 +4274,30 @@ window.boardsCardName=function(id,el){
    c.rows[r][i] directly — seven call sites used to, and each would have
    rendered "[object Object]" the first time a cell grew an attribute. */
 const _BOARDS_CELL_ATTRS=['b','i','sz','bg','al'];
+/* Spreadsheet coordinates. These are DISPLAY-ONLY and are never stored:
+   the letter is derived from the column index and the number is the row
+   index + 1, so they cost nothing, cannot go stale, and need no migration.
+   They map 1:1 onto the stored array — B1 is rows[0][1] whether or not
+   `head` is set, because `head` is pure styling (it renders row 0 as <th>)
+   and nothing else. A spreadsheet whose row 1 holds labels and whose sum
+   reads SUM(B2:B4) is the behaviour everyone already knows, and the
+   grammar M5 parses then needs no special case anywhere. */
+function _boardsColName(i){
+  let n=Math.max(0,i|0),out='';
+  do{ out=String.fromCharCode(65+(n%26))+out; n=Math.floor(n/26)-1; }while(n>=0);
+  return out;
+}
+function _boardsCellRef(r,i){ return _boardsColName(i)+(r+1); }
+// The inverse, for M5's parser. Null for anything that is not a reference.
+function _boardsRefToRC(ref){
+  const m=/^([A-Za-z]+)([0-9]+)$/.exec(String(ref||'').trim());
+  if(!m)return null;
+  let col=0;
+  for(const ch of m[1].toUpperCase())col=col*26+(ch.charCodeAt(0)-64);
+  const r=parseInt(m[2],10)-1;
+  if(r<0)return null;
+  return{r:r,i:col-1};
+}
 function _boardsCellVal(cell){
   if(cell&&typeof cell==='object')return String(cell.v==null?'':cell.v);
   return String(cell==null?'':cell);
@@ -4386,8 +4424,19 @@ window.boardsCellDone=function(){
   _boardsRenderCanvasAndWire();
 };
 function _boardsTableMinH(c){
-  const rows=Array.isArray(c.rows)?c.rows.length:1;
-  return 26+rows*28+26;   // card header + rows + the +Row/+Col strip
+  const rows=Array.isArray(c.rows)?c.rows:[];
+  // Measured per ROW, not as a flat count: a cell set to the large text
+  // size makes its whole row taller, and a flat 28 left the +Row/+Col
+  // strip hanging outside the card. Found by smoke-layout the same day the
+  // size attribute shipped — no logic suite could see it.
+  let body=0;
+  if(!rows.length)body=28;
+  else rows.forEach(row=>{
+    const big=Array.isArray(row)&&row.some(cell=>_boardsCellAttr(cell,'sz')==='l');
+    body+=big?36:28;
+  });
+  // card header + the A/B/C band + rows + the +Row/+Col strip
+  return 26+20+body+26;
 }
 window.boardsTableAdd=function(id,what){
   const c=_editCards.find(x=>x.id===id);
@@ -4400,7 +4449,7 @@ window.boardsTableAdd=function(id,what){
   // card and clipped away — the same class of bug the label and reaction
   // rows caused on small cards.
   if(what==='row')c.h=Math.max(c.h,_boardsTableMinH(c));
-  else c.w=Math.max(c.w,60+c.rows[0].length*100);
+  else c.w=Math.max(c.w,84+c.rows[0].length*100);  // + the row-number gutter
   if(_boardsColumnOf(c))_boardsLayoutColumns();
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
@@ -6809,7 +6858,8 @@ function _boardsCtxRun(act){
       const s=_boardsSelectedCards();
       if(s.length!==1)break;
       const c=s[0];
-      if(c.type!=='image'&&c.type!=='file'){showToast('Captions are for images and files');break;}
+      if(c.type!=='image'&&c.type!=='file'&&c.type!=='table'){
+        showToast('Captions are for images, files and tables');break;}
       if(c.caption==null){
         _boardsPushUndo();
         c.caption='';
