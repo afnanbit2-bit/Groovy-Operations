@@ -1314,5 +1314,93 @@ module.exports=function(){
       /var\(--accent-urgent\)/.test(run(`_boardsConnStroke({color:'red'})`)));
   }
 
+  // ── M1: the table cell model ──────────────────────────────────────
+  {
+    const app=loadApp({files:['js/boards.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'}});
+    const run=x=>app.run(x);
+    const boot=()=>run(`session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};
+      _editBoard={id:'B',title:'T',visibility:'shared',ownerUid:'u1',zoom:1,panX:0,panY:0};
+      _boardsSelection=new Set(['t']);_boardsConnSel=null;_boardsCellFocus=null;
+      _editConnectors=[];moodBoards=[];_boardsPeers=[];
+      _editCards=[{id:'t',type:'table',x:0,y:0,w:360,h:150,head:true,
+        rows:[['Column A','Column B'],['10','20']]}];`);
+    boot();
+
+    s.section('a cell stays a bare string until it carries an attribute');
+    // This is what makes the typed-cell work need no migration: 'Auto' —
+    // the default type — is exactly what a bare string already means.
+    s.eq('a plain table is plain strings',run(`typeof _editCards[0].rows[1][0]`),'string');
+    run(`_boardsCellWrite(_editCards[0],1,0,{v:'99'})`);
+    s.eq('writing only the value keeps it a string',run(`typeof _editCards[0].rows[1][0]`),'string');
+    s.eq('and the value lands',run(`_editCards[0].rows[1][0]`),'99');
+    run(`_boardsCellWrite(_editCards[0],1,0,{b:true})`);
+    s.eq('an attribute upgrades it to an object',run(`typeof _editCards[0].rows[1][0]`),'object');
+    s.eq('carrying the value with it',run(`_boardsCellVal(_editCards[0].rows[1][0])`),'99');
+    run(`_boardsCellWrite(_editCards[0],1,0,{b:false})`);
+    s.eq('clearing the last attribute DOWNGRADES it back',run(`typeof _editCards[0].rows[1][0]`),'string');
+    s.eq('losing nothing',run(`_editCards[0].rows[1][0]`),'99');
+
+    s.section('every consumer reads through the helper');
+    // Seven call sites used to read c.rows[r][i] raw. Each would have
+    // rendered "[object Object]" the first time a cell grew an attribute.
+    boot();
+    run(`_boardsCellWrite(_editCards[0],1,0,{b:true,bg:'red'})`);
+    s.ok('the search index',/10/.test(run(`_boardsCardText(_editCards[0])`)));
+    s.ok('and does not leak the object',!/object/.test(run(`_boardsCardText(_editCards[0])`)));
+    const doc=run(`JSON.stringify(_boardsCardDoc(_editCards[0]))`);
+    s.ok('the Word/Markdown export',doc.indexOf('10')>-1&&doc.indexOf('object Object')<0,doc.slice(0,60));
+
+    s.section('a cell colour is a palette NAME, never a stored hex');
+    // The swatch palette maps to CSS variables that INVERT with the theme;
+    // a literal hex would be light-on-light in dark mode.
+    boot();
+    run(`window.boardsCellAction;_boardsCellFocus={id:'t',r:1,i:1};window.boardsCellColor('green')`);
+    s.eq('a palette name is stored',run(`_editCards[0].rows[1][1].bg`),'green');
+    s.eq('and painted by a class',run(`_boardsCellClass(_editCards[0].rows[1][1])`),' cell-bg-green');
+    s.ok('nothing reaches a style attribute',
+      !/background/.test(run(`_boardsCellStyle(_editCards[0].rows[1][1])`)));
+    run(`window.boardsCellColor('#ff0000;x:url(y)')`);
+    s.ok('anything off the palette falls back rather than passing through',
+      run(`_editCards[0].rows[1][1]===undefined||_boardsCellAttr(_editCards[0].rows[1][1],'bg')===undefined`));
+
+    s.section('focus is re-derived, never trusted');
+    boot();
+    run(`_boardsCellFocus={id:'t',r:1,i:1}`);
+    s.ok('a real cell resolves',run(`!!_boardsFocusedCell()`));
+    run(`_editCards[0].rows.pop()`);
+    s.ok('a row that went away does not paint a ring on its replacement',
+      run(`_boardsFocusedCell()===null`));
+    boot();
+    run(`_boardsCellFocus={id:'gone',r:0,i:0}`);
+    s.ok('nor does a deleted card',run(`_boardsFocusedCell()===null`));
+
+    s.section('the rail gains a fourth mode');
+    boot();
+    s.ok('a selected table alone shows card actions',
+      !/cell:/.test(run(`JSON.stringify(_boardsRailItems())`)));
+    run(`_boardsCellFocus={id:'t',r:1,i:1}`);
+    const rail=run(`JSON.stringify(_boardsRailItems())`);
+    s.ok('a focused cell swaps the rail',/cell:bold/.test(rail));
+    s.ok('carrying the spec toolbar',
+      /cell:italic/.test(rail)&&/cell:size/.test(rail)&&/cell:align/.test(rail)
+      &&/cellSwatches/.test(rail)&&/tbl:row/.test(rail)&&/tbl:col/.test(rail));
+    run(`_boardsCtxRun('cell:bold')`);
+    s.ok('and the router applies it',run(`!!_boardsCellAttr(_editCards[0].rows[1][1],'b')`));
+    s.ok('the rail reflects the state it just set',
+      /"act":"cell:bold","label":"Bold","icon":"rename","on":true/.test(run(`JSON.stringify(_boardsRailItems())`)));
+
+    s.section('selecting something else drops the focus');
+    boot();
+    run(`_boardsCellFocus={id:'t',r:1,i:1};_editCards.push({id:'z',type:'text',x:9,y:9,w:10,h:10});
+      _boardsSelectCard('z')`);
+    s.ok('so the rail cannot offer cell actions for a cell nobody sees',
+      run(`_boardsCellFocus===null`));
+
+    s.section('a locked card refuses cell edits');
+    boot();
+    run(`_editCards[0].locked=true;_boardsCellFocus={id:'t',r:1,i:1};_boardsCtxRun('cell:bold')`);
+    s.ok('nothing is written',run(`_boardsCellAttr(_editCards[0].rows[1][1],'b')===undefined`));
+  }
+
   return s;
 };

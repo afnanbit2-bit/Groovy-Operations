@@ -168,6 +168,31 @@ const FRAGMENTS={
       +app.run('renderTowerSwimlane("printing",[])');
     return Promise.resolve(html);
   },
+  // A table carrying cell attributes — bold, sized, aligned and coloured —
+  // with one cell focused. The contrast check is the point: a cell colour
+  // is a palette NAME painted by a class precisely so it reads in BOTH
+  // themes, which a stored hex could not do.
+  'boards — a table with styled cells':()=>{
+    const app=loadApp({files:['js/boards.js']});
+    app.run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
+      _editConnectors=[];_boardsSelection=new Set(['t']);moodBoards=[];
+      _editCards=[{id:'t',type:'table',x:20,y:20,w:360,h:180,head:true,rows:[
+        ['Fabric','Qty','Status'],
+        [{v:'Cotton drill 8.5oz',b:true},'120',{v:'Cleared',bg:'green'}],
+        [{v:'Fleece 320gsm',sz:'l'},{v:'40',al:'r'},{v:'Rework',bg:'red'}],
+        ['Rib 2x1',{v:'8',al:'c',i:true,bg:'purple'},{v:'Pending',bg:'blue'}]
+      ]}];
+      _boardsCellFocus={id:'t',r:1,i:0};`);
+    let html=app.run(`_boardCardHTML(_editCards[0],true)`);
+    // Hydration writes into the harness's stub nodes, so the text is put
+    // back here for the measurement — same as every other fragment.
+    app.run(`_editCards[0].rows`).forEach((row,r)=>row.forEach((cell,i)=>{
+      const v=(cell&&typeof cell==='object')?cell.v:cell;
+      html=html.replace(new RegExp('(id="board-td-t-'+r+'-'+i+'"[^>]*>)'),'$1'+v);
+    }));
+    return Promise.resolve(
+      '<div style="position:relative;overflow:hidden;height:420px;width:100%">'+html+'</div>');
+  },
   'boards — a column and its cards':()=>{
     const app=loadApp({files:['js/boards.js']});
     app.run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};

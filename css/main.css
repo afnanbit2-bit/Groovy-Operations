@@ -759,6 +759,18 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-table.with-head th{background:var(--surface-2);font-weight:700;
   font-size:10.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)}
 .board-table [contenteditable="true"]{background:var(--hover);cursor:text}
+/* The focused cell — Milanote's white focus border. A ring rather than a
+   border so it does not move the 1px grid lines and reflow the table. */
+.board-table td.focused,.board-table th.focused{
+  outline:2px solid var(--text);outline-offset:-2px;position:relative;z-index:1}
+/* A cell background is a palette NAME, never a stored hex: these variables
+   invert with the theme, so a coloured cell reads in light and dark alike.
+   Six classes is also a stricter allow-list than validating a hex. */
+.board-table .cell-bg-red{background:var(--accent-urgent-soft)}
+.board-table .cell-bg-amber{background:var(--accent-warning-soft)}
+.board-table .cell-bg-green{background:var(--accent-success-soft)}
+.board-table .cell-bg-blue{background:var(--cat-notes);color:var(--on-dark)}
+.board-table .cell-bg-purple{background:var(--cat-boards);color:var(--on-dark)}
 .board-table-add{display:flex;gap:5px;padding:4px 6px;flex-shrink:0;
   border-top:1px solid var(--border);background:var(--surface)}
 .board-table-add button{flex:1;font-family:inherit;font-size:10.5px;font-weight:600;

@@ -571,7 +571,7 @@ function _boardsCardText(c){
   if(c.caption)parts.push(c.caption);
   if(c.boardTitle)parts.push(c.boardTitle);
   if(Array.isArray(c.items))c.items.forEach(i=>{if(i&&i.text)parts.push(i.text);});
-  if(Array.isArray(c.rows))c.rows.forEach(r=>{if(Array.isArray(r))r.forEach(v=>{if(v)parts.push(v);});});
+  if(Array.isArray(c.rows))c.rows.forEach(r=>{if(Array.isArray(r))r.forEach(v=>{const t=_boardsCellVal(v);if(t)parts.push(t);});});
   if(Array.isArray(c.labels))c.labels.forEach(l=>{if(l&&l.t)parts.push(l.t);});
   return parts.join(' ').toLowerCase();
 }
@@ -637,6 +637,13 @@ window.boardsRedoAction=function(){
 // _boardsIsEditableFocus (and therefore every keyboard shortcut) keeps
 // working unchanged, and boardsCardDragStart has one thing to check.
 let _boardsEditingEl=null;
+// The FOCUSED table cell, which is deliberately independent of
+// _boardsEditingEl: the rail's cell toolbar has to stay up while you use
+// it, and every rail action re-renders the canvas (destroying the DOM the
+// caret lived in). Focus is data, so it survives that; edit mode does not
+// have to. Cleared when the selection changes, on Escape, and whenever the
+// coordinates stop pointing at a real cell.
+let _boardsCellFocus=null;   // {id,r,i}
 window.boardsBeginEdit=function(ev,elId){
   if(!_editBoard||!_boardsCanEdit(_editBoard))return;
   const el=document.getElementById(elId);
@@ -811,7 +818,12 @@ function _boardsOnKeydown(e){
   // editable-focus bail below — otherwise it is handed to the browser and
   // does nothing at all.
   if(_boardsEditingEl&&(e.key==='Escape'||e.key==='Esc')){
-    e.preventDefault();_boardsEndEdit();return;
+    e.preventDefault();
+    const hadCell=!!_boardsCellFocus;
+    _boardsCellFocus=null;
+    _boardsEndEdit();
+    if(hadCell)_boardsRenderCanvasAndWire();
+    return;
   }
   // Inside a text card or a link field every one of these belongs to the
   // browser — Ctrl+Z is text undo, Backspace deletes a character, Ctrl+A
@@ -924,10 +936,10 @@ function _boardsCardDoc(c){
       const rows=Array.isArray(c.rows)?c.rows:[];
       if(!rows.length)return null;
       const head=c.head!==false;
-      const md=rows.map((r,i)=>'| '+r.map(v=>String(v||'').replace(/\|/g,'\\|')).join(' | ')+' |'
+      const md=rows.map((r,i)=>'| '+r.map(v=>_boardsCellVal(v).replace(/\|/g,'\\|')).join(' | ')+' |'
         +((head&&i===0)?'\n|'+r.map(()=>' --- ').join('|')+'|':'')).join('\n');
       const html='<table border="1" cellpadding="5" cellspacing="0">'+rows.map((r,i)=>
-        '<tr>'+r.map(v=>(head&&i===0)?'<th>'+esc(v||'')+'</th>':'<td>'+esc(v||'')+'</td>').join('')+'</tr>').join('')+'</table>';
+        '<tr>'+r.map(v=>(head&&i===0)?'<th>'+esc(_boardsCellVal(v))+'</th>':'<td>'+esc(_boardsCellVal(v))+'</td>').join('')+'</tr>').join('')+'</table>';
       return{md,html};
     }
     case'image':
@@ -1154,7 +1166,7 @@ function _boardsPresentPaint(){
       const tr=document.createElement('tr');
       row.forEach(v=>{
         const cell=document.createElement((c.head!==false&&r===0)?'th':'td');
-        cell.textContent=v||'';
+        cell.textContent=_boardsCellVal(v);
         tr.appendChild(cell);
       });
       t.appendChild(tr);
@@ -1683,6 +1695,7 @@ async function _boardsOpenCanvas(){
   // instead of doing what you meant. Reset it with the rest of the
   // per-opening state. (Reported as "Line tool defaults to ON".)
   _boardsLineMode=false;
+  _boardsCellFocus=null;
   // History is per board-opening — undoing your way into a different
   // board's state would be nonsense.
   _boardsUndo=[];_boardsRedo=[];
@@ -1989,7 +2002,9 @@ function _boardCardHTML(c,canEdit){
       <table class="board-table${c.head===false?'':' with-head'}">
         ${rows.map((row,r)=>`<tr>${row.map((cell,i)=>{
           const tag=(c.head!==false&&r===0)?'th':'td';
-          return`<${tag} id="board-td-${c.id}-${r}-${i}" contenteditable="false" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-td-${c.id}-${r}-${i}')"`:''} oninput="window.boardsTableInput('${c.id}',${r},${i},this)"></${tag}>`;
+          const st=_boardsCellStyle(cell);
+          const foc=_boardsCellFocus&&_boardsCellFocus.id===c.id&&_boardsCellFocus.r===r&&_boardsCellFocus.i===i;
+          return`<${tag} id="board-td-${c.id}-${r}-${i}" class="board-td${foc?' focused':''}${_boardsCellClass(cell)}" contenteditable="false"${st?` style="${st}"`:''} ${canEdit?`ondblclick="window.boardsFocusCell(event,'${c.id}',${r},${i})"`:''} oninput="window.boardsTableInput('${c.id}',${r},${i},this)"></${tag}>`;
         }).join('')}</tr>`).join('')}
       </table>
       ${canEdit?`<div class="board-table-add">
@@ -2548,7 +2563,7 @@ window.boardsOpenMore=function(){
   _boardsOpenSheet('More',`<div class="board-sheet-list">${items.map(it=>{
     if(it.sep)return'<div class="board-sheet-sep"></div>';
     if(it.title)return`<div class="board-sheet-label">${_boardsEsc(it.title)}</div>`;
-    if(it.swatches)return'';
+    if(it.swatches||it.cellSwatches||it.connSwatches)return'';
     return`<button class="board-sheet-item${it.danger?' danger':''}" onclick="window.boardsSheetRun('${it.act}')">${_boardsEsc(it.label)}</button>`;
   }).join('')}</div>`);
 };
@@ -2647,7 +2662,7 @@ function _boardsHydrateTextCards(){
     if(c.type==='table'&&Array.isArray(c.rows)){
       c.rows.forEach((row,r)=>row.forEach((cell,i)=>{
         const td=document.getElementById('board-td-'+c.id+'-'+r+'-'+i);
-        if(td)td.textContent=cell||'';
+        if(td)td.textContent=_boardsCellVal(cell);
       }));
     }
     if(c.type==='text'||c.type==='heading'){
@@ -3544,6 +3559,10 @@ function _boardsSetSelection(ids){
 }
 function _boardsSelectCard(id,additive){
   if(_boardsConnSel!==null){_boardsConnSel=null;_boardsDrawConnectors();}
+  // A cell's focus belongs to its own table. Selecting anything else — or
+  // the same table again as a fresh single selection — drops it, or the
+  // rail would keep offering cell actions for a cell nobody is looking at.
+  if(_boardsCellFocus&&_boardsCellFocus.id!==id)_boardsCellFocus=null;
   if(additive){
     if(_boardsSelection.has(id))_boardsSelection.delete(id);
     else _boardsSelection.add(id);
@@ -3616,6 +3635,7 @@ const _BOARDS_ICONS={
   grid:'<rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/>',
   trash:'<path d="M3.5 4.5h9l-1 9.5h-7z" fill="none" stroke="currentColor"/><path d="M6 4.5V3h4v1.5M2.5 4.5h11" fill="none" stroke="currentColor"/>',
   color:'<path d="M8 1.5C5 4.5 3 6.8 3 9a5 5 0 0010 0c0-2.2-2-4.5-5-7.5z" fill="none" stroke="currentColor" stroke-width="1.3"/>',
+  align:'<path d="M2.5 3.5h11M2.5 7h7M2.5 10.5h11M2.5 14h7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>',
   labels:'<path d="M8.5 2H14v5.5L7.5 14 2 8.5z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="11" cy="5" r="1"/>',
   reactions:'<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6.6" r=".9"/><circle cx="10" cy="6.6" r=".9"/><path d="M5.4 9.6a3.2 3.2 0 005.2 0" fill="none" stroke="currentColor" stroke-width="1.3"/>',
   more:'<circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/>',
@@ -3651,6 +3671,26 @@ function _boardsRailItems(){
       out.push({act:'ln:deselect',label:'Done',icon:'done',done:true});
       return out;
     }
+  }
+  // A focused table cell is the rail's FOURTH mode (nothing selected /
+  // card / line / cell). It outranks the card mode: while a cell is
+  // focused the table itself is still selected, and the card actions are
+  // one 'Done' away.
+  const fc=_boardsFocusedCell();
+  if(fc&&canEdit){
+    const cell=fc.cell;
+    return[
+      {act:'cell:bold',label:'Bold',icon:'rename',on:!!_boardsCellAttr(cell,'b')},
+      {act:'cell:italic',label:'Italic',icon:'rename',on:!!_boardsCellAttr(cell,'i')},
+      {act:'cell:size',label:'Size',icon:'heading',on:!!_boardsCellAttr(cell,'sz')},
+      {act:'cell:align',label:'Align',icon:'align',on:!!_boardsCellAttr(cell,'al')},
+      {cellSwatches:true},
+      {sep:true},
+      {act:'tbl:row',label:'Add row',icon:'table'},
+      {act:'tbl:col',label:'Add column',icon:'table'},
+      {act:'cell:clear',label:'Clear',icon:'trash'},
+      {act:'cell:done',label:'Done',icon:'done',done:true}
+    ];
   }
   if(!sel.length){
     if(!canEdit)return[{act:'fit',label:'Fit',icon:'fit'}];
@@ -3728,6 +3768,7 @@ function _boardsRenderRail(){
   host.innerHTML=(sel.length>1?`<div class="rail-count">${sel.length}</div>`:'')+items.map(it=>{
     if(it.sep)return'<div class="rail-sep"></div>';
     if(it.swatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
+    if(it.cellSwatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="cellbg:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
     if(it.connSwatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="ln:c:${c}" title="${c==='none'?'Default':c}"></button>`).join('')}</div>`;
     return`<button class="rail-btn${it.on?' on':''}${it.danger?' danger':''}${it.done?' rail-done':''}" data-act="${it.act}" title="${_boardsEsc(it.label)}">${_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span></button>`;
   }).join('');
@@ -4204,11 +4245,145 @@ window.boardsCardName=function(id,el){
    to hold what these boards actually use a table for, which is a small
    grid of text beside a tech pack. A typed table can be built on top of
    this later; the reverse is not true. */
+/* ── Table cells ───────────────────────────────────────────────────
+   A cell is stored as a BARE STRING until it carries an attribute, and
+   becomes an object {v,…} only then. Two reasons, and they are the whole
+   reason this needs no migration: 'Auto' — the default cell type — is
+   exactly what a bare string already means, so every table written before
+   this reads correctly with no rewrite; and a table of plain text costs
+   the bytes it always did on a document that is rewritten on every
+   autosave.
+
+   _boardsCellWrite DOWNGRADES back to a bare string the moment the last
+   attribute is cleared, so a cell that was bolded and un-bolded does not
+   leave an object behind. Nothing outside these helpers may read or write
+   c.rows[r][i] directly — seven call sites used to, and each would have
+   rendered "[object Object]" the first time a cell grew an attribute. */
+const _BOARDS_CELL_ATTRS=['b','i','sz','bg','al'];
+function _boardsCellVal(cell){
+  if(cell&&typeof cell==='object')return String(cell.v==null?'':cell.v);
+  return String(cell==null?'':cell);
+}
+function _boardsCellAttr(cell,k){
+  return (cell&&typeof cell==='object')?cell[k]:undefined;
+}
+function _boardsCellAt(c,r,i){
+  const rows=(c&&Array.isArray(c.rows))?c.rows:null;
+  if(!rows||!Array.isArray(rows[r]))return undefined;
+  return rows[r][i];
+}
+function _boardsCellWrite(c,r,i,patch){
+  if(!c||!Array.isArray(c.rows)||!Array.isArray(c.rows[r]))return false;
+  if(i<0||i>=c.rows[r].length)return false;
+  const cur=c.rows[r][i];
+  const next=(cur&&typeof cur==='object')?Object.assign({},cur):{v:_boardsCellVal(cur)};
+  Object.keys(patch).forEach(k=>{
+    const v=patch[k];
+    // '' / false / null / undefined all mean "back to the default", which
+    // is an ABSENT key — that is what lets the downgrade below happen.
+    if(v===undefined||v===null||v===''||v===false)delete next[k];
+    else next[k]=v;
+  });
+  const dressed=_BOARDS_CELL_ATTRS.some(k=>next[k]!==undefined);
+  c.rows[r][i]=dressed?next:_boardsCellVal(next);
+  return true;
+}
+// Text attributes reach a style attribute; the BACKGROUND does not. A cell
+// colour is a palette NAME painted by a class, because the swatch palette
+// maps to CSS variables that INVERT with the theme — a stored literal hex
+// would be light-on-light in dark mode, which is exactly the bug the
+// embellishments sweep just spent a round removing. It is also a stricter
+// allow-list than validating a hex: six names, nothing else renders.
+function _boardsCellStyle(cell){
+  if(!cell||typeof cell!=='object')return'';
+  const out=[];
+  if(cell.b)out.push('font-weight:700');
+  if(cell.i)out.push('font-style:italic');
+  if(cell.sz==='s')out.push('font-size:11px');
+  else if(cell.sz==='l')out.push('font-size:15px');
+  if(cell.al==='c')out.push('text-align:center');
+  else if(cell.al==='r')out.push('text-align:right');
+  return out.join(';');
+}
+function _boardsCellClass(cell){
+  const bg=_boardsCellAttr(cell,'bg');
+  return (bg&&bg!=='none'&&_BOARDS_COLORS.indexOf(bg)>-1)?' cell-bg-'+bg:'';
+}
+// The focused cell, or null. Re-derived rather than trusted: a row or
+// column can be removed, the card can be deleted, or a remote merge can
+// shrink the table under us, and a stale {id,r,i} must not paint a ring on
+// whatever moved into those coordinates.
+function _boardsFocusedCell(){
+  const f=_boardsCellFocus;
+  if(!f)return null;
+  const c=_editCards.find(x=>x.id===f.id);
+  if(!c||c.type!=='table'||!Array.isArray(c.rows))return null;
+  if(!Array.isArray(c.rows[f.r])||f.i<0||f.i>=c.rows[f.r].length)return null;
+  return{card:c,r:f.r,i:f.i,cell:c.rows[f.r][f.i]};
+}
+window.boardsFocusCell=function(ev,id,r,i){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c)return;
+  _boardsCellFocus={id:id,r:r,i:i};
+  window.boardsBeginEdit(ev,'board-td-'+id+'-'+r+'-'+i);
+  _boardsRenderRail();
+  _boardsPaintCellFocus();
+};
+function _boardsPaintCellFocus(){
+  const stage=document.getElementById('board-stage');
+  if(!stage)return;
+  stage.querySelectorAll('.board-td.focused').forEach(el=>el.classList.remove('focused'));
+  const f=_boardsFocusedCell();
+  if(!f)return;
+  const td=document.getElementById('board-td-'+f.card.id+'-'+f.r+'-'+f.i);
+  if(td)td.classList.add('focused');
+}
 window.boardsTableInput=function(id,r,i,el){
   const c=_editCards.find(x=>x.id===id);
   if(!c||!Array.isArray(c.rows)||!c.rows[r])return;
-  c.rows[r][i]=el.textContent;
+  _boardsCellWrite(c,r,i,{v:el.textContent});
   _boardsSaveDebounced();
+};
+// The cell toolbar's actions. Every one is a patch through
+// _boardsCellWrite, so the lazy upgrade/downgrade is in exactly one place.
+window.boardsCellAction=function(what){
+  const f=_boardsFocusedCell();
+  if(!f||!_boardsCanEdit(_editBoard))return;
+  if(f.card.locked)return showToast('Card is locked — unlock it to edit it');
+  const cur=f.cell;
+  _boardsPushUndo();
+  if(what==='bold')       _boardsCellWrite(f.card,f.r,f.i,{b:!_boardsCellAttr(cur,'b')});
+  else if(what==='italic')_boardsCellWrite(f.card,f.r,f.i,{i:!_boardsCellAttr(cur,'i')});
+  else if(what==='size'){
+    const order=['','l','s'],at=order.indexOf(_boardsCellAttr(cur,'sz')||'');
+    _boardsCellWrite(f.card,f.r,f.i,{sz:order[(at+1)%order.length]});
+  }
+  else if(what==='align'){
+    const order=['','c','r'],at=order.indexOf(_boardsCellAttr(cur,'al')||'');
+    _boardsCellWrite(f.card,f.r,f.i,{al:order[(at+1)%order.length]});
+  }
+  else if(what==='clear') _boardsCellWrite(f.card,f.r,f.i,
+    {b:'',i:'',sz:'',al:'',bg:''});
+  else return;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+window.boardsCellColor=function(name){
+  const f=_boardsFocusedCell();
+  if(!f||!_boardsCanEdit(_editBoard))return;
+  if(f.card.locked)return showToast('Card is locked — unlock it to edit it');
+  // Anything not in the palette falls back to no colour rather than being
+  // passed through — the same rule the connector colours follow.
+  const ok=(name&&name!=='none'&&_BOARDS_COLORS.indexOf(name)>-1)?name:'';
+  _boardsPushUndo();
+  _boardsCellWrite(f.card,f.r,f.i,{bg:ok});
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+window.boardsCellDone=function(){
+  _boardsCellFocus=null;
+  _boardsEndEdit();
+  _boardsRenderCanvasAndWire();
 };
 function _boardsTableMinH(c){
   const rows=Array.isArray(c.rows)?c.rows.length:1;
@@ -5355,7 +5530,7 @@ function _boardsDrawCard(ctx,c,img,P){
       ctx.font=((c.head!==false&&r===0)?'700 ':'')+'11px '+P.font;
       ctx.save();
       ctx.beginPath();ctx.rect(c.x+i*cw,c.y+hh+r*rh,cw,rh);ctx.clip();
-      ctx.fillText(String(cell||''),c.x+i*cw+6,c.y+hh+r*rh+rh/2+4);
+      ctx.fillText(_boardsCellVal(cell),c.x+i*cw+6,c.y+hh+r*rh+rh/2+4);
       ctx.restore();
     }));
     ctx.restore();
@@ -5563,7 +5738,7 @@ window.boardsExportPDF=async function(){
       :c.type==='link'?((c.linkTitle||'')+(c.linkUrl?'  —  '+c.linkUrl:''))
       :c.type==='file'?(c.name||c.fileName||'')
       :c.type==='board'?(c.boardTitle||'')
-      :c.type==='table'?(Array.isArray(c.rows)?c.rows.map(r=>r.join(' | ')).join('  ·  '):'')
+      :c.type==='table'?(Array.isArray(c.rows)?c.rows.map(r=>r.map(_boardsCellVal).join(' | ')).join('  ·  '):'')
       :(c.type==='frame'||c.type==='column')?(c.title||'')
       :(c.text||'')).replace(/\s+/g,' ').trim()
   })).filter(r=>r.text);
@@ -6485,6 +6660,12 @@ function _boardsCtxRun(act){
   if(act.indexOf('add:')===0){place();window.boardsAddCard(act.slice(4));return;}
   if(act.indexOf('color:')===0){window.boardsSetColor(act.slice(6));return;}
   if(act.indexOf('ln:')===0){_boardsConnAction(act.slice(3));return;}
+  if(act.indexOf('cellbg:')===0){window.boardsCellColor(act.slice(7));return;}
+  if(act.indexOf('cell:')===0){
+    const w=act.slice(5);
+    if(w==='done')window.boardsCellDone();else window.boardsCellAction(w);
+    return;
+  }
   if(act.indexOf('tbl:')===0){
     const one=_boardsSelOne();
     if(!one||one.type!=='table')return;
