@@ -1502,7 +1502,9 @@ module.exports=function(){
     const acts=run(`_boardsRailItems().map(i=>i.act||'|').join(' ')`);
     ['add:text','add:link','add:todo','add:board','add:column','line']
       .forEach(a=>s.ok('the main group keeps '+a,acts.indexOf(a)>-1));
-    ['add:image','file'].forEach(a=>s.ok('the media group keeps '+a,acts.indexOf(a)>-1));
+    // 'imagepanel', not 'add:image' — the Image tool opens the add-image
+    // panel (search + upload) rather than going straight to a file picker.
+    ['imagepanel','file'].forEach(a=>s.ok('the media group keeps '+a,acts.indexOf(a)>-1));
     s.ok('and the overflow button',acts.indexOf('more-tools')>-1);
     ['add:heading','add:table','add:frame'].forEach(a=>
       s.ok(a+' folds away behind it',acts.indexOf(a)<0));
@@ -1512,6 +1514,47 @@ module.exports=function(){
     s.ok('no Trash at the foot, deliberately',acts.indexOf('trash')<0);
     s.eq('the overflow offers exactly what was folded away',
       run(`_BOARDS_RAIL_OVERFLOW.map(i=>i.act).join(',')`),'add:heading,add:table,add:frame');
+
+    s.section('the add-image panel — upload always, search only if switched on');
+    boot();
+    run(`_editBoard.title='Winter Drop fleece';
+      _editCards=[{id:'a',type:'text',x:0,y:0,w:100,h:100,text:'cotton drill fleece swatch'},
+                  {id:'b',type:'text',x:0,y:0,w:100,h:100,text:'fleece hoodie reference'}]`);
+    const kws=run(`_boardsImgKeywords()`);
+    s.ok('keywords are derived from the board itself',kws.indexOf('fleece')>-1,kws.join(','));
+    s.ok('the board title feeds them too',kws.indexOf('winter')>-1);
+    s.ok('and nothing is stored to keep in step',
+      run(`JSON.stringify(_editBoard).indexOf('keyword')<0`));
+    s.ok('stop-words and bare numbers are dropped',
+      run(`_boardsImgKeywords().every(w=>['the','and','note','card','board'].indexOf(w)<0&&!/^\\d+$/.test(w))`));
+    s.ok('and it is capped, not a word cloud',run(`_boardsImgKeywords().length<=6`));
+
+    s.section('a search that is not configured is not an error');
+    run(`_boardsImgPanelState={configured:false,hint:'Set PEXELS_API_KEY',photos:[]}`);
+    const offHtml=run(`_boardsImgPanelHTML()`);
+    s.ok('upload is still offered',/Upload your own/.test(offHtml));
+    s.ok('and it says so plainly rather than failing red',
+      /not switched on/.test(offHtml)&&/Upload still works/.test(offHtml));
+    run(`_boardsImgPanelState={configured:true,error:'Search provider returned 429',photos:[]}`);
+    s.ok('a real provider failure names itself',
+      /returned 429/.test(run(`_boardsImgPanelHTML()`)));
+    run(`_boardsImgPanelState={configured:true,photos:[]}`);
+    s.ok('and no results is its own message',/Try another word/.test(run(`_boardsImgPanelHTML()`)));
+
+    s.section('a stock result is escaped like every other outside string');
+    run(`_boardsImgPanelState={configured:true,photos:[
+      {id:'1',thumb:'https://x.test/t.jpg',full:'https://x.test/f.jpg',
+       alt:'<img src=x onerror=alert(1)>',credit:'"><script>bad()</script>'}]}`);
+    const stockHtml=run(`_boardsImgPanelHTML()`);
+    // What matters is that nothing can OPEN a tag or CLOSE an attribute —
+    // the literal words surviving escaped is harmless and expected.
+    s.ok('no tag can be opened',stockHtml.indexOf('<img src=x')<0
+      &&stockHtml.indexOf('<script>')<0);
+    s.ok('and no attribute can be closed early',
+      stockHtml.indexOf('title="<')<0&&stockHtml.indexOf('"><script')<0);
+    s.ok('the dangerous characters are entities instead',
+      /&lt;img src=x/.test(stockHtml)&&/&quot;&gt;&lt;script&gt;/.test(stockHtml));
+    s.ok('but the picture is still offered',/board-img-hit/.test(stockHtml));
 
     s.section('drag-to-place — click-to-place is unchanged');
     // The spec's single-click-then-click-to-place is NOT built: a browser

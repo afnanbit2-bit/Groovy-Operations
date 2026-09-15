@@ -1744,6 +1744,47 @@ the three lists, and **drag-to-place**.
   (Stage 1) — so a Trash here would be a second Delete button pretending to
   be a safety net.
 
+**M7 — the add-image panel (§3).** A popover (`_boardsOpenSheet`), not a
+rail swap — see M6's correction. Two halves, and they are **not equally
+trustworthy**, which the panel itself says.
+
+- **The provider key lives in `netlify/functions/image-search.js`**, in
+  `process.env`, never in client code. `js/*.js` is a public static asset;
+  a Pexels key pasted into `js/boards.js` would be a published key. A leaked
+  search key is not a data breach — which is exactly why it is tempting to
+  shortcut — but it still burns someone else's quota and still breaks the
+  rule the rest of this repo holds, so it gets no exception for being cheap.
+- **"Not configured" is a first-class answer.** With no `PEXELS_API_KEY` the
+  function returns `200 {configured:false}` and the panel shows upload only,
+  because a red error for a feature nobody switched on reads as a bug.
+  **To enable: Netlify → Site settings → Environment variables →
+  `PEXELS_API_KEY`**, a free key from pexels.com/api.
+- **UNVERIFIED AGAINST THE LIVE API.** The sandbox cannot reach
+  `api.pexels.com`, `api.openverse.org` or `api.unsplash.com` — all three
+  refused at the egress proxy, checked. The request shape and response
+  mapping are written from the documented API and have **not** been
+  exercised. Treat the first real call as the test.
+- **Keyword chips are DERIVED from the board's own words** (`_boardsImgKeywords`
+  over `_boardsCardText` plus the title, stop-worded, capped at six).
+  Nothing stored, nothing to keep in step — the same discipline as the label
+  library and frame membership.
+- **Picking a stock photo UPLOADS it to Cloudinary rather than storing the
+  remote URL.** A remote URL would make the card depend on a third party
+  forever and would break the PNG/PDF export the first time that host does
+  not send CORS headers — the exporter draws with `crossOrigin` and a
+  tainted canvas refuses `toBlob` outright. Re-uploading makes a picked
+  photo indistinguishable from one off your own disk. Cloudinary takes a
+  remote URL as `file` on an unsigned upload, so it is one request and does
+  not depend on the photo host allowing a cross-origin fetch. **If it fails
+  the card is not created and the failure is said out loud** — a silently
+  fragile card is worse than no card.
+- **Upload lands on the CANVAS, never in an Unsorted holding area** — the
+  one thing the spec's build note explicitly asked us to do differently.
+- Found while building: `_boardsImgPanelRepaint` first used
+  `getElementById('board-sheet-body')`, but **`.board-sheet-body` is a
+  CLASS**. It fails silently and the panel never repaints — exactly the
+  dead-button shape this module keeps producing. `querySelector` now.
+
 **Still unmeasured, and the honest way to get it:** every motion timing in
 the study is eyeballed. Real durations and easings need DevTools' Animations
 panel on the live product, or a 60fps screen recording stepped through. **No

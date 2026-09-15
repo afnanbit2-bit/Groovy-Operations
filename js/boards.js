@@ -3768,7 +3768,7 @@ const _BOARDS_RAIL_OVERFLOW=[
   {act:'add:frame',label:'Frame',icon:'frame',drag:true}
 ];
 const _BOARDS_RAIL_MEDIA=[
-  {act:'add:image',label:'Image',icon:'image'},
+  {act:'imagepanel',label:'Image',icon:'image'},
   {act:'file',label:'File',icon:'file'}
 ];
 function _boardsRailItems(){
@@ -5183,6 +5183,162 @@ function _boardsCellFxItems(){
    dismiss behaviour, which is the rule the rail and the old selection bar
    broke before they were merged. Anchored beside the button, which is what
    the browser study observed the real one doing. */
+/* ── The add-image panel (spec §3) ─────────────────────────────────
+   A POPOVER anchored to the button, not a rail swap. The spec says the
+   media tools "swap the rail for a full context panel" with a back-arrow at
+   the rail top; a browser study of the real product found the rail stays
+   intact and the panel opens beside it, toggled by the same button. The
+   back-arrow belongs to the SELECTION rail — the spec conflated the two.
+
+   Two halves, per the spec's own build note: a search provider and local
+   upload. They are NOT equally trustworthy here and the panel says so.
+
+   Search goes through netlify/functions/image-search.js so the provider key
+   stays in process.env — js/*.js is a public static asset, and a key pasted
+   here would be a published key. With no key set the function answers
+   {configured:false} and this panel shows upload only, because a red error
+   for a feature nobody has switched on reads as a bug.
+
+   UPLOAD LANDS ON THE CANVAS, never in an Unsorted holding area — the one
+   thing the spec's build note explicitly asked us to do differently from
+   Milanote. */
+let _boardsImgPanelQ='';
+let _boardsImgPanelState=null;   // null | 'loading' | {configured,photos,error}
+// The keyword chips the spec describes as "auto-derived from the board".
+// Derived, never stored: the board's own words, longest first, so a board
+// about fleece suggests fleece. No network, no history, nothing to keep in
+// step — the same discipline as the label library and frame membership.
+const _BOARDS_IMG_STOPWORDS=('the a an and or of to in on for with is are was'+
+  ' be by at from this that it as new untitled board note card').split(' ');
+function _boardsImgKeywords(){
+  const seen={};
+  (_editCards||[]).forEach(c=>{
+    _boardsCardText(c).split(/[^a-z0-9]+/).forEach(w=>{
+      if(w.length<4||w.length>18)return;
+      if(_BOARDS_IMG_STOPWORDS.indexOf(w)>-1)return;
+      if(/^\d+$/.test(w))return;
+      seen[w]=(seen[w]||0)+1;
+    });
+  });
+  const title=String((_editBoard&&_editBoard.title)||'').toLowerCase()
+    .split(/[^a-z0-9]+/).filter(w=>w.length>3&&_BOARDS_IMG_STOPWORDS.indexOf(w)<0);
+  const words=Object.keys(seen).sort((a,b)=>seen[b]-seen[a]||b.length-a.length);
+  const out=[];
+  title.concat(words).forEach(w=>{if(out.length<6&&out.indexOf(w)<0)out.push(w);});
+  return out;
+}
+window.boardsOpenImagePanel=function(){
+  if(!_boardsCanEdit(_editBoard))return;
+  _boardsImgPanelQ='';_boardsImgPanelState=null;
+  _boardsOpenSheet('Add image',_boardsImgPanelHTML());
+  _boardsImgPanelSearch('');
+};
+function _boardsImgPanelHTML(){
+  const st=_boardsImgPanelState;
+  const kw=_boardsImgKeywords();
+  let grid='';
+  if(st==='loading')grid='<div class="board-img-note">Searching…</div>';
+  else if(st&&st.configured===false)
+    grid='<div class="board-img-note">Image search is not switched on for this site yet.'
+        +' Upload still works.<br><span class="board-img-dim">'+_boardsEsc(st.hint||'')+'</span></div>';
+  else if(st&&st.error)
+    grid='<div class="board-img-note">'+_boardsEsc(st.error)+' — try again, or upload instead.</div>';
+  else if(st&&st.photos&&st.photos.length)
+    grid='<div class="board-img-grid">'+st.photos.map((ph,i)=>
+      `<button class="board-img-hit" onclick="window.boardsPickStockImage(${i})" title="${_boardsEsc(ph.alt||'')}">`
+      +`<img src="${_boardsEsc(ph.thumb)}" alt="" loading="lazy" draggable="false">`
+      +`<span class="board-img-credit">${_boardsEsc(ph.credit||'')}</span></button>`).join('')+'</div>';
+  else if(st)grid='<div class="board-img-note">No pictures for that. Try another word.</div>';
+  return`<div class="board-img-panel">
+    <button class="btn-primary board-img-upload" onclick="window.boardsCloseSheet();window.boardsAddCard('image')">Upload your own</button>
+    ${kw.length?`<div class="board-img-kw">${kw.map(w=>
+      `<button class="board-img-chip" onclick="window.boardsImgSearchFor('${_boardsEsc(w)}')">${_boardsEsc(w)}</button>`
+    ).join('')}</div>`:''}
+    <input type="text" class="board-img-q" id="board-img-q" placeholder="Search images…"
+      value="${_boardsEsc(_boardsImgPanelQ)}"
+      oninput="window.boardsImgQInput(this.value)">
+    ${grid}
+  </div>`;
+}
+function _boardsImgPanelRepaint(){
+  // .board-sheet-body is a CLASS, not an id — getElementById here fails
+  // silently and the panel never repaints, which is exactly the kind of
+  // dead-button bug this module keeps producing.
+  const host=document.querySelector&&document.querySelector('.board-sheet-body');
+  if(!host)return;
+  host.innerHTML=_boardsImgPanelHTML();
+  // Same refocus-after-rerender pattern every search box in this app uses.
+  const q=document.getElementById('board-img-q');
+  if(q&&q.focus){try{q.focus();if(q.setSelectionRange)q.setSelectionRange(9999,9999);}catch(e){}}
+}
+let _boardsImgQTimer=null;
+window.boardsImgQInput=function(v){
+  _boardsImgPanelQ=v;
+  clearTimeout(_boardsImgQTimer);
+  _boardsImgQTimer=setTimeout(()=>_boardsImgPanelSearch(v),300);
+};
+window.boardsImgSearchFor=function(w){
+  _boardsImgPanelQ=w;
+  _boardsImgPanelSearch(w);
+};
+async function _boardsImgPanelSearch(q){
+  _boardsImgPanelState=String(q||'').trim()?'loading':null;
+  _boardsImgPanelRepaint();
+  if(!String(q||'').trim()){
+    // An empty box still asks once, so "not configured" is said up front
+    // rather than only after someone types and waits.
+    try{
+      const r=await fetch('/.netlify/functions/image-search?q=');
+      const d=await r.json();
+      if(d&&d.configured===false){_boardsImgPanelState=d;_boardsImgPanelRepaint();}
+    }catch(e){}
+    return;
+  }
+  try{
+    const r=await fetch('/.netlify/functions/image-search?q='+encodeURIComponent(q));
+    _boardsImgPanelState=await r.json();
+  }catch(e){
+    _boardsImgPanelState={configured:true,error:'Could not reach the search',photos:[]};
+  }
+  _boardsImgPanelRepaint();
+}
+/* Picking a stock photo UPLOADS IT, rather than storing the remote URL.
+
+   A remote URL would make the card depend on a third party forever, and it
+   would break the PNG/PDF export the first time that host does not send
+   CORS headers — the exporter draws every image with crossOrigin and a
+   tainted canvas refuses toBlob outright. Re-uploading makes a picked photo
+   indistinguishable from one you chose off your own disk: same Cloudinary
+   URL, same sized derivatives, same export behaviour.
+
+   Cloudinary takes a remote URL as `file` on an unsigned upload, so this is
+   one request and does not depend on the photo host allowing a cross-origin
+   fetch. If it fails the card is NOT created and the failure is said out
+   loud — a silently fragile card is worse than no card. */
+window.boardsPickStockImage=async function(i){
+  const st=_boardsImgPanelState;
+  const ph=st&&st.photos&&st.photos[i];
+  if(!ph||!_boardsCanEdit(_editBoard))return;
+  window.boardsCloseSheet();
+  showToast('Adding picture…');
+  try{
+    const fd=new FormData();
+    fd.append('file',ph.full);
+    fd.append('upload_preset','groovy-ops');
+    const r=await fetch('https://api.cloudinary.com/v1_1/deww4lpym/auto/upload',{method:'POST',body:fd});
+    const d=await r.json();
+    if(!d.secure_url)throw new Error((d.error&&d.error.message)||'Upload failed');
+    _boardsPushUndo();
+    const card=_boardsNewCard('image');
+    card.imageUrl=d.secure_url;
+    if(ph.credit)card.caption='Photo: '+ph.credit;
+    _editCards.push(card);
+    _boardsRenderCanvasAndWire();
+    _boardsSaveNow();
+  }catch(e){
+    showToast('Could not add that picture: '+((e&&e.message)||'upload failed'),true);
+  }
+};
 window.boardsMoreTools=function(){
   if(!_boardsCanEdit(_editBoard))return;
   const items=_BOARDS_RAIL_OVERFLOW.map(it=>({act:it.act,label:it.label}));
@@ -7644,6 +7800,7 @@ function _boardsCtxRun(act){
   if(act.indexOf('ln:')===0){_boardsConnAction(act.slice(3));return;}
   if(act.indexOf('cellbg:')===0){window.boardsCellColor(act.slice(7));return;}
   if(act==='more-tools'){window.boardsMoreTools();return;}
+  if(act==='imagepanel'){window.boardsOpenImagePanel();return;}
   if(act.indexOf('cellfx:')===0){
     const w=act.slice(7);
     if(w==='__help')window.boardsCellFormulaHelp();
