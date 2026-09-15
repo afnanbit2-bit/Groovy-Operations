@@ -1453,6 +1453,91 @@ module.exports=function(){
     s.ok('the card reserves the band height so a new row is never clipped',
       run(`_boardsTableMinH(_editCards[0])>=26+20+2*28+26`));
 
+    s.section('nothing written to Firestore may nest an array in an array');
+    // Firestore refuses {rows:[['a','b']]} outright — "Nested arrays are
+    // not supported" — so every board carrying a table failed to save from
+    // the day the table card shipped. This checks the RULE, not one field,
+    // so a future array-of-arrays anywhere on a card fails here first.
+    boot();
+    run(`_editCards=[
+      {id:'t',type:'table',x:0,y:0,w:360,h:200,head:false,
+       rows:[['Fabric','Qty'],[{v:'45000',t:'currency'},'120']]},
+      {id:'n',type:'text',x:0,y:0,w:100,h:100,text:'hi',
+       labels:[{t:'urgent',c:'red'}],reactions:{'👍':['u1','u2']}}
+    ]`);
+    const nested=x=>{
+      if(Array.isArray(x))return x.some(v=>Array.isArray(v)||nested(v));
+      if(x&&typeof x==='object')return Object.keys(x).some(k=>nested(x[k]));
+      return false;
+    };
+    s.ok('a table with cells is refused by Firestore before this fix',
+      nested(JSON.parse(run(`JSON.stringify(_editCards)`))));
+    s.ok('and the saved form has no nested array anywhere',
+      !nested(JSON.parse(run(`JSON.stringify(_boardsCardsForSave())`))));
+    s.ok('reactions (an object holding arrays) are untouched — they were always legal',
+      run(`JSON.stringify(_boardsCardsForSave()[1].reactions)`)==='{"👍":["u1","u2"]}');
+
+    s.section('the wire form round-trips, and both directions are idempotent');
+    const wire=run(`JSON.stringify(_boardsCardsForSave()[0].rows)`);
+    s.ok('each row becomes an object holding its cells',/^\[\{"c":\[/.test(wire),wire.slice(0,30));
+    s.eq('decoding gives back exactly what was in memory',
+      run(`JSON.stringify(_boardsDecodeCards(_boardsCardsForSave())[0].rows)`),
+      run(`JSON.stringify(_editCards[0].rows)`));
+    s.eq('encoding twice changes nothing',
+      run(`JSON.stringify(_boardsEncodeRows(_boardsEncodeRows(_boardsCardsForSave()[0])))`),
+      run(`JSON.stringify(_boardsCardsForSave()[0])`));
+    s.eq('decoding twice changes nothing',
+      run(`JSON.stringify(_boardsDecodeCard(_boardsDecodeCard(_boardsCardsForSave()[0])))`),
+      run(`JSON.stringify(_editCards[0])`));
+    s.ok('a board written before this — plain nested rows — still decodes',
+      run(`JSON.stringify(_boardsDecodeCard({type:'table',rows:[['a','b']]}).rows)`)==='[["a","b"]]');
+    s.ok('and a malformed row decodes to an empty one rather than throwing',
+      run(`JSON.stringify(_boardsDecodeCard({type:'table',rows:[{},null]}).rows)`)==='[[],[]]');
+    s.ok('a non-table card is passed straight through',
+      run(`_boardsEncodeRows(_editCards[1])===_editCards[1]`));
+
+    s.section('a cell stops pointerdown, or it can never be edited');
+    // boardsCardDragStart calls setPointerCapture on the card body, and a
+    // captured pointer RETARGETS the following click and dblclick to the
+    // capturing element. A note survives that because its ondblclick is on
+    // the very element carrying the drag handler; a cell's is on a
+    // DESCENDANT, so the cell handler never ran and the dblclick bubbled to
+    // the stage — double-clicking a table spawned a stray note.
+    boot();
+    const cellHtml=run(`_boardCardHTML(_editCards[0],true)`);
+    const tds=cellHtml.match(/<t[dh] id="board-td-[^>]*>/g)||[];
+    s.ok('every data cell carries the guard',
+      tds.length>0&&tds.every(t=>t.indexOf('onpointerdown="event.stopPropagation()"')>-1),
+      tds.length+' cells');
+    s.ok('and still carries the handler that needs it',
+      tds.every(t=>/ondblclick|boardsCellToggle/.test(t)));
+    // The A/B/C band and the row gutter are chrome, not data — they keep the
+    // drag, so a table can still be grabbed by something other than its header.
+    const coords=cellHtml.match(/<td class="board-coord[^>]*>/g)||[];
+    s.ok('the coordinate chrome deliberately does NOT stop it',
+      coords.length>0&&coords.every(t=>t.indexOf('onpointerdown')<0),coords.length+' coords');
+
+    s.section('Escape and clicking away leave cell mode');
+    // Escape used to be gated on _boardsEditingEl, but a cell focused by
+    // RIGHT-CLICK has focus without edit mode, so it fell through and the
+    // ring and the cell rail stayed up with no way out but Done.
+    boot();
+    // Isolated deliberately: with a card selected, line 893's Escape clears
+    // the selection and _boardsSetSelection drops the focus with it, so
+    // that path proves nothing about the gate. An EMPTY selection is the
+    // only way to exercise the gate on its own.
+    run(`currentPage='board-canvas';_boardsEditingEl=null;_boardsSelection=new Set();
+         _boardsConnSel=null;_boardsCellFocus={id:'t',r:1,i:1};
+         _boardsOnKeydown({key:'Escape',preventDefault(){}})`);
+    s.ok('Escape clears a focus that was never in edit mode',run(`_boardsCellFocus===null`));
+    run(`_boardsSelection=new Set(['t']);_boardsCellFocus={id:'t',r:1,i:1};
+         _boardsOnKeydown({key:'Escape',preventDefault(){}})`);
+    s.ok('and with the table selected too',run(`_boardsCellFocus===null`));
+    run(`_boardsCellFocus={id:'t',r:1,i:1};_boardsSetSelection([])`);
+    s.ok('and clearing the selection takes the cell with it',run(`_boardsCellFocus===null`));
+    run(`_boardsCellFocus={id:'t',r:1,i:1};_boardsSetSelection(['t'])`);
+    s.ok('but selecting the cell\'s OWN table keeps it',run(`_boardsCellFocus!==null`));
+
     s.section('the value is always the raw string, the format is derived');
     // Switch to Text and you get your '007' back, not '7'. That is what
     // makes a type change lossless in both directions.

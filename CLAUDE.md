@@ -1590,6 +1590,50 @@ date · check`, each with a per-type format config.
   menu**, two sequential menus rather than teaching the context menu to
   nest. **Clear resets presentation only** — a type is what the cell IS.
 
+**The QA round after M4 found three things, and two were never M1–M4's
+fault at all — they had been broken since the table card shipped.**
+
+- **A cell could never be double-clicked, on any build.**
+  `boardsCardDragStart` calls `setPointerCapture` on the card body, and a
+  captured pointer **RETARGETS the following `click` and `dblclick` to the
+  capturing element**. A note survives that because its `ondblclick` sits on
+  the very element carrying the drag handler; a table cell's sits on a
+  DESCENDANT, so the cell's handler never ran and the dblclick bubbled to
+  the stage — which is why double-clicking a table **spawned a stray note**
+  instead of putting a caret in the cell. The fix is the guard the delete ✕,
+  the card-name span and the comment badge already carry:
+  `onpointerdown="event.stopPropagation()"` on every data cell. **Anything
+  clickable inside a drag surface needs it — this is the third time.** The
+  cost is that a table no longer drags by its cells; it drags by its header
+  strip and by the A/B/C band and row gutter, which are chrome and keep the
+  drag deliberately.
+- **FIRESTORE DOES NOT SUPPORT NESTED ARRAYS, and `rows` is one.**
+  `updateDoc` refused every board carrying a table outright — "Nested arrays
+  are not supported" — so **table content had never persisted**, from the
+  day the table card shipped. It surfaced as a repeating "Save failed — will
+  retry" only once tables started being used in anger. The **wire form wraps
+  each row in an object**: `[{c:['a','b']},{c:['c','d']}]`, an array of
+  OBJECTS each holding an array, which is legal. In memory rows stay the
+  plain nested array every helper reads, so the encoding lives at exactly
+  two boundaries — `_boardsCardsForSave` on the way out, and
+  `_boardsDecodeCards` at every point a document's cards come back in (board
+  open, the Stage 6 merge, the doc-export child walk, `loadBoardsData`'s
+  gallery list, the `moodBoards` mirror). Both directions are **idempotent
+  and total**, so an older board (plain nested rows) still reads and an
+  older build reading the new form renders an empty table rather than
+  corrupting one. `tests/boards.test.js` asserts the **rule**, not the
+  field: nothing `_boardsCardsForSave()` produces may nest an array in an
+  array, so a future array-of-arrays anywhere on a card fails there first.
+- **Escape and clicking away did not leave cell mode.** Escape was gated on
+  `_boardsEditingEl`, but a cell focused by RIGHT-CLICK has focus without
+  edit mode, so it fell straight through; and `_boardsSetSelection` — the
+  path a click on empty canvas takes — left the focus behind. The ring and
+  the cell rail stayed up with no way out but the Done button. **Note the
+  two fixes overlap:** line 893's Escape clears the selection, which now
+  drops the focus too, so the gate change is only exercisable with an EMPTY
+  selection. The test isolates it that way on purpose — with a card selected
+  it proves nothing.
+
 **The `+Row/+Col` strip lives OUTSIDE the scrolling element**, and it took
 three attempts. As a plain flex child it scrolled out of reach on a table
 taller than its card; made sticky, it then covered the bottom row so a

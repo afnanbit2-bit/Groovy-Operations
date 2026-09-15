@@ -843,7 +843,7 @@ function _boardsOnKeydown(e){
   // Escape is the way OUT of edit mode, so it has to be read before the
   // editable-focus bail below — otherwise it is handed to the browser and
   // does nothing at all.
-  if(_boardsEditingEl&&(e.key==='Escape'||e.key==='Esc')){
+  if((_boardsEditingEl||_boardsCellFocus)&&(e.key==='Escape'||e.key==='Esc')){
     e.preventDefault();
     const hadCell=!!_boardsCellFocus;
     _boardsCellFocus=null;
@@ -1027,7 +1027,7 @@ function _boardsDocWalk(cards,depth,subs,seen,acc){
       // pointing at another board's array.
       const save=_editCards;
       try{
-        _editCards=(child.cards||[]).slice();
+        _editCards=_boardsDecodeCards((child.cards||[]).slice());
         const order=_boardsReadingOrder();
         _boardsDocWalk(order,depth+1,subs,seen,acc);
       }finally{_editCards=save;}
@@ -1280,6 +1280,9 @@ async function loadBoardsData(){
   // where('deletedAt','==',null) query — that would need every existing
   // board to carry the field, and a board written before this shipped
   // doesn't have it at all.
+  // Gallery previews, the card count and the cross-board search all read
+  // b.cards straight off the document, so they need the in-memory shape too.
+  all.forEach(b=>{if(Array.isArray(b.cards))b.cards=_boardsDecodeCards(b.cards);});
   moodBoards=all.filter(b=>!b.deletedAt);
   _boardsTrash=all.filter(b=>!!b.deletedAt).sort((a,b)=>(b.deletedAt||0)-(a.deletedAt||0));
   boardsLoaded=true;
@@ -1720,7 +1723,7 @@ async function _boardsOpenCanvas(){
     }catch(e){m.innerHTML='<div class="empty">Could not load board: '+(e.message||e)+'</div>';return;}
   }
   _editBoard={id:b.id,title:b.title||'Untitled board',visibility:b.visibility||'personal',ownerUid:b.ownerUid,ownerName:b.ownerName,ownerUsername:b.ownerUsername,zoom:b.zoom||1,panX:b.panX||40,panY:b.panY||30,parentId:b.parentId||null,isTemplate:!!b.isTemplate,isHome:!!b.isHome,sharedWith:Array.isArray(b.sharedWith)?b.sharedWith.slice():[]};
-  _editCards=(b.cards||[]).map(c=>{const cc={...c};delete cc._uploading;return cc;});
+  _editCards=_boardsDecodeCards((b.cards||[]).map(c=>{const cc={...c};delete cc._uploading;return cc;}));
   _editConnectors=(b.connectors||[]).map(cn=>({...cn}));
   _editUnsorted=(b.unsorted||[]).map(u=>{const uu={...u};delete uu._uploading;return uu;});
   _boardsSelection=new Set();
@@ -2054,14 +2057,28 @@ function _boardCardHTML(c,canEdit){
           const st=_boardsCellStyle(cell);
           const foc=_boardsCellFocus&&_boardsCellFocus.id===c.id&&_boardsCellFocus.r===r&&_boardsCellFocus.i===i;
           const cls=`board-td${foc?' focused':''}${_boardsCellClass(cell)}`;
+          // THE CELL MUST STOP POINTERDOWN, or it can never be edited.
+          // boardsCardDragStart calls setPointerCapture on the card body,
+          // and a captured pointer RETARGETS the following click and
+          // dblclick to the capturing element. A note survives that because
+          // its ondblclick sits on the very element carrying the drag
+          // handler; a cell's sits on a descendant, so the cell's handler
+          // never ran and the dblclick bubbled to the stage — which is why
+          // double-clicking a table spawned a stray note instead of
+          // putting a caret in the cell. Same guard the delete X, the card
+          // name and the comment badge already carry.
+          // The cost: a table no longer drags by its cells. It drags by its
+          // header strip and by the A/B/C band and row gutter, which are
+          // chrome and deliberately keep the drag.
+          const stopDown=canEdit?' onpointerdown="event.stopPropagation()"':'';
           // A checkbox toggles on a SINGLE click, so it needs the guard
           // every control inside a drag surface needs: without stopping
           // pointerdown the header captures the pointer and the click is
           // retargeted away — the delete-X bug, in a new place.
           if(_boardsCellType(cell)==='check'){
-            return`<${tag} id="board-td-${c.id}-${r}-${i}" class="${cls}"${st?` style="${st}"`:''} title="${_boardsCellRef(r,i)}"${canEdit?` onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsCellToggle('${c.id}',${r},${i})"`:''}></${tag}>`;
+            return`<${tag} id="board-td-${c.id}-${r}-${i}" class="${cls}"${st?` style="${st}"`:''} title="${_boardsCellRef(r,i)}"${stopDown}${canEdit?` onclick="event.stopPropagation();window.boardsCellToggle('${c.id}',${r},${i})"`:''}></${tag}>`;
           }
-          return`<${tag} id="board-td-${c.id}-${r}-${i}" class="${cls}" contenteditable="false"${st?` style="${st}"`:''} ${canEdit?`ondblclick="window.boardsFocusCell(event,'${c.id}',${r},${i})"`:''} oninput="window.boardsTableInput('${c.id}',${r},${i},this)"></${tag}>`;
+          return`<${tag} id="board-td-${c.id}-${r}-${i}" class="${cls}" contenteditable="false"${st?` style="${st}"`:''}${stopDown} ${canEdit?`ondblclick="window.boardsFocusCell(event,'${c.id}',${r},${i})"`:''} oninput="window.boardsTableInput('${c.id}',${r},${i},this)"></${tag}>`;
         }).join('')}</tr>`).join('')}
       </table>
       </div>
@@ -3615,6 +3632,13 @@ function _boardsSetSelection(ids){
   if(ids&&ids.length&&_boardsConnSel!==null){_boardsConnSel=null;_boardsDrawConnectors();}
   else if(_boardsConnSel!==null&&(!ids||!ids.length)){_boardsConnSel=null;_boardsDrawConnectors();}
   _boardsSelection=new Set(ids);
+  // A focused cell belongs to a selected table. Clicking empty canvas
+  // clears the selection through here, and leaving the focus behind left
+  // the ring and the cell rail up with no way out but the Done button.
+  if(_boardsCellFocus&&!_boardsSelection.has(_boardsCellFocus.id)){
+    _boardsCellFocus=null;
+    _boardsEndEdit();
+  }
   _boardsPaintSelection();
 }
 function _boardsSelectCard(id,additive){
@@ -5268,7 +5292,7 @@ window.boardsAddCard=function(type){
 function _boardsSyncLocalCards(){
   if(!_editBoard)return;
   const idx=moodBoards.findIndex(b=>b.id===_editBoard.id);
-  if(idx>-1)moodBoards[idx]={...moodBoards[idx],cards:_boardsCardsForSave()};
+  if(idx>-1)moodBoards[idx]={...moodBoards[idx],cards:_boardsDecodeCards(_boardsCardsForSave())};
 }
 window.boardsDeleteCard=function(id){
   const c=_editCards.find(x=>x.id===id);
@@ -5693,11 +5717,44 @@ function _boardsWireMinimap(){
 // Firestore — a save that fires while files are still uploading would
 // otherwise persist `_uploading:true` and the card would come back stuck
 // on "Uploading…" forever.
+/* FIRESTORE DOES NOT SUPPORT NESTED ARRAYS, and a table's rows are one.
+   `{rows:[['a','b'],['c','d']]}` is refused outright with "Nested arrays
+   are not supported", so every board carrying a table failed to save from
+   the day the table card shipped — reported as a repeating
+   "Save failed — will retry". Nothing about it was specific to cell types;
+   it has been there the whole time and only surfaced when tables started
+   being used in anger.
+
+   The wire form wraps each row in an object: [{c:['a','b']},{c:['c','d']}].
+   An array of OBJECTS each holding an array is legal. In memory rows stay
+   the plain nested array every helper in this file reads, so the encoding
+   lives at exactly two boundaries — here on the way out, and
+   _boardsDecodeCards wherever a document's cards come back in.
+
+   Both directions are IDEMPOTENT and total, so a card that has been
+   through either twice is unchanged, and a board written by an older
+   build (plain nested rows, never actually persisted) still reads. An
+   older build reading the new form sees `rows` as an array of objects,
+   fails `Array.isArray(row)` and renders an empty table — degraded, never
+   corrupted. */
+function _boardsEncodeRows(c){
+  if(!c||c.type!=='table'||!Array.isArray(c.rows))return c;
+  if(!c.rows.some(Array.isArray))return c;                 // already encoded
+  return{...c,rows:c.rows.map(r=>Array.isArray(r)?{c:r}:r)};
+}
+function _boardsDecodeCard(c){
+  if(!c||c.type!=='table'||!Array.isArray(c.rows))return c;
+  if(!c.rows.some(r=>r&&!Array.isArray(r)&&typeof r==='object'))return c;
+  return{...c,rows:c.rows.map(r=>Array.isArray(r)?r:((r&&Array.isArray(r.c))?r.c:[]))};
+}
+function _boardsDecodeCards(arr){
+  return (Array.isArray(arr)?arr:[]).map(_boardsDecodeCard);
+}
 function _boardsCardsForSave(){
   return _editCards.map(c=>{
     const out={};
     Object.keys(c).forEach(k=>{if(k.charAt(0)!=='_')out[k]=c[k];});
-    return out;
+    return _boardsEncodeRows(out);
   });
 }
 // The board shows NOTHING while saving. A progress indicator on an
@@ -6683,7 +6740,9 @@ function _boardsApplyRemote(data){
   _editCards.forEach(lc=>{if(!remoteById[lc.id]&&changed.has(lc.id))out.push(lc);});
   // Drop base entries for cards the server no longer has and we didn't touch.
   Object.keys(_boardsBase).forEach(id=>{if(!remoteById[id]&&!changed.has(id))delete _boardsBase[id];});
-  _editCards=out;
+  // The merge keeps _boardsBase in the WIRE form (it is compared against
+  // _boardsCardsForSave output), so only what lands in memory is decoded.
+  _editCards=_boardsDecodeCards(out);
   if(!_boardsConnDirty()){
     _editConnectors=(data.connectors||[]).map(c=>({...c}));
     _boardsConnEnsureIds();
