@@ -2000,5 +2000,128 @@ module.exports=function(){
     s.ok('and it is drawn',/board-cap-t/.test(run(`_boardCardHTML(_editCards[0],true)`)));
   }
 
+  // ── M8: no Trash, so every delete says it is undoable ─────────────────
+  // The spec's build note asks for a recoverable Trash. This file declined
+  // it twice on purpose (Stage 1 for cards, again for lines) because Ctrl+Z
+  // already covers them — and that is only defensible if the keystroke is
+  // discoverable. These assertions are the thing that keeps it so: a delete
+  // path that stops naming the undo is a delete path with no safety net a
+  // person can find.
+  {
+    const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    const {run,state}=app;
+    const boot=()=>{
+      state.toasts.length=0;
+      run(`_editBoard={id:'b1',title:'B',ownerUid:'u1',visibility:'personal'};
+           _editCards=[
+             {id:'n',type:'text',text:'note',x:0,y:0,w:170,h:100},
+             {id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/a.jpg',x:200,y:0,w:170,h:100},
+             {id:'t',type:'table',rows:[['A']],x:400,y:0,w:240,h:140}
+           ];
+           _editConnectors=[{id:'L',from:'n',to:'p'}];
+           _boardsSelection=new Set();_boardsConnSel=null;`);
+    };
+
+    s.section('every card type has a noun, so no toast reads "Card deleted"');
+    // The delete toast is the only place these strings surface, and a type
+    // missing from the map degrades to the generic word silently.
+    [['text','Note'],['todo','To-do'],['board','Board link'],['frame','Frame'],
+     ['column','Column'],['table','Table'],['heading','Heading'],
+     ['image','Image'],['file','File'],['link','Link']].forEach(([t,n])=>{
+      s.eq(t+' → '+n,run(`_boardsCardNoun({type:'${t}'})`),n);
+    });
+    s.eq('an unknown type still says something',run(`_boardsCardNoun({type:'zzz'})`),'Card');
+    s.eq('and a missing card does not throw',run(`_boardsCardNoun(null)`),'Card');
+
+    s.section('deleting a card names what went and how to get it back');
+    boot();
+    run(`window.boardsDeleteCard('n')`);
+    s.ok('the toast names the card',/Note deleted/.test(state.toasts.join(' ')),state.toasts.join(' | '));
+    s.ok('and names the keystroke',/Ctrl\+Z/.test(state.toasts.join(' ')));
+    s.ok('an undo entry really is there to use',run(`_boardsUndo.length>0`));
+    run(`window.boardsUndoAction()`);
+    s.eq('and it brings the card back',run(`_editCards.filter(c=>c.id==='n').length`),1);
+
+    s.section('a table says table, not note');
+    // The card header's own type label had this bug: no `table` branch, so
+    // a table introduced itself as a NOTE. Same map, same risk.
+    boot();
+    run(`window.boardsDeleteCard('t')`);
+    s.ok('Table deleted',/Table deleted/.test(state.toasts.join(' ')),state.toasts.join(' | '));
+
+    s.section('exactly ONE toast fires per delete');
+    // The column-released and sub-board-link branches are chained with
+    // `else`; unchained, a column delete would say both "kept on the board"
+    // and "Column deleted — press Ctrl+Z".
+    boot();
+    run(`_editCards.push({id:'col',type:'column',x:700,y:0,w:256,h:120,title:'C'},
+                         {id:'k',type:'text',text:'in',x:700,y:30,w:256,h:100,columnId:'col'});
+         _boardsLayoutColumns()`);
+    state.toasts.length=0;
+    run(`window.boardsDeleteCard('col')`);
+    s.eq('one toast, not two',state.toasts.length,1,state.toasts.join(' | '));
+    s.ok('and it is the one about the kept card',/kept on the board/.test(state.toasts[0]));
+    s.ok('not the undo toast',!/Ctrl\+Z/.test(state.toasts[0]));
+
+    s.section('a sub-board link says where the board went, not Ctrl+Z');
+    boot();
+    run(`_editCards.push({id:'sb',type:'board',boardId:'b2',boardTitle:'Child',x:900,y:0,w:170,h:104})`);
+    state.toasts.length=0;
+    run(`window.boardsDeleteCard('sb')`);
+    s.eq('still one toast',state.toasts.length,1,state.toasts.join(' | '));
+    s.ok('naming the boards list',/boards list/.test(state.toasts[0]));
+
+    s.section('a bulk delete counts what it removed');
+    boot();
+    run(`_boardsSetSelection(['n','p']);window.boardsDeleteSelection()`);
+    s.ok('plural and countable',/2 cards deleted/.test(state.toasts.join(' ')),state.toasts.join(' | '));
+    s.ok('with the keystroke',/Ctrl\+Z/.test(state.toasts.join(' ')));
+    boot();
+    run(`_boardsSetSelection(['n']);window.boardsDeleteSelection()`);
+    s.ok('singular reads as singular',/1 card deleted/.test(state.toasts.join(' ')),state.toasts.join(' | '));
+
+    s.section('deleting a line says so too');
+    boot();
+    run(`window.boardsDeleteConnector('L')`);
+    s.ok('Line deleted — Ctrl+Z',/Line deleted.*Ctrl\+Z/.test(state.toasts.join(' ')),state.toasts.join(' | '));
+    run(`window.boardsUndoAction()`);
+    s.eq('and undo restores it',run(`_editConnectors.length`),1);
+
+    s.section('the confirmed destructive action states it in the CONFIRM');
+    // boardsDeleteColumnAndCards is the one delete that asks first, so the
+    // undo belongs in the question, not in a toast after the fact.
+    boot();
+    run(`_editCards.push({id:'col',type:'column',x:700,y:0,w:256,h:120,title:'C'},
+                         {id:'k',type:'text',text:'in',x:700,y:30,w:256,h:100,columnId:'col'});
+         _boardsLayoutColumns();_boardsSetSelection(['col'])`);
+    state.confirms.length=0;
+    run(`window.boardsDeleteColumnAndCards()`);
+    s.ok('the question names Ctrl+Z',/Ctrl\+Z/.test(state.confirms.join(' ')),state.confirms.join(' | '));
+
+    s.section('the tray is honest that it is NOT undoable');
+    // _boardsPushUndo snapshots cards and connectors only — the Unsorted
+    // tray is saved in `head` and is genuinely not recoverable. The confirm
+    // says exactly that, and must keep saying it.
+    boot();
+    run(`_editUnsorted=[{id:'u1',kind:'text',text:'x'}]`);
+    state.confirms.length=0;
+    run(`window.boardsTrayRemove(0)`);
+    s.ok('it says it cannot be undone',/cannot be undone/i.test(state.confirms.join(' ')),state.confirms.join(' | '));
+    s.ok('and does not promise Ctrl+Z',!/Ctrl\+Z/.test(state.confirms.join(' ')));
+    s.eq('the item really is gone',run(`_editUnsorted.length`),0);
+
+    s.section('provenance says "you" for your own card');
+    boot();
+    run(`_editCards[0].by='Afnan';_editCards[0].at=Date.now();_boardsSetSelection(['n'])`);
+    s.ok('mine reads as you',/Added by you/.test(run(`JSON.stringify(_boardsCardCtxItems(true))`)));
+    run(`_editCards[0].by='Ammar'`);
+    const other=run(`JSON.stringify(_boardsCardCtxItems(true))`);
+    s.ok('someone else keeps their name',/Added by Ammar/.test(other));
+    s.ok('and is not called you',!/Added by you/.test(other));
+    run(`delete _editCards[0].by`);
+    s.ok('a card with no provenance shows no line',
+      !/Added by/.test(run(`JSON.stringify(_boardsCardCtxItems(true))`)));
+  }
+
   return s;
 };

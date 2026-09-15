@@ -4182,6 +4182,7 @@ window.boardsDeleteConnector=function(id){
   _boardsDrawConnectors();
   _boardsRenderRail();
   _boardsSaveDebounced();
+  _boardsUndoableToast('Line deleted');
 };
 // One setter for every line property, so the rail and the right-click menu
 // cannot drift apart on what a change actually does.
@@ -5957,13 +5958,41 @@ window.boardsDeleteCard=function(id){
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
   if(released)showToast('Column removed — '+released+' card'+(released===1?'':'s')+' kept on the board');
-  if(c&&c.type==='board'){
+  else if(c&&c.type==='board'){
     _boardsSyncLocalCards();
     showToast('Link removed — the sub-board itself is back in the boards list');
   }
+  else _boardsUndoableToast(_boardsCardNoun(c)+' deleted');
   _boardsLogBoardActivity('deleted a card');
 };
 
+/* ── Delete says it is undoable ─────────────────────────────────────
+   Spec §9's build note says deletes should go to a recoverable Trash and
+   never hard-delete by default. Afnan decided against it, and this file
+   had already decided the same thing twice: cards and lines have no trash
+   because Ctrl+Z covers them, and a second recovery system for a
+   one-keystroke-recoverable action is not worth its complexity (Stage 1,
+   and again for connectors).
+
+   That decision is only defensible if THE KEYSTROKE IS DISCOVERABLE. Until
+   now a plain delete was silent — it pushed an undo entry and said nothing
+   — so the safety net existed and nobody was told. Every delete path now
+   names what went and how to get it back. That is the whole of M8: not a
+   Trash, but the honesty a missing Trash requires.
+
+   Deliberately a toast and not a confirm: a confirm on every delete is the
+   thing that makes people stop reading confirms. */
+function _boardsCardNoun(c){
+  if(!c)return'Card';
+  const t=c.type;
+  return t==='text'?'Note':t==='todo'?'To-do':t==='board'?'Board link'
+    :t==='frame'?'Frame':t==='column'?'Column':t==='table'?'Table'
+    :t==='heading'?'Heading':t==='image'?'Image':t==='file'?'File'
+    :t==='link'?'Link':'Card';
+}
+function _boardsUndoableToast(what){
+  showToast(what+' — press Ctrl+Z to undo');
+}
 // ── Bulk actions on the selection ──────────────────────────────────────
 window.boardsDeleteSelection=function(){
   if(!_boardsCanEdit(_editBoard))return;
@@ -5990,6 +6019,7 @@ window.boardsDeleteSelection=function(){
     _boardsSyncLocalCards();
     showToast('Sub-board links removed — those boards are back in the boards list');
   }
+  else if(!released)_boardsUndoableToast(removable.length+' card'+(removable.length===1?'':'s')+' deleted');
   if(removable.length<sel.length)showToast('Kept '+(sel.length-removable.length)+' locked card'+(sel.length-removable.length===1?'':'s'));
   _boardsLogBoardActivity('deleted '+removable.length+' card'+(removable.length===1?'':'s'));
 };
@@ -8366,9 +8396,9 @@ function _boardsCardCtxItems(canEdit){
     items.push({sep:true});
     if(sel.length>1){
       // Milanote's wording for this, so anyone coming from it finds the
-      // action. There is no stored column container here on purpose
-      // (Stage 3) — stacking is the arrange-once action that gets the
-      // same tidy result.
+      // action. It builds a REAL container — see "Column is a real
+      // container"; this used to be the arrange-once `stack` and the
+      // comment here still said so long after that changed.
       items.push({act:'connectsel',label:'Connect with Lines'});
       items.push({act:'stack',label:'Group into Column'});
       items.push({act:'grid',label:'Arrange in a grid'});
@@ -8397,7 +8427,10 @@ function _boardsCardCtxItems(canEdit){
   // don't, and the line is simply omitted rather than faked).
   if(one&&one.by){
     items.push({sep:true});
-    items.push({title:'Added by '+one.by+(one.at?' · '+_boardsRelTime(one.at):'')});
+    // "you", not your own name, when it is yours — the spec's wording, and
+    // the one that reads like a person wrote it.
+    const mine=(typeof session!=='undefined'&&session&&session.name)===one.by;
+    items.push({title:'Added by '+(mine?'you':one.by)+(one.at?' · '+_boardsRelTime(one.at):'')});
   }
   return items;
 }

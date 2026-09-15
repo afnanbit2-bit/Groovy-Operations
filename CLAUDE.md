@@ -1816,6 +1816,63 @@ same day the size attribute shipped; no logic suite could have seen it**,
 and both that and the sticky strip were verified by reverting each and
 watching the check fail.
 
+### Mood Boards — M8: the object menu, and the Trash we did not build (Sept 2026)
+
+The last milestone of the Milanote spec round. §9's object menu was already
+built — Cut/Copy/Duplicate/Delete with their real shortcuts, Group into
+Column, Lock, Bring to front, Send to back, and the provenance footer. Its
+**build note** was the open question: *deletes should go to a recoverable
+Trash and never hard-delete by default.*
+
+**Afnan declined the Trash** ("keep ctrl+z, no card trash"), which matches
+what this file had already decided twice on its own — cards have no trash
+(Stage 1) and neither do connectors, because Ctrl+Z covers them and a second
+recovery system for a one-keystroke-recoverable action is not worth its
+complexity.
+
+**That decision is only defensible if the keystroke is DISCOVERABLE, and it
+was not.** `boardsDeleteCard`, `boardsDeleteSelection` and
+`boardsDeleteConnector` all called `_boardsPushUndo()` and then said
+**nothing at all**. The safety net existed and nobody was told about it —
+which, from the seat of a person who has just lost a card, is
+indistinguishable from not having one. So M8 is not a Trash; it is the
+honesty a missing Trash requires.
+
+- **Every delete names what went and how to get it back.**
+  `_boardsUndoableToast(what)` is the single phrasing
+  (`"Note deleted — press Ctrl+Z to undo"`), and `_boardsCardNoun(c)` is the
+  single type→word map so no toast reads a generic "Card deleted". The map
+  is asserted per type, because the card header's own type label had exactly
+  this bug (no `table` branch, so a table introduced itself as a NOTE).
+- **Deliberately a toast, not a confirm.** A confirm on every delete is the
+  thing that makes people stop reading confirms — and then the one that
+  matters is clicked through too.
+- **Exactly one toast fires per delete, and the chaining is what enforces
+  it.** A column delete already says "N cards kept on the board" and a
+  sub-board link already says "the board is back in the boards list"; the
+  undo toast is chained after both with `else`, and the sub-board branch
+  had to become an `else if` for the same reason. Unchained, deleting a
+  column says two contradictory things at once. `tests/boards.test.js`
+  counts the toasts rather than matching one of them — verified by
+  unchaining it and watching both cases report 2.
+- **The two deletes that are NOT a plain undo stay as they were, and both
+  are already honest.** `boardsDeleteColumnAndCards` asks first and puts
+  "Ctrl+Z undoes it." in the question, where it belongs. `boardsTrayRemove`
+  says **"This cannot be undone"** — and that is true, not a hedge:
+  `_boardsPushUndo` snapshots cards and connectors only, and the Unsorted
+  tray is saved in `head`. A test asserts the tray confirm does **not**
+  promise Ctrl+Z, so a future tidy-up can't make it lie.
+- **Provenance says "you" for your own card** — `Added by you · just now`
+  rather than your own name read back at you. Uses the bare `session` name
+  (`typeof session!=='undefined'&&session`), never `window.session`; see
+  the Labels/reactions note for why that distinction has already cost this
+  file one silent bug.
+
+Also corrected here: the comment above "Group into Column" still said there
+was deliberately no stored column container (Stage 3). That stopped being
+true when Column became a real container — a stale comment on a load-bearing
+decision is worse than none.
+
 ### Mood Boards — Home is a board (Sept 2026)
 
 Milanote has no "list of your boards" page: **home IS a board**, and your
