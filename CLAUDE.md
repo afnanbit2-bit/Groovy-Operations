@@ -1651,6 +1651,56 @@ fault at all — they had been broken since the table card shipped.**
   selection. The test isolates it that way on purpose — with a card selected
   it proves nothing.
 
+**M5 — formulas (§7).** SUM · AVERAGE · MIN · MAX · COUNT · IF, over M2's
+`B2:B4` grammar, with a hand-written tokenizer and recursive-descent parser.
+No library: this module has held the zero-new-deps line since Stage 1, and
+the grammar is small enough to read in one sitting.
+
+- **A FORMULA IS THE CELL'S VALUE, not a separate field.** `v` holds the
+  literal text `=SUM(B2:B4)`. The spec's build note proposed a `formula`
+  field; storing it in the value is better here and all three reasons fall
+  out of M4's model — the raw string is what you EDIT, so a double-click
+  already puts the formula under the caret with nothing new wired; it
+  round-trips through every export, the clipboard and the search index
+  because those already read the raw value; and it needs **no entry in
+  `_BOARDS_CELL_ATTRS`**, so the downgrade-to-a-bare-string can never throw
+  it away — the exact bug that nearly ate cell types in M4. Typing
+  `=SUM(B2:B4)` by hand also just works, which is what anyone will try.
+- **THE RESULT IS NEVER STORED.** It is computed at render from the grid as
+  it stands, so there is no cache to invalidate and no way for a stale total
+  to outlive a dependency change. The cost is a few thousand lookups on a
+  structural render; the renders that matter for feel (drag, resize) do not
+  rebuild cells at all.
+- **Nothing rerenders on a keystroke** — the caret has to stay put — so a
+  total would not move while you type into a cell it depends on.
+  `_boardsRepaintFormulas` runs from `_boardsEndEdit`, repainting every
+  formula cell in that table the moment you leave.
+- **`_boardsFxRun` never throws**, whatever it is handed. It always returns
+  `{value}` or `{err}`, so a broken formula shows `#ERR!` **in the cell**
+  rather than taking the render down with it. Fuzzed with a junk list in
+  `tests/boards.test.js`.
+- **Cycles are caught by a `seen` set of `r,i` keys threaded through every
+  reference**, so `=A1` in A1 and a two-cell loop both read `#CYCLE!`
+  instead of hanging the page.
+- **Text in a range is SKIPPED, not zero and not an error** — a column of
+  figures under a heading must still add up. `COUNT` counts numbers, not
+  cells, which is Excel's rule and the one people expect.
+- **The answer is formatted by the CELL's type**, so `=SUM(B2:B4)` in a
+  currency cell reads `Rs 45,000` like any typed number would.
+- **Arithmetic ships too, beyond what the spec asked.** `IF`'s condition
+  needs a comparison evaluator anyway, so `+ - * /`, unary minus and parens
+  came almost free — and a formula feature where `=B2*1.15` silently failed
+  would be reported as broken the same day.
+- Errors: `#REF!` (a cell or range past the edge) · `#CYCLE!` · `#NAME?`
+  (unknown function) · `#DIV/0!` · `#ERR!` (unreadable). A formula cell
+  carries a faint corner mark so a computed total is distinguishable from a
+  typed one — knowing which is which is the whole reason to trust it.
+
+**Drag-a-tool-from-the-rail onto the canvas is NOT built**, confirmed in a
+browser session: rail tools are click-only, and the canvas empty-state
+advertises double-click, file drop and paste. That is spec §1's other
+placement method and it belongs to **M6**, not a bug.
+
 **A card names its own type in its header, and the table did not.** The
 `kind` ternary (`js/boards.js`, `_boardCardHTML`) had no branch for `table`,
 so it fell through to `'Note'` — a table card labelled itself NOTE. Found in

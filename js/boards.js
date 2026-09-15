@@ -576,7 +576,7 @@ function _boardsCardText(c){
   if(Array.isArray(c.items))c.items.forEach(i=>{if(i&&i.text)parts.push(i.text);});
   if(Array.isArray(c.rows))c.rows.forEach(r=>{if(Array.isArray(r))r.forEach(v=>{
     const raw=_boardsCellVal(v);if(raw)parts.push(raw);
-    const shown=_boardsCellDisplay(v);if(shown&&shown!==raw)parts.push(shown);
+    const shown=_boardsCellDisplay(v,c);if(shown&&shown!==raw)parts.push(shown);
   });});
   if(Array.isArray(c.labels))c.labels.forEach(l=>{if(l&&l.t)parts.push(l.t);});
   return parts.join(' ').toLowerCase();
@@ -691,7 +691,23 @@ function _boardsEndEdit(){
   // every click away from a cell, and rebuilding every card and connector
   // on a 46-card board to reformat one number would be absurd.
   _boardsRepaintCell(el);
+  // A formula reads other cells, so editing one of them changes an answer
+  // somewhere else in the same table. Nothing rerenders on a keystroke (the
+  // caret has to stay put), so the recompute happens the moment you leave.
+  _boardsRepaintFormulas(el);
   _boardsSaveDebounced();
+}
+function _boardsRepaintFormulas(el){
+  if(!el||!el.id||el.id.indexOf('board-td-')!==0)return;
+  const m=/^board-td-(.+)-(\d+)-(\d+)$/.exec(el.id);
+  if(!m)return;
+  const c=_editCards.find(x=>x.id===m[1]);
+  if(!c||!Array.isArray(c.rows))return;
+  c.rows.forEach((row,r)=>row.forEach((cell,i)=>{
+    if(!_boardsIsFormula(cell))return;
+    const td=document.getElementById('board-td-'+c.id+'-'+r+'-'+i);
+    if(td&&td!==_boardsEditingEl)_boardsRepaintCell(td);
+  }));
 }
 function _boardsRepaintCell(el){
   if(!el||!el.id||el.id.indexOf('board-td-')!==0)return;
@@ -702,9 +718,9 @@ function _boardsRepaintCell(el){
   const cell=_boardsCellAt(c,parseInt(m[2],10),parseInt(m[3],10));
   if(cell===undefined)return;
   try{
-    el.textContent=_boardsCellDisplay(cell);
-    el.className='board-td'+_boardsCellClass(cell);
-    const st=_boardsCellStyle(cell);
+    el.textContent=_boardsCellDisplay(cell,c);
+    el.className='board-td'+_boardsCellClass(cell,c);
+    const st=_boardsCellStyle(cell,c);
     if(st)el.setAttribute('style',st);else el.removeAttribute('style');
   }catch(e){}
 }
@@ -974,10 +990,10 @@ function _boardsCardDoc(c){
       const rows=Array.isArray(c.rows)?c.rows:[];
       if(!rows.length)return null;
       const head=c.head!==false;
-      const md=rows.map((r,i)=>'| '+r.map(v=>_boardsCellDisplay(v).replace(/\|/g,'\\|')).join(' | ')+' |'
+      const md=rows.map((r,i)=>'| '+r.map(v=>_boardsCellDisplay(v,c).replace(/\|/g,'\\|')).join(' | ')+' |'
         +((head&&i===0)?'\n|'+r.map(()=>' --- ').join('|')+'|':'')).join('\n');
       const html='<table border="1" cellpadding="5" cellspacing="0">'+rows.map((r,i)=>
-        '<tr>'+r.map(v=>(head&&i===0)?'<th>'+esc(_boardsCellDisplay(v))+'</th>':'<td>'+esc(_boardsCellDisplay(v))+'</td>').join('')+'</tr>').join('')+'</table>';
+        '<tr>'+r.map(v=>(head&&i===0)?'<th>'+esc(_boardsCellDisplay(v,c))+'</th>':'<td>'+esc(_boardsCellDisplay(v,c))+'</td>').join('')+'</tr>').join('')+'</table>';
       return{md,html};
     }
     case'image':
@@ -1204,7 +1220,7 @@ function _boardsPresentPaint(){
       const tr=document.createElement('tr');
       row.forEach(v=>{
         const cell=document.createElement((c.head!==false&&r===0)?'th':'td');
-        cell.textContent=_boardsCellDisplay(v);
+        cell.textContent=_boardsCellDisplay(v,c);
         tr.appendChild(cell);
       });
       t.appendChild(tr);
@@ -2054,9 +2070,9 @@ function _boardCardHTML(c,canEdit){
         }</tr>
         ${rows.map((row,r)=>`<tr><td class="board-coord">${r+1}</td>${row.map((cell,i)=>{
           const tag=(c.head!==false&&r===0)?'th':'td';
-          const st=_boardsCellStyle(cell);
+          const st=_boardsCellStyle(cell,c);
           const foc=_boardsCellFocus&&_boardsCellFocus.id===c.id&&_boardsCellFocus.r===r&&_boardsCellFocus.i===i;
-          const cls=`board-td${foc?' focused':''}${_boardsCellClass(cell)}`;
+          const cls=`board-td${foc?' focused':''}${_boardsCellClass(cell,c)}`;
           // THE CELL MUST STOP POINTERDOWN, or it can never be edited.
           // boardsCardDragStart calls setPointerCapture on the card body,
           // and a captured pointer RETARGETS the following click and
@@ -2740,7 +2756,7 @@ function _boardsHydrateTextCards(){
         const td=document.getElementById('board-td-'+c.id+'-'+r+'-'+i);
         // The DISPLAY form, not the stored one — except in the cell being
         // edited right now, which must show the raw text you are editing.
-        if(td)td.textContent=(td===_boardsEditingEl)?_boardsCellVal(cell):_boardsCellDisplay(cell);
+        if(td)td.textContent=(td===_boardsEditingEl)?_boardsCellVal(cell):_boardsCellDisplay(cell,c);
       }));
     }
     if(c.type==='text'||c.type==='heading'){
@@ -3721,6 +3737,7 @@ const _BOARDS_ICONS={
   trash:'<path d="M3.5 4.5h9l-1 9.5h-7z" fill="none" stroke="currentColor"/><path d="M6 4.5V3h4v1.5M2.5 4.5h11" fill="none" stroke="currentColor"/>',
   color:'<path d="M8 1.5C5 4.5 3 6.8 3 9a5 5 0 0010 0c0-2.2-2-4.5-5-7.5z" fill="none" stroke="currentColor" stroke-width="1.3"/>',
   align:'<path d="M2.5 3.5h11M2.5 7h7M2.5 10.5h11M2.5 14h7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>',
+  formula:'<path d="M10.5 3H7.2a1.7 1.7 0 00-1.7 1.7V13M4 8h4.5M10 8l3.5 5M13.5 8L10 13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>',
   labels:'<path d="M8.5 2H14v5.5L7.5 14 2 8.5z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="11" cy="5" r="1"/>',
   reactions:'<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6.6" r=".9"/><circle cx="10" cy="6.6" r=".9"/><path d="M5.4 9.6a3.2 3.2 0 005.2 0" fill="none" stroke="currentColor" stroke-width="1.3"/>',
   more:'<circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/>',
@@ -3770,6 +3787,7 @@ function _boardsRailItems(){
       {act:'cell:size',label:'Size',icon:'heading',on:!!_boardsCellAttr(cell,'sz')},
       {act:'cell:align',label:'Align',icon:'align',on:!!_boardsCellAttr(cell,'al')},
       {act:'cell:type',label:'Type',icon:'table',on:_boardsCellType(cell)!=='auto'},
+      {act:'cell:formula',label:'Formula',icon:'formula',on:_boardsIsFormula(cell)},
       {cellSwatches:true},
       {sep:true},
       {act:'cell:row-below',label:'Add row',icon:'table'},
@@ -4374,7 +4392,233 @@ function _boardsCellFmt(cell){
 // type — thousands separators, a currency symbol, a trailing % — because
 // the stored value is raw text and a typed cell should not stop computing
 // just because someone pasted '1,200'. M5's SUM reads through this.
-function _boardsCellNum(cell){
+
+/* ── Formulas ──────────────────────────────────────────────────────
+   A FORMULA IS THE CELL'S VALUE, not a separate field: `v` holds the
+   literal text '=SUM(B2:B4)'. The spec's build note proposed a `formula`
+   field; storing it in the value is better here, and all three reasons
+   fall out of M4's model:
+
+     - The raw string is what you EDIT, so double-clicking a formula cell
+       already puts '=SUM(B2:B4)' under the caret with nothing new wired.
+     - It round-trips through every export, the clipboard and the search
+       index untouched, because those already read the raw value.
+     - It needs no entry in _BOARDS_CELL_ATTRS, so the downgrade-to-a-
+       bare-string can never throw it away — the exact bug that nearly ate
+       cell types in M4.
+
+   Typing '=SUM(B2:B4)' by hand also just works, which is the first thing
+   anyone who has used a spreadsheet will try.
+
+   THE RESULT IS NEVER STORED. It is computed at render from the grid as it
+   stands, so there is no cache to invalidate and no way for a stale total
+   to outlive a dependency change. Recomputing ~50 formulas over ~20 cells
+   each is a few thousand lookups on a structural render; the renders that
+   matter for feel (drag, resize) do not rebuild cells at all.
+
+   Written by hand rather than with a parser library — this module has held
+   the zero-new-deps line since Stage 1, and the grammar is small enough to
+   read in one sitting. */
+const _BOARDS_FX_ERR={ref:'#REF!',cycle:'#CYCLE!',err:'#ERR!',div:'#DIV/0!',name:'#NAME?'};
+const _BOARDS_FX_FNS=['SUM','AVERAGE','MIN','MAX','COUNT','IF'];
+function _boardsIsFormula(cell){ return /^\s*=/.test(_boardsCellVal(cell)); }
+
+function _boardsFxTokens(src){
+  const out=[];let i=0;
+  while(i<src.length){
+    const c=src[i];
+    if(/\s/.test(c)){i++;continue;}
+    if(/[0-9]/.test(c)||(c==='.'&&/[0-9]/.test(src[i+1]||''))){
+      let j=i;while(j<src.length&&/[0-9.]/.test(src[j]))j++;
+      const n=parseFloat(src.slice(i,j));
+      if(!isFinite(n))return null;
+      out.push({t:'num',v:n});i=j;continue;
+    }
+    if(c==='"'){
+      let j=i+1,str='';
+      while(j<src.length&&src[j]!=='"'){str+=src[j];j++;}
+      if(j>=src.length)return null;                 // unterminated string
+      out.push({t:'str',v:str});i=j+1;continue;
+    }
+    if(/[A-Za-z_]/.test(c)){
+      let j=i;while(j<src.length&&/[A-Za-z0-9_]/.test(src[j]))j++;
+      out.push({t:'name',v:src.slice(i,j)});i=j;continue;
+    }
+    const two=src.substr(i,2);
+    if(two==='>='||two==='<='||two==='<>'){out.push({t:'op',v:two});i+=2;continue;}
+    if('+-*/(),:=<>'.indexOf(c)>-1){out.push({t:'op',v:c});i++;continue;}
+    return null;                                    // character we do not know
+  }
+  return out;
+}
+// A range is only ever a function argument; it is carried as a marker so
+// that reaching arithmetic with one is an error rather than a silent NaN.
+function _boardsFxRange(cells){ return{__range:cells}; }
+function _boardsFxThrow(e){ throw{fx:e}; }
+
+/* Recursive descent. Precedence, loosest first:
+     compare   ->  add ( (>|>=|<|<=|=|<>) add )?
+     add       ->  mul ( (+|-) mul )*
+     mul       ->  unary ( (*|/) unary )*
+     unary     ->  '-'? primary
+     primary   ->  number | string | '(' compare ')'
+                 | NAME '(' args ')'            a function call
+                 | REF ':' REF                  a range
+                 | REF                          one cell               */
+function _boardsFxParser(tokens,card,seen){
+  let p=0;
+  const peek=()=>tokens[p];
+  const eat=v=>{const t=tokens[p];if(t&&t.t==='op'&&t.v===v){p++;return true;}return false;};
+  function primary(){
+    const t=tokens[p];
+    if(!t)_boardsFxThrow(_BOARDS_FX_ERR.err);
+    if(t.t==='num'){p++;return t.v;}
+    if(t.t==='str'){p++;return t.v;}
+    if(t.t==='op'&&t.v==='('){p++;const v=compare();if(!eat(')'))_boardsFxThrow(_BOARDS_FX_ERR.err);return v;}
+    if(t.t==='name'){
+      p++;
+      if(peek()&&peek().t==='op'&&peek().v==='('){
+        p++;
+        const args=[];
+        if(!(peek()&&peek().t==='op'&&peek().v===')')){
+          args.push(compare());
+          while(eat(','))args.push(compare());
+        }
+        if(!eat(')'))_boardsFxThrow(_BOARDS_FX_ERR.err);
+        return _boardsFxCall(t.v,args);
+      }
+      // A range, or a single reference.
+      if(peek()&&peek().t==='op'&&peek().v===':'){
+        const nxt=tokens[p+1];
+        if(!nxt||nxt.t!=='name')_boardsFxThrow(_BOARDS_FX_ERR.ref);
+        p+=2;
+        return _boardsFxRange(_boardsFxRangeCells(card,t.v,nxt.v,seen));
+      }
+      return _boardsFxCell(card,t.v,seen);
+    }
+    _boardsFxThrow(_BOARDS_FX_ERR.err);
+  }
+  function num(v){
+    if(v&&v.__range)_boardsFxThrow(_BOARDS_FX_ERR.err);   // a range is not a number
+    if(typeof v==='number')return v;
+    if(v==='' ||v==null)return 0;
+    const n=parseFloat(String(v).replace(/[,\s]/g,''));
+    return isFinite(n)?n:_boardsFxThrow(_BOARDS_FX_ERR.err);
+  }
+  function unary(){ if(eat('-'))return -num(unary()); if(eat('+'))return num(unary()); return primary(); }
+  function mul(){
+    let v=unary();
+    for(;;){
+      if(eat('*'))v=num(v)*num(unary());
+      else if(eat('/')){const d=num(unary());if(d===0)_boardsFxThrow(_BOARDS_FX_ERR.div);v=num(v)/d;}
+      else return v;
+    }
+  }
+  function add(){
+    let v=mul();
+    for(;;){
+      if(eat('+'))v=num(v)+num(mul());
+      else if(eat('-'))v=num(v)-num(mul());
+      else return v;
+    }
+  }
+  function compare(){
+    const a=add();
+    const t=peek();
+    if(t&&t.t==='op'&&['>','>=','<','<=','=','<>'].indexOf(t.v)>-1){
+      p++;const b=add();
+      // Numbers compare numerically, anything else as text — the least
+      // surprising rule, and the only one that works for IF(A1="ok",…).
+      const both=(typeof a==='number'&&typeof b==='number');
+      const x=both?a:String(a),y=both?b:String(b);
+      switch(t.v){
+        case'>':return x>y; case'>=':return x>=y;
+        case'<':return x<y; case'<=':return x<=y;
+        case'=':return x===y; default:return x!==y;
+      }
+    }
+    return a;
+  }
+  const value=compare();
+  if(p!==tokens.length)_boardsFxThrow(_BOARDS_FX_ERR.err);   // trailing junk
+  return value;
+}
+function _boardsFxCell(card,ref,seen){
+  const rc=_boardsRefToRC(ref);
+  if(!rc)_boardsFxThrow(_BOARDS_FX_ERR.name);
+  const cell=_boardsCellAt(card,rc.r,rc.i);
+  if(cell===undefined)_boardsFxThrow(_BOARDS_FX_ERR.ref);
+  const key=rc.r+','+rc.i;
+  if(seen.has(key))_boardsFxThrow(_BOARDS_FX_ERR.cycle);
+  if(_boardsIsFormula(cell)){
+    const next=new Set(seen);next.add(key);
+    const out=_boardsFxRun(card,_boardsCellVal(cell),next);
+    if(out.err)_boardsFxThrow(out.err);
+    return out.value;
+  }
+  const n=_boardsCellNum(cell);
+  return n===null?_boardsCellVal(cell):n;
+}
+function _boardsFxRangeCells(card,a,b,seen){
+  const ra=_boardsRefToRC(a),rb=_boardsRefToRC(b);
+  if(!ra||!rb)_boardsFxThrow(_BOARDS_FX_ERR.name);
+  const out=[];
+  const r0=Math.min(ra.r,rb.r),r1=Math.max(ra.r,rb.r);
+  const i0=Math.min(ra.i,rb.i),i1=Math.max(ra.i,rb.i);
+  // A range over a shape that no longer exists is #REF!, not a silent zero.
+  const rows=Array.isArray(card&&card.rows)?card.rows:[];
+  if(r1>=rows.length||i1>=((rows[0]||[]).length))_boardsFxThrow(_BOARDS_FX_ERR.ref);
+  for(let r=r0;r<=r1;r++)for(let i=i0;i<=i1;i++)
+    out.push(_boardsFxCell(card,_boardsCellRef(r,i),seen));
+  return out;
+}
+function _boardsFxFlat(args){
+  const out=[];
+  args.forEach(a=>{ if(a&&a.__range)a.__range.forEach(v=>out.push(v)); else out.push(a); });
+  return out;
+}
+function _boardsFxNums(args){
+  // Non-numeric cells are SKIPPED, not zero and not an error — a column of
+  // figures with a text header must still add up.
+  return _boardsFxFlat(args).filter(v=>typeof v==='number'&&isFinite(v));
+}
+function _boardsFxCall(name,args){
+  const fn=String(name||'').toUpperCase();
+  if(_BOARDS_FX_FNS.indexOf(fn)<0)_boardsFxThrow(_BOARDS_FX_ERR.name);
+  if(fn==='IF'){
+    if(args.length<2||args.length>3)_boardsFxThrow(_BOARDS_FX_ERR.err);
+    const c=args[0];
+    const truth=(typeof c==='boolean')?c:(typeof c==='number'?c!==0:String(c||'')!=='');
+    const pick=truth?args[1]:(args.length>2?args[2]:'');
+    return (pick&&pick.__range)?_boardsFxThrow(_BOARDS_FX_ERR.err):pick;
+  }
+  const ns=_boardsFxNums(args);
+  if(fn==='COUNT')return ns.length;
+  if(fn==='SUM')return ns.reduce((a,b)=>a+b,0);
+  if(fn==='AVERAGE'){ if(!ns.length)_boardsFxThrow(_BOARDS_FX_ERR.div); return ns.reduce((a,b)=>a+b,0)/ns.length; }
+  if(!ns.length)return 0;                       // MIN/MAX of nothing, as Excel
+  return fn==='MIN'?Math.min.apply(null,ns):Math.max.apply(null,ns);
+}
+// The only entry point. Always returns {value} or {err} — it never throws,
+// so no caller has to guard, and a broken formula shows an error IN the
+// cell rather than taking the render down with it.
+function _boardsFxRun(card,src,seen){
+  const text=String(src==null?'':src).replace(/^\s*=/,'');
+  if(!text.trim())return{err:_BOARDS_FX_ERR.err};
+  const toks=_boardsFxTokens(text);
+  if(!toks||!toks.length)return{err:_BOARDS_FX_ERR.err};
+  try{ return{value:_boardsFxParser(toks,card,seen||new Set())}; }
+  catch(e){ return{err:(e&&e.fx)||_BOARDS_FX_ERR.err}; }
+}
+function _boardsFxResult(cell,card){
+  if(!card||!_boardsIsFormula(cell))return null;
+  return _boardsFxRun(card,_boardsCellVal(cell),new Set());
+}
+function _boardsCellNum(cell,card){
+  if(card&&_boardsIsFormula(cell)){
+    const out=_boardsFxRun(card,_boardsCellVal(cell),new Set());
+    return (!out.err&&typeof out.value==='number'&&isFinite(out.value))?out.value:null;
+  }
   const raw=_boardsCellVal(cell).trim();
   if(!raw)return null;
   const cleaned=raw.replace(/[,\s]/g,'').replace(/^[^0-9.+-]+/,'').replace(/%$/,'');
@@ -4401,9 +4645,23 @@ function _boardsFmtDate(raw,how){
   return dd+' '+_BOARDS_MONTHS[mm]+' '+yy;
 }
 // What the cell SHOWS. Never what it stores.
-function _boardsCellDisplay(cell){
+function _boardsCellDisplay(cell,card){
   const raw=_boardsCellVal(cell);
   const t=_boardsCellType(cell);
+  if(_boardsIsFormula(cell)){
+    // Without the card there is no grid to read, so the formula shows as
+    // written rather than as a wrong answer. That is the honest fallback
+    // for any caller that genuinely has no card in hand.
+    if(!card)return raw;
+    const out=_boardsFxRun(card,raw,new Set());
+    if(out.err)return out.err;
+    if(typeof out.value==='boolean')return out.value?'TRUE':'FALSE';
+    if(typeof out.value!=='number')return String(out.value==null?'':out.value);
+    // A formula result is formatted by the cell's own type, so
+    // =SUM(B2:B4) in a currency cell reads 'Rs 45,000' like any other.
+    return _boardsCellDisplay({v:String(out.value),t:_boardsCellAttr(cell,'t'),
+                               fmt:_boardsCellAttr(cell,'fmt')});
+  }
   if(t==='auto'||t==='text')return raw;
   if(t==='check')return raw?'✓':'';
   const f=_boardsCellFmt(cell);
@@ -4425,20 +4683,25 @@ function _boardsCellDisplay(cell){
 // A typed numeric cell holding text it cannot read. Flagged, never
 // rejected: refusing a keystroke inside a contenteditable is miserable,
 // and the person can see what they typed and fix it.
-function _boardsCellInvalid(cell){
+function _boardsCellInvalid(cell,card){
+  if(_boardsIsFormula(cell)){
+    const out=_boardsFxResult(cell,card);
+    return !!(out&&out.err);
+  }
   const t=_boardsCellType(cell);
   if(t!=='number'&&t!=='currency'&&t!=='percent')return false;
   return _boardsCellVal(cell).trim()!==''&&_boardsCellNum(cell)===null;
 }
 // Numbers sit right unless the cell says otherwise — the spreadsheet
 // default, and the one piece of formatting 'auto' does apply.
-function _boardsCellAlign(cell){
+function _boardsCellAlign(cell,card){
   const a=_boardsCellAttr(cell,'al');
   if(a)return a;
   const t=_boardsCellType(cell);
   if(t==='check')return 'c';
   if(t==='number'||t==='currency'||t==='percent')return 'r';
-  if(t==='auto'&&_boardsCellNum(cell)!==null)return 'r';
+  // A formula returning a number sits right like any other number.
+  if(t==='auto'&&_boardsCellNum(cell,card)!==null)return 'r';
   return '';
 }
 /* Spreadsheet coordinates. These are DISPLAY-ONLY and are never stored:
@@ -4499,8 +4762,8 @@ function _boardsCellWrite(c,r,i,patch){
 // would be light-on-light in dark mode, which is exactly the bug the
 // embellishments sweep just spent a round removing. It is also a stricter
 // allow-list than validating a hex: six names, nothing else renders.
-function _boardsCellStyle(cell){
-  const al=_boardsCellAlign(cell);
+function _boardsCellStyle(cell,card){
+  const al=_boardsCellAlign(cell,card);
   const out=[];
   if(al==='c')out.push('text-align:center');
   else if(al==='r')out.push('text-align:right');
@@ -4511,12 +4774,13 @@ function _boardsCellStyle(cell){
   else if(cell.sz==='l')out.push('font-size:15px');
   return out.join(';');
 }
-function _boardsCellClass(cell){
+function _boardsCellClass(cell,card){
   const bg=_boardsCellAttr(cell,'bg');
   let out=(bg&&bg!=='none'&&_BOARDS_COLORS.indexOf(bg)>-1)?' cell-bg-'+bg:'';
   const t=_boardsCellType(cell);
   if(t!=='auto')out+=' cell-t-'+t;
-  if(_boardsCellInvalid(cell))out+=' cell-bad';
+  if(_boardsIsFormula(cell))out+=' cell-fx';
+  if(_boardsCellInvalid(cell,card))out+=' cell-bad';
   return out;
 }
 // The focused cell, or null. Re-derived rather than trusted: a row or
@@ -4623,6 +4887,7 @@ function _boardsCellCtxItems(c,r,i){
   items.push({sep:true});
   items.push({act:'cell:align',label:'Change alignment'});
   items.push({act:'cell:type',label:'Cell type   ›'});
+  items.push({act:'cell:formula',label:'Formula   ›'});
   items.push({sep:true});
   items.push({title:_boardsCellRef(r,i)+' · '+(c.name||'Table')});
   return items;
@@ -4768,6 +5033,69 @@ window.boardsCellToggle=function(id,r,i){
   _boardsCellWrite(c,r,i,{v:_boardsCellVal(cell)?'':'1'});
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
+};
+const _BOARDS_FX_HINTS={
+  SUM:'Adds a range — SUM(B2:B4)',
+  AVERAGE:'Mean of a range — AVERAGE(B2:B4)',
+  MIN:'Smallest in a range — MIN(B2:B4)',
+  MAX:'Largest in a range — MAX(B2:B4)',
+  COUNT:'How many numbers — COUNT(B2:B4)',
+  IF:'One condition — IF(B2>100,"over","ok")'
+};
+function _boardsCellFxItems(){
+  return _BOARDS_FX_FNS.map(fn=>({act:'cellfx:'+fn,label:fn+'   '+_BOARDS_FX_HINTS[fn]}))
+    .concat([{sep:true},{act:'cellfx:__help',label:'View formula help   ›'}]);
+}
+window.boardsCellFormulaMenu=function(){
+  const f=_boardsFocusedCell();
+  if(!f||!_boardsCanEdit(_editBoard))return;
+  _boardsCellMenuAt(_boardsCellFxItems());
+};
+window.boardsCellFormulaHelp=function(){
+  _boardsOpenSheet('Formula help',`<div class="board-fx-help">
+    <p>A formula is just the cell's value, starting with <code>=</code>. Type
+       one by hand or pick a function from the rail.</p>
+    <p><strong>References</strong> use the letters along the top and the
+       numbers down the side: <code>B2</code> is one cell,
+       <code>B2:B4</code> a range. They count every row, including a header
+       row — so a column of figures under a label usually starts at row 2.</p>
+    <p><strong>Functions</strong><br>
+      ${_BOARDS_FX_FNS.map(fn=>'<code>'+fn+'</code> — '+_boardsEsc(_BOARDS_FX_HINTS[fn])).join('<br>')}</p>
+    <p><strong>Arithmetic</strong> works too — <code>=B2*1.15</code>,
+       <code>=(B2+B3)/2</code>. Text in a range is skipped rather than
+       counted as zero, so a heading never spoils a total.</p>
+    <p><strong>Errors</strong><br>
+      <code>#REF!</code> a cell or range that is not there ·
+      <code>#CYCLE!</code> a formula that depends on itself ·
+      <code>#NAME?</code> an unknown function ·
+      <code>#DIV/0!</code> dividing by nothing ·
+      <code>#ERR!</code> the formula could not be read</p>
+  </div>`);
+};
+window.boardsCellInsertFormula=function(fn){
+  const f=_boardsFocusedCell();
+  if(!f||!_boardsCanEdit(_editBoard))return;
+  if(f.card.locked)return showToast('Card is locked — unlock it to edit it');
+  _boardsPushUndo();
+  _boardsCellWrite(f.card,f.r,f.i,{v:'='+fn+'()'});
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  // Open the cell with the caret INSIDE the brackets — the range is the
+  // one thing the picker cannot know, so that is where you should be.
+  const id='board-td-'+f.card.id+'-'+f.r+'-'+f.i;
+  window.boardsBeginEdit(null,id);
+  try{
+    const el=document.getElementById(id),sel=window.getSelection();
+    if(el&&sel&&sel.rangeCount){
+      const rg=sel.getRangeAt(0);
+      const node=el.firstChild;
+      if(node&&node.nodeType===3){
+        const at=Math.max(0,node.textContent.length-1);
+        rg.setStart(node,at);rg.setEnd(node,at);
+        sel.removeAllRanges();sel.addRange(rg);
+      }
+    }
+  }catch(e){}
 };
 window.boardsCellRowCol=function(what){
   const f=_boardsFocusedCell();
@@ -6032,7 +6360,7 @@ function _boardsDrawCard(ctx,c,img,P){
       ctx.font=((c.head!==false&&r===0)?'700 ':'')+'11px '+P.font;
       ctx.save();
       ctx.beginPath();ctx.rect(c.x+i*cw,c.y+hh+r*rh,cw,rh);ctx.clip();
-      ctx.fillText(_boardsCellDisplay(cell),c.x+i*cw+6,c.y+hh+r*rh+rh/2+4);
+      ctx.fillText(_boardsCellDisplay(cell,c),c.x+i*cw+6,c.y+hh+r*rh+rh/2+4);
       ctx.restore();
     }));
     ctx.restore();
@@ -6240,7 +6568,7 @@ window.boardsExportPDF=async function(){
       :c.type==='link'?((c.linkTitle||'')+(c.linkUrl?'  —  '+c.linkUrl:''))
       :c.type==='file'?(c.name||c.fileName||'')
       :c.type==='board'?(c.boardTitle||'')
-      :c.type==='table'?(Array.isArray(c.rows)?c.rows.map(r=>r.map(_boardsCellDisplay).join(' | ')).join('  ·  '):'')
+      :c.type==='table'?(Array.isArray(c.rows)?c.rows.map(r=>r.map(v=>_boardsCellDisplay(v,c)).join(' | ')).join('  ·  '):'')
       :(c.type==='frame'||c.type==='column')?(c.title||'')
       :(c.text||'')).replace(/\s+/g,' ').trim()
   })).filter(r=>r.text);
@@ -7165,6 +7493,12 @@ function _boardsCtxRun(act){
   if(act.indexOf('color:')===0){window.boardsSetColor(act.slice(6));return;}
   if(act.indexOf('ln:')===0){_boardsConnAction(act.slice(3));return;}
   if(act.indexOf('cellbg:')===0){window.boardsCellColor(act.slice(7));return;}
+  if(act.indexOf('cellfx:')===0){
+    const w=act.slice(7);
+    if(w==='__help')window.boardsCellFormulaHelp();
+    else window.boardsCellInsertFormula(w);
+    return;
+  }
   if(act.indexOf('celltype:')===0){window.boardsCellSetType(act.slice(9));return;}
   if(act.indexOf('cellfmt:')===0){
     const bits=act.slice(8).split(':');
@@ -7175,6 +7509,7 @@ function _boardsCtxRun(act){
     const w=act.slice(5);
     if(w==='done')return window.boardsCellDone();
     if(w==='type')return window.boardsCellTypeMenu();
+    if(w==='formula')return window.boardsCellFormulaMenu();
     if(w==='copy'||w==='cut'||w==='paste')return window.boardsCellClip(w);
     if(/^(row-|col-|del-)/.test(w))return window.boardsCellRowCol(w);
     window.boardsCellAction(w);

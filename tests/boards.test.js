@@ -1496,6 +1496,106 @@ module.exports=function(){
     s.ok('a non-table card is passed straight through',
       run(`_boardsEncodeRows(_editCards[1])===_editCards[1]`));
 
+    s.section('formulas — a formula IS the cell value, starting with =');
+    // Not a separate field: the raw string is what you edit, it round-trips
+    // through every export untouched, and it needs no entry in
+    // _BOARDS_CELL_ATTRS, so the downgrade can never throw it away.
+    boot();
+    run(`_editCards[0].head=false;_editCards[0].rows=[
+      ['Item','Qty'],['Drill','10'],['Fleece','20'],['Rib','x'],['Total','=SUM(B2:B4)']]`);
+    const fx=x=>run('JSON.stringify(_boardsFxRun(_editCards[0],'+JSON.stringify(x)+',new Set()))');
+    s.eq('it stays a plain string',run(`typeof _editCards[0].rows[4][1]`),'string');
+    s.eq('editing shows the formula, not the answer',
+      run(`_boardsCellVal(_editCards[0].rows[4][1])`),'=SUM(B2:B4)');
+    s.eq('displaying shows the answer',
+      run(`_boardsCellDisplay(_editCards[0].rows[4][1],_editCards[0])`),'30');
+    s.ok('and it is recognised as a formula',run(`_boardsIsFormula('=SUM(A1)')===true`));
+    s.ok('a bare = is not enough to be one by accident',
+      run(`_boardsIsFormula('a=b')===false&&_boardsIsFormula('')===false`));
+
+    s.section('the six functions the spec asks for');
+    s.eq('SUM',fx('=SUM(B2:B4)'),'{"value":30}');
+    s.eq('AVERAGE',fx('=AVERAGE(B2:B3)'),'{"value":15}');
+    s.eq('MIN',fx('=MIN(B2:B3)'),'{"value":10}');
+    s.eq('MAX',fx('=MAX(B2:B3)'),'{"value":20}');
+    s.eq('COUNT counts NUMBERS, not cells',fx('=COUNT(B2:B4)'),'{"value":2}');
+    s.eq('IF on a comparison',fx('=IF(B2>5,"over","ok")'),'{"value":"over"}');
+    s.eq('IF taking the other branch',fx('=IF(B2>500,"over","ok")'),'{"value":"ok"}');
+    s.eq('IF comparing text',fx('=IF(A2="Drill",1,0)'),'{"value":1}');
+    // Text in a range is SKIPPED, not zero — a column under a heading must
+    // still add up, and B4 here holds 'x'.
+    s.ok('text in a range is skipped rather than counted',fx('=SUM(B2:B4)')==='{"value":30}');
+
+    s.section('arithmetic, which the spec did not ask for');
+    // IF's condition needs a comparison evaluator anyway, so + - * / and
+    // parens came almost free — and a formula feature where =B2*1.15
+    // silently failed would be reported as broken the same day.
+    s.eq('multiply',fx('=B2*1.15'),'{"value":11.5}');
+    s.eq('parens beat precedence',fx('=(B2+B3)/2'),'{"value":15}');
+    s.eq('precedence without them',fx('=B2+B3/2'),'{"value":20}');
+    s.eq('a function inside arithmetic',fx('=SUM(B2:B3)+100'),'{"value":130}');
+    s.eq('unary minus',fx('=-B2'),'{"value":-10}');
+    s.eq('a nested call',fx('=MAX(SUM(B2:B3),5)'),'{"value":30}');
+
+    s.section('every failure is an error IN the cell, never a thrown render');
+    s.eq('an unknown function',fx('=NOPE(1)'),'{"err":"#NAME?"}');
+    s.eq('a cell past the edge',fx('=B9'),'{"err":"#REF!"}');
+    s.eq('a range past the edge',fx('=SUM(B2:B99)'),'{"err":"#REF!"}');
+    s.eq('dividing by zero',fx('=1/0'),'{"err":"#DIV/0!"}');
+    s.eq('averaging nothing numeric',fx('=AVERAGE(A2:A3)'),'{"err":"#DIV/0!"}');
+    s.eq('an unclosed bracket',fx('=SUM('),'{"err":"#ERR!"}');
+    s.eq('trailing junk',fx('=SUM(B2:B3) rubbish'),'{"err":"#ERR!"}');
+    s.eq('an empty formula',fx('='),'{"err":"#ERR!"}');
+    s.eq('a character the tokenizer does not know',fx('=B2 # B3'),'{"err":"#ERR!"}');
+    s.ok('_boardsFxRun never throws, whatever it is given',
+      run(`(()=>{const junk=['=','=((((','=)','="unterminated','=SUM(,,)','=1..2','=IF()',
+        '=A','=:','=SUM(B2:)','=\u0000'];
+        try{junk.forEach(j=>_boardsFxRun(_editCards[0],j,new Set()));return true;}
+        catch(e){return 'THREW: '+e;}})()`));
+
+    s.section('a formula that depends on itself is caught, not hung');
+    boot();
+    run(`_editCards[0].rows=[['=A1','=B2'],['=B1','=A2']]`);
+    s.eq('directly self-referential',
+      run(`_boardsCellDisplay(_editCards[0].rows[0][0],_editCards[0])`),'#CYCLE!');
+    s.eq('and a two-cell loop',
+      run(`_boardsCellDisplay(_editCards[0].rows[0][1],_editCards[0])`),'#CYCLE!');
+
+    s.section('a formula reads through other formulas');
+    boot();
+    run(`_editCards[0].head=false;_editCards[0].rows=[['10','20'],['=A1+B1','=A2*2']]`);
+    s.eq('one level',run(`_boardsCellDisplay(_editCards[0].rows[1][0],_editCards[0])`),'30');
+    s.eq('two levels',run(`_boardsCellDisplay(_editCards[0].rows[1][1],_editCards[0])`),'60');
+
+    s.section('the answer is formatted by the CELL type, not by the formula');
+    boot();
+    run(`_editCards[0].head=false;_editCards[0].rows=[['20000','25000'],
+      [{v:'=SUM(A1:B1)',t:'currency'},{v:'=A1/B1',t:'percent',fmt:{d:1}}]]`);
+    s.eq('a currency cell',run(`_boardsCellDisplay(_editCards[0].rows[1][0],_editCards[0])`),'Rs 45,000');
+    s.eq('a percent cell',run(`_boardsCellDisplay(_editCards[0].rows[1][1],_editCards[0])`),'0.8%');
+    s.ok('and a numeric result sits right without being told to',
+      /text-align:right/.test(run(`_boardsCellStyle('=SUM(A1:B1)',_editCards[0])`)));
+
+    s.section('formulas reach the exports and the search index');
+    boot();
+    run(`_editCards[0].head=false;_editCards[0].rows=[['10','20'],['Total','=SUM(A1:B1)']]`);
+    const fdoc=run(`JSON.stringify(_boardsCardDoc(_editCards[0]))`);
+    s.ok('the Word/Markdown export shows the ANSWER',/\|\s*30\s*\|/.test(fdoc),fdoc.slice(0,80));
+    const ftext=run(`_boardsCardText(_editCards[0])`);
+    s.ok('search finds the computed value',/30/.test(ftext));
+    s.ok('and the formula text too, so you can find where it is',/sum\(a1:b1\)/.test(ftext));
+
+    s.section('the picker and the rail');
+    boot();
+    run(`_boardsCellFocus={id:'t',r:1,i:1}`);
+    const fxm=run(`JSON.stringify(_boardsCellFxItems())`);
+    ['SUM','AVERAGE','MIN','MAX','COUNT','IF'].forEach(fn=>
+      s.ok('offers '+fn,fxm.indexOf('"cellfx:'+fn+'"')>-1));
+    s.ok('and the help entry the spec shows',/cellfx:__help/.test(fxm));
+    s.ok('the rail offers Formula',/"act":"cell:formula"/.test(run(`JSON.stringify(_boardsRailItems())`)));
+    run(`_boardsCtxRun('cellfx:SUM')`);
+    s.eq('picking one writes the template',run(`_boardsCellVal(_editCards[0].rows[1][1])`),'=SUM()');
+
     s.section('a card names its own type in its header');
     // The ternary chain had no branch for table/column/frame, so all three
     // fell through to 'Note' — a table card labelled itself NOTE. Found in

@@ -803,6 +803,16 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
    and you can see what you typed and fix it. */
 .board-table .cell-bad{color:var(--accent-urgent);text-decoration:underline wavy;
   text-underline-offset:2px}
+/* A formula cell is marked, faintly, in the corner — you cannot tell a
+   computed total from a typed one otherwise, and knowing which is which is
+   the whole reason to trust the number. */
+.board-table .cell-fx{position:relative}
+.board-table .cell-fx::after{content:'';position:absolute;top:0;right:0;
+  border-top:5px solid var(--muted);border-left:5px solid transparent;opacity:.55}
+.board-fx-help{font-size:13px;line-height:1.7;padding:2px 2px 10px}
+.board-fx-help p{margin:0 0 12px}
+.board-fx-help code{background:var(--surface-2);border:1px solid var(--border);
+  border-radius:4px;padding:1px 5px;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
 .board-table-add{background:var(--surface);display:flex;gap:5px;padding:4px 6px;flex-shrink:0;
   border-top:1px solid var(--border);background:var(--surface)}
 .board-table-add button{flex:1;font-family:inherit;font-size:10.5px;font-weight:600;

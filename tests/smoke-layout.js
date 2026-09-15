@@ -176,13 +176,14 @@ const FRAGMENTS={
     const app=loadApp({files:['js/boards.js']});
     app.run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
       _editConnectors=[];_boardsSelection=new Set(['t']);moodBoards=[];
-      _editCards=[{id:'t',type:'table',x:20,y:20,w:360,h:400,head:true,rows:[
+      _editCards=[{id:'t',type:'table',x:20,y:20,w:360,h:460,head:true,rows:[
         ['Fabric','Qty','Status'],
         [{v:'Cotton drill 8.5oz',b:true},'120',{v:'Cleared',bg:'green'}],
         [{v:'Fleece 320gsm',sz:'l'},{v:'40',al:'r'},{v:'Rework',bg:'red'}],
         ['Rib 2x1',{v:'8',al:'c',i:true,bg:'purple'},{v:'Pending',bg:'blue'}],
         [{v:'1',t:'check'},{v:'45000',t:'currency'},{v:'twelve',t:'number'}],
-        [{v:'',t:'check'},{v:'12',t:'percent'},{v:'2026-09-15',t:'date'}]
+        [{v:'',t:'check'},{v:'12',t:'percent'},{v:'2026-09-15',t:'date'}],
+        ['Total',{v:'=SUM(B2:B4)',t:'currency'},{v:'=NOPE(1)'}]
       ]}];
       _boardsCellFocus={id:'t',r:1,i:0};`);
     let html=app.run(`_boardCardHTML(_editCards[0],true)`);
@@ -193,7 +194,7 @@ const FRAGMENTS={
       html=html.replace(new RegExp('(id="board-td-t-'+r+'-'+i+'"[^>]*>)'),'$1'+v);
     }));
     return Promise.resolve(
-      '<div style="position:relative;overflow:hidden;height:520px;width:100%">'+html+'</div>');
+      '<div style="position:relative;overflow:hidden;height:580px;width:100%">'+html+'</div>');
   },
   'boards — a column and its cards':()=>{
     const app=loadApp({files:['js/boards.js']});
