@@ -1503,6 +1503,12 @@ function _fabFindRoll(rollCode){
 // Every fabric issue against a PO, with the cut (size breakdown / planned qty),
 // bundles, fabric and weight. Source = gate passes with gpType 'fabric'.
 let _fabRegPage=0,_fabRegQ='',_fabRegPer=12,_fabRegIncompleteOnly=false,_fabRegLabelFilter='';
+// Cut-date filter — same shape as Monitor's `_monitorFilter`: a preset plus a
+// custom from/to. Defaults to 'all' because this is a historical record, not a
+// feed; defaulting to Today would leave an empty page on most mornings and
+// read as broken. Filtering compares the SAME `g.date` string the card prints,
+// so the filter can never disagree with what is on screen.
+let _fabRegDate={preset:'all',from:'',to:''};
 // Owner label palette — soft chip bg/fg + a solid dot for the picker.
 const FAB_LABEL_COLORS=[
   {name:'Red',bg:'#fee2e2',fg:'#991b1b',dot:'#dc2626'},
@@ -1526,6 +1532,56 @@ function _fabAllUsedLabels(){
   return [...seen.values()];
 }
 let _fabTagWork={id:null,incomplete:false,labels:[],colorIdx:null,_pendingText:''};
+// ── Cut-date helpers ──────────────────────────────────────────────────────
+// Local YYYY-MM-DD. Not toISOString(), which is UTC — in PKT (UTC+5) that
+// names the previous day for anything before 5am.
+function _fabRegDayStr(d){const p=n=>String(n).padStart(2,'0');return`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;}
+// The day an issue belongs to. `g.date` is what the card shows, so it wins;
+// a record written without one falls back to its creation timestamp.
+function _fabRegDayOf(g){
+  const d=String(g.date||'');
+  if(/^\d{4}-\d{2}-\d{2}$/.test(d))return d;
+  return g.ts?_fabRegDayStr(new Date(g.ts)):'';
+}
+// Inclusive [from,to] as YYYY-MM-DD, '' meaning unbounded. Plain string
+// compare is correct on this format, so there is no Date maths per row.
+function _fabRegDateBounds(){
+  const f=_fabRegDate,today=new Date();
+  if(f.preset==='today'){const t=_fabRegDayStr(today);return[t,t];}
+  if(f.preset==='yesterday'){const d=new Date();d.setDate(d.getDate()-1);const t=_fabRegDayStr(d);return[t,t];}
+  if(f.preset==='week'){const d=new Date();d.setDate(d.getDate()-6);return[_fabRegDayStr(d),_fabRegDayStr(today)];}
+  if(f.preset==='month'){const d=new Date();d.setDate(1);return[_fabRegDayStr(d),_fabRegDayStr(today)];}
+  if(f.preset==='custom')return[f.from||'',f.to||''];
+  return['',''];                                                    // 'all'
+}
+function _fabRegDayLabel(day){
+  if(!day)return 'No date';
+  const d=new Date(day+'T00:00:00');
+  if(isNaN(d.getTime()))return day;
+  return d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+}
+const _FAB_REG_PRESETS=[['all','All'],['today','Today'],['yesterday','Yesterday'],['week','Last 7 days'],['month','This month'],['custom','Custom \u25BE']];
+function _fabRegRangeLabel(){
+  const f=_fabRegDate;
+  if(f.preset!=='custom'){const p=_FAB_REG_PRESETS.find(x=>x[0]===f.preset);return f.preset==='all'?'All dates':(p?p[1]:'All dates');}
+  const[a,b]=_fabRegDateBounds();
+  if(!a&&!b)return 'All dates';
+  if(a&&b)return a===b?_fabRegDayLabel(a):`${_fabRegDayLabel(a)} \u2192 ${_fabRegDayLabel(b)}`;
+  return a?`From ${_fabRegDayLabel(a)}`:`Up to ${_fabRegDayLabel(b)}`;
+}
+// Per-day roll-up of a filtered set, for the day headers in the list.
+// Weight is split by unit — most issues are kg, but the field can be meters
+// and adding the two together would be a made-up number.
+function _fabRegDayTotals(issues){
+  const m=new Map();
+  issues.forEach(g=>{
+    const k=_fabRegDayOf(g),t=m.get(k)||{n:0,pcs:0,bundles:0,kg:0,m:0};
+    t.n++;t.pcs+=g.plannedQty||0;t.bundles+=g.totalBundles||0;
+    if((g.fabricUnit||'kg')==='kg')t.kg+=g.fabricQty||0;else t.m+=g.fabricQty||0;
+    m.set(k,t);
+  });
+  return m;
+}
 function _fabIssueRecords(){
   return (typeof allPasses!=='undefined'&&allPasses||[])
     .filter(g=>g.gpType==='fabric')
@@ -1533,12 +1589,28 @@ function _fabIssueRecords(){
 }
 function _fabRegFiltered(){
   const f=_fabRegQ.toLowerCase();
+  const[dFrom,dTo]=_fabRegDateBounds();
   return _fabIssueRecords().filter(g=>{
+    if(dFrom||dTo){
+      // An entry with no day at all cannot be proved to sit in the range,
+      // so a bounded range excludes it rather than guessing.
+      const day=_fabRegDayOf(g);
+      if(!day||(dFrom&&day<dFrom)||(dTo&&day>dTo))return false;
+    }
     if(_fabRegIncompleteOnly&&!g.regIncomplete)return false;
     if(_fabRegLabelFilter){const lf=_fabRegLabelFilter.toUpperCase();if(!(g.regLabels||[]).some(l=>String(l.text||'').toUpperCase()===lf))return false;}
     if(!f)return true;
     const labelText=(g.regLabels||[]).map(l=>l.text).join(' ');
     return [g.poId,g.articleName,g.articleCode,g.fabricType,g.fabricColor,g.id,labelText].some(v=>String(v||'').toLowerCase().includes(f));
+  }).sort((a,b)=>{
+    // Day first, newest day first, then newest within the day. _fabIssueRecords
+    // sorts on `ts` alone, which is the CREATION time — an entry whose date was
+    // corrected in Edit then sits away from its own day and the list grows a
+    // second header for a day it already showed. Grouping by day is only
+    // coherent if the order is by day. Undated entries ('') sort last.
+    const da=_fabRegDayOf(a),db=_fabRegDayOf(b);
+    if(da!==db)return da<db?1:-1;
+    return (b.ts||0)-(a.ts||0);
   });
 }
 function _fabSizeLabel(s){
@@ -1547,13 +1619,29 @@ function _fabSizeLabel(s){
     ? `${_gpEsc(s.size||'?')}: ${s.qty} [${bl}]`               // new per-bundle format
     : `${_gpEsc(s.size||'?')}: ${s.qty} (${s.perBundle||0}×${s.bundles||0})`; // legacy
 }
-function _fabRegRows(issues){
+function _fabRegRows(issues,dayTotals){
+  let lastDay=null;
   return issues.map(g=>{
+    // Day header whenever the date changes. Totals are the WHOLE filtered
+    // day's, not this page's slice of it — "what got cut on the 14th" is a
+    // property of the day, not of where the pagination happened to cut.
+    let dayHead='';
+    if(dayTotals){
+      const day=_fabRegDayOf(g);
+      if(day!==lastDay){
+        lastDay=day;
+        const t=dayTotals.get(day)||{n:0,pcs:0,bundles:0,kg:0,m:0};
+        dayHead=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin:16px 2px 8px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+          <div style="font-size:13px;font-weight:800">${_gpEsc(_fabRegDayLabel(day))}</div>
+          <div style="font-size:11px;color:var(--muted)">${t.n} issue${t.n===1?'':'s'} · <strong style="color:var(--text)">${t.pcs.toLocaleString()}</strong> pcs · ${t.bundles.toLocaleString()} bundles${t.kg?` · <strong style="color:var(--text)">${t.kg.toFixed(1)}</strong> kg`:''}${t.m?` · <strong style="color:var(--text)">${t.m.toFixed(1)}</strong> m`:''}</div>
+        </div>`;
+      }
+    }
     const u=_gpEsc(g.fabricUnit||'kg');
     const sizes=(g.sizeBreakdown||[]).filter(s=>s.qty).map(_fabSizeLabel).join(' · ');
     const incBadge=g.regIncomplete?'<span style="background:#fee2e2;color:#991b1b;font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;margin-left:6px;letter-spacing:.04em">INCOMPLETE</span>':'';
     const labelChips=(g.regLabels||[]).map(l=>`<span style="background:${l.bg||'#f3f4f6'};color:${l.fg||'#374151'};font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;margin-left:6px">${_gpEsc(l.text)}</span>`).join('');
-    return`<div style="border:1px solid var(--border);${g.regIncomplete?'border-left:3px solid #dc2626;':''}border-radius:10px;padding:12px 14px;margin-bottom:8px">
+    return dayHead+`<div style="border:1px solid var(--border);${g.regIncomplete?'border-left:3px solid #dc2626;':''}border-radius:10px;padding:12px 14px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
         <div style="font-size:15px"><span style="font-weight:800;color:#dc2626">PO ${_gpEsc(g.poId||'—')}</span> <span style="font-weight:600;color:var(--muted);font-size:13px">${_gpEsc(g.articleName||'')}${g.articleCode?' · '+_gpEsc(g.articleCode):''}</span>${incBadge}${labelChips}</div>
         <div style="font-size:11px;color:var(--muted)">${_gpEsc(g.id||'')} · ${_gpEsc(g.date||'')}</div>
@@ -1584,7 +1672,7 @@ function _fabRegRows(issues){
 }
 function _fabRegListHTML(){
   const all=_fabRegFiltered();
-  if(!all.length)return '<div class="empty" style="padding:24px;text-align:center">No fabric issues found.</div>';
+  if(!all.length)return `<div class="empty" style="padding:24px;text-align:center">No fabric issues${_fabRegDate.preset!=='all'?` for <strong>${_gpEsc(_fabRegRangeLabel())}</strong>`:''}${_fabRegQ||_fabRegLabelFilter||_fabRegIncompleteOnly?' matching these filters':''}.</div>`;
   const pages=Math.ceil(all.length/_fabRegPer);
   if(_fabRegPage>=pages)_fabRegPage=Math.max(0,pages-1);
   const slice=all.slice(_fabRegPage*_fabRegPer,(_fabRegPage+1)*_fabRegPer);
@@ -1603,25 +1691,54 @@ function _fabRegListHTML(){
       </span>
     </div>`;
   }
-  return _fabRegRows(slice)+pager;
+  return _fabRegRows(slice,_fabRegDayTotals(all))+pager;
+}
+// The date bar. Kept in its own container so changing a preset repaints the
+// bar (to move the highlight / show the custom inputs) without rebuilding the
+// whole card and losing the search box's caret.
+function _fabRegDateBarHTML(){
+  const f=_fabRegDate;
+  const btn=(pre,lbl)=>`<button onclick="window.fabRegSetPreset('${pre}')" style="padding:6px 12px;border:1px solid ${f.preset===pre?'var(--dark)':'var(--border)'};border-radius:8px;background:${f.preset===pre?'var(--dark)':'var(--surface)'};color:${f.preset===pre?'var(--on-dark)':'var(--text)'};font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">${lbl}</button>`;
+  const dateInput=(id,val)=>`<input type="date" id="${id}" value="${_gpEsc(val)}" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;background:var(--surface);color:var(--text);margin-left:4px">`;
+  return`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:10px;color:var(--muted);font-weight:800;letter-spacing:.05em;margin-right:2px">CUT DATE</span>
+      ${_FAB_REG_PRESETS.map(([pre,lbl])=>btn(pre,lbl)).join('')}
+    </div>
+    ${f.preset==='custom'?`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
+      <label style="font-size:11px;color:var(--muted)">From ${dateInput('fab-reg-from',f.from)}</label>
+      <label style="font-size:11px;color:var(--muted)">To ${dateInput('fab-reg-to',f.to)}</label>
+      <button class="btn-primary" style="width:auto;padding:6px 14px;margin-top:0;font-size:12px" onclick="window.fabRegApplyCustom()">Apply</button>
+    </div>`:''}`;
+}
+// Totals follow the ACTIVE filters, not the whole collection — a date filter
+// whose headline numbers still counted every issue ever cut would answer the
+// wrong question. The caption says exactly what is being counted.
+function _fabRegStatsHTML(){
+  const all=_fabIssueRecords(),shown=_fabRegFiltered();
+  const totalWeight=shown.reduce((s,g)=>s+(g.fabricQty||0),0);
+  const totalPcs=shown.reduce((s,g)=>s+(g.plannedQty||0),0);
+  const totalBundles=shown.reduce((s,g)=>s+(g.totalBundles||0),0);
+  const days=new Set(shown.map(_fabRegDayOf).filter(Boolean)).size;
+  const tile=(lbl,val)=>`<div style="flex:1;background:var(--surface-2);border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">${lbl}</div><div style="font-size:18px;font-weight:800">${val}</div></div>`;
+  return`<div style="display:flex;gap:8px">
+      ${tile('Pieces cut',`${totalPcs.toLocaleString()} pcs`)}
+      ${tile('Bundles',totalBundles.toLocaleString())}
+      ${tile('Fabric out',totalWeight.toFixed(1))}
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin:7px 2px 0">${shown.length===all.length?`All <strong style="color:var(--text)">${all.length}</strong> issues`:`<strong style="color:var(--text)">${shown.length}</strong> of ${all.length} issues`} · ${_gpEsc(_fabRegRangeLabel())}${days>1?` · across ${days} days`:''}</div>`;
 }
 function renderFabricIssueRegistry(){
   _fabRegPage=0;_fabRegQ='';_fabRegLabelFilter='';_fabRegIncompleteOnly=false;
+  _fabRegDate={preset:'all',from:'',to:''};
   const issues=_fabIssueRecords();
-  const totalWeight=issues.reduce((s,g)=>s+(g.fabricQty||0),0);
-  const totalPcs=issues.reduce((s,g)=>s+(g.plannedQty||0),0);
-  const totalBundles=issues.reduce((s,g)=>s+(g.totalBundles||0),0);
   return`<div class="card"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center">Fabric Issue Registry <span style="font-weight:400;color:var(--muted);font-size:11px">${issues.length} issue${issues.length===1?'':'s'}</span></div>
     ${issues.length?`<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <button class="btn-outline" style="font-size:12px;padding:6px 14px" onclick="window.fabExportIssueRegistry()">⬇ Export Excel</button>
       <button class="btn-outline" id="fab-reg-inc-btn" style="font-size:12px;padding:6px 14px;${_fabRegIncompleteOnly?'background:#dc2626;color:#fff;border-color:#dc2626':''}" onclick="window.fabRegToggleIncomplete()">⚠ Incomplete only</button>
       ${['owner','manager'].includes(session.role)?`<button class="btn-outline" style="font-size:12px;padding:6px 14px;color:#dc2626;border-color:#fca5a5" onclick="window.fabRegDeleteAll()">🗑 Delete all</button>`:''}
     </div>`:''}
-    <div style="display:flex;gap:8px;margin-bottom:10px">
-      <div style="flex:1;background:var(--surface-2);border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">Pieces cut</div><div style="font-size:18px;font-weight:800">${totalPcs.toLocaleString()} pcs</div></div>
-      <div style="flex:1;background:var(--surface-2);border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">Bundles</div><div style="font-size:18px;font-weight:800">${totalBundles.toLocaleString()}</div></div>
-      <div style="flex:1;background:var(--surface-2);border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">Fabric out</div><div style="font-size:18px;font-weight:800">${totalWeight.toFixed(1)}</div></div>
-    </div>
+    <div id="fab-reg-datebar" style="margin-bottom:10px">${_fabRegDateBarHTML()}</div>
+    <div id="fab-reg-stats" style="margin-bottom:10px">${_fabRegStatsHTML()}</div>
     <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
       <input id="fab-reg-search" placeholder="Search PO, article, fabric…" oninput="window.fabRegFilter(this.value)" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
       <select onchange="window.fabRegSetPer(this.value)" title="Entries per page" style="padding:10px 8px;border:1px solid var(--border);border-radius:8px;font-size:13px">
@@ -1638,15 +1755,36 @@ function renderFabricIssueRegistry(){
   </div>
   <div style="height:60px"></div>`;
 }
+// Every filter change repaints the stats as well as the list, or the headline
+// numbers would describe a set that is no longer on screen. Paging does not —
+// the same set is still being shown, just a different slice of it.
+function _fabRegRepaint(){
+  const st=document.getElementById('fab-reg-stats');if(st)st.innerHTML=_fabRegStatsHTML();
+  const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();
+}
 window.fabRegPage=function(n){_fabRegPage=Math.max(0,n);const el=document.getElementById('fab-reg-list');if(el){el.innerHTML=_fabRegListHTML();el.scrollIntoView({behavior:'smooth',block:'start'});}};
 window.fabRegSetPer=function(v){_fabRegPer=parseInt(v)||12;_fabRegPage=0;const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();};
-window.fabRegFilter=function(q){_fabRegQ=q||'';_fabRegPage=0;const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();};
-window.fabRegSetLabel=function(v){_fabRegLabelFilter=v||'';_fabRegPage=0;const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();};
+window.fabRegFilter=function(q){_fabRegQ=q||'';_fabRegPage=0;_fabRegRepaint();};
+window.fabRegSetLabel=function(v){_fabRegLabelFilter=v||'';_fabRegPage=0;_fabRegRepaint();};
+window.fabRegSetPreset=function(preset){
+  // Custom keeps whatever dates were last applied, so re-picking Custom after
+  // a preset does not silently wipe the range that is still in the inputs.
+  _fabRegDate={preset,from:_fabRegDate.from,to:_fabRegDate.to};_fabRegPage=0;
+  const b=document.getElementById('fab-reg-datebar');if(b)b.innerHTML=_fabRegDateBarHTML();
+  _fabRegRepaint();
+};
+window.fabRegApplyCustom=function(){
+  const from=document.getElementById('fab-reg-from')?.value||'';
+  const to=document.getElementById('fab-reg-to')?.value||'';
+  if(from&&to&&from>to){showToast('From date is after To date.',true);return;}
+  _fabRegDate={preset:'custom',from,to};_fabRegPage=0;
+  _fabRegRepaint();
+};
 window.fabRegToggleIncomplete=function(){
   _fabRegIncompleteOnly=!_fabRegIncompleteOnly;_fabRegPage=0;
   const b=document.getElementById('fab-reg-inc-btn');
   if(b)b.style.cssText=`font-size:12px;padding:6px 14px;${_fabRegIncompleteOnly?'background:#dc2626;color:#fff;border-color:#dc2626':''}`;
-  const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();
+  _fabRegRepaint();
 };
 // ── Owner labels + Incomplete flag on a fabric-issue entry ──
 window.fabRegTag=function(gpId){
@@ -1864,7 +2002,9 @@ window._fabRegSaveEdit=async function(gpId){
   window.switchFabTab('registry');
 };
 window.fabExportIssueRegistry=function(){
-  const issues=_fabIssueRecords();
+  // Exports WHAT IS ON SCREEN, filters included — a date filter you then have
+  // to re-apply in Excel would defeat the point of picking one.
+  const issues=_fabRegFiltered();
   if(!issues.length){showToast('Nothing to export.',true);return;}
   const header=['Date','GP','PO','Article','Code','Fabric','GSM','Color','Pcs cut','Bundles','Fabric used','Unit','Rolls','Avg/unit','Cut by size (bundles)','Rib type','Rib kg','Rib %','Cutting master','Issued by','Status','Labels'];
   const bstr=s=>Array.isArray(s.bundles)?s.bundles.join('-'):`${s.perBundle||0}x${s.bundles||0}`;
@@ -1884,8 +2024,10 @@ window.fabExportIssueRegistry=function(){
     issues.reduce((n,g)=>n+(g.totalBundles||0),0),
     issues.reduce((n,g)=>n+(g.fabricQty||0),0),'','','','',
     '',issues.reduce((n,g)=>n+(g.ribWeight||0),0),'','','','','',''];
-  _fabXlsx([header,...rows,[],tot],'Fabric Issues','fabric-issue-registry');
-  showToast('Exported ✓');
+  const[dFrom,dTo]=_fabRegDateBounds();
+  const base='fabric-issue-registry'+(dFrom||dTo?`-${dFrom||'start'}_to_${dTo||'latest'}`:'');
+  _fabXlsx([header,...rows,[],tot],'Fabric Issues',base);
+  showToast(`Exported ${issues.length} issue${issues.length===1?'':'s'} · ${_fabRegRangeLabel()} ✓`);
 };
 
 // ════════════════════════════════════════════════════════════════════════
