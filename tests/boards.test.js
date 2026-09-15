@@ -1496,6 +1496,24 @@ module.exports=function(){
     s.ok('a non-table card is passed straight through',
       run(`_boardsEncodeRows(_editCards[1])===_editCards[1]`));
 
+    s.section('a card names its own type in its header');
+    // The ternary chain had no branch for table/column/frame, so all three
+    // fell through to 'Note' — a table card labelled itself NOTE. Found in
+    // the browser QA round, filed as cosmetic; it is a mislabel.
+    boot();
+    const kindOf=t=>{
+      const h=run(`_boardCardHTML(Object.assign({},_editCards[0],{type:'${t}',id:'k'}),true)`);
+      const m=/id="board-name-k"[^>]*data-placeholder="([^"]*)"/.exec(h);
+      return m?m[1]:'(none)';
+    };
+    s.eq('a table says Table, not Note',kindOf('table'),'Table');
+    s.eq('and a plain note still says Note',kindOf('text'),'Note');
+    // Columns and frames render their own markup with an in-place title and
+    // no type label at all, so they were never mislabelled — only the table
+    // fell through the chain. Asserted so the distinction is on the record.
+    s.eq('a column carries no type label to get wrong',kindOf('column'),'(none)');
+    s.eq('nor does a frame',kindOf('frame'),'(none)');
+
     s.section('a cell stops pointerdown, or it can never be edited');
     // boardsCardDragStart calls setPointerCapture on the card body, and a
     // captured pointer RETARGETS the following click and dblclick to the

@@ -1506,10 +1506,18 @@ renamed. Existing tables are untouched.
   grammar for formulas, so hiding them hides the feature — and a
   selection-only band would either reflow the table under the pointer or
   need an overlay escaping a card that clips its own content.
-- Both are **sticky** (`top:0` / `left:0`), as is the `+Row/+Col` strip
-  (`bottom:0`). A table can legitimately be taller than its card — that is
-  why the body scrolls — and a strip that merely refuses to shrink still
-  scrolls out of reach.
+- Both are **sticky** (`top:0` / `left:0`). **Corrected after the browser QA
+  round: a table almost never scrolls vertically.** `drawH` is
+  `Math.max(c.h,_boardsMinCardH(c))` and the resize handle is clamped by the
+  same function, so the card GROWS to fit its rows and cannot be shrunk
+  below them — 15 rows makes a tall card, not a scrollbar. The sticky band
+  therefore only engages where the per-row height estimate **under-counts**
+  (wrapped text in narrow cells — exactly the 420px case that caught the
+  `+Row/+Col` bug) or on **horizontal** scroll with many columns. The work
+  is not wasted, but scrolling is the exception, not the normal case.
+  **Open design question for later:** a 100-row table becomes a ~3,000px
+  card. Growing beats scrolling for seeing your data, but it should cap
+  somewhere. Not changed mid-QA.
 - **Not built, deliberately: the round top-right selection handle.** Our
   cards already carry a drag header and a selection outline, and that corner
   is where the delete ✕ lives. The bottom-right diagonal resize handle the
@@ -1633,6 +1641,14 @@ fault at all — they had been broken since the table card shipped.**
   drops the focus too, so the gate change is only exercisable with an EMPTY
   selection. The test isolates it that way on purpose — with a card selected
   it proves nothing.
+
+**A card names its own type in its header, and the table did not.** The
+`kind` ternary (`js/boards.js`, `_boardCardHTML`) had no branch for `table`,
+so it fell through to `'Note'` — a table card labelled itself NOTE. Found in
+the browser QA round and filed there as cosmetic; it is a mislabel, and it is
+one line. Columns and frames render their own markup with an in-place title
+and **no type label at all**, so they were never affected — asserted, so the
+distinction stays on the record rather than being re-investigated.
 
 **The `+Row/+Col` strip lives OUTSIDE the scrolling element**, and it took
 three attempts. As a plain flex child it scrolled out of reach on a table
