@@ -1496,6 +1496,93 @@ module.exports=function(){
     s.ok('a non-table card is passed straight through',
       run(`_boardsEncodeRows(_editCards[1])===_editCards[1]`));
 
+    s.section('the rail is grouped, and the overflow keeps it short');
+    boot();
+    run(`_boardsSelection=new Set();_boardsCellFocus=null;_boardsConnSel=null`);
+    const acts=run(`_boardsRailItems().map(i=>i.act||'|').join(' ')`);
+    ['add:text','add:link','add:todo','add:board','add:column','line']
+      .forEach(a=>s.ok('the main group keeps '+a,acts.indexOf(a)>-1));
+    ['add:image','file'].forEach(a=>s.ok('the media group keeps '+a,acts.indexOf(a)>-1));
+    s.ok('and the overflow button',acts.indexOf('more-tools')>-1);
+    ['add:heading','add:table','add:frame'].forEach(a=>
+      s.ok(a+' folds away behind it',acts.indexOf(a)<0));
+    // Milanote has a Trash at the foot because a deleted card goes to a
+    // per-board trash. Ours do not — Ctrl+Z covers them (Stage 1) — so a
+    // Trash here would be a second Delete pretending to be a safety net.
+    s.ok('no Trash at the foot, deliberately',acts.indexOf('trash')<0);
+    s.eq('the overflow offers exactly what was folded away',
+      run(`_BOARDS_RAIL_OVERFLOW.map(i=>i.act).join(',')`),'add:heading,add:table,add:frame');
+
+    s.section('drag-to-place — click-to-place is unchanged');
+    // The spec's single-click-then-click-to-place is NOT built: a browser
+    // session could not reproduce it in the real product or find any armed
+    // affordance, and our click already places immediately.
+    const html6=run(`(()=>{_boardsRenderRail();
+      const h=document.getElementById('board-rail');return h?h.innerHTML:'';})()`);
+    s.ok('draggable tools are marked in the markup',/data-drag="1"/.test(html6));
+    s.ok('and say so in their tooltip',/drag onto the board/.test(html6));
+    s.ok('a tool with no drag affordance is not marked',
+      run(`_BOARDS_RAIL_MAIN.filter(i=>i.act==='add:board')[0].drag===undefined`));
+
+    s.section('the drag creates nothing until it is released on the canvas');
+    boot();
+    run(`_boardsSelection=new Set();_editCards=[];_boardsNextPlacement=null;
+      __stage=document.getElementById('board-stage');
+      __stage.getBoundingClientRect=()=>({left:0,top:0,right:1000,bottom:800,width:1000,height:800});
+      __btn={getAttribute:k=>k==='data-act'?'add:text':'Note — click to place, or drag onto the board',
+             getBoundingClientRect:()=>({left:0,top:0,right:40,bottom:40})};
+      __ev=(x,y)=>({clientX:x,clientY:y,button:0,target:{closest:()=>__btn}});
+      _boardsRailDragStart(__ev(20,20));`);
+    s.ok('a press alone arms nothing visible',run(`_boardsRailDrag!==null&&_boardsRailDrag.moved===false`));
+    run(`_boardsRailDragMove(__ev(22,21))`);
+    s.ok('and a twitch below the threshold is still not a drag',run(`_boardsRailDrag.moved===false`));
+    run(`_boardsRailDragMove(__ev(300,300))`);
+    s.ok('past it, the drag is live',run(`_boardsRailDrag.moved===true`));
+    s.eq('nothing has been created yet',run(`_editCards.length`),0);
+    run(`_boardsRailDragEnd(__ev(300,300))`);
+    s.eq('releasing on the canvas creates one card',run(`_editCards.length`),1);
+    s.eq('of the type that was dragged',run(`_editCards[0].type`),'text');
+    s.ok('and the drag is torn down',run(`_boardsRailDrag===null`));
+    // A drag ends with a click on whatever is under the pointer, which
+    // would run the rail action a second time.
+    s.ok('the trailing click is suppressed',run(`_boardsSuppressClick===true`));
+
+    s.section('released anywhere else, nothing is created');
+    boot();
+    run(`_boardsSelection=new Set();_editCards=[];
+      __stage=document.getElementById('board-stage');
+      __stage.getBoundingClientRect=()=>({left:0,top:0,right:1000,bottom:800,width:1000,height:800});
+      __btn={getAttribute:()=>'add:table',getBoundingClientRect:()=>({left:0,top:0,right:40,bottom:40})};
+      __ev=(x,y)=>({clientX:x,clientY:y,button:0,target:{closest:()=>__btn}});
+      _boardsRailDragStart(__ev(20,20));_boardsRailDragMove(__ev(300,300));
+      _boardsRailDragEnd(__ev(2000,2000));`);
+    s.eq('dropped outside the stage',run(`_editCards.length`),0);
+    run(`_boardsRailDragStart(__ev(20,20));_boardsRailDragMove(__ev(300,300));
+         _boardsRailDragEscape({key:'Escape'});`);
+    s.ok('Escape abandons a drag in flight',run(`_boardsRailDrag===null`));
+    run(`_boardsRailDragEnd(__ev(300,300))`);
+    s.eq('and the abandoned drag cannot still land',run(`_editCards.length`),0);
+
+    s.section('a press that never moves is still a click');
+    boot();
+    run(`_boardsSelection=new Set();_editCards=[];
+      __btn={getAttribute:()=>'add:text',getBoundingClientRect:()=>({left:0,top:0,right:40,bottom:40})};
+      __ev=(x,y)=>({clientX:x,clientY:y,button:0,target:{closest:()=>__btn}});
+      _boardsRailDragStart(__ev(20,20));_boardsSuppressClick=false;
+      _boardsRailDragEnd(__ev(20,20));`);
+    s.ok('so the rail click handler is left alone to place it',
+      run(`_boardsSuppressClick===false`));
+    s.eq('and the drag made nothing of its own',run(`_editCards.length`),0);
+
+    s.section('the selection rail has a way back to the add-tools');
+    boot();
+    run(`_editCards=[{id:'a',type:'text',x:0,y:0,w:100,h:100,text:'x'}];
+         _boardsSelection=new Set(['a']);_boardsCellFocus=null;_boardsConnSel=null`);
+    const selRail=run(`JSON.stringify(_boardsRailItems())`);
+    s.ok('a Back entry is offered',/"act":"deselect","label":"Back"/.test(selRail));
+    s.ok('and it is the first thing on the rail',
+      run(`_boardsRailItems()[0].act`)==='deselect');
+
     s.section('formulas — a formula IS the cell value, starting with =');
     // Not a separate field: the raw string is what you edit, it round-trips
     // through every export untouched, and it needs no entry in

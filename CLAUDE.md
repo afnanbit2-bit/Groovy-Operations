@@ -1696,10 +1696,59 @@ the grammar is small enough to read in one sitting.
   carries a faint corner mark so a computed total is distinguishable from a
   typed one — knowing which is which is the whole reason to trust it.
 
-**Drag-a-tool-from-the-rail onto the canvas is NOT built**, confirmed in a
-browser session: rail tools are click-only, and the canvas empty-state
-advertises double-click, file drop and paste. That is spec §1's other
-placement method and it belongs to **M6**, not a bug.
+**M6 — the rail, rebuilt against OBSERVED Milanote, not the written spec.**
+A browser study of the real product contradicted the spec twice, and both
+contradictions changed what got built. That session was scrupulous about its
+limits — **no computed CSS, no mid-drag frames, no reduced-motion
+emulation** — so every timing in it is eyeballed and none of it is recorded
+here as fact.
+
+- **Add image does NOT swap the rail.** The spec says the media tools
+  "swap the rail for a full context panel" with "a back-arrow at the rail
+  top". Observed: the rail stays intact and the panel opens as a **popover
+  anchored to the button**, with a tail, toggled by clicking the button
+  again. **The back-arrow belongs to the SELECTION rail, not the media
+  panel** — the spec conflated the two. So the overflow (`…`) is a popover
+  through the existing `_boardsOpenCtx`, not a second popover
+  implementation, and the **back-arrow was added to our selection rail**,
+  which previously had no route back to the add-tools except clearing the
+  selection.
+- **Single-click-then-click-to-place could not be reproduced** in the real
+  product — no armed state, no cursor change, no floating preview — and the
+  observer saw a "Drag me" coach-mark instead. **It is deliberately NOT
+  built.** Our click already places a card immediately, which is useful;
+  trading that for an unverified two-step arm would be a regression on the
+  strength of a spec sentence nobody could confirm.
+
+What shipped: the rail is **grouped** (content tools · divider · `…` ·
+media · Comment/Fit) with `_BOARDS_RAIL_MAIN` / `_OVERFLOW` / `_MEDIA` as
+the three lists, and **drag-to-place**.
+
+- **The drag is pointer-based, never HTML5 drag-and-drop.** The stage reads
+  a native `dragstart` as "files from the desktop" (`_boardsInternalDrag`),
+  so a native tool drag would raise the file-drop overlay — the same
+  collision that made card images undraggable until Sept 2026.
+- **Nothing is created until the pointer comes up over the stage.** Released
+  on the rail, over the top bar or outside the window, the drag is
+  abandoned; Escape abandons one in flight.
+- **Click-to-place is untouched.** A press that never moves past 5px is
+  still a click, and `_boardsSuppressClick` is armed only when the drag
+  actually moved — otherwise the drag would eat its own click.
+- The ghost is a chip at the cursor that **brightens over the canvas**, so
+  "this will land" and "this will be abandoned" look different before you
+  let go. Deliberately ONE generic size rather than per-type dimensions:
+  those live in `_boardsNewCard`, which is **not pure** (it mints an id), and
+  a second copy of that table would be a second thing to keep in step.
+- **No Trash at the foot of the rail.** Milanote has one because a deleted
+  card goes to a per-board trash; ours do not — Ctrl+Z covers them
+  (Stage 1) — so a Trash here would be a second Delete button pretending to
+  be a safety net.
+
+**Still unmeasured, and the honest way to get it:** every motion timing in
+the study is eyeballed. Real durations and easings need DevTools' Animations
+panel on the live product, or a 60fps screen recording stepped through. **No
+motion work should be done off the estimates** — that is M9's problem, and
+it starts with measurement.
 
 **A card names its own type in its header, and the table did not.** The
 `kind` ternary (`js/boards.js`, `_boardCardHTML`) had no branch for `table`,

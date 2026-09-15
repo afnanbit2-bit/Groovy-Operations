@@ -809,6 +809,20 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-table .cell-fx{position:relative}
 .board-table .cell-fx::after{content:'';position:absolute;top:0;right:0;
   border-top:5px solid var(--muted);border-left:5px solid transparent;opacity:.55}
+/* Dragging a tool off the rail. The chip follows the cursor and says what
+   you are carrying; it brightens once it is over the canvas, so "this will
+   land" and "this will be abandoned" look different before you let go.
+   pointer-events:none or it would eat its own drop. */
+.board-rail-ghost{position:fixed;z-index:600;pointer-events:none;
+  transform:translate(10px,10px);
+  background:var(--surface);color:var(--muted);
+  border:1px dashed var(--border);border-radius:8px;
+  padding:5px 10px;font-size:11.5px;font-weight:600;
+  box-shadow:0 4px 14px rgba(0,0,0,.18);opacity:.8}
+.board-rail-ghost.over{color:var(--text);border-style:solid;
+  border-color:var(--text);opacity:1}
+.rail-btn.rail-draggable{cursor:grab}
+.rail-btn.rail-draggable:active{cursor:grabbing}
 .board-fx-help{font-size:13px;line-height:1.7;padding:2px 2px 10px}
 .board-fx-help p{margin:0 0 12px}
 .board-fx-help code{background:var(--surface-2);border:1px solid var(--border);

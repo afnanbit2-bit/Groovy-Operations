@@ -3747,6 +3747,30 @@ const _BOARDS_ICONS={
 function _boardsIcon(name){
   return`<svg viewBox="0 0 16 16" aria-hidden="true">${_BOARDS_ICONS[name]||_BOARDS_ICONS.note}</svg>`;
 }
+/* The add-tools, split three ways.
+
+   _MAIN is what stays on the rail, _OVERFLOW is what the "…" reveals, and
+   _MEDIA is the group below the divider. The split follows Milanote's own:
+   the things you reach for constantly stay out, the structural ones fold
+   away. Every entry carries `drag:true` — that is what makes it a drag
+   source in _boardsWireRailDrag; anything without it stays click-only. */
+const _BOARDS_RAIL_MAIN=[
+  {act:'add:text',label:'Note',icon:'note',drag:true},
+  {act:'add:link',label:'Link',icon:'link',drag:true},
+  {act:'add:todo',label:'To-do',icon:'todo',drag:true},
+  {act:'add:board',label:'Board',icon:'board'},
+  {act:'add:column',label:'Column',icon:'stack',drag:true},
+  {act:'line',label:'Line',icon:'line'}
+];
+const _BOARDS_RAIL_OVERFLOW=[
+  {act:'add:heading',label:'Heading',icon:'heading',drag:true},
+  {act:'add:table',label:'Table',icon:'table',drag:true},
+  {act:'add:frame',label:'Frame',icon:'frame',drag:true}
+];
+const _BOARDS_RAIL_MEDIA=[
+  {act:'add:image',label:'Image',icon:'image'},
+  {act:'file',label:'File',icon:'file'}
+];
 function _boardsRailItems(){
   const canEdit=_boardsCanEdit(_editBoard);
   const sel=_boardsSelectedCards();
@@ -3798,22 +3822,25 @@ function _boardsRailItems(){
   }
   if(!sel.length){
     if(!canEdit)return[{act:'fit',label:'Fit',icon:'fit'}];
-    return[
-      {act:'add:text',label:'Note',icon:'note'},
-      {act:'add:image',label:'Image',icon:'image'},
-      {act:'add:todo',label:'To-do',icon:'todo'},
-      {act:'add:link',label:'Link',icon:'link'},
-      {act:'file',label:'File',icon:'file'},
-      {act:'add:heading',label:'Heading',icon:'heading'},
-      {act:'add:frame',label:'Frame',icon:'frame'},
-      {act:'add:column',label:'Column',icon:'stack'},
-      {act:'add:table',label:'Table',icon:'table'},
-      {act:'add:board',label:'Board',icon:'board'},
-      {act:'line',label:'Line',icon:'line',on:_boardsLineMode},
+    // Grouped the way Milanote groups it: content tools, a divider, the
+    // overflow, then media. Eleven add-tools in one flat column was a wall;
+    // the point of the overflow is that the resting rail stays short.
+    //
+    // NO TRASH at the foot, deliberately. Milanote has one because a
+    // deleted card goes to a per-board trash; ours do not — Ctrl+Z covers
+    // them (Stage 1), and a Trash that only ever deletes the selection
+    // would be a second Delete button pretending to be a safety net.
+    const main=_BOARDS_RAIL_MAIN.map(it=>
+      it.act==='line'?Object.assign({},it,{on:_boardsLineMode}):it);
+    return main.concat([
+      {sep:true},
+      {act:'more-tools',label:'More',icon:'more',on:false},
+      {sep:true}
+    ]).concat(_BOARDS_RAIL_MEDIA).concat([
       {sep:true},
       {act:'comment-board',label:'Comment',icon:'comment'},
       {act:'fit',label:'Fit',icon:'fit'}
-    ];
+    ]);
   }
   const one=sel.length===1?sel[0]:null;
   // On a phone the rail is a bottom bar the width of the screen: six
@@ -3832,6 +3859,10 @@ function _boardsRailItems(){
     return ph;
   }
   const items=[];
+  // A way back to the add-tools without losing the selection — the
+  // back-arrow the browser study saw fading in on the real rail's context
+  // swap. Ours had no route back at all except clearing the selection.
+  items.push({act:'deselect',label:'Back',icon:'back',rewind:true});
   if(canEdit)items.push({swatches:true});
   items.push({act:'card-comment',label:'Comment',icon:'comment'});
   if(canEdit)items.push({act:'labels',label:'Labels',icon:'labels'});
@@ -3875,14 +3906,14 @@ function _boardsRenderRail(){
     if(it.swatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
     if(it.cellSwatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="cellbg:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
     if(it.connSwatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="ln:c:${c}" title="${c==='none'?'Default':c}"></button>`).join('')}</div>`;
-    return`<button class="rail-btn${it.on?' on':''}${it.danger?' danger':''}${it.done?' rail-done':''}" data-act="${it.act}" title="${_boardsEsc(it.label)}">${_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span></button>`;
+    return`<button class="rail-btn${it.on?' on':''}${it.danger?' danger':''}${it.done?' rail-done':''}${it.drag?' rail-draggable':''}" data-act="${it.act}"${it.drag?' data-drag="1"':''} title="${_boardsEsc(it.label)}${it.drag?' — click to place, or drag onto the board':''}">${_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span></button>`;
   }).join('');
   if(host.__wired)return;
   host.__wired=true;
   // One delegated listener on a host that survives innerHTML swaps — and
   // pointerdown must not reach the stage, or clicking the rail would start
   // a pan and clear the very selection you are acting on.
-  host.addEventListener('pointerdown',e=>e.stopPropagation());
+  host.addEventListener('pointerdown',e=>{e.stopPropagation();_boardsRailDragStart(e);});
   host.addEventListener('click',e=>{
     const btn=e.target.closest&&e.target.closest('[data-act]');
     if(!btn)return;
@@ -3891,6 +3922,107 @@ function _boardsRenderRail(){
     _boardsCtxRun(btn.getAttribute('data-act'));
   });
 }
+/* Drag a tool from the rail onto the canvas.
+
+   Click-to-place is UNCHANGED and stays the primary route: a click still
+   drops a card at the cascade point immediately. Milanote's spec claims a
+   single-click-then-click-to-place mode as well; a browser session could
+   not reproduce it or find any armed affordance for it in the real
+   product, so it is deliberately NOT built here — our click already does
+   something useful, and replacing that with a two-step arm would trade a
+   working gesture for an unverified one.
+
+   The drag is pointer-based like everything else on this canvas, NOT HTML5
+   drag-and-drop: the stage already reads a native dragstart as "files from
+   the desktop" (_boardsInternalDrag), so a native tool drag would raise
+   the file-drop overlay — the same collision that made card images
+   undraggable until Sept 2026.
+
+   Nothing is created until the pointer comes up over the stage. Released
+   anywhere else — back on the rail, over the top bar, outside the window —
+   the drag is simply abandoned. */
+let _boardsRailDrag=null;
+const _BOARDS_RAIL_DRAG_PX=5;
+function _boardsRailDragStart(e){
+  if(!_editBoard||!_boardsCanEdit(_editBoard))return;
+  if(e.button!==undefined&&e.button!==0)return;
+  const btn=e.target.closest&&e.target.closest('[data-act][data-drag="1"]');
+  if(!btn)return;
+  _boardsRailDrag={act:btn.getAttribute('data-act'),
+    label:(btn.getAttribute('title')||'').split(' — ')[0],
+    x0:e.clientX,y0:e.clientY,moved:false};
+  document.addEventListener('pointermove',_boardsRailDragMove,true);
+  document.addEventListener('pointerup',_boardsRailDragEnd,true);
+  document.addEventListener('pointercancel',_boardsRailDragCancel,true);
+}
+function _boardsRailDragMove(e){
+  const d=_boardsRailDrag;
+  if(!d)return;
+  if(!d.moved){
+    if(Math.abs(e.clientX-d.x0)<_BOARDS_RAIL_DRAG_PX&&
+       Math.abs(e.clientY-d.y0)<_BOARDS_RAIL_DRAG_PX)return;
+    d.moved=true;
+    _boardsRailGhostShow(d);
+  }
+  _boardsRailGhostMove(e.clientX,e.clientY);
+}
+function _boardsRailDragEnd(e){
+  const d=_boardsRailDrag;
+  _boardsRailDragCancel();
+  if(!d||!d.moved)return;                       // a plain click: let it through
+  // A drag ends with a click on whatever is under the pointer, and that
+  // click would run the rail action a second time. Same guard a card drag
+  // arms (_boardsSuppressClick).
+  _boardsSuppressClick=true;
+  const stage=document.getElementById('board-stage');
+  if(!stage)return;
+  const r=stage.getBoundingClientRect();
+  const inside=e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom;
+  if(!inside)return;                            // dropped off the canvas: abandon
+  _boardsNextPlacement=_boardsScreenToWorld(e.clientX,e.clientY);
+  _boardsCtxRun(d.act);
+}
+function _boardsRailDragCancel(){
+  _boardsRailDrag=null;
+  _boardsRailGhostHide();
+  document.removeEventListener('pointermove',_boardsRailDragMove,true);
+  document.removeEventListener('pointerup',_boardsRailDragEnd,true);
+  document.removeEventListener('pointercancel',_boardsRailDragCancel,true);
+}
+// The ghost is a chip at the cursor plus a dashed outline showing where the
+// card lands. The outline is the useful half — a chip alone tells you what
+// you are carrying but not where it will go. Deliberately ONE generic size
+// rather than the per-type dimensions: those live in _boardsNewCard, which
+// is not pure (it mints an id), and a second copy of that table would be a
+// second thing to keep in step.
+const _BOARDS_GHOST_ID='board-rail-ghost';
+function _boardsRailGhostShow(d){
+  _boardsRailGhostHide();
+  const el=document.createElement('div');
+  el.id=_BOARDS_GHOST_ID;
+  el.className='board-rail-ghost';
+  el.textContent=d.label||'';                   // textContent: it is a label, not markup
+  document.body.appendChild(el);
+}
+function _boardsRailGhostMove(x,y){
+  const el=document.getElementById(_BOARDS_GHOST_ID);
+  if(!el)return;
+  el.style.left=x+'px';el.style.top=y+'px';
+  const stage=document.getElementById('board-stage');
+  if(!stage)return;
+  const r=stage.getBoundingClientRect();
+  const over=x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom;
+  el.classList.toggle('over',over);
+}
+function _boardsRailGhostHide(){
+  const el=document.getElementById(_BOARDS_GHOST_ID);
+  if(el&&el.parentNode)el.parentNode.removeChild(el);
+}
+// Escape abandons a drag in flight, like it abandons everything else here.
+function _boardsRailDragEscape(e){
+  if(_boardsRailDrag&&(e.key==='Escape'||e.key==='Esc'))_boardsRailDragCancel();
+}
+document.addEventListener('keydown',_boardsRailDragEscape,true);
 function _boardCardCenter(c){return{x:c.x+c.w/2,y:c.y+c.h/2};}
 
 /* ── Connectors ─────────────────────────────────────────────────────────
@@ -5046,6 +5178,24 @@ function _boardsCellFxItems(){
   return _BOARDS_FX_FNS.map(fn=>({act:'cellfx:'+fn,label:fn+'   '+_BOARDS_FX_HINTS[fn]}))
     .concat([{sep:true},{act:'cellfx:__help',label:'View formula help   ›'}]);
 }
+/* The "…" overflow. It reuses _boardsOpenCtx rather than growing a second
+   popover: one renderer means the two cannot drift apart in look or in
+   dismiss behaviour, which is the rule the rail and the old selection bar
+   broke before they were merged. Anchored beside the button, which is what
+   the browser study observed the real one doing. */
+window.boardsMoreTools=function(){
+  if(!_boardsCanEdit(_editBoard))return;
+  const items=_BOARDS_RAIL_OVERFLOW.map(it=>({act:it.act,label:it.label}));
+  const btn=document.querySelector('#board-rail [data-act="more-tools"]');
+  if(_boardsIsPhone()){
+    _boardsOpenSheet('More tools',`<div class="board-sheet-list">${items.map(it=>
+      `<button class="board-sheet-item" onclick="window.boardsSheetRun('${it.act}')">${_boardsEsc(it.label)}</button>`
+    ).join('')}</div>`);
+    return;
+  }
+  const r=btn&&btn.getBoundingClientRect?btn.getBoundingClientRect():null;
+  _boardsOpenCtx(r?r.right+6:120,r?r.top:120,items);
+};
 window.boardsCellFormulaMenu=function(){
   const f=_boardsFocusedCell();
   if(!f||!_boardsCanEdit(_editBoard))return;
@@ -7493,6 +7643,7 @@ function _boardsCtxRun(act){
   if(act.indexOf('color:')===0){window.boardsSetColor(act.slice(6));return;}
   if(act.indexOf('ln:')===0){_boardsConnAction(act.slice(3));return;}
   if(act.indexOf('cellbg:')===0){window.boardsCellColor(act.slice(7));return;}
+  if(act==='more-tools'){window.boardsMoreTools();return;}
   if(act.indexOf('cellfx:')===0){
     const w=act.slice(7);
     if(w==='__help')window.boardsCellFormulaHelp();
