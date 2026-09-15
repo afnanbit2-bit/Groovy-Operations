@@ -327,6 +327,22 @@ service cloud.firestore {
         allow update: if canEditParent();
         allow delete: if signedIn() && (resource.data.byUid==request.auth.uid || isOwner());
       }
+      // The card trash. One document per deleted card, so two people
+      // deleting at the same time cannot clobber each other's entry the
+      // way a single array on the board document would (the Stage 6 merge
+      // is per card). Anyone who can edit the board may delete a card into
+      // it and may restore from it; an entry is NEVER edited, only created
+      // and purged, so there is no update clause at all. Purging is your
+      // own entry, the board's owner clearing up, or an app owner —
+      // mirrored by _boardsTrashCanPurge() in js/boards.js.
+      match /trash/{tdoc} {
+        allow read:   if canSeeParent();
+        allow create: if canEditParent() && request.resource.data.byUid==request.auth.uid;
+        allow update: if false;
+        allow delete: if signedIn() && (resource.data.byUid==request.auth.uid
+                                        || parentBoard().ownerUid==request.auth.uid
+                                        || isOwner());
+      }
       // Per-board activity feed — append-only, like fabric_movements:
       // a record nobody can quietly rewrite, not even an owner.
       match /activity/{adoc} {

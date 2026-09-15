@@ -1508,10 +1508,11 @@ module.exports=function(){
     s.ok('and the overflow button',acts.indexOf('more-tools')>-1);
     ['add:heading','add:table','add:frame'].forEach(a=>
       s.ok(a+' folds away behind it',acts.indexOf(a)<0));
-    // Milanote has a Trash at the foot because a deleted card goes to a
-    // per-board trash. Ours do not — Ctrl+Z covers them (Stage 1) — so a
-    // Trash here would be a second Delete pretending to be a safety net.
-    s.ok('no Trash at the foot, deliberately',acts.indexOf('trash')<0);
+    // A Trash at the foot, because deleted cards really do go somewhere
+    // now. It is a DESTINATION, not a second Delete button — the router
+    // sends it to the panel and it never removes anything.
+    s.ok('a Trash at the foot',acts.indexOf('trash')>-1);
+    s.eq('and it is the last tool',acts.trim().split(' ').pop(),'trash');
     s.eq('the overflow offers exactly what was folded away',
       run(`_BOARDS_RAIL_OVERFLOW.map(i=>i.act).join(',')`),'add:heading,add:table,add:frame');
 
@@ -2121,6 +2122,167 @@ module.exports=function(){
     run(`delete _editCards[0].by`);
     s.ok('a card with no provenance shows no line',
       !/Added by/.test(run(`JSON.stringify(_boardsCardCtxItems(true))`)));
+  }
+
+  // ── Trash: deleted cards go somewhere, and Ctrl+Z still works ─────────
+  // The pair has to hold together: undo restores a card under its own id,
+  // and the trash row for it must stop showing WITHOUT anything being
+  // written. That derivation is the whole design, so it is asserted first.
+  {
+    const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    const {run,state}=app;
+    // A trash entry is the only thing this module writes that carries a
+    // `card`, so that is how the recorded writes are picked out — whether
+    // they arrived one at a time or through a batch.
+    const trashed=()=>state.writes.filter(w=>w.data&&w.data.card).map(w=>w.data);
+    const countOp=op=>state.writes.filter(w=>w.op===op).length;
+    const nests=v=>Array.isArray(v)?(v.some(Array.isArray)||v.some(nests))
+      :(v&&typeof v==='object'?Object.keys(v).some(k=>nests(v[k])):false);
+    const boot=()=>{
+      state.toasts.length=0;state.writes.length=0;state.batches.length=0;
+      run(`_editBoard={id:'b1',title:'B',ownerUid:'u1',visibility:'personal'};
+           _editCards=[
+             {id:'n',type:'text',text:'a note',x:0,y:0,w:170,h:100},
+             {id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/a.jpg',x:200,y:0,w:170,h:100},
+             {id:'t',type:'table',rows:[['A','B'],['1','2']],x:400,y:0,w:240,h:140}
+           ];
+           _editConnectors=[{id:'L',from:'n',to:'p'}];
+           _boardsCardTrash=[];_boardsSelection=new Set();_boardsConnSel=null;
+           _boardsCardTrashOpen=false;_boardsCardTrashTab='mine';`);
+    };
+
+    s.section('deleting a card writes a trash entry');
+    boot();
+    run(`window.boardsDeleteCard('n')`);
+    s.eq('one entry written',trashed().length,1);
+    s.eq('holding the card',trashed()[0].card.id,'n');
+    s.eq('stamped with who',trashed()[0].byUid+'/'+trashed()[0].byName,'u1/Afnan');
+    s.ok('and when',typeof trashed()[0].at==='number'&&trashed()[0].at>0);
+
+    s.section('the connectors go WITH the card, captured before the filter');
+    // Afterwards there is nothing left to record — a restore without its
+    // lines returns a different card from the one that went.
+    s.eq('the line attached to it is stored',trashed()[0].conns.map(c=>c.id).join(','),'L');
+    s.eq('and it really was removed from the board',run(`_editConnectors.length`),0);
+
+    s.section('a TABLE is encoded on the way in — Firestore refuses nested arrays');
+    boot();
+    run(`window.boardsDeleteCard('t')`);
+    const rows=JSON.stringify(trashed()[0].card.rows);
+    s.ok('rows are wrapped, not nested',/^\[\{"c":\[/.test(rows),rows);
+    // The RULE, not the field: nothing a trash write produces may nest an
+    // array in an array, so a future one fails here first.
+    s.ok('nothing written nests an array in an array',!nests(trashed()));
+
+    s.section('a bulk delete is ONE batch, not N round trips');
+    boot();
+    run(`_boardsSetSelection(['n','p']);window.boardsDeleteSelection()`);
+    s.eq('one batch',state.batches.length,1);
+    s.eq('carrying both cards',state.batches[0].length,2);
+    // The board-activity row is an add too, so the assertion is narrower
+    // than "no adds": no TRASH entry may be written outside the batch.
+    s.eq('no trash entry outside the batch',
+      state.writes.filter(w=>w.op==='add'&&w.data&&w.data.card).length,0);
+
+    s.section('AN ENTRY IS HIDDEN ONCE ITS CARD IS BACK — no write, no bookkeeping');
+    // This is what lets Ctrl+Z and the trash coexist. Undo restores the
+    // card under its own id; the row stops matching and disappears.
+    boot();
+    run(`window.boardsDeleteCard('n')`);
+    run(`_boardsCardTrash=[{id:'e1',card:{id:'n',type:'text',text:'a note'},conns:[],byUid:'u1',byName:'Afnan',at:Date.now()}]`);
+    s.eq('the row shows while the card is gone',run(`_boardsTrashLive().length`),1);
+    state.writes.length=0;
+    run(`window.boardsUndoAction()`);
+    s.eq('the card is back',run(`_editCards.filter(c=>c.id==='n').length`),1);
+    s.eq('and the row is gone',run(`_boardsTrashLive().length`),0);
+    s.eq('with nothing written to make that true',state.writes.length,0);
+
+    s.section('an entry with no usable card is dropped, not drawn blank');
+    run(`_boardsCardTrash=[{id:'x',byUid:'u1',at:1},{id:'y',card:{},byUid:'u1',at:1}]`);
+    s.eq('both ignored',run(`_boardsTrashLive().length`),0);
+
+    s.section('the two tabs split on who deleted it');
+    boot();
+    run(`_boardsCardTrash=[
+      {id:'a',card:{id:'g1',type:'text',text:'mine'},byUid:'u1',byName:'Afnan',at:Date.now()},
+      {id:'b',card:{id:'g2',type:'image'},byUid:'u2',byName:'Ammar',at:Date.now()}
+    ]`);
+    s.eq('mine',run(`_boardsTrashTabRows('mine').map(e=>e.id).join(',')`),'a');
+    s.eq('theirs',run(`_boardsTrashTabRows('others').map(e=>e.id).join(',')`),'b');
+
+    s.section('purging follows the rules, not the UI');
+    // _boardsTrashCanPurge mirrors the firestore.rules delete clause:
+    // your own entry, the board's owner, or an app owner.
+    s.ok('my own entry, yes',run(`_boardsTrashCanPurge({byUid:'u1'})`));
+    s.ok("the board owner may clear someone else's",run(`_boardsTrashCanPurge({byUid:'u2'})`));
+    run(`_editBoard.ownerUid='u9';session.role='worker'`);
+    s.ok('a plain member may not',!run(`_boardsTrashCanPurge({byUid:'u2'})`));
+    s.ok('but still may purge their own',run(`_boardsTrashCanPurge({byUid:'u1'})`));
+
+    s.section('restore puts the card back, and its lines with it');
+    boot();
+    run(`_boardsCardTrash=[{id:'e',card:{id:'n2',type:'text',text:'back',x:5,y:6,w:170,h:100},
+         conns:[{id:'L2',from:'n2',to:'p'},{id:'L3',from:'n2',to:'gone'}],
+         byUid:'u1',byName:'Afnan',at:Date.now()}]`);
+    run(`window.boardsTrashRestore('e')`);
+    s.eq('the card is on the board',run(`_editCards.filter(c=>c.id==='n2').length`),1);
+    s.eq('at the position it was deleted from',run(`_editCards.find(c=>c.id==='n2').x+','+_editCards.find(c=>c.id==='n2').y`),'5,6');
+    s.eq('the line whose other end is here comes back',run(`_editConnectors.filter(c=>c.id==='L2').length`),1);
+    s.eq('the one pointing at a missing card does NOT',run(`_editConnectors.filter(c=>c.id==='L3').length`),0);
+    s.ok('and the restore is itself undoable',run(`_boardsUndo.length>0`));
+
+    s.section('a table survives the round trip');
+    boot();
+    run(`window.boardsDeleteCard('t')`);
+    run(`_boardsCardTrash=[{id:'e',card:`+JSON.stringify(trashed()[0].card)+`,conns:[],byUid:'u1',byName:'A',at:1}]`);
+    run(`window.boardsTrashRestore('e')`);
+    s.eq('rows are a nested array again in memory',
+      run(`JSON.stringify(_editCards.find(c=>c.id==='t').rows)`),'[["A","B"],["1","2"]]');
+
+    s.section('restoring twice is refused, not duplicated');
+    state.toasts.length=0;
+    run(`window.boardsTrashRestore('e')`);
+    s.eq('still one copy',run(`_editCards.filter(c=>c.id==='t').length`),1);
+    s.ok('and it says so',/already back/i.test(state.toasts.join(' ')),state.toasts.join(' | '));
+
+    s.section('restoring both ends of one line restores it ONCE');
+    boot();
+    run(`_editCards=[];_editConnectors=[];
+         _boardsCardTrash=[
+           {id:'e1',card:{id:'c1',type:'text',x:0,y:0,w:170,h:100},conns:[{id:'L9',from:'c1',to:'c2'}],byUid:'u1',at:1},
+           {id:'e2',card:{id:'c2',type:'text',x:0,y:0,w:170,h:100},conns:[{id:'L9',from:'c1',to:'c2'}],byUid:'u1',at:1}
+         ]`);
+    run(`window.boardsTrashRestore('e1')`);
+    s.eq('first restore draws nothing yet',run(`_editConnectors.length`),0);
+    run(`window.boardsTrashRestore('e2')`);
+    s.eq('the second brings the line back',run(`_editConnectors.length`),1);
+    run(`window.boardsTrashRestore('e1')`);
+    s.eq('and it is never doubled',run(`_editConnectors.filter(c=>c.id==='L9').length`),1);
+
+    s.section('the delete toast names both routes back');
+    boot();
+    run(`window.boardsDeleteCard('n')`);
+    s.ok('Ctrl+Z',/Ctrl\+Z/.test(state.toasts.join(' ')),state.toasts.join(' | '));
+    s.ok('and the Trash',/Trash/.test(state.toasts.join(' ')));
+
+    s.section('day headers read as a person would say them');
+    const DAY=86400000;
+    s.eq('today',run(`_boardsTrashDay(Date.now())`),'Today');
+    s.eq('yesterday',run(`_boardsTrashDay(Date.now()-${DAY})`),'Yesterday');
+    s.ok('older is a date',!/Today|Yesterday/.test(run(`_boardsTrashDay(Date.now()-5*${DAY})`)));
+    // A timestamp a few hours ahead (a clock skew between two devices) must
+    // still read as Today rather than falling through to a date.
+    s.eq('a slightly-ahead clock still says Today',run(`_boardsTrashDay(Date.now()+3600000)`),'Today');
+
+    s.section('the panel never interpolates a stored string into its HTML');
+    boot();
+    run(`_boardsCardTrashOpen=true;
+         _boardsCardTrash=[{id:'e',card:{id:'z',type:'text',text:'<img src=x onerror=alert(1)>'},
+           conns:[],byUid:'u1',byName:'<script>bad</script>',at:Date.now()}]`);
+    run(`_boardsRenderTrash()`);
+    const html=run(`(document.getElementById('board-ctrash-panel')||{innerHTML:''}).innerHTML`);
+    s.ok('no tag can open from the card text',html.indexOf('<img')<0,html.slice(0,160));
+    s.ok('and none from the name',html.indexOf('<script')<0);
   }
 
   return s;

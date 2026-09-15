@@ -1767,12 +1767,14 @@ async function _boardsOpenCanvas(){
   _boardsConnSel=null;
   _boardsConnBase=JSON.stringify(_editConnectors);
   _boardsPeers=[];_boardsComments=[];_boardsBoardActivity=[];
+  _boardsCardTrash=[];_boardsCardTrashOpen=false;_boardsCardTrashTab='mine';
   _boardsPendingRemote=null;_boardsGestureActive=false;
   if(_boardsHomeSync())_boardsSaveDebounced();
   _boardsRenderCanvasAndWire();
   _boardsSubscribe(b.id);
   _boardsPresenceStart(b.id);
   _boardsCommentsStart(b.id);
+  _boardsCardTrashStart(b.id);
   _boardsActivityStart(b.id);
   // Opened cold from a deep link, moodBoards is empty — so breadcrumbs and
   // sub-board titles would be blank. Load the list in the background and
@@ -1928,6 +1930,7 @@ function _renderBoardCanvasHTML(){
       </div>
     </div>
     <div class="board-drawer" id="board-drawer" style="display:none"></div>
+    <div class="board-ctrash-panel" id="board-ctrash-panel" style="display:none"></div>
     <div class="board-share-modal" id="board-share-modal" style="display:none"></div>
     <input type="file" id="board-file-picker" multiple style="display:none" onchange="window.boardsFilesPicked(this)">
     ${_boardsTrayHTML(canEdit)}
@@ -3826,10 +3829,10 @@ function _boardsRailItems(){
     // overflow, then media. Eleven add-tools in one flat column was a wall;
     // the point of the overflow is that the resting rail stays short.
     //
-    // NO TRASH at the foot, deliberately. Milanote has one because a
-    // deleted card goes to a per-board trash; ours do not — Ctrl+Z covers
-    // them (Stage 1), and a Trash that only ever deletes the selection
-    // would be a second Delete button pretending to be a safety net.
+    // THE TRASH AT THE FOOT IS A DESTINATION, NOT A DELETE BUTTON — which
+    // is what M6's note here was worried about when it said there would
+    // never be one. Deleted cards really do go somewhere now, so the rail
+    // needs a way in; it opens the panel and never deletes anything.
     const main=_BOARDS_RAIL_MAIN.map(it=>
       it.act==='line'?Object.assign({},it,{on:_boardsLineMode}):it);
     return main.concat([
@@ -3839,7 +3842,9 @@ function _boardsRailItems(){
     ]).concat(_BOARDS_RAIL_MEDIA).concat([
       {sep:true},
       {act:'comment-board',label:'Comment',icon:'comment'},
-      {act:'fit',label:'Fit',icon:'fit'}
+      {act:'fit',label:'Fit',icon:'fit'},
+      {sep:true},
+      {act:'trash',label:'Trash',icon:'trash',badge:true,on:_boardsCardTrashOpen}
     ]);
   }
   const one=sel.length===1?sel[0]:null;
@@ -3906,8 +3911,12 @@ function _boardsRenderRail(){
     if(it.swatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
     if(it.cellSwatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="cellbg:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
     if(it.connSwatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="ln:c:${c}" title="${c==='none'?'Default':c}"></button>`).join('')}</div>`;
-    return`<button class="rail-btn${it.on?' on':''}${it.danger?' danger':''}${it.done?' rail-done':''}${it.drag?' rail-draggable':''}" data-act="${it.act}"${it.drag?' data-drag="1"':''} title="${_boardsEsc(it.label)}${it.drag?' — click to place, or drag onto the board':''}">${_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span></button>`;
+    return`<button class="rail-btn${it.on?' on':''}${it.danger?' danger':''}${it.done?' rail-done':''}${it.drag?' rail-draggable':''}" data-act="${it.act}"${it.drag?' data-drag="1"':''} title="${_boardsEsc(it.label)}${it.drag?' — click to place, or drag onto the board':''}">${_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span>${it.badge?'<span class="board-rail-badge" style="display:none"></span>':''}</button>`;
   }).join('');
+  // The count is painted after the markup exists, and again whenever the
+  // trash changes underneath — it is derived from what is actually
+  // restorable, not from how many documents the collection holds.
+  _boardsPaintTrashCount();
   if(host.__wired)return;
   host.__wired=true;
   // One delegated listener on a host that survives innerHTML swaps — and
@@ -5652,6 +5661,7 @@ window.boardsDeleteColumnAndCards=function(){
   _boardsPushUndo();
   const ids=new Set(kids.map(k=>k.id));ids.add(col.id);
   _boardsColumnChildren(col).forEach(k=>{if(!ids.has(k.id))_boardsLeaveColumn(k);});
+  _boardsTrashPut(_editCards.filter(c=>ids.has(c.id)),_boardsConnsTouching(ids));
   _editCards=_editCards.filter(c=>!ids.has(c.id));
   _editConnectors=_editConnectors.filter(cn=>!ids.has(cn.from)&&!ids.has(cn.to));
   ids.forEach(id=>_boardsSelection.delete(id));
@@ -5951,6 +5961,10 @@ window.boardsDeleteCard=function(id){
     _boardsColumnChildren(c).forEach(_boardsLeaveColumn);
   }
   _boardsPushUndo();
+  // Captured before the filter below — afterwards there is nothing left to
+  // record, and a restore without its lines returns a different card from
+  // the one that went.
+  _boardsTrashPut([c],_boardsConnsTouching([id]));
   _editCards=_editCards.filter(x=>x.id!==id);
   _editConnectors=_editConnectors.filter(cn=>cn.from!==id&&cn.to!==id);
   _boardsSelection.delete(id);
@@ -5966,22 +5980,19 @@ window.boardsDeleteCard=function(id){
   _boardsLogBoardActivity('deleted a card');
 };
 
-/* ── Delete says it is undoable ─────────────────────────────────────
-   Spec §9's build note says deletes should go to a recoverable Trash and
-   never hard-delete by default. Afnan decided against it, and this file
-   had already decided the same thing twice: cards and lines have no trash
-   because Ctrl+Z covers them, and a second recovery system for a
-   one-keystroke-recoverable action is not worth its complexity (Stage 1,
-   and again for connectors).
+/* ── Delete says where the card went ────────────────────────────────
+   M8 shipped this toast INSTEAD of a trash, on the reading that Ctrl+Z was
+   enough and only needed to be discoverable. Afnan then sent Milanote's
+   own trash panel and asked for both, which is the right call: undo and a
+   trash answer different questions. Ctrl+Z is "that was a mistake, just
+   now"; the trash is "where did that card go last Tuesday", and one
+   keystroke of history cannot answer the second. See the Trash section for
+   how the two are kept from disagreeing.
 
-   That decision is only defensible if THE KEYSTROKE IS DISCOVERABLE. Until
-   now a plain delete was silent — it pushed an undo entry and said nothing
-   — so the safety net existed and nobody was told. Every delete path now
-   names what went and how to get it back. That is the whole of M8: not a
-   Trash, but the honesty a missing Trash requires.
-
-   Deliberately a toast and not a confirm: a confirm on every delete is the
-   thing that makes people stop reading confirms. */
+   So the toast now names both routes back. Still deliberately a toast and
+   not a confirm: a confirm on every delete is the thing that makes people
+   stop reading confirms, and then the one that matters is clicked through
+   too. */
 function _boardsCardNoun(c){
   if(!c)return'Card';
   const t=c.type;
@@ -5991,7 +6002,7 @@ function _boardsCardNoun(c){
     :t==='link'?'Link':'Card';
 }
 function _boardsUndoableToast(what){
-  showToast(what+' — press Ctrl+Z to undo');
+  showToast(what+' — Ctrl+Z to undo, or find it in Trash');
 }
 // ── Bulk actions on the selection ──────────────────────────────────────
 window.boardsDeleteSelection=function(){
@@ -6008,6 +6019,7 @@ window.boardsDeleteSelection=function(){
   removable.filter(c=>c.type==='column').forEach(col=>{
     _boardsColumnChildren(col).forEach(k=>{if(!ids.has(k.id)){_boardsLeaveColumn(k);released++;}});
   });
+  _boardsTrashPut(removable,_boardsConnsTouching(ids));
   _editCards=_editCards.filter(c=>!ids.has(c.id));
   _editConnectors=_editConnectors.filter(cn=>!ids.has(cn.from)&&!ids.has(cn.to));
   ids.forEach(id=>_boardsSelection.delete(id));
@@ -7499,6 +7511,253 @@ function _boardsActivityStart(boardId){
     },()=>{});
   }catch(e){/* noop */}
 }
+/* ── Trash (Sept 2026) ─────────────────────────────────────────────────
+   REVERSES M8. Cards had no trash from Stage 1 onward — Ctrl+Z covered
+   them and a second recovery system looked like complexity for its own
+   sake. Afnan sent Milanote's own trash (a rail button, Deleted by me /
+   Deleted by others, day groups, Empty trash) and asked for BOTH: undo
+   AND a trash. He is right that they answer different questions — Ctrl+Z
+   is "that was a mistake, just now", the trash is "where did that card go
+   last Tuesday". One keystroke of history cannot answer the second.
+
+   Four decisions hold this together:
+
+   1. A SUBCOLLECTION, not an array on the board document. `unsorted` is a
+      plain array because one person fills their own tray; a trash has a
+      "Deleted by others" tab by definition, and the Stage 6 merge is
+      per CARD — two people deleting at once would each rewrite a whole
+      array and the later write would silently drop the other's entry.
+      One document per deleted card makes concurrent deletes independent.
+      It also keeps a growing pile of deleted cards out of the document
+      that gets rewritten on every autosave.
+   2. AN ENTRY IS HIDDEN WHEN ITS CARD IS BACK ON THE BOARD, and nothing
+      is written to make that true (`_boardsTrashLive`). That is what lets
+      Ctrl+Z and the trash coexist: undo restores the card under its own
+      id, the entry stops matching, and the row disappears with no write,
+      no coupling to the undo stack and no way for the two to disagree.
+      Same discipline as nesting, frame membership and a stale columnId.
+   3. CARDS ARE ENCODED ON THE WAY IN. A table's `rows` is a nested array
+      and Firestore refuses those outright — the bug that meant table
+      content never persisted at all. A trashed table is the same shape,
+      so it goes through the same `_boardsEncodeRows`/`_boardsDecodeCard`
+      boundary.
+   4. THE LINES COME BACK TOO. Deleting a card drops the connectors
+      touching it; if restore did not carry them, "restore" would quietly
+      return a different card from the one that went. They are stored on
+      the entry and re-added only where BOTH endpoints are on the board
+      and the line is not already there — so restoring two ends of the
+      same line, in either order, restores it exactly once. */
+const _BOARDS_TRASH_LIMIT=200;
+let _boardsCardTrash=[],_boardsCardTrashUnsub=null,_boardsCardTrashOpen=false,_boardsCardTrashTab='mine';
+function _boardsTrashStart(boardId){
+  if(!_boardsLive())return;
+  try{
+    _boardsCardTrashUnsub=onSnapshot(query(collection(db,'mood_boards',boardId,'trash'),orderBy('at','desc'),limit(_BOARDS_TRASH_LIMIT)),snap=>{
+      _boardsCardTrash=[];
+      snap.forEach(d=>_boardsCardTrash.push({id:d.id,...d.data()}));
+      _boardsPaintTrashCount();
+      if(_boardsCardTrashOpen)_boardsRenderTrash();
+    },()=>{});
+  }catch(e){/* the board must open with or without a trash */}
+}
+// Entries whose card is back on the board are not shown — see decision 2.
+// An entry with no readable card at all is dropped rather than rendered as
+// a blank row; there is nothing a person could do with it.
+function _boardsTrashLive(){
+  const here=new Set(_editCards.map(c=>c.id));
+  return _boardsCardTrash.filter(e=>e&&e.card&&e.card.id&&!here.has(e.card.id));
+}
+function _boardsTrashMine(e){return !!(session&&e.byUid===session.uid);}
+function _boardsTrashTabRows(tab){
+  return _boardsTrashLive().filter(e=>tab==='mine'?_boardsTrashMine(e):!_boardsTrashMine(e));
+}
+// Day headers, matching the panel Afnan sent: Today / Yesterday / a date.
+function _boardsTrashDay(at){
+  const d=new Date(at||0),now=new Date();
+  const day=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime();
+  const diff=Math.round((day(now)-day(d))/86400000);
+  if(diff<=0)return'Today';
+  if(diff===1)return'Yesterday';
+  return d.toLocaleDateString(undefined,{day:'numeric',month:'short'})+(d.getFullYear()===now.getFullYear()?'':' '+d.getFullYear());
+}
+/* Send cards to the trash. Called from the delete paths with the cards AND
+   the connectors that were attached to them, captured BEFORE _editConnectors
+   is filtered — afterwards there is nothing left to record.
+
+   Deliberately fire-and-forget: a failed trash write must not fail the
+   delete, because Ctrl+Z is still there and the card is already gone from
+   the board. One batch, so a twelve-card delete is one round trip. */
+function _boardsTrashPut(cards,conns){
+  if(!_editBoard||!session||!Array.isArray(cards)||!cards.length)return;
+  const at=Date.now(),byUid=session.uid||'',byName=session.name||'Someone';
+  const all=Array.isArray(conns)?conns:[];
+  try{
+    const col=collection(db,'mood_boards',_editBoard.id,'trash');
+    const rows=cards.map(c=>{
+      const plain={};
+      Object.keys(c).forEach(k=>{if(k.charAt(0)!=='_')plain[k]=c[k];});
+      return{
+        card:_boardsEncodeRows(plain),
+        conns:all.filter(cn=>cn&&(cn.from===c.id||cn.to===c.id)),
+        byUid,byName,at
+      };
+    });
+    if(typeof writeBatch==='function'&&rows.length>1){
+      const b=writeBatch(db);
+      rows.forEach(r=>b.set(doc(col),r));
+      _boardsQuietWrite(()=>b.commit()).catch(e=>console.warn('[boards] trash write failed',e));
+    }else{
+      rows.forEach(r=>_qAdd(col,r).catch(e=>console.warn('[boards] trash write failed',e)));
+    }
+  }catch(e){console.warn('[boards] trash write failed',e);}
+}
+// The connectors a set of card ids owns, for _boardsTrashPut. A line
+// between two cards that are BOTH going is recorded on both entries; the
+// restore guard is what stops it coming back twice.
+function _boardsConnsTouching(ids){
+  const set=ids instanceof Set?ids:new Set(ids);
+  return _editConnectors.filter(cn=>cn&&(set.has(cn.from)||set.has(cn.to)));
+}
+function _boardsPaintTrashCount(){
+  const el=document.querySelector('#board-rail [data-act="trash"] .board-rail-badge');
+  if(!el)return;
+  const n=_boardsTrashLive().length;
+  el.textContent=n?String(n):'';
+  el.style.display=n?'':'none';
+}
+window.boardsToggleTrash=function(){
+  _boardsCardTrashOpen=!_boardsCardTrashOpen;
+  _boardsRenderTrash();
+};
+window.boardsCloseTrash=function(){
+  if(!_boardsCardTrashOpen)return;
+  _boardsCardTrashOpen=false;
+  _boardsRenderTrash();
+};
+window.boardsTrashTab=function(tab){_boardsCardTrashTab=tab==='others'?'others':'mine';_boardsRenderTrash();};
+function _boardsRenderTrash(){
+  const host=document.getElementById('board-ctrash-panel');
+  if(!host)return;
+  host.style.display=_boardsCardTrashOpen?'flex':'none';
+  if(!_boardsCardTrashOpen)return;
+  const rows=_boardsTrashTabRows(_boardsCardTrashTab);
+  const canEdit=_boardsCanEdit(_editBoard);
+  const purgeable=rows.filter(_boardsTrashCanPurge).length;
+  // Day headers are emitted as the list is walked, so a day appears once
+  // and only where it actually starts — the same rule the cutting
+  // registry's day grouping follows.
+  let lastDay='';
+  const body=rows.map(e=>{
+    const day=_boardsTrashDay(e.at);
+    const head=day===lastDay?'':`<div class="board-ctrash-day">${_boardsEsc(day)}</div>`;
+    lastDay=day;
+    return head+`
+      <div class="board-ctrash-row">
+        <div class="board-ctrash-prev">
+          <span class="board-ctrash-kind">${_boardsEsc(_boardsCardNoun(e.card))}</span>
+          <span class="board-ctrash-text" id="board-ctrash-t-${_boardsEsc(e.id)}"></span>
+        </div>
+        <div class="board-ctrash-meta">
+          <span id="board-ctrash-by-${_boardsEsc(e.id)}"></span>
+          <span>${_boardsEsc(_boardsRelTime(e.at))}</span>
+        </div>
+        <div class="board-ctrash-actions">
+          ${canEdit?`<button class="btn-sm" onclick="window.boardsTrashRestore('${_boardsEsc(e.id)}')">Restore</button>`:''}
+          ${_boardsTrashCanPurge(e)?`<button class="btn-sm" onclick="window.boardsTrashPurge('${_boardsEsc(e.id)}')">Delete forever</button>`:''}
+        </div>
+      </div>`;
+  }).join('');
+  host.innerHTML=`
+    <div class="board-ctrash-tabs">
+      <button class="${_boardsCardTrashTab==='mine'?'on':''}" onclick="window.boardsTrashTab('mine')">Deleted by me</button>
+      <button class="${_boardsCardTrashTab==='others'?'on':''}" onclick="window.boardsTrashTab('others')">Deleted by others</button>
+      <button class="board-ctrash-x" onclick="window.boardsCloseTrash()" title="Close">✕</button>
+    </div>
+    <div class="board-ctrash-list">
+      ${rows.length?body:`<div class="empty">${_boardsCardTrashTab==='mine'?'You haven’t deleted anything on this board.':'Nobody else has deleted anything here.'}</div>`}
+    </div>
+    ${purgeable?`<button class="board-ctrash-empty" onclick="window.boardsTrashEmpty()">Empty trash</button>`:''}`;
+  // Card text and the person's name are other people's strings — written
+  // in with textContent after the structure exists, never interpolated.
+  rows.forEach(e=>{
+    const t=document.getElementById('board-ctrash-t-'+e.id);
+    if(t)t.textContent=_boardsTrashPreview(e.card);
+    const b=document.getElementById('board-ctrash-by-'+e.id);
+    if(b)b.textContent=_boardsTrashMine(e)?'You':(e.byName||'Someone');
+  });
+}
+// What a row shows of the card it is holding. Falls back to the card's own
+// name, then to nothing — a row is identified by its type chip and its day
+// either way, so an empty note still reads as a row rather than a gap.
+function _boardsTrashPreview(card){
+  try{
+    const txt=String(_boardsCardText(_boardsDecodeCard(card))||'').replace(/\s+/g,' ').trim();
+    if(txt)return txt.length>120?txt.slice(0,120)+'…':txt;
+  }catch(e){}
+  return String((card&&(card.name||card.fileName))||'').trim();
+}
+// Rules mirror: your own entry, or the board's owner clearing up. An app
+// owner can too (the moderation power they already have on a board).
+function _boardsTrashCanPurge(e){
+  if(!session)return false;
+  if(e.byUid===session.uid)return true;
+  if(_editBoard&&_editBoard.ownerUid===session.uid)return true;
+  return session.role==='owner';
+}
+window.boardsTrashRestore=async function(id){
+  if(!_boardsCanEdit(_editBoard))return;
+  const e=_boardsCardTrash.find(x=>x.id===id);
+  if(!e||!e.card){showToast('That card is no longer in the trash');return;}
+  const card=_boardsDecodeCard({...e.card});
+  if(_editCards.some(c=>c.id===card.id)){showToast('That card is already back on the board');return;}
+  _boardsPushUndo();
+  _editCards.push(card);
+  // A line comes back only when both of its cards are here and it is not
+  // already drawn — so restoring both ends of one line, in either order,
+  // restores it exactly once.
+  const here=new Set(_editCards.map(c=>c.id));
+  const have=new Set(_editConnectors.map(cn=>cn.id));
+  (Array.isArray(e.conns)?e.conns:[]).forEach(cn=>{
+    if(!cn||have.has(cn.id))return;
+    if(!here.has(cn.from)||!here.has(cn.to))return;
+    _editConnectors.push(cn);have.add(cn.id);
+  });
+  _boardsLayoutColumns();
+  _boardsRenderCanvasAndWire();
+  _boardsSaveNow();
+  _boardsLogBoardActivity('restored a card from the trash');
+  showToast(_boardsCardNoun(card)+' restored');
+  // The row vanishes on its own the moment the card is back (decision 2),
+  // so the document is tidied up behind the render, not in front of it.
+  try{await _qDel(doc(db,'mood_boards',_editBoard.id,'trash',id));}catch(err){}
+  _boardsRenderTrash();
+};
+window.boardsTrashPurge=async function(id){
+  const e=_boardsCardTrash.find(x=>x.id===id);
+  if(!e||!_boardsTrashCanPurge(e))return;
+  if(!confirm('Delete this '+_boardsCardNoun(e.card).toLowerCase()+' forever? This cannot be undone.'))return;
+  try{await _qDel(doc(db,'mood_boards',_editBoard.id,'trash',id));showToast('Deleted forever');}
+  catch(err){showToast('Could not empty that — try again');}
+  _boardsRenderTrash();
+};
+window.boardsTrashEmpty=async function(){
+  const rows=_boardsTrashTabRows(_boardsCardTrashTab);
+  const mine=rows.filter(_boardsTrashCanPurge);
+  if(!mine.length)return;
+  const kept=rows.length-mine.length;
+  if(!confirm('Delete '+mine.length+' item'+(mine.length===1?'':'s')+' forever? This cannot be undone.'))return;
+  try{
+    if(typeof writeBatch==='function'){
+      const b=writeBatch(db);
+      mine.forEach(e=>b.delete(doc(db,'mood_boards',_editBoard.id,'trash',e.id)));
+      await _boardsQuietWrite(()=>b.commit());
+    }else{
+      await Promise.all(mine.map(e=>_qDel(doc(db,'mood_boards',_editBoard.id,'trash',e.id))));
+    }
+    showToast(kept?'Trash emptied — kept '+kept+' deleted by someone else':'Trash emptied');
+  }catch(err){showToast('Could not empty the trash — try again');}
+  _boardsRenderTrash();
+};
 // The canvas is a full-viewport takeover, so the page behind it must not
 // scroll — otherwise Android scrolls the whole document and the board's own
 // top bar slides off the screen (reported from a real phone, Sept 2026).
@@ -7512,12 +7771,13 @@ function _boardsTeardown(){
   _boardsFullscreen(false);
   window.boardsCloseSheet();
   if(_editBoard)_boardsSaveNow();
-  [_boardsUnsub,_boardsPresenceUnsub,_boardsCommentsUnsub,_boardsActivityUnsub].forEach(f=>{try{if(typeof f==='function')f();}catch(e){}});
-  _boardsUnsub=_boardsPresenceUnsub=_boardsCommentsUnsub=_boardsActivityUnsub=null;
+  [_boardsUnsub,_boardsPresenceUnsub,_boardsCommentsUnsub,_boardsActivityUnsub,_boardsCardTrashUnsub].forEach(f=>{try{if(typeof f==='function')f();}catch(e){}});
+  _boardsUnsub=_boardsPresenceUnsub=_boardsCommentsUnsub=_boardsActivityUnsub=_boardsCardTrashUnsub=null;
   clearInterval(_boardsPresenceTimer);_boardsPresenceTimer=null;
   clearInterval(_boardsFlushTimer);_boardsFlushTimer=null;
   _boardsPendingRemote=null;
   _boardsPeers=[];_boardsComments=[];_boardsBoardActivity=[];
+  _boardsCardTrash=[];_boardsCardTrashOpen=false;
   _boardsDrawerOpen=false;_boardsDrawerCard=null;
   // The board we were ON — not _boardsViewingId, which has already been
   // moved on by boardsOpen when you step into a sub-board.
@@ -7831,6 +8091,7 @@ function _boardsCtxRun(act){
   if(act.indexOf('cellbg:')===0){window.boardsCellColor(act.slice(7));return;}
   if(act==='more-tools'){window.boardsMoreTools();return;}
   if(act==='imagepanel'){window.boardsOpenImagePanel();return;}
+  if(act==='trash'){window.boardsToggleTrash();return;}
   if(act.indexOf('cellfx:')===0){
     const w=act.slice(7);
     if(w==='__help')window.boardsCellFormulaHelp();

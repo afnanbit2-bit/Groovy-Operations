@@ -212,6 +212,51 @@ const FRAGMENTS={
     return Promise.resolve(
       '<div style="position:relative;overflow:hidden;height:600px;width:100%">'+html+'</div>');
   },
+  // The trash panel is a list of rows that each pair a long, unbounded
+  // string (the card preview) with fixed-width chrome and two buttons —
+  // the exact shape that crushed the Profile directory's names to 0px.
+  // Both tabs' buttons must also be genuinely clickable: the panel sits
+  // beside the rail and a z-index a step out would bury it, which is how
+  // the board's whole top bar was invisible for weeks.
+  //
+  // VERIFIED BOTH WAYS, and worth recording WHICH way: recolouring the day
+  // header to its own background fails this fragment at 1:1 in both themes,
+  // so the contrast and text checks genuinely reach it. The "overflows its
+  // own box" check does NOT bite here, and that is correct rather than a
+  // gap — the panel is overflow:hidden, so a too-wide row is clipped and
+  // cannot push the page around. A 2000px flex child and a 3000px row were
+  // both tried and both passed for that reason. What protects a clipped
+  // panel is the "text laid out entirely outside its clipping ancestor"
+  // check, not the overflow one.
+  'boards — the trash panel':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();
+      _boardsCardTrashOpen=true;_boardsCardTrashTab='mine';
+      const now=Date.now();
+      _boardsCardTrash=[
+        {id:'e1',card:{id:'g1',type:'text',text:'Winter Drop 2027 — fleece weight comparison against last season, full tech pack notes'},
+         conns:[],byUid:'u1',byName:'Afnan',at:now},
+        {id:'e2',card:{id:'g2',type:'file',fileName:'swatch-card.pdf'},conns:[],byUid:'u1',byName:'Afnan',at:now},
+        {id:'e3',card:{id:'g3',type:'table',rows:[['A']]},conns:[],byUid:'u1',byName:'Afnan',at:now-86400000}
+      ];`);
+    // Render through the real function into the real host, then hand back
+    // what it produced — the panel hydrates its text with textContent, so
+    // reading innerHTML after the call is the only way to see the rows.
+    app.run(`(function(){
+      const host=document.createElement('div');
+      host.id='board-ctrash-panel';host.className='board-ctrash-panel';
+      document.body.appendChild(host);
+      _boardsRenderTrash();
+      return true;})()`);
+    const inner=app.run(`document.getElementById('board-ctrash-panel').innerHTML`);
+    // The host itself is position:absolute inside the canvas wrap, so the
+    // fragment supplies that containing block rather than letting it
+    // escape to the page and measure nothing.
+    return Promise.resolve(
+      '<div style="position:relative;height:620px;width:100%">'+
+      '<div class="board-ctrash-panel" style="display:flex">'+inner+'</div></div>');
+  },
   'boards — a card wearing labels, reactions and captions':()=>{
     const app=loadApp({files:['js/boards.js']});
     app.run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};

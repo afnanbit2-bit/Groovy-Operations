@@ -1873,6 +1873,67 @@ was deliberately no stored column container (Stage 3). That stopped being
 true when Column became a real container — a stale comment on a load-bearing
 decision is worse than none.
 
+### Mood Boards — the Trash (Sept 2026) — REVERSES M8
+
+M8 shipped a toast INSTEAD of a trash. Afnan then sent Milanote's own trash
+panel (rail button at the foot, **Deleted by me / Deleted by others**, day
+groups, **Empty trash**) and asked for **both**: "trash should exist and
+ctrl + z should result in undo". He is right, and the earlier reasoning was
+wrong — the two answer different questions. **Ctrl+Z is "that was a
+mistake, just now"; the trash is "where did that card go last Tuesday",
+and one keystroke of history cannot answer the second.**
+
+Four decisions hold it together:
+
+1. **A SUBCOLLECTION (`mood_boards/{id}/trash/{entry}`), not an array on
+   the board document.** `unsorted` is a plain array because one person
+   fills their own tray; a trash has a "Deleted by others" tab *by
+   definition*, and the Stage 6 merge is per CARD — two people deleting at
+   once would each rewrite a whole array and the later write would silently
+   drop the other's entry. One document per deleted card makes concurrent
+   deletes independent. It also keeps a growing pile of deleted cards out
+   of the document that is rewritten on every autosave.
+2. **AN ENTRY IS HIDDEN ONCE ITS CARD IS BACK ON THE BOARD, and nothing is
+   written to make that true** (`_boardsTrashLive`). That is the whole
+   trick that lets Ctrl+Z and a trash coexist: undo restores the card under
+   its own id, the entry stops matching, the row disappears — no write, no
+   coupling to the undo stack, and no way for the two to disagree. Same
+   discipline as nesting, frame membership and a stale `columnId`.
+   Asserted, including that the undo writes nothing at all.
+3. **Cards are ENCODED on the way in.** A table's `rows` is a nested array
+   and Firestore refuses those outright — the bug that meant table content
+   never persisted. A trashed table is the same shape, so it goes through
+   the same `_boardsEncodeRows`/`_boardsDecodeCard` boundary. The test
+   asserts the **rule** (nothing a trash write produces may nest an array
+   in an array), not the field.
+4. **The lines come back too.** Deleting a card drops the connectors
+   touching it; without them "restore" would quietly return a different
+   card from the one that went. They are captured **before**
+   `_editConnectors` is filtered — afterwards there is nothing left to
+   record — and re-added only where BOTH endpoints are on the board and the
+   line is not already there, so restoring two ends of one line, in either
+   order, restores it exactly once.
+
+- **A bulk delete is ONE `writeBatch`**, not N round trips. `tests/harness.js`
+  gained a `writeBatch` stub (recording into `state.batches` and
+  `state.writes`) so both the batch path and its contents are testable.
+- **Purge rights mirror `firestore.rules` exactly** (`_boardsTrashCanPurge`):
+  your own entry, the board's owner, or an app owner. **Empty trash empties
+  the tab you are looking at** and says how many it kept.
+- **An entry is never edited** — created and purged only — so the rule has
+  `allow update: if false`, like the activity feed.
+- **The Unsorted tray still says "cannot be undone", and that is still
+  true.** `_boardsPushUndo` snapshots cards and connectors only; the tray
+  lives in `head`. A test asserts that confirm does **not** promise Ctrl+Z,
+  so a future tidy-up cannot make it lie.
+- **The rail's Trash is a DESTINATION, not a Delete button** — M6's note
+  said there would never be one precisely because a Trash that only deleted
+  the selection would be a second Delete pretending to be a safety net.
+  That objection is answered now that deleted cards really go somewhere.
+- **`firestore.rules` CHANGED — it needs a republish.**
+- **Nobody has looked at the panel in a browser.** The sandbox still cannot
+  sign in (gstatic blocked), so the visual is unverified as usual.
+
 ### Mood Boards — Home is a board (Sept 2026)
 
 Milanote has no "list of your boards" page: **home IS a board**, and your

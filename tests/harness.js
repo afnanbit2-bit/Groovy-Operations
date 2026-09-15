@@ -163,7 +163,7 @@ function loadApp(opts){
   const state={
     viewportW:opts.viewportW||1000,viewportH:opts.viewportH||600,
     seq:1,body:[],listeners:{},activeElement:null,execCommands:[],
-    toasts:[],activity:[],vibrations:[],writes:[],confirms:[],prompts:[],
+    toasts:[],activity:[],vibrations:[],writes:[],batches:[],confirms:[],prompts:[],
     txCount:0,plainWriteCount:0
   };
   const {document,nodes}=makeDom(state);
@@ -227,6 +227,19 @@ function loadApp(opts){
     runTransaction:async(db,fn)=>{
       state.txCount++;
       return fn({get:async()=>({exists:()=>true,data:()=>({cards:[],connectors:[]})}),update(){}});
+    },
+    // Batched writes land in state.writes like any other, tagged with the
+    // batch they belonged to, so a test can assert BOTH what was written
+    // and that it went in one round trip.
+    writeBatch:()=>{
+      const ops=[];
+      state.batches.push(ops);
+      return{
+        set(r,p){ops.push({op:'set',data:p});return this;},
+        update(r,p){ops.push({op:'update',data:p});return this;},
+        delete(r){ops.push({op:'delete'});return this;},
+        async commit(){ops.forEach(o=>state.writes.push(o));}
+      };
     },
     onSnapshot:()=>()=>{}
   };
