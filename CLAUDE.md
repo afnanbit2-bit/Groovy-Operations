@@ -2786,10 +2786,10 @@ Inventory card and the PO Registry tab) and `renderGPRegistry()`
   `ts` is the creation time; `date` is the cut date, and Edit can change it.
   Filtering on the displayed value is what makes the filter incapable of
   disagreeing with what is on screen. A record with no `date` falls back to
-  its `ts` day (`_fabRegDayOf`); one with neither is excluded from a bounded
+  its `ts` day (`_gvDayOf`); one with neither is excluded from a bounded
   range — it cannot be *proved* to sit in it — but is never hidden from All.
 - **Bounds are inclusive YYYY-MM-DD strings compared as strings**
-  (`_fabRegDateBounds`), so there is no Date maths per row. `_fabRegDayStr`
+  (`_gvDateBounds`), so there is no Date maths per row. `_gvDayStr`
   builds a **local** day; `toISOString()` is UTC and in PKT (UTC+5) names the
   previous day before 5am.
 - **Default is All, not Today.** This is a historical record, not a feed —
