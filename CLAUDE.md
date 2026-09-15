@@ -211,6 +211,15 @@ past both** — the merge is new bytes and needs its own version.
 previous `main` tip and sees changed files with an unchanged version), which
 is how this one was caught.
 
+**It happened again in Sept 2026, and the second time is worth recording
+because of HOW it hid.** Afnan's table-QA fix and Ammar's cutting-registry
+work both bumped to **`v61`**. The merge produced **no conflict at all** —
+both sides had written the *identical* line, so git had nothing to resolve —
+while the two `v61` builds were entirely different bytes. A clean merge is
+therefore NOT evidence that the version is safe. **Read `CACHE_VERSION` on
+both sides before merging, not just the conflict list**, and bump past both
+(v61 + v61 → v62).
+
 ### Update banner (Sept 2026) — content updates, NOT the home-screen icon
 
 `_swWatchForUpdate(registration)` / `_showUpdateBanner()` (`js/shared.js`),
