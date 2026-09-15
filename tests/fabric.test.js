@@ -63,6 +63,44 @@ function app(extra){
 const ids=a=>a.run('_fabRegFiltered().map(g=>g.id).join(",")');
 const preset=(a,p)=>a.run(`(_fabRegDate={preset:'${p}',from:'',to:''},1)`);
 
+// ── Gate pass registry ────────────────────────────────────────────────────
+// Same days as the fabric fixture so the two can be compared directly, but
+// a spread of pass TYPES, since a gate pass rolls up by type.
+const GP_PASSES=[
+  {id:'GP-1',gpType:'garments',date:TODAY,    ts:5000,article:'Tee',dest:'FebKnit',name:'Uzaib',totalUnits:100},
+  {id:'GP-2',gpType:'fabric',  date:TODAY,    ts:4000,article:'Jersey',dest:'Al-Hamd',name:'Uzaib',fabricQty:25,fabricUnit:'kg',rollsCount:2},
+  {id:'GP-3',gpType:'garments',date:YESTERDAY,ts:3000,article:'Hoodie',dest:'Al-Nisa',name:'Hassan',totalUnits:80},
+  {id:'GP-4',gpType:'item',    date:THREE,    ts:2000,article:'Machine',dest:'JR Traders',name:'Hassan',assetItems:[{n:1},{n:2}]},
+  {id:'GP-5',gpType:'fabric',  date:TWENTY,   ts:1000,article:'Fleece',dest:'Aqib',name:'Uzaib',fabricQty:40,fabricUnit:'meters'},
+  {id:'GP-6',gpType:'garments',ts:new Date(YESTERDAY+'T09:00:00').getTime(),article:'Sando',dest:'FebKnit',name:'Uzaib',totalUnits:10},
+  {id:'GP-7',gpType:'garments',ts:0,article:'Cap',dest:'FebKnit',name:'Uzaib',totalUnits:7}
+];
+// gatepass.js FIRST, fabric.js second — the real index.html order. The date
+// helpers therefore do not exist while gatepass.js is executing, which is
+// exactly the constraint the guards in that file are written for.
+function gpApp(){
+  const sheets=[];
+  const a=loadApp({files:['js/gatepass.js','js/fabric.js'],globals:{
+    currentPage:'',
+    allPasses:GP_PASSES.map(p=>Object.assign({},p)),
+    allReturns:[],allFabricIn:[],allPOs:[],allGPEditRequests:[],
+    allFabricInventory:[],allFabricMovements:[],
+    XLSX:{
+      utils:{aoa_to_sheet:aoa=>({aoa}),book_new:()=>({}),book_append_sheet:(wb,ws)=>{wb.ws=ws;}},
+      writeFile:(wb,name)=>sheets.push({aoa:wb.ws.aoa,name})
+    }
+  }});
+  a.sheets=sheets;
+  return a;
+}
+// The day label out of each day header — the one thing that must appear once
+// per day in either registry. Both render it as the only font-weight:800 span
+// in the list body.
+const dayHeads=html=>(html.match(/font-weight:800">([^<]+)<\/div>/g)||[])
+  .map(m=>m.replace(/.*800">/,'').replace('</div>',''));
+const gpIds=a=>a.run('_gpRegFiltered().map(p=>p.id).join(",")');
+const gpPreset=(a,p)=>a.run(`(_gpRegDate={preset:'${p}',from:'',to:''},1)`);
+
 module.exports=function(){
   const s=suite('fabric');
 
@@ -149,7 +187,7 @@ module.exports=function(){
   {
     const a=app();
     const html=a.run('_fabRegListHTML()');
-    s.ok('the day is named in full',html.indexOf(a.run(`_fabRegDayLabel('${TODAY}')`))>-1);
+    s.ok('the day is named in full',html.indexOf(a.run(`_gvDayLabel('${TODAY}')`))>-1);
     s.ok('with the day total, not the page total',/2 issues · <strong[^>]*>150<\/strong> pcs/.test(html),
       (html.match(/\d+ issues · <strong[^>]*>\d+<\/strong> pcs/g)||[]).join(' | '));
     s.ok('kg is labelled',/40\.0<\/strong> kg/.test(html));
@@ -164,12 +202,12 @@ module.exports=function(){
     // renders twice, each header claiming the whole day's totals.
     const a=app();
     const html=a.run('_fabRegListHTML()');
-    const heads=(html.match(/\d+ issues? · <strong[^>]*>\d+<\/strong> pcs/g)||[]);
+    const heads=dayHeads(html);
     s.eq('five days, five headers',heads.length,5);
-    s.eq('none repeated',new Set(heads).size,heads.length);
+    s.eq('none repeated',new Set(heads).size,heads.length,heads.join(' | '));
     // '' sorts below every real day, so the unplaceable rows land at the end
     // rather than at the top where they would read as the newest cutting.
-    const oldest=a.run(`_fabRegDayLabel('${TWENTY}')`);
+    const oldest=a.run(`_gvDayLabel('${TWENTY}')`);
     s.ok('the undated group sorts last',html.indexOf('No date')>html.indexOf(oldest),
       `No date @${html.indexOf('No date')}, ${oldest} @${html.indexOf(oldest)}`);
   }
@@ -203,6 +241,104 @@ module.exports=function(){
     a.run(`(_fabRegDate={preset:'custom',from:'2001-01-01',to:'2001-01-02'},1)`);
     const html=a.run('_fabRegListHTML()');
     s.ok('names the range that is empty',/No fabric issues for/.test(html),html);
+  }
+
+  s.section('GATE PASS registry — the same filter, the same helpers');
+  {
+    // js/fabric.js loads AFTER js/gatepass.js, so the helpers only exist at
+    // render time. Loading both in that real order is the point of this
+    // fixture: a call moved to load time would throw here.
+    const gp=gpApp();
+    s.eq('all',gpIds(gp),'GP-1,GP-2,GP-6,GP-3,GP-4,GP-5,GP-7');
+    gpPreset(gp,'today');
+    s.eq('today',gpIds(gp),'GP-1,GP-2');
+    gpPreset(gp,'yesterday');
+    s.eq('yesterday, incl. the pass with only a ts',gpIds(gp),'GP-6,GP-3');
+    gpPreset(gp,'week');
+    s.eq('last 7 days',gpIds(gp),'GP-1,GP-2,GP-6,GP-3,GP-4');
+    gp.run(`(_gpRegDate={preset:'custom',from:'${THREE}',to:'${YESTERDAY}'},1)`);
+    s.eq('custom is inclusive at both ends',gpIds(gp),'GP-6,GP-3,GP-4');
+
+    s.section('and an undateable pass is treated identically');
+    gpPreset(gp,'today');
+    s.eq('excluded from a bounded range',gpIds(gp).indexOf('GP-7'),-1);
+    gpPreset(gp,'all');
+    s.ok('never hidden from All',gpIds(gp).indexOf('GP-7')>-1,gpIds(gp));
+  }
+
+  s.section('the two registries can never disagree about a preset');
+  {
+    // The reason the helpers moved out of the Cutting registry at all: one
+    // definition of "Yesterday", used by both pages.
+    const a=app(),gp=gpApp();
+    ['today','yesterday','week','month','all'].forEach(pre=>{
+      const A=a.run(`JSON.stringify(_gvDateBounds({preset:'${pre}'}))`);
+      const B=gp.run(`JSON.stringify(_gvDateBounds({preset:'${pre}'}))`);
+      s.eq(pre,A,B);
+    });
+  }
+
+  s.section('gate pass day headers roll the day up, by TYPE');
+  {
+    // pcs, fabric weight and asset items are different things; a single
+    // blended number would be a made-up one.
+    const gp=gpApp();
+    gp.run('renderGPRegistry()');
+    gpPreset(gp,'today');
+    gp.run('_gpRegRender()');
+    const html=gp.el('gp-reg-body').innerHTML;
+    s.ok('the day is named in full',html.indexOf(gp.run(`_gvDayLabel('${TODAY}')`))>-1,html.slice(0,120));
+    s.ok('2 passes',/2 passes/.test(html));
+    s.ok('garment pcs counted',/>100<\/strong> pcs/.test(html),html.slice(0,400));
+    s.ok('fabric kg counted separately',/>25\.0<\/strong> kg/.test(html));
+    s.ok('and never added together',!/125/.test(html));
+
+    s.section('the summary follows the filter');
+    const sum=gp.el('gp-reg-summary').innerHTML;
+    s.ok('says the range',/Today/.test(sum),sum);
+    s.ok('and the same totals',/2 passes/.test(sum)&&/100<\/strong> pcs/.test(sum),sum);
+  }
+
+  s.section('each gate pass day gets exactly ONE header');
+  {
+    const gp=gpApp();
+    gp.run('renderGPRegistry()');gp.run('_gpRegRender()');
+    // Dedupe on the DAY LABEL. The totals text is not unique — four of these
+    // five days hold one pass each, so "1 pass" legitimately repeats.
+    const heads=dayHeads(gp.el('gp-reg-body').innerHTML);
+    s.eq('five days, five headers',heads.length,5);
+    s.eq('none repeated',new Set(heads).size,heads.length,heads.join(' | '));
+  }
+
+  s.section('a backwards gate pass range is refused too');
+  {
+    const gp=gpApp();
+    gp.el('gp-reg-from').value=TODAY;
+    gp.el('gp-reg-to').value=TWENTY;
+    gp.run('window.gpRegApplyCustom()');
+    s.ok('it says so',/after/i.test(gp.state.toasts.join(' ')),gp.state.toasts.join(' '));
+    s.eq('and the filter is untouched',gp.run('_gpRegDate.preset'),'all');
+  }
+
+  s.section('gate pass export follows the filter');
+  {
+    const gp=gpApp();
+    gpPreset(gp,'today');
+    gp.run('window.gpRegExport()');
+    const x=gp.sheets[0];
+    s.eq('header plus the two filtered rows',x.aoa.length,3);
+    s.eq('only those passes',x.aoa.slice(1).map(r=>r[2]).join(','),'GP-1,GP-2');
+    s.ok('range in the filename',x.name.indexOf(TODAY)>-1,x.name);
+    s.ok('and in the toast',/2 passes/.test(gp.state.toasts.join(' ')),gp.state.toasts.join(' '));
+  }
+
+  s.section('Clear filters resets the date too');
+  {
+    const gp=gpApp();
+    gpPreset(gp,'today');
+    gp.run('window.gpRegClear()');
+    s.eq('back to All dates',gp.run('_gpRegDate.preset'),'all');
+    s.eq('with no stale custom range',gp.run('_gpRegDate.from+"|"+_gpRegDate.to'),'|');
   }
 
   s.section('opening the registry starts on All dates');

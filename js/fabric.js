@@ -1532,42 +1532,86 @@ function _fabAllUsedLabels(){
   return [...seen.values()];
 }
 let _fabTagWork={id:null,incomplete:false,labels:[],colorIdx:null,_pendingText:''};
-// ── Cut-date helpers ──────────────────────────────────────────────────────
+// ── Date-range helpers — SHARED, not fabric-specific ──────────────────────
+// The Cutting registry and the Gate pass registry (js/gatepass.js) both use
+// these. One definition of what "Yesterday" means, or the two pages answer
+// the same question differently. They live here rather than in
+// js/shared.js because gatepass.js already depends on this file
+// (_fabXlsx, _fabParseBundles) and shared.js is a cross-track file.
+// Every one of them is PURE — the filter is passed in, never read from a
+// module variable — which is what makes them reusable at all.
+//
 // Local YYYY-MM-DD. Not toISOString(), which is UTC — in PKT (UTC+5) that
 // names the previous day for anything before 5am.
-function _fabRegDayStr(d){const p=n=>String(n).padStart(2,'0');return`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;}
-// The day an issue belongs to. `g.date` is what the card shows, so it wins;
-// a record written without one falls back to its creation timestamp.
-function _fabRegDayOf(g){
-  const d=String(g.date||'');
+function _gvDayStr(d){const p=n=>String(n).padStart(2,'0');return`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;}
+// The day a record belongs to. `rec.date` is what the row PRINTS, so it
+// wins; a record written without one falls back to its creation timestamp.
+function _gvDayOf(rec){
+  const d=String((rec&&rec.date)||'');
   if(/^\d{4}-\d{2}-\d{2}$/.test(d))return d;
-  return g.ts?_fabRegDayStr(new Date(g.ts)):'';
+  return rec&&rec.ts?_gvDayStr(new Date(rec.ts)):'';
 }
 // Inclusive [from,to] as YYYY-MM-DD, '' meaning unbounded. Plain string
 // compare is correct on this format, so there is no Date maths per row.
-function _fabRegDateBounds(){
-  const f=_fabRegDate,today=new Date();
-  if(f.preset==='today'){const t=_fabRegDayStr(today);return[t,t];}
-  if(f.preset==='yesterday'){const d=new Date();d.setDate(d.getDate()-1);const t=_fabRegDayStr(d);return[t,t];}
-  if(f.preset==='week'){const d=new Date();d.setDate(d.getDate()-6);return[_fabRegDayStr(d),_fabRegDayStr(today)];}
-  if(f.preset==='month'){const d=new Date();d.setDate(1);return[_fabRegDayStr(d),_fabRegDayStr(today)];}
+function _gvDateBounds(f){
+  f=f||{};
+  const today=new Date();
+  if(f.preset==='today'){const t=_gvDayStr(today);return[t,t];}
+  if(f.preset==='yesterday'){const d=new Date();d.setDate(d.getDate()-1);const t=_gvDayStr(d);return[t,t];}
+  if(f.preset==='week'){const d=new Date();d.setDate(d.getDate()-6);return[_gvDayStr(d),_gvDayStr(today)];}
+  if(f.preset==='month'){const d=new Date();d.setDate(1);return[_gvDayStr(d),_gvDayStr(today)];}
   if(f.preset==='custom')return[f.from||'',f.to||''];
   return['',''];                                                    // 'all'
 }
-function _fabRegDayLabel(day){
+// True when `rec` sits inside the filter's range. An entry with no day at
+// all cannot be PROVED to sit in a bounded range, so it is excluded from
+// one — but an unbounded range ('all') keeps everything.
+function _gvInRange(rec,f){
+  const[a,b]=_gvDateBounds(f);
+  if(!a&&!b)return true;
+  const day=_gvDayOf(rec);
+  return !!day&&!(a&&day<a)&&!(b&&day>b);
+}
+function _gvDayLabel(day){
   if(!day)return 'No date';
   const d=new Date(day+'T00:00:00');
   if(isNaN(d.getTime()))return day;
   return d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
 }
-const _FAB_REG_PRESETS=[['all','All'],['today','Today'],['yesterday','Yesterday'],['week','Last 7 days'],['month','This month'],['custom','Custom \u25BE']];
-function _fabRegRangeLabel(){
-  const f=_fabRegDate;
-  if(f.preset!=='custom'){const p=_FAB_REG_PRESETS.find(x=>x[0]===f.preset);return f.preset==='all'?'All dates':(p?p[1]:'All dates');}
-  const[a,b]=_fabRegDateBounds();
+const _GV_DATE_PRESETS=[['all','All'],['today','Today'],['yesterday','Yesterday'],['week','Last 7 days'],['month','This month'],['custom','Custom \u25BE']];
+function _gvRangeLabel(f){
+  f=f||{};
+  if(f.preset!=='custom'){const p=_GV_DATE_PRESETS.find(x=>x[0]===f.preset);return f.preset==='all'||!p?'All dates':p[1];}
+  const[a,b]=_gvDateBounds(f);
   if(!a&&!b)return 'All dates';
-  if(a&&b)return a===b?_fabRegDayLabel(a):`${_fabRegDayLabel(a)} \u2192 ${_fabRegDayLabel(b)}`;
-  return a?`From ${_fabRegDayLabel(a)}`:`Up to ${_fabRegDayLabel(b)}`;
+  if(a&&b)return a===b?_gvDayLabel(a):`${_gvDayLabel(a)} \u2192 ${_gvDayLabel(b)}`;
+  return a?`From ${_gvDayLabel(a)}`:`Up to ${_gvDayLabel(b)}`;
+}
+// Newest day first, newest within the day, undated last. Grouping a list by
+// day is only coherent if the list is ORDERED by day — see the note on
+// _fabRegFiltered for the second-header-for-one-day bug this prevents.
+function _gvByDayDesc(a,b){
+  const da=_gvDayOf(a),db=_gvDayOf(b);
+  if(da!==db)return da<db?1:-1;
+  return (b.ts||0)-(a.ts||0);
+}
+// The preset bar. `onPreset` / `onApply` are the global handler NAMES the
+// host page owns, so each registry keeps its own repaint logic; `idFrom` /
+// `idTo` keep the two pages' custom inputs from colliding if both are ever
+// in the DOM at once.
+function _gvDateBarHTML(f,o){
+  f=f||{};o=o||{};
+  const btn=(pre,lbl)=>`<button onclick="window.${o.onPreset}('${pre}')" style="padding:6px 12px;border:1px solid ${f.preset===pre?'var(--dark)':'var(--border)'};border-radius:8px;background:${f.preset===pre?'var(--dark)':'var(--surface)'};color:${f.preset===pre?'var(--on-dark)':'var(--text)'};font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">${lbl}</button>`;
+  const dateInput=(id,val)=>`<input type="date" id="${id}" value="${_gpEsc(val||'')}" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;background:var(--surface);color:var(--text);margin-left:4px">`;
+  return`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:10px;color:var(--muted);font-weight:800;letter-spacing:.05em;margin-right:2px">${_gpEsc(o.label||'DATE')}</span>
+      ${_GV_DATE_PRESETS.map(([pre,lbl])=>btn(pre,lbl)).join('')}
+    </div>
+    ${f.preset==='custom'?`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
+      <label style="font-size:11px;color:var(--muted)">From ${dateInput(o.idFrom,f.from)}</label>
+      <label style="font-size:11px;color:var(--muted)">To ${dateInput(o.idTo,f.to)}</label>
+      <button class="btn-primary" style="width:auto;padding:6px 14px;margin-top:0;font-size:12px" onclick="window.${o.onApply}()">Apply</button>
+    </div>`:''}`;
 }
 // Per-day roll-up of a filtered set, for the day headers in the list.
 // Weight is split by unit — most issues are kg, but the field can be meters
@@ -1575,7 +1619,7 @@ function _fabRegRangeLabel(){
 function _fabRegDayTotals(issues){
   const m=new Map();
   issues.forEach(g=>{
-    const k=_fabRegDayOf(g),t=m.get(k)||{n:0,pcs:0,bundles:0,kg:0,m:0};
+    const k=_gvDayOf(g),t=m.get(k)||{n:0,pcs:0,bundles:0,kg:0,m:0};
     t.n++;t.pcs+=g.plannedQty||0;t.bundles+=g.totalBundles||0;
     if((g.fabricUnit||'kg')==='kg')t.kg+=g.fabricQty||0;else t.m+=g.fabricQty||0;
     m.set(k,t);
@@ -1589,29 +1633,18 @@ function _fabIssueRecords(){
 }
 function _fabRegFiltered(){
   const f=_fabRegQ.toLowerCase();
-  const[dFrom,dTo]=_fabRegDateBounds();
   return _fabIssueRecords().filter(g=>{
-    if(dFrom||dTo){
-      // An entry with no day at all cannot be proved to sit in the range,
-      // so a bounded range excludes it rather than guessing.
-      const day=_fabRegDayOf(g);
-      if(!day||(dFrom&&day<dFrom)||(dTo&&day>dTo))return false;
-    }
+    if(!_gvInRange(g,_fabRegDate))return false;
     if(_fabRegIncompleteOnly&&!g.regIncomplete)return false;
     if(_fabRegLabelFilter){const lf=_fabRegLabelFilter.toUpperCase();if(!(g.regLabels||[]).some(l=>String(l.text||'').toUpperCase()===lf))return false;}
     if(!f)return true;
     const labelText=(g.regLabels||[]).map(l=>l.text).join(' ');
     return [g.poId,g.articleName,g.articleCode,g.fabricType,g.fabricColor,g.id,labelText].some(v=>String(v||'').toLowerCase().includes(f));
-  }).sort((a,b)=>{
-    // Day first, newest day first, then newest within the day. _fabIssueRecords
-    // sorts on `ts` alone, which is the CREATION time — an entry whose date was
-    // corrected in Edit then sits away from its own day and the list grows a
-    // second header for a day it already showed. Grouping by day is only
-    // coherent if the order is by day. Undated entries ('') sort last.
-    const da=_fabRegDayOf(a),db=_fabRegDayOf(b);
-    if(da!==db)return da<db?1:-1;
-    return (b.ts||0)-(a.ts||0);
-  });
+  // Day first, then newest within the day. _fabIssueRecords sorts on `ts`
+  // alone, which is the CREATION time — an entry whose date was corrected in
+  // Edit then sits away from its own day and the list grows a second header
+  // for a day it already showed.
+  }).sort(_gvByDayDesc);
 }
 function _fabSizeLabel(s){
   const bl=Array.isArray(s.bundles)?s.bundles.join('-'):null;
@@ -1627,12 +1660,12 @@ function _fabRegRows(issues,dayTotals){
     // property of the day, not of where the pagination happened to cut.
     let dayHead='';
     if(dayTotals){
-      const day=_fabRegDayOf(g);
+      const day=_gvDayOf(g);
       if(day!==lastDay){
         lastDay=day;
         const t=dayTotals.get(day)||{n:0,pcs:0,bundles:0,kg:0,m:0};
         dayHead=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin:16px 2px 8px;padding-bottom:6px;border-bottom:1px solid var(--border)">
-          <div style="font-size:13px;font-weight:800">${_gpEsc(_fabRegDayLabel(day))}</div>
+          <div style="font-size:13px;font-weight:800">${_gpEsc(_gvDayLabel(day))}</div>
           <div style="font-size:11px;color:var(--muted)">${t.n} issue${t.n===1?'':'s'} · <strong style="color:var(--text)">${t.pcs.toLocaleString()}</strong> pcs · ${t.bundles.toLocaleString()} bundles${t.kg?` · <strong style="color:var(--text)">${t.kg.toFixed(1)}</strong> kg`:''}${t.m?` · <strong style="color:var(--text)">${t.m.toFixed(1)}</strong> m`:''}</div>
         </div>`;
       }
@@ -1672,7 +1705,7 @@ function _fabRegRows(issues,dayTotals){
 }
 function _fabRegListHTML(){
   const all=_fabRegFiltered();
-  if(!all.length)return `<div class="empty" style="padding:24px;text-align:center">No fabric issues${_fabRegDate.preset!=='all'?` for <strong>${_gpEsc(_fabRegRangeLabel())}</strong>`:''}${_fabRegQ||_fabRegLabelFilter||_fabRegIncompleteOnly?' matching these filters':''}.</div>`;
+  if(!all.length)return `<div class="empty" style="padding:24px;text-align:center">No fabric issues${_fabRegDate.preset!=='all'?` for <strong>${_gpEsc(_gvRangeLabel(_fabRegDate))}</strong>`:''}${_fabRegQ||_fabRegLabelFilter||_fabRegIncompleteOnly?' matching these filters':''}.</div>`;
   const pages=Math.ceil(all.length/_fabRegPer);
   if(_fabRegPage>=pages)_fabRegPage=Math.max(0,pages-1);
   const slice=all.slice(_fabRegPage*_fabRegPer,(_fabRegPage+1)*_fabRegPer);
@@ -1697,18 +1730,8 @@ function _fabRegListHTML(){
 // bar (to move the highlight / show the custom inputs) without rebuilding the
 // whole card and losing the search box's caret.
 function _fabRegDateBarHTML(){
-  const f=_fabRegDate;
-  const btn=(pre,lbl)=>`<button onclick="window.fabRegSetPreset('${pre}')" style="padding:6px 12px;border:1px solid ${f.preset===pre?'var(--dark)':'var(--border)'};border-radius:8px;background:${f.preset===pre?'var(--dark)':'var(--surface)'};color:${f.preset===pre?'var(--on-dark)':'var(--text)'};font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">${lbl}</button>`;
-  const dateInput=(id,val)=>`<input type="date" id="${id}" value="${_gpEsc(val)}" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;background:var(--surface);color:var(--text);margin-left:4px">`;
-  return`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-      <span style="font-size:10px;color:var(--muted);font-weight:800;letter-spacing:.05em;margin-right:2px">CUT DATE</span>
-      ${_FAB_REG_PRESETS.map(([pre,lbl])=>btn(pre,lbl)).join('')}
-    </div>
-    ${f.preset==='custom'?`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
-      <label style="font-size:11px;color:var(--muted)">From ${dateInput('fab-reg-from',f.from)}</label>
-      <label style="font-size:11px;color:var(--muted)">To ${dateInput('fab-reg-to',f.to)}</label>
-      <button class="btn-primary" style="width:auto;padding:6px 14px;margin-top:0;font-size:12px" onclick="window.fabRegApplyCustom()">Apply</button>
-    </div>`:''}`;
+  return _gvDateBarHTML(_fabRegDate,{label:'CUT DATE',onPreset:'fabRegSetPreset',
+    onApply:'fabRegApplyCustom',idFrom:'fab-reg-from',idTo:'fab-reg-to'});
 }
 // Totals follow the ACTIVE filters, not the whole collection — a date filter
 // whose headline numbers still counted every issue ever cut would answer the
@@ -1718,14 +1741,14 @@ function _fabRegStatsHTML(){
   const totalWeight=shown.reduce((s,g)=>s+(g.fabricQty||0),0);
   const totalPcs=shown.reduce((s,g)=>s+(g.plannedQty||0),0);
   const totalBundles=shown.reduce((s,g)=>s+(g.totalBundles||0),0);
-  const days=new Set(shown.map(_fabRegDayOf).filter(Boolean)).size;
+  const days=new Set(shown.map(_gvDayOf).filter(Boolean)).size;
   const tile=(lbl,val)=>`<div style="flex:1;background:var(--surface-2);border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">${lbl}</div><div style="font-size:18px;font-weight:800">${val}</div></div>`;
   return`<div style="display:flex;gap:8px">
       ${tile('Pieces cut',`${totalPcs.toLocaleString()} pcs`)}
       ${tile('Bundles',totalBundles.toLocaleString())}
       ${tile('Fabric out',totalWeight.toFixed(1))}
     </div>
-    <div style="font-size:11px;color:var(--muted);margin:7px 2px 0">${shown.length===all.length?`All <strong style="color:var(--text)">${all.length}</strong> issues`:`<strong style="color:var(--text)">${shown.length}</strong> of ${all.length} issues`} · ${_gpEsc(_fabRegRangeLabel())}${days>1?` · across ${days} days`:''}</div>`;
+    <div style="font-size:11px;color:var(--muted);margin:7px 2px 0">${shown.length===all.length?`All <strong style="color:var(--text)">${all.length}</strong> issues`:`<strong style="color:var(--text)">${shown.length}</strong> of ${all.length} issues`} · ${_gpEsc(_gvRangeLabel(_fabRegDate))}${days>1?` · across ${days} days`:''}</div>`;
 }
 function renderFabricIssueRegistry(){
   _fabRegPage=0;_fabRegQ='';_fabRegLabelFilter='';_fabRegIncompleteOnly=false;
@@ -2024,10 +2047,10 @@ window.fabExportIssueRegistry=function(){
     issues.reduce((n,g)=>n+(g.totalBundles||0),0),
     issues.reduce((n,g)=>n+(g.fabricQty||0),0),'','','','',
     '',issues.reduce((n,g)=>n+(g.ribWeight||0),0),'','','','','',''];
-  const[dFrom,dTo]=_fabRegDateBounds();
+  const[dFrom,dTo]=_gvDateBounds(_fabRegDate);
   const base='fabric-issue-registry'+(dFrom||dTo?`-${dFrom||'start'}_to_${dTo||'latest'}`:'');
   _fabXlsx([header,...rows,[],tot],'Fabric Issues',base);
-  showToast(`Exported ${issues.length} issue${issues.length===1?'':'s'} · ${_fabRegRangeLabel()} ✓`);
+  showToast(`Exported ${issues.length} issue${issues.length===1?'':'s'} · ${_gvRangeLabel(_fabRegDate)} ✓`);
 };
 
 // ════════════════════════════════════════════════════════════════════════

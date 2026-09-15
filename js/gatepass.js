@@ -268,7 +268,11 @@ function _gpPassRowHtml(p){
   const pendBadge=pend?`<span title="${pend.action==='delete'?'Delete':'Edit'} pending approval" style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${pend.action==='delete'?'Delete':'Edit'} pending</span>`:'';
   const isFab=p.gpType==='fabric',isItem=p.gpType==='item';
   const typeBadge=isFab?`<span style="display:inline-block;background:#dbeafe;color:#1e40af;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">Fabric</span>`:(isItem?`<span style="display:inline-block;background:#ede9fe;color:#5b21b6;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">Item</span>`:'');
-  const reasonBadge=p.gpReason&&p.gpReason!=='other'?`<span style="display:inline-block;background:var(--surface-2);color:#374151;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${GP_REASON_LABEL[p.gpReason]||p.gpReason}</span>`:'';
+  // `--surface-2` follows the theme but the ink was a literal dark grey, so
+  // in dark mode this badge was dark-on-dark at 1.61:1 — the "fixed dark
+  // foreground on a themed background" shape from the embellishments sweep.
+  // Found by tests/smoke-layout.js, not by looking at it.
+  const reasonBadge=p.gpReason&&p.gpReason!=='other'?`<span style="display:inline-block;background:var(--surface-2);color:var(--text);font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${GP_REASON_LABEL[p.gpReason]||p.gpReason}</span>`:'';
   const retBadge=p.expectReturn?(()=>{const st=_gpReturnStatus(p);const c=st==='Overdue'?'#dc2626':(st==='Partial'?'#92400e':'#6b7280');const b=st==='Overdue'?'#fee2e2':(st==='Partial'?'#fef3c7':'#f3f4f6');return `<span style="display:inline-block;background:${b};color:${c};font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px">${st}</span>`;})():(p.returnStatus==='Complete'?`<span style="display:inline-block;background:#dcfce7;color:#166534;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px">Returned</span>`:'');
   const qtyLabel=isFab?`${p.fabricQty||0} ${p.fabricUnit||'kg'}${p.rollsCount?` · ${p.rollsCount} rolls`:''}`:(isItem?`${(p.assetItems||[]).length} item${(p.assetItems||[]).length===1?'':'s'}`:`${p.totalUnits||0} pcs`);
   return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5;flex-wrap:wrap;gap:8px">
@@ -282,11 +286,63 @@ function _gpPassRowHtml(p){
 }
 
 // ── Registry: every pass in one searchable, filterable, exportable place ──
-let _gpRegQ='',_gpRegType='all',_gpRegReason='all',_gpRegIssuer='all',_gpRegFrom='',_gpRegTo='',_gpRegPage=1,_gpRegPer=25;
+let _gpRegQ='',_gpRegType='all',_gpRegReason='all',_gpRegIssuer='all',_gpRegPage=1,_gpRegPer=25;
+// Pass-date filter — the same {preset,from,to} shape and the same preset bar
+// as the Cutting / Issue Registry. It replaced the two always-visible From/To
+// fields: Custom still offers exactly those, and the presets answer "what
+// went out today" without typing two dates.
+let _gpRegDate={preset:'all',from:'',to:''};
+// The date helpers live in js/fabric.js, which this file already depends on
+// (_fabXlsx, _fabParseBundles). One definition of what "Yesterday" means, or
+// the two registries answer the same question differently.
+// **fabric.js loads AFTER this file**, so these may only ever be called at
+// RENDER time, never at load. Guarded with typeof so that if it failed to
+// parse, the registry falls back to the explicit Custom From/To rather than
+// filtering on a range it could not compute.
+function _gpRegInRange(p){
+  if(typeof _gvInRange==='function')return _gvInRange(p,_gpRegDate);
+  const a=_gpRegDate.from||'',b=_gpRegDate.to||'',d=p.date||'';
+  return !((a&&d<a)||(b&&d>b));
+}
+function _gpRegDayOf(p){return typeof _gvDayOf==='function'?_gvDayOf(p):String(p.date||'');}
+function _gpRegDayLabel(d){return typeof _gvDayLabel==='function'?_gvDayLabel(d):(d||'No date');}
+function _gpRegRangeLabel(){return typeof _gvRangeLabel==='function'?_gvRangeLabel(_gpRegDate):'All dates';}
+function _gpRegDateBarHTML(){
+  return typeof _gvDateBarHTML==='function'
+    ? _gvDateBarHTML(_gpRegDate,{label:'PASS DATE',onPreset:'gpRegSetPreset',
+        onApply:'gpRegApplyCustom',idFrom:'gp-reg-from',idTo:'gp-reg-to'})
+    : '';
+}
+// Per-day roll-up. A pass carries one of three quantities depending on its
+// type, and they are NEVER added together — pcs, fabric weight and asset
+// items are different things, and a single blended number would be a made-up
+// one. Fabric splits again by unit, kg vs meters, for the same reason.
+function _gpRegDayTotals(rows){
+  const m=new Map();
+  rows.forEach(p=>{
+    const k=_gpRegDayOf(p),t=m.get(k)||{n:0,pcs:0,kg:0,m:0,items:0};
+    t.n++;
+    if(p.gpType==='fabric'){if((p.fabricUnit||'kg')==='kg')t.kg+=p.fabricQty||0;else t.m+=p.fabricQty||0;}
+    else if(p.gpType==='item')t.items+=(p.assetItems||[]).length;
+    else t.pcs+=p.totalUnits||0;
+    m.set(k,t);
+  });
+  return m;
+}
+function _gpRegTotalsText(t){
+  const b=[`${t.n} pass${t.n===1?'':'es'}`];
+  const strong=v=>`<strong style="color:var(--text)">${v}</strong>`;
+  if(t.pcs)b.push(`${strong(t.pcs.toLocaleString())} pcs`);
+  if(t.kg)b.push(`${strong(t.kg.toFixed(1))} kg`);
+  if(t.m)b.push(`${strong(t.m.toFixed(1))} m`);
+  if(t.items)b.push(`${strong(t.items)} item${t.items===1?'':'s'}`);
+  return b.join(' · ');
+}
 function renderGPRegistry(){
   const issuers=[...new Set(allPasses.map(p=>p.issuer||p.name).filter(Boolean))].sort();
   return`<div class="card"><div class="card-title">Gate pass registry <span id="gp-reg-count" style="font-weight:400;color:var(--muted);font-size:12px"></span></div>
     <input id="gp-reg-search" value="${_gpRegQ.replace(/"/g,'&quot;')}" oninput="window.gpRegSearch(this.value)" placeholder="Search GP #, article, spec, PO, destination, person…" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;margin-bottom:10px">
+    <div id="gp-reg-datebar" style="margin-bottom:10px">${_gpRegDateBarHTML()}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       <div class="field" style="margin:0;min-width:130px"><label>Type</label>
         <select onchange="window.gpRegSet('type',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--surface-2);color:var(--text);font-family:inherit;width:100%">
@@ -301,8 +357,6 @@ function renderGPRegistry(){
           <option value="all"${_gpRegIssuer==='all'?' selected':''}>Everyone</option>
           ${issuers.map(i=>`<option value="${_gpEsc(i)}"${_gpRegIssuer===i?' selected':''}>${_gpEsc(i)}</option>`).join('')}
         </select></div>
-      <div class="field" style="margin:0;min-width:130px"><label>From date</label><input type="date" value="${_gpRegFrom}" onchange="window.gpRegSet('from',this.value)" style="padding:7px 9px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--surface-2);color:var(--text);font-family:inherit;width:100%"></div>
-      <div class="field" style="margin:0;min-width:130px"><label>To date</label><input type="date" value="${_gpRegTo}" onchange="window.gpRegSet('to',this.value)" style="padding:7px 9px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--surface-2);color:var(--text);font-family:inherit;width:100%"></div>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
       <div style="display:flex;gap:8px;align-items:center">
@@ -314,6 +368,7 @@ function renderGPRegistry(){
       </div>
       <button class="btn-outline" style="font-size:12px;padding:6px 14px" onclick="window.gpRegExport()">⬇ Export Excel</button>
     </div>
+    <div id="gp-reg-summary" style="font-size:11px;color:var(--muted);margin:2px 2px 8px"></div>
     <div id="gp-reg-body"></div>
     <div id="gp-reg-pager" style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;padding-top:10px;border-top:1px solid #f5f5f5;margin-top:4px"></div>
   </div><div style="height:80px"></div>`;
@@ -324,11 +379,33 @@ function _gpRegFiltered(){
     if(_gpRegType!=='all'&&(p.gpType||'garments')!==_gpRegType)return false;
     if(_gpRegReason!=='all'&&(p.gpReason||'other')!==_gpRegReason)return false;
     if(_gpRegIssuer!=='all'&&(p.issuer||p.name)!==_gpRegIssuer)return false;
-    if(_gpRegFrom&&(p.date||'')<_gpRegFrom)return false;
-    if(_gpRegTo&&(p.date||'')>_gpRegTo)return false;
+    if(!_gpRegInRange(p))return false;
     if(q){const hay=`${p.id||''} ${p.article||''} ${p.spec||''} ${p.dest||''} ${p.name||''} ${p.issuer||''} ${p.poId||''} ${p.sourceVendor||''} ${GP_REASON_LABEL[p.gpReason]||''} ${p.gpType||''}`.toLowerCase();if(!hay.includes(q))return false;}
     return true;
-  }).sort((a,b)=>(b.ts||0)-(a.ts||0));
+  // Day first, then newest within the day. Sorting on `ts` alone is the
+  // CREATION time, so a pass whose date was corrected in Edit sits away from
+  // its own day and the list grows a second header for a day it already
+  // showed — grouping by day is only coherent if the order is by day.
+  }).sort(typeof _gvByDayDesc==='function'?_gvByDayDesc:(a,b)=>(b.ts||0)-(a.ts||0));
+}
+// Day headers carry the WHOLE filtered day's roll-up, not this page's slice
+// of it — "what went out on the 14th" is a property of the day, not of where
+// the pagination happened to fall.
+function _gpRegRowsHTML(slice,dayTotals){
+  let lastDay=null;
+  return slice.map(p=>{
+    let head='';
+    const day=_gpRegDayOf(p);
+    if(day!==lastDay){
+      lastDay=day;
+      const t=dayTotals.get(day)||{n:0,pcs:0,kg:0,m:0,items:0};
+      head=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin:16px 2px 8px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+        <div style="font-size:13px;font-weight:800">${_gpEsc(_gpRegDayLabel(day))}</div>
+        <div style="font-size:11px;color:var(--muted)">${_gpRegTotalsText(t)}</div>
+      </div>`;
+    }
+    return head+_gpPassRowHtml(p);
+  }).join('');
 }
 function _gpRegRender(){
   const body=document.getElementById('gp-reg-body');if(!body)return;
@@ -338,7 +415,19 @@ function _gpRegRender(){
   if(_gpRegPage>pages)_gpRegPage=pages;
   const slice=all.slice((_gpRegPage-1)*_gpRegPer,_gpRegPage*_gpRegPer);
   const cnt=document.getElementById('gp-reg-count');if(cnt)cnt.textContent=`(${total} match${total===1?'':'es'} of ${allPasses.length})`;
-  body.innerHTML=slice.map(_gpPassRowHtml).join('')||'<div class="empty" style="padding:20px;text-align:center">No passes match these filters.</div>';
+  const dayTotals=_gpRegDayTotals(all);
+  // The summary describes the FILTERED set, so it can never describe a set
+  // that is no longer on screen — the whole point of picking a date.
+  const sum=document.getElementById('gp-reg-summary');
+  if(sum){
+    // Summed from the per-day map that was just built, not recomputed from
+    // the rows — one pass over the data, and the two can never disagree.
+    let days=0;
+    const grand={n:0,pcs:0,kg:0,m:0,items:0};
+    dayTotals.forEach((t,day)=>{if(day)days++;grand.n+=t.n;grand.pcs+=t.pcs;grand.kg+=t.kg;grand.m+=t.m;grand.items+=t.items;});
+    sum.innerHTML=total?`${_gpRegTotalsText(grand)} · ${_gpEsc(_gpRegRangeLabel())}${days>1?` · across ${days} days`:''}`:'';
+  }
+  body.innerHTML=_gpRegRowsHTML(slice,dayTotals)||`<div class="empty" style="padding:20px;text-align:center">No passes${_gpRegDate.preset!=='all'?` for <strong>${_gpEsc(_gpRegRangeLabel())}</strong>`:''} match these filters.</div>`;
   const pg=document.getElementById('gp-reg-pager');if(!pg)return;
   if(pages<=1){pg.innerHTML='';return;}
   const btn=(n,l,dis,cur)=>`<button onclick="window.gpRegGoto(${n})" ${dis?'disabled':''} style="padding:5px 11px;border:1px solid ${cur?'#111':'var(--border)'};border-radius:6px;background:${cur?'var(--dark)':'var(--surface)'};color:${cur?'var(--on-dark)':'var(--text)'};cursor:pointer;font-size:12px;font-family:inherit">${l}</button>`;
@@ -351,9 +440,24 @@ function _gpRegRender(){
 }
 let _gpRegTo2=null;
 window.gpRegSearch=function(v){_gpRegQ=v||'';_gpRegPage=1;clearTimeout(_gpRegTo2);_gpRegTo2=setTimeout(()=>{_gpRegRender();const i=document.getElementById('gp-reg-search');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}},160);};
-window.gpRegSet=function(k,v){if(k==='type')_gpRegType=v;else if(k==='reason')_gpRegReason=v;else if(k==='issuer')_gpRegIssuer=v;else if(k==='from')_gpRegFrom=v;else if(k==='to')_gpRegTo=v;else if(k==='per')_gpRegPer=parseInt(v)||25;_gpRegPage=1;_gpRegRender();};
+window.gpRegSet=function(k,v){if(k==='type')_gpRegType=v;else if(k==='reason')_gpRegReason=v;else if(k==='issuer')_gpRegIssuer=v;else if(k==='per')_gpRegPer=parseInt(v)||25;_gpRegPage=1;_gpRegRender();};
 window.gpRegGoto=function(n){_gpRegPage=Math.max(1,n);_gpRegRender();};
-window.gpRegClear=function(){_gpRegQ='';_gpRegType='all';_gpRegReason='all';_gpRegIssuer='all';_gpRegFrom='';_gpRegTo='';_gpRegPage=1;const el=document.getElementById('gp-tab-content');if(el){el.innerHTML=renderGPRegistry();_gpRegRender();}};
+// Only the bar is repainted, not the whole card — rebuilding it would drop
+// the caret out of the search box mid-filtering.
+window.gpRegSetPreset=function(preset){
+  // Custom keeps whatever dates were last applied, so re-picking Custom after
+  // a preset does not silently wipe the range still in the inputs.
+  _gpRegDate={preset,from:_gpRegDate.from,to:_gpRegDate.to};_gpRegPage=1;
+  const b=document.getElementById('gp-reg-datebar');if(b)b.innerHTML=_gpRegDateBarHTML();
+  _gpRegRender();
+};
+window.gpRegApplyCustom=function(){
+  const from=document.getElementById('gp-reg-from')?.value||'';
+  const to=document.getElementById('gp-reg-to')?.value||'';
+  if(from&&to&&from>to){showToast('From date is after To date.',true);return;}
+  _gpRegDate={preset:'custom',from,to};_gpRegPage=1;_gpRegRender();
+};
+window.gpRegClear=function(){_gpRegQ='';_gpRegType='all';_gpRegReason='all';_gpRegIssuer='all';_gpRegDate={preset:'all',from:'',to:''};_gpRegPage=1;const el=document.getElementById('gp-tab-content');if(el){el.innerHTML=renderGPRegistry();_gpRegRender();}};
 window.gpRegExport=function(){
   const rows=_gpRegFiltered();
   if(!rows.length){showToast('Nothing to export.',true);return;}
@@ -365,9 +469,13 @@ window.gpRegExport=function(){
     const retSt=p.expectReturn?_gpReturnStatus(p):(p.returnStatus||'');
     return [p.date||'',p.time||'',p.id||'',p.gpType||'garments',GP_REASON_LABEL[p.gpReason]||p.gpReason||'',p.article||'',p.spec||'',p.poId||'',p.dest||'',qty,unit,p.rollsCount||'',p.boras||'',p.expectedBack||'',retSt,p.issuer||p.name||''];
   })];
-  if(typeof _fabXlsx==='function')_fabXlsx(aoa,'Gate Passes','gate-pass-registry');
-  else{const ws=XLSX.utils.aoa_to_sheet(aoa);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Gate Passes');XLSX.writeFile(wb,'gate-pass-registry.xlsx');}
-  showToast('Exported ✓');
+  // Already exports the FILTERED set; the range goes in the filename and the
+  // toast so a dated export is identifiable after it lands in Downloads.
+  const[dFrom,dTo]=typeof _gvDateBounds==='function'?_gvDateBounds(_gpRegDate):['',''];
+  const base='gate-pass-registry'+(dFrom||dTo?`-${dFrom||'start'}_to_${dTo||'latest'}`:'');
+  if(typeof _fabXlsx==='function')_fabXlsx(aoa,'Gate Passes',base);
+  else{const ws=XLSX.utils.aoa_to_sheet(aoa);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Gate Passes');XLSX.writeFile(wb,base+'.xlsx');}
+  showToast(`Exported ${rows.length} pass${rows.length===1?'':'es'} · ${_gpRegRangeLabel()} ✓`);
 };
 window.setDest=function(v){document.getElementById('gp-dest').value=v;};
 // Garments go out in BUNDLES (like cutting): per size, one number per bundle

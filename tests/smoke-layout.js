@@ -259,6 +259,38 @@ const FRAGMENTS={
     app.run(`(_fabRegDate={preset:'custom',from:'${day(7)}',to:'${day(0)}'},1)`);
     const custom=app.run('_fabRegDateBarHTML()');
     return Promise.resolve(card+'<div class="card">'+custom+'</div>');
+  },
+  // The same preset bar on the Gate pass registry, plus its day headers —
+  // which put a day label and a by-type roll-up in one justify-between row.
+  // Loaded in the real index.html order (gatepass.js, then fabric.js), so
+  // this also proves the shared date helpers resolve at render time.
+  'gate pass registry — pass-date filter':()=>{
+    const day=n=>{const d=new Date();d.setDate(d.getDate()-n);
+      const p=v=>String(v).padStart(2,'0');
+      return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;};
+    const app=loadApp({files:['js/gatepass.js','js/fabric.js'],currentPage:'',globals:{
+      allPasses:[
+        {id:'GP-348',gpType:'garments',date:day(0),ts:5e3,article:'GST001 — Baggy Trousers | Black',
+         spec:'Terry Fresh 283gsm Black',dest:'Rahim Gul Enterprise',name:'Uzaib',issuer:'Uzaib',
+         totalUnits:102,boras:'6',gpReason:'process',expectReturn:true},
+        {id:'GP-347',gpType:'fabric',date:day(0),ts:4e3,article:'GP091 — EFFORTLESS TEE',
+         spec:'Jersey Heavy 248gsm Slate Grey',dest:'Al-Hamd',name:'Uzaib',issuer:'Uzaib',
+         fabricQty:26.9,fabricUnit:'kg',rollsCount:1,gpReason:'return_vendor'},
+        {id:'GP-340',gpType:'item',date:day(3),ts:2e3,article:'Sewing machine — JUKI DDL-8700',
+         dest:'JR Traders',name:'Hassan',issuer:'Hassan',assetItems:[{n:1},{n:2}],gpReason:'other'}
+      ],
+      allReturns:[],allFabricIn:[],allPOs:[],allGPEditRequests:[],
+      allFabricInventory:[],allFabricMovements:[]
+    }});
+    let card=app.run('renderGPRegistry()');
+    const rows=app.run('_gpRegRowsHTML(_gpRegFiltered(),_gpRegDayTotals(_gpRegFiltered()))');
+    const sum=app.run('_gpRegTotalsText(_gpRegDayTotals(_gpRegFiltered()).values().next().value)');
+    card=card.replace('<div id="gp-reg-body"></div>','<div id="gp-reg-body">'+rows+'</div>')
+             .replace('<div id="gp-reg-summary" style="font-size:11px;color:var(--muted);margin:2px 2px 8px"></div>',
+                      '<div id="gp-reg-summary" style="font-size:11px;color:var(--muted);margin:2px 2px 8px">'+sum+' · All dates</div>');
+    // …and the bar in its custom state, which renderGPRegistry resets away.
+    app.run(`(_gpRegDate={preset:'custom',from:'${day(7)}',to:'${day(0)}'},1)`);
+    return Promise.resolve(card+'<div class="card">'+app.run('_gpRegDateBarHTML()')+'</div>');
   }
 };
 

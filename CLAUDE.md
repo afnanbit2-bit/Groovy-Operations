@@ -2749,13 +2749,38 @@ it from a hypothesis risks breaking real saves everywhere. If it recurs,
 get the browser console output from the moment it happens before touching
 this code.
 
-## Cutting / Issue Registry — the cut-date filter (Sept 2026)
+## Registry date filters — Cutting and Gate pass (Sept 2026)
 
-`PO Registry → Cutting / Issue Registry` (and the same card under Fabric
-Inventory — one function, `renderFabricIssueRegistry()` in `js/fabric.js`,
-mirrored into both). Afnan asked for a date filter "so it is easy to assess
-what got cut on what date". Presets All / Today / Yesterday / Last 7 days /
+Afnan asked for a date filter on `PO Registry → Cutting / Issue Registry`
+"so it is easy to assess what got cut on what date", then for the same thing
+on `Gate Pass → Registry`. Presets All / Today / Yesterday / Last 7 days /
 This month / Custom, the same shape as Monitor's `_monitorFilter`.
+
+**The helpers are SHARED and live in `js/fabric.js`** — `_gvDayStr`,
+`_gvDayOf`, `_gvDateBounds(f)`, `_gvInRange(rec,f)`, `_gvDayLabel`,
+`_gvRangeLabel(f)`, `_gvByDayDesc`, `_gvDateBarHTML(f,opts)` and
+`_GV_DATE_PRESETS`. Every one is **pure — the filter is passed in, never read
+from a module variable**, which is the only reason they are reusable. One
+definition of what "Yesterday" means, or the two pages answer the same
+question differently; `tests/fabric.test.js` asserts the two registries
+resolve identical bounds for every preset.
+
+- **Why `js/fabric.js` and not `js/shared.js`:** `js/gatepass.js` already
+  depends on this file (`_fabXlsx`, `_fabParseBundles`), and `shared.js` is a
+  cross-track file needing coordination. **`fabric.js` loads AFTER
+  `gatepass.js`** in `index.html`, so gatepass.js may only call these at
+  RENDER time, never at load — and each call is `typeof`-guarded so a
+  fabric.js that failed to parse leaves the explicit Custom From/To working
+  rather than filtering on a range the page could not compute. Same
+  fail-safe discipline as `profile.js` reusing `_boardsValidHex`.
+- The layout fragment loads the two files **in the real index.html order**,
+  so a call moved to load time fails there.
+
+### Both registries
+
+`renderFabricIssueRegistry()` (`js/fabric.js`, mirrored into the Fabric
+Inventory card and the PO Registry tab) and `renderGPRegistry()`
+(`js/gatepass.js`).
 
 - **It filters on `g.date` — the same string the card prints — not on `ts`.**
   `ts` is the creation time; `date` is the cut date, and Edit can change it.
@@ -2797,6 +2822,28 @@ This month / Custom, the same shape as Monitor's `_monitorFilter`.
   a false positive that would block any fragment containing a dropdown. It
   is an **array**, not a comma-joined string: `'OPTION,OPTGROUP'.indexOf('P')`
   is 1, which would silently exempt every `<p>` in the app.
+
+### Gate pass registry — what differs
+
+It already had two always-visible From/To inputs; the preset bar **replaced**
+them (Custom still offers exactly those two, and the presets answer "what
+went out today" without typing two dates). `_gpRegFrom`/`_gpRegTo` are gone,
+replaced by `_gpRegDate`, and `gpRegSet` no longer takes `'from'`/`'to'`.
+
+- **A day roll-up is BY TYPE, never blended.** A pass carries pcs
+  (garments), a fabric weight, or a count of asset items depending on
+  `gpType` — three different things, and one summed number would be a
+  made-up one. Fabric splits again by unit (kg vs meters). Verified by
+  reverting it: the header then reads `125 pcs` for 100 pcs plus 25 kg.
+- The summary strip is summed **from the per-day map already built**, so the
+  headline and the day headers cannot disagree.
+- `_gpPassRowHtml` is deliberately untouched — the Outward tab's recent list
+  shares it, so day grouping lives in `_gpRegRowsHTML` instead.
+- **Found by the new layout fragment, not by looking:** the row's reason
+  badge painted a literal `#374151` on `var(--surface-2)`, i.e. dark-on-dark
+  at **1.61:1** in dark mode — the "fixed dark foreground on a themed
+  background" shape from the embellishments sweep, pre-existing since long
+  before this change.
 
 ## Credentials — never in client code
 
