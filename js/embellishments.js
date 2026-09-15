@@ -163,7 +163,13 @@ const JOB_STAGE_LABELS={
   qc_bundling:'QC Bundling',       stitching:'Stitching',       final_qc_post_stitch:'Final QC (Post-Stitch)',
   closed:'Closed'
 };
-const PRIORITY_COLORS={urgent:'#000000', normal:'#111111', flexible:'#6B6B6B'};
+const PRIORITY_COLORS={urgent:'var(--text)', normal:'var(--text)', flexible:'var(--muted)'};
+/* The priority chip used to build its background by appending an alpha
+   suffix to that colour ('#111111'+'22') and use the colour raw as the
+   text. Both halves were fixed near-black, so in dark mode the chip was
+   black-on-black. Tokens invert with the theme; one helper keeps the
+   four call sites from drifting apart. */
+function _embPriorityChipStyle(p){ return 'background:var(--soft);color:'+(PRIORITY_COLORS[p]||'var(--muted)'); }
 const JOB_TYPES={
   printing:    {label:'Printing',    icon:'🖨️', hasPP:true,  stages:['awaiting_pp','printing','final_qc','rework','closed'], stageLabels:{awaiting_pp:'Awaiting PP', printing:'Printing', final_qc:'Final QC', rework:'Rework', closed:'Closed'}},
   embroidery:  {label:'Embroidery', icon:'🧵',     hasPP:true,  stages:['awaiting_pp','printing','final_qc','rework','closed'], stageLabels:{awaiting_pp:'Awaiting PP', printing:'Embroidery Job', final_qc:'Final QC', rework:'Rework', closed:'Closed'}},
@@ -261,7 +267,7 @@ function slaStatus(dueAt){
   if(rem<60)return'near';
   return'ok';
 }
-function slaColor(s){ return{ok:'var(--green)',near:'var(--amber)',over:'#dc2626',critical:'#7f1d1d'}[s]||'var(--muted)'; }
+function slaColor(s){ return{ok:'var(--green)',near:'var(--amber)',over:'var(--accent-urgent)',critical:'var(--accent-urgent)'}[s]||'var(--muted)'; }
 function slaChipClass(s){ return{ok:'sla-ok-chip',near:'sla-near-chip',over:'sla-over-chip',critical:'sla-critical-chip'}[s]||'sla-ok-chip'; }
 function remainLabel(dueAt){
   if(!dueAt)return'No SLA set';
@@ -270,7 +276,7 @@ function remainLabel(dueAt){
   return rem<60?`${rem}m left`:`${Math.floor(rem/60)}h ${rem%60}m left`;
 }
 function calcDue(stage,priority){ const h=SLA_HOURS[priority||'normal'][stage]||8; return new Date(Date.now()+h*3600000).toISOString(); }
-function recipeBadgeHTML(status){ const map={locked:'<span style="color:var(--green);font-weight:700">🔒 Locked</span>',active:'<span style="color:var(--green);font-weight:700">✅ Active</span>',pending_review:'<span style="color:#854F0B;font-weight:700;background:#FEF3C7;padding:2px 8px;border-radius:6px">⏳ Pending Review</span>',revision:'<span style="color:#9B1B2D;font-weight:700;background:#FBE7E9;padding:2px 8px;border-radius:6px">↩️ Revision</span>',draft:'<span style="color:var(--amber);font-weight:700">✏️ Draft</span>',archived:'<span style="color:var(--muted);font-weight:700">📦 Archived</span>'}; return map[status]||map.draft; }
+function recipeBadgeHTML(status){ const map={locked:'<span style="color:var(--green);font-weight:700">🔒 Locked</span>',active:'<span style="color:var(--green);font-weight:700">✅ Active</span>',pending_review:'<span style="color:var(--accent-warning);font-weight:700;background:var(--accent-warning-soft);padding:2px 8px;border-radius:6px">⏳ Pending Review</span>',revision:'<span style="color:var(--accent-urgent);font-weight:700;background:var(--accent-urgent-soft);padding:2px 8px;border-radius:6px">↩️ Revision</span>',draft:'<span style="color:var(--amber);font-weight:700">✏️ Draft</span>',archived:'<span style="color:var(--muted);font-weight:700">📦 Archived</span>'}; return map[status]||map.draft; }
 function tierBadge(t){ const ti=TIER_INFO[t]||TIER_INFO[1]; return`<span class="tier-badge ${ti.css}">${ti.label}</span>`; }
 function processBadge(pt){ const p=PROCESS_TYPES[pt]; return p?`<span class="process-badge">${p.icon} ${p.label}</span>`:'<span class="process-badge">—</span>'; }
 
@@ -329,7 +335,7 @@ function _ptDetailChipHTML(p){
   var isLegacy=!p.colorLibraryId;
   var showTechnical=canManageRecipes();
   var showWorker=isPrintWorker();
-  return'<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #f5f5f5">'+
+  return'<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--soft)">'+
     '<div style="width:32px;height:32px;border-radius:7px;background:'+hex+';border:1px solid rgba(0,0,0,.12);flex-shrink:0;margin-top:2px"></div>'+
     '<div style="flex:1;min-width:0">'+
       '<div style="font-size:13px;font-weight:700;color:var(--dark)">'+(p.colorName||'—')+'</div>'+
@@ -360,7 +366,7 @@ function renderColorLibraryPage(){
       '</div>':'')+
     '</div>'+
   '</div>'+
-  '<div style="font-size:11px;color:var(--muted);margin-bottom:12px;padding:8px 12px;background:#fffbeb;border-radius:8px;border:1px solid #fde68a">Digital swatches are for reference only. Final approval must match physical Pantone / ink sample.</div>'+
+  '<div style="font-size:11px;color:var(--muted);margin-bottom:12px;padding:8px 12px;background:var(--accent-warning-soft);border-radius:8px;border:1px solid var(--accent-warning)">Digital swatches are for reference only. Final approval must match physical Pantone / ink sample.</div>'+
   (canEdit?_renderColorImporterBlock():'')+
   (active.length?'<div style="display:grid;gap:8px;margin-bottom:12px">'+active.map(function(c){return _colorCardFull(c);}).join('')+'</div>':'<div class="empty" style="margin-bottom:12px">No colors in library yet. Add colors or seed starter set.</div>')+
   (archived.length?'<details style="margin-bottom:16px"><summary style="font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;padding:8px 0">Archived ('+archived.length+')</summary><div style="display:grid;gap:8px;margin-top:8px;opacity:.65">'+archived.map(function(c){return _colorCardFull(c);}).join('')+'</div></details>':'')+
@@ -379,7 +385,7 @@ window.openColorModal=function(id){
         '<div style="font-size:16px;font-weight:700">'+(c?'Edit Color':'Add New Color')+'</div>'+
         '<button onclick="window.closeColorModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>'+
       '</div>'+
-      '<div style="font-size:11px;color:var(--amber);margin-bottom:12px;padding:7px 10px;background:#fffbeb;border-radius:8px">Digital swatch is only an approximation. Confirm with physical Pantone/ink sample.</div>'+
+      '<div style="font-size:11px;color:var(--amber);margin-bottom:12px;padding:7px 10px;background:var(--accent-warning-soft);border-radius:8px">Digital swatch is only an approximation. Confirm with physical Pantone/ink sample.</div>'+
       '<div class="form-grid">'+
         '<div class="field"><label>Color Name *</label><input id="cm-name" value="'+(c&&c.colorName?c.colorName:'')+'" placeholder="e.g. Brown"></div>'+
         '<div class="field"><label>Pantone Code</label><input id="cm-pantone" value="'+(c&&c.pantoneCode?c.pantoneCode:'')+'" placeholder="e.g. PANTONE 438 C"></div>'+
@@ -607,13 +613,13 @@ window.runColorImport=async function(){
       var dupe=allColors.find(function(c){return(c.pantoneCode||'').trim().toLowerCase()===p.code.toLowerCase();});
       if(dupe){
         skip++;
-        if(rowEl){rowEl.textContent='skipped';rowEl.style.color='#7a5c1a';}
+        if(rowEl){rowEl.textContent='skipped';rowEl.style.color='var(--accent-warning)';}
       }else{
         var ref=doc(db,'color_library',p.slug);
         var snap=await getDoc(ref);
         if(snap.exists()){
           skip++;
-          if(rowEl){rowEl.textContent='skipped';rowEl.style.color='#7a5c1a';}
+          if(rowEl){rowEl.textContent='skipped';rowEl.style.color='var(--accent-warning)';}
         }else{
           var payload={
             colorName:p.name,
@@ -684,8 +690,8 @@ function renderRecipeDirectory(){
   </div>
 
   ${isOM&&pendingDrafts.length?`<div class="card" style="border-left:3px solid #F59E0B;margin-bottom:12px;padding:0">
-    <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-weight:700"><span style="color:#854F0B">⏳ Drafts Pending Review</span><span style="background:#F59E0B;color:#fff;font-size:11px;padding:2px 9px;border-radius:10px">${pendingDrafts.length}</span></div>
-    ${pendingDrafts.map(r=>`<div onclick="window.openRecipeDraftReview('${r._id}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-top:1px solid var(--soft);cursor:pointer" onmouseenter="this.style.background='#fafafa'" onmouseleave="this.style.background=''">
+    <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-weight:700"><span style="color:var(--accent-warning)">⏳ Drafts Pending Review</span><span style="background:#F59E0B;color:#fff;font-size:11px;padding:2px 9px;border-radius:10px">${pendingDrafts.length}</span></div>
+    ${pendingDrafts.map(r=>`<div onclick="window.openRecipeDraftReview('${r._id}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-top:1px solid var(--soft);cursor:pointer" onmouseenter="this.style.background='var(--hover)'" onmouseleave="this.style.background=''">
       <div style="min-width:0">
         <div style="font-weight:600;font-size:14px">${r.articleName||'Untitled'}</div>
         <div style="font-size:11px;color:var(--muted)">${r.articleCode||'—'} · PO ${r.poNumber||'—'} · by ${r.submittedBy||r.createdBy||'—'}${r.submittedAt?' · '+new Date(r.submittedAt).toLocaleString('en-GB'):''} · ${(r.draftPlacements||[]).length} placement${(r.draftPlacements||[]).length===1?'':'s'}</div>
@@ -696,7 +702,7 @@ function renderRecipeDirectory(){
 
   ${myRevisions.length?`<div class="card" style="border-left:3px solid #E94560;margin-bottom:12px;padding:0">
     <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-weight:700;color:#9B1B2D">↩️ Sent Back for Revision</div>
-    ${myRevisions.map(r=>`<div onclick="window.openRecipeDraftEdit('${r._id}')" style="padding:10px 16px;border-top:1px solid var(--soft);cursor:pointer" onmouseenter="this.style.background='#fafafa'" onmouseleave="this.style.background=''">
+    ${myRevisions.map(r=>`<div onclick="window.openRecipeDraftEdit('${r._id}')" style="padding:10px 16px;border-top:1px solid var(--soft);cursor:pointer" onmouseenter="this.style.background='var(--hover)'" onmouseleave="this.style.background=''">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
         <div style="min-width:0">
           <div style="font-weight:600;font-size:14px">${r.articleName||'Untitled'}</div>
@@ -763,7 +769,7 @@ function recipeCardHTML(r){
   return`<div class="recipe-card" onclick="window.openRecipeDetail('${r._id}')">
     <div style="display:flex;gap:12px;align-items:flex-start">
       <div style="width:56px;height:70px;flex-shrink:0;background:var(--soft);border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
-        ${hasImg?`<img src="${imgUrl}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:9px;color:#ccc;text-align:center;padding:4px">No img</span>'}
+        ${hasImg?`<img src="${imgUrl}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:9px;color:var(--muted);text-align:center;padding:4px">No img</span>'}
       </div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
@@ -814,7 +820,7 @@ function _rdPlacementRowHTML(i,p={}){
     <div class="field" style="margin:0"><label style="font-size:11px">Notes</label>
       <input id="rd-pl-notes-${i}" value="${_rdEsc(p.notes)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">
     </div>
-    <button type="button" onclick="window._rdRemovePlacement(${i})" style="padding:8px 10px;border:1px solid #fecaca;background:#fff5f5;color:#dc2626;border-radius:8px;font-size:12px;cursor:pointer;height:36px">Remove</button>
+    <button type="button" onclick="window._rdRemovePlacement(${i})" style="padding:8px 10px;border:1px solid var(--accent-urgent);background:var(--accent-urgent-soft);color:var(--accent-urgent);border-radius:8px;font-size:12px;cursor:pointer;height:36px">Remove</button>
   </div>`;
 }
 
@@ -850,7 +856,7 @@ window._rdSearch=function(qRaw){
   dd.innerHTML=results.map(p=>{
     const m={articleName:p.name||'',articleCode:p.code||''};
     const data=encodeURIComponent(JSON.stringify(m));
-    return`<div onclick="window._rdPick('${data}')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--soft);font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
+    return`<div onclick="window._rdPick('${data}')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--soft);font-size:13px" onmouseenter="this.style.background='var(--hover)'" onmouseleave="this.style.background=''">
       <div style="font-weight:600">${p.name||'(no name)'}</div>
       <div style="font-size:11px;color:var(--muted)">${p.code||'—'}</div>
     </div>`;
@@ -1007,7 +1013,7 @@ function _rdrPantoneChipHTML(i,j,pn){
 function _rdrPlacementRowHTML(i,p={}){
   const colorOpts=(typeof allColors!=='undefined'?allColors:[]).filter(c=>c.status!=='archived')
     .map(c=>`<option value="${c._id}">${_rdEsc(c.colorName)||'—'}${c.pantoneCode?' · '+_rdEsc(c.pantoneCode):''}</option>`).join('');
-  return`<div class="rdr-pl-row" data-idx="${i}" style="border:1px solid #e5e7eb;border-radius:10px;padding:12px;margin-bottom:10px;background:#fcfcfd">
+  return`<div class="rdr-pl-row" data-idx="${i}" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;background:var(--surface-2)">
     <div style="display:grid;grid-template-columns:1.2fr 1.4fr 1fr auto;gap:8px;align-items:end">
       <div class="field" style="margin:0"><label style="font-size:11px">Placement Type</label>
         <select id="rdr-pl-type-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
@@ -1024,7 +1030,7 @@ function _rdrPlacementRowHTML(i,p={}){
           ${RD_TECHNIQUES.map(t=>`<option value="${t}" ${p.technique===t?'selected':''}>${t}</option>`).join('')}
         </select>
       </div>
-      <button type="button" onclick="window._rdrRemovePlacement(${i})" style="padding:8px 10px;border:1px solid #fecaca;background:#fff5f5;color:#dc2626;border-radius:8px;font-size:12px;cursor:pointer;height:36px">Remove</button>
+      <button type="button" onclick="window._rdrRemovePlacement(${i})" style="padding:8px 10px;border:1px solid var(--accent-urgent);background:var(--accent-urgent-soft);color:var(--accent-urgent);border-radius:8px;font-size:12px;cursor:pointer;height:36px">Remove</button>
     </div>
     <div class="field" style="margin:8px 0 0"><label style="font-size:11px">Notes</label>
       <input id="rdr-pl-notes-${i}" value="${_rdEsc(p.notes)}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">
@@ -1164,7 +1170,7 @@ function renderRecipeDraftReviewPage(){
           </label>`).join('')}
         </div>
       </div>
-      <div id="rc-rate-status" style="grid-column:1/-1">${rm?`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:12px"><span style="color:var(--green);font-weight:700">Rate found from Printing Rate List ✅</span><span style="color:var(--muted)">Rs. ${rm.ratePerPiece}/pc · Tier ${rm.complexityTier}</span></div>`:`<div style="padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted)">Article not in Rate Master — set manually</div>`}</div>
+      <div id="rc-rate-status" style="grid-column:1/-1">${rm?`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--accent-success-soft);border:1px solid var(--accent-success);border-radius:8px;font-size:12px"><span style="color:var(--green);font-weight:700">Rate found from Printing Rate List ✅</span><span style="color:var(--muted)">Rs. ${rm.ratePerPiece}/pc · Tier ${rm.complexityTier}</span></div>`:`<div style="padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted)">Article not in Rate Master — set manually</div>`}</div>
       <div class="field"><label>Complexity Tier *</label>
         <select id="rc-tier" onchange="window._rcMarkOverride()">${[1,2,3,4].map(t=>`<option value="${t}" ${(_tierVal||1)==t?'selected':''}>${TIER_INFO[t].label} — ${TIER_INFO[t].desc}</option>`).join('')}</select>
       </div>
@@ -1200,7 +1206,7 @@ function renderRecipeDraftReviewPage(){
   <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
     <button class="btn-outline" style="flex:1;min-width:140px" onclick="window.saveDraftReview('${r._id}')">Save Changes</button>
     <button class="btn-primary" style="flex:1;min-width:140px;background:var(--green)" onclick="window.approveRecipeDraft('${r._id}')">Approve &amp; Publish Recipe ✅</button>
-    <button class="btn-outline" style="flex:1;min-width:140px;color:#9B1B2D;border-color:#E94560" onclick="window.revisionRecipeDraft('${r._id}')">Send Back for Revision ↩️</button>
+    <button class="btn-outline" style="flex:1;min-width:140px;color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.revisionRecipeDraft('${r._id}')">Send Back for Revision ↩️</button>
     ${session.u==='ammar'?`<button class="btn-outline" style="flex:1;min-width:140px;color:#dc2626;border-color:#dc2626" onclick="window.deleteRecipe('${r._id}')">Delete Recipe 🗑</button>`:''}
   </div>
   <div style="height:80px"></div>`;
@@ -1392,7 +1398,7 @@ function renderRecipeCreatePage(){
       <div id="rc-rate-status" style="grid-column:1/-1">${(()=>{
         const rm=_lookupRate(e.articleCode||'');
         if(!e.articleCode)return'';
-        if(rm)return`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:12px">
+        if(rm)return`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--accent-success-soft);border:1px solid var(--accent-success);border-radius:8px;font-size:12px">
           <span style="color:var(--green);font-weight:700">Rate found from Printing Rate List ✅</span>
           <span style="color:var(--muted)">Rs. ${rm.ratePerPiece}/pc · Tier ${rm.complexityTier}</span>
           <span style="color:var(--muted);margin-left:auto">Source: Current Quarter Rate List</span>
@@ -1408,7 +1414,7 @@ function renderRecipeCreatePage(){
       <div id="rc-override-row" style="grid-column:1/-1;display:${(()=>{const rm=_lookupRate(e.articleCode||'');return(rm&&(pt.ratePerPiece!==rm.ratePerPiece||pt.complexityTier!==rm.complexityTier))?'block':'none';})()}">
         <div style="padding:7px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span>Values differ from Rate List.</span>
-          <button type="button" onclick="window._rcUseRateList()" style="font-size:12px;padding:3px 10px;border:1px solid #f97316;border-radius:6px;background:none;color:#ea580c;cursor:pointer">Use Rate List Values</button>
+          <button type="button" onclick="window._rcUseRateList()" style="font-size:12px;padding:3px 10px;border:1px solid var(--accent-warning);border-radius:6px;background:none;color:var(--accent-warning);cursor:pointer">Use Rate List Values</button>
           <span style="margin-left:auto">Override reason: <input id="rc-override-note" placeholder="optional…" style="font-size:12px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;width:180px;outline:none" value="${pt.rateOverrideNote||''}"></span>
         </div>
       </div>
@@ -1463,7 +1469,7 @@ function placementRowHTML(i,pl={}){
   return`<div id="pl-row-${i}" class="placement-row">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <span style="font-size:11px;font-weight:700;color:var(--muted)">PLACEMENT ${i+1}</span>
-      <button type="button" onclick="document.getElementById('pl-row-${i}').remove()" style="background:none;border:none;color:#ccc;font-size:18px;cursor:pointer">×</button>
+      <button type="button" onclick="document.getElementById('pl-row-${i}').remove()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer">×</button>
     </div>
     <div class="field">
       <label>Placement Template *</label>
@@ -1501,7 +1507,7 @@ function placementRowHTML(i,pl={}){
     <div class="field" style="margin-top:8px">
       <label>Placement Reference Image / پلیسمنٹ ریفرنس تصویر</label>
       <div id="pl-${i}-img-preview" style="${refImg?'':'display:none'}margin-bottom:8px;position:relative">
-        <img id="pl-${i}-img-thumb" src="${refImg}" style="width:100%;max-height:160px;object-fit:contain;border-radius:8px;border:1px solid var(--border);background:#f9f9f9;cursor:zoom-in" onclick="this.src&&window.open(this.src)">
+        <img id="pl-${i}-img-thumb" src="${refImg}" style="width:100%;max-height:160px;object-fit:contain;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);cursor:zoom-in" onclick="this.src&&window.open(this.src)">
         <button type="button" onclick="window._plRemoveImg(${i})" style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:14px;cursor:pointer;line-height:1">×</button>
       </div>
       <div id="pl-${i}-img-controls" style="${refImg?'display:none':''}">
@@ -1603,7 +1609,7 @@ function pantoneRowHTML(i,p={}){
             ' oninput="window._ptSearch('+i+')"'+
             ' onfocus="window._ptSearch('+i+')"'+
             ' autocomplete="off">'+
-          '<button type="button" onclick="document.getElementById(\'pt-row-'+i+'\').remove()" style="background:none;border:none;color:#ccc;font-size:20px;cursor:pointer;padding:2px 4px;flex-shrink:0">×</button>'+
+          '<button type="button" onclick="document.getElementById(\'pt-row-'+i+'\').remove()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:2px 4px;flex-shrink:0">×</button>'+
         '</div>'+
         '<div id="pt-dropdown-'+i+'" style="position:relative;z-index:100"></div>'+
         '<input type="hidden" id="pt-lib-id-'+i+'" value="'+(p.colorLibraryId||'')+'">'+
@@ -1639,7 +1645,7 @@ window._ptSearch=function(i){
   }
   dd.innerHTML='<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.1);margin-top:4px;overflow:hidden">'+
     matches.map(function(c){
-      return'<div onclick="window._ptSelectColor('+i+',\''+c._id+'\')" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid #f5f5f5" onmouseover="this.style.background=\'#f9f9f9\'" onmouseout="this.style.background=\'\'">'+
+      return'<div onclick="window._ptSelectColor('+i+',\''+c._id+'\')" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--soft)" onmouseover="this.style.background=\'var(--hover)\'" onmouseout="this.style.background=\'\'">'+
         '<div style="width:24px;height:24px;border-radius:5px;background:'+(c.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div>'+
         '<div><div style="font-size:13px;font-weight:600">'+c.colorName+'</div><div style="font-size:11px;color:var(--muted)">'+(c.pantoneCode||'')+(c.localInkName?' · '+c.localInkName:'')+'</div></div>'+
       '</div>';
@@ -1722,7 +1728,7 @@ window._rcLookupRate=function(rawCode){
   const rateEl=document.getElementById('rc-rate');
   if(!code){if(statusEl)statusEl.innerHTML='';return;}
   if(rm){
-    if(statusEl)statusEl.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:12px">'+
+    if(statusEl)statusEl.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--accent-success-soft);border:1px solid var(--accent-success);border-radius:8px;font-size:12px">'+
       '<span style="color:var(--green);font-weight:700">Rate found from Printing Rate List ✅</span>'+
       '<span style="color:var(--muted)">Rs. '+rm.ratePerPiece+'/pc · Tier '+rm.complexityTier+'</span>'+
       '<span style="color:var(--muted);margin-left:auto">Source: Current Quarter Rate List</span>'+
@@ -1850,8 +1856,8 @@ function _recPlacementHTML(pl,idx){
   const techAFile=pl.technical?.artworkFileUrl||'';
   const techPDNotes=pl.technical?.printDimensionNotes||'';
   const imgBlock=refImg
-    ?`<img src="${refImg}" onclick="window.open('${refImg}')" style="width:100%;border-radius:8px;max-height:180px;object-fit:contain;margin-top:8px;background:#f9f9f9;border:1px solid var(--border);cursor:zoom-in">`
-    :`<div style="font-size:12px;color:var(--muted);margin-top:6px;padding:10px;background:#f9f9f9;border-radius:8px;text-align:center">No placement image uploaded / پلیسمنٹ تصویر موجود نہیں</div>`;
+    ?`<img src="${refImg}" onclick="window.open('${refImg}')" style="width:100%;border-radius:8px;max-height:180px;object-fit:contain;margin-top:8px;background:var(--surface-2);border:1px solid var(--border);cursor:zoom-in">`
+    :`<div style="font-size:12px;color:var(--muted);margin-top:6px;padding:10px;background:var(--surface-2);border-radius:8px;text-align:center">No placement image uploaded / پلیسمنٹ تصویر موجود نہیں</div>`;
   const wrap=c=>`<div class="placement-row" style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--soft)">${c}</div>`;
   const header=`<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px">PLACEMENT ${idx+1}</div>
     <div class="info-row"><span class="info-label">Placement</span><span style="font-weight:600">${plName}${plNameUr?' / '+plNameUr:''}</span></div>`;
@@ -1859,8 +1865,8 @@ function _recPlacementHTML(pl,idx){
   if(isPrintWorker()){
     return wrap(`${header}
       ${meas?`<div class="info-row"><span class="info-label">Measurement</span><span>${meas}${mUnit?' ('+mUnit+')':''}</span></div>`:''}
-      ${instrEn?`<div style="background:#f7f7f9;padding:8px 10px;border-radius:8px;font-size:13px;margin-top:4px"><strong>Instruction:</strong> ${instrEn}</div>`:''}
-      ${instrUr?`<div style="background:#fffbeb;padding:8px 10px;border-radius:8px;font-size:14px;direction:rtl;text-align:right;margin-top:4px">${instrUr}</div>`:''}
+      ${instrEn?`<div style="background:var(--surface-2);padding:8px 10px;border-radius:8px;font-size:13px;margin-top:4px"><strong>Instruction:</strong> ${instrEn}</div>`:''}
+      ${instrUr?`<div style="background:var(--accent-warning-soft);padding:8px 10px;border-radius:8px;font-size:14px;direction:rtl;text-align:right;margin-top:4px">${instrUr}</div>`:''}
       ${imgBlock}
       ${techCollapsible}`);
   }
@@ -1955,7 +1961,7 @@ function renderRecipeDetailPage(){
   </div>`:''}
 
   ${(r.draftPlacements||[]).length?`<div class="card"><div class="card-title">Placements (${r.draftPlacements.length})</div>
-    ${r.draftPlacements.map((p,i)=>`<div style="padding:10px 0;border-bottom:1px solid #f5f5f5">
+    ${r.draftPlacements.map((p,i)=>`<div style="padding:10px 0;border-bottom:1px solid var(--soft)">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
         <span style="font-size:11px;font-weight:700;color:var(--muted)">${i+1}.</span>
         <span style="font-weight:600;font-size:14px">${_rdEsc(p.placementType)||'—'}</span>
@@ -1963,7 +1969,7 @@ function renderRecipeDetailPage(){
       </div>
       ${p.positionSize?`<div style="font-size:13px;color:#1A1A2E;margin-bottom:3px"><span style="color:var(--muted);font-size:11px">Position &amp; Size:</span> ${_rdEsc(p.positionSize)}</div>`:''}
       ${p.notes?`<div style="font-size:12px;color:var(--muted);margin-bottom:4px">${_rdEsc(p.notes)}</div>`:''}
-      ${(p.pantones||[]).length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${p.pantones.map(pn=>`<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;background:#f7f7f9;border:1px solid var(--soft);border-radius:14px;font-size:12px">
+      ${(p.pantones||[]).length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${p.pantones.map(pn=>`<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;background:var(--surface-2);border:1px solid var(--soft);border-radius:14px;font-size:12px">
         <span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${pn.hexApprox||'#ccc'};border:1px solid var(--border)"></span>
         ${_rdEsc(pn.colorName)||'—'}${pn.pantoneCode?' · '+_rdEsc(pn.pantoneCode):''}
       </span>`).join('')}</div>`:''}
@@ -1978,12 +1984,12 @@ function renderRecipeDetailPage(){
   </div>`:''}
 
   ${(r.qcSuggestions||[]).length?`<div class="card"><div class="card-title">QC Suggestions (${r.qcSuggestions.length})</div>
-    ${r.qcSuggestions.map(s=>`<div style="padding:8px 0;border-bottom:1px solid #f5f5f5">
+    ${r.qcSuggestions.map(s=>`<div style="padding:8px 0;border-bottom:1px solid var(--soft)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div style="flex:1"><div style="font-size:12px;font-weight:600">${s.by||'—'} <span style="color:var(--muted);font-weight:400">· ${tsLabel2(s.date)}</span></div>
           <div style="font-size:13px;margin-top:3px">${s.note||'—'}</div>
         </div>
-        <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${s.status==='rejected'?'#111':'#f0f0f0'};color:${s.status==='rejected'?'#fff':'#111'}">${(s.status||'open').toUpperCase()}</span>
+        <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${s.status==='rejected'?'var(--dark)':'var(--soft)'};color:${s.status==='rejected'?'var(--on-dark)':'var(--text)'}">${(s.status||'open').toUpperCase()}</span>
       </div>
       ${canManageRecipes()&&s.status==='open'&&!roView?`<div style="display:flex;gap:6px;margin-top:6px">
         <button class="btn-sm" style="background:var(--green)" onclick="window.resolveQCSug('${r._id}','${s.suggestionId}','accepted')">Accept</button>
@@ -2211,7 +2217,7 @@ window._lookupRecipe=function(code){
   const r=allRecipes.find(x=>x.articleCode&&x.articleCode.toLowerCase()===code.trim().toLowerCase());
   if(!r){el.innerHTML='<span style="color:var(--amber);font-weight:600">⚠ Recipe Missing — printing will be blocked until recipe is created/locked</span>';return;}
   const pt=r.printing||{};
-  el.innerHTML=`<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px">
+  el.innerHTML=`<div style="background:var(--accent-success-soft);border:1px solid var(--accent-success);border-radius:8px;padding:10px">
     <div style="font-weight:700;color:var(--green)">✓ Recipe found — ${r.status==='locked'?'🔒 Locked':'✏️ Draft'}</div>
     <div style="font-size:12px;color:var(--muted);margin-top:4px">${(pt.processTypes||[]).map(p=>PROCESS_TYPES[p]?.label||p).join(', ')||'No process'} · Tier ${pt.complexityTier||1} · Rs.${pt.ratePerPiece||'—'}/pc</div>
   </div>`;
@@ -2340,12 +2346,12 @@ function jobListCardHTML(j){
   return`<div class="job-card sla-${sl}" onclick="window.openPrintingJob('${j._id}')">
     <div style="display:flex;gap:10px;align-items:flex-start">
       <div style="width:48px;height:60px;flex-shrink:0;background:var(--soft);border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
-        ${recipe?.images?.frontUrl?`<img src="${recipe.images.frontUrl}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:9px;color:#ccc;text-align:center;padding:2px">No img</span>'}
+        ${recipe?.images?.frontUrl?`<img src="${recipe.images.frontUrl}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:9px;color:var(--muted);text-align:center;padding:2px">No img</span>'}
       </div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:3px">
           <span style="font-size:11px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</span>
-          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;background:${PRIORITY_COLORS[j.priority]+'20'};color:${PRIORITY_COLORS[j.priority]}">${(j.priority||'normal').toUpperCase()}</span>
+          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;${_embPriorityChipStyle(j.priority)}">${(j.priority||'normal').toUpperCase()}</span>
           ${tierBadge(j.complexityTier||1)}
           <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:8px;background:var(--soft);color:var(--dark)">${JOB_TYPES[jt].icon} ${jt}</span>
         </div>
@@ -2379,9 +2385,9 @@ function printWorkerCardHTML(j){
   const alreadyPrinting=stage==='bulk_printing';
 
   // ── SLA block ──
-  const slaColors={ok:'#EFEFEF',near:'#f0f0f0',over:'#fee2e2',critical:'#fecaca'};
-  const slaText={ok:'var(--green)',near:'var(--amber)',over:'#dc2626',critical:'#7f1d1d'};
-  const slaBg=slaColors[sl]||'#f4f4f6';
+  const slaColors={ok:'var(--soft)',near:'var(--surface-2)',over:'var(--accent-urgent-soft)',critical:'var(--accent-urgent-soft)'};
+  const slaText={ok:'var(--green)',near:'var(--amber)',over:'var(--accent-urgent)',critical:'var(--accent-urgent)'};
+  const slaBg=slaColors[sl]||'var(--hover)';
   const slaFg=slaText[sl]||'var(--muted)';
   const slaBlock=j.slaCurrentDue?`
     <div style="background:${slaBg};border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
@@ -2412,10 +2418,10 @@ function printWorkerCardHTML(j){
   const curStep=ppRejected?ppRejStep:(stepInstructions[stage]||{en:JOB_STAGE_LABELS[stage]||stage,ur:'',steps:[]});
   const stepBlock=`
     <div style="background:var(--dark);border-radius:12px;padding:14px;margin-bottom:12px;color:var(--on-dark)">
-      <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:rgba(255,255,255,.5);margin-bottom:4px">موجودہ مرحلہ / CURRENT STEP</div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--on-dark);opacity:.55;margin-bottom:4px">موجودہ مرحلہ / CURRENT STEP</div>
       <div style="font-size:17px;font-weight:800">${curStep.en}</div>
-      ${curStep.ur?`<div style="font-size:15px;font-weight:700;direction:rtl;text-align:right;margin-top:2px;color:rgba(255,255,255,.85)">${curStep.ur}</div>`:''}
-      ${curStep.steps.length?`<ol style="margin:10px 0 0 0;padding-left:18px;font-size:12px;line-height:2;color:rgba(255,255,255,.8)">${curStep.steps.map(s=>`<li>${s}</li>`).join('')}</ol>`:''}
+      ${curStep.ur?`<div style="font-size:15px;font-weight:700;direction:rtl;text-align:right;margin-top:2px;color:var(--on-dark);opacity:.88">${curStep.ur}</div>`:''}
+      ${curStep.steps.length?`<ol style="margin:10px 0 0 0;padding-left:18px;font-size:12px;line-height:2;color:var(--on-dark);opacity:.82">${curStep.steps.map(s=>`<li>${s}</li>`).join('')}</ol>`:''}
     </div>`;
 
   // ── Images ──
@@ -2454,20 +2460,20 @@ function printWorkerCardHTML(j){
           <div style="font-size:13px;font-weight:700;margin-bottom:4px">${pl.templateNameEn||pl.name||'Placement'}${pl.templateNameUr?' / '+pl.templateNameUr:''}</div>
           ${(pl.measurementText||pl.measurementDescriptionEn)?`<div style="font-size:12px;color:var(--dark);margin-bottom:2px">${pl.measurementText||pl.measurementDescriptionEn}${pl.measurementUnit?' ('+pl.measurementUnit+')':''}</div>`:''}
           ${(pl.toleranceText||pl.toleranceValue||pl.tolerance)?`<div style="font-size:11px;color:var(--muted)">Tolerance: ${pl.toleranceText?(pl.toleranceText+(pl.toleranceUnit?' '+pl.toleranceUnit:'')):(pl.toleranceValue||pl.tolerance)}</div>`:''}
-          ${(pl.production?.referenceImageUrl||pl.imageUrl)?`<img src="${pl.production?.referenceImageUrl||pl.imageUrl}" style="width:100%;max-height:120px;object-fit:contain;border-radius:8px;margin-top:6px;background:#f9f9f9;border:1px solid var(--border)">`:''}
+          ${(pl.production?.referenceImageUrl||pl.imageUrl)?`<img src="${pl.production?.referenceImageUrl||pl.imageUrl}" style="width:100%;max-height:120px;object-fit:contain;border-radius:8px;margin-top:6px;background:var(--surface-2);border:1px solid var(--border)">`:''}
           ${pantones.length?`<div style="margin-top:6px">${pantones.map(p=>'<div style="display:flex;align-items:center;gap:7px;padding:3px 0"><div style="width:16px;height:16px;border-radius:4px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div><span style="font-size:12px;font-weight:600">'+(p.colorName||'—')+'</span>'+(p.localInkName?'<span style="font-size:11px;color:var(--muted)">· '+p.localInkName+'</span>':'')+'</div>').join('')}</div>`:''}
         </div>`).join('')}
       ${!placements.length&&pantones.length?`<div style="margin-top:4px">${pantones.map(p=>'<div style="display:flex;align-items:center;gap:7px;padding:4px 0"><div style="width:18px;height:18px;border-radius:4px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div><span style="font-size:12px;font-weight:600">'+(p.colorName||'—')+'</span>'+(p.localInkName?'<span style="font-size:11px;color:var(--muted)">· '+p.localInkName+'</span>':'')+'</div>').join('')}</div>`:''}
-      ${recipe.printing?.instructionsUr?`<div style="margin-top:8px;font-size:14px;line-height:2;direction:rtl;text-align:right;color:var(--dark);background:#f9f9f9;padding:8px 10px;border-radius:8px">${recipe.printing.instructionsUr}</div>`:''}
+      ${recipe.printing?.instructionsUr?`<div style="margin-top:8px;font-size:14px;line-height:2;direction:rtl;text-align:right;color:var(--dark);background:var(--surface-2);padding:8px 10px;border-radius:8px">${recipe.printing.instructionsUr}</div>`:''}
       ${recipe.printing?.instructionsEn?`<div style="margin-top:6px;font-size:12px;color:var(--dark);line-height:1.6">${recipe.printing.instructionsEn}</div>`:''}
       ${pantones.length?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--soft)">
         <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px">رنگ / Colors to Use</div>
-        ${pantones.map(p=>'<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#f9f9f9;border-radius:8px;margin-bottom:5px"><div style="width:28px;height:28px;border-radius:6px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.12);flex-shrink:0"></div><div><div style="font-size:13px;font-weight:700">'+(p.colorName||'—')+'</div><div style="font-size:11px;color:var(--muted)">'+(p.localInkName||p.pantoneCode||'')+'</div>'+(p.articleSpecificNotes||p.notes?'<div style="font-size:11px;color:var(--dark);font-style:italic">'+(p.articleSpecificNotes||p.notes)+'</div>':'')+'</div></div>').join('')}
+        ${pantones.map(p=>'<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--surface-2);border-radius:8px;margin-bottom:5px"><div style="width:28px;height:28px;border-radius:6px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.12);flex-shrink:0"></div><div><div style="font-size:13px;font-weight:700">'+(p.colorName||'—')+'</div><div style="font-size:11px;color:var(--muted)">'+(p.localInkName||p.pantoneCode||'')+'</div>'+(p.articleSpecificNotes||p.notes?'<div style="font-size:11px;color:var(--dark);font-style:italic">'+(p.articleSpecificNotes||p.notes)+'</div>':'')+'</div></div>').join('')}
       </div>`:''}
     </div>`:'';
 
   // ── No recipe warning ──
-  const noRecipeWarn=!hasRecipe?`<div style="background:#fee2e2;border-radius:10px;padding:12px;color:#dc2626;font-weight:700;font-size:13px;margin-bottom:12px;text-align:center">ریسیپی موجود نہیں<br><span style="font-size:11px;font-weight:500;margin-top:4px;display:block">Recipe Missing — PP sample cannot start. Contact Ammar.</span></div>`:'';
+  const noRecipeWarn=!hasRecipe?`<div style="background:var(--accent-urgent-soft);border-radius:10px;padding:12px;color:var(--accent-urgent);font-weight:700;font-size:13px;margin-bottom:12px;text-align:center">ریسیپی موجود نہیں<br><span style="font-size:11px;font-weight:500;margin-top:4px;display:block">Recipe Missing — PP sample cannot start. Contact Ammar.</span></div>`:'';
 
   // ── PP photo upload (file input, no URL shown to worker) ──
   const ppPhotoInput=`
@@ -2490,12 +2496,12 @@ function printWorkerCardHTML(j){
     </div>`;
 
   // ── Action area ──
-  const handoffNote=`<div style="background:#f0f9ff;border-radius:8px;padding:8px 10px;font-size:12px;color:#0369a1;margin-top:8px;font-weight:500;line-height:1.6">یہ بٹن دبانے کے بعد فزیکل پی پی سیمپل QC / حارث کو دیں۔<br><span style="font-size:11px;font-style:italic">After pressing this, send the physical PP sample to Haris (QC).</span></div>`;
+  const handoffNote=`<div style="background:var(--surface-2);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--text);margin-top:8px;font-weight:500;line-height:1.6">یہ بٹن دبانے کے بعد فزیکل پی پی سیمپل QC / حارث کو دیں۔<br><span style="font-size:11px;font-style:italic">After pressing this, send the physical PP sample to Haris (QC).</span></div>`;
 
   let actionArea='';
   if(hasRecipe&&(canPPSample||ppRejected)){
     actionArea=`
-      ${ppRejected?`<div style="background:#fee2e2;border-radius:10px;padding:12px;margin-bottom:12px;color:#dc2626;font-weight:700;font-size:13px">پی پی ریجیکٹ — نیا پی پی سیمپل بنائیں<br><span style="font-size:12px;font-weight:500;margin-top:4px;display:block">وجہ: ${j.ppAttempts?.[j.ppAttempts.length-1]?.rejectionReason||'—'}</span></div>`:''}
+      ${ppRejected?`<div style="background:var(--accent-urgent-soft);border-radius:10px;padding:12px;margin-bottom:12px;color:var(--accent-urgent);font-weight:700;font-size:13px">پی پی ریجیکٹ — نیا پی پی سیمپل بنائیں<br><span style="font-size:12px;font-weight:500;margin-top:4px;display:block">وجہ: ${j.ppAttempts?.[j.ppAttempts.length-1]?.rejectionReason||'—'}</span></div>`:''}
       ${ppNoteInput}
       ${ppPhotoInput}
       <button class="worker-btn worker-btn-amber" onclick="window.submitPPSample('${j._id}')">
@@ -2503,7 +2509,7 @@ function printWorkerCardHTML(j){
       </button>
       ${handoffNote}`;
   } else if(awaitingApproval){
-    actionArea=`<div style="background:#f0f9ff;border:1px solid #7dd3fc;border-radius:10px;padding:14px;color:#0369a1;font-weight:700;font-size:14px;text-align:center">
+    actionArea=`<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:14px;color:var(--text);font-weight:700;font-size:14px;text-align:center">
       منظوری کا انتظار / Waiting for Approval<br>
       <span style="font-size:12px;font-weight:500;margin-top:4px;display:block">پی پی سیمپل حارث کے پاس ہے — منظوری آنے پر لاٹ شروع ہوگا</span>
     </div>`;
@@ -2544,7 +2550,7 @@ function printWorkerCardHTML(j){
         <div style="flex:1;min-width:0">
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
             <span style="font-size:14px;font-weight:800;color:var(--red)">${j.poNumber||'—'}</span>
-            <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;background:${(PRIORITY_COLORS[j.priority]||'#888')+'22'};color:${PRIORITY_COLORS[j.priority]||'#888'}">${(j.priority||'normal').toUpperCase()}</span>
+            <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;${_embPriorityChipStyle(j.priority)}">${(j.priority||'normal').toUpperCase()}</span>
             ${tierBadge(j.complexityTier||1)}
           </div>
           <div style="font-size:16px;font-weight:800;line-height:1.25;margin-bottom:2px">${j.articleCode||'—'}</div>
@@ -2642,7 +2648,7 @@ function renderPrintingJobDetailPage(){
       <div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <span style="font-size:12px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</span>
-          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;background:${PRIORITY_COLORS[j.priority]+'20'};color:${PRIORITY_COLORS[j.priority]}">${(j.priority||'').toUpperCase()}</span>
+          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;${_embPriorityChipStyle(j.priority)}">${(j.priority||'').toUpperCase()}</span>
           ${tierBadge(j.complexityTier||1)}
           ${processBadge(j.processType)}
         </div>
@@ -2682,7 +2688,7 @@ function renderPrintingJobDetailPage(){
       <div style="display:flex;flex-wrap:wrap;gap:6px">
         ${Object.entries(j.sizeBreakdown||{}).filter(([,v])=>v>0).map(([k,v])=>`<div style="text-align:center;min-width:42px;padding:6px 8px;background:var(--surface-2);border-radius:6px"><div style="font-size:9px;color:var(--muted)">${k}</div><div style="font-size:16px;font-weight:700">${v}</div></div>`).join('')||'<span style="font-size:12px;color:var(--muted)">No breakdown set</span>'}
       </div>
-      ${j.slaCurrentDue?`<div style="margin-top:10px;padding:8px;border-radius:8px;background:${sl==='ok'?'#EFEFEF':sl==='near'?'#f0f0f0':'#fee2e2'}">
+      ${j.slaCurrentDue?`<div style="margin-top:10px;padding:8px;border-radius:8px;background:${sl==='ok'?'var(--soft)':sl==='near'?'var(--surface-2)':'var(--accent-urgent-soft)'}">
         <div style="font-size:10px;font-weight:700;color:var(--muted)">CURRENT SLA</div>
         <div style="font-size:15px;font-weight:700;color:${slaColor(sl)}">${remainLabel(j.slaCurrentDue)}</div>
       </div>`:''}
@@ -2701,17 +2707,17 @@ function renderPPAttemptsCard(j){
   const attempts=j.ppAttempts||[];
   if(!attempts.length)return`<div class="card"><div class="card-title">PP Sample History</div><div style="font-size:12px;color:var(--muted)">No PP sample submitted yet.</div></div>`;
   return`<div class="card"><div class="card-title">PP Sample History (${attempts.length} attempt${attempts.length>1?'s':''})</div>
-    ${attempts.map((a,i)=>`<div style="padding:10px;background:${a.status==='approved'?'#f0fdf4':a.status==='rejected'?'#fef2f2':'#f8f8f8'};border-radius:8px;margin-bottom:8px">
+    ${attempts.map((a,i)=>`<div style="padding:10px;background:${a.status==='approved'?'var(--accent-success-soft)':a.status==='rejected'?'var(--accent-urgent-soft)':'var(--surface-2)'};border-radius:8px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
           <div style="font-size:12px;font-weight:700">Attempt #${i+1} <span style="font-weight:400;color:var(--muted)">by ${a.submittedBy||'—'} · ${tsLabel2(a.submittedAt)}</span></div>
           ${a.note?`<div style="font-size:12px;color:var(--dark);margin-top:3px">${a.note}</div>`:''}
         </div>
-        <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:${a.status==='rejected'?'#111':'#f0f0f0'};color:${a.status==='rejected'?'#fff':'#111'}">${(a.status||'pending').toUpperCase()}</span>
+        <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:${a.status==='rejected'?'var(--dark)':'var(--soft)'};color:${a.status==='rejected'?'var(--on-dark)':'var(--text)'}">${(a.status||'pending').toUpperCase()}</span>
       </div>
       ${a.photoUrl?`<img src="${a.photoUrl}" style="width:100%;max-height:180px;object-fit:contain;border-radius:6px;margin-top:8px;background:var(--soft)">`:''}
       ${a.reviewedBy?`<div style="font-size:11px;color:var(--muted);margin-top:6px">${a.status==='approved'?'✓ Approved':'✗ Rejected'} by ${a.reviewedBy} · ${tsLabel2(a.reviewedAt)}</div>`:''}
-      ${a.rejectionReason?`<div style="font-size:12px;color:#dc2626;margin-top:4px">Reason: ${a.rejectionReason}</div>`:''}
+      ${a.rejectionReason?`<div style="font-size:12px;color:var(--accent-urgent);margin-top:4px">Reason: ${a.rejectionReason}</div>`:''}
     </div>`).join('')}
   </div>`;
 }
@@ -2753,7 +2759,7 @@ function renderJobComms(j,notes){
 function renderSLACard(j,evts){
   if(!evts.length)return'';
   return`<div class="card"><div class="card-title">SLA Events</div>
-    ${evts.map(e=>{const sl2=slaStatus(e.dueAt);return`<div style="padding:8px 0;border-bottom:1px solid #f5f5f5">
+    ${evts.map(e=>{const sl2=slaStatus(e.dueAt);return`<div style="padding:8px 0;border-bottom:1px solid var(--soft)">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">
         <div><div style="font-size:12px;font-weight:600">${JOB_STAGE_LABELS[e.stage]||e.stage}</div>
           <div style="font-size:11px;color:var(--muted)">Assigned: ${e.assignedTo||'—'} · Due: ${tsLabel2(e.dueAt)}</div>
@@ -2938,7 +2944,7 @@ function renderExistingQCReport(rep,j){
           <div style="font-size:11px;color:var(--muted)">${d.affectedQty||0} pcs · Sizes: ${(d.affectedSizes||[]).join(',')||'—'} · Resp: ${d.responsibleDepartment||'—'}</div>
         </div>
         <div style="text-align:right">
-          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;background:${d.severity==='critical'?'#111':d.severity==='major'?'#555':'#f0f0f0'};color:${d.severity==='critical'||d.severity==='major'?'#fff':'#111'}">${(d.severity||'minor').toUpperCase()}</span>
+          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;background:${d.severity==='critical'?'var(--dark)':d.severity==='major'?'var(--muted)':'var(--soft)'};color:${d.severity==='critical'||d.severity==='major'?'var(--on-dark)':'var(--text)'}">${(d.severity||'minor').toUpperCase()}</span>
           <div style="font-size:10px;font-weight:700;color:${d.action==='accept'?'var(--green)':d.action==='reject'?'#dc2626':'var(--amber)'};margin-top:2px">${(d.action||'').toUpperCase()}</div>
         </div>
       </div>
@@ -2952,7 +2958,7 @@ function renderExistingQCReport(rep,j){
     ${rep.rework.returnedQty?`<div class="info-row"><span class="info-label">Returned</span><span>${rep.rework.returnedQty} pcs (Passed: ${rep.rework.passedAfterRework||0})</span></div>`:''}
   </div>`:''}
 
-  ${rep.rejection?.totalRejectedQty?`<div class="card" style="border:1px solid #fca5a5"><div class="card-title" style="color:#dc2626">Rejection Box</div>
+  ${rep.rejection?.totalRejectedQty?`<div class="card" style="border:1px solid var(--accent-urgent)"><div class="card-title" style="color:#dc2626">Rejection Box</div>
     <div class="info-row"><span class="info-label">Box No.</span><span style="font-weight:700">${rep.rejection.rejectionBoxNo||'—'}</span></div>
     <div class="info-row"><span class="info-label">Rejected Qty</span><span style="color:#dc2626;font-weight:700">${rep.rejection.totalRejectedQty} pcs</span></div>
     <div class="info-row"><span class="info-label">Responsible</span><span>${rep.rejection.responsibleDept||'—'}</span></div>
@@ -3077,11 +3083,11 @@ window.addDefectRow=function(){
   const i=_defectRows;
   const deptOpts=['Printing','Fabric','Cutting','Washing','Stitching','External Vendor','Unknown'];
   const wrap=document.getElementById('defect-rows-wrap'); if(!wrap)return;
-  const div=document.createElement('div');div.id='def-row-'+i;div.style.cssText='padding:12px;background:#f8f8f8;border-radius:10px;margin-bottom:10px';
+  const div=document.createElement('div');div.id='def-row-'+i;div.style.cssText='padding:12px;background:var(--surface-2);border-radius:10px;margin-bottom:10px';
   div.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <span style="font-size:11px;font-weight:700;color:var(--muted)">DEFECT #${i}</span>
-      <button type="button" onclick="document.getElementById('def-row-${i}').remove()" style="background:none;border:none;color:#ccc;font-size:18px;cursor:pointer">×</button>
+      <button type="button" onclick="document.getElementById('def-row-${i}').remove()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer">×</button>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div class="field"><label>Category</label>
@@ -3473,11 +3479,11 @@ function renderTowerBoard(jobs){
 function renderTowerSwimlane(jobType,jobs){
   const meta=JOB_TYPES[jobType];
   const laneJobs=jobs.filter(j=>inferJobType(j)===jobType);
-  const stageColor={awaiting_pp:'#555',printing:'#111111',final_qc:'#111111',rework:'#dc2626',closed:'var(--green)'};
+  const stageColor={awaiting_pp:'var(--muted)',printing:'var(--text)',final_qc:'var(--text)',rework:'var(--accent-urgent)',closed:'var(--green)'};
   const cols=meta.stages.map(stage=>({
     key:stage,
     label:meta.stageLabels[stage]||stage,
-    color:stageColor[stage]||'#111111',
+    color:stageColor[stage]||'var(--text)',
     jobs:laneJobs.filter(j=>towerLaneStage(j)===stage)
   }));
   return`<div style="margin-bottom:18px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px">
@@ -3524,7 +3530,7 @@ function renderTowerSLA(){
   return`<div class="card"><div class="card-title">Active SLA Events (${evts.length})</div>
     ${evts.length?evts.map(e=>{
       const sl=slaStatus(e.dueAt);
-      return`<div style="padding:10px;background:${sl==='ok'?'#f8f8f8':sl==='near'?'#fef9e7':sl==='over'?'#fef2f2':'#7f1d1d10'};border-radius:8px;margin-bottom:8px;border-left:3px solid ${slaColor(sl)}">
+      return`<div style="padding:10px;background:${sl==='ok'?'var(--surface-2)':sl==='near'?'var(--accent-warning-soft)':'var(--accent-urgent-soft)'};border-radius:8px;margin-bottom:8px;border-left:3px solid ${slaColor(sl)}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px">
           <div>
             <div style="font-size:11px;font-weight:700">${e.poId||'—'} · ${JOB_STAGE_LABELS[e.stage]||e.stage}</div>
@@ -3545,7 +3551,7 @@ function renderTowerSLA(){
     }).join(''):'<div class="empty" style="padding:1rem">No open SLA events.</div>'}
   </div>
 
-  ${proposed.length?`<div class="card" style="border:1px solid #fcd34d"><div class="card-title">Monetary Withhold Proposals (${proposed.length})</div>
+  ${proposed.length?`<div class="card" style="border:1px solid var(--accent-warning)"><div class="card-title">Monetary Withhold Proposals (${proposed.length})</div>
     ${proposed.map(e=>`<div class="withhold-card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div><div style="font-size:12px;font-weight:700">${e.poId||'—'} · ${JOB_STAGE_LABELS[e.stage]||e.stage}</div>
@@ -3611,14 +3617,14 @@ function renderTowerBilling(){
   </div>
 
   <div class="card"><div class="card-title">All Billing Records</div>
-    ${allPrintBilling.length?allPrintBilling.map(b=>`<div style="padding:10px 0;border-bottom:1px solid #f5f5f5;cursor:pointer" onclick="window._openBilling('${b._id}')">
+    ${allPrintBilling.length?allPrintBilling.map(b=>`<div style="padding:10px 0;border-bottom:1px solid var(--soft);cursor:pointer" onclick="window._openBilling('${b._id}')">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px">
         <div><div style="font-size:12px;font-weight:700">${b.poNumber||'—'} — ${b.articleCode||'—'}</div>
           <div style="font-size:11px;color:var(--muted)">${processBadge(b.processType)} · ${b.finalApprovedQty||0} pcs approved</div>
         </div>
         <div style="text-align:right">
           <div style="font-size:15px;font-weight:700">Rs. ${Math.round(b.netPayable||0).toLocaleString()}</div>
-          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;background:${b.status==='disputed'?'#111':'#f0f0f0'};color:${b.status==='disputed'?'#fff':'#111'}">${(b.status||'').replace('_',' ').toUpperCase()}</span>
+          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;background:${b.status==='disputed'?'var(--dark)':'var(--soft)'};color:${b.status==='disputed'?'var(--on-dark)':'var(--text)'}">${(b.status||'').replace('_',' ').toUpperCase()}</span>
         </div>
       </div>
     </div>`).join(''):'<div class="empty">No billing records yet.</div>'}
@@ -3642,7 +3648,7 @@ function renderTowerRecipes(){
     <div class="stat-card"><div class="stat-label">Draft ✏️</div><div class="stat-val">${draft.length}</div></div>
     <div class="stat-card"><div class="stat-label">Jobs No Recipe</div><div class="stat-val">${missing.length}</div></div>
   </div>
-  ${missing.length?`<div class="card" style="border:1px solid #fca5a5"><div class="card-title" style="color:#dc2626">⚠ Jobs with Missing Recipe</div>
+  ${missing.length?`<div class="card" style="border:1px solid var(--accent-urgent)"><div class="card-title" style="color:#dc2626">⚠ Jobs with Missing Recipe</div>
     ${missing.map(j=>`<div class="info-row"><span style="font-weight:600">${j.poNumber} — ${j.articleCode||'No code'}</span><button class="btn-sm" onclick="window.showPage('recipe-create')">Create Recipe</button></div>`).join('')}
   </div>`:''}
   <div class="card"><div class="card-title">All Recipes</div>
@@ -3654,7 +3660,7 @@ function renderTowerRecipes(){
 function renderTowerComms(){
   const recent=allCommNotes.slice(0,30);
   const pings=allCommNotes.filter(n=>n.type==='ping'&&!(n.readBy||[]).includes(session.u));
-  return`${pings.length?`<div class="card" style="border:1px solid #7dd3fc"><div class="card-title">🔔 Unread Pings (${pings.length})</div>
+  return`${pings.length?`<div class="card" style="border:1px solid var(--border)"><div class="card-title">🔔 Unread Pings (${pings.length})</div>
     ${pings.map(n=>`<div class="comm-note comm-ping">
       <div style="font-size:12px;font-weight:700">${n.fromUser||'—'} → ${n.toUser||n.toRole||'All'}</div>
       <div style="font-size:13px;margin-top:3px">${n.message||'—'}</div>
@@ -4038,7 +4044,7 @@ function renderDashboard(){
   // ── Stage overview with correct production order ──
   // Cutting → Embellishments → Embellishment QC → Bundling → Stitching → Washing → Final QC
   function stageCard(label,count,color,flagged,alert){
-    const borderStyle=alert?`border:2px solid #111`:`border:1px solid var(--border)`;
+    const borderStyle=alert?`border:2px solid var(--dark)`:`border:1px solid var(--border)`;
     return`<div style="flex:1;min-width:0;padding:10px 8px;background:var(--surface);${borderStyle};border-radius:8px;text-align:center">
       <div style="font-size:16px;font-weight:700;color:var(--text)">${count}</div>
       <div style="font-size:10px;color:var(--muted);margin-top:2px;word-break:break-word;overflow-wrap:break-word;line-height:1.3">${label}</div>
@@ -4073,7 +4079,7 @@ function renderDashboard(){
     </div>
     <div id="emb-ov-body" style="overflow:hidden;transition:max-height .25s;max-height:${embDefaultOpen?'200px':'0'};border-top:${embDefaultOpen?'1px solid var(--border)':'none'}">
       <div style="display:flex;gap:6px;flex-wrap:wrap;padding:12px 14px">
-        ${[['Printing',inPrinting,'#111'],['Sublimation',inSubl,'#111'],['Embroidery',inEmbr,'#111'],['Rework Pending',inRework,'#111'],['Overdue',overdue,overdue>0?'#000':'var(--muted)']].map(([label,val,color])=>`<div style="flex:1;min-width:0;padding:9px 8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;text-align:center"><div style="font-size:16px;font-weight:700;color:${color}">${val}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${label}</div></div>`).join('')}
+        ${[['Printing',inPrinting,'var(--text)'],['Sublimation',inSubl,'var(--text)'],['Embroidery',inEmbr,'var(--text)'],['Rework Pending',inRework,'var(--text)'],['Overdue',overdue,overdue>0?'var(--text)':'var(--muted)']].map(([label,val,color])=>`<div style="flex:1;min-width:0;padding:9px 8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;text-align:center"><div style="font-size:16px;font-weight:700;color:${color}">${val}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${label}</div></div>`).join('')}
       </div>
     </div>
   </div>`:'';
@@ -4111,17 +4117,17 @@ function renderDashboard(){
   const qvJobs=activeJobs.slice(0,5);
   const jobRows=qvJobs.length?qvJobs.map(j=>{
     const sl=slaStatus(j.slaCurrentDue||null);
-    const slaBg={ok:'#EFEFEF',near:'#f0f0f0',over:'#fee2e2',critical:'#fecaca'}[sl]||'#f4f4f6';
-    const slaFg={ok:'var(--green)',near:'var(--amber)',over:'#dc2626',critical:'#7f1d1d'}[sl]||'var(--muted)';
+    const slaBg={ok:'var(--soft)',near:'var(--surface-2)',over:'var(--accent-urgent-soft)',critical:'var(--accent-urgent-soft)'}[sl]||'var(--hover)';
+    const slaFg={ok:'var(--green)',near:'var(--amber)',over:'var(--accent-urgent)',critical:'var(--accent-urgent)'}[sl]||'var(--muted)';
     const procInfo=PROCESS_TYPES[j.processType]||{icon:'•',label:j.processType||'—'};
     const po=allPOs.find(p=>p.id===j.poNumber);
     return`<div class="po-row" style="cursor:pointer;align-items:flex-start" onclick="window._openEmbJob('${j._id}')">
-      <div class="po-img">${po?.imgFront?`<img src="${po.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:#ccc">No img</span>'}</div>
+      <div class="po-img">${po?.imgFront?`<img src="${po.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:var(--muted)">No img</span>'}</div>
       <div class="po-info" style="min-width:0">
         <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:2px">
           <span class="po-num">${j.poNumber||'—'}</span>
           <span class="process-badge">${procInfo.label}</span>
-          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;background:${(PRIORITY_COLORS[j.priority]||'#888')+'22'};color:${PRIORITY_COLORS[j.priority]||'#888'}">${(j.priority||'normal').toUpperCase()}</span>
+          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;${_embPriorityChipStyle(j.priority)}">${(j.priority||'normal').toUpperCase()}</span>
         </div>
         <div class="po-name" style="word-break:break-word;overflow-wrap:break-word">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px;line-height:1.6;word-break:break-word;overflow-wrap:break-word">

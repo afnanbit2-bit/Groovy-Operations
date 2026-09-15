@@ -2248,6 +2248,60 @@ theme is about the screen you are looking at, not who you are.
   assignments, chart and badge colours); they are a follow-up pass, best
   done one file at a time so each can be eyeballed.
 
+### Dark mode — the embellishments track (Sept 2026)
+
+`js/embellishments.js` was left out of the original property-qualified sweep
+because it is **Ammar's file** per the domain map. Afnan asked for it to be
+done anyway; tell Ammar it changed. Three distinct failure shapes were in
+there, and only the first is the one the earlier sweep looked for:
+
+- **A fixed light background behind a foreground that follows the theme.**
+  Every SLA panel did this (`{ok:'#EFEFEF',near:'#f0f0f0',over:'#fee2e2',
+  critical:'#fecaca'}` behind `var(--green)`/`var(--amber)`/`var(--muted)`),
+  as did the PP-attempt rows, the recipe hover rows and the placement
+  panels. In dark mode these render **light-on-light** — measured at 1.03:1.
+  Fixed by tokenising the BACKGROUND, so both halves move together.
+- **A fixed dark foreground on a background that follows the theme.** The
+  priority chip built its own background by appending an alpha suffix to a
+  near-black literal (`'#111111'+'22'`) and used the same literal raw as the
+  text, so it was black-on-black. `PRIORITY_COLORS` holds tokens now and
+  **`_embPriorityChipStyle()` is the single definition** the four call sites
+  share. The Observer Tower's per-stage `border-bottom:2px solid #111111`
+  and the dashboard's `color:'#111'` stat numbers were the same shape.
+- **White text on `var(--dark)`.** The worker card's "CURRENT STEP" hero
+  paints on `var(--dark)` — which **inverts**, so in dark mode it is a
+  *light* panel — while its three inner lines hardcoded
+  `rgba(255,255,255,.5/.85/.8)`. They use `var(--on-dark)` with an `opacity`
+  now. **Anything painted on `--dark` must take its ink from `--on-dark`;
+  a literal white is only correct where the background is also literal.**
+
+**Chips whose background AND text are both literal were still converted**,
+though they are readable in both themes — a white `#f0f0f0` chip on a dark
+page is what Afnan reported as "not in the right color tone". That is the
+one place this sweep went further than the first one.
+
+**Deliberately untouched:** `#dc2626` and friends sitting straight on a
+token surface (readable in both, ~3.2:1) and the Pantone hex data in
+`COLOR_IMPORT_PANTONE_HEX` / `hexApprox` fallbacks — those are **ink
+colours, i.e. content**, not chrome. And, critically, **the two
+`win.document.write` print windows** (`renderBlankPlacementSheet`,
+`generateJobSheetPDF`'s job card): those documents never load
+`css/main.css`, so a `var()` in them resolves to nothing at all. The sweep
+script hard-excluded their line ranges. Same rule as `js/print-engine.js`
+and `js/diagnostics.js`.
+
+`tests/smoke-layout.js` gained the fragment that proves it — the real
+`printWorkerCardHTML`, `renderPPAttemptsCard` and `renderTowerSwimlane`
+output at ok/near/over/critical. **Verified both ways:** reverting the
+`slaColors` map alone fails it at 1.03:1 and 1.4:1, naming the exact text.
+
+**It also found a gap in the probe itself.** `display:none` on an ANCESTOR
+does not appear in a descendant's own computed style — the child keeps
+whatever `display` it specified — so every collapsible form in this app
+(the delay-reason textarea, the QC defect rows) reported as zero-size
+invisible text. `hiddenEl()` walks up to `#main-content` instead, and all
+four checks use it.
+
 ## Shopify Inventory Intelligence
 
 Read-only sales + inventory dashboard ("Inventory Intel" page). Data is

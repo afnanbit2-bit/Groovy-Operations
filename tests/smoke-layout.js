@@ -138,6 +138,36 @@ const FRAGMENTS={
     })()`);
     return Promise.resolve(html);
   },
+  // The embellishments track's SLA panel, priority chip and PP-attempt rows.
+  // Every one of these used to pair a FIXED light background with a
+  // foreground that follows the theme (var(--green), var(--amber),
+  // var(--muted)), so in dark mode they rendered light-on-light. The
+  // contrast check below is what actually proves this; the geometry checks
+  // would pass either way.
+  'embellishments — SLA panel, priority chip, PP attempts':()=>{
+    const app=loadApp({files:['js/embellishments.js'],
+      session:{u:'ammar',name:'Ammar',role:'owner'},
+      globals:{allRecipes:[],allPOs:[],allPrintingJobs:[],allQCReports:[],
+               allPrintBilling:[]}});
+    const mk=(pri,dueOffsetMs)=>({
+      _id:'j-'+pri,poNumber:'PO-2041',articleCode:'GRV-HD-114',
+      articleName:'Oversized hoodie — winter drop',priority:pri,
+      currentStage:'printing',processType:'screen_print',
+      slaCurrentDue:new Date(Date.now()+dueOffsetMs).toISOString(),
+      sizeBreakdown:{S:10,M:24,L:18},
+      ppAttempts:[
+        {attemptNo:1,status:'approved',by:'Ammar',at:new Date().toISOString()},
+        {attemptNo:2,status:'rejected',by:'Ammar',at:new Date().toISOString(),
+         rejectionReason:'Pantone 185 C came out too warm'},
+        {attemptNo:3,status:'pending',by:'Ammar',at:new Date().toISOString()}
+      ]});
+    // ok / near / over / critical all at once — each has its own tint.
+    const jobs=[mk('urgent',-9e6),mk('normal',36e5),mk('flexible',864e5)];
+    const html=jobs.map(j=>app.run('printWorkerCardHTML('+JSON.stringify(j)+')')).join('')
+      +app.run('renderPPAttemptsCard('+JSON.stringify(jobs[0])+')')
+      +app.run('renderTowerSwimlane("printing",[])');
+    return Promise.resolve(html);
+  },
   'boards — a column and its cards':()=>{
     const app=loadApp({files:['js/boards.js']});
     app.run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
@@ -194,9 +224,20 @@ function textOfOwn(el){
   el.childNodes.forEach(n=>{if(n.nodeType===3)t+=n.textContent;});
   return t.trim();
 }
+// display:none on an ANCESTOR does not show up in a descendant's own
+// computed style — the child keeps whatever display it specified, so every
+// collapsible form in this app (the delay-reason textarea, the QC defect
+// rows) reported as zero-size invisible text. Walk up instead.
+function hiddenEl(el){
+  for(let n=el;n&&n.id!=='main-content';n=n.parentElement){
+    const s=getComputedStyle(n);
+    if(s.display==='none'||s.visibility==='hidden')return true;
+  }
+  return false;
+}
 document.querySelectorAll('#main-content *').forEach(el=>{
   const cs=getComputedStyle(el);
-  if(cs.display==='none'||cs.visibility==='hidden'||cs.position==='fixed')return;
+  if(hiddenEl(el)||cs.position==='fixed')return;
   const own=textOfOwn(el);
   if(!own)return;
   const r=el.getBoundingClientRect();
@@ -217,7 +258,7 @@ document.querySelectorAll('#main-content *').forEach(el=>{
 document.querySelectorAll('#main-content *').forEach(el=>{
   if(!textOfOwn(el))return;
   const cs=getComputedStyle(el);
-  if(cs.display==='none'||cs.visibility==='hidden')return;
+  if(hiddenEl(el))return;
   let p=el.parentElement,clip=null;
   while(p&&p.id!=='main-content'){
     const pcs=getComputedStyle(p);
@@ -272,7 +313,7 @@ document.querySelectorAll('#main-content *').forEach(el=>{
   const own=textOfOwn(el);
   if(!own)return;
   const cs=getComputedStyle(el);
-  if(cs.display==='none'||cs.visibility==='hidden')return;
+  if(hiddenEl(el))return;
   const r=el.getBoundingClientRect();
   if(r.width<1||r.height<1)return;
   const fg=lum(cs.color),bg=bgOf(el);
@@ -303,7 +344,7 @@ if(document.documentElement.scrollWidth>innerWidth+2){
 // make sure the browser would actually reach it.
 document.querySelectorAll('#main-content button, #main-content [onclick], #main-content a[href]').forEach(el=>{
   const cs=getComputedStyle(el);
-  if(cs.display==='none'||cs.visibility==='hidden')return;
+  if(hiddenEl(el))return;
   if(el.disabled)return;
   const r=el.getBoundingClientRect();
   if(r.width<1||r.height<1){
