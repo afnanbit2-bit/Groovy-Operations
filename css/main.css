@@ -752,7 +752,14 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
    sizing; cells stay contenteditable="false" until boardsBeginEdit turns
    exactly one on, which is what keeps a single click on the card a
    selection and a drag rather than a caret. */
-.board-table-body{display:flex;flex-direction:column;overflow:auto;padding:0}
+/* The table SCROLLS; the +Row/+Col strip does not. The strip used to live
+   inside the scroll container, first as a plain flex child (it scrolled out
+   of reach on a table taller than its card) and then as a sticky one (it
+   then covered the bottom row, so a checkbox in the last row could not be
+   clicked). Both were found by smoke-layout. Taking it out of the scroller
+   entirely is the fix neither patch was. */
+.board-table-body{display:flex;flex-direction:column;overflow:hidden;padding:0}
+.board-table-scroll{flex:1;min-height:0;overflow:auto}
 .board-table{width:100%;border-collapse:collapse;font-size:11.5px;table-layout:fixed}
 .board-table th,.board-table td{border:1px solid var(--border);padding:5px 7px;
   text-align:left;vertical-align:top;word-break:break-word;outline:none;min-width:0}
@@ -785,12 +792,18 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-table .cell-bg-green{background:var(--accent-success-soft)}
 .board-table .cell-bg-blue{background:var(--cat-notes);color:var(--on-dark)}
 .board-table .cell-bg-purple{background:var(--cat-boards);color:var(--on-dark)}
-/* Sticky, not merely flex-shrink:0. A table can legitimately be taller
-   than its card — that is why the body scrolls — and when it is, a strip
-   that only refuses to shrink still scrolls out of reach. Found by
-   smoke-layout at phone width, where the cells wrap and the grid grows. */
-.board-table-add{position:sticky;bottom:0;z-index:2;background:var(--surface);
-  display:flex;gap:5px;padding:4px 6px;flex-shrink:0;
+/* A checkbox cell is the one cell you operate with a single click, so it
+   reads as a control: centred, a pointer cursor, and no caret. */
+.board-table .cell-t-check{cursor:pointer;user-select:none;-webkit-user-select:none;
+  font-size:13px;line-height:1;color:var(--text)}
+.board-table .cell-t-check:hover{background:var(--hover)}
+.board-table .cell-t-check:empty::after{content:'☐';color:var(--muted);opacity:.7}
+/* A typed numeric cell holding text it cannot read. FLAGGED, never
+   rejected — refusing a keystroke inside a contenteditable is miserable,
+   and you can see what you typed and fix it. */
+.board-table .cell-bad{color:var(--accent-urgent);text-decoration:underline wavy;
+  text-underline-offset:2px}
+.board-table-add{background:var(--surface);display:flex;gap:5px;padding:4px 6px;flex-shrink:0;
   border-top:1px solid var(--border);background:var(--surface)}
 .board-table-add button{flex:1;font-family:inherit;font-size:10.5px;font-weight:600;
   padding:3px 6px;border-radius:6px;border:1px solid var(--border);

@@ -1549,6 +1549,57 @@ the focused cell, from a cell right-click menu and from Alt+Arrow.
   `navigator.clipboard.readText()` and says "Press Ctrl+V" plainly when
   that is refused, rather than failing silently.
 
+**M4 — cell types (§6).** `auto · number · currency · percent · text ·
+date · check`, each with a per-type format config.
+
+- **THE VALUE IS ALWAYS THE RAW STRING THE PERSON TYPED.** A number cell
+  stores `'1200'` and DISPLAYS `1,200`; the formatting is derived at render
+  and never written back. That is what makes a type change lossless in both
+  directions — switch to Text and you get your `'007'` back, not `'7'` — and
+  it keeps `_boardsCellVal` the single reader every export, the search index
+  and M5's parser can rely on.
+- **`auto` is the ABSENCE of a type**, which is why a bare string needs no
+  migration to have one, and why picking Auto *clears* rather than stores.
+  Auto does not reformat what you typed: it renders verbatim and only
+  right-aligns a numeric value, because a type you did not choose silently
+  rewriting `'007'` would be the most surprising thing in the feature.
+- **`t` and `fmt` had to be added to `_BOARDS_CELL_ATTRS`.** That list
+  drives `_boardsCellWrite`'s downgrade-to-a-bare-string; leave a key out of
+  it and the attribute is thrown away the instant it is the only thing the
+  cell carries. Asserted both ways.
+- **Percentage does NOT multiply by 100** — type 12, see `12%`. A deliberate
+  divergence from the spreadsheet convention: in a garment ops tool people
+  type 12 meaning a 12% rejection rate, and turning that into 1200% silently
+  would be the most confusing thing here. M5 reads the underlying 12.
+- **Numbers are read tolerantly** (`_boardsCellNum` strips separators, a
+  currency symbol, a trailing `%`), because the stored value is raw text and
+  a typed cell should not stop computing because someone pasted `1,200`.
+- **A typed numeric cell holding prose is FLAGGED, never rejected** —
+  refusing a keystroke inside a `contenteditable` is miserable, and the
+  person can see what they typed and fix it.
+- **You edit the raw value, never the formatted one.** A currency cell
+  showing `Rs 1,200` puts `1200` under the caret, or the first keystroke
+  would append to a string the model never held. `_boardsEndEdit` swaps the
+  display form back by repainting **that one cell** — it fires on every
+  click away from a cell, and rebuilding every card and connector on a
+  46-card board to reformat one number would be absurd.
+- **A checkbox is the one cell operated with a single click**, so it carries
+  the `onpointerdown` guard every control inside a drag surface needs — the
+  delete-✕ bug in a new place.
+- The type menu's four `›` entries **set the type and then open the format
+  menu**, two sequential menus rather than teaching the context menu to
+  nest. **Clear resets presentation only** — a type is what the cell IS.
+
+**The `+Row/+Col` strip lives OUTSIDE the scrolling element**, and it took
+three attempts. As a plain flex child it scrolled out of reach on a table
+taller than its card; made sticky, it then covered the bottom row so a
+checkbox there could not be clicked. Both were found by `smoke-layout`, both
+only with a table that actually overflows — and the hit-test check reads a
+legitimately scrolled-away control as "covered", so **the fragment cannot
+hold that ground**. The nesting is what matters, so `tests/boards.test.js`
+asserts the nesting instead. Worth knowing when adding a control to any
+scrolling card body.
+
 **`_boardsTableMinH` measures per ROW, not as a flat count** — a cell set to
 the large text size makes its whole row taller, and a flat 28px left the
 `+Row/+Col` strip hanging outside the card. **Found by `smoke-layout` the

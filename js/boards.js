@@ -574,7 +574,10 @@ function _boardsCardText(c){
   if(c.caption)parts.push(c.caption);
   if(c.boardTitle)parts.push(c.boardTitle);
   if(Array.isArray(c.items))c.items.forEach(i=>{if(i&&i.text)parts.push(i.text);});
-  if(Array.isArray(c.rows))c.rows.forEach(r=>{if(Array.isArray(r))r.forEach(v=>{const t=_boardsCellVal(v);if(t)parts.push(t);});});
+  if(Array.isArray(c.rows))c.rows.forEach(r=>{if(Array.isArray(r))r.forEach(v=>{
+    const raw=_boardsCellVal(v);if(raw)parts.push(raw);
+    const shown=_boardsCellDisplay(v);if(shown&&shown!==raw)parts.push(shown);
+  });});
   if(Array.isArray(c.labels))c.labels.forEach(l=>{if(l&&l.t)parts.push(l.t);});
   return parts.join(' ').toLowerCase();
 }
@@ -683,7 +686,27 @@ function _boardsEndEdit(){
     el.setAttribute('contenteditable','false');
     if(document.activeElement===el)el.blur();
   }catch(e){}
+  // Leaving a table cell swaps the raw text back for the formatted one.
+  // Repainting the ONE cell rather than the whole canvas: this fires on
+  // every click away from a cell, and rebuilding every card and connector
+  // on a 46-card board to reformat one number would be absurd.
+  _boardsRepaintCell(el);
   _boardsSaveDebounced();
+}
+function _boardsRepaintCell(el){
+  if(!el||!el.id||el.id.indexOf('board-td-')!==0)return;
+  const m=/^board-td-(.+)-(\d+)-(\d+)$/.exec(el.id);
+  if(!m)return;
+  const c=_editCards.find(x=>x.id===m[1]);
+  if(!c)return;
+  const cell=_boardsCellAt(c,parseInt(m[2],10),parseInt(m[3],10));
+  if(cell===undefined)return;
+  try{
+    el.textContent=_boardsCellDisplay(cell);
+    el.className='board-td'+_boardsCellClass(cell);
+    const st=_boardsCellStyle(cell);
+    if(st)el.setAttribute('style',st);else el.removeAttribute('style');
+  }catch(e){}
 }
 window.boardsEndEdit=_boardsEndEdit;
 // Leaving edit mode by clicking elsewhere. Registered once at load, like the
@@ -951,10 +974,10 @@ function _boardsCardDoc(c){
       const rows=Array.isArray(c.rows)?c.rows:[];
       if(!rows.length)return null;
       const head=c.head!==false;
-      const md=rows.map((r,i)=>'| '+r.map(v=>_boardsCellVal(v).replace(/\|/g,'\\|')).join(' | ')+' |'
+      const md=rows.map((r,i)=>'| '+r.map(v=>_boardsCellDisplay(v).replace(/\|/g,'\\|')).join(' | ')+' |'
         +((head&&i===0)?'\n|'+r.map(()=>' --- ').join('|')+'|':'')).join('\n');
       const html='<table border="1" cellpadding="5" cellspacing="0">'+rows.map((r,i)=>
-        '<tr>'+r.map(v=>(head&&i===0)?'<th>'+esc(_boardsCellVal(v))+'</th>':'<td>'+esc(_boardsCellVal(v))+'</td>').join('')+'</tr>').join('')+'</table>';
+        '<tr>'+r.map(v=>(head&&i===0)?'<th>'+esc(_boardsCellDisplay(v))+'</th>':'<td>'+esc(_boardsCellDisplay(v))+'</td>').join('')+'</tr>').join('')+'</table>';
       return{md,html};
     }
     case'image':
@@ -1181,7 +1204,7 @@ function _boardsPresentPaint(){
       const tr=document.createElement('tr');
       row.forEach(v=>{
         const cell=document.createElement((c.head!==false&&r===0)?'th':'td');
-        cell.textContent=_boardsCellVal(v);
+        cell.textContent=_boardsCellDisplay(v);
         tr.appendChild(cell);
       });
       t.appendChild(tr);
@@ -2021,6 +2044,7 @@ function _boardCardHTML(c,canEdit){
     // only on selection would either reflow the table under the pointer or
     // need an overlay escaping a card that clips its own content.
     body=`<div class="board-card-body board-table-body"${bodyDrag}>
+      <div class="board-table-scroll">
       <table class="board-table${c.head===false?'':' with-head'}">
         <tr class="board-tr-coords"><td class="board-coord board-coord-corner"></td>${
           Array.from({length:ncols},(_,i)=>`<td class="board-coord">${_boardsColName(i)}</td>`).join('')
@@ -2029,9 +2053,18 @@ function _boardCardHTML(c,canEdit){
           const tag=(c.head!==false&&r===0)?'th':'td';
           const st=_boardsCellStyle(cell);
           const foc=_boardsCellFocus&&_boardsCellFocus.id===c.id&&_boardsCellFocus.r===r&&_boardsCellFocus.i===i;
-          return`<${tag} id="board-td-${c.id}-${r}-${i}" class="board-td${foc?' focused':''}${_boardsCellClass(cell)}" contenteditable="false"${st?` style="${st}"`:''} ${canEdit?`ondblclick="window.boardsFocusCell(event,'${c.id}',${r},${i})"`:''} oninput="window.boardsTableInput('${c.id}',${r},${i},this)"></${tag}>`;
+          const cls=`board-td${foc?' focused':''}${_boardsCellClass(cell)}`;
+          // A checkbox toggles on a SINGLE click, so it needs the guard
+          // every control inside a drag surface needs: without stopping
+          // pointerdown the header captures the pointer and the click is
+          // retargeted away — the delete-X bug, in a new place.
+          if(_boardsCellType(cell)==='check'){
+            return`<${tag} id="board-td-${c.id}-${r}-${i}" class="${cls}"${st?` style="${st}"`:''} title="${_boardsCellRef(r,i)}"${canEdit?` onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsCellToggle('${c.id}',${r},${i})"`:''}></${tag}>`;
+          }
+          return`<${tag} id="board-td-${c.id}-${r}-${i}" class="${cls}" contenteditable="false"${st?` style="${st}"`:''} ${canEdit?`ondblclick="window.boardsFocusCell(event,'${c.id}',${r},${i})"`:''} oninput="window.boardsTableInput('${c.id}',${r},${i},this)"></${tag}>`;
         }).join('')}</tr>`).join('')}
       </table>
+      </div>
       ${canEdit?`<div class="board-table-add">
         <button onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsTableAdd('${c.id}','row')" title="Add a row">+ Row</button>
         <button onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsTableAdd('${c.id}','col')" title="Add a column">+ Col</button>
@@ -2687,7 +2720,9 @@ function _boardsHydrateTextCards(){
     if(c.type==='table'&&Array.isArray(c.rows)){
       c.rows.forEach((row,r)=>row.forEach((cell,i)=>{
         const td=document.getElementById('board-td-'+c.id+'-'+r+'-'+i);
-        if(td)td.textContent=_boardsCellVal(cell);
+        // The DISPLAY form, not the stored one — except in the cell being
+        // edited right now, which must show the raw text you are editing.
+        if(td)td.textContent=(td===_boardsEditingEl)?_boardsCellVal(cell):_boardsCellDisplay(cell);
       }));
     }
     if(c.type==='text'||c.type==='heading'){
@@ -3709,6 +3744,7 @@ function _boardsRailItems(){
       {act:'cell:italic',label:'Italic',icon:'rename',on:!!_boardsCellAttr(cell,'i')},
       {act:'cell:size',label:'Size',icon:'heading',on:!!_boardsCellAttr(cell,'sz')},
       {act:'cell:align',label:'Align',icon:'align',on:!!_boardsCellAttr(cell,'al')},
+      {act:'cell:type',label:'Type',icon:'table',on:_boardsCellType(cell)!=='auto'},
       {cellSwatches:true},
       {sep:true},
       {act:'cell:row-below',label:'Add row',icon:'table'},
@@ -4285,7 +4321,101 @@ window.boardsCardName=function(id,el){
    leave an object behind. Nothing outside these helpers may read or write
    c.rows[r][i] directly — seven call sites used to, and each would have
    rendered "[object Object]" the first time a cell grew an attribute. */
-const _BOARDS_CELL_ATTRS=['b','i','sz','bg','al'];
+const _BOARDS_CELL_ATTRS=['b','i','sz','bg','al','t','fmt'];
+/* ── Cell types ───────────────────────────────────────────────────
+   THE VALUE IS ALWAYS THE RAW STRING THE PERSON TYPED. A number cell
+   stores '1200' and DISPLAYS '1,200.00'; the formatting is derived at
+   render and never written back. That is what makes a type change
+   lossless in both directions — switch to Text and you get your '007'
+   back, not '7' — and it keeps _boardsCellVal the single reader that
+   every export, the search index and M5's parser can rely on.
+
+   'auto' is the absence of a type, which is why a bare string needs no
+   migration to have one. Auto does NOT reformat what you typed: it
+   renders verbatim and only right-aligns when the value is numeric,
+   because a type you did not choose silently rewriting '007' to '7'
+   would be the most surprising thing in the feature. */
+const _BOARDS_CELL_TYPES=['auto','number','currency','percent','text','date','check'];
+const _BOARDS_CURRENCIES=[['Rs','Rs '],['usd','$'],['eur','€'],['gbp','£']];
+function _boardsCellType(cell){
+  const t=_boardsCellAttr(cell,'t');
+  return _BOARDS_CELL_TYPES.indexOf(t)>0?t:'auto';
+}
+function _boardsCellFmt(cell){
+  const f=_boardsCellAttr(cell,'fmt');
+  return (f&&typeof f==='object')?f:{};
+}
+// The numeric reading of a cell, or null. Tolerant of what people actually
+// type — thousands separators, a currency symbol, a trailing % — because
+// the stored value is raw text and a typed cell should not stop computing
+// just because someone pasted '1,200'. M5's SUM reads through this.
+function _boardsCellNum(cell){
+  const raw=_boardsCellVal(cell).trim();
+  if(!raw)return null;
+  const cleaned=raw.replace(/[,\s]/g,'').replace(/^[^0-9.+-]+/,'').replace(/%$/,'');
+  if(!/^[+-]?(\d+\.?\d*|\.\d+)$/.test(cleaned))return null;
+  const n=parseFloat(cleaned);
+  return isFinite(n)?n:null;
+}
+function _boardsFmtNum(n,d,sep){
+  const fixed=Math.abs(n).toFixed(Math.max(0,Math.min(6,d|0)));
+  const bits=fixed.split('.');
+  let int=bits[0];
+  if(sep!==false)int=int.replace(/\B(?=(\d{3})+(?!\d))/g,',');
+  return (n<0?'-':'')+int+(bits[1]?'.'+bits[1]:'');
+}
+const _BOARDS_MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function _boardsFmtDate(raw,how){
+  const d=new Date(raw);
+  if(!raw||isNaN(d.getTime()))return null;       // not a date: show it raw
+  const p=n=>(n<10?'0':'')+n;
+  const dd=d.getDate(),mm=d.getMonth(),yy=d.getFullYear();
+  if(how==='s')return p(dd)+'/'+p(mm+1)+'/'+yy;
+  if(how==='i')return yy+'-'+p(mm+1)+'-'+p(dd);
+  if(how==='t')return dd+' '+_BOARDS_MONTHS[mm]+' '+yy+', '+p(d.getHours())+':'+p(d.getMinutes());
+  return dd+' '+_BOARDS_MONTHS[mm]+' '+yy;
+}
+// What the cell SHOWS. Never what it stores.
+function _boardsCellDisplay(cell){
+  const raw=_boardsCellVal(cell);
+  const t=_boardsCellType(cell);
+  if(t==='auto'||t==='text')return raw;
+  if(t==='check')return raw?'✓':'';
+  const f=_boardsCellFmt(cell);
+  if(t==='date'){ const out=_boardsFmtDate(raw,f.f); return out==null?raw:out; }
+  const n=_boardsCellNum(cell);
+  if(n===null)return raw;                         // invalid: show what they typed
+  if(t==='number')return _boardsFmtNum(n,f.d==null?0:f.d,true);
+  // Percentage does NOT multiply by 100. Type 12, see 12% — a deliberate
+  // divergence from the spreadsheet convention, because in a garment ops
+  // tool people type 12 meaning a 12% rejection rate and silently turning
+  // that into 1200% would be the most confusing thing in the feature.
+  if(t==='percent')return _boardsFmtNum(n,f.d==null?0:f.d,true)+'%';
+  if(t==='currency'){
+    const sym=(_BOARDS_CURRENCIES.find(c=>c[0]===f.c)||_BOARDS_CURRENCIES[0])[1];
+    return sym+_boardsFmtNum(n,f.d==null?0:f.d,true);
+  }
+  return raw;
+}
+// A typed numeric cell holding text it cannot read. Flagged, never
+// rejected: refusing a keystroke inside a contenteditable is miserable,
+// and the person can see what they typed and fix it.
+function _boardsCellInvalid(cell){
+  const t=_boardsCellType(cell);
+  if(t!=='number'&&t!=='currency'&&t!=='percent')return false;
+  return _boardsCellVal(cell).trim()!==''&&_boardsCellNum(cell)===null;
+}
+// Numbers sit right unless the cell says otherwise — the spreadsheet
+// default, and the one piece of formatting 'auto' does apply.
+function _boardsCellAlign(cell){
+  const a=_boardsCellAttr(cell,'al');
+  if(a)return a;
+  const t=_boardsCellType(cell);
+  if(t==='check')return 'c';
+  if(t==='number'||t==='currency'||t==='percent')return 'r';
+  if(t==='auto'&&_boardsCellNum(cell)!==null)return 'r';
+  return '';
+}
 /* Spreadsheet coordinates. These are DISPLAY-ONLY and are never stored:
    the letter is derived from the column index and the number is the row
    index + 1, so they cost nothing, cannot go stale, and need no migration.
@@ -4345,19 +4475,24 @@ function _boardsCellWrite(c,r,i,patch){
 // embellishments sweep just spent a round removing. It is also a stricter
 // allow-list than validating a hex: six names, nothing else renders.
 function _boardsCellStyle(cell){
-  if(!cell||typeof cell!=='object')return'';
+  const al=_boardsCellAlign(cell);
   const out=[];
+  if(al==='c')out.push('text-align:center');
+  else if(al==='r')out.push('text-align:right');
+  if(!cell||typeof cell!=='object')return out.join(';');
   if(cell.b)out.push('font-weight:700');
   if(cell.i)out.push('font-style:italic');
   if(cell.sz==='s')out.push('font-size:11px');
   else if(cell.sz==='l')out.push('font-size:15px');
-  if(cell.al==='c')out.push('text-align:center');
-  else if(cell.al==='r')out.push('text-align:right');
   return out.join(';');
 }
 function _boardsCellClass(cell){
   const bg=_boardsCellAttr(cell,'bg');
-  return (bg&&bg!=='none'&&_BOARDS_COLORS.indexOf(bg)>-1)?' cell-bg-'+bg:'';
+  let out=(bg&&bg!=='none'&&_BOARDS_COLORS.indexOf(bg)>-1)?' cell-bg-'+bg:'';
+  const t=_boardsCellType(cell);
+  if(t!=='auto')out+=' cell-t-'+t;
+  if(_boardsCellInvalid(cell))out+=' cell-bad';
+  return out;
 }
 // The focused cell, or null. Re-derived rather than trusted: a row or
 // column can be removed, the card can be deleted, or a remote merge can
@@ -4375,6 +4510,14 @@ window.boardsFocusCell=function(ev,id,r,i){
   const c=_editCards.find(x=>x.id===id);
   if(!c)return;
   _boardsCellFocus={id:id,r:r,i:i};
+  // You edit the RAW value, never the formatted one: a currency cell
+  // showing "Rs 1,200" must put "1200" under the caret, or the first
+  // keystroke would be appended to a string the model never held.
+  const el=document.getElementById('board-td-'+id+'-'+r+'-'+i);
+  if(el&&_boardsCanEdit(_editBoard)&&!c.locked){
+    const raw=_boardsCellVal(_boardsCellAt(c,r,i));
+    if(el.textContent!==raw)el.textContent=raw;
+  }
   window.boardsBeginEdit(ev,'board-td-'+id+'-'+r+'-'+i);
   _boardsRenderRail();
   _boardsPaintCellFocus();
@@ -4412,6 +4555,9 @@ window.boardsCellAction=function(what){
     const order=['','c','r'],at=order.indexOf(_boardsCellAttr(cur,'al')||'');
     _boardsCellWrite(f.card,f.r,f.i,{al:order[(at+1)%order.length]});
   }
+  // Clear resets PRESENTATION only. The type is what the cell IS, not how
+  // it looks, and losing it to a "clear formatting" button would silently
+  // reformat every number in the column.
   else if(what==='clear') _boardsCellWrite(f.card,f.r,f.i,
     {b:'',i:'',sz:'',al:'',bg:''});
   else return;
@@ -4451,6 +4597,7 @@ function _boardsCellCtxItems(c,r,i){
   items.push({act:'cell:del-col',label:'Delete column '+_boardsColName(i),danger:true});
   items.push({sep:true});
   items.push({act:'cell:align',label:'Change alignment'});
+  items.push({act:'cell:type',label:'Cell type   ›'});
   items.push({sep:true});
   items.push({title:_boardsCellRef(r,i)+' · '+(c.name||'Table')});
   return items;
@@ -4499,6 +4646,103 @@ window.boardsCellClip=function(what){
     _boardsCellWrite(f.card,f.r,f.i,{v:''});
     _boardsSaveDebounced();
   }
+};
+/* The Cell type menu. Milanote shows four of the seven types with a "›"
+   into a submenu; rather than teach the context menu to nest, picking one
+   of those SETS the type and immediately opens its format menu. Two
+   sequential menus, no nesting, and the second one is reachable again by
+   re-opening Type — which is what the "›" promises anyway. */
+const _BOARDS_TYPE_LABELS={auto:'Auto',number:'Number',currency:'Currency',
+  percent:'Percentage',text:'Text',date:'Date & Time',check:'Checkbox'};
+function _boardsCellTypeItems(cell){
+  const cur=_boardsCellType(cell);
+  return _BOARDS_CELL_TYPES.map(t=>({
+    act:'celltype:'+t,
+    label:(cur===t?'✓  ':'     ')+_BOARDS_TYPE_LABELS[t]
+      +(['number','currency','percent','date'].indexOf(t)>-1?'   ›':'')
+  }));
+}
+function _boardsCellFmtItems(t,cell){
+  const f=_boardsCellFmt(cell);
+  const dec=lbl=>[0,1,2].map(d=>({act:'cellfmt:d:'+d,
+    label:(( f.d==null?0:f.d)===d?'✓  ':'     ')+lbl(d)}));
+  if(t==='number')  return dec(d=>d===0?'1,234':d===1?'1,234.5':'1,234.57');
+  if(t==='percent') return dec(d=>d===0?'12%':d===1?'12.5%':'12.50%');
+  if(t==='currency')return _BOARDS_CURRENCIES.map(c=>({act:'cellfmt:c:'+c[0],
+      label:((f.c||'Rs')===c[0]?'✓  ':'     ')+c[1]+'1,234'}))
+      .concat([{sep:true}]).concat(dec(d=>d===0?'no decimals':d+' decimal'+(d>1?'s':'')));
+  if(t==='date')    return [['d','15 Sep 2026'],['s','15/09/2026'],
+      ['i','2026-09-15'],['t','15 Sep 2026, 14:30']].map(o=>({act:'cellfmt:f:'+o[0],
+      label:((f.f||'d')===o[0]?'✓  ':'     ')+o[1]}));
+  return [];
+}
+function _boardsCellMenuAt(items){
+  // Anchored to the rail button when there is one, else to the focused
+  // cell — a menu that opens in the corner of the screen reads as broken.
+  const f=_boardsFocusedCell();
+  let x=window.innerWidth/2,y=window.innerHeight/2;
+  const btn=document.querySelector('#board-rail [data-act="cell:type"]');
+  const td=f&&document.getElementById('board-td-'+f.card.id+'-'+f.r+'-'+f.i);
+  const src=btn||td;
+  if(src&&src.getBoundingClientRect){
+    const r=src.getBoundingClientRect();
+    x=r.right+6;y=r.top;
+  }
+  if(_boardsIsPhone()&&typeof _boardsOpenSheet==='function'){
+    _boardsOpenSheet('Cell type',`<div class="board-sheet-list">${items.map(it=>
+      it.sep?'<div class="board-sheet-sep"></div>'
+        :`<button class="board-sheet-item" onclick="window.boardsSheetRun('${it.act}')">${_boardsEsc(it.label)}</button>`
+    ).join('')}</div>`);
+    return;
+  }
+  _boardsOpenCtx(x,y,items);
+}
+window.boardsCellTypeMenu=function(){
+  const f=_boardsFocusedCell();
+  if(!f||!_boardsCanEdit(_editBoard))return;
+  _boardsCellMenuAt(_boardsCellTypeItems(f.cell));
+};
+window.boardsCellSetType=function(t){
+  const f=_boardsFocusedCell();
+  if(!f||!_boardsCanEdit(_editBoard))return;
+  if(f.card.locked)return showToast('Card is locked — unlock it to edit it');
+  if(_BOARDS_CELL_TYPES.indexOf(t)<0)return;
+  _boardsPushUndo();
+  // 'auto' is the ABSENCE of a type, so it clears rather than stores —
+  // which is also what lets the cell downgrade back to a bare string.
+  _boardsCellWrite(f.card,f.r,f.i,t==='auto'?{t:'',fmt:''}:{t:t});
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  if(['number','currency','percent','date'].indexOf(t)>-1){
+    const g=_boardsFocusedCell();
+    if(g)_boardsCellMenuAt(_boardsCellFmtItems(t,g.cell));
+  }
+};
+window.boardsCellSetFmt=function(key,val){
+  const f=_boardsFocusedCell();
+  if(!f||!_boardsCanEdit(_editBoard))return;
+  if(f.card.locked)return;
+  const fmt=Object.assign({},_boardsCellFmt(f.cell));
+  if(key==='d')fmt.d=Math.max(0,Math.min(6,parseInt(val,10)||0));
+  else if(key==='c'){ if(!_BOARDS_CURRENCIES.some(c=>c[0]===val))return; fmt.c=val; }
+  else if(key==='f'){ if('dsit'.indexOf(val)<0||val.length!==1)return; fmt.f=val; }
+  else return;
+  _boardsPushUndo();
+  _boardsCellWrite(f.card,f.r,f.i,{fmt:fmt});
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+// A checkbox is the one cell type you operate with a single click, so it
+// gets its own handler rather than going through focus-then-edit.
+window.boardsCellToggle=function(id,r,i){
+  const c=_boardsTableEditable(id);
+  if(!c)return;
+  const cell=_boardsCellAt(c,r,i);
+  if(_boardsCellType(cell)!=='check')return;
+  _boardsPushUndo();
+  _boardsCellWrite(c,r,i,{v:_boardsCellVal(cell)?'':'1'});
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
 };
 window.boardsCellRowCol=function(what){
   const f=_boardsFocusedCell();
@@ -5730,7 +5974,7 @@ function _boardsDrawCard(ctx,c,img,P){
       ctx.font=((c.head!==false&&r===0)?'700 ':'')+'11px '+P.font;
       ctx.save();
       ctx.beginPath();ctx.rect(c.x+i*cw,c.y+hh+r*rh,cw,rh);ctx.clip();
-      ctx.fillText(_boardsCellVal(cell),c.x+i*cw+6,c.y+hh+r*rh+rh/2+4);
+      ctx.fillText(_boardsCellDisplay(cell),c.x+i*cw+6,c.y+hh+r*rh+rh/2+4);
       ctx.restore();
     }));
     ctx.restore();
@@ -5938,7 +6182,7 @@ window.boardsExportPDF=async function(){
       :c.type==='link'?((c.linkTitle||'')+(c.linkUrl?'  —  '+c.linkUrl:''))
       :c.type==='file'?(c.name||c.fileName||'')
       :c.type==='board'?(c.boardTitle||'')
-      :c.type==='table'?(Array.isArray(c.rows)?c.rows.map(r=>r.map(_boardsCellVal).join(' | ')).join('  ·  '):'')
+      :c.type==='table'?(Array.isArray(c.rows)?c.rows.map(r=>r.map(_boardsCellDisplay).join(' | ')).join('  ·  '):'')
       :(c.type==='frame'||c.type==='column')?(c.title||'')
       :(c.text||'')).replace(/\s+/g,' ').trim()
   })).filter(r=>r.text);
@@ -6861,9 +7105,16 @@ function _boardsCtxRun(act){
   if(act.indexOf('color:')===0){window.boardsSetColor(act.slice(6));return;}
   if(act.indexOf('ln:')===0){_boardsConnAction(act.slice(3));return;}
   if(act.indexOf('cellbg:')===0){window.boardsCellColor(act.slice(7));return;}
+  if(act.indexOf('celltype:')===0){window.boardsCellSetType(act.slice(9));return;}
+  if(act.indexOf('cellfmt:')===0){
+    const bits=act.slice(8).split(':');
+    window.boardsCellSetFmt(bits[0],bits.slice(1).join(':'));
+    return;
+  }
   if(act.indexOf('cell:')===0){
     const w=act.slice(5);
     if(w==='done')return window.boardsCellDone();
+    if(w==='type')return window.boardsCellTypeMenu();
     if(w==='copy'||w==='cut'||w==='paste')return window.boardsCellClip(w);
     if(/^(row-|col-|del-)/.test(w))return window.boardsCellRowCol(w);
     window.boardsCellAction(w);

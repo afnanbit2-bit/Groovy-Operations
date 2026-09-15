@@ -1427,6 +1427,22 @@ module.exports=function(){
       run(`_boardsRefToRC('B0')===null&&_boardsRefToRC('')===null&&_boardsRefToRC('1B')===null
         &&_boardsRefToRC('B1:B4')===null`));
 
+    s.section('the +Row/+Col strip lives OUTSIDE the scrolling element');
+    // Twice a patch put it inside: as a plain flex child it scrolled out of
+    // reach on a table taller than its card, and as a sticky one it covered
+    // the bottom row so a checkbox there could not be clicked. Both were
+    // found by smoke-layout — but only with a table that actually
+    // overflows, and the hit-test check reads a legitimately scrolled-away
+    // control as "covered", so the fragment cannot hold this ground. The
+    // nesting is the thing that matters, so assert the nesting.
+    boot();
+    const th=run(`_boardCardHTML(_editCards[0],true)`);
+    s.ok('the table is inside the scroller',/board-table-scroll"?>\s*<table/.test(th));
+    s.ok('and the strip is after it closes',
+      /<\/table>\s*<\/div>[\s\S]*board-table-add/.test(th));
+    s.ok('with nothing scrollable wrapping the strip',
+      th.indexOf('board-table-add')>th.lastIndexOf('board-table-scroll'));
+
     s.section('the band and the gutter are rendered, not stored');
     boot();
     const html=run(`_boardCardHTML(_editCards[0],true)`);
@@ -1436,6 +1452,108 @@ module.exports=function(){
       run(`JSON.stringify(_editCards[0]).indexOf('coord')<0`));
     s.ok('the card reserves the band height so a new row is never clipped',
       run(`_boardsTableMinH(_editCards[0])>=26+20+2*28+26`));
+
+    s.section('the value is always the raw string, the format is derived');
+    // Switch to Text and you get your '007' back, not '7'. That is what
+    // makes a type change lossless in both directions.
+    boot();
+    run(`_editCards[0].rows=[['007','1200'],['','']];_boardsCellFocus={id:'t',r:0,i:1};
+         _boardsCtxRun('celltype:number')`);
+    s.eq('the stored value is untouched',run(`_boardsCellVal(_editCards[0].rows[0][1])`),'1200');
+    s.eq('only the display changes',run(`_boardsCellDisplay(_editCards[0].rows[0][1])`),'1,200');
+    run(`_boardsCtxRun('cellfmt:d:2')`);
+    s.eq('decimals come from the format',run(`_boardsCellDisplay(_editCards[0].rows[0][1])`),'1,200.00');
+    run(`_boardsCtxRun('celltype:text')`);
+    s.eq('and it round-trips back out',run(`_boardsCellDisplay(_editCards[0].rows[0][1])`),'1200');
+    s.eq("auto never rewrites what you typed",run(`_boardsCellDisplay('007')`),'007');
+
+    s.section('a type survives being the only thing a cell carries');
+    // _BOARDS_CELL_ATTRS drives the downgrade to a bare string. Leave 't'
+    // out of it and the type is thrown away the instant it stands alone.
+    boot();
+    run(`_editCards[0].rows=[['5','x'],['','']];_boardsCellFocus={id:'t',r:0,i:0};
+         _boardsCtxRun('celltype:percent')`);
+    s.eq('it stays an object',run(`typeof _editCards[0].rows[0][0]`),'object');
+    s.eq('carrying the type',run(`_boardsCellType(_editCards[0].rows[0][0])`),'percent');
+    run(`_boardsCtxRun('celltype:auto')`);
+    s.eq('and auto clears it back to a bare string',run(`typeof _editCards[0].rows[0][0]`),'string');
+
+    s.section('percentage does NOT multiply by 100');
+    // Deliberate divergence from the spreadsheet convention: in a garment
+    // ops tool people type 12 meaning a 12% rejection rate.
+    boot();
+    run(`_editCards[0].rows=[[{v:'12',t:'percent'},{v:'12.5',t:'percent',fmt:{d:1}}],['','']]`);
+    s.eq('12 reads as 12%',run(`_boardsCellDisplay(_editCards[0].rows[0][0])`),'12%');
+    s.eq('and the decimals are honoured',run(`_boardsCellDisplay(_editCards[0].rows[0][1])`),'12.5%');
+
+    s.section('currency, dates and checkboxes');
+    boot();
+    s.eq('Rs is the default symbol',run(`_boardsCellDisplay({v:'45000',t:'currency'})`),'Rs 45,000');
+    s.eq('and the submenu changes it',run(`_boardsCellDisplay({v:'45000',t:'currency',fmt:{c:'usd',d:2}})`),'$45,000.00');
+    s.eq('a date formats four ways',
+      run(`['d','s','i'].map(f=>_boardsCellDisplay({v:'2026-09-15',t:'date',fmt:{f:f}})).join(' | ')`),
+      '15 Sep 2026 | 15/09/2026 | 2026-09-15');
+    s.eq('and something that is not a date is shown as typed',
+      run(`_boardsCellDisplay({v:'next tuesday',t:'date'})`),'next tuesday');
+    s.eq('a checkbox is a tick or nothing',
+      run(`_boardsCellDisplay({v:'1',t:'check'})+'/'+_boardsCellDisplay({v:'',t:'check'})`),'✓/');
+    run(`_editCards[0].rows=[[{v:'',t:'check'},'']];window.boardsCellToggle('t',0,0)`);
+    s.eq('clicking it toggles',run(`_boardsCellVal(_editCards[0].rows[0][0])`),'1');
+    run(`window.boardsCellToggle('t',0,0)`);
+    s.eq('and back',run(`_boardsCellVal(_editCards[0].rows[0][0])`),'');
+    s.ok('its click carries the pointerdown guard every control in a drag surface needs',
+      /cell-t-check[\s\S]{0,240}onpointerdown="event.stopPropagation\(\)"/
+        .test(run(`_boardCardHTML(_editCards[0],true)`)));
+
+    s.section('numbers read tolerantly, and bad ones are flagged not rejected');
+    s.eq('a pasted thousands separator still computes',run(`_boardsCellNum('1,200')`),1200);
+    s.eq('so does a currency symbol',run(`_boardsCellNum('Rs 45,000')`),45000);
+    s.eq('and a trailing percent',run(`_boardsCellNum('12%')`),12);
+    s.eq('negatives',run(`_boardsCellNum('-3.5')`),-3.5);
+    s.ok('prose is not a number',run(`_boardsCellNum('twelve')===null&&_boardsCellNum('')===null`));
+    s.ok('a typed numeric cell holding prose is flagged',
+      run(`_boardsCellInvalid({v:'twelve',t:'number'})===true`));
+    s.ok('an EMPTY one is not — that is just an empty cell',
+      run(`_boardsCellInvalid({v:'',t:'number'})===false`));
+    s.ok('and an untyped one never is',run(`_boardsCellInvalid('twelve')===false`));
+
+    s.section('numbers sit right without being told to');
+    s.ok('a number cell',/text-align:right/.test(run(`_boardsCellStyle({v:'5',t:'number'})`)));
+    s.ok('and an AUTO cell holding a number — the one thing auto formats',
+      /text-align:right/.test(run(`_boardsCellStyle('1200')`)));
+    s.ok('but not one holding words',!/text-align/.test(run(`_boardsCellStyle('Cotton')`)));
+    s.ok('an explicit alignment still wins',
+      /text-align:center/.test(run(`_boardsCellStyle({v:'5',t:'number',al:'c'})`)));
+
+    s.section('Clear resets presentation, never the type');
+    boot();
+    run(`_editCards[0].rows=[[{v:'1200',t:'currency',b:true,bg:'red',sz:'l'},'']];
+         _boardsCellFocus={id:'t',r:0,i:0};_boardsCtxRun('cell:clear')`);
+    s.eq('the type is what the cell IS, not how it looks',
+      run(`_boardsCellType(_editCards[0].rows[0][0])`),'currency');
+    s.ok('the styling is gone',
+      run(`_boardsCellAttr(_editCards[0].rows[0][0],'b')===undefined
+        &&_boardsCellAttr(_editCards[0].rows[0][0],'bg')===undefined`));
+
+    s.section('the type menu is the spec menu');
+    boot();
+    const tm=run(`JSON.stringify(_boardsCellTypeItems({v:'1',t:'currency'}))`);
+    ['auto','number','currency','percent','text','date','check']
+      .forEach(t=>s.ok('offers '+t,tm.indexOf('celltype:'+t)>-1));
+    s.ok('ticking the one in force',/✓  Currency/.test(tm));
+    s.ok('and marking the four that open a format menu',
+      (tm.match(/›/g)||[]).length===4);
+    s.ok('the rail offers Type',/"act":"cell:type"/.test(
+      run(`_boardsCellFocus={id:'t',r:0,i:0};JSON.stringify(_boardsRailItems())`)));
+
+    s.section('exports and search show the formatted value');
+    boot();
+    run(`_editCards[0].head=false;_editCards[0].rows=[[{v:'45000',t:'currency'},'Drill']]`);
+    const dx=run(`JSON.stringify(_boardsCardDoc(_editCards[0]))`);
+    s.ok('the Word/Markdown export is what you see on screen',/Rs 45,000/.test(dx));
+    const tx=run(`_boardsCardText(_editCards[0])`);
+    s.ok('search finds the raw number',/45000/.test(tx));
+    s.ok('and the formatted one — both are the same cell',/45,000/.test(tx));
 
     s.section('rows and columns insert RELATIVE to the focused cell');
     boot();
