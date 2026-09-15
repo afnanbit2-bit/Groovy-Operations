@@ -828,6 +828,18 @@ function _boardsOnKeydown(e){
     if(hadCell)_boardsRenderCanvasAndWire();
     return;
   }
+  // Alt+Arrow inserts a row or column around the FOCUSED cell, and like
+  // Escape it has to be read before the editable bail — a focused cell is
+  // contenteditable, so the bail would swallow it every time. It is gated
+  // on a focused cell existing, so the one thing it costs (Alt+←/→ as
+  // word-jump on a Mac) is only unavailable inside a table cell, which is
+  // exactly where the spec asks for it.
+  if(e.altKey&&!e.ctrlKey&&!e.metaKey&&_boardsCellFocus&&/^Arrow/.test(e.key||'')){
+    const map={ArrowUp:'row-above',ArrowDown:'row-below',
+               ArrowLeft:'col-left',ArrowRight:'col-right'};
+    const w=map[e.key];
+    if(w){e.preventDefault();window.boardsCellRowCol(w);return;}
+  }
   // Inside a text card or a link field every one of these belongs to the
   // browser — Ctrl+Z is text undo, Backspace deletes a character, Ctrl+A
   // selects the paragraph. Intercepting any of them there would be worse
@@ -3699,8 +3711,8 @@ function _boardsRailItems(){
       {act:'cell:align',label:'Align',icon:'align',on:!!_boardsCellAttr(cell,'al')},
       {cellSwatches:true},
       {sep:true},
-      {act:'tbl:row',label:'Add row',icon:'table'},
-      {act:'tbl:col',label:'Add column',icon:'table'},
+      {act:'cell:row-below',label:'Add row',icon:'table'},
+      {act:'cell:col-right',label:'Add column',icon:'table'},
       {act:'cell:clear',label:'Clear',icon:'trash'},
       {act:'cell:done',label:'Done',icon:'done',done:true}
     ];
@@ -4418,6 +4430,87 @@ window.boardsCellColor=function(name){
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
 };
+/* The cell's own right-click menu. A table cell is the one place this file
+   takes the menu back from the browser while text is editable: everywhere
+   else — a note body, a to-do item, any input — the browser's menu wins,
+   because spellcheck and copy/paste belong to it while you are writing
+   prose. A spreadsheet cell is not prose; row and column operations are
+   what a right-click there is FOR, and the spec asks for them by name. */
+function _boardsCellCtxItems(c,r,i){
+  const items=[];
+  items.push({act:'cell:copy',label:'Copy',hint:'Ctrl C'});
+  items.push({act:'cell:cut',label:'Cut',hint:'Ctrl X'});
+  items.push({act:'cell:paste',label:'Paste',hint:'Ctrl V'});
+  items.push({sep:true});
+  items.push({act:'cell:row-above',label:'Add row above',hint:'Alt ↑'});
+  items.push({act:'cell:row-below',label:'Add row below',hint:'Alt ↓'});
+  items.push({act:'cell:col-left',label:'Add column left',hint:'Alt ←'});
+  items.push({act:'cell:col-right',label:'Add column right',hint:'Alt →'});
+  items.push({sep:true});
+  items.push({act:'cell:del-row',label:'Delete row '+(r+1),danger:true});
+  items.push({act:'cell:del-col',label:'Delete column '+_boardsColName(i),danger:true});
+  items.push({sep:true});
+  items.push({act:'cell:align',label:'Change alignment'});
+  items.push({sep:true});
+  items.push({title:_boardsCellRef(r,i)+' · '+(c.name||'Table')});
+  return items;
+}
+// Cut and Copy raise the REAL clipboard events by selecting the cell and
+// firing execCommand, so the system clipboard stays the single source of
+// truth — the rule the card menu already follows. Paste cannot: browsers
+// refuse execCommand('paste') from script, so it goes through the async
+// clipboard and says so plainly when that is refused.
+function _boardsCellSelectAll(){
+  const f=_boardsFocusedCell();
+  if(!f)return null;
+  const el=document.getElementById('board-td-'+f.card.id+'-'+f.r+'-'+f.i);
+  if(!el)return null;
+  window.boardsBeginEdit(null,el.id);
+  try{
+    const sel=window.getSelection(),rg=document.createRange();
+    rg.selectNodeContents(el);sel.removeAllRanges();sel.addRange(rg);
+  }catch(e){return null;}
+  return el;
+}
+window.boardsCellClip=function(what){
+  const f=_boardsFocusedCell();
+  if(!f)return;
+  if(what==='paste'){
+    if(!(navigator.clipboard&&navigator.clipboard.readText))
+      return showToast('Press Ctrl+V to paste into this cell');
+    navigator.clipboard.readText().then(txt=>{
+      const g=_boardsFocusedCell();
+      if(!g||txt==null)return;
+      _boardsPushUndo();
+      _boardsCellWrite(g.card,g.r,g.i,{v:String(txt).replace(/[\r\n\t]+/g,' ')});
+      _boardsRenderCanvasAndWire();
+      _boardsSaveDebounced();
+    }).catch(()=>showToast('Press Ctrl+V to paste into this cell'));
+    return;
+  }
+  if(!_boardsCellSelectAll())return;
+  let ok=false;
+  try{ ok=document.execCommand(what==='cut'?'cut':'copy'); }catch(e){}
+  if(!ok)return showToast(what==='cut'?'Press Ctrl+X to cut':'Press Ctrl+C to copy');
+  if(what==='cut'){
+    // execCommand('cut') empties the element; mirror that into the model,
+    // which the oninput handler would otherwise be the only one to see.
+    _boardsPushUndo();
+    _boardsCellWrite(f.card,f.r,f.i,{v:''});
+    _boardsSaveDebounced();
+  }
+};
+window.boardsCellRowCol=function(what){
+  const f=_boardsFocusedCell();
+  if(!f)return;
+  const id=f.card.id;
+  if(what==='row-above')      window.boardsTableInsertRow(id,f.r);
+  else if(what==='row-below') window.boardsTableInsertRow(id,f.r+1);
+  else if(what==='col-left')  window.boardsTableInsertCol(id,f.i);
+  else if(what==='col-right') window.boardsTableInsertCol(id,f.i+1);
+  else if(what==='del-row')   window.boardsTableDeleteRow(id,f.r);
+  else if(what==='del-col')   window.boardsTableDeleteCol(id,f.i);
+};
 window.boardsCellDone=function(){
   _boardsCellFocus=null;
   _boardsEndEdit();
@@ -4438,33 +4531,91 @@ function _boardsTableMinH(c){
   // card header + the A/B/C band + rows + the +Row/+Col strip
   return 26+20+body+26;
 }
-window.boardsTableAdd=function(id,what){
+/* Row and column operations, positional.
+
+   These are the ONE implementation: appending a row is inserting at the
+   end and dropping one is deleting the last, so boardsTableAdd/Drop are
+   thin wrappers rather than a second copy of the bounds checks.
+
+   The focused cell MOVES with the edit. Insert a row above it and its row
+   index shifts down by one; leave the index alone and the focus ring lands
+   on the blank row that was just pushed under it, which reads as the caret
+   jumping. _boardsFocusedCell re-derives and so can drop a stale focus,
+   but it cannot know that a cell MOVED — only the operation knows that. */
+function _boardsTableEditable(id){
   const c=_editCards.find(x=>x.id===id);
-  if(!c||c.locked||!_boardsCanEdit(_editBoard))return;
+  if(!c||c.type!=='table'||!_boardsCanEdit(_editBoard))return null;
+  if(c.locked){showToast('Card is locked — unlock it to edit it');return null;}
   if(!Array.isArray(c.rows)||!c.rows.length)c.rows=[['','']];
-  _boardsPushUndo();
-  if(what==='row')c.rows.push(c.rows[0].map(()=>''));
-  else c.rows.forEach(row=>row.push(''));
-  // A table that grows needs the room, or the new row is drawn outside the
-  // card and clipped away — the same class of bug the label and reaction
-  // rows caused on small cards.
+  return c;
+}
+function _boardsTableGrow(c,what){
   if(what==='row')c.h=Math.max(c.h,_boardsTableMinH(c));
   else c.w=Math.max(c.w,84+c.rows[0].length*100);  // + the row-number gutter
   if(_boardsColumnOf(c))_boardsLayoutColumns();
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
+}
+window.boardsTableInsertRow=function(id,at){
+  const c=_boardsTableEditable(id);
+  if(!c)return;
+  const n=Math.max(0,Math.min(c.rows.length,at|0));
+  _boardsPushUndo();
+  c.rows.splice(n,0,c.rows[0].map(()=>''));
+  if(_boardsCellFocus&&_boardsCellFocus.id===id&&_boardsCellFocus.r>=n)_boardsCellFocus.r++;
+  _boardsTableGrow(c,'row');
+};
+window.boardsTableInsertCol=function(id,at){
+  const c=_boardsTableEditable(id);
+  if(!c)return;
+  const n=Math.max(0,Math.min(c.rows[0].length,at|0));
+  _boardsPushUndo();
+  c.rows.forEach(row=>row.splice(n,0,''));
+  if(_boardsCellFocus&&_boardsCellFocus.id===id&&_boardsCellFocus.i>=n)_boardsCellFocus.i++;
+  _boardsTableGrow(c,'col');
+};
+window.boardsTableDeleteRow=function(id,at){
+  const c=_boardsTableEditable(id);
+  if(!c)return;
+  const n=at|0;
+  if(n<0||n>=c.rows.length)return;
+  // A header table keeps its header plus one body row; a plain one keeps
+  // one row. Same floor the old end-drop enforced.
+  const minRows=c.head===false?1:2;
+  if(c.rows.length<=minRows)return showToast('A table needs at least one row');
+  _boardsPushUndo();
+  c.rows.splice(n,1);
+  if(_boardsCellFocus&&_boardsCellFocus.id===id){
+    if(_boardsCellFocus.r>n)_boardsCellFocus.r--;
+    else if(_boardsCellFocus.r===n)_boardsCellFocus=null;   // it is gone
+  }
+  _boardsTableGrow(c,'row');
+};
+window.boardsTableDeleteCol=function(id,at){
+  const c=_boardsTableEditable(id);
+  if(!c)return;
+  const n=at|0;
+  if(n<0||n>=c.rows[0].length)return;
+  if(c.rows[0].length<=1)return showToast('A table needs at least one column');
+  _boardsPushUndo();
+  c.rows.forEach(row=>row.splice(n,1));
+  if(_boardsCellFocus&&_boardsCellFocus.id===id){
+    if(_boardsCellFocus.i>n)_boardsCellFocus.i--;
+    else if(_boardsCellFocus.i===n)_boardsCellFocus=null;
+  }
+  _boardsTableGrow(c,'col');
+};
+window.boardsTableAdd=function(id,what){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||!Array.isArray(c.rows))return window.boardsTableInsertRow(id,0);
+  if(what==='row')window.boardsTableInsertRow(id,c.rows.length);
+  else window.boardsTableInsertCol(id,(c.rows[0]||[]).length);
 };
 window.boardsTableDrop=function(id,what){
   const c=_editCards.find(x=>x.id===id);
-  if(!c||c.locked||!_boardsCanEdit(_editBoard)||!Array.isArray(c.rows))return;
-  const minRows=c.head===false?1:2;
-  if(what==='row'&&c.rows.length<=minRows)return showToast('A table needs at least one row');
-  if(what==='col'&&c.rows[0].length<=1)return showToast('A table needs at least one column');
-  _boardsPushUndo();
-  if(what==='row')c.rows.pop();else c.rows.forEach(row=>row.pop());
-  if(_boardsColumnOf(c))_boardsLayoutColumns();
-  _boardsRenderCanvasAndWire();
-  _boardsSaveDebounced();
+  if(!c||!Array.isArray(c.rows)||!c.rows.length)return;
+  if(what==='row')window.boardsTableDeleteRow(id,c.rows.length-1);
+  else window.boardsTableDeleteCol(id,(c.rows[0]||[]).length-1);
 };
 window.boardsTableHeader=function(id){
   const c=_editCards.find(x=>x.id===id);
@@ -6712,7 +6863,10 @@ function _boardsCtxRun(act){
   if(act.indexOf('cellbg:')===0){window.boardsCellColor(act.slice(7));return;}
   if(act.indexOf('cell:')===0){
     const w=act.slice(5);
-    if(w==='done')window.boardsCellDone();else window.boardsCellAction(w);
+    if(w==='done')return window.boardsCellDone();
+    if(w==='copy'||w==='cut'||w==='paste')return window.boardsCellClip(w);
+    if(/^(row-|col-|del-)/.test(w))return window.boardsCellRowCol(w);
+    window.boardsCellAction(w);
     return;
   }
   if(act.indexOf('tbl:')===0){
@@ -7295,6 +7449,33 @@ function _boardsCardCtxItems(canEdit){
 }
 function _boardsWireContextMenu(stage){
   stage.addEventListener('contextmenu',e=>{
+    const t0=e.target;
+    // A TABLE CELL is read before the editable bail below, and it is the
+    // only place in this file that takes the menu back from the browser
+    // while text is editable. Everywhere else — a note body, a to-do item,
+    // an input — the browser's menu wins, because spellcheck and text
+    // copy/paste belong to it while you are writing prose. A spreadsheet
+    // cell is not prose: row and column operations are what a right-click
+    // there is for. Right-clicking a cell FOCUSES it first, the same rule
+    // a right-click on an unselected card or line already follows.
+    const tdEl=t0&&t0.closest&&t0.closest('td.board-td,th.board-td');
+    if(tdEl&&_boardsCanEdit(_editBoard)){
+      const m=/^board-td-(.+)-(\d+)-(\d+)$/.exec(tdEl.id||'');
+      const host=tdEl.closest('.board-card-el');
+      const hostId=host&&host.getAttribute('data-id');
+      if(m&&hostId&&m[1]===hostId){
+        const r=parseInt(m[2],10),i=parseInt(m[3],10);
+        e.preventDefault();
+        _boardsCtxWorld=_boardsScreenToWorld(e.clientX,e.clientY);
+        if(!_boardsSelection.has(hostId))_boardsSetSelection([hostId]);
+        _boardsCellFocus={id:hostId,r:r,i:i};
+        _boardsRenderRail();
+        _boardsPaintCellFocus();
+        const card=_editCards.find(x=>x.id===hostId);
+        _boardsOpenCtx(e.clientX,e.clientY,_boardsCellCtxItems(card||{},r,i));
+        return;
+      }
+    }
     // Editing text? The browser's menu is the right one.
     if(_boardsIsEditableFocus())return;
     const t=e.target;

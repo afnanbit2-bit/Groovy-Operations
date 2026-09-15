@@ -1388,7 +1388,7 @@ module.exports=function(){
     s.ok('a focused cell swaps the rail',/cell:bold/.test(rail));
     s.ok('carrying the spec toolbar',
       /cell:italic/.test(rail)&&/cell:size/.test(rail)&&/cell:align/.test(rail)
-      &&/cellSwatches/.test(rail)&&/tbl:row/.test(rail)&&/tbl:col/.test(rail));
+      &&/cellSwatches/.test(rail)&&/cell:row-below/.test(rail)&&/cell:col-right/.test(rail));
     run(`_boardsCtxRun('cell:bold')`);
     s.ok('and the router applies it',run(`!!_boardsCellAttr(_editCards[0].rows[1][1],'b')`));
     s.ok('the rail reflects the state it just set',
@@ -1437,7 +1437,111 @@ module.exports=function(){
     s.ok('the card reserves the band height so a new row is never clipped',
       run(`_boardsTableMinH(_editCards[0])>=26+20+2*28+26`));
 
-    s.section('a table can carry a caption, per the spec toolbar');
+    s.section('rows and columns insert RELATIVE to the focused cell');
+    boot();
+    run(`_editCards[0].rows=[['A0','B0'],['A1','B1'],['A2','B2']];_boardsCellFocus={id:'t',r:1,i:1}`);
+    run(`_boardsCtxRun('cell:row-above')`);
+    s.eq('above puts the blank row before it',
+      run(`_editCards[0].rows.map(r=>r.join('')).join('|')`),'A0B0||A1B1|A2B2');
+    // Leave the index alone and the ring lands on the blank row that was
+    // just pushed under it, which reads as the caret jumping.
+    s.eq('and the focus follows the cell it was on',
+      run(`_boardsCellFocus.r+','+_boardsCellFocus.i`),'2,1');
+    s.eq('which is still the same text',run(`_boardsCellVal(_boardsFocusedCell().cell)`),'B1');
+    boot();
+    run(`_editCards[0].rows=[['A0','B0'],['A1','B1']];_boardsCellFocus={id:'t',r:0,i:0};
+         _boardsCtxRun('cell:row-below')`);
+    s.eq('below puts it after',run(`_editCards[0].rows.map(r=>r.join('')).join('|')`),'A0B0||A1B1');
+    s.eq('and a row inserted BELOW does not move the focus',
+      run(`_boardsCellFocus.r`),0);
+
+    s.section('and columns the same way');
+    boot();
+    run(`_editCards[0].rows=[['A','B','C'],['1','2','3']];_boardsCellFocus={id:'t',r:1,i:1};
+         _boardsCtxRun('cell:col-left')`);
+    s.eq('every row widens together',run(`_editCards[0].rows.map(r=>r.length).join(',')`),'4,4');
+    s.eq('the blank lands in the right place',run(`_editCards[0].rows[0].join('|')`),'A||B|C');
+    s.eq('and the focus shifts right with its cell',run(`_boardsCellFocus.i`),2);
+    s.eq('still the same text',run(`_boardsCellVal(_boardsFocusedCell().cell)`),'2');
+
+    s.section('delete takes the whole row or column the cell sits in');
+    boot();
+    run(`_editCards[0].head=false;_editCards[0].rows=[['A0','B0'],['A1','B1'],['A2','B2']];
+         _boardsCellFocus={id:'t',r:1,i:0};_boardsCtxRun('cell:del-row')`);
+    s.eq('the row is gone',run(`_editCards[0].rows.map(r=>r.join('')).join('|')`),'A0B0|A2B2');
+    s.ok('and the focus with it — that cell does not exist any more',
+      run(`_boardsCellFocus===null`));
+    boot();
+    run(`_editCards[0].rows=[['A','B','C'],['1','2','3']];_boardsCellFocus={id:'t',r:0,i:2};
+         _boardsCtxRun('cell:del-col')`);
+    s.eq('the column is gone from every row',run(`_editCards[0].rows.map(r=>r.join('')).join('|')`),'AB|12');
+    s.ok('focus cleared',run(`_boardsCellFocus===null`));
+    boot();
+    run(`_editCards[0].rows=[['A','B','C'],['1','2','3']];_boardsCellFocus={id:'t',r:0,i:0};
+         window.boardsTableDeleteCol('t',2)`);
+    s.eq('deleting a LATER column leaves the focus alone',run(`_boardsCellFocus.i`),0);
+
+    s.section('the floors still hold, from any direction');
+    boot();
+    run(`_editCards[0].head=true;_editCards[0].rows=[['h','h'],['a','b']];
+         window.boardsTableDeleteRow('t',0)`);
+    s.eq('a header table keeps its header plus a body row',run(`_editCards[0].rows.length`),2);
+    run(`while(_editCards[0].rows[0].length>1)window.boardsTableDeleteCol('t',0);
+         window.boardsTableDeleteCol('t',0)`);
+    s.eq('and never falls below one column',run(`_editCards[0].rows[0].length`),1);
+    s.ok('an out-of-range index is a no-op, not a hole',
+      run(`(()=>{const b=JSON.stringify(_editCards[0].rows);
+        window.boardsTableDeleteRow('t',99);window.boardsTableInsertRow('t',-5);
+        return _editCards[0].rows.length>=1&&Array.isArray(_editCards[0].rows[0]);})()`));
+
+    s.section('append and drop are the same code, not a second copy');
+    boot();
+    run(`_editCards[0].head=false;_editCards[0].rows=[['A','B'],['1','2']];
+         window.boardsTableAdd('t','row')`);
+    s.eq('adding a row still appends',run(`_editCards[0].rows.length+':'+_editCards[0].rows[2].join('')`),'3:');
+    run(`window.boardsTableDrop('t','row')`);
+    s.eq('and dropping still removes the last',run(`_editCards[0].rows.length`),2);
+    s.eq('leaving the earlier rows untouched',run(`_editCards[0].rows.map(r=>r.join('')).join('|')`),'AB|12');
+
+    s.section('the cell menu is the spec menu');
+    boot();
+    const cm=run(`JSON.stringify(_boardsCellCtxItems(_editCards[0],1,1))`);
+    ['cell:copy','cell:cut','cell:paste','cell:row-above','cell:row-below',
+     'cell:col-left','cell:col-right','cell:del-row','cell:del-col','cell:align']
+      .forEach(a=>s.ok('offers '+a,cm.indexOf('"'+a+'"')>-1));
+    s.ok('naming the row and column it would delete',
+      /Delete row 2/.test(cm)&&/Delete column B/.test(cm));
+    s.ok('and the shortcuts, so the menu teaches them',
+      /Alt ↑/.test(cm)&&/Alt ←/.test(cm));
+    s.ok('with the reference in the footer',/"title":"B2/.test(cm));
+
+    s.section('Alt+Arrow is read BEFORE the editable bail');
+    // A focused cell is contenteditable, so the bail that protects text
+    // cards would swallow this every time. Gated on a focused cell, so the
+    // one thing it costs — Alt+Left/Right as word-jump on a Mac — is only
+    // unavailable inside a table cell, which is where the spec wants it.
+    boot();
+    run(`currentPage='board-canvas';_editCards[0].rows=[['A','B'],['1','2']];
+         _boardsCellFocus={id:'t',r:1,i:1};__pd=0;
+         _boardsOnKeydown({key:'ArrowUp',altKey:true,preventDefault(){__pd++;}})`);
+    s.eq('Alt+Up inserts above',run(`_editCards[0].rows.length`),3);
+    s.eq('and claims the key from the browser',run(`__pd`),1);
+    run(`_boardsOnKeydown({key:'ArrowRight',altKey:true,preventDefault(){}})`);
+    s.eq('Alt+Right inserts a column',run(`_editCards[0].rows[0].length`),3);
+    run(`_boardsCellFocus=null;__n=_editCards[0].rows.length;
+         _boardsOnKeydown({key:'ArrowUp',altKey:true,preventDefault(){}})`);
+    s.eq('with no focused cell it does nothing at all',run(`_editCards[0].rows.length`),run(`__n`));
+    run(`_boardsCellFocus={id:'t',r:0,i:0};__n2=_editCards[0].rows.length;
+         _boardsOnKeydown({key:'ArrowUp',altKey:true,ctrlKey:true,preventDefault(){}})`);
+    s.eq('and Ctrl+Alt+Up is not it either',run(`_editCards[0].rows.length`),run(`__n2`));
+
+    s.section('a locked table refuses all of it');
+    boot();
+    run(`_editCards[0].locked=true;_editCards[0].rows=[['A','B'],['1','2']];
+         _boardsCellFocus={id:'t',r:0,i:0};_boardsCtxRun('cell:row-above')`);
+    s.eq('nothing is inserted',run(`_editCards[0].rows.length`),2);
+
+        s.section('a table can carry a caption, per the spec toolbar');
     boot();
     run(`_boardsCtxRun('caption')`);
     s.eq('the field is created',run(`typeof _editCards[0].caption`),'string');

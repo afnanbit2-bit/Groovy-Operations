@@ -1519,6 +1519,36 @@ renamed. Existing tables are untouched.
   (Labels · Reactions · Comment · Title · Caption); the other four were
   already there.
 
+**M3 — row and column operations (§8).** Insert and delete act RELATIVE to
+the focused cell, from a cell right-click menu and from Alt+Arrow.
+
+- **Positional is the ONE implementation.** `boardsTableAdd`/`Drop` used to
+  append and pop; they are thin wrappers now (appending is inserting at the
+  end, dropping is deleting the last), so the bounds checks exist once.
+- **The focused cell MOVES with the edit.** Insert a row above it and its
+  row index shifts down by one; leave the index alone and the focus ring
+  lands on the blank row just pushed under it, which reads as the caret
+  jumping. `_boardsFocusedCell` re-derives and so can drop a stale focus,
+  but it cannot know that a cell MOVED — only the operation knows that.
+  Deleting the focused row or column clears the focus outright.
+- **A table cell is the one place this file takes the right-click menu back
+  from the browser while text is editable.** Everywhere else — a note body,
+  a to-do item, an input — the browser's menu wins, because spellcheck and
+  text copy/paste belong to it while you are writing prose. A spreadsheet
+  cell is not prose. Right-clicking a cell focuses it first, the same rule
+  a right-click on an unselected card or line already follows.
+- **Alt+Arrow is read BEFORE the editable bail**, like Escape, because a
+  focused cell is contenteditable and the bail would swallow it every time.
+  It is gated on a focused cell existing, so the one thing it costs —
+  Alt+←/→ as word-jump on a Mac — is unavailable only inside a table cell,
+  which is exactly where the spec asks for the shortcut.
+- **Cut and Copy raise the REAL clipboard events** (select the cell, then
+  `execCommand`), keeping the system clipboard the single source of truth —
+  the rule the card menu already follows. **Paste cannot**: browsers refuse
+  `execCommand('paste')` from script, so it goes through
+  `navigator.clipboard.readText()` and says "Press Ctrl+V" plainly when
+  that is refused, rather than failing silently.
+
 **`_boardsTableMinH` measures per ROW, not as a flat count** — a cell set to
 the large text size makes its whole row taller, and a flat 28px left the
 `+Row/+Col` strip hanging outside the card. **Found by `smoke-layout` the
