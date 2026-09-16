@@ -217,6 +217,14 @@ past both** — the merge is new bytes and needs its own version.
 previous `main` tip and sees changed files with an unchanged version), which
 is how this one was caught.
 
+**Third collision, Sept 2026 — the EASY shape, recorded for contrast.**
+Afnan's rail/Trash work sat at `v68` while Ammar's Marketing M1 shipped
+`v69`. Because the two values DIFFERED, git raised a real conflict in
+`sw.js` and the merge could not complete without someone looking at it —
+resolved to **`v70`**, past both, since the merge is new bytes. That is the
+benign case. The dangerous one is directly below, where both sides pick the
+same number and git has nothing to resolve.
+
 **It happened again in Sept 2026, and the second time is worth recording
 because of HOW it hid.** Afnan's table-QA fix and Ammar's cutting-registry
 work both bumped to **`v61`**. The merge produced **no conflict at all** —
@@ -615,25 +623,40 @@ see `_renderMobNav`) a button on their own "Me" page (`renderMePage()`,
 SVG that was briefly added to `_icon()` was removed again once the nav
 entry became icon-less; don't re-add it without a reason.
 
-**Staged rollout (Sept 2026): nav-gated to Afnan only for now.** All four
-of the pushes above are behind `if(session.u==='afnan')`, plus the "Me" page
-button in `js/hrm.js` and the deep-link guard in `js/boards.js` — **six
-checks in total**, not five; the earlier count here missed `js/hrm.js` and
-was caught by `tests/invariants.test.js`, which now asserts the gate is
-all-or-nothing. Note the `boards.js` one is written **inverted**
-(`session.u!=='afnan'`), so a naive grep for the `===` form misses it — deliberately a
-single username check, not `isOwner()` and not a role, same pattern as the
-`isMustafa()`-style per-person grants already in this codebase. Afnan
-asked to dogfood it alone until the module (Phase 1 + Phase 2) is further
-along, then open it to the rest of the staff. This is a **nav-only** gate —
-`firestore.rules` still lets any signed-in user create/read pages per the
-design above, matching how this app already handles staged rollouts
-elsewhere (e.g. Shopify Intel is nav-gated to `isOwner()`, not blocked at
-the rules layer). To roll out: change these four `session.u==='afnan'`
-checks (grep `staged rollout` in `js/shared.js`, and the one in
-`js/hrm.js`) to whatever the real target audience should be — probably
-just removing the condition, matching the "for everyone" design intent
-above.
+**Staged rollout: ONE list, six routes (Sept 2026 — widened to Ammar).**
+`_CREATIVE_HUB_USERS` + `_canSeeCreativeHub()` in **`js/shared.js`** is the
+single audience for the whole module. Six routes call it: the four nav
+pushes above, the "Me" page button in `js/hrm.js`, and the deep-link guard
+in `js/boards.js`.
+
+It used to be six copies of `if(session.u==='afnan')` — including one
+written **inverted** in `boards.js`, which a naive grep for the `===` form
+missed. That made widening the audience a six-site edit whose failure mode
+is a **partial rollout**: one way in open, another shut, and nothing on
+screen to say which. `js/shared.js` loads first and these are classic
+scripts sharing one lexical scope, so `hrm.js` and `boards.js` reach the
+helper by bare name; both **guard with `typeof` and fail CLOSED**, so a
+`shared.js` that failed to parse hides the hub rather than opening the
+side door.
+
+**Audience: `afnan`, `ammar`** — Afnan dogfooded it alone while the module
+was being shaped and opened it to Ammar once the Trash/rail round landed.
+Still by USERNAME, not a role and not `isOwner()`, matching the
+`isMustafa()`-style per-person grants elsewhere. **Ammar's own Claude
+session should be told the hub is now visible to him.**
+
+This is a **nav-only** gate — `firestore.rules` already lets any signed-in
+user create and read pages, matching how this app handles staged rollouts
+elsewhere (Shopify Intel is nav-gated to `isOwner()`, not blocked at the
+rules layer). **To roll out to everyone: make `_canSeeCreativeHub()` return
+true.** That is the whole change.
+
+`tests/invariants.test.js` guards four things and **each was verified by
+breaking it**: all six routes call the helper (drop one → fails at 5), no
+route still hardcodes a username (a leftover `session.u==='afnan'` → fails),
+the audience is exactly `afnan,ammar` (so widening it shows up in a diff
+review rather than slipping through), and both cross-file callers keep the
+`typeof` guard.
 
 **Phase 2 (shipped): `js/boards.js` — Mood Boards, the Milanote half.**
 Reached only through the Creative Hub grid (no separate top-level nav
@@ -1939,6 +1962,56 @@ Four decisions hold it together:
 - **`firestore.rules` CHANGED — it needs a republish.**
 - **Nobody has looked at the panel in a browser.** The sandbox still cannot
   sign in (gstatic blocked), so the visual is unverified as usual.
+
+### Mood Boards — the rail is a column (Sept 2026)
+
+Afnan, comparing our canvas with Milanote's side by side: theirs runs "along
+the whole left side", ours is "not user friendly". Ours was a **floating
+rounded pill centred vertically**; Milanote's is a full-height column flush
+to the edge with Trash pinned to the floor.
+
+- **It overlays the stage rather than insetting it** — deliberate. The
+  stage's bounding rect is what `_boardsScreenToWorld` measures, so leaving
+  its geometry alone keeps every pan, zoom, drag and marquee calculation
+  untouched. An opaque background hides what pans underneath exactly as a
+  real column would.
+- **`.rail-grow` pins Trash to the bottom** (a `flex:1` spacer emitted for a
+  `{grow:true}` item), and collapses on a phone where the rail is a
+  horizontal scroller.
+- **The phone dock has to undo more than it used to.** Width, the right
+  border and the square corners now come from the desktop rule, so the
+  `max-width:560px` block restores all three explicitly — leave one out and
+  a full-height column docks to the bottom of a phone.
+- **The clipping claim was MEASURED, and the first version of it was
+  wrong.** It was first asserted from arithmetic (~13 tools × ~48px vs the
+  old `max-height:calc(100% - 40px)`), which is exactly the kind of claim
+  this file says not to make. Measured: the rail's content is **~616px**, so
+  the old pill overflowed on any stage shorter than **~656px** — a 720p
+  laptop once browser chrome and the board's top bar come off. At a 660px
+  stage BOTH layouts fit (620 of room for 611 of tools, a **9px** margin),
+  which is why the first `smoke-layout` fragment proved nothing. It is sized
+  to **640px** now and verified both ways: the old pill reports 616 > 598
+  and fails, the column passes.
+- **`tests/smoke-layout.js` gained a rail check**: the tool rail must never
+  need VERTICAL scrolling. It is navigation chrome, and a tool you have to
+  discover by scrolling is a tool nobody finds. Scoped to the vertical axis,
+  so the phone dock (sideways by design) is naturally exempt.
+
+**It also exposed a real flaw in the probe itself, now fixed.** The
+"text clipped completely out of view" check walked up to the first ancestor
+with `overflow-x:hidden` **or** `overflow-y:hidden`, then judged the element
+against that box on **both** axes. The phone rail is `overflow-x:auto;
+overflow-y:hidden`, so every tool scrolled past its right edge was reported
+as invisible — but a **scrollable** axis has not hidden anything, it has
+moved it, and it comes back when you scroll. The check is **per axis now,
+and only an axis that is genuinely `hidden` counts**. That is the same false
+positive recorded under the `+Row/+Col` strip as the reason a fragment could
+not hold that ground. Verified both ways: a row pushed entirely above its
+`overflow:hidden` panel is still caught.
+
+**And the documented trap caught me writing that comment:** the PROBE is a
+template literal, so a **backtick in a comment closes it** and the whole
+file stops parsing. Written out again without them.
 
 ### Mood Boards — Home is a board (Sept 2026)
 

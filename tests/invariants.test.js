@@ -134,24 +134,44 @@ module.exports=function(){
   });
 
   // ── The staged rollout gate (CLAUDE.md) ────────────────────────────────
-  // SIX checks gate the Creative Hub module: four nav pushes in
+  // SIX routes reach the Creative Hub module: four nav pushes in
   // js/shared.js, the "Me" page button in js/hrm.js, and the deep-link
-  // guard in js/boards.js — which is written INVERTED (session.u!=='afnan')
-  // and would be missed by a naive grep for the === form. They are meant to
-  // be removed together at rollout, so this counts them and fails on a
-  // partial removal, which would otherwise leave one route open or one
-  // route shut with nothing on screen to say so.
+  // guard in js/boards.js. They all call ONE helper now, so the audience is
+  // a single list — but that only helps if every route actually calls it.
+  // A route left behind is the same failure as before: one way in open and
+  // another shut, with nothing on screen to say which.
   s.section('staged rollout gate');
   const stripComments=src=>src.replace(/\/\*[\s\S]*?\*\//g,'').replace(/(^|[^:])\/\/[^\n]*/g,'$1');
   const GATE_FILES=['js/shared.js','js/hrm.js','js/boards.js'];
-  const gateCount=GATE_FILES
+  // The lookbehind drops the DECLARATION, whose `function _canSeeCreativeHub()`
+  // otherwise counts as a seventh call and quietly absorbs a route that
+  // went missing.
+  const calls=GATE_FILES
+    .map(f=>(stripComments(read(f)).match(/(?<!function\s)_canSeeCreativeHub\(\)/g)||[]).length)
+    .reduce((a,b)=>a+b,0);
+  // 4 in shared.js + 1 in hrm.js + 1 in boards.js.
+  s.eq('every Creative Hub route goes through the one helper',calls,6);
+  const sharedSrc=stripComments(read('js/shared.js'));
+  s.ok('and the helper is defined in js/shared.js, which loads first',
+    /function\s+_canSeeCreativeHub\s*\(/.test(sharedSrc));
+  // The audience itself. Deliberately asserted by name: widening it is a
+  // decision, and this is what makes it show up in a diff review.
+  const hubList=(sharedSrc.match(/_CREATIVE_HUB_USERS\s*=\s*\[([^\]]*)\]/)||[])[1]||'';
+  const hubNames=(hubList.match(/'([^']+)'/g)||[]).map(x=>x.replace(/'/g,''));
+  s.eq('the Creative Hub audience is afnan, ammar',hubNames.join(','),'afnan,ammar');
+  // Nothing may still gate the hub on a bare username — that is the shape
+  // the helper replaced, and a leftover would silently outrank it.
+  const strays=GATE_FILES
     .map(f=>(stripComments(read(f)).match(/session\.u\s*[!=]==\s*'afnan'/g)||[]).length)
     .reduce((a,b)=>a+b,0);
-  s.ok('the Afnan-only gate is all-or-nothing ('+gateCount+' checks)',
-    gateCount===0||gateCount===6,
-    gateCount===0?'rolled out to everyone'
-      :gateCount===6?'still gated to Afnan'
-      :'PARTIAL — some routes open, some shut, and nothing on screen says which');
+  s.eq('no route still hardcodes a username',strays,0);
+  // Fail CLOSED: the two files that reach across for the helper must guard
+  // with typeof, so a shared.js that failed to parse hides the hub rather
+  // than opening the side door.
+  ['js/hrm.js','js/boards.js'].forEach(f=>{
+    s.ok(f+' guards the cross-file call with typeof',
+      /typeof\s+_canSeeCreativeHub\s*[!=]==\s*'function'/.test(stripComments(read(f))));
+  });
 
   // ── The profile admin grant lives in three places (CLAUDE.md) ──────────
   // js/profile.js decides what the UI offers, firestore.rules decides

@@ -954,7 +954,23 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 /* ── The rail — add-tools when nothing is selected, per-type actions when
    something is. Replaces the old floating selection bar and the bottom
    "+ card" strip (one surface, one action vocabulary). ── */
-.board-rail{touch-action:pan-y;position:absolute;left:14px;top:50%;transform:translateY(-50%);z-index:26;display:flex;flex-direction:column;gap:2px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:6px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.12);max-height:calc(100% - 40px);overflow:auto}
+/* A full-height column flush to the left edge, not a floating pill.
+   Milanote's is a real column and ours was a rounded pill centred
+   vertically — which looked incidental and, more importantly, SCROLLED:
+   `max-height:calc(100% - 40px)` with 13 tools meant the last one (Trash)
+   could fall off the end on a short laptop viewport. A full-height column
+   has room for every tool at every height, which is why Milanote never
+   needs to scroll one.
+   It still OVERLAYS the stage rather than insetting it, deliberately: the
+   stage's bounding rect is what _boardsScreenToWorld measures, so leaving
+   its geometry alone keeps every pan/zoom/drag calculation untouched. The
+   opaque background hides what pans underneath exactly as a real column
+   would. */
+.board-rail{touch-action:pan-y;position:absolute;left:0;top:0;bottom:0;z-index:26;display:flex;flex-direction:column;align-items:center;gap:1px;width:80px;background:var(--surface);border-right:1px solid var(--border);padding:10px 0 12px;overflow-y:auto;overflow-x:hidden}
+/* Pushes whatever follows it to the bottom of the column — Trash, which
+   Milanote also pins to the floor. Collapses on a phone, where the rail is
+   a horizontal scroller and a growing spacer means nothing. */
+.rail-grow{flex:1 1 auto;min-height:10px;width:100%}
 .rail-btn{display:flex;flex-direction:column;align-items:center;gap:3px;width:58px;padding:7px 2px;background:none;border:none;border-radius:9px;cursor:pointer;color:var(--text);font-family:inherit;font-size:9.5px;font-weight:600;letter-spacing:.02em}
 .rail-btn svg{width:17px;height:17px;fill:currentColor}
 .rail-btn:hover{background:var(--soft)}
@@ -1312,7 +1328,12 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   .board-menu-sep{height:1px;background:var(--border);margin:4px 0}
   .board-drawer{width:100%;max-width:100%}
   /* the rail docks to the bottom and scrolls sideways on a phone */
-  .board-rail{left:10px;right:10px;top:auto;bottom:12px;transform:none;flex-direction:row;max-height:none;overflow-x:auto;overflow-y:hidden;align-items:center;touch-action:pan-x}
+  /* The desktop column resets that the phone dock has to undo explicitly —
+     width, the right border and the square corners all come from the rule
+     above now, so leaving any of them out docks a full-height column to the
+     bottom of a phone. */
+  .board-rail{left:10px;right:10px;top:auto;bottom:12px;width:auto;flex-direction:row;max-height:none;overflow-x:auto;overflow-y:hidden;align-items:center;touch-action:pan-x;border:1px solid var(--border);border-radius:14px;padding:6px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.12)}
+  .rail-grow{display:none}
   .rail-sep{width:1px;height:26px;margin:0 4px}
   .rail-swatches{grid-template-columns:repeat(6,1fr);padding:0 6px;gap:6px}
   .rail-btn{width:54px;flex-shrink:0}

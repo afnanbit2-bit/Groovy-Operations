@@ -228,6 +228,30 @@ const FRAGMENTS={
   // both tried and both passed for that reason. What protects a clipped
   // panel is the "text laid out entirely outside its clipping ancestor"
   // check, not the overflow one.
+  // The rail went from a floating pill to a full-height column. MEASURED,
+  // rather than argued: the rail's content is ~616px tall, and the old pill
+  // was capped at calc(100% - 40px), so it overflowed on any stage shorter
+  // than ~656px — a 720p laptop once the browser chrome and the board's own
+  // top bar are taken off. Trash, pinned last, was the entry that fell off.
+  //
+  // 640px here is that laptop. VERIFIED BOTH WAYS at this height: the old
+  // pill reports 616 > 598 and fails, the column passes. At 660px BOTH pass
+  // (620 of room for 611 of tools, a 9px margin) — which is why the first
+  // version of this fragment proved nothing and was rewritten rather than
+  // kept green.
+  'boards — the tool rail':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();
+      _boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+      _boardsRenderRail();`);
+    const inner=app.run(`document.getElementById('board-rail').innerHTML`);
+    // 660px is a 768px-tall laptop minus the app top bar — the height at
+    // which the old pill clipped.
+    return Promise.resolve(
+      '<div style="position:relative;height:640px;width:100%;overflow:hidden">'+
+      '<div class="board-rail" id="board-rail">'+inner+'</div></div>');
+  },
   'boards — the trash panel':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
@@ -393,18 +417,28 @@ document.querySelectorAll('#main-content *').forEach(el=>{
   if(!textOfOwn(el))return;
   const cs=getComputedStyle(el);
   if(hiddenEl(el))return;
-  let p=el.parentElement,clip=null;
+  let p=el.parentElement,clip=null,clipX=false,clipY=false;
   while(p&&p.id!=='main-content'){
     const pcs=getComputedStyle(p);
-    if(pcs.overflowY==='hidden'||pcs.overflowX==='hidden'){clip=p;break;}
+    const hx=pcs.overflowX==='hidden',hy=pcs.overflowY==='hidden';
+    if(hx||hy){clip=p;clipX=hx;clipY=hy;break;}
     p=p.parentElement;
   }
   if(!clip)return;
   const r=el.getBoundingClientRect(),c=clip.getBoundingClientRect();
   if(r.width<1||r.height<1)return;
-  const overlap=Math.max(0,Math.min(r.bottom,c.bottom)-Math.max(r.top,c.top))
-               *Math.max(0,Math.min(r.right,c.right)-Math.max(r.left,c.left));
-  if(overlap<=0){
+  // PER AXIS, and only an axis that is genuinely hidden. An axis that
+  // SCROLLS has not hidden anything - it has moved it off-screen, and it
+  // comes back when you scroll. Judging both axes against a box that
+  // scrolls on one of them reports every horizontally-docked phone rail and
+  // every tall scrolling card body as broken; that exact false positive is
+  // why the +Row/+Col strip could not be held by a fragment. A box hidden
+  // on BOTH axes is unchanged, which is the case the check was written for
+  // (a centred flex body spilling out of both ends).
+  // NOTE: no backticks in this comment - the PROBE is a template literal.
+  const outX=clipX&&(r.right<=c.left||r.left>=c.right);
+  const outY=clipY&&(r.bottom<=c.top||r.top>=c.bottom);
+  if(outX||outY){
     bad.push({why:'text is clipped completely out of view',
       text:textOfOwn(el).slice(0,40),
       cls:el.className&&el.className.toString().slice(0,50),
@@ -458,6 +492,18 @@ document.querySelectorAll('#main-content *').forEach(el=>{
       text:own.slice(0,34),ratio:Math.round(ratio*100)/100,
       color:cs.color,bg:getComputedStyle(el).backgroundColor,
       cls:(el.className||'').toString().slice(0,50)});
+  }
+});
+// The tool rail must never need VERTICAL scrolling. It is navigation
+// chrome: a tool you have to discover by scrolling a column is, in
+// practice, a tool nobody finds - and the rail was a vertically-scrolling
+// pill until Sept 2026, with Trash the entry most likely to fall off a
+// short laptop viewport. Scoped to the vertical axis on purpose, so the
+// phone dock (which scrolls sideways by design) is naturally exempt.
+document.querySelectorAll('#main-content .board-rail').forEach(el=>{
+  if(el.scrollHeight>el.clientHeight+2){
+    bad.push({why:'the tool rail cannot show all its tools without scrolling',
+      scroll:el.scrollHeight,client:el.clientHeight});
   }
 });
 document.querySelectorAll('#main-content .card, #main-content [class*="-row"], #main-content [class*="-tile"]').forEach(el=>{
