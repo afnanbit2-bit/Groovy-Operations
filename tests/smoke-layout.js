@@ -329,6 +329,30 @@ const FRAGMENTS={
     app.run(`(_fabRegDate={preset:'custom',from:'${day(7)}',to:'${day(0)}'},1)`);
     const custom=app.run('_fabRegDateBarHTML()');
     return Promise.resolve(card+'<div class="card">'+custom+'</div>');
+  },
+
+  // The Creator Database (Marketing M1): stat tiles, filter bar, a table
+  // carrying every tier chip (including the "manual" badge and an unscored
+  // row) and the Needs completion column. The table is allowed to scroll
+  // sideways inside its own wrapper at 420px; the page must not.
+  'marketing — creator database':()=>{
+    const LS={getItem:()=>null,setItem(){},removeItem(){}};
+    const rows=[
+      {ig_handle:'saritasangrez',name:'Sarita Sangrez',tier:'A',score:82,follower_count:128000,engagement_rate:0.052,city:'Lahore',niche:['Fashion Creator','Content Creator'],status:'active'},
+      {ig_handle:'night_flarz',name:'Night Flarz',tier:'B',score:61,follower_count:42000,engagement_rate:0.031,city:'Karachi',niche:['Content Creator'],status:'active',tier_is_override:true,tier_formula:'C',tier_override_reason:'Strong past sales'},
+      {ig_handle:'st4rr.doll',name:'',tier:'C',score:35,follower_count:12000,engagement_rate:0.02,city:'Islamabad',niche:['Blogger','Meme/Comedy','Fitness'],status:'do_not_use'},
+      {ig_handle:'shoaibkhn.t',name:'Shoaib Khan',tier:'below_threshold',score:60,follower_count:500000,engagement_rate:0.005,city:'Rahim Yar Khan',niche:[],status:'blacklisted'},
+      {ig_handle:'shadysaidthat',name:'',tier:null,score:null,follower_count:null,engagement_rate:null,city:'',niche:[],status:'active'}
+    ].map((r,i)=>Object.assign({id:'cr_'+i},r));
+    const app=loadApp({files:['js/auth.js','js/marketing.js'],currentPage:'mkt-creators',
+      session:{uid:'u1',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'},
+      globals:{localStorage:LS,getDocs:async()=>({docs:rows.map(r=>({id:r.id,data:()=>r}))})}});
+    return app.run('loadMarketingCreators()').then(()=>{
+      const page=app.run('renderMarketingCreators()');
+      app.run("_mktFilter.view='incomplete'");
+      const incomplete=app.run('_mktListHTML()');
+      return page+incomplete;
+    });
   }
 };
 

@@ -1368,3 +1368,90 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   .board-link-handle{opacity:1;width:16px;height:16px}
   .board-find input{flex:1;min-width:0}
 }
+
+/* ── The Sales Team ▸ Marketing — Creator Database (Sept 2026) ─────────
+   js/marketing.js. Tier colours use the SEMANTIC accent palette (they are
+   state, not decoration) so both themes are handled by the tokens. */
+.mkt-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.mkt-actions{display:flex;gap:8px;flex-wrap:wrap}
+.mkt-primary{background:var(--dark);color:var(--on-dark);border-color:var(--dark)}
+.mkt-primary:hover{opacity:.88;color:var(--on-dark)}
+.mkt-warn{background:var(--accent-warning-soft);color:var(--accent-warning);border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:12px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.mkt-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.mkt-stat{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;cursor:pointer;font-family:inherit;color:var(--text);min-width:0}
+.mkt-stat:hover{border-color:var(--dark)}
+.mkt-stat-label{font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.mkt-stat-val{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.mkt-stat-sub{font-size:11px;color:var(--muted)}
+.mkt-filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.mkt-search{flex:1 1 240px;min-width:0;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);color:var(--text);font-family:inherit}
+.mkt-chiprow{display:flex;gap:6px}
+.mkt-select{padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--surface);color:var(--text);font-family:inherit}
+.mkt-card{padding:0;overflow:hidden}
+.mkt-count{font-size:11px;color:var(--muted);padding:10px 14px;border-bottom:1px solid var(--border)}
+.mkt-tablewrap{overflow-x:auto}
+.mkt-table{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
+.mkt-table th{text-align:left;font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap}
+.mkt-table td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+.mkt-table .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mkt-row{cursor:pointer}
+.mkt-row:hover,.mkt-row:focus{background:var(--hover);outline:none}
+.mkt-dim td{color:var(--muted)}
+.mkt-name{font-weight:600}
+.mkt-handle{font-size:12px;color:var(--muted)}
+.mkt-niche{max-width:220px}
+.mkt-tag-chip{display:inline-block;font-size:10px;padding:2px 7px;margin:1px 3px 1px 0;border-radius:10px;background:var(--soft);color:var(--text);white-space:nowrap}
+.mkt-tier{display:inline-block;min-width:26px;text-align:center;font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;white-space:nowrap}
+.mkt-tier-a{background:var(--accent-success-soft);color:var(--accent-success)}
+.mkt-tier-b{background:var(--soft);color:var(--text)}
+.mkt-tier-c{background:var(--accent-warning-soft);color:var(--accent-warning)}
+.mkt-tier-low{background:var(--accent-urgent-soft);color:var(--accent-urgent)}
+.mkt-tier-none{background:transparent;color:var(--muted);border:1px dashed var(--border)}
+.mkt-override{display:inline-block;margin-left:5px;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border-radius:8px;border:1px solid var(--accent-warning);color:var(--accent-warning);cursor:help}
+.mkt-status{font-size:11px;font-weight:600;white-space:nowrap}
+.mkt-status-do_not_use{color:var(--accent-warning)}
+.mkt-status-blacklisted{color:var(--accent-urgent)}
+.mkt-missing{font-size:11px;color:var(--accent-warning)}
+.mkt-pager{display:flex;gap:10px;align-items:center;justify-content:flex-end;padding:10px 14px;font-size:12px;color:var(--muted)}
+.mkt-modal-wide{max-width:780px}
+.mkt-section{border-top:1px solid var(--border);padding-top:12px;margin-top:14px}
+.mkt-section-title{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.mkt-grid-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.mkt-tags{display:flex;flex-wrap:wrap;gap:6px}
+.mkt-tag{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:5px 10px;border:1px solid var(--border);border-radius:16px;cursor:pointer;background:var(--surface)}
+.mkt-tag input{margin:0}
+.mkt-tag:has(input:checked){border-color:var(--dark);background:var(--soft)}
+.mkt-preview{margin-top:10px;font-size:13px;line-height:1.5;padding:10px 12px;border-radius:8px;background:var(--surface-2)}
+.mkt-muted{color:var(--muted)}
+.mkt-note{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5}
+.mkt-lifetime{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.mkt-lifetime div{display:flex;flex-direction:column;font-size:11px;color:var(--muted)}
+.mkt-lifetime b{font-size:16px;color:var(--text);font-variant-numeric:tabular-nums}
+.mkt-prov{font-size:11px;color:var(--muted);margin-top:12px}
+.mkt-error{background:var(--accent-urgent-soft);color:var(--accent-urgent);border-radius:8px;padding:9px 11px;font-size:12px;margin-top:12px;line-height:1.5}
+.mkt-modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+.mkt-modal-actions .btn-primary{width:auto;margin-top:0;padding:10px 18px}
+.mkt-band{display:flex;gap:8px;align-items:flex-end;margin-bottom:6px}
+.mkt-band .field{flex:1;min-width:0}
+.mkt-band-label{font-size:11px;font-weight:600;color:var(--muted)}
+.mkt-band-x{flex-shrink:0;width:34px;height:36px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--muted);cursor:pointer;font-size:16px}
+.mkt-band-x:hover{color:var(--accent-urgent);border-color:var(--accent-urgent)}
+@media (max-width:600px){
+  .mkt-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .mkt-grid-4{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .mkt-lifetime{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .mkt-filters .mkt-select{flex:1 1 40%}
+  /* The table becomes a stack of rows at phone width — a sideways-scrolling
+     table hid Niche and Status off-screen (caught by smoke-layout). */
+  .mkt-table{min-width:0;display:block}
+  .mkt-table thead{display:none}
+  .mkt-table tbody{display:block}
+  .mkt-table tr{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding:11px 14px;border-bottom:1px solid var(--border)}
+  .mkt-table td{display:block;padding:0;border:none}
+  .mkt-table .mkt-c-who{flex:1 1 55%;min-width:0}
+  .mkt-table .mkt-c-tier{flex:0 0 auto}
+  .mkt-table td.num{text-align:left;font-size:12px}
+  .mkt-table td[data-label]::before{content:attr(data-label) " ";color:var(--muted);font-size:11px}
+  .mkt-table .mkt-niche{flex:1 1 100%;max-width:none}
+  .mkt-table .mkt-c-last{flex:1 1 100%}
+}

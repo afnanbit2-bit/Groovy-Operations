@@ -658,6 +658,32 @@ async function uploadToCloudinary(file){
   return d.secure_url;
 }
 
+// ── The Sales Team ▸ (Sept 2026) ──
+// A collapsible parent of SUB-AREAS, each with its own list of pages —
+// an array, not a hardcoded menu, because more sub-areas are coming. Each
+// sub-area supplies its own pages (Marketing: mktNavItems() in
+// js/marketing.js), so a new page is added there, not here.
+function _salesTeamGroups(){
+  const groups=[];
+  if(typeof mktNavItems==='function'){const it=mktNavItems();if(it.length)groups.push({label:'Marketing',items:it});}
+  return groups;
+}
+function _salesTeamNavHTML(groups){
+  if(!groups.length)return'';
+  const open=String(currentPage||'').startsWith('mkt-')||(session&&session.role==='creator_content_ops_lead');
+  const count=groups.reduce((n,g)=>n+g.items.length,0);
+  const h=count*40+groups.length*30+8;
+  return`
+    <div class="nav-divider"></div>
+    <div class="nav-item" id="nav-sales-toggle" onclick="window.toggleSalesNav()" style="display:flex;justify-content:space-between;align-items:center">
+      <span>The Sales Team</span><span id="sales-nav-arrow" style="font-size:10px;transition:transform .2s">${open?'▾':'▸'}</span>
+    </div>
+    <div id="sales-subnav" data-h="${h}" style="overflow:hidden;transition:max-height .2s;max-height:${open?h+'px':'0'}">
+      ${groups.map(g=>`<div class="nav-group-label" style="padding:8px 12px 4px 22px;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">${g.label}</div>
+        ${g.items.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:30px;font-size:12px">${i.label}</div>`).join('')}`).join('')}
+    </div>`;
+}
+
 // ── Auth ──
 /* ── Creative Hub staged rollout (Sept 2026) ───────────────────────────
    ONE list, six call sites. Notes + Mood Boards are gated by USERNAME — not
@@ -683,6 +709,16 @@ function _canSeeCreativeHub(){
   return !!(typeof session!=='undefined'&&session&&_CREATIVE_HUB_USERS.indexOf(session.u)>-1);
 }
 function buildNav(){
+  // Creator & Content Operations Lead — The Sales Team ▸ Marketing plus a
+  // view-only Inventory Intel. Scoped in showPage below as well; the page
+  // list itself comes from the same groups the owners see.
+  if(session.role==='creator_content_ops_lead'){
+    const sb=document.getElementById('sidebar');
+    if(sb)sb.innerHTML=_salesTeamNavHTML(_salesTeamGroups()).replace(/^\s*<div class="nav-divider"><\/div>/,'')
+      +`<div class="nav-divider"></div><div class="nav-item" id="nav-shopify-intel" onclick="window.showPage('shopify-intel')">Inventory Intel</div>`;
+    _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
+    return;
+  }
   // Fulfilment account (Umair) — a single-purpose nav: Daily Performance only.
   if(session.role==='fulfillment'){
     const sb=document.getElementById('sidebar');
@@ -791,7 +827,9 @@ function buildNav(){
       ${hrmSubItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:22px;font-size:12px"><span class="icon">${i.iconName?_icon(i.iconName,16):''}</span>${i.label}</div>`).join('')}
     </div>`:'';
 
-  document.getElementById('sidebar').innerHTML=mainNav+printNav+storeNav+hrmNav;
+  const salesNav=_salesTeamNavHTML(_salesTeamGroups());
+
+  document.getElementById('sidebar').innerHTML=mainNav+salesNav+printNav+storeNav+hrmNav;
   // ── Mobile bottom nav: 5-button "More" pattern (3 buttons for workers) ──
   _renderMobNav({isOwner,isWorker,isViewer,isStore,om,canPO,printItems,storeSubItems,hrmSubItems,mainItems});
 }
@@ -841,6 +879,14 @@ function _renderMobNav(ctx){
     mob.innerHTML=_mobNavBtn('fulfillment','activity','Analytics',"window.showFulfillTab('analytics')")
                  +_mobNavBtn('fulfillment-entry','plus','Record',"window.showFulfillTab('entry')")
                  +_mobNavBtn('fulfillment-log','list','Log',"window.showFulfillTab('log')");
+    _updateMobNavActive(currentPage);
+    return;
+  }
+  if(session&&session.role==='creator_content_ops_lead'){
+    mob.className='cols-3';
+    mob.style.gridTemplateColumns='';
+    mob.innerHTML=_mobNavBtn('mkt-creators','people','Creators',"window.showPage('mkt-creators')")
+                 +_mobNavBtn('shopify-intel','shop','Intel',"window.showPage('shopify-intel')");
     _updateMobNavActive(currentPage);
     return;
   }
@@ -897,6 +943,7 @@ function _updateMobNavActive(pageId){
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
     'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more','store-cash-ledger':'more',
     'activity':'more','monitor':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more',
+    'mkt-creators':'more',
     'creative-hub':'more','notes':'more','note-detail':'more','boards':'more','boards-all':'more','board-canvas':'more',
     'my-work':'my-work'
   };
@@ -922,6 +969,20 @@ window.togglePrintNav=function(){
   const open=sub.style.maxHeight!=='0px'&&sub.style.maxHeight!=='0';
   sub.style.maxHeight=open?'0':'300px';
   if(arrow)arrow.textContent=open?'▸':'▾';
+};
+window.toggleSalesNav=function(){
+  const sub=document.getElementById('sales-subnav');
+  const arrow=document.getElementById('sales-nav-arrow');
+  if(!sub)return;
+  const open=sub.style.maxHeight!=='0px'&&sub.style.maxHeight!=='0';
+  sub.style.maxHeight=open?'0':((sub.dataset&&sub.dataset.h)||300)+'px';
+  if(arrow)arrow.textContent=open?'▸':'▾';
+};
+// Mobile: "The Sales Team ›" in the More sheet opens every sub-area's pages.
+window.openSalesSheet=function(){
+  const items=[];
+  _salesTeamGroups().forEach(g=>g.items.forEach(i=>items.push({iconName:i.iconName||'list',label:g.label+' · '+i.label,pageId:i.id})));
+  window.openMobSheet('The Sales Team',items);
 };
 window.toggleHRMNav=function(){
   const sub=document.getElementById('hrm-subnav');
@@ -989,6 +1050,7 @@ window.openMoreSheet=function(){
   if(om||session.canFabric)items.push({iconName:'box',label:'Fabric Inventory',pageId:'fabric-inventory'});
   if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
   if(om)items.push({iconName:'activity',label:'Courier Performance',pageId:'fulfillment'});
+  if(_salesTeamGroups().length)items.push({iconName:'people',label:'The Sales Team ›',onClick:'window.openSalesSheet()'});
   // Embellishments dept items (visible to owners/managers + relevant workers)
   if(om||session.u==='ammar'||session.u==='haris'||(typeof isPrintWorker==='function'&&isPrintWorker()))items.push({iconName:'palette',label:'Recipe Directory',pageId:'recipe-directory'});
   if(om||['asghar','zohaib','waqas','haris'].includes(session.u))items.push({iconName:'print',label:'Embellishment Jobs',pageId:'printing-jobs'});
@@ -1070,6 +1132,12 @@ window.showPage=async function(id){
   // other pages (e.g. the topbar logo's dashboard link) EXCEPT the chrome
   // pages above, which are for everyone.
   if(session&&session.role==='fulfillment'&&id!=='fulfillment'&&_CHROME_PAGES.indexOf(id)<0)id='fulfillment';
+  // Creator & Content Operations Lead: the Sales Team pages and a
+  // view-only Inventory Intel, plus the chrome pages. Inventory Intel is
+  // allowed ONLY because that page never writes — if it ever gains a write
+  // action this grant must be revisited (logged in the Inventory
+  // Intelligence change request).
+  if(session&&session.role==='creator_content_ops_lead'&&!String(id).startsWith('mkt-')&&id!=='shopify-intel'&&_CHROME_PAGES.indexOf(id)<0)id='mkt-creators';
   currentPage=id;
   document.querySelectorAll('.nav-item,.mob-nav-item').forEach(n=>n.classList.remove('on'));
   document.getElementById('nav-'+id)?.classList.add('on');
@@ -1081,6 +1149,11 @@ window.showPage=async function(id){
     const sub=document.getElementById('store-subnav');
     const arrow=document.getElementById('store-nav-arrow');
     if(sub&&sub.style.maxHeight==='0px'){sub.style.maxHeight='300px';if(arrow)arrow.textContent='▾';}
+  }
+  if(id.startsWith('mkt-')){
+    const sub=document.getElementById('sales-subnav');
+    const arrow=document.getElementById('sales-nav-arrow');
+    if(sub&&sub.style.maxHeight==='0px'){sub.style.maxHeight=((sub.dataset&&sub.dataset.h)||300)+'px';if(arrow)arrow.textContent='▾';}
   }
   if(id.startsWith('recipe-')||id.startsWith('printing-')||id==='observer-tower'||id==='qc-report-page'||id==='billing-detail'){
     const sub=document.getElementById('print-subnav');
@@ -1113,6 +1186,10 @@ function renderPage(id){
     else m.innerHTML=renderBugTrackerPage();
   }
   else if(id==='profile'){if(!profilesLoaded){m.innerHTML=gvSkeleton(3);loadProfiles().then(()=>{if(currentPage===id){m.innerHTML=renderProfilePage();_profileHydrate();}});}else{m.innerHTML=renderProfilePage();_profileHydrate();}}
+  // ── The Sales Team ▸ Marketing ──
+  // loadMarketingCreators cannot reject; a failed read renders its own
+  // error card with Retry (see "Loading must never hang" in CLAUDE.md).
+  else if(id==='mkt-creators'){if(!mktCreatorsLoaded){m.innerHTML=gvSkeleton(6);loadMarketingCreators().then(()=>{if(currentPage===id)m.innerHTML=renderMarketingCreators();});}else m.innerHTML=renderMarketingCreators();}
   else if(id==='creative-hub')m.innerHTML=renderCreativeHub();
   else if(id==='notes'){if(!notesLoaded){m.innerHTML=gvSkeleton(6);loadNotesData().then(()=>{if(currentPage===id)m.innerHTML=renderNotesPage();});}else m.innerHTML=renderNotesPage();}
   else if(id==='note-detail'){_notesOpenDetail();return;}
@@ -1217,6 +1294,8 @@ const BUG_PAGE_NAMES={
   'billing-detail':'Billing Detail',
   'color-library':'Color Library',
   'bug-tracker':'Bug Tracker',
+  'shopify-intel':'Inventory Intel',
+  'mkt-creators':'Marketing — Creator Database',
   'creative-hub':'Creative Hub',
   'notes':'Notes',
   'note-detail':'Note Detail',
