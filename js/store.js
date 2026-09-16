@@ -1176,7 +1176,7 @@ function _ilEsc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;
 window.ilRetryLoad=async function(){
   const body=document.getElementById('il-body');
   if(body)body.innerHTML='<div class="empty" style="padding:22px;text-align:center">Loading…</div>';
-  await loadStoreTransactions(true);
+  await loadStoreTransactions('full',true);
   const m=document.getElementById('main-content');
   if(m&&currentPage==='store-log'){m.innerHTML=renderStoreLog();refreshIssueLog();}
 };
@@ -1662,6 +1662,9 @@ function normPO(s){return s.replace(/[\s\-]/g,'').toLowerCase();}
 // to look different, which is the whole lesson of the vanished Stock Log.
 let _storeLoadErrors={};
 function _storeLoadFailed(col){return _storeLoadErrors[col]||null;}
+// Exposed for tests and for anything that needs to know how deep the
+// in-memory movement history actually goes.
+function _storeTxnLoadedDepth(){return _storeTxnDepth;}
 function _storeIsPermission(e){
   return !!e&&(e.code==='PERMISSION_DENIED'||e.status===401||e.status===403
     ||String(e.message||'').indexOf('permission')>-1);
@@ -1673,26 +1676,43 @@ function _storeIsPermission(e){
 // nothing on screen used. That is what exhausted the read quota and turned
 // every subsequent read into an HTTP 429. It is loaded on demand now, once
 // per session, by `loadStoreTransactions()`.
-const _STORE_TXN_LOAD={
-  name:'store_transactions',
-  run:()=>fsQueryOrdered('store_transactions','ts',_STORE_TXN_LIMIT),
-  apply:v=>{allTransactions=v;}
-};
-const _STORE_TXN_LIMIT=3000;
-let _storeTxnsLoaded=false;
-// `force` re-reads even when a previous attempt succeeded — the Retry button.
-async function loadStoreTransactions(force){
-  if(_storeTxnsLoaded&&!force)return[];
-  const failed=await _storeRunLoads([_STORE_TXN_LOAD]);
-  _storeTxnsLoaded=!failed.length;
+// It is loaded in TWO DEPTHS, because the three pages do not want the same
+// thing. The Store Dashboard — the page every store user lands on — renders
+// `allTransactions.slice(0,10)`, and was reading 3,000 documents to show
+// ten. The Log and Analytics genuinely do scan the whole history.
+//
+// Blaze removed the daily cap, so this is now a bill rather than an outage;
+// it is still 120x more reads than that page has any use for.
+const _STORE_TXN_RECENT=25;    // the Dashboard's last-ten strip, with headroom
+const _STORE_TXN_FULL=3000;    // the Log and Analytics, which scan everything
+const _STORE_TXN_LIMIT=_STORE_TXN_FULL;   // kept: the Retry path's full re-read
+// How many rows the history in memory was READ AT, so a page asking for less
+// than we already hold is free, and one asking for more upgrades.
+let _storeTxnDepth=0;
+function _storeTxnWant(need){return need==='full'?_STORE_TXN_FULL:_STORE_TXN_RECENT;}
+function _storeTxnJob(limit){
+  return{name:'store_transactions',
+    run:()=>fsQueryOrdered('store_transactions','ts',limit),
+    apply:v=>{allTransactions=v;}};
+}
+const _STORE_TXN_LOAD=_storeTxnJob(_STORE_TXN_FULL);
+// `need` is 'recent' (default) or 'full'; `force` re-reads whatever the
+// current depth is, which is what the Log's Retry button wants.
+async function loadStoreTransactions(need,force){
+  const want=_storeTxnWant(need);
+  if(!force&&_storeTxnDepth>=want)return[];
+  const failed=await _storeRunLoads([_storeTxnJob(want)]);
+  _storeTxnDepth=failed.length?0:want;
   if(failed.length)_storeReportFailures(failed);
   return failed;
 }
-// Anything that WRITES a transaction has to work from the real history, not
-// from an empty array it was never given. Rename migrates every matching row.
+// Anything that WRITES against the history has to work from the FULL history,
+// never the Dashboard's 25 — `_renameStoreItemCode` migrates every row
+// carrying the old code, and a partial scan would silently miss most of them
+// while reporting a count that looks fine.
 async function _storeEnsureTransactions(){
-  if(!_storeTxnsLoaded)await loadStoreTransactions();
-  return _storeTxnsLoaded;
+  if(_storeTxnDepth<_STORE_TXN_FULL)await loadStoreTransactions('full');
+  return _storeTxnDepth>=_STORE_TXN_FULL;
 }
 const _STORE_LOADS=[
   {name:'store_items',        run:()=>fsList('store_items'),                          apply:v=>{allItems=v;}},

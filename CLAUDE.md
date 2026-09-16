@@ -2716,6 +2716,41 @@ because the helpers swallowed the failure, it presented as data vanishing.
   the Log's error card name the quota and point at Firebase Console → Usage
   instead of sending the next person to `firestore.rules`.
 
+**Blaze, and the two depths (Sept 2026).** Afnan upgraded the project to
+Blaze, which removes the 50,000/day cap — the free allowance still applies
+daily and only usage past it is billed, so an over-reading page is now a
+**bill rather than an outage**. That makes the remaining waste worth fixing
+rather than urgent.
+
+The one that mattered: **the Store Dashboard is where every store user
+lands, it renders `allTransactions.slice(0,10)`, and it was reading 3,000
+documents to show ten.** The history now loads at TWO DEPTHS —
+`_STORE_TXN_RECENT` (25) for the Dashboard, `_STORE_TXN_FULL` (3000) for the
+Log and Analytics — tracked by `_storeTxnDepth`, which is the READ DEPTH,
+not a boolean. A page asking for less than is already held is free; one
+asking for more upgrades; it never downgrades.
+
+**`loadStoreTransactions(need, force)` changed signature** — `need` is
+`'recent'`/`'full'` and `force` moved to the second argument. The old
+`loadStoreTransactions(true)` now silently means "recent, don't force",
+which is exactly the sort of quiet breakage this file exists to prevent, so
+check every call site if you touch it again.
+
+**Tiering would have silently broken rename, and that is the part worth
+remembering.** `_renameStoreItemCode` migrates every row carrying the old
+code by scanning `allTransactions`; against the Dashboard's 25 it would have
+reported a migrated count that looks perfectly reasonable while missing
+almost the entire history. `_storeEnsureTransactions()` therefore demands
+**full** depth, never merely "loaded". Asserted both ways. **Any future
+read-reduction has to ask what WRITES against the data, not just what
+renders it.**
+
+**Known limit, not fixed:** `_STORE_TXN_FULL` is a cap, so a history longer
+than 3,000 rows would leave rename missing the oldest ones. The honest fix
+is a targeted `where('itemCode','==',code)` query rather than scanning a
+capped array — cheaper AND complete — but it is case-SENSITIVE where the
+current scan is not, so it needs deciding rather than swapping in.
+
 **If store data goes missing again, read the error card first — it now names
 the collection AND the reason.** And before adding any collection to
 `_STORE_LOADS`, check which pages actually read it; the default should be

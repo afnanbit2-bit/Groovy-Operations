@@ -1170,9 +1170,13 @@ window.showPage=async function(id){
   if((id.startsWith('store-')||id.startsWith('po-issue-')||id==='po-edit-inbox')
      &&!(typeof _storeDataLoaded==='function'?_storeDataLoaded():allItems.length)){await loadStoreData();}
   // The movement history is thousands of documents. Only the three pages that
-  // actually read it pay for it — see "the Store's REST reads" in CLAUDE.md.
-  if((id==='store-log'||id==='store-analytics'||id==='store-dashboard')
-     &&typeof loadStoreTransactions==='function'){await loadStoreTransactions();}
+  // actually read it pay for it, and the Dashboard — which renders the last
+  // TEN — asks for a shallow read rather than the whole history.
+  // See "the Store's REST reads" in CLAUDE.md.
+  if(typeof loadStoreTransactions==='function'){
+    if(id==='store-log'||id==='store-analytics')await loadStoreTransactions('full');
+    else if(id==='store-dashboard')await loadStoreTransactions('recent');
+  }
   renderPage(id);
 };
 

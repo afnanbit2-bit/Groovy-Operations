@@ -140,7 +140,7 @@ module.exports=async function(){
       return res(200,{documents:[]});
     });
     await a.run('loadStoreData()');
-    await a.run('loadStoreTransactions()');
+    await a.run("loadStoreTransactions('full')");
     s.eq('items still loaded',a.run('allItems.length'),1);
     s.eq('categories still loaded',a.run('allStoreCategories.length'),1);
     s.eq('the refused one is empty',a.run('allTransactions.length'),0);
@@ -160,7 +160,7 @@ module.exports=async function(){
   {
     const a=app(u=>/runQuery/.test(u)?res(403,DENIED):res(200,{documents:[]}));
     await a.run('loadStoreData()');
-    await a.run('loadStoreTransactions()');      // what opening store-log does
+    await a.run("loadStoreTransactions('full')");   // what opening store-log does
     const head=a.run('renderStoreLog()');
     s.ok('the header does not claim 0 movements',!/0 movements/.test(head),'header still counts a failed read as 0');
     s.ok('it says it could not be loaded',/could not be loaded/.test(head));
@@ -178,7 +178,7 @@ module.exports=async function(){
   {
     const a=app(u=>res(200,/runQuery/.test(u)?[]:{documents:[]}));
     await a.run('loadStoreData()');
-    await a.run('loadStoreTransactions()');
+    await a.run("loadStoreTransactions('full')");
     s.ok('header counts 0 movements',/0 movements/.test(a.run('renderStoreLog()')));
     a.run("document.getElementById('il-body');document.getElementById('il-pager');");
     a.run('refreshIssueLog()');
@@ -229,12 +229,57 @@ module.exports=async function(){
       a.run("_STORE_LOADS.every(j=>j.name!=='store_transactions')"));
 
     s.section('and the three pages that need it fetch it on demand, once');
-    await a.run('loadStoreTransactions()');
+    await a.run("loadStoreTransactions('full')");
     s.eq('one runQuery now',urls.filter(u=>/runQuery/.test(u)).length,1);
-    await a.run('loadStoreTransactions()');
+    await a.run("loadStoreTransactions('full')");
     s.eq('a second call is a no-op',urls.filter(u=>/runQuery/.test(u)).length,1);
-    await a.run('loadStoreTransactions(true)');
+    await a.run("loadStoreTransactions('full',true)");
     s.eq('but Retry forces a re-read',urls.filter(u=>/runQuery/.test(u)).length,2);
+  }
+
+  s.section('the Dashboard reads 25 rows, not 3000');
+  {
+    // It renders allTransactions.slice(0,10) and was reading the whole
+    // history to do it — 120x the rows that page has any use for. Blaze
+    // makes that a bill rather than an outage; it is still waste.
+    const lims=[];
+    const a=app((u,b)=>{
+      if(b&&b.structuredQuery)lims.push(b.structuredQuery.limit);
+      return res(200,/runQuery/.test(u)?[]:{documents:[]});
+    });
+    await a.run("loadStoreTransactions('recent')");
+    s.eq('the shallow read asks for 25',lims[0],25);
+
+    s.eq('and that is the whole read',lims.length,1);
+    s.eq('recorded as a shallow depth',a.run('_storeTxnLoadedDepth()'),25);
+
+    s.section('and a deeper page upgrades it');
+    await a.run("loadStoreTransactions('full')");
+    s.eq('the Log re-reads',lims.length,2);
+    s.ok('for far more than 25',lims[1]>25,'asked for '+lims[1]);
+    s.eq('at the full depth',a.run('_storeTxnLoadedDepth()'),3000);
+
+    s.section('but never downgrades');
+    await a.run("loadStoreTransactions('recent')");
+    s.eq('holding the full history satisfies a shallow ask',lims.length,2);
+  }
+
+  s.section('a WRITE against the history always demands the full depth');
+  {
+    // Tiering would otherwise silently break rename: it migrates every row
+    // carrying the old code, and scanning the Dashboard's 25 would report a
+    // count that looks fine while missing almost everything.
+    const lims=[];
+    const a=app((u,b)=>{
+      if(b&&b.structuredQuery)lims.push(b.structuredQuery.limit);
+      return res(200,/runQuery/.test(u)?[]:{documents:[]});
+    });
+    await a.run("loadStoreTransactions('recent')");
+    s.eq('the dashboard depth is shallow',a.run('_storeTxnLoadedDepth()'),25);
+    await a.run("_storeEnsureTransactions()");
+    s.eq('a write forces the full read',a.run('_storeTxnLoadedDepth()'),3000);
+    s.eq('which is a second query',lims.length,2);
+    s.ok('for far more than the shallow 25',lims[1]>25,'asked for '+lims[1]);
   }
 
   s.section('a failed load does not re-run on every navigation');
@@ -281,7 +326,7 @@ module.exports=async function(){
     const QUOTA={error:{code:429,status:'RESOURCE_EXHAUSTED',message:'Quota exceeded.'}};
     const a=app(u=>/runQuery/.test(u)?res(429,QUOTA):res(200,{documents:[]}));
     await a.run('loadStoreData()');
-    await a.run('loadStoreTransactions()');
+    await a.run("loadStoreTransactions('full')");
     a.run("document.getElementById('il-body');document.getElementById('il-pager');");
     a.run('refreshIssueLog()');
     const body=a.el('il-body').innerHTML;
