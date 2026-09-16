@@ -2770,8 +2770,10 @@ dispatch tabs). Source spec: `GRVY-Marketing-Module-Spec.md` (Ammar's
 Downloads, not in the repo). Built **one milestone at a time**, same as the
 Mood Boards table round: M1 Creator Database + scoring · M2 Dispatch Log ·
 M3 Paid PR approvals · M4 discount codes · M5 reminders + dashboard card ·
-M6 reports · M7 migration. **M1–M3 are built.** M1 = PR #58, M2 = PR #59
-(both merged and live); M3 is Paid PR approvals, below.
+M6 reports · M7 migration. **M1–M3 are built, merged and live** (PRs #58,
+#59, #60; Daniyal's email fixed in #61) **and their rules were published
+on 16 Sept 2026** — see "Firestore rules" below. M4 is blocked on a human
+check: whether the Shopify app may create discounts.
 
 - **Nav:** "The Sales Team ▸" is a collapsible parent of SUB-AREAS
   (`_salesTeamGroups()` / `_salesTeamNavHTML()` in `js/shared.js`); each
@@ -3585,14 +3587,16 @@ republish.
 AND `user_profiles`. Both had been waiting; the Profile page's own error
 card is what finally surfaced it.
 
-**REPUBLISH OUTSTANDING (16 Sept 2026) — send it as ONE paste of the
-current file:** `71b4acb` (Mood Boards Trash: `mood_boards/{id}/trash`),
-Marketing M1 (`creators`, `creator_handles`, `scoring_config`,
-`isContentOpsLead()`), M2 (`dispatches`) and M3 (`paid_pr_requests`,
-`isPaidPRApprover()`, the `paid_pr` dispatch clause). None of them is live
-until Afnan pastes the current file into the Console. **Marketing M1–M3 are
-not "done" until this is confirmed** — every Marketing page shows its rules
-error card until then.
+**Republished by Ammar on 16 Sept 2026** (reported in-session, after PR
+#61), from the repo file at `md5 5211506e56a03d345ba061be46ea6a20` —
+`git log --oneline -1 -- firestore.rules` is `60f8ccb`. That one paste
+covered everything that had been waiting: the Mood Boards Trash
+(`71b4acb`) and Marketing M1–M3 (`creators`, `creator_handles`,
+`scoring_config`, `dispatches`, `paid_pr_requests`, `isContentOpsLead()`
+with `daniyal@groovy.op`, `isPaidPRApprover()`). **No republish is
+outstanding as of that commit** — if `git log -- firestore.rules` shows
+anything newer than `60f8ccb`, ask for one. The Console's acceptance was
+reported by the human; it could not be checked from a session.
 
 **Keep updating both in lockstep**, per the comment at the top of
 `firestore.rules` itself. **The trigger to ask for a republish is a change
