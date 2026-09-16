@@ -37,6 +37,11 @@
 [functions."postex-payments-background"]
   schedule = "0 3 * * *"
 
+# 1:30am UTC = 6:30am PKT — Marketing discount-code redemption rollup
+# (counts orders per code; see netlify/functions/marketing-code-rollup.js)
+[functions."marketing-code-rollup"]
+  schedule = "30 1 * * *"
+
 # 2am UTC Saturday = 7am PKT — weekly close rollup
 [functions."shopify-weekly-close"]
   schedule = "0 2 * * 6"

@@ -10,7 +10,9 @@
    M5 (Sept 2026): SLA / Day-7 reminders in the bell, the dashboard card.
    M6 (Sept 2026): Reports.
    M7 (Sept 2026): the importer for the Content Tracker 2026 sheet.
-   M4 (discount codes) is waiting on a Shopify permission check —
+   M4 (Sept 2026): Shopify discount codes — created server-side by
+   netlify/functions/marketing-discounts.js, counted nightly by
+   marketing-code-rollup.js —
    see "The Sales Team ▸ Marketing" in CLAUDE.md.
 
    Who can reach it is decided by canAccessMarketing() in js/auth.js (owners
@@ -418,11 +420,13 @@ function _mktPct(r){return r==null?'—':(Math.round(r*1000)/10)+'%';}
 // "Loading must never hang"). Each read settles on its own.
 async function loadMarketingCreators(){
   _mktLoadErr=null;
-  const [cr,cfg,dsp,prq]=await Promise.allSettled([
+  const [cr,cfg,dsp,prq,cod,cmeta]=await Promise.allSettled([
     getDocs(collection(db,'creators')),
     getDoc(doc(db,'scoring_config','current')),
     getDocs(collection(db,'dispatches')),
-    getDocs(collection(db,'paid_pr_requests'))
+    getDocs(collection(db,'paid_pr_requests')),
+    getDocs(collection(db,'discount_codes')),
+    getDoc(doc(db,'shopify_sync_meta','marketing_codes'))
   ]);
   const failed=[];
   if(cr.status==='fulfilled'){
@@ -443,6 +447,11 @@ async function loadMarketingCreators(){
     mktPaidPRs=prq.value.docs.map(d=>Object.assign({id:d.id},d.data()));
     mktPaidPRsLoaded=true;
   }else{mktPaidPRsLoaded=false;failed.push('paid_pr_requests');console.warn('[marketing] paid PR requests load failed',prq.reason);}
+  if(cod.status==='fulfilled'){
+    mktCodes=cod.value.docs.map(d=>Object.assign({id:d.id},d.data()));
+    mktCodesLoaded=true;
+  }else{mktCodesLoaded=false;failed.push('discount_codes');console.warn('[marketing] discount codes load failed',cod.reason);}
+  if(cmeta.status==='fulfilled'){const m=cmeta.value;_mktCodesMeta=m&&typeof m.exists==='function'&&m.exists()?m.data():null;}
   if(failed.length)_mktLoadErr=failed;
   mktCreatorsLoaded=cr.status==='fulfilled';
   // Names for "added by" — the directory is small and its loader cannot reject.
@@ -1311,6 +1320,7 @@ window.mktOpenDispatch=function(id,creatorId){
       <div id="mkt-d-presults" class="mkt-picks"></div>
       <div id="mkt-d-products">${_mktDraftProductsHTML(d)}</div>
     </div>
+    ${d?_mktCodeSectionHTML(d):''}
     ${d?`<div class="mkt-section">
       <div class="mkt-section-title">Day-7 performance</div>
       ${perf?`<div class="mkt-perf">${_MKT_PERF_FIELDS.map(([k,l])=>`<div><span>${l}</span><b>${d[k]==null?'—':Number(d[k]).toLocaleString('en-US')}</b></div>`).join('')}</div>
@@ -1847,6 +1857,18 @@ window.mktDecidePaidPR=async function(which){
     _mktCloseModal();
     const c=_mktCreatorById(req.creator_id);
     showToast(which==='approved'?'Approved — the Paid PR dispatch is in the Dispatch Log, waiting for its products and date':'Rejected');
+    // A Paid PR always gets a code (spec §6). The approval stands whatever
+    // happens here; a failure is said out loud and retried from the dispatch.
+    if(which==='approved'&&decision.dispatch){
+      mktCreateCode(decision.dispatch.id).then(r=>{
+        if(r.error)showToast('Approved, but the discount code was not created: '+r.error+' Open the dispatch to retry.',true);
+        else{
+          showToast('Discount code created: '+r.code.code);
+          if(typeof logActivity==='function')logActivity('Discount code created',(c?'@'+c.ig_handle+' · ':'')+r.code.code);
+        }
+        _mktRerenderPage();
+      });
+    }
     if(typeof logActivity==='function')logActivity(which==='approved'?'Paid PR approved':'Paid PR rejected',(c?'@'+c.ig_handle+' · ':'')+_mktPKR(req.proposed_amount_pkr));
     _mktRerenderPage();
   }catch(e){
@@ -2043,7 +2065,7 @@ function mktDashboardLine(weekCount,pendingCount,pendingPkr,codes){
     `<b style="color:${pendingCount?'var(--accent-warning)':'var(--text)'}">${pendingCount}</b> Paid PR pending approval${pendingCount?' ('+_mktPKR(pendingPkr)+')':''}`,
     codes&&codes.live!=null
       ?`<b style="color:var(--text)">${codes.live}</b> discount codes live, ${_mktPKR(codes.redeemedPkr)} redeemed this month`
-      :'discount codes not set up yet'
+      :'discount-code figures unavailable'
   ];
   return parts.join(' · ');
 }
@@ -2055,12 +2077,14 @@ async function _mktPopulateDashboard(){
   if(!body)return;
   try{
     const since=_mktWeekStart(Date.now());
-    const [wk,pend]=await _mktWithTimeout(Promise.all([
+    const codesRead=getDocs(collection(db,'discount_codes')).then(s=>mktCodesSummary(s.docs.map(d=>d.data()),Date.now())).catch(()=>null);
+    const [wk,pend,codes]=await _mktWithTimeout(Promise.all([
       getDocs(query(collection(db,'dispatches'),where('date_of_dispatch','>=',since))),
-      getDocs(query(collection(db,'paid_pr_requests'),where('status','==','pending')))
+      getDocs(query(collection(db,'paid_pr_requests'),where('status','==','pending'))),
+      codesRead
     ]),12000);
     const pending=pend.docs.map(d=>d.data());
-    body.innerHTML=mktDashboardLine(wk.docs.length,pending.length,pending.reduce((n,r)=>n+(Number(r.proposed_amount_pkr)||0),0),null);
+    body.innerHTML=mktDashboardLine(wk.docs.length,pending.length,pending.reduce((n,r)=>n+(Number(r.proposed_amount_pkr)||0),0),codes);
   }catch(e){
     body.innerHTML=e&&e.message==='timeout'
       ?'Taking too long. <a href="#" onclick="event.preventDefault();event.stopPropagation();_mktPopulateDashboard();" style="color:inherit;text-decoration:underline">Retry</a>'
@@ -2228,6 +2252,7 @@ function renderMarketingReports(){
     <div class="card"><div class="card-title">Top ROI creators — Paid PR only</div>${_mktRoiHTML()}</div>
     <div class="card"><div class="card-title">Best performing — organic</div>${_mktOrganicHTML()}</div>
     <div class="card"><div class="card-title">Sales lift on dispatched products</div><div id="mkt-rep-lift">${_mktLiftHTML()}</div></div>
+    <div class="card"><div class="card-title">Shopify connection</div><div id="mkt-rep-shopify">${_mktShopifyHTML()}</div></div>
     <div style="height:80px"></div>`;
 }
 
@@ -2243,9 +2268,14 @@ function _mktSpendHTML(){
 }
 
 function _mktRoiHTML(){
-  const rows=mktPaidRoi(mktPaidPRs,mktCreators,null);
+  const haveCodes=mktCodesLoaded&&mktCodes.some(c=>c.dispatch_type==='paid_pr');
+  const rows=mktPaidRoi(mktPaidPRs,mktCreators,haveCodes?mktRevenueByCreator(mktCodes,'paid_pr'):null);
   if(!rows.length)return'<div class="mkt-note">No approved Paid PRs yet.</div>';
-  return`<div class="mkt-warn">ROI needs the revenue from each creator's discount code, and discount codes are not live yet. Until they are, this ranks creators by Paid PR spend — it is not an ROI ranking.</div>
+  if(haveCodes)return`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
+    <thead><tr><th>Creator</th><th class="num">Paid PRs</th><th class="num">Spend</th><th class="num">Attributed revenue</th><th class="num">ROI</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr><td class="mkt-c-who">${_mktWhoCell(r.creator)}</td><td class="num" data-label="Paid PRs">${r.paidPrs}</td><td class="num" data-label="Spend">${_mktPKR(r.spend)}</td><td class="num" data-label="Revenue">${_mktPKR(r.revenue)}</td><td class="num" data-label="ROI">${r.roi==null?'—':`<b class="${r.roi>=1?'mkt-up':'mkt-down'}">${r.roi}×</b>`}</td></tr>`).join('')}</tbody>
+  </table></div><div class="mkt-note">ROI = revenue from orders that used the creator's Paid PR codes ÷ approved Paid PR spend. Revenue is recounted nightly${_mktCodesMeta&&_mktCodesMeta.last_run_at?' (last: '+_mktWhen(_mktCodesMeta.last_run_at)+')':''}; a refund made after an order was synced is not deducted.</div>`;
+  return`<div class="mkt-warn">ROI needs the revenue from each creator's Paid PR discount code, and no Paid PR has a code yet. Until one does, this ranks creators by Paid PR spend — it is not an ROI ranking.</div>
   <div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
     <thead><tr><th>Creator</th><th class="num">Paid PRs</th><th class="num">Spend</th><th class="num">Attributed revenue</th><th class="num">ROI</th></tr></thead>
     <tbody>${rows.map(r=>`<tr><td class="mkt-c-who">${_mktWhoCell(r.creator)}</td><td class="num" data-label="Paid PRs">${r.paidPrs}</td><td class="num" data-label="Spend">${_mktPKR(r.spend)}</td><td class="num" data-label="Revenue"><span class="mkt-muted">not measurable yet</span></td><td class="num" data-label="ROI"><span class="mkt-muted">—</span></td></tr>`).join('')}</tbody>
@@ -2264,8 +2294,17 @@ function _mktOrganicHTML(){
 window.mktOrganicSort=function(k){if(k==='views'||k==='engagement'){_mktOrganicSort=k;_mktRerenderPage();}};
 
 function _mktLiftHTML(){
+  const aRows=mktCodesLoaded?mktAttributedRows(mktCodes,mktDispatches,mktCreators):null;
   const coded=`<div class="mkt-lift-line"><div class="mkt-section-title">Attributed — dispatches with a discount code</div>
-    <div class="mkt-note">Discount codes are not live yet, so there is no attributed revenue to report. This becomes a hard number (Shopify revenue from each code's redemptions) once they are.</div></div>`;
+    ${aRows===null?'<div class="mkt-error">Discount codes could not be read.</div>'
+      :!aRows.length?'<div class="mkt-note">No discount codes yet. Each code’s Shopify revenue appears here once it has been used.</div>'
+      :`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
+        <thead><tr><th>Code</th><th>Creator</th><th>Dispatch</th><th class="num">Redemptions</th><th class="num">Revenue</th></tr></thead>
+        <tbody>${aRows.slice(0,60).map(r=>`<tr><td><span class="mkt-code-text">${_mktEsc(r.code)}</span>${r.status==='expired'?' <span class="mkt-muted">expired</span>':''}</td><td class="mkt-c-who">${_mktWhoCell(r.creator)}</td>
+          <td data-label="Dispatch">${r.dispatch?_mktDayLabel(r.dispatch.date_of_dispatch)+' · '+(r.type==='paid_pr'?'Paid PR':'organic'):'—'}</td>
+          <td class="num" data-label="Redemptions">${r.redemptions}</td><td class="num" data-label="Revenue">${_mktPKR(r.revenue)}</td></tr>`).join('')}</tbody>
+      </table></div><div class="mkt-note">A hard number: Shopify orders placed with the code, cancelled and refunded-at-sync orders excluded. Recounted nightly.</div>`}
+  </div>`;
   const days=_mktReportLiftDays;
   const picker=`<div class="mkt-chiprow" style="margin:6px 0 10px">${[7,14,30].map(n=>`<button class="filter-chip${days===n?' active':''}" onclick="window.mktLiftDays(${n})">${n} days</button>`).join('')}</div>`;
   let body;
@@ -2640,4 +2679,164 @@ window.mktImportRun=async function(){
   _mktImport.log=log;
   showToast('Import finished — '+added+' creators, '+dAdded+' dispatches');
   _mktRerenderPage();
+};
+
+// ════════════════════════════════════════════════════════════════════════
+// M4 — discount codes
+// ════════════════════════════════════════════════════════════════════════
+// Codes are created ONLY by netlify/functions/marketing-discounts.js — it
+// holds the Shopify secret and is the only writer of discount_codes and of a
+// dispatch's has_discount_code / discount_code_id (firestore.rules deny the
+// client all three). The page asks; the server checks the caller and does it.
+//
+// Paid PR: a code is created as part of approval — no opt-out. If that call
+// fails, the approval still stands and the dispatch offers "Create the code"
+// to retry. Organic: the lead's call, per dispatch, from the same button.
+// Redemptions and revenue are filled in by the nightly rollup
+// (marketing-code-rollup.js) and can be refreshed on demand from Reports.
+
+const MKT_CODE_ENDPOINT='/.netlify/functions/marketing-discounts';
+let mktCodes=[];
+let mktCodesLoaded=false;
+let _mktCodesMeta=null;        // {last_run_at}
+let _mktShopifyStatus=null;    // {scopes, missing, canCreate} | {error}
+let _mktCodeBusy={};           // dispatchId → true while a create is in flight
+
+/** Codes live now, and PKR redeemed in the current calendar month. Pure. */
+function mktCodesSummary(codes,nowMs){
+  const d=new Date(nowMs);
+  const key=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  const live=(codes||[]).filter(c=>c.status!=='expired'&&!(Number(c.expires_at)&&nowMs>=Number(c.expires_at))).length;
+  const redeemedPkr=(codes||[]).reduce((n,c)=>n+(Number(c.revenue_by_month&&c.revenue_by_month[key])||0),0);
+  return{live,redeemedPkr:Math.round(redeemedPkr)};
+}
+/** Attributed revenue per creator from the codes on one kind of dispatch. Pure. */
+function mktRevenueByCreator(codes,type){
+  const out={};
+  (codes||[]).forEach(c=>{if(type&&c.dispatch_type!==type)return;out[c.creator_id]=(out[c.creator_id]||0)+(Number(c.revenue_attributed_pkr)||0);});
+  return out;
+}
+/** The attributed sales-lift line: one row per coded dispatch. Pure. */
+function mktAttributedRows(codes,dispatches,creators){
+  const dById=new Map((dispatches||[]).map(d=>[d.id,d]));
+  const cById=new Map((creators||[]).map(c=>[c.id,c]));
+  return (codes||[]).map(c=>({code:c.code,dispatch:dById.get(c.dispatch_id)||null,creator:cById.get(c.creator_id)||null,
+    type:c.dispatch_type,redemptions:Number(c.redemption_count)||0,revenue:Number(c.revenue_attributed_pkr)||0,
+    expires:Number(c.expires_at)||null,status:c.status})).sort((a,b)=>b.revenue-a.revenue||b.redemptions-a.redemptions);
+}
+function _mktCodeFor(d){return d&&d.discount_code_id?mktCodes.find(c=>c.id===d.discount_code_id)||null:null;}
+
+async function mktCallDiscounts(action,extra){
+  if(typeof auth==='undefined'||!auth||!auth.currentUser)throw new Error('You are signed out — sign in again.');
+  const idToken=await auth.currentUser.getIdToken();
+  const res=await fetch(MKT_CODE_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(Object.assign({idToken,action},extra||{}))});
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok){const e=new Error(data.error||('Request failed ('+res.status+')'));e.status=res.status;e.missing=data.missing;throw e;}
+  return data;
+}
+
+/** Ask the server for a code; merge the result in. Resolves {code}|{error}, never rejects. */
+async function mktCreateCode(dispatchId){
+  if(_mktCodeBusy[dispatchId])return{error:'Already creating a code for this dispatch.'};
+  _mktCodeBusy[dispatchId]=true;
+  try{
+    const r=await mktCallDiscounts('create',{dispatchId});
+    const code=r.code;
+    if(code){
+      if(!mktCodes.some(c=>c.id===code.id))mktCodes=mktCodes.concat([code]);
+      mktDispatches=mktDispatches.map(d=>d.id===dispatchId?Object.assign({},d,{has_discount_code:true,discount_code_id:code.id}):d);
+      if(!r.already)mktCreators=mktCreators.map(c=>c.id===code.creator_id?Object.assign({},c,{lifetime_codes_issued:(Number(c.lifetime_codes_issued)||0)+1}):c);
+    }
+    return{code,already:!!r.already};
+  }catch(e){
+    console.warn('[marketing] code create failed',e);
+    return{error:(e&&e.message)||'The code could not be created.',status:e&&e.status};
+  }finally{delete _mktCodeBusy[dispatchId];}
+}
+
+function _mktCodeSectionHTML(d){
+  const c=_mktCodeFor(d);
+  let body;
+  if(c){
+    const exp=Number(c.expires_at);
+    const expired=c.status==='expired'||(exp&&Date.now()>=exp);
+    body=`<div class="mkt-code"><span class="mkt-code-text">${_mktEsc(c.code)}</span>
+        <button class="btn-outline" data-code="${_mktEsc(c.code)}" onclick="window.mktCopyCode(this.dataset.code)">Copy</button></div>
+      <div class="mkt-perf" style="margin-top:8px">
+        <div><span>Status</span><b class="${expired?'mkt-muted':'mkt-up'}">${expired?'Expired':'Live'}</b></div>
+        <div><span>${expired?'Ended':'Ends'}</span><b>${_mktWhen(exp)}</b></div>
+        <div><span>Redemptions</span><b>${Number(c.redemption_count)||0}</b></div>
+        <div><span>Revenue</span><b>${_mktPKR(Number(c.revenue_attributed_pkr)||0)}</b></div>
+      </div>
+      <div class="mkt-note">${c.value_percent||10}% off, once per customer. Redemptions and revenue update overnight${_mktCodesMeta&&_mktCodesMeta.last_run_at?' — last counted '+_mktWhen(_mktCodesMeta.last_run_at):''}.</div>`;
+  }else if(d.has_discount_code){
+    body=`<div class="mkt-note">This dispatch has a code, but it is not in the loaded list — refresh the page.</div>`;
+  }else{
+    const paid=d.type==='paid_pr';
+    body=`<div class="mkt-note">${paid?'A Paid PR always gets a code. It is created at approval — if that did not happen, create it here.':'Optional for an organic dispatch: 10% off for the creator’s audience, once per customer, for 20 days.'}</div>
+      <button class="btn-outline" style="margin-top:8px" id="mkt-code-btn" data-id="${_mktEsc(d.id)}" ${_mktCodeBusy[d.id]?'disabled':''} onclick="window.mktCreateCodeFor(this.dataset.id)">${_mktCodeBusy[d.id]?'Creating…':paid?'Create the Paid PR code':'Create discount code'}</button>`;
+  }
+  return`<div class="mkt-section"><div class="mkt-section-title">Discount code</div><div id="mkt-code-box">${body}</div></div>`;
+}
+
+window.mktCreateCodeFor=async function(id){
+  const d=mktDispatches.find(x=>x.id===id);
+  if(!d)return;
+  const c=_mktCreatorById(d.creator_id);
+  if(typeof confirm==='function'&&!confirm('Create a live Shopify discount code for '+(c?'@'+c.ig_handle:'this creator')+'? 10% off, once per customer, ends in 20 days.'))return;
+  const btn=document.getElementById('mkt-code-btn');
+  if(btn){btn.disabled=true;btn.textContent='Creating…';}
+  const r=await mktCreateCode(id);
+  if(r.error){
+    _mktFormError('The code was not created: '+r.error);
+    if(btn){btn.disabled=false;btn.textContent=d.type==='paid_pr'?'Create the Paid PR code':'Create discount code';}
+    return;
+  }
+  showToast((r.already?'This dispatch already had a code: ':'Code created: ')+r.code.code);
+  if(typeof logActivity==='function'&&!r.already)logActivity('Discount code created',(c?'@'+c.ig_handle+' · ':'')+r.code.code);
+  const box=document.getElementById('mkt-code-box');
+  const nd=mktDispatches.find(x=>x.id===id);
+  if(box&&nd)box.parentElement.outerHTML=_mktCodeSectionHTML(nd);
+  _mktDispRepaint();
+};
+window.mktCopyCode=function(code){
+  const done=()=>showToast('Copied '+code);
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(code).then(done,()=>showToast('Copy failed — select the code and copy it by hand',true));return;}
+  }catch(_){}
+  showToast('Copy failed — select the code and copy it by hand',true);
+};
+
+// ── Shopify connection (Reports) ────────────────────────────────────────
+function _mktShopifyHTML(){
+  const s=_mktShopifyStatus;
+  let line='<div class="mkt-note">Checks what Shopify has actually granted the app. Codes need <b>write_discounts</b> and <b>read_discounts</b>.</div>';
+  if(s&&s.checking)line='<div class="mkt-note">Checking…</div>';
+  else if(s&&s.error)line=`<div class="mkt-error">${_mktEsc(s.error)}</div>`;
+  else if(s&&s.canCreate)line=`<div class="mkt-note"><b class="mkt-up">Ready</b> — Shopify has granted the discount permissions. Granted: ${_mktEsc((s.scopes||[]).join(', '))}</div>`;
+  else if(s)line=`<div class="mkt-error">Missing: ${_mktEsc((s.missing||[]).join(', '))}. Release an app version with these scopes in the Shopify dev dashboard and approve it on the store. Granted now: ${_mktEsc((s.scopes||[]).join(', ')||'none')}</div>`;
+  const last=_mktCodesMeta&&_mktCodesMeta.last_run_at?'Redemptions last counted '+_mktWhen(_mktCodesMeta.last_run_at)+'.':'Redemptions have not been counted yet.';
+  return`${line}<div class="mkt-note">${last} They are recounted every night at 6:30am.</div>
+    <div class="mkt-actions" style="margin-top:8px"><button class="btn-outline" id="mkt-shop-check" onclick="window.mktCheckShopify()">Check Shopify access</button>
+    <button class="btn-outline" id="mkt-shop-roll" onclick="window.mktRollupNow()">Recount redemptions now</button></div>`;
+}
+function _mktShopifyRepaint(){const el=document.getElementById('mkt-rep-shopify');if(el)el.innerHTML=_mktShopifyHTML();}
+window.mktCheckShopify=async function(){
+  _mktShopifyStatus={checking:true};_mktShopifyRepaint();
+  try{_mktShopifyStatus=await mktCallDiscounts('status');}
+  catch(e){_mktShopifyStatus={error:'Could not check: '+((e&&e.message)||'unknown error')};}
+  _mktShopifyRepaint();
+};
+window.mktRollupNow=async function(){
+  const b=document.getElementById('mkt-shop-roll');if(b){b.disabled=true;b.textContent='Counting…';}
+  try{
+    const r=await mktCallDiscounts('rollup');
+    showToast('Recounted '+r.codes_updated+' code'+(r.codes_updated===1?'':'s'));
+    mktCreatorsLoaded=false;
+    if(typeof window.showPage==='function')window.showPage(typeof currentPage!=='undefined'?currentPage:'mkt-reports');
+  }catch(e){
+    showToast('Recount failed: '+((e&&e.message)||'unknown error'),true);
+    if(b){b.disabled=false;b.textContent='Recount redemptions now';}
+  }
 };

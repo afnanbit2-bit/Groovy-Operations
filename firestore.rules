@@ -457,6 +457,11 @@ service cloud.firestore {
         && request.resource.data.type == resource.data.type
         && request.resource.data.creator_id == resource.data.creator_id
         && request.resource.data.get('paid_pr_request_id', null) == resource.data.get('paid_pr_request_id', null)
+        // The code link is written only by netlify/functions/marketing-discounts.js
+        // (Admin SDK); a browser can never attach, detach or fake one.
+        && request.resource.data.get('has_discount_code', false) == resource.data.get('has_discount_code', false)
+        && request.resource.data.get('discount_code_id', null) == resource.data.get('discount_code_id', null)
+        && request.resource.data.get('code_lock_at', null) == resource.data.get('code_lock_at', null)
         && request.resource.data.status in ['','confirmed','in_transit','shipped','content_received'];
       allow delete: if isOwner();
     }
@@ -506,6 +511,13 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['payment_status','payment_method','payment_reference','payment_date','payment_logged_by_user_id','payment_logged_at','updated_at']));
       allow delete: if isOwner() && resource.data.status == 'pending';
+    }
+    // Discount codes (M4). Created and counted ONLY server-side — the Shopify
+    // secret lives there, and a redemption count is not something a browser
+    // should be able to write. Marketing reads them.
+    match /discount_codes/{id} {
+      allow read: if isMarketing();
+      allow write: if false;
     }
     // The scoring bands and tier thresholds — one settings document,
     // edited in the app.

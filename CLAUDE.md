@@ -2772,10 +2772,11 @@ Mood Boards table round: M1 Creator Database + scoring · M2 Dispatch Log ·
 M3 Paid PR approvals · M4 discount codes · M5 reminders + dashboard card ·
 M6 reports · M7 migration. **M1–M3 are built, merged and live** (PRs #58,
 #59, #60; Daniyal's email fixed in #61) **and their rules were published
-on 16 Sept 2026** — see "Firestore rules" below. **M5–M7 are built** (one
-PR, below). **M4 is blocked on a human check:** whether the Shopify app
-may create discounts. Until M4 lands, every place that needs discount-code
-data says so instead of showing zeros.
+on 16 Sept 2026** — see "Firestore rules" below. **M5–M7** are PR #63.
+**M4 (discount codes) is the last milestone**, below — the Shopify app's
+`write_discounts` / `read_discounts` scopes were added and approved by
+Ammar on 16 Sept 2026 (reported in-session; confirm with the Reports
+page's "Check Shopify access", which asks Shopify directly).
 
 - **Nav:** "The Sales Team ▸" is a collapsible parent of SUB-AREAS
   (`_salesTeamGroups()` / `_salesTeamNavHTML()` in `js/shared.js`); each
@@ -2958,6 +2959,57 @@ data says so instead of showing zeros.
     dispatch create/update) and the UI shows it as "Not recorded", never as
     Confirmed. **That change needs a republish.**
   - The sheet's A/B/C tier column is read (`sheetTier`) and never written.
+- **M4 — discount codes.** Two server functions, because the Shopify secret
+  must stay server-side and because a code record, a redemption count or a
+  dispatch's code link must not be forgeable from a browser:
+  - `netlify/functions/marketing-discounts.js` (POST, caller's Firebase ID
+    token verified on the server; `MARKETING_EMAILS` mirrors `isMarketing()`
+    and a test holds them equal). Actions: `status` (asks Shopify
+    `currentAppInstallation.accessScopes` — the only way to confirm the
+    permission from this side), `create`, `rollup`.
+  - `create` **reserves the dispatch first** (`code_lock_at`, 2-minute lock,
+    in a transaction) so a double click cannot make two codes; a dispatch
+    that already has one returns it. It checks both scopes before calling
+    Shopify, retries **only** a taken code (up to 3 suffixes), and on any
+    failure releases the lock and writes nothing. On success ONE batch
+    writes `discount_codes/{id}`, links the dispatch
+    (`has_discount_code`, `discount_code_id`) and increments the creator's
+    `lifetime_codes_issued`.
+  - The mutation is `discountCodeBasicCreate` with **`context: {all: ALL}`**
+    — `customerSelection` is deprecated in the 2026-04 schema — 10% off
+    all items, `appliesOncePerCustomer`, no `usageLimit`, ends in 20 days.
+    Validated against the Admin GraphQL schema when written (it requires
+    both `write_discounts` and `read_discounts`). **The first real code is
+    the live test.** Codes are `GRVY-<HANDLE>-<4>`, A–Z/0–9 only.
+  - The spec's `shopify_price_rule_id` is `shopify_discount_id` here (the
+    GraphQL `DiscountCodeNode` gid) — price rules are the legacy REST model.
+  - **Paid PR: approval asks for the code right after the approval batch.**
+    The approval stands either way; a failure is toasted with where to
+    retry (the dispatch's "Create the Paid PR code"). Organic: the lead's
+    button on the dispatch, with a confirm.
+  - `firestore.rules`: `discount_codes` is read-only to Marketing and
+    unwritable by any client; a dispatch update may not change
+    `has_discount_code`, `discount_code_id` or `code_lock_at`.
+  - **Redemptions:** `shopify-order-sync.js` (and the backfill) now store
+    `discount_codes` on each order, upper-cased. Orders synced before that
+    carry none — fine, every code is newer.
+    `netlify/functions/marketing-code-rollup.js`, scheduled `30 1 * * *`
+    (6:30am PKT) and callable through `rollup`, counts orders per code with
+    an `array-contains` query, excludes cancelled and refunded-at-sync
+    orders, buckets revenue by **store-local month** (the first 7 chars of
+    Shopify's offset timestamp), marks expired codes, and writes creator
+    totals — only for creators that still exist (a merge-set would have
+    resurrected a deleted one). **Known limit:** the order sync skips an
+    order it already has, so a refund made later is not deducted; the page
+    says so.
+  - Wired into the dashboard card (codes live, PKR redeemed this month),
+    the ROI table (real once any Paid PR has a code — Paid PR code revenue
+    only), the attributed sales line, and a "Shopify connection" card on
+    Reports with **Check Shopify access** and **Recount redemptions now**.
+  - `tests/marketing-codes.test.js` runs both functions against an
+    in-memory Firestore (replacing `firebase-admin` through
+    `Module._load`) and a scripted Shopify. The gate was verified by
+    removing it: two assertions fail.
 - **`tests/smoke-layout.js` now runs Chrome in a bounded pool** (default
   min(8, CPUs), `SMOKE_LAYOUT_CONCURRENCY` to override). With 14 fragments
   it launched 84 Chromes at once and most timed out on a Windows machine,
@@ -3656,6 +3708,12 @@ republish.
 (`sharedWith`, TEAM update, the presence/comments/activity sub-collections)
 AND `user_profiles`. Both had been waiting; the Profile page's own error
 card is what finally surfaced it.
+
+**REPUBLISH OUTSTANDING — Marketing M4 (16 Sept 2026):** new
+`discount_codes` block and the dispatch code-link guard. Until it is
+published, the app cannot read codes (the dashboard says "figures
+unavailable" and the attributed line shows an error) — creating a code
+still works, because the server writes it. Ask for the full file.
 
 **Republished again by Ammar on 16 Sept 2026, after PR #63** (reported
 in-session), from the repo file at `md5 1910baa80876acfebd09d46b68e7d8e3` —
