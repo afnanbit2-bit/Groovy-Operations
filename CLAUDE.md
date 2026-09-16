@@ -2679,6 +2679,46 @@ chips. **Any page reading one of these collections should ask
 overridable through `globals`, plus `_res(status,body)`) — `js/store.js`
 could not be tested at all before, being the only REST module.
 
+### …and the answer was HTTP 429 — the read quota (Sept 2026)
+
+With the error surfaced, the Stock Log said it outright: **`store_transactions:
+read failed (HTTP 429)`**. Not a rules problem, not a bug in the query — the
+**Firestore read quota was exhausted**, and `js/store.js` was the thing
+exhausting it.
+
+**`loadStoreData` pulled the full 3,000-document movement history on EVERY
+store page.** Opening Receive, Issue, Inventory, Templates, the cash ledger or
+any PO-issue page cost ~3,000 reads that nothing on screen used. Only three
+pages actually read `allTransactions` — the Log, Analytics, and the
+Dashboard's last-ten strip. On the free Spark plan's 50,000 reads/day that is
+roughly **sixteen page visits before the whole app starts answering 429**, and
+because the helpers swallowed the failure, it presented as data vanishing.
+
+- **The history is lazy now.** `_STORE_TXN_LOAD` came out of `_STORE_LOADS`
+  into `loadStoreTransactions()`, called from `showPage` for those three
+  pages only, once per session (`force` re-reads, for the Retry button).
+  **Anything that WRITES against the history must call
+  `_storeEnsureTransactions()` first** — `_renameStoreItemCode` migrates every
+  matching row and would otherwise report "0 transactions migrated" against an
+  array it was never given. It aborts instead.
+- **`!allItems.length` was the wrong "already loaded" test.** A refused
+  `store_items` read left it empty, so the whole eight-job loader re-ran on
+  every store navigation — a feedback loop that burns more of the quota that
+  is already gone. `_storeDataLoaded()` tracks the ATTEMPT.
+- **429/503/500 are retried, 403 is not.** `_fsFetch` backs off exponentially
+  with jitter, honours `Retry-After`, and stops at three tries: a burst limit
+  is worth retrying, an exhausted daily quota will not clear in eight seconds
+  and hammering it is the wrong thing to do. A refusal will never succeed, so
+  it is tried exactly once.
+- **The error says what a 429 IS.** `err.quota` is set, and both the toast and
+  the Log's error card name the quota and point at Firebase Console → Usage
+  instead of sending the next person to `firestore.rules`.
+
+**If store data goes missing again, read the error card first — it now names
+the collection AND the reason.** And before adding any collection to
+`_STORE_LOADS`, check which pages actually read it; the default should be
+lazy, not eager.
+
 Also fixed in passing: the log's pager border was a hardcoded `#f5f5f5` (a
 bright line straight across the card in dark mode) and `setILDir` wrote a
 literal `#fff` background under a themed foreground — both leftovers the

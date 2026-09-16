@@ -1160,9 +1160,11 @@ function setILDir(dir){
 // "No records found." on a log that has thousands of rows is the single most
 // misleading thing this page can say, and it is what it said.
 function _ilErrorHTML(err){
-  const why=_storeIsPermission(err)
-    ?'The read was refused. Check that the published firestore.rules match the repo — store_transactions needs a match block.'
-    :'The read did not come back.';
+  const why=err&&err.quota
+    ?'The Firestore read quota or rate limit is exhausted. Check Firebase Console → Usage; on the free Spark plan this is 50,000 reads a day.'
+    :_storeIsPermission(err)
+      ?'The read was refused. Check that the published firestore.rules match the repo — store_transactions needs a match block.'
+      :'The read did not come back.';
   return`<div class="empty" style="padding:22px;text-align:center">
     <div style="font-weight:700;color:var(--red);margin-bottom:6px">Could not load the movement log</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:4px">${_ilEsc(why)}</div>
@@ -1174,7 +1176,7 @@ function _ilEsc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;
 window.ilRetryLoad=async function(){
   const body=document.getElementById('il-body');
   if(body)body.innerHTML='<div class="empty" style="padding:22px;text-align:center">Loading…</div>';
-  await _storeRunLoads(_STORE_LOADS.filter(j=>j.name==='store_transactions'));
+  await loadStoreTransactions(true);
   const m=document.getElementById('main-content');
   if(m&&currentPage==='store-log'){m.innerHTML=renderStoreLog();refreshIssueLog();}
 };
@@ -1307,7 +1309,7 @@ async function _fsListAll(col,batchSize=1000){
   const out=[];let pageToken='';
   do{
     const url=`${_FS_BASE}/${col}?pageSize=${batchSize}${pageToken?`&pageToken=${encodeURIComponent(pageToken)}`:''}`;
-    const d=await _fsJson(col,await fetch(url,{headers:{Authorization:`Bearer ${tok}`}}));
+    const d=await _fsJson(col,await _fsFetch(url,{headers:{Authorization:`Bearer ${tok}`}}));
     if(d.documents)out.push(...d.documents.map(fromFsDoc));
     pageToken=d.nextPageToken||'';
   }while(pageToken);
@@ -1503,9 +1505,33 @@ function fromFsDoc(doc){
 // report. THAT is how the Stock Log "vanished". Every read below now checks
 // r.ok and throws an error naming the collection and the status, so a
 // refused read reads as a refused read and not as an empty store.
+// 429 = RESOURCE_EXHAUSTED. On Firestore that is almost always the daily
+// read quota (50,000/day on the free Spark plan), occasionally a burst
+// limit. A burst is worth retrying; an exhausted daily quota is not going
+// to clear in eight seconds, so this is bounded at three tries and then
+// reports honestly rather than hammering a quota that is already gone.
+const _FS_RETRY_STATUS={429:1,503:1,500:1};
+function _fsRetryWait(res,attempt){
+  const h=res&&res.headers&&typeof res.headers.get==='function'?res.headers.get('Retry-After'):null;
+  const secs=h?parseInt(h,10):NaN;
+  if(Number.isFinite(secs)&&secs>0)return Math.min(secs*1000,8000);
+  return Math.min(500*Math.pow(2,attempt),4000)+Math.floor(Math.random()*250);
+}
+async function _fsFetch(url,init,tries=3){
+  let res=null;
+  for(let i=0;i<tries;i++){
+    res=await fetch(url,init);
+    if(res.ok||!_FS_RETRY_STATUS[res.status]||i===tries-1)return res;
+    await new Promise(r=>setTimeout(r,_fsRetryWait(res,i)));
+  }
+  return res;
+}
 function _fsThrow(col,res,body){
-  const msg=(body&&body.error&&body.error.message)||(res&&res.statusText)||'read failed';
+  let msg=(body&&body.error&&body.error.message)||(res&&res.statusText)||'read failed';
+  // A bare "429" tells the next person nothing. Say what it means.
+  if(res&&res.status===429)msg='Firestore read quota or rate limit exhausted';
   const err=new Error(col+': '+msg+' (HTTP '+((res&&res.status)||'?')+')');
+  err.quota=!!(res&&res.status===429);
   err.collection=col;err.status=res&&res.status;
   if(body&&body.error&&body.error.status)err.code=body.error.status;
   throw err;
@@ -1525,7 +1551,7 @@ async function fsList(col,pageSize=300){
   const out=[];let pageToken='';let guard=0;
   do{
     const url=`${_FS_BASE}/${col}?pageSize=${pageSize}`+(pageToken?`&pageToken=${encodeURIComponent(pageToken)}`:'');
-    const d=await _fsJson(col,await fetch(url,{headers:{Authorization:`Bearer ${tok}`}}));
+    const d=await _fsJson(col,await _fsFetch(url,{headers:{Authorization:`Bearer ${tok}`}}));
     if(d.documents)out.push(...d.documents.map(fromFsDoc));
     pageToken=d.nextPageToken||'';
   }while(pageToken&&++guard<200);
@@ -1560,7 +1586,7 @@ async function fsDelete(col,id){
 // a collection with nothing in it.
 async function _fsRunQuery(col,structuredQuery){
   const tok=await getStoreToken();
-  const res=await fetch(`${_FS_BASE}:runQuery`,{
+  const res=await _fsFetch(`${_FS_BASE}:runQuery`,{
     method:'POST',
     headers:{Authorization:`Bearer ${tok}`,'Content-Type':'application/json'},
     body:JSON.stringify({structuredQuery})
@@ -1640,10 +1666,36 @@ function _storeIsPermission(e){
   return !!e&&(e.code==='PERMISSION_DENIED'||e.status===401||e.status===403
     ||String(e.message||'').indexOf('permission')>-1);
 }
+// The full movement history is THOUSANDS of documents and only three pages
+// read it — the Log, Analytics, and the Dashboard's last-ten strip. It used
+// to ride in the load-everything path, so opening Receive, Issue, Inventory,
+// Templates or any PO-issue page quietly cost ~3,000 Firestore reads that
+// nothing on screen used. That is what exhausted the read quota and turned
+// every subsequent read into an HTTP 429. It is loaded on demand now, once
+// per session, by `loadStoreTransactions()`.
+const _STORE_TXN_LOAD={
+  name:'store_transactions',
+  run:()=>fsQueryOrdered('store_transactions','ts',_STORE_TXN_LIMIT),
+  apply:v=>{allTransactions=v;}
+};
+const _STORE_TXN_LIMIT=3000;
+let _storeTxnsLoaded=false;
+// `force` re-reads even when a previous attempt succeeded — the Retry button.
+async function loadStoreTransactions(force){
+  if(_storeTxnsLoaded&&!force)return[];
+  const failed=await _storeRunLoads([_STORE_TXN_LOAD]);
+  _storeTxnsLoaded=!failed.length;
+  if(failed.length)_storeReportFailures(failed);
+  return failed;
+}
+// Anything that WRITES a transaction has to work from the real history, not
+// from an empty array it was never given. Rename migrates every matching row.
+async function _storeEnsureTransactions(){
+  if(!_storeTxnsLoaded)await loadStoreTransactions();
+  return _storeTxnsLoaded;
+}
 const _STORE_LOADS=[
   {name:'store_items',        run:()=>fsList('store_items'),                          apply:v=>{allItems=v;}},
-  // Full movement history for the Stock Log. Cursor-paged inside fsQueryOrdered.
-  {name:'store_transactions', run:()=>fsQueryOrdered('store_transactions','ts',3000), apply:v=>{allTransactions=v;}},
   {name:'trim_templates',     run:()=>fsList('trim_templates'),                       apply:v=>{allTemplates=v;}},
   {name:'store_requests',     run:()=>fsList('store_requests'),                       apply:v=>{allRequests=v;}},
   // Custom categories added in-app (anything outside CAT_LABELS). When this
@@ -1673,7 +1725,13 @@ async function _storeRunLoads(jobs){
   });
   return failed;
 }
+// `!allItems.length` used to be the "already loaded" test, so a failed
+// store_items read re-ran the WHOLE loader on every single store page
+// navigation — the last thing a quota that is already exhausted needs.
+let _storeLoadAttempted=false;
+function _storeDataLoaded(){return _storeLoadAttempted||!!(allItems&&allItems.length);}
 async function loadStoreData(){
+  _storeLoadAttempted=true;
   let failed=await _storeRunLoads(_STORE_LOADS);
   // One retry behind a forced token refresh, for the auth/permission
   // failures only — a stale ID token is the one cause this can fix, and
@@ -1696,18 +1754,23 @@ async function loadStoreData(){
     allItems=INITIAL_ITEMS.map(i=>({...i,_id:i.code}));
     showToast('Store initialised ✓');
   }
-  const hard=failed.filter(f=>!f.job.optional);
-  if(hard.length){
-    // NAME the collections. "Missing or insufficient permissions" on its own
-    // is unreportable — it is the same string whichever read was refused.
-    const names=hard.map(f=>f.job.name).join(', ');
-    const why=_storeIsPermission(hard[0].err)
-      ?'permission denied — check the firestore.rules block for '+(hard.length===1?'that collection':'those collections')+' and that the published rules match the repo'
-      :((hard[0].err&&hard[0].err.message)||'unknown error');
-    showToast('Could not load: '+names+' ('+why+')',true);
-    console.warn('[loadStoreData] gave up on:',names,hard.map(f=>f.err));
-  }
+  _storeReportFailures(failed);
   return failed;
+}
+// NAME the collections. "Missing or insufficient permissions" on its own is
+// unreportable — it is the same string whichever read was refused.
+function _storeReportFailures(failed){
+  const hard=failed.filter(f=>!f.job.optional);
+  if(!hard.length)return;
+  const names=hard.map(f=>f.job.name).join(', ');
+  const err=hard[0].err;
+  const why=err&&err.quota
+    ?'Firestore read quota or rate limit exhausted — check Firebase Console → Usage'
+    :_storeIsPermission(err)
+      ?'permission denied — check the firestore.rules block for '+(hard.length===1?'that collection':'those collections')+' and that the published rules match the repo'
+      :((err&&err.message)||'unknown error');
+  showToast('Could not load: '+names+' ('+why+')',true);
+  console.warn('[loadStoreData] gave up on:',names,hard.map(f=>f.err));
 }
 // Internal store navigation (maps store section IDs back to showPage)
 function renderStoreSection(id){window.showPage('store-'+id);}
@@ -2263,6 +2326,10 @@ window.showAddItemForm=function(){
 };
 
 async function _renameStoreItemCode(oldCode,newCode,newDoc){
+  // The movement history is lazy now, and this migrates every row carrying
+  // the old code. Renaming against an unloaded array would report "0
+  // transactions migrated" and leave the history pointing at a dead code.
+  if(!await _storeEnsureTransactions())throw new Error('Could not load the movement history — rename aborted so no transactions are orphaned.');
   await fsSet('store_items',newCode,newDoc);
   let txCount=0;
   for(const tx of allTransactions){
