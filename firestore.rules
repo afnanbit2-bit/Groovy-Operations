@@ -381,5 +381,50 @@ service cloud.firestore {
       allow read:  if signedIn();
       allow write: if false;
     }
+
+    // ── The Sales Team ▸ Marketing (Sept 2026) ──
+    // Owners + the Creator & Content Operations Lead. Rules cannot read
+    // USER_DEFS, so the role is mirrored here by EMAIL — keep this list in
+    // lockstep with every role:'creator_content_ops_lead' entry in
+    // js/auth.js (canAccessMarketing / isContentOpsLead there).
+    function isContentOpsLead() {
+      return signedIn() && userEmail() in ['daniyaltufail59@gmail.com'];
+    }
+    function isMarketing() { return isOwner() || isContentOpsLead(); }
+    function creatorHandlePath(h) {
+      return /databases/$(database)/documents/creator_handles/$(h);
+    }
+
+    // A creator can only be written if the handle lock for its ig_handle
+    // points back at it AFTER the write — which is what makes IG-handle
+    // uniqueness a server-side guarantee rather than a form check. The
+    // client writes the lock and the creator in one transaction.
+    match /creators/{id} {
+      allow read: if isMarketing();
+      allow create, update: if isMarketing()
+        && request.resource.data.ig_handle is string
+        && request.resource.data.status in ['active','do_not_use','blacklisted']
+        && getAfter(creatorHandlePath(request.resource.data.ig_handle)).data.creatorId == id;
+      allow delete: if isOwner();
+    }
+    // One document per handle, naming the creator that owns it. Never
+    // updated — an existing lock cannot be taken over — and only removed
+    // once its creator no longer carries that handle (a rename) or no
+    // longer exists.
+    match /creator_handles/{handle} {
+      allow read: if isMarketing();
+      allow create: if isMarketing()
+        && request.resource.data.handle == handle
+        && request.resource.data.creatorId is string;
+      allow update: if false;
+      allow delete: if isMarketing()
+        && (!existsAfter(/databases/$(database)/documents/creators/$(resource.data.creatorId))
+            || getAfter(/databases/$(database)/documents/creators/$(resource.data.creatorId)).data.ig_handle != handle);
+    }
+    // The scoring bands and tier thresholds — one settings document,
+    // edited in the app.
+    match /scoring_config/{doc} {
+      allow read, write: if isMarketing();
+    }
   }
 }

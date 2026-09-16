@@ -138,6 +138,11 @@ verification needs the human, a phone, or Claude in Chrome.
                      on-screen panel with a cache-reset button. Loaded FIRST,
                      before shared.js. See "Diagnostics" below.
 /js/activity.js      activity log loader.
+/js/marketing.js     The Sales Team ▸ Marketing (Sept 2026, replaces the
+                     Content Tracker 2026 sheet). M1: Creator Database +
+                     scoring engine. Loaded LAST, after activity.js. Owners +
+                     the creator_content_ops_lead role. See "The Sales Team
+                     ▸ Marketing" below.
 /js/notes.js         Creative Hub / Notes — Phase 1 of the Notion+Milanote
                      module (see "Creative Hub / Notes module" below). Hub
                      landing page (shared infra, also renders Mood Boards'
@@ -155,7 +160,8 @@ verification needs the human, a phone, or Claude in Chrome.
 
 Load order is fixed in `index.html`:
 `shared → print-engine → auth → pos → embellishments → hrm → store →
-gatepass → notes → boards → profile → activity`, then the bootstrap module. All
+gatepass → notes → boards → profile → activity → marketing`, then the
+bootstrap module. All
 `/js/*.js` are **plain global classic
 scripts — no `import`/`export`**. They share one global lexical scope, so
 top-level `let/const` are visible across files (declared exactly once);
@@ -2524,6 +2530,74 @@ from overlapping. Note this hit `_gvProgStart/Stop` (the top progress bar),
 **not** the blocking "Saving…" overlay — it is not the stuck-overlay
 suspect recorded under the Monitor section.
 
+## The Sales Team ▸ Marketing (Sept 2026)
+
+Replaces the **Content Tracker 2026** Google Sheet (Master List + monthly
+dispatch tabs). Source spec: `GRVY-Marketing-Module-Spec.md` (Ammar's
+Downloads, not in the repo). Built **one milestone at a time**, same as the
+Mood Boards table round: M1 Creator Database + scoring · M2 Dispatch Log ·
+M3 Paid PR approvals · M4 discount codes · M5 reminders + dashboard card ·
+M6 reports · M7 migration. **Only M1 is built.**
+
+- **Nav:** "The Sales Team ▸" is a collapsible parent of SUB-AREAS
+  (`_salesTeamGroups()` / `_salesTeamNavHTML()` in `js/shared.js`); each
+  sub-area supplies its own page list (`mktNavItems()` in
+  `js/marketing.js`). **Add a Marketing page there, not in shared.js.**
+  Owners see it above Embellishments; on phones it is "The Sales Team ›"
+  in the More sheet.
+- **The lead account** is `daniyal` → `daniyaltufail59@gmail.com`, role
+  `creator_content_ops_lead`, landing on `mkt-creators`. `showPage` scopes
+  that role to `mkt-*` pages, `shopify-intel` and `_CHROME_PAGES` — same
+  pattern as the fulfilment redirect. **Inventory Intel is granted only
+  because that page never writes**; if it gains a write action, re-scope
+  (logged as a follow-up in the Inventory Intelligence change request).
+- **It is the only account whose login is a real inbox**, not
+  `@groovy.op`. Two server functions refuse non-`@groovy.op` targets on
+  purpose — `admin-reset-password.js` (owner reset) and
+  `admin-seed-profiles.js` (Sync accounts) — so neither works for Daniyal
+  until they are widened deliberately. His password is set/reset through
+  the Firebase Console (the reset EMAIL works for him, unlike everyone
+  else) or by him via "Change password".
+- **No names in records.** Every "who" field is a Firebase uid, resolved at
+  render (`_mktUserName`, via `userProfiles`). Permissions key off role,
+  and Paid PR approval off the `canApprovePaidPR` flag.
+- **Scoring (`mktScore`)** is the spec's 100-point weighted model. Bands
+  live in `scoring_config/current`, edited in-app; `MKT_DEFAULT_SCORING`
+  only fills gaps. A creator scores the reach band they are **below**
+  (exactly 10,000 followers is 15, not 5). Engagement is rounded to 1e-6
+  before the floor compare so 0.0099999 can't slip under a 1% it meets.
+  **No tier without its inputs** — followers + avg likes + avg comments
+  are required; avg views is optional and scores 0 when absent. A manual
+  override keeps its tier through every recalculation, and `tier_formula`
+  is stored beside it so the "manual" badge can say what the formula
+  gives. Saving the config recalculates everyone in 400-write batches.
+- **IG-handle uniqueness is a WRITE-time guarantee.**
+  `creator_handles/{handle}` is a lock naming the owning creator, written
+  in the same `runTransaction` as the creator. `firestore.rules` refuses a
+  creator whose lock does not point back at it (`getAfter`), refuses any
+  update to a lock, and only lets a lock be deleted once its creator no
+  longer carries that handle. So a rename releases the old lock and two
+  simultaneous adds cannot both succeed. Saving a creator therefore needs
+  a connection — the form says so rather than queueing.
+- **Cities** are the sheet's Lists tab verbatim (`MKT_PK_CITIES`, 94);
+  `mktCanonCity` maps case variants and a few unambiguous aliases (pindi).
+  **Niche** is an array; the picker offers the seed tags plus every tag in
+  use (derived, never stored). Sizes stay free text — the sheet's values
+  ("medium/30", "34/XL") don't fit a list.
+- `loadMarketingCreators()` cannot reject (allSettled) — a refused read
+  renders a card that names the rules republish.
+- **Tests:** `tests/marketing.test.js` (band edges, floor, no-basis → null,
+  config validation, uniqueness transaction, scoping, and that
+  `USER_DEFS` and `isContentOpsLead()` list the same emails) and a
+  `smoke-layout` fragment. That fragment caught the table hiding Niche and
+  Status off-screen at 420px; rows stack at phone width now.
+- **Known for M2:** the product picker reads `shopify_products`, which the
+  daily 9am-PKT catalog sync fills — "current as of this morning".
+- **Known for M7:** the sheet's Master List has **265** non-empty rows, not
+  the spec's 254 — reconcile before import. The Sep 2026 tab's three rows
+  (st4rr.doll and shoaibkhn.t — Lowkey Heat; shadysaidthat — Live In
+  Pants) migrate into `dispatches` with date and status left blank.
+
 ## Profiles (Sept 2026)
 
 Afnan asked for "a general Profile for each login where people can add their
@@ -2810,9 +2884,14 @@ client-side.
 - **Functions (`netlify/functions/`):** all auth to Shopify via Client
   Credentials Grant; env vars `SHOPIFY_CLIENT_ID/SECRET`,
   `SHOPIFY_STORE_DOMAIN`, `FIREBASE_SERVICE_ACCOUNT`.
-  - `shopify-catalog-sync.js` — **manual / on-demand HTTP function, NOT
-    scheduled.** No auth header (handler ignores the event); a plain GET
-    runs it. Trigger:
+  - `shopify-catalog-sync.js` — **scheduled DAILY at `0 4 * * *` UTC
+    (9am PKT)** in `netlify.toml` — this line used to say "NOT scheduled",
+    which was wrong (verified against `netlify.toml`, Sept 2026). It is ALSO
+    a plain HTTP function: no auth header (handler ignores the event), so a
+    GET runs it on demand. **`shopify_products` is therefore only as fresh
+    as 9am PKT today** unless someone triggers it — anything that reads the
+    catalog (the Marketing product picker, M2) is "current as of this
+    morning", not live. Trigger:
     `https://groovyoperations.netlify.app/.netlify/functions/shopify-catalog-sync`.
     Fetches all products (`status=active,draft,archived`) and writes **one
     doc per variant** to `shopify_products/{variant.id}` via
@@ -2891,6 +2970,13 @@ etc.) live in `js/hrm.js`; the printing/role helpers (`isObserver`,
   `firestore.rules` `user_profiles` update and in
   `netlify/functions/admin-reset-password.js` (`RESET_ADMIN_EMAILS` /
   `PROTECTED_EMAILS`) — three layers, see "Admin profile editing".
+- `canAccessMarketing()` / `isContentOpsLead()` / `canApprovePaidPR()`
+  (`js/auth.js`) → The Sales Team ▸ Marketing. Access is by ROLE (owners +
+  `creator_content_ops_lead`); Paid PR approval is the per-account
+  `canApprovePaidPR` flag on `USER_DEFS` (Ammar today), NOT a username and
+  NOT a role — both owners share `owner`. Mirrored in `firestore.rules`
+  (`isMarketing()` / `isContentOpsLead()`, by email). See "The Sales Team ▸
+  Marketing".
 - **Inventory Intel nav item** (`js/shared.js`, `buildNav()` +
   `openMoreSheet()`) → owners, **+ mustafa by username** (Sept 2026 grant,
   he's Ecom Manager). Nav-only, same shape as the Notes staged-rollout gate —
@@ -3200,6 +3286,13 @@ republish.
 (`sharedWith`, TEAM update, the presence/comments/activity sub-collections)
 AND `user_profiles`. Both had been waiting; the Profile page's own error
 card is what finally surfaced it.
+
+**REPUBLISH OUTSTANDING (16 Sept 2026) — two changes, send them together:**
+`71b4acb` (Mood Boards Trash: `mood_boards/{id}/trash`) and the Marketing M1
+branch (`creators`, `creator_handles`, `scoring_config`,
+`isContentOpsLead()`). Neither is live until Afnan pastes the current file
+into the Console. **Marketing M1 is not "done" until this is confirmed** —
+the Creator Database shows its rules error card until then.
 
 **Keep updating both in lockstep**, per the comment at the top of
 `firestore.rules` itself. **The trigger to ask for a republish is a change
