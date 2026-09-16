@@ -2779,19 +2779,16 @@ M6 reports · M7 migration. **M1–M3 are built.** M1 = PR #58, M2 = PR #59
   `js/marketing.js`). **Add a Marketing page there, not in shared.js.**
   Owners see it above Embellishments; on phones it is "The Sales Team ›"
   in the More sheet.
-- **The lead account** is `daniyal` → `daniyaltufail59@gmail.com`, role
+- **The lead account** is `daniyal` → `daniyal@groovy.op` (the account
+  Afnan created in Firebase Auth; an earlier cut used a Gmail address, which
+  never existed in Auth and was corrected before anyone signed in), role
   `creator_content_ops_lead`, landing on `mkt-creators`. `showPage` scopes
   that role to `mkt-*` pages, `shopify-intel` and `_CHROME_PAGES` — same
   pattern as the fulfilment redirect. **Inventory Intel is granted only
   because that page never writes**; if it gains a write action, re-scope
   (logged as a follow-up in the Inventory Intelligence change request).
-- **It is the only account whose login is a real inbox**, not
-  `@groovy.op`. Two server functions refuse non-`@groovy.op` targets on
-  purpose — `admin-reset-password.js` (owner reset) and
-  `admin-seed-profiles.js` (Sync accounts) — so neither works for Daniyal
-  until they are widened deliberately. His password is set/reset through
-  the Firebase Console (the reset EMAIL works for him, unlike everyone
-  else) or by him via "Change password".
+  Being `@groovy.op`, the owner password reset and "Sync accounts" both work
+  for him like everyone else.
 - **No names in records.** Every "who" field is a Firebase uid, resolved at
   render (`_mktUserName`, via `userProfiles`). Permissions key off role,
   and Paid PR approval off the `canApprovePaidPR` flag.

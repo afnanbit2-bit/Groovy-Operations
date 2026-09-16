@@ -307,7 +307,7 @@ module.exports=async function(){
     const defs=a.run('USER_DEFS');
     const leads=defs.filter(d=>d.role==='creator_content_ops_lead');
     s.eq('Daniyal holds the role',J(leads.map(d=>d.u)),J(['daniyal']));
-    s.eq('with the confirmed login email',leads[0]&&leads[0].email,'daniyaltufail59@gmail.com');
+    s.eq('with the confirmed login email',leads[0]&&leads[0].email,'daniyal@groovy.op');
     const rules=read('firestore.rules');
     const m=/function isContentOpsLead\(\)\s*\{[^}]*\[([^\]]*)\]/.exec(rules);
     const ruleEmails=m?(m[1].match(/'([^']+)'/g)||[]).map(x=>x.replace(/'/g,'')).sort():[];
@@ -330,7 +330,7 @@ module.exports=async function(){
       ids.forEach(id=>{full.run('globalThis.__got=null');full.run('window.showPage('+J(id)+')');out[id]=full.run('__got');});
       return out;
     };
-    const lead={uid:'2',u:'daniyal',name:'Daniyal Tufail',role:'creator_content_ops_lead',email:'daniyaltufail59@gmail.com'};
+    const lead={uid:'2',u:'daniyal',name:'Daniyal Tufail',role:'creator_content_ops_lead',email:'daniyal@groovy.op'};
     const r=go(lead,['dashboard','hrm-payroll','po-registry','mkt-creators','shopify-intel','profile','bug-tracker']);
     s.eq('the dashboard is scoped away',r['dashboard'],'mkt-creators');
     s.eq('so is payroll',r['hrm-payroll'],'mkt-creators');
@@ -614,7 +614,7 @@ module.exports=async function(){
   }
   // The client gate follows the flag; the rules gate follows the email.
   {
-    const lead=app({session:{uid:'2',u:'daniyal',role:'creator_content_ops_lead',email:'daniyaltufail59@gmail.com'}});
+    const lead=app({session:{uid:'2',u:'daniyal',role:'creator_content_ops_lead',email:'daniyal@groovy.op'}});
     lead.run("mktPaidPRs=[{id:'pr_1',creator_id:'cr_a',status:'pending',proposed_amount_pkr:1000,deliverable:'x'}];mktCreators=[{id:'cr_a',ig_handle:'a'}];mktDispatches=[];mktPaidPRsLoaded=true");
     lead.run("window.mktOpenPaidPR('pr_1')");
     const html=lead.bodyHtml('mkt-modal-back');
