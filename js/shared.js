@@ -883,13 +883,13 @@ function _renderMobNav(ctx){
     return;
   }
   if(session&&session.role==='creator_content_ops_lead'){
-    // Four buttons: the inline column count beats #mob-nav's 5-column
-    // default (cols-3 is !important, so it is deliberately not used here).
+    // Five buttons — #mob-nav's own 5-column default.
     mob.className='';
-    mob.style.gridTemplateColumns='repeat(4,1fr)';
+    mob.style.gridTemplateColumns='';
     mob.innerHTML=_mobNavBtn('mkt-creators','people','Creators',"window.showPage('mkt-creators')")
                  +_mobNavBtn('mkt-dispatches','box','Dispatches',"window.showPage('mkt-dispatches')")
                  +_mobNavBtn('mkt-paid-pr','money','Paid PR',"window.showPage('mkt-paid-pr')")
+                 +_mobNavBtn('mkt-reports','activity','Reports',"window.showPage('mkt-reports')")
                  +_mobNavBtn('shopify-intel','shop','Intel',"window.showPage('shopify-intel')");
     _updateMobNavActive(currentPage);
     return;
@@ -947,7 +947,7 @@ function _updateMobNavActive(pageId){
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
     'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more','store-cash-ledger':'more',
     'activity':'more','monitor':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more',
-    'mkt-creators':'more','mkt-dispatches':'more','mkt-paid-pr':'more',
+    'mkt-creators':'more','mkt-dispatches':'more','mkt-paid-pr':'more','mkt-reports':'more','mkt-import':'more',
     'creative-hub':'more','notes':'more','note-detail':'more','boards':'more','boards-all':'more','board-canvas':'more',
     'my-work':'my-work'
   };
@@ -1182,7 +1182,7 @@ window.showPage=async function(id){
 
 function renderPage(id){
   const m=document.getElementById('main-content');
-  if(id==='dashboard'){m.innerHTML=renderDashboard(); if(typeof _hrmPopulateDashboard==='function')setTimeout(_hrmPopulateDashboard,0); if(typeof _fulfillDashboardInject==='function')setTimeout(_fulfillDashboardInject,0); if(typeof _monitorPopulateDashboard==='function')setTimeout(_monitorPopulateDashboard,0);}
+  if(id==='dashboard'){m.innerHTML=renderDashboard(); if(typeof _hrmPopulateDashboard==='function')setTimeout(_hrmPopulateDashboard,0); if(typeof _fulfillDashboardInject==='function')setTimeout(_fulfillDashboardInject,0); if(typeof _monitorPopulateDashboard==='function')setTimeout(_monitorPopulateDashboard,0); if(typeof _mktPopulateDashboard==='function')setTimeout(_mktPopulateDashboard,0);}
   else if(id==='po-create'){m.innerHTML=renderPOCreate(); if(typeof loadProducts==='function'&&!_productsLoaded)loadProducts();}
   else if(id==='po-registry')m.innerHTML=renderRegistry();
   else if(id==='my-work'){m.innerHTML=renderMyWork(); if(typeof _populateWorkerHRMWidget==='function')setTimeout(_populateWorkerHRMWidget,0);}
@@ -1314,6 +1314,8 @@ const BUG_PAGE_NAMES={
   'mkt-creators':'Marketing — Creator Database',
   'mkt-dispatches':'Marketing — Dispatch Log',
   'mkt-paid-pr':'Marketing — Paid PR Approvals',
+  'mkt-reports':'Marketing — Reports',
+  'mkt-import':'Marketing — Sheet import',
   'creative-hub':'Creative Hub',
   'notes':'Notes',
   'note-detail':'Note Detail',

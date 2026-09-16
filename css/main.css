@@ -1480,12 +1480,31 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .mkt-danger{color:var(--accent-urgent);border-color:var(--accent-urgent)}
 .mkt-danger:hover{color:var(--accent-urgent);border-color:var(--accent-urgent);background:var(--accent-urgent-soft)}
 .field textarea:disabled,.field input:disabled{opacity:.7}
+/* Reports + importer (Marketing M5–M7). */
+.mkt-dstatus-none{background:transparent;color:var(--muted);border:1px dashed var(--border)}
+.mkt-rep{min-width:560px}
+.mkt-total td{font-weight:700;border-top:2px solid var(--border)}
+.mkt-up{color:var(--accent-success);font-weight:600}
+.mkt-down{color:var(--accent-urgent);font-weight:600}
+.mkt-lift-line{margin-bottom:14px}
+.mkt-lift-line .mkt-warn{justify-content:flex-start}
+.mkt-implist{display:flex;flex-direction:column;max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:8px}
+.mkt-improw{display:grid;grid-template-columns:110px minmax(0,1fr) minmax(0,1fr) minmax(0,1.4fr);gap:10px;padding:6px 10px;font-size:12px;border-bottom:1px solid var(--border)}
+.mkt-improw:last-child{border-bottom:none}
+.mkt-improw>span{min-width:0;overflow-wrap:anywhere}
+.mkt-dupe{padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px}
+.mkt-dupe-opt{display:flex;gap:8px;align-items:flex-start;font-size:12px;padding:4px 0;cursor:pointer}
+.mkt-dupe-opt input{margin-top:2px;flex-shrink:0}
+.mkt-dupe-opt span{min-width:0;overflow-wrap:anywhere}
+.mkt-implog{font-size:12px;line-height:1.6;padding:10px 12px;margin-bottom:10px;border-radius:8px;background:var(--surface-2);max-height:220px;overflow-y:auto;font-variant-numeric:tabular-nums}
 @media (max-width:600px){
   .mkt-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   .mkt-grid-5,.mkt-perf{grid-template-columns:repeat(2,minmax(0,1fr))}
   .mkt-table .mkt-c-date{flex:1 1 100%;font-size:11px;color:var(--muted)}
   .mkt-table .mkt-c-prod{flex:1 1 100%;max-width:none}
   .mkt-hist-row{grid-template-columns:minmax(0,1fr) auto}
+  .mkt-rep{min-width:0}
+  .mkt-improw{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .mkt-hist-row>span:nth-child(2){display:none}
   .mkt-grid-4{grid-template-columns:repeat(2,minmax(0,1fr))}
   .mkt-lifetime{grid-template-columns:repeat(2,minmax(0,1fr))}

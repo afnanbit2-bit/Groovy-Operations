@@ -7,7 +7,10 @@
    M2 (Sept 2026): the Dispatch Log — organic dispatches, the Shopify
    product picker, the Day-7 performance capture and creator rollups.
    M3 (Sept 2026): Paid PR requests, the approval gate, payment logging.
-   Discount codes, reminders and reports land in later milestones —
+   M5 (Sept 2026): SLA / Day-7 reminders in the bell, the dashboard card.
+   M6 (Sept 2026): Reports.
+   M7 (Sept 2026): the importer for the Content Tracker 2026 sheet.
+   M4 (discount codes) is waiting on a Shopify permission check —
    see "The Sales Team ▸ Marketing" in CLAUDE.md.
 
    Who can reach it is decided by canAccessMarketing() in js/auth.js (owners
@@ -25,7 +28,10 @@
 // (M7) normalises every legacy spelling onto this list.
 const MKT_PK_CITIES=["Islamabad","Rawalpindi","Lahore","Faisalabad","Multan","Gujranwala","Sialkot","Bahawalpur","Sargodha","Sahiwal","Sheikhupura","Rahim Yar Khan","Jhang","Gujrat","Kasur","Okara","Dera Ghazi Khan","Muzaffargarh","Vehari","Chiniot","Kamoke","Hafizabad","Mianwali","Layyah","Pakpattan","Khanewal","Jhelum","Attock","Chakwal","Narowal","Toba Tek Singh","Nankana Sahib","Bhakkar","Khushab","Lodhran","Mandi Bahauddin","Wazirabad","Kot Addu","Karachi","Hyderabad","Sukkur","Larkana","Nawabshah","Mirpur Khas","Jacobabad","Shikarpur","Khairpur","Dadu","Thatta","Badin","Tando Adam","Tando Allahyar","Ghotki","Umerkot","Sanghar","Peshawar","Mardan","Mingora (Swat)","Kohat","Abbottabad","Mansehra","Dera Ismail Khan","Bannu","Swabi","Nowshera","Charsadda","Haripur","Chitral","Batagram","Buner","Hangu","Karak","Lakki Marwat","Tank","Quetta","Gwadar","Turbat","Khuzdar","Sibi","Chaman","Hub","Dera Murad Jamali","Zhob","Loralai","Panjgur","Mastung","Gilgit","Skardu","Hunza","Muzaffarabad","Mirpur (AJK)","Rawalakot","Bagh","Kotli"];
 // Common short forms seen in the sheet. Only unambiguous ones.
-const _MKT_CITY_ALIASES={pindi:'Rawalpindi',isb:'Islamabad',isl:'Islamabad',lhr:'Lahore',khi:'Karachi',swat:'Mingora (Swat)',di_khan:'Dera Ismail Khan','d.i khan':'Dera Ismail Khan','d.g khan':'Dera Ghazi Khan'};
+const _MKT_CITY_ALIASES={pindi:'Rawalpindi',rwp:'Rawalpindi',isb:'Islamabad',isl:'Islamabad',lhr:'Lahore',khi:'Karachi',
+  swat:'Mingora (Swat)',di_khan:'Dera Ismail Khan','d.i khan':'Dera Ismail Khan','d.g khan':'Dera Ghazi Khan',
+  // Seen in the Master List: a misspelling and an area of a listed city.
+  abottabad:'Abbottabad','lahore cantt':'Lahore'};
 
 // Niche tags the sheet already uses. The picker also offers every tag any
 // creator carries (derived, never stored — same rule as board labels).
@@ -361,14 +367,15 @@ function mktNavItems(){
   return[
     {id:'mkt-creators',label:'Creator Database',iconName:'people'},
     {id:'mkt-dispatches',label:'Dispatch Log',iconName:'box'},
-    {id:'mkt-paid-pr',label:'Paid PR Approvals',iconName:'money'}
+    {id:'mkt-paid-pr',label:'Paid PR Approvals',iconName:'money'},
+    {id:'mkt-reports',label:'Reports',iconName:'activity'}
   ];
 }
 
 // One entry point for every Marketing page, so js/shared.js dispatches all
 // of them with a single `id.startsWith('mkt-')` line and never needs
 // touching again when a milestone adds a page.
-const _MKT_PAGES={'mkt-creators':()=>renderMarketingCreators(),'mkt-dispatches':()=>renderMarketingDispatches(),'mkt-paid-pr':()=>renderMarketingPaidPR()};
+const _MKT_PAGES={'mkt-creators':()=>renderMarketingCreators(),'mkt-dispatches':()=>renderMarketingDispatches(),'mkt-paid-pr':()=>renderMarketingPaidPR(),'mkt-reports':()=>renderMarketingReports(),'mkt-import':()=>renderMarketingImport()};
 function mktPageHTML(id){return(_MKT_PAGES[id]||_MKT_PAGES['mkt-creators'])();}
 function mktRenderPage(id){
   const m=document.getElementById('main-content');
@@ -475,6 +482,7 @@ function renderMarketingCreators(){
       <div><div class="page-title">Creator Database</div>
       <div class="page-sub">The Sales Team ▸ Marketing</div></div>
       <div class="mkt-actions">
+        <button class="btn-outline" onclick="window.showPage('mkt-import')">Import from sheet</button>
         <button class="btn-outline" onclick="window.mktOpenScoring()">Scoring settings</button>
         <button class="btn-outline mkt-primary" onclick="window.mktOpenCreator('')">+ Add creator</button>
       </div>
@@ -952,7 +960,8 @@ function mktBuildDispatchPayload(form,existing,creators,now,uid){
   const seen=new Set();
   const products=(Array.isArray(f.products)?f.products:[]).filter(p=>p&&p.variant_id).map(p=>({
     product_id:String(p.product_id||''),variant_id:String(p.variant_id),
-    product_title:_mktTrim(p.product_title,120),variant_title:_mktTrim(p.variant_title,120)
+    product_title:_mktTrim(p.product_title,120),variant_title:_mktTrim(p.variant_title,120),
+    sku:_mktTrim(p.sku,60)
   })).filter(p=>seen.has(p.variant_id)?false:(seen.add(p.variant_id),true));
   if(!products.length&&!(old&&old.products_note))return{error:'Add at least one product from the catalog.'};
   let status=MKT_DISPATCH_STATUSES.some(x=>x.k===f.status)?f.status:(old?old.status:'confirmed');
@@ -1011,13 +1020,17 @@ function mktBuildPerformance(form,now,uid){
 }
 
 /**
- * When the Day-7 snapshot is due. Counted from content received; a dispatch
- * with no content-received time falls back to shipped, and that fallback is
+ * When the Day-7 snapshot is due. Only once there IS a post (a link, or
+ * Content received). Counted from content received; a posted dispatch with
+ * no content-received time falls back to shipped, and that fallback is
  * reported as such (spec §8: it is a data-quality signal in itself).
  */
 function mktDay7(d,nowMs){
   if(!d)return{state:'none'};
   if(d.performance_captured_at)return{state:'captured'};
+  // No post, nothing to measure: the no-post reminder covers that case.
+  const posted=d.status==='content_received'||!!String(d.link_to_post||'').trim();
+  if(!posted)return{state:'none'};
   const cr=_mktMs(d.content_received_at),sh=_mktMs(d.shipped_at);
   const anchor=cr!=null?cr:sh;
   if(anchor==null)return{state:'none'};
@@ -1122,7 +1135,8 @@ function _mktCatalogNoteHTML(){
 function _mktCreatorById(id){return mktCreators.find(c=>c.id===id)||null;}
 
 function _mktDispChip(d){
-  const k=d.status||'confirmed';
+  const k=d.status||'';
+  if(!k)return`<span class="mkt-dstatus mkt-dstatus-none">Not recorded</span>`;
   return`<span class="mkt-dstatus mkt-dstatus-${_mktEsc(k)}">${_mktDispStatusLabel(k)}</span>`;
 }
 function _mktDay7Chip(d,now){
@@ -1285,7 +1299,7 @@ window.mktOpenDispatch=function(id,creatorId){
         <div class="field"><label for="mkt-d-date">Dispatch date *</label><input id="mkt-d-date" type="date" value="${_mktEsc(d?d.date_of_dispatch||'':_mktDayStr(Date.now()))}"></div>
         <div class="field"><label for="mkt-d-coll">Collection sent</label><input id="mkt-d-coll" list="mkt-d-coll-list" value="${_mktEsc(d?d.collection_sent||'':'')}" autocomplete="off" placeholder="e.g. Lowkey Heat">
           <datalist id="mkt-d-coll-list">${collections.map(x=>`<option value="${_mktEsc(x)}"></option>`).join('')}</datalist></div>
-        <div class="field"><label for="mkt-d-status">Status</label><select id="mkt-d-status">${MKT_DISPATCH_STATUSES.map(x=>`<option value="${x.k}"${(d?d.status:'confirmed')===x.k?' selected':''}>${x.label}</option>`).join('')}</select></div>
+        <div class="field"><label for="mkt-d-status">Status</label><select id="mkt-d-status">${d&&!d.status?'<option value="" selected>Not recorded (from the sheet)</option>':''}${MKT_DISPATCH_STATUSES.map(x=>`<option value="${x.k}"${(d?d.status:'confirmed')===x.k?' selected':''}>${x.label}</option>`).join('')}</select></div>
         <div class="field"><label for="mkt-d-link">Link to post</label><input id="mkt-d-link" value="${_mktEsc(d?d.link_to_post||'':'')}" placeholder="https://www.instagram.com/p/…" autocomplete="off" inputmode="url"></div>
       </div>
       <div class="mkt-note">${stamps?_mktEsc(stamps)+'. ':''}Adding a post link marks the dispatch Content received.</div>
@@ -1378,7 +1392,7 @@ window.mktAddProduct=function(vid){
   if(!_mktDraft||!_mktCatalog)return;
   const v=_mktCatalog.find(x=>x.variant_id===vid);
   if(!v||_mktDraft.products.some(p=>p.variant_id===vid))return;
-  _mktDraft.products.push({product_id:v.product_id,variant_id:v.variant_id,product_title:v.product_title,variant_title:v.variant_title});
+  _mktDraft.products.push({product_id:v.product_id,variant_id:v.variant_id,product_title:v.product_title,variant_title:v.variant_title,sku:v.sku});
   _mktRepaintDraftProducts();
 };
 window.mktRemoveProduct=function(i){
@@ -1866,4 +1880,764 @@ window.mktSavePayment=async function(){
     _mktSaving=false;
     if(btn){btn.disabled=false;btn.textContent='Save payment';}
   }
+};
+
+// ════════════════════════════════════════════════════════════════════════
+// M5 — SLA reminders and the dashboard card
+// ════════════════════════════════════════════════════════════════════════
+// Reminders go to the same bell every other module uses (hrm_notifications)
+// and are addressed by forUser. Recipients are resolved at the moment a
+// reminder is raised — by ROLE for the lead, by the canApprovePaidPR FLAG
+// for the approver — so nothing names a person and a reassignment needs no
+// data change.
+//
+// They are raised by whichever Marketing account opens the app (at most
+// once a day per device), the same client-side pattern as the HRM
+// increment-due check. Nothing fires while nobody has the app open; the
+// first person to open it raises everything that is due. Every reminder has
+// a DETERMINISTIC id, so any number of devices raising it produce one
+// notification, and a dismissed one is never raised again.
+
+const MKT_SLA_LEAD_DAYS=7;       // no post N days after shipping → the lead
+const MKT_SLA_APPROVER_DAYS=14;  // … and at this point → the approver too
+const _MKT_REMINDER_KEY='groovy-mkt-reminders-day';
+const _MKT_REMINDER_CAP=60;      // per run — a backlog cannot flood the bell
+let _mktRemindersRan=false;
+
+function mktLeadUsernames(){
+  return (typeof USER_DEFS!=='undefined'?USER_DEFS:[]).filter(u=>u.role==='creator_content_ops_lead').map(u=>u.u);
+}
+function mktApproverUsernames(){
+  return (typeof USER_DEFS!=='undefined'?USER_DEFS:[]).filter(u=>u.canApprovePaidPR===true).map(u=>u.u);
+}
+
+/** Whole days since a timestamp. */
+function _mktDaysSince(ms,nowMs){return ms==null?null:Math.floor((nowMs-ms)/_MKT_DAY_MS);}
+
+/**
+ * Every reminder that should exist right now, as the bell will store it.
+ * Pure: the caller decides which ones are new.
+ */
+function mktPlanReminders(dispatches,creators,nowMs,leads,approvers){
+  const byId=new Map((creators||[]).map(c=>[c.id,c]));
+  const who=d=>{const c=byId.get(d.creator_id);return c?'@'+_mktEsc(c.ig_handle):'a creator';};
+  const out=[];
+  (dispatches||[]).forEach(d=>{
+    const shipped=_mktMs(d.shipped_at);
+    const noPost=!String(d.link_to_post||'').trim()&&d.status!=='content_received';
+    const days=_mktDaysSince(shipped,nowMs);
+    if(noPost&&days!=null&&days>=MKT_SLA_LEAD_DAYS){
+      (leads||[]).forEach(u=>out.push({id:'mkt_sla7_'+d.id+'_'+u,forUser:u,type:'mkt_sla_7',priority:'normal',
+        title:'No post yet — '+days+' days since shipping',
+        message:who(d)+' has not posted '+_mktEsc(d.collection_sent||'the dispatch')+' shipped '+days+' days ago.',
+        relatedTo:d.id}));
+    }
+    if(noPost&&days!=null&&days>=MKT_SLA_APPROVER_DAYS){
+      (approvers||[]).forEach(u=>out.push({id:'mkt_sla14_'+d.id+'_'+u,forUser:u,type:'mkt_sla_14',priority:'high',
+        title:'Creator overdue — '+days+' days, no post',
+        message:who(d)+' still has not posted '+_mktEsc(d.collection_sent||'the dispatch')+' ('+(d.type==='paid_pr'?'Paid PR':'organic')+'), shipped '+days+' days ago.',
+        relatedTo:d.id}));
+    }
+    const d7=mktDay7(d,nowMs);
+    if(d7.state==='due'){
+      (leads||[]).forEach(u=>out.push({id:'mkt_d7_'+d.id+'_'+u,forUser:u,type:'mkt_day7',priority:'normal',
+        title:'Day-7 performance due',
+        message:'Capture the Day-7 numbers for '+who(d)+'’s post'+(d7.basis==='shipped'?' — counted from shipping, because no content-received date was recorded.':'.'),
+        relatedTo:d.id}));
+    }
+  });
+  return out;
+}
+
+function _mktTodayKey(){return _mktDayStr(Date.now());}
+
+/**
+ * Raise whatever is due and not yet raised. Reads only what it needs —
+ * shipped dispatches and uncaptured ones — never the whole log.
+ */
+async function mktRunReminders(opts){
+  const o=opts||{};
+  if(typeof canAccessMarketing!=='function'||!canAccessMarketing())return{raised:0,skipped:'no access'};
+  if(_mktRemindersRan&&!o.force)return{raised:0,skipped:'already ran'};
+  if(!o.force){
+    try{if(localStorage.getItem(_MKT_REMINDER_KEY)===_mktTodayKey())return{raised:0,skipped:'ran today'};}catch(_){}
+  }
+  _mktRemindersRan=true;
+  const now=o.now||Date.now();
+  let list;
+  if(mktDispatchesLoaded)list=mktDispatches;
+  else{
+    const [a,b]=await Promise.allSettled([
+      getDocs(query(collection(db,'dispatches'),where('status','==','shipped'))),
+      getDocs(query(collection(db,'dispatches'),where('performance_captured_at','==',null)))
+    ]);
+    const seen=new Map();
+    [a,b].forEach(r=>{if(r.status==='fulfilled')r.value.docs.forEach(d=>seen.set(d.id,Object.assign({id:d.id},d.data())));});
+    if(a.status!=='fulfilled'&&b.status!=='fulfilled')return{raised:0,skipped:'reads refused'};
+    list=Array.from(seen.values());
+  }
+  // Names for the messages — only the creators actually involved.
+  let creators=mktCreators;
+  if(!mktCreatorsLoaded){
+    const ids=Array.from(new Set(list.map(d=>d.creator_id).filter(Boolean))).slice(0,80);
+    const snaps=await Promise.allSettled(ids.map(id=>getDoc(doc(db,'creators',id))));
+    creators=snaps.map((s,i)=>s.status==='fulfilled'&&s.value&&s.value.exists()?Object.assign({id:ids[i]},s.value.data()):null).filter(Boolean);
+  }
+  const plan=mktPlanReminders(list,creators,now,mktLeadUsernames(),mktApproverUsernames()).slice(0,_MKT_REMINDER_CAP);
+  const known=new Set((typeof allHRMNotifs!=='undefined'?allHRMNotifs:[]).map(n=>n._id||n.id));
+  let raised=0;
+  for(const n of plan){
+    if(known.has(n.id))continue;
+    try{
+      const ref=doc(db,'hrm_notifications',n.id);
+      const snap=await getDoc(ref);
+      if(snap&&snap.exists())continue;   // raised before — maybe dismissed; never raise it again
+      const data={id:n.id,type:n.type,title:n.title,message:n.message,forUser:n.forUser,forRole:'',
+        relatedTo:n.relatedTo,createdAt:now,readBy:[],priority:n.priority,actionRequired:false,actionUrl:'mkt-dispatches'};
+      await setDoc(ref,data);
+      raised++;
+      if(typeof allHRMNotifs!=='undefined')allHRMNotifs.unshift(Object.assign({},data,{_id:n.id}));
+    }catch(e){console.warn('[marketing] reminder failed',n.id,e&&e.message);}
+  }
+  try{localStorage.setItem(_MKT_REMINDER_KEY,_mktTodayKey());}catch(_){}
+  if(raised&&typeof _renderHRMNotifBadge==='function')_renderHRMNotifBadge();
+  return{raised,planned:plan.length};
+}
+
+/**
+ * Called from startApp and NEVER awaited — nothing on the path to the first
+ * render may wait on the network (CLAUDE.md, "Diagnostics"). Gives the lead
+ * the bell's contents (the lead never opens the dashboard that normally
+ * loads them) and raises today's reminders.
+ */
+function mktBootstrap(){
+  if(typeof canAccessMarketing!=='function'||!canAccessMarketing())return;
+  setTimeout(()=>{
+    (async()=>{
+      try{
+        if(typeof hrmS4DataLoaded!=='undefined'&&!hrmS4DataLoaded&&typeof loadHRMSession4Data==='function')await loadHRMSession4Data();
+      }catch(_){}
+      try{await mktRunReminders();}catch(e){console.warn('[marketing] reminders skipped',e&&e.message);}
+    })();
+  },1500);
+}
+
+// ── Dashboard card (owners) ─────────────────────────────────────────────
+// Passive visibility only — it reports, it asks nothing. Same placeholder +
+// async populate shape as the Monitor and HRM widgets.
+function renderMarketingDashboardWidget(){
+  if(!session||session.role!=='owner'||typeof canAccessMarketing!=='function'||!canAccessMarketing())return'';
+  return`<div class="card" id="mkt-dash-widget" style="margin-bottom:14px;cursor:pointer" onclick="window.showPage('mkt-dispatches')">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div style="font-weight:700;font-size:11px;letter-spacing:.07em;text-transform:uppercase">Marketing</div>
+      <div style="font-size:11px;color:var(--muted)">Dispatch Log ›</div>
+    </div>
+    <div id="mkt-dash-body" style="font-size:13px;color:var(--muted);margin-top:6px">Loading…</div>
+  </div>`;
+}
+
+/** The card's sentence, from counts. Pure. */
+function mktDashboardLine(weekCount,pendingCount,pendingPkr,codes){
+  const parts=[
+    `<b style="color:var(--text)">${weekCount}</b> dispatched this week`,
+    `<b style="color:${pendingCount?'var(--accent-warning)':'var(--text)'}">${pendingCount}</b> Paid PR pending approval${pendingCount?' ('+_mktPKR(pendingPkr)+')':''}`,
+    codes&&codes.live!=null
+      ?`<b style="color:var(--text)">${codes.live}</b> discount codes live, ${_mktPKR(codes.redeemedPkr)} redeemed this month`
+      :'discount codes not set up yet'
+  ];
+  return parts.join(' · ');
+}
+
+function _mktWithTimeout(p,ms){return Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),ms))]);}
+
+async function _mktPopulateDashboard(){
+  const body=document.getElementById('mkt-dash-body');
+  if(!body)return;
+  try{
+    const since=_mktWeekStart(Date.now());
+    const [wk,pend]=await _mktWithTimeout(Promise.all([
+      getDocs(query(collection(db,'dispatches'),where('date_of_dispatch','>=',since))),
+      getDocs(query(collection(db,'paid_pr_requests'),where('status','==','pending')))
+    ]),12000);
+    const pending=pend.docs.map(d=>d.data());
+    body.innerHTML=mktDashboardLine(wk.docs.length,pending.length,pending.reduce((n,r)=>n+(Number(r.proposed_amount_pkr)||0),0),null);
+  }catch(e){
+    body.innerHTML=e&&e.message==='timeout'
+      ?'Taking too long. <a href="#" onclick="event.preventDefault();event.stopPropagation();_mktPopulateDashboard();" style="color:inherit;text-decoration:underline">Retry</a>'
+      :'Could not load the Marketing figures.';
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// M6 — Reports
+// ════════════════════════════════════════════════════════════════════════
+// Four reports, each saying plainly what it can and cannot claim:
+//   · Monthly PR spend — approved and paid side by side (approved ≠ paid).
+//   · Top ROI — Paid PR only (ROI needs a cost; organic has none). Revenue
+//     comes from discount-code redemptions, which arrive with M4, so until
+//     then the table ranks spend and says ROI is not yet measurable.
+//   · Best performing (organic) — Day-7 captures, never called ROI.
+//   · Sales lift — two lines that are never added together: attributed
+//     (coded, M4) and directional (uncoded: units of the dispatched SKU in
+//     the N days after vs before; correlation, not attribution).
+
+let _mktReportLiftDays=14;
+let _mktOrganicSort='views';
+let _mktLineItems=null;       // [{sku, quantity, created:ms, refunded:bool}]
+let _mktLineItemsErr=null;
+let _mktLineItemsLoading=null;
+
+/** Approved requests grouped by the month they were decided in. */
+function mktMonthlySpend(requests){
+  const byMonth=new Map();
+  (requests||[]).forEach(r=>{
+    if(r.status!=='approved')return;
+    const t=_mktMs(r.decided_at);if(t==null)return;
+    const key=_mktDayStr(t).slice(0,7);
+    const m=byMonth.get(key)||{month:key,count:0,approved:0,paid:0,unpaid:0};
+    const amt=Number(r.proposed_amount_pkr)||0;
+    m.count++;m.approved+=amt;
+    if(r.payment_status==='paid')m.paid+=amt;else m.unpaid+=amt;
+    byMonth.set(key,m);
+  });
+  return Array.from(byMonth.values()).sort((a,b)=>a.month<b.month?1:-1);
+}
+
+/**
+ * Paid PR creators with their spend and, once codes exist, attributed
+ * revenue. revenueByCreator is null until M4 — then ROI is null too, and
+ * the list is ranked by spend instead of pretending.
+ */
+function mktPaidRoi(requests,creators,revenueByCreator){
+  const byId=new Map((creators||[]).map(c=>[c.id,c]));
+  const rows=new Map();
+  (requests||[]).forEach(r=>{
+    if(r.status!=='approved')return;
+    const row=rows.get(r.creator_id)||{creator_id:r.creator_id,creator:byId.get(r.creator_id)||null,paidPrs:0,spend:0,revenue:null,roi:null};
+    row.paidPrs++;row.spend+=Number(r.proposed_amount_pkr)||0;
+    rows.set(r.creator_id,row);
+  });
+  const list=Array.from(rows.values());
+  if(revenueByCreator){
+    list.forEach(x=>{x.revenue=Number(revenueByCreator[x.creator_id])||0;x.roi=x.spend>0?Math.round(x.revenue/x.spend*100)/100:null;});
+    return list.sort((a,b)=>(b.roi==null?-1:b.roi)-(a.roi==null?-1:a.roi));
+  }
+  return list.sort((a,b)=>b.spend-a.spend);
+}
+
+/** Organic creators ranked from their Day-7 captures. */
+function mktOrganicPerformance(dispatches,creators,sortBy){
+  const byId=new Map((creators||[]).map(c=>[c.id,c]));
+  const rows=new Map();
+  (dispatches||[]).forEach(d=>{
+    if((d.type||'organic')!=='organic'||!d.performance_captured_at)return;
+    const v=Number(d.performance_views);
+    if(!isFinite(v)||v<=0)return;
+    const eng=(Number(d.performance_likes)||0)+(Number(d.performance_comments)||0)+(Number(d.performance_saves)||0);
+    const row=rows.get(d.creator_id)||{creator_id:d.creator_id,creator:byId.get(d.creator_id)||null,posts:0,views:0,engagements:0};
+    row.posts++;row.views+=v;row.engagements+=eng;
+    rows.set(d.creator_id,row);
+  });
+  const list=Array.from(rows.values()).map(r=>Object.assign(r,{
+    avgViews:Math.round(r.views/r.posts),
+    engagementRate:Math.round(r.engagements/r.views*10000)/10000
+  }));
+  return list.sort(sortBy==='engagement'
+    ?(a,b)=>b.engagementRate-a.engagementRate||b.avgViews-a.avgViews
+    :(a,b)=>b.avgViews-a.avgViews||b.engagementRate-a.engagementRate);
+}
+
+/** Line items as the lift report needs them. */
+function mktLineItemFromDoc(o){
+  const d=o||{};
+  return{sku:String(d.sku||'').trim(),quantity:Number(d.quantity)||0,created:_mktMs(d.order_created_at),
+    refunded:/refund|void/i.test(String(d.financial_status||''))};
+}
+
+/**
+ * Directional lift for UNCODED dispatches: for each dispatched SKU, units
+ * sold in the N days after the dispatch date against the N days before.
+ * A window still running is reported as such, never as a finished number.
+ */
+function mktSalesLift(dispatches,lineItems,skuByVariant,days,nowMs,creators){
+  const N=days||14;
+  const byId=new Map((creators||[]).map(c=>[c.id,c]));
+  const bySku=new Map();
+  (lineItems||[]).forEach(li=>{
+    if(!li.sku||li.refunded||li.created==null)return;
+    (bySku.get(li.sku)||bySku.set(li.sku,[]).get(li.sku)).push(li);
+  });
+  const rows=[];
+  (dispatches||[]).forEach(d=>{
+    if(d.has_discount_code)return;               // coded → the attributed line
+    const day=_mktIsoDay(d.date_of_dispatch);
+    if(!day)return;
+    const [y,m,dd]=day.split('-').map(Number);
+    const start=new Date(y,m-1,dd).getTime();
+    const before=start-N*_MKT_DAY_MS,after=start+N*_MKT_DAY_MS;
+    (d.products||[]).forEach(p=>{
+      const sku=String(p.sku||(skuByVariant&&skuByVariant[p.variant_id])||'').trim();
+      const row={dispatch_id:d.id,creator:byId.get(d.creator_id)||null,date:day,product:p.product_title+(p.variant_title?' — '+p.variant_title:''),
+        sku,before:null,after:null,change:null,open:nowMs<after};
+      if(sku){
+        const items=bySku.get(sku)||[];
+        row.before=items.filter(li=>li.created>=before&&li.created<start).reduce((n,li)=>n+li.quantity,0);
+        row.after=items.filter(li=>li.created>=start&&li.created<Math.min(after,nowMs)).reduce((n,li)=>n+li.quantity,0);
+        row.change=row.after-row.before;
+      }
+      rows.push(row);
+    });
+  });
+  return rows.sort((a,b)=>a.date<b.date?1:-1);
+}
+
+function _mktLoadLineItems(){
+  if(_mktLineItems)return Promise.resolve();
+  if(_mktLineItemsLoading)return _mktLineItemsLoading;
+  _mktLineItemsErr=null;
+  _mktLineItemsLoading=(async()=>{
+    try{
+      if(typeof _siCollectionsLoaded!=='undefined'&&_siCollectionsLoaded&&typeof _siLineItems!=='undefined')
+        _mktLineItems=_siLineItems.map(mktLineItemFromDoc);
+      else{
+        const snap=await getDocs(collection(db,'shopify_line_items'));
+        _mktLineItems=snap.docs.map(d=>mktLineItemFromDoc(d.data()));
+      }
+    }catch(e){_mktLineItemsErr=(e&&e.message)||'could not read Shopify orders';}
+    _mktLineItemsLoading=null;
+  })();
+  return _mktLineItemsLoading;
+}
+
+function _mktMonthLabel(key){const [y,m]=key.split('-').map(Number);return new Date(y,m-1,1).toLocaleDateString('en-GB',{month:'long',year:'numeric'});}
+function _mktWhoCell(c){return c?`<div class="mkt-name">${_mktEsc(c.name||'@'+c.ig_handle)}</div><div class="mkt-handle">@${_mktEsc(c.ig_handle)}</div>`:'<span class="mkt-muted">Unknown creator</span>';}
+
+function renderMarketingReports(){
+  if(typeof canAccessMarketing!=='function'||!canAccessMarketing())
+    return'<div class="empty">Reports are limited to the owners and the Creator &amp; Content Operations Lead.</div>';
+  const missing=[!mktDispatchesLoaded&&'dispatches',!mktPaidPRsLoaded&&'paid_pr_requests'].filter(Boolean);
+  const warn=missing.length?`<div class="mkt-warn">Some data could not be read (${_mktEsc(missing.join(', '))}), so the reports below are incomplete. <button class="btn-outline" onclick="window.mktRetryLoad()">Retry</button></div>`:'';
+  // Line items and the catalog load on first visit; the lift section repaints when they land.
+  if(!_mktLineItems&&!_mktLineItemsErr)Promise.all([_mktLoadLineItems(),_mktLoadCatalog()]).then(()=>{const el=document.getElementById('mkt-rep-lift');if(el)el.innerHTML=_mktLiftHTML();});
+  return`<div class="page-head mkt-head">
+      <div><div class="page-title">Reports</div>
+      <div class="page-sub">The Sales Team ▸ Marketing</div></div>
+    </div>
+    ${warn}
+    <div class="card"><div class="card-title">Monthly PR spend</div>${_mktSpendHTML()}</div>
+    <div class="card"><div class="card-title">Top ROI creators — Paid PR only</div>${_mktRoiHTML()}</div>
+    <div class="card"><div class="card-title">Best performing — organic</div>${_mktOrganicHTML()}</div>
+    <div class="card"><div class="card-title">Sales lift on dispatched products</div><div id="mkt-rep-lift">${_mktLiftHTML()}</div></div>
+    <div style="height:80px"></div>`;
+}
+
+function _mktSpendHTML(){
+  const rows=mktMonthlySpend(mktPaidPRs);
+  if(!rows.length)return'<div class="mkt-note">No approved Paid PRs yet.</div>';
+  const tot=rows.reduce((t,r)=>({count:t.count+r.count,approved:t.approved+r.approved,paid:t.paid+r.paid,unpaid:t.unpaid+r.unpaid}),{count:0,approved:0,paid:0,unpaid:0});
+  return`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
+    <thead><tr><th>Month approved</th><th class="num">Paid PRs</th><th class="num">Approved</th><th class="num">Paid out</th><th class="num">Not yet paid</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr><td>${_mktMonthLabel(r.month)}</td><td class="num" data-label="Paid PRs">${r.count}</td><td class="num" data-label="Approved">${_mktPKR(r.approved)}</td><td class="num" data-label="Paid out">${_mktPKR(r.paid)}</td><td class="num" data-label="Not yet paid">${r.unpaid?`<span class="mkt-pay-unpaid">${_mktPKR(r.unpaid)}</span>`:_mktPKR(0)}</td></tr>`).join('')}
+    <tr class="mkt-total"><td>Total</td><td class="num" data-label="Paid PRs">${tot.count}</td><td class="num" data-label="Approved">${_mktPKR(tot.approved)}</td><td class="num" data-label="Paid out">${_mktPKR(tot.paid)}</td><td class="num" data-label="Not yet paid">${_mktPKR(tot.unpaid)}</td></tr></tbody>
+  </table></div><div class="mkt-note">Grouped by the month each request was approved. Approved is what was committed; paid out is what has been logged as paid.</div>`;
+}
+
+function _mktRoiHTML(){
+  const rows=mktPaidRoi(mktPaidPRs,mktCreators,null);
+  if(!rows.length)return'<div class="mkt-note">No approved Paid PRs yet.</div>';
+  return`<div class="mkt-warn">ROI needs the revenue from each creator's discount code, and discount codes are not live yet. Until they are, this ranks creators by Paid PR spend — it is not an ROI ranking.</div>
+  <div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
+    <thead><tr><th>Creator</th><th class="num">Paid PRs</th><th class="num">Spend</th><th class="num">Attributed revenue</th><th class="num">ROI</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr><td class="mkt-c-who">${_mktWhoCell(r.creator)}</td><td class="num" data-label="Paid PRs">${r.paidPrs}</td><td class="num" data-label="Spend">${_mktPKR(r.spend)}</td><td class="num" data-label="Revenue"><span class="mkt-muted">not measurable yet</span></td><td class="num" data-label="ROI"><span class="mkt-muted">—</span></td></tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+function _mktOrganicHTML(){
+  const rows=mktOrganicPerformance(mktDispatches,mktCreators,_mktOrganicSort);
+  const toggle=`<div class="mkt-chiprow" style="margin-bottom:10px"><button class="filter-chip${_mktOrganicSort==='views'?' active':''}" onclick="window.mktOrganicSort('views')">By reach (avg views)</button><button class="filter-chip${_mktOrganicSort==='engagement'?' active':''}" onclick="window.mktOrganicSort('engagement')">By engagement</button></div>`;
+  if(!rows.length)return toggle+'<div class="mkt-note">No Day-7 captures on organic dispatches yet.</div>';
+  return toggle+`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
+    <thead><tr><th>#</th><th>Creator</th><th class="num">Posts captured</th><th class="num">Avg views</th><th class="num">Engagement</th></tr></thead>
+    <tbody>${rows.slice(0,25).map((r,i)=>`<tr><td class="num">${i+1}</td><td class="mkt-c-who">${_mktWhoCell(r.creator)}</td><td class="num" data-label="Posts">${r.posts}</td><td class="num" data-label="Avg views">${_mktFmtNum(r.avgViews)}</td><td class="num" data-label="Engagement">${_mktPct(r.engagementRate)}</td></tr>`).join('')}</tbody>
+  </table></div><div class="mkt-note">From the Day-7 snapshots. Engagement = (likes + comments + saves) ÷ views. Organic dispatches carry no cost, so this is performance, not ROI.</div>`;
+}
+window.mktOrganicSort=function(k){if(k==='views'||k==='engagement'){_mktOrganicSort=k;_mktRerenderPage();}};
+
+function _mktLiftHTML(){
+  const coded=`<div class="mkt-lift-line"><div class="mkt-section-title">Attributed — dispatches with a discount code</div>
+    <div class="mkt-note">Discount codes are not live yet, so there is no attributed revenue to report. This becomes a hard number (Shopify revenue from each code's redemptions) once they are.</div></div>`;
+  const days=_mktReportLiftDays;
+  const picker=`<div class="mkt-chiprow" style="margin:6px 0 10px">${[7,14,30].map(n=>`<button class="filter-chip${days===n?' active':''}" onclick="window.mktLiftDays(${n})">${n} days</button>`).join('')}</div>`;
+  let body;
+  if(_mktLineItemsErr)body=`<div class="mkt-error">Shopify order data could not be read (${_mktEsc(_mktLineItemsErr)}).</div>`;
+  else if(!_mktLineItems)body='<div class="mkt-note">Loading Shopify orders…</div>';
+  else{
+    const skuByVariant={};(_mktCatalog||[]).forEach(v=>{if(v.sku)skuByVariant[v.variant_id]=v.sku;});
+    const rows=mktSalesLift(mktDispatches,_mktLineItems,skuByVariant,days,Date.now(),mktCreators);
+    body=!rows.length?'<div class="mkt-note">No dated dispatches with products yet.</div>'
+      :`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
+        <thead><tr><th>Dispatched</th><th>Creator</th><th>Product</th><th class="num">${days}d before</th><th class="num">${days}d after</th><th class="num">Change</th></tr></thead>
+        <tbody>${rows.slice(0,60).map(r=>`<tr><td class="mkt-c-date">${_mktDayLabel(r.date)}</td><td class="mkt-c-who">${_mktWhoCell(r.creator)}</td><td class="mkt-c-prod">${_mktEsc(r.product)}${r.sku?'':' <span class="mkt-muted">(no SKU match)</span>'}</td>
+          <td class="num" data-label="Before">${r.before==null?'—':r.before}</td><td class="num" data-label="After">${r.after==null?'—':r.after}${r.open?' <span class="mkt-muted">so far</span>':''}</td>
+          <td class="num" data-label="Change">${r.change==null?'—':`<span class="${r.change>0?'mkt-up':r.change<0?'mkt-down':''}">${r.change>0?'+':''}${r.change}</span>`}</td></tr>`).join('')}</tbody>
+      </table></div>`;
+  }
+  return coded+`<div class="mkt-lift-line"><div class="mkt-section-title">Directional — dispatches without a code</div>
+    <div class="mkt-warn">Correlational estimate, not attribution. Units of the dispatched SKU in the ${days} days after the dispatch against the ${days} days before — ads, other creators and seasonality are not controlled for. Refunded orders are left out.</div>
+    ${picker}${body}</div>`;
+}
+window.mktLiftDays=function(n){if([7,14,30].indexOf(n)>=0){_mktReportLiftDays=n;const el=document.getElementById('mkt-rep-lift');if(el)el.innerHTML=_mktLiftHTML();}};
+
+// ════════════════════════════════════════════════════════════════════════
+// M7 — Migration from the Content Tracker 2026 sheet
+// ════════════════════════════════════════════════════════════════════════
+// An in-app importer rather than a script with a service account: the
+// Excel file is read in the browser with the vendored SheetJS, every row is
+// shown before anything is written, duplicate handles must be resolved by a
+// person, and the writes go through the same rules and the same
+// handle-lock transaction as a creator added by hand. Re-running it is
+// safe — a handle already in the database is skipped, and a sheet dispatch
+// row has a fixed id.
+//
+// Rules from the spec, all enforced below:
+//   · rows import as-is; a missing field stays EMPTY, never a placeholder;
+//   · niche strings are split into arrays;
+//   · city casing is normalised onto the Lists tab; a city that matches
+//     nothing is kept as typed and flagged, not guessed;
+//   · duplicate handles are held back for review;
+//   · score and tier stay null — the sheet's A/B/C column is ignored;
+//   · monthly-tab rows become dispatches with date and status left BLANK
+//     when the sheet has none, and their product text kept as a note.
+
+const MKT_IMPORT_SOURCE='content_tracker_2026';
+const _MKT_MONTH_TABS=/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{4}$/i;
+let _mktImport=null;   // {fileName, creators:{...plan}, dispatches:[...], choices:{handle:rowNo|''}, running, log}
+
+/** A header cell to the key the importer uses. */
+function _mktHeaderKey(h){
+  const k=String(h||'').toLowerCase().replace(/[^a-z]/g,'');
+  return({tier:'tier',name:'name',ighandle:'ig_handle',handle:'ig_handle',instagram:'ig_handle',niche:'niche',city:'city',
+    address:'address',phone:'phone',phoneno:'phone',topsize:'top_size',bottomsize:'bottom_size',
+    dateofdispatch:'date',date:'date',collectionsent:'collection',collection:'collection',
+    productssent:'products',products:'products',status:'status',linktopost:'link',link:'link'})[k]||'';
+}
+
+/** Rows (arrays, first row = header) → objects keyed by importer keys. */
+function mktRowsToRecords(rows){
+  if(!rows||!rows.length)return[];
+  const keys=(rows[0]||[]).map(_mktHeaderKey);
+  const out=[];
+  for(let i=1;i<rows.length;i++){
+    const r=rows[i]||[];
+    const rec={_row:i+1};
+    let any=false;
+    keys.forEach((k,j)=>{if(!k)return;const v=r[j];if(v!==undefined&&v!==null&&String(v).trim()!==''){rec[k]=v;any=true;}});
+    if(any)out.push(rec);
+  }
+  return out;
+}
+
+function _mktTitleCase(s){return String(s||'').trim().replace(/\s+/g,' ').toLowerCase().replace(/\b[a-z]/g,c=>c.toUpperCase());}
+
+/** One Master List row → what would be imported, with its problems named. */
+function mktParseMasterRecord(rec){
+  const raw=String(rec.ig_handle==null?'':rec.ig_handle).trim();
+  const handle=mktNormHandle(raw);
+  const cityRaw=String(rec.city==null?'':rec.city).trim();
+  const city=mktCanonCity(cityRaw);
+  const out={
+    row:rec._row,handleRaw:raw,handle,
+    name:_mktTrim(rec.name,80),
+    niche:mktNormNiche(rec.niche),
+    city:city||(cityRaw?_mktTitleCase(cityRaw):''),
+    cityUnmatched:!!(cityRaw&&!city),cityRaw,
+    address:_mktTrim(rec.address,300),
+    phone:_mktTrim(rec.phone,30),
+    top_size:_mktTrim(rec.top_size,20),
+    bottom_size:_mktTrim(rec.bottom_size,20),
+    sheetTier:_mktTrim(rec.tier,20)
+  };
+  out.problem=!raw?'no handle':!handle?'not a valid Instagram handle':'';
+  if(!raw){
+    // Seven Master List rows carry the handle in the NAME column and nothing
+    // in IG Handle. That is offered as a correction for a person to accept —
+    // never applied on its own.
+    const n=String(rec.name==null?'':rec.name).trim();
+    const sug=/\s/.test(n)?'':mktNormHandle(n);
+    if(sug){out.problem='handle is in the Name column';out.suggestedHandle=sug;}
+    // A row holding nothing but the old tier letter has nothing to import.
+    const content=['name','niche','city','address','phone','top_size','bottom_size'].some(k=>String(rec[k]==null?'':rec[k]).trim());
+    if(!content){out.problem='empty apart from the old tier letter';out.empty=true;}
+  }
+  return out;
+}
+
+/**
+ * Sort the Master List into what will happen to each row. Nothing with a
+ * doubt attached is imported without a person choosing.
+ */
+function mktPlanCreatorImport(records,existingCreators){
+  const parsed=(records||[]).map(mktParseMasterRecord);
+  const existing=new Set((existingCreators||[]).map(c=>c.ig_handle));
+  const groups=new Map();
+  const invalid=[],already=[],swapped=[],empty=[];
+  parsed.forEach(p=>{
+    if(p.empty){empty.push(p);return;}
+    if(p.suggestedHandle){
+      if(existing.has(p.suggestedHandle))already.push(Object.assign({},p,{handle:p.suggestedHandle}));
+      else swapped.push(p);
+      return;
+    }
+    if(p.problem){invalid.push(p);return;}
+    if(existing.has(p.handle)){already.push(p);return;}
+    (groups.get(p.handle)||groups.set(p.handle,[]).get(p.handle)).push(p);
+  });
+  const ready=[],duplicates=[];
+  groups.forEach((rows,handle)=>{if(rows.length===1)ready.push(rows[0]);else duplicates.push({handle,rows});});
+  // A swapped row whose handle also appears correctly elsewhere is a duplicate, not a correction.
+  const readyHandles=new Set(ready.map(r=>r.handle).concat(...duplicates.map(g=>[g.handle])));
+  const swappedFree=swapped.filter(p=>!readyHandles.has(p.suggestedHandle));
+  swapped.filter(p=>readyHandles.has(p.suggestedHandle)).forEach(p=>invalid.push(Object.assign({},p,{problem:'handle is in the Name column, and @'+p.suggestedHandle+' is already in this sheet'})));
+  return{total:parsed.length,ready,duplicates,invalid,already,swapped:swappedFree,empty,
+    unmatchedCities:parsed.filter(p=>p.cityUnmatched&&!p.problem)};
+}
+
+/** A sheet date cell (Excel serial, Date, or text) → YYYY-MM-DD, or '' — never a guess. */
+function mktSheetDate(v){
+  if(v===undefined||v===null||v==='')return'';
+  if(v instanceof Date&&!isNaN(v))return _mktDayStr(v.getTime());
+  if(typeof v==='number'&&v>20000&&v<80000){
+    const ms=Math.round((v-25569)*_MKT_DAY_MS);          // Excel epoch → Unix
+    const d=new Date(ms);
+    return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
+  }
+  const s=String(v).trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
+  const m=/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(s);   // the sheet's day-first format
+  if(m){const dd=+m[1],mm=+m[2];if(mm>=1&&mm<=12&&dd>=1&&dd<=31)return m[3]+'-'+String(mm).padStart(2,'0')+'-'+String(dd).padStart(2,'0');}
+  return'';
+}
+/** A sheet status → one of ours, or '' when it names none of them. */
+function mktSheetStatus(v){
+  const k=String(v||'').toLowerCase().replace(/[^a-z]/g,'');
+  return({confirmed:'confirmed',intransit:'in_transit',transit:'in_transit',shipped:'shipped',dispatched:'shipped',
+    contentreceived:'content_received',received:'content_received',posted:'content_received'})[k]||'';
+}
+
+/** A monthly tab's rows → dispatches to create, matched to creators by handle. */
+function mktPlanDispatchImport(tabName,records,creators,existingDispatches){
+  const byHandle=new Map((creators||[]).map(c=>[c.ig_handle,c]));
+  const have=new Set((existingDispatches||[]).map(d=>d.id));
+  const tabKey=String(tabName).toLowerCase().replace(/[^a-z0-9]+/g,'');
+  return (records||[]).map(rec=>{
+    const handle=mktNormHandle(rec.ig_handle);
+    const c=handle?byHandle.get(handle):null;
+    const id='dp_mig_'+tabKey+'_r'+rec._row;
+    const link=String(rec.link||'').trim();
+    const row={id,tab:tabName,row:rec._row,handle,handleRaw:String(rec.ig_handle||'').trim(),creator_id:c?c.id:'',
+      date:mktSheetDate(rec.date),status:mktSheetStatus(rec.status),collection:_mktTrim(rec.collection,80),
+      productsNote:_mktTrim(String(rec.products||'').replace(/,\s*$/,''),500),link:/^https?:\/\/\S+$/i.test(link)?link:'',
+      linkRejected:!!(link&&!/^https?:\/\/\S+$/i.test(link))};
+    row.problem=!handle?'no valid handle':!c?'creator not in the database':have.has(id)?'already imported':'';
+    return row;
+  });
+}
+
+/** What a sheet dispatch row is written as. */
+function mktImportDispatchData(r,now,uid){
+  return{
+    creator_id:r.creator_id,type:'organic',date_of_dispatch:r.date,collection_sent:r.collection,
+    products:[],products_note:r.productsNote,status:r.status,link_to_post:r.link,
+    logged_by_user_id:uid||null,created_at:now,updated_at:now,updated_by_user_id:uid||null,
+    status_updated_at:null,shipped_at:null,content_received_at:null,
+    paid_pr_request_id:null,has_discount_code:false,discount_code_id:null,
+    performance_captured_at:null,performance_views:null,performance_likes:null,
+    performance_comments:null,performance_saves:null,performance_story_replies:null,
+    imported_from:MKT_IMPORT_SOURCE,import_ref:r.tab+' row '+r.row
+  };
+}
+
+// ── Page ────────────────────────────────────────────────────────────────
+function renderMarketingImport(){
+  if(typeof canAccessMarketing!=='function'||!canAccessMarketing())
+    return'<div class="empty">The importer is limited to the owners and the Creator &amp; Content Operations Lead.</div>';
+  if(!mktCreatorsLoaded||!mktDispatchesLoaded)
+    return`<div class="page-head"><div class="page-title">Import from the sheet</div></div><div class="card">The creator list and dispatch log have to load first, so nothing already imported is imported twice. <button class="btn-outline" onclick="window.mktRetryLoad()">Retry</button></div>`;
+  const back=`<button class="btn-outline" onclick="window.showPage('mkt-creators')">← Creator Database</button>`;
+  const head=`<div class="page-head mkt-head"><div><div class="page-title">Import from the sheet</div>
+    <div class="page-sub">Content Tracker 2026 → The Sales Team ▸ Marketing · safe to run again</div></div><div class="mkt-actions">${back}</div></div>`;
+  const pick=`<div class="card">
+    <div class="card-title">1 · Choose the file</div>
+    <div class="mkt-note" style="margin-bottom:10px">The Excel export of the Content Tracker 2026 sheet (File → Download → Microsoft Excel). It is read here in the browser; nothing is written until you press Import.</div>
+    <input type="file" id="mkt-imp-file" accept=".xlsx,.xls" onchange="window.mktImportRead(this)">
+    ${_mktImport&&_mktImport.error?`<div class="mkt-error">${_mktEsc(_mktImport.error)}</div>`:''}
+  </div>`;
+  if(!_mktImport||!_mktImport.plan)return head+pick;
+  const p=_mktImport.plan;
+  const choices=_mktImport.choices;
+  const dupChosen=p.duplicates.filter(g=>choices[g.handle]).length;
+  const accepted=p.swapped.filter(x=>_mktImport.accept[x.row]).length;
+  const toAdd=_mktImportCreatorsToWrite().length;
+  const disp=_mktImport.dispatches;
+  const dReady=disp.filter(r=>!r.problem);
+  const list=(rows,fmt)=>rows.length?`<div class="mkt-implist">${rows.slice(0,200).map(fmt).join('')}</div>${rows.length>200?`<div class="mkt-note">…and ${rows.length-200} more.</div>`:''}`:'<div class="mkt-note">None.</div>';
+  const rowLabel=r=>`<div class="mkt-improw"><span class="mkt-muted">row ${r.row}</span><span>${_mktEsc(r.handle?'@'+r.handle:r.handleRaw||'(blank)')}</span><span>${_mktEsc(r.name||'')}</span><span class="mkt-muted">${_mktEsc([r.city,r.phone].filter(Boolean).join(' · '))}</span></div>`;
+  return head+pick+`
+    <div class="card">
+      <div class="card-title">2 · Check what will happen — ${_mktEsc(_mktImport.fileName)}</div>
+      <div class="mkt-stats">
+        <div class="mkt-stat"><span class="mkt-stat-label">Master List rows</span><span class="mkt-stat-val">${p.total}</span><span class="mkt-stat-sub">with any content</span></div>
+        <div class="mkt-stat"><span class="mkt-stat-label">Will be added</span><span class="mkt-stat-val">${toAdd}</span><span class="mkt-stat-sub">score and tier left empty</span></div>
+        <div class="mkt-stat"><span class="mkt-stat-label">Needs your decision</span><span class="mkt-stat-val">${p.duplicates.length-dupChosen+p.swapped.length-accepted}</span><span class="mkt-stat-sub">duplicates · handles in the Name column</span></div>
+        <div class="mkt-stat"><span class="mkt-stat-label">Skipped</span><span class="mkt-stat-val">${p.already.length+p.invalid.length+p.empty.length}</span><span class="mkt-stat-sub">${p.already.length} already in · ${p.invalid.length} unusable · ${p.empty.length} empty</span></div>
+      </div>
+      <div class="mkt-section"><div class="mkt-section-title">Duplicate handles — pick the row to keep (${p.duplicates.length})</div>
+        ${p.duplicates.length?p.duplicates.map((g,gi)=>`<div class="mkt-dupe"><div class="mkt-name">@${_mktEsc(g.handle)}</div>
+          ${g.rows.map(r=>`<label class="mkt-dupe-opt"><input type="radio" name="mkt-dupe-${gi}" data-h="${_mktEsc(g.handle)}" value="${r.row}" ${String(choices[g.handle])===String(r.row)?'checked':''} onchange="window.mktImportChoose(this.dataset.h,this.value)">
+            <span>Row ${r.row}: ${_mktEsc([r.name,r.niche.join(', '),r.city,r.phone,r.address,[r.top_size,r.bottom_size].filter(Boolean).join('/')].filter(Boolean).join(' · ')||'(nothing but the handle)')}</span></label>`).join('')}
+          <label class="mkt-dupe-opt"><input type="radio" name="mkt-dupe-${gi}" data-h="${_mktEsc(g.handle)}" value="" ${!choices[g.handle]?'checked':''} onchange="window.mktImportChoose(this.dataset.h,'')"><span>Don't import this handle yet</span></label>
+        </div>`).join(''):'<div class="mkt-note">None — every handle in the sheet is unique.</div>'}
+      </div>
+      <div class="mkt-section"><div class="mkt-section-title">Handle typed in the Name column — confirm each (${p.swapped.length})</div>
+        ${p.swapped.length?`<div class="mkt-implist">${p.swapped.map(r=>`<label class="mkt-dupe-opt" style="padding:6px 10px"><input type="checkbox" data-row="${r.row}" ${_mktImport.accept[r.row]?'checked':''} onchange="window.mktImportAccept(this.dataset.row,this.checked)">
+          <span>Row ${r.row}: import <b>@${_mktEsc(r.suggestedHandle)}</b> (the Name cell reads "${_mktEsc(r.name)}"), with the name left empty</span></label>`).join('')}</div>`:'<div class="mkt-note">None.</div>'}
+      </div>
+      <div class="mkt-section"><div class="mkt-section-title">Rows that cannot be imported (${p.invalid.length})</div>
+        ${list(p.invalid,r=>`<div class="mkt-improw"><span class="mkt-muted">row ${r.row}</span><span>${_mktEsc(r.handleRaw||'(blank)')}</span><span class="mkt-pay-unpaid">${_mktEsc(r.problem)}</span><span>${_mktEsc(r.name)}</span></div>`)}
+        <div class="mkt-note">Fix these in the sheet or add them by hand.${p.empty.length?' Also skipped: '+p.empty.length+' rows holding nothing but the old tier letter (rows '+p.empty.map(r=>r.row).join(', ')+').':''}</div></div>
+      <div class="mkt-section"><div class="mkt-section-title">Cities not on the list — kept as typed (${p.unmatchedCities.length})</div>
+        ${list(p.unmatchedCities,r=>`<div class="mkt-improw"><span class="mkt-muted">row ${r.row}</span><span>@${_mktEsc(r.handle)}</span><span>"${_mktEsc(r.cityRaw)}"</span><span class="mkt-muted">pick the right one later in the creator form</span></div>`)}</div>
+      <div class="mkt-section"><div class="mkt-section-title">Will be added (${p.ready.length})</div>${list(p.ready,rowLabel)}</div>
+      <div class="mkt-section"><div class="mkt-section-title">Monthly tabs → dispatches (${disp.length} rows)</div>
+        ${list(disp,r=>`<div class="mkt-improw"><span class="mkt-muted">${_mktEsc(r.tab)} · row ${r.row}</span><span>${_mktEsc(r.handle?'@'+r.handle:r.handleRaw||'(blank)')}</span><span>${_mktEsc(r.collection||'—')}</span><span class="${r.problem?'mkt-pay-unpaid':'mkt-muted'}">${_mktEsc(r.problem||[r.date?'dated '+r.date:'no date',r.status?_mktDispStatusLabel(r.status):'no status'].join(' · '))}</span></div>`)}
+        <div class="mkt-note">Date and status stay blank where the sheet has none. The product text is kept as a note; pick the real products from the catalog when editing the dispatch. A dispatch whose creator is imported in this same run is matched after the creators land.</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">3 · Import</div>
+      ${_mktImport.log?`<div class="mkt-implog">${_mktImport.log}</div>`:''}
+      <button class="btn-outline mkt-primary" id="mkt-imp-go" ${_mktImport.running?'disabled':''} onclick="window.mktImportRun()">${_mktImport.running?'Importing…':'Import '+toAdd+' creator'+(toAdd===1?'':'s')+', then their dispatches'}</button>
+    </div>
+    <div style="height:80px"></div>`;
+}
+
+window.mktImportRead=function(input){
+  const f=input&&input.files&&input.files[0];
+  if(!f)return;
+  if(typeof XLSX==='undefined'){_mktImport={error:'The spreadsheet reader did not load — refresh the page and try again.'};_mktRerenderPage();return;}
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array',cellDates:true});
+      mktImportFromWorkbook(wb,f.name);
+    }catch(e){_mktImport={error:'That file could not be read as a spreadsheet: '+((e&&e.message)||e)};}
+    _mktRerenderPage();
+  };
+  reader.onerror=()=>{_mktImport={error:'The file could not be opened.'};_mktRerenderPage();};
+  reader.readAsArrayBuffer(f);
+};
+
+/** Build the preview from a parsed workbook. Separate from the file reading so it can be tested. */
+function mktImportFromWorkbook(wb,fileName){
+  const sheetRows=name=>XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,raw:true,defval:''});
+  const master=(wb.SheetNames||[]).find(n=>/^master\s*list$/i.test(n.trim()));
+  if(!master){_mktImport={error:'No "Master List" tab in that file. Found: '+(wb.SheetNames||[]).join(', ')};return;}
+  const masterRecords=mktRowsToRecords(sheetRows(master));
+  const monthTabs=(wb.SheetNames||[]).filter(n=>_MKT_MONTH_TABS.test(n.trim()));
+  _mktImport={fileName,masterRecords,plan:null,choices:{},accept:{},monthTabs,
+    monthRecords:monthTabs.map(t=>({tab:t,records:mktRowsToRecords(sheetRows(t))})),running:false,log:''};
+  _mktImportReplan();
+}
+
+// The plan is always rebuilt from the sheet's records and the database as
+// it stands, so it can never drift from either — before a run and after.
+// Dispatches are planned against the creators that exist PLUS the ones this
+// import is about to add, so a Sep row for a new creator is shown as ready.
+function _mktImportReplan(){
+  if(!_mktImport||!_mktImport.masterRecords)return;
+  const p=mktPlanCreatorImport(_mktImport.masterRecords,mktCreators);
+  _mktImport.plan=p;
+  Object.keys(_mktImport.choices).forEach(h=>{if(!p.duplicates.some(g=>g.handle===h))delete _mktImport.choices[h];});
+  Object.keys(_mktImport.accept).forEach(r=>{if(!p.swapped.some(x=>String(x.row)===r))delete _mktImport.accept[r];});
+  const incoming=_mktImportCreatorsToWrite().map(r=>({id:'(new)',ig_handle:r.handle}));
+  const pool=mktCreators.concat(incoming);
+  const heldBack=new Set(p.duplicates.map(g=>g.handle).filter(h=>!_mktImport.choices[h])
+    .concat(p.swapped.filter(x=>!_mktImport.accept[x.row]).map(x=>x.suggestedHandle)));
+  _mktImport.dispatches=[].concat(..._mktImport.monthRecords.map(m=>mktPlanDispatchImport(m.tab,m.records,pool,mktDispatches)))
+    .map(r=>r.problem==='creator not in the database'&&heldBack.has(r.handle)?Object.assign(r,{problem:'creator is held back above — resolve it first'}):r);
+}
+function _mktImportCreatorsToWrite(){
+  const p=_mktImport.plan;
+  const chosen=p.duplicates.map(g=>{const row=_mktImport.choices[g.handle];return row?g.rows.find(r=>String(r.row)===String(row)):null;}).filter(Boolean);
+  // An accepted correction imports the Name cell as the handle and leaves the
+  // name EMPTY — that cell held a handle, not a name.
+  const fixed=p.swapped.filter(x=>_mktImport.accept[x.row]).map(x=>Object.assign({},x,{handle:x.suggestedHandle,name:'',problem:''}));
+  return p.ready.concat(chosen,fixed);
+}
+window.mktImportChoose=function(handle,row){
+  if(!_mktImport)return;
+  if(row)_mktImport.choices[handle]=row;else delete _mktImport.choices[handle];
+  _mktImportReplan();
+  _mktRerenderPage();
+};
+window.mktImportAccept=function(row,on){
+  if(!_mktImport)return;
+  if(on)_mktImport.accept[row]=true;else delete _mktImport.accept[row];
+  _mktImportReplan();
+  _mktRerenderPage();
+};
+
+window.mktImportRun=async function(){
+  if(!_mktImport||_mktImport.running)return;
+  if(typeof canAccessMarketing!=='function'||!canAccessMarketing())return;
+  const rows=_mktImportCreatorsToWrite();
+  if(typeof confirm==='function'&&!confirm('Import '+rows.length+' creator'+(rows.length===1?'':'s')+' into the live database? Handles already there are skipped.'))return;
+  _mktImport.running=true;_mktImport.log='';
+  _mktRerenderPage();
+  const uid=session&&session.uid;
+  const say=t=>{_mktImport.log+=_mktEsc(t)+'<br>';const el=document.querySelector('.mkt-implog');if(el)el.innerHTML=_mktImport.log;};
+  let added=0,skipped=0,failed=0;
+  for(const r of rows){
+    const now=Date.now();
+    const built=mktBuildCreatorPayload({ig_handle:r.handle,name:r.name,niche:r.niche,city:r.cityUnmatched?'':r.city,
+      address:r.address,phone:r.phone,top_size:r.top_size,bottom_size:r.bottom_size,status:'active'},null,mktScoringConfig,now,uid);
+    if(built.error){failed++;say('row '+r.row+' @'+r.handle+': '+built.error);continue;}
+    if(r.cityUnmatched)built.data.city=r.city;
+    built.data.imported_from=MKT_IMPORT_SOURCE;
+    built.data.import_ref='Master List row '+r.row;
+    try{
+      await mktWriteCreator(built);
+      mktCreators=mktCreators.concat([Object.assign({id:built.id},built.data)]);
+      added++;
+      if(added%25===0)say(added+' creators added…');
+    }catch(e){
+      if(e&&e.code==='mkt/duplicate'){skipped++;say('row '+r.row+' @'+r.handle+': already in the database — skipped');}
+      else{failed++;say('row '+r.row+' @'+r.handle+': '+((e&&e.message)||'failed'));}
+    }
+  }
+  say('Creators: '+added+' added, '+skipped+' skipped, '+failed+' failed.');
+  // Dispatches, now that every creator this run could add is in.
+  const plan=[].concat(..._mktImport.monthRecords.map(m=>mktPlanDispatchImport(m.tab,m.records,mktCreators,mktDispatches)));
+  let dAdded=0,dFailed=0;
+  for(const r of plan.filter(x=>!x.problem)){
+    const now=Date.now();
+    const data=mktImportDispatchData(r,now,uid);
+    const next=mktDispatches.concat([Object.assign({id:r.id},data)]);
+    try{
+      await mktWriteDispatch({id:r.id,isNew:true,data},mktCreatorRollups(r.creator_id,next,mktPaidPRsLoaded?mktPaidPRs:null),r.creator_id);
+      mktDispatches=next;
+      mktCreators=mktCreators.map(c=>c.id===r.creator_id?Object.assign({},c,mktCreatorRollups(r.creator_id,next,mktPaidPRsLoaded?mktPaidPRs:null)):c);
+      dAdded++;
+    }catch(e){dFailed++;say(r.tab+' row '+r.row+': '+((e&&e.message)||'failed'));}
+  }
+  const notMatched=plan.filter(x=>x.problem&&x.problem!=='already imported').length;
+  say('Dispatches: '+dAdded+' added'+(dFailed?', '+dFailed+' failed':'')+(notMatched?', '+notMatched+' not matched to a creator':'')+'.');
+  if(typeof logActivity==='function')logActivity('Creators imported','Content Tracker 2026: '+added+' creators, '+dAdded+' dispatches');
+  _mktImport.running=false;
+  const log=_mktImport.log;
+  // Re-plan against the new state, so the preview now shows everything as done.
+  _mktImport.choices={};_mktImport.accept={};
+  _mktImportReplan();
+  _mktImport.log=log;
+  showToast('Import finished — '+added+' creators, '+dAdded+' dispatches');
+  _mktRerenderPage();
 };

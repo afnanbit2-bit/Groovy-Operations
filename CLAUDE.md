@@ -2772,8 +2772,10 @@ Mood Boards table round: M1 Creator Database + scoring · M2 Dispatch Log ·
 M3 Paid PR approvals · M4 discount codes · M5 reminders + dashboard card ·
 M6 reports · M7 migration. **M1–M3 are built, merged and live** (PRs #58,
 #59, #60; Daniyal's email fixed in #61) **and their rules were published
-on 16 Sept 2026** — see "Firestore rules" below. M4 is blocked on a human
-check: whether the Shopify app may create discounts.
+on 16 Sept 2026** — see "Firestore rules" below. **M5–M7 are built** (one
+PR, below). **M4 is blocked on a human check:** whether the Shopify app
+may create discounts. Until M4 lands, every place that needs discount-code
+data says so instead of showing zeros.
 
 - **Nav:** "The Sales Team ▸" is a collapsible parent of SUB-AREAS
   (`_salesTeamGroups()` / `_salesTeamNavHTML()` in `js/shared.js`); each
@@ -2890,8 +2892,76 @@ check: whether the Shopify app may create discounts.
     them.
   - **M4 hooks in at `mktDecidePaidPR`:** the spec creates the discount
     code on approval; that call belongs in the same flow, after the batch.
-  - The lead's phone nav has four buttons now; it sets
-    `gridTemplateColumns` inline because `#mob-nav.cols-3` is `!important`.
+  - The lead's phone nav has five buttons now (Creators · Dispatches ·
+    Paid PR · Reports · Intel) — `#mob-nav`'s own 5-column default.
+- **M5 — reminders and the dashboard card.**
+  - **Reminders use the existing bell** (`hrm_notifications`), addressed by
+    `forUser`. Recipients are resolved when a reminder is raised: the lead
+    **by role**, the approver **by the `canApprovePaidPR` flag**
+    (`mktLeadUsernames` / `mktApproverUsernames`) — no names, and
+    `js/hrm.js` needed no change.
+  - Rules: no post 7 days after `shipped_at` → the lead; 14 days → the
+    approver too (high priority). **Day-7 capture is only due once there IS
+    a post** (a link or Content received) — a first cut reminded people to
+    capture numbers for posts that did not exist; the tests caught it.
+  - **Raised client-side by whichever Marketing account opens the app**,
+    at most once a day per device (`localStorage`), like the HRM
+    increment-due check. So nothing fires while nobody opens the app.
+    Every reminder has a **deterministic id** (`mkt_sla7_<dispatch>_<user>`
+    …) and is only written if absent — several devices make one reminder,
+    and a dismissed one is never raised again.
+  - It reads only `status=='shipped'` and `performance_captured_at==null`
+    dispatches, never the whole log, and caps a run at 60.
+  - **The bell prints `title`/`message` into HTML raw** (`_hrmNotifCardHTML`,
+    `js/hrm.js`), so handles are escaped before they go in.
+  - `mktBootstrap()` runs from `startApp`, **never awaited**, and also loads
+    the bell for the lead, who never opens the dashboard that normally does.
+  - **Dashboard card** (owners): `renderMarketingDashboardWidget` in
+    `renderDashboard` + `_mktPopulateDashboard` in the dashboard dispatch —
+    the same two-half pattern as Monitor. Two small queries (this week's
+    dispatches, pending Paid PRs). "Discount codes not set up yet" until M4.
+- **M6 — Reports (`mkt-reports`).** Monthly PR spend (approved vs paid out,
+  by decision month). **Top ROI is Paid PR only and ranks by SPEND until M4
+  exists** — it says, on the page, that it is not an ROI ranking yet.
+  Best performing (organic) from Day-7 captures, sortable by reach or
+  engagement ((likes + comments + saves) ÷ views), never called ROI. Sales
+  lift in **two separate lines**: attributed (coded — empty until M4) and
+  directional (uncoded — units of the dispatched SKU N days after vs
+  before, refunds excluded, labelled as correlation; a window still running
+  says "so far").
+  - `shopify_line_items` has **no variant id** — only `sku`. Dispatched
+    products now store their `sku`, and older ones are matched through the
+    catalog (`shopify_products` doc id = variant id). No match → "—", never 0.
+  - The line items are read whole (as Inventory Intel already does), once,
+    and reused from Inventory Intel when that page loaded them.
+- **M7 — the sheet importer (`mkt-import`, button on the Creator
+  Database).** In-app, not a service-account script: the `.xlsx` is read in
+  the browser with the vendored SheetJS, everything is previewed, and the
+  writes go through the same rules and handle-lock transaction as a
+  creator added by hand. **Re-running is safe** (existing handles skipped;
+  sheet dispatches have fixed ids `dp_mig_<tab>_r<row>`).
+  - **The real sheet, dry-run 16 Sept 2026:** 265 Master List rows = 245
+    ready + `shadysaidthat` twice (rows 211, 257) + **7 rows with the
+    handle typed in the Name column** (5, 101, 123, 149, 174, 245, 248) +
+    **11 rows holding only the old tier letter**. With the duplicate and
+    the 7 confirmed, **253 creators** — the spec's "254" was a rough count.
+    Name-column handles are OFFERED, never applied: each needs a tick, and
+    the name is then left empty (that cell held a handle). Cities: `RWP`,
+    `abottabad`, `lahore cantt` are mapped; `taxila` is not on the Lists
+    tab and is imported as typed, flagged.
+  - Monthly tabs (`Sep 2026` … `Dec 2026`) become dispatches: **date and
+    status left blank** where the sheet has none, product text kept as
+    `products_note`. The three Sep rows match (st4rr.doll, shoaibkhn.t,
+    shadysaidthat once its duplicate is resolved); Dec has one row with no
+    handle, reported.
+  - **A blank status needed a rules change** (`''` is now allowed on
+    dispatch create/update) and the UI shows it as "Not recorded", never as
+    Confirmed. **That change needs a republish.**
+  - The sheet's A/B/C tier column is read (`sheetTier`) and never written.
+- **`tests/smoke-layout.js` now runs Chrome in a bounded pool** (default
+  min(8, CPUs), `SMOKE_LAYOUT_CONCURRENCY` to override). With 14 fragments
+  it launched 84 Chromes at once and most timed out on a Windows machine,
+  reporting "the probe never ran" — the runner failing, not a layout.
 - **Known for M7:** the sheet's Master List has **265** non-empty rows, not
   the spec's 254 — reconcile before import. The Sep 2026 tab's three rows
   (st4rr.doll and shoaibkhn.t — Lowkey Heat; shadysaidthat — Live In
@@ -3586,6 +3656,11 @@ republish.
 (`sharedWith`, TEAM update, the presence/comments/activity sub-collections)
 AND `user_profiles`. Both had been waiting; the Profile page's own error
 card is what finally surfaced it.
+
+**REPUBLISH OUTSTANDING — Marketing M7 (16 Sept 2026):** the `dispatches`
+status list gained `''` (rows migrated from the sheet with no status).
+Until it is republished, importing the Sep 2026 rows fails with a
+permission error; the creators import fine. Ask for the full file.
 
 **Republished by Ammar on 16 Sept 2026** (reported in-session, after PR
 #61), from the repo file at `md5 5211506e56a03d345ba061be46ea6a20` —

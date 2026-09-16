@@ -419,14 +419,15 @@ module.exports=async function(){
   const DAY=86400000;
   const d7=(d,now)=>a.run('mktDay7('+J(d)+','+now+')');
   s.eq('nothing shipped → nothing due',d7({status:'confirmed'},10*DAY).state,'none');
-  s.eq('counted from content received',d7({content_received_at:DAY,shipped_at:0},8*DAY).basis,'content_received');
-  s.eq('due exactly 7 days after',d7({content_received_at:DAY},8*DAY).state,'due');
-  s.eq('not a moment before',d7({content_received_at:DAY},8*DAY-1).state,'waiting');
-  const fb=d7({shipped_at:0},7*DAY);
+  s.eq('shipped but not posted → nothing to capture yet',d7({status:'shipped',shipped_at:0},30*DAY).state,'none');
+  s.eq('counted from content received',d7({status:'content_received',content_received_at:DAY,shipped_at:0},8*DAY).basis,'content_received');
+  s.eq('due exactly 7 days after',d7({status:'content_received',content_received_at:DAY},8*DAY).state,'due');
+  s.eq('not a moment before',d7({status:'content_received',content_received_at:DAY},8*DAY-1).state,'waiting');
+  const fb=d7({shipped_at:0,link_to_post:'https://p'},7*DAY);
   s.eq('no content-received date falls back to shipped',fb.basis,'shipped');
   s.eq('and is still due',fb.state,'due');
   s.eq('a captured snapshot is never due',d7({shipped_at:0,performance_captured_at:5},99*DAY).state,'captured');
-  s.eq('a Firestore Timestamp is understood',d7({content_received_at:{seconds:1}},7*DAY+1000).state,'due');
+  s.eq('a Firestore Timestamp is understood',d7({status:'content_received',content_received_at:{seconds:1}},7*DAY+1000).state,'due');
   const perf=f=>a.run('mktBuildPerformance('+J(f)+',9000,"uid-daniyal")');
   s.ok('views are required',/views/.test(perf({performance_likes:'10'}).error||''));
   s.ok('junk is refused, not zeroed',/not a number/.test(perf({performance_views:'100',performance_saves:'lots'}).error||''));
@@ -458,7 +459,7 @@ module.exports=async function(){
   const now=Date.parse('2026-09-16T12:00:00');
   const dl=[
     {id:'old',creator_id:'cr_a',date_of_dispatch:'2026-08-02',status:'content_received',products:[{product_title:'Tinted Denim',variant_title:'Blue'}]},
-    {id:'new',creator_id:'cr_a',date_of_dispatch:'2026-09-15',status:'shipped',shipped_at:now-8*DAY,products:[]},
+    {id:'new',creator_id:'cr_a',date_of_dispatch:'2026-09-15',status:'shipped',shipped_at:now-8*DAY,link_to_post:'https://p',products:[]},
     {id:'nodate',creator_id:'cr_b',date_of_dispatch:'',status:'confirmed',products:[]},
     {id:'transit',creator_id:'cr_b',date_of_dispatch:'2026-09-14',status:'in_transit',products:[]}
   ];
@@ -533,7 +534,7 @@ module.exports=async function(){
     s.ok('the log renders the dispatch',/st4rr\.doll/.test(html));
     s.ok('and escapes everything stored',!/<b>Starr|<img src=x|<script>|"onmouseover/.test(html));
     s.ok('a post link opens in a new tab without an opener',/rel="noopener noreferrer"/.test(html));
-    s.eq('every Marketing page is listed in the nav',J(t.run('mktNavItems().map(i=>i.id)')),J(['mkt-creators','mkt-dispatches','mkt-paid-pr']));
+    s.eq('every Marketing page is listed in the nav',J(t.run('mktNavItems().map(i=>i.id)')),J(['mkt-creators','mkt-dispatches','mkt-paid-pr','mkt-reports']));
     t.run('_mktFilter={q:"",view:"all",tier:"all",status:"all",page:1}');
     const cm=t.run('_mktCreatorDispatchesHTML(mktCreators[0])');
     s.ok('a creator shows their own dispatch history',/Dispatches \(1\)/.test(cm));
@@ -718,6 +719,355 @@ module.exports=async function(){
     s.ok('a refused read shows the rules card',/could not be loaded/.test(t2.run('renderMarketingPaidPR()')));
     s.ok('without taking the Creator Database down',/@st4rr\.doll/.test(t2.run('renderMarketingCreators()')));
   }
+
+  // ════════════════════════════════════════════════════════════════════
+  // M5 — reminders and the dashboard card
+  // ════════════════════════════════════════════════════════════════════
+  s.section('who reminders go to');
+  s.eq('the lead, found by role',J(a.run('mktLeadUsernames()')),J(['daniyal']));
+  s.eq('the approver, found by the flag',J(a.run('mktApproverUsernames()')),J(['ammar']));
+
+  s.section('which reminders are due');
+  {
+    const DAYm=86400000,now=Date.parse('2026-09-20T12:00:00');
+    const cr=[{id:'cr_a',ig_handle:'st4rr.doll'},{id:'cr_x',ig_handle:'<b>x</b>'}];
+    const ds=[
+      {id:'d6',creator_id:'cr_a',status:'shipped',shipped_at:now-6*DAYm,collection_sent:'Lowkey Heat'},
+      {id:'d7',creator_id:'cr_a',status:'shipped',shipped_at:now-7*DAYm,collection_sent:'Lowkey Heat'},
+      {id:'d14',creator_id:'cr_x',status:'shipped',shipped_at:now-15*DAYm,type:'paid_pr'},
+      {id:'dpost',creator_id:'cr_a',status:'shipped',shipped_at:now-20*DAYm,link_to_post:'https://x'},
+      {id:'drecv',creator_id:'cr_a',status:'content_received',shipped_at:now-20*DAYm,content_received_at:now-2*DAYm},
+      {id:'dd7',creator_id:'cr_a',status:'content_received',shipped_at:now-30*DAYm,content_received_at:now-8*DAYm,link_to_post:'https://y'}
+    ];
+    const plan=a.run('mktPlanReminders('+J(ds)+','+J(cr)+','+now+',["daniyal"],["ammar"])');
+    const ids=plan.map(p=>p.id).sort();
+    s.eq('exactly the due reminders',J(ids),J(['mkt_d7_dd7_daniyal','mkt_d7_dpost_daniyal','mkt_sla14_d14_ammar','mkt_sla7_d14_daniyal','mkt_sla7_d7_daniyal']));
+    s.ok('no Day-7 reminder for a post that does not exist',!ids.some(x=>x==='mkt_d7_d7_daniyal'||x==='mkt_d7_d14_daniyal'));
+    s.ok('6 days after shipping is not yet due',!ids.some(x=>x.indexOf('_d6_')>=0));
+    s.ok('a posted link stops the no-post reminder',!ids.some(x=>/mkt_sla\d+_dpost/.test(x)));
+    const p14=plan.find(p=>p.id==='mkt_sla14_d14_ammar');
+    s.eq('14 days goes to the approver',p14.forUser,'ammar');
+    s.eq('as high priority',p14.priority,'high');
+    s.ok('the bell prints messages raw, so handles are escaped here',/&lt;b&gt;x/.test(p14.message)&&!/<b>/.test(p14.message));
+    s.ok('and it says it was a Paid PR',/Paid PR/.test(p14.message));
+    const f=a.run('mktPlanReminders('+J([{id:'q',creator_id:'cr_a',status:'shipped',link_to_post:'https://p',shipped_at:now-9*DAYm}])+','+J(cr)+','+now+',["daniyal"],[])');
+    s.ok('a Day-7 counted from shipping says so',/counted from shipping/.test((f.find(x=>x.id.indexOf('mkt_d7')===0)||{}).message||''));
+    s.eq('no lead on the roster → nobody to remind, nothing raised',a.run('mktPlanReminders('+J(ds)+','+J(cr)+','+now+',[],[]).length'),0);
+  }
+
+  s.section('raising reminders');
+  {
+    const store={};
+    const writes=[];
+    const mk=(sess,extra)=>app(Object.assign({session:sess,globals:Object.assign({
+      doc:(db,col,id)=>({path:col+'/'+id,id}),
+      getDoc:async ref=>({exists:()=>!!store[ref.path],data:()=>store[ref.path],id:ref.id}),
+      setDoc:async(ref,data)=>{store[ref.path]=data;writes.push(ref.path);},
+      allHRMNotifs:[],
+      getDocs:async()=>({docs:[{id:'d7',data:()=>({creator_id:'cr_a',status:'shipped',shipped_at:Date.now()-8*86400000})}]}),
+      query:(c,w)=>({c,w}),where:()=>({})
+    },extra||{})}));
+    const own=mk({uid:'u1',u:'ammar',role:'owner',canApprovePaidPR:true});
+    const r1=await own.run('mktRunReminders({force:true})');
+    s.eq('a due dispatch raises the lead\'s reminder',r1.raised,1);
+    s.ok('under a fixed id',writes.indexOf('hrm_notifications/mkt_sla7_d7_daniyal')>=0);
+    s.eq('addressed to the lead',store['hrm_notifications/mkt_sla7_d7_daniyal'].forUser,'daniyal');
+    s.eq('in the bell\'s own shape',J(Object.keys(store['hrm_notifications/mkt_sla7_d7_daniyal']).sort()),
+      J(['actionRequired','actionUrl','createdAt','forRole','forUser','id','message','priority','readBy','relatedTo','title','type']));
+    store['hrm_notifications/mkt_sla7_d7_daniyal'].readBy=['daniyal'];   // Daniyal dismissed it
+    const lead=mk({uid:'u2',u:'daniyal',role:'creator_content_ops_lead'});
+    const r2=await lead.run('mktRunReminders({force:true})');
+    s.eq('a second device raises nothing new',r2.raised,0);
+    s.eq('and a dismissed reminder is never raised again',J(store['hrm_notifications/mkt_sla7_d7_daniyal'].readBy),J(['daniyal']));
+    const r3=await own.run('mktRunReminders()');
+    s.eq('it runs once per session',r3.skipped,'already ran');
+    const mgr=mk({uid:'u3',u:'mustafa',role:'manager'});
+    s.eq('an account without Marketing raises nothing',(await mgr.run('mktRunReminders({force:true})')).skipped,'no access');
+    const refused=mk({uid:'u1',u:'ammar',role:'owner'},{getDocs:async()=>{throw new Error('denied');}});
+    s.eq('refused reads raise nothing and do not throw',(await refused.run('mktRunReminders({force:true})')).skipped,'reads refused');
+  }
+  {
+    const auth=read('js/auth.js');
+    s.ok('startApp starts it without awaiting',/\{try\{mktBootstrap\(\);\}catch\(_\)\{\}\}/.test(auth)&&!/await mktBootstrap/.test(auth));
+  }
+
+  s.section('the dashboard card');
+  s.ok('owners get the card',/mkt-dash-widget/.test(a.run('renderMarketingDashboardWidget()')));
+  s.eq('the lead does not (no dashboard)',app({session:{uid:'2',u:'daniyal',role:'creator_content_ops_lead'}}).run('renderMarketingDashboardWidget()'),'');
+  s.eq('nor a manager',app({session:{uid:'3',u:'mustafa',role:'manager'}}).run('renderMarketingDashboardWidget()'),'');
+  const line=a.run('mktDashboardLine(4,2,90000,null)');
+  s.ok('it says what went out this week',/4<\/b> dispatched this week/.test(line));
+  s.ok('what is waiting for approval, with the PKR',/2<\/b> Paid PR pending approval \(PKR 90,000\)/.test(line));
+  s.ok('and that discount codes are not set up yet',/discount codes not set up yet/.test(line));
+  s.ok('once codes exist it reports them',/3<\/b> discount codes live, PKR 1,500 redeemed this month/.test(a.run('mktDashboardLine(0,0,0,{live:3,redeemedPkr:1500})')));
+  {
+    const t=app({globals:{query:(c,w)=>({c,w}),collection:(db,name)=>({name}),where:(f,op,v)=>({f,op,v}),
+      getDocs:async q=>q.c.name==='dispatches'?{docs:[{},{},{}]}:{docs:[{data:()=>({proposed_amount_pkr:45000})}]}}});
+    await t.run('_mktPopulateDashboard()');
+    s.ok('the card fills in from two small queries',/3<\/b> dispatched this week[\s\S]*1<\/b> Paid PR pending approval \(PKR 45,000\)/.test(t.el('mkt-dash-body').innerHTML));
+    const t2=app({globals:{getDocs:async()=>{throw new Error('denied');}}});
+    await t2.run('_mktPopulateDashboard()');
+    s.ok('and says so when it cannot',/Could not load/.test(t2.el('mkt-dash-body').innerHTML));
+    s.ok('renderDashboard includes it',/renderMarketingDashboardWidget\(\):''/.test(read('js/embellishments.js')));
+    s.ok('and the dashboard dispatch fills it',/setTimeout\(_mktPopulateDashboard,0\)/.test(read('js/shared.js')));
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // M6 — Reports
+  // ════════════════════════════════════════════════════════════════════
+  s.section('monthly PR spend');
+  {
+    const R=[
+      {status:'approved',decided_at:Date.parse('2026-09-02T10:00:00'),proposed_amount_pkr:40000,payment_status:'paid'},
+      {status:'approved',decided_at:Date.parse('2026-09-20T10:00:00'),proposed_amount_pkr:10000,payment_status:'unpaid'},
+      {status:'approved',decided_at:Date.parse('2026-08-20T10:00:00'),proposed_amount_pkr:30000},
+      {status:'pending',proposed_amount_pkr:99999},
+      {status:'rejected',decided_at:Date.parse('2026-09-05T10:00:00'),proposed_amount_pkr:77777}
+    ];
+    const m=a.run('mktMonthlySpend('+J(R)+')');
+    s.eq('newest month first, approved only',J(m.map(x=>x.month)),J(['2026-09','2026-08']));
+    s.eq('September approved',m[0].approved,50000);
+    s.eq('paid and unpaid shown apart',m[0].paid+'/'+m[0].unpaid,'40000/10000');
+    s.eq('a request with no payment logged counts as unpaid',m[1].unpaid,30000);
+  }
+  s.section('top ROI — Paid PR only');
+  {
+    const R=[
+      {creator_id:'a',status:'approved',proposed_amount_pkr:10000},
+      {creator_id:'b',status:'approved',proposed_amount_pkr:50000},
+      {creator_id:'b',status:'approved',proposed_amount_pkr:20000},
+      {creator_id:'c',status:'pending',proposed_amount_pkr:90000}
+    ];
+    const noRev=a.run('mktPaidRoi('+J(R)+',[],null)');
+    s.eq('without revenue it ranks by spend',J(noRev.map(x=>x.creator_id)),J(['b','a']));
+    s.ok('and claims no ROI',noRev.every(x=>x.roi===null&&x.revenue===null));
+    const rev=a.run('mktPaidRoi('+J(R)+',[],{a:30000,b:35000})');
+    s.eq('with revenue it ranks by revenue ÷ spend',J(rev.map(x=>x.creator_id+':'+x.roi)),J(['a:3','b:0.5']));
+    s.ok('the page says it is not an ROI ranking yet',/not an ROI ranking/.test(a.run('_mktRoiHTML()'))||a.run('mktPaidPRs.length')===0);
+  }
+  s.section('best performing — organic');
+  {
+    const D=[
+      {creator_id:'a',type:'organic',performance_captured_at:1,performance_views:10000,performance_likes:500,performance_comments:50,performance_saves:50},
+      {creator_id:'a',type:'organic',performance_captured_at:1,performance_views:20000,performance_likes:100,performance_comments:0,performance_saves:0},
+      {creator_id:'b',type:'organic',performance_captured_at:1,performance_views:5000,performance_likes:1000,performance_comments:0,performance_saves:0},
+      {creator_id:'c',type:'paid_pr',performance_captured_at:1,performance_views:999999},
+      {creator_id:'d',type:'organic',performance_captured_at:1,performance_views:0},
+      {creator_id:'e',type:'organic',performance_views:50000}
+    ];
+    const byViews=a.run('mktOrganicPerformance('+J(D)+',[],"views")');
+    s.eq('paid PRs, zero-view and uncaptured posts are left out',J(byViews.map(x=>x.creator_id)),J(['a','b']));
+    s.eq('average views',byViews[0].avgViews,15000);
+    s.eq('engagement = (likes+comments+saves) ÷ views',byViews[0].engagementRate,0.0233);
+    s.eq('sorting by engagement changes the order',J(a.run('mktOrganicPerformance('+J(D)+',[],"engagement")').map(x=>x.creator_id)),J(['b','a']));
+  }
+  s.section('sales lift');
+  {
+    const DAYm=86400000;
+    const start=new Date(2026,8,10).getTime();
+    const li=[
+      {sku:'S1',quantity:2,created:start-3*DAYm},{sku:'S1',quantity:1,created:start-20*DAYm},
+      {sku:'S1',quantity:5,created:start+2*DAYm},{sku:'S1',quantity:4,created:start+3*DAYm,refunded:true},
+      {sku:'S2',quantity:9,created:start+1*DAYm}
+    ];
+    const D=[
+      {id:'u',creator_id:'a',date_of_dispatch:'2026-09-10',products:[{variant_id:'v1',product_title:'Tee',variant_title:'Rust'},{variant_id:'vX',product_title:'Unknown'}]},
+      {id:'k',creator_id:'a',date_of_dispatch:'2026-09-10',has_discount_code:true,products:[{variant_id:'v2',product_title:'Coded'}]},
+      {id:'n',creator_id:'a',date_of_dispatch:'',products:[{variant_id:'v1',product_title:'Undated'}]}
+    ];
+    const rows=a.run('mktSalesLift('+J(D)+','+J(li)+',{v1:"S1",v2:"S2"},14,'+(start+30*DAYm)+',[])');
+    s.eq('coded and undated dispatches are not in the directional line',J(rows.map(r=>r.dispatch_id)),J(['u','u']));
+    const tee=rows.find(r=>r.sku==='S1');
+    s.eq('units in the 14 days before',tee.before,2);
+    s.eq('units in the 14 days after, refunds excluded',tee.after,5);
+    s.eq('the change',tee.change,3);
+    s.ok('a finished window is not marked open',tee.open===false);
+    const unk=rows.find(r=>!r.sku);
+    s.ok('a variant with no SKU match reports nothing rather than zero',unk.before===null&&unk.change===null);
+    const open=a.run('mktSalesLift('+J(D)+','+J(li)+',{v1:"S1"},14,'+(start+5*DAYm)+',[])').find(r=>r.sku==='S1');
+    s.ok('a window still running is marked open',open.open===true);
+    s.eq('a stored SKU wins over the catalog',a.run('mktSalesLift([{id:"z",creator_id:"a",date_of_dispatch:"2026-09-10",products:[{variant_id:"v1",sku:"S2"}]}],'+J(li)+',{v1:"S1"},14,'+(start+30*DAYm)+',[])')[0].after,9);
+    s.ok('line items: refunds are recognised',a.run('mktLineItemFromDoc({sku:"A",quantity:2,order_created_at:"2026-09-10T10:00:00Z",financial_status:"partially_refunded"})').refunded===true);
+  }
+  {
+    const t=app({globals:{getDocs:async()=>({docs:[]}),getDoc:async()=>({exists:()=>false})}});
+    await t.run('loadMarketingCreators()');
+    const html=t.run('renderMarketingReports()');
+    s.ok('the reports page renders all four reports',/Monthly PR spend[\s\S]*Top ROI[\s\S]*Best performing[\s\S]*Sales lift/.test(html));
+    s.ok('the lift report is labelled as correlation, not attribution',/Correlational estimate, not attribution/.test(html));
+    s.ok('the two lift lines are separate',/Attributed — dispatches with a discount code[\s\S]*Directional — dispatches without a code/.test(html));
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // M7 — the sheet importer
+  // ════════════════════════════════════════════════════════════════════
+  s.section('reading the sheet');
+  {
+    const rows=[
+      ['Tier','Name','IG Handle','Niche','City','Address','Phone #','Top Size','Bottom Size'],
+      ['A','','saritasangrez','Fashion Creator, Content Creator','lahore','','','small','medium'],
+      ['','','','','','','','',''],
+      ['B','Night','@Night_Flarz','','KARACHI','','0300','',''],
+      ['','Pindi Guy','pindiguy','Meme/Comedy','pindi','','','',''],
+      ['','Nowhere','nowhere.x','','Atlantis','','','',''],
+      ['','Bad','two words','','','','','',''],
+      ['','Dup 1','twice','','','','111','',''],
+      ['','Dup 2','TWICE','','','House 2','','',''],
+      ['','Already','exists_already','','','','','','']
+    ];
+    const recs=a.run('mktRowsToRecords('+J(rows)+')');
+    s.eq('blank rows are dropped',recs.length,8);
+    s.eq('rows keep their sheet row number',recs[1]._row,4);
+    const p=a.run('mktParseMasterRecord('+J(recs[0])+')');
+    s.eq('niche is split into an array',J(p.niche),J(['Fashion Creator','Content Creator']));
+    s.eq('city casing is normalised',p.city,'Lahore');
+    s.eq('a blank name stays blank',p.name,'');
+    s.eq('a blank address stays blank, no placeholder',p.address,'');
+    s.eq('KARACHI → Karachi',a.run('mktParseMasterRecord('+J(recs[1])+')').city,'Karachi');
+    s.eq('@Night_Flarz → night_flarz',a.run('mktParseMasterRecord('+J(recs[1])+')').handle,'night_flarz');
+    s.eq('pindi → Rawalpindi',a.run('mktParseMasterRecord('+J(recs[2])+')').city,'Rawalpindi');
+    const nw=a.run('mktParseMasterRecord('+J(recs[3])+')');
+    s.ok('an unknown city is kept as typed and flagged',nw.city==='Atlantis'&&nw.cityUnmatched===true);
+    s.ok('a bad handle is named as the problem',/valid/.test(a.run('mktParseMasterRecord('+J(recs[4])+')').problem));
+    const plan=a.run('mktPlanCreatorImport('+J(recs)+','+J([{id:'e',ig_handle:'exists_already'}])+')');
+    s.eq('ready',J(plan.ready.map(r=>r.handle)),J(['saritasangrez','night_flarz','pindiguy','nowhere.x']));
+    s.eq('duplicates are grouped by handle, whatever their casing',J(plan.duplicates.map(g=>g.handle+':'+g.rows.map(r=>r.row).join(','))),J(['twice:8,9']));
+    s.eq('an existing handle is skipped',J(plan.already.map(r=>r.handle)),J(['exists_already']));
+    s.eq('invalid rows',plan.invalid.length,1);
+    s.eq('unmatched cities are listed for review',J(plan.unmatchedCities.map(r=>r.cityRaw)),J(['Atlantis']));
+    s.ok('the sheet\'s tier column is read but never becomes a tier',p.sheetTier==='A'&&!('tier' in p));
+  }
+  s.section('sheet dates and statuses');
+  s.eq('an Excel date serial',a.run('mktSheetDate(46281)'),'2026-09-16');
+  s.eq('a day-first date',a.run('mktSheetDate("16/09/2026")'),'2026-09-16');
+  s.eq('an impossible date is left blank',a.run('mktSheetDate("45/13/2026")'),'');
+  s.eq('text is not guessed at',a.run('mktSheetDate("next week")'),'');
+  s.eq('a blank stays blank',a.run('mktSheetDate("")'),'');
+  s.eq('"In Transit" → in_transit',a.run('mktSheetStatus("In Transit")'),'in_transit');
+  s.eq('an unknown status is left blank',a.run('mktSheetStatus("??")'),'');
+
+  s.section('the Sep 2026 rows');
+  {
+    const sep=[
+      ['Date of Dispatch','IG Handle','Collection Sent','Products sent','Status','Link to Post'],
+      ['','st4rr.doll','Lowkey Heat','rust effortless, love hurts, ','',''],
+      ['','shoaibkhn.t','Lowkey Heat','essential 2.0 black and blue, tinted denim, effortless blue, script blue','',''],
+      ['','shadysaidthat','Live In Pants','','',''],
+      ['','ghost.handle','Lowkey Heat','','','']
+    ];
+    const recs=a.run('mktRowsToRecords('+J(sep)+')');
+    const crs=[{id:'c1',ig_handle:'st4rr.doll'},{id:'c2',ig_handle:'shoaibkhn.t'},{id:'c3',ig_handle:'shadysaidthat'}];
+    const plan=a.run('mktPlanDispatchImport("Sep 2026",'+J(recs)+','+J(crs)+',[])');
+    s.eq('three rows match their creators',plan.filter(r=>!r.problem).length,3);
+    s.eq('an unknown handle is reported, not invented',plan[3].problem,'creator not in the database');
+    s.eq('ids are fixed per tab and row',plan[0].id,'dp_mig_sep2026_r2');
+    s.eq('date left blank',plan[0].date,'');
+    s.eq('status left blank',plan[0].status,'');
+    s.eq('the product text is kept, trailing comma trimmed',plan[0].productsNote,'rust effortless, love hurts');
+    s.eq('an empty product cell stays empty',plan[2].productsNote,'');
+    const data=a.run('mktImportDispatchData('+J(plan[0])+',5,"uid-daniyal")');
+    s.eq('written with a blank status',data.status,'');
+    s.eq('and a blank date',data.date_of_dispatch,'');
+    s.eq('as an organic dispatch',data.type,'organic');
+    s.eq('with no catalog products',J(data.products),J([]));
+    s.eq('and its origin recorded',data.import_ref,'Sep 2026 row 2');
+    const again=a.run('mktPlanDispatchImport("Sep 2026",'+J(recs)+','+J(crs)+','+J([{id:'dp_mig_sep2026_r2'}])+')');
+    s.eq('a row already imported is not imported twice',again[0].problem,'already imported');
+    // A migrated dispatch can be edited without being forced to a status.
+    const legacy=a.run('mktBuildDispatchPayload({status:"",products:[]},'+J(Object.assign({id:plan[0].id},data))+',[],9,"u")');
+    s.ok('an imported row can be edited as it is',!legacy.error);
+    s.eq('keeping its blank status',legacy.data.status,'');
+  }
+
+  s.section('running the import');
+  {
+    const tx=[];const batches=[];
+    const wb={SheetNames:['Taskboard','Master List','Sep 2026','Lists'],Sheets:{
+      'Master List':[['Tier','Name','IG Handle','Niche','City'],['A','Sarita','saritasangrez','Fashion Creator','lahore'],['','','st4rr.doll','',''],['','One','twin',''],['','Two','Twin','']],
+      'Sep 2026':[['Date of Dispatch','IG Handle','Collection Sent','Products sent','Status','Link to Post'],['','st4rr.doll','Lowkey Heat','rust effortless','','']],
+      'Taskboard':[['x']],'Lists':[['Pakistan Cities']]
+    }};
+    const XLSX={utils:{sheet_to_json:sh=>sh}};
+    const t=app({globals:{XLSX,
+      doc:(db,col,id)=>({path:col+'/'+id}),
+      runTransaction:async(db,fn)=>{const ops=[];await fn({get:async()=>({exists:()=>false}),set:(r,d)=>ops.push(['set',r.path,d]),update:(r,d)=>ops.push(['update',r.path,d]),delete:r=>ops.push(['delete',r.path])});tx.push(ops);},
+      writeBatch:()=>{const ops=[];batches.push(ops);return{set:(r,d)=>ops.push(['set',r.path,d]),update:(r,d)=>ops.push(['update',r.path,d]),commit:async()=>{}};}
+    }});
+    t.run('mktCreatorsLoaded=true;mktDispatchesLoaded=true;mktPaidPRsLoaded=true');
+    t.run('mktImportFromWorkbook('+J(wb)+',"Final_Content_Tracker_2026.xlsx")');
+    s.eq('only the month tabs are read as dispatches',J(t.run('_mktImport.monthTabs')),J(['Sep 2026']));
+    s.eq('the preview holds the duplicate back',t.run('_mktImport.plan.duplicates.length'),1);
+    s.ok('the Sep row is shown as ready because its creator is in this import',t.run('_mktImport.dispatches[0].problem')==='');
+    const html=t.run('renderMarketingImport()');
+    s.ok('the preview shows the duplicate to choose',/Duplicate handles[\s\S]*@twin/.test(html));
+    s.ok('and the import button counts only what is ready',/Import 2 creators/.test(html));
+    await t.run('window.mktImportRun()');
+    s.eq('one transaction per creator — the duplicate stayed out',tx.length,2);
+    const firstCreator=tx[0].find(o=>o[1].indexOf('creators/')===0)[2];
+    s.eq('the handle lock is written with it',tx[0][0][1],'creator_handles/saritasangrez');
+    s.eq('no tier is invented',firstCreator.tier,null);
+    s.eq('no score either',firstCreator.score,null);
+    s.eq('the source is recorded',firstCreator.imported_from,'content_tracker_2026');
+    s.eq('city normalised',firstCreator.city,'Lahore');
+    s.eq('the Sep row becomes a dispatch',batches.length,1);
+    const disp=batches[0][0][2];
+    s.eq('matched to the creator this run added',disp.creator_id,t.run('mktCreators.find(c=>c.ig_handle==="st4rr.doll").id'));
+    s.eq('with its status left blank',disp.status,'');
+    s.ok('and the creator rollups written with it',batches[0][1][0]==='update'&&batches[0][1][2].lifetime_organic_dispatches===1);
+    s.ok('the run is logged on screen',/Creators: 2 added/.test(t.run('_mktImport.log')));
+    s.eq('the preview afterwards has nothing left to add',t.run('_mktImport.plan.ready.length'),0);
+    await t.run('window.mktImportRun()');
+    s.eq('running it again writes nothing',tx.length+'/'+batches.length,'2/1');
+  }
+  {
+    const t=app({globals:{XLSX:{utils:{sheet_to_json:()=>[]}}}});
+    t.run('mktCreatorsLoaded=true;mktDispatchesLoaded=true');
+    t.run('mktImportFromWorkbook({SheetNames:["Sheet1"],Sheets:{}},"x.xlsx")');
+    s.ok('a file with no Master List tab is refused, naming the tabs it found',/No "Master List" tab[\s\S]*Sheet1/.test(t.run('_mktImport.error')));
+    const u=app();
+    s.ok('the importer will not run before the data it dedupes against has loaded',/have to load first/.test(u.run('renderMarketingImport()')));
+  }
+
+  s.section('rules for imported rows');
+  {
+    const rules=read('firestore.rules');
+    const blk=(rules.match(/match \/dispatches\/\{id\} \{[\s\S]*?\n    \}/)||[''])[0];
+    s.eq('a blank status is allowed on create and on update',(blk.match(/status in \['','confirmed','in_transit','shipped','content_received'\]/g)||[]).length,2);
+  }
+
+  s.section('the sheet\'s two odd row shapes');
+  {
+    const rows=[
+      ['Tier','Name','IG Handle','Niche','City'],
+      ['B','_kinzaa11','','',''],
+      ['A','Ayesha Khan','','',''],
+      ['A','','','',''],
+      ['C','dupe.in.name','','',''],
+      ['','Real','dupe.in.name','','']
+    ];
+    const recs=a.run('mktRowsToRecords('+J(rows)+')');
+    s.eq('a tier-only row is still read',recs.length,5);
+    const plan=a.run('mktPlanCreatorImport('+J(recs)+',[])');
+    s.eq('a handle in the Name column is offered as a correction',J(plan.swapped.map(x=>x.row+':'+x.suggestedHandle)),J(['2:_kinzaa11']));
+    s.ok('never applied on its own',plan.ready.every(r=>r.handle!=='_kinzaa11'));
+    s.ok('a real name with a space is not mistaken for a handle',plan.invalid.some(r=>r.row===3&&r.problem==='no handle'));
+    s.eq('a row with only the old tier letter is empty, not an error',J(plan.empty.map(r=>r.row)),J([4]));
+    s.ok('a Name-column handle already present correctly is not offered twice',plan.invalid.some(r=>r.row===5&&/already in this sheet/.test(r.problem))&&plan.ready.some(r=>r.handle==='dupe.in.name'));
+    const t=app({globals:{XLSX:{utils:{sheet_to_json:sh=>sh}}}});
+    t.run('mktCreatorsLoaded=true;mktDispatchesLoaded=true');
+    t.run('mktImportFromWorkbook('+J({SheetNames:['Master List'],Sheets:{'Master List':rows}})+',"x.xlsx")');
+    s.eq('before confirming, only the clean row would be written',t.run('_mktImportCreatorsToWrite().map(r=>r.handle)').join(),'dupe.in.name');
+    t.run('window.mktImportAccept("2",true)');
+    const w=t.run('_mktImportCreatorsToWrite()');
+    s.eq('once confirmed it is written under that handle',w.map(r=>r.handle).join(),'dupe.in.name,_kinzaa11');
+    s.eq('with the name left empty — that cell held a handle',w[1].name,'');
+    s.ok('the preview lists it with a checkbox',/mktImportAccept[\s\S]*@_kinzaa11/.test(t.run('renderMarketingImport()')));
+  }
+  s.section('cities the sheet actually uses');
+  s.eq('RWP → Rawalpindi',a.run('mktCanonCity("RWP")'),'Rawalpindi');
+  s.eq('abottabad → Abbottabad',a.run('mktCanonCity("abottabad")'),'Abbottabad');
+  s.eq('lahore cantt → Lahore',a.run('mktCanonCity("lahore cantt")'),'Lahore');
+  s.eq('taxila is not on the list and is not guessed',a.run('mktCanonCity("taxila")'),'');
 
   return s;
 };

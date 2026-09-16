@@ -118,6 +118,8 @@ async function startApp(){
   // after the first paint. That is a flicker. The alternative was a blank
   // app. Nothing on the critical path may wait on the network.
   if(typeof profileBootstrap==='function'){try{profileBootstrap();}catch(_){}}
+  // Marketing reminders + the lead's bell. Same rule: never awaited.
+  if(typeof mktBootstrap==='function'){try{mktBootstrap();}catch(_){}}
   // Inject the notification bell for everyone (HRM notifs are routed by user/role).
   if(typeof _ensureNotifBell==='function')_ensureNotifBell();
   // Show the bug-report FAB for every signed-in user
