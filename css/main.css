@@ -1481,6 +1481,8 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .mkt-danger:hover{color:var(--accent-urgent);border-color:var(--accent-urgent);background:var(--accent-urgent-soft)}
 .field textarea:disabled,.field input:disabled{opacity:.7}
 /* Reports + importer (Marketing M5–M7). */
+.mkt-code{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.mkt-code-text{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-weight:700;letter-spacing:.04em;padding:4px 8px;border-radius:6px;background:var(--surface-2);border:1px dashed var(--border);overflow-wrap:anywhere}
 .mkt-dstatus-none{background:transparent;color:var(--muted);border:1px dashed var(--border)}
 .mkt-rep{min-width:560px}
 .mkt-total td{font-weight:700;border-top:2px solid var(--border)}

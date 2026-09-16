@@ -197,6 +197,12 @@ exports.handler = async function () {
               financial_status: order.financial_status || "",
               fulfillment_status: order.fulfillment_status || null,
               cancelled_at: order.cancelled_at || null,
+              // Codes used on the order, upper-cased — read by the Marketing
+              // redemption rollup (marketing-code-rollup.js) with an
+              // array-contains query.
+              discount_codes: (order.discount_codes || [])
+                .map((d) => String((d && d.code) || "").toUpperCase())
+                .filter(Boolean),
               line_item_count: (order.line_items || []).length,
               synced_at: now,
             }

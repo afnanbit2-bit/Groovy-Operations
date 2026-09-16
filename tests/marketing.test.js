@@ -798,7 +798,7 @@ module.exports=async function(){
   const line=a.run('mktDashboardLine(4,2,90000,null)');
   s.ok('it says what went out this week',/4<\/b> dispatched this week/.test(line));
   s.ok('what is waiting for approval, with the PKR',/2<\/b> Paid PR pending approval \(PKR 90,000\)/.test(line));
-  s.ok('and that discount codes are not set up yet',/discount codes not set up yet/.test(line));
+  s.ok('and says when the code figures could not be read',/discount-code figures unavailable/.test(line));
   s.ok('once codes exist it reports them',/3<\/b> discount codes live, PKR 1,500 redeemed this month/.test(a.run('mktDashboardLine(0,0,0,{live:3,redeemedPkr:1500})')));
   {
     const t=app({globals:{query:(c,w)=>({c,w}),collection:(db,name)=>({name}),where:(f,op,v)=>({f,op,v}),
@@ -1068,6 +1068,107 @@ module.exports=async function(){
   s.eq('abottabad → Abbottabad',a.run('mktCanonCity("abottabad")'),'Abbottabad');
   s.eq('lahore cantt → Lahore',a.run('mktCanonCity("lahore cantt")'),'Lahore');
   s.eq('taxila is not on the list and is not guessed',a.run('mktCanonCity("taxila")'),'');
+
+  // ════════════════════════════════════════════════════════════════════
+  // M4 — discount codes, in the app
+  // ════════════════════════════════════════════════════════════════════
+  s.section('code figures');
+  {
+    const now=Date.parse('2026-09-20T12:00:00');
+    const codes=[
+      {id:'c1',creator_id:'a',dispatch_type:'paid_pr',expires_at:now+86400000,status:'active',revenue_attributed_pkr:5000,redemption_count:3,revenue_by_month:{'2026-09':3000,'2026-08':2000}},
+      {id:'c2',creator_id:'a',dispatch_type:'organic',expires_at:now-1,status:'active',revenue_attributed_pkr:700,redemption_count:1,revenue_by_month:{'2026-09':700}},
+      {id:'c3',creator_id:'b',dispatch_type:'paid_pr',expires_at:now+1,status:'expired',revenue_attributed_pkr:0}
+    ];
+    const sum=a.run('mktCodesSummary('+J(codes)+','+now+')');
+    s.eq('a code past its end is not live, whatever its stored status',sum.live,1);
+    s.eq('redeemed this month counts only this month',sum.redeemedPkr,3700);
+    s.eq('Paid PR revenue per creator',J(a.run('mktRevenueByCreator('+J(codes)+',"paid_pr")')),J({a:5000,b:0}));
+    const rows=a.run('mktAttributedRows('+J(codes)+',[],[])');
+    s.eq('the attributed line ranks by revenue',J(rows.map(r=>r.revenue)),J([5000,700,0]));
+    const roi=a.run('mktPaidRoi([{creator_id:"a",status:"approved",proposed_amount_pkr:2500}],[],mktRevenueByCreator('+J(codes)+',"paid_pr"))');
+    s.eq('ROI from Paid PR code revenue only (organic code revenue excluded)',roi[0].roi,2);
+  }
+
+  s.section('the dispatch\'s code section');
+  {
+    const t=app();
+    t.run("mktCodes=[{id:'c1',code:'GRVY-STARR-AB2C',expires_at:Date.now()+86400000,status:'active',redemption_count:4,revenue_attributed_pkr:12000,value_percent:10}]");
+    const has=t.run("_mktCodeSectionHTML({id:'d1',type:'paid_pr',has_discount_code:true,discount_code_id:'c1'})");
+    s.ok('a coded dispatch shows its code',/GRVY-STARR-AB2C/.test(has));
+    s.ok('with a copy button',/mktCopyCode/.test(has));
+    s.ok('its redemptions and revenue',/>4<[\s\S]*PKR 12,000/.test(has));
+    const org=t.run("_mktCodeSectionHTML({id:'d2',type:'organic',has_discount_code:false})");
+    s.ok('an organic dispatch offers a code as optional',/Optional[\s\S]*Create discount code/.test(org));
+    const paid=t.run("_mktCodeSectionHTML({id:'d3',type:'paid_pr',has_discount_code:false})");
+    s.ok('a Paid PR without one offers to create it, saying it should exist',/always gets a code[\s\S]*Create the Paid PR code/.test(paid));
+    const lost=t.run("_mktCodeSectionHTML({id:'d4',type:'organic',has_discount_code:true,discount_code_id:'zzz'})");
+    s.ok('a code that is not loaded says so rather than offering a second one',/not in the loaded list/.test(lost)&&!/Create/.test(lost));
+  }
+
+  s.section('creating a code from the app');
+  {
+    const posts=[];
+    const t=app({globals:{
+      auth:{currentUser:{getIdToken:async()=>'tok'}},
+      fetch:async(url,init)=>{posts.push({url,body:JSON.parse(init.body)});
+        return{ok:true,status:200,json:async()=>({code:{id:'c9',code:'GRVY-A-ZZZZ',creator_id:'cr_a',dispatch_id:'d1',expires_at:Date.now()+1e9,status:'active'}})};}
+    }});
+    t.run("mktDispatches=[{id:'d1',creator_id:'cr_a',type:'organic'}];mktCreators=[{id:'cr_a',ig_handle:'a',lifetime_codes_issued:0}];mktCodes=[]");
+    const r=await t.run("mktCreateCode('d1')");
+    s.eq('it asks the server function',posts[0].url,'/.netlify/functions/marketing-discounts');
+    s.eq('with the caller\'s ID token and the dispatch',J({t:posts[0].body.idToken,a:posts[0].body.action,d:posts[0].body.dispatchId}),J({t:'tok',a:'create',d:'d1'}));
+    s.ok('and never sends a secret',!/secret/i.test(J(posts[0].body)));
+    s.eq('the code comes back',r.code.code,'GRVY-A-ZZZZ');
+    s.eq('the dispatch is linked in memory',t.run("mktDispatches[0].discount_code_id"),'c9');
+    s.eq('the creator\'s code count moves',t.run("mktCreators[0].lifetime_codes_issued"),1);
+    const bad=app({globals:{auth:{currentUser:{getIdToken:async()=>'tok'}},
+      fetch:async()=>({ok:false,status:403,json:async()=>({error:'Shopify has not granted the app write_discounts yet.'})})}});
+    const e=await bad.run("mktCreateCode('d1')");
+    s.ok('a refusal is returned as a message, never thrown',/write_discounts/.test(e.error));
+    const out=app();
+    s.ok('signed out, it says so',/signed out/.test((await out.run("mktCreateCode('d1')")).error));
+  }
+  {
+    const posts=[];
+    const t=app({globals:{doc:(db,col,id)=>({path:col+'/'+id}),
+      auth:{currentUser:{getIdToken:async()=>'tok'}},
+      fetch:async(url,init)=>{posts.push(JSON.parse(init.body));return{ok:true,status:200,json:async()=>({code:{id:'c1',code:'GRVY-A-QQQQ',creator_id:'cr_a'}})};}}});
+    t.run("mktPaidPRs=[{id:'pr_1',creator_id:'cr_a',status:'pending',proposed_amount_pkr:45000,deliverable:'x'}];mktCreators=[{id:'cr_a',ig_handle:'a'}];mktDispatches=[];mktPaidPRsLoaded=true;mktDispatchesLoaded=true");
+    t.el('mkt-pr-id').value='pr_1';
+    await t.run("window.mktDecidePaidPR('approved')");
+    await new Promise(r=>setTimeout(r,10));
+    const newDisp=t.run("mktDispatches.find(d=>d.type==='paid_pr').id");
+    s.eq('approving a Paid PR asks for its code straight away',posts.length&&posts[0].dispatchId,newDisp);
+    s.ok('and says the code was created',t.state.toasts.some(x=>/Discount code created: GRVY-A-QQQQ/.test(x)));
+  }
+  {
+    const t=app({globals:{doc:(db,col,id)=>({path:col+'/'+id}),auth:{currentUser:null}}});
+    t.run("mktPaidPRs=[{id:'pr_1',creator_id:'cr_a',status:'pending',proposed_amount_pkr:45000,deliverable:'x'}];mktCreators=[{id:'cr_a',ig_handle:'a'}];mktDispatches=[];mktPaidPRsLoaded=true;mktDispatchesLoaded=true");
+    t.el('mkt-pr-id').value='pr_1';
+    await t.run("window.mktDecidePaidPR('approved')");
+    await new Promise(r=>setTimeout(r,10));
+    s.eq('if the code fails, the approval still stands',t.run("mktPaidPRs[0].status"),'approved');
+    s.ok('and the failure is said out loud, with where to retry',t.state.toasts.some(x=>/not created[\s\S]*retry/i.test(x)));
+  }
+
+  s.section('reports and the dashboard with codes');
+  {
+    const docs={
+      creators:[{id:'cr_a',data:()=>({ig_handle:'a'})}],
+      paid_pr_requests:[{id:'p1',data:()=>({creator_id:'cr_a',status:'approved',proposed_amount_pkr:10000,decided_at:Date.now()})}],
+      dispatches:[{id:'d1',data:()=>({creator_id:'cr_a',type:'paid_pr',date_of_dispatch:'2026-09-10',has_discount_code:true,discount_code_id:'c1'})}],
+      discount_codes:[{id:'c1',data:()=>({code:'GRVY-A-AAAA',creator_id:'cr_a',dispatch_id:'d1',dispatch_type:'paid_pr',revenue_attributed_pkr:30000,redemption_count:5,status:'active'})}]
+    };
+    const t=app({globals:{collection:(db,name)=>({name}),getDocs:async ref=>({docs:docs[ref.name]||[]}),getDoc:async()=>({exists:()=>false})}});
+    await t.run('loadMarketingCreators()');
+    const roi=t.run('_mktRoiHTML()');
+    s.ok('with Paid PR codes the ROI table is real',/3×/.test(roi)&&!/not an ROI ranking/.test(roi));
+    const lift=t.run('_mktLiftHTML()');
+    s.ok('the attributed line lists the code and its revenue',/GRVY-A-AAAA[\s\S]*PKR 30,000/.test(lift));
+    s.ok('the reports page has the Shopify connection card',/Check Shopify access/.test(t.run('renderMarketingReports()')));
+    s.ok('the dashboard line shows live codes',/1<\/b> discount codes live, PKR 0 redeemed this month/.test(t.run('mktDashboardLine(0,0,0,mktCodesSummary(mktCodes,Date.now()))')));
+  }
 
   return s;
 };
