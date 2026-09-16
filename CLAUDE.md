@@ -241,7 +241,9 @@ PR's `check-cache-version` run is what failed ("still v69"). Bumped to
 `v70` — and within minutes Afnan's Boards rail change landed at `v70`
 too, so it went round again to `v71` — which Afnan's Store read-quota fix
 had also just taken, so M2 finally merged at **`v72`**. Three collisions in
-one PR, all clean merges. **Before opening a PR, and again
+one PR, all clean merges. M3 then collided once more (Afnan's Store dashboard fix at `v73`) and
+merged at **`v74`**. While both tracks ship several times an hour, expect
+this on every PR: fetch, merge, bump past both, re-run, merge promptly. **Before opening a PR, and again
 before merging it, `git fetch` and compare against the CURRENT
 `origin/main`**, not the commit the branch started from.
 
