@@ -2530,6 +2530,78 @@ from overlapping. Note this hit `_gvProgStart/Stop` (the top progress bar),
 **not** the blocking "Saving…" overlay — it is not the stuck-overlay
 suspect recorded under the Monitor section.
 
+### The Store's REST reads — a failure looked exactly like an empty store (Sept 2026)
+
+Afnan reported the **Stock Log had vanished**: "Log · 0 movements · No
+records found." on a collection with thousands of rows, and a missing
+category on Inventory in the same session. No error, no toast, nothing to
+report — which is the tell.
+
+**`js/store.js` is the ONE module that talks to Firestore over the REST API**
+(`_FS_BASE` + a bearer ID token) instead of the window-bridged SDK every
+other file uses, so none of the SDK-shaped protections applied to it. Its
+read helpers never checked `r.ok`:
+
+- `fsList` returned `(d.documents||[]).map(…)`. A 401/403/429/500 body has
+  no `documents` key, so **every failure became `[]`**.
+- `fsQueryOrdered`/`fsQueryWhere` returned `Array.isArray(docs)?docs:[]`.
+  **`runQuery` answers a failure with a bare `{error:{…}}` object** — and
+  can also return `[{error:{…}}]` — so both shapes fell through to `[]`,
+  even on HTTP 200.
+- `fsDelete` ignored the response entirely, so a **refused delete reported
+  success** and the caller dropped the row from the local array anyway.
+
+Every read now goes through `_fsJson`/`_fsThrow`, which throw an error
+carrying the collection, the HTTP status and Firestore's own `status` code.
+**Reverting the `r.ok` check reproduces the exact reported screen** — a 403
+renders `0 movements` and `No records found.` — which is how this was
+confirmed rather than guessed; `tests/store.test.js` holds it.
+
+Three more things came out of the same read path:
+
+- **`fsList` ignored `nextPageToken`.** A collection larger than one
+  response page was silently truncated, and Firestore may return fewer than
+  `pageSize` docs *with* a token. It pages now. This is the most likely
+  explanation for a whole category of items being absent from Inventory
+  while `allItems.length` still matched the chip counts — an item that never
+  arrived is not an orphan, so the "Uncategorised" fallback can't reveal it.
+- **`fsQueryOrdered` asked for `limit:3000` in one response.** It is
+  cursor-paged now, ordered `<field> DESC, __name__ DESC`. Firestore already
+  appends `__name__` implicitly in the same direction, so **this needs no
+  composite index** — naming it makes the cursor exact, where a cursor on the
+  value alone would skip or repeat rows sharing a `ts`.
+- **A failed read could have wiped the stock.** `loadStoreData` seeds
+  `INITIAL_ITEMS` when `allItems` comes back empty, and
+  `reconstructStockPreview` rebuilds every balance from `_fsListAll`. Both
+  were one silent `[]` away from writing 112 zeroed items over the live
+  balances on the strength of a 403. The seed is now gated on the read having
+  actually *succeeded*, and the rebuild refuses a zero-row read out loud.
+
+**`loadStoreData` was the last `Promise.all` loader in the app** — eight
+reads, four of them un-caught, so one refusal threw away all eight and the
+whole store read as empty behind a toast that named nothing. Converted to
+the `_POS_LOADS` pattern from `js/pos.js`: `_STORE_LOADS` + `_storeRunLoads`
+(allSettled), whatever succeeded is applied, permission failures get one
+retry behind a forced token refresh, and the toast **names the collections**.
+
+**The rendering rule that follows from this, and it is the real lesson:**
+a read that FAILED and a collection that is EMPTY must never produce the same
+screen. `_storeLoadErrors` records failures by collection name and
+`_storeLoadFailed(col)` exposes them, so the Stock Log renders an error card
+with a Retry button instead of "No records found.", and Inventory says
+outright when `store_categories` didn't load rather than just omitting its
+chips. **Any page reading one of these collections should ask
+`_storeLoadFailed()` before rendering an empty state.**
+
+`tests/harness.js` gained a **`fetch` stub** (recording into `state.fetches`,
+overridable through `globals`, plus `_res(status,body)`) — `js/store.js`
+could not be tested at all before, being the only REST module.
+
+Also fixed in passing: the log's pager border was a hardcoded `#f5f5f5` (a
+bright line straight across the card in dark mode) and `setILDir` wrote a
+literal `#fff` background under a themed foreground — both leftovers the
+property-qualified dark-mode sweep didn't reach.
+
 ## The Sales Team ▸ Marketing (Sept 2026)
 
 Replaces the **Content Tracker 2026** Google Sheet (Master List + monthly

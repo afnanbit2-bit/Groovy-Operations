@@ -178,6 +178,16 @@ function renderInventory(){
     <div><div class="page-title">Inventory</div><div class="page-sub">${allItems.length} items across ${cats.length} categories</div></div>
     <button class="btn-primary" style="width:auto;padding:10px 18px" onclick="window.showAddItemForm()">+ Add Item</button>
   </div>`;
+  // Custom categories (anything not in CAT_LABELS) live in store_categories.
+  // When that read fails the chips for them just aren't drawn — which reads
+  // as "the category was deleted", not as "the list didn't load".
+  const catErr=_storeLoadFailed('store_categories');
+  if(catErr){
+    h+=`<div class="card" style="border-left:3px solid var(--amber);margin-bottom:14px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:4px">Custom categories could not be loaded</div>
+      <div style="font-size:11px;color:var(--muted)">Only the built-in categories are listed below. Any category added in-app is missing from the filters until this loads. — ${_ilEsc((catErr&&catErr.message)||'unknown error')}</div>
+    </div>`;
+  }
   if(lowStock.length){
     h+=`<div class="card" style="border-left:3px solid #dc2626;margin-bottom:16px">
       <div class="card-title">⚠ Low / Out of Stock (${lowStock.length} items)</div>
@@ -1122,7 +1132,8 @@ async function deleteTemplate(id){
 }
 
 function renderStoreLog(){
-  return`<div class="page-head"><div class="page-title">Log</div><div class="page-sub">${allTransactions.length} movements</div></div>
+  const err=_storeLoadFailed('store_transactions');
+  return`<div class="page-head"><div class="page-title">Log</div><div class="page-sub">${err?'could not be loaded':allTransactions.length+' movements'}</div></div>
   <div class="card">
     <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
       <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex-shrink:0">
@@ -1134,7 +1145,7 @@ function renderStoreLog(){
       <input id="il-po" placeholder="Filter PO…"           oninput="window.setILPO(this.value)" style="width:100px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
     </div>
     <div id="il-body"></div>
-    <div id="il-pager" style="display:flex;align-items:center;justify-content:center;gap:10px;padding-top:12px;border-top:1px solid #f5f5f5;margin-top:4px"></div>
+    <div id="il-pager" style="display:flex;align-items:center;justify-content:center;gap:10px;padding-top:12px;border-top:1px solid var(--border);margin-top:4px"></div>
   </div><div style="height:80px"></div>`;
 }
 function setILDir(dir){
@@ -1142,10 +1153,39 @@ function setILDir(dir){
   ['il-all','il-in','il-out'].forEach(id=>{
     const btn=document.getElementById(id);if(!btn)return;
     const active=(id==='il-all'&&dir==='')||(id==='il-in'&&dir==='received')||(id==='il-out'&&dir==='issued');
-    btn.style.background=active?'var(--dark)':'#fff';btn.style.color=active?'#fff':'var(--muted)';
+    btn.style.background=active?'var(--dark)':'var(--surface)';btn.style.color=active?'var(--on-dark)':'var(--muted)';
   });refreshIssueLog();
 }
+// A refused read and an empty collection must never render the same way.
+// "No records found." on a log that has thousands of rows is the single most
+// misleading thing this page can say, and it is what it said.
+function _ilErrorHTML(err){
+  const why=_storeIsPermission(err)
+    ?'The read was refused. Check that the published firestore.rules match the repo — store_transactions needs a match block.'
+    :'The read did not come back.';
+  return`<div class="empty" style="padding:22px;text-align:center">
+    <div style="font-weight:700;color:var(--red);margin-bottom:6px">Could not load the movement log</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">${_ilEsc(why)}</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px">${_ilEsc((err&&err.message)||'unknown error')}</div>
+    <button class="btn-sm" onclick="window.ilRetryLoad()">Retry</button>
+  </div>`;
+}
+function _ilEsc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+window.ilRetryLoad=async function(){
+  const body=document.getElementById('il-body');
+  if(body)body.innerHTML='<div class="empty" style="padding:22px;text-align:center">Loading…</div>';
+  await _storeRunLoads(_STORE_LOADS.filter(j=>j.name==='store_transactions'));
+  const m=document.getElementById('main-content');
+  if(m&&currentPage==='store-log'){m.innerHTML=renderStoreLog();refreshIssueLog();}
+};
 function refreshIssueLog(){
+  const loadErr=_storeLoadFailed('store_transactions');
+  if(loadErr){
+    const b=document.getElementById('il-body');const p=document.getElementById('il-pager');
+    if(b)b.innerHTML=_ilErrorHTML(loadErr);
+    if(p)p.innerHTML='';
+    return;
+  }
   const ql=_ilQ.toLowerCase();const poq=normPO(_ilPO);
   let list=allTransactions;
   if(_ilDir)list=list.filter(t=>t.type===_ilDir);
@@ -1267,8 +1307,7 @@ async function _fsListAll(col,batchSize=1000){
   const out=[];let pageToken='';
   do{
     const url=`${_FS_BASE}/${col}?pageSize=${batchSize}${pageToken?`&pageToken=${encodeURIComponent(pageToken)}`:''}`;
-    const r=await fetch(url,{headers:{Authorization:`Bearer ${tok}`}});
-    const d=await r.json();
+    const d=await _fsJson(col,await fetch(url,{headers:{Authorization:`Bearer ${tok}`}}));
     if(d.documents)out.push(...d.documents.map(fromFsDoc));
     pageToken=d.nextPageToken||'';
   }while(pageToken);
@@ -1311,6 +1350,13 @@ window.reconstructStockPreview=async function(){
   let txns;
   try{txns=await _fsListAll('store_transactions');}
   catch(e){showToast('Load failed: '+e.message,true);return;}
+  // A read that comes back with nothing would reconstruct every item back to
+  // the May-1 seed and offer to Apply that over the live balances. Before the
+  // helpers checked r.ok this was reachable from a plain 403.
+  if(!txns.length){
+    showToast('Read returned 0 transactions — refusing to preview a rebuild from an empty log',true);
+    return;
+  }
   const recon=_reconstructFromTxns(txns);
   const rows=[];
   for(const cur of allItems){
@@ -1412,6 +1458,9 @@ window._applyReconstruction=async function(){
 
 // ══════════════════════════════════════════
 const _FS_BASE=`https://firestore.googleapis.com/v1/projects/groovy-gatepass/databases/(default)/documents`;
+// The bare RESOURCE NAME, which is what a runQuery __name__ cursor takes —
+// `projects/…/documents/…`, never the https:// endpoint _FS_BASE is.
+const _FS_DOCS=_FS_BASE.replace(/^https:\/\/firestore\.googleapis\.com\/v1\//,'');
 
 async function getStoreToken(){
   if(!auth.currentUser)throw new Error('Not signed in');
@@ -1448,11 +1497,39 @@ function fromFsDoc(doc){
   if(doc.name)obj._id=doc.name.split('/').pop();
   return obj;
 }
+// A failed REST read used to come back as `[]` — the response body has no
+// `documents` key, so the `||[]` swallowed a 401/403/429/500 whole and the
+// page rendered "0 records" with no toast, no console line and nothing to
+// report. THAT is how the Stock Log "vanished". Every read below now checks
+// r.ok and throws an error naming the collection and the status, so a
+// refused read reads as a refused read and not as an empty store.
+function _fsThrow(col,res,body){
+  const msg=(body&&body.error&&body.error.message)||(res&&res.statusText)||'read failed';
+  const err=new Error(col+': '+msg+' (HTTP '+((res&&res.status)||'?')+')');
+  err.collection=col;err.status=res&&res.status;
+  if(body&&body.error&&body.error.status)err.code=body.error.status;
+  throw err;
+}
+async function _fsJson(col,res){
+  let body=null;
+  try{body=await res.json();}
+  catch(e){if(!res.ok)_fsThrow(col,res,null);throw new Error(col+': unreadable response — '+e.message);}
+  if(!res.ok)_fsThrow(col,res,body);
+  return body;
+}
+// Pages through nextPageToken. It used to ignore the token entirely, so a
+// collection larger than one response page was silently truncated — items
+// simply stopped existing as far as the rest of the app was concerned.
 async function fsList(col,pageSize=300){
   const tok=await getStoreToken();
-  const r=await fetch(`${_FS_BASE}/${col}?pageSize=${pageSize}`,{headers:{Authorization:`Bearer ${tok}`}});
-  const d=await r.json();
-  return(d.documents||[]).map(fromFsDoc);
+  const out=[];let pageToken='';let guard=0;
+  do{
+    const url=`${_FS_BASE}/${col}?pageSize=${pageSize}`+(pageToken?`&pageToken=${encodeURIComponent(pageToken)}`:'');
+    const d=await _fsJson(col,await fetch(url,{headers:{Authorization:`Bearer ${tok}`}}));
+    if(d.documents)out.push(...d.documents.map(fromFsDoc));
+    pageToken=d.nextPageToken||'';
+  }while(pageToken&&++guard<200);
+  return out;
 }
 async function fsSet(col,id,data){
   const tok=await getStoreToken();
@@ -1471,27 +1548,58 @@ async function fsAdd(col,data){
 }
 async function fsDelete(col,id){
   const tok=await getStoreToken();
-  await fetch(`${_FS_BASE}/${col}/${encodeURIComponent(id)}`,{method:'DELETE',headers:{Authorization:`Bearer ${tok}`}});
+  const r=await fetch(`${_FS_BASE}/${col}/${encodeURIComponent(id)}`,{method:'DELETE',headers:{Authorization:`Bearer ${tok}`}});
+  // A refused delete used to report success to the caller, which then told
+  // the user "deleted" and dropped the row from the local array.
+  if(!r.ok)_fsThrow(col,r,await r.json().catch(()=>null));
+}
+// runQuery answers a FAILURE with a bare `{error:{...}}` object rather than
+// the array of results, and can also return `[{error:{...}}]`. Both used to
+// fall through `Array.isArray(...)?...:[]` and `.filter(d=>d.document)` into
+// an empty list, so a refused or over-large query was indistinguishable from
+// a collection with nothing in it.
+async function _fsRunQuery(col,structuredQuery){
+  const tok=await getStoreToken();
+  const res=await fetch(`${_FS_BASE}:runQuery`,{
+    method:'POST',
+    headers:{Authorization:`Bearer ${tok}`,'Content-Type':'application/json'},
+    body:JSON.stringify({structuredQuery})
+  });
+  const body=await _fsJson(col,res);
+  if(!Array.isArray(body))_fsThrow(col,res,body);
+  const bad=body.find(d=>d&&d.error);
+  if(bad)_fsThrow(col,res,bad);
+  return body.filter(d=>d.document).map(d=>fromFsDoc(d.document));
 }
 async function fsQueryWhere(col,field,value,limit=50){
-  const tok=await getStoreToken();
-  const r=await fetch(`${_FS_BASE}:runQuery`,{
-    method:'POST',
-    headers:{Authorization:`Bearer ${tok}`,'Content-Type':'application/json'},
-    body:JSON.stringify({structuredQuery:{from:[{collectionId:col}],where:{fieldFilter:{field:{fieldPath:field},op:'EQUAL',value:fsVal(value)}},limit}})
-  });
-  const docs=await r.json();
-  return(Array.isArray(docs)?docs:[]).filter(d=>d.document).map(d=>fromFsDoc(d.document));
+  return _fsRunQuery(col,{from:[{collectionId:col}],where:{fieldFilter:{field:{fieldPath:field},op:'EQUAL',value:fsVal(value)}},limit});
 }
-async function fsQueryOrdered(col,orderField,limit=100){
-  const tok=await getStoreToken();
-  const r=await fetch(`${_FS_BASE}:runQuery`,{
-    method:'POST',
-    headers:{Authorization:`Bearer ${tok}`,'Content-Type':'application/json'},
-    body:JSON.stringify({structuredQuery:{from:[{collectionId:col}],orderBy:[{field:{fieldPath:orderField},direction:'DESCENDING'}],limit}})
-  });
-  const docs=await r.json();
-  return(Array.isArray(docs)?docs:[]).filter(d=>d.document).map(d=>fromFsDoc(d.document));
+// Cursor-paged, so a big history is never one oversized response. The old
+// single `limit:3000` call asked Firestore to return the whole movement log
+// in one body; this walks it in pages of `page` instead.
+//
+// The orderBy is `<field> DESC, __name__ DESC` on purpose. Firestore already
+// appends __name__ implicitly in the same direction, so this needs no
+// composite index — but naming it makes the cursor EXACT: a cursor on the
+// value alone would skip or repeat rows that share a `ts`.
+async function fsQueryOrdered(col,orderField,limit=100,page=500){
+  const out=[];let cursor=null;
+  while(out.length<limit){
+    const q={
+      from:[{collectionId:col}],
+      orderBy:[{field:{fieldPath:orderField},direction:'DESCENDING'},
+               {field:{fieldPath:'__name__'},direction:'DESCENDING'}],
+      limit:Math.min(page,limit-out.length)
+    };
+    if(cursor)q.startAt={values:cursor,before:false};
+    const batch=await _fsRunQuery(col,q);
+    out.push(...batch);
+    if(batch.length<q.limit)break;
+    const last=batch[batch.length-1];
+    if(last[orderField]==null||!last._id)break;   // cannot build a cursor — stop rather than loop
+    cursor=[fsVal(last[orderField]),{referenceValue:`${_FS_DOCS}/${col}/${last._id}`}];
+  }
+  return out;
 }
 // ── Store utilities ──
 function getBalance(item){
@@ -1521,30 +1629,85 @@ function tsLabel(ts){return ts?new Date(ts).toLocaleString('en-GB',{day:'2-digit
 function safeId(str){return(str||'').replace(/[^a-zA-Z0-9]/g,'_');}
 function normPO(s){return s.replace(/[\s\-]/g,'').toLowerCase();}
 // ── Store data loader (lazy — called on first store page visit) ──
-async function loadStoreData(){
-  try{
-    const[items,txns,templates,requests,cats,pirs,edits,shortfalls]=await Promise.all([
-      fsList('store_items'),
-      fsQueryOrdered('store_transactions','ts',3000),   // full movement history for the log
-      fsList('trim_templates'),
-      fsList('store_requests'),
-      fsList('store_categories').catch(()=>[]),
-      fsList('po_issue_requests').catch(()=>[]),
-      fsList('po_edit_requests').catch(()=>[]),
-      fsList('po_shortfalls').catch(()=>[]),
-    ]);
-    allItems=items;allTransactions=txns;allTemplates=templates;allRequests=requests;
-    allStoreCategories=Array.isArray(cats)?cats:[];
-    allPoIssueRequests=Array.isArray(pirs)?pirs:[];
-    allPoEditRequests=Array.isArray(edits)?edits:[];
-    allPoShortfalls=Array.isArray(shortfalls)?shortfalls:[];
-    if(!allItems.length){
-      showToast('Initialising store items…');
-      await Promise.all(INITIAL_ITEMS.map(item=>fsSet('store_items',item.code,item).catch(()=>{})));
-      allItems=INITIAL_ITEMS.map(i=>({...i,_id:i.code}));
-      showToast('Store initialised ✓');
+//
+// Which reads failed on the last run, by collection name. A page can ask
+// `_storeLoadFailed('store_transactions')` and render an honest error state
+// instead of an empty one — "nothing came back" and "there is nothing" have
+// to look different, which is the whole lesson of the vanished Stock Log.
+let _storeLoadErrors={};
+function _storeLoadFailed(col){return _storeLoadErrors[col]||null;}
+function _storeIsPermission(e){
+  return !!e&&(e.code==='PERMISSION_DENIED'||e.status===401||e.status===403
+    ||String(e.message||'').indexOf('permission')>-1);
+}
+const _STORE_LOADS=[
+  {name:'store_items',        run:()=>fsList('store_items'),                          apply:v=>{allItems=v;}},
+  // Full movement history for the Stock Log. Cursor-paged inside fsQueryOrdered.
+  {name:'store_transactions', run:()=>fsQueryOrdered('store_transactions','ts',3000), apply:v=>{allTransactions=v;}},
+  {name:'trim_templates',     run:()=>fsList('trim_templates'),                       apply:v=>{allTemplates=v;}},
+  {name:'store_requests',     run:()=>fsList('store_requests'),                       apply:v=>{allRequests=v;}},
+  // Custom categories added in-app (anything outside CAT_LABELS). When this
+  // read fails, those categories and every item sitting in one disappear
+  // from the Inventory chips — so it is NOT optional-and-silent any more.
+  {name:'store_categories',   run:()=>fsList('store_categories'),                     apply:v=>{allStoreCategories=v;}},
+  {name:'po_issue_requests',  optional:true, run:()=>fsList('po_issue_requests'),     apply:v=>{allPoIssueRequests=v;}},
+  {name:'po_edit_requests',   optional:true, run:()=>fsList('po_edit_requests'),      apply:v=>{allPoEditRequests=v;}},
+  {name:'po_shortfalls',      optional:true, run:()=>fsList('po_shortfalls'),         apply:v=>{allPoShortfalls=v;}},
+];
+// Runs the jobs, applies whatever came back, returns the ones that did not.
+// Never throws — one refused collection must not take the other seven down
+// with it, which is exactly what the old Promise.all did.
+async function _storeRunLoads(jobs){
+  const settled=await Promise.allSettled(jobs.map(j=>j.run()));
+  const failed=[];
+  settled.forEach((r,i)=>{
+    if(r.status==='fulfilled'){
+      delete _storeLoadErrors[jobs[i].name];
+      try{jobs[i].apply(Array.isArray(r.value)?r.value:[]);}
+      catch(e){console.warn('[loadStoreData] could not apply '+jobs[i].name+':',e);}
+    }else{
+      _storeLoadErrors[jobs[i].name]=r.reason||new Error('load failed');
+      failed.push({job:jobs[i],err:r.reason});
+      console.warn('[loadStoreData] '+jobs[i].name+' failed:',(r.reason&&(r.reason.code||r.reason.message))||r.reason);
     }
-  }catch(e){showToast('Store load error: '+e.message,true);}
+  });
+  return failed;
+}
+async function loadStoreData(){
+  let failed=await _storeRunLoads(_STORE_LOADS);
+  // One retry behind a forced token refresh, for the auth/permission
+  // failures only — a stale ID token is the one cause this can fix, and
+  // re-running the reads that already worked would just double the cost.
+  const retry=failed.filter(f=>_storeIsPermission(f.err)).map(f=>f.job);
+  if(retry.length&&auth&&auth.currentUser){
+    try{
+      await auth.currentUser.getIdToken(true);
+      const still=await _storeRunLoads(retry);
+      const stillNames=new Set(still.map(f=>f.job.name));
+      failed=failed.filter(f=>!retry.some(j=>j.name===f.job.name)||stillNames.has(f.job.name));
+    }catch(e){console.warn('[loadStoreData] token refresh failed:',e);}
+  }
+  // Seed the master item list ONLY on a read that actually came back empty.
+  // A failed read must never reach this — it would write 112 zeroed items
+  // over the live balances on the strength of a 403.
+  if(!_storeLoadFailed('store_items')&&!allItems.length){
+    showToast('Initialising store items…');
+    await Promise.all(INITIAL_ITEMS.map(item=>fsSet('store_items',item.code,item).catch(()=>{})));
+    allItems=INITIAL_ITEMS.map(i=>({...i,_id:i.code}));
+    showToast('Store initialised ✓');
+  }
+  const hard=failed.filter(f=>!f.job.optional);
+  if(hard.length){
+    // NAME the collections. "Missing or insufficient permissions" on its own
+    // is unreportable — it is the same string whichever read was refused.
+    const names=hard.map(f=>f.job.name).join(', ');
+    const why=_storeIsPermission(hard[0].err)
+      ?'permission denied — check the firestore.rules block for '+(hard.length===1?'that collection':'those collections')+' and that the published rules match the repo'
+      :((hard[0].err&&hard[0].err.message)||'unknown error');
+    showToast('Could not load: '+names+' ('+why+')',true);
+    console.warn('[loadStoreData] gave up on:',names,hard.map(f=>f.err));
+  }
+  return failed;
 }
 // Internal store navigation (maps store section IDs back to showPage)
 function renderStoreSection(id){window.showPage('store-'+id);}
