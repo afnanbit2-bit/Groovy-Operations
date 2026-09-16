@@ -3657,10 +3657,10 @@ republish.
 AND `user_profiles`. Both had been waiting; the Profile page's own error
 card is what finally surfaced it.
 
-**REPUBLISH OUTSTANDING — Marketing M7 (16 Sept 2026):** the `dispatches`
-status list gained `''` (rows migrated from the sheet with no status).
-Until it is republished, importing the Sep 2026 rows fails with a
-permission error; the creators import fine. Ask for the full file.
+**Republished again by Ammar on 16 Sept 2026, after PR #63** (reported
+in-session), from the repo file at `md5 1910baa80876acfebd09d46b68e7d8e3` —
+`git log --oneline -1 -- firestore.rules` is `d9a488c` (Marketing M7: the
+blank dispatch status). **No republish is outstanding as of that commit.**
 
 **Republished by Ammar on 16 Sept 2026** (reported in-session, after PR
 #61), from the repo file at `md5 5211506e56a03d345ba061be46ea6a20` —
@@ -3669,8 +3669,8 @@ covered everything that had been waiting: the Mood Boards Trash
 (`71b4acb`) and Marketing M1–M3 (`creators`, `creator_handles`,
 `scoring_config`, `dispatches`, `paid_pr_requests`, `isContentOpsLead()`
 with `daniyal@groovy.op`, `isPaidPRApprover()`). **No republish is
-outstanding as of that commit** — if `git log -- firestore.rules` shows
-anything newer than `60f8ccb`, ask for one. The Console's acceptance was
+outstanding as of that commit** — superseded by the `d9a488c` publish
+above; check against that one. The Console's acceptance was
 reported by the human; it could not be checked from a session.
 
 **Keep updating both in lockstep**, per the comment at the top of
