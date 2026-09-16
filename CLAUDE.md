@@ -239,7 +239,9 @@ bumped to `v69` while Afnan's Store REST-read fix (`61affaa`) landed on
 `main` at `v69` too. Merging `main` into the M2 branch was clean again; the
 PR's `check-cache-version` run is what failed ("still v69"). Bumped to
 `v70` — and within minutes Afnan's Boards rail change landed at `v70`
-too, so it went round again to **`v71`**. **Before opening a PR, and again
+too, so it went round again to `v71` — which Afnan's Store read-quota fix
+had also just taken, so M2 finally merged at **`v72`**. Three collisions in
+one PR, all clean merges. **Before opening a PR, and again
 before merging it, `git fetch` and compare against the CURRENT
 `origin/main`**, not the commit the branch started from.
 
