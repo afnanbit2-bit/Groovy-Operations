@@ -388,7 +388,7 @@ service cloud.firestore {
     // lockstep with every role:'creator_content_ops_lead' entry in
     // js/auth.js (canAccessMarketing / isContentOpsLead there).
     function isContentOpsLead() {
-      return signedIn() && userEmail() in ['daniyaltufail59@gmail.com'];
+      return signedIn() && userEmail() in ['daniyal@groovy.op'];
     }
     function isMarketing() { return isOwner() || isContentOpsLead(); }
     // Paid PR approval — the accounts whose USER_DEFS entry carries

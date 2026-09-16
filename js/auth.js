@@ -23,10 +23,9 @@ const USER_DEFS=[
   {u:'uzaib',  email:'uzaib@groovy.op',  name:'Uzaib',  role:'viewer', title:'Cutting & Fabric',   canPO:false,canFabric:true,  stages:['cutting']},
   {u:'faizan', email:'faizan@groovy.op', name:'Faizan', role:'packing',title:'Packing & Dispatch', canPO:false,canFabric:false, stages:[]},
   {u:'umair',  email:'umair@groovy.op',  name:'Umair',  role:'fulfillment', title:'Fulfilment',    canPO:false,canFabric:false, stages:[]},
-  // Marketing module (Sept 2026). The only account whose login is a real
-  // inbox rather than @groovy.op — keep isContentOpsLead() in
+  // Marketing module (Sept 2026). Keep isContentOpsLead() in
   // firestore.rules in step with this email.
-  {u:'daniyal',email:'daniyaltufail59@gmail.com',name:'Daniyal Tufail',role:'creator_content_ops_lead',title:'Creator & Content Operations Lead',canPO:false,canFabric:false,stages:[]},
+  {u:'daniyal',email:'daniyal@groovy.op',name:'Daniyal Tufail',role:'creator_content_ops_lead',title:'Creator & Content Operations Lead',canPO:false,canFabric:false,stages:[]},
 ];
 
 // ── The Sales Team ▸ Marketing (Sept 2026) ──
