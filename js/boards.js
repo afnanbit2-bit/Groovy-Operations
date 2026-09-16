@@ -3843,7 +3843,10 @@ function _boardsRailItems(){
       {sep:true},
       {act:'comment-board',label:'Comment',icon:'comment'},
       {act:'fit',label:'Fit',icon:'fit'},
-      {sep:true},
+      // Pinned to the floor of the column, where Milanote keeps it — far
+      // from the add-tools, so a Trash button is never next to a tool you
+      // reach for constantly.
+      {grow:true},
       {act:'trash',label:'Trash',icon:'trash',badge:true,on:_boardsCardTrashOpen}
     ]);
   }
@@ -3908,6 +3911,7 @@ function _boardsRenderRail(){
   const items=_boardsRailItems();
   host.innerHTML=(sel.length>1?`<div class="rail-count">${sel.length}</div>`:'')+items.map(it=>{
     if(it.sep)return'<div class="rail-sep"></div>';
+    if(it.grow)return'<div class="rail-grow"></div>';
     if(it.swatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
     if(it.cellSwatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="cellbg:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
     if(it.connSwatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="ln:c:${c}" title="${c==='none'?'Default':c}"></button>`).join('')}</div>`;
@@ -6996,8 +7000,10 @@ function _boardsConsumeDeepLink(){
   if(!link||!session)return false;
   // staged rollout: Creative Hub is still Afnan-only, and a deep link is
   // navigation — it must not be a side door into the module. Remove this
-  // with the other session.u==='afnan' checks at rollout (see CLAUDE.md).
-  if(session.u!=='afnan')return false;
+  // with every other Creative Hub route (see _canSeeCreativeHub in
+  // js/shared.js). Guarded with typeof so a shared.js that failed to parse
+  // leaves the side door SHUT rather than open — fail closed.
+  if(typeof _canSeeCreativeHub!=='function'||!_canSeeCreativeHub())return false;
   if(currentPage==='board-canvas'&&_boardsViewingId===link.board&&!link.card)return false;
   _boardsPendingFocusCard=link.card||null;
   window.boardsOpen(link.board);

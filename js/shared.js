@@ -659,6 +659,29 @@ async function uploadToCloudinary(file){
 }
 
 // ── Auth ──
+/* ── Creative Hub staged rollout (Sept 2026) ───────────────────────────
+   ONE list, six call sites. Notes + Mood Boards are gated by USERNAME — not
+   by a role and not by isOwner() — the same shape as the isMustafa()-style
+   per-person grants elsewhere in this app, so that adding somebody is a
+   deliberate act rather than a side effect of their role.
+
+   It used to be six copies of `session.u==='afnan'`, which made widening the
+   audience a six-file edit with a partial rollout as the failure mode: one
+   route open and another shut, with nothing on screen to say which. The
+   routes are the four nav pushes below, the "Me" page button in js/hrm.js,
+   and the deep-link guard in js/boards.js — all of which call this.
+
+   js/shared.js loads FIRST and these are classic scripts sharing one
+   lexical scope, so hrm.js and boards.js reach it by bare name. Callers in
+   those files still guard with `typeof`, which fails CLOSED (the hub stays
+   hidden) if this file ever fails to parse.
+
+   To roll out to everyone: return true. This is a NAV-ONLY gate —
+   firestore.rules already lets any signed-in user create and read pages. */
+const _CREATIVE_HUB_USERS=['afnan','ammar'];
+function _canSeeCreativeHub(){
+  return !!(typeof session!=='undefined'&&session&&_CREATIVE_HUB_USERS.indexOf(session.u)>-1);
+}
 function buildNav(){
   // Fulfilment account (Umair) — a single-purpose nav: Daily Performance only.
   if(session.role==='fulfillment'){
@@ -687,12 +710,8 @@ function buildNav(){
   // B-stock carton inventory — owners/managers view/manage.
   if(om)mainItems.push({id:'bstock',label:'B-Stock'});
   if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
-  // Staged rollout (Sept 2026): Creative Hub is scoped to Afnan by username
-  // only (same pattern as isMustafa()-style per-person grants elsewhere)
-  // while the module is still being shaped. Change this single check — not
-  // a role, not isOwner() — to roll it out to everyone once it's ready.
-  // No icon — deliberate, per Afnan's ask.
-  if(session.u==='afnan')mainItems.push({id:'creative-hub',label:'Creative Hub'});
+  // No icon — deliberate, per Afnan's ask. Audience: _CREATIVE_HUB_USERS.
+  if(_canSeeCreativeHub())mainItems.push({id:'creative-hub',label:'Creative Hub'});
   if(om||session.canFabric)mainItems.push({id:'fabric-inventory',label:'Fabric Inventory'});
   if(om)mainItems.push({id:'fulfillment',label:'Courier Performance'});
   if(om)mainItems.push({id:'bug-tracker',label:'🐛 Bug Tracker'});
@@ -968,7 +987,7 @@ window.openMoreSheet=function(){
   if(session.canPO)items.push({iconName:'plus',label:'New PO',pageId:'po-create'});
   items.push({iconName:'po',label:'PO Registry',pageId:'po-registry'});
   if(om||session.canFabric)items.push({iconName:'box',label:'Fabric Inventory',pageId:'fabric-inventory'});
-  if(session.u==='afnan')items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
+  if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
   if(om)items.push({iconName:'activity',label:'Courier Performance',pageId:'fulfillment'});
   // Embellishments dept items (visible to owners/managers + relevant workers)
   if(om||session.u==='ammar'||session.u==='haris'||(typeof isPrintWorker==='function'&&isPrintWorker()))items.push({iconName:'palette',label:'Recipe Directory',pageId:'recipe-directory'});
@@ -1003,7 +1022,7 @@ window.openStoreSubSheet=function(){
     {iconName:'tray',label:'PO Issue Requests',pageId:'po-issue-list'}
   );
   if(typeof _canApproveEdits==='function'&&_canApproveEdits())items.push({iconName:'list',label:'Edit Inbox',pageId:'po-edit-inbox'});
-  if(session.u==='afnan')items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
+  if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
   window.openMobSheet('Store',items);
 };
 
@@ -1017,7 +1036,7 @@ window.openStoreMoreSheet=function(){
     {iconName:'tray',label:'PO Issue Requests',pageId:'po-issue-list'}
   );
   if(typeof _canApproveEdits==='function'&&_canApproveEdits())items.push({iconName:'list',label:'Edit Inbox',pageId:'po-edit-inbox'});
-  if(session.u==='afnan')items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
+  if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
   window.openMobSheet('More',items);
 };
 
