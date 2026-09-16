@@ -393,6 +393,50 @@ const FRAGMENTS={
     });
   },
 
+  // Reports and the sheet importer (Marketing M6/M7). Reports carry four
+  // tables and three explanatory strips; the importer carries the long
+  // preview lists, the duplicate radios and the Name-column checkboxes.
+  'marketing — reports and importer':()=>{
+    const LS={getItem:()=>null,setItem(){},removeItem(){}};
+    const DAY=86400000,now=Date.now();
+    const day=n=>{const d=new Date(now-n*DAY);const p=v=>String(v).padStart(2,'0');return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());};
+    const creators=[
+      {id:'cr_a',ig_handle:'saritasangrez',name:'Sarita Sangrez',status:'active'},
+      {id:'cr_b',ig_handle:'night_flarz',name:'Night Flarz',status:'active'}
+    ];
+    const dispatches=[
+      {id:'d1',creator_id:'cr_a',type:'organic',date_of_dispatch:day(40),status:'content_received',link_to_post:'https://x',performance_captured_at:1,performance_views:18400,performance_likes:1200,performance_comments:80,performance_saves:64,products:[{variant_id:'v1',product_title:'Effortless Tee',variant_title:'Rust / M',sku:'GP01-R-M'}]},
+      {id:'d2',creator_id:'cr_b',type:'organic',date_of_dispatch:day(5),status:'shipped',products:[{variant_id:'v2',product_title:'Love Hurts Hoodie',variant_title:'Black / L'}]}
+    ];
+    const reqs=[
+      {id:'p1',creator_id:'cr_a',status:'approved',proposed_amount_pkr:45000,decided_at:now-20*DAY,payment_status:'paid'},
+      {id:'p2',creator_id:'cr_b',status:'approved',proposed_amount_pkr:120000,decided_at:now-50*DAY,payment_status:'unpaid'}
+    ];
+    const lines=[{sku:'GP01-R-M',quantity:3,order_created_at:new Date(now-45*DAY).toISOString()},{sku:'GP01-R-M',quantity:11,order_created_at:new Date(now-35*DAY).toISOString()}];
+    const sheet={SheetNames:['Master List','Sep 2026'],Sheets:{
+      'Master List':[['Tier','Name','IG Handle','Niche','City','Address','Phone #','Top Size','Bottom Size'],
+        ['A','Sarita','saritasangrez','Fashion Creator','lahore','','','small','medium'],
+        ['A','','a.very.long.handle.name_2026','Content Creator, Meme/Comedy','taxila','House 14, Street 9, Sector F-7/2, Islamabad Capital Territory','0300 1234567','large/xl','34/medium'],
+        ['B','_kinzaa11','','','','','','',''],
+        ['','One','shadysaidthat','','','','','',''],['','Two','shadysaidthat','','','','','',''],
+        ['A','','','','','','','','']],
+      'Sep 2026':[['Date of Dispatch','IG Handle','Collection Sent','Products sent','Status','Link to Post'],
+        ['','st4rr.doll','Lowkey Heat','rust effortless, love hurts, ','',''],['','shadysaidthat','Live In Pants','','','']]
+    }};
+    const app=loadApp({files:['js/auth.js','js/marketing.js'],currentPage:'mkt-reports',
+      session:{uid:'u1',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op',canApprovePaidPR:true},
+      globals:{localStorage:LS,XLSX:{utils:{sheet_to_json:sh=>sh}},
+        collection:(db,name)=>({name}),
+        getDoc:async()=>({exists:()=>false}),
+        getDocs:async ref=>({docs:(ref.name==='creators'?creators:ref.name==='dispatches'?dispatches:ref.name==='paid_pr_requests'?reqs:ref.name==='shopify_line_items'?lines:[]).map(r=>({id:r.id||'x',data:()=>r}))})}});
+    return app.run('loadMarketingCreators()').then(()=>app.run('Promise.all([_mktLoadLineItems(),_mktLoadCatalog()])')).then(()=>{
+      const reports=app.run('renderMarketingReports()');
+      app.run('mktImportFromWorkbook('+JSON.stringify(sheet)+',"Final_Content_Tracker_2026.xlsx")');
+      const imp=app.run('renderMarketingImport()');
+      return reports+imp;
+    });
+  },
+
   'marketing — dispatch log':()=>{
     const LS={getItem:()=>null,setItem(){},removeItem(){}};
     const DAY=86400000,now=Date.now();
@@ -672,7 +716,15 @@ document.getElementById('__out').textContent=JSON.stringify(bad);
     const jobs=[];
     cases.forEach((c,i)=>WIDTHS.forEach(w=>['light','dark'].forEach(t=>jobs.push({c,i,w,t}))));
     pending=jobs.length;
-    jobs.forEach(j=>{
+    // A bounded pool, not all at once: with 14 fragments that is 84 Chromes,
+    // and on a developer's Windows machine most of them blew the 120s
+    // timeout and reported "the probe never ran" — a failure of the runner,
+    // not of any layout. SMOKE_LAYOUT_CONCURRENCY overrides the default.
+    const LIMIT=Math.max(1,Number(process.env.SMOKE_LAYOUT_CONCURRENCY)||Math.min(8,Math.max(2,os.cpus().length)));
+    let next=0;
+    const launch=()=>{
+      if(next>=jobs.length)return;
+      const j=jobs[next++];
       execFile(browser,['--headless=new','--no-sandbox','--disable-gpu',
         '--disable-dev-shm-usage','--no-first-run','--no-default-browser-check',
         '--disable-background-networking','--disable-component-update','--disable-sync',
@@ -702,9 +754,10 @@ document.getElementById('__out').textContent=JSON.stringify(bad);
               console.log('  OK   '+label);
             }
           }
-          if(--pending===0)finish();
+          if(--pending===0)finish();else launch();
         });
-    });
+    };
+    for(let k=0;k<Math.min(LIMIT,jobs.length);k++)launch();
   });
 
   function finish(){

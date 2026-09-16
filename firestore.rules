@@ -430,9 +430,11 @@ service cloud.firestore {
         && (!existsAfter(/databases/$(database)/documents/creators/$(resource.data.creatorId))
             || getAfter(/databases/$(database)/documents/creators/$(resource.data.creatorId)).data.ig_handle != handle);
     }
-    // Dispatches (M2). Organic only from the client for now — a paid_pr
-    // dispatch is created by a Paid PR approval (M3), which will extend the
-    // create rule. A dispatch never changes creator or type once written:
+    // Dispatches (M2). A paid_pr dispatch is created only by a Paid PR
+    // approval (M3). The empty status is for rows migrated from the sheet
+    // (M7), which recorded none — left blank rather than guessed; the app
+    // shows it as "Not recorded". A dispatch never changes creator or type
+    // once written:
     // the creator's rollups are computed per creator, so a moved dispatch
     // would leave two creators wrong.
     match /dispatches/{id} {
@@ -443,7 +445,7 @@ service cloud.firestore {
       allow create: if isMarketing()
         && request.resource.data.creator_id is string
         && exists(/databases/$(database)/documents/creators/$(request.resource.data.creator_id))
-        && request.resource.data.status in ['confirmed','in_transit','shipped','content_received']
+        && request.resource.data.status in ['','confirmed','in_transit','shipped','content_received']
         && (request.resource.data.type == 'organic'
             || (request.resource.data.type == 'paid_pr'
                 && isPaidPRApprover()
@@ -455,7 +457,7 @@ service cloud.firestore {
         && request.resource.data.type == resource.data.type
         && request.resource.data.creator_id == resource.data.creator_id
         && request.resource.data.get('paid_pr_request_id', null) == resource.data.get('paid_pr_request_id', null)
-        && request.resource.data.status in ['confirmed','in_transit','shipped','content_received'];
+        && request.resource.data.status in ['','confirmed','in_transit','shipped','content_received'];
       allow delete: if isOwner();
     }
     // Paid PR requests (M3). Three kinds of write, each limited to the

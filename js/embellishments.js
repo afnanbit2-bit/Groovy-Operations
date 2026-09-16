@@ -4086,7 +4086,9 @@ function renderDashboard(){
 
   const hrmBanner=(typeof renderHRMDashboardWidget==='function')?renderHRMDashboardWidget():'';
   const monitorBanner=(typeof renderMonitorDashboardWidget==='function')?renderMonitorDashboardWidget():'';
-  const base=`${hrmBanner}${monitorBanner}<div class="stats-row">
+  // Marketing card (js/marketing.js loads after this file, hence typeof).
+  const marketingBanner=(typeof renderMarketingDashboardWidget==='function')?renderMarketingDashboardWidget():'';
+  const base=`${hrmBanner}${monitorBanner}${marketingBanner}<div class="stats-row">
     <div class="stat-card"><div class="stat-label">Total POs</div><div class="stat-val">${total}</div></div>
     <div class="stat-card"><div class="stat-label">Active</div><div class="stat-val">${active}</div></div>
     <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-val">${done}</div></div>
