@@ -993,6 +993,9 @@ module.exports=async function(){
       runTransaction:async(db,fn)=>{const ops=[];await fn({get:async()=>({exists:()=>false}),set:(r,d)=>ops.push(['set',r.path,d]),update:(r,d)=>ops.push(['update',r.path,d]),delete:r=>ops.push(['delete',r.path])});tx.push(ops);},
       writeBatch:()=>{const ops=[];batches.push(ops);return{set:(r,d)=>ops.push(['set',r.path,d]),update:(r,d)=>ops.push(['update',r.path,d]),commit:async()=>{}};}
     }});
+    const silent=[];
+    t.run('window._gvSilentSaveStart=()=>__silent.push("start");window._gvSilentSaveStop=()=>__silent.push("stop")'.replace(/__silent/g,'globalThis.__silent'));
+    t.ctx.__silent=silent;
     t.run('mktCreatorsLoaded=true;mktDispatchesLoaded=true;mktPaidPRsLoaded=true');
     t.run('mktImportFromWorkbook('+J(wb)+',"Final_Content_Tracker_2026.xlsx")');
     s.eq('only the month tabs are read as dispatches',J(t.run('_mktImport.monthTabs')),J(['Sep 2026']));
@@ -1002,22 +1005,45 @@ module.exports=async function(){
     s.ok('the preview shows the duplicate to choose',/Duplicate handles[\s\S]*@twin/.test(html));
     s.ok('and the import button counts only what is ready',/Import 2 creators/.test(html));
     await t.run('window.mktImportRun()');
-    s.eq('one transaction per creator — the duplicate stayed out',tx.length,2);
-    const firstCreator=tx[0].find(o=>o[1].indexOf('creators/')===0)[2];
-    s.eq('the handle lock is written with it',tx[0][0][1],'creator_handles/saritasangrez');
+    s.eq('creators go in ONE batch, not a transaction each',tx.length+'/'+batches.length,'0/2');
+    s.eq('each creator is written with its handle lock — the duplicate stayed out',J(batches[0].map(o=>o[1])),
+      J(['creator_handles/saritasangrez','creators/'+t.run('mktCreators.find(c=>c.ig_handle==="saritasangrez").id'),'creator_handles/st4rr.doll','creators/'+t.run('mktCreators.find(c=>c.ig_handle==="st4rr.doll").id')]));
+    const lock=batches[0][0][2];
+    s.eq('the lock names its creator',lock.creatorId,t.run('mktCreators.find(c=>c.ig_handle==="saritasangrez").id'));
+    const firstCreator=batches[0][1][2];
     s.eq('no tier is invented',firstCreator.tier,null);
     s.eq('no score either',firstCreator.score,null);
     s.eq('the source is recorded',firstCreator.imported_from,'content_tracker_2026');
     s.eq('city normalised',firstCreator.city,'Lahore');
-    s.eq('the Sep row becomes a dispatch',batches.length,1);
-    const disp=batches[0][0][2];
-    s.eq('matched to the creator this run added',disp.creator_id,t.run('mktCreators.find(c=>c.ig_handle==="st4rr.doll").id'));
+    const disp=batches[1][0][2];
+    s.eq('the Sep row becomes a dispatch, matched to the creator this run added',disp.creator_id,t.run('mktCreators.find(c=>c.ig_handle==="st4rr.doll").id'));
     s.eq('with its status left blank',disp.status,'');
-    s.ok('and the creator rollups written with it',batches[0][1][0]==='update'&&batches[0][1][2].lifetime_organic_dispatches===1);
+    s.ok('and the creator rollups written with it',batches[1][1][0]==='update'&&batches[1][1][2].lifetime_organic_dispatches===1);
     s.ok('the run is logged on screen',/Creators: 2 added/.test(t.run('_mktImport.log')));
     s.eq('the preview afterwards has nothing left to add',t.run('_mktImport.plan.ready.length'),0);
+    s.eq('the blocking Saving box was switched off for the run and back on',silent.join(),'start,stop');
     await t.run('window.mktImportRun()');
-    s.eq('running it again writes nothing',tx.length+'/'+batches.length,'2/1');
+    s.eq('running it again writes nothing',tx.length+'/'+batches.length,'0/2');
+  }
+  {
+    const tx=[];
+    const t=app({globals:{
+      XLSX:{utils:{sheet_to_json:sh=>sh}},
+      doc:(db,col,id)=>({path:col+'/'+id}),
+      writeBatch:()=>({set(){},update(){},commit:async()=>{throw new Error('Missing or insufficient permissions');}}),
+      runTransaction:async(db,fn)=>{
+        let handle='';
+        try{await fn({get:async r=>{handle=r.path.split('/')[1];return{exists:()=>handle==='taken.one',data:()=>({creatorId:'someone_else'})};},set(){},update(){},delete(){}});}
+        finally{tx.push(handle);}   // every attempt, including the refused one
+      }
+    }});
+    t.run('mktCreatorsLoaded=true;mktDispatchesLoaded=true;mktPaidPRsLoaded=true');
+    t.run('mktImportFromWorkbook('+J({SheetNames:['Master List'],Sheets:{'Master List':[['IG Handle'],['fine.one'],['taken.one'],['fine.two']]}})+',"x.xlsx")');
+    await t.run('window.mktImportRun()');
+    s.eq('a refused batch falls back to one transaction per creator',tx.length,3);
+    const log=t.run('_mktImport.log');
+    s.ok('so the rest still land',/Creators: 2 added, 1 skipped, 0 failed/.test(log));
+    s.ok('and the one that could not is named',/taken\.one: already in the database/.test(log));
   }
   {
     const t=app({globals:{XLSX:{utils:{sheet_to_json:()=>[]}}}});
