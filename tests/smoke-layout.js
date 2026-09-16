@@ -353,6 +353,48 @@ const FRAGMENTS={
       const incomplete=app.run('_mktListHTML()');
       return page+incomplete;
     });
+  },
+
+  // The Dispatch Log (Marketing M2): the list with every status and Day-7
+  // state, plus the log form with a creator and two products picked, and
+  // the Day-7 capture form. Modals are rendered as their inner card only —
+  // the fixed backdrop is shared app chrome, not this page's layout.
+  'marketing — dispatch log':()=>{
+    const LS={getItem:()=>null,setItem(){},removeItem(){}};
+    const DAY=86400000,now=Date.now();
+    const day=n=>{const d=new Date(now-n*DAY);const p=v=>String(v).padStart(2,'0');return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());};
+    const creators=[
+      {id:'cr_a',ig_handle:'st4rr.doll',name:'Starr Doll',city:'Lahore',address:'House 12, Street 4, DHA Phase 5',phone:'0300 1234567',top_size:'M',bottom_size:'30',status:'active',tier:'B'},
+      {id:'cr_b',ig_handle:'shoaibkhn.t',name:'Shoaib Khan',status:'active',tier:'A'},
+      {id:'cr_c',ig_handle:'shadysaidthat',name:'',status:'active'}
+    ];
+    const P=(t,v)=>({product_id:'1',variant_id:t+v,product_title:t,variant_title:v});
+    const dispatches=[
+      {id:'d1',creator_id:'cr_a',type:'organic',date_of_dispatch:day(1),collection_sent:'Lowkey Heat',status:'confirmed',products:[P('Effortless Tee','Rust / M'),P('Love Hurts Hoodie','Black / L'),P('Tinted Denim','Blue / 30')]},
+      {id:'d2',creator_id:'cr_b',type:'organic',date_of_dispatch:day(3),collection_sent:'Lowkey Heat',status:'in_transit',products:[P('Essential 2.0','Black / M')]},
+      {id:'d3',creator_id:'cr_c',type:'organic',date_of_dispatch:day(12),collection_sent:'Live In Pants',status:'shipped',shipped_at:now-10*DAY,products:[P('Live In Pants','Grey / 32')]},
+      {id:'d4',creator_id:'cr_a',type:'organic',date_of_dispatch:day(20),collection_sent:'Lowkey Heat',status:'content_received',shipped_at:now-18*DAY,content_received_at:now-15*DAY,link_to_post:'https://www.instagram.com/p/abc/',products:[P('Script Tee','Blue / M')],performance_captured_at:now-8*DAY,performance_views:12500,performance_likes:900,performance_comments:40,performance_saves:31,performance_story_replies:5},
+      {id:'d5',creator_id:'cr_b',type:'organic',date_of_dispatch:'',collection_sent:'',status:'confirmed',products:[],products_note:'rust effortless, love hurts'}
+    ];
+    const app=loadApp({files:['js/auth.js','js/marketing.js'],currentPage:'mkt-dispatches',
+      session:{uid:'u1',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'},
+      globals:{localStorage:LS,
+        collection:(db,name)=>({name}),
+        getDocs:async ref=>({docs:(ref.name==='creators'?creators:ref.name==='dispatches'?dispatches:[
+          {id:'v1',product_title:'Effortless Tee',color:'Rust',size:'M',sku:'GP01-R-M',status:'active'},
+          {id:'v2',product_title:'Effortless Tee',color:'Blue',size:'M',sku:'GP01-B-M',status:'draft'}
+        ]).map(r=>({id:r.id,data:()=>r}))}),
+        getDoc:async()=>({exists:()=>true,data:()=>({last_success_at:{seconds:Math.floor((now-3*3600000)/1000)}})})}});
+    return app.run('loadMarketingCreators()').then(()=>app.run('_mktLoadCatalog()')).then(()=>{
+      const page=app.run('renderMarketingDispatches()');
+      app.run("window.mktOpenDispatch('d1')");
+      const form=app.bodyHtml('mkt-modal-back');
+      app.run("window.mktOpenDispatch('')");
+      const blank=app.bodyHtml('mkt-modal-back');
+      app.run("window.mktOpenPerformance('d3')");
+      const perf=app.bodyHtml('mkt-modal-back');
+      return page+'<div class="card">'+form+'</div><div class="card">'+blank+'</div><div class="card">'+perf+'</div>';
+    });
   }
 };
 

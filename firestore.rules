@@ -421,6 +421,24 @@ service cloud.firestore {
         && (!existsAfter(/databases/$(database)/documents/creators/$(resource.data.creatorId))
             || getAfter(/databases/$(database)/documents/creators/$(resource.data.creatorId)).data.ig_handle != handle);
     }
+    // Dispatches (M2). Organic only from the client for now — a paid_pr
+    // dispatch is created by a Paid PR approval (M3), which will extend the
+    // create rule. A dispatch never changes creator or type once written:
+    // the creator's rollups are computed per creator, so a moved dispatch
+    // would leave two creators wrong.
+    match /dispatches/{id} {
+      allow read: if isMarketing();
+      allow create: if isMarketing()
+        && request.resource.data.type == 'organic'
+        && request.resource.data.creator_id is string
+        && exists(/databases/$(database)/documents/creators/$(request.resource.data.creator_id))
+        && request.resource.data.status in ['confirmed','in_transit','shipped','content_received'];
+      allow update: if isMarketing()
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.creator_id == resource.data.creator_id
+        && request.resource.data.status in ['confirmed','in_transit','shipped','content_received'];
+      allow delete: if isOwner();
+    }
     // The scoring bands and tier thresholds — one settings document,
     // edited in the app.
     match /scoring_config/{doc} {
