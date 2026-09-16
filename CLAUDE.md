@@ -2959,6 +2959,17 @@ page's "Check Shopify access", which asks Shopify directly).
     dispatch create/update) and the UI shows it as "Not recorded", never as
     Confirmed. **That change needs a republish.**
   - The sheet's A/B/C tier column is read (`sheetTier`) and never written.
+  - **The first live run looked hung** (reported by Daniyal, screenshot:
+    the app's blocking "Saving…" box and nothing else). Verified from code:
+    it wrote one `runTransaction` per creator — 245 round trips, each one
+    raising the shared write overlay — and the progress log was not in the
+    DOM until the run ended. Now creators go in **batches of 100** (creator
+    + handle lock together, which the rules check with `getAfter` exactly
+    as in the transaction), a refused batch falls back to one transaction
+    per creator for that batch only, the run is wrapped in
+    `_gvSilentSaveStart/Stop`, and a live progress line shows from the
+    first click. Whether that first run finished was not visible from the
+    session.
 - **M4 — discount codes.** Two server functions, because the Shopify secret
   must stay server-side and because a code record, a redemption count or a
   dispatch's code link must not be forgeable from a browser:

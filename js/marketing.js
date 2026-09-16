@@ -2508,7 +2508,7 @@ function renderMarketingImport(){
   const pick=`<div class="card">
     <div class="card-title">1 · Choose the file</div>
     <div class="mkt-note" style="margin-bottom:10px">The Excel export of the Content Tracker 2026 sheet (File → Download → Microsoft Excel). It is read here in the browser; nothing is written until you press Import.</div>
-    <input type="file" id="mkt-imp-file" accept=".xlsx,.xls" onchange="window.mktImportRead(this)">
+    <input type="file" id="mkt-imp-file" accept=".xlsx,.xls" onchange="window.mktImportRead(this)" ${_mktImport&&_mktImport.running?'disabled':''}>
     ${_mktImport&&_mktImport.error?`<div class="mkt-error">${_mktEsc(_mktImport.error)}</div>`:''}
   </div>`;
   if(!_mktImport||!_mktImport.plan)return head+pick;
@@ -2553,7 +2553,8 @@ function renderMarketingImport(){
     </div>
     <div class="card">
       <div class="card-title">3 · Import</div>
-      ${_mktImport.log?`<div class="mkt-implog">${_mktImport.log}</div>`:''}
+      ${_mktImport.running?`<div class="mkt-improgress" id="mkt-imp-progress" aria-live="polite">${_mktEsc(_mktImport.progress||'Working…')}</div>`:''}
+      ${_mktImport.log||_mktImport.running?`<div class="mkt-implog">${_mktImport.log||''}</div>`:''}
       <button class="btn-outline mkt-primary" id="mkt-imp-go" ${_mktImport.running?'disabled':''} onclick="window.mktImportRun()">${_mktImport.running?'Importing…':'Import '+toAdd+' creator'+(toAdd===1?'':'s')+', then their dispatches'}</button>
     </div>
     <div style="height:80px"></div>`;
@@ -2613,72 +2614,127 @@ function _mktImportCreatorsToWrite(){
   return p.ready.concat(chosen,fixed);
 }
 window.mktImportChoose=function(handle,row){
-  if(!_mktImport)return;
+  if(!_mktImport||_mktImport.running)return;
   if(row)_mktImport.choices[handle]=row;else delete _mktImport.choices[handle];
   _mktImportReplan();
   _mktRerenderPage();
 };
 window.mktImportAccept=function(row,on){
-  if(!_mktImport)return;
+  if(!_mktImport||_mktImport.running)return;
   if(on)_mktImport.accept[row]=true;else delete _mktImport.accept[row];
   _mktImportReplan();
   _mktRerenderPage();
 };
+
+// Creators are written 100 at a time: each batch holds the creator AND its
+// handle lock, which firestore.rules checks together (getAfter), so a batch
+// is exactly as safe as the one-by-one transaction. It is also ~100× fewer
+// round trips — the first live run wrote one transaction per creator, and
+// 245 of them behind the app's blocking "Saving…" box looked like a hang.
+// If a batch is refused (a handle taken meanwhile, a rules problem), that
+// batch alone falls back to one transaction per creator, so the rest still
+// land and each failure is named.
+const _MKT_IMPORT_CHUNK=100;
+async function mktImportWriteCreators(list,onStep){
+  let added=0,skipped=0,failed=0;
+  const errors=[];
+  for(let i=0;i<list.length;i+=_MKT_IMPORT_CHUNK){
+    const chunk=list.slice(i,i+_MKT_IMPORT_CHUNK);
+    let batchOk=false;
+    try{
+      const b=writeBatch(db);
+      chunk.forEach(x=>{
+        b.set(doc(db,'creator_handles',x.built.handle),{creatorId:x.built.id,handle:x.built.handle,created_at:x.built.data.date_added});
+        b.set(doc(db,'creators',x.built.id),x.built.data);
+      });
+      await b.commit();
+      batchOk=true;
+      chunk.forEach(x=>{x.ok=true;});
+      added+=chunk.length;
+    }catch(e){console.warn('[marketing] import batch refused, retrying one by one',e&&e.message);}
+    if(!batchOk){
+      for(const x of chunk){
+        try{await mktWriteCreator(x.built);x.ok=true;added++;}
+        catch(e){
+          if(e&&e.code==='mkt/duplicate'){skipped++;errors.push('row '+x.row+' @'+x.built.handle+': already in the database — skipped');}
+          else{failed++;errors.push('row '+x.row+' @'+x.built.handle+': '+((e&&e.message)||'failed'));}
+        }
+        if(onStep)onStep(added,skipped,failed);
+      }
+    }
+    if(onStep)onStep(added,skipped,failed);
+  }
+  return{added,skipped,failed,errors};
+}
 
 window.mktImportRun=async function(){
   if(!_mktImport||_mktImport.running)return;
   if(typeof canAccessMarketing!=='function'||!canAccessMarketing())return;
   const rows=_mktImportCreatorsToWrite();
   if(typeof confirm==='function'&&!confirm('Import '+rows.length+' creator'+(rows.length===1?'':'s')+' into the live database? Handles already there are skipped.'))return;
-  _mktImport.running=true;_mktImport.log='';
+  _mktImport.running=true;
+  _mktImport.log='Starting — '+rows.length+' creator'+(rows.length===1?'':'s')+' to add.<br>';
+  _mktImport.progress='';
   _mktRerenderPage();
+  // The import reports its own progress; the app's blocking "Saving…" box
+  // would only hide it.
+  if(typeof window._gvSilentSaveStart==='function')window._gvSilentSaveStart();
   const uid=session&&session.uid;
   const say=t=>{_mktImport.log+=_mktEsc(t)+'<br>';const el=document.querySelector('.mkt-implog');if(el)el.innerHTML=_mktImport.log;};
-  let added=0,skipped=0,failed=0;
-  for(const r of rows){
-    const now=Date.now();
-    const built=mktBuildCreatorPayload({ig_handle:r.handle,name:r.name,niche:r.niche,city:r.cityUnmatched?'':r.city,
-      address:r.address,phone:r.phone,top_size:r.top_size,bottom_size:r.bottom_size,status:'active'},null,mktScoringConfig,now,uid);
-    if(built.error){failed++;say('row '+r.row+' @'+r.handle+': '+built.error);continue;}
-    if(r.cityUnmatched)built.data.city=r.city;
-    built.data.imported_from=MKT_IMPORT_SOURCE;
-    built.data.import_ref='Master List row '+r.row;
-    try{
-      await mktWriteCreator(built);
-      mktCreators=mktCreators.concat([Object.assign({id:built.id},built.data)]);
-      added++;
-      if(added%25===0)say(added+' creators added…');
-    }catch(e){
-      if(e&&e.code==='mkt/duplicate'){skipped++;say('row '+r.row+' @'+r.handle+': already in the database — skipped');}
-      else{failed++;say('row '+r.row+' @'+r.handle+': '+((e&&e.message)||'failed'));}
+  const progress=t=>{_mktImport.progress=t;const el=document.getElementById('mkt-imp-progress');if(el)el.textContent=t;};
+  let added=0,skipped=0,failed=0,dAdded=0;
+  try{
+    const list=[];
+    for(const r of rows){
+      const now=Date.now();
+      const built=mktBuildCreatorPayload({ig_handle:r.handle,name:r.name,niche:r.niche,city:r.cityUnmatched?'':r.city,
+        address:r.address,phone:r.phone,top_size:r.top_size,bottom_size:r.bottom_size,status:'active'},null,mktScoringConfig,now,uid);
+      if(built.error){failed++;say('row '+r.row+' @'+r.handle+': '+built.error);continue;}
+      if(r.cityUnmatched)built.data.city=r.city;
+      built.data.imported_from=MKT_IMPORT_SOURCE;
+      built.data.import_ref='Master List row '+r.row;
+      list.push({row:r.row,built});
     }
+    progress('Creators: 0 of '+list.length+'…');
+    const res=await mktImportWriteCreators(list,(a,sk,f)=>progress('Creators: '+(a+sk+f)+' of '+list.length+'…'));
+    added=res.added;skipped=res.skipped;failed+=res.failed;
+    res.errors.forEach(say);
+    mktCreators=mktCreators.concat(list.filter(x=>x.ok).map(x=>Object.assign({id:x.built.id},x.built.data)));
+    say('Creators: '+added+' added, '+skipped+' skipped, '+failed+' failed.');
+    // Dispatches, now that every creator this run could add is in.
+    const plan=[].concat(..._mktImport.monthRecords.map(m=>mktPlanDispatchImport(m.tab,m.records,mktCreators,mktDispatches)));
+    const todo=plan.filter(x=>!x.problem);
+    let dFailed=0;
+    for(const r of todo){
+      progress('Dispatches: '+(dAdded+dFailed)+' of '+todo.length+'…');
+      const now=Date.now();
+      const data=mktImportDispatchData(r,now,uid);
+      const next=mktDispatches.concat([Object.assign({id:r.id},data)]);
+      try{
+        await mktWriteDispatch({id:r.id,isNew:true,data},mktCreatorRollups(r.creator_id,next,mktPaidPRsLoaded?mktPaidPRs:null),r.creator_id);
+        mktDispatches=next;
+        mktCreators=mktCreators.map(c=>c.id===r.creator_id?Object.assign({},c,mktCreatorRollups(r.creator_id,next,mktPaidPRsLoaded?mktPaidPRs:null)):c);
+        dAdded++;
+      }catch(e){dFailed++;say(r.tab+' row '+r.row+': '+((e&&e.message)||'failed'));}
+    }
+    const notMatched=plan.filter(x=>x.problem&&x.problem!=='already imported').length;
+    say('Dispatches: '+dAdded+' added'+(dFailed?', '+dFailed+' failed':'')+(notMatched?', '+notMatched+' not matched to a creator':'')+'.');
+    if(typeof logActivity==='function')logActivity('Creators imported','Content Tracker 2026: '+added+' creators, '+dAdded+' dispatches');
+  }catch(e){
+    console.error('[marketing] import failed',e);
+    say('The import stopped: '+((e&&e.message)||'unknown error')+'. What was saved stays saved; run it again to finish.');
+  }finally{
+    if(typeof window._gvSilentSaveStop==='function')window._gvSilentSaveStop();
+    _mktImport.running=false;
+    _mktImport.progress='';
+    const log=_mktImport.log;
+    // Re-plan against the new state, so the preview now shows everything as done.
+    _mktImport.choices={};_mktImport.accept={};
+    _mktImportReplan();
+    _mktImport.log=log;
+    _mktRerenderPage();
   }
-  say('Creators: '+added+' added, '+skipped+' skipped, '+failed+' failed.');
-  // Dispatches, now that every creator this run could add is in.
-  const plan=[].concat(..._mktImport.monthRecords.map(m=>mktPlanDispatchImport(m.tab,m.records,mktCreators,mktDispatches)));
-  let dAdded=0,dFailed=0;
-  for(const r of plan.filter(x=>!x.problem)){
-    const now=Date.now();
-    const data=mktImportDispatchData(r,now,uid);
-    const next=mktDispatches.concat([Object.assign({id:r.id},data)]);
-    try{
-      await mktWriteDispatch({id:r.id,isNew:true,data},mktCreatorRollups(r.creator_id,next,mktPaidPRsLoaded?mktPaidPRs:null),r.creator_id);
-      mktDispatches=next;
-      mktCreators=mktCreators.map(c=>c.id===r.creator_id?Object.assign({},c,mktCreatorRollups(r.creator_id,next,mktPaidPRsLoaded?mktPaidPRs:null)):c);
-      dAdded++;
-    }catch(e){dFailed++;say(r.tab+' row '+r.row+': '+((e&&e.message)||'failed'));}
-  }
-  const notMatched=plan.filter(x=>x.problem&&x.problem!=='already imported').length;
-  say('Dispatches: '+dAdded+' added'+(dFailed?', '+dFailed+' failed':'')+(notMatched?', '+notMatched+' not matched to a creator':'')+'.');
-  if(typeof logActivity==='function')logActivity('Creators imported','Content Tracker 2026: '+added+' creators, '+dAdded+' dispatches');
-  _mktImport.running=false;
-  const log=_mktImport.log;
-  // Re-plan against the new state, so the preview now shows everything as done.
-  _mktImport.choices={};_mktImport.accept={};
-  _mktImportReplan();
-  _mktImport.log=log;
   showToast('Import finished — '+added+' creators, '+dAdded+' dispatches');
-  _mktRerenderPage();
 };
 
 // ════════════════════════════════════════════════════════════════════════
