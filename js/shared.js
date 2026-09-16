@@ -1141,8 +1141,15 @@ window.showPage=async function(id){
     const arrow=document.getElementById('print-nav-arrow');
     if(sub&&sub.style.maxHeight==='0px'){sub.style.maxHeight='300px';if(arrow)arrow.textContent='▾';}
   }
-  // Lazy-load store data on first store page visit
-  if((id.startsWith('store-')||id.startsWith('po-issue-')||id==='po-edit-inbox')&&!allItems.length){await loadStoreData();}
+  // Lazy-load store data on first store page visit. _storeDataLoaded() rather
+  // than !allItems.length, so a read that FAILED does not re-run the whole
+  // loader on every subsequent navigation.
+  if((id.startsWith('store-')||id.startsWith('po-issue-')||id==='po-edit-inbox')
+     &&!(typeof _storeDataLoaded==='function'?_storeDataLoaded():allItems.length)){await loadStoreData();}
+  // The movement history is thousands of documents. Only the three pages that
+  // actually read it pay for it — see "the Store's REST reads" in CLAUDE.md.
+  if((id==='store-log'||id==='store-analytics'||id==='store-dashboard')
+     &&typeof loadStoreTransactions==='function'){await loadStoreTransactions();}
   renderPage(id);
 };
 

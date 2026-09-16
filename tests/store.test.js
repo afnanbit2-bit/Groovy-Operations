@@ -140,6 +140,7 @@ module.exports=async function(){
       return res(200,{documents:[]});
     });
     await a.run('loadStoreData()');
+    await a.run('loadStoreTransactions()');
     s.eq('items still loaded',a.run('allItems.length'),1);
     s.eq('categories still loaded',a.run('allStoreCategories.length'),1);
     s.eq('the refused one is empty',a.run('allTransactions.length'),0);
@@ -159,6 +160,7 @@ module.exports=async function(){
   {
     const a=app(u=>/runQuery/.test(u)?res(403,DENIED):res(200,{documents:[]}));
     await a.run('loadStoreData()');
+    await a.run('loadStoreTransactions()');      // what opening store-log does
     const head=a.run('renderStoreLog()');
     s.ok('the header does not claim 0 movements',!/0 movements/.test(head),'header still counts a failed read as 0');
     s.ok('it says it could not be loaded',/could not be loaded/.test(head));
@@ -176,6 +178,7 @@ module.exports=async function(){
   {
     const a=app(u=>res(200,/runQuery/.test(u)?[]:{documents:[]}));
     await a.run('loadStoreData()');
+    await a.run('loadStoreTransactions()');
     s.ok('header counts 0 movements',/0 movements/.test(a.run('renderStoreLog()')));
     a.run("document.getElementById('il-body');document.getElementById('il-pager');");
     a.run('refreshIssueLog()');
@@ -209,6 +212,96 @@ module.exports=async function(){
     await a.run('loadStoreData()');
     s.ok('and stays quiet when they load',
       !/Custom categories could not be loaded/.test(a.run('renderInventory()')));
+  }
+
+  s.section('the 3000-doc movement read is NOT on the load-everything path');
+  {
+    // This is what exhausted the read quota: opening Receive, Issue,
+    // Inventory or any PO-issue page pulled thousands of transaction
+    // documents that nothing on screen used, and every read afterwards
+    // came back 429.
+    const urls=[];
+    const a=app(u=>{urls.push(u);return res(200,/runQuery/.test(u)?[]:{documents:[]});});
+    await a.run('loadStoreData()');
+    s.ok('loadStoreData issues no runQuery at all',!urls.some(u=>/runQuery/.test(u)),
+      'it still pulls the movement history on every store page');
+    s.ok('store_transactions is not one of its jobs',
+      a.run("_STORE_LOADS.every(j=>j.name!=='store_transactions')"));
+
+    s.section('and the three pages that need it fetch it on demand, once');
+    await a.run('loadStoreTransactions()');
+    s.eq('one runQuery now',urls.filter(u=>/runQuery/.test(u)).length,1);
+    await a.run('loadStoreTransactions()');
+    s.eq('a second call is a no-op',urls.filter(u=>/runQuery/.test(u)).length,1);
+    await a.run('loadStoreTransactions(true)');
+    s.eq('but Retry forces a re-read',urls.filter(u=>/runQuery/.test(u)).length,2);
+  }
+
+  s.section('a failed load does not re-run on every navigation');
+  {
+    // The old guard was `!allItems.length`, so a refused store_items read
+    // re-ran all eight jobs on every store page — the last thing an
+    // exhausted quota needs.
+    const a=app(()=>res(429,{error:{code:429,status:'RESOURCE_EXHAUSTED',message:'Quota exceeded.'}}),{});
+    s.ok('nothing is loaded yet',!a.run('_storeDataLoaded()'));
+    await a.run('loadStoreData()');
+    s.ok('the attempt counts even though it failed',a.run('_storeDataLoaded()'));
+  }
+
+  s.section('a 429 is retried with backoff, then reported for what it is');
+  {
+    const QUOTA={error:{code:429,status:'RESOURCE_EXHAUSTED',message:'Quota exceeded.'}};
+    let n=0;
+    const a=app(()=>{n++;return n<3?res(429,QUOTA):res(200,{documents:[{name:'x/store_items/A',fields:{}}]});});
+    const out=await a.run("fsList('store_items')");
+    s.eq('it retried twice and then succeeded',n,3);
+    s.eq('and returned the real data',out.length,1);
+  }
+  {
+    const QUOTA={error:{code:429,status:'RESOURCE_EXHAUSTED',message:'Quota exceeded.'}};
+    let n=0;
+    const a=app(()=>{n++;return res(429,QUOTA);});
+    let threw=null;
+    await a.run("fsList('store_items')").catch(e=>{threw=e;});
+    s.eq('a persistent 429 is bounded at three tries',n,3);
+    s.ok('and then throws',!!threw);
+    s.ok('flagged as a quota failure',threw&&threw.quota===true);
+    s.ok('with a message a human can act on',/quota or rate limit/i.test(threw&&threw.message),threw&&threw.message);
+  }
+  {
+    // A 403 must NOT be retried — it will never succeed and each attempt costs.
+    let n=0;
+    const a=app(()=>{n++;return res(403,DENIED);});
+    await a.run("fsList('store_items')").catch(()=>{});
+    s.eq('a refusal is tried exactly once',n,1);
+  }
+
+  s.section('the Log names the quota, not a generic failure');
+  {
+    const QUOTA={error:{code:429,status:'RESOURCE_EXHAUSTED',message:'Quota exceeded.'}};
+    const a=app(u=>/runQuery/.test(u)?res(429,QUOTA):res(200,{documents:[]}));
+    await a.run('loadStoreData()');
+    await a.run('loadStoreTransactions()');
+    a.run("document.getElementById('il-body');document.getElementById('il-pager');");
+    a.run('refreshIssueLog()');
+    const body=a.el('il-body').innerHTML;
+    s.ok('it says quota',/quota/i.test(body),body.slice(0,160));
+    s.ok('and where to look',/Firebase Console/.test(body));
+    s.ok('not the firestore.rules answer',!/firestore\.rules/.test(body));
+    s.ok('the toast says so too',/quota/i.test(a.state.toasts.join(' ')),a.state.toasts.join(' | '));
+  }
+
+  s.section('rename refuses rather than orphaning the history');
+  {
+    // Rename migrates every transaction carrying the old code. Against an
+    // unloaded (lazy) array it would report "0 migrated" and leave the
+    // history pointing at a code that no longer exists.
+    const a=app(u=>/runQuery/.test(u)?res(403,DENIED):res(200,{documents:[]}));
+    await a.run('loadStoreData()');
+    let threw=null;
+    await a.run("_renameStoreItemCode('NL01','NL02',{code:'NL02'})").catch(e=>{threw=e;});
+    s.ok('it aborts',!!threw,'renamed against an unloaded history');
+    s.ok('saying why',/movement history/.test(threw&&threw.message),threw&&threw.message);
   }
 
   s.section('a delete that was refused is not reported as done');
