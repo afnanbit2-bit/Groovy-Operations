@@ -391,6 +391,15 @@ service cloud.firestore {
       return signedIn() && userEmail() in ['daniyaltufail59@gmail.com'];
     }
     function isMarketing() { return isOwner() || isContentOpsLead(); }
+    // Paid PR approval — the accounts whose USER_DEFS entry carries
+    // canApprovePaidPR:true, by email. The HARD gate: the lead role can
+    // request and pay, never decide.
+    function isPaidPRApprover() {
+      return signedIn() && userEmail() in ['ammar@groovy.op'];
+    }
+    function paidPRPath(id) {
+      return /databases/$(database)/documents/paid_pr_requests/$(id);
+    }
     function creatorHandlePath(h) {
       return /databases/$(database)/documents/creator_handles/$(h);
     }
@@ -428,16 +437,73 @@ service cloud.firestore {
     // would leave two creators wrong.
     match /dispatches/{id} {
       allow read: if isMarketing();
+      // Organic: any Marketing account. Paid PR: only the approver, and only
+      // as part of approving the request it belongs to — the request must
+      // be approved and name this dispatch once the batch lands.
       allow create: if isMarketing()
-        && request.resource.data.type == 'organic'
         && request.resource.data.creator_id is string
         && exists(/databases/$(database)/documents/creators/$(request.resource.data.creator_id))
-        && request.resource.data.status in ['confirmed','in_transit','shipped','content_received'];
+        && request.resource.data.status in ['confirmed','in_transit','shipped','content_received']
+        && (request.resource.data.type == 'organic'
+            || (request.resource.data.type == 'paid_pr'
+                && isPaidPRApprover()
+                && request.resource.data.paid_pr_request_id is string
+                && getAfter(paidPRPath(request.resource.data.paid_pr_request_id)).data.status == 'approved'
+                && getAfter(paidPRPath(request.resource.data.paid_pr_request_id)).data.dispatch_id == id
+                && getAfter(paidPRPath(request.resource.data.paid_pr_request_id)).data.creator_id == request.resource.data.creator_id));
       allow update: if isMarketing()
         && request.resource.data.type == resource.data.type
         && request.resource.data.creator_id == resource.data.creator_id
+        && request.resource.data.get('paid_pr_request_id', null) == resource.data.get('paid_pr_request_id', null)
         && request.resource.data.status in ['confirmed','in_transit','shipped','content_received'];
       allow delete: if isOwner();
+    }
+    // Paid PR requests (M3). Three kinds of write, each limited to the
+    // fields it owns (the lists match MKT_PR_EDIT_FIELDS /
+    // MKT_PAYMENT_FIELDS in js/marketing.js — a test holds them equal):
+    //   · anyone in Marketing submits one, pending, as themselves, and may
+    //     edit its terms while it is still pending;
+    //   · ONLY the approver decides it, once, from pending;
+    //   · anyone in Marketing logs the payment on an approved one.
+    // An approved amount can never change. Nothing is deleted except a
+    // still-pending request, by an owner.
+    match /paid_pr_requests/{id} {
+      allow read: if isMarketing();
+      allow create: if isMarketing()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.requested_by_user_id == request.auth.uid
+        && request.resource.data.creator_id is string
+        && exists(/databases/$(database)/documents/creators/$(request.resource.data.creator_id))
+        && request.resource.data.proposed_amount_pkr is number
+        && request.resource.data.proposed_amount_pkr > 0
+        && request.resource.data.decided_by_user_id == null
+        && request.resource.data.dispatch_id == null;
+      allow update: if
+        (isMarketing()
+          && resource.data.status == 'pending'
+          && request.resource.data.status == 'pending'
+          && request.resource.data.proposed_amount_pkr is number
+          && request.resource.data.proposed_amount_pkr > 0
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['deliverable','proposed_amount_pkr','timeline','rationale','updated_at','updated_by_user_id']))
+        || (isPaidPRApprover()
+          && resource.data.status == 'pending'
+          && request.resource.data.status in ['approved','rejected']
+          && request.resource.data.decided_by_user_id == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['status','decided_by_user_id','decided_at','rejection_reason','dispatch_id','updated_at'])
+          && ((request.resource.data.status == 'approved'
+               && request.resource.data.dispatch_id is string)
+              || (request.resource.data.status == 'rejected'
+               && request.resource.data.rejection_reason is string
+               && request.resource.data.rejection_reason.size() > 0)))
+        || (isMarketing()
+          && resource.data.status == 'approved'
+          && request.resource.data.status == 'approved'
+          && request.resource.data.payment_status in ['unpaid','paid']
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['payment_status','payment_method','payment_reference','payment_date','payment_logged_by_user_id','payment_logged_at','updated_at']));
+      allow delete: if isOwner() && resource.data.status == 'pending';
     }
     // The scoring bands and tier thresholds — one settings document,
     // edited in the app.

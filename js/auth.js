@@ -35,7 +35,9 @@ const USER_DEFS=[
 // (canApprovePaidPR on the USER_DEFS entry) rather than a role, because the
 // approver and the other owner share the `owner` role — moving the flag
 // moves the approval right without touching any record. Mirrored in
-// firestore.rules (isMarketing / isContentOpsLead).
+// firestore.rules (isMarketing / isContentOpsLead / isPaidPRApprover — the
+// last lists the EMAIL of every account carrying canApprovePaidPR; moving
+// the flag means moving that email too, and a test fails until you do).
 const MKT_LEAD_ROLE='creator_content_ops_lead';
 function isContentOpsLead(){ return !!(session && session.role===MKT_LEAD_ROLE); }
 function canAccessMarketing(){ return !!(session && (session.role==='owner' || session.role===MKT_LEAD_ROLE)); }

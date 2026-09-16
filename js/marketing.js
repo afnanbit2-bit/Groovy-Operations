@@ -6,7 +6,8 @@
    M1 (Sept 2026): the Creator Database and the scoring engine.
    M2 (Sept 2026): the Dispatch Log — organic dispatches, the Shopify
    product picker, the Day-7 performance capture and creator rollups.
-   Paid PR approvals, discount codes and reports land in later milestones —
+   M3 (Sept 2026): Paid PR requests, the approval gate, payment logging.
+   Discount codes, reminders and reports land in later milestones —
    see "The Sales Team ▸ Marketing" in CLAUDE.md.
 
    Who can reach it is decided by canAccessMarketing() in js/auth.js (owners
@@ -101,6 +102,11 @@ let _mktCatalogErr=null;
 let _mktCatalogLoading=null;   // the in-flight promise, so two opens share one read
 let _mktDraft=null;            // the dispatch being edited: {creatorId, products:[]}
 let _mktPickTimer=null;
+// M3 — Paid PR approvals
+let mktPaidPRs=[];
+let mktPaidPRsLoaded=false;
+let _mktPrFilter={q:'',status:'pending'};
+let _mktPrSearchTimer=null;
 
 // ── Pure helpers (tests/marketing.test.js) ──────────────────────────────
 
@@ -354,14 +360,15 @@ function mktNavItems(){
   if(typeof canAccessMarketing!=='function'||!canAccessMarketing())return[];
   return[
     {id:'mkt-creators',label:'Creator Database',iconName:'people'},
-    {id:'mkt-dispatches',label:'Dispatch Log',iconName:'box'}
+    {id:'mkt-dispatches',label:'Dispatch Log',iconName:'box'},
+    {id:'mkt-paid-pr',label:'Paid PR Approvals',iconName:'money'}
   ];
 }
 
 // One entry point for every Marketing page, so js/shared.js dispatches all
 // of them with a single `id.startsWith('mkt-')` line and never needs
 // touching again when a milestone adds a page.
-const _MKT_PAGES={'mkt-creators':()=>renderMarketingCreators(),'mkt-dispatches':()=>renderMarketingDispatches()};
+const _MKT_PAGES={'mkt-creators':()=>renderMarketingCreators(),'mkt-dispatches':()=>renderMarketingDispatches(),'mkt-paid-pr':()=>renderMarketingPaidPR()};
 function mktPageHTML(id){return(_MKT_PAGES[id]||_MKT_PAGES['mkt-creators'])();}
 function mktRenderPage(id){
   const m=document.getElementById('main-content');
@@ -404,10 +411,11 @@ function _mktPct(r){return r==null?'—':(Math.round(r*1000)/10)+'%';}
 // "Loading must never hang"). Each read settles on its own.
 async function loadMarketingCreators(){
   _mktLoadErr=null;
-  const [cr,cfg,dsp]=await Promise.allSettled([
+  const [cr,cfg,dsp,prq]=await Promise.allSettled([
     getDocs(collection(db,'creators')),
     getDoc(doc(db,'scoring_config','current')),
-    getDocs(collection(db,'dispatches'))
+    getDocs(collection(db,'dispatches')),
+    getDocs(collection(db,'paid_pr_requests'))
   ]);
   const failed=[];
   if(cr.status==='fulfilled'){
@@ -424,6 +432,10 @@ async function loadMarketingCreators(){
     mktDispatches=dsp.value.docs.map(d=>Object.assign({id:d.id},d.data()));
     mktDispatchesLoaded=true;
   }else{mktDispatchesLoaded=false;failed.push('dispatches');console.warn('[marketing] dispatches load failed',dsp.reason);}
+  if(prq.status==='fulfilled'){
+    mktPaidPRs=prq.value.docs.map(d=>Object.assign({id:d.id},d.data()));
+    mktPaidPRsLoaded=true;
+  }else{mktPaidPRsLoaded=false;failed.push('paid_pr_requests');console.warn('[marketing] paid PR requests load failed',prq.reason);}
   if(failed.length)_mktLoadErr=failed;
   mktCreatorsLoaded=cr.status==='fulfilled';
   // Names for "added by" — the directory is small and its loader cannot reject.
@@ -1014,22 +1026,32 @@ function mktDay7(d,nowMs){
 }
 
 /**
- * A creator's dispatch rollups, recomputed from every dispatch held for
- * them. Absolute, not incremental: an edited dispatch date can move
- * first/last in either direction, and an increment cannot tell. Paid PR
- * spend and discount-code rollups belong to M3/M4 and are not touched.
+ * A creator's rollups, recomputed from every dispatch (and, when given,
+ * every Paid PR request) held for them. Absolute, not incremental: an
+ * edited dispatch date can move first/last in either direction, and an
+ * increment cannot tell. The Paid PR fields are only returned when the
+ * requests are passed in — a failed requests read must never zero them.
+ * lifetime_pkr_spent is APPROVED spend (what was committed), not what has
+ * been paid out; payment is tracked separately and by hand.
+ * Discount-code rollups belong to M4 and are not touched.
  */
-function mktCreatorRollups(creatorId,dispatches){
+function mktCreatorRollups(creatorId,dispatches,requests){
   const mine=(dispatches||[]).filter(d=>d.creator_id===creatorId);
   const days=mine.map(d=>_mktIsoDay(d.date_of_dispatch)).filter(Boolean).sort();
   const delivered=mine.filter(d=>String(d.link_to_post||'').trim()).length;
-  return{
+  const out={
     lifetime_organic_dispatches:mine.filter(d=>(d.type||'organic')==='organic').length,
     lifetime_content_delivered:delivered,
     lifetime_fulfillment_rate:mine.length?Math.round(delivered/mine.length*1000)/1000:null,
     first_dispatch_date:days[0]||null,
     last_dispatch_date:days[days.length-1]||null
   };
+  if(Array.isArray(requests)){
+    const approved=requests.filter(r=>r.creator_id===creatorId&&r.status==='approved');
+    out.lifetime_paid_prs=approved.length;
+    out.lifetime_pkr_spent=approved.reduce((n,r)=>n+(Number(r.proposed_amount_pkr)||0),0);
+  }
+  return out;
 }
 
 function mktFilteredDispatches(list,creators,flt){
@@ -1230,7 +1252,7 @@ window.mktDispPage=function(d){_mktDispFilter.page=Math.max(1,_mktDispFilter.pag
 function _mktCreatorDispatchesHTML(c){
   if(!c||!mktDispatchesLoaded)return'';
   const mine=mktFilteredDispatches(mktDispatches.filter(d=>d.creator_id===c.id),mktCreators,{});
-  const add=`<button class="btn-outline" data-id="${_mktEsc(c.id)}" onclick="window.mktOpenDispatch('',this.dataset.id)">Log a dispatch to them</button>`;
+  const add=`<button class="btn-outline" data-id="${_mktEsc(c.id)}" onclick="window.mktOpenDispatch('',this.dataset.id)">Log a dispatch to them</button> <button class="btn-outline" data-id="${_mktEsc(c.id)}" onclick="window.mktOpenPaidPR('',this.dataset.id)">Request a Paid PR</button>`;
   if(!mine.length)return`<div class="mkt-section"><div class="mkt-section-title">Dispatches</div><div class="mkt-note" style="margin-bottom:8px">Nothing sent to this creator yet.</div>${(c.status||'active')==='active'?add:''}</div>`;
   return`<div class="mkt-section"><div class="mkt-section-title">Dispatches (${mine.length})</div>
     <div class="mkt-hist">${mine.slice(0,8).map(d=>`<button class="mkt-hist-row" data-id="${_mktEsc(d.id)}" onclick="window.mktOpenDispatch(this.dataset.id)">
@@ -1393,7 +1415,7 @@ window.mktSaveDispatch=async function(){
   const creatorId=existing?existing.creator_id:built.data.creator_id;
   const merged=Object.assign({},existing||{},built.data,{id:built.id});
   const nextList=existing?mktDispatches.map(x=>x.id===built.id?merged:x):mktDispatches.concat([merged]);
-  const rollups=_mktCreatorById(creatorId)?mktCreatorRollups(creatorId,nextList):null;
+  const rollups=_mktCreatorById(creatorId)?mktCreatorRollups(creatorId,nextList,mktPaidPRsLoaded?mktPaidPRs:null):null;
   const btn=document.getElementById('mkt-d-save');
   _mktSaving=true;if(btn){btn.disabled=true;btn.textContent='Saving…';}
   try{
@@ -1459,5 +1481,389 @@ window.mktSavePerformance=async function(){
   }finally{
     _mktSaving=false;
     if(btn){btn.disabled=false;btn.textContent='Save snapshot';}
+  }
+};
+
+// ════════════════════════════════════════════════════════════════════════
+// M3 — Paid PR approvals
+// ════════════════════════════════════════════════════════════════════════
+// A Paid PR is a REQUEST first and a dispatch only once approved. Anyone
+// with Marketing access can submit one; only an account carrying
+// canApprovePaidPR can decide it — and firestore.rules enforces that on its
+// own (isPaidPRApprover), so hiding the buttons is courtesy, not the gate.
+// Approval writes three things in one batch: the decision, the linked
+// paid_pr dispatch, and the creator's recomputed rollups. The discount code
+// the spec attaches to an approval arrives with M4.
+
+const MKT_PR_STATUSES=[
+  {k:'pending',label:'Pending'},
+  {k:'approved',label:'Approved'},
+  {k:'rejected',label:'Rejected'}
+];
+const MKT_PAY_METHODS=['Bank transfer','JazzCash','Easypaisa','Cash','Other'];
+// The only fields a payment log may touch — mirrored by the affectedKeys()
+// list in firestore.rules, and asserted equal in tests/marketing.test.js.
+const MKT_PAYMENT_FIELDS=['payment_status','payment_method','payment_reference','payment_date','payment_logged_by_user_id','payment_logged_at','updated_at'];
+// And the only fields a still-pending request may have edited.
+const MKT_PR_EDIT_FIELDS=['deliverable','proposed_amount_pkr','timeline','rationale','updated_at','updated_by_user_id'];
+
+function _mktPKR(n){return n==null||!isFinite(n)?'—':'PKR '+Math.round(n).toLocaleString('en-US');}
+function _mktPrStatusLabel(k){const x=MKT_PR_STATUSES.find(s=>s.k===k);return x?x.label:'—';}
+
+/** A new or edited request. @returns {{error}|{id,isNew,data}} */
+function mktBuildPaidPRRequest(form,existing,creators,now,uid){
+  const f=form||{};
+  const old=existing||null;
+  if(old&&old.status!=='pending')return{error:'A request that has been decided can no longer be edited.'};
+  const creatorId=old?old.creator_id:String(f.creator_id||'');
+  const creator=(creators||[]).find(c=>c.id===creatorId);
+  if(!creatorId)return{error:'Pick the creator this request is for.'};
+  if(!old&&!creator)return{error:'That creator is not in the database.'};
+  if(!old&&(creator.status||'active')!=='active')
+    return{error:'@'+creator.ig_handle+' is marked "'+_mktStatusLabel(creator.status)+'" — a Paid PR cannot be requested for them.'};
+  const deliverable=_mktTrim(f.deliverable,200);
+  if(!deliverable)return{error:'Describe the deliverable — e.g. "1 Reel + 3 story frames".'};
+  const amount=mktNum(f.proposed_amount_pkr);
+  if(amount==null||amount<=0)return{error:'Enter the proposed amount in PKR.'};
+  if(amount>10000000)return{error:'That amount looks wrong — check the number of zeros.'};
+  const data={
+    deliverable,
+    proposed_amount_pkr:amount,
+    timeline:_mktTrim(f.timeline,120),
+    rationale:_mktTrim(f.rationale,1000),
+    updated_at:now,
+    updated_by_user_id:uid||null
+  };
+  if(!old){
+    Object.assign(data,{
+      creator_id:creatorId,requested_by_user_id:uid||null,created_at:now,
+      status:'pending',decided_by_user_id:null,decided_at:null,rejection_reason:'',
+      dispatch_id:null,payment_status:'unpaid',payment_method:'',payment_reference:'',payment_date:''
+    });
+  }
+  return{id:old?old.id:'pr_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8),isNew:!old,data};
+}
+
+/** The decision. Approval mints the linked dispatch's id; rejection needs a reason. */
+function mktBuildDecision(req,decision,reason,now,uid){
+  if(!req)return{error:'That request is no longer in the list.'};
+  if(req.status!=='pending')return{error:'This request was already '+_mktPrStatusLabel(req.status).toLowerCase()+'.'};
+  if(decision==='rejected'){
+    const r=_mktTrim(reason,500);
+    if(!r)return{error:'Say why it is being rejected — the requester sees this.'};
+    return{data:{status:'rejected',decided_by_user_id:uid||null,decided_at:now,rejection_reason:r,updated_at:now}};
+  }
+  if(decision!=='approved')return{error:'Unknown decision.'};
+  const dispatchId='dp_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);
+  return{
+    data:{status:'approved',decided_by_user_id:uid||null,decided_at:now,rejection_reason:'',dispatch_id:dispatchId,updated_at:now},
+    dispatch:{id:dispatchId,data:{
+      creator_id:req.creator_id,type:'paid_pr',paid_pr_request_id:req.id,
+      date_of_dispatch:'',collection_sent:'',products:[],status:'confirmed',link_to_post:'',
+      logged_by_user_id:uid||null,created_at:now,updated_at:now,updated_by_user_id:uid||null,
+      status_updated_at:now,shipped_at:null,content_received_at:null,
+      has_discount_code:false,discount_code_id:null,
+      performance_captured_at:null,performance_views:null,performance_likes:null,
+      performance_comments:null,performance_saves:null,performance_story_replies:null
+    }}
+  };
+}
+
+/** A payment against an approved request. Touches payment fields only. */
+function mktBuildPayment(req,form,now,uid){
+  if(!req||req.status!=='approved')return{error:'Only an approved request can be paid.'};
+  const f=form||{};
+  const status=f.payment_status==='paid'?'paid':'unpaid';
+  const data={payment_status:status,payment_logged_by_user_id:uid||null,payment_logged_at:now,updated_at:now};
+  if(status==='paid'){
+    const method=MKT_PAY_METHODS.indexOf(f.payment_method)>=0?f.payment_method:'';
+    if(!method)return{error:'Pick how it was paid.'};
+    const date=_mktIsoDay(f.payment_date);
+    if(!date)return{error:'Enter the payment date.'};
+    data.payment_method=method;
+    data.payment_reference=_mktTrim(f.payment_reference,120);
+    data.payment_date=date;
+  }else{
+    data.payment_method='';data.payment_reference='';data.payment_date='';
+  }
+  return{data};
+}
+
+/** Requests as the page lists them: pending first (oldest waiting longest), then newest decisions. */
+function mktFilteredPaidPRs(list,creators,flt){
+  const f=flt||{};
+  const byId=new Map((creators||[]).map(c=>[c.id,c]));
+  const q=String(f.q||'').trim().toLowerCase().replace(/^@/,'');
+  return (list||[]).filter(r=>{
+    if(f.status&&f.status!=='all'){
+      if(f.status==='unpaid'){if(!(r.status==='approved'&&r.payment_status!=='paid'))return false;}
+      else if(r.status!==f.status)return false;
+    }
+    if(q){
+      const c=byId.get(r.creator_id)||{};
+      if([c.name,c.ig_handle,r.deliverable,r.rationale].join(' ').toLowerCase().indexOf(q)<0)return false;
+    }
+    return true;
+  }).sort((a,b)=>{
+    const pa=a.status==='pending'?0:1,pb=b.status==='pending'?0:1;
+    if(pa!==pb)return pa-pb;
+    if(pa===0)return (_mktMs(a.created_at)||0)-(_mktMs(b.created_at)||0);
+    return (_mktMs(b.decided_at)||0)-(_mktMs(a.decided_at)||0);
+  });
+}
+
+/** Approved spend for the calendar month a timestamp falls in. */
+function mktApprovedInMonth(list,nowMs){
+  const d=new Date(nowMs);
+  return (list||[]).filter(r=>{
+    if(r.status!=='approved')return false;
+    const t=_mktMs(r.decided_at);if(t==null)return false;
+    const x=new Date(t);return x.getFullYear()===d.getFullYear()&&x.getMonth()===d.getMonth();
+  }).reduce((n,r)=>n+(Number(r.proposed_amount_pkr)||0),0);
+}
+
+// ── Page ────────────────────────────────────────────────────────────────
+function _mktPrChip(r){
+  return`<span class="mkt-prstatus mkt-prstatus-${_mktEsc(r.status||'pending')}">${_mktPrStatusLabel(r.status||'pending')}</span>`;
+}
+function _mktPayChip(r){
+  if(r.status!=='approved')return'<span class="mkt-muted">—</span>';
+  return r.payment_status==='paid'?`<span class="mkt-pay mkt-pay-paid">Paid</span>`:`<span class="mkt-pay mkt-pay-unpaid">Unpaid</span>`;
+}
+
+function renderMarketingPaidPR(){
+  if(typeof canAccessMarketing!=='function'||!canAccessMarketing())
+    return'<div class="empty">Paid PR Approvals are limited to the owners and the Creator &amp; Content Operations Lead.</div>';
+  if(!mktPaidPRsLoaded){
+    return`<div class="page-head"><div class="page-title">Paid PR Approvals</div></div>
+      <div class="card"><div style="font-weight:600;margin-bottom:6px">Paid PR requests could not be loaded.</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.5">The database refused the read (${_mktEsc((_mktLoadErr||[]).join(', ')||'unknown')}). The Firestore rules in the Firebase Console probably have not been republished since this page shipped.</div>
+      <button class="btn-outline" style="margin-top:12px" onclick="window.mktRetryLoad()">Retry</button></div>`;
+  }
+  const approver=typeof canApprovePaidPR==='function'&&canApprovePaidPR();
+  const f=_mktPrFilter;
+  const tabs=[['pending','Pending'],['approved','Approved'],['unpaid','Approved, unpaid'],['rejected','Rejected'],['all','All']];
+  return`<div class="page-head mkt-head">
+      <div><div class="page-title">Paid PR Approvals</div>
+      <div class="page-sub">The Sales Team ▸ Marketing · ${approver?'you approve these':'approved by the account that holds the approval right'}</div></div>
+      <div class="mkt-actions">
+        <button class="btn-outline mkt-primary" onclick="window.mktOpenPaidPR('')">+ Request Paid PR</button>
+      </div>
+    </div>
+    <div id="mkt-prstats">${_mktPrStatsHTML()}</div>
+    <div class="mkt-filters">
+      <input id="mkt-prsearch" class="mkt-search" type="search" placeholder="Search creator or deliverable" value="${_mktEsc(f.q)}" oninput="window.mktPrSearch(this.value)" aria-label="Search requests">
+      <div class="mkt-chiprow mkt-wrap">${tabs.map(([k,l])=>`<button class="filter-chip${f.status===k?' active':''}" onclick="window.mktPrFilter('${k}')">${l}</button>`).join('')}</div>
+    </div>
+    <div id="mkt-prlist">${_mktPrListHTML()}</div>
+    <div style="height:80px"></div>`;
+}
+
+function _mktPrStatsHTML(){
+  const now=Date.now();
+  const pending=mktPaidPRs.filter(r=>r.status==='pending');
+  const unpaid=mktPaidPRs.filter(r=>r.status==='approved'&&r.payment_status!=='paid');
+  const month=new Date(now).toLocaleDateString('en-GB',{month:'long'});
+  const tile=(label,val,sub,onclick)=>`<button class="mkt-stat" onclick="${onclick}"><span class="mkt-stat-label">${label}</span><span class="mkt-stat-val">${val}</span><span class="mkt-stat-sub">${sub}</span></button>`;
+  return`<div class="mkt-stats">
+    ${tile('Awaiting approval',pending.length,_mktPKR(pending.reduce((n,r)=>n+(Number(r.proposed_amount_pkr)||0),0))+' requested',"window.mktPrFilter('pending')")}
+    ${tile('Approved in '+_mktEsc(month),_mktPKR(mktApprovedInMonth(mktPaidPRs,now)),'by decision date',"window.mktPrFilter('approved')")}
+    ${tile('Approved, not paid',unpaid.length,_mktPKR(unpaid.reduce((n,r)=>n+(Number(r.proposed_amount_pkr)||0),0))+' outstanding',"window.mktPrFilter('unpaid')")}
+    ${tile('Rejected',mktPaidPRs.filter(r=>r.status==='rejected').length,`of ${mktPaidPRs.length} requests`,"window.mktPrFilter('rejected')")}
+  </div>`;
+}
+
+function _mktPrListHTML(){
+  if(!mktPaidPRs.length)return`<div class="card empty">No Paid PR requests yet.</div>`;
+  const rows=mktFilteredPaidPRs(mktPaidPRs,mktCreators,_mktPrFilter);
+  if(!rows.length)return`<div class="card empty">Nothing here.</div>`;
+  const body=rows.map(r=>{
+    const c=_mktCreatorById(r.creator_id);
+    return`<tr class="mkt-row" data-id="${_mktEsc(r.id)}" onclick="window.mktOpenPaidPR(this.dataset.id)" tabindex="0" onkeydown="if(event.key==='Enter')window.mktOpenPaidPR(this.dataset.id)">
+      <td class="mkt-c-who"><div class="mkt-name">${_mktEsc(c?(c.name||'@'+c.ig_handle):'Unknown creator')}</div><div class="mkt-handle">${c?'@'+_mktEsc(c.ig_handle):''}</div></td>
+      <td class="mkt-c-prod">${_mktEsc(r.deliverable)}</td>
+      <td class="num" data-label="Amount">${_mktPKR(r.proposed_amount_pkr)}</td>
+      <td data-label="Requested">${_mktEsc(_mktUserName(r.requested_by_user_id))} · ${_mktWhen(_mktMs(r.created_at))}</td>
+      <td class="mkt-c-tier">${_mktPrChip(r)}</td>
+      <td data-label="Payment">${_mktPayChip(r)}</td>
+    </tr>`;
+  }).join('');
+  return`<div class="card mkt-card">
+    <div class="mkt-count">${rows.length} of ${mktPaidPRs.length} requests</div>
+    <div class="mkt-tablewrap"><table class="mkt-table">
+      <thead><tr><th>Creator</th><th>Deliverable</th><th class="num">Amount</th><th>Requested</th><th>Status</th><th>Payment</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table></div>
+  </div>`;
+}
+
+window.mktPrSearch=function(v){
+  clearTimeout(_mktPrSearchTimer);
+  _mktPrSearchTimer=setTimeout(()=>{_mktPrFilter.q=String(v||'');const l=document.getElementById('mkt-prlist');if(l)l.innerHTML=_mktPrListHTML();},180);
+};
+window.mktPrFilter=function(k){
+  if(!['pending','approved','unpaid','rejected','all'].includes(k))return;
+  _mktPrFilter.status=k;
+  _mktRerenderPage();
+};
+
+// ── Request / view / decide ─────────────────────────────────────────────
+window.mktOpenPaidPR=function(id,creatorId){
+  const r=id?mktPaidPRs.find(x=>x.id===id):null;
+  if(id&&!r){showToast('That request is no longer in the list — refresh the page.',true);return;}
+  const approver=typeof canApprovePaidPR==='function'&&canApprovePaidPR();
+  const editable=!r||r.status==='pending';
+  _mktDraft={creatorId:r?r.creator_id:(creatorId||''),products:[]};
+  const v=k=>_mktEsc(r&&r[k]!=null?r[k]:'');
+  const disp=r&&r.dispatch_id?mktDispatches.find(d=>d.id===r.dispatch_id):null;
+  const decided=r&&r.status!=='pending'?`<div class="mkt-section">
+      <div class="mkt-section-title">Decision</div>
+      <div>${_mktPrChip(r)} by ${_mktEsc(_mktUserName(r.decided_by_user_id))} · ${_mktWhen(_mktMs(r.decided_at))}</div>
+      ${r.status==='rejected'?`<div class="mkt-note">Reason: ${_mktEsc(r.rejection_reason||'—')}</div>`:''}
+      ${r.status==='approved'?(disp?`<button class="btn-outline" style="margin-top:8px" data-id="${_mktEsc(disp.id)}" onclick="window.mktOpenDispatch(this.dataset.id)">Open its dispatch (${_mktDispStatusLabel(disp.status)})</button>`:`<div class="mkt-note">Its dispatch is not in the loaded list — refresh the page.</div>`):''}
+    </div>`:'';
+  const payment=r&&r.status==='approved'?`<div class="mkt-section">
+      <div class="mkt-section-title">Payment</div>
+      <div class="form-grid mkt-grid-4">
+        <div class="field"><label for="mkt-pay-status">Status</label><select id="mkt-pay-status"><option value="unpaid"${r.payment_status!=='paid'?' selected':''}>Unpaid</option><option value="paid"${r.payment_status==='paid'?' selected':''}>Paid</option></select></div>
+        <div class="field"><label for="mkt-pay-method">Method</label><select id="mkt-pay-method"><option value="">—</option>${MKT_PAY_METHODS.map(m=>`<option${r.payment_method===m?' selected':''}>${m}</option>`).join('')}</select></div>
+        <div class="field"><label for="mkt-pay-ref">Reference</label><input id="mkt-pay-ref" value="${v('payment_reference')}" autocomplete="off"></div>
+        <div class="field"><label for="mkt-pay-date">Paid on</label><input id="mkt-pay-date" type="date" value="${v('payment_date')}"></div>
+      </div>
+      ${r.payment_logged_at?`<div class="mkt-note">Last logged by ${_mktEsc(_mktUserName(r.payment_logged_by_user_id))} · ${_mktWhen(_mktMs(r.payment_logged_at))}. Approved ≠ paid: this is tracked by hand.</div>`:'<div class="mkt-note">Approved ≠ paid: log the payment here once it has gone out.</div>'}
+      <button class="btn-outline" style="margin-top:8px" id="mkt-pay-save" onclick="window.mktSavePayment()">Save payment</button>
+    </div>`:'';
+  const gate=r&&r.status==='pending'?(approver?`<div class="mkt-section">
+      <div class="mkt-section-title">Your decision</div>
+      <div class="field"><label for="mkt-pr-reason">Reason (required to reject)</label><input id="mkt-pr-reason" autocomplete="off"></div>
+      <div class="mkt-note">Approving creates the Paid PR dispatch straight away; its products and date are filled in from the Dispatch Log.</div>
+      <div class="mkt-modal-actions" style="justify-content:flex-start">
+        <button class="btn-outline mkt-danger" id="mkt-pr-reject" onclick="window.mktDecidePaidPR('rejected')">Reject</button>
+        <button class="btn-outline mkt-primary" id="mkt-pr-approve" onclick="window.mktDecidePaidPR('approved')">Approve ${_mktPKR(r.proposed_amount_pkr)}</button>
+      </div></div>`
+    :`<div class="mkt-section"><div class="mkt-note">Waiting for approval. Only the approver can approve or reject a Paid PR.</div></div>`):'';
+  _mktOpenModal(`
+    <h3>${r?'Paid PR request':'Request a Paid PR'}</h3>
+    <div class="sub">${r?`Requested by ${_mktEsc(_mktUserName(r.requested_by_user_id))} · ${_mktWhen(_mktMs(r.created_at))} · ${_mktPrStatusLabel(r.status)}`:'Goes to the approver. Nothing is sent or paid until it is approved.'}</div>
+    <input type="hidden" id="mkt-pr-id" value="${r?_mktEsc(r.id):''}">
+    <div class="mkt-section">
+      <div class="mkt-section-title">Creator</div>
+      <div id="mkt-d-creator">${_mktDraftCreatorHTML(!!r)}</div>
+    </div>
+    <div class="mkt-section">
+      <div class="mkt-section-title">Request</div>
+      <div class="form-grid">
+        <div class="field" style="grid-column:1/-1"><label for="mkt-pr-deliv">Deliverable *</label><input id="mkt-pr-deliv" value="${v('deliverable')}" placeholder="1 Reel + 3 story frames" autocomplete="off" ${editable?'':'disabled'}></div>
+        <div class="field"><label for="mkt-pr-amount">Proposed amount (PKR) *</label><input id="mkt-pr-amount" value="${v('proposed_amount_pkr')}" inputmode="numeric" placeholder="e.g. 45000 or 45k" autocomplete="off" ${editable?'':'disabled'}></div>
+        <div class="field"><label for="mkt-pr-timeline">Timeline</label><input id="mkt-pr-timeline" value="${v('timeline')}" placeholder="Posts within 10 days of receipt" autocomplete="off" ${editable?'':'disabled'}></div>
+        <div class="field" style="grid-column:1/-1"><label for="mkt-pr-why">Rationale</label><textarea id="mkt-pr-why" rows="3" ${editable?'':'disabled'}>${v('rationale')}</textarea></div>
+      </div>
+    </div>
+    ${gate}${decided}${payment}
+    <div id="mkt-f-error" class="mkt-error" hidden></div>
+    <div class="mkt-modal-actions">
+      <button class="btn-outline" onclick="window.mktCloseModal()">${editable?'Cancel':'Close'}</button>
+      ${editable?`<button class="btn-primary" id="mkt-pr-save" onclick="window.mktSavePaidPR()">${r?'Save changes':'Submit for approval'}</button>`:''}
+    </div>`,true);
+  if(!r&&!_mktDraft.creatorId)document.getElementById('mkt-d-csearch')?.focus();
+};
+
+window.mktSavePaidPR=async function(){
+  if(_mktSaving||!_mktDraft)return;
+  if(typeof canAccessMarketing!=='function'||!canAccessMarketing()){_mktFormError('Your account cannot request Paid PRs.');return;}
+  const id=_mktVal('mkt-pr-id');
+  const existing=id?mktPaidPRs.find(x=>x.id===id):null;
+  const built=mktBuildPaidPRRequest({
+    creator_id:_mktDraft.creatorId,deliverable:_mktVal('mkt-pr-deliv'),proposed_amount_pkr:_mktVal('mkt-pr-amount'),
+    timeline:_mktVal('mkt-pr-timeline'),rationale:_mktVal('mkt-pr-why')
+  },existing,mktCreators,Date.now(),session&&session.uid);
+  if(built.error){_mktFormError(built.error);return;}
+  const btn=document.getElementById('mkt-pr-save');
+  _mktSaving=true;if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  try{
+    const ref=doc(db,'paid_pr_requests',built.id);
+    if(built.isNew)await setDoc(ref,built.data);else await updateDoc(ref,built.data);
+    const merged=Object.assign({},existing||{},built.data,{id:built.id});
+    mktPaidPRs=existing?mktPaidPRs.map(x=>x.id===built.id?merged:x):mktPaidPRs.concat([merged]);
+    _mktDraft=null;_mktCloseModal();
+    const c=_mktCreatorById(merged.creator_id);
+    showToast(existing?'Request updated':'Paid PR submitted for approval'+(c?' — @'+c.ig_handle:''));
+    if(typeof logActivity==='function')logActivity(existing?'Paid PR request updated':'Paid PR requested',(c?'@'+c.ig_handle+' · ':'')+_mktPKR(merged.proposed_amount_pkr));
+    _mktRerenderPage();
+  }catch(e){
+    console.error('[marketing] paid PR save failed',e);
+    _mktFormError('Could not save: '+((e&&e.message)||'unknown error')+'.');
+  }finally{
+    _mktSaving=false;
+    if(btn){btn.disabled=false;btn.textContent=existing?'Save changes':'Submit for approval';}
+  }
+};
+
+/**
+ * One batch: the decision; on approval also the paid_pr dispatch and the
+ * creator's rollups. firestore.rules checks the dispatch against the
+ * request AS THE BATCH LEAVES IT (getAfter), so the two cannot disagree.
+ */
+async function mktWriteDecision(reqId,decision,rollups,creatorId){
+  const b=writeBatch(db);
+  b.update(doc(db,'paid_pr_requests',reqId),decision.data);
+  if(decision.dispatch)b.set(doc(db,'dispatches',decision.dispatch.id),decision.dispatch.data);
+  if(rollups&&creatorId)b.update(doc(db,'creators',creatorId),rollups);
+  await b.commit();
+}
+
+window.mktDecidePaidPR=async function(which){
+  if(_mktSaving)return;
+  if(typeof canApprovePaidPR!=='function'||!canApprovePaidPR()){_mktFormError('Only the approver can decide a Paid PR.');return;}
+  const id=_mktVal('mkt-pr-id');
+  const req=mktPaidPRs.find(x=>x.id===id);
+  const now=Date.now();
+  const decision=mktBuildDecision(req,which,_mktVal('mkt-pr-reason'),now,session&&session.uid);
+  if(decision.error){_mktFormError(decision.error);return;}
+  if(which==='approved'&&typeof confirm==='function'&&!confirm('Approve '+_mktPKR(req.proposed_amount_pkr)+' for this Paid PR? This creates its dispatch.'))return;
+  const nextReqs=mktPaidPRs.map(x=>x.id===id?Object.assign({},x,decision.data):x);
+  const nextDisp=decision.dispatch?mktDispatches.concat([Object.assign({id:decision.dispatch.id},decision.dispatch.data)]):mktDispatches;
+  const rollups=which==='approved'&&_mktCreatorById(req.creator_id)?mktCreatorRollups(req.creator_id,nextDisp,nextReqs):null;
+  const btns=['mkt-pr-approve','mkt-pr-reject'].map(x=>document.getElementById(x)).filter(Boolean);
+  _mktSaving=true;btns.forEach(b=>{b.disabled=true;});
+  try{
+    await mktWriteDecision(id,decision,rollups,req.creator_id);
+    mktPaidPRs=nextReqs;mktDispatches=nextDisp;
+    if(rollups)mktCreators=mktCreators.map(c=>c.id===req.creator_id?Object.assign({},c,rollups):c);
+    _mktCloseModal();
+    const c=_mktCreatorById(req.creator_id);
+    showToast(which==='approved'?'Approved — the Paid PR dispatch is in the Dispatch Log, waiting for its products and date':'Rejected');
+    if(typeof logActivity==='function')logActivity(which==='approved'?'Paid PR approved':'Paid PR rejected',(c?'@'+c.ig_handle+' · ':'')+_mktPKR(req.proposed_amount_pkr));
+    _mktRerenderPage();
+  }catch(e){
+    console.error('[marketing] paid PR decision failed',e);
+    _mktFormError('Could not record the decision: '+((e&&e.message)||'unknown error')+'. Nothing was changed.');
+  }finally{
+    _mktSaving=false;btns.forEach(b=>{b.disabled=false;});
+  }
+};
+
+window.mktSavePayment=async function(){
+  if(_mktSaving)return;
+  const id=_mktVal('mkt-pr-id');
+  const req=mktPaidPRs.find(x=>x.id===id);
+  const built=mktBuildPayment(req,{payment_status:_mktVal('mkt-pay-status'),payment_method:_mktVal('mkt-pay-method'),
+    payment_reference:_mktVal('mkt-pay-ref'),payment_date:_mktVal('mkt-pay-date')},Date.now(),session&&session.uid);
+  if(built.error){_mktFormError(built.error);return;}
+  const btn=document.getElementById('mkt-pay-save');
+  _mktSaving=true;if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  try{
+    await updateDoc(doc(db,'paid_pr_requests',id),built.data);
+    mktPaidPRs=mktPaidPRs.map(x=>x.id===id?Object.assign({},x,built.data):x);
+    _mktCloseModal();
+    showToast(built.data.payment_status==='paid'?'Payment logged':'Marked unpaid');
+    if(typeof logActivity==='function'){const c=_mktCreatorById(req.creator_id);logActivity('Paid PR payment logged',(c?'@'+c.ig_handle+' · ':'')+(built.data.payment_status==='paid'?'paid '+_mktPKR(req.proposed_amount_pkr):'unpaid'));}
+    _mktRerenderPage();
+  }catch(e){
+    console.error('[marketing] payment save failed',e);
+    _mktFormError('Could not save the payment: '+((e&&e.message)||'unknown error')+'.');
+  }finally{
+    _mktSaving=false;
+    if(btn){btn.disabled=false;btn.textContent='Save payment';}
   }
 };

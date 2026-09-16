@@ -2733,8 +2733,8 @@ dispatch tabs). Source spec: `GRVY-Marketing-Module-Spec.md` (Ammar's
 Downloads, not in the repo). Built **one milestone at a time**, same as the
 Mood Boards table round: M1 Creator Database + scoring · M2 Dispatch Log ·
 M3 Paid PR approvals · M4 discount codes · M5 reminders + dashboard card ·
-M6 reports · M7 migration. **M1 and M2 are built.** M1 merged as PR #58
-(live, cache `v68`); M2 is the Dispatch Log below.
+M6 reports · M7 migration. **M1–M3 are built.** M1 = PR #58, M2 = PR #59
+(both merged and live); M3 is Paid PR approvals, below.
 
 - **Nav:** "The Sales Team ▸" is a collapsible parent of SUB-AREAS
   (`_salesTeamGroups()` / `_salesTeamNavHTML()` in `js/shared.js`); each
@@ -2822,6 +2822,40 @@ M6 reports · M7 migration. **M1 and M2 are built.** M1 merged as PR #58
   - **Dispatches are loaded with the creators** by the same never-rejecting
     loader, all at once. Fine at today's volume; if it grows, page by date
     rather than adding a second loader.
+- **M3 — Paid PR Approvals (`mkt-paid-pr`).** A request first, a dispatch
+  only once approved.
+  - **The hard gate is in `firestore.rules`, not the UI.**
+    `isPaidPRApprover()` lists the EMAIL of every account whose `USER_DEFS`
+    entry carries `canApprovePaidPR:true` (Ammar); a test fails if the two
+    disagree, and the client helper reads only the flag. The lead can
+    submit, edit a pending request and log payments — never decide. Both
+    halves were checked by breaking them: widening the flag or the email
+    list fails seven assertions.
+  - **Three kinds of update, each limited to its own fields** with
+    `diff().affectedKeys().hasOnly(...)`: edit a pending request
+    (`MKT_PR_EDIT_FIELDS`), decide once from pending (approver only), log a
+    payment on an approved one (`MKT_PAYMENT_FIELDS`). The JS lists and the
+    rules lists are asserted equal. **An approved amount can never change**;
+    a decided request is never deleted.
+  - **Approval is ONE `writeBatch`:** the decision, the new `paid_pr`
+    dispatch (id minted by `mktBuildDecision`, stored on the request as
+    `dispatch_id`), and the creator's rollups. The dispatch rule reads the
+    request with `getAfter`, so a `paid_pr` dispatch can only exist for a
+    request the same batch approved and linked to it — and only the
+    approver can write one. A dispatch can't be re-pointed at another
+    request afterwards.
+  - The new dispatch lands at **Confirmed with no products or date**; the
+    lead fills those in from the Dispatch Log, where the normal "add at
+    least one product" rule applies on the next save.
+  - **`lifetime_pkr_spent` is APPROVED spend** (committed), not what has
+    been paid out — payment is logged by hand and "approved ≠ paid" is
+    shown on the page and in the stats. The Paid PR rollups are only
+    written when the requests actually loaded, so a failed read can't zero
+    them.
+  - **M4 hooks in at `mktDecidePaidPR`:** the spec creates the discount
+    code on approval; that call belongs in the same flow, after the batch.
+  - The lead's phone nav has four buttons now; it sets
+    `gridTemplateColumns` inline because `#mob-nav.cols-3` is `!important`.
 - **Known for M7:** the sheet's Master List has **265** non-empty rows, not
   the spec's 254 — reconcile before import. The Sep 2026 tab's three rows
   (st4rr.doll and shoaibkhn.t — Lowkey Heat; shadysaidthat — Live In
@@ -3204,7 +3238,8 @@ etc.) live in `js/hrm.js`; the printing/role helpers (`isObserver`,
   `creator_content_ops_lead`); Paid PR approval is the per-account
   `canApprovePaidPR` flag on `USER_DEFS` (Ammar today), NOT a username and
   NOT a role — both owners share `owner`. Mirrored in `firestore.rules`
-  (`isMarketing()` / `isContentOpsLead()`, by email). See "The Sales Team ▸
+  (`isMarketing()` / `isContentOpsLead()` / `isPaidPRApprover()`, by
+  email — moving the flag means moving the email too). See "The Sales Team ▸
   Marketing".
 - **Inventory Intel nav item** (`js/shared.js`, `buildNav()` +
   `openMoreSheet()`) → owners, **+ mustafa by username** (Sept 2026 grant,
@@ -3519,10 +3554,11 @@ card is what finally surfaced it.
 **REPUBLISH OUTSTANDING (16 Sept 2026) — send it as ONE paste of the
 current file:** `71b4acb` (Mood Boards Trash: `mood_boards/{id}/trash`),
 Marketing M1 (`creators`, `creator_handles`, `scoring_config`,
-`isContentOpsLead()`) and Marketing M2 (`dispatches`). None of them is live
-until Afnan pastes the current file into the Console. **Marketing M1/M2 are
-not "done" until this is confirmed** — both pages show their rules error
-card until then.
+`isContentOpsLead()`), M2 (`dispatches`) and M3 (`paid_pr_requests`,
+`isPaidPRApprover()`, the `paid_pr` dispatch clause). None of them is live
+until Afnan pastes the current file into the Console. **Marketing M1–M3 are
+not "done" until this is confirmed** — every Marketing page shows its rules
+error card until then.
 
 **Keep updating both in lockstep**, per the comment at the top of
 `firestore.rules` itself. **The trigger to ask for a republish is a change

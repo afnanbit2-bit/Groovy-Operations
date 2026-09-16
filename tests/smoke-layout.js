@@ -359,6 +359,40 @@ const FRAGMENTS={
   // state, plus the log form with a creator and two products picked, and
   // the Day-7 capture form. Modals are rendered as their inner card only —
   // the fixed backdrop is shared app chrome, not this page's layout.
+  // Paid PR Approvals (Marketing M3): the page, a pending request as the
+  // APPROVER sees it (Approve / Reject reachable), and an approved one with
+  // the payment form. The approve/reject buttons are the gate's only UI, so
+  // the hit-test matters most here.
+  'marketing — paid PR approvals':()=>{
+    const LS={getItem:()=>null,setItem(){},removeItem(){}};
+    const now=Date.now(),DAY=86400000;
+    const creators=[
+      {id:'cr_a',ig_handle:'saritasangrez',name:'Sarita Sangrez',city:'Lahore',status:'active',tier:'A',address:'House 3, Gulberg III',phone:'0300 7654321'},
+      {id:'cr_b',ig_handle:'night_flarz',name:'Night Flarz',status:'active',tier:'B'}
+    ];
+    const reqs=[
+      {id:'p1',creator_id:'cr_a',status:'pending',deliverable:'1 Reel + 3 story frames, tagged, link in bio for 48h',proposed_amount_pkr:45000,timeline:'Posts within 10 days of receipt',rationale:'Top engagement in the Lahore set; last organic post drove 38 coded orders.',requested_by_user_id:'u2',created_at:now-2*DAY,payment_status:'unpaid'},
+      {id:'p2',creator_id:'cr_b',status:'approved',deliverable:'2 Reels',proposed_amount_pkr:120000,requested_by_user_id:'u2',created_at:now-9*DAY,decided_by_user_id:'u1',decided_at:now-8*DAY,dispatch_id:'dx',payment_status:'unpaid'},
+      {id:'p3',creator_id:'cr_b',status:'rejected',deliverable:'Account takeover for a week',proposed_amount_pkr:350000,requested_by_user_id:'u2',created_at:now-20*DAY,decided_by_user_id:'u1',decided_at:now-19*DAY,rejection_reason:'Out of budget this quarter'}
+    ];
+    const dispatches=[{id:'dx',creator_id:'cr_b',type:'paid_pr',paid_pr_request_id:'p2',status:'confirmed',date_of_dispatch:'',products:[]}];
+    const app=loadApp({files:['js/auth.js','js/marketing.js'],currentPage:'mkt-paid-pr',
+      session:{uid:'u1',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op',canApprovePaidPR:true},
+      globals:{localStorage:LS,
+        collection:(db,name)=>({name}),
+        getDocs:async ref=>({docs:(ref.name==='creators'?creators:ref.name==='dispatches'?dispatches:ref.name==='paid_pr_requests'?reqs:[]).map(r=>({id:r.id,data:()=>r}))})}});
+    return app.run('loadMarketingCreators()').then(()=>{
+      const page=app.run('renderMarketingPaidPR()');
+      app.run("_mktPrFilter.status='all'");
+      const all=app.run('_mktPrListHTML()');
+      app.run("window.mktOpenPaidPR('p1')");
+      const pending=app.bodyHtml('mkt-modal-back');
+      app.run("window.mktOpenPaidPR('p2')");
+      const approved=app.bodyHtml('mkt-modal-back');
+      return page+all+'<div class="card">'+pending+'</div><div class="card">'+approved+'</div>';
+    });
+  },
+
   'marketing — dispatch log':()=>{
     const LS={getItem:()=>null,setItem(){},removeItem(){}};
     const DAY=86400000,now=Date.now();

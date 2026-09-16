@@ -533,7 +533,7 @@ module.exports=async function(){
     s.ok('the log renders the dispatch',/st4rr\.doll/.test(html));
     s.ok('and escapes everything stored',!/<b>Starr|<img src=x|<script>|"onmouseover/.test(html));
     s.ok('a post link opens in a new tab without an opener',/rel="noopener noreferrer"/.test(html));
-    s.eq('both pages are listed in the nav',J(t.run('mktNavItems().map(i=>i.id)')),J(['mkt-creators','mkt-dispatches']));
+    s.eq('every Marketing page is listed in the nav',J(t.run('mktNavItems().map(i=>i.id)')),J(['mkt-creators','mkt-dispatches','mkt-paid-pr']));
     t.run('_mktFilter={q:"",view:"all",tier:"all",status:"all",page:1}');
     const cm=t.run('_mktCreatorDispatchesHTML(mktCreators[0])');
     s.ok('a creator shows their own dispatch history',/Dispatches \(1\)/.test(cm));
@@ -543,7 +543,7 @@ module.exports=async function(){
   {
     const rules=read('firestore.rules');
     const blk=(rules.match(/match \/dispatches\/\{id\} \{[\s\S]*?\n    \}/)||[''])[0];
-    s.ok('the client can only create organic dispatches',/allow create:[\s\S]*type == 'organic'/.test(blk));
+    s.ok('any Marketing account can create an organic dispatch',/allow create: if isMarketing\(\)[\s\S]*type == 'organic'/.test(blk));
     s.ok('against a creator that exists',/exists\(\/databases\/\$\(database\)\/documents\/creators\//.test(blk));
     s.ok('an update cannot move a dispatch to another creator',/creator_id == resource\.data\.creator_id/.test(blk));
     s.ok('or change its type',/type == resource\.data\.type/.test(blk));
@@ -553,6 +553,170 @@ module.exports=async function(){
     const statusesRules=((blk.match(/status in \[([^\]]*)\]/)||['',''])[1].match(/'([a-z_]+)'/g)||[]).map(x=>x.replace(/'/g,''));
     s.ok('the statuses were found',statusesJs.length===4,J(statusesJs));
     s.eq('rules and the app agree on the statuses',J(statusesRules),J(statusesJs));
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // M3 — Paid PR approvals
+  // ════════════════════════════════════════════════════════════════════
+  const prc=[
+    {id:'cr_a',ig_handle:'st4rr.doll',status:'active'},
+    {id:'cr_b',ig_handle:'benched',status:'blacklisted'}
+  ];
+  const prq=(form,existing,now)=>a.run('mktBuildPaidPRRequest('+J(form)+','+J(existing||null)+','+J(prc)+','+(now||1000)+',"uid-daniyal")');
+
+  s.section('requesting a Paid PR');
+  s.ok('a creator is required',/creator/.test(prq({deliverable:'1 Reel',proposed_amount_pkr:'45000'}).error||''));
+  s.ok('a blacklisted creator is refused',/Blacklisted/.test(prq({creator_id:'cr_b',deliverable:'1 Reel',proposed_amount_pkr:'45000'}).error||''));
+  s.ok('a deliverable is required',/deliverable/.test(prq({creator_id:'cr_a',proposed_amount_pkr:'45000'}).error||''));
+  s.ok('an amount is required',/amount/.test(prq({creator_id:'cr_a',deliverable:'1 Reel'}).error||''));
+  s.ok('zero is not an amount',/amount/.test(prq({creator_id:'cr_a',deliverable:'1 Reel',proposed_amount_pkr:'0'}).error||''));
+  s.ok('a runaway amount is questioned',/zeros/.test(prq({creator_id:'cr_a',deliverable:'1 Reel',proposed_amount_pkr:'450000000'}).error||''));
+  const nr=prq({creator_id:'cr_a',deliverable:' 1 Reel + 3 story frames ',proposed_amount_pkr:'45k',timeline:'10 days',rationale:'Strong Lowkey Heat fit'});
+  s.eq('45k is PKR 45,000',nr.data.proposed_amount_pkr,45000);
+  s.eq('a request starts pending',nr.data.status,'pending');
+  s.eq('unpaid',nr.data.payment_status,'unpaid');
+  s.eq('undecided',nr.data.decided_by_user_id,null);
+  s.eq('with no dispatch yet',nr.data.dispatch_id,null);
+  s.eq('requested by a uid',nr.data.requested_by_user_id,'uid-daniyal');
+  s.ok('the id is generated',/^pr_/.test(nr.id));
+  const pending=Object.assign({id:nr.id},nr.data);
+  const edit=prq({deliverable:'2 Reels',proposed_amount_pkr:'60000'},pending,2000);
+  s.eq('a pending request can be edited',edit.data.proposed_amount_pkr,60000);
+  {
+    const ed=a.run('(function(){const k=Object.keys('+J(edit.data)+');return k.filter(x=>MKT_PR_EDIT_FIELDS.indexOf(x)<0);})()');
+    s.eq('an edit writes only the fields the rules allow',J(ed),J([]));
+  }
+  s.ok('a decided request cannot be edited',/decided/.test(prq({deliverable:'x',proposed_amount_pkr:'1'},Object.assign({},pending,{status:'approved'})).error||''));
+
+  s.section('deciding — the hard gate');
+  const dec=(req,which,reason)=>a.run('mktBuildDecision('+J(req)+','+J(which)+','+J(reason||'')+',3000,"uid-ammar")');
+  s.ok('a rejection needs a reason',/why/.test(dec(pending,'rejected','').error||''));
+  const rj=dec(pending,'rejected','Budget is spent this month');
+  s.eq('a rejection records it',rj.data.rejection_reason,'Budget is spent this month');
+  s.ok('and creates no dispatch',!rj.dispatch);
+  const ap=dec(pending,'approved');
+  s.eq('an approval is recorded',ap.data.status,'approved');
+  s.eq('by the approver\'s uid',ap.data.decided_by_user_id,'uid-ammar');
+  s.ok('and mints the dispatch it links to',ap.dispatch&&ap.data.dispatch_id===ap.dispatch.id);
+  s.eq('a paid_pr dispatch',ap.dispatch.data.type,'paid_pr');
+  s.eq('pointing back at the request',ap.dispatch.data.paid_pr_request_id,pending.id);
+  s.eq('for the same creator',ap.dispatch.data.creator_id,'cr_a');
+  s.eq('entering the flow at Confirmed',ap.dispatch.data.status,'confirmed');
+  s.ok('a decided request cannot be decided again',/already/.test(dec(Object.assign({},pending,{status:'approved'}),'rejected','x').error||''));
+  {
+    const keys=a.run('Object.keys('+J(ap.data)+')');
+    const rules=read('firestore.rules');
+    const m=/request\.resource\.data\.status in \['approved','rejected'\][\s\S]*?hasOnly\(\[([^\]]*)\]\)/.exec(rules);
+    const allowed=m?(m[1].match(/'([a-z_]+)'/g)||[]).map(x=>x.replace(/'/g,'')):[];
+    s.ok('the decision rule was found',allowed.length>0,J(allowed));
+    s.eq('an approval writes only what the rules allow',J(keys.filter(k=>allowed.indexOf(k)<0)),J([]));
+    s.eq('so does a rejection',J(a.run('Object.keys('+J(rj.data)+')').filter(k=>allowed.indexOf(k)<0)),J([]));
+  }
+  // The client gate follows the flag; the rules gate follows the email.
+  {
+    const lead=app({session:{uid:'2',u:'daniyal',role:'creator_content_ops_lead',email:'daniyaltufail59@gmail.com'}});
+    lead.run("mktPaidPRs=[{id:'pr_1',creator_id:'cr_a',status:'pending',proposed_amount_pkr:1000,deliverable:'x'}];mktCreators=[{id:'cr_a',ig_handle:'a'}];mktDispatches=[];mktPaidPRsLoaded=true");
+    lead.run("window.mktOpenPaidPR('pr_1')");
+    const html=lead.bodyHtml('mkt-modal-back');
+    s.ok('the lead sees no Approve button',!/mktDecidePaidPR/.test(html));
+    s.ok('and is told only the approver can decide',/Only the approver/.test(html));
+    lead.el('mkt-pr-id').value='pr_1';
+    await lead.run("window.mktDecidePaidPR('approved')");
+    s.eq('and calling the decision directly writes nothing',lead.state.batches.length,0);
+    const own=app();
+    own.run("mktPaidPRs=[{id:'pr_1',creator_id:'cr_a',status:'pending',proposed_amount_pkr:1000,deliverable:'x'}];mktCreators=[{id:'cr_a',ig_handle:'a'}];mktDispatches=[];mktPaidPRsLoaded=true");
+    own.run("window.mktOpenPaidPR('pr_1')");
+    s.ok('the approver does see Approve and Reject',/mktDecidePaidPR\('approved'\)/.test(own.bodyHtml('mkt-modal-back'))&&/mktDecidePaidPR\('rejected'\)/.test(own.bodyHtml('mkt-modal-back')));
+    const other=app({session:{uid:'1',u:'afnan',role:'owner',email:'afnan@groovy.op'}});
+    other.run("mktPaidPRs=[{id:'pr_1',creator_id:'cr_a',status:'pending',proposed_amount_pkr:1000,deliverable:'x'}];mktCreators=[{id:'cr_a',ig_handle:'a'}];mktDispatches=[];mktPaidPRsLoaded=true");
+    other.run("window.mktOpenPaidPR('pr_1')");
+    s.ok('the other owner does not',!/mktDecidePaidPR/.test(other.bodyHtml('mkt-modal-back')));
+  }
+  {
+    const t=app({globals:{doc:(db,col,id)=>({path:col+'/'+id})}});
+    t.run("mktPaidPRs=[{id:'pr_1',creator_id:'cr_a',status:'pending',proposed_amount_pkr:45000,deliverable:'x'}];mktCreators=[{id:'cr_a',ig_handle:'a'}];mktDispatches=[];mktPaidPRsLoaded=true;mktDispatchesLoaded=true");
+    t.el('mkt-pr-id').value='pr_1';
+    await t.run("window.mktDecidePaidPR('approved')");
+    const b=t.state.batches[0]||[];
+    s.eq('approval is ONE batch: decision, dispatch, creator',J(b.map(o=>o.op)),J(['update','set','update']));
+    s.eq('the creator gets the paid PR counted',b[2]&&b[2].data.lifetime_paid_prs,1);
+    s.eq('and the approved PKR',b[2]&&b[2].data.lifetime_pkr_spent,45000);
+    s.eq('the new dispatch is in the log straight away',t.run("mktDispatches.filter(d=>d.type==='paid_pr').length"),1);
+    s.ok('and the toast says what happens next',/products and date/.test(t.state.toasts.join(' ')));
+    s.eq('an approval asks first',t.state.confirms.length,1);
+  }
+
+  s.section('paying — approved is not paid');
+  const apr=Object.assign({},pending,ap.data);
+  const pay=f=>a.run('mktBuildPayment('+J(apr)+','+J(f)+',4000,"uid-daniyal")');
+  s.ok('a pending request cannot be paid',/approved/.test(a.run('mktBuildPayment('+J(pending)+',{payment_status:"paid"},1,"u")').error||''));
+  s.ok('paid needs a method',/how/.test(pay({payment_status:'paid',payment_date:'2026-09-16'}).error||''));
+  s.ok('paid needs a date',/date/.test(pay({payment_status:'paid',payment_method:'JazzCash'}).error||''));
+  const pd=pay({payment_status:'paid',payment_method:'JazzCash',payment_reference:' TXN-1 ',payment_date:'2026-09-16'});
+  s.eq('a payment is recorded',pd.data.payment_status,'paid');
+  s.eq('with its reference',pd.data.payment_reference,'TXN-1');
+  s.eq('and who logged it',pd.data.payment_logged_by_user_id,'uid-daniyal');
+  s.eq('marking it unpaid clears the details',pay({payment_status:'unpaid',payment_method:'Cash'}).data.payment_method,'');
+  {
+    const rules=read('firestore.rules');
+    const m=/resource\.data\.status == 'approved'\s*&& request\.resource\.data\.status == 'approved'[\s\S]*?hasOnly\(\[([^\]]*)\]\)/.exec(rules);
+    const allowed=m?(m[1].match(/'([a-z_]+)'/g)||[]).map(x=>x.replace(/'/g,'')).sort():[];
+    s.eq('the payment fields in the app and the rules are the same list',J(allowed),J(a.run('MKT_PAYMENT_FIELDS.slice().sort()')));
+    const e=/resource\.data\.status == 'pending'\s*&& request\.resource\.data\.status == 'pending'[\s\S]*?hasOnly\(\[([^\]]*)\]\)/.exec(rules);
+    const eAllowed=e?(e[1].match(/'([a-z_]+)'/g)||[]).map(x=>x.replace(/'/g,'')).sort():[];
+    s.eq('and so are the editable request fields',J(eAllowed),J(a.run('MKT_PR_EDIT_FIELDS.slice().sort()')));
+    s.ok('an approved amount is not in either list',eAllowed.indexOf('proposed_amount_pkr')>=0&&allowed.indexOf('proposed_amount_pkr')<0);
+  }
+
+  s.section('the approval list');
+  const now2=Date.parse('2026-09-16T12:00:00');
+  const rl=[
+    {id:'p_old',creator_id:'cr_a',status:'pending',created_at:100,deliverable:'Reel',proposed_amount_pkr:10000},
+    {id:'p_new',creator_id:'cr_a',status:'pending',created_at:200,deliverable:'Story',proposed_amount_pkr:5000},
+    {id:'a_sep',creator_id:'cr_a',status:'approved',decided_at:Date.parse('2026-09-02'),payment_status:'unpaid',proposed_amount_pkr:40000,deliverable:'Reel'},
+    {id:'a_aug',creator_id:'cr_a',status:'approved',decided_at:Date.parse('2026-08-20'),payment_status:'paid',proposed_amount_pkr:30000,deliverable:'Reel'},
+    {id:'r_1',creator_id:'cr_b',status:'rejected',decided_at:Date.parse('2026-09-10'),proposed_amount_pkr:99000,deliverable:'Takeover'}
+  ];
+  const fl2=f=>J(a.run('mktFilteredPaidPRs('+J(rl)+','+J(prc)+','+J(f)+').map(r=>r.id)'));
+  s.eq('pending first, longest-waiting on top, then newest decisions',fl2({}),J(['p_old','p_new','r_1','a_sep','a_aug']));
+  s.eq('approved but unpaid',fl2({status:'unpaid'}),J(['a_sep']));
+  s.eq('search by deliverable',fl2({q:'takeover'}),J(['r_1']));
+  s.eq('approved this month counts by decision date only',a.run('mktApprovedInMonth('+J(rl)+','+now2+')'),40000);
+  const rr=a.run('mktCreatorRollups("cr_a",[],'+J(rl)+')');
+  s.eq('rollups count approved Paid PRs only',rr.lifetime_paid_prs,2);
+  s.eq('and sum their approved PKR',rr.lifetime_pkr_spent,70000);
+  s.ok('without the requests, the Paid PR rollups are left alone',!('lifetime_paid_prs' in a.run('mktCreatorRollups("cr_a",[])')));
+
+  s.section('Paid PR rules');
+  {
+    const rules=read('firestore.rules');
+    const approver=(/function isPaidPRApprover\(\)\s*\{[^}]*\[([^\]]*)\]/.exec(rules)||['',''])[1].match(/'([^']+)'/g)||[];
+    const defs=a.run('USER_DEFS').filter(d=>d.canApprovePaidPR===true).map(d=>d.email).sort();
+    s.eq('isPaidPRApprover() lists exactly the flagged accounts',J(approver.map(x=>x.replace(/'/g,'')).sort()),J(defs));
+    const blk=(rules.match(/match \/paid_pr_requests\/\{id\} \{[\s\S]*?\n    \}/)||[''])[0];
+    s.ok('a request is created pending, by its requester',/status == 'pending'[\s\S]*requested_by_user_id == request\.auth\.uid/.test(blk));
+    s.ok('only the approver decides',/\|\| \(isPaidPRApprover\(\)[\s\S]*status in \['approved','rejected'\]/.test(blk));
+    s.ok('only from pending',/isPaidPRApprover\(\)\s*&& resource\.data\.status == 'pending'/.test(blk));
+    s.ok('a decided request is never deleted',/allow delete: if isOwner\(\) && resource\.data\.status == 'pending';/.test(blk));
+    const dblk=(rules.match(/match \/dispatches\/\{id\} \{[\s\S]*?\n    \}/)||[''])[0];
+    s.ok('a paid_pr dispatch can only be created by the approver',/type == 'paid_pr'\s*&& isPaidPRApprover\(\)/.test(dblk));
+    s.ok('for a request the same batch approves and links to it',/getAfter\(paidPRPath[\s\S]*status == 'approved'[\s\S]*dispatch_id == id/.test(dblk));
+    s.ok('a dispatch cannot be re-pointed at another request',/get\('paid_pr_request_id', null\) == resource\.data\.get\('paid_pr_request_id', null\)/.test(dblk));
+  }
+  {
+    const docs={
+      creators:[{id:'cr_a',data:()=>({ig_handle:'st4rr.doll'})}],
+      paid_pr_requests:[{id:'pr_x',data:()=>({creator_id:'cr_a',status:'pending',deliverable:'<script>x</script>',proposed_amount_pkr:45000,created_at:1})}]
+    };
+    const t=app({globals:{collection:(db,name)=>({name}),getDocs:async ref=>({docs:docs[ref.name]||[]})}});
+    await t.run('loadMarketingCreators()');
+    const html=t.run('renderMarketingPaidPR()');
+    s.ok('the page lists the request',/PKR 45,000/.test(html));
+    s.ok('and escapes the deliverable',!/<script>x/.test(html));
+    const t2=app({globals:{collection:(db,name)=>({name}),getDocs:async ref=>{if(ref.name==='paid_pr_requests')throw new Error('denied');return{docs:docs[ref.name]||[]};}}});
+    await t2.run('loadMarketingCreators()');
+    s.ok('a refused read shows the rules card',/could not be loaded/.test(t2.run('renderMarketingPaidPR()')));
+    s.ok('without taking the Creator Database down',/@st4rr\.doll/.test(t2.run('renderMarketingCreators()')));
   }
 
   return s;

@@ -883,10 +883,13 @@ function _renderMobNav(ctx){
     return;
   }
   if(session&&session.role==='creator_content_ops_lead'){
-    mob.className='cols-3';
-    mob.style.gridTemplateColumns='';
+    // Four buttons: the inline column count beats #mob-nav's 5-column
+    // default (cols-3 is !important, so it is deliberately not used here).
+    mob.className='';
+    mob.style.gridTemplateColumns='repeat(4,1fr)';
     mob.innerHTML=_mobNavBtn('mkt-creators','people','Creators',"window.showPage('mkt-creators')")
                  +_mobNavBtn('mkt-dispatches','box','Dispatches',"window.showPage('mkt-dispatches')")
+                 +_mobNavBtn('mkt-paid-pr','money','Paid PR',"window.showPage('mkt-paid-pr')")
                  +_mobNavBtn('shopify-intel','shop','Intel',"window.showPage('shopify-intel')");
     _updateMobNavActive(currentPage);
     return;
@@ -944,7 +947,7 @@ function _updateMobNavActive(pageId){
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
     'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more','store-cash-ledger':'more',
     'activity':'more','monitor':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more',
-    'mkt-creators':'more','mkt-dispatches':'more',
+    'mkt-creators':'more','mkt-dispatches':'more','mkt-paid-pr':'more',
     'creative-hub':'more','notes':'more','note-detail':'more','boards':'more','boards-all':'more','board-canvas':'more',
     'my-work':'my-work'
   };
@@ -1306,6 +1309,7 @@ const BUG_PAGE_NAMES={
   'shopify-intel':'Inventory Intel',
   'mkt-creators':'Marketing — Creator Database',
   'mkt-dispatches':'Marketing — Dispatch Log',
+  'mkt-paid-pr':'Marketing — Paid PR Approvals',
   'creative-hub':'Creative Hub',
   'notes':'Notes',
   'note-detail':'Note Detail',
