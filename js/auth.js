@@ -11,7 +11,7 @@
 // are created in the Firebase Console, then given an entry here.
 const USER_DEFS=[
   {u:'afnan',  email:'afnan@groovy.op',  name:'Afnan',  role:'owner',  title:'Co-founder',        canPO:true, canFabric:true,  stages:null},
-  {u:'ammar',  email:'ammar@groovy.op',  name:'Ammar',  role:'owner',  title:'Co-founder',        canPO:true, canFabric:true,  stages:null},
+  {u:'ammar',  email:'ammar@groovy.op',  name:'Ammar',  role:'owner',  title:'Co-founder',        canPO:true, canFabric:true,  stages:null, canApprovePaidPR:true},
   {u:'mustafa',email:'mustafa@groovy.op',name:'Mustafa',role:'manager',title:'Operations Manager',canPO:true, canFabric:true,  stages:null},
   {u:'arfat',  email:'arfat@groovy.op',  name:'Arfat',  role:'manager',title:'Advisory',          canPO:true, canFabric:true,  stages:null},
   {u:'raees',  email:'raees@groovy.op',  name:'Raees',  role:'store',  title:'Store Manager',     canPO:false,canFabric:false, stages:[]},
@@ -23,7 +23,23 @@ const USER_DEFS=[
   {u:'uzaib',  email:'uzaib@groovy.op',  name:'Uzaib',  role:'viewer', title:'Cutting & Fabric',   canPO:false,canFabric:true,  stages:['cutting']},
   {u:'faizan', email:'faizan@groovy.op', name:'Faizan', role:'packing',title:'Packing & Dispatch', canPO:false,canFabric:false, stages:[]},
   {u:'umair',  email:'umair@groovy.op',  name:'Umair',  role:'fulfillment', title:'Fulfilment',    canPO:false,canFabric:false, stages:[]},
+  // Marketing module (Sept 2026). The only account whose login is a real
+  // inbox rather than @groovy.op — keep isContentOpsLead() in
+  // firestore.rules in step with this email.
+  {u:'daniyal',email:'daniyaltufail59@gmail.com',name:'Daniyal Tufail',role:'creator_content_ops_lead',title:'Creator & Content Operations Lead',canPO:false,canFabric:false,stages:[]},
 ];
+
+// ── The Sales Team ▸ Marketing (Sept 2026) ──
+// Access keys off ROLE, never a name: whoever holds creator_content_ops_lead
+// gets the module. Paid PR approval is a per-account FLAG
+// (canApprovePaidPR on the USER_DEFS entry) rather than a role, because the
+// approver and the other owner share the `owner` role — moving the flag
+// moves the approval right without touching any record. Mirrored in
+// firestore.rules (isMarketing / isContentOpsLead).
+const MKT_LEAD_ROLE='creator_content_ops_lead';
+function isContentOpsLead(){ return !!(session && session.role===MKT_LEAD_ROLE); }
+function canAccessMarketing(){ return !!(session && (session.role==='owner' || session.role===MKT_LEAD_ROLE)); }
+function canApprovePaidPR(){ return !!(session && session.canApprovePaidPR===true); }
 // Packing/dispatch role (Faizan) — receives finished pieces, runs QC handoff
 // reconciliation, and books stock transfers. Username/role gated.
 function isPacking(){ return !!(session && session.role==='packing'); }
@@ -117,6 +133,10 @@ async function startApp(){
   }else if(session.role==='fulfillment'){
     // Fulfilment account (Umair) — scoped to Daily Performance only.
     showPage('fulfillment');
+  }else if(session.role===MKT_LEAD_ROLE){
+    // Creator & Content Operations Lead — The Sales Team ▸ Marketing and a
+    // view-only Inventory Intel. No PO data is needed, so none is loaded.
+    showPage('mkt-creators');
   }else if(session.role==='packing'){
     // Packing account (Faizan) — receives finished pieces against POs.
     loadData();
