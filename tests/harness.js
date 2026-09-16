@@ -164,6 +164,7 @@ function loadApp(opts){
     viewportW:opts.viewportW||1000,viewportH:opts.viewportH||600,
     seq:1,body:[],listeners:{},activeElement:null,execCommands:[],
     toasts:[],activity:[],vibrations:[],writes:[],batches:[],confirms:[],prompts:[],
+    fetches:[],
     txCount:0,plainWriteCount:0
   };
   const {document,nodes}=makeDom(state);
@@ -241,7 +242,21 @@ function loadApp(opts){
         async commit(){ops.forEach(o=>state.writes.push(o));}
       };
     },
-    onSnapshot:()=>()=>{}
+    onSnapshot:()=>()=>{},
+
+    // js/store.js is the one module that talks to Firestore over REST rather
+    // than through the SDK bridge, so it needs a fetch. Every call is
+    // recorded; by default each answers 200 with an empty document list. A
+    // test drives real responses by overriding `fetch` through `globals`.
+    fetch:async(url,init)=>{
+      state.fetches.push({url:String(url),init:init||{}});
+      return{ok:true,status:200,statusText:'OK',json:async()=>({documents:[]})};
+    },
+    // Convenience for building those responses in a test.
+    _res:(status,body)=>({
+      ok:status>=200&&status<300,status,statusText:String(status),
+      json:async()=>body
+    })
   };
   Object.assign(ctx,opts.globals||{});
   ctx.globalThis=ctx;
