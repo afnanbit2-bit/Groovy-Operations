@@ -1468,6 +1468,18 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .mkt-perf div{display:flex;flex-direction:column;font-size:11px;color:var(--muted)}
 .mkt-perf b{font-size:16px;color:var(--text);font-variant-numeric:tabular-nums}
 .mkt-grid-5{grid-template-columns:repeat(5,minmax(0,1fr))}
+/* Paid PR Approvals (Marketing M3). */
+.mkt-prstatus{display:inline-block;font-size:11px;font-weight:600;padding:3px 8px;border-radius:10px;white-space:nowrap}
+.mkt-prstatus-pending{background:var(--accent-warning-soft);color:var(--accent-warning)}
+.mkt-prstatus-approved{background:var(--accent-success-soft);color:var(--accent-success)}
+.mkt-prstatus-rejected{background:var(--accent-urgent-soft);color:var(--accent-urgent)}
+.mkt-pay{font-size:11px;font-weight:600;white-space:nowrap}
+.mkt-pay-paid{color:var(--accent-success)}
+.mkt-pay-unpaid{color:var(--accent-warning)}
+.mkt-wrap{flex-wrap:wrap}
+.mkt-danger{color:var(--accent-urgent);border-color:var(--accent-urgent)}
+.mkt-danger:hover{color:var(--accent-urgent);border-color:var(--accent-urgent);background:var(--accent-urgent-soft)}
+.field textarea:disabled,.field input:disabled{opacity:.7}
 @media (max-width:600px){
   .mkt-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   .mkt-grid-5,.mkt-perf{grid-template-columns:repeat(2,minmax(0,1fr))}
