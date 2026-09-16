@@ -3720,11 +3720,12 @@ republish.
 AND `user_profiles`. Both had been waiting; the Profile page's own error
 card is what finally surfaced it.
 
-**REPUBLISH OUTSTANDING — Marketing M4 (16 Sept 2026):** new
-`discount_codes` block and the dispatch code-link guard. Until it is
-published, the app cannot read codes (the dashboard says "figures
-unavailable" and the attributed line shows an error) — creating a code
-still works, because the server writes it. Ask for the full file.
+**Republished a third time by Ammar on 16 Sept 2026, after PRs #65/#66**
+(reported in-session), from the repo file at
+`md5 d6fb1e99e99cf9575e275f973c68f47e` — `git log --oneline -1 --
+firestore.rules` is `5bd5494` (Marketing M4: `discount_codes`, the
+dispatch code-link guard). **No republish is outstanding as of that
+commit**; this supersedes the two entries below.
 
 **Republished again by Ammar on 16 Sept 2026, after PR #63** (reported
 in-session), from the repo file at `md5 1910baa80876acfebd09d46b68e7d8e3` —
