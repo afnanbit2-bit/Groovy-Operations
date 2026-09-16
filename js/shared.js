@@ -867,6 +867,7 @@ function _renderMobNav(ctx){
     mob.className='cols-3';
     mob.style.gridTemplateColumns='';
     mob.innerHTML=_mobNavBtn('mkt-creators','people','Creators',"window.showPage('mkt-creators')")
+                 +_mobNavBtn('mkt-dispatches','box','Dispatches',"window.showPage('mkt-dispatches')")
                  +_mobNavBtn('shopify-intel','shop','Intel',"window.showPage('shopify-intel')");
     _updateMobNavActive(currentPage);
     return;
@@ -924,7 +925,7 @@ function _updateMobNavActive(pageId){
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
     'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more','store-cash-ledger':'more',
     'activity':'more','monitor':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more',
-    'mkt-creators':'more',
+    'mkt-creators':'more','mkt-dispatches':'more',
     'creative-hub':'more','notes':'more','note-detail':'more','boards':'more','boards-all':'more','board-canvas':'more',
     'my-work':'my-work'
   };
@@ -1168,9 +1169,10 @@ function renderPage(id){
   }
   else if(id==='profile'){if(!profilesLoaded){m.innerHTML=gvSkeleton(3);loadProfiles().then(()=>{if(currentPage===id){m.innerHTML=renderProfilePage();_profileHydrate();}});}else{m.innerHTML=renderProfilePage();_profileHydrate();}}
   // ── The Sales Team ▸ Marketing ──
-  // loadMarketingCreators cannot reject; a failed read renders its own
-  // error card with Retry (see "Loading must never hang" in CLAUDE.md).
-  else if(id==='mkt-creators'){if(!mktCreatorsLoaded){m.innerHTML=gvSkeleton(6);loadMarketingCreators().then(()=>{if(currentPage===id)m.innerHTML=renderMarketingCreators();});}else m.innerHTML=renderMarketingCreators();}
+  // Every mkt-* page goes through mktRenderPage (js/marketing.js), so a new
+  // Marketing page never needs a line here. Its loader cannot reject; a
+  // failed read renders its own error card with Retry.
+  else if(id.startsWith('mkt-')){if(typeof mktRenderPage==='function')mktRenderPage(id);else m.innerHTML='<div class="empty">The Marketing module did not load — refresh the page.</div>';}
   else if(id==='creative-hub')m.innerHTML=renderCreativeHub();
   else if(id==='notes'){if(!notesLoaded){m.innerHTML=gvSkeleton(6);loadNotesData().then(()=>{if(currentPage===id)m.innerHTML=renderNotesPage();});}else m.innerHTML=renderNotesPage();}
   else if(id==='note-detail'){_notesOpenDetail();return;}
@@ -1277,6 +1279,7 @@ const BUG_PAGE_NAMES={
   'bug-tracker':'Bug Tracker',
   'shopify-intel':'Inventory Intel',
   'mkt-creators':'Marketing — Creator Database',
+  'mkt-dispatches':'Marketing — Dispatch Log',
   'creative-hub':'Creative Hub',
   'notes':'Notes',
   'note-detail':'Note Detail',

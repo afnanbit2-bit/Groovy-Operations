@@ -1415,8 +1415,45 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .mkt-band-label{font-size:11px;font-weight:600;color:var(--muted)}
 .mkt-band-x{flex-shrink:0;width:34px;height:36px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--muted);cursor:pointer;font-size:16px}
 .mkt-band-x:hover{color:var(--accent-urgent);border-color:var(--accent-urgent)}
+/* Dispatch Log (Marketing M2). Status reads left to right as the parcel
+   moves: neutral → neutral → warning (waiting on the creator) → success. */
+.mkt-dstatus{display:inline-block;font-size:11px;font-weight:600;padding:3px 8px;border-radius:10px;white-space:nowrap;background:var(--soft);color:var(--text)}
+.mkt-dstatus-shipped{background:var(--accent-warning-soft);color:var(--accent-warning)}
+.mkt-dstatus-content_received{background:var(--accent-success-soft);color:var(--accent-success)}
+.mkt-d7{font-size:11px;font-weight:600;white-space:nowrap}
+.mkt-d7-due{color:var(--accent-urgent);cursor:help}
+.mkt-d7-done{color:var(--accent-success)}
+.mkt-d7-wait{color:var(--muted);font-weight:500}
+.mkt-c-prod{max-width:260px;font-size:12px;color:var(--muted)}
+.mkt-c-date{white-space:nowrap;font-variant-numeric:tabular-nums}
+.mkt-wide{width:100%;margin-top:8px;flex:none}
+.mkt-picks{display:flex;flex-direction:column;gap:4px;margin-top:6px;max-height:260px;overflow-y:auto}
+.mkt-picks:empty{display:none}
+.mkt-pick{display:flex;justify-content:space-between;align-items:center;gap:10px;text-align:left;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-family:inherit;font-size:13px;cursor:pointer;min-width:0}
+.mkt-pick>span:first-child{min-width:0;overflow-wrap:anywhere}
+.mkt-pick>span:last-child{flex-shrink:0;font-size:11px}
+.mkt-pick:hover:not(:disabled){border-color:var(--dark)}
+.mkt-pick:disabled{opacity:.55;cursor:default}
+.mkt-pick-chosen{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:8px;background:var(--surface-2)}
+.mkt-pick-chosen>div{min-width:0;flex:1 1 220px}
+.mkt-chosen{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+.mkt-chosen-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 6px 6px 10px;border-radius:8px;background:var(--surface-2);font-size:13px}
+.mkt-chosen-row>span{min-width:0;overflow-wrap:anywhere}
+.mkt-hist{display:flex;flex-direction:column;gap:4px}
+.mkt-hist-row{display:grid;grid-template-columns:110px minmax(0,1fr) auto;gap:10px;align-items:center;text-align:left;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-family:inherit;font-size:12px;cursor:pointer}
+.mkt-hist-row:hover{border-color:var(--dark)}
+.mkt-hist-row>span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mkt-perf{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.mkt-perf div{display:flex;flex-direction:column;font-size:11px;color:var(--muted)}
+.mkt-perf b{font-size:16px;color:var(--text);font-variant-numeric:tabular-nums}
+.mkt-grid-5{grid-template-columns:repeat(5,minmax(0,1fr))}
 @media (max-width:600px){
   .mkt-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .mkt-grid-5,.mkt-perf{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .mkt-table .mkt-c-date{flex:1 1 100%;font-size:11px;color:var(--muted)}
+  .mkt-table .mkt-c-prod{flex:1 1 100%;max-width:none}
+  .mkt-hist-row{grid-template-columns:minmax(0,1fr) auto}
+  .mkt-hist-row>span:nth-child(2){display:none}
   .mkt-grid-4{grid-template-columns:repeat(2,minmax(0,1fr))}
   .mkt-lifetime{grid-template-columns:repeat(2,minmax(0,1fr))}
   .mkt-filters .mkt-select{flex:1 1 40%}

@@ -2537,7 +2537,8 @@ dispatch tabs). Source spec: `GRVY-Marketing-Module-Spec.md` (Ammar's
 Downloads, not in the repo). Built **one milestone at a time**, same as the
 Mood Boards table round: M1 Creator Database + scoring · M2 Dispatch Log ·
 M3 Paid PR approvals · M4 discount codes · M5 reminders + dashboard card ·
-M6 reports · M7 migration. **Only M1 is built.**
+M6 reports · M7 migration. **M1 and M2 are built.** M1 merged as PR #58
+(live, cache `v68`); M2 is the Dispatch Log below.
 
 - **Nav:** "The Sales Team ▸" is a collapsible parent of SUB-AREAS
   (`_salesTeamGroups()` / `_salesTeamNavHTML()` in `js/shared.js`); each
@@ -2591,8 +2592,40 @@ M6 reports · M7 migration. **Only M1 is built.**
   `USER_DEFS` and `isContentOpsLead()` list the same emails) and a
   `smoke-layout` fragment. That fragment caught the table hiding Niche and
   Status off-screen at 420px; rows stack at phone width now.
-- **Known for M2:** the product picker reads `shopify_products`, which the
-  daily 9am-PKT catalog sync fills — "current as of this morning".
+- **M2 — Dispatch Log (`mkt-dispatches`).** Organic dispatches only; a
+  `paid_pr` dispatch is created by a Paid PR approval in M3, and the rule
+  refuses a client-created one until then. Every Marketing page now routes
+  through ONE line in `renderPage` (`id.startsWith('mkt-')` →
+  `mktRenderPage`), so later pages never touch `js/shared.js` for routing.
+  - **Status timestamps record the FIRST time a stage is reached**
+    (`shipped_at`, `content_received_at`, beside the spec's
+    `status_updated_at`). M5's 7/14-day reminders and the Day-7 capture
+    count from these, and going back and forward must not reset the clock.
+  - **A post link IS content received** — saving one moves the dispatch
+    there and the toast says so; otherwise the no-post reminder would keep
+    firing on a creator who delivered.
+  - **Creator rollups are RECOMPUTED, not incremented**
+    (`mktCreatorRollups`), from every dispatch held for that creator, and
+    written in the same `writeBatch` as the dispatch. An edited date can
+    move first/last in either direction; an increment cannot tell. A batch,
+    not a transaction, so it queues offline like the rest of the app.
+    Known limit: two people editing the same creator's dispatches at the
+    same moment compute from their own copies; the next save re-derives.
+  - **`creator_id` and `type` are immutable** once written (rules + the
+    payload never re-sends them) — a dispatch moved between creators would
+    leave both creators' rollups wrong.
+  - **The product picker reads `shopify_products` — the daily 9am-PKT
+    catalog sync — never Shopify live**, and always says how old its copy
+    is (`shopify_sync_meta/catalog_sync.last_success_at`), warning when it
+    is over 30h. It reuses Inventory Intel's copy when that page already
+    loaded it. Products are stored by variant id; free text is refused. A
+    migrated row may carry `products_note` (the sheet's text) instead.
+  - **Day-7** is due 7 days after content received, falling back to shipped
+    — and that fallback is marked (`Due *`), per spec §8. The capture form is
+    one screen, five fields, one save; views are required.
+  - **Dispatches are loaded with the creators** by the same never-rejecting
+    loader, all at once. Fine at today's volume; if it grows, page by date
+    rather than adding a second loader.
 - **Known for M7:** the sheet's Master List has **265** non-empty rows, not
   the spec's 254 — reconcile before import. The Sep 2026 tab's three rows
   (st4rr.doll and shoaibkhn.t — Lowkey Heat; shadysaidthat — Live In
@@ -3287,12 +3320,13 @@ republish.
 AND `user_profiles`. Both had been waiting; the Profile page's own error
 card is what finally surfaced it.
 
-**REPUBLISH OUTSTANDING (16 Sept 2026) — two changes, send them together:**
-`71b4acb` (Mood Boards Trash: `mood_boards/{id}/trash`) and the Marketing M1
-branch (`creators`, `creator_handles`, `scoring_config`,
-`isContentOpsLead()`). Neither is live until Afnan pastes the current file
-into the Console. **Marketing M1 is not "done" until this is confirmed** —
-the Creator Database shows its rules error card until then.
+**REPUBLISH OUTSTANDING (16 Sept 2026) — send it as ONE paste of the
+current file:** `71b4acb` (Mood Boards Trash: `mood_boards/{id}/trash`),
+Marketing M1 (`creators`, `creator_handles`, `scoring_config`,
+`isContentOpsLead()`) and Marketing M2 (`dispatches`). None of them is live
+until Afnan pastes the current file into the Console. **Marketing M1/M2 are
+not "done" until this is confirmed** — both pages show their rules error
+card until then.
 
 **Keep updating both in lockstep**, per the comment at the top of
 `firestore.rules` itself. **The trigger to ask for a republish is a change

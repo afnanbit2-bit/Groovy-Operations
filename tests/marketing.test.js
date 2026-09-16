@@ -357,8 +357,202 @@ module.exports=async function(){
     full.run('session='+J({uid:'3',u:'mustafa',name:'Mustafa',role:'manager',email:'mustafa@groovy.op',canPO:true}));
     full.run('buildNav()');
     s.ok('a manager sidebar does not',!/The Sales Team/.test(full.el('sidebar').innerHTML));
-    s.ok('renderPage dispatches mkt-creators',/id==='mkt-creators'/.test(read('js/shared.js')));
+    s.ok('renderPage hands every mkt-* page to mktRenderPage',/id\.startsWith\('mkt-'\)\)\{if\(typeof mktRenderPage==='function'\)mktRenderPage\(id\)/.test(read('js/shared.js')));
+    s.ok('the lead phone nav has Dispatches',/mkt-dispatches/.test(mob));
     s.ok('startApp lands the lead on it',/MKT_LEAD_ROLE\)\{[\s\S]{0,200}showPage\('mkt-creators'\)/.test(read('js/auth.js')));
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // M2 — Dispatch Log
+  // ════════════════════════════════════════════════════════════════════
+  const creators=[
+    {id:'cr_a',ig_handle:'st4rr.doll',name:'Starr',status:'active'},
+    {id:'cr_b',ig_handle:'benched',status:'do_not_use'}
+  ];
+  const prod={product_id:'9',variant_id:'101',product_title:'Effortless Tee',variant_title:'Rust / M'};
+  const dsp=(form,existing,now)=>a.run('mktBuildDispatchPayload('+J(form)+','+J(existing||null)+','+J(creators)+','+(now||1000)+',"uid-daniyal")');
+
+  s.section('logging a dispatch');
+  s.ok('a creator is required',/creator/.test(dsp({date_of_dispatch:'2026-09-16',products:[prod]}).error||''));
+  s.ok('an unknown creator is refused',/not in the database/.test(dsp({creator_id:'cr_x',date_of_dispatch:'2026-09-16',products:[prod]}).error||''));
+  s.ok('a creator marked Do not use is refused, and says why',/Do not use/.test(dsp({creator_id:'cr_b',date_of_dispatch:'2026-09-16',products:[prod]}).error||''));
+  s.ok('a date is required',/date/.test(dsp({creator_id:'cr_a',products:[prod]}).error||''));
+  s.ok('a malformed date is refused',/date/.test(dsp({creator_id:'cr_a',date_of_dispatch:'16/09/2026',products:[prod]}).error||''));
+  s.ok('at least one catalog product is required',/product/.test(dsp({creator_id:'cr_a',date_of_dispatch:'2026-09-16',products:[]}).error||''));
+  s.ok('a product without a variant id (free text) does not count',/product/.test(dsp({creator_id:'cr_a',date_of_dispatch:'2026-09-16',products:[{product_title:'typed by hand'}]}).error||''));
+  s.ok('a javascript: link is refused',/https/.test(dsp({creator_id:'cr_a',date_of_dispatch:'2026-09-16',products:[prod],link_to_post:'javascript:alert(1)'}).error||''));
+  const nd=dsp({creator_id:'cr_a',date_of_dispatch:'2026-09-16',collection_sent:' Lowkey  Heat ',products:[prod,prod]});
+  s.eq('a new dispatch is organic',nd.data.type,'organic');
+  s.eq('it points at the creator by id',nd.data.creator_id,'cr_a');
+  s.eq('it starts Confirmed',nd.data.status,'confirmed');
+  s.eq('who logged it is a uid',nd.data.logged_by_user_id,'uid-daniyal');
+  s.ok('the dispatch id is generated',/^dp_/.test(nd.id));
+  s.eq('a product picked twice is stored once',nd.data.products.length,1);
+  s.eq('products keep their Shopify ids',nd.data.products[0].variant_id,'101');
+  s.eq('collection text is tidied',nd.data.collection_sent,'Lowkey Heat');
+  s.eq('no discount code by default',nd.data.has_discount_code,false);
+  s.eq('performance starts empty',nd.data.performance_views,null);
+  s.eq('not shipped yet',nd.data.shipped_at,null);
+
+  s.section('status timestamps');
+  const ex=Object.assign({id:nd.id},nd.data);
+  const shipped=dsp({status:'shipped',products:[prod]},ex,2000);
+  s.eq('reaching Shipped stamps shipped_at',shipped.data.shipped_at,2000);
+  s.eq('and status_updated_at',shipped.data.status_updated_at,2000);
+  s.ok('an edit never re-writes creator or type (rules keep them immutable)',!('creator_id' in shipped.data)&&!('type' in shipped.data));
+  const ex2=Object.assign({},ex,shipped.data);
+  const back=dsp({status:'in_transit',products:[prod]},ex2,3000);
+  const again=dsp({status:'shipped',products:[prod]},Object.assign({},ex2,back.data),4000);
+  s.ok('going back and forward does not reset the first shipped time',!('shipped_at' in again.data));
+  const linked=dsp({status:'shipped',products:[prod],link_to_post:'https://www.instagram.com/p/abc/'},ex2,5000);
+  s.eq('a post link moves the dispatch to Content received',linked.data.status,'content_received');
+  s.ok('and says it did',linked.autoAdvanced===true);
+  s.eq('stamping content_received_at',linked.data.content_received_at,5000);
+  const skip=dsp({status:'content_received',products:[prod]},ex,6000);
+  s.eq('jumping straight to Content received also records shipped',skip.data.shipped_at,6000);
+  const unchanged=dsp({status:'confirmed',products:[prod],collection_sent:'x'},ex,7000);
+  s.ok('an edit that keeps the status does not touch status_updated_at',!('status_updated_at' in unchanged.data));
+  const legacy=dsp({status:'confirmed',products:[]},Object.assign({},ex,{products:[],products_note:'rust effortless, love hurts'}),8000);
+  s.ok('a migrated row with only a text note can still be edited',!legacy.error);
+
+  s.section('Day-7 capture');
+  const DAY=86400000;
+  const d7=(d,now)=>a.run('mktDay7('+J(d)+','+now+')');
+  s.eq('nothing shipped → nothing due',d7({status:'confirmed'},10*DAY).state,'none');
+  s.eq('counted from content received',d7({content_received_at:DAY,shipped_at:0},8*DAY).basis,'content_received');
+  s.eq('due exactly 7 days after',d7({content_received_at:DAY},8*DAY).state,'due');
+  s.eq('not a moment before',d7({content_received_at:DAY},8*DAY-1).state,'waiting');
+  const fb=d7({shipped_at:0},7*DAY);
+  s.eq('no content-received date falls back to shipped',fb.basis,'shipped');
+  s.eq('and is still due',fb.state,'due');
+  s.eq('a captured snapshot is never due',d7({shipped_at:0,performance_captured_at:5},99*DAY).state,'captured');
+  s.eq('a Firestore Timestamp is understood',d7({content_received_at:{seconds:1}},7*DAY+1000).state,'due');
+  const perf=f=>a.run('mktBuildPerformance('+J(f)+',9000,"uid-daniyal")');
+  s.ok('views are required',/views/.test(perf({performance_likes:'10'}).error||''));
+  s.ok('junk is refused, not zeroed',/not a number/.test(perf({performance_views:'100',performance_saves:'lots'}).error||''));
+  const pv=perf({performance_views:'12.5k',performance_likes:'1,200',performance_comments:'40',performance_saves:'',performance_story_replies:'0'});
+  s.eq('12.5k views → 12500',pv.data.performance_views,12500);
+  s.eq('1,200 likes → 1200',pv.data.performance_likes,1200);
+  s.eq('a blank field stays blank',pv.data.performance_saves,null);
+  s.eq('0 is kept as 0',pv.data.performance_story_replies,0);
+  s.eq('capture time and person are stamped',pv.data.performance_captured_by_user_id,'uid-daniyal');
+
+  s.section('creator rollups are recomputed, not incremented');
+  const rlist=[
+    {id:'1',creator_id:'cr_a',type:'organic',date_of_dispatch:'2026-09-01',link_to_post:'https://x'},
+    {id:'2',creator_id:'cr_a',type:'organic',date_of_dispatch:'2026-09-10',link_to_post:''},
+    {id:'3',creator_id:'cr_a',type:'organic',date_of_dispatch:'',link_to_post:''},
+    {id:'4',creator_id:'cr_other',type:'organic',date_of_dispatch:'2026-01-01',link_to_post:'https://y'}
+  ];
+  const r=a.run('mktCreatorRollups("cr_a",'+J(rlist)+')');
+  s.eq('three dispatches',r.lifetime_organic_dispatches,3);
+  s.eq('one delivered',r.lifetime_content_delivered,1);
+  s.eq('fulfillment rate 1/3',r.lifetime_fulfillment_rate,0.333);
+  s.eq('first date ignores the undated row',r.first_dispatch_date,'2026-09-01');
+  s.eq('last date',r.last_dispatch_date,'2026-09-10');
+  const moved=rlist.map(d=>d.id==='2'?Object.assign({},d,{date_of_dispatch:'2026-08-20'}):d);
+  s.eq('an edited date moves last_dispatch_date BACK',a.run('mktCreatorRollups("cr_a",'+J(moved)+')').last_dispatch_date,'2026-09-01');
+  s.eq('a creator with nothing sent has no rate',a.run('mktCreatorRollups("cr_z",[])').lifetime_fulfillment_rate,null);
+
+  s.section('the dispatch list');
+  const now=Date.parse('2026-09-16T12:00:00');
+  const dl=[
+    {id:'old',creator_id:'cr_a',date_of_dispatch:'2026-08-02',status:'content_received',products:[{product_title:'Tinted Denim',variant_title:'Blue'}]},
+    {id:'new',creator_id:'cr_a',date_of_dispatch:'2026-09-15',status:'shipped',shipped_at:now-8*DAY,products:[]},
+    {id:'nodate',creator_id:'cr_b',date_of_dispatch:'',status:'confirmed',products:[]},
+    {id:'transit',creator_id:'cr_b',date_of_dispatch:'2026-09-14',status:'in_transit',products:[]}
+  ];
+  const fd=f=>a.run('mktFilteredDispatches('+J(dl)+','+J(creators)+','+J(Object.assign({now},f))+').map(d=>d.id)');
+  s.eq('newest first, undated last',J(fd({})),J(['new','transit','old','nodate']));
+  s.eq('awaiting content = in transit or shipped',J(fd({status:'awaiting'})),J(['new','transit']));
+  s.eq('Day-7 due',J(fd({status:'day7'})),J(['new']));
+  s.eq('a month',J(fd({month:'2026-08'})),J(['old']));
+  s.eq('a rolling window',J(fd({since:'2026-09-10'})),J(['new','transit']));
+  s.eq('search reaches product titles',J(fd({q:'tinted'})),J(['old']));
+  s.eq('and creator handles',J(fd({q:'@benched'})),J(['transit','nodate']));
+
+  s.section('the catalog picker');
+  const v=a.run('mktVariantFromDoc(101,{product_id:9,product_title:"Effortless Tee",color:"Rust",size:"M",option3:"",sku:"GP01-R-M",status:"active"})');
+  s.eq('a variant title is colour / size',v.variant_title,'Rust / M');
+  s.eq('ids are strings',v.variant_id,'101');
+  s.eq('the "Default Title" placeholder is not shown as a variant',a.run('mktVariantFromDoc(1,{product_title:"Cap",color:"Default Title"})').variant_title,'');
+  const cat=[
+    {variant_id:'1',product_title:'Effortless Tee',variant_title:'Rust / M',sku:'A',status:'active'},
+    {variant_id:'2',product_title:'Effortless Tee',variant_title:'Blue / M',sku:'B',status:'draft'},
+    {variant_id:'3',product_title:'Old Tee',variant_title:'Rust / M',sku:'C',status:'archived'}
+  ];
+  const cs=q=>J(a.run('mktCatalogSearch('+J(cat)+','+J(q)+',30).map(x=>x.variant_id)'));
+  s.eq('every word must match',cs('effortless rust'),J(['1']));
+  s.eq('archived products are left out',cs('rust'),J(['1']));
+  s.eq('drafts are offered',cs('blue'),J(['2']));
+  s.eq('an empty query lists nothing',cs('  '),J([]));
+  {
+    const t=app({globals:{getDocs:async()=>{throw new Error('denied');},getDoc:async()=>({exists:()=>false})}});
+    await t.run('_mktLoadCatalog()');
+    s.ok('a failed catalog read says so on the picker',/could not be loaded/.test(t.run('_mktCatalogNoteHTML()')));
+    const t2=app({globals:{getDocs:async()=>({docs:[{id:'1',data:()=>({product_title:'Tee',status:'active'})}]}),
+      getDoc:async()=>({exists:()=>true,data:()=>({last_success_at:{seconds:Math.floor((Date.now()-40*3600000)/1000)}})})}});
+    await t2.run('_mktLoadCatalog()');
+    const note=t2.run('_mktCatalogNoteHTML()');
+    s.ok('the picker always says how old its catalog is',/Catalog as of/.test(note));
+    s.ok('and flags a copy older than a day',/more than a day old/.test(note));
+  }
+
+  s.section('writing a dispatch is one batch with the creator rollups');
+  {
+    const t=app({globals:{doc:(db,col,id)=>({path:col+'/'+id})}});
+    await t.run('mktWriteDispatch({id:"dp_1",isNew:true,data:{type:"organic"}},{lifetime_organic_dispatches:1},"cr_a")');
+    const b=t.state.batches;
+    s.eq('one batch',b.length,1);
+    s.eq('holding the dispatch and the creator',J(b[0].map(o=>o.op)),J(['set','update']));
+    await t.run('mktWriteDispatch({id:"dp_1",isNew:false,data:{status:"shipped"}},null,"cr_a")');
+    s.eq('an edit updates rather than overwrites',t.state.batches[1][0].op,'update');
+  }
+
+  s.section('loading and rendering the log');
+  {
+    const t=app({globals:{getDocs:async()=>{throw new Error('denied');}}});
+    await t.run('loadMarketingCreators()');
+    s.ok('a refused dispatch read shows the rules card',/could not be loaded/.test(t.run('renderMarketingDispatches()')));
+  }
+  {
+    const t=app({globals:{collection:(db,name)=>({name}),getDocs:async(ref)=>{if(ref.name==='dispatches')throw new Error('denied');return{docs:[{id:'cr_1',data:()=>({ig_handle:'ok'})}]};}}});
+    await t.run('loadMarketingCreators()');
+    const html=t.run('renderMarketingCreators()');
+    s.ok('a refused dispatch read does not take the Creator Database down',/@ok/.test(html));
+    s.ok('nor raise the scoring-settings warning',!/default bands/.test(html));
+  }
+  {
+    const docs={
+      creators:[{id:'cr_a',data:()=>({ig_handle:'st4rr.doll',name:'<b>Starr</b>'})}],
+      dispatches:[{id:'dp_1',data:()=>({creator_id:'cr_a',type:'organic',date_of_dispatch:'2026-09-15',status:'shipped',collection_sent:'<img src=x onerror=1>',link_to_post:'https://www.instagram.com/p/a"onmouseover="x',products:[{product_title:'<script>',variant_title:''}]})}]
+    };
+    const t=app({globals:{collection:(db,name)=>({name}),getDocs:async(ref)=>({docs:docs[ref.name]||[]})}});
+    await t.run('loadMarketingCreators()');
+    const html=t.run('renderMarketingDispatches()');
+    s.ok('the log renders the dispatch',/st4rr\.doll/.test(html));
+    s.ok('and escapes everything stored',!/<b>Starr|<img src=x|<script>|"onmouseover/.test(html));
+    s.ok('a post link opens in a new tab without an opener',/rel="noopener noreferrer"/.test(html));
+    s.eq('both pages are listed in the nav',J(t.run('mktNavItems().map(i=>i.id)')),J(['mkt-creators','mkt-dispatches']));
+    t.run('_mktFilter={q:"",view:"all",tier:"all",status:"all",page:1}');
+    const cm=t.run('_mktCreatorDispatchesHTML(mktCreators[0])');
+    s.ok('a creator shows their own dispatch history',/Dispatches \(1\)/.test(cm));
+  }
+
+  s.section('dispatch rules');
+  {
+    const rules=read('firestore.rules');
+    const blk=(rules.match(/match \/dispatches\/\{id\} \{[\s\S]*?\n    \}/)||[''])[0];
+    s.ok('the client can only create organic dispatches',/allow create:[\s\S]*type == 'organic'/.test(blk));
+    s.ok('against a creator that exists',/exists\(\/databases\/\$\(database\)\/documents\/creators\//.test(blk));
+    s.ok('an update cannot move a dispatch to another creator',/creator_id == resource\.data\.creator_id/.test(blk));
+    s.ok('or change its type',/type == resource\.data\.type/.test(blk));
+    s.ok('only owners delete',/allow delete: if isOwner\(\);/.test(blk));
+    const js=read('js/marketing.js');
+    const statusesJs=((js.match(/const MKT_DISPATCH_STATUSES=\[([\s\S]*?)\];/)||['',''])[1].match(/k:'([a-z_]+)'/g)||[]).map(x=>x.slice(3,-1));
+    const statusesRules=((blk.match(/status in \[([^\]]*)\]/)||['',''])[1].match(/'([a-z_]+)'/g)||[]).map(x=>x.replace(/'/g,''));
+    s.ok('the statuses were found',statusesJs.length===4,J(statusesJs));
+    s.eq('rules and the app agree on the statuses',J(statusesRules),J(statusesJs));
   }
 
   return s;
