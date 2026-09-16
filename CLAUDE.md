@@ -226,6 +226,13 @@ therefore NOT evidence that the version is safe. **Read `CACHE_VERSION` on
 both sides before merging, not just the conflict list**, and bump past both
 (v61 + v61 → v62).
 
+**Third time, 16 Sept 2026, and CI caught it before merge:** Marketing M2
+bumped to `v69` while Afnan's Store REST-read fix (`61affaa`) landed on
+`main` at `v69` too. Merging `main` into the M2 branch was clean again; the
+PR's `check-cache-version` run is what failed ("still v69"). Bumped to
+`v70`. **Before opening a PR, `git fetch` and compare against the CURRENT
+`origin/main`**, not the commit the branch started from.
+
 ### Update banner (Sept 2026) — content updates, NOT the home-screen icon
 
 `_swWatchForUpdate(registration)` / `_showUpdateBanner()` (`js/shared.js`),
