@@ -3987,6 +3987,29 @@ This month / Custom, the same shape as Monitor's `_monitorFilter`.
   is an **array**, not a comma-joined string: `'OPTION,OPTGROUP'.indexOf('P')`
   is 1, which would silently exempt every `<p>` in the app.
 
+## Login accepts a username or an email (Sept 2026)
+
+Sami's first sign-in (17 Sept 2026) typed `sami@groovy.ops` into the
+Username box and got "Username not found." — raised by `doLogin`
+(`js/auth.js`) before Firebase was ever contacted, because the lookup
+matched `USER_DEFS.u` only. Two people had now typed an email there, so the
+box accepts three forms, through `_loginResolveUser()`: the username, the
+exact `USER_DEFS.email`, or the part before an `@` as a username. **The
+domain is never sent anywhere** — `def.email` is what goes to Firebase, so a
+mistyped domain is forgiven and the password still has to match the real
+account. The remembered value is always the canonical username. A miss with
+an `@` in it says "No account with that email."; without, "Username not
+found." `tests/login.test.js`.
+
+**The Firebase Auth account itself must still be `sami@groovy.op`.** The
+account Ammar created (verified from his Console screenshot) is
+`sami@groovy.ops`, so until it is recreated with the right address the app
+sends `sami@groovy.op`, Firebase refuses it, and the toast reads "Wrong
+password." — that message is the tell. The domain is enforced server-side
+too (`admin-reset-password.js`, `admin-seed-profiles.js` both require
+`@groovy.op`) and asserted by `tests/csr-lead.test.js`, so changing
+`USER_DEFS` to `.ops` is the wrong fix.
+
 ## Credentials — never in client code
 
 `js/*.js`, `css/*` and every `*.html` are **public static assets**, served

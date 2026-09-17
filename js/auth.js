@@ -65,6 +65,23 @@ function canEditScoring(){ return !!(session && session.canEditScoring===true); 
 // Packing/dispatch role (Faizan) — receives finished pieces, runs QC handoff
 // reconciliation, and books stock transfers. Username/role gated.
 function isPacking(){ return !!(session && session.role==='packing'); }
+// The Username box takes a username, but people type their email into it.
+// Sami's first sign-in was `sami@groovy.ops`, refused as "Username not
+// found." before Firebase was ever asked. So the lookup accepts three forms,
+// in order: the username itself, the exact USER_DEFS email, and — for
+// anything carrying an '@' — the part before it as a username. The domain
+// is never sent anywhere: def.email is what goes to Firebase, so a mistyped
+// domain costs nothing to forgive and the password still has to match the
+// real account. Pure, so tests/login.test.js can drive it directly.
+function _loginResolveUser(raw){
+  const u=String(raw==null?'':raw).trim().toLowerCase();
+  if(!u)return null;
+  const at=u.indexOf('@');
+  return USER_DEFS.find(x=>x.u===u)
+    ||USER_DEFS.find(x=>typeof x.email==='string'&&x.email.toLowerCase()===u)
+    ||(at>0?USER_DEFS.find(x=>x.u===u.slice(0,at)):undefined)
+    ||null;
+}
 window.doLogin=async function(){
   const uEl=document.getElementById('l-user');
   const pEl=document.getElementById('l-pass');
@@ -75,8 +92,8 @@ window.doLogin=async function(){
   if(!u){uEl.classList.add('l-error');valid=false;}else{uEl.classList.remove('l-error');}
   if(!p){pEl.classList.add('l-error');valid=false;}else{pEl.classList.remove('l-error');}
   if(!valid){_loginShake();showToast('Please fill in both fields.',true);return;}
-  const def=USER_DEFS.find(x=>x.u===u);
-  if(!def){uEl.classList.add('l-error');_loginShake();showToast('Username not found.',true);return;}
+  const def=_loginResolveUser(u);
+  if(!def){uEl.classList.add('l-error');_loginShake();showToast(u.indexOf('@')!==-1?'No account with that email.':'Username not found.',true);return;}
   const btn=document.getElementById('login-btn');
   btn.disabled=true;btn.textContent='Signing in…';
   uEl.disabled=true;pEl.disabled=true;
@@ -86,7 +103,8 @@ window.doLogin=async function(){
     session={...def,uid:cred.user.uid};
     window._loginFailCount=0;
     const _rm=document.getElementById('l-remember');
-    if(_rm&&_rm.checked)localStorage.setItem('groovy_remembered_user',u);
+    // Remember the canonical username, not whatever form was typed.
+    if(_rm&&_rm.checked)localStorage.setItem('groovy_remembered_user',def.u);
     else localStorage.removeItem('groovy_remembered_user');
     loginInProgress=false;
     startApp();
