@@ -4462,6 +4462,26 @@ reconcile screenshot no longer showed `shopify_articles` refused). One
 paste of the current file covers everything. Check `git log --oneline -1 --
 firestore.rules` against the entries below.
 
+**Corroborated live, same day: Save measurements on a block failed with
+"Missing or insufficient permissions."** for Afnan (an owner), screenshot
+in-session. Read from the code before answering: `window.ptnSaveGrid`
+writes only `{grid, gridUpdatedAt, updatedAt, updatedBy}` to
+`patterns/{id}` via a plain `updateDoc` — it never touches `code` or
+`createdAt` — and the repo's `patterns/{id}` **update** rule
+(`isPatternAdmin() && code unchanged && createdAt unchanged`) is
+**byte-identical from the M2 commit (`db8aefd`) through M6 (`af132bc`,
+current)** — checked with `git show <rev>:firestore.rules`, not assumed.
+So the repo rules already permit this exact write for an owner; a live
+`PERMISSION_DENIED` on it is not explained by anything in this file or in
+`js/patterns.js`. It matches exactly what a stale/never-fully-published
+ruleset would produce, and is consistent with — not proof of — the
+outstanding-republish note above. **Not verified from this sandbox**: what
+the live Console rules actually contain (`*.firebaseio.com` is
+unreachable here) — only Afnan republishing and retrying can confirm it.
+If "Missing or insufficient permissions" is reported again on ANY Pattern
+Hub write after a fresh republish, treat that as new evidence and reopen
+the code, not just the rules.
+
 **Republished a third time by Ammar on 16 Sept 2026, after PRs #65/#66**
 (reported in-session), from the repo file at
 `md5 d6fb1e99e99cf9575e275f973c68f47e` — `git log --oneline -1 --
