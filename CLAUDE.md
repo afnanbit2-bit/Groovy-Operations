@@ -3167,6 +3167,44 @@ created by hand — name-clustering says 251 but 133 articles are prints on a
 handful of blank bodies, so the real count (60–130) is the pattern master's
 call, and the app only ever *suggests*.
 
+**M2 (shipped): blocks · `PTN-####` · the 10×5 hook map · assignment ·
+the unassigned queue.** Pages `pattern-blocks` (rack + list), `pattern-block`
+(one block), `pattern-unassigned` (the queue). Collections `patterns/{id}`
+and `pattern_slots/{H-S}`.
+
+- **The article→block link lives on the ARTICLE** (`articles/{code}.patternId`),
+  never as an array on the block — the `columnId` lesson. Assigning is one
+  batch of one update per article and **never writes the block document**;
+  "which articles use this block" is a filter, not stored state.
+- **A slot is a LOCK document** (`pattern_slots/{H-S}`, 50 possible ids,
+  enforced by `key.matches()` in the rules), written in the **same
+  transaction** as the block's `hook`/`slot` — the `creator_handles` shape —
+  so two blocks can never take one slot; the refusal names who holds it.
+  Moving releases the old lock and takes the new one atomically.
+- **"Not on a hook" is a normal state.** The rack is 50 slots and the
+  estimate is 60–130 blocks; the map shows an Unplaced strip rather than
+  refusing. A lock whose block is gone renders as *stale* with a clear
+  action — the one write that touches a lock alone.
+- **A RETIRED block is "no block"** (`_ptnLiveBlock`): its articles keep an
+  inert `patternId` (no write) but return to the queue and show unassigned,
+  exactly as the retire confirm promises. Retiring releases the slot. Found
+  by the test, not by reading — the first cut resolved retired blocks.
+- **`PTN-####` comes from `getNextId('patterns')`** (`counters/main`,
+  `js/shared.js`) and the create is a transaction that refuses an existing
+  id; a number spent on a refused write is a harmless gap.
+- **The clustering is a SUGGESTION and never applied** (`_ptnClusterKey`:
+  category + style words, colourways and noise stripped — the planning
+  analysis, ported). The queue groups by it with "Assign all N" (to an
+  existing block) and "New block for these" (prefilled name, category, size
+  axis guessed from the Shopify rollup, and the codes). A graphic tee names
+  its artwork, not its shape, so the page says to trust your eyes.
+- Caps (`needsPattern:false`) and retired articles are never offered and
+  are refused by `ptnAssign`, which also says when an article was **moved**
+  from another block rather than silently re-homing it.
+- Measurements are M3; the block page carries a placeholder card so nobody
+  files "measurements are missing" as a bug.
+- **`firestore.rules` changed again — `patterns` and `pattern_slots`.**
+
 **M1 (shipped): Shopify liveness · reconcile · TAC export.**
 `shopify-catalog-sync.js` (the daily 9am-PKT sync, REST `/products.json`)
 now also writes **`shopify_articles/{CODE}`** — one small doc per article
@@ -4067,10 +4105,10 @@ firestore.rules` is the PR #71 commit (`creators` delete widened from
 creators). **No republish is outstanding as of that commit**; this
 supersedes the entries below.
 
-**REPUBLISH OUTSTANDING (17 Sept 2026): Pattern Hub M0 + M1** added
-`isPatternAdmin()`, `tac_categories`, `articles` and `shopify_articles` —
-nobody can seed the registry or open the reconcile page until the Console
-carries them. Check `git log --oneline -1 --
+**REPUBLISH OUTSTANDING (17 Sept 2026): Pattern Hub M0–M2.** Afnan
+published the M0 file (the seed worked) but not the M1 one — his screenshot
+showed `shopify_articles` refused — and M2 adds `patterns` and
+`pattern_slots`. One paste of the current file covers all of it. Check `git log --oneline -1 --
 firestore.rules` against the entries below.
 
 **Republished a third time by Ammar on 16 Sept 2026, after PRs #65/#66**

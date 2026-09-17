@@ -798,6 +798,7 @@ function _ptnToolbarHTML(){
     </select>
     <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px"><input type="checkbox" ${_ptnFilter.showRetired?'checked':''} onchange="window.ptnSetFilter('showRetired',this.checked?'1':'')">Show retired</label>
     ${_canManagePatterns()?`<button class="btn-primary" onclick="window.ptnToggleMint()">${_ptnMintOpen?'Close':'+ Mint a code'}</button>`:''}
+    <button class="btn-sm" onclick="window.showPage('pattern-blocks')">Patterns${typeof _ptnQueueBadge==='function'?_ptnQueueBadge():''}</button>
     <button class="btn-sm" onclick="window.showPage('pattern-reconcile')">Reconcile with Shopify${_ptnRecBadge()}</button>
     <button class="btn-sm" onclick="window.ptnExportTac('xlsx')" title="The TAC list as a spreadsheet">Export Excel</button>
     <button class="btn-sm" onclick="window.ptnExportTac('pdf')" title="The TAC list as a PDF">Export PDF</button>
@@ -845,11 +846,18 @@ function _ptnRowHTML(a,can){
     <td style="padding:9px 12px;font-weight:700;white-space:nowrap">${_ptnEsc(a.code)}</td>
     <td style="padding:9px 12px" class="ptn-name">${_ptnEsc(a.name||'')}${a.source==='minted'?' <span class="badge" style="font-size:9.5px">minted</span>':''}</td>
     <td style="padding:9px 12px;color:var(--muted);white-space:nowrap">${_ptnEsc(cat?cat.label:a.category||'')}</td>
-    <td style="padding:9px 12px;white-space:nowrap">${a.needsPattern?(a.patternId?'<span class="badge">assigned</span>':'<span style="color:var(--muted)">unassigned</span>'):'<span style="color:var(--muted)">not needed</span>'}</td>
+    <td style="padding:9px 12px;white-space:nowrap">${_ptnPatternCellHTML(a)}</td>
     <td style="padding:9px 12px;white-space:nowrap">${retired?'Retired':'Active'}</td>
     <td style="padding:9px 12px;white-space:nowrap" class="ptn-shop">${_ptnShopifyCellHTML(a)}</td>
     ${can?`<td style="padding:9px 12px;text-align:right"><button class="btn-sm" onclick="window.ptnEditArticle('${_ptnEsc(a.code)}')">Edit</button></td>`:''}
   </tr>`;
+}
+function _ptnPatternCellHTML(a){
+  if(!a.needsPattern)return'<span style="color:var(--muted)">not needed</span>';
+  const p=a.patternId&&typeof _ptnLiveBlock==='function'?_ptnLiveBlock(a.patternId):null;
+  if(p)return`<button class="btn-sm ptn-pat-link" onclick="window.ptnOpenBlock('${_ptnEsc(p.id)}')">${_ptnEsc(p.code)}</button>`;
+  if(a.patternId)return'<span style="color:var(--muted)" title="Points at a block that is retired or not loaded">unassigned</span>';
+  return'<span style="color:var(--muted)">unassigned</span>';
 }
 function _ptnEditRowHTML(a){
   return`<tr class="ptn-row ptn-row-edit" data-code="${_ptnEsc(a.code)}" style="border-top:1px solid var(--border);background:var(--surface-2)">
@@ -866,7 +874,7 @@ function _ptnEditRowHTML(a){
 window.ptnRetryLoad=function(){
   const m=document.getElementById('main-content');
   if(m)m.innerHTML=gvSkeleton(6);
-  patternsLoaded=false;_ptnShopifyLoaded=false;
+  patternsLoaded=false;_ptnShopifyLoaded=false;_ptnBlocksLoaded=false;
   ptnRenderPage(currentPage&&String(currentPage).startsWith('pattern-')?currentPage:'pattern-hub');
 };
 window.ptnSearchInput=function(v){
@@ -1317,10 +1325,462 @@ function ptnRenderPage(id){
     if(currentPage!==id)return;
     if(id==='pattern-hub')m.innerHTML=renderPatternHub();
     else if(id==='pattern-reconcile')m.innerHTML=renderPatternReconcile();
+    else if(id==='pattern-blocks')m.innerHTML=renderPatternBlocks();
+    else if(id==='pattern-block')m.innerHTML=renderPatternBlock();
+    else if(id==='pattern-unassigned')m.innerHTML=renderPatternUnassigned();
     else m.innerHTML='<div class="empty">Unknown Pattern Hub page.</div>';
   };
   const need=[];
   if(!patternsLoaded)need.push(loadPatternsData());
   if(!_ptnShopifyLoaded)need.push(loadPatternsShopify());
+  if(typeof loadPatternsBlocks==='function'&&!_ptnBlocksLoaded)need.push(loadPatternsBlocks());
   if(need.length){m.innerHTML=gvSkeleton(6);Promise.all(need).then(paint);}else paint();
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// M2 — Blocks (patterns) · PTN-#### · the 10×5 hook map · assignment ·
+//      the unassigned queue with a clustering SUGGESTION
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// A pattern is a BLOCK: one physical bundle of craft paper holding every
+// size of one garment shape, hung in one slot of a 10-hook × 5-slot rack.
+// Many article codes point at one block, and the link lives on the ARTICLE
+// (articles/{code}.patternId) — never as an array on the block — so
+// assigning writes one document and two people assigning different
+// articles to the same block never collide (the columnId lesson). A slot
+// is enforced by a lock document pattern_slots/{H-S} written in the same
+// transaction as the pattern's hook/slot (the creator_handles lock), so
+// two blocks cannot take one slot. "Not on a hook" is a normal state — the
+// rack is 50 slots and the estimate is 60–130 blocks — and the map shows
+// it rather than hiding it.
+
+const _PTN_HOOKS=10,_PTN_SLOTS=5;
+const _PTN_SIZES={alpha:['XXXS','XXS','XS','S','M','L','XL','2XL','3XL'],waist:['26','28','30','32','34','36','38','40']};
+const _PTN_TRACERS=['Hassan','Alam'];
+
+let patterns=[];               // [{id,code,name,category,fit,sizeAxis,sizes,sampleSize,hook,slot,tracedBy,status,…}]
+let _ptnSlots={};              // 'H-S' → {patternId}
+let _ptnBlocksLoaded=false,_ptnBlocksFailed={},_ptnBlocksErr=null;
+let _ptnBlockId=null;          // the open block
+let _ptnBlockQ='';             // article search on the block page
+let _ptnQueueTab='groups';     // 'groups' | 'all'
+
+function _ptnSlotKey(h,s){return h+'-'+s;}
+function _ptnPad4(n){return 'PTN-'+String(n).padStart(4,'0');}
+function _ptnBlock(id){return patterns.find(p=>p.id===id)||null;}
+// A RETIRED block is "no block" for every article pointing at it — the
+// link stays on the article (inert, no write) but the article is back in
+// the queue and shows unassigned, exactly as the retire confirm promises.
+function _ptnLiveBlock(id){const p=_ptnBlock(id);return p&&p.status!=='retired'?p:null;}
+function _ptnBlockByCode(code){return patterns.find(p=>p.code===code)||null;}
+function _ptnArticlesOf(patternId){return tacArticles.filter(a=>a.patternId===patternId);}
+function _ptnLiveBlocks(){return patterns.filter(p=>p.status!=='retired');}
+function _ptnUnplaced(){return _ptnLiveBlocks().filter(p=>!(p.hook&&p.slot));}
+// Articles that need a pattern and have none — the queue.
+function _ptnUnassigned(){return tacArticles.filter(a=>a.active!==false&&a.needsPattern&&!(a.patternId&&_ptnLiveBlock(a.patternId)));}
+
+// ── Loader — cannot reject ────────────────────────────────────────────────
+async function loadPatternsBlocks(){
+  _ptnBlocksFailed={};_ptnBlocksErr=null;
+  const [ps,sl]=await Promise.allSettled([
+    getDocs(collection(db,'patterns')),
+    getDocs(collection(db,'pattern_slots'))
+  ]);
+  if(ps.status==='fulfilled'){patterns=ps.value.docs.map(d=>Object.assign({id:d.id},d.data()));}
+  else{_ptnBlocksFailed.patterns=true;console.warn('[patterns] patterns load failed',ps.reason);}
+  if(sl.status==='fulfilled'){_ptnSlots={};sl.value.docs.forEach(d=>{_ptnSlots[d.id]=Object.assign({key:d.id},d.data());});}
+  else{_ptnBlocksFailed.pattern_slots=true;console.warn('[patterns] pattern_slots load failed',sl.reason);}
+  if(_ptnBlocksFailed.patterns){const r=ps.reason;_ptnBlocksErr=(r&&(r.message||String(r)))||'read failed';}
+  _ptnBlocksLoaded=true;
+}
+
+// ── Clustering SUGGESTION — derived, never stored, never applied ──────────
+// Same idea as the planning analysis: category + the style words of the
+// name with colourways and noise stripped. It over-counts on purpose
+// (every graphic tee names its ARTWORK, not its shape) — it is offered on
+// the queue as "these look like one block", and a person decides.
+const _PTN_COLOUR_WORDS=new Set(('black white cream grey gray green blue brown red plum olive mauve muave rust sage slate charcoal camel teal navy maroon crimson emerald mocha stone ash graphite granite lilac frost heather sandstone khaki chalk wine pastel mint military arctyc cool hunter racing electric steel deep dark light iced ice silver gold tan beige purple pink yellow orange sand moss coral').split(' '));
+const _PTN_NOISE_WORDS=new Set(('the a of and v1 v2 vi vii 2 0 20 summer summers winter winters edition exclusive top bottom').split(' '));
+function _ptnClusterKey(a){
+  const name=String(a.name||'');
+  const parts=name.split('|');
+  let base=parts[0];
+  if(parts.length>1){
+    const tail=parts.slice(1).join(' ').toLowerCase().replace(/[^a-z ]/g,' ').split(/\s+/).filter(Boolean);
+    if(!tail.some(w=>_PTN_COLOUR_WORDS.has(w)))base=name;   // the tail is not a colourway — keep it
+  }
+  base=base.replace(/\(.*?\)/g,'');
+  const words=base.toLowerCase().replace(/[^a-z0-9 ]/g,' ').split(/\s+/).filter(w=>w&&!_PTN_COLOUR_WORDS.has(w)&&!_PTN_NOISE_WORDS.has(w));
+  return (a.category||'')+'::'+(words.join(' ')||'(colour only)');
+}
+function _ptnClusterLabel(key){const i=key.indexOf('::');const style=key.slice(i+2);const cat=_ptnCategory(key.slice(0,i));return{cat,style};}
+function _ptnClusters(list){
+  const by={};
+  list.forEach(a=>{const k=_ptnClusterKey(a);(by[k]=by[k]||[]).push(a);});
+  return Object.keys(by).map(k=>({key:k,articles:by[k].slice().sort((x,y)=>String(x.code).localeCompare(String(y.code)))}))
+    .sort((x,y)=>y.articles.length-x.articles.length||x.key.localeCompare(y.key));
+}
+// A sensible default block name for a cluster: "Live In Pants block".
+function _ptnSuggestName(key){
+  const {style}=_ptnClusterLabel(key);
+  const s=style==='(colour only)'?'':style.replace(/\b\w/g,c=>c.toUpperCase());
+  return s?s+' block':'';
+}
+
+// ── Pages ─────────────────────────────────────────────────────────────────
+function renderPatternBlocks(){
+  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar and Mustafa only.</div>';
+  return`<div id="pattern-blocks-root">${_ptnBlocksHTML()}</div>`;
+}
+function _ptnBlocksRepaint(){const r=document.getElementById('pattern-blocks-root');if(r)r.innerHTML=_ptnBlocksHTML();}
+function _ptnBlocksErrHTML(){
+  if(_ptnBlocksErr)return`<div class="board-load-error" id="ptn-blocks-error"><div style="font-weight:700;margin-bottom:4px">Could not load the patterns</div><div style="font-size:12px;color:var(--muted)">patterns: ${_ptnEsc(_ptnBlocksErr)}. If that says <em>missing or insufficient permissions</em>, republish <code>firestore.rules</code>.</div><button class="btn-sm" style="margin-top:10px" onclick="window.ptnRetryLoad()">Retry</button></div>`;
+  if(_ptnBlocksFailed.pattern_slots)return`<div class="board-load-warn" id="ptn-slots-warn" style="margin-bottom:12px">The slot locks (<code>pattern_slots</code>) did not load — the hook map may be incomplete and placing is disabled until it loads. <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`;
+  return'';
+}
+function _ptnBlocksHTML(){
+  const head=`<button class="back-btn" onclick="window.showPage('pattern-hub')">← Pattern Hub</button>
+  <div class="page-head" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap">
+    <div><h2 style="margin:0">Patterns</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">One block = one bundle of craft paper, all sizes, one slot. Many articles point at one block.</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${_canManagePatterns()?`<button class="btn-primary" onclick="window.ptnNewBlock()">+ New block</button>`:''}<button class="btn-sm" onclick="window.showPage('pattern-unassigned')">Unassigned queue${_ptnQueueBadge()}</button></div>
+  </div>`;
+  const err=_ptnBlocksErrHTML();
+  if(_ptnBlocksErr)return head+err;
+  const live=_ptnLiveBlocks(),un=_ptnUnplaced();
+  const tile=(n,l)=>`<div class="card" style="padding:12px 14px;flex:1;min-width:120px"><div style="font-size:22px;font-weight:700">${n}</div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${l}</div></div>`;
+  const placed=live.length-un.length;
+  const stats=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${tile(live.length,'Blocks')}${tile(placed+' / '+(_PTN_HOOKS*_PTN_SLOTS),'Slots used')}${tile(un.length,'Not on a hook')}${tile(_ptnUnassigned().length,'Articles unassigned')}</div>`;
+  return head+err+stats+_ptnHookMapHTML()+_ptnUnplacedHTML()+_ptnBlockListHTML();
+}
+function _ptnHookMapHTML(){
+  let rows='';
+  for(let h=1;h<=_PTN_HOOKS;h++){
+    let cells='';
+    for(let s=1;s<=_PTN_SLOTS;s++){
+      const k=_ptnSlotKey(h,s);const lock=_ptnSlots[k];const p=lock&&_ptnBlock(lock.patternId);
+      cells+=p?`<button class="ptn-slot ptn-slot-full" data-slot="${k}" title="${_ptnEsc(p.name||'')}" onclick="window.ptnOpenBlock('${_ptnEsc(p.id)}')" style="text-align:left;border:1px solid var(--border);background:var(--surface-2);border-radius:8px;padding:6px 8px;min-height:48px;font-family:inherit;cursor:pointer;color:var(--text)"><div style="font-weight:700;font-size:12px">${_ptnEsc(p.code)}</div><div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_ptnEsc(p.name||'')}</div></button>`
+        :(lock?`<div class="ptn-slot ptn-slot-stale" data-slot="${k}" title="A lock with no live block — retired or deleted" style="border:1px dashed var(--accent-warning);border-radius:8px;padding:6px 8px;min-height:48px;font-size:11px;color:var(--muted)">stale lock${_canManagePatterns()?` <button class="btn-sm" onclick="window.ptnClearSlot('${k}')">clear</button>`:''}</div>`
+        :`<div class="ptn-slot ptn-slot-empty" data-slot="${k}" style="border:1px dashed var(--border);border-radius:8px;padding:6px 8px;min-height:48px;font-size:11px;color:var(--muted)">empty</div>`);
+    }
+    rows+=`<div style="display:grid;grid-template-columns:44px repeat(${_PTN_SLOTS},minmax(0,1fr));gap:6px;align-items:stretch"><div style="font-size:11px;font-weight:700;color:var(--muted);align-self:center">Hook ${h}</div>${cells}</div>`;
+  }
+  return`<div class="card" id="ptn-hook-map" style="margin-bottom:14px"><div class="card-title">Hook map <span style="font-weight:400;color:var(--muted);font-size:11px">10 hooks × 5 slots · click a block to open it</span></div><div style="display:flex;flex-direction:column;gap:6px;overflow:auto">${rows}</div></div>`;
+}
+function _ptnUnplacedHTML(){
+  const un=_ptnUnplaced();
+  if(!un.length)return'';
+  return`<div class="card" id="ptn-unplaced" style="border-color:var(--accent-warning);margin-bottom:14px"><div class="card-title">Not on a hook <span style="font-weight:400;color:var(--muted);font-size:11px">${un.length} block${un.length===1?'':'s'} — normal while the rack fills; the rack has ${_PTN_HOOKS*_PTN_SLOTS} slots</span></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${un.map(p=>`<button class="btn-sm" onclick="window.ptnOpenBlock('${_ptnEsc(p.id)}')">${_ptnEsc(p.code)} · ${_ptnEsc(p.name||'')}</button>`).join('')}</div></div>`;
+}
+function _ptnBlockListHTML(){
+  const live=_ptnLiveBlocks().slice().sort((a,b)=>String(a.code).localeCompare(String(b.code)));
+  const retired=patterns.filter(p=>p.status==='retired');
+  if(!patterns.length)return`<div class="empty" id="ptn-blocks-empty">No blocks yet. Create one, or start from the <a href="#" onclick="window.showPage('pattern-unassigned');return false">unassigned queue</a> — it groups articles that look like one block.</div>`;
+  const row=p=>{const n=_ptnArticlesOf(p.id).length;return`<tr class="ptn-block-row" data-id="${_ptnEsc(p.id)}" style="border-top:1px solid var(--border);cursor:pointer" onclick="window.ptnOpenBlock('${_ptnEsc(p.id)}')"><td style="padding:9px 12px;font-weight:700;white-space:nowrap">${_ptnEsc(p.code)}</td><td style="padding:9px 12px">${_ptnEsc(p.name||'')}</td><td style="padding:9px 12px;color:var(--muted);white-space:nowrap">${_ptnEsc((_ptnCategory(p.category)||{}).label||p.category||'')}</td><td style="padding:9px 12px;white-space:nowrap">${_ptnEsc((p.sizes||[]).join(' '))}</td><td style="padding:9px 12px;white-space:nowrap">${p.hook&&p.slot?'H'+p.hook+' / S'+p.slot:'<span style="color:var(--accent-warning)">not placed</span>'}</td><td style="padding:9px 12px;text-align:right">${n}</td></tr>`;};
+  return`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:10px 12px">Code</th><th style="padding:10px 12px">Block</th><th style="padding:10px 12px">Category</th><th style="padding:10px 12px">Sizes</th><th style="padding:10px 12px">Home</th><th style="padding:10px 12px;text-align:right">Articles</th></tr></thead><tbody>${live.map(row).join('')}</tbody></table>
+  ${retired.length?`<div style="padding:8px 12px;font-size:11px;color:var(--muted);border-top:1px solid var(--border)">${retired.length} retired block${retired.length===1?'':'s'} hidden.</div>`:''}</div>`;
+}
+
+// ── One block ─────────────────────────────────────────────────────────────
+function renderPatternBlock(){
+  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar and Mustafa only.</div>';
+  return`<div id="pattern-block-root">${_ptnBlockHTML()}</div>`;
+}
+function _ptnBlockRepaint(){const r=document.getElementById('pattern-block-root');if(r)r.innerHTML=_ptnBlockHTML();}
+function _ptnBlockHTML(){
+  const p=_ptnBlock(_ptnBlockId);
+  const back=`<button class="back-btn" onclick="window.showPage('pattern-blocks')">← Patterns</button>`;
+  if(!p)return back+`<div class="empty" id="ptn-block-missing">That block is not loaded${_ptnBlocksErr?' — '+_ptnEsc(_ptnBlocksErr):''}. <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`;
+  const can=_canManagePatterns();
+  const cat=_ptnCategory(p.category);
+  const arts=_ptnArticlesOf(p.id).sort((a,b)=>String(a.code).localeCompare(String(b.code)));
+  const q=_ptnBlockQ.trim().toLowerCase();
+  const candidates=q?tacArticles.filter(a=>a.active!==false&&a.needsPattern&&a.patternId!==p.id&&(String(a.code).toLowerCase().includes(q)||String(a.name||'').toLowerCase().includes(q))).slice(0,25):[];
+  const info=(l,v)=>`<div class="info-row"><span class="info-label">${l}</span><span>${v}</span></div>`;
+  const home=p.hook&&p.slot?`Hook ${p.hook} · Slot ${p.slot}`:'<span style="color:var(--accent-warning)">Not on a hook</span>';
+  const slotOpts=()=>{let o='<option value="">— not on a hook —</option>';for(let h=1;h<=_PTN_HOOKS;h++)for(let s=1;s<=_PTN_SLOTS;s++){const k=_ptnSlotKey(h,s);const lock=_ptnSlots[k];const mine=lock&&lock.patternId===p.id;const taken=lock&&!mine;o+=`<option value="${k}"${mine?' selected':''}${taken?' disabled':''}>Hook ${h} · Slot ${s}${taken?' — '+_ptnEsc((_ptnBlock(lock.patternId)||{}).code||'taken'):''}</option>`;}return o;};
+  return back+`
+  <div class="page-head" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+    <div><h2 style="margin:0">${_ptnEsc(p.code)} <span style="font-weight:400">· ${_ptnEsc(p.name||'')}</span>${p.status==='retired'?' <span class="badge">retired</span>':''}</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">${_ptnEsc(cat?cat.label:p.category||'')}${p.fit?' · '+_ptnEsc(p.fit):''} · ${_ptnEsc((p.sizes||[]).join(' '))}${p.sampleSize?' · sample '+_ptnEsc(p.sampleSize):''}${p.tracedBy?' · traced by '+_ptnEsc(p.tracedBy):''}</div></div>
+    ${can?`<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-sm" onclick="window.ptnEditBlock()">Edit</button>${p.status==='retired'?`<button class="btn-sm" onclick="window.ptnRestoreBlock('${_ptnEsc(p.id)}')">Restore</button>`:`<button class="btn-sm" onclick="window.ptnRetireBlock('${_ptnEsc(p.id)}')">Retire</button>`}</div>`:''}
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;align-items:start">
+    <div class="card"><div class="card-title">Home</div>
+      ${info('Where it hangs',home)}
+      ${can&&!_ptnBlocksFailed.pattern_slots?`<div class="field" style="margin-top:8px"><label>Move to</label><select id="ptn-slot-pick">${slotOpts()}</select></div><button class="btn-primary" ${_ptnBusy?'disabled':''} onclick="window.ptnPlaceBlock('${_ptnEsc(p.id)}')">Save home</button>`:''}
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">A taken slot is greyed out. Two blocks can never share one — the lock is written with the move.</div>
+    </div>
+    <div class="card"><div class="card-title">Measurements</div><div style="font-size:12px;color:var(--muted)">Coming in M3 — per-size grid with how-to-measure notes.</div></div>
+  </div>
+  <div class="card" style="margin-top:14px" id="ptn-block-articles"><div class="card-title">Articles using this block <span style="font-weight:400;color:var(--muted);font-size:11px">${arts.length}</span></div>
+    ${arts.length?`<table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>${arts.map(a=>`<tr class="ptn-block-art" data-code="${_ptnEsc(a.code)}" style="border-top:1px solid var(--border)"><td style="padding:7px 4px;font-weight:700;white-space:nowrap">${_ptnEsc(a.code)}</td><td style="padding:7px 4px">${_ptnEsc(a.name||'')}</td><td style="padding:7px 4px;white-space:nowrap">${_ptnShopifyCellHTML(a)}</td><td style="padding:7px 4px;text-align:right">${can?`<button class="btn-sm" onclick="window.ptnUnassign('${_ptnEsc(a.code)}')">Remove</button>`:''}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">No articles yet.</div>'}
+    ${can?`<div style="margin-top:12px"><input type="search" id="ptn-block-q" placeholder="Add an article — search code or name…" value="${_ptnEsc(_ptnBlockQ)}" oninput="window.ptnBlockSearch(this.value)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;background:var(--surface-2);color:var(--text)">
+      ${q?(candidates.length?`<div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">${candidates.map(a=>{const other=a.patternId&&_ptnLiveBlock(a.patternId);return`<button class="btn-sm ptn-cand" data-code="${_ptnEsc(a.code)}" style="text-align:left" onclick="window.ptnAssign('${_ptnEsc(p.id)}',['${_ptnEsc(a.code)}'])"><b>${_ptnEsc(a.code)}</b> ${_ptnEsc(a.name||'')}${other?` <span style="color:var(--accent-warning)">· now on ${_ptnEsc(other.code)} — will move</span>`:''}</button>`;}).join('')}</div>`:'<div style="font-size:12px;color:var(--muted);margin-top:6px">No article matches (caps and retired articles are never offered).</div>'):''}</div>`:''}
+  </div>`;
+}
+
+// ── The unassigned queue ──────────────────────────────────────────────────
+function _ptnQueueBadge(){const n=_ptnUnassigned().length;return n?` <span class="badge" style="font-size:10px">${n}</span>`:'';}
+function renderPatternUnassigned(){
+  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar and Mustafa only.</div>';
+  return`<div id="pattern-queue-root">${_ptnQueueHTML()}</div>`;
+}
+function _ptnQueueRepaint(){const r=document.getElementById('pattern-queue-root');if(r)r.innerHTML=_ptnQueueHTML();}
+function _ptnQueueHTML(){
+  const head=`<button class="back-btn" onclick="window.showPage('pattern-blocks')">← Patterns</button>
+  <div class="page-head" style="margin-bottom:10px"><div><h2 style="margin:0">Unassigned articles</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">GROOVY articles that need a pattern and have none. Groups are a SUGGESTION from the names — colourways stripped — a graphic tee names its artwork, not its shape, so trust your eyes over the grouping.</div></div></div>`;
+  if(_ptnBlocksErr)return head+_ptnBlocksErrHTML();
+  const list=_ptnUnassigned().filter(a=>a.brand==='groovy');
+  if(!list.length)return head+'<div class="empty" id="ptn-queue-empty">Every GROOVY article that needs a pattern has one.</div>';
+  const can=_canManagePatterns();
+  const blocks=_ptnLiveBlocks().slice().sort((a,b)=>String(a.code).localeCompare(String(b.code)));
+  const blockOpts=`<option value="">— pick a block —</option>${blocks.map(b=>`<option value="${_ptnEsc(b.id)}">${_ptnEsc(b.code)} · ${_ptnEsc(b.name||'')}</option>`).join('')}`;
+  const tabs=`<div style="display:flex;gap:6px;margin-bottom:12px"><button class="btn-sm" style="${_ptnQueueTab==='groups'?'background:var(--dark);color:var(--on-dark);border-color:var(--dark)':''}" onclick="window.ptnQueueTab('groups')">Suggested groups</button><button class="btn-sm" style="${_ptnQueueTab==='all'?'background:var(--dark);color:var(--on-dark);border-color:var(--dark)':''}" onclick="window.ptnQueueTab('all')">All ${list.length}</button></div>`;
+  let body='';
+  if(_ptnQueueTab==='groups'){
+    const clusters=_ptnClusters(list);
+    body=clusters.map((c,i)=>{const {cat,style}=_ptnClusterLabel(c.key);const n=c.articles.length;
+      return`<div class="card ptn-cluster" data-key="${_ptnEsc(c.key)}" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+        <div><div style="font-weight:700">${_ptnEsc(style==='(colour only)'?(cat?cat.label:'')+' — colour-only names':style.replace(/\b\w/g,ch=>ch.toUpperCase()))} <span style="color:var(--muted);font-weight:400;font-size:12px">· ${_ptnEsc(cat?cat.label:'')} · ${n} article${n===1?'':'s'}</span></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">${c.articles.map(a=>`<span style="display:inline-block;margin:2px 6px 2px 0"><b>${_ptnEsc(a.code)}</b> ${_ptnEsc(a.name||'')}</span>`).join('')}</div></div>
+        ${can?`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><select id="ptn-cl-${i}" style="padding:7px 9px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:12px;background:var(--surface-2);color:var(--text)">${blockOpts}</select><button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnAssignCluster(${i})">Assign all ${n}</button><button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnNewBlockFor(${i})">New block for these</button></div>`:''}
+      </div></div>`;}).join('');
+  }else{
+    body=`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>${list.slice().sort((a,b)=>String(a.code).localeCompare(String(b.code))).map(a=>`<tr style="border-top:1px solid var(--border)"><td style="padding:7px 12px;font-weight:700;white-space:nowrap">${_ptnEsc(a.code)}</td><td style="padding:7px 12px">${_ptnEsc(a.name||'')}</td><td style="padding:7px 12px;color:var(--muted);white-space:nowrap">${_ptnEsc((_ptnCategory(a.category)||{}).label||'')}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+  return head+tabs+body;
+}
+
+// ── Block form (create / edit) — a sheet-like card at the top of the list ─
+let _ptnBlockForm=null;   // {id|null, prefill:{name,category,codes:[…]}}
+function _ptnBlockFormHTML(){
+  const f=_ptnBlockForm;if(!f)return'';
+  const p=f.id?_ptnBlock(f.id):null;
+  const v=k=>_ptnEsc((p&&p[k])||(f.prefill&&f.prefill[k])||'');
+  const axis=(p&&p.sizeAxis)||(f.prefill&&f.prefill.sizeAxis)||'alpha';
+  const sizes=new Set((p&&p.sizes)||(f.prefill&&f.prefill.sizes)||(axis==='waist'?['26','28','30','32','34']:['XS','S','M','L','XL']));
+  const cats=_ptnCategoriesFor('groovy');
+  const catSel=(p&&p.category)||(f.prefill&&f.prefill.category)||'';
+  return`<div class="card" id="ptn-block-form" style="margin-bottom:14px;border-color:var(--dark)"><div class="card-title">${p?'Edit '+_ptnEsc(p.code):'New block'}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:end">
+      <div class="field"><label>Block name</label><input id="ptn-bf-name" placeholder="e.g. Live In Pants block" value="${v('name')}"></div>
+      <div class="field"><label>Category</label><select id="ptn-bf-cat">${cats.filter(c=>c.needsPattern!==false).map(c=>`<option value="${c.prefix}"${c.prefix===catSel?' selected':''}>${c.prefix} · ${_ptnEsc(c.label)}</option>`).join('')}</select></div>
+      <div class="field"><label>Fit</label><input id="ptn-bf-fit" placeholder="Relaxed / Baggy / Oversized" value="${v('fit')}"></div>
+      <div class="field"><label>Traced by</label><select id="ptn-bf-traced">${['',..._PTN_TRACERS].map(t=>`<option value="${t}"${t===((p&&p.tracedBy)||'')?' selected':''}>${t||'—'}</option>`).join('')}</select></div>
+      <div class="field"><label>Size axis</label><select id="ptn-bf-axis" onchange="window.ptnBlockFormAxis(this.value)"><option value="alpha"${axis==='alpha'?' selected':''}>Letters (XS–XL)</option><option value="waist"${axis==='waist'?' selected':''}>Waist (26–40)</option></select></div>
+      <div class="field"><label>Sample size <span style="font-weight:400;color:var(--muted)">(the label leads with it)</span></label><input id="ptn-bf-sample" placeholder="M or 32" value="${v('sampleSize')}"></div>
+    </div>
+    <div class="field" style="margin-top:8px"><label>Sizes in the bundle</label><div id="ptn-bf-sizes" style="display:flex;gap:6px;flex-wrap:wrap">${_PTN_SIZES[axis].map(s=>`<label style="display:flex;align-items:center;gap:4px;font-size:12px;border:1px solid var(--border);border-radius:8px;padding:4px 8px"><input type="checkbox" class="ptn-bf-size" value="${s}" ${sizes.has(s)?'checked':''}>${s}</label>`).join('')}</div></div>
+    ${f.prefill&&f.prefill.codes&&f.prefill.codes.length?`<div style="font-size:12px;color:var(--muted);margin-top:8px">On save, <b>${f.prefill.codes.length}</b> article${f.prefill.codes.length===1?'':'s'} will be assigned to it: ${f.prefill.codes.map(_ptnEsc).join(', ')}</div>`:''}
+    <div style="margin-top:10px;display:flex;gap:8px"><button class="btn-primary" ${_ptnBusy?'disabled':''} onclick="window.ptnSaveBlock()">${p?'Save':'Create'}</button><button class="btn-sm" onclick="window.ptnCancelBlockForm()">Cancel</button></div>
+  </div>`;
+}
+window.ptnBlockFormAxis=function(axis){
+  const host=document.getElementById('ptn-bf-sizes');if(!host||!_PTN_SIZES[axis])return;
+  const def=axis==='waist'?['26','28','30','32','34']:['XS','S','M','L','XL'];
+  host.innerHTML=_PTN_SIZES[axis].map(s=>`<label style="display:flex;align-items:center;gap:4px;font-size:12px;border:1px solid var(--border);border-radius:8px;padding:4px 8px"><input type="checkbox" class="ptn-bf-size" value="${s}" ${def.indexOf(s)>-1?'checked':''}>${s}</label>`).join('');
+};
+function _ptnReadBlockForm(){
+  const g=id=>String((document.getElementById(id)||{}).value||'').trim();
+  const sizes=[];const boxes=(document.querySelectorAll?document.querySelectorAll('.ptn-bf-size'):[])||[];boxes.forEach(el=>{if(el.checked)sizes.push(el.value);});
+  return{name:g('ptn-bf-name'),category:g('ptn-bf-cat'),fit:g('ptn-bf-fit'),tracedBy:g('ptn-bf-traced'),sizeAxis:g('ptn-bf-axis')||'alpha',sampleSize:g('ptn-bf-sample').toUpperCase(),sizes};
+}
+function _ptnValidateBlock(d){
+  if(!d.name)return'Give the block a name.';
+  if(!_ptnCategory(d.category))return'Pick a category.';
+  if(!_PTN_SIZES[d.sizeAxis])return'Pick a size axis.';
+  if(!d.sizes.length)return'Tick at least one size in the bundle.';
+  const bad=d.sizes.filter(s=>_PTN_SIZES[d.sizeAxis].indexOf(s)<0);if(bad.length)return'Sizes '+bad.join(', ')+' are not on the '+d.sizeAxis+' axis.';
+  if(d.sampleSize&&d.sizes.indexOf(d.sampleSize)<0)return'The sample size must be one of the sizes in the bundle.';
+  return null;
+}
+
+// ── Handlers ──────────────────────────────────────────────────────────────
+window.ptnOpenBlock=function(id){_ptnBlockId=id;_ptnBlockQ='';window.showPage('pattern-block');};
+window.ptnQueueTab=function(t){_ptnQueueTab=t;_ptnQueueRepaint();};
+window.ptnBlockSearch=function(v){
+  clearTimeout(_ptnSearchTimer);
+  _ptnSearchTimer=setTimeout(()=>{_ptnBlockQ=String(v||'');_ptnBlockRepaint();const i=document.getElementById('ptn-block-q');if(i){i.focus();const n=i.value.length;try{i.setSelectionRange(n,n);}catch(e){}}},180);
+};
+window.ptnNewBlock=function(prefill){if(!_canManagePatterns())return;_ptnBlockForm={id:null,prefill:prefill||{}};_ptnBlocksShowForm();};
+window.ptnEditBlock=function(){if(!_canManagePatterns()||!_ptnBlockId)return;_ptnBlockForm={id:_ptnBlockId,prefill:{}};window.showPage('pattern-blocks');_ptnBlocksShowForm();};
+window.ptnCancelBlockForm=function(){_ptnBlockForm=null;_ptnBlocksRepaint();};
+function _ptnBlocksShowForm(){
+  const r=document.getElementById('pattern-blocks-root');
+  if(!r){window.showPage('pattern-blocks');return;}
+  r.innerHTML=_ptnBlocksHTML();
+  const head=r.querySelector&&r.querySelector('.page-head');
+  const html=_ptnBlockFormHTML();
+  if(head&&head.insertAdjacentHTML)head.insertAdjacentHTML('afterend',html);else r.innerHTML=html+r.innerHTML;
+}
+// New block for a suggested cluster: prefilled name + category + the codes.
+window.ptnNewBlockFor=function(i){
+  const clusters=_ptnClusters(_ptnUnassigned().filter(a=>a.brand==='groovy'));const c=clusters[i];if(!c)return;
+  const {cat}=_ptnClusterLabel(c.key);
+  const axisGuess=(shopifyArticles&&c.articles.map(a=>shopifyArticles[a.code]).find(sa=>sa&&sa.size_axis&&sa.size_axis!=='none')||{}).size_axis||(cat&&['GD','GJO','GC'].indexOf(cat.prefix)>-1?'waist':'alpha');
+  window.showPage('pattern-blocks');
+  window.ptnNewBlock({name:_ptnSuggestName(c.key),category:cat?cat.prefix:'',codes:c.articles.map(a=>a.code),sizeAxis:axisGuess});
+};
+
+// Create: PTN-#### from counters/main (getNextId, js/shared.js), then ONE
+// transaction that refuses a taken slot and writes the block + its lock.
+// A number spent on a refused transaction is simply skipped — a gap in
+// PTN numbering is harmless, a double-booked slot is not.
+window.ptnSaveBlock=async function(){
+  if(!_canManagePatterns()||_ptnBusy||!_ptnBlockForm)return;
+  return _ptnSaveBlockData(_ptnReadBlockForm(),_ptnBlockForm);
+};
+async function _ptnSaveBlockData(d,f){
+  if(!_canManagePatterns()||_ptnBusy||!f)return false;
+  const err=_ptnValidateBlock(d);if(err){showToast(err,true);return false;}
+  const now=new Date().toISOString();const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  _ptnBlockForm=f;
+  _ptnBusy=true;
+  try{
+    if(f.id){
+      const p=_ptnBlock(f.id);if(!p)throw new Error('Block not loaded');
+      const patch=Object.assign({},d,{updatedAt:now,updatedBy:by});
+      await updateDoc(doc(db,'patterns',f.id),patch);
+      Object.assign(p,patch);
+      showToast('Saved '+p.code+'.');_ptnLog('Pattern Edited',p.code+' — '+p.name);
+      _ptnBlockForm=null;_ptnBusy=false;_ptnBlockId=f.id;window.showPage('pattern-block');return true;
+    }
+    if(typeof getNextId!=='function')throw new Error('Counter helper not loaded — refresh the page');
+    const n=await getNextId('patterns');
+    const code=_ptnPad4(n);
+    const id='ptn_'+String(n).padStart(4,'0');
+    const rec=Object.assign({code,hook:null,slot:null,status:'active',createdAt:now,createdBy:by,updatedAt:now,updatedBy:by},d);
+    await runTransaction(db,async tx=>{
+      const s=await tx.get(doc(db,'patterns',id));
+      if(s&&typeof s.exists==='function'&&s.exists())throw new Error(code+' already exists');
+      tx.set(doc(db,'patterns',id),rec);
+    });
+    patterns.push(Object.assign({id},rec));
+    showToast('Created '+code+' — '+d.name);_ptnLog('Pattern Created',code+' — '+d.name);
+    const codes=(f.prefill&&f.prefill.codes)||[];
+    _ptnBlockForm=null;_ptnBusy=false;
+    if(codes.length)await window.ptnAssign(id,codes,true);
+    _ptnBlockId=id;window.showPage('pattern-block');return true;
+  }catch(e){console.error('[patterns] save block failed',e);showToast('Could not save: '+(e.message||e),true);_ptnBusy=false;_ptnBlocksRepaint();return false;}
+}
+
+// Place / move: the lock is the truth. One transaction reads the target
+// lock, refuses if another block holds it, releases the old one, takes
+// the new one, and writes hook/slot on the block.
+window.ptnPlaceBlock=async function(id){
+  if(!_canManagePatterns()||_ptnBusy)return;
+  const p=_ptnBlock(id);if(!p)return;
+  const val=String((document.getElementById('ptn-slot-pick')||{}).value||'');
+  let hook=null,slot=null;
+  if(val){const m=/^(\d+)-(\d+)$/.exec(val);if(!m){showToast('Pick a slot.',true);return;}hook=parseInt(m[1],10);slot=parseInt(m[2],10);
+    if(hook<1||hook>_PTN_HOOKS||slot<1||slot>_PTN_SLOTS){showToast('That slot does not exist.',true);return;}}
+  await _ptnPlace(p,hook,slot);
+  _ptnBlockRepaint();
+};
+async function _ptnPlace(p,hook,slot){
+  const now=new Date().toISOString();const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  const oldKey=p.hook&&p.slot?_ptnSlotKey(p.hook,p.slot):null;
+  const newKey=hook&&slot?_ptnSlotKey(hook,slot):null;
+  if(oldKey===newKey){showToast('Already there.');return true;}
+  _ptnBusy=true;
+  try{
+    await runTransaction(db,async tx=>{
+      if(newKey){
+        const s=await tx.get(doc(db,'pattern_slots',newKey));
+        const d=(s&&typeof s.exists==='function'&&s.exists())?s.data():null;
+        if(d&&d.patternId&&d.patternId!==p.id){const o=_ptnBlock(d.patternId);throw new Error('Hook '+hook+' / Slot '+slot+' already holds '+((o&&o.code)||d.patternId));}
+      }
+      if(oldKey)tx.delete(doc(db,'pattern_slots',oldKey));
+      if(newKey)tx.set(doc(db,'pattern_slots',newKey),{patternId:p.id,patternCode:p.code,since:now,by});
+      tx.update(doc(db,'patterns',p.id),{hook,slot,updatedAt:now,updatedBy:by});
+    });
+    if(oldKey)delete _ptnSlots[oldKey];
+    if(newKey)_ptnSlots[newKey]={key:newKey,patternId:p.id,patternCode:p.code,since:now,by};
+    p.hook=hook;p.slot=slot;
+    showToast(newKey?p.code+' is now on Hook '+hook+' / Slot '+slot+'.':p.code+' taken off the rack.');
+    _ptnLog('Pattern Placed',p.code+' → '+(newKey?'H'+hook+'/S'+slot:'off the rack'));
+    _ptnBusy=false;return true;
+  }catch(e){console.error('[patterns] place failed',e);showToast('Could not move: '+(e.message||e),true);_ptnBusy=false;return false;}
+}
+// A lock whose block is gone (retired, deleted by hand) blocks a slot for
+// nothing; clearing it is the one write that touches a lock alone.
+window.ptnClearSlot=async function(key){
+  if(!_canManagePatterns()||_ptnBusy)return;
+  const lock=_ptnSlots[key];if(!lock)return;
+  const p=_ptnBlock(lock.patternId);
+  if(p&&p.status!=='retired'){showToast('That slot is held by '+p.code+' — move the block instead.',true);return;}
+  _ptnBusy=true;
+  try{await deleteDoc(doc(db,'pattern_slots',key));delete _ptnSlots[key];showToast('Slot cleared.');}
+  catch(e){showToast('Could not clear: '+(e.message||e),true);}
+  _ptnBusy=false;_ptnBlocksRepaint();
+};
+window.ptnRetireBlock=async function(id){
+  if(!_canManagePatterns()||_ptnBusy)return;
+  const p=_ptnBlock(id);if(!p)return;
+  const n=_ptnArticlesOf(id).length;
+  if(typeof confirm==='function'&&!confirm('Retire '+p.code+'? Its slot is released and its '+n+' article'+(n===1?'':'s')+' go back to the unassigned queue. Nothing is deleted.'))return;
+  if(p.hook&&p.slot){const ok=await _ptnPlace(p,null,null);if(!ok)return;}
+  const now=new Date().toISOString();const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  _ptnBusy=true;
+  try{
+    await updateDoc(doc(db,'patterns',id),{status:'retired',updatedAt:now,updatedBy:by});
+    p.status='retired';
+    showToast('Retired '+p.code+'.');_ptnLog('Pattern Retired',p.code);
+  }catch(e){showToast('Could not retire: '+(e.message||e),true);}
+  _ptnBusy=false;_ptnBlockRepaint();
+};
+window.ptnRestoreBlock=async function(id){
+  if(!_canManagePatterns()||_ptnBusy)return;
+  const p=_ptnBlock(id);if(!p)return;
+  const now=new Date().toISOString();const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  _ptnBusy=true;
+  try{await updateDoc(doc(db,'patterns',id),{status:'active',updatedAt:now,updatedBy:by});p.status='active';showToast('Restored '+p.code+'.');}
+  catch(e){showToast('Could not restore: '+(e.message||e),true);}
+  _ptnBusy=false;_ptnBlockRepaint();
+};
+
+// Assign: one batch, one update per ARTICLE — never a write to the block.
+// Caps (needsPattern:false) and retired articles are refused; an article
+// already on another block is moved, and the toast says so.
+window.ptnAssign=async function(patternId,codes,quiet){
+  if(!_canManagePatterns()||_ptnBusy)return false;
+  const p=_ptnBlock(patternId);if(!p){showToast('That block is not loaded.',true);return false;}
+  if(p.status==='retired'){showToast(p.code+' is retired — restore it first.',true);return false;}
+  const now=new Date().toISOString();const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  const todo=[],skipped=[],moved=[];
+  (codes||[]).forEach(code=>{
+    const a=tacArticles.find(x=>x.code===code);
+    if(!a||a.active===false||!a.needsPattern){skipped.push(code);return;}
+    if(a.patternId===patternId)return;
+    if(a.patternId&&_ptnLiveBlock(a.patternId))moved.push(code);
+    todo.push(a);
+  });
+  if(!todo.length){if(!quiet)showToast(skipped.length?'Nothing assigned — '+skipped.join(', ')+' cannot take a pattern.':'Already on this block.',true);return false;}
+  _ptnBusy=true;
+  try{
+    let batch=writeBatch(db),n=0;
+    for(const a of todo){batch.update(doc(db,'articles',a.code),{patternId,updatedAt:now,updatedBy:by});if(++n>=400){await batch.commit();batch=writeBatch(db);n=0;}}
+    if(n)await batch.commit();
+    todo.forEach(a=>{a.patternId=patternId;a.updatedAt=now;a.updatedBy=by;});
+    showToast(todo.length+' article'+(todo.length===1?'':'s')+' assigned to '+p.code+(moved.length?' ('+moved.length+' moved from another block)':'')+(skipped.length?' · skipped '+skipped.join(', '):'')+'.');
+    _ptnLog('Articles Assigned To Pattern',p.code+' ← '+todo.map(a=>a.code).join(', '));
+    _ptnBusy=false;_ptnBlockQ='';
+    if(currentPage==='pattern-block')_ptnBlockRepaint();else if(currentPage==='pattern-unassigned')_ptnQueueRepaint();else _ptnBlocksRepaint();
+    return true;
+  }catch(e){console.error('[patterns] assign failed',e);showToast('Could not assign: '+(e.message||e),true);_ptnBusy=false;return false;}
+};
+window.ptnUnassign=async function(code){
+  if(!_canManagePatterns()||_ptnBusy)return;
+  const a=tacArticles.find(x=>x.code===code);if(!a)return;
+  const now=new Date().toISOString();const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  _ptnBusy=true;
+  try{await updateDoc(doc(db,'articles',code),{patternId:null,updatedAt:now,updatedBy:by});a.patternId=null;showToast(code+' removed from the block.');_ptnLog('Article Unassigned From Pattern',code);}
+  catch(e){showToast('Could not remove: '+(e.message||e),true);}
+  _ptnBusy=false;_ptnBlockRepaint();
+};
+window.ptnAssignCluster=async function(i){
+  const clusters=_ptnClusters(_ptnUnassigned().filter(a=>a.brand==='groovy'));const c=clusters[i];if(!c)return;
+  const sel=document.getElementById('ptn-cl-'+i);const pid=sel&&sel.value;
+  if(!pid){showToast('Pick a block first, or make a new one for these.',true);return;}
+  await window.ptnAssign(pid,c.articles.map(a=>a.code));
+};

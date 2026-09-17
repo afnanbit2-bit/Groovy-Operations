@@ -1,7 +1,7 @@
 # Pattern Hub — Master Plan
 
-> Status: **PLANNING COMPLETE — every question answered across three rounds with
-> Afnan (16–17 Sept 2026). No code written yet; M0 is next.** This document is the single source of truth for
+> Status: **BUILDING. M0, M1 and M2 shipped (17 Sept 2026); M3 (measurements)
+> is next.** Design agreed across three question rounds with Afnan. This document is the single source of truth for
 > the module. Remaining open items are marked **[DECISION NEEDED]** and are all
 > Ammar's calls on the TAC document; none of them block M0.
 >

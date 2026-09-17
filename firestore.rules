@@ -567,5 +567,28 @@ service cloud.firestore {
       allow read: if signedIn();
       allow write: if false;
     }
+    // ── Pattern Hub — M2: blocks and the hook rack ──
+    // patterns/{id}: one physical block (all sizes bundled). The article→
+    // block link lives on articles/{code}.patternId, never here. Code and
+    // creation fields are immutable once written.
+    match /patterns/{id} {
+      allow read: if signedIn();
+      allow create: if isPatternAdmin()
+        && request.resource.data.code is string
+        && request.resource.data.name is string
+        && request.resource.data.category is string;
+      allow update: if isPatternAdmin()
+        && request.resource.data.code == resource.data.code
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner();
+    }
+    // pattern_slots/{H-S}: the lock that makes a rack slot exclusive —
+    // written in the same transaction as the block's hook/slot, so two
+    // blocks can never share one. Exactly 50 possible ids.
+    match /pattern_slots/{key} {
+      allow read: if signedIn();
+      allow write: if isPatternAdmin()
+        && key.matches('^([1-9]|10)-[1-5]$');
+    }
   }
 }

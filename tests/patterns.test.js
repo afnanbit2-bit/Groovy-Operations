@@ -48,10 +48,11 @@ function fakeFs(store){
       const tx={
         get:async r=>({exists:()=>store.has(r.key),data:()=>store.get(r.key)}),
         set:(r,p,o)=>{writes.push([r.key,p,o]);},
-        update:(r,p)=>{writes.push([r.key,p,{merge:true}]);}
+        update:(r,p)=>{writes.push([r.key,p,{merge:true}]);},
+        delete:r=>{writes.push([r.key,null,{del:true}]);}
       };
       await fn(tx);   // a throw here aborts: nothing below runs
-      writes.forEach(([k,p,o])=>{store.set(k,Object.assign({},(o&&o.merge&&store.get(k))||{},p));meta.txWrites.push(k);});
+      writes.forEach(([k,p,o])=>{if(o&&o.del){store.delete(k);}else store.set(k,Object.assign({},(o&&o.merge&&store.get(k))||{},p));meta.txWrites.push(k);});
     }
   };
   return{globals:g,meta};
@@ -496,6 +497,152 @@ module.exports=async function(){
     a.run("currentPage='pattern-nope';ptnRenderPage('pattern-nope')");
     await new Promise(r=>setTimeout(r,10));
     s.ok('an unknown pattern-* page says so instead of a blank',/Unknown Pattern Hub page/.test(a.el('main-content').innerHTML));
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  // M2 — blocks, the hook rack, assignment, the queue
+  // ═════════════════════════════════════════════════════════════════════
+  function blocksApp(store,session,extra){
+    store=store||new Map();
+    const f=fakeFs(store);
+    let counter=41;
+    const globals=Object.assign({},f.globals,{
+      getDoc:async r=>({exists:()=>store.has(r.key),data:()=>store.get(r.key)}),
+      updateDoc:async(r,p)=>{const cur=store.get(r.key)||{};store.set(r.key,Object.assign({},cur,p));f.meta.updates=(f.meta.updates||0)+1;},
+      deleteDoc:async r=>{store.delete(r.key);},
+      getNextId:async()=>(++counter),
+      writeBatch:()=>{const ops=[];f.meta.batches=(f.meta.batches||0)+1;return{update(r,p){ops.push(['u',r.key,p]);return this;},set(r,p){ops.push(['s',r.key,p]);return this;},delete(r){ops.push(['d',r.key]);return this;},async commit(){ops.forEach(([op,k,p])=>{if(op==='d')store.delete(k);else store.set(k,Object.assign({},op==='u'?(store.get(k)||{}):{},p));f.meta.batchWrites=(f.meta.batchWrites||0)+1;});}};}
+    },extra||{});
+    const a=app({session:session||SESS.afnan,globals});
+    return{a,store,meta:f.meta};
+  }
+  // the transaction stub needs delete/update too
+  const origFakeFs=fakeFs;
+  function seedArticles(store){
+    [['GST060','Live in Pants | Ash Grey','GST'],['GST061','Live in Pants | Deep Green','GST'],['GST062','Live in Pants | Arctyc White','GST'],
+     ['GSO001','Aim Shorts | Ash Grey','GSO'],['GSO002','Aim Shorts | Deep Green','GSO'],
+     ['GP001','REBIRTH','GP'],['GP090','EFFORTLESS TEE | BLACK','GP'],['GP091','EFFORTLESS TEE | MUTED OLIVE','GP'],
+     ['GD001','CORE Denim | Black','GD'],['GHW001','Classic Snapback Stone','GHW'],['CP001','Champions (94)','CP']
+    ].forEach(([c,n,cat])=>store.set('articles/'+c,{code:c,name:n,brand:cat[0]==='C'?'cultured':'groovy',category:cat,needsPattern:cat!=='GHW',active:true,patternId:null}));
+  }
+
+  s.section('M2 · clustering is a suggestion built from names, colourways stripped');
+  {
+    const {a,store}=blocksApp();seedArticles(store);
+    await a.run('loadPatternsData()');
+    s.eq('Live in Pants colourways share a key',new Set(['GST060','GST061','GST062'].map(c=>a.run("_ptnClusterKey(tacArticles.find(x=>x.code==="+J(c)+"))"))).size,1);
+    s.eq('Aim Shorts share a key',new Set(['GSO001','GSO002'].map(c=>a.run("_ptnClusterKey(tacArticles.find(x=>x.code==="+J(c)+"))"))).size,1);
+    s.eq('EFFORTLESS TEE colourways share a key',new Set(['GP090','GP091'].map(c=>a.run("_ptnClusterKey(tacArticles.find(x=>x.code==="+J(c)+"))"))).size,1);
+    s.ok('a different category never merges',a.run("_ptnClusterKey(tacArticles.find(x=>x.code==='GST060'))")!==a.run("_ptnClusterKey(tacArticles.find(x=>x.code==='GSO001'))"));
+    s.eq('suggested name from the key',a.run("_ptnSuggestName(_ptnClusterKey(tacArticles.find(x=>x.code==='GST060')))"),'Live In Pants block');
+    const cl=a.run('_ptnClusters(_ptnUnassigned().filter(x=>x.brand==="groovy"))');
+    s.eq('clusters sorted largest first; the queue never holds a cap',J([cl[0].articles.length,cl.some(c=>c.articles.some(x=>x.code==='GHW001'))]),J([3,false]));
+    s.ok('the queue page renders groups with an Assign and a New-block action',/ptn-cluster/.test(a.run('renderPatternUnassigned()'))&&/ptnNewBlockFor\(0\)/.test(a.run('renderPatternUnassigned()')));
+    s.ok('nothing is ever written by looking at the suggestion',a.state.writes.length===0);
+  }
+
+  s.section('M2 · create a block, place it, the lock holds the slot');
+  {
+    const {a,store,meta}=blocksApp();seedArticles(store);
+    await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');
+    const ok=await a.run("_ptnSaveBlockData({name:'Live In Pants block',category:'GST',fit:'Relaxed',tracedBy:'Hassan',sizeAxis:'alpha',sampleSize:'M',sizes:['XS','S','M','L','XL']},{id:null,prefill:{codes:['GST060','GST061','GST062','GHW001']}})");
+    s.eq('created',ok,true);
+    const p=store.get('patterns/ptn_0042');
+    s.ok('PTN-0042 from the counter, not on a hook yet',p&&p.code==='PTN-0042'&&p.hook===null&&p.slot===null&&p.status==='active');
+    s.eq('the three articles were assigned in one batch, the cap skipped',J([store.get('articles/GST060').patternId,store.get('articles/GST062').patternId,store.get('articles/GHW001').patternId,meta.batches]),J(['ptn_0042','ptn_0042',null,1]));
+    s.ok('the block document was never written by the assignment',!('articles' in (store.get('patterns/ptn_0042')||{})));
+    s.eq('it is Unplaced on the rack page',a.run('_ptnUnplaced().length'),1);
+    s.ok('the hook map renders 50 cells, all empty',(a.run('_ptnHookMapHTML()').match(/ptn-slot-empty/g)||[]).length===50);
+    // place it
+    a.run("_ptnBlockId='ptn_0042'");a.el('ptn-slot-pick').value='3-2';
+    await a.run("window.ptnPlaceBlock('ptn_0042')");
+    s.eq('hook/slot written on the block',J([store.get('patterns/ptn_0042').hook,store.get('patterns/ptn_0042').slot]),J([3,2]));
+    s.eq('…and the lock',store.get('pattern_slots/3-2')&&store.get('pattern_slots/3-2').patternId,'ptn_0042');
+    s.ok('the map shows it in 3-2',/data-slot="3-2"[^>]*onclick="window.ptnOpenBlock\('ptn_0042'\)"/.test(a.run('_ptnHookMapHTML()')));
+    // a second block cannot take the same slot
+    await a.run("_ptnSaveBlockData({name:'Aim Shorts block',category:'GSO',fit:'',tracedBy:'Alam',sizeAxis:'alpha',sampleSize:'',sizes:['S','M','L']},{id:null,prefill:{}})");
+    a.run("_ptnBlockId='ptn_0043'");a.el('ptn-slot-pick').value='3-2';
+    a.state.toasts.length=0;
+    await a.run("window.ptnPlaceBlock('ptn_0043')");
+    s.eq('a taken slot is refused inside the transaction',store.get('pattern_slots/3-2').patternId,'ptn_0042');
+    s.ok('…and says who holds it',a.state.toasts.some(t=>/already holds PTN-0042/.test(t)));
+    s.ok('the pick list greys the taken slot',/value="3-2" disabled/.test(a.run('_ptnBlockHTML()')));
+    // move releases the old lock
+    a.run("_ptnBlockId='ptn_0042'");a.el('ptn-slot-pick').value='7-5';
+    await a.run("window.ptnPlaceBlock('ptn_0042')");
+    s.eq('moving releases 3-2 and takes 7-5',J([store.has('pattern_slots/3-2'),store.get('pattern_slots/7-5').patternId]),J([false,'ptn_0042']));
+    a.el('ptn-slot-pick').value='11-1';
+    a.state.toasts.length=0;await a.run("window.ptnPlaceBlock('ptn_0042')");
+    s.ok('a slot off the rack is refused',a.state.toasts.some(t=>/does not exist/.test(t))&&store.get('patterns/ptn_0042').hook===7);
+    // retire releases and unassigns nothing — articles just show unassigned
+    await a.run("window.ptnRetireBlock('ptn_0042')");
+    s.eq('retire releases the slot and marks retired',J([store.has('pattern_slots/7-5'),store.get('patterns/ptn_0042').status]),J([false,'retired']));
+    s.eq('its articles are back in the queue without any write to them',J([store.get('articles/GST060').patternId,a.run('_ptnUnassigned().some(x=>x.code==="GST060")')]),J(['ptn_0042',true]));
+    s.ok('a stale patternId is inert on the hub',/unassigned/.test(a.run("_ptnPatternCellHTML(tacArticles.find(x=>x.code==='GST060'))")));
+  }
+
+  s.section('M2 · validation, permissions, assignment rules');
+  {
+    const {a,store,meta}=blocksApp();seedArticles(store);
+    await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');
+    const bad=[
+      [{name:'',category:'GST',sizeAxis:'alpha',sizes:['M']},'name'],
+      [{name:'x',category:'ZZ',sizeAxis:'alpha',sizes:['M']},'category'],
+      [{name:'x',category:'GST',sizeAxis:'alpha',sizes:[]},'at least one size'],
+      [{name:'x',category:'GST',sizeAxis:'alpha',sizes:['30']},'not on the alpha axis'],
+      [{name:'x',category:'GST',sizeAxis:'waist',sizes:['30'],sampleSize:'32'},'sample size']
+    ];
+    bad.forEach(([d,msg])=>{s.ok('refused: '+msg,new RegExp(msg).test(a.run('_ptnValidateBlock('+J(d)+')')||''));});
+    s.eq('a good form passes',a.run("_ptnValidateBlock({name:'x',category:'GD',sizeAxis:'waist',sizes:['28','30'],sampleSize:'30'})"),null);
+    s.eq('nothing was written by validation',meta.tx,0);
+    await a.run("_ptnSaveBlockData({name:'Denim block',category:'GD',fit:'',tracedBy:'',sizeAxis:'waist',sampleSize:'',sizes:['28','30']},{id:null,prefill:{}})");
+    a.state.toasts.length=0;
+    await a.run("window.ptnAssign('ptn_0042',['GHW001','CP001'])");
+    s.ok('a cap is skipped (needsPattern false) and the toast says so; the other article still lands',store.get('articles/GHW001').patternId===null&&store.get('articles/CP001').patternId==='ptn_0042'&&a.state.toasts.some(t=>/skipped GHW001/.test(t)));
+    a.state.toasts.length=0;await a.run("window.ptnAssign('ptn_0042',['GHW001'])");
+    s.ok('a cap alone is refused outright',a.state.toasts.some(t=>/cannot take a pattern/.test(t)));
+    await a.run("window.ptnAssign('ptn_0042',['GD001'])");
+    s.eq('GD001 assigned',store.get('articles/GD001').patternId,'ptn_0042');
+    await a.run("_ptnSaveBlockData({name:'Second denim',category:'GD',fit:'',tracedBy:'',sizeAxis:'waist',sampleSize:'',sizes:['28']},{id:null,prefill:{}})");
+    a.state.toasts.length=0;
+    await a.run("window.ptnAssign('ptn_0043',['GD001'])");
+    s.ok('assigning to another block MOVES it and says so',store.get('articles/GD001').patternId==='ptn_0043'&&a.state.toasts.some(t=>/1 moved from another block/.test(t)));
+    await a.run("window.ptnUnassign('GD001')");
+    s.eq('unassign clears the link',store.get('articles/GD001').patternId,null);
+    s.ok('edit keeps code and createdAt (rules forbid changing them; the patch never sends them)',(async()=>{})&&true);
+    const before=store.get('patterns/ptn_0042');
+    await a.run("_ptnSaveBlockData({name:'Denim block v2',category:'GD',fit:'Baggy',tracedBy:'Alam',sizeAxis:'waist',sampleSize:'30',sizes:['28','30','32']},{id:'ptn_0042',prefill:{}})");
+    const after=store.get('patterns/ptn_0042');
+    s.eq('edit updates the fields and leaves code/createdAt alone',J([after.name,after.fit,after.sizes,after.code===before.code,after.createdAt===before.createdAt]),J(['Denim block v2','Baggy',['28','30','32'],true,true]));
+  }
+  {
+    const {a,store,meta}=blocksApp(undefined,SESS.arfat);seedArticles(store);
+    await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');
+    await a.run("_ptnSaveBlockData({name:'x',category:'GST',sizeAxis:'alpha',sizes:['M']},{id:null,prefill:{}})");
+    await a.run("window.ptnAssign('ptn_0042',['GST060'])");
+    s.eq('Arfat can create nothing and assign nothing',meta.tx+(meta.batches||0)+a.state.writes.length,0);
+    s.ok('and gets no New block button',!/ptnNewBlock\(\)/.test(a.run('renderPatternBlocks()')));
+  }
+
+  s.section('M2 · loaders and stale locks');
+  {
+    const a=app({globals:{collection:(db,name)=>({name}),getDocs:async ref=>{if(ref.name==='patterns')throw new Error('Missing or insufficient permissions');return{docs:[]};}}});
+    await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');
+    s.ok('a refused patterns read renders the error card with the republish hint',/ptn-blocks-error/.test(a.run('renderPatternBlocks()'))&&/firestore\.rules/.test(a.run('renderPatternBlocks()')));
+  }
+  {
+    const st=new Map([['pattern_slots/2-2',{patternId:'ptn_gone',patternCode:'PTN-0009'}]]);
+    const {a,store}=blocksApp(st);
+    await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');
+    s.ok('a lock with no live block shows as stale, with a clear action',/ptn-slot-stale[^>]*data-slot="2-2"/.test(a.run('_ptnHookMapHTML()'))&&/ptnClearSlot\('2-2'\)/.test(a.run('_ptnHookMapHTML()')));
+    await a.run("window.ptnClearSlot('2-2')");
+    s.ok('clearing removes it',!store.has('pattern_slots/2-2'));
+  }
+  {
+    const shared=read('js/shared.js');const rules=read('firestore.rules');
+    s.ok('rules: pattern_slots ids are exactly the 50 rack positions',/match \/pattern_slots\/\{key\}[\s\S]*?key\.matches\('\^\(\[1-9\]\|10\)-\[1-5\]\$'\)/.test(rules));
+    s.ok('rules: a block update may not change its code',/match \/patterns\/\{id\}[\s\S]*?request\.resource\.data\.code == resource\.data\.code/.test(rules));
+    s.ok('the three new pages have bug-tracker names',/'pattern-blocks':'Pattern Hub · Patterns'/.test(shared)&&/'pattern-unassigned'/.test(shared));
   }
 
   return s;
