@@ -624,5 +624,13 @@ service cloud.firestore {
       allow read: if signedIn();
       allow write: if isPatternAdmin();
     }
+    // settings/{doc}: small app-level switches. Today only
+    // settings/pattern_hub.poIntegration — whether a PO carries its
+    // pattern code and hook. Everyone reads it (a PO page asks); an OWNER
+    // alone flips it, since it changes what every PO prints.
+    match /settings/{doc} {
+      allow read: if signedIn();
+      allow write: if isOwner();
+    }
   }
 }

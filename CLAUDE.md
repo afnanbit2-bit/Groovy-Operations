@@ -512,7 +512,8 @@ previously in `index.html`):
 
 ### Shared / Operational (older code, neither owner exclusively)
 
-- POs (`pos`, `bundles`)
+- POs (`pos`, `bundles`) — carry `patternId`/`patternCode`/`patternHook`
+  since the Pattern Hub's M6; see "Pattern Hub".
 - Gate passes (`gatepasses`, `returns`, `fabricin`)
 - Store (`store_items`, `store_transactions`, `store_notifications`,
   `trim_templates`)
@@ -3172,6 +3173,41 @@ created by hand — name-clustering says 251 but 133 articles are prints on a
 handful of blank bodies, so the real count (60–130) is the pattern master's
 call, and the app only ever *suggests*.
 
+**M6 (shipped): PO integration — the pattern code and its hook, on the PO.**
+Creating or editing a PO stamps `patternId` / `patternCode` / `patternHook`
+from the article's block; the detail page, the **cutting screen** and the
+printed traveler show it, and an unacknowledged revision on that block
+raises a loud warning.
+
+- **OFF until an owner turns it on** (`settings/pattern_hub.poIntegration`,
+  a new `settings` collection — read by all, written by `isOwner()`). Not a
+  100% gate: one forgotten baby tee would block it forever, so the hub
+  shows a **coverage dial** (active GROOVY articles that need a pattern and
+  have a live one — caps, retired articles and the other two brands are
+  out, or 100% would be unreachable) and turning it on below 100% asks
+  first and says how many are missing.
+- **`po.pattern` — the free-text box — is NEVER clobbered.** It is
+  someone's data. The traveler row is COMPOSED at render (`PTN-0007 ·
+  Hook 3 / Slot 2 · <whatever was typed>`), so every old PO prints exactly
+  as it did and nothing was migrated.
+- **A PO with no `patternId` is resolved through its article code**, so POs
+  written before this still show their pattern. A retired block is no
+  block; an unassigned article **clears** the fields rather than leaving a
+  stale link.
+- **The warning is a warning.** The embellishment recipe gate already warns
+  rather than blocks, and a hard block is what stops production at 2am for
+  a paperwork reason. It says so on screen.
+- **`js/pos.js` gained six touch points and nothing else** — each a
+  `typeof`-guarded call into `js/patterns.js`, asserted as exactly *guard +
+  call* per site, so a build without the Pattern Hub behaves precisely as
+  before. All the logic lives in the module, the way `js/boards.js` wraps
+  `startApp` rather than editing a cross-track file.
+- **No PO render waits on a read.** The banner is a synchronous
+  placeholder painted asynchronously (`ptnPoBannerSlot`) — the
+  dashboard-widget pattern — and `_ptnPoEnsure()` loads the module's data
+  once per session and cannot reject.
+- **`firestore.rules` changed — `settings`.**
+
 **M5 (shipped): revisions and the cutting notice.** Editing the grid stays
 silent — entering ~8,000 numbers must not page anyone. A **revision** is an
 explicit act ("Record a revision", one line of reason) and THAT is what tells
@@ -4255,9 +4291,9 @@ firestore.rules` is the PR #71 commit (`creators` delete widened from
 creators). **No republish is outstanding as of that commit**; this
 supersedes the entries below.
 
-**REPUBLISH OUTSTANDING (17 Sept 2026): Pattern Hub M3 + M5** add
-`pom_templates`, `patterns/{id}/revisions`, `pattern_notices` and
-`isPatternCutting()`. Afnan published the M0–M2 file earlier that day (his
+**REPUBLISH OUTSTANDING (17 Sept 2026): Pattern Hub M3 + M5 + M6** add
+`pom_templates`, `patterns/{id}/revisions`, `pattern_notices`,
+`isPatternCutting()` and `settings`. Afnan published the M0–M2 file earlier that day (his
 reconcile screenshot no longer showed `shopify_articles` refused). One
 paste of the current file covers everything. Check `git log --oneline -1 --
 firestore.rules` against the entries below.

@@ -1,7 +1,7 @@
 # Pattern Hub — Master Plan
 
-> Status: **BUILDING. M0–M5 shipped (17 Sept 2026); M6 (PO integration) is
-> next — M5's check-out log was dropped by Afnan (D8).** Design agreed across three question rounds with Afnan. This document is the single source of truth for
+> Status: **BUILDING. M0–M6 shipped (17 Sept 2026); M7 (the coverage
+> dashboard card) is the last one. The check-out log was dropped (D8).** Design agreed across three question rounds with Afnan. This document is the single source of truth for
 > the module. Remaining open items are marked **[DECISION NEEDED]** and are all
 > Ammar's calls on the TAC document; none of them block M0.
 >

@@ -767,7 +767,7 @@ function _ptnPageHTML(){
   }
   const failed=Object.keys(_ptnFailed);
   const warn=failed.length?`<div class="board-load-warn" id="ptn-load-warn" style="margin-bottom:12px">Some of the registry did not load: <b>${_ptnEsc(failed.join(', '))}</b>. What is shown may be incomplete. <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`:'';
-  return head+warn+sync+_ptnBrandTabsHTML()+_ptnSeedCardHTML()+_ptnStatsHTML()+_ptnToolbarHTML()+_ptnMintFormHTML()+_ptnTableHTML();
+  return head+warn+sync+(typeof _ptnCoverageCardHTML==='function'?_ptnCoverageCardHTML():'')+_ptnBrandTabsHTML()+_ptnSeedCardHTML()+_ptnStatsHTML()+_ptnToolbarHTML()+_ptnMintFormHTML()+_ptnTableHTML();
 }
 function _ptnBrandTabsHTML(){
   const tabs=[['groovy','GROOVY'],['cultured','Cultured Legacy'],['against','Against All Odds'],['all','All brands']];
@@ -889,6 +889,7 @@ window.ptnRetryLoad=function(){
   if(m)m.innerHTML=gvSkeleton(6);
   patternsLoaded=false;_ptnShopifyLoaded=false;_ptnBlocksLoaded=false;if(typeof _ptnPomsLoaded!=='undefined')_ptnPomsLoaded=false;
   if(typeof _ptnNoticesLoaded!=='undefined'){_ptnNoticesLoaded=false;patternRevisions={};}
+  if(typeof _ptnSettingsLoaded!=='undefined'){_ptnSettingsLoaded=false;_ptnPoReady=false;}
   ptnRenderPage(currentPage&&String(currentPage).startsWith('pattern-')?currentPage:'pattern-hub');
 };
 window.ptnSearchInput=function(v){
@@ -1413,6 +1414,7 @@ function ptnRenderPage(id){
   if(typeof loadPatternsBlocks==='function'&&!_ptnBlocksLoaded)need.push(loadPatternsBlocks());
   if(typeof loadPatternsPoms==='function'&&!_ptnPomsLoaded)need.push(loadPatternsPoms());
   if(typeof loadPatternNotices==='function'&&!_ptnNoticesLoaded)need.push(loadPatternNotices());
+  if(typeof loadPatternSettings==='function'&&!_ptnSettingsLoaded)need.push(loadPatternSettings());
   // A block's revisions are per block, so they load when one is opened.
   if(id==='pattern-block'&&_ptnBlockId&&typeof loadPatternRevisions==='function'&&!patternRevisions[_ptnBlockId])need.push(loadPatternRevisions(_ptnBlockId));
   if(need.length){m.innerHTML=gvSkeleton(6);Promise.all(need).then(paint);}else paint();
@@ -2624,3 +2626,196 @@ window.ptnAckNotice=async function(id){
   _ptnBusy=false;_ptnNoticesRepaint();return true;
 };
 const _PTN_ACK_FIELDS=['status','ackBy','ackAt','ackNote'];   // == the rules' hasOnly list
+
+// ═══════════════════════════════════════════════════════════════════════════
+// M6 — PO integration: the pattern code and where it hangs, on the PO
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// When a PO is created for an article, the block that article is cut from
+// is stamped on the PO (`patternId` / `patternCode` / `patternHook`) and
+// printed on the traveler, so whoever picks the paper off the rack does not
+// have to look it up. If that block has an UNACKNOWLEDGED revision, the PO
+// says so — loudly, and only as a warning: the embellishment recipe gate
+// already warns rather than blocks, and a hard block is what stops
+// production at 2am for a paperwork reason (PATTERN_HUB_PLAN.md §7).
+//
+// - `po.pattern` (the free-text "Pattern number" box) is NEVER clobbered.
+//   It is someone's data. The traveler composes its row from the linked
+//   block when there is one and falls back to the text, so every old PO
+//   renders exactly as it did.
+// - ALL of this lives here, behind `typeof`-guarded calls, so `js/pos.js`
+//   — a cross-track file — gains four one-line calls and nothing else.
+// - It is OFF until an owner turns it on (`settings/pattern_hub`
+//   .poIntegration). Not a 100% gate: one forgotten baby tee would block
+//   the feature forever, so the hub shows a coverage dial and an owner
+//   flips the switch when the number looks right.
+
+let _ptnSettings=null,_ptnSettingsLoaded=false;
+let _ptnPoReady=false,_ptnPoLoading=null;
+
+async function loadPatternSettings(){
+  try{
+    const s=await getDoc(doc(db,'settings','pattern_hub'));
+    const ex=s&&typeof s.exists==='function'?s.exists():false;
+    _ptnSettings=ex?s.data():{};
+  }catch(e){_ptnSettings=_ptnSettings||{};console.warn('[patterns] settings load failed',e);}
+  _ptnSettingsLoaded=true;
+}
+function ptnPoIntegrationOn(){return !!(_ptnSettings&&_ptnSettings.poIntegration);}
+
+// Everything the PO pages need, loaded once per session and never able to
+// reject. Cheap: articles + blocks + notices are the whole module's data
+// and each is a small collection.
+function _ptnPoEnsure(){
+  if(_ptnPoReady)return Promise.resolve();
+  if(_ptnPoLoading)return _ptnPoLoading;
+  _ptnPoLoading=(async()=>{
+    const jobs=[];
+    if(!_ptnSettingsLoaded)jobs.push(loadPatternSettings());
+    if(!patternsLoaded)jobs.push(loadPatternsData());
+    if(!_ptnBlocksLoaded)jobs.push(loadPatternsBlocks());
+    if(!_ptnNoticesLoaded)jobs.push(loadPatternNotices());
+    await Promise.allSettled(jobs);
+    _ptnPoReady=true;_ptnPoLoading=null;
+  })();
+  return _ptnPoLoading;
+}
+
+// The live block an article code is cut from, or null. A retired block is
+// no block (M2), and a stale patternId is inert — same rule everywhere.
+function ptnForArticle(code){
+  if(!code)return null;
+  const a=tacArticles.find(x=>String(x.code).toUpperCase()===String(code).toUpperCase());
+  if(!a||!a.patternId)return null;
+  return (typeof _ptnLiveBlock==='function'?_ptnLiveBlock(a.patternId):null);
+}
+function _ptnHomeStr(p){return p&&p.hook&&p.slot?('Hook '+p.hook+' / Slot '+p.slot):'';}
+// The fields a PO carries. Always returns an object — a PO whose article
+// has no block clears them rather than leaving a stale link behind.
+function ptnPoFields(code){
+  const p=ptnForArticle(code);
+  return p?{patternId:p.id,patternCode:p.code,patternHook:_ptnHomeStr(p)}
+          :{patternId:null,patternCode:'',patternHook:''};
+}
+window.ptnPoFieldsFor=async function(code){
+  if(!ptnPoIntegrationOn()&&_ptnSettingsLoaded)return{};
+  await _ptnPoEnsure();
+  if(!ptnPoIntegrationOn())return{};
+  return ptnPoFields(code);
+};
+// The traveler's "Pattern # / Name" row: the block and its home when there
+// is one, else whatever was typed. Never both — the row is one line.
+window.ptnPoTravelerPattern=function(po){
+  if(!po)return'';
+  const free=String(po.pattern||'').trim();
+  if(!ptnPoIntegrationOn())return free;
+  const p=(po.patternId&&typeof _ptnLiveBlock==='function'&&_ptnLiveBlock(po.patternId))||ptnForArticle(po.code);
+  if(!p)return free;
+  const home=_ptnHomeStr(p);
+  return p.code+(home?' · '+home:'')+(free?' · '+free:'');
+};
+// The PO detail's one-line Pattern row, rendered synchronously from data
+// already in memory. Returns '' when the module has not loaded yet or the
+// integration is off — the caller falls back to `po.pattern`, and the
+// async banner strip above is the reliable surface either way.
+window.ptnPoPatternRow=function(po){
+  if(!po||!_ptnPoReady||!ptnPoIntegrationOn())return'';
+  const p=(po.patternId&&typeof _ptnLiveBlock==='function'&&_ptnLiveBlock(po.patternId))||ptnForArticle(po.code);
+  if(!p)return'';
+  const home=_ptnHomeStr(p);
+  const free=String(po.pattern||'').trim();
+  return _ptnEsc(p.code)+(home?' · '+_ptnEsc(home):'')+(free?' · '+_ptnEsc(free):'');
+};
+
+// Open, unacknowledged notices for the block this PO is cut from.
+function ptnPoOpenNotices(po){
+  if(!po)return[];
+  const p=(po.patternId&&typeof _ptnLiveBlock==='function'&&_ptnLiveBlock(po.patternId))||ptnForArticle(po.code);
+  if(!p)return[];
+  return _ptnOpenNotices().filter(n=>n.patternId===p.id);
+}
+// A synchronous placeholder the PO pages drop in, painted asynchronously —
+// the dashboard-widget pattern. Nothing on a PO render waits on a read.
+window.ptnPoBannerSlot=function(po){
+  if(!po||!po.code)return'';
+  const id='ptn-po-banner-'+String(po.id||'x').replace(/[^A-Za-z0-9_-]/g,'');
+  setTimeout(()=>{_ptnPoPaintBanner(po,id);},0);
+  return'<div id="'+id+'"></div>';
+};
+async function _ptnPoPaintBanner(po,elId){
+  try{
+    await _ptnPoEnsure();
+    const el=document.getElementById(elId);if(!el)return;
+    if(!ptnPoIntegrationOn()){el.innerHTML='';return;}
+    const p=(po.patternId&&_ptnLiveBlock(po.patternId))||ptnForArticle(po.code);
+    const notices=ptnPoOpenNotices(po);
+    let html='';
+    if(p){
+      const home=_ptnHomeStr(p);
+      html+=`<div class="card ptn-po-strip" style="margin-bottom:12px;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Pattern</span>
+        <b style="font-size:14px">${_ptnEsc(p.code)}</b>
+        <span style="font-size:13px">${_ptnEsc(p.name||'')}</span>
+        <span style="font-size:13px;font-weight:600">${home?_ptnEsc(home):'<span style="color:var(--accent-warning);font-weight:600">not on a hook</span>'}</span>
+        ${_canSeePatternHub()?`<button class="btn-sm" style="margin-left:auto" onclick="window.ptnOpenBlock('${_ptnEsc(p.id)}')">Open</button>`:''}
+      </div>`;
+    }
+    if(notices.length){
+      const n=notices[0];
+      html+=`<div class="board-load-error ptn-po-warn" style="margin-bottom:12px;border-color:var(--accent-urgent)">
+        <div style="font-weight:700;font-size:13.5px;margin-bottom:4px">⚠ This pattern changed and cutting has not confirmed it yet</div>
+        <div style="font-size:12px;line-height:1.5">${_ptnEsc(n.patternCode||'')} · revision ${n.revisionN} — ${_ptnEsc(n.summary||'')}${notices.length>1?' (and '+(notices.length-1)+' more)':''}</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-top:4px">${(n.lines||[]).slice(0,4).map(l=>_ptnEsc(l)).join('<br>')}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:6px">Check the paper on the rack matches before cutting. This is a warning, not a block.</div>
+        ${_canSeePatternHub()?`<button class="btn-sm" style="margin-top:8px" onclick="window.showPage('pattern-notices')">Pattern updates</button>`:''}
+      </div>`;
+    }
+    el.innerHTML=html;
+  }catch(e){console.warn('[patterns] PO banner failed',e);}
+}
+
+// ── Coverage and the switch ───────────────────────────────────────────────
+// Coverage = active GROOVY articles that need a pattern and have a live
+// one. Caps, retired articles and the other two brands are out (D9, Q30,
+// Q31) — counting them would make 100% unreachable and the dial useless.
+function ptnCoverage(){
+  const need=tacArticles.filter(a=>a.active!==false&&a.needsPattern&&a.brand==='groovy');
+  const done=need.filter(a=>a.patternId&&(typeof _ptnLiveBlock==='function'?_ptnLiveBlock(a.patternId):true));
+  const pct=need.length?Math.round(done.length/need.length*100):0;
+  return{done:done.length,need:need.length,pct};
+}
+function _ptnCoverageCardHTML(){
+  if(!_canManagePatterns())return'';
+  const c=ptnCoverage();
+  const on=ptnPoIntegrationOn();
+  const isOwner=(typeof session!=='undefined'&&session&&session.role==='owner');
+  return`<div class="card" id="ptn-coverage" style="margin-bottom:14px">
+    <div class="card-title">Pattern coverage <span style="font-weight:400;color:var(--muted);font-size:11px">active GROOVY articles that need a pattern</span></div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <div style="font-size:26px;font-weight:700">${c.pct}%</div>
+      <div style="flex:1;min-width:160px"><div style="height:8px;background:var(--surface-2);border-radius:5px;overflow:hidden"><div style="height:100%;width:${c.pct}%;background:${c.pct>=100?'var(--green)':'var(--dark)'};border-radius:5px"></div></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">${c.done} of ${c.need} assigned to a block</div></div>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--muted);line-height:1.5">
+      With this on, a new PO carries its pattern code and the hook it hangs on, on screen and on the printed traveler, and warns when that pattern has an unacknowledged change.
+      ${on?'<b style="color:var(--green)">On.</b>':'<b>Off.</b>'} ${isOwner?'':'An owner turns it on.'}
+    </div>
+    ${isOwner?`<button class="btn-primary" style="margin-top:8px" ${_ptnBusy?'disabled':''} onclick="window.ptnSetPoIntegration(${on?'false':'true'})">${on?'Turn it off':'Turn it on for POs'}</button>`:''}
+  </div>`;
+}
+window.ptnSetPoIntegration=async function(on){
+  if(typeof session==='undefined'||!session||session.role!=='owner'){showToast('An owner turns this on.',true);return false;}
+  if(_ptnBusy)return false;
+  const c=ptnCoverage();
+  if(on&&c.pct<100&&typeof confirm==='function'&&
+     !confirm('Turn PO integration on at '+c.pct+'% coverage?\n\n'+(c.need-c.done)+' article'+((c.need-c.done)===1?'':'s')+' still have no pattern. A PO for one of those simply shows nothing extra — nothing breaks.'))return false;
+  const now=new Date().toISOString();const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  _ptnBusy=true;
+  try{
+    await setDoc(doc(db,'settings','pattern_hub'),{poIntegration:!!on,updatedAt:now,updatedBy:by},{merge:true});
+    _ptnSettings=Object.assign({},_ptnSettings||{},{poIntegration:!!on});
+    showToast(on?'POs now carry their pattern.':'POs no longer carry their pattern.');
+    _ptnLog('PO Pattern Integration',(on?'on':'off')+' at '+c.pct+'% coverage');
+  }catch(e){showToast('Could not save: '+(e.message||e),true);}
+  _ptnBusy=false;_ptnRepaint();return true;
+};

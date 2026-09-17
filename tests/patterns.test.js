@@ -1110,5 +1110,131 @@ module.exports=async function(){
     s.ok('the router knows pattern-notices and the page has a name',/id==='pattern-notices'/.test(js)&&/'pattern-notices':'Pattern Hub · Pattern updates'/.test(read('js/shared.js')));
   }
 
+  // ═════════════════════════════════════════════════════════════════════
+  // M6 — PO integration
+  // ═════════════════════════════════════════════════════════════════════
+  function poApp(store,session,settings){
+    store=store||new Map();
+    if(settings!==undefined)store.set('settings/pattern_hub',settings);
+    const f=fakeFs(store);
+    const globals=Object.assign({},f.globals,{
+      localStorage:LSmem(),
+      doc:(db,...rest)=>({key:rest.join('/'),col:rest[0],id:rest[rest.length-1]}),
+      collection:(db,...rest)=>({name:rest.join('/')}),
+      getDoc:async r=>({exists:()=>store.has(r.key),data:()=>store.get(r.key)}),
+      getDocs:async ref=>({docs:Array.from(store.entries()).filter(([k])=>k.startsWith(ref.name+'/')&&k.slice(ref.name.length+1).indexOf('/')<0).map(([k,v])=>({id:k.slice(ref.name.length+1),data:()=>v}))}),
+      setDoc:async(r,p,o)=>{store.set(r.key,Object.assign({},(o&&o.merge&&store.get(r.key))||{},p));f.meta.sets=(f.meta.sets||0)+1;},
+      updateDoc:async(r,p)=>{const cur=store.get(r.key)||{};store.set(r.key,Object.assign({},cur,p));}
+    });
+    return{a:app({session:session||SESS.afnan,globals}),store,meta:f.meta};
+  }
+  function poStore(extra){
+    const st=new Map([
+      ['patterns/ptn_0007',Object.assign({},BLOCK,{hook:3,slot:2,status:'active'})],
+      ['patterns/ptn_0009',Object.assign({},BLOCK,{code:'PTN-0009',name:'Retired block',status:'retired',hook:null,slot:null})],
+      ['articles/GST060',{code:'GST060',name:'Live in Pants | Ash',brand:'groovy',category:'GST',needsPattern:true,active:true,patternId:'ptn_0007'}],
+      ['articles/GST061',{code:'GST061',name:'Live in Pants | Deep',brand:'groovy',category:'GST',needsPattern:true,active:true,patternId:'ptn_0009'}],
+      ['articles/GST062',{code:'GST062',name:'Live in Pants | Cool',brand:'groovy',category:'GST',needsPattern:true,active:true,patternId:null}],
+      ['articles/GHW001',{code:'GHW001',name:'Cap',brand:'groovy',category:'GHW',needsPattern:false,active:true,patternId:null}]
+    ]);
+    Object.keys(extra||{}).forEach(k=>st.set(k,extra[k]));
+    return st;
+  }
+
+  s.section('M6 · off by default — a PO carries nothing until an owner turns it on');
+  {
+    const {a}=poApp(poStore());
+    await a.run('_ptnPoEnsure()');
+    s.eq('the switch reads off with no settings doc',a.run('ptnPoIntegrationOn()'),false);
+    s.eq('…so no fields are stamped',J(await a.run("window.ptnPoFieldsFor('GST060')")),J({}));
+    s.eq('…the traveler keeps the free text exactly',a.run("window.ptnPoTravelerPattern({code:'GST060',pattern:'old sheet 12'})"),'old sheet 12');
+    s.eq('…and the detail row defers to it',a.run("window.ptnPoPatternRow({code:'GST060',pattern:'old sheet 12'})"),'');
+  }
+
+  s.section('M6 · on — the block and its home reach the PO');
+  {
+    const {a,store}=poApp(poStore(),SESS.afnan,{poIntegration:true});
+    await a.run('_ptnPoEnsure()');
+    s.eq('on',a.run('ptnPoIntegrationOn()'),true);
+    s.eq('an assigned article stamps id, code and hook',J(await a.run("window.ptnPoFieldsFor('GST060')")),J({patternId:'ptn_0007',patternCode:'PTN-0007',patternHook:'Hook 3 / Slot 2'}));
+    s.eq('lower case is fine',(await a.run("window.ptnPoFieldsFor('gst060')")).patternCode,'PTN-0007');
+    s.eq('an unassigned article CLEARS the fields rather than leaving a stale link',J(await a.run("window.ptnPoFieldsFor('GST062')")),J({patternId:null,patternCode:'',patternHook:''}));
+    s.eq('a retired block is no block',J(await a.run("window.ptnPoFieldsFor('GST061')")),J({patternId:null,patternCode:'',patternHook:''}));
+    s.eq('a cap too',(await a.run("window.ptnPoFieldsFor('GHW001')")).patternCode,'');
+    s.eq('an unknown code too',(await a.run("window.ptnPoFieldsFor('NOPE9')")).patternCode,'');
+    // traveler + detail row
+    s.eq('the traveler shows the block and where it hangs',a.run("window.ptnPoTravelerPattern({code:'GST060',patternId:'ptn_0007',pattern:''})"),'PTN-0007 · Hook 3 / Slot 2');
+    s.eq('…and keeps a typed note alongside it',a.run("window.ptnPoTravelerPattern({code:'GST060',patternId:'ptn_0007',pattern:'sheet 12'})"),'PTN-0007 · Hook 3 / Slot 2 · sheet 12');
+    s.eq('a PO whose article has no block still prints what was typed',a.run("window.ptnPoTravelerPattern({code:'GST062',pattern:'sheet 12'})"),'sheet 12');
+    s.eq('an OLD PO with no patternId is resolved through its article code',a.run("window.ptnPoTravelerPattern({code:'GST060',pattern:''})"),'PTN-0007 · Hook 3 / Slot 2');
+    s.ok('the detail row is escaped',/&lt;b&gt;/.test(a.run("window.ptnPoPatternRow({code:'GST060',patternId:'ptn_0007',pattern:'<b>x</b>'})")));
+    s.eq('a block off the rack says so on the traveler',a.run("_ptnBlock('ptn_0007').hook=null;window.ptnPoTravelerPattern({code:'GST060',patternId:'ptn_0007',pattern:''})"),'PTN-0007');
+  }
+
+  s.section('M6 · the warning banner — loud, and only a warning');
+  {
+    const st=poStore({'pattern_notices/n1':{patternId:'ptn_0007',patternCode:'PTN-0007',revisionN:2,summary:'Hem shortened',lines:['M · hem: 29 → 28.5'],articleCodes:['GST060'],status:'open',raisedAt:'2026-09-17'},
+      'pattern_notices/n2':{patternId:'ptn_0007',patternCode:'PTN-0007',revisionN:1,summary:'Old one',lines:[],articleCodes:[],status:'acknowledged',raisedAt:'2026-09-16'}});
+    const {a}=poApp(st,SESS.afnan,{poIntegration:true});
+    await a.run('_ptnPoEnsure()');
+    s.eq('open notices for the PO\'s block, acknowledged ones ignored',J(a.run("ptnPoOpenNotices({code:'GST060'}).map(n=>n.revisionN)")),J([2]));
+    s.eq('a PO for another article is unaffected',a.run("ptnPoOpenNotices({code:'GST062'}).length"),0);
+    const slot=a.run("window.ptnPoBannerSlot({id:'PO-1',code:'GST060'})");
+    s.ok('the slot is a synchronous placeholder — no PO render waits on a read',/^<div id="ptn-po-banner-PO-1"><\/div>$/.test(slot));
+    await new Promise(r=>setTimeout(r,10));
+    const html=a.el('ptn-po-banner-PO-1').innerHTML;
+    s.ok('it paints the pattern strip with the code and the hook',/ptn-po-strip/.test(html)&&/PTN-0007/.test(html)&&/Hook 3 \/ Slot 2/.test(html));
+    s.ok('…and the warning, naming the revision and what moved',/ptn-po-warn/.test(html)&&/revision 2/.test(html)&&/Hem shortened/.test(html)&&/M · hem: 29 → 28\.5/.test(html));
+    s.ok('…saying plainly that it does not block',/warning, not a block/.test(html));
+    const {a:b}=poApp(poStore(),SESS.afnan,{poIntegration:true});
+    await b.run('_ptnPoEnsure()');
+    b.run("window.ptnPoBannerSlot({id:'PO-2',code:'GST060'})");
+    await new Promise(r=>setTimeout(r,10));
+    s.ok('with no open notice: the strip, no warning',/ptn-po-strip/.test(b.el('ptn-po-banner-PO-2').innerHTML)&&!/ptn-po-warn/.test(b.el('ptn-po-banner-PO-2').innerHTML));
+    const {a:c}=poApp(poStore(),SESS.afnan);
+    c.run("window.ptnPoBannerSlot({id:'PO-3',code:'GST060'})");
+    await new Promise(r=>setTimeout(r,10));
+    s.eq('switched off: nothing at all',c.el('ptn-po-banner-PO-3').innerHTML,'');
+  }
+
+  s.section('M6 · coverage and the switch');
+  {
+    const {a,store,meta}=poApp(poStore(),SESS.afnan);
+    await a.run('_ptnPoEnsure()');
+    const c=a.run('ptnCoverage()');
+    s.eq('counts GROOVY articles needing a pattern: GST060 assigned, 061 retired-so-no, 062 none; the cap is out',J([c.done,c.need,c.pct]),J([1,3,33]));
+    s.ok('the card shows the percentage and that it is off',/33%/.test(a.run('_ptnCoverageCardHTML()'))&&/<b>Off\.<\/b>/.test(a.run('_ptnCoverageCardHTML()')));
+    a.state.confirms.length=0;
+    await a.run('window.ptnSetPoIntegration(true)');
+    s.ok('turning it on below 100% ASKS first and says how many are missing',a.state.confirms.some(x=>/33% coverage/.test(x)&&/2 articles still have no pattern/.test(x)));
+    s.eq('…and writes the switch',J([store.get('settings/pattern_hub').poIntegration,a.run('ptnPoIntegrationOn()')]),J([true,true]));
+    s.ok('the card now reads On',/<b style="color:var\(--green\)">On\.<\/b>/.test(a.run('_ptnCoverageCardHTML()')));
+    await a.run('window.ptnSetPoIntegration(false)');
+    s.eq('turning it off needs no confirm',store.get('settings/pattern_hub').poIntegration,false);
+  }
+  {
+    const {a,store,meta}=poApp(poStore(),SESS.mustafa);
+    await a.run('_ptnPoEnsure()');
+    s.ok('a manager sees the dial but not the switch',/33%/.test(a.run('_ptnCoverageCardHTML()'))&&!/ptnSetPoIntegration/.test(a.run('_ptnCoverageCardHTML()')));
+    await a.run('window.ptnSetPoIntegration(true)');
+    s.eq('…and cannot flip it',(meta.sets||0),0);
+    s.ok('…and is told who can',a.state.toasts.some(t=>/An owner turns this on/.test(t)));
+    const {a:u}=poApp(poStore(),SESS.uzaib);
+    s.eq('cutting sees no dial at all',u.run('_ptnCoverageCardHTML()'),'');
+  }
+
+  s.section('M6 · js/pos.js stays a cross-track file — four guarded calls, nothing else');
+  {
+    const pos=read('js/pos.js');
+    const uses=(pos.match(/window\.ptnPo[A-Za-z]+/g)||[]).length;
+    const guards=(pos.match(/typeof window\.ptnPo[A-Za-z]+==='function'/g)||[]).length;
+    s.eq('six touch points, and each is a guard plus its call — nothing else',J([guards,uses]),J([6,12]));
+    s.ok('so a pos.js with no Pattern Hub loaded behaves exactly as before',guards*2===uses);
+    s.ok('the free-text pattern box is still written verbatim',/pattern:document\.getElementById\('po-pattern'\)\?\.value\.trim\(\)\|\|''/.test(pos));
+    s.ok('the traveler falls back to it',/ptnPoTravelerPattern\(po\):''\)\|\|po\.pattern\|\|''/.test(pos));
+    s.ok('the banner is on the PO detail AND the cutting screen',(pos.match(/ptnPoBannerSlot\(po\)/g)||[]).length===2);
+    s.ok('rules: settings readable by all, written by an owner',/match \/settings\/\{doc\}\s*\{\s*allow read: if signedIn\(\);\s*allow write: if isOwner\(\);/.test(read('firestore.rules')));
+  }
+
   return s;
 };

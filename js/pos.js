@@ -509,11 +509,12 @@ function renderDetailPage(){
     </div>
   </div>
   ${_reservedBanner}
+  ${typeof window.ptnPoBannerSlot==='function'?window.ptnPoBannerSlot(po):''}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
     <div class="card" style="margin-bottom:0"><div class="card-title">Product</div>
       <div class="info-row"><span class="info-label">Name</span><span style="font-weight:500">${po.name||'—'}</span></div>
       <div class="info-row"><span class="info-label">Code</span><span>${po.code||'—'}</span></div>
-      <div class="info-row"><span class="info-label">Pattern</span><span>${po.pattern||'—'}</span></div>
+      <div class="info-row"><span class="info-label">Pattern</span><span>${(typeof window.ptnPoPatternRow==='function'?window.ptnPoPatternRow(po):'')||po.pattern||'—'}</span></div>
       <div class="info-row"><span class="info-label">Total qty</span><span>${po.qty||'—'} pcs</span></div>
       <div class="info-row"><span class="info-label">Ratio</span><span>${po.ratio||'—'}</span></div>
     </div>
@@ -768,7 +769,12 @@ window.submitPO=async function(){
     const stages={};STAGE_KEYS.forEach(k=>stages[k]={done:false,doneAt:null,doneBy:null,dueDate:document.getElementById('due-'+k)?.value||'',notes:''});
     const bundlingParts=window.getBundleParts();
     const embellishment=_poEmbellishment||{required:false};
+    // Pattern Hub (M6): stamp the block this article is cut from, and where
+    // it hangs, onto the PO. Guarded — no Pattern Hub, no change; the
+    // free-text `pattern` box below is never touched. See js/patterns.js.
+    const _ptnFields=(typeof window.ptnPoFieldsFor==='function'?await window.ptnPoFieldsFor(code).catch(()=>({})):{});
     const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',fabrics:(typeof fabPoSelected==='function'?fabPoSelected():[]),imgFront:imgFrontUrl,imgBack:imgBackUrl,poStatus:PO_STATUS.RESERVED,currentStage:null,stages,bundlingParts,embellishment,notes:document.getElementById('po-notes')?.value.trim()||'',createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
+    Object.assign(payload,_ptnFields);
     await setDoc(doc(db,'pos',poId),payload);
     await logActivity('PO created',`${poId} — ${name} (${qty} pcs)`);
     if(typeof fabPoReserveCommit==='function'){try{await fabPoReserveCommit(poId);}catch(_re){showToast('PO saved, but fabric reservation failed: '+_re.message,true);}}
@@ -856,6 +862,10 @@ window.savePOEdit=async function(fbKey){
     notes:document.getElementById('po-notes')?.value.trim()||'',
     editedBy:session.name,editedAt:new Date().toISOString()
   };
+  // Pattern Hub (M6): re-stamp on edit — the article code can change.
+  if(typeof window.ptnPoFieldsFor==='function'){
+    try{Object.assign(updates,await window.ptnPoFieldsFor(document.getElementById('po-code')?.value||po.code));}catch(e){}
+  }
   const btn=document.getElementById('po-edit-save-btn');if(btn){btn.disabled=true;btn.textContent='Saving…';}
   try{
     await updateDoc(doc(db,'pos',fbKey),updates);
@@ -888,6 +898,7 @@ function renderCuttingWork(po){
   const min=Math.ceil(target*0.8),max=Math.floor(target*1.2);
   const rangeOk=actualTotal>=min&&actualTotal<=max;
   return`<button class="back-btn" onclick="window.showPage('my-work')">← Back to My Work</button>
+  ${typeof window.ptnPoBannerSlot==='function'?window.ptnPoBannerSlot(po):''}
   <div class="page-head"><div class="page-title">PO ${po.id} — Cutting</div><div class="page-sub">${po.name||'—'}</div></div>
   <div class="card"><div class="card-title">Actual cut quantities</div>
     <table class="cut-table"><thead><tr><th>Size</th><th>Target</th><th>Actual Cut</th><th>Variance</th></tr></thead>
@@ -1391,7 +1402,7 @@ window.generatePOPdf=function(fbKey){
     const sizesStr=(activeSizes.length?activeSizes:sizeOrder).join('-');
     return window.printDocument({type:'po',filename:`${po.id}.pdf`,data:{
       documentType:'Production Order',documentNumber:po.id,id:po.id,
-      poNumber:po.id,startDate:po.createdAt||'',pattern:po.pattern||'',
+      poNumber:po.id,startDate:po.createdAt||'',pattern:(typeof window.ptnPoTravelerPattern==='function'?window.ptnPoTravelerPattern(po):'')||po.pattern||'',
       articleName:po.name||'',articleCode:po.code||'',sizes:sizesStr,
       fabricName:po.fabric||'',fabricCode:po.fabricCode||'',
       totalQty:po.qty!=null?String(po.qty):'',ratio:po.ratio||'',
