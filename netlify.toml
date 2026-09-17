@@ -42,6 +42,11 @@
 [functions."marketing-code-rollup"]
   schedule = "30 1 * * *"
 
+# 2:15am UTC = 7:15am PKT — Instagram token health check (bell warning
+# 14 days before expiry; see netlify/functions/instagram-token-refresh.js)
+[functions."instagram-token-refresh"]
+  schedule = "15 2 * * *"
+
 # 2am UTC Saturday = 7am PKT — weekly close rollup
 [functions."shopify-weekly-close"]
   schedule = "0 2 * * 6"

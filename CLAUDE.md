@@ -3049,6 +3049,69 @@ page's "Check Shopify access", which asks Shopify directly).
     in-memory Firestore (replacing `firebase-admin` through
     `Module._load`) and a scripted Shopify. The gate was verified by
     removing it: two assertions fail.
+- **Instagram auto-fetch (Sept 2026).** "Fetch from Instagram" on the
+  creator form fills followers and average likes / comments / views through
+  **Instagram Business Discovery**, called with GRVY's OWN Business account
+  (`17841409780333939`, Meta app "API GRVY Ops" `2573791029752857`). An app
+  that only serves a business its owner manages gets **Standard Access with
+  no App Review**, so there is no "pending review" state anywhere — it is
+  live as soon as the env vars are set. Confirmed working by Ammar in Graph
+  API Explorer before it was built.
+  - `netlify/functions/instagram-business-discovery.js` — POST, the caller's
+    ID token is verified and checked against the SAME `MARKETING_EMAILS` the
+    discount function exports. `lookup` returns followers and the averages
+    over the posts Instagram returns (each average over the posts that carry
+    that number — a hidden like count is not a zero); `status` reports the
+    token's health. The username is validated (`[a-z0-9._]{1,30}`) before it
+    goes into the field expansion.
+  - **Not found is a normal answer, not an error.** Business Discovery's one
+    failure shape (code 110 / subcode 2207013, "Cannot find User") does not
+    tell a Personal account from a typo, so the message says exactly that:
+    *"Couldn't find a Business or Creator account with that handle — check
+    the spelling, or use manual/screenshot entry if this is a Personal
+    account."* Never assert "this is a Personal account".
+  - **Fetching never saves.** It fills the inputs; the person reviews and
+    presses Save, and any failure leaves the manual fields as they were.
+  - **`data_source` on the creator: `'api' | 'manual' | 'screenshot'`**
+    (null when there are no numbers). `'api'` is **never taken on the form's
+    word** — `mktDataSource` records it only when the saved numbers equal
+    the last fetch exactly, so editing a fetched number makes it manual and
+    the Source picker follows along. `api_fetched_at` is when. No rules
+    change: the `creators` rule does not restrict fields.
+  - **The token (`netlify/functions/instagram-token-refresh.js`).**
+    `IG_ACCESS_TOKEN` in Netlify is only a SEED. On first use it is
+    exchanged (`fb_exchange_token`, with `META_APP_SECRET`) for a long-lived
+    user token, and `/me/accounts` is asked for the Page linked to GRVY's
+    Instagram — **that Page token is what gets stored**, because Meta's
+    long-lived-token doc (read Sept 2026) says Page tokens obtained this way
+    have no expiry date, and describes **no way to renew an active 60-day
+    user token**. So the spec's "re-exchange before expiry" was replaced by
+    "store a token that does not expire, and check it nightly". If no linked
+    Page is found, the user token is stored with its expiry.
+  - The working token lives in **`integration_secrets/instagram`**, which has
+    **no `firestore.rules` match block** — default-deny, so no client can
+    read or write it (a test fails if a rule or a catch-all ever appears).
+    `shopify_sync_meta/instagram` holds the readable status, never the
+    token. Every call carries an `appsecret_proof`. **Changing
+    `IG_ACCESS_TOKEN` re-seeds automatically** (the stored doc keeps a
+    fingerprint of its seed) — after a redeploy, since Netlify env changes
+    only reach functions on the next deploy. A token Meta rejects (code 190)
+    is re-seeded once and the lookup retried.
+  - **Nightly check** (`15 2 * * *`, 7:15am PKT): `debug_token`, then a bell
+    to afnan and ammar if the token is invalid or expires within 14 days
+    (high priority at 3), with deterministic ids so it is raised once.
+    Reports → **Instagram connection → Check Instagram access** shows the
+    same thing on demand.
+  - Env vars: **`IG_ACCESS_TOKEN`, `META_APP_SECRET`** required;
+    `META_APP_ID` and `IG_BUSINESS_ACCOUNT_ID` optional (default to the ids
+    above — ids are public, the secret is not). Unset → "not set up" on the
+    form and the Reports card, never a crash. Graph API **`v26.0`** — the
+    newest version `graph.facebook.com` recognised when probed.
+  - `tests/instagram.test.js` runs both functions against a scripted Graph
+    and an in-memory Firestore. **Unverified against the live API**: the
+    first real lookup is the test, and so is whether `/me/accounts` returns
+    the linked Page for the token Ammar generates (it needs
+    `pages_show_list`, which was granted).
 - **`tests/smoke-layout.js` now runs Chrome in a bounded pool** (default
   min(8, CPUs), `SMOKE_LAYOUT_CONCURRENCY` to override). With 14 fragments
   it launched 84 Chromes at once and most timed out on a Windows machine,
@@ -3643,7 +3706,8 @@ worldwide with a single `curl`. Treat them as published, always.
   then add a `USER_DEFS` entry (no password) and a `firestore.rules` entry
   if the role needs scoping.
 - **The real secrets are server-side and must stay there** — Netlify
-  Functions read `SHOPIFY_CLIENT_SECRET`, `POSTEX_API_TOKEN` and
+  Functions read `SHOPIFY_CLIENT_SECRET`, `POSTEX_API_TOKEN`,
+  `META_APP_SECRET`, `IG_ACCESS_TOKEN` and
   `FIREBASE_SERVICE_ACCOUNT` from `process.env`. Never move one client-side.
 - **The Firebase web API key in `index.html` is not a secret.** It is a
   public project identifier that every Firebase web app ships. Do not try

@@ -267,6 +267,30 @@ function mktNicheLibrary(list){
   return Array.from(seen.values());
 }
 
+// Where the tiering numbers came from. 'api' is never taken on the form's
+// word: it is only recorded when the numbers saved are EXACTLY the ones the
+// last Instagram fetch returned, so editing a fetched number makes it manual.
+const MKT_DATA_SOURCES=[{k:'manual',label:'Typed in'},{k:'screenshot',label:'From a screenshot'},{k:'api',label:'Instagram (fetched)'}];
+function _mktApiValues(raw){
+  if(!raw)return null;
+  let o=raw;
+  if(typeof raw==='string'){try{o=JSON.parse(raw);}catch(_){return null;}}
+  if(!o||typeof o!=='object')return null;
+  const out={};
+  for(const k of _MKT_TIERING_FIELDS)out[k]=mktNum(o[k]);
+  return out;
+}
+/** 'api' | 'manual' | 'screenshot' | null for the numbers about to be saved. Pure. */
+function mktDataSource(nums,old,form){
+  const o=old||{},f=form||{};
+  if(_MKT_TIERING_FIELDS.every(k=>nums[k]==null))return null;
+  const unchanged=_MKT_TIERING_FIELDS.every(k=>nums[k]===(o[k]==null?null:o[k]));
+  const api=_mktApiValues(f.api_values);
+  if(api&&_MKT_TIERING_FIELDS.every(k=>nums[k]===api[k]))return'api';
+  if(unchanged&&o.data_source&&!api)return o.data_source;
+  return f.data_source==='screenshot'?'screenshot':'manual';
+}
+
 function _mktNewId(){return'cr_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);}
 
 /**
@@ -319,6 +343,10 @@ function mktBuildCreatorPayload(form,existing,rawCfg,now,uid){
   data.follower_count_updated_at=(nums.follower_count!==(old.follower_count==null?null:old.follower_count))?now:(old.follower_count_updated_at||null);
   const metricsChanged=['avg_views','avg_likes','avg_comments'].some(k=>nums[k]!==(old[k]==null?null:old[k]));
   data.metrics_updated_at=metricsChanged?now:(old.metrics_updated_at||null);
+  data.data_source=mktDataSource(nums,old,f);
+  // A fresh fetch stamps the time even when the numbers came back the same.
+  data.api_fetched_at=data.data_source!=='api'?null
+    :(_mktApiValues(f.api_values)?now:(old.api_fetched_at||null));
   Object.assign(data,mktScoreFields(Object.assign({},data,{tier:override||null}),rawCfg,now));
   if(!override)data.tier=data.tier_formula;
   data.updated_at=now;
@@ -617,6 +645,7 @@ window.mktOpenCreator=function(id){
   const cityOpts=['<option value="">—</option>']
     .concat(cityKnown?[]:[`<option value="${v('city')}" selected>${v('city')} (not on the list)</option>`])
     .concat(MKT_PK_CITIES.map(ct=>`<option value="${_mktEsc(ct)}"${c&&c.city===ct?' selected':''}>${_mktEsc(ct)}</option>`)).join('');
+  const srcNow=(c&&c.data_source)||'manual';
   const ovTier=c&&c.tier_is_override?c.tier:'';
   const lifetime=c?`<div class="mkt-section">
       <div class="mkt-section-title">Lifetime</div>
@@ -657,6 +686,14 @@ window.mktOpenCreator=function(id){
     </div>
     <div class="mkt-section">
       <div class="mkt-section-title">Tiering inputs</div>
+      <div class="mkt-actions mkt-ig-row">
+        <button type="button" class="btn-outline" id="mkt-ig-fetch" onclick="window.mktFetchInstagram()">Fetch from Instagram</button>
+        <label class="mkt-ig-src" for="mkt-f-source">Source
+          <select id="mkt-f-source">${MKT_DATA_SOURCES.map(o=>`<option value="${o.k}"${srcNow===o.k?' selected':''}${o.k==='api'&&srcNow!=='api'?' disabled':''}>${o.label}</option>`).join('')}</select>
+        </label>
+      </div>
+      <div id="mkt-ig-status" class="mkt-note" aria-live="polite">Fetch works for Business and Creator accounts. For a Personal account, type the numbers in (or copy them from a screenshot).</div>
+      <input type="hidden" id="mkt-f-api" value="">
       <div class="form-grid mkt-grid-4">
         <div class="field"><label for="mkt-f-followers">Followers</label><input id="mkt-f-followers" value="${v('follower_count')}" inputmode="numeric" placeholder="e.g. 24500 or 24.5k" oninput="window.mktPreviewScore()"></div>
         <div class="field"><label for="mkt-f-views">Avg views</label><input id="mkt-f-views" value="${v('avg_views')}" inputmode="numeric" oninput="window.mktPreviewScore()"></div>
@@ -664,7 +701,7 @@ window.mktOpenCreator=function(id){
         <div class="field"><label for="mkt-f-comments">Avg comments</label><input id="mkt-f-comments" value="${v('avg_comments')}" inputmode="numeric" oninput="window.mktPreviewScore()"></div>
       </div>
       <div id="mkt-score-preview" class="mkt-preview" aria-live="polite"></div>
-      ${c?`<div class="mkt-note">Followers as of ${_mktWhen(c.follower_count_updated_at)} · metrics as of ${_mktWhen(c.metrics_updated_at)}</div>`:''}
+      ${c?`<div class="mkt-note">Followers as of ${_mktWhen(c.follower_count_updated_at)} · metrics as of ${_mktWhen(c.metrics_updated_at)}${c.data_source?' · '+_mktEsc(_mktSourceLabel(c.data_source))+(c.data_source==='api'&&c.api_fetched_at?' '+_mktWhen(c.api_fetched_at):''):''}</div>`:''}
     </div>
     <div class="mkt-section">
       <div class="mkt-section-title">Manual tier</div>
@@ -699,7 +736,8 @@ function _mktReadForm(){
     address:_mktVal('mkt-f-address'),top_size:_mktVal('mkt-f-top'),bottom_size:_mktVal('mkt-f-bottom'),
     follower_count:_mktVal('mkt-f-followers'),avg_views:_mktVal('mkt-f-views'),
     avg_likes:_mktVal('mkt-f-likes'),avg_comments:_mktVal('mkt-f-comments'),
-    tier_override:_mktVal('mkt-f-override'),tier_override_reason:_mktVal('mkt-f-reason')
+    tier_override:_mktVal('mkt-f-override'),tier_override_reason:_mktVal('mkt-f-reason'),
+    data_source:_mktVal('mkt-f-source'),api_values:_mktVal('mkt-f-api')
   };
 }
 
@@ -707,12 +745,99 @@ window.mktPreviewScore=function(){
   const el=document.getElementById('mkt-score-preview');
   if(!el)return;
   const f=_mktReadForm();
+  _mktSyncSource(f);
   const r=mktScore({follower_count:f.follower_count,avg_views:f.avg_views,avg_likes:f.avg_likes,avg_comments:f.avg_comments},mktScoringConfig);
   if(r.score==null){el.innerHTML='<span class="mkt-muted">Enter followers, avg likes and avg comments to calculate a score. Avg views is optional.</span>';return;}
   const tierLabel=r.tier==='below_threshold'?'Below threshold':'Tier '+r.tier;
   const ov=f.tier_override?` · shown as <b>${_mktEsc(f.tier_override==='below_threshold'?'Below threshold':'Tier '+f.tier_override)}</b> (manual)`:'';
   el.innerHTML=`<b>${r.score}/100 · ${tierLabel}</b>${ov}<span class="mkt-muted"> — reach ${r.parts.reach} + engagement ${r.parts.engagement} (${_mktPct(r.engagement_rate)}) + view-through ${r.parts.view_through}${r.view_through==null?' (no view data)':' ('+_mktPct(r.view_through)+')'}${r.floored?' · engagement is under the floor, so the tier is forced to Below threshold':''}</span>`;
 };
+
+function _mktSourceLabel(k){const o=MKT_DATA_SOURCES.find(x=>x.k===k);return o?o.label:'';}
+
+// Once numbers are fetched, the Source picker follows them: edit one and it
+// becomes "Typed in"; put it back and it is "Instagram" again.
+function _mktSyncSource(f){
+  const sel=document.getElementById('mkt-f-source');
+  const api=_mktApiValues(f.api_values);
+  if(!sel||!api)return;
+  const nums={};
+  for(const k of _MKT_TIERING_FIELDS)nums[k]=mktNum(f[k]);
+  const match=_MKT_TIERING_FIELDS.every(k=>nums[k]===api[k]);
+  const apiOpt=sel.querySelector?sel.querySelector('option[value="api"]'):null;
+  if(apiOpt)apiOpt.disabled=!match;
+  if(match)sel.value='api';
+  else if(sel.value==='api')sel.value='manual';
+}
+
+const MKT_IG_ENDPOINT='/.netlify/functions/instagram-business-discovery';
+async function mktCallInstagram(action,extra){
+  if(typeof auth==='undefined'||!auth||!auth.currentUser)throw new Error('You are signed out — sign in again.');
+  const idToken=await auth.currentUser.getIdToken();
+  const res=await fetch(MKT_IG_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(Object.assign({idToken,action},extra||{}))});
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok){const e=new Error(data.error||('Request failed ('+res.status+')'));e.status=res.status;throw e;}
+  return data;
+}
+
+let _mktIgBusy=false;
+function _mktIgStatus(msg,isError){
+  const el=document.getElementById('mkt-ig-status');
+  if(!el)return;
+  el.className=isError?'mkt-error':'mkt-note';
+  el.textContent=msg;
+}
+/**
+ * Fill the tiering inputs from Instagram. Never saves anything — the person
+ * still reviews and presses Save. Any failure leaves the fields as they were
+ * and says why, so manual entry is always the way on.
+ */
+window.mktFetchInstagram=async function(){
+  if(_mktIgBusy)return;
+  const handle=mktNormHandle(_mktVal('mkt-f-handle'));
+  if(!handle){_mktIgStatus('Enter the Instagram handle first.',true);return;}
+  const btn=document.getElementById('mkt-ig-fetch');
+  _mktIgBusy=true;if(btn){btn.disabled=true;btn.textContent='Fetching…';}
+  _mktIgStatus('Asking Instagram about @'+handle+'…');
+  try{
+    const r=await mktCallInstagram('lookup',{username:handle});
+    if(!r.found){
+      _mktIgStatus(r.message||'Instagram did not return that account. Enter the numbers by hand.',true);
+      const api=document.getElementById('mkt-f-api');if(api)api.value='';
+      const sel=document.getElementById('mkt-f-source');
+      if(sel){if(sel.value==='api')sel.value='manual';const o=sel.querySelector?sel.querySelector('option[value="api"]'):null;if(o)o.disabled=true;}
+      return;
+    }
+    const set=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v==null?'':String(v);};
+    set('mkt-f-followers',r.follower_count);
+    set('mkt-f-likes',r.avg_likes);
+    set('mkt-f-comments',r.avg_comments);
+    set('mkt-f-views',r.avg_views);
+    const nameEl=document.getElementById('mkt-f-name');
+    if(nameEl&&!nameEl.value.trim()&&r.name)nameEl.value=r.name;
+    const api={};
+    for(const k of _MKT_TIERING_FIELDS)api[k]=r[k]==null?null:r[k];
+    set('mkt-f-api',JSON.stringify(api));
+    window.mktPreviewScore();
+    _mktIgStatus(mktIgFetchSummary(r,handle));
+  }catch(e){
+    console.warn('[marketing] instagram fetch failed',e);
+    const m=(e&&e.message)||'The fetch failed.';
+    _mktIgStatus(m+(/by hand/.test(m)?'':' Enter the numbers by hand.'),true);
+  }finally{
+    _mktIgBusy=false;
+    if(btn){btn.disabled=false;btn.textContent='Fetch from Instagram';}
+  }
+};
+/** One line saying what the averages are made of. Pure. */
+function mktIgFetchSummary(r,handle){
+  const bits=['Fetched @'+(r.username||handle)];
+  bits.push(r.posts_sampled?'averages over the last '+r.posts_sampled+' post'+(r.posts_sampled===1?'':'s'):'no posts to average');
+  if(r.posts_sampled&&r.avg_views==null)bits.push('none of them report views');
+  else if(r.views_sampled&&r.views_sampled<r.posts_sampled)bits.push('views from '+r.views_sampled+' of them');
+  return bits.join(' · ')+'. Check the numbers, then save.';
+}
 
 function _mktFormError(msg){
   const e=document.getElementById('mkt-f-error');
@@ -2253,6 +2378,7 @@ function renderMarketingReports(){
     <div class="card"><div class="card-title">Best performing — organic</div>${_mktOrganicHTML()}</div>
     <div class="card"><div class="card-title">Sales lift on dispatched products</div><div id="mkt-rep-lift">${_mktLiftHTML()}</div></div>
     <div class="card"><div class="card-title">Shopify connection</div><div id="mkt-rep-shopify">${_mktShopifyHTML()}</div></div>
+    <div class="card"><div class="card-title">Instagram connection</div><div id="mkt-rep-ig">${_mktIgConnHTML()}</div></div>
     <div style="height:80px"></div>`;
 }
 
@@ -2862,6 +2988,29 @@ window.mktCopyCode=function(code){
     if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(code).then(done,()=>showToast('Copy failed — select the code and copy it by hand',true));return;}
   }catch(_){}
   showToast('Copy failed — select the code and copy it by hand',true);
+};
+
+// ── Instagram connection (Reports) ──────────────────────────────────────
+let _mktIgConn=null;
+function _mktIgConnHTML(){
+  const s=_mktIgConn;
+  let line='<div class="mkt-note">"Fetch from Instagram" on a creator reads their numbers through GRVY&#39;s own Business account. The token is checked every night, and the bell warns 14 days before it expires.</div>';
+  if(s&&s.checking)line='<div class="mkt-note">Checking…</div>';
+  else if(s&&s.configured===false)line='<div class="mkt-error">Not set up: IG_ACCESS_TOKEN and META_APP_SECRET need to be added in Netlify (then redeploy).</div>';
+  else if(s&&s.error&&s.configured!==true)line=`<div class="mkt-error">${_mktEsc(s.error)}</div>`;
+  else if(s&&!s.valid)line=`<div class="mkt-error">Meta does not accept the token${s.error?' ('+_mktEsc(s.error)+')':''}. Generate a new one in Graph API Explorer and replace IG_ACCESS_TOKEN in Netlify, then redeploy.</div>`;
+  else if(s){
+    const exp=s.days_left==null?'does not expire':'expires in '+s.days_left+' day'+(s.days_left===1?'':'s');
+    line=`<div class="mkt-note"><b class="mkt-up">Ready</b> — ${s.kind==='page'?'Page token':'user token'}, ${exp}.${s.has_scope===false?' <span class="mkt-error">The token is missing instagram_basic or pages_show_list.</span>':''}</div>`;
+  }
+  return`${line}<div class="mkt-actions" style="margin-top:8px"><button class="btn-outline" id="mkt-ig-check" onclick="window.mktCheckInstagram()">Check Instagram access</button></div>`;
+}
+window.mktCheckInstagram=async function(){
+  const paint=()=>{const el=document.getElementById('mkt-rep-ig');if(el)el.innerHTML=_mktIgConnHTML();};
+  _mktIgConn={checking:true};paint();
+  try{_mktIgConn=await mktCallInstagram('status');}
+  catch(e){_mktIgConn={error:'Could not check: '+((e&&e.message)||'unknown error')};}
+  paint();
 };
 
 // ── Shopify connection (Reports) ────────────────────────────────────────
