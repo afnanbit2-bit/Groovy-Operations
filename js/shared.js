@@ -704,7 +704,7 @@ function _salesTeamNavHTML(groups){
 
    To roll out to everyone: return true. This is a NAV-ONLY gate —
    firestore.rules already lets any signed-in user create and read pages. */
-const _CREATIVE_HUB_USERS=['afnan','ammar'];
+const _CREATIVE_HUB_USERS=['afnan','ammar','sami'];
 function _canSeeCreativeHub(){
   return !!(typeof session!=='undefined'&&session&&_CREATIVE_HUB_USERS.indexOf(session.u)>-1);
 }
@@ -716,6 +716,16 @@ function buildNav(){
     const sb=document.getElementById('sidebar');
     if(sb)sb.innerHTML=_salesTeamNavHTML(_salesTeamGroups()).replace(/^\s*<div class="nav-divider"><\/div>/,'')
       +`<div class="nav-divider"></div><div class="nav-item" id="nav-shopify-intel" onclick="window.showPage('shopify-intel')">Inventory Intel</div>`;
+    _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
+    return;
+  }
+  // CSR Team Lead (Sami) — six read-mostly pages; scoped in showPage too.
+  if(session.role==='csr_lead'){
+    const sb=document.getElementById('sidebar');
+    const item=(id,label)=>`<div class="nav-item${id==='dashboard'?' on':''}" id="nav-${id}" onclick="window.showPage('${id}')">${label}</div>`;
+    if(sb)sb.innerHTML=item('dashboard','Dashboard')+item('qc-disposition','QC Disposition')+item('bstock','B-Stock')
+      +item('fabric-inventory','Fabric Inventory')+item('shopify-intel','Inventory Intel')
+      +(_canSeeCreativeHub()?item('creative-hub','Creative Hub'):'');
     _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
     return;
   }
@@ -898,6 +908,18 @@ function _renderMobNav(ctx){
     _updateMobNavActive(currentPage);
     return;
   }
+  if(session&&session.role==='csr_lead'){
+    // CSR Team Lead: Home · QC · B-Stock · Fabric · More (Intel, Creative Hub).
+    mob.className='';
+    mob.style.gridTemplateColumns='';
+    mob.innerHTML=_mobNavBtn('dashboard','home','Home',"window.showPage('dashboard')")
+                 +_mobNavBtn('qc-disposition','list','QC',"window.showPage('qc-disposition')")
+                 +_mobNavBtn('bstock','tray','B-Stock',"window.showPage('bstock')")
+                 +_mobNavBtn('fabric-inventory','box','Fabric',"window.showPage('fabric-inventory')")
+                 +_mobNavBtn('more','more','More','window.openCsrMoreSheet()');
+    _updateMobNavActive(currentPage);
+    return;
+  }
   if(session&&session.role==='packing'){
     // Packing (Faizan): Packing + B-stock (Ready-to-Barcode arrives later).
     mob.className='cols-3';
@@ -1002,6 +1024,11 @@ window.toggleHRMNav=function(){
 };
 
 // ── Mobile bottom-sheet menu ──
+window.openCsrMoreSheet=function(){
+  const items=[{iconName:'shop',label:'Inventory Intel',pageId:'shopify-intel'}];
+  if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'});
+  window.openMobSheet('More',items);
+};
 window.openMobSheet=function(title,items){
   const sheet=document.getElementById('mob-sheet');
   const back=document.getElementById('mob-sheet-backdrop');
@@ -1147,6 +1174,10 @@ window.showPage=async function(id){
   // action this grant must be revisited (logged in the Inventory
   // Intelligence change request).
   if(session&&session.role==='creator_content_ops_lead'&&!String(id).startsWith('mkt-')&&id!=='shopify-intel'&&_CHROME_PAGES.indexOf(id)<0)id='mkt-creators';
+  // CSR Team Lead: CSR_LEAD_PAGES (js/auth.js, which loads after this file —
+  // hence typeof; an unparsed auth.js fails CLOSED to the dashboard).
+  if(session&&session.role==='csr_lead'&&_CHROME_PAGES.indexOf(id)<0
+     &&!(typeof CSR_LEAD_PAGES!=='undefined'&&CSR_LEAD_PAGES.indexOf(id)>-1))id='dashboard';
   currentPage=id;
   document.querySelectorAll('.nav-item,.mob-nav-item').forEach(n=>n.classList.remove('on'));
   document.getElementById('nav-'+id)?.classList.add('on');
