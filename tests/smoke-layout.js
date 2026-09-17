@@ -335,6 +335,35 @@ const FRAGMENTS={
   // carrying every tier chip (including the "manual" badge and an unscored
   // row) and the Needs completion column. The table is allowed to scroll
   // sideways inside its own wrapper at 420px; the page must not.
+  // The Pattern Hub measurement grid. The size headers must sit over their
+  // own input boxes: they were right-aligned in a column stretched to the
+  // full card width while the 64px input sat at its left edge, so every
+  // label drifted ~135px right — the XS label landed over the S box.
+  // NOTE: this probe does not measure ALIGNMENT, only zero-width text,
+  // overflow, hit-testing and contrast. The alignment itself is a one-off
+  // Chromium measurement (135px drift before, 0px after) and is held here
+  // only as the markup rule, in tests/patterns.test.js.
+  'pattern hub — measurement grid':()=>{
+    const LS={getItem:()=>null,setItem(){},removeItem(){}};
+    const tpl={id:'pant',label:'Pants & trousers',poms:[
+      {key:'waist_relaxed',label:'Waist (relaxed)',howTo:'Lay flat. Across the top of the waistband, edge to edge, without stretching.'},
+      {key:'hip',label:'Hip',howTo:'Across the widest point of the seat, lying flat, at the crotch line.'},
+      {key:'inseam',label:'Inseam',howTo:'From the crotch seam down to the bottom of the leg, along the inner seam.'}]};
+    const block={id:'ptn_0004',code:'PTN-0004',name:'LIVE IN PANTS',category:'GST',status:'active',
+      sizeAxis:'alpha',sizes:['XS','S','M','L','XL','2XL'],sampleSize:'M',pomTemplate:'pant',
+      extraPoms:[{key:'cuff',label:'Cuff'}],grid:{M:{hip:22.5}},hook:null,slot:null,
+      fit:'Baggy',tracedBy:'Hassan',createdAt:'2026-09-17'};
+    const mk=session=>{
+      const app=loadApp({files:['js/patterns.js'],currentPage:'pattern-block',session,globals:{localStorage:LS}});
+      app.run('pomTemplates='+JSON.stringify([tpl])+';_ptnPomsLoaded=true;patterns=['+JSON.stringify(block)+'];_ptnBlocksLoaded=true;');
+      return app.run('_ptnGridCardHTML(_ptnBlock("ptn_0004"))');
+    };
+    // The editable grid (an admin) and the read-only one (cutting), since
+    // they build different cells and both have to line up.
+    return mk({uid:'u1',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'})
+         + mk({uid:'u2',u:'uzaib',name:'Uzaib',role:'viewer',email:'uzaib@groovy.op'});
+  },
+
   // The Pattern Hub card on the Dashboard (M7). Four stat tiles in one flex
   // row plus a two-line caption — the same justify/flex shape that crushed
   // the Profile directory's names to 0px, and it has to survive 420px.

@@ -1450,6 +1450,13 @@ let _ptnQueueTab='groups';     // 'groups' | 'all'
 
 function _ptnSlotKey(h,s){return h+'-'+s;}
 function _ptnPad4(n){return 'PTN-'+String(n).padStart(4,'0');}
+// The highest PTN-#### already loaded. The counter can never hand out a
+// number at or below this, whatever the counter document says — a block
+// that exists must never have its code minted a second time. Retired
+// blocks count: the code is spent either way.
+function _ptnCodeFloor(){
+  return patterns.reduce((m,p)=>{const x=/^PTN-(\d+)$/.exec(String((p&&p.code)||''));return x?Math.max(m,parseInt(x[1],10)):m;},0);
+}
 function _ptnBlock(id){return patterns.find(p=>p.id===id)||null;}
 // A RETIRED block is "no block" for every article pointing at it — the
 // link stays on the article (inert, no write) but the article is back in
@@ -1712,10 +1719,20 @@ window.ptnNewBlockFor=function(i){
   window.ptnNewBlock({name:_ptnSuggestName(c.key),category:cat?cat.prefix:'',codes:c.articles.map(a=>a.code),sizeAxis:axisGuess});
 };
 
-// Create: PTN-#### from counters/main (getNextId, js/shared.js), then ONE
-// transaction that refuses a taken slot and writes the block + its lock.
-// A number spent on a refused transaction is simply skipped — a gap in
-// PTN numbering is harmless, a double-booked slot is not.
+// Create: the number and the block are minted in ONE transaction.
+//
+// It used to call getNextId('patterns') FIRST — its own transaction, which
+// commits on its own — and only then write the block in a second one. So
+// every failure of the second (a refused write, no connection: a
+// transaction cannot use the offline cache and fails outright) SPENT a
+// number and created nothing, and the next Create jumped. Afnan reported
+// exactly that: "i did not save any … pattern number keeps on bumping up".
+// Reading the counter and writing the block together means a write that
+// does not land never moves the counter.
+//
+// The number is also FLOORED at the highest PTN-#### already loaded, the
+// same guard the article counter carries, so a counter left behind by a
+// hand edit can never hand out a code a block already holds.
 window.ptnSaveBlock=async function(){
   if(!_canManagePatterns()||_ptnBusy||!_ptnBlockForm)return;
   return _ptnSaveBlockData(_ptnReadBlockForm(),_ptnBlockForm);
@@ -1735,15 +1752,24 @@ async function _ptnSaveBlockData(d,f){
       showToast('Saved '+p.code+'.');_ptnLog('Pattern Edited',p.code+' — '+p.name);
       _ptnBlockForm=null;_ptnBusy=false;_ptnBlockId=f.id;window.showPage('pattern-block');return true;
     }
-    if(typeof getNextId!=='function')throw new Error('Counter helper not loaded — refresh the page');
-    const n=await getNextId('patterns');
-    const code=_ptnPad4(n);
-    const id='ptn_'+String(n).padStart(4,'0');
-    const rec=Object.assign({code,hook:null,slot:null,status:'active',grid:{},extraPoms:[],pomTemplate:_ptnGuessTemplate(d.category),createdAt:now,createdBy:by,updatedAt:now,updatedBy:by},d);
+    const floor=_ptnCodeFloor();
+    let code='',id='',rec=null;
     await runTransaction(db,async tx=>{
-      const s=await tx.get(doc(db,'patterns',id));
-      if(s&&typeof s.exists==='function'&&s.exists())throw new Error(code+' already exists');
-      tx.set(doc(db,'patterns',id),rec);
+      // Every read before every write — a transaction requires it.
+      const cref=doc(db,'counters','main');
+      const csnap=await tx.get(cref);
+      const has=csnap&&typeof csnap.exists==='function'?csnap.exists():false;
+      const cur=has?((csnap.data()||{}).patterns||0):0;
+      const n=Math.max(cur,floor)+1;
+      code=_ptnPad4(n);
+      id='ptn_'+String(n).padStart(4,'0');
+      const pref=doc(db,'patterns',id);
+      const psnap=await tx.get(pref);
+      if(psnap&&typeof psnap.exists==='function'&&psnap.exists())throw new Error(code+' already exists — reload the page and try again');
+      rec=Object.assign({code,hook:null,slot:null,status:'active',grid:{},extraPoms:[],pomTemplate:_ptnGuessTemplate(d.category),createdAt:now,createdBy:by,updatedAt:now,updatedBy:by},d);
+      if(has)tx.update(cref,{patterns:n});
+      else tx.set(cref,{pos:0,gatepasses:0,bundles:0,patterns:n});
+      tx.set(pref,rec);
     });
     patterns.push(Object.assign({id},rec));
     showToast('Created '+code+' — '+d.name);_ptnLog('Pattern Created',code+' — '+d.name);
@@ -2027,15 +2053,15 @@ function _ptnGridCardHTML(p){
     const stored=p.grid&&p.grid[s]?p.grid[s][r.key]:undefined;
     const raw=draft&&draft[s]&&draft[s][r.key]!==undefined?draft[s][r.key]:_ptnFmt(stored,units);
     const bad=draft&&draft[s]&&draft[s][r.key]!==undefined&&draft[s][r.key]!==''&&_ptnParseIn(draft[s][r.key],units).bad;
-    return can?`<td style="padding:3px"><input class="ptn-cell${bad?' ptn-cell-bad':''}" data-size="${_ptnEsc(s)}" data-key="${_ptnEsc(r.key)}" value="${_ptnEsc(raw)}" inputmode="decimal" oninput="window.ptnGridInput(this)" style="width:64px;padding:6px 6px;border:1px solid ${bad?'var(--accent-urgent)':'var(--border)'};border-radius:6px;font-family:inherit;font-size:13px;text-align:right;background:var(--surface-2);color:var(--text)"${bad?' title="Not a number — will be left blank"':''}></td>`
-      :`<td style="padding:6px 8px;text-align:right">${_ptnEsc(_ptnFmt(stored,units))||'<span style="color:var(--muted)">—</span>'}</td>`;
+    return can?`<td style="padding:3px;text-align:center"><input class="ptn-cell${bad?' ptn-cell-bad':''}" data-size="${_ptnEsc(s)}" data-key="${_ptnEsc(r.key)}" value="${_ptnEsc(raw)}" inputmode="decimal" oninput="window.ptnGridInput(this)" style="width:64px;padding:6px 6px;border:1px solid ${bad?'var(--accent-urgent)':'var(--border)'};border-radius:6px;font-family:inherit;font-size:13px;text-align:right;background:var(--surface-2);color:var(--text)"${bad?' title="Not a number — will be left blank"':''}></td>`
+      :`<td style="padding:6px 8px;text-align:center">${_ptnEsc(_ptnFmt(stored,units))||'<span style="color:var(--muted)">—</span>'}</td>`;
   };
   const f=_ptnGridFilled(p);
   return`<div class="card" id="ptn-grid-card">
     <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><span>Measurements <span style="font-weight:400;color:var(--muted);font-size:11px">${f.filled} of ${f.total} filled · all points ±${_PTN_TOL_IN} in</span></span>
       <span style="display:flex;gap:6px;align-items:center"><button class="btn-sm" id="ptn-units" onclick="window.ptnToggleUnits()">${units==='cm'?'Showing cm · switch to inches':'Showing inches · switch to cm'}</button></span></div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Template: <b>${_ptnEsc(tpl?tpl.label:(p.pomTemplate||'none'))}</b>${can?` <button class="btn-sm" onclick="window.showPage('pattern-poms')">Edit points of measure</button> <button class="btn-sm" onclick="window.ptnAddExtraPom('${_ptnEsc(p.id)}')">+ Point for this block only</button>`:''}</div>
-    ${rows.length&&sizes.length?`<div style="overflow:auto"><table class="ptn-grid" style="border-collapse:collapse;font-size:13px;min-width:100%"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:6px 8px;position:sticky;left:0;background:var(--surface)">Point of measure</th>${sizes.map(s=>`<th style="padding:6px 8px;text-align:right">${_ptnEsc(s)}</th>`).join('')}</tr></thead>
+    ${rows.length&&sizes.length?`<div style="overflow:auto"><table class="ptn-grid" style="border-collapse:collapse;font-size:13px;min-width:100%"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:6px 8px;position:sticky;left:0;background:var(--surface);width:100%">Point of measure</th>${sizes.map(s=>`<th style="padding:6px 8px;text-align:center;white-space:nowrap">${_ptnEsc(s)}</th>`).join('')}</tr></thead>
       <tbody>${rows.map(r=>`<tr class="ptn-grid-row" data-key="${_ptnEsc(r.key)}" style="border-top:1px solid var(--border);${r.src==='orphan'?'opacity:.6':''}"><td style="padding:6px 8px;position:sticky;left:0;background:var(--surface);white-space:nowrap"><b>${_ptnEsc(r.label)}</b>${r.src==='extra'?' <span class="badge" style="font-size:9.5px">this block</span>':''}${r.src==='orphan'?` <span style="color:var(--accent-warning);font-size:11px">no longer in the template</span>${can?` <button class="btn-sm" onclick="window.ptnClearRow('${_ptnEsc(p.id)}','${_ptnEsc(r.key)}')">clear</button>`:''}`:''}${r.howTo?`<div style="font-size:11px;color:var(--muted);white-space:normal;max-width:260px">${_ptnEsc(r.howTo)}${r.photoUrl?` <a href="${_ptnEsc(r.photoUrl)}" target="_blank" rel="noopener">photo</a>`:''}</div>`:''}${r.src==='extra'&&can?` <button class="btn-sm" onclick="window.ptnRemoveExtraPom('${_ptnEsc(p.id)}','${_ptnEsc(r.key)}')" title="Remove this point from the block (its numbers are kept until cleared)">×</button>`:''}</td>${sizes.map(s=>cell(r,s)).join('')}</tr>`).join('')}</tbody></table></div>`
       :'<div class="empty">No sizes on this block yet — edit the block and tick the sizes in the bundle.</div>'}
     ${can?`<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn-primary" id="ptn-grid-save" ${_ptnBusy||!_ptnGridDirty?'disabled':''} onclick="window.ptnSaveGrid('${_ptnEsc(p.id)}')">Save measurements</button><span id="ptn-grid-status" style="font-size:12px;color:var(--muted)">${_ptnGridDirty?'Unsaved changes':('Values are '+(units==='cm'?'cm (stored as inches)':'inches')+' · quarter-inch steps · type 22.5 or 22 1/2')}</span></div>`:''}

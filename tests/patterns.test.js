@@ -541,13 +541,14 @@ module.exports=async function(){
   // ═════════════════════════════════════════════════════════════════════
   function blocksApp(store,session,extra){
     store=store||new Map();
+    // The counter lives in the store now — the number is minted inside the
+    // same transaction that writes the block, so there is nothing to stub.
+    if(!store.has('counters/main'))store.set('counters/main',{pos:0,gatepasses:0,bundles:0,patterns:41});
     const f=fakeFs(store);
-    let counter=41;
     const globals=Object.assign({},f.globals,{
       getDoc:async r=>({exists:()=>store.has(r.key),data:()=>store.get(r.key)}),
       updateDoc:async(r,p)=>{const cur=store.get(r.key)||{};store.set(r.key,Object.assign({},cur,p));f.meta.updates=(f.meta.updates||0)+1;},
       deleteDoc:async r=>{store.delete(r.key);},
-      getNextId:async()=>(++counter),
       writeBatch:()=>{const ops=[];f.meta.batches=(f.meta.batches||0)+1;return{update(r,p){ops.push(['u',r.key,p]);return this;},set(r,p){ops.push(['s',r.key,p]);return this;},delete(r){ops.push(['d',r.key]);return this;},async commit(){ops.forEach(([op,k,p])=>{if(op==='d')store.delete(k);else store.set(k,Object.assign({},op==='u'?(store.get(k)||{}):{},p));f.meta.batchWrites=(f.meta.batchWrites||0)+1;});}};}
     },extra||{});
     const a=app({session:session||SESS.afnan,globals});
@@ -688,13 +689,15 @@ module.exports=async function(){
   const LSmem=()=>{const m={};return{getItem:k=>(k in m?m[k]:null),setItem(k,v){m[k]=String(v);},removeItem(k){delete m[k];}};};
   function gridApp(store,session,ls){
     store=store||new Map();
+    // 6 → the next block minted is PTN-0007 (the counter is read inside the
+    // block-write transaction now, so there is no getNextId to stub).
+    if(!store.has('counters/main'))store.set('counters/main',{pos:0,gatepasses:0,bundles:0,patterns:6});
     const f=fakeFs(store);
     const globals=Object.assign({},f.globals,{
       localStorage:ls||LSmem(),
       getDoc:async r=>({exists:()=>store.has(r.key),data:()=>store.get(r.key)}),
       updateDoc:async(r,p)=>{const cur=store.get(r.key)||{};store.set(r.key,Object.assign({},cur,p));f.meta.updates=(f.meta.updates||0)+1;},
       setDoc:async(r,p,o)=>{store.set(r.key,Object.assign({},(o&&o.merge&&store.get(r.key))||{},p));f.meta.sets=(f.meta.sets||0)+1;},
-      getNextId:async()=>7,
       writeBatch:()=>{const ops=[];return{set(r,p){ops.push(['s',r.key,p]);return this;},update(r,p){ops.push(['u',r.key,p]);return this;},delete(r){ops.push(['d',r.key]);return this;},async commit(){ops.forEach(([op,k,p])=>{if(op==='d')store.delete(k);else store.set(k,Object.assign({},op==='u'?(store.get(k)||{}):{},p));});f.meta.batches=(f.meta.batches||0)+1;}};}
     });
     const a=app({session:session||SESS.afnan,globals});
@@ -1351,6 +1354,82 @@ module.exports=async function(){
     s.ok('…and actually concatenates it into the page',/\$\{marketingBanner\}\$\{patternBanner\}/.test(emb));
     s.ok("the 'dashboard' dispatch populates it, guarded the same way",/typeof _ptnPopulateDashboard==='function'\)setTimeout\(_ptnPopulateDashboard,0\)/.test(sh));
     s.ok('the populate is on the dashboard line, not somewhere else',/id==='dashboard'[^\n]*_ptnPopulateDashboard/.test(sh));
+  }
+
+
+  s.section('M2 · a failed create never spends a PTN number');
+  {
+    // Reported by Afnan: "i did not save any … pattern number keeps on
+    // bumping up". The mint used to be getNextId('patterns') — its OWN
+    // transaction, committing on its own — followed by a second one that
+    // wrote the block. Any failure of the second (a refused write, or no
+    // connection: a transaction cannot use the offline cache and fails
+    // outright) burned a number and created nothing.
+    const {a,store}=blocksApp();
+    seedArticles(store);
+    await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');
+    const D="{name:'Denim block',category:'GD',fit:'',tracedBy:'',sizeAxis:'waist',sampleSize:'',sizes:['28']}";
+    s.eq('the counter starts at 41',store.get('counters/main').patterns,41);
+
+    const realTx=a.ctx.runTransaction;
+    a.ctx.runTransaction=async()=>{throw new Error('Missing or insufficient permissions');};
+    const bad=await a.run("_ptnSaveBlockData("+D+",{id:null,prefill:{}})");
+    s.eq('the create reports failure',bad,false);
+    s.ok('…and says so out loud',a.state.toasts.some(t=>/Could not save/.test(t)));
+    s.eq('THE COUNTER DID NOT MOVE',store.get('counters/main').patterns,41);
+    s.eq('…and no block was written',store.has('patterns/ptn_0042'),false);
+
+    a.ctx.runTransaction=realTx;
+    const ok=await a.run("_ptnSaveBlockData("+D+",{id:null,prefill:{}})");
+    s.eq('retrying succeeds',ok,true);
+    s.eq('…and takes the number the failed attempt did NOT spend',store.get('patterns/ptn_0042').code,'PTN-0042');
+    s.eq('…moving the counter exactly once',store.get('counters/main').patterns,42);
+  }
+
+  s.section('M2 · the number is floored at the highest block that exists');
+  {
+    // A counter left behind (a hand edit, a restore) must never hand out a
+    // code a block already holds — the same guard the article counter has.
+    const {a,store}=blocksApp(new Map([['counters/main',{patterns:3}],
+      ['patterns/ptn_0009',{code:'PTN-0009',name:'Nine',category:'GST',status:'active',sizes:['M']}],
+      ['patterns/ptn_0011',{code:'PTN-0011',name:'Retired eleven',category:'GST',status:'retired',sizes:['M']}]]));
+    seedArticles(store);
+    await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');
+    s.eq('the floor reads the highest code, retired blocks included',a.run('_ptnCodeFloor()'),11);
+    await a.run("_ptnSaveBlockData({name:'Twelve',category:'GST',fit:'',tracedBy:'',sizeAxis:'alpha',sampleSize:'',sizes:['M']},{id:null,prefill:{}})");
+    s.eq('so the next block is PTN-0012, not PTN-0004',store.get('patterns/ptn_0012').code,'PTN-0012');
+    s.eq('…and the counter catches up rather than staying behind',store.get('counters/main').patterns,12);
+    s.eq('an empty rack floors at 0',blocksApp().a.run('_ptnCodeFloor()'),0);
+  }
+
+  s.section('M3 · the size headers sit over their own boxes');
+  {
+    // Reported with a screenshot: every size label drifted right of its own
+    // input — the XS label landed over the S box. The column was stretched
+    // by min-width:100% while the header was text-align:right and the 64px
+    // input sat at the column's left edge. MEASURED in Chromium: 135px of
+    // drift before, 0 after. Held here as the markup rule that produces it.
+    const tpl={id:'pant',label:'Pants & trousers',poms:[{key:'hip',label:'Hip',howTo:'Across the seat.'}]};
+    const block={id:'ptn_0004',code:'PTN-0004',name:'LIVE IN PANTS',category:'GST',status:'active',
+      sizeAxis:'alpha',sizes:['XS','S','M','L','XL','2XL'],pomTemplate:'pant',extraPoms:[],grid:{},
+      hook:null,slot:null,createdAt:'2026-09-17'};
+    const grid=u=>{
+      const a=app({session:SESS[u]});
+      a.run('pomTemplates='+J([tpl])+';_ptnPomsLoaded=true;patterns=['+J(block)+'];_ptnBlocksLoaded=true;');
+      return a.run('_ptnGridCardHTML(_ptnBlock("ptn_0004"))');
+    };
+    const admin=grid('afnan'),ro=grid('uzaib');
+    const heads=(admin.match(/<th style="[^"]*"[^>]*>(?:XS|S|M|L|XL|2XL)<\/th>/g)||[]);
+    s.eq('one header per size',heads.length,6);
+    s.ok('every size header is centred over its column',heads.every(h=>/text-align:center/.test(h)));
+    s.ok('…and none is right-aligned to the column edge any more',!heads.some(h=>/text-align:right/.test(h)));
+    s.ok('a size header never wraps',heads.every(h=>/white-space:nowrap/.test(h)));
+    s.ok('the point-of-measure column absorbs the slack, so size columns shrink to their box',
+      /Point of measure<\/th>/.test(admin)&&/position:sticky;left:0;background:var\(--surface\);width:100%/.test(admin));
+    const cells=(admin.match(/<td style="padding:3px[^"]*">/g)||[]);
+    s.eq('one input cell per size on the first row',cells.length>=6,true);
+    s.ok('the input box is centred the same way the header is',cells.every(c=>/text-align:center/.test(c)));
+    s.ok('the READ-ONLY grid agrees — it is the same column',/<td style="padding:6px 8px;text-align:center">/.test(ro)&&!/text-align:right/.test(ro.replace(/<input[^>]*>/g,'')));
   }
 
   return s;

@@ -3202,6 +3202,36 @@ notices is still the Me-page button.
 - No `firestore.rules` change; the card reads nothing the module did not
   already read.
 
+**Two things Afnan reported after M7, both real, both fixed.**
+
+- **Every size header sat over the WRONG column.** The grid's `<th>` was
+  `text-align:right` inside a column stretched by `min-width:100%`, while
+  the 64px input sat at the column's LEFT edge — so each label drifted
+  **135px right, MEASURED in headless Chromium** (0 after), and the XS
+  label landed over the S box. The point-of-measure column takes
+  `width:100%` now, so the size columns shrink to their box, and header
+  and cell are both `text-align:center`. `smoke-layout` has a fragment for
+  the grid, but **it does not measure alignment** — only zero-width text,
+  overflow, hit-testing and contrast; the markup rule is asserted in
+  `tests/patterns.test.js`, and the 135px→0 is a one-off measurement.
+- **A PTN number was spent even when nothing was created.** Reported as
+  *"i did not save any … pattern number keeps on bumping up"*. The mint
+  called `getNextId('patterns')` — **its own transaction, which commits on
+  its own** — and only then wrote the block in a second one. Every failure
+  of the second burned a number: a refused write, or simply no connection,
+  since **a `runTransaction` cannot use the offline cache and fails
+  outright** (the Mood Boards Stage 6 lesson, in a new place). The counter
+  read and the block write are now ONE transaction, so a write that does
+  not land never moves the counter — **verified by restoring the old shape
+  and watching the assertion fail (`got 42, expected 41`)**. The number is
+  also floored at the highest `PTN-####` already loaded
+  (`_ptnCodeFloor()`, retired blocks included), the same guard the article
+  counter carries, so a counter left behind by a hand edit can never
+  re-mint a code a block already holds. **Opening and closing the form
+  never touched the counter — only Create did**, so a report of the number
+  moving means a Create was pressed and its write was refused; that now
+  costs nothing.
+
 **M6 (shipped): PO integration — the pattern code and its hook, on the PO.**
 Creating or editing a PO stamps `patternId` / `patternCode` / `patternHook`
 from the article's block; the detail page, the **cutting screen** and the
