@@ -24,7 +24,7 @@ function app(opts){
   return loadApp(Object.assign({
     files:['js/auth.js','js/marketing.js'],
     currentPage:'mkt-creators',
-    session:o.session||{uid:'uid-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op',canApprovePaidPR:true}
+    session:o.session||{uid:'uid-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op',canApprovePaidPR:true,canEditScoring:true}
   },o,{globals:Object.assign({localStorage:LS},o.globals||{})}));
 }
 const J=v=>JSON.stringify(v);
@@ -1441,6 +1441,29 @@ module.exports=async function(){
     s.ok('the start screen says who will be looked up and who is skipped',/1 to look up[\s\S]*1 already fetched/.test(h));
     s.ok('and that Personal accounts are left as they are',/left exactly as it is/.test(h));
     s.ok('the page has the button',/Fetch all from Instagram/.test(t.run('renderMarketingCreators()')));
+  }
+
+  s.section('scoring settings are Ammar\'s');
+  {
+    const lead=app({session:{uid:'uid-d',u:'daniyal',name:'Daniyal',role:'creator_content_ops_lead',email:'daniyal@groovy.op'}});
+    const afnan=app({session:{uid:'uid-a',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'}});
+    const ammar=app();
+    const defs=ammar.run('USER_DEFS');
+    s.eq('only Ammar carries the flag',J(defs.filter(d=>d.canEditScoring===true).map(d=>d.u)),J(['ammar']));
+    for(const t of [lead,afnan,ammar])t.run("mktCreators=[];mktCreatorsLoaded=true");
+    s.ok('Ammar sees the button',/Scoring settings/.test(ammar.run('renderMarketingCreators()')));
+    s.ok('the lead does not',!/Scoring settings/.test(lead.run('renderMarketingCreators()')));
+    s.ok('nor does the other owner',!/Scoring settings/.test(afnan.run('renderMarketingCreators()')));
+    lead.run('window.mktOpenScoring()');
+    s.ok('opening it anyway is refused',lead.state.toasts.some(x=>/managed by Ammar/.test(x)));
+    lead.run("_mktCfgDraft=_mktConfig(null)");
+    await lead.run('window.mktSaveScoring()');
+    s.eq('and so is saving — nothing written',lead.state.writes.length+lead.state.batches.length,0);
+    const rules=read('firestore.rules');
+    const admins=(/function isScoringAdmin\(\)\s*\{[^}]*\[([^\]]*)\]/.exec(rules)||['',''])[1].match(/'([^']+)'/g)||[];
+    s.eq('isScoringAdmin() lists exactly the flagged accounts',J(admins.map(x=>x.replace(/'/g,'')).sort()),J(defs.filter(d=>d.canEditScoring===true).map(d=>d.email).sort()));
+    s.ok('the rules let only the admin write the settings',/match \/scoring_config\/\{doc\} \{\s*allow read: if isMarketing\(\);\s*allow write: if isScoringAdmin\(\);/.test(rules));
+    s.eq('the lead can still score a creator (the bands are read, not written)',lead.run("mktScore({follower_count:10000,avg_likes:100,avg_comments:0},null).score"),25);
   }
 
   return s;

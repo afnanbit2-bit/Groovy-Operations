@@ -397,6 +397,12 @@ service cloud.firestore {
     function isPaidPRApprover() {
       return signedIn() && userEmail() in ['ammar@groovy.op'];
     }
+    // Scoring settings — the accounts whose USER_DEFS entry carries
+    // canEditScoring:true, by email (Ammar). Everyone in Marketing still
+    // READS the bands, since every creator save is scored with them.
+    function isScoringAdmin() {
+      return signedIn() && userEmail() in ['ammar@groovy.op'];
+    }
     function paidPRPath(id) {
       return /databases/$(database)/documents/paid_pr_requests/$(id);
     }
@@ -522,9 +528,10 @@ service cloud.firestore {
       allow write: if false;
     }
     // The scoring bands and tier thresholds — one settings document,
-    // edited in the app.
+    // edited in the app by the scoring admin only.
     match /scoring_config/{doc} {
-      allow read, write: if isMarketing();
+      allow read: if isMarketing();
+      allow write: if isScoringAdmin();
     }
   }
 }

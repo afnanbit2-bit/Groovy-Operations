@@ -521,7 +521,7 @@ function renderMarketingCreators(){
       <div class="mkt-actions">
         <button class="btn-outline" onclick="window.showPage('mkt-import')">Import from sheet</button>
         <button class="btn-outline" onclick="window.mktOpenIgBulk()">Fetch all from Instagram</button>
-        <button class="btn-outline" onclick="window.mktOpenScoring()">Scoring settings</button>
+        ${typeof canEditScoring==='function'&&canEditScoring()?`<button class="btn-outline" onclick="window.mktOpenScoring()">Scoring settings</button>`:''}
         <button class="btn-outline mkt-primary" onclick="window.mktOpenCreator('')">+ Add creator</button>
       </div>
     </div>
@@ -1116,6 +1116,7 @@ window.mktIgBulkRun=async function(opts){
 
 // ── Scoring settings ────────────────────────────────────────────────────
 window.mktOpenScoring=function(){
+  if(typeof canEditScoring!=='function'||!canEditScoring()){showToast('Scoring settings are managed by Ammar.',true);return;}
   _mktCfgDraft=JSON.parse(JSON.stringify(_mktConfig(mktScoringConfig)));
   _mktRenderScoring();
 };
@@ -1188,6 +1189,7 @@ function mktRecalcAll(list,cfg,now){
 
 window.mktSaveScoring=async function(){
   if(_mktSaving||!_mktCfgDraft)return;
+  if(typeof canEditScoring!=='function'||!canEditScoring()){_mktFormError('Scoring settings are managed by Ammar.');return;}
   const errs=mktValidateConfig(_mktCfgDraft);
   if(errs.length){_mktFormError(errs.join(' '));return;}
   const cfg=_mktConfig(_mktCfgDraft);

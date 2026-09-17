@@ -11,7 +11,7 @@
 // are created in the Firebase Console, then given an entry here.
 const USER_DEFS=[
   {u:'afnan',  email:'afnan@groovy.op',  name:'Afnan',  role:'owner',  title:'Co-founder',        canPO:true, canFabric:true,  stages:null},
-  {u:'ammar',  email:'ammar@groovy.op',  name:'Ammar',  role:'owner',  title:'Co-founder',        canPO:true, canFabric:true,  stages:null, canApprovePaidPR:true},
+  {u:'ammar',  email:'ammar@groovy.op',  name:'Ammar',  role:'owner',  title:'Co-founder',        canPO:true, canFabric:true,  stages:null, canApprovePaidPR:true, canEditScoring:true},
   {u:'mustafa',email:'mustafa@groovy.op',name:'Mustafa',role:'manager',title:'Operations Manager',canPO:true, canFabric:true,  stages:null},
   {u:'arfat',  email:'arfat@groovy.op',  name:'Arfat',  role:'manager',title:'Advisory',          canPO:true, canFabric:true,  stages:null},
   {u:'raees',  email:'raees@groovy.op',  name:'Raees',  role:'store',  title:'Store Manager',     canPO:false,canFabric:false, stages:[]},
@@ -41,6 +41,10 @@ const MKT_LEAD_ROLE='creator_content_ops_lead';
 function isContentOpsLead(){ return !!(session && session.role===MKT_LEAD_ROLE); }
 function canAccessMarketing(){ return !!(session && (session.role==='owner' || session.role===MKT_LEAD_ROLE)); }
 function canApprovePaidPR(){ return !!(session && session.canApprovePaidPR===true); }
+// Scoring settings (the bands and tier thresholds every creator is scored
+// by) are another per-account FLAG — Ammar only, not the other owner and
+// not the lead. Mirrored in firestore.rules isScoringAdmin(), by email.
+function canEditScoring(){ return !!(session && session.canEditScoring===true); }
 // Packing/dispatch role (Faizan) — receives finished pieces, runs QC handoff
 // reconciliation, and books stock transfers. Username/role gated.
 function isPacking(){ return !!(session && session.role==='packing'); }
