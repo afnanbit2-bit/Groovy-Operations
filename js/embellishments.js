@@ -4100,6 +4100,11 @@ function renderDashboard(){
   </div>
   ${embOverviewSection}`;
 
+  // CSR Team Lead: the counts and stage overview only — the PO list opens PO
+  // pages that role cannot reach.
+  if(typeof isCsrLead==='function'&&isCsrLead()){
+    return base+`<div class="empty" style="padding:14px;text-align:center">Limited view — production totals and stages only.</div>`;
+  }
   if(!isObserver()){
     return base+`<div class="section-title">Recent production orders</div>${allPOs.slice(0,10).map(p=>poRowHTML(p)).join('')||'<div class="empty">No POs yet.</div>'}`;
   }

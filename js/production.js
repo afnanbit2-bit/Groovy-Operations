@@ -397,6 +397,9 @@ function _qcListCard(p){
     <div class="po-arrow">›</div>
   </div>`;
 }
+// Everyone who can reach the page may record, except the view-only CSR role.
+function _qcCanRecord(){return !(typeof isCsrLead==='function'&&isCsrLead());}
+const _QC_VIEW_ONLY='<div class="empty" style="padding:12px;text-align:center">View only — QC dispositions are recorded by the QC team.</div>';
 function _renderQCDetail(po){
   const rec=poReceivedBySize(po),pend=qcPendingBySize(po),rw=qcInReworkBySize(po);
   const bc=qcBarcodeReadyBySize(po),bs=qcBstockBySize(po);
@@ -415,7 +418,7 @@ function _renderQCDetail(po){
   if(_qcSize&&!pendSizes.includes(_qcSize))_qcSize='';
   if(!_qcSize&&pendSizes.length)_qcSize=pendSizes[0];
   const dispPend=_qcSize?(pend[_qcSize]||0):0;
-  const dispForm=pendSizes.length?`
+  const dispForm=!_qcCanRecord()?_QC_VIEW_ONLY:pendSizes.length?`
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
       <label style="font-size:12px;color:var(--muted)">Size</label>
       <select id="qc-size" onchange="window.qcPickSize(this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px">
@@ -438,7 +441,7 @@ function _renderQCDetail(po){
   if(_qcRwSize&&!rwSizes.includes(_qcRwSize))_qcRwSize='';
   if(!_qcRwSize&&rwSizes.length)_qcRwSize=rwSizes[0];
   const rwPend=_qcRwSize?(rw[_qcRwSize]||0):0;
-  const rwForm=rwSizes.length?`
+  const rwForm=!_qcCanRecord()?_QC_VIEW_ONLY:rwSizes.length?`
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <label style="font-size:12px;color:var(--muted)">Size</label>
       <select id="qc-rw-size" onchange="window.qcPickRwSize(this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px">
@@ -490,6 +493,7 @@ window.qcCalcRemain=function(pending){
   if(btn){btn.disabled=(sum<=0||rem<0);btn.style.opacity=(sum<=0||rem<0)?'.5':'1';}
 };
 window.qcRecord=async function(fbKey){
+  if(!_qcCanRecord()){showToast('View only — your account cannot record QC.',true);return;}
   const po=(typeof allPOs!=='undefined'?allPOs:[]).find(p=>p.fbKey===fbKey);
   if(!po){showToast('PO not found.',true);return;}
   const size=_qcSize;if(!size){showToast('Pick a size.',true);return;}
@@ -511,6 +515,7 @@ window.qcRecord=async function(fbKey){
   }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Record disposition ✓';}}
 };
 window.qcResolveRework=async function(fbKey,dest){
+  if(!_qcCanRecord()){showToast('View only — your account cannot record QC.',true);return;}
   const po=(typeof allPOs!=='undefined'?allPOs:[]).find(p=>p.fbKey===fbKey);
   if(!po){showToast('PO not found.',true);return;}
   const size=_qcRwSize;if(!size){showToast('Pick a size.',true);return;}

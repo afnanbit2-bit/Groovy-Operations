@@ -652,8 +652,11 @@ helper by bare name; both **guard with `typeof` and fail CLOSED**, so a
 `shared.js` that failed to parse hides the hub rather than opening the
 side door.
 
-**Audience: `afnan`, `ammar`** — Afnan dogfooded it alone while the module
-was being shaped and opened it to Ammar once the Trash/rail round landed.
+**Audience: `afnan`, `ammar`, `sami`** — Afnan dogfooded it alone while the
+module was being shaped and opened it to Ammar once the Trash/rail round
+landed; Sami (CSR Team Lead) was added 17 Sept 2026 at Ammar's request. The
+helper is now called from **eight** routes: the six below plus the CSR Team
+Lead's own sidebar and phone "More" sheet.
 Still by USERNAME, not a role and not `isOwner()`, matching the
 `isMustafa()`-style per-person grants elsewhere. **Ammar's own Claude
 session should be told the hub is now visible to him.**
@@ -3739,6 +3742,23 @@ etc.) live in `js/hrm.js`; the printing/role helpers (`isObserver`,
   (`isMarketing()` / `isContentOpsLead()` / `isPaidPRApprover()`, by
   email — moving the flag means moving the email too). See "The Sales Team ▸
   Marketing".
+- **CSR Team Lead** (`csr_lead`, Sami — `sami@groovy.op`, added 17 Sept
+  2026). `isCsrLead()` / `CSR_LEAD_PAGES` in `js/auth.js`. Scoped in
+  `showPage` to Dashboard, QC Disposition, B-Stock, Fabric Inventory,
+  Inventory Intel and Creative Hub (plus the hub's notes/boards pages and
+  `_CHROME_PAGES`); anything else lands on the dashboard. **View only by
+  design** — customer support reads these pages, it does not run them: the
+  dashboard drops the PO list (it opens PO pages the role cannot reach),
+  `_qcCanRecord()` hides and refuses both QC write actions, `_fabReadOnly()`
+  hides the Fabric In / Issue / Drawstrings / Returns tabs, and B-Stock's
+  existing `canAssign`/`canTransfer` already exclude the role. `canFabric`
+  is true so the fabric low-stock card shows on his dashboard. **No
+  `firestore.rules` change** — every collection those pages read is
+  `signedIn()`, so like every other role scope here this is an app-layer
+  limit. The login email was given as `sami@groovy.ops`; every account is
+  `@groovy.op` (and `admin-seed-profiles.js` accepts only that domain), so
+  `@groovy.op` was used — **the Firebase Auth account must match it
+  exactly** or login fails. `tests/csr-lead.test.js`.
 - **Inventory Intel nav item** (`js/shared.js`, `buildNav()` +
   `openMoreSheet()`) → owners, **+ mustafa by username** (Sept 2026 grant,
   he's Ecom Manager). Nav-only, same shape as the Notes staged-rollout gate —
