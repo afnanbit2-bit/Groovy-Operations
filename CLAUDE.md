@@ -3835,10 +3835,13 @@ republish.
 AND `user_profiles`. Both had been waiting; the Profile page's own error
 card is what finally surfaced it.
 
-**REPUBLISH OUTSTANDING (17 Sept 2026):** `creators` delete widened from
-`isOwner()` to `isMarketing()` so the Content Ops lead can delete creators.
-Until the Console has it, Daniyal's Delete button is refused by the rules
-(the app shows the error; nothing is lost).
+**Republished a fourth time by Ammar on 17 Sept 2026, after PR #71**
+(reported in-session), from the repo file at
+`md5 0f6d62e739f5f66eac1c5010efbafbf6` — `git log --oneline -1 --
+firestore.rules` is the PR #71 commit (`creators` delete widened from
+`isOwner()` to `isMarketing()` so the Content Ops lead can delete
+creators). **No republish is outstanding as of that commit**; this
+supersedes the entries below.
 
 **Republished a third time by Ammar on 16 Sept 2026, after PRs #65/#66**
 (reported in-session), from the repo file at
