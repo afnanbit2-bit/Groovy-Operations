@@ -1252,6 +1252,7 @@ function renderStoreDashboard(){
     </div>`).join('')}
     ${lowStock.length>10?`<div style="font-size:12px;color:var(--muted);padding-top:6px">+${lowStock.length-10} more items below threshold</div>`:''}
   </div>`:'<div class="alert-banner alert-green">All items are in stock ✓</div>'}
+  ${(session.u==='afnan')?_reconcileCardHTML():''}
   ${(session.u==='afnan')?`<div class="card" style="border-left:3px solid #dc2626">
     <div class="card-title">⚠ Admin — Danger Zone</div>
     <div style="font-size:13px;color:var(--muted);margin-bottom:10px">Overwrites ALL live balances with the hardcoded master list (${INITIAL_ITEMS.length} items). Wipes any unrecorded updates Raees has made. Use only after a verified full physical count.</div>
@@ -2653,5 +2654,383 @@ function renderStoreAnalytics(){
 
   <div style="height:80px"></div>`;
 }
+
+// ══════════════════════════════════════════
+// STOCK RECONCILIATION REPORT — read-only. THIS SECTION NEVER WRITES.
+// No fsSet/fsAdd/fsDelete/updateDoc/setDoc/writeBatch/runTransaction
+// anywhere below — it reads store_items, the FULL store_transactions
+// ledger and a matching slice of activity, and reports what it finds.
+//
+// Deliberately does NOT reuse `_reconstructFromTxns` above — that reducer
+// clamps at zero mid-replay (hiding every negative dip, order-dependent),
+// floor-splits sized receipts (losing the remainder), reads qty with
+// parseInt (truncating a fractional kg/meters receipt to 0) and replays the
+// whole history on top of a seed with no stored date (double-counting
+// anything older than it). Run against SL6 today it can report
+// "reconstructed: 0 — matches", confirming a wrong number as correct. This
+// reducer never clamps, truncates or double-counts — it reports drift
+// instead of silently absorbing it.
+// ══════════════════════════════════════════
+const _RECONCILE_SEED_DATE_DEFAULT='2026-05-01';
+let _reconcileReport=null;      // last _stockReconcile() result, this session
+let _reconcileMeta=null;        // {itemsRead,txnsRead,activityRead,ranAt}
+let _reconcileOverwrite=null;   // last _stockOverwriteCheck() result
+let _reconcileError=null;       // Error from the last failed run, or null
+let _reconcileRunning=false;
+let _reconcileSeedDate=_RECONCILE_SEED_DATE_DEFAULT;
+let _reconcileSort='drift';
+
+// A `sizes` key the Edit dialog's size parser (H6) will silently mangle:
+// whitespace in the key, or a value that isn't a clean integer.
+function _sizeKeySuspect(sizes){
+  if(!sizes)return false;
+  for(const[k,v]of Object.entries(sizes)){
+    if(/\s/.test(k))return true;
+    const n=parseFloat(v);
+    if(!Number.isFinite(n)||!Number.isInteger(n))return true;
+  }
+  return false;
+}
+
+// Pure and synchronous — items/txns arrays in, a result object out. No
+// fetch, no DOM, no Date.now(). That is what makes it unit-testable, and it
+// is the single most important difference from `_reconstructFromTxns`:
+// a running total is allowed to go NEGATIVE (a finding to report, never an
+// error to clamp away), quantities are read with parseFloat (never
+// parseInt — DS-E2 is `unit:'kg'`), and nothing here ever adds quantities
+// across two items with different units.
+function _stockReconcile(items,txns,opts){
+  opts=opts||{};
+  const seedDate=opts.seedDate||_RECONCILE_SEED_DATE_DEFAULT;
+  const seedTs=Date.parse(seedDate+'T00:00:00Z');
+  const norm=c=>(c||'').trim().toUpperCase();
+  const numOf=v=>{const n=parseFloat(v);return Number.isFinite(n)?n:0;};
+  // Raw item.balance / item.sizes, never getBalance() — that helper
+  // truncates with parseInt (finding H1), which is exactly the bug a
+  // reconciliation report must not inherit.
+  const balanceOf=it=>it.sizeSpecific
+    ?Object.values(it.sizes||{}).reduce((s,v)=>s+numOf(v),0)
+    :numOf(it.balance);
+
+  const seedByCode=new Map();
+  for(const it of INITIAL_ITEMS)seedByCode.set(norm(it.code),it);
+
+  const txByCode=new Map();
+  for(const tx of(txns||[])){
+    const key=norm(tx&&tx.itemCode);
+    if(!key)continue;
+    if(!txByCode.has(key))txByCode.set(key,[]);
+    txByCode.get(key).push(tx);
+  }
+  const itemKeys=new Set((items||[]).map(it=>norm(it.code)));
+
+  // One pass over a code's transactions: all-time received/issued/net (used
+  // for NEGATIVE_NET and ZERO_WITH_RECEIPTS) plus the seed-scoped totals
+  // `expected` is built from. A transaction with no usable timestamp is
+  // counted in the all-time totals only — it can't be placed on either side
+  // of the seed date, so it must not silently count as post-seed.
+  function tally(list){
+    let received=0,issued=0,unknownCount=0,firstTxn=null,lastTxn=null,preSeed=false,
+        receivedSince=0,issuedSince=0;
+    const unknownTypes={};
+    for(const tx of list){
+      const qty=numOf(tx.qty);
+      const known=tx.type==='received'||tx.type==='issued';
+      if(tx.type==='received')received+=qty;
+      else if(tx.type==='issued')issued+=qty;
+      else{unknownCount++;const t=tx.type==null?'(none)':String(tx.type);unknownTypes[t]=(unknownTypes[t]||0)+1;}
+      const ts=typeof tx.ts==='number'?tx.ts:null;
+      if(ts===null)continue;
+      if(firstTxn===null||ts<firstTxn)firstTxn=ts;
+      if(lastTxn===null||ts>lastTxn)lastTxn=ts;
+      if(ts<seedTs)preSeed=true;
+      else if(known){if(tx.type==='received')receivedSince+=qty;else issuedSince+=qty;}
+    }
+    return{received,issued,net:received-issued,unknownCount,unknownTypes,firstTxn,lastTxn,preSeed,
+      receivedSince,issuedSince,netSinceSeed:receivedSince-issuedSince};
+  }
+
+  const rows=[];
+  let preSeedTxnCount=0;
+  for(const item of(items||[])){
+    const key=norm(item.code);
+    const list=txByCode.get(key)||[];
+    const t=tally(list);
+    const storedBalance=balanceOf(item);
+    const sizeSpecific=!!item.sizeSpecific;
+    const seedItem=seedByCode.get(key);
+    const seedValue=seedItem?balanceOf(seedItem):null;
+    const expected=seedValue===null?null:seedValue+t.netSinceSeed;
+    const drift=expected===null?null:storedBalance-expected;
+
+    const flags=[];
+    if(storedBalance===0&&t.received>0)flags.push('ZERO_WITH_RECEIPTS');
+    if(!Number.isInteger(storedBalance))flags.push('FRACTIONAL_BALANCE');
+    if(t.net<0)flags.push('NEGATIVE_NET');
+    if(drift!==null&&drift!==0)flags.push('DRIFT_NONZERO');
+    if(list.length===0&&storedBalance!==0)flags.push('NO_LEDGER');
+    if(t.preSeed)flags.push('PRE_SEED_TXNS');
+    if(sizeSpecific)flags.push('SIZED_TOTALS_ONLY');
+    if(sizeSpecific&&_sizeKeySuspect(item.sizes))flags.push('SIZE_KEY_SUSPECT');
+    if(t.unknownCount>0)flags.push('UNKNOWN_TYPE');
+    if(t.preSeed)preSeedTxnCount++;
+
+    rows.push({
+      code:item.code,name:item.name||'',unit:item.unit||'',sizeSpecific,
+      storedBalance,received:t.received,issued:t.issued,net:t.net,
+      receivedSinceSeed:t.receivedSince,issuedSinceSeed:t.issuedSince,netSinceSeed:t.netSinceSeed,
+      seedValue,expected,drift,
+      txnCount:list.length,firstTxn:t.firstTxn,lastTxn:t.lastTxn,
+      unknownTypeCount:t.unknownCount,unknownTypes:t.unknownTypes,
+      flags
+    });
+  }
+
+  // Orphan item codes — the split-ledger test. A code the ledger carries
+  // that no live store_items document matches at all.
+  const orphans=[];
+  for(const[key,list]of txByCode){
+    if(itemKeys.has(key))continue;
+    const t=tally(list);
+    orphans.push({code:key,rawCodes:[...new Set(list.map(tx=>tx.itemCode))],
+      received:t.received,issued:t.issued,net:t.net,txnCount:list.length,
+      firstTxn:t.firstTxn,lastTxn:t.lastTxn,
+      unknownTypeCount:t.unknownCount,unknownTypes:t.unknownTypes});
+    if(t.preSeed)preSeedTxnCount++;
+  }
+
+  // Near-duplicate codes — same code once normalised, spelled more than one
+  // way across either collection. Both creation paths already normalise to
+  // uppercase, so a non-empty result here is itself a finding.
+  const spellings=new Map(); // norm -> Map(raw -> Set(sources))
+  const addSpelling=(raw,source)=>{
+    const trimmed=(raw||'').trim();if(!trimmed)return;
+    const key=trimmed.toUpperCase();
+    if(!spellings.has(key))spellings.set(key,new Map());
+    const m=spellings.get(key);
+    if(!m.has(trimmed))m.set(trimmed,new Set());
+    m.get(trimmed).add(source);
+  };
+  for(const it of(items||[]))addSpelling(it.code,'store_items');
+  for(const tx of(txns||[]))addSpelling(tx&&tx.itemCode,'store_transactions');
+  const nearDuplicates=[];
+  for(const[key,m]of spellings){
+    if(m.size<2)continue;
+    nearDuplicates.push({norm:key,spellings:[...m.entries()].map(([raw,srcs])=>({raw,sources:[...srcs]}))});
+  }
+
+  const flagCounts={};
+  for(const r of rows)for(const f of r.flags)flagCounts[f]=(flagCounts[f]||0)+1;
+  const itemsWithDrift=rows.filter(r=>r.drift!==null&&r.drift!==0).length;
+  const unknownTypeTotal=rows.reduce((s,r)=>s+r.unknownTypeCount,0)+orphans.reduce((s,o)=>s+o.unknownTypeCount,0);
+
+  return{
+    seedDate,seedTs,
+    itemsChecked:rows.length,txnsRead:(txns||[]).length,
+    itemsWithDrift,flagCounts,preSeedTxnCount,unknownTypeTotal,
+    items:rows,orphans,nearDuplicates
+  };
+}
+
+// The SL6 question, decisively: did the master overwrite run, or is
+// something zeroing balances with no trace at all? Pure — takes the
+// already-fetched activity rows, and "found" and "not found" are both a
+// RESULT here, never a failed lookup.
+function _stockOverwriteCheck(activityRows){
+  const rows=(activityRows||[]).filter(r=>r&&r.action==='⚠ Stock overwritten from master');
+  rows.sort((a,b)=>(a.ts||0)-(b.ts||0));
+  return{found:rows.length>0,count:rows.length,
+    entries:rows.map(r=>({ts:r.ts,date:r.date,user:r.user,detail:r.detail}))};
+}
+
+function _reconcileNum(n){return Number.isInteger(n)?String(n):n.toFixed(2);}
+
+function _reconcileSortedItems(r){
+  const rows=[...r.items];
+  if(_reconcileSort==='code')rows.sort((a,b)=>a.code.localeCompare(b.code));
+  else if(_reconcileSort==='balance')rows.sort((a,b)=>a.storedBalance-b.storedBalance);
+  else if(_reconcileSort==='received')rows.sort((a,b)=>b.received-a.received);
+  else if(_reconcileSort==='issued')rows.sort((a,b)=>b.issued-a.issued);
+  else rows.sort((a,b)=>Math.abs(b.drift||0)-Math.abs(a.drift||0));
+  return rows;
+}
+
+function _reconcileOverwriteHTML(){
+  const o=_reconcileOverwrite;if(!o)return'';
+  if(o.found)return`<div class="alert-banner alert-amber">⚠ "Stock overwritten from master" WAS found in <code>activity</code> — ${o.count} time(s): ${o.entries.map(e=>`${_ilEsc(e.date||tsLabel(e.ts))} by ${_ilEsc(e.user||'—')}`).join('; ')}. The ledger after the latest of these dates is the recovery basis.</div>`;
+  return`<div class="alert-banner alert-red">⚠ "Stock overwritten from master" was NOT found in <code>activity</code>. Balances are being zeroed or edited through a path that records nothing — most likely the per-item Edit dialog, which writes <code>balance</code> straight to the document with no transaction and (for an owner/manager) no audit notification either. That missing audit trail is the higher-priority finding, not the master overwrite.</div>`;
+}
+
+function _reconcileTableHTML(r){
+  const rows=_reconcileSortedItems(r);
+  return`<div style="overflow-x:auto"><table class="cut-table" style="min-width:920px">
+    <thead><tr><th>Code</th><th>Name</th><th>Balance</th><th>Received</th><th>Issued</th><th>Net</th><th>Expected</th><th>Drift</th><th>Txns</th><th>Flags</th></tr></thead>
+    <tbody>${rows.map(row=>`<tr>
+      <td style="font-weight:700">${_ilEsc(row.code)}</td>
+      <td>${_ilEsc(row.name)}${row.sizeSpecific?' <span style="font-size:11px;color:var(--muted)">(sized — total only)</span>':''}</td>
+      <td>${_reconcileNum(row.storedBalance)} ${_ilEsc(row.unit)}</td>
+      <td>${_reconcileNum(row.received)}</td>
+      <td>${_reconcileNum(row.issued)}</td>
+      <td style="${row.net<0?'color:var(--red);font-weight:700':''}">${_reconcileNum(row.net)}</td>
+      <td>${row.expected===null?'—':_reconcileNum(row.expected)}</td>
+      <td style="font-weight:700;color:${row.drift===null?'var(--muted)':row.drift===0?'var(--green)':'var(--red)'}">${row.drift===null?'no seed':_reconcileNum(row.drift)}</td>
+      <td>${row.txnCount}</td>
+      <td style="font-size:11px;color:var(--muted)">${row.flags.join(', ')||'—'}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+function _reconcileOrphansHTML(r){
+  if(!r.orphans.length)return`<div style="margin-top:14px"><div class="card-title" style="font-size:13px">Orphan item codes</div><div class="empty" style="padding:10px">None — every transaction's item code matches a live store_items document.</div></div>`;
+  return`<div style="margin-top:14px">
+    <div class="card-title" style="font-size:13px">⚠ Orphan item codes (${r.orphans.length}) — ledger with no matching item</div>
+    <div style="overflow-x:auto"><table class="cut-table" style="min-width:700px">
+      <thead><tr><th>Code</th><th>Raw spellings seen</th><th>Received</th><th>Issued</th><th>Net</th><th>Txns</th><th>First</th><th>Last</th></tr></thead>
+      <tbody>${r.orphans.map(o=>`<tr>
+        <td style="font-weight:700">${_ilEsc(o.code)}</td>
+        <td style="font-size:12px">${o.rawCodes.map(_ilEsc).join(', ')}</td>
+        <td>${_reconcileNum(o.received)}</td>
+        <td>${_reconcileNum(o.issued)}</td>
+        <td>${_reconcileNum(o.net)}</td>
+        <td>${o.txnCount}</td>
+        <td style="font-size:11px;color:var(--muted)">${o.firstTxn?tsLabel(o.firstTxn):'—'}</td>
+        <td style="font-size:11px;color:var(--muted)">${o.lastTxn?tsLabel(o.lastTxn):'—'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`;
+}
+
+function _reconcileDuplicatesHTML(r){
+  if(!r.nearDuplicates.length)return'';
+  return`<div style="margin-top:14px">
+    <div class="card-title" style="font-size:13px">⚠ Near-duplicate codes (${r.nearDuplicates.length})</div>
+    ${r.nearDuplicates.map(g=>`<div class="info-row"><span>${_ilEsc(g.norm)}</span><span style="font-size:12px;color:var(--muted)">${g.spellings.map(s=>`"${_ilEsc(s.raw)}" (${s.sources.join(', ')})`).join(' · ')}</span></div>`).join('')}
+  </div>`;
+}
+
+function _reconcileBodyHTML(){
+  if(_reconcileError)return`<div class="empty" style="padding:16px;text-align:center">
+    <div style="font-weight:700;color:var(--red);margin-bottom:6px">Reconciliation failed</div>
+    <div style="font-size:13px;color:var(--muted)">${_ilEsc(_reconcileError.message||String(_reconcileError))}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:6px">This is a failed read, not proof of an empty ledger. Nothing was written either way.</div>
+  </div>`;
+  if(!_reconcileReport)return`<div class="empty" style="padding:16px">Not run yet this session. Reads the entire transaction history — could be tens of thousands of documents — plus every store item and a matching activity slice. You'll be asked to confirm before it runs, and it never writes.</div>`;
+  const r=_reconcileReport;
+  const flagLine=Object.entries(r.flagCounts).map(([f,n])=>`${f}: ${n}`).join(' · ')||'none';
+  return`
+    <div style="font-size:13px;color:var(--muted);margin-bottom:10px;line-height:1.7">
+      ${r.itemsChecked} items checked · ${r.txnsRead} transactions read in full${_reconcileMeta?` (vs. the ${_STORE_TXN_FULL}-row cap the Log displays)`:''} ·
+      <strong style="color:${r.itemsWithDrift?'var(--red)':'var(--green)'}">${r.itemsWithDrift} item(s) with non-zero drift</strong> ·
+      ${r.preSeedTxnCount} transaction(s) fall before ${r.seedDate}${r.preSeedTxnCount?' — expected/drift for those items only holds as well as that date does':' — the seed-date assumption does not matter here'} ·
+      ${r.unknownTypeTotal} transaction(s) of an unrecognised type
+      <br>Flags across all items: ${flagLine}
+    </div>
+    ${_reconcileOverwriteHTML()}
+    <div style="margin-bottom:8px">
+      <label style="font-size:12px;color:var(--muted)">Sort
+        <select onchange="window.reconcileSetSort(this.value)" style="margin-left:4px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface);font-family:inherit;font-size:12px">
+          ${[['drift','|Drift| high → low'],['code','Code A → Z'],['balance','Stored balance low → high'],['received','Received high → low'],['issued','Issued high → low']].map(([v,l])=>`<option value="${v}"${_reconcileSort===v?' selected':''}>${l}</option>`).join('')}
+        </select>
+      </label>
+    </div>
+    ${_reconcileTableHTML(r)}
+    ${_reconcileOrphansHTML(r)}
+    ${_reconcileDuplicatesHTML(r)}
+  `;
+}
+
+function _reconcileInnerHTML(){
+  return`<div style="font-size:13px;color:var(--muted);margin-bottom:10px">Cross-checks every item's stored <code>balance</code>/<code>sizes</code> against the FULL <code>store_transactions</code> ledger — every receive/issue ever logged, not just the ${_STORE_TXN_FULL}-row cap the Log shows. <strong>Read-only — writes nothing.</strong></div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <label style="font-size:12px;color:var(--muted)">Seed date
+        <input id="reconcile-seed-date" type="date" value="${_reconcileSeedDate}" onchange="window.reconcileSetSeedDate(this.value)" ${_reconcileRunning?'disabled':''} style="margin-left:4px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface);font-family:inherit;font-size:12px">
+      </label>
+      <button class="btn-sm" onclick="window.reconcileRun()" ${_reconcileRunning?'disabled':''}>${_reconcileRunning?'Reading…':(_reconcileReport?'↺ Re-run':'▶ Run reconciliation')}</button>
+      ${_reconcileReport?`<button class="btn-sm" onclick="window.reconcileExportExcel()">⬇ Export Excel</button>`:''}
+    </div>
+    <div id="reconcile-body">${_reconcileBodyHTML()}</div>`;
+}
+
+function _reconcileCardHTML(){
+  return`<div class="card" style="border-left:3px solid var(--border)">
+    <div class="card-title">Stock Reconciliation Report <span style="font-weight:400;color:var(--muted);font-size:12px">— read-only</span></div>
+    <div id="reconcile-card-inner">${_reconcileInnerHTML()}</div>
+  </div>`;
+}
+
+function _reconcileRepaint(){
+  const el=document.getElementById('reconcile-card-inner');
+  if(el)el.innerHTML=_reconcileInnerHTML();
+}
+
+window.reconcileSetSeedDate=function(v){_reconcileSeedDate=v||_RECONCILE_SEED_DATE_DEFAULT;};
+window.reconcileSetSort=function(v){_reconcileSort=v;const b=document.getElementById('reconcile-body');if(b)b.innerHTML=_reconcileBodyHTML();};
+
+window.reconcileRun=async function(){
+  if(!session||session.u!=='afnan'){showToast('Restricted to Afnan',true);return;}
+  if(!confirm('This reads the ENTIRE store_transactions history — could be tens of thousands of documents — plus every store item and a matching slice of activity. It writes NOTHING to Firestore. Continue?'))return;
+  _reconcileRunning=true;_reconcileError=null;
+  _reconcileRepaint();
+  try{
+    const[items,txns,activityRows]=await Promise.all([
+      fsList('store_items'),
+      _fsListAll('store_transactions'),
+      fsQueryWhere('activity','action','⚠ Stock overwritten from master',200)
+    ]);
+    _reconcileReport=_stockReconcile(items,txns,{seedDate:_reconcileSeedDate});
+    _reconcileOverwrite=_stockOverwriteCheck(activityRows);
+    _reconcileMeta={itemsRead:items.length,txnsRead:txns.length,activityRead:activityRows.length,ranAt:Date.now()};
+    showToast(`Reconciliation complete ✓ — ${items.length} items, ${txns.length} transactions read`);
+  }catch(e){
+    // A failed read must render as a failed read, never as zeros — the
+    // exact Stock Log lesson this whole file exists to not repeat.
+    _reconcileError=e;_reconcileReport=null;_reconcileOverwrite=null;
+    showToast('Reconciliation failed: '+(e.message||'unknown error'),true);
+  }finally{
+    _reconcileRunning=false;
+    _reconcileRepaint();
+  }
+};
+
+window.reconcileExportExcel=function(){
+  const r=_reconcileReport;if(!r){showToast('Run the reconciliation first.',true);return;}
+  if(typeof XLSX==='undefined'){showToast('Excel library not loaded.',true);return;}
+  const itemRows=_reconcileSortedItems(r).map(row=>({
+    Code:row.code,Name:row.name,Unit:row.unit,'Sized (totals only)':row.sizeSpecific?'yes':'no',
+    'Stored balance':row.storedBalance,Received:row.received,Issued:row.issued,Net:row.net,
+    'Received since seed':row.receivedSinceSeed,'Issued since seed':row.issuedSinceSeed,'Net since seed':row.netSinceSeed,
+    'Seed value':row.seedValue===null?'':row.seedValue,Expected:row.expected===null?'':row.expected,
+    Drift:row.drift===null?'':row.drift,
+    'Txn count':row.txnCount,'First txn':row.firstTxn?tsLabel(row.firstTxn):'',
+    'Last txn':row.lastTxn?tsLabel(row.lastTxn):'',
+    'Unknown-type txns':row.unknownTypeCount,Flags:row.flags.join(', ')
+  }));
+  const orphanRows=r.orphans.map(o=>({
+    Code:o.code,'Raw spellings seen':o.rawCodes.join(', '),Received:o.received,Issued:o.issued,Net:o.net,
+    'Txn count':o.txnCount,'First txn':o.firstTxn?tsLabel(o.firstTxn):'','Last txn':o.lastTxn?tsLabel(o.lastTxn):'',
+    'Unknown-type txns':o.unknownTypeCount
+  }));
+  const overwrite=_reconcileOverwrite||{found:false,count:0,entries:[]};
+  const summaryRows=[
+    {Field:'Run date',Value:new Date().toLocaleString('en-GB')},
+    {Field:'Seed date used',Value:r.seedDate},
+    {Field:'Items checked',Value:r.itemsChecked},
+    {Field:'Transactions read (full history, uncapped)',Value:r.txnsRead},
+    {Field:'Items with non-zero drift',Value:r.itemsWithDrift},
+    {Field:'Transactions before the seed date',Value:r.preSeedTxnCount},
+    {Field:'Transactions of an unrecognised type',Value:r.unknownTypeTotal},
+    {Field:'Orphan item codes',Value:r.orphans.length},
+    {Field:'Near-duplicate code groups',Value:r.nearDuplicates.length},
+    {Field:'"⚠ Stock overwritten from master" found in activity',Value:overwrite.found?`yes — ${overwrite.count} time(s)`:'no'},
+    ...Object.entries(r.flagCounts).map(([f,n])=>({Field:'Flag: '+f,Value:n}))
+  ];
+  try{
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(itemRows),'Items');
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(orphanRows.length?orphanRows:[{Code:'(none)'}]),'Orphan codes');
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(summaryRows),'Summary');
+    XLSX.writeFile(wb,`stock-reconciliation-${todayStr()}.xlsx`);
+  }catch(e){showToast('Export failed: '+(e.message||'unknown'),true);}
+};
 
 // ── HRM: Dashboard widgets, Employees page, increment workflow ──

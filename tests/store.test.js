@@ -381,5 +381,171 @@ module.exports=async function(){
     s.ok('and setILDir uses tokens',!/'#fff'/.test(dir),'setILDir still writes a literal #fff');
   }
 
+  // ── _stockReconcile — the read-only reconciliation reducer ──
+  // Pure and synchronous, so no fetch stubbing needed: fixtures go in
+  // through `extra` globals and the function is called directly.
+  s.section('_stockReconcile — fractional quantities are never truncated (parseFloat, not parseInt)');
+  {
+    const a=app(()=>res(200,{documents:[]}),{
+      FIX_ITEMS:[{code:'DS-E2',name:'Elastic 2 inch',unit:'kg',sizeSpecific:false,balance:1.25}],
+      FIX_TXNS:[
+        {itemCode:'DS-E2',type:'received',qty:0.75,ts:1000},
+        {itemCode:'DS-E2',type:'received',qty:0.5,ts:2000}
+      ]
+    });
+    const r=a.run("_stockReconcile(FIX_ITEMS,FIX_TXNS,{seedDate:'2026-05-01'})");
+    const row=r.items[0];
+    s.eq('0.75 + 0.5 nets to 1.25, not 0 or 1',row.net,1.25);
+    s.eq('storedBalance read raw, not truncated by getBalance()',row.storedBalance,1.25);
+    s.ok('FRACTIONAL_BALANCE flagged',row.flags.includes('FRACTIONAL_BALANCE'),row.flags);
+  }
+
+  s.section('_stockReconcile — a negative net is reported, never clamped at zero');
+  {
+    const a=app(()=>res(200,{documents:[]}),{
+      FIX_ITEMS:[{code:'ZP-BS25',name:'Black Silver Zip 25"',unit:'pcs',sizeSpecific:false,balance:0}],
+      FIX_TXNS:[{itemCode:'ZP-BS25',type:'issued',qty:400,ts:1000}]
+    });
+    const r=a.run("_stockReconcile(FIX_ITEMS,FIX_TXNS,{seedDate:'2026-05-01'})");
+    const row=r.items[0];
+    s.eq('net is -400, not clamped to 0',row.net,-400);
+    s.ok('NEGATIVE_NET flagged',row.flags.includes('NEGATIVE_NET'),row.flags);
+  }
+
+  s.section('_stockReconcile — zero balance with recorded receipts is the SL6/DS-E2 signature');
+  {
+    const a=app(()=>res(200,{documents:[]}),{
+      FIX_ITEMS:[{code:'SL6',name:'Groovy Shirting Flag Label',unit:'pcs',sizeSpecific:false,balance:0}],
+      FIX_TXNS:[{itemCode:'SL6',type:'received',qty:6600,ts:1000}]
+    });
+    const r=a.run("_stockReconcile(FIX_ITEMS,FIX_TXNS,{seedDate:'2026-05-01'})");
+    s.ok('ZERO_WITH_RECEIPTS flagged',r.items[0].flags.includes('ZERO_WITH_RECEIPTS'),r.items[0].flags);
+  }
+
+  s.section('_stockReconcile — transactions for a code absent from store_items are orphans, never dropped');
+  {
+    const a=app(()=>res(200,{documents:[]}),{
+      FIX_ITEMS:[{code:'HT01',name:'Hangtag',unit:'pcs',sizeSpecific:false,balance:100}],
+      FIX_TXNS:[{itemCode:'GHOST1',type:'received',qty:50,ts:1000},{itemCode:'ghost1',type:'issued',qty:10,ts:2000}]
+    });
+    const r=a.run("_stockReconcile(FIX_ITEMS,FIX_TXNS,{seedDate:'2026-05-01'})");
+    s.eq('one orphan, not zero',r.orphans.length,1);
+    s.eq('code normalised',r.orphans[0].code,'GHOST1');
+    s.eq('received carried over',r.orphans[0].received,50);
+    s.eq('issued carried over',r.orphans[0].issued,10);
+    s.eq('txnCount counts both spellings',r.orphans[0].txnCount,2);
+  }
+
+  s.section('_stockReconcile — an unrecognised transaction type is counted, never silently skipped');
+  {
+    const a=app(()=>res(200,{documents:[]}),{
+      FIX_ITEMS:[{code:'HT01',name:'Hangtag',unit:'pcs',sizeSpecific:false,balance:10}],
+      FIX_TXNS:[{itemCode:'HT01',type:'adjusted',qty:5,ts:1000}]
+    });
+    const r=a.run("_stockReconcile(FIX_ITEMS,FIX_TXNS,{seedDate:'2026-05-01'})");
+    const row=r.items[0];
+    s.ok('UNKNOWN_TYPE flagged',row.flags.includes('UNKNOWN_TYPE'),row.flags);
+    s.eq('unknownTypeCount is 1',row.unknownTypeCount,1);
+    s.eq('the type itself is named',row.unknownTypes.adjusted,1);
+    s.eq('received/issued untouched by it',row.received+row.issued,0);
+  }
+
+  s.section('_stockReconcile — a sized item gets totals only, never a claimed per-size figure');
+  {
+    const a=app(()=>res(200,{documents:[]}),{
+      FIX_ITEMS:[{code:'NL1',name:'Neck Label',unit:'pcs',sizeSpecific:true,sizes:{S:10,M:20}}],
+      FIX_TXNS:[]
+    });
+    const r=a.run("_stockReconcile(FIX_ITEMS,FIX_TXNS,{seedDate:'2026-05-01'})");
+    const row=r.items[0];
+    s.ok('SIZED_TOTALS_ONLY flagged',row.flags.includes('SIZED_TOTALS_ONLY'),row.flags);
+    s.eq('storedBalance is the sum of sizes',row.storedBalance,30);
+    s.ok('no per-size breakdown is claimed anywhere on the row',!('sizes'in row)&&!('bySize'in row));
+  }
+
+  s.section('_stockReconcile — pre/post seed-date split, and PRE_SEED_TXNS is set');
+  {
+    // HT01 is a real INITIAL_ITEMS code (seed balance 4600). One receipt
+    // lands before the default 2026-05-01 seed date and must be excluded
+    // from `expected`; one lands after and must be the only one counted.
+    const seedTs=Date.parse('2026-05-01T00:00:00Z');
+    const a=app(()=>res(200,{documents:[]}),{
+      FIX_ITEMS:[{code:'HT01',name:'Hangtag',unit:'pcs',sizeSpecific:false,balance:5000}],
+      FIX_TXNS:[
+        {itemCode:'HT01',type:'received',qty:1000,ts:seedTs-1000},
+        {itemCode:'HT01',type:'received',qty:400,ts:seedTs+1000}
+      ]
+    });
+    const r=a.run("_stockReconcile(FIX_ITEMS,FIX_TXNS,{seedDate:'2026-05-01'})");
+    const row=r.items[0];
+    s.ok('PRE_SEED_TXNS flagged',row.flags.includes('PRE_SEED_TXNS'),row.flags);
+    s.eq('netSinceSeed excludes the pre-seed receipt',row.netSinceSeed,400);
+    s.eq('expected = seed value (4600) + net since seed (400)',row.expected,5000);
+    s.eq('drift is 0 — the stored balance already agrees',row.drift,0);
+    s.eq('report-wide preSeedTxnCount picked it up',r.preSeedTxnCount,1);
+  }
+
+  s.section('_stockReconcile — a suspect size key is flagged (H6, the Edit-dialog size parser)');
+  {
+    const a=app(()=>res(200,{documents:[]}),{
+      FIX_ITEMS:[{code:'BL2',name:'Belt Label',unit:'pcs',sizeSpecific:true,sizes:{'28" ':100,'30"':50}}],
+      FIX_TXNS:[]
+    });
+    const r=a.run("_stockReconcile(FIX_ITEMS,FIX_TXNS,{seedDate:'2026-05-01'})");
+    s.ok('SIZE_KEY_SUSPECT flagged for the whitespace key',r.items[0].flags.includes('SIZE_KEY_SUSPECT'),r.items[0].flags);
+  }
+
+  s.section('_stockOverwriteCheck — found vs. not-found are both a result, never a failed lookup');
+  {
+    const a=app(()=>res(200,{documents:[]}));
+    const found=a.run("_stockOverwriteCheck([{action:'⚠ Stock overwritten from master',ts:1000,user:'Afnan',date:'01/05/26'},{action:'Item added via Receive'}])");
+    s.eq('found is true',found.found,true);
+    s.eq('count is 1',found.count,1);
+    const notFound=a.run("_stockOverwriteCheck([{action:'Item added via Receive'},{action:'Item renamed'}])");
+    s.eq('found is false',notFound.found,false);
+    s.eq('count is 0',notFound.count,0);
+  }
+
+  // ── Deliberate breaks — a check nobody has seen fail proves nothing ──
+  // These reproduce the two defects `_reconstructFromTxns` has today and
+  // confirm `_stockReconcile` would actually catch them if reintroduced.
+  s.section('_stockReconcile — verified by breaking it (parseInt instead of parseFloat)');
+  {
+    const src=require('fs').readFileSync(require('path').join(__dirname,'..','js/store.js'),'utf8');
+    const start=src.indexOf('function _stockReconcile(items,txns,opts){');
+    const end=src.indexOf('function _stockOverwriteCheck',start);
+    const orig=src.slice(start,end);
+    const broken=orig.replace('const numOf=v=>{const n=parseFloat(v);','const numOf=v=>{const n=parseInt(v);');
+    s.ok('the swap actually changed the source',broken!==orig);
+    const a=app(()=>res(200,{documents:[]}),{
+      FIX_ITEMS:[{code:'DS-E2',name:'Elastic 2 inch',unit:'kg',sizeSpecific:false,balance:1.25}],
+      FIX_TXNS:[{itemCode:'DS-E2',type:'received',qty:0.75,ts:1000},{itemCode:'DS-E2',type:'received',qty:0.5,ts:2000}]
+    });
+    a.run(broken); // redefine _stockReconcile in the sandbox with parseInt
+    const r=a.run("_stockReconcile(FIX_ITEMS,FIX_TXNS,{seedDate:'2026-05-01'})");
+    s.ok('with parseInt the 0.75+0.5 case fails (net collapses to 0)',r.items[0].net!==1.25,'net came back '+r.items[0].net+' — the parseFloat regression test would now fail as expected');
+  }
+
+  s.section('_stockReconcile — verified by breaking it (a Math.max(0,…) clamp)');
+  {
+    const src=require('fs').readFileSync(require('path').join(__dirname,'..','js/store.js'),'utf8');
+    const start=src.indexOf('function _stockReconcile(items,txns,opts){');
+    const end=src.indexOf('function _stockOverwriteCheck',start);
+    const orig=src.slice(start,end);
+    const broken=orig.replace(
+      'net:received-issued,unknownCount,unknownTypes,firstTxn,lastTxn,preSeed,',
+      'net:Math.max(0,received-issued),unknownCount,unknownTypes,firstTxn,lastTxn,preSeed,'
+    );
+    s.ok('the clamp actually changed the source',broken!==orig);
+    const a=app(()=>res(200,{documents:[]}),{
+      FIX_ITEMS:[{code:'ZP-BS25',name:'Black Silver Zip 25"',unit:'pcs',sizeSpecific:false,balance:0}],
+      FIX_TXNS:[{itemCode:'ZP-BS25',type:'issued',qty:400,ts:1000}]
+    });
+    a.run(broken);
+    const r=a.run("_stockReconcile(FIX_ITEMS,FIX_TXNS,{seedDate:'2026-05-01'})");
+    s.ok('with the clamp the -400 case fails (net floors at 0)',r.items[0].net!==-400,'net came back '+r.items[0].net+' — the no-clamp regression test would now fail as expected');
+    s.ok('and NEGATIVE_NET is never set',!r.items[0].flags.includes('NEGATIVE_NET'));
+  }
+
   return s;
 };
