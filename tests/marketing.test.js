@@ -1196,5 +1196,103 @@ module.exports=async function(){
     s.ok('the dashboard line shows live codes',/1<\/b> discount codes live, PKR 0 redeemed this month/.test(t.run('mktDashboardLine(0,0,0,mktCodesSummary(mktCodes,Date.now()))')));
   }
 
+  // ── Instagram auto-fetch ──────────────────────────────────────────────
+  s.section('where the tiering numbers came from');
+  {
+    const t=app();
+    const build=(form,existing,now)=>t.run('mktBuildCreatorPayload('+J(form)+','+J(existing||null)+',null,'+(now||1000)+',"uid-ammar")');
+    const api={follower_count:24500,avg_likes:600,avg_comments:40,avg_views:9000};
+    const nums={follower_count:'24500',avg_likes:'600',avg_comments:'40',avg_views:'9000'};
+    const f=build(Object.assign({ig_handle:'x',data_source:'manual',api_values:J(api)},nums),null,5000);
+    s.eq('numbers exactly as fetched are recorded as api',f.data.data_source,'api');
+    s.eq('with when they were fetched',f.data.api_fetched_at,5000);
+    const edited=build(Object.assign({ig_handle:'x',data_source:'api',api_values:J(api)},nums,{avg_likes:'650'}));
+    s.eq('editing a fetched number makes it manual',edited.data.data_source,'manual');
+    s.eq('and drops the fetch time',edited.data.api_fetched_at,null);
+    const forged=build(Object.assign({ig_handle:'x',data_source:'api'},nums));
+    s.eq('the form cannot claim api without a fetch',forged.data.data_source,'manual');
+    s.eq('a screenshot is kept as a screenshot',build(Object.assign({ig_handle:'x',data_source:'screenshot'},nums)).data.data_source,'screenshot');
+    s.eq('no numbers → no source',build({ig_handle:'x',data_source:'screenshot'}).data.data_source,null);
+    s.eq('a nonsense source is manual',build(Object.assign({ig_handle:'x',data_source:'hacked'},nums)).data.data_source,'manual');
+    const old=Object.assign({id:'cr_1',ig_handle:'x',data_source:'api',api_fetched_at:4000},api);
+    const addr=build(Object.assign({ig_handle:'x',address:'new',data_source:'api'},nums),old,6000);
+    s.eq('editing an address keeps an api record api',addr.data.data_source,'api');
+    s.eq('and keeps when it was fetched',addr.data.api_fetched_at,4000);
+    const refetch=build(Object.assign({ig_handle:'x',data_source:'api',api_values:J(api)},nums),old,7000);
+    s.eq('a fresh fetch with the same numbers moves the fetch time',refetch.data.api_fetched_at,7000);
+    const shot=Object.assign({},old,{data_source:'screenshot',api_fetched_at:null});
+    s.eq('an unchanged screenshot record stays a screenshot',build(Object.assign({ig_handle:'x',data_source:'manual'},nums),shot).data.data_source,'screenshot');
+    s.eq('the imported sheet has no numbers, so no source',build({ig_handle:'x'}).data.data_source,null);
+  }
+
+  s.section('fetch from Instagram on the creator form');
+  {
+    const posts=[];
+    const t=app({globals:{auth:{currentUser:{getIdToken:async()=>'tok'}},
+      fetch:async(url,init)=>{posts.push({url,body:JSON.parse(init.body)});
+        return{ok:true,status:200,json:async()=>({found:true,username:'st4rr.doll',name:'Starr',follower_count:24500,avg_likes:600,avg_comments:40,avg_views:9000,posts_sampled:25,views_sampled:18})};}}});
+    t.el('mkt-f-handle').value='@St4rr.Doll';
+    t.el('mkt-f-name').value='';
+    t.el('mkt-f-source').value='manual';
+    await t.run('window.mktFetchInstagram()');
+    s.eq('it asks the server function',posts[0].url,'/.netlify/functions/instagram-business-discovery');
+    s.eq('with the ID token and the normalised handle',J([posts[0].body.idToken,posts[0].body.action,posts[0].body.username]),J(['tok','lookup','st4rr.doll']));
+    s.ok('and never a Meta credential',!/secret|access_token/i.test(J(posts[0].body)));
+    s.eq('followers are filled in',t.el('mkt-f-followers').value,'24500');
+    s.eq('averages too',J([t.el('mkt-f-likes').value,t.el('mkt-f-comments').value,t.el('mkt-f-views').value]),J(['600','40','9000']));
+    s.eq('an empty name is filled from Instagram',t.el('mkt-f-name').value,'Starr');
+    s.eq('the source follows the fetch',t.el('mkt-f-source').value,'api');
+    s.ok('it says what the averages are made of',/25 posts[\s\S]*views from 18/.test(t.el('mkt-ig-status').textContent));
+    s.eq('nothing is saved by fetching',t.state.writes.length,0);
+    t.el('mkt-f-likes').value='700';
+    t.run('window.mktPreviewScore()');
+    s.eq('editing a fetched number flips the source to manual',t.el('mkt-f-source').value,'manual');
+    t.el('mkt-f-likes').value='600';
+    t.run('window.mktPreviewScore()');
+    s.eq('putting it back flips it to api again',t.el('mkt-f-source').value,'api');
+    const saved=t.run('mktBuildCreatorPayload(_mktReadForm(),null,null,1,"u")');
+    s.eq('and the payload agrees',saved.data.data_source,'api');
+  }
+  {
+    const msg="Couldn't find a Business or Creator account with that handle — check the spelling, or use manual/screenshot entry if this is a Personal account.";
+    const t=app({globals:{auth:{currentUser:{getIdToken:async()=>'tok'}},
+      fetch:async()=>({ok:true,status:200,json:async()=>({found:false,message:msg})})}});
+    t.el('mkt-f-handle').value='_iamaleeba_';
+    t.el('mkt-f-followers').value='1200';
+    t.el('mkt-f-api').value=J({follower_count:5});
+    t.el('mkt-f-source').value='api';
+    await t.run('window.mktFetchInstagram()');
+    s.eq('not found shows the server\'s message as is',t.el('mkt-ig-status').textContent,msg);
+    s.eq('typed numbers are left alone',t.el('mkt-f-followers').value,'1200');
+    s.eq('an earlier fetch is forgotten',t.el('mkt-f-api').value,'');
+    s.eq('and the source falls back to manual',t.el('mkt-f-source').value,'manual');
+    const err=app({globals:{auth:{currentUser:{getIdToken:async()=>'tok'}},
+      fetch:async()=>({ok:false,status:503,json:async()=>({error:'Instagram fetch is not set up yet. Enter the numbers by hand.'})})}});
+    err.el('mkt-f-handle').value='x';
+    await err.run('window.mktFetchInstagram()');
+    s.ok('a server failure is said out loud and points at manual entry',/not set up[\s\S]*by hand/.test(err.el('mkt-ig-status').textContent));
+    s.eq('said once, not twice',(err.el('mkt-ig-status').textContent.match(/by hand/g)||[]).length,1);
+    const none=app();
+    none.el('mkt-f-handle').value='  ';
+    await none.run('window.mktFetchInstagram()');
+    s.ok('no handle → it asks for one first',/handle first/.test(none.el('mkt-ig-status').textContent));
+    s.ok('signed out → it says so',await (async()=>{const o=app();o.el('mkt-f-handle').value='x';await o.run('window.mktFetchInstagram()');return /signed out/.test(o.el('mkt-ig-status').textContent);})());
+  }
+  {
+    const t=app();
+    s.eq('a summary with no posts says so',t.run('mktIgFetchSummary({username:"a",posts_sampled:0},"a")'),'Fetched @a · no posts to average. Check the numbers, then save.');
+    s.ok('a sample with no views says so',/none of them report views/.test(t.run('mktIgFetchSummary({username:"a",posts_sampled:3,avg_views:null},"a")')));
+    s.ok('the creator form has the button and the source picker',/id="mkt-ig-fetch"[\s\S]*id="mkt-f-source"[\s\S]*id="mkt-f-followers"/.test(read('js/marketing.js')));
+    s.ok('the reports page has the Instagram connection card',/Check Instagram access/.test(t.run('_mktIgConnHTML()')));
+    t.run("_mktIgConn={configured:true,valid:true,kind:'page',expires_at:null,days_left:null}");
+    s.ok('a Page token is shown as not expiring',/Ready[\s\S]*Page token, does not expire/.test(t.run('_mktIgConnHTML()')));
+    t.run("_mktIgConn={configured:true,valid:false,error:'<b>x</b>'}");
+    s.ok('a dead token says what to do, escaped',/replace IG_ACCESS_TOKEN/.test(t.run('_mktIgConnHTML()'))&&!/<b>x<\/b>/.test(t.run('_mktIgConnHTML()')));
+    t.run("_mktIgConn={configured:false}");
+    s.ok('not set up says which env vars',/IG_ACCESS_TOKEN and META_APP_SECRET/.test(t.run('_mktIgConnHTML()')));
+    const client=read('js/marketing.js');
+    s.ok('the app never holds a Meta credential',!/META_APP_SECRET\s*[:=]|IG_ACCESS_TOKEN\s*[:=]|appsecret_proof|graph\.facebook\.com/.test(client));
+  }
+
   return s;
 };
