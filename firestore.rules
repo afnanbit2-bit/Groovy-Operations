@@ -30,6 +30,10 @@ service cloud.firestore {
     function isMustafa() {
       return signedIn() && userEmail() == 'mustafa@groovy.op';
     }
+    // Pattern Hub (Sept 2026). Owners + Mustafa, by person — never
+    // isManager(), which would hand Arfat the registry too. Mirror in
+    // js/patterns.js _canManagePatterns() / _PATTERN_HUB_USERS.
+    function isPatternAdmin() { return isOwner() || isMustafa(); }
 
     // ── Operational data (POs, gate passes, returns, fabric in) ──
     match /pos/{doc}                  { allow read, write: if signedIn(); }
@@ -532,6 +536,28 @@ service cloud.firestore {
     match /scoring_config/{doc} {
       allow read: if isMarketing();
       allow write: if isScoringAdmin();
+    }
+    // ── Pattern Hub — M0: the article registry (PATTERN_HUB_PLAN.md) ──
+    // tac_categories/{PREFIX}: one doc per TAC category, carrying the
+    // minting counter (nextNumber). articles/{CODE}: the doc id IS the
+    // article code, so uniqueness is the document — a mint is a transaction
+    // that reads the article first and refuses if it exists. Readable by
+    // anyone signed in (a PO screen will look codes up); written only by the
+    // pattern admins. Delete stays owner-only, the fabricin/loans pattern.
+    match /tac_categories/{prefix} {
+      allow read: if signedIn();
+      allow write: if isPatternAdmin();
+    }
+    match /articles/{code} {
+      allow read: if signedIn();
+      allow create: if isPatternAdmin()
+        && request.resource.data.code == code
+        && request.resource.data.category is string
+        && request.resource.data.name is string;
+      allow update: if isPatternAdmin()
+        && request.resource.data.code == resource.data.code
+        && request.resource.data.category == resource.data.category;
+      allow delete: if isOwner();
     }
   }
 }

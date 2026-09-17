@@ -3152,6 +3152,67 @@ page's "Check Shopify access", which asks Shopify directly).
   (st4rr.doll and shoaibkhn.t — Lowkey Heat; shadysaidthat — Live In
   Pants) migrate into `dispatches` with date and status left blank.
 
+## Pattern Hub (Sept 2026)
+
+Physical sewing patterns — heavy craft paper, traced by Hassan and Alam,
+hung on **10 hooks × 5 slots** — get a digital twin: a code, a home, a
+measurement grid, and the articles that use them. **`PATTERN_HUB_PLAN.md` is
+the design, agreed across three question rounds with Afnan; read it before
+touching this module.** Built one milestone at a time, like Marketing.
+
+The decision everything hangs off: **a pattern is a BLOCK, and many article
+codes point at one pattern** (14 Live In Pants colourways = one pattern),
+with **one hook slot holding all sizes of one block bundled**. Blocks are
+created by hand — name-clustering says 251 but 133 articles are prints on a
+handful of blank bodies, so the real count (60–130) is the pattern master's
+call, and the app only ever *suggests*.
+
+**M0 (shipped): the article registry — `js/patterns.js`, page `pattern-hub`.**
+The TAC list (Ammar's `TAC List Complete.docx`, verified against Shopify on
+16 Sept 2026) lives in the app now and the app mints codes; the document
+becomes an export in M1. Collections `tac_categories/{PREFIX}` (the minting
+counter) and `articles/{CODE}`.
+
+- **The article's doc id IS its code.** Uniqueness is the document; a mint is
+  a `runTransaction` that reads the article first and refuses if it exists.
+- **Minting is next-after-highest per category.** TAC's holes (`GH036`,
+  `GS016`–`GS022`) are human errors, not reservations (Afnan), so the counter
+  never fills one on its own — an admin may type an explicit unused code to
+  fill a gap deliberately. `nextNumber` never moves backwards, and is
+  **floored at the seed's max + 1** so a hand-edited counter can never hand
+  out a code the TAC list already used. A co-ord (`GCO`, form `NNN-TB`) mints
+  a `-T`/`-B` pair from one number in one transaction.
+- **`needsPattern` lives on the category** and is inherited at seed/mint,
+  overridable per article. Headwear (`GHW`) is the only `false` — caps get
+  codes, never patterns.
+- **The Shopify SKU is the article code plus size** (`GST073-XS`). That join
+  key already exists; nothing maps it. `PRODUCT_CATALOG` in `js/shared.js`
+  is a stale snapshot missing 88 active codes and this module is **not**
+  built on it — retiring it is a later, cross-track job.
+- **A failed read and an empty registry render different screens**, and
+  **the seed is never offered on a failed read** — it would rewrite a live
+  registry it could not see. `_ptnLoadFailed(col)`, the Store lesson.
+- **Audience by username** (`_PATTERN_HUB_USERS`: afnan, ammar, mustafa) —
+  Arfat holds the manager role and gets nothing, like every Sept 2026 grant.
+  `firestore.rules` mirrors it as `isPatternAdmin()` (owners + `isMustafa()`,
+  never `isManager()`); `tests/patterns.test.js` asserts the two lists are
+  the same people. `js/shared.js` reaches the gate from two routes behind
+  `typeof` guards that fail closed. To widen: edit the list, and the rules.
+- **`firestore.rules` changed in M0 — it needs a republish** before anyone
+  can seed. The page's own error card says so.
+
+Data facts worth not re-deriving: 350 active Shopify products, 336 distinct
+codes; 11 products with no usable SKU, 7 of them recoverable by title (all
+denim); the Jorts `GJO001`/`GJO002` codes are **swapped** on Shopify vs TAC;
+`GCO001–008` duplicate their `GHZ`/`GST` twins; `GST062`/`GSO003`/`GB025`
+are renamed colourways. All four are Ammar's calls, all resolved in M1's
+reconcile page, none blocking M0. Four size axes exist (alpha incl.
+XXXS/XXS, numeric waist, none, legacy) and `PO_FLOW_SIZES` covers only one —
+**deliberately left alone**; the hub carries its own sizes per pattern.
+
+**Nothing in this module has been looked at in a browser** — the sandbox
+cannot sign in. Logic and the real-Chromium script load are tested.
+
 ## Profiles (Sept 2026)
 
 Afnan asked for "a general Profile for each login where people can add their
@@ -3958,6 +4019,11 @@ firestore.rules` is the PR #71 commit (`creators` delete widened from
 `isOwner()` to `isMarketing()` so the Content Ops lead can delete
 creators). **No republish is outstanding as of that commit**; this
 supersedes the entries below.
+
+**REPUBLISH OUTSTANDING (17 Sept 2026): Pattern Hub M0** added
+`isPatternAdmin()`, `tac_categories` and `articles` — nobody can seed the
+registry until the Console carries them. Check `git log --oneline -1 --
+firestore.rules` against the entries below.
 
 **Republished a third time by Ammar on 16 Sept 2026, after PRs #65/#66**
 (reported in-session), from the repo file at

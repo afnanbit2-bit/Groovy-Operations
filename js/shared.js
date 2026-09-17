@@ -748,6 +748,10 @@ function buildNav(){
   if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
   // No icon — deliberate, per Afnan's ask. Audience: _CREATIVE_HUB_USERS.
   if(_canSeeCreativeHub())mainItems.push({id:'creative-hub',label:'Creative Hub'});
+  // Pattern Hub (Sept 2026, test phase: afnan/ammar/mustafa by username). The
+  // gate lives in js/patterns.js, which loads AFTER this file — hence the
+  // typeof guard, which fails CLOSED. See PATTERN_HUB_PLAN.md.
+  if(typeof _canSeePatternHub==='function'&&_canSeePatternHub())mainItems.push({id:'pattern-hub',label:'Pattern Hub'});
   if(om||session.canFabric)mainItems.push({id:'fabric-inventory',label:'Fabric Inventory'});
   if(om)mainItems.push({id:'fulfillment',label:'Courier Performance'});
   if(om)mainItems.push({id:'bug-tracker',label:'🐛 Bug Tracker'});
@@ -946,7 +950,7 @@ function _updateMobNavActive(pageId){
     'attendance':'hrm','hrm-employees':'hrm','hrm-payroll':'hrm','hrm-advances':'hrm','hrm-loans':'hrm','hrm-policy':'hrm',
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
     'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more','store-cash-ledger':'more',
-    'activity':'more','monitor':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more',
+    'activity':'more','monitor':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more','pattern-hub':'more',
     'mkt-creators':'more','mkt-dispatches':'more','mkt-paid-pr':'more','mkt-reports':'more','mkt-import':'more',
     'creative-hub':'more','notes':'more','note-detail':'more','boards':'more','boards-all':'more','board-canvas':'more',
     'my-work':'my-work'
@@ -1053,6 +1057,7 @@ window.openMoreSheet=function(){
   items.push({iconName:'po',label:'PO Registry',pageId:'po-registry'});
   if(om||session.canFabric)items.push({iconName:'box',label:'Fabric Inventory',pageId:'fabric-inventory'});
   if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
+  if(typeof _canSeePatternHub==='function'&&_canSeePatternHub())items.push({label:'Pattern Hub',pageId:'pattern-hub'}); // test phase — see buildNav()
   if(om)items.push({iconName:'activity',label:'Courier Performance',pageId:'fulfillment'});
   if(_salesTeamGroups().length)items.push({iconName:'people',label:'The Sales Team ›',onClick:'window.openSalesSheet()'});
   // Embellishments dept items (visible to owners/managers + relevant workers)
@@ -1207,6 +1212,8 @@ function renderPage(id){
   // failed read renders its own error card with Retry.
   else if(id.startsWith('mkt-')){if(typeof mktRenderPage==='function')mktRenderPage(id);else m.innerHTML='<div class="empty">The Marketing module did not load — refresh the page.</div>';}
   else if(id==='creative-hub')m.innerHTML=renderCreativeHub();
+  // Pattern Hub — loader cannot reject (allSettled); a failed read renders its own error card.
+  else if(id==='pattern-hub'){if(typeof loadPatternsData!=='function'){m.innerHTML='<div class="empty">The Pattern Hub module did not load — refresh the page.</div>';}else if(!patternsLoaded){m.innerHTML=gvSkeleton(6);loadPatternsData().then(()=>{if(currentPage===id)m.innerHTML=renderPatternHub();});}else m.innerHTML=renderPatternHub();}
   else if(id==='notes'){if(!notesLoaded){m.innerHTML=gvSkeleton(6);loadNotesData().then(()=>{if(currentPage===id)m.innerHTML=renderNotesPage();});}else m.innerHTML=renderNotesPage();}
   else if(id==='note-detail'){_notesOpenDetail();return;}
   // Mood Boards' home is a BOARD, not a list — boardsOpenHome resolves (or
@@ -1287,6 +1294,7 @@ const BUG_PAGE_NAMES={
   'gatepass':'Gate Pass',
   'fabric-inventory':'Fabric Inventory',
   'fulfillment':'Courier Performance',
+  'pattern-hub':'Pattern Hub',
   'attendance':'HRM Attendance',
   'hrm-employees':'HRM Employees',
   'hrm-payroll':'HRM Payroll',
