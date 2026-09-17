@@ -3407,6 +3407,16 @@ colours, i.e. content**, not chrome. And, critically, **the two
 script hard-excluded their line ranges. Same rule as `js/print-engine.js`
 and `js/diagnostics.js`.
 
+**The notification bell was missed by both sweeps (fixed 17 Sept 2026).**
+`_ensureNotifBell` painted `#notif-panel` with a literal `#fff`, and
+`_hrmNotifCardHTML` gave normal/low cards `#fff`/`#fafafa` backgrounds and a
+`#1A1A2E` title, while the message text used `var(--text)` — light text on
+a white card in dark mode, reported from Daniyal's screen. All tokens now;
+`smoke-layout` has an `hrm — notification cards` fragment, verified to fail
+in dark on the old code. (The advance/loan notices he saw were genuinely
+his: `js/hrm.js` seeds an employee `daniyal`, and this was his first
+sign-in, so nothing had dismissed them.)
+
 `tests/smoke-layout.js` gained the fragment that proves it — the real
 `printWorkerCardHTML`, `renderPPAttemptsCard` and `renderTowerSwimlane`
 output at ok/near/over/critical. **Verified both ways:** reverting the
