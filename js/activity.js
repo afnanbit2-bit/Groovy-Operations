@@ -11,11 +11,11 @@ async function loadActivity(){
     const snap=await getDocs(query(collection(db,'activity'),orderBy('ts','desc'),limit(150)));
     const items=snap.docs.map(d=>d.data());
     m.innerHTML=`<div class="page-head"><div class="page-title">Activity Log</div><div class="page-sub">${items.length} recent actions</div></div>
-    <div class="card">${items.length?items.map(a=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #f5f5f5">
+    <div class="card">${items.length?items.map(a=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
       <div style="width:28px;height:28px;border-radius:50%;background:var(--dark);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--on-dark);flex-shrink:0">${(a.user||'?')[0].toUpperCase()}</div>
       <div style="flex:1"><div style="font-size:13px"><strong>${a.user||'?'}</strong> <span style="color:var(--muted)">— ${a.action||''}</span></div>
         <div style="font-size:11px;color:var(--muted)">${a.detail||''}</div>
-        <div style="font-size:10px;color:#aaa;margin-top:1px">${a.ts?new Date(a.ts).toLocaleString('en-GB'):a.date||''}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:1px">${a.ts?new Date(a.ts).toLocaleString('en-GB'):a.date||''}</div>
       </div></div>`).join(''):'<div class="empty">No activity yet.</div>'}
     </div><div style="height:80px"></div>`;
   }catch(e){m.innerHTML=`<div class="empty">Error: ${e.message}</div>`;}
@@ -205,20 +205,20 @@ function _monitorOverviewHTML(rangeItems){
       <div style="font-size:22px;font-weight:800">${activePeople}</div>
       <div style="font-size:11px;color:var(--muted);margin-top:2px">Active accounts</div>
     </div>
-    <div class="card" style="flex:1;min-width:120px;text-align:center;padding:14px 10px;${watchedItems.length?'border:1px solid #fca5a5;background:#fef2f2':''}">
+    <div class="card" style="flex:1;min-width:120px;text-align:center;padding:14px 10px;${watchedItems.length?'border:1px solid var(--accent-urgent);background:var(--accent-urgent-soft)':''}">
       <div style="font-size:22px;font-weight:800;color:${watchedItems.length?'#dc2626':'inherit'}">${watchedItems.length}</div>
       <div style="font-size:11px;color:${watchedItems.length?'#dc2626':'var(--muted)'};margin-top:2px;font-weight:${watchedItems.length?'700':'400'}">Watched (${_MONITOR_WATCH_USER})</div>
     </div>
   </div>`;
 
-  const watchedPanel=watchedItems.length?`<div class="card" style="margin-bottom:14px;border:1px solid #fca5a5;background:#fef2f2">
-    <div style="font-weight:700;font-size:13px;color:#dc2626;margin-bottom:8px">⚠ Recent watched activity — ${_MONITOR_WATCH_USER}</div>
+  const watchedPanel=watchedItems.length?`<div class="card" style="margin-bottom:14px;border:1px solid var(--accent-urgent);background:var(--accent-urgent-soft)">
+    <div style="font-weight:700;font-size:13px;color:var(--accent-urgent);margin-bottom:8px">⚠ Recent watched activity — ${_MONITOR_WATCH_USER}</div>
     ${watchedItems.slice(0,_MONITOR_WATCHED_PANEL_CAP).map(a=>{
       const cat=_monitorCategorize(a.action);
-      return`<div style="cursor:pointer;padding:7px 0;border-bottom:1px solid #fecaca" onclick="window.monitorOpenPerson('${_monitorEsc(_MONITOR_WATCH_USER)}')">
+      return`<div style="cursor:pointer;padding:7px 0;border-bottom:1px solid var(--accent-urgent)" onclick="window.monitorOpenPerson('${_monitorEsc(_MONITOR_WATCH_USER)}')">
         <div style="font-size:12px">${cat.icon} <strong>${_monitorEsc(a.action||'')}</strong></div>
         <div style="font-size:11px;color:var(--muted)">${_monitorEsc(a.detail||'')}</div>
-        <div style="font-size:10px;color:#aaa;margin-top:1px">${_monitorFmtTime(a)}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:1px">${_monitorFmtTime(a)}</div>
       </div>`;
     }).join('')}
     ${watchedItems.length>_MONITOR_WATCHED_PANEL_CAP?`<div style="font-size:11px;color:var(--muted);padding-top:6px">+${watchedItems.length-_MONITOR_WATCHED_PANEL_CAP} more — open ${_MONITOR_WATCH_USER}'s profile to see all</div>`:''}
@@ -245,11 +245,11 @@ function _monitorOverviewHTML(rangeItems){
     for(const a of actions){const c=_monitorCategorize(a.action);catCounts.set(c.key,(catCounts.get(c.key)||0)+1);}
     const chips=_MONITOR_CATEGORIES.filter(c=>catCounts.has(c.key)).map(c=>`<span style="font-size:10px;color:${c.color};font-weight:600;background:${c.color}18;padding:2px 7px;border-radius:10px;margin-right:4px">${c.icon} ${catCounts.get(c.key)}</span>`).join('');
     const watchedN=name===_MONITOR_WATCH_USER?actions.filter(a=>_MONITOR_WATCH_ACTIONS.has(a.action)).length:0;
-    return`<div class="card" style="margin-bottom:10px;cursor:pointer;${watchedN?'border:1px solid #fca5a5':''}" onclick="window.monitorOpenPerson('${_monitorEsc(name)}')">
+    return`<div class="card" style="margin-bottom:10px;cursor:pointer;${watchedN?'border:1px solid var(--accent-urgent)':''}" onclick="window.monitorOpenPerson('${_monitorEsc(name)}')">
       <div style="display:flex;align-items:center;gap:10px">
         ${_monitorAvatar(name)}
         <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:14px">${_monitorEsc(name)}${watchedN?` <span style="color:#dc2626;font-size:11px;font-weight:700">⚠ ${watchedN} watched</span>`:''}</div>
+          <div style="font-weight:700;font-size:14px">${_monitorEsc(name)}${watchedN?` <span style="color:var(--accent-urgent);font-size:11px;font-weight:700">⚠ ${watchedN} watched</span>`:''}</div>
           <div style="font-size:11px;color:var(--muted);margin-top:1px">${actions.length} action${actions.length===1?'':'s'} · last ${_monitorFmtTime(actions[0])}</div>
           <div style="margin-top:6px">${chips}</div>
         </div>
@@ -290,9 +290,9 @@ function _monitorDrilldownHTML(rangeItems){
   const entryRow=(a)=>{
     const flagged=name===_MONITOR_WATCH_USER&&_MONITOR_WATCH_ACTIONS.has(a.action);
     const expanded=_monitorExpanded.has(a._id);
-    return`<div style="padding:8px 0;border-bottom:1px solid #f5f5f5;cursor:pointer;${flagged?'border-left:3px solid #dc2626;padding-left:8px;background:#fef2f2':''}" onclick="window.monitorToggleEntry('${a._id}')">
-      <div style="font-size:13px">${flagged?'<span style="color:#dc2626;font-weight:700">⚠ </span>':''}${_monitorEsc(a.action||'')}<span style="color:#bbb;float:right;font-size:11px">${expanded?'▾':'▸'}</span></div>
-      ${expanded?`<div style="font-size:11px;color:var(--muted);margin-top:4px">${_monitorEsc(a.detail||'')}</div><div style="font-size:10px;color:#aaa;margin-top:1px">${_monitorFmtTime(a)}</div>`:''}
+    return`<div style="padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;${flagged?'border-left:3px solid #dc2626;padding-left:8px;background:var(--accent-urgent-soft)':''}" onclick="window.monitorToggleEntry('${a._id}')">
+      <div style="font-size:13px">${flagged?'<span style="color:var(--accent-urgent);font-weight:700">⚠ </span>':''}${_monitorEsc(a.action||'')}<span style="color:var(--muted);float:right;font-size:11px">${expanded?'▾':'▸'}</span></div>
+      ${expanded?`<div style="font-size:11px;color:var(--muted);margin-top:4px">${_monitorEsc(a.detail||'')}</div><div style="font-size:10px;color:var(--muted);margin-top:1px">${_monitorFmtTime(a)}</div>`:''}
     </div>`;
   };
 
@@ -303,7 +303,7 @@ function _monitorDrilldownHTML(rangeItems){
       const last=entries[0];
       return`<div class="card" style="margin-bottom:10px">${sectionHead}
         <div style="cursor:pointer" onclick="window.monitorToggleAuth()">
-          <div style="font-size:13px">${entries.length} sign-ins · last ${_monitorFmtTime(last)} <span style="color:#bbb;float:right;font-size:11px">${_monitorAuthExpanded?'▾':'▸'}</span></div>
+          <div style="font-size:13px">${entries.length} sign-ins · last ${_monitorFmtTime(last)} <span style="color:var(--muted);float:right;font-size:11px">${_monitorAuthExpanded?'▾':'▸'}</span></div>
         </div>
         ${_monitorAuthExpanded?entries.map(entryRow).join(''):''}
       </div>`;
@@ -383,7 +383,7 @@ async function _monitorPopulateDashboard(){
     const watched=items.filter(a=>a.user===_MONITOR_WATCH_USER&&_MONITOR_WATCH_ACTIONS.has(a.action));
     const activePeople=new Set(items.map(a=>a.user)).size;
     body.innerHTML=watched.length
-      ?`<span style="color:#dc2626;font-weight:700">⚠ ${watched.length} watched action${watched.length===1?'':'s'} from ${_MONITOR_WATCH_USER} today</span> · ${items.length} total · ${activePeople} active`
+      ?`<span style="color:var(--accent-urgent);font-weight:700">⚠ ${watched.length} watched action${watched.length===1?'':'s'} from ${_MONITOR_WATCH_USER} today</span> · ${items.length} total · ${activePeople} active`
       :`${items.length} action${items.length===1?'':'s'} today · ${activePeople} active · no watched activity`;
   }catch(e){
     const timedOut=e&&e.message==='timeout';

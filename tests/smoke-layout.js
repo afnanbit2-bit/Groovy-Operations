@@ -479,6 +479,59 @@ const FRAGMENTS={
       const perf=app.bodyHtml('mkt-modal-back');
       return page+'<div class="card">'+form+'</div><div class="card">'+blank+'</div><div class="card">'+perf+'</div>';
     });
+  },
+  // The Inventory Intel SKU table, reported unreadable in dark mode and
+  // measured at 1.1:1 before the fix. `.cut-table th` painted a white-alpha
+  // ink on `background:var(--dark)` — and --dark INVERTS, so in dark mode
+  // that is near-white text on a near-white bar. Every .cut-table in the app
+  // had it; this is the page it was reported on, and the one that puts the
+  // most numbers on screen at once.
+  //
+  // Verified both ways: restoring `color:rgba(255,255,255,.6)` on
+  // `.cut-table th` fails this fragment in dark and names every header cell.
+  // The tinted cells below it cover the other half of the same bug — a
+  // literal ink (#111, #dc2626) or a literal light chip on a row background
+  // that follows the theme.
+  'inventory intel — SKU table':()=>{
+    const app=loadApp({files:['js/shopify.js']});
+    const rows=[
+      {sku:'LIP-CG-XS',title:'Live in Pants',color:'Cool Grey',productType:'Live In Pants',
+       size:'XS',onHand:58,s7:62,s30:242,daysLeft:0,dailyRate:8.8,sellThrough:0.81,
+       reorderPoint:120,suggestedQty:200,season:'winter',garmentType:'bottom'},
+      {sku:'LIP-CG-S',title:'Live in Pants',color:'Cool Grey',productType:'Live In Pants',
+       size:'S',onHand:0,s7:20,s30:90,daysLeft:0,dailyRate:3,sellThrough:1,
+       reorderPoint:60,suggestedQty:90,season:'winter',garmentType:'bottom'},
+      {sku:'LIP-CG-M',title:'Live in Pants',color:'Cool Grey',productType:'Live In Pants',
+       size:'M',onHand:9,s7:14,s30:60,daysLeft:5,dailyRate:2,sellThrough:0.6,
+       reorderPoint:40,suggestedQty:70,season:'winter',garmentType:'bottom'},
+      {sku:'CT-MR-M',title:'CORE Tees',color:'Maroon',productType:'Basic Tee',
+       size:'M',onHand:367,s7:31,s30:98,daysLeft:44,dailyRate:3.3,sellThrough:0.2,
+       reorderPoint:80,suggestedQty:0,season:'summer',garmentType:'top'},
+      // A variant Shopify has not reported inventory for. onHand is undefined,
+      // so BOTH `every(onHand>0)` and `some(onHand<=0)` are false and the
+      // group total takes the third branch — the one that used to be a
+      // literal near-black on a row background that follows the theme
+      // (measured 1.02:1). It is the only way to reach that branch, which is
+      // why a table of ordinary rows does not cover it.
+      {sku:'TC-DI-OS',title:'Classic Denim',color:'Iced',productType:'Trucker Cap',
+       size:'OS',s7:25,s30:89,daysLeft:5,dailyRate:1.2,season:'all-season'}
+    ];
+    // Expand the first group so the per-variant child rows are measured too —
+    // those carry the sold-out ink and the striped --surface-2 background.
+    app.run("_siSkuExpanded.add('Live in Pants|||Cool Grey')");
+    const html=app.run('_siSkuTableSection('+JSON.stringify(rows)+')');
+    return Promise.resolve('<div class="card">'+html+'</div>');
+  },
+  // The other shape of the same bug, and the one that hid longest: a label
+  // whose ink is a literal white-alpha sitting on a `background:var(--dark)`
+  // panel. --dark is the app's "strong contrast chip" and inverts, so these
+  // read at ~1.08:1 in dark mode while the value beside them (which already
+  // used --on-dark) stayed perfectly legible. Gate Pass has six of them.
+  'gate pass — dark summary panels':()=>{
+    const app=loadApp({files:['js/gatepass.js'],currentPage:'gate-pass',
+      session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'}});
+    const html=app.run('renderOutward()');
+    return Promise.resolve(html);
   }
 };
 

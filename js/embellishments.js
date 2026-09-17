@@ -701,7 +701,7 @@ function renderRecipeDirectory(){
   </div>`:''}
 
   ${myRevisions.length?`<div class="card" style="border-left:3px solid #E94560;margin-bottom:12px;padding:0">
-    <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-weight:700;color:#9B1B2D">↩️ Sent Back for Revision</div>
+    <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-weight:700;color:var(--accent-urgent)">↩️ Sent Back for Revision</div>
     ${myRevisions.map(r=>`<div onclick="window.openRecipeDraftEdit('${r._id}')" style="padding:10px 16px;border-top:1px solid var(--soft);cursor:pointer" onmouseenter="this.style.background='var(--hover)'" onmouseleave="this.style.background=''">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
         <div style="min-width:0">
@@ -710,7 +710,7 @@ function renderRecipeDirectory(){
         </div>
         <div style="font-size:18px;color:var(--muted)">›</div>
       </div>
-      ${r.revisionNote?`<div style="font-size:12px;color:#9B1B2D;margin-top:6px;padding:6px 10px;background:#FBE7E9;border-radius:6px">"${r.revisionNote}"</div>`:''}
+      ${r.revisionNote?`<div style="font-size:12px;color:var(--accent-urgent);margin-top:6px;padding:6px 10px;background:var(--accent-urgent-soft);border-radius:6px">"${r.revisionNote}"</div>`:''}
     </div>`).join('')}
   </div>`:''}
 
@@ -1967,7 +1967,7 @@ function renderRecipeDetailPage(){
         <span style="font-weight:600;font-size:14px">${_rdEsc(p.placementType)||'—'}</span>
         ${p.technique?`<span style="font-size:11px;background:var(--soft);padding:2px 8px;border-radius:10px">${_rdEsc(p.technique)}</span>`:''}
       </div>
-      ${p.positionSize?`<div style="font-size:13px;color:#1A1A2E;margin-bottom:3px"><span style="color:var(--muted);font-size:11px">Position &amp; Size:</span> ${_rdEsc(p.positionSize)}</div>`:''}
+      ${p.positionSize?`<div style="font-size:13px;color:var(--text);margin-bottom:3px"><span style="color:var(--muted);font-size:11px">Position &amp; Size:</span> ${_rdEsc(p.positionSize)}</div>`:''}
       ${p.notes?`<div style="font-size:12px;color:var(--muted);margin-bottom:4px">${_rdEsc(p.notes)}</div>`:''}
       ${(p.pantones||[]).length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${p.pantones.map(pn=>`<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;background:var(--surface-2);border:1px solid var(--soft);border-radius:14px;font-size:12px">
         <span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${pn.hexApprox||'#ccc'};border:1px solid var(--border)"></span>
@@ -2535,8 +2535,8 @@ function printWorkerCardHTML(j){
   // ── Secondary: delay + voice note ──
   const secondaryActions=`
     <div style="display:flex;gap:8px;margin-top:12px">
-      <button class="btn-outline" style="flex:1;font-size:12px;padding:8px 0;color:var(--muted);border-color:var(--border)" onclick="window.showDelayForm('${j._id}')">تاخیر کی وجہ لکھیں<br><span style="font-size:10px">Add Delay Reason</span></button>
-      <button class="btn-outline" style="flex:1;font-size:12px;padding:8px 0;color:var(--muted);border-color:var(--border)" onclick="window._voiceNoteWorker('${j._id}')">وائس نوٹ<br><span style="font-size:10px">Add Voice Note</span></button>
+      <button class="btn-outline" style="flex:1;font-size:12px;padding:8px 0;color:var(--muted);border-color:var(--muted)" onclick="window.showDelayForm('${j._id}')">تاخیر کی وجہ لکھیں<br><span style="font-size:10px">Add Delay Reason</span></button>
+      <button class="btn-outline" style="flex:1;font-size:12px;padding:8px 0;color:var(--muted);border-color:var(--muted)" onclick="window._voiceNoteWorker('${j._id}')">وائس نوٹ<br><span style="font-size:10px">Add Voice Note</span></button>
     </div>
     <div id="delay-form-${j._id}" style="display:none;margin-top:8px">
       <textarea id="delay-text-${j._id}" rows="2" placeholder="تاخیر کی وجہ بتائیں… / Explain delay…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none;margin-bottom:6px;direction:rtl"></textarea>
@@ -3545,7 +3545,7 @@ function renderTowerSLA(){
         </div>
         ${(sl==='over'||sl==='critical')&&isObserver()?`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn-sm" style="font-size:10px" onclick="window._proposeWithhold('${e._id}','${e.poId||''}')">Propose Withhold</button>
-          <button class="btn-sm" style="font-size:10px;background:#6B7280" onclick="window._markSLADone('${e._id}')">Mark Resolved</button>
+          <button class="btn-sm" style="font-size:10px;background:var(--muted)" onclick="window._markSLADone('${e._id}')">Mark Resolved</button>
         </div>`:''}
       </div>`;
     }).join(''):'<div class="empty" style="padding:1rem">No open SLA events.</div>'}
@@ -3563,7 +3563,7 @@ function renderTowerSLA(){
       ${isObserver()?`<div style="display:flex;gap:6px;margin-top:8px">
         <input id="wh-amt-${e._id}" type="number" value="${e.monetaryWithholdSuggested||0}" style="width:80px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;outline:none">
         <button class="btn-sm" style="background:var(--green);font-size:11px" onclick="window._approveWithhold('${e._id}')">Approve</button>
-        <button class="btn-sm" style="background:#6B7280;font-size:11px" onclick="window._waiveWithhold('${e._id}')">Waive</button>
+        <button class="btn-sm" style="background:var(--muted);font-size:11px" onclick="window._waiveWithhold('${e._id}')">Waive</button>
       </div>`:''}
     </div>`).join('')}
   </div>`:''}`;

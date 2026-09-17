@@ -427,7 +427,7 @@ function _siWeeksOfSupply(rows){
   });
   return Object.entries(cats).map(([cat,d])=>{
     const wos=d.weeklyRate>0?(d.onHand/d.weeklyRate).toFixed(1):'∞';
-    const cls=d.weeklyRate>0&&d.onHand/d.weeklyRate<3?'color:#dc2626;font-weight:700':'';
+    const cls=d.weeklyRate>0&&d.onHand/d.weeklyRate<3?'color:var(--accent-urgent);font-weight:700':'';
     return{cat,onHand:d.onHand,weeklyRate:d.weeklyRate,wos,cls};
   }).sort((a,b)=>(parseFloat(a.wos)||999)-(parseFloat(b.wos)||999));
 }
@@ -563,9 +563,9 @@ function _siOverview(m,skuRows){
   </div>
 
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
-    <div class="card${lowCount?' style="border-left:3px solid #dc2626"':''}">
+    <div class="card${lowCount?' style="border-left:3px solid var(--accent-urgent)"':''}">
       <div class="card-title">Low Stock Alert</div>
-      <div style="font-size:28px;font-weight:700;${lowCount?'color:#dc2626':''}">${lowCount}</div>
+      <div style="font-size:28px;font-weight:700;${lowCount?'color:var(--accent-urgent)':''}">${lowCount}</div>
       <div style="font-size:11px;color:var(--muted)">SKUs with &lt; 14 days left</div>
     </div>
     <div class="card${deadCount?' style="border-left:3px solid var(--accent-warning)"':''}">
@@ -609,7 +609,7 @@ function _siDailyMovementTable(){
 function _siAttentionSection(attn,skuRows){
   const md=_siMarkdownCandidates(skuRows);
   return`
-  <div class="card" style="border-left:3px solid #dc2626">
+  <div class="card" style="border-left:3px solid var(--accent-urgent)">
     <div class="card-title">Low Stock / About to Sell Out</div>
     ${attn.lowStock.length?attn.lowStock.map(r=>`<div class="info-row">
       <div>
@@ -617,7 +617,7 @@ function _siAttentionSection(attn,skuRows){
         <div style="font-size:11px;color:var(--muted)">${r.color} / ${r.size}</div>
       </div>
       <div style="text-align:right">
-        <div style="font-weight:700;color:#dc2626">${r.daysLeft}d left</div>
+        <div style="font-weight:700;color:var(--accent-urgent)">${r.daysLeft}d left</div>
         <div style="font-size:10px;color:var(--muted)">est. · ${r.onHand} on hand · ${r.s7} sold/7d</div>
       </div>
     </div>`).join(''):'<div class="empty">Nothing critically low</div>'}
@@ -752,8 +752,8 @@ function _siSkuRowsHtml(rows){
   const filtered=_siSkuFiltered(rows);
   const page=filtered.slice(0,_siSkuLimit);
   return page.map(r=>{
-    const daysClass=r.daysLeft<=7&&r.daysLeft>0?'color:#dc2626;font-weight:700':r.daysLeft<=14&&r.daysLeft>0?'color:var(--accent-warning);font-weight:600':'';
-    const reviewBadge=r.needsReview?'<span style="display:inline-block;background:#fef3c7;color:#92400e;font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px">review</span>':'';
+    const daysClass=r.daysLeft<=7&&r.daysLeft>0?'color:var(--accent-urgent);font-weight:700':r.daysLeft<=14&&r.daysLeft>0?'color:var(--accent-warning);font-weight:600':'';
+    const reviewBadge=r.needsReview?'<span style="display:inline-block;background:var(--accent-warning-soft);color:var(--accent-warning);font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px">review</span>':'';
     return`<tr>
       <td style="padding:4px 8px"><input type="checkbox" value="${r.sku}" ${_siSkuSelected.has(r.sku)?'checked':''} onchange="window._siToggleSku('${r.sku}',this.checked)"></td>
       <td style="font-weight:600;font-size:11px;white-space:nowrap">${r.sku}${reviewBadge}</td>
@@ -799,8 +799,8 @@ function _siSizeChips(variants){
   return variants.map(v=>{
     const soldOut=v.onHand<=0;
     const low=!soldOut&&v.daysLeft>0&&v.daysLeft<=14&&v.dailyRate>0.05;
-    const bg=soldOut?'#fee2e2':low?'#fef3c7':'#f0f0f0';
-    const clr=soldOut?'#dc2626':low?'#92400e':'#111';
+    const bg=soldOut?'var(--accent-urgent-soft)':low?'var(--accent-warning-soft)':'var(--soft)';
+    const clr=soldOut?'var(--accent-urgent)':low?'var(--accent-warning)':'var(--text)';
     return`<span style="padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;background:${bg};color:${clr}">${_siEsc(v.size||'?')}</span>`;
   }).join(' ');
 }
@@ -825,17 +825,17 @@ function _siGroupedBodyHtml(filteredRows){
     const tot=g.variants.reduce((s,r)=>s+(r.onHand||0),0);
     const anySoldOut=g.variants.some(r=>r.onHand<=0);
     const allInStock=g.variants.every(r=>r.onHand>0);
-    const totColor=allInStock?'#16a34a':anySoldOut?'#dc2626':'#111';
+    const totColor=allInStock?'var(--accent-success)':anySoldOut?'var(--accent-urgent)':'inherit';
     const totS7=g.variants.reduce((s,r)=>s+(r.s7||0),0);
     const totS30=g.variants.reduce((s,r)=>s+(r.s30||0),0);
     const minDays=Math.min(...g.variants.filter(r=>r.dailyRate>0.05).map(r=>r.daysLeft).concat([9999]));
-    const minDaysStr=minDays<9999?(minDays<=7?`<span style="color:#dc2626;font-weight:700">${minDays}d</span>`:minDays<=14?`<span style="color:var(--accent-warning)">${minDays}d</span>`:`${minDays}d`):'—';
+    const minDaysStr=minDays<9999?(minDays<=7?`<span style="color:var(--accent-urgent);font-weight:700">${minDays}d</span>`:minDays<=14?`<span style="color:var(--accent-warning)">${minDays}d</span>`:`${minDays}d`):'—';
     const groupAllSel=g.variants.every(r=>_siSkuSelected.has(r.sku));
     const gkeyEsc=_siEsc(gkey);
     const gSeason=g.variants.find(v=>v.season!=='all-season')?.season||g.variants[0]?.season||'all-season';
     const gType=g.variants.find(v=>v.garmentType)?.garmentType||'';
     const seasonIcon=gSeason==='summer'?'<span title="Summer" style="font-size:11px;margin-right:3px">☀</span>':gSeason==='winter'?'<span title="Winter" style="font-size:11px;margin-right:3px">❄</span>':'';
-    const typeChip=gType?`<span style="background:#e0e7ff;color:#3730a3;border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700;margin-left:5px;vertical-align:middle">${_siEsc(gType.toUpperCase())}</span>`:'';
+    const typeChip=gType?`<span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700;margin-left:5px;vertical-align:middle">${_siEsc(gType.toUpperCase())}</span>`:'';
     const parent=`<tr style="cursor:pointer" data-gkey="${gkeyEsc}" onclick="window._siToggleGroup(this.dataset.gkey)">
       <td style="padding:4px 8px" onclick="event.stopPropagation()"><input type="checkbox" ${groupAllSel?'checked':''} data-gkey="${gkeyEsc}" onchange="window._siToggleGroupSel(this.dataset.gkey,this.checked)" onclick="event.stopPropagation()"></td>
       <td style="font-weight:600;font-size:12px;padding:10px 8px;white-space:nowrap"><span style="display:inline-block;width:14px;font-size:10px;color:var(--muted)">${expanded?'▼':'▶'}</span>${seasonIcon}${_siEsc(g.title)}${typeChip}</td>
@@ -850,14 +850,14 @@ function _siGroupedBodyHtml(filteredRows){
     </tr>`;
     const children=!expanded?'':g.variants.map(r=>{
       const soldOut=r.onHand<=0;
-      const daysClass=r.daysLeft<=7&&r.daysLeft>0?'color:#dc2626;font-weight:700':r.daysLeft<=14&&r.daysLeft>0?'color:var(--accent-warning);font-weight:600':'';
+      const daysClass=r.daysLeft<=7&&r.daysLeft>0?'color:var(--accent-urgent);font-weight:700':r.daysLeft<=14&&r.daysLeft>0?'color:var(--accent-warning);font-weight:600':'';
       const daysStr=r.daysLeft===999?'∞':r.daysLeft===0?'—':`${r.daysLeft}d`;
       return`<tr style="background:var(--surface-2)">
         <td style="padding:4px 8px"><input type="checkbox" ${_siSkuSelected.has(r.sku)?'checked':''} data-sku="${_siEsc(r.sku)}" onchange="window._siToggleSku(this.dataset.sku,this.checked)"></td>
         <td style="font-size:10px;color:var(--muted);padding:7px 8px 7px 22px">${_siEsc(r.sku)}</td>
         <td></td><td></td>
         <td style="font-weight:700;font-size:12px">${_siEsc(r.size||'?')}</td>
-        <td style="font-weight:${soldOut?'700':'600'};color:${soldOut?'#dc2626':'inherit'}">${r.onHand}</td>
+        <td style="font-weight:${soldOut?'700':'600'};color:${soldOut?'var(--accent-urgent)':'inherit'}">${r.onHand}</td>
         <td>${r.s7}</td><td>${r.s30}</td>
         <td style="${daysClass}">${daysStr}</td>
         <td style="font-size:11px">${r.sellThrough!=null?_siPct(r.sellThrough):'—'}</td>
@@ -883,7 +883,7 @@ function _siFixIndeterminate(){
 function _siCatSelBar(){
   if(!_siSkuSelected.size)return'<div id="si-cat-bar"></div>';
   const n=_siSkuSelected.size;
-  const btnSm='padding:5px 10px;font-size:11px;border-radius:6px;cursor:pointer;font-family:inherit;border:1px solid var(--border);background:#fff;font-weight:600';
+  const btnSm='padding:5px 10px;font-size:11px;border-radius:6px;cursor:pointer;font-family:inherit;border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:600';
   return`<div id="si-cat-bar" style="background:var(--soft);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <span style="font-size:12px;font-weight:700;flex-shrink:0">${n} variant${n===1?'':'s'} selected</span>
     <div style="display:flex;gap:6px;align-items:center">
@@ -930,7 +930,7 @@ function _siSkuTableSection(rows){
     <button class="gp-tab${typeTab('bottom')?' active':''}" onclick="window._siFilterType('bottom')">Bottom</button>
     <span style="margin-left:auto;font-size:11px;color:var(--muted)" id="si-sku-count">${countStr}</span>
   </div>
-  <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Click a row to expand sizes. ☀ = Summer · ❄ = Winter · <span style="background:#e0e7ff;color:#3730a3;border-radius:3px;padding:1px 4px;font-size:9px;font-weight:700">TOP</span> / <span style="background:#e0e7ff;color:#3730a3;border-radius:3px;padding:1px 4px;font-size:9px;font-weight:700">BOTTOM</span> badges from your labels. Green = all sizes in stock · Red = any sold out.</div>
+  <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Click a row to expand sizes. ☀ = Summer · ❄ = Winter · <span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 4px;font-size:9px;font-weight:700">TOP</span> / <span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 4px;font-size:9px;font-weight:700">BOTTOM</span> badges from your labels. Green = all sizes in stock · Red = any sold out.</div>
   <div style="overflow-x:auto"><table class="cut-table" style="min-width:950px">
     <thead><tr id="si-sku-head">${_siSkuHeadCells()}</tr></thead>
     <tbody id="si-sku-tbody">${_siGroupedBodyHtml(filtered)||(totalGroups===0?`<tr><td colspan="12" style="text-align:center;padding:32px;color:var(--muted);font-size:13px">No products match your filters</td></tr>`:'')}</tbody>
@@ -1091,7 +1091,7 @@ function _siWeeklySection(){
         </div>
         <div class="stat-card">
           <div class="stat-label">Net Change</div>
-          <div class="stat-val" style="${wc.net_change<0?'color:#dc2626':''}">${wc.net_change!=null?(wc.net_change>0?'+':'')+_siFmt(wc.net_change):'—'}</div>
+          <div class="stat-val" style="${wc.net_change<0?'color:var(--accent-urgent)':''}">${wc.net_change!=null?(wc.net_change>0?'+':'')+_siFmt(wc.net_change):'—'}</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Line Items</div>
@@ -1127,7 +1127,7 @@ function _siAdvancedSection(skuRows){
     </table></div>`:'<div class="empty">No data</div>'}
   </div>
 
-  <div class="card" style="border-left:3px solid #dc2626">
+  <div class="card" style="border-left:3px solid var(--accent-urgent)">
     <div class="card-title">Lost Sales / Stockout Detection</div>
     <div style="font-size:10px;color:var(--muted);margin-bottom:8px">SKUs with zero inventory but recent (30d) sales — potential lost revenue</div>
     ${stockouts.length?stockouts.map(r=>`<div class="info-row">
@@ -1135,7 +1135,7 @@ function _siAdvancedSection(skuRows){
         <div style="font-weight:600;font-size:12px">${r.sku} <span style="color:var(--muted);font-weight:400">${r.title}</span></div>
         <div style="font-size:11px;color:var(--muted)">${r.color} / ${r.size} · sold ${r.s30} in 30d</div>
       </div>
-      <div style="text-align:right;font-weight:700;color:#dc2626">OUT</div>
+      <div style="text-align:right;font-weight:700;color:var(--accent-urgent)">OUT</div>
     </div>`).join(''):'<div class="empty">No stockouts with recent demand</div>'}
   </div>
 
@@ -1148,7 +1148,7 @@ function _siAdvancedSection(skuRows){
         <td style="font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.title}</td>
         <td style="font-size:11px">${(r.firstSold||'').slice(0,10)}</td>
         <td style="font-size:11px">${(r.lastSold||'').slice(0,10)}</td>
-        <td style="${r.daysSinceLastSale>30?'color:#dc2626;font-weight:600':''}">${r.daysSinceLastSale!=null?r.daysSinceLastSale+'d':'—'}</td>
+        <td style="${r.daysSinceLastSale>30?'color:var(--accent-urgent);font-weight:600':''}">${r.daysSinceLastSale!=null?r.daysSinceLastSale+'d':'—'}</td>
         <td>${r.totalSold}</td>
       </tr>`).join('')}</tbody>
     </table></div>
@@ -1231,9 +1231,9 @@ function _siReturnsTable(skuRows){
       return`<tr>
         <td style="font-weight:600;font-size:11px">${r.sku}</td>
         <td style="font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.title}</td>
-        <td style="font-weight:600;color:#dc2626">${r.refunds}</td>
+        <td style="font-weight:600;color:var(--accent-urgent)">${r.refunds}</td>
         <td>${r.totalSold}</td>
-        <td style="${parseFloat(rate)>10?'color:#dc2626;font-weight:600':''}">${rate}</td>
+        <td style="${parseFloat(rate)>10?'color:var(--accent-urgent);font-weight:600':''}">${rate}</td>
       </tr>`;
     }).join('')}</tbody>
   </table></div>`;

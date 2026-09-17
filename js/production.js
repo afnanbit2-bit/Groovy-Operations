@@ -24,9 +24,9 @@ function poTransferBar(po){
   return`<div style="margin-top:8px">
     <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:3px">
       <span>cut <b style="color:var(--text)">${cut}</b> · transferred <b style="color:#2563eb">${tr}</b></span>
-      <span>${bal?`<b style="color:#b45309">${bal}</b> balance`:'<b style="color:#16a34a">complete</b>'}</span>
+      <span>${bal?`<b style="color:var(--accent-warning)">${bal}</b> balance`:'<b style="color:var(--accent-success)">complete</b>'}</span>
     </div>
-    <div style="height:6px;background:#eef0f2;border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${bal?'#2563eb':'#16a34a'};border-radius:4px"></div></div>
+    <div style="height:6px;background:var(--soft);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${bal?'#2563eb':'#16a34a'};border-radius:4px"></div></div>
   </div>`;
 }
 
@@ -45,9 +45,9 @@ function poReceiveBar(po){
   return`<div style="margin-top:8px">
     <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:3px">
       <span>cut <b style="color:var(--text)">${cut}</b> · received <b style="color:#2563eb">${rec}</b></span>
-      <span>${pend?`<b style="color:#b45309">${pend}</b> to receive`:'<b style="color:#16a34a">complete</b>'}</span>
+      <span>${pend?`<b style="color:var(--accent-warning)">${pend}</b> to receive`:'<b style="color:var(--accent-success)">complete</b>'}</span>
     </div>
-    <div style="height:6px;background:#eef0f2;border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${pend?'#2563eb':'#16a34a'};border-radius:4px;transition:width .2s"></div></div>
+    <div style="height:6px;background:var(--soft);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${pend?'#2563eb':'#16a34a'};border-radius:4px;transition:width .2s"></div></div>
   </div>`;
 }
 
@@ -80,7 +80,7 @@ function _receivingListHTML(){
 
 function _packListCard(p){
   return`<div class="po-row" onclick="window.packOpen('${p.fbKey}')" style="align-items:stretch">
-    <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:#ccc">No img</span>'}</div>
+    <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:var(--muted)">No img</span>'}</div>
     <div class="po-info" style="flex:1">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="po-num">${p.id}</span><span style="font-size:11px;color:var(--muted)">${_gpEsc(p.code||'')}</span></div>
       <div class="po-name">${_gpEsc(p.name||'—')}</div>
@@ -96,7 +96,7 @@ function _renderPackDetail(po){
   const sizes=PO_FLOW_SIZES.filter(sz=>(cut[sz]||0)>0||(rec[sz]||0)>0);
   const rows=sizes.map(sz=>{
     const c=cut[sz]||0,r=rec[sz]||0,pend=Math.max(0,c-r);
-    return`<tr style="border-bottom:1px solid #f5f5f5">
+    return`<tr style="border-bottom:1px solid var(--border)">
       <td style="padding:9px 8px;font-weight:700">${sz}</td>
       <td style="padding:9px 8px;text-align:center">${c}</td>
       <td style="padding:9px 8px;text-align:center;color:#2563eb;font-weight:600">${r}</td>
@@ -119,7 +119,7 @@ function _renderPackDetail(po){
   return`<button class="back-btn" onclick="window.packBack()">← Back to receiving</button>
   <div class="page-head"><div class="page-title">${po.id} — Receive</div><div class="page-sub">${_gpEsc(po.name||'—')} · ${_gpEsc(po.code||'')}</div></div>
   <div class="card">${poReceiveBar(po)}</div>
-  <div class="card"><div class="card-title">Received quantity by size ${fully?'<span style="color:#16a34a;font-weight:700;font-size:12px">· fully received</span>':''}</div>
+  <div class="card"><div class="card-title">Received quantity by size ${fully?'<span style="color:var(--accent-success);font-weight:700;font-size:12px">· fully received</span>':''}</div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="background:var(--surface-2)">
         <th style="padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--muted)">Size</th>
@@ -206,11 +206,11 @@ function _barcodeListHTML(){
 function _barcodeListCard(p){
   const rdy=_mapTotal(poToBarcodeBySize(p));
   return`<div class="po-row" onclick="window.bcOpen('${p.fbKey}')" style="align-items:stretch">
-    <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:#ccc">No img</span>'}</div>
+    <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:var(--muted)">No img</span>'}</div>
     <div class="po-info" style="flex:1">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="po-num">${p.id}</span><span style="font-size:11px;color:var(--muted)">${_gpEsc(p.code||'')}</span></div>
       <div class="po-name">${_gpEsc(p.name||'—')}</div>
-      <div style="margin-top:6px"><span style="font-size:11px;font-weight:700;color:#16a34a;background:#dcfce7;padding:2px 8px;border-radius:6px">${rdy} ready</span></div>
+      <div style="margin-top:6px"><span style="font-size:11px;font-weight:700;color:var(--accent-success);background:var(--accent-success-soft);padding:2px 8px;border-radius:6px">${rdy} ready</span></div>
     </div>
     <div class="po-arrow">›</div>
   </div>`;
@@ -220,7 +220,7 @@ function _renderBarcodeDetail(po){
   const sizes=PO_FLOW_SIZES.filter(sz=>(ready[sz]||0)>0||(tr[sz]||0)>0);
   const rows=sizes.map(sz=>{
     const rd=ready[sz]||0,t=tr[sz]||0,a=avail[sz]||0;
-    return`<tr style="border-bottom:1px solid #f5f5f5">
+    return`<tr style="border-bottom:1px solid var(--border)">
       <td style="padding:9px 8px;font-weight:700">${sz}</td>
       <td style="padding:9px 8px;text-align:center">${rd}</td>
       <td style="padding:9px 8px;text-align:center;color:#2563eb;font-weight:600">${t}</td>
@@ -244,7 +244,7 @@ function _renderBarcodeDetail(po){
   <div class="page-head"><div class="page-title">${po.id} — Transfer</div><div class="page-sub">${_gpEsc(po.name||'—')} · ${_gpEsc(po.code||'')}</div></div>
   <div class="card">${poTransferBar(po)}</div>
   <div class="card"><div style="font-size:12px;color:var(--muted)">Scan the already-barcoded pieces (ERP / SKU) and enter the counted quantity per size, then book the stock transfer.</div></div>
-  <div class="card"><div class="card-title">Ready to barcode ${totalAvail?'':'<span style="color:#16a34a;font-weight:700;font-size:12px">· all transferred</span>'}</div>
+  <div class="card"><div class="card-title">Ready to barcode ${totalAvail?'':'<span style="color:var(--accent-success);font-weight:700;font-size:12px">· all transferred</span>'}</div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="background:var(--surface-2)">
         <th style="padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--muted)">Size</th>
@@ -385,13 +385,13 @@ function _renderQCList(){
 function _qcListCard(p){
   const pend=_mapTotal(qcPendingBySize(p)),rw=_mapTotal(qcInReworkBySize(p));
   return`<div class="po-row" onclick="window.qcOpen('${p.fbKey}')" style="align-items:stretch">
-    <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:#ccc">No img</span>'}</div>
+    <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:var(--muted)">No img</span>'}</div>
     <div class="po-info" style="flex:1">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="po-num">${p.id}</span><span style="font-size:11px;color:var(--muted)">${_gpEsc(p.code||'')}</span></div>
       <div class="po-name">${_gpEsc(p.name||'—')}</div>
       <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
-        ${pend?`<span style="font-size:11px;font-weight:700;color:#b45309;background:#fef3c7;padding:2px 8px;border-radius:6px">${pend} to QC</span>`:''}
-        ${rw?`<span style="font-size:11px;font-weight:700;color:#0891b2;background:#ecfeff;padding:2px 8px;border-radius:6px">${rw} in rework</span>`:''}
+        ${pend?`<span style="font-size:11px;font-weight:700;color:var(--accent-warning);background:var(--accent-warning-soft);padding:2px 8px;border-radius:6px">${pend} to QC</span>`:''}
+        ${rw?`<span style="font-size:11px;font-weight:700;color:var(--cat-chat);background:var(--soft);padding:2px 8px;border-radius:6px">${rw} in rework</span>`:''}
       </div>
     </div>
     <div class="po-arrow">›</div>
@@ -402,13 +402,13 @@ function _renderQCDetail(po){
   const bc=qcBarcodeReadyBySize(po),bs=qcBstockBySize(po);
   const sizes=PO_FLOW_SIZES.filter(sz=>(rec[sz]||0)>0);
   // Reconciliation table
-  const recRows=sizes.map(sz=>`<tr style="border-bottom:1px solid #f5f5f5">
+  const recRows=sizes.map(sz=>`<tr style="border-bottom:1px solid var(--border)">
     <td style="padding:8px;font-weight:700">${sz}</td>
     <td style="padding:8px;text-align:center">${rec[sz]||0}</td>
     <td style="padding:8px;text-align:center;font-weight:700;color:${(pend[sz]||0)?'#b45309':'#16a34a'}">${pend[sz]||'✓'}</td>
-    <td style="padding:8px;text-align:center;color:#0891b2">${(rw[sz]||0)||'—'}</td>
-    <td style="padding:8px;text-align:center;color:#16a34a;font-weight:600">${bc[sz]||0}</td>
-    <td style="padding:8px;text-align:center;color:#dc2626;font-weight:600">${bs[sz]||0}</td>
+    <td style="padding:8px;text-align:center;color:var(--cat-chat)">${(rw[sz]||0)||'—'}</td>
+    <td style="padding:8px;text-align:center;color:var(--accent-success);font-weight:600">${bc[sz]||0}</td>
+    <td style="padding:8px;text-align:center;color:var(--accent-urgent);font-weight:600">${bs[sz]||0}</td>
   </tr>`).join('');
   // Disposition form (selected size)
   const pendSizes=PO_FLOW_SIZES.filter(sz=>(pend[sz]||0)>0);
@@ -421,7 +421,7 @@ function _renderQCDetail(po){
       <select id="qc-size" onchange="window.qcPickSize(this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px">
         ${pendSizes.map(sz=>`<option value="${sz}"${sz===_qcSize?' selected':''}>${sz} — ${pend[sz]} pending</option>`).join('')}
       </select>
-      <span style="font-size:12px;color:var(--muted)">Pending: <b style="color:#b45309">${dispPend}</b></span>
+      <span style="font-size:12px;color:var(--muted)">Pending: <b style="color:var(--accent-warning)">${dispPend}</b></span>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px">
       ${QC_BUCKETS.map(b=>`<div>
@@ -430,7 +430,7 @@ function _renderQCDetail(po){
       </div>`).join('')}
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <span style="font-size:12px;color:var(--muted)">Unassigned: <b id="qc-remain" style="color:#b45309">${dispPend}</b></span>
+      <span style="font-size:12px;color:var(--muted)">Unassigned: <b id="qc-remain" style="color:var(--accent-warning)">${dispPend}</b></span>
       <button class="mark-done-btn" id="qc-record-btn" style="width:auto;padding:9px 18px" onclick="window.qcRecord('${po.fbKey}')">Record disposition ✓</button>
     </div>`:'<div class="empty" style="padding:12px;text-align:center">All received pieces have been QC-dispositioned.</div>';
   // Rework-resolution form
@@ -445,8 +445,8 @@ function _renderQCDetail(po){
         ${rwSizes.map(sz=>`<option value="${sz}"${sz===_qcRwSize?' selected':''}>${sz} — ${rw[sz]} in rework</option>`).join('')}
       </select>
       <input id="qc-rw-qty" type="number" min="0" max="${rwPend}" placeholder="qty" style="width:80px;padding:8px;border:1px solid var(--border);border-radius:7px;font-size:14px;text-align:center;font-family:inherit">
-      <button class="btn-outline" style="width:auto;padding:8px 14px;margin:0;color:#16a34a;border-color:#86efac" onclick="window.qcResolveRework('${po.fbKey}','barcode')">→ Barcode (fixed)</button>
-      <button class="btn-outline" style="width:auto;padding:8px 14px;margin:0;color:#dc2626;border-color:#fca5a5" onclick="window.qcResolveRework('${po.fbKey}','bstock')">→ B-stock</button>
+      <button class="btn-outline" style="width:auto;padding:8px 14px;margin:0;color:var(--accent-success);border-color:var(--accent-success)" onclick="window.qcResolveRework('${po.fbKey}','barcode')">→ Barcode (fixed)</button>
+      <button class="btn-outline" style="width:auto;padding:8px 14px;margin:0;color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.qcResolveRework('${po.fbKey}','bstock')">→ B-stock</button>
     </div>`:'<div class="empty" style="padding:12px;text-align:center">No pieces in rework.</div>';
 
   return`<button class="back-btn" onclick="window.qcBack()">← Back to QC list</button>
@@ -587,9 +587,9 @@ function _bstockUnassignedHTML(){
   const canAssign=isPacking()||['owner','manager'].includes(session.role);
   return pos.map(po=>{
     const un=bstockUnassignedBySize(po);
-    const rows=PO_FLOW_SIZES.filter(sz=>(un[sz]||0)>0).map(sz=>`<tr style="border-bottom:1px solid #f5f5f5">
+    const rows=PO_FLOW_SIZES.filter(sz=>(un[sz]||0)>0).map(sz=>`<tr style="border-bottom:1px solid var(--border)">
       <td style="padding:8px;font-weight:700">${sz}</td>
-      <td style="padding:8px;text-align:center;color:#dc2626;font-weight:700">${un[sz]}</td>
+      <td style="padding:8px;text-align:center;color:var(--accent-urgent);font-weight:700">${un[sz]}</td>
       ${canAssign?`<td style="padding:8px;text-align:right">
         <div style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
           <input id="bs-qty-${po.fbKey}-${sz}" type="number" min="1" max="${un[sz]}" placeholder="qty" style="width:64px;padding:6px;border:1px solid var(--border);border-radius:6px;font-size:13px;text-align:center;font-family:inherit">
@@ -619,7 +619,7 @@ function _bstockCartonsHTML(){
       </div>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">
         <thead><tr style="background:var(--surface-2)"><th style="padding:7px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--muted)">PO</th><th style="padding:7px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Article</th><th style="padding:7px;text-align:center;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Size</th><th style="padding:7px;text-align:center;font-size:10.5px;text-transform:uppercase;color:var(--muted)">Qty</th><th style="padding:7px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--muted)">By</th></tr></thead>
-        <tbody>${items.map(it=>`<tr style="border-bottom:1px solid #f5f5f5"><td style="padding:7px;font-weight:600">${_gpEsc(it.poId||'')}</td><td style="padding:7px">${_gpEsc(it.productCode||it.article||'')}</td><td style="padding:7px;text-align:center;font-weight:700">${_gpEsc(it.size||'')}</td><td style="padding:7px;text-align:center;color:#dc2626;font-weight:700">${it.qty||0}</td><td style="padding:7px;color:var(--muted)">${_gpEsc(it.assignedBy||'')}</td></tr>`).join('')||'<tr><td colspan="5" style="padding:10px;text-align:center;color:var(--muted)">Empty carton</td></tr>'}</tbody>
+        <tbody>${items.map(it=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px;font-weight:600">${_gpEsc(it.poId||'')}</td><td style="padding:7px">${_gpEsc(it.productCode||it.article||'')}</td><td style="padding:7px;text-align:center;font-weight:700">${_gpEsc(it.size||'')}</td><td style="padding:7px;text-align:center;color:var(--accent-urgent);font-weight:700">${it.qty||0}</td><td style="padding:7px;color:var(--muted)">${_gpEsc(it.assignedBy||'')}</td></tr>`).join('')||'<tr><td colspan="5" style="padding:10px;text-align:center;color:var(--muted)">Empty carton</td></tr>'}</tbody>
       </table></div>
       ${(!transferred&&canTransfer&&items.length)?`<button class="mark-done-btn" style="width:auto;padding:8px 16px;margin-top:10px" onclick="window.bstockTransferCarton('${_gpEsc(c._id)}')">Transfer carton out →</button>`:''}
     </div>`;

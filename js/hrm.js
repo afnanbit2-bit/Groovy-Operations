@@ -966,7 +966,7 @@ function renderWorkerHRMWidget(){
   const pgBadge=paygrade?`<span class="paygrade-badge ${pgClass}">${paygrade}</span>`:'';
   const advance=(emp&&emp.advanceBalance)||0;
   const basic=(emp&&emp.basicSalary)||0;
-  const advanceRow=advance>0?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:#E94560">Advance balance: ${_hrmFmtPKR(advance)}</div>`:'';
+  const advanceRow=advance>0?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:var(--accent-urgent)">Advance balance: ${_hrmFmtPKR(advance)}</div>`:'';
   return`<div class="hrm-greeting" style="margin-bottom:16px">
     <div class="greeting-left" style="min-width:0">
       <div class="greeting-name">Good ${greeting}, ${session.name} 👋</div>
@@ -986,7 +986,7 @@ function renderWorkerHRMWidget(){
     <div class="card" style="padding:16px">
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px">This Month · اس مہینے</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;text-align:center">
-        <div style="background:#EAF3DE;border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:#3B6D11" id="wrk-m-present">—</div><div style="font-size:9px;color:var(--muted)">Present</div></div>
+        <div style="background:var(--accent-success-soft);border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:var(--accent-success)" id="wrk-m-present">—</div><div style="font-size:9px;color:var(--muted)">Present</div></div>
         <div style="background:var(--accent-warning-soft);border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:var(--accent-warning)" id="wrk-m-late">—</div><div style="font-size:9px;color:var(--muted)">Late</div></div>
         <div style="background:var(--accent-urgent-soft);border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:700;color:var(--accent-urgent)" id="wrk-m-absent">—</div><div style="font-size:9px;color:var(--muted)">Absent</div></div>
       </div>
@@ -996,7 +996,7 @@ function renderWorkerHRMWidget(){
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
       <div>
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Estimated Salary · تخمینہ تنخواہ</div>
-        <div style="font-size:22px;font-weight:700;color:#1A1A2E;margin-top:4px" id="wrk-est-salary">${_hrmFmtPKR(basic)}</div>
+        <div style="font-size:22px;font-weight:700;color:var(--text);margin-top:4px" id="wrk-est-salary">${_hrmFmtPKR(basic)}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px" id="wrk-est-breakdown">Basic ${_hrmFmtPKR(basic)}</div>
       </div>
       <div style="text-align:right">
@@ -1071,7 +1071,7 @@ async function _populateWorkerHRMWidget(){
       badgeWrap.innerHTML=badges.join('');
     }
     const advRow=document.getElementById('wrk-advance-row');
-    if(advRow)advRow.innerHTML=advance>0?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:#E94560">Advance balance: ${_hrmFmtPKR(advance)}</div>`:'';
+    if(advRow)advRow.innerHTML=advance>0?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:var(--accent-urgent)">Advance balance: ${_hrmFmtPKR(advance)}</div>`:'';
     // Last-month payslip cue
     const cue=document.getElementById('wrk-payslip-cue');
     if(cue&&payrollDataLoaded){
@@ -1083,7 +1083,7 @@ async function _populateWorkerHRMWidget(){
         cue.innerHTML=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer" onclick="window.openPayslip('${last._id}','${last.employeeId}')">
           <div>
             <div style="font-size:12px;color:var(--muted)">${_payrollMonthLabel(last.month)} payslip available</div>
-            <div style="font-size:14px;font-weight:700;color:#1A1A2E">${_hrmFmtPKR(last.netPayable)} <span style="font-size:10px;font-weight:600;background:${badgeBg};color:${badgeFg};padding:2px 8px;border-radius:8px;margin-left:6px">${status}</span></div>
+            <div style="font-size:14px;font-weight:700;color:var(--text)">${_hrmFmtPKR(last.netPayable)} <span style="font-size:10px;font-weight:600;background:${badgeBg};color:${badgeFg};padding:2px 8px;border-radius:8px;margin-left:6px">${status}</span></div>
           </div>
           <span style="font-size:18px;color:var(--muted)">›</span>
         </div>`;
@@ -1156,7 +1156,7 @@ function renderAttendanceDaily(){
     <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:var(--accent-success)" id="att-tot-in">—</div><div style="font-size:11px;color:var(--muted);margin-top:4px">Punched IN</div></div>
     <div class="card" style="padding:16px;text-align:center"><div style="font-size:28px;font-weight:700;color:var(--accent-urgent)" id="att-tot-absent">—</div><div style="font-size:11px;color:var(--muted);margin-top:4px">Absent</div></div>
     <div class="card" style="padding:16px;text-align:center;background:var(--accent-warning-soft)"><div style="font-size:28px;font-weight:700;color:var(--accent-warning)" id="att-tot-late">—</div><div style="font-size:11px;color:var(--muted);margin-top:4px">Late Arrivals</div></div>
-    <div class="card" style="padding:16px;text-align:center" title="Active employees with a K40 device ID. Only these are tracked by attendance."><div style="font-size:28px;font-weight:700;color:#1A1A2E">${allEmployees.filter(e=>e.status!=='inactive'&&String(e.k40UserId||'').trim()).length}</div><div style="font-size:11px;color:var(--muted);margin-top:4px">Tracked Staff</div></div>
+    <div class="card" style="padding:16px;text-align:center" title="Active employees with a K40 device ID. Only these are tracked by attendance."><div style="font-size:28px;font-weight:700;color:var(--text)">${allEmployees.filter(e=>e.status!=='inactive'&&String(e.k40UserId||'').trim()).length}</div><div style="font-size:11px;color:var(--muted);margin-top:4px">Tracked Staff</div></div>
   </div>
   <div class="section-title">Staff Presence</div>
   <div id="att-grid-wrap"><div class="empty">Loading attendance…</div></div>
@@ -1843,7 +1843,7 @@ function _payrollRowHTML(r,idx,saved){
   let rowBg='';
   if((r.lateAbsentEquivalent||0)>=1&&(r.actualAbsentDays||0)>=2)rowBg='background:var(--accent-urgent-soft)';
   else if((r.advanceDeduction||0)>0&&(r.loanDeduction||0)>0)rowBg='background:var(--accent-warning-soft)';
-  else if(idx%2===0)rowBg='background:#FAFAFA';
+  else if(idx%2===0)rowBg='background:var(--surface-2)';
   const statusBadge=saved&&r._status==='paid'?`<span style="background:var(--accent-success-soft);color:var(--accent-success);padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;letter-spacing:.04em">PAID</span>`:'';
   return`<tr style="${rowBg};border-bottom:1px solid var(--border)">
     <td style="padding:10px 8px">${idx}</td>
@@ -2572,7 +2572,7 @@ function _hrmNotifCardHTML(n){
   const priColor=n.priority==='high'?'var(--accent-urgent)':n.priority==='low'?'var(--muted)':'#1A1A2E';
   const priBg=n.priority==='high'?'var(--accent-urgent-soft)':n.priority==='low'?'#fafafa':'#fff';
   const actionBtn=n.actionUrl?`<button onclick="(window._hrmNotifAction||window.showPage)('${n.actionUrl}');window.toggleNotifPanel()" style="margin-top:8px;margin-right:6px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface);cursor:pointer;font-size:11px">View</button>`:'';
-  return`<div style="padding:14px 16px;border-bottom:1px solid #f5f5f5;border-left:3px solid ${priColor};background:${priBg}">
+  return`<div style="padding:14px 16px;border-bottom:1px solid var(--border);border-left:3px solid ${priColor};background:${priBg}">
     <div style="display:flex;align-items:flex-start;gap:8px">
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:13px;color:${priColor}">${n.title||''}</div>
@@ -2716,7 +2716,7 @@ function _advCardHTML(a){
       <div style="flex:1;min-width:200px">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><div style="font-weight:700;font-size:15px">${a.employeeName||'—'}</div>${pgClass?`<span class="paygrade-badge ${pgClass}">${emp.paygrade}</span>`:''}</div>
         <div style="font-size:12px;color:var(--muted);margin-top:2px">${emp?.designation||'—'}</div>
-        <div style="margin-top:10px;font-size:14px">Requesting: <strong style="color:#1A1A2E;font-size:18px">${_hrmFmtPKR(a.amount)}</strong></div>
+        <div style="margin-top:10px;font-size:14px">Requesting: <strong style="color:var(--text);font-size:18px">${_hrmFmtPKR(a.amount)}</strong></div>
         <div style="font-size:13px;color:var(--muted);margin-top:6px">Reason: ${a.reason||'—'}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:8px">Requested by ${a.requestedBy||'—'} · ${_hrmTimeAgo(a.requestedAt)}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px">Repayment: ${planLabel}</div>

@@ -100,9 +100,9 @@ window._cashUploadPhoto=async function(inputId,statusId){
   try{
     const url=await uploadToCloudinary(file);
     window._cashPhoto[inputId]=url;
-    if(st)st.innerHTML=`<a href="${url}" target="_blank" style="color:#15803d;font-weight:700;text-decoration:none">✓ Attached — tap to view</a> <button onclick="window._cashClearPhoto('${inputId}','${statusId}')" style="background:none;border:none;color:#dc2626;font-size:11px;cursor:pointer">remove</button>`;
+    if(st)st.innerHTML=`<a href="${url}" target="_blank" style="color:var(--accent-success);font-weight:700;text-decoration:none">✓ Attached — tap to view</a> <button onclick="window._cashClearPhoto('${inputId}','${statusId}')" style="background:none;border:none;color:var(--accent-urgent);font-size:11px;cursor:pointer">remove</button>`;
   }catch(e){
-    if(st)st.innerHTML=`<span style="color:#dc2626">Upload failed: ${_scEsc(e.message)}</span>`;
+    if(st)st.innerHTML=`<span style="color:var(--accent-urgent)">Upload failed: ${_scEsc(e.message)}</span>`;
   }
 };
 window._cashClearPhoto=function(inputId,statusId){
@@ -448,10 +448,10 @@ function _cashFeedRow(r){
     title='Adjustment';sub=(acc?acc.label:r.account||'')+(r.adjustsReason?' · '+_scEsc(r.adjustsReason):'');
   }else{ title=r.kind; sub=''; }
   const proof=(r.billPhoto||r.proofPhoto)?`<a href="${r.billPhoto||r.proofPhoto}" target="_blank" onclick="event.stopPropagation()" style="text-decoration:none;font-size:13px;margin-right:4px" title="View bill/proof">📎</a>`:'';
-  return `<div onclick="window._cashRowAction('${r._id}')" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f5f5f5;cursor:pointer">
+  return `<div onclick="window._cashRowAction('${r._id}')" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer">
     <div style="width:8px;height:8px;border-radius:50%;background:${dot};flex-shrink:0"></div>
     <div style="flex:1;min-width:0">
-      <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_scEsc(title)}${isCredit?' <span style="font-size:9px;background:#fef2f2;color:#dc2626;padding:1px 6px;border-radius:8px;font-weight:700;vertical-align:middle">CREDIT</span>':''}</div>
+      <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_scEsc(title)}${isCredit?' <span style="font-size:9px;background:var(--accent-urgent-soft);color:var(--accent-urgent);padding:1px 6px;border-radius:8px;font-weight:700;vertical-align:middle">CREDIT</span>':''}</div>
       <div style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_scEsc(sub)} · ${_scEsc(r.by||'')}</div>
     </div>
     ${proof}
@@ -479,21 +479,21 @@ function _cashIssuedFeed(){
     const settled=_cashFloatSettled(f), outstanding=_cashFloatOutstanding(f);
     const pct=f.issued>0?Math.min(100,Math.round(settled/f.issued*100)):0;
     const bills=(f.settlements||[]).filter(s=>s.billPhoto);
-    return `<div style="background:var(--surface);border:1px solid #fca5a5;border-radius:10px;padding:12px 14px;margin-bottom:8px">
+    return `<div style="background:var(--surface);border:1px solid var(--accent-urgent);border-radius:10px;padding:12px 14px;margin-bottom:8px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
       <div style="font-weight:700;font-size:14px">${_scEsc(f.payee)||'Runner'}
         <span style="font-size:10px;background:${ageColor(f.issuedTs)};color:#fff;padding:2px 7px;border-radius:10px;margin-left:6px">${ageLabel(f.issuedTs)}</span>
       </div>
-      <div style="text-align:right"><div style="font-size:16px;font-weight:800;color:#dc2626">${_fmtPKR(outstanding)}</div><div style="font-size:10px;color:var(--muted)">left of ${_fmtPKR(f.issued)}</div></div>
+      <div style="text-align:right"><div style="font-size:16px;font-weight:800;color:var(--accent-urgent)">${_fmtPKR(outstanding)}</div><div style="font-size:10px;color:var(--muted)">left of ${_fmtPKR(f.issued)}</div></div>
     </div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:8px">From ${_scEsc(_cashGetAccount(f.account)?.label||f.account)} · ${_scEsc(f.issuedBy||'')} · ${new Date(f.issuedTs).toLocaleDateString()}${f.note?' · '+_scEsc(f.note):''}</div>
-    ${settled>0?`<div style="height:6px;background:var(--soft);border-radius:4px;overflow:hidden;margin-bottom:6px"><div style="height:100%;width:${pct}%;background:#15803d"></div></div>
+    ${settled>0?`<div style="height:6px;background:var(--soft);border-radius:4px;overflow:hidden;margin-bottom:6px"><div style="height:100%;width:${pct}%;background:var(--accent-success)"></div></div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Settled ${_fmtPKR(settled)} of ${_fmtPKR(f.issued)}${bills.length?` · ${bills.length} bill${bills.length>1?'s':''}: `+bills.map((b,i)=>`<a href="${b.billPhoto}" target="_blank" style="text-decoration:none">📎${i+1}</a>`).join(' '):''}</div>`:''}
     ${_canEntryCash()?`<button class="btn-primary" style="font-size:12px;padding:6px 16px;margin-top:0;background:var(--dark)" onclick="window.cashSettleFloat('${_scEsc(f._id)}')">${settled>0?'Add bill / settle more':'Settle with bill ✓'}</button>`:''}
   </div>`;}).join('');
   const closedSection=closed.length?`<div style="font-size:10px;color:var(--muted);margin:12px 0 4px;font-weight:700;text-transform:uppercase;letter-spacing:.06em">Recently Settled</div>`+closed.map(f=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
     <span style="color:var(--muted)">${_scEsc(f.payee)||'Runner'} · ${new Date(f.issuedTs).toLocaleDateString()}${f.billPhoto?` · <a href="${f.billPhoto}" target="_blank" style="text-decoration:none">📎</a>`:''}</span>
-    <span style="font-weight:700;color:#15803d">Settled ${_fmtPKR(f.issued)}${f.variance?` (${f.variance>0?'−':'+'}${_fmtPKR(Math.abs(f.variance))})`:''}</span>
+    <span style="font-weight:700;color:var(--accent-success)">Settled ${_fmtPKR(f.issued)}${f.variance?` (${f.variance>0?'−':'+'}${_fmtPKR(Math.abs(f.variance))})`:''}</span>
   </div>`).join(''):'';
   return `<div>${openCards}${closedSection}</div>`;
 }
@@ -523,7 +523,7 @@ function _cashByAccountFeed(entries){
           const col=isIn?'#15803d':r.kind==='transfer'?'#475569':'#dc2626';
           const sign=isIn?'+':r.kind==='transfer'?'↕':'-';
           const lbl=cat?cat.label:(r.kind==='vendor_payment'?'Paid '+(_cashGetVendor(r.vendorId)?.name||'vendor'):r.kind);
-          return`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f5f5f5;font-size:12px">
+          return`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
             <span style="color:var(--muted)">${_scEsc(lbl)} · ${_scEsc(r.date||'')}</span>
             <span style="font-weight:700;color:${col}">${sign}${_fmtPKR(r.amount)}</span>
           </div>`;
@@ -539,10 +539,10 @@ function _cashByAccountFeed(entries){
       :`<button class="btn-outline" style="flex:1;font-size:12px;padding:8px" onclick="window.cashRequestAccount()">Request new account</button>`}
   </div>`;
   if(_canAdminCash()){
-    h+=`<div style="margin-top:22px;border:1px solid #fca5a5;border-radius:10px;padding:14px;background:#fff5f5">
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#dc2626;margin-bottom:4px">Danger Zone</div>
+    h+=`<div style="margin-top:22px;border:1px solid var(--accent-urgent);border-radius:10px;padding:14px;background:var(--accent-urgent-soft)">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent-urgent);margin-bottom:4px">Danger Zone</div>
       <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">Erase every ledger entry, runner float, category and vendor, and reset all account balances to zero. Use this to clear old test data before going live. This cannot be undone.</div>
-      <button class="btn-outline" style="width:100%;font-size:12px;padding:9px;color:#dc2626;border-color:#fca5a5" onclick="window.cashResetAllData()">🗑 Reset all cash data</button>
+      <button class="btn-outline" style="width:100%;font-size:12px;padding:9px;color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.cashResetAllData()">🗑 Reset all cash data</button>
     </div>`;
   }
   return h;
@@ -584,7 +584,7 @@ function _cashCategoriesPanel(){
         <span style="font-size:13px;font-weight:800">${_fmtPKR(spend)}${budget>0?` <span style="font-weight:500;color:var(--muted)">/ ${_fmtPKR(budget)}</span>`:''}</span>
       </div>
       ${budget>0?`<div style="height:6px;background:var(--soft);border-radius:3px;overflow:hidden;margin-top:5px"><div style="height:100%;width:${Math.min(100,pct)}%;background:${barCol};border-radius:3px"></div></div>
-        ${pct>100?`<div style="font-size:10px;color:#dc2626;font-weight:600;margin-top:3px">⚠ Over by ${_fmtPKR(spend-budget)}</div>`:''}`:''}
+        ${pct>100?`<div style="font-size:10px;color:var(--accent-urgent);font-weight:600;margin-top:3px">⚠ Over by ${_fmtPKR(spend-budget)}</div>`:''}`:''}
     </div>`;
   }
   return h;
@@ -616,7 +616,7 @@ function _cashVendorsPanel(){
           ${v.phone?`<div style="font-size:12px;margin-top:2px"><a href="tel:${_scEsc(v.phone)}" style="color:#0369a1;text-decoration:none">📞 ${_scEsc(v.phone)}</a></div>`:''}
           ${v.address?`<div style="font-size:11px;color:var(--muted);margin-top:2px">📍 ${_scEsc(v.address)}</div>`:''}
           ${v.creditTerms?`<div style="font-size:11px;color:var(--muted);margin-top:2px">Terms: ${_scEsc(v.creditTerms)}</div>`:''}
-          ${types.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${types.map(t=>`<span style="font-size:10px;background:var(--soft);color:#333;padding:2px 8px;border-radius:8px;font-weight:600">${_scEsc(t)}</span>`).join('')}</div>`:''}
+          ${types.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${types.map(t=>`<span style="font-size:10px;background:var(--soft);color:var(--text);padding:2px 8px;border-radius:8px;font-weight:600">${_scEsc(t)}</span>`).join('')}</div>`:''}
         </div>
         <div style="text-align:right;flex-shrink:0">
           <div style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700">Outstanding</div>
@@ -702,12 +702,12 @@ function _cashInsightsPanel(entries,period){
   h+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;border-top:3px solid #15803d">
       <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">In</div>
-      <div style="font-size:18px;font-weight:800;color:#15803d">${_fmtPKR(totalIn)}</div>
+      <div style="font-size:18px;font-weight:800;color:var(--accent-success)">${_fmtPKR(totalIn)}</div>
       ${_delta(totalIn,prevIn,false)}
     </div>
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;border-top:3px solid #dc2626">
       <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Out</div>
-      <div style="font-size:18px;font-weight:800;color:#dc2626">${_fmtPKR(totalOut)}</div>
+      <div style="font-size:18px;font-weight:800;color:var(--accent-urgent)">${_fmtPKR(totalOut)}</div>
       ${_delta(totalOut,prevOut,true)}
     </div>
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;border-top:3px solid ${net>=0?'#15803d':'#dc2626'}">
@@ -732,7 +732,7 @@ function _cashInsightsPanel(entries,period){
     const shareW=totalOut?Math.min(Math.round(amt/totalOut*100),100):0;
     const usedPct=budget>0?Math.round(amt/budget*100):null;
     const barColor=usedPct!=null?(usedPct>100?'#dc2626':usedPct>80?'#b45309':accent):accent;
-    h+=`<div style="padding:10px 14px;border-bottom:1px solid #f5f5f5">
+    h+=`<div style="padding:10px 14px;border-bottom:1px solid var(--border)">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
         <span style="width:9px;height:9px;border-radius:50%;background:${accent};flex-shrink:0"></span>
         <span style="flex:1;font-size:13px;font-weight:600">${_scEsc(cat.label)}</span>
@@ -743,7 +743,7 @@ function _cashInsightsPanel(entries,period){
         <div style="height:100%;width:${shareW}%;background:${barColor};border-radius:3px"></div>
         ${budget>0?`<div style="position:absolute;top:-1px;bottom:-1px;left:${Math.min(100,Math.round(budget/totalOut*100))}%;width:2px;background:var(--dark);opacity:.45;border-radius:1px" title="Budget"></div>`:''}
       </div>
-      ${usedPct!=null&&usedPct>100?`<div style="font-size:10px;color:#dc2626;font-weight:600;margin-top:3px">⚠ Over budget by ${_fmtPKR(amt-budget)}</div>`:''}
+      ${usedPct!=null&&usedPct>100?`<div style="font-size:10px;color:var(--accent-urgent);font-weight:600;margin-top:3px">⚠ Over budget by ${_fmtPKR(amt-budget)}</div>`:''}
     </div>`;
   }
   h+=`<div style="display:flex;justify-content:space-between;padding:10px 14px;background:var(--surface-2)">
@@ -757,7 +757,7 @@ function _cashInsightsPanel(entries,period){
       <div style="padding:12px 14px 8px;border-bottom:1px solid var(--border)"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">By Vendor</div></div>`;
     for(const [k,amt] of vendorSorted){
       const v=_cashGetVendor(k);const pct=totalOut>0?Math.round(amt/totalOut*100):0;
-      h+=`<div style="padding:10px 14px;border-bottom:1px solid #f5f5f5">
+      h+=`<div style="padding:10px 14px;border-bottom:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
           <span style="font-size:13px;font-weight:600">${_scEsc(v?v.name:k)}</span>
           <span style="font-size:13px;font-weight:800">${_fmtPKR(amt)}</span>
@@ -810,7 +810,7 @@ function _cashInsightsPanel(entries,period){
       <div style="padding:12px 14px 8px;border-bottom:1px solid var(--border)"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">By Person</div></div>`;
     for(const [u,amt] of userSorted){
       const pct=totalOut>0?Math.round(amt/totalOut*100):0;
-      h+=`<div style="padding:10px 14px;border-bottom:1px solid #f5f5f5">
+      h+=`<div style="padding:10px 14px;border-bottom:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
           <span style="font-size:13px;font-weight:600">${_scEsc(u)}</span>
           <span style="font-size:13px;font-weight:800">${_fmtPKR(amt)}</span>
@@ -831,7 +831,7 @@ function _cashInsightsPanel(entries,period){
 function _cashActionBar(){
   return `<div id="cash-action-bar" class="cash-action-bar">
     <button onclick="window.cashSheetExpense()" style="flex:3;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer;letter-spacing:-.01em">Record Expense</button>
-    <button onclick="window.cashSheetTopup()" style="flex:1;height:48px;background:var(--surface);color:#15803d;border:1.5px solid #15803d;border-radius:12px;font-size:13px;font-weight:700;cursor:pointer">+ In</button>
+    <button onclick="window.cashSheetTopup()" style="flex:1;height:48px;background:var(--surface);color:var(--accent-success);border:1.5px solid #15803d;border-radius:12px;font-size:13px;font-weight:700;cursor:pointer">+ In</button>
     <button onclick="window.cashSheetIssue()" style="flex:1;height:48px;background:var(--surface);color:var(--text);border:1.5px solid var(--border);border-radius:12px;font-size:11px;font-weight:700;cursor:pointer">→ Issue</button>
   </div>`;
 }
@@ -851,7 +851,7 @@ window._cashRowAction=function(id){
 // Read-only breakdown of an itemized cash issue.
 window._cashViewIssue=function(id){
   const r=allCashLedger.find(x=>x._id===id);if(!r)return;
-  const rows=(r.items||[]).map(i=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid #f5f5f5;font-size:13px"><span style="flex:1;min-width:0"><b>${_scEsc(i.name)}</b> <span style="color:var(--muted)">${i.qty} ${_scEsc(i.unit||'item')} × ${_fmtPKR(i.price)}</span></span><span style="font-weight:800">${_fmtPKR(i.total)}</span></div>`).join('');
+  const rows=(r.items||[]).map(i=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="flex:1;min-width:0"><b>${_scEsc(i.name)}</b> <span style="color:var(--muted)">${i.qty} ${_scEsc(i.unit||'item')} × ${_fmtPKR(i.price)}</span></span><span style="font-weight:800">${_fmtPKR(i.total)}</span></div>`).join('');
   const acc=_cashGetAccount(r.account);
   const src=r.reimbursement?`Paid by ${_scEsc(r.paidBy||'—')} · owed`:(acc?_scEsc(acc.label):_scEsc(r.account||'—'));
   _cashOpenSheet('Issue detail',`
@@ -859,7 +859,7 @@ window._cashViewIssue=function(id){
     <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${src} · ${new Date(r.ts).toLocaleDateString()} · by ${_scEsc(r.by||'')}</div>
     ${rows||'<div class="empty">No items recorded.</div>'}
     <div style="display:flex;justify-content:space-between;background:var(--dark);color:var(--on-dark);border-radius:10px;padding:10px 13px;margin-top:12px"><span style="font-weight:700">Total</span><span style="font-weight:800">${_fmtPKR(r.amount)}</span></div>
-    ${r.billPhoto?`<a href="${r.billPhoto}" target="_blank" style="display:block;text-align:center;margin-top:12px;color:#15803d;font-weight:700;text-decoration:none">📎 View bill photo</a>`:''}
+    ${r.billPhoto?`<a href="${r.billPhoto}" target="_blank" style="display:block;text-align:center;margin-top:12px;color:var(--accent-success);font-weight:700;text-decoration:none">📎 View bill photo</a>`:''}
   `);
 };
 
@@ -909,7 +909,7 @@ window.cashSheetExpense=function(cloneId){
       <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">From Account</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">${accChips}</div>
     </div>
-    <div id="exp-credit-note" style="display:${_cashExpenseMode==='credit'?'block':'none'};background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:12px;color:#991b1b;line-height:1.5">Added to vendor payables. <strong>Bill photo required.</strong></div>
+    <div id="exp-credit-note" style="display:${_cashExpenseMode==='credit'?'block':'none'};background:var(--accent-urgent-soft);border:1px solid var(--accent-urgent);border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:12px;color:var(--accent-urgent);line-height:1.5">Added to vendor payables. <strong>Bill photo required.</strong></div>
 
     <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Note <span style="font-weight:400">(optional)</span></div>
     <input id="cash-note" type="text" placeholder="e.g. invoice #, what was bought" value="${_scEsc(clone?.note||'')}"
@@ -1086,7 +1086,7 @@ window.cashSheetIssue=function(){
     <div id="issue-src" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${_cashSrcChipsHtml()}</div>
     <div id="issue-paidby-wrap" style="display:none;margin-bottom:12px">
       <input id="issue-paidby" type="text" placeholder="Paid by whom? (e.g. Afnan)" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
-      <div style="font-size:11px;color:#b45309;margin-top:5px">Recorded as money the store owes this person — settle later from the Vendors tab.</div>
+      <div style="font-size:11px;color:var(--accent-warning);margin-top:5px">Recorded as money the store owes this person — settle later from the Vendors tab.</div>
     </div>
 
     <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:2px 0 6px">Name of person</div>
@@ -1134,7 +1134,7 @@ window._cashIssueAddItem=function(){
     <input class="ci-price" type="number" inputmode="decimal" min="0" step="any" placeholder="Price" oninput="window._cashIssueRecalc()" style="width:74px;padding:8px 7px;border:1px solid var(--border);border-radius:7px;font-size:13px;text-align:right;box-sizing:border-box">
     <span style="color:var(--muted);font-size:12px">=</span>
     <span class="ci-total" style="flex:1;min-width:60px;text-align:right;font-weight:800;font-size:13px">₨0</span>
-    <button type="button" onclick="this.closest('.cash-iss-row').remove();window._cashIssueRecalc()" title="Remove item" style="background:none;border:none;color:#dc2626;font-size:16px;cursor:pointer;line-height:1">×</button>`;
+    <button type="button" onclick="this.closest('.cash-iss-row').remove();window._cashIssueRecalc()" title="Remove item" style="background:none;border:none;color:var(--accent-urgent);font-size:16px;cursor:pointer;line-height:1">×</button>`;
   box.appendChild(div);
 };
 window._cashIssueRecalc=function(){
@@ -1202,10 +1202,10 @@ window.cashSettleFloat=function(floatId){
   const _bills=(f.settlements||[]).filter(s=>s.billPhoto);
   const _priorHtml=_bills.length?`<div style="font-size:11px;color:var(--muted);margin-bottom:12px">Bills so far: ${_bills.map((b,i)=>`<a href="${b.billPhoto}" target="_blank" style="text-decoration:none">📎 #${i+1} ${_fmtPKR((b.goodsValue||0)+(b.changeReturned||0))}</a>`).join(' · ')}</div>`:'';
   _cashOpenSheet('Settle Float',`
-    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;line-height:1.6">
+    <div style="background:var(--accent-urgent-soft);border:1px solid var(--accent-urgent);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;line-height:1.6">
       <strong>${_scEsc(f.payee)}</strong> was issued <strong>${_fmtPKR(f.issued)}</strong> from <strong>${_scEsc(_cashGetAccount(f.account)?.label||f.account)}</strong>
-      <div style="margin-top:6px;display:flex;justify-content:space-between"><span>Settled so far</span><strong style="color:#15803d">${_fmtPKR(_settled)}</strong></div>
-      <div style="display:flex;justify-content:space-between"><span>Still to account for</span><strong style="color:#dc2626">${_fmtPKR(_outstanding)}</strong></div>
+      <div style="margin-top:6px;display:flex;justify-content:space-between"><span>Settled so far</span><strong style="color:var(--accent-success)">${_fmtPKR(_settled)}</strong></div>
+      <div style="display:flex;justify-content:space-between"><span>Still to account for</span><strong style="color:var(--accent-urgent)">${_fmtPKR(_outstanding)}</strong></div>
     </div>
     ${_priorHtml}
     <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Bill photo <span style="font-weight:400">(required for this entry)</span></div>
@@ -1214,7 +1214,7 @@ window.cashSettleFloat=function(floatId){
     <input id="settle-goods" type="number" inputmode="numeric" min="0" placeholder="0" oninput="window._cashSettlePrev('${_scEsc(floatId)}')"
       style="width:100%;font-size:22px;font-weight:800;padding:10px;border:2px solid var(--border);border-radius:10px;margin-bottom:10px;box-sizing:border-box">
     ${catOpts?`<div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Goods Category</div>
-    <select id="settle-cat" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:10px;box-sizing:border-box">${catOpts}</select>`:`<div style="font-size:12px;color:#dc2626;margin-bottom:10px">No categories exist — create one first (Categories tab).</div>`}
+    <select id="settle-cat" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:10px;box-sizing:border-box">${catOpts}</select>`:`<div style="font-size:12px;color:var(--accent-urgent);margin-bottom:10px">No categories exist — create one first (Categories tab).</div>`}
     <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Change Returned (₨)</div>
     <input id="settle-change" type="number" inputmode="numeric" min="0" placeholder="0" oninput="window._cashSettlePrev('${_scEsc(floatId)}')"
       style="width:100%;font-size:22px;font-weight:800;padding:10px;border:2px solid var(--border);border-radius:10px;margin-bottom:8px;box-sizing:border-box">
@@ -1222,7 +1222,7 @@ window.cashSettleFloat=function(floatId){
     <select id="settle-change-acc" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:10px;box-sizing:border-box">${_cashAllAccounts().map(a=>`<option value="${a._id||a.key}"${(a._id||a.key)===f.account?' selected':''}>${_scEsc(a.label)}${(a._id||a.key)===f.account?' (issued from)':''}</option>`).join('')}</select>
     <div id="settle-prev" style="font-size:12px;text-align:center;margin-bottom:12px;min-height:16px;color:var(--muted)"></div>
     <button id="settle-submit" onclick="window._cashDoSettle('${_scEsc(floatId)}')" style="width:100%;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">Add bill ✓</button>
-    ${(typeof _canAdminCash==='function'&&_canAdminCash())?`<button onclick="window._cashForceCloseFloat('${_scEsc(floatId)}')" style="width:100%;margin-top:8px;height:40px;background:var(--surface);border:1px solid #fca5a5;color:#dc2626;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">Force-close · write off ${_fmtPKR(_outstanding)}</button>`:''}
+    ${(typeof _canAdminCash==='function'&&_canAdminCash())?`<button onclick="window._cashForceCloseFloat('${_scEsc(floatId)}')" style="width:100%;margin-top:8px;height:40px;background:var(--surface);border:1px solid var(--accent-urgent);color:var(--accent-urgent);border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">Force-close · write off ${_fmtPKR(_outstanding)}</button>`:''}
   `);
 };
 window._cashSettlePrev=function(floatId){
@@ -1233,9 +1233,9 @@ window._cashSettlePrev=function(floatId){
   const v=out-g-c;   // remaining outstanding AFTER this entry
   const el=document.getElementById('settle-prev');if(!el)return;
   if(g===0&&c===0){el.textContent='';return;}
-  if(v===0){el.innerHTML='<span style="color:#15803d;font-weight:700">This fully settles the float ✓</span>';}
-  else if(v>0){el.innerHTML=`<span style="color:#b45309;font-weight:700">${_fmtPKR(v)} still to account for</span> after this bill — stays open`;}
-  else{el.innerHTML=`<span style="color:#dc2626;font-weight:700">Over by ${_fmtPKR(-v)}</span> — exceeds the outstanding balance`;}
+  if(v===0){el.innerHTML='<span style="color:var(--accent-success);font-weight:700">This fully settles the float ✓</span>';}
+  else if(v>0){el.innerHTML=`<span style="color:var(--accent-warning);font-weight:700">${_fmtPKR(v)} still to account for</span> after this bill — stays open`;}
+  else{el.innerHTML=`<span style="color:var(--accent-urgent);font-weight:700">Over by ${_fmtPKR(-v)}</span> — exceeds the outstanding balance`;}
 };
 window._cashDoSettle=async function(floatId){
   const f=allCashFloats.find(x=>x._id===floatId||x.floatId===floatId);
@@ -1328,7 +1328,7 @@ window.cashSheetVendor=function(vendorId){
     <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Opening Outstanding (₨) <span style="font-weight:400">${v?'':'(if they already owe)'}</span></div>
     <input id="vn-opening" type="number" inputmode="numeric" min="0" value="${v?.openingOutstanding||''}" placeholder="0" ${v?'disabled style="background:var(--surface-2);'+'':'style="'}width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:14px">
     <button id="vn-submit" onclick="window._cashDoVendor('${vendorId||''}')" style="width:100%;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">${v?'Save Changes':'Create Vendor'}</button>
-    ${v&&_canAdminCash()?`<button onclick="window.cashDeleteVendor('${vendorId}')" style="width:100%;height:40px;background:transparent;color:#dc2626;border:1.5px solid #fca5a5;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;margin-top:8px">Delete vendor</button>`:''}
+    ${v&&_canAdminCash()?`<button onclick="window.cashDeleteVendor('${vendorId}')" style="width:100%;height:40px;background:transparent;color:var(--accent-urgent);border:1.5px solid var(--accent-urgent);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;margin-top:8px">Delete vendor</button>`:''}
   `);
 };
 window._cashDoVendor=async function(vendorId){
@@ -1372,8 +1372,8 @@ window.cashSheetPayVendor=function(vendorId){
   delete window._cashPhoto['pay-proof'];
   const opts=_cashAllAccounts().map(a=>`<option value="${a._id||a.key}" data-online="${a.online?1:0}">${_scEsc(a.label)}${a.online?' (online)':''}</option>`).join('');
   _cashOpenSheet('Pay '+(v.name||'Vendor'),`
-    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px">
-      Outstanding to <strong>${_scEsc(v.name)}</strong>: <strong style="color:#dc2626">${_fmtPKR(out)}</strong>
+    <div style="background:var(--accent-urgent-soft);border:1px solid var(--accent-urgent);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px">
+      Outstanding to <strong>${_scEsc(v.name)}</strong>: <strong style="color:var(--accent-urgent)">${_fmtPKR(out)}</strong>
     </div>
     <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Amount (₨)</div>
     <input id="pay-amt" type="number" inputmode="numeric" min="1" value="${out>0?out:''}" placeholder="0"
@@ -1421,7 +1421,7 @@ window.cashVendorLedger=function(vendorId){
     const col=isPay?'#15803d':'#dc2626';const sign=isPay?'−':'+';
     const lbl=isPay?'Payment':(r.kind==='credit_purchase'?'Credit purchase':'Purchase');
     const proof=(r.billPhoto||r.proofPhoto)?` <a href="${r.billPhoto||r.proofPhoto}" target="_blank" style="text-decoration:none">📎</a>`:'';
-    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #f5f5f5;font-size:13px">
+    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px">
       <div><div style="font-weight:600">${lbl}${proof}</div><div style="font-size:11px;color:var(--muted)">${_scEsc(r.date||'')} · ${_scEsc(r.note||'')}</div></div>
       <div style="font-weight:800;color:${col}">${sign}${_fmtPKR(r.amount)}</div>
     </div>`;
@@ -1449,7 +1449,7 @@ window.cashSheetCategory=function(catId){
     <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Linked Vendor *</div>
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <button id="cvm-existing" onclick="window._cashCatVendorMode('existing')" style="flex:1;padding:9px;border-radius:9px;border:2px solid var(--line);background:var(--dark);color:var(--on-dark);font-size:12px;font-weight:700;cursor:pointer">Existing vendor</button>
-      <button id="cvm-new" onclick="window._cashCatVendorMode('new')" style="flex:1;padding:9px;border-radius:9px;border:2px solid #e5e7eb;background:var(--surface);color:var(--text);font-size:12px;font-weight:700;cursor:pointer">+ New vendor</button>
+      <button id="cvm-new" onclick="window._cashCatVendorMode('new')" style="flex:1;padding:9px;border-radius:9px;border:2px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-weight:700;cursor:pointer">+ New vendor</button>
     </div>
     <div id="cv-existing-block">
       <select id="cat-vendor" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:14px;box-sizing:border-box">${_cashVendorOptions(vendorSel||'walkin')}</select>
@@ -1466,7 +1466,7 @@ window.cashSheetCategory=function(catId){
       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:14px">
 
     <button id="cat-submit" onclick="window._cashDoCategory('${catId||''}')" style="width:100%;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">${c?'Save Changes':'Create Category'}</button>
-    ${c&&_canAdminCash()?`<button onclick="window.cashDeleteCategory('${catId}')" style="width:100%;height:40px;background:transparent;color:#dc2626;border:1.5px solid #fca5a5;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;margin-top:8px">Delete category</button>`:''}
+    ${c&&_canAdminCash()?`<button onclick="window.cashDeleteCategory('${catId}')" style="width:100%;height:40px;background:transparent;color:var(--accent-urgent);border:1.5px solid var(--accent-urgent);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;margin-top:8px">Delete category</button>`:''}
   `);
 };
 window._cashCatVendorMode=function(mode){

@@ -3419,6 +3419,95 @@ whatever `display` it specified — so every collapsible form in this app
 invisible text. `hiddenEl()` walks up to `#main-content` instead, and all
 four checks use it.
 
+### Dark mode — the app-wide sweep (Sept 2026)
+
+Afnan, with a screenshot of Inventory Intel: *"look at the color of dark
+mode, i cant read the table."* He was right, and the cause was one rule.
+The round that followed swept the whole app for the same shapes. **Every
+claim below was MEASURED in headless Chromium in both themes, never read
+off the source**, and each fix was verified by reverting it.
+
+**The reported bug: `.cut-table th` — measured 1.1:1.**
+`background:var(--dark);color:rgba(255,255,255,.6)`. `--dark` is the app's
+"strong contrast chip" and **inverts**, so in dark mode that is near-white
+ink on a near-white bar. It had been invisible since dark mode shipped, on
+**every `.cut-table` in the app** — Inventory Intel just happens to be the
+page that puts the most numbers on screen. The rule that "anything painted
+on `--dark` must take its ink from `--on-dark`" was already written down
+for the embellishments sweep; this rule predated it and was never revisited.
+An alpha becomes an `opacity` so the muted label look survives both themes.
+
+**The four shapes, and only the first is the one earlier sweeps looked for:**
+
+1. **White-alpha ink on a `--dark` panel** (1.03–1.10:1). The *value* beside
+   it already used `--on-dark` and read perfectly, which is exactly why
+   nobody noticed the *label* had gone. 13 sites in `gatepass.js` and
+   `fabric.js`, plus `.cut-table th`, the board heading placeholder, and the
+   Users-page avatar initial.
+2. **A fixed light panel with token ink** (1.04–1.14:1). `#fffbeb`,
+   `#fef2f2`, `#f0fdf4`, `#f7f7f8` … carrying an inherited `var(--text)`.
+   The accent `*-soft` tokens already invert and their LIGHT values are
+   these very colours, so mapping the background is a no-op in light mode
+   and fixes both halves in dark.
+3. **A fixed dark ink on a token surface** (1.02–1.74:1). `#111`, `#1A1A2E`
+   (the brand navy), `#333`, `#374151`, `#1e3a8a`. The worst was the SKU
+   table's own on-hand total.
+4. **Bright patches that are readable but wrong in tone** — self-consistent
+   literal chip pairs (`#f0f0f0`/`#111`, `#dcfce7`/`#166534`, `#e0e7ff`/
+   `#3730a3`) glaring off a dark page. Converted, for the same reason the
+   embellishments sweep converted its chips.
+
+Also swept: seven `border-bottom:1px solid #f5f5f5` hairlines in
+`css/main.css` (a bright line straight across a dark card — the leftover the
+Store log's pager had), `.cash-action-bar`'s fixed white bar, the board
+drop-zone, the white skeleton shimmers, and `fabric.js`'s busy overlay,
+which flashed a white scrim over the whole app.
+
+**Two of the sweep's own replacements were wrong, and the measurement is
+what caught them — not review:**
+
+- **`#ccc`/`#ddd` ink → `var(--border)` is too faint** (1.33:1). Those sites
+  are remove-**×** buttons and empty-state glyphs: faint on purpose, but
+  they still have to be seen. `--muted` is the token that means "faint but
+  legible". **`--border` is a line colour; it is never ink.**
+- **A `.btn-sm` background → `var(--soft)` broke it in LIGHT mode** (1.15:1).
+  The class already sets `color:var(--on-dark)`, which only reads on a solid
+  chip. A grey button wants `--muted`, not a pale surface. **Before changing
+  any element's background, check what its CLASS sets for `color`.**
+
+**What the sweep deliberately did NOT touch**, all confirmed by reading the
+call site rather than assumed:
+
+- `win.document.write` print windows (`embellishments.js` ~3849) — those
+  documents never load `css/main.css`, so a `var()` resolves to nothing.
+  Same standing rule as `js/print-engine.js` and `js/diagnostics.js`.
+- `.hrm-greeting` and the bug-report modal header — fixed dark **gradients**
+  with white ink, self-consistent in both themes.
+- Solid saturated buttons (`#dc2626`/`#fff`, `#1A1A2E`/`white`) — readable
+  on a dark page and semantic.
+- `rgba(0,0,0,.5)` modal backdrops and shadows, and the Pantone hex data,
+  which is **content** (ink colours), not chrome.
+
+**The probe technique, worth reusing.** Extracting every `style="…"` string
+in `js/*.js` and measuring each one in isolation is tempting and produces a
+**flood of false positives**: a child whose ink is `var(--on-dark)` gets
+rendered without the `background:var(--dark)` parent that justifies it, and
+a `.btn-primary` loses the `color` its class supplies. **The filter that
+makes it usable: keep only what fails in DARK and passes in LIGHT.** A
+self-contained style broken in both themes is almost always a missing
+parent, not a bug. That cut 53 raw hits to 9 real ones, and the final sweep
+reports **0 dark-only failures** across 860 style strings.
+
+`tests/smoke-layout.js` gained two fragments. **`inventory intel — SKU
+table` needs one non-obvious row to be worth anything:** a variant with
+**no `onHand` at all**. `totColor`'s three branches are `allInStock ? … :
+anySoldOut ? … : '#111'`, and for numeric stock those first two are exact
+complements — the third is unreachable. Only a variant Shopify has not
+reported inventory for (both `>0` and `<=0` false) reaches it. The first cut
+of the fragment used ordinary rows, **passed with the bug restored, and
+proved nothing.** `gate pass — dark summary panels` covers shape 1. Both
+verified by reverting: 3 dark checks fail each time, naming the elements.
+
 ## Shopify Inventory Intelligence
 
 Read-only sales + inventory dashboard ("Inventory Intel" page). Data is
@@ -3846,7 +3935,8 @@ card is what finally surfaced it.
 **Republished a fifth time by Ammar on 17 Sept 2026, after PR #73**
 (reported in-session), from the repo file at
 `md5 88297fc6f2624db194d3249a5155c79e` (LF line endings — a Windows
-checkout hashes differently until `` is stripped). That commit narrowed
+checkout hashes differently until `
+` is stripped). That commit narrowed
 `scoring_config` write to the new `isScoringAdmin()` (Ammar). **No
 republish is outstanding as of that commit**; this supersedes the entries
 below.
