@@ -520,6 +520,7 @@ function renderMarketingCreators(){
       <div class="page-sub">The Sales Team ▸ Marketing</div></div>
       <div class="mkt-actions">
         <button class="btn-outline" onclick="window.showPage('mkt-import')">Import from sheet</button>
+        <button class="btn-outline" onclick="window.mktOpenIgBulk()">Fetch all from Instagram</button>
         <button class="btn-outline" onclick="window.mktOpenScoring()">Scoring settings</button>
         <button class="btn-outline mkt-primary" onclick="window.mktOpenCreator('')">+ Add creator</button>
       </div>
@@ -717,6 +718,7 @@ window.mktOpenCreator=function(id){
     ${lifetime}
     <div id="mkt-f-error" class="mkt-error" hidden></div>
     <div class="mkt-modal-actions">
+      ${c&&mktCanDeleteCreators()?`<button class="btn-danger mkt-del" id="mkt-f-delete" onclick="window.mktDeleteCreator('${_mktEsc(c.id)}')">Delete creator</button>`:''}
       <button class="btn-outline" onclick="window.mktCloseModal()">Cancel</button>
       <button class="btn-primary" id="mkt-f-save" onclick="window.mktSaveCreator()">${c?'Save changes':'Add creator'}</button>
     </div>`,true);
@@ -901,6 +903,216 @@ async function mktWriteCreator(built){
     else tx.update(creatorRef,built.data);
   });
 }
+
+// ── Deleting a creator ──────────────────────────────────────────────────
+// Owners only — firestore.rules allows a creator delete for isOwner() and
+// nobody else. The handle lock goes in the same batch (the lock rule lets it
+// go once its creator no longer exists), so the handle can be added again.
+// A creator with dispatches or Paid PRs is NOT deleted: those records name
+// the creator, and the rollups, reports and discount codes built on them
+// would be left pointing at nothing. "Do not use" is the way to retire one.
+function mktCanDeleteCreators(){
+  return typeof session!=='undefined'&&!!session&&session.role==='owner';
+}
+/** Why this creator cannot be deleted, or '' if it can. Pure. */
+function mktCreatorDeleteBlock(creatorId,dispatches,paidPRs){
+  if(dispatches==null||paidPRs==null)return'The dispatch log or Paid PR list did not load, so it cannot be checked that nothing refers to this creator. Reload and try again.';
+  const d=dispatches.filter(x=>x.creator_id===creatorId).length;
+  const p=paidPRs.filter(x=>x.creator_id===creatorId).length;
+  if(!d&&!p)return'';
+  const parts=[];
+  if(d)parts.push(d+' dispatch'+(d===1?'':'es'));
+  if(p)parts.push(p+' Paid PR request'+(p===1?'':'s'));
+  return'This creator has '+parts.join(' and ')+', which would be left pointing at nothing. Set the status to "Do not use" instead.';
+}
+let _mktDeleting=false;
+window.mktDeleteCreator=async function(id){
+  if(_mktDeleting)return;
+  if(!mktCanDeleteCreators()){_mktFormError('Only an owner can delete a creator.');return;}
+  const c=mktCreators.find(x=>x.id===id);
+  if(!c){_mktFormError('That creator is no longer in the list.');return;}
+  const block=mktCreatorDeleteBlock(id,mktDispatchesLoaded?mktDispatches:null,mktPaidPRsLoaded?mktPaidPRs:null);
+  if(block){_mktFormError(block);return;}
+  if(typeof confirm==='function'&&!confirm('Delete @'+c.ig_handle+(c.name?' ('+c.name+')':'')+' from the Creator Database? This cannot be undone.'))return;
+  const btn=document.getElementById('mkt-f-delete');
+  _mktDeleting=true;if(btn){btn.disabled=true;btn.textContent='Deleting…';}
+  try{
+    const b=writeBatch(db);
+    b.delete(doc(db,'creators',id));
+    const handle=mktNormHandle(c.ig_handle);
+    if(handle){
+      // Only release a lock that is actually this creator's.
+      const lock=await getDoc(doc(db,'creator_handles',handle));
+      if(lock&&lock.exists()&&((lock.data()||{}).creatorId===id))b.delete(doc(db,'creator_handles',handle));
+    }
+    await b.commit();
+    mktCreators=mktCreators.filter(x=>x.id!==id);
+    _mktCloseModal();
+    showToast('Deleted @'+c.ig_handle);
+    if(typeof logActivity==='function')logActivity('Creator deleted','@'+c.ig_handle);
+    _mktRerenderPage();
+  }catch(e){
+    console.error('[marketing] delete failed',e);
+    _mktFormError('Could not delete: '+((e&&e.message)||'unknown error')+'. Nothing was changed.');
+  }finally{
+    _mktDeleting=false;
+    if(btn){btn.disabled=false;btn.textContent='Delete creator';}
+  }
+};
+
+// ── Fetch all from Instagram ────────────────────────────────────────────
+// Runs the same lookup as the form's button over the whole list, one
+// creator at a time. A Business or Creator account gets its followers and
+// averages written (source 'api'); anything Instagram cannot find is LEFT
+// EXACTLY AS IT IS — no write at all. A manual tier stays manual.
+//
+// Meta caps calls per hour. The server passes back how much of that cap is
+// used (X-App-Usage / X-Business-Use-Case-Usage); the run stops itself at
+// _MKT_IG_USAGE_STOP and on any 429. Running it again skips everyone fetched
+// in the last _MKT_IG_FRESH_MS, so a stopped run simply picks up where it
+// left off.
+const _MKT_IG_FRESH_MS=24*3600*1000;
+const _MKT_IG_USAGE_STOP=85;
+const _MKT_IG_PACE_MS=1200;
+let _mktIgBulk=null;
+
+/** Who a bulk run would look up, and who it skips. Pure. */
+function mktIgBulkPlan(list,now){
+  const todo=[],fresh=[],noHandle=[];
+  for(const c of list||[]){
+    if(!mktNormHandle(c.ig_handle)){noHandle.push(c);continue;}
+    if(c.data_source==='api'&&c.api_fetched_at&&now-c.api_fetched_at<_MKT_IG_FRESH_MS){fresh.push(c);continue;}
+    todo.push(c);
+  }
+  return{todo,fresh,noHandle};
+}
+
+/** The record as a form, so a fetch goes through the same payload builder as a save. Pure. */
+function mktCreatorAsForm(c){
+  return{
+    ig_handle:c.ig_handle,name:c.name||'',tiktok_handle:c.tiktok_handle||'',status:c.status||'active',
+    niche:Array.isArray(c.niche)?c.niche.slice():[],city:c.city||'',address:c.address||'',phone:c.phone||'',
+    top_size:c.top_size||'',bottom_size:c.bottom_size||'',
+    follower_count:c.follower_count,avg_views:c.avg_views,avg_likes:c.avg_likes,avg_comments:c.avg_comments,
+    tier_override:c.tier_is_override?(c.tier||''):'',tier_override_reason:c.tier_override_reason||'',
+    data_source:c.data_source||'manual'
+  };
+}
+
+/** A creator with a fetch applied: the built payload, or {error}. Pure apart from what the builder mints. */
+function mktApplyIgFetch(c,r,cfg,now,uid){
+  const f=mktCreatorAsForm(c);
+  const api={};
+  for(const k of _MKT_TIERING_FIELDS){api[k]=r[k]==null?null:r[k];f[k]=api[k];}
+  f.api_values=api;
+  f.data_source='api';
+  if(!f.name&&r.name)f.name=r.name;
+  return mktBuildCreatorPayload(f,c,cfg,now,uid);
+}
+
+function _mktIgBulkHTML(){
+  const b=_mktIgBulk;
+  const plan=mktIgBulkPlan(mktCreators,Date.now());
+  const head=`<h3>Fetch all from Instagram</h3>
+    <div class="sub">Looks up every creator. Business and Creator accounts get their followers and averages filled in. Anyone Instagram cannot find (Personal accounts, typos, deleted accounts) is left exactly as it is.</div>`;
+  if(!b){
+    return`${head}
+      <div class="mkt-note">${plan.todo.length} to look up${plan.fresh.length?' · '+plan.fresh.length+' already fetched in the last 24 hours (skipped)':''}${plan.noHandle.length?' · '+plan.noHandle.length+' without a valid handle (skipped)':''}.</div>
+      <div class="mkt-note">Instagram limits lookups per hour. If it says stop, the run stops on its own — run it again later and it carries on with whoever is left. A manual tier stays manual.</div>
+      <div class="mkt-modal-actions">
+        <button class="btn-outline" onclick="window.mktCloseModal()">Cancel</button>
+        <button class="btn-primary" id="mkt-igb-start" onclick="window.mktIgBulkRun()"${plan.todo.length?'':' disabled'}>Start (${plan.todo.length})</button>
+      </div>`;
+  }
+  return`${head}
+    <div class="mkt-improgress" id="mkt-igb-progress" aria-live="polite">${_mktEsc(_mktIgBulkLine())}</div>
+    <div class="mkt-implog" id="mkt-igb-log">${b.log.map(_mktEsc).join('<br>')}</div>
+    <div class="mkt-modal-actions">
+      ${b.running?`<button class="btn-outline" id="mkt-igb-stop" onclick="window.mktIgBulkStop()"${b.stop?' disabled':''}>${b.stop?'Stopping…':'Stop'}</button>`
+        :`<button class="btn-primary" onclick="window.mktIgBulkClose()">Done</button>`}
+    </div>`;
+}
+function _mktIgBulkLine(){
+  const b=_mktIgBulk;
+  if(!b)return'';
+  const n=b.updated+b.notFound+b.failed;
+  return(b.running?'Looking up '+n+' of '+b.total+'…':(b.stopReason||'Finished.'))+
+    ' Updated '+b.updated+' · not a Business/Creator account (left as is) '+b.notFound+(b.failed?' · failed '+b.failed:'')+'.';
+}
+function _mktIgBulkPaint(){
+  // Only while the bulk modal is the one showing — closing it mid-run lets
+  // the run carry on quietly instead of popping the modal back up.
+  const back=document.getElementById('mkt-modal-back');
+  if(!back||!back.__igBulk)return;
+  const again=_mktOpenModal(_mktIgBulkHTML());
+  if(again)again.__igBulk=true;
+}
+
+window.mktOpenIgBulk=function(){
+  if(typeof canAccessMarketing!=='function'||!canAccessMarketing())return;
+  if(_mktIgBulk&&!_mktIgBulk.running)_mktIgBulk=null;
+  const back=_mktOpenModal(_mktIgBulkHTML());
+  if(back)back.__igBulk=true;
+};
+window.mktIgBulkStop=function(){if(_mktIgBulk&&_mktIgBulk.running){_mktIgBulk.stop=true;_mktIgBulkPaint();}};
+window.mktIgBulkClose=function(){_mktIgBulk=null;_mktCloseModal();_mktRerenderPage();};
+
+window.mktIgBulkRun=async function(opts){
+  if(_mktIgBulk&&_mktIgBulk.running)return;
+  if(typeof canAccessMarketing!=='function'||!canAccessMarketing())return;
+  const pace=opts&&opts.paceMs!=null?opts.paceMs:_MKT_IG_PACE_MS;
+  const plan=mktIgBulkPlan(mktCreators,Date.now());
+  const b=_mktIgBulk={running:true,stop:false,total:plan.todo.length,updated:0,notFound:0,failed:0,log:[],stopReason:''};
+  const say=t=>{b.log.push(t);const el=document.getElementById('mkt-igb-log');if(el)el.innerHTML=b.log.map(_mktEsc).join('<br>');};
+  const tick=()=>{const el=document.getElementById('mkt-igb-progress');if(el)el.textContent=_mktIgBulkLine();};
+  _mktIgBulkPaint();
+  if(typeof window._gvSilentSaveStart==='function')window._gvSilentSaveStart();
+  const uid=typeof session!=='undefined'&&session?session.uid:null;
+  try{
+    for(let i=0;i<plan.todo.length;i++){
+      if(b.stop){b.stopReason='Stopped. Run it again to carry on.';break;}
+      const c=plan.todo[i];
+      let r;
+      try{r=await mktCallInstagram('lookup',{username:c.ig_handle});}
+      catch(e){
+        const msg=(e&&e.message)||'failed';
+        if(e&&(e.status===429||e.status===503||e.status===401||e.status===403)){
+          b.stopReason=(e.status===429?'Instagram\'s hourly limit was reached — run it again in an hour; everyone updated so far is skipped.':'Stopped: '+msg);
+          say('@'+c.ig_handle+': '+msg);
+          break;
+        }
+        b.failed++;say('@'+c.ig_handle+': '+msg);tick();continue;
+      }
+      if(!r||!r.found){b.notFound++;say('@'+c.ig_handle+': not found as a Business/Creator account — left as is');}
+      else{
+        const now=Date.now();
+        const built=mktApplyIgFetch(c,r,mktScoringConfig,now,uid);
+        if(built.error){b.failed++;say('@'+c.ig_handle+': '+built.error);}
+        else{
+          try{
+            await updateDoc(doc(db,'creators',c.id),built.data);
+            const merged=Object.assign({},c,built.data);
+            mktCreators=mktCreators.map(x=>x.id===c.id?merged:x);
+            b.updated++;
+            say('@'+c.ig_handle+': '+_mktFmtNum(r.follower_count)+' followers · tier '+(merged.tier==='below_threshold'?'below threshold':(merged.tier||'—')));
+          }catch(e){b.failed++;say('@'+c.ig_handle+': could not save — '+((e&&e.message)||'failed'));}
+        }
+      }
+      tick();
+      if(r&&typeof r.usage==='number'&&r.usage>=_MKT_IG_USAGE_STOP&&i<plan.todo.length-1){
+        b.stopReason='Paused at '+Math.round(r.usage)+'% of Instagram\'s hourly allowance — run it again in an hour; everyone updated so far is skipped.';
+        break;
+      }
+      if(pace&&i<plan.todo.length-1)await new Promise(res=>setTimeout(res,pace));
+    }
+    if(typeof logActivity==='function'&&(b.updated||b.notFound))logActivity('Creators fetched from Instagram',b.updated+' updated, '+b.notFound+' not Business/Creator');
+  }finally{
+    if(typeof window._gvSilentSaveStop==='function')window._gvSilentSaveStop();
+    b.running=false;
+    _mktIgBulkPaint();
+  }
+  return{updated:b.updated,notFound:b.notFound,failed:b.failed,stopReason:b.stopReason};
+};
 
 // ── Scoring settings ────────────────────────────────────────────────────
 window.mktOpenScoring=function(){

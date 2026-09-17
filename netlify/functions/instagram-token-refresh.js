@@ -61,10 +61,28 @@ const fingerprint = (s) => crypto.createHash("sha256").update(String(s)).digest(
 // Sent with every call, so the app works whether or not "Require App Secret" is on.
 const appsecretProof = (token, secret) => crypto.createHmac("sha256", secret).update(token).digest("hex");
 
+// Meta reports how much of the hourly allowance is used, as percentages, in
+// X-App-Usage and X-Business-Use-Case-Usage. The highest figure across both
+// is what a bulk run paces itself by. Pure apart from reading the headers.
+let lastUsage = null;
+function usageFromHeaders(headers) {
+  const get = (k) => { try { return headers && typeof headers.get === "function" ? headers.get(k) : null; } catch (_) { return null; } };
+  const nums = [];
+  const take = (o) => { if (o && typeof o === "object") ["call_count", "total_time", "total_cputime", "acc_id_util_pct"].forEach((k) => { if (typeof o[k] === "number") nums.push(o[k]); }); };
+  try { take(JSON.parse(get("x-app-usage") || "null")); } catch (_) {}
+  try {
+    const buc = JSON.parse(get("x-business-use-case-usage") || "null");
+    if (buc && typeof buc === "object") Object.values(buc).forEach((arr) => (Array.isArray(arr) ? arr : []).forEach(take));
+  } catch (_) {}
+  return nums.length ? Math.max(...nums) : null;
+}
+const getLastUsage = () => lastUsage;
+
 /** A Graph error, keeping Meta's code/subcode for the caller to classify. */
 async function graphGet(pathAndQuery, params) {
   const qs = new URLSearchParams(params).toString();
   const res = await fetch(`${GRAPH}/${pathAndQuery}${pathAndQuery.includes("?") ? "&" : "?"}${qs}`);
+  lastUsage = usageFromHeaders(res.headers);
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.error) {
     const g = data.error || {};
@@ -234,6 +252,6 @@ function getDbIfPossible() {
 
 Object.assign(exports, {
   GRAPH, GRAPH_VERSION, DEFAULT_IG_ACCOUNT_ID, WARN_DAYS,
-  igConfig, isConfigured, getDb, graphGet, classifyGraphError, appsecretProof,
+  igConfig, isConfigured, getDb, graphGet, usageFromHeaders, getLastUsage, classifyGraphError, appsecretProof,
   getToken, markTokenBad, writeStatus, debugToken, daysLeft, planAlert, runCheck, fingerprint,
 });

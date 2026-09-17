@@ -1294,5 +1294,152 @@ module.exports=async function(){
     s.ok('the app never holds a Meta credential',!/META_APP_SECRET\s*[:=]|IG_ACCESS_TOKEN\s*[:=]|appsecret_proof|graph\.facebook\.com/.test(client));
   }
 
+  s.section('deleting a creator');
+  {
+    const t=app();
+    s.eq('a creator with nothing linked can go',t.run("mktCreatorDeleteBlock('cr_a',[],[])"),'');
+    s.ok('one with dispatches cannot',/2 dispatches[\s\S]*Do not use/.test(t.run("mktCreatorDeleteBlock('cr_a',[{creator_id:'cr_a'},{creator_id:'cr_a'},{creator_id:'cr_b'}],[])")));
+    s.ok('nor one with a Paid PR',/1 Paid PR request\b/.test(t.run("mktCreatorDeleteBlock('cr_a',[],[{creator_id:'cr_a'}])")));
+    s.ok('nor when the lists did not load — it cannot be checked',/did not load/.test(t.run("mktCreatorDeleteBlock('cr_a',null,[])")));
+    s.eq('owners may delete',t.run('mktCanDeleteCreators()'),true);
+    const lead=app({session:{uid:'uid-d',u:'daniyal',name:'Daniyal',role:'creator_content_ops_lead',email:'daniyal@groovy.op'}});
+    s.eq('the lead may not (the rules say owners only)',lead.run('mktCanDeleteCreators()'),false);
+    lead.run("mktCreators=[{id:'cr_a',ig_handle:'a'}];mktCreatorsLoaded=true");
+    lead.run("window.mktOpenCreator('cr_a')");
+    s.ok('and is not offered the button',!/Delete creator/.test(lead.bodyHtml('mkt-modal-back')));
+    t.run("mktCreators=[{id:'cr_a',ig_handle:'a'}];mktCreatorsLoaded=true");
+    t.run("window.mktOpenCreator('cr_a')");
+    s.ok('an owner is',/Delete creator/.test(t.bodyHtml('mkt-modal-back')));
+    t.run("window.mktOpenCreator('')");
+    s.ok('but not on a new, unsaved creator',!/Delete creator/.test(t.bodyHtml('mkt-modal-back')));
+  }
+  {
+    const batches=[];
+    const lockOwner={v:'cr_a'};
+    const mk=(extra)=>app({globals:Object.assign({
+      doc:(db,col,id)=>({path:col+'/'+id}),
+      getDoc:async ref=>({exists:()=>true,data:()=>({creatorId:lockOwner.v})}),
+      writeBatch:()=>{const ops=[];return{delete:r=>ops.push(['delete',r.path]),set:()=>{},update:()=>{},commit:async()=>{batches.push(ops);}};}
+    },extra||{})});
+    const t=mk();
+    t.run("mktCreators=[{id:'cr_a',ig_handle:'st4rr.doll'},{id:'cr_b',ig_handle:'b'}];mktDispatches=[{creator_id:'cr_b'}];mktPaidPRs=[];mktDispatchesLoaded=true;mktPaidPRsLoaded=true");
+    await t.run("window.mktDeleteCreator('cr_a')");
+    s.eq('one batch deletes the creator and its handle lock',JSON.stringify(batches[0]),JSON.stringify([['delete','creators/cr_a'],['delete','creator_handles/st4rr.doll']]));
+    s.eq('it leaves the list',t.run("mktCreators.map(c=>c.id).join()"),'cr_b');
+    s.ok('and says so',t.state.toasts.some(x=>/Deleted @st4rr\.doll/.test(x)));
+    s.ok('after asking first',t.state.confirms&&t.state.confirms.length===1&&/cannot be undone/.test(t.state.confirms[0]));
+    await t.run("window.mktDeleteCreator('cr_b')");
+    s.eq('a creator with a dispatch is refused — no write',batches.length,1);
+    s.ok('with the reason',t.state.toasts.some(x=>/1 dispatch\b[\s\S]*Do not use/.test(x))||/1 dispatch\b/.test(t.el('mkt-f-error').textContent));
+    lockOwner.v='someone_else';
+    const u=mk();
+    u.run("mktCreators=[{id:'cr_a',ig_handle:'st4rr.doll'}];mktDispatches=[];mktPaidPRs=[];mktDispatchesLoaded=true;mktPaidPRsLoaded=true");
+    await u.run("window.mktDeleteCreator('cr_a')");
+    s.eq('a lock owned by another creator is never released',JSON.stringify(batches[1]),JSON.stringify([['delete','creators/cr_a']]));
+    const no=mk({confirm:()=>false});
+    no.run("mktCreators=[{id:'cr_a',ig_handle:'a'}];mktDispatches=[];mktPaidPRs=[];mktDispatchesLoaded=true;mktPaidPRsLoaded=true");
+    await no.run("window.mktDeleteCreator('cr_a')");
+    s.eq('cancelling the confirm deletes nothing',batches.length,2);
+  }
+
+  s.section('fetch all from Instagram');
+  {
+    const t=app();
+    const now=Date.parse('2026-09-17T10:00:00Z');
+    const plan=t.run("mktIgBulkPlan([{id:'1',ig_handle:'a'},{id:'2',ig_handle:'b',data_source:'api',api_fetched_at:"+(now-3600000)+"},{id:'3',ig_handle:'c',data_source:'api',api_fetched_at:"+(now-2*86400000)+"},{id:'4',ig_handle:''}],"+now+")");
+    s.eq('never-fetched and stale creators are looked up',plan.todo.map(c=>c.id).join(),'1,3');
+    s.eq('anyone fetched in the last day is skipped (so a stopped run resumes)',plan.fresh.map(c=>c.id).join(),'2');
+    s.eq('no handle, no lookup',plan.noHandle.map(c=>c.id).join(),'4');
+    const c={id:'cr_x',ig_handle:'x',name:'',city:'taxila',niche:['Blogger'],status:'do_not_use',address:'h1',phone:'0300',
+      tier:'A',tier_is_override:true,tier_override_reason:'Great sales',follower_count:100,avg_likes:1,avg_comments:0,data_source:'screenshot',date_added:5};
+    const built=t.run('mktApplyIgFetch('+J(c)+','+J({found:true,name:'Ex',follower_count:24500,avg_likes:600,avg_comments:40,avg_views:null})+',null,'+now+',"u1")');
+    s.ok('it builds without error',!built.error);
+    s.eq('the fetched numbers go in',J([built.data.follower_count,built.data.avg_likes,built.data.avg_comments,built.data.avg_views]),J([24500,600,40,null]));
+    s.eq('marked api',built.data.data_source,'api');
+    s.eq('stamped',built.data.api_fetched_at,now);
+    s.eq('a manual tier stays manual',J([built.data.tier,built.data.tier_is_override,built.data.tier_override_reason]),J(['A',true,'Great sales']));
+    s.eq('the formula tier is recalculated beside it',built.data.tier_formula,'C');
+    s.eq('an off-list city the sheet brought in survives',built.data.city,'taxila');
+    s.eq('everything else is untouched',J([built.data.status,built.data.address,built.data.phone,built.data.niche]),J(['do_not_use','h1','0300',['Blogger']]));
+    s.eq('an empty name is filled from Instagram',built.data.name,'Ex');
+    s.ok('it is an update, not a new creator',built.isNew===false&&!('date_added' in built.data));
+  }
+  {
+    const writes=[];
+    const answers={
+      'biz.one':{found:true,username:'biz.one',follower_count:30000,avg_likes:900,avg_comments:50,avg_views:12000,usage:10},
+      'personal.acc':{found:false,message:'nf',usage:12},
+      'biz.two':{found:true,username:'biz.two',follower_count:5000,avg_likes:100,avg_comments:5,avg_views:null,usage:15}
+    };
+    const t=app({globals:{
+      auth:{currentUser:{getIdToken:async()=>'tok'}},
+      doc:(db,col,id)=>({path:col+'/'+id}),
+      updateDoc:async(ref,data)=>{writes.push([ref.path,data]);},
+      fetch:async(url,init)=>{const u=JSON.parse(init.body).username;const a=answers[u];
+        if(!a)return{ok:false,status:502,json:async()=>({error:'Instagram lookup failed: boom'})};
+        return{ok:true,status:200,json:async()=>a};}
+    }});
+    t.run("mktCreators=["+
+      "{id:'c1',ig_handle:'biz.one',name:'One',follower_count:10,avg_likes:1,avg_comments:1,data_source:'manual'},"+
+      "{id:'c2',ig_handle:'personal.acc',name:'Two',follower_count:777,avg_likes:7,avg_comments:7,data_source:'screenshot'},"+
+      "{id:'c3',ig_handle:'broken',name:'Three'},"+
+      "{id:'c4',ig_handle:'biz.two',name:''}];mktCreatorsLoaded=true");
+    const out=await t.run('window.mktIgBulkRun({paceMs:0})');
+    s.eq('business accounts are updated',J(writes.map(w=>w[0])),J(['creators/c1','creators/c4']));
+    s.eq('with their numbers',J([writes[0][1].follower_count,writes[0][1].avg_likes,writes[0][1].data_source]),J([30000,900,'api']));
+    s.ok('a Personal account is left exactly as it is — no write at all',!writes.some(w=>w[0]==='creators/c2'));
+    s.eq('and keeps its numbers in memory too',J(t.run("mktCreators.find(c=>c.id==='c2')")),J({id:'c2',ig_handle:'personal.acc',name:'Two',follower_count:777,avg_likes:7,avg_comments:7,data_source:'screenshot'}));
+    s.eq('the counts',J([out.updated,out.notFound,out.failed]),J([2,1,1]));
+    s.eq('one lookup failing does not stop the run',out.stopReason,'');
+    s.eq('memory follows the writes',t.run("mktCreators.find(c=>c.id==='c4').follower_count"),5000);
+  }
+  {
+    const writes=[];let calls=0;
+    const t=app({globals:{
+      auth:{currentUser:{getIdToken:async()=>'tok'}},doc:(db,col,id)=>({path:col+'/'+id}),
+      updateDoc:async(ref)=>{writes.push(ref.path);},
+      fetch:async()=>{calls++;
+        if(calls===2)return{ok:false,status:429,json:async()=>({error:'Instagram is rate-limiting lookups'})};
+        return{ok:true,status:200,json:async()=>({found:true,follower_count:1000,avg_likes:10,avg_comments:1,avg_views:null,usage:20})};}
+    }});
+    t.run("mktCreators=[{id:'a',ig_handle:'a'},{id:'b',ig_handle:'b'},{id:'c',ig_handle:'c'}];mktCreatorsLoaded=true");
+    const out=await t.run('window.mktIgBulkRun({paceMs:0})');
+    s.eq('a 429 stops the run at once',calls,2);
+    s.ok('saying to run it again in an hour',/hourly limit[\s\S]*again in an hour/.test(out.stopReason));
+    s.eq('what was done stays done',writes.join(),'creators/a');
+    s.eq('and a rerun skips it',t.run("mktIgBulkPlan(mktCreators,Date.now()).todo.map(c=>c.id).join()"),'b,c');
+  }
+  {
+    let calls=0;
+    const t=app({globals:{
+      auth:{currentUser:{getIdToken:async()=>'tok'}},doc:(db,col,id)=>({path:col+'/'+id}),updateDoc:async()=>{},
+      fetch:async()=>{calls++;return{ok:true,status:200,json:async()=>({found:true,follower_count:1000,avg_likes:10,avg_comments:1,usage:calls===1?40:91})};}
+    }});
+    t.run("mktCreators=[{id:'a',ig_handle:'a'},{id:'b',ig_handle:'b'},{id:'c',ig_handle:'c'}];mktCreatorsLoaded=true");
+    const out=await t.run('window.mktIgBulkRun({paceMs:0})');
+    s.eq('near Meta\'s hourly cap it pauses itself before the next lookup',calls,2);
+    s.ok('and says at what percentage',/Paused at 91%/.test(out.stopReason));
+  }
+  {
+    let calls=0;
+    const t=app({globals:{
+      auth:{currentUser:{getIdToken:async()=>'tok'}},doc:(db,col,id)=>({path:col+'/'+id}),updateDoc:async()=>{},
+      fetch:async()=>{calls++;return{ok:false,status:503,json:async()=>({error:'The Instagram connection has expired.'})};}
+    }});
+    t.run("mktCreators=[{id:'a',ig_handle:'a'},{id:'b',ig_handle:'b'}];mktCreatorsLoaded=true");
+    const out=await t.run('window.mktIgBulkRun({paceMs:0})');
+    s.eq('a dead connection stops after one call, not 244',calls,1);
+    s.ok('with the reason',/connection has expired/.test(out.stopReason));
+  }
+  {
+    const t=app();
+    t.run("mktCreators=[{id:'a',ig_handle:'a'},{id:'b',ig_handle:'b',data_source:'api',api_fetched_at:Date.now()}];mktCreatorsLoaded=true");
+    t.run('window.mktOpenIgBulk()');
+    const h=t.bodyHtml('mkt-modal-back');
+    s.ok('the start screen says who will be looked up and who is skipped',/1 to look up[\s\S]*1 already fetched/.test(h));
+    s.ok('and that Personal accounts are left as they are',/left exactly as it is/.test(h));
+    s.ok('the page has the button',/Fetch all from Instagram/.test(t.run('renderMarketingCreators()')));
+  }
+
   return s;
 };
