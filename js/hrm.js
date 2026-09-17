@@ -2569,19 +2569,30 @@ function _renderHRMNotifPanel(){
   }
 }
 
+// Any text that came from a Firestore document is untrusted — hrm_notifications
+// is writable by any signed-in user. Structure is ours; text is escaped.
+function _hrmEsc(s){
+  return String(s==null?'':s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+// For values landing inside a JS string literal in an inline handler.
+function _hrmEscAttr(s){
+  return _hrmEsc(s).replace(/\\/g,'\\\\');
+}
 function _hrmNotifCardHTML(n){
   // Tokens only: the message text follows the theme, so a literal white
   // card here was light-on-light in dark mode.
   const priColor=n.priority==='high'?'var(--accent-urgent)':n.priority==='low'?'var(--muted)':'var(--text)';
   const priBg=n.priority==='high'?'var(--accent-urgent-soft)':n.priority==='low'?'var(--surface-2)':'var(--surface)';
-  const actionBtn=n.actionUrl?`<button onclick="(window._hrmNotifAction||window.showPage)('${n.actionUrl}');window.toggleNotifPanel()" style="margin-top:8px;margin-right:6px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface);cursor:pointer;font-size:12px">View</button>`:'';
+  const actionBtn=n.actionUrl?`<button onclick="(window._hrmNotifAction||window.showPage)('${_hrmEscAttr(n.actionUrl)}');window.toggleNotifPanel()" style="margin-top:8px;margin-right:6px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface);cursor:pointer;font-size:12px">View</button>`:'';
   return`<div style="padding:14px 16px;border-bottom:1px solid var(--border);border-left:3px solid ${priColor};background:${priBg}">
     <div style="display:flex;align-items:flex-start;gap:8px">
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:14px;color:${priColor}">${n.title||''}</div>
-        <div style="font-size:13px;color:var(--text);margin-top:3px;line-height:1.45">${n.message||''}</div>
+        <div style="font-weight:700;font-size:14px;color:${priColor}">${_hrmEsc(n.title)}</div>
+        <div style="font-size:13px;color:var(--text);margin-top:3px;line-height:1.45">${_hrmEsc(n.message)}</div>
         <div style="font-size:12px;color:var(--muted);margin-top:6px">${_hrmTimeAgo(n.createdAt)}</div>
-        ${actionBtn}<button onclick="window.hrmDismissNotif('${n._id}')" style="margin-top:8px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface);cursor:pointer;font-size:12px;color:var(--muted)">Dismiss</button>
+        ${actionBtn}<button onclick="window.hrmDismissNotif('${_hrmEscAttr(n._id)}')" style="margin-top:8px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface);cursor:pointer;font-size:12px;color:var(--muted)">Dismiss</button>
       </div>
     </div>
   </div>`;
