@@ -1539,8 +1539,9 @@ function _ptnBlockListHTML(){
   const live=_ptnLiveBlocks().slice().sort((a,b)=>String(a.code).localeCompare(String(b.code)));
   const retired=patterns.filter(p=>p.status==='retired');
   if(!patterns.length)return`<div class="empty" id="ptn-blocks-empty">No blocks yet. Create one, or start from the <a href="#" onclick="window.showPage('pattern-unassigned');return false">unassigned queue</a> — it groups articles that look like one block.</div>`;
-  const row=p=>{const n=_ptnArticlesOf(p.id).length;return`<tr class="ptn-block-row" data-id="${_ptnEsc(p.id)}" style="border-top:1px solid var(--border);cursor:pointer" onclick="window.ptnOpenBlock('${_ptnEsc(p.id)}')"><td style="padding:9px 12px;font-weight:700;white-space:nowrap">${_ptnEsc(p.code)}</td><td style="padding:9px 12px">${_ptnEsc(p.name||'')}</td><td style="padding:9px 12px;color:var(--muted);white-space:nowrap">${_ptnEsc((_ptnCategory(p.category)||{}).label||p.category||'')}</td><td style="padding:9px 12px;white-space:nowrap">${_ptnEsc((p.sizes||[]).join(' '))}</td><td style="padding:9px 12px;white-space:nowrap">${p.hook&&p.slot?'H'+p.hook+' / S'+p.slot:'<span style="color:var(--accent-warning)">not placed</span>'}</td><td style="padding:9px 12px;text-align:right">${n}</td></tr>`;};
-  return`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:10px 12px">Code</th><th style="padding:10px 12px">Block</th><th style="padding:10px 12px">Category</th><th style="padding:10px 12px">Sizes</th><th style="padding:10px 12px">Home</th><th style="padding:10px 12px;text-align:right">Articles</th></tr></thead><tbody>${live.map(row).join('')}</tbody></table>
+  const can=_canManagePatterns();
+  const row=p=>{const n=_ptnArticlesOf(p.id).length;return`<tr class="ptn-block-row" data-id="${_ptnEsc(p.id)}" style="border-top:1px solid var(--border);cursor:pointer" onclick="window.ptnOpenBlock('${_ptnEsc(p.id)}')">${can?`<td style="padding:9px 6px 9px 12px" onclick="event.stopPropagation()"><input type="checkbox" class="ptn-label-pick" ${_ptnLabelSel.has(p.id)?'checked':''} onchange="window.ptnLabelToggle('${_ptnEsc(p.id)}',this.checked)"></td>`:''}<td style="padding:9px 12px;font-weight:700;white-space:nowrap">${_ptnEsc(p.code)}</td><td style="padding:9px 12px">${_ptnEsc(p.name||'')}</td><td style="padding:9px 12px;color:var(--muted);white-space:nowrap">${_ptnEsc((_ptnCategory(p.category)||{}).label||p.category||'')}</td><td style="padding:9px 12px;white-space:nowrap">${_ptnEsc((p.sizes||[]).join(' '))}</td><td style="padding:9px 12px;white-space:nowrap">${p.hook&&p.slot?'H'+p.hook+' / S'+p.slot:'<span style="color:var(--accent-warning)">not placed</span>'}</td><td style="padding:9px 12px;text-align:right">${n}</td></tr>`;};
+  return`<div class="card" style="padding:0;overflow:auto">${can?`<div id="ptn-label-bar" style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">${_ptnLabelBarInner()}</div>`:''}<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase">${can?'<th style="padding:10px 6px 10px 12px"></th>':''}<th style="padding:10px 12px">Code</th><th style="padding:10px 12px">Block</th><th style="padding:10px 12px">Category</th><th style="padding:10px 12px">Sizes</th><th style="padding:10px 12px">Home</th><th style="padding:10px 12px;text-align:right">Articles</th></tr></thead><tbody>${live.map(row).join('')}</tbody></table>
   ${retired.length?`<div style="padding:8px 12px;font-size:11px;color:var(--muted);border-top:1px solid var(--border)">${retired.length} retired block${retired.length===1?'':'s'} hidden.</div>`:''}</div>`;
 }
 
@@ -1575,6 +1576,7 @@ function _ptnBlockHTML(){
     </div>
   </div>
   <div style="margin-top:14px">${typeof _ptnGridCardHTML==='function'?_ptnGridCardHTML(p):''}</div>
+  ${typeof _ptnLabelCardHTML==='function'?_ptnLabelCardHTML(p):''}
   <div class="card" style="margin-top:14px" id="ptn-block-articles"><div class="card-title">Articles using this block <span style="font-weight:400;color:var(--muted);font-size:11px">${arts.length}</span></div>
     ${arts.length?`<table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>${arts.map(a=>`<tr class="ptn-block-art" data-code="${_ptnEsc(a.code)}" style="border-top:1px solid var(--border)"><td style="padding:7px 4px;font-weight:700;white-space:nowrap">${_ptnEsc(a.code)}</td><td style="padding:7px 4px">${_ptnEsc(a.name||'')}</td><td style="padding:7px 4px;white-space:nowrap">${_ptnShopifyCellHTML(a)}</td><td style="padding:7px 4px;text-align:right">${can?`<button class="btn-sm" onclick="window.ptnUnassign('${_ptnEsc(a.code)}')">Remove</button>`:''}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">No articles yet.</div>'}
     ${can?`<div style="margin-top:12px"><input type="search" id="ptn-block-q" placeholder="Add an article — search code or name…" value="${_ptnEsc(_ptnBlockQ)}" oninput="window.ptnBlockSearch(this.value)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;background:var(--surface-2);color:var(--text)">
@@ -2220,3 +2222,161 @@ window.ptnSeedPoms=async function(){
   _ptnBusy=false;
   if(currentPage==='pattern-poms')_ptnPomsRepaint();else _ptnBlockRepaint();
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// M4 — The 5 × 6 in label, one per SIZE in the bundle, operator-selected
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Each traced sheet in a bundle gets its own sticker (Afnan, Q24): the
+// block's identity, its home, the articles using it, THIS size's
+// measurements, and a QR that deep-links to the block (#pattern=<id>).
+// The engine's shared components are A4 by construction, so the
+// `pattern-label` variant draws its own layout on a custom page and the
+// QR is handed over as a matrix built here with the vendored
+// qrcode-generator — the engine never learns about the library.
+// `labelPrinted[size] = {at}` on the block records the last print; a label
+// whose block, grid, home or article list changed since reads "reprint".
+
+const _PTN_LABEL_PAGE={w:360,h:432};      // 5 × 6 in at 72 pt/in, portrait
+const _PTN_LABEL_MAX_ARTICLES=12;
+let _ptnLabelSel=new Set();               // blocks ticked on the rack page
+
+function _ptnAppUrl(){try{return String(location.origin||'')+String(location.pathname||'/');}catch(e){return'/';}}
+function _ptnBlockUrl(p){return _ptnAppUrl()+'#pattern='+encodeURIComponent(p.id);}
+function _ptnQrMatrix(text){
+  if(typeof qrcode!=='function')return null;
+  try{
+    const q=qrcode(0,'M');q.addData(String(text));q.make();
+    const n=q.getModuleCount();const m=[];
+    for(let r=0;r<n;r++){const row=[];for(let c=0;c<n;c++)row.push(!!q.isDark(r,c));m.push(row);}
+    return m;
+  }catch(e){console.warn('[patterns] QR failed',e);return null;}
+}
+// Everything one label needs, from one block and one size.
+function _ptnLabelData(p,size){
+  const cat=_ptnCategory(p.category);
+  const arts=_ptnArticlesOf(p.id).map(a=>a.code).sort();
+  const rows=(typeof _ptnRowsFor==='function'?_ptnRowsFor(p):[]).filter(r=>r.src!=='orphan');
+  const g=(p.grid&&p.grid[size])||{};
+  const measurements=rows.filter(r=>typeof g[r.key]==='number').map(r=>({label:r.label,value:_ptnFmt(g[r.key],'in')}));
+  const url=_ptnBlockUrl(p);
+  return{
+    id:p.id,code:p.code,name:p.name||'',category:cat?cat.label:(p.category||''),fit:p.fit||'',
+    size,sizes:p.sizes||[],hook:p.hook||null,slot:p.slot||null,
+    articles:arts.slice(0,_PTN_LABEL_MAX_ARTICLES),more:Math.max(0,arts.length-_PTN_LABEL_MAX_ARTICLES),
+    measurements,url,qr:_ptnQrMatrix(url),
+    printedOn:new Date().toISOString().slice(0,10),
+    gridUpdated:p.gridUpdatedAt?String(p.gridUpdatedAt).slice(0,10):'',
+    tol:_PTN_TOL_IN
+  };
+}
+// Has anything on the label changed since this size was last printed?
+function _ptnLabelStatus(p,size){
+  const rec=p.labelPrinted&&p.labelPrinted[size];
+  if(!rec||!rec.at)return{state:'never'};
+  const at=String(rec.at);
+  let changed=false;
+  if(p.updatedAt&&String(p.updatedAt)>at)changed=true;
+  if(!changed)changed=_ptnArticlesOf(p.id).some(a=>a.updatedAt&&String(a.updatedAt)>at);
+  return{state:changed?'stale':'current',at};
+}
+function _ptnLabelCardHTML(p){
+  const can=_canManagePatterns();
+  const sizes=p.sizes||[];
+  if(!sizes.length)return'';
+  const rows=sizes.map(s=>{const st=_ptnLabelStatus(p,s);
+    const txt=st.state==='never'?'<span style="color:var(--muted)">never printed</span>':st.state==='stale'?`<span style="color:var(--accent-warning);font-weight:600">reprint — changed since ${_ptnEsc(String(st.at).slice(0,10))}</span>`:`<span style="color:var(--green)">printed ${_ptnEsc(String(st.at).slice(0,10))}</span>`;
+    return`<label class="ptn-label-row" data-size="${_ptnEsc(s)}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);font-size:13px">${can?`<input type="checkbox" class="ptn-label-size" value="${_ptnEsc(s)}" ${st.state!=='current'?'checked':''}>`:''}<b style="min-width:44px">${_ptnEsc(s)}</b>${txt}</label>`;}).join('');
+  return`<div class="card" id="ptn-label-card" style="margin-top:14px"><div class="card-title">Labels <span style="font-weight:400;color:var(--muted);font-size:11px">5 × 6 in · one sticker per size in the bundle · ${typeof qrcode==='function'?'with a QR to this page':'<span style="color:var(--accent-warning)">QR library not loaded — labels print without a QR</span>'}</span></div>
+    ${rows}
+    ${can?`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn-primary" ${_ptnBusy?'disabled':''} onclick="window.ptnPrintBlockLabels('${_ptnEsc(p.id)}','selected')">Print ticked</button><button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnPrintBlockLabels('${_ptnEsc(p.id)}','all')">Print all ${sizes.length}</button><span style="font-size:11px;color:var(--muted)">Sizes never printed or changed since are ticked for you.</span></div>`:''}
+  </div>`;
+}
+window.ptnPrintBlockLabels=function(id,which){
+  const p=_ptnBlock(id);if(!p)return;
+  let sizes=p.sizes||[];
+  if(which==='selected'){
+    const picked=[];const boxes=(document.querySelectorAll?document.querySelectorAll('.ptn-label-size'):[])||[];
+    boxes.forEach(el=>{if(el.checked)picked.push(el.value);});
+    sizes=sizes.filter(s=>picked.indexOf(s)>-1);
+  }
+  if(!sizes.length){showToast('Tick at least one size.',true);return;}
+  return window.ptnPrintLabels([{id,sizes}]);
+};
+// Print: one PDF, one page per (block, size), then record the print on
+// each block — one update per block, never one per size.
+window.ptnPrintLabels=async function(items){
+  if(!_canSeePatternHub())return false;
+  if(typeof window.printDocument!=='function'){showToast('The print engine did not load — refresh and try again.',true);return false;}
+  const labels=[],perBlock=[];
+  (items||[]).forEach(it=>{
+    const p=_ptnBlock(it.id);if(!p)return;
+    const sizes=(it.sizes&&it.sizes.length?it.sizes:(p.sizes||[])).filter(s=>(p.sizes||[]).indexOf(s)>-1);
+    if(!sizes.length)return;
+    sizes.forEach(s=>labels.push(_ptnLabelData(p,s)));
+    perBlock.push({p,sizes});
+  });
+  if(!labels.length){showToast('Nothing to print — pick a block with sizes.',true);return false;}
+  const date=new Date().toISOString().slice(0,10);
+  const one=perBlock.length===1?perBlock[0].p.code:perBlock.length+'-blocks';
+  try{
+    await window.printDocument({type:'pattern-label',filename:'labels-'+one+'-'+date+'.pdf',data:{page:_PTN_LABEL_PAGE,labels,urduLevel:'none',documentNumber:one,documentType:'Pattern Label'}});
+  }catch(e){console.error('[patterns] label print failed',e);showToast('Could not print: '+(e.message||e),true);return false;}
+  // record — best effort; a failed record must not undo a print that happened
+  const now=new Date().toISOString();const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  if(_canManagePatterns()){
+    for(const {p,sizes} of perBlock){
+      const labelPrinted=Object.assign({},p.labelPrinted||{});
+      sizes.forEach(s=>{labelPrinted[s]={at:now,by};});
+      try{await updateDoc(doc(db,'patterns',p.id),{labelPrinted});p.labelPrinted=labelPrinted;}
+      catch(e){console.warn('[patterns] could not record the print',e);}
+    }
+  }
+  showToast('Printed '+labels.length+' label'+(labels.length===1?'':'s')+'.');
+  _ptnLog('Pattern Labels Printed',labels.length+' — '+perBlock.map(x=>x.p.code+' ('+x.sizes.join(' ')+')').join(', '));
+  if(currentPage==='pattern-block')_ptnBlockRepaint();else if(currentPage==='pattern-blocks')_ptnBlocksRepaint();
+  return true;
+};
+// Rack page: tick blocks, print every size of each.
+window.ptnLabelToggle=function(id,on){if(on)_ptnLabelSel.add(id);else _ptnLabelSel.delete(id);const bar=document.getElementById('ptn-label-bar');if(bar)bar.innerHTML=_ptnLabelBarInner();};
+function _ptnLabelBarInner(){
+  const n=_ptnLabelSel.size;
+  if(!n)return'<span style="font-size:12px;color:var(--muted)">Tick blocks to print their labels — every size in each bundle.</span>';
+  return`<span style="font-size:12px"><b>${n}</b> block${n===1?'':'s'} ticked</span> <button class="btn-primary" onclick="window.ptnPrintSelectedBlocks()">Print labels</button> <button class="btn-sm" onclick="window.ptnLabelClear()">Clear</button>`;
+}
+window.ptnLabelClear=function(){_ptnLabelSel=new Set();_ptnBlocksRepaint();};
+window.ptnPrintSelectedBlocks=function(){
+  const items=Array.from(_ptnLabelSel).map(id=>({id,sizes:null}));
+  if(!items.length){showToast('Tick at least one block.',true);return;}
+  return window.ptnPrintLabels(items).then(ok=>{if(ok){_ptnLabelSel=new Set();}});
+};
+
+// ── Deep link: #pattern=<id> ──────────────────────────────────────────────
+// The QR on every label points here. Consumed after startApp (a link
+// opened cold, once auth has resolved) and on hashchange (pasted into an
+// open tab) — the js/boards.js pattern, wrapping the global rather than
+// editing js/auth.js. Gated on the same audience as the nav; a deep link
+// is navigation and must not be a side door.
+function _ptnParseHash(){
+  const h=(typeof location!=='undefined'&&location.hash)||'';
+  const m=/^#pattern=([A-Za-z0-9_\-]+)/.exec(h);
+  return m?{id:decodeURIComponent(m[1])}:null;
+}
+function _ptnConsumeDeepLink(){
+  const link=_ptnParseHash();
+  if(!link||typeof session==='undefined'||!session)return false;
+  if(!_canSeePatternHub())return false;
+  if(currentPage==='pattern-block'&&_ptnBlockId===link.id)return false;
+  _ptnBlockId=link.id;_ptnBlockQ='';_ptnGridDraft=null;_ptnGridDirty=false;
+  window.showPage('pattern-block');
+  return true;
+}
+if(typeof window.addEventListener==='function')window.addEventListener('hashchange',()=>{try{_ptnConsumeDeepLink();}catch(e){console.warn('[patterns] deep link failed',e);}});
+const _ptnOrigStartApp=window.startApp;
+if(typeof _ptnOrigStartApp==='function'){
+  window.startApp=async function(){
+    const out=await _ptnOrigStartApp.apply(this,arguments);
+    try{_ptnConsumeDeepLink();}catch(e){console.warn('[patterns] deep link failed:',e);}
+    return out;
+  };
+}

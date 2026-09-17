@@ -842,5 +842,128 @@ module.exports=async function(){
     s.ok('the router knows pattern-poms',/id==='pattern-poms'/.test(read('js/patterns.js'))&&/'pattern-poms'/.test(read('js/shared.js')));
   }
 
+  // ═════════════════════════════════════════════════════════════════════
+  // M4 — the label
+  // ═════════════════════════════════════════════════════════════════════
+  // a stub QR encoder with the real library's surface: 21×21, finder at 0,0
+  const QR_STUB="function qrcode(){let d='';return{addData(s){d=s;},make(){},getModuleCount(){return 21;},isDark(r,c){return (r<7&&c<7)||((r+c+d.length)%3===0);}};}";
+  function labelApp(store,session,extra){
+    const g=gridApp(store,session);
+    return g;
+  }
+  const LBLOCK=Object.assign({},BLOCK,{hook:3,slot:2,fit:'Relaxed',grid:{M:{waist_relaxed:15,hip:22.5},L:{waist_relaxed:16}},gridUpdatedAt:'2026-09-17T10:00:00Z',updatedAt:'2026-09-17T10:00:00Z'});
+
+  s.section('M4 · label data — one size, this size\'s numbers, capped articles, a QR to the block');
+  {
+    const st=new Map([['patterns/ptn_0007',Object.assign({},LBLOCK)]]);_seedPoms(st);
+    for(let i=0;i<15;i++)st.set('articles/GST0'+(60+i),{code:'GST0'+(60+i),name:'Live in Pants | '+i,brand:'groovy',category:'GST',needsPattern:true,active:true,patternId:'ptn_0007',updatedAt:'2026-09-17T09:00:00Z'});
+    const {a}=labelApp(st);
+    a.run(QR_STUB);
+    await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');await a.run('loadPatternsPoms()');
+    const L=a.run("_ptnLabelData(_ptnBlock('ptn_0007'),'M')");
+    s.eq('code, name, size, home',J([L.code,L.name,L.size,L.hook,L.slot]),J(['PTN-0007','Live In Pants block','M',3,2]));
+    s.eq('articles capped at 12 with the rest counted',J([L.articles.length,L.more]),J([12,3]));
+    s.eq('only THIS size\'s filled measurements, as inch strings',J(L.measurements),J([{label:'Waist (relaxed)',value:'15'},{label:'Hip',value:'22.5'}]));
+    s.eq('size L has one',a.run("_ptnLabelData(_ptnBlock('ptn_0007'),'L').measurements.length"),1);
+    s.ok('the URL is the app + #pattern=<id>',/\/#pattern=ptn_0007$/.test(L.url));
+    s.eq('the QR is a square boolean matrix from the library',J([L.qr.length,L.qr[0].length,L.qr[0][0]]),J([21,21,true]));
+    s.eq('tolerance, dates',J([L.tol,L.gridUpdated,L.printedOn.length]),J([0.5,'2026-09-17',10]));
+    a.run('qrcode=undefined');
+    s.eq('with no QR library the label still builds, qr null',a.run("_ptnLabelData(_ptnBlock('ptn_0007'),'M').qr"),null);
+  }
+
+  s.section('M4 · printed-status: never · current · reprint');
+  {
+    const st=new Map([['patterns/ptn_0007',Object.assign({},LBLOCK,{labelPrinted:{M:{at:'2026-09-17T11:00:00Z'},L:{at:'2026-09-17T09:00:00Z'}}})],
+      ['articles/GST060',{code:'GST060',name:'x',brand:'groovy',category:'GST',needsPattern:true,active:true,patternId:'ptn_0007',updatedAt:'2026-09-17T09:30:00Z'}]]);
+    _seedPoms(st);
+    const {a}=labelApp(st);
+    await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');await a.run('loadPatternsPoms()');
+    s.eq('S never printed',a.run("_ptnLabelStatus(_ptnBlock('ptn_0007'),'S').state"),'never');
+    s.eq('M printed after every change → current',a.run("_ptnLabelStatus(_ptnBlock('ptn_0007'),'M').state"),'current');
+    s.eq('L printed before the block was edited → reprint',a.run("_ptnLabelStatus(_ptnBlock('ptn_0007'),'L').state"),'stale');
+    a.run("tacArticles.find(x=>x.code==='GST060').updatedAt='2026-09-17T12:00:00Z'");
+    s.eq('an article assigned after the print makes M stale too (assignment never writes the block)',a.run("_ptnLabelStatus(_ptnBlock('ptn_0007'),'M').state"),'stale');
+    const html=a.run("_ptnLabelCardHTML(_ptnBlock('ptn_0007'))");
+    s.ok('the card ticks never-printed and stale sizes, not current ones',/value="S" checked/.test(html)&&/value="L" checked/.test(html)&&/value="M" checked/.test(html));
+    s.ok('…and says reprint with the old date',/reprint — changed since 2026-09-17/.test(html));
+  }
+
+  s.section('M4 · printing goes through the engine on a 5×6 page and records the print');
+  {
+    const st=new Map([['patterns/ptn_0007',Object.assign({},LBLOCK)],['patterns/ptn_0008',Object.assign({},LBLOCK,{code:'PTN-0008',name:'Shorts block',sizes:['S','M']})]]);_seedPoms(st);
+    const {a,store,meta}=labelApp(st);
+    const calls=[];a.ctx.window.printDocument=async o=>{calls.push(o);};
+    a.run(QR_STUB);
+    await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');await a.run('loadPatternsPoms()');
+    const ok=await a.run("window.ptnPrintLabels([{id:'ptn_0007',sizes:['M','L']}])");
+    s.eq('printed',ok,true);
+    const o=calls[0];
+    s.eq('one call: type pattern-label, custom 360×432 page, English only',J([calls.length,o.type,o.data.page,o.data.urduLevel]),J([1,'pattern-label',{w:360,h:432},'none']));
+    s.eq('two labels, one per size, each with a QR',J(o.data.labels.map(l=>[l.code,l.size,!!l.qr])),J([['PTN-0007','M',true],['PTN-0007','L',true]]));
+    s.ok('filename names the block',/labels-PTN-0007-\d{4}-\d{2}-\d{2}\.pdf/.test(o.filename));
+    const rec=store.get('patterns/ptn_0007').labelPrinted;
+    s.eq('the print is recorded per size in ONE update',J([Object.keys(rec).sort(),meta.updates]),J([['L','M'],1]));
+    s.eq('an unprinted size stays unrecorded',rec.S,undefined);
+    // rack picker: two blocks, every size
+    a.run("_ptnLabelSel=new Set(['ptn_0007','ptn_0008'])");
+    await a.run('window.ptnPrintSelectedBlocks()');
+    s.eq('the rack picker prints every size of every ticked block',J(calls[1].data.labels.map(l=>l.code+'-'+l.size)),J(['PTN-0007-S','PTN-0007-M','PTN-0007-L','PTN-0008-S','PTN-0008-M']));
+    s.eq('…and clears the selection',a.run('_ptnLabelSel.size'),0);
+    s.ok('the rack list carries a tick per block and the bar',/ptn-label-pick/.test(a.run('_ptnBlockListHTML()'))&&/ptn-label-bar/.test(a.run('_ptnBlockListHTML()')));
+    // a size not in the bundle is ignored; nothing → refused
+    a.state.toasts.length=0;
+    s.eq('a size not in the bundle prints nothing',await a.run("window.ptnPrintLabels([{id:'ptn_0007',sizes:['XXL']}])"),false);
+    a.ctx.window.printDocument=undefined;
+    s.eq('no engine → refused with a message',await a.run("window.ptnPrintLabels([{id:'ptn_0007',sizes:['M']}])"),false);
+    s.ok(a.state.toasts.some(t=>/print engine/.test(t))?'…which names the engine':'…which names the engine',a.state.toasts.some(t=>/print engine/.test(t)));
+  }
+
+  s.section('M4 · the engine: page override and the label variant');
+  {
+    let eng=null;
+    try{eng=loadApp({files:['js/print-engine.js'],currentPage:'pattern-block'});}catch(e){eng=null;s.ok('print-engine.js loads in the harness',false,String(e.message||e));}
+    if(eng){
+      s.eq('A4 unless a page is asked for',eng.run('_customPage({})'),null);
+      s.eq('a 5×6 page is accepted',J(eng.run('_customPage({page:{w:360,h:432}})')),J({w:360,h:432}));
+      s.eq('a nonsense page is refused (falls back to A4)',eng.run('_customPage({page:{w:0,h:432}})'),null);
+      const src=read('js/print-engine.js');
+      s.ok('the footer is NOT stamped on a custom page',/if \(!customPage\) _stampFooters\(doc\);/.test(src));
+      s.ok('the variant is registered, labelled, and English-only by default',/'pattern-label': _renderPatternLabel/.test(src)&&/'pattern-label': 'Pattern Label'/.test(src)&&/'pattern-label': 'none'/.test(src));
+      // a recording jsPDF
+      eng.run(`fakeDoc=function(){const calls={text:[],rect:[],pages:1,fonts:[]};return{calls,internal:{pageSize:{getWidth:()=>360,getHeight:()=>432}},
+        addPage(){calls.pages++;},setFont(f,s){calls.fonts.push([f,s]);},setFontSize(){},setTextColor(){},setDrawColor(){},setLineWidth(){},setFillColor(){},
+        line(){},rect(x,y,w,h,st){calls.rect.push([x,y,w,h,st||'']);},
+        text(t,x,y,o){calls.text.push({t:Array.isArray(t)?t.join('|'):String(t),x,y,align:o&&o.align});},
+        splitTextToSize(t,w){return String(t).split('\\n');},__groovyFonts:{}};}`);
+      const labels=[{code:'PTN-0007',name:'Live In Pants block',category:'Sweatpants & Trousers',fit:'Relaxed',size:'M',sizes:['S','M','L'],hook:3,slot:2,articles:['GST060','GST061'],more:0,measurements:[{label:'Waist (relaxed)',value:'15'},{label:'Hip',value:'22.5'}],qr:[[true,false],[false,true]],url:'https://x/#pattern=ptn_0007',printedOn:'2026-09-17',gridUpdated:'2026-09-17',tol:0.5},
+        {code:'PTN-0007',name:'Live In Pants block',category:'',fit:'',size:'L',sizes:['S','M','L'],hook:null,slot:null,articles:[],more:0,measurements:[],qr:null,url:'',printedOn:'',gridUpdated:'',tol:0.5}];
+      const calls=eng.run('(function(){const d=fakeDoc();_renderPatternLabel(d,{labels:'+J(labels)+'});return d.calls;})()');
+      s.eq('one page per label',calls.pages,2);
+      const texts=calls.text.map(t=>t.t);
+      s.ok('the code, the size, the home and the numbers are drawn',texts.includes('PTN-0007')&&texts.includes('M')&&texts.some(t=>/HOOK 3/.test(t))&&texts.includes('15')&&texts.includes('22.5'));
+      s.ok('the second label says NOT ON A HOOK and no measurements',texts.some(t=>/NOT ON A HOOK/.test(t))&&texts.some(t=>/no measurements recorded/.test(t)));
+      s.ok('the QR is drawn as filled squares inside a white quiet zone',calls.rect.some(r=>r[4]==='F'&&r[2]===84)&&calls.rect.filter(r=>r[4]==='F'&&r[2]<84).length===2);
+      s.ok('the size box is drawn top-right',calls.rect.some(r=>r[2]===96&&r[3]===46&&r[0]>200));
+      s.ok('everything lands inside the 360×432 page',calls.text.every(t=>t.x>=0&&t.x<=360&&t.y>=0&&t.y<=432));
+    }
+  }
+
+  s.section('M4 · deep link #pattern=<id>');
+  {
+    const a=app({session:SESS.arfat});
+    a.ctx.location.hash='#pattern=ptn_0007';
+    s.eq('parsed',J(a.run('_ptnParseHash()')),J({id:'ptn_0007'}));
+    s.eq('Arfat: refused (a link is navigation, not a side door)',a.run('_ptnConsumeDeepLink()'),false);
+    const pages=[];const b=app({session:SESS.afnan});b.ctx.window.showPage=id=>pages.push(id);
+    b.ctx.location.hash='#pattern=ptn_0042';
+    s.eq('an admin: opens the block',J([b.run('_ptnConsumeDeepLink()'),b.run('_ptnBlockId'),pages]),J([true,'ptn_0042',['pattern-block']]));
+    s.eq('the same block already open → no-op',J([b.run("currentPage='pattern-block';_ptnConsumeDeepLink()")]),J([false]));
+    s.ok('a hashchange listener is registered once at load',(b.state.listeners['window:hashchange']||[]).length===1);
+    b.ctx.location.hash='#board=abc';
+    s.eq('a board link is not a pattern link',b.run('_ptnParseHash()'),null);
+    s.ok('startApp is wrapped, not edited',/_ptnOrigStartApp/.test(read('js/patterns.js'))&&!/pattern/i.test(read('js/auth.js')));
+  }
+
   return s;
 };

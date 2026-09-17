@@ -1,7 +1,7 @@
 # Pattern Hub — Master Plan
 
-> Status: **BUILDING. M0–M3 shipped (17 Sept 2026); M4 (the 5×6 label) is
-> next.** Design agreed across three question rounds with Afnan. This document is the single source of truth for
+> Status: **BUILDING. M0–M4 shipped (17 Sept 2026); M5 (revisions + cutting
+> notices) is next.** Design agreed across three question rounds with Afnan. This document is the single source of truth for
 > the module. Remaining open items are marked **[DECISION NEEDED]** and are all
 > Ammar's calls on the TAC document; none of them block M0.
 >

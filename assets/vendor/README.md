@@ -7,6 +7,7 @@ Third-party runtime libraries, served from this origin instead of a CDN.
 | `jspdf-2.5.1.umd.min.js` | [jspdf](https://www.npmjs.com/package/jspdf) | 2.5.1 | MIT |
 | `xlsx-0.18.5.full.min.js` | [xlsx](https://www.npmjs.com/package/xlsx) (SheetJS) | 0.18.5 | Apache-2.0 |
 | `jsbarcode-3.11.6.all.min.js` | [jsbarcode](https://www.npmjs.com/package/jsbarcode) | 3.11.6 | MIT |
+| `qrcode-generator-2.0.4.js` | [qrcode-generator](https://www.npmjs.com/package/qrcode-generator) | 2.0.4 | MIT |
 
 Each `*.LICENSE` file is the licence text as published in that package.
 
@@ -60,3 +61,22 @@ jsbarcode@3.11.6 sha512-G5TKGyKY1zJo0ZQKFM1IIMfy0nF2rs92BLlCz+cU4/TazIc4ZH+X1GYe
   forget the bump.
 - **Never hand-edit a vendored file.** If one needs patching, the patch
   belongs in our own code.
+
+## qrcode-generator 2.0.4 (Sept 2026 — the Pattern Hub's 5×6 in label)
+
+Added for the QR code on each pattern label (M4), which deep-links to the
+block's page. JsBarcode is 1-D only. Same procedure, same check:
+
+```
+PKG=qrcode-generator VER=2.0.4
+registry dist.integrity:
+  sha512-mZSiP6RnbHl4xL2Ap5HfkjLnmxfKcPWpWe/c+5XxCuetEenqmNFf1FH/ftXPCtFG5/TDobjsjz6sSNL0Sr8Z9g==
+file (openssl dgst -sha512 -binary | base64):  identical — verified 17 Sept 2026
+extracted:  package/dist/qrcode.js  →  assets/vendor/qrcode-generator-2.0.4.js
+```
+
+`dist/qrcode.js` is the UMD build and **not minified** (the package ships no
+minified file); as a classic script it defines a global `qrcode`. The package
+ships no LICENSE file — `qrcode-generator-2.0.4.LICENSE` reproduces the MIT
+text with the author's copyright line from the source header.
+

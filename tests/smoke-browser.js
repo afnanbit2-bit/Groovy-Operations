@@ -58,7 +58,8 @@ function buildProbe(){
   const srcs=[...idx.matchAll(/<script src="(\/(?:assets\/vendor|js)\/[^"]+)"/g)].map(m=>m[1]);
   const want=['showPage','renderPage','buildNav','showToast','_icon','logActivity',
     'uploadToCloudinary','printDocument','startApp','doLogin','renderProfilePage',
-    'loadProfiles','renderBoardsGallery','boardsCreate','renderNotesPage'];
+    'loadProfiles','renderBoardsGallery','boardsCreate','renderNotesPage',
+    'renderPatternHub','ptnRenderPage','qrcode'];
   return{srcs,html:`<!doctype html><meta charset="utf-8"><body><pre id="out">running</pre>
 <script>window.__errs=[];window.onerror=function(m,u,l){window.__errs.push(m+' @'+String(u||'').split('/').pop()+':'+l);};</script>
 ${srcs.map(s=>`<script src="${s}"></script>`).join('\n')}
@@ -82,6 +83,10 @@ t('SheetJS writes a workbook',function(){
   var out=XLSX.write(wb,{type:'base64',bookType:'xlsx'});
   if(!out||out.length<100)throw new Error('empty workbook');
   return 'v'+XLSX.version+', '+out.length+' chars';
+});
+t('qrcode-generator encodes a pattern deep link',function(){
+  var q=qrcode(0,'M');q.addData('https://groovyoperations.netlify.app/#pattern=ptn_0042');q.make();
+  var n=q.getModuleCount();if(!(n>=21&&q.isDark(0,0)&&q.isDark(0,6)&&!q.isDark(0,7)))throw new Error('bad symbol '+n);return n+'x'+n+' modules';
 });
 t('JsBarcode draws a CODE128',function(){
   var c=document.createElement('canvas');JsBarcode(c,'GRV-123',{format:'CODE128'});

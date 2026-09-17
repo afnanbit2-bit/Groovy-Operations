@@ -96,7 +96,7 @@ module.exports=function(){
         indexHtml.indexOf('/assets/vendor/'+f)!==-1);
       s.ok('vendored '+f+' carries its version in the filename',
         /-\d+\.\d+\.\d+[.-]/.test(f));
-      const lic='assets/vendor/'+f.replace(/\.(umd|full|all)\.min\.js$/,'.LICENSE');
+      const lic='assets/vendor/'+f.replace(/(\.(umd|full|all))?(\.min)?\.js$/,'.LICENSE');
       s.ok('vendored '+f+' ships its licence',exists(lic),exists(lic)?undefined:'missing '+lic);
     });
 

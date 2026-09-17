@@ -181,8 +181,8 @@ Firebase (the 5 hoisted blocks) lives in `window.__bootApp()` in
 - Auth: Firebase Auth (project `groovy-gatepass`)
 - DB: Cloud Firestore + Realtime Database (RTDB used only for attendance)
 - Images: Cloudinary, unsigned preset `groovy-ops`
-- PDF: jsPDF · Excel: SheetJS · Barcodes: JsBarcode — all **vendored** in
-  `/assets/vendor`, not CDN-loaded (see below)
+- PDF: jsPDF · Excel: SheetJS · Barcodes: JsBarcode · QR: qrcode-generator
+  — all **vendored** in `/assets/vendor`, not CDN-loaded (see below)
 - Hosting: Netlify (auto-deploy on push to `main`)
 - PWA: `manifest.json` + `sw.js` (installable, offline shell) — see below
 
@@ -403,7 +403,9 @@ do not call jsPDF directly for new print features.**
   (`_renderGatePass`, single-page bilingual transit document), ✅
   `payslip` (`_renderPayslip`), ✅ `daily-performance`
   (`_renderDailyPerformance`), ✅ `stock-transfer`
-  (`_renderStockTransfer`), and ✅ **`mood-board`** (Sept 2026 — the board
+  (`_renderStockTransfer`), ✅ **`pattern-label`** (Sept 2026 — the Pattern
+  Hub's 5 × 6 in sticker, one page per label, on a **custom page size**
+  `data.page={w,h}`; see "Pattern Hub" M4), and ✅ **`mood-board`** (Sept 2026 — the board
   as one picture fitted to the page plus a text index of every card
   carrying text; `_renderMoodBoard`). The mood-board picture is rasterised
   by the CALLER (`js/boards.js` draws the board onto a 2D canvas and
@@ -3169,6 +3171,46 @@ with **one hook slot holding all sizes of one block bundled**. Blocks are
 created by hand — name-clustering says 251 but 133 articles are prints on a
 handful of blank bodies, so the real count (60–130) is the pattern master's
 call, and the app only ever *suggests*.
+
+**M4 (shipped): the 5 × 6 in label — one per SIZE in the bundle.** Each
+traced sheet gets its own sticker: block code (large), name, category, fit,
+**SIZE** (large), the bundle, **HOOK / SLOT**, the articles using it (12,
+"+N more"), **this size's** measurements, a **QR** to the block
+(`#pattern=<id>`), print date and when the grid last changed.
+
+- **The engine gained a custom page size** (`data.page = {w,h}` in points;
+  `_customPage()` validates it) and the `pattern-label` variant
+  (`_renderPatternLabel`) **draws its own layout** — the shared A4
+  components are `PRINT_LAYOUT`-bound (72 references, none read the page
+  size) so it cannot borrow them, and `_stampFooters` is skipped on a
+  custom page. Every other variant is untouched; 5 × 6 in = 360 × 432 pt.
+- **The QR is built by the CALLER** (`_ptnQrMatrix` in `js/patterns.js`)
+  with the vendored **`qrcode-generator` 2.0.4** and handed to the engine as
+  a boolean matrix — the engine never learns about the library, the way the
+  mood-board variant never learns how a board is drawn. Drawn with a 2-module
+  quiet zone. **Vendored the documented way**: fetched from
+  `registry.npmjs.org`, sha512 checked against `dist.integrity`, licence
+  beside it, `?v`-less immutable path, `PRECACHE_URLS`, `onerror` CDN
+  fallback. It is the UMD build and **not minified** (the package ships no
+  minified file); `tests/invariants.test.js` derives the licence name for a
+  plain `.js` now. JsBarcode is 1-D only, and a hand-rolled encoder is not
+  where a bug belongs when 500 stickers are printed off it.
+- **Operator-selected**: on a block, tick sizes (never-printed and changed-
+  since are pre-ticked) → *Print ticked* / *Print all*; on the rack page,
+  tick blocks → every size of each. One PDF, one page per label.
+- **`p.labelPrinted[size] = {at,by}`** records the print — one update per
+  block, never per size, and best-effort: a failed record never undoes a
+  print that happened. `_ptnLabelStatus` reads *reprint* when the block
+  (`updatedAt`), or **any article pointing at it** (`updatedAt`), changed
+  after the print — assignment never writes the block, so the article side
+  has to be checked too.
+- **`#pattern=<id>` is the module's deep link**, consumed after `startApp`
+  (wrapped, the `js/boards.js` pattern — `js/auth.js` untouched) and on
+  `hashchange`, gated on the same audience as the nav.
+- **No `firestore.rules` change** — `labelPrinted` lives on the block.
+- **The first print on real sticker stock is the test.** Nothing here has
+  been seen on paper or in a browser; the geometry is asserted against a
+  recording fake jsPDF only.
 
 **M3 (shipped): measurements.** `pom_templates/{id}` (top · pant · short ·
 jacket, seeded from `_PTN_POM_SEED`, editable on `pattern-poms`: label,

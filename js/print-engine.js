@@ -94,6 +94,7 @@ const _PRINT_DOC_LABELS = {
   'daily-performance': 'Daily Performance',
   'stock-transfer': 'Stock Transfer',
   'mood-board': 'Mood Board',
+  'pattern-label': 'Pattern Label',
   'generic': 'Document'
 };
 
@@ -118,7 +119,8 @@ const _PRINT_URDU_DEFAULTS = {
   'embroidery-vendor': 'full',
   'sublimation-vendor': 'full',
   'qc-report': 'full',
-  'placement-sheet': 'full'
+  'placement-sheet': 'full',
+  'pattern-label': 'none'
 };
 
 /* Urdu footer tail, keyed by the English documentType label so each
@@ -1728,6 +1730,132 @@ function _renderPO(doc, data) {
   signWithName();
 }
 
+/* ── Custom page size ──────────────────────────────────────────────────────
+   Only a variant that draws its whole page itself may ask for one. Points. */
+function _customPage(data) {
+  const pg = data && data.page;
+  if (!pg) return null;
+  const w = Number(pg.w), h = Number(pg.h);
+  if (!(w > 36 && h > 36 && w < 3000 && h < 3000)) return null;
+  return { w: w, h: h };
+}
+
+/**
+ * Pattern label — the Pattern Hub's 5 × 6 in sticker (M4). ONE PAGE PER
+ * LABEL; the caller passes `data.page = {w:360, h:432}` and `data.labels`,
+ * one entry per (block, size). Draws its own layout — the A4 components are
+ * not used — and the QR is passed in as a boolean matrix the caller built
+ * (the engine never learns about the QR library, the same way the mood-board
+ * variant never learns how a board is drawn).
+ *
+ * label = { code, name, category, fit, size, sizes[], hook, slot,
+ *           articles[] (codes), more (n not shown), measurements [{label,value}],
+ *           qr (bool[][]), url, printedOn, gridUpdated, tol }
+ */
+function _renderPatternLabel(doc, data) {
+  const labels = (data && data.labels) || [];
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const M = 16;
+  const grey = PRINT_COLORS.greyAccent, ink = PRINT_COLORS.text, black = PRINT_COLORS.black;
+  labels.forEach(function (L, i) {
+    if (i > 0) doc.addPage();
+    let y = M;
+    // brand line + print date
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 7, grey);
+    doc.text('GROOVY  ·  PATTERN', M, y + 6);
+    if (L.printedOn) doc.text('printed ' + L.printedOn, W - M, y + 6, { align: 'right' });
+    y += 12;
+    // the size box, top right
+    const bw = 96, bh = 46;
+    doc.setDrawColor(0, 0, 0); doc.setLineWidth(1.2);
+    doc.rect(W - M - bw, y, bw, bh);
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 7, grey);
+    doc.text('SIZE', W - M - bw / 2, y + 11, { align: 'center' });
+    _setFont(doc, PRINT_FONTS.display, 'bold', 26, black);
+    doc.text(String(L.size || '—'), W - M - bw / 2, y + 38, { align: 'center' });
+    // code + name, left of the box
+    const leftW = W - 2 * M - bw - 10;
+    _setFont(doc, PRINT_FONTS.display, 'bold', 30, black);
+    doc.text(String(L.code || ''), M, y + 27);
+    y += 34;
+    _setFont(doc, PRINT_FONTS.bodyBold, 'bold', 12, ink);
+    const nameLines = doc.splitTextToSize(String(L.name || ''), leftW).slice(0, 2);
+    doc.text(nameLines, M, y + 6);
+    y += 14 * Math.max(1, nameLines.length);
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 8, grey);
+    doc.text([L.category, L.fit].filter(Boolean).join('  ·  '), M, y + 4);
+    y = Math.max(y + 12, M + 12 + bh + 8);
+    // home + bundle
+    doc.setDrawColor(204, 204, 204); doc.setLineWidth(0.5); doc.line(M, y, W - M, y); y += 6;
+    _setFont(doc, PRINT_FONTS.bodyBold, 'bold', 12, black);
+    doc.text(L.hook && L.slot ? 'HOOK ' + L.hook + '   ·   SLOT ' + L.slot : 'NOT ON A HOOK', M, y + 10);
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 8, grey);
+    doc.text('bundle: ' + ((L.sizes || []).join(' ') || '—'), W - M, y + 10, { align: 'right' });
+    y += 20;
+    // articles
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 7, grey);
+    doc.text('ARTICLES USING THIS BLOCK', M, y + 6); y += 9;
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 8, ink);
+    const artText = ((L.articles || []).join('   ') || '—') + (L.more ? '   +' + L.more + ' more' : '');
+    const artLines = doc.splitTextToSize(artText, W - 2 * M).slice(0, 3);
+    doc.text(artLines, M, y + 6);
+    y += 10 * artLines.length + 4;
+    doc.setDrawColor(204, 204, 204); doc.line(M, y, W - M, y); y += 6;
+    // measurements for THIS size, two columns, above the QR / footer band
+    const qrSize = 84;
+    const bandTop = H - M - qrSize - 4;
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 7, grey);
+    doc.text('MEASUREMENTS  ·  SIZE ' + String(L.size || '') + '  ·  inches  ·  ±' + (L.tol != null ? L.tol : 0.5) + ' in', M, y + 6);
+    y += 10;
+    const rows = L.measurements || [];
+    const lineH = 10.5, colW = (W - 2 * M) / 2;
+    const perCol = Math.max(0, Math.floor((bandTop - 4 - y) / lineH));
+    const shown = rows.slice(0, perCol * 2);
+    const half = Math.ceil(shown.length / 2);
+    shown.forEach(function (r, k) {
+      const col = k < half ? 0 : 1, row = k < half ? k : k - half;
+      const x = M + col * colW, yy = y + row * lineH + 7;
+      _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 8, ink);
+      doc.text(doc.splitTextToSize(String(r.label || ''), colW - 40)[0] || '', x, yy);
+      _setFont(doc, PRINT_FONTS.bodyBold, 'bold', 8, black);
+      doc.text(String(r.value == null ? '—' : r.value), x + colW - 8, yy, { align: 'right' });
+    });
+    if (!rows.length) {
+      _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 8, grey);
+      doc.text('no measurements recorded yet', M, y + 7);
+    } else if (rows.length > shown.length) {
+      _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 7, grey);
+      doc.text('+' + (rows.length - shown.length) + ' more in the app', M, bandTop - 2);
+    }
+    // QR, bottom right
+    _drawQrMatrix(doc, L.qr, W - M - qrSize, H - M - qrSize, qrSize);
+    // footer, bottom left
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 7, grey);
+    const foot = [];
+    if (L.gridUpdated) foot.push('measurements updated ' + L.gridUpdated);
+    foot.push('scan for the full grid');
+    if (L.url) foot.push(doc.splitTextToSize(String(L.url), W - 2 * M - qrSize - 10)[0] || '');
+    doc.text(foot, M, H - M - qrSize + 10);
+  });
+}
+/* Draw a QR module matrix (bool[][]) as filled squares with a quiet zone. */
+function _drawQrMatrix(doc, matrix, x, y, size) {
+  if (!matrix || !matrix.length) return;
+  const n = matrix.length;
+  const quiet = 2;                      // modules of white margin, per the spec's minimum for print
+  const cell = size / (n + quiet * 2);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(x, y, size, size, 'F');
+  doc.setFillColor(0, 0, 0);
+  for (let r = 0; r < n; r++) {
+    const row = matrix[r] || [];
+    for (let c = 0; c < n; c++) {
+      if (row[c]) doc.rect(x + (c + quiet) * cell, y + (r + quiet) * cell, cell, cell, 'F');
+    }
+  }
+}
+
 /* ── PART 2 — Public API ───────────────────────────────────────────────────
    The ONLY global this engine exposes. */
 window.printDocument = async function (opts) {
@@ -1743,14 +1871,15 @@ window.printDocument = async function (opts) {
 
   const known = ['po', 'embroidery-vendor', 'sublimation-vendor',
     'gate-pass', 'placement-sheet', 'qc-report', 'payslip',
-    'daily-performance', 'stock-transfer', 'mood-board', 'generic'];
+    'daily-performance', 'stock-transfer', 'mood-board', 'pattern-label', 'generic'];
   const _VARIANTS = {
     'po': _renderPO,
     'gate-pass': _renderGatePass,
     'payslip': _renderPayslip,
     'daily-performance': _renderDailyPerformance,
     'stock-transfer': _renderStockTransfer,
-    'mood-board': _renderMoodBoard
+    'mood-board': _renderMoodBoard,
+    'pattern-label': _renderPatternLabel
   };
   const render = _VARIANTS[type] || _renderGeneric;
   if (known.indexOf(type) === -1) {
@@ -1779,7 +1908,15 @@ window.printDocument = async function (opts) {
   const embedUrdu = (urduLevel === 'full');
 
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  // Page size: A4 portrait for every document EXCEPT one that asks for its
+  // own (data.page = {w,h} in points) — the Pattern Hub's 5×6 in label. The
+  // shared components (_renderHeader, _renderFooter, _renderInfoTable, …)
+  // are A4 by construction through PRINT_LAYOUT, so a custom-page variant
+  // must draw its own layout and gets no automatic footer.
+  const customPage = _customPage(data);
+  const doc = customPage
+    ? new jsPDF({ unit: 'pt', format: [customPage.w, customPage.h], orientation: customPage.w > customPage.h ? 'landscape' : 'portrait' })
+    : new jsPDF({ unit: 'pt', format: 'a4' });
 
   const fontState = await _ensurePrintFonts(embedUrdu);
   doc.__groovyFonts = _registerFonts(doc, fontState);
@@ -1801,7 +1938,7 @@ window.printDocument = async function (opts) {
 
   try {
     render(doc, data);
-    _stampFooters(doc);
+    if (!customPage) _stampFooters(doc);
   } catch (e) {
     console.error('[print-engine] render failed:', e);
     if (typeof showToast === 'function') showToast('PDF generation failed: ' + e.message, true);
