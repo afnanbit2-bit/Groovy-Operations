@@ -3126,8 +3126,9 @@ page's "Check Shopify access", which asks Shopify directly).
   rule is already satisfied. **Whether the hourly allowance covers 244
   lookups in one go is not known from here**; the pause is what makes that
   not matter.
-- **Deleting a creator** (owners only — the rules allow `creators` delete
-  for `isOwner()` and nobody else, so the lead is never offered it). One
+- **Deleting a creator** (owners and the Content Ops lead — the rules
+  allow `creators` delete for `isMarketing()`; widened from owners-only at
+  Ammar's request so Daniyal can clean up the list). One
   batch deletes the creator and its handle lock (the lock rule releases it
   once the creator no longer exists; a lock naming ANOTHER creator is never
   touched). **A creator with any dispatch or Paid PR is refused** —
@@ -3833,6 +3834,11 @@ republish.
 (`sharedWith`, TEAM update, the presence/comments/activity sub-collections)
 AND `user_profiles`. Both had been waiting; the Profile page's own error
 card is what finally surfaced it.
+
+**REPUBLISH OUTSTANDING (17 Sept 2026):** `creators` delete widened from
+`isOwner()` to `isMarketing()` so the Content Ops lead can delete creators.
+Until the Console has it, Daniyal's Delete button is refused by the rules
+(the app shows the error; nothing is lost).
 
 **Republished a third time by Ammar on 16 Sept 2026, after PRs #65/#66**
 (reported in-session), from the repo file at

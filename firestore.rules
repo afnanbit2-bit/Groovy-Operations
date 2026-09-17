@@ -414,7 +414,9 @@ service cloud.firestore {
         && request.resource.data.ig_handle is string
         && request.resource.data.status in ['active','do_not_use','blacklisted']
         && getAfter(creatorHandlePath(request.resource.data.ig_handle)).data.creatorId == id;
-      allow delete: if isOwner();
+      // Owners and the Content Ops lead. The app refuses a creator that any
+      // dispatch or Paid PR still names (mktCreatorDeleteBlock).
+      allow delete: if isMarketing();
     }
     // One document per handle, naming the creator that owns it. Never
     // updated — an existing lock cannot be taken over — and only removed

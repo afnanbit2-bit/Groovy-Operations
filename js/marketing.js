@@ -905,14 +905,14 @@ async function mktWriteCreator(built){
 }
 
 // ── Deleting a creator ──────────────────────────────────────────────────
-// Owners only — firestore.rules allows a creator delete for isOwner() and
-// nobody else. The handle lock goes in the same batch (the lock rule lets it
+// Owners and the Content Ops lead — firestore.rules allows a creator delete
+// for isMarketing(), and this mirrors it. The handle lock goes in the same batch (the lock rule lets it
 // go once its creator no longer exists), so the handle can be added again.
 // A creator with dispatches or Paid PRs is NOT deleted: those records name
 // the creator, and the rollups, reports and discount codes built on them
 // would be left pointing at nothing. "Do not use" is the way to retire one.
 function mktCanDeleteCreators(){
-  return typeof session!=='undefined'&&!!session&&session.role==='owner';
+  return typeof canAccessMarketing==='function'&&canAccessMarketing();
 }
 /** Why this creator cannot be deleted, or '' if it can. Pure. */
 function mktCreatorDeleteBlock(creatorId,dispatches,paidPRs){
@@ -928,7 +928,7 @@ function mktCreatorDeleteBlock(creatorId,dispatches,paidPRs){
 let _mktDeleting=false;
 window.mktDeleteCreator=async function(id){
   if(_mktDeleting)return;
-  if(!mktCanDeleteCreators()){_mktFormError('Only an owner can delete a creator.');return;}
+  if(!mktCanDeleteCreators()){_mktFormError('Your account cannot delete creators.');return;}
   const c=mktCreators.find(x=>x.id===id);
   if(!c){_mktFormError('That creator is no longer in the list.');return;}
   const block=mktCreatorDeleteBlock(id,mktDispatchesLoaded?mktDispatches:null,mktPaidPRsLoaded?mktPaidPRs:null);
