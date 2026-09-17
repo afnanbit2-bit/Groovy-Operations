@@ -314,7 +314,7 @@ module.exports=async function(){
     s.eq('every lead email is in isContentOpsLead(), and nothing else is',J(ruleEmails),J(leads.map(d=>d.email).sort()));
     s.ok('a creator write needs its handle lock to point back at it',/getAfter\(creatorHandlePath\(request\.resource\.data\.ig_handle\)\)\.data\.creatorId == id/.test(rules));
     s.ok('a handle lock can never be taken over',/match \/creator_handles\/\{handle\}[\s\S]*?allow update: if false;/.test(rules));
-    s.ok('only owners delete creators',/match \/creators\/\{id\}[\s\S]*?allow delete: if isOwner\(\);/.test(rules));
+    s.ok('owners and the lead delete creators (isMarketing)',/match \/creators\/\{id\}[\s\S]*?allow delete: if isMarketing\(\);/.test(rules));
   }
 
   // ── Nav + scoping (needs the real router) ─────────────────────────────
@@ -1303,10 +1303,12 @@ module.exports=async function(){
     s.ok('nor when the lists did not load — it cannot be checked',/did not load/.test(t.run("mktCreatorDeleteBlock('cr_a',null,[])")));
     s.eq('owners may delete',t.run('mktCanDeleteCreators()'),true);
     const lead=app({session:{uid:'uid-d',u:'daniyal',name:'Daniyal',role:'creator_content_ops_lead',email:'daniyal@groovy.op'}});
-    s.eq('the lead may not (the rules say owners only)',lead.run('mktCanDeleteCreators()'),false);
+    s.eq('so may the lead (the rules say isMarketing)',lead.run('mktCanDeleteCreators()'),true);
     lead.run("mktCreators=[{id:'cr_a',ig_handle:'a'}];mktCreatorsLoaded=true");
     lead.run("window.mktOpenCreator('cr_a')");
-    s.ok('and is not offered the button',!/Delete creator/.test(lead.bodyHtml('mkt-modal-back')));
+    s.ok('and is offered the button',/Delete creator/.test(lead.bodyHtml('mkt-modal-back')));
+    const other=app({session:{uid:'uid-m',u:'mustafa',name:'Mustafa',role:'manager',email:'mustafa@groovy.op'}});
+    s.eq('nobody outside Marketing may',other.run('mktCanDeleteCreators()'),false);
     t.run("mktCreators=[{id:'cr_a',ig_handle:'a'}];mktCreatorsLoaded=true");
     t.run("window.mktOpenCreator('cr_a')");
     s.ok('an owner is',/Delete creator/.test(t.bodyHtml('mkt-modal-back')));
