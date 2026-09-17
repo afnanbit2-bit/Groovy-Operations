@@ -3126,6 +3126,14 @@ page's "Check Shopify access", which asks Shopify directly).
   rule is already satisfied. **Whether the hourly allowance covers 244
   lookups in one go is not known from here**; the pause is what makes that
   not matter.
+- **Scoring settings are Ammar's alone** (17 Sept 2026). A third
+  per-account flag, `canEditScoring` on Ammar's `USER_DEFS` entry
+  (`canEditScoring()` in `js/auth.js`), mirrored by EMAIL in
+  `firestore.rules` `isScoringAdmin()`; a test fails if the two disagree.
+  `scoring_config` stays READABLE to all of Marketing — every creator save
+  is scored with those bands — but only the admin may write it. The button
+  is hidden from everyone else (the other owner included), and opening or
+  saving it anyway is refused client-side too. **Needs a rules republish.**
 - **Deleting a creator** (owners and the Content Ops lead — the rules
   allow `creators` delete for `isMarketing()`; widened from owners-only at
   Ammar's request so Daniyal can clean up the list). One
@@ -3834,6 +3842,11 @@ republish.
 (`sharedWith`, TEAM update, the presence/comments/activity sub-collections)
 AND `user_profiles`. Both had been waiting; the Profile page's own error
 card is what finally surfaced it.
+
+**REPUBLISH OUTSTANDING (17 Sept 2026):** `scoring_config` write narrowed
+from `isMarketing()` to the new `isScoringAdmin()` (Ammar). Until the
+Console has it, only the hidden button stops Daniyal — the rules still
+would let him write.
 
 **Republished a fourth time by Ammar on 17 Sept 2026, after PR #71**
 (reported in-session), from the repo file at
