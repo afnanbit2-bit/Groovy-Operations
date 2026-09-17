@@ -9,12 +9,28 @@ rules_version = '2';
 //   All other accounts created by setup are workers/store/viewer.
 //
 // Most operational tables are open to any signed-in user (matches the
-// app's runtime expectations). HRM and payroll are tightened.
+// app's runtime expectations). HRM and payroll WRITES are tightened —
+// `employees` and `payslips` reads are still open to any signed-in user
+// (including workers), pending a per-employee self-read fix that needs
+// an authEmail field denormalised onto each record first.
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function signedIn() { return request.auth != null; }
+    // Authentication alone is not authorisation: if self-signup is ever enabled
+    // on the Firebase project, request.auth != null would let any stranger in.
+    // Every account in USER_DEFS (js/auth.js) is @groovy.op — keep it that way.
+    //
+    // NOTE: groovy.op is not a domain anyone owns (.op is not a real TLD — the
+    // addresses exist only inside Firebase Auth), so this check is a barrier
+    // against accidental signups, NOT against an attacker, who can simply
+    // register attacker@groovy.op. Self-signup must stay DISABLED in the
+    // Firebase Console; that is the real boundary. An explicit allowlist of the
+    // USER_DEFS addresses would be stronger here than a domain pattern.
+    function signedIn() {
+      return request.auth != null
+        && request.auth.token.email.matches('.*@groovy[.]op$');
+    }
     function userEmail() { return request.auth.token.email; }
     function isOwner() {
       return signedIn() && userEmail() in ['afnan@groovy.op','ammar@groovy.op'];
