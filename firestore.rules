@@ -34,6 +34,10 @@ service cloud.firestore {
     // isManager(), which would hand Arfat the registry too. Mirror in
     // js/patterns.js _canManagePatterns() / _PATTERN_HUB_USERS.
     function isPatternAdmin() { return isOwner() || isMustafa(); }
+    // Cutting (Uzaib) reads the Pattern Hub and acknowledges a revision
+    // notice — nothing else. Mirror in js/patterns.js
+    // _PATTERN_CUTTING_USERS.
+    function isPatternCutting() { return signedIn() && userEmail() == 'uzaib@groovy.op'; }
 
     // ── Operational data (POs, gate passes, returns, fabric in) ──
     match /pos/{doc}                  { allow read, write: if signedIn(); }
@@ -581,6 +585,28 @@ service cloud.firestore {
         && request.resource.data.code == resource.data.code
         && request.resource.data.createdAt == resource.data.createdAt;
       allow delete: if isOwner();
+
+      // A revision is the record of a physical correction. APPEND-ONLY,
+      // like fabric_movements and the board activity feed — the history
+      // cutting acted on must not be editable after the fact.
+      match /revisions/{n} {
+        allow read: if signedIn();
+        allow create: if isPatternAdmin();
+        allow update, delete: if false;
+      }
+    }
+    // pattern_notices/{id}: what cutting has to update, raised with the
+    // revision. Only the four acknowledge fields may ever change, and only
+    // cutting or an admin may change them — the Marketing M3 shape. The
+    // JS list _PTN_ACK_FIELDS is asserted equal to this hasOnly list.
+    match /pattern_notices/{id} {
+      allow read: if signedIn();
+      allow create: if isPatternAdmin();
+      allow update: if (isPatternAdmin() || isPatternCutting())
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status','ackBy','ackAt','ackNote'])
+        && request.resource.data.status == 'acknowledged';
+      allow delete: if false;
     }
     // pattern_slots/{H-S}: the lock that makes a rack slot exclusive —
     // written in the same transaction as the block's hook/slot, so two

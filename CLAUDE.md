@@ -3172,6 +3172,46 @@ created by hand — name-clustering says 251 but 133 articles are prints on a
 handful of blank bodies, so the real count (60–130) is the pattern master's
 call, and the app only ever *suggests*.
 
+**M5 (shipped): revisions and the cutting notice.** Editing the grid stays
+silent — entering ~8,000 numbers must not page anyone. A **revision** is an
+explicit act ("Record a revision", one line of reason) and THAT is what tells
+cutting what moved.
+
+- **`patterns/{id}/revisions/{n}` is append-only** (rules: `update, delete:
+  if false`), like `fabric_movements`. Each revision keeps a **full
+  `snapshot` of the grid**, so the next diff is against the record itself
+  rather than a baseline field that could drift from it — ~60 numbers, worth
+  the bytes. `cells` holds only what moved, as `{from,to}` in inches.
+- **The first revision has no prior snapshot, so every value reads as new.**
+  That is cutting being told the spec exists, not noise, and it avoids a
+  special case needing its own correctness argument.
+- **`pattern_notices/{id}` SNAPSHOTS the article codes affected.** Deriving
+  them live would rewrite history each time an article is reassigned; the
+  notice records what cutting acted on.
+- **One `writeBatch`** writes the revision, the notice and the bell row —
+  a revision without a notice is a private diary, a notice without a
+  revision points at nothing.
+- The bell is the existing one (`hrm_notifications`, `forUser`,
+  deterministic id, `actionUrl:'pattern-notices'`) exactly as Marketing M5
+  does — **`js/hrm.js` needed no change** beyond a Me-page button.
+- **Acknowledging writes exactly four fields** (`status, ackBy, ackAt,
+  ackNote`) and may only ever set `status` to `acknowledged`; the rules'
+  `hasOnly` list and `_PTN_ACK_FIELDS` are asserted equal — the Marketing
+  M3 shape. A notice is never deleted.
+- **A revision is refused while the grid has unsaved edits** ("a revision
+  records what is saved"), and refused when nothing has changed.
+- **THE AUDIENCE SPLIT INTO THREE LISTS HERE.** `_PATTERN_ADMIN_USERS`
+  (afnan, ammar, mustafa) build everything and mirror
+  `isPatternAdmin()`; `_PATTERN_CUTTING_USERS` (uzaib) mirror
+  `isPatternCutting()` and may only acknowledge; `_PATTERN_HUB_USERS` is
+  the two concatenated and gates the nav. Arfat is in none. Uzaib is a
+  `viewer`, whose phone nav has no More sheet, so his route in is a **Me
+  page button** — the Creative Hub pattern — and **`renderPatternHub()`
+  returns the notices page for him**: one redirect rather than a second,
+  emptier registry page.
+- **`firestore.rules` changed — `revisions`, `pattern_notices`,
+  `isPatternCutting()`.**
+
 **M4 (shipped): the 5 × 6 in label — one per SIZE in the bundle.** Each
 traced sheet gets its own sticker: block code (large), name, category, fit,
 **SIZE** (large), the bundle, **HOOK / SLOT**, the articles using it (12,
@@ -3359,7 +3399,8 @@ counter) and `articles/{CODE}`.
 - **A failed read and an empty registry render different screens**, and
   **the seed is never offered on a failed read** — it would rewrite a live
   registry it could not see. `_ptnLoadFailed(col)`, the Store lesson.
-- **Audience by username** (`_PATTERN_HUB_USERS`: afnan, ammar, mustafa) —
+- **Audience by username** (M0 shipped one list; M5 split it into three —
+  see M5 above. `_PATTERN_ADMIN_USERS`: afnan, ammar, mustafa) —
   Arfat holds the manager role and gets nothing, like every Sept 2026 grant.
   `firestore.rules` mirrors it as `isPatternAdmin()` (owners + `isMustafa()`,
   never `isManager()`); `tests/patterns.test.js` asserts the two lists are
@@ -4214,8 +4255,9 @@ firestore.rules` is the PR #71 commit (`creators` delete widened from
 creators). **No republish is outstanding as of that commit**; this
 supersedes the entries below.
 
-**REPUBLISH OUTSTANDING (17 Sept 2026): Pattern Hub M3** adds
-`pom_templates`. Afnan published the M0–M2 file earlier that day (his
+**REPUBLISH OUTSTANDING (17 Sept 2026): Pattern Hub M3 + M5** add
+`pom_templates`, `patterns/{id}/revisions`, `pattern_notices` and
+`isPatternCutting()`. Afnan published the M0–M2 file earlier that day (his
 reconcile screenshot no longer showed `shopify_articles` refused). One
 paste of the current file covers everything. Check `git log --oneline -1 --
 firestore.rules` against the entries below.

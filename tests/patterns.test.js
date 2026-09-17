@@ -68,13 +68,15 @@ module.exports=async function(){
 
   // ── Audience ──────────────────────────────────────────────────────────
   s.section('audience — by username, Arfat out');
-  for(const [u,want] of [['afnan',true],['ammar',true],['mustafa',true],['arfat',false],['uzaib',false]]){
+  for(const [u,see,manage,ack] of [['afnan',true,true,true],['ammar',true,true,true],['mustafa',true,true,true],['arfat',false,false,false],['uzaib',true,false,true]]){
     const a=app({session:SESS[u]});
-    s.eq(u+' can see the hub: '+want,a.run('_canSeePatternHub()'),want);
-    s.eq(u+' can manage: '+want,a.run('_canManagePatterns()'),want);
+    s.eq(u+' sees the hub: '+see,a.run('_canSeePatternHub()'),see);
+    s.eq(u+' manages: '+manage,a.run('_canManagePatterns()'),manage);
+    s.eq(u+' acknowledges: '+ack,a.run('_canAckPatternNotice()'),ack);
   }
   s.eq('no session → closed',app().run('session=null;_canSeePatternHub()'),false);
   s.ok('renderPatternHub refuses Arfat with a message, not a blank',/test phase/.test(app({session:SESS.arfat}).run('renderPatternHub()')));
+  s.ok('the hub for cutting IS the updates list, not an emptier registry',/Pattern updates/.test(app({session:SESS.uzaib}).run('renderPatternHub()'))&&!/Mint a code/.test(app({session:SESS.uzaib}).run('renderPatternHub()')));
 
   // ── Code grammar ──────────────────────────────────────────────────────
   s.section('code grammar');
@@ -302,7 +304,7 @@ module.exports=async function(){
   {
     const rules=read('firestore.rules');
     const authSrc=read('js/auth.js');
-    const users=a0.run('_PATTERN_HUB_USERS');
+    const users=a0.run('_PATTERN_ADMIN_USERS');
     const emailOf=u=>(new RegExp("u:'"+u+"',\\s*email:'([^']+)'").exec(authSrc)||[])[1];
     const jsEmails=users.map(emailOf).sort();
     const owners=(/function isOwner\(\)\s*\{[^}]*\[([^\]]*)\]/.exec(rules)||[,''])[1].match(/'[^']+'/g).map(x=>x.replace(/'/g,''));
@@ -310,6 +312,7 @@ module.exports=async function(){
     s.ok('rules define isPatternAdmin() as owners + Mustafa',/function isPatternAdmin\(\)\s*\{\s*return isOwner\(\) \|\| isMustafa\(\);\s*\}/.test(rules));
     s.eq('…which is exactly _PATTERN_HUB_USERS',J(owners.concat([mustafa]).sort()),J(jsEmails));
     s.ok('Arfat is not in the JS list',users.indexOf('arfat')<0);
+    s.eq('the hub list is the admins plus cutting, nobody else',J(a0.run('_PATTERN_HUB_USERS')),J(users.concat(a0.run('_PATTERN_CUTTING_USERS'))));
     s.ok('Arfat is not a pattern admin in rules',!/isPatternAdmin[^}]*arfat/.test(rules));
     s.ok('articles create requires the payload code to equal the doc id',/match \/articles\/\{code\}[\s\S]*?request\.resource\.data\.code == code/.test(rules));
     s.ok('articles update cannot change code or category',/request\.resource\.data\.category == resource\.data\.category/.test(rules));
@@ -963,6 +966,148 @@ module.exports=async function(){
     b.ctx.location.hash='#board=abc';
     s.eq('a board link is not a pattern link',b.run('_ptnParseHash()'),null);
     s.ok('startApp is wrapped, not edited',/_ptnOrigStartApp/.test(read('js/patterns.js'))&&!/pattern/i.test(read('js/auth.js')));
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  // M5 — revisions and the cutting notice
+  // ═════════════════════════════════════════════════════════════════════
+  function revApp(store,session){
+    store=store||new Map();
+    const f=fakeFs(store);
+    const globals=Object.assign({},f.globals,{
+      localStorage:LSmem(),
+      doc:(db,...rest)=>({key:rest.join('/'),col:rest[0],id:rest[rest.length-1]}),
+      collection:(db,...rest)=>({name:rest.join('/')}),
+      getDoc:async r=>({exists:()=>store.has(r.key),data:()=>store.get(r.key)}),
+      getDocs:async ref=>({docs:Array.from(store.entries()).filter(([k])=>k.startsWith(ref.name+'/')&&k.slice(ref.name.length+1).indexOf('/')<0).map(([k,v])=>({id:k.slice(ref.name.length+1),data:()=>v}))}),
+      updateDoc:async(r,p)=>{const cur=store.get(r.key)||{};store.set(r.key,Object.assign({},cur,p));f.meta.updates=(f.meta.updates||0)+1;},
+      setDoc:async(r,p,o)=>{store.set(r.key,Object.assign({},(o&&o.merge&&store.get(r.key))||{},p));},
+      writeBatch:()=>{const ops=[];f.meta.batches=(f.meta.batches||0)+1;return{set(r,p){ops.push([r.key,p]);return this;},update(r,p){ops.push([r.key,p]);return this;},delete(r){ops.push([r.key,null]);return this;},async commit(){ops.forEach(([k,p])=>{if(p===null)store.delete(k);else store.set(k,p);});f.meta.batchOps=(f.meta.batchOps||0)+ops.length;}};}
+    });
+    return{a:app({session:session||SESS.afnan,globals}),store,meta:f.meta};
+  }
+  const RBLOCK=Object.assign({},BLOCK,{hook:3,slot:2,grid:{M:{waist_relaxed:15,hip:22.5},L:{waist_relaxed:16}}});
+
+  s.section('M5 · the diff');
+  {
+    const {a}=revApp();
+    const d=(b,x)=>a.run('_ptnGridDiff('+J(b)+','+J(x)+')');
+    s.eq('a changed cell',J(d({M:{hip:22.5}},{M:{hip:22}})),J({cells:{M:{hip:{from:22.5,to:22}}},count:1}));
+    s.eq('a new cell',J(d({},{M:{hip:22}}).cells.M.hip),J({from:null,to:22}));
+    s.eq('a cleared cell',J(d({M:{hip:22}},{}).cells.M.hip),J({from:22,to:null}));
+    s.eq('an unchanged grid diffs to nothing',d({M:{hip:22}},{M:{hip:22}}).count,0);
+    s.eq('a whole new size',d({},{S:{hip:20,waist_relaxed:14}}).count,2);
+    s.ok('lines read from → to in inches',/^M · hip: 22\.5 → 22$/.test(a.run("_ptnDiffLines(_ptnGridDiff({M:{hip:22.5}},{M:{hip:22}}))")[0]));
+    s.ok('a long diff is capped and says how many more',a.run("_ptnDiffLines(_ptnGridDiff({},{M:{a:1,b:2,c:3,d:4}}),2)").slice(-1)[0]==='…and 2 more');
+  }
+
+  s.section('M5 · recording a revision writes the revision, the notice and the bell — in one batch');
+  {
+    const st=new Map([['patterns/ptn_0007',Object.assign({},RBLOCK)],
+      ['articles/GST060',{code:'GST060',name:'a',brand:'groovy',category:'GST',needsPattern:true,active:true,patternId:'ptn_0007'}],
+      ['articles/GST061',{code:'GST061',name:'b',brand:'groovy',category:'GST',needsPattern:true,active:true,patternId:'ptn_0007'}]]);
+    _seedPoms(st);
+    const {a,store,meta}=revApp(st);
+    await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');await a.run('loadPatternsPoms()');await a.run('loadPatternNotices()');
+    await a.run("loadPatternRevisions('ptn_0007')");
+    a.run("_ptnBlockId='ptn_0007'");
+    s.eq('with no prior revision every value reads as new',a.run("_ptnPendingDiff(_ptnBlock('ptn_0007')).count"),3);
+    a.ctx.prompt=()=>'Hem shortened half an inch';
+    const ok=await a.run("window.ptnRecordRevision('ptn_0007')");
+    s.eq('recorded',ok,true);
+    s.eq('one batch',meta.batches,1);
+    const rev=store.get('patterns/ptn_0007/revisions/rev_001');
+    s.eq('revision 1: reason, count, who',J([rev.n,rev.reason,rev.changed,rev.by]),J([1,'Hem shortened half an inch',3,'afnan']));
+    s.eq('…and a FULL snapshot of the grid, so the next diff is against the record',J(rev.snapshot),J(RBLOCK.grid));
+    const n=store.get('pattern_notices/ptnn_ptn_0007_r1');
+    s.eq('the notice names the block, the revision and the reason',J([n.patternCode,n.revisionN,n.summary,n.status]),J(['PTN-0007',1,'Hem shortened half an inch','open']));
+    s.eq('…and SNAPSHOTS the articles affected',J(n.articleCodes),J(['GST060','GST061']));
+    s.ok('…with readable before→after lines',n.lines.length===3&&/M · hip: — → 22\.5/.test(n.lines.join('|')));
+    const bell=store.get('hrm_notifications/ptn_rev_ptn_0007_r1_uzaib');
+    s.ok('the bell goes to cutting, high priority, pointing at the updates page',bell&&bell.forUser==='uzaib'&&bell.priority==='high'&&bell.actionUrl==='pattern-notices'&&/PTN-0007/.test(bell.title));
+    s.ok('…and nobody else is paged',!Object.keys(store.toJSON?{}:{}).length&&Array.from(store.keys()).filter(k=>k.startsWith('hrm_notifications/')).length===1);
+    // nothing changed since → refused
+    a.state.toasts.length=0;
+    s.eq('a second revision with no change is refused',await a.run("window.ptnRecordRevision('ptn_0007')"),false);
+    s.ok('…and says so',a.state.toasts.some(t=>/Nothing has changed/.test(t)));
+    s.eq('…writing nothing',meta.batches,1);
+    // change one cell → revision 2 diffs against revision 1's snapshot
+    a.run("_ptnBlock('ptn_0007').grid.M.hip=22");
+    s.eq('now one cell differs',a.run("_ptnPendingDiff(_ptnBlock('ptn_0007')).count"),1);
+    a.ctx.prompt=()=>'Hip taken in';
+    await a.run("window.ptnRecordRevision('ptn_0007')");
+    const r2=store.get('patterns/ptn_0007/revisions/rev_002');
+    s.eq('revision 2 records only what moved',J([r2.n,r2.changed,r2.cells.M.hip]),J([2,1,{from:22.5,to:22}]));
+    s.ok('a second notice and a second bell, each with their own id',!!store.get('pattern_notices/ptnn_ptn_0007_r2')&&!!store.get('hrm_notifications/ptn_rev_ptn_0007_r2_uzaib'));
+    // a blank reason writes nothing
+    a.run("_ptnBlock('ptn_0007').grid.L.waist_relaxed=16.5");
+    a.ctx.prompt=()=>'   ';
+    const before=meta.batches;
+    s.eq('a blank reason is refused',await a.run("window.ptnRecordRevision('ptn_0007')"),false);
+    s.eq('…writing nothing',meta.batches,before);
+    // unsaved grid edits block a revision
+    a.run("_ptnGridDirty=true");a.ctx.prompt=()=>'x';a.state.toasts.length=0;
+    s.eq('unsaved measurements block a revision',await a.run("window.ptnRecordRevision('ptn_0007')"),false);
+    s.ok('…and say to save first',a.state.toasts.some(t=>/Save the measurements first/.test(t)));
+    a.run("_ptnGridDirty=false");
+  }
+
+  s.section('M5 · the notices page and acknowledging');
+  {
+    const st=new Map([['patterns/ptn_0007',Object.assign({},RBLOCK)],
+      ['pattern_notices/n1',{patternId:'ptn_0007',patternCode:'PTN-0007',patternName:'Live In Pants block',revisionN:1,articleCodes:['GST060'],summary:'Hem shortened',changed:2,lines:['M · hem: 29 → 28.5','L · hem: 30 → 29.5'],raisedBy:'afnan',raisedByName:'Afnan',raisedAt:'2026-09-17T10:00:00Z',status:'open',ackBy:'',ackAt:'',ackNote:''}]]);
+    _seedPoms(st);
+    const {a,store,meta}=revApp(st,SESS.uzaib);
+    await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');await a.run('loadPatternNotices()');
+    const html=a.run('renderPatternNotices()');
+    s.ok('cutting sees the block, the reason, the lines and the articles',/PTN-0007/.test(html)&&/Hem shortened/.test(html)&&/M · hem: 29 → 28\.5/.test(html)&&/GST060/.test(html));
+    s.ok('…the hook it hangs on',/Hook 3 \/ Slot 2/.test(html));
+    s.ok('…and an acknowledge button, but no Open-the-block (cutting does not manage)',/ptnAckNotice\('n1'\)/.test(html)&&!/ptnOpenBlock/.test(html));
+    s.ok('the badge counts open notices',/badge[^>]*>1</.test(a.run('_ptnNoticeBadge()')));
+    a.ctx.prompt=()=>'updated the paper';
+    await a.run("window.ptnAckNotice('n1')");
+    const n=store.get('pattern_notices/n1');
+    s.eq('exactly the four acknowledge fields are written, nothing else',J(Object.keys(n).filter(k=>['status','ackBy','ackAt','ackNote'].indexOf(k)>-1).sort().concat([n.status,n.ackBy,n.ackNote])),J(['ackAt','ackBy','ackNote','status','acknowledged','uzaib','updated the paper']));
+    s.eq('…and the summary was not touched',n.summary,'Hem shortened');
+    s.eq('one update',meta.updates,1);
+    s.ok('it moves to Done and the badge clears',/Acknowledged by uzaib/.test(a.run("_ptnNoticeTab='done';_ptnNoticesHTML()"))&&a.run('_ptnNoticeBadge()')==='');
+    a.state.toasts.length=0;
+    await a.run("window.ptnAckNotice('n1')");
+    s.eq('acknowledging twice writes nothing',meta.updates,1);
+  }
+  {
+    const st=new Map([['pattern_notices/n1',{patternId:'p',patternCode:'X',revisionN:1,summary:'s',lines:[],articleCodes:[],status:'open',raisedAt:'2026-09-17'}]]);
+    const {a,meta}=revApp(st,SESS.arfat);
+    await a.run('loadPatternsData()');await a.run('loadPatternNotices()');
+    await a.run("window.ptnAckNotice('n1')");
+    s.eq('Arfat cannot acknowledge',meta.updates||0,0);
+    const {a:b,meta:m2}=revApp(new Map([['patterns/ptn_0007',Object.assign({},RBLOCK)]]),SESS.uzaib);
+    await b.run('loadPatternsData()');await b.run('loadPatternsBlocks()');
+    b.ctx.prompt=()=>'x';
+    await b.run("window.ptnRecordRevision('ptn_0007')");
+    s.eq('cutting cannot RAISE a revision, only acknowledge one',(m2.batches||0)+(m2.updates||0),0);
+  }
+  {
+    const a=app({globals:{collection:(db,...r)=>({name:r.join('/')}),getDocs:async ref=>{if(ref.name==='pattern_notices')throw new Error('Missing or insufficient permissions');return{docs:[]};}}});
+    await a.run('loadPatternNotices()');
+    s.ok('a refused read renders the error and the republish hint, not "nothing to do"',/ptn-notices-failed/.test(a.run('renderPatternNotices()'))&&/firestore\.rules/.test(a.run('renderPatternNotices()'))&&!/ptn-notices-empty/.test(a.run('renderPatternNotices()')));
+  }
+
+  s.section('M5 · three layers agree');
+  {
+    const rules=read('firestore.rules'),js=read('js/patterns.js'),hrm=read('js/hrm.js');
+    const authSrc=read('js/auth.js');
+    const cutting=app().run('_PATTERN_CUTTING_USERS');
+    const email=(new RegExp("u:'"+cutting[0]+"',\\s*email:'([^']+)'").exec(authSrc)||[])[1];
+    const ruleEmail=(/function isPatternCutting\(\)[^}]*==\s*'([^']+)'/.exec(rules)||[])[1];
+    s.eq('isPatternCutting() names exactly _PATTERN_CUTTING_USERS',ruleEmail,email);
+    s.eq('the JS acknowledge-field list equals the rules hasOnly list',J(app().run('_PTN_ACK_FIELDS')),J(['status','ackBy','ackAt','ackNote']));
+    s.ok('…and the rules list is that, in that order',/hasOnly\(\['status','ackBy','ackAt','ackNote'\]\)/.test(rules));
+    s.ok('an update may only ever set status to acknowledged',/request\.resource\.data\.status == 'acknowledged'/.test(rules));
+    s.ok('revisions are append-only',/match \/revisions\/\{n\}[\s\S]*?allow update, delete: if false;/.test(rules));
+    s.ok('a notice is never deleted',/match \/pattern_notices\/\{id\}[\s\S]*?allow delete: if false;/.test(rules));
+    s.ok('cutting reaches the page from the Me page, guarded with typeof',/_canSeePatternHub==='function'&&_canSeePatternHub\(\)/.test(hrm)&&/pattern-notices/.test(hrm));
+    s.ok('the router knows pattern-notices and the page has a name',/id==='pattern-notices'/.test(js)&&/'pattern-notices':'Pattern Hub · Pattern updates'/.test(read('js/shared.js')));
   }
 
   return s;

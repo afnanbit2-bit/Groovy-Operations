@@ -53,14 +53,23 @@
      js/shared.js reaches _canSeePatternHub() by bare name behind a `typeof`
      guard that fails CLOSED. Mirror: firestore.rules isPatternAdmin(). */
 
-// ── Audience (test phase) ─────────────────────────────────────────────────
-const _PATTERN_HUB_USERS=['afnan','ammar','mustafa'];
-function _canSeePatternHub(){
-  return !!(typeof session!=='undefined'&&session&&_PATTERN_HUB_USERS.indexOf(session.u)>-1);
-}
-// M0: the same three people. Widens to Uzaib (view) at M3 without touching
-// the manage gate, which is why the two are separate functions from day one.
-function _canManagePatterns(){ return _canSeePatternHub(); }
+// ── Audience ──────────────────────────────────────────────────────────────
+// THREE lists, because three different powers. Admins build the registry,
+// the blocks and the measurements. Cutting (Uzaib) reads everything and
+// acknowledges a revision notice — nothing else. Arfat holds the manager
+// role and is in none of them, like every Sept 2026 grant.
+//   _PATTERN_ADMIN_USERS  ⇄ firestore.rules isPatternAdmin()  (+ the
+//                            PATTERN_ADMIN_EMAILS in the sync function)
+//   _PATTERN_CUTTING_USERS ⇄ firestore.rules isCutting()
+// tests/patterns.test.js asserts each pair names the same people.
+const _PATTERN_ADMIN_USERS=['afnan','ammar','mustafa'];
+const _PATTERN_CUTTING_USERS=['uzaib'];
+const _PATTERN_HUB_USERS=_PATTERN_ADMIN_USERS.concat(_PATTERN_CUTTING_USERS);
+function _ptnIs(list){ return !!(typeof session!=='undefined'&&session&&list.indexOf(session.u)>-1); }
+function _canSeePatternHub(){ return _ptnIs(_PATTERN_HUB_USERS); }
+function _canManagePatterns(){ return _ptnIs(_PATTERN_ADMIN_USERS); }
+function _isPatternCutting(){ return _ptnIs(_PATTERN_CUTTING_USERS); }
+function _canAckPatternNotice(){ return _canManagePatterns()||_isPatternCutting(); }
 
 // ── Registry shape — brands and categories, exactly as the TAC List ───────
 const _TAC_BRANDS={groovy:'GROOVY',cultured:'Cultured Legacy',against:'Against All Odds'};
@@ -732,7 +741,10 @@ function _ptnNextCodes(prefix){
 
 // ── Page ──────────────────────────────────────────────────────────────────
 function renderPatternHub(){
-  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar and Mustafa only.</div>';
+  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar, Mustafa and Uzaib.</div>';
+  // Cutting does not manage the registry; the hub for them IS the updates
+  // list. One redirect rather than a second, emptier version of this page.
+  if(!_canManagePatterns())return renderPatternNotices();
   return`<div id="pattern-hub-root">${_ptnPageHTML()}</div>`;
 }
 function _ptnRepaint(){
@@ -799,6 +811,7 @@ function _ptnToolbarHTML(){
     <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px"><input type="checkbox" ${_ptnFilter.showRetired?'checked':''} onchange="window.ptnSetFilter('showRetired',this.checked?'1':'')">Show retired</label>
     ${_canManagePatterns()?`<button class="btn-primary" onclick="window.ptnToggleMint()">${_ptnMintOpen?'Close':'+ Mint a code'}</button>`:''}
     <button class="btn-sm" onclick="window.showPage('pattern-blocks')">Patterns${typeof _ptnQueueBadge==='function'?_ptnQueueBadge():''}</button>
+    <button class="btn-sm" onclick="window.showPage('pattern-notices')">Pattern updates${typeof _ptnNoticeBadge==='function'?_ptnNoticeBadge():''}</button>
     <button class="btn-sm" onclick="window.showPage('pattern-reconcile')">Reconcile with Shopify${_ptnRecBadge()}</button>
     <button class="btn-sm" onclick="window.ptnExportTac('xlsx')" title="The TAC list as a spreadsheet">Export Excel</button>
     <button class="btn-sm" onclick="window.ptnExportTac('pdf')" title="The TAC list as a PDF">Export PDF</button>
@@ -875,6 +888,7 @@ window.ptnRetryLoad=function(){
   const m=document.getElementById('main-content');
   if(m)m.innerHTML=gvSkeleton(6);
   patternsLoaded=false;_ptnShopifyLoaded=false;_ptnBlocksLoaded=false;if(typeof _ptnPomsLoaded!=='undefined')_ptnPomsLoaded=false;
+  if(typeof _ptnNoticesLoaded!=='undefined'){_ptnNoticesLoaded=false;patternRevisions={};}
   ptnRenderPage(currentPage&&String(currentPage).startsWith('pattern-')?currentPage:'pattern-hub');
 };
 window.ptnSearchInput=function(v){
@@ -1167,7 +1181,7 @@ function _ptnShopifyCellHTML(a){
 
 // ── Reconcile page ────────────────────────────────────────────────────────
 function renderPatternReconcile(){
-  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar and Mustafa only.</div>';
+  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar, Mustafa and Uzaib.</div>';
   return`<div id="pattern-rec-root">${_ptnReconcileHTML()}</div>`;
 }
 function _ptnRecRepaint(){const r=document.getElementById('pattern-rec-root');if(r)r.innerHTML=_ptnReconcileHTML();}
@@ -1381,7 +1395,7 @@ function _ptnFmtNow(){try{return new Date().toLocaleString('en-GB');}catch(e){re
 // ── Router — every pattern-* page comes through here ──────────────────────
 function ptnRenderPage(id){
   const m=document.getElementById('main-content');if(!m)return;
-  if(!_canSeePatternHub()){m.innerHTML='<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar and Mustafa only.</div>';return;}
+  if(!_canSeePatternHub()){m.innerHTML='<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar, Mustafa and Uzaib.</div>';return;}
   const paint=()=>{
     if(currentPage!==id)return;
     if(id==='pattern-hub')m.innerHTML=renderPatternHub();
@@ -1390,6 +1404,7 @@ function ptnRenderPage(id){
     else if(id==='pattern-block')m.innerHTML=renderPatternBlock();
     else if(id==='pattern-unassigned')m.innerHTML=renderPatternUnassigned();
     else if(id==='pattern-poms')m.innerHTML=renderPatternPoms();
+    else if(id==='pattern-notices')m.innerHTML=renderPatternNotices();
     else m.innerHTML='<div class="empty">Unknown Pattern Hub page.</div>';
   };
   const need=[];
@@ -1397,6 +1412,9 @@ function ptnRenderPage(id){
   if(!_ptnShopifyLoaded)need.push(loadPatternsShopify());
   if(typeof loadPatternsBlocks==='function'&&!_ptnBlocksLoaded)need.push(loadPatternsBlocks());
   if(typeof loadPatternsPoms==='function'&&!_ptnPomsLoaded)need.push(loadPatternsPoms());
+  if(typeof loadPatternNotices==='function'&&!_ptnNoticesLoaded)need.push(loadPatternNotices());
+  // A block's revisions are per block, so they load when one is opened.
+  if(id==='pattern-block'&&_ptnBlockId&&typeof loadPatternRevisions==='function'&&!patternRevisions[_ptnBlockId])need.push(loadPatternRevisions(_ptnBlockId));
   if(need.length){m.innerHTML=gvSkeleton(6);Promise.all(need).then(paint);}else paint();
 }
 
@@ -1492,7 +1510,7 @@ function _ptnSuggestName(key){
 
 // ── Pages ─────────────────────────────────────────────────────────────────
 function renderPatternBlocks(){
-  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar and Mustafa only.</div>';
+  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar, Mustafa and Uzaib.</div>';
   return`<div id="pattern-blocks-root">${_ptnBlocksHTML()}</div>`;
 }
 function _ptnBlocksRepaint(){const r=document.getElementById('pattern-blocks-root');if(r)r.innerHTML=_ptnBlocksHTML();}
@@ -1505,7 +1523,7 @@ function _ptnBlocksHTML(){
   const head=`<button class="back-btn" onclick="window.showPage('pattern-hub')">← Pattern Hub</button>
   <div class="page-head" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap">
     <div><h2 style="margin:0">Patterns</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">One block = one bundle of craft paper, all sizes, one slot. Many articles point at one block.</div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">${_canManagePatterns()?`<button class="btn-primary" onclick="window.ptnNewBlock()">+ New block</button>`:''}<button class="btn-sm" onclick="window.showPage('pattern-unassigned')">Unassigned queue${_ptnQueueBadge()}</button><button class="btn-sm" onclick="window.showPage('pattern-poms')">Points of measure</button></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${_canManagePatterns()?`<button class="btn-primary" onclick="window.ptnNewBlock()">+ New block</button>`:''}<button class="btn-sm" onclick="window.showPage('pattern-unassigned')">Unassigned queue${_ptnQueueBadge()}</button><button class="btn-sm" onclick="window.showPage('pattern-poms')">Points of measure</button><button class="btn-sm" onclick="window.showPage('pattern-notices')">Pattern updates${typeof _ptnNoticeBadge==='function'?_ptnNoticeBadge():''}</button></div>
   </div>`;
   const err=_ptnBlocksErrHTML();
   if(_ptnBlocksErr)return head+err;
@@ -1547,7 +1565,7 @@ function _ptnBlockListHTML(){
 
 // ── One block ─────────────────────────────────────────────────────────────
 function renderPatternBlock(){
-  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar and Mustafa only.</div>';
+  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar, Mustafa and Uzaib.</div>';
   return`<div id="pattern-block-root">${_ptnBlockHTML()}</div>`;
 }
 function _ptnBlockRepaint(){const r=document.getElementById('pattern-block-root');if(r)r.innerHTML=_ptnBlockHTML();}
@@ -1577,6 +1595,7 @@ function _ptnBlockHTML(){
   </div>
   <div style="margin-top:14px">${typeof _ptnGridCardHTML==='function'?_ptnGridCardHTML(p):''}</div>
   ${typeof _ptnLabelCardHTML==='function'?_ptnLabelCardHTML(p):''}
+  ${typeof _ptnRevisionsCardHTML==='function'?_ptnRevisionsCardHTML(p):''}
   <div class="card" style="margin-top:14px" id="ptn-block-articles"><div class="card-title">Articles using this block <span style="font-weight:400;color:var(--muted);font-size:11px">${arts.length}</span></div>
     ${arts.length?`<table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>${arts.map(a=>`<tr class="ptn-block-art" data-code="${_ptnEsc(a.code)}" style="border-top:1px solid var(--border)"><td style="padding:7px 4px;font-weight:700;white-space:nowrap">${_ptnEsc(a.code)}</td><td style="padding:7px 4px">${_ptnEsc(a.name||'')}</td><td style="padding:7px 4px;white-space:nowrap">${_ptnShopifyCellHTML(a)}</td><td style="padding:7px 4px;text-align:right">${can?`<button class="btn-sm" onclick="window.ptnUnassign('${_ptnEsc(a.code)}')">Remove</button>`:''}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">No articles yet.</div>'}
     ${can?`<div style="margin-top:12px"><input type="search" id="ptn-block-q" placeholder="Add an article — search code or name…" value="${_ptnEsc(_ptnBlockQ)}" oninput="window.ptnBlockSearch(this.value)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;background:var(--surface-2);color:var(--text)">
@@ -1587,7 +1606,7 @@ function _ptnBlockHTML(){
 // ── The unassigned queue ──────────────────────────────────────────────────
 function _ptnQueueBadge(){const n=_ptnUnassigned().length;return n?` <span class="badge" style="font-size:10px">${n}</span>`:'';}
 function renderPatternUnassigned(){
-  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar and Mustafa only.</div>';
+  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar, Mustafa and Uzaib.</div>';
   return`<div id="pattern-queue-root">${_ptnQueueHTML()}</div>`;
 }
 function _ptnQueueRepaint(){const r=document.getElementById('pattern-queue-root');if(r)r.innerHTML=_ptnQueueHTML();}
@@ -1664,6 +1683,8 @@ function _ptnValidateBlock(d){
 
 // ── Handlers ──────────────────────────────────────────────────────────────
 window.ptnOpenBlock=function(id){_ptnBlockId=id;_ptnBlockQ='';if(typeof _ptnGridDraft!=='undefined'){_ptnGridDraft=null;_ptnGridDirty=false;}window.showPage('pattern-block');};
+// Saving measurements changes what a revision would say, so the card is
+// repainted by the same _ptnBlockRepaint the save already calls.
 window.ptnQueueTab=function(t){_ptnQueueTab=t;_ptnQueueRepaint();};
 window.ptnBlockSearch=function(v){
   clearTimeout(_ptnSearchTimer);
@@ -2105,7 +2126,7 @@ window.ptnRemoveExtraPom=async function(id,key){
 
 // ── Template editor page ──────────────────────────────────────────────────
 function renderPatternPoms(){
-  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar and Mustafa only.</div>';
+  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar, Mustafa and Uzaib.</div>';
   return`<div id="pattern-poms-root">${_ptnPomsHTML()}</div>`;
 }
 function _ptnPomsRepaint(){const r=document.getElementById('pattern-poms-root');if(r)r.innerHTML=_ptnPomsHTML();}
@@ -2380,3 +2401,226 @@ if(typeof _ptnOrigStartApp==='function'){
     return out;
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// M5 — Revisions and the cutting notice
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Editing the grid (M3) is silent and always was: entering ~8,000 numbers
+// for the first time must not page anyone. A REVISION is an explicit act —
+// "Record a revision", a one-line reason — and THAT is what tells cutting
+// what moved, with the before/after of every changed cell attached.
+//
+// - patterns/{id}/revisions/{n} is APPEND-ONLY (rules: update/delete false),
+//   like fabric_movements and the board activity feed. Each revision keeps
+//   a FULL `snapshot` of the grid, so the next diff is against the record
+//   itself rather than a baseline field that could drift from it. ~60
+//   numbers; the honesty is worth the bytes.
+// - The first revision has no prior snapshot, so every value reads as new.
+//   That is not noise — it is cutting being told the spec exists — and it
+//   avoids a special case that would need its own correctness argument.
+// - pattern_notices/{id} carries a SNAPSHOT of the article codes affected.
+//   Deriving them live would silently rewrite history every time an
+//   article is reassigned; the notice records what cutting acted on.
+// - The bell is the existing one (hrm_notifications, addressed by
+//   forUser), exactly as Marketing M5 does — js/hrm.js needs no change.
+//   Deterministic ids, and a notification is never re-raised.
+
+let patternRevisions={};      // patternId → [{n,…}] newest first, loaded per block
+let patternNotices=[];
+let _ptnNoticesLoaded=false,_ptnNoticesFailed=false,_ptnNoticesErr=null;
+let _ptnRevBusy=false;
+let _ptnNoticeTab='open';
+
+// ── Diffing two grids ─────────────────────────────────────────────────────
+// Returns only the cells that differ: {size:{key:{from,to}}} plus a count.
+// `from`/`to` are inches or null (null = the cell was empty / was cleared).
+function _ptnGridDiff(before,after){
+  const out={};let count=0;
+  const sizes=new Set(Object.keys(before||{}).concat(Object.keys(after||{})));
+  sizes.forEach(s=>{
+    const b=(before&&before[s])||{},a=(after&&after[s])||{};
+    const keys=new Set(Object.keys(b).concat(Object.keys(a)));
+    keys.forEach(k=>{
+      const from=typeof b[k]==='number'?b[k]:null,to=typeof a[k]==='number'?a[k]:null;
+      if(from===to)return;
+      (out[s]=out[s]||{})[k]={from,to};count++;
+    });
+  });
+  return{cells:out,count};
+}
+function _ptnRevs(id){return patternRevisions[id]||[];}
+function _ptnLastRev(id){const r=_ptnRevs(id);return r.length?r[0]:null;}
+function _ptnRevBaseline(id){const last=_ptnLastRev(id);return last&&last.snapshot?last.snapshot:{};}
+// What a revision recorded now would say — used to arm the button and to
+// show the person what they are about to send before they send it.
+function _ptnPendingDiff(p){return _ptnGridDiff(_ptnRevBaseline(p.id),p.grid||{});}
+// One readable line per changed cell, for the notice and the bell.
+function _ptnDiffLines(diff,limit){
+  const out=[];
+  Object.keys(diff.cells||{}).sort().forEach(s=>{
+    Object.keys(diff.cells[s]).sort().forEach(k=>{
+      const c=diff.cells[s][k];
+      out.push(s+' · '+k+': '+(c.from==null?'—':_ptnFmt(c.from,'in'))+' → '+(c.to==null?'—':_ptnFmt(c.to,'in')));
+    });
+  });
+  return limit&&out.length>limit?out.slice(0,limit).concat(['…and '+(out.length-limit)+' more']):out;
+}
+function _ptnRowLabel(p,key){
+  const r=(typeof _ptnRowsFor==='function'?_ptnRowsFor(p):[]).find(x=>x.key===key);
+  return r?r.label:key;
+}
+
+// ── Loaders — cannot reject ───────────────────────────────────────────────
+async function loadPatternRevisions(id){
+  if(!id)return;
+  try{
+    const snap=await getDocs(collection(db,'patterns',id,'revisions'));
+    patternRevisions[id]=snap.docs.map(d=>Object.assign({id:d.id},d.data())).sort((a,b)=>(b.n||0)-(a.n||0));
+  }catch(e){console.warn('[patterns] revisions load failed',e);patternRevisions[id]=patternRevisions[id]||[];}
+}
+async function loadPatternNotices(){
+  _ptnNoticesFailed=false;_ptnNoticesErr=null;
+  try{
+    const snap=await getDocs(collection(db,'pattern_notices'));
+    patternNotices=snap.docs.map(d=>Object.assign({id:d.id},d.data())).sort((a,b)=>String(b.raisedAt||'').localeCompare(String(a.raisedAt||'')));
+  }catch(e){_ptnNoticesFailed=true;_ptnNoticesErr=(e&&(e.message||String(e)))||'read failed';console.warn('[patterns] pattern_notices load failed',e);}
+  _ptnNoticesLoaded=true;
+}
+function _ptnOpenNotices(){return patternNotices.filter(n=>n.status!=='acknowledged');}
+function _ptnNoticeBadge(){const n=_ptnOpenNotices().length;return n?` <span class="badge" style="font-size:10px">${n}</span>`:'';}
+
+// ── Record a revision ─────────────────────────────────────────────────────
+// One batch: the revision, the notice, and one bell row per recipient. A
+// revision without a notice would be a private diary; a notice without a
+// revision would have nothing to point at. They are written together.
+async function _ptnRecordRevision(p,reason){
+  const diff=_ptnPendingDiff(p);
+  if(!diff.count)return{error:'Nothing has changed since the last revision.'};
+  if(!reason||!String(reason).trim())return{error:'A revision needs a reason.'};
+  const now=new Date().toISOString();
+  const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  const byName=(typeof session!=='undefined'&&session&&session.name)||by;
+  const n=(_ptnLastRev(p.id)||{}).n||0;
+  const revN=n+1;
+  const revId='rev_'+String(revN).padStart(3,'0');
+  const noticeId='ptnn_'+p.id+'_r'+revN;
+  const articleCodes=_ptnArticlesOf(p.id).map(a=>a.code).sort();
+  const lines=_ptnDiffLines(diff,40);
+  const rev={n:revN,at:now,by,byName,reason:String(reason).trim(),
+    cells:diff.cells,changed:diff.count,snapshot:JSON.parse(JSON.stringify(p.grid||{})),noticeId};
+  const notice={patternId:p.id,patternCode:p.code,patternName:p.name||'',revisionN:revN,
+    articleCodes,summary:String(reason).trim(),changed:diff.count,lines,
+    raisedBy:by,raisedByName:byName,raisedAt:now,status:'open',ackBy:'',ackAt:'',ackNote:''};
+  const recipients=_PATTERN_CUTTING_USERS.slice();
+  try{
+    const batch=writeBatch(db);
+    batch.set(doc(db,'patterns',p.id,'revisions',revId),rev);
+    batch.set(doc(db,'pattern_notices',noticeId),notice);
+    recipients.forEach(u=>{
+      batch.set(doc(db,'hrm_notifications','ptn_rev_'+p.id+'_r'+revN+'_'+u),{
+        id:'ptn_rev_'+p.id+'_r'+revN+'_'+u,type:'pattern_revision',
+        title:'Pattern updated — '+p.code,
+        message:_ptnEsc(String(reason).trim())+' · '+diff.count+' measurement'+(diff.count===1?'':'s')+' changed on '+_ptnEsc(p.name||p.code)+(p.hook&&p.slot?' (Hook '+p.hook+' / Slot '+p.slot+')':''),
+        forUser:u,forRole:'',relatedTo:noticeId,createdAt:now,readBy:[],
+        priority:'high',actionRequired:true,actionUrl:'pattern-notices'});
+    });
+    await batch.commit();
+    patternRevisions[p.id]=[Object.assign({id:revId},rev)].concat(_ptnRevs(p.id));
+    patternNotices.unshift(Object.assign({id:noticeId},notice));
+    return{revN,changed:diff.count,recipients:recipients.length};
+  }catch(e){console.error('[patterns] revision failed',e);return{error:(e&&(e.message||String(e)))||'write failed'};}
+}
+window.ptnRecordRevision=async function(id){
+  if(!_canManagePatterns()||_ptnRevBusy)return false;
+  const p=_ptnBlock(id);if(!p)return false;
+  if(_ptnGridDirty){showToast('Save the measurements first — a revision records what is saved.',true);return false;}
+  const diff=_ptnPendingDiff(p);
+  if(!diff.count){showToast('Nothing has changed since the last revision.',true);return false;}
+  const reason=typeof prompt==='function'?prompt('What changed on the paper, in one line?\n\n'+diff.count+' measurement'+(diff.count===1?'':'s')+' will be sent to cutting.',''):'';
+  if(reason===null||!String(reason||'').trim())return false;
+  _ptnRevBusy=true;_ptnBlockRepaint();
+  const r=await _ptnRecordRevision(p,reason);
+  _ptnRevBusy=false;
+  if(r.error){showToast('Could not record the revision: '+r.error,true);_ptnBlockRepaint();return false;}
+  showToast('Revision '+r.revN+' recorded — '+r.changed+' change'+(r.changed===1?'':'s')+' sent to cutting.');
+  _ptnLog('Pattern Revision',p.code+' r'+r.revN+' — '+r.changed+' cells · '+String(reason).trim());
+  _ptnBlockRepaint();return true;
+};
+
+// ── The revisions card on a block ─────────────────────────────────────────
+function _ptnRevisionsCardHTML(p){
+  const can=_canManagePatterns();
+  const revs=_ptnRevs(p.id);
+  const diff=_ptnPendingDiff(p);
+  const pending=diff.count?`<div style="font-size:12px;color:var(--accent-warning);margin-bottom:8px"><b>${diff.count}</b> measurement${diff.count===1?'':'s'} ${revs.length?'changed since revision '+(_ptnLastRev(p.id)||{}).n:'recorded'} and not yet sent to cutting.<div style="color:var(--muted);margin-top:4px;line-height:1.5">${_ptnDiffLines(diff,6).map(l=>_ptnEsc(l)).join('<br>')}</div></div>`
+    :`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Cutting has the current measurements.${revs.length?'':' No revision recorded yet.'}</div>`;
+  const list=revs.length?revs.map(r=>{
+    const notice=patternNotices.find(x=>x.id===r.noticeId);
+    const state=notice?(notice.status==='acknowledged'?`<span style="color:var(--green)">acknowledged by ${_ptnEsc(notice.ackBy||'')}</span>`:'<span style="color:var(--accent-warning)">waiting for cutting</span>'):'';
+    return`<div class="ptn-rev" data-n="${r.n}" style="border-top:1px solid var(--border);padding:8px 0;font-size:12px">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>Revision ${r.n}</b><span style="color:var(--muted)">${_ptnEsc(String(r.at||'').slice(0,10))} · ${_ptnEsc(r.byName||r.by||'')} · ${r.changed} change${r.changed===1?'':'s'}</span></div>
+      <div style="margin-top:3px">${_ptnEsc(r.reason||'')}</div>
+      <div style="color:var(--muted);margin-top:4px;line-height:1.5">${_ptnDiffLines({cells:r.cells||{},count:r.changed||0},6).map(l=>_ptnEsc(l)).join('<br>')}</div>
+      ${state?`<div style="margin-top:4px">${state}</div>`:''}
+    </div>`;}).join(''):'<div class="empty">No revisions yet.</div>';
+  return`<div class="card" id="ptn-rev-card" style="margin-top:14px"><div class="card-title">Revisions <span style="font-weight:400;color:var(--muted);font-size:11px">a physical correction, mirrored here and sent to cutting</span></div>
+    ${pending}
+    ${can?`<button class="btn-primary" ${_ptnRevBusy||_ptnBusy||!diff.count?'disabled':''} onclick="window.ptnRecordRevision('${_ptnEsc(p.id)}')">Record a revision</button>${diff.count?'':'<span style="font-size:11px;color:var(--muted);margin-left:8px">Nothing to send.</span>'}`:''}
+    <div style="margin-top:10px">${list}</div>
+  </div>`;
+}
+
+// ── The notices page ──────────────────────────────────────────────────────
+function renderPatternNotices(){
+  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar, Mustafa and Uzaib.</div>';
+  return`<div id="pattern-notices-root">${_ptnNoticesHTML()}</div>`;
+}
+function _ptnNoticesRepaint(){const r=document.getElementById('pattern-notices-root');if(r)r.innerHTML=_ptnNoticesHTML();}
+function _ptnNoticesHTML(){
+  const back=_canManagePatterns()?`<button class="back-btn" onclick="window.showPage('pattern-blocks')">← Patterns</button>`:'';
+  const head=back+`<div class="page-head" style="margin-bottom:10px"><div><h2 style="margin:0">Pattern updates</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">What changed on a physical pattern, and what to update at cutting.</div></div></div>`;
+  if(_ptnNoticesFailed)return head+`<div class="board-load-error" id="ptn-notices-failed">pattern_notices: ${_ptnEsc(_ptnNoticesErr||'')}. If that says <em>missing or insufficient permissions</em>, republish <code>firestore.rules</code>. <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`;
+  const open=_ptnOpenNotices(),done=patternNotices.filter(n=>n.status==='acknowledged');
+  const list=_ptnNoticeTab==='open'?open:done;
+  const tabs=`<div style="display:flex;gap:6px;margin-bottom:12px"><button class="btn-sm" style="${_ptnNoticeTab==='open'?'background:var(--dark);color:var(--on-dark);border-color:var(--dark)':''}" onclick="window.ptnNoticeTab('open')">To do <b>${open.length}</b></button><button class="btn-sm" style="${_ptnNoticeTab==='done'?'background:var(--dark);color:var(--on-dark);border-color:var(--dark)':''}" onclick="window.ptnNoticeTab('done')">Done <b>${done.length}</b></button></div>`;
+  if(!list.length)return head+tabs+`<div class="empty" id="ptn-notices-empty">${_ptnNoticeTab==='open'?'Nothing to update — every pattern change has been acknowledged.':'Nothing acknowledged yet.'}</div>`;
+  const canAck=_canAckPatternNotice();
+  const cards=list.map(n=>{
+    const p=_ptnBlock(n.patternId);
+    const home=p&&p.hook&&p.slot?'Hook '+p.hook+' / Slot '+p.slot:(p?'not on a hook':'');
+    return`<div class="card ptn-notice" data-id="${_ptnEsc(n.id)}" style="margin-bottom:10px;${n.status!=='acknowledged'?'border-color:var(--accent-warning)':''}">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
+        <div><div style="font-weight:700;font-size:14px">${_ptnEsc(n.patternCode||'')} · ${_ptnEsc(n.patternName||'')} <span style="font-weight:400;color:var(--muted);font-size:12px">revision ${n.revisionN}</span></div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">${_ptnEsc(String(n.raisedAt||'').slice(0,10))} · by ${_ptnEsc(n.raisedByName||n.raisedBy||'')}${home?' · '+_ptnEsc(home):''}</div></div>
+        ${p&&_canManagePatterns()?`<button class="btn-sm" onclick="window.ptnOpenBlock('${_ptnEsc(p.id)}')">Open the block</button>`:''}
+      </div>
+      <div style="margin-top:8px;font-size:13px"><b>${_ptnEsc(n.summary||'')}</b></div>
+      <div style="margin-top:6px;font-size:12px;color:var(--muted);line-height:1.6">${(n.lines||[]).map(l=>_ptnEsc(l)).join('<br>')}</div>
+      <div style="margin-top:8px;font-size:11px;color:var(--muted)">Articles cut from this pattern: ${(n.articleCodes||[]).length?_ptnEsc((n.articleCodes||[]).join(', ')):'none recorded'}</div>
+      ${n.status==='acknowledged'
+        ?`<div style="margin-top:10px;font-size:12px;color:var(--green)">Acknowledged by ${_ptnEsc(n.ackBy||'')} on ${_ptnEsc(String(n.ackAt||'').slice(0,10))}${n.ackNote?' — '+_ptnEsc(n.ackNote):''}</div>`
+        :(canAck?`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn-primary" ${_ptnBusy?'disabled':''} onclick="window.ptnAckNotice('${_ptnEsc(n.id)}')">I have updated the pattern</button><span style="font-size:11px;color:var(--muted)">Confirms the paper at cutting now matches.</span></div>`
+          :'<div style="margin-top:10px;font-size:12px;color:var(--accent-warning)">Waiting for cutting to acknowledge.</div>')}
+    </div>`;}).join('');
+  return head+tabs+cards;
+}
+window.ptnNoticeTab=function(t){_ptnNoticeTab=t;_ptnNoticesRepaint();};
+window.ptnAckNotice=async function(id){
+  if(!_canAckPatternNotice()||_ptnBusy)return false;
+  const n=patternNotices.find(x=>x.id===id);if(!n)return false;
+  if(n.status==='acknowledged'){showToast('Already acknowledged.');return false;}
+  const note=typeof prompt==='function'?prompt('Anything to note? (optional)',''):'';
+  if(note===null)return false;
+  const now=new Date().toISOString();const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  _ptnBusy=true;_ptnNoticesRepaint();
+  try{
+    // ONLY these four fields — firestore.rules limits the update to them.
+    await updateDoc(doc(db,'pattern_notices',id),{status:'acknowledged',ackBy:by,ackAt:now,ackNote:String(note||'').trim()});
+    Object.assign(n,{status:'acknowledged',ackBy:by,ackAt:now,ackNote:String(note||'').trim()});
+    showToast('Thanks — recorded.');
+    _ptnLog('Pattern Update Acknowledged',(n.patternCode||'')+' r'+n.revisionN);
+  }catch(e){console.error('[patterns] ack failed',e);showToast('Could not record it: '+(e.message||e),true);}
+  _ptnBusy=false;_ptnNoticesRepaint();return true;
+};
+const _PTN_ACK_FIELDS=['status','ackBy','ackAt','ackNote'];   // == the rules' hasOnly list
