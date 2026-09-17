@@ -1,537 +1,472 @@
 # Pattern Hub — Master Plan
 
-> Status: **PLANNING ONLY — no code written yet.** This document is the single
-> source of truth for the Pattern Hub module. Open decisions are marked
-> **[DECISION NEEDED]**. Nothing is built until they are locked.
+> Status: **PLANNING — decisions locked through two rounds with Afnan (16–17 Sept
+> 2026). No code written yet.** This document is the single source of truth for
+> the module. Remaining open items are marked **[DECISION NEEDED]** and are all
+> Ammar's calls on the TAC document; none of them block M0.
 >
-> Requested by Afnan, Sept 2026: *"a pattern hub for all the articles — fetch all
-> active articles from Shopify so we can assign a physical pattern to them, take
-> their measurements, and notify the cutting stall what to update on them. We
-> assign codes to physical patterns from Groovy Ops."*
+> Afnan's brief: *"a pattern hub for all the articles — fetch all active articles
+> from Shopify so we can assign a physical pattern to them, take their
+> measurements, and notify the cutting stall what to update on them. We assign
+> codes to physical patterns from Groovy Ops. It's a logical system that has to
+> work smoothly."*
 
-## 0. The decision that shapes everything
+## 0. The system in one picture
 
-**A pattern is a BLOCK. Many article codes point at one pattern.**
+```
+TAC registry (IN-APP, per category, mints codes)
+   │
+   ▼
+ARTICLE  GST062 · brand · category · needsPattern
+   │  many articles ─▶ one pattern            Shopify (READ-ONLY, daily rollup)
+   ▼                                          supplies: active/draft/archived,
+PATTERN = BLOCK  PTN-0042 "Live In Pants"     sizes seen, product photo
+   ├── home:   hook 3 · slot 2   (all sizes of the block bundled in one slot)
+   ├── sizes:  XS S M L XL       (the sizes physically in the bundle)
+   ├── grid:   POM × size, inches (cm view), each POM with "how to measure"
+   ├── revision ──▶ before/after diff ──▶ notice to cutting (Uzaib) ──▶ acknowledged
+   └── label:  5 × 6 in PDF — code, articles, sizes, key measurements, QR
+                    │
+PO create ──▶ article ──▶ pattern code + hook/slot ──▶ on the PO + traveler PDF
+```
 
-Locked by Afnan, 17 Sept 2026. The alternative — one pattern per article code —
-was rejected because the data makes it absurd: `GST060`–`GST073` are fourteen
-colourways of one Live In Pants; `GSO001`–`GSO016` are sixteen Aim Shorts. They
-are one physical pattern each, not fourteen and sixteen.
+**One sentence:** the physical craft-paper pattern gets a digital twin — its
+identity (code), its home (hook/slot), its shape (measurements), and its users
+(articles) — and every physical correction is mirrored in the twin, which is what
+lets cutting be told exactly what moved.
 
-Everything downstream follows from this: a measurement set belongs to the block,
-a pattern code names the block, and a cutting notice is raised against the block
-and fans out to every article using it.
+## 1. Locked decisions
 
-### What "block" means in practice, and why we do not auto-derive it
-
-Clustering the 395 GROOVY article names by style (colourway stripped) yields
-**251 candidate blocks**. That number is wrong, and the reason matters:
-
-> **90 of the 103 graphic tees cluster as their own block purely because each has
-> a different artwork name.** A graphic tee's name describes its *print*, not its
-> *shape*. `GP090`–`GP097` (Effortless Tee) are one body with eight colours;
-> most of `GP001`–`GP070` are prints on a small set of blank bodies.
-
-Counting the printed categories — Graphic Tees (103), Tank/Sando (11), Baby Tees
-(19) = **133 articles that are print-on-blank** — the realistic block count is
-**60–130**, not 251.
-
-**No algorithm can draw that line.** Whether two articles share a physical block
-is a fact about paper in a rack, known only to the pattern master. So:
-
-- **Articles are seeded automatically** (from the TAC List, below).
-- **Blocks are created by hand.**
-- The name-clustering above is offered in the UI as a *suggestion* on the
-  unassigned queue — "these 14 look like one block, assign them together?" —
-  and is **never applied automatically**.
-
-Same discipline as frame membership and the label library in Mood Boards:
-derived and suggested, never stored as truth.
-
-## 1. Verified findings this plan rests on
-
-All figures below were read from the live Shopify Admin API and the TAC List on
-16 Sept 2026, not estimated. Method: `productsCount` + seven pages of
-`products(first:50, query:"status:active")` paged to `hasNextPage:false`;
-cross-matched against `TAC List Complete.docx` (Google Drive, owner Ammar) by
-article code and by normalised title.
-
-**Read-only. No Shopify mutation was made or is planned by this module.**
-
-### 1.1 The catalogue
-
-| | count |
-|---|---|
-| Shopify products — active | **350** |
-| Shopify products — all (draft 50, archived 90) | 490 |
-| Distinct article codes derivable from active SKUs | **336** |
-| GROOVY codes in the TAC List | **395** |
-| Codes in `PRODUCT_CATALOG` (`js/shared.js`) | 396 |
-
-**The Shopify SKU *is* the article code plus size** — `GST073-XS`, `GB001-S`,
-`GD007-28`. That is the join key, and it already exists. No mapping table needed.
-
-### 1.2 The TAC List is the source of truth; the app has drifted from it
-
-`TAC List Complete.docx` is the authoritative registry across **three brands** —
-GROOVY (395 codes), Cultured Legacy (~48), Against All Odds (~63). Only GROOVY is
-on this Shopify store.
-
-`PRODUCT_CATALOG` in `js/shared.js` is a **stale partial snapshot** of that
-document. 88 active Shopify codes are missing from it — every recent drop
-(`GP071`–`GP103`, `GST060`–`GST076`, all 14 `GHW` caps, `GTT005`–`GTT011`,
-`GB022`–`GB027`). **The Pattern Hub must not be built on `PRODUCT_CATALOG`.**
-
-### 1.3 Cross-match result (350 active products vs 395 TAC codes)
-
-| | count |
-|---|---|
-| Clean match — code and name agree | 293 |
-| Code matches, **name substantially different** | 12 |
-| Code matches, minor spelling drift | 30 |
-| Code on Shopify, **absent from TAC** | 5 |
-| TAC code **not active** on Shopify | 60 |
-| Active products with **no usable SKU** | 11 |
-
-### 1.4 Title matching recovered 7 of the 11 unjoinable products
-
-All denim, all with an empty SKU on Shopify, all with an existing TAC code found
-by exact title match:
-
-| Shopify product | Recovered code |
-|---|---|
-| Carpenter Dark Grey Denim | GD012 |
-| Carpenter Light Grey Denim | GD013 |
-| Carpenter Washed Black Denim | GD006 |
-| Project Rebirth Denim | GD010 |
-| cross star denim blue | GD011 |
-| CORE Denim \| Washed Blue | GD004 |
-| Fade Washed Denim | GD009 |
-
-Each of those codes also appeared in the "in TAC but not active on Shopify" list —
-because the product *is* live, its SKU field is simply empty. The two lists
-cancel. **These need their existing code typed into Shopify, not a new code.**
-
-**Four genuinely need a new code minted**: `Trying Times`, `Keep Keeping It
-Positive`, `Anxiety Prime` (Baby Tees → `GBT###`) and `The Best Is Yet To Come`
-(the v1; `GP035` is "…2.0").
-
-### 1.5 Three real errors, confirmed by direct product lookup
-
-1. **The Jorts codes are swapped.** `jorts-dark-stone` carries SKU **GJO001**,
-   which TAC defines as *White* Stone; `jorts-white-stone` carries **GJO002**,
-   which TAC defines as *Dark* Stone. Two different washes pointing at each
-   other's code. **[DECISION NEEDED — Ammar]** which side is authoritative.
-
-2. **`GCO001`–`GCO008` (Co-Ord Sets) are defined in TAC but used nowhere on
-   Shopify, and their garments already have other codes.** TAC `GCO001-T` =
-   "The Utility Set | Lilac | Top" is the same garment as `GHZ012` = "The Utility
-   Top | Lilac". One physical item, two article codes, across all 8 sets.
-   For a Pattern Hub this is the worst ambiguity there is.
-   **[DECISION NEEDED — Ammar]** retire `GCO`, or retire the `GHZ`/`GST` twins.
-   (TAC also mislabels `GCO003-B` and `GCO004-B` as "| Top".)
-
-3. **A colourway was renamed and TAC never caught up.** `GST062` and `GSO003`
-   are "Heather Grey" in TAC but ship as **"Arctyc White"** — consistent across
-   two categories, so a deliberate rename rather than a mis-keyed code. Same
-   shape: `GB025` is "Faded Olive" in TAC, "Muted Olive" on Shopify.
-
-Also, not an error but it kills an assumption: the **Chicago Bulls** product
-carries **two** codes, `GP060` (Black) and `GP061` (White) — two colourways
-merged into one Shopify product. **One Shopify product ≠ one article.**
-
-### 1.6 Four size axes, and a gap in the existing app
-
-| Axis | Values seen | Examples |
+| # | Decision | Locked |
 |---|---|---|
-| `alpha` | XXXS · XXS · XS · S · M · L · XL | most tops, Live In Pants, VII Cargo |
-| `waist` | 26 · 28 · 30 · 32 · 34 | all denim, jorts, Utility V1 cargos |
-| `none` | single variant, bare code as SKU | all 14 `GHW` caps |
-| (legacy) | foreign schemes | `TOPS-030`, `CARGO-010`, `FOG-02` |
+| D1 | **A pattern is a BLOCK; many article codes point at one pattern** | Afnan, 17 Sept |
+| D2 | **One hook slot holds ALL sizes of one block, bundled** — a block is one physical item | Afnan, 17 Sept |
+| D3 | The TAC list lives **in-app** — mint new codes per category, assign a code to any article missing one | Afnan, 17 Sept |
+| D4 | Measurements are recorded per block per size, **inches stored, cm viewable** | Afnan, 17 Sept |
+| D5 | Points of measure (POMs) are **editable in-app** — create / edit / delete — and each carries **how-to-measure instructions** | Afnan, 17 Sept |
+| D6 | **5 × 6 inch label** per block, printed and stuck to the paper, reflecting live data | Afnan, 17 Sept |
+| D7 | Storage is a **fixed grid: 10 hooks × 5 slots** | Afnan, 17 Sept |
+| D8 | **No check-out / check-in log** for now | Afnan, 17 Sept |
+| D9 | Caps (`GHW`) and any future non-garment article: **in TAC, get codes, `needsPattern:false`** | Afnan, 17 Sept |
+| D10 | **PO integration** goes live once articles are covered: the PO shows pattern code + hook/slot, on screen and on the traveler PDF | Afnan, 17 Sept |
+| D11 | Test-phase audience: **Afnan, Ammar, Mustafa.** Uzaib's account manages cutting and joins when notices go live | Afnan, 17 Sept |
+| D12 | Shopify is **read-only** for this module | Afnan, 16 Sept |
 
-`PO_FLOW_SIZES` in `js/pos.js` is `['XS','S','M','L','XL','2XL']` — it covers
-**none** of `XXXS`, `XXS` or numeric waists.
+### Why we do not auto-derive blocks
 
-> **Deliberately NOT changed by this module.** `js/pos.js` is shared operational
-> code; every PO form, cut-plan row, PDF column and packing reconciliation reads
-> that constant. Widening it is a large blast radius for a module that does not
-> need it. The Pattern Hub carries its **own** `sizeAxis` per pattern and does
-> not touch `PO_FLOW_SIZES`. Logged here as a known gap for a future PO round.
+Clustering the 395 GROOVY article names by style (colourway stripped) yields 251
+candidate blocks. That overcounts badly: **90 of the 103 graphic tees cluster
+separately only because each names its artwork, not its shape.** Counting the
+print-on-blank categories — Graphic Tees 103, Sando 11, Baby Tees 19 = 133
+articles — the realistic block count is **60–130**. Only the pattern master can
+draw that line. So articles are seeded automatically, **blocks are created by
+hand**, and clustering is offered in the unassigned queue as a suggestion
+("these 14 look like one block — assign together?"), **never applied**.
 
-## 2. Actors
+### The capacity fact the hub must show, not hide
 
-| User | Role today | In this module |
-|------|-----------|----------------|
-| Afnan, Ammar | owner | Full: create/edit patterns, measurements, assign articles, raise notices |
-| Mustafa | manager (by username) | Same as owners — matches the Sept 2026 `isMustafa()` grants |
-| Arfat | manager | **View only.** He holds the same `manager` role as Mustafa and gets none of the Sept 2026 grants; this follows that precedent exactly |
-| **Uzaib** | `viewer`, "Cutting & Fabric" | Sees the hub, sees pattern detail + measurements, **acknowledges cutting notices**, logs pattern check-out/in |
-| Hassan, Alam | cutting masters, **no login** | Named on movement records as who physically holds a pattern; they do not sign in |
-| Everyone else | — | No nav entry |
+50 slots. 60–130 blocks. **"Not on a hook" is a normal state**, not an error; the
+hook map (§5) shows occupancy honestly so a full rack is visible as a fact.
+Whether the master prunes to 50, boxes the rest, or adds hooks is an operational
+choice the tool must make visible rather than paper over.
 
-## 3. Data model
+## 2. Verified findings this plan rests on
 
-Six pieces. Firestore, client SDK (window-bridged), same as every module except
+Read from the live Shopify Admin API (read-only) and `TAC List Complete.docx`
+(Google Drive, owner Ammar) on 16 Sept 2026 — a full census, paged to
+`hasNextPage:false`, then cross-matched by code and by normalised title.
+
+- **350 active products, 336 distinct article codes.** The SKU *is* the article
+  code plus size (`GST073-XS`, `GD007-28`). The join key already exists.
+- **The TAC List is the source of truth** across three brands: GROOVY (395 codes),
+  Cultured Legacy (~48), Against All Odds (~63). `PRODUCT_CATALOG` in
+  `js/shared.js` is a stale snapshot missing 88 active codes — **this module
+  is not built on it.**
+- Cross-match: 293 clean · 12 name mismatches · 30 spelling drift · 5 codes on
+  Shopify absent from TAC · 60 TAC codes not active · **11 products with no
+  usable SKU**.
+- **Title matching recovers 7 of those 11** to existing TAC codes (all denim with
+  an empty SKU: GD004, GD006, GD009, GD010, GD011, GD012, GD013). Four need a
+  new code minted — `Trying Times`, `Keep Keeping It Positive`, `Anxiety Prime`
+  (`GBT###`), `The Best Is Yet To Come` (v1; `GP035` is "2.0").
+- **Three real errors** (confirmed by direct product lookup): the Jorts codes
+  `GJO001`/`GJO002` are **swapped**; the `GCO001–008` co-ord codes are unused on
+  Shopify and **duplicate** their `GHZ`/`GST` twins (one garment, two codes); and
+  `GST062`/`GSO003`/`GB025` carry **renamed colourways** TAC never picked up.
+- The **Chicago Bulls** product carries two codes (`GP060` Black, `GP061` White).
+  One Shopify product ≠ one article.
+- **Four size axes**: alpha (XXXS…XL), numeric waist (26…34), none (caps),
+  legacy foreign SKUs. `PO_FLOW_SIZES` in `js/pos.js` (`XS…2XL`) covers none of
+  the last three — **deliberately left alone** (shared operational code; the hub
+  carries its own size list per pattern).
+
+## 3. Actors
+
+| User | Role | In this module |
+|---|---|---|
+| Afnan, Ammar | owner | Everything |
+| Mustafa | manager, **by username** | Everything — matches the Sept 2026 `isMustafa()` grants |
+| Arfat | manager | Nothing in the test phase (same precedent: holds the role, gets none of the grants) |
+| Uzaib | `viewer`, Cutting & Fabric | **View** from the milestone the hub opens up; **acknowledge notices** from M5. Not in the test-phase nav |
+| Pattern master | no login (default — see §12) | Named on the pattern (`tracedBy`) like Hassan/Alam are on cut records |
+
+## 4. Data model
+
+Firestore, client SDK, window-bridged globals — like every module except
 `js/store.js`.
 
-### 3.1 `articles/{CODE}` — the spine
-
-Doc id **is** the article code (`GST062`). Seeded from the TAC List.
+### 4.1 `tac_categories/{PREFIX}` — the registry's shape
 
 ```
-code            'GST062'            (mirrors the doc id)
-name            'Live in Pants | Heather Grey'    (TAC name)
-brand           'groovy' | 'cultured' | 'against'
-category        'GST'               (prefix; label derived in JS)
-patternId       'ptn_ab12…' | null  ← THE LINK
-active          true                (TAC-level, not Shopify status)
-updatedBy/At
+prefix     'GST'      brand 'groovy'     label 'Sweatpants & Trousers'
+form       'NNN'      ('NNN' → GST001; 'NNN-TB' → GCO001-T / GCO001-B)
+needsPattern  true    (false for GHW)
+nextNumber 77         ← minting counter, seeded from today's max per category
 ```
 
-**The pattern link lives on the ARTICLE, never as an `articles:[…]` array on the
-pattern.** This is the `columnId` lesson from Mood Boards, and it applies for the
-same reason: assigning an article writes **one** document, so two people
-assigning different articles to the same block never collide, and joining a block
-never writes the block. "Which articles use this pattern" is a query
-(`where('patternId','==',id)`), not stored state.
+**Minting is next-after-highest, never gap-filling.** TAC has deliberate holes
+(`GH036` blank, `GS016`–`GS022` reserved). A number reserved offline could
+collide with a reused gap; a number past the max cannot. Minted in a
+`runTransaction` on this doc, the same shape as `getNextId()` in
+`js/shared.js:625`, and the `articles/{code}` create is in the **same
+transaction** so the doc-id itself enforces uniqueness (the `creator_handles`
+lock pattern from Marketing M1).
 
-A **stale `patternId` is inert** — the article renders as unassigned. Nothing is
-reconciled on read; no failed write can strand an article inside a deleted block.
-
-### 3.2 `patterns/{id}` — the block
+### 4.2 `articles/{CODE}` — the spine
 
 ```
-code              'PTN-0042'        (minted from counters/pattern)
-name              'Live In Pants block'
-category          'GST'
-fit               'Relaxed'         (free text)
-sizeAxis          'alpha' | 'waist' | 'none'
-measurementTpl    'top' | 'pant' | 'short' | 'jacket'
-currentVersion    3
-location          { store, rack, note }
-copies            2
-status            'active' | 'retired'
+code          'GST062'   (mirrors the doc id)
+name          'Live in Pants | Heather Grey'
+brand         'groovy' | 'cultured' | 'against'
+category      'GST'
+needsPattern  true       (inherited from the category, overridable per article)
+patternId     'ptn_…' | null      ← THE LINK
+active        true
+source        'tac_seed' | 'minted' | 'assigned_from_reconcile'
 createdBy/At, updatedBy/At
 ```
 
-`copies` exists because a master lives in storage and a working copy sits at
-cutting — that was question 6's answer and it is one integer, not a bin-location
-system.
+**The pattern link lives on the ARTICLE, never as an array on the pattern** — the
+`columnId` lesson from Mood Boards. Assigning writes one document; two people
+assigning different articles to the same block never collide; joining a block
+never writes the block. "Which articles use this pattern" is a query. A stale
+`patternId` is **inert** — renders unassigned, nothing reconciled on read.
 
-### 3.3 `patterns/{id}/versions/{v}` — append-only, and measurements live HERE
-
-```
-v              3
-changeSummary  'Shortened hem 1/2", widened leg opening 1/4"'
-reason         'Fit feedback from sample run'
-measurements   { 'M': { chest:{spec:22, tol:0.5}, length:{spec:29, tol:0.5}, … }, … }
-changedBy, changedAt
-```
-
-**Measurements belong to a VERSION, not to the pattern.** This is the single
-choice that makes the cutting-notification feature honest: a revision *is* a new
-measurement set, so "what changed" is a diff between two versions rather than a
-sentence somebody typed. Without it, "notify cutting what to update" is just a
-message board.
-
-A subcollection, not an array, because versions accumulate forever and the
-pattern document is rewritten on every edit — the same reasoning as the Mood
-Boards Trash. `allow update, delete: if false`, like `fabric_movements` and the
-board activity feed.
-
-### 3.4 Measurement templates — a JS constant, not Firestore
-
-`_PTN_TEMPLATES` in `js/patterns.js`. Four templates so nobody fills "inseam" on
-a t-shirt:
-
-| Template | Points of measure |
-|---|---|
-| `top` | chest, length (HPS), shoulder, sleeve length, sleeve opening, armhole, neck width, neck drop, bottom hem |
-| `pant` | waist relaxed, waist stretched, hip, thigh, knee, leg opening, front rise, back rise, inseam, outseam |
-| `short` | waist relaxed, waist stretched, hip, thigh, leg opening, front rise, back rise, inseam, outseam |
-| `jacket` | `top` points + zip length, placket width |
-
-- **Inches, quarter-inch steps, stored as a NUMBER.** Never a free-text string —
-  a tolerance check has to be arithmetic.
-- **Spec + tolerance, actuals optional.** A measured actual outside
-  `spec ± tol` is **flagged, never rejected** — the M4 cell-type lesson: refusing
-  a keystroke is miserable, and the person can see what they typed.
-- A constant first, migratable to Firestore later if templates need editing
-  in-app. Same path `PRINTING_RATE_MASTER` documents.
-
-### 3.5 `pattern_notices/{id}` — the cutting notification
+### 4.3 `patterns/{id}` — the block
 
 ```
-patternId, patternCode, version
-articleCodes   ['GST060','GST061', …]   snapshot at raise time
-summary        (copied from the version's changeSummary)
+code        'PTN-0042'   (counters/main.patterns, via getNextId)
+name        'Live In Pants block'
+category    'GST'
+fit         'Relaxed'
+sizeAxis    'alpha' | 'waist'
+sizes       ['XS','S','M','L','XL']     the sizes physically in the bundle
+sampleSize  'M'                          the size the label leads with
+hook        3 | null       slot  2 | null     ← null = not on a hook (normal)
+tracedBy    'Hassan'       (free text)
+pomTemplate 'pant'         (which POM set it starts from, §4.4)
+extraPoms   ['drawcord_len']             per-pattern additions
+grid        { 'M': { chest: 22, length: 29, … }, 'L': {…} }   ← inches, numbers
+status      'active' | 'retired'
+labelPrintedAt, labelPrintedVersion
+createdBy/At, updatedBy/At
+```
+
+**The grid lives on the pattern document and is edited in place.** A block is
+~10 POMs × ~6 sizes = ~60 numbers; the document stays tiny. Measurements are a
+**number in inches** — never a string — because tolerance and cm conversion are
+arithmetic.
+
+### 4.4 `pom_templates/{id}` — points of measure, editable
+
+```
+id       'pant'   label 'Pants & Trousers'
+poms: [ { key:'waist_relaxed', label:'Waist (relaxed)', tol:0.5,
+          howTo:'Lay flat, measure edge to edge across the top of the waistband…',
+          photoUrl: null } , … ]
+```
+
+Editable in-app (D5). Four seeded: `top`, `pant`, `short`, `jacket`. Per-pattern
+`extraPoms` cover "this one has a drawcord length".
+
+**Deleting a POM from a template never deletes recorded data.** A pattern's grid
+keeps any key it already holds; the row renders greyed as "no longer in template"
+until someone clears it deliberately. A column deletion must never be a data
+deletion.
+
+`howTo` is required; `photoUrl` optional via the existing `uploadToCloudinary()`
+— a master tracing on craft paper benefits from a picture of where the tape goes.
+
+### 4.5 `patterns/{id}/revisions/{n}` — append-only, and the ONLY thing that notifies
+
+```
+n, at, by
+reason      'Fit feedback from sample run — hem shortened'
+before      { 'M': { length: 29 }, 'L': { length: 30 } }   only the cells that changed
+after       { 'M': { length: 28.5 }, 'L': { length: 29.5 } }
+noticeId
+```
+
+**Editing the grid is free and silent. A revision is an explicit act.** During
+initial entry ~8,000 numbers get typed (130 blocks × 10 POMs × 6 sizes); if every
+edit notified cutting, Uzaib would be buried. So: "Record a revision" takes a
+one-line reason, snapshots the diff between the last revision (or the grid at
+first save) and now, and **that** raises the notice with the before/after
+attached automatically. This is what "physical correction → change the model too"
+means in practice: correct the paper, correct the grid, record the revision, and
+cutting sees exactly which cells moved.
+
+Subcollection, `allow update, delete: if false` — like `fabric_movements`.
+
+### 4.6 `pattern_notices/{id}` — the cutting notification
+
+```
+patternId, patternCode, revisionN
+articleCodes  ['GST060', …]   snapshot at raise time — deliberately NOT derived live
+summary, diff
 raisedBy, raisedAt
-status         'open' | 'acknowledged'
-ackBy, ackAt, ackNote
+status  'open' | 'acknowledged'    ackBy, ackAt, ackNote
 ```
-
-`articleCodes` is a **denormalised snapshot**, deliberately: the notice records
-what was affected *when it was raised*, which is what cutting acted on. Deriving
-it live would silently rewrite history every time an article is reassigned.
 
 Delivered through the **existing bell** (`hrm_notifications`, addressed by
-`forUser`) — exactly how Marketing M5 does it, so `js/hrm.js` needs no change.
-Recipients resolved by role/username at raise time, never stored as names.
-Deterministic id (`ptn_notice_<patternId>_v<n>_<user>`) so several devices raise
-one reminder.
+`forUser`), exactly as Marketing M5 does — `js/hrm.js` needs no change.
+Deterministic id `ptn_notice_<patternId>_r<n>_<user>` so several devices raise
+one. Cutting may update **only** `status/ackBy/ackAt/ackNote` — `hasOnly()` in
+rules, the Marketing M3 shape, and the JS field list is asserted equal.
 
-### 3.6 `pattern_movements/{id}` — check-out / check-in
-
-```
-patternId, patternCode
-action    'out' | 'in'
-person    'Hassan'        (free text — cutting masters have no login)
-by        uid of whoever logged it
-at, note
-```
-
-Append-only. This is what makes a missing pattern traceable to a person, which
-was question 7's answer.
-
-## 4. Shopify liveness — server-side rollup, not client reads
-
-The hub needs to know, per article code: is it active, draft, archived or absent
-from Shopify entirely, and what size axis does it use.
-
-**`shopify_products` is per-VARIANT (~1,500 docs).** Reading all of it
-client-side on every hub visit is precisely the mistake that exhausted the
-Firestore read quota and made the Stock Log read "0 movements" — see the Store
-REST section in `CLAUDE.md`. We do not repeat it.
-
-Instead **extend `netlify/functions/shopify-catalog-sync.js`** (already scheduled
-`0 4 * * *`, 9am PKT) to write a second, small collection:
+### 4.7 `pattern_slots/{H-S}` — one block per slot, enforced
 
 ```
-shopify_articles/{CODE}          ~336 docs instead of ~1,500
-  code, status ('active'|'draft'|'archived'|'mixed')
-  productIds[], productTitles[]
-  variantCount, sizeAxis ('alpha'|'waist'|'none')
-  sizesSeen[]
-  imageUrl                       ← see below
-  lastSeenAt
+'3-2' → { patternId, since }
 ```
 
-Rolled up with the Admin SDK where the reads are already being done anyway. The
-client reads ~336 small docs, once, lazily, on the hub pages only.
+Written in the **same transaction** as the pattern's `hook`/`slot`, so two people
+hanging two blocks on slot 3-2 at once cannot both succeed — the
+`creator_handles` lock, reused. Moving a block releases the old lock and takes
+the new one atomically. Exactly 50 possible ids.
 
-**Also add `imageUrl` to the per-variant write.** `shopify-catalog-sync.js`
-currently stores sku/title/color/size/type/tags/status/price and **no image** —
-verified by reading the function. A pattern card with no garment photo is much
-harder to use, and the field costs one line
-(`product.image?.src` from the REST payload).
+## 5. The hook map
 
-> `shopify_*` collections are already `read: if signedIn(); write: if false;` —
-> only the Admin SDK writes them. `shopify_articles` follows that rule exactly,
-> so this needs no new client-write surface.
+A 10 × 5 grid, always visible from the hub: each cell shows the pattern code
+sitting there (or empty), click to open, drag-free — a block is placed from its
+own page by picking hook and slot. **An "Unplaced" strip lists every active
+block with no slot**, so the capacity question in §1 is a number on screen.
 
-## 5. Reconciliation — a prerequisite milestone, not a nice-to-have
+## 6. Units
 
-§1.3–1.5 above is a one-off report produced by hand in a session. It has to
-become a live page, or patterns get assigned against bad identities and the mess
-is inherited permanently.
+Inches are the only stored value. **cm is a view toggle** (per viewer,
+`localStorage`, like the snap and minimap preferences in Mood Boards), applied
+at render: `in × 2.54`, one decimal. Input is always inches, quarter-inch steps
+(`0.25` granularity enforced on save, not on keystroke — the M4 cell lesson:
+refusing a keystroke in an input is miserable; flag, then round on save).
+Tolerance ± per POM, out-of-tolerance **flagged, never rejected**.
 
-`pattern-reconcile` renders, off `articles` + `shopify_articles`:
+## 7. The label — 5 × 6 inch, one per block
 
-| Bucket | Action offered |
+Content, top to bottom: **pattern code** (large) · block name · fit · category ·
+**sizes in this bundle** · **hook / slot** · **articles using it** (codes, wrapped;
+truncated with "+N more" past ~12) · **sample-size measurements** (the
+`sampleSize` column only — a full grid does not fit legibly on 5×6) · a **QR**
+deep-linking to the pattern page (`#pattern=<id>`, the Mood Boards `#board=`
+routing pattern) · printed date + revision number.
+
+**The full grid lives on the pattern page; the QR gets you there.** That is the
+whole point of the QR.
+
+Batch printing: "print all unprinted" / "print hook N" → one PDF, N pages.
+`labelPrintedAt` records what was last printed; a label whose data changed since
+shows "reprint" on the hub.
+
+### The print-engine touch, stated plainly
+
+`js/print-engine.js` is **hardcoded A4**: `new jsPDF({format:'a4'})` at line
+1782, and `PRINT_LAYOUT` (A4 points) is referenced **72 times** by the shared
+components — zero of them read `doc.internal.pageSize`. So:
+
+- `printDocument` gains an optional `data.page = {w, h}` in points; the label
+  passes `{w:360, h:432}` (5×6 in at 72 pt/in).
+- The `pattern-label` variant **draws its own layout** against those bounds. It
+  cannot borrow `_renderHeader`/`_renderFooter`/`_renderInfoTable` — they are A4
+  by construction. `_stampFooters` is skipped for it.
+- Every other variant is untouched. The standing rule ("never call jsPDF directly
+  for a new print feature") is kept: the label is still a `printDocument` variant.
+- Portrait 5 wide × 6 tall (default — flip to landscape if the sticker stock is
+  cut that way).
+- `urduLevel: 'none'` — a label is English-only, and skipping the ~10 MB JNN
+  fetch matters when printing 100 of them.
+
+## 8. Shopify liveness — server-side rollup
+
+`shopify_products` is per-variant (~1,500 docs). Reading it client-side on each
+hub visit is the mistake that exhausted the read quota and blanked the Stock Log.
+So `netlify/functions/shopify-catalog-sync.js` (already `0 4 * * *`, 9am PKT,
+REST `/products.json`) additionally writes:
+
+```
+shopify_articles/{CODE}    ~336 docs
+  status ('active'|'draft'|'archived'|'mixed'), productIds[], productTitles[]
+  sizesSeen[], sizeAxis, imageUrl, lastSeenAt
+```
+
+and adds `imageUrl` (`product.image.src`) to the per-variant write it already
+does — the function currently drops the image. `read: if signedIn(); write: if
+false;` like every `shopify_*` collection.
+
+## 9. Reconciliation page — prerequisite, not nice-to-have
+
+§2's findings, live and re-runnable, off `articles` + `shopify_articles`:
+
+| Bucket | Action |
 |---|---|
-| Code in TAC, not on Shopify | mark retired, or leave |
-| Code on Shopify, not in TAC | add to `articles` (and tell Ammar to add to TAC) |
-| **Name mismatch** | show both, pick authoritative |
-| **No SKU on Shopify** | show the title-matched TAC candidate, one click to accept |
-| Foreign SKU scheme | flag for a Shopify fix |
-| Two codes on one product | informational (Chicago Bulls is legitimate) |
+| TAC code not on Shopify | mark retired / leave |
+| Shopify code not in TAC | **add to registry** (one click — D3) |
+| Name mismatch | show both, pick authoritative |
+| No SKU on Shopify | show the title-matched candidate, **one click to link** |
+| Foreign SKU | flag for a Shopify fix — **we never write to Shopify** |
+| Two codes on one product | informational |
 
-**The title matcher is the same normaliser used at seed time** — one definition,
-so the reconcile page and the seed can never disagree. (The `_boardsCardText`
-lesson.)
+The title normaliser is **one function** used by the seed and by this page.
 
-**This page never writes to Shopify.** It tells a human what to fix there.
+## 10. TAC export
 
-## 6. Rendering rule — a failed read must not look like an empty hub
+The in-app registry is authoritative (D3). So the .docx becomes an **output**:
+"Export TAC list" → PDF (print engine, `generic` A4, per category) and `.xlsx`
+(vendored SheetJS). Ammar keeps a document; it can no longer drift from the app.
 
-Per `CLAUDE.md`'s "Loading must never hang": `renderPage` dispatches loaders with
-no `.catch`, so **every loader here settles each query independently**
-(`Promise.allSettled`), applies whatever succeeded, names what failed, and
-renders an error card with Retry rather than an empty state.
+## 11. PO integration — additive, switched on deliberately
 
-`_ptnLoadFailed(col)` mirrors `_storeLoadFailed()`. **A page reading one of these
-collections asks it before rendering "no patterns yet".** This is the Store
-lesson written down: a read that FAILED and a collection that is EMPTY must never
-produce the same screen.
+`po.pattern` is a free-text "Pattern number" today (`js/pos.js:604`, printed at
+`print-engine.js:1628`). Kept.
 
-## 7. PO integration — additive, warn-only
+- Add `po.patternId`, `po.patternCode`, `po.patternHook` (`'3-2'`), auto-filled
+  when the PO's article has a block. Keep writing `po.pattern = patternCode`, so
+  the traveler PDF, the job sheet and every old PO render unchanged.
+- The traveler's `Pattern # / Name` row gains the hook: `PTN-0042 · Hook 3 / Slot 2`.
+- **Go-live is a switch, not a 100% gate.** Coverage = active GROOVY articles
+  with `needsPattern:true` that have a `patternId`, shown as a dial on the
+  dashboard; an owner flips `settings/pattern_hub.poIntegration = true` when
+  satisfied. Otherwise one forgotten baby tee blocks the feature forever.
+- Old POs keep their text; no migration.
+- Open, unacknowledged notice on the article's pattern → **loud warning** on the
+  PO detail and cut plan, **not a block** (the embellishment recipe gate's
+  precedent; a hard block is what stops production at 2am for paperwork).
 
-`po.pattern` already exists as a free-text "Pattern number" box
-(`js/pos.js:604`, printed by `print-engine.js:1628`). This module does **not**
-remove it.
+## 12. Defaults taken for the unanswered questions
 
-- Add `po.patternId` alongside, auto-filled from the PO's article code when that
-  article has a block assigned.
-- **Keep writing `po.pattern`** as the pattern's `code` string, so the PO
-  traveler PDF, the job sheet and every legacy PO keep rendering unchanged.
-- On the PO detail and the cut-plan screen, show a **loud warning** — not a block —
-  when the article's pattern has an **open, unacknowledged notice**.
+Recorded so nobody re-asks them; each is one line to reverse.
 
-> **Warn, not block**, was question 15's default and it stands. The embellishment
-> recipe gate already warns rather than blocks, and a hard block on a pattern
-> notice is the thing that stops production at 2am for a paperwork reason.
-> **[DECISION NEEDED]** only if Afnan wants it to be a block after all.
+| Q | Default taken |
+|---|---|
+| Registry vs .docx | app authoritative, .docx becomes an export (§10) |
+| Minting rule | next-after-highest per category, never gap-fill (§4.1) |
+| POM levels | category template + per-pattern extras; deleting a POM never deletes data (§4.4) |
+| How-to-measure | text required, photo optional |
+| What is a revision | explicit "Record a revision"; edits are silent (§4.5) |
+| Tolerance | ±0.5 in default per POM, editable |
+| Label orientation | portrait, sample-size column + QR (§7) |
+| Batch labels | yes |
+| "All articles covered" | coverage dial + manual switch (§11) |
+| Old POs | untouched |
+| The master | named on the pattern, no login |
+| Uzaib early access | view-only from M3, acknowledge from M5 |
+| Draft/archived products | active + draft need patterns; archived do not |
+| Cultured / Against | in the registry from M0; **patterns for GROOVY only in v1** |
 
-## 8. `firestore.rules`
+## 13. `firestore.rules`
 
-New match blocks. `isMustafa()` already exists and is reused rather than widened
-to `isManager()` — Arfat holds that role and must not inherit these grants.
+`isMustafa()`, `isOwner()`, `signedIn()`, `userEmail()` already exist and are
+reused — never `isManager()`, which would hand Arfat everything.
 
 ```
-function isPatternAdmin()  { return isOwner() || isMustafa(); }
-function isCutting()       { return signedIn() && userEmail() == 'uzaib@groovy.op'; }
+function isPatternAdmin() { return isOwner() || isMustafa(); }
+function isCutting()      { return signedIn() && userEmail() == 'uzaib@groovy.op'; }
 
-match /articles/{code} {
-  allow read:   if signedIn();
-  allow create, update: if isPatternAdmin();
-  allow delete: if isOwner();
-}
+match /tac_categories/{p}   { allow read: if signedIn(); allow write: if isPatternAdmin(); }
+match /articles/{code}      { allow read: if signedIn(); allow create, update: if isPatternAdmin(); allow delete: if isOwner(); }
+match /pom_templates/{id}   { allow read: if signedIn(); allow write: if isPatternAdmin(); }
 match /patterns/{id} {
-  allow read:   if signedIn();
-  allow create, update: if isPatternAdmin();
-  allow delete: if isOwner();
-
-  match /versions/{v} {
-    allow read:   if signedIn();
-    allow create: if isPatternAdmin();
-    allow update, delete: if false;          // append-only
-  }
+  allow read: if signedIn(); allow create, update: if isPatternAdmin(); allow delete: if isOwner();
+  match /revisions/{n} { allow read: if signedIn(); allow create: if isPatternAdmin(); allow update, delete: if false; }
 }
+match /pattern_slots/{hs}   { allow read: if signedIn(); allow write: if isPatternAdmin(); }
 match /pattern_notices/{id} {
-  allow read:   if signedIn();
-  allow create: if isPatternAdmin();
-  // cutting may ONLY acknowledge, and only these fields
+  allow read: if signedIn(); allow create: if isPatternAdmin();
   allow update: if (isPatternAdmin() || isCutting())
-                && request.resource.data.diff(resource.data).affectedKeys()
-                     .hasOnly(['status','ackBy','ackAt','ackNote']);
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','ackBy','ackAt','ackNote']);
   allow delete: if false;
 }
-match /pattern_movements/{id} {
-  allow read:   if signedIn();
-  allow create: if isPatternAdmin() || isCutting();
-  allow update, delete: if false;            // append-only
-}
-match /shopify_articles/{code} {
-  allow read:  if signedIn();
-  allow write: if false;                     // Admin SDK only
-}
+match /shopify_articles/{c} { allow read: if signedIn(); allow write: if false; }
+match /settings/pattern_hub { allow read: if signedIn(); allow write: if isOwner(); }
 ```
 
-**This changes `firestore.rules` — it needs a republish.** Per `CLAUDE.md`, the
-trigger to ask Afnan is a change to the repo file; check
-`git log --oneline -1 -- firestore.rules` against the last recorded republish.
+**This changes `firestore.rules` — republish when built.**
 
-The `hasOnly` field-limiting on the acknowledge path is the Marketing M3 pattern,
-and the JS field list and the rules list must be asserted equal in tests.
+## 14. Milestones
 
-## 9. Permission helpers
-
-In `js/patterns.js`, mirroring `firestore.rules` exactly:
-
-- `_canViewPatterns()` → owners, managers (incl. Arfat), `uzaib`
-- `_canManagePatterns()` → `afnan`, `ammar`, `mustafa` **by username**
-- `_canAckPatternNotice()` → `_canManagePatterns()` or `uzaib`
-
-Three layers must agree — the UI (not a boundary), `firestore.rules` (the real
-one), and the tests that assert they match. Same shape as
-`_profCanEditUser` / `admin-reset-password.js`.
-
-## 10. Milestones
-
-Built and verified **one at a time**, same as the Marketing round and the Mood
-Boards table round. Each is a PR.
+One at a time, each a PR, each verified before the next. `js/patterns.js` is a
+new file: script tag in `index.html`, `PRECACHE_URLS` in `sw.js`, bump
+`CACHE_VERSION` — the three places.
 
 | # | Milestone | Contents |
 |---|---|---|
-| **M0** | **Article spine** | `_TAC_ARTICLES` constant (3 brands, ~506 codes) → seed `articles`. `js/patterns.js` created + wired in **three places** (`index.html` script tag, `sw.js` `PRECACHE_URLS`, bump `CACHE_VERSION`). Nav entry, page shell, permission helpers. No pattern concept yet. |
-| **M1** | **Shopify rollup + reconcile** | Extend `shopify-catalog-sync.js`: `shopify_articles` rollup + `imageUrl`. `pattern-reconcile` page with the six buckets of §5 and the one-click title-match accept. **This is where the 27 data fixes from §1.3–1.5 get worked through.** |
-| **M2** | **Patterns + assignment** | `patterns` collection, `PTN-####` from `counters`, create/edit, location, copies. Article→pattern assignment, including bulk-assign from the clustering suggestion. Unassigned queue. |
-| **M3** | **Measurements** | `versions` subcollection, the four templates, per-size spec + tolerance grid, optional actuals with out-of-tolerance flagging. Size axis drives which sizes the grid shows. |
-| **M4** | **Versions + cutting notices** | New version = diff against previous = notice raised. Bell delivery via `hrm_notifications`. Uzaib's acknowledge screen. Open-notice list. |
-| **M5** | **Check-out / check-in** | `pattern_movements`, who holds what, overdue view. |
-| **M6** | **Labels** | `pattern-label` variant on `js/print-engine.js` (**never jsPDF directly** — the standing rule), JsBarcode/QR deep-linking to the pattern page. Reuses the Mood Boards `#board=` deep-link pattern. |
-| **M7** | **PO integration** | `po.patternId` additive, `po.pattern` still written, warn-only banner on PO detail and cut plan. |
-| **M8** | **Coverage dashboard** | Of N active codes: assigned / measured / open notices. Owner dashboard card, the same two-half placeholder+populate pattern as Monitor and Marketing. |
+| **M0** | **Registry + spine** | `tac_categories` + `articles` seeded (3 brands, ~506 codes, `needsPattern` per category). Mint a code; assign a code to an article. Nav gated to `afnan, ammar, mustafa` by username. Loaders cannot reject. |
+| **M1** | **Shopify rollup + reconcile** | `shopify_articles` + `imageUrl` in the catalog sync; the reconcile page (§9). **The 27 data fixes from §2 are worked through here, before any pattern exists.** TAC export (§10). |
+| **M2** | **Blocks + hook map** | `patterns`, `PTN-####`, create/edit, sizes, `pattern_slots` lock, the 10×5 map, the Unplaced strip. Article→block assignment, bulk-assign from the clustering suggestion, unassigned queue. |
+| **M3** | **Measurements** | `pom_templates` (4 seeded, editable, how-to + photo), the grid, inches/cm toggle, tolerance flags. Uzaib gets view access. |
+| **M4** | **Label** | `pattern-label` variant with the page-size override (§7), QR deep link, batch print, "reprint" indicator. |
+| **M5** | **Revisions + notices** | Record a revision → diff → bell → Uzaib acknowledges. Open-notice list. |
+| **M6** | **PO integration** | `po.patternId/Code/Hook`, traveler row, coverage dial, the go-live switch, warn-only banner. |
+| **M7** | **Coverage dashboard** | Owner card: assigned / measured / labelled / open notices — the Monitor two-half pattern. |
 
-**Deliberately later, not in v1:**
+**Deliberately later:** retiring `PRODUCT_CATALOG` from `js/shared.js` (five
+callers, cross-track file — coordinate with Ammar once `articles` is proven);
+writing size charts to Shopify (read-only stands); patterns for the other two
+brands; a check-out log (D8).
 
-- Writing size charts back to Shopify (question 12). The app has
-  `write_products` scope, but this module stays read-only against Shopify —
-  Afnan's instruction, and Inventory Intel's precedent.
-- Retiring `PRODUCT_CATALOG` from `js/shared.js`. It has callers in
-  `pos.js`, `gatepass.js`, `store.js`, `fabric.js` and `embellishments.js`, and
-  `js/shared.js` is a **cross-track file**. Once `articles` is proven, migrate
-  those callers one at a time — coordinated with Ammar.
-- Headwear patterns (`GHW001`–`GHW014`). Cap construction is not a cut pattern in
-  the same sense; they are marked "no pattern required" so they do not sit in the
-  unassigned queue forever. Question 5's default.
+## 15. Tests
 
-## 11. Tests
+`tests/patterns.test.js` plus the existing suites. Each assertion verified by
+breaking it before the milestone is done.
 
-`tests/patterns.test.js`, plus additions to the existing suites. Every assertion
-below should be **verified by breaking it** before the milestone is called done —
-the standard this repo already holds.
+- Minting: next-after-highest; a gap is never reused; two concurrent mints of
+  the same category yield two different codes; `GCO` produces `-T`/`-B`.
+- Title normaliser recovers all 7 denim codes; the 4 new ones return no match.
+- Assigning an article writes exactly one document, never the pattern.
+- Stale `patternId` is inert. Deleting a template POM leaves grid data intact.
+- Slot lock: two blocks cannot take one slot; moving releases the old one.
+- Revision diff contains only changed cells; an edit with no revision writes no
+  notice; a revision writes exactly one.
+- Notice ack-field list == rules `hasOnly` list. `_canManagePatterns()` ==
+  `isPatternAdmin()`; Arfat is asserted **out**; Uzaib can ack, not edit.
+- cm view is display-only — the stored value never changes on toggle.
+- Loaders: allSettled; a failed read and an empty collection render **different**
+  screens (`_ptnLoadFailed`).
+- `invariants`: script tag + precache entry for `js/patterns.js`; every new
+  collection has a rules block; the label's page override never leaks into
+  another variant (A4 asserted for `po`, `gate-pass`, `payslip`).
+- `smoke-layout`: the measurement grid (10 POMs × 7 sizes is the widest table in
+  the app — the shape that crushed the Profile directory to 0px), the hook map at
+  420px, the reconcile row, in both themes.
 
-- **Seed + title matcher**: the normaliser recovers all 7 denim codes of §1.4;
-  the 4 genuinely-new products return no match rather than a wrong one.
-- **Membership on the child**: assigning an article writes exactly ONE document,
-  and never the pattern document. (The `columnId` contract.)
-- **Stale `patternId` is inert** — renders unassigned, writes nothing on read.
-- **Versions are append-only**; measurements never mutate in place.
-- **Notice field-limiting**: the JS ack-field list and the `firestore.rules`
-  `hasOnly` list are asserted **equal** — the Marketing M3 pattern.
-- **Permission parity**: `_canManagePatterns()` and `isPatternAdmin()` name the
-  same people; widening either fails. Arfat is asserted **out**.
-- **Tolerance maths**: out-of-tolerance flags, never rejects; quarter-inch steps
-  round correctly.
-- **Loaders cannot reject** — allSettled, partial success renders, total failure
-  renders an error card with Retry.
-- **`_ptnLoadFailed`**: a failed read and an empty collection produce **different**
-  screens.
-- `tests/invariants.test.js`: `js/patterns.js` has a script tag in `index.html`
-  AND an entry in `sw.js` `PRECACHE_URLS`; every new collection has a
-  `firestore.rules` match block.
-- `tests/smoke-layout.js`: fragments for the pattern card, the **measurement
-  grid** (10 points × 7 sizes is the widest table this app will have — it is
-  exactly the shape that crushed the Profile directory's names to 0px) and the
-  reconcile row, at 1900/1280/420px in both themes.
+## 16. Open decisions — all Ammar's, all resolved during M1
 
-## 12. Open decisions
+| # | Decision |
+|---|---|
+| 1 | Jorts `GJO001`/`GJO002` — which side is right |
+| 2 | `GCO` co-ord codes vs their `GHZ`/`GST` twins — which survives |
+| 3 | Renamed colourways (`GST062`, `GSO003`, `GB025`) — update TAC to Shopify's names |
+| 4 | Mint the four missing codes (three Baby Tees, `The Best Is Yet To Come` v1) |
 
-| # | Decision | Owner |
-|---|---|---|
-| 1 | Jorts `GJO001`/`GJO002` — which side is right? (§1.5) | **Ammar** |
-| 2 | `GCO` co-ord codes vs their `GHZ`/`GST` twins — which survives? (§1.5) | **Ammar** |
-| 3 | `GST062`/`GSO003`/`GB025` renamed colourways — update TAC to match Shopify? | **Ammar** |
-| 4 | Mint 4 new codes for the un-coded Baby Tees / `The Best Is Yet To Come` | **Ammar** |
-| 5 | Warn vs hard block on an open notice at cut time (§7) | **Afnan** |
-| 6 | Do Cultured Legacy / Against All Odds articles get patterns in v1, or GROOVY only? | **Afnan** |
+None block M0. All must land before any pattern is assigned — an article assigned
+under a wrong identity is the one expensive mistake here.
 
-Decisions 1–4 are Ammar's calls on his own document. They **do not block M0**
-(seeding records what TAC says today) but they **must be resolved during M1**,
-before any pattern is assigned — an article assigned under a wrong identity is
-the one mistake here that is expensive to undo.
+## 17. What cannot be verified from a session
 
-## 13. What cannot be verified from a session
-
-Per `CLAUDE.md`'s sandbox limits, stated plainly rather than skipped:
-
-- **The sandbox cannot sign in.** `gstatic.com` is blocked, so `__bootApp()`
-  never runs and the app stops at the login screen. **No UI in this module can be
-  visually confirmed from a session.** Logic, layout geometry and contrast are
-  testable via `tests/smoke-layout.js`; "does this page look right" needs Afnan,
-  a phone, or Claude in Chrome.
-- `api.shopify.com` is reachable through the MCP connector used for this
-  research, but the Netlify functions' own Shopify calls cannot be exercised here.
-- Cloudinary is entirely unreachable, so any pattern-photo upload path is
-  unverifiable from a session — same as every other image feature in this app.
+- **The sandbox cannot sign in** (`gstatic.com` blocked), so nothing in this
+  module can be *looked at* from a session. Logic, geometry and contrast are
+  testable; "does the label look right" needs Afnan, a phone, or Claude in
+  Chrome — and a **physical print** of the 5×6 label on the actual sticker stock
+  before batch-printing 100.
+- The Netlify function's Shopify call cannot be exercised here; the first
+  scheduled run of the extended catalog sync is the test.
+- Cloudinary is unreachable; the how-to-measure photo path is unverifiable here.
