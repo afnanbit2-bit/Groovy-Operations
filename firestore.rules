@@ -559,5 +559,13 @@ service cloud.firestore {
         && request.resource.data.category == resource.data.category;
       allow delete: if isOwner();
     }
+    // shopify_articles/{CODE}: the Pattern Hub's per-article liveness rollup
+    // (status, sizes seen, product image), written by shopify-catalog-sync.js
+    // with the Admin SDK — ~336 docs instead of ~1,500 variants. Clients
+    // read only, like every other shopify_* collection.
+    match /shopify_articles/{code} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
   }
 }

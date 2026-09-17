@@ -3167,6 +3167,50 @@ created by hand — name-clustering says 251 but 133 articles are prints on a
 handful of blank bodies, so the real count (60–130) is the pattern master's
 call, and the app only ever *suggests*.
 
+**M1 (shipped): Shopify liveness · reconcile · TAC export.**
+`shopify-catalog-sync.js` (the daily 9am-PKT sync, REST `/products.json`)
+now also writes **`shopify_articles/{CODE}`** — one small doc per article
+code (status, sizes seen, size axis, product ids/titles, image) — and lists
+every product it could not key on `shopify_sync_meta/articles_rollup`
+(`unkeyed_products`, with `reason: no_sku | foreign_sku`, and
+`multi_code_products`). It also adds `image_url` to the per-variant write,
+which was missing. The client reads ~336 rollup docs instead of ~1,500
+variants — the Store read-quota lesson, applied before it could bite.
+
+- **The SKU grammar is one regex in the function** (`ARTICLE_SKU_RE`):
+  `GST073-XS`, `GD007-28`, `GHW001` (no size), `GCO001-T-M`. Anything else
+  (`TOPS-030`, `FOG-02`, an empty SKU) is *listed*, never keyed under a
+  guessed code. Rollup docs for codes that vanished from Shopify are deleted
+  each run. `tests/catalog-sync.test.js` runs the real handler against an
+  in-memory Firestore and a scripted Shopify.
+- **`pattern-reconcile`** puts the registry beside the rollup in six buckets:
+  codes not in the registry (one click adds them, code exactly as Shopify
+  has it, title as name, counter moved past), name mismatches (Use Shopify
+  name / Keep — "keep" writes `nameReviewedAt` so it stops nagging), products
+  with no usable SKU (**title-matched** to a candidate, one click links),
+  GROOVY codes not on Shopify (Retire), two codes on one product
+  (informational), and **Fix in Shopify** — the SKU a human must type there.
+  **Every write goes to `articles`; nothing here writes to Shopify.**
+- **One normaliser** (`_ptnNorm` / `_ptnSim`, Dice on character bigrams —
+  no library) serves the reconcile page and any future auto-link, so they
+  cannot disagree. It recovers all 7 SKU-less denims by exact title;
+  `_PTN_SIM_SAME` (0.72) is where a shared code's two names count as
+  "substantially different" (a renamed colourway), `_PTN_SIM_LIKELY` (0.6)
+  the floor for a title-only candidate.
+- A link is `articles/{code}.shopifyLink = {productId,title,sku,reason,…}` —
+  the registry's record of which product a code IS while the SKU is still
+  wrong on Shopify. Once the SKU is typed in there, the next sync keys the
+  product and the row disappears on its own.
+- **The TAC list is an export now** — Excel (vendored SheetJS) and PDF
+  (print engine `generic`, `urduLevel:'none'`), category-ordered. Ammar keeps
+  a document; it can no longer drift from the app. **Tell Ammar.**
+- **Every `pattern-*` page routes through `ptnRenderPage()`** — the `mkt-*`
+  rule — so `js/shared.js` never needs another line for this module. Both
+  loaders (`loadPatternsData`, `loadPatternsShopify`) cannot reject; a
+  missing rollup says how to run the sync, a refused one names the
+  collection and the republish.
+- **`firestore.rules` changed again — `shopify_articles` (read-only).**
+
 **M0 (shipped): the article registry — `js/patterns.js`, page `pattern-hub`.**
 The TAC list (Ammar's `TAC List Complete.docx`, verified against Shopify on
 16 Sept 2026) lives in the app now and the app mints codes; the document
@@ -3599,7 +3643,10 @@ client-side.
   Credentials Grant; env vars `SHOPIFY_CLIENT_ID/SECRET`,
   `SHOPIFY_STORE_DOMAIN`, `FIREBASE_SERVICE_ACCOUNT`.
   - `shopify-catalog-sync.js` — **scheduled DAILY at `0 4 * * *` UTC
-    (9am PKT)** in `netlify.toml` — this line used to say "NOT scheduled",
+    (9am PKT)** in `netlify.toml`. **Since Sept 2026 it also writes the
+    Pattern Hub's `shopify_articles` rollup + `shopify_sync_meta/
+    articles_rollup`, and `image_url` on each variant** (see "Pattern Hub").
+    It — this line used to say "NOT scheduled",
     which was wrong (verified against `netlify.toml`, Sept 2026). It is ALSO
     a plain HTTP function: no auth header (handler ignores the event), so a
     GET runs it on demand. **`shopify_products` is therefore only as fresh
@@ -4020,9 +4067,10 @@ firestore.rules` is the PR #71 commit (`creators` delete widened from
 creators). **No republish is outstanding as of that commit**; this
 supersedes the entries below.
 
-**REPUBLISH OUTSTANDING (17 Sept 2026): Pattern Hub M0** added
-`isPatternAdmin()`, `tac_categories` and `articles` — nobody can seed the
-registry until the Console carries them. Check `git log --oneline -1 --
+**REPUBLISH OUTSTANDING (17 Sept 2026): Pattern Hub M0 + M1** added
+`isPatternAdmin()`, `tac_categories`, `articles` and `shopify_articles` —
+nobody can seed the registry or open the reconcile page until the Console
+carries them. Check `git log --oneline -1 --
 firestore.rules` against the entries below.
 
 **Republished a third time by Ammar on 16 Sept 2026, after PRs #65/#66**

@@ -80,6 +80,34 @@ function checkOptions(product) {
   return { ok, o1Name, o2Name };
 }
 
+// ── Article rollup (Pattern Hub M1) ─────────────────────────────
+// A Shopify SKU is the Groovy article code plus a size suffix — GST073-XS,
+// GD007-28, GHW001 (caps carry no size). One rollup doc per article code
+// (~336) lets the Pattern Hub read liveness without paying for the whole
+// per-variant catalog (~1,500 docs) on every visit — the read-quota lesson
+// from js/store.js. Anything that does not parse as an article code (an
+// empty SKU, TOPS-030, FOG-02) is listed on the meta doc as "unkeyed" so the
+// reconcile page can offer a title match; nothing here writes to Shopify.
+const ARTICLE_SKU_RE = /^([A-Z]{2,3}\d{3,}(?:-[TB])?)(?:-([A-Z0-9]+))?$/;
+function parseArticleSku(sku) {
+  const m = ARTICLE_SKU_RE.exec(String(sku || "").trim().toUpperCase());
+  return m ? { code: m[1], size: m[2] || "" } : null;
+}
+function sizeAxisOf(sizes) {
+  const s = sizes.filter(Boolean);
+  if (!s.length) return "none";
+  const numeric = s.filter((x) => /^\d+$/.test(x)).length;
+  if (numeric === s.length) return "waist";
+  if (numeric === 0) return "alpha";
+  return "mixed";
+}
+function rollupStatus(statuses) {
+  if (statuses.has("active")) return "active";
+  if (statuses.has("draft")) return "draft";
+  if (statuses.has("archived")) return "archived";
+  return "unknown";
+}
+
 // ── Handler ─────────────────────────────────────────────────────
 exports.handler = async function () {
   const start = Date.now();
@@ -112,7 +140,14 @@ exports.handler = async function () {
     let batch = db.batch();
     let inBatch = 0;
 
+    const rollup = new Map();   // code → accumulator
+    const unkeyed = [];         // products with no parseable article code
+    const multiCode = [];       // products whose variants carry >1 code
+
     for (const product of products) {
+      const imageUrl = (product.image && product.image.src) || "";
+      const codesInProduct = new Set();
+      const foreign = [];
       const { ok, o1Name, o2Name } = checkOptions(product);
       const needsReview = !ok;
 
@@ -139,6 +174,7 @@ exports.handler = async function () {
           option3: v.option3 || "",
           price: parseFloat(v.price) || 0,
           inventory_item_id: v.inventory_item_id || null,
+          image_url: imageUrl,
           product_type: product.product_type || "",
           tags: (product.tags || "")
             .split(",")
@@ -153,15 +189,83 @@ exports.handler = async function () {
         variantCount++;
         inBatch++;
 
+        const parsed = parseArticleSku(v.sku);
+        if (!parsed) {
+          if (String(v.sku || "").trim()) foreign.push(String(v.sku).trim());
+        } else {
+          codesInProduct.add(parsed.code);
+          let r = rollup.get(parsed.code);
+          if (!r) {
+            r = { code: parsed.code, statuses: new Set(), productIds: new Set(), productTitles: new Set(), variantCount: 0, sizes: new Set(), imageUrl: "" };
+            rollup.set(parsed.code, r);
+          }
+          r.statuses.add(product.status || "");
+          r.productIds.add(String(product.id));
+          r.productTitles.add(product.title || "");
+          r.variantCount++;
+          if (parsed.size) r.sizes.add(parsed.size);
+          if (!r.imageUrl && imageUrl) r.imageUrl = imageUrl;
+        }
+
         if (inBatch >= BATCH_LIMIT) {
           await batch.commit();
           batch = db.batch();
           inBatch = 0;
         }
       }
+
+      if (codesInProduct.size > 1) {
+        multiCode.push({ product_id: String(product.id), title: product.title || "", status: product.status || "", codes: Array.from(codesInProduct) });
+      }
+      if (codesInProduct.size === 0) {
+        unkeyed.push({
+          product_id: String(product.id), title: product.title || "", status: product.status || "",
+          product_type: product.product_type || "", image_url: imageUrl,
+          reason: foreign.length ? "foreign_sku" : "no_sku", sku_sample: foreign[0] || "",
+        });
+      }
     }
 
     if (inBatch > 0) await batch.commit();
+
+    // ── Article rollup: write every code seen, delete the ones that vanished ──
+    const existing = await db.collection("shopify_articles").get();
+    const seen = new Set();
+    let rbatch = db.batch(), rn = 0, articlesWritten = 0, articlesDeleted = 0;
+    const flushRollup = async () => { if (rn) { await rbatch.commit(); rbatch = db.batch(); rn = 0; } };
+    for (const r of rollup.values()) {
+      seen.add(r.code);
+      const sizes = Array.from(r.sizes);
+      rbatch.set(db.collection("shopify_articles").doc(r.code), {
+        code: r.code,
+        status: rollupStatus(r.statuses),
+        statuses: Array.from(r.statuses),
+        product_ids: Array.from(r.productIds),
+        product_titles: Array.from(r.productTitles),
+        variant_count: r.variantCount,
+        sizes_seen: sizes,
+        size_axis: sizeAxisOf(sizes),
+        image_url: r.imageUrl,
+        last_seen_at: now,
+      });
+      articlesWritten++;
+      if (++rn >= BATCH_LIMIT) await flushRollup();
+    }
+    for (const d of existing.docs) {
+      if (seen.has(d.id)) continue;
+      rbatch.delete(d.ref);
+      articlesDeleted++;
+      if (++rn >= BATCH_LIMIT) await flushRollup();
+    }
+    await flushRollup();
+    await db.collection("shopify_sync_meta").doc("articles_rollup").set({
+      last_success_at: now,
+      codes: articlesWritten,
+      unkeyed_count: unkeyed.length,
+      multi_code_count: multiCode.length,
+      unkeyed_products: unkeyed.slice(0, 200),
+      multi_code_products: multiCode.slice(0, 100),
+    });
 
     const summary = {
       last_run_at: now,
@@ -172,6 +276,10 @@ exports.handler = async function () {
       variants_written: variantCount,
       flagged_products: flaggedCount,
       flagged_details: flaggedDetails,
+      articles_written: articlesWritten,
+      articles_deleted: articlesDeleted,
+      unkeyed_products: unkeyed.length,
+      multi_code_products: multiCode.length,
       duration_ms: Date.now() - start,
     };
     await syncRef.set(summary, { merge: true });
@@ -200,3 +308,6 @@ exports.handler = async function () {
     };
   }
 };
+
+// Exposed for tests/catalog-sync.test.js only.
+exports._test = { parseArticleSku, sizeAxisOf, rollupStatus };

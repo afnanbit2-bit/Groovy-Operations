@@ -950,7 +950,7 @@ function _updateMobNavActive(pageId){
     'attendance':'hrm','hrm-employees':'hrm','hrm-payroll':'hrm','hrm-advances':'hrm','hrm-loans':'hrm','hrm-policy':'hrm',
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
     'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more','store-cash-ledger':'more',
-    'activity':'more','monitor':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more','pattern-hub':'more',
+    'activity':'more','monitor':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more','pattern-hub':'more','pattern-reconcile':'more',
     'mkt-creators':'more','mkt-dispatches':'more','mkt-paid-pr':'more','mkt-reports':'more','mkt-import':'more',
     'creative-hub':'more','notes':'more','note-detail':'more','boards':'more','boards-all':'more','board-canvas':'more',
     'my-work':'my-work'
@@ -1212,8 +1212,10 @@ function renderPage(id){
   // failed read renders its own error card with Retry.
   else if(id.startsWith('mkt-')){if(typeof mktRenderPage==='function')mktRenderPage(id);else m.innerHTML='<div class="empty">The Marketing module did not load — refresh the page.</div>';}
   else if(id==='creative-hub')m.innerHTML=renderCreativeHub();
-  // Pattern Hub — loader cannot reject (allSettled); a failed read renders its own error card.
-  else if(id==='pattern-hub'){if(typeof loadPatternsData!=='function'){m.innerHTML='<div class="empty">The Pattern Hub module did not load — refresh the page.</div>';}else if(!patternsLoaded){m.innerHTML=gvSkeleton(6);loadPatternsData().then(()=>{if(currentPage===id)m.innerHTML=renderPatternHub();});}else m.innerHTML=renderPatternHub();}
+  // Every pattern-* page goes through ptnRenderPage (js/patterns.js), so a
+  // new Pattern Hub page never needs a line here — the mkt-* rule. Its
+  // loaders cannot reject; a failed read renders its own error card.
+  else if(id.startsWith('pattern-')){if(typeof ptnRenderPage==='function')ptnRenderPage(id);else m.innerHTML='<div class="empty">The Pattern Hub module did not load — refresh the page.</div>';}
   else if(id==='notes'){if(!notesLoaded){m.innerHTML=gvSkeleton(6);loadNotesData().then(()=>{if(currentPage===id)m.innerHTML=renderNotesPage();});}else m.innerHTML=renderNotesPage();}
   else if(id==='note-detail'){_notesOpenDetail();return;}
   // Mood Boards' home is a BOARD, not a list — boardsOpenHome resolves (or
@@ -1295,6 +1297,7 @@ const BUG_PAGE_NAMES={
   'fabric-inventory':'Fabric Inventory',
   'fulfillment':'Courier Performance',
   'pattern-hub':'Pattern Hub',
+  'pattern-reconcile':'Pattern Hub · Reconcile',
   'attendance':'HRM Attendance',
   'hrm-employees':'HRM Employees',
   'hrm-payroll':'HRM Payroll',

@@ -320,11 +320,182 @@ module.exports=async function(){
     s.eq('shared.js reaches the gate from two routes (desktop nav, More sheet)',calls.length,2);
     const guarded=shared.match(/typeof _canSeePatternHub==='function'&&_canSeePatternHub\(\)/g)||[];
     s.eq('…every one behind a typeof guard that fails closed',guarded.length,calls.length);
-    s.ok('renderPage dispatches pattern-hub',/id==='pattern-hub'/.test(shared));
-    s.ok('…and does not crash if the module failed to load',/typeof loadPatternsData!=='function'/.test(shared));
+    s.ok('renderPage routes every pattern-* page through ptnRenderPage',/id\.startsWith\('pattern-'\)[^\n]*ptnRenderPage\(id\)/.test(shared));
+    s.ok('…and does not crash if the module failed to load',/typeof ptnRenderPage==='function'/.test(shared));
+    s.ok('shared.js carries no per-page pattern dispatch besides the prefix route',(shared.match(/id==='pattern-/g)||[]).length===0);
     s.ok('the bug tracker knows the page name',/'pattern-hub':'Pattern Hub'/.test(shared));
     s.ok('the mobile nav maps it to More',/'pattern-hub':'more'/.test(shared));
     s.ok('no hard-coded username route',!/session\.u==='afnan'[^\n]*pattern/.test(shared));
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  // M1 — Shopify liveness, reconcile, export, router
+  // ═════════════════════════════════════════════════════════════════════
+  s.section('M1 · one normaliser, and it recovers the seven denims by title');
+  {
+    const a=app();await a.run('loadPatternsData()');
+    // registry = the seed, in memory
+    a.run("tacArticles=_TAC_ARTICLES.map(([code,name])=>({code,name,brand:'groovy',category:_ptnParseCode(code).prefix,needsPattern:true,active:true}))");
+    const want={'Carpenter Dark Grey Denim':'GD012','Carpenter Light Grey Denim':'GD013','Carpenter Washed Black Denim':'GD006','Project Rebirth Denim':'GD010','cross star denim blue':'GD011','CORE Denim | Washed Blue':'GD004','Fade Washed Denim':'GD009'};
+    Object.entries(want).forEach(([title,code])=>{
+      const m=a.run('_ptnTitleMatch('+J(title)+')');
+      s.eq('"'+title+'" → '+code+' (exact)',J([m&&m.code,m&&m.kind]),J([code,'exact']));
+    });
+    s.eq('"The Best Is Yet To Come" is only a LIKELY match to the 2.0',J((a.run("_ptnTitleMatch('The Best Is Yet To Come')")||{}).kind),J('likely'));
+    s.eq('"Trying Times" matches nothing',a.run("_ptnTitleMatch('Trying Times')"),null);
+    s.eq('"Anxiety Prime" matches nothing',a.run("_ptnTitleMatch('Anxiety Prime')"),null);
+    s.eq('normaliser: punctuation, case, & and T-Shirt',a.run("_ptnNorm('  Money & Feelings T-Shirt | RUST ')"),'money and feelings tee rust');
+    s.ok('same name → similarity 1',a.run("_ptnSim('Jorts | Dark Stone','jorts dark stone')")===1);
+    s.ok('renamed colourway reads as "substantially different"',a.run("_ptnSim('Live in Pants | Heather Grey','Live in Pants | Arctyc White')")<a.run('_PTN_SIM_SAME'));
+    s.ok('spelling drift does not',a.run("_ptnSim('Pit Crew Shirt','Pitcrew Shirt')")>=a.run('_PTN_SIM_SAME'));
+  }
+
+  s.section('M1 · the buckets');
+  function recApp(session){
+    const store=new Map([
+      ['tac_categories/GST',{prefix:'GST',nextNumber:77}],
+      ['tac_categories/GBT',{prefix:'GBT',nextNumber:20}],
+      ['articles/GST062',{code:'GST062',name:'Live in Pants | Heather Grey',brand:'groovy',category:'GST',needsPattern:true,active:true}],
+      ['articles/GST001',{code:'GST001',name:'Baggy Trousers | Black',brand:'groovy',category:'GST',needsPattern:true,active:true}],
+      ['articles/GD012',{code:'GD012',name:'Carpenter Dark Grey Denim',brand:'groovy',category:'GD',needsPattern:true,active:true}],
+      ['articles/GST029',{code:'GST029',name:'Navy Blue Trouser',brand:'groovy',category:'GST',needsPattern:true,active:true}],
+      ['articles/CP001',{code:'CP001',name:'Champions (94)',brand:'cultured',category:'CP',needsPattern:true,active:true}],
+      ['shopify_articles/GST062',{code:'GST062',status:'active',product_titles:['Live in Pants | Arctyc White'],product_ids:['1'],size_axis:'alpha'}],
+      ['shopify_articles/GST001',{code:'GST001',status:'active',product_titles:['Baggy Trousers | Black'],product_ids:['2'],size_axis:'alpha'}],
+      ['shopify_articles/GBT020',{code:'GBT020',status:'active',product_titles:['Cupid Lovestruck Baby Tee'],product_ids:['3'],size_axis:'alpha'}],
+      ['shopify_articles/ZZZ001',{code:'ZZZ001',status:'active',product_titles:['Mystery'],product_ids:['9']}]
+    ]);
+    const f=fakeFs(store);
+    const meta={last_success_at:'2026-09-17T04:00:00Z',codes:4,unkeyed_products:[
+      {product_id:'30',title:'Carpenter Dark Grey Denim',status:'active',reason:'no_sku',sku_sample:''},
+      {product_id:'40',title:'Kinder Planet Baby Tee',status:'draft',reason:'foreign_sku',sku_sample:'TOPS-030'}
+    ],multi_code_products:[{product_id:'5',title:'Chicago Bulls',status:'active',codes:['GP061','GP060']}]};
+    const globals=Object.assign({},f.globals,{
+      getDoc:async r=>({exists:()=>r.key==='shopify_sync_meta/articles_rollup',data:()=>meta}),
+      updateDoc:async(r,p)=>{const cur=store.get(r.key)||{};store.set(r.key,Object.assign({},cur,p));}
+    });
+    const a=app({session:session||SESS.afnan,globals});
+    return{a,store,meta:f.meta};
+  }
+  {
+    const {a,store}=recApp();
+    await a.run('loadPatternsData()');await a.run('loadPatternsShopify()');
+    const r=a.run('_ptnReconcile()');
+    s.eq('unknown codes: GBT020 (known prefix) and ZZZ001 (unknown prefix)',J(r.unknownCodes.map(u=>[u.code,!!u.cat])),J([['GBT020',true],['ZZZ001',false]]));
+    s.eq('name mismatch: GST062 only',J(r.nameMismatch.map(u=>u.code)),J(['GST062']));
+    s.ok('…flagged as substantially different',r.nameMismatch[0].sim<a.run('_PTN_SIM_SAME'));
+    s.eq('not on Shopify: the GROOVY codes with no rollup doc, never Cultured',J(r.notOnShopify.map(u=>u.code).sort()),J(['GD012','GST029']));
+    s.eq('unkeyed: the denim matches GD012 exactly, the baby tee matches nothing',J(r.unkeyed.map(u=>[u.productId,u.match&&u.match.code,u.match&&u.match.kind])),J([['30','GD012','exact'],['40',null,null]]));
+    s.eq('two-codes bucket carries the product',J(r.multiCode.map(u=>u.codes)),J([['GP061','GP060']]));
+    s.eq('ok = shared codes whose names agree',r.ok,1);
+    s.eq('nothing waiting on Shopify yet',r.fixShopify.length,0);
+    const html=a.run('renderPatternReconcile()');
+    s.ok('the page renders the tabs with counts',/Codes not in registry <b>2<\/b>/.test(html)&&/Name mismatches <b>1<\/b>/.test(html));
+    s.ok('an unknown prefix offers no Add button',!/ptnAddFromShopify\('ZZZ001'\)/.test(html)&&/ptnAddFromShopify\('GBT020'\)/.test(html));
+    s.ok('the hub badge counts open items (2 unknown + 1 name + 2 unkeyed)',/badge[^>]*>5</.test(a.run('_ptnRecBadge()')));
+    s.ok('the hub shows the Shopify column',/ptn-shop/.test(a.run('_ptnTableHTML()'))&&/active/.test(a.run('_ptnTableHTML()')));
+    s.ok('the sync line names the copy',/Shopify copy: <b>4<\/b>/.test(a.run('_ptnSyncLineHTML()')));
+
+    // add from Shopify
+    a.state.toasts.length=0;
+    await a.run("window.ptnAddFromShopify('GBT020')");
+    const added=store.get('articles/GBT020');
+    s.ok('GBT020 added with the Shopify title as its name',added&&added.name==='Cupid Lovestruck Baby Tee');
+    s.eq('…source and link recorded',J([added.source,added.shopifyLink&&added.shopifyLink.productId]),J(['assigned_from_reconcile','3']));
+    s.eq('…GBT counter moved past it',store.get('tac_categories/GBT').nextNumber,21);
+    await a.run("window.ptnAddFromShopify('ZZZ001')");
+    s.ok('an unknown prefix is refused with a message',!store.has('articles/ZZZ001')&&a.state.toasts.some(t=>/No TAC category/.test(t)));
+    s.eq('the bucket drops GBT020 on the next compute',J(a.run('_ptnReconcile()').unknownCodes.map(u=>u.code)),J(['ZZZ001']));
+
+    // names
+    await a.run("window.ptnUseShopifyName('GST062')");
+    s.eq('Use Shopify name renames and marks reviewed',J([store.get('articles/GST062').name,!!store.get('articles/GST062').nameReviewedAt]),J(['Live in Pants | Arctyc White',true]));
+    s.eq('…and the mismatch is gone',a.run('_ptnReconcile()').nameMismatch.length,0);
+
+    // link an unkeyed product
+    await a.run("window.ptnLinkProduct('30','GD012')");
+    const gd=store.get('articles/GD012');
+    s.eq('link writes shopifyLink on the article only',J([gd.shopifyLink.productId,gd.shopifyLink.reason,gd.name]),J(['30','no_sku','Carpenter Dark Grey Denim']));
+    const r2=a.run('_ptnReconcile()');
+    s.eq('…the product leaves the open list and lands in Fix in Shopify',J([r2.unkeyed.filter(u=>!u.linked).length,r2.fixShopify.map(f=>f.code)]),J([1,['GD012']]));
+    s.ok('Fix in Shopify tells a human the SKU to type',/GD012-&lt;size&gt;/.test(a.run("_ptnRecTab='fix';_ptnReconcileHTML()")));
+    s.ok('a linked article shows "fix SKU" on the hub',/linked · fix SKU/.test(a.run("_ptnShopifyCellHTML(tacArticles.find(x=>x.code==='GD012'))")));
+
+    // mint for an unkeyed product carries the link into the mint
+    a.run("window.ptnMintForProduct('40')");
+    s.ok('a pending link is set and the mint form opened',a.run('!!_ptnPendingLink&&_ptnMintOpen'));
+    a.el('ptn-mint-cat').value='GBT';a.el('ptn-mint-name').value='Kinder Planet Baby Tee';a.el('ptn-mint-code').value='';a.el('ptn-mint-needs').checked=true;
+    await a.run('window.ptnMint()');
+    const kp=store.get('articles/GBT021');
+    s.ok('minted GBT021 with the link attached',kp&&kp.shopifyLink&&kp.shopifyLink.productId==='40'&&kp.shopifyLink.reason==='foreign_sku');
+    s.eq('the pending link is consumed',a.run('_ptnPendingLink'),null);
+
+    // retire
+    await a.run("window.ptnRetireQuick('GST029')");
+    s.eq('retire writes active:false and asked first',J([store.get('articles/GST029').active,a.state.confirms.length]),J([false,1]));
+  }
+  {
+    const {a,meta}=recApp(SESS.arfat);
+    await a.run('loadPatternsData()');await a.run('loadPatternsShopify()');
+    await a.run("window.ptnAddFromShopify('GBT020')");await a.run("window.ptnLinkProduct('30','GD012')");
+    s.eq('Arfat can do none of it',meta.tx+a.state.writes.length,0);
+  }
+
+  s.section('M1 · rollup missing or refused');
+  {
+    const a=app({globals:{collection:(db,name)=>({name}),getDocs:async ref=>{if(ref.name==='shopify_articles')throw new Error('Missing or insufficient permissions');return{docs:[]};}}});
+    await a.run('loadPatternsData()');await a.run('loadPatternsShopify()');
+    s.ok('the reconcile page names the collection and the republish',/ptn-rec-failed/.test(a.run('renderPatternReconcile()'))&&/firestore\.rules/.test(a.run('renderPatternReconcile()')));
+    s.ok('the hub warns but still works',/ptn-shop-warn/.test(a.run('renderPatternHub()'))&&/ptn-seed-card/.test(a.run('renderPatternHub()')));
+    s.eq('the badge is silent',a.run('_ptnRecBadge()'),'');
+  }
+  {
+    const a=app();
+    await a.run('loadPatternsData()');await a.run('loadPatternsShopify()');
+    s.ok('no rollup yet → the page says how to run the sync',/ptn-rec-none/.test(a.run('renderPatternReconcile()'))&&/shopify-catalog-sync/.test(a.run('renderPatternReconcile()')));
+    s.ok('…and the hub says so too',/ptn-shop-none/.test(a.run('renderPatternHub()')));
+  }
+
+  s.section('M1 · export');
+  {
+    const {a}=recApp();
+    await a.run('loadPatternsData()');await a.run('loadPatternsShopify()');
+    const rows=a.run('_ptnExportRows()');
+    s.eq('one row per article, TAC category order (GD before GST) then number, other brands after',J(rows.map(r=>r[2])),J(['GD012','GST001','GST029','GST062','CP001']));
+    s.eq('header',J(a.run('_PTN_EXPORT_HEADER')),J(['Brand','Category','Article Code','Article Name','Needs pattern','Status','Shopify']));
+    s.eq('a row carries brand, category, code, name, pattern flag, status and Shopify status',J(rows[3]),J(['GROOVY','GST · Sweatpants & Trousers','GST062','Live in Pants | Heather Grey','Yes','Active','active']));
+    s.eq('a code absent from Shopify reads —',rows[2][6],'—');
+    a.state.toasts.length=0;
+    a.run("window.ptnExportTac('xlsx')");
+    s.ok('with no XLSX loaded the export says so rather than throwing',a.state.toasts.some(t=>/spreadsheet library/.test(t)));
+    a.run("window.ptnExportTac('pdf')");
+    s.ok('with no print engine the export says so rather than throwing',a.state.toasts.some(t=>/print engine/.test(t)));
+  }
+  {
+    const calls=[];
+    const {a}=recApp();
+    a.ctx.window.printDocument=o=>calls.push(o);
+    await a.run('loadPatternsData()');await a.run('loadPatternsShopify()');
+    a.run("window.ptnExportTac('pdf')");
+    s.eq('PDF goes through the print engine, generic variant, English only',J([calls.length,calls[0]&&calls[0].type,calls[0]&&calls[0].data.urduLevel]),J([1,'generic','none']));
+    s.ok('…with the category headings and every code in the body',/GROOVY — GST · Sweatpants & Trousers\n/.test(calls[0].data.bodyHtml)&&/GST062   Live in Pants/.test(calls[0].data.bodyHtml)&&/Cultured Legacy — CP/.test(calls[0].data.bodyHtml));
+  }
+
+  s.section('M1 · router');
+  {
+    const a=app({session:SESS.arfat});
+    a.run("ptnRenderPage('pattern-hub')");
+    s.ok('Arfat gets the test-phase message from the router',/test phase/.test(a.el('main-content').innerHTML));
+  }
+  {
+    const {a}=recApp();
+    a.run("currentPage='pattern-reconcile';ptnRenderPage('pattern-reconcile')");
+    s.ok('the router paints a skeleton first',/skeleton/.test(a.el('main-content').innerHTML));
+    await new Promise(r=>setTimeout(r,10));
+    s.ok('…then the reconcile page',/Reconcile with Shopify/.test(a.el('main-content').innerHTML));
+    a.run("currentPage='pattern-nope';ptnRenderPage('pattern-nope')");
+    await new Promise(r=>setTimeout(r,10));
+    s.ok('an unknown pattern-* page says so instead of a blank',/Unknown Pattern Hub page/.test(a.el('main-content').innerHTML));
   }
 
   return s;

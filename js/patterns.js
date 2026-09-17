@@ -13,6 +13,19 @@
    here the app MINTS new codes per category and is the source of truth; the
    .docx becomes an export (M1). No pattern (block) concept yet — that is M2.
 
+   M1: SHOPIFY LIVENESS + RECONCILE + EXPORT. shopify-catalog-sync.js now
+   writes shopify_articles/{CODE} (one small doc per article code, daily 9am
+   PKT) and lists products it could not key on shopify_sync_meta/
+   articles_rollup. The reconcile page (`pattern-reconcile`) puts the registry
+   and that rollup side by side in buckets — unknown codes, name mismatches,
+   products with no usable SKU (title-matched to a candidate), codes not on
+   Shopify, two codes on one product — and the only writes it makes are to
+   `articles`. NOTHING here writes to Shopify; the "Fix in Shopify" list
+   tells a human what to type there. The TAC list exports to Excel and PDF
+   so Ammar keeps a document — as an OUTPUT of the registry, never an input.
+   Every pattern-* page routes through ptnRenderPage(), so js/shared.js
+   never needs another line for this module (the mkt-* rule).
+
    Load-bearing choices (each one is also asserted in tests/patterns.test.js):
 
    - The article's doc id IS its code. Uniqueness is the document, not a
@@ -731,6 +744,7 @@ function _ptnPageHTML(){
   <div class="page-head" style="margin-bottom:10px">
     <div><h2 style="margin:0">Pattern Hub</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">Article registry · the TAC list, live in the app · test phase</div></div>
   </div>`;
+  const sync=_ptnSyncLineHTML();
   if(_ptnLoadErr){
     return head+`<div class="board-load-error" id="ptn-load-error">
       <div style="font-weight:700;font-size:13.5px;margin-bottom:4px">Could not load the registry</div>
@@ -741,7 +755,7 @@ function _ptnPageHTML(){
   }
   const failed=Object.keys(_ptnFailed);
   const warn=failed.length?`<div class="board-load-warn" id="ptn-load-warn" style="margin-bottom:12px">Some of the registry did not load: <b>${_ptnEsc(failed.join(', '))}</b>. What is shown may be incomplete. <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`:'';
-  return head+warn+_ptnBrandTabsHTML()+_ptnSeedCardHTML()+_ptnStatsHTML()+_ptnToolbarHTML()+_ptnMintFormHTML()+_ptnTableHTML();
+  return head+warn+sync+_ptnBrandTabsHTML()+_ptnSeedCardHTML()+_ptnStatsHTML()+_ptnToolbarHTML()+_ptnMintFormHTML()+_ptnTableHTML();
 }
 function _ptnBrandTabsHTML(){
   const tabs=[['groovy','GROOVY'],['cultured','Cultured Legacy'],['against','Against All Odds'],['all','All brands']];
@@ -784,6 +798,9 @@ function _ptnToolbarHTML(){
     </select>
     <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px"><input type="checkbox" ${_ptnFilter.showRetired?'checked':''} onchange="window.ptnSetFilter('showRetired',this.checked?'1':'')">Show retired</label>
     ${_canManagePatterns()?`<button class="btn-primary" onclick="window.ptnToggleMint()">${_ptnMintOpen?'Close':'+ Mint a code'}</button>`:''}
+    <button class="btn-sm" onclick="window.showPage('pattern-reconcile')">Reconcile with Shopify${_ptnRecBadge()}</button>
+    <button class="btn-sm" onclick="window.ptnExportTac('xlsx')" title="The TAC list as a spreadsheet">Export Excel</button>
+    <button class="btn-sm" onclick="window.ptnExportTac('pdf')" title="The TAC list as a PDF">Export PDF</button>
   </div>`;
 }
 function _ptnMintFormHTML(){
@@ -817,7 +834,7 @@ function _ptnTableHTML(){
   if(!rows.length)return`<div class="empty">Nothing matches.</div>`;
   const can=_canManagePatterns();
   return`<div class="card" style="padding:0;overflow:auto"><table class="ptn-table" style="width:100%;border-collapse:collapse;font-size:13px">
-    <thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em"><th style="padding:10px 12px">Code</th><th style="padding:10px 12px">Name</th><th style="padding:10px 12px">Category</th><th style="padding:10px 12px">Pattern</th><th style="padding:10px 12px">Status</th>${can?'<th style="padding:10px 12px"></th>':''}</tr></thead>
+    <thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em"><th style="padding:10px 12px">Code</th><th style="padding:10px 12px">Name</th><th style="padding:10px 12px">Category</th><th style="padding:10px 12px">Pattern</th><th style="padding:10px 12px">Status</th><th style="padding:10px 12px">Shopify</th>${can?'<th style="padding:10px 12px"></th>':''}</tr></thead>
     <tbody>${rows.map(a=>_ptnEditing===a.code?_ptnEditRowHTML(a):_ptnRowHTML(a,can)).join('')}</tbody></table>
     <div style="padding:8px 12px;font-size:11px;color:var(--muted);border-top:1px solid var(--border)">${rows.length} of ${tacArticles.length} articles</div></div>`;
 }
@@ -830,6 +847,7 @@ function _ptnRowHTML(a,can){
     <td style="padding:9px 12px;color:var(--muted);white-space:nowrap">${_ptnEsc(cat?cat.label:a.category||'')}</td>
     <td style="padding:9px 12px;white-space:nowrap">${a.needsPattern?(a.patternId?'<span class="badge">assigned</span>':'<span style="color:var(--muted)">unassigned</span>'):'<span style="color:var(--muted)">not needed</span>'}</td>
     <td style="padding:9px 12px;white-space:nowrap">${retired?'Retired':'Active'}</td>
+    <td style="padding:9px 12px;white-space:nowrap" class="ptn-shop">${_ptnShopifyCellHTML(a)}</td>
     ${can?`<td style="padding:9px 12px;text-align:right"><button class="btn-sm" onclick="window.ptnEditArticle('${_ptnEsc(a.code)}')">Edit</button></td>`:''}
   </tr>`;
 }
@@ -839,6 +857,7 @@ function _ptnEditRowHTML(a){
     <td style="padding:9px 12px" colspan="2"><input id="ptn-edit-name" value="${_ptnEsc(a.name||'')}" style="width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--text)"></td>
     <td style="padding:9px 12px;white-space:nowrap"><label style="display:flex;align-items:center;gap:5px;font-size:12px"><input type="checkbox" id="ptn-edit-needs" ${a.needsPattern?'checked':''}>Needs a pattern</label></td>
     <td style="padding:9px 12px;white-space:nowrap"><label style="display:flex;align-items:center;gap:5px;font-size:12px"><input type="checkbox" id="ptn-edit-active" ${a.active!==false?'checked':''}>Active</label></td>
+    <td style="padding:9px 12px;white-space:nowrap" class="ptn-shop">${_ptnShopifyCellHTML(a)}</td>
     <td style="padding:9px 12px;text-align:right;white-space:nowrap"><button class="btn-primary" ${_ptnBusy?'disabled':''} onclick="window.ptnSaveArticle('${_ptnEsc(a.code)}')">Save</button> <button class="btn-sm" onclick="window.ptnCancelEdit()">Cancel</button></td>
   </tr>`;
 }
@@ -847,7 +866,8 @@ function _ptnEditRowHTML(a){
 window.ptnRetryLoad=function(){
   const m=document.getElementById('main-content');
   if(m)m.innerHTML=gvSkeleton(6);
-  loadPatternsData().then(()=>{if(currentPage==='pattern-hub'&&m)m.innerHTML=renderPatternHub();});
+  patternsLoaded=false;_ptnShopifyLoaded=false;
+  ptnRenderPage(currentPage&&String(currentPage).startsWith('pattern-')?currentPage:'pattern-hub');
 };
 window.ptnSearchInput=function(v){
   clearTimeout(_ptnSearchTimer);
@@ -934,43 +954,59 @@ window.ptnMint=async function(){
     explicitNum=p.num;
   }
   _ptnBusy=true;_ptnRepaint();
-  const now=new Date().toISOString();
-  const by=(typeof session!=='undefined'&&session&&session.u)||'';
-  const floor=(_ptnSeedMaxByPrefix()[cat.prefix]||0)+1;
+  const link=_ptnPendingLink;
+  const fields={source:'minted'};
+  if(link)fields.shopifyLink=_ptnLinkFields(link);
   let minted=[];
   try{
-    await runTransaction(db,async tx=>{
-      const cref=doc(db,'tac_categories',cat.prefix);
-      const cs=await tx.get(cref);
-      const cd=(cs&&typeof cs.exists==='function'&&cs.exists())?cs.data():{};
-      const counter=Math.max(floor,cd.nextNumber||0);
-      const num=explicitNum!=null?explicitNum:counter;
-      const codes=_ptnCodesFor(cat,num);
-      for(const code of codes){
-        const s=await tx.get(doc(db,'articles',code));
-        if(s&&typeof s.exists==='function'&&s.exists())throw new Error(code+' already exists');
-      }
-      codes.forEach(code=>{
-        tx.set(doc(db,'articles',code),{code,name,brand:cat.brand,category:cat.prefix,needsPattern:needs,patternId:null,active:true,source:'minted',createdAt:now,createdBy:by,updatedAt:now,updatedBy:by});
-      });
-      tx.set(cref,{prefix:cat.prefix,brand:cat.brand,label:cd.label||cat.label,form:cat.form,needsPattern:cd.needsPattern!=null?cd.needsPattern:cat.needsPattern,nextNumber:Math.max(counter,num+1),updatedAt:now,updatedBy:by},{merge:true});
-      minted=codes;
-    });
+    minted=await _ptnCreateArticlesTx(cat,{name,explicitNum,needs,fields});
   }catch(e){
     console.error('[patterns] mint failed',e);
     showToast('Could not mint: '+(e.message||e),true);
     _ptnBusy=false;_ptnRepaint();return;
   }
-  minted.forEach(code=>{tacArticles.push({code,name,brand:cat.brand,category:cat.prefix,needsPattern:needs,patternId:null,active:true,source:'minted',createdAt:now,createdBy:by});});
-  const lc=tacCategories.find(c=>c.prefix===cat.prefix);
-  const newNext=Math.max(floor,(lc&&lc.nextNumber)||0,_ptnParseCode(minted[0]).num+1);
-  if(lc)lc.nextNumber=newNext;else tacCategories.push(Object.assign({},cat,{nextNumber:newNext}));
-  showToast('Minted '+minted.join(' + ')+' — '+name);
+  _ptnPendingLink=null;
+  showToast('Minted '+minted.join(' + ')+' — '+name+(link?' · now set the SKU on Shopify to '+minted[0]+'-<size>':''));
   _ptnLog('Article Code Minted',minted.join(' + ')+' — '+name);
   const ni=document.getElementById('ptn-mint-name');if(ni)ni.value='';
   const ci=document.getElementById('ptn-mint-code');if(ci)ci.value='';
   _ptnBusy=false;_ptnFilter.q='';_ptnRepaint();
 };
+
+// The ONE place an article is created. Reads the category counter, refuses
+// any code that already exists, writes the article(s), moves the counter
+// forward — never backwards, never below the seed's maximum. Used by the
+// mint form (codes from the counter or an explicit number) and by the
+// reconcile page (an exact code Shopify already uses). Returns the codes.
+async function _ptnCreateArticlesTx(cat,o){
+  const now=new Date().toISOString();
+  const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  const floor=(_ptnSeedMaxByPrefix()[cat.prefix]||0)+1;
+  const needs=o.needs!=null?!!o.needs:cat.needsPattern!==false;
+  let out=[];
+  await runTransaction(db,async tx=>{
+    const cref=doc(db,'tac_categories',cat.prefix);
+    const cs=await tx.get(cref);
+    const cd=(cs&&typeof cs.exists==='function'&&cs.exists())?cs.data():{};
+    const counter=Math.max(floor,cd.nextNumber||0);
+    const num=o.explicitNum!=null?o.explicitNum:counter;
+    const codes=o.codes||_ptnCodesFor(cat,num);
+    for(const code of codes){
+      const s=await tx.get(doc(db,'articles',code));
+      if(s&&typeof s.exists==='function'&&s.exists())throw new Error(code+' already exists');
+    }
+    codes.forEach(code=>{
+      tx.set(doc(db,'articles',code),Object.assign({code,name:o.name,brand:cat.brand,category:cat.prefix,needsPattern:needs,patternId:null,active:true,source:'minted',createdAt:now,createdBy:by,updatedAt:now,updatedBy:by},o.fields||{}));
+    });
+    tx.set(cref,{prefix:cat.prefix,brand:cat.brand,label:cd.label||cat.label,form:cat.form,needsPattern:cd.needsPattern!=null?cd.needsPattern:cat.needsPattern,nextNumber:Math.max(counter,num+1),updatedAt:now,updatedBy:by},{merge:true});
+    out=codes;
+  });
+  out.forEach(code=>{tacArticles.push(Object.assign({code,name:o.name,brand:cat.brand,category:cat.prefix,needsPattern:needs,patternId:null,active:true,source:'minted',createdAt:now,createdBy:by},o.fields||{}));});
+  const lc=tacCategories.find(c=>c.prefix===cat.prefix);
+  const newNext=Math.max(floor,(lc&&lc.nextNumber)||0,_ptnParseCode(out[0]).num+1);
+  if(lc)lc.nextNumber=newNext;else tacCategories.push(Object.assign({},cat,{nextNumber:newNext}));
+  return out;
+}
 
 window.ptnSaveArticle=async function(code){
   if(!_canManagePatterns()||_ptnBusy)return;
@@ -992,3 +1028,299 @@ window.ptnSaveArticle=async function(code){
   }
   _ptnBusy=false;_ptnEditing=null;_ptnRepaint();
 };
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// M1 — Shopify liveness · reconcile · TAC export · router
+// ═══════════════════════════════════════════════════════════════════════════
+
+let shopifyArticles=null;      // code → shopify_articles doc; null until loaded
+let _ptnRollupMeta=null;       // shopify_sync_meta/articles_rollup
+let _ptnShopifyLoaded=false,_ptnShopifyFailed=null;
+let _ptnPendingLink=null;      // a Shopify product carried into the next mint
+let _ptnRecTab='unknown';
+
+// Cannot reject. ~336 small docs + one meta doc, once per session.
+async function loadPatternsShopify(){
+  _ptnShopifyFailed=null;
+  const [arts,meta]=await Promise.allSettled([
+    getDocs(collection(db,'shopify_articles')),
+    getDoc(doc(db,'shopify_sync_meta','articles_rollup'))
+  ]);
+  if(arts.status==='fulfilled'){
+    shopifyArticles={};
+    arts.value.docs.forEach(d=>{shopifyArticles[d.id]=Object.assign({code:d.id},d.data());});
+  }else{_ptnShopifyFailed=(arts.reason&&(arts.reason.message||String(arts.reason)))||'read failed';console.warn('[patterns] shopify_articles load failed',arts.reason);}
+  if(meta.status==='fulfilled'){
+    const s=meta.value;const ex=s&&typeof s.exists==='function'?s.exists():false;
+    _ptnRollupMeta=ex?s.data():null;
+  }else{console.warn('[patterns] articles_rollup load failed',meta.reason);}
+  _ptnShopifyLoaded=true;
+}
+
+// ── Title matching — ONE normaliser for the seed, the reconcile page and
+//    the future auto-link, so the three can never disagree ───────────────
+function _ptnNorm(s){
+  return String(s==null?'':s).toLowerCase().replace(/&/g,' and ')
+    .replace(/[^a-z0-9]+/g,' ').replace(/\bt shirt\b|\btshirt\b/g,'tee')
+    .trim().replace(/\s+/g,' ');
+}
+function _ptnBigrams(s){const o=new Set();for(let i=0;i<s.length-1;i++)o.add(s.slice(i,i+2));return o;}
+// Dice coefficient on character bigrams of the normalised names: 1 = same,
+// 0 = nothing in common. Small, explainable, no library.
+function _ptnSim(a,b){
+  a=_ptnNorm(a);b=_ptnNorm(b);
+  if(!a||!b)return 0;if(a===b)return 1;
+  const A=_ptnBigrams(a),B=_ptnBigrams(b);let inter=0;A.forEach(x=>{if(B.has(x))inter++;});
+  return (A.size+B.size)?(2*inter)/(A.size+B.size):0;
+}
+const _PTN_SIM_SAME=0.72;     // below this a code's two names are "substantially different"
+const _PTN_SIM_LIKELY=0.6;    // a title-only candidate needs at least this
+function _ptnTitleMatch(title){
+  const n=_ptnNorm(title);if(!n)return null;
+  const exact=tacArticles.find(a=>a.active!==false&&_ptnNorm(a.name)===n);
+  if(exact)return{code:exact.code,name:exact.name,kind:'exact',sim:1};
+  let best=null;
+  tacArticles.forEach(a=>{
+    if(a.active===false)return;
+    const s=_ptnSim(a.name,title);
+    if(s>=_PTN_SIM_LIKELY&&(!best||s>best.sim))best={code:a.code,name:a.name,kind:'likely',sim:s};
+  });
+  return best;
+}
+function _ptnLinkFields(l){
+  const now=new Date().toISOString();
+  const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  return{productId:String(l.productId||''),title:String(l.title||''),sku:String(l.sku||''),reason:String(l.reason||''),linkedBy:by,linkedAt:now};
+}
+
+// ── The buckets ───────────────────────────────────────────────────────────
+function _ptnReconcile(){
+  const out={unknownCodes:[],nameMismatch:[],notOnShopify:[],unkeyed:[],multiCode:[],fixShopify:[],ok:0,ready:!!shopifyArticles};
+  if(!shopifyArticles)return out;
+  const reg={};tacArticles.forEach(a=>{reg[a.code]=a;});
+  Object.values(shopifyArticles).forEach(sa=>{
+    const a=reg[sa.code];
+    const title=(sa.product_titles||[])[0]||'';
+    if(!a){out.unknownCodes.push({code:sa.code,title,status:sa.status||'',cat:_ptnCategoryOfCode(sa.code),imageUrl:sa.image_url||''});return;}
+    if(a.active!==false&&!a.nameReviewedAt&&title&&_ptnNorm(title)!==_ptnNorm(a.name)){
+      out.nameMismatch.push({code:a.code,tac:a.name||'',shopify:title,sim:_ptnSim(a.name,title),status:sa.status||''});
+    }else out.ok++;
+  });
+  tacArticles.forEach(a=>{
+    if(a.active===false||a.brand!=='groovy')return;   // only GROOVY is on this store
+    if(!shopifyArticles[a.code])out.notOnShopify.push({code:a.code,name:a.name||'',linked:a.shopifyLink||null});
+  });
+  const linked={};tacArticles.forEach(a=>{if(a.shopifyLink&&a.shopifyLink.productId)linked[String(a.shopifyLink.productId)]=a;});
+  ((_ptnRollupMeta&&_ptnRollupMeta.unkeyed_products)||[]).forEach(pd=>{
+    const pid=String(pd.product_id||'');
+    const la=linked[pid]||null;
+    out.unkeyed.push({productId:pid,title:pd.title||'',status:pd.status||'',reason:pd.reason||'no_sku',sku:pd.sku_sample||'',imageUrl:pd.image_url||'',linked:la?la.code:null,match:la?null:_ptnTitleMatch(pd.title)});
+    if(la)out.fixShopify.push({productId:pid,title:pd.title||'',code:la.code,reason:pd.reason||'no_sku'});
+  });
+  out.multiCode=((_ptnRollupMeta&&_ptnRollupMeta.multi_code_products)||[]).map(pd=>({productId:String(pd.product_id||''),title:pd.title||'',codes:pd.codes||[]}));
+  out.nameMismatch.sort((x,y)=>x.sim-y.sim);
+  return out;
+}
+function _ptnRecBadge(){
+  if(!shopifyArticles)return'';
+  const r=_ptnReconcile();
+  const n=r.unknownCodes.length+r.nameMismatch.length+r.unkeyed.filter(u=>!u.linked).length;
+  return n?` <span class="badge" style="font-size:10px">${n}</span>`:'';
+}
+
+// ── Hub: the sync line and the Shopify column ─────────────────────────────
+function _ptnSyncDate(){
+  const v=_ptnRollupMeta&&_ptnRollupMeta.last_success_at;
+  if(!v)return null;
+  try{return typeof v.toDate==='function'?v.toDate():new Date(v);}catch(e){return null;}
+}
+function _ptnSyncLineHTML(){
+  if(!_ptnShopifyLoaded)return'';
+  if(_ptnShopifyFailed)return`<div class="board-load-warn" id="ptn-shop-warn" style="margin-bottom:12px">The Shopify rollup (<code>shopify_articles</code>) did not load: ${_ptnEsc(_ptnShopifyFailed)}. Liveness is unknown; the registry still works. <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`;
+  const n=shopifyArticles?Object.keys(shopifyArticles).length:0;
+  if(!n)return`<div style="font-size:12px;color:var(--muted);margin-bottom:12px" id="ptn-shop-none">No Shopify rollup yet — the catalog sync writes it daily at 9am PKT. It can be run now: <code>/.netlify/functions/shopify-catalog-sync</code>.</div>`;
+  const d=_ptnSyncDate();
+  const ageH=d?Math.round((Date.now()-d.getTime())/36e5):null;
+  const stale=ageH!=null&&ageH>30;
+  return`<div style="font-size:12px;color:var(--muted);margin-bottom:12px" id="ptn-shop-line">Shopify copy: <b>${n}</b> article codes${d?` · synced ${_ptnEsc(d.toLocaleString('en-GB'))}`:''}${ageH!=null?` (${ageH}h ago${stale?' — <b style="color:var(--accent-warning)">older than a day</b>':''})`:''} · read-only.</div>`;
+}
+function _ptnShopifyCellHTML(a){
+  if(!_ptnShopifyLoaded)return'';
+  if(_ptnShopifyFailed)return'<span style="color:var(--muted)">?</span>';
+  const sa=shopifyArticles&&shopifyArticles[a.code];
+  if(sa){
+    const c={active:'var(--green)',draft:'var(--amber)',archived:'var(--muted)'}[sa.status]||'var(--muted)';
+    return`<span style="color:${c};font-weight:600">${_ptnEsc(sa.status||'?')}</span>${sa.size_axis&&sa.size_axis!=='none'?` <span style="color:var(--muted);font-size:11px">${_ptnEsc(sa.size_axis)}</span>`:''}`;
+  }
+  if(a.shopifyLink&&a.shopifyLink.productId)return'<span style="color:var(--accent-warning);font-weight:600" title="Linked to a product whose SKU is not set">linked · fix SKU</span>';
+  return a.brand==='groovy'?'<span style="color:var(--muted)">—</span>':'';
+}
+
+// ── Reconcile page ────────────────────────────────────────────────────────
+function renderPatternReconcile(){
+  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar and Mustafa only.</div>';
+  return`<div id="pattern-rec-root">${_ptnReconcileHTML()}</div>`;
+}
+function _ptnRecRepaint(){const r=document.getElementById('pattern-rec-root');if(r)r.innerHTML=_ptnReconcileHTML();}
+function _ptnReconcileHTML(){
+  const head=`<button class="back-btn" onclick="window.showPage('pattern-hub')">← Pattern Hub</button>
+  <div class="page-head" style="margin-bottom:10px"><div><h2 style="margin:0">Reconcile with Shopify</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">The registry beside the store's SKUs. Fixes here write to the registry only — Shopify is never written from this app.</div></div></div>`;
+  if(_ptnLoadErr)return head+`<div class="board-load-error">The registry did not load: ${_ptnEsc(_ptnLoadErr)} <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`;
+  if(_ptnShopifyFailed)return head+`<div class="board-load-error" id="ptn-rec-failed"><div style="font-weight:700;margin-bottom:4px">The Shopify rollup did not load</div><div style="font-size:12px;color:var(--muted)">shopify_articles: ${_ptnEsc(_ptnShopifyFailed)}. If that says <em>missing or insufficient permissions</em>, republish <code>firestore.rules</code>.</div><button class="btn-sm" style="margin-top:10px" onclick="window.ptnRetryLoad()">Retry</button></div>`;
+  if(!shopifyArticles||!Object.keys(shopifyArticles).length)return head+`<div class="empty" id="ptn-rec-none">No Shopify rollup yet. The catalog sync writes <code>shopify_articles</code> daily at 9am PKT; run it now at <code>/.netlify/functions/shopify-catalog-sync</code>, then Retry. <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`;
+  const r=_ptnReconcile();
+  const open=r.unkeyed.filter(u=>!u.linked);
+  const tabs=[
+    ['unknown','Codes not in registry',r.unknownCodes.length],
+    ['names','Name mismatches',r.nameMismatch.length],
+    ['unkeyed','No usable SKU',open.length],
+    ['absent','Not on Shopify',r.notOnShopify.length],
+    ['multi','Two codes, one product',r.multiCode.length],
+    ['fix','Fix in Shopify',r.fixShopify.length]
+  ];
+  if(!tabs.some(t=>t[0]===_ptnRecTab))_ptnRecTab='unknown';
+  const tabHTML=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${tabs.map(([k,l,n])=>`<button class="btn-sm" style="${_ptnRecTab===k?'background:var(--dark);color:var(--on-dark);border-color:var(--dark)':''}" onclick="window.ptnRecTab('${k}')">${l} <b>${n}</b></button>`).join('')}</div>`;
+  const summary=`<div style="font-size:12px;color:var(--muted);margin-bottom:12px">${r.ok} code${r.ok===1?'':'s'} agree on both sides · ${_ptnSyncLineHTML().replace(/<div[^>]*>|<\/div>/g,'')}</div>`;
+  const can=_canManagePatterns();
+  let body='';
+  if(_ptnRecTab==='unknown'){
+    body=r.unknownCodes.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:10px 12px">Code</th><th style="padding:10px 12px">Shopify title</th><th style="padding:10px 12px">Status</th><th style="padding:10px 12px">Category</th><th></th></tr></thead><tbody>${r.unknownCodes.map(u=>`<tr class="ptn-rec-unknown" data-code="${_ptnEsc(u.code)}" style="border-top:1px solid var(--border)"><td style="padding:9px 12px;font-weight:700">${_ptnEsc(u.code)}</td><td style="padding:9px 12px">${_ptnEsc(u.title)}</td><td style="padding:9px 12px">${_ptnEsc(u.status)}</td><td style="padding:9px 12px;color:var(--muted)">${u.cat?_ptnEsc(u.cat.label):'<span style="color:var(--accent-urgent)">unknown prefix</span>'}</td><td style="padding:9px 12px;text-align:right">${can&&u.cat?`<button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnAddFromShopify('${_ptnEsc(u.code)}')">Add to registry</button>`:''}</td></tr>`).join('')}</tbody></table></div>
+    <div style="font-size:12px;color:var(--muted);margin-top:8px">A code Shopify uses that the TAC list never recorded. Adding it takes the code exactly as Shopify has it, the product title as the name, and moves that category's counter past it.</div>`
+    :'<div class="empty">Every code on Shopify is in the registry.</div>';
+  }else if(_ptnRecTab==='names'){
+    body=r.nameMismatch.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:10px 12px">Code</th><th style="padding:10px 12px">TAC name</th><th style="padding:10px 12px">Shopify title</th><th style="padding:10px 12px">Match</th><th></th></tr></thead><tbody>${r.nameMismatch.map(u=>`<tr class="ptn-rec-name" data-code="${_ptnEsc(u.code)}" style="border-top:1px solid var(--border)"><td style="padding:9px 12px;font-weight:700">${_ptnEsc(u.code)}</td><td style="padding:9px 12px">${_ptnEsc(u.tac)}</td><td style="padding:9px 12px">${_ptnEsc(u.shopify)}</td><td style="padding:9px 12px;white-space:nowrap;color:${u.sim<_PTN_SIM_SAME?'var(--accent-urgent)':'var(--muted)'}">${Math.round(u.sim*100)}%${u.sim<_PTN_SIM_SAME?' · check':''}</td><td style="padding:9px 12px;text-align:right;white-space:nowrap">${can?`<button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnUseShopifyName('${_ptnEsc(u.code)}')">Use Shopify name</button> <button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnKeepName('${_ptnEsc(u.code)}')">Keep TAC name</button>`:''}</td></tr>`).join('')}</tbody></table></div>
+    <div style="font-size:12px;color:var(--muted);margin-top:8px">Same code, different name. A low match usually means a renamed colourway (Heather Grey → Arctyc White) or two codes typed the wrong way round (the Jorts). "Keep" records that you looked.</div>`
+    :'<div class="empty">Every shared code has the same name on both sides.</div>';
+  }else if(_ptnRecTab==='unkeyed'){
+    body=open.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:10px 12px">Shopify product</th><th style="padding:10px 12px">Why</th><th style="padding:10px 12px">Candidate in registry</th><th></th></tr></thead><tbody>${open.map(u=>`<tr class="ptn-rec-unkeyed" data-pid="${_ptnEsc(u.productId)}" style="border-top:1px solid var(--border)"><td style="padding:9px 12px"><b>${_ptnEsc(u.title)}</b><div style="font-size:11px;color:var(--muted)">${_ptnEsc(u.status)}</div></td><td style="padding:9px 12px;white-space:nowrap">${u.reason==='foreign_sku'?'SKU <code>'+_ptnEsc(u.sku)+'</code> is not a code':'no SKU'}</td><td style="padding:9px 12px">${u.match?`<b>${_ptnEsc(u.match.code)}</b> ${_ptnEsc(u.match.name)} <span style="color:var(--muted);font-size:11px">${u.match.kind==='exact'?'exact title match':Math.round(u.match.sim*100)+'% similar'}</span>`:'<span style="color:var(--muted)">none — needs a new code</span>'}</td><td style="padding:9px 12px;text-align:right;white-space:nowrap">${can?(u.match?`<button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnLinkProduct('${_ptnEsc(u.productId)}','${_ptnEsc(u.match.code)}')">Link to ${_ptnEsc(u.match.code)}</button> `:'')+`<button class="btn-sm" onclick="window.ptnMintForProduct('${_ptnEsc(u.productId)}')">Mint a code</button>`:''}</td></tr>`).join('')}</tbody></table></div>
+    <div style="font-size:12px;color:var(--muted);margin-top:8px">Products the store cannot key to an article. Linking records which code the product IS; the SKU itself has to be typed into Shopify by hand — see "Fix in Shopify" once linked.</div>`
+    :'<div class="empty">Every Shopify product carries a usable SKU.</div>';
+  }else if(_ptnRecTab==='absent'){
+    body=r.notOnShopify.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:10px 12px">Code</th><th style="padding:10px 12px">TAC name</th><th style="padding:10px 12px"></th><th></th></tr></thead><tbody>${r.notOnShopify.map(u=>`<tr class="ptn-rec-absent" data-code="${_ptnEsc(u.code)}" style="border-top:1px solid var(--border)"><td style="padding:9px 12px;font-weight:700">${_ptnEsc(u.code)}</td><td style="padding:9px 12px">${_ptnEsc(u.name)}</td><td style="padding:9px 12px;color:var(--muted);font-size:12px">${u.linked?'linked to a product with no SKU':''}</td><td style="padding:9px 12px;text-align:right">${can&&!u.linked?`<button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnRetireQuick('${_ptnEsc(u.code)}')">Retire</button>`:''}</td></tr>`).join('')}</tbody></table></div>
+    <div style="font-size:12px;color:var(--muted);margin-top:8px">GROOVY codes with no Shopify product at any status (active, draft or archived). Usually discontinued before the store existed, or a product whose SKU is empty — check "No usable SKU" first. Retiring hides a code; it never deletes one.</div>`
+    :'<div class="empty">Every GROOVY code in the registry is on Shopify.</div>';
+  }else if(_ptnRecTab==='multi'){
+    body=r.multiCode.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:10px 12px">Shopify product</th><th style="padding:10px 12px">Codes</th></tr></thead><tbody>${r.multiCode.map(u=>`<tr style="border-top:1px solid var(--border)"><td style="padding:9px 12px">${_ptnEsc(u.title)}</td><td style="padding:9px 12px;font-weight:700">${u.codes.map(_ptnEsc).join(' · ')}</td></tr>`).join('')}</tbody></table></div>
+    <div style="font-size:12px;color:var(--muted);margin-top:8px">Two colourways merged into one Shopify product (Chicago Bulls: GP060 black, GP061 white). Legitimate — recorded so nobody assumes one product is one article.</div>`
+    :'<div class="empty">No product carries more than one code.</div>';
+  }else if(_ptnRecTab==='fix'){
+    body=r.fixShopify.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:10px 12px">Shopify product</th><th style="padding:10px 12px">Set each variant's SKU to</th></tr></thead><tbody>${r.fixShopify.map(u=>`<tr class="ptn-rec-fix" style="border-top:1px solid var(--border)"><td style="padding:9px 12px">${_ptnEsc(u.title)}</td><td style="padding:9px 12px;font-weight:700"><code>${_ptnEsc(u.code)}-&lt;size&gt;</code> <span style="color:var(--muted);font-weight:400;font-size:12px">(e.g. ${_ptnEsc(u.code)}-M or ${_ptnEsc(u.code)}-30)</span></td></tr>`).join('')}</tbody></table></div>
+    <div style="font-size:12px;color:var(--muted);margin-top:8px">Linked here, still wrong on Shopify. Once the SKU is typed in there, the next catalog sync keys the product and this row disappears on its own.</div>`
+    :'<div class="empty">Nothing waiting on a Shopify edit.</div>';
+  }
+  return head+summary+tabHTML+body;
+}
+
+// ── Reconcile actions — every one writes to `articles`, none to Shopify ──
+window.ptnRecTab=function(k){_ptnRecTab=k;_ptnRecRepaint();};
+window.ptnAddFromShopify=async function(code){
+  if(!_canManagePatterns()||_ptnBusy)return;
+  const sa=shopifyArticles&&shopifyArticles[code];if(!sa){showToast('Not in the Shopify rollup.',true);return;}
+  const p=_ptnParseCode(code);const cat=p&&_ptnCategory(p.prefix);
+  if(!cat){showToast('No TAC category for prefix '+(p?p.prefix:code)+' — add the category first.',true);return;}
+  const name=(sa.product_titles||[])[0]||code;
+  _ptnBusy=true;_ptnRecRepaint();
+  try{
+    await _ptnCreateArticlesTx(cat,{name,explicitNum:p.num,codes:[code],fields:{source:'assigned_from_reconcile',shopifyLink:_ptnLinkFields({productId:(sa.product_ids||[])[0]||'',title:name,sku:code,reason:'code_on_shopify'})}});
+    showToast('Added '+code+' — '+name);
+    _ptnLog('Article Added From Shopify',code+' — '+name);
+  }catch(e){console.error('[patterns] add-from-shopify failed',e);showToast('Could not add: '+(e.message||e),true);}
+  _ptnBusy=false;_ptnRecRepaint();
+};
+async function _ptnUpdateArticle(code,patch,toastMsg,logAction,logDetail){
+  if(!_canManagePatterns()||_ptnBusy)return false;
+  const a=tacArticles.find(x=>x.code===code);if(!a){showToast(code+' is not in the registry.',true);return false;}
+  const now=new Date().toISOString();
+  const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  _ptnBusy=true;
+  try{
+    const data=Object.assign({},patch,{updatedAt:now,updatedBy:by});
+    await updateDoc(doc(db,'articles',code),data);
+    Object.assign(a,data);
+    if(toastMsg)showToast(toastMsg);
+    if(logAction)_ptnLog(logAction,logDetail||code);
+    _ptnBusy=false;return true;
+  }catch(e){console.error('[patterns] update failed',e);showToast('Save failed: '+(e.message||e),true);_ptnBusy=false;return false;}
+}
+window.ptnUseShopifyName=async function(code){
+  const sa=shopifyArticles&&shopifyArticles[code];const title=sa&&(sa.product_titles||[])[0];
+  if(!title){showToast('No Shopify title for '+code,true);return;}
+  const a=tacArticles.find(x=>x.code===code);
+  await _ptnUpdateArticle(code,{name:title,nameReviewedAt:new Date().toISOString()},'Renamed '+code+' to the Shopify title.','Article Renamed',code+': "'+((a&&a.name)||'')+'" → "'+title+'"');
+  _ptnRecRepaint();
+};
+window.ptnKeepName=async function(code){
+  await _ptnUpdateArticle(code,{nameReviewedAt:new Date().toISOString()},'Kept the TAC name for '+code+'.');
+  _ptnRecRepaint();
+};
+window.ptnRetireQuick=async function(code){
+  if(typeof confirm==='function'&&!confirm('Retire '+code+'? It stays in the registry, hidden by default. Nothing is deleted.'))return;
+  await _ptnUpdateArticle(code,{active:false},'Retired '+code+'.','Article Retired',code);
+  _ptnRecRepaint();
+};
+window.ptnLinkProduct=async function(productId,code){
+  const meta=(_ptnRollupMeta&&_ptnRollupMeta.unkeyed_products)||[];
+  const pd=meta.find(x=>String(x.product_id)===String(productId));
+  if(!pd){showToast('That product is no longer in the rollup.',true);return;}
+  const ok=await _ptnUpdateArticle(code,{shopifyLink:_ptnLinkFields({productId,title:pd.title||'',sku:pd.sku_sample||'',reason:pd.reason||'no_sku'})},
+    'Linked "'+(pd.title||'')+'" to '+code+'. Now set its SKUs on Shopify to '+code+'-<size>.','Article Linked To Shopify Product',code+' ← '+(pd.title||productId));
+  if(ok)_ptnRecTab='fix';
+  _ptnRecRepaint();
+};
+window.ptnMintForProduct=function(productId){
+  const meta=(_ptnRollupMeta&&_ptnRollupMeta.unkeyed_products)||[];
+  const pd=meta.find(x=>String(x.product_id)===String(productId));
+  if(!pd){showToast('That product is no longer in the rollup.',true);return;}
+  _ptnPendingLink={productId:String(productId),title:pd.title||'',sku:pd.sku_sample||'',reason:pd.reason||'no_sku'};
+  _ptnMintOpen=true;_ptnFilter.brand='groovy';
+  window.showPage('pattern-hub');
+  const ni=document.getElementById('ptn-mint-name');if(ni)ni.value=pd.title||'';
+  showToast('Pick the category, then Mint — the new code will be linked to "'+(pd.title||'')+'".');
+};
+
+// ── TAC export — the document is an OUTPUT of the registry now ────────────
+function _ptnExportRows(){
+  const order=c=>{const p=_ptnParseCode(c);return[p?_TAC_CATEGORIES.findIndex(x=>x.prefix===p.prefix):999,p?p.num:0,c];};
+  const rows=tacArticles.slice().sort((a,b)=>{const x=order(a.code),y=order(b.code);return x[0]-y[0]||x[1]-y[1]||(x[2]<y[2]?-1:x[2]>y[2]?1:0);});
+  return rows.map(a=>{
+    const cat=_ptnCategory(a.category);
+    const sa=shopifyArticles&&shopifyArticles[a.code];
+    return[_TAC_BRANDS[a.brand]||a.brand||'',cat?cat.prefix+' · '+cat.label:(a.category||''),a.code,a.name||'',a.needsPattern?'Yes':'No',a.active===false?'Retired':'Active',shopifyArticles?(sa?(sa.status||''):'—'):''];
+  });
+}
+const _PTN_EXPORT_HEADER=['Brand','Category','Article Code','Article Name','Needs pattern','Status','Shopify'];
+window.ptnExportTac=function(kind){
+  if(!tacArticles.length){showToast('Nothing to export — the registry is empty.',true);return;}
+  const date=new Date().toISOString().slice(0,10);
+  const rows=_ptnExportRows();
+  if(kind==='xlsx'){
+    if(typeof XLSX==='undefined'){showToast('The spreadsheet library did not load — refresh and try again.',true);return;}
+    const ws=XLSX.utils.aoa_to_sheet([_PTN_EXPORT_HEADER].concat(rows));
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'TAC List');
+    XLSX.writeFile(wb,'TAC-List-'+date+'.xlsx');
+  }else{
+    if(typeof window.printDocument!=='function'){showToast('The print engine did not load — refresh and try again.',true);return;}
+    let body='',lastCat='';
+    rows.forEach(r=>{if(r[1]!==lastCat){body+=(body?'\n':'')+r[0]+' — '+r[1]+'\n';lastCat=r[1];}body+=r[2]+'   '+r[3]+(r[4]==='No'?'   (no pattern)':'')+(r[5]==='Retired'?'   [retired]':'')+'\n';});
+    window.printDocument({type:'generic',filename:'TAC-List-'+date+'.pdf',data:{documentNumber:'TAC-'+date,title:'TAC List / Article Code Document',subtitle:'Exported from Groovy Operations · '+date+' · '+rows.length+' articles',bodyHtml:body,urduLevel:'none'}});
+  }
+  showToast('Exported the TAC list ('+rows.length+' articles) as '+(kind==='xlsx'?'Excel':'PDF')+'.');
+  _ptnLog('TAC List Exported',kind+' · '+rows.length+' articles');
+};
+
+// ── Router — every pattern-* page comes through here ──────────────────────
+function ptnRenderPage(id){
+  const m=document.getElementById('main-content');if(!m)return;
+  if(!_canSeePatternHub()){m.innerHTML='<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar and Mustafa only.</div>';return;}
+  const paint=()=>{
+    if(currentPage!==id)return;
+    if(id==='pattern-hub')m.innerHTML=renderPatternHub();
+    else if(id==='pattern-reconcile')m.innerHTML=renderPatternReconcile();
+    else m.innerHTML='<div class="empty">Unknown Pattern Hub page.</div>';
+  };
+  const need=[];
+  if(!patternsLoaded)need.push(loadPatternsData());
+  if(!_ptnShopifyLoaded)need.push(loadPatternsShopify());
+  if(need.length){m.innerHTML=gvSkeleton(6);Promise.all(need).then(paint);}else paint();
+}
