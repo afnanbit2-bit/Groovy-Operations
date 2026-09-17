@@ -184,8 +184,8 @@ function renderInventory(){
   const catErr=_storeLoadFailed('store_categories');
   if(catErr){
     h+=`<div class="card" style="border-left:3px solid var(--amber);margin-bottom:14px">
-      <div style="font-size:12px;font-weight:700;margin-bottom:4px">Custom categories could not be loaded</div>
-      <div style="font-size:11px;color:var(--muted)">Only the built-in categories are listed below. Any category added in-app is missing from the filters until this loads. — ${_ilEsc((catErr&&catErr.message)||'unknown error')}</div>
+      <div style="font-size:13px;font-weight:700;margin-bottom:4px">Custom categories could not be loaded</div>
+      <div style="font-size:12px;color:var(--muted)">Only the built-in categories are listed below. Any category added in-app is missing from the filters until this loads. — ${_ilEsc((catErr&&catErr.message)||'unknown error')}</div>
     </div>`;
   }
   if(lowStock.length){
@@ -194,7 +194,7 @@ function renderInventory(){
       ${lowStock.map(i=>`<div class="info-row"><span><strong>${i.code}</strong> — ${i.name}</span><span class="badge badge-${getStatus(i)}">${getBalance(i)} ${i.unit}</span></div>`).join('')}
     </div>`;
   }
-  const chip=(key,label,count,active)=>`<button onclick="window.invSetCat('${key}')" style="padding:6px 12px;border:1px solid ${active?'var(--dark)':'var(--border)'};border-radius:999px;background:${active?'var(--dark)':'var(--surface)'};color:${active?'var(--on-dark)':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit;font-weight:${active?'600':'500'}">${label}${count!=null?` <span style="opacity:.7;font-weight:400">${count}</span>`:''}</button>`;
+  const chip=(key,label,count,active)=>`<button onclick="window.invSetCat('${key}')" style="padding:6px 12px;border:1px solid ${active?'var(--dark)':'var(--border)'};border-radius:999px;background:${active?'var(--dark)':'var(--surface)'};color:${active?'var(--on-dark)':'var(--text)'};font-size:13px;cursor:pointer;font-family:inherit;font-weight:${active?'600':'500'}">${label}${count!=null?` <span style="opacity:.7;font-weight:400">${count}</span>`:''}</button>`;
   let chipsHTML=chip('all','All',allItems.length,_invFilterCat==='all');
   for(const c of cats){
     if(!catCounts[c])continue;
@@ -204,8 +204,8 @@ function renderInventory(){
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <div style="display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0">${chipsHTML}</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <input id="inv-search" placeholder="Search code or name…" value="${_invSearchQ.replace(/"/g,'&quot;')}" oninput="window.invSetSearch(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;outline:none;min-width:180px">
-        <select onchange="window.invSetSort(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;outline:none;background:var(--surface)">
+        <input id="inv-search" placeholder="Search code or name…" value="${_invSearchQ.replace(/"/g,'&quot;')}" oninput="window.invSetSearch(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;min-width:180px">
+        <select onchange="window.invSetSort(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;background:var(--surface)">
           ${[['category','Sort: by category'],['az','A → Z'],['za','Z → A'],['low','Stock low → high'],['recent','Recently added']].map(([v,l])=>`<option value="${v}"${_invSort===v?' selected':''}>${l}</option>`).join('')}
         </select>
       </div>
@@ -226,12 +226,12 @@ function renderInventory(){
         <div class="item-name">${item.name}</div>
       </div>
     </div>
-    <div class="item-bal ${s}">${b} <span style="font-size:12px;font-weight:400">${item.unit}</span></div>
+    <div class="item-bal ${s}">${b} <span style="font-size:13px;font-weight:400">${item.unit}</span></div>
     ${item.sizeSpecific?`<div class="item-sizes">${formatSizes(item)}</div>`:''}
     <div style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
       <span class="badge badge-${s}">${s==='green'?'In Stock':s==='amber'?'Low Stock':'Out of Stock'}</span>
-      <button onclick="window.editStoreItem('${item.code}')" style="padding:3px 8px;background:none;border:1px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--muted)" onmouseenter="this.style.borderColor='var(--dark)'" onmouseleave="this.style.borderColor='var(--border)'">Edit</button>
-      <button onclick="window.deleteStoreItem('${item.code}')" class="btn-danger" style="padding:3px 8px;font-size:11px">Delete</button>
+      <button onclick="window.editStoreItem('${item.code}')" style="padding:3px 8px;background:none;border:1px solid var(--border);border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--muted)" onmouseenter="this.style.borderColor='var(--dark)'" onmouseleave="this.style.borderColor='var(--border)'">Edit</button>
+      <button onclick="window.deleteStoreItem('${item.code}')" class="btn-danger" style="padding:3px 8px;font-size:12px">Delete</button>
     </div>
   </div>`;};
   if(!list.length){
@@ -258,7 +258,7 @@ window._invImgPreview=function(url,code){
   lb.id='_inv-img-lb';
   lb.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:2400;display:flex;align-items:center;justify-content:center;padding:24px;cursor:zoom-out';
   lb.onclick=()=>lb.remove();
-  lb.innerHTML=`<div style="max-width:90vw;max-height:85vh;display:flex;flex-direction:column;align-items:center;gap:8px"><img src="${url}" style="max-width:100%;max-height:80vh;object-fit:contain;border-radius:8px;background:var(--surface)"><div style="color:var(--on-dark);font-size:12px">${code||''}</div></div>`;
+  lb.innerHTML=`<div style="max-width:90vw;max-height:85vh;display:flex;flex-direction:column;align-items:center;gap:8px"><img src="${url}" style="max-width:100%;max-height:80vh;object-fit:contain;border-radius:8px;background:var(--surface)"><div style="color:var(--on-dark);font-size:13px">${code||''}</div></div>`;
   document.body.appendChild(lb);
 };
 window.invSetCat=function(c){_invFilterCat=c;const m=document.getElementById('main-content');if(m)m.innerHTML=renderInventory();};
@@ -284,7 +284,7 @@ function renderStoreReceive(){
       <div class="field"><label>Date</label><input id="rcv-date" type="date" value="${todayStr()}"></div>
       <div class="field"><label>Received By</label><input value="${session.name}" readonly></div>
       <div class="field" style="grid-column:1/-1"><label>Notes</label>
-        <textarea id="rcv-notes" rows="2" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);font-family:inherit;outline:none;width:100%;resize:vertical" placeholder="Optional"></textarea>
+        <textarea id="rcv-notes" rows="2" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface-2);font-family:inherit;outline:none;width:100%;resize:vertical" placeholder="Optional"></textarea>
       </div>
     </div>
     <div id="rcv-new-wrap" style="margin-top:12px"></div>
@@ -306,14 +306,14 @@ function _rcvUnitOptions(selected){
 
 function _renderRcvNewForm(){
   return`<div style="background:var(--accent-success-soft);border:1px solid var(--accent-success);border-radius:10px;padding:14px;margin-bottom:6px">
-    <div style="font-weight:700;font-size:13px;color:var(--accent-success);margin-bottom:10px">New item — will be added to Inventory</div>
+    <div style="font-weight:700;font-size:14px;color:var(--accent-success);margin-bottom:10px">New item — will be added to Inventory</div>
     <div class="form-grid">
       <div class="field"><label>Category *</label>
         <select id="rcvn-cat" onchange="window.onRcvNewCatChange()">${_rcvCatOptions('')}</select>
       </div>
       <div class="field"><label>Code *</label>
         <input id="rcvn-code" placeholder="Pick category first" style="text-transform:uppercase">
-        <div style="font-size:10px;color:var(--muted);margin-top:3px">Auto-suggested from category. Edit if needed.</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">Auto-suggested from category. Edit if needed.</div>
       </div>
       <div class="field" style="grid-column:1/-1"><label>Item Name *</label>
         <input id="rcvn-name" placeholder="e.g. New Patch Label Black">
@@ -321,8 +321,8 @@ function _renderRcvNewForm(){
       <div class="field" style="grid-column:1/-1">
         <label>Image <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
         <div style="display:flex;gap:10px;align-items:center">
-          <div id="rcvn-img-preview" style="width:54px;height:54px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:10px">No image</div>
-          <input type="file" id="rcvn-img-file" accept="image/*" style="font-size:11px;font-family:inherit" onchange="window._rcvOnImgPick(this)">
+          <div id="rcvn-img-preview" style="width:54px;height:54px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px">No image</div>
+          <input type="file" id="rcvn-img-file" accept="image/*" style="font-size:12px;font-family:inherit" onchange="window._rcvOnImgPick(this)">
           <input type="hidden" id="rcvn-img-url" value="">
           <input type="hidden" id="rcvn-img-status" value="ready">
         </div>
@@ -335,11 +335,11 @@ function _renderRcvNewForm(){
       </div>
       <div class="field"><label>Low-stock threshold</label>
         <input id="rcvn-thresh" type="number" min="0" value="200">
-        <div style="font-size:10px;color:var(--muted);margin-top:3px">Default 200 — change anytime in Inventory.</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">Default 200 — change anytime in Inventory.</div>
       </div>
       <div class="field" style="display:flex;align-items:center;gap:8px;padding-top:22px">
         <input type="checkbox" id="rcvn-sized" onchange="window.onRcvSizedToggle()" style="width:auto;margin:0">
-        <label for="rcvn-sized" style="margin:0;cursor:pointer;font-size:13px">Size-specific item</label>
+        <label for="rcvn-sized" style="margin:0;cursor:pointer;font-size:14px">Size-specific item</label>
       </div>
       <div class="field" id="rcvn-sizes-wrap" style="grid-column:1/-1;display:none"><label>Sizes (comma-separated, e.g. XS,S,M,L,XL)</label>
         <input id="rcvn-sizes-list" placeholder="XS,S,M,L,XL" oninput="window.onRcvSizedListChange()">
@@ -547,8 +547,8 @@ window.openNewCategoryDialog=function(onCreated){
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2200;display:flex;align-items:center;justify-content:center;padding:16px';
   modal.innerHTML=`<div style="background:var(--surface);border-radius:14px;width:100%;max-width:380px;box-shadow:0 12px 48px rgba(0,0,0,.25)">
     <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-      <span style="font-weight:700;font-size:15px">New category</span>
-      <button onclick="document.getElementById('_cat-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
+      <span style="font-weight:700;font-size:16px">New category</span>
+      <button onclick="document.getElementById('_cat-modal').remove()" style="background:none;border:none;font-size:23px;cursor:pointer;color:var(--muted)">×</button>
     </div>
     <div style="padding:16px;display:grid;gap:10px">
       <div class="field"><label>Display label *</label>
@@ -556,7 +556,7 @@ window.openNewCategoryDialog=function(onCreated){
       </div>
       <div class="field"><label>Code prefix *</label>
         <input id="_cat-prefix" placeholder="e.g. CB" maxlength="6" style="text-transform:uppercase">
-        <div style="font-size:10px;color:var(--muted);margin-top:3px">Used to auto-generate item codes (CB01, CB02…).</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">Used to auto-generate item codes (CB01, CB02…).</div>
       </div>
       <div class="field"><label>Internal key</label>
         <input id="_cat-key" placeholder="auto" disabled style="background:var(--surface-2);color:var(--muted)">
@@ -618,20 +618,20 @@ function _miRowCells(l,idx){
       const av=parseInt(item.sizes[sz])||0;
       const v=(l.sizeQtys&&l.sizeQtys[sz]!=null)?l.sizeQtys[sz]:'';
       return`<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-        <span style="font-size:9px;font-weight:700;color:var(--muted)">${sz}<span style="font-weight:400;color:var(--muted)"> ·${av}</span></span>
-        <input type="number" min="0" value="${v}" placeholder="0" ${av>0?'':'disabled'} style="width:50px;padding:4px;border:1px solid ${av>0?'var(--border)':'#eee'};border-radius:6px;font-size:12px;text-align:center" onchange="window._miChangeSizeQty(${idx},'${sz}',this.value)"></div>`;
+        <span style="font-size:11px;font-weight:700;color:var(--muted)">${sz}<span style="font-weight:400;color:var(--muted)"> ·${av}</span></span>
+        <input type="number" min="0" value="${v}" placeholder="0" ${av>0?'':'disabled'} style="width:50px;padding:4px;border:1px solid ${av>0?'var(--border)':'#eee'};border-radius:6px;font-size:13px;text-align:center" onchange="window._miChangeSizeQty(${idx},'${sz}',this.value)"></div>`;
     }).join('')}</div>`;
   }else{
     const stock=item?getBalance(item):0;
     stockCell=item?`<span style="color:${stock>0?G:R}">${stock}</span>`:'—';
-    qtyCell=`<input type="number" min="1" value="${l.qty!=null?l.qty:''}" placeholder="0" style="width:80px;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:12px" onchange="window._miChangeQty(${idx},this.value)">`;
+    qtyCell=`<input type="number" min="1" value="${l.qty!=null?l.qty:''}" placeholder="0" style="width:80px;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:13px" onchange="window._miChangeQty(${idx},this.value)">`;
   }
   return`<td style="padding:4px;width:28px"><input type="checkbox" class="mi-row-chk" style="cursor:pointer;width:15px;height:15px"></td>
-  <td><select style="width:100%;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:12px" onchange="window._miChangeItem(${idx},this.value)">
+  <td><select style="width:100%;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:13px" onchange="window._miChangeItem(${idx},this.value)">
     <option value="">— select —</option>${opts}</select></td>
-  <td style="text-align:center;font-size:12px">${l.itemCode?stockCell:'—'}</td>
+  <td style="text-align:center;font-size:13px">${l.itemCode?stockCell:'—'}</td>
   <td style="text-align:right">${qtyCell}</td>
-  <td><button onclick="window._miRemoveRow(${idx})" style="background:none;border:none;font-size:18px;color:var(--muted);cursor:pointer;padding:2px 6px">×</button></td>`;
+  <td><button onclick="window._miRemoveRow(${idx})" style="background:none;border:none;font-size:19px;color:var(--muted);cursor:pointer;padding:2px 6px">×</button></td>`;
 }
 function _miLineQty(l){
   if(!l.itemCode)return 0;
@@ -697,19 +697,19 @@ function renderStoreIssue(){
   return`<div class="page-head"><div class="page-title">Issue Stock</div></div>
   ${pirBanner}
   <div class="card">
-    <div class="card-title">Issue against PO <span style="font-size:11px;font-weight:500;color:var(--amber);background:var(--accent-warning-soft);padding:2px 8px;border-radius:10px;margin-left:6px">Work in Progress</span></div>
+    <div class="card-title">Issue against PO <span style="font-size:12px;font-weight:500;color:var(--amber);background:var(--accent-warning-soft);padding:2px 8px;border-radius:10px;margin-left:6px">Work in Progress</span></div>
     <div class="form-grid">
       <div class="field" style="grid-column:1/-1;position:relative"><label>PO Number</label>
         <input id="iss-po" placeholder="Type PO number or pick from list…" autocomplete="off"
           oninput="window.filterPODropMain(this.value)" onfocus="window.filterPODropMain(this.value)" onblur="setTimeout(()=>window.hidePODropMain(),200)">
         <div id="iss-po-drop-main" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:220px;overflow-y:auto;margin-top:3px"></div>
-        <div id="iss-po-status" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
+        <div id="iss-po-status" style="font-size:13px;color:var(--muted);margin-top:4px"></div>
       </div>
     </div>
     <div id="iss-po-body"></div>
   </div>
   <div class="card">
-    <div class="card-title">Manual issue <span style="font-size:11px;font-weight:600;color:var(--text);background:var(--soft);padding:2px 8px;border-radius:10px;margin-left:6px">● Live</span></div>
+    <div class="card-title">Manual issue <span style="font-size:12px;font-weight:600;color:var(--text);background:var(--soft);padding:2px 8px;border-radius:10px;margin-left:6px">● Live</span></div>
     <div class="form-grid">
       <div class="field" style="grid-column:1/-1;position:relative"><label>PO Number *</label>
         <input id="iss-po-ref" placeholder="Type PO number or pick from list…" autocomplete="off"
@@ -722,12 +722,12 @@ function renderStoreIssue(){
       <div class="field"><label>Date</label><input id="iss-date" type="date" value="${todayStr()}"></div>
     </div>
     <div style="margin-top:12px">
-      <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <table style="width:100%;border-collapse:collapse;font-size:14px">
         <thead><tr>
           <th style="padding:6px 4px;border-bottom:2px solid var(--border);width:28px"></th>
-          <th style="text-align:left;padding:6px 4px;border-bottom:2px solid var(--border);font-size:11px;color:var(--muted)">Item</th>
-          <th style="padding:6px 4px;border-bottom:2px solid var(--border);font-size:11px;color:var(--muted);text-align:center">Stock</th>
-          <th style="padding:6px 4px;border-bottom:2px solid var(--border);font-size:11px;color:var(--muted);text-align:center">Qty</th>
+          <th style="text-align:left;padding:6px 4px;border-bottom:2px solid var(--border);font-size:12px;color:var(--muted)">Item</th>
+          <th style="padding:6px 4px;border-bottom:2px solid var(--border);font-size:12px;color:var(--muted);text-align:center">Stock</th>
+          <th style="padding:6px 4px;border-bottom:2px solid var(--border);font-size:12px;color:var(--muted);text-align:center">Qty</th>
           <th style="padding:6px 4px;border-bottom:2px solid var(--border);width:36px"></th>
         </tr></thead>
         <tbody id="mi-tbody">${_miLines.map((l,i)=>`<tr id="mi-row-${i}">${_miRowCells(l,i)}</tr>`).join('')}</tbody>
@@ -746,9 +746,9 @@ function filterPODropMain(val){
   const matches=allActivePOs.filter(p=>normPO(p.id).includes(q)||(p.name||'').toLowerCase().includes(q));
   if(!matches.length||!val){dd.style.display='none';return;}
   dd.style.display='block';
-  dd.innerHTML=matches.slice(0,10).map(p=>`<div onclick="window.selectPOMain('${p.id}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
+  dd.innerHTML=matches.slice(0,10).map(p=>`<div onclick="window.selectPOMain('${p.id}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);font-size:14px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
     <span style="font-weight:700;color:var(--red)">${p.id}</span>
-    <span style="color:var(--muted);margin-left:6px;font-size:12px">${p.name||'—'} · ${p.currentStage||'—'}</span>
+    <span style="color:var(--muted);margin-left:6px;font-size:13px">${p.name||'—'} · ${p.currentStage||'—'}</span>
   </div>`).join('');
 }
 function hidePODropMain(){const dd=document.getElementById('iss-po-drop-main');if(dd)dd.style.display='none';}
@@ -784,8 +784,8 @@ function renderPoIssueBody(po,tpl){
     const bal=getBalance(item);const ok=bal>=needed;
     rows+=`<div class="issue-row">
       <div style="flex:1;min-width:0"><div><strong>${item.code}</strong> — ${item.name}</div>
-        <div style="font-size:11px;color:var(--muted)">Need: ${needed} ${item.unit} · Stock: <span class="${ok?'stock-ok':'stock-low'}">${bal}</span></div></div>
-      <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;flex-shrink:0">
+        <div style="font-size:12px;color:var(--muted)">Need: ${needed} ${item.unit} · Stock: <span class="${ok?'stock-ok':'stock-low'}">${bal}</span></div></div>
+      <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;flex-shrink:0">
         <input type="checkbox" id="iss-chk-${safeId(item.code)}" ${ok?'checked':''} ${ok?'':'disabled'}> Issue</label>
     </div>`;
   }
@@ -830,9 +830,9 @@ function filterPODrop(val){
   const matches=allActivePOs.filter(p=>normPO(p.id).includes(q)||(p.name||'').toLowerCase().includes(q));
   if(!matches.length||!val){dd.style.display='none';return;}
   dd.style.display='block';
-  dd.innerHTML=matches.slice(0,10).map(p=>`<div onclick="window.selectPO('${p.id}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
+  dd.innerHTML=matches.slice(0,10).map(p=>`<div onclick="window.selectPO('${p.id}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);font-size:14px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
     <span style="font-weight:700;color:var(--red)">${p.id}</span>
-    <span style="color:var(--muted);margin-left:6px;font-size:12px">${p.name||'—'} · ${p.currentStage||'—'}</span>
+    <span style="color:var(--muted);margin-left:6px;font-size:13px">${p.name||'—'} · ${p.currentStage||'—'}</span>
   </div>`).join('');
 }
 function hidePODrop(){const dd=document.getElementById('iss-po-drop');if(dd)dd.style.display='none';}
@@ -844,27 +844,27 @@ async function lookupManualPO(raw){
   const el=document.getElementById('iss-po-preview');if(!el)return;
   const q=normPO(raw);if(!q){el.innerHTML='';return;}
   const normalized=raw.trim().toUpperCase().replace(/^PO[\s\-]?0*(\d+)$/,'PO-$1').replace(/^0*(\d+)$/,'PO-$1');
-  el.innerHTML='<span style="font-size:12px;color:var(--muted)">Looking up…</span>';
+  el.innerHTML='<span style="font-size:13px;color:var(--muted)">Looking up…</span>';
   try{
     let po=allActivePOs.find(p=>normPO(p.id)===q||normPO(p.id)===normPO(normalized));
-    if(!po){const matches=await fsQueryWhere('pos','id',normalized,1);if(!matches.length){el.innerHTML='<span style="font-size:12px;color:var(--accent-urgent)">PO not found</span>';return;}po=matches[0];}
+    if(!po){const matches=await fsQueryWhere('pos','id',normalized,1);if(!matches.length){el.innerHTML='<span style="font-size:13px;color:var(--accent-urgent)">PO not found</span>';return;}po=matches[0];}
     const szs=['XS','S','M','L','XL','2XL'];
     const hasCut=po.cutQty&&szs.some(s=>po.cutQty[s]>0);
     const hasSizes=po.sizes&&szs.some(s=>po.sizes[s]>0);
     const stageLabel=po.currentStage?po.currentStage.charAt(0).toUpperCase()+po.currentStage.slice(1):'—';
     el.innerHTML=`<div style="background:var(--accent-success-soft);border:1px solid var(--accent-success);border-radius:10px;padding:12px 14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:4px">
-        <span style="font-weight:700;color:var(--green);font-size:13px">✓ ${po.name||po.id}</span>
-        <span style="font-size:11px;background:var(--soft);color:var(--text);padding:2px 8px;border-radius:10px;font-weight:600">${stageLabel}</span>
+        <span style="font-weight:700;color:var(--green);font-size:14px">✓ ${po.name||po.id}</span>
+        <span style="font-size:12px;background:var(--soft);color:var(--text);padding:2px 8px;border-radius:10px;font-weight:600">${stageLabel}</span>
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${po.qty||0} pcs total · ${po.fabric||'—'}</div>
-      ${hasCut?`<div style="margin-bottom:6px"><div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Cut Qty</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${szs.filter(s=>po.cutQty[s]>0).map(s=>`<div style="text-align:center;min-width:38px;padding:5px 8px;background:var(--surface);border-radius:6px;border:1px solid var(--accent-success)"><div style="font-size:9px;color:var(--muted)">${s}</div><div style="font-size:14px;font-weight:700;color:var(--dark)">${po.cutQty[s]}</div></div>`).join('')}</div></div>`:''}
-      ${hasSizes&&!hasCut?`<div><div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Order Qty (not yet cut)</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${szs.filter(s=>po.sizes[s]>0).map(s=>`<div style="text-align:center;min-width:38px;padding:5px 8px;background:var(--surface);border-radius:6px;border:1px solid #d1d5db"><div style="font-size:9px;color:var(--muted)">${s}</div><div style="font-size:14px;font-weight:700;color:var(--muted)">${po.sizes[s]}</div></div>`).join('')}</div></div>`:''}
-      ${!hasCut&&!hasSizes?`<div style="font-size:12px;color:var(--muted)">No size/cut data available yet.</div>`:''}
+      <div style="font-size:13px;color:var(--muted);margin-bottom:10px">${po.qty||0} pcs total · ${po.fabric||'—'}</div>
+      ${hasCut?`<div style="margin-bottom:6px"><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Cut Qty</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${szs.filter(s=>po.cutQty[s]>0).map(s=>`<div style="text-align:center;min-width:38px;padding:5px 8px;background:var(--surface);border-radius:6px;border:1px solid var(--accent-success)"><div style="font-size:11px;color:var(--muted)">${s}</div><div style="font-size:15px;font-weight:700;color:var(--dark)">${po.cutQty[s]}</div></div>`).join('')}</div></div>`:''}
+      ${hasSizes&&!hasCut?`<div><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Order Qty (not yet cut)</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${szs.filter(s=>po.sizes[s]>0).map(s=>`<div style="text-align:center;min-width:38px;padding:5px 8px;background:var(--surface);border-radius:6px;border:1px solid #d1d5db"><div style="font-size:11px;color:var(--muted)">${s}</div><div style="font-size:15px;font-weight:700;color:var(--muted)">${po.sizes[s]}</div></div>`).join('')}</div></div>`:''}
+      ${!hasCut&&!hasSizes?`<div style="font-size:13px;color:var(--muted)">No size/cut data available yet.</div>`:''}
     </div>`;
-  }catch(e){el.innerHTML=`<span style="font-size:12px;color:var(--accent-urgent)">Error: ${e.message}</span>`;}
+  }catch(e){el.innerHTML=`<span style="font-size:13px;color:var(--accent-urgent)">Error: ${e.message}</span>`;}
 }
 async function submitIssueManual(){
   const poRefRaw=(document.getElementById('iss-po-ref')?.value||'').trim().toUpperCase();
@@ -945,7 +945,7 @@ function renderStoreTemplates(){
   if(_tplPage>maxPages)_tplPage=maxPages;
   const slice=allTemplates.slice((_tplPage-1)*TPL_PER,_tplPage*TPL_PER);
   const editLabel=_tplEditId?'Update Template':'Save Template';
-  const editBanner=_tplEditId?`<div style="font-size:12px;background:var(--accent-warning-soft);color:var(--accent-warning);padding:6px 10px;border-radius:6px;margin-bottom:10px;font-weight:600">✏️ Editing template — make changes then click Update Template. <button onclick="window.cancelTplEdit()" style="background:none;border:none;color:var(--accent-warning);cursor:pointer;font-size:12px;text-decoration:underline;font-family:inherit">Cancel</button></div>`:'';
+  const editBanner=_tplEditId?`<div style="font-size:13px;background:var(--accent-warning-soft);color:var(--accent-warning);padding:6px 10px;border-radius:6px;margin-bottom:10px;font-weight:600">✏️ Editing template — make changes then click Update Template. <button onclick="window.cancelTplEdit()" style="background:none;border:none;color:var(--accent-warning);cursor:pointer;font-size:13px;text-decoration:underline;font-family:inherit">Cancel</button></div>`:'';
   return`<div class="page-head"><div class="page-title">Trim Templates</div><div class="page-sub">Auto-deducts trims from store when a PO is created</div></div>
   <div class="card" id="tpl-form-card">
     <div class="card-title">Create template</div>
@@ -955,11 +955,11 @@ function renderStoreTemplates(){
         <input id="tpl-prod-search" placeholder="Type product code or name e.g. GH001 or Black Hoodie…" autocomplete="off"
           onblur="setTimeout(()=>{const d=document.getElementById('tpl-prod-dd');if(d)d.style.display='none'},300)">
         <div id="tpl-prod-dd" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.13);max-height:220px;overflow-y:auto;margin-top:3px"></div>
-        <div id="tpl-prod-sel" style="margin-top:6px;font-size:12px;color:var(--green);font-weight:600"></div>
+        <div id="tpl-prod-sel" style="margin-top:6px;font-size:13px;color:var(--green);font-weight:600"></div>
       </div>
     </div>
     <div style="margin-top:12px">
-      <div class="section-title" style="margin-bottom:8px">Trim requirements <span style="font-size:11px;font-weight:400;color:var(--muted)">(qty per piece × PO qty = auto-issued)</span></div>
+      <div class="section-title" style="margin-bottom:8px">Trim requirements <span style="font-size:12px;font-weight:400;color:var(--muted)">(qty per piece × PO qty = auto-issued)</span></div>
       <div id="tpl-rows"></div>
       <button class="btn-outline" style="width:100%;margin-top:6px" onclick="window.addTplRow()">+ Add trim item</button>
     </div>
@@ -971,25 +971,25 @@ function renderStoreTemplates(){
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-            <span style="font-weight:700;color:var(--dark);font-size:13px">${t.productCode||'—'}</span>
-            <span style="font-size:12px;color:var(--muted)">${t.productName||t.productType||'—'}</span>
+            <span style="font-weight:700;color:var(--dark);font-size:14px">${t.productCode||'—'}</span>
+            <span style="font-size:13px;color:var(--muted)">${t.productName||t.productType||'—'}</span>
           </div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px;display:flex;flex-wrap:wrap;gap:6px">
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;display:flex;flex-wrap:wrap;gap:6px">
             ${(t.items||[]).map(i=>`<span style="background:var(--soft);padding:2px 8px;border-radius:8px">${i.itemCode} × ${i.qtyPerPiece||i.qtyPerUnit||1}/pc${i.pricePerUnit?` @ Rs.${i.pricePerUnit}`:''}</span>`).join('')||'No items'}
           </div>
-          ${(()=>{const tot=(t.items||[]).reduce((s,i)=>s+(i.pricePerUnit||0)*(i.qtyPerPiece||1),0);return tot?`<div style="font-size:11px;color:var(--dark);font-weight:600;margin-top:4px">Cost/pc: Rs.${tot.toFixed(2)}</div>`:''})()}
-          <div style="font-size:10px;color:var(--green);margin-top:4px">⚡ Auto-deducts on PO creation</div>
+          ${(()=>{const tot=(t.items||[]).reduce((s,i)=>s+(i.pricePerUnit||0)*(i.qtyPerPiece||1),0);return tot?`<div style="font-size:12px;color:var(--dark);font-weight:600;margin-top:4px">Cost/pc: Rs.${tot.toFixed(2)}</div>`:''})()}
+          <div style="font-size:11px;color:var(--green);margin-top:4px">⚡ Auto-deducts on PO creation</div>
         </div>
         ${canEdit?`<div style="display:flex;gap:6px;flex-shrink:0">
-          <button class="btn-outline" style="font-size:12px;padding:5px 10px" onclick="window.editTemplate('${t._id}')">Edit</button>
-          <button class="btn-danger" style="font-size:12px;padding:5px 10px" onclick="window.deleteTemplate('${t._id}')">Delete</button>
+          <button class="btn-outline" style="font-size:13px;padding:5px 10px" onclick="window.editTemplate('${t._id}')">Edit</button>
+          <button class="btn-danger" style="font-size:13px;padding:5px 10px" onclick="window.deleteTemplate('${t._id}')">Delete</button>
         </div>`:''}
       </div>
     </div>`).join('')}
     ${maxPages>1?`<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding-top:12px;border-top:1px solid var(--border);margin-top:4px">
-      <button onclick="window.tplPagePrev()" ${_tplPage===1?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:12px;font-family:inherit">← Prev</button>
-      <span style="font-size:12px;color:var(--muted)">Page ${_tplPage} of ${maxPages}</span>
-      <button onclick="window.tplPageNext()" ${_tplPage===maxPages?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:12px;font-family:inherit">Next →</button>
+      <button onclick="window.tplPagePrev()" ${_tplPage===1?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:13px;font-family:inherit">← Prev</button>
+      <span style="font-size:13px;color:var(--muted)">Page ${_tplPage} of ${maxPages}</span>
+      <button onclick="window.tplPageNext()" ${_tplPage===maxPages?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:13px;font-family:inherit">Next →</button>
     </div>`:''}
   </div>`:'<div class="card"><div class="empty">No templates yet. Create one above.</div></div>'}
   <div style="height:80px"></div>`;
@@ -1001,9 +1001,9 @@ function filterTplProd(q){
   const matches=PRODUCT_CATALOG.filter(p=>p.code.toLowerCase().includes(ql)||p.name.toLowerCase().includes(ql));
   if(!matches.length){dd.style.display='none';return;}
   dd.style.display='block';
-  dd.innerHTML=matches.slice(0,12).map(p=>`<div onclick="window.selectTplProd('${p.code}','${p.name.replace(/'/g,'&#39;')}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
+  dd.innerHTML=matches.slice(0,12).map(p=>`<div onclick="window.selectTplProd('${p.code}','${p.name.replace(/'/g,'&#39;')}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);font-size:14px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
     <span style="font-weight:700;color:var(--red)">${p.code}</span>
-    <span style="color:var(--muted);margin-left:8px;font-size:12px">${p.name}</span>
+    <span style="color:var(--muted);margin-left:8px;font-size:13px">${p.name}</span>
   </div>`).join('');
 }
 function selectTplProd(code,name){
@@ -1025,7 +1025,7 @@ function _tplItemRowHTML(rowId,itemCode='',itemName='',qty=1,price=''){
       <input type="number" min="0.01" step="0.01" value="${qty}" placeholder="1" class="tpl-qty"></div>
     <div class="field" style="width:90px"><label>Price / unit</label>
       <input type="number" min="0" step="0.01" value="${price}" placeholder="Rs." class="tpl-price"></div>
-    <button onclick="document.getElementById('${rowId}').remove()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;align-self:flex-end;padding:0 4px;margin-bottom:2px">×</button>`;
+    <button onclick="document.getElementById('${rowId}').remove()" style="background:none;border:none;color:var(--muted);font-size:21px;cursor:pointer;align-self:flex-end;padding:0 4px;margin-bottom:2px">×</button>`;
 }
 function _attachTplItemSearch(div){
   const inp=div.querySelector('.tpl-item-search');
@@ -1038,9 +1038,9 @@ function _attachTplItemSearch(div){
     const matches=allItems.filter(i=>i.code.toLowerCase().includes(ql)||i.name.toLowerCase().includes(ql));
     if(!q||!matches.length){dd.style.display='none';return;}
     dd.style.display='block';
-    dd.innerHTML=matches.slice(0,15).map(i=>`<div data-code="${i.code}" data-name="${i.name.replace(/"/g,'&quot;')}" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
-      <span style="font-weight:700;color:var(--red);font-size:12px">${i.code}</span>
-      <span style="color:var(--muted);margin-left:8px;font-size:12px">${i.name}</span>
+    dd.innerHTML=matches.slice(0,15).map(i=>`<div data-code="${i.code}" data-name="${i.name.replace(/"/g,'&quot;')}" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:14px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
+      <span style="font-weight:700;color:var(--red);font-size:13px">${i.code}</span>
+      <span style="color:var(--muted);margin-left:8px;font-size:13px">${i.name}</span>
     </div>`).join('');
     dd.querySelectorAll('[data-code]').forEach(el=>{
       el.addEventListener('mousedown',e=>{
@@ -1137,12 +1137,12 @@ function renderStoreLog(){
   <div class="card">
     <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
       <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex-shrink:0">
-        <button id="il-all"  onclick="window.setILDir('')"          style="padding:8px 14px;font-size:12px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:var(--dark);color:var(--on-dark)">All</button>
-        <button id="il-in"   onclick="window.setILDir('received')"  style="padding:8px 14px;font-size:12px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:var(--surface);color:var(--muted)">▲ Inbound</button>
-        <button id="il-out"  onclick="window.setILDir('issued')"    style="padding:8px 14px;font-size:12px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:var(--surface);color:var(--muted)">▼ Outbound</button>
+        <button id="il-all"  onclick="window.setILDir('')"          style="padding:8px 14px;font-size:13px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:var(--dark);color:var(--on-dark)">All</button>
+        <button id="il-in"   onclick="window.setILDir('received')"  style="padding:8px 14px;font-size:13px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:var(--surface);color:var(--muted)">▲ Inbound</button>
+        <button id="il-out"  onclick="window.setILDir('issued')"    style="padding:8px 14px;font-size:13px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:var(--surface);color:var(--muted)">▼ Outbound</button>
       </div>
-      <input id="il-q"  placeholder="Search item, person…" oninput="window.setILQ(this.value)"  style="flex:1;min-width:120px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
-      <input id="il-po" placeholder="Filter PO…"           oninput="window.setILPO(this.value)" style="width:100px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
+      <input id="il-q"  placeholder="Search item, person…" oninput="window.setILQ(this.value)"  style="flex:1;min-width:120px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
+      <input id="il-po" placeholder="Filter PO…"           oninput="window.setILPO(this.value)" style="width:100px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
     </div>
     <div id="il-body"></div>
     <div id="il-pager" style="display:flex;align-items:center;justify-content:center;gap:10px;padding-top:12px;border-top:1px solid var(--border);margin-top:4px"></div>
@@ -1167,8 +1167,8 @@ function _ilErrorHTML(err){
       :'The read did not come back.';
   return`<div class="empty" style="padding:22px;text-align:center">
     <div style="font-weight:700;color:var(--red);margin-bottom:6px">Could not load the movement log</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">${_ilEsc(why)}</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:12px">${_ilEsc((err&&err.message)||'unknown error')}</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:4px">${_ilEsc(why)}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${_ilEsc((err&&err.message)||'unknown error')}</div>
     <button class="btn-sm" onclick="window.ilRetryLoad()">Retry</button>
   </div>`;
 }
@@ -1203,27 +1203,27 @@ function refreshIssueLog(){
     return`<div class="tx-row">
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span style="font-size:10px;font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${isIn?'▲ INBOUND':'▼ OUTBOUND'}</span>
-          <span style="font-size:11px;font-weight:700">${tx.itemCode||'—'}</span>
-          ${tx.size?`<span style="font-size:10px;font-weight:700;background:var(--accent-warning-soft);color:var(--accent-warning);padding:2px 7px;border-radius:8px">${tx.size}</span>`:''}
-          ${tx.poRef||tx.poId?`<span style="font-size:10px;font-weight:700;background:var(--soft);color:var(--text);padding:2px 7px;border-radius:8px">${tx.poRef||tx.poId}</span>`:''}
+          <span style="font-size:11px;font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${isIn?'▲ INBOUND':'▼ OUTBOUND'}</span>
+          <span style="font-size:12px;font-weight:700">${tx.itemCode||'—'}</span>
+          ${tx.size?`<span style="font-size:11px;font-weight:700;background:var(--accent-warning-soft);color:var(--accent-warning);padding:2px 7px;border-radius:8px">${tx.size}</span>`:''}
+          ${tx.poRef||tx.poId?`<span style="font-size:11px;font-weight:700;background:var(--soft);color:var(--text);padding:2px 7px;border-radius:8px">${tx.poRef||tx.poId}</span>`:''}
         </div>
-        <div style="font-size:13px;font-weight:500;margin-top:2px">${tx.itemName||'—'}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:1px">${isIn?`From: ${tx.supplier||'—'}`:`To: ${tx.issuedTo||'—'}`}${tx.purpose?` · ${tx.purpose}`:''}${tx.notes?` · ${tx.notes}`:''}</div>
+        <div style="font-size:14px;font-weight:500;margin-top:2px">${tx.itemName||'—'}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:1px">${isIn?`From: ${tx.supplier||'—'}`:`To: ${tx.issuedTo||'—'}`}${tx.purpose?` · ${tx.purpose}`:''}${tx.notes?` · ${tx.notes}`:''}</div>
       </div>
       <div style="text-align:right;flex-shrink:0">
-        <div style="font-size:16px;font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${isIn?'+':'−'}${tx.qty||0} <span style="font-size:11px;font-weight:400;color:var(--muted)">${tx.unit||'pcs'}</span></div>
-        <div style="font-size:10px;color:var(--muted);margin-top:2px">${tx.date||''}</div>
-        <div style="font-size:10px;color:var(--muted)">${tx.by||'—'}</div>
+        <div style="font-size:17px;font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${isIn?'+':'−'}${tx.qty||0} <span style="font-size:12px;font-weight:400;color:var(--muted)">${tx.unit||'pcs'}</span></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${tx.date||''}</div>
+        <div style="font-size:11px;color:var(--muted)">${tx.by||'—'}</div>
       </div>
     </div>`;
   }).join('');
   if(pager){
     if(maxPages<=1){pager.innerHTML='';return;}
     pager.innerHTML=`
-      <button onclick="window.ilPagePrev()" ${_ilPage===1?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:12px;font-family:inherit">← Prev</button>
-      <span style="font-size:12px;color:var(--muted)">Page ${_ilPage} of ${maxPages}</span>
-      <button onclick="window.ilPageNext()" ${_ilPage===maxPages?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:12px;font-family:inherit">Next →</button>`;
+      <button onclick="window.ilPagePrev()" ${_ilPage===1?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:13px;font-family:inherit">← Prev</button>
+      <span style="font-size:13px;color:var(--muted)">Page ${_ilPage} of ${maxPages}</span>
+      <button onclick="window.ilPageNext()" ${_ilPage===maxPages?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:13px;font-family:inherit">Next →</button>`;
   }
 }
 
@@ -1236,11 +1236,11 @@ function renderStoreDashboard(){
     <div class="card-title">Pending PO Issue Requests (${pendingPirs.length})</div>
     ${pendingPirs.slice(0,5).map(r=>`<div class="req-card">
       <div class="req-head">
-        <div><div style="font-weight:700;color:var(--red);font-size:13px">${r.poId||'—'}</div>
-          <div style="font-size:11px;color:var(--muted)">${r.poName||'—'} · ${r.poQty||0} pcs</div></div>
+        <div><div style="font-weight:700;color:var(--red);font-size:14px">${r.poId||'—'}</div>
+          <div style="font-size:12px;color:var(--muted)">${r.poName||'—'} · ${r.poQty||0} pcs</div></div>
         <button class="btn-sm" onclick="window.openPoIssueDetail('${r.id}')">Issue →</button>
       </div>
-      <div style="font-size:11px;color:var(--muted)">${(r.snapshot||[]).filter(l=>l.issued<l.required).length} item(s) remaining</div>
+      <div style="font-size:12px;color:var(--muted)">${(r.snapshot||[]).filter(l=>l.issued<l.required).length} item(s) remaining</div>
     </div>`).join('')}
     ${pendingPirs.length>5?`<div style="text-align:center;margin-top:6px"><button class="btn-sm" onclick="window.showPage('po-issue-list')">View all ${pendingPirs.length} requests</button></div>`:''}
   </div>`:`<div class="card"><div class="card-title">PO Issue Requests</div><div class="empty" style="padding:1rem">No pending requests ✓</div></div>`}
@@ -1250,14 +1250,14 @@ function renderStoreDashboard(){
       <span><strong>${i.code}</strong> — ${i.name}</span>
       <span class="badge badge-${getStatus(i)}">${getBalance(i)} ${i.unit}</span>
     </div>`).join('')}
-    ${lowStock.length>10?`<div style="font-size:11px;color:var(--muted);padding-top:6px">+${lowStock.length-10} more items below threshold</div>`:''}
+    ${lowStock.length>10?`<div style="font-size:12px;color:var(--muted);padding-top:6px">+${lowStock.length-10} more items below threshold</div>`:''}
   </div>`:'<div class="alert-banner alert-green">All items are in stock ✓</div>'}
   ${(session.u==='afnan')?`<div class="card" style="border-left:3px solid #dc2626">
     <div class="card-title">⚠ Admin — Danger Zone</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Overwrites ALL live balances with the hardcoded master list (${INITIAL_ITEMS.length} items). Wipes any unrecorded updates Raees has made. Use only after a verified full physical count.</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:10px">Overwrites ALL live balances with the hardcoded master list (${INITIAL_ITEMS.length} items). Wipes any unrecorded updates Raees has made. Use only after a verified full physical count.</div>
     <button class="btn-primary" onclick="window.syncStoreItems()">⟳ Apply Stock Update</button>
     <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
-      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">One-shot recovery: replays every receive/issue in <code>store_transactions</code> on top of the May-1 seed and shows you a current-vs-reconstructed comparison before any write.</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:8px">One-shot recovery: replays every receive/issue in <code>store_transactions</code> on top of the May-1 seed and shows you a current-vs-reconstructed comparison before any write.</div>
       <button class="btn-sm" onclick="window.reconstructStockPreview()">↺ Preview Reconstruction</button>
     </div>
   </div>`:''}
@@ -1266,14 +1266,14 @@ function renderStoreDashboard(){
     ${recent.length?recent.map(tx=>{const isIn=tx.type==='received';return`<div class="tx-row">
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span style="font-size:10px;font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${isIn?'▲ IN':'▼ OUT'}</span>
-          <span style="font-size:11px;font-weight:700">${tx.itemCode||'—'}</span>
+          <span style="font-size:11px;font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${isIn?'▲ IN':'▼ OUT'}</span>
+          <span style="font-size:12px;font-weight:700">${tx.itemCode||'—'}</span>
         </div>
-        <div style="font-size:13px;margin-top:1px">${tx.itemName||'—'}</div>
+        <div style="font-size:14px;margin-top:1px">${tx.itemName||'—'}</div>
       </div>
       <div style="text-align:right;flex-shrink:0">
         <div style="font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${isIn?'+':'−'}${tx.qty||0} ${tx.unit||'pcs'}</div>
-        <div style="font-size:10px;color:var(--muted)">${tx.date||''}</div>
+        <div style="font-size:11px;color:var(--muted)">${tx.date||''}</div>
       </div>
     </div>`;}).join(''):'<div class="empty" style="padding:1rem">No transactions yet.</div>'}
   </div>
@@ -1386,16 +1386,16 @@ function _showReconstructionModal(rows,recon,txCount){
   m.innerHTML=`<div style="background:var(--surface);border-radius:14px;width:100%;max-width:880px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 16px 56px rgba(0,0,0,.3)">
     <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
       <div>
-        <div style="font-weight:700;font-size:15px">Reconstruction Preview</div>
-        <div style="font-size:11px;color:var(--muted)">${txCount} transactions replayed · ${changed} items would change · ${noBaseline} item(s) not in May-1 seed</div>
+        <div style="font-weight:700;font-size:16px">Reconstruction Preview</div>
+        <div style="font-size:12px;color:var(--muted)">${txCount} transactions replayed · ${changed} items would change · ${noBaseline} item(s) not in May-1 seed</div>
       </div>
-      <button onclick="document.getElementById('_recon-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
+      <button onclick="document.getElementById('_recon-modal').remove()" style="background:none;border:none;font-size:23px;cursor:pointer;color:var(--muted)">×</button>
     </div>
-    <div style="padding:10px 14px;background:var(--accent-warning-soft);border-bottom:1px solid var(--accent-warning);font-size:12px;color:var(--accent-warning)">
+    <div style="padding:10px 14px;background:var(--accent-warning-soft);border-bottom:1px solid var(--accent-warning);font-size:13px;color:var(--accent-warning)">
       ⚠ This rebuild does not capture direct balance edits done via the per-item Edit dialog (those don't write to <code>store_transactions</code>). Compare numbers with Raees before hitting Apply.
     </div>
     <div style="overflow:auto;flex:1;padding:0 14px">
-      <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead style="position:sticky;top:0;background:var(--surface);border-bottom:2px solid var(--line)">
           <tr><th style="text-align:left;padding:8px 6px">Code</th><th style="text-align:left;padding:8px 6px">Name</th><th style="text-align:right;padding:8px 6px">Current</th><th style="text-align:right;padding:8px 6px">Reconstructed</th><th style="text-align:right;padding:8px 6px">Δ</th></tr>
         </thead>
@@ -1405,7 +1405,7 @@ function _showReconstructionModal(rows,recon,txCount){
           const dTxt=r.delta===null?'no seed':(r.delta>0?'+':'')+r.delta;
           return`<tr style="border-bottom:1px solid var(--soft)">
             <td style="padding:6px;font-weight:700">${r.code}</td>
-            <td style="padding:6px">${r.name}${r.sized?' <span style="font-size:10px;color:var(--muted)">(sized)</span>':''}${r.inSeed?'':' <span style="font-size:10px;color:var(--accent-warning)">[not in seed]</span>'}</td>
+            <td style="padding:6px">${r.name}${r.sized?' <span style="font-size:11px;color:var(--muted)">(sized)</span>':''}${r.inSeed?'':' <span style="font-size:11px;color:var(--accent-warning)">[not in seed]</span>'}</td>
             <td style="padding:6px;text-align:right">${r.current} ${r.unit}</td>
             <td style="padding:6px;text-align:right">${r.reconstructed===null?'—':r.reconstructed+' '+r.unit}</td>
             <td style="padding:6px;text-align:right;${dStyle}">${dTxt}</td>
@@ -1848,12 +1848,12 @@ function renderPoIssueList(){
     return`<div class="card" style="border-left:3px solid ${statusColor};cursor:pointer" onclick="window.openPoIssueDetail('${r.id}')">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">
         <div>
-          <div style="font-weight:700;font-size:14px">${r.poId||'—'}</div>
-          <div style="font-size:12px;color:var(--muted)">${r.poName||'—'} · ${r.poQty||0} pcs</div>
+          <div style="font-weight:700;font-size:15px">${r.poId||'—'}</div>
+          <div style="font-size:13px;color:var(--muted)">${r.poName||'—'} · ${r.poQty||0} pcs</div>
         </div>
-        <span style="font-size:11px;font-weight:700;color:${statusColor};background:${statusBg};padding:2px 10px;border-radius:10px">${status==='partial'?'Partially Issued':'Pending'}</span>
+        <span style="font-size:12px;font-weight:700;color:${statusColor};background:${statusBg};padding:2px 10px;border-radius:10px">${status==='partial'?'Partially Issued':'Pending'}</span>
       </div>
-      <div style="margin-top:8px;font-size:12px;color:var(--muted)">${open} item(s) pending${short?' · '+short+' shortfall(s)':''}</div>
+      <div style="margin-top:8px;font-size:13px;color:var(--muted)">${open} item(s) pending${short?' · '+short+' shortfall(s)':''}</div>
     </div>`;
   }).join('')}
   <div style="height:80px"></div>`;
@@ -1879,16 +1879,16 @@ function renderPoIssuePickList(){
       const done=l.issued>=l.required;
       return`<div style="padding:10px 0;border-bottom:1px solid var(--border);${frozen?'opacity:.6;pointer-events:none':''}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">
-          <div><div style="font-weight:600;font-size:13px">${l.itemCode} — ${l.itemName}</div>
-            <div style="font-size:11px;color:var(--muted)">Needed: ${l.required} · Issued: ${l.issued} · Stock: ${stock}</div>
+          <div><div style="font-weight:600;font-size:14px">${l.itemCode} — ${l.itemName}</div>
+            <div style="font-size:12px;color:var(--muted)">Needed: ${l.required} · Issued: ${l.issued} · Stock: ${stock}</div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
-            ${frozen?'<span style="font-size:10px;color:var(--amber);font-weight:700">⏸ EDIT PENDING</span>':done?'<span style="font-size:10px;color:var(--green);font-weight:700">✓ DONE</span>':short?`<span style="font-size:10px;color:var(--amber);font-weight:700">Short ${short}</span>`:''}
+            ${frozen?'<span style="font-size:11px;color:var(--amber);font-weight:700">⏸ EDIT PENDING</span>':done?'<span style="font-size:11px;color:var(--green);font-weight:700">✓ DONE</span>':short?`<span style="font-size:11px;color:var(--amber);font-weight:700">Short ${short}</span>`:''}
             ${!done&&!frozen&&_canApproveEdits()?`<button class="btn-sm" onclick="window.openLineEditModal('${req.id}','${l.lineId}')">Edit</button>`:''}
           </div>
         </div>
-        ${!done&&!frozen&&willIssue>0?`<div style="font-size:12px;margin-top:4px">Will issue: <strong>${willIssue}</strong></div>`:''}
-        ${short&&!done&&!frozen?`<div style="font-size:12px;color:var(--amber);margin-top:2px">Short ${short} pcs — shortfall recorded</div>`:''}
+        ${!done&&!frozen&&willIssue>0?`<div style="font-size:13px;margin-top:4px">Will issue: <strong>${willIssue}</strong></div>`:''}
+        ${short&&!done&&!frozen?`<div style="font-size:13px;color:var(--amber);margin-top:2px">Short ${short} pcs — shortfall recorded</div>`:''}
       </div>`;
     }).join('')}
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
@@ -1968,11 +1968,11 @@ window.openLineEditModal=function(reqId,lineId){
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2200;display:flex;align-items:center;justify-content:center;padding:16px';
   modal.innerHTML=`<div style="background:var(--surface);border-radius:14px;width:100%;max-width:420px;box-shadow:0 12px 48px rgba(0,0,0,.25)">
     <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-      <span style="font-weight:700;font-size:15px">Request Line Edit</span>
-      <button onclick="document.getElementById('_pe-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
+      <span style="font-weight:700;font-size:16px">Request Line Edit</span>
+      <button onclick="document.getElementById('_pe-modal').remove()" style="background:none;border:none;font-size:23px;cursor:pointer;color:var(--muted)">×</button>
     </div>
     <div style="padding:16px;display:grid;gap:10px">
-      <div style="font-size:13px;color:var(--muted)">Current: <strong>${line.itemCode}</strong> — ${line.itemName} · Required: ${line.required}</div>
+      <div style="font-size:14px;color:var(--muted)">Current: <strong>${line.itemCode}</strong> — ${line.itemName} · Required: ${line.required}</div>
       <div class="field"><label>Change type</label>
         <select id="_pe-type" onchange="window._peTypeChange()">
           <option value="qty">Change quantity</option>
@@ -2027,8 +2027,8 @@ window.openAddLineModal=function(reqId){
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2200;display:flex;align-items:center;justify-content:center;padding:16px';
   modal.innerHTML=`<div style="background:var(--surface);border-radius:14px;width:100%;max-width:420px;box-shadow:0 12px 48px rgba(0,0,0,.25)">
     <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-      <span style="font-weight:700;font-size:15px">Add Line Request</span>
-      <button onclick="document.getElementById('_pa-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
+      <span style="font-weight:700;font-size:16px">Add Line Request</span>
+      <button onclick="document.getElementById('_pa-modal').remove()" style="background:none;border:none;font-size:23px;cursor:pointer;color:var(--muted)">×</button>
     </div>
     <div style="padding:16px;display:grid;gap:10px">
       <div class="field"><label>Item *</label><select id="_pa-item">${opts}</select></div>
@@ -2074,18 +2074,18 @@ function renderPoEditInbox(){
     return`<div class="card" style="border-left:3px solid ${tc}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">
         <div>
-          <div style="font-weight:700;font-size:14px">${r.poId||'—'}</div>
-          <div style="font-size:12px;color:var(--muted)">Requested by ${r.requestedBy||'—'}</div>
+          <div style="font-weight:700;font-size:15px">${r.poId||'—'}</div>
+          <div style="font-size:13px;color:var(--muted)">Requested by ${r.requestedBy||'—'}</div>
         </div>
-        <span style="font-size:11px;font-weight:700;color:${tc};background:${bg};padding:2px 10px;border-radius:10px;text-transform:uppercase">${r.type}</span>
+        <span style="font-size:12px;font-weight:700;color:${tc};background:${bg};padding:2px 10px;border-radius:10px;text-transform:uppercase">${r.type}</span>
       </div>
-      <div style="margin-top:6px;font-size:13px">
+      <div style="margin-top:6px;font-size:14px">
         ${r.type==='add'?`Add <strong>${r.newItemCode}</strong> × ${r.newQty}`:
           r.type==='remove'?`Remove <strong>${r.currentItemCode}</strong>`:
           r.type==='swap'?`Swap <strong>${r.currentItemCode}</strong> → <strong>${r.newItemCode}</strong>`:
           `Change qty <strong>${r.currentItemCode}</strong>: ${r.currentRequired} → ${r.newQty}`}
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-top:4px">Reason: ${r.reason||'—'}</div>
+      <div style="font-size:13px;color:var(--muted);margin-top:4px">Reason: ${r.reason||'—'}</div>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
         <button class="btn-sm" onclick="window.openReviewModal('${r._id}')">Review</button>
         <button class="btn-sm" style="color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.rejectEditRequest('${r._id}')">Reject</button>
@@ -2100,7 +2100,7 @@ window.openReviewModal=function(editId){
   if(!er){showToast('Request not found.',true);return;}
   document.getElementById('_rv-modal')?.remove();
   const req=allPoIssueRequests.find(r=>r.id===er.issueRequestId);
-  const tplUpdate=req&&req.templateId?`<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-top:8px;cursor:pointer"><input type="checkbox" id="_rv-update-tpl"> Also update master trim template for future POs</label>`:'';
+  const tplUpdate=req&&req.templateId?`<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-top:8px;cursor:pointer"><input type="checkbox" id="_rv-update-tpl"> Also update master trim template for future POs</label>`:'';
   let detailHTML='';
   if(er.type==='qty')detailHTML=`<div class="field"><label>Approve qty</label><input id="_rv-qty" type="number" value="${er.newQty}" min="1"></div>`;
   if(er.type==='swap'){const opts=allItems.map(i=>`<option value="${i.code}"${i.code===er.newItemCode?' selected':''}>${i.code} — ${i.name}</option>`).join('');detailHTML=`<div class="field"><label>Confirm swap to</label><select id="_rv-swap">${opts}</select></div>`;}
@@ -2110,13 +2110,13 @@ window.openReviewModal=function(editId){
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2200;display:flex;align-items:center;justify-content:center;padding:16px';
   modal.innerHTML=`<div style="background:var(--surface);border-radius:14px;width:100%;max-width:460px;box-shadow:0 12px 48px rgba(0,0,0,.25)">
     <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-      <span style="font-weight:700;font-size:15px">Review Edit Request</span>
-      <button onclick="document.getElementById('_rv-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
+      <span style="font-weight:700;font-size:16px">Review Edit Request</span>
+      <button onclick="document.getElementById('_rv-modal').remove()" style="background:none;border:none;font-size:23px;cursor:pointer;color:var(--muted)">×</button>
     </div>
     <div style="padding:16px;display:grid;gap:10px">
-      <div style="font-size:13px;background:var(--surface-2);padding:10px;border-radius:8px">
+      <div style="font-size:14px;background:var(--surface-2);padding:10px;border-radius:8px">
         <div><strong>${er.poId}</strong> — ${er.type} request by ${er.requestedBy}</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:3px">Reason: ${er.reason}</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:3px">Reason: ${er.reason}</div>
       </div>
       ${detailHTML}
       <div class="field"><label>Approval note (optional)</label><input id="_rv-note" placeholder="Optional note to requestor"></div>
@@ -2245,17 +2245,17 @@ function _buildItemModal(title,item,onSave){
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px';
   modal.innerHTML=`<div style="background:var(--surface);border-radius:14px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 12px 48px rgba(0,0,0,.25)">
     <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-      <span style="font-weight:700;font-size:15px">${title}</span>
-      <button onclick="document.getElementById('_item-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
+      <span style="font-weight:700;font-size:16px">${title}</span>
+      <button onclick="document.getElementById('_item-modal').remove()" style="background:none;border:none;font-size:23px;cursor:pointer;color:var(--muted)">×</button>
     </div>
     <div style="padding:18px;display:grid;gap:12px">
       <div class="field">
         <label>Image <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
         <div style="display:flex;gap:10px;align-items:center">
-          <div id="_im-img-preview" style="width:64px;height:64px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2) center/cover no-repeat;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:10px;${imgUrl?`background-image:url('${imgUrl}')`:''}">${imgUrl?'':'No image'}</div>
+          <div id="_im-img-preview" style="width:64px;height:64px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2) center/cover no-repeat;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px;${imgUrl?`background-image:url('${imgUrl}')`:''}">${imgUrl?'':'No image'}</div>
           <div style="display:flex;flex-direction:column;gap:6px">
-            <input type="file" id="_im-img-file" accept="image/*" style="font-size:11px;font-family:inherit" onchange="window._imOnImgPick(this)">
-            ${imgUrl?`<button type="button" onclick="window._imClearImg()" style="padding:4px 10px;background:var(--surface);border:1px solid var(--accent-urgent);color:var(--accent-urgent);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;align-self:flex-start">Remove image</button>`:''}
+            <input type="file" id="_im-img-file" accept="image/*" style="font-size:12px;font-family:inherit" onchange="window._imOnImgPick(this)">
+            ${imgUrl?`<button type="button" onclick="window._imClearImg()" style="padding:4px 10px;background:var(--surface);border:1px solid var(--accent-urgent);color:var(--accent-urgent);border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;align-self:flex-start">Remove image</button>`:''}
           </div>
         </div>
         <input type="hidden" id="_im-img-url" value="${imgUrl}">
@@ -2266,7 +2266,7 @@ function _buildItemModal(title,item,onSave){
       <div class="field"><label>Category *</label><select id="_im-cat" onchange="window._imCatChange()">${cats}</select></div>
       <div class="field"><label>Unit *</label><select id="_im-unit">${unitOpts}</select></div>
       <div class="field"><label>Low Stock Threshold</label><input id="_im-thresh" type="number" min="0" value="${item&&item.lowStockThreshold!=null?item.lowStockThreshold:200}"></div>
-      <div style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="_im-sized" ${item&&item.sizeSpecific?'checked':''} onchange="document.getElementById('_im-sized-row').style.display=this.checked?'block':'none';document.getElementById('_im-bal-row').style.display=this.checked?'none':'block'"><label for="_im-sized" style="cursor:pointer;font-size:13px">Size-specific</label></div>
+      <div style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="_im-sized" ${item&&item.sizeSpecific?'checked':''} onchange="document.getElementById('_im-sized-row').style.display=this.checked?'block':'none';document.getElementById('_im-bal-row').style.display=this.checked?'none':'block'"><label for="_im-sized" style="cursor:pointer;font-size:14px">Size-specific</label></div>
       <div id="_im-sized-row" style="display:${item&&item.sizeSpecific?'block':'none'}">
         <div class="field"><label>Sizes (e.g. XS:100 S:200 M:300)</label><input id="_im-sizes" value="${sizesStr}" placeholder="XS:100 S:200 M:300 L:400"></div>
       </div>
@@ -2464,25 +2464,25 @@ function _timeAgo(ts){
 function renderNotifList(){
   const el=document.getElementById('notif-list');if(!el)return;
   const list=storeNotifications.filter(n=>n.status==='unread');
-  if(!list.length){el.innerHTML='<div style="padding:32px;text-align:center;color:var(--muted);font-size:13px">No pending notifications ✓</div>';return;}
+  if(!list.length){el.innerHTML='<div style="padding:32px;text-align:center;color:var(--muted);font-size:14px">No pending notifications ✓</div>';return;}
   el.innerHTML=list.map(n=>{
     let changesHTML='';
     if(n.action==='edit'&&n.changes){
-      const parts=Object.entries(n.changes).map(([f,v])=>`<span style="font-size:11px;background:var(--surface-2);padding:2px 6px;border-radius:4px">${f}: <span style="color:var(--accent-urgent)">${JSON.stringify(v.old)}</span> → <span style="color:var(--green)">${JSON.stringify(v.new)}</span></span>`);
+      const parts=Object.entries(n.changes).map(([f,v])=>`<span style="font-size:12px;background:var(--surface-2);padding:2px 6px;border-radius:4px">${f}: <span style="color:var(--accent-urgent)">${JSON.stringify(v.old)}</span> → <span style="color:var(--green)">${JSON.stringify(v.new)}</span></span>`);
       if(parts.length)changesHTML=`<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">${parts.join('')}</div>`;
     }else if(n.action==='delete'){
-      changesHTML=`<div style="font-size:11px;color:var(--muted);margin-top:3px">Item snapshot saved</div>`;
+      changesHTML=`<div style="font-size:12px;color:var(--muted);margin-top:3px">Item snapshot saved</div>`;
     }
     return`<div style="padding:14px 16px;border-bottom:1px solid var(--border)">
       <div style="display:flex;align-items:flex-start;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">${n.action==='edit'?'✏️':'🗑️'}</span>
+        <span style="font-size:21px;flex-shrink:0">${n.action==='edit'?'✏️':'🗑️'}</span>
         <div style="flex:1;min-width:0">
-          <div style="font-weight:600;font-size:13px">${n.action==='edit'?'Edited':'Deleted'}: ${n.itemCode} — ${n.itemName}</div>
+          <div style="font-weight:600;font-size:14px">${n.action==='edit'?'Edited':'Deleted'}: ${n.itemCode} — ${n.itemName}</div>
           ${changesHTML}
-          <div style="font-size:11px;color:var(--muted);margin-top:5px">${_timeAgo(n.changedAt)} · by ${n.changedBy}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:5px">${_timeAgo(n.changedAt)} · by ${n.changedBy}</div>
         </div>
       </div>
-      <button onclick="window.dismissNotif('${n._id}')" style="margin-top:10px;width:100%;padding:7px;border:1px solid var(--border);border-radius:7px;background:var(--surface);cursor:pointer;font-size:12px;color:var(--muted);font-family:inherit">Dismiss</button>
+      <button onclick="window.dismissNotif('${n._id}')" style="margin-top:10px;width:100%;padding:7px;border:1px solid var(--border);border-radius:7px;background:var(--surface);cursor:pointer;font-size:13px;color:var(--muted);font-family:inherit">Dismiss</button>
     </div>`;
   }).join('');
 }
@@ -2571,14 +2571,14 @@ function renderStoreAnalytics(){
   const neverIssued=allItems.filter(i=>!issuedCodes.has(i.code)&&getBalance(i)>0);
 
   const kpi=(label,val,sub,color='var(--dark)')=>`<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
-    <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${label}</div>
-    <div style="font-size:22px;font-weight:700;color:${color}">${val}</div>
-    ${sub?`<div style="font-size:10px;color:var(--muted);margin-top:2px">${sub}</div>`:''}
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${label}</div>
+    <div style="font-size:23px;font-weight:700;color:${color}">${val}</div>
+    ${sub?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${sub}</div>`:''}
   </div>`;
 
   const sec=(title,body)=>`<div class="card" style="margin-bottom:14px"><div class="card-title">${title}</div>${body}</div>`;
 
-  const tableRow=(a,b,c,bold=false)=>`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;${bold?'font-weight:700':''}">
+  const tableRow=(a,b,c,bold=false)=>`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;${bold?'font-weight:700':''}">
     <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a}</span>
     <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${b}</span>
     <span style="flex-shrink:0;font-weight:600">${c}</span>
@@ -2609,12 +2609,12 @@ function renderStoreAnalytics(){
 
   ${sec('Monthly Trend (last 12 months)',months.length?`
     <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:400px">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:400px">
         <thead><tr>
-          <th style="text-align:left;padding:6px 4px;border-bottom:2px solid var(--border);font-size:10px;color:var(--muted)">Month</th>
-          <th style="text-align:right;padding:6px 4px;border-bottom:2px solid var(--border);font-size:10px;color:var(--green)">▲ Received</th>
-          <th style="text-align:right;padding:6px 4px;border-bottom:2px solid var(--border);font-size:10px;color:var(--red)">▼ Issued</th>
-          <th style="text-align:right;padding:6px 4px;border-bottom:2px solid var(--border);font-size:10px;color:var(--muted)">Net</th>
+          <th style="text-align:left;padding:6px 4px;border-bottom:2px solid var(--border);font-size:11px;color:var(--muted)">Month</th>
+          <th style="text-align:right;padding:6px 4px;border-bottom:2px solid var(--border);font-size:11px;color:var(--green)">▲ Received</th>
+          <th style="text-align:right;padding:6px 4px;border-bottom:2px solid var(--border);font-size:11px;color:var(--red)">▼ Issued</th>
+          <th style="text-align:right;padding:6px 4px;border-bottom:2px solid var(--border);font-size:11px;color:var(--muted)">Net</th>
         </tr></thead>
         <tbody>${months.map(m=>{const net=m.in-m.out;return`<tr style="border-bottom:1px solid var(--border)">
           <td style="padding:6px 4px;font-weight:600">${m.month}</td>
@@ -2644,10 +2644,10 @@ function renderStoreAnalytics(){
   </div>
 
   ${neverIssued.length?sec(`Items in stock but never issued (${neverIssued.length})`,`
-    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">These items have received stock but zero outbound records — may be dead stock or used outside the system.</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">These items have received stock but zero outbound records — may be dead stock or used outside the system.</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px">
-      ${neverIssued.slice(0,30).map(i=>`<span style="background:var(--surface-2);padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600">${i.code}</span>`).join('')}
-      ${neverIssued.length>30?`<span style="font-size:11px;color:var(--muted)">+${neverIssued.length-30} more</span>`:''}
+      ${neverIssued.slice(0,30).map(i=>`<span style="background:var(--surface-2);padding:3px 8px;border-radius:6px;font-size:12px;font-weight:600">${i.code}</span>`).join('')}
+      ${neverIssued.length>30?`<span style="font-size:12px;color:var(--muted)">+${neverIssued.length-30} more</span>`:''}
     </div>
   `):''}
 

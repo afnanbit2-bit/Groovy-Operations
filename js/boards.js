@@ -1316,9 +1316,9 @@ window.boardsRetryLoad=async function(){
 function _boardsLoadNoticeHTML(){
   if(_boardsLoadError){
     return`<div class="board-load-error">
-      <div style="font-weight:700;font-size:13.5px;margin-bottom:4px">Could not load your boards</div>
-      <div style="font-size:12px;color:var(--muted);line-height:1.5">${_boardsEsc(_boardsLoadError)}</div>
-      <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-top:6px">If that says <em>missing or insufficient permissions</em>, the Firestore rules in the Firebase Console are older than this app — republish <code>firestore.rules</code>.</div>
+      <div style="font-weight:700;font-size:14.5px;margin-bottom:4px">Could not load your boards</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.5">${_boardsEsc(_boardsLoadError)}</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-top:6px">If that says <em>missing or insufficient permissions</em>, the Firestore rules in the Firebase Console are older than this app — republish <code>firestore.rules</code>.</div>
       <button class="btn-sm" style="margin-top:10px" onclick="window.boardsRetryLoad()">Retry</button>
     </div>`;
   }
@@ -1381,7 +1381,7 @@ function renderBoardsGallery(){
   const head=`
   <button class="back-btn" onclick="window.showPage('boards')">← Home</button>
   <div class="page-head" style="margin-bottom:10px">
-    <div><h2 style="margin:0">All boards</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">Every board you can see, including ones not on your Home. Templates and Trash live here.</div></div>
+    <div><h2 style="margin:0">All boards</h2><div style="color:var(--muted);font-size:13px;margin-top:2px">Every board you can see, including ones not on your Home. Templates and Trash live here.</div></div>
   </div>
   ${_boardsLoadNoticeHTML()}
   ${_boardsGalleryBarHTML()}`;
@@ -1405,7 +1405,7 @@ function renderBoardsGallery(){
     ${priv.length?`<div class="board-gallery-grid">${priv.map(b=>_boardGalleryCardHTML(b)).join('')}</div>`:'<div class="empty">No private boards yet.</div>'}
   </div>
   ${templates.length?`<div class="notes-section">
-    <div class="notes-section-head"><h3>Templates</h3><span style="font-size:11px;color:var(--muted)">Start a new board from a skeleton you already built</span></div>
+    <div class="notes-section-head"><h3>Templates</h3><span style="font-size:12px;color:var(--muted)">Start a new board from a skeleton you already built</span></div>
     <div class="board-gallery-grid">${templates.map(b=>_boardGalleryCardHTML(b,{template:true})).join('')}</div>
   </div>`:''}
   ${_boardsTrashSectionHTML()}`;
@@ -1432,12 +1432,12 @@ function _boardsRerenderGallery(){
 function _boardsTrashSectionHTML(){
   if(!_boardsTrash.length)return'';
   return`<div class="notes-section">
-    <div class="notes-section-head"><h3>Trash</h3><span style="font-size:11px;color:var(--muted)">Deleted boards are kept here until you remove them for good</span></div>
+    <div class="notes-section-head"><h3>Trash</h3><span style="font-size:12px;color:var(--muted)">Deleted boards are kept here until you remove them for good</span></div>
     <div class="board-trash-list">${_boardsTrash.map(b=>`
       <div class="board-trash-row" data-trash="${b.id}">
         <div style="min-width:0">
-          <div style="font-weight:600;font-size:13px">${_boardsEsc(b.title||'Untitled board')}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">${(b.cards||[]).length} card${(b.cards||[]).length===1?'':'s'} · deleted ${_boardsRelTime(b.deletedAt)}${b.deletedByName?' by '+_boardsEsc(b.deletedByName):''}</div>
+          <div style="font-weight:600;font-size:14px">${_boardsEsc(b.title||'Untitled board')}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">${(b.cards||[]).length} card${(b.cards||[]).length===1?'':'s'} · deleted ${_boardsRelTime(b.deletedAt)}${b.deletedByName?' by '+_boardsEsc(b.deletedByName):''}</div>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
           <button class="btn-sm outline" onclick="window.boardsRestore('${b.id}')">Restore</button>
@@ -1493,7 +1493,7 @@ function _boardGalleryCardHTML(b,opts){
     <div class="board-gallery-meta">
       ${crumbs?`<div class="board-gallery-path">${crumbs} ›</div>`:''}
       <div class="board-gallery-title">${_boardsTileHTML(b,34)}<span>${_boardsEsc(b.title||'Untitled board')}</span></div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">${vis} · ${cards.length} card${cards.length===1?'':'s'}${files?' · '+files+' file'+(files===1?'':'s'):''}${subs?' · '+subs+' sub-board'+(subs===1?'':'s'):''} · ${_boardsEsc(b.ownerName||'')} · ${_boardsRelTime(b.updatedAt)}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px">${vis} · ${cards.length} card${cards.length===1?'':'s'}${files?' · '+files+' file'+(files===1?'':'s'):''}${subs?' · '+subs+' sub-board'+(subs===1?'':'s'):''} · ${_boardsEsc(b.ownerName||'')} · ${_boardsRelTime(b.updatedAt)}</div>
       ${opts.matches?`<div class="board-gallery-hit">${opts.matches} matching card${opts.matches===1?'':'s'}</div>`:''}
       ${opts.template?`<div style="margin-top:8px"><button class="btn-sm" onclick="event.stopPropagation();window.boardsUseTemplate('${b.id}')">Use template</button></div>`:''}
     </div>
@@ -1847,8 +1847,8 @@ function _renderBoardCanvasHTML(){
         <button class="back-btn" style="margin:0" onclick="window.boardsBack()">← ${_boardsEsc(backLabel)}</button>
         ${crumbs}
         ${home
-          ?`<span style="font-size:14.5px;font-weight:700">Home</span>`
-          :`<input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" placeholder="Untitled board" title="Click to rename this board" style="font-size:14.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
+          ?`<span style="font-size:15.5px;font-weight:700">Home</span>`
+          :`<input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" placeholder="Untitled board" title="Click to rename this board" style="font-size:15.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
         <span class="pill">${visLabel}</span>
         ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}`}
         ${canEdit?`<span class="board-save-status" id="board-save-status">Saved</span>`:''}
@@ -4919,8 +4919,8 @@ function _boardsCellStyle(cell,card){
   if(!cell||typeof cell!=='object')return out.join(';');
   if(cell.b)out.push('font-weight:700');
   if(cell.i)out.push('font-style:italic');
-  if(cell.sz==='s')out.push('font-size:11px');
-  else if(cell.sz==='l')out.push('font-size:15px');
+  if(cell.sz==='s')out.push('font-size:12px');
+  else if(cell.sz==='l')out.push('font-size:16px');
   return out.join(';');
 }
 function _boardsCellClass(cell,card){
@@ -8052,8 +8052,8 @@ window.boardsOpenShare=function(){
   host.style.display='flex';
   host.innerHTML=`<div class="board-share-box">
     <div class="board-share-head">
-      <div><div style="font-weight:700;font-size:14px">Share this board</div>
-      <div style="font-size:11.5px;color:var(--muted);margin-top:2px">People you pick can open and edit it, even while it stays PRIVATE.</div></div>
+      <div><div style="font-weight:700;font-size:15px">Share this board</div>
+      <div style="font-size:12.5px;color:var(--muted);margin-top:2px">People you pick can open and edit it, even while it stays PRIVATE.</div></div>
       <button class="tool-btn" onclick="window.boardsCloseShare()">✕</button>
     </div>
     <div class="board-share-list">

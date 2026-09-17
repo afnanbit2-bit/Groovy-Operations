@@ -292,7 +292,7 @@ function _previewLoading(win, label) {
       '.s{width:34px;height:34px;border:3px solid #ccc;border-top-color:#111;' +
       'border-radius:50%;margin:0 auto 14px;animation:r .8s linear infinite}' +
       '@keyframes r{to{transform:rotate(360deg)}}' +
-      '.t{font-size:15px;font-weight:600}.h{font-size:12px;color:#6B6B6B;margin-top:6px}' +
+      '.t{font-size:16px;font-weight:600}.h{font-size:13px;color:#6B6B6B;margin-top:6px}' +
       '</style></head><body><div class="b"><div class="s"></div>' +
       '<div class="t">Generating ' + label + ' PDF…</div>' +
       '<div class="h">Bilingual documents embed a large Urdu font — ' +
@@ -313,8 +313,8 @@ function _previewError(win, msg) {
       '<!doctype html><meta charset="utf-8">' +
       '<body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;' +
       'padding:24px;color:#7B1F2A"><h3 style="margin:0 0 8px">' +
-      'PDF generation failed</h3><div style="color:#111;font-size:13px">' +
-      safe + '</div><div style="color:#6B6B6B;font-size:12px;margin-top:10px">' +
+      'PDF generation failed</h3><div style="color:#111;font-size:14px">' +
+      safe + '</div><div style="color:#6B6B6B;font-size:13px;margin-top:10px">' +
       'Close this tab and retry. If it persists, report it.</div></body>'
     );
     win.document.close();

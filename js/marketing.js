@@ -510,7 +510,7 @@ function renderMarketingCreators(){
   if(!mktCreatorsLoaded){
     return`<div class="page-head"><div class="page-title">Creator Database</div></div>
       <div class="card"><div style="font-weight:600;margin-bottom:6px">The creator list could not be loaded.</div>
-      <div style="font-size:13px;color:var(--muted);line-height:1.5">The database refused the read (${_mktEsc((_mktLoadErr||[]).join(', ')||'unknown')}). If this is the first visit since the Marketing module shipped, the Firestore rules in the Firebase Console probably have not been republished yet.</div>
+      <div style="font-size:14px;color:var(--muted);line-height:1.5">The database refused the read (${_mktEsc((_mktLoadErr||[]).join(', ')||'unknown')}). If this is the first visit since the Marketing module shipped, the Firestore rules in the Firebase Console probably have not been republished yet.</div>
       <button class="btn-outline" style="margin-top:12px" onclick="window.mktRetryLoad()">Retry</button></div>`;
   }
   const cfgFailed=(_mktLoadErr||[]).indexOf('scoring_config')>=0;
@@ -1501,7 +1501,7 @@ function renderMarketingDispatches(){
   if(!mktDispatchesLoaded){
     return`<div class="page-head"><div class="page-title">Dispatch Log</div></div>
       <div class="card"><div style="font-weight:600;margin-bottom:6px">The dispatch log could not be loaded.</div>
-      <div style="font-size:13px;color:var(--muted);line-height:1.5">The database refused the read (${_mktEsc((_mktLoadErr||[]).join(', ')||'unknown')}). The Firestore rules in the Firebase Console probably have not been republished since this page shipped.</div>
+      <div style="font-size:14px;color:var(--muted);line-height:1.5">The database refused the read (${_mktEsc((_mktLoadErr||[]).join(', ')||'unknown')}). The Firestore rules in the Firebase Console probably have not been republished since this page shipped.</div>
       <button class="btn-outline" style="margin-top:12px" onclick="window.mktRetryLoad()">Retry</button></div>`;
   }
   const months=Array.from(new Set(mktDispatches.map(d=>String(d.date_of_dispatch||'').slice(0,7)).filter(Boolean))).sort().reverse();
@@ -2000,7 +2000,7 @@ function renderMarketingPaidPR(){
   if(!mktPaidPRsLoaded){
     return`<div class="page-head"><div class="page-title">Paid PR Approvals</div></div>
       <div class="card"><div style="font-weight:600;margin-bottom:6px">Paid PR requests could not be loaded.</div>
-      <div style="font-size:13px;color:var(--muted);line-height:1.5">The database refused the read (${_mktEsc((_mktLoadErr||[]).join(', ')||'unknown')}). The Firestore rules in the Firebase Console probably have not been republished since this page shipped.</div>
+      <div style="font-size:14px;color:var(--muted);line-height:1.5">The database refused the read (${_mktEsc((_mktLoadErr||[]).join(', ')||'unknown')}). The Firestore rules in the Firebase Console probably have not been republished since this page shipped.</div>
       <button class="btn-outline" style="margin-top:12px" onclick="window.mktRetryLoad()">Retry</button></div>`;
   }
   const approver=typeof canApprovePaidPR==='function'&&canApprovePaidPR();
@@ -2390,10 +2390,10 @@ function renderMarketingDashboardWidget(){
   if(!session||session.role!=='owner'||typeof canAccessMarketing!=='function'||!canAccessMarketing())return'';
   return`<div class="card" id="mkt-dash-widget" style="margin-bottom:14px;cursor:pointer" onclick="window.showPage('mkt-dispatches')">
     <div style="display:flex;align-items:center;justify-content:space-between">
-      <div style="font-weight:700;font-size:11px;letter-spacing:.07em;text-transform:uppercase">Marketing</div>
-      <div style="font-size:11px;color:var(--muted)">Dispatch Log ›</div>
+      <div style="font-weight:700;font-size:12px;letter-spacing:.07em;text-transform:uppercase">Marketing</div>
+      <div style="font-size:12px;color:var(--muted)">Dispatch Log ›</div>
     </div>
-    <div id="mkt-dash-body" style="font-size:13px;color:var(--muted);margin-top:6px">Loading…</div>
+    <div id="mkt-dash-body" style="font-size:14px;color:var(--muted);margin-top:6px">Loading…</div>
   </div>`;
 }
 

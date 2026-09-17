@@ -295,9 +295,9 @@ function _colorChipHTML(p){
   return'<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);margin-bottom:6px">'+
     _swatchDot(hex,20)+
     '<div style="flex:1;min-width:0">'+
-      '<div style="font-size:13px;font-weight:600;color:var(--dark)">'+(p.colorName||'—')+'</div>'+
-      '<div style="font-size:11px;color:var(--muted)">'+(p.pantoneCode||'')+(p.localInkName?' · '+p.localInkName:'')+'</div>'+
-      (isLegacy?'<div style="font-size:10px;color:var(--amber);font-weight:600;margin-top:1px">Legacy — not linked to Color Library</div>':'')+
+      '<div style="font-size:14px;font-weight:600;color:var(--dark)">'+(p.colorName||'—')+'</div>'+
+      '<div style="font-size:12px;color:var(--muted)">'+(p.pantoneCode||'')+(p.localInkName?' · '+p.localInkName:'')+'</div>'+
+      (isLegacy?'<div style="font-size:11px;color:var(--amber);font-weight:600;margin-top:1px">Legacy — not linked to Color Library</div>':'')+
     '</div>'+
   '</div>';
 }
@@ -311,8 +311,8 @@ function _colorCardFull(c){
     '<div style="flex:1;min-width:0">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">'+
         '<div>'+
-          '<div style="font-size:14px;font-weight:700;color:var(--dark)">'+(c.colorName||'—')+'</div>'+
-          '<div style="font-size:12px;color:var(--muted);margin-top:1px">'+(c.pantoneCode||'No Pantone code')+'</div>'+
+          '<div style="font-size:15px;font-weight:700;color:var(--dark)">'+(c.colorName||'—')+'</div>'+
+          '<div style="font-size:13px;color:var(--muted);margin-top:1px">'+(c.pantoneCode||'No Pantone code')+'</div>'+
         '</div>'+
         (canEdit?'<div style="display:flex;gap:6px">'+
           '<button class="btn-sm" onclick="window.openColorModal(\''+c._id+'\')">Edit</button>'+
@@ -321,11 +321,11 @@ function _colorCardFull(c){
         '</div>':'')+
       '</div>'+
       '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">'+
-        (c.localInkName?'<span style="font-size:11px;padding:2px 8px;background:var(--surface-2);border-radius:6px">'+c.localInkName+'</span>':'')+
-        (c.inkType?'<span style="font-size:11px;padding:2px 8px;background:var(--soft);border-radius:6px;text-transform:capitalize">'+(INK_LABELS[c.inkType]||c.inkType)+'</span>':'')+
-        (c.supplierName?'<span style="font-size:11px;padding:2px 8px;background:var(--surface-2);border-radius:6px">'+c.supplierName+'</span>':'')+
+        (c.localInkName?'<span style="font-size:12px;padding:2px 8px;background:var(--surface-2);border-radius:6px">'+c.localInkName+'</span>':'')+
+        (c.inkType?'<span style="font-size:12px;padding:2px 8px;background:var(--soft);border-radius:6px;text-transform:capitalize">'+(INK_LABELS[c.inkType]||c.inkType)+'</span>':'')+
+        (c.supplierName?'<span style="font-size:12px;padding:2px 8px;background:var(--surface-2);border-radius:6px">'+c.supplierName+'</span>':'')+
       '</div>'+
-      (c.mixingNotes?'<div style="font-size:11px;color:var(--muted);margin-top:4px;font-style:italic">'+c.mixingNotes+'</div>':'')+
+      (c.mixingNotes?'<div style="font-size:12px;color:var(--muted);margin-top:4px;font-style:italic">'+c.mixingNotes+'</div>':'')+
     '</div>'+
   '</div>';
 }
@@ -338,12 +338,12 @@ function _ptDetailChipHTML(p){
   return'<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--soft)">'+
     '<div style="width:32px;height:32px;border-radius:7px;background:'+hex+';border:1px solid rgba(0,0,0,.12);flex-shrink:0;margin-top:2px"></div>'+
     '<div style="flex:1;min-width:0">'+
-      '<div style="font-size:13px;font-weight:700;color:var(--dark)">'+(p.colorName||'—')+'</div>'+
-      (!showWorker?'<div style="font-size:11px;color:var(--muted)">'+(p.pantoneCode||'')+(p.localInkName?' · '+p.localInkName:'')+'</div>':'')+
-      (showWorker?'<div style="font-size:12px;color:var(--muted)">'+(p.localInkName||p.pantoneCode||'')+'</div>':'')+
-      (p.usage?'<div style="font-size:11px;padding:1px 7px;background:var(--soft);border-radius:5px;display:inline-block;margin-top:3px">'+p.usage+'</div>':'')+
-      ((p.articleSpecificNotes||p.notes)?'<div style="font-size:12px;color:var(--dark);margin-top:3px;font-style:italic">'+(p.articleSpecificNotes||p.notes)+'</div>':'')+
-      (isLegacy?'<div style="font-size:10px;color:var(--amber);font-weight:600;margin-top:2px">Legacy — not linked to Color Library</div>':'')+
+      '<div style="font-size:14px;font-weight:700;color:var(--dark)">'+(p.colorName||'—')+'</div>'+
+      (!showWorker?'<div style="font-size:12px;color:var(--muted)">'+(p.pantoneCode||'')+(p.localInkName?' · '+p.localInkName:'')+'</div>':'')+
+      (showWorker?'<div style="font-size:13px;color:var(--muted)">'+(p.localInkName||p.pantoneCode||'')+'</div>':'')+
+      (p.usage?'<div style="font-size:12px;padding:1px 7px;background:var(--soft);border-radius:5px;display:inline-block;margin-top:3px">'+p.usage+'</div>':'')+
+      ((p.articleSpecificNotes||p.notes)?'<div style="font-size:13px;color:var(--dark);margin-top:3px;font-style:italic">'+(p.articleSpecificNotes||p.notes)+'</div>':'')+
+      (isLegacy?'<div style="font-size:11px;color:var(--amber);font-weight:600;margin-top:2px">Legacy — not linked to Color Library</div>':'')+
     '</div>'+
   '</div>';
 }
@@ -366,10 +366,10 @@ function renderColorLibraryPage(){
       '</div>':'')+
     '</div>'+
   '</div>'+
-  '<div style="font-size:11px;color:var(--muted);margin-bottom:12px;padding:8px 12px;background:var(--accent-warning-soft);border-radius:8px;border:1px solid var(--accent-warning)">Digital swatches are for reference only. Final approval must match physical Pantone / ink sample.</div>'+
+  '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;padding:8px 12px;background:var(--accent-warning-soft);border-radius:8px;border:1px solid var(--accent-warning)">Digital swatches are for reference only. Final approval must match physical Pantone / ink sample.</div>'+
   (canEdit?_renderColorImporterBlock():'')+
   (active.length?'<div style="display:grid;gap:8px;margin-bottom:12px">'+active.map(function(c){return _colorCardFull(c);}).join('')+'</div>':'<div class="empty" style="margin-bottom:12px">No colors in library yet. Add colors or seed starter set.</div>')+
-  (archived.length?'<details style="margin-bottom:16px"><summary style="font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;padding:8px 0">Archived ('+archived.length+')</summary><div style="display:grid;gap:8px;margin-top:8px;opacity:.65">'+archived.map(function(c){return _colorCardFull(c);}).join('')+'</div></details>':'')+
+  (archived.length?'<details style="margin-bottom:16px"><summary style="font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;padding:8px 0">Archived ('+archived.length+')</summary><div style="display:grid;gap:8px;margin-top:8px;opacity:.65">'+archived.map(function(c){return _colorCardFull(c);}).join('')+'</div></details>':'')+
   '<div id="color-modal-container"></div>';
 }
 
@@ -382,10 +382,10 @@ window.openColorModal=function(id){
   container.innerHTML='<div id="color-modal-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:flex-end;justify-content:center" onclick="if(event.target.id===\'color-modal-overlay\')window.closeColorModal()">'+
     '<div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:20px;max-height:90vh;overflow-y:auto">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'+
-        '<div style="font-size:16px;font-weight:700">'+(c?'Edit Color':'Add New Color')+'</div>'+
-        '<button onclick="window.closeColorModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>'+
+        '<div style="font-size:17px;font-weight:700">'+(c?'Edit Color':'Add New Color')+'</div>'+
+        '<button onclick="window.closeColorModal()" style="background:none;border:none;font-size:23px;cursor:pointer;color:var(--muted)">×</button>'+
       '</div>'+
-      '<div style="font-size:11px;color:var(--amber);margin-bottom:12px;padding:7px 10px;background:var(--accent-warning-soft);border-radius:8px">Digital swatch is only an approximation. Confirm with physical Pantone/ink sample.</div>'+
+      '<div style="font-size:12px;color:var(--amber);margin-bottom:12px;padding:7px 10px;background:var(--accent-warning-soft);border-radius:8px">Digital swatch is only an approximation. Confirm with physical Pantone/ink sample.</div>'+
       '<div class="form-grid">'+
         '<div class="field"><label>Color Name *</label><input id="cm-name" value="'+(c&&c.colorName?c.colorName:'')+'" placeholder="e.g. Brown"></div>'+
         '<div class="field"><label>Pantone Code</label><input id="cm-pantone" value="'+(c&&c.pantoneCode?c.pantoneCode:'')+'" placeholder="e.g. PANTONE 438 C"></div>'+
@@ -397,7 +397,7 @@ window.openColorModal=function(id){
         '</div>'+
         '<div class="field"><label>Local Ink Name</label><input id="cm-ink" value="'+(c&&c.localInkName?c.localInkName:'')+'" placeholder="e.g. Camlin Brown 01"></div>'+
         '<div class="field"><label>Ink Type</label>'+
-          '<select id="cm-type" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">'+
+          '<select id="cm-type" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;outline:none">'+
             INK_TYPES.map(function(t){return'<option value="'+t+'"'+(c&&c.inkType===t?' selected':'')+'>'+INK_LABELS[t]+'</option>';}).join('')+
           '</select>'+
         '</div>'+
@@ -529,14 +529,14 @@ function _ensureSheetJS(){
 function _ciEsc(s){return String(s).replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]);});}
 function _renderColorImporterBlock(){
   return '<details id="color-import-details" style="margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px">'+
-    '<summary style="padding:12px 14px;cursor:pointer;font-size:13px;font-weight:700;list-style:none;display:flex;justify-content:space-between;align-items:center">'+
+    '<summary style="padding:12px 14px;cursor:pointer;font-size:14px;font-weight:700;list-style:none;display:flex;justify-content:space-between;align-items:center">'+
       '<span>Bulk import from XLSX</span>'+
-      '<span style="font-size:11px;color:var(--muted);font-weight:500">Click to expand</span>'+
+      '<span style="font-size:12px;color:var(--muted);font-weight:500">Click to expand</span>'+
     '</summary>'+
     '<div style="padding:0 14px 14px;border-top:1px solid var(--border)">'+
-      '<div style="font-size:11px;color:var(--muted);margin:10px 0">Upload an XLSX. Pantone codes (e.g. "357 C", "Cool Grey 1C", "Pantone Red 032 C", "White", "Black", "Base") are extracted from any cell. Existing codes are skipped.</div>'+
+      '<div style="font-size:12px;color:var(--muted);margin:10px 0">Upload an XLSX. Pantone codes (e.g. "357 C", "Cool Grey 1C", "Pantone Red 032 C", "White", "Black", "Base") are extracted from any cell. Existing codes are skipped.</div>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'+
-        '<input type="file" id="color-xlsx-file" accept=".xlsx,.xls" style="font-size:12px;flex:1;min-width:180px">'+
+        '<input type="file" id="color-xlsx-file" accept=".xlsx,.xls" style="font-size:13px;flex:1;min-width:180px">'+
         '<button class="btn-outline" onclick="window.parseColorXlsx()">Parse file</button>'+
       '</div>'+
       '<div id="color-import-preview"></div>'+
@@ -548,7 +548,7 @@ function _renderColorImportPreview(){
   var preview=document.getElementById('color-import-preview');
   if(!preview)return;
   if(!pendingColorImport.length){
-    preview.innerHTML='<div style="font-size:12px;color:var(--muted);padding:6px 0">No Pantone codes detected in this file.</div>';
+    preview.innerHTML='<div style="font-size:13px;color:var(--muted);padding:6px 0">No Pantone codes detected in this file.</div>';
     return;
   }
   var n=pendingColorImport.length;
@@ -557,14 +557,14 @@ function _renderColorImportPreview(){
     var p=pendingColorImport[i];
     rows+='<div style="width:24px;height:24px;border-radius:5px;background:'+_ciEsc(p.hex)+';border:1px solid rgba(0,0,0,.12);align-self:center"></div>'+
           '<div style="align-self:center">'+
-            '<div style="font-family:ui-monospace,monospace;font-size:11px;line-height:1.2">'+_ciEsc(p.code)+'</div>'+
-            '<div style="font-family:ui-monospace,monospace;font-size:10px;color:var(--muted);line-height:1.2">'+_ciEsc(p.hex)+'</div>'+
+            '<div style="font-family:ui-monospace,monospace;font-size:12px;line-height:1.2">'+_ciEsc(p.code)+'</div>'+
+            '<div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--muted);line-height:1.2">'+_ciEsc(p.hex)+'</div>'+
           '</div>'+
-          '<input type="text" data-i="'+i+'" class="ci-name-edit" value="'+_ciEsc(p.name)+'" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--surface)">'+
-          '<div id="ci-row-'+i+'" style="font-size:10px;color:var(--muted);align-self:center">pending</div>';
+          '<input type="text" data-i="'+i+'" class="ci-name-edit" value="'+_ciEsc(p.name)+'" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--surface)">'+
+          '<div id="ci-row-'+i+'" style="font-size:11px;color:var(--muted);align-self:center">pending</div>';
   }
   preview.innerHTML='<div style="border-top:1px solid var(--border);padding-top:10px;margin-top:8px">'+
-    '<div style="font-size:12px;font-weight:600;margin-bottom:8px">'+n+' unique pantone code'+(n!==1?'s':'')+' detected</div>'+
+    '<div style="font-size:13px;font-weight:600;margin-bottom:8px">'+n+' unique pantone code'+(n!==1?'s':'')+' detected</div>'+
     '<div style="display:grid;grid-template-columns:28px auto 1fr auto;gap:6px 10px;max-height:280px;overflow-y:auto;padding-right:6px;align-items:center">'+rows+'</div>'+
     '<button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:10px" onclick="window.runColorImport()">Import to Color Library</button>'+
   '</div>';
@@ -581,7 +581,7 @@ window.parseColorXlsx=async function(){
   if(!file){showToast('Choose an XLSX file first.',true);return;}
   var preview=document.getElementById('color-import-preview');
   var prog=document.getElementById('color-import-progress');
-  if(preview)preview.innerHTML='<div style="font-size:12px;color:var(--muted);padding:6px 0">Parsing…</div>';
+  if(preview)preview.innerHTML='<div style="font-size:13px;color:var(--muted);padding:6px 0">Parsing…</div>';
   if(prog)prog.innerHTML='';
   try{
     var XLSX=await _ensureSheetJS();
@@ -597,7 +597,7 @@ window.parseColorXlsx=async function(){
     pendingColorImport=codes.map(function(c){return{code:c,name:_suggestPantoneName(c),hex:_suggestPantoneHex(c),slug:_slugPantone(c)};});
     _renderColorImportPreview();
   }catch(e){
-    if(preview)preview.innerHTML='<div style="font-size:12px;color:#dc2626;padding:6px 0">Parse error: '+e.message+'</div>';
+    if(preview)preview.innerHTML='<div style="font-size:13px;color:#dc2626;padding:6px 0">Parse error: '+e.message+'</div>';
   }
 };
 window.runColorImport=async function(){
@@ -645,7 +645,7 @@ window.runColorImport=async function(){
       if(rowEl){rowEl.textContent='failed';rowEl.style.color='#9a1f1f';rowEl.title=e.message;}
     }
     if(prog){
-      prog.innerHTML='<div style="font-size:11px;color:var(--muted);padding:4px 0">'+(i+1)+'/'+total+' processed · '+ok+' imported · '+skip+' skipped · '+err+' failed</div>';
+      prog.innerHTML='<div style="font-size:12px;color:var(--muted);padding:4px 0">'+(i+1)+'/'+total+' processed · '+ok+' imported · '+skip+' skipped · '+err+' failed</div>';
     }
   }
   showToast(ok+' added, '+skip+' skipped'+(err?', '+err+' failed':''));
@@ -690,13 +690,13 @@ function renderRecipeDirectory(){
   </div>
 
   ${isOM&&pendingDrafts.length?`<div class="card" style="border-left:3px solid #F59E0B;margin-bottom:12px;padding:0">
-    <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-weight:700"><span style="color:var(--accent-warning)">⏳ Drafts Pending Review</span><span style="background:#F59E0B;color:#fff;font-size:11px;padding:2px 9px;border-radius:10px">${pendingDrafts.length}</span></div>
+    <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-weight:700"><span style="color:var(--accent-warning)">⏳ Drafts Pending Review</span><span style="background:#F59E0B;color:#fff;font-size:12px;padding:2px 9px;border-radius:10px">${pendingDrafts.length}</span></div>
     ${pendingDrafts.map(r=>`<div onclick="window.openRecipeDraftReview('${r._id}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-top:1px solid var(--soft);cursor:pointer" onmouseenter="this.style.background='var(--hover)'" onmouseleave="this.style.background=''">
       <div style="min-width:0">
-        <div style="font-weight:600;font-size:14px">${r.articleName||'Untitled'}</div>
-        <div style="font-size:11px;color:var(--muted)">${r.articleCode||'—'} · PO ${r.poNumber||'—'} · by ${r.submittedBy||r.createdBy||'—'}${r.submittedAt?' · '+new Date(r.submittedAt).toLocaleString('en-GB'):''} · ${(r.draftPlacements||[]).length} placement${(r.draftPlacements||[]).length===1?'':'s'}</div>
+        <div style="font-weight:600;font-size:15px">${r.articleName||'Untitled'}</div>
+        <div style="font-size:12px;color:var(--muted)">${r.articleCode||'—'} · PO ${r.poNumber||'—'} · by ${r.submittedBy||r.createdBy||'—'}${r.submittedAt?' · '+new Date(r.submittedAt).toLocaleString('en-GB'):''} · ${(r.draftPlacements||[]).length} placement${(r.draftPlacements||[]).length===1?'':'s'}</div>
       </div>
-      <div style="font-size:18px;color:var(--muted)">›</div>
+      <div style="font-size:19px;color:var(--muted)">›</div>
     </div>`).join('')}
   </div>`:''}
 
@@ -705,12 +705,12 @@ function renderRecipeDirectory(){
     ${myRevisions.map(r=>`<div onclick="window.openRecipeDraftEdit('${r._id}')" style="padding:10px 16px;border-top:1px solid var(--soft);cursor:pointer" onmouseenter="this.style.background='var(--hover)'" onmouseleave="this.style.background=''">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
         <div style="min-width:0">
-          <div style="font-weight:600;font-size:14px">${r.articleName||'Untitled'}</div>
-          <div style="font-size:11px;color:var(--muted)">${r.articleCode||'—'} · PO ${r.poNumber||'—'}</div>
+          <div style="font-weight:600;font-size:15px">${r.articleName||'Untitled'}</div>
+          <div style="font-size:12px;color:var(--muted)">${r.articleCode||'—'} · PO ${r.poNumber||'—'}</div>
         </div>
-        <div style="font-size:18px;color:var(--muted)">›</div>
+        <div style="font-size:19px;color:var(--muted)">›</div>
       </div>
-      ${r.revisionNote?`<div style="font-size:12px;color:var(--accent-urgent);margin-top:6px;padding:6px 10px;background:var(--accent-urgent-soft);border-radius:6px">"${r.revisionNote}"</div>`:''}
+      ${r.revisionNote?`<div style="font-size:13px;color:var(--accent-urgent);margin-top:6px;padding:6px 10px;background:var(--accent-urgent-soft);border-radius:6px">"${r.revisionNote}"</div>`:''}
     </div>`).join('')}
   </div>`:''}
 
@@ -718,11 +718,11 @@ function renderRecipeDirectory(){
 
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
     <input id="recipe-q" placeholder="Search article code or name…" oninput="window._filterRecipes(this.value)" value="${q}"
-      style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
-    ${!isAsghar?`<select onchange="window._filterRecipeStatus(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
+      style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
+    ${!isAsghar?`<select onchange="window._filterRecipeStatus(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
       <option value="">All status</option><option value="active">Active</option><option value="locked">Locked</option><option value="draft">Draft</option><option value="archived">Archived</option>
     </select>`:''}
-    <select onchange="window._filterRecipeTier(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
+    <select onchange="window._filterRecipeTier(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
       <option value="">All tiers</option>${[1,2,3,4].map(t=>`<option value="${t}">Tier ${t}</option>`).join('')}
     </select>
   </div>
@@ -769,20 +769,20 @@ function recipeCardHTML(r){
   return`<div class="recipe-card" onclick="window.openRecipeDetail('${r._id}')">
     <div style="display:flex;gap:12px;align-items:flex-start">
       <div style="width:56px;height:70px;flex-shrink:0;background:var(--soft);border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
-        ${hasImg?`<img src="${imgUrl}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:9px;color:var(--muted);text-align:center;padding:4px">No img</span>'}
+        ${hasImg?`<img src="${imgUrl}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:11px;color:var(--muted);text-align:center;padding:4px">No img</span>'}
       </div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
-          <span style="font-size:11px;font-weight:700;color:var(--red)">${r.articleCode||'—'}</span>
+          <span style="font-size:12px;font-weight:700;color:var(--red)">${r.articleCode||'—'}</span>
           ${recipeBadgeHTML(r.status||'draft')}
           ${tierBadge(tier)}
         </div>
-        <div style="font-size:14px;font-weight:600;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.articleName||'Untitled'}</div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${(r.printing?.processTypes||[]).map(pt=>processBadge(pt)).join(' ')}</div>
-        ${r.printing?.ratePerPiece?`<div style="font-size:12px;font-weight:600;color:var(--dark)">Rs. ${r.printing.ratePerPiece}/pc</div>`:''}
-        ${warnings.length?`<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${warnings.map(w=>`<span style="font-size:10px;background:var(--soft);color:var(--text);padding:2px 6px;border-radius:6px;font-weight:600">⚠ ${w}</span>`).join('')}</div>`:''}
+        <div style="font-size:15px;font-weight:600;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.articleName||'Untitled'}</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">${(r.printing?.processTypes||[]).map(pt=>processBadge(pt)).join(' ')}</div>
+        ${r.printing?.ratePerPiece?`<div style="font-size:13px;font-weight:600;color:var(--dark)">Rs. ${r.printing.ratePerPiece}/pc</div>`:''}
+        ${warnings.length?`<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${warnings.map(w=>`<span style="font-size:11px;background:var(--soft);color:var(--text);padding:2px 6px;border-radius:6px;font-weight:600">⚠ ${w}</span>`).join('')}</div>`:''}
       </div>
-      <div style="font-size:18px;color:var(--muted)">›</div>
+      <div style="font-size:19px;color:var(--muted)">›</div>
     </div>
   </div>`;
 }
@@ -802,25 +802,25 @@ function _draftTypeToTemplateId(placementType){
 
 function _rdPlacementRowHTML(i,p={}){
   return`<div class="rd-pl-row" data-idx="${i}" style="display:grid;grid-template-columns:1.2fr 1.4fr 1fr 1.4fr auto;gap:8px;margin-bottom:8px;align-items:end">
-    <div class="field" style="margin:0"><label style="font-size:11px">Placement Type</label>
-      <select id="rd-pl-type-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
+    <div class="field" style="margin:0"><label style="font-size:12px">Placement Type</label>
+      <select id="rd-pl-type-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
         <option value="">Select…</option>
         ${RD_PLACEMENT_TYPES.map(t=>`<option value="${t}" ${p.placementType===t?'selected':''}>${t}</option>`).join('')}
       </select>
     </div>
-    <div class="field" style="margin:0"><label style="font-size:11px">Position &amp; Size (inches)</label>
-      <input id="rd-pl-pos-${i}" placeholder='e.g. 4&quot; x 3&quot; centered' value="${_rdEsc(p.positionSize)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">
+    <div class="field" style="margin:0"><label style="font-size:12px">Position &amp; Size (inches)</label>
+      <input id="rd-pl-pos-${i}" placeholder='e.g. 4&quot; x 3&quot; centered' value="${_rdEsc(p.positionSize)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;outline:none">
     </div>
-    <div class="field" style="margin:0"><label style="font-size:11px">Technique</label>
-      <select id="rd-pl-tech-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
+    <div class="field" style="margin:0"><label style="font-size:12px">Technique</label>
+      <select id="rd-pl-tech-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
         <option value="">Select…</option>
         ${RD_TECHNIQUES.map(t=>`<option value="${t}" ${p.technique===t?'selected':''}>${t}</option>`).join('')}
       </select>
     </div>
-    <div class="field" style="margin:0"><label style="font-size:11px">Notes</label>
-      <input id="rd-pl-notes-${i}" value="${_rdEsc(p.notes)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">
+    <div class="field" style="margin:0"><label style="font-size:12px">Notes</label>
+      <input id="rd-pl-notes-${i}" value="${_rdEsc(p.notes)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;outline:none">
     </div>
-    <button type="button" onclick="window._rdRemovePlacement(${i})" style="padding:8px 10px;border:1px solid var(--accent-urgent);background:var(--accent-urgent-soft);color:var(--accent-urgent);border-radius:8px;font-size:12px;cursor:pointer;height:36px">Remove</button>
+    <button type="button" onclick="window._rdRemovePlacement(${i})" style="padding:8px 10px;border:1px solid var(--accent-urgent);background:var(--accent-urgent-soft);color:var(--accent-urgent);border-radius:8px;font-size:13px;cursor:pointer;height:36px">Remove</button>
   </div>`;
 }
 
@@ -852,13 +852,13 @@ window._rdSearch=function(qRaw){
   // It's a module-level constant always in memory; no fetch needed.
   const cat=(typeof PRODUCT_CATALOG!=='undefined'?PRODUCT_CATALOG:[]);
   const results=cat.filter(p=>(p.code||'').toLowerCase().includes(q)||(p.name||'').toLowerCase().includes(q)).slice(0,15);
-  if(!results.length){dd.innerHTML='<div style="padding:10px 12px;color:var(--muted);font-size:13px">Article not found — contact Ammar</div>';dd.style.display='block';return;}
+  if(!results.length){dd.innerHTML='<div style="padding:10px 12px;color:var(--muted);font-size:14px">Article not found — contact Ammar</div>';dd.style.display='block';return;}
   dd.innerHTML=results.map(p=>{
     const m={articleName:p.name||'',articleCode:p.code||''};
     const data=encodeURIComponent(JSON.stringify(m));
-    return`<div onclick="window._rdPick('${data}')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--soft);font-size:13px" onmouseenter="this.style.background='var(--hover)'" onmouseleave="this.style.background=''">
+    return`<div onclick="window._rdPick('${data}')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--soft);font-size:14px" onmouseenter="this.style.background='var(--hover)'" onmouseleave="this.style.background=''">
       <div style="font-weight:600">${p.name||'(no name)'}</div>
-      <div style="font-size:11px;color:var(--muted)">${p.code||'—'}</div>
+      <div style="font-size:12px;color:var(--muted)">${p.code||'—'}</div>
     </div>`;
   }).join('');
   dd.style.display='block';
@@ -923,7 +923,7 @@ function renderRecipeDraftPage(){
 
   <div class="card"><div class="card-title">Article</div>
     <div style="position:relative;margin-bottom:8px">
-      <input id="rd-search-q" placeholder="Search by article name or code…" oninput="window._rdSearch(this.value)" autocomplete="off" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">
+      <input id="rd-search-q" placeholder="Search by article name or code…" oninput="window._rdSearch(this.value)" autocomplete="off" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;outline:none">
       <div id="rd-search-dd" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-top:4px;max-height:280px;overflow-y:auto;z-index:10;box-shadow:0 4px 14px rgba(0,0,0,0.08)"></div>
     </div>
     <div id="rd-fields" style="display:${editing?'block':'none'}">
@@ -1003,10 +1003,10 @@ window.submitRecipeDraft=async function(existingId){
 
 // ── Draft review (Ammar) ──
 function _rdrPantoneChipHTML(i,j,pn){
-  return`<span class="rdr-pn-chip" data-pi="${i}" data-pj="${j}" data-color-id="${_rdEsc(pn.colorLibraryId)}" data-color-name="${_rdEsc(pn.colorName)}" data-pantone-code="${_rdEsc(pn.pantoneCode)}" data-hex-approx="${_rdEsc(pn.hexApprox)}" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:var(--soft);border-radius:14px;font-size:12px">
+  return`<span class="rdr-pn-chip" data-pi="${i}" data-pj="${j}" data-color-id="${_rdEsc(pn.colorLibraryId)}" data-color-name="${_rdEsc(pn.colorName)}" data-pantone-code="${_rdEsc(pn.pantoneCode)}" data-hex-approx="${_rdEsc(pn.hexApprox)}" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:var(--soft);border-radius:14px;font-size:13px">
     <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${pn.hexApprox||'#ccc'};border:1px solid var(--border)"></span>
     <span>${_rdEsc(pn.colorName)||'—'}${pn.pantoneCode?' · '+_rdEsc(pn.pantoneCode):''}</span>
-    <button type="button" onclick="window._rdrRemovePantone(${i},${j})" style="border:none;background:none;color:#dc2626;cursor:pointer;font-size:14px;padding:0;line-height:1">×</button>
+    <button type="button" onclick="window._rdrRemovePantone(${i},${j})" style="border:none;background:none;color:#dc2626;cursor:pointer;font-size:15px;padding:0;line-height:1">×</button>
   </span>`;
 }
 
@@ -1015,32 +1015,32 @@ function _rdrPlacementRowHTML(i,p={}){
     .map(c=>`<option value="${c._id}">${_rdEsc(c.colorName)||'—'}${c.pantoneCode?' · '+_rdEsc(c.pantoneCode):''}</option>`).join('');
   return`<div class="rdr-pl-row" data-idx="${i}" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;background:var(--surface-2)">
     <div style="display:grid;grid-template-columns:1.2fr 1.4fr 1fr auto;gap:8px;align-items:end">
-      <div class="field" style="margin:0"><label style="font-size:11px">Placement Type</label>
-        <select id="rdr-pl-type-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
+      <div class="field" style="margin:0"><label style="font-size:12px">Placement Type</label>
+        <select id="rdr-pl-type-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
           <option value="">Select…</option>
           ${RD_PLACEMENT_TYPES.map(t=>`<option value="${t}" ${p.placementType===t?'selected':''}>${t}</option>`).join('')}
         </select>
       </div>
-      <div class="field" style="margin:0"><label style="font-size:11px">Position &amp; Size (inches)</label>
-        <input id="rdr-pl-pos-${i}" value="${_rdEsc(p.positionSize)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">
+      <div class="field" style="margin:0"><label style="font-size:12px">Position &amp; Size (inches)</label>
+        <input id="rdr-pl-pos-${i}" value="${_rdEsc(p.positionSize)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;outline:none">
       </div>
-      <div class="field" style="margin:0"><label style="font-size:11px">Technique</label>
-        <select id="rdr-pl-tech-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
+      <div class="field" style="margin:0"><label style="font-size:12px">Technique</label>
+        <select id="rdr-pl-tech-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
           <option value="">Select…</option>
           ${RD_TECHNIQUES.map(t=>`<option value="${t}" ${p.technique===t?'selected':''}>${t}</option>`).join('')}
         </select>
       </div>
-      <button type="button" onclick="window._rdrRemovePlacement(${i})" style="padding:8px 10px;border:1px solid var(--accent-urgent);background:var(--accent-urgent-soft);color:var(--accent-urgent);border-radius:8px;font-size:12px;cursor:pointer;height:36px">Remove</button>
+      <button type="button" onclick="window._rdrRemovePlacement(${i})" style="padding:8px 10px;border:1px solid var(--accent-urgent);background:var(--accent-urgent-soft);color:var(--accent-urgent);border-radius:8px;font-size:13px;cursor:pointer;height:36px">Remove</button>
     </div>
-    <div class="field" style="margin:8px 0 0"><label style="font-size:11px">Notes</label>
-      <input id="rdr-pl-notes-${i}" value="${_rdEsc(p.notes)}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">
+    <div class="field" style="margin:8px 0 0"><label style="font-size:12px">Notes</label>
+      <input id="rdr-pl-notes-${i}" value="${_rdEsc(p.notes)}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;outline:none">
     </div>
     <div style="margin-top:10px">
-      <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Pantone Colors</div>
+      <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Pantone Colors</div>
       <div id="rdr-pl-pantones-${i}" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
         ${(p.pantones||[]).map((pn,j)=>_rdrPantoneChipHTML(i,j,pn)).join('')}
       </div>
-      <select onchange="window._rdrAddPantone(${i},this.value);this.value='';" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--surface);outline:none;max-width:280px">
+      <select onchange="window._rdrAddPantone(${i},this.value);this.value='';" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--surface);outline:none;max-width:280px">
         <option value="">+ Add color from library…</option>
         ${colorOpts}
       </select>
@@ -1140,7 +1140,7 @@ function renderRecipeDraftReviewPage(){
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
       <div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-size:12px;font-weight:700;color:var(--red)">${_rdEsc(r.articleCode)||'—'}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--red)">${_rdEsc(r.articleCode)||'—'}</span>
           ${recipeBadgeHTML(r.status||'pending_review')}
         </div>
         <div class="page-title" style="margin-top:4px">Review Draft — ${_rdEsc(r.articleName)||'Untitled'}</div>
@@ -1165,19 +1165,19 @@ function renderRecipeDraftReviewPage(){
       <div class="field" style="grid-column:1/-1">
         <label>Process Types (select all that apply)</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-          ${Object.entries(PROCESS_TYPES).map(([k,v])=>`<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2)">
+          ${Object.entries(PROCESS_TYPES).map(([k,v])=>`<label style="display:flex;align-items:center;gap:5px;font-size:14px;cursor:pointer;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2)">
             <input type="checkbox" id="rc-pt-${k}" ${(pt.processTypes||[]).includes(k)?'checked':''} style="accent-color:var(--dark)"> ${v.icon} ${v.label}
           </label>`).join('')}
         </div>
       </div>
-      <div id="rc-rate-status" style="grid-column:1/-1">${rm?`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--accent-success-soft);border:1px solid var(--accent-success);border-radius:8px;font-size:12px"><span style="color:var(--green);font-weight:700">Rate found from Printing Rate List ✅</span><span style="color:var(--muted)">Rs. ${rm.ratePerPiece}/pc · Tier ${rm.complexityTier}</span></div>`:`<div style="padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted)">Article not in Rate Master — set manually</div>`}</div>
+      <div id="rc-rate-status" style="grid-column:1/-1">${rm?`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--accent-success-soft);border:1px solid var(--accent-success);border-radius:8px;font-size:13px"><span style="color:var(--green);font-weight:700">Rate found from Printing Rate List ✅</span><span style="color:var(--muted)">Rs. ${rm.ratePerPiece}/pc · Tier ${rm.complexityTier}</span></div>`:`<div style="padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--muted)">Article not in Rate Master — set manually</div>`}</div>
       <div class="field"><label>Complexity Tier *</label>
         <select id="rc-tier" onchange="window._rcMarkOverride()">${[1,2,3,4].map(t=>`<option value="${t}" ${(_tierVal||1)==t?'selected':''}>${TIER_INFO[t].label} — ${TIER_INFO[t].desc}</option>`).join('')}</select>
       </div>
       <div class="field"><label>Rate per Piece (Rs.) *</label><input id="rc-rate" type="number" min="0" step="0.5" placeholder="0.00" value="${_rateVal}" oninput="window._rcMarkOverride()"></div>
       <div id="rc-override-row" style="grid-column:1/-1;display:none"></div>
-      <div class="field" style="grid-column:1/-1"><label>Instructions (English)</label><textarea id="rc-instr-en" rows="3" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:100%;font-family:inherit;resize:vertical;outline:none">${_rdEsc(pt.instructionsEn||'')}</textarea></div>
-      <div class="field" style="grid-column:1/-1"><label>ہدایات (اردو)</label><textarea id="rc-instr-ur" rows="3" dir="rtl" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:100%;font-family:inherit;resize:vertical;outline:none;text-align:right">${_rdEsc(pt.instructionsUr||'')}</textarea></div>
+      <div class="field" style="grid-column:1/-1"><label>Instructions (English)</label><textarea id="rc-instr-en" rows="3" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;width:100%;font-family:inherit;resize:vertical;outline:none">${_rdEsc(pt.instructionsEn||'')}</textarea></div>
+      <div class="field" style="grid-column:1/-1"><label>ہدایات (اردو)</label><textarea id="rc-instr-ur" rows="3" dir="rtl" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;width:100%;font-family:inherit;resize:vertical;outline:none;text-align:right">${_rdEsc(pt.instructionsUr||'')}</textarea></div>
     </div>
   </div>
 
@@ -1316,28 +1316,28 @@ window.printBlankRecipeSheet=function(){
   win.document.write(`<!DOCTYPE html><html><head><title>Placement Recipe Sheet — Blank</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',sans-serif;color:#000;background:#fff;font-size:9px;line-height:1.2;padding:5mm}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',sans-serif;color:#000;background:#fff;font-size:11px;line-height:1.2;padding:5mm}
     .sheet{width:100%}
     .head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #000;padding-bottom:2px;margin-bottom:4px}
-    .brand{font-size:16px;font-weight:900;letter-spacing:2px}
-    .subtitle{font-size:10px;font-weight:600;letter-spacing:.5px}
+    .brand{font-size:17px;font-weight:900;letter-spacing:2px}
+    .subtitle{font-size:11px;font-weight:600;letter-spacing:.5px}
     .block{margin-bottom:4px;padding-bottom:4px;border-bottom:1px dashed #000}
     .block:last-of-type{border-bottom:none;margin-bottom:0;padding-bottom:0}
-    .meta{display:flex;gap:6px;font-size:9px;font-weight:600;margin-bottom:2px}
+    .meta{display:flex;gap:6px;font-size:11px;font-weight:600;margin-bottom:2px}
     .meta-item{flex:1;display:flex;align-items:flex-end;gap:3px}
     .meta-line{flex:1;border-bottom:1px solid #000;display:inline-block;height:12px}
-    table{border-collapse:collapse;width:100%;font-size:9px;table-layout:fixed}
+    table{border-collapse:collapse;width:100%;font-size:11px;table-layout:fixed}
     th,td{border:1px solid #000;padding:1px 4px;text-align:left;vertical-align:middle}
-    th{background:#eee;font-weight:700;font-size:8px;text-transform:uppercase;letter-spacing:.4px;height:13px}
+    th{background:#eee;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;height:13px}
     th.col-num,td.col-num{width:20px;text-align:center}
     th.col-type{width:38%}
     td.row-cell{height:14px}
-    .footer{margin-top:4px;padding-top:4px;border-top:2px solid #000;display:flex;gap:14px;font-size:9px}
+    .footer{margin-top:4px;padding-top:4px;border-top:2px solid #000;display:flex;gap:14px;font-size:11px}
     .footer-item{flex:1;display:flex;align-items:flex-end;gap:5px}
     .footer-label{font-weight:700;white-space:nowrap}
     .footer-line{flex:1;border-bottom:1px solid #000;height:12px}
     .no-print{margin-top:8px;text-align:center}
-    .no-print button{padding:7px 16px;background:#1A1A2E;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit}
+    .no-print button{padding:7px 16px;background:#1A1A2E;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit}
     @media print{
       @page{size:A4 portrait;margin:5mm}
       html,body{height:auto}
@@ -1390,7 +1390,7 @@ function renderRecipeCreatePage(){
       <div class="field" style="grid-column:1/-1">
         <label>Process Types (select all that apply)</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-          ${Object.entries(PROCESS_TYPES).map(([k,v])=>`<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2)">
+          ${Object.entries(PROCESS_TYPES).map(([k,v])=>`<label style="display:flex;align-items:center;gap:5px;font-size:14px;cursor:pointer;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2)">
             <input type="checkbox" id="rc-pt-${k}" ${(pt.processTypes||[]).includes(k)?'checked':''} style="accent-color:var(--dark)"> ${v.icon} ${v.label}
           </label>`).join('')}
         </div>
@@ -1398,12 +1398,12 @@ function renderRecipeCreatePage(){
       <div id="rc-rate-status" style="grid-column:1/-1">${(()=>{
         const rm=_lookupRate(e.articleCode||'');
         if(!e.articleCode)return'';
-        if(rm)return`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--accent-success-soft);border:1px solid var(--accent-success);border-radius:8px;font-size:12px">
+        if(rm)return`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--accent-success-soft);border:1px solid var(--accent-success);border-radius:8px;font-size:13px">
           <span style="color:var(--green);font-weight:700">Rate found from Printing Rate List ✅</span>
           <span style="color:var(--muted)">Rs. ${rm.ratePerPiece}/pc · Tier ${rm.complexityTier}</span>
           <span style="color:var(--muted);margin-left:auto">Source: Current Quarter Rate List</span>
         </div>`;
-        return`<div style="padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted)">
+        return`<div style="padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--muted)">
           Rate not found in Printing Rate List ⚠️ — Enter manually for now.
         </div>`;
       })()}</div>
@@ -1412,14 +1412,14 @@ function renderRecipeCreatePage(){
       </div>
       <div class="field"><label>Rate per Piece (Rs.) *</label><input id="rc-rate" type="number" min="0" step="0.5" placeholder="0.00" value="${pt.ratePerPiece||''}" oninput="window._rcMarkOverride()"></div>
       <div id="rc-override-row" style="grid-column:1/-1;display:${(()=>{const rm=_lookupRate(e.articleCode||'');return(rm&&(pt.ratePerPiece!==rm.ratePerPiece||pt.complexityTier!==rm.complexityTier))?'block':'none';})()}">
-        <div style="padding:7px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div style="padding:7px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span>Values differ from Rate List.</span>
-          <button type="button" onclick="window._rcUseRateList()" style="font-size:12px;padding:3px 10px;border:1px solid var(--accent-warning);border-radius:6px;background:none;color:var(--accent-warning);cursor:pointer">Use Rate List Values</button>
-          <span style="margin-left:auto">Override reason: <input id="rc-override-note" placeholder="optional…" style="font-size:12px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;width:180px;outline:none" value="${pt.rateOverrideNote||''}"></span>
+          <button type="button" onclick="window._rcUseRateList()" style="font-size:13px;padding:3px 10px;border:1px solid var(--accent-warning);border-radius:6px;background:none;color:var(--accent-warning);cursor:pointer">Use Rate List Values</button>
+          <span style="margin-left:auto">Override reason: <input id="rc-override-note" placeholder="optional…" style="font-size:13px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;width:180px;outline:none" value="${pt.rateOverrideNote||''}"></span>
         </div>
       </div>
-      <div class="field" style="grid-column:1/-1"><label>Instructions (English)</label><textarea id="rc-instr-en" rows="3" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:100%;font-family:inherit;resize:vertical;outline:none">${pt.instructionsEn||''}</textarea></div>
-      <div class="field" style="grid-column:1/-1"><label>ہدایات (اردو)</label><textarea id="rc-instr-ur" rows="3" dir="rtl" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:100%;font-family:inherit;resize:vertical;outline:none;text-align:right">${pt.instructionsUr||''}</textarea></div>
+      <div class="field" style="grid-column:1/-1"><label>Instructions (English)</label><textarea id="rc-instr-en" rows="3" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;width:100%;font-family:inherit;resize:vertical;outline:none">${pt.instructionsEn||''}</textarea></div>
+      <div class="field" style="grid-column:1/-1"><label>ہدایات (اردو)</label><textarea id="rc-instr-ur" rows="3" dir="rtl" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;width:100%;font-family:inherit;resize:vertical;outline:none;text-align:right">${pt.instructionsUr||''}</textarea></div>
     </div>
   </div>
 
@@ -1443,7 +1443,7 @@ function renderRecipeCreatePage(){
       <div class="field"><label>Back Image URL</label><input id="rc-img-back" placeholder="https://…" value="${imgs.backUrl||''}"></div>
       <div class="field" style="grid-column:1/-1"><label>Placement Guide URL</label><input id="rc-img-place" placeholder="https://…" value="${imgs.placementGuideUrl||''}"></div>
     </div>
-    <div style="margin-top:10px;font-size:11px;color:var(--muted)">Tip: upload images to Cloudinary or use direct links. Approved PP sample URL can be added after first approval.</div>
+    <div style="margin-top:10px;font-size:12px;color:var(--muted)">Tip: upload images to Cloudinary or use direct links. Approved PP sample URL can be added after first approval.</div>
   </div>
 
   <div style="display:flex;gap:8px;margin-top:4px">
@@ -1468,8 +1468,8 @@ function placementRowHTML(i,pl={}){
   const refImg=pl.production?.referenceImageUrl||pl.imageUrl||'';
   return`<div id="pl-row-${i}" class="placement-row">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <span style="font-size:11px;font-weight:700;color:var(--muted)">PLACEMENT ${i+1}</span>
-      <button type="button" onclick="document.getElementById('pl-row-${i}').remove()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer">×</button>
+      <span style="font-size:12px;font-weight:700;color:var(--muted)">PLACEMENT ${i+1}</span>
+      <button type="button" onclick="document.getElementById('pl-row-${i}').remove()" style="background:none;border:none;color:var(--muted);font-size:19px;cursor:pointer">×</button>
     </div>
     <div class="field">
       <label>Placement Template *</label>
@@ -1481,11 +1481,11 @@ function placementRowHTML(i,pl={}){
       <div class="field" style="margin-bottom:0">
         <label>Measurement / Position</label>
         <input id="pl-${i}-mtext" placeholder="Add measurement here" value="${measText}" style="width:100%">
-        <div style="font-size:11px;color:var(--muted);margin-top:3px">مثلاً HPS سے 3 انچ نیچے</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:3px">مثلاً HPS سے 3 انچ نیچے</div>
       </div>
       <div class="field" style="margin-bottom:0">
         <label>Unit</label>
-        <select id="pl-${i}-munit" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;width:100%">
+        <select id="pl-${i}-munit" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;outline:none;width:100%">
           <option value="inch" ${mUnit==='inch'?'selected':''}>inch</option>
           <option value="cm" ${mUnit==='cm'?'selected':''}>cm</option>
         </select>
@@ -1498,7 +1498,7 @@ function placementRowHTML(i,pl={}){
       </div>
       <div class="field" style="margin-bottom:0">
         <label>Unit</label>
-        <select id="pl-${i}-tolunit" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;width:100%">
+        <select id="pl-${i}-tolunit" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;outline:none;width:100%">
           <option value="inch" ${tolUnit==='inch'?'selected':''}>inch</option>
           <option value="cm" ${tolUnit==='cm'?'selected':''}>cm</option>
         </select>
@@ -1508,17 +1508,17 @@ function placementRowHTML(i,pl={}){
       <label>Placement Reference Image / پلیسمنٹ ریفرنس تصویر</label>
       <div id="pl-${i}-img-preview" style="${refImg?'':'display:none'}margin-bottom:8px;position:relative">
         <img id="pl-${i}-img-thumb" src="${refImg}" style="width:100%;max-height:160px;object-fit:contain;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);cursor:zoom-in" onclick="this.src&&window.open(this.src)">
-        <button type="button" onclick="window._plRemoveImg(${i})" style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:14px;cursor:pointer;line-height:1">×</button>
+        <button type="button" onclick="window._plRemoveImg(${i})" style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:15px;cursor:pointer;line-height:1">×</button>
       </div>
       <div id="pl-${i}-img-controls" style="${refImg?'display:none':''}">
         <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:2px dashed var(--border);border-radius:10px;cursor:pointer;background:var(--surface-2);margin-bottom:6px">
-          <span style="font-size:18px">🖼️</span>
-          <span style="font-size:13px;color:var(--muted)">Upload image<br><span style="font-size:11px">Click to choose file from computer</span></span>
+          <span style="font-size:19px">🖼️</span>
+          <span style="font-size:14px;color:var(--muted)">Upload image<br><span style="font-size:12px">Click to choose file from computer</span></span>
           <input type="file" id="pl-${i}-img-file" accept="image/*" style="display:none" onchange="window._plUploadImg(${i},this)">
         </label>
-        <input id="pl-${i}-img-url" type="url" placeholder="or paste image URL…" value="${refImg}" style="font-size:12px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;outline:none;width:100%" oninput="window._plUrlPreview(${i},this.value)">
+        <input id="pl-${i}-img-url" type="url" placeholder="or paste image URL…" value="${refImg}" style="font-size:13px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;outline:none;width:100%" oninput="window._plUrlPreview(${i},this.value)">
       </div>
-      <div id="pl-${i}-img-uploading" style="display:none;font-size:12px;color:var(--muted);padding:6px 0">Uploading…</div>
+      <div id="pl-${i}-img-uploading" style="display:none;font-size:13px;color:var(--muted);padding:6px 0">Uploading…</div>
       <input type="hidden" id="pl-${i}-img" value="${refImg}">
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
@@ -1526,7 +1526,7 @@ function placementRowHTML(i,pl={}){
       <div class="field"><label>ہدایت (اردو)</label><input id="pl-${i}-wk-ur" dir="rtl" style="text-align:right" placeholder="${tpl.workerUr||'مثلاً چیسٹ پر پرنٹ کریں'}" value="${pl.production?.visibleInstructionUr||pl.notesUr||''}"></div>
     </div>
     <details style="margin-top:4px">
-      <summary style="font-size:11px;font-weight:600;color:var(--muted);cursor:pointer;padding:6px 0">Technical Setup ▾</summary>
+      <summary style="font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;padding:6px 0">Technical Setup ▾</summary>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
         <div class="field"><label>Artwork Size</label><input id="pl-${i}-asize" placeholder="e.g. 25cm × 30cm" value="${pl.technical?.artworkSize||pl.artworkSize||''}"></div>
         <div class="field"><label>Artwork File URL</label><input id="pl-${i}-afile" placeholder="https://…" value="${pl.technical?.artworkFileUrl||''}"></div>
@@ -1601,15 +1601,15 @@ function pantoneRowHTML(i,p={}){
     '<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px">'+
       '<div id="pt-swatch-'+i+'" style="width:36px;height:36px;border-radius:8px;background:'+displayHex+';border:1px solid rgba(0,0,0,.12);flex-shrink:0;margin-top:4px"></div>'+
       '<div style="flex:1;min-width:0">'+
-        (isLegacy?'<div style="font-size:10px;color:var(--amber);font-weight:600;margin-bottom:4px">Legacy color — not linked to Color Library</div>':'')+
+        (isLegacy?'<div style="font-size:11px;color:var(--amber);font-weight:600;margin-bottom:4px">Legacy color — not linked to Color Library</div>':'')+
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
           '<input id="pt-search-'+i+'" type="text" placeholder="Search color by name or Pantone code…"'+
             ' value="'+(p.colorName||'')+'"'+
-            ' style="flex:1;min-width:160px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none"'+
+            ' style="flex:1;min-width:160px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;outline:none"'+
             ' oninput="window._ptSearch('+i+')"'+
             ' onfocus="window._ptSearch('+i+')"'+
             ' autocomplete="off">'+
-          '<button type="button" onclick="document.getElementById(\'pt-row-'+i+'\').remove()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:2px 4px;flex-shrink:0">×</button>'+
+          '<button type="button" onclick="document.getElementById(\'pt-row-'+i+'\').remove()" style="background:none;border:none;color:var(--muted);font-size:21px;cursor:pointer;padding:2px 4px;flex-shrink:0">×</button>'+
         '</div>'+
         '<div id="pt-dropdown-'+i+'" style="position:relative;z-index:100"></div>'+
         '<input type="hidden" id="pt-lib-id-'+i+'" value="'+(p.colorLibraryId||'')+'">'+
@@ -1620,11 +1620,11 @@ function pantoneRowHTML(i,p={}){
       '</div>'+
     '</div>'+
     '<div style="margin-top:6px">'+
-      '<div class="field" style="margin-bottom:0"><label style="font-size:11px">Article Notes</label>'+
-        '<input id="pt-note-'+i+'" placeholder="e.g. Do not make too bright" value="'+(p.articleSpecificNotes||p.notes||'')+'" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;outline:none;width:100%">'+
+      '<div class="field" style="margin-bottom:0"><label style="font-size:12px">Article Notes</label>'+
+        '<input id="pt-note-'+i+'" placeholder="e.g. Do not make too bright" value="'+(p.articleSpecificNotes||p.notes||'')+'" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;width:100%">'+
       '</div>'+
     '</div>'+
-    (canManageRecipes()&&!p.colorLibraryId?'<div style="margin-top:6px"><button type="button" onclick="window.openColorModal(null)" style="font-size:11px;color:var(--red);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">+ Add new color to library</button></div>':'')+
+    (canManageRecipes()&&!p.colorLibraryId?'<div style="margin-top:6px"><button type="button" onclick="window.openColorModal(null)" style="font-size:12px;color:var(--red);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">+ Add new color to library</button></div>':'')+
   '</div>';
 }
 window._ptSearch=function(i){
@@ -1640,14 +1640,14 @@ window._ptSearch=function(i){
     );
   }).slice(0,8);
   if(!matches.length){
-    dd.innerHTML='<div style="font-size:12px;color:var(--muted);padding:6px 0">No matches. '+(canManageRecipes()?'<button type="button" onclick="window.openColorModal(null)" style="color:var(--red);background:none;border:none;cursor:pointer;font-size:12px;text-decoration:underline">Add to library</button>':'')+'</div>';
+    dd.innerHTML='<div style="font-size:13px;color:var(--muted);padding:6px 0">No matches. '+(canManageRecipes()?'<button type="button" onclick="window.openColorModal(null)" style="color:var(--red);background:none;border:none;cursor:pointer;font-size:13px;text-decoration:underline">Add to library</button>':'')+'</div>';
     return;
   }
   dd.innerHTML='<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.1);margin-top:4px;overflow:hidden">'+
     matches.map(function(c){
       return'<div onclick="window._ptSelectColor('+i+',\''+c._id+'\')" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--soft)" onmouseover="this.style.background=\'var(--hover)\'" onmouseout="this.style.background=\'\'">'+
         '<div style="width:24px;height:24px;border-radius:5px;background:'+(c.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div>'+
-        '<div><div style="font-size:13px;font-weight:600">'+c.colorName+'</div><div style="font-size:11px;color:var(--muted)">'+(c.pantoneCode||'')+(c.localInkName?' · '+c.localInkName:'')+'</div></div>'+
+        '<div><div style="font-size:14px;font-weight:600">'+c.colorName+'</div><div style="font-size:12px;color:var(--muted)">'+(c.pantoneCode||'')+(c.localInkName?' · '+c.localInkName:'')+'</div></div>'+
       '</div>';
     }).join('')+
   '</div>';
@@ -1728,7 +1728,7 @@ window._rcLookupRate=function(rawCode){
   const rateEl=document.getElementById('rc-rate');
   if(!code){if(statusEl)statusEl.innerHTML='';return;}
   if(rm){
-    if(statusEl)statusEl.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--accent-success-soft);border:1px solid var(--accent-success);border-radius:8px;font-size:12px">'+
+    if(statusEl)statusEl.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--accent-success-soft);border:1px solid var(--accent-success);border-radius:8px;font-size:13px">'+
       '<span style="color:var(--green);font-weight:700">Rate found from Printing Rate List ✅</span>'+
       '<span style="color:var(--muted)">Rs. '+rm.ratePerPiece+'/pc · Tier '+rm.complexityTier+'</span>'+
       '<span style="color:var(--muted);margin-left:auto">Source: Current Quarter Rate List</span>'+
@@ -1740,7 +1740,7 @@ window._rcLookupRate=function(rawCode){
     if(curTier===1||curTier===rm.complexityTier){if(tierEl)tierEl.value=rm.complexityTier;}
     window._rcCheckOverride();
   }else{
-    if(statusEl)statusEl.innerHTML='<div style="padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted)">Rate not found in Printing Rate List ⚠️ — Enter manually for now.</div>';
+    if(statusEl)statusEl.innerHTML='<div style="padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--muted)">Rate not found in Printing Rate List ⚠️ — Enter manually for now.</div>';
     if(overEl)overEl.style.display='none';
   }
 };
@@ -1857,16 +1857,16 @@ function _recPlacementHTML(pl,idx){
   const techPDNotes=pl.technical?.printDimensionNotes||'';
   const imgBlock=refImg
     ?`<img src="${refImg}" onclick="window.open('${refImg}')" style="width:100%;border-radius:8px;max-height:180px;object-fit:contain;margin-top:8px;background:var(--surface-2);border:1px solid var(--border);cursor:zoom-in">`
-    :`<div style="font-size:12px;color:var(--muted);margin-top:6px;padding:10px;background:var(--surface-2);border-radius:8px;text-align:center">No placement image uploaded / پلیسمنٹ تصویر موجود نہیں</div>`;
+    :`<div style="font-size:13px;color:var(--muted);margin-top:6px;padding:10px;background:var(--surface-2);border-radius:8px;text-align:center">No placement image uploaded / پلیسمنٹ تصویر موجود نہیں</div>`;
   const wrap=c=>`<div class="placement-row" style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--soft)">${c}</div>`;
-  const header=`<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px">PLACEMENT ${idx+1}</div>
+  const header=`<div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px">PLACEMENT ${idx+1}</div>
     <div class="info-row"><span class="info-label">Placement</span><span style="font-weight:600">${plName}${plNameUr?' / '+plNameUr:''}</span></div>`;
-  const techCollapsible=techArtSize?`<details style="margin-top:6px"><summary style="font-size:11px;color:var(--muted);cursor:pointer">Technical Details</summary><div class="info-row" style="margin-top:4px"><span class="info-label">Artwork Size</span><span>${techArtSize}</span></div></details>`:'';
+  const techCollapsible=techArtSize?`<details style="margin-top:6px"><summary style="font-size:12px;color:var(--muted);cursor:pointer">Technical Details</summary><div class="info-row" style="margin-top:4px"><span class="info-label">Artwork Size</span><span>${techArtSize}</span></div></details>`:'';
   if(isPrintWorker()){
     return wrap(`${header}
       ${meas?`<div class="info-row"><span class="info-label">Measurement</span><span>${meas}${mUnit?' ('+mUnit+')':''}</span></div>`:''}
-      ${instrEn?`<div style="background:var(--surface-2);padding:8px 10px;border-radius:8px;font-size:13px;margin-top:4px"><strong>Instruction:</strong> ${instrEn}</div>`:''}
-      ${instrUr?`<div style="background:var(--accent-warning-soft);padding:8px 10px;border-radius:8px;font-size:14px;direction:rtl;text-align:right;margin-top:4px">${instrUr}</div>`:''}
+      ${instrEn?`<div style="background:var(--surface-2);padding:8px 10px;border-radius:8px;font-size:14px;margin-top:4px"><strong>Instruction:</strong> ${instrEn}</div>`:''}
+      ${instrUr?`<div style="background:var(--accent-warning-soft);padding:8px 10px;border-radius:8px;font-size:15px;direction:rtl;text-align:right;margin-top:4px">${instrUr}</div>`:''}
       ${imgBlock}
       ${techCollapsible}`);
   }
@@ -1883,10 +1883,10 @@ function _recPlacementHTML(pl,idx){
     ${instrEn?`<div class="info-row"><span class="info-label">Worker Instruction</span><span>${instrEn}</span></div>`:''}
     ${instrUr?`<div class="info-row"><span class="info-label">ہدایت</span><span dir="rtl">${instrUr}</span></div>`:''}
     ${imgBlock}
-    ${techArtSize||techAFile||techPDNotes?`<details style="margin-top:8px"><summary style="font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;padding:4px 0">Technical Setup ▾</summary>
+    ${techArtSize||techAFile||techPDNotes?`<details style="margin-top:8px"><summary style="font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;padding:4px 0">Technical Setup ▾</summary>
       <div style="margin-top:6px">
         ${techArtSize?`<div class="info-row"><span class="info-label">Artwork Size</span><span style="font-weight:600">${techArtSize}</span></div>`:''}
-        ${techAFile?`<div class="info-row"><span class="info-label">Artwork File</span><span style="word-break:break-all;font-size:11px">${techAFile}</span></div>`:''}
+        ${techAFile?`<div class="info-row"><span class="info-label">Artwork File</span><span style="word-break:break-all;font-size:12px">${techAFile}</span></div>`:''}
         ${techPDNotes?`<div class="info-row"><span class="info-label">Print Dim Notes</span><span>${techPDNotes}</span></div>`:''}
       </div>
     </details>`:''}`);
@@ -1905,7 +1905,7 @@ function renderRecipeDetailPage(){
   // QC Suggestion form (for QC worker)
   const qcSugForm=isQCWorker()&&r.status!=='archived'&&!roView?`
     <div class="card"><div class="card-title">Submit QC Suggestion</div>
-      <div class="field" style="margin-bottom:8px"><textarea id="qc-sug-text" rows="3" placeholder="Describe the recipe change or quality observation…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;outline:none"></textarea></div>
+      <div class="field" style="margin-bottom:8px"><textarea id="qc-sug-text" rows="3" placeholder="Describe the recipe change or quality observation…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;resize:vertical;outline:none"></textarea></div>
       <button class="btn-outline" onclick="window.submitQCSuggestion('${r._id}')">Submit Suggestion</button>
     </div>`:'';
 
@@ -1914,7 +1914,7 @@ function renderRecipeDetailPage(){
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
       <div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-size:12px;font-weight:700;color:var(--red)">${r.articleCode||'—'}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--red)">${r.articleCode||'—'}</span>
           ${recipeBadgeHTML(r.status||'draft')}
           ${tierBadge(pt.complexityTier||1)}
         </div>
@@ -1936,16 +1936,16 @@ function renderRecipeDetailPage(){
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
     ${imgs.frontUrl||imgs.backUrl?`<div class="card" style="margin-bottom:0"><div class="card-title">Product Images</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        ${imgs.frontUrl?`<div><div style="font-size:10px;color:var(--muted);margin-bottom:4px;font-weight:600">FRONT</div><img src="${imgs.frontUrl}" style="width:100%;border-radius:8px;max-height:200px;object-fit:cover"></div>`:''}
-        ${imgs.backUrl?`<div><div style="font-size:10px;color:var(--muted);margin-bottom:4px;font-weight:600">BACK</div><img src="${imgs.backUrl}" style="width:100%;border-radius:8px;max-height:200px;object-fit:cover"></div>`:''}
+        ${imgs.frontUrl?`<div><div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600">FRONT</div><img src="${imgs.frontUrl}" style="width:100%;border-radius:8px;max-height:200px;object-fit:cover"></div>`:''}
+        ${imgs.backUrl?`<div><div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600">BACK</div><img src="${imgs.backUrl}" style="width:100%;border-radius:8px;max-height:200px;object-fit:cover"></div>`:''}
       </div>
-      ${imgs.approvedPpSampleUrl?`<div style="margin-top:8px"><div style="font-size:10px;color:var(--green);font-weight:600;margin-bottom:4px">✓ APPROVED PP SAMPLE</div><img src="${imgs.approvedPpSampleUrl}" style="width:100%;border-radius:8px;max-height:140px;object-fit:cover"></div>`:''}
+      ${imgs.approvedPpSampleUrl?`<div style="margin-top:8px"><div style="font-size:11px;color:var(--green);font-weight:600;margin-bottom:4px">✓ APPROVED PP SAMPLE</div><img src="${imgs.approvedPpSampleUrl}" style="width:100%;border-radius:8px;max-height:140px;object-fit:cover"></div>`:''}
     </div>`:''}
     <div class="card" style="margin-bottom:0"><div class="card-title">Printing Details</div>
       <div class="info-row"><span class="info-label">Process</span><span>${(pt.processTypes||[]).map(p=>processBadge(p)).join(' ')||'—'}</span></div>
       <div class="info-row"><span class="info-label">Tier</span><span>${tierBadge(pt.complexityTier||1)}</span></div>
       <div class="info-row"><span class="info-label">Rate</span><span style="font-weight:700;color:var(--dark)">${pt.ratePerPiece?'Rs. '+pt.ratePerPiece+'/pc':'Not set'}</span></div>
-      <div class="info-row"><span class="info-label">Rate Source</span><span style="font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;background:var(--soft);color:var(--text)">${pt.rateSource==='printing_rate_list'?'Rate List ✅':pt.rateSource==='override'?'Override ⚠️':'Manual'}</span>${pt.rateOverrideNote?`<span style="font-size:11px;color:var(--muted);margin-left:6px">${pt.rateOverrideNote}</span>`:''}</div>
+      <div class="info-row"><span class="info-label">Rate Source</span><span style="font-size:12px;padding:2px 8px;border-radius:6px;font-weight:600;background:var(--soft);color:var(--text)">${pt.rateSource==='printing_rate_list'?'Rate List ✅':pt.rateSource==='override'?'Override ⚠️':'Manual'}</span>${pt.rateOverrideNote?`<span style="font-size:12px;color:var(--muted);margin-left:6px">${pt.rateOverrideNote}</span>`:''}</div>
       <div class="info-row"><span class="info-label">Placements</span><span>${(pt.placements||[]).length}</span></div>
       <div class="info-row"><span class="info-label">Pantones</span><span>${(pt.pantones||[]).length}</span></div>
     </div>
@@ -1963,33 +1963,33 @@ function renderRecipeDetailPage(){
   ${(r.draftPlacements||[]).length?`<div class="card"><div class="card-title">Placements (${r.draftPlacements.length})</div>
     ${r.draftPlacements.map((p,i)=>`<div style="padding:10px 0;border-bottom:1px solid var(--soft)">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-        <span style="font-size:11px;font-weight:700;color:var(--muted)">${i+1}.</span>
-        <span style="font-weight:600;font-size:14px">${_rdEsc(p.placementType)||'—'}</span>
-        ${p.technique?`<span style="font-size:11px;background:var(--soft);padding:2px 8px;border-radius:10px">${_rdEsc(p.technique)}</span>`:''}
+        <span style="font-size:12px;font-weight:700;color:var(--muted)">${i+1}.</span>
+        <span style="font-weight:600;font-size:15px">${_rdEsc(p.placementType)||'—'}</span>
+        ${p.technique?`<span style="font-size:12px;background:var(--soft);padding:2px 8px;border-radius:10px">${_rdEsc(p.technique)}</span>`:''}
       </div>
-      ${p.positionSize?`<div style="font-size:13px;color:var(--text);margin-bottom:3px"><span style="color:var(--muted);font-size:11px">Position &amp; Size:</span> ${_rdEsc(p.positionSize)}</div>`:''}
-      ${p.notes?`<div style="font-size:12px;color:var(--muted);margin-bottom:4px">${_rdEsc(p.notes)}</div>`:''}
-      ${(p.pantones||[]).length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${p.pantones.map(pn=>`<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;background:var(--surface-2);border:1px solid var(--soft);border-radius:14px;font-size:12px">
+      ${p.positionSize?`<div style="font-size:14px;color:var(--text);margin-bottom:3px"><span style="color:var(--muted);font-size:12px">Position &amp; Size:</span> ${_rdEsc(p.positionSize)}</div>`:''}
+      ${p.notes?`<div style="font-size:13px;color:var(--muted);margin-bottom:4px">${_rdEsc(p.notes)}</div>`:''}
+      ${(p.pantones||[]).length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${p.pantones.map(pn=>`<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;background:var(--surface-2);border:1px solid var(--soft);border-radius:14px;font-size:13px">
         <span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${pn.hexApprox||'#ccc'};border:1px solid var(--border)"></span>
         ${_rdEsc(pn.colorName)||'—'}${pn.pantoneCode?' · '+_rdEsc(pn.pantoneCode):''}
       </span>`).join('')}</div>`:''}
     </div>`).join('')}
   </div>`:''}
 
-  ${r.recipeNotes?`<div class="card"><div class="card-title">Recipe Notes</div><div style="font-size:13px;line-height:1.7">${_rdEsc(r.recipeNotes)}</div></div>`:''}
+  ${r.recipeNotes?`<div class="card"><div class="card-title">Recipe Notes</div><div style="font-size:14px;line-height:1.7">${_rdEsc(r.recipeNotes)}</div></div>`:''}
 
   ${pt.instructionsEn||pt.instructionsUr?`<div class="card"><div class="card-title">Instructions / ہدایات</div>
-    ${pt.instructionsEn?`<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:4px">ENGLISH</div><div style="font-size:13px;line-height:1.7">${pt.instructionsEn}</div></div>`:''}
-    ${pt.instructionsUr?`<div><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:4px">اردو</div><div style="font-size:14px;line-height:2;direction:rtl;text-align:right">${pt.instructionsUr}</div></div>`:''}
+    ${pt.instructionsEn?`<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">ENGLISH</div><div style="font-size:14px;line-height:1.7">${pt.instructionsEn}</div></div>`:''}
+    ${pt.instructionsUr?`<div><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">اردو</div><div style="font-size:15px;line-height:2;direction:rtl;text-align:right">${pt.instructionsUr}</div></div>`:''}
   </div>`:''}
 
   ${(r.qcSuggestions||[]).length?`<div class="card"><div class="card-title">QC Suggestions (${r.qcSuggestions.length})</div>
     ${r.qcSuggestions.map(s=>`<div style="padding:8px 0;border-bottom:1px solid var(--soft)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div style="flex:1"><div style="font-size:12px;font-weight:600">${s.by||'—'} <span style="color:var(--muted);font-weight:400">· ${tsLabel2(s.date)}</span></div>
-          <div style="font-size:13px;margin-top:3px">${s.note||'—'}</div>
+        <div style="flex:1"><div style="font-size:13px;font-weight:600">${s.by||'—'} <span style="color:var(--muted);font-weight:400">· ${tsLabel2(s.date)}</span></div>
+          <div style="font-size:14px;margin-top:3px">${s.note||'—'}</div>
         </div>
-        <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${s.status==='rejected'?'var(--dark)':'var(--soft)'};color:${s.status==='rejected'?'var(--on-dark)':'var(--text)'}">${(s.status||'open').toUpperCase()}</span>
+        <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:${s.status==='rejected'?'var(--dark)':'var(--soft)'};color:${s.status==='rejected'?'var(--on-dark)':'var(--text)'}">${(s.status||'open').toUpperCase()}</span>
       </div>
       ${canManageRecipes()&&s.status==='open'&&!roView?`<div style="display:flex;gap:6px;margin-top:6px">
         <button class="btn-sm" style="background:var(--green)" onclick="window.resolveQCSug('${r._id}','${s.suggestionId}','accepted')">Accept</button>
@@ -2120,7 +2120,7 @@ function renderPrintingJobsPage(){
   return`<div class="page-head">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
       <div><div class="page-title">Embellishment Jobs</div><div class="page-sub">${allPrintingJobs.length} total jobs</div></div>
-      ${isObserver()?`<button class="btn-outline" style="font-size:11px;padding:6px 12px;color:var(--muted)" onclick="window.showCreateJobModal()">Admin: Link Missing Job</button>`:''}
+      ${isObserver()?`<button class="btn-outline" style="font-size:12px;padding:6px 12px;color:var(--muted)" onclick="window.showCreateJobModal()">Admin: Link Missing Job</button>`:''}
     </div>
   </div>
 
@@ -2148,14 +2148,14 @@ window.closeJobModal=function(){
 
 function renderCreateJobModal(){
   return`<div style="background:var(--surface);border-radius:16px;padding:1.5rem;width:100%;max-width:560px;margin:0 auto">
-    <div style="font-size:17px;font-weight:700;margin-bottom:16px">Create Embellishment Job from PO</div>
+    <div style="font-size:18px;font-weight:700;margin-bottom:16px">Create Embellishment Job from PO</div>
 
     <div class="form-grid">
       <div class="field" style="grid-column:1/-1"><label>Job Type *</label>
         <select id="cj-job-type" onchange="window._cjOnJobTypeChange()">
           ${JOB_TYPE_KEYS.map(k=>`<option value="${k}">${JOB_TYPES[k].icon} ${JOB_TYPES[k].label}</option>`).join('')}
         </select>
-        <div id="cj-job-type-hint" style="margin-top:4px;font-size:11px;color:var(--muted)">In-house rubber/screen/puff print. Pipeline: Awaiting PP → Printing → Final QC.</div>
+        <div id="cj-job-type-hint" style="margin-top:4px;font-size:12px;color:var(--muted)">In-house rubber/screen/puff print. Pipeline: Awaiting PP → Printing → Final QC.</div>
       </div>
       <div class="field" style="grid-column:1/-1"><label>PO Number *</label>
         <input id="cj-po-num" placeholder="e.g. PO-041" list="cj-po-list">
@@ -2163,7 +2163,7 @@ function renderCreateJobModal(){
       </div>
       <div class="field" style="grid-column:1/-1"><label>Article Code / Recipe</label>
         <input id="cj-article-code" placeholder="e.g. GP020" oninput="window._lookupRecipe(this.value)">
-        <div id="cj-recipe-preview" style="margin-top:6px;font-size:12px;color:var(--muted)">Enter article code to auto-link recipe</div>
+        <div id="cj-recipe-preview" style="margin-top:6px;font-size:13px;color:var(--muted)">Enter article code to auto-link recipe</div>
       </div>
       <div class="field" id="cj-process-wrap"><label>Process Type *</label>
         <select id="cj-process">${Object.entries(PROCESS_TYPES).map(([k,v])=>`<option value="${k}">${v.icon} ${v.label}</option>`).join('')}</select>
@@ -2219,7 +2219,7 @@ window._lookupRecipe=function(code){
   const pt=r.printing||{};
   el.innerHTML=`<div style="background:var(--accent-success-soft);border:1px solid var(--accent-success);border-radius:8px;padding:10px">
     <div style="font-weight:700;color:var(--green)">✓ Recipe found — ${r.status==='locked'?'🔒 Locked':'✏️ Draft'}</div>
-    <div style="font-size:12px;color:var(--muted);margin-top:4px">${(pt.processTypes||[]).map(p=>PROCESS_TYPES[p]?.label||p).join(', ')||'No process'} · Tier ${pt.complexityTier||1} · Rs.${pt.ratePerPiece||'—'}/pc</div>
+    <div style="font-size:13px;color:var(--muted);margin-top:4px">${(pt.processTypes||[]).map(p=>PROCESS_TYPES[p]?.label||p).join(', ')||'No process'} · Tier ${pt.complexityTier||1} · Rs.${pt.ratePerPiece||'—'}/pc</div>
   </div>`;
   if(pt.complexityTier){const s=document.getElementById('cj-tier');if(s)s.value=String(pt.complexityTier);}
   if(pt.ratePerPiece){const r2=document.getElementById('cj-rate');if(r2)r2.value=pt.ratePerPiece;}
@@ -2346,24 +2346,24 @@ function jobListCardHTML(j){
   return`<div class="job-card sla-${sl}" onclick="window.openPrintingJob('${j._id}')">
     <div style="display:flex;gap:10px;align-items:flex-start">
       <div style="width:48px;height:60px;flex-shrink:0;background:var(--soft);border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
-        ${recipe?.images?.frontUrl?`<img src="${recipe.images.frontUrl}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:9px;color:var(--muted);text-align:center;padding:2px">No img</span>'}
+        ${recipe?.images?.frontUrl?`<img src="${recipe.images.frontUrl}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:11px;color:var(--muted);text-align:center;padding:2px">No img</span>'}
       </div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:3px">
-          <span style="font-size:11px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</span>
-          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;${_embPriorityChipStyle(j.priority)}">${(j.priority||'normal').toUpperCase()}</span>
+          <span style="font-size:12px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</span>
+          <span style="font-size:11px;font-weight:700;padding:2px 6px;border-radius:8px;${_embPriorityChipStyle(j.priority)}">${(j.priority||'normal').toUpperCase()}</span>
           ${tierBadge(j.complexityTier||1)}
-          <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:8px;background:var(--soft);color:var(--dark)">${JOB_TYPES[jt].icon} ${jt}</span>
+          <span style="font-size:11px;font-weight:600;padding:2px 6px;border-radius:8px;background:var(--soft);color:var(--dark)">${JOB_TYPES[jt].icon} ${jt}</span>
         </div>
-        <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${processBadge(j.processType)} · ${j.totalQty||'?'} pcs · ${j.assignedTo||'—'}</div>
+        <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">${processBadge(j.processType)} · ${j.totalQty||'?'} pcs · ${j.assignedTo||'—'}</div>
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px">
-          <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:8px;background:var(--soft);color:var(--dark)">${JOB_STAGE_LABELS[j.currentStage]||j.currentStage}</span>
-          ${j.slaCurrentDue?`<span class="sla-chip ${slaChipClass(sl)}">${remainLabel(j.slaCurrentDue)}</span>`:'<span style="font-size:11px;color:var(--muted)">No SLA</span>'}
+          <span style="font-size:12px;font-weight:700;padding:3px 8px;border-radius:8px;background:var(--soft);color:var(--dark)">${JOB_STAGE_LABELS[j.currentStage]||j.currentStage}</span>
+          ${j.slaCurrentDue?`<span class="sla-chip ${slaChipClass(sl)}">${remainLabel(j.slaCurrentDue)}</span>`:'<span style="font-size:12px;color:var(--muted)">No SLA</span>'}
         </div>
-        ${j.recipeWarning?`<div style="font-size:10px;color:var(--amber);margin-top:4px;font-weight:600">⚠ ${j.recipeWarning}</div>`:''}
-        ${j.ppApprovalStatus==='rejected'?`<div style="font-size:10px;color:#dc2626;margin-top:3px;font-weight:700">✗ PP Rejected — new sample required</div>`:''}
-        ${isOutsourced?`<button class="btn-outline" style="width:auto;padding:5px 10px;font-size:11px;margin-top:6px" onclick="event.stopPropagation();window.generateJobSheetPDF('${j._id}')">📄 Print Job Sheet</button>`:''}
+        ${j.recipeWarning?`<div style="font-size:11px;color:var(--amber);margin-top:4px;font-weight:600">⚠ ${j.recipeWarning}</div>`:''}
+        ${j.ppApprovalStatus==='rejected'?`<div style="font-size:11px;color:#dc2626;margin-top:3px;font-weight:700">✗ PP Rejected — new sample required</div>`:''}
+        ${isOutsourced?`<button class="btn-outline" style="width:auto;padding:5px 10px;font-size:12px;margin-top:6px" onclick="event.stopPropagation();window.generateJobSheetPDF('${j._id}')">📄 Print Job Sheet</button>`:''}
       </div>
     </div>
   </div>`;
@@ -2392,10 +2392,10 @@ function printWorkerCardHTML(j){
   const slaBlock=j.slaCurrentDue?`
     <div style="background:${slaBg};border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
       <div>
-        <div style="font-size:11px;font-weight:700;color:${slaFg};text-transform:uppercase;letter-spacing:.06em">وقت / Time Remaining</div>
-        <div style="font-size:20px;font-weight:800;color:${slaFg};margin-top:2px">${remainLabel(j.slaCurrentDue)}</div>
+        <div style="font-size:12px;font-weight:700;color:${slaFg};text-transform:uppercase;letter-spacing:.06em">وقت / Time Remaining</div>
+        <div style="font-size:21px;font-weight:800;color:${slaFg};margin-top:2px">${remainLabel(j.slaCurrentDue)}</div>
       </div>
-      <div style="text-align:right;font-size:11px;color:${slaFg};font-weight:600">${sl==='ok'?'On Time / وقت پر':sl==='near'?'Near Due / وقت قریب ہے':sl==='over'?'OVERDUE / لیٹ':'CRITICAL / فوری'}</div>
+      <div style="text-align:right;font-size:12px;color:${slaFg};font-weight:600">${sl==='ok'?'On Time / وقت پر':sl==='near'?'Near Due / وقت قریب ہے':sl==='over'?'OVERDUE / لیٹ':'CRITICAL / فوری'}</div>
     </div>`:'';
 
   // ── Current Step hero block ──
@@ -2418,10 +2418,10 @@ function printWorkerCardHTML(j){
   const curStep=ppRejected?ppRejStep:(stepInstructions[stage]||{en:JOB_STAGE_LABELS[stage]||stage,ur:'',steps:[]});
   const stepBlock=`
     <div style="background:var(--dark);border-radius:12px;padding:14px;margin-bottom:12px;color:var(--on-dark)">
-      <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--on-dark);opacity:.55;margin-bottom:4px">موجودہ مرحلہ / CURRENT STEP</div>
-      <div style="font-size:17px;font-weight:800">${curStep.en}</div>
-      ${curStep.ur?`<div style="font-size:15px;font-weight:700;direction:rtl;text-align:right;margin-top:2px;color:var(--on-dark);opacity:.88">${curStep.ur}</div>`:''}
-      ${curStep.steps.length?`<ol style="margin:10px 0 0 0;padding-left:18px;font-size:12px;line-height:2;color:var(--on-dark);opacity:.82">${curStep.steps.map(s=>`<li>${s}</li>`).join('')}</ol>`:''}
+      <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--on-dark);opacity:.55;margin-bottom:4px">موجودہ مرحلہ / CURRENT STEP</div>
+      <div style="font-size:18px;font-weight:800">${curStep.en}</div>
+      ${curStep.ur?`<div style="font-size:16px;font-weight:700;direction:rtl;text-align:right;margin-top:2px;color:var(--on-dark);opacity:.88">${curStep.ur}</div>`:''}
+      ${curStep.steps.length?`<ol style="margin:10px 0 0 0;padding-left:18px;font-size:13px;line-height:2;color:var(--on-dark);opacity:.82">${curStep.steps.map(s=>`<li>${s}</li>`).join('')}</ol>`:''}
     </div>`;
 
   // ── Images ──
@@ -2430,9 +2430,9 @@ function printWorkerCardHTML(j){
   const guideUrl=recipe?.images?.placementGuideUrl||'';
   const imagesBlock=(frontUrl||backUrl||guideUrl)?`
     <div style="display:flex;gap:8px;margin-bottom:12px;overflow-x:auto">
-      ${frontUrl?`<div style="flex-shrink:0"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px">FRONT / سامنے</div><img src="${frontUrl}" onclick="window.open('${frontUrl}')" style="height:110px;width:90px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--border)"></div>`:''}
-      ${backUrl?`<div style="flex-shrink:0"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px">BACK / پیچھے</div><img src="${backUrl}" onclick="window.open('${backUrl}')" style="height:110px;width:90px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--border)"></div>`:''}
-      ${guideUrl?`<div style="flex-shrink:0"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px">PLACEMENT GUIDE</div><img src="${guideUrl}" onclick="window.open('${guideUrl}')" style="height:110px;width:90px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--border)"></div>`:''}
+      ${frontUrl?`<div style="flex-shrink:0"><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px">FRONT / سامنے</div><img src="${frontUrl}" onclick="window.open('${frontUrl}')" style="height:110px;width:90px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--border)"></div>`:''}
+      ${backUrl?`<div style="flex-shrink:0"><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px">BACK / پیچھے</div><img src="${backUrl}" onclick="window.open('${backUrl}')" style="height:110px;width:90px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--border)"></div>`:''}
+      ${guideUrl?`<div style="flex-shrink:0"><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px">PLACEMENT GUIDE</div><img src="${guideUrl}" onclick="window.open('${guideUrl}')" style="height:110px;width:90px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--border)"></div>`:''}
     </div>`:'';
 
   // ── Qty + size breakdown ──
@@ -2441,67 +2441,67 @@ function printWorkerCardHTML(j){
   const qtyBlock=`
     <div style="background:var(--surface-2);border-radius:10px;padding:10px 12px;margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <span style="font-size:11px;font-weight:700;color:var(--muted)">کل مقدار / TOTAL QTY</span>
-        <span style="font-size:20px;font-weight:800;color:var(--dark)">${j.totalQty||'?'} <span style="font-size:12px;font-weight:500">pcs</span></span>
+        <span style="font-size:12px;font-weight:700;color:var(--muted)">کل مقدار / TOTAL QTY</span>
+        <span style="font-size:21px;font-weight:800;color:var(--dark)">${j.totalQty||'?'} <span style="font-size:13px;font-weight:500">pcs</span></span>
       </div>
-      ${sizeKeys.length?`<div style="display:flex;gap:5px;flex-wrap:wrap">${sizeKeys.map(k=>`<span style="padding:3px 8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;font-size:12px;font-weight:700">${k}: ${sizes[k]}</span>`).join('')}</div>`:'<div style="font-size:11px;color:var(--muted)">Size details not available</div>'}
+      ${sizeKeys.length?`<div style="display:flex;gap:5px;flex-wrap:wrap">${sizeKeys.map(k=>`<span style="padding:3px 8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;font-size:13px;font-weight:700">${k}: ${sizes[k]}</span>`).join('')}</div>`:'<div style="font-size:12px;color:var(--muted)">Size details not available</div>'}
     </div>`;
 
   // ── Recipe placements as cards ──
-  const recipeLockBanner=recipeLocked?`<div style="background:var(--dark);border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;color:var(--on-dark);margin-bottom:10px;text-align:center">Recipe Locked — Follow Exactly / ریسیپی لاک ہے — بالکل یہی فالو کریں</div>`:`<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:10px;text-align:center">Draft Recipe — Not yet locked / ریسیپی ابھی لاک نہیں</div>`;
+  const recipeLockBanner=recipeLocked?`<div style="background:var(--dark);border-radius:8px;padding:7px 10px;font-size:13px;font-weight:700;color:var(--on-dark);margin-bottom:10px;text-align:center">Recipe Locked — Follow Exactly / ریسیپی لاک ہے — بالکل یہی فالو کریں</div>`:`<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:10px;text-align:center">Draft Recipe — Not yet locked / ریسیپی ابھی لاک نہیں</div>`;
   const pantones=recipe?.printing?.pantones||[];
   const placements=recipe?.printing?.placements||[];
   const recipeSection=hasRecipe?`
     <div style="margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">ریسیپی / Recipe Summary</div>
+      <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">ریسیپی / Recipe Summary</div>
       ${recipeLockBanner}
       ${placements.map(pl=>`
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:7px">
-          <div style="font-size:13px;font-weight:700;margin-bottom:4px">${pl.templateNameEn||pl.name||'Placement'}${pl.templateNameUr?' / '+pl.templateNameUr:''}</div>
-          ${(pl.measurementText||pl.measurementDescriptionEn)?`<div style="font-size:12px;color:var(--dark);margin-bottom:2px">${pl.measurementText||pl.measurementDescriptionEn}${pl.measurementUnit?' ('+pl.measurementUnit+')':''}</div>`:''}
-          ${(pl.toleranceText||pl.toleranceValue||pl.tolerance)?`<div style="font-size:11px;color:var(--muted)">Tolerance: ${pl.toleranceText?(pl.toleranceText+(pl.toleranceUnit?' '+pl.toleranceUnit:'')):(pl.toleranceValue||pl.tolerance)}</div>`:''}
+          <div style="font-size:14px;font-weight:700;margin-bottom:4px">${pl.templateNameEn||pl.name||'Placement'}${pl.templateNameUr?' / '+pl.templateNameUr:''}</div>
+          ${(pl.measurementText||pl.measurementDescriptionEn)?`<div style="font-size:13px;color:var(--dark);margin-bottom:2px">${pl.measurementText||pl.measurementDescriptionEn}${pl.measurementUnit?' ('+pl.measurementUnit+')':''}</div>`:''}
+          ${(pl.toleranceText||pl.toleranceValue||pl.tolerance)?`<div style="font-size:12px;color:var(--muted)">Tolerance: ${pl.toleranceText?(pl.toleranceText+(pl.toleranceUnit?' '+pl.toleranceUnit:'')):(pl.toleranceValue||pl.tolerance)}</div>`:''}
           ${(pl.production?.referenceImageUrl||pl.imageUrl)?`<img src="${pl.production?.referenceImageUrl||pl.imageUrl}" style="width:100%;max-height:120px;object-fit:contain;border-radius:8px;margin-top:6px;background:var(--surface-2);border:1px solid var(--border)">`:''}
-          ${pantones.length?`<div style="margin-top:6px">${pantones.map(p=>'<div style="display:flex;align-items:center;gap:7px;padding:3px 0"><div style="width:16px;height:16px;border-radius:4px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div><span style="font-size:12px;font-weight:600">'+(p.colorName||'—')+'</span>'+(p.localInkName?'<span style="font-size:11px;color:var(--muted)">· '+p.localInkName+'</span>':'')+'</div>').join('')}</div>`:''}
+          ${pantones.length?`<div style="margin-top:6px">${pantones.map(p=>'<div style="display:flex;align-items:center;gap:7px;padding:3px 0"><div style="width:16px;height:16px;border-radius:4px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div><span style="font-size:13px;font-weight:600">'+(p.colorName||'—')+'</span>'+(p.localInkName?'<span style="font-size:12px;color:var(--muted)">· '+p.localInkName+'</span>':'')+'</div>').join('')}</div>`:''}
         </div>`).join('')}
-      ${!placements.length&&pantones.length?`<div style="margin-top:4px">${pantones.map(p=>'<div style="display:flex;align-items:center;gap:7px;padding:4px 0"><div style="width:18px;height:18px;border-radius:4px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div><span style="font-size:12px;font-weight:600">'+(p.colorName||'—')+'</span>'+(p.localInkName?'<span style="font-size:11px;color:var(--muted)">· '+p.localInkName+'</span>':'')+'</div>').join('')}</div>`:''}
-      ${recipe.printing?.instructionsUr?`<div style="margin-top:8px;font-size:14px;line-height:2;direction:rtl;text-align:right;color:var(--dark);background:var(--surface-2);padding:8px 10px;border-radius:8px">${recipe.printing.instructionsUr}</div>`:''}
-      ${recipe.printing?.instructionsEn?`<div style="margin-top:6px;font-size:12px;color:var(--dark);line-height:1.6">${recipe.printing.instructionsEn}</div>`:''}
+      ${!placements.length&&pantones.length?`<div style="margin-top:4px">${pantones.map(p=>'<div style="display:flex;align-items:center;gap:7px;padding:4px 0"><div style="width:18px;height:18px;border-radius:4px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div><span style="font-size:13px;font-weight:600">'+(p.colorName||'—')+'</span>'+(p.localInkName?'<span style="font-size:12px;color:var(--muted)">· '+p.localInkName+'</span>':'')+'</div>').join('')}</div>`:''}
+      ${recipe.printing?.instructionsUr?`<div style="margin-top:8px;font-size:15px;line-height:2;direction:rtl;text-align:right;color:var(--dark);background:var(--surface-2);padding:8px 10px;border-radius:8px">${recipe.printing.instructionsUr}</div>`:''}
+      ${recipe.printing?.instructionsEn?`<div style="margin-top:6px;font-size:13px;color:var(--dark);line-height:1.6">${recipe.printing.instructionsEn}</div>`:''}
       ${pantones.length?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--soft)">
-        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px">رنگ / Colors to Use</div>
-        ${pantones.map(p=>'<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--surface-2);border-radius:8px;margin-bottom:5px"><div style="width:28px;height:28px;border-radius:6px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.12);flex-shrink:0"></div><div><div style="font-size:13px;font-weight:700">'+(p.colorName||'—')+'</div><div style="font-size:11px;color:var(--muted)">'+(p.localInkName||p.pantoneCode||'')+'</div>'+(p.articleSpecificNotes||p.notes?'<div style="font-size:11px;color:var(--dark);font-style:italic">'+(p.articleSpecificNotes||p.notes)+'</div>':'')+'</div></div>').join('')}
+        <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px">رنگ / Colors to Use</div>
+        ${pantones.map(p=>'<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--surface-2);border-radius:8px;margin-bottom:5px"><div style="width:28px;height:28px;border-radius:6px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.12);flex-shrink:0"></div><div><div style="font-size:14px;font-weight:700">'+(p.colorName||'—')+'</div><div style="font-size:12px;color:var(--muted)">'+(p.localInkName||p.pantoneCode||'')+'</div>'+(p.articleSpecificNotes||p.notes?'<div style="font-size:12px;color:var(--dark);font-style:italic">'+(p.articleSpecificNotes||p.notes)+'</div>':'')+'</div></div>').join('')}
       </div>`:''}
     </div>`:'';
 
   // ── No recipe warning ──
-  const noRecipeWarn=!hasRecipe?`<div style="background:var(--accent-urgent-soft);border-radius:10px;padding:12px;color:var(--accent-urgent);font-weight:700;font-size:13px;margin-bottom:12px;text-align:center">ریسیپی موجود نہیں<br><span style="font-size:11px;font-weight:500;margin-top:4px;display:block">Recipe Missing — PP sample cannot start. Contact Ammar.</span></div>`:'';
+  const noRecipeWarn=!hasRecipe?`<div style="background:var(--accent-urgent-soft);border-radius:10px;padding:12px;color:var(--accent-urgent);font-weight:700;font-size:14px;margin-bottom:12px;text-align:center">ریسیپی موجود نہیں<br><span style="font-size:12px;font-weight:500;margin-top:4px;display:block">Recipe Missing — PP sample cannot start. Contact Ammar.</span></div>`:'';
 
   // ── PP photo upload (file input, no URL shown to worker) ──
   const ppPhotoInput=`
     <div style="margin-bottom:10px">
-      <div style="font-size:13px;font-weight:700;color:var(--dark);margin-bottom:6px">تصویر لگائیں / Attach PP Sample Photo</div>
+      <div style="font-size:14px;font-weight:700;color:var(--dark);margin-bottom:6px">تصویر لگائیں / Attach PP Sample Photo</div>
       <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:2px dashed var(--border);border-radius:10px;cursor:pointer;background:var(--surface-2)">
-        <span style="font-size:20px">📷</span>
-        <span style="font-size:13px;color:var(--muted)">تصویر لیں یا اپلوڈ کریں<br><span style="font-size:11px">Take Photo / Upload Photo</span></span>
+        <span style="font-size:21px">📷</span>
+        <span style="font-size:14px;color:var(--muted)">تصویر لیں یا اپلوڈ کریں<br><span style="font-size:12px">Take Photo / Upload Photo</span></span>
         <input type="file" id="pp-file-${j._id}" accept="image/*" capture="environment" style="display:none" onchange="window._ppPhotoSelected('${j._id}',this)">
       </label>
-      <div id="pp-photo-preview-${j._id}" style="margin-top:6px;display:none"><img id="pp-photo-img-${j._id}" style="width:100%;max-height:160px;object-fit:contain;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green);font-weight:600;margin-top:3px">Photo selected / تصویر منتخب</div></div>
+      <div id="pp-photo-preview-${j._id}" style="margin-top:6px;display:none"><img id="pp-photo-img-${j._id}" style="width:100%;max-height:160px;object-fit:contain;border-radius:8px;border:1px solid var(--border)"><div style="font-size:12px;color:var(--green);font-weight:600;margin-top:3px">Photo selected / تصویر منتخب</div></div>
       <input type="hidden" id="pp-photo-${j._id}" value="">
     </div>`;
 
   // ── PP note ──
   const ppNoteInput=`
     <div style="margin-bottom:10px">
-      <div style="font-size:13px;font-weight:700;color:var(--dark);margin-bottom:5px">نوٹ لکھیں / Sample Notes <span style="font-size:11px;font-weight:400;color:var(--muted)">(optional)</span></div>
-      <textarea id="pp-note-${j._id}" rows="2" placeholder="کوئی بات لکھیں… / Any notes…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none"></textarea>
+      <div style="font-size:14px;font-weight:700;color:var(--dark);margin-bottom:5px">نوٹ لکھیں / Sample Notes <span style="font-size:12px;font-weight:400;color:var(--muted)">(optional)</span></div>
+      <textarea id="pp-note-${j._id}" rows="2" placeholder="کوئی بات لکھیں… / Any notes…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;resize:none;outline:none"></textarea>
     </div>`;
 
   // ── Action area ──
-  const handoffNote=`<div style="background:var(--surface-2);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--text);margin-top:8px;font-weight:500;line-height:1.6">یہ بٹن دبانے کے بعد فزیکل پی پی سیمپل QC / حارث کو دیں۔<br><span style="font-size:11px;font-style:italic">After pressing this, send the physical PP sample to Haris (QC).</span></div>`;
+  const handoffNote=`<div style="background:var(--surface-2);border-radius:8px;padding:8px 10px;font-size:13px;color:var(--text);margin-top:8px;font-weight:500;line-height:1.6">یہ بٹن دبانے کے بعد فزیکل پی پی سیمپل QC / حارث کو دیں۔<br><span style="font-size:12px;font-style:italic">After pressing this, send the physical PP sample to Haris (QC).</span></div>`;
 
   let actionArea='';
   if(hasRecipe&&(canPPSample||ppRejected)){
     actionArea=`
-      ${ppRejected?`<div style="background:var(--accent-urgent-soft);border-radius:10px;padding:12px;margin-bottom:12px;color:var(--accent-urgent);font-weight:700;font-size:13px">پی پی ریجیکٹ — نیا پی پی سیمپل بنائیں<br><span style="font-size:12px;font-weight:500;margin-top:4px;display:block">وجہ: ${j.ppAttempts?.[j.ppAttempts.length-1]?.rejectionReason||'—'}</span></div>`:''}
+      ${ppRejected?`<div style="background:var(--accent-urgent-soft);border-radius:10px;padding:12px;margin-bottom:12px;color:var(--accent-urgent);font-weight:700;font-size:14px">پی پی ریجیکٹ — نیا پی پی سیمپل بنائیں<br><span style="font-size:13px;font-weight:500;margin-top:4px;display:block">وجہ: ${j.ppAttempts?.[j.ppAttempts.length-1]?.rejectionReason||'—'}</span></div>`:''}
       ${ppNoteInput}
       ${ppPhotoInput}
       <button class="worker-btn worker-btn-amber" onclick="window.submitPPSample('${j._id}')">
@@ -2509,22 +2509,22 @@ function printWorkerCardHTML(j){
       </button>
       ${handoffNote}`;
   } else if(awaitingApproval){
-    actionArea=`<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:14px;color:var(--text);font-weight:700;font-size:14px;text-align:center">
+    actionArea=`<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:14px;color:var(--text);font-weight:700;font-size:15px;text-align:center">
       منظوری کا انتظار / Waiting for Approval<br>
-      <span style="font-size:12px;font-weight:500;margin-top:4px;display:block">پی پی سیمپل حارث کے پاس ہے — منظوری آنے پر لاٹ شروع ہوگا</span>
+      <span style="font-size:13px;font-weight:500;margin-top:4px;display:block">پی پی سیمپل حارث کے پاس ہے — منظوری آنے پر لاٹ شروع ہوگا</span>
     </div>`;
   } else if(canStartBulk){
-    actionArea=`<div class="pp-approved-banner">پی پی منظور — لاٹ چلانے کی اجازت ہے<br><span style="font-size:11px;font-weight:400">PP Approved — Lot Run Allowed</span></div>
+    actionArea=`<div class="pp-approved-banner">پی پی منظور — لاٹ چلانے کی اجازت ہے<br><span style="font-size:12px;font-weight:400">PP Approved — Lot Run Allowed</span></div>
     <button class="worker-btn worker-btn-green" onclick="window.startBulkPrinting('${j._id}')">
       لاٹ پرنٹنگ شروع کریں / Start Lot Printing
     </button>`;
   } else if(alreadyPrinting){
-    actionArea=`<div class="pp-approved-banner" style="margin-bottom:10px">پی پی منظور — لاٹ جاری ہے<br><span style="font-size:11px;font-weight:400">PP Approved — Printing in Progress</span></div>
+    actionArea=`<div class="pp-approved-banner" style="margin-bottom:10px">پی پی منظور — لاٹ جاری ہے<br><span style="font-size:12px;font-weight:400">PP Approved — Printing in Progress</span></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
       <div class="field"><label>پرنٹ شدہ پیس / Printed Qty</label><input id="bulk-qty-${j._id}" type="number" min="0" placeholder="${j.totalQty||0}" style="width:100%"></div>
       <div class="field"><label>خراب پیس / Damaged Qty</label><input id="bulk-dmg-${j._id}" type="number" min="0" placeholder="0" style="width:100%"></div>
     </div>
-    <div class="field" style="margin-bottom:10px"><label>نوٹ / Notes</label><textarea id="bulk-note-${j._id}" rows="2" placeholder="کوئی بات لکھیں…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none"></textarea></div>
+    <div class="field" style="margin-bottom:10px"><label>نوٹ / Notes</label><textarea id="bulk-note-${j._id}" rows="2" placeholder="کوئی بات لکھیں…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;resize:none;outline:none"></textarea></div>
     <button class="worker-btn worker-btn-green" onclick="window.completeBulkPrinting('${j._id}')">
       پرنٹنگ مکمل ہو گئی / Printing Complete
     </button>`;
@@ -2535,11 +2535,11 @@ function printWorkerCardHTML(j){
   // ── Secondary: delay + voice note ──
   const secondaryActions=`
     <div style="display:flex;gap:8px;margin-top:12px">
-      <button class="btn-outline" style="flex:1;font-size:12px;padding:8px 0;color:var(--muted);border-color:var(--muted)" onclick="window.showDelayForm('${j._id}')">تاخیر کی وجہ لکھیں<br><span style="font-size:10px">Add Delay Reason</span></button>
-      <button class="btn-outline" style="flex:1;font-size:12px;padding:8px 0;color:var(--muted);border-color:var(--muted)" onclick="window._voiceNoteWorker('${j._id}')">وائس نوٹ<br><span style="font-size:10px">Add Voice Note</span></button>
+      <button class="btn-outline" style="flex:1;font-size:13px;padding:8px 0;color:var(--muted);border-color:var(--muted)" onclick="window.showDelayForm('${j._id}')">تاخیر کی وجہ لکھیں<br><span style="font-size:11px">Add Delay Reason</span></button>
+      <button class="btn-outline" style="flex:1;font-size:13px;padding:8px 0;color:var(--muted);border-color:var(--muted)" onclick="window._voiceNoteWorker('${j._id}')">وائس نوٹ<br><span style="font-size:11px">Add Voice Note</span></button>
     </div>
     <div id="delay-form-${j._id}" style="display:none;margin-top:8px">
-      <textarea id="delay-text-${j._id}" rows="2" placeholder="تاخیر کی وجہ بتائیں… / Explain delay…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none;margin-bottom:6px;direction:rtl"></textarea>
+      <textarea id="delay-text-${j._id}" rows="2" placeholder="تاخیر کی وجہ بتائیں… / Explain delay…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;resize:none;outline:none;margin-bottom:6px;direction:rtl"></textarea>
       <button class="btn-outline" style="width:100%" onclick="window.submitDelayReason('${j._id}')">جمع کروائیں / Submit</button>
     </div>`;
 
@@ -2549,12 +2549,12 @@ function printWorkerCardHTML(j){
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <div style="flex:1;min-width:0">
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
-            <span style="font-size:14px;font-weight:800;color:var(--red)">${j.poNumber||'—'}</span>
-            <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;${_embPriorityChipStyle(j.priority)}">${(j.priority||'normal').toUpperCase()}</span>
+            <span style="font-size:15px;font-weight:800;color:var(--red)">${j.poNumber||'—'}</span>
+            <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:8px;${_embPriorityChipStyle(j.priority)}">${(j.priority||'normal').toUpperCase()}</span>
             ${tierBadge(j.complexityTier||1)}
           </div>
-          <div style="font-size:16px;font-weight:800;line-height:1.25;margin-bottom:2px">${j.articleCode||'—'}</div>
-          <div style="font-size:13px;color:var(--muted)">${j.articleName||'—'}</div>
+          <div style="font-size:17px;font-weight:800;line-height:1.25;margin-bottom:2px">${j.articleCode||'—'}</div>
+          <div style="font-size:14px;color:var(--muted)">${j.articleName||'—'}</div>
           <div style="margin-top:4px">${processBadge(j.processType)}</div>
         </div>
         ${frontUrl?`<img src="${frontUrl}" onclick="window.open('${frontUrl}')" style="width:64px;height:80px;object-fit:cover;border-radius:8px;flex-shrink:0;cursor:zoom-in;border:1px solid var(--border)">`:''}
@@ -2571,7 +2571,7 @@ function printWorkerCardHTML(j){
       ${actionArea}
       ${secondaryActions}
       <div style="margin-top:10px;text-align:center">
-        <button style="background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;font-family:inherit" onclick="window.openPrintingJob('${j._id}')">Full Details / تفصیل دیکھیں →</button>
+        <button style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;font-family:inherit" onclick="window.openPrintingJob('${j._id}')">Full Details / تفصیل دیکھیں →</button>
       </div>
     </div>
   </div>`;
@@ -2600,9 +2600,9 @@ window._voiceNoteWorker=function(jobId){
 function bundlingWorkerCardHTML(j){
   return`<div class="work-card">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
-      <div><div style="display:flex;gap:6px;align-items:center"><span style="font-size:12px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</span>${tierBadge(j.complexityTier||1)}</div>
-        <div style="font-size:14px;font-weight:600;margin-top:3px">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:2px">${j.totalQty||'?'} pcs · ${processBadge(j.processType)}</div>
+      <div><div style="display:flex;gap:6px;align-items:center"><span style="font-size:13px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</span>${tierBadge(j.complexityTier||1)}</div>
+        <div style="font-size:15px;font-weight:600;margin-top:3px">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:2px">${j.totalQty||'?'} pcs · ${processBadge(j.processType)}</div>
       </div>
     </div>
     ${j.handoff?.acceptedByZohaibAt?`<div class="pp-approved-banner" style="margin-top:10px">✓ Lot accepted · Bundling in progress</div>`:''}
@@ -2611,21 +2611,21 @@ function bundlingWorkerCardHTML(j){
       <div class="field" style="margin-top:10px"><label>Bundle Count</label><input id="bundle-count-${j._id}" type="number" min="1" placeholder="no. of bundles" style="width:100%"></div>
       <div class="field" style="margin:8px 0"><label>Notes</label><input id="bundle-notes-${j._id}" placeholder="any notes…" style="width:100%"></div>
       <button class="worker-btn" onclick="window.forwardToStitching('${j._id}')">Forward to Stitching / سلائی کو بھیجیں</button>`:''}
-    ${j.handoff?.forwardedToStitchingAt?`<div style="font-size:12px;color:var(--green);margin-top:8px;font-weight:600">✓ Forwarded to Stitching at ${tsLabel2(j.handoff.forwardedToStitchingAt)}</div>`:''}
+    ${j.handoff?.forwardedToStitchingAt?`<div style="font-size:13px;color:var(--green);margin-top:8px;font-weight:600">✓ Forwarded to Stitching at ${tsLabel2(j.handoff.forwardedToStitchingAt)}</div>`:''}
   </div>`;
 }
 function stitchingWorkerCardHTML(j){
   return`<div class="work-card">
-    <div><div style="display:flex;gap:6px;align-items:center"><span style="font-size:12px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</span>${tierBadge(j.complexityTier||1)}</div>
-      <div style="font-size:14px;font-weight:600;margin-top:3px">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
-      <div style="font-size:12px;color:var(--muted);margin-top:2px">${j.totalQty||'?'} pcs</div>
+    <div><div style="display:flex;gap:6px;align-items:center"><span style="font-size:13px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</span>${tierBadge(j.complexityTier||1)}</div>
+      <div style="font-size:15px;font-weight:600;margin-top:3px">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
+      <div style="font-size:13px;color:var(--muted);margin-top:2px">${j.totalQty||'?'} pcs</div>
     </div>
     ${!j.handoff?.acceptedByWaqasAt?`<button class="worker-btn worker-btn-green" style="margin-top:10px" onclick="window.acceptByWaqas('${j._id}')">Accept Stitching / سلائی قبول کریں</button>`:''}
     ${j.handoff?.acceptedByWaqasAt&&!j.handoff?.stitchingForwardedToQcAt?`
       <div class="pp-approved-banner" style="margin:10px 0">✓ Stitching in progress</div>
       <div class="field"><label>Notes</label><input id="stitch-notes-${j._id}" placeholder="notes…" style="width:100%"></div>
       <button class="worker-btn" onclick="window.completeStitching('${j._id}')">Stitching Complete → Return to QC / فائنل QC کو بھیجیں</button>`:''}
-    ${j.handoff?.stitchingForwardedToQcAt?`<div style="font-size:12px;color:var(--green);margin-top:8px;font-weight:600">✓ Returned to Final QC at ${tsLabel2(j.handoff.stitchingForwardedToQcAt)}</div>`:''}
+    ${j.handoff?.stitchingForwardedToQcAt?`<div style="font-size:13px;color:var(--green);margin-top:8px;font-weight:600">✓ Returned to Final QC at ${tsLabel2(j.handoff.stitchingForwardedToQcAt)}</div>`:''}
   </div>`;
 }
 
@@ -2647,8 +2647,8 @@ function renderPrintingJobDetailPage(){
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
       <div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span style="font-size:12px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</span>
-          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;${_embPriorityChipStyle(j.priority)}">${(j.priority||'').toUpperCase()}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</span>
+          <span style="font-size:11px;font-weight:700;padding:2px 6px;border-radius:8px;${_embPriorityChipStyle(j.priority)}">${(j.priority||'').toUpperCase()}</span>
           ${tierBadge(j.complexityTier||1)}
           ${processBadge(j.processType)}
         </div>
@@ -2686,11 +2686,11 @@ function renderPrintingJobDetailPage(){
     </div>
     <div class="card" style="margin-bottom:0"><div class="card-title">Size Breakdown</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">
-        ${Object.entries(j.sizeBreakdown||{}).filter(([,v])=>v>0).map(([k,v])=>`<div style="text-align:center;min-width:42px;padding:6px 8px;background:var(--surface-2);border-radius:6px"><div style="font-size:9px;color:var(--muted)">${k}</div><div style="font-size:16px;font-weight:700">${v}</div></div>`).join('')||'<span style="font-size:12px;color:var(--muted)">No breakdown set</span>'}
+        ${Object.entries(j.sizeBreakdown||{}).filter(([,v])=>v>0).map(([k,v])=>`<div style="text-align:center;min-width:42px;padding:6px 8px;background:var(--surface-2);border-radius:6px"><div style="font-size:11px;color:var(--muted)">${k}</div><div style="font-size:17px;font-weight:700">${v}</div></div>`).join('')||'<span style="font-size:13px;color:var(--muted)">No breakdown set</span>'}
       </div>
       ${j.slaCurrentDue?`<div style="margin-top:10px;padding:8px;border-radius:8px;background:${sl==='ok'?'var(--soft)':sl==='near'?'var(--surface-2)':'var(--accent-urgent-soft)'}">
-        <div style="font-size:10px;font-weight:700;color:var(--muted)">CURRENT SLA</div>
-        <div style="font-size:15px;font-weight:700;color:${slaColor(sl)}">${remainLabel(j.slaCurrentDue)}</div>
+        <div style="font-size:11px;font-weight:700;color:var(--muted)">CURRENT SLA</div>
+        <div style="font-size:16px;font-weight:700;color:${slaColor(sl)}">${remainLabel(j.slaCurrentDue)}</div>
       </div>`:''}
     </div>
   </div>
@@ -2705,19 +2705,19 @@ function renderPrintingJobDetailPage(){
 
 function renderPPAttemptsCard(j){
   const attempts=j.ppAttempts||[];
-  if(!attempts.length)return`<div class="card"><div class="card-title">PP Sample History</div><div style="font-size:12px;color:var(--muted)">No PP sample submitted yet.</div></div>`;
+  if(!attempts.length)return`<div class="card"><div class="card-title">PP Sample History</div><div style="font-size:13px;color:var(--muted)">No PP sample submitted yet.</div></div>`;
   return`<div class="card"><div class="card-title">PP Sample History (${attempts.length} attempt${attempts.length>1?'s':''})</div>
     ${attempts.map((a,i)=>`<div style="padding:10px;background:${a.status==='approved'?'var(--accent-success-soft)':a.status==='rejected'?'var(--accent-urgent-soft)':'var(--surface-2)'};border-radius:8px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
-          <div style="font-size:12px;font-weight:700">Attempt #${i+1} <span style="font-weight:400;color:var(--muted)">by ${a.submittedBy||'—'} · ${tsLabel2(a.submittedAt)}</span></div>
-          ${a.note?`<div style="font-size:12px;color:var(--dark);margin-top:3px">${a.note}</div>`:''}
+          <div style="font-size:13px;font-weight:700">Attempt #${i+1} <span style="font-weight:400;color:var(--muted)">by ${a.submittedBy||'—'} · ${tsLabel2(a.submittedAt)}</span></div>
+          ${a.note?`<div style="font-size:13px;color:var(--dark);margin-top:3px">${a.note}</div>`:''}
         </div>
-        <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:${a.status==='rejected'?'var(--dark)':'var(--soft)'};color:${a.status==='rejected'?'var(--on-dark)':'var(--text)'}">${(a.status||'pending').toUpperCase()}</span>
+        <span style="font-size:12px;font-weight:700;padding:2px 8px;border-radius:8px;background:${a.status==='rejected'?'var(--dark)':'var(--soft)'};color:${a.status==='rejected'?'var(--on-dark)':'var(--text)'}">${(a.status||'pending').toUpperCase()}</span>
       </div>
       ${a.photoUrl?`<img src="${a.photoUrl}" style="width:100%;max-height:180px;object-fit:contain;border-radius:6px;margin-top:8px;background:var(--soft)">`:''}
-      ${a.reviewedBy?`<div style="font-size:11px;color:var(--muted);margin-top:6px">${a.status==='approved'?'✓ Approved':'✗ Rejected'} by ${a.reviewedBy} · ${tsLabel2(a.reviewedAt)}</div>`:''}
-      ${a.rejectionReason?`<div style="font-size:12px;color:var(--accent-urgent);margin-top:4px">Reason: ${a.rejectionReason}</div>`:''}
+      ${a.reviewedBy?`<div style="font-size:12px;color:var(--muted);margin-top:6px">${a.status==='approved'?'✓ Approved':'✗ Rejected'} by ${a.reviewedBy} · ${tsLabel2(a.reviewedAt)}</div>`:''}
+      ${a.rejectionReason?`<div style="font-size:13px;color:var(--accent-urgent);margin-top:4px">Reason: ${a.rejectionReason}</div>`:''}
     </div>`).join('')}
   </div>`;
 }
@@ -2740,15 +2740,15 @@ function renderJobComms(j,notes){
     <div style="margin-bottom:10px">
       ${notes.length?notes.slice(0,10).map(n=>`<div class="comm-note ${n.type==='ping'?'comm-ping':''}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
-          <div style="font-size:11px;font-weight:700">${n.fromUser||'—'} ${n.toUser?'→ '+n.toUser:''} <span style="font-weight:400;color:var(--muted)">· ${tsLabel2(n.createdAt)}</span></div>
-          <span style="font-size:9px;font-weight:600;padding:1px 6px;border-radius:6px;background:var(--soft)">${(n.type||'text').toUpperCase()}</span>
+          <div style="font-size:12px;font-weight:700">${n.fromUser||'—'} ${n.toUser?'→ '+n.toUser:''} <span style="font-weight:400;color:var(--muted)">· ${tsLabel2(n.createdAt)}</span></div>
+          <span style="font-size:11px;font-weight:600;padding:1px 6px;border-radius:6px;background:var(--soft)">${(n.type||'text').toUpperCase()}</span>
         </div>
-        <div style="font-size:13px;margin-top:4px">${n.message||'—'}</div>
-      </div>`).join(''):'<div style="font-size:12px;color:var(--muted)">No notes yet.</div>'}
+        <div style="font-size:14px;margin-top:4px">${n.message||'—'}</div>
+      </div>`).join(''):'<div style="font-size:13px;color:var(--muted)">No notes yet.</div>'}
     </div>
     <div style="display:flex;gap:8px">
-      <input id="comm-msg-${j._id}" placeholder="Add note or ping…" style="flex:1;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none">
-      <select id="comm-type-${j._id}" style="padding:9px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--surface);outline:none">
+      <input id="comm-msg-${j._id}" placeholder="Add note or ping…" style="flex:1;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;outline:none">
+      <select id="comm-type-${j._id}" style="padding:9px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
         <option value="text">Note</option><option value="ping">Ping</option>
       </select>
       <button class="btn-sm" onclick="window.addCommNote('${j._id}')">Send</button>
@@ -2761,9 +2761,9 @@ function renderSLACard(j,evts){
   return`<div class="card"><div class="card-title">SLA Events</div>
     ${evts.map(e=>{const sl2=slaStatus(e.dueAt);return`<div style="padding:8px 0;border-bottom:1px solid var(--soft)">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">
-        <div><div style="font-size:12px;font-weight:600">${JOB_STAGE_LABELS[e.stage]||e.stage}</div>
-          <div style="font-size:11px;color:var(--muted)">Assigned: ${e.assignedTo||'—'} · Due: ${tsLabel2(e.dueAt)}</div>
-          ${e.delayReasonText?`<div style="font-size:11px;color:var(--amber);margin-top:2px">Delay reason: ${e.delayReasonText}</div>`:''}
+        <div><div style="font-size:13px;font-weight:600">${JOB_STAGE_LABELS[e.stage]||e.stage}</div>
+          <div style="font-size:12px;color:var(--muted)">Assigned: ${e.assignedTo||'—'} · Due: ${tsLabel2(e.dueAt)}</div>
+          ${e.delayReasonText?`<div style="font-size:12px;color:var(--amber);margin-top:2px">Delay reason: ${e.delayReasonText}</div>`:''}
         </div>
         <span class="sla-chip ${slaChipClass(e.completedAt?'ok':sl2)}">${e.completedAt?'Completed':remainLabel(e.dueAt)}</span>
       </div>
@@ -2915,7 +2915,7 @@ function renderQCReportPage(){
       <div><div class="page-title">QC Report — ${j.poNumber}</div>
         <div class="page-sub">${j.articleCode||'—'} · ${j.articleName||'—'} · ${j.printedQty||j.totalQty||'?'} pcs received</div>
       </div>
-      ${existing?`<div style="display:flex;gap:6px"><span style="font-size:12px;font-weight:700;color:${existing.final?.totalCleared>0?'var(--green)':'#dc2626'};padding:8px 14px;border:1px solid ${existing.final?.totalCleared>0?'var(--green)':'#dc2626'};border-radius:8px">Report Submitted</span></div>`:''}
+      ${existing?`<div style="display:flex;gap:6px"><span style="font-size:13px;font-weight:700;color:${existing.final?.totalCleared>0?'var(--green)':'#dc2626'};padding:8px 14px;border:1px solid ${existing.final?.totalCleared>0?'var(--green)':'#dc2626'};border-radius:8px">Report Submitted</span></div>`:''}
     </div>
   </div>
 
@@ -2929,9 +2929,9 @@ function renderExistingQCReport(rep,j){
 
   <div class="card"><div class="card-title">QC Summary</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;margin-bottom:12px">
-      ${[['Received',rep.firstPass?.checkedQty||0,'var(--dark)'],['Clear ✓',rep.firstPass?.clearQty||0,'var(--green)'],['Rework',rep.firstPass?.reworkQty||0,'var(--amber)'],['Minor',rep.firstPass?.minorQty||0,'var(--amber)'],['Rejected',rep.firstPass?.rejectedQty||0,'#dc2626']].map(([l,v,c])=>`<div style="text-align:center;padding:10px;background:var(--surface-2);border-radius:8px"><div style="font-size:9px;color:var(--muted)">${l}</div><div style="font-size:22px;font-weight:800;color:${c}">${v}</div></div>`).join('')}
+      ${[['Received',rep.firstPass?.checkedQty||0,'var(--dark)'],['Clear ✓',rep.firstPass?.clearQty||0,'var(--green)'],['Rework',rep.firstPass?.reworkQty||0,'var(--amber)'],['Minor',rep.firstPass?.minorQty||0,'var(--amber)'],['Rejected',rep.firstPass?.rejectedQty||0,'#dc2626']].map(([l,v,c])=>`<div style="text-align:center;padding:10px;background:var(--surface-2);border-radius:8px"><div style="font-size:11px;color:var(--muted)">${l}</div><div style="font-size:23px;font-weight:800;color:${c}">${v}</div></div>`).join('')}
     </div>
-    <div class="info-row"><span class="info-label">Final Approved Qty</span><span style="font-size:18px;font-weight:800;color:var(--green)">${f.totalCleared||0} pcs</span></div>
+    <div class="info-row"><span class="info-label">Final Approved Qty</span><span style="font-size:19px;font-weight:800;color:var(--green)">${f.totalCleared||0} pcs</span></div>
     <div class="info-row"><span class="info-label">Total Rejected</span><span style="font-weight:700;color:#dc2626">${f.totalRejected||0} pcs</span></div>
     <div class="info-row"><span class="info-label">Billing Approved Qty</span><span style="font-weight:700">${f.billingApprovedQty||0} pcs</span></div>
     ${f.remarks?`<div class="info-row"><span class="info-label">Remarks</span><span>${f.remarks}</span></div>`:''}
@@ -2940,15 +2940,15 @@ function renderExistingQCReport(rep,j){
   ${(rep.defects||[]).length?`<div class="card"><div class="card-title">Defects Logged (${rep.defects.length})</div>
     ${rep.defects.map(d=>`<div style="padding:8px;background:var(--surface-2);border-radius:8px;margin-bottom:6px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div><div style="font-size:12px;font-weight:700">${d.category} — ${d.type}</div>
-          <div style="font-size:11px;color:var(--muted)">${d.affectedQty||0} pcs · Sizes: ${(d.affectedSizes||[]).join(',')||'—'} · Resp: ${d.responsibleDepartment||'—'}</div>
+        <div><div style="font-size:13px;font-weight:700">${d.category} — ${d.type}</div>
+          <div style="font-size:12px;color:var(--muted)">${d.affectedQty||0} pcs · Sizes: ${(d.affectedSizes||[]).join(',')||'—'} · Resp: ${d.responsibleDepartment||'—'}</div>
         </div>
         <div style="text-align:right">
-          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;background:${d.severity==='critical'?'var(--dark)':d.severity==='major'?'var(--muted)':'var(--soft)'};color:${d.severity==='critical'||d.severity==='major'?'var(--on-dark)':'var(--text)'}">${(d.severity||'minor').toUpperCase()}</span>
-          <div style="font-size:10px;font-weight:700;color:${d.action==='accept'?'var(--green)':d.action==='reject'?'#dc2626':'var(--amber)'};margin-top:2px">${(d.action||'').toUpperCase()}</div>
+          <span style="font-size:11px;font-weight:700;padding:2px 6px;border-radius:6px;background:${d.severity==='critical'?'var(--dark)':d.severity==='major'?'var(--muted)':'var(--soft)'};color:${d.severity==='critical'||d.severity==='major'?'var(--on-dark)':'var(--text)'}">${(d.severity||'minor').toUpperCase()}</span>
+          <div style="font-size:11px;font-weight:700;color:${d.action==='accept'?'var(--green)':d.action==='reject'?'#dc2626':'var(--amber)'};margin-top:2px">${(d.action||'').toUpperCase()}</div>
         </div>
       </div>
-      ${d.affectsBilling?'<div style="font-size:10px;color:#dc2626;margin-top:3px;font-weight:700">⚠ Affects billing</div>':''}
+      ${d.affectsBilling?'<div style="font-size:11px;color:#dc2626;margin-top:3px;font-weight:700">⚠ Affects billing</div>':''}
     </div>`).join('')}
   </div>`:''}
 
@@ -2987,7 +2987,7 @@ function renderQCReportForm(j){
       <div class="field"><label>Rework Required</label><input id="qc-rework" type="number" min="0" value="0" style="width:100%" oninput="window._calcQCTotals()"></div>
       <div class="field"><label>Rejected / No Use</label><input id="qc-rejected" type="number" min="0" value="0" style="width:100%" oninput="window._calcQCTotals()"></div>
     </div>
-    <div id="qc-total-display" style="margin-top:10px;font-size:13px;color:var(--muted)">Fill quantities above</div>
+    <div id="qc-total-display" style="margin-top:10px;font-size:14px;color:var(--muted)">Fill quantities above</div>
   </div>
 
   <div class="card"><div class="card-title">Bundle Records / بنڈل ریکارڈ</div>
@@ -2997,11 +2997,11 @@ function renderQCReportForm(j){
       </tr></thead>
       <tbody id="bundle-tbody">
         <tr id="brow-1">
-          <td><input type="number" value="1" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>
-          <td><input type="number" value="0" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>
-          <td><input type="date" value="${new Date().toISOString().slice(0,10)}" style="width:110px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>
-          ${sizes.map(()=>`<td><input type="number" min="0" value="0" style="width:50px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>`).join('')}
-          <td><input type="number" min="0" value="0" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>
+          <td><input type="number" value="1" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:13px;outline:none"></td>
+          <td><input type="number" value="0" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:13px;outline:none"></td>
+          <td><input type="date" value="${new Date().toISOString().slice(0,10)}" style="width:110px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:13px;outline:none"></td>
+          ${sizes.map(()=>`<td><input type="number" min="0" value="0" style="width:50px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:13px;outline:none"></td>`).join('')}
+          <td><input type="number" min="0" value="0" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:13px;outline:none"></td>
         </tr>
       </tbody></table>
     </div>
@@ -3034,7 +3034,7 @@ function renderQCReportForm(j){
         <select id="rej-dept"><option value="printing">Printing</option><option value="fabric">Fabric / Cutting</option><option value="washing">Washing</option><option value="stitching">Stitching</option><option value="vendor">External Vendor</option><option value="unknown">Unknown / Review</option></select>
       </div>
       <div class="field"><label>Material Cost/pc (Rs.)</label><input id="rej-mat-cost" type="number" min="0" value="0" style="width:100%"></div>
-      <div class="field" style="grid-column:1/-1"><label>Rejection Notes</label><textarea id="rej-notes" rows="2" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none" placeholder="Describe rejection reason in detail…"></textarea></div>
+      <div class="field" style="grid-column:1/-1"><label>Rejection Notes</label><textarea id="rej-notes" rows="2" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;resize:none;outline:none" placeholder="Describe rejection reason in detail…"></textarea></div>
     </div>
   </div>
 
@@ -3048,7 +3048,7 @@ function renderQCReportForm(j){
       </select>
     </div>
     <div class="field" style="margin-bottom:10px"><label>QC Remarks</label>
-      <textarea id="qc-remarks" rows="2" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;outline:none" placeholder="Overall QC remarks…"></textarea>
+      <textarea id="qc-remarks" rows="2" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;resize:vertical;outline:none" placeholder="Overall QC remarks…"></textarea>
     </div>
     <button class="btn-primary" onclick="window.submitQCReport('${j._id}')">Submit QC Report</button>
   </div>`;
@@ -3070,11 +3070,11 @@ window._addBundleRow=function(){
   const sizes=['XS','S','M','L','XL','2XL'];
   const row=document.createElement('tr');row.id='brow-'+_bundleRowCount;
   row.innerHTML=`
-    <td><input type="number" value="${_bundleRowCount}" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>
-    <td><input type="number" value="0" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>
-    <td><input type="date" value="${new Date().toISOString().slice(0,10)}" style="width:110px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>
-    ${sizes.map(()=>`<td><input type="number" min="0" value="0" style="width:50px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>`).join('')}
-    <td><input type="number" min="0" value="0" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none"></td>`;
+    <td><input type="number" value="${_bundleRowCount}" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:13px;outline:none"></td>
+    <td><input type="number" value="0" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:13px;outline:none"></td>
+    <td><input type="date" value="${new Date().toISOString().slice(0,10)}" style="width:110px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:13px;outline:none"></td>
+    ${sizes.map(()=>`<td><input type="number" min="0" value="0" style="width:50px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:13px;outline:none"></td>`).join('')}
+    <td><input type="number" min="0" value="0" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:13px;outline:none"></td>`;
   document.getElementById('bundle-tbody')?.appendChild(row);
 };
 
@@ -3086,8 +3086,8 @@ window.addDefectRow=function(){
   const div=document.createElement('div');div.id='def-row-'+i;div.style.cssText='padding:12px;background:var(--surface-2);border-radius:10px;margin-bottom:10px';
   div.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <span style="font-size:11px;font-weight:700;color:var(--muted)">DEFECT #${i}</span>
-      <button type="button" onclick="document.getElementById('def-row-${i}').remove()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer">×</button>
+      <span style="font-size:12px;font-weight:700;color:var(--muted)">DEFECT #${i}</span>
+      <button type="button" onclick="document.getElementById('def-row-${i}').remove()" style="background:none;border:none;color:var(--muted);font-size:19px;cursor:pointer">×</button>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div class="field"><label>Category</label>
@@ -3113,7 +3113,7 @@ window.addDefectRow=function(){
       <div class="field" style="grid-column:1/-1"><label>Notes</label><input id="def-notes-${i}" placeholder="describe defect…" style="width:100%"></div>
       <div class="field" style="grid-column:1/-1;display:flex;align-items:center;gap:8px">
         <input type="checkbox" id="def-billing-${i}" checked style="accent-color:#dc2626">
-        <label for="def-billing-${i}" style="font-size:12px;cursor:pointer">Affects billing / billing impact</label>
+        <label for="def-billing-${i}" style="font-size:13px;cursor:pointer">Affects billing / billing impact</label>
       </div>
     </div>`;
   wrap.appendChild(div);
@@ -3310,15 +3310,15 @@ function renderBillingDetailPage(){
     <div class="billing-row"><span>Printed Quantity</span><span>${billing.printedQty} pcs</span></div>
     <div class="billing-row"><span>First Pass Approved</span><span style="color:var(--green);font-weight:700">${billing.firstPassApprovedQty} pcs</span></div>
     <div class="billing-row"><span>Rework Passed</span><span style="color:var(--green)">${billing.reworkPassedQty} pcs</span></div>
-    <div class="billing-row"><span style="font-weight:700">Final Approved Qty</span><span style="font-size:18px;font-weight:800;color:var(--dark)">${billing.finalApprovedQty} pcs</span></div>
+    <div class="billing-row"><span style="font-weight:700">Final Approved Qty</span><span style="font-size:19px;font-weight:800;color:var(--dark)">${billing.finalApprovedQty} pcs</span></div>
     <div class="billing-row"><span>Rate / Piece</span><span>Rs. ${billing.ratePerPiece}</span></div>
-    <div class="billing-row"><span style="font-weight:600">Gross Bill</span><span style="font-size:16px;font-weight:700">Rs. ${billing.grossBill?.toFixed(0)||0}</span></div>
+    <div class="billing-row"><span style="font-weight:600">Gross Bill</span><span style="font-size:17px;font-weight:700">Rs. ${billing.grossBill?.toFixed(0)||0}</span></div>
     ${billing.materialCostImpact?`<div class="billing-row"><span style="color:#dc2626">Material Cost Impact (rejected)</span><span style="color:#dc2626;font-weight:700">− Rs. ${billing.materialCostImpact}</span></div>`:''}
     ${billing.monetaryWithhold?`<div class="billing-row"><span style="color:#dc2626">SLA Monetary Withhold</span><span style="color:#dc2626;font-weight:700">− Rs. ${billing.monetaryWithhold}</span></div>`:''}
     ${deductTotal?`<div class="billing-row"><span style="color:#dc2626">Approved Deductions</span><span style="color:#dc2626;font-weight:700">− Rs. ${deductTotal}</span></div>`:''}
     <div class="billing-row" style="border-top:2px solid var(--dark);padding-top:12px;margin-top:4px">
-      <span style="font-size:15px;font-weight:800">NET PAYABLE</span>
-      <span style="font-size:22px;font-weight:900;color:var(--green)">Rs. ${net.toFixed(0)}</span>
+      <span style="font-size:16px;font-weight:800">NET PAYABLE</span>
+      <span style="font-size:23px;font-weight:900;color:var(--green)">Rs. ${net.toFixed(0)}</span>
     </div>
     <div class="billing-row"><span class="info-label">Status</span>
       <span style="font-weight:700;padding:3px 10px;border-radius:8px;background:var(--soft)">${(billing.status||'pending').replace('_',' ').toUpperCase()}</span>
@@ -3327,9 +3327,9 @@ function renderBillingDetailPage(){
 
   ${(billing.deductions||[]).length?`<div class="card"><div class="card-title">Deductions</div>
     ${billing.deductions.map(d=>`<div class="billing-row">
-      <div><div style="font-size:12px;font-weight:600">${d.type.replace('_',' ')}</div><div style="font-size:11px;color:var(--muted)">${d.reason}</div></div>
+      <div><div style="font-size:13px;font-weight:600">${d.type.replace('_',' ')}</div><div style="font-size:12px;color:var(--muted)">${d.reason}</div></div>
       <div style="text-align:right"><div style="font-weight:600">Rs. ${d.amount||0}</div>
-        <div style="font-size:10px;font-weight:700;color:${d.status==='approved'?'var(--green)':d.status==='waived'?'var(--amber)':'var(--muted)'}">${d.status?.toUpperCase()}</div>
+        <div style="font-size:11px;font-weight:700;color:${d.status==='approved'?'var(--green)':d.status==='waived'?'var(--amber)':'var(--muted)'}">${d.status?.toUpperCase()}</div>
       </div>
     </div>`).join('')}
   </div>`:''}
@@ -3488,15 +3488,15 @@ function renderTowerSwimlane(jobType,jobs){
   }));
   return`<div style="margin-bottom:18px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px">
     <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:10px">
-      <div style="font-size:14px;font-weight:700">${meta.icon} ${meta.label}</div>
-      <div style="font-size:11px;color:var(--muted)">${laneJobs.filter(j=>j.currentStage!=='closed').length} active · ${laneJobs.length} total</div>
+      <div style="font-size:15px;font-weight:700">${meta.icon} ${meta.label}</div>
+      <div style="font-size:12px;color:var(--muted)">${laneJobs.filter(j=>j.currentStage!=='closed').length} active · ${laneJobs.length} total</div>
     </div>
     <div class="tower-cols">
       ${cols.map(col=>`<div class="tower-col">
         <div class="tower-col-head" style="border-bottom:2px solid ${col.color};padding-bottom:6px;margin-bottom:8px">
-          ${col.label} <span style="font-size:12px;font-weight:400;color:var(--muted)">(${col.jobs.length})</span>
+          ${col.label} <span style="font-size:13px;font-weight:400;color:var(--muted)">(${col.jobs.length})</span>
         </div>
-        ${col.jobs.map(j=>towerJobMini(j)).join('')||'<div style="font-size:11px;color:var(--muted);padding:8px;text-align:center">—</div>'}
+        ${col.jobs.map(j=>towerJobMini(j)).join('')||'<div style="font-size:12px;color:var(--muted);padding:8px;text-align:center">—</div>'}
       </div>`).join('')}
     </div>
   </div>`;
@@ -3508,17 +3508,17 @@ function towerJobMini(j){
   const jt=inferJobType(j);
   const isOutsourced=(jt==='embroidery'||jt==='sublimation');
   return`<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:6px;cursor:pointer;border-left:3px solid ${slaColor(sl)}" onclick="window.openPrintingJob('${j._id}')">
-    <div style="font-size:10px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</div>
-    <div style="font-size:12px;font-weight:600;margin:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${j.articleCode||'—'}</div>
+    <div style="font-size:11px;font-weight:700;color:var(--red)">${j.poNumber||'—'}</div>
+    <div style="font-size:13px;font-weight:600;margin:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${j.articleCode||'—'}</div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:4px;flex-wrap:wrap">
-      <span style="font-size:10px;color:var(--muted)">${j.totalQty||0} pcs</span>
+      <span style="font-size:11px;color:var(--muted)">${j.totalQty||0} pcs</span>
       ${tierBadge(j.complexityTier||1)}
     </div>
-    ${j.slaCurrentDue?`<div style="font-size:9px;font-weight:700;color:${slaColor(sl)};margin-top:3px">${remainLabel(j.slaCurrentDue)}</div>`:''}
-    ${j.ppApprovalStatus==='rejected'?'<div style="font-size:9px;color:#dc2626;font-weight:700">PP Rejected</div>':''}
-    ${j.recipeWarning?'<div style="font-size:9px;color:var(--amber);font-weight:700">⚠ Recipe Missing</div>':''}
-    <div style="font-size:9px;color:var(--muted);margin-top:2px">${j.assignedTo||'—'} · ${processBadge(j.processType)}</div>
-    ${isOutsourced?`<button style="margin-top:5px;padding:3px 8px;font-size:10px;background:var(--surface);border:1px solid var(--border);border-radius:5px;cursor:pointer;color:var(--dark);font-family:inherit;width:100%" onclick="event.stopPropagation();window.generateJobSheetPDF('${j._id}')">📄 Job Sheet</button>`:''}
+    ${j.slaCurrentDue?`<div style="font-size:11px;font-weight:700;color:${slaColor(sl)};margin-top:3px">${remainLabel(j.slaCurrentDue)}</div>`:''}
+    ${j.ppApprovalStatus==='rejected'?'<div style="font-size:11px;color:#dc2626;font-weight:700">PP Rejected</div>':''}
+    ${j.recipeWarning?'<div style="font-size:11px;color:var(--amber);font-weight:700">⚠ Recipe Missing</div>':''}
+    <div style="font-size:11px;color:var(--muted);margin-top:2px">${j.assignedTo||'—'} · ${processBadge(j.processType)}</div>
+    ${isOutsourced?`<button style="margin-top:5px;padding:3px 8px;font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:5px;cursor:pointer;color:var(--dark);font-family:inherit;width:100%" onclick="event.stopPropagation();window.generateJobSheetPDF('${j._id}')">📄 Job Sheet</button>`:''}
   </div>`;
 }
 
@@ -3533,19 +3533,19 @@ function renderTowerSLA(){
       return`<div style="padding:10px;background:${sl==='ok'?'var(--surface-2)':sl==='near'?'var(--accent-warning-soft)':'var(--accent-urgent-soft)'};border-radius:8px;margin-bottom:8px;border-left:3px solid ${slaColor(sl)}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px">
           <div>
-            <div style="font-size:11px;font-weight:700">${e.poId||'—'} · ${JOB_STAGE_LABELS[e.stage]||e.stage}</div>
-            <div style="font-size:11px;color:var(--muted)">Assigned: ${e.assignedTo||'—'} · Priority: ${e.priority||'—'}</div>
-            <div style="font-size:11px;color:var(--muted)">Due: ${tsLabel2(e.dueAt)}</div>
-            ${e.delayReasonText?`<div style="font-size:11px;color:var(--amber);margin-top:3px">📝 ${e.delayReasonText}</div>`:''}
+            <div style="font-size:12px;font-weight:700">${e.poId||'—'} · ${JOB_STAGE_LABELS[e.stage]||e.stage}</div>
+            <div style="font-size:12px;color:var(--muted)">Assigned: ${e.assignedTo||'—'} · Priority: ${e.priority||'—'}</div>
+            <div style="font-size:12px;color:var(--muted)">Due: ${tsLabel2(e.dueAt)}</div>
+            ${e.delayReasonText?`<div style="font-size:12px;color:var(--amber);margin-top:3px">📝 ${e.delayReasonText}</div>`:''}
           </div>
           <div style="text-align:right">
             <span class="sla-chip ${slaChipClass(sl)}">${remainLabel(e.dueAt)}</span>
-            ${sl!=='ok'&&!e.delayReasonText?`<div style="font-size:9px;color:#dc2626;font-weight:700;margin-top:4px">⚠ No delay reason</div>`:''}
+            ${sl!=='ok'&&!e.delayReasonText?`<div style="font-size:11px;color:#dc2626;font-weight:700;margin-top:4px">⚠ No delay reason</div>`:''}
           </div>
         </div>
         ${(sl==='over'||sl==='critical')&&isObserver()?`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn-sm" style="font-size:10px" onclick="window._proposeWithhold('${e._id}','${e.poId||''}')">Propose Withhold</button>
-          <button class="btn-sm" style="font-size:10px;background:var(--muted)" onclick="window._markSLADone('${e._id}')">Mark Resolved</button>
+          <button class="btn-sm" style="font-size:11px" onclick="window._proposeWithhold('${e._id}','${e.poId||''}')">Propose Withhold</button>
+          <button class="btn-sm" style="font-size:11px;background:var(--muted)" onclick="window._markSLADone('${e._id}')">Mark Resolved</button>
         </div>`:''}
       </div>`;
     }).join(''):'<div class="empty" style="padding:1rem">No open SLA events.</div>'}
@@ -3554,16 +3554,16 @@ function renderTowerSLA(){
   ${proposed.length?`<div class="card" style="border:1px solid var(--accent-warning)"><div class="card-title">Monetary Withhold Proposals (${proposed.length})</div>
     ${proposed.map(e=>`<div class="withhold-card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div><div style="font-size:12px;font-weight:700">${e.poId||'—'} · ${JOB_STAGE_LABELS[e.stage]||e.stage}</div>
-          <div style="font-size:11px;color:var(--muted)">Responsible: ${e.assignedTo||'—'} · Delay: ${e.missedByMinutes||0} min</div>
-          ${e.delayReasonText?`<div style="font-size:11px;margin-top:3px">"${e.delayReasonText}"</div>`:''}
+        <div><div style="font-size:13px;font-weight:700">${e.poId||'—'} · ${JOB_STAGE_LABELS[e.stage]||e.stage}</div>
+          <div style="font-size:12px;color:var(--muted)">Responsible: ${e.assignedTo||'—'} · Delay: ${e.missedByMinutes||0} min</div>
+          ${e.delayReasonText?`<div style="font-size:12px;margin-top:3px">"${e.delayReasonText}"</div>`:''}
         </div>
-        <div style="text-align:right"><div style="font-size:16px;font-weight:800;color:var(--text)">Rs. ${e.monetaryWithholdSuggested||0}</div><div style="font-size:10px;color:var(--muted)">Proposed</div></div>
+        <div style="text-align:right"><div style="font-size:17px;font-weight:800;color:var(--text)">Rs. ${e.monetaryWithholdSuggested||0}</div><div style="font-size:11px;color:var(--muted)">Proposed</div></div>
       </div>
       ${isObserver()?`<div style="display:flex;gap:6px;margin-top:8px">
-        <input id="wh-amt-${e._id}" type="number" value="${e.monetaryWithholdSuggested||0}" style="width:80px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;outline:none">
-        <button class="btn-sm" style="background:var(--green);font-size:11px" onclick="window._approveWithhold('${e._id}')">Approve</button>
-        <button class="btn-sm" style="background:var(--muted);font-size:11px" onclick="window._waiveWithhold('${e._id}')">Waive</button>
+        <input id="wh-amt-${e._id}" type="number" value="${e.monetaryWithholdSuggested||0}" style="width:80px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;outline:none">
+        <button class="btn-sm" style="background:var(--green);font-size:12px" onclick="window._approveWithhold('${e._id}')">Approve</button>
+        <button class="btn-sm" style="background:var(--muted);font-size:12px" onclick="window._waiveWithhold('${e._id}')">Waive</button>
       </div>`:''}
     </div>`).join('')}
   </div>`:''}`;
@@ -3613,18 +3613,18 @@ function renderTowerBilling(){
   const pending=allPrintBilling.filter(b=>['ready','pending_approval'].includes(b.status));
 
   return`<div class="stats-row" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr));margin-bottom:16px">
-    ${[['Total Gross',`Rs. ${Math.round(totalGross).toLocaleString()}`],['Net Payable',`Rs. ${Math.round(totalNet).toLocaleString()}`],['Approved',`Rs. ${Math.round(totalApproved).toLocaleString()}`],['Pending',pending.length+' bills']].map(([l,v])=>`<div class="stat-card"><div class="stat-label">${l}</div><div class="stat-val" style="font-size:18px">${v}</div></div>`).join('')}
+    ${[['Total Gross',`Rs. ${Math.round(totalGross).toLocaleString()}`],['Net Payable',`Rs. ${Math.round(totalNet).toLocaleString()}`],['Approved',`Rs. ${Math.round(totalApproved).toLocaleString()}`],['Pending',pending.length+' bills']].map(([l,v])=>`<div class="stat-card"><div class="stat-label">${l}</div><div class="stat-val" style="font-size:19px">${v}</div></div>`).join('')}
   </div>
 
   <div class="card"><div class="card-title">All Billing Records</div>
     ${allPrintBilling.length?allPrintBilling.map(b=>`<div style="padding:10px 0;border-bottom:1px solid var(--soft);cursor:pointer" onclick="window._openBilling('${b._id}')">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px">
-        <div><div style="font-size:12px;font-weight:700">${b.poNumber||'—'} — ${b.articleCode||'—'}</div>
-          <div style="font-size:11px;color:var(--muted)">${processBadge(b.processType)} · ${b.finalApprovedQty||0} pcs approved</div>
+        <div><div style="font-size:13px;font-weight:700">${b.poNumber||'—'} — ${b.articleCode||'—'}</div>
+          <div style="font-size:12px;color:var(--muted)">${processBadge(b.processType)} · ${b.finalApprovedQty||0} pcs approved</div>
         </div>
         <div style="text-align:right">
-          <div style="font-size:15px;font-weight:700">Rs. ${Math.round(b.netPayable||0).toLocaleString()}</div>
-          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;background:${b.status==='disputed'?'var(--dark)':'var(--soft)'};color:${b.status==='disputed'?'var(--on-dark)':'var(--text)'}">${(b.status||'').replace('_',' ').toUpperCase()}</span>
+          <div style="font-size:16px;font-weight:700">Rs. ${Math.round(b.netPayable||0).toLocaleString()}</div>
+          <span style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:8px;background:${b.status==='disputed'?'var(--dark)':'var(--soft)'};color:${b.status==='disputed'?'var(--on-dark)':'var(--text)'}">${(b.status||'').replace('_',' ').toUpperCase()}</span>
         </div>
       </div>
     </div>`).join(''):'<div class="empty">No billing records yet.</div>'}
@@ -3662,22 +3662,22 @@ function renderTowerComms(){
   const pings=allCommNotes.filter(n=>n.type==='ping'&&!(n.readBy||[]).includes(session.u));
   return`${pings.length?`<div class="card" style="border:1px solid var(--border)"><div class="card-title">🔔 Unread Pings (${pings.length})</div>
     ${pings.map(n=>`<div class="comm-note comm-ping">
-      <div style="font-size:12px;font-weight:700">${n.fromUser||'—'} → ${n.toUser||n.toRole||'All'}</div>
-      <div style="font-size:13px;margin-top:3px">${n.message||'—'}</div>
-      <div style="font-size:10px;color:var(--muted);margin-top:4px">${tsLabel2(n.createdAt)}</div>
+      <div style="font-size:13px;font-weight:700">${n.fromUser||'—'} → ${n.toUser||n.toRole||'All'}</div>
+      <div style="font-size:14px;margin-top:3px">${n.message||'—'}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">${tsLabel2(n.createdAt)}</div>
     </div>`).join('')}
   </div>`:''}
   <div class="card"><div class="card-title">All Communications (last 30)</div>
     ${recent.length?recent.map(n=>`<div class="comm-note ${n.type==='ping'?'comm-ping':''}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div style="font-size:11px;font-weight:700;color:var(--dark)">${n.fromUser||'—'} ${n.toUser?'→ '+n.toUser:''}</div>
+        <div style="font-size:12px;font-weight:700;color:var(--dark)">${n.fromUser||'—'} ${n.toUser?'→ '+n.toUser:''}</div>
         <div style="display:flex;gap:4px;align-items:center">
-          <span style="font-size:9px;font-weight:600;padding:1px 6px;border-radius:6px;background:var(--soft)">${(n.type||'text').toUpperCase()}</span>
-          <span style="font-size:10px;color:var(--muted)">${tsLabel2(n.createdAt)}</span>
+          <span style="font-size:11px;font-weight:600;padding:1px 6px;border-radius:6px;background:var(--soft)">${(n.type||'text').toUpperCase()}</span>
+          <span style="font-size:11px;color:var(--muted)">${tsLabel2(n.createdAt)}</span>
         </div>
       </div>
-      ${n.linkedId?`<div style="font-size:10px;color:var(--muted);margin:1px 0">Job: ${allPrintingJobs.find(j=>j._id===n.linkedId)?.poNumber||n.linkedId}</div>`:''}
-      <div style="font-size:13px;margin-top:4px">${n.message||'—'}</div>
+      ${n.linkedId?`<div style="font-size:11px;color:var(--muted);margin:1px 0">Job: ${allPrintingJobs.find(j=>j._id===n.linkedId)?.poNumber||n.linkedId}</div>`:''}
+      <div style="font-size:14px;margin-top:4px">${n.message||'—'}</div>
     </div>`).join(''):'<div class="empty">No communications yet.</div>'}
   </div>`;
 }
@@ -3848,26 +3848,26 @@ window.printVendorJobCard=function(jobId){
   win.document.write(`<!DOCTYPE html><html><head><title>Vendor Job Card — ${j.poNumber}</title>
   <style>body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Inter','Segoe UI',sans-serif;max-width:800px;margin:40px auto;padding:20px;color:#1A1A2E}
   .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #E94560;padding-bottom:16px;margin-bottom:20px}
-  .logo{font-size:22px;font-weight:800;color:#1A1A2E}.logo span{color:#E94560}
-  .qr-box{text-align:right;font-size:12px;color:#6B7280;font-weight:700}
+  .logo{font-size:23px;font-weight:800;color:#1A1A2E}.logo span{color:#E94560}
+  .qr-box{text-align:right;font-size:13px;color:#6B7280;font-weight:700}
   .section{margin-bottom:16px;border:1px solid #E5E5E7;border-radius:8px;padding:14px}
-  .section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#6B7280;margin-bottom:10px}
-  .row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f5f5f5;font-size:13px}
+  .section-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#6B7280;margin-bottom:10px}
+  .row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f5f5f5;font-size:14px}
   .row:last-child{border-bottom:none}
   .label{color:#6B7280;font-weight:500}.val{font-weight:600}
-  table{border-collapse:collapse;width:100%;font-size:13px}
-  th{background:#1A1A2E;color:rgba(255,255,255,.7);padding:8px 10px;font-size:10px;font-weight:600;text-align:left}
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th{background:#1A1A2E;color:rgba(255,255,255,.7);padding:8px 10px;font-size:11px;font-weight:600;text-align:left}
   td{padding:6px 10px;border:1px solid #eee}
-  .banner{background:#1A1A2E;color:#fff;padding:12px 16px;border-radius:8px;margin-top:16px;font-size:12px;line-height:1.8}
-  .footer{margin-top:24px;border-top:1px solid #E5E5E7;padding-top:12px;font-size:11px;color:#6B7280;display:flex;justify-content:space-between}
+  .banner{background:#1A1A2E;color:#fff;padding:12px 16px;border-radius:8px;margin-top:16px;font-size:13px;line-height:1.8}
+  .footer{margin-top:24px;border-top:1px solid #E5E5E7;padding-top:12px;font-size:12px;color:#6B7280;display:flex;justify-content:space-between}
   @media print{.no-print{display:none}body{margin:0;padding:16px}}</style></head><body>
 
   <div class="header">
     <div><div class="logo">Groovy <span>Operations</span></div>
-      <div style="font-size:12px;color:var(--muted);margin-top:4px">Internal ERP — Vendor Job Card</div>
+      <div style="font-size:13px;color:var(--muted);margin-top:4px">Internal ERP — Vendor Job Card</div>
     </div>
     <div class="qr-box">
-      <div style="font-size:18px;font-weight:900;color:#E94560">${j.poNumber}</div>
+      <div style="font-size:19px;font-weight:900;color:#E94560">${j.poNumber}</div>
       <div style="margin-top:4px">${qr}</div>
       <div>${new Date().toLocaleDateString('en-GB')}</div>
     </div>
@@ -3890,7 +3890,7 @@ window.printVendorJobCard=function(jobId){
   </div>
 
   ${(pt.placements||[]).length?`<div class="section"><div class="section-title">Placements (${pt.placements.length})</div>
-    ${pt.placements.map((pl,i)=>`<div class="row"><span class="label">${i+1}. ${pl.name||'—'}</span><span class="val">${pl.measurementText||pl.measurementDescriptionEn||pl.placementMeasurement||'—'} · tol: ${pl.toleranceValue||pl.tolerance||'—'}</span></div>${(pl.production?.visibleInstructionEn||pl.notesEn)?`<div style="font-size:11px;color:var(--muted);padding:3px 0">${pl.production?.visibleInstructionEn||pl.notesEn}</div>`:''}`).join('')}
+    ${pt.placements.map((pl,i)=>`<div class="row"><span class="label">${i+1}. ${pl.name||'—'}</span><span class="val">${pl.measurementText||pl.measurementDescriptionEn||pl.placementMeasurement||'—'} · tol: ${pl.toleranceValue||pl.tolerance||'—'}</span></div>${(pl.production?.visibleInstructionEn||pl.notesEn)?`<div style="font-size:12px;color:var(--muted);padding:3px 0">${pl.production?.visibleInstructionEn||pl.notesEn}</div>`:''}`).join('')}
   </div>`:''}
 
   ${(pt.pantones||[]).length?`<div class="section"><div class="section-title">Colors / Pantones</div>
@@ -3898,8 +3898,8 @@ window.printVendorJobCard=function(jobId){
     <tbody>${pt.pantones.map(p=>`<tr><td>${p.colorName||'—'}</td><td>${p.pantoneCode||'—'}</td><td>${p.localInkName||'—'}</td><td>${p.usage||'—'}</td><td>${p.articleSpecificNotes||p.notes||'—'}</td></tr>`).join('')}</tbody></table>
   </div>`:''}
 
-  ${pt.instructionsEn?`<div class="section"><div class="section-title">Instructions</div><div style="font-size:13px;line-height:1.8">${pt.instructionsEn}</div>
-    ${pt.instructionsUr?`<div style="direction:rtl;text-align:right;font-size:14px;line-height:2;margin-top:8px;border-top:1px solid #f5f5f5;padding-top:8px">${pt.instructionsUr}</div>`:''}</div>`:''}
+  ${pt.instructionsEn?`<div class="section"><div class="section-title">Instructions</div><div style="font-size:14px;line-height:1.8">${pt.instructionsEn}</div>
+    ${pt.instructionsUr?`<div style="direction:rtl;text-align:right;font-size:15px;line-height:2;margin-top:8px;border-top:1px solid #f5f5f5;padding-top:8px">${pt.instructionsUr}</div>`:''}</div>`:''}
 
   <div class="banner">
     <strong>Important:</strong> This job card must accompany the lot at all times.<br>
@@ -3913,16 +3913,16 @@ window.printVendorJobCard=function(jobId){
   </div>
 
   <div style="margin-top:16px;border:2px dashed var(--border);border-radius:8px;padding:14px">
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px">VENDOR ACKNOWLEDGEMENT</div>
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px">VENDOR ACKNOWLEDGEMENT</div>
     <div style="display:flex;gap:40px">
-      <div><div style="font-size:11px;color:var(--muted)">Received by (Vendor)</div><div style="border-bottom:1px solid #1A1A2E;width:160px;height:28px;margin-top:8px"></div></div>
-      <div><div style="font-size:11px;color:var(--muted)">Date</div><div style="border-bottom:1px solid #1A1A2E;width:120px;height:28px;margin-top:8px"></div></div>
-      <div><div style="font-size:11px;color:var(--muted)">Stamp</div><div style="border:1px dashed var(--border);width:80px;height:60px;margin-top:4px;border-radius:4px"></div></div>
+      <div><div style="font-size:12px;color:var(--muted)">Received by (Vendor)</div><div style="border-bottom:1px solid #1A1A2E;width:160px;height:28px;margin-top:8px"></div></div>
+      <div><div style="font-size:12px;color:var(--muted)">Date</div><div style="border-bottom:1px solid #1A1A2E;width:120px;height:28px;margin-top:8px"></div></div>
+      <div><div style="font-size:12px;color:var(--muted)">Stamp</div><div style="border:1px dashed var(--border);width:80px;height:60px;margin-top:4px;border-radius:4px"></div></div>
     </div>
   </div>
 
   <div class="no-print" style="margin-top:16px;text-align:center">
-    <button onclick="window.print()" style="padding:10px 24px;background:#1A1A2E;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-family:inherit">Print Job Card 🖨️</button>
+    <button onclick="window.print()" style="padding:10px 24px;background:#1A1A2E;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer;font-family:inherit">Print Job Card 🖨️</button>
   </div>
   </body></html>`);
   win.document.close();
@@ -3946,7 +3946,7 @@ function _renderMyWorkInner(){
     if(!printingDataLoaded){loadPrintingData().then(()=>{const m=document.getElementById('main-content');if(m&&currentPage==='my-work')m.innerHTML=renderMyWork();});}
     const myJobs=allPrintingJobs.filter(j=>j.assignedTo===session.u&&j.currentStage!=='closed');
     if(!myJobs.length)return base||'<div class="empty">No orders in your queue right now.</div>';
-    return`<div class="page-head"><div class="page-title">Printing Work / پرنٹنگ کام</div><div class="page-sub" style="direction:rtl;text-align:right;font-size:14px">اسغر کا پرنٹنگ کام · ${myJobs.length} کام باقی ہے</div></div>
+    return`<div class="page-head"><div class="page-title">Printing Work / پرنٹنگ کام</div><div class="page-sub" style="direction:rtl;text-align:right;font-size:15px">اسغر کا پرنٹنگ کام · ${myJobs.length} کام باقی ہے</div></div>
     ${myJobs.map(j=>printWorkerCardHTML(j)).join('')}`;
   }
 
@@ -3980,15 +3980,15 @@ function _renderMyWorkInner(){
       const baseContent=base||'';
       return`${baseContent}<div class="page-head" style="margin-top:16px"><div class="page-title">Printing QC Queue</div><div class="page-sub">${ppJobs.length} PP pending · ${qcJobs.length} lot QC pending</div></div>
       ${ppJobs.map(j=>`<div class="work-card">
-        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="po-num">${j.poNumber||'—'}</span><span style="font-size:10px;font-weight:700;color:var(--text);background:var(--soft);padding:2px 7px;border-radius:8px">AWAITING PP APPROVAL</span></div>
-        <div style="font-size:14px;font-weight:600">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:2px">${j.totalQty||'?'} pcs · ${j.ppMode==='repeat_article'?'Repeat Article (QC can approve)':'New Article (needs owner)'}</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="po-num">${j.poNumber||'—'}</span><span style="font-size:11px;font-weight:700;color:var(--text);background:var(--soft);padding:2px 7px;border-radius:8px">AWAITING PP APPROVAL</span></div>
+        <div style="font-size:15px;font-weight:600">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:2px">${j.totalQty||'?'} pcs · ${j.ppMode==='repeat_article'?'Repeat Article (QC can approve)':'New Article (needs owner)'}</div>
         <button class="mark-done-btn" style="width:auto;padding:8px 16px;margin-top:8px" onclick="window.openPrintingJob('${j._id}')">Review PP Sample</button>
       </div>`).join('')}
       ${qcJobs.map(j=>`<div class="work-card">
-        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="po-num">${j.poNumber||'—'}</span><span style="font-size:10px;font-weight:700;color:var(--text);background:var(--soft);padding:2px 7px;border-radius:8px">QC REQUIRED</span></div>
-        <div style="font-size:14px;font-weight:600">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:2px">${j.printedQty||j.totalQty||'?'} pcs received</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="po-num">${j.poNumber||'—'}</span><span style="font-size:11px;font-weight:700;color:var(--text);background:var(--soft);padding:2px 7px;border-radius:8px">QC REQUIRED</span></div>
+        <div style="font-size:15px;font-weight:600">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:2px">${j.printedQty||j.totalQty||'?'} pcs received</div>
         <button class="mark-done-btn" style="width:auto;padding:8px 16px;margin-top:8px" onclick="window.openQCReport('${j._id}')">Enter QC Report</button>
       </div>`).join('')}`;
     }
@@ -4002,13 +4002,13 @@ function _renderMyWorkInner(){
     ${myPOs.map(p=>`<div class="work-card">
       <div style="display:flex;gap:14px;align-items:flex-start">
         <div style="width:80px;height:104px;flex-shrink:0;background:var(--soft);border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="window.openPODetail('${p.fbKey}')">
-          ${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:10px;color:#aaa;text-align:center;padding:4px">No image</span>'}
+          ${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:11px;color:#aaa;text-align:center;padding:4px">No image</span>'}
         </div>
         <div style="flex:1">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span class="po-num">${p.id}</span>
             <span class="stage-badge" style="background:var(--soft);color:var(--text)">${STAGES.find(s=>s.key===p.currentStage)?.label||p.currentStage}</span></div>
-          <div style="font-size:15px;font-weight:700;margin-bottom:3px">${p.name||'—'}</div>
-          <div style="font-size:12px;color:var(--muted)">${p.qty||'?'} pcs · ${p.fabric||''}</div>
+          <div style="font-size:16px;font-weight:700;margin-bottom:3px">${p.name||'—'}</div>
+          <div style="font-size:13px;color:var(--muted)">${p.qty||'?'} pcs · ${p.fabric||''}</div>
           <button class="mark-done-btn" style="background:${p.currentStage==='cutting'||p.currentStage==='bundling'||p.currentStage==='stitching'||p.currentStage==='qc'?'var(--dark)':'var(--green)'}" onclick="window.openStageWork('${p.fbKey}','${p.currentStage}')">${stageLabel[p.currentStage]||'Mark Done'}</button>
         </div>
       </div>
@@ -4046,9 +4046,9 @@ function renderDashboard(){
   function stageCard(label,count,color,flagged,alert){
     const borderStyle=alert?`border:2px solid var(--dark)`:`border:1px solid var(--border)`;
     return`<div style="flex:1;min-width:0;padding:10px 8px;background:var(--surface);${borderStyle};border-radius:8px;text-align:center">
-      <div style="font-size:16px;font-weight:700;color:var(--text)">${count}</div>
-      <div style="font-size:10px;color:var(--muted);margin-top:2px;word-break:break-word;overflow-wrap:break-word;line-height:1.3">${label}</div>
-      ${flagged?`<div style="font-size:9px;color:#dc2626;font-weight:700;margin-top:2px">⚠ ${flagged} flagged</div>`:''}
+      <div style="font-size:17px;font-weight:700;color:var(--text)">${count}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px;word-break:break-word;overflow-wrap:break-word;line-height:1.3">${label}</div>
+      ${flagged?`<div style="font-size:11px;color:#dc2626;font-weight:700;margin-top:2px">⚠ ${flagged} flagged</div>`:''}
     </div>`;
   }
   // PO-based stages
@@ -4072,14 +4072,14 @@ function renderDashboard(){
   <div style="margin-bottom:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer" onclick="window._toggleEmbOverview()">
       <div>
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)">Embellishments Overview</div>
-        <div style="font-size:12px;color:var(--dark);margin-top:1px">${embSummaryText}</div>
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)">Embellishments Overview</div>
+        <div style="font-size:13px;color:var(--dark);margin-top:1px">${embSummaryText}</div>
       </div>
-      <span id="emb-ov-arrow" style="font-size:12px;color:var(--muted);transition:transform .2s">${embDefaultOpen?'▾':'▸'}</span>
+      <span id="emb-ov-arrow" style="font-size:13px;color:var(--muted);transition:transform .2s">${embDefaultOpen?'▾':'▸'}</span>
     </div>
     <div id="emb-ov-body" style="overflow:hidden;transition:max-height .25s;max-height:${embDefaultOpen?'200px':'0'};border-top:${embDefaultOpen?'1px solid var(--border)':'none'}">
       <div style="display:flex;gap:6px;flex-wrap:wrap;padding:12px 14px">
-        ${[['Printing',inPrinting,'var(--text)'],['Sublimation',inSubl,'var(--text)'],['Embroidery',inEmbr,'var(--text)'],['Rework Pending',inRework,'var(--text)'],['Overdue',overdue,overdue>0?'var(--text)':'var(--muted)']].map(([label,val,color])=>`<div style="flex:1;min-width:0;padding:9px 8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;text-align:center"><div style="font-size:16px;font-weight:700;color:${color}">${val}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${label}</div></div>`).join('')}
+        ${[['Printing',inPrinting,'var(--text)'],['Sublimation',inSubl,'var(--text)'],['Embroidery',inEmbr,'var(--text)'],['Rework Pending',inRework,'var(--text)'],['Overdue',overdue,overdue>0?'var(--text)':'var(--muted)']].map(([label,val,color])=>`<div style="flex:1;min-width:0;padding:9px 8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;text-align:center"><div style="font-size:17px;font-weight:700;color:${color}">${val}</div><div style="font-size:11px;color:var(--muted);margin-top:2px">${label}</div></div>`).join('')}
       </div>
     </div>
   </div>`:'';
@@ -4133,15 +4133,15 @@ function renderDashboard(){
     const procInfo=PROCESS_TYPES[j.processType]||{icon:'•',label:j.processType||'—'};
     const po=allPOs.find(p=>p.id===j.poNumber);
     return`<div class="po-row" style="cursor:pointer;align-items:flex-start" onclick="window._openEmbJob('${j._id}')">
-      <div class="po-img">${po?.imgFront?`<img src="${po.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:var(--muted)">No img</span>'}</div>
+      <div class="po-img">${po?.imgFront?`<img src="${po.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:11px;color:var(--muted)">No img</span>'}</div>
       <div class="po-info" style="min-width:0">
         <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:2px">
           <span class="po-num">${j.poNumber||'—'}</span>
           <span class="process-badge">${procInfo.label}</span>
-          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;${_embPriorityChipStyle(j.priority)}">${(j.priority||'normal').toUpperCase()}</span>
+          <span style="font-size:11px;font-weight:700;padding:2px 6px;border-radius:8px;${_embPriorityChipStyle(j.priority)}">${(j.priority||'normal').toUpperCase()}</span>
         </div>
         <div class="po-name" style="word-break:break-word;overflow-wrap:break-word">${j.articleCode||'—'} — ${j.articleName||'—'}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px;line-height:1.6;word-break:break-word;overflow-wrap:break-word">
+        <div style="font-size:12px;color:var(--muted);margin-top:2px;line-height:1.6;word-break:break-word;overflow-wrap:break-word">
           Stage: ${JOB_STAGE_LABELS[j.currentStage]||j.currentStage}<br>
           Holder: ${holderLabel(j)}<br>
           ${j.slaCurrentDue?`SLA: <span style="font-weight:700;color:${slaFg}">${remainLabel(j.slaCurrentDue)}</span><br>`:''}
@@ -4157,8 +4157,8 @@ function renderDashboard(){
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
     <div class="section-title" style="margin-bottom:0;word-break:break-word;overflow-wrap:break-word">Embellishments — Quick View</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
-      ${activeJobs.length>5?`<button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.showPage('printing-jobs')">View all ${activeJobs.length} →</button>`:''}
-      <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.showPage('observer-tower')">Observer Tower →</button>
+      ${activeJobs.length>5?`<button class="btn-outline" style="font-size:12px;padding:5px 10px" onclick="window.showPage('printing-jobs')">View all ${activeJobs.length} →</button>`:''}
+      <button class="btn-outline" style="font-size:12px;padding:5px 10px" onclick="window.showPage('observer-tower')">Observer Tower →</button>
     </div>
   </div>
   ${jobRows}

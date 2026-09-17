@@ -3682,6 +3682,96 @@ this was a one-field additive change) now also writes `u: session.u`, and
 `_monitorRoleTier(name, username)` prefers the username when the row carries
 one, falling back to name-matching for every row written before this.
 
+## Type scale — "Comfortable" (Sept 2026)
+
+Afnan, after the Pattern Hub screenshot: *"the texts are too small dont you
+think you have to focus to read."* Counted before touching anything —
+`grep -ohE 'font-size:[0-9.]+px' css/main.css js/*.js` — and the base body
+size (14px) turned out to be almost never used: **11px and 12px alone were
+1,258 of the app's font-size declarations**, with 323 more at 10px or
+below. A specimen page (three scales, the app's own font stack, the real
+measurement-grid and dashboard markup, switchable live) was published for
+Afnan to judge at real size before anything shipped; he picked
+**Comfortable**.
+
+**The rule, applied mechanically everywhere:** `f(x) = x<11 ? 11 : x+1`.
+Every size below 11px floors at 11 (the two smallest steps merge — nothing
+below 11 was worth keeping, so this is a simplification, not a loss);
+every other size moves up exactly one pixel. `12px→13px`, `14px→15px`,
+`18px→19px`, `24px→25px`, and so on including every half-step
+(`12.5px→13.5px`). Applied by script across **css/main.css and every
+`js/*.js`**, matching only a literal `font-size:<number>px` — **2,431
+sites in one deterministic sweep**, verified both by `node --check` on
+every file and by re-running the entire test suite (still 2,485/2,485 —
+these are pure numeric bumps, not structural changes) plus
+`tests/smoke-layout.js` across all fragments, all three widths, both
+themes (114/114 — the check that would have caught a bigger size clipping
+a tight badge or table header).
+
+- **This is a literal value sweep, not a token layer.** The plan floated
+  to Afnan before building was nine CSS custom properties
+  (`--t-micro`…`--t-num`) with every site swapped to reference them — the
+  dark-mode shape. That was **not** what shipped: classifying ~2,400
+  untyped inline `style="…"` sites into the correct semantic step
+  reliably, in one pass, with no way to verify a wrong classification
+  automatically, was the riskier and less honest option. A deterministic
+  numeric function needs no per-site judgment call and is trivially
+  reversible (subtract the same function). **If a token layer is wanted
+  later, this sweep is the version to build it FROM** — the sizes are
+  already right, only the indirection is missing.
+- **What the sweep did NOT touch, and why, each confirmed from the code
+  first:**
+  - **`clamp(...)` sizes** — the Mood Boards Presentation-mode slide text
+    (`.bp-kicker`/`.bp-title`/`.bp-sub`/`.bp-body`/`.bp-cap`/`.bp-list`/
+    `.bp-table` in `css/main.css`) is already responsive and already large
+    (up to 76px); the regex requires a literal `<number>px` immediately
+    after the colon, so a `clamp(11px,1.4vw,14px)` value never matched —
+    confirmed by grepping for `clamp(` separately before running the
+    sweep, not by trusting the regex.
+  - **`pt` sizes** — the two `win.document.write` print windows
+    (`js/boards.js`'s Word-export slide CSS, `js/fabric.js`'s gate-pass/
+    label print CSS) size physical output in points on a fixed physical
+    tag or page, not screen chrome; the regex matches `px` only, so these
+    were never candidates. Same standing exclusion as the dark-mode sweep,
+    for the same reason: these documents never load `css/main.css` and
+    aren't screen reading at all.
+  - **Computed avatar-initial sizes** — `js/activity.js`'s and
+    `js/boards.js`'s `font-size:${Math.round(size*0.38)}px` scale with
+    their own tile size already (a ratio, not a fixed value), so the
+    regex — which requires a literal digit right after the colon — never
+    matched the `${…}` in between. Confirmed deliberately, not accidental:
+    these already read correctly at every tile size, and bumping the ratio
+    would just change the ratio, not fix anything.
+  - **`js/print-engine.js`'s PDF-drawing sizes** (`PRINT_SIZES`, the
+    `_render*` component functions) are jsPDF point values with no `px`
+    unit at all — never candidates. Its two `win.document.write` preview/
+    error tabs (`_previewLoading`, `_previewError`) **are** real on-screen
+    HTML pages with no `css/main.css` (self-styled, like
+    `js/diagnostics.js`), so — unlike the dark-mode sweep, which excludes
+    this whole file — their **4** literal px sizes were bumped like any
+    other screen text; nothing about them depends on CSS custom
+    properties, only on being readable.
+  - **`js/diagnostics.js`** was swept too (4 sites) — excluded from the
+    dark-mode CSS-token sweep because it must render when
+    `css/main.css` itself is what failed and can't depend on a custom
+    property, but a plain literal pixel number has no such dependency, and
+    the panel it draws is exactly the kind of "someone is squinting at
+    this on a phone" screen this whole change is for.
+- **`CACHE_VERSION` bumped once for the whole sweep** (not once per file)
+  — 20 `/js/*.js` files plus `css/main.css` all changed in the same
+  commit, so one version bump past whatever `origin/main` held covers all
+  of them; every touched file's `?v=` query string in `index.html` was
+  bumped alongside it to the same tag, though (per "How the fetch handler
+  routes" above) the service worker itself only cares about
+  `CACHE_VERSION` — the `?v=` bump is belt-and-braces for plain HTTP
+  caching outside the SW, not load-bearing for the offline cache.
+- **Not verified from here, same as dark mode:** nobody has looked at the
+  new sizes on a real phone or in a real browser — the sandbox still
+  cannot sign in. The specimen artifact was published specifically so
+  Afnan could judge the actual sizes before this shipped, rather than
+  trusting a description of pixel counts; the app itself still needs a
+  human pass.
+
 ## Dark mode (Sept 2026)
 
 Asked for on the Profile page; applies to the whole app. `Profile →

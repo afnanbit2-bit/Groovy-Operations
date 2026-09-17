@@ -208,8 +208,8 @@ function renderProfilePage(){
   return`<div class="page-head"><h2>Profile</h2></div>
     ${_profileLoadErr?`<div class="card" style="border-color:var(--accent-urgent)">
       <div style="font-weight:700;margin-bottom:6px">Could not load profiles</div>
-      <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">${_profEsc(_profileLoadErr)}</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">If this says permissions, republish <code>firestore.rules</code> from the repo — <code>user_profiles</code> is new.</div>
+      <div style="font-size:13.5px;color:var(--muted);margin-bottom:10px">${_profEsc(_profileLoadErr)}</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:10px">If this says permissions, republish <code>firestore.rules</code> from the repo — <code>user_profiles</code> is new.</div>
       <button class="btn-sm" onclick="window.profileRetry()">Retry</button>
     </div>`:''}
     ${_profileEdit?_profileEditCardHTML():_profileViewCardHTML(me)}
@@ -333,7 +333,7 @@ function _profileAppearanceHTML(){
     <span class="profile-theme-label">${label}</span><span class="profile-theme-sub">${sub}</span></button>`;
   return`<div class="card">
     <div style="font-weight:700;margin-bottom:4px">Appearance</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Applies to the whole app on this device only.</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">Applies to the whole app on this device only.</div>
     <div class="profile-theme-row">
       ${opt('light','Light','Always light')}
       ${opt('dark','Dark','Always dark')}
@@ -362,7 +362,7 @@ function _profileDirectoryHTML(){
       <div style="font-weight:700">Team</div>
       ${admin?`<button class="btn-sm btn-outline" id="prof-sync-btn" onclick="window.profileSyncAccounts()">Sync accounts</button>`:''}
     </div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${rows.length} accounts.${admin?' You can edit anyone showing an Edit button. <strong>Sync accounts</strong> creates the missing profile rows so you don’t have to wait for people to sign in.':' Only the person themselves can edit their profile.'}</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${rows.length} accounts.${admin?' You can edit anyone showing an Edit button. <strong>Sync accounts</strong> creates the missing profile rows so you don’t have to wait for people to sign in.':' Only the person themselves can edit their profile.'}</div>
     <div class="profile-dir">
       ${rows.map((r,i)=>{
         const photo=_profAvatarUrl(r.p.photoUrl,64);
@@ -453,7 +453,7 @@ function _profileRerender(){
     h.style.cssText='font-weight:700;margin-bottom:6px';
     h.textContent='The Profile page hit an error';
     const p=document.createElement('pre');
-    p.style.cssText='font-size:11.5px;color:var(--muted);white-space:pre-wrap;word-break:break-word;margin:0 0 10px';
+    p.style.cssText='font-size:12.5px;color:var(--muted);white-space:pre-wrap;word-break:break-word;margin:0 0 10px';
     p.textContent=msg;      // an error message can contain anything
     const b=document.createElement('button');
     b.className='btn-sm';

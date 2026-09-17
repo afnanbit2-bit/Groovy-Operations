@@ -127,8 +127,8 @@ const _HUB_CATEGORIES=[
 function renderCreativeHub(){
   return`
   <div class="page-head" style="margin-bottom:16px">
-    <h2 style="margin:0;font-size:30px;letter-spacing:-.01em">Creative Hub</h2>
-    <div style="color:var(--muted);font-size:13.5px;margin-top:6px">A shared space for docs and boards</div>
+    <h2 style="margin:0;font-size:31px;letter-spacing:-.01em">Creative Hub</h2>
+    <div style="color:var(--muted);font-size:14.5px;margin-top:6px">A shared space for docs and boards</div>
   </div>
   <div class="hub-grid">${_HUB_CATEGORIES.map(c=>`
     <button class="hub-tile${c.status==='soon'?' soon':''}" style="--tile-accent:var(${c.accent})" onclick="window.onHubTileClick('${c.id}')">
@@ -151,13 +151,13 @@ function renderNotesPage(){
   return`
   <button class="back-btn" onclick="window.showPage('creative-hub')">← Back to Creative Hub</button>
   <div class="page-head" style="margin-bottom:10px">
-    <div><h2 style="margin:0">Notes</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">Team Wiki, private notes</div></div>
+    <div><h2 style="margin:0">Notes</h2><div style="color:var(--muted);font-size:13px;margin-top:2px">Team Wiki, private notes</div></div>
   </div>
-  <input type="text" id="notes-search" placeholder="Search notes…" value="${_notesEsc(_notesSearch)}" oninput="window.notesSearchInput(this.value)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:16px;box-sizing:border-box">
+  <input type="text" id="notes-search" placeholder="Search notes…" value="${_notesEsc(_notesSearch)}" oninput="window.notesSearchInput(this.value)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:14px;font-family:inherit;margin-bottom:16px;box-sizing:border-box">
   ${_notesLoadError?`<div class="board-load-error">
-    <div style="font-weight:700;font-size:13.5px;margin-bottom:4px">Could not load notes</div>
-    <div style="font-size:12px;color:var(--muted);line-height:1.5">${_notesEsc(_notesLoadError)}</div>
-    <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-top:6px">If that says <em>missing or insufficient permissions</em>, the Firestore rules in the Firebase Console are older than this app — republish <code>firestore.rules</code>.</div>
+    <div style="font-weight:700;font-size:14.5px;margin-bottom:4px">Could not load notes</div>
+    <div style="font-size:13px;color:var(--muted);line-height:1.5">${_notesEsc(_notesLoadError)}</div>
+    <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-top:6px">If that says <em>missing or insufficient permissions</em>, the Firestore rules in the Firebase Console are older than this app — republish <code>firestore.rules</code>.</div>
     <button class="btn-sm" style="margin-top:10px" onclick="window.notesRetryLoad()">Retry</button>
   </div>`:`<div id="notes-sections">${_notesRenderSections()}</div>`}`;
 }
@@ -183,10 +183,10 @@ function _notesCardHTML(p){
   const vis=p.visibility==='shared'?'TEAM':'PRIVATE';
   return`<div class="card" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px" onclick="window.notesOpenPage('${p.id}')">
     <div style="min-width:0">
-      <div style="font-weight:600;font-size:14px">${_notesEsc(p.title||'Untitled')}</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">${vis}${p.ownerName?(' · '+_notesEsc(p.ownerName)):''}${p.updatedAt?(' · updated '+_notesRelTime(p.updatedAt)):''}</div>
+      <div style="font-weight:600;font-size:15px">${_notesEsc(p.title||'Untitled')}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px">${vis}${p.ownerName?(' · '+_notesEsc(p.ownerName)):''}${p.updatedAt?(' · updated '+_notesRelTime(p.updatedAt)):''}</div>
     </div>
-    <div style="color:var(--muted);font-size:16px;flex-shrink:0">›</div>
+    <div style="color:var(--muted);font-size:17px;flex-shrink:0">›</div>
   </div>`;
 }
 
@@ -250,13 +250,13 @@ function renderNoteDetailPage(){
   <button class="back-btn" onclick="window.notesBack()">← Back to Notes</button>
   <div class="card" style="padding:20px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-      <input type="text" id="notes-title-input" value="${_notesEsc(p.title)}" ${canEdit?'':'readonly'} oninput="window.notesTitleInput(this.value)" placeholder="Untitled" style="font-size:24px;font-weight:700;border:none;outline:none;font-family:inherit;flex:1;min-width:180px;background:transparent">
+      <input type="text" id="notes-title-input" value="${_notesEsc(p.title)}" ${canEdit?'':'readonly'} oninput="window.notesTitleInput(this.value)" placeholder="Untitled" style="font-size:25px;font-weight:700;border:none;outline:none;font-family:inherit;flex:1;min-width:180px;background:transparent">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        ${canEdit?`<button class="btn-sm" onclick="window.notesToggleVisibility()">${visLabel} — change</button>`:`<span style="font-size:11px;color:var(--muted)">${visLabel}</span>`}
+        ${canEdit?`<button class="btn-sm" onclick="window.notesToggleVisibility()">${visLabel} — change</button>`:`<span style="font-size:12px;color:var(--muted)">${visLabel}</span>`}
         ${canEdit?`<button class="btn-sm" style="background:var(--accent-urgent)" onclick="window.notesDeletePage()">Delete</button>`:''}
       </div>
     </div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:16px">${p.ownerName?('by '+_notesEsc(p.ownerName)+' · '):''}${updated?('updated '+updated):''}${!canEdit?' · read-only':''}${canEdit?' · <span class="note-save-status" id="note-save-status">Saved</span>':''}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:16px">${p.ownerName?('by '+_notesEsc(p.ownerName)+' · '):''}${updated?('updated '+updated):''}${!canEdit?' · read-only':''}${canEdit?' · <span class="note-save-status" id="note-save-status">Saved</span>':''}</div>
     <div id="notes-blocks">${_notesRenderBlocksHTML(_notesEditBlocks,canEdit)}</div>
     ${canEdit?`<button class="btn-sm" onclick="window.notesAddBlock()" style="margin-top:10px;background:none;border:1px dashed var(--border);color:var(--muted)">+ Add block</button>`:''}
   </div>`;
@@ -283,12 +283,12 @@ function _notesRenderBlocksHTML(blocks,canEdit){
 }
 
 function _notesBlockWrapperHTML(b,i,canEdit,numCounter){
-  const typeSelect=canEdit?`<select onchange="window.notesChangeBlockType(${i},this.value)" style="font-size:11px;border:1px solid var(--border);border-radius:6px;padding:2px 4px;font-family:inherit">${_NOTES_BLOCK_TYPES.map(t=>`<option value="${t.type}"${t.type===b.type?' selected':''}>${t.label}</option>`).join('')}</select>`:'';
+  const typeSelect=canEdit?`<select onchange="window.notesChangeBlockType(${i},this.value)" style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:2px 4px;font-family:inherit">${_NOTES_BLOCK_TYPES.map(t=>`<option value="${t.type}"${t.type===b.type?' selected':''}>${t.label}</option>`).join('')}</select>`:'';
   const toolbar=canEdit?`<div class="note-block-toolbar" style="opacity:0;transition:opacity .12s;display:flex;gap:6px;align-items:center;margin-bottom:2px">
     ${typeSelect}
-    <button type="button" onclick="window.notesMoveBlock(${i},-1)" title="Move up" style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--muted)">↑</button>
-    <button type="button" onclick="window.notesMoveBlock(${i},1)" title="Move down" style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--muted)">↓</button>
-    <button type="button" onclick="window.notesDeleteBlock(${i})" title="Delete block" style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--accent-urgent)">✕</button>
+    <button type="button" onclick="window.notesMoveBlock(${i},-1)" title="Move up" style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--muted)">↑</button>
+    <button type="button" onclick="window.notesMoveBlock(${i},1)" title="Move down" style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--muted)">↓</button>
+    <button type="button" onclick="window.notesDeleteBlock(${i})" title="Delete block" style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--accent-urgent)">✕</button>
   </div>`:'';
 
   let bodyHTML;
@@ -297,8 +297,8 @@ function _notesBlockWrapperHTML(b,i,canEdit,numCounter){
   }else if(b.type==='image'){
     bodyHTML=`<div class="note-image-block">
       ${b.imageUrl?`<img src="${_notesEsc(b.imageUrl)}" style="max-width:100%;border-radius:8px;display:block;margin-bottom:6px">`:''}
-      ${canEdit?`<input type="file" accept="image/*" onchange="window.notesUploadBlockImage(${i},this)" style="font-size:11px;margin-bottom:4px">`:''}
-      <div id="nb-${i}" contenteditable="${!!canEdit}" data-placeholder="Caption (optional)" class="note-block-body" style="font-size:12px;color:var(--muted)" oninput="window.notesBlockInput(${i},this)" onkeydown="window.notesBlockKeydown(event,${i})"></div>
+      ${canEdit?`<input type="file" accept="image/*" onchange="window.notesUploadBlockImage(${i},this)" style="font-size:12px;margin-bottom:4px">`:''}
+      <div id="nb-${i}" contenteditable="${!!canEdit}" data-placeholder="Caption (optional)" class="note-block-body" style="font-size:13px;color:var(--muted)" oninput="window.notesBlockInput(${i},this)" onkeydown="window.notesBlockKeydown(event,${i})"></div>
     </div>`;
   }else{
     const align=b.type==='checklist'?'flex-start':'baseline';

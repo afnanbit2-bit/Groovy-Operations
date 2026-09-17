@@ -159,14 +159,14 @@ window.filterProducts=function(q){
   q=raw.toLowerCase();
   const catalog=getProductCatalog();
   const hits=q?catalog.filter(p=>p.code.toLowerCase().includes(q)||p.name.toLowerCase().includes(q)).slice(0,18):[];
-  const addRow=`<div class="prod-add" style="padding:11px 12px;cursor:pointer;font-size:13px;font-weight:600;color:var(--dark);display:flex;gap:8px;align-items:center;background:var(--surface-2)"><span style="font-size:16px;line-height:1">+</span><span>Add new product${raw?` “${raw.replace(/"/g,'&quot;').slice(0,40)}”`:''}</span></div>`;
+  const addRow=`<div class="prod-add" style="padding:11px 12px;cursor:pointer;font-size:14px;font-weight:600;color:var(--dark);display:flex;gap:8px;align-items:center;background:var(--surface-2)"><span style="font-size:17px;line-height:1">+</span><span>Add new product${raw?` “${raw.replace(/"/g,'&quot;').slice(0,40)}”`:''}</span></div>`;
   if(!q){
     // Empty query: offer only the add-new action.
     dd.innerHTML=addRow;
   }else if(!hits.length){
-    dd.innerHTML='<div style="padding:10px 12px;font-size:12px;color:var(--muted)">No matches found</div>'+addRow;
+    dd.innerHTML='<div style="padding:10px 12px;font-size:13px;color:var(--muted)">No matches found</div>'+addRow;
   }else{
-    dd.innerHTML=hits.map((p,i)=>`<div class="prod-opt" data-i="${catalog.indexOf(p)}" style="padding:10px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f3f4f6;display:flex;gap:10px;align-items:baseline"><span style="font-weight:700;color:var(--dark);min-width:80px;font-size:12px">${p.code}</span><span style="color:var(--text)">${p.name}</span></div>`).join('')+addRow;
+    dd.innerHTML=hits.map((p,i)=>`<div class="prod-opt" data-i="${catalog.indexOf(p)}" style="padding:10px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid #f3f4f6;display:flex;gap:10px;align-items:baseline"><span style="font-weight:700;color:var(--dark);min-width:80px;font-size:13px">${p.code}</span><span style="color:var(--text)">${p.name}</span></div>`).join('')+addRow;
   }
   dd.style.display='block';
   dd.querySelectorAll('.prod-opt').forEach(el=>el.addEventListener('mousedown',e=>{
@@ -202,18 +202,18 @@ window._openAddProductModal=function(prefill){
   container.innerHTML='<div id="addprod-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px" onclick="if(event.target.id===\'addprod-overlay\')window._closeAddProductModal()">'+
     '<div style="background:var(--surface,#fff);width:100%;max-width:460px;border-radius:16px;padding:20px;max-height:calc(100vh - 32px);overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.35)">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
-        '<div style="font-size:16px;font-weight:700">Add New Product</div>'+
-        '<button onclick="window._closeAddProductModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>'+
+        '<div style="font-size:17px;font-weight:700">Add New Product</div>'+
+        '<button onclick="window._closeAddProductModal()" style="background:none;border:none;font-size:23px;cursor:pointer;color:var(--muted)">×</button>'+
       '</div>'+
-      '<div style="font-size:11px;color:var(--muted);margin-bottom:14px">Creates a product and assigns it a code. It is saved for future POs and searchable everywhere.</div>'+
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">Creates a product and assigns it a code. It is saved for future POs and searchable everywhere.</div>'+
       '<div class="field" style="margin-bottom:12px"><label>Product name *</label><input id="np-name" value="'+nameVal+'" placeholder="e.g. Olive Green Hoodie" autocomplete="off"></div>'+
       '<div class="field" style="margin-bottom:12px"><label>Category / code prefix</label>'+
-        '<select id="np-prefix" onchange="window._npPrefixChanged()" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--surface,#fff)">'+
+        '<select id="np-prefix" onchange="window._npPrefixChanged()" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;outline:none;background:var(--surface,#fff)">'+
           opts+'<option value="__custom__">＋ Create new prefix…</option>'+
         '</select>'+
         '<div id="np-prefix-custom-wrap" style="display:none;margin-top:8px">'+
           '<input id="np-prefix-custom" oninput="window._npCustomInput()" placeholder="New prefix e.g. GX" maxlength="6" autocomplete="off" style="width:100%;font-weight:700;letter-spacing:.5px;text-transform:uppercase">'+
-          '<div id="np-prefix-preview" style="font-size:11px;color:var(--muted);margin-top:5px">Letters/numbers only. A new prefix is created the moment you save this product.</div>'+
+          '<div id="np-prefix-preview" style="font-size:12px;color:var(--muted);margin-top:5px">Letters/numbers only. A new prefix is created the moment you save this product.</div>'+
         '</div>'+
       '</div>'+
       '<div class="field" style="margin-bottom:6px"><label>Assigned code</label>'+
@@ -221,7 +221,7 @@ window._openAddProductModal=function(prefill){
           '<input id="np-code" oninput="window._npCodeEdited=true" style="flex:1;font-weight:700;letter-spacing:.5px" autocomplete="off">'+
           '<button type="button" onclick="window._npCodeEdited=false;window._npUpdateCode()" class="btn-outline" style="white-space:nowrap;padding:8px 12px">Auto</button>'+
         '</div>'+
-        '<div id="np-code-hint" style="font-size:11px;color:var(--muted);margin-top:5px">Auto-assigned. Edit if you need a specific code.</div>'+
+        '<div id="np-code-hint" style="font-size:12px;color:var(--muted);margin-top:5px">Auto-assigned. Edit if you need a specific code.</div>'+
       '</div>'+
       '<div style="display:flex;gap:8px;margin-top:18px">'+
         '<button class="btn-outline" onclick="window._closeAddProductModal()" style="flex:1">Cancel</button>'+
@@ -296,10 +296,10 @@ function poRowHTML(p){
   const badgeBg=isReserved?'#fef3c7':isCompleted?'#EFEFEF':'#f0f0f0';
   const badgeColor=isReserved?'#b45309':'#111';
   return`<div class="po-row" onclick="window.openPODetail('${p.fbKey}')">
-    <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:var(--muted)">No img</span>'}</div>
+    <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:11px;color:var(--muted)">No img</span>'}</div>
     <div class="po-info">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="po-num">${p.id}</span>
-        <span class="stage-badge" style="background:${badgeBg};color:${badgeColor}">${badgeLabel}</span>${p.damageFlagged?`<span style="padding:2px 6px;background:var(--accent-urgent-soft);color:var(--accent-urgent);border-radius:6px;font-size:10px;font-weight:700">⚠ Loss</span>`:''}</div>
+        <span class="stage-badge" style="background:${badgeBg};color:${badgeColor}">${badgeLabel}</span>${p.damageFlagged?`<span style="padding:2px 6px;background:var(--accent-urgent-soft);color:var(--accent-urgent);border-radius:6px;font-size:11px;font-weight:700">⚠ Loss</span>`:''}</div>
       <div class="po-name">${p.name||'—'}</div>
       <div class="po-meta">${p.qty||'?'} pcs · ${p.fabric||''} · ${p.createdBy||'—'} · ${p.createdAt||''}</div>
     </div><div class="po-arrow">›</div></div>`;
@@ -397,8 +397,8 @@ function _poRegTabContent(){
 function _poRegOrdersHTML(){
   const reservedCount=allPOs.filter(p=>poStatusOf(p)===PO_STATUS.RESERVED).length;
   return`<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-    <input placeholder="Search name, code, fabric…" oninput="window.filterPOs(this.value)" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
-    <select onchange="window.filterStage(this.value)" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">
+    <input placeholder="Search name, code, fabric…" oninput="window.filterPOs(this.value)" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
+    <select onchange="window.filterStage(this.value)" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
       <option value="">All stages</option><option value="reserved">🟡 Reserved${reservedCount?` (${reservedCount})`:''}</option>${STAGES.map(s=>`<option value="${s.key}">${s.label}</option>`).join('')}<option value="completed">Completed</option>
     </select>
   </div>
@@ -468,12 +468,12 @@ function renderDetailPage(){
   const _isReserved=poStatusOf(po)===PO_STATUS.RESERVED;
   const _reservedBanner=_isReserved?`<div class="card" style="border:2px solid var(--accent-warning);background:var(--accent-warning-soft);margin-bottom:12px">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <span style="font-size:18px">🟡</span>
+      <span style="font-size:19px">🟡</span>
       <div style="flex:1;min-width:180px">
-        <div style="font-weight:800;color:var(--accent-warning);font-size:14px;letter-spacing:.01em">Reserve order — not yet in production</div>
-        <div style="font-size:12px;color:var(--accent-warning);margin-top:2px">${_poReserveSummary(po)}</div>
+        <div style="font-weight:800;color:var(--accent-warning);font-size:15px;letter-spacing:.01em">Reserve order — not yet in production</div>
+        <div style="font-size:13px;color:var(--accent-warning);margin-top:2px">${_poReserveSummary(po)}</div>
       </div>
-      ${isOwner?`<button class="mark-done-btn" style="width:auto;padding:9px 18px" onclick="window.releaseToProduction('${po.fbKey}')">Release to production →</button>`:'<span style="font-size:12px;color:var(--accent-warning)">A manager must release this PO.</span>'}
+      ${isOwner?`<button class="mark-done-btn" style="width:auto;padding:9px 18px" onclick="window.releaseToProduction('${po.fbKey}')">Release to production →</button>`:'<span style="font-size:13px;color:var(--accent-warning)">A manager must release this PO.</span>'}
     </div></div>`:'';
   const stagesHTML=STAGES.map(s=>{
     const sd=po.stages?.[s.key]||{};const isDone=!!sd.done;const isCurrent=po.currentStage===s.key;
@@ -491,7 +491,7 @@ function renderDetailPage(){
             ${sd.dueDate?`<div class="stage-meta">Due: ${sd.dueDate}</div>`:''}
           </div>
           <div style="flex-shrink:0;display:flex;gap:6px">
-            ${canUpdate?`<button class="mark-done-btn" style="width:auto;padding:8px 14px;font-size:12px" onclick="window.openStageWork('${po.fbKey}','${s.key}')">Go to stage</button>`:''}
+            ${canUpdate?`<button class="mark-done-btn" style="width:auto;padding:8px 14px;font-size:13px" onclick="window.openStageWork('${po.fbKey}','${s.key}')">Go to stage</button>`:''}
             ${isOwner&&isCurrent&&!canUpdate?`<button class="btn-sm" onclick="window.ownerAdvance('${po.fbKey}','${s.key}')">Force advance</button>`:''}
           </div>
         </div>
@@ -504,8 +504,8 @@ function renderDetailPage(){
     <div><div class="page-title">PO ${po.id}</div><div class="page-sub">By ${po.createdBy||'—'} · ${po.createdAt||''}</div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn-pdf" onclick="window.generatePOPdf('${po.fbKey}')">⬇ PDF</button>
-      ${_poCanEdit()?`<button class="btn-outline" style="font-size:12px" onclick="window.openPOEdit('${po.fbKey}')">Edit PO</button>`:''}
-      ${_poCanDelete()?`<button class="btn-outline" style="font-size:12px" onclick="window.deletePO('${po.fbKey}','${po.id}')">Delete PO</button>`:''}
+      ${_poCanEdit()?`<button class="btn-outline" style="font-size:13px" onclick="window.openPOEdit('${po.fbKey}')">Edit PO</button>`:''}
+      ${_poCanDelete()?`<button class="btn-outline" style="font-size:13px" onclick="window.deletePO('${po.fbKey}','${po.id}')">Delete PO</button>`:''}
     </div>
   </div>
   ${_reservedBanner}
@@ -528,25 +528,25 @@ function renderDetailPage(){
   </div>
   <div class="card"><div class="card-title">Size breakdown</div>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">
-      ${['XS','S','M','L','XL','2XL'].map(sz=>`<div style="text-align:center;padding:8px 4px;background:var(--surface-2);border-radius:6px"><div style="font-size:10px;color:var(--muted)">${sz}</div><div style="font-size:18px;font-weight:700">${po.sizes?.[sz]||0}</div>${po.cutQty?.[sz]!=null?`<div style="font-size:10px;color:var(--green)">Cut:${po.cutQty[sz]}</div>`:''}</div>`).join('')}
+      ${['XS','S','M','L','XL','2XL'].map(sz=>`<div style="text-align:center;padding:8px 4px;background:var(--surface-2);border-radius:6px"><div style="font-size:11px;color:var(--muted)">${sz}</div><div style="font-size:19px;font-weight:700">${po.sizes?.[sz]||0}</div>${po.cutQty?.[sz]!=null?`<div style="font-size:11px;color:var(--green)">Cut:${po.cutQty[sz]}</div>`:''}</div>`).join('')}
     </div>
   </div>
   ${po.notes?`<div class="card"><div class="card-title">Notes</div>
-    <div style="color:var(--accent-urgent);font-weight:600;font-size:13px;white-space:pre-wrap">${_gpEsc(po.notes)}</div>
+    <div style="color:var(--accent-urgent);font-weight:600;font-size:14px;white-space:pre-wrap">${_gpEsc(po.notes)}</div>
   </div>`:''}
   ${po.damageFlagged||po.damageSummary?`<div class="card" style="border:1px solid var(--accent-urgent)"><div class="card-title" style="color:var(--accent-urgent)">⚠ Damage report</div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px">
-      <div style="text-align:center;padding:8px 4px;background:var(--accent-urgent-soft);border-radius:6px"><div style="font-size:10px;color:var(--muted)">Cut</div><div style="font-size:16px;font-weight:700">${po.damageSummary?.cutTotal||0}</div></div>
-      <div style="text-align:center;padding:8px 4px;background:var(--accent-urgent-soft);border-radius:6px"><div style="font-size:10px;color:var(--accent-urgent)">Damaged</div><div style="font-size:16px;font-weight:700;color:var(--accent-urgent)">${po.damageSummary?.total||0}</div></div>
-      <div style="text-align:center;padding:8px 4px;background:var(--soft);border-radius:6px"><div style="font-size:10px;color:var(--muted)">Usable</div><div style="font-size:16px;font-weight:700;color:var(--text)">${po.damageSummary?.usable||0}</div></div>
-      <div style="text-align:center;padding:8px 4px;background:${(po.damagePercent||0)>1.5?'#fee2e2':'#fef9e7'};border-radius:6px"><div style="font-size:10px;color:var(--muted)">Rate</div><div style="font-size:16px;font-weight:700;color:${(po.damagePercent||0)>1.5?'#dc2626':'var(--amber)'}">${(po.damagePercent||0).toFixed(2)}%</div></div>
+      <div style="text-align:center;padding:8px 4px;background:var(--accent-urgent-soft);border-radius:6px"><div style="font-size:11px;color:var(--muted)">Cut</div><div style="font-size:17px;font-weight:700">${po.damageSummary?.cutTotal||0}</div></div>
+      <div style="text-align:center;padding:8px 4px;background:var(--accent-urgent-soft);border-radius:6px"><div style="font-size:11px;color:var(--accent-urgent)">Damaged</div><div style="font-size:17px;font-weight:700;color:var(--accent-urgent)">${po.damageSummary?.total||0}</div></div>
+      <div style="text-align:center;padding:8px 4px;background:var(--soft);border-radius:6px"><div style="font-size:11px;color:var(--muted)">Usable</div><div style="font-size:17px;font-weight:700;color:var(--text)">${po.damageSummary?.usable||0}</div></div>
+      <div style="text-align:center;padding:8px 4px;background:${(po.damagePercent||0)>1.5?'#fee2e2':'#fef9e7'};border-radius:6px"><div style="font-size:11px;color:var(--muted)">Rate</div><div style="font-size:17px;font-weight:700;color:${(po.damagePercent||0)>1.5?'#dc2626':'var(--amber)'}">${(po.damagePercent||0).toFixed(2)}%</div></div>
     </div>
-    ${po.damageSummary?.bySize?`<div style="font-size:11px;color:var(--muted)">By size: ${Object.entries(po.damageSummary.bySize).filter(([,v])=>v>0).map(([k,v])=>`${k}: ${v}`).join(' · ')||'None'}</div>`:''}
+    ${po.damageSummary?.bySize?`<div style="font-size:12px;color:var(--muted)">By size: ${Object.entries(po.damageSummary.bySize).filter(([,v])=>v>0).map(([k,v])=>`${k}: ${v}`).join(' · ')||'None'}</div>`:''}
   </div>`:''}
   ${po.imgFront||po.imgBack?`<div class="card"><div class="card-title">Product images</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      ${po.imgFront?`<div><div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:500">FRONT</div><img src="${po.imgFront}" style="width:100%;border-radius:8px;max-height:320px;object-fit:cover"></div>`:''}
-      ${po.imgBack?`<div><div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:500">BACK</div><img src="${po.imgBack}" style="width:100%;border-radius:8px;max-height:320px;object-fit:cover"></div>`:''}
+      ${po.imgFront?`<div><div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:500">FRONT</div><img src="${po.imgFront}" style="width:100%;border-radius:8px;max-height:320px;object-fit:cover"></div>`:''}
+      ${po.imgBack?`<div><div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:500">BACK</div><img src="${po.imgBack}" style="width:100%;border-radius:8px;max-height:320px;object-fit:cover"></div>`:''}
     </div></div>`:''}
   <div class="card"><div class="card-title">Production timeline</div>
     ${stagesHTML}
@@ -608,45 +608,45 @@ function renderPOCreate(){
   </div>
   <div class="card" id="emb-recipe-card">
     <div class="card-title">Embellishment Recipe / پرنٹنگ ریسیپی</div>
-    <div id="emb-recipe-status" style="font-size:12px;color:var(--muted)">Select a product above to auto-detect its embellishment recipe.</div>
+    <div id="emb-recipe-status" style="font-size:13px;color:var(--muted)">Select a product above to auto-detect its embellishment recipe.</div>
     <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
       <input type="checkbox" id="emb-not-required" onchange="window._toggleEmbRequired(this.checked)" style="width:15px;height:15px;accent-color:var(--dark);cursor:pointer">
-      <label for="emb-not-required" style="font-size:12px;color:var(--muted);cursor:pointer">No embellishment required for this PO</label>
+      <label for="emb-not-required" style="font-size:13px;color:var(--muted);cursor:pointer">No embellishment required for this PO</label>
     </div>
   </div>
   <div class="card"><div class="card-title">Size breakdown *</div>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
       ${['XS','S','M','L','XL','2XL'].map(sz=>`<div class="field"><label>${sz}</label><input id="sz-${sz}" type="number" min="0" value="0" onfocus="if(this.value==='0')this.value=''" onblur="if(this.value==='')this.value='0'" oninput="window.updateRatio()"></div>`).join('')}
     </div>
-    <div style="margin-top:8px;font-size:12px;color:var(--muted)">Ratio: <span id="ratio-disp" style="font-weight:600;color:var(--text)">—</span></div>
+    <div style="margin-top:8px;font-size:13px;color:var(--muted)">Ratio: <span id="ratio-disp" style="font-weight:600;color:var(--text)">—</span></div>
   </div>
   ${typeof fabPoFabricCard==='function'?fabPoFabricCard():'<div class="card"><div class="card-title">Fabric & supply *</div><div class="form-grid"><div class="field"><label>Fabric type *</label><input id="po-fabric" placeholder="e.g. Terry, Fleece"></div><div class="field"><label>Fabric code</label><input id="po-fabriccode" placeholder="e.g. BLKTRY220"></div><div class="field"><label>Supply store</label><input id="po-store" placeholder="Store/supplier"></div><div class="field"><label>Total rolls</label><input id="po-rolls" placeholder="e.g. 12"></div></div></div>'}
   <div class="card"><div class="card-title">Product images</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600">FRONT VIEW *</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">FRONT VIEW *</div>
         <div class="img-upload-box" id="img-front-box" onclick="document.getElementById('inp-front').click()">
           <img id="img-front-prev" style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:9px">
-          <div id="img-front-ph" style="text-align:center"><div style="font-size:24px;color:var(--muted);margin-bottom:4px">+</div><div>Tap to upload front</div></div>
+          <div id="img-front-ph" style="text-align:center"><div style="font-size:25px;color:var(--muted);margin-bottom:4px">+</div><div>Tap to upload front</div></div>
         </div>
         <input type="file" id="inp-front" accept="image/*" class="hidden" onchange="window.handleImg(this,'front')">
-        <button onclick="window.clearImg('front')" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;margin-top:4px;font-family:inherit">Remove</button>
+        <button onclick="window.clearImg('front')" style="font-size:12px;color:var(--muted);background:none;border:none;cursor:pointer;margin-top:4px;font-family:inherit">Remove</button>
       </div>
       <div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600">BACK VIEW</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">BACK VIEW</div>
         <div class="img-upload-box" id="img-back-box" onclick="document.getElementById('inp-back').click()">
           <img id="img-back-prev" style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:9px">
-          <div id="img-back-ph" style="text-align:center"><div style="font-size:24px;color:var(--muted);margin-bottom:4px">+</div><div>Tap to upload back</div></div>
+          <div id="img-back-ph" style="text-align:center"><div style="font-size:25px;color:var(--muted);margin-bottom:4px">+</div><div>Tap to upload back</div></div>
         </div>
         <input type="file" id="inp-back" accept="image/*" class="hidden" onchange="window.handleImg(this,'back')">
-        <button onclick="window.clearImg('back')" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;margin-top:4px;font-family:inherit">Remove</button>
+        <button onclick="window.clearImg('back')" style="font-size:12px;color:var(--muted);background:none;border:none;cursor:pointer;margin-top:4px;font-family:inherit">Remove</button>
       </div>
     </div>
   </div>
   <div class="card"><div class="card-title">Notes</div>
     <div class="field">
       <label>Notes for this PO (optional) — printed in <span style="color:var(--accent-urgent);font-weight:700">red</span> on the PO copy</label>
-      <textarea id="po-notes" rows="3" placeholder="e.g. special instructions, buyer remarks…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--accent-urgent);font-family:inherit;outline:none;resize:vertical"></textarea>
+      <textarea id="po-notes" rows="3" placeholder="e.g. special instructions, buyer remarks…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface-2);color:var(--accent-urgent);font-family:inherit;outline:none;resize:vertical"></textarea>
     </div>
   </div>
   <button class="btn-primary" id="po-submit-btn" onclick="window.submitPO()">Create Production Order</button>
@@ -659,8 +659,8 @@ window._checkEmbRecipe=async function(code,name){
   const notReq=document.getElementById('emb-not-required');
   if(notReq?.checked)return;
   _poEmbellishment=null;
-  statusDiv.innerHTML='<div style="font-size:12px;color:var(--muted)">Checking recipe…</div>';
-  if(!printingDataLoaded){try{await loadPrintingData();}catch(e){statusDiv.innerHTML='<div style="font-size:12px;color:var(--red)">Could not load recipes.</div>';return;}}
+  statusDiv.innerHTML='<div style="font-size:13px;color:var(--muted)">Checking recipe…</div>';
+  if(!printingDataLoaded){try{await loadPrintingData();}catch(e){statusDiv.innerHTML='<div style="font-size:13px;color:var(--red)">Could not load recipes.</div>';return;}}
   let r=allRecipes.find(x=>(x.articleCode||'').toLowerCase()===(code||'').toLowerCase());
   if(!r&&name)r=allRecipes.find(x=>(x.articleName||'').toLowerCase()===(name||'').toLowerCase());
   if(!r){
@@ -668,31 +668,31 @@ window._checkEmbRecipe=async function(code,name){
     _poEmbellishment={required:true,recipeId:null,articleCode:code,articleName:name,recipeStatus:'missing',recipeRequiredBefore:'pp_approval',rateMasterPreview:rm?{complexityTier:rm.complexityTier,ratePerPiece:rm.ratePerPiece}:null};
     if(rm){
       const tierLabel=TIER_INFO[rm.complexityTier]?.label||('Tier '+rm.complexityTier);
-      statusDiv.innerHTML=`<div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;border:1px solid var(--border)"><div style="font-size:12px;font-weight:700;color:var(--text)">Recipe Missing — Rate List Preview</div><div style="font-size:11px;color:var(--muted);margin-top:3px">No recipe yet. Rate List suggests: <strong>${tierLabel}</strong> · Rs. ${rm.ratePerPiece}/pc. Recipe must be created and locked before PP approval.</div></div>`;
+      statusDiv.innerHTML=`<div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;border:1px solid var(--border)"><div style="font-size:13px;font-weight:700;color:var(--text)">Recipe Missing — Rate List Preview</div><div style="font-size:12px;color:var(--muted);margin-top:3px">No recipe yet. Rate List suggests: <strong>${tierLabel}</strong> · Rs. ${rm.ratePerPiece}/pc. Recipe must be created and locked before PP approval.</div></div>`;
     }else{
-      statusDiv.innerHTML=`<div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;border:1px solid var(--border)"><div style="font-size:12px;font-weight:700;color:var(--text)">Recipe Missing</div><div style="font-size:11px;color:var(--muted);margin-top:3px">PO can be created. Recipe must be locked before PP approval — Ammar will be notified.</div></div>`;
+      statusDiv.innerHTML=`<div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;border:1px solid var(--border)"><div style="font-size:13px;font-weight:700;color:var(--text)">Recipe Missing</div><div style="font-size:12px;color:var(--muted);margin-top:3px">PO can be created. Recipe must be locked before PP approval — Ammar will be notified.</div></div>`;
     }
   }else if(r.status!=='locked'){
     _poEmbellishment={required:true,recipeId:r._id,articleCode:code,articleName:r.articleName||name,recipeStatus:'draft',recipeRequiredBefore:'pp_approval'};
     const pt=(r.printing?.processTypes||[]).map(k=>PROCESS_TYPES[k]?.label||k).join(', ')||'—';
-    statusDiv.innerHTML=`<div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;border:1px solid var(--border)"><div style="font-size:12px;font-weight:700;color:var(--text)">Recipe Draft — Not Locked</div><div style="font-size:11px;color:var(--muted);margin-top:3px">Recipe exists (${pt} · Tier ${r.printing?.complexityTier||'?'}) but must be locked by Ammar before PP approval.</div></div>`;
+    statusDiv.innerHTML=`<div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;border:1px solid var(--border)"><div style="font-size:13px;font-weight:700;color:var(--text)">Recipe Draft — Not Locked</div><div style="font-size:12px;color:var(--muted);margin-top:3px">Recipe exists (${pt} · Tier ${r.printing?.complexityTier||'?'}) but must be locked by Ammar before PP approval.</div></div>`;
   }else{
     _poEmbellishment={required:true,recipeId:r._id,articleCode:code,articleName:r.articleName||name,processType:(r.printing?.processTypes||[])[0]||'',complexityTier:r.printing?.complexityTier||1,ratePerPiece:r.printing?.ratePerPiece||0,recipeStatus:'locked',recipeRequiredBefore:'pp_approval'};
     const pt=(r.printing?.processTypes||[]).map(k=>PROCESS_TYPES[k]?.label||k).join(', ')||'—';
     const places=(r.printing?.placements||[]).map(pl=>pl.name).filter(Boolean).join(', ')||'—';
-    statusDiv.innerHTML=`<div style="background:var(--soft);border-radius:8px;padding:10px 12px;border:1px solid var(--border)"><div style="font-size:12px;font-weight:700;color:var(--text)">Recipe Found — Locked</div><div style="font-size:11px;color:var(--muted);margin-top:4px">${pt} · Tier ${r.printing?.complexityTier||'?'} · Rs.${r.printing?.ratePerPiece||0}/pc</div><div style="font-size:11px;color:var(--muted)">Placements: ${places}</div></div>`;
+    statusDiv.innerHTML=`<div style="background:var(--soft);border-radius:8px;padding:10px 12px;border:1px solid var(--border)"><div style="font-size:13px;font-weight:700;color:var(--text)">Recipe Found — Locked</div><div style="font-size:12px;color:var(--muted);margin-top:4px">${pt} · Tier ${r.printing?.complexityTier||'?'} · Rs.${r.printing?.ratePerPiece||0}/pc</div><div style="font-size:12px;color:var(--muted)">Placements: ${places}</div></div>`;
   }
 };
 window._toggleEmbRequired=function(notRequired){
   const statusDiv=document.getElementById('emb-recipe-status');
   if(notRequired){
     _poEmbellishment={required:false};
-    if(statusDiv)statusDiv.innerHTML='<div style="font-size:12px;color:var(--muted)">No embellishment required for this PO.</div>';
+    if(statusDiv)statusDiv.innerHTML='<div style="font-size:13px;color:var(--muted)">No embellishment required for this PO.</div>';
   }else{
     const code=document.getElementById('po-code')?.value;
     const name=document.getElementById('po-name')?.value;
     if(code)window._checkEmbRecipe(code,name);
-    else{_poEmbellishment=null;if(statusDiv)statusDiv.innerHTML='<div style="font-size:12px;color:var(--muted)">Select a product above to auto-detect its embellishment recipe.</div>';}
+    else{_poEmbellishment=null;if(statusDiv)statusDiv.innerHTML='<div style="font-size:13px;color:var(--muted)">Select a product above to auto-detect its embellishment recipe.</div>';}
   }
 };
 window.updateRatio=function(){
@@ -719,15 +719,15 @@ window.addBundlePart=function(name='',notes='',dest='Warehouse'){
   const div=document.createElement('div');
   div.id=id;div.style.cssText='display:grid;grid-template-columns:1fr 1fr auto auto;gap:6px;align-items:center;margin-bottom:8px';
   const parts=['Front','Back','Sleeves','Collar','Body','Panels','Full Garment'];
-  div.innerHTML=`<select style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface-2);outline:none;font-family:inherit">
+  div.innerHTML=`<select style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:var(--surface-2);outline:none;font-family:inherit">
     ${parts.map(p=>`<option value="${p}" ${p===name?'selected':''}>${p}</option>`).join('')}
   </select>
-  <input placeholder="Notes (optional)" value="${notes}" style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface-2);outline:none;font-family:inherit">
+  <input placeholder="Notes (optional)" value="${notes}" style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:var(--surface-2);outline:none;font-family:inherit">
   <div style="display:flex;gap:4px">
-    <button type="button" onclick="window.setBPDest('${id}','Printing')" id="${id}-print" style="padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid;${dest==='Printing'?'background:var(--soft);color:var(--text);border-color:var(--line)':'background:var(--surface);color:var(--muted);border-color:var(--muted)'}">→ Printing</button>
-    <button type="button" onclick="window.setBPDest('${id}','Warehouse')" id="${id}-wh" style="padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid;${dest==='Warehouse'?'background:var(--soft);color:var(--text);border-color:var(--line)':'background:var(--surface);color:var(--muted);border-color:var(--muted)'}">→ Warehouse</button>
+    <button type="button" onclick="window.setBPDest('${id}','Printing')" id="${id}-print" style="padding:5px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid;${dest==='Printing'?'background:var(--soft);color:var(--text);border-color:var(--line)':'background:var(--surface);color:var(--muted);border-color:var(--muted)'}">→ Printing</button>
+    <button type="button" onclick="window.setBPDest('${id}','Warehouse')" id="${id}-wh" style="padding:5px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid;${dest==='Warehouse'?'background:var(--soft);color:var(--text);border-color:var(--line)':'background:var(--surface);color:var(--muted);border-color:var(--muted)'}">→ Warehouse</button>
   </div>
-  <button type="button" onclick="document.getElementById('${id}').remove()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:2px 6px">×</button>`;
+  <button type="button" onclick="document.getElementById('${id}').remove()" style="background:none;border:none;color:var(--muted);font-size:19px;cursor:pointer;padding:2px 6px">×</button>`;
   wrap.appendChild(div);
 };
 window.setBPDest=function(rowId,dest){
@@ -824,7 +824,7 @@ function renderPOEditPage(){
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
       ${['XS','S','M','L','XL','2XL'].map(sz=>`<div class="field"><label>${sz}</label><input id="sz-${sz}" type="number" min="0" value="${po.sizes?.[sz]||0}" onfocus="if(this.value==='0')this.value=''" onblur="if(this.value==='')this.value='0'" oninput="window.updateRatio()"></div>`).join('')}
     </div>
-    <div style="margin-top:8px;font-size:12px;color:var(--muted)">Ratio: <span id="ratio-disp" style="font-weight:600;color:var(--text)">${po.ratio||'—'}</span></div>
+    <div style="margin-top:8px;font-size:13px;color:var(--muted)">Ratio: <span id="ratio-disp" style="font-weight:600;color:var(--text)">${po.ratio||'—'}</span></div>
   </div>
   <div class="card"><div class="card-title">Fabric & supply *</div>
     <div class="form-grid">
@@ -833,12 +833,12 @@ function renderPOEditPage(){
       <div class="field"><label>Supply store</label><input id="po-store" value="${_gpEsc(po.store||'')}" placeholder="Store/supplier"></div>
       <div class="field"><label>Total rolls</label><input id="po-rolls" value="${_gpEsc(po.totalRoll||'')}" placeholder="e.g. 12"></div>
     </div>
-    <div style="font-size:11px;color:var(--muted);margin-top:6px">Corrects the record only — does not release or re-reserve fabric rolls. Use Fabric Inventory for that.</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:6px">Corrects the record only — does not release or re-reserve fabric rolls. Use Fabric Inventory for that.</div>
   </div>
   <div class="card"><div class="card-title">Notes</div>
     <div class="field">
       <label>Notes for this PO (optional) — printed in <span style="color:var(--accent-urgent);font-weight:700">red</span> on the PO copy</label>
-      <textarea id="po-notes" rows="3" placeholder="e.g. special instructions, buyer remarks…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--accent-urgent);font-family:inherit;outline:none;resize:vertical">${_gpEsc(po.notes||'')}</textarea>
+      <textarea id="po-notes" rows="3" placeholder="e.g. special instructions, buyer remarks…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface-2);color:var(--accent-urgent);font-family:inherit;outline:none;resize:vertical">${_gpEsc(po.notes||'')}</textarea>
     </div>
   </div>
   <button class="btn-primary" id="po-edit-save-btn" onclick="window.savePOEdit('${po.fbKey}')">Save Changes</button>
@@ -906,19 +906,19 @@ function renderCuttingWork(po){
       ${szs.map(sz=>{
         const tgt=po.sizes?.[sz]||0,act=parseInt(cutState.actualQty[sz])||0,diff=act-tgt;
         const cls=diff===0?'var-ok':Math.abs(diff)<=Math.ceil(tgt*0.1)?'var-warn':'var-bad';
-        return`<tr><td style="font-weight:600">${sz}</td><td>${tgt}</td><td><input type="number" min="0" value="${act}" style="width:80px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;outline:none" onfocus="if(this.value==='0')this.value=''" onblur="if(this.value==='')this.value='0'" onchange="window.setCutQty('${sz}',this.value)"></td><td id="var-${sz}" class="${cls}">${act>0?diff>=0?'+'+diff:diff:'—'}</td></tr>`;
+        return`<tr><td style="font-weight:600">${sz}</td><td>${tgt}</td><td><input type="number" min="0" value="${act}" style="width:80px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px;outline:none" onfocus="if(this.value==='0')this.value=''" onblur="if(this.value==='')this.value='0'" onchange="window.setCutQty('${sz}',this.value)"></td><td id="var-${sz}" class="${cls}">${act>0?diff>=0?'+'+diff:diff:'—'}</td></tr>`;
       }).join('')}
     </tbody></table>
-    <div id="cut-total-row" style="margin-top:10px;font-size:13px">
+    <div id="cut-total-row" style="margin-top:10px;font-size:14px">
       Total: <strong>${actualTotal}</strong> actual / <strong>${target}</strong> target &nbsp;
-      <span style="font-size:11px;color:var(--muted)">Allowed: ${min}–${max} pcs (80–120%)</span>
+      <span style="font-size:12px;color:var(--muted)">Allowed: ${min}–${max} pcs (80–120%)</span>
       <span style="margin-left:8px;font-weight:600;color:${rangeOk?'var(--green)':'#dc2626'}">${rangeOk?'✓ In range':'✗ Out of range'}</span>
     </div>
   </div>
   <div class="card"><div class="card-title">Fabric used</div>
     <div class="field" style="margin-bottom:10px">
       <label>Consume from fabric stock <span style="font-weight:400;color:var(--muted)">(optional — picks rolls to deduct from inventory)</span></label>
-      <select id="cut-fab-stock" onchange="window.onCutFabStockPick()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--text);font-family:inherit;outline:none;width:100%">
+      <select id="cut-fab-stock" onchange="window.onCutFabStockPick()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface-2);color:var(--text);font-family:inherit;outline:none;width:100%">
         <option value="">— don't deduct from fabric inventory —</option>
         ${allFabricInventory.filter(s=>(s.totalWeight||0)>0).map(s=>`<option value="${s._id}">${_gpEsc(s.fabType||'')} · ${s.gsm||0}gsm · ${_gpEsc(s.color||'')} — ${s.totalWeight} ${s.unit||'kg'} · ${s.rollsCount||0} rolls</option>`).join('')}
       </select>
@@ -928,28 +928,28 @@ function renderCuttingWork(po){
       <div class="field"><label>Total weight (kg) *</label><input id="cut-weight" type="number" min="0" step="0.1" placeholder="e.g. 100" style="width:100%" oninput="window.calcCutAvg()"></div>
       <div class="field"><label>Total rolls</label><input id="cut-rolls" type="number" min="0" placeholder="e.g. 12" style="width:100%"></div>
     </div>
-    <div id="cut-avg-display" style="margin-top:6px;font-size:13px;color:var(--muted)">Enter weight to auto-calculate avg per unit</div>
+    <div id="cut-avg-display" style="margin-top:6px;font-size:14px;color:var(--muted)">Enter weight to auto-calculate avg per unit</div>
   </div>
   <div class="card"><div class="card-title">Bundle entry</div>
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-      <select id="bundle-size-sel" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);outline:none">${szs.map(s=>`<option value="${s}">${s}</option>`).join('')}</select>
-      <input type="number" id="bundle-units-inp" min="1" placeholder="Units" style="width:100px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none">
+      <select id="bundle-size-sel" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">${szs.map(s=>`<option value="${s}">${s}</option>`).join('')}</select>
+      <input type="number" id="bundle-units-inp" min="1" placeholder="Units" style="width:100px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;outline:none">
       <button onclick="window.addCutBundle()" class="btn-sm" style="padding:9px 16px">+ Add Bundle</button>
     </div>
     <div id="cut-bundle-list">${renderCutBundleList()}</div>
-    <div id="cut-bundle-summary" style="margin-top:10px;font-size:12px">${renderCutBundleSummary(po)}</div>
+    <div id="cut-bundle-summary" style="margin-top:10px;font-size:13px">${renderCutBundleSummary(po)}</div>
   </div>
   <button class="mark-done-btn" id="cut-done-btn" onclick="window.markCuttingDone('${po.fbKey}')" ${cutValidationOk(po)?'':'disabled'}>Mark Cutting Done ✓</button>
   <div style="height:80px"></div>`;
 }
 
 function renderCutBundleList(){
-  if(!cutState.pendingBundles.length)return'<div style="color:var(--muted);font-size:12px;padding:8px 0">No bundles added yet.</div>';
+  if(!cutState.pendingBundles.length)return'<div style="color:var(--muted);font-size:13px;padding:8px 0">No bundles added yet.</div>';
   return cutState.pendingBundles.map((b,i)=>`<div class="bundle-item">
     <span class="bundle-num">B-${String(i+1).padStart(4,'0')}*</span>
     <span class="bundle-size-tag">${b.size}</span>
     <span class="bundle-units">${b.units} pcs</span>
-    <button onclick="window.removeCutBundle(${b.tempId})" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:0 4px">×</button>
+    <button onclick="window.removeCutBundle(${b.tempId})" style="background:none;border:none;color:var(--muted);font-size:19px;cursor:pointer;padding:0 4px">×</button>
   </div>`).join('');
 }
 
@@ -991,7 +991,7 @@ function refreshCutPartial(po){
   });
   // Update total row
   const tot=document.getElementById('cut-total-row');
-  if(tot)tot.innerHTML=`Total: <strong>${actualTotal}</strong> actual / <strong>${target}</strong> target &nbsp;<span style="font-size:11px;color:var(--muted)">Allowed: ${min}–${max} pcs (80–120%)</span><span style="margin-left:8px;font-weight:600;color:${rangeOk?'var(--green)':'#dc2626'}">${rangeOk?'✓ In range':'✗ Out of range'}</span>`;
+  if(tot)tot.innerHTML=`Total: <strong>${actualTotal}</strong> actual / <strong>${target}</strong> target &nbsp;<span style="font-size:12px;color:var(--muted)">Allowed: ${min}–${max} pcs (80–120%)</span><span style="margin-left:8px;font-weight:600;color:${rangeOk?'var(--green)':'#dc2626'}">${rangeOk?'✓ In range':'✗ Out of range'}</span>`;
   // Update bundle list & summary
   const bl=document.getElementById('cut-bundle-list');if(bl)bl.innerHTML=renderCutBundleList();
   const bs=document.getElementById('cut-bundle-summary');if(bs)bs.innerHTML=renderCutBundleSummary(po);
@@ -1040,10 +1040,10 @@ window.onCutFabStockPick=function(){
   const stock=allFabricInventory.find(s=>s._id===key);
   if(!stock){wrap.innerHTML='';return;}
   const inStock=(stock.rolls||[]).filter(r=>r.status==='in_stock');
-  if(!inStock.length){wrap.innerHTML='<div style="font-size:12px;color:var(--muted);padding:8px">No in-stock rolls.</div>';return;}
-  wrap.innerHTML=`<label style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Select rolls to consume (${inStock.length} in stock)</label>
+  if(!inStock.length){wrap.innerHTML='<div style="font-size:13px;color:var(--muted);padding:8px">No in-stock rolls.</div>';return;}
+  wrap.innerHTML=`<label style="font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Select rolls to consume (${inStock.length} in stock)</label>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;max-height:240px;overflow-y:auto;padding:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px">
-      ${inStock.map(r=>`<label style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">
+      ${inStock.map(r=>`<label style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px;cursor:pointer">
         <input type="checkbox" data-roll="${_gpEsc(r.rollCode)}" data-weight="${r.weight||0}" onchange="window.onCutFabRollToggle()" style="margin:0">
         <span style="font-weight:700;letter-spacing:.04em">${r.rollCode}</span>
         <span style="color:var(--muted)">${r.weight||0} ${stock.unit||'kg'}</span>
@@ -1109,8 +1109,8 @@ function renderBundlingWork(po){
     return`<button class="back-btn" onclick="window.showPage('my-work')">← Back to My Work</button>
     <div class="page-head"><div class="page-title">PO ${po.id} — Bundling</div><div class="page-sub">${po.name||'—'}</div></div>
     <div class="card"><div class="card-title">No bundles found</div>
-      <div style="font-size:13px;color:var(--muted);margin-bottom:12px">Cutting stage has not created bundles for this PO yet.</div>
-      ${isOwner?`<button class="mark-done-btn" onclick="window.bundlingOverride('${po.fbKey}')">Owner override — skip to stitching</button>`:'<div style="font-size:12px;color:var(--muted)">Contact the owner to proceed.</div>'}
+      <div style="font-size:14px;color:var(--muted);margin-bottom:12px">Cutting stage has not created bundles for this PO yet.</div>
+      ${isOwner?`<button class="mark-done-btn" onclick="window.bundlingOverride('${po.fbKey}')">Owner override — skip to stitching</button>`:'<div style="font-size:13px;color:var(--muted)">Contact the owner to proceed.</div>'}
     </div><div style="height:80px"></div>`;
   }
   const parts=po.bundlingParts&&po.bundlingParts.length?po.bundlingParts:[{name:'Full Garment',notes:'',dest:'Warehouse'}];
@@ -1142,11 +1142,11 @@ function renderBundlingWork(po){
   const doneCount=bundles.filter(b=>b.bundlingDone).length;
 
   const partsCard=parts.length>1||parts[0]?.name!=='Full Garment'?`<div class="card"><div class="card-title">Bundling instructions</div>
-    ${parts.map(p=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
+    ${parts.map(p=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:14px">
       <span style="font-weight:500">${p.name}</span>
       <div style="display:flex;align-items:center;gap:8px">
-        ${p.notes?`<span style="font-size:11px;color:var(--muted)">${p.notes}</span>`:''}
-        <span style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;background:var(--soft);color:var(--text)">→ ${p.dest}</span>
+        ${p.notes?`<span style="font-size:12px;color:var(--muted)">${p.notes}</span>`:''}
+        <span style="padding:3px 10px;border-radius:12px;font-size:12px;font-weight:700;background:var(--soft);color:var(--text)">→ ${p.dest}</span>
       </div>
     </div>`).join('')}
   </div>`:'';
@@ -1157,8 +1157,8 @@ function renderBundlingWork(po){
     const bySz={};dBundles.forEach(b=>{if(!bySz[b.size])bySz[b.size]=[];bySz[b.size].push(b);});
     return`<div style="margin-bottom:4px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        <span style="font-size:13px;font-weight:700">→ ${dest}</span>
-        <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--soft);color:var(--text)">${dDone}/${dBundles.length} bundled</span>
+        <span style="font-size:14px;font-weight:700">→ ${dest}</span>
+        <span style="font-size:12px;padding:2px 8px;border-radius:10px;background:var(--soft);color:var(--text)">${dDone}/${dBundles.length} bundled</span>
         ${uniqueDests.length>1?`<div class="progress-strip" style="flex:1;max-width:120px"><div class="progress-fill" style="width:${dBundles.length?Math.round(dDone/dBundles.length*100):0}%"></div></div>`:''}
       </div>
       ${Object.entries(bySz).map(([sz,bList])=>`<div class="card" style="margin-bottom:8px"><div class="card-title">${sz} — ${bList.length} bundle${bList.length!==1?'s':''}</div>
@@ -1172,10 +1172,10 @@ function renderBundlingWork(po){
             <span style="flex:1"></span>
             ${b.bundlingDone
               ?`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-                  <span style="color:var(--green);font-weight:600;font-size:12px">✓ Bundled</span>
+                  <span style="color:var(--green);font-weight:600;font-size:13px">✓ Bundled</span>
                   <div style="display:flex;align-items:center;gap:4px">
-                    <input type="number" min="0" max="${b.units}" placeholder="0" value="${dmgVal===0?'':dmgVal}" style="width:56px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:12px;outline:none;font-family:inherit" oninput="window.saveBundleDamage('${b.bundleId}',this.value||'0','${dest}','${po.fbKey}')">
-                    <span style="font-size:11px;color:var(--muted)">dmg</span>
+                    <input type="number" min="0" max="${b.units}" placeholder="0" value="${dmgVal===0?'':dmgVal}" style="width:56px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:13px;outline:none;font-family:inherit" oninput="window.saveBundleDamage('${b.bundleId}',this.value||'0','${dest}','${po.fbKey}')">
+                    <span style="font-size:12px;color:var(--muted)">dmg</span>
                   </div>
                 </div>`
               :`<button class="qc-pass-btn" onclick="window.markBundlingDone('${b.bundleId}','${dest}','${po.fbKey}')">Mark Bundled ✓</button>`}
@@ -1189,27 +1189,27 @@ function renderBundlingWork(po){
   <div class="page-head"><div class="page-title">PO ${po.id} — Bundling</div><div class="page-sub">${po.name||'—'}</div></div>
   <div class="card"><div class="card-title">Bundle progress</div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-      <span style="font-size:22px;font-weight:700;color:${allBundled?'var(--green)':'var(--dark)'}">${doneCount}/${bundles.length}</span>
-      <span style="font-size:12px;color:var(--muted)">bundles bundled</span>
+      <span style="font-size:23px;font-weight:700;color:${allBundled?'var(--green)':'var(--dark)'}">${doneCount}/${bundles.length}</span>
+      <span style="font-size:13px;color:var(--muted)">bundles bundled</span>
     </div>
     <div class="progress-strip"><div class="progress-fill" style="width:${bundles.length?Math.round(doneCount/bundles.length*100):0}%"></div></div>
-    <div style="margin-top:10px;padding:10px 12px;background:var(--surface-2);border-radius:8px;font-size:12px;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center">
-      <div><div style="font-size:10px;color:var(--muted)">PO Qty</div><div style="font-weight:700">${po.qty||0}</div></div>
-      <div><div style="font-size:10px;color:var(--muted)">Cut</div><div style="font-weight:700">${cutTotal}</div></div>
-      <div><div style="font-size:10px;color:var(--muted)">Damaged</div><div style="font-weight:700;color:${pctColor}">${totalDamage}</div></div>
-      <div><div style="font-size:10px;color:var(--muted)">Usable</div><div style="font-weight:700;color:var(--green)">${usable}</div></div>
+    <div style="margin-top:10px;padding:10px 12px;background:var(--surface-2);border-radius:8px;font-size:13px;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center">
+      <div><div style="font-size:11px;color:var(--muted)">PO Qty</div><div style="font-weight:700">${po.qty||0}</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">Cut</div><div style="font-weight:700">${cutTotal}</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">Damaged</div><div style="font-weight:700;color:${pctColor}">${totalDamage}</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">Usable</div><div style="font-weight:700;color:var(--green)">${usable}</div></div>
     </div>
-    ${cutTotal>0?`<div style="margin-top:6px;font-size:11px;text-align:center;font-weight:600;color:${pctColor}">${pct.toFixed(2)}% damage rate ${pct>1.5?'⚠ Will be flagged':pct>1?'⚠ Near threshold':''}</div>`:''}
+    ${cutTotal>0?`<div style="margin-top:6px;font-size:12px;text-align:center;font-weight:600;color:${pctColor}">${pct.toFixed(2)}% damage rate ${pct>1.5?'⚠ Will be flagged':pct>1?'⚠ Near threshold':''}</div>`:''}
   </div>
   ${partsCard}
   ${destSections}
   ${pct>1.5?`<div style="background:var(--accent-urgent-soft);border:1px solid var(--accent-urgent);border-radius:10px;padding:12px 14px;margin-bottom:10px">
-    <div style="font-weight:700;color:var(--accent-urgent);font-size:13px;margin-bottom:4px">⚠ Damage Alert / نقصان کا انتباہ</div>
-    <div style="font-size:12px;color:var(--accent-urgent);margin-bottom:6px">This bundling record will be flagged for excess loss of quantity (${pct.toFixed(2)}%). A manager will be notified.</div>
-    <div style="font-size:12px;color:var(--accent-urgent);direction:rtl;text-align:right;font-family:serif">یہ بنڈلنگ ریکارڈ مقدار میں زیادہ نقصان (${pct.toFixed(2)}%) کی وجہ سے فلیگ کیا جائے گا۔ مینیجر کو اطلاع دی جائے گی۔</div>
+    <div style="font-weight:700;color:var(--accent-urgent);font-size:14px;margin-bottom:4px">⚠ Damage Alert / نقصان کا انتباہ</div>
+    <div style="font-size:13px;color:var(--accent-urgent);margin-bottom:6px">This bundling record will be flagged for excess loss of quantity (${pct.toFixed(2)}%). A manager will be notified.</div>
+    <div style="font-size:13px;color:var(--accent-urgent);direction:rtl;text-align:right;font-family:serif">یہ بنڈلنگ ریکارڈ مقدار میں زیادہ نقصان (${pct.toFixed(2)}%) کی وجہ سے فلیگ کیا جائے گا۔ مینیجر کو اطلاع دی جائے گی۔</div>
   </div>`:''}
   <button class="mark-done-btn" id="bundling-done-btn" onclick="window.completeBundling('${po.fbKey}')" ${allBundled?'':'disabled'} style="margin-top:4px">Complete Bundling ✓</button>
-  ${!allBundled?'<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:6px">Mark all bundles done first — damage defaults to 0 if none</div>':''}
+  ${!allBundled?'<div style="font-size:12px;color:var(--muted);text-align:center;margin-top:6px">Mark all bundles done first — damage defaults to 0 if none</div>':''}
   <div style="height:80px"></div>`;
 }
 
@@ -1285,7 +1285,7 @@ function renderBundleStageWork(po,stage,doneField,doneAtField,doneLabel,nextStag
   return`<button class="back-btn" onclick="window.showPage('my-work')">← Back to My Work</button>
   <div class="page-head"><div class="page-title">PO ${po.id} — ${stageMeta.label||stage}</div><div class="page-sub">${po.name||'—'}</div></div>
   <div class="card"><div class="card-title">Bundle progress</div>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><span style="font-size:22px;font-weight:700;color:${allDone?'var(--green)':'var(--dark)'}">${doneCount}/${bundles.length}</span><span style="font-size:12px;color:var(--muted)">bundles ${doneLabel.toLowerCase()}</span></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><span style="font-size:23px;font-weight:700;color:${allDone?'var(--green)':'var(--dark)'}">${doneCount}/${bundles.length}</span><span style="font-size:13px;color:var(--muted)">bundles ${doneLabel.toLowerCase()}</span></div>
     <div class="progress-strip"><div class="progress-fill" style="width:${bundles.length?Math.round(doneCount/bundles.length*100):0}%"></div></div>
   </div>
   ${Object.entries(bySz).map(([sz,bList])=>`<div class="card"><div class="card-title">${sz} — ${bList.length} bundle${bList.length!==1?'s':''}</div>
@@ -1294,11 +1294,11 @@ function renderBundleStageWork(po,stage,doneField,doneAtField,doneLabel,nextStag
       <span class="bundle-size-tag">${b.size}</span>
       <span class="bundle-units ${b[doneField]?'bundle-done':''}">${b.units} pcs</span>
       <span style="flex:1"></span>
-      ${b[doneField]?`<span style="color:var(--green);font-weight:600;font-size:12px">✓ ${doneLabel}</span>`:`<button class="qc-pass-btn" onclick="window.markBundleStage('${b.bundleId}','${stage}','${doneField}','${doneAtField}','${doneLabel}','${po.fbKey}','${nextStage}')">Mark ${doneLabel} ✓</button>`}
+      ${b[doneField]?`<span style="color:var(--green);font-weight:600;font-size:13px">✓ ${doneLabel}</span>`:`<button class="qc-pass-btn" onclick="window.markBundleStage('${b.bundleId}','${stage}','${doneField}','${doneAtField}','${doneLabel}','${po.fbKey}','${nextStage}')">Mark ${doneLabel} ✓</button>`}
     </div>`).join('')}
   </div>`).join('')}
   ${!bundles.length?'<div class="empty">No bundles found for this PO.</div>':''}
-  ${doneCount<bundles.length&&bundles.length>0?`<div style="font-size:11px;color:var(--muted);text-align:center;margin-bottom:6px">${bundles.length-doneCount} bundle${bundles.length-doneCount!==1?'s':''} remaining — you can still complete the stage</div>`:''}
+  ${doneCount<bundles.length&&bundles.length>0?`<div style="font-size:12px;color:var(--muted);text-align:center;margin-bottom:6px">${bundles.length-doneCount} bundle${bundles.length-doneCount!==1?'s':''} remaining — you can still complete the stage</div>`:''}
   <button class="mark-done-btn" id="stage-done-btn" onclick="window.completeStage('${po.fbKey}','${stage}','${nextStage}')" ${bundles.length>0?'':'disabled'}>Complete ${stageMeta.label||stage} ✓</button>
   <div style="height:80px"></div>`;
 }
@@ -1333,11 +1333,11 @@ function renderLotStageWork(po,stage,stageTitle,nextStage){
   <div class="page-head"><div class="page-title">PO ${po.id} — ${stageTitle}</div><div class="page-sub">${po.name||'—'} · ${po.qty||'?'} pcs</div></div>
   <div class="card"><div class="card-title">Bundle reference</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0">
-      ${bundles.map(b=>`<div style="padding:5px 10px;background:var(--surface-2);border-radius:8px;font-size:12px;font-weight:600">${b.bundleId} <span style="color:var(--muted);font-weight:400">${b.size} · ${b.units}pcs</span></div>`).join('')||'<div style="color:var(--muted);font-size:12px">No bundles on record.</div>'}
+      ${bundles.map(b=>`<div style="padding:5px 10px;background:var(--surface-2);border-radius:8px;font-size:13px;font-weight:600">${b.bundleId} <span style="color:var(--muted);font-weight:400">${b.size} · ${b.units}pcs</span></div>`).join('')||'<div style="color:var(--muted);font-size:13px">No bundles on record.</div>'}
     </div>
   </div>
   <div class="card"><div class="card-title">Completion</div>
-    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">Mark the entire lot as complete to advance to the next stage.</div>
+    <div style="font-size:14px;color:var(--muted);margin-bottom:12px">Mark the entire lot as complete to advance to the next stage.</div>
     <button class="mark-done-btn" onclick="window.completeStage('${po.fbKey}','${stage}','${nextStage}')">Mark ${stageTitle} Complete ✓</button>
   </div><div style="height:80px"></div>`;
 }
@@ -1353,16 +1353,16 @@ function renderQCWork(po){
   <div class="page-head"><div class="page-title">PO ${po.id} — Final QC</div><div class="page-sub">${po.name||'—'}</div></div>
   <div class="card"><div class="card-title">QC summary</div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-      <div style="text-align:center;padding:10px;background:var(--surface-2);border-radius:8px"><div style="font-size:20px;font-weight:700;color:var(--muted)">${pending}</div><div style="font-size:10px;color:var(--muted)">Pending</div></div>
-      <div style="text-align:center;padding:10px;background:var(--soft);border-radius:8px"><div style="font-size:20px;font-weight:700;color:var(--text)">${passed}</div><div style="font-size:10px;color:var(--muted)">Passed</div></div>
-      <div style="text-align:center;padding:10px;background:var(--accent-urgent-soft);border-radius:8px"><div style="font-size:20px;font-weight:700;color:var(--accent-urgent)">${failed}</div><div style="font-size:10px;color:var(--accent-urgent)">Failed</div></div>
+      <div style="text-align:center;padding:10px;background:var(--surface-2);border-radius:8px"><div style="font-size:21px;font-weight:700;color:var(--muted)">${pending}</div><div style="font-size:11px;color:var(--muted)">Pending</div></div>
+      <div style="text-align:center;padding:10px;background:var(--soft);border-radius:8px"><div style="font-size:21px;font-weight:700;color:var(--text)">${passed}</div><div style="font-size:11px;color:var(--muted)">Passed</div></div>
+      <div style="text-align:center;padding:10px;background:var(--accent-urgent-soft);border-radius:8px"><div style="font-size:21px;font-weight:700;color:var(--accent-urgent)">${failed}</div><div style="font-size:11px;color:var(--accent-urgent)">Failed</div></div>
     </div>
   </div>
   ${bundles.map(b=>`<div class="bundle-item" id="qci-${b.bundleId}" style="background:${b.qcStatus==='pass'?'#f0fdf4':b.qcStatus==='fail'?'#fef2f2':'#f8f8f8'}">
     <span class="bundle-num">${b.bundleId}</span>
     <span class="bundle-size-tag">${b.size}</span>
     <span class="bundle-units" style="flex:1">${b.units} pcs</span>
-    ${b.qcStatus==='pass'?'<span style="color:var(--green);font-weight:700">✓ Pass</span>':b.qcStatus==='fail'?`<span style="color:var(--accent-urgent);font-weight:700">✗ Fail</span><span style="font-size:11px;color:var(--accent-urgent);margin-left:6px">${b.qcReason||''}</span>`:`<button class="qc-pass-btn" onclick="window.setQC('${b.bundleId}','pass','')">Pass ✓</button><button class="qc-fail-btn" style="margin-left:6px" onclick="window.setQCFail('${b.bundleId}')">Fail ✗</button>`}
+    ${b.qcStatus==='pass'?'<span style="color:var(--green);font-weight:700">✓ Pass</span>':b.qcStatus==='fail'?`<span style="color:var(--accent-urgent);font-weight:700">✗ Fail</span><span style="font-size:12px;color:var(--accent-urgent);margin-left:6px">${b.qcReason||''}</span>`:`<button class="qc-pass-btn" onclick="window.setQC('${b.bundleId}','pass','')">Pass ✓</button><button class="qc-fail-btn" style="margin-left:6px" onclick="window.setQCFail('${b.bundleId}')">Fail ✗</button>`}
   </div>`).join('')||'<div class="empty">No bundles found.</div>'}
   <button class="mark-done-btn" id="qc-done-btn" onclick="window.completeQC('${po.fbKey}')" ${canComplete?'':'disabled'} style="margin-top:10px">Complete QC${failed>0?` (${failed} failed)`:' ✓'}</button>
   <div style="height:80px"></div>`;

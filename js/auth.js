@@ -176,14 +176,14 @@ function renderUsers(){
   return`<div class="page-head"><div class="page-title">Users</div><div class="page-sub">${USER_DEFS.length} accounts · Role-based access</div></div>
   <div class="card"><div class="card-title">User accounts</div>
     ${USER_DEFS.map(u=>`<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)">
-      <div style="width:36px;height:36px;border-radius:50%;background:${u.role==='owner'?'var(--dark)':u.role==='manager'?'var(--red)':'var(--green)'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--on-dark);flex-shrink:0">${u.name[0]}</div>
-      <div style="flex:1"><div style="font-weight:600;font-size:13px">${u.name} <span style="font-size:11px;font-weight:400;color:var(--muted)">@${u.u}</span></div><div style="font-size:11px;color:var(--muted)">${u.title}</div></div>
-      <div style="text-align:right;flex-shrink:0"><div style="font-size:11px;font-weight:600;color:${u.role==='owner'?'var(--dark)':u.role==='manager'?'var(--red)':'var(--green)'};text-transform:capitalize">${u.role}</div><div style="font-size:10px;color:var(--muted);margin-top:1px">${u.canPO?'Can create PO':'View only'}</div></div>
-      <button class="btn-outline" style="flex-shrink:0;padding:5px 10px;font-size:11px" onclick="window.openOwnerResetModal('${u.u}')">Reset password</button>
+      <div style="width:36px;height:36px;border-radius:50%;background:${u.role==='owner'?'var(--dark)':u.role==='manager'?'var(--red)':'var(--green)'};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--on-dark);flex-shrink:0">${u.name[0]}</div>
+      <div style="flex:1"><div style="font-weight:600;font-size:14px">${u.name} <span style="font-size:12px;font-weight:400;color:var(--muted)">@${u.u}</span></div><div style="font-size:12px;color:var(--muted)">${u.title}</div></div>
+      <div style="text-align:right;flex-shrink:0"><div style="font-size:12px;font-weight:600;color:${u.role==='owner'?'var(--dark)':u.role==='manager'?'var(--red)':'var(--green)'};text-transform:capitalize">${u.role}</div><div style="font-size:11px;color:var(--muted);margin-top:1px">${u.canPO?'Can create PO':'View only'}</div></div>
+      <button class="btn-outline" style="flex-shrink:0;padding:5px 10px;font-size:12px" onclick="window.openOwnerResetModal('${u.u}')">Reset password</button>
     </div>`).join('')}
   </div>
   <div class="card"><div class="card-title">Stage assignments</div>
-    ${STAGES.map(s=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="font-weight:500">${s.label}</span><span style="font-weight:600;color:${s.color}">${s.owner}</span></div>`).join('')}
+    ${STAGES.map(s=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:14px"><span style="font-weight:500">${s.label}</span><span style="font-weight:600;color:${s.color}">${s.owner}</span></div>`).join('')}
   </div>
   <div style="height:80px"></div>`;
 }
@@ -205,7 +205,7 @@ window.openChangePasswordModal=function(){
     <div class="field" style="margin-bottom:12px"><label>Current password</label><input id="cp-current" type="password" autocomplete="current-password"></div>
     <div class="field" style="margin-bottom:12px"><label>New password</label><input id="cp-new" type="password" autocomplete="new-password" placeholder="At least 8 characters"></div>
     <div class="field" style="margin-bottom:14px"><label>Confirm new password</label><input id="cp-confirm" type="password" autocomplete="new-password"></div>
-    <div id="cp-error" style="display:none;color:var(--accent-urgent);font-size:12px;margin-bottom:12px;line-height:1.5"></div>
+    <div id="cp-error" style="display:none;color:var(--accent-urgent);font-size:13px;margin-bottom:12px;line-height:1.5"></div>
     <div style="display:flex;gap:10px">
       <button class="btn-outline" style="flex:1" onclick="window.closeChangePasswordModal()">Cancel</button>
       <button class="btn-primary" id="cp-submit-btn" style="flex:1;margin-top:0" onclick="window.submitChangePassword()">Change password</button>
@@ -278,8 +278,8 @@ window.openOwnerResetModal=function(username){
         <button type="button" class="btn-outline" style="flex-shrink:0;padding:0 12px" onclick="document.getElementById('or-new').value=window._genPassword_()">Generate</button>
       </div>
     </div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:14px;line-height:1.5">Copy this and share it with ${target.name} privately — direct message, not a group chat. It will not be shown again.</div>
-    <div id="or-error" style="display:none;color:var(--accent-urgent);font-size:12px;margin-bottom:12px;line-height:1.5"></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.5">Copy this and share it with ${target.name} privately — direct message, not a group chat. It will not be shown again.</div>
+    <div id="or-error" style="display:none;color:var(--accent-urgent);font-size:13px;margin-bottom:12px;line-height:1.5"></div>
     <div style="display:flex;gap:10px">
       <button class="btn-outline" style="flex:1" onclick="window.closeOwnerResetModal()">Cancel</button>
       <button class="btn-primary" id="or-submit-btn" style="flex:1;margin-top:0" onclick="window.submitOwnerReset('${target.u}')">Set password</button>

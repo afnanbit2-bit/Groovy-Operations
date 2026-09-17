@@ -100,7 +100,7 @@ window._cashUploadPhoto=async function(inputId,statusId){
   try{
     const url=await uploadToCloudinary(file);
     window._cashPhoto[inputId]=url;
-    if(st)st.innerHTML=`<a href="${url}" target="_blank" style="color:var(--accent-success);font-weight:700;text-decoration:none">✓ Attached — tap to view</a> <button onclick="window._cashClearPhoto('${inputId}','${statusId}')" style="background:none;border:none;color:var(--accent-urgent);font-size:11px;cursor:pointer">remove</button>`;
+    if(st)st.innerHTML=`<a href="${url}" target="_blank" style="color:var(--accent-success);font-weight:700;text-decoration:none">✓ Attached — tap to view</a> <button onclick="window._cashClearPhoto('${inputId}','${statusId}')" style="background:none;border:none;color:var(--accent-urgent);font-size:12px;cursor:pointer">remove</button>`;
   }catch(e){
     if(st)st.innerHTML=`<span style="color:var(--accent-urgent)">Upload failed: ${_scEsc(e.message)}</span>`;
   }
@@ -111,11 +111,11 @@ window._cashClearPhoto=function(inputId,statusId){
   const st=document.getElementById(statusId); if(st)st.innerHTML='';
 };
 function _cashPhotoField(inputId,statusId,label){
-  return `<label for="${inputId}" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:11px;border:1.5px dashed var(--border);border-radius:10px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;background:var(--surface-2);box-sizing:border-box">
+  return `<label for="${inputId}" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:11px;border:1.5px dashed var(--border);border-radius:10px;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;background:var(--surface-2);box-sizing:border-box">
       📷 ${label}
     </label>
     <input id="${inputId}" type="file" accept="image/*" capture="environment" style="display:none" onchange="window._cashUploadPhoto('${inputId}','${statusId}')">
-    <div id="${statusId}" style="font-size:12px;margin:6px 0 0;min-height:16px"></div>`;
+    <div id="${statusId}" style="font-size:13px;margin:6px 0 0;min-height:16px"></div>`;
 }
 
 // ── Data layer ──
@@ -300,7 +300,7 @@ function renderStoreCashLedger(){
       const m=document.getElementById('main-content');
       if(m&&currentPage==='store-cash-ledger') m.innerHTML=renderStoreCashLedger();
     });
-    return '<div style="padding:40px;text-align:center"><span class="spinner"></span><div style="margin-top:12px;color:var(--muted);font-size:14px">Loading Cash Ledger…</div></div>';
+    return '<div style="padding:40px;text-align:center"><span class="spinner"></span><div style="margin-top:12px;color:var(--muted);font-size:15px">Loading Cash Ledger…</div></div>';
   }
   return _cashPageHTML();
 }
@@ -347,16 +347,16 @@ function _cashKpiStrip(thisMonthOut,openFloat,payables){
   const wallets=_cashAllAccounts().map(a=>{
     const bal=a.balance||0;
     return `<div onclick="window._cashSetTab('byaccount')" style="cursor:pointer;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;border-top:3px solid ${a.accent||'#111'}">
-      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:4px;font-weight:700">${_scEsc(a.label)}</div>
-      <div style="font-size:17px;font-weight:800;color:${bal<0?'#dc2626':'#111'};line-height:1">${_fmtPKR(bal)}</div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:4px;font-weight:700">${_scEsc(a.label)}</div>
+      <div style="font-size:18px;font-weight:800;color:${bal<0?'#dc2626':'#111'};line-height:1">${_fmtPKR(bal)}</div>
     </div>`;
   }).join('');
   const totalBal=allCashAccounts.reduce((s,a)=>s+(a.balance||0),0);
   const tile=(label,val,opts={})=>{
     const danger=opts.danger;const onclick=opts.onclick?`onclick="${opts.onclick}" style="cursor:pointer;`:'style="';
     return `<div ${onclick}background:#fff;border:1px solid ${danger?'#fca5a5':'var(--border)'};border-radius:10px;padding:10px 12px;border-top:3px solid ${danger?'#dc2626':'#111'}">
-      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:${danger?'#dc2626':'var(--muted)'};margin-bottom:4px;font-weight:700">${label}</div>
-      <div style="font-size:17px;font-weight:800;color:${danger?'#dc2626':(val<0?'#dc2626':'#111')};line-height:1">${_fmtPKR(val)}</div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:${danger?'#dc2626':'var(--muted)'};margin-bottom:4px;font-weight:700">${label}</div>
+      <div style="font-size:18px;font-weight:800;color:${danger?'#dc2626':(val<0?'#dc2626':'#111')};line-height:1">${_fmtPKR(val)}</div>
     </div>`;
   };
   return `<div style="padding:12px 0 4px">
@@ -374,7 +374,7 @@ function _cashKpiStrip(thisMonthOut,openFloat,payables){
 
 // ── Recent Feed ──
 function _cashRecentFeed(entries){
-  if(!entries.length) return `<div class="empty" style="padding:40px 0;text-align:center">No entries yet.<br><span style="font-size:13px;color:var(--muted)">Tap <strong>Record Expense</strong> below to start.</span></div>`;
+  if(!entries.length) return `<div class="empty" style="padding:40px 0;text-align:center">No entries yet.<br><span style="font-size:14px;color:var(--muted)">Tap <strong>Record Expense</strong> below to start.</span></div>`;
   const PG=25;
   const totalPages=Math.ceil(entries.length/PG);
   if(_cashRecentPage>=totalPages)_cashRecentPage=Math.max(0,totalPages-1);
@@ -399,7 +399,7 @@ function _cashRecentFeed(entries){
 
   let rows='';
   for(const d of groupOrder){
-    rows+=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:10px 0 4px;margin-top:4px">${_dLabel(d)}</div>`;
+    rows+=`<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:10px 0 4px;margin-top:4px">${_dLabel(d)}</div>`;
     for(const r of groups[d]){
       rows+=_cashFeedRow(r);
     }
@@ -407,9 +407,9 @@ function _cashRecentFeed(entries){
   let pager='';
   if(totalPages>1){
     pager=`<div style="display:flex;gap:8px;align-items:center;justify-content:center;padding:12px 0 4px;border-top:1px solid var(--border);margin-top:4px">
-      <button onclick="window._cashPageNav(${_cashRecentPage-1})" ${_cashRecentPage===0?'disabled':''} class="btn-outline" style="padding:6px 14px;font-size:12px">← Prev</button>
-      <span style="font-size:12px;color:var(--muted)">Page <strong>${_cashRecentPage+1}</strong>/${totalPages} · ${entries.length} entries</span>
-      <button onclick="window._cashPageNav(${_cashRecentPage+1})" ${_cashRecentPage>=totalPages-1?'disabled':''} class="btn-outline" style="padding:6px 14px;font-size:12px">Next →</button>
+      <button onclick="window._cashPageNav(${_cashRecentPage-1})" ${_cashRecentPage===0?'disabled':''} class="btn-outline" style="padding:6px 14px;font-size:13px">← Prev</button>
+      <span style="font-size:13px;color:var(--muted)">Page <strong>${_cashRecentPage+1}</strong>/${totalPages} · ${entries.length} entries</span>
+      <button onclick="window._cashPageNav(${_cashRecentPage+1})" ${_cashRecentPage>=totalPages-1?'disabled':''} class="btn-outline" style="padding:6px 14px;font-size:13px">Next →</button>
     </div>`;
   }
   return `<div>${rows}${pager}</div>`;
@@ -447,15 +447,15 @@ function _cashFeedRow(r){
   }else if(r.kind==='adjust'){
     title='Adjustment';sub=(acc?acc.label:r.account||'')+(r.adjustsReason?' · '+_scEsc(r.adjustsReason):'');
   }else{ title=r.kind; sub=''; }
-  const proof=(r.billPhoto||r.proofPhoto)?`<a href="${r.billPhoto||r.proofPhoto}" target="_blank" onclick="event.stopPropagation()" style="text-decoration:none;font-size:13px;margin-right:4px" title="View bill/proof">📎</a>`:'';
+  const proof=(r.billPhoto||r.proofPhoto)?`<a href="${r.billPhoto||r.proofPhoto}" target="_blank" onclick="event.stopPropagation()" style="text-decoration:none;font-size:14px;margin-right:4px" title="View bill/proof">📎</a>`:'';
   return `<div onclick="window._cashRowAction('${r._id}')" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer">
     <div style="width:8px;height:8px;border-radius:50%;background:${dot};flex-shrink:0"></div>
     <div style="flex:1;min-width:0">
-      <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_scEsc(title)}${isCredit?' <span style="font-size:9px;background:var(--accent-urgent-soft);color:var(--accent-urgent);padding:1px 6px;border-radius:8px;font-weight:700;vertical-align:middle">CREDIT</span>':''}</div>
-      <div style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_scEsc(sub)} · ${_scEsc(r.by||'')}</div>
+      <div style="font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_scEsc(title)}${isCredit?' <span style="font-size:11px;background:var(--accent-urgent-soft);color:var(--accent-urgent);padding:1px 6px;border-radius:8px;font-weight:700;vertical-align:middle">CREDIT</span>':''}</div>
+      <div style="font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_scEsc(sub)} · ${_scEsc(r.by||'')}</div>
     </div>
     ${proof}
-    <div style="font-size:14px;font-weight:800;color:${col};flex-shrink:0;padding-left:2px">${sign}${_fmtPKR(r.amount)}</div>
+    <div style="font-size:15px;font-weight:800;color:${col};flex-shrink:0;padding-left:2px">${sign}${_fmtPKR(r.amount)}</div>
   </div>`;
 }
 
@@ -472,7 +472,7 @@ function _cashFloatOutstanding(f){return Math.max(0,(f.issued||0)-_cashFloatSett
 function _cashIssuedFeed(){
   const open=allCashFloats.filter(f=>f.status==='open');
   const closed=allCashFloats.filter(f=>f.status==='settled').slice(0,8);
-  if(!open.length&&!closed.length) return `<div class="empty" style="padding:32px 0;text-align:center">No issued floats.<br><span style="font-size:12px;color:var(--muted)">Use <strong>Issue Cash</strong> to hand out a runner float.</span></div>`;
+  if(!open.length&&!closed.length) return `<div class="empty" style="padding:32px 0;text-align:center">No issued floats.<br><span style="font-size:13px;color:var(--muted)">Use <strong>Issue Cash</strong> to hand out a runner float.</span></div>`;
   const ageColor=ts=>{const d=(Date.now()-ts)/86400000;return d>7?'#dc2626':d>3?'#b45309':'#15803d';};
   const ageLabel=ts=>{ const d=Math.round((Date.now()-ts)/86400000);return d===0?'today':d+'d ago'; };
   const openCards=open.map(f=>{
@@ -481,17 +481,17 @@ function _cashIssuedFeed(){
     const bills=(f.settlements||[]).filter(s=>s.billPhoto);
     return `<div style="background:var(--surface);border:1px solid var(--accent-urgent);border-radius:10px;padding:12px 14px;margin-bottom:8px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <div style="font-weight:700;font-size:14px">${_scEsc(f.payee)||'Runner'}
-        <span style="font-size:10px;background:${ageColor(f.issuedTs)};color:#fff;padding:2px 7px;border-radius:10px;margin-left:6px">${ageLabel(f.issuedTs)}</span>
+      <div style="font-weight:700;font-size:15px">${_scEsc(f.payee)||'Runner'}
+        <span style="font-size:11px;background:${ageColor(f.issuedTs)};color:#fff;padding:2px 7px;border-radius:10px;margin-left:6px">${ageLabel(f.issuedTs)}</span>
       </div>
-      <div style="text-align:right"><div style="font-size:16px;font-weight:800;color:var(--accent-urgent)">${_fmtPKR(outstanding)}</div><div style="font-size:10px;color:var(--muted)">left of ${_fmtPKR(f.issued)}</div></div>
+      <div style="text-align:right"><div style="font-size:17px;font-weight:800;color:var(--accent-urgent)">${_fmtPKR(outstanding)}</div><div style="font-size:11px;color:var(--muted)">left of ${_fmtPKR(f.issued)}</div></div>
     </div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">From ${_scEsc(_cashGetAccount(f.account)?.label||f.account)} · ${_scEsc(f.issuedBy||'')} · ${new Date(f.issuedTs).toLocaleDateString()}${f.note?' · '+_scEsc(f.note):''}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">From ${_scEsc(_cashGetAccount(f.account)?.label||f.account)} · ${_scEsc(f.issuedBy||'')} · ${new Date(f.issuedTs).toLocaleDateString()}${f.note?' · '+_scEsc(f.note):''}</div>
     ${settled>0?`<div style="height:6px;background:var(--soft);border-radius:4px;overflow:hidden;margin-bottom:6px"><div style="height:100%;width:${pct}%;background:var(--accent-success)"></div></div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Settled ${_fmtPKR(settled)} of ${_fmtPKR(f.issued)}${bills.length?` · ${bills.length} bill${bills.length>1?'s':''}: `+bills.map((b,i)=>`<a href="${b.billPhoto}" target="_blank" style="text-decoration:none">📎${i+1}</a>`).join(' '):''}</div>`:''}
-    ${_canEntryCash()?`<button class="btn-primary" style="font-size:12px;padding:6px 16px;margin-top:0;background:var(--dark)" onclick="window.cashSettleFloat('${_scEsc(f._id)}')">${settled>0?'Add bill / settle more':'Settle with bill ✓'}</button>`:''}
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Settled ${_fmtPKR(settled)} of ${_fmtPKR(f.issued)}${bills.length?` · ${bills.length} bill${bills.length>1?'s':''}: `+bills.map((b,i)=>`<a href="${b.billPhoto}" target="_blank" style="text-decoration:none">📎${i+1}</a>`).join(' '):''}</div>`:''}
+    ${_canEntryCash()?`<button class="btn-primary" style="font-size:13px;padding:6px 16px;margin-top:0;background:var(--dark)" onclick="window.cashSettleFloat('${_scEsc(f._id)}')">${settled>0?'Add bill / settle more':'Settle with bill ✓'}</button>`:''}
   </div>`;}).join('');
-  const closedSection=closed.length?`<div style="font-size:10px;color:var(--muted);margin:12px 0 4px;font-weight:700;text-transform:uppercase;letter-spacing:.06em">Recently Settled</div>`+closed.map(f=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
+  const closedSection=closed.length?`<div style="font-size:11px;color:var(--muted);margin:12px 0 4px;font-weight:700;text-transform:uppercase;letter-spacing:.06em">Recently Settled</div>`+closed.map(f=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px">
     <span style="color:var(--muted)">${_scEsc(f.payee)||'Runner'} · ${new Date(f.issuedTs).toLocaleDateString()}${f.billPhoto?` · <a href="${f.billPhoto}" target="_blank" style="text-decoration:none">📎</a>`:''}</span>
     <span style="font-weight:700;color:var(--accent-success)">Settled ${_fmtPKR(f.issued)}${f.variance?` (${f.variance>0?'−':'+'}${_fmtPKR(Math.abs(f.variance))})`:''}</span>
   </div>`).join(''):'';
@@ -510,11 +510,11 @@ function _cashByAccountFeed(entries){
     h+=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-top:3px solid ${acc.accent||'#111'}">
         <div>
-          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700">${_scEsc(acc.label)}${acc.online?' · online':''}</div>
-          <div style="font-size:24px;font-weight:800;color:${bal<0?'#dc2626':'#111'};line-height:1.1">${_fmtPKR(bal)}</div>
-          ${drift!=null?`<div style="font-size:11px;margin-top:2px;color:${drift>10?'#dc2626':'#15803d'}">Last count: ${_fmtPKR(doc.countedBalance)} ${drift>10?'· off by '+_fmtPKR(drift):'✓'}</div>`:''}
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700">${_scEsc(acc.label)}${acc.online?' · online':''}</div>
+          <div style="font-size:25px;font-weight:800;color:${bal<0?'#dc2626':'#111'};line-height:1.1">${_fmtPKR(bal)}</div>
+          ${drift!=null?`<div style="font-size:12px;margin-top:2px;color:${drift>10?'#dc2626':'#15803d'}">Last count: ${_fmtPKR(doc.countedBalance)} ${drift>10?'· off by '+_fmtPKR(drift):'✓'}</div>`:''}
         </div>
-        <button class="btn-outline" style="font-size:11px;padding:4px 12px" onclick="window.cashCountWallet('${key}')">Count</button>
+        <button class="btn-outline" style="font-size:12px;padding:4px 12px" onclick="window.cashCountWallet('${key}')">Count</button>
       </div>
       <div style="padding:2px 14px 10px">
         ${recent.map(r=>{
@@ -523,26 +523,26 @@ function _cashByAccountFeed(entries){
           const col=isIn?'#15803d':r.kind==='transfer'?'#475569':'#dc2626';
           const sign=isIn?'+':r.kind==='transfer'?'↕':'-';
           const lbl=cat?cat.label:(r.kind==='vendor_payment'?'Paid '+(_cashGetVendor(r.vendorId)?.name||'vendor'):r.kind);
-          return`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+          return`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
             <span style="color:var(--muted)">${_scEsc(lbl)} · ${_scEsc(r.date||'')}</span>
             <span style="font-weight:700;color:${col}">${sign}${_fmtPKR(r.amount)}</span>
           </div>`;
         }).join('')}
-        ${!recent.length?`<div style="font-size:12px;color:var(--muted);padding:8px 0">No entries yet.</div>`:''}
+        ${!recent.length?`<div style="font-size:13px;color:var(--muted);padding:8px 0">No entries yet.</div>`:''}
       </div>
     </div>`;
   }
   h+=`<div style="display:flex;gap:8px;margin-top:4px">
-    <button class="btn-outline" style="flex:1;font-size:12px;padding:8px" onclick="window.cashRecomputeBalances()">↺ Recompute balances</button>
+    <button class="btn-outline" style="flex:1;font-size:13px;padding:8px" onclick="window.cashRecomputeBalances()">↺ Recompute balances</button>
     ${_canAdminCash()
-      ?`<button class="btn-outline" style="flex:1;font-size:12px;padding:8px" onclick="window.cashSheetNewAccount()">+ New account</button>`
-      :`<button class="btn-outline" style="flex:1;font-size:12px;padding:8px" onclick="window.cashRequestAccount()">Request new account</button>`}
+      ?`<button class="btn-outline" style="flex:1;font-size:13px;padding:8px" onclick="window.cashSheetNewAccount()">+ New account</button>`
+      :`<button class="btn-outline" style="flex:1;font-size:13px;padding:8px" onclick="window.cashRequestAccount()">Request new account</button>`}
   </div>`;
   if(_canAdminCash()){
     h+=`<div style="margin-top:22px;border:1px solid var(--accent-urgent);border-radius:10px;padding:14px;background:var(--accent-urgent-soft)">
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent-urgent);margin-bottom:4px">Danger Zone</div>
-      <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">Erase every ledger entry, runner float, category and vendor, and reset all account balances to zero. Use this to clear old test data before going live. This cannot be undone.</div>
-      <button class="btn-outline" style="width:100%;font-size:12px;padding:9px;color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.cashResetAllData()">🗑 Reset all cash data</button>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent-urgent);margin-bottom:4px">Danger Zone</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:10px">Erase every ledger entry, runner float, category and vendor, and reset all account balances to zero. Use this to clear old test data before going live. This cannot be undone.</div>
+      <button class="btn-outline" style="width:100%;font-size:13px;padding:9px;color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.cashResetAllData()">🗑 Reset all cash data</button>
     </div>`;
   }
   return h;
@@ -552,13 +552,13 @@ function _cashByAccountFeed(entries){
 function _cashCategoriesPanel(){
   const mo=_cashCurrentMonth();
   let h=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-    <div style="font-size:13px;color:var(--muted)">${allCashCategories.length} categor${allCashCategories.length===1?'y':'ies'}</div>
-    ${_canEntryCash()?`<button class="btn-primary" style="background:var(--dark);font-size:12px;padding:7px 14px" onclick="window.cashSheetCategory()">+ New Category</button>`:''}
+    <div style="font-size:14px;color:var(--muted)">${allCashCategories.length} categor${allCashCategories.length===1?'y':'ies'}</div>
+    ${_canEntryCash()?`<button class="btn-primary" style="background:var(--dark);font-size:13px;padding:7px 14px" onclick="window.cashSheetCategory()">+ New Category</button>`:''}
   </div>`;
   if(!allCashCategories.length){
     h+=`<div class="empty" style="padding:34px 16px;text-align:center;border:1.5px dashed var(--border);border-radius:12px">
-      <div style="font-size:14px;font-weight:600;margin-bottom:4px">No categories yet</div>
-      <div style="font-size:13px;color:var(--muted);line-height:1.5">Create your first expense category — each one is linked to a vendor so spending is traceable.</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:4px">No categories yet</div>
+      <div style="font-size:14px;color:var(--muted);line-height:1.5">Create your first expense category — each one is linked to a vendor so spending is traceable.</div>
     </div>`;
     return h;
   }
@@ -574,17 +574,17 @@ function _cashCategoriesPanel(){
       <div style="display:flex;align-items:center;gap:10px">
         <div style="width:10px;height:10px;border-radius:50%;background:${_catAccent(id)};flex-shrink:0"></div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:14px;font-weight:700">${_scEsc(c.label)}</div>
-          <div style="font-size:11px;color:var(--muted)">${vendor?'Vendor: '+_scEsc(vendor.name):'No vendor linked'}</div>
+          <div style="font-size:15px;font-weight:700">${_scEsc(c.label)}</div>
+          <div style="font-size:12px;color:var(--muted)">${vendor?'Vendor: '+_scEsc(vendor.name):'No vendor linked'}</div>
         </div>
-        ${_canEntryCash()?`<button class="btn-outline" style="font-size:11px;padding:4px 10px" onclick="window.cashSheetCategory('${id}')">Edit</button>`:''}
+        ${_canEntryCash()?`<button class="btn-outline" style="font-size:12px;padding:4px 10px" onclick="window.cashSheetCategory('${id}')">Edit</button>`:''}
       </div>
       <div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:8px">
-        <span style="font-size:11px;color:var(--muted)">This month</span>
-        <span style="font-size:13px;font-weight:800">${_fmtPKR(spend)}${budget>0?` <span style="font-weight:500;color:var(--muted)">/ ${_fmtPKR(budget)}</span>`:''}</span>
+        <span style="font-size:12px;color:var(--muted)">This month</span>
+        <span style="font-size:14px;font-weight:800">${_fmtPKR(spend)}${budget>0?` <span style="font-weight:500;color:var(--muted)">/ ${_fmtPKR(budget)}</span>`:''}</span>
       </div>
       ${budget>0?`<div style="height:6px;background:var(--soft);border-radius:3px;overflow:hidden;margin-top:5px"><div style="height:100%;width:${Math.min(100,pct)}%;background:${barCol};border-radius:3px"></div></div>
-        ${pct>100?`<div style="font-size:10px;color:var(--accent-urgent);font-weight:600;margin-top:3px">⚠ Over by ${_fmtPKR(spend-budget)}</div>`:''}`:''}
+        ${pct>100?`<div style="font-size:11px;color:var(--accent-urgent);font-weight:600;margin-top:3px">⚠ Over by ${_fmtPKR(spend-budget)}</div>`:''}`:''}
     </div>`;
   }
   return h;
@@ -594,13 +594,13 @@ function _cashCategoriesPanel(){
 function _cashVendorsPanel(){
   const real=allCashVendors.filter(v=>(v._id||v.id)!=='walkin');
   let h=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-    <div style="font-size:13px;color:var(--muted)">${real.length} vendor${real.length===1?'':'s'} · Payables ${_fmtPKR(_cashTotalPayables())}</div>
-    ${_canEntryCash()?`<button class="btn-primary" style="background:var(--dark);font-size:12px;padding:7px 14px" onclick="window.cashSheetVendor()">+ New Vendor</button>`:''}
+    <div style="font-size:14px;color:var(--muted)">${real.length} vendor${real.length===1?'':'s'} · Payables ${_fmtPKR(_cashTotalPayables())}</div>
+    ${_canEntryCash()?`<button class="btn-primary" style="background:var(--dark);font-size:13px;padding:7px 14px" onclick="window.cashSheetVendor()">+ New Vendor</button>`:''}
   </div>`;
   if(!real.length){
     h+=`<div class="empty" style="padding:34px 16px;text-align:center;border:1.5px dashed var(--border);border-radius:12px">
-      <div style="font-size:14px;font-weight:600;margin-bottom:4px">No vendors yet</div>
-      <div style="font-size:13px;color:var(--muted);line-height:1.5">Add vendors with contact, address and product types. Walk-in / direct buys are always available without a profile.</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:4px">No vendors yet</div>
+      <div style="font-size:14px;color:var(--muted);line-height:1.5">Add vendors with contact, address and product types. Walk-in / direct buys are always available without a profile.</div>
     </div>`;
     return h;
   }
@@ -612,21 +612,21 @@ function _cashVendorsPanel(){
     h+=`<div style="background:var(--surface);border:1px solid ${out>0?'#fca5a5':'var(--border)'};border-radius:10px;padding:12px 14px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
         <div style="flex:1;min-width:0">
-          <div style="font-size:14px;font-weight:700">${_scEsc(v.name)}</div>
-          ${v.phone?`<div style="font-size:12px;margin-top:2px"><a href="tel:${_scEsc(v.phone)}" style="color:#0369a1;text-decoration:none">📞 ${_scEsc(v.phone)}</a></div>`:''}
-          ${v.address?`<div style="font-size:11px;color:var(--muted);margin-top:2px">📍 ${_scEsc(v.address)}</div>`:''}
-          ${v.creditTerms?`<div style="font-size:11px;color:var(--muted);margin-top:2px">Terms: ${_scEsc(v.creditTerms)}</div>`:''}
-          ${types.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${types.map(t=>`<span style="font-size:10px;background:var(--soft);color:var(--text);padding:2px 8px;border-radius:8px;font-weight:600">${_scEsc(t)}</span>`).join('')}</div>`:''}
+          <div style="font-size:15px;font-weight:700">${_scEsc(v.name)}</div>
+          ${v.phone?`<div style="font-size:13px;margin-top:2px"><a href="tel:${_scEsc(v.phone)}" style="color:#0369a1;text-decoration:none">📞 ${_scEsc(v.phone)}</a></div>`:''}
+          ${v.address?`<div style="font-size:12px;color:var(--muted);margin-top:2px">📍 ${_scEsc(v.address)}</div>`:''}
+          ${v.creditTerms?`<div style="font-size:12px;color:var(--muted);margin-top:2px">Terms: ${_scEsc(v.creditTerms)}</div>`:''}
+          ${types.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${types.map(t=>`<span style="font-size:11px;background:var(--soft);color:var(--text);padding:2px 8px;border-radius:8px;font-weight:600">${_scEsc(t)}</span>`).join('')}</div>`:''}
         </div>
         <div style="text-align:right;flex-shrink:0">
-          <div style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700">Outstanding</div>
-          <div style="font-size:17px;font-weight:800;color:${out>0?'#dc2626':'#15803d'}">${_fmtPKR(out)}</div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700">Outstanding</div>
+          <div style="font-size:18px;font-weight:800;color:${out>0?'#dc2626':'#15803d'}">${_fmtPKR(out)}</div>
         </div>
       </div>
       <div style="display:flex;gap:6px;margin-top:10px">
-        ${out>0&&_canEntryCash()?`<button class="btn-primary" style="flex:1;background:var(--dark);font-size:12px;padding:7px" onclick="window.cashSheetPayVendor('${id}')">Pay Vendor</button>`:''}
-        ${_canEntryCash()?`<button class="btn-outline" style="${out>0?'':'flex:1;'}font-size:12px;padding:7px ${out>0?'14px':''}" onclick="window.cashSheetVendor('${id}')">Edit</button>`:''}
-        <button class="btn-outline" style="font-size:12px;padding:7px 14px" onclick="window.cashVendorLedger('${id}')">History</button>
+        ${out>0&&_canEntryCash()?`<button class="btn-primary" style="flex:1;background:var(--dark);font-size:13px;padding:7px" onclick="window.cashSheetPayVendor('${id}')">Pay Vendor</button>`:''}
+        ${_canEntryCash()?`<button class="btn-outline" style="${out>0?'':'flex:1;'}font-size:13px;padding:7px ${out>0?'14px':''}" onclick="window.cashSheetVendor('${id}')">Edit</button>`:''}
+        <button class="btn-outline" style="font-size:13px;padding:7px 14px" onclick="window.cashVendorLedger('${id}')">History</button>
       </div>
     </div>`;
   }
@@ -658,7 +658,7 @@ function _cashInsightsPanel(entries,period){
     if(!prev) return '';
     const d=Math.round((cur-prev)/prev*100);
     const col=(d>0)===lowerGood?'#dc2626':'#15803d';
-    return `<div style="font-size:10px;color:${col};font-weight:700;margin-top:3px">${d>0?'▲':'▼'}${Math.abs(d)}% vs ${prevMo}</div>`;
+    return `<div style="font-size:11px;color:${col};font-weight:700;margin-top:3px">${d>0?'▲':'▼'}${Math.abs(d)}% vs ${prevMo}</div>`;
   }
 
   const byCat={};
@@ -696,24 +696,24 @@ function _cashInsightsPanel(entries,period){
 
   let h='';
   if(months.length>1){
-    h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${months.map(m=>`<button onclick="window._cashSetPeriod('${m}')" style="padding:5px 12px;border-radius:16px;border:1.5px solid ${mo===m?'#111':'var(--border)'};background:${mo===m?'var(--dark)':'var(--surface)'};font-size:11px;font-weight:600;cursor:pointer;color:${mo===m?'var(--on-dark)':'var(--text)'}">${m}</button>`).join('')}</div>`;
+    h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${months.map(m=>`<button onclick="window._cashSetPeriod('${m}')" style="padding:5px 12px;border-radius:16px;border:1.5px solid ${mo===m?'#111':'var(--border)'};background:${mo===m?'var(--dark)':'var(--surface)'};font-size:12px;font-weight:600;cursor:pointer;color:${mo===m?'var(--on-dark)':'var(--text)'}">${m}</button>`).join('')}</div>`;
   }
 
   h+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;border-top:3px solid #15803d">
-      <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">In</div>
-      <div style="font-size:18px;font-weight:800;color:var(--accent-success)">${_fmtPKR(totalIn)}</div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">In</div>
+      <div style="font-size:19px;font-weight:800;color:var(--accent-success)">${_fmtPKR(totalIn)}</div>
       ${_delta(totalIn,prevIn,false)}
     </div>
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;border-top:3px solid #dc2626">
-      <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Out</div>
-      <div style="font-size:18px;font-weight:800;color:var(--accent-urgent)">${_fmtPKR(totalOut)}</div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Out</div>
+      <div style="font-size:19px;font-weight:800;color:var(--accent-urgent)">${_fmtPKR(totalOut)}</div>
       ${_delta(totalOut,prevOut,true)}
     </div>
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;border-top:3px solid ${net>=0?'#15803d':'#dc2626'}">
-      <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Net</div>
-      <div style="font-size:18px;font-weight:800;color:${net>=0?'#15803d':'#dc2626'}">${net>=0?'+':''}${_fmtPKR(net)}</div>
-      <div style="font-size:10px;color:var(--muted);margin-top:3px">${expenses.length} entries</div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Net</div>
+      <div style="font-size:19px;font-weight:800;color:${net>=0?'#15803d':'#dc2626'}">${net>=0?'+':''}${_fmtPKR(net)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px">${expenses.length} entries</div>
     </div>
   </div>`;
 
@@ -722,8 +722,8 @@ function _cashInsightsPanel(entries,period){
   // Category breakdown
   h+=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px 8px;border-bottom:1px solid var(--border)">
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">By Category</div>
-      ${hasBudget?`<div style="font-size:10px;color:var(--muted)">Budget markers shown</div>`:''}
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">By Category</div>
+      ${hasBudget?`<div style="font-size:11px;color:var(--muted)">Budget markers shown</div>`:''}
     </div>`;
   for(const [k,amt] of catSorted){
     const cat=k==='__none__'?{label:'Uncategorized'}:(_cashGetCategory(k)||{label:k});
@@ -735,36 +735,36 @@ function _cashInsightsPanel(entries,period){
     h+=`<div style="padding:10px 14px;border-bottom:1px solid var(--border)">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
         <span style="width:9px;height:9px;border-radius:50%;background:${accent};flex-shrink:0"></span>
-        <span style="flex:1;font-size:13px;font-weight:600">${_scEsc(cat.label)}</span>
-        <span style="font-size:13px;font-weight:800">${_fmtPKR(amt)}</span>
-        ${usedPct!=null?`<span style="font-size:10px;color:${barColor};font-weight:700;min-width:34px;text-align:right">${usedPct}%</span>`:`<span style="font-size:10px;color:var(--muted);min-width:34px;text-align:right">${totalOut?Math.round(amt/totalOut*100):0}%</span>`}
+        <span style="flex:1;font-size:14px;font-weight:600">${_scEsc(cat.label)}</span>
+        <span style="font-size:14px;font-weight:800">${_fmtPKR(amt)}</span>
+        ${usedPct!=null?`<span style="font-size:11px;color:${barColor};font-weight:700;min-width:34px;text-align:right">${usedPct}%</span>`:`<span style="font-size:11px;color:var(--muted);min-width:34px;text-align:right">${totalOut?Math.round(amt/totalOut*100):0}%</span>`}
       </div>
       <div style="height:6px;background:var(--soft);border-radius:3px;overflow:hidden;position:relative">
         <div style="height:100%;width:${shareW}%;background:${barColor};border-radius:3px"></div>
         ${budget>0?`<div style="position:absolute;top:-1px;bottom:-1px;left:${Math.min(100,Math.round(budget/totalOut*100))}%;width:2px;background:var(--dark);opacity:.45;border-radius:1px" title="Budget"></div>`:''}
       </div>
-      ${usedPct!=null&&usedPct>100?`<div style="font-size:10px;color:var(--accent-urgent);font-weight:600;margin-top:3px">⚠ Over budget by ${_fmtPKR(amt-budget)}</div>`:''}
+      ${usedPct!=null&&usedPct>100?`<div style="font-size:11px;color:var(--accent-urgent);font-weight:600;margin-top:3px">⚠ Over budget by ${_fmtPKR(amt-budget)}</div>`:''}
     </div>`;
   }
   h+=`<div style="display:flex;justify-content:space-between;padding:10px 14px;background:var(--surface-2)">
-    <span style="font-size:12px;color:var(--muted)">${catSorted.length} categories</span>
-    <span style="font-size:13px;font-weight:800">${_fmtPKR(totalOut)} total out</span>
+    <span style="font-size:13px;color:var(--muted)">${catSorted.length} categories</span>
+    <span style="font-size:14px;font-weight:800">${_fmtPKR(totalOut)} total out</span>
   </div></div>`;
 
   // By vendor
   if(vendorSorted.length){
     h+=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden">
-      <div style="padding:12px 14px 8px;border-bottom:1px solid var(--border)"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">By Vendor</div></div>`;
+      <div style="padding:12px 14px 8px;border-bottom:1px solid var(--border)"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">By Vendor</div></div>`;
     for(const [k,amt] of vendorSorted){
       const v=_cashGetVendor(k);const pct=totalOut>0?Math.round(amt/totalOut*100):0;
       h+=`<div style="padding:10px 14px;border-bottom:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
-          <span style="font-size:13px;font-weight:600">${_scEsc(v?v.name:k)}</span>
-          <span style="font-size:13px;font-weight:800">${_fmtPKR(amt)}</span>
+          <span style="font-size:14px;font-weight:600">${_scEsc(v?v.name:k)}</span>
+          <span style="font-size:14px;font-weight:800">${_fmtPKR(amt)}</span>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <div style="flex:1;height:5px;background:var(--soft);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--dark);border-radius:3px"></div></div>
-          <span style="font-size:10px;color:var(--muted)">${pct}%</span>
+          <span style="font-size:11px;color:var(--muted)">${pct}%</span>
         </div>
       </div>`;
     }
@@ -774,15 +774,15 @@ function _cashInsightsPanel(entries,period){
   // Weekly
   if(weekEntries.length>1){
     h+=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden">
-      <div style="padding:12px 14px 8px;border-bottom:1px solid var(--border)"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Weekly (Mon–Sun)</div></div>
+      <div style="padding:12px 14px 8px;border-bottom:1px solid var(--border)"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Weekly (Mon–Sun)</div></div>
       <div style="padding:10px 14px">`;
     for(const [wk,amt] of weekEntries){
       const d=new Date(wk+'T00:00:00');const lbl=isNaN(d)?wk:d.toLocaleDateString('en-PK',{day:'numeric',month:'short'});
       const barW=Math.round(amt/weekMax*100);
       h+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <div style="font-size:10px;color:var(--muted);width:52px;flex-shrink:0">wk ${lbl}</div>
+        <div style="font-size:11px;color:var(--muted);width:52px;flex-shrink:0">wk ${lbl}</div>
         <div style="flex:1;height:12px;background:var(--soft);border-radius:3px;overflow:hidden"><div style="height:100%;width:${barW}%;background:var(--dark);border-radius:3px"></div></div>
-        <div style="font-size:11px;font-weight:700;width:72px;text-align:right;flex-shrink:0">${_fmtPKR(amt)}</div>
+        <div style="font-size:12px;font-weight:700;width:72px;text-align:right;flex-shrink:0">${_fmtPKR(amt)}</div>
       </div>`;
     }
     h+=`</div></div>`;
@@ -791,14 +791,14 @@ function _cashInsightsPanel(entries,period){
   // Daily spend
   if(dayEntries.length){
     h+=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden">
-      <div style="padding:12px 14px 8px;border-bottom:1px solid var(--border)"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Daily Cash Flow — ${mo}</div></div>
+      <div style="padding:12px 14px 8px;border-bottom:1px solid var(--border)"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Daily Cash Flow — ${mo}</div></div>
       <div style="padding:10px 14px">`;
     for(const [d,amt] of dayEntries){
       const day=parseInt(d.slice(8));const barW=Math.round(amt/dayMax*100);
       h+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
-        <div style="font-size:10px;color:var(--muted);width:18px;text-align:right;flex-shrink:0">${day}</div>
+        <div style="font-size:11px;color:var(--muted);width:18px;text-align:right;flex-shrink:0">${day}</div>
         <div style="flex:1;height:12px;background:var(--soft);border-radius:3px;overflow:hidden"><div style="height:100%;width:${barW}%;background:var(--dark);border-radius:3px"></div></div>
-        <div style="font-size:11px;font-weight:700;width:72px;text-align:right;flex-shrink:0">${_fmtPKR(amt)}</div>
+        <div style="font-size:12px;font-weight:700;width:72px;text-align:right;flex-shrink:0">${_fmtPKR(amt)}</div>
       </div>`;
     }
     h+=`</div></div>`;
@@ -807,17 +807,17 @@ function _cashInsightsPanel(entries,period){
   // By person
   if(userSorted.length){
     h+=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden">
-      <div style="padding:12px 14px 8px;border-bottom:1px solid var(--border)"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">By Person</div></div>`;
+      <div style="padding:12px 14px 8px;border-bottom:1px solid var(--border)"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">By Person</div></div>`;
     for(const [u,amt] of userSorted){
       const pct=totalOut>0?Math.round(amt/totalOut*100):0;
       h+=`<div style="padding:10px 14px;border-bottom:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
-          <span style="font-size:13px;font-weight:600">${_scEsc(u)}</span>
-          <span style="font-size:13px;font-weight:800">${_fmtPKR(amt)}</span>
+          <span style="font-size:14px;font-weight:600">${_scEsc(u)}</span>
+          <span style="font-size:14px;font-weight:800">${_fmtPKR(amt)}</span>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <div style="flex:1;height:5px;background:var(--soft);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--dark);border-radius:3px"></div></div>
-          <span style="font-size:10px;color:var(--muted);white-space:nowrap">${userCt[u]||0} entries · ${pct}%</span>
+          <span style="font-size:11px;color:var(--muted);white-space:nowrap">${userCt[u]||0} entries · ${pct}%</span>
         </div>
       </div>`;
     }
@@ -830,9 +830,9 @@ function _cashInsightsPanel(entries,period){
 // ── Action Bar ──
 function _cashActionBar(){
   return `<div id="cash-action-bar" class="cash-action-bar">
-    <button onclick="window.cashSheetExpense()" style="flex:3;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer;letter-spacing:-.01em">Record Expense</button>
-    <button onclick="window.cashSheetTopup()" style="flex:1;height:48px;background:var(--surface);color:var(--accent-success);border:1.5px solid #15803d;border-radius:12px;font-size:13px;font-weight:700;cursor:pointer">+ In</button>
-    <button onclick="window.cashSheetIssue()" style="flex:1;height:48px;background:var(--surface);color:var(--text);border:1.5px solid var(--border);border-radius:12px;font-size:11px;font-weight:700;cursor:pointer">→ Issue</button>
+    <button onclick="window.cashSheetExpense()" style="flex:3;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer;letter-spacing:-.01em">Record Expense</button>
+    <button onclick="window.cashSheetTopup()" style="flex:1;height:48px;background:var(--surface);color:var(--accent-success);border:1.5px solid #15803d;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer">+ In</button>
+    <button onclick="window.cashSheetIssue()" style="flex:1;height:48px;background:var(--surface);color:var(--text);border:1.5px solid var(--border);border-radius:12px;font-size:12px;font-weight:700;cursor:pointer">→ Issue</button>
   </div>`;
 }
 
@@ -851,12 +851,12 @@ window._cashRowAction=function(id){
 // Read-only breakdown of an itemized cash issue.
 window._cashViewIssue=function(id){
   const r=allCashLedger.find(x=>x._id===id);if(!r)return;
-  const rows=(r.items||[]).map(i=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="flex:1;min-width:0"><b>${_scEsc(i.name)}</b> <span style="color:var(--muted)">${i.qty} ${_scEsc(i.unit||'item')} × ${_fmtPKR(i.price)}</span></span><span style="font-weight:800">${_fmtPKR(i.total)}</span></div>`).join('');
+  const rows=(r.items||[]).map(i=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:14px"><span style="flex:1;min-width:0"><b>${_scEsc(i.name)}</b> <span style="color:var(--muted)">${i.qty} ${_scEsc(i.unit||'item')} × ${_fmtPKR(i.price)}</span></span><span style="font-weight:800">${_fmtPKR(i.total)}</span></div>`).join('');
   const acc=_cashGetAccount(r.account);
   const src=r.reimbursement?`Paid by ${_scEsc(r.paidBy||'—')} · owed`:(acc?_scEsc(acc.label):_scEsc(r.account||'—'));
   _cashOpenSheet('Issue detail',`
-    <div style="font-size:14px;margin-bottom:3px"><b>${_scEsc(r.payee||'')}</b></div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${src} · ${new Date(r.ts).toLocaleDateString()} · by ${_scEsc(r.by||'')}</div>
+    <div style="font-size:15px;margin-bottom:3px"><b>${_scEsc(r.payee||'')}</b></div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${src} · ${new Date(r.ts).toLocaleDateString()} · by ${_scEsc(r.by||'')}</div>
     ${rows||'<div class="empty">No items recorded.</div>'}
     <div style="display:flex;justify-content:space-between;background:var(--dark);color:var(--on-dark);border-radius:10px;padding:10px 13px;margin-top:12px"><span style="font-weight:700">Total</span><span style="font-weight:800">${_fmtPKR(r.amount)}</span></div>
     ${r.billPhoto?`<a href="${r.billPhoto}" target="_blank" style="display:block;text-align:center;margin-top:12px;color:var(--accent-success);font-weight:700;text-decoration:none">📎 View bill photo</a>`:''}
@@ -867,7 +867,7 @@ window._cashViewIssue=function(id){
 window.cashSheetExpense=function(cloneId){
   if(!allCashCategories.length){
     _cashOpenSheet('No categories yet',`
-      <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:16px">You need at least one expense category before recording. Each category is linked to a vendor for clean accounting.</div>
+      <div style="font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:16px">You need at least one expense category before recording. Each category is linked to a vendor for clean accounting.</div>
       <button class="btn-primary" style="width:100%;background:var(--dark);height:46px" onclick="window.cashSheetCategory()">+ Create first category</button>`);
     return;
   }
@@ -882,45 +882,45 @@ window.cashSheetExpense=function(cloneId){
 
   const catChips=[...allCashCategories].sort((a,b)=>(a.label||'').localeCompare(b.label||'')).map(c=>{
     const k=c._id||c.key;const on=defCat===k;const ac=_catAccent(k);
-    return`<button id="cc-${k}" onclick="window._cashPickCat('${k}')" style="padding:7px 12px;border-radius:20px;border:2px solid ${on?'#111':'#e5e7eb'};background:${on?'var(--dark)':'var(--surface)'};font-size:12px;cursor:pointer;font-weight:600;color:${on?'var(--on-dark)':'var(--text)'};display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:${ac}"></span>${_scEsc(c.label)}</button>`;
+    return`<button id="cc-${k}" onclick="window._cashPickCat('${k}')" style="padding:7px 12px;border-radius:20px;border:2px solid ${on?'#111':'#e5e7eb'};background:${on?'var(--dark)':'var(--surface)'};font-size:13px;cursor:pointer;font-weight:600;color:${on?'var(--on-dark)':'var(--text)'};display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:${ac}"></span>${_scEsc(c.label)}</button>`;
   }).join('');
-  const accChips=_cashAllAccounts().map(a=>{const k=a._id||a.key;const on=defAcc===k;return`<button id="ca-${k}" onclick="window._cashPickAcc('${k}')" style="padding:7px 14px;border-radius:20px;border:2px solid ${on?'#111':'#e5e7eb'};background:${on?'var(--dark)':'var(--surface)'};font-size:12px;cursor:pointer;font-weight:600;color:${on?'var(--on-dark)':'var(--text)'}">${_scEsc(a.label)}</button>`;}).join('');
-  const qAmts=[100,500,1000,2000,5000].map(v=>`<button onclick="window._cashQAmt(${v})" style="flex:1;padding:8px 0;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:12px;font-weight:700;cursor:pointer">+${v>=1000?v/1000+'k':v}</button>`).join('');
+  const accChips=_cashAllAccounts().map(a=>{const k=a._id||a.key;const on=defAcc===k;return`<button id="ca-${k}" onclick="window._cashPickAcc('${k}')" style="padding:7px 14px;border-radius:20px;border:2px solid ${on?'#111':'#e5e7eb'};background:${on?'var(--dark)':'var(--surface)'};font-size:13px;cursor:pointer;font-weight:600;color:${on?'var(--on-dark)':'var(--text)'}">${_scEsc(a.label)}</button>`;}).join('');
+  const qAmts=[100,500,1000,2000,5000].map(v=>`<button onclick="window._cashQAmt(${v})" style="flex:1;padding:8px 0;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:13px;font-weight:700;cursor:pointer">+${v>=1000?v/1000+'k':v}</button>`).join('');
 
   _cashOpenSheet('Record Expense',`
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Category</div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Category</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">${catChips}</div>
 
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Vendor</div>
-    <select id="exp-vendor" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:14px;box-sizing:border-box">${_cashVendorOptions(defVendor)}</select>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Vendor</div>
+    <select id="exp-vendor" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-bottom:14px;box-sizing:border-box">${_cashVendorOptions(defVendor)}</select>
 
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Amount (₨)</div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Amount (₨)</div>
     <input id="cash-amt" type="number" inputmode="numeric" min="1" placeholder="0" value="${clone?.amount||''}" oninput="window._cashPrev()"
-      style="width:100%;font-size:28px;font-weight:800;text-align:center;padding:12px;border:2px solid var(--border);border-radius:10px;margin-bottom:8px;box-sizing:border-box">
+      style="width:100%;font-size:29px;font-weight:800;text-align:center;padding:12px;border:2px solid var(--border);border-radius:10px;margin-bottom:8px;box-sizing:border-box">
     <div style="display:flex;gap:6px;margin-bottom:16px">${qAmts}</div>
 
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Payment</div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Payment</div>
     <div style="display:flex;gap:8px;margin-bottom:14px">
-      <button id="mode-paid" onclick="window._cashPickMode('paid')" style="flex:1;padding:11px;border-radius:10px;border:2px solid ${_cashExpenseMode==='paid'?'#111':'#e5e7eb'};background:${_cashExpenseMode==='paid'?'var(--dark)':'var(--surface)'};color:${_cashExpenseMode==='paid'?'var(--on-dark)':'var(--text)'};font-size:13px;font-weight:700;cursor:pointer">Paid now</button>
-      <button id="mode-credit" onclick="window._cashPickMode('credit')" style="flex:1;padding:11px;border-radius:10px;border:2px solid ${_cashExpenseMode==='credit'?'#dc2626':'#e5e7eb'};background:${_cashExpenseMode==='credit'?'#dc2626':'var(--surface)'};color:${_cashExpenseMode==='credit'?'#fff':'var(--text)'};font-size:13px;font-weight:700;cursor:pointer">On credit</button>
+      <button id="mode-paid" onclick="window._cashPickMode('paid')" style="flex:1;padding:11px;border-radius:10px;border:2px solid ${_cashExpenseMode==='paid'?'#111':'#e5e7eb'};background:${_cashExpenseMode==='paid'?'var(--dark)':'var(--surface)'};color:${_cashExpenseMode==='paid'?'var(--on-dark)':'var(--text)'};font-size:14px;font-weight:700;cursor:pointer">Paid now</button>
+      <button id="mode-credit" onclick="window._cashPickMode('credit')" style="flex:1;padding:11px;border-radius:10px;border:2px solid ${_cashExpenseMode==='credit'?'#dc2626':'#e5e7eb'};background:${_cashExpenseMode==='credit'?'#dc2626':'var(--surface)'};color:${_cashExpenseMode==='credit'?'#fff':'var(--text)'};font-size:14px;font-weight:700;cursor:pointer">On credit</button>
     </div>
 
     <div id="exp-paid-block" style="display:${_cashExpenseMode==='paid'?'block':'none'}">
-      <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">From Account</div>
+      <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">From Account</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">${accChips}</div>
     </div>
-    <div id="exp-credit-note" style="display:${_cashExpenseMode==='credit'?'block':'none'};background:var(--accent-urgent-soft);border:1px solid var(--accent-urgent);border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:12px;color:var(--accent-urgent);line-height:1.5">Added to vendor payables. <strong>Bill photo required.</strong></div>
+    <div id="exp-credit-note" style="display:${_cashExpenseMode==='credit'?'block':'none'};background:var(--accent-urgent-soft);border:1px solid var(--accent-urgent);border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:13px;color:var(--accent-urgent);line-height:1.5">Added to vendor payables. <strong>Bill photo required.</strong></div>
 
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Note <span style="font-weight:400">(optional)</span></div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Note <span style="font-weight:400">(optional)</span></div>
     <input id="cash-note" type="text" placeholder="e.g. invoice #, what was bought" value="${_scEsc(clone?.note||'')}"
-      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px">
+      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:12px">
 
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Bill photo <span id="bill-req" style="font-weight:400">${_cashExpenseMode==='credit'?'(required)':'(optional)'}</span></div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Bill photo <span id="bill-req" style="font-weight:400">${_cashExpenseMode==='credit'?'(required)':'(optional)'}</span></div>
     ${_cashPhotoField('exp-bill','exp-bill-status','Attach bill / receipt')}
 
-    <div id="cash-prev" style="font-size:12px;color:var(--muted);text-align:center;margin:10px 0;min-height:16px"></div>
-    <button id="cash-submit" onclick="window._cashDoExpense()" style="width:100%;height:50px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">Record <span id="cash-sub-amt">—</span></button>
-    <button onclick="window.cashSheetTransfer(true)" style="width:100%;height:38px;background:transparent;color:var(--muted);border:1.5px solid var(--border);border-radius:10px;font-size:12px;font-weight:600;cursor:pointer;margin-top:8px">↕ Transfer between accounts</button>
+    <div id="cash-prev" style="font-size:13px;color:var(--muted);text-align:center;margin:10px 0;min-height:16px"></div>
+    <button id="cash-submit" onclick="window._cashDoExpense()" style="width:100%;height:50px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer">Record <span id="cash-sub-amt">—</span></button>
+    <button onclick="window.cashSheetTransfer(true)" style="width:100%;height:38px;background:transparent;color:var(--muted);border:1.5px solid var(--border);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;margin-top:8px">↕ Transfer between accounts</button>
   `);
   window._cashPrev();
 };
@@ -994,19 +994,19 @@ window.cashSheetTopup=function(cloneId){
   const clone=cloneId?allCashLedger.find(r=>r._id===cloneId):null;
   const defAcc=clone?.account||'cash';
   _cashTopupAcc=defAcc;
-  const accChips=_cashAllAccounts().map(a=>{const k=a._id||a.key;const on=defAcc===k;return`<button id="ta-${k}" onclick="window._cashPickTopupAcc('${k}')" style="padding:8px 16px;border-radius:20px;border:2px solid ${on?'#111':'#e5e7eb'};background:${on?'var(--dark)':'var(--surface)'};font-size:13px;cursor:pointer;font-weight:600;color:${on?'var(--on-dark)':'var(--text)'}">${_scEsc(a.label)}</button>`;}).join('');
-  const qAmts=[1000,2000,5000,10000,20000].map(v=>`<button onclick="window._cashTQAmt(${v})" style="flex:1;padding:8px 0;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:12px;font-weight:700;cursor:pointer">+${v>=1000?v/1000+'k':v}</button>`).join('');
+  const accChips=_cashAllAccounts().map(a=>{const k=a._id||a.key;const on=defAcc===k;return`<button id="ta-${k}" onclick="window._cashPickTopupAcc('${k}')" style="padding:8px 16px;border-radius:20px;border:2px solid ${on?'#111':'#e5e7eb'};background:${on?'var(--dark)':'var(--surface)'};font-size:14px;cursor:pointer;font-weight:600;color:${on?'var(--on-dark)':'var(--text)'}">${_scEsc(a.label)}</button>`;}).join('');
+  const qAmts=[1000,2000,5000,10000,20000].map(v=>`<button onclick="window._cashTQAmt(${v})" style="flex:1;padding:8px 0;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:13px;font-weight:700;cursor:pointer">+${v>=1000?v/1000+'k':v}</button>`).join('');
   _cashOpenSheet('Money In',`
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Deposit Into</div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Deposit Into</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">${accChips}</div>
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Amount (₨)</div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Amount (₨)</div>
     <input id="topup-amt" type="number" inputmode="numeric" min="1" placeholder="0" value="${clone?.amount||''}"
-      style="width:100%;font-size:28px;font-weight:800;text-align:center;padding:12px;border:2px solid var(--border);border-radius:10px;margin-bottom:8px;box-sizing:border-box" oninput="window._cashTPrev()">
+      style="width:100%;font-size:29px;font-weight:800;text-align:center;padding:12px;border:2px solid var(--border);border-radius:10px;margin-bottom:8px;box-sizing:border-box" oninput="window._cashTPrev()">
     <div style="display:flex;gap:6px;margin-bottom:16px">${qAmts}</div>
     <input id="topup-note" type="text" placeholder="Source / note (e.g. Afnan — MCB transfer)" value="${_scEsc(clone?.note||'')}"
-      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:10px">
-    <div id="topup-prev" style="font-size:12px;color:var(--muted);text-align:center;margin-bottom:10px;min-height:16px"></div>
-    <button id="topup-submit" onclick="window._cashDoTopup()" style="width:100%;height:50px;background:#15803d;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">+ Add Money In</button>
+      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:10px">
+    <div id="topup-prev" style="font-size:13px;color:var(--muted);text-align:center;margin-bottom:10px;min-height:16px"></div>
+    <button id="topup-submit" onclick="window._cashDoTopup()" style="width:100%;height:50px;background:#15803d;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer">+ Add Money In</button>
   `);
   window._cashTPrev();
 };
@@ -1039,19 +1039,19 @@ window._cashDoTopup=async function(){
 window.cashSheetTransfer=function(fromExpenseSheet){
   if(fromExpenseSheet) _cashCloseSheet();
   const opts=_cashAllAccounts().map(a=>`<option value="${a._id||a.key}">${_scEsc(a.label)}</option>`).join('');
-  const qAmts=[1000,2000,5000,10000].map(v=>`<button onclick="window._cashXQAmt(${v})" style="flex:1;padding:8px 0;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:12px;font-weight:700;cursor:pointer">+${v>=1000?v/1000+'k':v}</button>`).join('');
+  const qAmts=[1000,2000,5000,10000].map(v=>`<button onclick="window._cashXQAmt(${v})" style="flex:1;padding:8px 0;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:13px;font-weight:700;cursor:pointer">+${v>=1000?v/1000+'k':v}</button>`).join('');
   const show=()=>_cashOpenSheet('Transfer',`
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">From</div>
-    <select id="xfer-from" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:12px;box-sizing:border-box">${opts}</select>
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">To</div>
-    <select id="xfer-to" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:12px;box-sizing:border-box">${opts}</select>
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Amount (₨)</div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">From</div>
+    <select id="xfer-from" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-bottom:12px;box-sizing:border-box">${opts}</select>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">To</div>
+    <select id="xfer-to" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-bottom:12px;box-sizing:border-box">${opts}</select>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Amount (₨)</div>
     <input id="xfer-amt" type="number" inputmode="numeric" min="1" placeholder="0"
-      style="width:100%;font-size:24px;font-weight:800;text-align:center;padding:12px;border:2px solid var(--border);border-radius:10px;margin-bottom:8px;box-sizing:border-box">
+      style="width:100%;font-size:25px;font-weight:800;text-align:center;padding:12px;border:2px solid var(--border);border-radius:10px;margin-bottom:8px;box-sizing:border-box">
     <div style="display:flex;gap:6px;margin-bottom:12px">${qAmts}</div>
     <input id="xfer-note" type="text" placeholder="Reason / note"
-      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px">
-    <button id="xfer-submit" onclick="window._cashDoTransfer()" style="width:100%;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">↕ Transfer</button>
+      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:12px">
+    <button id="xfer-submit" onclick="window._cashDoTransfer()" style="width:100%;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer">↕ Transfer</button>
   `);
   if(fromExpenseSheet) setTimeout(show,160); else show();
 };
@@ -1082,37 +1082,37 @@ window.cashSheetIssue=function(){
   _cashIssueSrc='cash';_cashIssueRowSeq=0;
   delete window._cashPhoto['issue-bill'];
   _cashOpenSheet('Issue Cash — itemized',`
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Payment source · pick one</div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Payment source · pick one</div>
     <div id="issue-src" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${_cashSrcChipsHtml()}</div>
     <div id="issue-paidby-wrap" style="display:none;margin-bottom:12px">
-      <input id="issue-paidby" type="text" placeholder="Paid by whom? (e.g. Afnan)" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
-      <div style="font-size:11px;color:var(--accent-warning);margin-top:5px">Recorded as money the store owes this person — settle later from the Vendors tab.</div>
+      <input id="issue-paidby" type="text" placeholder="Paid by whom? (e.g. Afnan)" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box">
+      <div style="font-size:12px;color:var(--accent-warning);margin-top:5px">Recorded as money the store owes this person — settle later from the Vendors tab.</div>
     </div>
 
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:2px 0 6px">Name of person</div>
-    <input id="issue-payee" type="text" placeholder="Person the cash / goods went to (e.g. Noman Rider)" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px">
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:2px 0 6px">Name of person</div>
+    <input id="issue-payee" type="text" placeholder="Person the cash / goods went to (e.g. Noman Rider)" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:12px">
 
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Bill photo</div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Bill photo</div>
     ${_cashPhotoField('issue-bill','issue-bill-status','Attach bill photo')}
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 6px">
-      <span style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em">Items on the bill</span>
-      <span style="font-size:11px;color:var(--muted)">qty × price = line total</span>
+      <span style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em">Items on the bill</span>
+      <span style="font-size:12px;color:var(--muted)">qty × price = line total</span>
     </div>
     <div id="issue-items"></div>
-    <button type="button" onclick="window._cashIssueAddItem()" style="width:100%;padding:9px;border:1.5px dashed var(--border);border-radius:9px;background:var(--surface-2);font-size:13px;font-weight:700;color:var(--text);cursor:pointer;margin-bottom:12px">+ Add item</button>
+    <button type="button" onclick="window._cashIssueAddItem()" style="width:100%;padding:9px;border:1.5px dashed var(--border);border-radius:9px;background:var(--surface-2);font-size:14px;font-weight:700;color:var(--text);cursor:pointer;margin-bottom:12px">+ Add item</button>
 
     <div style="display:flex;justify-content:space-between;align-items:center;background:var(--dark);color:var(--on-dark);border-radius:10px;padding:11px 14px;margin-bottom:12px">
-      <span style="font-size:13px;font-weight:700">Grand total</span>
-      <span id="issue-grand" style="font-size:20px;font-weight:800">₨0</span>
+      <span style="font-size:14px;font-weight:700">Grand total</span>
+      <span id="issue-grand" style="font-size:21px;font-weight:800">₨0</span>
     </div>
-    <button id="issue-submit" onclick="window._cashDoIssueItemized()" style="width:100%;height:50px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">Record issue</button>
+    <button id="issue-submit" onclick="window._cashDoIssueItemized()" style="width:100%;height:50px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer">Record issue</button>
   `);
   window._cashIssueAddItem();
 };
 // Payment-source chips: every account with its live balance, plus "Other".
 function _cashSrcChipsHtml(){
-  const chip=(id,top,bottom,on,accent)=>`<button id="isrc-${id}" onclick="window._cashIssuePickSrc('${id}')" style="padding:8px 12px;border-radius:12px;border:2px solid ${on?accent:'var(--border)'};background:${on?accent:'var(--surface)'};color:${on?'#fff':'var(--text)'};font-size:12px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;line-height:1.25;gap:1px"><span>${_scEsc(top)}</span><span style="font-size:11px;font-weight:600;opacity:.72">${_scEsc(bottom)}</span></button>`;
+  const chip=(id,top,bottom,on,accent)=>`<button id="isrc-${id}" onclick="window._cashIssuePickSrc('${id}')" style="padding:8px 12px;border-radius:12px;border:2px solid ${on?accent:'var(--border)'};background:${on?accent:'var(--surface)'};color:${on?'#fff':'var(--text)'};font-size:13px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;line-height:1.25;gap:1px"><span>${_scEsc(top)}</span><span style="font-size:12px;font-weight:600;opacity:.72">${_scEsc(bottom)}</span></button>`;
   const accs=_cashAllAccounts().map(a=>{const k=a._id||a.key;return chip(k,a.label,_fmtPKR(a.balance||0),_cashIssueSrc===k,'#111');}).join('');
   return accs+chip('other','Other','someone paid',_cashIssueSrc==='other','#b45309');
 }
@@ -1127,14 +1127,14 @@ window._cashIssueAddItem=function(){
   const div=document.createElement('div');div.id=id;div.className='cash-iss-row';
   div.style.cssText='display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px';
   div.innerHTML=`
-    <input class="ci-name" placeholder="Item name" style="flex:2;min-width:130px;padding:8px 9px;border:1px solid var(--border);border-radius:7px;font-size:13px;box-sizing:border-box">
-    <input class="ci-qty" type="number" inputmode="decimal" min="0" step="any" placeholder="Qty" oninput="window._cashIssueRecalc()" style="width:56px;padding:8px 6px;border:1px solid var(--border);border-radius:7px;font-size:13px;text-align:center;box-sizing:border-box">
-    <select class="ci-unit" style="width:58px;padding:8px 3px;border:1px solid var(--border);border-radius:7px;font-size:12px;box-sizing:border-box"><option value="item">item</option><option value="kg">kg</option></select>
-    <span style="color:var(--muted);font-size:12px">×</span>
-    <input class="ci-price" type="number" inputmode="decimal" min="0" step="any" placeholder="Price" oninput="window._cashIssueRecalc()" style="width:74px;padding:8px 7px;border:1px solid var(--border);border-radius:7px;font-size:13px;text-align:right;box-sizing:border-box">
-    <span style="color:var(--muted);font-size:12px">=</span>
-    <span class="ci-total" style="flex:1;min-width:60px;text-align:right;font-weight:800;font-size:13px">₨0</span>
-    <button type="button" onclick="this.closest('.cash-iss-row').remove();window._cashIssueRecalc()" title="Remove item" style="background:none;border:none;color:var(--accent-urgent);font-size:16px;cursor:pointer;line-height:1">×</button>`;
+    <input class="ci-name" placeholder="Item name" style="flex:2;min-width:130px;padding:8px 9px;border:1px solid var(--border);border-radius:7px;font-size:14px;box-sizing:border-box">
+    <input class="ci-qty" type="number" inputmode="decimal" min="0" step="any" placeholder="Qty" oninput="window._cashIssueRecalc()" style="width:56px;padding:8px 6px;border:1px solid var(--border);border-radius:7px;font-size:14px;text-align:center;box-sizing:border-box">
+    <select class="ci-unit" style="width:58px;padding:8px 3px;border:1px solid var(--border);border-radius:7px;font-size:13px;box-sizing:border-box"><option value="item">item</option><option value="kg">kg</option></select>
+    <span style="color:var(--muted);font-size:13px">×</span>
+    <input class="ci-price" type="number" inputmode="decimal" min="0" step="any" placeholder="Price" oninput="window._cashIssueRecalc()" style="width:74px;padding:8px 7px;border:1px solid var(--border);border-radius:7px;font-size:14px;text-align:right;box-sizing:border-box">
+    <span style="color:var(--muted);font-size:13px">=</span>
+    <span class="ci-total" style="flex:1;min-width:60px;text-align:right;font-weight:800;font-size:14px">₨0</span>
+    <button type="button" onclick="this.closest('.cash-iss-row').remove();window._cashIssueRecalc()" title="Remove item" style="background:none;border:none;color:var(--accent-urgent);font-size:17px;cursor:pointer;line-height:1">×</button>`;
   box.appendChild(div);
 };
 window._cashIssueRecalc=function(){
@@ -1200,29 +1200,29 @@ window.cashSettleFloat=function(floatId){
     : '';
   const _settled=_cashFloatSettled(f), _outstanding=_cashFloatOutstanding(f);
   const _bills=(f.settlements||[]).filter(s=>s.billPhoto);
-  const _priorHtml=_bills.length?`<div style="font-size:11px;color:var(--muted);margin-bottom:12px">Bills so far: ${_bills.map((b,i)=>`<a href="${b.billPhoto}" target="_blank" style="text-decoration:none">📎 #${i+1} ${_fmtPKR((b.goodsValue||0)+(b.changeReturned||0))}</a>`).join(' · ')}</div>`:'';
+  const _priorHtml=_bills.length?`<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Bills so far: ${_bills.map((b,i)=>`<a href="${b.billPhoto}" target="_blank" style="text-decoration:none">📎 #${i+1} ${_fmtPKR((b.goodsValue||0)+(b.changeReturned||0))}</a>`).join(' · ')}</div>`:'';
   _cashOpenSheet('Settle Float',`
-    <div style="background:var(--accent-urgent-soft);border:1px solid var(--accent-urgent);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;line-height:1.6">
+    <div style="background:var(--accent-urgent-soft);border:1px solid var(--accent-urgent);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:14px;line-height:1.6">
       <strong>${_scEsc(f.payee)}</strong> was issued <strong>${_fmtPKR(f.issued)}</strong> from <strong>${_scEsc(_cashGetAccount(f.account)?.label||f.account)}</strong>
       <div style="margin-top:6px;display:flex;justify-content:space-between"><span>Settled so far</span><strong style="color:var(--accent-success)">${_fmtPKR(_settled)}</strong></div>
       <div style="display:flex;justify-content:space-between"><span>Still to account for</span><strong style="color:var(--accent-urgent)">${_fmtPKR(_outstanding)}</strong></div>
     </div>
     ${_priorHtml}
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Bill photo <span style="font-weight:400">(required for this entry)</span></div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Bill photo <span style="font-weight:400">(required for this entry)</span></div>
     ${_cashPhotoField('settle-bill','settle-bill-status','Attach bill / receipt')}
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 6px">Goods Value (₨)</div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 6px">Goods Value (₨)</div>
     <input id="settle-goods" type="number" inputmode="numeric" min="0" placeholder="0" oninput="window._cashSettlePrev('${_scEsc(floatId)}')"
-      style="width:100%;font-size:22px;font-weight:800;padding:10px;border:2px solid var(--border);border-radius:10px;margin-bottom:10px;box-sizing:border-box">
-    ${catOpts?`<div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Goods Category</div>
-    <select id="settle-cat" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:10px;box-sizing:border-box">${catOpts}</select>`:`<div style="font-size:12px;color:var(--accent-urgent);margin-bottom:10px">No categories exist — create one first (Categories tab).</div>`}
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Change Returned (₨)</div>
+      style="width:100%;font-size:23px;font-weight:800;padding:10px;border:2px solid var(--border);border-radius:10px;margin-bottom:10px;box-sizing:border-box">
+    ${catOpts?`<div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Goods Category</div>
+    <select id="settle-cat" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-bottom:10px;box-sizing:border-box">${catOpts}</select>`:`<div style="font-size:13px;color:var(--accent-urgent);margin-bottom:10px">No categories exist — create one first (Categories tab).</div>`}
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Change Returned (₨)</div>
     <input id="settle-change" type="number" inputmode="numeric" min="0" placeholder="0" oninput="window._cashSettlePrev('${_scEsc(floatId)}')"
-      style="width:100%;font-size:22px;font-weight:800;padding:10px;border:2px solid var(--border);border-radius:10px;margin-bottom:8px;box-sizing:border-box">
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Change returned to <span style="font-weight:400">(where the money lands)</span></div>
-    <select id="settle-change-acc" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:10px;box-sizing:border-box">${_cashAllAccounts().map(a=>`<option value="${a._id||a.key}"${(a._id||a.key)===f.account?' selected':''}>${_scEsc(a.label)}${(a._id||a.key)===f.account?' (issued from)':''}</option>`).join('')}</select>
-    <div id="settle-prev" style="font-size:12px;text-align:center;margin-bottom:12px;min-height:16px;color:var(--muted)"></div>
-    <button id="settle-submit" onclick="window._cashDoSettle('${_scEsc(floatId)}')" style="width:100%;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">Add bill ✓</button>
-    ${(typeof _canAdminCash==='function'&&_canAdminCash())?`<button onclick="window._cashForceCloseFloat('${_scEsc(floatId)}')" style="width:100%;margin-top:8px;height:40px;background:var(--surface);border:1px solid var(--accent-urgent);color:var(--accent-urgent);border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">Force-close · write off ${_fmtPKR(_outstanding)}</button>`:''}
+      style="width:100%;font-size:23px;font-weight:800;padding:10px;border:2px solid var(--border);border-radius:10px;margin-bottom:8px;box-sizing:border-box">
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Change returned to <span style="font-weight:400">(where the money lands)</span></div>
+    <select id="settle-change-acc" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-bottom:10px;box-sizing:border-box">${_cashAllAccounts().map(a=>`<option value="${a._id||a.key}"${(a._id||a.key)===f.account?' selected':''}>${_scEsc(a.label)}${(a._id||a.key)===f.account?' (issued from)':''}</option>`).join('')}</select>
+    <div id="settle-prev" style="font-size:13px;text-align:center;margin-bottom:12px;min-height:16px;color:var(--muted)"></div>
+    <button id="settle-submit" onclick="window._cashDoSettle('${_scEsc(floatId)}')" style="width:100%;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer">Add bill ✓</button>
+    ${(typeof _canAdminCash==='function'&&_canAdminCash())?`<button onclick="window._cashForceCloseFloat('${_scEsc(floatId)}')" style="width:100%;margin-top:8px;height:40px;background:var(--surface);border:1px solid var(--accent-urgent);color:var(--accent-urgent);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer">Force-close · write off ${_fmtPKR(_outstanding)}</button>`:''}
   `);
 };
 window._cashSettlePrev=function(floatId){
@@ -1310,25 +1310,25 @@ window.cashSheetVendor=function(vendorId){
   if(v&&(v._id||v.id)==='walkin'){showToast('The walk-in vendor cannot be edited.',true);return;}
   const types=(v?.productTypes||[]).join(', ');
   _cashOpenSheet(v?'Edit Vendor':'New Vendor',`
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Business Name *</div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Business Name *</div>
     <input id="vn-name" type="text" value="${_scEsc(v?.name||'')}" placeholder="e.g. Pak Gas Agency"
-      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px">
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Contact Number</div>
+      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:12px">
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Contact Number</div>
     <input id="vn-phone" type="tel" inputmode="tel" value="${_scEsc(v?.phone||'')}" placeholder="03xx-xxxxxxx"
-      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px">
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Address / Area</div>
+      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:12px">
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Address / Area</div>
     <input id="vn-address" type="text" value="${_scEsc(v?.address||'')}" placeholder="e.g. Shershah, Karachi"
-      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px">
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Product Types <span style="font-weight:400">(comma separated)</span></div>
+      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:12px">
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Product Types <span style="font-weight:400">(comma separated)</span></div>
     <input id="vn-types" type="text" value="${_scEsc(types)}" placeholder="e.g. Gas, Cylinders"
-      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px">
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Credit Terms</div>
+      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:12px">
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Credit Terms</div>
     <input id="vn-terms" type="text" value="${_scEsc(v?.creditTerms||'')}" placeholder="e.g. Net 30, cash only"
-      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px">
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Opening Outstanding (₨) <span style="font-weight:400">${v?'':'(if they already owe)'}</span></div>
-    <input id="vn-opening" type="number" inputmode="numeric" min="0" value="${v?.openingOutstanding||''}" placeholder="0" ${v?'disabled style="background:var(--surface-2);'+'':'style="'}width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:14px">
-    <button id="vn-submit" onclick="window._cashDoVendor('${vendorId||''}')" style="width:100%;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">${v?'Save Changes':'Create Vendor'}</button>
-    ${v&&_canAdminCash()?`<button onclick="window.cashDeleteVendor('${vendorId}')" style="width:100%;height:40px;background:transparent;color:var(--accent-urgent);border:1.5px solid var(--accent-urgent);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;margin-top:8px">Delete vendor</button>`:''}
+      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:12px">
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Opening Outstanding (₨) <span style="font-weight:400">${v?'':'(if they already owe)'}</span></div>
+    <input id="vn-opening" type="number" inputmode="numeric" min="0" value="${v?.openingOutstanding||''}" placeholder="0" ${v?'disabled style="background:var(--surface-2);'+'':'style="'}width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:14px">
+    <button id="vn-submit" onclick="window._cashDoVendor('${vendorId||''}')" style="width:100%;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer">${v?'Save Changes':'Create Vendor'}</button>
+    ${v&&_canAdminCash()?`<button onclick="window.cashDeleteVendor('${vendorId}')" style="width:100%;height:40px;background:transparent;color:var(--accent-urgent);border:1.5px solid var(--accent-urgent);border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;margin-top:8px">Delete vendor</button>`:''}
   `);
 };
 window._cashDoVendor=async function(vendorId){
@@ -1372,21 +1372,21 @@ window.cashSheetPayVendor=function(vendorId){
   delete window._cashPhoto['pay-proof'];
   const opts=_cashAllAccounts().map(a=>`<option value="${a._id||a.key}" data-online="${a.online?1:0}">${_scEsc(a.label)}${a.online?' (online)':''}</option>`).join('');
   _cashOpenSheet('Pay '+(v.name||'Vendor'),`
-    <div style="background:var(--accent-urgent-soft);border:1px solid var(--accent-urgent);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px">
+    <div style="background:var(--accent-urgent-soft);border:1px solid var(--accent-urgent);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:14px">
       Outstanding to <strong>${_scEsc(v.name)}</strong>: <strong style="color:var(--accent-urgent)">${_fmtPKR(out)}</strong>
     </div>
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Amount (₨)</div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Amount (₨)</div>
     <input id="pay-amt" type="number" inputmode="numeric" min="1" value="${out>0?out:''}" placeholder="0"
-      style="width:100%;font-size:24px;font-weight:800;text-align:center;padding:12px;border:2px solid var(--border);border-radius:10px;margin-bottom:12px;box-sizing:border-box">
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Pay From</div>
-    <select id="pay-acc" onchange="window._cashPayAccChange()" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:12px;box-sizing:border-box">${opts}</select>
+      style="width:100%;font-size:25px;font-weight:800;text-align:center;padding:12px;border:2px solid var(--border);border-radius:10px;margin-bottom:12px;box-sizing:border-box">
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Pay From</div>
+    <select id="pay-acc" onchange="window._cashPayAccChange()" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-bottom:12px;box-sizing:border-box">${opts}</select>
     <div id="pay-proof-wrap">
-      <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Payment proof <span id="pay-proof-req" style="font-weight:400"></span></div>
+      <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Payment proof <span id="pay-proof-req" style="font-weight:400"></span></div>
       ${_cashPhotoField('pay-proof','pay-proof-status','Attach payment screenshot / receipt')}
     </div>
     <input id="pay-note" type="text" placeholder="Note (e.g. invoice paid)"
-      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin:12px 0">
-    <button id="pay-submit" onclick="window._cashDoPayVendor('${vendorId}')" style="width:100%;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">Pay Vendor</button>
+      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:12px 0">
+    <button id="pay-submit" onclick="window._cashDoPayVendor('${vendorId}')" style="width:100%;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer">Pay Vendor</button>
   `);
   window._cashPayAccChange();
 };
@@ -1421,15 +1421,15 @@ window.cashVendorLedger=function(vendorId){
     const col=isPay?'#15803d':'#dc2626';const sign=isPay?'−':'+';
     const lbl=isPay?'Payment':(r.kind==='credit_purchase'?'Credit purchase':'Purchase');
     const proof=(r.billPhoto||r.proofPhoto)?` <a href="${r.billPhoto||r.proofPhoto}" target="_blank" style="text-decoration:none">📎</a>`:'';
-    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px">
-      <div><div style="font-weight:600">${lbl}${proof}</div><div style="font-size:11px;color:var(--muted)">${_scEsc(r.date||'')} · ${_scEsc(r.note||'')}</div></div>
+    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:14px">
+      <div><div style="font-weight:600">${lbl}${proof}</div><div style="font-size:12px;color:var(--muted)">${_scEsc(r.date||'')} · ${_scEsc(r.note||'')}</div></div>
       <div style="font-weight:800;color:${col}">${sign}${_fmtPKR(r.amount)}</div>
     </div>`;
-  }).join(''):`<div style="font-size:13px;color:var(--muted);padding:16px 0;text-align:center">No transactions yet.</div>`;
+  }).join(''):`<div style="font-size:14px;color:var(--muted);padding:16px 0;text-align:center">No transactions yet.</div>`;
   _cashOpenSheet(v.name,`
     <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
-      <span style="font-size:12px;color:var(--muted)">Outstanding</span>
-      <span style="font-size:16px;font-weight:800;color:${out>0?'#dc2626':'#15803d'}">${_fmtPKR(out)}</span>
+      <span style="font-size:13px;color:var(--muted)">Outstanding</span>
+      <span style="font-size:17px;font-weight:800;color:${out>0?'#dc2626':'#15803d'}">${_fmtPKR(out)}</span>
     </div>
     ${out>0&&_canEntryCash()?`<button class="btn-primary" style="width:100%;background:var(--dark);height:44px;margin-bottom:12px" onclick="window.cashSheetPayVendor('${vendorId}')">Pay Vendor</button>`:''}
     ${body}
@@ -1442,31 +1442,31 @@ window.cashSheetCategory=function(catId){
   _cashCatVendorMode='existing';
   const vendorSel=c?.vendorId||'';
   _cashOpenSheet(c?'Edit Category':'New Category',`
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Category Name *</div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Category Name *</div>
     <input id="cat-label" type="text" value="${_scEsc(c?.label||'')}" placeholder="e.g. Gas Cylinder"
-      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:14px">
+      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:14px">
 
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Linked Vendor *</div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Linked Vendor *</div>
     <div style="display:flex;gap:8px;margin-bottom:10px">
-      <button id="cvm-existing" onclick="window._cashCatVendorMode('existing')" style="flex:1;padding:9px;border-radius:9px;border:2px solid var(--line);background:var(--dark);color:var(--on-dark);font-size:12px;font-weight:700;cursor:pointer">Existing vendor</button>
-      <button id="cvm-new" onclick="window._cashCatVendorMode('new')" style="flex:1;padding:9px;border-radius:9px;border:2px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-weight:700;cursor:pointer">+ New vendor</button>
+      <button id="cvm-existing" onclick="window._cashCatVendorMode('existing')" style="flex:1;padding:9px;border-radius:9px;border:2px solid var(--line);background:var(--dark);color:var(--on-dark);font-size:13px;font-weight:700;cursor:pointer">Existing vendor</button>
+      <button id="cvm-new" onclick="window._cashCatVendorMode('new')" style="flex:1;padding:9px;border-radius:9px;border:2px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-weight:700;cursor:pointer">+ New vendor</button>
     </div>
     <div id="cv-existing-block">
-      <select id="cat-vendor" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:14px;box-sizing:border-box">${_cashVendorOptions(vendorSel||'walkin')}</select>
+      <select id="cat-vendor" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-bottom:14px;box-sizing:border-box">${_cashVendorOptions(vendorSel||'walkin')}</select>
     </div>
     <div id="cv-new-block" style="display:none;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:14px">
-      <input id="cnv-name" type="text" placeholder="Vendor name *" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;font-size:13px;box-sizing:border-box;margin-bottom:8px">
-      <input id="cnv-phone" type="tel" placeholder="Contact number" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;font-size:13px;box-sizing:border-box;margin-bottom:8px">
-      <input id="cnv-address" type="text" placeholder="Address / area" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;font-size:13px;box-sizing:border-box;margin-bottom:8px">
-      <input id="cnv-types" type="text" placeholder="Product types (comma separated)" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;font-size:13px;box-sizing:border-box">
+      <input id="cnv-name" type="text" placeholder="Vendor name *" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:8px">
+      <input id="cnv-phone" type="tel" placeholder="Contact number" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:8px">
+      <input id="cnv-address" type="text" placeholder="Address / area" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:8px">
+      <input id="cnv-types" type="text" placeholder="Product types (comma separated)" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
     </div>
 
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Monthly Budget (₨) <span style="font-weight:400">(optional)</span></div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Monthly Budget (₨) <span style="font-weight:400">(optional)</span></div>
     <input id="cat-budget" type="number" inputmode="numeric" min="0" value="${c?.monthlyBudget||''}" placeholder="0"
-      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:14px">
+      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:14px">
 
-    <button id="cat-submit" onclick="window._cashDoCategory('${catId||''}')" style="width:100%;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">${c?'Save Changes':'Create Category'}</button>
-    ${c&&_canAdminCash()?`<button onclick="window.cashDeleteCategory('${catId}')" style="width:100%;height:40px;background:transparent;color:var(--accent-urgent);border:1.5px solid var(--accent-urgent);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;margin-top:8px">Delete category</button>`:''}
+    <button id="cat-submit" onclick="window._cashDoCategory('${catId||''}')" style="width:100%;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer">${c?'Save Changes':'Create Category'}</button>
+    ${c&&_canAdminCash()?`<button onclick="window.cashDeleteCategory('${catId}')" style="width:100%;height:40px;background:transparent;color:var(--accent-urgent);border:1.5px solid var(--accent-urgent);border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;margin-top:8px">Delete category</button>`:''}
   `);
 };
 window._cashCatVendorMode=function(mode){
@@ -1533,16 +1533,16 @@ window.cashCountWallet=function(key){
   const acc=_cashGetAccount(key);
   const bal=allCashAccounts.find(a=>(a._id||a.key)===key)?.balance||0;
   _cashOpenSheet(`Count ${acc?.label||key}`,`
-    <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px">
+    <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:14px">
       Book balance: <strong>${_fmtPKR(bal)}</strong>
     </div>
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Actual Physical Count (₨)</div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Actual Physical Count (₨)</div>
     <input id="count-amt" type="number" inputmode="numeric" min="0" placeholder="0"
-      style="width:100%;font-size:24px;font-weight:800;text-align:center;padding:12px;border:2px solid var(--border);border-radius:10px;margin-bottom:12px;box-sizing:border-box">
+      style="width:100%;font-size:25px;font-weight:800;text-align:center;padding:12px;border:2px solid var(--border);border-radius:10px;margin-bottom:12px;box-sizing:border-box">
     ${_canAdminCash()?`<input id="count-reason" type="text" placeholder="Reason (required if posting adjustment)"
-      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px">
-    <button id="count-submit" onclick="window._cashDoCount('${key}')" style="width:100%;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer">Record Count &amp; Post Adjustment if Needed</button>`
-    :`<button id="count-submit" onclick="window._cashDoCount('${key}')" style="width:100%;height:48px;background:#475569;color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer">Record Count</button>`}
+      style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:12px">
+    <button id="count-submit" onclick="window._cashDoCount('${key}')" style="width:100%;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer">Record Count &amp; Post Adjustment if Needed</button>`
+    :`<button id="count-submit" onclick="window._cashDoCount('${key}')" style="width:100%;height:48px;background:#475569;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer">Record Count</button>`}
   `);
 };
 window._cashDoCount=async function(key){
@@ -1569,12 +1569,12 @@ window._cashDoCount=async function(key){
 window.cashSheetNewAccount=function(){
   if(!_canAdminCash()){window.cashRequestAccount();return;}
   _cashOpenSheet('New Account',`
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Account Name *</div>
-    <input id="na-label" type="text" placeholder="e.g. JazzCash" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px">
-    <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:12px;cursor:pointer"><input id="na-online" type="checkbox" checked style="width:15px;height:15px"> Online account (requires payment proof when paying vendors)</label>
-    <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Opening Balance (₨)</div>
-    <input id="na-opening" type="number" inputmode="numeric" min="0" placeholder="0" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:14px">
-    <button id="na-submit" onclick="window._cashDoNewAccount()" style="width:100%;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">Create Account</button>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Account Name *</div>
+    <input id="na-label" type="text" placeholder="e.g. JazzCash" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:12px">
+    <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:12px;cursor:pointer"><input id="na-online" type="checkbox" checked style="width:15px;height:15px"> Online account (requires payment proof when paying vendors)</label>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Opening Balance (₨)</div>
+    <input id="na-opening" type="number" inputmode="numeric" min="0" placeholder="0" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:14px">
+    <button id="na-submit" onclick="window._cashDoNewAccount()" style="width:100%;height:48px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer">Create Account</button>
   `);
 };
 window._cashDoNewAccount=async function(){
@@ -1592,9 +1592,9 @@ window._cashDoNewAccount=async function(){
 };
 window.cashRequestAccount=function(){
   _cashOpenSheet('Request New Account',`
-    <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">New accounts are created by an owner. Send your request and an owner will set it up.</div>
-    <input id="ra-label" type="text" placeholder="Account name needed (e.g. JazzCash)" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px">
-    <button onclick="window._cashDoRequestAccount()" style="width:100%;height:46px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer">Send Request to Owner</button>
+    <div style="font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:14px">New accounts are created by an owner. Send your request and an owner will set it up.</div>
+    <input id="ra-label" type="text" placeholder="Account name needed (e.g. JazzCash)" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:12px">
+    <button onclick="window._cashDoRequestAccount()" style="width:100%;height:46px;background:var(--dark);color:var(--on-dark);border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer">Send Request to Owner</button>
   `);
 };
 window._cashDoRequestAccount=async function(){

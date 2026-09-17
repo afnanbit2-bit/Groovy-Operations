@@ -374,11 +374,11 @@ function _siBarChart(data,maxBars){
   return d.map(([label,val])=>{
     const pct=Math.round(val/max*100);
     return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-      <div style="width:90px;font-size:11px;text-align:right;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${label}">${label}</div>
+      <div style="width:90px;font-size:12px;text-align:right;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${label}">${label}</div>
       <div style="flex:1;height:18px;background:var(--soft);border-radius:4px;overflow:hidden">
         <div style="height:100%;width:${pct}%;background:var(--text);border-radius:4px;transition:width .3s"></div>
       </div>
-      <div style="width:45px;font-size:11px;font-weight:600;text-align:right">${_siFmt(val)}</div>
+      <div style="width:45px;font-size:12px;font-weight:600;text-align:right">${_siFmt(val)}</div>
     </div>`;
   }).join('');
 }
@@ -404,12 +404,12 @@ function _siSizeCurve(rows){
         <span style="height:40px;width:20px;background:var(--soft);border-radius:3px;position:relative;display:flex;align-items:flex-end">
           <span style="width:100%;height:${pct}%;background:var(--text);border-radius:3px"></span>
         </span>
-        <span style="font-size:9px;color:var(--muted)">${sz}</span>
-        <span style="font-size:9px;font-weight:600">${qty}</span>
+        <span style="font-size:11px;color:var(--muted)">${sz}</span>
+        <span style="font-size:11px;font-weight:600">${qty}</span>
       </span>`;
     }).join('');
     return`<div style="margin-bottom:12px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:4px">${style} <span style="color:var(--muted);font-weight:400">(${data.total} sold)</span></div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">${style} <span style="color:var(--muted);font-weight:400">(${data.total} sold)</span></div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">${bars}</div>
     </div>`;
   }).join('');
@@ -480,11 +480,11 @@ function renderShopifyDashboard(){
 function _siSeasonBar(){
   const opts=[{id:'all',label:'All Seasons'},{id:'winter',label:'❄ Winter'},{id:'summer',label:'☀ Summer'}];
   return`<div id="si-season-bar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-    <span style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase">Season</span>
+    <span style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase">Season</span>
     <div class="gp-tabs" style="margin:0">${opts.map(o=>
       `<button class="gp-tab${_siSeason===o.id?' active':''}" onclick="window._siSetSeason('${o.id}')">${o.label}</button>`
     ).join('')}</div>
-    <span style="font-size:10px;color:var(--muted)">${_siSeason==='all'?'showing all items':'in-season + year-round (untagged) items only'}</span>
+    <span style="font-size:11px;color:var(--muted)">${_siSeason==='all'?'showing all items':'in-season + year-round (untagged) items only'}</span>
   </div>`;
 }
 window._siSetSeason=function(s){
@@ -545,7 +545,7 @@ function _siOverview(m,skuRows){
   return`<div class="stats-row">
     <div class="stat-card">
       <div class="stat-label">Inventory Value</div>
-      <div class="stat-val" style="font-size:18px">${_siPKR(m.totalValue)}</div>
+      <div class="stat-val" style="font-size:19px">${_siPKR(m.totalValue)}</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">Units On Hand</div>
@@ -553,8 +553,8 @@ function _siOverview(m,skuRows){
     </div>
     <div class="stat-card">
       <div class="stat-label">Sell-Through 7d</div>
-      <div class="stat-val" style="font-size:18px">${_siPct(m.sellThrough7)}</div>
-      <div style="font-size:9px;color:var(--muted);margin-top:2px">est. based on recent pace</div>
+      <div class="stat-val" style="font-size:19px">${_siPct(m.sellThrough7)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">est. based on recent pace</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">Units Sold 7d</div>
@@ -565,13 +565,13 @@ function _siOverview(m,skuRows){
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
     <div class="card${lowCount?' style="border-left:3px solid var(--accent-urgent)"':''}">
       <div class="card-title">Low Stock Alert</div>
-      <div style="font-size:28px;font-weight:700;${lowCount?'color:var(--accent-urgent)':''}">${lowCount}</div>
-      <div style="font-size:11px;color:var(--muted)">SKUs with &lt; 14 days left</div>
+      <div style="font-size:29px;font-weight:700;${lowCount?'color:var(--accent-urgent)':''}">${lowCount}</div>
+      <div style="font-size:12px;color:var(--muted)">SKUs with &lt; 14 days left</div>
     </div>
     <div class="card${deadCount?' style="border-left:3px solid var(--accent-warning)"':''}">
       <div class="card-title">Dead / Slow Stock</div>
-      <div style="font-size:28px;font-weight:700;${deadCount?'color:var(--accent-warning)':''}">${deadCount}</div>
-      <div style="font-size:11px;color:var(--muted)">No sale in 60+ days</div>
+      <div style="font-size:29px;font-weight:700;${deadCount?'color:var(--accent-warning)':''}">${deadCount}</div>
+      <div style="font-size:12px;color:var(--muted)">No sale in 60+ days</div>
     </div>
   </div>
 
@@ -582,7 +582,7 @@ function _siOverview(m,skuRows){
 
   <div class="card">
     <div class="card-title">Sync Status</div>
-    <div style="font-size:12px;color:var(--muted);line-height:2">
+    <div style="font-size:13px;color:var(--muted);line-height:2">
       Products: <strong>${_siProducts.length}</strong> variants
       · Orders: <strong>${_siOrders.length}</strong>
       · Line items: <strong>${_siLineItems.length}</strong>
@@ -613,12 +613,12 @@ function _siAttentionSection(attn,skuRows){
     <div class="card-title">Low Stock / About to Sell Out</div>
     ${attn.lowStock.length?attn.lowStock.map(r=>`<div class="info-row">
       <div>
-        <div style="font-weight:600;font-size:12px">${r.sku} <span style="color:var(--muted);font-weight:400">${r.title}</span></div>
-        <div style="font-size:11px;color:var(--muted)">${r.color} / ${r.size}</div>
+        <div style="font-weight:600;font-size:13px">${r.sku} <span style="color:var(--muted);font-weight:400">${r.title}</span></div>
+        <div style="font-size:12px;color:var(--muted)">${r.color} / ${r.size}</div>
       </div>
       <div style="text-align:right">
         <div style="font-weight:700;color:var(--accent-urgent)">${r.daysLeft}d left</div>
-        <div style="font-size:10px;color:var(--muted)">est. · ${r.onHand} on hand · ${r.s7} sold/7d</div>
+        <div style="font-size:11px;color:var(--muted)">est. · ${r.onHand} on hand · ${r.s7} sold/7d</div>
       </div>
     </div>`).join(''):'<div class="empty">Nothing critically low</div>'}
   </div>
@@ -627,12 +627,12 @@ function _siAttentionSection(attn,skuRows){
     <div class="card-title">High Sell-Through (Committed Pressure)</div>
     ${attn.highSellThrough.length?attn.highSellThrough.map(r=>`<div class="info-row">
       <div>
-        <div style="font-weight:600;font-size:12px">${r.sku}</div>
-        <div style="font-size:11px;color:var(--muted)">${r.color} / ${r.size}</div>
+        <div style="font-weight:600;font-size:13px">${r.sku}</div>
+        <div style="font-size:12px;color:var(--muted)">${r.color} / ${r.size}</div>
       </div>
       <div style="text-align:right">
         <div style="font-weight:700">${_siPct(r.sellThrough)}</div>
-        <div style="font-size:10px;color:var(--muted)">sell-through 7d est.</div>
+        <div style="font-size:11px;color:var(--muted)">sell-through 7d est.</div>
       </div>
     </div>`).join(''):'<div class="empty">No pressure</div>'}
   </div>
@@ -641,10 +641,10 @@ function _siAttentionSection(attn,skuRows){
     <div class="card-title">Dead / Slow Stock (60+ days no sale)</div>
     ${attn.deadStock.length?attn.deadStock.map(r=>`<div class="info-row">
       <div>
-        <div style="font-weight:600;font-size:12px">${r.sku} <span style="color:var(--muted);font-weight:400">${r.title}</span></div>
-        <div style="font-size:11px;color:var(--muted)">${r.daysSinceLastSale!=null?r.daysSinceLastSale+'d since last sale':'Never sold'} · ${r.onHand} on hand</div>
+        <div style="font-weight:600;font-size:13px">${r.sku} <span style="color:var(--muted);font-weight:400">${r.title}</span></div>
+        <div style="font-size:12px;color:var(--muted)">${r.daysSinceLastSale!=null?r.daysSinceLastSale+'d since last sale':'Never sold'} · ${r.onHand} on hand</div>
       </div>
-      <div style="text-align:right;font-size:12px;font-weight:600">${_siPKR(r.onHand*r.price)}</div>
+      <div style="text-align:right;font-size:13px;font-weight:600">${_siPKR(r.onHand*r.price)}</div>
     </div>`).join(''):'<div class="empty">No dead stock</div>'}
   </div>
 
@@ -652,10 +652,10 @@ function _siAttentionSection(attn,skuRows){
     <div class="card-title">Promote / Restock Candidates</div>
     ${attn.promote.length?attn.promote.map(r=>`<div class="info-row">
       <div>
-        <div style="font-weight:600;font-size:12px">${r.sku} <span style="color:var(--muted);font-weight:400">${r.title}</span></div>
-        <div style="font-size:11px;color:var(--muted)">${r.onHand} on hand · ${r.s30} sold last 30d · zero this week</div>
+        <div style="font-weight:600;font-size:13px">${r.sku} <span style="color:var(--muted);font-weight:400">${r.title}</span></div>
+        <div style="font-size:12px;color:var(--muted)">${r.onHand} on hand · ${r.s30} sold last 30d · zero this week</div>
       </div>
-      <div style="text-align:right;font-size:12px;font-weight:600">${_siPKR(r.onHand*r.price)}</div>
+      <div style="text-align:right;font-size:13px;font-weight:600">${_siPKR(r.onHand*r.price)}</div>
     </div>`).join(''):'<div class="empty">None</div>'}
   </div>
 
@@ -663,12 +663,12 @@ function _siAttentionSection(attn,skuRows){
     <div class="card-title">Markdown Candidates (cash-freed estimate)</div>
     ${md.map(r=>`<div class="info-row">
       <div>
-        <div style="font-weight:600;font-size:12px">${r.sku}</div>
-        <div style="font-size:11px;color:var(--muted)">${r.daysSinceLastSale}d no sale · ${r.onHand} units</div>
+        <div style="font-weight:600;font-size:13px">${r.sku}</div>
+        <div style="font-size:12px;color:var(--muted)">${r.daysSinceLastSale}d no sale · ${r.onHand} units</div>
       </div>
       <div style="text-align:right">
         <div style="font-weight:700">${_siPKR(r.cashTied)}</div>
-        <div style="font-size:10px;color:var(--muted)">tied up at retail</div>
+        <div style="font-size:11px;color:var(--muted)">tied up at retail</div>
       </div>
     </div>`).join('')}
   </div>`:''}`;
@@ -682,7 +682,7 @@ function _siPatternsSection(items7,skuRows){
 
   return`
   <div class="card">
-    <div class="card-title">By Category (7d) <span style="font-size:11px;font-weight:400;color:var(--muted)">— current catalog</span></div>
+    <div class="card-title">By Category (7d) <span style="font-size:12px;font-weight:400;color:var(--muted)">— current catalog</span></div>
     ${_siBarChart(byCat,12)}
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px" class="no-stack">
@@ -753,14 +753,14 @@ function _siSkuRowsHtml(rows){
   const page=filtered.slice(0,_siSkuLimit);
   return page.map(r=>{
     const daysClass=r.daysLeft<=7&&r.daysLeft>0?'color:var(--accent-urgent);font-weight:700':r.daysLeft<=14&&r.daysLeft>0?'color:var(--accent-warning);font-weight:600':'';
-    const reviewBadge=r.needsReview?'<span style="display:inline-block;background:var(--accent-warning-soft);color:var(--accent-warning);font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px">review</span>':'';
+    const reviewBadge=r.needsReview?'<span style="display:inline-block;background:var(--accent-warning-soft);color:var(--accent-warning);font-size:11px;padding:1px 5px;border-radius:4px;margin-left:4px">review</span>':'';
     return`<tr>
       <td style="padding:4px 8px"><input type="checkbox" value="${r.sku}" ${_siSkuSelected.has(r.sku)?'checked':''} onchange="window._siToggleSku('${r.sku}',this.checked)"></td>
-      <td style="font-weight:600;font-size:11px;white-space:nowrap">${r.sku}${reviewBadge}</td>
-      <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.title}">${r.title}</td>
-      <td style="font-size:11px">${r.color}</td>
-      <td style="font-size:11px">${r.size}</td>
-      <td style="font-size:11px">${r.productType||'—'}</td>
+      <td style="font-weight:600;font-size:12px;white-space:nowrap">${r.sku}${reviewBadge}</td>
+      <td style="font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.title}">${r.title}</td>
+      <td style="font-size:12px">${r.color}</td>
+      <td style="font-size:12px">${r.size}</td>
+      <td style="font-size:12px">${r.productType||'—'}</td>
       <td style="font-weight:600">${r.onHand}</td>
       <td>${r.s7}</td>
       <td>${r.s30}</td>
@@ -801,7 +801,7 @@ function _siSizeChips(variants){
     const low=!soldOut&&v.daysLeft>0&&v.daysLeft<=14&&v.dailyRate>0.05;
     const bg=soldOut?'var(--accent-urgent-soft)':low?'var(--accent-warning-soft)':'var(--soft)';
     const clr=soldOut?'var(--accent-urgent)':low?'var(--accent-warning)':'var(--text)';
-    return`<span style="padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;background:${bg};color:${clr}">${_siEsc(v.size||'?')}</span>`;
+    return`<span style="padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;background:${bg};color:${clr}">${_siEsc(v.size||'?')}</span>`;
   }).join(' ');
 }
 
@@ -834,13 +834,13 @@ function _siGroupedBodyHtml(filteredRows){
     const gkeyEsc=_siEsc(gkey);
     const gSeason=g.variants.find(v=>v.season!=='all-season')?.season||g.variants[0]?.season||'all-season';
     const gType=g.variants.find(v=>v.garmentType)?.garmentType||'';
-    const seasonIcon=gSeason==='summer'?'<span title="Summer" style="font-size:11px;margin-right:3px">☀</span>':gSeason==='winter'?'<span title="Winter" style="font-size:11px;margin-right:3px">❄</span>':'';
-    const typeChip=gType?`<span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700;margin-left:5px;vertical-align:middle">${_siEsc(gType.toUpperCase())}</span>`:'';
+    const seasonIcon=gSeason==='summer'?'<span title="Summer" style="font-size:12px;margin-right:3px">☀</span>':gSeason==='winter'?'<span title="Winter" style="font-size:12px;margin-right:3px">❄</span>':'';
+    const typeChip=gType?`<span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 5px;font-size:11px;font-weight:700;margin-left:5px;vertical-align:middle">${_siEsc(gType.toUpperCase())}</span>`:'';
     const parent=`<tr style="cursor:pointer" data-gkey="${gkeyEsc}" onclick="window._siToggleGroup(this.dataset.gkey)">
       <td style="padding:4px 8px" onclick="event.stopPropagation()"><input type="checkbox" ${groupAllSel?'checked':''} data-gkey="${gkeyEsc}" onchange="window._siToggleGroupSel(this.dataset.gkey,this.checked)" onclick="event.stopPropagation()"></td>
-      <td style="font-weight:600;font-size:12px;padding:10px 8px;white-space:nowrap"><span style="display:inline-block;width:14px;font-size:10px;color:var(--muted)">${expanded?'▼':'▶'}</span>${seasonIcon}${_siEsc(g.title)}${typeChip}</td>
-      <td style="font-size:11px;color:var(--muted)">${_siEsc(g.color)}</td>
-      <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_siEsc(g.productType||'')}">${_siEsc(g.productType)||'—'}</td>
+      <td style="font-weight:600;font-size:13px;padding:10px 8px;white-space:nowrap"><span style="display:inline-block;width:14px;font-size:11px;color:var(--muted)">${expanded?'▼':'▶'}</span>${seasonIcon}${_siEsc(g.title)}${typeChip}</td>
+      <td style="font-size:12px;color:var(--muted)">${_siEsc(g.color)}</td>
+      <td style="font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_siEsc(g.productType||'')}">${_siEsc(g.productType)||'—'}</td>
       <td style="white-space:nowrap">${_siSizeChips(g.variants)}</td>
       <td style="font-weight:700;color:${totColor}">${tot}</td>
       <td style="font-weight:600">${totS7}</td>
@@ -854,15 +854,15 @@ function _siGroupedBodyHtml(filteredRows){
       const daysStr=r.daysLeft===999?'∞':r.daysLeft===0?'—':`${r.daysLeft}d`;
       return`<tr style="background:var(--surface-2)">
         <td style="padding:4px 8px"><input type="checkbox" ${_siSkuSelected.has(r.sku)?'checked':''} data-sku="${_siEsc(r.sku)}" onchange="window._siToggleSku(this.dataset.sku,this.checked)"></td>
-        <td style="font-size:10px;color:var(--muted);padding:7px 8px 7px 22px">${_siEsc(r.sku)}</td>
+        <td style="font-size:11px;color:var(--muted);padding:7px 8px 7px 22px">${_siEsc(r.sku)}</td>
         <td></td><td></td>
-        <td style="font-weight:700;font-size:12px">${_siEsc(r.size||'?')}</td>
+        <td style="font-weight:700;font-size:13px">${_siEsc(r.size||'?')}</td>
         <td style="font-weight:${soldOut?'700':'600'};color:${soldOut?'var(--accent-urgent)':'inherit'}">${r.onHand}</td>
         <td>${r.s7}</td><td>${r.s30}</td>
         <td style="${daysClass}">${daysStr}</td>
-        <td style="font-size:11px">${r.sellThrough!=null?_siPct(r.sellThrough):'—'}</td>
-        <td style="font-size:11px">${r.reorderPoint||'—'}</td>
-        <td style="font-size:11px;font-weight:${r.suggestedQty?'700':''}">${r.suggestedQty||'—'}</td>
+        <td style="font-size:12px">${r.sellThrough!=null?_siPct(r.sellThrough):'—'}</td>
+        <td style="font-size:12px">${r.reorderPoint||'—'}</td>
+        <td style="font-size:12px;font-weight:${r.suggestedQty?'700':''}">${r.suggestedQty||'—'}</td>
       </tr>`;
     }).join('');
     return parent+children;
@@ -883,27 +883,27 @@ function _siFixIndeterminate(){
 function _siCatSelBar(){
   if(!_siSkuSelected.size)return'<div id="si-cat-bar"></div>';
   const n=_siSkuSelected.size;
-  const btnSm='padding:5px 10px;font-size:11px;border-radius:6px;cursor:pointer;font-family:inherit;border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:600';
+  const btnSm='padding:5px 10px;font-size:12px;border-radius:6px;cursor:pointer;font-family:inherit;border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:600';
   return`<div id="si-cat-bar" style="background:var(--soft);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-    <span style="font-size:12px;font-weight:700;flex-shrink:0">${n} variant${n===1?'':'s'} selected</span>
+    <span style="font-size:13px;font-weight:700;flex-shrink:0">${n} variant${n===1?'':'s'} selected</span>
     <div style="display:flex;gap:6px;align-items:center">
-      <input id="si-cat-input" placeholder="Category name…" onkeydown="if(event.key==='Enter')window._siApplyCat()" style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit;outline:none;min-width:150px;background:var(--surface)">
-      <button class="btn-primary" style="padding:7px 12px;font-size:12px;width:auto" onclick="window._siApplyCat()">Apply Category</button>
+      <input id="si-cat-input" placeholder="Category name…" onkeydown="if(event.key==='Enter')window._siApplyCat()" style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;font-family:inherit;outline:none;min-width:150px;background:var(--surface)">
+      <button class="btn-primary" style="padding:7px 12px;font-size:13px;width:auto" onclick="window._siApplyCat()">Apply Category</button>
     </div>
     <div style="display:flex;gap:4px;align-items:center">
-      <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;white-space:nowrap">Season</span>
+      <span style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;white-space:nowrap">Season</span>
       <button style="${btnSm}" onclick="window._siApplySeason('summer')">☀ Summer</button>
       <button style="${btnSm}" onclick="window._siApplySeason('winter')">❄ Winter</button>
       <button style="${btnSm}" onclick="window._siApplySeason('all-season')">◯ Year-Round</button>
     </div>
     <div style="display:flex;gap:4px;align-items:center">
-      <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;white-space:nowrap">Type</span>
+      <span style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;white-space:nowrap">Type</span>
       <button style="${btnSm}" onclick="window._siApplyType('top')">Top</button>
       <button style="${btnSm}" onclick="window._siApplyType('bottom')">Bottom</button>
       <button style="${btnSm}" onclick="window._siApplyType('')">—</button>
     </div>
-    <button style="padding:5px 10px;font-size:11px;border-radius:6px;cursor:pointer;font-family:inherit;border:1px solid var(--border);background:var(--surface);font-weight:600;margin-left:auto" onclick="window._siExportSelectedCsv()">↓ Export CSV</button>
-    <button class="btn-outline" style="padding:5px 10px;font-size:11px" onclick="window._siClearSel()">Clear selection</button>
+    <button style="padding:5px 10px;font-size:12px;border-radius:6px;cursor:pointer;font-family:inherit;border:1px solid var(--border);background:var(--surface);font-weight:600;margin-left:auto" onclick="window._siExportSelectedCsv()">↓ Export CSV</button>
+    <button class="btn-outline" style="padding:5px 10px;font-size:12px" onclick="window._siClearSel()">Clear selection</button>
   </div>`;
 }
 function _siSkuTableSection(rows){
@@ -917,23 +917,23 @@ function _siSkuTableSection(rows){
   return`${_siCatSelBar()}
   <div style="margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap">
     <input placeholder="Search SKU, product, color, category…" value="${_siEsc(_siSkuSearch)}" oninput="window._siFilterSku(this.value)"
-      style="flex:1;min-width:200px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);outline:none;font-family:inherit">
-    <select onchange="window._siFilterCat(this.value)" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--text);font-family:inherit;cursor:pointer;outline:none">
+      style="flex:1;min-width:200px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface-2);outline:none;font-family:inherit">
+    <select onchange="window._siFilterCat(this.value)" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface-2);color:var(--text);font-family:inherit;cursor:pointer;outline:none">
       <option value="">All Categories</option>
       ${cats.map(c=>`<option value="${_siEsc(c)}"${_siSkuCatFilter===c?' selected':''}>${_siEsc(c)}</option>`).join('')}
     </select>
   </div>
   <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-    <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Type</span>
+    <span style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase">Type</span>
     <button class="gp-tab${typeTab('')?' active':''}" onclick="window._siFilterType('')">All</button>
     <button class="gp-tab${typeTab('top')?' active':''}" onclick="window._siFilterType('top')">Top</button>
     <button class="gp-tab${typeTab('bottom')?' active':''}" onclick="window._siFilterType('bottom')">Bottom</button>
-    <span style="margin-left:auto;font-size:11px;color:var(--muted)" id="si-sku-count">${countStr}</span>
+    <span style="margin-left:auto;font-size:12px;color:var(--muted)" id="si-sku-count">${countStr}</span>
   </div>
-  <div style="font-size:9px;color:var(--muted);margin-bottom:6px">Click a row to expand sizes. ☀ = Summer · ❄ = Winter · <span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 4px;font-size:9px;font-weight:700">TOP</span> / <span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 4px;font-size:9px;font-weight:700">BOTTOM</span> badges from your labels. Green = all sizes in stock · Red = any sold out.</div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Click a row to expand sizes. ☀ = Summer · ❄ = Winter · <span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 4px;font-size:11px;font-weight:700">TOP</span> / <span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 4px;font-size:11px;font-weight:700">BOTTOM</span> badges from your labels. Green = all sizes in stock · Red = any sold out.</div>
   <div style="overflow-x:auto"><table class="cut-table" style="min-width:950px">
     <thead><tr id="si-sku-head">${_siSkuHeadCells()}</tr></thead>
-    <tbody id="si-sku-tbody">${_siGroupedBodyHtml(filtered)||(totalGroups===0?`<tr><td colspan="12" style="text-align:center;padding:32px;color:var(--muted);font-size:13px">No products match your filters</td></tr>`:'')}</tbody>
+    <tbody id="si-sku-tbody">${_siGroupedBodyHtml(filtered)||(totalGroups===0?`<tr><td colspan="12" style="text-align:center;padding:32px;color:var(--muted);font-size:14px">No products match your filters</td></tr>`:'')}</tbody>
   </table></div>
   <div id="si-sku-more" style="margin-top:10px;text-align:center">${moreHtml}</div>`;
 }
@@ -1065,7 +1065,7 @@ function _siRefreshSkuBody(){
   const totalGroups=Object.keys(groups).length;
   const tb=document.getElementById('si-sku-tbody');
   if(tb){
-    tb.innerHTML=_siGroupedBodyHtml(filtered)||(totalGroups===0?`<tr><td colspan="12" style="text-align:center;padding:32px;color:var(--muted);font-size:13px">No products match your filters</td></tr>`:'');
+    tb.innerHTML=_siGroupedBodyHtml(filtered)||(totalGroups===0?`<tr><td colspan="12" style="text-align:center;padding:32px;color:var(--muted);font-size:14px">No products match your filters</td></tr>`:'');
     _siFixIndeterminate();
   }
   const cnt=document.getElementById('si-sku-count');
@@ -1098,9 +1098,9 @@ function _siWeeklySection(){
           <div class="stat-val">${_siFmt(wc.line_items_counted)}</div>
         </div>
       </div>
-      ${wc.top_sku?`<div style="font-size:12px;margin-bottom:4px">Top SKU: <strong>${wc.top_sku.sku}</strong>${_siGetProd(wc.top_sku.sku).product_title?` — ${_siGetProd(wc.top_sku.sku).product_title}`:''} (${wc.top_sku.quantity} units)</div>`:''}
-      ${wc.top_category?`<div style="font-size:12px;margin-bottom:8px">Top Category: <strong>${wc.top_category.category}</strong> (${wc.top_category.quantity} units)</div>`:''}
-      ${wc.by_category?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:4px">By Category</div>${_siBarChart(Object.entries(wc.by_category).sort((a,b)=>b[1]-a[1]),8)}</div>`:''}
+      ${wc.top_sku?`<div style="font-size:13px;margin-bottom:4px">Top SKU: <strong>${wc.top_sku.sku}</strong>${_siGetProd(wc.top_sku.sku).product_title?` — ${_siGetProd(wc.top_sku.sku).product_title}`:''} (${wc.top_sku.quantity} units)</div>`:''}
+      ${wc.top_category?`<div style="font-size:13px;margin-bottom:8px">Top Category: <strong>${wc.top_category.category}</strong> (${wc.top_category.quantity} units)</div>`:''}
+      ${wc.by_category?`<div style="margin-top:8px"><div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:4px">By Category</div>${_siBarChart(Object.entries(wc.by_category).sort((a,b)=>b[1]-a[1]),8)}</div>`:''}
     </div>`;
   }).join('');
 }
@@ -1129,11 +1129,11 @@ function _siAdvancedSection(skuRows){
 
   <div class="card" style="border-left:3px solid var(--accent-urgent)">
     <div class="card-title">Lost Sales / Stockout Detection</div>
-    <div style="font-size:10px;color:var(--muted);margin-bottom:8px">SKUs with zero inventory but recent (30d) sales — potential lost revenue</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">SKUs with zero inventory but recent (30d) sales — potential lost revenue</div>
     ${stockouts.length?stockouts.map(r=>`<div class="info-row">
       <div>
-        <div style="font-weight:600;font-size:12px">${r.sku} <span style="color:var(--muted);font-weight:400">${r.title}</span></div>
-        <div style="font-size:11px;color:var(--muted)">${r.color} / ${r.size} · sold ${r.s30} in 30d</div>
+        <div style="font-weight:600;font-size:13px">${r.sku} <span style="color:var(--muted);font-weight:400">${r.title}</span></div>
+        <div style="font-size:12px;color:var(--muted)">${r.color} / ${r.size} · sold ${r.s30} in 30d</div>
       </div>
       <div style="text-align:right;font-weight:700;color:var(--accent-urgent)">OUT</div>
     </div>`).join(''):'<div class="empty">No stockouts with recent demand</div>'}
@@ -1144,10 +1144,10 @@ function _siAdvancedSection(skuRows){
     <div style="overflow-x:auto"><table class="cut-table" style="min-width:600px">
       <thead><tr><th>SKU</th><th>Product</th><th>First Sold</th><th>Last Sold</th><th>Days Since</th><th>Total Sold</th></tr></thead>
       <tbody>${skuRows.filter(r=>r.firstSold).sort((a,b)=>(b.daysSinceLastSale||0)-(a.daysSinceLastSale||0)).slice(0,20).map(r=>`<tr>
-        <td style="font-weight:600;font-size:11px">${r.sku}</td>
-        <td style="font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.title}</td>
-        <td style="font-size:11px">${(r.firstSold||'').slice(0,10)}</td>
-        <td style="font-size:11px">${(r.lastSold||'').slice(0,10)}</td>
+        <td style="font-weight:600;font-size:12px">${r.sku}</td>
+        <td style="font-size:12px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.title}</td>
+        <td style="font-size:12px">${(r.firstSold||'').slice(0,10)}</td>
+        <td style="font-size:12px">${(r.lastSold||'').slice(0,10)}</td>
         <td style="${r.daysSinceLastSale>30?'color:var(--accent-urgent);font-weight:600':''}">${r.daysSinceLastSale!=null?r.daysSinceLastSale+'d':'—'}</td>
         <td>${r.totalSold}</td>
       </tr>`).join('')}</tbody>
@@ -1156,12 +1156,12 @@ function _siAdvancedSection(skuRows){
 
   <div class="card">
     <div class="card-title">Reorder Points + Suggested Qty</div>
-    <div style="font-size:10px;color:var(--muted);margin-bottom:8px">Based on 30d daily rate. Reorder point = 14 days cover. Suggested qty = 30 days cover minus on hand.</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Based on 30d daily rate. Reorder point = 14 days cover. Suggested qty = 30 days cover minus on hand.</div>
     <div style="overflow-x:auto"><table class="cut-table" style="min-width:600px">
       <thead><tr><th>SKU</th><th>Product</th><th>Daily Rate</th><th>On Hand</th><th>Reorder Pt</th><th>Suggested Qty</th></tr></thead>
       <tbody>${skuRows.filter(r=>r.suggestedQty>0).sort((a,b)=>b.suggestedQty-a.suggestedQty).slice(0,20).map(r=>`<tr>
-        <td style="font-weight:600;font-size:11px">${r.sku}</td>
-        <td style="font-size:11px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.title}</td>
+        <td style="font-weight:600;font-size:12px">${r.sku}</td>
+        <td style="font-size:12px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.title}</td>
         <td>${r.dailyRate.toFixed(1)}/day</td>
         <td>${r.onHand}</td>
         <td>${r.reorderPoint}</td>
@@ -1172,15 +1172,15 @@ function _siAdvancedSection(skuRows){
 
   ${dropPerf.length?`<div class="card">
     <div class="card-title">Drop Performance Tracker</div>
-    <div style="font-size:10px;color:var(--muted);margin-bottom:8px">Products created in the last 30 days — early sell-through signal</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Products created in the last 30 days — early sell-through signal</div>
     ${dropPerf.map(r=>`<div class="info-row">
       <div>
-        <div style="font-weight:600;font-size:12px">${r.sku} <span style="color:var(--muted);font-weight:400">${r.title}</span></div>
-        <div style="font-size:11px;color:var(--muted)">Launched ${(r.created_at||'').slice(0,10)} · ${r.daysLive}d live</div>
+        <div style="font-weight:600;font-size:13px">${r.sku} <span style="color:var(--muted);font-weight:400">${r.title}</span></div>
+        <div style="font-size:12px;color:var(--muted)">Launched ${(r.created_at||'').slice(0,10)} · ${r.daysLive}d live</div>
       </div>
       <div style="text-align:right">
         <div style="font-weight:700">${r.totalSold} sold</div>
-        <div style="font-size:10px;color:var(--muted)">${r.dailyRate.toFixed(1)}/day · ${r.onHand} left</div>
+        <div style="font-size:11px;color:var(--muted)">${r.dailyRate.toFixed(1)}/day · ${r.onHand} left</div>
       </div>
     </div>`).join('')}
   </div>`:''}
@@ -1192,11 +1192,11 @@ function _siAdvancedSection(skuRows){
 
   ${md.length?`<div class="card">
     <div class="card-title">Markdown Candidates (cash-freed estimate)</div>
-    <div style="font-size:10px;color:var(--muted);margin-bottom:8px">45+ days no sale, 10+ units. Markdown at 30% off frees the estimated cash below.</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">45+ days no sale, 10+ units. Markdown at 30% off frees the estimated cash below.</div>
     <div style="overflow-x:auto"><table class="cut-table">
       <thead><tr><th>SKU</th><th>On Hand</th><th>Days No Sale</th><th>Cash Tied (retail)</th><th>Cash Freed (30% off)</th></tr></thead>
       <tbody>${md.map(r=>`<tr>
-        <td style="font-weight:600;font-size:11px">${r.sku}</td>
+        <td style="font-weight:600;font-size:12px">${r.sku}</td>
         <td>${r.onHand}</td>
         <td>${r.daysSinceLastSale}d</td>
         <td>${_siPKR(r.cashTied)}</td>
@@ -1229,8 +1229,8 @@ function _siReturnsTable(skuRows){
     <tbody>${withReturns.map(r=>{
       const rate=r.totalSold>0?(r.refunds/r.totalSold*100).toFixed(1)+'%':'—';
       return`<tr>
-        <td style="font-weight:600;font-size:11px">${r.sku}</td>
-        <td style="font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.title}</td>
+        <td style="font-weight:600;font-size:12px">${r.sku}</td>
+        <td style="font-size:12px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.title}</td>
         <td style="font-weight:600;color:var(--accent-urgent)">${r.refunds}</td>
         <td>${r.totalSold}</td>
         <td style="${parseFloat(rate)>10?'color:var(--accent-urgent);font-weight:600':''}">${rate}</td>

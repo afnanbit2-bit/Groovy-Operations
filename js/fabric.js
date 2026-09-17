@@ -30,7 +30,7 @@ function _fabShowBusy(on,label){
       el.style.cssText='position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(20,20,22,.34)';
       el.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;gap:10px;background:var(--dark);color:var(--on-dark);padding:16px 24px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.25)">
         <svg width="26" height="26" viewBox="0 0 50 50" style="animation:fabspin .8s linear infinite"><circle cx="25" cy="25" r="20" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-dasharray="80 50"/></svg>
-        <span id="fab-busy-label" style="font-size:12px;letter-spacing:.02em">Working…</span></div>`;
+        <span id="fab-busy-label" style="font-size:13px;letter-spacing:.02em">Working…</span></div>`;
       document.body.appendChild(el);
     }
     const lbl=document.getElementById('fab-busy-label');if(lbl)lbl.textContent=label||'Working…';
@@ -188,8 +188,8 @@ function renderFabricInventory(){
   }).sort((a,b)=>(a.fabType||'').localeCompare(b.fabType||'')||(a.color||'').localeCompare(b.color||'')||(a.gsm||0)-(b.gsm||0));
 
   // KPI strip values
-  const kpiStock=totalKg.toFixed(1)+' kg'+(totalM?`<div style="font-size:11px;font-weight:500;color:var(--muted)">+ ${totalM.toFixed(1)} m</div>`:'');
-  const kpiAlerts=alertCount+(outCount?`<div style="font-size:11px;font-weight:500;color:var(--muted)">${outCount} empty</div>`:'');
+  const kpiStock=totalKg.toFixed(1)+' kg'+(totalM?`<div style="font-size:12px;font-weight:500;color:var(--muted)">+ ${totalM.toFixed(1)} m</div>`:'');
+  const kpiAlerts=alertCount+(outCount?`<div style="font-size:12px;font-weight:500;color:var(--muted)">${outCount} empty</div>`:'');
 
   let h=`<div class="page-head"><div class="page-title">Fabric Inventory</div></div>`;
   h+=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:14px">
@@ -205,17 +205,17 @@ function renderFabricInventory(){
   h+=`<div class="card" style="margin-bottom:14px;padding:12px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
       <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex-shrink:0">
-        <button onclick="window.fabInvSetView('vendor')" style="padding:6px 14px;border:none;border-right:1px solid var(--border);background:${_fabInvView==='vendor'?'var(--dark)':'var(--surface)'};color:${_fabInvView==='vendor'?'var(--on-dark)':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">By Vendor</button>
-        <button onclick="window.fabInvSetView('fabric')" style="padding:6px 14px;border:none;background:${_fabInvView==='fabric'?'var(--dark)':'var(--surface)'};color:${_fabInvView==='fabric'?'var(--on-dark)':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">By Fabric</button>
+        <button onclick="window.fabInvSetView('vendor')" style="padding:6px 14px;border:none;border-right:1px solid var(--border);background:${_fabInvView==='vendor'?'var(--dark)':'var(--surface)'};color:${_fabInvView==='vendor'?'var(--on-dark)':'var(--text)'};font-size:13px;cursor:pointer;font-family:inherit">By Vendor</button>
+        <button onclick="window.fabInvSetView('fabric')" style="padding:6px 14px;border:none;background:${_fabInvView==='fabric'?'var(--dark)':'var(--surface)'};color:${_fabInvView==='fabric'?'var(--on-dark)':'var(--text)'};font-size:13px;cursor:pointer;font-family:inherit">By Fabric</button>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        ${[['in_stock','In stock'],['empty','Out of stock'],['partial',`Partial${partialCount?` (${partialCount})`:''}`],['all','All']].map(([k,l])=>`<button onclick="window.fabInvSetFilter('${k}')" style="padding:6px 12px;border:1px solid ${_fabInvFilter===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabInvFilter===k?(k==='partial'?'#b45309':'var(--dark)'):'var(--surface)'};color:${_fabInvFilter===k?(k==='partial'?'#fff':'var(--on-dark)'):(k==='partial'&&partialCount?'#b45309':'var(--text)')};font-size:12px;cursor:pointer;font-family:inherit;font-weight:${k==='partial'&&partialCount?'700':'400'}">${l}</button>`).join('')}
+        ${[['in_stock','In stock'],['empty','Out of stock'],['partial',`Partial${partialCount?` (${partialCount})`:''}`],['all','All']].map(([k,l])=>`<button onclick="window.fabInvSetFilter('${k}')" style="padding:6px 12px;border:1px solid ${_fabInvFilter===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabInvFilter===k?(k==='partial'?'#b45309':'var(--dark)'):'var(--surface)'};color:${_fabInvFilter===k?(k==='partial'?'#fff':'var(--on-dark)'):(k==='partial'&&partialCount?'#b45309':'var(--text)')};font-size:13px;cursor:pointer;font-family:inherit;font-weight:${k==='partial'&&partialCount?'700':'400'}">${l}</button>`).join('')}
       </div>
-      <input id="finv-search" placeholder="Search fabric…" value="${_fabInvSearchQ.replace(/"/g,'&quot;')}" oninput="window.fabInvSetSearch(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;outline:none;flex:1;min-width:160px">
+      <input id="finv-search" placeholder="Search fabric…" value="${_fabInvSearchQ.replace(/"/g,'&quot;')}" oninput="window.fabInvSetSearch(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;flex:1;min-width:160px">
     </div>
     ${cats.length?`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-      <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-right:2px">Category</span>
-      ${[['all','All'],...cats.map(c=>[c,c])].map(([k,l])=>`<button onclick="window.fabInvSetCat('${_gpEsc(k).replace(/'/g,"\\'")}')" style="padding:5px 11px;border:1px solid ${_fabInvCatFilter===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabInvCatFilter===k?'var(--dark)':'var(--surface)'};color:${_fabInvCatFilter===k?'var(--on-dark)':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${_gpEsc(l)}</button>`).join('')}
+      <span style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-right:2px">Category</span>
+      ${[['all','All'],...cats.map(c=>[c,c])].map(([k,l])=>`<button onclick="window.fabInvSetCat('${_gpEsc(k).replace(/'/g,"\\'")}')" style="padding:5px 11px;border:1px solid ${_fabInvCatFilter===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabInvCatFilter===k?'var(--dark)':'var(--surface)'};color:${_fabInvCatFilter===k?'var(--on-dark)':'var(--text)'};font-size:13px;cursor:pointer;font-family:inherit">${_gpEsc(l)}</button>`).join('')}
     </div>`:''}
   </div>`;
   h+=((_fabInvView==='vendor'&&_fabInvFilter!=='partial')?_renderFabByVendor(vendorNames,vMap,agg):_renderFabByFabric(filtered,vMap));
@@ -225,8 +225,8 @@ function renderFabricInventory(){
 // KPI tile — colored top border, label + large value
 function _fabKpiTile(label,value,accent){
   return`<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;border-top:3px solid ${accent}">
-    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px;font-weight:600">${label}</div>
-    <div style="font-size:20px;font-weight:800;color:var(--text);line-height:1;letter-spacing:-.01em">${value}</div>
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px;font-weight:600">${label}</div>
+    <div style="font-size:21px;font-weight:800;color:var(--text);line-height:1;letter-spacing:-.01em">${value}</div>
   </div>`;
 }
 
@@ -242,16 +242,16 @@ function _fabRelabelBannerHtml(){
   if(!list.length)return '';
   return`<div style="border:2px solid var(--accent-warning);background:var(--accent-warning-soft);border-radius:12px;padding:14px 16px;margin-bottom:14px">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
-      <span style="font-size:16px">⚠️</span>
-      <span style="font-weight:800;color:var(--accent-warning);font-size:14px;letter-spacing:.01em">${list.length} roll${list.length===1?'':'s'} partially used — REPRINT LABEL with the new weight</span>
+      <span style="font-size:17px">⚠️</span>
+      <span style="font-weight:800;color:var(--accent-warning);font-size:15px;letter-spacing:.01em">${list.length} roll${list.length===1?'':'s'} partially used — REPRINT LABEL with the new weight</span>
     </div>
-    <div style="font-size:12px;color:var(--accent-warning);margin-bottom:11px">These rolls were cut for a PO and now weigh less than their printed label. The barcode is unchanged — just reprint so the weight on the sticker matches.</div>
+    <div style="font-size:13px;color:var(--accent-warning);margin-bottom:11px">These rolls were cut for a PO and now weigh less than their printed label. The barcode is unchanged — just reprint so the weight on the sticker matches.</div>
     <div style="display:flex;flex-direction:column;gap:6px">
       ${list.map(({stock,roll})=>`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--accent-warning);border-radius:8px;padding:8px 10px">
-        <span style="font-weight:700;letter-spacing:.04em;font-size:12.5px">${_gpEsc(roll.rollCode)}</span>
-        <span style="font-size:12px;color:var(--muted)">${_gpEsc(stock.fabType||'')} ${stock.gsm||0}g ${_gpEsc(stock.color||'')}</span>
-        <span style="font-size:12.5px"><b>${roll.weight||0}</b> ${_gpEsc(roll.unit||stock.unit||'kg')} <span style="color:var(--muted);font-size:11px">now · was ${roll.originalWeight||roll.weight||0}</span></span>
-        <button onclick="window.fabReprintRoll('${_gpEsc(stock._id)}','${_gpEsc(roll.rollCode)}')" style="margin-left:auto;padding:6px 13px;border:none;border-radius:7px;background:#b45309;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🖨 Reprint label</button>
+        <span style="font-weight:700;letter-spacing:.04em;font-size:13.5px">${_gpEsc(roll.rollCode)}</span>
+        <span style="font-size:13px;color:var(--muted)">${_gpEsc(stock.fabType||'')} ${stock.gsm||0}g ${_gpEsc(stock.color||'')}</span>
+        <span style="font-size:13.5px"><b>${roll.weight||0}</b> ${_gpEsc(roll.unit||stock.unit||'kg')} <span style="color:var(--muted);font-size:12px">now · was ${roll.originalWeight||roll.weight||0}</span></span>
+        <button onclick="window.fabReprintRoll('${_gpEsc(stock._id)}','${_gpEsc(roll.rollCode)}')" style="margin-left:auto;padding:6px 13px;border:none;border-radius:7px;background:#b45309;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🖨 Reprint label</button>
       </div>`).join('')}
     </div>
   </div>`;
@@ -299,21 +299,21 @@ function _renderFabByVendor(vendorNames,vMap,agg){
     const alerts=fabrics.filter(s=>(s.totalWeight||0)>0&&_fabAlertLevel(s).label!=='OK').length;
     h+=`<div class="card" style="margin-bottom:10px;padding:0;overflow:hidden">
       <div onclick="window.fabInvToggleVendor('${_gpEsc(sup).replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;user-select:none;border-bottom:${expanded?'1px solid var(--border)':'none'};background:var(--surface-2)">
-        <span style="font-size:10px;color:var(--muted);display:inline-block;transform:rotate(${expanded?'90deg':'0deg'});transition:transform .15s">▶</span>
+        <span style="font-size:11px;color:var(--muted);display:inline-block;transform:rotate(${expanded?'90deg':'0deg'});transition:transform .15s">▶</span>
         <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:13px;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_gpEsc(sup)}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">${v.totalWeight.toFixed(1)} kg · ${v.rollsCount} rolls · ${fabrics.length} fabric${fabrics.length!==1?'s':''}</div>
+          <div style="font-weight:700;font-size:14px;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_gpEsc(sup)}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">${v.totalWeight.toFixed(1)} kg · ${v.rollsCount} rolls · ${fabrics.length} fabric${fabrics.length!==1?'s':''}</div>
         </div>
-        ${alerts?`<span style="background:var(--accent-urgent-soft);color:var(--accent-urgent);font-size:10px;font-weight:700;padding:3px 7px;border-radius:5px;flex-shrink:0">⚠ ${alerts} alert${alerts>1?'s':''}</span>`:''}
+        ${alerts?`<span style="background:var(--accent-urgent-soft);color:var(--accent-urgent);font-size:11px;font-weight:700;padding:3px 7px;border-radius:5px;flex-shrink:0">⚠ ${alerts} alert${alerts>1?'s':''}</span>`:''}
       </div>
-      ${expanded?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      ${expanded?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px">
         <thead><tr style="background:var(--surface);border-bottom:1px solid var(--border)">
-          <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Fabric</th>
-          <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">GSM</th>
-          <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Color</th>
-          <th style="padding:10px;text-align:right;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Stock</th>
-          <th style="padding:10px;text-align:right;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Rolls</th>
-          <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Status</th>
+          <th style="padding:10px;text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">Fabric</th>
+          <th style="padding:10px;text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">GSM</th>
+          <th style="padding:10px;text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">Color</th>
+          <th style="padding:10px;text-align:right;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">Stock</th>
+          <th style="padding:10px;text-align:right;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">Rolls</th>
+          <th style="padding:10px;text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">Status</th>
           <th></th>
         </tr></thead>
         <tbody>${fabrics.map(s=>{
@@ -322,10 +322,10 @@ function _renderFabByVendor(vendorNames,vMap,agg){
             <td style="padding:10px;font-weight:600"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${lvl.dot};margin-right:6px;vertical-align:middle"></span>${_gpEsc(s.fabType||'—')}</td>
             <td style="padding:10px">${s.gsm||'—'}</td>
             <td style="padding:10px">${_gpEsc(s.color||'—')}</td>
-            <td style="padding:10px;text-align:right;font-weight:700;color:${empty?'#dc2626':'var(--text)'}">${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'}${s.reservedCount?`<div style="font-size:10px;color:#d97706;font-weight:500">+${(s.reservedWeight||0).toFixed(2)} resv</div>`:''}</td>
-            <td style="padding:10px;text-align:right;font-weight:600">${s.rollsCount||0}${s.reservedCount?`<div style="font-size:10px;color:#d97706">+${s.reservedCount}</div>`:''}</td>
-            <td style="padding:10px"><span style="font-size:11px;font-weight:600;color:${lvl.color}">${lvl.label}</span>${_fabStockBar(s)}</td>
-            <td style="padding:10px;text-align:right"><button onclick="window.fabInvDrill('${s._id}')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Open</button></td>
+            <td style="padding:10px;text-align:right;font-weight:700;color:${empty?'#dc2626':'var(--text)'}">${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'}${s.reservedCount?`<div style="font-size:11px;color:#d97706;font-weight:500">+${(s.reservedWeight||0).toFixed(2)} resv</div>`:''}</td>
+            <td style="padding:10px;text-align:right;font-weight:600">${s.rollsCount||0}${s.reservedCount?`<div style="font-size:11px;color:#d97706">+${s.reservedCount}</div>`:''}</td>
+            <td style="padding:10px"><span style="font-size:12px;font-weight:600;color:${lvl.color}">${lvl.label}</span>${_fabStockBar(s)}</td>
+            <td style="padding:10px;text-align:right"><button onclick="window.fabInvDrill('${s._id}')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;font-family:inherit">Open</button></td>
           </tr>`;
         }).join('')}</tbody>
       </table></div>`:''}
@@ -344,15 +344,15 @@ function _renderFabByFabric(filtered,vMap){
       if(!fabVendors[id].includes(sup))fabVendors[id].push(sup);
     }
   }
-  return`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;background:var(--surface)">
+  return`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px;background:var(--surface)">
     <thead><tr style="background:var(--surface-2);border-bottom:1px solid var(--border)">
-      <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Fabric</th>
-      <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">GSM</th>
-      <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Color</th>
-      <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Vendor</th>
-      <th style="padding:10px;text-align:right;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Stock</th>
-      <th style="padding:10px;text-align:right;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Rolls</th>
-      <th style="padding:10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Status</th>
+      <th style="padding:10px;text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">Fabric</th>
+      <th style="padding:10px;text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">GSM</th>
+      <th style="padding:10px;text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">Color</th>
+      <th style="padding:10px;text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">Vendor</th>
+      <th style="padding:10px;text-align:right;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">Stock</th>
+      <th style="padding:10px;text-align:right;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">Rolls</th>
+      <th style="padding:10px;text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">Status</th>
       <th></th>
     </tr></thead>
     <tbody>${filtered.map(s=>{
@@ -362,11 +362,11 @@ function _renderFabByFabric(filtered,vMap){
         <td style="padding:10px;font-weight:600"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${lvl.dot};margin-right:6px;vertical-align:middle"></span>${_gpEsc(s.fabType||'—')}</td>
         <td style="padding:10px">${s.gsm||'—'}</td>
         <td style="padding:10px">${_gpEsc(s.color||'—')}</td>
-        <td style="padding:10px">${vendors.slice(0,2).map(v=>`<span style="display:inline-block;padding:2px 7px;background:var(--surface-2);border-radius:4px;margin:1px 2px 1px 0;white-space:nowrap;font-size:10px">${_gpEsc(v)}</span>`).join('')}${vendors.length>2?`<span style="font-size:11px;color:var(--muted)">+${vendors.length-2}</span>`:''}</td>
-        <td style="padding:10px;text-align:right;font-weight:700;color:${empty?'#dc2626':'var(--text)'}">${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'}${s.reservedCount?`<div style="font-size:10px;color:#d97706;font-weight:500">+${(s.reservedWeight||0).toFixed(2)} resv</div>`:''}</td>
-        <td style="padding:10px;text-align:right;font-weight:600">${s.rollsCount||0}${s.reservedCount?`<div style="font-size:10px;color:#d97706">+${s.reservedCount}</div>`:''}</td>
-        <td style="padding:10px"><span style="font-size:11px;font-weight:600;color:${lvl.color}">${lvl.label}</span>${_fabStockBar(s)}</td>
-        <td style="padding:10px;text-align:right"><button onclick="window.fabInvDrill('${s._id}')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Open</button></td>
+        <td style="padding:10px">${vendors.slice(0,2).map(v=>`<span style="display:inline-block;padding:2px 7px;background:var(--surface-2);border-radius:4px;margin:1px 2px 1px 0;white-space:nowrap;font-size:11px">${_gpEsc(v)}</span>`).join('')}${vendors.length>2?`<span style="font-size:12px;color:var(--muted)">+${vendors.length-2}</span>`:''}</td>
+        <td style="padding:10px;text-align:right;font-weight:700;color:${empty?'#dc2626':'var(--text)'}">${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'}${s.reservedCount?`<div style="font-size:11px;color:#d97706;font-weight:500">+${(s.reservedWeight||0).toFixed(2)} resv</div>`:''}</td>
+        <td style="padding:10px;text-align:right;font-weight:600">${s.rollsCount||0}${s.reservedCount?`<div style="font-size:11px;color:#d97706">+${s.reservedCount}</div>`:''}</td>
+        <td style="padding:10px"><span style="font-size:12px;font-weight:600;color:${lvl.color}">${lvl.label}</span>${_fabStockBar(s)}</td>
+        <td style="padding:10px;text-align:right"><button onclick="window.fabInvDrill('${s._id}')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;font-family:inherit">Open</button></td>
       </tr>`;
     }).join('')}</tbody>
   </table></div>`;
@@ -384,13 +384,13 @@ function _renderFabInvDrill(key){
     <button class="btn-outline" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.fabInvDrill(null)">← Back to Fabric Inventory</button>
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
-    <button onclick="window.fabDrillJump('issue','${key}')" style="padding:7px 13px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;font-family:inherit">Issue this fabric →</button>
-    <button onclick="window.fabDrillJump('returns','${key}')" style="padding:7px 13px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;font-family:inherit">Returns →</button>
-    <button onclick="window.fabDrillJump('fabricin','${key}')" style="padding:7px 13px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;font-family:inherit">Record arrival →</button>
-    <button onclick="window.fabDrillJump('reports','${key}')" style="padding:7px 13px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;font-family:inherit">Reports →</button>
-    ${_fabCanDelete()?`<button onclick="window.fabCorrectFabric('${key}')" style="padding:7px 13px;border:1px solid var(--accent-urgent);border-radius:8px;background:var(--surface);color:var(--accent-warning);font-size:12px;cursor:pointer;font-family:inherit">✎ Correct color / type / GSM</button>`:''}
+    <button onclick="window.fabDrillJump('issue','${key}')" style="padding:7px 13px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:13px;cursor:pointer;font-family:inherit">Issue this fabric →</button>
+    <button onclick="window.fabDrillJump('returns','${key}')" style="padding:7px 13px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:13px;cursor:pointer;font-family:inherit">Returns →</button>
+    <button onclick="window.fabDrillJump('fabricin','${key}')" style="padding:7px 13px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:13px;cursor:pointer;font-family:inherit">Record arrival →</button>
+    <button onclick="window.fabDrillJump('reports','${key}')" style="padding:7px 13px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:13px;cursor:pointer;font-family:inherit">Reports →</button>
+    ${_fabCanDelete()?`<button onclick="window.fabCorrectFabric('${key}')" style="padding:7px 13px;border:1px solid var(--accent-urgent);border-radius:8px;background:var(--surface);color:var(--accent-warning);font-size:13px;cursor:pointer;font-family:inherit">✎ Correct color / type / GSM</button>`:''}
   </div>
-  <div class="card" style="margin-bottom:14px"><div class="card-title">Stock alerts <span style="font-weight:400;color:var(--muted);font-size:11px">3 levels (${s.unit||'kg'}) · weight at/below each level raises the flag</span></div>
+  <div class="card" style="margin-bottom:14px"><div class="card-title">Stock alerts <span style="font-weight:400;color:var(--muted);font-size:12px">3 levels (${s.unit||'kg'}) · weight at/below each level raises the flag</span></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
       <div class="field" style="margin:0"><label>🟠 Low ≤</label><input id="fab-th1" type="number" min="0" step="0.1" value="${cfg.t1}" style="width:96px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-family:inherit"></div>
       <div class="field" style="margin:0"><label>🟧 Very low ≤</label><input id="fab-th2" type="number" min="0" step="0.1" value="${cfg.t2}" style="width:96px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-family:inherit"></div>
@@ -398,10 +398,10 @@ function _renderFabInvDrill(key){
       <button class="btn-outline" style="width:auto;padding:8px 16px;margin:0" onclick="window.fabSaveAlerts('${key}')">Save levels</button>
     </div>
   </div>
-  <div class="card" style="margin-bottom:14px"><div class="card-title">Rolls <span style="font-weight:400;color:var(--muted);font-size:11px">${rolls.length} total · scan barcode, reprint, history${_fabCanDelete()?', edit & delete':''} per roll</span></div>
+  <div class="card" style="margin-bottom:14px"><div class="card-title">Rolls <span style="font-weight:400;color:var(--muted);font-size:12px">${rolls.length} total · scan barcode, reprint, history${_fabCanDelete()?', edit & delete':''} per roll</span></div>
     ${rolls.length?`<div style="display:flex;align-items:center;gap:10px;padding:0 2px 8px;border-bottom:1px solid var(--soft);flex-wrap:wrap">
-      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);cursor:pointer"><input type="checkbox" id="fab-drill-chk-all" onclick="window.toggleAllDrillChk(this)" style="cursor:pointer;width:15px;height:15px">Select all</label>
-      <button id="fab-drill-print-sel" onclick="window.printSelectedDrillBarcodes()" disabled style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit;opacity:.5">🖨 Print selected</button>
+      <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer"><input type="checkbox" id="fab-drill-chk-all" onclick="window.toggleAllDrillChk(this)" style="cursor:pointer;width:15px;height:15px">Select all</label>
+      <button id="fab-drill-print-sel" onclick="window.printSelectedDrillBarcodes()" disabled style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;font-family:inherit;opacity:.5">🖨 Print selected</button>
     </div>`:''}
     ${rolls.length?rolls.map(r=>{
       const st=r.status||'in_stock';
@@ -413,22 +413,22 @@ function _renderFabInvDrill(key){
       return`<div style="padding:8px 2px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <input type="checkbox" class="fab-drill-chk" data-rc="${_gpEsc(r.rollCode||'')}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(supplier)}" data-gsm="${r.gsm||rcpt?.gsm||s.gsm||''}" data-color="${_gpEsc(r.color||rcpt?.color||s.color||'')}" data-fabtype="${_gpEsc(s.fabType||'')}" onclick="window.updateDrillPrintCount()" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
-          <span style="font-weight:700;letter-spacing:.04em;min-width:120px">${_gpEsc(r.rollCode||'—')}${(r.partiallyConsumed||(r.originalWeight&&r.originalWeight>(r.weight||0)))?' <span style="font-size:9px;font-weight:700;color:var(--accent-warning);background:var(--accent-warning-soft);padding:1px 6px;border-radius:5px;letter-spacing:.03em">PARTIAL</span>':''}${r.labelStale?' <span style="font-size:9px;font-weight:800;color:#fff;background:#dc2626;padding:1px 6px;border-radius:5px;letter-spacing:.03em">REPRINT LABEL</span>':''}</span>
-          <span style="flex:1;min-width:70px">${(r.originalWeight&&r.originalWeight>(r.weight||0))?`<b>${r.weight||0}</b> / ${r.originalWeight} ${r.unit||s.unit||'kg'} <span style="color:var(--accent-warning);font-size:11px">left</span>`:wt}${r.consumedWeight?` · used ${r.consumedWeight}`:''}</span>
-          <span style="color:${stColor};font-weight:600;text-transform:capitalize;font-size:11px">${st.replace('_',' ')}</span>
-          <button onclick="window.printRollBarcode('${_gpEsc(r.rollCode||'')}','${_gpEsc(s.fabType||'')}','${r.gsm||s.gsm||0}','${_gpEsc(s.color||'')}','${_gpEsc(wt)}','${_gpEsc(supplier)}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">🖨 Print</button>
-          ${r.labelStale?`<button onclick="window.fabReprintRoll('${_gpEsc(key)}','${_gpEsc(r.rollCode||'')}')" title="Reprint label with the updated weight — same barcode" style="padding:3px 8px;border:none;border-radius:6px;background:#b45309;color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">🖨 Reprint (weight changed)</button>`:''}
-          ${canAct?`<button onclick="window.editFabricRoll('${_gpEsc(r.sourceFabId||'')}','${_gpEsc(r.rollCode||'')}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">Edit</button>
-          <button onclick="window.deleteFabricRoll('${_gpEsc(r.sourceFabId||'')}','${_gpEsc(r.rollCode||'')}')" title="Delete this roll" style="padding:3px 8px;border:1px solid var(--accent-urgent);border-radius:6px;background:var(--surface);color:var(--accent-urgent);font-size:10px;cursor:pointer;font-family:inherit">✕</button>`:''}
+          <span style="font-weight:700;letter-spacing:.04em;min-width:120px">${_gpEsc(r.rollCode||'—')}${(r.partiallyConsumed||(r.originalWeight&&r.originalWeight>(r.weight||0)))?' <span style="font-size:11px;font-weight:700;color:var(--accent-warning);background:var(--accent-warning-soft);padding:1px 6px;border-radius:5px;letter-spacing:.03em">PARTIAL</span>':''}${r.labelStale?' <span style="font-size:11px;font-weight:800;color:#fff;background:#dc2626;padding:1px 6px;border-radius:5px;letter-spacing:.03em">REPRINT LABEL</span>':''}</span>
+          <span style="flex:1;min-width:70px">${(r.originalWeight&&r.originalWeight>(r.weight||0))?`<b>${r.weight||0}</b> / ${r.originalWeight} ${r.unit||s.unit||'kg'} <span style="color:var(--accent-warning);font-size:12px">left</span>`:wt}${r.consumedWeight?` · used ${r.consumedWeight}`:''}</span>
+          <span style="color:${stColor};font-weight:600;text-transform:capitalize;font-size:12px">${st.replace('_',' ')}</span>
+          <button onclick="window.printRollBarcode('${_gpEsc(r.rollCode||'')}','${_gpEsc(s.fabType||'')}','${r.gsm||s.gsm||0}','${_gpEsc(s.color||'')}','${_gpEsc(wt)}','${_gpEsc(supplier)}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">🖨 Print</button>
+          ${r.labelStale?`<button onclick="window.fabReprintRoll('${_gpEsc(key)}','${_gpEsc(r.rollCode||'')}')" title="Reprint label with the updated weight — same barcode" style="padding:3px 8px;border:none;border-radius:6px;background:#b45309;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">🖨 Reprint (weight changed)</button>`:''}
+          ${canAct?`<button onclick="window.editFabricRoll('${_gpEsc(r.sourceFabId||'')}','${_gpEsc(r.rollCode||'')}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
+          <button onclick="window.deleteFabricRoll('${_gpEsc(r.sourceFabId||'')}','${_gpEsc(r.rollCode||'')}')" title="Delete this roll" style="padding:3px 8px;border:1px solid var(--accent-urgent);border-radius:6px;background:var(--surface);color:var(--accent-urgent);font-size:11px;cursor:pointer;font-family:inherit">✕</button>`:''}
         </div>
-        <div style="font-size:11px;color:var(--muted)">${_fabRollDetail(r)}</div>
+        <div style="font-size:12px;color:var(--muted)">${_fabRollDetail(r)}</div>
         <svg class="fab-drill-bc" data-rc="${_gpEsc(r.rollCode||'')}" style="display:block;height:34px"></svg>
       </div>`;
     }).join(''):'<div class="empty" style="padding:16px;text-align:center">No rolls yet.</div>'}
   </div>
   <div class="card"><div class="card-title">Movements (${movements.length})</div>
-    ${movements.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead><tr style="background:var(--surface-2)"><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">When</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Type</th><th style="padding:8px;text-align:right;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Qty</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Rolls</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Source</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">By</th><th style="padding:8px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted)">Note</th></tr></thead>
+    ${movements.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:var(--surface-2)"><th style="padding:8px;text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">When</th><th style="padding:8px;text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">Type</th><th style="padding:8px;text-align:right;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">Qty</th><th style="padding:8px;text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">Rolls</th><th style="padding:8px;text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">Source</th><th style="padding:8px;text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">By</th><th style="padding:8px;text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;color:var(--muted)">Note</th></tr></thead>
       <tbody>${movements.map(m=>{
         // Return-to-supplier rows are shown in PURPLE across the whole line.
         const isRet=m.subtype==='return_out';
@@ -438,10 +438,10 @@ function _renderFabInvDrill(key){
           <td style="padding:8px;color:${isRet?'#7c3aed':'inherit'}">${new Date(m.ts).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
           <td style="padding:8px;color:${tColor};font-weight:700;text-transform:uppercase">${isRet?'↩ RETURN':m.type==='in'?'+ IN':m.type==='out'?'− OUT':m.type==='consume'?'− CONSUME':m.type==='return'?'+ RETURN':m.type}</td>
           <td style="padding:8px;text-align:right;font-weight:600;color:${isRet?'#7c3aed':'inherit'}">${(m.qty||0).toFixed(2)} ${m.unit||'kg'}</td>
-          <td style="padding:8px;font-size:11px;letter-spacing:.04em;color:${isRet?'#7c3aed':'inherit'}">${(m.rollCodes||[]).slice(0,3).map(_gpEsc).join(', ')}${(m.rollCodes||[]).length>3?` +${m.rollCodes.length-3}`:''}</td>
-          <td style="padding:8px;font-size:11px;color:${noteCol}">${_gpEsc(m.sourceCollection||'')}/${_gpEsc(m.sourceId||'')}</td>
-          <td style="padding:8px;font-size:11px;color:${noteCol}">${_gpEsc(m.by||'')}</td>
-          <td style="padding:8px;font-size:11px;color:${noteCol}">${_gpEsc(m.note||'')}${(m.partialRolls&&m.partialRolls.length)?`<span style="color:var(--accent-warning);display:block;margin-top:2px">✂ ${m.partialRolls.map(pr=>`${_gpEsc(pr.rollCode)} ${pr.usedWeight} cut → ${pr.weightAfter} left`).join('; ')}</span>`:''}</td>
+          <td style="padding:8px;font-size:12px;letter-spacing:.04em;color:${isRet?'#7c3aed':'inherit'}">${(m.rollCodes||[]).slice(0,3).map(_gpEsc).join(', ')}${(m.rollCodes||[]).length>3?` +${m.rollCodes.length-3}`:''}</td>
+          <td style="padding:8px;font-size:12px;color:${noteCol}">${_gpEsc(m.sourceCollection||'')}/${_gpEsc(m.sourceId||'')}</td>
+          <td style="padding:8px;font-size:12px;color:${noteCol}">${_gpEsc(m.by||'')}</td>
+          <td style="padding:8px;font-size:12px;color:${noteCol}">${_gpEsc(m.note||'')}${(m.partialRolls&&m.partialRolls.length)?`<span style="color:var(--accent-warning);display:block;margin-top:2px">✂ ${m.partialRolls.map(pr=>`${_gpEsc(pr.rollCode)} ${pr.usedWeight} cut → ${pr.weightAfter} left`).join('; ')}</span>`:''}</td>
         </tr>`;
       }).join('')}</tbody>
     </table></div>`:'<div class="empty" style="padding:16px">No movements logged for this fabric yet.</div>'}
@@ -626,18 +626,18 @@ function renderFabricInTab(){
       <div class="field"><label>Received By</label><input value="${session.name}" readonly style="background:var(--soft);cursor:default"></div>
       <div class="field"><label>Auto fabric code</label>
         <input id="fab-code" readonly placeholder="Pick type + GSM + color to generate" style="background:var(--surface-2);color:var(--cat-notes);font-weight:700;letter-spacing:.04em">
-        <div style="font-size:10px;color:var(--muted);margin-top:3px">COLOR+TYPE+GSM-LOT. Each roll tagged <span id="fab-code-roll-hint">CODE-R01</span>, <span id="fab-code-roll-hint-2">CODE-R02</span>…</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">COLOR+TYPE+GSM-LOT. Each roll tagged <span id="fab-code-roll-hint">CODE-R01</span>, <span id="fab-code-roll-hint-2">CODE-R02</span>…</div>
       </div>
-      <div class="field" style="grid-column:1/-1"><label>Notes</label><textarea id="fab-notes" rows="2" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--text);font-family:inherit;outline:none;width:100%;resize:vertical" placeholder="Optional notes"></textarea></div>
+      <div class="field" style="grid-column:1/-1"><label>Notes</label><textarea id="fab-notes" rows="2" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface-2);color:var(--text);font-family:inherit;outline:none;width:100%;resize:vertical" placeholder="Optional notes"></textarea></div>
     </div>
   </div>
   <div class="card">
-    <div class="card-title">Fabric rolls <span id="fab-unit-label" style="font-weight:400;color:var(--muted);font-size:11px">(kg)</span></div>
+    <div class="card-title">Fabric rolls <span id="fab-unit-label" style="font-weight:400;color:var(--muted);font-size:12px">(kg)</span></div>
     <div id="fab-rolls-body"></div>
-    <button onclick="window.addFabRoll()" style="width:100%;padding:9px;background:none;border:none;font-size:12px;color:var(--muted);cursor:pointer;border-top:1px solid var(--border);font-family:inherit;margin-top:4px">+ Add roll</button>
+    <button onclick="window.addFabRoll()" style="width:100%;padding:9px;background:none;border:none;font-size:13px;color:var(--muted);cursor:pointer;border-top:1px solid var(--border);font-family:inherit;margin-top:4px">+ Add roll</button>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding:10px 14px;background:var(--dark);border-radius:8px">
-      <span style="font-size:11px;color:var(--on-dark);opacity:.62;text-transform:uppercase;letter-spacing:.06em">Total weight</span>
-      <span id="fab-total-weight" style="font-size:18px;font-weight:700;color:var(--on-dark)">0.00 kg</span>
+      <span style="font-size:12px;color:var(--on-dark);opacity:.62;text-transform:uppercase;letter-spacing:.06em">Total weight</span>
+      <span id="fab-total-weight" style="font-size:19px;font-weight:700;color:var(--on-dark)">0.00 kg</span>
     </div>
   </div>
   <button class="btn-primary" onclick="window.submitFabricIn()">Save Fabric Entry</button>
@@ -709,15 +709,15 @@ window.addFabRoll=function(){
   div.id=id;div.className='roll-row';
   div.style.flexDirection='column';div.style.alignItems='stretch';
   div.innerHTML=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <span class="fab-roll-code" style="font-size:11px;font-weight:700;color:var(--dark);min-width:108px;letter-spacing:.04em">${rollCode}</span>
-      <input type="number" class="fab-roll-weight" min="0" step="0.01" placeholder="0" style="width:88px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:var(--surface);outline:none;font-family:inherit" oninput="window.fabRecalc()">
-      <span class="fab-roll-unit" style="font-size:12px;color:var(--muted);min-width:24px">${unit}</span>
-      <input type="number" class="fab-roll-gsm" min="0" step="1" placeholder="GSM" value="${defaultGsm}" title="GSM for this roll" style="width:72px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:var(--surface);outline:none;font-family:inherit">
-      <span style="font-size:11px;color:var(--muted)">gsm</span>
-      <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;flex-shrink:0;white-space:nowrap">
+      <span class="fab-roll-code" style="font-size:12px;font-weight:700;color:var(--dark);min-width:108px;letter-spacing:.04em">${rollCode}</span>
+      <input type="number" class="fab-roll-weight" min="0" step="0.01" placeholder="0" style="width:88px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:14px;background:var(--surface);outline:none;font-family:inherit" oninput="window.fabRecalc()">
+      <span class="fab-roll-unit" style="font-size:13px;color:var(--muted);min-width:24px">${unit}</span>
+      <input type="number" class="fab-roll-gsm" min="0" step="1" placeholder="GSM" value="${defaultGsm}" title="GSM for this roll" style="width:72px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:14px;background:var(--surface);outline:none;font-family:inherit">
+      <span style="font-size:12px;color:var(--muted)">gsm</span>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;flex-shrink:0;white-space:nowrap">
         <input type="checkbox" onchange="window.onFabRollQC(this,'${rollCode}')"> QC ✓
       </label>
-      <button onclick="document.getElementById('${id}').remove();window.fabRecalc()" style="background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:2px 6px;flex-shrink:0">×</button>
+      <button onclick="document.getElementById('${id}').remove();window.fabRecalc()" style="background:none;border:none;color:var(--muted);font-size:17px;cursor:pointer;padding:2px 6px;flex-shrink:0">×</button>
     </div>
     <svg class="fab-roll-barcode" style="display:block;height:36px;margin:4px 0 0 108px"></svg>`;
   body.appendChild(div);
@@ -731,10 +731,10 @@ function _renderRollBarcode(svgEl,value){
     if(typeof JsBarcode==='function'){
       JsBarcode(svgEl,value,{format:'CODE128',displayValue:true,fontSize:10,height:28,margin:0,width:1.4});
     }else{
-      svgEl.outerHTML=`<span style="font-size:10px;color:var(--muted);margin-left:108px">${value}</span>`;
+      svgEl.outerHTML=`<span style="font-size:11px;color:var(--muted);margin-left:108px">${value}</span>`;
     }
   }catch(e){
-    svgEl.outerHTML=`<span style="font-size:10px;color:var(--accent-urgent);margin-left:108px">Barcode error: ${e.message}</span>`;
+    svgEl.outerHTML=`<span style="font-size:11px;color:var(--accent-urgent);margin-left:108px">Barcode error: ${e.message}</span>`;
   }
 }
 
@@ -815,25 +815,25 @@ function renderFabricInList(){
     const total=rolls.length;
     const allQC=total>0&&qcDone===total;
     const pend=_gpPendingFor('fabric',f.id);
-    const pendBadge=pend?`<span title="${pend.action==='delete'?'Delete':'Edit'} pending approval" style="display:inline-block;background:var(--accent-warning-soft);color:var(--accent-warning);font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px">${pend.action==='delete'?'Delete':'Edit'} pending</span>`:'';
+    const pendBadge=pend?`<span title="${pend.action==='delete'?'Delete':'Edit'} pending approval" style="display:inline-block;background:var(--accent-warning-soft);color:var(--accent-warning);font-size:11px;font-weight:600;padding:2px 6px;border-radius:4px">${pend.action==='delete'?'Delete':'Edit'} pending</span>`:'';
     return`<div>
       <div class="fab-entry-header" onclick="window.toggleFabEntry('${f.id}')">
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-            <span style="font-weight:700;color:var(--red);font-size:11px">${f.id}</span>
-            ${f.fabCode?`<span style="font-weight:700;color:var(--cat-notes);font-size:11px;background:var(--surface-2);padding:1px 6px;border-radius:4px;letter-spacing:.04em">${f.fabCode}</span>`:''}
-            <span style="font-size:11px;color:var(--muted)">${f.date||''}</span>
+            <span style="font-weight:700;color:var(--red);font-size:12px">${f.id}</span>
+            ${f.fabCode?`<span style="font-weight:700;color:var(--cat-notes);font-size:12px;background:var(--surface-2);padding:1px 6px;border-radius:4px;letter-spacing:.04em">${f.fabCode}</span>`:''}
+            <span style="font-size:12px;color:var(--muted)">${f.date||''}</span>
             ${pendBadge}
           </div>
-          <div style="font-size:13px;font-weight:500;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${f.supplier} · ${f.fabType||'—'}${f.gsm?` · ${f.gsm}gsm`:''}</div>
-          <div style="font-size:11px;color:var(--muted)">${f.color||'—'} · ${f.totalWeight||0} ${f.unit||'kg'} · ${total} rolls · <span style="color:${allQC?'var(--green)':'var(--amber)'};font-weight:600">${qcDone}/${total} QC ✓</span></div>
+          <div style="font-size:14px;font-weight:500;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${f.supplier} · ${f.fabType||'—'}${f.gsm?` · ${f.gsm}gsm`:''}</div>
+          <div style="font-size:12px;color:var(--muted)">${f.color||'—'} · ${f.totalWeight||0} ${f.unit||'kg'} · ${total} rolls · <span style="color:${allQC?'var(--green)':'var(--amber)'};font-weight:600">${qcDone}/${total} QC ✓</span></div>
         </div>
-        <span id="fab-chev-${f.id}" style="color:var(--muted);font-size:18px;margin-left:8px;flex-shrink:0">›</span>
+        <span id="fab-chev-${f.id}" style="color:var(--muted);font-size:19px;margin-left:8px;flex-shrink:0">›</span>
       </div>
       <div id="fab-rolls-${f.id}" style="display:none;padding:4px 0 8px">
         ${total?`<div style="display:flex;align-items:center;gap:10px;padding:4px 4px 8px;border-bottom:1px solid var(--soft);flex-wrap:wrap">
-          <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);cursor:pointer"><input type="checkbox" id="fab-chk-all-${f.id}" onclick="event.stopPropagation();window.toggleAllRollChk('${f.id}',this)" style="cursor:pointer;width:15px;height:15px">Select all</label>
-          <button id="fab-print-sel-${f.id}" onclick="event.stopPropagation();window.printSelectedRollBarcodes('${f.id}')" disabled style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit;opacity:.5">🖨 Print selected</button>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer"><input type="checkbox" id="fab-chk-all-${f.id}" onclick="event.stopPropagation();window.toggleAllRollChk('${f.id}',this)" style="cursor:pointer;width:15px;height:15px">Select all</label>
+          <button id="fab-print-sel-${f.id}" onclick="event.stopPropagation();window.printSelectedRollBarcodes('${f.id}')" disabled style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;font-family:inherit;opacity:.5">🖨 Print selected</button>
         </div>`:''}
         ${rolls.map(r=>{
           const rc=r.rollCode||r.rollNumber||'';
@@ -844,24 +844,24 @@ function renderFabricInList(){
           const live=_fabFindRoll(rc);
           const liveSt=live?(live.roll.status||'in_stock'):'in_stock';
           const stCol=liveSt==='in_stock'?'var(--green)':liveSt==='issued'?'#dc2626':liveSt==='reserved'?'#d97706':liveSt==='returned_supplier'?'#9ca3af':'var(--muted)';
-          return`<div style="display:flex;flex-direction:column;padding:8px 4px;border-bottom:1px solid #f9f9f9;font-size:12px;gap:6px">
+          return`<div style="display:flex;flex-direction:column;padding:8px 4px;border-bottom:1px solid #f9f9f9;font-size:13px;gap:6px">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
               <input type="checkbox" class="fab-roll-chk" data-rc="${_gpEsc(rc)}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(f.supplier||'')}" data-gsm="${rGsm}" data-color="${_gpEsc(f.color||'')}" data-fabtype="${_gpEsc(f.fabType||'')}" onclick="event.stopPropagation();window.updateRollPrintCount('${f.id}')" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
               <span style="font-weight:600;min-width:120px;letter-spacing:.04em">${rc}</span>
               <span style="flex:1;min-width:80px">${wt} · ${rGsm}gsm</span>
-              <span style="color:${stCol};font-weight:600;text-transform:capitalize;font-size:11px">${liveSt.replace('_',' ')}</span>
+              <span style="color:${stCol};font-weight:600;text-transform:capitalize;font-size:12px">${liveSt.replace('_',' ')}</span>
               <span style="${r.qcPassed?'color:var(--green);font-weight:600':'color:var(--muted)'}">${r.qcPassed?'QC ✓':'Pending QC'}</span>
-              ${r.qcPassed&&r.qcBy?`<span style="font-size:10px;color:var(--muted)">${r.qcBy}</span>`:''}
-              <button onclick="event.stopPropagation();window.printRollBarcode('${_gpEsc(rc)}','${_gpEsc(f.fabType||'')}','${rGsm}','${_gpEsc(f.color||'')}','${_gpEsc(wt)}','${_gpEsc(f.supplier||'')}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">🖨 Print</button>
-              ${_fabCanDelete()&&liveSt==='in_stock'?`<button onclick="event.stopPropagation();window.editFabricRoll('${f.id}','${_gpEsc(rc)}')" title="Edit this roll (owners only)" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:10px;cursor:pointer;font-family:inherit">Edit</button>
-              <button onclick="event.stopPropagation();window.deleteFabricRoll('${f.id}','${_gpEsc(rc)}')" title="Delete just this roll (owners only)" style="padding:3px 8px;border:1px solid var(--accent-urgent);border-radius:6px;background:var(--surface);color:var(--accent-urgent);font-size:10px;cursor:pointer;font-family:inherit">✕ Roll</button>`:''}
+              ${r.qcPassed&&r.qcBy?`<span style="font-size:11px;color:var(--muted)">${r.qcBy}</span>`:''}
+              <button onclick="event.stopPropagation();window.printRollBarcode('${_gpEsc(rc)}','${_gpEsc(f.fabType||'')}','${rGsm}','${_gpEsc(f.color||'')}','${_gpEsc(wt)}','${_gpEsc(f.supplier||'')}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">🖨 Print</button>
+              ${_fabCanDelete()&&liveSt==='in_stock'?`<button onclick="event.stopPropagation();window.editFabricRoll('${f.id}','${_gpEsc(rc)}')" title="Edit this roll (owners only)" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
+              <button onclick="event.stopPropagation();window.deleteFabricRoll('${f.id}','${_gpEsc(rc)}')" title="Delete just this roll (owners only)" style="padding:3px 8px;border:1px solid var(--accent-urgent);border-radius:6px;background:var(--surface);color:var(--accent-urgent);font-size:11px;cursor:pointer;font-family:inherit">✕ Roll</button>`:''}
             </div>
             <svg class="fab-roll-barcode-view" data-rc="${_gpEsc(rc)}" style="display:block;height:38px;margin-left:0"></svg>
           </div>`;
-        }).join('')||'<div style="font-size:12px;color:var(--muted);padding:6px">No rolls recorded.</div>'}
+        }).join('')||'<div style="font-size:13px;color:var(--muted);padding:6px">No rolls recorded.</div>'}
         <div style="display:flex;gap:6px;justify-content:flex-end;padding:8px 4px 0">
-          <button onclick="event.stopPropagation();window.editFabricIn('${f.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
-          <button onclick="event.stopPropagation();window.requestDeleteFabricIn('${f.id}')" title="Delete the whole receipt (all rolls)" style="padding:4px 10px;border:1px solid var(--accent-urgent);border-radius:6px;background:var(--surface);color:var(--accent-urgent);font-size:11px;cursor:pointer;font-family:inherit">Delete entry</button>
+          <button onclick="event.stopPropagation();window.editFabricIn('${f.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;font-family:inherit">Edit</button>
+          <button onclick="event.stopPropagation();window.requestDeleteFabricIn('${f.id}')" title="Delete the whole receipt (all rolls)" style="padding:4px 10px;border:1px solid var(--accent-urgent);border-radius:6px;background:var(--surface);color:var(--accent-urgent);font-size:12px;cursor:pointer;font-family:inherit">Delete entry</button>
         </div>
       </div>
     </div>`;
@@ -870,10 +870,10 @@ function renderFabricInList(){
     const p=_fabInListPage;
     body.innerHTML+=`<div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:14px 0 4px;border-top:1px solid var(--border);margin-top:4px">
       <button onclick="window.fabInListGoPage(${p-1})" ${p===0?'disabled':''}
-        style="padding:5px 14px;border:1px solid var(--border);border-radius:7px;background:${p===0?'var(--surface-2)':'var(--surface)'};color:${p===0?'var(--muted)':'var(--text)'};font-size:12px;cursor:${p===0?'default':'pointer'};font-family:inherit">← Prev</button>
-      <span style="font-size:12px;color:var(--muted)">Page <strong style="color:var(--text)">${p+1}</strong> of ${totalPages} · ${allFabricIn.length} entries</span>
+        style="padding:5px 14px;border:1px solid var(--border);border-radius:7px;background:${p===0?'var(--surface-2)':'var(--surface)'};color:${p===0?'var(--muted)':'var(--text)'};font-size:13px;cursor:${p===0?'default':'pointer'};font-family:inherit">← Prev</button>
+      <span style="font-size:13px;color:var(--muted)">Page <strong style="color:var(--text)">${p+1}</strong> of ${totalPages} · ${allFabricIn.length} entries</span>
       <button onclick="window.fabInListGoPage(${p+1})" ${p===totalPages-1?'disabled':''}
-        style="padding:5px 14px;border:1px solid var(--border);border-radius:7px;background:${p===totalPages-1?'var(--surface-2)':'var(--surface)'};color:${p===totalPages-1?'var(--muted)':'var(--text)'};font-size:12px;cursor:${p===totalPages-1?'default':'pointer'};font-family:inherit">Next →</button>
+        style="padding:5px 14px;border:1px solid var(--border);border-radius:7px;background:${p===totalPages-1?'var(--surface-2)':'var(--surface)'};color:${p===totalPages-1?'var(--muted)':'var(--text)'};font-size:13px;cursor:${p===totalPages-1?'default':'pointer'};font-family:inherit">Next →</button>
     </div>`;
   }
 }
@@ -952,12 +952,12 @@ function _openRollLabelsPrint(labels){
       .row:last-child{page-break-after:auto;break-after:auto}
       .pc{padding:9px 12px;background:#f5f5f5;border-bottom:1px solid #ddd;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       .grp{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-      .gt{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;margin-right:1px}
-      .pc label{display:flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap}
-      .pc input[type=number]{width:46px;padding:3px 4px;border:1px solid #bbb;border-radius:5px;font-size:11px;font-family:inherit;text-align:center}
+      .gt{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;margin-right:1px}
+      .pc label{display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap}
+      .pc input[type=number]{width:46px;padding:3px 4px;border:1px solid #bbb;border-radius:5px;font-size:12px;font-family:inherit;text-align:center}
       .pc input[type=range]{width:66px;cursor:pointer}
       .sep{width:1px;height:26px;background:#ccc;flex-shrink:0}
-      .btn{padding:6px 13px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit;font-weight:600}
+      .btn{padding:6px 13px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-family:inherit;font-weight:600}
       @media print{.pc{display:none}}
     </style>
     <style id="dp">
@@ -1145,12 +1145,12 @@ window.editFabricIn=function(fabId){
   back.className='hrm-modal-back';back.id='hrm-modal-back';
   back.onclick=ev=>{if(ev.target===back)window.hrmCloseModal();};
   const banner=_gpCanApprove()
-    ?`<div style="background:var(--accent-success-soft);color:var(--accent-success);border:1px solid var(--accent-success);padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Owner/Manager: changes apply immediately.</div>`
-    :`<div style="background:var(--accent-warning-soft);color:var(--accent-warning);border:1px solid var(--accent-warning);padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Your changes will be sent to owners/managers for approval.</div>`;
+    ?`<div style="background:var(--accent-success-soft);color:var(--accent-success);border:1px solid var(--accent-success);padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:10px">Owner/Manager: changes apply immediately.</div>`
+    :`<div style="background:var(--accent-warning-soft);color:var(--accent-warning);border:1px solid var(--accent-warning);padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:10px">Your changes will be sent to owners/managers for approval.</div>`;
   back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div><h3>Edit Fabric Entry</h3><div class="sub">${f.id} · ${_gpEsc(f.supplier||'')}</div></div>
-      <button onclick="window.hrmCloseModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);line-height:1">×</button>
+      <button onclick="window.hrmCloseModal()" style="background:none;border:none;font-size:25px;cursor:pointer;color:var(--muted);line-height:1">×</button>
     </div>
     ${banner}
     <div class="hrm-grid-2">
@@ -1161,9 +1161,9 @@ window.editFabricIn=function(fabId){
       <div class="field"><label>GSM 🔒</label><input value="${f.gsm||0}" readonly style="background:var(--soft);cursor:not-allowed;color:var(--muted)"></div>
       <div class="field"><label>Total Weight 🔒</label><input value="${(f.totalWeight||0)} ${_gpEsc(f.unit||'kg')}" readonly style="background:var(--soft);cursor:not-allowed;color:var(--muted)"></div>
     </div>
-    <div class="field" style="margin-top:8px"><label>Notes</label><textarea id="fabe-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">${_gpEsc(f.notes||'')}</textarea></div>
-    <div style="background:var(--surface-2);padding:8px 12px;border-radius:8px;margin-top:8px;font-size:12px;color:var(--muted)">🔒 Fabric type, colour, GSM, unit and weight are derived from the rolls and define this fabric's stock bucket — they can't be edited here (it would orphan stock). To fix one of those, delete a roll (or the whole receipt) and re-add it. Only supplier, date and notes are editable.</div>
-    ${!_gpCanApprove()?`<div class="field" style="margin-top:12px"><label>Reason for change *</label><textarea id="fabe-reason" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px" placeholder="Required so the approver understands why."></textarea></div>`:''}
+    <div class="field" style="margin-top:8px"><label>Notes</label><textarea id="fabe-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px">${_gpEsc(f.notes||'')}</textarea></div>
+    <div style="background:var(--surface-2);padding:8px 12px;border-radius:8px;margin-top:8px;font-size:13px;color:var(--muted)">🔒 Fabric type, colour, GSM, unit and weight are derived from the rolls and define this fabric's stock bucket — they can't be edited here (it would orphan stock). To fix one of those, delete a roll (or the whole receipt) and re-add it. Only supplier, date and notes are editable.</div>
+    ${!_gpCanApprove()?`<div class="field" style="margin-top:12px"><label>Reason for change *</label><textarea id="fabe-reason" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px" placeholder="Required so the approver understands why."></textarea></div>`:''}
     <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
       <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
       <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.submitFabricEdit('${fabId}')">${_gpCanApprove()?'Save Changes':'Send for Approval'}</button>
@@ -1330,13 +1330,13 @@ window.editFabricRoll=function(fabId,rollCode){
   back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div><h3>Edit roll</h3><div class="sub">${_gpEsc(rollCode)}</div></div>
-      <button onclick="window.hrmCloseModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);line-height:1">×</button>
+      <button onclick="window.hrmCloseModal()" style="background:none;border:none;font-size:25px;cursor:pointer;color:var(--muted);line-height:1">×</button>
     </div>
     <div class="hrm-grid-2">
       <div class="field"><label>Weight (${_gpEsc(unit)})</label><input id="fer-weight" type="number" min="0" step="0.01" value="${r.weight||0}"></div>
       <div class="field"><label>GSM</label><input id="fer-gsm" type="number" min="0" step="1" value="${r.gsm||inv.stock.gsm||0}"></div>
     </div>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;cursor:pointer"><input type="checkbox" id="fer-qc" ${r.qcPassed?'checked':''}> QC passed</label>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;cursor:pointer"><input type="checkbox" id="fer-qc" ${r.qcPassed?'checked':''}> QC passed</label>
     <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
       <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
       <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.saveFabricRoll('${_gpEsc(fabId)}','${_gpEsc(rollCode)}')">Save</button>
@@ -1401,15 +1401,15 @@ window.fabCorrectFabric=function(key){
   back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div><h3>Correct fabric entry</h3><div class="sub">${_gpEsc(s.fabType||'')} · ${s.gsm||0}gsm · ${_gpEsc(s.color||'')}</div></div>
-      <button onclick="window.hrmCloseModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);line-height:1">×</button>
+      <button onclick="window.hrmCloseModal()" style="background:none;border:none;font-size:25px;cursor:pointer;color:var(--muted);line-height:1">×</button>
     </div>
-    <div style="background:var(--accent-warning-soft);border:1px solid var(--accent-warning);border-radius:8px;padding:9px 11px;font-size:12px;color:var(--accent-warning);margin:10px 0;line-height:1.5">Fixes a wrong entry (e.g. Cream → Bottle Green). The ${inStock} in-stock roll(s) get <strong>new barcodes</strong> and move to the corrected fabric — <strong>reprint them after</strong>.${stuck?` ${stuck} reserved/issued roll(s) stay as-is (their codes are used elsewhere).`:''}</div>
+    <div style="background:var(--accent-warning-soft);border:1px solid var(--accent-warning);border-radius:8px;padding:9px 11px;font-size:13px;color:var(--accent-warning);margin:10px 0;line-height:1.5">Fixes a wrong entry (e.g. Cream → Bottle Green). The ${inStock} in-stock roll(s) get <strong>new barcodes</strong> and move to the corrected fabric — <strong>reprint them after</strong>.${stuck?` ${stuck} reserved/issued roll(s) stay as-is (their codes are used elsewhere).`:''}</div>
     <div class="hrm-grid-2">
       <div class="field"><label>Fabric type</label><input id="fc-type" value="${_gpEsc(s.fabType||'')}" oninput="window._fabCorrectPrev()"></div>
       <div class="field"><label>GSM</label><input id="fc-gsm" type="number" min="0" value="${s.gsm||0}" oninput="window._fabCorrectPrev()"></div>
     </div>
     <div class="field"><label>Color</label><input id="fc-color" value="${_gpEsc(s.color||'')}" placeholder="e.g. Bottle Green" oninput="window._fabCorrectPrev()"></div>
-    <div style="font-size:12px;color:var(--muted);margin:6px 0 2px">New code preview: <strong id="fc-prev" style="color:var(--text)">—</strong></div>
+    <div style="font-size:13px;color:var(--muted);margin:6px 0 2px">New code preview: <strong id="fc-prev" style="color:var(--text)">—</strong></div>
     <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
       <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
       <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window._fabDoCorrect('${_gpEsc(key)}')">Apply correction</button>
@@ -1636,39 +1636,39 @@ function _fabRegRows(issues,dayTotals){
         lastDay=day;
         const t=dayTotals.get(day)||{n:0,pcs:0,bundles:0,kg:0,m:0};
         dayHead=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin:16px 2px 8px;padding-bottom:6px;border-bottom:1px solid var(--border)">
-          <div style="font-size:13px;font-weight:800">${_gpEsc(_fabRegDayLabel(day))}</div>
-          <div style="font-size:11px;color:var(--muted)">${t.n} issue${t.n===1?'':'s'} · <strong style="color:var(--text)">${t.pcs.toLocaleString()}</strong> pcs · ${t.bundles.toLocaleString()} bundles${t.kg?` · <strong style="color:var(--text)">${t.kg.toFixed(1)}</strong> kg`:''}${t.m?` · <strong style="color:var(--text)">${t.m.toFixed(1)}</strong> m`:''}</div>
+          <div style="font-size:14px;font-weight:800">${_gpEsc(_fabRegDayLabel(day))}</div>
+          <div style="font-size:12px;color:var(--muted)">${t.n} issue${t.n===1?'':'s'} · <strong style="color:var(--text)">${t.pcs.toLocaleString()}</strong> pcs · ${t.bundles.toLocaleString()} bundles${t.kg?` · <strong style="color:var(--text)">${t.kg.toFixed(1)}</strong> kg`:''}${t.m?` · <strong style="color:var(--text)">${t.m.toFixed(1)}</strong> m`:''}</div>
         </div>`;
       }
     }
     const u=_gpEsc(g.fabricUnit||'kg');
     const sizes=(g.sizeBreakdown||[]).filter(s=>s.qty).map(_fabSizeLabel).join(' · ');
-    const incBadge=g.regIncomplete?'<span style="background:var(--accent-urgent-soft);color:var(--accent-urgent);font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;margin-left:6px;letter-spacing:.04em">INCOMPLETE</span>':'';
-    const labelChips=(g.regLabels||[]).map(l=>`<span style="background:${l.bg||'#f3f4f6'};color:${l.fg||'#374151'};font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;margin-left:6px">${_gpEsc(l.text)}</span>`).join('');
+    const incBadge=g.regIncomplete?'<span style="background:var(--accent-urgent-soft);color:var(--accent-urgent);font-size:11px;font-weight:800;padding:2px 8px;border-radius:6px;margin-left:6px;letter-spacing:.04em">INCOMPLETE</span>':'';
+    const labelChips=(g.regLabels||[]).map(l=>`<span style="background:${l.bg||'#f3f4f6'};color:${l.fg||'#374151'};font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;margin-left:6px">${_gpEsc(l.text)}</span>`).join('');
     return dayHead+`<div style="border:1px solid var(--border);${g.regIncomplete?'border-left:3px solid #dc2626;':''}border-radius:10px;padding:12px 14px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
-        <div style="font-size:15px"><span style="font-weight:800;color:var(--accent-urgent)">PO ${_gpEsc(g.poId||'—')}</span> <span style="font-weight:600;color:var(--muted);font-size:13px">${_gpEsc(g.articleName||'')}${g.articleCode?' · '+_gpEsc(g.articleCode):''}</span>${incBadge}${labelChips}</div>
-        <div style="font-size:11px;color:var(--muted)">${_gpEsc(g.id||'')} · ${_gpEsc(g.date||'')}</div>
+        <div style="font-size:16px"><span style="font-weight:800;color:var(--accent-urgent)">PO ${_gpEsc(g.poId||'—')}</span> <span style="font-weight:600;color:var(--muted);font-size:14px">${_gpEsc(g.articleName||'')}${g.articleCode?' · '+_gpEsc(g.articleCode):''}</span>${incBadge}${labelChips}</div>
+        <div style="font-size:12px;color:var(--muted)">${_gpEsc(g.id||'')} · ${_gpEsc(g.date||'')}</div>
       </div>
       ${(g.fabrics&&g.fabrics.length>1)
-        ?`<div style="font-size:12px;color:var(--muted);margin-top:3px">${g.fabrics.map(f=>`<span style="display:inline-block;margin-right:10px"><strong style="color:var(--text)">${_gpEsc(f.fabType||'')} ${f.gsm||0}gsm ${_gpEsc(f.color||'')}</strong> · ${(f.weight||0).toFixed(2)}kg</span>`).join('')}</div>`
-        :`<div style="font-size:12px;color:var(--muted);margin-top:3px">${_gpEsc(g.fabricType||'')} ${g.fabricGsm||0}gsm ${_gpEsc(g.fabricColor||'')}</div>`}
-      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:14px">
+        ?`<div style="font-size:13px;color:var(--muted);margin-top:3px">${g.fabrics.map(f=>`<span style="display:inline-block;margin-right:10px"><strong style="color:var(--text)">${_gpEsc(f.fabType||'')} ${f.gsm||0}gsm ${_gpEsc(f.color||'')}</strong> · ${(f.weight||0).toFixed(2)}kg</span>`).join('')}</div>`
+        :`<div style="font-size:13px;color:var(--muted);margin-top:3px">${_gpEsc(g.fabricType||'')} ${g.fabricGsm||0}gsm ${_gpEsc(g.fabricColor||'')}</div>`}
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:15px">
         <span><strong>${(g.plannedQty||0).toLocaleString()}</strong> pcs cut</span>
         <span><strong>${g.totalBundles||0}</strong> bundles</span>
         <span><strong>${(g.fabricQty||0).toFixed(2)}</strong> ${u} used</span>
         <span><strong>${g.avgConsumption||0}</strong> ${u}/pc avg</span>
         <span style="color:var(--muted)">${g.rollsCount||0} rolls</span>
       </div>
-      ${sizes?`<div style="font-size:12px;color:var(--muted);margin-top:7px">Cut by size: ${sizes}</div>`:''}
-      ${g.ribWeight?`<div style="font-size:12px;color:var(--cat-boards);margin-top:5px;font-weight:600">+ Rib: ${_gpEsc(g.ribType||'')} ${g.ribGsm||0}gsm ${_gpEsc(g.ribColor||'')} · ${(g.ribWeight||0).toFixed(2)} kg · ${g.ribRolls||0} rolls${g.ribPct?` (${g.ribPct}%)`:''}</div>`:''}
-      ${(g.partialRolls&&g.partialRolls.length)?`<div style="font-size:12px;color:var(--accent-warning);margin-top:5px;font-weight:600;background:var(--accent-warning-soft);border:1px solid var(--accent-warning);border-radius:7px;padding:5px 9px">✂ Partial rolls (roll stays in stock, lighter): ${g.partialRolls.map(pr=>`${_gpEsc(pr.rollCode)} — <b>${pr.usedWeight}</b> ${_gpEsc(pr.unit||'kg')} used · ${pr.weightAfter} ${_gpEsc(pr.unit||'kg')} left${pr.weightBefore?` (was ${pr.weightBefore})`:''}`).join(' &nbsp;·&nbsp; ')}</div>`:''}
+      ${sizes?`<div style="font-size:13px;color:var(--muted);margin-top:7px">Cut by size: ${sizes}</div>`:''}
+      ${g.ribWeight?`<div style="font-size:13px;color:var(--cat-boards);margin-top:5px;font-weight:600">+ Rib: ${_gpEsc(g.ribType||'')} ${g.ribGsm||0}gsm ${_gpEsc(g.ribColor||'')} · ${(g.ribWeight||0).toFixed(2)} kg · ${g.ribRolls||0} rolls${g.ribPct?` (${g.ribPct}%)`:''}</div>`:''}
+      ${(g.partialRolls&&g.partialRolls.length)?`<div style="font-size:13px;color:var(--accent-warning);margin-top:5px;font-weight:600;background:var(--accent-warning-soft);border:1px solid var(--accent-warning);border-radius:7px;padding:5px 9px">✂ Partial rolls (roll stays in stock, lighter): ${g.partialRolls.map(pr=>`${_gpEsc(pr.rollCode)} — <b>${pr.usedWeight}</b> ${_gpEsc(pr.unit||'kg')} used · ${pr.weightAfter} ${_gpEsc(pr.unit||'kg')} left${pr.weightBefore?` (was ${pr.weightBefore})`:''}`).join(' &nbsp;·&nbsp; ')}</div>`:''}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;flex-wrap:wrap">
-        <div style="font-size:11px;color:var(--muted)">Issued by ${_gpEsc(g.issuer||g.name||'')}${g.cutMaster?` · Cut by <strong style="color:var(--text)">${_gpEsc(g.cutMaster)}</strong>`:''}</div>
+        <div style="font-size:12px;color:var(--muted)">Issued by ${_gpEsc(g.issuer||g.name||'')}${g.cutMaster?` · Cut by <strong style="color:var(--text)">${_gpEsc(g.cutMaster)}</strong>`:''}</div>
         ${(_fabCanLabel()||['owner','manager'].includes(session.role))?`<div style="display:flex;gap:6px">
-          ${_fabCanLabel()?`<button class="btn-outline" style="font-size:11px;padding:3px 12px" onclick="window.fabRegTag('${_gpEsc(g.id||'')}')">🏷 Label</button>`:''}
-          ${['owner','manager'].includes(session.role)?`<button class="btn-outline" style="font-size:11px;padding:3px 12px" onclick="window.fabRegEdit('${_gpEsc(g.id||'')}')">Edit</button>
-          <button class="btn-outline" style="font-size:11px;padding:3px 12px;color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.fabRegDeleteOne('${_gpEsc(g.id||'')}')">Delete</button>`:''}
+          ${_fabCanLabel()?`<button class="btn-outline" style="font-size:12px;padding:3px 12px" onclick="window.fabRegTag('${_gpEsc(g.id||'')}')">🏷 Label</button>`:''}
+          ${['owner','manager'].includes(session.role)?`<button class="btn-outline" style="font-size:12px;padding:3px 12px" onclick="window.fabRegEdit('${_gpEsc(g.id||'')}')">Edit</button>
+          <button class="btn-outline" style="font-size:12px;padding:3px 12px;color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.fabRegDeleteOne('${_gpEsc(g.id||'')}')">Delete</button>`:''}
         </div>`:''}
       </div>
     </div>`;
@@ -1683,15 +1683,15 @@ function _fabRegListHTML(){
   let pager='';
   if(pages>1){
     // Numbered page buttons (windowed) + Prev/Next + jump box.
-    const btn=(p,lbl,dis,cur)=>`<button onclick="window.fabRegPage(${p})" ${dis?'disabled':''} class="btn-outline" style="padding:5px 11px;font-size:12px;${cur?'background:var(--dark);color:var(--on-dark);border-color:var(--line)':''}">${lbl}</button>`;
+    const btn=(p,lbl,dis,cur)=>`<button onclick="window.fabRegPage(${p})" ${dis?'disabled':''} class="btn-outline" style="padding:5px 11px;font-size:13px;${cur?'background:var(--dark);color:var(--on-dark);border-color:var(--line)':''}">${lbl}</button>`;
     let nums='';const from=Math.max(0,_fabRegPage-2),to=Math.min(pages-1,_fabRegPage+2);
     if(from>0)nums+=btn(0,'1',false,false)+(from>1?'<span style="color:var(--muted)">…</span>':'');
     for(let p=from;p<=to;p++)nums+=btn(p,String(p+1),false,p===_fabRegPage);
     if(to<pages-1)nums+=(to<pages-2?'<span style="color:var(--muted)">…</span>':'')+btn(pages-1,String(pages),false,false);
     pager=`<div style="display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;padding:12px 0 4px;border-top:1px solid var(--border);margin-top:6px">
       ${btn(_fabRegPage-1,'← Prev',_fabRegPage===0,false)}${nums}${btn(_fabRegPage+1,'Next →',_fabRegPage>=pages-1,false)}
-      <span style="font-size:12px;color:var(--muted);margin-left:6px">${all.length} issues · go to
-        <input type="number" min="1" max="${pages}" value="${_fabRegPage+1}" onchange="window.fabRegPage((parseInt(this.value)||1)-1)" style="width:52px;padding:4px;border:1px solid var(--border);border-radius:6px;font-size:12px;text-align:center">
+      <span style="font-size:13px;color:var(--muted);margin-left:6px">${all.length} issues · go to
+        <input type="number" min="1" max="${pages}" value="${_fabRegPage+1}" onchange="window.fabRegPage((parseInt(this.value)||1)-1)" style="width:52px;padding:4px;border:1px solid var(--border);border-radius:6px;font-size:13px;text-align:center">
       </span>
     </div>`;
   }
@@ -1702,16 +1702,16 @@ function _fabRegListHTML(){
 // whole card and losing the search box's caret.
 function _fabRegDateBarHTML(){
   const f=_fabRegDate;
-  const btn=(pre,lbl)=>`<button onclick="window.fabRegSetPreset('${pre}')" style="padding:6px 12px;border:1px solid ${f.preset===pre?'var(--dark)':'var(--border)'};border-radius:8px;background:${f.preset===pre?'var(--dark)':'var(--surface)'};color:${f.preset===pre?'var(--on-dark)':'var(--text)'};font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">${lbl}</button>`;
-  const dateInput=(id,val)=>`<input type="date" id="${id}" value="${_gpEsc(val)}" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;background:var(--surface);color:var(--text);margin-left:4px">`;
+  const btn=(pre,lbl)=>`<button onclick="window.fabRegSetPreset('${pre}')" style="padding:6px 12px;border:1px solid ${f.preset===pre?'var(--dark)':'var(--border)'};border-radius:8px;background:${f.preset===pre?'var(--dark)':'var(--surface)'};color:${f.preset===pre?'var(--on-dark)':'var(--text)'};font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">${lbl}</button>`;
+  const dateInput=(id,val)=>`<input type="date" id="${id}" value="${_gpEsc(val)}" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;background:var(--surface);color:var(--text);margin-left:4px">`;
   return`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-      <span style="font-size:10px;color:var(--muted);font-weight:800;letter-spacing:.05em;margin-right:2px">CUT DATE</span>
+      <span style="font-size:11px;color:var(--muted);font-weight:800;letter-spacing:.05em;margin-right:2px">CUT DATE</span>
       ${_FAB_REG_PRESETS.map(([pre,lbl])=>btn(pre,lbl)).join('')}
     </div>
     ${f.preset==='custom'?`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
-      <label style="font-size:11px;color:var(--muted)">From ${dateInput('fab-reg-from',f.from)}</label>
-      <label style="font-size:11px;color:var(--muted)">To ${dateInput('fab-reg-to',f.to)}</label>
-      <button class="btn-primary" style="width:auto;padding:6px 14px;margin-top:0;font-size:12px" onclick="window.fabRegApplyCustom()">Apply</button>
+      <label style="font-size:12px;color:var(--muted)">From ${dateInput('fab-reg-from',f.from)}</label>
+      <label style="font-size:12px;color:var(--muted)">To ${dateInput('fab-reg-to',f.to)}</label>
+      <button class="btn-primary" style="width:auto;padding:6px 14px;margin-top:0;font-size:13px" onclick="window.fabRegApplyCustom()">Apply</button>
     </div>`:''}`;
 }
 // Totals follow the ACTIVE filters, not the whole collection — a date filter
@@ -1723,34 +1723,34 @@ function _fabRegStatsHTML(){
   const totalPcs=shown.reduce((s,g)=>s+(g.plannedQty||0),0);
   const totalBundles=shown.reduce((s,g)=>s+(g.totalBundles||0),0);
   const days=new Set(shown.map(_fabRegDayOf).filter(Boolean)).size;
-  const tile=(lbl,val)=>`<div style="flex:1;background:var(--surface-2);border-radius:8px;padding:9px;text-align:center"><div style="font-size:10px;color:var(--muted)">${lbl}</div><div style="font-size:18px;font-weight:800">${val}</div></div>`;
+  const tile=(lbl,val)=>`<div style="flex:1;background:var(--surface-2);border-radius:8px;padding:9px;text-align:center"><div style="font-size:11px;color:var(--muted)">${lbl}</div><div style="font-size:19px;font-weight:800">${val}</div></div>`;
   return`<div style="display:flex;gap:8px">
       ${tile('Pieces cut',`${totalPcs.toLocaleString()} pcs`)}
       ${tile('Bundles',totalBundles.toLocaleString())}
       ${tile('Fabric out',totalWeight.toFixed(1))}
     </div>
-    <div style="font-size:11px;color:var(--muted);margin:7px 2px 0">${shown.length===all.length?`All <strong style="color:var(--text)">${all.length}</strong> issues`:`<strong style="color:var(--text)">${shown.length}</strong> of ${all.length} issues`} · ${_gpEsc(_fabRegRangeLabel())}${days>1?` · across ${days} days`:''}</div>`;
+    <div style="font-size:12px;color:var(--muted);margin:7px 2px 0">${shown.length===all.length?`All <strong style="color:var(--text)">${all.length}</strong> issues`:`<strong style="color:var(--text)">${shown.length}</strong> of ${all.length} issues`} · ${_gpEsc(_fabRegRangeLabel())}${days>1?` · across ${days} days`:''}</div>`;
 }
 function renderFabricIssueRegistry(){
   _fabRegPage=0;_fabRegQ='';_fabRegLabelFilter='';_fabRegIncompleteOnly=false;
   _fabRegDate={preset:'all',from:'',to:''};
   const issues=_fabIssueRecords();
-  return`<div class="card"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center">Fabric Issue Registry <span style="font-weight:400;color:var(--muted);font-size:11px">${issues.length} issue${issues.length===1?'':'s'}</span></div>
+  return`<div class="card"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center">Fabric Issue Registry <span style="font-weight:400;color:var(--muted);font-size:12px">${issues.length} issue${issues.length===1?'':'s'}</span></div>
     ${issues.length?`<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-      <button class="btn-outline" style="font-size:12px;padding:6px 14px" onclick="window.fabExportIssueRegistry()">⬇ Export Excel</button>
-      <button class="btn-outline" id="fab-reg-inc-btn" style="font-size:12px;padding:6px 14px;${_fabRegIncompleteOnly?'background:#dc2626;color:#fff;border-color:#dc2626':''}" onclick="window.fabRegToggleIncomplete()">⚠ Incomplete only</button>
-      ${['owner','manager'].includes(session.role)?`<button class="btn-outline" style="font-size:12px;padding:6px 14px;color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.fabRegDeleteAll()">🗑 Delete all</button>`:''}
+      <button class="btn-outline" style="font-size:13px;padding:6px 14px" onclick="window.fabExportIssueRegistry()">⬇ Export Excel</button>
+      <button class="btn-outline" id="fab-reg-inc-btn" style="font-size:13px;padding:6px 14px;${_fabRegIncompleteOnly?'background:#dc2626;color:#fff;border-color:#dc2626':''}" onclick="window.fabRegToggleIncomplete()">⚠ Incomplete only</button>
+      ${['owner','manager'].includes(session.role)?`<button class="btn-outline" style="font-size:13px;padding:6px 14px;color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.fabRegDeleteAll()">🗑 Delete all</button>`:''}
     </div>`:''}
     <div id="fab-reg-datebar" style="margin-bottom:10px">${_fabRegDateBarHTML()}</div>
     <div id="fab-reg-stats" style="margin-bottom:10px">${_fabRegStatsHTML()}</div>
     <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
-      <input id="fab-reg-search" placeholder="Search PO, article, fabric…" oninput="window.fabRegFilter(this.value)" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
-      <select onchange="window.fabRegSetPer(this.value)" title="Entries per page" style="padding:10px 8px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+      <input id="fab-reg-search" placeholder="Search PO, article, fabric…" oninput="window.fabRegFilter(this.value)" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box">
+      <select onchange="window.fabRegSetPer(this.value)" title="Entries per page" style="padding:10px 8px;border:1px solid var(--border);border-radius:8px;font-size:14px">
         ${[12,20,50,100].map(n=>`<option value="${n}"${_fabRegPer===n?' selected':''}>${n}/page</option>`).join('')}
       </select>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
-      <select id="fab-reg-label-filter" onchange="window.fabRegSetLabel(this.value)" title="Filter by label" style="flex:1;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface)">
+      <select id="fab-reg-label-filter" onchange="window.fabRegSetLabel(this.value)" title="Filter by label" style="flex:1;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface)">
         <option value="">🏷 Filter by label — all</option>
         ${_fabAllUsedLabels().map(l=>`<option value="${_gpEsc(l.text)}"${_fabRegLabelFilter===l.text?' selected':''}>${_gpEsc(l.text)}</option>`).join('')}
       </select>
@@ -1787,7 +1787,7 @@ window.fabRegApplyCustom=function(){
 window.fabRegToggleIncomplete=function(){
   _fabRegIncompleteOnly=!_fabRegIncompleteOnly;_fabRegPage=0;
   const b=document.getElementById('fab-reg-inc-btn');
-  if(b)b.style.cssText=`font-size:12px;padding:6px 14px;${_fabRegIncompleteOnly?'background:#dc2626;color:#fff;border-color:#dc2626':''}`;
+  if(b)b.style.cssText=`font-size:13px;padding:6px 14px;${_fabRegIncompleteOnly?'background:#dc2626;color:#fff;border-color:#dc2626':''}`;
   _fabRegRepaint();
 };
 // ── Owner labels + Incomplete flag on a fabric-issue entry ──
@@ -1800,23 +1800,23 @@ window.fabRegTag=function(gpId){
 function _fabRenderTagModal(){
   const w=_fabTagWork;
   const g=_fabIssueRecords().find(x=>x.id===w.id)||{};
-  const swatches=FAB_LABEL_COLORS.map((c,i)=>{const on=w.colorIdx===i;return`<button type="button" onclick="window._fabTagPickColor(${i})" title="${c.name}" style="width:32px;height:32px;border-radius:9px;border:2px solid var(--surface);background:${c.dot};cursor:pointer;box-shadow:${on?'0 0 0 3px #111':'0 0 0 1px var(--border)'};transform:${on?'scale(1.08)':'none'};transition:transform .1s;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:900;line-height:1">${on?'✓':''}</button>`;}).join('');
-  const chips=w.labels.length?w.labels.map((l,i)=>`<span style="display:inline-flex;align-items:center;gap:6px;background:${l.bg};color:${l.fg};font-size:12px;font-weight:700;padding:4px 10px;border-radius:7px;margin:0 6px 6px 0">${_gpEsc(l.text)}<button onclick="window._fabTagRemove(${i})" style="background:none;border:none;color:${l.fg};cursor:pointer;font-size:15px;line-height:1;padding:0">×</button></span>`).join(''):'<span style="font-size:12px;color:var(--muted)">No labels yet.</span>';
+  const swatches=FAB_LABEL_COLORS.map((c,i)=>{const on=w.colorIdx===i;return`<button type="button" onclick="window._fabTagPickColor(${i})" title="${c.name}" style="width:32px;height:32px;border-radius:9px;border:2px solid var(--surface);background:${c.dot};cursor:pointer;box-shadow:${on?'0 0 0 3px #111':'0 0 0 1px var(--border)'};transform:${on?'scale(1.08)':'none'};transition:transform .1s;display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;font-weight:900;line-height:1">${on?'✓':''}</button>`;}).join('');
+  const chips=w.labels.length?w.labels.map((l,i)=>`<span style="display:inline-flex;align-items:center;gap:6px;background:${l.bg};color:${l.fg};font-size:13px;font-weight:700;padding:4px 10px;border-radius:7px;margin:0 6px 6px 0">${_gpEsc(l.text)}<button onclick="window._fabTagRemove(${i})" style="background:none;border:none;color:${l.fg};cursor:pointer;font-size:16px;line-height:1;padding:0">×</button></span>`).join(''):'<span style="font-size:13px;color:var(--muted)">No labels yet.</span>';
   const known=_fabAllUsedLabels();
   const usedKeys=new Set(w.labels.map(l=>String(l.text).toUpperCase()));
-  const quick=known.map((l,i)=>{const on=usedKeys.has(l.text.toUpperCase());return`<button type="button" onclick="window._fabTagQuick(${i})" ${on?'disabled':''} style="background:${l.bg};color:${l.fg};font-size:11px;font-weight:700;padding:4px 10px;border-radius:7px;border:none;cursor:${on?'default':'pointer'};opacity:${on?'.4':'1'};margin:0 6px 6px 0">${on?'✓ ':'+ '}${_gpEsc(l.text)}</button>`;}).join('');
+  const quick=known.map((l,i)=>{const on=usedKeys.has(l.text.toUpperCase());return`<button type="button" onclick="window._fabTagQuick(${i})" ${on?'disabled':''} style="background:${l.bg};color:${l.fg};font-size:12px;font-weight:700;padding:4px 10px;border-radius:7px;border:none;cursor:${on?'default':'pointer'};opacity:${on?'.4':'1'};margin:0 6px 6px 0">${on?'✓ ':'+ '}${_gpEsc(l.text)}</button>`;}).join('');
   _fabModal('Label · PO '+_gpEsc(g.poId||''),`
-    <label style="display:flex;align-items:center;gap:10px;font-size:14px;margin-bottom:16px;cursor:pointer">
+    <label style="display:flex;align-items:center;gap:10px;font-size:15px;margin-bottom:16px;cursor:pointer">
       <input type="checkbox" id="fab-tag-incomplete" ${w.incomplete?'checked':''} onchange="window._fabTagToggleIncomplete(this.checked)" style="width:18px;height:18px">
       <span style="font-weight:700">Mark this issue <span style="color:var(--accent-urgent)">Incomplete</span></span>
     </label>
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px">Quick apply <span style="font-weight:400;text-transform:none">— tap to add a saved / preset label</span></div>
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px">Quick apply <span style="font-weight:400;text-transform:none">— tap to add a saved / preset label</span></div>
     <div style="margin-bottom:14px">${quick}</div>
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px">Labels on this entry</div>
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px">Labels on this entry</div>
     <div style="margin-bottom:12px">${chips}</div>
-    <input id="fab-tag-text" value="${_gpEsc(w._pendingText||'')}" placeholder="Label text — e.g. Urgent, Reprint, Short fabric" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:10px">
+    <input id="fab-tag-text" value="${_gpEsc(w._pendingText||'')}" placeholder="Label text — e.g. Urgent, Reprint, Short fabric" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:10px">
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">${swatches}
-      <button type="button" class="btn-primary" style="margin:0 0 0 auto;padding:8px 14px;font-size:13px;width:auto" onclick="window._fabTagAdd()">+ Add label</button>
+      <button type="button" class="btn-primary" style="margin:0 0 0 auto;padding:8px 14px;font-size:14px;width:auto" onclick="window._fabTagAdd()">+ Add label</button>
     </div>
     <button class="btn-primary" style="width:100%" onclick="window._fabTagSave()">Save</button>
   `);
@@ -1921,7 +1921,7 @@ function _fabModal(title,html){
   let ov=document.getElementById('fab-modal-ov');
   if(!ov){ov=document.createElement('div');ov.id='fab-modal-ov';ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px';ov.addEventListener('click',e=>{if(e.target===ov)window._fabModalClose();});document.body.appendChild(ov);}
   ov.innerHTML=`<div style="background:var(--surface);border-radius:14px;max-width:600px;width:100%;max-height:88vh;overflow:auto;padding:18px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div style="font-size:16px;font-weight:800">${title}</div><button onclick="window._fabModalClose()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);line-height:1">×</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div style="font-size:17px;font-weight:800">${title}</div><button onclick="window._fabModalClose()" style="background:none;border:none;font-size:25px;cursor:pointer;color:var(--muted);line-height:1">×</button></div>
     ${html}</div>`;
   ov.style.display='flex';
 }
@@ -1945,10 +1945,10 @@ window.fabRegEdit=function(gpId){
         <option value="Alam"${g.cutMaster==='Alam'?' selected':''}>Alam</option>
       </select>
     </div>
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.04em;margin:6px 0 6px">Cutting — bundles per size</div>
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.04em;margin:6px 0 6px">Cutting — bundles per size</div>
     <div id="fed-sizes"></div>
-    <button type="button" class="btn-outline" style="font-size:12px;padding:5px 12px;margin-top:6px" onclick="window.fabRegAddEditSize()">+ Add size</button>
-    <div style="background:var(--surface-2);border-radius:8px;padding:10px;margin-top:12px;font-size:13px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <button type="button" class="btn-outline" style="font-size:13px;padding:5px 12px;margin-top:6px" onclick="window.fabRegAddEditSize()">+ Add size</button>
+    <div style="background:var(--surface-2);border-radius:8px;padding:10px;margin-top:12px;font-size:14px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <span>Total cut: <strong id="fed-tot">0</strong> pcs · <strong id="fed-tb">0</strong> bundles</span>
       <span>Fabric used: <strong>${(g.fabricQty||0).toFixed(2)} ${_gpEsc(_fabEditUnit)}</strong> · Avg: <strong id="fed-avg">—</strong></span>
     </div>
@@ -1959,10 +1959,10 @@ window.fabRegEdit=function(gpId){
 function _fabEditRenderSizes(){
   const el=document.getElementById('fed-sizes');if(!el)return;
   el.innerHTML=_fabEditSizes.map((s,i)=>`<div class="fed-row" style="display:grid;grid-template-columns:1fr 2fr .8fr 24px;gap:6px;align-items:center;margin-bottom:6px">
-    <input class="fed-size" value="${_gpEsc(s.size)}" placeholder="Size" oninput="window.fabRegEditRecalc()" style="padding:8px;border:1px solid var(--border);border-radius:7px;font-size:14px">
-    <input class="fed-bundles" value="${_gpEsc(s.bundles)}" placeholder="9-8-6-7" oninput="window.fabRegEditRecalc()" style="padding:8px;border:1px solid var(--border);border-radius:7px;font-size:14px">
-    <span class="fed-q" style="text-align:right;font-weight:700;font-size:14px">—</span>
-    <button type="button" onclick="window.fabRegRemoveEditSize(${i})" style="background:none;border:none;color:var(--accent-urgent);cursor:pointer;font-size:18px">×</button>
+    <input class="fed-size" value="${_gpEsc(s.size)}" placeholder="Size" oninput="window.fabRegEditRecalc()" style="padding:8px;border:1px solid var(--border);border-radius:7px;font-size:15px">
+    <input class="fed-bundles" value="${_gpEsc(s.bundles)}" placeholder="9-8-6-7" oninput="window.fabRegEditRecalc()" style="padding:8px;border:1px solid var(--border);border-radius:7px;font-size:15px">
+    <span class="fed-q" style="text-align:right;font-weight:700;font-size:15px">—</span>
+    <button type="button" onclick="window.fabRegRemoveEditSize(${i})" style="background:none;border:none;color:var(--accent-urgent);cursor:pointer;font-size:19px">×</button>
   </div>`).join('');
   window.fabRegEditRecalc();
 }
@@ -2087,7 +2087,7 @@ function renderDrawstrings(){
   if(!_dsLoaded){
     if(_dsLoadErr)return '<div class="empty" style="padding:24px;text-align:center">Could not load drawstrings: '+_gpEsc(_dsLoadErr)+'<div style="margin-top:10px"><button class="btn-sm" onclick="window.dsRetryLoad()">Retry</button></div></div>';
     loadDrawstrings().then(_dsRerender);
-    return '<div style="padding:32px;text-align:center"><span class="spinner"></span><div style="margin-top:10px;color:var(--muted);font-size:13px">Loading drawstrings…</div></div>';
+    return '<div style="padding:32px;text-align:center"><span class="spinner"></span><div style="margin-top:10px;color:var(--muted);font-size:14px">Loading drawstrings…</div></div>';
   }
   const total=allDrawstrings.reduce((s,d)=>s+(d.balance||0),0);
   const low=allDrawstrings.filter(d=>_dsAlertLevel(d).label==='Low').length;
@@ -2095,25 +2095,25 @@ function renderDrawstrings(){
   let rows=sorted.map(d=>{
     const lvl=_dsAlertLevel(d);
     return `<div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--border);flex-wrap:wrap">
-      <div style="flex:1;min-width:130px"><div style="font-weight:700;font-size:14px">${_gpEsc(d.color||'—')}</div>
-        <div style="font-size:11px;color:var(--muted)">alert ≤ ${d.threshold||0} m${d.updatedBy?' · '+_gpEsc(d.updatedBy):''}</div></div>
-      <div style="text-align:right;min-width:82px"><div style="font-size:18px;font-weight:800;color:${lvl.color}">${(d.balance||0).toFixed(1)} m</div>
-        <div style="font-size:10px;color:var(--muted)">≈ ${Math.floor((d.balance||0)/DS_M_PER_UNIT)} units</div>
-        <div style="font-size:10px;font-weight:700;color:${lvl.color}">${lvl.label}</div></div>
+      <div style="flex:1;min-width:130px"><div style="font-weight:700;font-size:15px">${_gpEsc(d.color||'—')}</div>
+        <div style="font-size:12px;color:var(--muted)">alert ≤ ${d.threshold||0} m${d.updatedBy?' · '+_gpEsc(d.updatedBy):''}</div></div>
+      <div style="text-align:right;min-width:82px"><div style="font-size:19px;font-weight:800;color:${lvl.color}">${(d.balance||0).toFixed(1)} m</div>
+        <div style="font-size:11px;color:var(--muted)">≈ ${Math.floor((d.balance||0)/DS_M_PER_UNIT)} units</div>
+        <div style="font-size:11px;font-weight:700;color:${lvl.color}">${lvl.label}</div></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
-        <button class="btn-outline" style="font-size:11px;padding:5px 10px;color:var(--accent-success);border-color:var(--accent-success)" onclick="window.dsMove('${d._id}','in')">+ Add</button>
-        <button class="btn-outline" style="font-size:11px;padding:5px 10px;color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.dsMove('${d._id}','out')">− Use</button>
-        <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.dsLogView('${d._id}')">Log</button>
-        ${_fabCanDelete()?`<button class="btn-outline" style="font-size:11px;padding:5px 9px;color:var(--accent-urgent);border-color:var(--accent-urgent)" title="Delete color" onclick="window.dsDelete('${d._id}')">✕</button>`:''}
+        <button class="btn-outline" style="font-size:12px;padding:5px 10px;color:var(--accent-success);border-color:var(--accent-success)" onclick="window.dsMove('${d._id}','in')">+ Add</button>
+        <button class="btn-outline" style="font-size:12px;padding:5px 10px;color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.dsMove('${d._id}','out')">− Use</button>
+        <button class="btn-outline" style="font-size:12px;padding:5px 10px" onclick="window.dsLogView('${d._id}')">Log</button>
+        ${_fabCanDelete()?`<button class="btn-outline" style="font-size:12px;padding:5px 9px;color:var(--accent-urgent);border-color:var(--accent-urgent)" title="Delete color" onclick="window.dsDelete('${d._id}')">✕</button>`:''}
       </div>
     </div>`;
   }).join('');
   if(!sorted.length)rows='<div class="empty" style="padding:24px;text-align:center">No drawstring colors yet — add one to start tracking.</div>';
-  return `<div class="card"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center">Drawstrings <span style="font-weight:400;color:var(--muted);font-size:11px">${allDrawstrings.length} color${allDrawstrings.length===1?'':'s'} · ${total.toFixed(1)} m total${low?` · ${low} low`:''}</span></div>
-    <button class="btn-primary" style="background:var(--dark);font-size:12px;padding:7px 14px;margin-bottom:10px" onclick="window.dsNewColor()">+ New color</button>
+  return `<div class="card"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center">Drawstrings <span style="font-weight:400;color:var(--muted);font-size:12px">${allDrawstrings.length} color${allDrawstrings.length===1?'':'s'} · ${total.toFixed(1)} m total${low?` · ${low} low`:''}</span></div>
+    <button class="btn-primary" style="background:var(--dark);font-size:13px;padding:7px 14px;margin-bottom:10px" onclick="window.dsNewColor()">+ New color</button>
     <div>${rows}</div>
   </div>
-  ${allDrawstringMoves.length?`<div class="card"><div class="card-title">Recent movements</div>${allDrawstringMoves.slice(0,20).map(m=>`<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)"><span><strong>${_gpEsc(m.color||'')}</strong> · ${m.type==='in'?'added':'used'}${m.note?' · '+_gpEsc(m.note):''} <span style="color:var(--muted)">${_gpEsc(m.by||'')} · ${m.ts?new Date(m.ts).toLocaleDateString():''}</span></span><span style="font-weight:700;white-space:nowrap;color:${m.type==='in'?'#16a34a':'#dc2626'}">${m.type==='in'?'+':'−'}${(m.qty||0).toFixed(1)} m</span></div>`).join('')}</div>`:''}
+  ${allDrawstringMoves.length?`<div class="card"><div class="card-title">Recent movements</div>${allDrawstringMoves.slice(0,20).map(m=>`<div style="display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border)"><span><strong>${_gpEsc(m.color||'')}</strong> · ${m.type==='in'?'added':'used'}${m.note?' · '+_gpEsc(m.note):''} <span style="color:var(--muted)">${_gpEsc(m.by||'')} · ${m.ts?new Date(m.ts).toLocaleDateString():''}</span></span><span style="font-weight:700;white-space:nowrap;color:${m.type==='in'?'#16a34a':'#dc2626'}">${m.type==='in'?'+':'−'}${(m.qty||0).toFixed(1)} m</span></div>`).join('')}</div>`:''}
   <div style="height:60px"></div>`;
 }
 window.dsNewColor=function(){
@@ -2148,24 +2148,24 @@ window.dsMove=function(id,dir){
   window._dsMoveCtx={bal,dir};
   _fabModal(`${isIn?'Add':'Use'} drawstring · ${_gpEsc(d.color)}`,`
     <div style="display:flex;align-items:center;gap:10px;background:var(--soft);border-radius:10px;padding:10px 13px;margin-bottom:14px">
-      <div style="flex:1"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Current stock</div>
-        <div style="font-size:19px;font-weight:800">${bal.toFixed(1)} m</div></div>
-      <div style="text-align:right"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">≈ units</div>
-        <div style="font-size:19px;font-weight:800">${Math.floor(bal/DS_M_PER_UNIT)}</div></div>
+      <div style="flex:1"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Current stock</div>
+        <div style="font-size:20px;font-weight:800">${bal.toFixed(1)} m</div></div>
+      <div style="text-align:right"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">≈ units</div>
+        <div style="font-size:20px;font-weight:800">${Math.floor(bal/DS_M_PER_UNIT)}</div></div>
     </div>
     ${isIn?`
     <div class="field" style="margin:0"><label>Meters to add</label>
-      <input id="ds-qty" type="number" min="0" step="0.1" placeholder="0" oninput="window._dsPreview()" style="width:100%;padding:12px;border:1px solid var(--border);border-radius:9px;box-sizing:border-box;font-size:19px;font-weight:700;text-align:center"></div>
-    <div style="font-size:11px;color:var(--muted);margin-top:6px">Enter the length of dyed dori received.</div>`:`
+      <input id="ds-qty" type="number" min="0" step="0.1" placeholder="0" oninput="window._dsPreview()" style="width:100%;padding:12px;border:1px solid var(--border);border-radius:9px;box-sizing:border-box;font-size:20px;font-weight:700;text-align:center"></div>
+    <div style="font-size:12px;color:var(--muted);margin-top:6px">Enter the length of dyed dori received.</div>`:`
     <div style="display:flex;align-items:flex-end;gap:10px">
       <div class="field" style="flex:1;margin:0"><label>Units (pieces)</label>
-        <input id="ds-units" type="number" min="0" step="1" placeholder="0" oninput="window._dsUnitsToM()" style="width:100%;padding:11px;border:1px solid var(--border);border-radius:9px;box-sizing:border-box;font-size:18px;font-weight:700;text-align:center"></div>
-      <div style="font-size:15px;font-weight:700;color:var(--muted);padding-bottom:12px;white-space:nowrap">×1.5 =</div>
+        <input id="ds-units" type="number" min="0" step="1" placeholder="0" oninput="window._dsUnitsToM()" style="width:100%;padding:11px;border:1px solid var(--border);border-radius:9px;box-sizing:border-box;font-size:19px;font-weight:700;text-align:center"></div>
+      <div style="font-size:16px;font-weight:700;color:var(--muted);padding-bottom:12px;white-space:nowrap">×1.5 =</div>
       <div class="field" style="flex:1;margin:0"><label>Meters</label>
-        <input id="ds-qty" type="number" min="0" step="0.1" placeholder="0" oninput="window._dsMToUnits()" style="width:100%;padding:11px;border:1px solid var(--border);border-radius:9px;box-sizing:border-box;font-size:18px;font-weight:700;text-align:center"></div>
+        <input id="ds-qty" type="number" min="0" step="0.1" placeholder="0" oninput="window._dsMToUnits()" style="width:100%;padding:11px;border:1px solid var(--border);border-radius:9px;box-sizing:border-box;font-size:19px;font-weight:700;text-align:center"></div>
     </div>
-    <div style="font-size:11px;color:var(--muted);margin-top:6px">1 unit = ${DS_M_PER_UNIT} m of dori — type either box and the other fills in.</div>`}
-    <div id="ds-preview" style="font-size:12.5px;font-weight:700;margin-top:11px;padding:9px 12px;border-radius:8px;background:${isIn?'#f0fdf4':'#fef2f2'};color:${isIn?'#065f46':'#991b1b'}">New balance: ${bal.toFixed(1)} m · ≈ ${Math.floor(bal/DS_M_PER_UNIT)} units</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:6px">1 unit = ${DS_M_PER_UNIT} m of dori — type either box and the other fills in.</div>`}
+    <div id="ds-preview" style="font-size:13.5px;font-weight:700;margin-top:11px;padding:9px 12px;border-radius:8px;background:${isIn?'#f0fdf4':'#fef2f2'};color:${isIn?'#065f46':'#991b1b'}">New balance: ${bal.toFixed(1)} m · ≈ ${Math.floor(bal/DS_M_PER_UNIT)} units</div>
     <div class="field" style="margin-top:12px"><label>Note (optional)</label><input id="ds-note" placeholder="${isIn?'e.g. dyed with PO 536':'e.g. PO 536 trousers'}" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
     <button class="btn-primary" style="width:100%;margin-top:12px;background:${isIn?'#16a34a':'#dc2626'}" onclick="window.dsDoMove('${id}','${dir}')">${isIn?'Add to stock':'Use from stock'}</button>`);
 };
@@ -2200,14 +2200,14 @@ window.dsLogView=function(id){
     const noteClean=(m.note||'').replace(new RegExp('\\s*·?\\s*'+(m.units||0)+' units$'),'').trim();
     return`<div style="display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
       <div style="min-width:0"><span style="font-weight:700;color:${c}">${isIn?'Added':'Used'}</span>${m.units?`<span style="color:var(--muted)"> · ${m.units} units</span>`:''}${noteClean?`<span style="color:var(--muted)"> · ${_gpEsc(noteClean)}</span>`:''}
-        <div style="font-size:10px;color:var(--muted);margin-top:1px">${_gpEsc(m.by||'—')} · ${m.ts?new Date(m.ts).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):''}</div></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:1px">${_gpEsc(m.by||'—')} · ${m.ts?new Date(m.ts).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):''}</div></div>
       <div style="font-weight:800;white-space:nowrap;color:${c}">${isIn?'+':'−'}${(m.qty||0).toFixed(1)} m</div>
     </div>`;}).join(''):'<div class="empty" style="padding:18px;text-align:center">No movements recorded yet.</div>';
   _fabModal(`Log · ${_gpEsc(d.color)}`,`
     <div style="display:flex;gap:8px;margin-bottom:12px">
-      <div style="flex:1;background:var(--accent-success-soft);border-radius:9px;padding:9px 11px"><div style="font-size:10px;color:var(--accent-success);text-transform:uppercase;letter-spacing:.04em">Total in</div><div style="font-size:16px;font-weight:800;color:var(--accent-success)">+${tin.toFixed(1)} m</div></div>
-      <div style="flex:1;background:var(--accent-urgent-soft);border-radius:9px;padding:9px 11px"><div style="font-size:10px;color:var(--accent-urgent);text-transform:uppercase;letter-spacing:.04em">Total out</div><div style="font-size:16px;font-weight:800;color:var(--accent-urgent)">−${tout.toFixed(1)} m</div></div>
-      <div style="flex:1;background:var(--soft);border-radius:9px;padding:9px 11px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Balance</div><div style="font-size:16px;font-weight:800">${(d.balance||0).toFixed(1)} m</div></div>
+      <div style="flex:1;background:var(--accent-success-soft);border-radius:9px;padding:9px 11px"><div style="font-size:11px;color:var(--accent-success);text-transform:uppercase;letter-spacing:.04em">Total in</div><div style="font-size:17px;font-weight:800;color:var(--accent-success)">+${tin.toFixed(1)} m</div></div>
+      <div style="flex:1;background:var(--accent-urgent-soft);border-radius:9px;padding:9px 11px"><div style="font-size:11px;color:var(--accent-urgent);text-transform:uppercase;letter-spacing:.04em">Total out</div><div style="font-size:17px;font-weight:800;color:var(--accent-urgent)">−${tout.toFixed(1)} m</div></div>
+      <div style="flex:1;background:var(--soft);border-radius:9px;padding:9px 11px"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Balance</div><div style="font-size:17px;font-weight:800">${(d.balance||0).toFixed(1)} m</div></div>
     </div>
     <div style="max-height:44vh;overflow-y:auto">${rows}</div>`);
 };
@@ -2250,15 +2250,15 @@ function fabTrimAlertsCard(){
   const dsOut=(allDrawstrings||[]).filter(d=>(d.balance||0)<=0);
   const n=ribLow.length+ribOut.length+dsLow.length+dsOut.length;
   if(!n)return '';
-  const chip=(html,border,bg)=>`<span onclick="window.showPage('fabric-inventory')" style="cursor:pointer;font-size:11px;background:${bg};border:1px solid ${border};border-radius:8px;padding:3px 9px;white-space:nowrap">${html}</span>`;
+  const chip=(html,border,bg)=>`<span onclick="window.showPage('fabric-inventory')" style="cursor:pointer;font-size:12px;background:${bg};border:1px solid ${border};border-radius:8px;padding:3px 9px;white-space:nowrap">${html}</span>`;
   const ribChips=[...ribLow.map(s=>chip(`<strong>${_gpEsc(s.fabType)} ${_gpEsc(s.color)}</strong> · ${(s.totalWeight||0).toFixed(1)}kg <span style="color:${_fabAlertLevel(s).color};font-weight:700">${_fabAlertLevel(s).label}</span>`,'#fca5a5','#fef2f2')),
     ...ribOut.map(s=>chip(`<strong>${_gpEsc(s.fabType)} ${_gpEsc(s.color)}</strong> <span style="color:var(--muted);font-weight:700">Out</span>`,'#e5e7eb','#f9fafb'))];
   const dsChips=[...dsLow.map(d=>chip(`Drawstring <strong>${_gpEsc(d.color)}</strong> · ${(d.balance||0).toFixed(1)}m <span style="color:var(--accent-urgent);font-weight:700">Low</span>`,'#f5e1a4','#fffbeb')),
     ...dsOut.map(d=>chip(`Drawstring <strong>${_gpEsc(d.color)}</strong> <span style="color:var(--muted);font-weight:700">Out</span>`,'#e5e7eb','#f9fafb'))];
   return `<div style="background:var(--surface);border:1px solid var(--accent-urgent);border-radius:10px;padding:12px 14px;margin-bottom:16px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--accent-urgent)">⚠ Rib &amp; drawstring — low / out (${n})</div>
-      <button class="btn-outline" style="font-size:11px;padding:4px 10px" onclick="window.showPage('fabric-inventory')">Fabric Inventory →</button>
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--accent-urgent)">⚠ Rib &amp; drawstring — low / out (${n})</div>
+      <button class="btn-outline" style="font-size:12px;padding:4px 10px" onclick="window.showPage('fabric-inventory')">Fabric Inventory →</button>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:6px">${ribChips.join('')}${dsChips.join('')}</div>
   </div>`;
@@ -2272,7 +2272,7 @@ function renderFabricIssueTab(){
       <div class="field" style="grid-column:1/-1"><label>Production Order (PO) *</label>
         <input id="fab-iss-po" list="fab-iss-po-list" placeholder="Type or pick a PO number…" autocomplete="off" onchange="window.fabIssuePoChange()" oninput="window.fabIssuePoChange()">
         <datalist id="fab-iss-po-list">${pos.map(p=>`<option value="${_gpEsc(p.id)}">${_gpEsc(p.name||'')}${p.code?` · ${_gpEsc(p.code)}`:''}${p.fabric?` · ${_gpEsc(p.fabric)}`:''}</option>`).join('')}</datalist>
-        <div style="font-size:10px;color:var(--muted);margin-top:3px">Fabric is issued to the factory against this PO. Issuer, date &amp; time are recorded automatically.</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">Fabric is issued to the factory against this PO. Issuer, date &amp; time are recorded automatically.</div>
       </div>
       <div class="field" style="position:relative"><label>Article name *</label>
         <input id="fab-iss-article" placeholder="Type to search product name or code…" autocomplete="off"
@@ -2283,29 +2283,29 @@ function renderFabricIssueTab(){
         <input id="fab-iss-code" placeholder="Auto-filled from product (editable)" autocomplete="off"></div>
     </div>
   </div>
-  <div class="card"><div class="card-title">Cutting <span style="font-weight:400;color:var(--muted);font-size:11px">quantity after cutting · one number per bundle (e.g. 9-8-6-7)</span></div>
+  <div class="card"><div class="card-title">Cutting <span style="font-weight:400;color:var(--muted);font-size:12px">quantity after cutting · one number per bundle (e.g. 9-8-6-7)</span></div>
     <div class="field" style="max-width:280px"><label>Cutting master *</label>
-      <select id="fab-iss-cutmaster" style="width:100%;font-size:15px;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box">
+      <select id="fab-iss-cutmaster" style="width:100%;font-size:16px;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box">
         <option value="">Select cutting master…</option>
         <option value="Hassan">Hassan</option>
         <option value="Alam">Alam</option>
       </select>
     </div>
     <div id="fab-iss-sizes" style="margin-top:12px"></div>
-    <button type="button" class="btn-outline" style="font-size:12px;padding:6px 12px;margin-top:8px" onclick="window.fabIssueAddSize()">+ Add size</button>
+    <button type="button" class="btn-outline" style="font-size:13px;padding:6px 12px;margin-top:8px" onclick="window.fabIssueAddSize()">+ Add size</button>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px">
       <div class="field" style="flex:1;min-width:120px;margin:0"><label>Total quantity cut</label>
-        <div id="fab-iss-totalqty" style="font-size:20px;font-weight:800;padding:8px 0">0 pcs</div></div>
+        <div id="fab-iss-totalqty" style="font-size:21px;font-weight:800;padding:8px 0">0 pcs</div></div>
       <div class="field" style="flex:1;min-width:120px;margin:0"><label>Total bundles</label>
-        <div id="fab-iss-totbundles" style="font-size:20px;font-weight:800;padding:8px 0">0</div></div>
+        <div id="fab-iss-totbundles" style="font-size:21px;font-weight:800;padding:8px 0">0</div></div>
       <div class="field" style="flex:1;min-width:120px;margin:0"><label>Fabric used (rolls)</label>
-        <div id="fab-iss-fabused" style="font-size:20px;font-weight:800;padding:8px 0">—</div></div>
+        <div id="fab-iss-fabused" style="font-size:21px;font-weight:800;padding:8px 0">—</div></div>
       <div class="field" style="flex:1;min-width:120px;margin:0"><label>Avg / unit (auto)</label>
-        <div id="fab-iss-avg" style="font-size:20px;font-weight:800;padding:8px 0">—</div></div>
+        <div id="fab-iss-avg" style="font-size:21px;font-weight:800;padding:8px 0">—</div></div>
     </div>
-    <div style="font-size:11px;color:var(--muted);margin-top:2px">Avg = fabric used ÷ pieces cut, from the rolls you pick below.</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:2px">Avg = fabric used ÷ pieces cut, from the rolls you pick below.</div>
   </div>
-  <div class="card"><div class="card-title">Pick rolls <span style="font-weight:400;color:var(--muted);font-size:11px">scan or select — one or more fabrics (e.g. 2-tone: light + dark)</span></div>
+  <div class="card"><div class="card-title">Pick rolls <span style="font-weight:400;color:var(--muted);font-size:12px">scan or select — one or more fabrics (e.g. 2-tone: light + dark)</span></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
       <div class="field" style="flex:1;min-width:200px;margin:0"><label>Scan roll barcode</label>
         <input id="fab-iss-scan" placeholder="Scan or type roll code, press Enter" autocomplete="off" onkeydown="if(event.key==='Enter'||(event.key==='Tab'&&this.value.trim())){event.preventDefault();window.fabIssueScan();}">
@@ -2320,11 +2320,11 @@ function renderFabricIssueTab(){
     <div id="fab-iss-checklist"></div>
     <div id="fab-iss-selected" style="margin-top:10px"></div>
   </div>
-  <div class="card"><div class="card-title">Rib — matching color <span style="font-weight:400;color:var(--muted);font-size:11px">≈ 4% of fabric weight · issued together (optional)</span></div>
+  <div class="card"><div class="card-title">Rib — matching color <span style="font-weight:400;color:var(--muted);font-size:12px">≈ 4% of fabric weight · issued together (optional)</span></div>
     <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
-      <div class="field" style="margin:0"><label>Rib %</label><input id="fab-rib-pct" type="number" min="0" step="0.5" value="4" oninput="window.fabRibRecalc()" style="width:82px;font-size:15px;padding:9px 10px"></div>
-      <div class="field" style="margin:0"><label>Rib needed</label><div id="fab-rib-need" style="font-size:20px;font-weight:800;padding:6px 0">—</div></div>
-      <div class="field" style="margin:0"><label>Rib picked</label><div id="fab-rib-picked" style="font-size:20px;font-weight:800;padding:6px 0">—</div></div>
+      <div class="field" style="margin:0"><label>Rib %</label><input id="fab-rib-pct" type="number" min="0" step="0.5" value="4" oninput="window.fabRibRecalc()" style="width:82px;font-size:16px;padding:9px 10px"></div>
+      <div class="field" style="margin:0"><label>Rib needed</label><div id="fab-rib-need" style="font-size:21px;font-weight:800;padding:6px 0">—</div></div>
+      <div class="field" style="margin:0"><label>Rib picked</label><div id="fab-rib-picked" style="font-size:21px;font-weight:800;padding:6px 0">—</div></div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
       <div class="field" style="flex:1;min-width:200px;margin:0"><label>Scan rib roll</label>
@@ -2407,11 +2407,11 @@ window.fabRibPickStock=function(){
   const key=document.getElementById('fab-rib-stock')?.value||'';
   const wrap=document.getElementById('fab-rib-checklist');if(!wrap)return;
   if(!key){wrap.innerHTML='';return;}
-  if(_fabRibKey&&_fabRibKey!==key){wrap.innerHTML='<div style="font-size:12px;color:var(--accent-urgent);padding:6px">Clear the current rib selection to pick a different rib fabric.</div>';return;}
+  if(_fabRibKey&&_fabRibKey!==key){wrap.innerHTML='<div style="font-size:13px;color:var(--accent-urgent);padding:6px">Clear the current rib selection to pick a different rib fabric.</div>';return;}
   const stock=allFabricInventory.find(s=>s._id===key);
   const pickable=(stock?.rolls||[]).filter(r=>['in_stock','reserved'].includes(r.status||'in_stock'));
-  if(!pickable.length){wrap.innerHTML='<div style="font-size:12px;color:var(--muted);padding:6px">No available rib rolls.</div>';return;}
-  wrap.innerHTML=`<label style="font-size:11px;color:var(--muted)">${pickable.length} rib rolls</label><div style="display:grid;gap:4px;margin-top:4px">${pickable.map(r=>{const sel=_fabRibRolls.some(x=>x.rollCode===r.rollCode);return`<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;cursor:pointer"><input type="checkbox" data-roll="${_gpEsc(r.rollCode)}" ${sel?'checked':''} onchange="window.fabRibToggle(this)"><span style="font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode)}</span><span style="color:var(--muted)">${r.weight||0} kg</span></label>`;}).join('')}</div>`;
+  if(!pickable.length){wrap.innerHTML='<div style="font-size:13px;color:var(--muted);padding:6px">No available rib rolls.</div>';return;}
+  wrap.innerHTML=`<label style="font-size:12px;color:var(--muted)">${pickable.length} rib rolls</label><div style="display:grid;gap:4px;margin-top:4px">${pickable.map(r=>{const sel=_fabRibRolls.some(x=>x.rollCode===r.rollCode);return`<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:13px;cursor:pointer"><input type="checkbox" data-roll="${_gpEsc(r.rollCode)}" ${sel?'checked':''} onchange="window.fabRibToggle(this)"><span style="font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode)}</span><span style="color:var(--muted)">${r.weight||0} kg</span></label>`;}).join('')}</div>`;
 };
 function _fabRibSyncChecklist(){if(document.getElementById('fab-rib-stock')?.value)window.fabRibPickStock();}
 window.fabRibToggle=function(cb){const code=cb.dataset.roll;if(cb.checked)_fabRibAdd(code);else window.fabRibRemove(code);};
@@ -2421,7 +2421,7 @@ function _fabRibRenderSelected(){
   if(!_fabRibRolls.length){el.innerHTML='';return;}
   const stock=allFabricInventory.find(s=>s._id===_fabRibKey);
   const total=_fabRibRolls.reduce((s,r)=>s+(r.weight||0),0);
-  el.innerHTML=`<div style="font-size:11px;color:var(--muted);margin-bottom:4px">${stock?`${_gpEsc(stock.fabType)} · ${stock.gsm}gsm · ${_gpEsc(stock.color)}`:''}</div>${_fabRibRolls.map(r=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;border-bottom:1px solid var(--border);font-size:12px"><span style="font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode)}</span><span style="display:flex;gap:10px;align-items:center"><span>${r.weight||0} kg</span><button onclick="window.fabRibRemove('${_gpEsc(r.rollCode)}')" style="background:none;border:none;color:var(--accent-urgent);cursor:pointer;font-size:14px">×</button></span></div>`).join('')}<div style="display:flex;justify-content:space-between;padding:8px;margin-top:6px;background:var(--dark);border-radius:8px;color:var(--on-dark);font-size:13px"><span>${_fabRibRolls.length} rib rolls</span><span style="font-weight:700">${total.toFixed(2)} kg</span></div>`;
+  el.innerHTML=`<div style="font-size:12px;color:var(--muted);margin-bottom:4px">${stock?`${_gpEsc(stock.fabType)} · ${stock.gsm}gsm · ${_gpEsc(stock.color)}`:''}</div>${_fabRibRolls.map(r=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;border-bottom:1px solid var(--border);font-size:13px"><span style="font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode)}</span><span style="display:flex;gap:10px;align-items:center"><span>${r.weight||0} kg</span><button onclick="window.fabRibRemove('${_gpEsc(r.rollCode)}')" style="background:none;border:none;color:var(--accent-urgent);cursor:pointer;font-size:15px">×</button></span></div>`).join('')}<div style="display:flex;justify-content:space-between;padding:8px;margin-top:6px;background:var(--dark);border-radius:8px;color:var(--on-dark);font-size:14px"><span>${_fabRibRolls.length} rib rolls</span><span style="font-weight:700">${total.toFixed(2)} kg</span></div>`;
 }
 
 // Type-to-search the product catalog (same source as New PO) → fills article
@@ -2432,8 +2432,8 @@ window.fabIssueProdSearch=function(q){
   q=(q||'').toLowerCase().trim();
   if(!q){dd.style.display='none';return;}
   const hits=cat.filter(p=>(p.code||'').toLowerCase().includes(q)||(p.name||'').toLowerCase().includes(q)).slice(0,18);
-  if(!hits.length){dd.innerHTML='<div style="padding:10px 12px;font-size:12px;color:var(--muted)">No catalog match — you can still type any name/code to use as-is</div>';dd.style.display='block';return;}
-  dd.innerHTML=hits.map(p=>`<div class="prod-opt" data-code="${_gpEsc(p.code||'')}" data-name="${_gpEsc(p.name||'')}" style="padding:10px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f3f4f6;display:flex;gap:10px;align-items:baseline"><span style="font-weight:700;color:var(--dark);min-width:84px;font-size:12px">${_gpEsc(p.code||'')}</span><span style="color:var(--text)">${_gpEsc(p.name||'')}</span></div>`).join('');
+  if(!hits.length){dd.innerHTML='<div style="padding:10px 12px;font-size:13px;color:var(--muted)">No catalog match — you can still type any name/code to use as-is</div>';dd.style.display='block';return;}
+  dd.innerHTML=hits.map(p=>`<div class="prod-opt" data-code="${_gpEsc(p.code||'')}" data-name="${_gpEsc(p.name||'')}" style="padding:10px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid #f3f4f6;display:flex;gap:10px;align-items:baseline"><span style="font-weight:700;color:var(--dark);min-width:84px;font-size:13px">${_gpEsc(p.code||'')}</span><span style="color:var(--text)">${_gpEsc(p.name||'')}</span></div>`).join('');
   dd.style.display='block';
   dd.querySelectorAll('.prod-opt').forEach(el=>el.addEventListener('mousedown',e=>{
     e.preventDefault();
@@ -2468,17 +2468,17 @@ function _fabIssueSyncSizesFromDOM(){
 function _fabIssueRenderSizes(){
   const el=document.getElementById('fab-iss-sizes'); if(!el)return;
   if(!_fabIssueSizes.length)_fabIssueSizes=[{size:'',bundles:''}];
-  el.innerHTML=`<div style="display:grid;grid-template-columns:1fr 2.2fr .8fr .9fr 28px;gap:8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:0 2px 6px">
+  el.innerHTML=`<div style="display:grid;grid-template-columns:1fr 2.2fr .8fr .9fr 28px;gap:8px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:0 2px 6px">
       <span>Size</span><span>Bundles (e.g. 9-8-6-7)</span><span style="text-align:center"># Bundles</span><span style="text-align:right">Qty</span><span></span>
     </div>`+
     _fabIssueSizes.map((s,i)=>{
       const arr=_fabParseBundles(s.bundles);const q=arr.reduce((a,b)=>a+b,0);
       return`<div class="fis-row" style="display:grid;grid-template-columns:1fr 2.2fr .8fr .9fr 28px;gap:8px;align-items:center;margin-bottom:8px">
-        <input class="fis-size" value="${_gpEsc(s.size)}" placeholder="e.g. M" oninput="window.fabIssueRecalc()" style="margin:0;font-size:15px;padding:9px 10px">
-        <input class="fis-bundles" value="${_gpEsc(s.bundles)}" placeholder="9-8-6-7" oninput="window.fabIssueRecalc()" style="margin:0;font-size:15px;padding:9px 10px">
-        <span class="fis-nb" style="text-align:center;font-weight:700;font-size:14px;color:var(--muted)">${arr.length||'—'}</span>
-        <span class="fis-qty" style="text-align:right;font-weight:800;font-size:16px">${q?q.toLocaleString():'—'}</span>
-        <button type="button" onclick="window.fabIssueRemoveSize(${i})" title="Remove" style="background:none;border:none;color:var(--accent-urgent);cursor:pointer;font-size:20px;padding:0;line-height:1">×</button>
+        <input class="fis-size" value="${_gpEsc(s.size)}" placeholder="e.g. M" oninput="window.fabIssueRecalc()" style="margin:0;font-size:16px;padding:9px 10px">
+        <input class="fis-bundles" value="${_gpEsc(s.bundles)}" placeholder="9-8-6-7" oninput="window.fabIssueRecalc()" style="margin:0;font-size:16px;padding:9px 10px">
+        <span class="fis-nb" style="text-align:center;font-weight:700;font-size:15px;color:var(--muted)">${arr.length||'—'}</span>
+        <span class="fis-qty" style="text-align:right;font-weight:800;font-size:17px">${q?q.toLocaleString():'—'}</span>
+        <button type="button" onclick="window.fabIssueRemoveSize(${i})" title="Remove" style="background:none;border:none;color:var(--accent-urgent);cursor:pointer;font-size:21px;padding:0;line-height:1">×</button>
       </div>`;
     }).join('');
   window.fabIssueRecalc();
@@ -2543,17 +2543,17 @@ window.fabIssuePickStock=function(){
   if(!key){wrap.innerHTML='';return;}
   const stock=allFabricInventory.find(s=>s._id===key);
   const pickable=(stock?.rolls||[]).filter(r=>['in_stock','reserved'].includes(r.status||'in_stock'));
-  if(!pickable.length){wrap.innerHTML='<div style="font-size:12px;color:var(--muted);padding:6px">No available rolls.</div>';return;}
-  wrap.innerHTML=`<label style="font-size:11px;color:var(--muted)">${pickable.length} available rolls</label>
+  if(!pickable.length){wrap.innerHTML='<div style="font-size:13px;color:var(--muted);padding:6px">No available rolls.</div>';return;}
+  wrap.innerHTML=`<label style="font-size:12px;color:var(--muted)">${pickable.length} available rolls</label>
     <div style="display:grid;gap:4px;margin-top:4px">${pickable.map(r=>{
       const sel=_fabIssueRolls.some(x=>x.rollCode===r.rollCode);
       const resv=r.status==='reserved';
-      return`<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;cursor:pointer">
+      return`<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:13px;cursor:pointer">
         <input type="checkbox" data-roll="${_gpEsc(r.rollCode)}" ${sel?'checked':''} onchange="window.fabIssueToggle(this)">
         <span style="font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode)}</span>
         <span style="color:var(--muted)">${r.weight||0} ${r.unit||stock.unit||'kg'}</span>
-        ${resv?`<span style="color:var(--amber);font-size:10px">reserved ${_gpEsc(r.reservedPO||'')}</span>`:''}
-        ${r.qcPassed?'<span style="color:var(--green);font-size:10px">QC ✓</span>':'<span style="color:var(--muted);font-size:10px">no QC</span>'}
+        ${resv?`<span style="color:var(--amber);font-size:11px">reserved ${_gpEsc(r.reservedPO||'')}</span>`:''}
+        ${r.qcPassed?'<span style="color:var(--green);font-size:11px">QC ✓</span>':'<span style="color:var(--muted);font-size:11px">no QC</span>'}
       </label>`;
     }).join('')}</div>`;
 };
@@ -2602,30 +2602,30 @@ function _fabIssueRenderSelected(){
   const groupsHtml=groups.map((g,gi)=>{
     const unit=g.unit||'kg';
     return`<div style="border:1px solid var(--border);border-radius:9px;padding:8px 10px;margin-bottom:8px">
-      <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">${multi?`<span style="color:var(--muted)">Fabric ${gi+1}:</span> `:''}${_gpEsc(g.fabType||'')} · ${g.gsm||0}gsm · ${_gpEsc(g.color||'')}</div>
+      <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">${multi?`<span style="color:var(--muted)">Fabric ${gi+1}:</span> `:''}${_gpEsc(g.fabType||'')} · ${g.gsm||0}gsm · ${_gpEsc(g.color||'')}</div>
       ${g.rolls.map(r=>{const sid=_fabIssueSafeId(r.rollCode);const full=r.weight||0;return`<div style="border:1px solid var(--border);border-radius:8px;padding:9px 10px;margin-bottom:7px;background:var(--surface-2)">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px">
-          <span style="font-weight:700;letter-spacing:.04em;font-size:12.5px">${_gpEsc(r.rollCode)}${r.status==='reserved'?' <span style="color:var(--amber);font-weight:400;font-size:10px">(reserved)</span>':''}</span>
-          <button onclick="window.fabIssueRemove('${_gpEsc(r.rollCode)}')" title="Remove roll" style="background:none;border:none;color:var(--accent-urgent);cursor:pointer;font-size:16px;line-height:1">×</button>
+          <span style="font-weight:700;letter-spacing:.04em;font-size:13.5px">${_gpEsc(r.rollCode)}${r.status==='reserved'?' <span style="color:var(--amber);font-weight:400;font-size:11px">(reserved)</span>':''}</span>
+          <button onclick="window.fabIssueRemove('${_gpEsc(r.rollCode)}')" title="Remove roll" style="background:none;border:none;color:var(--accent-urgent);cursor:pointer;font-size:17px;line-height:1">×</button>
         </div>
         <div style="display:flex;align-items:flex-end;gap:9px;flex-wrap:wrap">
           <div style="display:flex;flex-direction:column;gap:3px">
-            <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Used by production</label>
+            <label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Used by production</label>
             <div style="display:flex;align-items:center;gap:7px">
-              <input type="number" min="0" max="${full}" step="0.01" value="${_fabRollUse(r)}" id="fab-use-${sid}" title="Weight used by production" oninput="window.fabIssueSetUse('${_gpEsc(r.rollCode)}')" style="width:96px;padding:8px 10px;border:1px solid var(--dark);border-radius:8px;font-size:16px;font-weight:800;text-align:right;font-family:inherit;background:var(--surface)">
-              <span style="font-size:12px;color:var(--muted)">${unit} of <b style="color:var(--text)">${full}</b> ${unit}</span>
-              <button type="button" onclick="window.fabIssueUseFull('${_gpEsc(r.rollCode)}')" title="Use the whole roll" style="padding:5px 9px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Full</button>
+              <input type="number" min="0" max="${full}" step="0.01" value="${_fabRollUse(r)}" id="fab-use-${sid}" title="Weight used by production" oninput="window.fabIssueSetUse('${_gpEsc(r.rollCode)}')" style="width:96px;padding:8px 10px;border:1px solid var(--dark);border-radius:8px;font-size:17px;font-weight:800;text-align:right;font-family:inherit;background:var(--surface)">
+              <span style="font-size:13px;color:var(--muted)">${unit} of <b style="color:var(--text)">${full}</b> ${unit}</span>
+              <button type="button" onclick="window.fabIssueUseFull('${_gpEsc(r.rollCode)}')" title="Use the whole roll" style="padding:5px 9px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;font-family:inherit">Full</button>
             </div>
           </div>
         </div>
         <div id="fab-bar-${sid}" style="margin-top:8px">${_fabIssueBarHtml(r)}</div>
-        <div id="fab-uh-${sid}" style="font-size:11px;margin-top:5px">${_fabIssueUseHintHtml(r)}</div>
+        <div id="fab-uh-${sid}" style="font-size:12px;margin-top:5px">${_fabIssueUseHintHtml(r)}</div>
       </div>`;}).join('')}
-      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);padding-top:3px"><span>${g.rolls.length} roll${g.rolls.length===1?'':'s'}</span><span style="font-weight:700;color:var(--text)" id="fab-gw-${_fabIssueSafeId(g.key)}">${g.weight.toFixed(2)} ${unit} used</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding-top:3px"><span>${g.rolls.length} roll${g.rolls.length===1?'':'s'}</span><span style="font-weight:700;color:var(--text)" id="fab-gw-${_fabIssueSafeId(g.key)}">${g.weight.toFixed(2)} ${unit} used</span></div>
     </div>`;
   }).join('');
   el.innerHTML=`${groupsHtml}
-    <div style="display:flex;justify-content:space-between;padding:8px;background:var(--dark);border-radius:8px;color:var(--on-dark);font-size:13px"><span>${_fabIssueRolls.length} rolls${multi?` · ${groups.length} fabrics`:''}</span><span style="font-weight:700" id="fab-iss-grand">${total.toFixed(2)} kg used</span></div>`;
+    <div style="display:flex;justify-content:space-between;padding:8px;background:var(--dark);border-radius:8px;color:var(--on-dark);font-size:14px"><span>${_fabIssueRolls.length} rolls${multi?` · ${groups.length} fabrics`:''}</span><span style="font-weight:700" id="fab-iss-grand">${total.toFixed(2)} kg used</span></div>`;
   if(typeof window.fabIssueRecalc==='function')window.fabIssueRecalc();   // refresh cut totals + avg
   if(typeof _fabRibRefreshStocks==='function'){ if(!_fabRibRolls.length)_fabRibRefreshStocks(); window.fabRibRecalc&&window.fabRibRecalc(); }
 }
@@ -2770,7 +2770,7 @@ function renderFabRetSupplier(){
   const fabs=[...new Map(inStock.map(x=>[x.key,x.stock])).values()].sort((a,b)=>(a.fabType||'').localeCompare(b.fabType||''));
   if(_fabSRetFilterKey&&!fabs.some(s=>s._id===_fabSRetFilterKey))_fabSRetFilterKey='';
   const shown=_fabSRetFilterKey?inStock.filter(x=>x.key===_fabSRetFilterKey):inStock;
-  return`<div class="card"><div class="card-title">Return to supplier <span style="font-weight:400;color:var(--muted);font-size:11px">to the supplier each roll came from — auto-picked</span></div>
+  return`<div class="card"><div class="card-title">Return to supplier <span style="font-weight:400;color:var(--muted);font-size:12px">to the supplier each roll came from — auto-picked</span></div>
     <div class="form-grid" style="margin-bottom:8px">
       <div class="field"><label>Reason *</label>
         <select id="fab-sret-reason"><option value="">Select reason…</option>${FAB_RETURN_REASONS.map(r=>`<option value="${r}">${r}</option>`).join('')}</select>
@@ -2788,11 +2788,11 @@ function renderFabRetSupplier(){
         </select>
       </div>
     </div>
-    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="background:var(--surface-2)"><th style="padding:6px"></th><th style="padding:6px;text-align:left">Roll</th><th style="padding:6px;text-align:left">Fabric</th><th style="padding:6px;text-align:left">Supplier (origin)</th><th style="padding:6px;text-align:right">Weight</th></tr></thead>
       <tbody>${shown.map(x=>{const sup=_fabRollSupplier(x.roll);return`<tr style="border-bottom:1px solid var(--border)">
         <td style="padding:6px;text-align:center"><input type="checkbox" class="fab-sret-cb" data-key="${x.key}" data-roll="${_gpEsc(x.roll.rollCode)}" data-supplier="${_gpEsc(sup)}"></td>
-        <td style="padding:6px;font-weight:700;letter-spacing:.04em">${_gpEsc(x.roll.rollCode)}${x.roll.remnant?' <span style="color:var(--amber);font-size:9px">remnant</span>':''}</td>
+        <td style="padding:6px;font-weight:700;letter-spacing:.04em">${_gpEsc(x.roll.rollCode)}${x.roll.remnant?' <span style="color:var(--amber);font-size:11px">remnant</span>':''}</td>
         <td style="padding:6px;color:var(--muted)">${_gpEsc(x.stock.fabType)} ${x.stock.gsm}g ${_gpEsc(x.stock.color)}</td>
         <td style="padding:6px;font-weight:600;color:${sup?'var(--text)':'#dc2626'}">${sup?_gpEsc(sup):'unknown'}</td>
         <td style="padding:6px;text-align:right">${x.roll.weight||0} ${x.stock.unit||'kg'}</td>
@@ -2877,7 +2877,7 @@ function _fabPoRowHTML(){
         <option value="">Select fabric…</option>
         ${stocks.map(s=>`<option value="${s._id}">${_gpEsc(s.fabType)} · ${s.gsm||0}gsm · ${_gpEsc(s.color)} — ${s.rollsCount||0} available</option>`).join('')}
       </select>
-      <button type="button" onclick="window.fabPoRemoveRow(${rid})" title="Remove fabric" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:0 6px;line-height:1">×</button>
+      <button type="button" onclick="window.fabPoRemoveRow(${rid})" title="Remove fabric" style="background:none;border:none;color:var(--muted);font-size:21px;cursor:pointer;padding:0 6px;line-height:1">×</button>
     </div>
     <div id="po-fab-rolls-${rid}" style="margin-top:6px"></div>
   </div>`;
@@ -2891,17 +2891,17 @@ window.fabPoFabricCard=function(){
   _poFabrics=[];_poFabRowSeq=0;
   const stocks=_fabPoStocks();
   const firstRow=_fabPoRowHTML();
-  return`<div class="card"><div class="card-title">Fabric &amp; supply <span style="font-weight:400;color:var(--muted);font-size:11px">* · linked to fabric inventory</span></div>
+  return`<div class="card"><div class="card-title">Fabric &amp; supply <span style="font-weight:400;color:var(--muted);font-size:12px">* · linked to fabric inventory</span></div>
     <div class="field"><label>Reserve from fabric inventory <span style="font-weight:400;color:var(--muted)">optional · pick one or more fabrics &amp; reserve rolls</span></label>
       <div id="po-fab-rows">${firstRow}</div>
-      <button type="button" onclick="window.fabPoAddRow()" style="background:none;border:1px dashed var(--border);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;color:var(--dark);cursor:pointer;font-family:inherit">+ Add another fabric</button>
-      ${stocks.length?'':'<div style="font-size:11px;color:var(--muted);margin-top:8px">No fabric in inventory yet — enter details manually below, or add stock in the Fabric Inventory section.</div>'}
+      <button type="button" onclick="window.fabPoAddRow()" style="background:none;border:1px dashed var(--border);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:600;color:var(--dark);cursor:pointer;font-family:inherit">+ Add another fabric</button>
+      ${stocks.length?'':'<div style="font-size:12px;color:var(--muted);margin-top:8px">No fabric in inventory yet — enter details manually below, or add stock in the Fabric Inventory section.</div>'}
     </div>
     <div class="form-grid" style="margin-top:12px">
       <div class="field"><label>Fabric type *</label><input id="po-fabric" placeholder="e.g. Terry, Fleece"></div>
       <div class="field"><label>Fabric code</label><input id="po-fabriccode" placeholder="e.g. BLKTRY220"></div>
       <div class="field"><label>Supply store</label><input id="po-store" placeholder="Store/supplier"></div>
-      <div class="field"><label>Total rolls <span style="font-weight:400;color:var(--muted);font-size:11px">auto from reserved</span></label><input id="po-rolls" placeholder="e.g. 12"></div>
+      <div class="field"><label>Total rolls <span style="font-weight:400;color:var(--muted);font-size:12px">auto from reserved</span></label><input id="po-rolls" placeholder="e.g. 12"></div>
     </div>
   </div>`;
 };
@@ -2939,9 +2939,9 @@ window.fabPoRowPick=function(rid){
     if(!key)wrap.innerHTML='';
     else{
       const avail=(s?.rolls||[]).filter(r=>(r.status||'in_stock')==='in_stock');
-      if(!avail.length)wrap.innerHTML='<div style="font-size:12px;color:var(--muted)">No available rolls in this stock.</div>';
-      else wrap.innerHTML=`<label style="font-size:11px;color:var(--muted)">${avail.length} available — tick to reserve for this PO</label>
-        <div style="display:grid;gap:4px;margin-top:4px">${avail.map(r=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;cursor:pointer;background:var(--surface)">
+      if(!avail.length)wrap.innerHTML='<div style="font-size:13px;color:var(--muted)">No available rolls in this stock.</div>';
+      else wrap.innerHTML=`<label style="font-size:12px;color:var(--muted)">${avail.length} available — tick to reserve for this PO</label>
+        <div style="display:grid;gap:4px;margin-top:4px">${avail.map(r=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:13px;cursor:pointer;background:var(--surface)">
           <input type="checkbox" data-roll="${_gpEsc(r.rollCode)}" onchange="window.fabPoRowToggle(${rid},this)">
           <span style="font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode)}</span>
           <span style="color:var(--muted)">${r.weight||0} ${r.unit||s.unit||'kg'}</span>
@@ -3108,49 +3108,49 @@ function renderFabricReportsTab(){
   const userRows=Object.values(byUser).sort((a,b)=>b.n-a.n);
 
   const periods=[['today','Today'],['7d','Week'],['month','Month'],['custom','Specific date'],['all','All time']];
-  const chip=(k,l)=>`<button onclick="window.fabRptSetPeriod('${k}')" style="padding:6px 13px;border:1px solid ${_fabRptPeriod===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabRptPeriod===k?'var(--dark)':'var(--surface)'};color:${_fabRptPeriod===k?'var(--on-dark)':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${l}</button>`;
+  const chip=(k,l)=>`<button onclick="window.fabRptSetPeriod('${k}')" style="padding:6px 13px;border:1px solid ${_fabRptPeriod===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabRptPeriod===k?'var(--dark)':'var(--surface)'};color:${_fabRptPeriod===k?'var(--on-dark)':'var(--text)'};font-size:13px;cursor:pointer;font-family:inherit">${l}</button>`;
   const card=(title,c,a)=>`<div style="flex:1;min-width:150px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px">
-    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${title}</div>
-    <div style="font-size:22px;font-weight:800;color:${c};margin-top:3px">${a.qty.toFixed(1)}<span style="font-size:12px;font-weight:600;color:var(--muted)"> kg/m</span></div>
-    <div style="font-size:11px;color:var(--muted)">${a.count} events · ${a.rolls} rolls</div>
+    <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${title}</div>
+    <div style="font-size:23px;font-weight:800;color:${c};margin-top:3px">${a.qty.toFixed(1)}<span style="font-size:13px;font-weight:600;color:var(--muted)"> kg/m</span></div>
+    <div style="font-size:12px;color:var(--muted)">${a.count} events · ${a.rolls} rolls</div>
   </div>`;
   const btn=(l,fn)=>`<button class="btn-outline" style="width:auto;padding:9px 16px;margin:0" onclick="window.${fn}()">${l}</button>`;
   const waste=_fabWastageData();
 
-  return`<div class="card"><div class="card-title">Fabric report <span style="font-weight:400;color:var(--muted);font-size:11px">${label}</span></div>
+  return`<div class="card"><div class="card-title">Fabric report <span style="font-weight:400;color:var(--muted);font-size:12px">${label}</span></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:${_fabRptPeriod==='custom'?'8':'0'}px">
       ${periods.map(([k,l])=>chip(k,l)).join('')}
     </div>
-    ${_fabRptPeriod==='custom'?`<input type="date" value="${_fabRptDate||new Date().toISOString().slice(0,10)}" onchange="window.fabRptSetDate(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">`:''}
+    ${_fabRptPeriod==='custom'?`<input type="date" value="${_fabRptDate||new Date().toISOString().slice(0,10)}" onchange="window.fabRptSetDate(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px">`:''}
   </div>
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
     ${card('Received','#16a34a',received)}
     ${card('Issued','#dc2626',issued)}
     ${card('Returned','#7c3aed',returned)}
     <div style="flex:1;min-width:150px;background:var(--dark);border-radius:12px;padding:12px 14px;color:var(--on-dark)">
-      <div style="font-size:11px;color:var(--on-dark);opacity:.7;text-transform:uppercase;letter-spacing:.04em">Stock now</div>
-      <div style="font-size:22px;font-weight:800;margin-top:3px">${kg.toFixed(1)}<span style="font-size:12px;font-weight:600;color:var(--on-dark);opacity:.7"> kg</span></div>
-      <div style="font-size:11px;color:var(--on-dark);opacity:.7">${fabrics} fabrics · ${rollsNow} rolls${crit?` · <span style="color:var(--on-dark);opacity:.7;font-weight:700">${crit} critical</span>`:''}${low?` · <span style="color:var(--on-dark);opacity:.7;font-weight:700">${low} low</span>`:''}</div>
+      <div style="font-size:12px;color:var(--on-dark);opacity:.7;text-transform:uppercase;letter-spacing:.04em">Stock now</div>
+      <div style="font-size:23px;font-weight:800;margin-top:3px">${kg.toFixed(1)}<span style="font-size:13px;font-weight:600;color:var(--on-dark);opacity:.7"> kg</span></div>
+      <div style="font-size:12px;color:var(--on-dark);opacity:.7">${fabrics} fabrics · ${rollsNow} rolls${crit?` · <span style="color:var(--on-dark);opacity:.7;font-weight:700">${crit} critical</span>`:''}${low?` · <span style="color:var(--on-dark);opacity:.7;font-weight:700">${low} low</span>`:''}</div>
     </div>
   </div>
-  <div class="card"><div class="card-title">Issued against PO <span style="font-weight:400;color:var(--muted);font-size:11px">${label}</span></div>
-    ${poRows.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+  <div class="card"><div class="card-title">Issued against PO <span style="font-weight:400;color:var(--muted);font-size:12px">${label}</span></div>
+    ${poRows.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="background:var(--surface-2)"><th style="padding:8px;text-align:left">PO</th><th style="padding:8px;text-align:right">Issues</th><th style="padding:8px;text-align:right">Rolls</th><th style="padding:8px;text-align:right">Qty</th></tr></thead>
       <tbody>${poRows.map(p=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px;font-weight:700">${_gpEsc(p.po)}</td><td style="padding:8px;text-align:right">${p.count}</td><td style="padding:8px;text-align:right">${p.rolls}</td><td style="padding:8px;text-align:right;font-weight:600">${p.qty.toFixed(2)}</td></tr>`).join('')}</tbody>
     </table></div>`:'<div class="empty" style="padding:14px">No fabric issued in this period.</div>'}
   </div>
-  <div class="card"><div class="card-title" style="color:var(--cat-boards)">Returned to supplier <span style="font-weight:400;color:var(--muted);font-size:11px">${label}</span></div>
-    ${rets.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+  <div class="card"><div class="card-title" style="color:var(--cat-boards)">Returned to supplier <span style="font-weight:400;color:var(--muted);font-size:12px">${label}</span></div>
+    ${rets.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="background:var(--surface-2)"><th style="padding:8px;text-align:left">When</th><th style="padding:8px;text-align:left">Fabric</th><th style="padding:8px;text-align:right">Rolls</th><th style="padding:8px;text-align:right">Qty</th><th style="padding:8px;text-align:left">Detail</th></tr></thead>
-      <tbody>${rets.map(m=>`<tr style="border-bottom:1px solid var(--border);color:var(--cat-boards)"><td style="padding:8px">${_fabFmtDT(m.ts)}</td><td style="padding:8px">${_gpEsc(m.fabType)} ${m.gsm}g ${_gpEsc(m.color)}</td><td style="padding:8px;text-align:right">${(m.rollCodes||[]).length}</td><td style="padding:8px;text-align:right;font-weight:600">${(m.qty||0).toFixed(2)}</td><td style="padding:8px;font-size:11px">${_gpEsc(m.note||'')}</td></tr>`).join('')}</tbody>
+      <tbody>${rets.map(m=>`<tr style="border-bottom:1px solid var(--border);color:var(--cat-boards)"><td style="padding:8px">${_fabFmtDT(m.ts)}</td><td style="padding:8px">${_gpEsc(m.fabType)} ${m.gsm}g ${_gpEsc(m.color)}</td><td style="padding:8px;text-align:right">${(m.rollCodes||[]).length}</td><td style="padding:8px;text-align:right;font-weight:600">${(m.qty||0).toFixed(2)}</td><td style="padding:8px;font-size:12px">${_gpEsc(m.note||'')}</td></tr>`).join('')}</tbody>
     </table></div>`:'<div class="empty" style="padding:14px">No supplier returns in this period.</div>'}
   </div>
-  <div class="card"><div class="card-title">Activity by person <span style="font-weight:400;color:var(--muted);font-size:11px">${label} · ${movs.length} events</span></div>
-    ${userRows.length?`<div style="display:flex;gap:8px;flex-wrap:wrap">${userRows.map(u=>`<div style="background:var(--surface-2);border-radius:8px;padding:8px 12px;font-size:12px"><span style="font-weight:700">${_gpEsc(u.u)}</span> · ${u.n} actions</div>`).join('')}</div>`:'<div class="empty" style="padding:14px">No activity in this period.</div>'}
-    <div style="font-size:11px;color:var(--muted);margin-top:10px">Received ${received.count} · Issued ${issued.count} · Returned ${returned.count} · Edited ${edited.count} · Deleted ${deleted.count} — every event is in the immutable <b>Log</b> tab with name, date &amp; time.</div>
+  <div class="card"><div class="card-title">Activity by person <span style="font-weight:400;color:var(--muted);font-size:12px">${label} · ${movs.length} events</span></div>
+    ${userRows.length?`<div style="display:flex;gap:8px;flex-wrap:wrap">${userRows.map(u=>`<div style="background:var(--surface-2);border-radius:8px;padding:8px 12px;font-size:13px"><span style="font-weight:700">${_gpEsc(u.u)}</span> · ${u.n} actions</div>`).join('')}</div>`:'<div class="empty" style="padding:14px">No activity in this period.</div>'}
+    <div style="font-size:12px;color:var(--muted);margin-top:10px">Received ${received.count} · Issued ${issued.count} · Returned ${returned.count} · Edited ${edited.count} · Deleted ${deleted.count} — every event is in the immutable <b>Log</b> tab with name, date &amp; time.</div>
   </div>
-  <div class="card"><div class="card-title">Per-PO wastage <span style="font-weight:400;color:var(--muted);font-size:11px">all-time</span></div>
-    ${waste.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+  <div class="card"><div class="card-title">Per-PO wastage <span style="font-weight:400;color:var(--muted);font-size:12px">all-time</span></div>
+    ${waste.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="background:var(--surface-2)"><th style="padding:8px;text-align:left">PO</th><th style="padding:8px;text-align:right">Issued</th><th style="padding:8px;text-align:right">Consumed</th><th style="padding:8px;text-align:right">Returned</th><th style="padding:8px;text-align:right">Wastage %</th></tr></thead>
       <tbody>${waste.map(w=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px;font-weight:700">${_gpEsc(w.po)}</td><td style="padding:8px;text-align:right">${w.issued.toFixed(2)}</td><td style="padding:8px;text-align:right">${w.consumed.toFixed(2)}</td><td style="padding:8px;text-align:right">${w.returned.toFixed(2)}</td><td style="padding:8px;text-align:right;font-weight:600;color:${w.wastagePct>15?'#dc2626':w.wastagePct>5?'#b45309':'#16a34a'}">${w.wastagePct.toFixed(1)}%</td></tr>`).join('')}</tbody>
     </table></div>`:'<div class="empty" style="padding:14px">No issued fabric yet.</div>'}
@@ -3181,41 +3181,41 @@ function renderFabricLogTab(){
   const rows=movs.slice(0,400);
   const acts=[['all','All'],['receipt','Received'],['issue','Issued'],['return_out','Returned'],['reserve','Reserved'],['edit','Edited'],['delete','Deleted']];
   const chip=(k,l)=>{const on=_fabLogAction===k,c=counts[k]||0;
-    return`<button onclick="window.fabLogSetAction('${k}')" style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid ${on?'#111':'var(--border)'};border-radius:999px;background:${on?'var(--dark)':'var(--surface)'};color:${on?'var(--on-dark)':'var(--text)'};font-size:12px;cursor:pointer;font-family:inherit">${l}<span style="font-size:10px;font-weight:700;opacity:${on?'.75':'.45'}">${c}</span></button>`;};
+    return`<button onclick="window.fabLogSetAction('${k}')" style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid ${on?'#111':'var(--border)'};border-radius:999px;background:${on?'var(--dark)':'var(--surface)'};color:${on?'var(--on-dark)':'var(--text)'};font-size:13px;cursor:pointer;font-family:inherit">${l}<span style="font-size:11px;font-weight:700;opacity:${on?'.75':'.45'}">${c}</span></button>`;};
   let lastDay='';
   const body=rows.map(m=>{
     const a=_fabActionMeta(m),{po,supplier,extra}=_fabLogDetail(m),codes=m.rollCodes||[];
     const dl=_fabLogDayLabel(m.ts);
     let head='';
-    if(dl!==lastDay){lastDay=dl;head=`<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:14px 2px 6px;border-bottom:1px solid var(--border);margin-bottom:2px">${dl}</div>`;}
+    if(dl!==lastDay){lastDay=dl;head=`<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:14px 2px 6px;border-bottom:1px solid var(--border);margin-bottom:2px">${dl}</div>`;}
     return head+`<div style="display:flex;gap:11px;align-items:flex-start;padding:10px 4px;border-bottom:1px solid #f4f4f5">
-      <div style="width:30px;height:30px;border-radius:9px;background:${a.bg};color:${a.color};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0;margin-top:1px">${a.sign}</div>
+      <div style="width:30px;height:30px;border-radius:9px;background:${a.bg};color:${a.color};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex-shrink:0;margin-top:1px">${a.sign}</div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
-          <span style="font-weight:700;font-size:13.5px;color:var(--text)">${_gpEsc(m.fabType||'—')} ${m.gsm||0}g ${_gpEsc(m.color||'')}</span>
-          <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:${a.color};background:${a.bg};padding:2px 7px;border-radius:6px">${a.label}</span>
+          <span style="font-weight:700;font-size:14.5px;color:var(--text)">${_gpEsc(m.fabType||'—')} ${m.gsm||0}g ${_gpEsc(m.color||'')}</span>
+          <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:${a.color};background:${a.bg};padding:2px 7px;border-radius:6px">${a.label}</span>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;font-size:11px;color:var(--muted)">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;font-size:12px;color:var(--muted)">
           <span>${_fabFmtTime(m.ts)}</span>
           ${po?`<span style="font-weight:700;color:var(--text);background:var(--soft);border-radius:5px;padding:1px 7px">PO ${_gpEsc(po)}</span>`:''}
           ${supplier?`<span>from <span style="color:var(--text);font-weight:600">${_gpEsc(supplier)}</span></span>`:''}
           <span>by ${_gpEsc(m.by||'—')}</span>
         </div>
-        ${codes.length?`<div style="font-size:10px;color:var(--muted);letter-spacing:.02em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:4px">${codes.slice(0,6).map(_gpEsc).join(' · ')}${codes.length>6?` +${codes.length-6} more`:''}</div>`:''}
-        ${(m.partialRolls&&m.partialRolls.length)?`<div style="font-size:10.5px;color:var(--accent-warning);margin-top:3px">${m.partialRolls.map(pr=>`✂ ${_gpEsc(pr.rollCode)}: ${pr.usedWeight} ${m.unit||'kg'} cut · ${pr.weightAfter} ${m.unit||'kg'} left in stock (was ${pr.weightBefore})`).join('<br>')}</div>`:''}
-        ${extra?`<div style="font-size:11px;color:${a.color};margin-top:3px">${_gpEsc(extra)}</div>`:''}
+        ${codes.length?`<div style="font-size:11px;color:var(--muted);letter-spacing:.02em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:4px">${codes.slice(0,6).map(_gpEsc).join(' · ')}${codes.length>6?` +${codes.length-6} more`:''}</div>`:''}
+        ${(m.partialRolls&&m.partialRolls.length)?`<div style="font-size:11px;color:var(--accent-warning);margin-top:3px">${m.partialRolls.map(pr=>`✂ ${_gpEsc(pr.rollCode)}: ${pr.usedWeight} ${m.unit||'kg'} cut · ${pr.weightAfter} ${m.unit||'kg'} left in stock (was ${pr.weightBefore})`).join('<br>')}</div>`:''}
+        ${extra?`<div style="font-size:12px;color:${a.color};margin-top:3px">${_gpEsc(extra)}</div>`:''}
       </div>
       <div style="text-align:right;flex-shrink:0">
-        <div style="font-size:14px;font-weight:800;color:${a.color};white-space:nowrap">${a.sign==='+'||a.sign==='−'?a.sign:''}${(m.qty||0).toFixed(2)}</div>
-        <div style="font-size:10px;color:var(--muted)">${m.unit||'kg'}</div>
+        <div style="font-size:15px;font-weight:800;color:${a.color};white-space:nowrap">${a.sign==='+'||a.sign==='−'?a.sign:''}${(m.qty||0).toFixed(2)}</div>
+        <div style="font-size:11px;color:var(--muted)">${m.unit||'kg'}</div>
       </div>
     </div>`;
   }).join('');
-  return`<div class="card"><div class="card-title">Audit log <span style="font-weight:400;color:var(--muted);font-size:11px">append-only · every fabric event · cannot be edited or deleted</span></div>
-    <div style="background:var(--accent-success-soft);border:1px solid var(--accent-success);color:var(--accent-success);font-size:11px;padding:7px 11px;border-radius:8px;margin-bottom:10px">🔒 Permanent record — who did what to which fabric, with date &amp; time. Entries can never be altered or removed.</div>
-    <input id="fab-log-search" value="${_fabLogQ.replace(/"/g,'&quot;')}" oninput="window.fabLogSearch(this.value)" placeholder="Search fabric, roll, PO, person, note…" style="width:100%;padding:8px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;margin-bottom:10px">
+  return`<div class="card"><div class="card-title">Audit log <span style="font-weight:400;color:var(--muted);font-size:12px">append-only · every fabric event · cannot be edited or deleted</span></div>
+    <div style="background:var(--accent-success-soft);border:1px solid var(--accent-success);color:var(--accent-success);font-size:12px;padding:7px 11px;border-radius:8px;margin-bottom:10px">🔒 Permanent record — who did what to which fabric, with date &amp; time. Entries can never be altered or removed.</div>
+    <input id="fab-log-search" value="${_fabLogQ.replace(/"/g,'&quot;')}" oninput="window.fabLogSearch(this.value)" placeholder="Search fabric, roll, PO, person, note…" style="width:100%;padding:8px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;outline:none;margin-bottom:10px">
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${acts.map(([k,l])=>chip(k,l)).join('')}</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:2px">${total} event${total===1?'':'s'}${total>400?' · showing latest 400 (refine with search)':''}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:2px">${total} event${total===1?'':'s'}${total>400?' · showing latest 400 (refine with search)':''}</div>
     ${rows.length?body:'<div class="empty" style="padding:20px;text-align:center">No matching events.</div>'}
   </div><div style="height:80px"></div>`;
 }
@@ -3265,9 +3265,9 @@ window.fabPrintReport=function(){
   const waste=_fabWastageData().map(x=>`<tr><td>${_gpEsc(x.po)}</td><td style="text-align:right">${x.issued.toFixed(2)}</td><td style="text-align:right">${x.consumed.toFixed(2)}</td><td style="text-align:right">${x.wastagePct.toFixed(1)}%</td></tr>`).join('');
   w.document.write(`<!doctype html><html><head><title>Fabric Inventory Report</title><style>
     body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111}
-    h1{font-size:18px;margin:0 0 4px}h2{font-size:14px;margin:20px 0 6px}
-    .sub{font-size:11px;color:var(--muted);margin-bottom:8px}
-    table{width:100%;border-collapse:collapse;font-size:11px}
+    h1{font-size:19px;margin:0 0 4px}h2{font-size:15px;margin:20px 0 6px}
+    .sub{font-size:12px;color:var(--muted);margin-bottom:8px}
+    table{width:100%;border-collapse:collapse;font-size:12px}
     th,td{border-bottom:1px solid #ddd;padding:5px 6px;text-align:left}
     th{background:#f3f3f3}
     @media print{body{padding:0}}

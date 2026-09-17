@@ -754,14 +754,14 @@ function _ptnRepaint(){
 function _ptnPageHTML(){
   const head=`
   <div class="page-head" style="margin-bottom:10px">
-    <div><h2 style="margin:0">Pattern Hub</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">Article registry · the TAC list, live in the app · test phase</div></div>
+    <div><h2 style="margin:0">Pattern Hub</h2><div style="color:var(--muted);font-size:13px;margin-top:2px">Article registry · the TAC list, live in the app · test phase</div></div>
   </div>`;
   const sync=_ptnSyncLineHTML();
   if(_ptnLoadErr){
     return head+`<div class="board-load-error" id="ptn-load-error">
-      <div style="font-weight:700;font-size:13.5px;margin-bottom:4px">Could not load the registry</div>
-      <div style="font-size:12px;color:var(--muted);line-height:1.5">tac_categories, articles: ${_ptnEsc(_ptnLoadErr)}</div>
-      <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-top:6px">If that says <em>missing or insufficient permissions</em>, the Firestore rules in the Firebase Console are older than this app — republish <code>firestore.rules</code>.</div>
+      <div style="font-weight:700;font-size:14.5px;margin-bottom:4px">Could not load the registry</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.5">tac_categories, articles: ${_ptnEsc(_ptnLoadErr)}</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-top:6px">If that says <em>missing or insufficient permissions</em>, the Firestore rules in the Firebase Console are older than this app — republish <code>firestore.rules</code>.</div>
       <button class="btn-sm" style="margin-top:10px" onclick="window.ptnRetryLoad()">Retry</button>
     </div>`;
   }
@@ -781,7 +781,7 @@ function _ptnSeedCardHTML(){
   const empty=tacArticles.length===0;
   return`<div class="card" id="ptn-seed-card" style="border-color:var(--accent-warning);margin-bottom:14px">
     <div class="card-title">${empty?'The registry is empty':'The registry is missing articles from the TAC list'}</div>
-    <div style="font-size:12.5px;color:var(--muted);line-height:1.5;margin-bottom:10px">
+    <div style="font-size:13.5px;color:var(--muted);line-height:1.5;margin-bottom:10px">
       ${empty?`Seed it from the TAC List — <b>${_TAC_ARTICLES.length}</b> articles across <b>${_TAC_CATEGORIES.length}</b> categories and three brands, exactly as Ammar's document has them today.`
              :`<b>${missing.length}</b> code${missing.length===1?'':'s'} in the TAC List constant ${missing.length===1?'is':'are'} not in the registry yet. Seeding writes only those; nothing already here is touched.`}
     </div>
@@ -792,23 +792,23 @@ function _ptnStatsHTML(){
   const inBrand=tacArticles.filter(a=>(_ptnFilter.brand==='all'||a.brand===_ptnFilter.brand)&&a.active!==false);
   const needs=inBrand.filter(a=>a.needsPattern).length;
   const cats=_ptnCategoriesFor(_ptnFilter.brand).length;
-  const tile=(n,l)=>`<div class="card" style="padding:12px 14px;flex:1;min-width:120px"><div style="font-size:22px;font-weight:700">${n}</div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${l}</div></div>`;
+  const tile=(n,l)=>`<div class="card" style="padding:12px 14px;flex:1;min-width:120px"><div style="font-size:23px;font-weight:700">${n}</div><div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${l}</div></div>`;
   return`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${tile(inBrand.length,'Articles')}${tile(needs,'Need a pattern')}${tile(inBrand.length-needs,'No pattern needed')}${tile(cats,'Categories')}</div>`;
 }
 function _ptnToolbarHTML(){
   const cats=_ptnCategoriesFor(_ptnFilter.brand);
   return`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
-    <input type="search" id="ptn-search" placeholder="Search code or name…" value="${_ptnEsc(_ptnFilter.q)}" oninput="window.ptnSearchInput(this.value)" aria-label="Search articles" style="flex:1;min-width:180px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;background:var(--surface-2);color:var(--text)">
-    <select onchange="window.ptnSetFilter('cat',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:9px;font-family:inherit;font-size:13px;background:var(--surface-2);color:var(--text)">
+    <input type="search" id="ptn-search" placeholder="Search code or name…" value="${_ptnEsc(_ptnFilter.q)}" oninput="window.ptnSearchInput(this.value)" aria-label="Search articles" style="flex:1;min-width:180px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:14px;font-family:inherit;background:var(--surface-2);color:var(--text)">
+    <select onchange="window.ptnSetFilter('cat',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:9px;font-family:inherit;font-size:14px;background:var(--surface-2);color:var(--text)">
       <option value="all"${_ptnFilter.cat==='all'?' selected':''}>All categories</option>
       ${cats.map(c=>`<option value="${c.prefix}"${_ptnFilter.cat===c.prefix?' selected':''}>${c.prefix} · ${_ptnEsc(c.label)}</option>`).join('')}
     </select>
-    <select onchange="window.ptnSetFilter('needs',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:9px;font-family:inherit;font-size:13px;background:var(--surface-2);color:var(--text)">
+    <select onchange="window.ptnSetFilter('needs',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:9px;font-family:inherit;font-size:14px;background:var(--surface-2);color:var(--text)">
       <option value="all"${_ptnFilter.needs==='all'?' selected':''}>Pattern: any</option>
       <option value="yes"${_ptnFilter.needs==='yes'?' selected':''}>Needs a pattern</option>
       <option value="no"${_ptnFilter.needs==='no'?' selected':''}>No pattern needed</option>
     </select>
-    <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px"><input type="checkbox" ${_ptnFilter.showRetired?'checked':''} onchange="window.ptnSetFilter('showRetired',this.checked?'1':'')">Show retired</label>
+    <label style="font-size:13px;color:var(--muted);display:flex;align-items:center;gap:4px"><input type="checkbox" ${_ptnFilter.showRetired?'checked':''} onchange="window.ptnSetFilter('showRetired',this.checked?'1':'')">Show retired</label>
     ${_canManagePatterns()?`<button class="btn-primary" onclick="window.ptnToggleMint()">${_ptnMintOpen?'Close':'+ Mint a code'}</button>`:''}
     <button class="btn-sm" onclick="window.showPage('pattern-blocks')">Patterns${typeof _ptnQueueBadge==='function'?_ptnQueueBadge():''}</button>
     <button class="btn-sm" onclick="window.showPage('pattern-notices')">Pattern updates${typeof _ptnNoticeBadge==='function'?_ptnNoticeBadge():''}</button>
@@ -833,7 +833,7 @@ function _ptnMintFormHTML(){
       <div class="field"><label>Code <span style="color:var(--muted);font-weight:400">(leave blank for next)</span></label><input id="ptn-mint-code" placeholder="${_ptnEsc(cat.form==='NNN-TB'?_ptnFormatCode(cat.prefix,next.length?_ptnParseCode(next[0]).num:1,''):(next[0]||''))}" value="${_ptnEsc((document.getElementById('ptn-mint-code')||{}).value||'')}"></div>
       <div class="field"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="ptn-mint-needs" ${cat.needsPattern!==false?'checked':''}> Needs a pattern</label></div>
     </div>
-    <div style="font-size:12px;color:var(--muted);margin-top:8px;line-height:1.5">
+    <div style="font-size:13px;color:var(--muted);margin-top:8px;line-height:1.5">
       Next in <b>${_ptnEsc(cat.prefix)}</b>: <b id="ptn-mint-next">${_ptnEsc(next.join(' + '))}</b>.
       ${cat.form==='NNN-TB'?'A co-ord set mints a Top and a Bottom from one number. ':''}
       Numbering never goes backwards on its own; type a specific unused code only to fill a gap deliberately.
@@ -847,17 +847,17 @@ function _ptnTableHTML(){
   if(!tacArticles.length)return`<div class="empty" id="ptn-empty">No articles in the registry yet.</div>`;
   if(!rows.length)return`<div class="empty">Nothing matches.</div>`;
   const can=_canManagePatterns();
-  return`<div class="card" style="padding:0;overflow:auto"><table class="ptn-table" style="width:100%;border-collapse:collapse;font-size:13px">
-    <thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em"><th style="padding:10px 12px">Code</th><th style="padding:10px 12px">Name</th><th style="padding:10px 12px">Category</th><th style="padding:10px 12px">Pattern</th><th style="padding:10px 12px">Status</th><th style="padding:10px 12px">Shopify</th>${can?'<th style="padding:10px 12px"></th>':''}</tr></thead>
+  return`<div class="card" style="padding:0;overflow:auto"><table class="ptn-table" style="width:100%;border-collapse:collapse;font-size:14px">
+    <thead><tr style="text-align:left;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em"><th style="padding:10px 12px">Code</th><th style="padding:10px 12px">Name</th><th style="padding:10px 12px">Category</th><th style="padding:10px 12px">Pattern</th><th style="padding:10px 12px">Status</th><th style="padding:10px 12px">Shopify</th>${can?'<th style="padding:10px 12px"></th>':''}</tr></thead>
     <tbody>${rows.map(a=>_ptnEditing===a.code?_ptnEditRowHTML(a):_ptnRowHTML(a,can)).join('')}</tbody></table>
-    <div style="padding:8px 12px;font-size:11px;color:var(--muted);border-top:1px solid var(--border)">${rows.length} of ${tacArticles.length} articles</div></div>`;
+    <div style="padding:8px 12px;font-size:12px;color:var(--muted);border-top:1px solid var(--border)">${rows.length} of ${tacArticles.length} articles</div></div>`;
 }
 function _ptnRowHTML(a,can){
   const cat=_ptnCategory(a.category);
   const retired=a.active===false;
   return`<tr class="ptn-row" data-code="${_ptnEsc(a.code)}" style="border-top:1px solid var(--border);${retired?'opacity:.55':''}">
     <td style="padding:9px 12px;font-weight:700;white-space:nowrap">${_ptnEsc(a.code)}</td>
-    <td style="padding:9px 12px" class="ptn-name">${_ptnEsc(a.name||'')}${a.source==='minted'?' <span class="badge" style="font-size:9.5px">minted</span>':''}</td>
+    <td style="padding:9px 12px" class="ptn-name">${_ptnEsc(a.name||'')}${a.source==='minted'?' <span class="badge" style="font-size:11px">minted</span>':''}</td>
     <td style="padding:9px 12px;color:var(--muted);white-space:nowrap">${_ptnEsc(cat?cat.label:a.category||'')}</td>
     <td style="padding:9px 12px;white-space:nowrap">${_ptnPatternCellHTML(a)}</td>
     <td style="padding:9px 12px;white-space:nowrap">${retired?'Retired':'Active'}</td>
@@ -875,9 +875,9 @@ function _ptnPatternCellHTML(a){
 function _ptnEditRowHTML(a){
   return`<tr class="ptn-row ptn-row-edit" data-code="${_ptnEsc(a.code)}" style="border-top:1px solid var(--border);background:var(--surface-2)">
     <td style="padding:9px 12px;font-weight:700;white-space:nowrap">${_ptnEsc(a.code)}</td>
-    <td style="padding:9px 12px" colspan="2"><input id="ptn-edit-name" value="${_ptnEsc(a.name||'')}" style="width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--text)"></td>
-    <td style="padding:9px 12px;white-space:nowrap"><label style="display:flex;align-items:center;gap:5px;font-size:12px"><input type="checkbox" id="ptn-edit-needs" ${a.needsPattern?'checked':''}>Needs a pattern</label></td>
-    <td style="padding:9px 12px;white-space:nowrap"><label style="display:flex;align-items:center;gap:5px;font-size:12px"><input type="checkbox" id="ptn-edit-active" ${a.active!==false?'checked':''}>Active</label></td>
+    <td style="padding:9px 12px" colspan="2"><input id="ptn-edit-name" value="${_ptnEsc(a.name||'')}" style="width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:14px;background:var(--surface);color:var(--text)"></td>
+    <td style="padding:9px 12px;white-space:nowrap"><label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="ptn-edit-needs" ${a.needsPattern?'checked':''}>Needs a pattern</label></td>
+    <td style="padding:9px 12px;white-space:nowrap"><label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="ptn-edit-active" ${a.active!==false?'checked':''}>Active</label></td>
     <td style="padding:9px 12px;white-space:nowrap" class="ptn-shop">${_ptnShopifyCellHTML(a)}</td>
     <td style="padding:9px 12px;text-align:right;white-space:nowrap"><button class="btn-primary" ${_ptnBusy?'disabled':''} onclick="window.ptnSaveArticle('${_ptnEsc(a.code)}')">Save</button> <button class="btn-sm" onclick="window.ptnCancelEdit()">Cancel</button></td>
   </tr>`;
@@ -1149,7 +1149,7 @@ function _ptnRecBadge(){
   if(!shopifyArticles)return'';
   const r=_ptnReconcile();
   const n=r.unknownCodes.length+r.nameMismatch.length+r.unkeyed.filter(u=>!u.linked).length;
-  return n?` <span class="badge" style="font-size:10px">${n}</span>`:'';
+  return n?` <span class="badge" style="font-size:11px">${n}</span>`:'';
 }
 
 // ── Hub: the sync line and the Shopify column ─────────────────────────────
@@ -1162,11 +1162,11 @@ function _ptnSyncLineHTML(){
   if(!_ptnShopifyLoaded)return'';
   if(_ptnShopifyFailed)return`<div class="board-load-warn" id="ptn-shop-warn" style="margin-bottom:12px">The Shopify rollup (<code>shopify_articles</code>) did not load: ${_ptnEsc(_ptnShopifyFailed)}. Liveness is unknown; the registry still works. <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`;
   const n=shopifyArticles?Object.keys(shopifyArticles).length:0;
-  if(!n)return`<div style="font-size:12px;color:var(--muted);margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap" id="ptn-shop-none"><span>No Shopify rollup yet — the catalog sync writes it daily at 9am PKT.</span>${_ptnSyncNowBtnHTML()}</div>`;
+  if(!n)return`<div style="font-size:13px;color:var(--muted);margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap" id="ptn-shop-none"><span>No Shopify rollup yet — the catalog sync writes it daily at 9am PKT.</span>${_ptnSyncNowBtnHTML()}</div>`;
   const d=_ptnSyncDate();
   const ageH=d?Math.round((Date.now()-d.getTime())/36e5):null;
   const stale=ageH!=null&&ageH>30;
-  return`<div style="font-size:12px;color:var(--muted);margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap" id="ptn-shop-line"><span>Shopify copy: <b>${n}</b> article codes${d?` · synced ${_ptnEsc(d.toLocaleString('en-GB'))}`:''}${ageH!=null?` (${ageH}h ago${stale?' — <b style="color:var(--accent-warning)">older than a day</b>':''})`:''} · read-only.</span>${_ptnSyncNowBtnHTML()}</div>`;
+  return`<div style="font-size:13px;color:var(--muted);margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap" id="ptn-shop-line"><span>Shopify copy: <b>${n}</b> article codes${d?` · synced ${_ptnEsc(d.toLocaleString('en-GB'))}`:''}${ageH!=null?` (${ageH}h ago${stale?' — <b style="color:var(--accent-warning)">older than a day</b>':''})`:''} · read-only.</span>${_ptnSyncNowBtnHTML()}</div>`;
 }
 function _ptnShopifyCellHTML(a){
   if(!_ptnShopifyLoaded)return'';
@@ -1174,7 +1174,7 @@ function _ptnShopifyCellHTML(a){
   const sa=shopifyArticles&&shopifyArticles[a.code];
   if(sa){
     const c={active:'var(--green)',draft:'var(--amber)',archived:'var(--muted)'}[sa.status]||'var(--muted)';
-    return`<span style="color:${c};font-weight:600">${_ptnEsc(sa.status||'?')}</span>${sa.size_axis&&sa.size_axis!=='none'?` <span style="color:var(--muted);font-size:11px">${_ptnEsc(sa.size_axis)}</span>`:''}`;
+    return`<span style="color:${c};font-weight:600">${_ptnEsc(sa.status||'?')}</span>${sa.size_axis&&sa.size_axis!=='none'?` <span style="color:var(--muted);font-size:12px">${_ptnEsc(sa.size_axis)}</span>`:''}`;
   }
   if(a.shopifyLink&&a.shopifyLink.productId)return'<span style="color:var(--accent-warning);font-weight:600" title="Linked to a product whose SKU is not set">linked · fix SKU</span>';
   return a.brand==='groovy'?'<span style="color:var(--muted)">—</span>':'';
@@ -1188,9 +1188,9 @@ function renderPatternReconcile(){
 function _ptnRecRepaint(){const r=document.getElementById('pattern-rec-root');if(r)r.innerHTML=_ptnReconcileHTML();}
 function _ptnReconcileHTML(){
   const head=`<button class="back-btn" onclick="window.showPage('pattern-hub')">← Pattern Hub</button>
-  <div class="page-head" style="margin-bottom:10px"><div><h2 style="margin:0">Reconcile with Shopify</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">The registry beside the store's SKUs. Fixes here write to the registry only — Shopify is never written from this app.</div></div></div>`;
+  <div class="page-head" style="margin-bottom:10px"><div><h2 style="margin:0">Reconcile with Shopify</h2><div style="color:var(--muted);font-size:13px;margin-top:2px">The registry beside the store's SKUs. Fixes here write to the registry only — Shopify is never written from this app.</div></div></div>`;
   if(_ptnLoadErr)return head+`<div class="board-load-error">The registry did not load: ${_ptnEsc(_ptnLoadErr)} <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`;
-  if(_ptnShopifyFailed)return head+`<div class="board-load-error" id="ptn-rec-failed"><div style="font-weight:700;margin-bottom:4px">The Shopify rollup did not load</div><div style="font-size:12px;color:var(--muted)">shopify_articles: ${_ptnEsc(_ptnShopifyFailed)}. If that says <em>missing or insufficient permissions</em>, republish <code>firestore.rules</code>.</div><button class="btn-sm" style="margin-top:10px" onclick="window.ptnRetryLoad()">Retry</button></div>`;
+  if(_ptnShopifyFailed)return head+`<div class="board-load-error" id="ptn-rec-failed"><div style="font-weight:700;margin-bottom:4px">The Shopify rollup did not load</div><div style="font-size:13px;color:var(--muted)">shopify_articles: ${_ptnEsc(_ptnShopifyFailed)}. If that says <em>missing or insufficient permissions</em>, republish <code>firestore.rules</code>.</div><button class="btn-sm" style="margin-top:10px" onclick="window.ptnRetryLoad()">Retry</button></div>`;
   if(!shopifyArticles||!Object.keys(shopifyArticles).length)return head+`<div class="empty" id="ptn-rec-none">No Shopify rollup yet. The catalog sync writes <code>shopify_articles</code> daily at 9am PKT — or run it now. ${_ptnSyncNowBtnHTML()} <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`;
   const r=_ptnReconcile();
   const open=r.unkeyed.filter(u=>!u.linked);
@@ -1204,32 +1204,32 @@ function _ptnReconcileHTML(){
   ];
   if(!tabs.some(t=>t[0]===_ptnRecTab))_ptnRecTab='unknown';
   const tabHTML=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${tabs.map(([k,l,n])=>`<button class="btn-sm" style="${_ptnRecTab===k?'background:var(--dark);color:var(--on-dark);border-color:var(--dark)':''}" onclick="window.ptnRecTab('${k}')">${l} <b>${n}</b></button>`).join('')}</div>`;
-  const summary=`<div style="font-size:12px;color:var(--muted);margin-bottom:12px">${r.ok} code${r.ok===1?'':'s'} agree on both sides · ${_ptnSyncLineHTML().replace(/<div[^>]*>|<\/div>/g,'')}</div>`;
+  const summary=`<div style="font-size:13px;color:var(--muted);margin-bottom:12px">${r.ok} code${r.ok===1?'':'s'} agree on both sides · ${_ptnSyncLineHTML().replace(/<div[^>]*>|<\/div>/g,'')}</div>`;
   const can=_canManagePatterns();
   let body='';
   if(_ptnRecTab==='unknown'){
-    body=r.unknownCodes.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:10px 12px">Code</th><th style="padding:10px 12px">Shopify title</th><th style="padding:10px 12px">Status</th><th style="padding:10px 12px">Category</th><th></th></tr></thead><tbody>${r.unknownCodes.map(u=>`<tr class="ptn-rec-unknown" data-code="${_ptnEsc(u.code)}" style="border-top:1px solid var(--border)"><td style="padding:9px 12px;font-weight:700">${_ptnEsc(u.code)}</td><td style="padding:9px 12px">${_ptnEsc(u.title)}</td><td style="padding:9px 12px">${_ptnEsc(u.status)}</td><td style="padding:9px 12px;color:var(--muted)">${u.cat?_ptnEsc(u.cat.label):'<span style="color:var(--accent-urgent)">unknown prefix</span>'}</td><td style="padding:9px 12px;text-align:right">${can&&u.cat?`<button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnAddFromShopify('${_ptnEsc(u.code)}')">Add to registry</button>`:''}</td></tr>`).join('')}</tbody></table></div>
-    <div style="font-size:12px;color:var(--muted);margin-top:8px">A code Shopify uses that the TAC list never recorded. Adding it takes the code exactly as Shopify has it, the product title as the name, and moves that category's counter past it.</div>`
+    body=r.unknownCodes.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px;text-transform:uppercase"><th style="padding:10px 12px">Code</th><th style="padding:10px 12px">Shopify title</th><th style="padding:10px 12px">Status</th><th style="padding:10px 12px">Category</th><th></th></tr></thead><tbody>${r.unknownCodes.map(u=>`<tr class="ptn-rec-unknown" data-code="${_ptnEsc(u.code)}" style="border-top:1px solid var(--border)"><td style="padding:9px 12px;font-weight:700">${_ptnEsc(u.code)}</td><td style="padding:9px 12px">${_ptnEsc(u.title)}</td><td style="padding:9px 12px">${_ptnEsc(u.status)}</td><td style="padding:9px 12px;color:var(--muted)">${u.cat?_ptnEsc(u.cat.label):'<span style="color:var(--accent-urgent)">unknown prefix</span>'}</td><td style="padding:9px 12px;text-align:right">${can&&u.cat?`<button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnAddFromShopify('${_ptnEsc(u.code)}')">Add to registry</button>`:''}</td></tr>`).join('')}</tbody></table></div>
+    <div style="font-size:13px;color:var(--muted);margin-top:8px">A code Shopify uses that the TAC list never recorded. Adding it takes the code exactly as Shopify has it, the product title as the name, and moves that category's counter past it.</div>`
     :'<div class="empty">Every code on Shopify is in the registry.</div>';
   }else if(_ptnRecTab==='names'){
-    body=r.nameMismatch.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:10px 12px">Code</th><th style="padding:10px 12px">TAC name</th><th style="padding:10px 12px">Shopify title</th><th style="padding:10px 12px">Match</th><th></th></tr></thead><tbody>${r.nameMismatch.map(u=>`<tr class="ptn-rec-name" data-code="${_ptnEsc(u.code)}" style="border-top:1px solid var(--border)"><td style="padding:9px 12px;font-weight:700">${_ptnEsc(u.code)}</td><td style="padding:9px 12px">${_ptnEsc(u.tac)}</td><td style="padding:9px 12px">${_ptnEsc(u.shopify)}</td><td style="padding:9px 12px;white-space:nowrap;color:${u.sim<_PTN_SIM_SAME?'var(--accent-urgent)':'var(--muted)'}">${Math.round(u.sim*100)}%${u.sim<_PTN_SIM_SAME?' · check':''}</td><td style="padding:9px 12px;text-align:right;white-space:nowrap">${can?`<button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnUseShopifyName('${_ptnEsc(u.code)}')">Use Shopify name</button> <button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnKeepName('${_ptnEsc(u.code)}')">Keep TAC name</button>`:''}</td></tr>`).join('')}</tbody></table></div>
-    <div style="font-size:12px;color:var(--muted);margin-top:8px">Same code, different name. A low match usually means a renamed colourway (Heather Grey → Arctyc White) or two codes typed the wrong way round (the Jorts). "Keep" records that you looked.</div>`
+    body=r.nameMismatch.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px;text-transform:uppercase"><th style="padding:10px 12px">Code</th><th style="padding:10px 12px">TAC name</th><th style="padding:10px 12px">Shopify title</th><th style="padding:10px 12px">Match</th><th></th></tr></thead><tbody>${r.nameMismatch.map(u=>`<tr class="ptn-rec-name" data-code="${_ptnEsc(u.code)}" style="border-top:1px solid var(--border)"><td style="padding:9px 12px;font-weight:700">${_ptnEsc(u.code)}</td><td style="padding:9px 12px">${_ptnEsc(u.tac)}</td><td style="padding:9px 12px">${_ptnEsc(u.shopify)}</td><td style="padding:9px 12px;white-space:nowrap;color:${u.sim<_PTN_SIM_SAME?'var(--accent-urgent)':'var(--muted)'}">${Math.round(u.sim*100)}%${u.sim<_PTN_SIM_SAME?' · check':''}</td><td style="padding:9px 12px;text-align:right;white-space:nowrap">${can?`<button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnUseShopifyName('${_ptnEsc(u.code)}')">Use Shopify name</button> <button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnKeepName('${_ptnEsc(u.code)}')">Keep TAC name</button>`:''}</td></tr>`).join('')}</tbody></table></div>
+    <div style="font-size:13px;color:var(--muted);margin-top:8px">Same code, different name. A low match usually means a renamed colourway (Heather Grey → Arctyc White) or two codes typed the wrong way round (the Jorts). "Keep" records that you looked.</div>`
     :'<div class="empty">Every shared code has the same name on both sides.</div>';
   }else if(_ptnRecTab==='unkeyed'){
-    body=open.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:10px 12px">Shopify product</th><th style="padding:10px 12px">Why</th><th style="padding:10px 12px">Candidate in registry</th><th></th></tr></thead><tbody>${open.map(u=>`<tr class="ptn-rec-unkeyed" data-pid="${_ptnEsc(u.productId)}" style="border-top:1px solid var(--border)"><td style="padding:9px 12px"><b>${_ptnEsc(u.title)}</b><div style="font-size:11px;color:var(--muted)">${_ptnEsc(u.status)}</div></td><td style="padding:9px 12px;white-space:nowrap">${u.reason==='foreign_sku'?'SKU <code>'+_ptnEsc(u.sku)+'</code> is not a code':'no SKU'}</td><td style="padding:9px 12px">${u.match?`<b>${_ptnEsc(u.match.code)}</b> ${_ptnEsc(u.match.name)} <span style="color:var(--muted);font-size:11px">${u.match.kind==='exact'?'exact title match':Math.round(u.match.sim*100)+'% similar'}</span>`:'<span style="color:var(--muted)">none — needs a new code</span>'}</td><td style="padding:9px 12px;text-align:right;white-space:nowrap">${can?(u.match?`<button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnLinkProduct('${_ptnEsc(u.productId)}','${_ptnEsc(u.match.code)}')">Link to ${_ptnEsc(u.match.code)}</button> `:'')+`<button class="btn-sm" onclick="window.ptnMintForProduct('${_ptnEsc(u.productId)}')">Mint a code</button>`:''}</td></tr>`).join('')}</tbody></table></div>
-    <div style="font-size:12px;color:var(--muted);margin-top:8px">Products the store cannot key to an article. Linking records which code the product IS; the SKU itself has to be typed into Shopify by hand — see "Fix in Shopify" once linked.</div>`
+    body=open.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px;text-transform:uppercase"><th style="padding:10px 12px">Shopify product</th><th style="padding:10px 12px">Why</th><th style="padding:10px 12px">Candidate in registry</th><th></th></tr></thead><tbody>${open.map(u=>`<tr class="ptn-rec-unkeyed" data-pid="${_ptnEsc(u.productId)}" style="border-top:1px solid var(--border)"><td style="padding:9px 12px"><b>${_ptnEsc(u.title)}</b><div style="font-size:12px;color:var(--muted)">${_ptnEsc(u.status)}</div></td><td style="padding:9px 12px;white-space:nowrap">${u.reason==='foreign_sku'?'SKU <code>'+_ptnEsc(u.sku)+'</code> is not a code':'no SKU'}</td><td style="padding:9px 12px">${u.match?`<b>${_ptnEsc(u.match.code)}</b> ${_ptnEsc(u.match.name)} <span style="color:var(--muted);font-size:12px">${u.match.kind==='exact'?'exact title match':Math.round(u.match.sim*100)+'% similar'}</span>`:'<span style="color:var(--muted)">none — needs a new code</span>'}</td><td style="padding:9px 12px;text-align:right;white-space:nowrap">${can?(u.match?`<button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnLinkProduct('${_ptnEsc(u.productId)}','${_ptnEsc(u.match.code)}')">Link to ${_ptnEsc(u.match.code)}</button> `:'')+`<button class="btn-sm" onclick="window.ptnMintForProduct('${_ptnEsc(u.productId)}')">Mint a code</button>`:''}</td></tr>`).join('')}</tbody></table></div>
+    <div style="font-size:13px;color:var(--muted);margin-top:8px">Products the store cannot key to an article. Linking records which code the product IS; the SKU itself has to be typed into Shopify by hand — see "Fix in Shopify" once linked.</div>`
     :'<div class="empty">Every Shopify product carries a usable SKU.</div>';
   }else if(_ptnRecTab==='absent'){
-    body=r.notOnShopify.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:10px 12px">Code</th><th style="padding:10px 12px">TAC name</th><th style="padding:10px 12px"></th><th></th></tr></thead><tbody>${r.notOnShopify.map(u=>`<tr class="ptn-rec-absent" data-code="${_ptnEsc(u.code)}" style="border-top:1px solid var(--border)"><td style="padding:9px 12px;font-weight:700">${_ptnEsc(u.code)}</td><td style="padding:9px 12px">${_ptnEsc(u.name)}</td><td style="padding:9px 12px;color:var(--muted);font-size:12px">${u.linked?'linked to a product with no SKU':''}</td><td style="padding:9px 12px;text-align:right">${can&&!u.linked?`<button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnRetireQuick('${_ptnEsc(u.code)}')">Retire</button>`:''}</td></tr>`).join('')}</tbody></table></div>
-    <div style="font-size:12px;color:var(--muted);margin-top:8px">GROOVY codes with no Shopify product at any status (active, draft or archived). Usually discontinued before the store existed, or a product whose SKU is empty — check "No usable SKU" first. Retiring hides a code; it never deletes one.</div>`
+    body=r.notOnShopify.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px;text-transform:uppercase"><th style="padding:10px 12px">Code</th><th style="padding:10px 12px">TAC name</th><th style="padding:10px 12px"></th><th></th></tr></thead><tbody>${r.notOnShopify.map(u=>`<tr class="ptn-rec-absent" data-code="${_ptnEsc(u.code)}" style="border-top:1px solid var(--border)"><td style="padding:9px 12px;font-weight:700">${_ptnEsc(u.code)}</td><td style="padding:9px 12px">${_ptnEsc(u.name)}</td><td style="padding:9px 12px;color:var(--muted);font-size:13px">${u.linked?'linked to a product with no SKU':''}</td><td style="padding:9px 12px;text-align:right">${can&&!u.linked?`<button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnRetireQuick('${_ptnEsc(u.code)}')">Retire</button>`:''}</td></tr>`).join('')}</tbody></table></div>
+    <div style="font-size:13px;color:var(--muted);margin-top:8px">GROOVY codes with no Shopify product at any status (active, draft or archived). Usually discontinued before the store existed, or a product whose SKU is empty — check "No usable SKU" first. Retiring hides a code; it never deletes one.</div>`
     :'<div class="empty">Every GROOVY code in the registry is on Shopify.</div>';
   }else if(_ptnRecTab==='multi'){
-    body=r.multiCode.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:10px 12px">Shopify product</th><th style="padding:10px 12px">Codes</th></tr></thead><tbody>${r.multiCode.map(u=>`<tr style="border-top:1px solid var(--border)"><td style="padding:9px 12px">${_ptnEsc(u.title)}</td><td style="padding:9px 12px;font-weight:700">${u.codes.map(_ptnEsc).join(' · ')}</td></tr>`).join('')}</tbody></table></div>
-    <div style="font-size:12px;color:var(--muted);margin-top:8px">Two colourways merged into one Shopify product (Chicago Bulls: GP060 black, GP061 white). Legitimate — recorded so nobody assumes one product is one article.</div>`
+    body=r.multiCode.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px;text-transform:uppercase"><th style="padding:10px 12px">Shopify product</th><th style="padding:10px 12px">Codes</th></tr></thead><tbody>${r.multiCode.map(u=>`<tr style="border-top:1px solid var(--border)"><td style="padding:9px 12px">${_ptnEsc(u.title)}</td><td style="padding:9px 12px;font-weight:700">${u.codes.map(_ptnEsc).join(' · ')}</td></tr>`).join('')}</tbody></table></div>
+    <div style="font-size:13px;color:var(--muted);margin-top:8px">Two colourways merged into one Shopify product (Chicago Bulls: GP060 black, GP061 white). Legitimate — recorded so nobody assumes one product is one article.</div>`
     :'<div class="empty">No product carries more than one code.</div>';
   }else if(_ptnRecTab==='fix'){
-    body=r.fixShopify.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:10px 12px">Shopify product</th><th style="padding:10px 12px">Set each variant's SKU to</th></tr></thead><tbody>${r.fixShopify.map(u=>`<tr class="ptn-rec-fix" style="border-top:1px solid var(--border)"><td style="padding:9px 12px">${_ptnEsc(u.title)}</td><td style="padding:9px 12px;font-weight:700"><code>${_ptnEsc(u.code)}-&lt;size&gt;</code> <span style="color:var(--muted);font-weight:400;font-size:12px">(e.g. ${_ptnEsc(u.code)}-M or ${_ptnEsc(u.code)}-30)</span></td></tr>`).join('')}</tbody></table></div>
-    <div style="font-size:12px;color:var(--muted);margin-top:8px">Linked here, still wrong on Shopify. Once the SKU is typed in there, the next catalog sync keys the product and this row disappears on its own.</div>`
+    body=r.fixShopify.length?`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px;text-transform:uppercase"><th style="padding:10px 12px">Shopify product</th><th style="padding:10px 12px">Set each variant's SKU to</th></tr></thead><tbody>${r.fixShopify.map(u=>`<tr class="ptn-rec-fix" style="border-top:1px solid var(--border)"><td style="padding:9px 12px">${_ptnEsc(u.title)}</td><td style="padding:9px 12px;font-weight:700"><code>${_ptnEsc(u.code)}-&lt;size&gt;</code> <span style="color:var(--muted);font-weight:400;font-size:13px">(e.g. ${_ptnEsc(u.code)}-M or ${_ptnEsc(u.code)}-30)</span></td></tr>`).join('')}</tbody></table></div>
+    <div style="font-size:13px;color:var(--muted);margin-top:8px">Linked here, still wrong on Shopify. Once the SKU is typed in there, the next catalog sync keys the product and this row disappears on its own.</div>`
     :'<div class="empty">Nothing waiting on a Shopify edit.</div>';
   }
   return head+summary+tabHTML+body;
@@ -1343,8 +1343,8 @@ let _ptnSyncRun=null;   // {startedAt, status:'starting'|'running'|'done'|'faile
 function _ptnSyncNowBtnHTML(){
   if(!_canManagePatterns())return'';
   const r=_ptnSyncRun;
-  if(r&&(r.status==='starting'||r.status==='running'))return`<span id="ptn-sync-status" style="font-size:12px">Sync running… ${_ptnEsc(r.msg||'')}</span>`;
-  return`<button class="btn-sm" id="ptn-sync-now" onclick="window.ptnRunSyncNow()">Run sync now</button>${r&&r.msg?`<span id="ptn-sync-status" style="font-size:12px;color:${r.status==='done'?'var(--green)':'var(--accent-urgent)'}">${_ptnEsc(r.msg)}</span>`:''}`;
+  if(r&&(r.status==='starting'||r.status==='running'))return`<span id="ptn-sync-status" style="font-size:13px">Sync running… ${_ptnEsc(r.msg||'')}</span>`;
+  return`<button class="btn-sm" id="ptn-sync-now" onclick="window.ptnRunSyncNow()">Run sync now</button>${r&&r.msg?`<span id="ptn-sync-status" style="font-size:13px;color:${r.status==='done'?'var(--green)':'var(--accent-urgent)'}">${_ptnEsc(r.msg)}</span>`:''}`;
 }
 function _ptnRepaintCurrent(){
   if(currentPage==='pattern-reconcile')_ptnRecRepaint();else if(currentPage==='pattern-hub')_ptnRepaint();
@@ -1524,20 +1524,20 @@ function renderPatternBlocks(){
 }
 function _ptnBlocksRepaint(){const r=document.getElementById('pattern-blocks-root');if(r)r.innerHTML=_ptnBlocksHTML();}
 function _ptnBlocksErrHTML(){
-  if(_ptnBlocksErr)return`<div class="board-load-error" id="ptn-blocks-error"><div style="font-weight:700;margin-bottom:4px">Could not load the patterns</div><div style="font-size:12px;color:var(--muted)">patterns: ${_ptnEsc(_ptnBlocksErr)}. If that says <em>missing or insufficient permissions</em>, republish <code>firestore.rules</code>.</div><button class="btn-sm" style="margin-top:10px" onclick="window.ptnRetryLoad()">Retry</button></div>`;
+  if(_ptnBlocksErr)return`<div class="board-load-error" id="ptn-blocks-error"><div style="font-weight:700;margin-bottom:4px">Could not load the patterns</div><div style="font-size:13px;color:var(--muted)">patterns: ${_ptnEsc(_ptnBlocksErr)}. If that says <em>missing or insufficient permissions</em>, republish <code>firestore.rules</code>.</div><button class="btn-sm" style="margin-top:10px" onclick="window.ptnRetryLoad()">Retry</button></div>`;
   if(_ptnBlocksFailed.pattern_slots)return`<div class="board-load-warn" id="ptn-slots-warn" style="margin-bottom:12px">The slot locks (<code>pattern_slots</code>) did not load — the hook map may be incomplete and placing is disabled until it loads. <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`;
   return'';
 }
 function _ptnBlocksHTML(){
   const head=`<button class="back-btn" onclick="window.showPage('pattern-hub')">← Pattern Hub</button>
   <div class="page-head" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap">
-    <div><h2 style="margin:0">Patterns</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">One block = one bundle of craft paper, all sizes, one slot. Many articles point at one block.</div></div>
+    <div><h2 style="margin:0">Patterns</h2><div style="color:var(--muted);font-size:13px;margin-top:2px">One block = one bundle of craft paper, all sizes, one slot. Many articles point at one block.</div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">${_canManagePatterns()?`<button class="btn-primary" onclick="window.ptnNewBlock()">+ New block</button>`:''}<button class="btn-sm" onclick="window.showPage('pattern-unassigned')">Unassigned queue${_ptnQueueBadge()}</button><button class="btn-sm" onclick="window.showPage('pattern-poms')">Points of measure</button><button class="btn-sm" onclick="window.showPage('pattern-notices')">Pattern updates${typeof _ptnNoticeBadge==='function'?_ptnNoticeBadge():''}</button></div>
   </div>`;
   const err=_ptnBlocksErrHTML();
   if(_ptnBlocksErr)return head+err;
   const live=_ptnLiveBlocks(),un=_ptnUnplaced();
-  const tile=(n,l)=>`<div class="card" style="padding:12px 14px;flex:1;min-width:120px"><div style="font-size:22px;font-weight:700">${n}</div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${l}</div></div>`;
+  const tile=(n,l)=>`<div class="card" style="padding:12px 14px;flex:1;min-width:120px"><div style="font-size:23px;font-weight:700">${n}</div><div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${l}</div></div>`;
   const placed=live.length-un.length;
   const stats=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${tile(live.length,'Blocks')}${tile(placed+' / '+(_PTN_HOOKS*_PTN_SLOTS),'Slots used')}${tile(un.length,'Not on a hook')}${tile(_ptnUnassigned().length,'Articles unassigned')}</div>`;
   return head+err+stats+_ptnHookMapHTML()+_ptnUnplacedHTML()+_ptnBlockListHTML();
@@ -1548,18 +1548,18 @@ function _ptnHookMapHTML(){
     let cells='';
     for(let s=1;s<=_PTN_SLOTS;s++){
       const k=_ptnSlotKey(h,s);const lock=_ptnSlots[k];const p=lock&&_ptnBlock(lock.patternId);
-      cells+=p?`<button class="ptn-slot ptn-slot-full" data-slot="${k}" title="${_ptnEsc(p.name||'')}" onclick="window.ptnOpenBlock('${_ptnEsc(p.id)}')" style="text-align:left;border:1px solid var(--border);background:var(--surface-2);border-radius:8px;padding:6px 8px;min-height:48px;font-family:inherit;cursor:pointer;color:var(--text)"><div style="font-weight:700;font-size:12px">${_ptnEsc(p.code)}</div><div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_ptnEsc(p.name||'')}</div></button>`
-        :(lock?`<div class="ptn-slot ptn-slot-stale" data-slot="${k}" title="A lock with no live block — retired or deleted" style="border:1px dashed var(--accent-warning);border-radius:8px;padding:6px 8px;min-height:48px;font-size:11px;color:var(--muted)">stale lock${_canManagePatterns()?` <button class="btn-sm" onclick="window.ptnClearSlot('${k}')">clear</button>`:''}</div>`
-        :`<div class="ptn-slot ptn-slot-empty" data-slot="${k}" style="border:1px dashed var(--border);border-radius:8px;padding:6px 8px;min-height:48px;font-size:11px;color:var(--muted)">empty</div>`);
+      cells+=p?`<button class="ptn-slot ptn-slot-full" data-slot="${k}" title="${_ptnEsc(p.name||'')}" onclick="window.ptnOpenBlock('${_ptnEsc(p.id)}')" style="text-align:left;border:1px solid var(--border);background:var(--surface-2);border-radius:8px;padding:6px 8px;min-height:48px;font-family:inherit;cursor:pointer;color:var(--text)"><div style="font-weight:700;font-size:13px">${_ptnEsc(p.code)}</div><div style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_ptnEsc(p.name||'')}</div></button>`
+        :(lock?`<div class="ptn-slot ptn-slot-stale" data-slot="${k}" title="A lock with no live block — retired or deleted" style="border:1px dashed var(--accent-warning);border-radius:8px;padding:6px 8px;min-height:48px;font-size:12px;color:var(--muted)">stale lock${_canManagePatterns()?` <button class="btn-sm" onclick="window.ptnClearSlot('${k}')">clear</button>`:''}</div>`
+        :`<div class="ptn-slot ptn-slot-empty" data-slot="${k}" style="border:1px dashed var(--border);border-radius:8px;padding:6px 8px;min-height:48px;font-size:12px;color:var(--muted)">empty</div>`);
     }
-    rows+=`<div style="display:grid;grid-template-columns:44px repeat(${_PTN_SLOTS},minmax(0,1fr));gap:6px;align-items:stretch"><div style="font-size:11px;font-weight:700;color:var(--muted);align-self:center">Hook ${h}</div>${cells}</div>`;
+    rows+=`<div style="display:grid;grid-template-columns:44px repeat(${_PTN_SLOTS},minmax(0,1fr));gap:6px;align-items:stretch"><div style="font-size:12px;font-weight:700;color:var(--muted);align-self:center">Hook ${h}</div>${cells}</div>`;
   }
-  return`<div class="card" id="ptn-hook-map" style="margin-bottom:14px"><div class="card-title">Hook map <span style="font-weight:400;color:var(--muted);font-size:11px">10 hooks × 5 slots · click a block to open it</span></div><div style="display:flex;flex-direction:column;gap:6px;overflow:auto">${rows}</div></div>`;
+  return`<div class="card" id="ptn-hook-map" style="margin-bottom:14px"><div class="card-title">Hook map <span style="font-weight:400;color:var(--muted);font-size:12px">10 hooks × 5 slots · click a block to open it</span></div><div style="display:flex;flex-direction:column;gap:6px;overflow:auto">${rows}</div></div>`;
 }
 function _ptnUnplacedHTML(){
   const un=_ptnUnplaced();
   if(!un.length)return'';
-  return`<div class="card" id="ptn-unplaced" style="border-color:var(--accent-warning);margin-bottom:14px"><div class="card-title">Not on a hook <span style="font-weight:400;color:var(--muted);font-size:11px">${un.length} block${un.length===1?'':'s'} — normal while the rack fills; the rack has ${_PTN_HOOKS*_PTN_SLOTS} slots</span></div>
+  return`<div class="card" id="ptn-unplaced" style="border-color:var(--accent-warning);margin-bottom:14px"><div class="card-title">Not on a hook <span style="font-weight:400;color:var(--muted);font-size:12px">${un.length} block${un.length===1?'':'s'} — normal while the rack fills; the rack has ${_PTN_HOOKS*_PTN_SLOTS} slots</span></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">${un.map(p=>`<button class="btn-sm" onclick="window.ptnOpenBlock('${_ptnEsc(p.id)}')">${_ptnEsc(p.code)} · ${_ptnEsc(p.name||'')}</button>`).join('')}</div></div>`;
 }
 function _ptnBlockListHTML(){
@@ -1568,8 +1568,8 @@ function _ptnBlockListHTML(){
   if(!patterns.length)return`<div class="empty" id="ptn-blocks-empty">No blocks yet. Create one, or start from the <a href="#" onclick="window.showPage('pattern-unassigned');return false">unassigned queue</a> — it groups articles that look like one block.</div>`;
   const can=_canManagePatterns();
   const row=p=>{const n=_ptnArticlesOf(p.id).length;return`<tr class="ptn-block-row" data-id="${_ptnEsc(p.id)}" style="border-top:1px solid var(--border);cursor:pointer" onclick="window.ptnOpenBlock('${_ptnEsc(p.id)}')">${can?`<td style="padding:9px 6px 9px 12px" onclick="event.stopPropagation()"><input type="checkbox" class="ptn-label-pick" ${_ptnLabelSel.has(p.id)?'checked':''} onchange="window.ptnLabelToggle('${_ptnEsc(p.id)}',this.checked)"></td>`:''}<td style="padding:9px 12px;font-weight:700;white-space:nowrap">${_ptnEsc(p.code)}</td><td style="padding:9px 12px">${_ptnEsc(p.name||'')}</td><td style="padding:9px 12px;color:var(--muted);white-space:nowrap">${_ptnEsc((_ptnCategory(p.category)||{}).label||p.category||'')}</td><td style="padding:9px 12px;white-space:nowrap">${_ptnEsc((p.sizes||[]).join(' '))}</td><td style="padding:9px 12px;white-space:nowrap">${p.hook&&p.slot?'H'+p.hook+' / S'+p.slot:'<span style="color:var(--accent-warning)">not placed</span>'}</td><td style="padding:9px 12px;text-align:right">${n}</td></tr>`;};
-  return`<div class="card" style="padding:0;overflow:auto">${can?`<div id="ptn-label-bar" style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">${_ptnLabelBarInner()}</div>`:''}<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase">${can?'<th style="padding:10px 6px 10px 12px"></th>':''}<th style="padding:10px 12px">Code</th><th style="padding:10px 12px">Block</th><th style="padding:10px 12px">Category</th><th style="padding:10px 12px">Sizes</th><th style="padding:10px 12px">Home</th><th style="padding:10px 12px;text-align:right">Articles</th></tr></thead><tbody>${live.map(row).join('')}</tbody></table>
-  ${retired.length?`<div style="padding:8px 12px;font-size:11px;color:var(--muted);border-top:1px solid var(--border)">${retired.length} retired block${retired.length===1?'':'s'} hidden.</div>`:''}</div>`;
+  return`<div class="card" style="padding:0;overflow:auto">${can?`<div id="ptn-label-bar" style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">${_ptnLabelBarInner()}</div>`:''}<table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px;text-transform:uppercase">${can?'<th style="padding:10px 6px 10px 12px"></th>':''}<th style="padding:10px 12px">Code</th><th style="padding:10px 12px">Block</th><th style="padding:10px 12px">Category</th><th style="padding:10px 12px">Sizes</th><th style="padding:10px 12px">Home</th><th style="padding:10px 12px;text-align:right">Articles</th></tr></thead><tbody>${live.map(row).join('')}</tbody></table>
+  ${retired.length?`<div style="padding:8px 12px;font-size:12px;color:var(--muted);border-top:1px solid var(--border)">${retired.length} retired block${retired.length===1?'':'s'} hidden.</div>`:''}</div>`;
 }
 
 // ── One block ─────────────────────────────────────────────────────────────
@@ -1592,28 +1592,28 @@ function _ptnBlockHTML(){
   const slotOpts=()=>{let o='<option value="">— not on a hook —</option>';for(let h=1;h<=_PTN_HOOKS;h++)for(let s=1;s<=_PTN_SLOTS;s++){const k=_ptnSlotKey(h,s);const lock=_ptnSlots[k];const mine=lock&&lock.patternId===p.id;const taken=lock&&!mine;o+=`<option value="${k}"${mine?' selected':''}${taken?' disabled':''}>Hook ${h} · Slot ${s}${taken?' — '+_ptnEsc((_ptnBlock(lock.patternId)||{}).code||'taken'):''}</option>`;}return o;};
   return back+`
   <div class="page-head" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
-    <div><h2 style="margin:0">${_ptnEsc(p.code)} <span style="font-weight:400">· ${_ptnEsc(p.name||'')}</span>${p.status==='retired'?' <span class="badge">retired</span>':''}</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">${_ptnEsc(cat?cat.label:p.category||'')}${p.fit?' · '+_ptnEsc(p.fit):''} · ${_ptnEsc((p.sizes||[]).join(' '))}${p.sampleSize?' · sample '+_ptnEsc(p.sampleSize):''}${p.tracedBy?' · traced by '+_ptnEsc(p.tracedBy):''}</div></div>
+    <div><h2 style="margin:0">${_ptnEsc(p.code)} <span style="font-weight:400">· ${_ptnEsc(p.name||'')}</span>${p.status==='retired'?' <span class="badge">retired</span>':''}</h2><div style="color:var(--muted);font-size:13px;margin-top:2px">${_ptnEsc(cat?cat.label:p.category||'')}${p.fit?' · '+_ptnEsc(p.fit):''} · ${_ptnEsc((p.sizes||[]).join(' '))}${p.sampleSize?' · sample '+_ptnEsc(p.sampleSize):''}${p.tracedBy?' · traced by '+_ptnEsc(p.tracedBy):''}</div></div>
     ${can?`<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-sm" onclick="window.ptnEditBlock()">Edit</button>${p.status==='retired'?`<button class="btn-sm" onclick="window.ptnRestoreBlock('${_ptnEsc(p.id)}')">Restore</button>`:`<button class="btn-sm" onclick="window.ptnRetireBlock('${_ptnEsc(p.id)}')">Retire</button>`}</div>`:''}
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;align-items:start">
     <div class="card"><div class="card-title">Home</div>
       ${info('Where it hangs',home)}
       ${can&&!_ptnBlocksFailed.pattern_slots?`<div class="field" style="margin-top:8px"><label>Move to</label><select id="ptn-slot-pick">${slotOpts()}</select></div><button class="btn-primary" ${_ptnBusy?'disabled':''} onclick="window.ptnPlaceBlock('${_ptnEsc(p.id)}')">Save home</button>`:''}
-      <div style="font-size:11px;color:var(--muted);margin-top:8px">A taken slot is greyed out. Two blocks can never share one — the lock is written with the move.</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">A taken slot is greyed out. Two blocks can never share one — the lock is written with the move.</div>
     </div>
   </div>
   <div style="margin-top:14px">${typeof _ptnGridCardHTML==='function'?_ptnGridCardHTML(p):''}</div>
   ${typeof _ptnLabelCardHTML==='function'?_ptnLabelCardHTML(p):''}
   ${typeof _ptnRevisionsCardHTML==='function'?_ptnRevisionsCardHTML(p):''}
-  <div class="card" style="margin-top:14px" id="ptn-block-articles"><div class="card-title">Articles using this block <span style="font-weight:400;color:var(--muted);font-size:11px">${arts.length}</span></div>
-    ${arts.length?`<table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>${arts.map(a=>`<tr class="ptn-block-art" data-code="${_ptnEsc(a.code)}" style="border-top:1px solid var(--border)"><td style="padding:7px 4px;font-weight:700;white-space:nowrap">${_ptnEsc(a.code)}</td><td style="padding:7px 4px">${_ptnEsc(a.name||'')}</td><td style="padding:7px 4px;white-space:nowrap">${_ptnShopifyCellHTML(a)}</td><td style="padding:7px 4px;text-align:right">${can?`<button class="btn-sm" onclick="window.ptnUnassign('${_ptnEsc(a.code)}')">Remove</button>`:''}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">No articles yet.</div>'}
-    ${can?`<div style="margin-top:12px"><input type="search" id="ptn-block-q" placeholder="Add an article — search code or name…" value="${_ptnEsc(_ptnBlockQ)}" oninput="window.ptnBlockSearch(this.value)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;background:var(--surface-2);color:var(--text)">
-      ${q?(candidates.length?`<div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">${candidates.map(a=>{const other=a.patternId&&_ptnLiveBlock(a.patternId);return`<button class="btn-sm ptn-cand" data-code="${_ptnEsc(a.code)}" style="text-align:left" onclick="window.ptnAssign('${_ptnEsc(p.id)}',['${_ptnEsc(a.code)}'])"><b>${_ptnEsc(a.code)}</b> ${_ptnEsc(a.name||'')}${other?` <span style="color:var(--accent-warning)">· now on ${_ptnEsc(other.code)} — will move</span>`:''}</button>`;}).join('')}</div>`:'<div style="font-size:12px;color:var(--muted);margin-top:6px">No article matches (caps and retired articles are never offered).</div>'):''}</div>`:''}
+  <div class="card" style="margin-top:14px" id="ptn-block-articles"><div class="card-title">Articles using this block <span style="font-weight:400;color:var(--muted);font-size:12px">${arts.length}</span></div>
+    ${arts.length?`<table style="width:100%;border-collapse:collapse;font-size:14px"><tbody>${arts.map(a=>`<tr class="ptn-block-art" data-code="${_ptnEsc(a.code)}" style="border-top:1px solid var(--border)"><td style="padding:7px 4px;font-weight:700;white-space:nowrap">${_ptnEsc(a.code)}</td><td style="padding:7px 4px">${_ptnEsc(a.name||'')}</td><td style="padding:7px 4px;white-space:nowrap">${_ptnShopifyCellHTML(a)}</td><td style="padding:7px 4px;text-align:right">${can?`<button class="btn-sm" onclick="window.ptnUnassign('${_ptnEsc(a.code)}')">Remove</button>`:''}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">No articles yet.</div>'}
+    ${can?`<div style="margin-top:12px"><input type="search" id="ptn-block-q" placeholder="Add an article — search code or name…" value="${_ptnEsc(_ptnBlockQ)}" oninput="window.ptnBlockSearch(this.value)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:14px;font-family:inherit;background:var(--surface-2);color:var(--text)">
+      ${q?(candidates.length?`<div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">${candidates.map(a=>{const other=a.patternId&&_ptnLiveBlock(a.patternId);return`<button class="btn-sm ptn-cand" data-code="${_ptnEsc(a.code)}" style="text-align:left" onclick="window.ptnAssign('${_ptnEsc(p.id)}',['${_ptnEsc(a.code)}'])"><b>${_ptnEsc(a.code)}</b> ${_ptnEsc(a.name||'')}${other?` <span style="color:var(--accent-warning)">· now on ${_ptnEsc(other.code)} — will move</span>`:''}</button>`;}).join('')}</div>`:'<div style="font-size:13px;color:var(--muted);margin-top:6px">No article matches (caps and retired articles are never offered).</div>'):''}</div>`:''}
   </div>`;
 }
 
 // ── The unassigned queue ──────────────────────────────────────────────────
-function _ptnQueueBadge(){const n=_ptnUnassigned().length;return n?` <span class="badge" style="font-size:10px">${n}</span>`:'';}
+function _ptnQueueBadge(){const n=_ptnUnassigned().length;return n?` <span class="badge" style="font-size:11px">${n}</span>`:'';}
 function renderPatternUnassigned(){
   if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar, Mustafa and Uzaib.</div>';
   return`<div id="pattern-queue-root">${_ptnQueueHTML()}</div>`;
@@ -1621,7 +1621,7 @@ function renderPatternUnassigned(){
 function _ptnQueueRepaint(){const r=document.getElementById('pattern-queue-root');if(r)r.innerHTML=_ptnQueueHTML();}
 function _ptnQueueHTML(){
   const head=`<button class="back-btn" onclick="window.showPage('pattern-blocks')">← Patterns</button>
-  <div class="page-head" style="margin-bottom:10px"><div><h2 style="margin:0">Unassigned articles</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">GROOVY articles that need a pattern and have none. Groups are a SUGGESTION from the names — colourways stripped — a graphic tee names its artwork, not its shape, so trust your eyes over the grouping.</div></div></div>`;
+  <div class="page-head" style="margin-bottom:10px"><div><h2 style="margin:0">Unassigned articles</h2><div style="color:var(--muted);font-size:13px;margin-top:2px">GROOVY articles that need a pattern and have none. Groups are a SUGGESTION from the names — colourways stripped — a graphic tee names its artwork, not its shape, so trust your eyes over the grouping.</div></div></div>`;
   if(_ptnBlocksErr)return head+_ptnBlocksErrHTML();
   const list=_ptnUnassigned().filter(a=>a.brand==='groovy');
   if(!list.length)return head+'<div class="empty" id="ptn-queue-empty">Every GROOVY article that needs a pattern has one.</div>';
@@ -1634,12 +1634,12 @@ function _ptnQueueHTML(){
     const clusters=_ptnClusters(list);
     body=clusters.map((c,i)=>{const {cat,style}=_ptnClusterLabel(c.key);const n=c.articles.length;
       return`<div class="card ptn-cluster" data-key="${_ptnEsc(c.key)}" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
-        <div><div style="font-weight:700">${_ptnEsc(style==='(colour only)'?(cat?cat.label:'')+' — colour-only names':style.replace(/\b\w/g,ch=>ch.toUpperCase()))} <span style="color:var(--muted);font-weight:400;font-size:12px">· ${_ptnEsc(cat?cat.label:'')} · ${n} article${n===1?'':'s'}</span></div>
-        <div style="font-size:12px;color:var(--muted);margin-top:4px">${c.articles.map(a=>`<span style="display:inline-block;margin:2px 6px 2px 0"><b>${_ptnEsc(a.code)}</b> ${_ptnEsc(a.name||'')}</span>`).join('')}</div></div>
-        ${can?`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><select id="ptn-cl-${i}" style="padding:7px 9px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:12px;background:var(--surface-2);color:var(--text)">${blockOpts}</select><button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnAssignCluster(${i})">Assign all ${n}</button><button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnNewBlockFor(${i})">New block for these</button></div>`:''}
+        <div><div style="font-weight:700">${_ptnEsc(style==='(colour only)'?(cat?cat.label:'')+' — colour-only names':style.replace(/\b\w/g,ch=>ch.toUpperCase()))} <span style="color:var(--muted);font-weight:400;font-size:13px">· ${_ptnEsc(cat?cat.label:'')} · ${n} article${n===1?'':'s'}</span></div>
+        <div style="font-size:13px;color:var(--muted);margin-top:4px">${c.articles.map(a=>`<span style="display:inline-block;margin:2px 6px 2px 0"><b>${_ptnEsc(a.code)}</b> ${_ptnEsc(a.name||'')}</span>`).join('')}</div></div>
+        ${can?`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><select id="ptn-cl-${i}" style="padding:7px 9px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface-2);color:var(--text)">${blockOpts}</select><button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnAssignCluster(${i})">Assign all ${n}</button><button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnNewBlockFor(${i})">New block for these</button></div>`:''}
       </div></div>`;}).join('');
   }else{
-    body=`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>${list.slice().sort((a,b)=>String(a.code).localeCompare(String(b.code))).map(a=>`<tr style="border-top:1px solid var(--border)"><td style="padding:7px 12px;font-weight:700;white-space:nowrap">${_ptnEsc(a.code)}</td><td style="padding:7px 12px">${_ptnEsc(a.name||'')}</td><td style="padding:7px 12px;color:var(--muted);white-space:nowrap">${_ptnEsc((_ptnCategory(a.category)||{}).label||'')}</td></tr>`).join('')}</tbody></table></div>`;
+    body=`<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><tbody>${list.slice().sort((a,b)=>String(a.code).localeCompare(String(b.code))).map(a=>`<tr style="border-top:1px solid var(--border)"><td style="padding:7px 12px;font-weight:700;white-space:nowrap">${_ptnEsc(a.code)}</td><td style="padding:7px 12px">${_ptnEsc(a.name||'')}</td><td style="padding:7px 12px;color:var(--muted);white-space:nowrap">${_ptnEsc((_ptnCategory(a.category)||{}).label||'')}</td></tr>`).join('')}</tbody></table></div>`;
   }
   return head+tabs+body;
 }
@@ -1664,15 +1664,15 @@ function _ptnBlockFormHTML(){
       <div class="field"><label>Size axis</label><select id="ptn-bf-axis" onchange="window.ptnBlockFormAxis(this.value)"><option value="alpha"${axis==='alpha'?' selected':''}>Letters (XS–XL)</option><option value="waist"${axis==='waist'?' selected':''}>Waist (26–40)</option></select></div>
       <div class="field"><label>Sample size <span style="font-weight:400;color:var(--muted)">(the label leads with it)</span></label><input id="ptn-bf-sample" placeholder="M or 32" value="${v('sampleSize')}"></div>
     </div>
-    <div class="field" style="margin-top:8px"><label>Sizes in the bundle</label><div id="ptn-bf-sizes" style="display:flex;gap:6px;flex-wrap:wrap">${_PTN_SIZES[axis].map(s=>`<label style="display:flex;align-items:center;gap:4px;font-size:12px;border:1px solid var(--border);border-radius:8px;padding:4px 8px"><input type="checkbox" class="ptn-bf-size" value="${s}" ${sizes.has(s)?'checked':''}>${s}</label>`).join('')}</div></div>
-    ${f.prefill&&f.prefill.codes&&f.prefill.codes.length?`<div style="font-size:12px;color:var(--muted);margin-top:8px">On save, <b>${f.prefill.codes.length}</b> article${f.prefill.codes.length===1?'':'s'} will be assigned to it: ${f.prefill.codes.map(_ptnEsc).join(', ')}</div>`:''}
+    <div class="field" style="margin-top:8px"><label>Sizes in the bundle</label><div id="ptn-bf-sizes" style="display:flex;gap:6px;flex-wrap:wrap">${_PTN_SIZES[axis].map(s=>`<label style="display:flex;align-items:center;gap:4px;font-size:13px;border:1px solid var(--border);border-radius:8px;padding:4px 8px"><input type="checkbox" class="ptn-bf-size" value="${s}" ${sizes.has(s)?'checked':''}>${s}</label>`).join('')}</div></div>
+    ${f.prefill&&f.prefill.codes&&f.prefill.codes.length?`<div style="font-size:13px;color:var(--muted);margin-top:8px">On save, <b>${f.prefill.codes.length}</b> article${f.prefill.codes.length===1?'':'s'} will be assigned to it: ${f.prefill.codes.map(_ptnEsc).join(', ')}</div>`:''}
     <div style="margin-top:10px;display:flex;gap:8px"><button class="btn-primary" ${_ptnBusy?'disabled':''} onclick="window.ptnSaveBlock()">${p?'Save':'Create'}</button><button class="btn-sm" onclick="window.ptnCancelBlockForm()">Cancel</button></div>
   </div>`;
 }
 window.ptnBlockFormAxis=function(axis){
   const host=document.getElementById('ptn-bf-sizes');if(!host||!_PTN_SIZES[axis])return;
   const def=axis==='waist'?['26','28','30','32','34']:['XS','S','M','L','XL'];
-  host.innerHTML=_PTN_SIZES[axis].map(s=>`<label style="display:flex;align-items:center;gap:4px;font-size:12px;border:1px solid var(--border);border-radius:8px;padding:4px 8px"><input type="checkbox" class="ptn-bf-size" value="${s}" ${def.indexOf(s)>-1?'checked':''}>${s}</label>`).join('');
+  host.innerHTML=_PTN_SIZES[axis].map(s=>`<label style="display:flex;align-items:center;gap:4px;font-size:13px;border:1px solid var(--border);border-radius:8px;padding:4px 8px"><input type="checkbox" class="ptn-bf-size" value="${s}" ${def.indexOf(s)>-1?'checked':''}>${s}</label>`).join('');
 };
 function _ptnReadBlockForm(){
   const g=id=>String((document.getElementById(id)||{}).value||'').trim();
@@ -2053,19 +2053,19 @@ function _ptnGridCardHTML(p){
     const stored=p.grid&&p.grid[s]?p.grid[s][r.key]:undefined;
     const raw=draft&&draft[s]&&draft[s][r.key]!==undefined?draft[s][r.key]:_ptnFmt(stored,units);
     const bad=draft&&draft[s]&&draft[s][r.key]!==undefined&&draft[s][r.key]!==''&&_ptnParseIn(draft[s][r.key],units).bad;
-    return can?`<td style="padding:3px;text-align:center"><input class="ptn-cell${bad?' ptn-cell-bad':''}" data-size="${_ptnEsc(s)}" data-key="${_ptnEsc(r.key)}" value="${_ptnEsc(raw)}" inputmode="decimal" oninput="window.ptnGridInput(this)" style="width:64px;padding:6px 6px;border:1px solid ${bad?'var(--accent-urgent)':'var(--border)'};border-radius:6px;font-family:inherit;font-size:13px;text-align:right;background:var(--surface-2);color:var(--text)"${bad?' title="Not a number — will be left blank"':''}></td>`
+    return can?`<td style="padding:3px;text-align:center"><input class="ptn-cell${bad?' ptn-cell-bad':''}" data-size="${_ptnEsc(s)}" data-key="${_ptnEsc(r.key)}" value="${_ptnEsc(raw)}" inputmode="decimal" oninput="window.ptnGridInput(this)" style="width:64px;padding:6px 6px;border:1px solid ${bad?'var(--accent-urgent)':'var(--border)'};border-radius:6px;font-family:inherit;font-size:14px;text-align:right;background:var(--surface-2);color:var(--text)"${bad?' title="Not a number — will be left blank"':''}></td>`
       :`<td style="padding:6px 8px;text-align:center">${_ptnEsc(_ptnFmt(stored,units))||'<span style="color:var(--muted)">—</span>'}</td>`;
   };
   const f=_ptnGridFilled(p);
   return`<div class="card" id="ptn-grid-card">
-    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><span>Measurements <span style="font-weight:400;color:var(--muted);font-size:11px">${f.filled} of ${f.total} filled · all points ±${_PTN_TOL_IN} in</span></span>
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><span>Measurements <span style="font-weight:400;color:var(--muted);font-size:12px">${f.filled} of ${f.total} filled · all points ±${_PTN_TOL_IN} in</span></span>
       <span style="display:flex;gap:6px;align-items:center"><button class="btn-sm" id="ptn-units" onclick="window.ptnToggleUnits()">${units==='cm'?'Showing cm · switch to inches':'Showing inches · switch to cm'}</button></span></div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Template: <b>${_ptnEsc(tpl?tpl.label:(p.pomTemplate||'none'))}</b>${can?` <button class="btn-sm" onclick="window.showPage('pattern-poms')">Edit points of measure</button> <button class="btn-sm" onclick="window.ptnAddExtraPom('${_ptnEsc(p.id)}')">+ Point for this block only</button>`:''}</div>
-    ${rows.length&&sizes.length?`<div style="overflow:auto"><table class="ptn-grid" style="border-collapse:collapse;font-size:13px;min-width:100%"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:6px 8px;position:sticky;left:0;background:var(--surface);width:100%">Point of measure</th>${sizes.map(s=>`<th style="padding:6px 8px;text-align:center;white-space:nowrap">${_ptnEsc(s)}</th>`).join('')}</tr></thead>
-      <tbody>${rows.map(r=>`<tr class="ptn-grid-row" data-key="${_ptnEsc(r.key)}" style="border-top:1px solid var(--border);${r.src==='orphan'?'opacity:.6':''}"><td style="padding:6px 8px;position:sticky;left:0;background:var(--surface);white-space:nowrap"><b>${_ptnEsc(r.label)}</b>${r.src==='extra'?' <span class="badge" style="font-size:9.5px">this block</span>':''}${r.src==='orphan'?` <span style="color:var(--accent-warning);font-size:11px">no longer in the template</span>${can?` <button class="btn-sm" onclick="window.ptnClearRow('${_ptnEsc(p.id)}','${_ptnEsc(r.key)}')">clear</button>`:''}`:''}${r.howTo?`<div style="font-size:11px;color:var(--muted);white-space:normal;max-width:260px">${_ptnEsc(r.howTo)}${r.photoUrl?` <a href="${_ptnEsc(r.photoUrl)}" target="_blank" rel="noopener">photo</a>`:''}</div>`:''}${r.src==='extra'&&can?` <button class="btn-sm" onclick="window.ptnRemoveExtraPom('${_ptnEsc(p.id)}','${_ptnEsc(r.key)}')" title="Remove this point from the block (its numbers are kept until cleared)">×</button>`:''}</td>${sizes.map(s=>cell(r,s)).join('')}</tr>`).join('')}</tbody></table></div>`
+    <div style="font-size:13px;color:var(--muted);margin-bottom:8px">Template: <b>${_ptnEsc(tpl?tpl.label:(p.pomTemplate||'none'))}</b>${can?` <button class="btn-sm" onclick="window.showPage('pattern-poms')">Edit points of measure</button> <button class="btn-sm" onclick="window.ptnAddExtraPom('${_ptnEsc(p.id)}')">+ Point for this block only</button>`:''}</div>
+    ${rows.length&&sizes.length?`<div style="overflow:auto"><table class="ptn-grid" style="border-collapse:collapse;font-size:14px;min-width:100%"><thead><tr style="text-align:left;color:var(--muted);font-size:12px;text-transform:uppercase"><th style="padding:6px 8px;position:sticky;left:0;background:var(--surface);width:100%">Point of measure</th>${sizes.map(s=>`<th style="padding:6px 8px;text-align:center;white-space:nowrap">${_ptnEsc(s)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map(r=>`<tr class="ptn-grid-row" data-key="${_ptnEsc(r.key)}" style="border-top:1px solid var(--border);${r.src==='orphan'?'opacity:.6':''}"><td style="padding:6px 8px;position:sticky;left:0;background:var(--surface);white-space:nowrap"><b>${_ptnEsc(r.label)}</b>${r.src==='extra'?' <span class="badge" style="font-size:11px">this block</span>':''}${r.src==='orphan'?` <span style="color:var(--accent-warning);font-size:12px">no longer in the template</span>${can?` <button class="btn-sm" onclick="window.ptnClearRow('${_ptnEsc(p.id)}','${_ptnEsc(r.key)}')">clear</button>`:''}`:''}${r.howTo?`<div style="font-size:12px;color:var(--muted);white-space:normal;max-width:260px">${_ptnEsc(r.howTo)}${r.photoUrl?` <a href="${_ptnEsc(r.photoUrl)}" target="_blank" rel="noopener">photo</a>`:''}</div>`:''}${r.src==='extra'&&can?` <button class="btn-sm" onclick="window.ptnRemoveExtraPom('${_ptnEsc(p.id)}','${_ptnEsc(r.key)}')" title="Remove this point from the block (its numbers are kept until cleared)">×</button>`:''}</td>${sizes.map(s=>cell(r,s)).join('')}</tr>`).join('')}</tbody></table></div>`
       :'<div class="empty">No sizes on this block yet — edit the block and tick the sizes in the bundle.</div>'}
-    ${can?`<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn-primary" id="ptn-grid-save" ${_ptnBusy||!_ptnGridDirty?'disabled':''} onclick="window.ptnSaveGrid('${_ptnEsc(p.id)}')">Save measurements</button><span id="ptn-grid-status" style="font-size:12px;color:var(--muted)">${_ptnGridDirty?'Unsaved changes':('Values are '+(units==='cm'?'cm (stored as inches)':'inches')+' · quarter-inch steps · type 22.5 or 22 1/2')}</span></div>`:''}
-    <div style="font-size:11px;color:var(--muted);margin-top:8px">The grid is the spec. Checking a sewn sample against it (and flagging anything past ±${_PTN_TOL_IN} in) comes with revisions in M5.</div>
+    ${can?`<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn-primary" id="ptn-grid-save" ${_ptnBusy||!_ptnGridDirty?'disabled':''} onclick="window.ptnSaveGrid('${_ptnEsc(p.id)}')">Save measurements</button><span id="ptn-grid-status" style="font-size:13px;color:var(--muted)">${_ptnGridDirty?'Unsaved changes':('Values are '+(units==='cm'?'cm (stored as inches)':'inches')+' · quarter-inch steps · type 22.5 or 22 1/2')}</span></div>`:''}
+    <div style="font-size:12px;color:var(--muted);margin-top:8px">The grid is the spec. Checking a sewn sample against it (and flagging anything past ±${_PTN_TOL_IN} in) comes with revisions in M5.</div>
   </div>`;
 }
 window.ptnToggleUnits=function(){_ptnSetUnits(_ptnUnits()==='cm'?'in':'cm');if(_ptnGridDirty){showToast('Save or clear your unsaved measurements before switching units.',true);return;}_ptnBlockRepaint();};
@@ -2160,7 +2160,7 @@ function renderPatternPoms(){
 function _ptnPomsRepaint(){const r=document.getElementById('pattern-poms-root');if(r)r.innerHTML=_ptnPomsHTML();}
 function _ptnPomsHTML(){
   const head=`<button class="back-btn" onclick="window.showPage('pattern-blocks')">← Patterns</button>
-  <div class="page-head" style="margin-bottom:10px"><div><h2 style="margin:0">Points of measure</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">What gets measured on each kind of block, and how. Deleting a point never deletes numbers already recorded on a block.</div></div></div>`;
+  <div class="page-head" style="margin-bottom:10px"><div><h2 style="margin:0">Points of measure</h2><div style="color:var(--muted);font-size:13px;margin-top:2px">What gets measured on each kind of block, and how. Deleting a point never deletes numbers already recorded on a block.</div></div></div>`;
   if(_ptnPomsFailed)return head+`<div class="board-load-error" id="ptn-poms-failed">pom_templates: ${_ptnEsc(_ptnPomsErr||'')}. If that says <em>missing or insufficient permissions</em>, republish <code>firestore.rules</code>. <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`;
   const can=_canManagePatterns();
   if(!pomTemplates.length)return head+`<div class="empty" id="ptn-poms-none">No templates yet. ${can?`<button class="btn-primary" onclick="window.ptnSeedPoms()">Seed the four templates</button>`:''}</div>`;
@@ -2169,13 +2169,13 @@ function _ptnPomsHTML(){
   const tabs=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${pomTemplates.map(x=>`<button class="btn-sm" style="${x.id===t.id?'background:var(--dark);color:var(--on-dark);border-color:var(--dark)':''}" onclick="window.ptnPomsTab('${_ptnEsc(x.id)}')">${_ptnEsc(x.label||x.id)} <span style="opacity:.7">${(x.poms||[]).length}</span></button>`).join('')}</div>`;
   const used=patterns.filter(p=>p.pomTemplate===t.id&&p.status!=='retired').length;
   const rows=(t.poms||[]).map((m,i)=>`<tr class="ptn-pom-row" data-key="${_ptnEsc(m.key)}" style="border-top:1px solid var(--border)">
-    <td style="padding:6px 8px;white-space:nowrap;color:var(--muted);font-size:11px">${i+1}</td>
-    <td style="padding:6px 8px">${can?`<input id="ptn-pom-label-${i}" value="${_ptnEsc(m.label||'')}" style="width:100%;min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;background:var(--surface-2);color:var(--text)">`:`<b>${_ptnEsc(m.label||'')}</b>`}<div style="font-size:10px;color:var(--muted)">${_ptnEsc(m.key)}</div></td>
-    <td style="padding:6px 8px;min-width:260px">${can?`<textarea id="ptn-pom-how-${i}" rows="2" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:12px;background:var(--surface-2);color:var(--text)">${_ptnEsc(m.howTo||'')}</textarea>`:`<div style="font-size:12px">${_ptnEsc(m.howTo||'')}</div>`}</td>
-    <td style="padding:6px 8px;white-space:nowrap">${m.photoUrl?`<a href="${_ptnEsc(m.photoUrl)}" target="_blank" rel="noopener"><img src="${_ptnEsc(m.photoUrl)}" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--border)"></a>`:'<span style="color:var(--muted);font-size:11px">no photo</span>'}${can?`<div><label class="btn-sm" style="cursor:pointer;display:inline-block;margin-top:4px">${m.photoUrl?'Replace':'Add photo'}<input type="file" accept="image/*" style="display:none" onchange="window.ptnPomPhoto('${_ptnEsc(t.id)}',${i},this)"></label>${m.photoUrl?` <button class="btn-sm" onclick="window.ptnPomPhotoClear('${_ptnEsc(t.id)}',${i})">remove</button>`:''}</div>`:''}</td>
+    <td style="padding:6px 8px;white-space:nowrap;color:var(--muted);font-size:12px">${i+1}</td>
+    <td style="padding:6px 8px">${can?`<input id="ptn-pom-label-${i}" value="${_ptnEsc(m.label||'')}" style="width:100%;min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:14px;background:var(--surface-2);color:var(--text)">`:`<b>${_ptnEsc(m.label||'')}</b>`}<div style="font-size:11px;color:var(--muted)">${_ptnEsc(m.key)}</div></td>
+    <td style="padding:6px 8px;min-width:260px">${can?`<textarea id="ptn-pom-how-${i}" rows="2" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;background:var(--surface-2);color:var(--text)">${_ptnEsc(m.howTo||'')}</textarea>`:`<div style="font-size:13px">${_ptnEsc(m.howTo||'')}</div>`}</td>
+    <td style="padding:6px 8px;white-space:nowrap">${m.photoUrl?`<a href="${_ptnEsc(m.photoUrl)}" target="_blank" rel="noopener"><img src="${_ptnEsc(m.photoUrl)}" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--border)"></a>`:'<span style="color:var(--muted);font-size:12px">no photo</span>'}${can?`<div><label class="btn-sm" style="cursor:pointer;display:inline-block;margin-top:4px">${m.photoUrl?'Replace':'Add photo'}<input type="file" accept="image/*" style="display:none" onchange="window.ptnPomPhoto('${_ptnEsc(t.id)}',${i},this)"></label>${m.photoUrl?` <button class="btn-sm" onclick="window.ptnPomPhotoClear('${_ptnEsc(t.id)}',${i})">remove</button>`:''}</div>`:''}</td>
     <td style="padding:6px 8px;white-space:nowrap;text-align:right">${can?`<button class="btn-sm" onclick="window.ptnPomMove('${_ptnEsc(t.id)}',${i},-1)" ${i===0?'disabled':''}>↑</button> <button class="btn-sm" onclick="window.ptnPomMove('${_ptnEsc(t.id)}',${i},1)" ${i===(t.poms||[]).length-1?'disabled':''}>↓</button> <button class="btn-sm" onclick="window.ptnPomDelete('${_ptnEsc(t.id)}',${i})">Delete</button>`:''}</td></tr>`).join('');
-  return head+tabs+`<div class="card" style="padding:0;overflow:auto"><div style="padding:10px 12px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border)">Used by <b>${used}</b> block${used===1?'':'s'}. ${can?'Edit labels and how-to text in place, then Save.':''}</div>
-    <table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:8px"></th><th style="padding:8px">Point</th><th style="padding:8px">How to measure</th><th style="padding:8px">Photo</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="5" class="empty">No points yet.</td></tr>'}</tbody></table>
+  return head+tabs+`<div class="card" style="padding:0;overflow:auto"><div style="padding:10px 12px;font-size:13px;color:var(--muted);border-bottom:1px solid var(--border)">Used by <b>${used}</b> block${used===1?'':'s'}. ${can?'Edit labels and how-to text in place, then Save.':''}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px;text-transform:uppercase"><th style="padding:8px"></th><th style="padding:8px">Point</th><th style="padding:8px">How to measure</th><th style="padding:8px">Photo</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="5" class="empty">No points yet.</td></tr>'}</tbody></table>
     ${can?`<div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid var(--border)"><button class="btn-sm" onclick="window.ptnPomAdd('${_ptnEsc(t.id)}')">+ Add a point</button><button class="btn-primary" ${_ptnBusy?'disabled':''} onclick="window.ptnPomsSave('${_ptnEsc(t.id)}')">Save template</button></div>`:''}</div>`;
 }
 window.ptnPomsTab=function(id){_ptnPomsTplId=id;_ptnPomsRepaint();};
@@ -2335,10 +2335,10 @@ function _ptnLabelCardHTML(p){
   if(!sizes.length)return'';
   const rows=sizes.map(s=>{const st=_ptnLabelStatus(p,s);
     const txt=st.state==='never'?'<span style="color:var(--muted)">never printed</span>':st.state==='stale'?`<span style="color:var(--accent-warning);font-weight:600">reprint — changed since ${_ptnEsc(String(st.at).slice(0,10))}</span>`:`<span style="color:var(--green)">printed ${_ptnEsc(String(st.at).slice(0,10))}</span>`;
-    return`<label class="ptn-label-row" data-size="${_ptnEsc(s)}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);font-size:13px">${can?`<input type="checkbox" class="ptn-label-size" value="${_ptnEsc(s)}" ${st.state!=='current'?'checked':''}>`:''}<b style="min-width:44px">${_ptnEsc(s)}</b>${txt}</label>`;}).join('');
-  return`<div class="card" id="ptn-label-card" style="margin-top:14px"><div class="card-title">Labels <span style="font-weight:400;color:var(--muted);font-size:11px">5 × 6 in · one sticker per size in the bundle · ${typeof qrcode==='function'?'with a QR to this page':'<span style="color:var(--accent-warning)">QR library not loaded — labels print without a QR</span>'}</span></div>
+    return`<label class="ptn-label-row" data-size="${_ptnEsc(s)}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);font-size:14px">${can?`<input type="checkbox" class="ptn-label-size" value="${_ptnEsc(s)}" ${st.state!=='current'?'checked':''}>`:''}<b style="min-width:44px">${_ptnEsc(s)}</b>${txt}</label>`;}).join('');
+  return`<div class="card" id="ptn-label-card" style="margin-top:14px"><div class="card-title">Labels <span style="font-weight:400;color:var(--muted);font-size:12px">5 × 6 in · one sticker per size in the bundle · ${typeof qrcode==='function'?'with a QR to this page':'<span style="color:var(--accent-warning)">QR library not loaded — labels print without a QR</span>'}</span></div>
     ${rows}
-    ${can?`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn-primary" ${_ptnBusy?'disabled':''} onclick="window.ptnPrintBlockLabels('${_ptnEsc(p.id)}','selected')">Print ticked</button><button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnPrintBlockLabels('${_ptnEsc(p.id)}','all')">Print all ${sizes.length}</button><span style="font-size:11px;color:var(--muted)">Sizes never printed or changed since are ticked for you.</span></div>`:''}
+    ${can?`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn-primary" ${_ptnBusy?'disabled':''} onclick="window.ptnPrintBlockLabels('${_ptnEsc(p.id)}','selected')">Print ticked</button><button class="btn-sm" ${_ptnBusy?'disabled':''} onclick="window.ptnPrintBlockLabels('${_ptnEsc(p.id)}','all')">Print all ${sizes.length}</button><span style="font-size:12px;color:var(--muted)">Sizes never printed or changed since are ticked for you.</span></div>`:''}
   </div>`;
 }
 window.ptnPrintBlockLabels=function(id,which){
@@ -2390,8 +2390,8 @@ window.ptnPrintLabels=async function(items){
 window.ptnLabelToggle=function(id,on){if(on)_ptnLabelSel.add(id);else _ptnLabelSel.delete(id);const bar=document.getElementById('ptn-label-bar');if(bar)bar.innerHTML=_ptnLabelBarInner();};
 function _ptnLabelBarInner(){
   const n=_ptnLabelSel.size;
-  if(!n)return'<span style="font-size:12px;color:var(--muted)">Tick blocks to print their labels — every size in each bundle.</span>';
-  return`<span style="font-size:12px"><b>${n}</b> block${n===1?'':'s'} ticked</span> <button class="btn-primary" onclick="window.ptnPrintSelectedBlocks()">Print labels</button> <button class="btn-sm" onclick="window.ptnLabelClear()">Clear</button>`;
+  if(!n)return'<span style="font-size:13px;color:var(--muted)">Tick blocks to print their labels — every size in each bundle.</span>';
+  return`<span style="font-size:13px"><b>${n}</b> block${n===1?'':'s'} ticked</span> <button class="btn-primary" onclick="window.ptnPrintSelectedBlocks()">Print labels</button> <button class="btn-sm" onclick="window.ptnLabelClear()">Clear</button>`;
 }
 window.ptnLabelClear=function(){_ptnLabelSel=new Set();_ptnBlocksRepaint();};
 window.ptnPrintSelectedBlocks=function(){
@@ -2516,7 +2516,7 @@ async function loadPatternNotices(){
   _ptnNoticesLoaded=true;
 }
 function _ptnOpenNotices(){return patternNotices.filter(n=>n.status!=='acknowledged');}
-function _ptnNoticeBadge(){const n=_ptnOpenNotices().length;return n?` <span class="badge" style="font-size:10px">${n}</span>`:'';}
+function _ptnNoticeBadge(){const n=_ptnOpenNotices().length;return n?` <span class="badge" style="font-size:11px">${n}</span>`:'';}
 
 // ── Record a revision ─────────────────────────────────────────────────────
 // One batch: the revision, the notice, and one bell row per recipient. A
@@ -2581,20 +2581,20 @@ function _ptnRevisionsCardHTML(p){
   const can=_canManagePatterns();
   const revs=_ptnRevs(p.id);
   const diff=_ptnPendingDiff(p);
-  const pending=diff.count?`<div style="font-size:12px;color:var(--accent-warning);margin-bottom:8px"><b>${diff.count}</b> measurement${diff.count===1?'':'s'} ${revs.length?'changed since revision '+(_ptnLastRev(p.id)||{}).n:'recorded'} and not yet sent to cutting.<div style="color:var(--muted);margin-top:4px;line-height:1.5">${_ptnDiffLines(diff,6).map(l=>_ptnEsc(l)).join('<br>')}</div></div>`
-    :`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Cutting has the current measurements.${revs.length?'':' No revision recorded yet.'}</div>`;
+  const pending=diff.count?`<div style="font-size:13px;color:var(--accent-warning);margin-bottom:8px"><b>${diff.count}</b> measurement${diff.count===1?'':'s'} ${revs.length?'changed since revision '+(_ptnLastRev(p.id)||{}).n:'recorded'} and not yet sent to cutting.<div style="color:var(--muted);margin-top:4px;line-height:1.5">${_ptnDiffLines(diff,6).map(l=>_ptnEsc(l)).join('<br>')}</div></div>`
+    :`<div style="font-size:13px;color:var(--muted);margin-bottom:8px">Cutting has the current measurements.${revs.length?'':' No revision recorded yet.'}</div>`;
   const list=revs.length?revs.map(r=>{
     const notice=patternNotices.find(x=>x.id===r.noticeId);
     const state=notice?(notice.status==='acknowledged'?`<span style="color:var(--green)">acknowledged by ${_ptnEsc(notice.ackBy||'')}</span>`:'<span style="color:var(--accent-warning)">waiting for cutting</span>'):'';
-    return`<div class="ptn-rev" data-n="${r.n}" style="border-top:1px solid var(--border);padding:8px 0;font-size:12px">
+    return`<div class="ptn-rev" data-n="${r.n}" style="border-top:1px solid var(--border);padding:8px 0;font-size:13px">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>Revision ${r.n}</b><span style="color:var(--muted)">${_ptnEsc(String(r.at||'').slice(0,10))} · ${_ptnEsc(r.byName||r.by||'')} · ${r.changed} change${r.changed===1?'':'s'}</span></div>
       <div style="margin-top:3px">${_ptnEsc(r.reason||'')}</div>
       <div style="color:var(--muted);margin-top:4px;line-height:1.5">${_ptnDiffLines({cells:r.cells||{},count:r.changed||0},6).map(l=>_ptnEsc(l)).join('<br>')}</div>
       ${state?`<div style="margin-top:4px">${state}</div>`:''}
     </div>`;}).join(''):'<div class="empty">No revisions yet.</div>';
-  return`<div class="card" id="ptn-rev-card" style="margin-top:14px"><div class="card-title">Revisions <span style="font-weight:400;color:var(--muted);font-size:11px">a physical correction, mirrored here and sent to cutting</span></div>
+  return`<div class="card" id="ptn-rev-card" style="margin-top:14px"><div class="card-title">Revisions <span style="font-weight:400;color:var(--muted);font-size:12px">a physical correction, mirrored here and sent to cutting</span></div>
     ${pending}
-    ${can?`<button class="btn-primary" ${_ptnRevBusy||_ptnBusy||!diff.count?'disabled':''} onclick="window.ptnRecordRevision('${_ptnEsc(p.id)}')">Record a revision</button>${diff.count?'':'<span style="font-size:11px;color:var(--muted);margin-left:8px">Nothing to send.</span>'}`:''}
+    ${can?`<button class="btn-primary" ${_ptnRevBusy||_ptnBusy||!diff.count?'disabled':''} onclick="window.ptnRecordRevision('${_ptnEsc(p.id)}')">Record a revision</button>${diff.count?'':'<span style="font-size:12px;color:var(--muted);margin-left:8px">Nothing to send.</span>'}`:''}
     <div style="margin-top:10px">${list}</div>
   </div>`;
 }
@@ -2607,7 +2607,7 @@ function renderPatternNotices(){
 function _ptnNoticesRepaint(){const r=document.getElementById('pattern-notices-root');if(r)r.innerHTML=_ptnNoticesHTML();}
 function _ptnNoticesHTML(){
   const back=_canManagePatterns()?`<button class="back-btn" onclick="window.showPage('pattern-blocks')">← Patterns</button>`:'';
-  const head=back+`<div class="page-head" style="margin-bottom:10px"><div><h2 style="margin:0">Pattern updates</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">What changed on a physical pattern, and what to update at cutting.</div></div></div>`;
+  const head=back+`<div class="page-head" style="margin-bottom:10px"><div><h2 style="margin:0">Pattern updates</h2><div style="color:var(--muted);font-size:13px;margin-top:2px">What changed on a physical pattern, and what to update at cutting.</div></div></div>`;
   if(_ptnNoticesFailed)return head+`<div class="board-load-error" id="ptn-notices-failed">pattern_notices: ${_ptnEsc(_ptnNoticesErr||'')}. If that says <em>missing or insufficient permissions</em>, republish <code>firestore.rules</code>. <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`;
   const open=_ptnOpenNotices(),done=patternNotices.filter(n=>n.status==='acknowledged');
   const list=_ptnNoticeTab==='open'?open:done;
@@ -2619,17 +2619,17 @@ function _ptnNoticesHTML(){
     const home=p&&p.hook&&p.slot?'Hook '+p.hook+' / Slot '+p.slot:(p?'not on a hook':'');
     return`<div class="card ptn-notice" data-id="${_ptnEsc(n.id)}" style="margin-bottom:10px;${n.status!=='acknowledged'?'border-color:var(--accent-warning)':''}">
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
-        <div><div style="font-weight:700;font-size:14px">${_ptnEsc(n.patternCode||'')} · ${_ptnEsc(n.patternName||'')} <span style="font-weight:400;color:var(--muted);font-size:12px">revision ${n.revisionN}</span></div>
-          <div style="font-size:12px;color:var(--muted);margin-top:2px">${_ptnEsc(String(n.raisedAt||'').slice(0,10))} · by ${_ptnEsc(n.raisedByName||n.raisedBy||'')}${home?' · '+_ptnEsc(home):''}</div></div>
+        <div><div style="font-weight:700;font-size:15px">${_ptnEsc(n.patternCode||'')} · ${_ptnEsc(n.patternName||'')} <span style="font-weight:400;color:var(--muted);font-size:13px">revision ${n.revisionN}</span></div>
+          <div style="font-size:13px;color:var(--muted);margin-top:2px">${_ptnEsc(String(n.raisedAt||'').slice(0,10))} · by ${_ptnEsc(n.raisedByName||n.raisedBy||'')}${home?' · '+_ptnEsc(home):''}</div></div>
         ${p&&_canManagePatterns()?`<button class="btn-sm" onclick="window.ptnOpenBlock('${_ptnEsc(p.id)}')">Open the block</button>`:''}
       </div>
-      <div style="margin-top:8px;font-size:13px"><b>${_ptnEsc(n.summary||'')}</b></div>
-      <div style="margin-top:6px;font-size:12px;color:var(--muted);line-height:1.6">${(n.lines||[]).map(l=>_ptnEsc(l)).join('<br>')}</div>
-      <div style="margin-top:8px;font-size:11px;color:var(--muted)">Articles cut from this pattern: ${(n.articleCodes||[]).length?_ptnEsc((n.articleCodes||[]).join(', ')):'none recorded'}</div>
+      <div style="margin-top:8px;font-size:14px"><b>${_ptnEsc(n.summary||'')}</b></div>
+      <div style="margin-top:6px;font-size:13px;color:var(--muted);line-height:1.6">${(n.lines||[]).map(l=>_ptnEsc(l)).join('<br>')}</div>
+      <div style="margin-top:8px;font-size:12px;color:var(--muted)">Articles cut from this pattern: ${(n.articleCodes||[]).length?_ptnEsc((n.articleCodes||[]).join(', ')):'none recorded'}</div>
       ${n.status==='acknowledged'
-        ?`<div style="margin-top:10px;font-size:12px;color:var(--green)">Acknowledged by ${_ptnEsc(n.ackBy||'')} on ${_ptnEsc(String(n.ackAt||'').slice(0,10))}${n.ackNote?' — '+_ptnEsc(n.ackNote):''}</div>`
-        :(canAck?`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn-primary" ${_ptnBusy?'disabled':''} onclick="window.ptnAckNotice('${_ptnEsc(n.id)}')">I have updated the pattern</button><span style="font-size:11px;color:var(--muted)">Confirms the paper at cutting now matches.</span></div>`
-          :'<div style="margin-top:10px;font-size:12px;color:var(--accent-warning)">Waiting for cutting to acknowledge.</div>')}
+        ?`<div style="margin-top:10px;font-size:13px;color:var(--green)">Acknowledged by ${_ptnEsc(n.ackBy||'')} on ${_ptnEsc(String(n.ackAt||'').slice(0,10))}${n.ackNote?' — '+_ptnEsc(n.ackNote):''}</div>`
+        :(canAck?`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn-primary" ${_ptnBusy?'disabled':''} onclick="window.ptnAckNotice('${_ptnEsc(n.id)}')">I have updated the pattern</button><span style="font-size:12px;color:var(--muted)">Confirms the paper at cutting now matches.</span></div>`
+          :'<div style="margin-top:10px;font-size:13px;color:var(--accent-warning)">Waiting for cutting to acknowledge.</div>')}
     </div>`;}).join('');
   return head+tabs+cards;
 }
@@ -2779,20 +2779,20 @@ async function _ptnPoPaintBanner(po,elId){
     if(p){
       const home=_ptnHomeStr(p);
       html+=`<div class="card ptn-po-strip" style="margin-bottom:12px;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Pattern</span>
-        <b style="font-size:14px">${_ptnEsc(p.code)}</b>
-        <span style="font-size:13px">${_ptnEsc(p.name||'')}</span>
-        <span style="font-size:13px;font-weight:600">${home?_ptnEsc(home):'<span style="color:var(--accent-warning);font-weight:600">not on a hook</span>'}</span>
+        <span style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Pattern</span>
+        <b style="font-size:15px">${_ptnEsc(p.code)}</b>
+        <span style="font-size:14px">${_ptnEsc(p.name||'')}</span>
+        <span style="font-size:14px;font-weight:600">${home?_ptnEsc(home):'<span style="color:var(--accent-warning);font-weight:600">not on a hook</span>'}</span>
         ${_canSeePatternHub()?`<button class="btn-sm" style="margin-left:auto" onclick="window.ptnOpenBlock('${_ptnEsc(p.id)}')">Open</button>`:''}
       </div>`;
     }
     if(notices.length){
       const n=notices[0];
       html+=`<div class="board-load-error ptn-po-warn" style="margin-bottom:12px;border-color:var(--accent-urgent)">
-        <div style="font-weight:700;font-size:13.5px;margin-bottom:4px">⚠ This pattern changed and cutting has not confirmed it yet</div>
-        <div style="font-size:12px;line-height:1.5">${_ptnEsc(n.patternCode||'')} · revision ${n.revisionN} — ${_ptnEsc(n.summary||'')}${notices.length>1?' (and '+(notices.length-1)+' more)':''}</div>
-        <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-top:4px">${(n.lines||[]).slice(0,4).map(l=>_ptnEsc(l)).join('<br>')}</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:6px">Check the paper on the rack matches before cutting. This is a warning, not a block.</div>
+        <div style="font-weight:700;font-size:14.5px;margin-bottom:4px">⚠ This pattern changed and cutting has not confirmed it yet</div>
+        <div style="font-size:13px;line-height:1.5">${_ptnEsc(n.patternCode||'')} · revision ${n.revisionN} — ${_ptnEsc(n.summary||'')}${notices.length>1?' (and '+(notices.length-1)+' more)':''}</div>
+        <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-top:4px">${(n.lines||[]).slice(0,4).map(l=>_ptnEsc(l)).join('<br>')}</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:6px">Check the paper on the rack matches before cutting. This is a warning, not a block.</div>
         ${_canSeePatternHub()?`<button class="btn-sm" style="margin-top:8px" onclick="window.showPage('pattern-notices')">Pattern updates</button>`:''}
       </div>`;
     }
@@ -2816,13 +2816,13 @@ function _ptnCoverageCardHTML(){
   const on=ptnPoIntegrationOn();
   const isOwner=(typeof session!=='undefined'&&session&&session.role==='owner');
   return`<div class="card" id="ptn-coverage" style="margin-bottom:14px">
-    <div class="card-title">Pattern coverage <span style="font-weight:400;color:var(--muted);font-size:11px">active GROOVY articles that need a pattern</span></div>
+    <div class="card-title">Pattern coverage <span style="font-weight:400;color:var(--muted);font-size:12px">active GROOVY articles that need a pattern</span></div>
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-      <div style="font-size:26px;font-weight:700">${c.pct}%</div>
+      <div style="font-size:27px;font-weight:700">${c.pct}%</div>
       <div style="flex:1;min-width:160px"><div style="height:8px;background:var(--surface-2);border-radius:5px;overflow:hidden"><div style="height:100%;width:${c.pct}%;background:${c.pct>=100?'var(--green)':'var(--dark)'};border-radius:5px"></div></div>
-        <div style="font-size:11px;color:var(--muted);margin-top:4px">${c.done} of ${c.need} assigned to a block</div></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">${c.done} of ${c.need} assigned to a block</div></div>
     </div>
-    <div style="margin-top:10px;font-size:12px;color:var(--muted);line-height:1.5">
+    <div style="margin-top:10px;font-size:13px;color:var(--muted);line-height:1.5">
       With this on, a new PO carries its pattern code and the hook it hangs on, on screen and on the printed traveler, and warns when that pattern has an unacknowledged change.
       ${on?'<b style="color:var(--green)">On.</b>':'<b>Off.</b>'} ${isOwner?'':'An owner turns it on.'}
     </div>
@@ -2882,8 +2882,8 @@ function ptnBlockProgress(){
 function _ptnDashTile(val,label,opts){
   const o=opts||{};
   return`<div style="flex:1;min-width:66px;padding:9px 8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;text-align:center${o.onclick?';cursor:pointer':''}"${o.onclick?` onclick="${o.onclick}"`:''}>
-    <div style="font-size:16px;font-weight:700;color:${o.color||'var(--text)'}">${val}</div>
-    <div style="font-size:10px;color:var(--muted);margin-top:2px">${label}</div>
+    <div style="font-size:17px;font-weight:700;color:${o.color||'var(--text)'}">${val}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:2px">${label}</div>
   </div>`;
 }
 
@@ -2912,17 +2912,17 @@ function _ptnDashBodyHTML(){
   if(_ptnNoticesFailed)lines.push(`<span style="color:var(--accent-urgent)">Could not read pattern_notices.</span> ${retry}`);
   if(typeof ptnPoIntegrationOn==='function'&&!ptnPoIntegrationOn())lines.push(`POs are not carrying their pattern code yet.`);
   return`<div style="display:flex;gap:6px;flex-wrap:wrap">${tiles}</div>
-    <div style="margin-top:8px;font-size:11px;color:var(--muted);line-height:1.5">${lines.join('<br>')}</div>`;
+    <div style="margin-top:8px;font-size:12px;color:var(--muted);line-height:1.5">${lines.join('<br>')}</div>`;
 }
 
 function renderPatternDashboardWidget(){
   if(!_canManagePatterns())return'';
   return`<div class="card" id="ptn-dash-widget" style="margin-bottom:14px;cursor:pointer" onclick="window.showPage('pattern-hub')">
     <div style="display:flex;align-items:center;justify-content:space-between">
-      <div style="font-weight:700;font-size:13px">Pattern Hub</div>
-      <div style="font-size:11px;color:var(--muted)">Open ›</div>
+      <div style="font-weight:700;font-size:14px">Pattern Hub</div>
+      <div style="font-size:12px;color:var(--muted)">Open ›</div>
     </div>
-    <div id="ptn-dash-body" style="font-size:12px;color:var(--muted);margin-top:6px">Loading…</div>
+    <div id="ptn-dash-body" style="font-size:13px;color:var(--muted);margin-top:6px">Loading…</div>
   </div>`;
 }
 

@@ -99,19 +99,19 @@
       'overflow:auto;-webkit-overflow-scrolling:touch');
     el.innerHTML=
       '<div style="max-width:620px;margin:0 auto">'+
-      '<div style="font-size:18px;font-weight:700;margin-bottom:6px">Groovy Operations didn’t finish loading</div>'+
+      '<div style="font-size:19px;font-weight:700;margin-bottom:6px">Groovy Operations didn’t finish loading</div>'+
       '<div style="color:#6B6B6B;margin-bottom:16px">'+esc(reason)+'</div>'+
       '<button id="gv-diag-retry" style="width:100%;padding:13px;margin-bottom:8px;border:1px solid #111;'+
         'background:#111;color:#fff;border-radius:10px;font:inherit;font-weight:600;cursor:pointer">Reload the page</button>'+
       '<button id="gv-diag-reset" style="width:100%;padding:13px;margin-bottom:8px;border:1px solid #111;'+
         'background:#fff;color:#111;border-radius:10px;font:inherit;font-weight:600;cursor:pointer">Clear the app cache and reload</button>'+
-      '<div style="font-size:12px;color:#6B6B6B;margin-bottom:16px">Use the second button if reloading doesn’t help — '+
+      '<div style="font-size:13px;color:#6B6B6B;margin-bottom:16px">Use the second button if reloading doesn’t help — '+
         'your phone may be holding an old copy of the app. Nothing you’ve saved is affected.</div>'+
       '<button id="gv-diag-copy" style="width:100%;padding:11px;margin-bottom:14px;border:1px solid #D9D9D9;'+
         'background:#fff;color:#111;border-radius:10px;font:inherit;cursor:pointer">Copy details to send to Claude</button>'+
-      '<div style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#6B6B6B;margin-bottom:6px">Details</div>'+
+      '<div style="font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#6B6B6B;margin-bottom:6px">Details</div>'+
       '<pre id="gv-diag-pre" style="white-space:pre-wrap;word-break:break-word;background:#F4F4F4;border:1px solid #D9D9D9;'+
-        'border-radius:10px;padding:12px;font-size:11.5px;margin:0"></pre>'+
+        'border-radius:10px;padding:12px;font-size:12.5px;margin:0"></pre>'+
       '</div>';
     document.body.appendChild(el);
     // The details are written in as TEXT, never interpolated — an error

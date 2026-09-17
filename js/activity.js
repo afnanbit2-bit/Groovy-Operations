@@ -12,10 +12,10 @@ async function loadActivity(){
     const items=snap.docs.map(d=>d.data());
     m.innerHTML=`<div class="page-head"><div class="page-title">Activity Log</div><div class="page-sub">${items.length} recent actions</div></div>
     <div class="card">${items.length?items.map(a=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-      <div style="width:28px;height:28px;border-radius:50%;background:var(--dark);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--on-dark);flex-shrink:0">${(a.user||'?')[0].toUpperCase()}</div>
-      <div style="flex:1"><div style="font-size:13px"><strong>${a.user||'?'}</strong> <span style="color:var(--muted)">— ${a.action||''}</span></div>
-        <div style="font-size:11px;color:var(--muted)">${a.detail||''}</div>
-        <div style="font-size:10px;color:var(--muted);margin-top:1px">${a.ts?new Date(a.ts).toLocaleString('en-GB'):a.date||''}</div>
+      <div style="width:28px;height:28px;border-radius:50%;background:var(--dark);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--on-dark);flex-shrink:0">${(a.user||'?')[0].toUpperCase()}</div>
+      <div style="flex:1"><div style="font-size:14px"><strong>${a.user||'?'}</strong> <span style="color:var(--muted)">— ${a.action||''}</span></div>
+        <div style="font-size:12px;color:var(--muted)">${a.detail||''}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:1px">${a.ts?new Date(a.ts).toLocaleString('en-GB'):a.date||''}</div>
       </div></div>`).join(''):'<div class="empty">No activity yet.</div>'}
     </div><div style="height:80px"></div>`;
   }catch(e){m.innerHTML=`<div class="empty">Error: ${e.message}</div>`;}
@@ -171,17 +171,17 @@ function _renderMonitorPage(){
 
 function _monitorFilterBarHTML(mayBeIncomplete){
   const f=_monitorFilter;
-  const btn=(preset,label)=>`<button onclick="window.monitorSetPreset('${preset}')" style="padding:7px 13px;border:1px solid ${f.preset===preset?'var(--dark)':'var(--border)'};border-radius:8px;background:${f.preset===preset?'var(--dark)':'var(--surface)'};color:${f.preset===preset?'var(--on-dark)':'var(--text)'};font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">${label}</button>`;
+  const btn=(preset,label)=>`<button onclick="window.monitorSetPreset('${preset}')" style="padding:7px 13px;border:1px solid ${f.preset===preset?'var(--dark)':'var(--border)'};border-radius:8px;background:${f.preset===preset?'var(--dark)':'var(--surface)'};color:${f.preset===preset?'var(--on-dark)':'var(--text)'};font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">${label}</button>`;
   return`<div class="card" style="margin-bottom:14px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:${f.preset==='custom'?'10px':'0'}">
       ${btn('today','Today')}${btn('week','This Week')}${btn('month','This Month')}${btn('all','All Time')}${btn('custom','Custom ▾')}
     </div>
     ${f.preset==='custom'?`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <label style="font-size:11px;color:var(--muted)">From <input type="date" id="mon-from" value="${f.from}" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;margin-left:4px"></label>
-      <label style="font-size:11px;color:var(--muted)">To <input type="date" id="mon-to" value="${f.to}" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;margin-left:4px"></label>
-      <button class="btn-primary" style="width:auto;padding:7px 14px;margin-top:0;font-size:12px" onclick="window.monitorApplyCustom()">Apply</button>
+      <label style="font-size:12px;color:var(--muted)">From <input type="date" id="mon-from" value="${f.from}" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;margin-left:4px"></label>
+      <label style="font-size:12px;color:var(--muted)">To <input type="date" id="mon-to" value="${f.to}" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;margin-left:4px"></label>
+      <button class="btn-primary" style="width:auto;padding:7px 14px;margin-top:0;font-size:13px" onclick="window.monitorApplyCustom()">Apply</button>
     </div>`:''}
-    ${mayBeIncomplete?`<div style="font-size:11px;color:var(--muted);margin-top:8px">Showing the most recent ${_MONITOR_FETCH_LIMIT} platform-wide actions (back to ${new Date((_monitorItems[_monitorItems.length-1]||{}).ts||Date.now()).toLocaleDateString('en-GB')}). Older activity in this range is not included.</div>`:''}
+    ${mayBeIncomplete?`<div style="font-size:12px;color:var(--muted);margin-top:8px">Showing the most recent ${_MONITOR_FETCH_LIMIT} platform-wide actions (back to ${new Date((_monitorItems[_monitorItems.length-1]||{}).ts||Date.now()).toLocaleDateString('en-GB')}). Older activity in this range is not included.</div>`:''}
   </div>`;
 }
 
@@ -198,33 +198,33 @@ function _monitorOverviewHTML(rangeItems){
 
   const statsHTML=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
     <div class="card" style="flex:1;min-width:120px;text-align:center;padding:14px 10px">
-      <div style="font-size:22px;font-weight:800">${rangeItems.length}</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">Actions in range</div>
+      <div style="font-size:23px;font-weight:800">${rangeItems.length}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px">Actions in range</div>
     </div>
     <div class="card" style="flex:1;min-width:120px;text-align:center;padding:14px 10px">
-      <div style="font-size:22px;font-weight:800">${activePeople}</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">Active accounts</div>
+      <div style="font-size:23px;font-weight:800">${activePeople}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px">Active accounts</div>
     </div>
     <div class="card" style="flex:1;min-width:120px;text-align:center;padding:14px 10px;${watchedItems.length?'border:1px solid var(--accent-urgent);background:var(--accent-urgent-soft)':''}">
-      <div style="font-size:22px;font-weight:800;color:${watchedItems.length?'#dc2626':'inherit'}">${watchedItems.length}</div>
-      <div style="font-size:11px;color:${watchedItems.length?'#dc2626':'var(--muted)'};margin-top:2px;font-weight:${watchedItems.length?'700':'400'}">Watched (${_MONITOR_WATCH_USER})</div>
+      <div style="font-size:23px;font-weight:800;color:${watchedItems.length?'#dc2626':'inherit'}">${watchedItems.length}</div>
+      <div style="font-size:12px;color:${watchedItems.length?'#dc2626':'var(--muted)'};margin-top:2px;font-weight:${watchedItems.length?'700':'400'}">Watched (${_MONITOR_WATCH_USER})</div>
     </div>
   </div>`;
 
   const watchedPanel=watchedItems.length?`<div class="card" style="margin-bottom:14px;border:1px solid var(--accent-urgent);background:var(--accent-urgent-soft)">
-    <div style="font-weight:700;font-size:13px;color:var(--accent-urgent);margin-bottom:8px">⚠ Recent watched activity — ${_MONITOR_WATCH_USER}</div>
+    <div style="font-weight:700;font-size:14px;color:var(--accent-urgent);margin-bottom:8px">⚠ Recent watched activity — ${_MONITOR_WATCH_USER}</div>
     ${watchedItems.slice(0,_MONITOR_WATCHED_PANEL_CAP).map(a=>{
       const cat=_monitorCategorize(a.action);
       return`<div style="cursor:pointer;padding:7px 0;border-bottom:1px solid var(--accent-urgent)" onclick="window.monitorOpenPerson('${_monitorEsc(_MONITOR_WATCH_USER)}')">
-        <div style="font-size:12px">${cat.icon} <strong>${_monitorEsc(a.action||'')}</strong></div>
-        <div style="font-size:11px;color:var(--muted)">${_monitorEsc(a.detail||'')}</div>
-        <div style="font-size:10px;color:var(--muted);margin-top:1px">${_monitorFmtTime(a)}</div>
+        <div style="font-size:13px">${cat.icon} <strong>${_monitorEsc(a.action||'')}</strong></div>
+        <div style="font-size:12px;color:var(--muted)">${_monitorEsc(a.detail||'')}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:1px">${_monitorFmtTime(a)}</div>
       </div>`;
     }).join('')}
-    ${watchedItems.length>_MONITOR_WATCHED_PANEL_CAP?`<div style="font-size:11px;color:var(--muted);padding-top:6px">+${watchedItems.length-_MONITOR_WATCHED_PANEL_CAP} more — open ${_MONITOR_WATCH_USER}'s profile to see all</div>`:''}
+    ${watchedItems.length>_MONITOR_WATCHED_PANEL_CAP?`<div style="font-size:12px;color:var(--muted);padding-top:6px">+${watchedItems.length-_MONITOR_WATCHED_PANEL_CAP} more — open ${_MONITOR_WATCH_USER}'s profile to see all</div>`:''}
   </div>`:'';
 
-  const searchHTML=`<div style="margin-bottom:14px"><input id="mon-search" value="${_monitorEsc(_monitorSearch)}" placeholder="Search people…" oninput="window.monitorSearchInput(this.value)" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none"></div>`;
+  const searchHTML=`<div style="margin-bottom:14px"><input id="mon-search" value="${_monitorEsc(_monitorSearch)}" placeholder="Search people…" oninput="window.monitorSearchInput(this.value)" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;outline:none"></div>`;
 
   let people=[...byUser.entries()];
   if(q)people=people.filter(([name])=>name.toLowerCase().includes(q));
@@ -243,22 +243,22 @@ function _monitorOverviewHTML(rangeItems){
   const cardHTML=([name,actions])=>{
     const catCounts=new Map();
     for(const a of actions){const c=_monitorCategorize(a.action);catCounts.set(c.key,(catCounts.get(c.key)||0)+1);}
-    const chips=_MONITOR_CATEGORIES.filter(c=>catCounts.has(c.key)).map(c=>`<span style="font-size:10px;color:${c.color};font-weight:600;background:${c.color}18;padding:2px 7px;border-radius:10px;margin-right:4px">${c.icon} ${catCounts.get(c.key)}</span>`).join('');
+    const chips=_MONITOR_CATEGORIES.filter(c=>catCounts.has(c.key)).map(c=>`<span style="font-size:11px;color:${c.color};font-weight:600;background:${c.color}18;padding:2px 7px;border-radius:10px;margin-right:4px">${c.icon} ${catCounts.get(c.key)}</span>`).join('');
     const watchedN=name===_MONITOR_WATCH_USER?actions.filter(a=>_MONITOR_WATCH_ACTIONS.has(a.action)).length:0;
     return`<div class="card" style="margin-bottom:10px;cursor:pointer;${watchedN?'border:1px solid var(--accent-urgent)':''}" onclick="window.monitorOpenPerson('${_monitorEsc(name)}')">
       <div style="display:flex;align-items:center;gap:10px">
         ${_monitorAvatar(name)}
         <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:14px">${_monitorEsc(name)}${watchedN?` <span style="color:var(--accent-urgent);font-size:11px;font-weight:700">⚠ ${watchedN} watched</span>`:''}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:1px">${actions.length} action${actions.length===1?'':'s'} · last ${_monitorFmtTime(actions[0])}</div>
+          <div style="font-weight:700;font-size:15px">${_monitorEsc(name)}${watchedN?` <span style="color:var(--accent-urgent);font-size:12px;font-weight:700">⚠ ${watchedN} watched</span>`:''}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:1px">${actions.length} action${actions.length===1?'':'s'} · last ${_monitorFmtTime(actions[0])}</div>
           <div style="margin-top:6px">${chips}</div>
         </div>
-        <div style="color:var(--muted);font-size:18px;flex-shrink:0">›</div>
+        <div style="color:var(--muted);font-size:19px;flex-shrink:0">›</div>
       </div>
     </div>`;
   };
 
-  const tierHTML=tiers.map((list,i)=>list.length?`<div style="margin-bottom:6px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 8px">${_MONITOR_TIER_LABELS[i]}</div>${list.map(cardHTML).join('')}</div>`:'').join('');
+  const tierHTML=tiers.map((list,i)=>list.length?`<div style="margin-bottom:6px"><div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 8px">${_MONITOR_TIER_LABELS[i]}</div>${list.map(cardHTML).join('')}</div>`:'').join('');
 
   return statsHTML+watchedPanel+searchHTML+(people.length?tierHTML:'<div class="empty">No matching accounts.</div>');
 }
@@ -269,14 +269,14 @@ function _monitorDrilldownHTML(rangeItems){
   const q=_monitorSearch.trim().toLowerCase();
   const filtered=q?all.filter(a=>(a.action||'').toLowerCase().includes(q)||(a.detail||'').toLowerCase().includes(q)):all;
 
-  const headerHTML=`<button class="btn-outline" style="margin-bottom:12px;font-size:12px" onclick="window.monitorBackToOverview()">← All profiles</button>
+  const headerHTML=`<button class="btn-outline" style="margin-bottom:12px;font-size:13px" onclick="window.monitorBackToOverview()">← All profiles</button>
   <div class="card" style="margin-bottom:14px">
     <div style="display:flex;align-items:center;gap:12px">
       ${_monitorAvatar(name,40)}
-      <div><div style="font-weight:700;font-size:16px">${_monitorEsc(name)}</div><div style="font-size:12px;color:var(--muted)">${all.length} action${all.length===1?'':'s'} in range</div></div>
+      <div><div style="font-weight:700;font-size:17px">${_monitorEsc(name)}</div><div style="font-size:13px;color:var(--muted)">${all.length} action${all.length===1?'':'s'} in range</div></div>
     </div>
   </div>
-  <div style="margin-bottom:14px"><input id="mon-search" value="${_monitorEsc(_monitorSearch)}" placeholder="Search ${_monitorEsc(name)}'s actions…" oninput="window.monitorSearchInput(this.value)" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none"></div>`;
+  <div style="margin-bottom:14px"><input id="mon-search" value="${_monitorEsc(_monitorSearch)}" placeholder="Search ${_monitorEsc(name)}'s actions…" oninput="window.monitorSearchInput(this.value)" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;outline:none"></div>`;
 
   if(!filtered.length)return headerHTML+'<div class="empty">No matching actions.</div>';
 
@@ -291,19 +291,19 @@ function _monitorDrilldownHTML(rangeItems){
     const flagged=name===_MONITOR_WATCH_USER&&_MONITOR_WATCH_ACTIONS.has(a.action);
     const expanded=_monitorExpanded.has(a._id);
     return`<div style="padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;${flagged?'border-left:3px solid #dc2626;padding-left:8px;background:var(--accent-urgent-soft)':''}" onclick="window.monitorToggleEntry('${a._id}')">
-      <div style="font-size:13px">${flagged?'<span style="color:var(--accent-urgent);font-weight:700">⚠ </span>':''}${_monitorEsc(a.action||'')}<span style="color:var(--muted);float:right;font-size:11px">${expanded?'▾':'▸'}</span></div>
-      ${expanded?`<div style="font-size:11px;color:var(--muted);margin-top:4px">${_monitorEsc(a.detail||'')}</div><div style="font-size:10px;color:var(--muted);margin-top:1px">${_monitorFmtTime(a)}</div>`:''}
+      <div style="font-size:14px">${flagged?'<span style="color:var(--accent-urgent);font-weight:700">⚠ </span>':''}${_monitorEsc(a.action||'')}<span style="color:var(--muted);float:right;font-size:12px">${expanded?'▾':'▸'}</span></div>
+      ${expanded?`<div style="font-size:12px;color:var(--muted);margin-top:4px">${_monitorEsc(a.detail||'')}</div><div style="font-size:11px;color:var(--muted);margin-top:1px">${_monitorFmtTime(a)}</div>`:''}
     </div>`;
   };
 
   const sectionsHTML=_MONITOR_CATEGORIES.filter(c=>byCat.has(c.key)).map(c=>{
     const entries=byCat.get(c.key);
-    const sectionHead=`<div style="display:flex;align-items:center;gap:6px;margin:14px 0 6px"><span>${c.icon}</span><span style="font-size:12px;font-weight:700;color:${c.color}">${c.label}</span><span style="font-size:11px;color:var(--muted)">· ${entries.length}</span></div>`;
+    const sectionHead=`<div style="display:flex;align-items:center;gap:6px;margin:14px 0 6px"><span>${c.icon}</span><span style="font-size:13px;font-weight:700;color:${c.color}">${c.label}</span><span style="font-size:12px;color:var(--muted)">· ${entries.length}</span></div>`;
     if(c.key==='auth'&&entries.length>1){
       const last=entries[0];
       return`<div class="card" style="margin-bottom:10px">${sectionHead}
         <div style="cursor:pointer" onclick="window.monitorToggleAuth()">
-          <div style="font-size:13px">${entries.length} sign-ins · last ${_monitorFmtTime(last)} <span style="color:var(--muted);float:right;font-size:11px">${_monitorAuthExpanded?'▾':'▸'}</span></div>
+          <div style="font-size:14px">${entries.length} sign-ins · last ${_monitorFmtTime(last)} <span style="color:var(--muted);float:right;font-size:12px">${_monitorAuthExpanded?'▾':'▸'}</span></div>
         </div>
         ${_monitorAuthExpanded?entries.map(entryRow).join(''):''}
       </div>`;
@@ -366,10 +366,10 @@ function renderMonitorDashboardWidget(){
   if(!session||session.role!=='owner')return'';
   return`<div class="card" id="monitor-dash-widget" style="margin-bottom:14px;cursor:pointer" onclick="window.showPage('monitor')">
     <div style="display:flex;align-items:center;justify-content:space-between">
-      <div style="font-weight:700;font-size:13px">👁 Monitor</div>
-      <div style="font-size:11px;color:var(--muted)">View all ›</div>
+      <div style="font-weight:700;font-size:14px">👁 Monitor</div>
+      <div style="font-size:12px;color:var(--muted)">View all ›</div>
     </div>
-    <div id="monitor-dash-body" style="font-size:12px;color:var(--muted);margin-top:6px">Loading…</div>
+    <div id="monitor-dash-body" style="font-size:13px;color:var(--muted);margin-top:6px">Loading…</div>
   </div>`;
 }
 async function _monitorPopulateDashboard(){

@@ -519,8 +519,8 @@ function _showUpdateBanner(){
   if(document.getElementById('sw-update-banner'))return;
   const bar=document.createElement('div');
   bar.id='sw-update-banner';
-  bar.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:2000;background:#111;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:center;gap:14px;font-size:13px;box-shadow:0 -2px 12px rgba(0,0,0,.25);flex-wrap:wrap;text-align:center';
-  bar.innerHTML=`<span>A new version of Groovy Ops is available.</span><button onclick="location.reload()" style="background:var(--surface);color:var(--text);border:none;padding:7px 16px;border-radius:7px;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0">Refresh now</button>`;
+  bar.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:2000;background:#111;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:center;gap:14px;font-size:14px;box-shadow:0 -2px 12px rgba(0,0,0,.25);flex-wrap:wrap;text-align:center';
+  bar.innerHTML=`<span>A new version of Groovy Ops is available.</span><button onclick="location.reload()" style="background:var(--surface);color:var(--text);border:none;padding:7px 16px;border-radius:7px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;flex-shrink:0">Refresh now</button>`;
   document.body.appendChild(bar);
 }
 
@@ -676,11 +676,11 @@ function _salesTeamNavHTML(groups){
   return`
     <div class="nav-divider"></div>
     <div class="nav-item" id="nav-sales-toggle" onclick="window.toggleSalesNav()" style="display:flex;justify-content:space-between;align-items:center">
-      <span>The Sales Team</span><span id="sales-nav-arrow" style="font-size:10px;transition:transform .2s">${open?'▾':'▸'}</span>
+      <span>The Sales Team</span><span id="sales-nav-arrow" style="font-size:11px;transition:transform .2s">${open?'▾':'▸'}</span>
     </div>
     <div id="sales-subnav" data-h="${h}" style="overflow:hidden;transition:max-height .2s;max-height:${open?h+'px':'0'}">
-      ${groups.map(g=>`<div class="nav-group-label" style="padding:8px 12px 4px 22px;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">${g.label}</div>
-        ${g.items.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:30px;font-size:12px">${i.label}</div>`).join('')}`).join('')}
+      ${groups.map(g=>`<div class="nav-group-label" style="padding:8px 12px 4px 22px;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">${g.label}</div>
+        ${g.items.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:30px;font-size:13px">${i.label}</div>`).join('')}`).join('')}
     </div>`;
 }
 
@@ -818,27 +818,27 @@ function buildNav(){
   const storeNav=storeSubItems.length?`
     <div class="nav-divider"></div>
     <div class="nav-item" id="nav-store-toggle" onclick="window.toggleStoreNav()" style="display:flex;justify-content:space-between;align-items:center">
-      <span>Store</span><span id="store-nav-arrow" style="font-size:10px;transition:transform .2s">${storeOpen?'▾':'▸'}</span>
+      <span>Store</span><span id="store-nav-arrow" style="font-size:11px;transition:transform .2s">${storeOpen?'▾':'▸'}</span>
     </div>
     <div id="store-subnav" style="overflow:hidden;transition:max-height .2s;max-height:${storeOpen?(storeSubItems.length*40+8)+'px':'0'}">
-      ${storeSubItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:22px;font-size:12px">${i.label}</div>`).join('')}
+      ${storeSubItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:22px;font-size:13px">${i.label}</div>`).join('')}
     </div>`:'';
   const printNav=printSubItems.length?`
     <div class="nav-divider"></div>
     <div class="nav-item" id="nav-print-toggle" onclick="window.togglePrintNav()" style="display:flex;justify-content:space-between;align-items:center">
-      <span>Embellishments Department</span><span id="print-nav-arrow" style="font-size:10px;transition:transform .2s">${printOpen?'▾':'▸'}</span>
+      <span>Embellishments Department</span><span id="print-nav-arrow" style="font-size:11px;transition:transform .2s">${printOpen?'▾':'▸'}</span>
     </div>
     <div id="print-subnav" style="overflow:hidden;transition:max-height .2s;max-height:${printOpen?(printSubItems.length*40+8)+'px':'0'}">
-      ${printSubItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:22px;font-size:12px">${i.label}</div>`).join('')}
+      ${printSubItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:22px;font-size:13px">${i.label}</div>`).join('')}
     </div>`:'';
 
   const hrmNav=hrmSubItems.length?`
     <div class="nav-divider"></div>
     <div class="nav-item" id="nav-hrm-toggle" onclick="window.toggleHRMNav()" style="display:flex;justify-content:space-between;align-items:center">
-      <span>HRM</span><span id="hrm-nav-arrow" style="font-size:10px;transition:transform .2s">${hrmOpen?'▾':'▸'}</span>
+      <span>HRM</span><span id="hrm-nav-arrow" style="font-size:11px;transition:transform .2s">${hrmOpen?'▾':'▸'}</span>
     </div>
     <div id="hrm-subnav" style="overflow:hidden;transition:max-height .2s;max-height:${hrmOpen?(hrmSubItems.length*40+8)+'px':'0'}">
-      ${hrmSubItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:22px;font-size:12px"><span class="icon">${i.iconName?_icon(i.iconName,16):''}</span>${i.label}</div>`).join('')}
+      ${hrmSubItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:22px;font-size:13px"><span class="icon">${i.iconName?_icon(i.iconName,16):''}</span>${i.label}</div>`).join('')}
     </div>`:'';
 
   const salesNav=_salesTeamNavHTML(_salesTeamGroups());
@@ -1395,20 +1395,20 @@ window.openBugReportModal=function(){
   back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()" style="max-width:520px;padding:0;overflow:hidden">
     <div style="background:#1A1A2E;color:white;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:8px">
       <div style="min-width:0">
-        <div style="font-size:11px;letter-spacing:.06em;opacity:.6">REPORT A BUG · بگ رپورٹ</div>
-        <div style="margin:4px 0 0;font-size:18px;font-weight:700">Help us improve Groovy Ops</div>
+        <div style="font-size:12px;letter-spacing:.06em;opacity:.6">REPORT A BUG · بگ رپورٹ</div>
+        <div style="margin:4px 0 0;font-size:19px;font-weight:700">Help us improve Groovy Ops</div>
       </div>
-      <button onclick="window.closeBugReportModal()" style="background:none;border:none;color:white;font-size:24px;cursor:pointer;line-height:1">×</button>
+      <button onclick="window.closeBugReportModal()" style="background:none;border:none;color:white;font-size:25px;cursor:pointer;line-height:1">×</button>
     </div>
     <div style="padding:20px">
-      <div style="background:var(--surface-2);padding:10px 12px;border-radius:8px;margin-bottom:14px;font-size:11px;color:var(--muted);line-height:1.7">
+      <div style="background:var(--surface-2);padding:10px 12px;border-radius:8px;margin-bottom:14px;font-size:12px;color:var(--muted);line-height:1.7">
         📍 Page: <strong style="color:var(--text)">${pageName}</strong><br>
         👤 Reporter: ${session.name} · ${session.role}<br>
         💻 Device: ${device}
       </div>
       <div class="field" style="margin-bottom:12px"><label>What went wrong? *</label><input id="bug-title" placeholder="e.g. Save button doesn't work on PO form"></div>
-      <div class="field" style="margin-bottom:12px"><label>Describe what happened</label><textarea id="bug-description" rows="3" placeholder="e.g. Clicked save, got an error message" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface-2);resize:vertical"></textarea></div>
-      <div class="field" style="margin-bottom:12px"><label>What did you expect to happen?</label><textarea id="bug-expected" rows="2" placeholder="e.g. The PO should have been saved" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface-2);resize:vertical"></textarea></div>
+      <div class="field" style="margin-bottom:12px"><label>Describe what happened</label><textarea id="bug-description" rows="3" placeholder="e.g. Clicked save, got an error message" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px;background:var(--surface-2);resize:vertical"></textarea></div>
+      <div class="field" style="margin-bottom:12px"><label>What did you expect to happen?</label><textarea id="bug-expected" rows="2" placeholder="e.g. The PO should have been saved" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px;background:var(--surface-2);resize:vertical"></textarea></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
         <div class="field"><label>Category</label><select id="bug-category">
           <option value="ui">🎨 UI / Design</option>
@@ -1427,7 +1427,7 @@ window.openBugReportModal=function(){
       </div>
       <div class="field" style="margin-bottom:6px"><label>Screenshot (optional, very helpful)</label><input id="bug-screenshot" type="file" accept="image/*" onchange="window._bugPreviewImg(this)"></div>
       <div id="bug-screenshot-preview" style="display:none;margin-top:6px"><img style="max-width:100%;border-radius:6px;border:1px solid var(--border)" /></div>
-      <div id="bug-screenshot-status" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
+      <div id="bug-screenshot-status" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
     </div>
     <div style="padding:14px 20px;border-top:1px solid var(--border);background:var(--surface-2);display:flex;gap:10px">
       <button class="btn-outline" style="flex:1" onclick="window.closeBugReportModal()">Cancel</button>
@@ -1539,17 +1539,17 @@ function renderBugTrackerPage(){
   const weekAgo=Date.now()-7*86400000;
   const fixedThisWeek=visible.filter(b=>b.status==='fixed'&&(b.resolvedAt||0)>weekAgo).length;
   const stats=`<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px" class="bug-stats-strip">
-    <div class="card" style="padding:14px;background:var(--accent-urgent-soft)"><div style="font-size:10px;text-transform:uppercase;color:var(--accent-urgent);letter-spacing:.06em">🔴 Critical</div><div style="font-size:24px;font-weight:700;color:var(--accent-urgent);margin-top:4px">${critical}</div></div>
-    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">🟠 High</div><div style="font-size:24px;font-weight:700;margin-top:4px">${high}</div></div>
-    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">🟡 Open</div><div style="font-size:24px;font-weight:700;margin-top:4px">${open.length}</div></div>
-    <div class="card" style="padding:14px;background:var(--accent-success-soft)"><div style="font-size:10px;text-transform:uppercase;color:var(--accent-success);letter-spacing:.06em">✅ Fixed (week)</div><div style="font-size:24px;font-weight:700;color:var(--accent-success);margin-top:4px">${fixedThisWeek}</div></div>
-    <div class="card" style="padding:14px"><div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Total</div><div style="font-size:24px;font-weight:700;margin-top:4px">${visible.length}</div></div>
+    <div class="card" style="padding:14px;background:var(--accent-urgent-soft)"><div style="font-size:11px;text-transform:uppercase;color:var(--accent-urgent);letter-spacing:.06em">🔴 Critical</div><div style="font-size:25px;font-weight:700;color:var(--accent-urgent);margin-top:4px">${critical}</div></div>
+    <div class="card" style="padding:14px"><div style="font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">🟠 High</div><div style="font-size:25px;font-weight:700;margin-top:4px">${high}</div></div>
+    <div class="card" style="padding:14px"><div style="font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">🟡 Open</div><div style="font-size:25px;font-weight:700;margin-top:4px">${open.length}</div></div>
+    <div class="card" style="padding:14px;background:var(--accent-success-soft)"><div style="font-size:11px;text-transform:uppercase;color:var(--accent-success);letter-spacing:.06em">✅ Fixed (week)</div><div style="font-size:25px;font-weight:700;color:var(--accent-success);margin-top:4px">${fixedThisWeek}</div></div>
+    <div class="card" style="padding:14px"><div style="font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Total</div><div style="font-size:25px;font-weight:700;margin-top:4px">${visible.length}</div></div>
   </div>`;
 
   // Tabs (owners/managers only — workers don't need Fix Sessions)
   const tabs=isOM?`<div style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px">
-    <button onclick="window.bugSetTab('bugs')" style="padding:10px 16px;background:none;border:none;border-bottom:2px solid ${_bugTab==='bugs'?'#1A1A2E':'transparent'};font-weight:${_bugTab==='bugs'?'700':'500'};color:${_bugTab==='bugs'?'#1A1A2E':'var(--muted)'};cursor:pointer;font-family:inherit;font-size:13px">🐛 Bugs</button>
-    <button onclick="window.bugSetTab('sessions')" style="padding:10px 16px;background:none;border:none;border-bottom:2px solid ${_bugTab==='sessions'?'#1A1A2E':'transparent'};font-weight:${_bugTab==='sessions'?'700':'500'};color:${_bugTab==='sessions'?'#1A1A2E':'var(--muted)'};cursor:pointer;font-family:inherit;font-size:13px">📦 Fix Sessions</button>
+    <button onclick="window.bugSetTab('bugs')" style="padding:10px 16px;background:none;border:none;border-bottom:2px solid ${_bugTab==='bugs'?'#1A1A2E':'transparent'};font-weight:${_bugTab==='bugs'?'700':'500'};color:${_bugTab==='bugs'?'#1A1A2E':'var(--muted)'};cursor:pointer;font-family:inherit;font-size:14px">🐛 Bugs</button>
+    <button onclick="window.bugSetTab('sessions')" style="padding:10px 16px;background:none;border:none;border-bottom:2px solid ${_bugTab==='sessions'?'#1A1A2E':'transparent'};font-weight:${_bugTab==='sessions'?'700':'500'};color:${_bugTab==='sessions'?'#1A1A2E':'var(--muted)'};cursor:pointer;font-family:inherit;font-size:14px">📦 Fix Sessions</button>
   </div>`:'';
 
   const head=`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
@@ -1567,11 +1567,11 @@ function renderBugTrackerPage(){
   const filters=['all','open','critical','high','investigating','fixed'];
   const filterLabels={all:'All',open:'Open',critical:'🔴 Critical',high:'🟠 High',investigating:'🔍 Investigating',fixed:'✅ Fixed'};
   const exportableCount=isOM?_getExportableBugs(visible).length:0;
-  const exportBtn=isOM?`<button class="btn-outline" onclick="window.exportBugsForFix()" style="display:flex;align-items:center;gap:6px;margin-left:auto;padding:6px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:12px;cursor:pointer;font-family:inherit">📤 Export for Fix <span id="export-count-badge" style="background:#E94560;color:white;font-size:10px;padding:2px 6px;border-radius:10px;font-weight:700">${exportableCount}</span></button>`:'';
+  const exportBtn=isOM?`<button class="btn-outline" onclick="window.exportBugsForFix()" style="display:flex;align-items:center;gap:6px;margin-left:auto;padding:6px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:13px;cursor:pointer;font-family:inherit">📤 Export for Fix <span id="export-count-badge" style="background:#E94560;color:white;font-size:11px;padding:2px 6px;border-radius:10px;font-weight:700">${exportableCount}</span></button>`:'';
   const filterBar=`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
     ${filters.map(f=>`<button class="filter-chip ${_bugFilter===f?'active':''}" onclick="window.bugSetFilter('${f}')">${filterLabels[f]}</button>`).join('')}
     ${exportBtn}
-    <select id="bug-sort" onchange="window.bugSetSort(this.value)" style="${isOM?'':'margin-left:auto;'}padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--surface)">
+    <select id="bug-sort" onchange="window.bugSetSort(this.value)" style="${isOM?'':'margin-left:auto;'}padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface)">
       <option value="severity" ${_bugSort==='severity'?'selected':''}>Sort by Severity</option>
       <option value="newest" ${_bugSort==='newest'?'selected':''}>Newest First</option>
       <option value="oldest" ${_bugSort==='oldest'?'selected':''}>Oldest First</option>
@@ -1622,21 +1622,21 @@ function _bugCardHTML(b){
   const upActive=Array.isArray(b.upvotes)&&b.upvotes.includes(session.u);
   const isOM=session&&['owner','manager'].includes(session.role);
   const comments=Array.isArray(b.comments)?b.comments:[];
-  const commentsHTML=comments.length?comments.map(c=>`<div style="background:var(--surface-2);padding:8px 10px;border-radius:6px;margin-bottom:4px"><div style="font-size:11px;color:var(--muted)">${c.by||'—'} · ${_hrmTimeAgo(c.at)}</div><div style="font-size:13px;margin-top:2px">${(c.text||'').replace(/[<>]/g,'')}</div></div>`).join(''):'';
+  const commentsHTML=comments.length?comments.map(c=>`<div style="background:var(--surface-2);padding:8px 10px;border-radius:6px;margin-bottom:4px"><div style="font-size:12px;color:var(--muted)">${c.by||'—'} · ${_hrmTimeAgo(c.at)}</div><div style="font-size:14px;margin-top:2px">${(c.text||'').replace(/[<>]/g,'')}</div></div>`).join(''):'';
   const screenshotHTML=b.screenshotUrl?`<div style="margin-bottom:14px"><img src="${b.screenshotUrl}" style="max-width:100%;border-radius:8px;border:1px solid var(--border);cursor:pointer" onclick="window.open('${b.screenshotUrl}','_blank')"></div>`:'';
-  const expectedHTML=b.expectedBehavior?`<div style="margin-bottom:14px"><div style="font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Expected</div><div style="font-size:14px">${(b.expectedBehavior||'').replace(/[<>]/g,'')}</div></div>`:'';
+  const expectedHTML=b.expectedBehavior?`<div style="margin-bottom:14px"><div style="font-size:12px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Expected</div><div style="font-size:15px">${(b.expectedBehavior||'').replace(/[<>]/g,'')}</div></div>`:'';
   // Auto-fix detection — show badge if any comment starts with [CLAUDE_CODE_FIXED]
   const ccComment=comments.find(c=>(c.text||'').startsWith('[CLAUDE_CODE_FIXED]'));
-  const ccBadge=ccComment?`<div style="background:var(--accent-success-soft);padding:8px 12px;border-radius:6px;font-size:12px;color:var(--accent-success);display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+  const ccBadge=ccComment?`<div style="background:var(--accent-success-soft);padding:8px 12px;border-radius:6px;font-size:13px;color:var(--accent-success);display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
     <span>🤖 Fixed by Claude Code · ${_hrmTimeAgo(ccComment.at)}</span>
-    ${b.verified?`<span style="background:#1D9E75;color:white;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">VERIFIED</span>`:(isOM?`<button class="btn-sm" style="margin-left:auto" onclick="event.stopPropagation();window.verifyFix('${b._id}')">Verify Fix</button>`:'')}
+    ${b.verified?`<span style="background:#1D9E75;color:white;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">VERIFIED</span>`:(isOM?`<button class="btn-sm" style="margin-left:auto" onclick="event.stopPropagation();window.verifyFix('${b._id}')">Verify Fix</button>`:'')}
   </div>`:'';
   const ownerActions=isOM?`<div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--border);margin-top:10px">
-    <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.bugAssign('${b._id}')">📌 Assign</button>
-    <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.bugUpdateStatus('${b._id}','investigating')">🔍 Investigating</button>
-    <button class="btn-outline" style="font-size:11px;padding:5px 10px;color:var(--accent-success);border-color:var(--accent-success)" onclick="window.bugUpdateStatus('${b._id}','fixed')">✅ Mark Fixed</button>
-    <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.bugUpdateStatus('${b._id}','wont-fix')">❌ Won't Fix</button>
-    <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="window.bugMarkDuplicate('${b._id}')">🔗 Duplicate</button>
+    <button class="btn-outline" style="font-size:12px;padding:5px 10px" onclick="window.bugAssign('${b._id}')">📌 Assign</button>
+    <button class="btn-outline" style="font-size:12px;padding:5px 10px" onclick="window.bugUpdateStatus('${b._id}','investigating')">🔍 Investigating</button>
+    <button class="btn-outline" style="font-size:12px;padding:5px 10px;color:var(--accent-success);border-color:var(--accent-success)" onclick="window.bugUpdateStatus('${b._id}','fixed')">✅ Mark Fixed</button>
+    <button class="btn-outline" style="font-size:12px;padding:5px 10px" onclick="window.bugUpdateStatus('${b._id}','wont-fix')">❌ Won't Fix</button>
+    <button class="btn-outline" style="font-size:12px;padding:5px 10px" onclick="window.bugMarkDuplicate('${b._id}')">🔗 Duplicate</button>
   </div>`:'';
   return`<div class="card bug-card ${expanded?'expanded':''}" style="padding:16px;margin-bottom:10px;border-left:3px solid ${sevColor}" id="bug-card-${b._id}">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;cursor:pointer;gap:10px;flex-wrap:wrap" onclick="window.bugToggleCard('${b._id}')">
@@ -1646,26 +1646,26 @@ function _bugCardHTML(b){
           <span class="bug-status-badge ${b.status}">${b.status}</span>
           <span class="bug-cat-badge">${b.category||'other'}</span>
         </div>
-        <div style="font-weight:600;font-size:15px;margin-top:8px">${(b.title||'').replace(/[<>]/g,'')}</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:4px">Reported by ${b.reporterName||'—'} (${b.reporterRole||'—'}) · ${_hrmTimeAgo(b.reportedAt)} · on <strong>${b.pageWhereOccurred||'—'}</strong></div>
+        <div style="font-weight:600;font-size:16px;margin-top:8px">${(b.title||'').replace(/[<>]/g,'')}</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:4px">Reported by ${b.reporterName||'—'} (${b.reporterRole||'—'}) · ${_hrmTimeAgo(b.reportedAt)} · on <strong>${b.pageWhereOccurred||'—'}</strong></div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
-        <button onclick="event.stopPropagation();window.bugUpvote('${b._id}')" style="background:${upActive?'var(--accent-success-soft)':'var(--surface)'};border:1px solid ${upActive?'var(--accent-success)':'var(--border)'};border-radius:20px;padding:4px 10px;font-size:12px;cursor:pointer;color:${upActive?'var(--accent-success)':'var(--text)'}">👍 ${upCount}</button>
+        <button onclick="event.stopPropagation();window.bugUpvote('${b._id}')" style="background:${upActive?'var(--accent-success-soft)':'var(--surface)'};border:1px solid ${upActive?'var(--accent-success)':'var(--border)'};border-radius:20px;padding:4px 10px;font-size:13px;cursor:pointer;color:${upActive?'var(--accent-success)':'var(--text)'}">👍 ${upCount}</button>
         <span class="bug-arrow">▼</span>
       </div>
     </div>
     <div class="bug-card-expanded" style="display:${expanded?'block':'none'};margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
       ${ccBadge}
-      <div style="margin-bottom:14px"><div style="font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Description</div><div style="font-size:14px">${(b.description||'(none)').replace(/[<>]/g,'')}</div></div>
+      <div style="margin-bottom:14px"><div style="font-size:12px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Description</div><div style="font-size:15px">${(b.description||'(none)').replace(/[<>]/g,'')}</div></div>
       ${expectedHTML}
       ${screenshotHTML}
-      ${b.assignedTo?`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Assigned to: <strong>${b.assignedTo}</strong></div>`:''}
-      ${b.resolution?`<div style="font-size:12px;color:var(--accent-success);margin-bottom:8px">Resolution: ${(b.resolution||'').replace(/[<>]/g,'')}</div>`:''}
-      ${b.duplicateOfBugId?`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Duplicate of: ${b.duplicateOfBugId}</div>`:''}
-      ${comments.length?`<div style="margin-bottom:10px"><div style="font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Comments (${comments.length})</div>${commentsHTML}</div>`:''}
+      ${b.assignedTo?`<div style="font-size:13px;color:var(--muted);margin-bottom:8px">Assigned to: <strong>${b.assignedTo}</strong></div>`:''}
+      ${b.resolution?`<div style="font-size:13px;color:var(--accent-success);margin-bottom:8px">Resolution: ${(b.resolution||'').replace(/[<>]/g,'')}</div>`:''}
+      ${b.duplicateOfBugId?`<div style="font-size:13px;color:var(--muted);margin-bottom:8px">Duplicate of: ${b.duplicateOfBugId}</div>`:''}
+      ${comments.length?`<div style="margin-bottom:10px"><div style="font-size:12px;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Comments (${comments.length})</div>${commentsHTML}</div>`:''}
       <div style="display:flex;gap:6px;margin-bottom:10px">
-        <input type="text" id="bug-comment-${b._id}" placeholder="Add comment…" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--surface-2)">
-        <button class="btn-outline" style="font-size:12px;padding:6px 14px" onclick="window.bugAddComment('${b._id}')">Send</button>
+        <input type="text" id="bug-comment-${b._id}" placeholder="Add comment…" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--surface-2)">
+        <button class="btn-outline" style="font-size:13px;padding:6px 14px" onclick="window.bugAddComment('${b._id}')">Send</button>
       </div>
       ${ownerActions}
     </div>
@@ -1794,8 +1794,8 @@ function _populateOwnerBugBanner(){
   if(openCritical>0){
     html+=`<div class="card" style="padding:14px;margin-bottom:14px;background:var(--accent-urgent-soft);border-left:3px solid var(--accent-urgent);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
       <div>
-        <div style="font-size:11px;text-transform:uppercase;color:var(--accent-urgent);letter-spacing:.06em;font-weight:700">⚠ Critical Bugs Open</div>
-        <div style="font-size:16px;font-weight:700;margin-top:2px">${openCritical} critical bug${openCritical===1?'':'s'} need attention</div>
+        <div style="font-size:12px;text-transform:uppercase;color:var(--accent-urgent);letter-spacing:.06em;font-weight:700">⚠ Critical Bugs Open</div>
+        <div style="font-size:17px;font-weight:700;margin-top:2px">${openCritical} critical bug${openCritical===1?'':'s'} need attention</div>
       </div>
       <button class="btn-primary" style="background:var(--accent-urgent);width:auto;padding:8px 16px;margin-top:0" onclick="window.showPage('bug-tracker')">View →</button>
     </div>`;
@@ -1805,12 +1805,12 @@ function _populateOwnerBugBanner(){
     html+=`<div class="card" style="padding:14px;margin-bottom:16px;background:var(--surface-2)">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <div>
-          <div style="font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">🐛 Bug Tracker</div>
-          <div style="font-size:14px;font-weight:600;margin-top:4px">${openBugs.length} open bug${openBugs.length===1?'':'s'} · ${exportable} ready to export</div>
+          <div style="font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">🐛 Bug Tracker</div>
+          <div style="font-size:15px;font-weight:600;margin-top:4px">${openBugs.length} open bug${openBugs.length===1?'':'s'} · ${exportable} ready to export</div>
         </div>
         <div style="display:flex;gap:6px">
           <button class="btn-sm" onclick="window.showPage('bug-tracker')">View All</button>
-          ${showExport?`<button class="btn-primary btn-sm" style="padding:5px 10px;font-size:11px;width:auto;margin-top:0" onclick="window.showPage('bug-tracker');setTimeout(()=>window.exportBugsForFix(),50)">Export Now</button>`:''}
+          ${showExport?`<button class="btn-primary btn-sm" style="padding:5px 10px;font-size:12px;width:auto;margin-top:0" onclick="window.showPage('bug-tracker');setTimeout(()=>window.exportBugsForFix(),50)">Export Now</button>`:''}
         </div>
       </div>
     </div>`;
@@ -1844,34 +1844,34 @@ function _bugExportModalShell(){
   return`<div class="hrm-modal" onclick="event.stopPropagation()" style="max-width:700px;border-radius:12px;padding:0;overflow:hidden;max-height:90vh;display:flex;flex-direction:column">
     <div style="background:#1A1A2E;color:white;padding:16px 20px;display:flex;justify-content:space-between;align-items:center">
       <div>
-        <div style="font-size:11px;letter-spacing:.06em;opacity:.6">EXPORT BUGS FOR CLAUDE CODE</div>
-        <h3 id="export-modal-count" style="margin:4px 0 0;font-size:18px;font-weight:700">— bugs ready to fix</h3>
+        <div style="font-size:12px;letter-spacing:.06em;opacity:.6">EXPORT BUGS FOR CLAUDE CODE</div>
+        <h3 id="export-modal-count" style="margin:4px 0 0;font-size:19px;font-weight:700">— bugs ready to fix</h3>
       </div>
-      <button onclick="window.closeBugExportModal()" style="background:none;border:none;color:white;font-size:24px;cursor:pointer;line-height:1">×</button>
+      <button onclick="window.closeBugExportModal()" style="background:none;border:none;color:white;font-size:25px;cursor:pointer;line-height:1">×</button>
     </div>
     <div style="padding:20px;flex:1;overflow-y:auto">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
         <div>
-          <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Severity to include</label>
-          <div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap;font-size:12px">
+          <label style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Severity to include</label>
+          <div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap;font-size:13px">
             ${[['critical','🔴 Critical'],['high','🟠 High'],['medium','🟡 Medium'],['low','🟢 Low']].map(([v,lab])=>`<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" ${_bugExportSeverities.has(v)?'checked':''} onchange="window._bugExportToggleSev('${v}',this.checked)"> ${lab}</label>`).join('')}
           </div>
         </div>
         <div>
-          <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Categories</label>
-          <div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap;font-size:12px">
+          <label style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Categories</label>
+          <div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap;font-size:13px">
             ${[['ui','UI'],['data','Data'],['permission','Permission'],['calculation','Calculation'],['missing-feature','Features'],['other','Other']].map(([v,lab])=>`<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" ${_bugExportCategories.has(v)?'checked':''} onchange="window._bugExportToggleCat('${v}',this.checked)"> ${lab}</label>`).join('')}
           </div>
         </div>
       </div>
       <div style="margin-bottom:14px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Generated Claude Code Prompt</label>
+          <label style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Generated Claude Code Prompt</label>
           <button class="btn-sm" onclick="window.copyExportText()">📋 Copy</button>
         </div>
-        <textarea id="export-output" rows="20" readonly style="width:100%;padding:12px;border:1px solid var(--border);border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--surface-2);color:var(--text);resize:vertical;line-height:1.5"></textarea>
+        <textarea id="export-output" rows="20" readonly style="width:100%;padding:12px;border:1px solid var(--border);border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:var(--surface-2);color:var(--text);resize:vertical;line-height:1.5"></textarea>
       </div>
-      <div style="background:var(--accent-warning-soft);padding:10px 12px;border-radius:6px;font-size:12px;color:var(--accent-warning);line-height:1.5">
+      <div style="background:var(--accent-warning-soft);padding:10px 12px;border-radius:6px;font-size:13px;color:var(--accent-warning);line-height:1.5">
         💡 <strong>How to use:</strong> Click "Copy & Mark as Exported", then paste into a fresh Claude Code session. Claude Code will fix the bugs in batches and auto-mark them as fixed in your bug tracker.
       </div>
     </div>
@@ -2071,9 +2071,9 @@ function _renderFixSessionsList(visible){
   const sessions=Object.values(sessionsMap).sort((a,b)=>(b.exportedAt||'').localeCompare(a.exportedAt||''));
   if(sessions.length===0){
     return`<div class="empty" style="padding:30px;text-align:center;color:var(--muted)">
-      <div style="font-size:32px;margin-bottom:8px">📦</div>
+      <div style="font-size:33px;margin-bottom:8px">📦</div>
       No fix sessions yet.<br>
-      <div style="font-size:12px;margin-top:6px">Click "Export for Fix" on the Bugs tab to create your first session.</div>
+      <div style="font-size:13px;margin-top:6px">Click "Export for Fix" on the Bugs tab to create your first session.</div>
     </div>`;
   }
   return sessions.map(s=>{
@@ -2086,12 +2086,12 @@ function _renderFixSessionsList(visible){
     return`<div class="card" style="padding:16px;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <div>
-          <div style="font-weight:600;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px">${s.id}</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:2px">Exported ${dt}${s.exportedBy?' · by '+s.exportedBy:''} · ${total} bug${total===1?'':'s'} · ${fixedByCC} fixed by Claude Code</div>
+          <div style="font-weight:600;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px">${s.id}</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:2px">Exported ${dt}${s.exportedBy?' · by '+s.exportedBy:''} · ${total} bug${total===1?'':'s'} · ${fixedByCC} fixed by Claude Code</div>
         </div>
         <div style="text-align:right">
-          <div style="font-size:24px;font-weight:700;color:${barColor}">${rate}%</div>
-          <div style="font-size:11px;color:var(--muted)">Fix rate</div>
+          <div style="font-size:25px;font-weight:700;color:${barColor}">${rate}%</div>
+          <div style="font-size:12px;color:var(--muted)">Fix rate</div>
         </div>
       </div>
       <div style="margin-top:10px;background:var(--surface-2);height:6px;border-radius:3px;overflow:hidden">
