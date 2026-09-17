@@ -118,10 +118,13 @@ function _boardsCanEdit(b){
   const me=_boardsMyEmail();
   return!!(me&&Array.isArray(b.sharedWith)&&b.sharedWith.indexOf(me)>-1);
 }
+// A file card with no thumbnail is a name row and two buttons, so it stays
+// compact. A PDF is not: see _boardsFitPdfCard.
+const _BOARDS_FILE_W=200,_BOARDS_FILE_H=110;
 function _boardsNewCard(type){
   const id='c'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
-  const w=type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?220:type==='todo'?240:type==='file'?200:type==='board'?200:170;
-  const h=type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?120:type==='link'?120:type==='file'?110:type==='todo'?170:type==='board'?104:100;
+  const w=type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?220:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?200:170;
+  const h=type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?120:type==='link'?120:type==='file'?_BOARDS_FILE_H:type==='todo'?170:type==='board'?104:100;
   const base={id,type,x:80,y:80,w,h};
   if(type==='image')base.imageUrl='';
   if(type==='text')base.text='';
@@ -5750,6 +5753,42 @@ function _boardsPdfThumbUrl(url){
 function _boardsIsImageFile(file){
   return!!(file&&file.type&&file.type.indexOf('image/')===0);
 }
+// A PDF card is sized to its first page. At the 200×110 file default the
+// name row and the Open/Download buttons took ~90px, leaving the page
+// thumbnail a ~20px strip — every attached brief had to be dragged open by
+// hand before anyone could see what it was.
+const _BOARDS_PDF_CARD_W=240;
+const _BOARDS_FILE_CHROME_H=92;   // header, name row and buttons, plus the 2px border — measured in Chrome
+function _boardsIsPdfFile(file){
+  return!!file&&(file.type==='application/pdf'||/\.pdf$/i.test(file.name||''));
+}
+// ratio = page height / width. With none (or nonsense) assume A4 portrait,
+// which is what these briefs and tech packs almost always are.
+function _boardsPdfCardH(ratio){
+  const r=ratio>0&&isFinite(ratio)?Math.min(Math.max(ratio,0.25),4):Math.SQRT2;
+  return Math.round((_BOARDS_PDF_CARD_W-2)*r)+_BOARDS_FILE_CHROME_H;
+}
+// Only a card nobody has sized is refitted: the plain file default, or the
+// page-shaped placeholder _boardsAddFiles gives a PDF while it uploads. A
+// card someone resized keeps the size they chose, even across a Replace.
+function _boardsFileCardUnsized(c){
+  return(c.w===_BOARDS_FILE_W&&c.h===_BOARDS_FILE_H)
+    ||(c.w===_BOARDS_PDF_CARD_W&&c.h===_boardsPdfCardH());
+}
+function _boardsFitPdfCard(c,res){
+  if(!_boardsFileCardUnsized(c))return;
+  // Cloudinary only rasterises a PDF stored as an IMAGE resource. One stored
+  // raw has no thumbnail, and a page-sized card around nothing is worse than
+  // the compact card, so it goes back to that.
+  if(_boardsPdfThumbUrl(c.fileUrl)&&c.fileUrl.indexOf('/image/upload/')>-1){
+    const pw=res&&+res.width,ph=res&&+res.height;
+    c.w=_BOARDS_PDF_CARD_W;
+    c.h=_boardsPdfCardH(pw>0&&ph>0?ph/pw:0);
+  }else{
+    c.w=_BOARDS_FILE_W;
+    c.h=_BOARDS_FILE_H;
+  }
+}
 
 window.boardsUploadToCard=async function(id,inputEl){
   const file=inputEl.files&&inputEl.files[0];
@@ -5775,6 +5814,9 @@ async function _boardsUploadFileToCard(cardId,file){
   const c=_editCards.find(x=>x.id===cardId);
   if(!c)return;
   c._uploading=true;
+  // The size as the upload started. If it differs when the upload lands,
+  // someone resized the card meanwhile and the fit leaves it alone.
+  const w0=c.w,h0=c.h;
   _boardsRenderSoon();
   try{
     const res=await _boardsUploadAny(file);
@@ -5787,6 +5829,7 @@ async function _boardsUploadFileToCard(cardId,file){
       card.fileUrl=res.secure_url;
       card.fileName=file.name||(res.original_filename||'file');
       card.fileSize=res.bytes||file.size||0;
+      if(card.w===w0&&card.h===h0)_boardsFitPdfCard(card,res);
     }
     delete card._uploading;
     _boardsRenderSoon();
@@ -5794,6 +5837,11 @@ async function _boardsUploadFileToCard(cardId,file){
   }catch(e){
     const card=_editCards.find(x=>x.id===cardId);
     if(card)delete card._uploading;
+    // A PDF placeholder that never got its file shrinks back to the empty
+    // file card rather than a page-sized "Click to choose a file".
+    if(card&&card.type==='file'&&!card.fileUrl&&card.w===w0&&card.h===h0&&_boardsFileCardUnsized(card)){
+      card.w=_BOARDS_FILE_W;card.h=_BOARDS_FILE_H;
+    }
     _boardsRenderSoon();
     showToast('Upload failed: '+(e.message||e),true);
   }
@@ -5806,14 +5854,22 @@ function _boardsAddFiles(files,at){
   if(!_boardsCanEdit(_editBoard)||!files.length)return;
   _boardsPushUndo();
   const perRow=Math.min(4,Math.ceil(Math.sqrt(files.length)));
-  const made=files.map((f,i)=>{
-    const isImg=_boardsIsImageFile(f);
-    const c=_boardsNewCard(isImg?'image':'file');
-    c.x=at.x+(i%perRow)*(c.w+16);
-    c.y=at.y+Math.floor(i/perRow)*(c.h+16);
+  const made=files.map(f=>{
+    const c=_boardsNewCard(_boardsIsImageFile(f)?'image':'file');
+    // A PDF starts at A4 page size, so the grid below leaves room for it and
+    // the card doesn't jump when the upload lands; _boardsFitPdfCard then
+    // corrects the height to the real page.
+    if(c.type==='file'&&_boardsIsPdfFile(f)){c.w=_BOARDS_PDF_CARD_W;c.h=_boardsPdfCardH();}
     c._uploading=true;
-    _editCards.push(c);
     return{card:c,file:f};
+  });
+  // One cell size for the whole drop, or a PDF beside a small card overlaps
+  // the next row.
+  const cellW=Math.max(...made.map(m=>m.card.w)),cellH=Math.max(...made.map(m=>m.card.h));
+  made.forEach(({card},i)=>{
+    card.x=at.x+(i%perRow)*(cellW+16);
+    card.y=at.y+Math.floor(i/perRow)*(cellH+16);
+    _editCards.push(card);
   });
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
@@ -7274,12 +7330,16 @@ window.boardsTrayRemove=function(i){
 function _boardsCardFromTrayItem(u,at){
   const type=u.kind==='image'?'image':u.kind==='file'?'file':u.kind==='link'?'link':'text';
   const c=_boardsNewCard(type);
-  c.x=at.x-c.w/2;c.y=at.y-c.h/2;
   if(u.name)c.name=u.name;
   if(type==='image')c.imageUrl=u.imageUrl||'';
-  else if(type==='file'){c.fileUrl=u.fileUrl||'';c.fileName=u.fileName||'';c.fileSize=u.fileSize||0;}
+  else if(type==='file'){
+    c.fileUrl=u.fileUrl||'';c.fileName=u.fileName||'';c.fileSize=u.fileSize||0;
+    // A tray item keeps no page size, so a PDF comes out A4-shaped.
+    if(c.fileUrl)_boardsFitPdfCard(c);
+  }
   else if(type==='link'){c.linkUrl=u.linkUrl||'';c.linkTitle=u.linkTitle||'';c.linkDesc=u.text||'';}
   else{c.text=u.text||'';if(u.rich)c.rich=u.rich;}
+  c.x=at.x-c.w/2;c.y=at.y-c.h/2;   // after sizing, so it centres on the drop
   return c;
 }
 // Returns true when it consumed the paste. Mirrors _boardsOnPaste's own

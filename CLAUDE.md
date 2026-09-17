@@ -2119,6 +2119,34 @@ card no longer navigates (ctrl/cmd-click still opens a tab). The right-click
 menu's Download and Open route through the same two functions as the card's
 own buttons, so the two cannot drift apart.
 
+### Mood Boards — a PDF card is sized to its page (Sept 2026)
+
+Reported with a screenshot: an attached production brief landed as the
+200×110 file default, and the name row plus Open/Download took ~90px of it,
+so the page-1 thumbnail was a **198×30 strip** (measured in Chrome with the
+real `css/main.css`). Every PDF had to be dragged open by hand.
+
+- **A PDF card is 240 wide and as tall as its page** (`_boardsFitPdfCard`,
+  `_boardsPdfCardH`). The ratio comes from Cloudinary's upload response
+  (`width`/`height`), with **A4 portrait** when it has none. The chrome
+  constant (`_BOARDS_FILE_CHROME_H` = 92) was **measured, not estimated**:
+  the first guess of 96 left the thumbnail 4px taller than the page.
+- **Only an unsized card is fitted** (`_boardsFileCardUnsized`): the file
+  default, or the A4 placeholder below. A card resized while its upload ran,
+  or resized before a Replace, keeps its size. The size at upload start is
+  captured before the `await` and compared after it.
+- **`_boardsAddFiles` gives a PDF its A4 size before uploading**, so the
+  "Uploading…" card doesn't jump, and the drop grid now steps by the
+  **largest** card in the drop — with per-card steps a PDF beside a small
+  card overlapped the next row.
+- **A PDF stored as a RAW resource goes back to the compact card.**
+  Cloudinary cannot rasterise raw files, and a page-sized card around a
+  thumbnail that will never load is worse than the default. A failed upload
+  shrinks the placeholder back the same way.
+- Dragging a PDF out of Unsorted gives it A4 size (a tray item stores no page size).
+- **Existing cards are not touched.** Resizing them on open would write to
+  every board that has one; drag the corner instead.
+
 ### Mood Boards — the QA retest (Sept 2026)
 
 Afnan retested the round above on the live site. Three fixes held (Line
