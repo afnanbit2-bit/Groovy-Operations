@@ -1797,8 +1797,14 @@ function _renderPatternLabel(doc, data) {
     _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 7, grey);
     doc.text('ARTICLES USING THIS BLOCK', M, y + 6); y += 9;
     _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 8, ink);
-    const artText = ((L.articles || []).join('   ') || '—') + (L.more ? '   +' + L.more + ' more' : '');
-    const artLines = doc.splitTextToSize(artText, W - 2 * M).slice(0, 3);
+    // ALL of L.articles, never truncated to a line count — this used to be
+    // .slice(0, 3) with a "+N more" appended by the caller, which sent
+    // whoever read the physical label to a screen for the rest of it. The
+    // measurement rows below already shrink to whatever vertical room is
+    // left (unchanged); a long article list costs those rows before it
+    // costs anything else on the label.
+    const artText = (L.articles || []).join('   ') || '—';
+    const artLines = doc.splitTextToSize(artText, W - 2 * M);
     doc.text(artLines, M, y + 6);
     y += 10 * artLines.length + 4;
     doc.setDrawColor(204, 204, 204); doc.line(M, y, W - M, y); y += 6;

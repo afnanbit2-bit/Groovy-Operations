@@ -2287,7 +2287,6 @@ window.ptnSeedPoms=async function(){
 // whose block, grid, home or article list changed since reads "reprint".
 
 const _PTN_LABEL_PAGE={w:360,h:432};      // 5 × 6 in at 72 pt/in, portrait
-const _PTN_LABEL_MAX_ARTICLES=12;
 let _ptnLabelSel=new Set();               // blocks ticked on the rack page
 
 function _ptnAppUrl(){try{return String(location.origin||'')+String(location.pathname||'/');}catch(e){return'/';}}
@@ -2312,7 +2311,16 @@ function _ptnLabelData(p,size){
   return{
     id:p.id,code:p.code,name:p.name||'',category:cat?cat.label:(p.category||''),fit:p.fit||'',
     size,sizes:p.sizes||[],hook:p.hook||null,slot:p.slot||null,
-    articles:arts.slice(0,_PTN_LABEL_MAX_ARTICLES),more:Math.max(0,arts.length-_PTN_LABEL_MAX_ARTICLES),
+    // ALL article codes, never capped — a sticker sent to the cutting table
+    // has to be trustworthy on its own; a "+N more" sent whoever reads it
+    // to a screen for the rest. The measurement rows below this DO still
+    // shrink to whatever room is left (unchanged, already graceful — "no
+    // measurements"/"+N more in the app" — see _renderPatternLabel), so a
+    // long article list costs measurement rows before it costs anything
+    // else. Known real max is 14 (Live In Pants' colourways); nothing this
+    // large has ever pushed that fallback text toward the QR box.
+    articles:arts,
+
     measurements,url,qr:_ptnQrMatrix(url),
     printedOn:new Date().toISOString().slice(0,10),
     gridUpdated:p.gridUpdatedAt?String(p.gridUpdatedAt).slice(0,10):'',

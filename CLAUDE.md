@@ -3309,9 +3309,24 @@ cutting what moved.
 
 **M4 (shipped): the 5 × 6 in label — one per SIZE in the bundle.** Each
 traced sheet gets its own sticker: block code (large), name, category, fit,
-**SIZE** (large), the bundle, **HOOK / SLOT**, the articles using it (12,
-"+N more"), **this size's** measurements, a **QR** to the block
-(`#pattern=<id>`), print date and when the grid last changed.
+**SIZE** (large), the bundle, **HOOK / SLOT**, **every article using it**,
+**this size's** measurements, a **QR** to the block (`#pattern=<id>`),
+print date and when the grid last changed.
+- **The article list is never capped (Sept 2026 fix).** It shipped with a
+  12-article limit and a "+N more" for the rest — Afnan: a sticker sent to
+  the cutting table has to be trustworthy on its own, not send whoever
+  reads it to a screen for the remainder. `_ptnLabelData` now returns
+  every code (`_PTN_LABEL_MAX_ARTICLES` removed) and `_renderPatternLabel`
+  wraps the full list to however many lines it needs, instead of
+  `.slice(0, 3)`. **The measurement rows below it still shrink to whatever
+  room is left** — unchanged, already graceful ("no measurements
+  recorded"/"+N more in the app") — so a long article list costs
+  measurement rows before it costs anything else on the label. Known real
+  max is 14 (Live In Pants' colourways, the flagship example this whole
+  module is built around); nothing this large has ever pushed that
+  fallback text toward the QR box, and no block anywhere near that size
+  has been reported. Verified by reverting each half and watching the
+  test fail (`got 12, expected 15`; the drawn text saying "more" again).
 
 - **The engine gained a custom page size** (`data.page = {w,h}` in points;
   `_customPage()` validates it) and the `pattern-label` variant

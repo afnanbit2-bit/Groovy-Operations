@@ -859,7 +859,7 @@ module.exports=async function(){
   }
   const LBLOCK=Object.assign({},BLOCK,{hook:3,slot:2,fit:'Relaxed',grid:{M:{waist_relaxed:15,hip:22.5},L:{waist_relaxed:16}},gridUpdatedAt:'2026-09-17T10:00:00Z',updatedAt:'2026-09-17T10:00:00Z'});
 
-  s.section('M4 · label data — one size, this size\'s numbers, capped articles, a QR to the block');
+  s.section('M4 · label data — one size, this size\'s numbers, EVERY article, a QR to the block');
   {
     const st=new Map([['patterns/ptn_0007',Object.assign({},LBLOCK)]]);_seedPoms(st);
     for(let i=0;i<15;i++)st.set('articles/GST0'+(60+i),{code:'GST0'+(60+i),name:'Live in Pants | '+i,brand:'groovy',category:'GST',needsPattern:true,active:true,patternId:'ptn_0007',updatedAt:'2026-09-17T09:00:00Z'});
@@ -868,7 +868,12 @@ module.exports=async function(){
     await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');await a.run('loadPatternsPoms()');
     const L=a.run("_ptnLabelData(_ptnBlock('ptn_0007'),'M')");
     s.eq('code, name, size, home',J([L.code,L.name,L.size,L.hook,L.slot]),J(['PTN-0007','Live In Pants block','M',3,2]));
-    s.eq('articles capped at 12 with the rest counted',J([L.articles.length,L.more]),J([12,3]));
+    // Afnan: a "+N more" sends whoever reads the physical label back to a
+    // screen for the rest of it — the sticker has to be trustworthy on
+    // its own. All 15 articles, never capped, and no "more" field at all.
+    s.eq('every article is on the label, none capped, sorted',L.articles.length,15);
+    s.ok('sorted by code',L.articles.every((c,i,arr)=>!i||arr[i-1]<c));
+    s.eq('no cap left to report — the field is gone',L.more,undefined);
     s.eq('only THIS size\'s filled measurements, as inch strings',J(L.measurements),J([{label:'Waist (relaxed)',value:'15'},{label:'Hip',value:'22.5'}]));
     s.eq('size L has one',a.run("_ptnLabelData(_ptnBlock('ptn_0007'),'L').measurements.length"),1);
     s.ok('the URL is the app + #pattern=<id>',/\/#pattern=ptn_0007$/.test(L.url));
@@ -942,15 +947,25 @@ module.exports=async function(){
         line(){},rect(x,y,w,h,st){calls.rect.push([x,y,w,h,st||'']);},
         text(t,x,y,o){calls.text.push({t:Array.isArray(t)?t.join('|'):String(t),x,y,align:o&&o.align});},
         splitTextToSize(t,w){return String(t).split('\\n');},__groovyFonts:{}};}`);
-      const labels=[{code:'PTN-0007',name:'Live In Pants block',category:'Sweatpants & Trousers',fit:'Relaxed',size:'M',sizes:['S','M','L'],hook:3,slot:2,articles:['GST060','GST061'],more:0,measurements:[{label:'Waist (relaxed)',value:'15'},{label:'Hip',value:'22.5'}],qr:[[true,false],[false,true]],url:'https://x/#pattern=ptn_0007',printedOn:'2026-09-17',gridUpdated:'2026-09-17',tol:0.5},
-        {code:'PTN-0007',name:'Live In Pants block',category:'',fit:'',size:'L',sizes:['S','M','L'],hook:null,slot:null,articles:[],more:0,measurements:[],qr:null,url:'',printedOn:'',gridUpdated:'',tol:0.5}];
+      const MANY=Array.from({length:16},(_,i)=>'GST0'+(60+i));
+      const labels=[{code:'PTN-0007',name:'Live In Pants block',category:'Sweatpants & Trousers',fit:'Relaxed',size:'M',sizes:['S','M','L'],hook:3,slot:2,articles:['GST060','GST061'],measurements:[{label:'Waist (relaxed)',value:'15'},{label:'Hip',value:'22.5'}],qr:[[true,false],[false,true]],url:'https://x/#pattern=ptn_0007',printedOn:'2026-09-17',gridUpdated:'2026-09-17',tol:0.5},
+        {code:'PTN-0007',name:'Live In Pants block',category:'',fit:'',size:'L',sizes:['S','M','L'],hook:null,slot:null,articles:[],measurements:[],qr:null,url:'',printedOn:'',gridUpdated:'',tol:0.5},
+        {code:'PTN-0009',name:'Wide block',category:'',fit:'',size:'M',sizes:['M'],hook:null,slot:null,articles:MANY,measurements:[],qr:null,url:'',printedOn:'',gridUpdated:'',tol:0.5}];
       const calls=eng.run('(function(){const d=fakeDoc();_renderPatternLabel(d,{labels:'+J(labels)+'});return d.calls;})()');
-      s.eq('one page per label',calls.pages,2);
+      s.eq('one page per label',calls.pages,3);
       const texts=calls.text.map(t=>t.t);
       s.ok('the code, the size, the home and the numbers are drawn',texts.includes('PTN-0007')&&texts.includes('M')&&texts.some(t=>/HOOK 3/.test(t))&&texts.includes('15')&&texts.includes('22.5'));
       s.ok('the second label says NOT ON A HOOK and no measurements',texts.some(t=>/NOT ON A HOOK/.test(t))&&texts.some(t=>/no measurements recorded/.test(t)));
       s.ok('the QR is drawn as filled squares inside a white quiet zone',calls.rect.some(r=>r[4]==='F'&&r[2]===84)&&calls.rect.filter(r=>r[4]==='F'&&r[2]<84).length===2);
       s.ok('the size box is drawn top-right',calls.rect.some(r=>r[2]===96&&r[3]===46&&r[0]>200));
+      // Afnan: the printed label should never say "+N more" for articles —
+      // every article the block carries must be on the sticker itself. This
+      // third label has no measurements, so the ONLY thing that could
+      // legitimately say "more" is the (untouched, still-truncated)
+      // measurements fallback — with none to show, it does not fire either,
+      // which is what makes this a clean test of the article list alone.
+      s.ok('ALL 16 articles are drawn, none held back',MANY.every(code=>texts.some(t=>t.indexOf(code)>-1)));
+      s.ok('…and nothing on the label says "more"',!texts.some(t=>/more/i.test(t)));
       s.ok('everything lands inside the 360×432 page',calls.text.every(t=>t.x>=0&&t.x<=360&&t.y>=0&&t.y<=432));
     }
   }
