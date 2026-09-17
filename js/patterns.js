@@ -1147,11 +1147,11 @@ function _ptnSyncLineHTML(){
   if(!_ptnShopifyLoaded)return'';
   if(_ptnShopifyFailed)return`<div class="board-load-warn" id="ptn-shop-warn" style="margin-bottom:12px">The Shopify rollup (<code>shopify_articles</code>) did not load: ${_ptnEsc(_ptnShopifyFailed)}. Liveness is unknown; the registry still works. <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`;
   const n=shopifyArticles?Object.keys(shopifyArticles).length:0;
-  if(!n)return`<div style="font-size:12px;color:var(--muted);margin-bottom:12px" id="ptn-shop-none">No Shopify rollup yet — the catalog sync writes it daily at 9am PKT. It can be run now: <code>/.netlify/functions/shopify-catalog-sync</code>.</div>`;
+  if(!n)return`<div style="font-size:12px;color:var(--muted);margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap" id="ptn-shop-none"><span>No Shopify rollup yet — the catalog sync writes it daily at 9am PKT.</span>${_ptnSyncNowBtnHTML()}</div>`;
   const d=_ptnSyncDate();
   const ageH=d?Math.round((Date.now()-d.getTime())/36e5):null;
   const stale=ageH!=null&&ageH>30;
-  return`<div style="font-size:12px;color:var(--muted);margin-bottom:12px" id="ptn-shop-line">Shopify copy: <b>${n}</b> article codes${d?` · synced ${_ptnEsc(d.toLocaleString('en-GB'))}`:''}${ageH!=null?` (${ageH}h ago${stale?' — <b style="color:var(--accent-warning)">older than a day</b>':''})`:''} · read-only.</div>`;
+  return`<div style="font-size:12px;color:var(--muted);margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap" id="ptn-shop-line"><span>Shopify copy: <b>${n}</b> article codes${d?` · synced ${_ptnEsc(d.toLocaleString('en-GB'))}`:''}${ageH!=null?` (${ageH}h ago${stale?' — <b style="color:var(--accent-warning)">older than a day</b>':''})`:''} · read-only.</span>${_ptnSyncNowBtnHTML()}</div>`;
 }
 function _ptnShopifyCellHTML(a){
   if(!_ptnShopifyLoaded)return'';
@@ -1176,7 +1176,7 @@ function _ptnReconcileHTML(){
   <div class="page-head" style="margin-bottom:10px"><div><h2 style="margin:0">Reconcile with Shopify</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">The registry beside the store's SKUs. Fixes here write to the registry only — Shopify is never written from this app.</div></div></div>`;
   if(_ptnLoadErr)return head+`<div class="board-load-error">The registry did not load: ${_ptnEsc(_ptnLoadErr)} <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`;
   if(_ptnShopifyFailed)return head+`<div class="board-load-error" id="ptn-rec-failed"><div style="font-weight:700;margin-bottom:4px">The Shopify rollup did not load</div><div style="font-size:12px;color:var(--muted)">shopify_articles: ${_ptnEsc(_ptnShopifyFailed)}. If that says <em>missing or insufficient permissions</em>, republish <code>firestore.rules</code>.</div><button class="btn-sm" style="margin-top:10px" onclick="window.ptnRetryLoad()">Retry</button></div>`;
-  if(!shopifyArticles||!Object.keys(shopifyArticles).length)return head+`<div class="empty" id="ptn-rec-none">No Shopify rollup yet. The catalog sync writes <code>shopify_articles</code> daily at 9am PKT; run it now at <code>/.netlify/functions/shopify-catalog-sync</code>, then Retry. <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`;
+  if(!shopifyArticles||!Object.keys(shopifyArticles).length)return head+`<div class="empty" id="ptn-rec-none">No Shopify rollup yet. The catalog sync writes <code>shopify_articles</code> daily at 9am PKT — or run it now. ${_ptnSyncNowBtnHTML()} <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`;
   const r=_ptnReconcile();
   const open=r.unkeyed.filter(u=>!u.linked);
   const tabs=[
@@ -1316,6 +1316,67 @@ window.ptnExportTac=function(kind){
   showToast('Exported the TAC list ('+rows.length+' articles) as '+(kind==='xlsx'?'Excel':'PDF')+'.');
   _ptnLog('TAC List Exported',kind+' · '+rows.length+' articles');
 };
+
+// ── Run the catalog sync now ──────────────────────────────────────────────
+// The scheduled function refuses direct HTTP (Netlify answers 403 — seen
+// from Afnan's browser), so a separate BACKGROUND function runs the same
+// handler behind a verified ID token. It answers 202 at once and says
+// nothing else, so the outcome is read by polling the sync's own meta
+// document until last_run_at moves past the moment we clicked.
+const _PTN_SYNC_ENDPOINT='/.netlify/functions/pattern-sync-now-background';
+let _ptnSyncRun=null;   // {startedAt, status:'starting'|'running'|'done'|'failed'|'timeout', msg}
+function _ptnSyncNowBtnHTML(){
+  if(!_canManagePatterns())return'';
+  const r=_ptnSyncRun;
+  if(r&&(r.status==='starting'||r.status==='running'))return`<span id="ptn-sync-status" style="font-size:12px">Sync running… ${_ptnEsc(r.msg||'')}</span>`;
+  return`<button class="btn-sm" id="ptn-sync-now" onclick="window.ptnRunSyncNow()">Run sync now</button>${r&&r.msg?`<span id="ptn-sync-status" style="font-size:12px;color:${r.status==='done'?'var(--green)':'var(--accent-urgent)'}">${_ptnEsc(r.msg)}</span>`:''}`;
+}
+function _ptnRepaintCurrent(){
+  if(currentPage==='pattern-reconcile')_ptnRecRepaint();else if(currentPage==='pattern-hub')_ptnRepaint();
+}
+async function _ptnReadSyncMeta(){
+  try{const s=await getDoc(doc(db,'shopify_sync_meta','catalog_sync'));const ex=s&&typeof s.exists==='function'?s.exists():false;return ex?s.data():null;}catch(e){return null;}
+}
+function _ptnMetaMs(v){try{if(!v)return 0;if(typeof v.toDate==='function')return v.toDate().getTime();const d=new Date(v);return isNaN(d)?0:d.getTime();}catch(e){return 0;}}
+let _ptnSyncPollMs=5000;   // a test shortens it
+window.ptnRunSyncNow=async function(){
+  if(!_canManagePatterns())return;
+  if(_ptnSyncRun&&(_ptnSyncRun.status==='starting'||_ptnSyncRun.status==='running'))return;
+  if(typeof auth==='undefined'||!auth||!auth.currentUser){showToast('You are signed out — sign in again.',true);return;}
+  const startedAt=Date.now();
+  _ptnSyncRun={startedAt,status:'starting',msg:'asking Netlify…'};_ptnRepaintCurrent();
+  // What the sync's record said BEFORE we asked, so a stale success can
+  // never be mistaken for this run.
+  const before=await _ptnReadSyncMeta();
+  const seenAt=(before?_ptnMetaMs(before.last_run_at):0);
+  let idToken;
+  try{idToken=await auth.currentUser.getIdToken();}catch(e){_ptnSyncRun={status:'failed',msg:'Could not get your sign-in token.'};_ptnRepaintCurrent();return;}
+  try{
+    const res=await fetch(_PTN_SYNC_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken})});
+    if(!(res.status===202||res.ok)){const d=await res.json().catch(()=>({}));throw new Error(d.error||('Netlify answered '+res.status));}
+  }catch(e){_ptnSyncRun={status:'failed',msg:'Could not start the sync: '+(e.message||e)};_ptnRepaintCurrent();showToast(_ptnSyncRun.msg,true);return;}
+  _ptnSyncRun={startedAt,status:'running',msg:'started — usually 10–60 s'};_ptnRepaintCurrent();
+  _ptnLog('Catalog Sync Run',_ptnFmtNow());
+  // Poll the sync's own record until last_run_at moves past what we saw.
+  // A run that never lands in 4 minutes is reported, never left spinning.
+  const deadline=startedAt+240000;
+  const tick=async()=>{
+    const meta=await _ptnReadSyncMeta();
+    const ranAt=meta?_ptnMetaMs(meta.last_run_at):0;
+    const landed=meta&&ranAt>seenAt&&(meta.last_status==='success'||meta.last_status==='error');
+    if(landed){
+      if(meta.last_status==='success'){
+        _ptnSyncRun={status:'done',msg:'Done — '+(meta.articles_written!=null?meta.articles_written+' article codes, '+(meta.unkeyed_products||0)+' without a usable SKU, '+(meta.multi_code_products||0)+' with two codes':'synced')};
+        _ptnShopifyLoaded=false;await loadPatternsShopify();
+      }else _ptnSyncRun={status:'failed',msg:'The sync failed: '+(meta.last_error||'see the Netlify function log')};
+      _ptnRepaintCurrent();return;
+    }
+    if(Date.now()>deadline){_ptnSyncRun={status:'timeout',msg:'No result after 4 minutes — check the Netlify function log, then Retry.'};_ptnRepaintCurrent();return;}
+    setTimeout(tick,_ptnSyncPollMs);
+  };
+  setTimeout(tick,_ptnSyncPollMs);
+};
+function _ptnFmtNow(){try{return new Date().toLocaleString('en-GB');}catch(e){return '';}}
 
 // ── Router — every pattern-* page comes through here ──────────────────────
 function ptnRenderPage(id){

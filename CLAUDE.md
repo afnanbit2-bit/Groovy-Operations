@@ -3248,6 +3248,14 @@ variants — the Store read-quota lesson, applied before it could bite.
   missing rollup says how to run the sync, a refused one names the
   collection and the republish.
 - **`firestore.rules` changed again — `shopify_articles` (read-only).**
+- **"Run sync now"** (hub and reconcile page, admins only) →
+  `netlify/functions/pattern-sync-now-background.js`. The scheduled sync
+  refuses direct HTTP with a 403 — a claim in this file said otherwise and
+  cost Afnan a dead link — so the button POSTs an ID token to an unscheduled
+  background wrapper that runs the same handler, then polls the sync's meta
+  doc for the result (never left spinning: 4-minute timeout). Netlify
+  ignores a background function's return value, so a refused caller sees
+  nothing — the UI gate is what they see; the server gate is the boundary.
 
 **M0 (shipped): the article registry — `js/patterns.js`, page `pattern-hub`.**
 The TAC list (Ammar's `TAC List Complete.docx`, verified against Shopify on
@@ -3684,14 +3692,21 @@ client-side.
     (9am PKT)** in `netlify.toml`. **Since Sept 2026 it also writes the
     Pattern Hub's `shopify_articles` rollup + `shopify_sync_meta/
     articles_rollup`, and `image_url` on each variant** (see "Pattern Hub").
-    It — this line used to say "NOT scheduled",
-    which was wrong (verified against `netlify.toml`, Sept 2026). It is ALSO
-    a plain HTTP function: no auth header (handler ignores the event), so a
-    GET runs it on demand. **`shopify_products` is therefore only as fresh
-    as 9am PKT today** unless someone triggers it — anything that reads the
+    **It CANNOT be run by opening its URL.** This file used to say a GET
+    runs it on demand; that was never verified and it is false — Netlify
+    answers a direct HTTP request to a *scheduled* function with **403**
+    (seen in Afnan's browser, 17 Sept 2026; the same is true of every
+    function with a `schedule` in `netlify.toml`). **To run it now: the
+    "Run sync now" button on the Pattern Hub**, which POSTs to
+    `pattern-sync-now-background.js` — a separate, UNscheduled background
+    function that verifies the caller's ID token against
+    `PATTERN_ADMIN_EMAILS` (= `isPatternAdmin()`) and then calls this
+    handler. It answers 202 at once, so the button polls
+    `shopify_sync_meta/catalog_sync.last_run_at` and reads the summary from
+    there. **`shopify_products` is therefore only as fresh as 9am PKT
+    today** unless someone presses that button — anything that reads the
     catalog (the Marketing product picker, M2) is "current as of this
-    morning", not live. Trigger:
-    `https://groovyoperations.netlify.app/.netlify/functions/shopify-catalog-sync`.
+    morning", not live.
     Fetches all products (`status=active,draft,archived`) and writes **one
     doc per variant** to `shopify_products/{variant.id}` via
     `batch.set(...)` **without `{merge:true}`** → a re-sync **fully

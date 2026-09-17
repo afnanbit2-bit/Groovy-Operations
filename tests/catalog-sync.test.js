@@ -134,6 +134,40 @@ module.exports=async function(){
   s.eq('meta code count matches',meta.codes,6);
   s.ok('rollup docs and deletes went through batches',state.batches.length>=2);
 
+  s.section('run it now — pattern-sync-now-background');
+  {
+    // The scheduled function refuses HTTP (Netlify 403). This wrapper runs
+    // the same handler behind a verified ID token. Loaded through the same
+    // firebase-admin stub, with an auth() that knows three tokens.
+    const st2={docs:{},log:[],batches:[],calls:[],tokens:{t_afnan:{uid:'u1',email:'afnan@groovy.op'},t_mustafa:{uid:'u3',email:'mustafa@groovy.op'},t_arfat:{uid:'u4',email:'arfat@groovy.op'}}};
+    const admin2=makeAdmin(st2);admin2.auth=()=>({verifyIdToken:async t=>{if(!st2.tokens[t])throw new Error('bad');return st2.tokens[t];}});
+    const orig=Module._load;
+    Module._load=function(req,...rest){if(req==='firebase-admin')return admin2;return orig.call(this,req,...rest);};
+    const dir=path.join(ROOT,'netlify','functions');
+    ['pattern-sync-now-background.js','shopify-catalog-sync.js'].forEach(f=>delete require.cache[path.join(dir,f)]);
+    let now;try{now=require(path.join(dir,'pattern-sync-now-background.js'));}finally{Module._load=orig;}
+    const saved2={};envKeys.forEach(k=>{saved2[k]=process.env[k];process.env[k]=k==='FIREBASE_SERVICE_ACCOUNT'?'{}':'x';});
+    const savedFetch2=global.fetch;global.fetch=shopifyFetch(st2);
+    const call=b=>now.handler({httpMethod:'POST',body:JSON.stringify(b)});
+    try{
+      s.eq('GET is refused',(await now.handler({httpMethod:'GET'})).statusCode,405);
+      s.eq('no token → 400',(await call({})).statusCode,400);
+      s.eq('a bad token → 401',(await call({idToken:'nope'})).statusCode,401);
+      s.eq('Arfat (manager, not a pattern admin) → 403',(await call({idToken:'t_arfat'})).statusCode,403);
+      s.eq('…and nothing was synced for any of those',Object.keys(st2.docs).length,0);
+      const r=await call({idToken:'t_mustafa'});
+      s.eq('Mustafa runs it',r.statusCode,200);
+      const b2=JSON.parse(r.body);
+      s.eq('the response is the sync summary plus who ran it',J([b2.ran_by,b2.products_fetched,b2.articles_written]),J(['mustafa@groovy.op',8,6]));
+      s.ok('and the rollup landed',!!st2.docs['shopify_articles/GST062']&&!!st2.docs['shopify_sync_meta/catalog_sync']);
+    }finally{global.fetch=savedFetch2;envKeys.forEach(k=>{if(saved2[k]===undefined)delete process.env[k];else process.env[k]=saved2[k];});}
+    const rules=require('fs').readFileSync(path.join(ROOT,'firestore.rules'),'utf8');
+    const owners=(/function isOwner\(\)\s*\{[^}]*\[([^\]]*)\]/.exec(rules)||[,''])[1].match(/'[^']+'/g).map(x=>x.replace(/'/g,''));
+    const mustafa=(/function isMustafa\(\)\s*\{[^}]*==\s*'([^']+)'/.exec(rules)||[])[1];
+    s.eq('PATTERN_ADMIN_EMAILS mirrors isPatternAdmin() exactly',J(now.PATTERN_ADMIN_EMAILS.slice().sort()),J(owners.concat([mustafa]).sort()));
+    s.ok('the sync is never scheduled twice: the wrapper has no schedule in netlify.toml',!/functions\."pattern-sync-now-background"/.test(require('fs').readFileSync(path.join(ROOT,'netlify.toml'),'utf8')));
+  }
+
   s.section('SKU grammar');
   s.eq('GST073-XS → GST073 / XS',J(fn._test.parseArticleSku('GST073-XS')),J({code:'GST073',size:'XS'}));
   s.eq('GD007-28 → waist size',J(fn._test.parseArticleSku('gd007-28')),J({code:'GD007',size:'28'}));

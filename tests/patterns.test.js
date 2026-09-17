@@ -442,6 +442,40 @@ module.exports=async function(){
     s.eq('Arfat can do none of it',meta.tx+a.state.writes.length,0);
   }
 
+  s.section('M1 · Run sync now — the scheduled function refuses HTTP, the button does not');
+  {
+    s.ok('the dead URL hint is gone from the module',!/run it now at <code>\/\.netlify\/functions\/shopify-catalog-sync/.test(read('js/patterns.js')));
+    const a0=app({session:SESS.arfat});
+    s.eq('Arfat gets no button',a0.run('_ptnSyncNowBtnHTML()'),'');
+    // an admin: a scripted fetch answers 202; the sync meta moves from an old
+    // run to a fresh success on the second poll
+    let polls=0;const posts=[];
+    const meta=()=>({last_run_at:polls>=2?'2026-09-17T15:00:00Z':'2026-09-17T04:00:00Z',last_success_at:'2026-09-17T15:00:00Z',last_status:'success',articles_written:336,unkeyed_products:11,multi_code_products:1});
+    const a=app({globals:{
+      auth:{currentUser:{getIdToken:async()=>'tok-afnan'}},
+      fetch:async(url,init)=>{posts.push({url,body:JSON.parse(init.body)});return{status:202,ok:true,json:async()=>({})};},
+      getDoc:async r=>{if(r&&r.key==='shopify_sync_meta/catalog_sync'){polls++;return{exists:()=>true,data:meta};}return{exists:()=>false,data:()=>({})};},
+      doc:(db,col,id)=>({col,id,key:col+'/'+id}),
+      collection:(db,name)=>({name})
+    }});
+    a.run('_ptnSyncPollMs=15');
+    s.ok('an admin sees the button',/ptn-sync-now/.test(a.run('_ptnSyncNowBtnHTML()')));
+    await a.run('window.ptnRunSyncNow()');
+    s.eq('it POSTs the ID token to the background wrapper, not to the scheduled function',J([posts[0].url,posts[0].body.idToken]),J(['/.netlify/functions/pattern-sync-now-background','tok-afnan']));
+    s.eq('…and shows running',a.run('_ptnSyncRun.status'),'running');
+    await new Promise(r=>setTimeout(r,120));
+    s.eq('a fresh success in the meta doc ends the run as done',a.run('_ptnSyncRun.status'),'done');
+    s.ok('…with the three numbers in the message',/336 article codes, 11 without a usable SKU, 1 with two codes/.test(a.run('_ptnSyncRun.msg')));
+    s.ok('the stale (pre-click) success was not mistaken for ours',polls>=2);
+    s.ok('the rollup was reloaded',a.run('_ptnShopifyLoaded')===true);
+  }
+  {
+    const a=app({globals:{auth:{currentUser:{getIdToken:async()=>'t'}},fetch:async()=>({status:403,ok:false,json:async()=>({error:'Your account cannot run the catalog sync.'})})}});
+    await a.run('window.ptnRunSyncNow()');
+    s.eq('a refused start is reported, not spun',a.run('_ptnSyncRun.status'),'failed');
+    s.ok('…with the server\'s reason',/cannot run the catalog sync/.test(a.run('_ptnSyncRun.msg')));
+  }
+
   s.section('M1 · rollup missing or refused');
   {
     const a=app({globals:{collection:(db,name)=>({name}),getDocs:async ref=>{if(ref.name==='shopify_articles')throw new Error('Missing or insufficient permissions');return{docs:[]};}}});
@@ -453,7 +487,7 @@ module.exports=async function(){
   {
     const a=app();
     await a.run('loadPatternsData()');await a.run('loadPatternsShopify()');
-    s.ok('no rollup yet → the page says how to run the sync',/ptn-rec-none/.test(a.run('renderPatternReconcile()'))&&/shopify-catalog-sync/.test(a.run('renderPatternReconcile()')));
+    s.ok('no rollup yet → the page offers Run sync now (not a URL that 403s)',/ptn-rec-none/.test(a.run('renderPatternReconcile()'))&&/ptn-sync-now/.test(a.run('renderPatternReconcile()'))&&!/functions\/shopify-catalog-sync/.test(a.run('renderPatternReconcile()')));
     s.ok('…and the hub says so too',/ptn-shop-none/.test(a.run('renderPatternHub()')));
   }
 
