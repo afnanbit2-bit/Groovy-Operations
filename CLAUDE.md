@@ -4117,6 +4117,18 @@ the whole thing into the Firebase Console in one paste. Read the live file
 fresh each time rather than reconstructing it from memory or from an older
 turn in the conversation.
 
+**Republished by Afnan on 17 Sept 2026, after Pattern Hub M2** (reported
+in-session, "done"), from the repo file at
+`md5 1b642c511ac5c9512180c4d8386f2e16` (LF line endings) — `git log
+--oneline -1 -- firestore.rules` is `db8aefd` (Pattern Hub M2: `patterns`,
+`pattern_slots`; the same paste also carried M0's `tac_categories`/
+`articles` and M1's `shopify_articles`, which had been waiting). **No
+republish is outstanding as of that commit**; this supersedes every entry
+below, including the "REPUBLISH OUTSTANDING" one. Nothing in it was for
+Sami — the CSR lead needed no rules change (verified: every collection his
+pages read is `signedIn()`). The Console's acceptance was reported by the
+human; it could not be checked from a session.
+
 **No republish outstanding as of 14 Sept 2026.** Afnan republished at
 1:38 pm that day (confirmed from the Console's own rules history), from the
 repo file at `md5 e922310a963b373ba41d6dd434d276b8` — the version carrying
@@ -4148,7 +4160,7 @@ firestore.rules` is the PR #71 commit (`creators` delete widened from
 creators). **No republish is outstanding as of that commit**; this
 supersedes the entries below.
 
-**REPUBLISH OUTSTANDING (17 Sept 2026): Pattern Hub M0–M2.** Afnan
+**(Resolved 17 Sept 2026 — see the `db8aefd` entry above.) REPUBLISH OUTSTANDING (17 Sept 2026): Pattern Hub M0–M2.** Afnan
 published the M0 file (the seed worked) but not the M1 one — his screenshot
 showed `shopify_articles` refused — and M2 adds `patterns` and
 `pattern_slots`. One paste of the current file covers all of it. Check `git log --oneline -1 --
