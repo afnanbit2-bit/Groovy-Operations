@@ -49,22 +49,26 @@ function _fabBusyStart(label){
 }
 function _fabBusyEnd(){_fabBusy=false;clearTimeout(_fabBusyTimer);_fabShowBusy(false);}
 
+// The tabs that ENTER data. A view-only account (the CSR Team Lead) sees the
+// rest; asking for one of these lands on Stock instead.
+const _FAB_WRITE_TABS=['fabricin','issue','drawstring','returns'];
+function _fabReadOnly(){return typeof isCsrLead==='function'&&isCsrLead();}
 function renderFabricPage(){
-  return`<div class="page-head"><div class="page-title">Fabric Inventory</div></div>
+  const tabs=[['stock','Stock'],['fabricin','Fabric In'],['issue','Issue'],['registry','Issue Registry'],
+    ['drawstring','Drawstrings'],['returns','Returns'],['reports','Reports'],['log','Log']]
+    .filter(([k])=>!(_fabReadOnly()&&_FAB_WRITE_TABS.includes(k)));
+  return`<div class="page-head"><div class="page-title">Fabric Inventory</div>${_fabReadOnly()?'<div class="page-sub">View only</div>':''}</div>
   <div class="gp-tabs">
-    <button class="gp-tab" id="fabtab-stock" onclick="window.switchFabTab('stock')">Stock</button>
-    <button class="gp-tab" id="fabtab-fabricin" onclick="window.switchFabTab('fabricin')">Fabric In</button>
-    <button class="gp-tab" id="fabtab-issue" onclick="window.switchFabTab('issue')">Issue</button>
-    <button class="gp-tab" id="fabtab-registry" onclick="window.switchFabTab('registry')">Issue Registry</button>
-    <button class="gp-tab" id="fabtab-drawstring" onclick="window.switchFabTab('drawstring')">Drawstrings</button>
-    <button class="gp-tab" id="fabtab-returns" onclick="window.switchFabTab('returns')">Returns</button>
-    <button class="gp-tab" id="fabtab-reports" onclick="window.switchFabTab('reports')">Reports</button>
-    <button class="gp-tab" id="fabtab-log" onclick="window.switchFabTab('log')">Log</button>
+    ${tabs.map(([k,l])=>`<button class="gp-tab" id="fabtab-${k}" onclick="window.switchFabTab('${k}')">${l}</button>`).join('\n    ')}
   </div>
   <div id="fab-tab-content"></div>`;
 }
 
 window.switchFabTab=function(tab){
+  if(_fabReadOnly()&&_FAB_WRITE_TABS.includes(tab)){
+    if(tab!=='stock'&&typeof showToast==='function')showToast('View only — fabric entries are made by the fabric team.',true);
+    tab='stock';
+  }
   fabActiveTab=tab;
   ['stock','fabricin','issue','registry','drawstring','returns','reports','log'].forEach(t=>{
     const b=document.getElementById('fabtab-'+t);

@@ -26,7 +26,24 @@ const USER_DEFS=[
   // Marketing module (Sept 2026). Keep isContentOpsLead() in
   // firestore.rules in step with this email.
   {u:'daniyal',email:'daniyal@groovy.op',name:'Daniyal Tufail',role:'creator_content_ops_lead',title:'Creator & Content Operations Lead',canPO:false,canFabric:false,stages:[]},
+  // Customer support (Sept 2026). A scoped, VIEW-ONLY role — see
+  // CSR_LEAD_PAGES below and "CSR Team Lead" in CLAUDE.md.
+  {u:'sami',   email:'sami@groovy.op',   name:'Sami',   role:'csr_lead', title:'CSR Team Lead',     canPO:false,canFabric:true,  stages:[]},
 ];
+
+// ── CSR Team Lead (Sept 2026) ──
+// Customer support needs to SEE production, QC outcomes, B-stock, fabric and
+// stock levels to answer customers — not to change them. The role is scoped
+// to exactly these pages in showPage (js/shared.js), and QC Disposition and
+// Fabric Inventory hide their write actions for it (B-Stock already limits
+// boxing and transfers to packing/owners/managers). Creative Hub children
+// (notes, boards) are part of the hub. Firestore rules are unchanged: every
+// collection these pages touch is already `signedIn()`, so this — like the
+// other role scopes in this app — is an app-layer limit, not a rules one.
+const CSR_LEAD_ROLE='csr_lead';
+const CSR_LEAD_PAGES=['dashboard','qc-disposition','bstock','fabric-inventory','shopify-intel',
+  'creative-hub','notes','note-detail','boards','boards-all','board-canvas'];
+function isCsrLead(){ return !!(session && session.role===CSR_LEAD_ROLE); }
 
 // ── The Sales Team ▸ Marketing (Sept 2026) ──
 // Access keys off ROLE, never a name: whoever holds creator_content_ops_lead

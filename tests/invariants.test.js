@@ -149,8 +149,9 @@ module.exports=function(){
   const calls=GATE_FILES
     .map(f=>(stripComments(read(f)).match(/(?<!function\s)_canSeeCreativeHub\(\)/g)||[]).length)
     .reduce((a,b)=>a+b,0);
-  // 4 in shared.js + 1 in hrm.js + 1 in boards.js.
-  s.eq('every Creative Hub route goes through the one helper',calls,6);
+  // 6 in shared.js (the four nav pushes, plus the CSR Team Lead's sidebar and
+  // phone More sheet) + 1 in hrm.js + 1 in boards.js.
+  s.eq('every Creative Hub route goes through the one helper',calls,8);
   const sharedSrc=stripComments(read('js/shared.js'));
   s.ok('and the helper is defined in js/shared.js, which loads first',
     /function\s+_canSeeCreativeHub\s*\(/.test(sharedSrc));
@@ -158,7 +159,7 @@ module.exports=function(){
   // decision, and this is what makes it show up in a diff review.
   const hubList=(sharedSrc.match(/_CREATIVE_HUB_USERS\s*=\s*\[([^\]]*)\]/)||[])[1]||'';
   const hubNames=(hubList.match(/'([^']+)'/g)||[]).map(x=>x.replace(/'/g,''));
-  s.eq('the Creative Hub audience is afnan, ammar',hubNames.join(','),'afnan,ammar');
+  s.eq('the Creative Hub audience is afnan, ammar, sami',hubNames.join(','),'afnan,ammar,sami');
   // Nothing may still gate the hub on a bare username — that is the shape
   // the helper replaced, and a leftover would silently outrank it.
   const strays=GATE_FILES
