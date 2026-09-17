@@ -126,7 +126,14 @@ window.doLogin=async function(){
   }
 };
 window.doLogout=async function(){
-  await signOut(auth);session=null;sessionStorage.clear();location.reload();
+  // The auth listener (_gvAuthChanged, js/shared.js) fires with user=null
+  // while this runs; loginInProgress tells it this tab signed out on
+  // purpose, so it does not raise the "signed out from another tab" notice
+  // on the way to the reload.
+  loginInProgress=true;
+  try{await signOut(auth);}
+  catch(e){loginInProgress=false;showToast('Sign out failed: '+e.message,true);return;}
+  session=null;sessionStorage.clear();location.reload();
 };
 
 

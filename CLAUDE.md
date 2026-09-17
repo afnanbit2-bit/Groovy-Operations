@@ -3987,6 +3987,42 @@ This month / Custom, the same shape as Monitor's `_monitorFilter`.
   is an **array**, not a comma-joined string: `'OPTION,OPTGROUP'.indexOf('P')`
   is 1, which would silently exempt every `<p>` in the app.
 
+## A tab's identity follows the Firebase token (Sept 2026)
+
+Reported with a DevTools screenshot minutes after Sami's account was set up:
+Afnan's own dashboard, signed in as `afnan`, logging
+`loadHRMData failed: Missing or insufficient permissions.` Under the
+published rules an OWNER cannot be refused that read, so the token behind
+the tab was not an owner's. **Verified from code, not the token** (the
+sandbox cannot sign in): `onAuthStateChanged` rebuilt a restored session
+from the username saved in `sessionStorage` and never looked at
+`user.email`, and did nothing at all when the user changed under a live
+session. Firebase Auth persistence is per ORIGIN and `sessionStorage` is
+per TAB, so signing in as Sami from a second tab replaced the user under
+the first tab, which kept saying "afnan" on screen while every request
+carried Sami's token. That is a hypothesis about the trigger, but the
+code path is real and is now closed:
+
+- `_gvUserDefFor(user)` (`js/shared.js`) resolves the account by the
+  token's EMAIL — the identity `firestore.rules` enforce. The saved
+  username is only a fallback for a token with no email, which password
+  sign-in never produces. A Firebase account with no `USER_DEFS` entry (a
+  mistyped email in the Console) is signed out, never guessed.
+- `_gvAuthChanged(user)` is the listener, a named function so
+  `tests/session.test.js` can drive it. A user change or sign-out under a
+  live session raises `_gvShowIdentityNotice` — a blocking overlay with a
+  Reload button, **never an automatic reload** (a form in progress stays
+  visible until the person chooses; same rule as the update banner).
+  `doLogout` sets `loginInProgress` first so the tab's own sign-out does
+  not trip it.
+- `loadHRMData` (`js/hrm.js`) asks for `hrm_policies` and `increment_logs`
+  only when the role can read them (`_hrmCanReadPolicies`: owner or
+  manager, the rules' `isOM()`). Every other role used to request them,
+  be refused, and lose `employees` with it — the one read they may make,
+  and the one the worker paygrade widget needs. Probably a long-standing
+  silent failure for every worker; **not verified on a real worker
+  account**.
+
 ## Login accepts a username or an email (Sept 2026)
 
 Sami's first sign-in (17 Sept 2026) typed `sami@groovy.ops` into the

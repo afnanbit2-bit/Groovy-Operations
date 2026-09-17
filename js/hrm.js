@@ -104,17 +104,27 @@ async function seedHRMPoliciesIfEmpty(){
   }catch(e){console.warn('seedHRMPolicies failed:',e.message);return false;}
 }
 
+// hrm_policies and increment_logs are owner/manager-only in firestore.rules
+// (isOM()). Every other role used to request them anyway; the refused
+// policies read rejected the whole Promise.all, so `employees` — which
+// every role MAY read, and which the worker paygrade widget depends on —
+// was thrown away with it, and the console logged "loadHRMData failed:
+// Missing or insufficient permissions" on every dashboard. Only ask for
+// what the role can read; everyone else runs on HRM_DEFAULT_POLICIES, the
+// same fallback a missing policies document already takes.
+function _hrmCanReadPolicies(){ return !!(session&&(session.role==='owner'||session.role==='manager')); }
 async function loadHRMData(){
   try{
+    const om=_hrmCanReadPolicies();
     await seedEmployeesIfEmpty();
-    await seedHRMPoliciesIfEmpty();
+    if(om)await seedHRMPoliciesIfEmpty();
     const[empSnap,polSnap,incSnap]=await Promise.all([
       getDocs(collection(db,'employees')),
-      getDoc(doc(db,'hrm_policies','main')),
-      getDocs(collection(db,'increment_logs')).catch(()=>({docs:[]}))
+      om?getDoc(doc(db,'hrm_policies','main')):Promise.resolve(null),
+      om?getDocs(collection(db,'increment_logs')).catch(()=>({docs:[]})):Promise.resolve({docs:[]})
     ]);
     allEmployees=empSnap.docs.map(d=>({...d.data(),_id:d.id}));
-    hrmPolicies=polSnap.exists()?polSnap.data():{...HRM_DEFAULT_POLICIES};
+    hrmPolicies=(polSnap&&polSnap.exists())?polSnap.data():{...HRM_DEFAULT_POLICIES};
     allIncrementLogs=incSnap.docs.map(d=>({...d.data(),_id:d.id}));
     hrmDataLoaded=true;
     // Background-load payroll data (used by worker payslip cue + owner Pending Payroll KPI)

@@ -2186,15 +2186,78 @@ document.addEventListener('keydown',e=>{
   });
 })();
   // auth state -> start app / show login
-onAuthStateChanged(auth,async user=>{
+onAuthStateChanged(auth,_gvAuthChanged);
+};
+
+// ── Who this tab IS ─────────────────────────────────────────────────────
+// The Firebase user's EMAIL is the identity firestore.rules enforce, so it
+// decides which USER_DEFS account a restored session belongs to. Until Sept
+// 2026 the app rebuilt the session from the username it had saved in
+// sessionStorage and never looked at the token — so a tab could say "afnan"
+// on screen while every Firestore request carried another account's token.
+// Firebase Auth persistence is per ORIGIN and sessionStorage is per TAB, so
+// signing in as someone else from a second tab replaces the user under
+// every open tab, and the first tab kept its old session and started
+// logging "loadHRMData failed: Missing or insufficient permissions" on an
+// owner's dashboard. tests/session.test.js.
+function _gvUserDefFor(user){
+  const email=String((user&&user.email)||'').trim().toLowerCase();
+  if(email)return USER_DEFS.find(x=>String(x.email||'').toLowerCase()===email)||null;
+  // A token with no email (never the case for password sign-in): fall back
+  // to the username this tab saved in startApp.
+  let saved=null;try{saved=sessionStorage.getItem('u');}catch(_){}
+  return saved?(USER_DEFS.find(x=>x.u===saved)||null):null;
+}
+// The live session no longer matches the Firebase user — another tab or
+// window signed in as someone else, or signed out. Nothing this tab does
+// from here on would be attributed to the person on screen, so block it.
+// Deliberately NOT an automatic reload: a form in progress stays visible
+// until the person chooses (same rule as the update banner).
+let _gvIdentityNoticeShown=false;
+function _gvShowIdentityNotice(user){
+  if(_gvIdentityNoticeShown)return;_gvIdentityNoticeShown=true;
+  const def=user?_gvUserDefFor(user):null;
+  const onScreen=(session&&session.name)||'someone else';
+  const title=user?'Signed in as someone else':'Signed out';
+  const msg=user
+    ?'This browser is now signed in as '+(def?def.name+' ('+def.u+')':(user.email||'another account')+' — not a Groovy Ops account')
+      +', from another tab or window. This screen is still showing '+onScreen
+      +', so nothing here can be saved as '+onScreen+'. Reload to continue'+(def?' as '+def.name:'')+'.'
+    :'This browser was signed out from another tab or window. Reload to sign in again.';
+  const wrap=document.createElement('div');
+  wrap.id='gv-identity-notice';
+  wrap.style.cssText='position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:24px;font-family:inherit';
+  // Literal #111/#fff on purpose: a self-consistent pair, like the update
+  // banner — this has to read in either theme and even if the stylesheet failed.
+  wrap.innerHTML='<div style="background:#111;color:#fff;max-width:440px;width:100%;border-radius:12px;padding:22px 22px 18px;box-shadow:0 12px 40px rgba(0,0,0,.5)">'
+    +'<div id="gv-identity-title" style="font-weight:800;font-size:15px;margin-bottom:8px"></div>'
+    +'<p id="gv-identity-msg" style="font-size:13px;line-height:1.55;margin:0 0 16px;color:#ddd"></p>'
+    +'<button onclick="location.reload()" style="background:#fff;color:#111;border:none;padding:9px 18px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit">Reload</button></div>';
+  document.body.appendChild(wrap);
+  const t=document.getElementById('gv-identity-title');if(t)t.textContent=title;
+  const p=document.getElementById('gv-identity-msg');if(p)p.textContent=msg;
+  console.warn('[auth] '+msg);
+}
+// The onAuthStateChanged handler, registered by __bootApp. Kept as a named
+// function so tests/session.test.js can drive it without a Firebase.
+function _gvAuthChanged(user){
   if(loginInProgress)return;
+  const uEmail=String((user&&user.email)||'').toLowerCase();
   if(user&&!session){
-    const saved=sessionStorage.getItem('u');
-    const def=saved?USER_DEFS.find(x=>x.u===saved):null;
+    const def=_gvUserDefFor(user);
     if(def){session={...def,uid:user.uid};startApp();}
-    else{await signOut(auth);document.getElementById('scr-login').style.display='flex';}
+    else{
+      // A Firebase account with no USER_DEFS entry (a mistyped email in the
+      // Console, say). Never guess who it is from the saved username.
+      try{sessionStorage.removeItem('u');}catch(_){}
+      try{const p=signOut(auth);if(p&&typeof p.catch==='function')p.catch(()=>{});}catch(_){}
+      document.getElementById('scr-login').style.display='flex';
+    }
+  }else if(session&&user&&uEmail!==String(session.email||'').toLowerCase()){
+    _gvShowIdentityNotice(user);
+  }else if(session&&!user){
+    _gvShowIdentityNotice(null);
   }else if(!user&&!session){
     document.getElementById('scr-login').style.display='flex';
   }
-});
-};
+}
