@@ -2560,7 +2560,7 @@ function _renderHRMNotifPanel(){
     const wrap=document.createElement('div');
     storeUnread.forEach(n=>{
       const div=document.createElement('div');
-      div.style.cssText='padding:14px 16px;border-bottom:1px solid #f5f5f5';
+      div.style.cssText='padding:14px 16px;border-bottom:1px solid var(--border)';
       div.innerHTML=`<div style="font-weight:600;font-size:13px">${n.action==='edit'?'✏️ Edited':'🗑️ Deleted'}: ${n.itemCode||''} ${n.itemName||''}</div><div style="font-size:11px;color:var(--muted);margin-top:5px">by ${n.changedBy||'—'}</div><button onclick="window.dismissNotif('${n._id}')" style="margin-top:10px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface);cursor:pointer;font-size:11px;color:var(--muted)">Dismiss</button>`;
       wrap.appendChild(div);
     });
@@ -2569,8 +2569,10 @@ function _renderHRMNotifPanel(){
 }
 
 function _hrmNotifCardHTML(n){
-  const priColor=n.priority==='high'?'var(--accent-urgent)':n.priority==='low'?'var(--muted)':'#1A1A2E';
-  const priBg=n.priority==='high'?'var(--accent-urgent-soft)':n.priority==='low'?'#fafafa':'#fff';
+  // Tokens only: the message text follows the theme, so a literal white
+  // card here was light-on-light in dark mode.
+  const priColor=n.priority==='high'?'var(--accent-urgent)':n.priority==='low'?'var(--muted)':'var(--text)';
+  const priBg=n.priority==='high'?'var(--accent-urgent-soft)':n.priority==='low'?'var(--surface-2)':'var(--surface)';
   const actionBtn=n.actionUrl?`<button onclick="(window._hrmNotifAction||window.showPage)('${n.actionUrl}');window.toggleNotifPanel()" style="margin-top:8px;margin-right:6px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface);cursor:pointer;font-size:11px">View</button>`:'';
   return`<div style="padding:14px 16px;border-bottom:1px solid var(--border);border-left:3px solid ${priColor};background:${priBg}">
     <div style="display:flex;align-items:flex-start;gap:8px">
@@ -2597,7 +2599,7 @@ function _ensureNotifBell(){
   if(!document.getElementById('notif-panel')){
     const panel=document.createElement('div');
     panel.id='notif-panel';
-    panel.style.cssText='display:none;position:fixed;top:52px;right:12px;width:360px;max-height:70vh;overflow-y:auto;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.18);z-index:1000';
+    panel.style.cssText='display:none;position:fixed;top:52px;right:12px;width:360px;max-height:70vh;overflow-y:auto;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.18);z-index:1000';
     panel.innerHTML=`<div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:var(--surface)"><span style="font-weight:700;font-size:14px">Notifications</span><button onclick="window.toggleNotifPanel()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1">×</button></div><div id="notif-list"></div>`;
     document.body.appendChild(panel);
   }

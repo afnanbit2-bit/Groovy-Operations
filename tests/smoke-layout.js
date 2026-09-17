@@ -527,6 +527,20 @@ const FRAGMENTS={
   // panel. --dark is the app's "strong contrast chip" and inverts, so these
   // read at ~1.08:1 in dark mode while the value beside them (which already
   // used --on-dark) stayed perfectly legible. Gate Pass has six of them.
+  // The bell's cards at each priority. Their message text follows the theme,
+  // so a card background that did not would be unreadable in dark mode —
+  // which is exactly how they shipped until Sept 2026.
+  'hrm — notification cards':()=>{
+    const app=loadApp({files:['js/hrm.js'],
+      session:{uid:'u9',u:'daniyal',name:'Daniyal Tufail',role:'creator_content_ops_lead'}});
+    const n=(id,priority,title,message,actionUrl)=>({_id:id,priority,title,message,actionUrl,createdAt:Date.now()-86400000*3});
+    const cards=[
+      n('a','normal','Advance approved','PKR 50,000 approved. Will be deducted from your next payroll.'),
+      n('b','high','No post yet: @st4rr.doll','Shipped 14 days ago and nothing is posted.','mkt-dispatches'),
+      n('c','low','Policy updated','lateGraceMinutes changed from 15 to 14.')
+    ].map(x=>app.run('_hrmNotifCardHTML('+JSON.stringify(x)+')')).join('');
+    return Promise.resolve('<div style="max-width:360px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:12px">'+cards+'</div>');
+  },
   'gate pass — dark summary panels':()=>{
     const app=loadApp({files:['js/gatepass.js'],currentPage:'gate-pass',
       session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'}});
