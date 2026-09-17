@@ -3112,6 +3112,28 @@ page's "Check Shopify access", which asks Shopify directly).
     first real lookup is the test, and so is whether `/me/accounts` returns
     the linked Page for the token Ammar generates (it needs
     `pages_show_list`, which was granted).
+- **Fetch all from Instagram** (Creator Database header). The same lookup
+  over the whole list, one creator at a time: a Business/Creator account is
+  written through `mktApplyIgFetch` → the normal payload builder (so a
+  manual tier stays manual and an off-list city survives); a not-found
+  account gets **no write at all** — "leave it as is" was the instruction.
+  Meta caps calls per hour, so the lookup now returns `usage` (the highest
+  percentage in `X-App-Usage` / `X-Business-Use-Case-Usage`) and the run
+  **pauses itself at 85%**, stops on any 429, and stops on a 401/403/503
+  (a dead connection stops after ONE call, not 244). A rerun skips anyone
+  fetched in the last 24 h (`mktIgBulkPlan`), so a paused run resumes.
+  Writes are plain `updateDoc`s — the handle does not change, so the lock
+  rule is already satisfied. **Whether the hourly allowance covers 244
+  lookups in one go is not known from here**; the pause is what makes that
+  not matter.
+- **Deleting a creator** (owners only — the rules allow `creators` delete
+  for `isOwner()` and nobody else, so the lead is never offered it). One
+  batch deletes the creator and its handle lock (the lock rule releases it
+  once the creator no longer exists; a lock naming ANOTHER creator is never
+  touched). **A creator with any dispatch or Paid PR is refused** —
+  `mktCreatorDeleteBlock` — because those records, their rollups and codes
+  would point at nothing; "Do not use" is how to retire one. If either list
+  failed to load, the delete is refused rather than guessed.
 - **`tests/smoke-layout.js` now runs Chrome in a bounded pool** (default
   min(8, CPUs), `SMOKE_LAYOUT_CONCURRENCY` to override). With 14 fragments
   it launched 84 Chromes at once and most timed out on a Windows machine,

@@ -84,7 +84,7 @@ async function lookup(db, cfg, username) {
     bd = await run();
   } catch (e) {
     const kind = ig.classifyGraphError(e);
-    if (kind === "not_found") return json(200, { found: false, username, message: NOT_FOUND_MESSAGE });
+    if (kind === "not_found") return json(200, { found: false, username, message: NOT_FOUND_MESSAGE, usage: ig.getLastUsage() });
     if (kind === "token") {
       // Re-seed once from IG_ACCESS_TOKEN — the stored token may simply be stale.
       await ig.markTokenBad(db, e.message).catch(() => {});
@@ -96,7 +96,7 @@ async function lookup(db, cfg, username) {
         return json(503, { error: "The Instagram connection has expired. Ask Ammar to replace IG_ACCESS_TOKEN in Netlify. Enter the numbers by hand for now.", kind: "token" });
       }
     } else if (kind === "rate") {
-      return json(429, { error: "Instagram is rate-limiting lookups — wait a few minutes, or enter the numbers by hand.", kind });
+      return json(429, { error: "Instagram is rate-limiting lookups — wait a few minutes, or enter the numbers by hand.", kind, usage: ig.getLastUsage() });
     } else if (kind === "permission") {
       return json(502, { error: "Instagram refused the lookup (the app is missing a permission): " + e.message, kind });
     } else {
@@ -104,7 +104,7 @@ async function lookup(db, cfg, username) {
     }
   }
   if (!bd) return json(200, { found: false, username, message: NOT_FOUND_MESSAGE });
-  return json(200, Object.assign({ found: true, fetched_at: Date.now() }, summarize(bd)));
+  return json(200, Object.assign({ found: true, fetched_at: Date.now(), usage: ig.getLastUsage() }, summarize(bd)));
 }
 
 async function status(db, cfg) {

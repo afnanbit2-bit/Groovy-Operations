@@ -1499,6 +1499,7 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .mkt-dupe-opt input{margin-top:2px;flex-shrink:0}
 .mkt-dupe-opt span{min-width:0;overflow-wrap:anywhere}
 .mkt-improgress{font-weight:700;font-size:13px;margin-bottom:8px;font-variant-numeric:tabular-nums}
+.mkt-modal-actions .mkt-del{margin-right:auto;padding:10px 14px;font-size:13px}
 .mkt-ig-row{align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:4px}
 .mkt-ig-src{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
 .mkt-ig-src select{min-width:0}
