@@ -1,7 +1,7 @@
 # Pattern Hub — Master Plan
 
-> Status: **BUILDING. M0–M6 shipped (17 Sept 2026); M7 (the coverage
-> dashboard card) is the last one. The check-out log was dropped (D8).** Design agreed across three question rounds with Afnan. This document is the single source of truth for
+> Status: **BUILT. M0–M7 all shipped (17 Sept 2026). The check-out log was
+> dropped (D8).** Design agreed across three question rounds with Afnan. This document is the single source of truth for
 > the module. Remaining open items are marked **[DECISION NEEDED]** and are all
 > Ammar's calls on the TAC document; none of them block M0.
 >
@@ -422,7 +422,7 @@ new file: script tag in `index.html`, `PRECACHE_URLS` in `sw.js`, bump
 | **M4** | **Label** | `pattern-label` variant with the page-size override, one page per size, operator-selected batch, QR deep link, per-size "reprint" indicator (§7). |
 | **M5** | **Revisions + notices** | Record a revision → diff → bell → Uzaib acknowledges. Open-notice list. |
 | **M6** | **PO integration** | `po.patternId/Code/Hook`, traveler row, coverage dial, the go-live switch, warn-only banner. |
-| **M7** | **Coverage dashboard** | Owner card: assigned / measured / labelled / open notices — the Monitor two-half pattern. |
+| **M7** | **Coverage dashboard** ✅ | Admin card on the Dashboard: assigned / measured / labelled / open notices, the two-half pattern (`renderPatternDashboardWidget()` in `renderDashboard()`, `_ptnPopulateDashboard()` on the `dashboard` dispatch). A failed read names the collection instead of reading as 0%. |
 
 **Deliberately later:** retiring `PRODUCT_CATALOG` from `js/shared.js` (five
 callers, cross-track file — coordinate with Ammar once `articles` is proven);

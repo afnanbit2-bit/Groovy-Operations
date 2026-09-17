@@ -1218,7 +1218,7 @@ window.showPage=async function(id){
 
 function renderPage(id){
   const m=document.getElementById('main-content');
-  if(id==='dashboard'){m.innerHTML=renderDashboard(); if(typeof _hrmPopulateDashboard==='function')setTimeout(_hrmPopulateDashboard,0); if(typeof _fulfillDashboardInject==='function')setTimeout(_fulfillDashboardInject,0); if(typeof _monitorPopulateDashboard==='function')setTimeout(_monitorPopulateDashboard,0); if(typeof _mktPopulateDashboard==='function')setTimeout(_mktPopulateDashboard,0);}
+  if(id==='dashboard'){m.innerHTML=renderDashboard(); if(typeof _hrmPopulateDashboard==='function')setTimeout(_hrmPopulateDashboard,0); if(typeof _fulfillDashboardInject==='function')setTimeout(_fulfillDashboardInject,0); if(typeof _monitorPopulateDashboard==='function')setTimeout(_monitorPopulateDashboard,0); if(typeof _mktPopulateDashboard==='function')setTimeout(_mktPopulateDashboard,0); if(typeof _ptnPopulateDashboard==='function')setTimeout(_ptnPopulateDashboard,0);}
   else if(id==='po-create'){m.innerHTML=renderPOCreate(); if(typeof loadProducts==='function'&&!_productsLoaded)loadProducts();}
   else if(id==='po-registry')m.innerHTML=renderRegistry();
   else if(id==='my-work'){m.innerHTML=renderMyWork(); if(typeof _populateWorkerHRMWidget==='function')setTimeout(_populateWorkerHRMWidget,0);}

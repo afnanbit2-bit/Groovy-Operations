@@ -1236,5 +1236,122 @@ module.exports=async function(){
     s.ok('rules: settings readable by all, written by an owner',/match \/settings\/\{doc\}\s*\{\s*allow read: if signedIn\(\);\s*allow write: if isOwner\(\);/.test(read('firestore.rules')));
   }
 
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  M7 — the Dashboard card
+  // ═══════════════════════════════════════════════════════════════════════
+  // The two-half widget pattern. What is worth guarding: the placeholder is
+  // synchronous (no dashboard render waits on a read), a FAILED read and an
+  // EMPTY registry render DIFFERENT bodies, Retry actually re-reads, and
+  // BOTH halves are wired — a placeholder nobody populates sits on
+  // "Loading…" forever and is invisible to every logic suite.
+
+  function dashStore(){
+    const st=poStore();
+    // One fully measured + fully labelled block, and one that is neither.
+    st.set('patterns/ptn_0007',Object.assign({},BLOCK,{hook:3,slot:2,status:'active',
+      extraPoms:[{key:'hem',label:'Hem'}],sizes:['S','M'],grid:{S:{hem:22},M:{hem:23}},
+      labelPrinted:{S:{at:'2030-01-01'},M:{at:'2030-01-01'}}}));
+    st.set('patterns/ptn_0011',Object.assign({},BLOCK,{code:'PTN-0011',name:'Half-done block',
+      status:'active',hook:null,slot:null,extraPoms:[{key:'hem',label:'Hem'}],
+      sizes:['S','M'],grid:{S:{hem:22}},labelPrinted:{}}));
+    st.set('pattern_notices/n1',{patternId:'ptn_0007',patternCode:'PTN-0007',revisionN:2,summary:'Hem shortened',lines:[],articleCodes:['GST060'],status:'open',raisedAt:'2026-09-17'});
+    st.set('pattern_notices/n2',{patternId:'ptn_0007',patternCode:'PTN-0007',revisionN:1,summary:'Old',lines:[],articleCodes:[],status:'acknowledged',raisedAt:'2026-09-16'});
+    return st;
+  }
+  // poApp, plus the ability to make named collections refuse — and a count
+  // of what was actually read, so Retry can be proved to re-read.
+  function dashApp(store,session,fail,settings){
+    const r=poApp(store,session,settings);
+    const reads={};
+    const inner=r.a.ctx.getDocs;
+    r.a.ctx.getDocs=async ref=>{
+      const col=String(ref&&ref.name||'');
+      reads[col]=(reads[col]||0)+1;
+      if(fail&&fail.indexOf(col)>-1){const e=new Error('Missing or insufficient permissions');e.code='permission-denied';throw e;}
+      return inner(ref);
+    };
+    r.reads=reads;r.a.reads=reads;
+    return r;
+  }
+
+  s.section('M7 · who sees the card');
+  {
+    for(const [u,shown] of [['afnan',true],['ammar',true],['mustafa',true],['arfat',false],['uzaib',false]]){
+      const {a}=dashApp(dashStore(),SESS[u]);
+      const html=a.run('renderPatternDashboardWidget()');
+      s.eq(u+(shown?' gets the card':' gets nothing'),/ptn-dash-widget/.test(html),shown);
+    }
+    const {a}=dashApp(dashStore(),SESS.afnan);
+    s.ok('the placeholder is SYNCHRONOUS — the dashboard never waits on a read',/id="ptn-dash-body"[^>]*>Loading…</.test(a.run('renderPatternDashboardWidget()')));
+    s.eq('…and rendering it reads nothing at all',J(a.reads),J({}));
+  }
+
+  s.section('M7 · what it counts');
+  {
+    const {a}=dashApp(dashStore(),SESS.afnan);
+    await a.run('_ptnPoEnsure()');
+    s.eq('coverage is M6\'s, unchanged',J(a.run('ptnCoverage()')),J({done:1,need:3,pct:33}));
+    s.eq('two live blocks; one fully measured, one fully labelled, one on a hook',J(a.run('ptnBlockProgress()')),J({blocks:2,measured:1,labelled:1,placed:1}));
+    s.eq('a half-filled grid is not "measured"',a.run("_ptnGridFilled(_ptnBlock('ptn_0011')).filled"),1);
+    a.run("_ptnBlock('ptn_0007').updatedAt='2031-01-01'");
+    s.eq('…and a block changed since its sticker was printed is not "labelled"',a.run('ptnBlockProgress().labelled'),0);
+  }
+
+  s.section('M7 · the populated body');
+  {
+    const {a}=dashApp(dashStore(),SESS.afnan);
+    a.run('renderPatternDashboardWidget()');
+    await a.run('_ptnPopulateDashboard()');
+    const b=a.el('ptn-dash-body').innerHTML;
+    s.ok('the four tiles: assigned, measured, labelled, open notices',/33%/.test(b)&&/1\/2<\/div>\s*<div[^>]*>Measured/.test(b)&&/Labelled/.test(b)&&/Open notices/.test(b));
+    s.ok('one notice is open, the acknowledged one is not counted',/>1<\/div>\s*<div[^>]*>Open notices/.test(b));
+    s.ok('the caption says what is being counted, in words',/1 of 3 active GROOVY articles/.test(b)&&/1 of 2 blocks on a hook/.test(b));
+    s.ok('…and says the PO switch is still off',/POs are not carrying their pattern code yet/.test(b));
+    s.ok('the notices tile is its own route, and does not also open the hub',/stopPropagation\(\);window\.showPage\('pattern-notices'\)/.test(b));
+    const {a:on}=dashApp(dashStore(),SESS.afnan,null,{poIntegration:true});
+    on.run('renderPatternDashboardWidget()');
+    await on.run('_ptnPopulateDashboard()');
+    s.ok('with the switch on, that line is gone',!/POs are not carrying/.test(on.el('ptn-dash-body').innerHTML));
+    const {a:u}=dashApp(dashStore(),SESS.uzaib);
+    await u.run('_ptnPopulateDashboard()');
+    s.eq('cutting: the populate is a no-op, never a half-painted card',u.el('ptn-dash-body').innerHTML,'');
+  }
+
+  s.section('M7 · a failed read and an empty registry are DIFFERENT screens');
+  {
+    const {a}=dashApp(dashStore(),SESS.afnan,['articles']);
+    a.run('renderPatternDashboardWidget()');
+    await a.run('_ptnPopulateDashboard()');
+    const b=a.el('ptn-dash-body').innerHTML;
+    s.ok('a refused articles read NAMES it — never a silent 0%',/Could not read articles/.test(b)&&!/0%/.test(b));
+    s.ok('…and offers Retry',/ptnDashRetry/.test(b));
+    const before=a.reads['articles'];
+    a.run('window.ptnDashRetry()');
+    await new Promise(r=>setTimeout(r,10));
+    s.ok('Retry clears the loaded flag and really re-reads',a.reads['articles']>before);
+
+    const {a:e}=dashApp(new Map(),SESS.afnan);
+    e.run('renderPatternDashboardWidget()');
+    await e.run('_ptnPopulateDashboard()');
+    s.ok('an EMPTY registry says it is not seeded, not that something failed',/not seeded yet/.test(e.el('ptn-dash-body').innerHTML)&&!/Could not read/.test(e.el('ptn-dash-body').innerHTML));
+
+    const {a:n}=dashApp(dashStore(),SESS.afnan,['pattern_notices']);
+    n.run('renderPatternDashboardWidget()');
+    await n.run('_ptnPopulateDashboard()');
+    const nb=n.el('ptn-dash-body').innerHTML;
+    s.ok('a notices-only failure degrades: the tiles still render, with a warning',/33%/.test(nb)&&/Could not read pattern_notices/.test(nb));
+    s.ok('…and the count is "—", never a 0 that would read as "all clear"',/>—<\/div>\s*<div[^>]*>Open notices/.test(nb));
+  }
+
+  s.section('M7 · both halves are wired');
+  {
+    const emb=read('js/embellishments.js'),sh=read('js/shared.js');
+    s.ok('renderDashboard() calls the placeholder behind a typeof guard',/typeof renderPatternDashboardWidget==='function'\)\?renderPatternDashboardWidget\(\):''/.test(emb));
+    s.ok('…and actually concatenates it into the page',/\$\{marketingBanner\}\$\{patternBanner\}/.test(emb));
+    s.ok("the 'dashboard' dispatch populates it, guarded the same way",/typeof _ptnPopulateDashboard==='function'\)setTimeout\(_ptnPopulateDashboard,0\)/.test(sh));
+    s.ok('the populate is on the dashboard line, not somewhere else',/id==='dashboard'[^\n]*_ptnPopulateDashboard/.test(sh));
+  }
+
   return s;
 };

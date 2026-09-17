@@ -335,6 +335,41 @@ const FRAGMENTS={
   // carrying every tier chip (including the "manual" badge and an unscored
   // row) and the Needs completion column. The table is allowed to scroll
   // sideways inside its own wrapper at 420px; the page must not.
+  // The Pattern Hub card on the Dashboard (M7). Four stat tiles in one flex
+  // row plus a two-line caption — the same justify/flex shape that crushed
+  // the Profile directory's names to 0px, and it has to survive 420px.
+  // Rendered twice: populated, and in its failed-read state, whose message
+  // is the longest string the card can carry.
+  'pattern hub — dashboard card':()=>{
+    const LS={getItem:()=>null,setItem(){},removeItem(){}};
+    const data={
+      articles:[
+        {id:'GST060',code:'GST060',name:'Live in Pants | Ash',brand:'groovy',category:'GST',needsPattern:true,active:true,patternId:'ptn_0007'},
+        {id:'GST062',code:'GST062',name:'Live in Pants | Cool',brand:'groovy',category:'GST',needsPattern:true,active:true,patternId:null},
+        {id:'GHW001',code:'GHW001',name:'Cap',brand:'groovy',category:'GHW',needsPattern:false,active:true,patternId:null}
+      ],
+      patterns:[
+        {id:'ptn_0007',code:'PTN-0007',name:'Live In Pants block',category:'GST',status:'active',sizeAxis:'alpha',sizes:['S','M'],hook:3,slot:2,extraPoms:[{key:'hem',label:'Hem'}],grid:{S:{hem:22},M:{hem:23}},labelPrinted:{S:{at:'2030-01-01'},M:{at:'2030-01-01'}}},
+        {id:'ptn_0011',code:'PTN-0011',name:'Half-done block',category:'GST',status:'active',sizeAxis:'alpha',sizes:['S','M'],extraPoms:[{key:'hem',label:'Hem'}],grid:{S:{hem:22}},labelPrinted:{}}
+      ],
+      pattern_slots:[],
+      pattern_notices:[{id:'n1',patternId:'ptn_0007',patternCode:'PTN-0007',revisionN:2,summary:'Hem shortened',lines:[],articleCodes:['GST060'],status:'open',raisedAt:'2026-09-17'}]
+    };
+    const app=loadApp({files:['js/patterns.js'],currentPage:'dashboard',
+      session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'},
+      globals:{localStorage:LS,
+        doc:(db,...rest)=>({key:rest.join('/')}),
+        collection:(db,...rest)=>({name:rest.join('/')}),
+        getDoc:async()=>({exists:()=>false,data:()=>({})}),
+        getDocs:async ref=>({docs:(data[String(ref&&ref.name||'')]||[]).map(r=>({id:r.id,data:()=>r}))})}});
+    return app.run('_ptnPoEnsure()').then(()=>{
+      const card=app.run('renderPatternDashboardWidget()');
+      const ok=card.replace('Loading…',app.run('_ptnDashBodyHTML()'));
+      const bad=card.replace('Loading…',app.run("_ptnFailed.articles=true;_ptnDashBodyHTML()"));
+      return ok+bad;
+    });
+  },
+
   'marketing — creator database':()=>{
     const LS={getItem:()=>null,setItem(){},removeItem(){}};
     const rows=[

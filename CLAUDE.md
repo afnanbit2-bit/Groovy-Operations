@@ -3173,6 +3173,35 @@ created by hand — name-clustering says 251 but 133 articles are prints on a
 handful of blank bodies, so the real count (60–130) is the pattern master's
 call, and the app only ever *suggests*.
 
+**M7 (shipped — the last milestone): the Dashboard card.** Assigned /
+measured / labelled / open notices, for pattern admins only, above the PO
+stats. Uzaib is a `viewer` and never sees the dashboard; his route to the
+notices is still the Me-page button.
+
+- **The two-half widget pattern, both halves or neither.**
+  `renderPatternDashboardWidget()` is a SYNCHRONOUS placeholder returned by
+  `renderDashboard()` (`js/embellishments.js`, behind a `typeof` guard
+  because `patterns.js` loads LAST); `_ptnPopulateDashboard()` is a fifth
+  `setTimeout` on the `id==='dashboard'` dispatch in `js/shared.js`. A
+  placeholder nobody populates sits on "Loading…" forever and no logic
+  suite would see it, so `tests/patterns.test.js` asserts BOTH halves are
+  present — verified by deleting each.
+- **A refused read NAMES the collection; it never reads as 0%.** Coverage
+  over an empty `tacArticles` is "0 of 0", which is exactly what a denied
+  `articles` read would otherwise paint — the Store lesson. An empty
+  registry says "not seeded yet" instead, and a `pattern_notices`-only
+  failure degrades: the tiles still render, the notice count shows **—**
+  rather than a 0 that would read as "all clear".
+- **Retry clears the `_ptnPoEnsure` "already loaded" flags** before
+  re-running, or the button would return the same failed state instantly
+  and do nothing — the dead-button shape this codebase keeps producing.
+- **"Measured" is every POM row × every size**, and **"labelled" is every
+  size carrying a CURRENT sticker**, so a block whose grid changed after
+  printing counts as unlabelled again. `ptnBlockProgress()` reuses
+  `_ptnGridFilled` and `_ptnLabelStatus` rather than re-deciding either.
+- No `firestore.rules` change; the card reads nothing the module did not
+  already read.
+
 **M6 (shipped): PO integration — the pattern code and its hook, on the PO.**
 Creating or editing a PO stamps `patternId` / `patternCode` / `patternHook`
 from the article's block; the detail page, the **cutting screen** and the

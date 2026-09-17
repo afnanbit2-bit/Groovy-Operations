@@ -2819,3 +2819,116 @@ window.ptnSetPoIntegration=async function(on){
   }catch(e){showToast('Could not save: '+(e.message||e),true);}
   _ptnBusy=false;_ptnRepaint();return true;
 };
+
+// ═════════════════════════════════════════════════════════════════════════
+//  M7 — the Pattern Hub card on the Dashboard
+// ═════════════════════════════════════════════════════════════════════════
+// The two-half widget pattern this app uses for every dashboard card (HRM,
+// Monitor, Marketing): a SYNCHRONOUS placeholder returned by
+// renderPatternDashboardWidget(), called from renderDashboard()
+// (js/embellishments.js) behind a `typeof` guard because patterns.js loads
+// LAST; then _ptnPopulateDashboard(), hooked into the id==='dashboard'
+// dispatch in js/shared.js beside the other four. Both halves or neither —
+// a placeholder nothing populates sits on "Loading…" forever, and a
+// populate with no placeholder silently no-ops on a missing element.
+//
+// Admins only (afnan, ammar, mustafa). Uzaib is a viewer: his route to the
+// notices is the Me-page button, and he never sees this dashboard.
+
+// Live blocks that are fully measured / fully labelled. "Measured" means
+// every POM row × every size carries a number — a half-filled grid is not a
+// spec. "Labelled" means every size has a CURRENT sticker, so a block whose
+// grid changed after printing counts as unlabelled again, which is exactly
+// what _ptnLabelStatus already decides for the block page.
+function ptnBlockProgress(){
+  const live=_ptnLiveBlocks();
+  let measured=0,labelled=0,placed=0;
+  live.forEach(p=>{
+    const g=_ptnGridFilled(p);
+    if(g.total>0&&g.filled>=g.total)measured++;
+    const sizes=p.sizes||[];
+    if(sizes.length&&sizes.every(s=>_ptnLabelStatus(p,s).state==='current'))labelled++;
+    if(p.hook&&p.slot)placed++;
+  });
+  return{blocks:live.length,measured,labelled,placed};
+}
+
+function _ptnDashTile(val,label,opts){
+  const o=opts||{};
+  return`<div style="flex:1;min-width:66px;padding:9px 8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;text-align:center${o.onclick?';cursor:pointer':''}"${o.onclick?` onclick="${o.onclick}"`:''}>
+    <div style="font-size:16px;font-weight:700;color:${o.color||'var(--text)'}">${val}</div>
+    <div style="font-size:10px;color:var(--muted);margin-top:2px">${label}</div>
+  </div>`;
+}
+
+// A read that FAILED and a registry that is EMPTY must never produce the
+// same screen — the Store lesson. Coverage of "0 of 0" is what a refused
+// `articles` read would otherwise look like.
+function _ptnDashBodyHTML(){
+  const retry=`<a href="#" onclick="event.preventDefault();event.stopPropagation();window.ptnDashRetry();" style="color:inherit;text-decoration:underline">Retry</a>`;
+  const hard=[];
+  if(_ptnLoadFailed('articles'))hard.push('articles');
+  if(_ptnBlocksFailed&&_ptnBlocksFailed.patterns)hard.push('patterns');
+  if(hard.length)return`<span style="color:var(--accent-urgent);font-weight:700">Could not read ${hard.join(' and ')}.</span> ${retry}`;
+  if(!tacArticles.length)return`Registry not seeded yet — open the hub to seed it.`;
+
+  const c=ptnCoverage();
+  const b=ptnBlockProgress();
+  const open=_ptnNoticesFailed?null:_ptnOpenNotices().length;
+  const tiles=[
+    _ptnDashTile(c.pct+'%','Assigned',{color:c.pct>=100?'var(--green)':'var(--text)'}),
+    _ptnDashTile(b.measured+'/'+b.blocks,'Measured',{}),
+    _ptnDashTile(b.labelled+'/'+b.blocks,'Labelled',{}),
+    _ptnDashTile(open==null?'—':open,'Open notices',{color:open?'var(--accent-urgent)':'var(--muted)',onclick:"event.stopPropagation();window.showPage('pattern-notices')"})
+  ].join('');
+  const lines=[];
+  lines.push(`${c.done} of ${c.need} active GROOVY articles that need a pattern are on a block · ${b.placed} of ${b.blocks} block${b.blocks===1?'':'s'} on a hook`);
+  if(_ptnNoticesFailed)lines.push(`<span style="color:var(--accent-urgent)">Could not read pattern_notices.</span> ${retry}`);
+  if(typeof ptnPoIntegrationOn==='function'&&!ptnPoIntegrationOn())lines.push(`POs are not carrying their pattern code yet.`);
+  return`<div style="display:flex;gap:6px;flex-wrap:wrap">${tiles}</div>
+    <div style="margin-top:8px;font-size:11px;color:var(--muted);line-height:1.5">${lines.join('<br>')}</div>`;
+}
+
+function renderPatternDashboardWidget(){
+  if(!_canManagePatterns())return'';
+  return`<div class="card" id="ptn-dash-widget" style="margin-bottom:14px;cursor:pointer" onclick="window.showPage('pattern-hub')">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div style="font-weight:700;font-size:13px">Pattern Hub</div>
+      <div style="font-size:11px;color:var(--muted)">Open ›</div>
+    </div>
+    <div id="ptn-dash-body" style="font-size:12px;color:var(--muted);margin-top:6px">Loading…</div>
+  </div>`;
+}
+
+// Never rejects, and never leaves the card on "Loading…": _ptnPoEnsure
+// settles every read independently and records its own failures, which
+// _ptnDashBodyHTML reads. The element is looked up again after the await —
+// the dashboard may have been repainted, or left, while it ran.
+async function _ptnPopulateDashboard(){
+  if(!_canManagePatterns())return;
+  if(!document.getElementById('ptn-dash-body'))return;
+  try{
+    await _ptnPoEnsure();
+  }catch(e){
+    const el0=document.getElementById('ptn-dash-body');
+    if(el0)el0.innerHTML=`Could not load. <a href="#" onclick="event.preventDefault();event.stopPropagation();window.ptnDashRetry();" style="color:inherit;text-decoration:underline">Retry</a>`;
+    return;
+  }
+  const el=document.getElementById('ptn-dash-body');
+  if(!el)return;
+  try{el.innerHTML=_ptnDashBodyHTML();}
+  catch(e){el.textContent='Could not load.';console.warn('[patterns] dashboard card failed',e);}
+}
+
+// Retry has to clear the "already loaded" flags or _ptnPoEnsure returns the
+// same failed state instantly and the button does nothing.
+window.ptnDashRetry=function(){
+  if(_ptnLoadFailed('articles')||_ptnLoadFailed('tac_categories'))patternsLoaded=false;
+  if(_ptnBlocksFailed&&(_ptnBlocksFailed.patterns||_ptnBlocksFailed.pattern_slots))_ptnBlocksLoaded=false;
+  if(_ptnNoticesFailed)_ptnNoticesLoaded=false;
+  _ptnPoReady=false;_ptnPoLoading=null;
+  const el=document.getElementById('ptn-dash-body');
+  if(el)el.textContent='Loading…';
+  _ptnPopulateDashboard();
+  return true;
+};
