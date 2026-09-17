@@ -3133,7 +3133,7 @@ page's "Check Shopify access", which asks Shopify directly).
   `scoring_config` stays READABLE to all of Marketing — every creator save
   is scored with those bands — but only the admin may write it. The button
   is hidden from everyone else (the other owner included), and opening or
-  saving it anyway is refused client-side too. **Needs a rules republish.**
+  saving it anyway is refused client-side too. Rules published 17 Sept 2026.
 - **Deleting a creator** (owners and the Content Ops lead — the rules
   allow `creators` delete for `isMarketing()`; widened from owners-only at
   Ammar's request so Daniyal can clean up the list). One
@@ -3843,10 +3843,13 @@ republish.
 AND `user_profiles`. Both had been waiting; the Profile page's own error
 card is what finally surfaced it.
 
-**REPUBLISH OUTSTANDING (17 Sept 2026):** `scoring_config` write narrowed
-from `isMarketing()` to the new `isScoringAdmin()` (Ammar). Until the
-Console has it, only the hidden button stops Daniyal — the rules still
-would let him write.
+**Republished a fifth time by Ammar on 17 Sept 2026, after PR #73**
+(reported in-session), from the repo file at
+`md5 88297fc6f2624db194d3249a5155c79e` (LF line endings — a Windows
+checkout hashes differently until `` is stripped). That commit narrowed
+`scoring_config` write to the new `isScoringAdmin()` (Ammar). **No
+republish is outstanding as of that commit**; this supersedes the entries
+below.
 
 **Republished a fourth time by Ammar on 17 Sept 2026, after PR #71**
 (reported in-session), from the repo file at
