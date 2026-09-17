@@ -296,10 +296,10 @@ function poRowHTML(p){
   const badgeBg=isReserved?'#fef3c7':isCompleted?'#EFEFEF':'#f0f0f0';
   const badgeColor=isReserved?'#b45309':'#111';
   return`<div class="po-row" onclick="window.openPODetail('${p.fbKey}')">
-    <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:#ccc">No img</span>'}</div>
+    <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:9px;color:var(--muted)">No img</span>'}</div>
     <div class="po-info">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="po-num">${p.id}</span>
-        <span class="stage-badge" style="background:${badgeBg};color:${badgeColor}">${badgeLabel}</span>${p.damageFlagged?`<span style="padding:2px 6px;background:#fee2e2;color:#dc2626;border-radius:6px;font-size:10px;font-weight:700">⚠ Loss</span>`:''}</div>
+        <span class="stage-badge" style="background:${badgeBg};color:${badgeColor}">${badgeLabel}</span>${p.damageFlagged?`<span style="padding:2px 6px;background:var(--accent-urgent-soft);color:var(--accent-urgent);border-radius:6px;font-size:10px;font-weight:700">⚠ Loss</span>`:''}</div>
       <div class="po-name">${p.name||'—'}</div>
       <div class="po-meta">${p.qty||'?'} pcs · ${p.fabric||''} · ${p.createdBy||'—'} · ${p.createdAt||''}</div>
     </div><div class="po-arrow">›</div></div>`;
@@ -379,7 +379,7 @@ let _poRegTab='orders';
 function renderRegistry(){
   _cleanupAutoFabricPOs();
   const reservedCount=allPOs.filter(p=>poStatusOf(p)===PO_STATUS.RESERVED).length;
-  const sub=`${allPOs.length} production order${allPOs.length!==1?'s':''}${reservedCount?` · <span style="color:#b45309;font-weight:600">${reservedCount} reserved</span>`:''}`;
+  const sub=`${allPOs.length} production order${allPOs.length!==1?'s':''}${reservedCount?` · <span style="color:var(--accent-warning);font-weight:600">${reservedCount} reserved</span>`:''}`;
   return`<div class="page-head"><div class="page-title">PO Registry</div><div class="page-sub">${sub}</div></div>
   <div class="gp-tabs">
     <button class="gp-tab${_poRegTab==='orders'?' active':''}" onclick="window.switchPoRegTab('orders')">Orders</button>
@@ -466,14 +466,14 @@ function renderDetailPage(){
   const m=document.getElementById('main-content');
   const isOwner=['owner','manager'].includes(session.role);
   const _isReserved=poStatusOf(po)===PO_STATUS.RESERVED;
-  const _reservedBanner=_isReserved?`<div class="card" style="border:2px solid #f59e0b;background:#fffbeb;margin-bottom:12px">
+  const _reservedBanner=_isReserved?`<div class="card" style="border:2px solid var(--accent-warning);background:var(--accent-warning-soft);margin-bottom:12px">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <span style="font-size:18px">🟡</span>
       <div style="flex:1;min-width:180px">
-        <div style="font-weight:800;color:#b45309;font-size:14px;letter-spacing:.01em">Reserve order — not yet in production</div>
-        <div style="font-size:12px;color:#92400e;margin-top:2px">${_poReserveSummary(po)}</div>
+        <div style="font-weight:800;color:var(--accent-warning);font-size:14px;letter-spacing:.01em">Reserve order — not yet in production</div>
+        <div style="font-size:12px;color:var(--accent-warning);margin-top:2px">${_poReserveSummary(po)}</div>
       </div>
-      ${isOwner?`<button class="mark-done-btn" style="width:auto;padding:9px 18px" onclick="window.releaseToProduction('${po.fbKey}')">Release to production →</button>`:'<span style="font-size:12px;color:#92400e">A manager must release this PO.</span>'}
+      ${isOwner?`<button class="mark-done-btn" style="width:auto;padding:9px 18px" onclick="window.releaseToProduction('${po.fbKey}')">Release to production →</button>`:'<span style="font-size:12px;color:var(--accent-warning)">A manager must release this PO.</span>'}
     </div></div>`:'';
   const stagesHTML=STAGES.map(s=>{
     const sd=po.stages?.[s.key]||{};const isDone=!!sd.done;const isCurrent=po.currentStage===s.key;
@@ -531,12 +531,12 @@ function renderDetailPage(){
     </div>
   </div>
   ${po.notes?`<div class="card"><div class="card-title">Notes</div>
-    <div style="color:#DC2626;font-weight:600;font-size:13px;white-space:pre-wrap">${_gpEsc(po.notes)}</div>
+    <div style="color:var(--accent-urgent);font-weight:600;font-size:13px;white-space:pre-wrap">${_gpEsc(po.notes)}</div>
   </div>`:''}
-  ${po.damageFlagged||po.damageSummary?`<div class="card" style="border:1px solid #fca5a5"><div class="card-title" style="color:#dc2626">⚠ Damage report</div>
+  ${po.damageFlagged||po.damageSummary?`<div class="card" style="border:1px solid var(--accent-urgent)"><div class="card-title" style="color:var(--accent-urgent)">⚠ Damage report</div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px">
-      <div style="text-align:center;padding:8px 4px;background:#fef2f2;border-radius:6px"><div style="font-size:10px;color:var(--muted)">Cut</div><div style="font-size:16px;font-weight:700">${po.damageSummary?.cutTotal||0}</div></div>
-      <div style="text-align:center;padding:8px 4px;background:#fee2e2;border-radius:6px"><div style="font-size:10px;color:#dc2626">Damaged</div><div style="font-size:16px;font-weight:700;color:#dc2626">${po.damageSummary?.total||0}</div></div>
+      <div style="text-align:center;padding:8px 4px;background:var(--accent-urgent-soft);border-radius:6px"><div style="font-size:10px;color:var(--muted)">Cut</div><div style="font-size:16px;font-weight:700">${po.damageSummary?.cutTotal||0}</div></div>
+      <div style="text-align:center;padding:8px 4px;background:var(--accent-urgent-soft);border-radius:6px"><div style="font-size:10px;color:var(--accent-urgent)">Damaged</div><div style="font-size:16px;font-weight:700;color:var(--accent-urgent)">${po.damageSummary?.total||0}</div></div>
       <div style="text-align:center;padding:8px 4px;background:var(--soft);border-radius:6px"><div style="font-size:10px;color:var(--muted)">Usable</div><div style="font-size:16px;font-weight:700;color:var(--text)">${po.damageSummary?.usable||0}</div></div>
       <div style="text-align:center;padding:8px 4px;background:${(po.damagePercent||0)>1.5?'#fee2e2':'#fef9e7'};border-radius:6px"><div style="font-size:10px;color:var(--muted)">Rate</div><div style="font-size:16px;font-weight:700;color:${(po.damagePercent||0)>1.5?'#dc2626':'var(--amber)'}">${(po.damagePercent||0).toFixed(2)}%</div></div>
     </div>
@@ -626,7 +626,7 @@ function renderPOCreate(){
         <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600">FRONT VIEW *</div>
         <div class="img-upload-box" id="img-front-box" onclick="document.getElementById('inp-front').click()">
           <img id="img-front-prev" style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:9px">
-          <div id="img-front-ph" style="text-align:center"><div style="font-size:24px;color:#ddd;margin-bottom:4px">+</div><div>Tap to upload front</div></div>
+          <div id="img-front-ph" style="text-align:center"><div style="font-size:24px;color:var(--muted);margin-bottom:4px">+</div><div>Tap to upload front</div></div>
         </div>
         <input type="file" id="inp-front" accept="image/*" class="hidden" onchange="window.handleImg(this,'front')">
         <button onclick="window.clearImg('front')" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;margin-top:4px;font-family:inherit">Remove</button>
@@ -635,7 +635,7 @@ function renderPOCreate(){
         <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600">BACK VIEW</div>
         <div class="img-upload-box" id="img-back-box" onclick="document.getElementById('inp-back').click()">
           <img id="img-back-prev" style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:9px">
-          <div id="img-back-ph" style="text-align:center"><div style="font-size:24px;color:#ddd;margin-bottom:4px">+</div><div>Tap to upload back</div></div>
+          <div id="img-back-ph" style="text-align:center"><div style="font-size:24px;color:var(--muted);margin-bottom:4px">+</div><div>Tap to upload back</div></div>
         </div>
         <input type="file" id="inp-back" accept="image/*" class="hidden" onchange="window.handleImg(this,'back')">
         <button onclick="window.clearImg('back')" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;margin-top:4px;font-family:inherit">Remove</button>
@@ -644,8 +644,8 @@ function renderPOCreate(){
   </div>
   <div class="card"><div class="card-title">Notes</div>
     <div class="field">
-      <label>Notes for this PO (optional) — printed in <span style="color:#DC2626;font-weight:700">red</span> on the PO copy</label>
-      <textarea id="po-notes" rows="3" placeholder="e.g. special instructions, buyer remarks…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:#DC2626;font-family:inherit;outline:none;resize:vertical"></textarea>
+      <label>Notes for this PO (optional) — printed in <span style="color:var(--accent-urgent);font-weight:700">red</span> on the PO copy</label>
+      <textarea id="po-notes" rows="3" placeholder="e.g. special instructions, buyer remarks…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--accent-urgent);font-family:inherit;outline:none;resize:vertical"></textarea>
     </div>
   </div>
   <button class="btn-primary" id="po-submit-btn" onclick="window.submitPO()">Create Production Order</button>
@@ -723,18 +723,18 @@ window.addBundlePart=function(name='',notes='',dest='Warehouse'){
   </select>
   <input placeholder="Notes (optional)" value="${notes}" style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface-2);outline:none;font-family:inherit">
   <div style="display:flex;gap:4px">
-    <button type="button" onclick="window.setBPDest('${id}','Printing')" id="${id}-print" style="padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid;${dest==='Printing'?'background:var(--soft);color:var(--text);border-color:var(--line)':'background:var(--surface);color:var(--muted);border-color:var(--border)'}">→ Printing</button>
-    <button type="button" onclick="window.setBPDest('${id}','Warehouse')" id="${id}-wh" style="padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid;${dest==='Warehouse'?'background:var(--soft);color:var(--text);border-color:var(--line)':'background:var(--surface);color:var(--muted);border-color:var(--border)'}">→ Warehouse</button>
+    <button type="button" onclick="window.setBPDest('${id}','Printing')" id="${id}-print" style="padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid;${dest==='Printing'?'background:var(--soft);color:var(--text);border-color:var(--line)':'background:var(--surface);color:var(--muted);border-color:var(--muted)'}">→ Printing</button>
+    <button type="button" onclick="window.setBPDest('${id}','Warehouse')" id="${id}-wh" style="padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid;${dest==='Warehouse'?'background:var(--soft);color:var(--text);border-color:var(--line)':'background:var(--surface);color:var(--muted);border-color:var(--muted)'}">→ Warehouse</button>
   </div>
-  <button type="button" onclick="document.getElementById('${id}').remove()" style="background:none;border:none;color:#ccc;font-size:18px;cursor:pointer;padding:2px 6px">×</button>`;
+  <button type="button" onclick="document.getElementById('${id}').remove()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:2px 6px">×</button>`;
   wrap.appendChild(div);
 };
 window.setBPDest=function(rowId,dest){
   const row=document.getElementById(rowId);if(!row)return;
   row.dataset.dest=dest;
   const pBtn=document.getElementById(rowId+'-print'),wBtn=document.getElementById(rowId+'-wh');
-  if(pBtn){pBtn.style.cssText=pBtn.style.cssText.replace(/background:[^;]+;color:[^;]+;border-color:[^;]+/,dest==='Printing'?'background:#EFEFEF;color:#111;border-color:#111':'background:#fff;color:var(--muted);border-color:var(--border)');}
-  if(wBtn){wBtn.style.cssText=wBtn.style.cssText.replace(/background:[^;]+;color:[^;]+;border-color:[^;]+/,dest==='Warehouse'?'background:#EFEFEF;color:#111;border-color:#111':'background:#fff;color:var(--muted);border-color:var(--border)');}
+  if(pBtn){pBtn.style.cssText=pBtn.style.cssText.replace(/background:[^;]+;color:[^;]+;border-color:[^;]+/,dest==='Printing'?'background:var(--soft);color:#111;border-color:#111':'background:#fff;color:var(--muted);border-color:var(--muted)');}
+  if(wBtn){wBtn.style.cssText=wBtn.style.cssText.replace(/background:[^;]+;color:[^;]+;border-color:[^;]+/,dest==='Warehouse'?'background:var(--soft);color:#111;border-color:#111':'background:#fff;color:var(--muted);border-color:var(--muted)');}
 };
 window.getBundleParts=function(){
   const rows=document.querySelectorAll('#bp-rows > div');
@@ -831,8 +831,8 @@ function renderPOEditPage(){
   </div>
   <div class="card"><div class="card-title">Notes</div>
     <div class="field">
-      <label>Notes for this PO (optional) — printed in <span style="color:#DC2626;font-weight:700">red</span> on the PO copy</label>
-      <textarea id="po-notes" rows="3" placeholder="e.g. special instructions, buyer remarks…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:#DC2626;font-family:inherit;outline:none;resize:vertical">${_gpEsc(po.notes||'')}</textarea>
+      <label>Notes for this PO (optional) — printed in <span style="color:var(--accent-urgent);font-weight:700">red</span> on the PO copy</label>
+      <textarea id="po-notes" rows="3" placeholder="e.g. special instructions, buyer remarks…" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--accent-urgent);font-family:inherit;outline:none;resize:vertical">${_gpEsc(po.notes||'')}</textarea>
     </div>
   </div>
   <button class="btn-primary" id="po-edit-save-btn" onclick="window.savePOEdit('${po.fbKey}')">Save Changes</button>
@@ -938,7 +938,7 @@ function renderCutBundleList(){
     <span class="bundle-num">B-${String(i+1).padStart(4,'0')}*</span>
     <span class="bundle-size-tag">${b.size}</span>
     <span class="bundle-units">${b.units} pcs</span>
-    <button onclick="window.removeCutBundle(${b.tempId})" style="background:none;border:none;color:#ccc;font-size:18px;cursor:pointer;padding:0 4px">×</button>
+    <button onclick="window.removeCutBundle(${b.tempId})" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:0 4px">×</button>
   </div>`).join('');
 }
 
@@ -1131,7 +1131,7 @@ function renderBundlingWork(po){
   const doneCount=bundles.filter(b=>b.bundlingDone).length;
 
   const partsCard=parts.length>1||parts[0]?.name!=='Full Garment'?`<div class="card"><div class="card-title">Bundling instructions</div>
-    ${parts.map(p=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f5f5f5;font-size:13px">
+    ${parts.map(p=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
       <span style="font-weight:500">${p.name}</span>
       <div style="display:flex;align-items:center;gap:8px">
         ${p.notes?`<span style="font-size:11px;color:var(--muted)">${p.notes}</span>`:''}
@@ -1154,7 +1154,7 @@ function renderBundlingWork(po){
         ${bList.map(b=>{
           const dmgVal=bundleDamage[b.bundleId]?.dmg??'';
           const dmgEntered=bundleDamage[b.bundleId]?.entered;
-          return`<div class="bundle-item" id="bi-${b.bundleId}" style="flex-wrap:wrap;gap:8px;${b.bundlingDone?'background:#f0fdf4;border-radius:8px;padding:8px':''}">
+          return`<div class="bundle-item" id="bi-${b.bundleId}" style="flex-wrap:wrap;gap:8px;${b.bundlingDone?'background:var(--accent-success-soft);border-radius:8px;padding:8px':''}">
             <span class="bundle-num">${b.bundleId}</span>
             <span class="bundle-size-tag">${b.size}</span>
             <span class="bundle-units ${b.bundlingDone?'bundle-done':''}">${b.units} pcs</span>
@@ -1192,10 +1192,10 @@ function renderBundlingWork(po){
   </div>
   ${partsCard}
   ${destSections}
-  ${pct>1.5?`<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:10px;padding:12px 14px;margin-bottom:10px">
-    <div style="font-weight:700;color:#dc2626;font-size:13px;margin-bottom:4px">⚠ Damage Alert / نقصان کا انتباہ</div>
-    <div style="font-size:12px;color:#991b1b;margin-bottom:6px">This bundling record will be flagged for excess loss of quantity (${pct.toFixed(2)}%). A manager will be notified.</div>
-    <div style="font-size:12px;color:#991b1b;direction:rtl;text-align:right;font-family:serif">یہ بنڈلنگ ریکارڈ مقدار میں زیادہ نقصان (${pct.toFixed(2)}%) کی وجہ سے فلیگ کیا جائے گا۔ مینیجر کو اطلاع دی جائے گی۔</div>
+  ${pct>1.5?`<div style="background:var(--accent-urgent-soft);border:1px solid var(--accent-urgent);border-radius:10px;padding:12px 14px;margin-bottom:10px">
+    <div style="font-weight:700;color:var(--accent-urgent);font-size:13px;margin-bottom:4px">⚠ Damage Alert / نقصان کا انتباہ</div>
+    <div style="font-size:12px;color:var(--accent-urgent);margin-bottom:6px">This bundling record will be flagged for excess loss of quantity (${pct.toFixed(2)}%). A manager will be notified.</div>
+    <div style="font-size:12px;color:var(--accent-urgent);direction:rtl;text-align:right;font-family:serif">یہ بنڈلنگ ریکارڈ مقدار میں زیادہ نقصان (${pct.toFixed(2)}%) کی وجہ سے فلیگ کیا جائے گا۔ مینیجر کو اطلاع دی جائے گی۔</div>
   </div>`:''}
   <button class="mark-done-btn" id="bundling-done-btn" onclick="window.completeBundling('${po.fbKey}')" ${allBundled?'':'disabled'} style="margin-top:4px">Complete Bundling ✓</button>
   ${!allBundled?'<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:6px">Mark all bundles done first — damage defaults to 0 if none</div>':''}
@@ -1344,14 +1344,14 @@ function renderQCWork(po){
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
       <div style="text-align:center;padding:10px;background:var(--surface-2);border-radius:8px"><div style="font-size:20px;font-weight:700;color:var(--muted)">${pending}</div><div style="font-size:10px;color:var(--muted)">Pending</div></div>
       <div style="text-align:center;padding:10px;background:var(--soft);border-radius:8px"><div style="font-size:20px;font-weight:700;color:var(--text)">${passed}</div><div style="font-size:10px;color:var(--muted)">Passed</div></div>
-      <div style="text-align:center;padding:10px;background:#fef2f2;border-radius:8px"><div style="font-size:20px;font-weight:700;color:#dc2626">${failed}</div><div style="font-size:10px;color:#dc2626">Failed</div></div>
+      <div style="text-align:center;padding:10px;background:var(--accent-urgent-soft);border-radius:8px"><div style="font-size:20px;font-weight:700;color:var(--accent-urgent)">${failed}</div><div style="font-size:10px;color:var(--accent-urgent)">Failed</div></div>
     </div>
   </div>
   ${bundles.map(b=>`<div class="bundle-item" id="qci-${b.bundleId}" style="background:${b.qcStatus==='pass'?'#f0fdf4':b.qcStatus==='fail'?'#fef2f2':'#f8f8f8'}">
     <span class="bundle-num">${b.bundleId}</span>
     <span class="bundle-size-tag">${b.size}</span>
     <span class="bundle-units" style="flex:1">${b.units} pcs</span>
-    ${b.qcStatus==='pass'?'<span style="color:var(--green);font-weight:700">✓ Pass</span>':b.qcStatus==='fail'?`<span style="color:#dc2626;font-weight:700">✗ Fail</span><span style="font-size:11px;color:#dc2626;margin-left:6px">${b.qcReason||''}</span>`:`<button class="qc-pass-btn" onclick="window.setQC('${b.bundleId}','pass','')">Pass ✓</button><button class="qc-fail-btn" style="margin-left:6px" onclick="window.setQCFail('${b.bundleId}')">Fail ✗</button>`}
+    ${b.qcStatus==='pass'?'<span style="color:var(--green);font-weight:700">✓ Pass</span>':b.qcStatus==='fail'?`<span style="color:var(--accent-urgent);font-weight:700">✗ Fail</span><span style="font-size:11px;color:var(--accent-urgent);margin-left:6px">${b.qcReason||''}</span>`:`<button class="qc-pass-btn" onclick="window.setQC('${b.bundleId}','pass','')">Pass ✓</button><button class="qc-fail-btn" style="margin-left:6px" onclick="window.setQCFail('${b.bundleId}')">Fail ✗</button>`}
   </div>`).join('')||'<div class="empty">No bundles found.</div>'}
   <button class="mark-done-btn" id="qc-done-btn" onclick="window.completeQC('${po.fbKey}')" ${canComplete?'':'disabled'} style="margin-top:10px">Complete QC${failed>0?` (${failed} failed)`:' ✓'}</button>
   <div style="height:80px"></div>`;

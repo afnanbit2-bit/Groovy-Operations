@@ -723,7 +723,7 @@ function _renderPostexPipeline(){
     const term=!_POSTEX_FLIGHT_KINDS.includes(s.kind);
     return `<div style="display:flex;align-items:center;gap:9px;margin-bottom:9px">
         <div style="width:104px;flex-shrink:0;font-size:12.5px;font-weight:600;line-height:1.2">${s.label}${term?'':' <span style="color:var(--muted);font-weight:400">•</span>'}</div>
-        <div style="flex:1;min-width:0;background:#F3F3F3;border-radius:6px;height:22px;overflow:hidden">
+        <div style="flex:1;min-width:0;background:var(--soft);border-radius:6px;height:22px;overflow:hidden">
           <div style="width:${Math.max(2,100*v/maxV).toFixed(1)}%;background:${s.color};height:100%;border-radius:6px"></div>
         </div>
         <div style="width:88px;flex-shrink:0;text-align:right;font-size:12.5px"><b>${_fnum(v)}</b> <span style="color:var(--muted)">${pct}%</span></div>
@@ -738,7 +738,7 @@ function _renderPostexPipeline(){
   const rawRows=Object.entries(raw).sort((a,b)=>b[1]-a[1]).map(([k,v])=>{
     const st=_POSTEX_PIPELINE.find(x=>x.match(String(k).toLowerCase()));
     const label=st?st.label:'<span style="color:var(--accent-warning)">In transit (fallback)</span>';
-    return `<tr style="border-bottom:1px solid #f5f5f5;font-size:12.5px">
+    return `<tr style="border-bottom:1px solid var(--border);font-size:12.5px">
         <td style="padding:5px 6px">${k}</td>
         <td style="padding:5px 6px;color:var(--muted)">→ ${label}</td>
         <td style="padding:5px 6px;text-align:right;font-weight:600">${_fnum(v)}</td></tr>`;
@@ -810,7 +810,7 @@ function _postexCohortChart(cohorts,period){
     const lbl=period==='monthly'?_fulfillMonthLabel(c.key):_fulfillFmtDateShort(c.key);
     return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:50px">
         <div style="font-size:12px;font-weight:700;color:${color}">${mature?'':'~'}${rate.toFixed(0)}%</div>
-        <div style="width:28px;height:${H}px;background:#F3F3F3;border-radius:5px;display:flex;align-items:flex-end;overflow:hidden">
+        <div style="width:28px;height:${H}px;background:var(--soft);border-radius:5px;display:flex;align-items:flex-end;overflow:hidden">
           <div title="${mature?'':'still maturing — '}${_fnum(c.returned)} of ${_fnum(resolved)} resolved returned" style="width:100%;height:${h}px;background:${color};opacity:${mature?1:0.4};border-radius:5px 5px 0 0"></div>
         </div>
         <div style="font-size:10px;color:var(--muted);text-align:center;line-height:1.1;white-space:nowrap">${lbl}</div>
@@ -843,7 +843,7 @@ function _renderPostexCohort(){
     const lbl=period==='monthly'?_fulfillMonthLabel(c.key):'Wk '+_fulfillFmtDateShort(c.key);
     const rateCell=rate==null?'<span style="color:var(--muted)">—</span>'
       :`<span style="font-weight:700;color:${_fulfillRateColor(rate)}">${mat?'':'~'}${rate.toFixed(1)}%</span>`;
-    return `<tr style="border-bottom:1px solid #f5f5f5;font-size:13.5px">
+    return `<tr style="border-bottom:1px solid var(--border);font-size:13.5px">
         ${td(lbl,'left','font-weight:600;white-space:nowrap')}
         ${td(_fnum(c.ship),'right')}
         ${td(_fnum(c.delivered),'right','color:var(--muted)')}
@@ -896,7 +896,7 @@ function _postexCOD(){
 }
 function _renderPostexCOD(){
   const r=_postexCOD();
-  const row=(label,val,sign,color,strong)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 2px;border-bottom:1px solid #f5f5f5;font-size:${strong?'15px':'14px'}">
+  const row=(label,val,sign,color,strong)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 2px;border-bottom:1px solid var(--border);font-size:${strong?'15px':'14px'}">
       <span style="${strong?'font-weight:800':'color:var(--muted)'}">${sign?`<span style="display:inline-block;width:14px;color:var(--muted)">${sign}</span>`:''}${label}</span>
       <span style="font-weight:${strong?800:600};color:${color||'var(--text)'}">${_fRs(val)}</span>
     </div>`;
@@ -970,7 +970,7 @@ function _renderPostexCPR(){
         <span style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">CPR enrichment</span>
         <span style="font-size:12px;color:var(--muted)">${_fnum(withCpr)} of ${_fnum(eligible)} delivered/returned parcels have CPR data</span>
       </div>
-      <div style="height:8px;background:var(--soft);border-radius:6px;overflow:hidden"><div style="height:100%;width:${Math.max(2,pct)}%;background:#14532D;border-radius:6px"></div></div>
+      <div style="height:8px;background:var(--soft);border-radius:6px;overflow:hidden"><div style="height:100%;width:${Math.max(2,pct)}%;background:var(--accent-success);border-radius:6px"></div></div>
       <div style="font-size:11px;color:var(--muted);margin-top:6px">CPR data is fetched one parcel at a time from PostEx's Payment Status API and fills in over a few daily runs. Use <b>Fetch CPR now</b> to speed up the backfill.</div>
       <button class="btn-sm" style="margin-top:10px" ${_postexCprFetching?'disabled':''} onclick="window.fulfillFetchCPR()">${_postexCprFetching?'Fetching…':'Fetch CPR now'}</button>
     </div>`;
@@ -983,7 +983,7 @@ function _renderPostexCPR(){
   const th=(t,a)=>`<th style="padding:7px 6px;border-bottom:2px solid var(--border);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;text-align:${a||'left'}">${t}</th>`;
   const td=(v,a,x)=>`<td style="padding:8px 6px;text-align:${a||'left'};${x||''}">${v}</td>`;
   const rows=cprs.map(c=>{
-    return `<tr style="border-bottom:1px solid #f5f5f5;font-size:13.5px">
+    return `<tr style="border-bottom:1px solid var(--border);font-size:13.5px">
         ${td(c.cpr,'left','font-weight:700;white-space:nowrap')}
         ${td(_postexCprDate(c.date),'left','color:var(--muted);white-space:nowrap')}
         ${td(_fnum(c.n),'right')}
@@ -1464,7 +1464,7 @@ function _renderFulfillAnalytics(){
     const rr=bucketRate(b);
     const net=b.dAmt-b.rAmt;
     const rrCell=rr==null?'<span style="color:var(--muted)">—</span>':`<span style="font-weight:600;color:${rrColor(rr)}">${rr}%</span>`;
-    return `<tr style="border-bottom:1px solid #f5f5f5;font-size:14px">
+    return `<tr style="border-bottom:1px solid var(--border);font-size:14px">
       ${firstCol(b)}
       ${td(b.days,'right','color:var(--muted)')}
       ${td(_fnum(b.dShip),'right','font-weight:600')}
@@ -1485,7 +1485,7 @@ function _renderFulfillAnalytics(){
 
   const rankRows=map=>Object.entries(map).sort((a,b)=>b[1].dShip-a[1].dShip).map(([name,v])=>{
     const rr=v.dShip?Math.round(100*v.rShip/v.dShip):0;
-    return `<tr style="border-bottom:1px solid #f5f5f5;font-size:14px">
+    return `<tr style="border-bottom:1px solid var(--border);font-size:14px">
       ${td(name,'left','font-weight:600')}${td(_fnum(v.dShip),'right')}${td(_fRs(v.dAmt),'right','color:var(--muted)')}${td(_fnum(v.rShip),'right')}${td(_fulfillRateBar(rr,rrColor),'right')}
     </tr>`;
   }).join('');

@@ -2119,6 +2119,34 @@ card no longer navigates (ctrl/cmd-click still opens a tab). The right-click
 menu's Download and Open route through the same two functions as the card's
 own buttons, so the two cannot drift apart.
 
+### Mood Boards — a PDF card is sized to its page (Sept 2026)
+
+Reported with a screenshot: an attached production brief landed as the
+200×110 file default, and the name row plus Open/Download took ~90px of it,
+so the page-1 thumbnail was a **198×30 strip** (measured in Chrome with the
+real `css/main.css`). Every PDF had to be dragged open by hand.
+
+- **A PDF card is 240 wide and as tall as its page** (`_boardsFitPdfCard`,
+  `_boardsPdfCardH`). The ratio comes from Cloudinary's upload response
+  (`width`/`height`), with **A4 portrait** when it has none. The chrome
+  constant (`_BOARDS_FILE_CHROME_H` = 92) was **measured, not estimated**:
+  the first guess of 96 left the thumbnail 4px taller than the page.
+- **Only an unsized card is fitted** (`_boardsFileCardUnsized`): the file
+  default, or the A4 placeholder below. A card resized while its upload ran,
+  or resized before a Replace, keeps its size. The size at upload start is
+  captured before the `await` and compared after it.
+- **`_boardsAddFiles` gives a PDF its A4 size before uploading**, so the
+  "Uploading…" card doesn't jump, and the drop grid now steps by the
+  **largest** card in the drop — with per-card steps a PDF beside a small
+  card overlapped the next row.
+- **A PDF stored as a RAW resource goes back to the compact card.**
+  Cloudinary cannot rasterise raw files, and a page-sized card around a
+  thumbnail that will never load is worse than the default. A failed upload
+  shrinks the placeholder back the same way.
+- Dragging a PDF out of Unsorted gives it A4 size (a tray item stores no page size).
+- **Existing cards are not touched.** Resizing them on open would write to
+  every board that has one; drag the corner instead.
+
 ### Mood Boards — the QA retest (Sept 2026)
 
 Afnan retested the round above on the live site. Three fixes held (Line
@@ -3021,6 +3049,100 @@ page's "Check Shopify access", which asks Shopify directly).
     in-memory Firestore (replacing `firebase-admin` through
     `Module._load`) and a scripted Shopify. The gate was verified by
     removing it: two assertions fail.
+- **Instagram auto-fetch (Sept 2026).** "Fetch from Instagram" on the
+  creator form fills followers and average likes / comments / views through
+  **Instagram Business Discovery**, called with GRVY's OWN Business account
+  (`17841409780333939`, Meta app "API GRVY Ops" `2573791029752857`). An app
+  that only serves a business its owner manages gets **Standard Access with
+  no App Review**, so there is no "pending review" state anywhere — it is
+  live as soon as the env vars are set. Confirmed working by Ammar in Graph
+  API Explorer before it was built.
+  - `netlify/functions/instagram-business-discovery.js` — POST, the caller's
+    ID token is verified and checked against the SAME `MARKETING_EMAILS` the
+    discount function exports. `lookup` returns followers and the averages
+    over the posts Instagram returns (each average over the posts that carry
+    that number — a hidden like count is not a zero); `status` reports the
+    token's health. The username is validated (`[a-z0-9._]{1,30}`) before it
+    goes into the field expansion.
+  - **Not found is a normal answer, not an error.** Business Discovery's one
+    failure shape (code 110 / subcode 2207013, "Cannot find User") does not
+    tell a Personal account from a typo, so the message says exactly that:
+    *"Couldn't find a Business or Creator account with that handle — check
+    the spelling, or use manual/screenshot entry if this is a Personal
+    account."* Never assert "this is a Personal account".
+  - **Fetching never saves.** It fills the inputs; the person reviews and
+    presses Save, and any failure leaves the manual fields as they were.
+  - **`data_source` on the creator: `'api' | 'manual' | 'screenshot'`**
+    (null when there are no numbers). `'api'` is **never taken on the form's
+    word** — `mktDataSource` records it only when the saved numbers equal
+    the last fetch exactly, so editing a fetched number makes it manual and
+    the Source picker follows along. `api_fetched_at` is when. No rules
+    change: the `creators` rule does not restrict fields.
+  - **The token (`netlify/functions/instagram-token-refresh.js`).**
+    `IG_ACCESS_TOKEN` in Netlify is only a SEED. On first use it is
+    exchanged (`fb_exchange_token`, with `META_APP_SECRET`) for a long-lived
+    user token, and `/me/accounts` is asked for the Page linked to GRVY's
+    Instagram — **that Page token is what gets stored**, because Meta's
+    long-lived-token doc (read Sept 2026) says Page tokens obtained this way
+    have no expiry date, and describes **no way to renew an active 60-day
+    user token**. So the spec's "re-exchange before expiry" was replaced by
+    "store a token that does not expire, and check it nightly". If no linked
+    Page is found, the user token is stored with its expiry.
+  - The working token lives in **`integration_secrets/instagram`**, which has
+    **no `firestore.rules` match block** — default-deny, so no client can
+    read or write it (a test fails if a rule or a catch-all ever appears).
+    `shopify_sync_meta/instagram` holds the readable status, never the
+    token. Every call carries an `appsecret_proof`. **Changing
+    `IG_ACCESS_TOKEN` re-seeds automatically** (the stored doc keeps a
+    fingerprint of its seed) — after a redeploy, since Netlify env changes
+    only reach functions on the next deploy. A token Meta rejects (code 190)
+    is re-seeded once and the lookup retried.
+  - **Nightly check** (`15 2 * * *`, 7:15am PKT): `debug_token`, then a bell
+    to afnan and ammar if the token is invalid or expires within 14 days
+    (high priority at 3), with deterministic ids so it is raised once.
+    Reports → **Instagram connection → Check Instagram access** shows the
+    same thing on demand.
+  - Env vars: **`IG_ACCESS_TOKEN`, `META_APP_SECRET`** required;
+    `META_APP_ID` and `IG_BUSINESS_ACCOUNT_ID` optional (default to the ids
+    above — ids are public, the secret is not). Unset → "not set up" on the
+    form and the Reports card, never a crash. Graph API **`v26.0`** — the
+    newest version `graph.facebook.com` recognised when probed.
+  - `tests/instagram.test.js` runs both functions against a scripted Graph
+    and an in-memory Firestore. **Unverified against the live API**: the
+    first real lookup is the test, and so is whether `/me/accounts` returns
+    the linked Page for the token Ammar generates (it needs
+    `pages_show_list`, which was granted).
+- **Fetch all from Instagram** (Creator Database header). The same lookup
+  over the whole list, one creator at a time: a Business/Creator account is
+  written through `mktApplyIgFetch` → the normal payload builder (so a
+  manual tier stays manual and an off-list city survives); a not-found
+  account gets **no write at all** — "leave it as is" was the instruction.
+  Meta caps calls per hour, so the lookup now returns `usage` (the highest
+  percentage in `X-App-Usage` / `X-Business-Use-Case-Usage`) and the run
+  **pauses itself at 85%**, stops on any 429, and stops on a 401/403/503
+  (a dead connection stops after ONE call, not 244). A rerun skips anyone
+  fetched in the last 24 h (`mktIgBulkPlan`), so a paused run resumes.
+  Writes are plain `updateDoc`s — the handle does not change, so the lock
+  rule is already satisfied. **Whether the hourly allowance covers 244
+  lookups in one go is not known from here**; the pause is what makes that
+  not matter.
+- **Scoring settings are Ammar's alone** (17 Sept 2026). A third
+  per-account flag, `canEditScoring` on Ammar's `USER_DEFS` entry
+  (`canEditScoring()` in `js/auth.js`), mirrored by EMAIL in
+  `firestore.rules` `isScoringAdmin()`; a test fails if the two disagree.
+  `scoring_config` stays READABLE to all of Marketing — every creator save
+  is scored with those bands — but only the admin may write it. The button
+  is hidden from everyone else (the other owner included), and opening or
+  saving it anyway is refused client-side too. Rules published 17 Sept 2026.
+- **Deleting a creator** (owners and the Content Ops lead — the rules
+  allow `creators` delete for `isMarketing()`; widened from owners-only at
+  Ammar's request so Daniyal can clean up the list). One
+  batch deletes the creator and its handle lock (the lock rule releases it
+  once the creator no longer exists; a lock naming ANOTHER creator is never
+  touched). **A creator with any dispatch or Paid PR is refused** —
+  `mktCreatorDeleteBlock` — because those records, their rollups and codes
+  would point at nothing; "Do not use" is how to retire one. If either list
+  failed to load, the delete is refused rather than guessed.
 - **`tests/smoke-layout.js` now runs Chrome in a bounded pool** (default
   min(8, CPUs), `SMOKE_LAYOUT_CONCURRENCY` to override). With 14 fragments
   it launched 84 Chromes at once and most timed out on a Windows machine,
@@ -3285,6 +3407,16 @@ colours, i.e. content**, not chrome. And, critically, **the two
 script hard-excluded their line ranges. Same rule as `js/print-engine.js`
 and `js/diagnostics.js`.
 
+**The notification bell was missed by both sweeps (fixed 17 Sept 2026).**
+`_ensureNotifBell` painted `#notif-panel` with a literal `#fff`, and
+`_hrmNotifCardHTML` gave normal/low cards `#fff`/`#fafafa` backgrounds and a
+`#1A1A2E` title, while the message text used `var(--text)` — light text on
+a white card in dark mode, reported from Daniyal's screen. All tokens now;
+`smoke-layout` has an `hrm — notification cards` fragment, verified to fail
+in dark on the old code. (The advance/loan notices he saw were genuinely
+his: `js/hrm.js` seeds an employee `daniyal`, and this was his first
+sign-in, so nothing had dismissed them.)
+
 `tests/smoke-layout.js` gained the fragment that proves it — the real
 `printWorkerCardHTML`, `renderPPAttemptsCard` and `renderTowerSwimlane`
 output at ok/near/over/critical. **Verified both ways:** reverting the
@@ -3296,6 +3428,95 @@ whatever `display` it specified — so every collapsible form in this app
 (the delay-reason textarea, the QC defect rows) reported as zero-size
 invisible text. `hiddenEl()` walks up to `#main-content` instead, and all
 four checks use it.
+
+### Dark mode — the app-wide sweep (Sept 2026)
+
+Afnan, with a screenshot of Inventory Intel: *"look at the color of dark
+mode, i cant read the table."* He was right, and the cause was one rule.
+The round that followed swept the whole app for the same shapes. **Every
+claim below was MEASURED in headless Chromium in both themes, never read
+off the source**, and each fix was verified by reverting it.
+
+**The reported bug: `.cut-table th` — measured 1.1:1.**
+`background:var(--dark);color:rgba(255,255,255,.6)`. `--dark` is the app's
+"strong contrast chip" and **inverts**, so in dark mode that is near-white
+ink on a near-white bar. It had been invisible since dark mode shipped, on
+**every `.cut-table` in the app** — Inventory Intel just happens to be the
+page that puts the most numbers on screen. The rule that "anything painted
+on `--dark` must take its ink from `--on-dark`" was already written down
+for the embellishments sweep; this rule predated it and was never revisited.
+An alpha becomes an `opacity` so the muted label look survives both themes.
+
+**The four shapes, and only the first is the one earlier sweeps looked for:**
+
+1. **White-alpha ink on a `--dark` panel** (1.03–1.10:1). The *value* beside
+   it already used `--on-dark` and read perfectly, which is exactly why
+   nobody noticed the *label* had gone. 13 sites in `gatepass.js` and
+   `fabric.js`, plus `.cut-table th`, the board heading placeholder, and the
+   Users-page avatar initial.
+2. **A fixed light panel with token ink** (1.04–1.14:1). `#fffbeb`,
+   `#fef2f2`, `#f0fdf4`, `#f7f7f8` … carrying an inherited `var(--text)`.
+   The accent `*-soft` tokens already invert and their LIGHT values are
+   these very colours, so mapping the background is a no-op in light mode
+   and fixes both halves in dark.
+3. **A fixed dark ink on a token surface** (1.02–1.74:1). `#111`, `#1A1A2E`
+   (the brand navy), `#333`, `#374151`, `#1e3a8a`. The worst was the SKU
+   table's own on-hand total.
+4. **Bright patches that are readable but wrong in tone** — self-consistent
+   literal chip pairs (`#f0f0f0`/`#111`, `#dcfce7`/`#166534`, `#e0e7ff`/
+   `#3730a3`) glaring off a dark page. Converted, for the same reason the
+   embellishments sweep converted its chips.
+
+Also swept: seven `border-bottom:1px solid #f5f5f5` hairlines in
+`css/main.css` (a bright line straight across a dark card — the leftover the
+Store log's pager had), `.cash-action-bar`'s fixed white bar, the board
+drop-zone, the white skeleton shimmers, and `fabric.js`'s busy overlay,
+which flashed a white scrim over the whole app.
+
+**Two of the sweep's own replacements were wrong, and the measurement is
+what caught them — not review:**
+
+- **`#ccc`/`#ddd` ink → `var(--border)` is too faint** (1.33:1). Those sites
+  are remove-**×** buttons and empty-state glyphs: faint on purpose, but
+  they still have to be seen. `--muted` is the token that means "faint but
+  legible". **`--border` is a line colour; it is never ink.**
+- **A `.btn-sm` background → `var(--soft)` broke it in LIGHT mode** (1.15:1).
+  The class already sets `color:var(--on-dark)`, which only reads on a solid
+  chip. A grey button wants `--muted`, not a pale surface. **Before changing
+  any element's background, check what its CLASS sets for `color`.**
+
+**What the sweep deliberately did NOT touch**, all confirmed by reading the
+call site rather than assumed:
+
+- `win.document.write` print windows (`embellishments.js` ~3849) — those
+  documents never load `css/main.css`, so a `var()` resolves to nothing.
+  Same standing rule as `js/print-engine.js` and `js/diagnostics.js`.
+- `.hrm-greeting` and the bug-report modal header — fixed dark **gradients**
+  with white ink, self-consistent in both themes.
+- Solid saturated buttons (`#dc2626`/`#fff`, `#1A1A2E`/`white`) — readable
+  on a dark page and semantic.
+- `rgba(0,0,0,.5)` modal backdrops and shadows, and the Pantone hex data,
+  which is **content** (ink colours), not chrome.
+
+**The probe technique, worth reusing.** Extracting every `style="…"` string
+in `js/*.js` and measuring each one in isolation is tempting and produces a
+**flood of false positives**: a child whose ink is `var(--on-dark)` gets
+rendered without the `background:var(--dark)` parent that justifies it, and
+a `.btn-primary` loses the `color` its class supplies. **The filter that
+makes it usable: keep only what fails in DARK and passes in LIGHT.** A
+self-contained style broken in both themes is almost always a missing
+parent, not a bug. That cut 53 raw hits to 9 real ones, and the final sweep
+reports **0 dark-only failures** across 860 style strings.
+
+`tests/smoke-layout.js` gained two fragments. **`inventory intel — SKU
+table` needs one non-obvious row to be worth anything:** a variant with
+**no `onHand` at all**. `totColor`'s three branches are `allInStock ? … :
+anySoldOut ? … : '#111'`, and for numeric stock those first two are exact
+complements — the third is unreachable. Only a variant Shopify has not
+reported inventory for (both `>0` and `<=0` false) reaches it. The first cut
+of the fragment used ordinary rows, **passed with the bug restored, and
+proved nothing.** `gate pass — dark summary panels` covers shape 1. Both
+verified by reverting: 3 dark checks fail each time, naming the elements.
 
 ## Shopify Inventory Intelligence
 
@@ -3615,7 +3836,8 @@ worldwide with a single `curl`. Treat them as published, always.
   then add a `USER_DEFS` entry (no password) and a `firestore.rules` entry
   if the role needs scoping.
 - **The real secrets are server-side and must stay there** — Netlify
-  Functions read `SHOPIFY_CLIENT_SECRET`, `POSTEX_API_TOKEN` and
+  Functions read `SHOPIFY_CLIENT_SECRET`, `POSTEX_API_TOKEN`,
+  `META_APP_SECRET`, `IG_ACCESS_TOKEN` and
   `FIREBASE_SERVICE_ACCOUNT` from `process.env`. Never move one client-side.
 - **The Firebase web API key in `index.html` is not a secret.** It is a
   public project identifier that every Firebase web app ships. Do not try
@@ -3719,6 +3941,23 @@ republish.
 (`sharedWith`, TEAM update, the presence/comments/activity sub-collections)
 AND `user_profiles`. Both had been waiting; the Profile page's own error
 card is what finally surfaced it.
+
+**Republished a fifth time by Ammar on 17 Sept 2026, after PR #73**
+(reported in-session), from the repo file at
+`md5 88297fc6f2624db194d3249a5155c79e` (LF line endings — a Windows
+checkout hashes differently until `
+` is stripped). That commit narrowed
+`scoring_config` write to the new `isScoringAdmin()` (Ammar). **No
+republish is outstanding as of that commit**; this supersedes the entries
+below.
+
+**Republished a fourth time by Ammar on 17 Sept 2026, after PR #71**
+(reported in-session), from the repo file at
+`md5 0f6d62e739f5f66eac1c5010efbafbf6` — `git log --oneline -1 --
+firestore.rules` is the PR #71 commit (`creators` delete widened from
+`isOwner()` to `isMarketing()` so the Content Ops lead can delete
+creators). **No republish is outstanding as of that commit**; this
+supersedes the entries below.
 
 **Republished a third time by Ammar on 16 Sept 2026, after PRs #65/#66**
 (reported in-session), from the repo file at

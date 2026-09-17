@@ -116,9 +116,9 @@ function renderOutward(){
     <div id="gp-sizes"></div>
     <button type="button" class="btn-outline" style="font-size:12px;padding:6px 12px;margin-top:8px" onclick="window.gpAddSize()">+ Add size</button>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">
-      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total units</div><div id="gp-t-units" style="font-size:18px;font-weight:700;color:var(--on-dark)">0 pcs</div></div>
-      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total bundles</div><div id="gp-t-bundles" style="font-size:18px;font-weight:700;color:var(--on-dark)">0</div></div>
-      <div style="background:var(--red);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total boras</div><div><input id="gp-boras" type="number" min="0" placeholder="0" style="background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,.35);color:var(--on-dark);font-size:18px;font-weight:700;width:60px;text-align:center;padding:0;border-radius:0;outline:none"></div></div>
+      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:var(--on-dark);opacity:.6;text-transform:uppercase;letter-spacing:.06em">Total units</div><div id="gp-t-units" style="font-size:18px;font-weight:700;color:var(--on-dark)">0 pcs</div></div>
+      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:var(--on-dark);opacity:.6;text-transform:uppercase;letter-spacing:.06em">Total bundles</div><div id="gp-t-bundles" style="font-size:18px;font-weight:700;color:var(--on-dark)">0</div></div>
+      <div style="background:var(--red);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:var(--on-dark);opacity:.6;text-transform:uppercase;letter-spacing:.06em">Total boras</div><div><input id="gp-boras" type="number" min="0" placeholder="0" style="background:transparent;border:none;border-bottom:1px solid var(--on-dark);color:var(--on-dark);font-size:18px;font-weight:700;width:60px;text-align:center;padding:0;border-radius:0;outline:none"></div></div>
     </div>
   </div>
   <div class="card" id="gp-fabric-card" style="display:none"><div class="card-title">Fabric details</div>
@@ -131,21 +131,21 @@ function renderOutward(){
       </div>
       <div class="field" style="grid-column:1/-1" id="gp-fab-rolls-pick-wrap"></div>
       <div class="field"><label>Total <span id="gp-fab-unit-label">weight (kg)</span> *</label>
-        <input id="gp-fab-qty" type="number" min="0" step="0.01" placeholder="0" readonly style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#eef2ff;color:var(--text);font-family:inherit;outline:none;width:100%;font-weight:700">
+        <input id="gp-fab-qty" type="number" min="0" step="0.01" placeholder="0" readonly style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--text);font-family:inherit;outline:none;width:100%;font-weight:700">
         <div style="font-size:10px;color:var(--muted);margin-top:3px">Auto-summed from selected rolls.</div>
       </div>
       <div class="field"><label>Roll count</label>
-        <input id="gp-fab-rolls" type="number" min="0" placeholder="0" readonly style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#eef2ff;color:var(--text);font-family:inherit;outline:none;width:100%;font-weight:700">
+        <input id="gp-fab-rolls" type="number" min="0" placeholder="0" readonly style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--text);font-family:inherit;outline:none;width:100%;font-weight:700">
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
-      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Total <span id="gp-fab-tot-label">weight</span></div><div id="gp-fab-tot-display" style="font-size:18px;font-weight:700;color:var(--on-dark)">0 kg</div></div>
-      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em">Rolls</div><div id="gp-fab-rolls-display" style="font-size:18px;font-weight:700;color:var(--on-dark)">0</div></div>
+      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:var(--on-dark);opacity:.6;text-transform:uppercase;letter-spacing:.06em">Total <span id="gp-fab-tot-label">weight</span></div><div id="gp-fab-tot-display" style="font-size:18px;font-weight:700;color:var(--on-dark)">0 kg</div></div>
+      <div style="background:var(--dark);border-radius:8px;padding:10px;text-align:center"><div style="font-size:9px;color:var(--on-dark);opacity:.6;text-transform:uppercase;letter-spacing:.06em">Rolls</div><div id="gp-fab-rolls-display" style="font-size:18px;font-weight:700;color:var(--on-dark)">0</div></div>
     </div>
   </div>
   <div class="card" id="gp-item-card" style="display:none"><div class="card-title">Items / assets</div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:300px">
-      <thead><tr style="background:var(--dark)"><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Item</th><th style="padding:8px 10px;text-align:left;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Qty</th><th style="padding:8px 10px;text-align:center;color:rgba(255,255,255,.55);font-size:10px;font-weight:500;text-transform:uppercase">Returnable</th><th style="width:36px"></th></tr></thead>
+      <thead><tr style="background:var(--dark)"><th style="padding:8px 10px;text-align:left;color:var(--on-dark);opacity:.65;font-size:10px;font-weight:500;text-transform:uppercase">Item</th><th style="padding:8px 10px;text-align:left;color:var(--on-dark);opacity:.65;font-size:10px;font-weight:500;text-transform:uppercase">Qty</th><th style="padding:8px 10px;text-align:center;color:var(--on-dark);opacity:.65;font-size:10px;font-weight:500;text-transform:uppercase">Returnable</th><th style="width:36px"></th></tr></thead>
       <tbody id="gp-item-body"></tbody>
     </table></div>
     <button onclick="window.addGPItemRow()" style="width:100%;padding:9px;background:none;border:none;border-top:1px solid var(--border);font-size:12px;color:var(--muted);cursor:pointer;font-family:inherit">+ Add item</button>
@@ -159,7 +159,7 @@ function renderOutward(){
       <div class="field"><label>Payment received into *</label><select id="gp-sale-acc" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--text);font-family:inherit;outline:none;width:100%"></select></div>
     </div>
     <div style="background:var(--dark);border-radius:9px;padding:12px;margin-top:12px;display:flex;justify-content:space-between;align-items:center;color:var(--on-dark)">
-      <div style="font-size:11px;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.05em">Bill total</div>
+      <div style="font-size:11px;color:var(--on-dark);opacity:.7;text-transform:uppercase;letter-spacing:.05em">Bill total</div>
       <div id="gp-sale-total" style="font-size:20px;font-weight:800">Rs 0</div>
     </div>
     <div style="font-size:11px;color:var(--muted);margin-top:8px">On submit: prints the bill, deducts the picked rolls, and posts the amount as income to the Store Cash Ledger under “Fabric sale”.</div>
@@ -167,7 +167,7 @@ function renderOutward(){
   <button class="btn-primary" onclick="window.submitGP()" id="gp-submit-btn">Submit gate pass</button>
   <div class="card" style="margin-top:12px"><div class="card-title">Gate passes <span id="gp-count-lbl" style="font-weight:400;color:var(--muted);font-size:12px"></span></div>
     <div id="gp-list-body"></div>
-    <div id="gp-pagination" style="display:flex;align-items:center;justify-content:center;gap:10px;padding-top:10px;border-top:1px solid #f5f5f5;margin-top:4px"></div>
+    <div id="gp-pagination" style="display:flex;align-items:center;justify-content:center;gap:10px;padding-top:10px;border-top:1px solid var(--border);margin-top:4px"></div>
   </div><div style="height:80px"></div>`;
 }
 
@@ -190,7 +190,7 @@ function _gpRenderOutstanding(){
     const st=_gpReturnStatus(p);
     const stColor=st==='Overdue'?'#dc2626':(st==='Partial'?'#92400e':'#6b7280');
     const stBg=st==='Overdue'?'#fee2e2':(st==='Partial'?'#fef3c7':'#f3f4f6');
-    const age=_gpIsOverdue(p)?'<span style="color:#dc2626;font-weight:700">overdue</span>':`<span style="color:var(--muted)">${_gpDaysOut(p)}d out</span>`;
+    const age=_gpIsOverdue(p)?'<span style="color:var(--accent-urgent);font-weight:700">overdue</span>':`<span style="color:var(--muted)">${_gpDaysOut(p)}d out</span>`;
     const pct=sent>0?Math.min(100,Math.round(back/sent*100)):0;
     const uL=unit==='qty'?'':(' '+unit);
     return`<div onclick="window.gpPickReturn('${p.id}')" style="border:1px solid ${_gpRetSelGp===p.id?'#111':'var(--border)'};border-radius:11px;padding:11px 13px;margin-bottom:9px;cursor:pointer">
@@ -199,9 +199,9 @@ function _gpRenderOutstanding(){
         <div style="text-align:right"><span style="font-size:11px;font-weight:800;padding:2px 8px;border-radius:7px;background:${stBg};color:${stColor}">${st}</span><div style="font-size:11px;margin-top:3px">${age}</div></div>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:9px;color:var(--muted)">
-        <span>sent <b style="color:var(--text)">${sent}${uL}</b></span><span>back <b style="color:var(--text)">${back}${uL}</b></span><span>still out <b style="color:#dc2626">${bal}${uL}</b></span>
+        <span>sent <b style="color:var(--text)">${sent}${uL}</b></span><span>back <b style="color:var(--text)">${back}${uL}</b></span><span>still out <b style="color:var(--accent-urgent)">${bal}${uL}</b></span>
       </div>
-      <div style="height:7px;border-radius:5px;background:var(--soft);overflow:hidden;margin-top:8px"><div style="height:100%;width:${pct}%;background:#16a34a"></div></div>
+      <div style="height:7px;border-radius:5px;background:var(--soft);overflow:hidden;margin-top:8px"><div style="height:100%;width:${pct}%;background:var(--accent-success)"></div></div>
     </div>`;
   }).join('');
 }
@@ -213,11 +213,11 @@ window.gpPickReturn=function(gpId){
   const unit=_gpRetUnitKey(p),sent=_gpSentQtyForPass(p),back=_gpReturnedSoFar(gpId),bal=+(sent-back).toFixed(2),tol=_gpTolFor(p);
   const uL=unit==='qty'?'units':unit;
   const hist=allReturns.filter(r=>r.gpNum===gpId).sort((a,b)=>(b.ts||0)-(a.ts||0));
-  const histHtml=hist.length?`<div style="margin-top:12px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:5px">Return loads</div>${hist.map(h=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--muted)">${h.date||''} · ${_gpEsc(h.receivedBy||'')}</span><span style="font-weight:700;color:#16a34a">+${h.returnedQty} ${uL}</span></div>`).join('')}</div>`:'';
+  const histHtml=hist.length?`<div style="margin-top:12px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:5px">Return loads</div>${hist.map(h=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span style="color:var(--muted)">${h.date||''} · ${_gpEsc(h.receivedBy||'')}</span><span style="font-weight:700;color:var(--accent-success)">+${h.returnedQty} ${uL}</span></div>`).join('')}</div>`:'';
   const card=document.getElementById('gp-ret-form-card');if(!card)return;
   card.style.display='block';
   card.innerHTML=`<div class="card-title">Record return · ${p.id}</div>
-    <div style="background:#f7f7f8;border-radius:9px;padding:11px 13px;font-size:12.5px;margin-bottom:12px">Sent <b>${sent} ${uL}</b> · already back <b>${back} ${uL}</b> · <b style="color:#dc2626">${bal} ${uL}</b> still out. Tolerance ±${tol} ${uL}.</div>
+    <div style="background:var(--soft);border-radius:9px;padding:11px 13px;font-size:12.5px;margin-bottom:12px">Sent <b>${sent} ${uL}</b> · already back <b>${back} ${uL}</b> · <b style="color:var(--accent-urgent)">${bal} ${uL}</b> still out. Tolerance ±${tol} ${uL}.</div>
     <div class="form-grid">
       <div class="field"><label>Return date</label><input id="ret2-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
       <div class="field"><label>This load (${uL}) *</label><input id="ret2-qty" type="number" min="0" step="0.01" placeholder="0" oninput="window.gpRetPreview()"></div>
@@ -235,9 +235,9 @@ window.gpRetPreview=function(){
   const uL=unit==='qty'?'units':unit;const el=document.getElementById('ret2-preview');if(!el)return;
   if(!q){el.innerHTML='';return;}
   const nb=back+q;
-  if(nb>sent+tol)el.innerHTML=`<div style="background:#fee2e2;border-radius:8px;padding:9px 11px;font-size:12px;color:#991b1b"><b>Overage</b> — ${(nb-sent).toFixed(2)} ${uL} more than sent. Verify.</div>`;
-  else if(nb>=sent-tol)el.innerHTML=`<div style="background:#dcfce7;border-radius:8px;padding:9px 11px;font-size:12px;color:#166534"><b>Will complete</b> — ${nb.toFixed(2)}/${sent} ${uL} back, pass closes.</div>`;
-  else el.innerHTML=`<div style="background:#fef3c7;border-radius:8px;padding:9px 11px;font-size:12px;color:#92400e"><b>Stays open</b> — ${(sent-nb).toFixed(2)} ${uL} still out after this load.</div>`;
+  if(nb>sent+tol)el.innerHTML=`<div style="background:var(--accent-urgent-soft);border-radius:8px;padding:9px 11px;font-size:12px;color:var(--accent-urgent)"><b>Overage</b> — ${(nb-sent).toFixed(2)} ${uL} more than sent. Verify.</div>`;
+  else if(nb>=sent-tol)el.innerHTML=`<div style="background:var(--accent-success-soft);border-radius:8px;padding:9px 11px;font-size:12px;color:var(--accent-success)"><b>Will complete</b> — ${nb.toFixed(2)}/${sent} ${uL} back, pass closes.</div>`;
+  else el.innerHTML=`<div style="background:var(--accent-warning-soft);border-radius:8px;padding:9px 11px;font-size:12px;color:var(--accent-warning)"><b>Stays open</b> — ${(sent-nb).toFixed(2)} ${uL} still out after this load.</div>`;
 };
 
 function renderGPPage(){
@@ -265,18 +265,18 @@ window.gpGotoPage=function(n){gpPage=n;renderGPPage();};
 // Shared pass-row markup, reused by the Outward list and the Registry.
 function _gpPassRowHtml(p){
   const pend=_gpPendingFor('gp',p.id);
-  const pendBadge=pend?`<span title="${pend.action==='delete'?'Delete':'Edit'} pending approval" style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${pend.action==='delete'?'Delete':'Edit'} pending</span>`:'';
+  const pendBadge=pend?`<span title="${pend.action==='delete'?'Delete':'Edit'} pending approval" style="display:inline-block;background:var(--accent-warning-soft);color:var(--accent-warning);font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${pend.action==='delete'?'Delete':'Edit'} pending</span>`:'';
   const isFab=p.gpType==='fabric',isItem=p.gpType==='item';
-  const typeBadge=isFab?`<span style="display:inline-block;background:#dbeafe;color:#1e40af;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">Fabric</span>`:(isItem?`<span style="display:inline-block;background:#ede9fe;color:#5b21b6;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">Item</span>`:'');
-  const reasonBadge=p.gpReason&&p.gpReason!=='other'?`<span style="display:inline-block;background:var(--surface-2);color:#374151;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${GP_REASON_LABEL[p.gpReason]||p.gpReason}</span>`:'';
-  const retBadge=p.expectReturn?(()=>{const st=_gpReturnStatus(p);const c=st==='Overdue'?'#dc2626':(st==='Partial'?'#92400e':'#6b7280');const b=st==='Overdue'?'#fee2e2':(st==='Partial'?'#fef3c7':'#f3f4f6');return `<span style="display:inline-block;background:${b};color:${c};font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px">${st}</span>`;})():(p.returnStatus==='Complete'?`<span style="display:inline-block;background:#dcfce7;color:#166534;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px">Returned</span>`:'');
+  const typeBadge=isFab?`<span style="display:inline-block;background:var(--soft);color:var(--cat-notes);font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">Fabric</span>`:(isItem?`<span style="display:inline-block;background:var(--soft);color:var(--cat-boards);font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">Item</span>`:'');
+  const reasonBadge=p.gpReason&&p.gpReason!=='other'?`<span style="display:inline-block;background:var(--surface-2);color:var(--muted);font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${GP_REASON_LABEL[p.gpReason]||p.gpReason}</span>`:'';
+  const retBadge=p.expectReturn?(()=>{const st=_gpReturnStatus(p);const c=st==='Overdue'?'#dc2626':(st==='Partial'?'#92400e':'#6b7280');const b=st==='Overdue'?'#fee2e2':(st==='Partial'?'#fef3c7':'#f3f4f6');return `<span style="display:inline-block;background:${b};color:${c};font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px">${st}</span>`;})():(p.returnStatus==='Complete'?`<span style="display:inline-block;background:var(--accent-success-soft);color:var(--accent-success);font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px">Returned</span>`:'');
   const qtyLabel=isFab?`${p.fabricQty||0} ${p.fabricUnit||'kg'}${p.rollsCount?` · ${p.rollsCount} rolls`:''}`:(isItem?`${(p.assetItems||[]).length} item${(p.assetItems||[]).length===1?'':'s'}`:`${p.totalUnits||0} pcs`);
-  return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5;flex-wrap:wrap;gap:8px">
+  return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
     <div><div style="font-weight:700;color:var(--red);font-size:11px">${p.id}${typeBadge}${reasonBadge}${retBadge}${pendBadge}</div><div style="font-size:13px;font-weight:500">${p.article||'—'}${p.spec?` <span style="font-weight:400;color:var(--muted)">· ${_gpEsc(p.spec)}</span>`:''}</div><div style="font-size:11px;color:var(--muted)">${p.name||'—'} · ${p.date||''}${p.time?' '+p.time:''} · ${p.dest||'—'}</div></div>
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div style="text-align:right;font-size:12px;color:var(--muted);font-weight:500">${qtyLabel}</div>
     <button class="btn-pdf" onclick="window.generateGPPdf('${p.id}')">⬇ PDF</button>
     <button onclick="window.editGP('${p.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
-    <button onclick="window.requestDeleteGP('${p.id}')" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:var(--surface);color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
+    <button onclick="window.requestDeleteGP('${p.id}')" style="padding:4px 10px;border:1px solid var(--accent-urgent);border-radius:6px;background:var(--surface);color:var(--accent-urgent);font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
     </div>
   </div>`;
 }
@@ -315,7 +315,7 @@ function renderGPRegistry(){
       <button class="btn-outline" style="font-size:12px;padding:6px 14px" onclick="window.gpRegExport()">⬇ Export Excel</button>
     </div>
     <div id="gp-reg-body"></div>
-    <div id="gp-reg-pager" style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;padding-top:10px;border-top:1px solid #f5f5f5;margin-top:4px"></div>
+    <div id="gp-reg-pager" style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--border);margin-top:4px"></div>
   </div><div style="height:80px"></div>`;
 }
 function _gpRegFiltered(){
@@ -389,7 +389,7 @@ function _gpRenderSizes(){
         <input class="gps-bundles" value="${_gpEsc(s.bundles)}" placeholder="9-8-6-7" oninput="window.gpRecalc()" style="margin:0;font-size:15px;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box">
         <span class="gps-nb" style="text-align:center;font-weight:700;font-size:14px;color:var(--muted)">${arr.length||'—'}</span>
         <span class="gps-qty" style="text-align:right;font-weight:800;font-size:16px">${q?q.toLocaleString():'—'}</span>
-        <button type="button" onclick="window.gpRemoveSize(${i})" title="Remove" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:20px;padding:0;line-height:1">×</button>
+        <button type="button" onclick="window.gpRemoveSize(${i})" title="Remove" style="background:none;border:none;color:var(--accent-urgent);cursor:pointer;font-size:20px;padding:0;line-height:1">×</button>
       </div>`;}).join('');
   window.gpRecalc();
 }
@@ -463,7 +463,7 @@ window.addGPItemRow=function(name='',qty='',returnable=false){
   tr.innerHTML=`<td style="padding:4px 8px"><input type="text" value="${_gpEsc(name)}" placeholder="e.g. Office table" style="width:100%;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" oninput="window.gpSaleRecalc&&window.gpSaleRecalc()"></td>
     <td style="padding:4px 8px"><input type="number" min="0" value="${qty}" placeholder="1" style="width:70px;border:none;border-bottom:1px solid var(--border);padding:5px 4px;font-size:13px;background:transparent;color:var(--text);outline:none" oninput="window.gpSaleRecalc&&window.gpSaleRecalc()"></td>
     <td style="padding:4px 8px;text-align:center"><input type="checkbox" class="gp-item-ret" ${returnable?'checked':''} style="width:15px;height:15px;cursor:pointer"></td>
-    <td><button onclick="document.getElementById('${id}').remove()" style="background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:2px 6px">×</button></td>`;
+    <td><button onclick="document.getElementById('${id}').remove()" style="background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:2px 6px">×</button></td>`;
   tb.appendChild(tr);
 };
 
@@ -689,9 +689,9 @@ function renderReturnsList(){
     const bg=st==='Complete'?'#dcfce7':(st==='Overage'?'#fee2e2':(st==='Partial'?'#fef3c7':(st==='Incomplete Lot'?'#fee2e2':'#f3f4f6')));
     const uL=r.unit==='qty'?'':(' '+(r.unit||'pcs'));
     const pend=_gpPendingFor('return',r.id);
-    const pendBadge=pend?`<span title="${pend.action==='delete'?'Delete':'Edit'} pending approval" style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px">${pend.action==='delete'?'Delete':'Edit'} pending</span>`:'';
+    const pendBadge=pend?`<span title="${pend.action==='delete'?'Delete':'Edit'} pending approval" style="display:inline-block;background:var(--accent-warning-soft);color:var(--accent-warning);font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px">${pend.action==='delete'?'Delete':'Edit'} pending</span>`:'';
     const cum=r.cumulative!=null?`${r.cumulative}/${r.sentQty||0}${uL}`:`${r.returnedQty||0}/${r.sentQty||0}${uL}`;
-    return`<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid #f5f5f5;gap:10px;flex-wrap:wrap">
+    return`<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);gap:10px;flex-wrap:wrap">
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <span style="font-weight:700;color:var(--red);font-size:11px">${r.id}</span>
@@ -700,16 +700,16 @@ function renderReturnsList(){
         </div>
         <div style="font-size:13px;font-weight:500;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_gpEsc(r.vendor||'')} · ${_gpEsc(r.article||'—')}</div>
         <div style="font-size:11px;color:var(--muted)">${r.gpNum||'—'} · ${r.date||''} · ${_gpEsc(r.receivedBy||'—')}</div>
-        ${r.reason?`<div style="font-size:11px;color:#dc2626;margin-top:2px">Reason: ${_gpEsc(r.reason)}</div>`:''}
+        ${r.reason?`<div style="font-size:11px;color:var(--accent-urgent);margin-top:2px">Reason: ${_gpEsc(r.reason)}</div>`:''}
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
         <div style="text-align:right;font-size:12px;color:var(--muted)">
-          <div style="font-weight:700;color:#16a34a">+${r.returnedQty||0}${uL}</div>
+          <div style="font-weight:700;color:var(--accent-success)">+${r.returnedQty||0}${uL}</div>
           <div style="font-size:10px">${cum}</div>
         </div>
         <div style="display:flex;gap:6px">
           <button onclick="window.editReturn('${r.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
-          <button onclick="window.requestDeleteReturn('${r.id}')" style="padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:var(--surface);color:#dc2626;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
+          <button onclick="window.requestDeleteReturn('${r.id}')" style="padding:4px 10px;border:1px solid var(--accent-urgent);border-radius:6px;background:var(--surface);color:var(--accent-urgent);font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
         </div>
       </div>
     </div>`;
@@ -912,16 +912,16 @@ window.editGP=function(gpId){
   const rowsHTML=items.map(it=>{
     _gpEditRowIdx++;
     const id='gpe-row-'+_gpEditRowIdx;
-    return`<tr id="${id}" style="border-bottom:1px solid #f5f5f5">
+    return`<tr id="${id}" style="border-bottom:1px solid var(--border)">
       <td style="padding:4px 6px"><input value="${_gpEsc(it.size||'')}" style="width:70px;border:1px solid var(--border);border-radius:6px;padding:5px 6px;font-size:13px"></td>
       <td style="padding:4px 6px"><input type="number" min="0" value="${it.units||0}" style="width:80px;border:1px solid var(--border);border-radius:6px;padding:5px 6px;font-size:13px"></td>
       <td style="padding:4px 6px"><input type="number" min="0" step="0.1" value="${it.weight||0}" style="width:80px;border:1px solid var(--border);border-radius:6px;padding:5px 6px;font-size:13px"></td>
-      <td><button onclick="document.getElementById('${id}').remove()" style="background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:2px 6px">×</button></td>
+      <td><button onclick="document.getElementById('${id}').remove()" style="background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:2px 6px">×</button></td>
     </tr>`;
   }).join('');
   const banner=_gpCanApprove()
-    ?`<div style="background:#ecfdf5;color:#065f46;border:1px solid #bbf7d0;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Owner/Manager: changes apply immediately.</div>`
-    :`<div style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Your changes will be sent to owners/managers for approval.</div>`;
+    ?`<div style="background:var(--accent-success-soft);color:var(--accent-success);border:1px solid var(--accent-success);padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Owner/Manager: changes apply immediately.</div>`
+    :`<div style="background:var(--accent-warning-soft);color:var(--accent-warning);border:1px solid var(--accent-warning);padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Your changes will be sent to owners/managers for approval.</div>`;
   const isFab=gp.gpType==='fabric';
   const fabUnit=gp.fabricUnit||'kg';
   const sectionHTML=isFab
@@ -975,7 +975,7 @@ window.gpEditAddRow=function(){
   tr.innerHTML=`<td style="padding:4px 6px"><input placeholder="e.g. M" style="width:70px;border:1px solid var(--border);border-radius:6px;padding:5px 6px;font-size:13px"></td>
     <td style="padding:4px 6px"><input type="number" min="0" placeholder="0" style="width:80px;border:1px solid var(--border);border-radius:6px;padding:5px 6px;font-size:13px"></td>
     <td style="padding:4px 6px"><input type="number" min="0" step="0.1" placeholder="0" style="width:80px;border:1px solid var(--border);border-radius:6px;padding:5px 6px;font-size:13px"></td>
-    <td><button onclick="document.getElementById('${id}').remove()" style="background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:2px 6px">×</button></td>`;
+    <td><button onclick="document.getElementById('${id}').remove()" style="background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:2px 6px">×</button></td>`;
   tbody.appendChild(tr);
 };
 
@@ -1067,8 +1067,8 @@ window.editReturn=function(retId){
   back.className='hrm-modal-back';back.id='hrm-modal-back';
   back.onclick=ev=>{if(ev.target===back)window.hrmCloseModal();};
   const banner=_gpCanApprove()
-    ?`<div style="background:#ecfdf5;color:#065f46;border:1px solid #bbf7d0;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Owner/Manager: changes apply immediately.</div>`
-    :`<div style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Your changes will be sent to owners/managers for approval.</div>`;
+    ?`<div style="background:var(--accent-success-soft);color:var(--accent-success);border:1px solid var(--accent-success);padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Owner/Manager: changes apply immediately.</div>`
+    :`<div style="background:var(--accent-warning-soft);color:var(--accent-warning);border:1px solid var(--accent-warning);padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px">Your changes will be sent to owners/managers for approval.</div>`;
   back.innerHTML=`<div class="hrm-modal" onclick="event.stopPropagation()">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div><h3>Edit Return</h3><div class="sub">${r.id} · ${_gpEsc(r.vendor||'')} · ${_gpEsc(r.article||'')}</div></div>
@@ -1172,8 +1172,8 @@ function _renderGPPendingApprovals(){
   const pending=allGPEditRequests.filter(r=>r&&r.status==='pending');
   if(!pending.length)return'';
   const labelMap={gp:'Gate Pass',return:'Return',fabric:'Fabric In'};
-  return`<div class="card" style="margin-bottom:14px;border:1px solid #fde68a;background:#fffbeb">
-    <div class="card-title" style="color:#92400e">Pending approvals · ${pending.length}</div>
+  return`<div class="card" style="margin-bottom:14px;border:1px solid var(--accent-warning);background:var(--accent-warning-soft)">
+    <div class="card-title" style="color:var(--accent-warning)">Pending approvals · ${pending.length}</div>
     ${pending.map(r=>{
       const verb=r.action==='delete'?'Delete':'Edit';
       const diffHTML=r.action==='edit'?_renderGPEditDiff(r):'';
@@ -1182,12 +1182,12 @@ function _renderGPPendingApprovals(){
           <div style="min-width:0;flex:1">
             <div style="font-weight:700;font-size:13px">${verb} · ${labelMap[r.type]||r.type} · <span style="color:var(--red)">${_gpEsc(r.targetId)}</span></div>
             <div style="font-size:11px;color:var(--muted);margin-top:2px">Requested by ${_gpEsc(r.requestedByName||r.requestedBy||'—')} · ${new Date(r.ts).toLocaleString()}</div>
-            ${r.reason?`<div style="font-size:12px;color:#444;margin-top:4px"><b>Reason:</b> ${_gpEsc(r.reason)}</div>`:''}
+            ${r.reason?`<div style="font-size:12px;color:var(--muted);margin-top:4px"><b>Reason:</b> ${_gpEsc(r.reason)}</div>`:''}
             ${diffHTML}
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0">
             <button onclick="window.gpApproveRequest('${r.id}')" style="padding:6px 12px;border:1px solid #16a34a;border-radius:6px;background:#16a34a;color:#fff;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">Approve</button>
-            <button onclick="window.gpRejectRequest('${r.id}')" style="padding:6px 12px;border:1px solid #dc2626;border-radius:6px;background:var(--surface);color:#dc2626;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">Reject</button>
+            <button onclick="window.gpRejectRequest('${r.id}')" style="padding:6px 12px;border:1px solid #dc2626;border-radius:6px;background:var(--surface);color:var(--accent-urgent);font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">Reject</button>
           </div>
         </div>
       </div>`;
@@ -1203,10 +1203,10 @@ function _renderGPEditDiff(req){
     const sa=typeof a==='object'?JSON.stringify(a):String(a==null?'':a);
     const sb=typeof b==='object'?JSON.stringify(b):String(b==null?'':b);
     if(sa===sb)return'';
-    return`<tr><td style="padding:3px 6px;color:var(--muted);font-weight:600;vertical-align:top">${_gpEsc(k)}</td><td style="padding:3px 6px;color:#dc2626;text-decoration:line-through;vertical-align:top;word-break:break-word">${_gpEsc(sa.length>120?sa.slice(0,120)+'…':sa)}</td><td style="padding:3px 6px;color:#16a34a;vertical-align:top;word-break:break-word">${_gpEsc(sb.length>120?sb.slice(0,120)+'…':sb)}</td></tr>`;
+    return`<tr><td style="padding:3px 6px;color:var(--muted);font-weight:600;vertical-align:top">${_gpEsc(k)}</td><td style="padding:3px 6px;color:var(--accent-urgent);text-decoration:line-through;vertical-align:top;word-break:break-word">${_gpEsc(sa.length>120?sa.slice(0,120)+'…':sa)}</td><td style="padding:3px 6px;color:var(--accent-success);vertical-align:top;word-break:break-word">${_gpEsc(sb.length>120?sb.slice(0,120)+'…':sb)}</td></tr>`;
   }).filter(Boolean).join('');
   if(!rows)return'<div style="font-size:11px;color:var(--muted);margin-top:4px">No effective changes detected.</div>';
-  return`<div style="margin-top:6px;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:var(--surface-2)"><th style="padding:4px 6px;text-align:left;font-weight:600">Field</th><th style="padding:4px 6px;text-align:left;font-weight:600;color:#dc2626">Current</th><th style="padding:4px 6px;text-align:left;font-weight:600;color:#16a34a">Proposed</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return`<div style="margin-top:6px;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:var(--surface-2)"><th style="padding:4px 6px;text-align:left;font-weight:600">Field</th><th style="padding:4px 6px;text-align:left;font-weight:600;color:var(--accent-urgent)">Current</th><th style="padding:4px 6px;text-align:left;font-weight:600;color:var(--accent-success)">Proposed</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 window.gpApproveRequest=async function(reqId){

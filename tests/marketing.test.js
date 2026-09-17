@@ -24,7 +24,7 @@ function app(opts){
   return loadApp(Object.assign({
     files:['js/auth.js','js/marketing.js'],
     currentPage:'mkt-creators',
-    session:o.session||{uid:'uid-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op',canApprovePaidPR:true}
+    session:o.session||{uid:'uid-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op',canApprovePaidPR:true,canEditScoring:true}
   },o,{globals:Object.assign({localStorage:LS},o.globals||{})}));
 }
 const J=v=>JSON.stringify(v);
@@ -314,7 +314,7 @@ module.exports=async function(){
     s.eq('every lead email is in isContentOpsLead(), and nothing else is',J(ruleEmails),J(leads.map(d=>d.email).sort()));
     s.ok('a creator write needs its handle lock to point back at it',/getAfter\(creatorHandlePath\(request\.resource\.data\.ig_handle\)\)\.data\.creatorId == id/.test(rules));
     s.ok('a handle lock can never be taken over',/match \/creator_handles\/\{handle\}[\s\S]*?allow update: if false;/.test(rules));
-    s.ok('only owners delete creators',/match \/creators\/\{id\}[\s\S]*?allow delete: if isOwner\(\);/.test(rules));
+    s.ok('owners and the lead delete creators (isMarketing)',/match \/creators\/\{id\}[\s\S]*?allow delete: if isMarketing\(\);/.test(rules));
   }
 
   // ── Nav + scoping (needs the real router) ─────────────────────────────
@@ -1194,6 +1194,276 @@ module.exports=async function(){
     s.ok('the attributed line lists the code and its revenue',/GRVY-A-AAAA[\s\S]*PKR 30,000/.test(lift));
     s.ok('the reports page has the Shopify connection card',/Check Shopify access/.test(t.run('renderMarketingReports()')));
     s.ok('the dashboard line shows live codes',/1<\/b> discount codes live, PKR 0 redeemed this month/.test(t.run('mktDashboardLine(0,0,0,mktCodesSummary(mktCodes,Date.now()))')));
+  }
+
+  // ── Instagram auto-fetch ──────────────────────────────────────────────
+  s.section('where the tiering numbers came from');
+  {
+    const t=app();
+    const build=(form,existing,now)=>t.run('mktBuildCreatorPayload('+J(form)+','+J(existing||null)+',null,'+(now||1000)+',"uid-ammar")');
+    const api={follower_count:24500,avg_likes:600,avg_comments:40,avg_views:9000};
+    const nums={follower_count:'24500',avg_likes:'600',avg_comments:'40',avg_views:'9000'};
+    const f=build(Object.assign({ig_handle:'x',data_source:'manual',api_values:J(api)},nums),null,5000);
+    s.eq('numbers exactly as fetched are recorded as api',f.data.data_source,'api');
+    s.eq('with when they were fetched',f.data.api_fetched_at,5000);
+    const edited=build(Object.assign({ig_handle:'x',data_source:'api',api_values:J(api)},nums,{avg_likes:'650'}));
+    s.eq('editing a fetched number makes it manual',edited.data.data_source,'manual');
+    s.eq('and drops the fetch time',edited.data.api_fetched_at,null);
+    const forged=build(Object.assign({ig_handle:'x',data_source:'api'},nums));
+    s.eq('the form cannot claim api without a fetch',forged.data.data_source,'manual');
+    s.eq('a screenshot is kept as a screenshot',build(Object.assign({ig_handle:'x',data_source:'screenshot'},nums)).data.data_source,'screenshot');
+    s.eq('no numbers → no source',build({ig_handle:'x',data_source:'screenshot'}).data.data_source,null);
+    s.eq('a nonsense source is manual',build(Object.assign({ig_handle:'x',data_source:'hacked'},nums)).data.data_source,'manual');
+    const old=Object.assign({id:'cr_1',ig_handle:'x',data_source:'api',api_fetched_at:4000},api);
+    const addr=build(Object.assign({ig_handle:'x',address:'new',data_source:'api'},nums),old,6000);
+    s.eq('editing an address keeps an api record api',addr.data.data_source,'api');
+    s.eq('and keeps when it was fetched',addr.data.api_fetched_at,4000);
+    const refetch=build(Object.assign({ig_handle:'x',data_source:'api',api_values:J(api)},nums),old,7000);
+    s.eq('a fresh fetch with the same numbers moves the fetch time',refetch.data.api_fetched_at,7000);
+    const shot=Object.assign({},old,{data_source:'screenshot',api_fetched_at:null});
+    s.eq('an unchanged screenshot record stays a screenshot',build(Object.assign({ig_handle:'x',data_source:'manual'},nums),shot).data.data_source,'screenshot');
+    s.eq('the imported sheet has no numbers, so no source',build({ig_handle:'x'}).data.data_source,null);
+  }
+
+  s.section('fetch from Instagram on the creator form');
+  {
+    const posts=[];
+    const t=app({globals:{auth:{currentUser:{getIdToken:async()=>'tok'}},
+      fetch:async(url,init)=>{posts.push({url,body:JSON.parse(init.body)});
+        return{ok:true,status:200,json:async()=>({found:true,username:'st4rr.doll',name:'Starr',follower_count:24500,avg_likes:600,avg_comments:40,avg_views:9000,posts_sampled:25,views_sampled:18})};}}});
+    t.el('mkt-f-handle').value='@St4rr.Doll';
+    t.el('mkt-f-name').value='';
+    t.el('mkt-f-source').value='manual';
+    await t.run('window.mktFetchInstagram()');
+    s.eq('it asks the server function',posts[0].url,'/.netlify/functions/instagram-business-discovery');
+    s.eq('with the ID token and the normalised handle',J([posts[0].body.idToken,posts[0].body.action,posts[0].body.username]),J(['tok','lookup','st4rr.doll']));
+    s.ok('and never a Meta credential',!/secret|access_token/i.test(J(posts[0].body)));
+    s.eq('followers are filled in',t.el('mkt-f-followers').value,'24500');
+    s.eq('averages too',J([t.el('mkt-f-likes').value,t.el('mkt-f-comments').value,t.el('mkt-f-views').value]),J(['600','40','9000']));
+    s.eq('an empty name is filled from Instagram',t.el('mkt-f-name').value,'Starr');
+    s.eq('the source follows the fetch',t.el('mkt-f-source').value,'api');
+    s.ok('it says what the averages are made of',/25 posts[\s\S]*views from 18/.test(t.el('mkt-ig-status').textContent));
+    s.eq('nothing is saved by fetching',t.state.writes.length,0);
+    t.el('mkt-f-likes').value='700';
+    t.run('window.mktPreviewScore()');
+    s.eq('editing a fetched number flips the source to manual',t.el('mkt-f-source').value,'manual');
+    t.el('mkt-f-likes').value='600';
+    t.run('window.mktPreviewScore()');
+    s.eq('putting it back flips it to api again',t.el('mkt-f-source').value,'api');
+    const saved=t.run('mktBuildCreatorPayload(_mktReadForm(),null,null,1,"u")');
+    s.eq('and the payload agrees',saved.data.data_source,'api');
+  }
+  {
+    const msg="Couldn't find a Business or Creator account with that handle — check the spelling, or use manual/screenshot entry if this is a Personal account.";
+    const t=app({globals:{auth:{currentUser:{getIdToken:async()=>'tok'}},
+      fetch:async()=>({ok:true,status:200,json:async()=>({found:false,message:msg})})}});
+    t.el('mkt-f-handle').value='_iamaleeba_';
+    t.el('mkt-f-followers').value='1200';
+    t.el('mkt-f-api').value=J({follower_count:5});
+    t.el('mkt-f-source').value='api';
+    await t.run('window.mktFetchInstagram()');
+    s.eq('not found shows the server\'s message as is',t.el('mkt-ig-status').textContent,msg);
+    s.eq('typed numbers are left alone',t.el('mkt-f-followers').value,'1200');
+    s.eq('an earlier fetch is forgotten',t.el('mkt-f-api').value,'');
+    s.eq('and the source falls back to manual',t.el('mkt-f-source').value,'manual');
+    const err=app({globals:{auth:{currentUser:{getIdToken:async()=>'tok'}},
+      fetch:async()=>({ok:false,status:503,json:async()=>({error:'Instagram fetch is not set up yet. Enter the numbers by hand.'})})}});
+    err.el('mkt-f-handle').value='x';
+    await err.run('window.mktFetchInstagram()');
+    s.ok('a server failure is said out loud and points at manual entry',/not set up[\s\S]*by hand/.test(err.el('mkt-ig-status').textContent));
+    s.eq('said once, not twice',(err.el('mkt-ig-status').textContent.match(/by hand/g)||[]).length,1);
+    const none=app();
+    none.el('mkt-f-handle').value='  ';
+    await none.run('window.mktFetchInstagram()');
+    s.ok('no handle → it asks for one first',/handle first/.test(none.el('mkt-ig-status').textContent));
+    s.ok('signed out → it says so',await (async()=>{const o=app();o.el('mkt-f-handle').value='x';await o.run('window.mktFetchInstagram()');return /signed out/.test(o.el('mkt-ig-status').textContent);})());
+  }
+  {
+    const t=app();
+    s.eq('a summary with no posts says so',t.run('mktIgFetchSummary({username:"a",posts_sampled:0},"a")'),'Fetched @a · no posts to average. Check the numbers, then save.');
+    s.ok('a sample with no views says so',/none of them report views/.test(t.run('mktIgFetchSummary({username:"a",posts_sampled:3,avg_views:null},"a")')));
+    s.ok('the creator form has the button and the source picker',/id="mkt-ig-fetch"[\s\S]*id="mkt-f-source"[\s\S]*id="mkt-f-followers"/.test(read('js/marketing.js')));
+    s.ok('the reports page has the Instagram connection card',/Check Instagram access/.test(t.run('_mktIgConnHTML()')));
+    t.run("_mktIgConn={configured:true,valid:true,kind:'page',expires_at:null,days_left:null}");
+    s.ok('a Page token is shown as not expiring',/Ready[\s\S]*Page token, does not expire/.test(t.run('_mktIgConnHTML()')));
+    t.run("_mktIgConn={configured:true,valid:false,error:'<b>x</b>'}");
+    s.ok('a dead token says what to do, escaped',/replace IG_ACCESS_TOKEN/.test(t.run('_mktIgConnHTML()'))&&!/<b>x<\/b>/.test(t.run('_mktIgConnHTML()')));
+    t.run("_mktIgConn={configured:false}");
+    s.ok('not set up says which env vars',/IG_ACCESS_TOKEN and META_APP_SECRET/.test(t.run('_mktIgConnHTML()')));
+    const client=read('js/marketing.js');
+    s.ok('the app never holds a Meta credential',!/META_APP_SECRET\s*[:=]|IG_ACCESS_TOKEN\s*[:=]|appsecret_proof|graph\.facebook\.com/.test(client));
+  }
+
+  s.section('deleting a creator');
+  {
+    const t=app();
+    s.eq('a creator with nothing linked can go',t.run("mktCreatorDeleteBlock('cr_a',[],[])"),'');
+    s.ok('one with dispatches cannot',/2 dispatches[\s\S]*Do not use/.test(t.run("mktCreatorDeleteBlock('cr_a',[{creator_id:'cr_a'},{creator_id:'cr_a'},{creator_id:'cr_b'}],[])")));
+    s.ok('nor one with a Paid PR',/1 Paid PR request\b/.test(t.run("mktCreatorDeleteBlock('cr_a',[],[{creator_id:'cr_a'}])")));
+    s.ok('nor when the lists did not load — it cannot be checked',/did not load/.test(t.run("mktCreatorDeleteBlock('cr_a',null,[])")));
+    s.eq('owners may delete',t.run('mktCanDeleteCreators()'),true);
+    const lead=app({session:{uid:'uid-d',u:'daniyal',name:'Daniyal',role:'creator_content_ops_lead',email:'daniyal@groovy.op'}});
+    s.eq('so may the lead (the rules say isMarketing)',lead.run('mktCanDeleteCreators()'),true);
+    lead.run("mktCreators=[{id:'cr_a',ig_handle:'a'}];mktCreatorsLoaded=true");
+    lead.run("window.mktOpenCreator('cr_a')");
+    s.ok('and is offered the button',/Delete creator/.test(lead.bodyHtml('mkt-modal-back')));
+    const other=app({session:{uid:'uid-m',u:'mustafa',name:'Mustafa',role:'manager',email:'mustafa@groovy.op'}});
+    s.eq('nobody outside Marketing may',other.run('mktCanDeleteCreators()'),false);
+    t.run("mktCreators=[{id:'cr_a',ig_handle:'a'}];mktCreatorsLoaded=true");
+    t.run("window.mktOpenCreator('cr_a')");
+    s.ok('an owner is',/Delete creator/.test(t.bodyHtml('mkt-modal-back')));
+    t.run("window.mktOpenCreator('')");
+    s.ok('but not on a new, unsaved creator',!/Delete creator/.test(t.bodyHtml('mkt-modal-back')));
+  }
+  {
+    const batches=[];
+    const lockOwner={v:'cr_a'};
+    const mk=(extra)=>app({globals:Object.assign({
+      doc:(db,col,id)=>({path:col+'/'+id}),
+      getDoc:async ref=>({exists:()=>true,data:()=>({creatorId:lockOwner.v})}),
+      writeBatch:()=>{const ops=[];return{delete:r=>ops.push(['delete',r.path]),set:()=>{},update:()=>{},commit:async()=>{batches.push(ops);}};}
+    },extra||{})});
+    const t=mk();
+    t.run("mktCreators=[{id:'cr_a',ig_handle:'st4rr.doll'},{id:'cr_b',ig_handle:'b'}];mktDispatches=[{creator_id:'cr_b'}];mktPaidPRs=[];mktDispatchesLoaded=true;mktPaidPRsLoaded=true");
+    await t.run("window.mktDeleteCreator('cr_a')");
+    s.eq('one batch deletes the creator and its handle lock',JSON.stringify(batches[0]),JSON.stringify([['delete','creators/cr_a'],['delete','creator_handles/st4rr.doll']]));
+    s.eq('it leaves the list',t.run("mktCreators.map(c=>c.id).join()"),'cr_b');
+    s.ok('and says so',t.state.toasts.some(x=>/Deleted @st4rr\.doll/.test(x)));
+    s.ok('after asking first',t.state.confirms&&t.state.confirms.length===1&&/cannot be undone/.test(t.state.confirms[0]));
+    await t.run("window.mktDeleteCreator('cr_b')");
+    s.eq('a creator with a dispatch is refused — no write',batches.length,1);
+    s.ok('with the reason',t.state.toasts.some(x=>/1 dispatch\b[\s\S]*Do not use/.test(x))||/1 dispatch\b/.test(t.el('mkt-f-error').textContent));
+    lockOwner.v='someone_else';
+    const u=mk();
+    u.run("mktCreators=[{id:'cr_a',ig_handle:'st4rr.doll'}];mktDispatches=[];mktPaidPRs=[];mktDispatchesLoaded=true;mktPaidPRsLoaded=true");
+    await u.run("window.mktDeleteCreator('cr_a')");
+    s.eq('a lock owned by another creator is never released',JSON.stringify(batches[1]),JSON.stringify([['delete','creators/cr_a']]));
+    const no=mk({confirm:()=>false});
+    no.run("mktCreators=[{id:'cr_a',ig_handle:'a'}];mktDispatches=[];mktPaidPRs=[];mktDispatchesLoaded=true;mktPaidPRsLoaded=true");
+    await no.run("window.mktDeleteCreator('cr_a')");
+    s.eq('cancelling the confirm deletes nothing',batches.length,2);
+  }
+
+  s.section('fetch all from Instagram');
+  {
+    const t=app();
+    const now=Date.parse('2026-09-17T10:00:00Z');
+    const plan=t.run("mktIgBulkPlan([{id:'1',ig_handle:'a'},{id:'2',ig_handle:'b',data_source:'api',api_fetched_at:"+(now-3600000)+"},{id:'3',ig_handle:'c',data_source:'api',api_fetched_at:"+(now-2*86400000)+"},{id:'4',ig_handle:''}],"+now+")");
+    s.eq('never-fetched and stale creators are looked up',plan.todo.map(c=>c.id).join(),'1,3');
+    s.eq('anyone fetched in the last day is skipped (so a stopped run resumes)',plan.fresh.map(c=>c.id).join(),'2');
+    s.eq('no handle, no lookup',plan.noHandle.map(c=>c.id).join(),'4');
+    const c={id:'cr_x',ig_handle:'x',name:'',city:'taxila',niche:['Blogger'],status:'do_not_use',address:'h1',phone:'0300',
+      tier:'A',tier_is_override:true,tier_override_reason:'Great sales',follower_count:100,avg_likes:1,avg_comments:0,data_source:'screenshot',date_added:5};
+    const built=t.run('mktApplyIgFetch('+J(c)+','+J({found:true,name:'Ex',follower_count:24500,avg_likes:600,avg_comments:40,avg_views:null})+',null,'+now+',"u1")');
+    s.ok('it builds without error',!built.error);
+    s.eq('the fetched numbers go in',J([built.data.follower_count,built.data.avg_likes,built.data.avg_comments,built.data.avg_views]),J([24500,600,40,null]));
+    s.eq('marked api',built.data.data_source,'api');
+    s.eq('stamped',built.data.api_fetched_at,now);
+    s.eq('a manual tier stays manual',J([built.data.tier,built.data.tier_is_override,built.data.tier_override_reason]),J(['A',true,'Great sales']));
+    s.eq('the formula tier is recalculated beside it',built.data.tier_formula,'C');
+    s.eq('an off-list city the sheet brought in survives',built.data.city,'taxila');
+    s.eq('everything else is untouched',J([built.data.status,built.data.address,built.data.phone,built.data.niche]),J(['do_not_use','h1','0300',['Blogger']]));
+    s.eq('an empty name is filled from Instagram',built.data.name,'Ex');
+    s.ok('it is an update, not a new creator',built.isNew===false&&!('date_added' in built.data));
+  }
+  {
+    const writes=[];
+    const answers={
+      'biz.one':{found:true,username:'biz.one',follower_count:30000,avg_likes:900,avg_comments:50,avg_views:12000,usage:10},
+      'personal.acc':{found:false,message:'nf',usage:12},
+      'biz.two':{found:true,username:'biz.two',follower_count:5000,avg_likes:100,avg_comments:5,avg_views:null,usage:15}
+    };
+    const t=app({globals:{
+      auth:{currentUser:{getIdToken:async()=>'tok'}},
+      doc:(db,col,id)=>({path:col+'/'+id}),
+      updateDoc:async(ref,data)=>{writes.push([ref.path,data]);},
+      fetch:async(url,init)=>{const u=JSON.parse(init.body).username;const a=answers[u];
+        if(!a)return{ok:false,status:502,json:async()=>({error:'Instagram lookup failed: boom'})};
+        return{ok:true,status:200,json:async()=>a};}
+    }});
+    t.run("mktCreators=["+
+      "{id:'c1',ig_handle:'biz.one',name:'One',follower_count:10,avg_likes:1,avg_comments:1,data_source:'manual'},"+
+      "{id:'c2',ig_handle:'personal.acc',name:'Two',follower_count:777,avg_likes:7,avg_comments:7,data_source:'screenshot'},"+
+      "{id:'c3',ig_handle:'broken',name:'Three'},"+
+      "{id:'c4',ig_handle:'biz.two',name:''}];mktCreatorsLoaded=true");
+    const out=await t.run('window.mktIgBulkRun({paceMs:0})');
+    s.eq('business accounts are updated',J(writes.map(w=>w[0])),J(['creators/c1','creators/c4']));
+    s.eq('with their numbers',J([writes[0][1].follower_count,writes[0][1].avg_likes,writes[0][1].data_source]),J([30000,900,'api']));
+    s.ok('a Personal account is left exactly as it is — no write at all',!writes.some(w=>w[0]==='creators/c2'));
+    s.eq('and keeps its numbers in memory too',J(t.run("mktCreators.find(c=>c.id==='c2')")),J({id:'c2',ig_handle:'personal.acc',name:'Two',follower_count:777,avg_likes:7,avg_comments:7,data_source:'screenshot'}));
+    s.eq('the counts',J([out.updated,out.notFound,out.failed]),J([2,1,1]));
+    s.eq('one lookup failing does not stop the run',out.stopReason,'');
+    s.eq('memory follows the writes',t.run("mktCreators.find(c=>c.id==='c4').follower_count"),5000);
+  }
+  {
+    const writes=[];let calls=0;
+    const t=app({globals:{
+      auth:{currentUser:{getIdToken:async()=>'tok'}},doc:(db,col,id)=>({path:col+'/'+id}),
+      updateDoc:async(ref)=>{writes.push(ref.path);},
+      fetch:async()=>{calls++;
+        if(calls===2)return{ok:false,status:429,json:async()=>({error:'Instagram is rate-limiting lookups'})};
+        return{ok:true,status:200,json:async()=>({found:true,follower_count:1000,avg_likes:10,avg_comments:1,avg_views:null,usage:20})};}
+    }});
+    t.run("mktCreators=[{id:'a',ig_handle:'a'},{id:'b',ig_handle:'b'},{id:'c',ig_handle:'c'}];mktCreatorsLoaded=true");
+    const out=await t.run('window.mktIgBulkRun({paceMs:0})');
+    s.eq('a 429 stops the run at once',calls,2);
+    s.ok('saying to run it again in an hour',/hourly limit[\s\S]*again in an hour/.test(out.stopReason));
+    s.eq('what was done stays done',writes.join(),'creators/a');
+    s.eq('and a rerun skips it',t.run("mktIgBulkPlan(mktCreators,Date.now()).todo.map(c=>c.id).join()"),'b,c');
+  }
+  {
+    let calls=0;
+    const t=app({globals:{
+      auth:{currentUser:{getIdToken:async()=>'tok'}},doc:(db,col,id)=>({path:col+'/'+id}),updateDoc:async()=>{},
+      fetch:async()=>{calls++;return{ok:true,status:200,json:async()=>({found:true,follower_count:1000,avg_likes:10,avg_comments:1,usage:calls===1?40:91})};}
+    }});
+    t.run("mktCreators=[{id:'a',ig_handle:'a'},{id:'b',ig_handle:'b'},{id:'c',ig_handle:'c'}];mktCreatorsLoaded=true");
+    const out=await t.run('window.mktIgBulkRun({paceMs:0})');
+    s.eq('near Meta\'s hourly cap it pauses itself before the next lookup',calls,2);
+    s.ok('and says at what percentage',/Paused at 91%/.test(out.stopReason));
+  }
+  {
+    let calls=0;
+    const t=app({globals:{
+      auth:{currentUser:{getIdToken:async()=>'tok'}},doc:(db,col,id)=>({path:col+'/'+id}),updateDoc:async()=>{},
+      fetch:async()=>{calls++;return{ok:false,status:503,json:async()=>({error:'The Instagram connection has expired.'})};}
+    }});
+    t.run("mktCreators=[{id:'a',ig_handle:'a'},{id:'b',ig_handle:'b'}];mktCreatorsLoaded=true");
+    const out=await t.run('window.mktIgBulkRun({paceMs:0})');
+    s.eq('a dead connection stops after one call, not 244',calls,1);
+    s.ok('with the reason',/connection has expired/.test(out.stopReason));
+  }
+  {
+    const t=app();
+    t.run("mktCreators=[{id:'a',ig_handle:'a'},{id:'b',ig_handle:'b',data_source:'api',api_fetched_at:Date.now()}];mktCreatorsLoaded=true");
+    t.run('window.mktOpenIgBulk()');
+    const h=t.bodyHtml('mkt-modal-back');
+    s.ok('the start screen says who will be looked up and who is skipped',/1 to look up[\s\S]*1 already fetched/.test(h));
+    s.ok('and that Personal accounts are left as they are',/left exactly as it is/.test(h));
+    s.ok('the page has the button',/Fetch all from Instagram/.test(t.run('renderMarketingCreators()')));
+  }
+
+  s.section('scoring settings are Ammar\'s');
+  {
+    const lead=app({session:{uid:'uid-d',u:'daniyal',name:'Daniyal',role:'creator_content_ops_lead',email:'daniyal@groovy.op'}});
+    const afnan=app({session:{uid:'uid-a',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'}});
+    const ammar=app();
+    const defs=ammar.run('USER_DEFS');
+    s.eq('only Ammar carries the flag',J(defs.filter(d=>d.canEditScoring===true).map(d=>d.u)),J(['ammar']));
+    for(const t of [lead,afnan,ammar])t.run("mktCreators=[];mktCreatorsLoaded=true");
+    s.ok('Ammar sees the button',/Scoring settings/.test(ammar.run('renderMarketingCreators()')));
+    s.ok('the lead does not',!/Scoring settings/.test(lead.run('renderMarketingCreators()')));
+    s.ok('nor does the other owner',!/Scoring settings/.test(afnan.run('renderMarketingCreators()')));
+    lead.run('window.mktOpenScoring()');
+    s.ok('opening it anyway is refused',lead.state.toasts.some(x=>/managed by Ammar/.test(x)));
+    lead.run("_mktCfgDraft=_mktConfig(null)");
+    await lead.run('window.mktSaveScoring()');
+    s.eq('and so is saving — nothing written',lead.state.writes.length+lead.state.batches.length,0);
+    const rules=read('firestore.rules');
+    const admins=(/function isScoringAdmin\(\)\s*\{[^}]*\[([^\]]*)\]/.exec(rules)||['',''])[1].match(/'([^']+)'/g)||[];
+    s.eq('isScoringAdmin() lists exactly the flagged accounts',J(admins.map(x=>x.replace(/'/g,'')).sort()),J(defs.filter(d=>d.canEditScoring===true).map(d=>d.email).sort()));
+    s.ok('the rules let only the admin write the settings',/match \/scoring_config\/\{doc\} \{\s*allow read: if isMarketing\(\);\s*allow write: if isScoringAdmin\(\);/.test(rules));
+    s.eq('the lead can still score a creator (the bands are read, not written)',lead.run("mktScore({follower_count:10000,avg_likes:100,avg_comments:0},null).score"),25);
   }
 
   return s;

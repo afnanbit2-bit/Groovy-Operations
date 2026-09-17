@@ -339,7 +339,7 @@ const FRAGMENTS={
     const LS={getItem:()=>null,setItem(){},removeItem(){}};
     const rows=[
       {ig_handle:'saritasangrez',name:'Sarita Sangrez',tier:'A',score:82,follower_count:128000,engagement_rate:0.052,city:'Lahore',niche:['Fashion Creator','Content Creator'],status:'active'},
-      {ig_handle:'night_flarz',name:'Night Flarz',tier:'B',score:61,follower_count:42000,engagement_rate:0.031,city:'Karachi',niche:['Content Creator'],status:'active',tier_is_override:true,tier_formula:'C',tier_override_reason:'Strong past sales'},
+      {ig_handle:'night_flarz',name:'Night Flarz',tier:'B',score:61,follower_count:42000,engagement_rate:0.031,city:'Karachi',niche:['Content Creator'],status:'active',tier_is_override:true,tier_formula:'C',tier_override_reason:'Strong past sales',avg_likes:1200,avg_comments:100,avg_views:30000,data_source:'api',api_fetched_at:Date.now()-3600000},
       {ig_handle:'st4rr.doll',name:'',tier:'C',score:35,follower_count:12000,engagement_rate:0.02,city:'Islamabad',niche:['Blogger','Meme/Comedy','Fitness'],status:'do_not_use'},
       {ig_handle:'shoaibkhn.t',name:'Shoaib Khan',tier:'below_threshold',score:60,follower_count:500000,engagement_rate:0.005,city:'Rahim Yar Khan',niche:[],status:'blacklisted'},
       {ig_handle:'shadysaidthat',name:'',tier:null,score:null,follower_count:null,engagement_rate:null,city:'',niche:[],status:'active'}
@@ -351,7 +351,13 @@ const FRAGMENTS={
       const page=app.run('renderMarketingCreators()');
       app.run("_mktFilter.view='incomplete'");
       const incomplete=app.run('_mktListHTML()');
-      return page+incomplete;
+      // The creator form: the "Fetch from Instagram" row sits beside the
+      // Source picker and must stay reachable at phone width.
+      app.run("window.mktOpenCreator('cr_1')");
+      const fetched=app.bodyHtml('mkt-modal-back');
+      app.run("window.mktOpenCreator('')");
+      const blank=app.bodyHtml('mkt-modal-back');
+      return page+incomplete+fetched+blank;
     });
   },
 
@@ -473,6 +479,73 @@ const FRAGMENTS={
       const perf=app.bodyHtml('mkt-modal-back');
       return page+'<div class="card">'+form+'</div><div class="card">'+blank+'</div><div class="card">'+perf+'</div>';
     });
+  },
+  // The Inventory Intel SKU table, reported unreadable in dark mode and
+  // measured at 1.1:1 before the fix. `.cut-table th` painted a white-alpha
+  // ink on `background:var(--dark)` — and --dark INVERTS, so in dark mode
+  // that is near-white text on a near-white bar. Every .cut-table in the app
+  // had it; this is the page it was reported on, and the one that puts the
+  // most numbers on screen at once.
+  //
+  // Verified both ways: restoring `color:rgba(255,255,255,.6)` on
+  // `.cut-table th` fails this fragment in dark and names every header cell.
+  // The tinted cells below it cover the other half of the same bug — a
+  // literal ink (#111, #dc2626) or a literal light chip on a row background
+  // that follows the theme.
+  'inventory intel — SKU table':()=>{
+    const app=loadApp({files:['js/shopify.js']});
+    const rows=[
+      {sku:'LIP-CG-XS',title:'Live in Pants',color:'Cool Grey',productType:'Live In Pants',
+       size:'XS',onHand:58,s7:62,s30:242,daysLeft:0,dailyRate:8.8,sellThrough:0.81,
+       reorderPoint:120,suggestedQty:200,season:'winter',garmentType:'bottom'},
+      {sku:'LIP-CG-S',title:'Live in Pants',color:'Cool Grey',productType:'Live In Pants',
+       size:'S',onHand:0,s7:20,s30:90,daysLeft:0,dailyRate:3,sellThrough:1,
+       reorderPoint:60,suggestedQty:90,season:'winter',garmentType:'bottom'},
+      {sku:'LIP-CG-M',title:'Live in Pants',color:'Cool Grey',productType:'Live In Pants',
+       size:'M',onHand:9,s7:14,s30:60,daysLeft:5,dailyRate:2,sellThrough:0.6,
+       reorderPoint:40,suggestedQty:70,season:'winter',garmentType:'bottom'},
+      {sku:'CT-MR-M',title:'CORE Tees',color:'Maroon',productType:'Basic Tee',
+       size:'M',onHand:367,s7:31,s30:98,daysLeft:44,dailyRate:3.3,sellThrough:0.2,
+       reorderPoint:80,suggestedQty:0,season:'summer',garmentType:'top'},
+      // A variant Shopify has not reported inventory for. onHand is undefined,
+      // so BOTH `every(onHand>0)` and `some(onHand<=0)` are false and the
+      // group total takes the third branch — the one that used to be a
+      // literal near-black on a row background that follows the theme
+      // (measured 1.02:1). It is the only way to reach that branch, which is
+      // why a table of ordinary rows does not cover it.
+      {sku:'TC-DI-OS',title:'Classic Denim',color:'Iced',productType:'Trucker Cap',
+       size:'OS',s7:25,s30:89,daysLeft:5,dailyRate:1.2,season:'all-season'}
+    ];
+    // Expand the first group so the per-variant child rows are measured too —
+    // those carry the sold-out ink and the striped --surface-2 background.
+    app.run("_siSkuExpanded.add('Live in Pants|||Cool Grey')");
+    const html=app.run('_siSkuTableSection('+JSON.stringify(rows)+')');
+    return Promise.resolve('<div class="card">'+html+'</div>');
+  },
+  // The other shape of the same bug, and the one that hid longest: a label
+  // whose ink is a literal white-alpha sitting on a `background:var(--dark)`
+  // panel. --dark is the app's "strong contrast chip" and inverts, so these
+  // read at ~1.08:1 in dark mode while the value beside them (which already
+  // used --on-dark) stayed perfectly legible. Gate Pass has six of them.
+  // The bell's cards at each priority. Their message text follows the theme,
+  // so a card background that did not would be unreadable in dark mode —
+  // which is exactly how they shipped until Sept 2026.
+  'hrm — notification cards':()=>{
+    const app=loadApp({files:['js/hrm.js'],
+      session:{uid:'u9',u:'daniyal',name:'Daniyal Tufail',role:'creator_content_ops_lead'}});
+    const n=(id,priority,title,message,actionUrl)=>({_id:id,priority,title,message,actionUrl,createdAt:Date.now()-86400000*3});
+    const cards=[
+      n('a','normal','Advance approved','PKR 50,000 approved. Will be deducted from your next payroll.'),
+      n('b','high','No post yet: @st4rr.doll','Shipped 14 days ago and nothing is posted.','mkt-dispatches'),
+      n('c','low','Policy updated','lateGraceMinutes changed from 15 to 14.')
+    ].map(x=>app.run('_hrmNotifCardHTML('+JSON.stringify(x)+')')).join('');
+    return Promise.resolve('<div style="max-width:360px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:12px">'+cards+'</div>');
+  },
+  'gate pass — dark summary panels':()=>{
+    const app=loadApp({files:['js/gatepass.js'],currentPage:'gate-pass',
+      session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'}});
+    const html=app.run('renderOutward()');
+    return Promise.resolve(html);
   }
 };
 

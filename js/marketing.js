@@ -267,6 +267,30 @@ function mktNicheLibrary(list){
   return Array.from(seen.values());
 }
 
+// Where the tiering numbers came from. 'api' is never taken on the form's
+// word: it is only recorded when the numbers saved are EXACTLY the ones the
+// last Instagram fetch returned, so editing a fetched number makes it manual.
+const MKT_DATA_SOURCES=[{k:'manual',label:'Typed in'},{k:'screenshot',label:'From a screenshot'},{k:'api',label:'Instagram (fetched)'}];
+function _mktApiValues(raw){
+  if(!raw)return null;
+  let o=raw;
+  if(typeof raw==='string'){try{o=JSON.parse(raw);}catch(_){return null;}}
+  if(!o||typeof o!=='object')return null;
+  const out={};
+  for(const k of _MKT_TIERING_FIELDS)out[k]=mktNum(o[k]);
+  return out;
+}
+/** 'api' | 'manual' | 'screenshot' | null for the numbers about to be saved. Pure. */
+function mktDataSource(nums,old,form){
+  const o=old||{},f=form||{};
+  if(_MKT_TIERING_FIELDS.every(k=>nums[k]==null))return null;
+  const unchanged=_MKT_TIERING_FIELDS.every(k=>nums[k]===(o[k]==null?null:o[k]));
+  const api=_mktApiValues(f.api_values);
+  if(api&&_MKT_TIERING_FIELDS.every(k=>nums[k]===api[k]))return'api';
+  if(unchanged&&o.data_source&&!api)return o.data_source;
+  return f.data_source==='screenshot'?'screenshot':'manual';
+}
+
 function _mktNewId(){return'cr_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);}
 
 /**
@@ -319,6 +343,10 @@ function mktBuildCreatorPayload(form,existing,rawCfg,now,uid){
   data.follower_count_updated_at=(nums.follower_count!==(old.follower_count==null?null:old.follower_count))?now:(old.follower_count_updated_at||null);
   const metricsChanged=['avg_views','avg_likes','avg_comments'].some(k=>nums[k]!==(old[k]==null?null:old[k]));
   data.metrics_updated_at=metricsChanged?now:(old.metrics_updated_at||null);
+  data.data_source=mktDataSource(nums,old,f);
+  // A fresh fetch stamps the time even when the numbers came back the same.
+  data.api_fetched_at=data.data_source!=='api'?null
+    :(_mktApiValues(f.api_values)?now:(old.api_fetched_at||null));
   Object.assign(data,mktScoreFields(Object.assign({},data,{tier:override||null}),rawCfg,now));
   if(!override)data.tier=data.tier_formula;
   data.updated_at=now;
@@ -492,7 +520,8 @@ function renderMarketingCreators(){
       <div class="page-sub">The Sales Team ▸ Marketing</div></div>
       <div class="mkt-actions">
         <button class="btn-outline" onclick="window.showPage('mkt-import')">Import from sheet</button>
-        <button class="btn-outline" onclick="window.mktOpenScoring()">Scoring settings</button>
+        <button class="btn-outline" onclick="window.mktOpenIgBulk()">Fetch all from Instagram</button>
+        ${typeof canEditScoring==='function'&&canEditScoring()?`<button class="btn-outline" onclick="window.mktOpenScoring()">Scoring settings</button>`:''}
         <button class="btn-outline mkt-primary" onclick="window.mktOpenCreator('')">+ Add creator</button>
       </div>
     </div>
@@ -617,6 +646,7 @@ window.mktOpenCreator=function(id){
   const cityOpts=['<option value="">—</option>']
     .concat(cityKnown?[]:[`<option value="${v('city')}" selected>${v('city')} (not on the list)</option>`])
     .concat(MKT_PK_CITIES.map(ct=>`<option value="${_mktEsc(ct)}"${c&&c.city===ct?' selected':''}>${_mktEsc(ct)}</option>`)).join('');
+  const srcNow=(c&&c.data_source)||'manual';
   const ovTier=c&&c.tier_is_override?c.tier:'';
   const lifetime=c?`<div class="mkt-section">
       <div class="mkt-section-title">Lifetime</div>
@@ -657,6 +687,14 @@ window.mktOpenCreator=function(id){
     </div>
     <div class="mkt-section">
       <div class="mkt-section-title">Tiering inputs</div>
+      <div class="mkt-actions mkt-ig-row">
+        <button type="button" class="btn-outline" id="mkt-ig-fetch" onclick="window.mktFetchInstagram()">Fetch from Instagram</button>
+        <label class="mkt-ig-src" for="mkt-f-source">Source
+          <select id="mkt-f-source">${MKT_DATA_SOURCES.map(o=>`<option value="${o.k}"${srcNow===o.k?' selected':''}${o.k==='api'&&srcNow!=='api'?' disabled':''}>${o.label}</option>`).join('')}</select>
+        </label>
+      </div>
+      <div id="mkt-ig-status" class="mkt-note" aria-live="polite">Fetch works for Business and Creator accounts. For a Personal account, type the numbers in (or copy them from a screenshot).</div>
+      <input type="hidden" id="mkt-f-api" value="">
       <div class="form-grid mkt-grid-4">
         <div class="field"><label for="mkt-f-followers">Followers</label><input id="mkt-f-followers" value="${v('follower_count')}" inputmode="numeric" placeholder="e.g. 24500 or 24.5k" oninput="window.mktPreviewScore()"></div>
         <div class="field"><label for="mkt-f-views">Avg views</label><input id="mkt-f-views" value="${v('avg_views')}" inputmode="numeric" oninput="window.mktPreviewScore()"></div>
@@ -664,7 +702,7 @@ window.mktOpenCreator=function(id){
         <div class="field"><label for="mkt-f-comments">Avg comments</label><input id="mkt-f-comments" value="${v('avg_comments')}" inputmode="numeric" oninput="window.mktPreviewScore()"></div>
       </div>
       <div id="mkt-score-preview" class="mkt-preview" aria-live="polite"></div>
-      ${c?`<div class="mkt-note">Followers as of ${_mktWhen(c.follower_count_updated_at)} · metrics as of ${_mktWhen(c.metrics_updated_at)}</div>`:''}
+      ${c?`<div class="mkt-note">Followers as of ${_mktWhen(c.follower_count_updated_at)} · metrics as of ${_mktWhen(c.metrics_updated_at)}${c.data_source?' · '+_mktEsc(_mktSourceLabel(c.data_source))+(c.data_source==='api'&&c.api_fetched_at?' '+_mktWhen(c.api_fetched_at):''):''}</div>`:''}
     </div>
     <div class="mkt-section">
       <div class="mkt-section-title">Manual tier</div>
@@ -680,6 +718,7 @@ window.mktOpenCreator=function(id){
     ${lifetime}
     <div id="mkt-f-error" class="mkt-error" hidden></div>
     <div class="mkt-modal-actions">
+      ${c&&mktCanDeleteCreators()?`<button class="btn-danger mkt-del" id="mkt-f-delete" onclick="window.mktDeleteCreator('${_mktEsc(c.id)}')">Delete creator</button>`:''}
       <button class="btn-outline" onclick="window.mktCloseModal()">Cancel</button>
       <button class="btn-primary" id="mkt-f-save" onclick="window.mktSaveCreator()">${c?'Save changes':'Add creator'}</button>
     </div>`,true);
@@ -699,7 +738,8 @@ function _mktReadForm(){
     address:_mktVal('mkt-f-address'),top_size:_mktVal('mkt-f-top'),bottom_size:_mktVal('mkt-f-bottom'),
     follower_count:_mktVal('mkt-f-followers'),avg_views:_mktVal('mkt-f-views'),
     avg_likes:_mktVal('mkt-f-likes'),avg_comments:_mktVal('mkt-f-comments'),
-    tier_override:_mktVal('mkt-f-override'),tier_override_reason:_mktVal('mkt-f-reason')
+    tier_override:_mktVal('mkt-f-override'),tier_override_reason:_mktVal('mkt-f-reason'),
+    data_source:_mktVal('mkt-f-source'),api_values:_mktVal('mkt-f-api')
   };
 }
 
@@ -707,12 +747,99 @@ window.mktPreviewScore=function(){
   const el=document.getElementById('mkt-score-preview');
   if(!el)return;
   const f=_mktReadForm();
+  _mktSyncSource(f);
   const r=mktScore({follower_count:f.follower_count,avg_views:f.avg_views,avg_likes:f.avg_likes,avg_comments:f.avg_comments},mktScoringConfig);
   if(r.score==null){el.innerHTML='<span class="mkt-muted">Enter followers, avg likes and avg comments to calculate a score. Avg views is optional.</span>';return;}
   const tierLabel=r.tier==='below_threshold'?'Below threshold':'Tier '+r.tier;
   const ov=f.tier_override?` · shown as <b>${_mktEsc(f.tier_override==='below_threshold'?'Below threshold':'Tier '+f.tier_override)}</b> (manual)`:'';
   el.innerHTML=`<b>${r.score}/100 · ${tierLabel}</b>${ov}<span class="mkt-muted"> — reach ${r.parts.reach} + engagement ${r.parts.engagement} (${_mktPct(r.engagement_rate)}) + view-through ${r.parts.view_through}${r.view_through==null?' (no view data)':' ('+_mktPct(r.view_through)+')'}${r.floored?' · engagement is under the floor, so the tier is forced to Below threshold':''}</span>`;
 };
+
+function _mktSourceLabel(k){const o=MKT_DATA_SOURCES.find(x=>x.k===k);return o?o.label:'';}
+
+// Once numbers are fetched, the Source picker follows them: edit one and it
+// becomes "Typed in"; put it back and it is "Instagram" again.
+function _mktSyncSource(f){
+  const sel=document.getElementById('mkt-f-source');
+  const api=_mktApiValues(f.api_values);
+  if(!sel||!api)return;
+  const nums={};
+  for(const k of _MKT_TIERING_FIELDS)nums[k]=mktNum(f[k]);
+  const match=_MKT_TIERING_FIELDS.every(k=>nums[k]===api[k]);
+  const apiOpt=sel.querySelector?sel.querySelector('option[value="api"]'):null;
+  if(apiOpt)apiOpt.disabled=!match;
+  if(match)sel.value='api';
+  else if(sel.value==='api')sel.value='manual';
+}
+
+const MKT_IG_ENDPOINT='/.netlify/functions/instagram-business-discovery';
+async function mktCallInstagram(action,extra){
+  if(typeof auth==='undefined'||!auth||!auth.currentUser)throw new Error('You are signed out — sign in again.');
+  const idToken=await auth.currentUser.getIdToken();
+  const res=await fetch(MKT_IG_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(Object.assign({idToken,action},extra||{}))});
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok){const e=new Error(data.error||('Request failed ('+res.status+')'));e.status=res.status;throw e;}
+  return data;
+}
+
+let _mktIgBusy=false;
+function _mktIgStatus(msg,isError){
+  const el=document.getElementById('mkt-ig-status');
+  if(!el)return;
+  el.className=isError?'mkt-error':'mkt-note';
+  el.textContent=msg;
+}
+/**
+ * Fill the tiering inputs from Instagram. Never saves anything — the person
+ * still reviews and presses Save. Any failure leaves the fields as they were
+ * and says why, so manual entry is always the way on.
+ */
+window.mktFetchInstagram=async function(){
+  if(_mktIgBusy)return;
+  const handle=mktNormHandle(_mktVal('mkt-f-handle'));
+  if(!handle){_mktIgStatus('Enter the Instagram handle first.',true);return;}
+  const btn=document.getElementById('mkt-ig-fetch');
+  _mktIgBusy=true;if(btn){btn.disabled=true;btn.textContent='Fetching…';}
+  _mktIgStatus('Asking Instagram about @'+handle+'…');
+  try{
+    const r=await mktCallInstagram('lookup',{username:handle});
+    if(!r.found){
+      _mktIgStatus(r.message||'Instagram did not return that account. Enter the numbers by hand.',true);
+      const api=document.getElementById('mkt-f-api');if(api)api.value='';
+      const sel=document.getElementById('mkt-f-source');
+      if(sel){if(sel.value==='api')sel.value='manual';const o=sel.querySelector?sel.querySelector('option[value="api"]'):null;if(o)o.disabled=true;}
+      return;
+    }
+    const set=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v==null?'':String(v);};
+    set('mkt-f-followers',r.follower_count);
+    set('mkt-f-likes',r.avg_likes);
+    set('mkt-f-comments',r.avg_comments);
+    set('mkt-f-views',r.avg_views);
+    const nameEl=document.getElementById('mkt-f-name');
+    if(nameEl&&!nameEl.value.trim()&&r.name)nameEl.value=r.name;
+    const api={};
+    for(const k of _MKT_TIERING_FIELDS)api[k]=r[k]==null?null:r[k];
+    set('mkt-f-api',JSON.stringify(api));
+    window.mktPreviewScore();
+    _mktIgStatus(mktIgFetchSummary(r,handle));
+  }catch(e){
+    console.warn('[marketing] instagram fetch failed',e);
+    const m=(e&&e.message)||'The fetch failed.';
+    _mktIgStatus(m+(/by hand/.test(m)?'':' Enter the numbers by hand.'),true);
+  }finally{
+    _mktIgBusy=false;
+    if(btn){btn.disabled=false;btn.textContent='Fetch from Instagram';}
+  }
+};
+/** One line saying what the averages are made of. Pure. */
+function mktIgFetchSummary(r,handle){
+  const bits=['Fetched @'+(r.username||handle)];
+  bits.push(r.posts_sampled?'averages over the last '+r.posts_sampled+' post'+(r.posts_sampled===1?'':'s'):'no posts to average');
+  if(r.posts_sampled&&r.avg_views==null)bits.push('none of them report views');
+  else if(r.views_sampled&&r.views_sampled<r.posts_sampled)bits.push('views from '+r.views_sampled+' of them');
+  return bits.join(' · ')+'. Check the numbers, then save.';
+}
 
 function _mktFormError(msg){
   const e=document.getElementById('mkt-f-error');
@@ -777,8 +904,219 @@ async function mktWriteCreator(built){
   });
 }
 
+// ── Deleting a creator ──────────────────────────────────────────────────
+// Owners and the Content Ops lead — firestore.rules allows a creator delete
+// for isMarketing(), and this mirrors it. The handle lock goes in the same batch (the lock rule lets it
+// go once its creator no longer exists), so the handle can be added again.
+// A creator with dispatches or Paid PRs is NOT deleted: those records name
+// the creator, and the rollups, reports and discount codes built on them
+// would be left pointing at nothing. "Do not use" is the way to retire one.
+function mktCanDeleteCreators(){
+  return typeof canAccessMarketing==='function'&&canAccessMarketing();
+}
+/** Why this creator cannot be deleted, or '' if it can. Pure. */
+function mktCreatorDeleteBlock(creatorId,dispatches,paidPRs){
+  if(dispatches==null||paidPRs==null)return'The dispatch log or Paid PR list did not load, so it cannot be checked that nothing refers to this creator. Reload and try again.';
+  const d=dispatches.filter(x=>x.creator_id===creatorId).length;
+  const p=paidPRs.filter(x=>x.creator_id===creatorId).length;
+  if(!d&&!p)return'';
+  const parts=[];
+  if(d)parts.push(d+' dispatch'+(d===1?'':'es'));
+  if(p)parts.push(p+' Paid PR request'+(p===1?'':'s'));
+  return'This creator has '+parts.join(' and ')+', which would be left pointing at nothing. Set the status to "Do not use" instead.';
+}
+let _mktDeleting=false;
+window.mktDeleteCreator=async function(id){
+  if(_mktDeleting)return;
+  if(!mktCanDeleteCreators()){_mktFormError('Your account cannot delete creators.');return;}
+  const c=mktCreators.find(x=>x.id===id);
+  if(!c){_mktFormError('That creator is no longer in the list.');return;}
+  const block=mktCreatorDeleteBlock(id,mktDispatchesLoaded?mktDispatches:null,mktPaidPRsLoaded?mktPaidPRs:null);
+  if(block){_mktFormError(block);return;}
+  if(typeof confirm==='function'&&!confirm('Delete @'+c.ig_handle+(c.name?' ('+c.name+')':'')+' from the Creator Database? This cannot be undone.'))return;
+  const btn=document.getElementById('mkt-f-delete');
+  _mktDeleting=true;if(btn){btn.disabled=true;btn.textContent='Deleting…';}
+  try{
+    const b=writeBatch(db);
+    b.delete(doc(db,'creators',id));
+    const handle=mktNormHandle(c.ig_handle);
+    if(handle){
+      // Only release a lock that is actually this creator's.
+      const lock=await getDoc(doc(db,'creator_handles',handle));
+      if(lock&&lock.exists()&&((lock.data()||{}).creatorId===id))b.delete(doc(db,'creator_handles',handle));
+    }
+    await b.commit();
+    mktCreators=mktCreators.filter(x=>x.id!==id);
+    _mktCloseModal();
+    showToast('Deleted @'+c.ig_handle);
+    if(typeof logActivity==='function')logActivity('Creator deleted','@'+c.ig_handle);
+    _mktRerenderPage();
+  }catch(e){
+    console.error('[marketing] delete failed',e);
+    _mktFormError('Could not delete: '+((e&&e.message)||'unknown error')+'. Nothing was changed.');
+  }finally{
+    _mktDeleting=false;
+    if(btn){btn.disabled=false;btn.textContent='Delete creator';}
+  }
+};
+
+// ── Fetch all from Instagram ────────────────────────────────────────────
+// Runs the same lookup as the form's button over the whole list, one
+// creator at a time. A Business or Creator account gets its followers and
+// averages written (source 'api'); anything Instagram cannot find is LEFT
+// EXACTLY AS IT IS — no write at all. A manual tier stays manual.
+//
+// Meta caps calls per hour. The server passes back how much of that cap is
+// used (X-App-Usage / X-Business-Use-Case-Usage); the run stops itself at
+// _MKT_IG_USAGE_STOP and on any 429. Running it again skips everyone fetched
+// in the last _MKT_IG_FRESH_MS, so a stopped run simply picks up where it
+// left off.
+const _MKT_IG_FRESH_MS=24*3600*1000;
+const _MKT_IG_USAGE_STOP=85;
+const _MKT_IG_PACE_MS=1200;
+let _mktIgBulk=null;
+
+/** Who a bulk run would look up, and who it skips. Pure. */
+function mktIgBulkPlan(list,now){
+  const todo=[],fresh=[],noHandle=[];
+  for(const c of list||[]){
+    if(!mktNormHandle(c.ig_handle)){noHandle.push(c);continue;}
+    if(c.data_source==='api'&&c.api_fetched_at&&now-c.api_fetched_at<_MKT_IG_FRESH_MS){fresh.push(c);continue;}
+    todo.push(c);
+  }
+  return{todo,fresh,noHandle};
+}
+
+/** The record as a form, so a fetch goes through the same payload builder as a save. Pure. */
+function mktCreatorAsForm(c){
+  return{
+    ig_handle:c.ig_handle,name:c.name||'',tiktok_handle:c.tiktok_handle||'',status:c.status||'active',
+    niche:Array.isArray(c.niche)?c.niche.slice():[],city:c.city||'',address:c.address||'',phone:c.phone||'',
+    top_size:c.top_size||'',bottom_size:c.bottom_size||'',
+    follower_count:c.follower_count,avg_views:c.avg_views,avg_likes:c.avg_likes,avg_comments:c.avg_comments,
+    tier_override:c.tier_is_override?(c.tier||''):'',tier_override_reason:c.tier_override_reason||'',
+    data_source:c.data_source||'manual'
+  };
+}
+
+/** A creator with a fetch applied: the built payload, or {error}. Pure apart from what the builder mints. */
+function mktApplyIgFetch(c,r,cfg,now,uid){
+  const f=mktCreatorAsForm(c);
+  const api={};
+  for(const k of _MKT_TIERING_FIELDS){api[k]=r[k]==null?null:r[k];f[k]=api[k];}
+  f.api_values=api;
+  f.data_source='api';
+  if(!f.name&&r.name)f.name=r.name;
+  return mktBuildCreatorPayload(f,c,cfg,now,uid);
+}
+
+function _mktIgBulkHTML(){
+  const b=_mktIgBulk;
+  const plan=mktIgBulkPlan(mktCreators,Date.now());
+  const head=`<h3>Fetch all from Instagram</h3>
+    <div class="sub">Looks up every creator. Business and Creator accounts get their followers and averages filled in. Anyone Instagram cannot find (Personal accounts, typos, deleted accounts) is left exactly as it is.</div>`;
+  if(!b){
+    return`${head}
+      <div class="mkt-note">${plan.todo.length} to look up${plan.fresh.length?' · '+plan.fresh.length+' already fetched in the last 24 hours (skipped)':''}${plan.noHandle.length?' · '+plan.noHandle.length+' without a valid handle (skipped)':''}.</div>
+      <div class="mkt-note">Instagram limits lookups per hour. If it says stop, the run stops on its own — run it again later and it carries on with whoever is left. A manual tier stays manual.</div>
+      <div class="mkt-modal-actions">
+        <button class="btn-outline" onclick="window.mktCloseModal()">Cancel</button>
+        <button class="btn-primary" id="mkt-igb-start" onclick="window.mktIgBulkRun()"${plan.todo.length?'':' disabled'}>Start (${plan.todo.length})</button>
+      </div>`;
+  }
+  return`${head}
+    <div class="mkt-improgress" id="mkt-igb-progress" aria-live="polite">${_mktEsc(_mktIgBulkLine())}</div>
+    <div class="mkt-implog" id="mkt-igb-log">${b.log.map(_mktEsc).join('<br>')}</div>
+    <div class="mkt-modal-actions">
+      ${b.running?`<button class="btn-outline" id="mkt-igb-stop" onclick="window.mktIgBulkStop()"${b.stop?' disabled':''}>${b.stop?'Stopping…':'Stop'}</button>`
+        :`<button class="btn-primary" onclick="window.mktIgBulkClose()">Done</button>`}
+    </div>`;
+}
+function _mktIgBulkLine(){
+  const b=_mktIgBulk;
+  if(!b)return'';
+  const n=b.updated+b.notFound+b.failed;
+  return(b.running?'Looking up '+n+' of '+b.total+'…':(b.stopReason||'Finished.'))+
+    ' Updated '+b.updated+' · not a Business/Creator account (left as is) '+b.notFound+(b.failed?' · failed '+b.failed:'')+'.';
+}
+function _mktIgBulkPaint(){
+  // Only while the bulk modal is the one showing — closing it mid-run lets
+  // the run carry on quietly instead of popping the modal back up.
+  const back=document.getElementById('mkt-modal-back');
+  if(!back||!back.__igBulk)return;
+  const again=_mktOpenModal(_mktIgBulkHTML());
+  if(again)again.__igBulk=true;
+}
+
+window.mktOpenIgBulk=function(){
+  if(typeof canAccessMarketing!=='function'||!canAccessMarketing())return;
+  if(_mktIgBulk&&!_mktIgBulk.running)_mktIgBulk=null;
+  const back=_mktOpenModal(_mktIgBulkHTML());
+  if(back)back.__igBulk=true;
+};
+window.mktIgBulkStop=function(){if(_mktIgBulk&&_mktIgBulk.running){_mktIgBulk.stop=true;_mktIgBulkPaint();}};
+window.mktIgBulkClose=function(){_mktIgBulk=null;_mktCloseModal();_mktRerenderPage();};
+
+window.mktIgBulkRun=async function(opts){
+  if(_mktIgBulk&&_mktIgBulk.running)return;
+  if(typeof canAccessMarketing!=='function'||!canAccessMarketing())return;
+  const pace=opts&&opts.paceMs!=null?opts.paceMs:_MKT_IG_PACE_MS;
+  const plan=mktIgBulkPlan(mktCreators,Date.now());
+  const b=_mktIgBulk={running:true,stop:false,total:plan.todo.length,updated:0,notFound:0,failed:0,log:[],stopReason:''};
+  const say=t=>{b.log.push(t);const el=document.getElementById('mkt-igb-log');if(el)el.innerHTML=b.log.map(_mktEsc).join('<br>');};
+  const tick=()=>{const el=document.getElementById('mkt-igb-progress');if(el)el.textContent=_mktIgBulkLine();};
+  _mktIgBulkPaint();
+  if(typeof window._gvSilentSaveStart==='function')window._gvSilentSaveStart();
+  const uid=typeof session!=='undefined'&&session?session.uid:null;
+  try{
+    for(let i=0;i<plan.todo.length;i++){
+      if(b.stop){b.stopReason='Stopped. Run it again to carry on.';break;}
+      const c=plan.todo[i];
+      let r;
+      try{r=await mktCallInstagram('lookup',{username:c.ig_handle});}
+      catch(e){
+        const msg=(e&&e.message)||'failed';
+        if(e&&(e.status===429||e.status===503||e.status===401||e.status===403)){
+          b.stopReason=(e.status===429?'Instagram\'s hourly limit was reached — run it again in an hour; everyone updated so far is skipped.':'Stopped: '+msg);
+          say('@'+c.ig_handle+': '+msg);
+          break;
+        }
+        b.failed++;say('@'+c.ig_handle+': '+msg);tick();continue;
+      }
+      if(!r||!r.found){b.notFound++;say('@'+c.ig_handle+': not found as a Business/Creator account — left as is');}
+      else{
+        const now=Date.now();
+        const built=mktApplyIgFetch(c,r,mktScoringConfig,now,uid);
+        if(built.error){b.failed++;say('@'+c.ig_handle+': '+built.error);}
+        else{
+          try{
+            await updateDoc(doc(db,'creators',c.id),built.data);
+            const merged=Object.assign({},c,built.data);
+            mktCreators=mktCreators.map(x=>x.id===c.id?merged:x);
+            b.updated++;
+            say('@'+c.ig_handle+': '+_mktFmtNum(r.follower_count)+' followers · tier '+(merged.tier==='below_threshold'?'below threshold':(merged.tier||'—')));
+          }catch(e){b.failed++;say('@'+c.ig_handle+': could not save — '+((e&&e.message)||'failed'));}
+        }
+      }
+      tick();
+      if(r&&typeof r.usage==='number'&&r.usage>=_MKT_IG_USAGE_STOP&&i<plan.todo.length-1){
+        b.stopReason='Paused at '+Math.round(r.usage)+'% of Instagram\'s hourly allowance — run it again in an hour; everyone updated so far is skipped.';
+        break;
+      }
+      if(pace&&i<plan.todo.length-1)await new Promise(res=>setTimeout(res,pace));
+    }
+    if(typeof logActivity==='function'&&(b.updated||b.notFound))logActivity('Creators fetched from Instagram',b.updated+' updated, '+b.notFound+' not Business/Creator');
+  }finally{
+    if(typeof window._gvSilentSaveStop==='function')window._gvSilentSaveStop();
+    b.running=false;
+    _mktIgBulkPaint();
+  }
+  return{updated:b.updated,notFound:b.notFound,failed:b.failed,stopReason:b.stopReason};
+};
+
 // ── Scoring settings ────────────────────────────────────────────────────
 window.mktOpenScoring=function(){
+  if(typeof canEditScoring!=='function'||!canEditScoring()){showToast('Scoring settings are managed by Ammar.',true);return;}
   _mktCfgDraft=JSON.parse(JSON.stringify(_mktConfig(mktScoringConfig)));
   _mktRenderScoring();
 };
@@ -851,6 +1189,7 @@ function mktRecalcAll(list,cfg,now){
 
 window.mktSaveScoring=async function(){
   if(_mktSaving||!_mktCfgDraft)return;
+  if(typeof canEditScoring!=='function'||!canEditScoring()){_mktFormError('Scoring settings are managed by Ammar.');return;}
   const errs=mktValidateConfig(_mktCfgDraft);
   if(errs.length){_mktFormError(errs.join(' '));return;}
   const cfg=_mktConfig(_mktCfgDraft);
@@ -2253,6 +2592,7 @@ function renderMarketingReports(){
     <div class="card"><div class="card-title">Best performing — organic</div>${_mktOrganicHTML()}</div>
     <div class="card"><div class="card-title">Sales lift on dispatched products</div><div id="mkt-rep-lift">${_mktLiftHTML()}</div></div>
     <div class="card"><div class="card-title">Shopify connection</div><div id="mkt-rep-shopify">${_mktShopifyHTML()}</div></div>
+    <div class="card"><div class="card-title">Instagram connection</div><div id="mkt-rep-ig">${_mktIgConnHTML()}</div></div>
     <div style="height:80px"></div>`;
 }
 
@@ -2862,6 +3202,29 @@ window.mktCopyCode=function(code){
     if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(code).then(done,()=>showToast('Copy failed — select the code and copy it by hand',true));return;}
   }catch(_){}
   showToast('Copy failed — select the code and copy it by hand',true);
+};
+
+// ── Instagram connection (Reports) ──────────────────────────────────────
+let _mktIgConn=null;
+function _mktIgConnHTML(){
+  const s=_mktIgConn;
+  let line='<div class="mkt-note">"Fetch from Instagram" on a creator reads their numbers through GRVY&#39;s own Business account. The token is checked every night, and the bell warns 14 days before it expires.</div>';
+  if(s&&s.checking)line='<div class="mkt-note">Checking…</div>';
+  else if(s&&s.configured===false)line='<div class="mkt-error">Not set up: IG_ACCESS_TOKEN and META_APP_SECRET need to be added in Netlify (then redeploy).</div>';
+  else if(s&&s.error&&s.configured!==true)line=`<div class="mkt-error">${_mktEsc(s.error)}</div>`;
+  else if(s&&!s.valid)line=`<div class="mkt-error">Meta does not accept the token${s.error?' ('+_mktEsc(s.error)+')':''}. Generate a new one in Graph API Explorer and replace IG_ACCESS_TOKEN in Netlify, then redeploy.</div>`;
+  else if(s){
+    const exp=s.days_left==null?'does not expire':'expires in '+s.days_left+' day'+(s.days_left===1?'':'s');
+    line=`<div class="mkt-note"><b class="mkt-up">Ready</b> — ${s.kind==='page'?'Page token':'user token'}, ${exp}.${s.has_scope===false?' <span class="mkt-error">The token is missing instagram_basic or pages_show_list.</span>':''}</div>`;
+  }
+  return`${line}<div class="mkt-actions" style="margin-top:8px"><button class="btn-outline" id="mkt-ig-check" onclick="window.mktCheckInstagram()">Check Instagram access</button></div>`;
+}
+window.mktCheckInstagram=async function(){
+  const paint=()=>{const el=document.getElementById('mkt-rep-ig');if(el)el.innerHTML=_mktIgConnHTML();};
+  _mktIgConn={checking:true};paint();
+  try{_mktIgConn=await mktCallInstagram('status');}
+  catch(e){_mktIgConn={error:'Could not check: '+((e&&e.message)||'unknown error')};}
+  paint();
 };
 
 // ── Shopify connection (Reports) ────────────────────────────────────────

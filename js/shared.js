@@ -1580,7 +1580,7 @@ function _bugCardHTML(b){
   const expectedHTML=b.expectedBehavior?`<div style="margin-bottom:14px"><div style="font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Expected</div><div style="font-size:14px">${(b.expectedBehavior||'').replace(/[<>]/g,'')}</div></div>`:'';
   // Auto-fix detection — show badge if any comment starts with [CLAUDE_CODE_FIXED]
   const ccComment=comments.find(c=>(c.text||'').startsWith('[CLAUDE_CODE_FIXED]'));
-  const ccBadge=ccComment?`<div style="background:#EAF3DE;padding:8px 12px;border-radius:6px;font-size:12px;color:#3B6D11;display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+  const ccBadge=ccComment?`<div style="background:var(--accent-success-soft);padding:8px 12px;border-radius:6px;font-size:12px;color:var(--accent-success);display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
     <span>🤖 Fixed by Claude Code · ${_hrmTimeAgo(ccComment.at)}</span>
     ${b.verified?`<span style="background:#1D9E75;color:white;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">VERIFIED</span>`:(isOM?`<button class="btn-sm" style="margin-left:auto" onclick="event.stopPropagation();window.verifyFix('${b._id}')">Verify Fix</button>`:'')}
   </div>`:'';
@@ -1805,13 +1805,13 @@ function _bugExportModalShell(){
     <div style="padding:20px;flex:1;overflow-y:auto">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
         <div>
-          <label style="font-size:11px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:.04em">Severity to include</label>
+          <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Severity to include</label>
           <div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap;font-size:12px">
             ${[['critical','🔴 Critical'],['high','🟠 High'],['medium','🟡 Medium'],['low','🟢 Low']].map(([v,lab])=>`<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" ${_bugExportSeverities.has(v)?'checked':''} onchange="window._bugExportToggleSev('${v}',this.checked)"> ${lab}</label>`).join('')}
           </div>
         </div>
         <div>
-          <label style="font-size:11px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:.04em">Categories</label>
+          <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Categories</label>
           <div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap;font-size:12px">
             ${[['ui','UI'],['data','Data'],['permission','Permission'],['calculation','Calculation'],['missing-feature','Features'],['other','Other']].map(([v,lab])=>`<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" ${_bugExportCategories.has(v)?'checked':''} onchange="window._bugExportToggleCat('${v}',this.checked)"> ${lab}</label>`).join('')}
           </div>
@@ -1819,12 +1819,12 @@ function _bugExportModalShell(){
       </div>
       <div style="margin-bottom:14px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <label style="font-size:11px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:.04em">Generated Claude Code Prompt</label>
+          <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Generated Claude Code Prompt</label>
           <button class="btn-sm" onclick="window.copyExportText()">📋 Copy</button>
         </div>
-        <textarea id="export-output" rows="20" readonly style="width:100%;padding:12px;border:1px solid var(--border);border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--surface-2);color:#1A1A2E;resize:vertical;line-height:1.5"></textarea>
+        <textarea id="export-output" rows="20" readonly style="width:100%;padding:12px;border:1px solid var(--border);border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--surface-2);color:var(--text);resize:vertical;line-height:1.5"></textarea>
       </div>
-      <div style="background:#FAEEDA;padding:10px 12px;border-radius:6px;font-size:12px;color:#854F0B;line-height:1.5">
+      <div style="background:var(--accent-warning-soft);padding:10px 12px;border-radius:6px;font-size:12px;color:var(--accent-warning);line-height:1.5">
         💡 <strong>How to use:</strong> Click "Copy & Mark as Exported", then paste into a fresh Claude Code session. Claude Code will fix the bugs in batches and auto-mark them as fixed in your bug tracker.
       </div>
     </div>

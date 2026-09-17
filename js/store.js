@@ -273,7 +273,7 @@ window.invSetSort=function(v){_invSort=v;const m=document.getElementById('main-c
 
 function renderStoreReceive(){
   _rcvNewMode=false;
-  const opts=`<option value="__new__" style="font-weight:700;color:#16a34a">+ New item — not in inventory yet</option>`+
+  const opts=`<option value="__new__" style="font-weight:700;color:var(--accent-success)">+ New item — not in inventory yet</option>`+
     allItems.map(i=>`<option value="${i.code}">${i.code} — ${i.name}</option>`).join('');
   return`<div class="page-head"><div class="page-title">Receive Stock</div></div>
   <div class="card">
@@ -295,7 +295,7 @@ function renderStoreReceive(){
 
 function _rcvCatOptions(selected){
   const items=_allCats().map(k=>`<option value="${k}"${k===selected?' selected':''}>${_catLabel(k)}</option>`).join('');
-  return`<option value="">— pick category —</option>${items}<option value="__new_cat__" style="font-weight:700;color:#16a34a">+ New category…</option>`;
+  return`<option value="">— pick category —</option>${items}<option value="__new_cat__" style="font-weight:700;color:var(--accent-success)">+ New category…</option>`;
 }
 
 function _rcvUnitOptions(selected){
@@ -305,8 +305,8 @@ function _rcvUnitOptions(selected){
 }
 
 function _renderRcvNewForm(){
-  return`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;margin-bottom:6px">
-    <div style="font-weight:700;font-size:13px;color:#065f46;margin-bottom:10px">New item — will be added to Inventory</div>
+  return`<div style="background:var(--accent-success-soft);border:1px solid var(--accent-success);border-radius:10px;padding:14px;margin-bottom:6px">
+    <div style="font-weight:700;font-size:13px;color:var(--accent-success);margin-bottom:10px">New item — will be added to Inventory</div>
     <div class="form-grid">
       <div class="field"><label>Category *</label>
         <select id="rcvn-cat" onchange="window.onRcvNewCatChange()">${_rcvCatOptions('')}</select>
@@ -321,7 +321,7 @@ function _renderRcvNewForm(){
       <div class="field" style="grid-column:1/-1">
         <label>Image <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
         <div style="display:flex;gap:10px;align-items:center">
-          <div id="rcvn-img-preview" style="width:54px;height:54px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:10px">No image</div>
+          <div id="rcvn-img-preview" style="width:54px;height:54px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:10px">No image</div>
           <input type="file" id="rcvn-img-file" accept="image/*" style="font-size:11px;font-family:inherit" onchange="window._rcvOnImgPick(this)">
           <input type="hidden" id="rcvn-img-url" value="">
           <input type="hidden" id="rcvn-img-status" value="ready">
@@ -618,7 +618,7 @@ function _miRowCells(l,idx){
       const av=parseInt(item.sizes[sz])||0;
       const v=(l.sizeQtys&&l.sizeQtys[sz]!=null)?l.sizeQtys[sz]:'';
       return`<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-        <span style="font-size:9px;font-weight:700;color:var(--muted)">${sz}<span style="font-weight:400;color:#bbb"> ·${av}</span></span>
+        <span style="font-size:9px;font-weight:700;color:var(--muted)">${sz}<span style="font-weight:400;color:var(--muted)"> ·${av}</span></span>
         <input type="number" min="0" value="${v}" placeholder="0" ${av>0?'':'disabled'} style="width:50px;padding:4px;border:1px solid ${av>0?'var(--border)':'#eee'};border-radius:6px;font-size:12px;text-align:center" onchange="window._miChangeSizeQty(${idx},'${sz}',this.value)"></div>`;
     }).join('')}</div>`;
   }else{
@@ -697,7 +697,7 @@ function renderStoreIssue(){
   return`<div class="page-head"><div class="page-title">Issue Stock</div></div>
   ${pirBanner}
   <div class="card">
-    <div class="card-title">Issue against PO <span style="font-size:11px;font-weight:500;color:var(--amber);background:#FEF3C7;padding:2px 8px;border-radius:10px;margin-left:6px">Work in Progress</span></div>
+    <div class="card-title">Issue against PO <span style="font-size:11px;font-weight:500;color:var(--amber);background:var(--accent-warning-soft);padding:2px 8px;border-radius:10px;margin-left:6px">Work in Progress</span></div>
     <div class="form-grid">
       <div class="field" style="grid-column:1/-1;position:relative"><label>PO Number</label>
         <input id="iss-po" placeholder="Type PO number or pick from list…" autocomplete="off"
@@ -735,7 +735,7 @@ function renderStoreIssue(){
     </div>
     <div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">
       <button class="btn-outline" onclick="window._miAddRow()">+ Add item</button>
-      <button class="btn-outline" onclick="window._miDeleteSelected()" style="color:#dc2626;border-color:#fca5a5">✕ Delete selected</button>
+      <button class="btn-outline" onclick="window._miDeleteSelected()" style="color:var(--accent-urgent);border-color:var(--accent-urgent)">✕ Delete selected</button>
       <button class="btn-primary" id="mi-submit-btn" style="margin-top:0" onclick="window.submitIssueManual()">${_miSubmitLabel()}</button>
     </div>
   </div><div style="height:80px"></div>`;
@@ -746,7 +746,7 @@ function filterPODropMain(val){
   const matches=allActivePOs.filter(p=>normPO(p.id).includes(q)||(p.name||'').toLowerCase().includes(q));
   if(!matches.length||!val){dd.style.display='none';return;}
   dd.style.display='block';
-  dd.innerHTML=matches.slice(0,10).map(p=>`<div onclick="window.selectPOMain('${p.id}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f5f5f5;font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
+  dd.innerHTML=matches.slice(0,10).map(p=>`<div onclick="window.selectPOMain('${p.id}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
     <span style="font-weight:700;color:var(--red)">${p.id}</span>
     <span style="color:var(--muted);margin-left:6px;font-size:12px">${p.name||'—'} · ${p.currentStage||'—'}</span>
   </div>`).join('');
@@ -772,7 +772,7 @@ async function onIssPoInput(raw){
     const tpl=allTemplates.find(t=>t.productCode&&po.code&&po.code===t.productCode)||(allTemplates.find(t=>t.productType&&po.name&&po.name.toLowerCase().includes(t.productType.toLowerCase())));
     if(!tpl||!tpl.items?.length){bodyEl.innerHTML=`<div class="alert-banner alert-amber">No trim template found for this product. Use manual issue below or create a template first.</div>`;return;}
     _poIssueData={po,tpl};renderPoIssueBody(po,tpl);
-  }catch(e){statusEl.innerHTML=`<span style="color:#dc2626">Error: ${e.message}</span>`;}
+  }catch(e){statusEl.innerHTML=`<span style="color:var(--accent-urgent)">Error: ${e.message}</span>`;}
 }
 function renderPoIssueBody(po,tpl){
   const qty=parseInt(po.qty)||1;
@@ -830,7 +830,7 @@ function filterPODrop(val){
   const matches=allActivePOs.filter(p=>normPO(p.id).includes(q)||(p.name||'').toLowerCase().includes(q));
   if(!matches.length||!val){dd.style.display='none';return;}
   dd.style.display='block';
-  dd.innerHTML=matches.slice(0,10).map(p=>`<div onclick="window.selectPO('${p.id}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f5f5f5;font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
+  dd.innerHTML=matches.slice(0,10).map(p=>`<div onclick="window.selectPO('${p.id}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
     <span style="font-weight:700;color:var(--red)">${p.id}</span>
     <span style="color:var(--muted);margin-left:6px;font-size:12px">${p.name||'—'} · ${p.currentStage||'—'}</span>
   </div>`).join('');
@@ -847,24 +847,24 @@ async function lookupManualPO(raw){
   el.innerHTML='<span style="font-size:12px;color:var(--muted)">Looking up…</span>';
   try{
     let po=allActivePOs.find(p=>normPO(p.id)===q||normPO(p.id)===normPO(normalized));
-    if(!po){const matches=await fsQueryWhere('pos','id',normalized,1);if(!matches.length){el.innerHTML='<span style="font-size:12px;color:#dc2626">PO not found</span>';return;}po=matches[0];}
+    if(!po){const matches=await fsQueryWhere('pos','id',normalized,1);if(!matches.length){el.innerHTML='<span style="font-size:12px;color:var(--accent-urgent)">PO not found</span>';return;}po=matches[0];}
     const szs=['XS','S','M','L','XL','2XL'];
     const hasCut=po.cutQty&&szs.some(s=>po.cutQty[s]>0);
     const hasSizes=po.sizes&&szs.some(s=>po.sizes[s]>0);
     const stageLabel=po.currentStage?po.currentStage.charAt(0).toUpperCase()+po.currentStage.slice(1):'—';
-    el.innerHTML=`<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:12px 14px">
+    el.innerHTML=`<div style="background:var(--accent-success-soft);border:1px solid var(--accent-success);border-radius:10px;padding:12px 14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:4px">
         <span style="font-weight:700;color:var(--green);font-size:13px">✓ ${po.name||po.id}</span>
         <span style="font-size:11px;background:var(--soft);color:var(--text);padding:2px 8px;border-radius:10px;font-weight:600">${stageLabel}</span>
       </div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${po.qty||0} pcs total · ${po.fabric||'—'}</div>
       ${hasCut?`<div style="margin-bottom:6px"><div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Cut Qty</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${szs.filter(s=>po.cutQty[s]>0).map(s=>`<div style="text-align:center;min-width:38px;padding:5px 8px;background:var(--surface);border-radius:6px;border:1px solid #86efac"><div style="font-size:9px;color:var(--muted)">${s}</div><div style="font-size:14px;font-weight:700;color:var(--dark)">${po.cutQty[s]}</div></div>`).join('')}</div></div>`:''}
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${szs.filter(s=>po.cutQty[s]>0).map(s=>`<div style="text-align:center;min-width:38px;padding:5px 8px;background:var(--surface);border-radius:6px;border:1px solid var(--accent-success)"><div style="font-size:9px;color:var(--muted)">${s}</div><div style="font-size:14px;font-weight:700;color:var(--dark)">${po.cutQty[s]}</div></div>`).join('')}</div></div>`:''}
       ${hasSizes&&!hasCut?`<div><div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Order Qty (not yet cut)</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">${szs.filter(s=>po.sizes[s]>0).map(s=>`<div style="text-align:center;min-width:38px;padding:5px 8px;background:var(--surface);border-radius:6px;border:1px solid #d1d5db"><div style="font-size:9px;color:var(--muted)">${s}</div><div style="font-size:14px;font-weight:700;color:var(--muted)">${po.sizes[s]}</div></div>`).join('')}</div></div>`:''}
       ${!hasCut&&!hasSizes?`<div style="font-size:12px;color:var(--muted)">No size/cut data available yet.</div>`:''}
     </div>`;
-  }catch(e){el.innerHTML=`<span style="font-size:12px;color:#dc2626">Error: ${e.message}</span>`;}
+  }catch(e){el.innerHTML=`<span style="font-size:12px;color:var(--accent-urgent)">Error: ${e.message}</span>`;}
 }
 async function submitIssueManual(){
   const poRefRaw=(document.getElementById('iss-po-ref')?.value||'').trim().toUpperCase();
@@ -945,7 +945,7 @@ function renderStoreTemplates(){
   if(_tplPage>maxPages)_tplPage=maxPages;
   const slice=allTemplates.slice((_tplPage-1)*TPL_PER,_tplPage*TPL_PER);
   const editLabel=_tplEditId?'Update Template':'Save Template';
-  const editBanner=_tplEditId?`<div style="font-size:12px;background:#FEF3C7;color:#92400e;padding:6px 10px;border-radius:6px;margin-bottom:10px;font-weight:600">✏️ Editing template — make changes then click Update Template. <button onclick="window.cancelTplEdit()" style="background:none;border:none;color:#92400e;cursor:pointer;font-size:12px;text-decoration:underline;font-family:inherit">Cancel</button></div>`:'';
+  const editBanner=_tplEditId?`<div style="font-size:12px;background:var(--accent-warning-soft);color:var(--accent-warning);padding:6px 10px;border-radius:6px;margin-bottom:10px;font-weight:600">✏️ Editing template — make changes then click Update Template. <button onclick="window.cancelTplEdit()" style="background:none;border:none;color:var(--accent-warning);cursor:pointer;font-size:12px;text-decoration:underline;font-family:inherit">Cancel</button></div>`:'';
   return`<div class="page-head"><div class="page-title">Trim Templates</div><div class="page-sub">Auto-deducts trims from store when a PO is created</div></div>
   <div class="card" id="tpl-form-card">
     <div class="card-title">Create template</div>
@@ -967,7 +967,7 @@ function renderStoreTemplates(){
   </div>
   ${total?`<div class="card">
     <div class="card-title">Saved templates (${total})</div>
-    ${slice.map(t=>`<div style="padding:12px 0;border-bottom:1px solid #f5f5f5">
+    ${slice.map(t=>`<div style="padding:12px 0;border-bottom:1px solid var(--border)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -986,7 +986,7 @@ function renderStoreTemplates(){
         </div>`:''}
       </div>
     </div>`).join('')}
-    ${maxPages>1?`<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding-top:12px;border-top:1px solid #f5f5f5;margin-top:4px">
+    ${maxPages>1?`<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding-top:12px;border-top:1px solid var(--border);margin-top:4px">
       <button onclick="window.tplPagePrev()" ${_tplPage===1?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:12px;font-family:inherit">← Prev</button>
       <span style="font-size:12px;color:var(--muted)">Page ${_tplPage} of ${maxPages}</span>
       <button onclick="window.tplPageNext()" ${_tplPage===maxPages?'disabled':''} style="padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:12px;font-family:inherit">Next →</button>
@@ -1001,7 +1001,7 @@ function filterTplProd(q){
   const matches=PRODUCT_CATALOG.filter(p=>p.code.toLowerCase().includes(ql)||p.name.toLowerCase().includes(ql));
   if(!matches.length){dd.style.display='none';return;}
   dd.style.display='block';
-  dd.innerHTML=matches.slice(0,12).map(p=>`<div onclick="window.selectTplProd('${p.code}','${p.name.replace(/'/g,'&#39;')}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f5f5f5;font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
+  dd.innerHTML=matches.slice(0,12).map(p=>`<div onclick="window.selectTplProd('${p.code}','${p.name.replace(/'/g,'&#39;')}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
     <span style="font-weight:700;color:var(--red)">${p.code}</span>
     <span style="color:var(--muted);margin-left:8px;font-size:12px">${p.name}</span>
   </div>`).join('');
@@ -1025,7 +1025,7 @@ function _tplItemRowHTML(rowId,itemCode='',itemName='',qty=1,price=''){
       <input type="number" min="0.01" step="0.01" value="${qty}" placeholder="1" class="tpl-qty"></div>
     <div class="field" style="width:90px"><label>Price / unit</label>
       <input type="number" min="0" step="0.01" value="${price}" placeholder="Rs." class="tpl-price"></div>
-    <button onclick="document.getElementById('${rowId}').remove()" style="background:none;border:none;color:#ccc;font-size:20px;cursor:pointer;align-self:flex-end;padding:0 4px;margin-bottom:2px">×</button>`;
+    <button onclick="document.getElementById('${rowId}').remove()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;align-self:flex-end;padding:0 4px;margin-bottom:2px">×</button>`;
 }
 function _attachTplItemSearch(div){
   const inp=div.querySelector('.tpl-item-search');
@@ -1038,7 +1038,7 @@ function _attachTplItemSearch(div){
     const matches=allItems.filter(i=>i.code.toLowerCase().includes(ql)||i.name.toLowerCase().includes(ql));
     if(!q||!matches.length){dd.style.display='none';return;}
     dd.style.display='block';
-    dd.innerHTML=matches.slice(0,15).map(i=>`<div data-code="${i.code}" data-name="${i.name.replace(/"/g,'&quot;')}" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid #f5f5f5;font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
+    dd.innerHTML=matches.slice(0,15).map(i=>`<div data-code="${i.code}" data-name="${i.name.replace(/"/g,'&quot;')}" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px" onmouseenter="this.style.background='#f5f5f5'" onmouseleave="this.style.background=''">
       <span style="font-weight:700;color:var(--red);font-size:12px">${i.code}</span>
       <span style="color:var(--muted);margin-left:8px;font-size:12px">${i.name}</span>
     </div>`).join('');
@@ -1205,7 +1205,7 @@ function refreshIssueLog(){
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <span style="font-size:10px;font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${isIn?'▲ INBOUND':'▼ OUTBOUND'}</span>
           <span style="font-size:11px;font-weight:700">${tx.itemCode||'—'}</span>
-          ${tx.size?`<span style="font-size:10px;font-weight:700;background:#FEF3C7;color:#92400e;padding:2px 7px;border-radius:8px">${tx.size}</span>`:''}
+          ${tx.size?`<span style="font-size:10px;font-weight:700;background:var(--accent-warning-soft);color:var(--accent-warning);padding:2px 7px;border-radius:8px">${tx.size}</span>`:''}
           ${tx.poRef||tx.poId?`<span style="font-size:10px;font-weight:700;background:var(--soft);color:var(--text);padding:2px 7px;border-radius:8px">${tx.poRef||tx.poId}</span>`:''}
         </div>
         <div style="font-size:13px;font-weight:500;margin-top:2px">${tx.itemName||'—'}</div>
@@ -1391,7 +1391,7 @@ function _showReconstructionModal(rows,recon,txCount){
       </div>
       <button onclick="document.getElementById('_recon-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">×</button>
     </div>
-    <div style="padding:10px 14px;background:#fff7ed;border-bottom:1px solid #fed7aa;font-size:12px;color:#7c2d12">
+    <div style="padding:10px 14px;background:var(--accent-warning-soft);border-bottom:1px solid var(--accent-warning);font-size:12px;color:var(--accent-warning)">
       ⚠ This rebuild does not capture direct balance edits done via the per-item Edit dialog (those don't write to <code>store_transactions</code>). Compare numbers with Raees before hitting Apply.
     </div>
     <div style="overflow:auto;flex:1;padding:0 14px">
@@ -1401,11 +1401,11 @@ function _showReconstructionModal(rows,recon,txCount){
         </thead>
         <tbody>
         ${rows.map(r=>{
-          const dStyle=r.delta===null?'color:var(--muted)':r.delta>0?'color:#16a34a;font-weight:700':r.delta<0?'color:#dc2626;font-weight:700':'color:var(--muted)';
+          const dStyle=r.delta===null?'color:var(--muted)':r.delta>0?'color:var(--accent-success);font-weight:700':r.delta<0?'color:#dc2626;font-weight:700':'color:var(--muted)';
           const dTxt=r.delta===null?'no seed':(r.delta>0?'+':'')+r.delta;
           return`<tr style="border-bottom:1px solid var(--soft)">
             <td style="padding:6px;font-weight:700">${r.code}</td>
-            <td style="padding:6px">${r.name}${r.sized?' <span style="font-size:10px;color:var(--muted)">(sized)</span>':''}${r.inSeed?'':' <span style="font-size:10px;color:#7c2d12">[not in seed]</span>'}</td>
+            <td style="padding:6px">${r.name}${r.sized?' <span style="font-size:10px;color:var(--muted)">(sized)</span>':''}${r.inSeed?'':' <span style="font-size:10px;color:var(--accent-warning)">[not in seed]</span>'}</td>
             <td style="padding:6px;text-align:right">${r.current} ${r.unit}</td>
             <td style="padding:6px;text-align:right">${r.reconstructed===null?'—':r.reconstructed+' '+r.unit}</td>
             <td style="padding:6px;text-align:right;${dStyle}">${dTxt}</td>
@@ -2088,7 +2088,7 @@ function renderPoEditInbox(){
       <div style="font-size:12px;color:var(--muted);margin-top:4px">Reason: ${r.reason||'—'}</div>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
         <button class="btn-sm" onclick="window.openReviewModal('${r._id}')">Review</button>
-        <button class="btn-sm" style="color:#dc2626;border-color:#fca5a5" onclick="window.rejectEditRequest('${r._id}')">Reject</button>
+        <button class="btn-sm" style="color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.rejectEditRequest('${r._id}')">Reject</button>
       </div>
     </div>`;
   }).join('')}
@@ -2235,7 +2235,7 @@ function _parseSizesInput(str){
 }
 function _buildItemModal(title,item,onSave){
   let existing=document.getElementById('_item-modal');if(existing)existing.remove();
-  const cats=_allCats().map(c=>`<option value="${c}"${item&&item.category===c?' selected':''}>${_catLabel(c)}</option>`).join('')+`<option value="__new_cat__" style="font-weight:700;color:#16a34a">+ New category…</option>`;
+  const cats=_allCats().map(c=>`<option value="${c}"${item&&item.category===c?' selected':''}>${_catLabel(c)}</option>`).join('')+`<option value="__new_cat__" style="font-weight:700;color:var(--accent-success)">+ New category…</option>`;
   const units=['pcs','meters','kg','grams','cones','packets','100pc bundles'];
   const unitOpts=units.map(u=>`<option${item&&item.unit===u?' selected':''}>${u}</option>`).join('');
   const sizesStr=item&&item.sizeSpecific&&item.sizes?Object.entries(item.sizes).map(([k,v])=>`${k}:${v}`).join(' '):'';
@@ -2252,10 +2252,10 @@ function _buildItemModal(title,item,onSave){
       <div class="field">
         <label>Image <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
         <div style="display:flex;gap:10px;align-items:center">
-          <div id="_im-img-preview" style="width:64px;height:64px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2) center/cover no-repeat;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:10px;${imgUrl?`background-image:url('${imgUrl}')`:''}">${imgUrl?'':'No image'}</div>
+          <div id="_im-img-preview" style="width:64px;height:64px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2) center/cover no-repeat;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:10px;${imgUrl?`background-image:url('${imgUrl}')`:''}">${imgUrl?'':'No image'}</div>
           <div style="display:flex;flex-direction:column;gap:6px">
             <input type="file" id="_im-img-file" accept="image/*" style="font-size:11px;font-family:inherit" onchange="window._imOnImgPick(this)">
-            ${imgUrl?`<button type="button" onclick="window._imClearImg()" style="padding:4px 10px;background:var(--surface);border:1px solid #fca5a5;color:#dc2626;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;align-self:flex-start">Remove image</button>`:''}
+            ${imgUrl?`<button type="button" onclick="window._imClearImg()" style="padding:4px 10px;background:var(--surface);border:1px solid var(--accent-urgent);color:var(--accent-urgent);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;align-self:flex-start">Remove image</button>`:''}
           </div>
         </div>
         <input type="hidden" id="_im-img-url" value="${imgUrl}">
@@ -2316,7 +2316,7 @@ window._imCatChange=function(){
   window.openNewCategoryDialog((newKey)=>{
     const sel2=document.getElementById('_im-cat');
     if(!sel2)return;
-    const cats=_allCats().map(c=>`<option value="${c}"${c===newKey?' selected':''}>${_catLabel(c)}</option>`).join('')+`<option value="__new_cat__" style="font-weight:700;color:#16a34a">+ New category…</option>`;
+    const cats=_allCats().map(c=>`<option value="${c}"${c===newKey?' selected':''}>${_catLabel(c)}</option>`).join('')+`<option value="__new_cat__" style="font-weight:700;color:var(--accent-success)">+ New category…</option>`;
     sel2.innerHTML=cats;
     sel2.value=newKey;
   });
@@ -2468,12 +2468,12 @@ function renderNotifList(){
   el.innerHTML=list.map(n=>{
     let changesHTML='';
     if(n.action==='edit'&&n.changes){
-      const parts=Object.entries(n.changes).map(([f,v])=>`<span style="font-size:11px;background:var(--surface-2);padding:2px 6px;border-radius:4px">${f}: <span style="color:#dc2626">${JSON.stringify(v.old)}</span> → <span style="color:var(--green)">${JSON.stringify(v.new)}</span></span>`);
+      const parts=Object.entries(n.changes).map(([f,v])=>`<span style="font-size:11px;background:var(--surface-2);padding:2px 6px;border-radius:4px">${f}: <span style="color:var(--accent-urgent)">${JSON.stringify(v.old)}</span> → <span style="color:var(--green)">${JSON.stringify(v.new)}</span></span>`);
       if(parts.length)changesHTML=`<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">${parts.join('')}</div>`;
     }else if(n.action==='delete'){
       changesHTML=`<div style="font-size:11px;color:var(--muted);margin-top:3px">Item snapshot saved</div>`;
     }
-    return`<div style="padding:14px 16px;border-bottom:1px solid #f5f5f5">
+    return`<div style="padding:14px 16px;border-bottom:1px solid var(--border)">
       <div style="display:flex;align-items:flex-start;gap:10px">
         <span style="font-size:20px;flex-shrink:0">${n.action==='edit'?'✏️':'🗑️'}</span>
         <div style="flex:1;min-width:0">
@@ -2578,7 +2578,7 @@ function renderStoreAnalytics(){
 
   const sec=(title,body)=>`<div class="card" style="margin-bottom:14px"><div class="card-title">${title}</div>${body}</div>`;
 
-  const tableRow=(a,b,c,bold=false)=>`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid #f5f5f5;font-size:12px;${bold?'font-weight:700':''}">
+  const tableRow=(a,b,c,bold=false)=>`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;${bold?'font-weight:700':''}">
     <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a}</span>
     <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${b}</span>
     <span style="flex-shrink:0;font-weight:600">${c}</span>
@@ -2616,7 +2616,7 @@ function renderStoreAnalytics(){
           <th style="text-align:right;padding:6px 4px;border-bottom:2px solid var(--border);font-size:10px;color:var(--red)">▼ Issued</th>
           <th style="text-align:right;padding:6px 4px;border-bottom:2px solid var(--border);font-size:10px;color:var(--muted)">Net</th>
         </tr></thead>
-        <tbody>${months.map(m=>{const net=m.in-m.out;return`<tr style="border-bottom:1px solid #f5f5f5">
+        <tbody>${months.map(m=>{const net=m.in-m.out;return`<tr style="border-bottom:1px solid var(--border)">
           <td style="padding:6px 4px;font-weight:600">${m.month}</td>
           <td style="padding:6px 4px;text-align:right;color:var(--green)">+${m.in.toLocaleString()}</td>
           <td style="padding:6px 4px;text-align:right;color:var(--red)">-${m.out.toLocaleString()}</td>
