@@ -3170,6 +3170,38 @@ created by hand — name-clustering says 251 but 133 articles are prints on a
 handful of blank bodies, so the real count (60–130) is the pattern master's
 call, and the app only ever *suggests*.
 
+**M3 (shipped): measurements.** `pom_templates/{id}` (top · pant · short ·
+jacket, seeded from `_PTN_POM_SEED`, editable on `pattern-poms`: label,
+how-to-measure text, optional Cloudinary photo, reorder, add, delete) and
+the per-size grid on the block page.
+
+- **The grid is on the block document** (`p.grid = {size:{pomKey:inches}}`,
+  ~60 numbers) and is rewritten whole on Save — one write, a draft in
+  memory until then, never a write per keystroke. **Inches are the only
+  stored value, as a NUMBER, rounded to quarter inches on save.** cm is a
+  per-viewer view (`localStorage['groovy-ptn-units']`) converted at render
+  and on input; nothing in cm is ever written. `22 1/2` and `22,5` are read.
+- **A cell that is not a number is left as it was and NAMED in the toast**
+  — flagged, never rejected (the Mood Boards M4 cell lesson). Rounding is
+  reported too.
+- **Deleting a POM from a template never deletes recorded numbers.** A grid
+  key no longer in the template or the block's extras renders as an
+  *orphan* — greyed, "no longer in the template", with its own clear
+  action — and the delete confirm says how many blocks hold numbers for it.
+  `_ptnRowsFor(p)` is the single definition of "which rows a block shows":
+  template points, then the block's own `extraPoms`, then orphans.
+- A block starts from one template (`p.pomTemplate`, guessed from the
+  category by `_ptnGuessTemplate`, chosen on the form) and may add
+  block-only points (`extraPoms`, via prompt). Removing an extra keeps its
+  numbers until cleared, same rule.
+- **Tolerance is one global ±0.5 in** (`_PTN_TOL_IN`, Afnan Q23), stated on
+  the grid. What it is checked AGAINST — a measured sample — is not stored
+  in M3; the grid is the spec. The page says a sample check comes with
+  revisions (M5), so nobody files it as missing.
+- The seed writes only the templates that are missing, never over an
+  edited one, and is refused on a failed read.
+- **`firestore.rules` changed again — `pom_templates`.**
+
 **M2 (shipped): blocks · `PTN-####` · the 10×5 hook map · assignment ·
 the unassigned queue.** Pages `pattern-blocks` (rack + list), `pattern-block`
 (one block), `pattern-unassigned` (the queue). Collections `patterns/{id}`
@@ -4140,10 +4172,10 @@ firestore.rules` is the PR #71 commit (`creators` delete widened from
 creators). **No republish is outstanding as of that commit**; this
 supersedes the entries below.
 
-**REPUBLISH OUTSTANDING (17 Sept 2026): Pattern Hub M0–M2.** Afnan
-published the M0 file (the seed worked) but not the M1 one — his screenshot
-showed `shopify_articles` refused — and M2 adds `patterns` and
-`pattern_slots`. One paste of the current file covers all of it. Check `git log --oneline -1 --
+**REPUBLISH OUTSTANDING (17 Sept 2026): Pattern Hub M3** adds
+`pom_templates`. Afnan published the M0–M2 file earlier that day (his
+reconcile screenshot no longer showed `shopify_articles` refused). One
+paste of the current file covers everything. Check `git log --oneline -1 --
 firestore.rules` against the entries below.
 
 **Republished a third time by Ammar on 16 Sept 2026, after PRs #65/#66**

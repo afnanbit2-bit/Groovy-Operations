@@ -590,5 +590,13 @@ service cloud.firestore {
       allow write: if isPatternAdmin()
         && key.matches('^([1-9]|10)-[1-5]$');
     }
+    // pom_templates/{id}: the points of measure a block's grid is built
+    // from (top · pant · short · jacket), editable in-app. Deleting a point
+    // here never touches a block's recorded numbers — those live on
+    // patterns/{id}.grid and are cleared there, on purpose.
+    match /pom_templates/{id} {
+      allow read: if signedIn();
+      allow write: if isPatternAdmin();
+    }
   }
 }

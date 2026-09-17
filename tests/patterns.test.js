@@ -679,5 +679,168 @@ module.exports=async function(){
     s.ok('the three new pages have bug-tracker names',/'pattern-blocks':'Pattern Hub · Patterns'/.test(shared)&&/'pattern-unassigned'/.test(shared));
   }
 
+  // ═════════════════════════════════════════════════════════════════════
+  // M3 — measurements
+  // ═════════════════════════════════════════════════════════════════════
+  const LSmem=()=>{const m={};return{getItem:k=>(k in m?m[k]:null),setItem(k,v){m[k]=String(v);},removeItem(k){delete m[k];}};};
+  function gridApp(store,session,ls){
+    store=store||new Map();
+    const f=fakeFs(store);
+    const globals=Object.assign({},f.globals,{
+      localStorage:ls||LSmem(),
+      getDoc:async r=>({exists:()=>store.has(r.key),data:()=>store.get(r.key)}),
+      updateDoc:async(r,p)=>{const cur=store.get(r.key)||{};store.set(r.key,Object.assign({},cur,p));f.meta.updates=(f.meta.updates||0)+1;},
+      setDoc:async(r,p,o)=>{store.set(r.key,Object.assign({},(o&&o.merge&&store.get(r.key))||{},p));f.meta.sets=(f.meta.sets||0)+1;},
+      getNextId:async()=>7,
+      writeBatch:()=>{const ops=[];return{set(r,p){ops.push(['s',r.key,p]);return this;},update(r,p){ops.push(['u',r.key,p]);return this;},delete(r){ops.push(['d',r.key]);return this;},async commit(){ops.forEach(([op,k,p])=>{if(op==='d')store.delete(k);else store.set(k,Object.assign({},op==='u'?(store.get(k)||{}):{},p));});f.meta.batches=(f.meta.batches||0)+1;}};}
+    });
+    const a=app({session:session||SESS.afnan,globals});
+    return{a,store,meta:f.meta};
+  }
+  const BLOCK={code:'PTN-0007',name:'Live In Pants block',category:'GST',status:'active',sizeAxis:'alpha',sizes:['S','M','L'],sampleSize:'M',pomTemplate:'pant',extraPoms:[],grid:{},hook:null,slot:null,createdAt:'2026-09-17'};
+
+  s.section('M3 · units and the quarter-inch rule');
+  {
+    const {a}=gridApp();
+    s.eq('22.5 in stays 22.5',J(a.run("_ptnParseIn('22.5','in')")),J({inches:22.5,rounded:false}));
+    s.eq('22 1/2 is read as 22.5',a.run("_ptnParseIn('22 1/2','in').inches"),22.5);
+    s.eq('22.6 rounds to 22.5 and says so',J(a.run("_ptnParseIn('22.6','in')")),J({inches:22.5,rounded:true}));
+    s.eq('a comma decimal is accepted',a.run("_ptnParseIn('22,25','in').inches"),22.25);
+    s.eq('57.2 cm → 22.5 in',a.run("_ptnParseIn('57.2','cm').inches"),22.5);
+    s.eq('blank → empty',J(a.run("_ptnParseIn('  ','in')")),J({empty:true}));
+    s.eq('prose → bad, never thrown',J(a.run("_ptnParseIn('about 22','in')")),J({bad:true}));
+    s.eq('negative → bad',J(a.run("_ptnParseIn('-3','in')")),J({bad:true}));
+    s.eq('22.5 in displays as 22.5 / 57.2 cm',J([a.run("_ptnFmt(22.5,'in')"),a.run("_ptnFmt(22.5,'cm')")]),J(['22.5','57.2']));
+    s.eq('22 in displays without a decimal',a.run("_ptnFmt(22,'in')"),'22');
+    s.eq('the unit preference is per viewer, default inches',a.run("_ptnUnits()"),'in');
+    a.run("_ptnSetUnits('cm')");s.eq('…and sticks',a.run("_ptnUnits()"),'cm');
+  }
+
+  s.section('M3 · rows: template + extras + orphans, never dropped');
+  {
+    const st=new Map([['patterns/ptn_0007',Object.assign({},BLOCK,{extraPoms:[{key:'drawcord',label:'Drawcord length',howTo:'tip to tip'}],grid:{M:{waist_relaxed:15,old_point:3}}})]]);
+    _seedPoms(st);
+    const {a}=gridApp(st);
+    await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');await a.run('loadPatternsPoms()');
+    const rows=a.run("_ptnRowsFor(_ptnBlock('ptn_0007'))");
+    s.eq('10 template points first',rows.slice(0,10).every(r=>r.src==='template')&&rows[0].key==='waist_relaxed',true);
+    s.eq('then the block-only extra',J([rows[10].key,rows[10].src]),J(['drawcord','extra']));
+    s.eq('then the orphan key still holding a number',J([rows[11].key,rows[11].src]),J(['old_point','orphan']));
+    const html=a.run("_ptnGridCardHTML(_ptnBlock('ptn_0007'))");
+    s.ok('the orphan renders greyed with a clear action, and the how-to text shows',/no longer in the template/.test(html)&&/ptnClearRow\('ptn_0007','old_point'\)/.test(html)&&/Lay flat\. Across the top of the waistband/.test(html));
+    s.ok('the grid has one input per point per size (12 rows × 3 sizes)',(html.match(/class="ptn-cell/g)||[]).length===36);
+    s.ok('±0.5 in is stated',/±0\.5 in/.test(html));
+    s.ok('a block with no sizes says so instead of a blank grid',/tick the sizes/.test(a.run("_ptnGridCardHTML(Object.assign({},_ptnBlock('ptn_0007'),{sizes:[]}))")));
+  }
+  function _seedPoms(st){
+    // the seed constant, as the seed action would write it
+    const seed=app().run('_PTN_POM_SEED');
+    seed.forEach(t=>st.set('pom_templates/'+t.id,{id:t.id,label:t.label,poms:t.poms}));
+  }
+
+  s.section('M3 · saving the grid: inches stored, rounded, bad cells flagged not thrown');
+  {
+    const st=new Map([['patterns/ptn_0007',Object.assign({},BLOCK)]]);_seedPoms(st);
+    const {a,store,meta}=gridApp(st);
+    await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');await a.run('loadPatternsPoms()');
+    a.run("_ptnBlockId='ptn_0007'");
+    a.run("_ptnGridDraft={M:{waist_relaxed:'15.1',hip:'22 1/2',thigh:'about 12'},L:{waist_relaxed:'16'}}");a.run("_ptnGridDirty=true");
+    a.state.toasts.length=0;
+    const ok=await a.run("window.ptnSaveGrid('ptn_0007')");
+    const g=store.get('patterns/ptn_0007').grid;
+    s.eq('saved',ok,true);
+    s.eq('numbers stored in inches, rounded to quarters, as NUMBERS',J(g),J({M:{waist_relaxed:15,hip:22.5},L:{waist_relaxed:16}}));
+    s.ok('the prose cell was left blank and named, and the rounding reported',a.state.toasts.some(t=>/left blank \(not a number\): M thigh/.test(t)&&/1 rounded/.test(t)));
+    s.eq('one write for the whole grid',meta.updates,1);
+    s.eq('the draft is cleared',a.run('_ptnGridDraft'),null);
+    // cm input stores inches
+    a.run("_ptnSetUnits('cm')");
+    a.run("_ptnGridDraft={S:{waist_relaxed:'38.1'}}");a.run("_ptnGridDirty=true");
+    await a.run("window.ptnSaveGrid('ptn_0007')");
+    s.eq('38.1 cm typed → 15 in stored',store.get('patterns/ptn_0007').grid.S.waist_relaxed,15);
+    s.ok('…and the cell displays 38.1 in cm view',/value="38\.1"/.test(a.run("_ptnGridCardHTML(_ptnBlock('ptn_0007'))")));
+    a.run("_ptnSetUnits('in')");
+    // blanking a cell removes it
+    a.run("_ptnGridDraft={S:{waist_relaxed:''}}");a.run("_ptnGridDirty=true");
+    await a.run("window.ptnSaveGrid('ptn_0007')");
+    s.ok('a blanked cell is removed, and an empty size row goes with it',!store.get('patterns/ptn_0007').grid.S);
+    // nothing changed → no write
+    const before=meta.updates;a.run("_ptnGridDraft={M:{waist_relaxed:'15'}}");a.run("_ptnGridDirty=true");
+    await a.run("window.ptnSaveGrid('ptn_0007')");
+    s.eq('re-saving the same value writes nothing',meta.updates,before);
+    s.ok('filled/total counts the template points only',J(a.run("_ptnGridFilled(_ptnBlock('ptn_0007'))"))===J({filled:3,total:30}));
+  }
+
+  s.section('M3 · extras, clearing an orphan, the template editor');
+  {
+    const st=new Map([['patterns/ptn_0007',Object.assign({},BLOCK,{grid:{M:{gone:9,waist_relaxed:15}}})]]);_seedPoms(st);
+    const {a,store}=gridApp(st);
+    await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');await a.run('loadPatternsPoms()');
+    a.run("_ptnBlockId='ptn_0007'");
+    a.ctx.prompt=(m,d)=>/Name of the point/.test(m)?'Drawcord length':'tip to tip';
+    await a.run("window.ptnAddExtraPom('ptn_0007')");
+    s.eq('an extra point is added to the block with a derived key',J(store.get('patterns/ptn_0007').extraPoms),J([{key:'drawcord_length',label:'Drawcord length',howTo:'tip to tip'}]));
+    a.state.toasts.length=0;await a.run("window.ptnAddExtraPom('ptn_0007')");
+    s.ok('the same point twice is refused',a.state.toasts.some(t=>/already on this block/.test(t)));
+    await a.run("window.ptnRemoveExtraPom('ptn_0007','drawcord_length')");
+    s.eq('removing an extra keeps the grid untouched',J(store.get('patterns/ptn_0007').grid),J({M:{gone:9,waist_relaxed:15}}));
+    await a.run("window.ptnClearRow('ptn_0007','gone')");
+    s.eq('clearing the orphan row removes only that key',J(store.get('patterns/ptn_0007').grid),J({M:{waist_relaxed:15}}));
+    // template editor: delete a POM keeps the block's number
+    a.run("_ptnPomsTplId='pant'");
+    const idx=a.run("_ptnTemplate('pant').poms.findIndex(m=>m.key==='waist_relaxed')");
+    a.state.confirms.length=0;
+    await a.run("window.ptnPomDelete('pant',"+idx+")");
+    s.ok('the confirm says how many blocks hold numbers for it and that they are KEPT',a.state.confirms.some(c=>/1 block has numbers for it — those are KEPT/.test(c)));
+    s.eq('the point is gone from the template',store.get('pom_templates/pant').poms.some(m=>m.key==='waist_relaxed'),false);
+    s.eq('…and the block still holds its number',store.get('patterns/ptn_0007').grid.M.waist_relaxed,15);
+    s.ok('…now rendered as an orphan on the block',a.run("_ptnRowsFor(_ptnBlock('ptn_0007')).find(r=>r.key==='waist_relaxed').src")==='orphan');
+    // add + rename + save
+    a.ctx.prompt=()=>'Waist (relaxed)';
+    await a.run("window.ptnPomAdd('pant')");
+    s.ok('adding a point derives a unique key',store.get('pom_templates/pant').poms.some(m=>m.key==='waist_relaxed'&&m.label==='Waist (relaxed)'));
+    const html=a.run('_ptnPomsHTML()');
+    s.ok('the editor page renders inputs per point with the how-to',/ptn-pom-label-0/.test(html)&&/ptn-pom-how-0/.test(html)&&/Used by <b>1<\/b> block/.test(html));
+    // XSS in a how-to
+    a.run("_ptnTemplate('pant').poms[0].howTo='<img src=x onerror=alert(1)>'");
+    s.ok('a how-to is escaped on the block page and the editor',/&lt;img src=x/.test(a.run("_ptnGridCardHTML(_ptnBlock('ptn_0007'))"))&&/&lt;img src=x/.test(a.run('_ptnPomsHTML()'))&&!/<img src=x/.test(a.run('_ptnPomsHTML()')));
+  }
+
+  s.section('M3 · seed, loader, permissions, form default');
+  {
+    const {a,store,meta}=gridApp();
+    await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');await a.run('loadPatternsPoms()');
+    s.ok('no templates → the block page offers the seed',/ptn-poms-none/.test(a.run("_ptnGridCardHTML("+J(BLOCK)+")")));
+    await a.run('window.ptnSeedPoms()');
+    s.eq('four templates seeded in one batch',J([['top','pant','short','jacket'].every(id=>store.has('pom_templates/'+id)),meta.batches]),J([true,1]));
+    s.eq('the pant template carries 10 points, each with a how-to',J([store.get('pom_templates/pant').poms.length,store.get('pom_templates/pant').poms.every(m=>m.howTo&&m.key&&m.label)]),J([10,true]));
+    a.run("_ptnTemplate('top').poms=[]");a.run("pomTemplates=pomTemplates.filter(t=>t.id!=='short')");
+    await a.run('window.ptnSeedPoms()');
+    s.ok('re-seeding writes only the missing template, never over an edited one',store.get('pom_templates/top').poms.length===9&&store.has('pom_templates/short'));
+    s.eq('template guessed from the category',J(['GST','GSO','GO','GP','GD'].map(c=>a.run("_ptnGuessTemplate("+J(c)+")"))),J(['pant','short','jacket','top','pant']));
+    await a.run("_ptnSaveBlockData({name:'Shorts block',category:'GSO',fit:'',tracedBy:'',sizeAxis:'alpha',sampleSize:'',sizes:['S','M']},{id:null,prefill:{}})");
+    s.eq('a new block gets the guessed template, an empty grid and no extras',J([store.get('patterns/ptn_0007').pomTemplate,store.get('patterns/ptn_0007').grid,store.get('patterns/ptn_0007').extraPoms]),J(['short',{},[]]));
+  }
+  {
+    const a=app({globals:{collection:(db,name)=>({name}),getDocs:async ref=>{if(ref.name==='pom_templates')throw new Error('Missing or insufficient permissions');return{docs:[]};}}});
+    await a.run('loadPatternsPoms()');
+    s.ok('a refused pom_templates read renders the error, not the seed offer',/ptn-poms-failed/.test(a.run("_ptnGridCardHTML("+J(BLOCK)+")"))&&!/ptn-poms-none/.test(a.run("_ptnGridCardHTML("+J(BLOCK)+")")));
+    a.state.toasts.length=0;await a.run('window.ptnSeedPoms()');
+    s.ok('and the seed is refused on a failed read',a.state.writes.length===0&&a.state.toasts.some(t=>/did not load/.test(t)));
+  }
+  {
+    const st=new Map([['patterns/ptn_0007',Object.assign({},BLOCK)]]);_seedPoms(st);
+    const {a,store,meta}=gridApp(st,SESS.arfat);
+    await a.run('loadPatternsData()');await a.run('loadPatternsBlocks()');await a.run('loadPatternsPoms()');
+    a.run("_ptnBlockId='ptn_0007'");
+    const html=a.run("_ptnGridCardHTML(_ptnBlock('ptn_0007'))");
+    s.ok('Arfat sees values, not inputs, and no Save',!/class="ptn-cell/.test(html)&&!/ptn-grid-save/.test(html));
+    a.run("_ptnGridDraft={M:{hip:'20'}}");a.run("_ptnGridDirty=true");
+    await a.run("window.ptnSaveGrid('ptn_0007')");await a.run("window.ptnSeedPoms()");
+    s.eq('…and writes nothing',(meta.updates||0)+(meta.batches||0)+(meta.sets||0),0);
+    s.ok('rules: pom_templates readable when signed in, written by admins only',/match \/pom_templates\/\{id\}\s*\{\s*allow read: if signedIn\(\);\s*allow write: if isPatternAdmin\(\);/.test(read('firestore.rules')));
+    s.ok('the router knows pattern-poms',/id==='pattern-poms'/.test(read('js/patterns.js'))&&/'pattern-poms'/.test(read('js/shared.js')));
+  }
+
   return s;
 };

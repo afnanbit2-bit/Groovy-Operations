@@ -874,7 +874,7 @@ function _ptnEditRowHTML(a){
 window.ptnRetryLoad=function(){
   const m=document.getElementById('main-content');
   if(m)m.innerHTML=gvSkeleton(6);
-  patternsLoaded=false;_ptnShopifyLoaded=false;_ptnBlocksLoaded=false;
+  patternsLoaded=false;_ptnShopifyLoaded=false;_ptnBlocksLoaded=false;if(typeof _ptnPomsLoaded!=='undefined')_ptnPomsLoaded=false;
   ptnRenderPage(currentPage&&String(currentPage).startsWith('pattern-')?currentPage:'pattern-hub');
 };
 window.ptnSearchInput=function(v){
@@ -1389,12 +1389,14 @@ function ptnRenderPage(id){
     else if(id==='pattern-blocks')m.innerHTML=renderPatternBlocks();
     else if(id==='pattern-block')m.innerHTML=renderPatternBlock();
     else if(id==='pattern-unassigned')m.innerHTML=renderPatternUnassigned();
+    else if(id==='pattern-poms')m.innerHTML=renderPatternPoms();
     else m.innerHTML='<div class="empty">Unknown Pattern Hub page.</div>';
   };
   const need=[];
   if(!patternsLoaded)need.push(loadPatternsData());
   if(!_ptnShopifyLoaded)need.push(loadPatternsShopify());
   if(typeof loadPatternsBlocks==='function'&&!_ptnBlocksLoaded)need.push(loadPatternsBlocks());
+  if(typeof loadPatternsPoms==='function'&&!_ptnPomsLoaded)need.push(loadPatternsPoms());
   if(need.length){m.innerHTML=gvSkeleton(6);Promise.all(need).then(paint);}else paint();
 }
 
@@ -1503,7 +1505,7 @@ function _ptnBlocksHTML(){
   const head=`<button class="back-btn" onclick="window.showPage('pattern-hub')">← Pattern Hub</button>
   <div class="page-head" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap">
     <div><h2 style="margin:0">Patterns</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">One block = one bundle of craft paper, all sizes, one slot. Many articles point at one block.</div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">${_canManagePatterns()?`<button class="btn-primary" onclick="window.ptnNewBlock()">+ New block</button>`:''}<button class="btn-sm" onclick="window.showPage('pattern-unassigned')">Unassigned queue${_ptnQueueBadge()}</button></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${_canManagePatterns()?`<button class="btn-primary" onclick="window.ptnNewBlock()">+ New block</button>`:''}<button class="btn-sm" onclick="window.showPage('pattern-unassigned')">Unassigned queue${_ptnQueueBadge()}</button><button class="btn-sm" onclick="window.showPage('pattern-poms')">Points of measure</button></div>
   </div>`;
   const err=_ptnBlocksErrHTML();
   if(_ptnBlocksErr)return head+err;
@@ -1571,8 +1573,8 @@ function _ptnBlockHTML(){
       ${can&&!_ptnBlocksFailed.pattern_slots?`<div class="field" style="margin-top:8px"><label>Move to</label><select id="ptn-slot-pick">${slotOpts()}</select></div><button class="btn-primary" ${_ptnBusy?'disabled':''} onclick="window.ptnPlaceBlock('${_ptnEsc(p.id)}')">Save home</button>`:''}
       <div style="font-size:11px;color:var(--muted);margin-top:8px">A taken slot is greyed out. Two blocks can never share one — the lock is written with the move.</div>
     </div>
-    <div class="card"><div class="card-title">Measurements</div><div style="font-size:12px;color:var(--muted)">Coming in M3 — per-size grid with how-to-measure notes.</div></div>
   </div>
+  <div style="margin-top:14px">${typeof _ptnGridCardHTML==='function'?_ptnGridCardHTML(p):''}</div>
   <div class="card" style="margin-top:14px" id="ptn-block-articles"><div class="card-title">Articles using this block <span style="font-weight:400;color:var(--muted);font-size:11px">${arts.length}</span></div>
     ${arts.length?`<table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>${arts.map(a=>`<tr class="ptn-block-art" data-code="${_ptnEsc(a.code)}" style="border-top:1px solid var(--border)"><td style="padding:7px 4px;font-weight:700;white-space:nowrap">${_ptnEsc(a.code)}</td><td style="padding:7px 4px">${_ptnEsc(a.name||'')}</td><td style="padding:7px 4px;white-space:nowrap">${_ptnShopifyCellHTML(a)}</td><td style="padding:7px 4px;text-align:right">${can?`<button class="btn-sm" onclick="window.ptnUnassign('${_ptnEsc(a.code)}')">Remove</button>`:''}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">No articles yet.</div>'}
     ${can?`<div style="margin-top:12px"><input type="search" id="ptn-block-q" placeholder="Add an article — search code or name…" value="${_ptnEsc(_ptnBlockQ)}" oninput="window.ptnBlockSearch(this.value)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;background:var(--surface-2);color:var(--text)">
@@ -1627,6 +1629,7 @@ function _ptnBlockFormHTML(){
       <div class="field"><label>Block name</label><input id="ptn-bf-name" placeholder="e.g. Live In Pants block" value="${v('name')}"></div>
       <div class="field"><label>Category</label><select id="ptn-bf-cat">${cats.filter(c=>c.needsPattern!==false).map(c=>`<option value="${c.prefix}"${c.prefix===catSel?' selected':''}>${c.prefix} · ${_ptnEsc(c.label)}</option>`).join('')}</select></div>
       <div class="field"><label>Fit</label><input id="ptn-bf-fit" placeholder="Relaxed / Baggy / Oversized" value="${v('fit')}"></div>
+      <div class="field"><label>Points of measure</label><select id="ptn-bf-tpl">${(typeof _PTN_POM_SEED!=='undefined'?_PTN_POM_SEED:[]).map(t=>`<option value="${t.id}"${t.id===((p&&p.pomTemplate)||(f.prefill&&f.prefill.pomTemplate)||_ptnGuessTemplate(catSel))?' selected':''}>${_ptnEsc(t.label)}</option>`).join('')}</select></div>
       <div class="field"><label>Traced by</label><select id="ptn-bf-traced">${['',..._PTN_TRACERS].map(t=>`<option value="${t}"${t===((p&&p.tracedBy)||'')?' selected':''}>${t||'—'}</option>`).join('')}</select></div>
       <div class="field"><label>Size axis</label><select id="ptn-bf-axis" onchange="window.ptnBlockFormAxis(this.value)"><option value="alpha"${axis==='alpha'?' selected':''}>Letters (XS–XL)</option><option value="waist"${axis==='waist'?' selected':''}>Waist (26–40)</option></select></div>
       <div class="field"><label>Sample size <span style="font-weight:400;color:var(--muted)">(the label leads with it)</span></label><input id="ptn-bf-sample" placeholder="M or 32" value="${v('sampleSize')}"></div>
@@ -1644,7 +1647,7 @@ window.ptnBlockFormAxis=function(axis){
 function _ptnReadBlockForm(){
   const g=id=>String((document.getElementById(id)||{}).value||'').trim();
   const sizes=[];const boxes=(document.querySelectorAll?document.querySelectorAll('.ptn-bf-size'):[])||[];boxes.forEach(el=>{if(el.checked)sizes.push(el.value);});
-  return{name:g('ptn-bf-name'),category:g('ptn-bf-cat'),fit:g('ptn-bf-fit'),tracedBy:g('ptn-bf-traced'),sizeAxis:g('ptn-bf-axis')||'alpha',sampleSize:g('ptn-bf-sample').toUpperCase(),sizes};
+  return{name:g('ptn-bf-name'),category:g('ptn-bf-cat'),fit:g('ptn-bf-fit'),tracedBy:g('ptn-bf-traced'),sizeAxis:g('ptn-bf-axis')||'alpha',sampleSize:g('ptn-bf-sample').toUpperCase(),sizes,pomTemplate:g('ptn-bf-tpl')||_ptnGuessTemplate(g('ptn-bf-cat'))};
 }
 function _ptnValidateBlock(d){
   if(!d.name)return'Give the block a name.';
@@ -1653,11 +1656,12 @@ function _ptnValidateBlock(d){
   if(!d.sizes.length)return'Tick at least one size in the bundle.';
   const bad=d.sizes.filter(s=>_PTN_SIZES[d.sizeAxis].indexOf(s)<0);if(bad.length)return'Sizes '+bad.join(', ')+' are not on the '+d.sizeAxis+' axis.';
   if(d.sampleSize&&d.sizes.indexOf(d.sampleSize)<0)return'The sample size must be one of the sizes in the bundle.';
+  if(d.pomTemplate&&!_PTN_POM_SEED.some(t=>t.id===d.pomTemplate)&&!_ptnTemplate(d.pomTemplate))return'Unknown points-of-measure template.';
   return null;
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────
-window.ptnOpenBlock=function(id){_ptnBlockId=id;_ptnBlockQ='';window.showPage('pattern-block');};
+window.ptnOpenBlock=function(id){_ptnBlockId=id;_ptnBlockQ='';if(typeof _ptnGridDraft!=='undefined'){_ptnGridDraft=null;_ptnGridDirty=false;}window.showPage('pattern-block');};
 window.ptnQueueTab=function(t){_ptnQueueTab=t;_ptnQueueRepaint();};
 window.ptnBlockSearch=function(v){
   clearTimeout(_ptnSearchTimer);
@@ -1710,7 +1714,7 @@ async function _ptnSaveBlockData(d,f){
     const n=await getNextId('patterns');
     const code=_ptnPad4(n);
     const id='ptn_'+String(n).padStart(4,'0');
-    const rec=Object.assign({code,hook:null,slot:null,status:'active',createdAt:now,createdBy:by,updatedAt:now,updatedBy:by},d);
+    const rec=Object.assign({code,hook:null,slot:null,status:'active',grid:{},extraPoms:[],pomTemplate:_ptnGuessTemplate(d.category),createdAt:now,createdBy:by,updatedAt:now,updatedBy:by},d);
     await runTransaction(db,async tx=>{
       const s=await tx.get(doc(db,'patterns',id));
       if(s&&typeof s.exists==='function'&&s.exists())throw new Error(code+' already exists');
@@ -1844,4 +1848,375 @@ window.ptnAssignCluster=async function(i){
   const sel=document.getElementById('ptn-cl-'+i);const pid=sel&&sel.value;
   if(!pid){showToast('Pick a block first, or make a new one for these.',true);return;}
   await window.ptnAssign(pid,c.articles.map(a=>a.code));
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// M3 — Measurements: editable points of measure with how-to notes, a
+//      per-size grid on the block, inches stored, cm viewable, ±0.5 in
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// - POMs live in pom_templates/{id} (top · pant · short · jacket), editable
+//   in-app: label, how-to-measure text, optional photo. A block starts from
+//   one template (p.pomTemplate) and may add its own points (p.extraPoms).
+// - THE GRID IS ON THE BLOCK DOCUMENT (p.grid = {size:{pomKey:inches}}),
+//   ~60 numbers, rewritten whole on Save. Inches are the only stored
+//   value — a NUMBER, never a string — rounded to quarter inches on save.
+//   cm is a per-viewer view (localStorage), converted at render and on
+//   input; nothing in cm is ever written.
+// - Deleting a POM from a template NEVER deletes recorded data: a grid key
+//   that no longer belongs to the template or the block's extras still
+//   renders, greyed, until someone clears that row on purpose.
+// - Tolerance is one global ±0.5 in (Afnan, Q23). What it is checked
+//   AGAINST — a measured sample — is not stored in M3; the grid is the spec.
+//   A sample-check that flags out-of-tolerance actuals belongs with
+//   revisions (M5). Said on the page so nobody files it as missing.
+
+const _PTN_TOL_IN=0.5;
+const _PTN_UNITS_KEY='groovy-ptn-units';
+const _PTN_POM_SEED=[
+  {id:'top',label:'Tops (tees, shirts, hoodies, sweats)',poms:[
+    {key:'chest',label:'Chest',howTo:'Lay flat. Measure straight across 1 inch below the armhole, seam to seam.'},
+    {key:'length_hps',label:'Length (HPS)',howTo:'From the high point of the shoulder, beside the neck, straight down to the bottom hem.'},
+    {key:'shoulder',label:'Shoulder',howTo:'Across the back, seam to seam, where the sleeves join.'},
+    {key:'sleeve_len',label:'Sleeve length',howTo:'From the shoulder seam to the end of the cuff, along the outer edge.'},
+    {key:'sleeve_open',label:'Sleeve opening',howTo:'Across the cuff opening, lying flat, edge to edge.'},
+    {key:'armhole',label:'Armhole',howTo:'From the shoulder seam straight down to the underarm seam, lying flat.'},
+    {key:'neck_width',label:'Neck width',howTo:'Inside edge to inside edge of the neck opening, lying flat.'},
+    {key:'neck_drop',label:'Front neck drop',howTo:'From the imaginary line between the high shoulder points down to the front neck seam.'},
+    {key:'hem',label:'Bottom hem',howTo:'Across the bottom opening, lying flat, edge to edge.'}
+  ]},
+  {id:'pant',label:'Pants & trousers',poms:[
+    {key:'waist_relaxed',label:'Waist (relaxed)',howTo:'Lay flat. Across the top of the waistband, edge to edge, without stretching.'},
+    {key:'waist_stretched',label:'Waist (stretched)',howTo:'Same as relaxed, with the waistband pulled to its full stretch.'},
+    {key:'hip',label:'Hip',howTo:'Across the widest point of the seat, lying flat, at the crotch line.'},
+    {key:'thigh',label:'Thigh',howTo:'Across one leg, 1 inch below the crotch seam, edge to edge.'},
+    {key:'knee',label:'Knee',howTo:'Across one leg at the midpoint of the inseam.'},
+    {key:'leg_open',label:'Leg opening',howTo:'Across the bottom of one leg, edge to edge.'},
+    {key:'front_rise',label:'Front rise',howTo:'From the crotch seam up to the top of the waistband at the front.'},
+    {key:'back_rise',label:'Back rise',howTo:'From the crotch seam up to the top of the waistband at the back.'},
+    {key:'inseam',label:'Inseam',howTo:'From the crotch seam down to the bottom of the leg, along the inner seam.'},
+    {key:'outseam',label:'Outseam',howTo:'From the top of the waistband down to the bottom of the leg, along the outer seam.'}
+  ]},
+  {id:'short',label:'Shorts',poms:[
+    {key:'waist_relaxed',label:'Waist (relaxed)',howTo:'Lay flat. Across the top of the waistband, edge to edge, without stretching.'},
+    {key:'waist_stretched',label:'Waist (stretched)',howTo:'Same as relaxed, with the waistband pulled to its full stretch.'},
+    {key:'hip',label:'Hip',howTo:'Across the widest point of the seat, lying flat, at the crotch line.'},
+    {key:'thigh',label:'Thigh',howTo:'Across one leg, 1 inch below the crotch seam, edge to edge.'},
+    {key:'leg_open',label:'Leg opening',howTo:'Across the bottom of one leg, edge to edge.'},
+    {key:'front_rise',label:'Front rise',howTo:'From the crotch seam up to the top of the waistband at the front.'},
+    {key:'back_rise',label:'Back rise',howTo:'From the crotch seam up to the top of the waistband at the back.'},
+    {key:'inseam',label:'Inseam',howTo:'From the crotch seam down to the bottom of the leg, along the inner seam.'},
+    {key:'outseam',label:'Outseam',howTo:'From the top of the waistband down to the bottom of the leg, along the outer seam.'}
+  ]},
+  {id:'jacket',label:'Jackets & outerwear',poms:[
+    {key:'chest',label:'Chest',howTo:'Lay flat, zipped or buttoned. Measure straight across 1 inch below the armhole.'},
+    {key:'length_hps',label:'Length (HPS)',howTo:'From the high point of the shoulder straight down to the bottom hem.'},
+    {key:'shoulder',label:'Shoulder',howTo:'Across the back, seam to seam, where the sleeves join.'},
+    {key:'sleeve_len',label:'Sleeve length',howTo:'From the shoulder seam to the end of the cuff, along the outer edge.'},
+    {key:'sleeve_open',label:'Sleeve opening',howTo:'Across the cuff opening, lying flat.'},
+    {key:'armhole',label:'Armhole',howTo:'From the shoulder seam straight down to the underarm seam.'},
+    {key:'hem',label:'Bottom hem',howTo:'Across the bottom opening, lying flat.'},
+    {key:'zip_len',label:'Zip length',howTo:'From the top of the zip tape to the bottom stop.'},
+    {key:'placket',label:'Placket width',howTo:'Across the front placket where the zip or buttons sit.'}
+  ]}
+];
+
+let pomTemplates=[];   // [{id,label,poms:[{key,label,howTo,photoUrl}]}]
+let _ptnPomsLoaded=false,_ptnPomsFailed=false,_ptnPomsErr=null;
+let _ptnGridDirty=false;     // unsaved grid edits on the open block
+let _ptnGridDraft=null;      // {size:{key:'raw input string'}} while editing
+let _ptnPomsTplId='top';     // template open on the editor page
+
+// ── Units ─────────────────────────────────────────────────────────────────
+function _ptnUnits(){try{const v=localStorage.getItem(_PTN_UNITS_KEY);return v==='cm'?'cm':'in';}catch(e){return'in';}}
+function _ptnSetUnits(u){try{localStorage.setItem(_PTN_UNITS_KEY,u==='cm'?'cm':'in');}catch(e){}}
+// inches → display string in the current unit
+function _ptnFmt(inches,units){
+  if(inches==null||inches===''||isNaN(inches))return'';
+  units=units||_ptnUnits();
+  if(units==='cm')return (Math.round(inches*2.54*10)/10).toString();
+  const n=Math.round(inches*4)/4;
+  return (n%1===0)?String(n):n.toFixed(2).replace(/0$/,'');
+}
+// a typed value in the current unit → inches rounded to a quarter, or null
+// when it is not a number (flagged by the caller, never thrown)
+function _ptnParseIn(raw,units){
+  const s=String(raw==null?'':raw).trim().replace(',','.');
+  if(!s)return{empty:true};
+  const m=/^(\d+(?:\.\d+)?)(?:\s*(?:(\d)\/(\d)))?$/.exec(s);   // 22 · 22.5 · 22 1/2
+  let v;
+  if(m){v=parseFloat(m[1]);if(m[2]&&m[3]&&Number(m[3]))v+=Number(m[2])/Number(m[3]);}
+  else return{bad:true};
+  if(!isFinite(v)||v<0)return{bad:true};
+  const inches=(units||_ptnUnits())==='cm'?v/2.54:v;
+  const q=Math.round(inches*4)/4;
+  return{inches:q,rounded:Math.abs(q-inches)>1e-9};
+}
+
+// ── Templates ─────────────────────────────────────────────────────────────
+async function loadPatternsPoms(){
+  _ptnPomsFailed=false;_ptnPomsErr=null;
+  try{
+    const snap=await getDocs(collection(db,'pom_templates'));
+    pomTemplates=snap.docs.map(d=>Object.assign({id:d.id},d.data()));
+  }catch(e){_ptnPomsFailed=true;_ptnPomsErr=(e&&(e.message||String(e)))||'read failed';console.warn('[patterns] pom_templates load failed',e);}
+  _ptnPomsLoaded=true;
+}
+function _ptnTemplate(id){return pomTemplates.find(t=>t.id===id)||null;}
+// Which template a block should start from, guessed from its category.
+function _ptnGuessTemplate(prefix){
+  if(['GST','GC','GD','GJO','AST','AD','CC','CD'].indexOf(prefix)>-1)return'pant';
+  if(['GSO','ASO'].indexOf(prefix)>-1)return'short';
+  if(['GO'].indexOf(prefix)>-1)return'jacket';
+  return'top';
+}
+function _ptnKeyFromLabel(label){return String(label||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,40)||'pom';}
+// The rows a block's grid shows: template POMs, then the block's own
+// extras, then any grid key belonging to neither — orphaned by a template
+// edit — kept and marked, never dropped.
+function _ptnRowsFor(p){
+  const tpl=_ptnTemplate(p.pomTemplate||'')||{poms:[]};
+  const rows=[];const seen=new Set();
+  (tpl.poms||[]).forEach(m=>{if(m&&m.key&&!seen.has(m.key)){seen.add(m.key);rows.push({key:m.key,label:m.label||m.key,howTo:m.howTo||'',photoUrl:m.photoUrl||'',src:'template'});}});
+  (p.extraPoms||[]).forEach(m=>{if(m&&m.key&&!seen.has(m.key)){seen.add(m.key);rows.push({key:m.key,label:m.label||m.key,howTo:m.howTo||'',photoUrl:'',src:'extra'});}});
+  const grid=p.grid||{};
+  Object.keys(grid).forEach(size=>{Object.keys(grid[size]||{}).forEach(k=>{if(!seen.has(k)){seen.add(k);rows.push({key:k,label:k,howTo:'',photoUrl:'',src:'orphan'});}});});
+  return rows;
+}
+function _ptnGridFilled(p){
+  const rows=_ptnRowsFor(p).filter(r=>r.src!=='orphan');const sizes=p.sizes||[];const g=p.grid||{};
+  let n=0;rows.forEach(r=>sizes.forEach(s=>{const v=g[s]&&g[s][r.key];if(typeof v==='number')n++;}));
+  return{filled:n,total:rows.length*sizes.length};
+}
+
+// ── The grid card on the block page ───────────────────────────────────────
+function _ptnGridCardHTML(p){
+  const can=_canManagePatterns();
+  const units=_ptnUnits();
+  if(_ptnPomsFailed)return`<div class="card"><div class="card-title">Measurements</div><div class="board-load-error" id="ptn-poms-failed">The points of measure (<code>pom_templates</code>) did not load: ${_ptnEsc(_ptnPomsErr||'')}. If that says <em>missing or insufficient permissions</em>, republish <code>firestore.rules</code>. <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div></div>`;
+  if(!pomTemplates.length)return`<div class="card"><div class="card-title">Measurements</div><div class="empty" id="ptn-poms-none">No points of measure yet. ${can?`<button class="btn-sm" onclick="window.ptnSeedPoms()">Seed the four templates</button> (tops · pants · shorts · jackets — editable afterwards)`:'An admin has to seed the templates first.'}</div></div>`;
+  const rows=_ptnRowsFor(p);const sizes=p.sizes||[];
+  const tpl=_ptnTemplate(p.pomTemplate||'');
+  const draft=_ptnGridDraft;
+  const cell=(r,s)=>{
+    const stored=p.grid&&p.grid[s]?p.grid[s][r.key]:undefined;
+    const raw=draft&&draft[s]&&draft[s][r.key]!==undefined?draft[s][r.key]:_ptnFmt(stored,units);
+    const bad=draft&&draft[s]&&draft[s][r.key]!==undefined&&draft[s][r.key]!==''&&_ptnParseIn(draft[s][r.key],units).bad;
+    return can?`<td style="padding:3px"><input class="ptn-cell${bad?' ptn-cell-bad':''}" data-size="${_ptnEsc(s)}" data-key="${_ptnEsc(r.key)}" value="${_ptnEsc(raw)}" inputmode="decimal" oninput="window.ptnGridInput(this)" style="width:64px;padding:6px 6px;border:1px solid ${bad?'var(--accent-urgent)':'var(--border)'};border-radius:6px;font-family:inherit;font-size:13px;text-align:right;background:var(--surface-2);color:var(--text)"${bad?' title="Not a number — will be left blank"':''}></td>`
+      :`<td style="padding:6px 8px;text-align:right">${_ptnEsc(_ptnFmt(stored,units))||'<span style="color:var(--muted)">—</span>'}</td>`;
+  };
+  const f=_ptnGridFilled(p);
+  return`<div class="card" id="ptn-grid-card">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><span>Measurements <span style="font-weight:400;color:var(--muted);font-size:11px">${f.filled} of ${f.total} filled · all points ±${_PTN_TOL_IN} in</span></span>
+      <span style="display:flex;gap:6px;align-items:center"><button class="btn-sm" id="ptn-units" onclick="window.ptnToggleUnits()">${units==='cm'?'Showing cm · switch to inches':'Showing inches · switch to cm'}</button></span></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Template: <b>${_ptnEsc(tpl?tpl.label:(p.pomTemplate||'none'))}</b>${can?` <button class="btn-sm" onclick="window.showPage('pattern-poms')">Edit points of measure</button> <button class="btn-sm" onclick="window.ptnAddExtraPom('${_ptnEsc(p.id)}')">+ Point for this block only</button>`:''}</div>
+    ${rows.length&&sizes.length?`<div style="overflow:auto"><table class="ptn-grid" style="border-collapse:collapse;font-size:13px;min-width:100%"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:6px 8px;position:sticky;left:0;background:var(--surface)">Point of measure</th>${sizes.map(s=>`<th style="padding:6px 8px;text-align:right">${_ptnEsc(s)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map(r=>`<tr class="ptn-grid-row" data-key="${_ptnEsc(r.key)}" style="border-top:1px solid var(--border);${r.src==='orphan'?'opacity:.6':''}"><td style="padding:6px 8px;position:sticky;left:0;background:var(--surface);white-space:nowrap"><b>${_ptnEsc(r.label)}</b>${r.src==='extra'?' <span class="badge" style="font-size:9.5px">this block</span>':''}${r.src==='orphan'?` <span style="color:var(--accent-warning);font-size:11px">no longer in the template</span>${can?` <button class="btn-sm" onclick="window.ptnClearRow('${_ptnEsc(p.id)}','${_ptnEsc(r.key)}')">clear</button>`:''}`:''}${r.howTo?`<div style="font-size:11px;color:var(--muted);white-space:normal;max-width:260px">${_ptnEsc(r.howTo)}${r.photoUrl?` <a href="${_ptnEsc(r.photoUrl)}" target="_blank" rel="noopener">photo</a>`:''}</div>`:''}${r.src==='extra'&&can?` <button class="btn-sm" onclick="window.ptnRemoveExtraPom('${_ptnEsc(p.id)}','${_ptnEsc(r.key)}')" title="Remove this point from the block (its numbers are kept until cleared)">×</button>`:''}</td>${sizes.map(s=>cell(r,s)).join('')}</tr>`).join('')}</tbody></table></div>`
+      :'<div class="empty">No sizes on this block yet — edit the block and tick the sizes in the bundle.</div>'}
+    ${can?`<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn-primary" id="ptn-grid-save" ${_ptnBusy||!_ptnGridDirty?'disabled':''} onclick="window.ptnSaveGrid('${_ptnEsc(p.id)}')">Save measurements</button><span id="ptn-grid-status" style="font-size:12px;color:var(--muted)">${_ptnGridDirty?'Unsaved changes':('Values are '+(units==='cm'?'cm (stored as inches)':'inches')+' · quarter-inch steps · type 22.5 or 22 1/2')}</span></div>`:''}
+    <div style="font-size:11px;color:var(--muted);margin-top:8px">The grid is the spec. Checking a sewn sample against it (and flagging anything past ±${_PTN_TOL_IN} in) comes with revisions in M5.</div>
+  </div>`;
+}
+window.ptnToggleUnits=function(){_ptnSetUnits(_ptnUnits()==='cm'?'in':'cm');if(_ptnGridDirty){showToast('Save or clear your unsaved measurements before switching units.',true);return;}_ptnBlockRepaint();};
+window.ptnGridInput=function(el){
+  const s=el.getAttribute('data-size'),k=el.getAttribute('data-key');
+  if(!_ptnGridDraft)_ptnGridDraft={};
+  (_ptnGridDraft[s]=_ptnGridDraft[s]||{})[k]=String(el.value||'');
+  _ptnGridDirty=true;
+  const bad=el.value!==''&&_ptnParseIn(el.value).bad;
+  el.style.borderColor=bad?'var(--accent-urgent)':'var(--border)';
+  if(el.classList){el.classList.toggle('ptn-cell-bad',!!bad);}
+  const b=document.getElementById('ptn-grid-save');if(b)b.disabled=false;
+  const st=document.getElementById('ptn-grid-status');if(st)st.textContent='Unsaved changes';
+};
+// Save: every draft cell parsed in the CURRENT unit, stored as inches
+// rounded to a quarter; a cell that is not a number is left as it was and
+// named in the toast (flagged, never rejected — the M4 cell lesson).
+function _ptnMergeGrid(p,draft,units){
+  const grid=JSON.parse(JSON.stringify(p.grid||{}));
+  const bad=[],rounded=[];let changed=0;
+  Object.keys(draft||{}).forEach(s=>{
+    Object.keys(draft[s]).forEach(k=>{
+      const r=_ptnParseIn(draft[s][k],units);
+      if(r.bad){bad.push(s+' '+k);return;}
+      grid[s]=grid[s]||{};
+      if(r.empty){if(grid[s][k]!==undefined){delete grid[s][k];changed++;}if(!Object.keys(grid[s]).length)delete grid[s];return;}
+      if(grid[s][k]!==r.inches){grid[s][k]=r.inches;changed++;}
+      if(r.rounded)rounded.push(s+' '+k);
+    });
+  });
+  return{grid,bad,rounded,changed};
+}
+window.ptnSaveGrid=async function(id){
+  if(!_canManagePatterns()||_ptnBusy)return false;
+  const p=_ptnBlock(id);if(!p)return false;
+  const {grid,bad,rounded,changed}=_ptnMergeGrid(p,_ptnGridDraft||{},_ptnUnits());
+  if(!changed&&!bad.length){_ptnGridDirty=false;_ptnGridDraft=null;_ptnBlockRepaint();return true;}
+  const now=new Date().toISOString();const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  _ptnBusy=true;
+  try{
+    await updateDoc(doc(db,'patterns',id),{grid,gridUpdatedAt:now,updatedAt:now,updatedBy:by});
+    p.grid=grid;p.gridUpdatedAt=now;
+    _ptnGridDirty=false;_ptnGridDraft=null;
+    showToast('Saved '+changed+' measurement'+(changed===1?'':'s')+(rounded.length?' · '+rounded.length+' rounded to the nearest ¼ in':'')+(bad.length?' · left blank (not a number): '+bad.join(', '):'')+'.',!!bad.length);
+    _ptnLog('Measurements Saved',p.code+' — '+changed+' cells');
+    _ptnBusy=false;_ptnBlockRepaint();return true;
+  }catch(e){console.error('[patterns] grid save failed',e);showToast('Could not save: '+(e.message||e),true);_ptnBusy=false;_ptnBlockRepaint();return false;}
+};
+window.ptnClearRow=async function(id,key){
+  if(!_canManagePatterns()||_ptnBusy)return;
+  const p=_ptnBlock(id);if(!p)return;
+  if(typeof confirm==='function'&&!confirm('Clear every "'+key+'" value on '+p.code+'? This point is no longer in the template; its numbers go for good.'))return;
+  const grid=JSON.parse(JSON.stringify(p.grid||{}));
+  Object.keys(grid).forEach(s=>{delete grid[s][key];if(!Object.keys(grid[s]).length)delete grid[s];});
+  const now=new Date().toISOString();const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  _ptnBusy=true;
+  try{await updateDoc(doc(db,'patterns',id),{grid,updatedAt:now,updatedBy:by});p.grid=grid;showToast('Cleared "'+key+'".');}
+  catch(e){showToast('Could not clear: '+(e.message||e),true);}
+  _ptnBusy=false;_ptnBlockRepaint();
+};
+window.ptnAddExtraPom=async function(id){
+  if(!_canManagePatterns()||_ptnBusy)return;
+  const p=_ptnBlock(id);if(!p)return;
+  const label=typeof prompt==='function'?String(prompt('Name of the point of measure (for this block only):','')||'').trim():'';
+  if(!label)return;
+  const howTo=typeof prompt==='function'?String(prompt('How to measure it (one or two lines):','')||'').trim():'';
+  const key=_ptnKeyFromLabel(label);
+  if(_ptnRowsFor(p).some(r=>r.key===key)){showToast('A point called "'+label+'" is already on this block.',true);return;}
+  const extraPoms=(p.extraPoms||[]).concat([{key,label,howTo}]);
+  const now=new Date().toISOString();const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  _ptnBusy=true;
+  try{await updateDoc(doc(db,'patterns',id),{extraPoms,updatedAt:now,updatedBy:by});p.extraPoms=extraPoms;showToast('Added "'+label+'" to '+p.code+'.');}
+  catch(e){showToast('Could not add: '+(e.message||e),true);}
+  _ptnBusy=false;_ptnBlockRepaint();
+};
+window.ptnRemoveExtraPom=async function(id,key){
+  if(!_canManagePatterns()||_ptnBusy)return;
+  const p=_ptnBlock(id);if(!p)return;
+  const extraPoms=(p.extraPoms||[]).filter(m=>m.key!==key);
+  const now=new Date().toISOString();const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  _ptnBusy=true;
+  try{await updateDoc(doc(db,'patterns',id),{extraPoms,updatedAt:now,updatedBy:by});p.extraPoms=extraPoms;showToast('Removed the point; any numbers it held stay until you clear them.');}
+  catch(e){showToast('Could not remove: '+(e.message||e),true);}
+  _ptnBusy=false;_ptnBlockRepaint();
+};
+
+// ── Template editor page ──────────────────────────────────────────────────
+function renderPatternPoms(){
+  if(!_canSeePatternHub())return'<div class="empty">The Pattern Hub is in a test phase — Afnan, Ammar and Mustafa only.</div>';
+  return`<div id="pattern-poms-root">${_ptnPomsHTML()}</div>`;
+}
+function _ptnPomsRepaint(){const r=document.getElementById('pattern-poms-root');if(r)r.innerHTML=_ptnPomsHTML();}
+function _ptnPomsHTML(){
+  const head=`<button class="back-btn" onclick="window.showPage('pattern-blocks')">← Patterns</button>
+  <div class="page-head" style="margin-bottom:10px"><div><h2 style="margin:0">Points of measure</h2><div style="color:var(--muted);font-size:12px;margin-top:2px">What gets measured on each kind of block, and how. Deleting a point never deletes numbers already recorded on a block.</div></div></div>`;
+  if(_ptnPomsFailed)return head+`<div class="board-load-error" id="ptn-poms-failed">pom_templates: ${_ptnEsc(_ptnPomsErr||'')}. If that says <em>missing or insufficient permissions</em>, republish <code>firestore.rules</code>. <button class="btn-sm" onclick="window.ptnRetryLoad()">Retry</button></div>`;
+  const can=_canManagePatterns();
+  if(!pomTemplates.length)return head+`<div class="empty" id="ptn-poms-none">No templates yet. ${can?`<button class="btn-primary" onclick="window.ptnSeedPoms()">Seed the four templates</button>`:''}</div>`;
+  if(!_ptnTemplate(_ptnPomsTplId))_ptnPomsTplId=pomTemplates[0].id;
+  const t=_ptnTemplate(_ptnPomsTplId);
+  const tabs=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${pomTemplates.map(x=>`<button class="btn-sm" style="${x.id===t.id?'background:var(--dark);color:var(--on-dark);border-color:var(--dark)':''}" onclick="window.ptnPomsTab('${_ptnEsc(x.id)}')">${_ptnEsc(x.label||x.id)} <span style="opacity:.7">${(x.poms||[]).length}</span></button>`).join('')}</div>`;
+  const used=patterns.filter(p=>p.pomTemplate===t.id&&p.status!=='retired').length;
+  const rows=(t.poms||[]).map((m,i)=>`<tr class="ptn-pom-row" data-key="${_ptnEsc(m.key)}" style="border-top:1px solid var(--border)">
+    <td style="padding:6px 8px;white-space:nowrap;color:var(--muted);font-size:11px">${i+1}</td>
+    <td style="padding:6px 8px">${can?`<input id="ptn-pom-label-${i}" value="${_ptnEsc(m.label||'')}" style="width:100%;min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;background:var(--surface-2);color:var(--text)">`:`<b>${_ptnEsc(m.label||'')}</b>`}<div style="font-size:10px;color:var(--muted)">${_ptnEsc(m.key)}</div></td>
+    <td style="padding:6px 8px;min-width:260px">${can?`<textarea id="ptn-pom-how-${i}" rows="2" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:12px;background:var(--surface-2);color:var(--text)">${_ptnEsc(m.howTo||'')}</textarea>`:`<div style="font-size:12px">${_ptnEsc(m.howTo||'')}</div>`}</td>
+    <td style="padding:6px 8px;white-space:nowrap">${m.photoUrl?`<a href="${_ptnEsc(m.photoUrl)}" target="_blank" rel="noopener"><img src="${_ptnEsc(m.photoUrl)}" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--border)"></a>`:'<span style="color:var(--muted);font-size:11px">no photo</span>'}${can?`<div><label class="btn-sm" style="cursor:pointer;display:inline-block;margin-top:4px">${m.photoUrl?'Replace':'Add photo'}<input type="file" accept="image/*" style="display:none" onchange="window.ptnPomPhoto('${_ptnEsc(t.id)}',${i},this)"></label>${m.photoUrl?` <button class="btn-sm" onclick="window.ptnPomPhotoClear('${_ptnEsc(t.id)}',${i})">remove</button>`:''}</div>`:''}</td>
+    <td style="padding:6px 8px;white-space:nowrap;text-align:right">${can?`<button class="btn-sm" onclick="window.ptnPomMove('${_ptnEsc(t.id)}',${i},-1)" ${i===0?'disabled':''}>↑</button> <button class="btn-sm" onclick="window.ptnPomMove('${_ptnEsc(t.id)}',${i},1)" ${i===(t.poms||[]).length-1?'disabled':''}>↓</button> <button class="btn-sm" onclick="window.ptnPomDelete('${_ptnEsc(t.id)}',${i})">Delete</button>`:''}</td></tr>`).join('');
+  return head+tabs+`<div class="card" style="padding:0;overflow:auto"><div style="padding:10px 12px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border)">Used by <b>${used}</b> block${used===1?'':'s'}. ${can?'Edit labels and how-to text in place, then Save.':''}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase"><th style="padding:8px"></th><th style="padding:8px">Point</th><th style="padding:8px">How to measure</th><th style="padding:8px">Photo</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="5" class="empty">No points yet.</td></tr>'}</tbody></table>
+    ${can?`<div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid var(--border)"><button class="btn-sm" onclick="window.ptnPomAdd('${_ptnEsc(t.id)}')">+ Add a point</button><button class="btn-primary" ${_ptnBusy?'disabled':''} onclick="window.ptnPomsSave('${_ptnEsc(t.id)}')">Save template</button></div>`:''}</div>`;
+}
+window.ptnPomsTab=function(id){_ptnPomsTplId=id;_ptnPomsRepaint();};
+function _ptnReadTemplateForm(t){
+  const poms=(t.poms||[]).map((m,i)=>{
+    const l=document.getElementById('ptn-pom-label-'+i),h=document.getElementById('ptn-pom-how-'+i);
+    return Object.assign({},m,{label:l?String(l.value||'').trim()||m.label:m.label,howTo:h?String(h.value||'').trim():m.howTo||''});
+  });
+  return poms;
+}
+async function _ptnWriteTemplate(t,poms,toastMsg){
+  const now=new Date().toISOString();const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  _ptnBusy=true;
+  try{
+    await setDoc(doc(db,'pom_templates',t.id),{id:t.id,label:t.label||t.id,poms,updatedAt:now,updatedBy:by},{merge:true});
+    t.poms=poms;t.updatedAt=now;
+    if(toastMsg)showToast(toastMsg);
+    _ptnBusy=false;return true;
+  }catch(e){console.error('[patterns] template save failed',e);showToast('Could not save the template: '+(e.message||e),true);_ptnBusy=false;return false;}
+}
+window.ptnPomsSave=async function(id){
+  if(!_canManagePatterns()||_ptnBusy)return;
+  const t=_ptnTemplate(id);if(!t)return;
+  const poms=_ptnReadTemplateForm(t);
+  if(poms.some(m=>!m.label)){showToast('Every point needs a label.',true);return;}
+  if(await _ptnWriteTemplate(t,poms,'Saved '+(t.label||t.id)+'.'))_ptnLog('POM Template Saved',t.id+' — '+poms.length+' points');
+  _ptnPomsRepaint();
+};
+window.ptnPomAdd=async function(id){
+  if(!_canManagePatterns()||_ptnBusy)return;
+  const t=_ptnTemplate(id);if(!t)return;
+  const label=typeof prompt==='function'?String(prompt('Name of the new point of measure:','')||'').trim():'';
+  if(!label)return;
+  let key=_ptnKeyFromLabel(label);
+  const keys=new Set((t.poms||[]).map(m=>m.key));let n=2;const base=key;while(keys.has(key))key=base+'_'+(n++);
+  const poms=_ptnReadTemplateForm(t).concat([{key,label,howTo:''}]);
+  if(await _ptnWriteTemplate(t,poms,'Added "'+label+'".'))_ptnLog('POM Added',t.id+' — '+label);
+  _ptnPomsRepaint();
+};
+// Delete removes the ROW from the template only. Every block that recorded
+// a number for it keeps that number (rendered as "no longer in the
+// template") until someone clears it on that block. Said in the confirm.
+window.ptnPomDelete=async function(id,i){
+  if(!_canManagePatterns()||_ptnBusy)return;
+  const t=_ptnTemplate(id);if(!t||!t.poms||!t.poms[i])return;
+  const m=t.poms[i];
+  const holders=patterns.filter(p=>p.pomTemplate===id&&Object.keys(p.grid||{}).some(s=>p.grid[s]&&p.grid[s][m.key]!==undefined)).length;
+  if(typeof confirm==='function'&&!confirm('Delete "'+m.label+'" from this template? '+(holders?holders+' block'+(holders===1?' has':'s have')+' numbers for it — those are KEPT and shown as "no longer in the template" until cleared.':'No block has numbers for it yet.')))return;
+  const poms=_ptnReadTemplateForm(t).filter((x,j)=>j!==i);
+  if(await _ptnWriteTemplate(t,poms,'Deleted "'+m.label+'" from the template. Recorded numbers were kept.'))_ptnLog('POM Deleted',t.id+' — '+m.label);
+  _ptnPomsRepaint();
+};
+window.ptnPomMove=async function(id,i,dir){
+  if(!_canManagePatterns()||_ptnBusy)return;
+  const t=_ptnTemplate(id);if(!t)return;
+  const poms=_ptnReadTemplateForm(t);const j=i+dir;if(j<0||j>=poms.length)return;
+  const tmp=poms[i];poms[i]=poms[j];poms[j]=tmp;
+  await _ptnWriteTemplate(t,poms,null);_ptnPomsRepaint();
+};
+window.ptnPomPhoto=async function(id,i,input){
+  if(!_canManagePatterns()||_ptnBusy)return;
+  const t=_ptnTemplate(id);const file=input&&input.files&&input.files[0];if(!t||!file)return;
+  if(typeof uploadToCloudinary!=='function'){showToast('Upload helper not loaded — refresh the page.',true);return;}
+  _ptnBusy=true;_ptnPomsRepaint();
+  let url;
+  try{url=await uploadToCloudinary(file);}catch(e){showToast('Upload failed: '+(e.message||e),true);_ptnBusy=false;_ptnPomsRepaint();return;}
+  _ptnBusy=false;
+  const poms=_ptnReadTemplateForm(t);if(poms[i])poms[i]=Object.assign({},poms[i],{photoUrl:url});
+  await _ptnWriteTemplate(t,poms,'Photo added.');_ptnPomsRepaint();
+};
+window.ptnPomPhotoClear=async function(id,i){
+  if(!_canManagePatterns()||_ptnBusy)return;
+  const t=_ptnTemplate(id);if(!t)return;
+  const poms=_ptnReadTemplateForm(t);if(poms[i]){poms[i]=Object.assign({},poms[i]);delete poms[i].photoUrl;}
+  await _ptnWriteTemplate(t,poms,'Photo removed.');_ptnPomsRepaint();
+};
+// Seed the four templates — only the ones missing, never over an edited one.
+window.ptnSeedPoms=async function(){
+  if(!_canManagePatterns()||_ptnBusy)return;
+  if(_ptnPomsFailed){showToast('pom_templates did not load — cannot tell what exists. Retry first.',true);return;}
+  const have=new Set(pomTemplates.map(t=>t.id));
+  const missing=_PTN_POM_SEED.filter(t=>!have.has(t.id));
+  if(!missing.length){showToast('All four templates already exist.');return;}
+  const now=new Date().toISOString();const by=(typeof session!=='undefined'&&session&&session.u)||'';
+  _ptnBusy=true;
+  try{
+    const batch=writeBatch(db);
+    missing.forEach(t=>batch.set(doc(db,'pom_templates',t.id),{id:t.id,label:t.label,poms:t.poms.map(m=>Object.assign({},m)),createdAt:now,createdBy:by,updatedAt:now,updatedBy:by}));
+    await batch.commit();
+    missing.forEach(t=>pomTemplates.push({id:t.id,label:t.label,poms:t.poms.map(m=>Object.assign({},m))}));
+    showToast('Seeded '+missing.length+' template'+(missing.length===1?'':'s')+'.');_ptnLog('POM Templates Seeded',missing.map(t=>t.id).join(', '));
+  }catch(e){console.error('[patterns] seed templates failed',e);showToast('Seed failed: '+(e.message||e),true);}
+  _ptnBusy=false;
+  if(currentPage==='pattern-poms')_ptnPomsRepaint();else _ptnBlockRepaint();
 };
