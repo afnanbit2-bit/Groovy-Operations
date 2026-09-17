@@ -1,7 +1,7 @@
 # Pattern Hub — Master Plan
 
-> Status: **PLANNING — decisions locked through two rounds with Afnan (16–17 Sept
-> 2026). No code written yet.** This document is the single source of truth for
+> Status: **PLANNING COMPLETE — every question answered across three rounds with
+> Afnan (16–17 Sept 2026). No code written yet; M0 is next.** This document is the single source of truth for
 > the module. Remaining open items are marked **[DECISION NEEDED]** and are all
 > Ammar's calls on the TAC document; none of them block M0.
 >
@@ -108,7 +108,8 @@ Read from the live Shopify Admin API (read-only) and `TAC List Complete.docx`
 | Mustafa | manager, **by username** | Everything — matches the Sept 2026 `isMustafa()` grants |
 | Arfat | manager | Nothing in the test phase (same precedent: holds the role, gets none of the grants) |
 | Uzaib | `viewer`, Cutting & Fabric | **View** from the milestone the hub opens up; **acknowledge notices** from M5. Not in the test-phase nav |
-| Pattern master | no login (default — see §12) | Named on the pattern (`tracedBy`) like Hassan/Alam are on cut records |
+| Hassan, Alam | cutting masters, no login | The ones who **trace** patterns; `tracedBy` picks from these two names, as the cut records already do |
+| Uzaib | (as above) | **Manages** the patterns day to day — Afnan, Q28 |
 
 ## 4. Data model
 
@@ -124,9 +125,12 @@ needsPattern  true    (false for GHW)
 nextNumber 77         ← minting counter, seeded from today's max per category
 ```
 
-**Minting is next-after-highest, never gap-filling.** TAC has deliberate holes
-(`GH036` blank, `GS016`–`GS022` reserved). A number reserved offline could
-collide with a reused gap; a number past the max cannot. Minted in a
+**Minting is next-after-highest.** TAC's holes (`GH036`, `GS016`–`GS022`) are
+human errors, not reservations (Afnan, Q19) — so nothing is *protected* in a gap,
+but the counter still never fills one automatically: a gap is a sign someone
+mis-typed, and silently landing a new article on that number would hide it.
+An admin **may type an explicit unused code** on the mint form to fill a gap
+deliberately; the transaction refuses any code that already exists. Minted in a
 `runTransaction` on this doc, the same shape as `getNextId()` in
 `js/shared.js:625`, and the `articles/{code}` create is in the **same
 transaction** so the doc-id itself enforces uniqueness (the `creator_handles`
@@ -168,7 +172,7 @@ pomTemplate 'pant'         (which POM set it starts from, §4.4)
 extraPoms   ['drawcord_len']             per-pattern additions
 grid        { 'M': { chest: 22, length: 29, … }, 'L': {…} }   ← inches, numbers
 status      'active' | 'retired'
-labelPrintedAt, labelPrintedVersion
+labelPrinted    { 'M': { at, revision }, … }   per size
 createdBy/At, updatedBy/At
 ```
 
@@ -181,7 +185,7 @@ arithmetic.
 
 ```
 id       'pant'   label 'Pants & Trousers'
-poms: [ { key:'waist_relaxed', label:'Waist (relaxed)', tol:0.5,
+poms: [ { key:'waist_relaxed', label:'Waist (relaxed)',
           howTo:'Lay flat, measure edge to edge across the top of the waistband…',
           photoUrl: null } , … ]
 ```
@@ -259,23 +263,27 @@ Inches are the only stored value. **cm is a view toggle** (per viewer,
 at render: `in × 2.54`, one decimal. Input is always inches, quarter-inch steps
 (`0.25` granularity enforced on save, not on keystroke — the M4 cell lesson:
 refusing a keystroke in an input is miserable; flag, then round on save).
-Tolerance ± per POM, out-of-tolerance **flagged, never rejected**.
+Tolerance is **±0.5 in on every POM** (one global constant, Q23); out-of-tolerance is **flagged, never rejected**.
 
-## 7. The label — 5 × 6 inch, one per block
+## 7. The label — 5 × 6 inch, one per SIZE in the bundle
+
+Locked (Q24 = A): **each traced sheet in the bundle gets its own sticker**, so a
+block with five sizes prints five labels. They share the block's identity and
+differ in the size line and the measurement column.
 
 Content, top to bottom: **pattern code** (large) · block name · fit · category ·
-**sizes in this bundle** · **hook / slot** · **articles using it** (codes, wrapped;
-truncated with "+N more" past ~12) · **sample-size measurements** (the
-`sampleSize` column only — a full grid does not fit legibly on 5×6) · a **QR**
-deep-linking to the pattern page (`#pattern=<id>`, the Mood Boards `#board=`
-routing pattern) · printed date + revision number.
+**SIZE — this sheet** (large, e.g. `M` or `32`) · "bundle: XS S M L XL" · **hook /
+slot** · **articles using it** (codes, wrapped; "+N more" past ~12) · **this
+size's measurements** (one column: POM → inches) · a **QR** deep-linking to the
+pattern page (`#pattern=<id>`, the Mood Boards `#board=` routing pattern) ·
+printed date + revision number.
 
-**The full grid lives on the pattern page; the QR gets you there.** That is the
-whole point of the QR.
+**The full grid lives on the pattern page; the QR gets you there.**
 
-Batch printing: "print all unprinted" / "print hook N" → one PDF, N pages.
-`labelPrintedAt` records what was last printed; a label whose data changed since
-shows "reprint" on the hub.
+Printing is **operator-selected** (Q25): from a block, tick the sizes to print
+(one, some, all); from the hub, tick the blocks. One PDF, one page per label.
+`labelPrintedAt` per size records what was last printed; a size whose
+measurements or hook changed since shows "reprint".
 
 ### The print-engine touch, stated plainly
 
@@ -351,26 +359,24 @@ The in-app registry is authoritative (D3). So the .docx becomes an **output**:
   PO detail and cut plan, **not a block** (the embellishment recipe gate's
   precedent; a hard block is what stops production at 2am for paperwork).
 
-## 12. Defaults taken for the unanswered questions
+## 12. Round-three answers — all locked (Afnan, 17 Sept)
 
-Recorded so nobody re-asks them; each is one line to reverse.
-
-| Q | Default taken |
+| Q | Locked |
 |---|---|
-| Registry vs .docx | app authoritative, .docx becomes an export (§10) |
-| Minting rule | next-after-highest per category, never gap-fill (§4.1) |
-| POM levels | category template + per-pattern extras; deleting a POM never deletes data (§4.4) |
-| How-to-measure | text required, photo optional |
-| What is a revision | explicit "Record a revision"; edits are silent (§4.5) |
-| Tolerance | ±0.5 in default per POM, editable |
-| Label orientation | portrait, sample-size column + QR (§7) |
-| Batch labels | yes |
-| "All articles covered" | coverage dial + manual switch (§11) |
-| Old POs | untouched |
-| The master | named on the pattern, no login |
-| Uzaib early access | view-only from M3, acknowledge from M5 |
-| Draft/archived products | active + draft need patterns; archived do not |
-| Cultured / Against | in the registry from M0; **patterns for GROOVY only in v1** |
+| 18 Registry vs .docx | **app authoritative, .docx becomes an export** (§10) — Ammar to be told |
+| 19 Minting | next-after-highest; gaps are human errors, fillable only by typing an explicit code (§4.1) |
+| 20 POM levels | template + per-pattern extras; deleting a POM never deletes data (§4.4) |
+| 21 How-to-measure | text required, **photo yes** |
+| 22 Revision | explicit "Record a revision"; edits silent (§4.5) |
+| 23 Tolerance | **±0.5 in on every POM**, one global value |
+| 24 Label | **one label per size in the bundle** (§7) |
+| 25 Batch | operator selects one / some / all |
+| 26 Go-live | coverage dial + owner switch (§11) |
+| 27 Old POs | untouched |
+| 28 Master | Hassan and Alam trace; Uzaib manages |
+| 29 Uzaib access | view-only from M3, acknowledge from M5 |
+| 30 Shopify status | **active + draft** need patterns; archived do not |
+| 31 Other brands | **left out of v1** — GROOVY only; registry still seeds all three brands (a brand filter defaults to GROOVY) |
 
 ## 13. `firestore.rules`
 
@@ -413,7 +419,7 @@ new file: script tag in `index.html`, `PRECACHE_URLS` in `sw.js`, bump
 | **M1** | **Shopify rollup + reconcile** | `shopify_articles` + `imageUrl` in the catalog sync; the reconcile page (§9). **The 27 data fixes from §2 are worked through here, before any pattern exists.** TAC export (§10). |
 | **M2** | **Blocks + hook map** | `patterns`, `PTN-####`, create/edit, sizes, `pattern_slots` lock, the 10×5 map, the Unplaced strip. Article→block assignment, bulk-assign from the clustering suggestion, unassigned queue. |
 | **M3** | **Measurements** | `pom_templates` (4 seeded, editable, how-to + photo), the grid, inches/cm toggle, tolerance flags. Uzaib gets view access. |
-| **M4** | **Label** | `pattern-label` variant with the page-size override (§7), QR deep link, batch print, "reprint" indicator. |
+| **M4** | **Label** | `pattern-label` variant with the page-size override, one page per size, operator-selected batch, QR deep link, per-size "reprint" indicator (§7). |
 | **M5** | **Revisions + notices** | Record a revision → diff → bell → Uzaib acknowledges. Open-notice list. |
 | **M6** | **PO integration** | `po.patternId/Code/Hook`, traveler row, coverage dial, the go-live switch, warn-only banner. |
 | **M7** | **Coverage dashboard** | Owner card: assigned / measured / labelled / open notices — the Monitor two-half pattern. |
