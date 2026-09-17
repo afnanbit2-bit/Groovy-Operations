@@ -34,6 +34,21 @@ function getDb() {
 const TEXT = { "Content-Type": "text/plain;charset=utf-8" };
 const ok = (body) => ({ statusCode: 200, headers: TEXT, body: body == null ? "OK" : String(body) });
 
+// Device allowlist — comma-separated serials, e.g. "CLKA204860123".
+// Empty (unset) means "accept any serial", i.e. the pre-hardening behaviour.
+const ALLOWED_SNS = String(process.env.ICLOCK_ALLOWED_SNS || "")
+  .split(",").map(s => s.trim()).filter(Boolean);
+// Optional shared secret. Dormant unless ICLOCK_SECRET is set in Netlify.
+const ICLOCK_SECRET = process.env.ICLOCK_SECRET || "";
+const MAX_LINES = 500;          // one push should never exceed this
+const MAX_SKEW_DAYS = 7;        // reject punches far outside a sane window
+
+const crypto = require("crypto");
+function safeEqual(a, b) {
+  const A = Buffer.from(String(a)), B = Buffer.from(String(b));
+  return A.length === B.length && crypto.timingSafeEqual(A, B);
+}
+
 // PKT "today" — the device sends local (PKT) timestamps already; used only to
 // decide whether a punch should update the live-presence board.
 function pktToday() {
@@ -74,6 +89,16 @@ exports.handler = async (event) => {
   let body = event.body || "";
   if (event.isBase64Encoded && body) body = Buffer.from(body, "base64").toString("utf8");
 
+  // Layer B — optional shared secret, accepted in the path or as ?key=.
+  // Dormant unless ICLOCK_SECRET is configured.
+  if (ICLOCK_SECRET) {
+    const supplied = q.key || q.KEY || "";
+    const inPath = p.includes("/" + ICLOCK_SECRET + "/");
+    if (!inPath && !safeEqual(supplied, ICLOCK_SECRET)) return ok("OK");
+  }
+  // Layer A — device serial allowlist.
+  if (ALLOWED_SNS.length && !ALLOWED_SNS.includes(sn)) return ok("OK");
+
   try {
     // 1) Command poll — nothing queued.
     if (/getrequest/i.test(p)) return ok("OK");
@@ -82,7 +107,7 @@ exports.handler = async (event) => {
     if (method === "POST" && String(q.table || "").toUpperCase() === "ATTLOG") {
       const db = getDb();
       const today = pktToday();
-      const lines = body.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const lines = body.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(0, MAX_LINES);
       let pushed = 0;
       for (const line of lines) {
         const f = line.split("\t");
@@ -93,17 +118,23 @@ exports.handler = async (event) => {
         const norm = ts.replace("T", " ");
         const date = norm.slice(0, 10);
         const time = norm.slice(11, 16);
+        // norm is PKT local, same as pktToday()'s idiom (Date.now() + 5h) —
+        // treat both as the same "naive UTC" clock so the offset cancels.
+        const nowPkt = Date.now() + 5 * 3600 * 1000;
+        const tsPkt = new Date(norm.replace(" ", "T") + "Z").getTime();
+        if (!Number.isFinite(tsPkt) || Math.abs(nowPkt - tsPkt) > MAX_SKEW_DAYS * 24 * 3600 * 1000) continue;
         const type = typeFromStatus(f[2] != null ? f[2] : "0");
         const safeTs = norm.replace(/[:\s]/g, "-");
         const record = { userId, name: `User${userId}`, date, time, type, timestamp: norm, synced: true, source: "push" };
-        await db.ref(`attendance/${date}/${userId}/${safeTs}`).set(record);
+        const ref = db.ref(`attendance/${date}/${userId}/${safeTs}`);
+        const cur = await ref.once("value");
+        if (!cur.exists()) { await ref.set(record); pushed++; }
         if (date === today) {
           await db.ref(`attendance/live/${userId}`).set({
             userId, name: `User${userId}`, status: type,
             lastSeen: `${date} ${time}`, updatedAt: new Date().toISOString(),
           });
         }
-        pushed++;
       }
       await db.ref("attendance/_meta").set({
         lastSyncAt: new Date().toISOString(), lastSyncOk: true, lastError: "",
