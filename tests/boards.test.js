@@ -2285,5 +2285,106 @@ module.exports=function(){
     s.ok('and none from the name',html.indexOf('<script')<0);
   }
 
-  return s;
+  // ── a PDF card is sized to its page ─────────────────────────────────────
+  // At the 200×110 file default the name row and the Open/Download buttons
+  // left the page thumbnail a ~20px strip. Reported with a screenshot of a
+  // production brief that had to be dragged open by hand.
+  {
+    const app=loadApp({files:FILES,globals:{requestAnimationFrame:()=>0}});
+    const {run}=app;
+    const IMG='https://res.cloudinary.com/x/image/upload/v1/brief.pdf';
+    const RAW='https://res.cloudinary.com/x/raw/upload/v1/brief.pdf';
+    const boot=()=>run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
+      _editCards=[];_editConnectors=[];_editUnsorted=[];_boardsSelection=new Set();
+      _boardsSaveDebounced=()=>{};_boardsRenderCanvasAndWire=()=>{};
+      __uploads=[];
+      _boardsUploadAny=f=>new Promise((ok,bad)=>__uploads.push({f,ok,bad}));`);
+    const pdf=`{name:'Denim Production Brief GROOVY.pdf',type:'application/pdf',size:1153433}`;
+    const size=id=>run(`(c=>c.w+'x'+c.h)(_editCards.find(c=>c.id==='${id}'))`);
+    const tick=()=>new Promise(r=>setImmediate(r));
+    const A4=`${240}x${Math.round(238*Math.SQRT2)+92}`;
+
+    return (async()=>{
+      boot();
+      s.section('the page-size maths');
+      s.eq('no size reported → A4 portrait',run(`_boardsPdfCardH()`),Math.round(238*Math.SQRT2)+92);
+      s.eq('US Letter (612×792)',run(`_boardsPdfCardH(792/612)`),Math.round(238*792/612)+92);
+      s.eq('garbage ratio falls back to A4',run(`_boardsPdfCardH(NaN)`),run(`_boardsPdfCardH()`));
+      s.eq('a sliver page is clamped, not a 4000px card',run(`_boardsPdfCardH(1000)`),238*4+92);
+      s.ok('a PDF is recognised by type',run(`_boardsIsPdfFile({type:'application/pdf',name:'x'})`));
+      s.ok('or by name when the browser gives no type',run(`_boardsIsPdfFile({type:'',name:'Brief.PDF'})`));
+      s.ok('a Word file is not a PDF',!run(`_boardsIsPdfFile({type:'',name:'brief.docx'})`));
+
+      s.section('dropping a PDF: page-sized from the start, fitted when it lands');
+      run(`_boardsAddFiles([${pdf}],{x:0,y:0})`);
+      const id=run(`_editCards[0].id`);
+      s.eq('the placeholder is already A4-shaped',size(id),A4);
+      run(`__uploads[0].ok({secure_url:'${IMG}',bytes:1153433,width:612,height:792})`);
+      await tick();
+      s.eq('then fitted to the real page (Letter)',size(id),`240x${Math.round(238*792/612)+92}`);
+      s.eq('and it is a file card with its file',run(`_editCards[0].type+' '+_editCards[0].fileUrl`),`file ${IMG}`);
+
+      s.section('a card someone sized is left alone');
+      boot();
+      run(`_boardsAddFiles([${pdf}],{x:0,y:0})`);
+      run(`_editCards[0].w=500;_editCards[0].h=300`);
+      run(`__uploads[0].ok({secure_url:'${IMG}',width:612,height:792})`);
+      await tick();
+      s.eq('resized while uploading → not refitted',size(run(`_editCards[0].id`)),'500x300');
+      boot();
+      run(`_editCards=[{id:'r',type:'file',x:0,y:0,w:320,h:180,fileUrl:'${IMG}',fileName:'old.pdf'}]`);
+      run(`_boardsUploadFileToCard('r',${pdf})`);
+      run(`__uploads[0].ok({secure_url:'${IMG}',width:612,height:792})`);
+      await tick();
+      s.eq('Replace on a resized card keeps its size',size('r'),'320x180');
+
+      s.section('the empty file card from the rail grows when its PDF arrives');
+      boot();
+      run(`_editCards=[Object.assign(_boardsNewCard('file'),{id:'e'})]`);
+      s.eq('starts at the compact default',size('e'),'200x110');
+      run(`_boardsUploadFileToCard('e',${pdf})`);
+      run(`__uploads[0].ok({secure_url:'${IMG}'})`);
+      await tick();
+      s.eq('no page size in the response → A4',size('e'),A4);
+
+      s.section('files with no thumbnail stay compact');
+      boot();
+      run(`_boardsAddFiles([{name:'costing.xlsx',type:'application/vnd.ms-excel',size:9}],{x:0,y:0})`);
+      run(`__uploads[0].ok({secure_url:'https://res.cloudinary.com/x/raw/upload/v1/costing.xlsx'})`);
+      await tick();
+      s.eq('a spreadsheet keeps 200×110',size(run(`_editCards[0].id`)),'200x110');
+      boot();
+      run(`_boardsAddFiles([${pdf}],{x:0,y:0})`);
+      run(`__uploads[0].ok({secure_url:'${RAW}',width:612,height:792})`);
+      await tick();
+      s.eq('a PDF stored RAW (no thumbnail possible) shrinks back',size(run(`_editCards[0].id`)),'200x110');
+      boot();
+      run(`_boardsAddFiles([${pdf}],{x:0,y:0})`);
+      run(`__uploads[0].bad(new Error('offline'))`);
+      await tick();
+      s.eq('a failed PDF upload shrinks back to the empty card',size(run(`_editCards[0].id`)),'200x110');
+
+      s.section('a mixed drop does not overlap');
+      boot();
+      run(`_boardsAddFiles([${pdf},{name:'a.docx',type:'',size:1},${pdf},{name:'b.zip',type:'',size:1}],{x:0,y:0})`);
+      const cards=run(`JSON.stringify(_editCards.map(c=>({x:c.x,y:c.y,w:c.w,h:c.h})))`);
+      const cs=JSON.parse(cards);
+      let overlap=false;
+      for(let i=0;i<cs.length;i++)for(let j=i+1;j<cs.length;j++){
+        const a=cs[i],b=cs[j];
+        if(a.x<b.x+b.w&&b.x<a.x+a.w&&a.y<b.y+b.h&&b.y<a.y+a.h)overlap=true;
+      }
+      s.eq('four cards',cs.length,4);
+      s.ok('no two cards overlap',!overlap,cards);
+
+      s.section('out of the Unsorted tray');
+      boot();
+      const t=run(`JSON.stringify(_boardsCardFromTrayItem({id:'u',kind:'file',fileUrl:'${IMG}',fileName:'brief.pdf'},{x:1000,y:1000}))`);
+      const tc=JSON.parse(t);
+      s.eq('a PDF comes out A4-shaped',`${tc.w}x${tc.h}`,A4);
+      s.eq('and centred on the drop point',`${tc.x+tc.w/2},${tc.y+tc.h/2}`,'1000,1000');
+      const d=JSON.parse(run(`JSON.stringify(_boardsCardFromTrayItem({id:'v',kind:'file',fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/a.docx',fileName:'a.docx'},{x:0,y:0}))`));
+      s.eq('a Word file stays compact',`${d.w}x${d.h}`,'200x110');
+    })().then(()=>s);
+  }
 };
