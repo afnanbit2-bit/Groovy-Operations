@@ -712,15 +712,11 @@ subcollection, same reasoning as `notes_pages`.
   "drag anywhere on the block" feel: image and link cards aren't
   contenteditable at all, so a header-only handle is the one pattern that
   works identically across all three card types.
-- **Link cards are manual entry** — the user types the URL, title and an
-  optional description themselves (`.board-link-edit` inputs). This was a
-  deliberate simplification, not an oversight: an auto-fetched preview
-  (og:title/og:image) needs a server-side fetch of a user-submitted URL —
-  the browser can't read another origin's HTML (CORS) — which means a new
-  Netlify Function and real SSRF surface (block internal/private
-  addresses, timeout, size-cap the response) to design carefully. Ship
-  that as a deliberate follow-up if wanted; don't casually add a
-  "quick" auto-fetch later without that hardening.
+- **Link cards were manual entry** — you typed the URL, title and
+  description yourself. **That shipped as a preview in Sept 2026** with
+  exactly the hardening this note demanded; see "Link previews" below.
+  The manual form is still there for a card with no URL yet and behind
+  "Edit link details".
 - **Image cards use the same `uploadToCloudinary()` helper** (`js/shared.js`)
   Notes' image blocks use — real uploaded photos, not placeholders.
 - Gallery cards (`_boardGalleryCardHTML`) show a **live scaled-down
@@ -2404,6 +2400,91 @@ which is the cell value the test looks for. Diagnosed by printing the match
 and its context, not by re-running until it passed; the id is pinned now.
 **Any assertion that greps rendered markup for a short string has this
 shape** — scope it, or pin whatever carries a timestamp.
+
+### Mood Boards — link previews (Sept 2026)
+
+Afnan, with our board beside Milanote's: a URL pasted there lands as a
+picture with a title and a description; ours landed as three empty form
+fields. **This is the follow-up Phase 2 flagged and told us not to ship
+casually**, and the reason is the whole design: the browser CANNOT read
+another origin's HTML for `og:image`/`og:title` — that is precisely what
+CORS forbids — so the fetch happens on a server, and **a server that
+fetches a URL somebody typed is a Server-Side Request Forgery hole** until
+every one of these is closed. `netlify/functions/link-preview.js` closes
+them; read its header before touching it.
+
+- **The hostname is RESOLVED and every address checked before the fetch** —
+  loopback, `10/8`, `172.16/12`, `192.168/16`, CGNAT, multicast, v6
+  unique-local and link-local, `::ffff:` mapped v4, and **`169.254.169.254`,
+  the cloud metadata address, which is the one that actually matters**. Not
+  a blocklist of hostnames: a DNS record you control evades that in one
+  step.
+- **REDIRECTS ARE FOLLOWED BY HAND AND EVERY HOP RE-VALIDATED.** This is the
+  case a naive check misses entirely — a public URL that 302s to
+  `http://169.254.169.254/` walks straight past a single up-front check.
+  **Proven by reverting it**: the test then reports the private address was
+  requested.
+- http/https only, no credentials in the URL, no `localhost`/`*.local`; an
+  8s timeout, a 512 KB cap read off the stream, a content-type check, and a
+  verified Firebase ID token — any signed-in user of this app, so it is not
+  an open fetch proxy for the internet.
+- **The HTML is never returned.** Four length-capped strings: title,
+  description, image URL, site name.
+- **Residual risk, stated rather than hidden:** it resolves the name and
+  then fetches by name, so a DNS rebind between the two is not prevented.
+  Pinning to the resolved IP means a TLS servername override undici's
+  `fetch` does not expose, and the prize for winning that race is one page
+  read back through a response already stripped to four strings. **Do not
+  widen what comes back without revisiting that.**
+
+Client side (`js/boards.js`):
+
+- **The picture is RE-UPLOADED TO CLOUDINARY, never linked hot** — the same
+  call the stock-photo picker makes (M7), for the same three reasons: no
+  permanent dependency on a stranger's host, no tainted export canvas the
+  first time one sends no CORS header, and the sized derivatives every other
+  board image gets. A picture that fails to mirror costs the picture, not
+  the card.
+- **Nothing is on the critical path.** The card appears at once with the
+  bare URL; the preview arrives and re-renders. A site that refuses, times
+  out or carries no `og:` tags leaves exactly the card we had before.
+- **Title, description and site name are hydrated with `textContent`** — the
+  most obviously third-party strings in this file. Same boundary as card
+  text, comments and to-do items.
+- **`_boardsApplyLinkMeta` is PURE and separate from the fetch**, so the two
+  judgement calls are assertable without a network: a title somebody typed
+  is **never** clobbered (the paste path seeds the HOST, so only a title
+  still equal to that is ours to replace), and only a card still at its
+  birth size is resized (`_boardsLinkCardUnsized`, the image/PDF guard).
+- **`_fetching` / `_linkEdit` / `_linkNoPreview` / `_linkFetched` are all
+  `_`-prefixed**, so a save firing mid-fetch cannot persist "Loading
+  preview…" the way `_uploading` once persisted "Uploading…".
+- **A preview card drags from its BODY**, like an image or file card. That
+  narrows the header-only rule rather than overturning it: the rule is for
+  bodies holding a caret, and the edit form keeps its own.
+- **Typing does not fetch** — `Done` does, and only when the URL actually
+  changed. A fetch per keystroke against a half-typed address would be a
+  server request per character.
+- **The Unsorted tray gets the same treatment**, which is what Afnan's
+  Milanote screenshot actually shows: a collected link is its picture, not a
+  grey LINK box. Dragging it out carries the preview rather than fetching it
+  a second time.
+- PNG/PDF export draws it, through the same preloader
+  (`_boardsExportImageUrl`).
+
+**Found on the way, both invisible:** `.board-world[data-lod="far"]
+.board-link-desc` has **never existed** — the class is `.link-desc` — so
+that level-of-detail rule had no effect and no symptom, which is exactly why
+the far-zoom probe asserts the contract rather than trusting the rules. And
+`.link-title`/`.link-desc`/`.link-url` are card-internal (multiplied by the
+board zoom) but do **not** start with `.board-`, so the 13px card-text floor
+never saw them and `.link-url` was still at 11px. The invariant covers them
+now.
+
+`tests/link-preview.test.js` (57 assertions) holds the function; the layout
+fragment catches **a fixed image height pushing the title and URL out of the
+card**, which is the real risk — the first thing I claimed it caught (a
+crushed text block) is not a bug and did not fail it.
 
 ### Mood Boards — attachments: preview and download (Sept 2026)
 
