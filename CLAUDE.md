@@ -2255,6 +2255,41 @@ flaky count rather than dead code. Async blocks now `_pending.push(…)` and
 the final block resolves them all: 728 → **759**. **If the total ever drops
 after adding a test, look for a `return` in the middle of the module.**
 
+### Card text has its own floor, ABOVE Comfortable (Sept 2026)
+
+Afnan, pointing at a sub-board card's "8 cards" line: "too small cant read
+them they are not comfortable… everything should be comfortable to read in
+the board."
+
+**The Comfortable sweep was right and still left the board wrong, and the
+reason is one sentence: card internals are the only text in this app that
+gets multiplied by a ZOOM factor.** Everything inside `.board-world` carries
+the board's `scale()`, so an 11px label is 11px *only at exactly 100%*. Afnan
+works at **84%**, where 11px renders at **9.2px**. The app-wide floor of 11
+is correct for chrome — the rail, the top bar, the panels — because none of
+that scales.
+
+**Card-internal text therefore floors at 13px** (~11px at 84%, ~10px at
+75%), with the hierarchy lifted above it: body and to-do text 13.5→**15**,
+sub-board title 14→**15**, frame title 13→**14**, heading 16→**17**, the
+A/B/C coordinate band 11→**13**, and the table cell size attribute (set
+INLINE in `js/boards.js`, so no CSS scan sees it) small 12→**13**, large
+16→**18**.
+
+**Bigger text in a fixed-height card is the bug class this module keeps
+producing, and it produced it again.** `smoke-layout` caught a sub-board
+card wearing labels + reactions + a caption where the reactions row painted
+straight over the "Open →" button. The fix is the documented one — grow the
+CARD: `_BOARDS_CHROME_H` 26/22/26/24 → **28/25/28/27** and
+`_BOARDS_MIN_BODY_H` raised across the board. `_boardsTableMinH`'s per-row
+estimate moved with it (28→32, big 36→42, header 26→28, band 20→22), or the
+`+Row/+Col` strip lands outside the card for the third time.
+
+`tests/invariants.test.js` holds the floor: no `.board-*` card rule under
+13px, plus the inline cell size. **Verified both ways** — putting
+`.board-subboard-meta` back to 11px fails it by name, which is the exact
+line from the screenshot.
+
 ### Mood Boards — Home is a board (Sept 2026)
 
 Milanote has no "list of your boards" page: **home IS a board**, and your

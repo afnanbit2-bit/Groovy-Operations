@@ -2284,8 +2284,13 @@ const _BOARDS_REACTIONS=[
 //     migration and no write;
 //   - adding a label or a reaction also raises c.h, so the stored value
 //     catches up the moment anyone touches the card.
-const _BOARDS_CHROME_H={head:26,labels:22,reactions:26,caption:24};
-const _BOARDS_MIN_BODY_H={board:66,image:90,file:96,link:96,todo:74,heading:34,text:48};
+// Raised with the Sept 2026 card-text bump. These are the heights the
+// chrome rows ACTUALLY occupy, so they move whenever the text inside them
+// does — leave them behind and the body keeps its old share, which is how a
+// reactions row ends up painted over a sub-board card's "Open →" button
+// (caught by smoke-layout, not by reading the diff).
+const _BOARDS_CHROME_H={head:28,labels:25,reactions:28,caption:27};
+const _BOARDS_MIN_BODY_H={board:78,image:92,file:100,link:104,todo:80,heading:36,text:52};
 function _boardsMinCardH(c){
   if(!c||c.type==='frame')return 60;
   if(c.type==='column')return c.h||_BOARDS_COL_MIN_H;   // derived by _boardsLayoutColumn
@@ -4980,8 +4985,12 @@ function _boardsCellStyle(cell,card){
   if(!cell||typeof cell!=='object')return out.join(';');
   if(cell.b)out.push('font-weight:700');
   if(cell.i)out.push('font-style:italic');
-  if(cell.sz==='s')out.push('font-size:12px');
-  else if(cell.sz==='l')out.push('font-size:16px');
+  // Card-internal, so these are multiplied by the board zoom like every
+  // other card size — "small" at 12px was 10px at the 84% Afnan works at.
+  // 13 is the floor the rest of a card now holds to; the default cell is
+  // .board-card-body at 15.
+  if(cell.sz==='s')out.push('font-size:13px');
+  else if(cell.sz==='l')out.push('font-size:18px');
   return out.join(';');
 }
 function _boardsCellClass(cell,card){
@@ -5504,14 +5513,18 @@ function _boardsTableMinH(c){
   // size makes its whole row taller, and a flat 28 left the +Row/+Col
   // strip hanging outside the card. Found by smoke-layout the same day the
   // size attribute shipped — no logic suite could see it.
+  // Every number here moved with the Sept 2026 card-text bump: a normal
+  // cell is .board-card-body at 15px, a large one 18px, and the A/B/C band
+  // is 13px. An estimate left behind puts the +Row/+Col strip back outside
+  // the card, which is what it did the last two times.
   let body=0;
-  if(!rows.length)body=28;
+  if(!rows.length)body=32;
   else rows.forEach(row=>{
     const big=Array.isArray(row)&&row.some(cell=>_boardsCellAttr(cell,'sz')==='l');
-    body+=big?36:28;
+    body+=big?42:32;
   });
   // card header + the A/B/C band + rows + the +Row/+Col strip
-  return 26+20+body+26;
+  return 28+22+body+28;
 }
 /* Row and column operations, positional.
 

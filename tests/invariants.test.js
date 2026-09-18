@@ -153,6 +153,36 @@ module.exports=function(){
     s.eq('none below the 11px floor Afnan approved',under.join(',')||'none','none');
   }
 
+  // ── Card text has its own, higher floor ────────────────────────────────
+  // The app-wide Comfortable floor is 11px, and that is right for CHROME.
+  // Card internals are the one place it is not: everything inside
+  // .board-world is multiplied by the board ZOOM, so an 11px label is 11px
+  // only at exactly 100%. Afnan reads boards at 84%, where it renders at
+  // 9.2px — reported as "the text starting this board has 8 cards are too
+  // small cant read them". Card-internal text therefore floors at 13px,
+  // which is ~11px at 84% and still ~10px at 75%.
+  //
+  // A future mechanical sweep will see these as ordinary sizes and may
+  // treat 11 as acceptable again; this is what notices.
+  s.section('card-internal text holds a 13px floor');
+  {
+    const CARD_SEL=/^\.board-(card|subboard|label|caption|todo|text|link|frame|heading|coord)[a-z-]*/;
+    const offenders=[];
+    css.split('}').forEach(block=>{
+      const sel=(block.split('{')[0]||'').trim().split(',')[0].trim();
+      if(!CARD_SEL.test(sel))return;
+      const m=/font-size:([0-9.]+)px/.exec(block);
+      if(m&&parseFloat(m[1])<13)offenders.push(sel+' '+m[1]+'px');
+    });
+    s.eq('no card rule under 13px',offenders.join(', ')||'none','none');
+    // The table cell size attribute is set inline in js/boards.js, so the
+    // CSS scan above cannot see it.
+    const cellSizes=(/if\(cell\.sz==='s'\)out\.push\('font-size:([0-9.]+)px'\)/
+      .exec(read('js/boards.js'))||[])[1];
+    s.ok('the small table cell is at the floor too',
+      cellSizes&&parseFloat(cellSizes)>=13,cellSizes+'px');
+  }
+
   // ── The staged rollout gate (CLAUDE.md) ────────────────────────────────
   // SIX routes reach the Creative Hub module: four nav pushes in
   // js/shared.js, the "Me" page button in js/hrm.js, and the deep-link
