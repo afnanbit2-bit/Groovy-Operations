@@ -156,10 +156,20 @@ function _boardsCanEdit(b){
 const _BOARDS_FILE_W=200,_BOARDS_FILE_H=110;
 // The size an image card is born at, before its picture has landed.
 const _BOARDS_IMG_W=170,_BOARDS_IMG_H=120;
+// The size a BOARD card is born at, wherever it is minted — the rail, the
+// sub-board action, Home's auto-place, the Boards panel. It used to be two
+// different numbers (200x104 from _boardsNewCard, 260x172 on Home), so the
+// same card was a different shape depending on how you made it. Afnan drew
+// the shape he wanted on a screenshot: a wide rectangle. MEASURED rather
+// than guessed at (headless Chromium, the real markup and the real
+// stylesheet): the tallest a spine card's content ever gets at this width
+// is 133px - a two-line name, the meta line and a thumbnail strip - so 136
+// fits the worst case with nothing clipped. See _BOARDS_MIN_BODY_H.board.
+const _BOARDS_BOARD_W=340,_BOARDS_BOARD_H=136;
 function _boardsNewCard(type){
   const id='c'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
-  const w=type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?220:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?200:type==='image'?_BOARDS_IMG_W:type==='link'?_BOARDS_LINK_W:170;
-  const h=type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?_BOARDS_IMG_H:type==='link'?_BOARDS_LINK_H:type==='file'?_BOARDS_FILE_H:type==='todo'?170:type==='board'?104:100;
+  const w=type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?220:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?_BOARDS_BOARD_W:type==='image'?_BOARDS_IMG_W:type==='link'?_BOARDS_LINK_W:170;
+  const h=type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?_BOARDS_IMG_H:type==='link'?_BOARDS_LINK_H:type==='file'?_BOARDS_FILE_H:type==='todo'?170:type==='board'?_BOARDS_BOARD_H:100;
   const base={id,type,x:80,y:80,w,h};
   if(type==='image')base.imageUrl='';
   if(type==='text')base.text='';
@@ -445,8 +455,12 @@ async function _boardsHomeId(){
    could not do is say what is INSIDE. D is the most a card can say at
    once: the board's colour (or its picture) as a spine down the left, the
    WHOLE name on two lines, the state and the counts, and a strip of the
-   board's own thumbnails. 260x172. */
-const _BOARDS_HOME_COLS=4,_BOARDS_HOME_W=260,_BOARDS_HOME_H=172;
+   board's own thumbnails.
+
+   The SIZE moved again in Sept 2026, at Afnan's request and with the shape
+   drawn on a screenshot: a board card is born a wide rectangle now, and
+   it is the same rectangle wherever it is minted - see _BOARDS_BOARD_W. */
+const _BOARDS_HOME_COLS=4,_BOARDS_HOME_W=_BOARDS_BOARD_W,_BOARDS_HOME_H=_BOARDS_BOARD_H;
 // Afnan's own line, kept. It is chrome, so no emoji (the module's rule)
 // and it is a literal rather than a card's data, so it is safe in the
 // template; every string that comes off a BOARD still goes through
@@ -2495,7 +2509,15 @@ const _BOARDS_REACTIONS=[
 // reactions row ends up painted over a sub-board card's "Open →" button
 // (caught by smoke-layout, not by reading the diff).
 const _BOARDS_CHROME_H={head:28,labels:25,reactions:28,caption:27};
-const _BOARDS_MIN_BODY_H={board:124,image:92,file:100,link:104,todo:80,heading:36,text:52};
+// board:108 is MEASURED, not chosen. The spine card's tallest honest
+// content at the width a board card is born at (_BOARDS_BOARD_W) is a
+// two-line name + the meta line + a thumbnail strip = 107px of body; 108
+// clears it. It came down from 124 when the card became a wide rectangle,
+// and it only stayed honest because the meta line is now a single
+// ellipsized line (css/main.css, .board-subboard-meta) - while it wrapped,
+// this number had to cover the NARROWEST card anyone might drag to, which
+// is a different thing from the shortest a card should be allowed to be.
+const _BOARDS_MIN_BODY_H={board:108,image:92,file:100,link:104,todo:80,heading:36,text:52};
 function _boardsMinCardH(c){
   if(!c||c.type==='frame')return 60;
   if(c.type==='column')return c.h||_BOARDS_COL_MIN_H;   // derived by _boardsLayoutColumn

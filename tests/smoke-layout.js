@@ -280,18 +280,25 @@ const FRAGMENTS={
         {id:'B4',title:'Old card, never resized',ownerUid:'u1',visibility:'personal',color:'#14532D',cards:[{id:'d'}]}
       ];
       _editCards=[
-        // Two rows, so every card is inside a 1280px viewport — a card laid
-        // out past the right edge is clipped, and the hit-test then reports
-        // its controls as covered by whatever the probe finds at that point.
-        {id:'k1',type:'board',boardId:'B1',x:10,y:10,w:260,h:172},
-        {id:'k2',type:'board',boardId:'B2',x:300,y:10,w:260,h:172},
-        {id:'k3',type:'board',boardId:'B3',x:590,y:10,w:260,h:172},
-        // The size every board card was written at before the redesign —
-        // not migrated, so the render has to grow it rather than clip it.
-        {id:'k4',type:'board',boardId:'B4',x:880,y:10,w:200,h:124},
+        // ONE COLUMN, and that is not cosmetic. A card laid out past the
+        // right edge is CLIPPED, and the hit-test then reports its own
+        // controls as covered by whatever the probe finds at that point —
+        // a false failure of the fragment, not of the layout. The narrowest
+        // width checked is 420px, i.e. 388px of content, so every card has
+        // to fit inside that. It cost two rows when a board card was 260
+        // wide; at 340 it costs a column.
+        // The birth size: a wide rectangle, 340x136.
+        {id:'k1',type:'board',boardId:'B1',x:10,y:10,w:340,h:136},
+        {id:'k2',type:'board',boardId:'B2',x:10,y:200,w:340,h:136},
+        {id:'k3',type:'board',boardId:'B3',x:10,y:390,w:340,h:136},
+        // The sizes board cards were written at before the redesign and
+        // before the rectangle — not migrated, so the render has to grow
+        // them rather than clip them.
+        {id:'k4',type:'board',boardId:'B4',x:10,y:580,w:200,h:124},
+        {id:'k7',type:'board',boardId:'B2',x:10,y:770,w:260,h:172},
         // A board this viewer cannot read, and an orphan with no boardId.
-        {id:'k5',type:'board',boardId:'GONE',x:10,y:200,w:260,h:172},
-        {id:'k6',type:'board',boardId:'',x:300,y:200,w:260,h:172}
+        {id:'k5',type:'board',boardId:'GONE',x:10,y:990,w:340,h:136},
+        {id:'k6',type:'board',boardId:'',x:10,y:1180,w:340,h:136}
       ];`);
     const cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`)
       // A solid WHITE stand-in for every picture: the probe has no network,
@@ -303,9 +310,9 @@ const FRAGMENTS={
     // most legible thing on the card (white on a dark wash over an unknown
     // photograph) would never be measured at all.
     return Promise.resolve(
-      '<div style="position:relative;overflow:hidden;height:390px;width:100%">'+
+      '<div style="position:relative;overflow:hidden;height:1350px;width:100%">'+
         '<div class="board-world" data-lod="near">'+cards+'</div></div>'+
-      '<div style="position:relative;overflow:hidden;height:390px;width:100%;margin-top:12px">'+
+      '<div style="position:relative;overflow:hidden;height:1350px;width:100%;margin-top:12px">'+
         '<div class="board-world" data-lod="near" id="hovered">'+cards+'</div></div>'+
       '<style>#hovered .board-subboard-cta{opacity:1}</style>');
   },

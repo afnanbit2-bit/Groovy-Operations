@@ -1084,10 +1084,13 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 
    IT SITS BESIDE THE ICON, NOT THE MIDDLE OF THE BUTTON, and that was
    MEASURED in headless Chromium rather than eyeballed. Inside a 58px
-   button the cue occupies x 44-54, y 14-16; every label sits at y 27-39,
-   so nothing overlaps — including Comment, whose label spans x 3-55 and
-   WOULD have been crossed by a bar on the middle row. The icon is ~x 20-37,
-   so the cue clears that too, and x1=54 keeps it inside the button.
+   button the cue occupies x 39-54, y 13.5-16.5; every label sits at
+   y 27-39, so nothing overlaps — including Comment, whose label spans
+   x 3-55 and WOULD have been crossed by a bar on the middle row. The icon
+   is x 21-38, so the cue clears it by 1px where it comes to rest; where it
+   STARTS (translated -9px, x 30-45) it is behind the icon's right edge and
+   invisible, and sliding out from under it is the movement being
+   advertised. right:4px keeps it inside the button.
 
    `.cue-on` is the seam that measurement used: the layout probe cannot
    hover, and it measures ELEMENTS, not pseudo-elements, so it cannot hold
@@ -1095,16 +1098,36 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
    standing check. What IS checked (tests/invariants.test.js) is the
    SCOPE: the rule may never widen to every .rail-btn.
 
-   pointer-events:none — it must never eat the press it is advertising. */
+   pointer-events:none — it must never eat the press it is advertising.
+
+   Sept 2026, reported as "not working". Two things were wrong and only the
+   second is a bug. The first: the cue is scoped to draggable tools, so
+   Image, File and Line — three of the eight in the rail, and Image is the
+   one people reach for most — correctly show nothing. The second:
+   @media (hover:none) SWITCHED IT OFF ENTIRELY on a touchscreen laptop.
+   Chrome answers that query on the PRIMARY pointer, so a machine with a
+   touch screen matches it while still having a mouse, and the rule was
+   never reached. Not a hypothesis: the measuring run reports
+   hover:none=true / hover:hover=false in headless Chromium on this very
+   build, so the cue was display:none there too — which is also why no
+   probe had ever seen it. The thing it was really guarding is the phone, where
+   the rail is a horizontal dock and "to the right" means nothing — so it
+   is the module's own phone breakpoint now, the one _boardsIsPhone keys
+   off, which is what was meant in the first place.
+
+   It was also drawn to be missed: 10x2px of --muted at .85, moving 7px,
+   under a :hover that repaints the whole button background at the same
+   moment. Bigger and in the button's own ink now — re-measured below. */
 .rail-btn.rail-draggable::after{content:"";position:absolute;right:4px;top:15px;
-  width:10px;height:2px;border-radius:1px;background:var(--muted);
-  opacity:0;transform:translate(-7px,-50%);pointer-events:none;
+  width:15px;height:3px;border-radius:2px;background:currentColor;
+  opacity:0;transform:translate(-9px,-50%);pointer-events:none;
   transition:transform .22s cubic-bezier(.22,.7,.3,1),opacity .16s ease-out}
 .rail-btn.rail-draggable:hover::after,
-.rail-btn.rail-draggable.cue-on::after{opacity:.85;transform:translate(0,-50%)}
-/* A touch screen has no hover, and the phone rail is a horizontal dock
-   where "to the right" means nothing. */
-@media (hover:none){.rail-btn.rail-draggable::after{display:none}}
+.rail-btn.rail-draggable.cue-on::after{opacity:.95;transform:translate(0,-50%)}
+/* The phone rail is a horizontal dock, where "to the right" means nothing —
+   and there is no hover there to trigger it anyway. Deliberately the
+   breakpoint and NOT (hover:none): see above. */
+@media (max-width:560px){.rail-btn.rail-draggable::after{display:none}}
 @media (prefers-reduced-motion:reduce){
   .rail-btn.rail-draggable::after{transition:none}
 }
@@ -1422,7 +1445,14 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-subboard-title{font-size:17px;font-weight:800;line-height:1.18;letter-spacing:-.01em;
   color:var(--text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
   overflow:hidden;word-break:break-word}
-.board-subboard-meta{font-size:13px;font-weight:600;color:var(--muted)}
+.board-subboard-meta{font-size:13px;font-weight:600;color:var(--muted);
+  /* One line, ellipsized, never wrapped. While it wrapped, a board card's
+     natural height depended on how WIDE it was (measured: 107px of body at
+     260px, 122 at 200, 137 at 160), so _BOARDS_MIN_BODY_H.board had to
+     cover the narrowest card anyone might drag to rather than the shortest
+     a card should be. Ellipsizing makes the height width-independent,
+     which is what let the card become a wide rectangle. */
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .board-subboard-open{position:absolute;right:8px;bottom:9px;z-index:3;
   background:rgba(255,255,255,.93);color:#111114;border:none;border-radius:7px;
   padding:4px 10px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer}

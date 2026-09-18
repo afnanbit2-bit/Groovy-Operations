@@ -523,12 +523,32 @@ module.exports=function(){
       s.ok('nor is an orphan',!/openable/.test(orphan)&&!/board-subboard-cta/.test(orphan));
       s.ok('but the orphan keeps its repair button',/>Create</.test(orphan));
 
-      s.eq('a new board card is 260x172',
-        r5(`_BOARDS_HOME_W+'x'+_BOARDS_HOME_H`),'260x172');
-      // Cards written at the old 200x124 are not rewritten on open — the
+      // A board card is born a WIDE RECTANGLE, at Afnan's request and to
+      // the shape he drew on a screenshot.
+      s.eq('a new board card is 340x136',
+        r5(`_BOARDS_HOME_W+'x'+_BOARDS_HOME_H`),'340x136');
+      // ONE definition of that size. It used to be two — 200x104 from
+      // _boardsNewCard and 260x172 on Home — so the same card came out a
+      // different shape depending on which way you made it.
+      s.eq('and the same size wherever it is minted',
+        r5(`(function(){var c=_boardsNewCard('board');return c.w+'x'+c.h;})()`),'340x136');
+      // The birth height has to clear the render's own minimum, or every
+      // new card is silently grown and the shape asked for never appears.
+      s.ok('the birth height is not grown by the render',
+        r5(`_boardsMinCardH({type:'board',w:_BOARDS_HOME_W,h:_BOARDS_HOME_H})`)<=136,
+        r5(`String(_boardsMinCardH({type:'board',w:_BOARDS_HOME_W,h:_BOARDS_HOME_H}))`));
+      // ...and still clear the content. MEASURED in headless Chromium with
+      // the real stylesheet: the tallest a spine card's body ever gets is
+      // 107px (a two-line name + the meta line + a thumbnail strip), and
+      // the header strip is 28. Drop below this and the thumbnails are
+      // clipped off the bottom of every board that has a long name.
+      s.ok('and still clears the measured content',
+        r5(`_boardsMinCardH({type:'board',w:_BOARDS_HOME_W,h:0})`)>=135,
+        r5(`String(_boardsMinCardH({type:'board',w:_BOARDS_HOME_W,h:0}))`));
+      // Cards written at the old sizes are not rewritten on open — the
       // render grows them to the minimum instead, so nothing migrates.
       s.ok('an old card is drawn tall enough for the name',
-        r5(`_boardsMinCardH({type:'board',w:200,h:124})`)>=150,
+        r5(`_boardsMinCardH({type:'board',w:200,h:124})`)>=135,
         r5(`String(_boardsMinCardH({type:'board',w:200,h:124}))`));
     }
 
