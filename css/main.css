@@ -550,6 +550,7 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .tool-btn{background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;font-weight:600;font-family:inherit}
 .tool-btn:hover{border-color:var(--muted)}
 .zoom-readout{font-size:12px;color:var(--muted);min-width:34px;text-align:center;display:inline-block}
+.board-below{position:relative;flex:1;min-height:0;display:flex;flex-direction:column}
 .board-stage{position:relative;flex:1;overflow:hidden;cursor:crosshair;background-image:radial-gradient(#00000014 1px,transparent 1px);background-size:22px 22px;touch-action:none;overscroll-behavior:contain;-webkit-user-select:none}
 .board-stage.panning{cursor:grabbing}
 .board-world{position:absolute;left:0;top:0;transform-origin:0 0}
@@ -596,9 +597,10 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .board-world[data-lod="far"] .board-cmt-badge,
 .board-world[data-lod="far"] .board-labels,
 .board-world[data-lod="far"] .board-reactions,
-.board-world[data-lod="far"] .board-caption{display:none!important}
+.board-world[data-lod="far"] .board-caption,
+.board-world[data-lod="far"] .board-subboard-open{display:none!important}
 /* The strip survives as a grab target; only its look goes. */
-.board-world[data-lod="far"] .board-card-head{padding:0;min-height:10px;height:10px;background:transparent;border-bottom:none}
+.board-world[data-lod="far"] .board-card-head{padding:0!important;min-height:10px;height:10px;background:transparent!important;border-bottom:none!important}
 .board-world[data-lod="far"] .board-card-el{box-shadow:none;border-radius:4px}
 /* Text at this zoom is under 5px. Hidden beats painted-but-unreadable —
    the picture cards are what carry a board at 22%, which is exactly what
@@ -1262,7 +1264,13 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .rail-btn.rail-done{color:var(--accent-urgent)}
 /* Zoom readout over the canvas — the topbar number is unreadable mid-pinch
    with a hand over the board, so the percentage surfaces here and fades. */
-.board-zoom-pill{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:27;background:rgba(0,0,0,.74);color:var(--on-dark);font-size:14px;font-weight:700;letter-spacing:.02em;padding:7px 14px;border-radius:8px;opacity:0;pointer-events:none;transition:opacity .18s}
+/* The background is a LITERAL rgba(0,0,0,.74), so the ink has to be a
+   literal white too. It was var(--on-dark), which INVERTS — in dark mode
+   that is near-black on near-black, measured at 1.11:1. CLAUDE.md states
+   the rule exactly: a literal white is only correct where the background is
+   also literal, and anything painted on --dark takes its ink from
+   --on-dark. This pill is the first case, not the second. */
+.board-zoom-pill{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:27;background:rgba(0,0,0,.74);color:#fff;font-size:14px;font-weight:700;letter-spacing:.02em;padding:7px 14px;border-radius:8px;opacity:0;pointer-events:none;transition:opacity .18s}
 .board-zoom-pill.show{opacity:1}
 /* Text formatting bar — shown while a note body has focus. */
 .board-fmt{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:60;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 10px 28px rgba(0,0,0,.16);padding:6px;max-width:calc(100% - 24px)}

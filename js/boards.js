@@ -1910,6 +1910,19 @@ function _renderBoardCanvasHTML(){
         </div>
       </div>
     </div>
+    <!-- Everything below the top bar. The Unsorted tray, the comments
+         drawer, the card trash and the share modal are all
+         position:absolute with top:0, and their containing block used to be
+         .board-canvas-wrap — which starts at the VIEWPORT top, so each of
+         them painted straight over the top bar. Reported from a screenshot
+         where the word "Comments" was cut off mid-word by the open tray.
+         Anchoring them to this element instead makes top:0 mean "under the
+         bar" with no magic number, and survives the bar wrapping onto two
+         rows at a narrow width. They stay SIBLINGS of the stage rather than
+         moving inside it: the stage carries touch-action:none and the
+         pan/marquee pointer handlers, and a panel inheriting either would
+         be a different bug. -->
+    <div class="board-below">
     <div class="board-stage" id="board-stage">
       <div class="board-world" id="board-world">
         <svg class="board-conn-layer" id="board-conn-layer" width="4000" height="3000"></svg>
@@ -1951,6 +1964,7 @@ function _renderBoardCanvasHTML(){
     <div class="board-share-modal" id="board-share-modal" style="display:none"></div>
     <input type="file" id="board-file-picker" multiple style="display:none" onchange="window.boardsFilesPicked(this)">
     ${_boardsTrayHTML(canEdit)}
+    </div>
   </div>`;
 }
 function _boardCardHTML(c,canEdit){

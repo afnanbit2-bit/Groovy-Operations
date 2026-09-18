@@ -258,8 +258,11 @@ const FRAGMENTS={
         {id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',
          name:'Hoodie',caption:'Front',x:250,y:10,w:220,h:200},
         {id:'l',type:'link',linkUrl:'https://example.test',linkTitle:'example.test',
-         linkDesc:'A reference',x:490,y:10,w:220,h:150}
-      ];`);
+         linkDesc:'A reference',x:490,y:10,w:220,h:150},
+        {id:'sb',type:'board',boardId:'CH',boardTitle:'WINTER 2K27',name:'WINTER 2K27',
+         color:'green',x:730,y:10,w:200,h:130}
+      ];
+      moodBoards=[{id:'CH',title:'Untitled board',cards:[{id:'z'}],visibility:'personal',ownerUid:'u1'}];`)
     const cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`);
     // Two worlds side by side, each stamped the way _boardsApplyTransform
     // stamps the real one. No transform: the probe measures layout, and a
@@ -269,6 +272,25 @@ const FRAGMENTS={
         '<div class="board-world" data-lod="near">'+cards+'</div></div>'+
       '<div style="position:relative;overflow:hidden;height:300px;width:100%;margin-top:12px">'+
         '<div class="board-world" data-lod="far">'+cards+'</div></div>');
+  },
+  // The top bar with the Unsorted tray OPEN. Reported from a screenshot in
+  // which the word "Comments" was cut off mid-word: the tray, the comments
+  // drawer and the card trash are all position:absolute with top:0, and
+  // their containing block was .board-canvas-wrap, which starts at the
+  // VIEWPORT top — so each of them painted over the bar. The hit-test is
+  // what holds this: a control the browser cannot reach because a panel is
+  // sitting on it is exactly what that check was written for.
+  'boards — the top bar with the tray open':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'Winter Drop 2027',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();_editUnsorted=[];moodBoards=[];
+      _boardsMenuOpen=false;_boardsViewOpen=false;_boardsTrayOpen=true;`);
+    const full=app.run(`_renderBoardCanvasHTML()`);
+    // The real wrap, so the tray resolves against the real containing block.
+    return Promise.resolve(
+      '<div style="position:relative;height:620px;width:100%;overflow:hidden">'+
+      full.replace('class="board-canvas-wrap"','class="board-canvas-wrap" style="position:absolute;height:100%"')+
+      '</div>');
   },
   'boards — the board top bar':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
@@ -814,6 +836,13 @@ document.querySelectorAll('.board-world[data-lod="far"]').forEach(world=>{
   world.querySelectorAll('.board-card-head').forEach(el=>{
     const h=el.getBoundingClientRect().height;
     if(h>12)bad.push({why:'the card header is still a full strip at far zoom',h:Math.round(h)});
+    // A TINTED card kept its coloured banding, because .tint-* .board-card-head
+    // sits later in the file at the same specificity and was winning.
+    const bg=getComputedStyle(el).backgroundColor;
+    if(bg&&bg!=='rgba(0, 0, 0, 0)'&&bg!=='transparent'){
+      bad.push({why:'a card header still paints a background at far zoom',bg:bg,
+        cls:(el.parentElement&&el.parentElement.className||'').toString().slice(0,40)});
+    }
   });
 });
 // The tool rail must never need VERTICAL scrolling. It is navigation
