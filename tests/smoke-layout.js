@@ -288,6 +288,35 @@ const FRAGMENTS={
       '<div style="position:relative;overflow:hidden;height:230px;width:100%">'+
         '<div class="board-world" data-lod="near">'+cards+'</div></div>');
   },
+  /* The "Preparing to download…" cover. It carries text on a literal dark
+     wash, so the contrast check applies; and because it is
+     pointer-events:none, every control under it must still be reachable —
+     which is the hit-test's whole job, and the reason the cover explains
+     rather than blocks. */
+  'boards — preparing to download':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+      _editConnectors=[];_boardsSelection=new Set();moodBoards=[];
+      _editCards=[
+        {id:'f1',type:'file',fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/brief.pdf',
+         fileName:'brief.pdf',name:'ARTICLE #1',x:10,y:10,w:240,h:220},
+        {id:'i1',type:'image',name:'BACK VIEW',
+         imageUrl:'https://res.cloudinary.com/x/image/upload/v1/back.jpg',x:280,y:10,w:240,h:220}
+      ];`);
+    const cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`);
+    // The cover is built by _boardsBusyStart with createElement, which the
+    // node harness stubs out — so it is built here the way the browser
+    // really builds it, on the card that is downloading.
+    return Promise.resolve(
+      '<div style="position:relative;overflow:hidden;height:270px;width:100%">'+
+        '<div class="board-world" data-lod="near">'+cards+'</div></div>'+
+      '<script>' +
+      '(function(){var el=document.getElementById("board-card-f1");if(!el)return;' +
+      'var o=document.createElement("div");o.className="board-card-busy";' +
+      'var t=document.createElement("div");t.className="board-card-busy-text";' +
+      't.textContent="Preparing to download… 42%";o.appendChild(t);el.appendChild(o);})();' +
+      '<\/script>');
+  },
   'boards — cards at far zoom (level of detail)':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};

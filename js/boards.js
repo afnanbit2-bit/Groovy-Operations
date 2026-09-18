@@ -9714,11 +9714,27 @@ function _boardsSaveNameFor(c){
   if(!base)base='file';
   return ext?base+'.'+ext:base;
 }
-async function _boardsFetchAsset(url){
+async function _boardsFetchAsset(url,onProgress){
   try{
     const res=await fetch(url,{mode:'cors',credentials:'omit'});
     if(!res.ok)return{ok:false,status:res.status};
-    return{ok:true,blob:await res.blob()};
+    /* Read through the STREAM when somebody is listening, so the wait can
+       be reported instead of just endured. A response with no readable
+       body, or no Content-Length to measure against, falls straight back to
+       blob(): a progress number that cannot move is worse than none, and
+       the caller's indeterminate shimmer already says "working". */
+    const total=Number(res.headers.get('content-length')||0);
+    if(!onProgress||!res.body||!res.body.getReader||!total)return{ok:true,blob:await res.blob()};
+    const reader=res.body.getReader();
+    const parts=[];let got=0;
+    for(;;){
+      const step=await reader.read();
+      if(step.done)break;
+      parts.push(step.value);
+      got+=step.value.length;
+      onProgress(Math.min(1,got/total));
+    }
+    return{ok:true,blob:new Blob(parts,{type:res.headers.get('content-type')||''})};
   }catch(e){return{ok:false,err:(e&&(e.message||e))||'network error'};}
 }
 // What a failure most likely means, said plainly. A 401 or 403 on a PDF
@@ -9821,26 +9837,86 @@ async function _boardsOpenPreview(c){
     body.appendChild(msg);
   }
 }
-// An <a download> pointing at a cross-origin URL is IGNORED by Chrome (it
-// navigates instead), which is why the old fl_attachment window.open could
-// only ever open a tab. A blob: URL is same-origin, so the attribute is
-// honoured and the real Save-as dialog appears with the name we chose.
+/* ── "Preparing to download…" (Sept 2026) ─────────────────────────────
+   Afnan: the Save-as dialog took a while, so he pressed Download again and
+   got the file twice.
+
+   WHY IT WAITS, and it is structural rather than a bug: an <a download>
+   pointing at a CROSS-ORIGIN url is ignored by Chrome — it navigates
+   instead — so the only way to hand the browser a filename WE choose is to
+   fetch the bytes ourselves and make a same-origin blob: url out of them.
+   The dialog therefore cannot appear until the whole file has arrived, and
+   the card shows a sized derivative while the download takes the ORIGINAL,
+   so nothing is warm in the cache either. Holding the bytes is what buys
+   the name; the wait is the price of it.
+
+   So the wait is made VISIBLE and the second press is refused. One
+   download per card at a time — the id is the key, so the same file
+   reached from the card button, the rail and the right-click menu is still
+   one download. */
+const _boardsDownloading=new Set();
+/* The overlay and its text node are held by card id rather than looked up
+   again on every progress tick — a querySelector per chunk of a 12 MB photo
+   is a lot of DOM work for one number. Known limit: a STRUCTURAL render
+   (someone adds a card) rebuilds the canvas and the held node goes with it,
+   so the overlay disappears while the download carries on. The download
+   still completes and the guard still holds; only the cover is lost. */
+const _boardsBusy=new Map();
+function _boardsBusyStart(id,label){
+  if(!id)return;
+  const el=document.getElementById('board-card-'+id);
+  if(!el)return;
+  const o=document.createElement('div');
+  o.className='board-card-busy';
+  const t=document.createElement('div');
+  t.className='board-card-busy-text';
+  // textContent, never interpolated — same boundary as every other string
+  // this file puts on a card.
+  t.textContent=label;
+  o.appendChild(t);
+  el.appendChild(o);
+  _boardsBusy.set(id,{o,t});
+}
+function _boardsBusyProgress(id,frac,label){
+  const b=_boardsBusy.get(id);
+  if(b)b.t.textContent=label+' '+Math.round(frac*100)+'%';
+}
+function _boardsBusyStop(id){
+  const b=_boardsBusy.get(id);
+  if(!b)return;
+  _boardsBusy.delete(id);
+  try{b.o.remove();}catch(e){}
+}
 async function _boardsDownloadAsset(c){
-  const name=_boardsSaveNameFor(c);
-  const r=await _boardsFetchAsset(c.fileUrl);
-  if(!r.ok){
-    showToast(_boardsAssetErrorText(r,_boardsAssetExt(c)==='pdf'),true);
-    // Last resort: ask the host for an attachment and let the browser try.
-    window.open(_boardsDownloadUrl(c.fileUrl),'_blank','noopener');
+  const id=(c&&c.id)||'';
+  if(id&&_boardsDownloading.has(id)){
+    showToast('Already preparing that download — it will start on its own');
     return false;
   }
-  const href=URL.createObjectURL(r.blob);
-  const a=document.createElement('a');
-  a.href=href;a.download=name;a.style.display='none';
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(()=>{try{URL.revokeObjectURL(href);}catch(e){}a.remove();},10000);
-  return true;
+  const label='Preparing to download…';
+  if(id){_boardsDownloading.add(id);_boardsBusyStart(id,label);}
+  try{
+    const name=_boardsSaveNameFor(c);
+    const r=await _boardsFetchAsset(c.fileUrl,id?(f=>_boardsBusyProgress(id,f,label)):null);
+    if(!r.ok){
+      showToast(_boardsAssetErrorText(r,_boardsAssetExt(c)==='pdf'),true);
+      // Last resort: ask the host for an attachment and let the browser try.
+      window.open(_boardsDownloadUrl(c.fileUrl),'_blank','noopener');
+      return false;
+    }
+    const href=URL.createObjectURL(r.blob);
+    const a=document.createElement('a');
+    a.href=href;a.download=name;a.style.display='none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{try{URL.revokeObjectURL(href);}catch(e){}a.remove();},10000);
+    return true;
+  }finally{
+    // Always, on every path — a card left wearing the overlay would be
+    // unusable with nothing on screen to say why.
+    if(id)_boardsDownloading.delete(id);
+    _boardsBusyStop(id);
+  }
 }
 // Card-addressed versions of the right-click menu's Open/Download, for the
 // buttons on the file card itself. They take an id rather than reading the

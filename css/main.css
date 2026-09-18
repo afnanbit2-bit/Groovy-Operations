@@ -1306,6 +1306,38 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-card-el.type-board .board-card-name{color:rgba(255,255,255,.88)}
 .board-card-el.type-board .board-card-name:empty::before{color:rgba(255,255,255,.62)}
 .board-subboard-body{position:relative;display:block;padding:0;overflow:hidden}
+/* ── "Preparing to download…" ─────────────────────────────────────────
+   A translucent cover over the card whose download is in flight. It is the
+   answer to a real report: the Save-as dialog waits for the whole file (see
+   _boardsDownloadAsset for why that is structural), so a card that looked
+   idle got clicked twice and the file arrived twice.
+
+   Built with createElement when a download starts rather than shipped
+   hidden in every card — a card carries enough markup already. Its ink is a
+   LITERAL white on a LITERAL dark wash, so the pair moves together in both
+   themes; the rule this file holds is that a literal white is only wrong
+   where the background follows the theme. */
+/* IT SWALLOWS NOTHING (pointer-events:none). The guard in
+   _boardsDownloadAsset is what refuses the second press, and it refuses it
+   OUT LOUD — a cover that ate the click would make the second press do
+   nothing at all, which is the silence that caused the report in the first
+   place. It also leaves the card selectable and draggable while its file
+   is on the way, and keeps every control under it reachable, which the
+   layout probe hit-tests. */
+.board-card-busy{position:absolute;inset:0;z-index:6;display:flex;align-items:center;
+  justify-content:center;padding:10px;text-align:center;pointer-events:none;
+  background:rgba(12,12,14,.72);-webkit-backdrop-filter:blur(1.5px);backdrop-filter:blur(1.5px)}
+/* The sweep is what says "working" while there is no percentage to show —
+   a Content-Length is not guaranteed, and an unmoving number reads as a
+   hang. */
+.board-card-busy::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(105deg,rgba(255,255,255,0) 38%,rgba(255,255,255,.16) 50%,rgba(255,255,255,0) 62%);
+  background-size:260% 100%;animation:board-busy-sweep 1.15s linear infinite}
+@keyframes board-busy-sweep{from{background-position:130% 0}to{background-position:-130% 0}}
+.board-card-busy-text{position:relative;z-index:1;font-size:13px;font-weight:700;
+  line-height:1.35;color:#fff;letter-spacing:.01em;
+  text-shadow:0 1px 2px rgba(0,0,0,.55)}
+@media (prefers-reduced-motion:reduce){.board-card-busy::after{animation:none}}
 .board-subboard-cover,.board-subboard-fill{position:absolute;inset:0;width:100%;height:100%}
 .board-subboard-cover{object-fit:cover;display:block}
 .board-subboard-fill{display:flex;align-items:center;padding:0 7%}

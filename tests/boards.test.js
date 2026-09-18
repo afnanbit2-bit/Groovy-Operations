@@ -475,6 +475,95 @@ module.exports=function(){
         r5(`String(_boardsMinCardH({type:'board',w:200,h:124}))`));
     }
 
+    /* ── One download per card ──────────────────────────────────────────
+       Afnan pressed Download twice because nothing happened, and got the
+       file twice. The wait is structural — an <a download> at a
+       cross-origin URL is ignored by Chrome, so the bytes have to be
+       fetched and turned into a same-origin blob: before a dialog can
+       appear with the name we chose — so it is made visible and the second
+       press is refused. */
+    _pending.push((async()=>{
+      const A='https://res.cloudinary.com/x/image/upload/v1/hoodie.jpg';
+      let opened=0,reads=0;
+      const bytes=new Uint8Array(4);
+      const mk=(opts)=>loadApp({files:['js/boards.js'],
+        session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        globals:Object.assign({
+          fetch:async()=>{reads++;return{
+            ok:true,status:200,
+            headers:{get:k=>k==='content-length'?'4':'image/jpeg'},
+            body:{getReader(){let n=0;return{read:async()=>(n++?{done:true}:{done:false,value:bytes})};}},
+            blob:async()=>({})
+          };},
+          Blob:function(){return{};},
+          open:()=>{opened++;}
+        },opts||{})});
+
+      const app6=mk();
+      const r6=x=>app6.run(x);
+      r6(`URL.createObjectURL=function(){return'blob:x';};URL.revokeObjectURL=function(){};
+        _editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+        _editCards=[{id:'p1',type:'image',name:'ARTICLE #1',imageUrl:'${A}',x:0,y:0,w:240,h:180}];`);
+      // The card element has to exist for the overlay to attach to.
+      r6(`document.getElementById('board-card-p1')`);
+
+      // TWO presses, the second while the first is still in flight.
+      const both=r6(`(function(){
+        const c=_boardsPreviewCard(_editCards[0]);
+        return Promise.all([_boardsDownloadAsset(c),_boardsDownloadAsset(c)]);
+      })()`);
+      const res=await both;
+      s.eq('the second press is refused',JSON.stringify(res),'[true,false]');
+      s.eq('so the file is fetched once, not twice',reads,1);
+      s.ok('and it says why rather than doing nothing',
+        /Already preparing/.test(app6.state.toasts.join(' ')),app6.state.toasts.join(' | '));
+      // The guard releases, or the card could never be downloaded again.
+      s.eq('the guard is released afterwards',r6(`_boardsDownloading.size`),0);
+      s.eq('and the overlay is taken down',r6(`_boardsBusy.size`),0);
+
+      // The overlay goes UP while it runs, carrying a real percentage when
+      // the response says how big it is.
+      const app7=mk();
+      const r7=x=>app7.run(x);
+      r7(`URL.createObjectURL=function(){return'blob:x';};URL.revokeObjectURL=function(){};
+        _editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+        _editCards=[{id:'p1',type:'image',name:'ARTICLE #1',imageUrl:'${A}',x:0,y:0,w:240,h:180}];
+        __seen=[];
+        __origStart=_boardsBusyStart;
+        _boardsBusyStart=function(id,l){__seen.push('start:'+l);return __origStart(id,l);};
+        __origProg=_boardsBusyProgress;
+        _boardsBusyProgress=function(id,f,l){__seen.push('prog:'+Math.round(f*100));return __origProg(id,f,l);};`);
+      await r7(`_boardsDownloadAsset(_boardsPreviewCard(_editCards[0]))`);
+      s.eq('the card says what is happening',
+        r7(`__seen[0]`),'start:Preparing to download…');
+      s.ok('and reports progress as the bytes arrive',
+        r7(`__seen.indexOf('prog:100')>0`),r7(`JSON.stringify(__seen)`));
+
+      // A FAILED download must not leave the card wearing the cover.
+      const app8=mk({fetch:async()=>{throw new Error('offline');}});
+      const r8=x=>app8.run(x);
+      r8(`URL.createObjectURL=function(){return'blob:x';};URL.revokeObjectURL=function(){};
+        _editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+        _editCards=[{id:'p1',type:'image',name:'ARTICLE #1',imageUrl:'${A}',x:0,y:0,w:240,h:180}];`);
+      const okf=await r8(`_boardsDownloadAsset(_boardsPreviewCard(_editCards[0]))`);
+      s.eq('a failed download reports failure',okf,false);
+      s.eq('the overlay comes down anyway',r8(`_boardsBusy.size`),0);
+      s.eq('and the card can be tried again',r8(`_boardsDownloading.size`),0);
+
+      // No Content-Length: the shimmer carries it, never a stuck number.
+      const app9=mk({fetch:async()=>({ok:true,status:200,
+        headers:{get:()=>null},body:null,blob:async()=>({})})});
+      const r9=x=>app9.run(x);
+      r9(`URL.createObjectURL=function(){return'blob:x';};URL.revokeObjectURL=function(){};
+        _editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+        _editCards=[{id:'p1',type:'image',name:'A',imageUrl:'${A}',x:0,y:0,w:240,h:180}];
+        __p=0;_boardsBusyProgress=function(){__p++;};`);
+      s.eq('an unmeasurable download still succeeds',
+        await r9(`_boardsDownloadAsset(_boardsPreviewCard(_editCards[0]))`),true);
+      s.eq('and shows no percentage at all',r9(`__p`),0);
+      s.eq('nothing was opened in a tab',opened,0);
+    })());
+
     s.section('the delete ✕ can actually be clicked');
     // It sits inside a header whose pointerdown calls setPointerCapture;
     // without stopPropagation the capture retargets the click away from the

@@ -70,6 +70,9 @@ function makeDom(state){
       dispatchEvent(){},
       setPointerCapture(){},releasePointerCapture(){},
       focus(){state.activeElement=this;},blur(){if(state.activeElement===this)state.activeElement=null;},
+      // A synthetic <a> is how a blob download is triggered; without this
+      // the download path cannot be exercised at all.
+      click(){},
       select(){},setSelectionRange(){},
       remove(){delete nodes[this.id];state.body=state.body.filter(x=>x!==this);}
     };
