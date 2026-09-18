@@ -655,11 +655,28 @@ helper by bare name; both **guard with `typeof` and fail CLOSED**, so a
 `shared.js` that failed to parse hides the hub rather than opening the
 side door.
 
-**Audience: `afnan`, `ammar`, `sami`** — Afnan dogfooded it alone while the
-module was being shaped and opened it to Ammar once the Trash/rail round
-landed; Sami (CSR Team Lead) was added 17 Sept 2026 at Ammar's request. The
-helper is now called from **eight** routes: the six below plus the CSR Team
-Lead's own sidebar and phone "More" sheet.
+**Audience: `afnan`, `ammar`, `sami`, `mustafa`** — Afnan dogfooded it alone
+while the module was being shaped and opened it to Ammar once the Trash/rail
+round landed; Sami (CSR Team Lead) was added 17 Sept 2026 at Ammar's request,
+and **Mustafa on 18 Sept 2026** (Afnan: "give mustafa creative hub and all
+its features"). The helper is called from **eight** routes: the six below
+plus the CSR Team Lead's own sidebar and phone "More" sheet.
+
+Mustafa took **one word** — the list is the only gate, which is the whole
+point of the round that replaced six hardcoded usernames with it. He holds
+`manager`, and `showPage` scopes only `fulfillment`, `creator_content_ops_lead`
+and `csr_lead`, so nothing redirects him; **Mood Boards needs no separate
+grant** (it is reached through the hub tile, and its deep link reads the same
+helper), so "all its features" follows from the one edit. **Arfat shares that
+`manager` role and gets nothing**, the Sept 2026 rule. Verified by DRIVING
+`buildNav()` and `window.openMoreSheet()` as Mustafa in the harness rather
+than by reading the pushes: both carry Creative Hub, and Arfat's gate is
+still false.
+
+`tests/csr-lead.test.js` had used Mustafa as its "nobody else is affected"
+manager, which would now pass whether the gate were a list or role-wide —
+exactly the shape that makes a role-wide grant look correct. It uses **Arfat**
+for that assertion now, and asserts Mustafa passes beside it.
 Still by USERNAME, not a role and not `isOwner()`, matching the
 `isMustafa()`-style per-person grants elsewhere. **Ammar's own Claude
 session should be told the hub is now visible to him.**
@@ -673,9 +690,10 @@ true.** That is the whole change.
 `tests/invariants.test.js` guards four things and **each was verified by
 breaking it**: all six routes call the helper (drop one → fails at 5), no
 route still hardcodes a username (a leftover `session.u==='afnan'` → fails),
-the audience is exactly `afnan,ammar` (so widening it shows up in a diff
-review rather than slipping through), and both cross-file callers keep the
-`typeof` guard.
+the audience is exactly the list recorded above (so widening it shows up in
+a diff review rather than slipping through — it is asserted by name, and is
+what has to be edited alongside `js/shared.js` each time), and both cross-file
+callers keep the `typeof` guard.
 
 **Phase 2 (shipped): `js/boards.js` — Mood Boards, the Milanote half.**
 Reached only through the Creative Hub grid (no separate top-level nav

@@ -704,7 +704,7 @@ function _salesTeamNavHTML(groups){
 
    To roll out to everyone: return true. This is a NAV-ONLY gate —
    firestore.rules already lets any signed-in user create and read pages. */
-const _CREATIVE_HUB_USERS=['afnan','ammar','sami'];
+const _CREATIVE_HUB_USERS=['afnan','ammar','sami','mustafa'];
 function _canSeeCreativeHub(){
   return !!(typeof session!=='undefined'&&session&&_CREATIVE_HUB_USERS.indexOf(session.u)>-1);
 }

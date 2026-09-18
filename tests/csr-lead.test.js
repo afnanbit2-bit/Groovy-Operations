@@ -53,13 +53,19 @@ module.exports=async function(){
     s.ok('the phone nav has Home, QC, B-Stock, Fabric and More',/Home[\s\S]*QC[\s\S]*B-Stock[\s\S]*Fabric[\s\S]*More/.test(mob));
   }
   {
-    // Nobody else is affected.
+    // Nobody else is affected. ARFAT, not Mustafa, is the manager who proves
+    // the hub gate is still a LIST rather than the role: Mustafa was added to
+    // _CREATIVE_HUB_USERS in Sept 2026 and would now pass either way, which
+    // is exactly the shape that makes a role-wide grant look correct.
     const a=loadApp({files:['js/shared.js','js/auth.js'],currentPage:'dashboard'});
-    a.run('session='+J({uid:'u',u:'mustafa',name:'Mustafa',role:'manager',email:'mustafa@groovy.op'}));
+    a.run('session='+J({uid:'u',u:'arfat',name:'Arfat',role:'manager',email:'arfat@groovy.op'}));
     a.run('renderPage=function(id){globalThis.__got=id;}');
     a.run("window.showPage('users')");
     s.eq('a manager is not redirected by the CSR scope',a.run('__got'),'users');
-    s.eq('and still cannot see Creative Hub',a.run('_canSeeCreativeHub()'),false);
+    s.eq('and a manager outside the list still cannot see Creative Hub',
+      a.run('_canSeeCreativeHub()'),false);
+    a.run('session='+J({uid:'u',u:'mustafa',name:'Mustafa',role:'manager',email:'mustafa@groovy.op'}));
+    s.eq('while Mustafa, who is on the list, can',a.run('_canSeeCreativeHub()'),true);
   }
 
   s.section('view only');
