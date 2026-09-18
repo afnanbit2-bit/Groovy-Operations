@@ -9004,12 +9004,79 @@ function _boardsConnsTouching(ids){
   const set=ids instanceof Set?ids:new Set(ids);
   return _editConnectors.filter(cn=>cn&&(set.has(cn.from)||set.has(cn.to)));
 }
+/* ── The trash badge fills up, and then it asks (Sept 2026) ────────────
+   Afnan: the number gets darker as the count rises — white through a
+   gradient of phases to red — and at 30 the bin animates to say empty me,
+   with a way to ignore that for 24 hours.
+
+   PHASES, NOT A CONTINUOUS GRADIENT. Four discrete steps are auditable and
+   MEASURABLE: each one is a class the layout probe can render and check for
+   contrast in both themes, where a per-count interpolated colour could only
+   ever be spot-checked. _boardsTrashPhase is the single definition, so the
+   badge, the panel and the tests cannot disagree about what "nearly full"
+   means. */
+const _BOARDS_TRASH_FULL=30;          // where the bin starts asking
+const _BOARDS_TRASH_PHASES=[
+  {at:0, cls:''},                     // the badge exactly as it was
+  {at:10,cls:'fill-1'},
+  {at:20,cls:'fill-2'},
+  {at:_BOARDS_TRASH_FULL,cls:'fill-3'}
+];
+function _boardsTrashPhase(n){
+  let cls='';
+  for(const p of _BOARDS_TRASH_PHASES)if(n>=p.at)cls=p.cls;
+  return cls;
+}
+/* THE SNOOZE IS PER VIEWER AND PER BOARD, in localStorage — the same rule
+   the minimap, snap and the tray's open state follow. It is about this
+   person being nagged on this board, not about the board, so it must never
+   travel to someone else's screen; and a board's trash is its own, so one
+   global snooze would silence a board you have not looked at.
+   Expired entries are pruned on write, so the key cannot grow forever. */
+const _BOARDS_TRASH_SNOOZE_KEY='groovy-boards-trash-snooze';
+const _BOARDS_TRASH_SNOOZE_MS=24*60*60*1000;
+function _boardsTrashSnoozeMap(){
+  try{const m=JSON.parse(localStorage.getItem(_BOARDS_TRASH_SNOOZE_KEY)||'{}');
+    return (m&&typeof m==='object'&&!Array.isArray(m))?m:{};}catch(e){return {};}
+}
+function _boardsTrashSnoozedUntil(id){
+  const t=_boardsTrashSnoozeMap()[id];
+  return (typeof t==='number'&&t>Date.now())?t:0;
+}
+function _boardsTrashSnoozed(){
+  return !!(_editBoard&&_boardsTrashSnoozedUntil(_editBoard.id));
+}
+/* WHETHER THE BIN SHOULD ASK, extracted from the painting so it can be
+   asserted at all: the node harness's querySelector returns null, so
+   _boardsPaintTrashCount bails there and no logic suite can reach the
+   decision through it. Same reason _boardsPreviewBackdrop was pulled out of
+   its overlay. */
+function _boardsTrashAlarm(n){
+  return n>=_BOARDS_TRASH_FULL&&!_boardsTrashSnoozed();
+}
+window.boardsTrashSnooze=function(){
+  if(!_editBoard)return;
+  const now=Date.now(),m=_boardsTrashSnoozeMap(),next={};
+  Object.keys(m).forEach(k=>{if(typeof m[k]==='number'&&m[k]>now)next[k]=m[k];});
+  next[_editBoard.id]=now+_BOARDS_TRASH_SNOOZE_MS;
+  try{localStorage.setItem(_BOARDS_TRASH_SNOOZE_KEY,JSON.stringify(next));}catch(e){}
+  _boardsPaintTrashCount();
+  _boardsRenderTrash();
+  showToast('The bin will stop asking for 24 hours');
+};
 function _boardsPaintTrashCount(){
   const el=document.querySelector('#board-rail [data-act="trash"] .board-rail-badge');
   if(!el)return;
   const n=_boardsTrashLive().length;
   el.textContent=n?String(n):'';
   el.style.display=n?'':'none';
+  el.className='board-rail-badge'+(n?' '+_boardsTrashPhase(n):'').trimEnd();
+  /* THE SHAKE IS ON THE BUTTON, NOT THE BADGE — it is the BIN that should
+     catch your eye, and a 15px chip twitching on its own reads as a
+     rendering fault rather than as a prompt. Driven by a class the paint
+     sets, so nothing animates on a timer that could be left running. */
+  const btn=el.closest&&el.closest('.rail-btn');
+  if(btn)btn.classList.toggle('trash-full',_boardsTrashAlarm(n));
 }
 window.boardsToggleTrash=function(){
   _boardsCardTrashOpen=!_boardsCardTrashOpen;
@@ -9062,6 +9129,7 @@ function _boardsRenderTrash(){
     <div class="board-ctrash-list">
       ${rows.length?body:`<div class="empty">${_boardsCardTrashTab==='mine'?'You haven’t deleted anything on this board.':'Nobody else has deleted anything here.'}</div>`}
     </div>
+    ${_boardsTrashNagHTML(rows.length)}
     ${purgeable?`<button class="board-ctrash-empty" onclick="window.boardsTrashEmpty()">Empty trash</button>`:''}`;
   // Card text and the person's name are other people's strings — written
   // in with textContent after the structure exists, never interpolated.
@@ -9071,6 +9139,31 @@ function _boardsRenderTrash(){
     const b=document.getElementById('board-ctrash-by-'+e.id);
     if(b)b.textContent=_boardsTrashMine(e)?'You':(e.byName||'Someone');
   });
+}
+/* The ask, INSIDE the bin, where the person who opened it is already
+   looking — and the way to silence it. It says the count rather than
+   "the trash is full", because 30 is a nudge and not a limit: nothing
+   stops working, and a message implying otherwise would be a lie.
+   While snoozed the strip still SHOWS, saying until when; the alarm is
+   what is silenced, not the fact. Hiding it outright would leave the
+   button with no way back. */
+function _boardsTrashNagHTML(n){
+  if(n<_BOARDS_TRASH_FULL)return '';
+  const until=_editBoard?_boardsTrashSnoozedUntil(_editBoard.id):0;
+  if(until){
+    return `<div class="board-ctrash-nag snoozed">Not asking again until `+
+      `${_boardsEsc(_boardsTrashSnoozeLabel(until))}.</div>`;
+  }
+  return `<div class="board-ctrash-nag">
+      <span>${n} deleted cards are being kept here.</span>
+      <button class="btn-sm" onclick="window.boardsTrashSnooze()">Ignore for 24 hours</button>
+    </div>`;
+}
+function _boardsTrashSnoozeLabel(ts){
+  try{
+    const d=new Date(ts);
+    return d.toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'});
+  }catch(e){return 'tomorrow';}
 }
 // What a row shows of the card it is holding. Falls back to the card's own
 // name, then to nothing — a row is identified by its type chip and its day

@@ -429,6 +429,36 @@ const FRAGMENTS={
     return Promise.resolve(
       '<div style="position:relative;width:100%">'+full.slice(i,j)+'</div>');
   },
+  /* The trash badge's fill ramp. The whole point of four DISCRETE phases
+     rather than a per-count colour is that they can be measured: this puts
+     the badge on the real rail button at every phase, so the contrast check
+     reads each one against the chip it actually sits on, in BOTH themes.
+     The chip is var(--red), which INVERTS, so a ramp that only worked in
+     light mode would fail here rather than in production.
+     The panel's ask is rendered beside it for the same reason. */
+  'boards — the trash badge fills up':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();
+      _boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+      _boardsRenderRail();`);
+    const inner=app.run(`document.getElementById('board-rail').innerHTML`);
+    // The real trash button, lifted out of the real rail, once per phase.
+    const btn=(inner.match(/<button[^>]*data-act="trash"[\s\S]*?<\/button>/)||[])[0]||'';
+    const counts=[3,12,24,30];
+    const cells=counts.map(n=>{
+      const cls=app.run(`_boardsTrashPhase(${n})`);
+      const one=btn.replace(/<span class="board-rail-badge"[^>]*><\/span>/,
+        `<span class="board-rail-badge ${cls}">${n}</span>`);
+      return '<div style="position:relative;width:58px">'+one+'</div>';
+    }).join('');
+    const nag=app.run(`_boardsTrashNagHTML(30)`);
+    return Promise.resolve(
+      '<div class="board-rail" style="position:relative;inset:auto;height:auto;'+
+      'flex-direction:row;width:auto;display:flex;gap:6px">'+cells+'</div>'+
+      '<div class="board-ctrash-panel" style="position:relative;display:flex;'+
+      'inset:auto;width:320px;margin-top:14px">'+nag+'</div>');
+  },
   'boards — the tool rail':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};

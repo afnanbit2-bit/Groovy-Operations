@@ -45,6 +45,13 @@
      the wrong way for the chip. Do not "fix" this by adding a dark
      override. */
   --count-accent:#DC2626;
+  /* The trash badge's ink ramp. It INVERTS, unlike --count-accent, and the
+     reason is the opposite of that token's: this ink has exactly ONE
+     background — the badge chip, which is var(--red), and --red inverts. So
+     a fixed colour would be right in one theme and wrong in the other.
+     MEASURED against the chip it actually sits on (#000 light, #EDEDED
+     dark): 15.11 / 9.75 / 6.55 in light, 7.28 / 5.47 / 4.92 in dark. */
+  --trash-1:#FFD0C8;--trash-2:#FF9382;--trash-3:#FF5247;
   --radius-card:14px;--radius-bubble:16px;color-scheme:light}
 
 /* ── Dark mode (Sept 2026) ────────────────────────────────────────────
@@ -71,6 +78,10 @@ html[data-theme="dark"]{
   --accent-warning:#E3B061;--accent-warning-soft:#3A2E18;
   --accent-success:#7FC49C;--accent-success-soft:#16301F;
   --cat-notes:#7FA0DA;--cat-boards:#C48FC6;--cat-storage:#C0A277;--cat-sops:#9AAEB8;--cat-chat:#7FBDBD;
+  /* Dark: the badge chip is the near-WHITE #EDEDED, so the ramp runs dark
+     rather than light. Same journey, neutral ink to red, inverted with the
+     chip under it. */
+  --trash-1:#8C2A1E;--trash-2:#B7241A;--trash-3:#C81E10;
   color-scheme:dark}
 /* The wordmark is black artwork on transparency, so it disappears on a
    dark bar. Inverting the <img> is safe — it has no fixed descendants. */
@@ -1722,7 +1733,43 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-ctrash-actions .btn-sm{font-size:12px;padding:4px 9px}
 .board-ctrash-empty{flex-shrink:0;padding:12px;border:none;border-top:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer}
 .board-ctrash-empty:hover{background:var(--hover)}
-.board-rail-badge{position:absolute;top:3px;right:6px;min-width:15px;height:15px;padding:0 4px;border-radius:8px;background:var(--red);color:var(--on-dark);font-size:11px;font-weight:700;line-height:15px;text-align:center}
+.board-rail-badge{position:absolute;top:3px;right:6px;min-width:15px;height:15px;padding:0 4px;border-radius:8px;background:var(--red);color:var(--on-dark);font-size:11px;font-weight:700;line-height:15px;text-align:center;transition:color .3s ease-out}
+/* ── The bin fills up (Sept 2026) ─────────────────────────────────────
+   Afnan: the number darkens as the count rises — white through phases to
+   red — and at 30 the bin animates to ask to be emptied.
+
+   FOUR DISCRETE PHASES rather than a colour interpolated per count: each is
+   a class, so tests/smoke-layout.js can render it and measure its contrast
+   in BOTH themes, which a per-count colour could only ever be spot-checked
+   for. The ink inverts with the chip it sits on — see --trash-1 above for
+   the measurements. */
+.board-rail-badge.fill-1{color:var(--trash-1)}
+.board-rail-badge.fill-2{color:var(--trash-2)}
+.board-rail-badge.fill-3{color:var(--trash-3)}
+/* THE SHAKE IS ON THE BUTTON, NOT THE BADGE. It is the BIN that should
+   catch the eye; a 15px chip twitching alone reads as a rendering fault
+   rather than a prompt. It runs on a class the paint sets, so nothing
+   animates on a timer that could be left running, and it stops as soon as
+   the count drops or the snooze is taken. */
+.rail-btn.trash-full svg{animation:board-trash-shake 2.4s ease-in-out infinite;transform-origin:50% 70%}
+@keyframes board-trash-shake{
+  0%,72%,100%{transform:rotate(0)}
+  76%{transform:rotate(-11deg)}
+  80%{transform:rotate(9deg)}
+  84%{transform:rotate(-7deg)}
+  88%{transform:rotate(5deg)}
+  92%{transform:rotate(-3deg)}
+}
+/* The ask INSIDE the bin, and the way to silence it. */
+.board-ctrash-nag{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;
+  gap:8px;padding:9px 12px;border-top:1px solid var(--border);
+  background:var(--accent-urgent-soft);color:var(--text);font-size:12.5px;font-weight:600}
+.board-ctrash-nag.snoozed{color:var(--muted);font-weight:500;background:var(--surface-2)}
+.board-ctrash-nag .btn-sm{flex-shrink:0}
+@media (prefers-reduced-motion:reduce){
+  .rail-btn.trash-full svg{animation:none}
+  .board-rail-badge{transition:none}
+}
 .rail-btn{position:relative}
 
 @media (max-width:560px){

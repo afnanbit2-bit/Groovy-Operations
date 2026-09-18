@@ -2465,6 +2465,80 @@ module.exports=function(){
       /&lt;img src=x/.test(stockHtml)&&/&quot;&gt;&lt;script&gt;/.test(stockHtml));
     s.ok('but the picture is still offered',/board-img-hit/.test(stockHtml));
 
+    /* ── The bin fills up (Sept 2026) ─────────────────────────────────
+       Afnan: the number darkens as the count rises, white through phases to
+       red, and at 30 the bin animates to ask to be emptied — with a way to
+       ignore that for 24 hours.
+
+       WHAT HOLDS WHAT. The COLOURS are smoke-layout's: the ink sits on a
+       chip that INVERTS, and no logic suite can see a colour. The DOM toggle
+       itself is held by neither — the harness's querySelector returns null,
+       so _boardsPaintTrashCount bails there — which is exactly why the
+       decision it paints was extracted into _boardsTrashAlarm. This holds
+       the boundaries, the threshold and the snooze. */
+    s.section('the badge phases are exact at their boundaries');
+    {
+      const store={};
+      const ls={getItem:k=>(k in store?store[k]:null),
+                setItem:(k,v)=>{store[k]=String(v);},removeItem:k=>{delete store[k];}};
+      const t=loadApp({files:['js/boards.js'],globals:{localStorage:ls},
+        session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      const tr=x=>t.run(x);
+      const phase=n=>tr(`_boardsTrashPhase(${n})`);
+      // Off by one at either end is the whole risk in a banded scale.
+      s.eq('nothing at all below the first band',[0,1,9].map(phase).join('|'),'||');
+      s.eq('the first band starts at 10',[10,19].map(phase).join('|'),'fill-1|fill-1');
+      s.eq('the second at 20',[20,29].map(phase).join('|'),'fill-2|fill-2');
+      s.eq('and the last exactly at the threshold',
+        [30,31,500].map(phase).join('|'),'fill-3|fill-3|fill-3');
+      s.eq('which is the same 30 the alarm uses',tr(`_BOARDS_TRASH_FULL`),30);
+
+      s.section('the bin only asks once it is actually full');
+      tr(`session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};
+        _editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+        _editCards=[];_editConnectors=[];_boardsCardTrash=[];`);
+      s.ok('29 does not shake',!tr(`_boardsTrashAlarm(29)`));
+      s.ok('30 does',tr(`_boardsTrashAlarm(30)`));
+      s.ok('and so does anything past it',tr(`_boardsTrashAlarm(400)`));
+
+      s.section('ignore for 24 hours');
+      const nagFull=tr(`_boardsTrashNagHTML(30)`);
+      s.ok('the ask only appears at the threshold',
+        tr(`_boardsTrashNagHTML(29)`)===''&&nagFull.length>0);
+      s.ok('and it offers the snooze',/boardsTrashSnooze/.test(nagFull));
+      // It states the COUNT, not "full": 30 is a nudge, not a limit, and
+      // nothing stops working at it. A message implying otherwise would lie.
+      s.ok('it states the count rather than claiming a limit',
+        /30 deleted cards/.test(nagFull)&&!/full/i.test(nagFull),nagFull);
+      tr(`window.boardsTrashSnooze()`);
+      s.ok('taking it silences the alarm',!tr(`_boardsTrashAlarm(30)`));
+      // The count is still 30 — only the nagging stopped.
+      s.eq('but the badge still reads as full',phase(30),'fill-3');
+      const snoozed=tr(`_boardsTrashNagHTML(30)`);
+      s.ok('and the strip says so rather than vanishing',
+        /Not asking again until/.test(snoozed)&&!/boardsTrashSnooze/.test(snoozed),snoozed);
+      const until=tr(`_boardsTrashSnoozedUntil('b1')`);
+      s.eq('for 24 hours',Math.round((until-Date.now())/3600000),24);
+      // PER BOARD: a board you have not looked at must not be silenced too.
+      s.eq('another board is untouched',tr(`_boardsTrashSnoozedUntil('other')`),0);
+
+      s.section('an expired snooze is ignored, and pruned on the next write');
+      tr(`localStorage.setItem('groovy-boards-trash-snooze',
+        JSON.stringify({old:Date.now()-1000,b1:Date.now()-1000}))`);
+      s.eq('a stale entry does not count',tr(`_boardsTrashSnoozedUntil('b1')`),0);
+      s.ok('so the bin asks again',tr(`_boardsTrashAlarm(30)`));
+      tr(`window.boardsTrashSnooze()`);
+      s.eq('and the next write drops the dead key',
+        tr(`Object.keys(JSON.parse(localStorage.getItem('groovy-boards-trash-snooze'))).join(',')`),
+        'b1');
+      // A corrupt value must not take the module down on a read path.
+      tr(`localStorage.setItem('groovy-boards-trash-snooze','not json')`);
+      s.eq('and junk in the key reads as no snooze',tr(`_boardsTrashSnoozedUntil('b1')`),0);
+      // Nothing here is board data: it is about being nagged, on this
+      // device. The same rule the minimap, snap and the tray follow.
+      s.eq('nothing was written to Firestore',t.state.writes.length,0);
+    }
+
     s.section('drag-to-place — click-to-place is unchanged');
     // The spec's single-click-then-click-to-place is NOT built: a browser
     // session could not reproduce it in the real product or find any armed
