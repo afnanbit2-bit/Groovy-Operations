@@ -270,7 +270,32 @@ function mktNicheLibrary(list){
 // Where the tiering numbers came from. 'api' is never taken on the form's
 // word: it is only recorded when the numbers saved are EXACTLY the ones the
 // last Instagram fetch returned, so editing a fetched number makes it manual.
-const MKT_DATA_SOURCES=[{k:'manual',label:'Typed in'},{k:'screenshot',label:'From a screenshot'},{k:'api',label:'Instagram (fetched)'}];
+const MKT_DATA_SOURCES=[{k:'manual',label:'Typed in'},{k:'screenshot',label:'From a screenshot'},
+  {k:'api',label:'Instagram (fetched)'},{k:'mixed',label:'Instagram + kept numbers'}];
+
+/**
+ * What a fetch should actually write. **A NUMBER INSTAGRAM DID NOT RETURN
+ * NEVER CLEARS ONE WE ALREADY HAVE.** Business Discovery omits `like_count`
+ * for an account that hides its likes (and can send -1, which the server
+ * drops the same way), so `avg_likes` comes back null while views and
+ * comments are fine — and the first cut wrote that null straight over a
+ * good stored value, dropping the creator into Unscored. Reported by
+ * Daniyal for @aitzazism on 18 Sept 2026 and traced to the bulk run.
+ * Pure. Returns the values to write plus which fields came from where.
+ */
+function mktIgMerge(c,r){
+  const values={},fetched=[],kept=[],missing=[];
+  for(const k of _MKT_TIERING_FIELDS){
+    const got=r&&r[k]!=null?mktNum(r[k]):null;
+    const had=mktNum(c?c[k]:null);
+    if(got!=null){values[k]=got;fetched.push(k);}
+    else if(had!=null){values[k]=had;kept.push(k);}
+    else{values[k]=null;missing.push(k);}
+  }
+  return{values,fetched,kept,missing};
+}
+/** 'api' when the fetch supplied everything, 'mixed' when some was kept. Pure. */
+function mktIgSource(merge){return merge.kept.length?'mixed':'api';}
 function _mktApiValues(raw){
   if(!raw)return null;
   let o=raw;
@@ -286,7 +311,18 @@ function mktDataSource(nums,old,form){
   if(_MKT_TIERING_FIELDS.every(k=>nums[k]==null))return null;
   const unchanged=_MKT_TIERING_FIELDS.every(k=>nums[k]===(o[k]==null?null:o[k]));
   const api=_mktApiValues(f.api_values);
-  if(api&&_MKT_TIERING_FIELDS.every(k=>nums[k]===api[k]))return'api';
+  // A fetch may supply only some of the four (hidden likes), so the
+  // snapshot carries only what it returned; the rest must be unchanged.
+  if(api){
+    const got=_MKT_TIERING_FIELDS.filter(k=>api[k]!=null);
+    // A field the fetch did not supply is only "kept" if it HAS a value —
+    // one that is empty everywhere is simply missing, not mixed. Editing a
+    // number the fetch DID supply still reads as manual, because that
+    // field then stops matching the snapshot.
+    const keptWithValue=_MKT_TIERING_FIELDS.filter(k=>api[k]==null&&nums[k]!=null);
+    if(got.length&&got.every(k=>nums[k]===api[k]))
+      return keptWithValue.length?'mixed':'api';
+  }
   if(unchanged&&o.data_source&&!api)return o.data_source;
   return f.data_source==='screenshot'?'screenshot':'manual';
 }
@@ -345,7 +381,7 @@ function mktBuildCreatorPayload(form,existing,rawCfg,now,uid){
   data.metrics_updated_at=metricsChanged?now:(old.metrics_updated_at||null);
   data.data_source=mktDataSource(nums,old,f);
   // A fresh fetch stamps the time even when the numbers came back the same.
-  data.api_fetched_at=data.data_source!=='api'?null
+  data.api_fetched_at=(data.data_source!=='api'&&data.data_source!=='mixed')?null
     :(_mktApiValues(f.api_values)?now:(old.api_fetched_at||null));
   Object.assign(data,mktScoreFields(Object.assign({},data,{tier:override||null}),rawCfg,now));
   if(!override)data.tier=data.tier_formula;
@@ -783,6 +819,7 @@ async function mktCallInstagram(action,extra){
   return data;
 }
 
+const _MKT_IG_FIELD_INPUT={follower_count:'mkt-f-followers',avg_views:'mkt-f-views',avg_likes:'mkt-f-likes',avg_comments:'mkt-f-comments'};
 let _mktIgBusy=false;
 function _mktIgStatus(msg,isError){
   const el=document.getElementById('mkt-ig-status');
@@ -811,18 +848,20 @@ window.mktFetchInstagram=async function(){
       if(sel){if(sel.value==='api')sel.value='manual';const o=sel.querySelector?sel.querySelector('option[value="api"]'):null;if(o)o.disabled=true;}
       return;
     }
+    // Merge against what is ON THE FORM, so a number Instagram did not
+    // return is left exactly as it is instead of being blanked.
+    const cur={};
+    for(const k of _MKT_TIERING_FIELDS)cur[k]=mktNum(_mktVal(_MKT_IG_FIELD_INPUT[k]));
+    const m=mktIgMerge(cur,r);
     const set=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v==null?'':String(v);};
-    set('mkt-f-followers',r.follower_count);
-    set('mkt-f-likes',r.avg_likes);
-    set('mkt-f-comments',r.avg_comments);
-    set('mkt-f-views',r.avg_views);
+    for(const k of _MKT_TIERING_FIELDS)set(_MKT_IG_FIELD_INPUT[k],m.values[k]);
     const nameEl=document.getElementById('mkt-f-name');
     if(nameEl&&!nameEl.value.trim()&&r.name)nameEl.value=r.name;
     const api={};
-    for(const k of _MKT_TIERING_FIELDS)api[k]=r[k]==null?null:r[k];
+    for(const k of m.fetched)api[k]=m.values[k];
     set('mkt-f-api',JSON.stringify(api));
     window.mktPreviewScore();
-    _mktIgStatus(mktIgFetchSummary(r,handle));
+    _mktIgStatus(mktIgFetchSummary(r,handle,m));
   }catch(e){
     console.warn('[marketing] instagram fetch failed',e);
     const m=(e&&e.message)||'The fetch failed.';
@@ -833,13 +872,19 @@ window.mktFetchInstagram=async function(){
   }
 };
 /** One line saying what the averages are made of. Pure. */
-function mktIgFetchSummary(r,handle){
+function mktIgFetchSummary(r,handle,merge){
   const bits=['Fetched @'+(r.username||handle)];
   bits.push(r.posts_sampled?'averages over the last '+r.posts_sampled+' post'+(r.posts_sampled===1?'':'s'):'no posts to average');
+  if(r.posts_sampled&&r.avg_likes==null)bits.push('this account hides its like counts');
   if(r.posts_sampled&&r.avg_views==null)bits.push('none of them report views');
   else if(r.views_sampled&&r.views_sampled<r.posts_sampled)bits.push('views from '+r.views_sampled+' of them');
+  const kept=merge&&merge.kept.length?merge.kept.map(_mktFieldLabel):[];
+  if(kept.length)bits.push(kept.join(' and ')+' kept as '+(kept.length===1?'it was':'they were'));
+  const gone=merge&&merge.missing.length?merge.missing.map(_mktFieldLabel):[];
+  if(gone.length)bits.push(gone.join(' and ')+' still need'+(gone.length===1?'s':'')+' typing in');
   return bits.join(' · ')+'. Check the numbers, then save.';
 }
+function _mktFieldLabel(k){const e=_MKT_COMPLETION_FIELDS.find(x=>x[0]===k);return e?e[1]:k.replace(/_/g,' ');}
 
 function _mktFormError(msg){
   const e=document.getElementById('mkt-f-error');
@@ -977,14 +1022,22 @@ const _MKT_IG_PACE_MS=1200;
 let _mktIgBulk=null;
 
 /** Who a bulk run would look up, and who it skips. Pure. */
-function mktIgBulkPlan(list,now){
-  const todo=[],fresh=[],noHandle=[];
+function mktIgBulkPlan(list,now,opts){
+  const repair=!!(opts&&opts.repair);
+  const todo=[],fresh=[],noHandle=[],complete=[];
   for(const c of list||[]){
     if(!mktNormHandle(c.ig_handle)){noHandle.push(c);continue;}
-    if(c.data_source==='api'&&c.api_fetched_at&&now-c.api_fetched_at<_MKT_IG_FRESH_MS){fresh.push(c);continue;}
+    // Repair mode (the 18 Sept avg-likes regression): only creators whose
+    // tiering numbers are incomplete, and the 24h skip does not apply —
+    // the whole point is to re-ask for a number a fetch cleared today.
+    if(repair){
+      if(_MKT_TIERING_FIELDS.every(k=>mktNum(c[k])!=null)){complete.push(c);continue;}
+      todo.push(c);continue;
+    }
+    if((c.data_source==='api'||c.data_source==='mixed')&&c.api_fetched_at&&now-c.api_fetched_at<_MKT_IG_FRESH_MS){fresh.push(c);continue;}
     todo.push(c);
   }
-  return{todo,fresh,noHandle};
+  return{todo,fresh,noHandle,complete};
 }
 
 /** The record as a form, so a fetch goes through the same payload builder as a save. Pure. */
@@ -1002,26 +1055,32 @@ function mktCreatorAsForm(c){
 /** A creator with a fetch applied: the built payload, or {error}. Pure apart from what the builder mints. */
 function mktApplyIgFetch(c,r,cfg,now,uid){
   const f=mktCreatorAsForm(c);
+  const m=mktIgMerge(c,r);
   const api={};
-  for(const k of _MKT_TIERING_FIELDS){api[k]=r[k]==null?null:r[k];f[k]=api[k];}
+  for(const k of _MKT_TIERING_FIELDS){f[k]=m.values[k];if(m.fetched.indexOf(k)>=0)api[k]=m.values[k];}
   f.api_values=api;
-  f.data_source='api';
+  f.data_source=mktIgSource(m);
   if(!f.name&&r.name)f.name=r.name;
-  return mktBuildCreatorPayload(f,c,cfg,now,uid);
+  const built=mktBuildCreatorPayload(f,c,cfg,now,uid);
+  if(!built.error)built.merge=m;
+  return built;
 }
 
 function _mktIgBulkHTML(){
   const b=_mktIgBulk;
   const plan=mktIgBulkPlan(mktCreators,Date.now());
+  const repair=mktIgBulkPlan(mktCreators,Date.now(),{repair:true});
   const head=`<h3>Fetch all from Instagram</h3>
     <div class="sub">Looks up every creator. Business and Creator accounts get their followers and averages filled in. Anyone Instagram cannot find (Personal accounts, typos, deleted accounts) is left exactly as it is.</div>`;
   if(!b){
     return`${head}
       <div class="mkt-note">${plan.todo.length} to look up${plan.fresh.length?' · '+plan.fresh.length+' already fetched in the last 24 hours (skipped)':''}${plan.noHandle.length?' · '+plan.noHandle.length+' without a valid handle (skipped)':''}.</div>
       <div class="mkt-note">Instagram limits lookups per hour. If it says stop, the run stops on its own — run it again later and it carries on with whoever is left. A manual tier stays manual.</div>
+      <div class="mkt-note">Missing a number after an earlier fetch? <b>Only the incomplete ones</b> re-asks Instagram for those creators alone, whenever they were last fetched. Anything Instagram will not give (an account that hides its like counts) is named so it can be typed in.</div>
       <div class="mkt-modal-actions">
         <button class="btn-outline" onclick="window.mktCloseModal()">Cancel</button>
-        <button class="btn-primary" id="mkt-igb-start" onclick="window.mktIgBulkRun()"${plan.todo.length?'':' disabled'}>Start (${plan.todo.length})</button>
+        <button class="btn-outline" id="mkt-igb-repair" onclick="window.mktIgBulkRun({repair:true})"${repair.todo.length?'':' disabled'}>Only the incomplete ones (${repair.todo.length})</button>
+        <button class="btn-primary" id="mkt-igb-start" onclick="window.mktIgBulkRun()"${plan.todo.length?'':' disabled'}>Fetch all (${plan.todo.length})</button>
       </div>`;
   }
   return`${head}
@@ -1037,7 +1096,8 @@ function _mktIgBulkLine(){
   if(!b)return'';
   const n=b.updated+b.notFound+b.failed;
   return(b.running?'Looking up '+n+' of '+b.total+'…':(b.stopReason||'Finished.'))+
-    ' Updated '+b.updated+' · not a Business/Creator account (left as is) '+b.notFound+(b.failed?' · failed '+b.failed:'')+'.';
+    ' Updated '+b.updated+' · not a Business/Creator account (left as is) '+b.notFound+(b.failed?' · failed '+b.failed:'')
+    +(b.needManual?' · '+b.needManual+' still need a number typed in':'')+'.';
 }
 function _mktIgBulkPaint(){
   // Only while the bulk modal is the one showing — closing it mid-run lets
@@ -1061,8 +1121,9 @@ window.mktIgBulkRun=async function(opts){
   if(_mktIgBulk&&_mktIgBulk.running)return;
   if(typeof canAccessMarketing!=='function'||!canAccessMarketing())return;
   const pace=opts&&opts.paceMs!=null?opts.paceMs:_MKT_IG_PACE_MS;
-  const plan=mktIgBulkPlan(mktCreators,Date.now());
-  const b=_mktIgBulk={running:true,stop:false,total:plan.todo.length,updated:0,notFound:0,failed:0,log:[],stopReason:''};
+  const plan=mktIgBulkPlan(mktCreators,Date.now(),opts);
+  const b=_mktIgBulk={running:true,stop:false,repair:!!(opts&&opts.repair),total:plan.todo.length,
+    updated:0,notFound:0,failed:0,needManual:0,log:[],stopReason:''};
   const say=t=>{b.log.push(t);const el=document.getElementById('mkt-igb-log');if(el)el.innerHTML=b.log.map(_mktEsc).join('<br>');};
   const tick=()=>{const el=document.getElementById('mkt-igb-progress');if(el)el.textContent=_mktIgBulkLine();};
   _mktIgBulkPaint();
@@ -1094,7 +1155,10 @@ window.mktIgBulkRun=async function(opts){
             const merged=Object.assign({},c,built.data);
             mktCreators=mktCreators.map(x=>x.id===c.id?merged:x);
             b.updated++;
-            say('@'+c.ig_handle+': '+_mktFmtNum(r.follower_count)+' followers · tier '+(merged.tier==='below_threshold'?'below threshold':(merged.tier||'—')));
+            const gaps=(built.merge&&built.merge.missing||[]).map(_mktFieldLabel);
+            if(gaps.length)b.needManual++;
+            say('@'+c.ig_handle+': '+_mktFmtNum(r.follower_count)+' followers · tier '+(merged.tier==='below_threshold'?'below threshold':(merged.tier||'—'))
+              +(gaps.length?' · Instagram gives no '+gaps.join(' or ')+' — type '+(gaps.length===1?'it':'them')+' in by hand':''));
           }catch(e){b.failed++;say('@'+c.ig_handle+': could not save — '+((e&&e.message)||'failed'));}
         }
       }
@@ -1111,7 +1175,7 @@ window.mktIgBulkRun=async function(opts){
     b.running=false;
     _mktIgBulkPaint();
   }
-  return{updated:b.updated,notFound:b.notFound,failed:b.failed,stopReason:b.stopReason};
+  return{updated:b.updated,notFound:b.notFound,failed:b.failed,needManual:b.needManual,stopReason:b.stopReason};
 };
 
 // ── Scoring settings ────────────────────────────────────────────────────

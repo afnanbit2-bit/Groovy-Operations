@@ -1466,5 +1466,79 @@ module.exports=async function(){
     s.eq('the lead can still score a creator (the bands are read, not written)',lead.run("mktScore({follower_count:10000,avg_likes:100,avg_comments:0},null).score"),25);
   }
 
+  s.section('a fetch never clears a number it did not get back');
+  {
+    // The 18 Sept 2026 regression: @aitzazism hides like counts, so
+    // Business Discovery returned avg_likes:null, the bulk run wrote that
+    // over a good stored value, and the creator fell into Unscored.
+    const t=app();
+    const had={id:'cr_a',ig_handle:'aitzazism',follower_count:8000,avg_likes:420,avg_comments:20,avg_views:9000,data_source:'api'};
+    const hidden={found:true,username:'aitzazism',follower_count:8513,avg_likes:null,avg_comments:27,avg_views:14114,posts_sampled:12,likes_sampled:0};
+    const m=t.run('mktIgMerge('+J(had)+','+J(hidden)+')');
+    s.eq('the numbers Instagram gave are taken',J([m.values.follower_count,m.values.avg_comments,m.values.avg_views]),J([8513,27,14114]));
+    s.eq('the one it withheld is KEPT, not cleared',m.values.avg_likes,420);
+    s.eq('and is reported as kept',J(m.kept),J(['avg_likes']));
+    s.eq('a field empty on both sides is missing, not kept',J(t.run('mktIgMerge({},'+J(hidden)+')').missing),J(['avg_likes']));
+    const built=t.run('mktApplyIgFetch('+J(had)+','+J(hidden)+',null,7000,"u1")');
+    s.eq('so the write keeps it too',built.data.avg_likes,420);
+    s.ok('and the creator still scores',built.data.score!=null&&built.data.tier!=null);
+    s.eq('recorded as part-fetched, not as a plain API record',built.data.data_source,'mixed');
+    s.eq('stamped with the fetch time all the same',built.data.api_fetched_at,7000);
+    const full=t.run('mktApplyIgFetch('+J(had)+','+J(Object.assign({},hidden,{avg_likes:500}))+',null,7000,"u1")');
+    s.eq('a complete fetch is still plain api',full.data.data_source,'api');
+    s.eq('with every number from Instagram',full.data.avg_likes,500);
+    const fresh=t.run('mktApplyIgFetch({id:"c",ig_handle:"x"},'+J(hidden)+',null,7000,"u1")');
+    s.eq('a creator with nothing stored keeps the gap',fresh.data.avg_likes,null);
+    s.eq('and is not pretended to be complete',fresh.data.score,null);
+  }
+  {
+    // The form's own fetch: the inputs are merged the same way.
+    const t=app({globals:{auth:{currentUser:{getIdToken:async()=>'tok'}},
+      fetch:async()=>({ok:true,status:200,json:async()=>({found:true,username:'aitzazism',follower_count:8513,avg_likes:null,avg_comments:27,avg_views:14114,posts_sampled:12,likes_sampled:0})})}});
+    t.el('mkt-f-handle').value='aitzazism';
+    t.el('mkt-f-likes').value='420';
+    t.el('mkt-f-followers').value='8000';
+    await t.run('window.mktFetchInstagram()');
+    s.eq('the typed like average survives the fetch',t.el('mkt-f-likes').value,'420');
+    s.eq('followers still update',t.el('mkt-f-followers').value,'8513');
+    s.ok('and the status says what happened',/hides its like counts[\s\S]*avg likes kept/.test(t.el('mkt-ig-status').textContent));
+    s.eq('the source reads as part-fetched',t.run('mktBuildCreatorPayload(_mktReadForm(),null,null,1,"u").data.data_source'),'mixed');
+    const empty=app({globals:{auth:{currentUser:{getIdToken:async()=>'tok'}},
+      fetch:async()=>({ok:true,status:200,json:async()=>({found:true,username:'x',follower_count:100,avg_likes:null,avg_comments:2,avg_views:null,posts_sampled:3})})}});
+    empty.el('mkt-f-handle').value='x';
+    await empty.run('window.mktFetchInstagram()');
+    s.ok('with nothing to keep, it says what still needs typing in',/still need/.test(empty.el('mkt-ig-status').textContent));
+  }
+  {
+    // Repair mode: the creators this bug regressed, whenever they were fetched.
+    const t=app();
+    const now=Date.parse('2026-09-18T10:00:00Z');
+    const list=[{id:'a',ig_handle:'a',follower_count:1,avg_likes:null,avg_comments:1,avg_views:1,data_source:'api',api_fetched_at:now-3600000},
+      {id:'b',ig_handle:'b',follower_count:1,avg_likes:1,avg_comments:1,avg_views:1,data_source:'api',api_fetched_at:now-3600000},
+      {id:'c',ig_handle:''}];
+    const rep=t.run('mktIgBulkPlan('+J(list)+','+now+',{repair:true})');
+    s.eq('only the incomplete creator is looked up',rep.todo.map(c=>c.id).join(),'a');
+    s.eq('a fetch an hour ago does not exempt it',rep.fresh.length,0);
+    s.eq('the complete ones are left alone',rep.complete.map(c=>c.id).join(),'b');
+    s.eq('no handle, no lookup',rep.noHandle.map(c=>c.id).join(),'c');
+    const all=t.run('mktIgBulkPlan('+J(list)+','+now+')');
+    s.eq('the ordinary run still skips anything fetched today',all.todo.map(c=>c.id).join(),'');
+    t.run("mktCreators="+J(list)+";mktCreatorsLoaded=true");
+    t.run('window.mktOpenIgBulk()');
+    s.ok('and the modal offers the repair run',/Only the incomplete ones \(1\)/.test(t.bodyHtml('mkt-modal-back')));
+  }
+  {
+    const writes=[];
+    const t=app({globals:{auth:{currentUser:{getIdToken:async()=>'tok'}},doc:(db,col,id)=>({path:col+'/'+id}),
+      updateDoc:async(ref,data)=>{writes.push(data);},
+      fetch:async()=>({ok:true,status:200,json:async()=>({found:true,username:'a',follower_count:9000,avg_likes:null,avg_comments:30,avg_views:12000,posts_sampled:10,usage:5})})}});
+    t.run("mktCreators=[{id:'a',ig_handle:'a',follower_count:1,avg_likes:null,avg_comments:1,avg_views:1,data_source:'api',api_fetched_at:Date.now()}];mktCreatorsLoaded=true");
+    const out=await t.run('window.mktIgBulkRun({repair:true,paceMs:0})');
+    s.eq('the repair run writes the creator',writes.length,1);
+    s.eq('leaving the number Instagram will not give empty',writes[0].avg_likes,null);
+    s.eq('and counts it as needing a human',out.needManual,1);
+    s.ok('naming the field in the log',/no avg likes/.test(t.run('_mktIgBulk.log.join(" ")')));
+  }
+
   return s;
 };
