@@ -3919,6 +3919,52 @@ not here** — the first reverses rollups, the second is a milestone.
   status on create and update, the Paid PR delete clause, and the new
   `marketing_settings` collection.
 
+### Marketing — the drops are a list, and FOUR bugs that were one (18 Sept 2026)
+
+**"Collection sent" offered exactly one option, "Lowkey Heat".** It was
+free text with a `<datalist>` DERIVED from whatever collections dispatches
+already carried, and that was the only value in the live data — so the
+feature looked broken while working exactly as written. It is a `<select>`
+over **`MKT_COLLECTIONS`**, the 15 real drops, **newest first and
+deliberately NOT alphabetical** — a dispatch is far more likely to be
+logged against something recent, so the order IS the affordance. Lowkey
+Heat is the most recent; The Owners Drop was the first. **Do not re-sort
+it**; a test asserts the literal order and fails on a well-meaning
+`.sort()`. Anything already recorded but not on the list (the sheet import
+wrote free text) is appended under "Recorded earlier" rather than being
+dropped — a value nobody can select again is one that vanishes the next
+time that dispatch is saved.
+
+**Four "Missing or insufficient permissions" reports, ONE cause: the rules
+were never republished.** Daniyal could not save a dispatch set to On Hold,
+could not withdraw his own pending Paid PR, could not remove a niche tag,
+and saw the tag panel's yellow "saved tag list could not be read" warning.
+No application code was wrong. Verified by diffing the repo's
+`firestore.rules` against the version last recorded as published
+(`af132bc`), not by reading the symptoms:
+
+| Symptom | Published rule | Repo rule |
+|---|---|---|
+| On Hold save | `status in ['','confirmed','in_transit','shipped','content_received']` | + `'on_hold_stock'` |
+| Withdraw a Paid PR | `allow delete: if isOwner() && status == 'pending'` | + `\|\| (isMarketing() && requested_by_user_id == request.auth.uid)` |
+| Remove a niche tag | **no `marketing_settings` match block at all** → default deny | `read, write: if isMarketing()` |
+
+**The yellow warning was the same cause, and that is provable rather than
+assumed.** `loadMarketingCreators` puts a MISSING document on the
+`fulfilled` branch (`mktNicheTags=[]`, `mktNicheTagsLoaded=true`, no
+warning); only a REJECTED read sets `mktNicheTagsLoaded=false`, which is
+the only thing that renders that strip. Default-deny on an unpublished
+collection is a rejection. **So the falsifiable test is: after a
+republish the warning disappears on its own, with no document needing to
+be created. If it is still there, it is a second, distinct bug.**
+
+**The lesson, since this is the second round in two days:** a generic
+`PERMISSION_DENIED` on a feature that shipped recently is a **deploy**
+question before it is a code question. `git log -- firestore.rules`
+against the md5 recorded under "Firestore rules" below answers it in one
+command, and `tests/invariants.test.js` cannot — it checks the repo file,
+and has no way to know what the Console holds.
+
 ### Marketing — deleting a dispatch, and Monitor (18 Sept 2026)
 
 Issue 2 of Daniyal's report. A dispatch logged in error had no way out.

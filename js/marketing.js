@@ -1671,6 +1671,56 @@ window.mktSaveScoring=async function(){
 // _mktStatusIdx therefore answers -1 for it, and every comparison in this
 // file already reads that as "not at this stage yet".
 const _MKT_STATUS_FLOW=['confirmed','in_transit','shipped','content_received'];
+// ── The drops (Sept 2026) ───────────────────────────────────────────────
+// NEWEST FIRST, and deliberately NOT alphabetical — do not re-sort this.
+// Lowkey Heat is the most recent drop and The Owners Drop was the first,
+// so the order IS the affordance: a dispatch is far more likely to be
+// logged against something recent, and that should be the first thing in
+// the list rather than something to scroll past "Afterdark" for.
+//
+// The field used to be free text with a datalist DERIVED from whatever
+// collections were already in use — which is why it offered exactly one
+// option, "Lowkey Heat": that was the only value any dispatch carried.
+const MKT_COLLECTIONS=[
+  'Lowkey Heat',
+  'Sunfaded',
+  'The Aim Drop',
+  'Live In Pants',
+  'The Jerseys Restock',
+  'Drop X',
+  'Rebirth Drop',
+  'Afterdark',
+  'The Originals Drop',
+  'The Ninja Drop',
+  'Vintage Drop',
+  'The Specials',
+  'Cultured Legacy VIII',
+  'Friends of GRVY',
+  'The Owners Drop'
+];
+/**
+ * What the dropdown offers: the known drops IN ORDER, then anything else
+ * already recorded on a dispatch (the sheet import wrote free text, and a
+ * value nobody can select again is a value that quietly disappears the
+ * next time that dispatch is saved). Case-insensitive, and the canonical
+ * spelling always wins. Pure.
+ */
+function mktCollectionOptions(dispatches,current){
+  const seen=new Map();
+  MKT_COLLECTIONS.forEach(c=>seen.set(c.toLowerCase(),c));
+  const extra=[];
+  const add=v=>{
+    const t=String(v==null?'':v).trim();
+    if(!t)return;
+    const k=t.toLowerCase();
+    if(seen.has(k))return;
+    seen.set(k,t);extra.push(t);
+  };
+  (dispatches||[]).forEach(d=>add(d&&d.collection_sent));
+  add(current);
+  return{known:MKT_COLLECTIONS.slice(),extra};
+}
+
 const MKT_DISPATCH_STATUSES=[
   {k:'confirmed',label:'Confirmed'},
   {k:'in_transit',label:'In transit'},
@@ -2078,7 +2128,7 @@ window.mktOpenDispatch=function(id,creatorId){
   const d=id?mktDispatches.find(x=>x.id===id):null;
   if(id&&!d){showToast('That dispatch is no longer in the list — refresh the page.',true);return;}
   _mktDraft={creatorId:d?d.creator_id:(creatorId||''),products:d?JSON.parse(JSON.stringify(d.products||[])):[]};
-  const collections=Array.from(new Set(mktDispatches.map(x=>x.collection_sent).filter(Boolean))).sort();
+  const collections=mktCollectionOptions(mktDispatches,d?d.collection_sent:'');
   const perf=d&&d.performance_captured_at;
   const d7=d?mktDay7(d,Date.now()):{state:'none'};
   const stamps=d?[d.shipped_at?'Shipped '+_mktWhen(_mktMs(d.shipped_at)):'',d.content_received_at?'content received '+_mktWhen(_mktMs(d.content_received_at)):''].filter(Boolean).join(' · '):'';
@@ -2094,8 +2144,11 @@ window.mktOpenDispatch=function(id,creatorId){
       <div class="mkt-section-title">Shipment</div>
       <div class="form-grid">
         <div class="field"><label for="mkt-d-date">Dispatch date *</label><input id="mkt-d-date" type="date" value="${_mktEsc(d?d.date_of_dispatch||'':_mktDayStr(Date.now()))}"></div>
-        <div class="field"><label for="mkt-d-coll">Collection sent</label><input id="mkt-d-coll" list="mkt-d-coll-list" value="${_mktEsc(d?d.collection_sent||'':'')}" autocomplete="off" placeholder="e.g. Lowkey Heat">
-          <datalist id="mkt-d-coll-list">${collections.map(x=>`<option value="${_mktEsc(x)}"></option>`).join('')}</datalist></div>
+        <div class="field"><label for="mkt-d-coll">Collection sent</label><select id="mkt-d-coll">
+          <option value="">—</option>
+          ${collections.known.map(x=>`<option value="${_mktEsc(x)}"${(d&&d.collection_sent)===x?' selected':''}>${_mktEsc(x)}</option>`).join('')}
+          ${collections.extra.length?`<optgroup label="Recorded earlier">${collections.extra.map(x=>`<option value="${_mktEsc(x)}"${(d&&d.collection_sent)===x?' selected':''}>${_mktEsc(x)}</option>`).join('')}</optgroup>`:''}
+        </select></div>
         <div class="field"><label for="mkt-d-status">Status</label><select id="mkt-d-status">${d&&!d.status?'<option value="" selected>Not recorded (from the sheet)</option>':''}${MKT_DISPATCH_STATUSES.map(x=>`<option value="${x.k}"${(d?d.status:'confirmed')===x.k?' selected':''}>${x.label}</option>`).join('')}</select></div>
         <div class="field"><label for="mkt-d-link">Link to post</label><input id="mkt-d-link" value="${_mktEsc(d?d.link_to_post||'':'')}" placeholder="https://www.instagram.com/p/…" autocomplete="off" inputmode="url"></div>
       </div>
