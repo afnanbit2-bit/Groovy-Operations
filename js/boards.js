@@ -442,6 +442,11 @@ async function _boardsHomeId(){
    Boards panel ever drew. 240x180 gives the picture a shape worth looking
    at and the name two lines to live on. */
 const _BOARDS_HOME_COLS=4,_BOARDS_HOME_W=240,_BOARDS_HOME_H=180;
+// Afnan's own line, kept. It is chrome, so no emoji (the module's rule)
+// and it is a literal rather than a card's data, so it is safe in the
+// template; every string that comes off a BOARD still goes through
+// _boardsEsc or textContent.
+const _BOARDS_OPEN_PHRASE='Double-click to open your mind';
 // Two devices opening Home for the first time at the same moment each place
 // the same board, and the Stage 6 merge keeps both — they are different
 // cards with different ids, so nothing can tell it is one board twice.
@@ -2313,8 +2318,17 @@ function _boardCardHTML(c,canEdit){
     const meta=child
       ?n+' card'+(n===1?'':'s')+(files?' · '+files+' file'+(files===1?'':'s'):'')
       :(c.boardId?'Not available — deleted, or private to someone else':'No board linked yet');
+    /* NO "Open" PILL ON A POINTER DEVICE (Sept 2026 — Afnan: "open text is
+       not required"). Double-click opens it, the idle corner glow says the
+       card is openable and the hover line says how. On a PHONE none of
+       that is reachable — there is no hover, and `dblclick` is not
+       dependable once .board-stage has taken touch-action (the reason
+       double-tap-to-place is paired by hand), so the pill stays there
+       rather than leaving a board with no way in but a long-press. The
+       repair button is NOT the same thing and always shows: an orphan card
+       is unusable until it is adopted. */
     const open=c.boardId
-      ?(child?`<button class="board-subboard-open" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsGoto('${c.boardId}')">Open</button>`:'')
+      ?(child&&_boardsIsPhone()?`<button class="board-subboard-open" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsGoto('${c.boardId}')">Open</button>`:'')
       :(canEdit?`<button class="board-subboard-open" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsRepairBoardCard('${c.id}')">Create</button>`:'');
     // A picture is drawn with the same three guards every board image
     // carries: a sized derivative, CORS (so the PNG/PDF export can read it
@@ -2325,12 +2339,16 @@ function _boardCardHTML(c,canEdit){
     // Double-click opens it. The handler sits on the very element carrying
     // the drag handler, so the pointer capture cannot retarget it away —
     // the rule the to-do item and the table cell both learned the hard way.
-    body=`<div class="board-card-body board-subboard-body"${bodyDrag}${child?` ondblclick="window.boardsGoto('${c.boardId}')"`:''}>
+    /* `openable` is what the idle glow and the hover line hang off, so a
+       board that is gone or not linked yet gets neither — nothing should
+       invite a double-click that cannot do anything. */
+    body=`<div class="board-card-body board-subboard-body${child?' openable':''}"${bodyDrag}${child?` ondblclick="window.boardsGoto('${c.boardId}')"`:''}>
       ${facePaint}
       <div class="board-subboard-scrim">
         <div class="board-subboard-title">${_boardsEsc(title)}</div>
         <div class="board-subboard-meta">${_boardsEsc(meta)}</div>
       </div>
+      ${child?`<div class="board-subboard-cta"><span>${_BOARDS_OPEN_PHRASE}</span></div>`:''}
       ${open}
     </div>`;
   }else{

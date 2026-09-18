@@ -1360,10 +1360,46 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   color:#fff;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
   overflow:hidden;word-break:break-word}
 .board-subboard-meta{margin-top:2px;font-size:13px;font-weight:600;color:rgba(255,255,255,.74)}
-.board-subboard-open{position:absolute;right:8px;bottom:9px;z-index:2;
+.board-subboard-open{position:absolute;right:8px;bottom:9px;z-index:3;
   background:rgba(255,255,255,.93);color:#111114;border:none;border-radius:7px;
   padding:4px 10px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer}
 .board-subboard-open:hover{background:#fff}
+/* ── "This one opens" (Sept 2026) ─────────────────────────────────────
+   Afnan: drop the Open pill, glow the corners in red while the card sits
+   idle, and say how on hover. Both hang off `.openable`, which the render
+   only sets when the child board is really there — nothing should invite a
+   double-click that cannot do anything.
+
+   The red is --count-accent, the app's one real red, which deliberately
+   does NOT invert: this glow sits on a cover photograph, so there is no
+   theme for it to follow. */
+.board-subboard-body.openable::after{content:"";position:absolute;inset:0;z-index:2;
+  pointer-events:none;
+  background:
+    radial-gradient(circle at 0% 0%,rgba(220,38,38,.58),rgba(220,38,38,0) 26%),
+    radial-gradient(circle at 100% 0%,rgba(220,38,38,.58),rgba(220,38,38,0) 26%),
+    radial-gradient(circle at 0% 100%,rgba(220,38,38,.58),rgba(220,38,38,0) 26%),
+    radial-gradient(circle at 100% 100%,rgba(220,38,38,.58),rgba(220,38,38,0) 26%);
+  animation:board-openable 2.8s ease-in-out infinite}
+@keyframes board-openable{0%,100%{opacity:.34}50%{opacity:1}}
+/* Hovering replaces the hint with the instruction, so the two never talk
+   over each other. */
+.board-subboard-body.openable:hover::after{animation:none;opacity:.22}
+.board-subboard-cta{position:absolute;inset:0;z-index:4;display:flex;
+  align-items:center;justify-content:center;padding:14px;text-align:center;
+  pointer-events:none;opacity:0;transition:opacity .16s ease-out;
+  background:rgba(12,12,14,.66);-webkit-backdrop-filter:blur(1.5px);backdrop-filter:blur(1.5px)}
+.board-subboard-body.openable:hover .board-subboard-cta{opacity:1}
+.board-subboard-cta span{font-size:14px;font-weight:700;line-height:1.35;color:#fff;
+  text-shadow:0 1px 3px rgba(0,0,0,.6)}
+/* Neither survives the zoom where a card is just its picture, and the
+   glow is motion nobody asked to keep. */
+.board-world[data-lod="far"] .board-subboard-body.openable::after{animation:none;opacity:0}
+.board-world[data-lod="far"] .board-subboard-cta{display:none}
+@media (prefers-reduced-motion:reduce){
+  .board-subboard-body.openable::after{animation:none;opacity:.6}
+  .board-subboard-cta{transition:none}
+}
 
 /* Find within a board */
 .board-find{position:absolute;top:14px;right:14px;display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px 8px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.1);z-index:28;max-width:calc(100% - 28px);flex-wrap:wrap}

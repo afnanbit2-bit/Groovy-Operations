@@ -284,9 +284,16 @@ const FRAGMENTS={
       // an <img> that never loads would measure the scrim against nothing.
       .replace(/src="[^"]*cloudinary[^"]*"/g,
         'src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'3\'%3E%3Crect width=\'4\' height=\'3\' fill=\'%23ffffff\'/%3E%3C/svg%3E"');
+    // The hover line is opacity:0 until :hover, and the probe cannot hover —
+    // so a second copy is rendered with it forced visible. Without this the
+    // most legible thing on the card (white on a dark wash over an unknown
+    // photograph) would never be measured at all.
     return Promise.resolve(
       '<div style="position:relative;overflow:hidden;height:230px;width:100%">'+
-        '<div class="board-world" data-lod="near">'+cards+'</div></div>');
+        '<div class="board-world" data-lod="near">'+cards+'</div></div>'+
+      '<div style="position:relative;overflow:hidden;height:230px;width:100%;margin-top:12px">'+
+        '<div class="board-world" data-lod="near" id="hovered">'+cards+'</div></div>'+
+      '<style>#hovered .board-subboard-cta{opacity:1}</style>');
   },
   /* The "Preparing to download…" cover. It carries text on a literal dark
      wash, so the contrast check applies; and because it is

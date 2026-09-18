@@ -9,6 +9,7 @@
    ───────────────────────────────────────────────────────────────────────── */
 'use strict';
 const {loadApp,suite,ROOT}=require('./harness');
+const _BOARDS_PHRASE_DEBUG=h=>(h.match(/board-subboard-cta[^<]*<span>([^<]*)/)||[])[1]||'(no cta)';
 
 const FILES=['js/boards.js'];
 
@@ -455,7 +456,27 @@ module.exports=function(){
       // carrying the drag handler — a descendant would be retargeted away
       // by the pointer capture, which is the bug this file keeps finding.
       s.ok('double-clicking the card opens the board',
-        /board-subboard-body"[^>]*boardsCardDragStart[^>]*ondblclick="window\.boardsGoto\('B'\)"/.test(noCover));
+        /board-subboard-body openable"[^>]*boardsCardDragStart[^>]*ondblclick="window\.boardsGoto\('B'\)"/.test(noCover));
+
+      /* ── "This one opens" ──────────────────────────────────────────
+         Afnan: drop the Open pill, glow the corners in red while the card
+         is idle, and say how on hover. Both hang off `.openable`. */
+      s.ok('an openable card is marked as such',/board-subboard-body openable/.test(noCover));
+      s.ok('and carries the line, not a button',
+        /board-subboard-cta/.test(noCover)&&!/>Open</.test(noCover));
+      s.ok('the line is the one Afnan wrote',
+        noCover.indexOf('Double-click to open your mind')>0,_BOARDS_PHRASE_DEBUG(noCover));
+      // THE PILL SURVIVES ON A PHONE. There is no hover there, and dblclick
+      // is not dependable once .board-stage has taken touch-action — the
+      // reason double-tap-to-place is paired by hand — so removing it
+      // would leave a board with no way in but a long-press.
+      const ph=loadApp({files:['js/boards.js'],phone:true,
+        session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      ph.run(`_editBoard={id:'H',isHome:true,ownerUid:'u1',visibility:'personal',zoom:1};
+        moodBoards=[{id:'B',title:'W',ownerUid:'u1',visibility:'personal',cards:[]}];
+        _editCards=[{id:'k1',type:'board',boardId:'B',x:0,y:0,w:240,h:180}];`);
+      s.ok('a phone still gets the Open button',
+        />Open</.test(ph.run(`_boardCardHTML(_editCards[0],true)`)));
 
       // The three states survive the redesign.
       r5(`moodBoards=[];`);
@@ -465,6 +486,13 @@ module.exports=function(){
       r5(`_editCards=[{id:'k2',type:'board',boardId:'',x:0,y:0,w:240,h:180}];`);
       const orphan=r5(`_boardCardHTML(_editCards[0],true)`);
       s.ok('an orphan still offers to create the board',/boardsRepairBoardCard/.test(orphan));
+      // A board that is gone, or never linked, invites nothing — a
+      // double-click on either can do nothing, so neither the glow nor the
+      // line appears.
+      s.ok('a card with nothing behind it is not openable',
+        !/openable/.test(gone)&&!/board-subboard-cta/.test(gone));
+      s.ok('nor is an orphan',!/openable/.test(orphan)&&!/board-subboard-cta/.test(orphan));
+      s.ok('but the orphan keeps its repair button',/>Create</.test(orphan));
 
       s.eq('a new board card is 240x180',
         r5(`_BOARDS_HOME_W+'x'+_BOARDS_HOME_H`),'240x180');
