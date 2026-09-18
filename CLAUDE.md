@@ -1379,6 +1379,73 @@ it started" (got 940,360), and leaving the flash flag set fails both
 one-shot assertions. **The six tests that encoded the old two-tab behaviour
 were rewritten to the new one rather than deleted.**
 
+### Mood Boards — a board card IS the board’s picture (Sept 2026)
+
+Afnan: *"on home max zoom out is 40%, while the way the board looks visually
+on home we need to change that, it should be visually powerful."* A specimen
+canvas was published with four options (the type-scale precedent); **he
+picked A, the cover tile.**
+
+**Home’s zoom floor is 40%** (`_BOARDS_HOME_ZOOM_MIN`). Home holds board
+cards and nothing else, and a board card is something you READ; an ordinary
+board holds tech packs you legitimately want to see all of at once, which is
+what 25% is for. `_boardsClampZoom` stays THE one enforcement point and now
+reads `_boardsZoomFloor()`, **the only thing that touches
+`_BOARDS_ZOOM_MIN`** — a test counts the references so nothing can read the
+constant and skip the Home branch. It also puts Home entirely inside the
+`mid` LOD band, so a board card there is never drawn in `far`.
+
+- **A live bug the test found:** the board OPEN path clamped **inside the
+  object literal it was building**, so `_editBoard` was still the PREVIOUS
+  board when the floor was read and a Home saved below 40% came back at 25%.
+  Clamped after the assignment now.
+- **A test-only hazard, hit twice:** two `_pending` blocks that each set up
+  state and then await overwrite each other (every body runs to its first
+  await at push time) — **and so does synchronous code that touches
+  `_editBoard` while one of them is mid-await.** Both opens are sequenced in
+  one block; the synchronous clamp checks get their own `loadApp`.
+
+**THE CARD.** It was 200×124 of grey chrome — type label, truncated title,
+count, button, identical for every board — while the board already stored a
+**cover picture**, a **colour** and an **icon or letter** that only the
+Boards panel ever drew. The same board was read by picture on the right and
+as grey text on the left. **That was the gap, not the size.** 240×180 now:
+cover full bleed, or the colour carrying its glyph, name on a scrim.
+**Nothing new is stored and nothing migrates.**
+
+- **ONE decision about what a board looks like.** `_boardsFaceOf(b)` returns
+  `{cover,color,glyph}` and the gallery tile, the panel row and the card all
+  read it. Three copies of "cover, then icon, then first letter" would
+  disagree the first time one learned something. `_boardsCountFiles` is the
+  same tidy-up — it had two identical copies and this needed a third.
+- **The header OVERLAYS the picture** rather than taking a row — a 28px grey
+  strip above the cover is exactly the chrome this replaces. It stays in the
+  DOM (drag handle, card name, delete ✕) as a transparent bar with a soft
+  gradient. Only `.type-board` is touched.
+- **THE SCRIM IS A SOLID FLOOR, NOT A FADE, AND THE PROBE SETTLED THAT.**
+  The first cut was a gradient to transparent; `smoke-layout` reported white
+  ink at **1:1** in light mode. Tempting to dismiss as a probe limitation —
+  a gradient has no `backgroundColor` to read — but there was a real bug
+  under it: **a board with no colour falls back to `var(--soft)`, `#EFEFEF`
+  in light mode**, and a cover photograph can be just as light. The band
+  carries an opaque `background-color` now, the gradient only deepens its
+  foot, and the top edge is softened with a `box-shadow` instead of
+  transparency. **A literal white ink is correct here because the scrim
+  under it is literal too.**
+- **Double-click opens the board**, with the handler on the very element
+  carrying the drag handler — a descendant would be retargeted away by the
+  pointer capture, the bug this file has now found five times. The Open pill
+  stays rather than being removed.
+- **Existing cards are NOT resized on open** — a write on a read path is
+  what this module refuses. `_BOARDS_MIN_BODY_H.board` 78 → **124**, so the
+  render grows an old 200×124 card to fit its own name, no migration.
+- At `far` the whole scrim goes: the picture is what tells boards apart at
+  that zoom, which is the entire reason the card became one.
+- **The `smoke-layout` fragment swaps the covers for a solid WHITE image**,
+  so a scrim that ever fades back to transparent reads as white-on-white.
+  Verified both ways, as are the cover-URL guard and the `ondblclick`
+  placement.
+
 ### Mood Boards — the QA round (Sept 2026)
 
 Afnan ran an exhaustive pass over a real private board — every tool, every
