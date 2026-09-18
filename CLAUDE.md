@@ -3687,6 +3687,30 @@ page's "Check Shopify access", which asks Shopify directly).
   rule is already satisfied. **Whether the hourly allowance covers 244
   lookups in one go is not known from here**; the pause is what makes that
   not matter.
+- **A FETCH NEVER CLEARS A NUMBER IT DID NOT GET BACK** (18 Sept 2026 —
+  a real data loss, found by Daniyal). Business Discovery omits
+  `like_count` for an account that hides its likes (and can send `-1`,
+  which `summarize`'s `isNum` filter drops the same way), so `avg_likes`
+  comes back **null while followers, comments and views are fine**. Both
+  fetch paths wrote that null straight over the stored value:
+  `mktApplyIgFetch` (the bulk run) and the form's own fetch, which blanked
+  the input. `mktScore` needs avg likes, so the creator lost its score and
+  fell into **Unscored / Needs completion** — @aitzazism, the morning after
+  the first "Fetch all" run. It reads exactly like someone deleted the
+  field, which is why it was reported as one. Editing another field was
+  ruled out: the form prefills every tiering input from the stored record.
+  **`mktIgMerge(creator, response)` is now the single decision** — a number
+  Instagram returns wins, a number it withholds keeps what is stored, and a
+  field empty on both sides stays empty and is NAMED. `api_values` carries
+  only what the fetch actually supplied, so `mktDataSource` can tell the
+  two apart: everything fetched is `'api'`, a record holding a kept number
+  beside fetched ones is **`'mixed'`** ("Instagram + kept numbers"), and
+  editing a fetched number is still `'manual'`. **The old values are NOT
+  recoverable** — nothing versions a Firestore field — so the repair is
+  "ask Instagram again": the bulk modal's **Only the incomplete ones**
+  (`mktIgBulkPlan(..,{repair:true})`) re-fetches creators whose tiering
+  numbers are incomplete, ignoring the 24h skip, and reports how many
+  Instagram still will not complete so those can be typed in by hand.
 - **Scoring settings are Ammar's alone** (17 Sept 2026). A third
   per-account flag, `canEditScoring` on Ammar's `USER_DEFS` entry
   (`canEditScoring()` in `js/auth.js`), mirrored by EMAIL in
