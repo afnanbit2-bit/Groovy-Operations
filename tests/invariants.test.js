@@ -153,6 +153,33 @@ module.exports=function(){
     s.eq('none below the 11px floor Afnan approved',under.join(',')||'none','none');
   }
 
+  // ── Chart text is never inside a scaled SVG ────────────────────────────
+  // The Reports charts first drew their labels into one
+  // <svg viewBox="0 0 720 H"> sized width:100%. Text inside a scaled SVG
+  // is in VIEWBOX units, not CSS pixels, so the browser multiplies it by
+  // whatever the scale happens to be. MEASURED in headless Chromium: at a
+  // 1900px window the SVG rendered 1818px against the 720 viewBox — 2.53×,
+  // so a 13px label painted at ~33px, which is what Ammar reported. At
+  // 420px the same label painted at ~8px, the same bug erring small.
+  // Bars are geometry and may be proportional; TEXT must be real HTML.
+  s.section('chart text is HTML, never inside a scaled SVG');
+  {
+    const src=read('js/marketing.js');
+    const charts=(src.match(/function mktChart(Bars|HBars)\([\s\S]*?\n\}/g)||[]);
+    s.eq('both chart builders were found',charts.length,2);
+    charts.forEach(fn=>{
+      const name=(/function (mktChart\w+)/.exec(fn)||[])[1];
+      s.ok(name+' emits no <svg>',!/<svg/.test(fn));
+      s.ok(name+' emits no viewBox',!/viewBox/.test(fn));
+      s.ok(name+' emits no <text> element',!/<text[ >]/.test(fn));
+    });
+    // A chart is chrome, so every colour is a token — a literal hex is the
+    // dark-mode bug this codebase keeps shipping.
+    const palette=(/const _MKT_SERIES=\[([\s\S]*?)\];/.exec(src)||['',''])[1];
+    s.ok('the series palette is all CSS variables',
+      /var\(--/.test(palette)&&!/#[0-9a-f]{3,6}/i.test(palette),palette.replace(/\s+/g,' ').trim());
+  }
+
   // ── Card text has its own, higher floor ────────────────────────────────
   // The app-wide Comfortable floor is 11px, and that is right for CHROME.
   // Card internals are the one place it is not: everything inside

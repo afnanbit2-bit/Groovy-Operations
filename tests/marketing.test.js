@@ -1853,6 +1853,41 @@ module.exports=async function(){
   s.section('the chart kit');
   {
     const t=app();
+    // The reported bug: five gridlines over a max of 3 put the ticks at
+    // 0.75 steps and the formatter rendered 0, 1, 2, 2, 3 — a REPEATED
+    // axis label, which reads as a rendering fault and makes every bar
+    // beside it suspect. The step is chosen first now, so it cannot happen.
+    const ticks=(vals,int)=>{
+      const sc=t.run('mktChartScale('+J(vals)+','+J(int?{integer:true}:{})+')');
+      const out=[];for(let i=0;i<=sc.count;i++)out.push(t.run('mktChartTick('+(sc.step*i)+')'));
+      return out;
+    };
+    s.eq('a max of 3 gives whole ticks',J(ticks([3,0],true)),J(['0','1','2','3']));
+    s.ok('with no repeats',new Set(ticks([3,0],true)).size===4);
+    [[1],[2],[3],[4],[5],[7],[9],[12],[23],[57],[999]].forEach(v=>{
+      const got=ticks(v,true);
+      s.eq('counts '+v[0]+': every tick is distinct',new Set(got).size,got.length);
+      // The STEP is what must be whole — half a dispatch is not a
+      // quantity. The LABEL may still be shortened (1000 reads as 1k).
+      s.ok('and the step is a whole number',Number.isInteger(t.run('mktChartScale('+J(v)+',{integer:true}).step')));
+    });
+    // …and the guarantee holds for ANY formatter, not just the charts
+    // that remember to ask for whole numbers: it is checked on the
+    // rendered LABELS, so a formatter that rounds cannot produce a repeat.
+    const axisLabels=(vals,fmt)=>{
+      const sc=t.run('mktAxisScale('+J(vals)+',{},'+(fmt||'null')+')');
+      const out=[];for(let i=0;i<=sc.count;i++)out.push(t.run('mktChartTick('+(sc.step*i)+')'));
+      return out;
+    };
+    s.eq('a rounding formatter still gets distinct labels',J(axisLabels([3,0])),J(['0','1','2','3']));
+    [1,2,3,4,6,7,11,13].forEach(v=>{
+      const got=axisLabels([v]);
+      s.eq('max '+v+' has no repeated axis label',new Set(got).size,got.length);
+    });
+    // A formatter that KEEPS decimals keeps its resolution — the ROI
+    // chart reads 0.25x, 0.5x and must not be forced to whole numbers.
+    const roi=t.run('mktAxisScale([1.2],{},function(n){return(Math.round(n*100)/100)+String.fromCharCode(215);})');
+    s.ok('a decimal formatter is not forced to whole steps',roi.step<1);
     s.eq('an axis rounds UP to something round',t.run('mktChartMax([42,17])'),50);
     s.eq('and again an order of magnitude up',t.run('mktChartMax([4200,900])'),5000);
     s.eq('an exact round number is not overshot',t.run('mktChartMax([100])'),100);
@@ -1867,22 +1902,32 @@ module.exports=async function(){
   }
   {
     const t=app();
-    const svg=t.run("mktChartBars({groups:[{label:'Sep',values:[10,4]},{label:'Oct',values:[20,20]}],series:['A','B'],caption:'x'})");
-    s.ok('bars are drawn',(svg.match(/<rect /g)||[]).length===4);
-    s.ok('with a scaling viewBox',/viewBox="0 0 720 210"[\s\S]*preserveAspectRatio/.test(svg));
-    s.ok('described for a screen reader',/role="img" aria-label="x"/.test(svg));
-    // A <title> carries text with no box, which the layout probe reads as
-    // invisible text — the chart must never grow one.
-    s.ok('and carries no <title> element',!/<title/.test(svg));
-    s.ok('every colour is a token',!/#[0-9a-f]{3,6}/i.test(svg));
+    const html=t.run("mktChartBars({groups:[{label:'Sep',values:[10,4]},{label:'Oct',values:[20,20]}],series:['A','B'],caption:'x'})");
+    s.eq('one bar per value',(html.match(/class="mkt-bar"/g)||[]).length,4);
+    s.eq('one group per month',(html.match(/class="mkt-bargroup"/g)||[]).length,2);
+    // Text inside a scaled SVG is in viewBox units, so it painted at 33px
+    // on a desktop and 8px on a phone (both MEASURED). The bars are
+    // geometry; every piece of text is ordinary HTML at the app's sizes.
+    s.ok('nothing is drawn in an SVG any more',!/<svg|viewBox/.test(html));
+    s.ok('the axis labels are real HTML',/<span class="mkt-chart-tick"/.test(html));
+    s.ok('and so are the month labels',/<span class="mkt-chart-lab"[^>]*>Sep</.test(html));
+    s.ok('bar heights are proportional, not pixel values',/height:100\.0%/.test(html));
+    s.ok('described for a screen reader',/role="img" aria-label="x"/.test(html));
+    // A <title> ELEMENT carries text with no box, which the layout probe
+    // reads as invisible text. A title ATTRIBUTE is a tooltip and has none.
+    s.ok('and carries no <title> element',!/<title[ >]/.test(html));
+    s.ok('every colour is a token',!/#[0-9a-f]{3,6}/i.test(html));
     s.eq('no groups, no chart',t.run('mktChartBars({groups:[],series:["A"]})'),'');
   }
   {
     const t=app();
     const q=String.fromCharCode(34);
-    const svg=t.run('mktChartHBars({rows:[{label:'+J('<img src=x onerror=1>')+',value:5}],caption:"c"})');
-    s.ok('a label is escaped into the SVG',!/<img/.test(svg)&&/&lt;img/.test(svg));
-    s.ok('one bar per row',(svg.match(/<rect /g)||[]).length===1);
+    const html=t.run('mktChartHBars({rows:[{label:'+J('<img src=x onerror=1>')+',value:5}],caption:"c"})');
+    s.ok('a label is escaped',!/<img/.test(html)&&/&lt;img/.test(html));
+    s.eq('one row',(html.match(/class="mkt-hbar"/g)||[]).length,1);
+    // The Profile-directory shape: a flexing name beside a fixed control
+    // renders the name at 0px. Here the NAME is fixed and the TRACK flexes.
+    s.ok('the track flexes, the name does not',/mkt-hbar-track/.test(html));
     s.eq('no rows, no chart',t.run('mktChartHBars({rows:[]})'),'');
   }
   {
