@@ -2419,7 +2419,22 @@ rail-and-selection-bar mistake, not repeated.
 
 Four real gaps were left:
 
-1. **A board PICTURE (`b.coverUrl`).** `_boardsTileHTML` takes an uploaded
+1. **A board PICTURE (`b.coverUrl`), and then one sheet for the whole
+   tile.** Afnan, on the next pass: double-clicking the picture should
+   offer colour, upload an image, assign text, assign a number "however
+   someone wants it". **Four ways to fill one tile belong on ONE sheet**
+   (`boardsOpenBoardLook`), not behind four menu entries whose names you
+   have to know — a person choosing how a board looks is comparing them,
+   not picking a command; Milanote's own panel does the same
+   (Recommended · Letters & numbers · Upload an image). **They all write
+   the same two fields:** a letter, a number and an emoji are all
+   `b.icon`, a short string the tile already rendered, so "assign text"
+   and "assign number" needed **no new field and no migration**. The
+   sheet reopens after each choice, so trying three colours is not three
+   round trips, and Custom colour still hands off to the existing HSV
+   sliders rather than a second implementation. The gallery menu's four
+   entries collapsed into one (`g:look`) for the same reason.
+   `b.coverUrl` itself: `_boardsTileHTML` takes an uploaded
    picture, then an emoji icon, then the first letter — a board always has
    a tile and nothing migrates. **Only an ANCHORED
    `https://res.cloudinary.com/` URL is accepted** (`_boardsCoverUrl`): the
@@ -2436,7 +2451,7 @@ Four real gaps were left:
    remembered itself shut would quietly undo "always open". A paste
    un-collapses it: collecting into a panel nobody can see is the bug the
    paste round just fixed.
-3. **The row.** 344px, a 54px picture, and the **whole name** on its own two
+3. **The row.** 404px, a 58px picture, and the **whole name** on its own two
    clamped lines, meta under it, actions on a line of their own. **The name
    never shares a row with a button** — the Profile-directory rule, which
    the 280px version broke exactly as that rule predicts: 30px of tile plus
@@ -2461,14 +2476,37 @@ Four real gaps were left:
   the next render. The dead-button shape, again.
 - `window.boardsToggleBoardsPanel` was deleted rather than left beside
   `boardsTogglePanel`.
+- **Double-click the NAME to rename in place**, double-click the **TILE**
+  for the look sheet. **Both swallow their own single click as well as
+  `pointerdown`** — without that, double-clicking an *unplaced* board would
+  PLACE it on the way to renaming it, and the row's drag would start under
+  the caret. Enter or blur saves; Escape restores the name captured
+  **before** the field opened, so a cancel cannot write back something
+  half-typed. The gallery keeps its `prompt()`: a gallery card is also a
+  click-to-open target and would fight an inline editor, which a panel row
+  is not.
+- **The left rail and the card menu carry Picture and Board name** for a
+  selected board card, routed to the same sheet and the same gallery
+  router — the rail and the menus cannot offer different things.
 
-**A lesson about verifying, worth more than the feature.** The layout
-fragment was checked by putting the name back on a shared flex row in a
-280px panel — and **the first attempt at that break did not apply**
-(a multiline string mismatch) and reported a clean pass, which reads
-exactly like "the fragment has no teeth". **Confirm the break actually
-landed before believing either answer.** Applied properly it fails, naming
-the overflowing row and the covered `⋯`.
+**TWO lessons about verifying, both worth more than the feature.**
+
+The layout fragment was checked by putting the name back on a shared flex
+row in a 280px panel — and **the first attempt at that break did not apply**
+(a multiline string mismatch) and reported a clean pass, which reads exactly
+like "the fragment has no teeth". **Confirm the break actually landed before
+believing either answer.**
+
+Worse: making the name clickable turned it into a control the probe
+hit-tests, which reported it as zero-size — and that is how it came out that
+**the fragment had never measured a real board name at all.**
+`_boardsPanelHydrate` walks `document.getElementById`, and **the harness's
+DOM does not parse an `innerHTML` string into findable elements**, so
+calling it there does nothing and every row was measured EMPTY. The fragment
+had been claiming to prove "the whole name is visible" while measuring blank
+boxes. **Any fragment whose module hydrates text with `textContent` must
+fill it in the REAL browser**, the way the link-preview and far-zoom
+fragments do — calling the hydrate from the harness proves nothing.
 
 **And the CACHE_VERSION collision happened again, in its dangerous form.**
 Ammar's PR #77 shipped `v108`; this work picked `v108` too. The merge was
