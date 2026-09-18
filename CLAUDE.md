@@ -1264,6 +1264,51 @@ both ways, as is a `tests/boards.test.js` block that renders a real
 two-item to-do and asserts the guard **and** that the body still starts a
 card drag (this is a per-control guard, not a removal of the drag).
 
+### Mood Boards — the panel counts are red (Sept 2026)
+
+Afnan, from a screenshot with both circled: the "1" beside Boards should
+read as a count, not as part of the label. All three counts paint
+**`--count-accent`** now — the two panel tabs (`.board-tray-tabn`), the
+collapsed rail (`.board-tray-reopen-n`) and the top bar's Boards button,
+whose count was bare text and is the same span now.
+
+**THE TOKEN DELIBERATELY DOES NOT INVERT FOR DARK MODE**, unlike every
+other accent in `:root`, and that is the whole point. A tab and the Boards
+button are transparent over `--surface` when idle and a **`var(--dark)`
+chip when `.on`** — and `--dark` inverts. So the count sits on FOUR
+backgrounds, and a colour that flips with the theme is wrong on half of
+them. `--accent-urgent` was the obvious choice and is one of those.
+Measured on all four:
+
+| | light surface | light chip | dark surface | dark chip |
+|---|---|---|---|---|
+| `#DC2626` | 4.83 | 4.35 | 3.70 | 4.13 |
+| `--accent-urgent` light `#7B1F2A` | 10.1 | **2.07** | **1.76** | 8.66 |
+| `--accent-urgent` dark `#F2A0A8` | **2.03** | 10.4 | 8.83 | **1.73** |
+
+Each `--accent-urgent` value is invisible on the chip in the theme it
+belongs to. `#DC2626` is the app's existing literal red and the only one
+that reads everywhere. **Do not "fix" this by adding a dark override.**
+
+Verified in the browser, not on paper: putting `#7B1F2A` in fails
+`smoke-layout` naming `board-tray-tabn` at **2.07** — the same number the
+arithmetic gives.
+
+**`tests/smoke-layout.js` gained "Home's top bar".** Neither existing
+top-bar fragment is on Home, so the Boards button — the control in the
+screenshot, and the only route to the panel — had never been measured or
+hit-tested at all. Verified by breaking it. `tests/boards.test.js` holds
+the markup half, since no logic suite can see a colour: both counts must
+be a span carrying the class, so a future edit cannot quietly put the
+number back as bare text and lose the red.
+
+**The CACHE_VERSION collision, again, in its benign shape.** Ammar's track
+had landed at `v114` while this sat at `v111`; the merge was clean and
+`sw.js` came through from their side untouched. The merge is new bytes on
+both sides, so it went to **`v115`** — checked against the CURRENT
+`origin/main`, not the commit this started from, which is the half that
+keeps getting missed.
+
 ### Mood Boards — the QA round (Sept 2026)
 
 Afnan ran an exhaustive pass over a real private board — every tool, every
