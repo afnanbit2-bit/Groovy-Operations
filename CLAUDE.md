@@ -3004,6 +3004,59 @@ card no longer navigates (ctrl/cmd-click still opens a tab). The right-click
 menu's Download and Open route through the same two functions as the card's
 own buttons, so the two cannot drift apart.
 
+### Mood Boards — one download per card (Sept 2026)
+
+Afnan: the Save-as dialog took a while, so he pressed Download again and the
+file arrived twice.
+
+**WHY IT WAITS is structural, not a bug.** An `<a download>` pointing at a
+**cross-origin** URL is ignored by Chrome — it navigates instead — so the
+only way to hand the browser a filename WE choose is to fetch the bytes and
+make a **same-origin `blob:` URL** out of them. The dialog cannot appear
+until the whole file has arrived. The card also shows a **sized derivative**
+while the download takes the **original**, so nothing is warm in the cache
+either. **Holding the bytes is what buys the name; the wait is the price.**
+
+**There IS an instant path, and it is NOT shipped because it could not be
+verified.** Let Cloudinary send the file with `Content-Disposition:
+attachment` (`fl_attachment`, already in this file as the last-resort path)
+and navigate to it: the browser streams it and asks immediately. The cost is
+the filename — it becomes Cloudinary's `public_id` unless
+**`fl_attachment:<name>`** works, and the sandbox cannot reach
+`cloudinary.com` to check. **Ask the human to open one such URL before
+shipping it**; do not guess the syntax.
+
+What shipped instead:
+
+- **A GUARD.** One download per card at a time, keyed on the card **id**, so
+  the same file reached from the card button, the rail and the right-click
+  menu is still one download. The second press is refused **out loud** with
+  a toast — silence is what caused the report. Released in a `finally` on
+  every path; a card left permanently "downloading" would be worse than the
+  bug.
+- **A COVER** on the card (`.board-card-busy`), built with `createElement`
+  when a download starts: a translucent wash, an animated sweep, suppressed
+  under `prefers-reduced-motion`.
+- **REAL PROGRESS where the response allows it.** `_boardsFetchAsset` reads
+  through the **stream** when a caller is listening AND there is a
+  `Content-Length` to measure against. No length or no readable body →
+  straight back to `blob()` and the sweep carries it: **a number that cannot
+  move reads as a hang.**
+- **IT SWALLOWS NOTHING** (`pointer-events:none`). The guard is the
+  enforcement; the cover is the explanation. A cover that ate the click
+  would make the second press do nothing at all — the exact silence being
+  fixed — and it leaves the card selectable and draggable meanwhile. The
+  layout probe hit-tests that: making it `pointer-events:auto` fails naming
+  the delete ✕ and the file card's own buttons.
+- **Known limit, written down:** the overlay and its text node are held by
+  card id rather than re-queried per chunk, so a **structural render**
+  rebuilds the canvas and the held node goes with it — the cover disappears
+  while the download carries on. The download still completes and the guard
+  still holds.
+- `tests/harness.js` gained **`click()`** on its element stub: a synthetic
+  `<a>` is how a blob download is triggered, so without it this path could
+  not be exercised at all.
+
 ### Mood Boards — a PDF card is sized to its page (Sept 2026)
 
 Reported with a screenshot: an attached production brief landed as the
