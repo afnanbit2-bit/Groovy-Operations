@@ -319,6 +319,26 @@ const FRAGMENTS={
     return Promise.resolve(
       '<div style="position:relative;width:100%">'+full.slice(i,j)+'</div>');
   },
+  // Home's top bar is a DIFFERENT bar — it drops share/rename/template and
+  // grows the Boards button, which is the one route to the panel. Its count
+  // is the red the panel tabs use, and it sits on .tool-btn.on's var(--dark)
+  // chip, which INVERTS: black in light, near-white in dark. Neither bar
+  // fragment above is on Home, so nothing measured this button at all.
+  'boards — Home’s top bar':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'H',isHome:true,title:'Home',ownerUid:'u1',visibility:'personal',zoom:.84,panX:0,panY:0};
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();_editUnsorted=[];
+      _boardsMenuOpen=false;_boardsViewOpen=false;_boardsHomePanelCollapsed=false;
+      moodBoards=[
+        {id:'H',isHome:true,ownerUid:'u1',title:'Home',cards:[],visibility:'personal'},
+        {id:'B',title:'WINTER DUMP 2K27',ownerUid:'u1',visibility:'personal',updatedAt:5,cards:[]}
+      ];`);
+    const full=app.run(`_renderBoardCanvasHTML()`);
+    const i=full.indexOf('<div class="board-topbar">');
+    const j=full.indexOf('<div class="board-stage"');
+    return Promise.resolve(
+      '<div style="position:relative;width:100%">'+full.slice(i,j)+'</div>');
+  },
   'boards — the tool rail':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};

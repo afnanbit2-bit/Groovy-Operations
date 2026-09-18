@@ -1938,7 +1938,7 @@ function _renderBoardCanvasHTML(){
         <button class="tool-btn${_boardsFindOpen?' on':''}" onclick="window.boardsToggleFind()" title="Find cards on this board">Find</button>
         <button class="tool-btn${_boardsDrawerOpen?' on':''}" id="board-cmt-btn" onclick="window.boardsToggleDrawer()" title="Comments and activity on this board">Comments</button>
         ${home
-          ?`<button class="tool-btn${_boardsHomePanelOpen()?' on':''}" onclick="window.boardsTogglePanel()" title="Show or hide the boards panel">Boards ${_boardsHomeList().length}</button>`
+          ?`<button class="tool-btn${_boardsHomePanelOpen()?' on':''}" onclick="window.boardsTogglePanel()" title="Show or hide the boards panel">Boards <span class="board-tray-tabn">${_boardsHomeList().length}</span></button>`
           :`<button class="tool-btn${_boardsTrayOpen?' on':''}" onclick="window.boardsToggleTray()" title="Unsorted — things collected but not placed yet">Unsorted${_editUnsorted.length?' '+_editUnsorted.length:''}</button>`}
         <div class="tool-sep"></div>
         <!-- View: everything about how the board is LOOKED AT, in one place,

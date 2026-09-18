@@ -1240,6 +1240,18 @@ module.exports=function(){
     const homeBar=run(`_renderBoardCanvasHTML()`);
     s.ok('Home shows both tabs',/boardsTraySetTab\('unsorted'\)/.test(homeBar)&&/boardsTraySetTab\('boards'\)/.test(homeBar));
     s.ok('and the top bar toggles the panel',/boardsTogglePanel\(\)/.test(homeBar));
+    // Afnan, from a screenshot: the count should read as a count, not as
+    // part of the label. All three counts (the two tabs and the top bar's
+    // Boards button) carry .board-tray-tabn / .board-tray-reopen-n, which
+    // paint var(--count-accent) — a REAL red that deliberately does not
+    // invert, because it sits on backgrounds that swap (a tab or button is
+    // transparent when idle and a var(--dark) chip when .on). The markup
+    // half is what a logic suite can hold; the colour is measured by
+    // smoke-layout in both themes.
+    s.ok('the top bar count is a span, not bare text',
+      /Boards <span class="board-tray-tabn">\d+<\/span>/.test(homeBar));
+    s.ok('and so is the Boards tab count',
+      /Boards<span class="board-tray-tabn">\d+<\/span>/.test(homeBar));
     run(`_editBoard={id:'A',title:'Winter Drop',visibility:'shared',ownerUid:'u1',zoom:1,panX:0,panY:0}`);
     const plainBar=run(`_renderBoardCanvasHTML()`);
     s.ok('an ordinary board has no tab strip',!/boardsTraySetTab/.test(plainBar));

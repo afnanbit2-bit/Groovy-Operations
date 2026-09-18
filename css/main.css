@@ -34,6 +34,17 @@
      be the only blue in the app; Milanote uses the same accent. It inverts
      for dark mode like --dark does, so anything using it keeps working. */
   --link-accent:#C2410C;
+  /* The count on a panel tab / the top bar's Boards button. It is a REAL
+     red, and it deliberately does NOT invert for dark mode — unlike every
+     other accent here — because it has to sit on two backgrounds that
+     SWAP: a tab is transparent over --surface when idle and a --dark chip
+     when active, and --dark inverts. MEASURED on all four (light surface
+     4.83:1, light --dark chip 4.35, dark surface 3.70, dark --dark chip
+     4.13); --accent-urgent was the obvious choice and fails two of them
+     (2.07 and 1.76 in light, 2.03 and 1.73 in dark) because it inverts
+     the wrong way for the chip. Do not "fix" this by adding a dark
+     override. */
+  --count-accent:#DC2626;
   --radius-card:14px;--radius-bubble:16px;color-scheme:light}
 
 /* ── Dark mode (Sept 2026) ────────────────────────────────────────────
@@ -668,7 +679,7 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .board-tray-reopen:hover{background:var(--hover);color:var(--text)}
 .board-tray-reopen-arrow{font-size:16px;line-height:1}
 .board-tray-reopen-label{writing-mode:vertical-rl;font-size:12px;font-weight:700;letter-spacing:.14em}
-.board-tray-reopen-n{font-size:12px;font-weight:700}
+.board-tray-reopen-n{font-size:12px;font-weight:700;color:var(--count-accent)}
 .board-tray.dropping{outline:2px dashed var(--text);outline-offset:-6px}
 .board-tray-head{display:flex;align-items:center;justify-content:space-between;gap:8px;
   padding:12px 14px;border-bottom:1px solid var(--border);flex-shrink:0}
@@ -708,7 +719,7 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
   display:flex;align-items:center;gap:6px;white-space:nowrap}
 .board-tray-tab:hover{background:var(--hover)}
 .board-tray-tab.on{background:var(--dark);color:var(--on-dark)}
-.board-tray-tabn{font-size:12px;font-weight:700;opacity:.75}
+.board-tray-tabn{font-size:12px;font-weight:700;color:var(--count-accent)}
 .board-panel-tools{flex-direction:column;align-items:stretch;gap:9px}
 .board-panel-search{width:100%;font-family:inherit;font-size:13.5px;padding:7px 10px;
   border:1px solid var(--border);border-radius:9px;background:var(--surface-2);color:var(--text)}
