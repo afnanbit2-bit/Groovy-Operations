@@ -133,6 +133,26 @@ module.exports=function(){
       new RegExp('match /'+c+'/').test(rules));
   });
 
+  // ── The Comfortable type scale reaches the canvas too ──────────────────
+  // The Sept 2026 sweep moved the whole app to Comfortable with f(x) =
+  // x<11 ? 11 : x+1, applied by script to every literal `font-size:<n>px`.
+  // The PNG/PDF exporter in js/boards.js does NOT declare CSS — it draws
+  // with `ctx.font`, which that pattern structurally cannot match, so all
+  // seventeen of its sizes were missed and seven sat BELOW the 11px floor
+  // (down to 8px). The exporter translates into WORLD coordinates, the same
+  // unit a card's CSS font-size uses, so the two are directly comparable
+  // and had silently drifted: 13.5px on screen against 12px in the export.
+  // The next mechanical sweep will miss these again; this is what notices.
+  s.section('the type scale reaches the export canvas');
+  {
+    const src=read('js/boards.js');
+    const sizes=(src.match(/ctx\.font=[^;]*/g)||[])
+      .join(' ').match(/([0-9.]+)px/g)||[];
+    s.ok('the exporter still draws text at all',sizes.length>0,sizes.length+' sizes');
+    const under=sizes.filter(x=>parseFloat(x)<11);
+    s.eq('none below the 11px floor Afnan approved',under.join(',')||'none','none');
+  }
+
   // ── The staged rollout gate (CLAUDE.md) ────────────────────────────────
   // SIX routes reach the Creative Hub module: four nav pushes in
   // js/shared.js, the "Me" page button in js/hrm.js, and the deep-link

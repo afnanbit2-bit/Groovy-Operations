@@ -2144,6 +2144,32 @@ showed the middle 170×120 slice of itself. The `image` branch of
 - `_BOARDS_IMG_W`/`_BOARDS_IMG_H` name the birth size so `_boardsNewCard`
   and the unsized-guard cannot drift apart.
 
+### The Comfortable type scale missed the export canvas (Sept 2026)
+
+Afnan asked me to double-check the board was actually on the Comfortable
+scale. The screen is. **The PNG/PDF export was not**, and the reason is
+structural rather than an oversight.
+
+The sweep (`e0a0b5b`) applied `f(x) = x<11 ? 11 : x+1` by script, "matching
+only a literal `font-size:<number>px`". `_boardsRenderExportCanvas` draws the
+board by hand onto a 2D canvas, so every size it uses is a **`ctx.font`
+string** — which that pattern cannot match. All **17** were missed and
+**7 sat below the 11px floor**, down to 8px.
+
+**They are directly comparable to the CSS sizes**, which is what makes it a
+real drift rather than a separate scale: the exporter does
+`ctx.scale(scale,scale)` and then translates into **world coordinates**, the
+same unit a card's `font-size` uses. Card body text read **13.5px on screen
+against 12px in the export**.
+
+Fixed by applying the sweep's own rule to exactly those 17 sites (8→11,
+8.5→11, 10→11, 11→12, 12→13, 15→16), scoped to lines containing `ctx.font=`
+so nothing else could be touched.
+
+`tests/invariants.test.js` now fails if any `ctx.font` size in
+`js/boards.js` drops below 11. **The next mechanical font sweep will miss
+these again** — the check is what notices. Verified both ways.
+
 ### Mood Boards — Home is a board (Sept 2026)
 
 Milanote has no "list of your boards" page: **home IS a board**, and your
