@@ -1125,7 +1125,7 @@ module.exports=function(){
     run(`moodBoards[3].title='<img src=x onerror=alert(1)>'`);
     const rows=run(`_boardsPanelRowsHTML(true)`);
     s.ok('no title in the markup at all',!/onerror|Winter Drop/.test(rows));
-    s.ok('only an empty node for it',/id="board-panel-n-A"><\/div>/.test(rows));
+    s.ok('only an empty node for it',/id="board-panel-n-A"[^>]*><\/div>/.test(rows));
 
     s.section("Home's panel is a fixture, and closing it is soft");
     boot();
@@ -1171,21 +1171,25 @@ module.exports=function(){
       moodBoards=[{id:'H',isHome:true,ownerUid:'u1',cards:[]},
         {id:'A',title:'WINTER DUMP 2K27',ownerUid:'u1',visibility:'personal',cards:[],updatedAt:1}];`);
     const row=run(`_boardsPanelRowHTML(moodBoards[1],false,true)`);
-    s.ok('the name is its own element',/board-panel-name" id="board-panel-n-A"><\/div>/.test(row));
+    s.ok('the name is its own element',/board-panel-name" id="board-panel-n-A"[^>]*><\/div>/.test(row));
     s.ok('and the actions are on their own line below it',
       row.indexOf('board-panel-name')<row.indexOf('board-panel-actions'));
-    s.ok('the tile is the big one',/width:54px/.test(row));
+    s.ok('the tile is the big one',/width:58px/.test(row));
     s.ok('a row carries the boards menu',/boardsPanelMenu\(event,'A'\)/.test(row));
     s.ok('on right-click too',/oncontextmenu="window\.boardsPanelMenu/.test(row));
-    // That menu is the GALLERY's, so picture/colour/icon come free and
-    // cannot drift from the gallery's own.
+
+    s.section('the two double-clicks Afnan asked for');
+    s.ok('the NAME opens an inline rename',/ondblclick="event\.stopPropagation\(\);window\.boardsPanelRename\('A'\)/.test(row));
+    s.ok('the TILE opens the look sheet',/ondblclick="event\.stopPropagation\(\);window\.boardsOpenBoardLook\('A'\)/.test(row));
+    // Both swallow their own single click, or a double-click on an unplaced
+    // board would PLACE it on the way to renaming it.
+    s.ok('and neither lets a single click reach the row',
+      (row.match(/onclick="event\.stopPropagation\(\)"/g)||[]).length>=2);
+    // The gallery menu keeps ONE entry for all of it rather than four.
     const menu=JSON.stringify(run(`_boardsGalleryCtxItems(moodBoards[1])`));
-    s.ok('including the picture',/g:cover/.test(menu));
-    s.ok('the colour',/g:color/.test(menu));
-    s.ok('and the icon',/g:icon/.test(menu));
-    s.ok('removing a picture is offered only when there is one',
-      !/g:uncover/.test(menu)&&
-      /g:uncover/.test(JSON.stringify(run(`_boardsGalleryCtxItems({id:'A',ownerUid:'u1',visibility:'shared',coverUrl:'x',cards:[]})`))));
+    s.ok('one entry covers picture, colour, letter and icon',/g:look/.test(menu));
+    s.ok('and the four separate ones are gone',!/g:cover|g:color|g:icon/.test(menu));
+
 
     s.section('search reaches the cards, and says so');
     boot();
@@ -1213,6 +1217,38 @@ module.exports=function(){
     const plainBar=run(`_renderBoardCanvasHTML()`);
     s.ok('an ordinary board has no tab strip',!/boardsTraySetTab/.test(plainBar));
     s.ok('and keeps the plain Unsorted button',/boardsToggleTray\(\)/.test(plainBar));
+
+    // Deferred, so the state it needs is built INSIDE the closure — the
+    // sections below this one call boot() and would otherwise have replaced
+    // moodBoards long before this ran.
+    _pending.push((async()=>{
+      s.section('the look sheet writes the tile fields, and only those');
+      run(`session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};currentPage='board-canvas';
+        _editBoard={id:'H',isHome:true,ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+        moodBoards=[{id:'H',isHome:true,ownerUid:'u1',cards:[]},
+          {id:'A',title:'Winter',ownerUid:'u1',visibility:'shared',cards:[]}];
+        _boardsLookTarget='A';_boardsOpenSheet=function(){};
+        _boardsRenderCanvasAndWire=function(){};`);
+      await run(`window.boardsLookIcon('27')`);
+      s.eq('a number is just the icon field — no new field, no migration',
+        run(`moodBoards[1].icon`),'27');
+      await run(`window.boardsLookColor('#C2410C')`);
+      s.eq('a colour is validated on the way in',run(`moodBoards[1].color`),'#C2410C');
+      await run(`window.boardsLookColor('javascript:alert(1)')`);
+      s.eq('and junk clears it rather than reaching a style attribute',
+        run(`moodBoards[1].color===undefined`),true);
+      // Restored immediately after: a stubbed getElementById would break
+      // every later assertion in this file.
+      run(`__realGEBI=document.getElementById;document.getElementById=function(){return{value:'  ABCD  '};}`);
+      await run(`window.boardsLookText()`);
+      run(`document.getElementById=__realGEBI`);
+      s.eq('typed text is capped at two characters',run(`moodBoards[1].icon`),'AB');
+      s.eq('a picture is the only thing that clears a picture',
+        run(`(moodBoards[1].coverUrl='https://res.cloudinary.com/x/a.jpg',moodBoards[1].icon)`),'AB');
+      await run(`window.boardsLookIcon(null,true)`);
+      s.eq('removing it leaves the letter alone',
+        run(`(moodBoards[1].coverUrl===undefined)+':'+moodBoards[1].icon`),'true:AB');
+    })());
   }
 
   {

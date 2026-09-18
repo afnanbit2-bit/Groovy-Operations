@@ -2709,6 +2709,104 @@ window.boardsPickIcon=function(e){
   _boardsSaveIdentity(id,{icon:e||null});
 };
 
+/* ── How a board LOOKS, in one place (Sept 2026) ────────────────────────
+   Afnan: double-tapping a board's picture should let you "select color,
+   upload image, assign text, assign number etc to board image however
+   someone wants it".
+
+   Four ways to fill one tile, so they belong on ONE sheet rather than
+   behind four menu entries you have to know the names of — a person
+   choosing how a board looks is comparing them, not picking a command.
+   Milanote's own panel does the same (Recommended · Letters & numbers ·
+   Upload an image).
+
+   THEY ALL WRITE THE SAME TWO FIELDS. A letter, a number and an emoji are
+   all `b.icon` — a short string the tile renders — so "assign text" and
+   "assign number" needed no new field and no migration, and the picture is
+   `b.coverUrl`, which wins over both. The colour is `b.color` underneath.
+   The existing pickers are REUSED rather than reimplemented: Custom colour
+   still hands off to the HSV sliders, and everything lands through
+   `_boardsSaveIdentity`, the one writer. */
+const _BOARDS_TILE_DIGITS=['0','1','2','3','4','5','6','7','8','9'];
+let _boardsLookTarget=null;
+window.boardsOpenBoardLook=function(id){
+  const b=moodBoards.find(x=>x.id===id);
+  if(!b){showToast('That board is not available');return;}
+  if(!_boardsCanEdit(b)){showToast('You cannot change this board');return;}
+  _boardsLookTarget=id;
+  _boardsIconTarget=id;
+  _boardsColorTarget={kind:'board',id};
+  const cur=_boardsValidHex(b.color);
+  const icon=String(b.icon||'');
+  const cover=_boardsCoverUrl(b.coverUrl);
+  _boardsOpenSheet('Board picture',`
+    <div class="board-look">
+      <div class="board-look-preview">${_boardsTileHTML(b,64)}<span class="board-look-hint">This is how the board is recognised — in the panel, on Home and in the boards list.</span></div>
+
+      <div class="board-look-label">Colour</div>
+      <div class="board-tile-swatches">
+        <button class="board-tile-sw none${cur?'':' on'}" title="No colour" onclick="window.boardsLookColor('')"></button>
+        ${_BOARDS_TILE_COLORS.map(c=>`<button class="board-tile-sw${cur===c?' on':''}" style="background:${c}" title="${c}" onclick="window.boardsLookColor('${c}')"></button>`).join('')}
+      </div>
+      <button class="board-custom-btn" onclick="window.boardsOpenCustomColor()"><span class="board-custom-wheel"></span>Custom colour…</button>
+
+      <div class="board-look-label">Letter or number</div>
+      <div class="board-look-row">
+        <input type="text" id="board-look-text" class="board-look-input" maxlength="2"
+          value="${_boardsEsc(icon.length<=2?icon:'')}" placeholder="e.g. W or 27"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();window.boardsLookText();}">
+        <button class="btn-sm" onclick="window.boardsLookText()">Set</button>
+      </div>
+      <div class="board-look-digits">
+        ${_BOARDS_TILE_DIGITS.map(d=>`<button class="board-look-digit${icon===d?' on':''}" onclick="window.boardsLookIcon('${d}')">${d}</button>`).join('')}
+      </div>
+
+      <div class="board-look-label">Icon</div>
+      <div class="board-emoji-grid">
+        <button class="board-emoji${icon?'':' on'}" title="No icon" onclick="window.boardsLookIcon('')">—</button>
+        ${_BOARDS_TILE_ICONS.map(e=>`<button class="board-emoji${icon===e?' on':''}" onclick="window.boardsLookIcon('${e}')">${e}</button>`).join('')}
+      </div>
+
+      <div class="board-look-label">Picture</div>
+      <div class="board-look-row">
+        <button class="btn-sm" onclick="window.boardsLookUpload()">${cover?'Change picture…':'Upload a picture…'}</button>
+        ${cover?`<button class="btn-sm" onclick="window.boardsLookIcon(null,true)">Remove picture</button>`:''}
+      </div>
+      <div class="board-look-note">A picture covers the letter and the icon. Remove it to go back to them.</div>
+    </div>`);
+};
+// Each of these applies and REOPENS the sheet, so you can see what you just
+// chose and keep going — a sheet that closed on every tap would make trying
+// three colours three round trips.
+function _boardsLookAfter(id){
+  if(currentPage==='board-canvas'||currentPage==='boards')window.boardsOpenBoardLook(id);
+}
+window.boardsLookColor=async function(hex){
+  const id=_boardsLookTarget;if(!id)return;
+  await _boardsSaveIdentity(id,{color:_boardsValidHex(hex)||null});
+  _boardsLookAfter(id);
+};
+window.boardsLookIcon=async function(e,removeCover){
+  const id=_boardsLookTarget;if(!id)return;
+  await _boardsSaveIdentity(id,removeCover?{coverUrl:null}:{icon:e||null});
+  _boardsLookAfter(id);
+};
+// A letter or a number is the same field an emoji uses — two characters is
+// as much as fits a tile legibly, and the input is capped at that rather
+// than truncating something longer behind the person's back.
+window.boardsLookText=async function(){
+  const id=_boardsLookTarget;if(!id)return;
+  const el=document.getElementById('board-look-text');
+  const v=String((el&&el.value)||'').trim().slice(0,2);
+  await _boardsSaveIdentity(id,{icon:v||null});
+  _boardsLookAfter(id);
+};
+window.boardsLookUpload=function(){
+  const id=_boardsLookTarget;if(!id)return;
+  window.boardsCloseSheet();
+  window.boardsPickCover(id);
+};
+
 // ── New-board setup ──
 // A board created straight into the canvas is an "Untitled board" forever
 // — that is how a gallery of them happens. Creation now offers the name,
@@ -4138,7 +4236,16 @@ function _boardsRailItems(){
       items.push({act:'download',label:'Download',icon:'download'});
     }
     if(one.type==='link'&&one.linkUrl)items.push({act:'openasset',label:'Open',icon:'open'});
-    if(one.type==='board'&&one.boardId)items.push({act:'open-board',label:'Open',icon:'open'});
+    if(one.type==='board'&&one.boardId){
+      items.push({act:'open-board',label:'Open',icon:'open'});
+      // Afnan asked for the picture options to be on the left rail as well
+      // as behind the double-click. Same sheet, same router — the rail and
+      // the menus cannot offer different things.
+      if(canEdit){
+        items.push({act:'board-look',label:'Picture',icon:'color'});
+        items.push({act:'board-rename',label:'Board name',icon:'rename'});
+      }
+    }
     if(canEdit)items.push({act:one.type==='heading'?'renameheading':'rename',label:'Rename',icon:'rename'});
   }
   if(!canEdit)return items;
@@ -7972,9 +8079,10 @@ function _boardsPanelRowHTML(b,placed,canEdit){
       ${canEdit?`onpointerdown="window.boardsPanelDragStart(event,'${id}')"`:''}
       onclick="window.boardsPanelRowClick('${id}')"
       oncontextmenu="window.boardsPanelMenu(event,'${id}')">
-    <span class="board-panel-tile">${_boardsTileHTML(b,54)}</span>
+    <span class="board-panel-tile"${canEdit?` onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()" ondblclick="event.stopPropagation();window.boardsOpenBoardLook('${id}')" title="Double-click to change the picture, colour, letter or icon"`:''}>${_boardsTileHTML(b,58)}</span>
     <div class="board-panel-info">
-      <div class="board-panel-name" id="board-panel-n-${id}"></div>
+      <div class="board-panel-name" id="board-panel-n-${id}"
+        ${canEdit?`onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()" ondblclick="event.stopPropagation();window.boardsPanelRename('${id}')" title="Double-click to rename"`:''}></div>
       <div class="board-panel-meta">${_boardsEsc(meta)}</div>
       ${hits?`<div class="board-panel-hit">${hits} matching card${hits===1?'':'s'}</div>`:''}
       <div class="board-panel-actions">
@@ -7992,6 +8100,52 @@ function _boardsPanelRowHTML(b,placed,canEdit){
 // Team/Private, Trash all already live there, acting on a board BY ID, which
 // is exactly what a panel row is. A second menu would be the rail-and-
 // selection-bar mistake again.
+/* Renaming IN PLACE, from a double-click on the name.
+   The gallery's rename is a prompt(), which is right there — a card that is
+   also a click-to-open target would fight an inline editor. A panel row is
+   not that: the name already stops its own clicks, so nothing underneath is
+   competing for the gesture.
+   Enter or blur saves, Escape restores. The old name is captured BEFORE the
+   field is opened rather than read back from the element, so a cancel
+   cannot put a half-typed name back. Written in with textContent for the
+   usual reason: somebody else named this board. */
+let _boardsPanelRenaming=null;
+window.boardsPanelRename=function(id){
+  const b=moodBoards.find(x=>x.id===id);
+  if(!b||!_boardsCanEdit(b))return;
+  const el=document.getElementById('board-panel-n-'+id);
+  if(!el)return;
+  _boardsPanelRenaming={id,was:b.title||''};
+  el.setAttribute('contenteditable','true');
+  el.classList.add('editing');
+  el.textContent=b.title||'';
+  el.onkeydown=function(ev){
+    if(ev.key==='Enter'){ev.preventDefault();el.blur();return;}
+    if(ev.key==='Escape'){ev.preventDefault();_boardsPanelRenaming={id,was:b.title||'',cancel:true};el.blur();}
+  };
+  el.onblur=function(){window.boardsPanelRenameDone(id,el);};
+  try{
+    el.focus();
+    const r=document.createRange();r.selectNodeContents(el);
+    const sel=window.getSelection();sel.removeAllRanges();sel.addRange(r);
+  }catch(e){/* focus/selection is a nicety, not the feature */}
+};
+window.boardsPanelRenameDone=async function(id,el){
+  const st=_boardsPanelRenaming;
+  _boardsPanelRenaming=null;
+  if(!el)return;
+  el.removeAttribute('contenteditable');
+  el.classList.remove('editing');
+  el.onkeydown=null;el.onblur=null;
+  const was=(st&&st.was)||'';
+  if(st&&st.cancel){el.textContent=was;return;}
+  const next=String(el.textContent||'').replace(/\s+/g,' ').trim().slice(0,120);
+  if(!next||next===was){el.textContent=was||'Untitled board';return;}
+  await _boardsSaveIdentity(id,{title:next});
+  // _boardsSaveIdentity repaints the panel on Home, which rebuilds this
+  // element — so nothing is written back into the old one.
+  showToast('Renamed');
+};
 window.boardsPanelMenu=function(e,id){
   const b=moodBoards.find(x=>x.id===id);
   if(!b)return;
@@ -9168,6 +9322,10 @@ function _boardsCtxRun(act){
     case'link-preview':{const s=_boardsSelectedCards();if(s.length===1)window.boardsLinkTogglePreview(s[0].id);break;}
     case'link-refresh':{const s=_boardsSelectedCards();if(s.length===1)window.boardsLinkRefresh(s[0].id);break;}
     case'home-trash':{const s=_boardsSelectedCards();if(s.length===1&&s[0].boardId)window.boardsTrashLinkedBoard(s[0].boardId,s[0].id);break;}
+    // Both act on the BOARD a card points at, not the card — so they go
+    // through the gallery's router, which is the one that speaks board ids.
+    case'board-look':{const s=_boardsSelectedCards();if(s.length===1&&s[0].boardId)window.boardsOpenBoardLook(s[0].boardId);break;}
+    case'board-rename':{const s=_boardsSelectedCards();if(s.length===1&&s[0].boardId)_boardsGalleryCtxRun('g:rename',s[0].boardId);break;}
     case'cut':case'copy':{
       // Our copy/cut live on the real clipboard events (see _boardsOnCopy),
       // so the menu fires those rather than keeping a second code path.
@@ -9661,6 +9819,10 @@ function _boardsCardCtxItems(canEdit){
       }
     }else if(one.type==='board'&&one.boardId){
       typed.push({act:'open-board',label:'Open this board'});
+      if(canEdit){
+        typed.push({act:'board-look',label:'Board picture…'});
+        typed.push({act:'board-rename',label:'Rename the board…'});
+      }
       typed.push({act:'copyasset',label:'Copy link to board'});
       // ✕ takes a board off Home now, so trashing the board itself needs a
       // route of its own — named so the two cannot be confused.
@@ -9818,10 +9980,9 @@ function _boardsGalleryCtxItems(b){
   const owner=!!(session&&(b.ownerUid===session.uid||session.role==='owner'));
   const items=[{act:'g:open',label:'Open'}];
   if(canEdit)items.push({act:'g:rename',label:'Rename…',hint:'F2'});
-  if(canEdit)items.push({act:'g:cover',label:b.coverUrl?'Change picture…':'Upload a picture…'});
-  if(canEdit&&b.coverUrl)items.push({act:'g:uncover',label:'Remove the picture'});
-  if(canEdit)items.push({act:'g:color',label:'Colour…'});
-  if(canEdit)items.push({act:'g:icon',label:'Icon…'});
+  // One entry, not four: colour, letter/number, icon and picture all fill
+  // the same tile and are chosen by comparing them. See boardsOpenBoardLook.
+  if(canEdit)items.push({act:'g:look',label:'Board picture…'});
   items.push({sep:true});
   items.push({act:'g:link',label:'Copy link to board'});
   items.push({act:'g:dup',label:'Duplicate'});
@@ -9852,6 +10013,7 @@ async function _boardsGalleryCtxRun(act,id){
     case'g:open':window.boardsOpenFromAll(id);break;
     case'g:color':window.boardsOpenColorPicker('board',id);break;
     case'g:icon':window.boardsOpenIconPicker(id);break;
+    case'g:look':window.boardsOpenBoardLook(id);break;
     case'g:cover':window.boardsPickCover(id);break;
     case'g:uncover':_boardsSaveIdentity(id,{coverUrl:null});break;
     case'g:link':{

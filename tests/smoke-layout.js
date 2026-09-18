@@ -410,11 +410,24 @@ const FRAGMENTS={
       _boardsPanelHydrate();
       return true;})()`);
     const inner=app.run(`document.getElementById('board-panel-host').innerHTML`);
+    // THE NAMES HAVE TO BE FILLED HERE. _boardsPanelHydrate walks
+    // document.getElementById, and the harness's DOM does not parse an
+    // innerHTML string into findable elements — so calling it above does
+    // nothing and every row measured EMPTY. This fragment claimed to prove
+    // "the whole name is visible" and was measuring blank boxes until the
+    // name became clickable and the probe reported it as a zero-size
+    // control. Filled in the real browser instead, like the link-preview
+    // and far-zoom fragments already are.
+    const names=app.run(`JSON.stringify(_boardsHomeList().map(b=>({id:b.id,t:b.title||''})))`);
     // .board-tray is position:absolute inside the canvas wrap, so the
     // fragment supplies that containing block rather than letting it escape
     // to the page and measure nothing.
     return Promise.resolve(
-      '<div style="position:relative;height:620px;width:100%;overflow:hidden">'+inner+'</div>');
+      '<div style="position:relative;height:620px;width:100%;overflow:hidden">'+inner+'</div>'+
+      '<script>' +
+      'JSON.parse(' + JSON.stringify(names) + ').forEach(function(b){' +
+      'var e=document.getElementById("board-panel-n-"+b.id);if(e)e.textContent=b.t;});' +
+      '<\/script>');
   },
   'boards — the trash panel':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
