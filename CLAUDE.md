@@ -2225,6 +2225,36 @@ class-level specificity, so it does NOT automatically beat the per-card
 modifier rules it is trying to suppress. Any future LOD rule overriding an
 existing card style needs `!important` or a later position.
 
+### Mood Boards — the preview would not close on the backdrop (Sept 2026)
+
+Afnan: "double clicked on the image to open it bigger but when i click on
+the grid to close it does not close, it closes by just clicking on cross on
+the top right."
+
+**The handler existed and had never once fired.** It tested
+`e.target===wrap`, and the wrap is a flex column **completely covered by its
+own bar plus `.board-preview-body`, which is `flex:1`** — so it has no
+exposed pixels and that condition is essentially never true. The dark space
+around the picture IS the body. Dead since the preview shipped.
+
+`_boardsPreviewBackdrop(t,wrap)` names the rule: the body or the wrap close
+it; **the picture, the PDF iframe and the top bar never do** — clicking the
+thing you came to look at must not dismiss it. Extracted rather than inlined
+so it can be asserted at all: the overlay is built with `createElement` and
+`querySelector`, which the node harness stubs out, so the predicate is the
+only part testable without a browser.
+
+**A test-suite bug found on the way, worth more than the fix.**
+`tests/boards.test.js` had one convention — *the last block returns its
+promise* — and the image-fit block I added earlier used `return (async…)()`
+**in the middle of the module**, which ends the function and silently drops
+every block below it. It had killed the new preview block AND the whole
+pre-existing PDF-sizing section. **The only symptom was the assertion total
+going DOWN when tests were added** (735 → 728), which is easy to read as a
+flaky count rather than dead code. Async blocks now `_pending.push(…)` and
+the final block resolves them all: 728 → **759**. **If the total ever drops
+after adding a test, look for a `return` in the middle of the module.**
+
 ### Mood Boards — Home is a board (Sept 2026)
 
 Milanote has no "list of your boards" page: **home IS a board**, and your

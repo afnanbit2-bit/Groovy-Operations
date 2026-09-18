@@ -8615,6 +8615,27 @@ function _boardsClosePreview(){
   document.removeEventListener('keydown',_boardsPreviewKey,true);
 }
 function _boardsPreviewKey(e){if(e.key==='Escape'){e.stopPropagation();_boardsClosePreview();}}
+/* What counts as a click on the BACKDROP of the preview.
+
+   This used to be `e.target===wrap`, which is essentially never true: the
+   wrap is a flex column completely covered by its own bar plus
+   .board-preview-body, which is `flex:1`. So the dark space around the
+   picture IS the body, the wrap has no exposed pixels of its own, and the
+   backdrop close had been dead since it shipped — reported as "when i click
+   on the grid to close it does not close, it closes by just clicking on
+   cross on the top right".
+
+   Named and extracted rather than inlined so it can be asserted: the
+   overlay is built with createElement and querySelector, which the node
+   harness stubs out, so the predicate is the only part that CAN be tested
+   without a browser. The picture, the PDF iframe and the top bar are all
+   deliberately NOT backdrop — clicking the thing you came to look at must
+   never dismiss it. */
+function _boardsPreviewBackdrop(t,wrap){
+  if(!t)return false;
+  if(t===wrap)return true;
+  return !!(t.classList&&t.classList.contains('board-preview-body'));
+}
 window.boardsClosePreview=_boardsClosePreview;
 async function _boardsOpenPreview(c){
   _boardsClosePreview();
@@ -8641,7 +8662,7 @@ async function _boardsOpenPreview(c){
   wrap.querySelector('#board-preview-x').onclick=_boardsClosePreview;
   wrap.querySelector('#board-preview-tab').onclick=()=>window.open(c.fileUrl,'_blank','noopener');
   wrap.querySelector('#board-preview-dl').onclick=()=>_boardsDownloadAsset(c);
-  wrap.addEventListener('pointerdown',e=>{if(e.target===wrap)_boardsClosePreview();});
+  wrap.addEventListener('pointerdown',e=>{if(_boardsPreviewBackdrop(e.target,wrap))_boardsClosePreview();});
   document.addEventListener('keydown',_boardsPreviewKey,true);
 
   const body=wrap.querySelector('#board-preview-body');

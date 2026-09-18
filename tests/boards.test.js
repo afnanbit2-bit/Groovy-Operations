@@ -14,6 +14,11 @@ const FILES=['js/boards.js'];
 
 module.exports=function(){
   const s=suite('boards');
+  // Async blocks push their promise here instead of `return`ing it. A bare
+  // `return` in the middle of this function ends it, silently dropping every
+  // block below — the tell is the assertion total going DOWN when tests are
+  // added. The final block resolves these before handing the suite back.
+  const _pending=[];
 
   // ── touch: the 100% detent and micro zoom ─────────────────────────────
   {
@@ -2442,7 +2447,7 @@ module.exports=function(){
     const tick=()=>new Promise(r=>setImmediate(r));
     const ratio=id=>run(`(c=>Math.round((c.w/c.h)*1000)/1000)(_editCards.find(c=>c.id==='${id}'))`);
 
-    return (async()=>{
+    _pending.push((async()=>{
       s.section('the shape a fitted card takes');
       boot();
       const fit=(w,h)=>run(`(function(){const c=_boardsNewCard('image');
@@ -2504,8 +2509,49 @@ module.exports=function(){
       const t2=JSON.parse(run(`JSON.stringify(_boardsCardFromTrayItem({id:'u',kind:'image',
         imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.png'},{x:0,y:0}))`));
       s.eq('an older tray item with no dimensions keeps the default',t2.w+'x'+t2.h,'170x120');
-      return s;
-    })();
+    })());
+  }
+
+
+  // ── the image preview closes on the backdrop ──────────────────────────
+  // Afnan: "double clicked on the image to open it bigger but when i click
+  // on the grid to close it does not close, it closes by just clicking on
+  // cross on the top right". The handler existed — it tested
+  // `e.target===wrap`, which is essentially never true, because the wrap is
+  // a flex column fully covered by its own bar plus .board-preview-body
+  // (flex:1). The dark space around the picture IS that body.
+  {
+    const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    const {run}=app;
+    const node=cls=>run(`(function(){const n=document.createElement('div');
+      ${cls?`n.classList.add('${cls}');`:''}return n;})()`);
+
+    s.section('the dark space around the picture closes it');
+    run(`__wrap=document.createElement('div');
+         __body=document.createElement('div');__body.classList.add('board-preview-body');
+         __img=document.createElement('img');__img.classList.add('board-preview-img');
+         __bar=document.createElement('div');__bar.classList.add('board-preview-bar');
+         __btn=document.createElement('button');__btn.classList.add('tool-btn');
+         __frame=document.createElement('iframe');__frame.classList.add('board-preview-frame');`);
+    s.ok('the body around the image IS the backdrop',run(`_boardsPreviewBackdrop(__body,__wrap)`));
+    s.ok('and so is the wrap itself, if it is ever exposed',run(`_boardsPreviewBackdrop(__wrap,__wrap)`));
+
+    s.section('the thing you came to look at never dismisses itself');
+    s.ok('not the picture',!run(`_boardsPreviewBackdrop(__img,__wrap)`));
+    s.ok('not the PDF viewer',!run(`_boardsPreviewBackdrop(__frame,__wrap)`));
+    s.ok('not the top bar',!run(`_boardsPreviewBackdrop(__bar,__wrap)`));
+    s.ok('not a button in it',!run(`_boardsPreviewBackdrop(__btn,__wrap)`));
+    s.ok('and a null target does nothing',!run(`_boardsPreviewBackdrop(null,__wrap)`));
+
+    s.section('Escape still closes it, and stops there');
+    // It listens in the CAPTURE phase and stops propagation, so Escape does
+    // not also reach the board and clear the selection behind the overlay.
+    run(`__stopped=0;__removed=0;
+         document.getElementById=function(){return null;};`);
+    run(`_boardsPreviewKey({key:'Escape',stopPropagation(){__stopped++;}})`);
+    s.eq('Escape is consumed',run(`__stopped`),1);
+    run(`_boardsPreviewKey({key:'a',stopPropagation(){__stopped++;}})`);
+    s.eq('any other key is left alone',run(`__stopped`),1);
   }
 
   // ── a PDF card is sized to its page ─────────────────────────────────────
@@ -2527,7 +2573,7 @@ module.exports=function(){
     const tick=()=>new Promise(r=>setImmediate(r));
     const A4=`${240}x${Math.round(238*Math.SQRT2)+92}`;
 
-    return (async()=>{
+    return Promise.all(_pending.concat([(async()=>{
       boot();
       s.section('the page-size maths');
       s.eq('no size reported → A4 portrait',run(`_boardsPdfCardH()`),Math.round(238*Math.SQRT2)+92);
@@ -2608,6 +2654,6 @@ module.exports=function(){
       s.eq('and centred on the drop point',`${tc.x+tc.w/2},${tc.y+tc.h/2}`,'1000,1000');
       const d=JSON.parse(run(`JSON.stringify(_boardsCardFromTrayItem({id:'v',kind:'file',fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/a.docx',fileName:'a.docx'},{x:0,y:0}))`));
       s.eq('a Word file stays compact',`${d.w}x${d.h}`,'200x110');
-    })().then(()=>s);
+    })()])).then(()=>s);
   }
 };
