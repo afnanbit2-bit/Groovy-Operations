@@ -865,12 +865,19 @@ module.exports=function(){
     s.eq('one note item',run(`_editUnsorted.length+':'+_editUnsorted[0].kind`),'1:text');
     s.eq('carrying the text',run(`_editUnsorted[0].text`),'fleece 320gsm, ask Hassan');
 
-    s.section('on Home the Boards tab is switched away from, not just opened');
+    // Home has no Unsorted to collect INTO, so it places — what a paste did
+    // before the tray existed. This replaces the "switch to the Unsorted
+    // tab" behaviour outright; there is no tab to switch to.
+    s.section('on Home a paste PLACES, because there is nothing to collect into');
     boot();
-    run(`_editBoard.isHome=true;_boardsTrayOpen=true;_boardsTrayTab='boards';
+    run(`_editBoard.isHome=true;_boardsTrayOpen=true;
       _mkPaste=${PASTE};_boardsOnPaste(_mkPaste('https://a.test/'))`);
-    s.eq('the panel is on Unsorted',run(`_boardsTrayTab`),'unsorted');
-    s.eq('with the item on it',run(`_editUnsorted.length`),1);
+    s.eq('nothing was collected',run(`_editUnsorted.length`),0);
+    s.eq('a link card landed instead',run(`_editCards.length+':'+_editCards[0].type`),'1:link');
+    boot();
+    run(`_editBoard.isHome=true;_mkPaste=${PASTE};_boardsOnPaste(_mkPaste('fleece 320gsm'))`);
+    s.eq('and plain text becomes a note card',run(`_editCards.length+':'+_editCards[0].type`),'1:text');
+    s.eq('still nothing collected',run(`_editUnsorted.length`),0);
 
     s.section('CARDS copied from a board are still cards, tray open or shut');
     // This is the bug the reordering fixes. The tray branch used to run
@@ -1098,8 +1105,15 @@ module.exports=function(){
       run(`_boardsHomeList().map(b=>b.id).sort().join(',')`),'A,B');
     s.ok('never a Home, never this board, never a nested sub-board',
       run(`_boardsHomeList().every(b=>!b.isHome&&b.id!=='H'&&b.id!=='SUB')`));
-    s.ok('and a brand-new Home opens the panel on its Boards tab',
-      run(`_boardsHomeFirstRun()&&_boardsTrayOpen&&_boardsTrayTab==='boards'`));
+    run(`_boardsHomePanelCollapsed=true`);
+    s.ok('and a brand-new Home un-collapses the panel',
+      run(`_boardsHomeFirstRun()&&_boardsHomePanelCollapsed===false`));
+    // A nudge, not a setting. The harness leaves localStorage undefined (the
+    // app guards every access), so persistence cannot be observed — but
+    // _boardsSetHomePanel is the ONLY thing that writes the preference, and
+    // first-run must assign the field instead of calling it.
+    s.ok('by assigning the field, never through the persisting setter',
+      !/_boardsSetHomePanel/.test(run(`String(_boardsHomeFirstRun)`)));
     run(`_editCards=[{id:'x',type:'text',text:'',x:0,y:0,w:170,h:100}]`);
     s.ok('but a Home somebody has already used is left alone',run(`_boardsHomeFirstRun()`)===false);
 
@@ -1171,9 +1185,13 @@ module.exports=function(){
     s.ok('and the stage takes the room',/with-panel-collapsed/.test(collapsed));
     run(`window.boardsTogglePanel()`);
     s.ok('and it comes back',run(`_boardsHomePanelCollapsed`)===false);
-    // A paste has to be visible, so it un-collapses too.
-    run(`_boardsSetHomePanel(true);_boardsCollectInto()`);
-    s.ok('collecting re-opens a collapsed panel',run(`_boardsHomePanelCollapsed`)===false);
+    // Collecting no longer reaches Home at all — a paste there PLACES (see
+    // the paste section) — so what used to un-collapse the panel went with
+    // the tray. Off Home it still opens a closed one, which is the half
+    // that still has to hold: a paste that collects must never be invisible.
+    run(`_editBoard.isHome=false;_boardsTrayOpen=false;_boardsCollectInto()`);
+    s.ok('off Home, collecting still opens a closed tray',run(`_boardsTrayOpen`)===true);
+    run(`_editBoard.isHome=true`);
     // Off Home nothing changed: Close still closes.
     run(`_editBoard.isHome=false;_boardsTrayOpen=true;window.boardsCloseTray()`);
     s.eq('the Unsorted tray still closes outright',run(`_boardsTrayOpen`),false);
@@ -1234,12 +1252,121 @@ module.exports=function(){
     s.ok('the list says how many matched',
       /1 board matched/.test(run(`(_boardsPanelQuery='fleece',_boardsPanelRowsHTML(true))`)));
 
-    s.section('the tab strip is a Home thing');
+    // Afnan: "there is no need for unsorted function in home". So the tab
+    // strip went with it — a header carrying one tab says nothing — and the
+    // panel on Home is the Boards panel, full stop.
+    s.section('Home has no Unsorted at all');
     boot();
-    run(`_boardsTrayOpen=true;_boardsTrayTab='boards'`);
+    run(`_boardsTrayOpen=true`);
     const homeBar=run(`_renderBoardCanvasHTML()`);
-    s.ok('Home shows both tabs',/boardsTraySetTab\('unsorted'\)/.test(homeBar)&&/boardsTraySetTab\('boards'\)/.test(homeBar));
+    s.ok('no tab strip',!/board-tray-tabs/.test(homeBar));
+    s.ok('and no way back to an Unsorted tray',!/boardsTraySetTab/.test(homeBar));
+    s.ok('the panel is still there',/board-panel-list/.test(homeBar));
     s.ok('and the top bar toggles the panel',/boardsTogglePanel\(\)/.test(homeBar));
+
+    /* ── Dragging a board card back INTO the panel ──────────────────────
+       Afnan drew the arrow the other way round. The gesture is driven for
+       real here — boardsCardDragStart, a pointermove to make it a drag
+       rather than a click, then a pointerup over the panel — because the
+       whole thing lives in that handler's closure and grepping the source
+       proves nothing about what it does. */
+    s.section('a board card dropped on the panel comes off Home');
+    {
+      const app2=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        currentPage:'board-canvas'});
+      const r2=x=>app2.run(x);
+      const setup=`_editBoard={id:'H',isHome:true,title:'Home',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+        moodBoards=[{id:'H',isHome:true,ownerUid:'u1',title:'Home',cards:[],visibility:'personal'},
+                    {id:'B',title:'WINTER DUMP 2K27',ownerUid:'u1',visibility:'personal',cards:[]}];
+        _editCards=[{id:'k1',type:'board',boardId:'B',x:40,y:60,w:200,h:124}];
+        _editConnectors=[];_editUnsorted=[];_boardsSelection=new Set(['k1']);
+        _boardsUndo=[];_boardsRedo=[];_boardsHomePanelCollapsed=false;_boardsPanelFlash=null;
+        _boardsSuppressClick=false;
+        // The panel occupies the right-hand strip; the harness's default
+        // rect has no right/bottom, so it is given a real one.
+        document.getElementById('board-tray').getBoundingClientRect=
+          function(){return{left:800,right:1200,top:0,bottom:600};};`;
+      const drag=(x,y)=>r2(`(function(){
+        const head=document.getElementById('drag-head');
+        window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
+          stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'k1');
+        const ev=t=>({type:t,clientX:${x},clientY:${y},altKey:false,shiftKey:false});
+        (head._ls.pointermove||[]).forEach(l=>l.fn(ev('pointermove')));
+        (head._ls.pointerup||[]).forEach(l=>l.fn(ev('pointerup')));
+        return true;})()`);
+
+      r2(setup);
+      drag(900,300);                      // inside the panel
+      s.eq('the card is gone from Home',r2(`_editCards.length`),0);
+      s.ok('the board itself is untouched',r2(`moodBoards.some(b=>b.id==='B'&&!b.deletedAt)`));
+      s.ok('and the toast says it is still in the panel',
+        /still in the Boards panel/.test(app2.state.toasts.join(' ')),app2.state.toasts.slice(-1)[0]);
+      // ONE undo entry for the whole gesture, and it restores the card at
+      // the position it was grabbed from — the drag's own entry is popped
+      // before boardsDeleteCard pushes its own, or Ctrl+Z would put the
+      // card back where it was dropped and need a second press.
+      s.eq('one undo entry, not two',r2(`_boardsUndo.length`),1);
+      r2(`window.boardsUndoAction()`);
+      s.eq('undo brings it back',r2(`_editCards.length+':'+(_editCards[0]||{}).boardId`),'1:B');
+      s.eq('exactly where it started',r2(`_editCards[0].x+','+_editCards[0].y`),'40,60');
+
+      // Dropped on the CANVAS it is an ordinary move, not an unplace.
+      r2(setup);
+      drag(300,300);
+      s.eq('a drop on the canvas keeps the card',r2(`_editCards.length`),1);
+
+      // Only a lone board card qualifies. A note dropped on the panel is a
+      // move like any other — "some of that did something" is worse than
+      // not offering the gesture.
+      r2(setup+`_editCards=[{id:'n1',type:'text',text:'',x:40,y:60,w:170,h:100}];
+        _boardsSelection=new Set(['n1']);`);
+      r2(`(function(){
+        const head=document.getElementById('drag-head2');
+        window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
+          stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'n1');
+        const ev=t=>({type:t,clientX:900,clientY:300,altKey:false,shiftKey:false});
+        (head._ls.pointermove||[]).forEach(l=>l.fn(ev('pointermove')));
+        (head._ls.pointerup||[]).forEach(l=>l.fn(ev('pointerup')));
+        return true;})()`);
+      s.eq('a note dropped on the panel is just a move',r2(`_editCards.length`),1);
+      s.ok('and the predicate says so directly',
+        r2(`_boardsUnplaceDrag([{type:'text'}])===false&&_boardsUnplaceDrag([{type:'board',boardId:'B'}])===true`));
+      s.ok('a board card with no boardId is not a drop target either',
+        r2(`_boardsUnplaceDrag([{type:'board',boardId:''}])===false`));
+      s.ok('nor is a multi-selection',
+        r2(`_boardsUnplaceDrag([{type:'board',boardId:'B'},{type:'board',boardId:'C'}])===false`));
+    }
+
+    s.section('the row that changed state is flashed, once');
+    {
+      const app3=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      const r3=x=>app3.run(x);
+      r3(`_editBoard={id:'H',isHome:true,title:'Home',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+        moodBoards=[{id:'H',isHome:true,ownerUid:'u1',title:'Home',cards:[],visibility:'personal'},
+                    {id:'B',title:'Winter',ownerUid:'u1',visibility:'personal',cards:[]}];
+        _editCards=[];_boardsPanelQuery='';_boardsPanelFilter='all';_boardsPanelFlash='B';`);
+      s.ok('the flashed row carries the class',/board-panel-row[^"]*flash/.test(r3(`_boardsPanelRowsHTML(true)`)));
+      // One-shot: the render that paints it consumes it, so the animation
+      // cannot repeat on the next render.
+      s.eq('and the flag is consumed',r3(`String(_boardsPanelFlash)`),'null');
+      s.ok('so the next render has no flash',!/flash/.test(r3(`_boardsPanelRowsHTML(true)`)));
+    }
+
+    s.section('items left in Home’s retired tray are not stranded');
+    {
+      const app4=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      const r4=x=>app4.run(x);
+      r4(`_editBoard={id:'H',isHome:true,title:'Home',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+        moodBoards=[{id:'H',isHome:true,ownerUid:'u1',title:'Home',cards:[],visibility:'personal'}];
+        _editCards=[];_editConnectors=[];_boardsUndo=[];
+        _editUnsorted=[{id:'u1',kind:'text',text:'ask Hassan'},{id:'u2',kind:'text',text:'and Alam'}];`);
+      s.ok('the panel says so',/2 items were collected here/.test(r4(`_boardsPanelHTML(true)`)));
+      r4(`window.boardsHomeFlushUnsorted()`);
+      s.eq('placing them empties the tray',r4(`_editUnsorted.length`),0);
+      s.eq('and makes a card each',r4(`_editCards.length`),2);
+      s.eq('one undo entry for the lot',r4(`_boardsUndo.length`),1);
+      s.ok('and the notice is gone for good',!/collected here/.test(r4(`_boardsPanelHTML(true)`)));
+    }
     // Afnan, from a screenshot: the count should read as a count, not as
     // part of the label. All three counts (the two tabs and the top bar's
     // Boards button) carry .board-tray-tabn / .board-tray-reopen-n, which
@@ -1250,8 +1377,8 @@ module.exports=function(){
     // smoke-layout in both themes.
     s.ok('the top bar count is a span, not bare text',
       /Boards <span class="board-tray-tabn">\d+<\/span>/.test(homeBar));
-    s.ok('and so is the Boards tab count',
-      /Boards<span class="board-tray-tabn">\d+<\/span>/.test(homeBar));
+    s.ok('and so is the panel heading count',
+      /board-tray-title">Boards <span class="board-tray-tabn">\d+<\/span>/.test(homeBar));
     run(`_editBoard={id:'A',title:'Winter Drop',visibility:'shared',ownerUid:'u1',zoom:1,panX:0,panY:0}`);
     const plainBar=run(`_renderBoardCanvasHTML()`);
     s.ok('an ordinary board has no tab strip',!/boardsTraySetTab/.test(plainBar));

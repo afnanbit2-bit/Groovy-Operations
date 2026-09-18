@@ -41,9 +41,6 @@ let _editUnsorted=[];
 const _BOARDS_TRAY_KEY='groovy-boards-tray';   // open/closed is per VIEWER, not board data
 // On HOME the same panel grows a second tab: every board you can see,
 // searchable, filterable by Team/Private, and draggable onto the canvas.
-// Which tab you were on is per VIEWER too — it is about this screen, not
-// about the board, the same rule the minimap and snap preferences follow.
-const _BOARDS_TRAY_TAB_KEY='groovy-boards-tray-tab';
 let _boardsSaveTimer=null;
 let _boardsCardSeq=0;
 let _boardsSelection=new Set(); // card ids currently selected (Stage 2: many, not one)
@@ -513,14 +510,15 @@ function _boardsHomeSync(){
   return _boardsHomeDedupe()+_boardsHomePruneTrashed();
 }
 // A brand-new Home is an empty canvas, and now that boards are not placed
-// for you there is nothing on it saying where they went. Open the panel on
-// its Boards tab — but ONLY when Home is completely empty, so it never
-// overrides the preference of anyone who has arranged theirs, and
-// deliberately without persisting: it is a first-run nudge, not a setting.
+// for you there is nothing on it saying where they went. Un-collapse the
+// panel — but ONLY when Home is completely empty, so it never overrides the
+// preference of anyone who has arranged theirs, and deliberately WITHOUT
+// persisting (the field, not _boardsSetHomePanel): it is a first-run nudge,
+// not a setting.
 function _boardsHomeFirstRun(){
   if(!_boardsIsHome(_editBoard)||!boardsLoaded)return false;
   if(_editCards.length||!_boardsHomeList().length)return false;
-  _boardsTrayOpen=true;_boardsTrayTab='boards';
+  _boardsHomePanelCollapsed=false;
   return true;
 }
 // The `boards` page is Home now. Renders the gallery instead — unchanged,
@@ -3860,6 +3858,34 @@ window.boardsHeadDblClick=function(ev,id){
   window.boardsBeginEdit(ev,'board-name-'+id);
 };
 
+/* ── Dragging a board card back INTO the panel (Sept 2026) ─────────────
+   Afnan drew the arrow the other way: the panel drops a board onto Home,
+   and Home should drop one back. Placing already had a drag; taking off
+   only had the ✕ and the card menu, which is not the gesture anyone tries.
+
+   It is the SAME ACTION as the ✕ — window.boardsDeleteCard, which on Home
+   already means "take it off Home and leave the board alone" — rather than
+   a second unlink path beside it. Two implementations of that is how the
+   trash entry, the toast and the sub-board wording would eventually
+   disagree.
+
+   Only a lone board card on Home qualifies. A multi-selection dropped on
+   the panel would have to decide what to do with the cards in it that are
+   not boards, and "some of that did something" is worse than not offering
+   the gesture. */
+function _boardsUnplaceDrag(group){
+  return _boardsIsHome(_editBoard)&&group.length===1&&group[0].type==='board'&&!!group[0].boardId;
+}
+function _boardsOverPanel(ev){
+  const el=document.getElementById('board-tray');
+  if(!el||el.classList.contains('collapsed'))return false;
+  const r=el.getBoundingClientRect();
+  return ev.clientX>=r.left&&ev.clientX<=r.right&&ev.clientY>=r.top&&ev.clientY<=r.bottom;
+}
+function _boardsPanelDropTarget(on){
+  const el=document.getElementById('board-tray');
+  if(el)el.classList.toggle('panel-drop',!!on);
+}
 window.boardsCardDragStart=function(e,cardId){
   e.stopPropagation();
   // A press inside whatever is currently open for editing is the user
@@ -3892,6 +3918,7 @@ window.boardsCardDragStart=function(e,cardId){
   // with it.
   const movingCols=new Set(group.filter(x=>x.type==='column').map(x=>x.id));
   const head=e.currentTarget;
+  const unplaceable=_boardsUnplaceDrag(group);
   const startX=e.clientX,startY=e.clientY;
   let pushed=false;
   head.setPointerCapture(e.pointerId);
@@ -3924,15 +3951,33 @@ window.boardsCardDragStart=function(e,cardId){
       if(el){el.style.left=o.card.x+'px';el.style.top=o.card.y+'px';}
       _boardsUpdateConnectorsFor(o.card.id);
     });
+    // A lone board card held over the panel is a "take it off Home", so the
+    // panel says so before the pointer comes up rather than after.
+    if(unplaceable)_boardsPanelDropTarget(_boardsOverPanel(ev));
     _boardsShowColumnDrop(_boardsDropTargets(group,movingCols));
   }
-  function up(){
+  function up(ev){
     head.removeEventListener('pointermove',move);head.removeEventListener('pointerup',up);
     _boardsHideGuides();
     _boardsHideColumnDrop();
+    _boardsPanelDropTarget(false);
     // `pushed` is set on the first real pointermove, so it is exactly
     // "this was a drag, not a click".
     if(pushed)_boardsSuppressClick=true;
+    // Dropped on the panel: the board comes off Home. Put the cards back
+    // where the gesture started and DISCARD the drag's own undo entry
+    // first — boardsDeleteCard pushes its own, and without this Ctrl+Z
+    // would restore the card at the spot it was dragged to and need a
+    // second press to put it back. _boardsUndo is a plain stack of
+    // snapshots, so popping the one this gesture pushed is exact.
+    if(pushed&&unplaceable&&ev&&_boardsOverPanel(ev)){
+      origins.forEach(o=>{o.card.x=o.ox;o.card.y=o.oy;});
+      _boardsUndo.pop();
+      _boardsSyncHistoryButtons();
+      _boardsPanelFlash=group[0].boardId;
+      window.boardsDeleteCard(group[0].id);
+      return;
+    }
     if(pushed){
       // Where a card ENDS decides which column it belongs to. Joining
       // writes only the dragged card's columnId and its y — the column
@@ -6577,6 +6622,9 @@ function _boardsOnPaste(e){
     const sel=_boardsSelectedCards();
     const target=(sel.length===1&&sel[0].type==='image'&&!sel[0].imageUrl)?sel[0]:null;
     if(target){_boardsPushUndo();_boardsUploadFileToCard(target.id,imageFile);return;}
+    // Home has no Unsorted to collect into, so it places — what a paste did
+    // before the tray existed. Everywhere else, unchanged.
+    if(_boardsIsHome(_editBoard)){_boardsAddFiles([imageFile],_boardsPlacementPoint());return;}
     _boardsCollectInto();
     _boardsTrayAddFiles([imageFile]);
     showToast('Added to Unsorted');
@@ -6588,6 +6636,7 @@ function _boardsOnPaste(e){
   if(_boardsPasteClipCards(e,text))return;
   if(!text)return;
   e.preventDefault();
+  if(_boardsIsHome(_editBoard)){_boardsPlaceText(text);return;}
   _boardsCollectInto();
   _boardsTrayAddText(text);
 }
@@ -7893,22 +7942,28 @@ function _boardsTrayHTML(canEdit){
     </aside>`;
   }
   if(!home&&!_boardsTrayOpen)return'';
-  // Off Home there is one tab and no tab strip — a tab bar with a single
-  // tab in it is chrome that says nothing.
-  const tab=home?_boardsTrayTab:'unsorted';
+  /* ON HOME THERE IS NO UNSORTED (Sept 2026) — Afnan: "there is no need for
+     unsorted function in home". Home is the board OF boards: the panel
+     there manages boards, and a scratch shelf for pasted images beside it
+     was a second unrelated thing wearing the same chrome. The tab strip
+     went with it — a header with one tab in it says nothing — so the panel
+     is the Boards panel, full stop, and _boardsTrayTab is gone rather than
+     left behind as a flag nothing reads.
+
+     The consequence that had to be answered rather than shrugged off:
+     paste COLLECTS (see _boardsOnPaste), and on Home there is nowhere to
+     collect into. So on Home a paste places on the canvas, which is what
+     it did before the tray existed. Off Home nothing changes. */
   const n=_editUnsorted.length;
   const head=home
-    ?`<div class="board-tray-tabs" role="tablist">
-        <button class="board-tray-tab${tab==='unsorted'?' on':''}" onclick="window.boardsTraySetTab('unsorted')" title="Things collected but not placed yet">Unsorted${n?`<span class="board-tray-tabn">${n}</span>`:''}</button>
-        <button class="board-tray-tab${tab==='boards'?' on':''}" onclick="window.boardsTraySetTab('boards')" title="Every board you can see">Boards<span class="board-tray-tabn">${_boardsHomeList().length}</span></button>
-      </div>`
+    ?`<span class="board-tray-title">Boards <span class="board-tray-tabn">${_boardsHomeList().length}</span></span>`
     :`<span class="board-tray-title">Unsorted${n?' · '+n:''}</span>`;
   return`<aside class="board-tray${home?' wide':''}" id="board-tray">
     <div class="board-tray-head">
       ${head}
       <button class="tool-btn" onclick="window.boardsCloseTray()" title="${home?'Collapse the panel — the rail brings it back':'Close the panel'}">${home?'Hide ›':'Close'}</button>
     </div>
-    ${tab==='boards'?_boardsPanelHTML(canEdit):_boardsTrayUnsortedHTML(canEdit,n)}
+    ${home?_boardsPanelHTML(canEdit):_boardsTrayUnsortedHTML(canEdit,n)}
   </aside>`;
 }
 function _boardsTrayUnsortedHTML(canEdit,n){
@@ -7952,9 +8007,14 @@ function _boardsTrayUnsortedHTML(canEdit,n){
    board pointing at that board id. Unsorted is the opposite kind of thing —
    items that exist nowhere else and must be stored — which is why the two
    tabs share a panel and nothing else. */
-let _boardsTrayTab=(function(){try{return localStorage.getItem('groovy-boards-tray-tab')==='boards'?'boards':'unsorted';}catch(e){return'unsorted';}})();
 let _boardsPanelQuery='';
 let _boardsPanelFilter='all';   // all | shared | personal
+/* A board whose row just changed state — placed onto Home, or taken back
+   off it. ONE-SHOT: the next render of the list consumes it, the way
+   _boardsNextPlacement is consumed by the next card. It is a board id, not
+   a row element, because the list is rebuilt from scratch each render and
+   an element reference would point at something already thrown away. */
+let _boardsPanelFlash=null;
 let _boardsPanelTimer=null;
 /* ── Home's panel is a fixture, not a popup (Sept 2026) ─────────────────
    Afnan: "on home page the tab you created to manage board it should be
@@ -7981,11 +8041,6 @@ function _boardsSetHomePanel(collapsed){
 }
 window.boardsTogglePanel=function(){
   _boardsSetHomePanel(!_boardsHomePanelCollapsed);
-  _boardsRenderCanvasAndWire();
-};
-window.boardsTraySetTab=function(t){
-  _boardsTrayTab=t==='boards'?'boards':'unsorted';
-  try{localStorage.setItem(_BOARDS_TRAY_TAB_KEY,_boardsTrayTab);}catch(e){}
   _boardsRenderCanvasAndWire();
 };
 // Every board this person can see that could sit on Home: not a Home, not
@@ -8031,7 +8086,20 @@ function _boardsPanelUnplaced(){
 function _boardsPanelHTML(canEdit){
   const f=_boardsPanelFilter;
   const left=_boardsPanelUnplaced().length;
-  return`<div class="board-tray-add board-panel-tools">
+  /* Home stopped having an Unsorted tray, and anything already collected
+     into one would otherwise be stranded: still saved on the document,
+     reachable from nowhere. Nothing is rewritten on open to tidy that up —
+     a write on a read path is the discipline this module holds against —
+     so the panel just SAYS SO, once, with a button that places them. It
+     disappears for good the moment it is used, and a Home that never had
+     a tray never shows it. */
+  const stray=_editUnsorted.length;
+  const strayHTML=(stray&&canEdit)
+    ?`<div class="board-panel-stray">
+        <div>${stray} item${stray===1?'':'s'} ${stray===1?'was':'were'} collected here before Home dropped its Unsorted tray.</div>
+        <button class="tool-btn" onclick="window.boardsHomeFlushUnsorted()">Place ${stray===1?'it':'them'} on Home</button>
+      </div>`:'';
+  return strayHTML+`<div class="board-tray-add board-panel-tools">
       <input type="search" class="board-panel-search" id="board-panel-search" placeholder="Search boards…"
         value="${_boardsEsc(_boardsPanelQuery)}" oninput="window.boardsPanelSearch(this)">
       <div class="board-panel-seg" id="board-panel-seg">${_boardsPanelSegHTML(f)}</div>
@@ -8058,7 +8126,8 @@ function _boardsPanelRowsHTML(canEdit){
       :'No boards yet. Make one with the buttons above — it lands here, and you drag it onto Home wherever you want it.'}</div>`;
   }
   const on=_boardsHomeCarded();
-  return note+rows.map(b=>_boardsPanelRowHTML(b,!!on[b.id],canEdit)).join('');
+  const flash=_boardsPanelFlash;_boardsPanelFlash=null;
+  return note+rows.map(b=>_boardsPanelRowHTML(b,!!on[b.id],canEdit,b.id===flash)).join('');
 }
 /* A row is Milanote's: a big picture on the left, the WHOLE name beside it,
    a meta line under that, and the actions on a line of their OWN.
@@ -8067,7 +8136,7 @@ function _boardsPanelRowsHTML(canEdit){
    a state word plus an Open button there was nothing left and the name
    rendered as "WINTER D…". A wider panel alone would not have fixed it,
    only postponed it. */
-function _boardsPanelRowHTML(b,placed,canEdit){
+function _boardsPanelRowHTML(b,placed,canEdit,flash){
   const cards=b.cards||[];
   const files=cards.filter(c=>(c.type==='file'&&c.fileUrl)||(c.type==='image'&&c.imageUrl)).length;
   const subs=cards.filter(c=>c.type==='board'&&c.boardId).length;
@@ -8085,7 +8154,7 @@ function _boardsPanelRowHTML(b,placed,canEdit){
   const hits=(q&&(b.title||'').toLowerCase().indexOf(q)===-1)?_boardsMatchCount(b,q):0;
   // The title is written in by _boardsPanelHydrate with textContent —
   // someone else named this board and it is drawn into this person's page.
-  return`<div class="board-panel-row${placed?' placed':''}" data-board="${id}"
+  return`<div class="board-panel-row${placed?' placed':''}${flash?' flash':''}" data-board="${id}"
       title="${placed?'On Home — click to go to it':(canEdit?'Drag onto Home to place it, or click':'Click to open')}"
       ${canEdit?`onpointerdown="window.boardsPanelDragStart(event,'${id}')"`:''}
       onclick="window.boardsPanelRowClick('${id}')"
@@ -8227,10 +8296,27 @@ window.boardsPanelRowClick=function(id){
   if(!_boardsCanEdit(_editBoard)){window.boardsPanelOpen(id);return;}
   _boardsPushUndo();
   const nc=_boardsHomePlaceOne(b,null);
+  _boardsPanelFlash=id;
   _boardsRenderCanvasAndWire();
   _boardsFocusCard(nc.id);
   _boardsSaveDebounced();
   showToast('“'+(b.title||'Untitled board')+'” placed on Home');
+};
+/* Places every item left in Home's retired Unsorted tray, through the same
+   _boardsCardFromTrayItem the drag-out uses, so a flushed item and a dragged
+   one are the same card. One undo entry for the lot. */
+window.boardsHomeFlushUnsorted=function(){
+  if(!_boardsCanEdit(_editBoard)||!_editUnsorted.length)return;
+  _boardsPushUndo();
+  const n=_editUnsorted.length;
+  _editUnsorted.forEach(u=>{
+    const p=_boardsPlacementPoint();
+    _editCards.push(_boardsCardFromTrayItem(u,{x:p.x+_BOARDS_HOME_W/2,y:p.y+_BOARDS_HOME_H/2}));
+  });
+  _editUnsorted=[];
+  _boardsRenderCanvasAndWire();
+  _boardsSaveNow();
+  showToast(n+' item'+(n===1?'':'s')+' placed on Home — Ctrl+Z to undo');
 };
 window.boardsHomePlaceAll=function(){
   if(!_boardsCanEdit(_editBoard))return;
@@ -8286,6 +8372,7 @@ window.boardsPanelDragStart=function(e,id){
     if(!over)return;
     _boardsPushUndo();
     const nc=_boardsHomePlaceOne(b,_boardsScreenToWorld(ev.clientX,ev.clientY));
+    _boardsPanelFlash=b.id;
     _boardsSetSelection([nc.id]);
     _boardsRenderCanvasAndWire();
     _boardsSaveDebounced();
@@ -8437,23 +8524,16 @@ function _boardsCardFromTrayItem(u,at){
 // order of preference — an image always wins, then a URL, then plain text.
 /**
  * Makes the Unsorted panel the thing you are looking at, because a paste
- * that collects must never be invisible. On Home the panel has two tabs and
- * may have been left on Boards, where a new item would not be on screen at
- * all — so the TAB is switched too, not just the panel opened. Both are
- * per-viewer preferences, so both are persisted: you were collecting, and
- * the next paste should land somewhere you are already looking.
+ * that collects must never be invisible. It is persisted: you were
+ * collecting, and the next paste should land somewhere you are already
+ * looking. Home never reaches here — it has no Unsorted and its paste
+ * places instead (_boardsOnPaste).
  */
 function _boardsCollectInto(){
   let changed=false;
-  // A collapsed Home panel is still "shut" as far as seeing the item goes.
-  if(_boardsIsHome(_editBoard)&&_boardsHomePanelCollapsed){_boardsSetHomePanel(false);changed=true;}
   if(!_boardsTrayOpen){
     _boardsTrayOpen=true;changed=true;
     try{localStorage.setItem(_BOARDS_TRAY_KEY,'1');}catch(e){}
-  }
-  if(_boardsTrayTab!=='unsorted'){
-    _boardsTrayTab='unsorted';changed=true;
-    try{localStorage.setItem(_BOARDS_TRAY_TAB_KEY,'unsorted');}catch(e){}
   }
   return changed;
 }
@@ -9484,7 +9564,15 @@ async function _boardsCtxPaste(){
       if(_boardsPasteCards(cards))return;
     }catch(e){/* fall through to plain text */}
   }
-  const trimmed=text.trim();
+  _boardsPlaceText(text);
+}
+/* Text pasted straight onto the canvas as a link or a note card.
+   Pulled out of _boardsCtxPaste so HOME can reuse it: Home has no Unsorted
+   to collect into, so a paste there places. Two copies of "turn this string
+   into a card" would disagree the first time one of them learned something
+   — the rule the rail and the right-click menu already share a router for. */
+function _boardsPlaceText(text){
+  const trimmed=String(text||'').trim();
   const isUrl=/^https?:\/\/\S+$/i.test(trimmed);
   _boardsPushUndo();
   const c=_boardsNewCard(isUrl?'link':'text');
@@ -9502,6 +9590,7 @@ async function _boardsCtxPaste(){
   _boardsSaveDebounced();
   if(isUrl)_boardsLinkHydrate(c.id);
   showToast(isUrl?'Link added':'Note added');
+  return c;
 }
 // The URL behind the one selected card, whatever kind it is.
 // The preview/download helpers read `fileUrl`; an image card keeps its URL

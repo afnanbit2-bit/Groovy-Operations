@@ -406,7 +406,7 @@ const FRAGMENTS={
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     app.run(`_editBoard={id:'H',isHome:true,title:'Home',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
       _editConnectors=[];_boardsSelection=new Set();_editUnsorted=[];
-      _boardsTrayOpen=true;_boardsTrayTab='boards';_boardsPanelQuery='';_boardsPanelFilter='all';
+      _boardsTrayOpen=true;_boardsPanelQuery='';_boardsPanelFilter='all';
       _boardsHomePanelCollapsed=false;
       moodBoards=[
         {id:'H',isHome:true,ownerUid:'u1',title:'Home',cards:[],visibility:'personal'},

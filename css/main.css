@@ -709,17 +709,18 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .board-stage.tray-target{outline:2px dashed var(--text);outline-offset:-8px}
 /* ── Home's Boards panel ───────────────────────────────────────────────
-   Shares the tray's shell; only the body differs. The tab strip is only
-   emitted on Home, where there are two tabs to choose between. All of this
-   is CHROME — it lives outside .board-world, so it is NOT multiplied by the
-   board zoom and the app-wide floor applies, not the card floor. */
-.board-tray-tabs{display:flex;gap:4px;min-width:0;flex:1}
-.board-tray-tab{border:none;background:transparent;font-family:inherit;cursor:pointer;
-  font-size:13.5px;font-weight:700;color:var(--muted);padding:5px 9px;border-radius:8px;
-  display:flex;align-items:center;gap:6px;white-space:nowrap}
-.board-tray-tab:hover{background:var(--hover)}
-.board-tray-tab.on{background:var(--dark);color:var(--on-dark)}
+   Shares the tray's shell; only the body differs. Home used to carry a
+   two-tab strip (Unsorted | Boards) and does not any more — Home has no
+   Unsorted at all — so those rules went with the markup rather than being
+   left behind for a class nothing emits. All of this is CHROME: it lives
+   outside .board-world, so it is NOT multiplied by the board zoom and the
+   app-wide floor applies, not the card floor. */
 .board-tray-tabn{font-size:12px;font-weight:700;color:var(--count-accent)}
+/* Items collected into Home's tray before it was retired. One line, one
+   button, and it is gone for good once used. */
+.board-panel-stray{padding:10px 14px;border-bottom:1px solid var(--border);flex-shrink:0;
+  display:flex;flex-direction:column;gap:8px;align-items:flex-start;
+  font-size:12.5px;line-height:1.5;color:var(--muted)}
 .board-panel-tools{flex-direction:column;align-items:stretch;gap:9px}
 .board-panel-search{width:100%;font-family:inherit;font-size:13.5px;padding:7px 10px;
   border:1px solid var(--border);border-radius:9px;background:var(--surface-2);color:var(--text)}
@@ -745,6 +746,32 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .board-panel-row:hover{background:var(--hover)}
 .board-panel-row:active{cursor:grabbing}
 .board-panel-row.placed{cursor:pointer}
+/* ── Motion (Sept 2026) ────────────────────────────────────────────────
+   Afnan asked for the drag between the canvas and the panel to have some.
+   Two states, both driven by a class the JS already sets, so nothing is
+   animated by a timer that could be left running:
+
+   - .panel-drop, while a lone board card is held over the panel. It is the
+     same dashed outline .board-stage.tray-target uses for the other
+     direction, deliberately: one drop-target look for both ways round.
+   - .flash on the row whose board just arrived or left, so the thing that
+     changed is findable in a list of forty. One-shot: _boardsPanelFlash is
+     consumed by the render that paints it, and the animation cannot repeat
+     because the class is not in the next render's markup.
+
+   Everything here is suppressed under prefers-reduced-motion, below. */
+.board-tray.panel-drop{outline:2px dashed var(--text);outline-offset:-6px}
+.board-tray.panel-drop .board-panel-list{background:var(--hover)}
+.board-tray,.board-panel-row{transition:outline-color .12s,background .18s,border-color .18s}
+@keyframes board-panel-flash{
+  0%{background:var(--soft);border-color:var(--count-accent);transform:translateX(6px)}
+  60%{background:var(--soft);border-color:var(--count-accent);transform:none}
+  100%{background:var(--surface-2);border-color:var(--border);transform:none}}
+.board-panel-row.flash{animation:board-panel-flash .5s ease-out}
+@media (prefers-reduced-motion:reduce){
+  .board-panel-row.flash{animation-duration:.001ms}
+  .board-tray,.board-panel-row{transition:none}
+}
 .board-panel-tile{flex:0 0 auto;display:block}
 .board-panel-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
 /* Two lines, then ellipsis — a whole name is the point, but one somebody
