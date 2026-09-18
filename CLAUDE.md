@@ -1446,6 +1446,38 @@ cover full bleed, or the colour carrying its glyph, name on a scrim.
   Verified both ways, as are the cover-URL guard and the `ondblclick`
   placement.
 
+### Mood Boards — the board card says it opens (Sept 2026)
+
+Afnan: drop the Open pill, glow the corners in red while the card sits idle,
+and say how on hover.
+
+- **The idle glow** is four corner radial gradients breathing on a 2.8s
+  cycle, in **`--count-accent`** — the app's one real red, which
+  deliberately does not invert. Right here for a second reason: the glow
+  sits on a cover **photograph**, so there is no theme for it to follow.
+- **Hover swaps the hint for the instruction** — *"Double-click to open your
+  mind"*, Afnan's own line minus the emoji the module's chrome rule
+  excludes. The glow drops to a fifth while it shows, so the two never talk
+  over each other. The CTA is `pointer-events:none`, so it cannot eat the
+  double-click it is advertising.
+- **Both hang off `.openable`**, which the render sets ONLY when the child
+  board is really there. A board that is gone, or an orphan with no
+  `boardId`, gets neither — **nothing should invite a double-click that
+  cannot do anything.** The orphan keeps its repair button, which is a
+  different thing: that card is unusable until it is adopted.
+- **THE PILL SURVIVES ON A PHONE**, deliberately. There is no hover there,
+  and `dblclick` is not dependable once `.board-stage` has taken
+  `touch-action` — exactly why double-tap-to-place is paired by hand in this
+  file. Removing it would leave a board with no way in but a long-press
+  nobody would guess at.
+- Neither survives `far` zoom, where a card is just its picture; both
+  respect `prefers-reduced-motion`.
+- **The layout fragment renders a SECOND copy of the cards with the CTA
+  forced visible**, because the probe cannot hover — without it the most
+  legible thing on the card (white on a dark wash over an unknown
+  photograph) would never be measured. Verified by darkening it: 1.23:1,
+  named.
+
 ### Mood Boards — the QA round (Sept 2026)
 
 Afnan ran an exhaustive pass over a real private board — every tool, every
