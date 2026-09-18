@@ -1235,6 +1235,35 @@ Three things Afnan asked for in one round. The first two were bugs.
   no content of its own, a board link belongs with its parent). Labels are
   hydrated with `textContent` like every other user string in this file.
 
+### Mood Boards — a to-do item can be double-clicked (Sept 2026)
+
+Afnan, with the item circled: double-clicking a to-do did nothing. **The
+handler was there the whole time and had never once run** — the fifth
+appearance of one bug.
+
+The to-do body is a drag surface, `boardsCardDragStart` calls
+`setPointerCapture`, and **a captured pointer RETARGETS the following
+`click` and `dblclick` to the CAPTURING element**. A note and a heading
+survive that because their `ondblclick` sits on the very element holding
+the drag handler; an item's sits on a **descendant**, so the dblclick went
+to the body and the item's own handler was never reached. Exactly the table
+cell. The checkbox and the remove button in the same row already carried
+`onpointerdown="event.stopPropagation()"`; the text was missed.
+
+The cost is the documented one: **a to-do card drags by its header strip
+and the padding around its rows**, not by the item text, just as a table
+drags by its chrome.
+
+**`tests/invariants.test.js` generalises it, because this keeps
+happening.** Every tag in `js/boards.js` carrying an `ondblclick` must
+either BE the drag element (it holds the `bodyDrag` interpolation) or stop
+pointerdown itself. One deliberate exception, **`.board-caption`** — it
+sits outside the card body, has no drag handler at all, and opens on a
+single click. Ten sites today; the invariant names the offender. Verified
+both ways, as is a `tests/boards.test.js` block that renders a real
+two-item to-do and asserts the guard **and** that the body still starts a
+card drag (this is a per-control guard, not a removal of the drag).
+
 ### Mood Boards — the QA round (Sept 2026)
 
 Afnan ran an exhaustive pass over a real private board — every tool, every
