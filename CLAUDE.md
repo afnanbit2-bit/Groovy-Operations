@@ -2316,27 +2316,94 @@ because the tree is its only truth; ours has a query behind it.
   "already placed"). Then *prune* cards for boards **positively known to be
   trashed** — never one merely absent from `moodBoards`, because a partial
   load (one of `loadBoardsData`'s three queries failing) would otherwise
-  empty someone's Home. Then *auto-place* whatever is left.
+  empty someone's Home. **Auto-place is no longer part of it** — see "the
+  Boards panel" below, which reverses that.
 - **Placement is SAVED, not derived.** One-time per board; after that Home
   is an ordinary board and a card you move stays moved.
-- **Auto-place is deliberately NOT undoable** — the one exception to "every
-  mutating action calls `_boardsPushUndo()` first". It runs at open, right
-  after the history resets, and undoing it would clear cards that reappear
-  next visit: a Ctrl+Z that looks broken.
 - **Sitting on a Home is not "nested".** `_boardsNestedIds` only ever
   follows a real `parentId`, so a board on your Home still lists at root in
   All boards and still reaches everyone else's Home. Same reason, creating
   a board from Home makes a **root** board with a card on Home, not a
   sub-board — nesting it under a board only you can read would drop it out
   of the list for you and nobody else.
-- **Deleting a board card on Home asks to trash the BOARD**, as Milanote
-  does: removing just the card is pointless, auto-place would put it back.
-  Owner-only, matching `firestore.rules`. Everywhere else, deleting a board
+- **Deleting a board card on Home TAKES IT OFF HOME** and leaves the board
+  alone — it goes back to the Boards panel. It used to ask to trash the
+  whole BOARD, which was right while auto-place existed (removing just the
+  card was an action that undid itself) and is wrong now; trashing the
+  board is **"Move board to Trash…" on the card's right-click menu**,
+  owner-only, matching `firestore.rules`. Everywhere else, deleting a board
   card still just unlinks a sub-board. Home itself can't be deleted,
   renamed, shared, templated or made Team, and its top bar drops all of it.
 - Back from Home leaves the module (Creative Hub); back from a root board
   goes to Home, or to All boards if that is where you came from
   (`_boardsCameFromAll`).
+
+### Mood Boards — Home's Boards panel (Sept 2026) — REVERSES auto-place
+
+Afnan, from Milanote's home: *"ON Home there should be a tab such as
+unsorted ... which is able to hold Public + Private boards, with button to
+select public + private board as well"*, plus search-and-scroll-to-it, and
+taking a board off Home should return it to the list.
+
+The Unsorted tray grows a **second tab, on Home only** (`_boardsTrayTab`,
+per viewer in `localStorage` like the minimap and snap): Unsorted | Boards.
+Search (debounced 180ms), an All · Team · Private segment, `+ Team board` /
+`+ Private board`, `Place all`, and rows you click or drag onto the canvas.
+
+**THE LIST IS DERIVED FROM THE SAME QUERY THE GALLERY READS**
+(`_boardsHomeList`), not a stored holding pen — Unsorted is the opposite
+kind of thing (items that exist nowhere else and must be stored), which is
+why the two share a panel and nothing else. Everything follows from that:
+nothing to keep in step when a board is made on another device or restored
+from Trash; "on Home" is derived too (`_boardsHomeCarded`, a card pointing
+at that board id); and a board can never be stranded, since the panel, All
+boards and the gallery search all read one `moodBoards`.
+
+- **AUTO-PLACE-ON-OPEN HAD TO GO, and that is the load-bearing part.** It
+  and the panel answered the same question in opposite directions: a card
+  you deleted came straight back on the next visit. That is the *only*
+  reason `boardsDeleteCard` used to trash the whole BOARD on Home. It also
+  settles the awkwardness the old note recorded — an automatic arrangement
+  could not be undoable, whereas `boardsHomePlaceAll` is a button you
+  pressed and pushes undo like anything else. `_boardsHomeAutoPlace` is
+  still the one implementation, now called only from there.
+- **A keystroke repaints THE LIST ALONE** (`_boardsPanelRepaint`). A full
+  `_boardsRenderCanvasAndWire()` per character would redraw every card and
+  connector on a 46-card board and destroy the input the caret is in — the
+  same reason the Find bar does not rerender.
+- **Titles are hydrated with `textContent`** (`_boardsPanelHydrate`), never
+  interpolated. Someone else named that board and it is drawn into your
+  page. The hydrate returns immediately when `#board-panel-list` is absent,
+  because it runs on every canvas render.
+- **Drag-to-place is pointer-based**, like the tray's drag-out and for the
+  same reason: the stage reads a native HTML5 drag as "files from the
+  desktop" (`_boardsInternalDrag`). The drop arms `_boardsSuppressClick` —
+  the row captured the pointer, so the click that follows is **retargeted
+  to it** and would place the board a second time. That is the delete-✕
+  retargeting in a new place; it keeps happening.
+- **On Home the top-bar button says `Boards` and opens the Boards tab**
+  (`boardsToggleBoardsPanel`). A button labelled Boards that opens Unsorted
+  is the kind of small lie that makes a UI feel broken.
+- **A brand-new Home opens the panel once** (`_boardsHomeFirstRun`) — only
+  when Home has no cards at all, and deliberately **not persisted**: a
+  first-run nudge, not a setting. Without it, retiring auto-place leaves a
+  new person on an empty canvas with nothing saying where the boards went.
+- A row names the owner **only when it isn't you**. Private covers both
+  your own boards and ones shared with you, since all three of
+  `loadBoardsData`'s queries land in the same `moodBoards`.
+- `tests/boards.test.js` covers it (32 assertions) and
+  `tests/smoke-layout.js` gained a fragment — **verified both ways**:
+  dropping `min-width:0` from the row's info column fails it, naming the
+  overflowing row and the covered Open button, which is the Profile
+  directory's shape exactly.
+
+**Found while doing this, already red on `main`:** the assertion "the
+markup carries no cell text" searches the WHOLE table card's markup, and a
+card id carries `Date.now()` — `1789724573410` contains the digits `245`,
+which is the cell value the test looks for. Diagnosed by printing the match
+and its context, not by re-running until it passed; the id is pinned now.
+**Any assertion that greps rendered markup for a short string has this
+shape** — scope it, or pin whatever carries a timestamp.
 
 ### Mood Boards — attachments: preview and download (Sept 2026)
 
