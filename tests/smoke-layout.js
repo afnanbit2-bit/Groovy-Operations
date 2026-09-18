@@ -243,6 +243,33 @@ const FRAGMENTS={
   // the hit-test is the point: the View button is the only way to reach
   // zoom, Fit, Snap and the minimap now, so a View button the browser
   // cannot actually click takes all four down with it.
+  // Level of detail. The same three cards rendered twice - once at NEAR and
+  // once at FAR - so the probe measures what each zoom actually paints.
+  // What this holds: the far board must still be free of clipped text and
+  // unreachable controls once the chrome is hidden, which is the risk in
+  // hiding a flex sibling (the body grows into its space).
+  'boards — cards at far zoom (level of detail)':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+      _editConnectors=[];_boardsSelection=new Set();moodBoards=[];
+      _editCards=[
+        {id:'n',type:'text',text:'Winter fleece weights',name:'Fleece',x:10,y:10,w:220,h:150,
+         labels:[{t:'REF',c:'blue'}],reactions:{'👍':['u2']}},
+        {id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',
+         name:'Hoodie',caption:'Front',x:250,y:10,w:220,h:200},
+        {id:'l',type:'link',linkUrl:'https://example.test',linkTitle:'example.test',
+         linkDesc:'A reference',x:490,y:10,w:220,h:150}
+      ];`);
+    const cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`);
+    // Two worlds side by side, each stamped the way _boardsApplyTransform
+    // stamps the real one. No transform: the probe measures layout, and a
+    // scale() would shrink everything below its own size thresholds.
+    return Promise.resolve(
+      '<div style="position:relative;overflow:hidden;height:300px;width:100%">'+
+        '<div class="board-world" data-lod="near">'+cards+'</div></div>'+
+      '<div style="position:relative;overflow:hidden;height:300px;width:100%;margin-top:12px">'+
+        '<div class="board-world" data-lod="far">'+cards+'</div></div>');
+  },
   'boards — the board top bar':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     app.run(`_editBoard={id:'b1',title:'Winter Drop 2027',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
@@ -767,6 +794,27 @@ document.querySelectorAll('#main-content *').forEach(el=>{
       color:cs.color,bg:getComputedStyle(el).backgroundColor,
       cls:(el.className||'').toString().slice(0,50)});
   }
+});
+// At FAR zoom a card paints its content and nothing else. This is the
+// contract the level-of-detail rules exist to keep: at 22% a header strip
+// is ~5 physical px of grey and its text is under 3px, so painting it is
+// worse than painting nothing. Asserted rather than assumed, because the
+// rules are pure CSS and a renamed class would silently stop applying them
+// with no other symptom.
+document.querySelectorAll('.board-world[data-lod="far"]').forEach(world=>{
+  ['.board-card-kind','.board-card-name','.board-card-del','.board-resize-handle',
+   '.board-labels','.board-reactions','.board-caption'].forEach(sel=>{
+    world.querySelectorAll(sel).forEach(el=>{
+      if(getComputedStyle(el).display!=='none'){
+        bad.push({why:'card chrome is still painted at far zoom',sel:sel,
+          display:getComputedStyle(el).display});
+      }
+    });
+  });
+  world.querySelectorAll('.board-card-head').forEach(el=>{
+    const h=el.getBoundingClientRect().height;
+    if(h>12)bad.push({why:'the card header is still a full strip at far zoom',h:Math.round(h)});
+  });
 });
 // The tool rail must never need VERTICAL scrolling. It is navigation
 // chrome: a tool you have to discover by scrolling a column is, in

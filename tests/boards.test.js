@@ -2382,6 +2382,132 @@ module.exports=function(){
       ph.slice(ph.indexOf('board-view-menu')).indexOf('Minimap:')<0);
   }
 
+
+  // ── Level of detail by zoom ───────────────────────────────────────────
+  // Afnan compared our board at 22% with Milanote's at 27%: theirs reads,
+  // ours does not. The cause was NOT font size — it is that we painted
+  // every piece of card chrome at every zoom. Verified before the change:
+  // there was no zoom-dependent rendering in the file at all.
+  {
+    const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    const {run}=app;
+    run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+         _editCards=[];_editConnectors=[];_boardsSelection=new Set();moodBoards=[];`);
+
+    s.section('three buckets, and the boundaries are exact');
+    [[0.05,'far'],[0.22,'far'],[0.34,'far'],[0.35,'mid'],[0.5,'mid'],
+     [0.69,'mid'],[0.7,'near'],[1,'near'],[3,'near']].forEach(([z,want])=>{
+      s.eq(Math.round(z*100)+'% → '+want,run(`_boardsLodFor(${z})`),want);
+    });
+    // The zoom Afnan was looking at, and Milanote's in the same screenshot.
+    s.eq('our 22% is far',run(`_boardsLodFor(0.22)`),'far');
+    s.eq("Milanote's 27% would be too",run(`_boardsLodFor(0.27)`),'far');
+    s.eq('junk does not throw',run(`_boardsLodFor(undefined)`),'far');
+
+    s.section('the transform stamps it on the world');
+    run(`_editBoard.zoom=0.22;_boardsApplyTransform()`);
+    s.eq('far',run(`document.getElementById('board-world').getAttribute('data-lod')`),'far');
+    run(`_editBoard.zoom=1;_boardsApplyTransform()`);
+    s.eq('and back to near',run(`document.getElementById('board-world').getAttribute('data-lod')`),'near');
+
+    s.section('the attribute is only WRITTEN when the bucket changes');
+    // _boardsApplyTransform runs on every pointermove of a pan and every
+    // frame of a pinch. Writing the attribute each time would thrash the
+    // style engine for no reason.
+    run(`__w=document.getElementById('board-world');__n=0;
+         __orig=__w.setAttribute.bind(__w);
+         __w.setAttribute=function(k,v){if(k==='data-lod')__n++;return __orig(k,v);};`);
+    run(`_editBoard.zoom=1;_boardsApplyTransform();_boardsApplyTransform();_boardsApplyTransform()`);
+    s.eq('three applies at one zoom write nothing',run(`__n`),0);
+    run(`_editBoard.zoom=0.2;_boardsApplyTransform();_boardsApplyTransform()`);
+    s.eq('crossing a boundary writes exactly once',run(`__n`),1);
+  }
+
+
+  // ── an image card is sized to its picture ─────────────────────────────
+  // Afnan pasted ONE photo into Milanote and into this board: theirs kept
+  // the garment whole, ours cut the top and bottom off. Card images draw
+  // with object-fit:cover (which CROPS to fill), and an image card was born
+  // 170×120 and never resized — while the file branch three lines away
+  // always called _boardsFitPdfCard. So a portrait photo showed the middle
+  // 170×120 slice of itself and nothing else.
+  {
+    const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    const {run}=app;
+    const boot=()=>run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
+      _editCards=[];_editConnectors=[];_editUnsorted=[];_boardsSelection=new Set();
+      _boardsSaveDebounced=()=>{};_boardsRenderCanvasAndWire=()=>{};_boardsRenderSoon=()=>{};
+      __uploads=[];
+      _boardsUploadAny=f=>new Promise((ok,bad)=>__uploads.push({f,ok,bad}));`);
+    const tick=()=>new Promise(r=>setImmediate(r));
+    const ratio=id=>run(`(c=>Math.round((c.w/c.h)*1000)/1000)(_editCards.find(c=>c.id==='${id}'))`);
+
+    return (async()=>{
+      s.section('the shape a fitted card takes');
+      boot();
+      const fit=(w,h)=>run(`(function(){const c=_boardsNewCard('image');
+        _boardsFitImageCard(c,{width:${w},height:${h}});return c.w+'x'+c.h;})()`);
+      // The garment photo from the screenshot: tall portrait.
+      s.eq('a 1000×1500 portrait',fit(1000,1500),'240x360');
+      s.eq('a 1600×900 landscape',fit(1600,900),'240x135');
+      s.eq('a square',fit(800,800),'240x240');
+
+      s.section('a very tall picture keeps its RATIO, not just its cap');
+      // Clamping the height alone would crop the very thing this exists to
+      // stop cropping, so the width comes down with it.
+      const tall=fit(500,5000);
+      const tw=+tall.split('x')[0],th=+tall.split('x')[1];
+      s.eq('height is capped',th,520);
+      s.ok('and the width followed it down',tw<240,tall);
+      s.ok('the ratio still matches the picture exactly',Math.abs((tw/th)-(500/5000))<0.005,tall);
+
+      s.section('no dimensions back → the default is left alone');
+      s.eq('missing',fit(0,0),'170x120');
+      s.eq('junk',run(`(function(){const c=_boardsNewCard('image');
+        _boardsFitImageCard(c,{width:'x',height:null});return c.w+'x'+c.h;})()`),'170x120');
+      s.eq('no response at all',run(`(function(){const c=_boardsNewCard('image');
+        _boardsFitImageCard(c);return c.w+'x'+c.h;})()`),'170x120');
+
+      s.section('a card someone already sized is never re-fitted');
+      s.eq('hand-sized card untouched',run(`(function(){const c=_boardsNewCard('image');
+        c.w=400;c.h=400;_boardsFitImageCard(c,{width:1000,height:1500});return c.w+'x'+c.h;})()`),'400x400');
+
+      s.section('pasting a photo produces a card the shape of the photo');
+      // This is the reported bug end to end: _boardsOnPaste routes through
+      // _boardsUploadFileToCard, which is where the image branch had no fit.
+      boot();
+      run(`(function(){const c=_boardsNewCard('image');c.id='p1';_editCards.push(c);})();
+           _boardsUploadFileToCard('p1',{name:'hoodie.png',type:'image/png',size:9})`);
+      await tick();
+      run(`__uploads[0].ok({secure_url:'https://res.cloudinary.com/x/image/upload/v1/h.png',width:1000,height:1500})`);
+      await tick();await tick();
+      s.eq('the card is portrait, like the picture',run(`(c=>c.w+'x'+c.h)(_editCards[0])`),'240x360');
+      s.ok('so cover crops nothing',Math.abs(ratio('p1')-(1000/1500))<0.02);
+
+      s.section('resized mid-upload → left alone, same guard the file path uses');
+      boot();
+      run(`(function(){const c=_boardsNewCard('image');c.id='p2';_editCards.push(c);})();
+           _boardsUploadFileToCard('p2',{name:'a.png',type:'image/png',size:9})`);
+      await tick();
+      run(`(c=>{c.w=333;c.h=222;})(_editCards[0])`);
+      run(`__uploads[0].ok({secure_url:'https://res.cloudinary.com/x/image/upload/v1/a.png',width:1000,height:1500})`);
+      await tick();await tick();
+      s.eq('kept the hand size',run(`(c=>c.w+'x'+c.h)(_editCards[0])`),'333x222');
+
+      s.section('out of the Unsorted tray, already the right shape');
+      // A tray item keeps no PDF page size, but an image costs nothing to
+      // carry — Cloudinary hands the dimensions back with the URL.
+      boot();
+      const t=JSON.parse(run(`JSON.stringify(_boardsCardFromTrayItem({id:'u',kind:'image',
+        imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.png',imgW:1000,imgH:1500},{x:0,y:0}))`));
+      s.eq('portrait out of the tray',t.w+'x'+t.h,'240x360');
+      const t2=JSON.parse(run(`JSON.stringify(_boardsCardFromTrayItem({id:'u',kind:'image',
+        imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.png'},{x:0,y:0}))`));
+      s.eq('an older tray item with no dimensions keeps the default',t2.w+'x'+t2.h,'170x120');
+      return s;
+    })();
+  }
+
   // ── a PDF card is sized to its page ─────────────────────────────────────
   // At the 200×110 file default the name row and the Open/Download buttons
   // left the page thumbnail a ~20px strip. Reported with a screenshot of a

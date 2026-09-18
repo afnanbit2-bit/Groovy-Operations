@@ -122,10 +122,12 @@ function _boardsCanEdit(b){
 // A file card with no thumbnail is a name row and two buttons, so it stays
 // compact. A PDF is not: see _boardsFitPdfCard.
 const _BOARDS_FILE_W=200,_BOARDS_FILE_H=110;
+// The size an image card is born at, before its picture has landed.
+const _BOARDS_IMG_W=170,_BOARDS_IMG_H=120;
 function _boardsNewCard(type){
   const id='c'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
-  const w=type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?220:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?200:170;
-  const h=type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?120:type==='link'?120:type==='file'?_BOARDS_FILE_H:type==='todo'?170:type==='board'?104:100;
+  const w=type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?220:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?200:type==='image'?_BOARDS_IMG_W:170;
+  const h=type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?_BOARDS_IMG_H:type==='link'?120:type==='file'?_BOARDS_FILE_H:type==='todo'?170:type==='board'?104:100;
   const base={id,type,x:80,y:80,w,h};
   if(type==='image')base.imageUrl='';
   if(type==='text')base.text='';
@@ -2789,10 +2791,43 @@ function _boardsHydrateTextCards(){
 }
 
 // -- pan/zoom --
+/* ── Level of detail (Sept 2026) ───────────────────────────────────────
+   Afnan put our board at 22% beside Milanote's at 27% and said theirs is
+   readable and ours is not. The difference is NOT font size, which was the
+   first guess: it is that Milanote stops drawing card CHROME as you zoom
+   out, and we drew all of it at every zoom. Verified before changing
+   anything — there was no zoom-dependent rendering in this file at all.
+
+   A card carries a header strip (~26 world px, with a type label, the
+   name, a comment badge and the delete X), a border, a shadow, a resize
+   grip, and possibly label/reaction/caption rows. At 22% that header is
+   about 5 physical pixels of grey banding across the top of a card barely
+   40px wide, and every piece of text in it is under 3px — illegible, but
+   still painted, so it reads as mush rather than as nothing. Milanote's
+   cards at 27% are just the pictures.
+
+   So: three buckets, stamped as `data-lod` on `.board-world`, and CSS does
+   the rest. No re-render and no per-card JS — this rides
+   _boardsApplyTransform, which already runs on every pan and zoom, and the
+   attribute is only written when the bucket actually CHANGES so a pinch
+   does not thrash the style engine.
+
+   The header stays in the DOM as a thin grab strip rather than being
+   removed: it is the drag handle for link cards, which are the one type
+   whose body does not drag (see "the wheel and the native drag"). */
+const _BOARDS_LOD_FAR=0.35,_BOARDS_LOD_MID=0.7;
+function _boardsLodFor(z){
+  const n=Number(z)||0;
+  return n<_BOARDS_LOD_FAR?'far':(n<_BOARDS_LOD_MID?'mid':'near');
+}
 function _boardsApplyTransform(){
   const b=_editBoard;if(!b)return;
   const w=document.getElementById('board-world');
   if(w)w.style.transform=`translate(${b.panX}px,${b.panY}px) scale(${b.zoom})`;
+  if(w){
+    const lod=_boardsLodFor(b.zoom);
+    if(w.getAttribute('data-lod')!==lod)w.setAttribute('data-lod',lod);
+  }
   const zr=document.getElementById('board-zoom-readout');
   if(zr)zr.textContent=Math.round(b.zoom*100)+'%';
   // Any transform change that ISN'T the fit itself means the view is no
@@ -5360,6 +5395,7 @@ window.boardsPickStockImage=async function(i){
     _boardsPushUndo();
     const card=_boardsNewCard('image');
     card.imageUrl=d.secure_url;
+    _boardsFitImageCard(card,d);
     if(ph.credit)card.caption='Photo: '+ph.credit;
     _editCards.push(card);
     _boardsRenderCanvasAndWire();
@@ -5802,6 +5838,43 @@ function _boardsFitPdfCard(c,res){
   }
 }
 
+/* An image card is sized to its PICTURE, exactly as a file card is sized to
+   its page. Afnan pasted one photo into Milanote and into this board: theirs
+   kept the garment whole, ours cut the top and bottom off.
+
+   The cause was not image size or Cloudinary. Card images are drawn with
+   `object-fit:cover`, which CROPS to fill the box — and an image card was
+   born 170x120 and never resized, while the file/PDF branch three lines
+   away always called _boardsFitPdfCard. So a portrait photo showed only the
+   middle 170x120 slice of itself. Verified from the code, not guessed: the
+   `image` branch of _boardsUploadFileToCard simply had no fit call.
+
+   `cover` is kept rather than swapped for `contain`: once the card matches
+   the picture's ratio, cover crops nothing, and contain would letterbox
+   every card that anyone later resizes by hand.
+
+   A very tall picture is bounded by _BOARDS_IMG_MAX_H, and the WIDTH comes
+   down with it so the ratio still holds — clamping height alone would crop
+   the thing this function exists to stop cropping. */
+// The floor is deliberately LOW. It exists to stop a degenerate card, not
+// to shape one: set it high and it fights the ratio it is standing next to
+// — a 10:1 sliver would be widened back out and cropped again, which is the
+// bug this whole function exists to remove. At 40 the ratio survives
+// anything up to a 13:1 picture.
+const _BOARDS_IMG_CARD_W=240,_BOARDS_IMG_MAX_H=520,_BOARDS_IMG_MIN=40;
+function _boardsImageCardUnsized(c){
+  return !!c&&c.type==='image'&&c.w===_BOARDS_IMG_W&&c.h===_BOARDS_IMG_H;
+}
+function _boardsFitImageCard(c,res){
+  if(!_boardsImageCardUnsized(c))return;
+  const iw=res&&+res.width,ih=res&&+res.height;
+  if(!(iw>0&&ih>0))return;          // no dimensions back — leave the default
+  let w=_BOARDS_IMG_CARD_W,h=Math.round(w*ih/iw);
+  if(h>_BOARDS_IMG_MAX_H){h=_BOARDS_IMG_MAX_H;w=Math.round(h*iw/ih);}
+  c.w=Math.max(_BOARDS_IMG_MIN,w);
+  c.h=Math.max(_BOARDS_IMG_MIN,h);
+}
+
 window.boardsUploadToCard=async function(id,inputEl){
   const file=inputEl.files&&inputEl.files[0];
   if(!file)return;
@@ -5836,6 +5909,9 @@ async function _boardsUploadFileToCard(cardId,file){
     if(!card)return;   // card was deleted or undone while the upload ran
     if(card.type==='image'){
       card.imageUrl=res.secure_url;
+      // Same guard the file branch uses: if the card changed size while the
+      // upload was in flight, somebody sized it by hand and it is left alone.
+      if(card.w===w0&&card.h===h0)_boardsFitImageCard(card,res);
     }else{
       card.type='file';
       card.fileUrl=res.secure_url;
@@ -7326,7 +7402,13 @@ function _boardsTrayAddFiles(files){
       const live=_editUnsorted.find(x=>x.id===item.id);
       if(!live)return;                     // removed while it was uploading
       delete live._uploading;
-      if(live.kind==='image')live.imageUrl=res.secure_url;else live.fileUrl=res.secure_url;
+      if(live.kind==='image'){
+        live.imageUrl=res.secure_url;
+        // Cloudinary hands back the dimensions for free, and a tray item
+        // that keeps them comes out of the tray already the right shape.
+        // (A PDF's page size is NOT kept — see _boardsCardFromTrayItem.)
+        if(+res.width>0&&+res.height>0){live.imgW=+res.width;live.imgH=+res.height;}
+      }else live.fileUrl=res.secure_url;
       _boardsRenderSoon();_boardsSaveDebounced();
     }).catch(e=>{
       _editUnsorted=_editUnsorted.filter(x=>x.id!==item.id);
@@ -7371,7 +7453,10 @@ function _boardsCardFromTrayItem(u,at){
   const type=u.kind==='image'?'image':u.kind==='file'?'file':u.kind==='link'?'link':'text';
   const c=_boardsNewCard(type);
   if(u.name)c.name=u.name;
-  if(type==='image')c.imageUrl=u.imageUrl||'';
+  if(type==='image'){
+    c.imageUrl=u.imageUrl||'';
+    if(c.imageUrl)_boardsFitImageCard(c,{width:u.imgW,height:u.imgH});
+  }
   else if(type==='file'){
     c.fileUrl=u.fileUrl||'';c.fileName=u.fileName||'';c.fileSize=u.fileSize||0;
     // A tray item keeps no page size, so a PDF comes out A4-shaped.

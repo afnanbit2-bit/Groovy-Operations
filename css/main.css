@@ -573,6 +573,41 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
   font-weight:600;paint-order:stroke;stroke:var(--surface);stroke-width:4;
   stroke-linejoin:round;pointer-events:none;user-select:none}
 .board-conn-layer line.temp{stroke:var(--text);stroke-dasharray:4 4;pointer-events:none}
+/* ── Level of detail: what a card stops drawing as you zoom out ────────
+   Set by _boardsApplyTransform as data-lod on .board-world. See the block
+   above _boardsLodFor in js/boards.js for why this exists — the short
+   version is that a 26px header strip is 5 physical pixels at 22% zoom,
+   and 3px text is noise rather than information.
+
+   MID (35-70%): the two controls too small to hit go first. The resize
+   grip is a 30px target that is 15px here, and the delete X is smaller
+   still; both are pure clutter long before they are unusable.
+   FAR (<35%): everything but the content. The header keeps a thin strip
+   so a link card - the one type whose body does not drag - still has a
+   handle, but loses its banding, its border and everything in it. Text is
+   hidden rather than painted illegibly, and the card loses its shadow and
+   most of its corner radius, because at this size those read as fuzz. */
+.board-world[data-lod="mid"] .board-card-del,
+.board-world[data-lod="mid"] .board-resize-handle,
+.board-world[data-lod="far"] .board-card-del,
+.board-world[data-lod="far"] .board-resize-handle,
+.board-world[data-lod="far"] .board-card-kind,
+.board-world[data-lod="far"] .board-card-name,
+.board-world[data-lod="far"] .board-cmt-badge,
+.board-world[data-lod="far"] .board-labels,
+.board-world[data-lod="far"] .board-reactions,
+.board-world[data-lod="far"] .board-caption{display:none!important}
+/* The strip survives as a grab target; only its look goes. */
+.board-world[data-lod="far"] .board-card-head{padding:0;min-height:10px;height:10px;background:transparent;border-bottom:none}
+.board-world[data-lod="far"] .board-card-el{box-shadow:none;border-radius:4px}
+/* Text at this zoom is under 5px. Hidden beats painted-but-unreadable —
+   the picture cards are what carry a board at 22%, which is exactly what
+   Milanote's own board looks like at 27%. */
+.board-world[data-lod="far"] .board-text-body,
+.board-world[data-lod="far"] .board-todo-body,
+.board-world[data-lod="far"] .board-subboard-meta,
+.board-world[data-lod="far"] .board-link-desc{visibility:hidden}
+
 .board-card-el{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.08);display:flex;flex-direction:column;overflow:hidden}
 .board-card-el.selected{outline:2px solid var(--text);outline-offset:1px}
 /* No native HTML5 drag anywhere inside a card. A dragged <img> or <a> both

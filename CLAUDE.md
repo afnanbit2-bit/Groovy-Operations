@@ -2085,6 +2085,65 @@ every buried control. That check is the one that matters here — the View
 button is now the ONLY route to zoom, Fit, Snap and the minimap, so a View
 button the browser cannot click takes all four down with it.
 
+### Mood Boards — level of detail, and the cropped image (Sept 2026)
+
+Two findings from Afnan putting our board beside Milanote's.
+
+**"Zoom out and theirs is readable, ours is not."** The first guess was font
+size. It was wrong. **Milanote stops drawing card CHROME as you zoom out and
+we drew all of it at every zoom** — verified before changing anything: there
+was no zoom-dependent rendering in `js/boards.js` at all.
+
+A card carries a ~26 world-px header strip (type label, name, comment badge,
+delete ✕), a border, a shadow, a resize grip and possibly label/reaction/
+caption rows. At 22% that header is about **5 physical pixels of grey
+banding** across a card barely 40px wide, and every piece of text in it is
+under 3px — illegible but still painted, so it reads as mush rather than as
+nothing. Milanote's cards at 27% are just the pictures.
+
+- **Three buckets stamped as `data-lod` on `.board-world`** — `far` (<35%),
+  `mid` (35–70%), `near`. CSS does the rest: no re-render, no per-card JS.
+  It rides `_boardsApplyTransform`, which already runs on every pan and
+  zoom, and **the attribute is only written when the bucket CHANGES** so a
+  pinch does not thrash the style engine. Asserted.
+- `mid` drops the two controls too small to hit (resize grip, delete ✕).
+  `far` drops everything but the content, hides text rather than painting it
+  illegibly, and flattens the shadow and most of the corner radius.
+- **The header stays in the DOM as a thin 10px strip rather than being
+  removed** — it is the drag handle for `link` cards, the one type whose
+  body does not drag.
+- `tests/smoke-layout.js` renders the same three cards at `near` and at
+  `far`, and asserts the **contract** (no chrome painted at far, header
+  under 12px). **Verified both ways** — deleting one selector fails it
+  naming `.board-card-kind`. The fragment also guards the risk in hiding a
+  flex sibling: the body grows into its space, which could clip.
+
+**"I pasted the same image into both and ours is cut."** Verified from the
+code rather than guessed, and it was neither image size nor Cloudinary.
+Card images draw with **`object-fit:cover`, which CROPS to fill**, and an
+image card was born 170×120 and **never resized** — while the file branch
+*three lines away* always called `_boardsFitPdfCard`. So a portrait photo
+showed the middle 170×120 slice of itself. The `image` branch of
+`_boardsUploadFileToCard` simply had no fit call.
+
+- **`_boardsFitImageCard(c,res)` mirrors `_boardsFitPdfCard`**, using the
+  `width`/`height` Cloudinary already returns. `cover` is KEPT rather than
+  swapped for `contain`: once the card matches the picture's ratio, cover
+  crops nothing, and `contain` would letterbox every card anyone later
+  resizes by hand.
+- **A very tall picture brings its WIDTH down with the height cap.**
+  Clamping height alone would crop the thing the function exists to stop
+  cropping. The floor (`_BOARDS_IMG_MIN`) is deliberately **low (40)** for
+  the same reason — set it high and it fights the ratio standing next to it.
+  Found by the test: at 80 a 10:1 picture came back at 80×520, re-cropped.
+- **All four image paths go through it** — paste, drop-onto-card, the
+  add-image panel's stock pick, and the Unsorted tray (which now carries
+  `imgW`/`imgH`, free in the upload response). An older tray item without
+  them keeps the default rather than guessing.
+- The same "someone resized it mid-upload" guard the file path uses.
+- `_BOARDS_IMG_W`/`_BOARDS_IMG_H` name the birth size so `_boardsNewCard`
+  and the unsized-guard cannot drift apart.
+
 ### Mood Boards — Home is a board (Sept 2026)
 
 Milanote has no "list of your boards" page: **home IS a board**, and your
