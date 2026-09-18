@@ -96,17 +96,30 @@ let _boardsLineMode=false;      // while on, dragging empty canvas draws an arro
    Milanote can afford 5% on a 398-card board; ours are tens of cards, where
    Fit already brings the whole board on screen well above this. */
 const _BOARDS_ZOOM_MIN=0.25;
+/* HOME HAS ITS OWN, HIGHER FLOOR (Sept 2026 — Afnan: "on home max zoom out
+   is 40%"). Home holds board cards and nothing else, and a board card is
+   something you READ — its picture, its name, its count. An ordinary board
+   holds tech packs and photographs you legitimately want to see all of at
+   once, which is what 25% is for; zooming a list of boards out past
+   legibility answers no question at all. It also puts Home entirely inside
+   the `mid` level-of-detail band (35–70%), so a board card on Home is never
+   drawn in the `far` bucket that strips its chrome. */
+const _BOARDS_HOME_ZOOM_MIN=0.40;
 const _BOARDS_ZOOM_MAX=3;
+function _boardsZoomFloor(){
+  return _boardsIsHome(_editBoard)?_BOARDS_HOME_ZOOM_MIN:_BOARDS_ZOOM_MIN;
+}
 /**
  * THE one place the range is enforced. Every zoom entry point runs through
  * it, including the board OPEN path — a board saved at 19% before this
  * shipped would otherwise come back below the floor and stay there, with
- * nothing on screen to say why zooming out did nothing.
+ * nothing on screen to say why zooming out did nothing. That open path is
+ * what carries a Home saved at 25% up to 40% too, with no migration.
  */
 function _boardsClampZoom(z){
   const n=Number(z);
   if(!isFinite(n)||n<=0)return 1;
-  return Math.max(_BOARDS_ZOOM_MIN,Math.min(_BOARDS_ZOOM_MAX,n));
+  return Math.max(_boardsZoomFloor(),Math.min(_BOARDS_ZOOM_MAX,n));
 }
 const _BOARDS_ZOOM_DETENT=1;      // 100% — a pinch from below stops here, with a buzz
 const _BOARDS_ZOOM_TOUCH_MAX=2;   // 200% — as far as a pinch goes, second buzz
@@ -1803,7 +1816,13 @@ async function _boardsOpenCanvas(){
       b={id:snap.id,...snap.data()};
     }catch(e){m.innerHTML='<div class="empty">Could not load board: '+(e.message||e)+'</div>';return;}
   }
-  _editBoard={id:b.id,title:b.title||'Untitled board',visibility:b.visibility||'personal',ownerUid:b.ownerUid,ownerName:b.ownerName,ownerUsername:b.ownerUsername,zoom:_boardsClampZoom(b.zoom||1),panX:b.panX||40,panY:b.panY||30,parentId:b.parentId||null,isTemplate:!!b.isTemplate,isHome:!!b.isHome,sharedWith:Array.isArray(b.sharedWith)?b.sharedWith.slice():[]};
+  _editBoard={id:b.id,title:b.title||'Untitled board',visibility:b.visibility||'personal',ownerUid:b.ownerUid,ownerName:b.ownerName,ownerUsername:b.ownerUsername,zoom:b.zoom||1,panX:b.panX||40,panY:b.panY||30,parentId:b.parentId||null,isTemplate:!!b.isTemplate,isHome:!!b.isHome,sharedWith:Array.isArray(b.sharedWith)?b.sharedWith.slice():[]};
+  // Clamped AFTER the assignment, not inside the literal. The floor is
+  // Home-aware now (_boardsZoomFloor reads _editBoard), and inside the
+  // literal _editBoard is still the PREVIOUS board — so a Home saved below
+  // 40% came back at the ordinary 25% floor. Found by the test, not by
+  // reading.
+  _editBoard.zoom=_boardsClampZoom(_editBoard.zoom);
   _editCards=_boardsDecodeCards((b.cards||[]).map(c=>{const cc={...c};delete cc._uploading;return cc;}));
   _editConnectors=(b.connectors||[]).map(cn=>({...cn}));
   _editUnsorted=(b.unsorted||[]).map(u=>{const uu={...u};delete uu._uploading;return uu;});

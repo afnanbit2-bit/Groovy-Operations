@@ -8,7 +8,7 @@
    NOT covered, and it matters: anything visual. See tests/harness.js.
    ───────────────────────────────────────────────────────────────────────── */
 'use strict';
-const {loadApp,suite}=require('./harness');
+const {loadApp,suite,ROOT}=require('./harness');
 
 const FILES=['js/boards.js'];
 
@@ -52,7 +52,42 @@ module.exports=function(){
         moodBoards=[{id:'OLD',title:'Winter',ownerUid:'u1',visibility:'personal',zoom:0.19,cards:[],connectors:[]}];`);
       await run(`_boardsOpenCanvas()`);
       s.eq('a board stored at 19% opens at the floor',run(`_editBoard&&_editBoard.zoom`),0.25);
+
+      // And a HOME saved at 25% comes back at 40 — which is what makes the
+      // higher floor need no migration. Sequenced inside this same block on
+      // purpose: two _pending blocks that each set up state and then await
+      // will overwrite each other, because every body runs to its first
+      // await at push time.
+      run(`_boardsViewingId='H2';
+        moodBoards=[{id:'H2',isHome:true,title:'Home',ownerUid:'u1',visibility:'personal',zoom:0.25,cards:[],connectors:[]}];`);
+      await run(`_boardsOpenCanvas()`);
+      s.eq('a Home stored at 25% opens at 40%',run(`_editBoard&&_editBoard.zoom`),0.40);
     })());
+
+    // HOME's floor is higher, because Home holds board cards and nothing
+    // else — things you READ rather than a wall of tech packs you want all
+    // of at once. Same single enforcement point, so every entry path and
+    // Fit inherit it.
+    // Its own app instance: the block above is mid-await on a board OPEN,
+    // and _editBoard is what both that and the clamp read. Setting it here
+    // would clobber the open before its microtask resumes — which is the
+    // same _pending hazard, reached from the synchronous side.
+    s.section('Home stops at 40%');
+    {
+      const z=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      const rz=x=>z.run(x);
+      rz(`_editBoard={id:'H',isHome:true,zoom:1}`);
+      s.eq('the Home floor',rz(`_BOARDS_HOME_ZOOM_MIN`),0.40);
+      s.eq('a pinch stops at 40 on Home',rz(`_boardsClampZoom(0.1)`),0.40);
+      s.eq('25% is below Home\u2019s floor',rz(`_boardsClampZoom(0.25)`),0.40);
+      s.eq('and the ceiling is unchanged',rz(`_boardsClampZoom(99)`),3);
+      rz(`_editBoard={id:'A',zoom:1}`);
+      s.eq('an ordinary board still goes to 25',rz(`_boardsClampZoom(0.1)`),0.25);
+      // Nothing may read the constant directly and skip the Home branch.
+      const src=require('fs').readFileSync(require('path').join(ROOT,'js/boards.js'),'utf8');
+      s.eq('the floor is read through the helper, never the constant',
+        (src.match(/_BOARDS_ZOOM_MIN/g)||[]).length,2);   // declaration + the helper
+    }
 
     s.section('a pinch that starts at 100% is geared down');
     state.vibrations.length=0;
