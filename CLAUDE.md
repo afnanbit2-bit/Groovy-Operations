@@ -1548,6 +1548,74 @@ the dark ramp fails the new fragment at **1.09:1** naming
 `board-rail-badge fill-3`. **Nobody has seen the shake or the ramp on a real
 screen** — the sandbox cannot sign in.
 
+### Mood Boards — the card is a wide rectangle, and the cue was switched off (Sept 2026)
+
+Two asks in one message: *"when ever a new board is crated i want the
+stamderd size to start as a rectanglar share as i made and marked 2, on the
+other hand the left side tool bar animation is not working when you hover
+over it"*.
+
+**A board card is born 340 × 136, and there is now ONE definition of that
+size.** There were two, and that is the part worth keeping: `_boardsNewCard`
+minted a board card at **200 × 104** (the rail, the sub-board action) while
+Home's grid used **260 × 172** — so the same card came out a different shape
+depending on which way you made it, and the render then grew both to the
+minimum anyway. Both read `_BOARDS_BOARD_W`/`_BOARDS_BOARD_H` now.
+
+- **136 is MEASURED, not chosen.** Rendered in headless Chromium against the
+  real `css/main.css`, the tallest a spine card's body ever gets is **107px**
+  — a two-line name, the meta line and a thumbnail strip — so the 28px header
+  strip plus `_BOARDS_MIN_BODY_H.board` 108 clears it with nothing clipped.
+  That constant came **down from 124** to let the card be this short.
+- **It only stays honest because the meta line no longer WRAPS.** While it
+  wrapped, a card's natural height depended on how WIDE it was — measured
+  107px of body at 260, **122 at 200, 137 at 160** — so the minimum had to
+  cover the narrowest card anyone might drag to, which is a different
+  question from the shortest a card should be allowed to be. One ellipsized
+  line makes the height width-independent, and that is what let the card
+  become a rectangle at all.
+- **Existing cards are NOT resized on open**, the module's standing rule: an
+  old card is drawn at its stored size and grown by the render if it is too
+  short. Nothing migrates.
+
+**THE RAIL HOVER CUE WAS SWITCHED OFF BY ITS OWN GUARD.** `@media
+(hover:none)` set it `display:none`. Chrome answers that query on the
+**PRIMARY pointer**, so a machine with a touch screen matches it *while still
+having a mouse*. **Not a hypothesis — the measuring run reports
+`hover:none=true` / `hover:hover=false` in headless Chromium on this very
+build**, so the cue was `display:none` there too, which is also why no probe
+had ever seen it. What it was really guarding is the phone, where the rail is
+a horizontal dock and "to the right" means nothing — so it is the module's
+own `max-width:560px` breakpoint now, the one `_boardsIsPhone` keys off.
+**Reuse the breakpoint, not `(hover:none)`, for anything else that is really
+about the phone.**
+
+It was also drawn to be missed: 10 × 2px of `--muted` at .85, travelling 7px,
+under a `:hover` that repaints the whole button background at the same
+moment. **15 × 3 in the button's own ink now**, re-measured: **x 39–54,
+y 13.5–16.5**, against an icon at **x 21–38** and every label at **y 27–39**,
+so nothing overlaps where it comes to rest; where it *starts* (x 30–45) it is
+behind the icon's right edge and invisible, and sliding out from under it is
+the movement being advertised.
+
+**The cue is correctly absent on Image, File and Line** — those three place
+nothing, and a cue promising a drag the tool does not accept is worse than no
+cue. Three of the rail's tools showing nothing is part of why "not working"
+was the report.
+
+**The layout fragment is ONE COLUMN now, and that is not cosmetic.** A 340px
+card laid out past the right edge of a **420px** viewport is clipped, and the
+hit-test then reports its own controls as covered by whatever it finds at
+that point — a false failure of the fragment, not of the layout. It cost two
+rows at 260 wide; at 340 it costs a column. Verified both ways: restoring
+`board:124` fails "the birth height is not grown by the render" at 152,
+dropping it to 100 fails two more by name, and reverting the `_boardsNewCard`
+change fails "the same size wherever it is minted" (`340x104`). A too-short
+card is caught by the labels/reactions fragment rather than this one — the
+spine card's thumbnails are pictures, and the probe measures text.
+
+**Nobody has seen either on a real screen** — the sandbox cannot sign in.
+
 ### Mood Boards — the rail's hover cue (Sept 2026)
 
 Afnan: hovering a tool in Milanote's rail runs a small animation, *"such as
