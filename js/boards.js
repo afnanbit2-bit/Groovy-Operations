@@ -90,10 +90,27 @@ const _BOARDS_CLIP_LINE_PREFIX='groovy-board-lines:';
 let _boardsSnapGrid=(function(){try{return localStorage.getItem('groovy-boards-snap')==='1';}catch(e){return false;}})();
 let _boardsLineMode=false;      // while on, dragging empty canvas draws an arrow instead of panning
 
-const _BOARDS_ZOOM_MIN=0.05;  // Milanote's own floor. Afnan works at ~19% on a real
-                              // board; 40% couldn't fit one and 10% still couldn't fit
-                              // the 398-card boards his Milanote account actually holds.
+/* The zoom floor is 25%, and that REVERSES the Milanote-parity round which
+   took it 10% → 5% to match their own. Afnan, with a screenshot at 26%:
+   "zoom problem not fix yet, lock zoom out at 25%". Below that a card is a
+   smudge — the level-of-detail rules already strip every piece of chrome
+   under 35% precisely because none of it is legible there, and past a point
+   the picture goes too. A floor you cannot read past is not a feature.
+   Milanote can afford 5% on a 398-card board; ours are tens of cards, where
+   Fit already brings the whole board on screen well above this. */
+const _BOARDS_ZOOM_MIN=0.25;
 const _BOARDS_ZOOM_MAX=3;
+/**
+ * THE one place the range is enforced. Every zoom entry point runs through
+ * it, including the board OPEN path — a board saved at 19% before this
+ * shipped would otherwise come back below the floor and stay there, with
+ * nothing on screen to say why zooming out did nothing.
+ */
+function _boardsClampZoom(z){
+  const n=Number(z);
+  if(!isFinite(n)||n<=0)return 1;
+  return Math.max(_BOARDS_ZOOM_MIN,Math.min(_BOARDS_ZOOM_MAX,n));
+}
 const _BOARDS_ZOOM_DETENT=1;      // 100% — a pinch from below stops here, with a buzz
 const _BOARDS_ZOOM_TOUCH_MAX=2;   // 200% — as far as a pinch goes, second buzz
 const _BOARDS_MICRO_GAIN=0.34;    // above 100%, finger travel buys a third of the zoom
@@ -1779,7 +1796,7 @@ async function _boardsOpenCanvas(){
       b={id:snap.id,...snap.data()};
     }catch(e){m.innerHTML='<div class="empty">Could not load board: '+(e.message||e)+'</div>';return;}
   }
-  _editBoard={id:b.id,title:b.title||'Untitled board',visibility:b.visibility||'personal',ownerUid:b.ownerUid,ownerName:b.ownerName,ownerUsername:b.ownerUsername,zoom:b.zoom||1,panX:b.panX||40,panY:b.panY||30,parentId:b.parentId||null,isTemplate:!!b.isTemplate,isHome:!!b.isHome,sharedWith:Array.isArray(b.sharedWith)?b.sharedWith.slice():[]};
+  _editBoard={id:b.id,title:b.title||'Untitled board',visibility:b.visibility||'personal',ownerUid:b.ownerUid,ownerName:b.ownerName,ownerUsername:b.ownerUsername,zoom:_boardsClampZoom(b.zoom||1),panX:b.panX||40,panY:b.panY||30,parentId:b.parentId||null,isTemplate:!!b.isTemplate,isHome:!!b.isHome,sharedWith:Array.isArray(b.sharedWith)?b.sharedWith.slice():[]};
   _editCards=_boardsDecodeCards((b.cards||[]).map(c=>{const cc={...c};delete cc._uploading;return cc;}));
   _editConnectors=(b.connectors||[]).map(cn=>({...cn}));
   _editUnsorted=(b.unsorted||[]).map(u=>{const uu={...u};delete uu._uploading;return uu;});
@@ -1816,7 +1833,17 @@ async function _boardsOpenCanvas(){
   _boardsSubscribe(b.id);
   _boardsPresenceStart(b.id);
   _boardsCommentsStart(b.id);
-  _boardsCardTrashStart(b.id);
+  // _boardsTrashStart, NOT _boardsCardTrashStart. The Trash round renamed
+  // the STATE (_boardsTrash was already the gallery's trashed boards, so
+  // the card trash became _boardsCardTrash) and this call site followed the
+  // state instead of the function. It has thrown a ReferenceError here on
+  // EVERY board open since, and because the canvas renders on the line
+  // above and _boardsOpenCanvas is dispatched from renderPage with no
+  // catch, nothing looked wrong — it silently skipped the three things
+  // below it: the per-board activity feed, the cold-load refresh a deep
+  // link needs for its breadcrumbs, and the focus a #board=…&card=… link
+  // asks for. The Trash panel never loaded its entries either.
+  _boardsTrashStart(b.id);
   _boardsActivityStart(b.id);
   // Opened cold from a deep link, moodBoards is empty — so breadcrumbs and
   // sub-board titles would be blank. Load the list in the background and
@@ -2991,7 +3018,7 @@ function _boardsBuzz(ms){try{if(navigator.vibrate)navigator.vibrate(ms);}catch(e
 window.boardsZoomBy=function(f){
   const b=_editBoard;if(!b)return;
   const stage=document.getElementById('board-stage');
-  const next=Math.max(_BOARDS_ZOOM_MIN,Math.min(_BOARDS_ZOOM_MAX,b.zoom*f));
+  const next=_boardsClampZoom(b.zoom*f);
   if(stage){
     const rect=stage.getBoundingClientRect();
     const cx=rect.width/2,cy=rect.height/2;
@@ -3008,7 +3035,7 @@ window.boardsZoomBy=function(f){
 function _boardsZoomAtPoint(next,clientX,clientY){
   const b=_editBoard;if(!b)return;
   const stage=document.getElementById('board-stage');if(!stage)return;
-  const z=Math.max(_BOARDS_ZOOM_MIN,Math.min(_BOARDS_ZOOM_MAX,next));
+  const z=_boardsClampZoom(next);
   if(z===b.zoom)return;
   const rect=stage.getBoundingClientRect();
   const px=clientX-rect.left,py=clientY-rect.top;
@@ -3031,7 +3058,9 @@ window.boardsFitView=function(){
   const rect=stage.getBoundingClientRect();
   const pad=64;
   const w=Math.max(1,maxX-minX),h=Math.max(1,maxY-minY);
-  const z=Math.max(_BOARDS_ZOOM_MIN,Math.min(_BOARDS_ZOOM_MAX,Math.min((rect.width-pad*2)/w,(rect.height-pad*2)/h)));
+  // Fit cannot go below the floor either: on a board too wide to fit at
+  // 25% you get 25% and a pan, not an unreadable whole-board view.
+  const z=_boardsClampZoom(Math.min((rect.width-pad*2)/w,(rect.height-pad*2)/h));
   b.zoom=z;
   b.panX=(rect.width-w*z)/2-minX*z;
   b.panY=(rect.height-h*z)/2-minY*z;
@@ -3242,14 +3271,14 @@ function _boardsPinchZoom(p,ratio){
       if(!p.buzzed100){p.buzzed100=true;_boardsBuzz(14);}
       return _BOARDS_ZOOM_DETENT;
     }
-    return Math.max(_BOARDS_ZOOM_MIN,raw);
+    return _boardsClampZoom(raw);
   }
   const next=ratio>=1?p.zoom*(1+(ratio-1)*_BOARDS_MICRO_GAIN):p.zoom*ratio;
   if(next>=_BOARDS_ZOOM_TOUCH_MAX){
     if(!p.buzzedMax){p.buzzedMax=true;_boardsBuzz([10,40,10]);}
     return _BOARDS_ZOOM_TOUCH_MAX;
   }
-  return Math.max(_BOARDS_ZOOM_MIN,next);
+  return _boardsClampZoom(next);
 }
 function _boardsPinchMove(){
   const b=_editBoard,p=_boardsPinch;if(!b||!p)return;

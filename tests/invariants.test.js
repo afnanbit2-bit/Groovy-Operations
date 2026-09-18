@@ -186,6 +186,39 @@ module.exports=function(){
       cellSizes&&parseFloat(cellSizes)>=13,cellSizes+'px');
   }
 
+  // ── A helper that is CALLED but never DEFINED ──────────────────────────
+  // js/boards.js calls _boardsCardTrashStart(b.id) on every board open and
+  // that function has never existed — the real one is _boardsTrashStart.
+  // The Trash round renamed the STATE (_boardsTrash was already the
+  // gallery's trashed boards) and this call site followed the state instead
+  // of the function. It threw a ReferenceError on every open, and because
+  // the canvas renders on the line ABOVE it and _boardsOpenCanvas is
+  // dispatched from renderPage with no catch, nothing looked wrong: it
+  // silently skipped the per-board activity feed, the cold-load refresh a
+  // deep link needs, and the card focus a #board=…&card=… link asks for.
+  //
+  // node --check cannot see this — the file parses perfectly. The browser
+  // smoke test cannot either, because it never opens a board. This can.
+  //
+  // Deliberately NOT comment-stripped first: doing that corrupts the scan
+  // (a /* inside a string or a regex literal eats the rest of the file, and
+  // it silently hid ten real definitions when this was written). Reading
+  // comments too only risks a name mentioned in prose and defined nowhere,
+  // which is a rename to make in the comment, not a reason to strip.
+  s.section('every _boards* helper that is called is also defined');
+  {
+    const src=read('js/boards.js');
+    const defined=new Set();
+    (src.match(/function\s+(_boards[A-Za-z0-9_]*)/g)||[]).forEach(m=>defined.add(m.split(/\s+/)[1]));
+    (src.match(/(?:const|let|var)\s+(_boards[A-Za-z0-9_]*)/g)||[]).forEach(m=>defined.add(m.split(/\s+/)[1]));
+    const called=new Set();
+    (src.match(/_boards[A-Za-z0-9_]*\s*\(/g)||[]).forEach(m=>called.add(m.replace(/\s*\($/,'')));
+    const missing=[...called].filter(n=>!defined.has(n)).sort();
+    s.eq('none missing',missing.join(', ')||'none','none');
+    s.ok('and the scan actually found the file',defined.size>200&&called.size>200,
+      defined.size+' defined, '+called.size+' called');
+  }
+
   // ── The staged rollout gate (CLAUDE.md) ────────────────────────────────
   // SIX routes reach the Creative Hub module: four nav pushes in
   // js/shared.js, the "Me" page button in js/hrm.js, and the deep-link

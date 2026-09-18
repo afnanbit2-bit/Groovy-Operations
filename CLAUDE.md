@@ -1227,10 +1227,10 @@ Three things Afnan asked for in one round. The first two were bugs.
   stage already reads a native drag as "files from the desktop" (see
   `_boardsInternalDrag`) and the canvas runs on pointer events throughout.
   Dropping files ON the tray collects them; dropping on the canvas still
-  places them. **Paste goes to the tray only while the tray is OPEN** —
-  canvas paste has worked since Stage 1 and people rely on it, and an open
-  tray is a visible statement that you are collecting rather than placing,
-  so nothing is hidden. "Move to Unsorted" on the card menu is the reverse
+  places them. **PASTE ALWAYS COLLECTS NOW (Sept 2026)** — this line used to
+  say "only while the tray is OPEN"; see "Paste always collects" below for
+  the reversal and for how the objection that rule protected is answered.
+  "Move to Unsorted" on the card menu is the reverse
   of dragging one out; frames and sub-board links are excluded (a frame has
   no content of its own, a board link belongs with its parent). Labels are
   hydrated with `textContent` like every other user string in this file.
@@ -2401,6 +2401,104 @@ and its context, not by re-running until it passed; the id is pinned now.
 **Any assertion that greps rendered markup for a short string has this
 shape** — scope it, or pin whatever carries a timestamp.
 
+### Mood Boards — the zoom floor is 25% (Sept 2026) — REVERSES parity
+
+Afnan, with a screenshot at 26%: *"zoom problem not fix yet, lock zoom out
+at 25%."* This reverses the Milanote-parity round that took the floor
+10% → 5%.
+
+**Below 25% a card is a smudge.** The level-of-detail rules already strip
+every piece of chrome under 35% precisely because none of it is legible
+there, and past a point the picture goes too — a floor you cannot read past
+is not a feature. Milanote can afford 5% on a 398-card board; ours are tens
+of cards, where Fit brings the whole board on screen well above this.
+
+- **`_boardsClampZoom` is THE one place the range is enforced** — all five
+  zoom entry points and, new, the board **OPEN path**. Without that last
+  one a board saved at 19% (every board Afnan has worked on) would come
+  back below the floor and stay there, with nothing on screen to say why
+  zooming out did nothing.
+- **Fit is clamped too:** on a board too wide to fit at 25% you get 25% and
+  a pan, not an unreadable whole-board view.
+- The `far` LOD bucket is now the 25–35% band. Narrow, and still exactly
+  where Afnan's screenshot sits.
+
+**A LIVE BUG THE TEST FOR THIS WALKED INTO, and it is the more important
+half.** Writing a test that opens a board *for real* surfaced that
+`_boardsOpenCanvas` calls **`_boardsCardTrashStart(b.id)` — a function that
+has never existed.** The real one is `_boardsTrashStart`; the Trash round
+renamed the STATE (`_boardsTrash` was already the gallery's trashed boards,
+so the card trash became `_boardsCardTrash`) and this call site followed the
+state instead of the function.
+
+It threw a `ReferenceError` on **every board open** since. Nothing looked
+wrong, because the canvas renders on the line ABOVE it and
+`_boardsOpenCanvas` is dispatched from `renderPage` with no `.catch` — so it
+silently skipped the four things below it:
+
+- **the card Trash never loaded its entries** (its `onSnapshot` is that call);
+- the per-board **activity feed** never started;
+- a board opened **cold from a deep link** never refreshed its breadcrumbs
+  and sub-board titles once the list landed — and **Home never ran its
+  sync**;
+- a `#board=…&card=…` link **never focused its card**.
+
+`node --check` cannot see this; the file parses perfectly. `smoke-browser`
+cannot either, because it never opens a board. So
+`tests/invariants.test.js` now checks that **every `_boards*` helper CALLED
+in `js/boards.js` is also DEFINED there** (406 defined, 339 called).
+Verified by putting the wrong name back: the invariant names it and the
+board-open test throws on it.
+
+**That scan deliberately does NOT strip comments first.** Stripping them is
+what corrupts it — a `/*` inside a string or a regex literal eats the rest
+of the file, and it silently hid ten real definitions when this was written.
+Reading comments too only risks a name mentioned in prose and defined
+nowhere, which is a rename to make in the comment.
+
+### Mood Boards — paste always collects (Sept 2026) — REVERSES Stage 1
+
+Afnan: *"make paste always collect into unsorted"*. `Ctrl+V` goes to the
+Unsorted panel whether or not it is open, the way Milanote's does.
+
+**The rule this reverses existed for a reason, and the reason is answered
+rather than dropped.** An open tray was the visible statement that you were
+collecting, so with it shut a paste that vanished into a panel nobody could
+see would be indistinguishable from a paste that did nothing. So collecting
+**opens the panel** (`_boardsCollectInto`) on its **Unsorted tab** — on Home
+it may have been left on Boards, where the new item would not be on screen
+at all, so the tab is switched too. Both are persisted: you were collecting,
+and the next paste should land somewhere you are already looking.
+
+**Placing directly is still one gesture away: right-click where you want it
+→ Paste.** That is the one paste that carries a location, which is what makes
+it the right home for the old behaviour.
+
+**THE REORDERING IS THE LOAD-BEARING PART, and it fixed a live bug.** The
+tray branch ran FIRST, above the copied-cards and copied-lines cases — so
+**with the tray open, `Ctrl+V` of cards copied from a board made a NOTE
+holding the raw tagged JSON**. That quietly broke the Stage 2 rule ("the
+paste handler checks the prefix **before** its URL/plain-text cases") the day
+the tray shipped, and making every paste collect would have made it happen to
+everyone, every time. `_boardsPasteClipCards` runs first and returns true
+**even when the payload is unreadable** — falling through would collect our
+own JSON as somebody's note.
+
+- **Two things still outrank the panel, both because they name a target:**
+  an image with a single EMPTY image card selected fills that card, and an
+  image still beats an editing caret (Stage 1 — pasting one into a
+  `contenteditable` does nothing useful anyway).
+- Text pasted while editing belongs to the card, and the guard is
+  `_boardsIsEditableFocus()`, so it covers an `<input>` too — **a URL typed
+  into the Boards panel's search box is not collected.**
+- **`_boardsTrayPaste` is gone rather than left beside the new path.** Two
+  paste implementations that disagree is the exact class of bug this
+  produced; there is one now, split into `_boardsCollectInto` +
+  `_boardsTrayAddText`.
+- `tests/harness.js` gained **`requestAnimationFrame`**, deferred rather than
+  inline: `_boardsRenderSoon` coalesces through it, and a synchronous
+  callback would re-enter the render in the middle of the call being tested.
+
 ### Mood Boards — link previews (Sept 2026)
 
 Afnan, with our board beside Milanote's: a URL pasted there lands as a
@@ -2485,6 +2583,56 @@ now.
 fragment catches **a fixed image height pushing the title and URL out of the
 card**, which is the real risk — the first thing I claimed it caught (a
 crushed text block) is not a bug and did not fail it.
+
+**The card anatomy, second round.** Afnan, with the first cut on screen: the
+URL should be shown, the link should be orange so it reads as clickable and
+clicking it should open the site, and there should be a small button to show
+or hide the picture. Rows are **URL · TITLE · description** now, Milanote's
+order.
+
+- **The title IS the link** — an `<a target="_blank" rel="noopener
+  noreferrer">` in a new **`--link-accent`** token (orange, inverting for
+  dark exactly as `--dark` does). **The `rel` is not decoration:** without
+  it the opened page can reach back through `window.opener`.
+- **`_boardsSafeHref` — only `http`/`https` reaches the attribute**, and
+  when it refuses the `<a>` is emitted with **no href at all**, which
+  renders as plain text. `_boardsEsc` escapes quotes but would pass
+  `javascript:alert(1)` straight through, and this string came off a
+  clipboard.
+- **The anchor stops `pointerdown` reaching the drag handler**, or the card
+  would move instead of the link opening — the pointer-capture retargeting
+  that has now cost the delete ✕, the file card, a table cell and this.
+  **Fourth time.**
+- **The URL row is the Profile-directory shape**: a fixed glyph, the
+  flexing address (`min-width:0`, ellipsized) and a fixed toggle. Get the
+  `min-width:0` wrong and the address crushes the button to nothing.
+- **The show/hide toggle is stored ON THE CARD** (`linkPreviewOff`), not per
+  viewer: a board is looked at by several people, and a card that is a
+  picture for one of them and three lines of text for another is two
+  different cards. It resizes only a card still at one of our two sizes.
+- The layout fragment carries a card **at the smallest size a link card
+  gets, WITH a picture**, so the toggle is measured on the card whose resize
+  grip is nearest it. **Verified by moving the toggle into that corner** —
+  it fails, naming `svg.board-resize-handle`.
+
+**CONFIRMED WORKING ON THE LIVE SITE by Afnan, 18 Sept 2026** — a real
+paste, a real page, a real preview. That matters more than usual here: the
+sandbox cannot reach any external site, so the server fetch, the `og:`
+parsing and the Cloudinary mirror could only ever be exercised against a
+scripted `fetch` from a session. **Do not re-open the fetch path on a
+hunch** — if a preview comes back empty for one site, that is that site
+(no `og:` tags, a bot block, a timeout), not this code. The card still
+works and **Refresh preview** is on its right-click menu.
+
+**Two defects in the probe itself, found here.** Its far-zoom fragment never
+hydrated its link cards, so an empty `<a>` was a genuine 0×0 box reported as
+an unreachable control — the fragment measuring itself. And
+"something else is covering this control" named the coverer as
+`[object SVGAnimatedString]`: `className` on an SVG is not a string, and what
+sits on top is usually an **unclassed** `<svg>` inside a classed wrapper. It
+reports the tag plus the nearest classed ancestor now. **And the documented
+trap caught me writing that comment: a backtick in the PROBE closes the
+template literal.**
 
 ### Mood Boards — attachments: preview and download (Sept 2026)
 
@@ -2608,7 +2756,8 @@ Verified both ways: with the height fix reverted it fails and names
 ### Mood Boards — Milanote parity (Sept 2026)
 
 From the teardown a browser-capable session ran against the real Milanote.
-Shipped: zoom floor **10% → 5%** (Milanote's own); **Fit and 100% are one
+Shipped: zoom floor **10% → 5%** (Milanote's own — **reversed to 25% in
+Sept 2026**, see "the zoom floor" below); **Fit and 100% are one
 context-aware button** (the fitted state is derived in
 `_boardsApplyTransform` rather than cleared at each zoom/pan entry point, so
 a new entry point inherits it); a **file count on gallery tiles** ("398

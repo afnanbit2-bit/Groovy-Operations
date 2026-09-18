@@ -25,14 +25,34 @@ module.exports=function(){
     const app=loadApp({files:FILES});
     const {run,state}=app;
     s.section('pinch stops at 100% when it starts below it');
-    run(`__p={zoom:0.19,micro:false,buzzed100:false,buzzedMax:false}`);
-    s.ok('19% × 1.5 → 28.5%',Math.abs(run(`_boardsPinchZoom(__p,1.5)`)-0.285)<1e-9);
+    // 40%, not the 19% this used to start from: the floor is 25% now, so a
+    // gesture starting below it is not a state the app can be in.
+    run(`__p={zoom:0.4,micro:false,buzzed100:false,buzzedMax:false}`);
+    s.ok('40% × 1.5 → 60%',Math.abs(run(`_boardsPinchZoom(__p,1.5)`)-0.6)<1e-9);
     s.eq('a wide spread stops dead at 100%',run(`_boardsPinchZoom(__p,9)`),1);
     s.eq('and buzzed exactly once',state.vibrations.length,1);
     run(`_boardsPinchZoom(__p,12)`);
     s.eq('no second buzz while held there',state.vibrations.length,1);
-    s.ok('pinching back in is unaffected',Math.abs(run(`_boardsPinchZoom(__p,0.8)`)-0.152)<1e-9);
-    s.eq('and never goes below the 5% floor',run(`_boardsPinchZoom(__p,0.01)`),0.05);
+    s.ok('pinching back in is unaffected',Math.abs(run(`_boardsPinchZoom(__p,0.8)`)-0.32)<1e-9);
+    s.eq('and never goes below the floor',run(`_boardsPinchZoom(__p,0.01)`),0.25);
+
+    s.section('the zoom floor is 25%, enforced in ONE place');
+    s.eq('the floor itself',run(`_BOARDS_ZOOM_MIN`),0.25);
+    s.eq('a pinch cannot pass it',run(`_boardsClampZoom(0.01)`),0.25);
+    s.eq('nor can anything else',run(`_boardsClampZoom(0.2499)`),0.25);
+    s.eq('the ceiling still holds',run(`_boardsClampZoom(99)`),3);
+    s.eq('and junk is not a zoom',run(`_boardsClampZoom(0)`),1);
+    // A board SAVED below the floor — every board Afnan has worked at 19%
+    // on — must come back inside it, or zooming out would appear to do
+    // nothing with no way to tell why.
+    // boardsOpen only routes; _boardsOpenCanvas is what reads the document.
+    _pending.push((async()=>{
+      run(`session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};currentPage='board-canvas';
+        boardsLoaded=true;_boardsTrash=[];_boardsViewingId='OLD';
+        moodBoards=[{id:'OLD',title:'Winter',ownerUid:'u1',visibility:'personal',zoom:0.19,cards:[],connectors:[]}];`);
+      await run(`_boardsOpenCanvas()`);
+      s.eq('a board stored at 19% opens at the floor',run(`_editBoard&&_editBoard.zoom`),0.25);
+    })());
 
     s.section('a pinch that starts at 100% is geared down');
     state.vibrations.length=0;
@@ -2746,7 +2766,9 @@ module.exports=function(){
          _editCards=[];_editConnectors=[];_boardsSelection=new Set();moodBoards=[];`);
 
     s.section('three buckets, and the boundaries are exact');
-    [[0.05,'far'],[0.22,'far'],[0.34,'far'],[0.35,'mid'],[0.5,'mid'],
+    // 0.25 is the floor now; the buckets below it are unreachable but the
+    // function is pure and still answers, which is what is asserted.
+    [[0.25,'far'],[0.3,'far'],[0.34,'far'],[0.35,'mid'],[0.5,'mid'],
      [0.69,'mid'],[0.7,'near'],[1,'near'],[3,'near']].forEach(([z,want])=>{
       s.eq(Math.round(z*100)+'% → '+want,run(`_boardsLodFor(${z})`),want);
     });
