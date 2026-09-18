@@ -387,16 +387,22 @@ const FRAGMENTS={
     app.run(`_editBoard={id:'H',isHome:true,title:'Home',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
       _editConnectors=[];_boardsSelection=new Set();_editUnsorted=[];
       _boardsTrayOpen=true;_boardsTrayTab='boards';_boardsPanelQuery='';_boardsPanelFilter='all';
+      _boardsHomePanelCollapsed=false;
       moodBoards=[
         {id:'H',isHome:true,ownerUid:'u1',title:'Home',cards:[],visibility:'personal'},
+        // The name Afnan's panel truncated to "WINTER D…", plus a longer one
+        // still, so the two-line clamp is measured rather than assumed.
         {id:'A',title:'Winter Drop 2027 — fleece, outerwear and the full tech-pack reference dump',
          ownerUid:'u1',ownerName:'Afnan',visibility:'shared',updatedAt:9,color:'#7C3AED',icon:'W',
          cards:[{id:'i1',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/a.jpg',x:0,y:0,w:170,h:120},
                 {id:'f1',type:'file',fileUrl:'https://res.cloudinary.com/x/raw/upload/t.pdf',x:0,y:0,w:200,h:110}]},
-        {id:'B',title:'Fabric refs',ownerUid:'u2',ownerName:'Ammar',visibility:'personal',updatedAt:5,cards:[]}
+        {id:'B',title:'WINTER DUMP 2K27',ownerUid:'u2',ownerName:'Ammar',visibility:'personal',updatedAt:5,cards:[]},
+        // A board wearing an uploaded PICTURE rather than a letter.
+        {id:'C',title:'Lowkey Heat ’26',ownerUid:'u1',visibility:'shared',updatedAt:3,color:'#C2410C',
+         coverUrl:'https://res.cloudinary.com/deww4lpym/image/upload/v1/cover.jpg',cards:[]}
       ];
       _editCards=[{id:'c1',type:'board',boardId:'B',x:0,y:0,w:200,h:124}];`);
-    app.run(`(function(){
+    app.run(`_editBoard.isHome=true;(function(){
       const host=document.createElement('div');
       host.id='board-panel-host';
       host.innerHTML=_boardsTrayHTML(true);

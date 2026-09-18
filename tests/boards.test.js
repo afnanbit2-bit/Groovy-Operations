@@ -1127,12 +1127,88 @@ module.exports=function(){
     s.ok('no title in the markup at all',!/onerror|Winter Drop/.test(rows));
     s.ok('only an empty node for it',/id="board-panel-n-A"><\/div>/.test(rows));
 
+    s.section("Home's panel is a fixture, and closing it is soft");
+    boot();
+    run(`_editBoard.isHome=true;_boardsHomePanelCollapsed=false;_boardsTrayOpen=false`);
+    // Always open: it does not depend on the Unsorted tray's own open flag.
+    const homePanel=run(`_renderBoardCanvasHTML()`);
+    s.ok('the panel is there with the tray flag OFF',/class="board-tray wide"/.test(homePanel));
+    s.ok('and it says Hide, not Close',/Hide ›/.test(homePanel));
+    s.ok('the stage is inset so Fit cannot fit the board under it',
+      /class="board-below with-panel"/.test(homePanel));
+    run(`window.boardsCloseTray()`);
+    s.ok('closing COLLAPSES rather than removing it',run(`_boardsHomePanelCollapsed`)===true);
+    const collapsed=run(`_renderBoardCanvasHTML()`);
+    s.ok('the rail is still on screen',/board-tray collapsed/.test(collapsed));
+    s.ok('carrying the way back',/boardsTogglePanel\(\)/.test(collapsed));
+    s.ok('and the stage takes the room',/with-panel-collapsed/.test(collapsed));
+    run(`window.boardsTogglePanel()`);
+    s.ok('and it comes back',run(`_boardsHomePanelCollapsed`)===false);
+    // A paste has to be visible, so it un-collapses too.
+    run(`_boardsSetHomePanel(true);_boardsCollectInto()`);
+    s.ok('collecting re-opens a collapsed panel',run(`_boardsHomePanelCollapsed`)===false);
+    // Off Home nothing changed: Close still closes.
+    run(`_editBoard.isHome=false;_boardsTrayOpen=true;window.boardsCloseTray()`);
+    s.eq('the Unsorted tray still closes outright',run(`_boardsTrayOpen`),false);
+
+    s.section("a board's own picture");
+    s.eq('only an anchored Cloudinary URL is a picture',
+      run(`_boardsCoverUrl('https://res.cloudinary.com/x/image/upload/a.jpg')`),
+      'https://res.cloudinary.com/x/image/upload/a.jpg');
+    [`https://res.cloudinary.com.evil.test/a.jpg`,`http://res.cloudinary.com/a.jpg`,
+     `javascript:alert(1)`,`https://evil.test/res.cloudinary.com/a.jpg`,``]
+      .forEach(u=>s.eq('refused: '+JSON.stringify(u),run(`_boardsCoverUrl(${JSON.stringify(u)})`),''));
+    s.ok('a picture fills the tile',
+      /board-tile-img/.test(run(`_boardsTileHTML({title:'X',coverUrl:'https://res.cloudinary.com/x/a.jpg'},54)`)));
+    s.ok('an untrusted one falls back to the letter, never into an img src',
+      !/evil|<img/.test(run(`_boardsTileHTML({title:'Xavier',coverUrl:'https://evil.test/a.jpg'},54)`)));
+    s.ok('an emoji icon still wins over the letter',
+      />W</.test(run(`_boardsTileHTML({title:'Zed',icon:'W'},54)`)));
+
+    s.section('the row shows the whole name, never beside a button');
+    boot();
+    run(`_editBoard.isHome=true;
+      moodBoards=[{id:'H',isHome:true,ownerUid:'u1',cards:[]},
+        {id:'A',title:'WINTER DUMP 2K27',ownerUid:'u1',visibility:'personal',cards:[],updatedAt:1}];`);
+    const row=run(`_boardsPanelRowHTML(moodBoards[1],false,true)`);
+    s.ok('the name is its own element',/board-panel-name" id="board-panel-n-A"><\/div>/.test(row));
+    s.ok('and the actions are on their own line below it',
+      row.indexOf('board-panel-name')<row.indexOf('board-panel-actions'));
+    s.ok('the tile is the big one',/width:54px/.test(row));
+    s.ok('a row carries the boards menu',/boardsPanelMenu\(event,'A'\)/.test(row));
+    s.ok('on right-click too',/oncontextmenu="window\.boardsPanelMenu/.test(row));
+    // That menu is the GALLERY's, so picture/colour/icon come free and
+    // cannot drift from the gallery's own.
+    const menu=JSON.stringify(run(`_boardsGalleryCtxItems(moodBoards[1])`));
+    s.ok('including the picture',/g:cover/.test(menu));
+    s.ok('the colour',/g:color/.test(menu));
+    s.ok('and the icon',/g:icon/.test(menu));
+    s.ok('removing a picture is offered only when there is one',
+      !/g:uncover/.test(menu)&&
+      /g:uncover/.test(JSON.stringify(run(`_boardsGalleryCtxItems({id:'A',ownerUid:'u1',visibility:'shared',coverUrl:'x',cards:[]})`))));
+
+    s.section('search reaches the cards, and says so');
+    boot();
+    run(`_editBoard.isHome=true;_boardsPanelFilter='all';
+      moodBoards=[{id:'H',isHome:true,ownerUid:'u1',cards:[]},
+        {id:'A',title:'Winter Drop',ownerUid:'u1',visibility:'shared',updatedAt:2,
+         cards:[{id:'c1',type:'text',text:'heavyweight fleece 320gsm'}]},
+        {id:'B',title:'Fabric refs',ownerUid:'u1',visibility:'shared',updatedAt:1,cards:[]}];`);
+    s.eq('a word only on a CARD still finds its board',
+      run(`(_boardsPanelQuery='fleece',_boardsPanelBoards().map(b=>b.id).join(','))`),'A');
+    s.ok('and the row says why it is there',
+      /matching card/.test(run(`_boardsPanelRowHTML(moodBoards[1],false,true)`)));
+    s.ok('a title match does not claim card hits',
+      !/matching card/.test(run(`(_boardsPanelQuery='winter',_boardsPanelRowHTML(moodBoards[1],false,true))`)));
+    s.ok('the list says how many matched',
+      /1 board matched/.test(run(`(_boardsPanelQuery='fleece',_boardsPanelRowsHTML(true))`)));
+
     s.section('the tab strip is a Home thing');
     boot();
     run(`_boardsTrayOpen=true;_boardsTrayTab='boards'`);
     const homeBar=run(`_renderBoardCanvasHTML()`);
     s.ok('Home shows both tabs',/boardsTraySetTab\('unsorted'\)/.test(homeBar)&&/boardsTraySetTab\('boards'\)/.test(homeBar));
-    s.ok('and the top bar names the Boards panel',/boardsToggleBoardsPanel\(\)/.test(homeBar));
+    s.ok('and the top bar toggles the panel',/boardsTogglePanel\(\)/.test(homeBar));
     run(`_editBoard={id:'A',title:'Winter Drop',visibility:'shared',ownerUid:'u1',zoom:1,panX:0,panY:0}`);
     const plainBar=run(`_renderBoardCanvasHTML()`);
     s.ok('an ordinary board has no tab strip',!/boardsTraySetTab/.test(plainBar));

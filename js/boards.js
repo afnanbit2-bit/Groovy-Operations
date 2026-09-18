@@ -1479,7 +1479,16 @@ window.boardsGallerySearch=function(el){
 };
 window.boardsGalleryClearSearch=function(){_boardsGalleryQuery='';_boardsRerenderGallery();};
 window.boardsGallerySetSort=function(v){_boardsGallerySort=v;_boardsRerenderGallery();};
+/**
+ * "Show the board list again, wherever it is being shown." The gallery is
+ * one place it lives; **Home's panel is the other**, and every identity
+ * change (a picture, a colour, an icon, a rename) is now reachable from
+ * there through the gallery's own menu. Without this branch the menu
+ * appeared to do nothing on Home — the write landed and the row kept its
+ * old tile until the next render. The dead-button shape, again.
+ */
 function _boardsRerenderGallery(){
+  if(currentPage==='board-canvas'&&_boardsIsHome(_editBoard)){_boardsRenderCanvasAndWire();return;}
   if(currentPage!=='boards')return;
   const m=document.getElementById('main-content');
   if(m)m.innerHTML=renderBoardsGallery();
@@ -1929,7 +1938,7 @@ function _renderBoardCanvasHTML(){
         <button class="tool-btn${_boardsFindOpen?' on':''}" onclick="window.boardsToggleFind()" title="Find cards on this board">Find</button>
         <button class="tool-btn${_boardsDrawerOpen?' on':''}" id="board-cmt-btn" onclick="window.boardsToggleDrawer()" title="Comments and activity on this board">Comments</button>
         ${home
-          ?`<button class="tool-btn${_boardsTrayOpen&&_boardsTrayTab==='boards'?' on':''}" onclick="window.boardsToggleBoardsPanel()" title="Every board you can see — search one, or drag it onto Home">Boards ${_boardsHomeList().length}</button>`
+          ?`<button class="tool-btn${_boardsHomePanelOpen()?' on':''}" onclick="window.boardsTogglePanel()" title="Show or hide the boards panel">Boards ${_boardsHomeList().length}</button>`
           :`<button class="tool-btn${_boardsTrayOpen?' on':''}" onclick="window.boardsToggleTray()" title="Unsorted — things collected but not placed yet">Unsorted${_editUnsorted.length?' '+_editUnsorted.length:''}</button>`}
         <div class="tool-sep"></div>
         <!-- View: everything about how the board is LOOKED AT, in one place,
@@ -1989,7 +1998,7 @@ function _renderBoardCanvasHTML(){
          moving inside it: the stage carries touch-action:none and the
          pan/marquee pointer handlers, and a panel inheriting either would
          be a different bug. -->
-    <div class="board-below">
+    <div class="board-below${home?(_boardsHomePanelCollapsed?' with-panel-collapsed':' with-panel'):''}">
     <div class="board-stage" id="board-stage">
       <div class="board-world" id="board-world">
         <svg class="board-conn-layer" id="board-conn-layer" width="4000" height="3000"></svg>
@@ -2512,9 +2521,30 @@ function _boardsInkOn(hex){
   const r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16);
   return(r*299+g*587+b*114)/1000>150?'#111111':'#FFFFFF';
 }
+/**
+ * A board's own picture. Only an https://res.cloudinary.com/… URL is
+ * accepted, ANCHORED — the string goes straight into an <img src>, and a
+ * lookalike host like res.cloudinary.com.evil.test must not pass. Same rule
+ * and same reasoning as _profPhotoUrl in js/profile.js; it is duplicated
+ * rather than shared because profile.js loads AFTER this file.
+ */
+function _boardsCoverUrl(u){
+  const s=String(u||'');
+  return /^https:\/\/res\.cloudinary\.com\//.test(s)?s:'';
+}
+/**
+ * The tile a board is recognised by. Three things can fill it, in order:
+ * an uploaded PICTURE, an emoji ICON, or the first letter of its name —
+ * so a board always has one and nothing has to migrate. The colour is the
+ * background behind the last two and a thin frame behind the first.
+ */
 function _boardsTileHTML(b,size){
   const px=size||36;
   const col=_boardsValidHex(b&&b.color);
+  const cover=_boardsCoverUrl(b&&b.coverUrl);
+  if(cover){
+    return`<span class="board-tile board-tile-img" style="width:${px}px;height:${px}px;background:${col||'var(--soft)'}"><img src="${_boardsEsc(_boardsDisplayUrl(cover,px*2))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt=""></span>`;
+  }
   const icon=String((b&&b.icon)||'').slice(0,4);
   const letter=String((b&&b.title)||'?').trim().charAt(0).toUpperCase()||'?';
   return`<span class="board-tile" style="width:${px}px;height:${px}px;background:${col||'var(--soft)'};color:${col?_boardsInkOn(col):'var(--muted)'};font-size:${Math.round(px*0.52)}px">${icon?_boardsEsc(icon):_boardsEsc(letter)}</span>`;
@@ -2635,6 +2665,43 @@ window.boardsOpenIconPicker=function(id){
       <button class="board-emoji${cur?'':' on'}" title="No icon" onclick="window.boardsPickIcon('')">—</button>
       ${_BOARDS_TILE_ICONS.map(e=>`<button class="board-emoji${cur===e?' on':''}" onclick="window.boardsPickIcon('${e}')">${e}</button>`).join('')}
     </div>`);
+};
+// Uploading a board's picture. One hidden <input type=file> lives in the
+// document for the whole module rather than one per row — a picker per
+// board in a list of forty is forty elements to keep in step, and the
+// browser only ever has one dialog open anyway.
+let _boardsCoverTarget=null;
+window.boardsPickCover=function(id){
+  const b=moodBoards.find(x=>x.id===id);
+  if(!b||!_boardsCanEdit(b))return;
+  _boardsCoverTarget=id;
+  let el=document.getElementById('board-cover-picker');
+  if(!el){
+    el=document.createElement('input');
+    el.type='file';el.id='board-cover-picker';el.accept='image/*';el.style.display='none';
+    el.onchange=function(){window.boardsCoverPicked(this);};
+    document.body.appendChild(el);
+  }
+  el.click();
+};
+window.boardsCoverPicked=async function(inputEl){
+  const file=(inputEl.files||[])[0];
+  inputEl.value='';
+  const id=_boardsCoverTarget;
+  if(!file||!id)return;
+  const b=moodBoards.find(x=>x.id===id);
+  if(!b||!_boardsCanEdit(b))return;
+  showToast('Uploading picture…');
+  try{
+    const res=await _boardsUploadAny(file);
+    const url=_boardsCoverUrl(res.secure_url);
+    // Cloudinary answering with something that is not a Cloudinary URL is
+    // not a thing that should ever happen, and is exactly the moment not to
+    // write it into a field every viewer renders as an <img src>.
+    if(!url)throw new Error('the upload came back with an address we do not accept');
+    await _boardsSaveIdentity(id,{coverUrl:url});
+    showToast('Picture set');
+  }catch(e){showToast('Could not set the picture: '+((e&&e.message)||e),true);}
 };
 window.boardsPickIcon=function(e){
   const id=_boardsIconTarget;if(!id)return;
@@ -7682,17 +7749,11 @@ window.boardsToggleTray=function(){
   try{localStorage.setItem(_BOARDS_TRAY_KEY,_boardsTrayOpen?'1':'0');}catch(e){}
   _boardsRenderCanvasAndWire();
 };
-// On Home the top-bar button names the Boards tab, so it opens THAT tab
-// rather than whichever one you were last on — a button labelled Boards
-// that opens Unsorted is the kind of small lie that makes a UI feel broken.
-window.boardsToggleBoardsPanel=function(){
-  if(_boardsTrayOpen&&_boardsTrayTab==='boards'){window.boardsCloseTray();return;}
-  _boardsTrayTab='boards';
-  _boardsTrayOpen=true;
-  try{localStorage.setItem(_BOARDS_TRAY_TAB_KEY,'boards');localStorage.setItem(_BOARDS_TRAY_KEY,'1');}catch(e){}
-  _boardsRenderCanvasAndWire();
-};
 window.boardsCloseTray=function(){
+  // On Home this is the SOFT close: the panel collapses to its rail instead
+  // of disappearing, because there it is the thing that manages the boards
+  // and a person who shuts it by accident should be able to see the way back.
+  if(_boardsIsHome(_editBoard)){_boardsSetHomePanel(true);_boardsRenderCanvasAndWire();return;}
   if(!_boardsTrayOpen)return;
   _boardsTrayOpen=false;
   try{localStorage.setItem(_BOARDS_TRAY_KEY,'0');}catch(e){}
@@ -7700,8 +7761,20 @@ window.boardsCloseTray=function(){
 };
 
 function _boardsTrayHTML(canEdit){
-  if(!_boardsTrayOpen)return'';
   const home=_boardsIsHome(_editBoard);
+  // On Home the panel is always in the DOM — expanded, or collapsed to the
+  // rail that brings it back.
+  if(home&&_boardsHomePanelCollapsed){
+    const n=_boardsHomeList().length;
+    return`<aside class="board-tray collapsed" id="board-tray">
+      <button class="board-tray-reopen" onclick="window.boardsTogglePanel()" title="Show the boards panel">
+        <span class="board-tray-reopen-arrow">‹</span>
+        <span class="board-tray-reopen-label">BOARDS</span>
+        <span class="board-tray-reopen-n">${n}</span>
+      </button>
+    </aside>`;
+  }
+  if(!home&&!_boardsTrayOpen)return'';
   // Off Home there is one tab and no tab strip — a tab bar with a single
   // tab in it is chrome that says nothing.
   const tab=home?_boardsTrayTab:'unsorted';
@@ -7712,10 +7785,10 @@ function _boardsTrayHTML(canEdit){
         <button class="board-tray-tab${tab==='boards'?' on':''}" onclick="window.boardsTraySetTab('boards')" title="Every board you can see">Boards<span class="board-tray-tabn">${_boardsHomeList().length}</span></button>
       </div>`
     :`<span class="board-tray-title">Unsorted${n?' · '+n:''}</span>`;
-  return`<aside class="board-tray" id="board-tray">
+  return`<aside class="board-tray${home?' wide':''}" id="board-tray">
     <div class="board-tray-head">
       ${head}
-      <button class="tool-btn" onclick="window.boardsCloseTray()" title="Close the panel">Close</button>
+      <button class="tool-btn" onclick="window.boardsCloseTray()" title="${home?'Collapse the panel — the rail brings it back':'Close the panel'}">${home?'Hide ›':'Close'}</button>
     </div>
     ${tab==='boards'?_boardsPanelHTML(canEdit):_boardsTrayUnsortedHTML(canEdit,n)}
   </aside>`;
@@ -7765,6 +7838,33 @@ let _boardsTrayTab=(function(){try{return localStorage.getItem('groovy-boards-tr
 let _boardsPanelQuery='';
 let _boardsPanelFilter='all';   // all | shared | personal
 let _boardsPanelTimer=null;
+/* ── Home's panel is a fixture, not a popup (Sept 2026) ─────────────────
+   Afnan: "on home page the tab you created to manage board it should be
+   wider and always open and a funtion to soft close."
+
+   So on HOME the panel is always rendered. Closing it COLLAPSES it to a
+   narrow rail carrying the board count and a handle back — that is what
+   makes the close soft: the thing does not vanish, and getting it back is
+   one click on something you can see. Off Home the Unsorted tray is
+   unchanged, because there it really is a scratch shelf you open when you
+   want it.
+
+   The collapse is per VIEWER (localStorage), like the minimap, the snap
+   preference and the tray tab — it is about this screen, not about the
+   board, and it must not travel to somebody else with it. It defaults to
+   EXPANDED: "always open" is the instruction, and a panel that remembered
+   itself shut would quietly undo it. */
+const _BOARDS_HOME_PANEL_KEY='groovy-boards-home-panel';
+let _boardsHomePanelCollapsed=(function(){try{return localStorage.getItem('groovy-boards-home-panel')==='closed';}catch(e){return false;}})();
+function _boardsHomePanelOpen(){return _boardsIsHome(_editBoard)&&!_boardsHomePanelCollapsed;}
+function _boardsSetHomePanel(collapsed){
+  _boardsHomePanelCollapsed=!!collapsed;
+  try{localStorage.setItem(_BOARDS_HOME_PANEL_KEY,collapsed?'closed':'open');}catch(e){}
+}
+window.boardsTogglePanel=function(){
+  _boardsSetHomePanel(!_boardsHomePanelCollapsed);
+  _boardsRenderCanvasAndWire();
+};
 window.boardsTraySetTab=function(t){
   _boardsTrayTab=t==='boards'?'boards':'unsorted';
   try{localStorage.setItem(_BOARDS_TRAY_TAB_KEY,_boardsTrayTab);}catch(e){}
@@ -7785,10 +7885,18 @@ function _boardsHomeCarded(){
   _editCards.forEach(c=>{if(c.type==='board'&&c.boardId&&!m[c.boardId])m[c.boardId]=c.id;});
   return m;
 }
+/**
+ * A board matches on its own words — title, owner, visibility — OR on what
+ * is written on its cards. `loadBoardsData` already reads whole documents,
+ * so the card text is in memory and searching it costs nothing extra; it is
+ * the same reach the gallery's search has, through the same
+ * `_boardsMatchCount`, so the two cannot disagree about what "matched" means.
+ */
 function _boardsPanelMatch(b,q){
   if(!q)return true;
   const hay=[(b.title||''),(b.ownerName||''),(b.visibility==='shared'?'team':'private')].join(' ').toLowerCase();
-  return hay.indexOf(q)>-1;
+  if(hay.indexOf(q)>-1)return true;
+  return _boardsMatchCount(b,q)>0;
 }
 function _boardsPanelBoards(){
   const q=_boardsPanelQuery.trim().toLowerCase();
@@ -7823,39 +7931,73 @@ function _boardsPanelSegHTML(f){
 }
 function _boardsPanelRowsHTML(canEdit){
   const rows=_boardsPanelBoards();
+  const q=_boardsPanelQuery.trim();
+  const note=(q||_boardsPanelFilter!=='all')&&rows.length
+    ?`<div class="board-panel-count">${rows.length} board${rows.length===1?'':'s'}${q?' matched':''}</div>`:'';
   if(!rows.length){
     return`<div class="board-tray-empty">${_boardsPanelQuery.trim()||_boardsPanelFilter!=='all'
       ?'No board matched that.'
       :'No boards yet. Make one with the buttons above — it lands here, and you drag it onto Home wherever you want it.'}</div>`;
   }
   const on=_boardsHomeCarded();
-  return rows.map(b=>_boardsPanelRowHTML(b,!!on[b.id],canEdit)).join('');
+  return note+rows.map(b=>_boardsPanelRowHTML(b,!!on[b.id],canEdit)).join('');
 }
+/* A row is Milanote's: a big picture on the left, the WHOLE name beside it,
+   a meta line under that, and the actions on a line of their OWN.
+   The name never shares a row with a button — that is the Profile-directory
+   rule, and the 280px panel broke it the obvious way: at 30px of tile plus
+   a state word plus an Open button there was nothing left and the name
+   rendered as "WINTER D…". A wider panel alone would not have fixed it,
+   only postponed it. */
 function _boardsPanelRowHTML(b,placed,canEdit){
   const cards=b.cards||[];
   const files=cards.filter(c=>(c.type==='file'&&c.fileUrl)||(c.type==='image'&&c.imageUrl)).length;
+  const subs=cards.filter(c=>c.type==='board'&&c.boardId).length;
   // Whose board it is, but only when it isn't yours — your own name read
   // back at you is the noise the profile provenance line already avoids.
   const mine=!!(typeof session!=='undefined'&&session&&b.ownerUid===session.uid);
   const meta=(b.visibility==='shared'?'TEAM':'PRIVATE')+' · '+cards.length+' card'+(cards.length===1?'':'s')+
     (files?' · '+files+' file'+(files===1?'':'s'):'')+
+    (subs?' · '+subs+' board'+(subs===1?'':'s'):'')+
     (!mine&&b.ownerName?' · '+b.ownerName:'');
+  const id=_boardsEsc(b.id);
+  // When a search matched the CARDS rather than the name, say so — a row
+  // appearing for a word that is nowhere on it reads as a broken filter.
+  const q=_boardsPanelQuery.trim().toLowerCase();
+  const hits=(q&&(b.title||'').toLowerCase().indexOf(q)===-1)?_boardsMatchCount(b,q):0;
   // The title is written in by _boardsPanelHydrate with textContent —
   // someone else named this board and it is drawn into this person's page.
-  return`<div class="board-panel-row${placed?' placed':''}" data-board="${_boardsEsc(b.id)}"
+  return`<div class="board-panel-row${placed?' placed':''}" data-board="${id}"
       title="${placed?'On Home — click to go to it':(canEdit?'Drag onto Home to place it, or click':'Click to open')}"
-      ${canEdit?`onpointerdown="window.boardsPanelDragStart(event,'${_boardsEsc(b.id)}')"`:''}
-      onclick="window.boardsPanelRowClick('${_boardsEsc(b.id)}')">
-    ${_boardsTileHTML(b,30)}
+      ${canEdit?`onpointerdown="window.boardsPanelDragStart(event,'${id}')"`:''}
+      onclick="window.boardsPanelRowClick('${id}')"
+      oncontextmenu="window.boardsPanelMenu(event,'${id}')">
+    <span class="board-panel-tile">${_boardsTileHTML(b,54)}</span>
     <div class="board-panel-info">
-      <div class="board-panel-name" id="board-panel-n-${_boardsEsc(b.id)}"></div>
+      <div class="board-panel-name" id="board-panel-n-${id}"></div>
       <div class="board-panel-meta">${_boardsEsc(meta)}</div>
+      ${hits?`<div class="board-panel-hit">${hits} matching card${hits===1?'':'s'}</div>`:''}
+      <div class="board-panel-actions">
+        <span class="board-panel-state">${placed?'On Home':(canEdit?'Not placed':'')}</span>
+        <button class="board-panel-open" onpointerdown="event.stopPropagation()"
+          onclick="event.stopPropagation();window.boardsPanelOpen('${id}')" title="Open this board">Open</button>
+        ${canEdit?`<button class="board-panel-more" onpointerdown="event.stopPropagation()"
+          onclick="event.stopPropagation();window.boardsPanelMenu(event,'${id}')" title="Picture, colour, icon, rename…">⋯</button>`:''}
+      </div>
     </div>
-    <span class="board-panel-state">${placed?'On Home':(canEdit?'Place':'')}</span>
-    <button class="board-panel-open" onpointerdown="event.stopPropagation()"
-      onclick="event.stopPropagation();window.boardsPanelOpen('${_boardsEsc(b.id)}')" title="Open this board">Open</button>
   </div>`;
 }
+// The row's ⋯ and its right-click both open the GALLERY's menu, through the
+// gallery's own router — picture, colour, icon, rename, duplicate, template,
+// Team/Private, Trash all already live there, acting on a board BY ID, which
+// is exactly what a panel row is. A second menu would be the rail-and-
+// selection-bar mistake again.
+window.boardsPanelMenu=function(e,id){
+  const b=moodBoards.find(x=>x.id===id);
+  if(!b)return;
+  e.preventDefault();e.stopPropagation();
+  _boardsOpenCtx(e.clientX,e.clientY,_boardsGalleryCtxItems(b),id);
+};
 function _boardsPanelHydrate(){
   // Called from every canvas render, so it has to be free when the panel
   // isn't on screen — which is every board that isn't Home.
@@ -8138,6 +8280,8 @@ function _boardsCardFromTrayItem(u,at){
  */
 function _boardsCollectInto(){
   let changed=false;
+  // A collapsed Home panel is still "shut" as far as seeing the item goes.
+  if(_boardsIsHome(_editBoard)&&_boardsHomePanelCollapsed){_boardsSetHomePanel(false);changed=true;}
   if(!_boardsTrayOpen){
     _boardsTrayOpen=true;changed=true;
     try{localStorage.setItem(_BOARDS_TRAY_KEY,'1');}catch(e){}
@@ -9674,6 +9818,8 @@ function _boardsGalleryCtxItems(b){
   const owner=!!(session&&(b.ownerUid===session.uid||session.role==='owner'));
   const items=[{act:'g:open',label:'Open'}];
   if(canEdit)items.push({act:'g:rename',label:'Rename…',hint:'F2'});
+  if(canEdit)items.push({act:'g:cover',label:b.coverUrl?'Change picture…':'Upload a picture…'});
+  if(canEdit&&b.coverUrl)items.push({act:'g:uncover',label:'Remove the picture'});
   if(canEdit)items.push({act:'g:color',label:'Colour…'});
   if(canEdit)items.push({act:'g:icon',label:'Icon…'});
   items.push({sep:true});
@@ -9706,6 +9852,8 @@ async function _boardsGalleryCtxRun(act,id){
     case'g:open':window.boardsOpenFromAll(id);break;
     case'g:color':window.boardsOpenColorPicker('board',id);break;
     case'g:icon':window.boardsOpenIconPicker(id);break;
+    case'g:cover':window.boardsPickCover(id);break;
+    case'g:uncover':_boardsSaveIdentity(id,{coverUrl:null});break;
     case'g:link':{
       const link=_boardsLinkFor(id,null);
       const ok=await _boardsCopyText(link);
