@@ -435,7 +435,13 @@ async function _boardsHomeId(){
 // a board sitting on someone's Home is NOT "nested" (see _boardsNestedIds,
 // which only ever follows a real parentId), so it still lists at root in
 // All boards and still reaches every other person's Home.
-const _BOARDS_HOME_COLS=4,_BOARDS_HOME_W=200,_BOARDS_HOME_H=124;
+/* A board card is a COVER TILE (Sept 2026 — Afnan picked option A from the
+   specimen). It was 200x124 of grey chrome: a type label, a truncated
+   title, a count and a button, identical for every board — while the board
+   itself already stored a picture, a colour and a letter that only the
+   Boards panel ever drew. 240x180 gives the picture a shape worth looking
+   at and the name two lines to live on. */
+const _BOARDS_HOME_COLS=4,_BOARDS_HOME_W=240,_BOARDS_HOME_H=180;
 // Two devices opening Home for the first time at the same moment each place
 // the same board, and the Stage 6 merge keeps both — they are different
 // cards with different ids, so nothing can tell it is one board twice.
@@ -1555,7 +1561,7 @@ function _boardGalleryCardHTML(b,opts){
   // Milanote's own tile reads "398 cards · 14 files" — an attachment count
   // is what tells you a board is a reference dump rather than a sketch.
   // Images count: on a mood board a photo IS an attachment.
-  const files=cards.filter(c=>(c.type==='file'&&c.fileUrl)||(c.type==='image'&&c.imageUrl)).length;
+  const files=_boardsCountFiles(cards);
   const crumbs=_boardsAncestors(b.id).map(a=>_boardsEsc(a.title||'Untitled board')).join(' › ');
   const tint=_boardsValidHex(b.color);
   return`<div class="board-gallery-card" data-board="${b.id}" onclick="window.boardsOpenFromAll('${b.id}')"${tint?` style="border-top:3px solid ${tint}"`:''}>
@@ -2297,17 +2303,35 @@ function _boardCardHTML(c,canEdit){
     // board" line with no way forward, so the card could only be deleted.
     // A card that links to something must either link to it or offer to
     // create it.
-    const foot=c.boardId
-      ?(child
-        ?`<button class="board-subboard-open" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsGoto('${c.boardId}')">Open →</button>`
-        :`<div class="board-subboard-meta">Not available — deleted, or private to someone else</div>`)
-      :(canEdit
-        ?`<button class="board-subboard-open" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsRepairBoardCard('${c.id}')">Create the board →</button>`
-        :`<div class="board-subboard-meta">No board linked</div>`);
-    body=`<div class="board-card-body board-subboard-body"${bodyDrag}>
-      <div class="board-subboard-title">${_boardsEsc(title)}</div>
-      <div class="board-subboard-meta">${child?n+' card'+(n===1?'':'s'):(c.boardId?'Board':'Not linked yet')}</div>
-      ${foot}
+    // THE CARD IS THE BOARD'S PICTURE. Cover full bleed, or the board's
+    // colour carrying its icon/letter — the same face the gallery tile and
+    // the panel row draw, through the same _boardsFaceOf, so the three can
+    // never disagree about what a board looks like. The name sits on a
+    // scrim over it rather than in a grey strip beside it.
+    const face=_boardsFaceOf(child);
+    const files=child?_boardsCountFiles(child.cards):0;
+    const meta=child
+      ?n+' card'+(n===1?'':'s')+(files?' · '+files+' file'+(files===1?'':'s'):'')
+      :(c.boardId?'Not available — deleted, or private to someone else':'No board linked yet');
+    const open=c.boardId
+      ?(child?`<button class="board-subboard-open" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsGoto('${c.boardId}')">Open</button>`:'')
+      :(canEdit?`<button class="board-subboard-open" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsRepairBoardCard('${c.id}')">Create</button>`:'');
+    // A picture is drawn with the same three guards every board image
+    // carries: a sized derivative, CORS (so the PNG/PDF export can read it
+    // back) and no native HTML5 drag.
+    const facePaint=face.cover
+      ?`<img class="board-subboard-cover" src="${_boardsEsc(_boardsDisplayUrl(face.cover,Math.max(400,Math.round(c.w*2))))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`
+      :`<div class="board-subboard-fill" style="background:${face.color||'var(--soft)'};color:${face.color?_boardsInkOn(face.color):'var(--muted)'}"><span class="board-subboard-glyph">${_boardsEsc(face.glyph)}</span></div>`;
+    // Double-click opens it. The handler sits on the very element carrying
+    // the drag handler, so the pointer capture cannot retarget it away —
+    // the rule the to-do item and the table cell both learned the hard way.
+    body=`<div class="board-card-body board-subboard-body"${bodyDrag}${child?` ondblclick="window.boardsGoto('${c.boardId}')"`:''}>
+      ${facePaint}
+      <div class="board-subboard-scrim">
+        <div class="board-subboard-title">${_boardsEsc(title)}</div>
+        <div class="board-subboard-meta">${_boardsEsc(meta)}</div>
+      </div>
+      ${open}
     </div>`;
   }else{
     body=`<div class="board-card-body board-text-body"${bodyDrag} contenteditable="false" id="board-txt-${c.id}" data-placeholder="Double-click to type…" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-txt-${c.id}')"`:''} oninput="window.boardsTextInput('${c.id}',this)"></div>`;
@@ -2433,7 +2457,7 @@ const _BOARDS_REACTIONS=[
 // reactions row ends up painted over a sub-board card's "Open →" button
 // (caught by smoke-layout, not by reading the diff).
 const _BOARDS_CHROME_H={head:28,labels:25,reactions:28,caption:27};
-const _BOARDS_MIN_BODY_H={board:78,image:92,file:100,link:104,todo:80,heading:36,text:52};
+const _BOARDS_MIN_BODY_H={board:124,image:92,file:100,link:104,todo:80,heading:36,text:52};
 function _boardsMinCardH(c){
   if(!c||c.type==='frame')return 60;
   if(c.type==='column')return c.h||_BOARDS_COL_MIN_H;   // derived by _boardsLayoutColumn
@@ -2566,16 +2590,35 @@ function _boardsCoverUrl(u){
  * so a board always has one and nothing has to migrate. The colour is the
  * background behind the last two and a thin frame behind the first.
  */
-function _boardsTileHTML(b,size){
-  const px=size||36;
-  const col=_boardsValidHex(b&&b.color);
-  const cover=_boardsCoverUrl(b&&b.coverUrl);
-  if(cover){
-    return`<span class="board-tile board-tile-img" style="width:${px}px;height:${px}px;background:${col||'var(--soft)'}"><img src="${_boardsEsc(_boardsDisplayUrl(cover,px*2))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt=""></span>`;
-  }
+/* "How many files are in this board" had two identical copies — the gallery
+   card and the panel row — and the board CARD now needs a third. One. */
+function _boardsCountFiles(cards){
+  return (cards||[]).filter(c=>(c.type==='file'&&c.fileUrl)||(c.type==='image'&&c.imageUrl)).length;
+}
+/* WHAT A BOARD LOOKS LIKE, decided in ONE place (Sept 2026).
+   A board carries a cover picture, a colour and an icon/letter, and three
+   surfaces draw them now: the gallery tile, the Boards panel row and the
+   board CARD on a canvas. The order is the whole decision — uploaded
+   picture, then the icon or first letter on the board's colour — and three
+   copies of it would disagree the first time one learned something. The
+   glyph is never empty: a board with no icon and no title still shows '?'
+   rather than a blank square. */
+function _boardsFaceOf(b){
   const icon=String((b&&b.icon)||'').slice(0,4);
   const letter=String((b&&b.title)||'?').trim().charAt(0).toUpperCase()||'?';
-  return`<span class="board-tile" style="width:${px}px;height:${px}px;background:${col||'var(--soft)'};color:${col?_boardsInkOn(col):'var(--muted)'};font-size:${Math.round(px*0.52)}px">${icon?_boardsEsc(icon):_boardsEsc(letter)}</span>`;
+  return{
+    cover:_boardsCoverUrl(b&&b.coverUrl),
+    color:_boardsValidHex(b&&b.color)||'',
+    glyph:icon||letter
+  };
+}
+function _boardsTileHTML(b,size){
+  const px=size||36;
+  const f=_boardsFaceOf(b);
+  if(f.cover){
+    return`<span class="board-tile board-tile-img" style="width:${px}px;height:${px}px;background:${f.color||'var(--soft)'}"><img src="${_boardsEsc(_boardsDisplayUrl(f.cover,px*2))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt=""></span>`;
+  }
+  return`<span class="board-tile" style="width:${px}px;height:${px}px;background:${f.color||'var(--soft)'};color:${f.color?_boardsInkOn(f.color):'var(--muted)'};font-size:${Math.round(px*0.52)}px">${_boardsEsc(f.glyph)}</span>`;
 }
 async function _boardsSaveIdentity(id,patch){
   const b=moodBoards.find(x=>x.id===id);
@@ -8157,7 +8200,7 @@ function _boardsPanelRowsHTML(canEdit){
    only postponed it. */
 function _boardsPanelRowHTML(b,placed,canEdit,flash){
   const cards=b.cards||[];
-  const files=cards.filter(c=>(c.type==='file'&&c.fileUrl)||(c.type==='image'&&c.imageUrl)).length;
+  const files=_boardsCountFiles(cards);
   const subs=cards.filter(c=>c.type==='board'&&c.boardId).length;
   // Whose board it is, but only when it isn't yours — your own name read
   // back at you is the noise the profile provenance line already avoids.

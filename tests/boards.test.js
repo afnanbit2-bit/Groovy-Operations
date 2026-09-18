@@ -397,6 +397,84 @@ module.exports=function(){
         /<div class="board-card-body board-todo-body" onpointerdown="window\.boardsCardDragStart/.test(todo));
     }
 
+    /* ── A board card IS the board's picture (Sept 2026) ────────────────
+       Afnan picked option A off the specimen. The card was 200x124 of grey
+       chrome while the board already stored a cover, a colour and a letter
+       that only the Boards panel ever drew. */
+    s.section('a board card wears the board’s face');
+    {
+      const app5=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      const r5=x=>app5.run(x);
+      const COVER='https://res.cloudinary.com/deww4lpym/image/upload/v1/cover.jpg';
+      const bc=`{id:'k1',type:'board',boardId:'B',x:0,y:0,w:240,h:180}`;
+      const setB=extra=>r5(`_editBoard={id:'H',isHome:true,ownerUid:'u1',visibility:'personal',zoom:1};
+        moodBoards=[{id:'B',title:'WINTER DUMP 2K27',ownerUid:'u1',visibility:'personal',
+          cards:[{id:'a',type:'image',imageUrl:'${COVER}'},{id:'b',type:'file',fileUrl:'x'},{id:'c',type:'text'}]${extra}}];
+        _editCards=[${bc}];`);
+
+      setB(`,coverUrl:'${COVER}',color:'#C2410C',icon:'W'`);
+      const withCover=r5(`_boardCardHTML(_editCards[0],true)`);
+      s.ok('the cover is drawn full bleed',/class="board-subboard-cover"/.test(withCover));
+      s.ok('as a sized derivative, not the original',
+        /board-subboard-cover[^>]*f_auto/.test(withCover),withCover.slice(0,0)||'');
+      s.ok('with CORS, so the PNG export can read it back',
+        /board-subboard-cover[^>]*crossorigin="anonymous"/.test(withCover));
+      s.ok('and no native HTML5 drag',/board-subboard-cover[^>]*draggable="false"/.test(withCover));
+      s.ok('the name is on the scrim',/board-subboard-scrim/.test(withCover)&&/WINTER DUMP 2K27/.test(withCover));
+      s.ok('the meta counts cards AND files',/3 cards · 2 files/.test(withCover),
+        (withCover.match(/board-subboard-meta">([^<]*)/)||[])[1]);
+      s.ok('the type strip is gone from the body',!/board-subboard-open">Open →/.test(withCover));
+
+      // No cover → the board's colour carrying its icon or first letter.
+      setB(`,color:'#C2410C',icon:'W'`);
+      const noCover=r5(`_boardCardHTML(_editCards[0],true)`);
+      s.ok('no cover falls back to the colour field',
+        /class="board-subboard-fill"[^>]*background:#C2410C/.test(noCover));
+      s.ok('carrying the icon',/board-subboard-glyph">W</.test(noCover));
+      s.ok('and no <img> at all',!/board-subboard-cover/.test(noCover));
+      setB(``);
+      const bare=r5(`_boardCardHTML(_editCards[0],true)`);
+      s.ok('no icon falls back to the first letter',/board-subboard-glyph">W</.test(bare));
+      s.ok('and no colour falls back to a neutral',/background:var\(--soft\)/.test(bare));
+
+      // ONE decision about what a board looks like — the gallery tile, the
+      // panel row and the card all read it, so they cannot disagree.
+      s.eq('the face of a board is decided once',
+        r5(`JSON.stringify(_boardsFaceOf({title:'Winter',icon:'W',color:'#C2410C',coverUrl:'${COVER}'}))`),
+        JSON.stringify({cover:COVER,color:'#C2410C',glyph:'W'}));
+      s.eq('a glyph is never empty',r5(`_boardsFaceOf({}).glyph`),'?');
+      // A stored cover is never trusted — the string goes into an <img src>.
+      s.eq('a lookalike host is refused',
+        r5(`_boardsFaceOf({coverUrl:'https://res.cloudinary.com.evil.test/a.jpg'}).cover`),'');
+      s.eq('so is a javascript: URL',
+        r5(`_boardsFaceOf({coverUrl:'javascript:alert(1)'}).cover`),'');
+      s.eq('and an invalid colour is dropped, never passed through',
+        r5(`_boardsFaceOf({color:'red;background:url(x)'}).color`),'');
+
+      // Double-click opens it, and the handler sits on the very element
+      // carrying the drag handler — a descendant would be retargeted away
+      // by the pointer capture, which is the bug this file keeps finding.
+      s.ok('double-clicking the card opens the board',
+        /board-subboard-body"[^>]*boardsCardDragStart[^>]*ondblclick="window\.boardsGoto\('B'\)"/.test(noCover));
+
+      // The three states survive the redesign.
+      r5(`moodBoards=[];`);
+      const gone=r5(`_boardCardHTML(_editCards[0],true)`);
+      s.ok('a board this viewer cannot read says why',/Not available/.test(gone));
+      s.ok('and offers no Open button that would no-op',!/boardsGoto/.test(gone));
+      r5(`_editCards=[{id:'k2',type:'board',boardId:'',x:0,y:0,w:240,h:180}];`);
+      const orphan=r5(`_boardCardHTML(_editCards[0],true)`);
+      s.ok('an orphan still offers to create the board',/boardsRepairBoardCard/.test(orphan));
+
+      s.eq('a new board card is 240x180',
+        r5(`_BOARDS_HOME_W+'x'+_BOARDS_HOME_H`),'240x180');
+      // Cards written at the old 200x124 are not rewritten on open — the
+      // render grows them to the minimum instead, so nothing migrates.
+      s.ok('an old card is drawn tall enough for the name',
+        r5(`_boardsMinCardH({type:'board',w:200,h:124})`)>=150,
+        r5(`String(_boardsMinCardH({type:'board',w:200,h:124}))`));
+    }
+
     s.section('the delete ✕ can actually be clicked');
     // It sits inside a header whose pointerdown calls setPointerCapture;
     // without stopPropagation the capture retargets the click away from the

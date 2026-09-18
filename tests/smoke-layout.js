@@ -248,6 +248,46 @@ const FRAGMENTS={
   // What this holds: the far board must still be free of clipped text and
   // unreachable controls once the chrome is hidden, which is the risk in
   // hiding a flex sibling (the body grows into its space).
+  /* A board card is the board's PICTURE now, so white ink sits on a scrim
+     over something this fragment cannot predict. The worst case is a LIGHT
+     cover, so the covers here are swapped for a solid WHITE image: if the
+     scrim ever goes back to fading to transparent, the contrast check reads
+     white on white and says so. It also measures the two-line name, and
+     hit-tests the Open pill, which now sits in the same corner as the
+     resize grip. */
+  'boards — a board card wears the board’s face':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    const COVER='https://res.cloudinary.com/deww4lpym/image/upload/v1/cover.jpg';
+    app.run(`_editBoard={id:'H',isHome:true,title:'Home',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+      _editConnectors=[];_boardsSelection=new Set();_editUnsorted=[];
+      moodBoards=[
+        {id:'B1',title:'WINTER DUMP 2K27',ownerUid:'u1',visibility:'personal',coverUrl:'${COVER}',
+         color:'#C2410C',icon:'W',cards:[{id:'a',type:'image',imageUrl:'${COVER}'},{id:'b',type:'file',fileUrl:'x'}]},
+        {id:'B2',title:'A board with a deliberately long name that has to wrap',ownerUid:'u1',
+         visibility:'shared',color:'#35507A',icon:'L',cards:[{id:'c'}]},
+        {id:'B3',title:'Untitled board',ownerUid:'u1',visibility:'personal',cards:[]},
+        {id:'B4',title:'Old card, never resized',ownerUid:'u1',visibility:'personal',color:'#14532D',cards:[{id:'d'}]}
+      ];
+      _editCards=[
+        {id:'k1',type:'board',boardId:'B1',x:10,y:10,w:240,h:180},
+        {id:'k2',type:'board',boardId:'B2',x:280,y:10,w:240,h:180},
+        {id:'k3',type:'board',boardId:'B3',x:550,y:10,w:240,h:180},
+        // The size every board card was written at before the redesign —
+        // not migrated, so the render has to grow it rather than clip it.
+        {id:'k4',type:'board',boardId:'B4',x:820,y:10,w:200,h:124},
+        // A board this viewer cannot read, and an orphan with no boardId.
+        {id:'k5',type:'board',boardId:'GONE',x:1070,y:10,w:240,h:180},
+        {id:'k6',type:'board',boardId:'',x:1330,y:10,w:240,h:180}
+      ];`);
+    const cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`)
+      // A solid WHITE stand-in for the cover: the probe has no network, and
+      // an <img> that never loads would measure the scrim against nothing.
+      .replace(/src="[^"]*cloudinary[^"]*"/g,
+        'src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'3\'%3E%3Crect width=\'4\' height=\'3\' fill=\'%23ffffff\'/%3E%3C/svg%3E"');
+    return Promise.resolve(
+      '<div style="position:relative;overflow:hidden;height:230px;width:100%">'+
+        '<div class="board-world" data-lod="near">'+cards+'</div></div>');
+  },
   'boards — cards at far zoom (level of detail)':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
