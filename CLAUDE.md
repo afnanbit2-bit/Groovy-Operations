@@ -1309,6 +1309,76 @@ both sides, so it went to **`v115`** — checked against the CURRENT
 `origin/main`, not the commit this started from, which is the half that
 keeps getting missed.
 
+### Mood Boards — Home drops Unsorted, and a board drags back off (Sept 2026)
+
+Afnan, with the arrow drawn from the canvas to the panel: *"there is no need
+for unsorted function in home, and there there should be a function to drag
+and drop board in board tab as well and there should be a motion to it."*
+
+**HOME HAS NO UNSORTED.** Home is the board OF boards: the panel there
+manages boards, and a scratch shelf for pasted images beside it was a
+second, unrelated thing wearing the same chrome. The tab strip went with it
+— a header carrying one tab says nothing — so **`_boardsTrayTab`, its setter
+and its `localStorage` key are DELETED**, and the `.board-tray-tab` CSS with
+them, rather than left behind as a flag nothing reads. Off Home the Unsorted
+tray is untouched.
+
+- **The consequence that had to be answered, not shrugged off: paste
+  COLLECTS**, and on Home there is now nowhere to collect into. So **on Home
+  a paste PLACES** — what it did before the tray existed — through
+  `_boardsPlaceText`, pulled out of the right-click paste so the two cannot
+  drift apart.
+- **Anything already collected into a Home tray would be stranded** — saved
+  on the document, reachable from nowhere. Nothing is rewritten on open to
+  tidy that up (a write on a read path is the discipline this module holds
+  against); the panel **says so, once**, with a button that places them, and
+  it is gone for good after.
+- `_boardsHomeFirstRun` un-collapses the panel now instead of switching a
+  tab, still by assigning the field rather than calling `_boardsSetHomePanel`
+  — a first-run nudge, not a setting.
+
+**DRAGGING A BOARD CARD ONTO THE PANEL TAKES IT OFF HOME.** It is the **same
+action as the ✕** — `window.boardsDeleteCard`, which on Home already means
+"take it off Home and leave the board alone" — not a second unlink path
+beside it; two of those is how the trash entry, the toast and the sub-board
+wording would eventually disagree. **Only a lone board card qualifies**
+(`_boardsUnplaceDrag`): a mixed multi-selection dropped there would have to
+decide what to do with the cards in it that are not boards, and "some of
+that did something" is worse than not offering the gesture.
+
+**The undo is the fiddly part.** The card drag pushes its own entry on the
+first `pointermove` and `boardsDeleteCard` pushes another, so a naive
+version leaves **two** — Ctrl+Z putting the card back where it was *dropped*
+and needing a second press to undo the move. The drop restores the cards to
+where the gesture started and **pops the drag's own snapshot** before
+deleting, so there is exactly one entry and it restores the card exactly
+where it was.
+
+**Motion**, both driven by a class the JS already sets, so nothing animates
+on a timer that could be left running:
+
+- **`.board-tray.panel-drop`** while a board card is held over the panel —
+  deliberately the same dashed outline `.board-stage.tray-target` uses for
+  the other direction, so there is **one drop-target look both ways round**.
+  It is also what teaches the gesture: nothing else on screen says the panel
+  takes a drop.
+- **`.board-panel-row.flash`** on the row whose board just arrived or left,
+  so the thing that changed is findable in a list of forty. **One-shot:**
+  `_boardsPanelFlash` is consumed by the render that paints it, the way
+  `_boardsNextPlacement` is, so it cannot repeat. Placing flashes too.
+- Both suppressed under `prefers-reduced-motion`.
+
+**The new gesture is DRIVEN in the test, not grepped** —
+`boardsCardDragStart`, a `pointermove` to make it a drag rather than a
+click, then a `pointerup` over a panel given a real rect (the harness's
+default has no `right`/`bottom`) — because the whole thing lives in that
+handler's closure. Verified by breaking each half: neutering the hit test
+fails "the card is gone from Home", dropping the undo pop fails "one undo
+entry, not two" (got 2), dropping the origins restore fails "exactly where
+it started" (got 940,360), and leaving the flash flag set fails both
+one-shot assertions. **The six tests that encoded the old two-tab behaviour
+were rewritten to the new one rather than deleted.**
+
 ### Mood Boards — the QA round (Sept 2026)
 
 Afnan ran an exhaustive pass over a real private board — every tool, every
