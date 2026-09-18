@@ -258,7 +258,8 @@ const FRAGMENTS={
         {id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',
          name:'Hoodie',caption:'Front',x:250,y:10,w:220,h:200},
         {id:'l',type:'link',linkUrl:'https://example.test',linkTitle:'example.test',
-         linkDesc:'A reference',x:490,y:10,w:220,h:150},
+         linkDesc:'A reference',linkSite:'example.test',
+         linkImage:'https://res.cloudinary.com/x/image/upload/v1/hero.jpg',x:490,y:10,w:220,h:200},
         {id:'sb',type:'board',boardId:'CH',boardTitle:'WINTER 2K27',name:'WINTER 2K27',
          color:'green',x:730,y:10,w:200,h:130}
       ];
@@ -322,6 +323,41 @@ const FRAGMENTS={
   // than collapse, a meta line, a state word and an Open button — the exact
   // shape that crushed the Profile directory's names to 0px when the name
   // shared a flex row with fixed-width actions.
+  // A link preview is a picture above two clamped text rows inside a fixed
+  // height card — the exact shape that erased a sub-board card's title when
+  // labels and reactions took the room. Rendered at the birth size too, so
+  // a card somebody shrank still shows its title rather than nothing.
+  'boards — link preview cards':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
+      _editConnectors=[];_boardsSelection=new Set();_editUnsorted=[];moodBoards=[];
+      _editCards=[
+        {id:'lp',type:'link',x:10,y:10,w:250,h:280,
+         linkUrl:'https://scuffers.com/collections/hoodies/products/club-navy-zipper',
+         linkTitle:'Club Navy Zipper — heavyweight rugby stripe hoodie, navy/ecru',
+         linkDesc:'Scuffers® Official Website. Everyday Urban Aesthetics. As Always, With Love',
+         linkSite:'scuffers.com',
+         linkImage:'https://res.cloudinary.com/deww4lpym/image/upload/v1/hero.jpg'},
+        {id:'ln',type:'link',x:280,y:10,w:250,h:150,
+         linkUrl:'https://example.com/a',linkTitle:'A page with no picture at all',
+         linkDesc:'And a description long enough to need the second line it is given',
+         linkSite:'example.com'},
+        {id:'lt',type:'link',x:550,y:10,w:170,h:120,
+         linkUrl:'https://example.com/b',linkTitle:'Still at the birth size',linkSite:'example.com'}
+      ];`);
+    const html=app.run(`_editCards.map(c=>_boardCardHTML(c,true)).join('')`);
+    // The text is hydrated with textContent, so it has to be put back the
+    // same way the canvas does it or the fragment measures empty boxes.
+    const fill=app.run(`JSON.stringify(_editCards.map(c=>({id:c.id,t:c.linkTitle||'',u:c.linkSite||'',d:c.linkDesc||''})))`);
+    return Promise.resolve(
+      '<div class="board-world" data-lod="near" style="position:relative;height:420px">'+html+'</div>'+
+      '<script>' +
+      'JSON.parse(' + JSON.stringify(fill) + ').forEach(function(c){' +
+      'var t=document.getElementById("board-linkt-"+c.id);if(t)t.textContent=c.t;' +
+      'var u=document.getElementById("board-linku-"+c.id);if(u)u.textContent=c.u;' +
+      'var d=document.getElementById("board-linkd-"+c.id);if(d)d.textContent=c.d;});' +
+      '<\/script>');
+  },
   'boards — Home’s Boards panel':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     app.run(`_editBoard={id:'H',isHome:true,title:'Home',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
@@ -857,7 +893,8 @@ document.querySelectorAll('#main-content *').forEach(el=>{
 // with no other symptom.
 document.querySelectorAll('.board-world[data-lod="far"]').forEach(world=>{
   ['.board-card-kind','.board-card-name','.board-card-del','.board-resize-handle',
-   '.board-labels','.board-reactions','.board-caption'].forEach(sel=>{
+   '.board-labels','.board-reactions','.board-caption',
+   '.board-link-img+.board-link-meta'].forEach(sel=>{
     world.querySelectorAll(sel).forEach(el=>{
       if(getComputedStyle(el).display!=='none'){
         bad.push({why:'card chrome is still painted at far zoom',sel:sel,

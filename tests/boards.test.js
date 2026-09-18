@@ -779,6 +779,108 @@ module.exports=function(){
     s.eq('the card survives a partial load',run(`_editCards.length`),1);
   }
 
+  // ── Link previews ─────────────────────────────────────────────────────
+  // The fetch itself lives in netlify/functions/link-preview.js and has its
+  // own suite. What is worth holding here are the two judgement calls the
+  // client makes with what comes back.
+  {
+    const app=loadApp({files:FILES,session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'}});
+    const {run}=app;
+    const boot=()=>run(`session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};
+      _editBoard={id:'B',title:'T',visibility:'shared',ownerUid:'u1',zoom:1,panX:0,panY:0};
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();_editUnsorted=[];moodBoards=[];`);
+    const META=`{host:'scuffers.com',title:'Club Navy Zipper',
+      description:'Everyday Urban Aesthetics. As Always, With Love',siteName:'Scuffers',
+      image:'https://scuffers.com/hero.jpg'}`;
+
+    s.section('a preview fills in a pasted link');
+    boot();
+    run(`_editCards=[{id:'L',type:'link',linkUrl:'https://scuffers.com/p/1',
+      linkTitle:'scuffers.com',linkDesc:'',x:0,y:0,w:_BOARDS_LINK_W,h:_BOARDS_LINK_H}]`);
+    s.ok('applied',run(`_boardsApplyLinkMeta(_editCards[0],${META},'https://res.cloudinary.com/x/image/upload/h.jpg')`));
+    s.eq('the real page title replaces the host placeholder',run(`_editCards[0].linkTitle`),'Club Navy Zipper');
+    s.eq('the description arrives',run(`_editCards[0].linkDesc`),'Everyday Urban Aesthetics. As Always, With Love');
+    s.eq('and OUR copy of the picture, never the remote one',
+      run(`_editCards[0].linkImage`),'https://res.cloudinary.com/x/image/upload/h.jpg');
+    s.eq('the card grows to preview size',run(`_editCards[0].w+'x'+_editCards[0].h`),
+      run(`_BOARDS_LINK_PREVIEW_W+'x'+_BOARDS_LINK_PREVIEW_H`));
+
+    s.section('what somebody typed outranks what the page calls itself');
+    boot();
+    run(`_editCards=[{id:'L',type:'link',linkUrl:'https://scuffers.com/p/1',
+      linkTitle:'Navy hoodie ref',linkDesc:'ask Hassan',x:0,y:0,w:_BOARDS_LINK_W,h:_BOARDS_LINK_H}];
+      _boardsApplyLinkMeta(_editCards[0],${META},'https://res.cloudinary.com/x/i.jpg')`);
+    s.eq('the title is kept',run(`_editCards[0].linkTitle`),'Navy hoodie ref');
+    s.eq('so is the description',run(`_editCards[0].linkDesc`),'ask Hassan');
+    s.eq('but the picture still lands',run(`!!_editCards[0].linkImage`),true);
+
+    s.section('a card somebody has already sized is never resized');
+    boot();
+    run(`_editCards=[{id:'L',type:'link',linkUrl:'https://a.test/',linkTitle:'a.test',x:0,y:0,w:420,h:300}];
+      _boardsApplyLinkMeta(_editCards[0],${META},'https://res.cloudinary.com/x/i.jpg')`);
+    s.eq('kept the hand size',run(`_editCards[0].w+'x'+_editCards[0].h`),'420x300');
+    // No picture → a shorter card, because the whole card would otherwise be
+    // empty space under two lines of text.
+    boot();
+    run(`_editCards=[{id:'L',type:'link',linkUrl:'https://a.test/',linkTitle:'a.test',x:0,y:0,w:_BOARDS_LINK_W,h:_BOARDS_LINK_H}];
+      _boardsApplyLinkMeta(_editCards[0],${META},'')`);
+    s.eq('a preview with no picture is a text-height card',
+      run(`_editCards[0].h`),run(`_BOARDS_LINK_TEXT_H`));
+
+    s.section('the preview replaces the three raw inputs');
+    boot();
+    run(`_editCards=[{id:'lnk1',type:'link',linkUrl:'https://scuffers.com/p/1',linkTitle:'Club Navy Zipper',
+      linkDesc:'Everyday Urban Aesthetics',linkSite:'Scuffers',
+      linkImage:'https://res.cloudinary.com/x/image/upload/h.jpg',x:0,y:0,w:250,h:280}]`);
+    const card=run(`_boardCardHTML(_editCards[0],true)`);
+    s.ok('a preview picture is drawn',/board-link-img/.test(card));
+    s.ok('and the form is gone',!/board-link-edit/.test(card));
+    // The title and description were written by a stranger's web page. Same
+    // boundary as card text, comments and to-do items: structure only.
+    s.ok('no third-party text anywhere in the markup',!/Club Navy|Urban Aesthetics|Scuffers/.test(card));
+    s.ok('only empty nodes for it',/id="board-linkt-lnk1"><\/div>/.test(card));
+    s.ok('a preview card drags from its body like an image card',
+      /board-link-preview" onpointerdown="window\.boardsCardDragStart/.test(card));
+    // A card with no URL yet — the rail's Link tool — still needs the form.
+    run(`_editCards=[{id:'lnk2',type:'link',linkUrl:'',linkTitle:'',linkDesc:'',x:0,y:0,w:170,h:120}]`);
+    s.ok('a blank link card is the form',/board-link-edit/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    run(`_editCards=[{id:'lnk3',type:'link',linkUrl:'https://a.test/',linkTitle:'a',_linkEdit:true,x:0,y:0,w:170,h:120}]`);
+    s.ok('and so is one being edited on purpose',/board-link-edit/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+
+    s.section('the in-flight flags never reach Firestore');
+    boot();
+    run(`_editCards=[{id:'L',type:'link',linkUrl:'https://a.test/',linkTitle:'a',x:0,y:0,w:170,h:120,
+      _fetching:true,_linkEdit:true,_linkNoPreview:true,_linkFetched:'https://a.test/'}]`);
+    const saved=run(`JSON.stringify(_boardsCardsForSave())`);
+    s.ok('no _fetching — the "Uploading…" bug in a new place',saved.indexOf('_fetching')===-1);
+    s.ok('nor any other underscore field',saved.indexOf('_link')===-1,saved);
+    s.ok('the real fields are still written',/linkUrl/.test(saved));
+
+    s.section('a preview picture goes into the PNG/PDF export too');
+    s.eq('a link card offers its mirrored picture',
+      run(`_boardsExportImageUrl({type:'link',linkImage:'https://res.cloudinary.com/x/i.jpg'})`),
+      'https://res.cloudinary.com/x/i.jpg');
+    s.eq('an image card is unchanged',
+      run(`_boardsExportImageUrl({type:'image',imageUrl:'https://res.cloudinary.com/x/j.jpg'})`),
+      'https://res.cloudinary.com/x/j.jpg');
+    s.eq('and a note offers nothing',run(`_boardsExportImageUrl({type:'text',text:'x'})`),'');
+
+    s.section('dragging a collected link out of Unsorted keeps its preview');
+    boot();
+    run(`_editUnsorted=[{id:'u1',kind:'link',linkUrl:'https://scuffers.com/p/1',linkTitle:'Club Navy Zipper',
+      text:'Everyday Urban Aesthetics',linkSite:'Scuffers',linkImage:'https://res.cloudinary.com/x/h.jpg'}];
+      _boardsPushUndo=function(){};`);
+    run(`_editCards=[_boardsCardFromTrayItem(_editUnsorted[0],{x:10,y:10})]`);
+    s.eq('the picture comes with it — not fetched a second time',
+      run(`_editCards[0].linkImage`),'https://res.cloudinary.com/x/h.jpg');
+    s.eq('so does the description',run(`_editCards[0].linkDesc`),'Everyday Urban Aesthetics');
+    s.eq('and it lands at preview size',run(`_editCards[0].w+'x'+_editCards[0].h`),
+      run(`_BOARDS_LINK_PREVIEW_W+'x'+_BOARDS_LINK_PREVIEW_H`));
+    const tray=run(`_boardsTrayItemHTML(_editUnsorted[0],0,true)`);
+    s.ok('and the tray row shows the picture, not a grey LINK box',
+      /board-tray-thumb" src=/.test(tray)&&!/>LINK</.test(tray));
+  }
+
   // ── Home's Boards panel ───────────────────────────────────────────────
   // The panel is DERIVED from the same query the gallery reads, which is
   // what lets "take a board off Home and it goes back to the list" need no

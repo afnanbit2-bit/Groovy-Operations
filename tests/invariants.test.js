@@ -166,7 +166,10 @@ module.exports=function(){
   // treat 11 as acceptable again; this is what notices.
   s.section('card-internal text holds a 13px floor');
   {
-    const CARD_SEL=/^\.board-(card|subboard|label|caption|todo|text|link|frame|heading|coord)[a-z-]*/;
+    // `.link-title`/`.link-desc`/`.link-url` are card-internal too and do NOT
+    // start with .board- — they slipped this check until the link-preview
+    // round found .link-url still sitting at 11px.
+    const CARD_SEL=/^\.(board-(card|subboard|label|caption|todo|text|link|frame|heading|coord)|link-(title|desc|url))[a-z-]*/;
     const offenders=[];
     css.split('}').forEach(block=>{
       const sel=(block.split('{')[0]||'').trim().split(',')[0].trim();

@@ -131,8 +131,8 @@ const _BOARDS_FILE_W=200,_BOARDS_FILE_H=110;
 const _BOARDS_IMG_W=170,_BOARDS_IMG_H=120;
 function _boardsNewCard(type){
   const id='c'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
-  const w=type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?220:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?200:type==='image'?_BOARDS_IMG_W:170;
-  const h=type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?_BOARDS_IMG_H:type==='link'?120:type==='file'?_BOARDS_FILE_H:type==='todo'?170:type==='board'?104:100;
+  const w=type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?220:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?200:type==='image'?_BOARDS_IMG_W:type==='link'?_BOARDS_LINK_W:170;
+  const h=type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?_BOARDS_IMG_H:type==='link'?_BOARDS_LINK_H:type==='file'?_BOARDS_FILE_H:type==='todo'?170:type==='board'?104:100;
   const base={id,type,x:80,y:80,w,h};
   if(type==='image')base.imageUrl='';
   if(type==='text')base.text='';
@@ -2073,17 +2073,39 @@ function _boardCardHTML(c,canEdit){
               :`<div class="board-card-empty">No image</div>`;
     body=`<div class="board-card-body" style="padding:0"${bodyDrag}${c.imageUrl?` ondblclick="window.boardsFilePreview('${c.id}')"`:''}>${body}</div>`;
   }else if(c.type==='link'){
-    body=canEdit
-      ?`<div class="board-card-body board-link-edit">
+    // The form is for a card with no URL yet (the rail's Link tool) or for
+    // someone who asked to edit one. Everything else shows the PREVIEW —
+    // before this, a link card was permanently three raw inputs, which is
+    // exactly what Afnan put beside Milanote's picture-and-title card.
+    const editing=canEdit&&(c._linkEdit||!c.linkUrl);
+    if(editing){
+      body=`<div class="board-card-body board-link-edit">
           <input type="text" value="${_boardsEsc(c.linkUrl)}" placeholder="https://…" oninput="window.boardsLinkInput('${c.id}','linkUrl',this.value)">
           <input type="text" value="${_boardsEsc(c.linkTitle)}" placeholder="Title" oninput="window.boardsLinkInput('${c.id}','linkTitle',this.value)">
           <textarea placeholder="Short description (optional)" oninput="window.boardsLinkInput('${c.id}','linkDesc',this.value)">${_boardsEsc(c.linkDesc)}</textarea>
-        </div>`
-      :`<div class="board-card-body">
-          <div class="link-title">${_boardsEsc(c.linkTitle||'Untitled link')}</div>
-          <div class="link-desc">${_boardsEsc(c.linkDesc||'')}</div>
-          <div class="link-url">${_boardsEsc(c.linkUrl||'')}</div>
+          ${c.linkUrl?`<button class="board-link-done" onpointerdown="event.stopPropagation()" onclick="window.boardsLinkDone('${c.id}')">Done</button>`:''}
         </div>`;
+    }else{
+      // A preview card holds nothing editable, so it drags from its body like
+      // an image or file card does. That NARROWS the header-only rule rather
+      // than overturning it: the rule exists for bodies holding a caret, and
+      // the form branch above still keeps its own.
+      const drag=(canEdit&&!c.locked)?` onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:'';
+      // Title, description and site name were written by a stranger's web
+      // page. They are hydrated with textContent by _boardsHydrateLinkCards,
+      // never interpolated — the same boundary card text, comments and
+      // to-do items hold, and the most obviously third-party string in the
+      // whole file.
+      body=`<div class="board-card-body board-link-preview"${drag}>
+          ${c.linkImage?`<img class="board-link-img" src="${_boardsEsc(_boardsDisplayUrl(c.linkImage,c.w))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`:''}
+          <div class="board-link-meta">
+            <div class="link-title" id="board-linkt-${c.id}"></div>
+            <div class="link-url" id="board-linku-${c.id}"></div>
+            <div class="link-desc" id="board-linkd-${c.id}"></div>
+          </div>
+          ${c._fetching?'<div class="board-link-loading">Loading preview…</div>':''}
+        </div>`;
+    }
   }else if(c.type==='file'){
     if(c._uploading){
       body='<div class="board-card-body"><div class="board-card-empty">Uploading…</div></div>';
@@ -2837,6 +2859,14 @@ function _boardsHydrateTextCards(){
         // edited right now, which must show the raw text you are editing.
         if(td)td.textContent=(td===_boardsEditingEl)?_boardsCellVal(cell):_boardsCellDisplay(cell,c);
       }));
+    }
+    if(c.type==='link'){
+      const t=document.getElementById('board-linkt-'+c.id);
+      if(t)t.textContent=c.linkTitle||_boardsLinkHost(c.linkUrl)||'Untitled link';
+      const u=document.getElementById('board-linku-'+c.id);
+      if(u)u.textContent=c.linkSite||_boardsLinkHost(c.linkUrl)||c.linkUrl||'';
+      const d=document.getElementById('board-linkd-'+c.id);
+      if(d)d.textContent=c._linkNoPreview&&!c.linkDesc?'No preview available':(c.linkDesc||'');
     }
     if(c.type==='text'||c.type==='heading'){
       _boardsSetRichInto(document.getElementById('board-txt-'+c.id),c);
@@ -4586,6 +4616,32 @@ window.boardsTextInput=function(id,el){
   _boardsSaveDebounced();
 };
 window.boardsLinkInput=function(id,field,val){const c=_editCards.find(x=>x.id===id);if(!c)return;c[field]=val;_boardsSaveDebounced();};
+// Leaving the edit form fetches a preview for whatever URL is in it now.
+// Typing is NOT what triggers a fetch — that would fire a server request per
+// keystroke against a half-typed address.
+window.boardsLinkDone=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||!_boardsCanEdit(_editBoard))return;
+  delete c._linkEdit;
+  const url=String(c.linkUrl||'').trim();
+  if(url&&url!==c._linkFetched){c._linkFetched=url;_boardsLinkHydrate(id);}
+  else _boardsRenderCanvasAndWire();
+};
+window.boardsLinkEdit=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||!_boardsCanEdit(_editBoard))return;
+  c._linkEdit=true;
+  _boardsRenderCanvasAndWire();
+};
+// "Fetch the preview again" — for a page that has changed, or one that was
+// unreachable the first time.
+window.boardsLinkRefresh=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||!c.linkUrl||!_boardsCanEdit(_editBoard))return;
+  delete c.linkSite;
+  c._linkFetched=c.linkUrl;
+  _boardsLinkHydrate(id);
+};
 // The card's own name, shown in its header in place of the type label.
 // Empty means "fall back to the type label", which the CSS placeholder
 // renders — so clearing a name restores IMAGE / FILE / NOTE rather than
@@ -5834,6 +5890,140 @@ window.boardsFrameSelection=function(){
 // than widening the shared helper: js/shared.js is a cross-track file both
 // contributors edit (see CLAUDE.md "Shared touchpoints"), and this is six
 // lines that only boards needs.
+/* ── Link previews (Sept 2026) ──────────────────────────────────────────
+   Afnan, side by side with Milanote: a URL pasted there lands as a picture
+   with a title and a description; ours landed as three empty form fields.
+
+   THIS IS THE FOLLOW-UP CLAUDE.md HAS FLAGGED SINCE PHASE 2, and the note
+   there is the reason it took a server function rather than an afternoon:
+   the browser cannot read another origin's HTML for og:image/og:title —
+   that is precisely what CORS forbids — so the fetch has to happen
+   server-side, and a server that fetches a URL someone typed is an SSRF
+   hole until every hop is validated. All of that lives in
+   netlify/functions/link-preview.js; read its header before touching it.
+
+   THE PICTURE IS RE-UPLOADED TO CLOUDINARY, never linked hot. Same call
+   the stock-photo picker makes, for the same three reasons: a remote URL
+   makes the card depend on a stranger's host forever, it breaks the
+   PNG/PDF export the first time that host sends no CORS header (the
+   exporter draws with crossOrigin and a tainted canvas refuses toBlob
+   outright), and it would miss the sized derivatives every other image
+   card gets. A preview whose picture fails to mirror still lands — the
+   title and description are most of the value — but it lands without one
+   rather than with a fragile one.
+
+   NOTHING HERE IS ON THE CRITICAL PATH. The card is created and rendered
+   immediately with the bare URL; the preview arrives later and re-renders.
+   A site that refuses, times out or has no og: tags leaves exactly the card
+   we had before this shipped. */
+const _BOARDS_LINK_W=170,_BOARDS_LINK_H=120;              // the birth size
+const _BOARDS_LINK_PREVIEW_W=250,_BOARDS_LINK_PREVIEW_H=280,_BOARDS_LINK_TEXT_H=150;
+// Only a card still at its birth size is resized, so a link somebody has
+// already sized by hand is left alone — the guard the image and PDF fits use.
+function _boardsLinkCardUnsized(c){
+  return !!c&&c.type==='link'&&c.w===_BOARDS_LINK_W&&c.h===_BOARDS_LINK_H;
+}
+function _boardsLinkHost(u){
+  try{return new URL(String(u||'')).hostname.replace(/^www\./,'');}catch(e){return'';}
+}
+/**
+ * What a fetched preview changes on a card. PURE, and separate from the
+ * fetch on purpose: the two decisions worth getting right — never clobber a
+ * title somebody typed, only resize a card still at its birth size — are
+ * then assertable without a network.
+ */
+function _boardsApplyLinkMeta(c,meta,imageUrl){
+  if(!c||c.type!=='link'||!meta)return false;
+  const host=_boardsLinkHost(c.linkUrl);
+  const typed=String(c.linkTitle||'').trim();
+  // The paste path seeds the title with the HOST as a placeholder, so a
+  // title still equal to that is ours to replace. Anything else is someone's
+  // own words and outranks whatever the page calls itself.
+  if(meta.title&&(!typed||typed===host||typed===meta.host))c.linkTitle=meta.title;
+  if(meta.description&&!String(c.linkDesc||'').trim())c.linkDesc=meta.description;
+  if(meta.siteName)c.linkSite=meta.siteName;
+  if(imageUrl)c.linkImage=imageUrl;
+  if(_boardsLinkCardUnsized(c)){
+    c.w=_BOARDS_LINK_PREVIEW_W;
+    c.h=imageUrl?_BOARDS_LINK_PREVIEW_H:_BOARDS_LINK_TEXT_H;
+  }
+  return true;
+}
+async function _boardsLinkMeta(url){
+  if(typeof auth==='undefined'||!auth||!auth.currentUser)return null;
+  const idToken=await auth.currentUser.getIdToken();
+  const r=await fetch('/.netlify/functions/link-preview',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({idToken,url})});
+  const d=await r.json();
+  return d&&d.ok?d:null;
+}
+// Mirrors a preview picture into Cloudinary and hands back our own URL, or
+// '' — never throws, because a card without a picture beats no card.
+async function _boardsMirrorPreviewImage(src){
+  if(!src)return'';
+  try{const up=await _boardsUploadAny(src);return up.secure_url||'';}
+  catch(e){console.warn('[boards] preview image could not be mirrored:',e&&(e.message||e));return'';}
+}
+/**
+ * Fills in a link card in the background. `_fetching` and `_linkNoPreview`
+ * are `_`-prefixed, so _boardsCardsForSave strips them: a save that fires
+ * mid-fetch cannot persist "Loading preview…" the way `_uploading` once
+ * persisted "Uploading…".
+ */
+function _boardsLinkHydrate(cardId){
+  const start=_editCards.find(x=>x.id===cardId);
+  if(!start||start.type!=='link'||!start.linkUrl)return;
+  const boardId=_editBoard&&_editBoard.id,url=start.linkUrl;
+  start._fetching=true;
+  delete start._linkNoPreview;
+  _boardsRenderSoon();
+  (async()=>{
+    let meta=null;
+    try{meta=await _boardsLinkMeta(url);}catch(e){meta=null;}
+    const img=meta?await _boardsMirrorPreviewImage(meta.image):'';
+    // The board may have been left, or the card deleted or re-pointed at a
+    // different URL, while that was in flight — the same guard _boardsSaveNow
+    // keeps on savingId, and for the same reason.
+    if(!_editBoard||_editBoard.id!==boardId)return;
+    const c=_editCards.find(x=>x.id===cardId);
+    if(!c)return;
+    delete c._fetching;
+    if(c.linkUrl!==url){_boardsRenderSoon();return;}
+    if(meta)_boardsApplyLinkMeta(c,meta,img);
+    else c._linkNoPreview=true;
+    _boardsRenderCanvasAndWire();
+    if(meta)_boardsSaveDebounced();
+  })();
+}
+// The tray's version of the same thing. It is a separate few lines rather
+// than a shared one because a tray item is a different shape — the
+// description lives in `text`, there is no card to resize — and folding the
+// two together would mean a parameter that says which kind you meant.
+function _boardsTrayLinkHydrate(itemId){
+  const start=_editUnsorted.find(u=>u.id===itemId);
+  if(!start||start.kind!=='link'||!start.linkUrl)return;
+  const boardId=_editBoard&&_editBoard.id,url=start.linkUrl;
+  start._fetching=true;
+  _boardsRenderSoon();
+  (async()=>{
+    let meta=null;
+    try{meta=await _boardsLinkMeta(url);}catch(e){meta=null;}
+    const img=meta?await _boardsMirrorPreviewImage(meta.image):'';
+    if(!_editBoard||_editBoard.id!==boardId)return;
+    const u=_editUnsorted.find(x=>x.id===itemId);
+    if(!u)return;
+    delete u._fetching;
+    if(meta){
+      if(meta.title)u.linkTitle=meta.title;
+      if(meta.description&&!String(u.text||'').trim())u.text=meta.description;
+      if(meta.siteName)u.linkSite=meta.siteName;
+      if(img)u.linkImage=img;
+    }
+    _boardsRenderCanvasAndWire();
+    if(meta)_boardsSaveDebounced();
+  })();
+}
 async function _boardsUploadAny(file){
   const fd=new FormData();
   fd.append('file',file);
@@ -6125,6 +6315,7 @@ function _boardsOnPaste(e){
   _editCards.push(c);
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
+  if(isUrl)_boardsLinkHydrate(c.id);
   showToast(isUrl?'Link added':'Note added');
 }
 document.addEventListener('paste',_boardsOnPaste);
@@ -6868,10 +7059,16 @@ function _boardsLoadImageEl(url){
     im.src=url;
   });
 }
+// A link card's preview picture is mirrored into Cloudinary like any other
+// image on a board, so it loads with CORS and draws into the export exactly
+// as an image card does — which is most of why it is mirrored at all.
+function _boardsExportImageUrl(c){
+  return c.type==='image'?(c.imageUrl||''):c.type==='link'?(c.linkImage||''):'';
+}
 async function _boardsPreloadImages(cards){
   const out={};
-  await Promise.all(cards.filter(c=>c.type==='image'&&c.imageUrl)
-    .map(c=>_boardsLoadImageEl(c.imageUrl).then(im=>{out[c.id]=im;})));
+  await Promise.all(cards.filter(c=>_boardsExportImageUrl(c))
+    .map(c=>_boardsLoadImageEl(_boardsExportImageUrl(c)).then(im=>{out[c.id]=im;})));
   return out;
 }
 function _boardsWrapLines(ctx,text,maxW,maxLines){
@@ -7006,12 +7203,26 @@ function _boardsDrawCard(ctx,c,img,P){
       y+=16;
     });
   }else if(c.type==='link'){
+    // The picture takes the top of the card, the same proportion the DOM
+    // gives it, so an exported board reads like the one on screen.
+    let ty=by+18;
+    if(c.linkImage&&img){
+      const ih=Math.min(bh*0.62,bh-46);
+      if(ih>10){
+        const ar=img.width/img.height,br=bw/ih;
+        let sw,sh,sx,sy;
+        if(ar>br){sh=img.height;sw=sh*br;sx=(img.width-sw)/2;sy=0;}
+        else{sw=img.width;sh=sw/br;sx=0;sy=(img.height-sh)/2;}
+        try{ctx.drawImage(img,sx,sy,sw,sh,bx,by,bw,ih);}catch(e){/* drawn as empty */}
+        ty=by+ih+16;
+      }
+    }
     ctx.fillStyle=P.text;ctx.font='700 13px '+P.font;
-    ctx.fillText((_boardsWrapLines(ctx,c.linkTitle||'Untitled link',bw-18,1)[0])||'',bx+9,by+18);
-    ctx.fillStyle=P.muted;ctx.font='11px '+P.font;
-    _boardsWrapLines(ctx,c.linkDesc||'',bw-18,2).forEach((l,i)=>ctx.fillText(l,bx+9,by+34+i*13));
+    ctx.fillText((_boardsWrapLines(ctx,c.linkTitle||'Untitled link',bw-18,1)[0])||'',bx+9,ty);
+    ctx.fillStyle=P.muted;ctx.font='12px '+P.font;
+    _boardsWrapLines(ctx,c.linkDesc||'',bw-18,2).forEach((l,i)=>ctx.fillText(l,bx+9,ty+16+i*13));
     ctx.fillStyle=P.tint.blue;
-    ctx.fillText((_boardsWrapLines(ctx,c.linkUrl||'',bw-18,1)[0])||'',bx+9,by+bh-8);
+    ctx.fillText((_boardsWrapLines(ctx,c.linkSite||_boardsLinkHost(c.linkUrl)||c.linkUrl||'',bw-18,1)[0])||'',bx+9,by+bh-8);
   }else if(c.type==='file'){
     ctx.fillStyle=P.dark;
     _boardsRoundRect(ctx,bx+9,by+10,30,13,3);ctx.fill();
@@ -7701,7 +7912,11 @@ function _boardsTrayItemHTML(u,i,canEdit){
       ?`<img class="board-tray-thumb" src="${_boardsEsc(pdf)}" draggable="false" onerror="this.className='board-tray-thumb board-tray-thumb-empty';this.replaceWith(Object.assign(document.createElement('div'),{className:'board-tray-thumb board-tray-thumb-empty',textContent:'${_boardsEsc(_boardsFileExt(u.fileName))}'}))" alt="">`
       :`<div class="board-tray-thumb board-tray-thumb-empty">${_boardsEsc(_boardsFileExt(u.fileName))}</div>`;
   }else if(u.kind==='link'){
-    thumb='<div class="board-tray-thumb board-tray-thumb-empty">LINK</div>';
+    // Milanote's tray shows the page's own picture, which is the whole
+    // reason a collected link is recognisable at a glance.
+    thumb=u.linkImage
+      ?`<img class="board-tray-thumb" src="${_boardsEsc(_boardsDisplayUrl(u.linkImage,400))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`
+      :`<div class="board-tray-thumb board-tray-thumb-empty">${u._fetching?'…':'LINK'}</div>`;
   }else{
     thumb='<div class="board-tray-thumb board-tray-thumb-empty">NOTE</div>';
   }
@@ -7775,7 +7990,9 @@ window.boardsTrayStash=function(cardId){
     by:(typeof session!=='undefined'&&session&&session.name)||'',name:c.name||''};
   if(c.type==='image'){item.kind='image';item.imageUrl=c.imageUrl;}
   else if(c.type==='file'){item.kind='file';item.fileUrl=c.fileUrl;item.fileName=c.fileName;item.fileSize=c.fileSize;}
-  else if(c.type==='link'){item.kind='link';item.linkUrl=c.linkUrl;item.linkTitle=c.linkTitle;item.text=c.linkDesc||'';}
+  else if(c.type==='link'){item.kind='link';item.linkUrl=c.linkUrl;item.linkTitle=c.linkTitle;item.text=c.linkDesc||'';
+    if(c.linkImage)item.linkImage=c.linkImage;
+    if(c.linkSite)item.linkSite=c.linkSite;}
   else{item.kind='text';item.text=c.text||'';item.rich=c.rich||'';}
   _editUnsorted.push(item);
   _editCards=_editCards.filter(x=>x.id!==cardId);
@@ -7809,7 +8026,14 @@ function _boardsCardFromTrayItem(u,at){
     // A tray item keeps no page size, so a PDF comes out A4-shaped.
     if(c.fileUrl)_boardsFitPdfCard(c);
   }
-  else if(type==='link'){c.linkUrl=u.linkUrl||'';c.linkTitle=u.linkTitle||'';c.linkDesc=u.text||'';}
+  else if(type==='link'){
+    c.linkUrl=u.linkUrl||'';c.linkTitle=u.linkTitle||'';c.linkDesc=u.text||'';
+    if(u.linkSite)c.linkSite=u.linkSite;
+    // Already fetched and mirrored while it sat in the tray — dragging it
+    // out must not throw that away and fetch it a second time.
+    if(u.linkImage){c.linkImage=u.linkImage;c.w=_BOARDS_LINK_PREVIEW_W;c.h=_BOARDS_LINK_PREVIEW_H;}
+    else if(u.linkTitle&&u.linkTitle!==_boardsLinkHost(u.linkUrl)){c.w=_BOARDS_LINK_PREVIEW_W;c.h=_BOARDS_LINK_TEXT_H;}
+  }
   else{c.text=u.text||'';if(u.rich)c.rich=u.rich;}
   c.x=at.x-c.w/2;c.y=at.y-c.h/2;   // after sizing, so it centres on the drop
   return c;
@@ -7831,8 +8055,9 @@ function _boardsTrayPaste(e){
   if(/^https?:\/\/\S+$/i.test(url)){
     let host=url;
     try{host=new URL(url).hostname.replace(/^www\./,'');}catch(err){}
-    _boardsTrayAdd({id:_boardsTrayItemId(),kind:'link',linkUrl:url,linkTitle:host,
+    const item=_boardsTrayAdd({id:_boardsTrayItemId(),kind:'link',linkUrl:url,linkTitle:host,
       at:Date.now(),by:(typeof session!=='undefined'&&session&&session.name)||''});
+    _boardsTrayLinkHydrate(item.id);
   }else{
     _boardsTrayAdd({id:_boardsTrayItemId(),kind:'text',text:text.slice(0,4000),
       at:Date.now(),by:(typeof session!=='undefined'&&session&&session.name)||''});
@@ -8696,6 +8921,8 @@ function _boardsCtxRun(act){
     case'lock':window.boardsToggleLock();break;
     case'delete':window.boardsDeleteSelection();break;
     case'open-board':{const s=_boardsSelectedCards();if(s.length===1&&s[0].boardId)window.boardsGoto(s[0].boardId);break;}
+    case'link-edit':{const s=_boardsSelectedCards();if(s.length===1)window.boardsLinkEdit(s[0].id);break;}
+    case'link-refresh':{const s=_boardsSelectedCards();if(s.length===1)window.boardsLinkRefresh(s[0].id);break;}
     case'home-trash':{const s=_boardsSelectedCards();if(s.length===1&&s[0].boardId)window.boardsTrashLinkedBoard(s[0].boardId,s[0].id);break;}
     case'cut':case'copy':{
       // Our copy/cut live on the real clipboard events (see _boardsOnCopy),
@@ -8859,6 +9086,7 @@ async function _boardsCtxPaste(){
   _editCards.push(c);
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
+  if(isUrl)_boardsLinkHydrate(c.id);
   showToast(isUrl?'Link added':'Note added');
 }
 // The URL behind the one selected card, whatever kind it is.
@@ -9181,6 +9409,10 @@ function _boardsCardCtxItems(canEdit){
     }else if(one.type==='link'&&one.linkUrl){
       typed.push({act:'openasset',label:'Open link'});
       typed.push({act:'copyasset',label:'Copy URL'});
+      if(canEdit){
+        typed.push({act:'link-edit',label:'Edit link details'});
+        typed.push({act:'link-refresh',label:'Refresh preview'});
+      }
     }else if(one.type==='board'&&one.boardId){
       typed.push({act:'open-board',label:'Open this board'});
       typed.push({act:'copyasset',label:'Copy link to board'});
