@@ -2401,6 +2401,61 @@ and its context, not by re-running until it passed; the id is pinned now.
 **Any assertion that greps rendered markup for a short string has this
 shape** — scope it, or pin whatever carries a timestamp.
 
+### Mood Boards — the zoom floor is 25% (Sept 2026) — REVERSES parity
+
+Afnan, with a screenshot at 26%: *"zoom problem not fix yet, lock zoom out
+at 25%."* This reverses the Milanote-parity round that took the floor
+10% → 5%.
+
+**Below 25% a card is a smudge.** The level-of-detail rules already strip
+every piece of chrome under 35% precisely because none of it is legible
+there, and past a point the picture goes too — a floor you cannot read past
+is not a feature. Milanote can afford 5% on a 398-card board; ours are tens
+of cards, where Fit brings the whole board on screen well above this.
+
+- **`_boardsClampZoom` is THE one place the range is enforced** — all five
+  zoom entry points and, new, the board **OPEN path**. Without that last
+  one a board saved at 19% (every board Afnan has worked on) would come
+  back below the floor and stay there, with nothing on screen to say why
+  zooming out did nothing.
+- **Fit is clamped too:** on a board too wide to fit at 25% you get 25% and
+  a pan, not an unreadable whole-board view.
+- The `far` LOD bucket is now the 25–35% band. Narrow, and still exactly
+  where Afnan's screenshot sits.
+
+**A LIVE BUG THE TEST FOR THIS WALKED INTO, and it is the more important
+half.** Writing a test that opens a board *for real* surfaced that
+`_boardsOpenCanvas` calls **`_boardsCardTrashStart(b.id)` — a function that
+has never existed.** The real one is `_boardsTrashStart`; the Trash round
+renamed the STATE (`_boardsTrash` was already the gallery's trashed boards,
+so the card trash became `_boardsCardTrash`) and this call site followed the
+state instead of the function.
+
+It threw a `ReferenceError` on **every board open** since. Nothing looked
+wrong, because the canvas renders on the line ABOVE it and
+`_boardsOpenCanvas` is dispatched from `renderPage` with no `.catch` — so it
+silently skipped the four things below it:
+
+- **the card Trash never loaded its entries** (its `onSnapshot` is that call);
+- the per-board **activity feed** never started;
+- a board opened **cold from a deep link** never refreshed its breadcrumbs
+  and sub-board titles once the list landed — and **Home never ran its
+  sync**;
+- a `#board=…&card=…` link **never focused its card**.
+
+`node --check` cannot see this; the file parses perfectly. `smoke-browser`
+cannot either, because it never opens a board. So
+`tests/invariants.test.js` now checks that **every `_boards*` helper CALLED
+in `js/boards.js` is also DEFINED there** (406 defined, 339 called).
+Verified by putting the wrong name back: the invariant names it and the
+board-open test throws on it.
+
+**That scan deliberately does NOT strip comments first.** Stripping them is
+what corrupts it — a `/*` inside a string or a regex literal eats the rest
+of the file, and it silently hid ten real definitions when this was written.
+Reading comments too only risks a name mentioned in prose and defined
+nowhere, which is a rename to make in the comment.
+
 ### Mood Boards — paste always collects (Sept 2026) — REVERSES Stage 1
 
 Afnan: *"make paste always collect into unsorted"*. `Ctrl+V` goes to the
@@ -2701,7 +2756,8 @@ Verified both ways: with the height fix reverted it fails and names
 ### Mood Boards — Milanote parity (Sept 2026)
 
 From the teardown a browser-capable session ran against the real Milanote.
-Shipped: zoom floor **10% → 5%** (Milanote's own); **Fit and 100% are one
+Shipped: zoom floor **10% → 5%** (Milanote's own — **reversed to 25% in
+Sept 2026**, see "the zoom floor" below); **Fit and 100% are one
 context-aware button** (the fitted state is derived in
 `_boardsApplyTransform` rather than cleared at each zoom/pan entry point, so
 a new entry point inherits it); a **file count on gallery tiles** ("398
