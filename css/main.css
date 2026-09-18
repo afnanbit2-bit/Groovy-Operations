@@ -1631,6 +1631,16 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .mkt-tagrow-actions{flex-shrink:0;display:flex;gap:6px}
 .mkt-tagrow-actions .btn-outline{font-size:12px;padding:4px 10px}
 .mkt-warnchip{font-size:11px;padding:2px 8px;border-radius:10px;background:var(--accent-warning-soft);color:var(--accent-warning);white-space:nowrap}
+.mkt-chart{margin:4px 0 12px}
+.mkt-chart svg{display:block;width:100%;height:auto;overflow:visible}
+.mkt-chart-grid{stroke:var(--border);stroke-width:1}
+.mkt-chart-axis{stroke:var(--border);stroke-width:1.5}
+.mkt-chart-tick{font-size:12px;color:var(--muted);fill:var(--muted)}
+.mkt-chart-lab{font-size:13px;color:var(--text);fill:var(--text)}
+.mkt-chart-val{font-size:13px;color:var(--text);fill:var(--text);font-weight:700}
+.mkt-legend{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:8px;font-size:13px;color:var(--muted)}
+.mkt-legend span{display:inline-flex;align-items:center;gap:6px}
+.mkt-legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
 .mkt-lifetime{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .mkt-lifetime div{display:flex;flex-direction:column;font-size:12px;color:var(--muted)}
 .mkt-lifetime b{font-size:17px;color:var(--text);font-variant-numeric:tabular-nums}

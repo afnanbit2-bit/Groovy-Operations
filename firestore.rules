@@ -480,7 +480,17 @@ service cloud.firestore {
         && request.resource.data.get('discount_code_id', null) == resource.data.get('discount_code_id', null)
         && request.resource.data.get('code_lock_at', null) == resource.data.get('code_lock_at', null)
         && request.resource.data.status in ['','confirmed','in_transit','shipped','content_received','on_hold_stock'];
-      allow delete: if isOwner();
+      // Anyone in Marketing may remove an ORGANIC dispatch logged in error
+      // (Sept 2026 — widened from owners-only so the lead can tidy the log).
+      // Two shapes can never be deleted by anyone, because another record
+      // names them: a paid_pr dispatch, which its approved request links to
+      // with dispatch_id, and a dispatch carrying a discount code, which
+      // discount_codes/{id} points at and the nightly rollup counts against.
+      // Mirrored by mktDispatchDeleteBlock() in js/marketing.js.
+      allow delete: if isMarketing()
+        && resource.data.type == 'organic'
+        && resource.data.get('has_discount_code', false) == false
+        && resource.data.get('discount_code_id', null) == null;
     }
     // Paid PR requests (M3). Three kinds of write, each limited to the
     // fields it owns (the lists match MKT_PR_EDIT_FIELDS /
