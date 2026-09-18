@@ -2091,10 +2091,21 @@ function _boardCardHTML(c,canEdit){
   if(c.type==='todo'){
     const items=c.items||[];
     const doneN=items.filter(i=>i.done).length;
+    // Every item carries the onpointerdown guard, for the same reason the
+    // checkbox and the remove button beside it already did: this body is a
+    // drag surface, boardsCardDragStart calls setPointerCapture, and a
+    // captured pointer RETARGETS the following click and dblclick to the
+    // capturing element — so the item's own ondblclick never ran and a
+    // to-do could not be edited by double-clicking it. Exactly the table
+    // cell's bug: a card whose ondblclick sits on the very element holding
+    // the drag handler (a note, a heading) survives it; one whose handler
+    // sits on a DESCENDANT does not. The cost is the documented one — a
+    // to-do card now drags by its header strip and the padding around its
+    // rows, not by the item text, just as a table drags by its chrome.
     body=`<div class="board-card-body board-todo-body"${bodyDrag}>
       ${items.map((it,i)=>`<div class="board-todo-row">
         <input type="checkbox" ${it.done?'checked':''} ${canEdit?'':'disabled'} onpointerdown="event.stopPropagation()" onchange="window.boardsTodoToggle('${c.id}',${i},this.checked)">
-        <div class="board-todo-text${it.done?' done':''}" id="board-todo-${c.id}-${i}" contenteditable="false" data-placeholder="To-do" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-todo-${c.id}-${i}')"`:''} oninput="window.boardsTodoText('${c.id}',${i},this)" onkeydown="window.boardsTodoKey(event,'${c.id}',${i})"></div>
+        <div class="board-todo-text${it.done?' done':''}" id="board-todo-${c.id}-${i}" contenteditable="false" data-placeholder="To-do" onpointerdown="event.stopPropagation()" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-todo-${c.id}-${i}')"`:''} oninput="window.boardsTodoText('${c.id}',${i},this)" onkeydown="window.boardsTodoKey(event,'${c.id}',${i})"></div>
         ${canEdit?`<button class="board-todo-del" onpointerdown="event.stopPropagation()" onclick="window.boardsTodoRemove('${c.id}',${i})" title="Remove">✕</button>`:''}
       </div>`).join('')}
       ${canEdit?`<button class="board-todo-add" onpointerdown="event.stopPropagation()" onclick="window.boardsTodoAdd('${c.id}')">+ Add item</button>`:''}

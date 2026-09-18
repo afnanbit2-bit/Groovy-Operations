@@ -335,6 +335,33 @@ module.exports=function(){
     });
     s.ok('the card name too',/board-card-name[^>]*ondblclick="window\.boardsBeginEdit/.test(run(card('image'))));
 
+    // Reported by Afnan with the item circled: double-clicking a to-do did
+    // nothing. The handler was there — it never ran. The to-do body is a
+    // drag surface, boardsCardDragStart calls setPointerCapture, and a
+    // captured pointer retargets the following dblclick to the CAPTURING
+    // element. A note and a heading survive that because their ondblclick
+    // sits on the very element holding the drag handler; an item's sits on
+    // a descendant. The checkbox and the remove button beside it already
+    // carried the guard; the text was missed. Fifth occurrence of this bug.
+    s.section('a to-do item can actually be double-clicked');
+    {
+      const todo=run(`_boardCardHTML(${JSON.stringify({id:'td',type:'todo',x:0,y:0,w:240,h:170,
+        items:[{text:'Lab dip',done:false},{text:'Bulk',done:true}]})},true)`);
+      const rows=todo.match(/<div class="board-todo-text[^>]*>/g)||[];
+      s.eq('both items render',rows.length,2);
+      rows.forEach((r,i)=>{
+        s.ok('item '+i+' offers the double-click',
+          /ondblclick="window\.boardsBeginEdit/.test(r),r.slice(0,90));
+        s.ok('item '+i+' stops pointerdown reaching the drag handler',
+          /onpointerdown="event\.stopPropagation\(\)"/.test(r),r.slice(0,90));
+      });
+      // The guard is per-control, not a removal of the body drag — a to-do
+      // card still drags, by its header strip and the padding around its
+      // rows, exactly as a table drags by its chrome.
+      s.ok('the to-do body still starts a card drag',
+        /<div class="board-card-body board-todo-body" onpointerdown="window\.boardsCardDragStart/.test(todo));
+    }
+
     s.section('the delete ✕ can actually be clicked');
     // It sits inside a header whose pointerdown calls setPointerCapture;
     // without stopPropagation the capture retargets the click away from the

@@ -380,5 +380,34 @@ module.exports=function(){
     });
   }
 
+  // ── A dblclick on a DESCENDANT of a drag surface needs the guard ───────
+  // boardsCardDragStart calls setPointerCapture, and a captured pointer
+  // RETARGETS the following click and dblclick to the capturing element.
+  // A card whose ondblclick sits on the very element carrying the drag
+  // handler survives that (a note, a heading, an image body); one whose
+  // handler sits on a DESCENDANT does not — its handler simply never runs.
+  // That has now cost the delete X, the file card, a table cell, the link
+  // title and, Sept 2026, every to-do item: double-clicking one did
+  // nothing, and the dblclick bubbled to the stage instead. So: any tag
+  // that carries an ondblclick must either BE the drag element (it holds
+  // the bodyDrag interpolation) or stop pointerdown itself.
+  s.section('ondblclick inside a drag surface');
+  {
+    const src=read('js/boards.js');
+    // Deliberate exceptions: elements that are not inside a drag surface at
+    // all, so there is no capture to escape. The caption sits OUTSIDE the
+    // card body, has no drag handler, and opens on a single click.
+    const EXEMPT=['board-caption'];
+    const tags=src.match(/<[a-zA-Z][^<>]*ondblclick[^<>]*>/g)||[];
+    s.ok('js/boards.js still wires double-clicks',tags.length>0,tags.length+' sites');
+    tags.forEach(t=>{
+      const cls=(t.match(/class="([a-z-]+)/)||[])[1]||t.slice(0,40);
+      if(EXEMPT.indexOf(cls)>=0)return;
+      s.ok('.'+cls+' is the drag element or stops pointerdown',
+        t.indexOf('onpointerdown')>=0||t.indexOf('bodyDrag')>=0,
+        t.slice(0,110));
+    });
+  }
+
   return s;
 };
