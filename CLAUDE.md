@@ -1493,6 +1493,61 @@ pointer — live since M6, and invisible unless you happen to right-click
 first. Measured before the fix: a drop at (300,300) landed at
 **(-1089,-1039)**.
 
+### Mood Boards — the bin fills up (Sept 2026)
+
+Afnan, with the Trash circled: the number darkens as the count rises — white
+through a gradient of phases to red — and at 30 the bin animates to ask to be
+emptied, with an option inside it to ignore that for 24 hours.
+
+- **FOUR DISCRETE PHASES, not a colour interpolated per count.** Each phase
+  is a class, so `tests/smoke-layout.js` can render it and MEASURE its
+  contrast in both themes; a per-count colour could only ever be
+  spot-checked. `_boardsTrashPhase` is the single definition, so the badge,
+  the panel and the tests cannot disagree about "nearly full". Bands are
+  1–9 (the badge exactly as it was) / 10–19 / 20–29 / 30+.
+- **THE INK INVERTS, and here that is right rather than a violation.** The
+  badge chip is `var(--red)`, which inverts — near-black in light, near
+  **white** in dark — so this ink has exactly ONE background and a fixed ramp
+  would be correct in one theme and invisible in the other. That is the
+  opposite of `--count-accent`'s case, which sits on four backgrounds and
+  therefore must NOT invert. Measured against the chip it actually sits on:
+  **15.11 / 9.75 / 6.55** in light, **7.28 / 5.47 / 4.92** in dark.
+- **What that means for the ask as written:** "starts with white" is
+  literally true in LIGHT mode, where the chip is black. In dark the chip is
+  near-white, so the ramp starts near-black and runs to red — the same
+  journey, inverted with the chip under it. A literal white start would be
+  invisible at count 1 in dark, which is the failure this file keeps
+  recording.
+- **The shake is on the BUTTON, not the badge** — it is the bin that should
+  catch the eye, and a 15px chip twitching alone reads as a rendering fault
+  rather than a prompt. It runs off a class the paint sets, so nothing
+  animates on a timer that could be left running, and it stops the moment
+  the count drops (restoring a card is enough — `_boardsTrashLive` is
+  derived, so nothing is written) or the snooze is taken.
+- **The snooze is per VIEWER and per BOARD**, in `localStorage`, the rule the
+  minimap, snap and the tray's open state already follow. It is about this
+  person being nagged on this board, so it must never travel to someone
+  else's screen, and one global snooze would silence a board you have not
+  looked at. Expired entries are pruned on write, so the key cannot grow.
+- **While snoozed the strip still SHOWS**, saying until when — hiding it
+  would leave no way back. It states the **count** rather than "the trash is
+  full", because 30 is a nudge and not a limit: nothing stops working at it,
+  and a message implying otherwise would be a lie.
+
+**`_boardsTrashAlarm` is extracted from the painting for the same reason
+`_boardsPreviewBackdrop` was:** the node harness's `querySelector` returns
+`null`, so `_boardsPaintTrashCount` bails there and no logic suite can reach
+the decision through it. **The DOM toggle itself is held by neither suite** —
+the colours are smoke-layout's, the boundaries and the snooze are
+boards.test.js's — and both comments say so rather than implying coverage.
+
+Verified both ways: moving the threshold to 25 fails four assertions by name,
+dropping the snooze from the alarm fails "taking it silences the alarm",
+dropping the prune fails with `old,b1`, and putting a near-chip colour into
+the dark ramp fails the new fragment at **1.09:1** naming
+`board-rail-badge fill-3`. **Nobody has seen the shake or the ramp on a real
+screen** — the sandbox cannot sign in.
+
 ### Mood Boards — the rail's hover cue (Sept 2026)
 
 Afnan: hovering a tool in Milanote's rail runs a small animation, *"such as
