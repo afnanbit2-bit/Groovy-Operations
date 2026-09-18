@@ -171,6 +171,11 @@ function loadApp(opts){
 
   const ctx={
     console,setTimeout,clearTimeout,setInterval:()=>1,clearInterval(){},
+    // js/boards.js coalesces renders through it (_boardsRenderSoon), so a
+    // test that reaches any batching path needs it to exist. Deferred like
+    // the real thing rather than run inline: a synchronous callback would
+    // re-enter the render in the middle of the call being tested.
+    requestAnimationFrame:fn=>setTimeout(fn,0),cancelAnimationFrame:id=>clearTimeout(id),
     Date,Math,JSON,Set,Map,Object,Array,String,Number,Promise,URL,RegExp,Error,isNaN,parseInt,parseFloat,
     Event:class{constructor(t){this.type=t;}},
     DOMParser:makeDomParser(),

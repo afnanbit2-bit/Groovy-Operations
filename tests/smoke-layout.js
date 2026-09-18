@@ -265,6 +265,13 @@ const FRAGMENTS={
       ];
       moodBoards=[{id:'CH',title:'Untitled board',cards:[{id:'z'}],visibility:'personal',ownerUid:'u1'}];`)
     const cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`);
+    // Link cards hydrate their text with textContent, so an un-hydrated one
+    // leaves an EMPTY <a> — which is a real 0x0 box and reports as an
+    // unclickable control. That is the fragment measuring itself, not the
+    // app, so fill them the way the canvas does. Both worlds share the ids,
+    // so this fills the near one; the far one is display:none there anyway.
+    const linkFill=app.run(`JSON.stringify(_editCards.filter(c=>c.type==='link')
+      .map(c=>({id:c.id,t:c.linkTitle||'',u:c.linkUrl||'',d:c.linkDesc||''})))`);
     // Two worlds side by side, each stamped the way _boardsApplyTransform
     // stamps the real one. No transform: the probe measures layout, and a
     // scale() would shrink everything below its own size thresholds.
@@ -272,7 +279,13 @@ const FRAGMENTS={
       '<div style="position:relative;overflow:hidden;height:300px;width:100%">'+
         '<div class="board-world" data-lod="near">'+cards+'</div></div>'+
       '<div style="position:relative;overflow:hidden;height:300px;width:100%;margin-top:12px">'+
-        '<div class="board-world" data-lod="far">'+cards+'</div></div>');
+        '<div class="board-world" data-lod="far">'+cards+'</div></div>'+
+      '<script>' +
+      'JSON.parse(' + JSON.stringify(linkFill) + ').forEach(function(c){' +
+      'document.querySelectorAll("#board-linkt-"+c.id).forEach(function(e){e.textContent=c.t;});' +
+      'document.querySelectorAll("#board-linku-"+c.id).forEach(function(e){e.textContent=c.u;});' +
+      'document.querySelectorAll("#board-linkd-"+c.id).forEach(function(e){e.textContent=c.d;});});' +
+      '<\/script>');
   },
   // The top bar with the Unsorted tray OPEN. Reported from a screenshot in
   // which the word "Comments" was cut off mid-word: the tray, the comments
@@ -343,12 +356,23 @@ const FRAGMENTS={
          linkDesc:'And a description long enough to need the second line it is given',
          linkSite:'example.com'},
         {id:'lt',type:'link',x:550,y:10,w:170,h:120,
-         linkUrl:'https://example.com/b',linkTitle:'Still at the birth size',linkSite:'example.com'}
+         // The SMALLEST a link card gets, WITH a picture — so the show/hide
+         // toggle is rendered on the card whose resize grip is nearest it.
+         // A control tucked into a corner another control already owns is
+         // this module's most repeated bug.
+         linkUrl:'https://example.com/b',linkTitle:'Still at the birth size',linkSite:'example.com',
+         linkImage:'https://res.cloudinary.com/deww4lpym/image/upload/v1/hero.jpg'},
+        {id:'lo',type:'link',x:740,y:10,w:250,h:150,linkPreviewOff:true,
+         linkUrl:'https://scuffers.com/collections/hoodies/products/club-navy-zipper',
+         linkTitle:'Preview turned off — still a link',
+         linkDesc:'The picture is hidden and the three rows keep their room',
+         linkSite:'scuffers.com',
+         linkImage:'https://res.cloudinary.com/deww4lpym/image/upload/v1/hero.jpg'}
       ];`);
     const html=app.run(`_editCards.map(c=>_boardCardHTML(c,true)).join('')`);
     // The text is hydrated with textContent, so it has to be put back the
     // same way the canvas does it or the fragment measures empty boxes.
-    const fill=app.run(`JSON.stringify(_editCards.map(c=>({id:c.id,t:c.linkTitle||'',u:c.linkSite||'',d:c.linkDesc||''})))`);
+    const fill=app.run(`JSON.stringify(_editCards.map(c=>({id:c.id,t:c.linkTitle||'',u:c.linkUrl||'',d:c.linkDesc||''})))`);
     return Promise.resolve(
       '<div class="board-world" data-lod="near" style="position:relative;height:420px">'+html+'</div>'+
       '<script>' +
@@ -970,7 +994,18 @@ document.querySelectorAll('#main-content button, #main-content [onclick], #main-
   if(hit&&hit!==el&&!el.contains(hit)){
     bad.push({why:'something else is covering this control',
       text:(el.textContent||'').trim().slice(0,30),
-      coveredBy:(hit.tagName+'.'+(hit.className||'')).slice(0,50)});
+      // Naming the coverer is the whole value of this finding, and
+      // hit.className gave up on both counts: on an SVG it is an
+      // SVGAnimatedString that stringifies to "[object SVGAnimatedString]",
+      // and the thing on top is often an unclassed svg or path inside a
+      // classed wrapper. So: the tag, then the nearest ancestor that has a
+      // class - which is what a person would call it.
+      // (No backticks in this comment: the PROBE is a template literal and
+      // one would close it. Documented in CLAUDE.md, and hit anyway.)
+      coveredBy:(hit.tagName+'.'+
+        ((hit.getAttribute&&hit.getAttribute('class'))||
+         (hit.closest&&hit.closest('[class]')&&hit.closest('[class]').getAttribute('class'))||'?')
+        ).slice(0,70)});
   }
 });
 document.getElementById('__out').textContent=JSON.stringify(bad);

@@ -2091,16 +2091,33 @@ function _boardCardHTML(c,canEdit){
       // than overturning it: the rule exists for bodies holding a caret, and
       // the form branch above still keeps its own.
       const drag=(canEdit&&!c.locked)?` onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:'';
-      // Title, description and site name were written by a stranger's web
-      // page. They are hydrated with textContent by _boardsHydrateLinkCards,
-      // never interpolated — the same boundary card text, comments and
-      // to-do items hold, and the most obviously third-party string in the
-      // whole file.
+      // Milanote's order exactly, which is what Afnan asked for: the URL on
+      // top, then the TITLE AS THE LINK in accent colour so it is obviously
+      // clickable, then the description.
+      //
+      // The title is an <a target="_blank" rel="noopener noreferrer"> — the
+      // rel is not decoration: without it the opened page can reach back
+      // through window.opener. Its href goes through _boardsSafeHref, and
+      // when that refuses, the <a> is emitted with NO href and is just text.
+      // It stops pointerdown reaching the drag handler, or the card would
+      // start moving instead of the link opening — the retargeting that has
+      // already cost the delete ✕, the file card and a table cell.
+      //
+      // Title, URL and description were written by a stranger's web page.
+      // They are hydrated with textContent by _boardsHydrateLinkCards, never
+      // interpolated — the same boundary card text, comments and to-do items
+      // hold, and the most obviously third-party strings in the whole file.
+      const href=_boardsSafeHref(c.linkUrl);
+      const showImg=c.linkImage&&!c.linkPreviewOff;
       body=`<div class="board-card-body board-link-preview"${drag}>
-          ${c.linkImage?`<img class="board-link-img" src="${_boardsEsc(_boardsDisplayUrl(c.linkImage,c.w))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`:''}
+          ${showImg?`<img class="board-link-img" src="${_boardsEsc(_boardsDisplayUrl(c.linkImage,c.w))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`:''}
           <div class="board-link-meta">
-            <div class="link-title" id="board-linkt-${c.id}"></div>
-            <div class="link-url" id="board-linku-${c.id}"></div>
+            <div class="board-link-urlrow">
+              <svg class="board-link-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 9.5a3 3 0 0 0 4.24 0l2-2a3 3 0 0 0-4.24-4.24l-.7.7M9.5 6.5a3 3 0 0 0-4.24 0l-2 2a3 3 0 0 0 4.24 4.24l.7-.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              <span class="link-url" id="board-linku-${c.id}"></span>
+              ${c.linkImage&&canEdit?`<button class="board-link-eye${c.linkPreviewOff?' off':''}" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsLinkTogglePreview('${c.id}')" title="${c.linkPreviewOff?'Show the preview picture':'Hide the preview picture'}"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="3.3" width="12.4" height="9.4" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M1.8 10.5l3.4-3 3 2.6 2.2-2 3.8 3.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path class="eye-slash" d="M2 14L14 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>`:''}
+            </div>
+            <a class="link-title" id="board-linkt-${c.id}"${href?` href="${_boardsEsc(href)}" target="_blank" rel="noopener noreferrer"`:''} onpointerdown="event.stopPropagation()" title="Open this link in a new tab"></a>
             <div class="link-desc" id="board-linkd-${c.id}"></div>
           </div>
           ${c._fetching?'<div class="board-link-loading">Loading preview…</div>':''}
@@ -2863,8 +2880,11 @@ function _boardsHydrateTextCards(){
     if(c.type==='link'){
       const t=document.getElementById('board-linkt-'+c.id);
       if(t)t.textContent=c.linkTitle||_boardsLinkHost(c.linkUrl)||'Untitled link';
+      // The full URL, truncated by CSS — Milanote shows the address, not the
+      // site name, and "where does this go" is the question a link card is
+      // asked. `linkSite` is still stored: search and the export read it.
       const u=document.getElementById('board-linku-'+c.id);
-      if(u)u.textContent=c.linkSite||_boardsLinkHost(c.linkUrl)||c.linkUrl||'';
+      if(u)u.textContent=c.linkUrl||'';
       const d=document.getElementById('board-linkd-'+c.id);
       if(d)d.textContent=c._linkNoPreview&&!c.linkDesc?'No preview available':(c.linkDesc||'');
     }
@@ -4627,6 +4647,23 @@ window.boardsLinkDone=function(id){
   if(url&&url!==c._linkFetched){c._linkFetched=url;_boardsLinkHydrate(id);}
   else _boardsRenderCanvasAndWire();
 };
+// Show or hide the preview picture. Stored ON THE CARD, not per viewer: a
+// board is looked at by several people and a card that is a picture for one
+// of them and three lines of text for another is two different cards.
+window.boardsLinkTogglePreview=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||!c.linkImage||!_boardsCanEdit(_editBoard))return;
+  _boardsPushUndo();
+  if(c.linkPreviewOff)delete c.linkPreviewOff;else c.linkPreviewOff=true;
+  // Only a card still at one of OUR two sizes follows — one somebody sized
+  // by hand keeps it, the same guard the image and PDF fits use.
+  if(c.w===_BOARDS_LINK_PREVIEW_W){
+    if(c.linkPreviewOff&&c.h===_BOARDS_LINK_PREVIEW_H)c.h=_BOARDS_LINK_TEXT_H;
+    else if(!c.linkPreviewOff&&c.h===_BOARDS_LINK_TEXT_H)c.h=_BOARDS_LINK_PREVIEW_H;
+  }
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
 window.boardsLinkEdit=function(id){
   const c=_editCards.find(x=>x.id===id);
   if(!c||!_boardsCanEdit(_editBoard))return;
@@ -5923,6 +5960,17 @@ const _BOARDS_LINK_PREVIEW_W=250,_BOARDS_LINK_PREVIEW_H=280,_BOARDS_LINK_TEXT_H=
 function _boardsLinkCardUnsized(c){
   return !!c&&c.type==='link'&&c.w===_BOARDS_LINK_W&&c.h===_BOARDS_LINK_H;
 }
+/**
+ * The URL as an href, or '' — and an `<a>` is emitted WITHOUT an href when
+ * this returns empty, which renders as plain text rather than a live link.
+ * `_boardsEsc` escapes quotes but would happily pass `javascript:alert(1)`
+ * straight into the attribute, and this string came off a clipboard.
+ */
+function _boardsSafeHref(u){
+  const raw=String(u||'').trim();
+  if(!/^https?:\/\//i.test(raw))return'';
+  return raw;
+}
 function _boardsLinkHost(u){
   try{return new URL(String(u||'')).hostname.replace(/^www\./,'');}catch(e){return'';}
 }
@@ -6240,83 +6288,94 @@ window.boardsFilesPicked=function(inputEl){
 // image INTO contenteditable does nothing useful anyway. Text with a card
 // focused is left entirely alone — that's an ordinary paste into the text
 // you're editing, and hijacking it would be infuriating.
-function _boardsOnPaste(e){
-  if(currentPage!=='board-canvas'||!_editBoard||!_boardsCanEdit(_editBoard))return;
-  // With the Unsorted tray open, a paste is COLLECTING, not placing — the
-  // open tray is the visible statement of that, so nothing is hidden. With
-  // it closed, paste lands on the canvas exactly as it has since Stage 1.
-  // Text pasted while a card is being edited still belongs to that card.
-  if(_boardsTrayOpen&&!_boardsEditingEl){
-    if(_boardsTrayPaste(e))return;
-  }
+/* ── Paste always collects (Sept 2026) — REVERSES the Stage-1 rule ──────
+   Afnan: "make paste always collect into unsorted". Ctrl+V now goes to the
+   Unsorted panel whether or not it is open, the way Milanote's does.
+
+   THE RULE THIS REVERSES EXISTED FOR A REASON AND THE REASON IS ANSWERED,
+   NOT DROPPED. Paste used to collect only while the tray was OPEN, because
+   an open tray is a visible statement that you are collecting — with it
+   shut, a paste that vanished into a panel nobody could see would be
+   indistinguishable from a paste that did nothing. So collecting now OPENS
+   the panel (_boardsCollectInto), on its Unsorted tab, and the item is on
+   screen the moment it lands. Placing directly is still one gesture away:
+   right-click where you want it → Paste, which is the one paste that
+   carries a location.
+
+   THE REORDERING IS THE LOAD-BEARING PART. The tray branch used to run
+   FIRST, above the copied-cards and copied-lines cases — so with the tray
+   open, Ctrl+V of cards copied from a board made a NOTE holding the raw
+   tagged JSON. That quietly broke the Stage 2 rule ("the paste handler
+   checks the prefix before its URL/plain-text cases") the day the tray
+   shipped, and making every paste collect would have made it happen to
+   everyone, every time. Cards and lines are card operations; they are read
+   before anything is collected, and they never become text.
+
+   Two things still outrank the tray, both because they name a target:
+   an IMAGE with a single empty image card selected fills that card, and an
+   image beats an editing caret outright (pasting one into a contenteditable
+   does nothing useful) — the Stage 1 rule, unchanged. */
+function _boardsClipImage(e){
   const items=(e.clipboardData&&e.clipboardData.items)||[];
-  let imageFile=null;
   for(const item of items){
-    if(item.type&&item.type.indexOf('image')===0){imageFile=item.getAsFile();break;}
-  }
-  if(imageFile){
-    e.preventDefault();
-    // Fill a single selected empty image card, if that's what's selected;
-    // otherwise make a new one.
-    const selected=_boardsSelectedCards();
-    let card=(selected.length===1&&selected[0].type==='image'&&!selected[0].imageUrl)?selected[0]:null;
-    if(!card){
-      _boardsPushUndo();
-      card=_boardsNewCard('image');
-      const p=_boardsPlacementPoint();
-      card.x=p.x;card.y=p.y;
-      _editCards.push(card);
-      _boardsRenderCanvasAndWire();
-    }else{
-      _boardsPushUndo();
+    if(item.type&&item.type.indexOf('image')===0){
+      const f=item.getAsFile();
+      if(f)return f;
     }
-    _boardsUploadFileToCard(card.id,imageFile);
-    return;
   }
-  if(_boardsIsEditableFocus())return;
-  const text=((e.clipboardData&&e.clipboardData.getData('text/plain'))||'').trim();
-  // Cards copied from a board (possibly a different one, or another tab)
-  // come back as tagged JSON — handled before the URL/text cases.
+  return null;
+}
+// Cards and lines copied from a board — possibly a different one, or
+// another tab. Returns true when the clipboard was OURS, including when the
+// payload turned out to be unreadable: falling through would collect our own
+// tagged JSON as somebody's note.
+function _boardsPasteClipCards(e,text){
   if(text.indexOf(_BOARDS_CLIP_LINE_PREFIX)===0){
     e.preventDefault();
     let lines=null;
     try{lines=JSON.parse(text.slice(_BOARDS_CLIP_LINE_PREFIX.length));}catch(err){lines=null;}
-    if(Array.isArray(lines)&&lines.length){_boardsPasteLines(lines);return;}
+    if(Array.isArray(lines)&&lines.length)_boardsPasteLines(lines);
+    return true;
   }
   if(text.indexOf(_BOARDS_CLIP_PREFIX)===0){
     e.preventDefault();
     let payload=null;
     try{payload=JSON.parse(text.slice(_BOARDS_CLIP_PREFIX.length));}catch(err){payload=null;}
-    if(Array.isArray(payload)&&payload.length){_boardsPasteCards(payload);return;}
+    if(Array.isArray(payload)&&payload.length)_boardsPasteCards(payload);
+    return true;
   }
+  // Nothing usable on the system clipboard, but this session copied cards
+  // earlier (the setData call can be refused in some browsers) — fall back.
   if(!text){
-    // Nothing usable on the system clipboard, but this session copied cards
-    // earlier (the setData call can be refused in some browsers) — fall back.
-    if(_boardsClipboard.length){e.preventDefault();_boardsPasteCards(_boardsClipboard);return;}
-    if(_boardsLineClipboard.length){e.preventDefault();_boardsPasteLines(_boardsLineClipboard);}
+    if(_boardsClipboard.length){e.preventDefault();_boardsPasteCards(_boardsClipboard);return true;}
+    if(_boardsLineClipboard.length){e.preventDefault();_boardsPasteLines(_boardsLineClipboard);return true;}
+  }
+  return false;
+}
+function _boardsOnPaste(e){
+  if(currentPage!=='board-canvas'||!_editBoard||!_boardsCanEdit(_editBoard))return;
+  const editing=_boardsIsEditableFocus();
+  const imageFile=_boardsClipImage(e);
+  const text=((e.clipboardData&&e.clipboardData.getData('text/plain'))||'').trim();
+
+  if(imageFile){
+    e.preventDefault();
+    const sel=_boardsSelectedCards();
+    const target=(sel.length===1&&sel[0].type==='image'&&!sel[0].imageUrl)?sel[0]:null;
+    if(target){_boardsPushUndo();_boardsUploadFileToCard(target.id,imageFile);return;}
+    _boardsCollectInto();
+    _boardsTrayAddFiles([imageFile]);
+    showToast('Added to Unsorted');
     return;
   }
+  // Everything below is text, and text pasted into a card being edited
+  // belongs to that card.
+  if(editing)return;
+  if(_boardsPasteClipCards(e,text))return;
+  if(!text)return;
   e.preventDefault();
-  _boardsPushUndo();
-  const p=_boardsPlacementPoint();
-  const isUrl=/^https?:\/\/\S+$/i.test(text);
-  const c=_boardsNewCard(isUrl?'link':'text');
-  c.x=p.x;c.y=p.y;
-  if(isUrl){
-    c.linkUrl=text;
-    let host='';
-    try{host=new URL(text).hostname.replace(/^www\./,'');}catch(err){host='';}
-    c.linkTitle=host;
-  }else{
-    c.text=text;
-    // Give a long pasted block room rather than a cramped default box.
-    if(text.length>180)c.h=Math.min(320,100+Math.floor(text.length/40)*16);
-  }
-  _editCards.push(c);
-  _boardsRenderCanvasAndWire();
-  _boardsSaveDebounced();
-  if(isUrl)_boardsLinkHydrate(c.id);
-  showToast(isUrl?'Link added':'Note added');
+  _boardsCollectInto();
+  _boardsTrayAddText(text);
 }
 document.addEventListener('paste',_boardsOnPaste);
 window.boardsAddCard=function(type){
@@ -8040,30 +8099,41 @@ function _boardsCardFromTrayItem(u,at){
 }
 // Returns true when it consumed the paste. Mirrors _boardsOnPaste's own
 // order of preference — an image always wins, then a URL, then plain text.
-function _boardsTrayPaste(e){
-  const items=(e.clipboardData&&e.clipboardData.items)||[];
-  for(const item of items){
-    if(item.type&&item.type.indexOf('image')===0){
-      const f=item.getAsFile();
-      if(f){e.preventDefault();_boardsTrayAddFiles([f]);showToast('Added to Unsorted');return true;}
-    }
+/**
+ * Makes the Unsorted panel the thing you are looking at, because a paste
+ * that collects must never be invisible. On Home the panel has two tabs and
+ * may have been left on Boards, where a new item would not be on screen at
+ * all — so the TAB is switched too, not just the panel opened. Both are
+ * per-viewer preferences, so both are persisted: you were collecting, and
+ * the next paste should land somewhere you are already looking.
+ */
+function _boardsCollectInto(){
+  let changed=false;
+  if(!_boardsTrayOpen){
+    _boardsTrayOpen=true;changed=true;
+    try{localStorage.setItem(_BOARDS_TRAY_KEY,'1');}catch(e){}
   }
-  const text=(e.clipboardData&&e.clipboardData.getData('text/plain'))||'';
-  if(!text.trim())return false;
-  e.preventDefault();
-  const url=text.trim();
+  if(_boardsTrayTab!=='unsorted'){
+    _boardsTrayTab='unsorted';changed=true;
+    try{localStorage.setItem(_BOARDS_TRAY_TAB_KEY,'unsorted');}catch(e){}
+  }
+  return changed;
+}
+/** A pasted string becomes a link item or a note. Callers collect first. */
+function _boardsTrayAddText(text){
+  const url=String(text||'').trim();
+  const by=(typeof session!=='undefined'&&session&&session.name)||'';
   if(/^https?:\/\/\S+$/i.test(url)){
     let host=url;
     try{host=new URL(url).hostname.replace(/^www\./,'');}catch(err){}
-    const item=_boardsTrayAdd({id:_boardsTrayItemId(),kind:'link',linkUrl:url,linkTitle:host,
-      at:Date.now(),by:(typeof session!=='undefined'&&session&&session.name)||''});
+    const item=_boardsTrayAdd({id:_boardsTrayItemId(),kind:'link',linkUrl:url,linkTitle:host,at:Date.now(),by});
     _boardsTrayLinkHydrate(item.id);
-  }else{
-    _boardsTrayAdd({id:_boardsTrayItemId(),kind:'text',text:text.slice(0,4000),
-      at:Date.now(),by:(typeof session!=='undefined'&&session&&session.name)||''});
+    showToast('Link added to Unsorted');
+    return item;
   }
+  const item=_boardsTrayAdd({id:_boardsTrayItemId(),kind:'text',text:String(text).slice(0,4000),at:Date.now(),by});
   showToast('Added to Unsorted');
-  return true;
+  return item;
 }
 window.boardsTrayDragStart=function(e,i){
   if(!_boardsCanEdit(_editBoard))return;
@@ -8922,6 +8992,7 @@ function _boardsCtxRun(act){
     case'delete':window.boardsDeleteSelection();break;
     case'open-board':{const s=_boardsSelectedCards();if(s.length===1&&s[0].boardId)window.boardsGoto(s[0].boardId);break;}
     case'link-edit':{const s=_boardsSelectedCards();if(s.length===1)window.boardsLinkEdit(s[0].id);break;}
+    case'link-preview':{const s=_boardsSelectedCards();if(s.length===1)window.boardsLinkTogglePreview(s[0].id);break;}
     case'link-refresh':{const s=_boardsSelectedCards();if(s.length===1)window.boardsLinkRefresh(s[0].id);break;}
     case'home-trash':{const s=_boardsSelectedCards();if(s.length===1&&s[0].boardId)window.boardsTrashLinkedBoard(s[0].boardId,s[0].id);break;}
     case'cut':case'copy':{
@@ -9057,7 +9128,8 @@ async function _boardsCtxPaste(){
   try{
     if(navigator.clipboard&&navigator.clipboard.readText)text=await navigator.clipboard.readText();
   }catch(e){text='';}
-  if(!text){showToast('Press Ctrl+V here to paste an image or text');return;}
+  // Ctrl+V no longer places — it collects — so this can't promise "here".
+  if(!text){showToast('Press Ctrl+V to collect an image or text in Unsorted');return;}
   if(text.indexOf(_BOARDS_CLIP_LINE_PREFIX)===0){
     try{
       const ls=JSON.parse(text.slice(_BOARDS_CLIP_LINE_PREFIX.length));
@@ -9410,6 +9482,7 @@ function _boardsCardCtxItems(canEdit){
       typed.push({act:'openasset',label:'Open link'});
       typed.push({act:'copyasset',label:'Copy URL'});
       if(canEdit){
+        if(one.linkImage)typed.push({act:'link-preview',label:one.linkPreviewOff?'Show the preview picture':'Hide the preview picture'});
         typed.push({act:'link-edit',label:'Edit link details'});
         typed.push({act:'link-refresh',label:'Refresh preview'});
       }

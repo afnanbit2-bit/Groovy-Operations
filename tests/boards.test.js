@@ -779,6 +779,108 @@ module.exports=function(){
     s.eq('the card survives a partial load',run(`_editCards.length`),1);
   }
 
+  // ── Paste always collects ─────────────────────────────────────────────
+  // Afnan: "make paste always collect into unsorted". This REVERSES the
+  // Stage-1 rule, so what that rule protected has to hold instead: a paste
+  // must never be invisible, and the copied-cards clipboard must never be
+  // mistaken for somebody's text.
+  {
+    const app=loadApp({files:FILES,session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'}});
+    const {run}=app;
+    const boot=()=>run(`session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};
+      currentPage='board-canvas';
+      _editBoard={id:'B',title:'T',visibility:'shared',ownerUid:'u1',zoom:1,panX:0,panY:0};
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();_editUnsorted=[];
+      _boardsUndo=[];_boardsRedo=[];_boardsClipboard=[];_boardsLineClipboard=[];
+      _boardsTrayOpen=false;_boardsTrayTab='unsorted';_boardsEditingEl=null;moodBoards=[];`);
+    // A paste event the real handler can read.
+    const PASTE=`function(text,image){return{
+      defaultPrevented:false,preventDefault(){this.defaultPrevented=true;},
+      clipboardData:{
+        items:image?[{type:'image/png',getAsFile:function(){return image;}}]:[],
+        getData:function(){return text||'';}
+      }};}`;
+
+    s.section('a pasted URL collects, with the panel shut');
+    boot();
+    run(`_mkPaste=${PASTE};_boardsOnPaste(_mkPaste('https://scuffers.com/p/1'))`);
+    s.eq('it lands in Unsorted',run(`_editUnsorted.length`),1);
+    s.eq('as a link item',run(`_editUnsorted[0].kind`),'link');
+    s.eq('and nothing was placed on the canvas',run(`_editCards.length`),0);
+    // The whole objection to this reversal: a paste into a panel nobody can
+    // see is indistinguishable from a paste that did nothing.
+    s.ok('the panel opened so you can see where it went',run(`_boardsTrayOpen`)===true);
+    s.ok('the toast says so',/Unsorted/.test(app.state.toasts.join(' ')),app.state.toasts.slice(-1)[0]);
+
+    s.section('plain text too');
+    boot();
+    run(`_mkPaste=${PASTE};_boardsOnPaste(_mkPaste('fleece 320gsm, ask Hassan'))`);
+    s.eq('one note item',run(`_editUnsorted.length+':'+_editUnsorted[0].kind`),'1:text');
+    s.eq('carrying the text',run(`_editUnsorted[0].text`),'fleece 320gsm, ask Hassan');
+
+    s.section('on Home the Boards tab is switched away from, not just opened');
+    boot();
+    run(`_editBoard.isHome=true;_boardsTrayOpen=true;_boardsTrayTab='boards';
+      _mkPaste=${PASTE};_boardsOnPaste(_mkPaste('https://a.test/'))`);
+    s.eq('the panel is on Unsorted',run(`_boardsTrayTab`),'unsorted');
+    s.eq('with the item on it',run(`_editUnsorted.length`),1);
+
+    s.section('CARDS copied from a board are still cards, tray open or shut');
+    // This is the bug the reordering fixes. The tray branch used to run
+    // FIRST, so with the tray open Ctrl+V of copied cards made a NOTE
+    // holding the raw tagged JSON — and every paste collects now.
+    boot();
+    run(`_boardsTrayOpen=true;_mkPaste=${PASTE};
+      _boardsOnPaste(_mkPaste(_BOARDS_CLIP_PREFIX+JSON.stringify([
+        {id:'x',type:'text',text:'copied note',x:0,y:0,w:170,h:100}])))`);
+    s.eq('a card, not a tray item',run(`_editCards.length`),1);
+    s.eq('nothing was collected',run(`_editUnsorted.length`),0);
+    s.ok('and no raw JSON anywhere',!/groovy-board/.test(run(`JSON.stringify(_editCards)`)));
+    boot();
+    run(`_editCards=[{id:'a',type:'text',x:0,y:0,w:170,h:100},{id:'b',type:'text',x:300,y:0,w:170,h:100}];
+      _boardsTrayOpen=true;_mkPaste=${PASTE};
+      _boardsOnPaste(_mkPaste(_BOARDS_CLIP_LINE_PREFIX+JSON.stringify([{free:true,x1:0,y1:0,x2:50,y2:50}])))`);
+    s.eq('a copied LINE is a line',run(`_editConnectors.length`),1);
+    s.eq('not a tray item',run(`_editUnsorted.length`),0);
+
+    s.section('what still outranks the panel');
+    boot();
+    run(`_editCards=[{id:'img',type:'image',imageUrl:'',x:0,y:0,w:170,h:120}];
+      _boardsSelection=new Set(['img']);
+      _boardsUploadFileToCard=function(id,f){_calledWith=id;};
+      _mkPaste=${PASTE};_boardsOnPaste(_mkPaste('',{name:'p.png',size:9,type:'image/png'}))`);
+    s.eq('an image fills a selected EMPTY image card',run(`_calledWith`),'img');
+    s.eq('rather than collecting',run(`_editUnsorted.length`),0);
+    boot();
+    // The guard is _boardsIsEditableFocus(), which reads the FOCUSED
+    // element — so it covers an <input> too (the link form, the Find bar,
+    // the Boards panel's search box), not only a card switched editable.
+    app.state.activeElement={tagName:'DIV',isContentEditable:true};
+    run(`_mkPaste=${PASTE};_boardsOnPaste(_mkPaste('some typing'))`);
+    s.eq('text pasted into a card being edited belongs to that card',run(`_editUnsorted.length`),0);
+    s.eq('and is not swallowed',run(`_editCards.length`),0);
+    app.state.activeElement={tagName:'INPUT'};
+    run(`_boardsOnPaste(_mkPaste('https://a.test/'))`);
+    s.eq('nor is a URL typed into a search box collected',run(`_editUnsorted.length`),0);
+    // Stage 1: an image beats an editing caret, because pasting one into a
+    // contenteditable does nothing useful anyway.
+    run(`_boardsOnPaste(_mkPaste('',{name:'p.png',size:9,type:'image/png'}))`);
+    s.eq('an image still wins over an editing caret',run(`_editUnsorted.length`),1);
+    app.state.activeElement=null;
+
+    s.section('right-click → Paste is the one that still PLACES');
+    s.ok('the menu no longer promises Ctrl+V pastes "here"',
+      !/Ctrl\+V here/.test(require('fs').readFileSync(
+        require('path').join(__dirname,'..','js/boards.js'),'utf8')));
+    _pending.push((async()=>{
+      boot();
+      run(`navigator.clipboard.readText=function(){return Promise.resolve('https://a.test/x');}`);
+      await run(`_boardsCtxPaste()`);
+      s.eq('a card on the canvas',run(`_editCards.length+':'+(_editCards[0]||{}).type`),'1:link');
+      s.eq('and nothing collected',run(`_editUnsorted.length`),0);
+    })());
+  }
+
   // ── Link previews ─────────────────────────────────────────────────────
   // The fetch itself lives in netlify/functions/link-preview.js and has its
   // own suite. What is worth holding here are the two judgement calls the
@@ -838,7 +940,44 @@ module.exports=function(){
     // The title and description were written by a stranger's web page. Same
     // boundary as card text, comments and to-do items: structure only.
     s.ok('no third-party text anywhere in the markup',!/Club Navy|Urban Aesthetics|Scuffers/.test(card));
-    s.ok('only empty nodes for it',/id="board-linkt-lnk1"><\/div>/.test(card));
+    s.ok('only empty nodes for it',/id="board-linkt-lnk1"[^>]*><\/a>/.test(card)&&/id="board-linku-lnk1"><\/span>/.test(card));
+
+    s.section('the title IS the link, and opening it is not a hole');
+    s.ok('a real anchor to the page',/<a class="link-title"[^>]*href="https:\/\/scuffers\.com\/p\/1"/.test(card));
+    s.ok('in a new tab',/target="_blank"/.test(card));
+    // Without rel=noopener the opened page can reach back through
+    // window.opener. This is not decoration.
+    s.ok('and the opened page cannot reach back',/rel="noopener noreferrer"/.test(card));
+    // The anchor sits inside a drag surface: a pointerdown reaching the
+    // handler retargets the click away and the link would never open — the
+    // delete-✕ bug, now for the fourth time.
+    s.ok('a press on the title does not start a card drag',
+      /<a class="link-title"[^>]*onpointerdown="event\.stopPropagation\(\)"/.test(card));
+    s.eq('http and https are hrefs',run(`_boardsSafeHref('https://a.test/x')`),'https://a.test/x');
+    [`javascript:alert(1)`,`data:text/html,<script>`,`  JAVASCRIPT:alert(1)`,`file:///etc/passwd`,`x`,``]
+      .forEach(u=>s.eq('refused: '+JSON.stringify(u),run(`_boardsSafeHref(${JSON.stringify(u)})`),''));
+    run(`_editCards=[{id:'js1',type:'link',linkUrl:'javascript:alert(1)',linkTitle:'x',x:0,y:0,w:250,h:280}]`);
+    const evil=run(`_boardCardHTML(_editCards[0],true)`);
+    s.ok('a javascript: URL gets an anchor with NO href — plain text, not a link',
+      /<a class="link-title"/.test(evil)&&!/href=/.test(evil));
+
+    s.section('the preview picture can be turned off');
+    boot();
+    run(`_editCards=[{id:'L',type:'link',linkUrl:'https://a.test/',linkTitle:'a',
+      linkImage:'https://res.cloudinary.com/x/i.jpg',x:0,y:0,w:_BOARDS_LINK_PREVIEW_W,h:_BOARDS_LINK_PREVIEW_H}];
+      _boardsPushUndo=function(){};
+      window.boardsLinkTogglePreview('L')`);
+    s.eq('the flag is on the CARD, so everyone sees the same card',run(`_editCards[0].linkPreviewOff`),true);
+    s.ok('no picture in the markup',!/board-link-img/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    s.eq('and the card shrinks to its text height',run(`_editCards[0].h`),run(`_BOARDS_LINK_TEXT_H`));
+    run(`window.boardsLinkTogglePreview('L')`);
+    s.ok('toggling back restores both',run(`!_editCards[0].linkPreviewOff&&_editCards[0].h===_BOARDS_LINK_PREVIEW_H`));
+    // A card sized by hand keeps its size, like every other fit in this file.
+    run(`_editCards[0].w=380;_editCards[0].h=420;window.boardsLinkTogglePreview('L')`);
+    s.eq('a hand-sized card is not resized',run(`_editCards[0].h`),420);
+    // Nothing to toggle without a picture, so nothing is offered.
+    run(`_editCards=[{id:'N',type:'link',linkUrl:'https://a.test/',linkTitle:'a',x:0,y:0,w:250,h:150}]`);
+    s.ok('and a card with no picture has no toggle',!/board-link-eye/.test(run(`_boardCardHTML(_editCards[0],true)`)));
     s.ok('a preview card drags from its body like an image card',
       /board-link-preview" onpointerdown="window\.boardsCardDragStart/.test(card));
     // A card with no URL yet — the rail's Link tool — still needs the form.
