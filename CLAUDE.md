@@ -2170,6 +2170,61 @@ so nothing else could be touched.
 `js/boards.js` drops below 11. **The next mechanical font sweep will miss
 these again** — the check is what notices. Verified both ways.
 
+### Mood Boards — the side panels covered the top bar (Sept 2026)
+
+Afnan's screenshots, three in a row, all showed the word **"Comments" cut
+off mid-word** by the open Unsorted tray. The tray, the comments drawer, the
+card trash and the share modal are all `position:absolute; top:0`, and their
+containing block was **`.board-canvas-wrap`** — which is `position:fixed;
+top:0`, i.e. the VIEWPORT top. So each of them painted over the top bar.
+
+Fixed with one new element, **`.board-below`** (`position:relative;flex:1`),
+wrapping everything under the bar. `top:0` now means "under the bar" with no
+magic number, and it survives the bar wrapping onto two rows at a narrow
+width. The panels stay **siblings of the stage** rather than moving inside
+it: the stage carries `touch-action:none` and the pan/marquee pointer
+handlers, and a panel inheriting either would be a different bug.
+
+`tests/smoke-layout.js` renders the top bar **with the tray open** —
+verified both ways: dropping `position:relative` from `.board-below` fails
+the hit-test naming `Unsorted`, `View 100%` and `⋯` as covered by
+`DIV.board-tray-head`.
+
+**That fragment immediately found an unrelated dark-mode bug**, which is
+what it is for: `.board-zoom-pill` measured **1.11:1** — near-black on
+near-black. Its background is a LITERAL `rgba(0,0,0,.74)` while its ink was
+`var(--on-dark)`, which INVERTS. The rule this file already states: *a
+literal white is only correct where the background is also literal.* The
+pill is that first case, not the second.
+
+### Mood Boards — two bugs in the level-of-detail rules (Sept 2026)
+
+Afnan: "zoom out function is still messy and has bugs as you can see in the
+image." Both were mine, both in the CSS shipped one commit earlier, and both
+were verifiable from the file rather than from the screenshot.
+
+- **A TINTED card kept its coloured header banding at 22%.**
+  `.board-world[data-lod="far"] .board-card-head` is three classes
+  (`.board-world` + the `[data-lod]` attribute + `.board-card-head`); so is
+  `.board-card-el.tint-green .board-card-head`. **Equal specificity, and the
+  tint rules sit ~365 lines LATER in the file**, so they won — which is
+  exactly the green band across his WINTER 2K27 card. Forced with
+  `!important` rather than reordered: the LOD block belongs beside the card
+  rules it modifies, not scattered after every tint.
+- **A sub-board card still painted its "Open →" button.** `far` hides
+  controls and keeps content, and that button is a control nobody can hit at
+  22%. `.board-subboard-title` deliberately STAYS — it is the card's only
+  content, and a board link with nothing drawn is a blank rectangle.
+
+The probe now asserts **no card header paints a background at far zoom**,
+with a tinted sub-board card in the fragment. Verified both ways: dropping
+the `!important` fails it naming `board-card-el type-board tint-green`.
+
+**The general lesson, worth more than either bug:** a `[data-lod]` rule is
+class-level specificity, so it does NOT automatically beat the per-card
+modifier rules it is trying to suppress. Any future LOD rule overriding an
+existing card style needs `!important` or a later position.
+
 ### Mood Boards — Home is a board (Sept 2026)
 
 Milanote has no "list of your boards" page: **home IS a board**, and your
@@ -4593,12 +4648,20 @@ firestore.rules` is the PR #71 commit (`creators` delete widened from
 creators). **No republish is outstanding as of that commit**; this
 supersedes the entries below.
 
-**REPUBLISH OUTSTANDING (17 Sept 2026): Pattern Hub M3 + M5 + M6** add
-`pom_templates`, `patterns/{id}/revisions`, `pattern_notices`,
-`isPatternCutting()` and `settings`. Afnan published the M0–M2 file earlier that day (his
-reconcile screenshot no longer showed `shopify_articles` refused). One
-paste of the current file covers everything. Check `git log --oneline -1 --
-firestore.rules` against the entries below.
+**No republish outstanding as of 18 Sept 2026.** Afnan confirmed
+("rules done") from the repo file at `md5
+e021956a095f27489364830576986683`. That one paste carried FOUR rounds at
+once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
+`pattern_notices`, `isPatternCutting()`, `settings`), Mood Boards Trash
+(`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
+--oneline -1 -- firestore.rules` against that md5 before assuming either way.
+
+**Known mismatch, deliberately parked** (Afnan: "leave daniyals ituation for
+rn"): `isContentOpsLead()` lists `daniyal@groovy.op`, while this file
+records Daniyal's login as `daniyaltufail59@gmail.com` — the one account on
+a real inbox rather than `@groovy.op`. If that is right, his Marketing reads
+are denied despite the republish, and the Creator Database shows its rules
+error card. It is Ammar's file: raise it, do not edit it.
 
 **Corroborated live, same day: Save measurements on a block failed with
 "Missing or insufficient permissions."** for Afnan (an owner), screenshot
