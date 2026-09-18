@@ -4322,6 +4322,53 @@ section.
   organic ranking, which **follows the sort toggle**.
 - **A refused read never renders as an empty chart** — the Store lesson.
 
+### The charts were SVG, and SVG text does not obey a font size (18 Sept 2026)
+
+Ammar, with a screenshot: *"Reports text/font sizes are too big."* The
+first guess would be the type scale. It was not — **the charts were drawn
+into one `<svg viewBox="0 0 720 H">` sized `width:100%`, and text inside a
+scaled SVG is in VIEWBOX units, not CSS pixels**, so the browser
+multiplies it by whatever the scale happens to be.
+
+**MEASURED in headless Chromium rather than reasoned about:** at a 1900px
+window the SVG rendered **1818px against the 720 viewBox — a 2.53× scale**,
+so a 13px label declared 13px and occupied a 43px box, painting at ~33px.
+That is the screenshot. **At 420px the scale is 0.61× and the same label
+painted at ~8px** — the identical bug erring small, which is why nobody
+had reported it. The approach was wrong at both ends, not too large at one.
+
+So the charts are **HTML now**: bars, gridlines and the track are geometry
+and stay proportional (percentages in ordinary boxes), and **every piece
+of text is real HTML at the app's own font sizes**. Re-measured after: a
+12px tick occupies a 12px box at 1900px and at 420px. That also puts chart
+text under the Comfortable scale and the dark-mode tokens like everything
+else, instead of in a coordinate space of its own.
+
+- **`tests/invariants.test.js` holds the rule** — neither chart builder may
+  emit `<svg>`, a `viewBox` or a `<text>` element, and the series palette
+  must be all CSS variables. Verified by turning one `<span>` back into a
+  `<text>`: it fails by name. **A future chart must draw its text in
+  HTML**; a bar or a sparkline in SVG is fine, a label is not.
+- The `title` ATTRIBUTE on a bar is a tooltip and has no box — distinct
+  from the `<title>` ELEMENT the layout probe reads as invisible text, and
+  the test now says which it is checking.
+
+**The same screenshot carried a second bug: the y-axis read 0, 1, 2, 2, 3.**
+Five gridlines over a max of 3 put the ticks at 0.75 steps and the
+formatter rounded them into a repeat. **A repeated axis label is worse
+than a wrong one** — it reads as a rendering fault and makes every bar
+beside it suspect. `mktChartScale` picks the STEP first from a
+1/2/2.5/5/10 ladder and derives the top from it, so a fraction cannot
+appear; `integer:true` keeps it whole for a chart that counts things,
+because half a dispatch is not a quantity.
+
+**`mktAxisScale` then makes it unconditional, and that is the part worth
+keeping.** It checks the caller's own FORMATTER for a collision and drops
+to a whole-number scale if it finds one — because it is the formatter that
+loses the precision, not the step. A chart that forgets `integer:true`
+still cannot render a duplicate, while the ROI chart's `1.25×` formatter
+keeps its decimals. Asserted across eleven maxima.
+
 **The layout probe named SVG findings as `[object SVGAnimatedString]`.**
 `className` on an SVG element is an `SVGAnimatedString`; CLAUDE.md records
 this being fixed once for the "covering element" report, and every OTHER

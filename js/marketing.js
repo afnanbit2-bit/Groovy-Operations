@@ -3220,14 +3220,34 @@ function _mktWhoCell(c){return c?`<div class="mkt-name">${_mktEsc(c.name||'@'+c.
 // the shape. Reading one figure off a bar is guesswork, and these are
 // numbers people are paid against.
 
-const _MKT_CHART_W=720;          // viewBox units; the SVG itself is fluid
 const _MKT_SERIES=[
-  {token:'var(--accent-success)'},
-  {token:'var(--accent-warning)'},
-  {token:'var(--accent-urgent)'},
-  {token:'var(--muted)'}
+  'var(--accent-success)','var(--accent-warning)','var(--accent-urgent)','var(--muted)'
 ];
-function _mktSeriesColor(i){return _MKT_SERIES[i%_MKT_SERIES.length].token;}
+function _mktSeriesColor(i){return _MKT_SERIES[i%_MKT_SERIES.length];}
+
+// ── Why these charts are HTML and not SVG (Sept 2026) ───────────────────
+// The first cut drew everything into one <svg viewBox="0 0 720 H"> sized
+// `width:100%`. **Text inside a scaled SVG is in viewBox units, not CSS
+// pixels**, so the browser multiplies it by whatever the scale happens to
+// be. MEASURED in headless Chromium: at a 1900px window the SVG rendered
+// 1818px wide against the 720 viewBox — a **2.53×** scale, so a 13px label
+// painted at ~33px (that is the report: "text sizes are too big"). At
+// 420px the scale is **0.61×** and the same label painted at ~8px, which
+// nobody had noticed because it errs small rather than large.
+//
+// So: bars, gridlines and the track are geometry and stay proportional
+// (percentages in ordinary boxes), and **every piece of text is real HTML
+// at the app's own font sizes**, which is the only thing that reads the
+// same at every width. It also puts chart text under the Comfortable
+// scale and the dark-mode tokens like the rest of the app, instead of in
+// a coordinate space of its own.
+//
+// The rest of the original rules still hold and are still asserted: every
+// colour is a CSS variable (a literal hex is the dark-mode bug this
+// codebase keeps shipping), every label is escaped, and a chart NEVER
+// replaces its table — reading a figure off a bar is guesswork and these
+// are numbers people are paid against.
+
 /** A short axis number: 45,000 → 45k, 1,200,000 → 1.2m. Pure. */
 function mktChartTick(n){
   const v=Number(n)||0,a=Math.abs(v);
@@ -3240,82 +3260,140 @@ function mktChartClip(s,max){
   const t=String(s==null?'':s);
   return t.length>max?t.slice(0,max-1)+'…':t;
 }
+
 /**
- * The top of the axis: the largest value, rounded UP to something round,
- * so the gridlines read as numbers rather than as fractions of the data.
- * Always > 0, so an all-zero chart still draws its baseline. Pure.
+ * The axis: a top value AND the number of gridlines, chosen together so
+ * every tick lands on a round number.
+ *
+ * The first version fixed five gridlines and rounded the top up on its
+ * own, which put the ticks at quarters of whatever that was — a chart
+ * topping out at 3 drew 0, 0.75, 1.5, 2.25, 3 and the formatter rendered
+ * that as **0, 1, 2, 2, 3**. A repeated axis label is worse than a wrong
+ * one: it reads as a rendering fault and it makes every bar beside it
+ * suspect. Picking the STEP first and the top from it is what makes a
+ * duplicate impossible.
+ *
+ * `integer` keeps the step whole, for a chart counting things — half a
+ * dispatch is not a quantity. Always returns a positive max, so an
+ * all-zero chart still draws its baseline instead of dividing by zero.
+ * Pure.
  */
-function mktChartMax(values){
+function mktChartScale(values,opts){
+  const o=opts||{};
   const m=Math.max(0,...(values||[]).map(v=>Number(v)||0));
-  if(m<=0)return 1;
-  const mag=Math.pow(10,Math.floor(Math.log10(m)));
-  for(const step of [1,1.5,2,2.5,3,4,5,7.5,10]){
-    if(m<=step*mag)return step*mag;
+  if(m<=0)return{max:1,step:1,count:1};
+  const ladder=o.integer?[1,2,5,10]:[1,2,2.5,5,10];
+  let mag=Math.pow(10,Math.floor(Math.log10(m/5)));
+  if(o.integer)mag=Math.max(1,mag);
+  for(let pass=0;pass<4;pass++){
+    for(const n of ladder){
+      const step=n*mag;
+      if(o.integer&&step<1)continue;
+      const count=Math.ceil(m/step);
+      if(count>=1&&count<=6)return{max:step*count,step,count};
+    }
+    mag*=10;
   }
-  return 10*mag;
+  return{max:m,step:m,count:1};
 }
+/** The top of the axis alone — kept because the scale is what callers size against. Pure. */
+function mktChartMax(values,opts){return mktChartScale(values,opts).max;}
+
 function _mktLegend(series){
   return`<div class="mkt-legend">${series.map((s,i)=>`<span><i style="background:${_mktSeriesColor(i)}"></i>${_mktEsc(s)}</span>`).join('')}</div>`;
+}
+/**
+ * The scale to actually draw with: the one asked for, UNLESS the caller's
+ * formatter renders two of its ticks identically — then a whole-number
+ * one, because an axis reading 0, 1, 1, 2, 2, 3, 3 is worse than a
+ * coarser one. The check is on the FORMATTED labels rather than on the
+ * step, since it is the formatter that loses the precision (a 0.5 step
+ * through `Math.round` is what produced the reported bug); a caller whose
+ * formatter keeps decimals — the ROI chart's `1.25×` — keeps its
+ * resolution. Pure.
+ */
+function mktAxisScale(values,opts,fmt){
+  const f=fmt||mktChartTick;
+  const distinct=sc=>{
+    const seen=new Set();
+    for(let i=0;i<=sc.count;i++){
+      const k=String(f(sc.step*i));
+      if(seen.has(k))return false;
+      seen.add(k);
+    }
+    return true;
+  };
+  const first=mktChartScale(values,opts);
+  if(distinct(first))return first;
+  const whole=mktChartScale(values,Object.assign({},opts,{integer:true}));
+  return distinct(whole)?whole:{max:first.max,step:first.max,count:1};
+}
+/** The y-axis labels and the gridlines they sit on — one source for both. Pure-ish. */
+function _mktAxis(scale,fmt){
+  const ticks=[];
+  for(let i=0;i<=scale.count;i++)ticks.push({pct:i/scale.count*100,value:scale.step*i});
+  return{
+    labels:ticks.map(t=>`<span class="mkt-chart-tick" style="bottom:${t.pct}%">${_mktEsc(fmt(t.value))}</span>`).join(''),
+    lines:ticks.map(t=>`<i class="mkt-gridline" style="bottom:${t.pct}%"></i>`).join('')
+  };
 }
 
 /**
  * Grouped vertical bars — one group per month, one bar per series.
  * opts: {groups:[{label,values:[…]}], series:['Approved','Paid out'],
- *        format:fn, caption:string}
+ *        format:fn, integer:bool, caption:string}
  */
 function mktChartBars(opts){
   const o=opts||{},groups=o.groups||[],series=o.series||[];
   if(!groups.length)return'';
   const fmt=o.format||mktChartTick;
-  const H=210,padL=54,padR=10,padT=14,padB=34;
-  const plotW=_MKT_CHART_W-padL-padR,plotH=H-padT-padB;
-  const max=mktChartMax(groups.reduce((a,g)=>a.concat(g.values||[]),[]));
-  const band=plotW/groups.length;
-  const barW=Math.min(34,Math.max(6,(band-10)/Math.max(1,series.length)));
-  const y=v=>padT+plotH-(Math.max(0,Number(v)||0)/max)*plotH;
-  const grid=[0,.25,.5,.75,1].map(f=>{
-    const gy=padT+plotH-f*plotH;
-    return`<line x1="${padL}" y1="${gy}" x2="${_MKT_CHART_W-padR}" y2="${gy}" class="mkt-chart-grid"/>`
-      +`<text x="${padL-8}" y="${gy+4}" class="mkt-chart-tick" text-anchor="end">${_mktEsc(fmt(max*f))}</text>`;
+  const scale=mktAxisScale(groups.reduce((a,g)=>a.concat(g.values||[]),[]),{integer:!!o.integer},fmt);
+  const axis=_mktAxis(scale,fmt);
+  const bars=groups.map(g=>{
+    const set=(g.values||[]).map((v,si)=>{
+      const pct=Math.max(0,Number(v)||0)/scale.max*100;
+      const label=_mktEsc((series[si]||'')+' '+fmt(v));
+      return`<i class="mkt-bar" style="height:${pct.toFixed(1)}%;background:${_mktSeriesColor(si)}" title="${label}"></i>`;
+    }).join('');
+    return`<div class="mkt-bargroup"><div class="mkt-barset">${set}</div></div>`;
   }).join('');
-  const bars=groups.map((g,gi)=>{
-    const cx=padL+band*gi+band/2;
-    const total=series.length*barW+(series.length-1)*3;
-    return(g.values||[]).map((v,si)=>{
-      const x=cx-total/2+si*(barW+3);
-      const top=y(v),h=Math.max(0,padT+plotH-top);
-      return`<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${_mktSeriesColor(si)}"/>`;
-    }).join('')
-    +`<text x="${cx.toFixed(1)}" y="${H-12}" class="mkt-chart-lab" text-anchor="middle">${_mktEsc(mktChartClip(g.label,10))}</text>`;
-  }).join('');
-  return`<div class="mkt-chart">${series.length>1?_mktLegend(series):''}
-    <svg viewBox="0 0 ${_MKT_CHART_W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${_mktEsc(o.caption||'Bar chart')}">
-      ${grid}${bars}
-      <line x1="${padL}" y1="${padT+plotH}" x2="${_MKT_CHART_W-padR}" y2="${padT+plotH}" class="mkt-chart-axis"/>
-    </svg></div>`;
+  const xs=groups.map(g=>`<span class="mkt-chart-lab">${_mktEsc(mktChartClip(g.label,10))}</span>`).join('');
+  return`<div class="mkt-chart" role="img" aria-label="${_mktEsc(o.caption||'Bar chart')}">
+    ${series.length>1?_mktLegend(series):''}
+    <div class="mkt-plot">
+      <div class="mkt-yaxis">${axis.labels}</div>
+      <div class="mkt-plotcol">
+        <div class="mkt-plotarea">${axis.lines}<div class="mkt-bars">${bars}</div></div>
+        <div class="mkt-xrow">${xs}</div>
+      </div>
+    </div>
+  </div>`;
 }
 
 /**
- * Ranked horizontal bars — one row per creator, label on the left and the
- * value at the end of its bar.
- * opts: {rows:[{label,sub,value}], format:fn, caption:string, series:0}
+ * Ranked horizontal bars — one row per creator, the name on the left and
+ * the value at the end of its bar.
+ *
+ * The name column is a FIXED width and the track flexes, never the other
+ * way round: a flexing name beside a fixed control is the shape that
+ * rendered every Profile-directory name at 0px.
+ *
+ * opts: {rows:[{label,value}], format:fn, caption:string, series:0}
  */
 function mktChartHBars(opts){
   const o=opts||{},rows=o.rows||[];
   if(!rows.length)return'';
   const fmt=o.format||mktChartTick;
-  const labW=170,valW=74,rowH=26,padT=6;
-  const H=padT*2+rows.length*rowH;
-  const plotW=_MKT_CHART_W-labW-valW;
-  const max=mktChartMax(rows.map(r=>r.value));
-  const body=rows.map((r,i)=>{
-    const cy=padT+i*rowH,mid=cy+rowH/2;
-    const w=Math.max(2,(Math.max(0,Number(r.value)||0)/max)*plotW);
-    return`<text x="0" y="${mid+4}" class="mkt-chart-lab">${_mktEsc(mktChartClip(r.label,24))}</text>`
-      +`<rect x="${labW}" y="${cy+5}" width="${w.toFixed(1)}" height="${rowH-12}" rx="3" fill="${_mktSeriesColor(o.series||0)}"/>`
-      +`<text x="${_MKT_CHART_W}" y="${mid+4}" class="mkt-chart-val" text-anchor="end">${_mktEsc(fmt(r.value))}</text>`;
+  const scale=mktAxisScale(rows.map(r=>r.value),{integer:!!o.integer},fmt);
+  const body=rows.map(r=>{
+    const pct=Math.max(0,Number(r.value)||0)/scale.max*100;
+    return`<div class="mkt-hbar">
+      <span class="mkt-hbar-lab">${_mktEsc(mktChartClip(r.label,28))}</span>
+      <span class="mkt-hbar-track"><i style="width:${Math.max(1,pct).toFixed(1)}%;background:${_mktSeriesColor(o.series||0)}"></i></span>
+      <span class="mkt-hbar-val">${_mktEsc(fmt(r.value))}</span>
+    </div>`;
   }).join('');
-  return`<div class="mkt-chart"><svg viewBox="0 0 ${_MKT_CHART_W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${_mktEsc(o.caption||'Ranked bar chart')}">${body}</svg></div>`;
+  return`<div class="mkt-chart" role="img" aria-label="${_mktEsc(o.caption||'Ranked bar chart')}"><div class="mkt-hbars">${body}</div></div>`;
 }
 
 /**
@@ -3389,6 +3467,7 @@ function _mktActivityHTML(){
     groups:rows.map(r=>({label:_mktShortMonth(r.month),values:[r.organic,r.paid]})),
     series:['Organic','Paid PR'],
     format:n=>String(Math.round(n)),
+    integer:true,
     caption:'Dispatches per month, organic against Paid PR'
   });
   const tot=rows.reduce((t,r)=>({organic:t.organic+r.organic,paid:t.paid+r.paid,delivered:t.delivered+r.delivered}),{organic:0,paid:0,delivered:0});
@@ -3410,6 +3489,7 @@ function _mktTiersHTML(){
   const chart=mktChartHBars({
     rows:rows.map(r=>({label:r.label,value:r.count})),
     format:n=>String(Math.round(n)),
+    integer:true,
     caption:'How many creators sit in each tier',
     series:3
   });

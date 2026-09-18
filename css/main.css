@@ -1786,14 +1786,33 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .mkt-tagrow-actions{flex-shrink:0;display:flex;gap:6px}
 .mkt-tagrow-actions .btn-outline{font-size:12px;padding:4px 10px}
 .mkt-warnchip{font-size:11px;padding:2px 8px;border-radius:10px;background:var(--accent-warning-soft);color:var(--accent-warning);white-space:nowrap}
-.mkt-chart{margin:4px 0 12px}
-.mkt-chart svg{display:block;width:100%;height:auto;overflow:visible}
-.mkt-chart-grid{stroke:var(--border);stroke-width:1}
-.mkt-chart-axis{stroke:var(--border);stroke-width:1.5}
-.mkt-chart-tick{font-size:12px;color:var(--muted);fill:var(--muted)}
-.mkt-chart-lab{font-size:13px;color:var(--text);fill:var(--text)}
-.mkt-chart-val{font-size:13px;color:var(--text);fill:var(--text);font-weight:700}
-.mkt-legend{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:8px;font-size:13px;color:var(--muted)}
+/* Charts. The BARS are geometry (percentages of a normal box) and the
+   TEXT is ordinary HTML at the app's own sizes — never inside a scaled
+   SVG, where a 13px label paints at 33px on a desktop and 8px on a
+   phone. Measured; see the note above mktChartBars in js/marketing.js. */
+.mkt-chart{margin:4px 0 14px}
+.mkt-plot{display:flex;gap:10px}
+.mkt-yaxis{position:relative;flex:0 0 auto;min-width:34px;height:var(--chart-h,180px)}
+.mkt-chart-tick{position:absolute;right:0;transform:translateY(50%);font-size:12px;color:var(--muted);white-space:nowrap;line-height:1}
+.mkt-plotcol{flex:1;min-width:0}
+.mkt-plotarea{position:relative;height:var(--chart-h,180px)}
+.mkt-gridline{position:absolute;left:0;right:0;height:1px;background:var(--border);opacity:.7}
+.mkt-gridline:first-child{opacity:1}
+.mkt-bars{position:absolute;inset:0;display:flex;align-items:flex-end}
+.mkt-bargroup{flex:1;min-width:0;height:100%;display:flex;align-items:flex-end;justify-content:center}
+.mkt-barset{display:flex;align-items:flex-end;gap:3px;height:100%;width:100%;justify-content:center}
+.mkt-bar{display:block;width:100%;max-width:30px;min-height:1px;border-radius:3px 3px 0 0}
+.mkt-xrow{display:flex;margin-top:7px}
+.mkt-xrow .mkt-chart-lab{flex:1;min-width:0;text-align:center;font-size:13px;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mkt-hbars{display:flex;flex-direction:column;gap:7px}
+.mkt-hbar{display:flex;align-items:center;gap:10px}
+.mkt-hbar-lab{flex:0 0 172px;font-size:13px;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mkt-hbar-track{flex:1;min-width:0;height:16px;background:var(--surface-2);border-radius:4px;display:block}
+.mkt-hbar-track i{display:block;height:100%;border-radius:4px}
+.mkt-hbar-val{flex:0 0 auto;min-width:56px;text-align:right;font-size:13px;font-weight:700;color:var(--text)}
+.mkt-legend{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:10px;font-size:13px;color:var(--muted)}
 .mkt-legend span{display:inline-flex;align-items:center;gap:6px}
 .mkt-legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
 .mkt-lifetime{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
@@ -1865,6 +1884,10 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 @media (max-width:600px){
   .mkt-tagrow{flex-direction:column;align-items:stretch}
   .mkt-tagrow-actions{justify-content:flex-end}
+  .mkt-chart{--chart-h:150px}
+  .mkt-hbar-lab{flex-basis:104px}
+  .mkt-hbar-val{min-width:44px}
+  .mkt-xrow .mkt-chart-lab{font-size:12px}
 }
 .mkt-implist{display:flex;flex-direction:column;max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:8px}
 .mkt-improw{display:grid;grid-template-columns:110px minmax(0,1fr) minmax(0,1fr) minmax(0,1.4fr);gap:10px;padding:6px 10px;font-size:13px;border-bottom:1px solid var(--border)}
