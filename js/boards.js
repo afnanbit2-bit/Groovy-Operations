@@ -435,13 +435,18 @@ async function _boardsHomeId(){
 // a board sitting on someone's Home is NOT "nested" (see _boardsNestedIds,
 // which only ever follows a real parentId), so it still lists at root in
 // All boards and still reaches every other person's Home.
-/* A board card is a COVER TILE (Sept 2026 — Afnan picked option A from the
-   specimen). It was 200x124 of grey chrome: a type label, a truncated
-   title, a count and a button, identical for every board — while the board
-   itself already stored a picture, a colour and a letter that only the
-   Boards panel ever drew. 240x180 gives the picture a shape worth looking
-   at and the name two lines to live on. */
-const _BOARDS_HOME_COLS=4,_BOARDS_HOME_W=240,_BOARDS_HOME_H=180;
+/* A board card is a SPINE CARD (Sept 2026 — Afnan picked option D from the
+   specimen, after living with option A's cover tile for a day: "i like D
+   spine its perfect").
+
+   It was 200x124 of grey chrome: a type label, a truncated title, a count
+   and a button, identical for every board. A took the other extreme — the
+   picture full bleed with the name on a scrim over it — and the thing it
+   could not do is say what is INSIDE. D is the most a card can say at
+   once: the board's colour (or its picture) as a spine down the left, the
+   WHOLE name on two lines, the state and the counts, and a strip of the
+   board's own thumbnails. 260x172. */
+const _BOARDS_HOME_COLS=4,_BOARDS_HOME_W=260,_BOARDS_HOME_H=172;
 // Afnan's own line, kept. It is chrome, so no emoji (the module's rule)
 // and it is a literal rather than a card's data, so it is safe in the
 // template; every string that comes off a BOARD still goes through
@@ -2308,15 +2313,26 @@ function _boardCardHTML(c,canEdit){
     // board" line with no way forward, so the card could only be deleted.
     // A card that links to something must either link to it or offer to
     // create it.
-    // THE CARD IS THE BOARD'S PICTURE. Cover full bleed, or the board's
-    // colour carrying its icon/letter — the same face the gallery tile and
-    // the panel row draw, through the same _boardsFaceOf, so the three can
-    // never disagree about what a board looks like. The name sits on a
-    // scrim over it rather than in a grey strip beside it.
+    /* THE CARD IS A SPINE, A NAME AND WHAT IS INSIDE (option D). The
+       board's face runs down the left edge, the whole name gets two lines
+       beside it, and a strip of the board's own thumbnails says what it
+       holds. The face still comes from _boardsFaceOf, the one place that
+       decides what a board looks like, so the card, the gallery tile and
+       the panel row can never disagree.
+
+       The spine paints the COVER when there is one. The picture is the
+       identity a person chose for that board, and it must not be demoted to
+       a 30px chip in the strip below — the strip is for contents. With no
+       cover it is the board's colour carrying its icon or first letter,
+       which is what the specimen showed. */
     const face=_boardsFaceOf(child);
     const files=child?_boardsCountFiles(child.cards):0;
+    const th=child?_boardsBoardThumbs(child):{urls:[],rest:0};
+    /* The state word is from the specimen and costs nothing — visibility is
+       already on the board document and the panel row already prints it. */
+    const state=child?(child.visibility==='shared'?'TEAM':'PRIVATE'):'';
     const meta=child
-      ?n+' card'+(n===1?'':'s')+(files?' · '+files+' file'+(files===1?'':'s'):'')
+      ?[state,n+' card'+(n===1?'':'s')].concat(files?[files+' file'+(files===1?'':'s')]:[]).join(' · ')
       :(c.boardId?'Not available — deleted, or private to someone else':'No board linked yet');
     /* NO "Open" PILL ON A POINTER DEVICE (Sept 2026 — Afnan: "open text is
        not required"). Double-click opens it, the idle corner glow says the
@@ -2330,12 +2346,15 @@ function _boardCardHTML(c,canEdit){
     const open=c.boardId
       ?(child&&_boardsIsPhone()?`<button class="board-subboard-open" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsGoto('${c.boardId}')">Open</button>`:'')
       :(canEdit?`<button class="board-subboard-open" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsRepairBoardCard('${c.id}')">Create</button>`:'');
-    // A picture is drawn with the same three guards every board image
-    // carries: a sized derivative, CORS (so the PNG/PDF export can read it
-    // back) and no native HTML5 drag.
-    const facePaint=face.cover
-      ?`<img class="board-subboard-cover" src="${_boardsEsc(_boardsDisplayUrl(face.cover,Math.max(400,Math.round(c.w*2))))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`
-      :`<div class="board-subboard-fill" style="background:${face.color||'var(--soft)'};color:${face.color?_boardsInkOn(face.color):'var(--muted)'}"><span class="board-subboard-glyph">${_boardsEsc(face.glyph)}</span></div>`;
+    // Every picture here is drawn with the same three guards every board
+    // image carries: a sized derivative, CORS (so the PNG/PDF export can
+    // read it back) and no native HTML5 drag.
+    const spine=face.cover
+      ?`<div class="board-subboard-spine has-cover" style="background:${face.color||'var(--soft)'}"><img src="${_boardsEsc(_boardsDisplayUrl(face.cover,400))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt=""></div>`
+      :`<div class="board-subboard-spine" style="background:${face.color||'var(--soft)'};color:${face.color?_boardsInkOn(face.color):'var(--muted)'}"><span class="board-subboard-glyph">${_boardsEsc(face.glyph)}</span></div>`;
+    const thumbs=th.urls.length
+      ?`<div class="board-subboard-thumbs">${th.urls.map(u=>`<span class="board-subboard-thumb"><img src="${_boardsEsc(_boardsDisplayUrl(u,400))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt=""></span>`).join('')}${th.rest?`<span class="board-subboard-thumb board-subboard-more">+${th.rest}</span>`:''}</div>`
+      :'';
     // Double-click opens it. The handler sits on the very element carrying
     // the drag handler, so the pointer capture cannot retarget it away —
     // the rule the to-do item and the table cell both learned the hard way.
@@ -2343,10 +2362,11 @@ function _boardCardHTML(c,canEdit){
        board that is gone or not linked yet gets neither — nothing should
        invite a double-click that cannot do anything. */
     body=`<div class="board-card-body board-subboard-body${child?' openable':''}"${bodyDrag}${child?` ondblclick="window.boardsGoto('${c.boardId}')"`:''}>
-      ${facePaint}
-      <div class="board-subboard-scrim">
+      ${spine}
+      <div class="board-subboard-info">
         <div class="board-subboard-title">${_boardsEsc(title)}</div>
         <div class="board-subboard-meta">${_boardsEsc(meta)}</div>
+        ${thumbs}
       </div>
       ${child?`<div class="board-subboard-cta"><span>${_BOARDS_OPEN_PHRASE}</span></div>`:''}
       ${open}
@@ -2629,6 +2649,27 @@ function _boardsFaceOf(b){
     color:_boardsValidHex(b&&b.color)||'',
     glyph:icon||letter
   };
+}
+/* The strip of real thumbnails at the foot of a board card — the half of
+   option D that says what is INSIDE a board rather than only what it is
+   called. DERIVED from the child board's own cards on every render, exactly
+   like the gallery tile's live preview, so it cannot go stale against the
+   board it describes; nothing new is stored and nothing migrates.
+
+   Image cards only. A file card's page-1 thumbnail is best-effort by design
+   (see _boardsPdfThumbUrl — the <img> carries an onerror that hides it), and
+   a strip with holes punched in it says less than a shorter strip with
+   none. `rest` counts the cards the strip could not show, so the +N chip
+   answers "and what else", not "and how many pictures". */
+const _BOARDS_THUMB_MAX=3;
+function _boardsBoardThumbs(child){
+  const cards=(child&&child.cards)||[];
+  const urls=[];
+  for(let i=0;i<cards.length&&urls.length<_BOARDS_THUMB_MAX;i++){
+    const c=cards[i];
+    if(c&&c.type==='image'&&c.imageUrl)urls.push(c.imageUrl);
+  }
+  return{urls:urls,rest:Math.max(0,cards.length-urls.length)};
 }
 function _boardsTileHTML(b,size){
   const px=size||36;

@@ -398,10 +398,11 @@ module.exports=function(){
         /<div class="board-card-body board-todo-body" onpointerdown="window\.boardsCardDragStart/.test(todo));
     }
 
-    /* ── A board card IS the board's picture (Sept 2026) ────────────────
-       Afnan picked option A off the specimen. The card was 200x124 of grey
-       chrome while the board already stored a cover, a colour and a letter
-       that only the Boards panel ever drew. */
+    /* ── A board card is a SPINE (Sept 2026) ────────────────────────────
+       Afnan lived with option A (the cover full bleed) for a day and then
+       picked option D: "i like D spine its perfect". The face runs down the
+       left edge, the whole name sits beside it, and a strip of the board's
+       own thumbnails says what is inside. */
     s.section('a board card wears the board’s face');
     {
       const app5=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
@@ -415,28 +416,56 @@ module.exports=function(){
 
       setB(`,coverUrl:'${COVER}',color:'#C2410C',icon:'W'`);
       const withCover=r5(`_boardCardHTML(_editCards[0],true)`);
-      s.ok('the cover is drawn full bleed',/class="board-subboard-cover"/.test(withCover));
+      // THE SPINE PAINTS THE COVER. A picture somebody chose for a board is
+      // its identity and must not be demoted to a 30px chip in the strip
+      // below, which is for contents.
+      s.ok('the cover fills the spine',/class="board-subboard-spine has-cover"/.test(withCover));
       s.ok('as a sized derivative, not the original',
-        /board-subboard-cover[^>]*f_auto/.test(withCover),withCover.slice(0,0)||'');
+        /board-subboard-spine has-cover[^>]*>\s*<img[^>]*f_auto/.test(withCover));
       s.ok('with CORS, so the PNG export can read it back',
-        /board-subboard-cover[^>]*crossorigin="anonymous"/.test(withCover));
-      s.ok('and no native HTML5 drag',/board-subboard-cover[^>]*draggable="false"/.test(withCover));
-      s.ok('the name is on the scrim',/board-subboard-scrim/.test(withCover)&&/WINTER DUMP 2K27/.test(withCover));
-      s.ok('the meta counts cards AND files',/3 cards · 2 files/.test(withCover),
+        /board-subboard-spine has-cover[^>]*>\s*<img[^>]*crossorigin="anonymous"/.test(withCover));
+      s.ok('and no native HTML5 drag',
+        /board-subboard-spine has-cover[^>]*>\s*<img[^>]*draggable="false"/.test(withCover));
+      s.ok('the whole name sits beside it',
+        /board-subboard-info/.test(withCover)&&/WINTER DUMP 2K27/.test(withCover));
+      s.ok('the meta names the state and counts cards AND files',
+        /PRIVATE · 3 cards · 2 files/.test(withCover),
         (withCover.match(/board-subboard-meta">([^<]*)/)||[])[1]);
       s.ok('the type strip is gone from the body',!/board-subboard-open">Open →/.test(withCover));
+
+      /* THE THUMBNAIL STRIP is the half of D that says what is INSIDE, and
+         it is DERIVED from the child board's cards on every render — nothing
+         is stored and nothing migrates. The +N counts the cards the strip
+         could not show, not the pictures it left out. */
+      s.eq('one image card makes one thumbnail',
+        (withCover.match(/board-subboard-thumb"/g)||[]).length,1);
+      s.ok('and the rest of the board is a +N chip',
+        /board-subboard-more">\+2</.test(withCover),
+        (withCover.match(/board-subboard-more">([^<]*)/)||[])[1]);
+      s.ok('a thumbnail carries the same three guards every board image does',
+        /board-subboard-thumb"><img[^>]*f_auto[^>]*crossorigin="anonymous"[^>]*draggable="false"/.test(withCover));
 
       // No cover → the board's colour carrying its icon or first letter.
       setB(`,color:'#C2410C',icon:'W'`);
       const noCover=r5(`_boardCardHTML(_editCards[0],true)`);
       s.ok('no cover falls back to the colour field',
-        /class="board-subboard-fill"[^>]*background:#C2410C/.test(noCover));
+        /class="board-subboard-spine"[^>]*background:#C2410C/.test(noCover));
       s.ok('carrying the icon',/board-subboard-glyph">W</.test(noCover));
-      s.ok('and no <img> at all',!/board-subboard-cover/.test(noCover));
+      s.ok('and no cover <img> at all',!/board-subboard-spine has-cover/.test(noCover));
       setB(``);
       const bare=r5(`_boardCardHTML(_editCards[0],true)`);
       s.ok('no icon falls back to the first letter',/board-subboard-glyph">W</.test(bare));
       s.ok('and no colour falls back to a neutral',/background:var\(--soft\)/.test(bare));
+      // A board with no pictures in it gets no strip at all, rather than an
+      // empty row or a chip that only repeats the count above it.
+      r5(`moodBoards[0].cards=[{id:'t',type:'text'}];`);
+      s.ok('a board with no pictures shows no strip',
+        !/board-subboard-thumbs/.test(r5(`_boardCardHTML(_editCards[0],true)`)));
+      s.eq('and the helper agrees',
+        r5(`JSON.stringify(_boardsBoardThumbs({cards:[{type:'text'},{type:'text'}]}))`),
+        JSON.stringify({urls:[],rest:2}));
+      s.eq('the strip is capped at three',
+        r5(`_boardsBoardThumbs({cards:[1,2,3,4,5].map(i=>({type:'image',imageUrl:'u'+i}))}).urls.length`),3);
 
       // ONE decision about what a board looks like — the gallery tile, the
       // panel row and the card all read it, so they cannot disagree.
@@ -494,8 +523,8 @@ module.exports=function(){
       s.ok('nor is an orphan',!/openable/.test(orphan)&&!/board-subboard-cta/.test(orphan));
       s.ok('but the orphan keeps its repair button',/>Create</.test(orphan));
 
-      s.eq('a new board card is 240x180',
-        r5(`_BOARDS_HOME_W+'x'+_BOARDS_HOME_H`),'240x180');
+      s.eq('a new board card is 260x172',
+        r5(`_BOARDS_HOME_W+'x'+_BOARDS_HOME_H`),'260x172');
       // Cards written at the old 200x124 are not rewritten on open — the
       // render grows them to the minimum instead, so nothing migrates.
       s.ok('an old card is drawn tall enough for the name',

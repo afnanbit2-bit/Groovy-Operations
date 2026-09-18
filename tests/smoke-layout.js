@@ -248,13 +248,24 @@ const FRAGMENTS={
   // What this holds: the far board must still be free of clipped text and
   // unreachable controls once the chrome is hidden, which is the risk in
   // hiding a flex sibling (the body grows into its space).
-  /* A board card is the board's PICTURE now, so white ink sits on a scrim
-     over something this fragment cannot predict. The worst case is a LIGHT
-     cover, so the covers here are swapped for a solid WHITE image: if the
-     scrim ever goes back to fading to transparent, the contrast check reads
-     white on white and says so. It also measures the two-line name, and
-     hit-tests the Open pill, which now sits in the same corner as the
-     resize grip. */
+  /* A board card is a SPINE now (option D): the board's face down the left
+     edge, the whole name and meta on the CARD SURFACE beside it, and a strip
+     of the board's own thumbnails at the foot. Three things this has to
+     hold, and none of them is visible to a logic suite:
+
+     - the name and meta take their ink from tokens now (they used to sit on
+       a literal black scrim), so the contrast check has to see them in BOTH
+       themes — a literal white left behind would be white-on-white in light;
+     - the long-name card wraps to the clamped two lines rather than
+       overflowing. Note what this does NOT prove, checked by removing it:
+       the info column's min-width:0. The title carries word-break, so it
+       shrinks either way — that rule is a guard for whatever is added to
+       the column next, not something a measurement here can hold;
+     - the thumbnail strip and the phone Open pill share the foot of the
+       card, and the pill is hit-tested.
+
+     The covers are swapped for a solid WHITE image: the probe has no
+     network, and an <img> that never loads measures as nothing. */
   'boards — a board card wears the board’s face':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     const COVER='https://res.cloudinary.com/deww4lpym/image/upload/v1/cover.jpg';
@@ -269,19 +280,22 @@ const FRAGMENTS={
         {id:'B4',title:'Old card, never resized',ownerUid:'u1',visibility:'personal',color:'#14532D',cards:[{id:'d'}]}
       ];
       _editCards=[
-        {id:'k1',type:'board',boardId:'B1',x:10,y:10,w:240,h:180},
-        {id:'k2',type:'board',boardId:'B2',x:280,y:10,w:240,h:180},
-        {id:'k3',type:'board',boardId:'B3',x:550,y:10,w:240,h:180},
+        // Two rows, so every card is inside a 1280px viewport — a card laid
+        // out past the right edge is clipped, and the hit-test then reports
+        // its controls as covered by whatever the probe finds at that point.
+        {id:'k1',type:'board',boardId:'B1',x:10,y:10,w:260,h:172},
+        {id:'k2',type:'board',boardId:'B2',x:300,y:10,w:260,h:172},
+        {id:'k3',type:'board',boardId:'B3',x:590,y:10,w:260,h:172},
         // The size every board card was written at before the redesign —
         // not migrated, so the render has to grow it rather than clip it.
-        {id:'k4',type:'board',boardId:'B4',x:820,y:10,w:200,h:124},
+        {id:'k4',type:'board',boardId:'B4',x:880,y:10,w:200,h:124},
         // A board this viewer cannot read, and an orphan with no boardId.
-        {id:'k5',type:'board',boardId:'GONE',x:1070,y:10,w:240,h:180},
-        {id:'k6',type:'board',boardId:'',x:1330,y:10,w:240,h:180}
+        {id:'k5',type:'board',boardId:'GONE',x:10,y:200,w:260,h:172},
+        {id:'k6',type:'board',boardId:'',x:300,y:200,w:260,h:172}
       ];`);
     const cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`)
-      // A solid WHITE stand-in for the cover: the probe has no network, and
-      // an <img> that never loads would measure the scrim against nothing.
+      // A solid WHITE stand-in for every picture: the probe has no network,
+      // and an <img> that never loads measures as nothing at all.
       .replace(/src="[^"]*cloudinary[^"]*"/g,
         'src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'3\'%3E%3Crect width=\'4\' height=\'3\' fill=\'%23ffffff\'/%3E%3C/svg%3E"');
     // The hover line is opacity:0 until :hover, and the probe cannot hover —
@@ -289,9 +303,9 @@ const FRAGMENTS={
     // most legible thing on the card (white on a dark wash over an unknown
     // photograph) would never be measured at all.
     return Promise.resolve(
-      '<div style="position:relative;overflow:hidden;height:230px;width:100%">'+
+      '<div style="position:relative;overflow:hidden;height:390px;width:100%">'+
         '<div class="board-world" data-lod="near">'+cards+'</div></div>'+
-      '<div style="position:relative;overflow:hidden;height:230px;width:100%;margin-top:12px">'+
+      '<div style="position:relative;overflow:hidden;height:390px;width:100%;margin-top:12px">'+
         '<div class="board-world" data-lod="near" id="hovered">'+cards+'</div></div>'+
       '<style>#hovered .board-subboard-cta{opacity:1}</style>');
   },

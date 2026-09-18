@@ -625,11 +625,11 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
    Milanote's own board looks like at 27%. */
 .board-world[data-lod="far"] .board-text-body,
 .board-world[data-lod="far"] .board-todo-body,
-/* The scrim is a gradient with nothing legible left on it at this zoom —
-   the picture (or the colour and its glyph) is what tells the boards
-   apart, which is the whole reason the card became one. */
-.board-world[data-lod="far"] .board-subboard-scrim,
+/* At this zoom the spine's colour (or its cover) is what tells the boards
+   apart, and the name is the only text still worth painting. The meta line
+   is 13px * 0.25 = 3px, and a 30x22 thumbnail is 7x5 — noise, both. */
 .board-world[data-lod="far"] .board-subboard-meta,
+.board-world[data-lod="far"] .board-subboard-thumbs,
 /* `.board-link-desc` used to be named here and has NEVER existed — the
    class is `.link-desc`, inside `.board-link-meta`. A dead selector in a
    pure-CSS feature has no symptom at all, which is why the far-zoom probe
@@ -1283,29 +1283,23 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-card-el .board-card-body{flex:1 1 auto;min-height:0}
 .board-subboard-title{flex-shrink:0}
 .board-reactions{flex-shrink:0}
-/* ── A board card IS the board's picture (Sept 2026) ──────────────────
-   The body is the picture surface: a cover full bleed, or the board's
-   colour carrying its icon/letter. The name sits on a scrim OVER it.
+/* ── A board card is a SPINE (Sept 2026) ──────────────────────────────
+   Afnan lived with option A (the cover full bleed, the name on a scrim over
+   it) for a day and then picked option D: "i like D spine its perfect".
 
-   THE HEADER OVERLAYS rather than taking a row, and that is the part that
-   makes the design work: a 28px grey strip above the picture is exactly
-   the chrome this replaces. It stays in the DOM — it is the drag handle,
-   the card name and the delete X — and becomes a transparent bar over the
-   top of the picture with a soft gradient so its controls stay legible on
-   a light photo. Only .type-board is changed; every other card keeps the
-   strip it has.
+   The body is a two-column strip — the board's FACE down the left edge, and
+   beside it the whole name, the state and counts, and a row of the board's
+   own thumbnails. A said what a board IS; D also says what is INSIDE it,
+   which is the thing a card of a board is actually for.
 
-   Ink on the scrim is a LITERAL white, and that is correct here: the scrim
-   under it is a literal black gradient, not a token, so the pair moves
-   together in both themes. The rule this file states is that a literal
-   white is only wrong where the background follows the theme. */
-.board-card-el.type-board .board-card-head{position:absolute;top:0;left:0;right:0;z-index:2;
-  background:linear-gradient(to bottom,rgba(0,0,0,.55),rgba(0,0,0,0));
-  border-bottom:none;padding:5px 7px}
-.board-card-el.type-board .board-card-kind,
-.board-card-el.type-board .board-card-name{color:rgba(255,255,255,.88)}
-.board-card-el.type-board .board-card-name:empty::before{color:rgba(255,255,255,.62)}
-.board-subboard-body{position:relative;display:block;padding:0;overflow:hidden}
+   THE HEADER GOES BACK TO BEING A HEADER. Under A it was a transparent bar
+   with literal-white ink floated over the picture, which only worked
+   because the surface under it was a photograph or a solid colour. Here the
+   info column is the ordinary card surface and follows the theme, so white
+   ink would be white-on-white in light mode — the exact failure this file
+   keeps recording. Removing the override is the fix; .type-board now wears
+   the same strip as every other card. */
+.board-subboard-body{position:relative;display:flex;padding:0;overflow:hidden}
 /* ── "Preparing to download…" ─────────────────────────────────────────
    A translucent cover over the card whose download is in flight. It is the
    answer to a real report: the Save-as dialog waits for the whole file (see
@@ -1338,28 +1332,48 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   line-height:1.35;color:#fff;letter-spacing:.01em;
   text-shadow:0 1px 2px rgba(0,0,0,.55)}
 @media (prefers-reduced-motion:reduce){.board-card-busy::after{animation:none}}
-.board-subboard-cover,.board-subboard-fill{position:absolute;inset:0;width:100%;height:100%}
-.board-subboard-cover{object-fit:cover;display:block}
-.board-subboard-fill{display:flex;align-items:center;padding:0 7%}
-.board-subboard-glyph{font-size:52px;font-weight:800;line-height:1;letter-spacing:-.03em}
-/* THE SCRIM IS A SOLID FLOOR, not a fade, and the probe is what settled
-   that. A gradient reports no backgroundColor at all, so white ink over one
-   measures 1:1 — but that was not merely a false positive: a board with no
-   colour set falls back to var(--soft), which in LIGHT mode is #EFEFEF, and
-   white-on-near-white through a fading gradient is genuinely unreadable.
-   A cover photograph can be just as light. So the band carries an opaque
-   background-color the ink is guaranteed against WHATEVER is behind it, the
-   gradient only deepens its foot, and the upper edge is softened with a
-   shadow instead of transparency. */
-.board-subboard-scrim{position:absolute;left:0;right:0;bottom:0;z-index:1;
-  padding:10px 11px 9px;
-  background-color:rgba(0,0,0,.86);
-  background-image:linear-gradient(to top,rgba(0,0,0,.16),rgba(0,0,0,0));
-  box-shadow:0 -16px 20px -12px rgba(0,0,0,.72)}
+/* The spine. 46px at 100% zoom, as the specimen drew it — wide enough to
+   read as the board's colour from across a Home full of them, narrow enough
+   that the name keeps two full lines beside it. It paints the COVER when
+   the board has one: a picture somebody chose for that board is its
+   identity and must not be demoted to a chip in the thumbnail strip, which
+   is for contents. */
+.board-subboard-spine{flex-shrink:0;width:46px;position:relative;overflow:hidden;
+  display:flex;align-items:center;justify-content:center}
+.board-subboard-spine>img{position:absolute;inset:0;width:100%;height:100%;
+  object-fit:cover;display:block}
+.board-subboard-glyph{font-size:28px;font-weight:800;line-height:1;letter-spacing:-.02em}
+.board-subboard-spine.has-cover .board-subboard-glyph{display:none}
+/* The info column — flexing text beside a fixed sibling, the shape that
+   crushed the Profile directory's names to 0px. min-width:0 is here for
+   that reason, but the probe does NOT currently hold that ground and the
+   claim was checked rather than assumed: removing it passes, because the
+   title already carries word-break:break-word and a 2-line clamp, so it
+   wraps instead of refusing to shrink. It stays as the guard for anything
+   added to this column later that does not break. */
+.board-subboard-info{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;
+  gap:5px;padding:10px 11px}
+/* DERIVED from the child board's cards on every render, so it cannot go
+   stale. The +N chip counts the cards the strip could not show. */
+.board-subboard-thumbs{margin-top:auto;display:flex;gap:4px;flex-shrink:0}
+.board-subboard-thumb{width:30px;height:22px;border-radius:4px;overflow:hidden;
+  background:var(--soft);display:flex;align-items:center;justify-content:center}
+.board-subboard-thumb>img{width:100%;height:100%;object-fit:cover;display:block}
+/* 13px, not the 11px the specimen drew: this text is INSIDE a card, so it
+   is multiplied by the board's zoom — the floor card-internal text holds
+   (11px at 84% is 9.2px). The chip widens rather than clipping the number. */
+.board-subboard-more{width:auto;min-width:30px;padding:0 5px;
+  font-size:13px;font-weight:700;color:var(--muted)}
+/* THE NAME AND META TAKE THEIR INK FROM TOKENS, and that is the difference
+   option D makes. Under A they sat on a literal black scrim, where a
+   literal white was correct; here they sit on the ordinary card surface,
+   which INVERTS with the theme, so a literal would be unreadable in one of
+   the two. Two lines, clamped — the whole name, which is what Afnan asked
+   the panel row for and what the specimen showed. */
 .board-subboard-title{font-size:17px;font-weight:800;line-height:1.18;letter-spacing:-.01em;
-  color:#fff;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  color:var(--text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
   overflow:hidden;word-break:break-word}
-.board-subboard-meta{margin-top:2px;font-size:13px;font-weight:600;color:rgba(255,255,255,.74)}
+.board-subboard-meta{font-size:13px;font-weight:600;color:var(--muted)}
 .board-subboard-open{position:absolute;right:8px;bottom:9px;z-index:3;
   background:rgba(255,255,255,.93);color:#111114;border:none;border-radius:7px;
   padding:4px 10px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer}
