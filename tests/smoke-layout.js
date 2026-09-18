@@ -239,6 +239,23 @@ const FRAGMENTS={
   // (620 of room for 611 of tools, a 9px margin) — which is why the first
   // version of this fragment proved nothing and was rewritten rather than
   // kept green.
+  // The regrouped top bar. Seven controls where there were thirteen, and
+  // the hit-test is the point: the View button is the only way to reach
+  // zoom, Fit, Snap and the minimap now, so a View button the browser
+  // cannot actually click takes all four down with it.
+  'boards — the board top bar':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'Winter Drop 2027',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();_editUnsorted=[];moodBoards=[];
+      _boardsMenuOpen=false;_boardsViewOpen=false;`);
+    const full=app.run(`_renderBoardCanvasHTML()`);
+    // Just the bar: the stage below it is a pan/zoom surface with no
+    // intrinsic height, and pulling it in measures nothing useful.
+    const i=full.indexOf('<div class="board-topbar">');
+    const j=full.indexOf('<div class="board-stage"');
+    return Promise.resolve(
+      '<div style="position:relative;width:100%">'+full.slice(i,j)+'</div>');
+  },
   'boards — the tool rail':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};

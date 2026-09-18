@@ -2032,6 +2032,59 @@ not hold that ground. Verified both ways: a row pushed entirely above its
 template literal, so a **backtick in a comment closes it** and the whole
 file stops parsing. Written out again without them.
 
+### Mood Boards — the top bar, regrouped (Sept 2026)
+
+Afnan: "the top menu milanote is polished which ours is not". Ours carried
+**thirteen same-weight `tool-btn`s in one row** — Undo, Redo, Find,
+Comments, Unsorted, ✋, −, %, +, Fit, Map, Snap, ⋯ — so nothing read as
+primary, and **five were already hidden at phone width**, which is the tell
+that the row was over capacity at every width.
+
+Milanote splits its header into identity (breadcrumb), the board title, and
+actions grouped by kind, with everything about how the board is *looked at*
+behind one **View ⌄**. Ours is now
+`Undo Redo │ Find Comments Unsorted │ View·100% │ ⋯` — seven controls.
+
+- **`#board-zoom-readout` keeps its id and moves INSIDE the View button.**
+  `_boardsApplyTransform` writes that element on every pan and zoom;
+  relocating rather than renaming it is what let that function stay
+  completely untouched, and it keeps the zoom reading visible without a
+  control of its own.
+- **The View menu is the SAME `.board-menu` machinery as `⋯`**, not a second
+  popover implementation. `_boardsSyncMenu()` was taught about both, so the
+  **eight** existing `_boardsMenuOpen=false;_boardsSyncMenu()` call sites
+  needed no change at all. Opening one closes the other — two dropdowns in
+  the same corner is the mess this regrouping exists to remove — and a test
+  asserts they can never both be open.
+- **The outside-click closer had to stop trusting `.board-menu-wrap`.** Each
+  menu now lives in its own wrap, so a click inside one must still close the
+  other; the old `closest('.board-menu-wrap') → return` left View open while
+  you used `⋯`. It keeps the "read the DOM, not just the flag" lesson.
+- **Snap is the one View toggle that repaints its own label.** Hand and
+  Minimap both call `_boardsRenderCanvasAndWire()`, which rebuilds the menu
+  with fresh labels and restores its open state through `_boardsSyncMenu()`;
+  Snap does not re-render, and it is a menu row reading "Snap to grid: on"
+  now rather than a bar chip whose state was carried by a class.
+- **The View menu deliberately does NOT close on its own items**, unlike
+  `⋯`. These are view toggles you use in sequence (fit, then zoom out, then
+  snap on); the closer returns early for a click inside the same wrap.
+- **The `⋯` menu's phone-only Fit / Zoom to 100% / Snap entries are gone** —
+  View offers them at every width, and two surfaces for one action is
+  exactly what the rail/selection-bar merge exists to prevent. Board
+  colour/icon stay there on a phone.
+
+**A real bug fixed in passing: the top bar hardcoded the word "Saved".**
+The save indicator was deliberately removed (see "Making it feel instant"),
+and `_boardsSetSaveStatus` does render `''` normally — but **nothing calls
+it on first render**, so every board opened showing a stale "Saved" next to
+its title. Visible in Afnan's screenshot. The span ships empty now.
+
+`tests/smoke-layout.js` gained a top-bar fragment. **Verified both ways** by
+covering the bar with a transparent `::after` overlay: the hit-test names
+every buried control. That check is the one that matters here — the View
+button is now the ONLY route to zoom, Fit, Snap and the minimap, so a View
+button the browser cannot click takes all four down with it.
+
 ### Mood Boards — Home is a board (Sept 2026)
 
 Milanote has no "list of your boards" page: **home IS a board**, and your

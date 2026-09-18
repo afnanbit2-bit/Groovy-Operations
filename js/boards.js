@@ -57,6 +57,7 @@ let _boardsLoadPartial=null;    // set when some queries failed but others worke
 // Stage 4 — find-within-a-board state.
 let _boardsFindOpen=false,_boardsFindQuery='',_boardsFindHits=[],_boardsFindIdx=0,_boardsFindTimer=null;
 let _boardsMenuOpen=false;          // the board "⋯" dropdown in the canvas topbar
+let _boardsViewOpen=false;          // the "View" dropdown beside it
 const _BOARDS_RECENT_KEY='groovy-boards-recent';
 const _BOARDS_RECENT_MAX=8;
 // Minimap default-on; like the snap preference it lives in localStorage
@@ -920,7 +921,7 @@ window.boardsToggleSnap=function(){
   _boardsSnapGrid=!_boardsSnapGrid;
   try{localStorage.setItem('groovy-boards-snap',_boardsSnapGrid?'1':'0');}catch(e){}
   const btn=document.getElementById('board-snap-btn');
-  if(btn)btn.classList.toggle('on',_boardsSnapGrid);
+  if(btn)btn.textContent='Snap to grid: '+(_boardsSnapGrid?'on':'off');
   showToast(_boardsSnapGrid?'Snap to grid on':'Snap to grid off — cards align to each other instead');
 };
 
@@ -1851,7 +1852,7 @@ function _renderBoardCanvasHTML(){
           :`<input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" placeholder="Untitled board" title="Click to rename this board" style="font-size:15.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
         <span class="pill">${visLabel}</span>
         ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}`}
-        ${canEdit?`<span class="board-save-status" id="board-save-status">Saved</span>`:''}
+        ${canEdit?`<span class="board-save-status" id="board-save-status"></span>`:''}
         <span class="board-peers" id="board-peers" style="display:none"></span>
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -1861,21 +1862,32 @@ function _renderBoardCanvasHTML(){
         <button class="tool-btn${_boardsFindOpen?' on':''}" onclick="window.boardsToggleFind()" title="Find cards on this board">Find</button>
         <button class="tool-btn${_boardsDrawerOpen?' on':''}" id="board-cmt-btn" onclick="window.boardsToggleDrawer()" title="Comments and activity on this board">Comments</button>
         <button class="tool-btn${_boardsTrayOpen?' on':''}" onclick="window.boardsToggleTray()" title="Unsorted — things collected but not placed yet">Unsorted${_editUnsorted.length?' '+_editUnsorted.length:''}</button>
-        ${_boardsIsPhone()?'':`<button class="tool-btn${_boardsPanMode?' on':''}" onclick="window.boardsTogglePan()" title="Hand — drag to pan instead of select (or just hold Space)">✋</button>`}
-        <button class="tool-btn" onclick="window.boardsZoomBy(0.8)">−</button>
-        <span class="zoom-readout" id="board-zoom-readout">${Math.round(b.zoom*100)}%</span>
-        <button class="tool-btn" onclick="window.boardsZoomBy(1.25)">+</button>
-        ${_boardsIsPhone()?'':`<button class="tool-btn" id="board-fit-btn" onclick="window.boardsToggleFit()" title="Fit every card on screen">Fit</button>`}
-        ${_boardsIsPhone()?'':`<button class="tool-btn${_boardsMinimapOn?' on':''}" onclick="window.boardsToggleMinimap()" title="Show the minimap">Map</button>`}
-        ${canEdit&&!_boardsIsPhone()?`<button class="tool-btn${_boardsSnapGrid?' on':''}" id="board-snap-btn" onclick="window.boardsToggleSnap()" title="Snap cards to a grid while dragging">Snap</button>`:''}
+        <div class="tool-sep"></div>
+        <!-- View: everything about how the board is LOOKED AT, in one place,
+             the way Milanote groups it. The row used to carry all seven of
+             these at the same visual weight as Comments, which made nothing
+             read as primary. The zoom % rides on the button itself, so the
+             reading stays visible without a control of its own — and
+             #board-zoom-readout keeps its id, so _boardsApplyTransform
+             needs no change at all. -->
+        <div class="board-menu-wrap">
+          <button class="tool-btn${_boardsViewOpen?' on':''}" id="board-view-btn" onclick="window.boardsToggleViewMenu(event)" title="How this board is displayed — zoom, fit, snap, minimap">View <span class="zoom-readout" id="board-zoom-readout">${Math.round(b.zoom*100)}%</span></button>
+          <div class="board-menu" id="board-view-menu" style="display:none">
+            <button id="board-fit-btn" onclick="window.boardsToggleFit()">Fit</button>
+            <button onclick="window.boardsResetView()">Zoom to 100%</button>
+            <button onclick="window.boardsZoomBy(1.25)">Zoom in</button>
+            <button onclick="window.boardsZoomBy(0.8)">Zoom out</button>
+            <div class="board-menu-sep"></div>
+            <button onclick="window.boardsTogglePan()">Hand (drag to pan): ${_boardsPanMode?'on':'off'}</button>
+            ${canEdit?`<button id="board-snap-btn" onclick="window.boardsToggleSnap()">Snap to grid: ${_boardsSnapGrid?'on':'off'}</button>`:''}
+            ${_boardsIsPhone()?'':`<button onclick="window.boardsToggleMinimap()">Minimap: ${_boardsMinimapOn?'on':'off'}</button>`}
+          </div>
+        </div>
         <div class="board-menu-wrap">
           <button class="tool-btn" onclick="window.boardsToggleMenu(event)" title="Board actions">⋯</button>
           <div class="board-menu" id="board-menu" style="display:none">
-            ${_boardsIsPhone()?`<button onclick="window.boardsFitView()">Fit to screen</button>
-            <button onclick="window.boardsResetView()">Zoom to 100%</button>
-            ${canEdit?`<button onclick="window.boardsToggleSnap()">${_boardsSnapGrid?'Snap to grid: on':'Snap to grid: off'}</button>`:''}
-            ${home?'':`<button onclick="window.boardsOpenColorPicker('board','${b.id}')">Board colour…</button>
-            <button onclick="window.boardsOpenIconPicker('${b.id}')">Board icon…</button>`}
+            ${_boardsIsPhone()&&!home?`<button onclick="window.boardsOpenColorPicker('board','${b.id}')">Board colour…</button>
+            <button onclick="window.boardsOpenIconPicker('${b.id}')">Board icon…</button>
             <div class="board-menu-sep"></div>`:''}
             <button onclick="window.boardsShowAll()">All boards${home?'':' (list, templates, trash)'}</button>
             <div class="board-menu-sep"></div>
@@ -6282,21 +6294,49 @@ window.boardsDelete=async function(){
 // full _boardsRenderCanvasAndWire() to open a menu would rebuild every
 // card and redraw every connector on a 46-card board just to show five
 // buttons.
+// Syncs BOTH topbar dropdowns. There are eight `_boardsMenuOpen=false;
+// _boardsSyncMenu()` call sites that close the menu after an action; making
+// this one function drive both means every one of them closes View as well,
+// with no new call site to remember.
 function _boardsSyncMenu(){
   const el=document.getElementById('board-menu');
   if(el)el.style.display=_boardsMenuOpen?'flex':'none';
+  const vw=document.getElementById('board-view-menu');
+  if(vw)vw.style.display=_boardsViewOpen?'flex':'none';
+  const vb=document.getElementById('board-view-btn');
+  if(vb)vb.classList.toggle('on',_boardsViewOpen);
 }
+// Opening one closes the other — two dropdowns open at once in the same
+// corner is the kind of mess this bar was regrouped to remove.
 window.boardsToggleMenu=function(ev){
   if(ev)ev.stopPropagation();
   _boardsMenuOpen=!_boardsMenuOpen;
+  if(_boardsMenuOpen)_boardsViewOpen=false;
+  _boardsSyncMenu();
+};
+window.boardsToggleViewMenu=function(ev){
+  if(ev)ev.stopPropagation();
+  _boardsViewOpen=!_boardsViewOpen;
+  if(_boardsViewOpen)_boardsMenuOpen=false;
   _boardsSyncMenu();
 };
 // Registered once at load, like the paste/keydown handlers — the canvas
 // DOM is replaced on every render, so a listener added there would pile up.
 document.addEventListener('click',e=>{
   const el=document.getElementById('board-menu');
+  const vw=document.getElementById('board-view-menu');
+  if(!el&&!vw)return;
+  // Each menu lives in its OWN .board-menu-wrap, so a click inside one wrap
+  // must still close the other — `closest('.board-menu-wrap')` alone would
+  // leave View open while you used the ⋯ menu.
+  const wrap=e.target&&e.target.closest&&e.target.closest('.board-menu-wrap');
+  if(wrap){
+    if(!wrap.contains(el)&&_boardsMenuOpen){_boardsMenuOpen=false;_boardsSyncMenu();}
+    if(vw&&!wrap.contains(vw)&&_boardsViewOpen){_boardsViewOpen=false;_boardsSyncMenu();}
+    return;
+  }
+  if(vw&&(_boardsViewOpen||vw.style.display!=='none')){_boardsViewOpen=false;_boardsSyncMenu();}
   if(!el)return;
-  if(e.target&&e.target.closest&&e.target.closest('.board-menu-wrap'))return;
   // Read the DOM, not just the flag. Reported as the menu "re-opening
   // unexpectedly": any action that clears `_boardsMenuOpen` without also
   // calling _boardsSyncMenu() (or re-rendering) leaves the menu visible

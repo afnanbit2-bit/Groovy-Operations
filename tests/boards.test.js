@@ -2285,6 +2285,103 @@ module.exports=function(){
     s.ok('and none from the name',html.indexOf('<script')<0);
   }
 
+
+  // ── The top bar, regrouped (Sept 2026) ────────────────────────────────
+  // It carried thirteen same-weight controls in one row, so nothing read as
+  // primary and five of them were already hidden on a phone — the tell that
+  // the row was over capacity at every width. Everything about how the
+  // board is LOOKED AT moved into one View menu, the way Milanote groups it.
+  {
+    const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    const {run,state}=app;
+    const boot=(phone)=>{
+      run(`_editBoard={id:'b1',title:'Winter Drop',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+           _editCards=[];_editConnectors=[];_boardsSelection=new Set();_editUnsorted=[];
+           _boardsMenuOpen=false;_boardsViewOpen=false;_boardsPanMode=false;
+           _boardsSnapGrid=false;_boardsMinimapOn=true;moodBoards=[];`);
+    };
+    boot();
+    const bar=()=>run(`_renderBoardCanvasHTML()`);
+
+    s.section('the view controls left the bar for one View menu');
+    const html=bar();
+    // Each of these used to be its own top-level button in the row.
+    ['board-view-btn','board-view-menu'].forEach(id=>
+      s.ok('the bar carries '+id,html.indexOf('id="'+id+'"')>-1));
+    s.ok('Fit moved into it',/board-view-menu[\s\S]*?id="board-fit-btn"/.test(html));
+    s.ok('Snap too',/board-view-menu[\s\S]*?id="board-snap-btn"/.test(html));
+    s.ok('and the minimap toggle',/board-view-menu[\s\S]*?Minimap:/.test(html));
+    s.ok('the bare ✋ chip is gone from the row',html.indexOf('>✋<')<0);
+
+    s.section('the zoom reading stays visible, and keeps its id');
+    // _boardsApplyTransform writes #board-zoom-readout on every pan and
+    // zoom. Moving it inside the View button rather than renaming it is
+    // what lets that function stay untouched.
+    s.ok('the readout rides the View button',
+      /id="board-view-btn"[\s\S]*?id="board-zoom-readout"[\s\S]*?<\/button>/.test(html));
+    run(`_editBoard.zoom=0.42;_boardsApplyTransform()`);
+    s.eq('and the transform updates it',run(`document.getElementById('board-zoom-readout').textContent`),'42%');
+
+    s.section('the stale "Saved" is gone');
+    // The save indicator was deliberately removed (see "Making it feel
+    // instant"), but the markup still SHIPPED the word, so every board
+    // opened claiming it had just saved.
+    s.ok('the status span is empty in the markup',
+      /id="board-save-status"><\/span>/.test(html),html.slice(html.indexOf('board-save-status')-40,html.indexOf('board-save-status')+60));
+
+    s.section('opening one dropdown closes the other');
+    run(`window.boardsToggleViewMenu(null)`);
+    s.ok('View opens',run(`_boardsViewOpen`));
+    run(`window.boardsToggleMenu(null)`);
+    s.ok('the ⋯ menu takes over',run(`_boardsMenuOpen`));
+    s.ok('and View closed',!run(`_boardsViewOpen`));
+    run(`window.boardsToggleViewMenu(null)`);
+    s.ok('and back the other way',run(`_boardsViewOpen&&!_boardsMenuOpen`));
+
+    s.section('one sync function drives both dropdowns');
+    // Eight call sites already do `_boardsMenuOpen=false;_boardsSyncMenu()`
+    // after an action. Teaching that ONE function about the second menu is
+    // what let all eight stay untouched. It REFLECTS the flags, it does not
+    // clear them — and it does not need to, because the two toggles above
+    // make it impossible for both to be open at once.
+    run(`_boardsMenuOpen=false;_boardsViewOpen=false;_boardsSyncMenu()`);
+    s.eq('both hidden',run(`document.getElementById('board-view-menu').style.display+','+document.getElementById('board-menu').style.display`),'none,none');
+    run(`_boardsViewOpen=true;_boardsSyncMenu()`);
+    s.eq('View shown, ⋯ still hidden',run(`document.getElementById('board-view-menu').style.display+','+document.getElementById('board-menu').style.display`),'flex,none');
+    s.ok('and the View button reads as active',run(`document.getElementById('board-view-btn').classList.contains('on')`));
+    run(`window.boardsToggleMenu(null)`);
+    s.eq('opening ⋯ swaps them',run(`document.getElementById('board-view-menu').style.display+','+document.getElementById('board-menu').style.display`),'none,flex');
+    s.ok('so the two can never both be open',!run(`_boardsMenuOpen&&_boardsViewOpen`));
+
+    s.section('Snap repaints its own label — it does not re-render');
+    // pan and minimap both rebuild the canvas (fresh labels, and
+    // _boardsSyncMenu restores the open state); snap does not, so it is the
+    // one that has to write its own text.
+    boot();
+    run(`_renderBoardCanvasHTML();_boardsSnapGrid=false`);
+    run(`document.getElementById('board-snap-btn').textContent='Snap to grid: off'`);
+    run(`window.boardsToggleSnap()`);
+    s.eq('the label flips',run(`document.getElementById('board-snap-btn').textContent`),'Snap to grid: on');
+    run(`window.boardsToggleSnap()`);
+    s.eq('and back',run(`document.getElementById('board-snap-btn').textContent`),'Snap to grid: off');
+
+    s.section('the ⋯ menu no longer duplicates the view actions on a phone');
+    // It used to carry Fit / Zoom to 100% / Snap at phone width only. View
+    // offers them at every width now, and two surfaces for one action is
+    // exactly what the rail/selection-bar merge exists to prevent.
+    const app2=loadApp({files:FILES,phone:true,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app2.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();_editUnsorted=[];moodBoards=[];
+      _boardsMenuOpen=false;_boardsViewOpen=false;`);
+    const ph=app2.run(`_renderBoardCanvasHTML()`);
+    const menu=ph.slice(ph.indexOf('id="board-menu"'));
+    s.ok('no Fit to screen in the ⋯ menu',menu.indexOf('Fit to screen')<0);
+    s.ok('no second Zoom to 100%',menu.indexOf('Zoom to 100%')<0);
+    s.ok('but View is still there on a phone',ph.indexOf('id="board-view-btn"')>-1);
+    s.ok('and the minimap toggle is NOT offered on a phone',
+      ph.slice(ph.indexOf('board-view-menu')).indexOf('Minimap:')<0);
+  }
+
   // ── a PDF card is sized to its page ─────────────────────────────────────
   // At the 200×110 file default the name row and the Open/Download buttons
   // left the page thumbnail a ~20px strip. Reported with a screenshot of a
