@@ -618,7 +618,15 @@ const FRAGMENTS={
       const fetched=app.bodyHtml('mkt-modal-back');
       app.run("window.mktOpenCreator('')");
       const blank=app.bodyHtml('mkt-modal-back');
-      return page+incomplete+fetched+blank;
+      // The niche tag screen. A row is a flexing name beside fixed-width
+      // buttons inside a modal — the exact shape that rendered every name
+      // in the Profile directory at 0px. The messy tag is in the fragment
+      // so the "needs tidying" chip is measured too.
+      app.run('mktNicheTags=["Streetwear"];mktNicheTagsLoaded=true');
+      app.run('mktCreators=mktCreators.concat([{id:"cr_messy",ig_handle:"x",niche:[String.fromCharCode(34)+"Blogger"+String.fromCharCode(34)]}])');
+      app.run('window.mktOpenNicheTags()');
+      const tags=app.bodyHtml('mkt-modal-back');
+      return page+incomplete+fetched+blank+tags;
     });
   },
 
@@ -823,6 +831,18 @@ if(!browser){
 // or zero-high is invisible to a human no matter what the DOM says.
 const PROBE=`
 const bad=[];
+// An element's class as a STRING. .className on an SVG element is an
+// SVGAnimatedString, which stringifies to "[object SVGAnimatedString]" and
+// names nothing - the exact defect already fixed for the coverer report,
+// still live everywhere else until Sept 2026. getAttribute is the one form
+// that works on both HTML and SVG.
+function clsOf(el,max){
+  if(!el)return '';
+  var c=(el.getAttribute&&el.getAttribute('class'))||'';
+  if(!c&&typeof el.className==='string')c=el.className;
+  return String(c).slice(0,max||50);
+}
+
 function textOfOwn(el){
   let t='';
   el.childNodes.forEach(n=>{if(n.nodeType===3)t+=n.textContent;});
@@ -855,7 +875,7 @@ document.querySelectorAll('#main-content *').forEach(el=>{
   const r=el.getBoundingClientRect();
   if(r.width<1||r.height<1){
     bad.push({why:'invisible text',text:own.slice(0,40),
-      cls:el.className&&el.className.toString().slice(0,60),
+      cls:clsOf(el,60),
       w:Math.round(r.width),h:Math.round(r.height)});
   }
 });
@@ -895,8 +915,8 @@ document.querySelectorAll('#main-content *').forEach(el=>{
   if(outX||outY){
     bad.push({why:'text is clipped completely out of view',
       text:textOfOwn(el).slice(0,40),
-      cls:el.className&&el.className.toString().slice(0,50),
-      clippedBy:(clip.className||clip.tagName).toString().slice(0,50)});
+      cls:clsOf(el,50),
+      clippedBy:(clsOf(clip,50)||String(clip.tagName)).slice(0,50)});
   }
 });
 // Text you cannot READ because it is nearly the same colour as what is
@@ -945,7 +965,7 @@ document.querySelectorAll('#main-content *').forEach(el=>{
     bad.push({why:'text is unreadable against its background',
       text:own.slice(0,34),ratio:Math.round(ratio*100)/100,
       color:cs.color,bg:getComputedStyle(el).backgroundColor,
-      cls:(el.className||'').toString().slice(0,50)});
+      cls:clsOf(el,50)});
   }
 });
 // At FAR zoom a card paints its content and nothing else. This is the
@@ -973,7 +993,7 @@ document.querySelectorAll('.board-world[data-lod="far"]').forEach(world=>{
     const bg=getComputedStyle(el).backgroundColor;
     if(bg&&bg!=='rgba(0, 0, 0, 0)'&&bg!=='transparent'){
       bad.push({why:'a card header still paints a background at far zoom',bg:bg,
-        cls:(el.parentElement&&el.parentElement.className||'').toString().slice(0,40)});
+        cls:clsOf(el.parentElement,40)});
     }
   });
 });
@@ -992,7 +1012,7 @@ document.querySelectorAll('#main-content .board-rail').forEach(el=>{
 document.querySelectorAll('#main-content .card, #main-content [class*="-row"], #main-content [class*="-tile"]').forEach(el=>{
   if(el.scrollWidth>el.clientWidth+2){
     bad.push({why:'overflows its own box',
-      cls:el.className&&el.className.toString().slice(0,60),
+      cls:clsOf(el,60),
       scroll:el.scrollWidth,client:el.clientWidth});
   }
 });
@@ -1013,7 +1033,7 @@ document.querySelectorAll('#main-content button, #main-content [onclick], #main-
   if(r.width<1||r.height<1){
     bad.push({why:'clickable but has no size',
       text:(el.textContent||'').trim().slice(0,30),
-      cls:(el.className||'').toString().slice(0,50)});
+      cls:clsOf(el,50)});
     return;
   }
   if(cs.pointerEvents==='none'){
@@ -1042,8 +1062,8 @@ document.querySelectorAll('#main-content button, #main-content [onclick], #main-
       // (No backticks in this comment: the PROBE is a template literal and
       // one would close it. Documented in CLAUDE.md, and hit anyway.)
       coveredBy:(hit.tagName+'.'+
-        ((hit.getAttribute&&hit.getAttribute('class'))||
-         (hit.closest&&hit.closest('[class]')&&hit.closest('[class]').getAttribute('class'))||'?')
+        (clsOf(hit,70)||
+         (hit.closest&&clsOf(hit.closest('[class]'),70))||'?')
         ).slice(0,70)});
   }
 });

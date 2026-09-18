@@ -82,6 +82,71 @@ const MKT_DEFAULT_SCORING={
   engagement_floor_override:0.01
 };
 
+// ── Sizes (Sept 2026) ───────────────────────────────────────────────────
+// Top and bottom sizes were free text, so the live list holds "medium/30",
+// "34/XL" and every other shape a person types. They are DROPDOWNS now,
+// and a bottom carries TWO values — a garment size and a waist — because
+// squeezing both into one string is what made the free text unreadable.
+//
+// NOTHING IS REWRITTEN IN PLACE. `mktSizeParse` reads the old string when
+// the form opens, so saving that creator migrates it; a value it cannot
+// read is KEPT and shown as "(as typed)", exactly as an off-list city is.
+// That is the same discipline as every other derived-not-stored decision
+// in this file: no migration pass, no way for a failed write to lose a
+// size nobody has looked at yet.
+const MKT_TOP_SIZES=['XXS','XS','S','M','L','XL','XXL'];
+const MKT_BOTTOM_SIZES=['XXXS','XXS','XS','S','M','L','XL','XXL'];
+const MKT_WAIST_SIZES=['26','27','28','29','30','31','32','33','34','35','36','37','38','39','40'];
+// Words and the numeric spellings people actually type. Keys are compared
+// after uppercasing and stripping spaces, dots and hyphens.
+const _MKT_SIZE_ALIAS={
+  EXTRAEXTRASMALL:'XXS',EXTRASMALL:'XS',SMALL:'S',MEDIUM:'M',MED:'M',LARGE:'L',
+  EXTRALARGE:'XL',EXTRAEXTRALARGE:'XXL',
+  '2XS':'XXS','3XS':'XXXS','2XL':'XXL','3XL':'XXXL',
+  XSMALL:'XS',XLARGE:'XL',XXSMALL:'XXS',XXLARGE:'XXL'
+};
+/** A garment size string → an option from `list`, or '' when it is not one. Pure. */
+function mktCanonSize(raw,list){
+  const k=String(raw==null?'':raw).toUpperCase().replace(/[\s.\-_]/g,'');
+  if(!k)return '';
+  const v=_MKT_SIZE_ALIAS[k]||k;
+  return (list||[]).indexOf(v)>=0?v:'';
+}
+/** A waist string → one of MKT_WAIST_SIZES, or '' — a bare number, in inches. Pure. */
+function mktCanonWaist(raw){
+  const m=/^\s*(\d{2})(\s*(in|inch|inches|")?)\s*$/i.exec(String(raw==null?'':raw));
+  if(!m)return '';
+  return MKT_WAIST_SIZES.indexOf(m[1])>=0?m[1]:'';
+}
+/**
+ * Read a stored free-text size. "medium/30" → {size:'M',waist:'30'};
+ * "34/XL" → {size:'XL',waist:'34'}; "large" → {size:'L',waist:''}; and
+ * anything unreadable comes back with `raw` set so the caller can keep it.
+ * Pure — it never writes and never guesses past the two vocabularies.
+ */
+function mktSizeParse(raw,list){
+  const s=String(raw==null?'':raw).trim();
+  const out={size:'',waist:'',raw:s};
+  if(!s)return out;
+  const parts=s.split(/[/,;&+|]| {1,}/).map(x=>x.trim()).filter(Boolean);
+  for(const p of parts){
+    if(!out.size){const g=mktCanonSize(p,list);if(g){out.size=g;continue;}}
+    if(!out.waist){const w=mktCanonWaist(p);if(w){out.waist=w;continue;}}
+  }
+  if(!out.size&&!out.waist){const g=mktCanonSize(s,list);if(g)out.size=g;}
+  return out;
+}
+// A size the dropdown offers wins; otherwise the value survives ONLY when
+// it is the one already stored — so an unreadable old size is never lost,
+// and nothing new can be typed past the list.
+function _mktSizeKeep(parsed,prev,list){
+  if(parsed.size)return parsed.size;
+  const known=mktCanonSize(prev,list);
+  if(known)return '';
+  const p=_mktTrim(prev,20);
+  return p&&_mktTrim(parsed.raw,20)===p?p:'';
+}
+
 const _MKT_PAGE_SIZE=50;
 const _MKT_TIERING_FIELDS=['follower_count','avg_views','avg_likes','avg_comments'];
 const _MKT_COMPLETION_FIELDS=[
@@ -94,6 +159,8 @@ let mktCreators=[];
 let mktCreatorsLoaded=false;
 let _mktLoadErr=null;          // names what failed, or null
 let mktScoringConfig=null;     // the stored doc, or null when never saved
+let mktNicheTags=[];           // the CURATED tag list (marketing_settings/niche_tags)
+let mktNicheTagsLoaded=false;
 let _mktScoringMeta=null;      // {updated_at, updated_by_user_id}
 let _mktFilter={q:'',view:'all',tier:'all',status:'all',page:1};
 let _mktSearchTimer=null;
@@ -258,13 +325,102 @@ function mktMissingFields(c){
   }).map(([,label])=>label);
 }
 
-/** Every niche tag already in use, for the picker. Derived, never stored. */
-function mktNicheLibrary(list){
+/**
+ * The three size fields, from whatever the form or the sheet supplied.
+ * A bottom's waist is taken from the waist field, or read out of the
+ * bottom string when it carries one ("medium/30"); a TOP that carries a
+ * number is almost certainly a mis-entered bottom, so that number fills
+ * the waist rather than being dropped on save. Pure.
+ */
+function mktBuildSizes(f,old){
+  const o=old||{};
+  const top=mktSizeParse(f.top_size,MKT_TOP_SIZES);
+  const bot=mktSizeParse(f.bottom_size,MKT_BOTTOM_SIZES);
+  const waist=mktCanonWaist(f.waist_size)||bot.waist||top.waist||mktCanonWaist(o.waist_size)||'';
+  return{
+    top_size:_mktSizeKeep(top,o.top_size,MKT_TOP_SIZES),
+    bottom_size:_mktSizeKeep(bot,o.bottom_size,MKT_BOTTOM_SIZES),
+    waist_size:waist
+  };
+}
+
+/**
+ * The tag picker's list: the CURATED list first, then the seed, then every
+ * tag any creator still carries. Case-insensitive, first spelling wins.
+ *
+ * It used to be derived only, which had one flaw that made the "Other
+ * tags" box feel broken: a tag typed there lived on that one creator and
+ * nowhere else, so it could not be renamed, could not be tidied, and
+ * vanished from the picker the moment that creator lost it. The curated
+ * half (marketing_settings/niche_tags) is what a tag joins when it is
+ * typed, and what the management screen edits. The derived half stays so
+ * that a tag in use can never be missing from the picker — including
+ * every malformed label the sheet import left behind.
+ */
+function mktNicheLibrary(list,stored){
   const seen=new Map();
-  MKT_NICHE_SEED.concat(...(list||[]).map(c=>Array.isArray(c.niche)?c.niche:[])).forEach(t=>{
-    const k=String(t).toLowerCase();if(t&&!seen.has(k))seen.set(k,t);
+  (stored||[]).concat(MKT_NICHE_SEED).concat(...(list||[]).map(c=>Array.isArray(c.niche)?c.niche:[])).forEach(t=>{
+    const k=String(t).trim().toLowerCase();if(t&&k&&!seen.has(k))seen.set(k,String(t).trim());
   });
   return Array.from(seen.values());
+}
+/** The picker's list for the live page. */
+function _mktLib(){return mktNicheLibrary(typeof mktCreators!=='undefined'?mktCreators:[],mktNicheTags);}
+
+// ── Tag housekeeping (Sept 2026) ────────────────────────────────────────
+// The sheet import left labels carrying stray quotes — `"Blogger"` and
+// `Content Creator"` are both in the live list. A tag is TIDY when it has
+// no quote characters and no doubled whitespace; anything else is offered
+// for a one-click clean-up rather than rewritten behind anyone's back,
+// because renaming a tag rewrites every creator that carries it.
+const _MKT_TAG_JUNK=/[\"'\u2018\u2019\u201c\u201d`]/g;
+/** A tidied spelling of a tag: quotes stripped, whitespace collapsed. Pure. */
+function mktTagTidy(t){return String(t==null?'':t).replace(_MKT_TAG_JUNK,'').replace(/\s+/g,' ').trim();}
+/** True when a tag is not written the way it should be. Pure. */
+function mktTagIsMessy(t){const s=String(t==null?'':t);return !!s.trim()&&mktTagTidy(s)!==s;}
+/**
+ * Every tag, with how many creators carry it and whether it needs tidying.
+ * Derived on every render — there is nothing to keep in step. Pure.
+ */
+function mktTagPlan(creators,stored){
+  const lib=mktNicheLibrary(creators,stored);
+  const counts=new Map();
+  (creators||[]).forEach(c=>(Array.isArray(c.niche)?c.niche:[]).forEach(t=>{
+    const k=String(t).trim().toLowerCase();if(k)counts.set(k,(counts.get(k)||0)+1);
+  }));
+  const curated=new Set((stored||[]).map(t=>String(t).trim().toLowerCase()));
+  const seed=new Set(MKT_NICHE_SEED.map(t=>t.toLowerCase()));
+  return lib.map(t=>({
+    tag:t,
+    count:counts.get(t.toLowerCase())||0,
+    curated:curated.has(t.toLowerCase()),
+    seed:seed.has(t.toLowerCase()),
+    messy:mktTagIsMessy(t),
+    tidy:mktTagTidy(t)
+  }));
+}
+/**
+ * Renaming or removing a tag across the creator list. `to` empty removes
+ * it; a rename onto a tag a creator already carries MERGES rather than
+ * duplicating. Returns only the creators that actually change, so a
+ * rename never writes a document it does not need to. Pure.
+ */
+function mktTagRewrite(creators,from,to){
+  const f=String(from||'').trim().toLowerCase();
+  const t=String(to||'').trim();
+  if(!f)return[];
+  const out=[];
+  (creators||[]).forEach(c=>{
+    const cur=Array.isArray(c.niche)?c.niche:[];
+    if(!cur.some(x=>String(x).trim().toLowerCase()===f))return;
+    const next=[];
+    cur.forEach(x=>{
+      const v=String(x).trim().toLowerCase()===f?t:x;
+      if(v&&!next.some(y=>String(y).trim().toLowerCase()===String(v).trim().toLowerCase()))next.push(v);
+    });
+    out.push({id:c.id,niche:next});
+  });
+  return out;
 }
 
 // Where the tiering numbers came from. 'api' is never taken on the form's
@@ -355,16 +511,18 @@ function mktBuildCreatorPayload(form,existing,rawCfg,now,uid){
     nums[k]=n;
   }
   const old=existing||{};
+  const sizes=mktBuildSizes(f,old);
   const data={
     name:_mktTrim(f.name,80),
     ig_handle:handle,
     tiktok_handle:tiktok,
-    niche:mktNormNiche(f.niche,mktNicheLibrary(typeof mktCreators!=='undefined'?mktCreators:[])),
+    niche:mktNormNiche(f.niche,_mktLib()),
     city:city||(existing&&existing.city===f.city?f.city:''),
     address:_mktTrim(f.address,300),
     phone:_mktTrim(f.phone,30),
-    top_size:_mktTrim(f.top_size,20),
-    bottom_size:_mktTrim(f.bottom_size,20),
+    top_size:sizes.top_size,
+    bottom_size:sizes.bottom_size,
+    waist_size:sizes.waist_size,
     status,
     follower_count:nums.follower_count,
     avg_views:nums.avg_views,
@@ -484,13 +642,14 @@ function _mktPct(r){return r==null?'—':(Math.round(r*1000)/10)+'%';}
 // "Loading must never hang"). Each read settles on its own.
 async function loadMarketingCreators(){
   _mktLoadErr=null;
-  const [cr,cfg,dsp,prq,cod,cmeta]=await Promise.allSettled([
+  const [cr,cfg,dsp,prq,cod,cmeta,tags]=await Promise.allSettled([
     getDocs(collection(db,'creators')),
     getDoc(doc(db,'scoring_config','current')),
     getDocs(collection(db,'dispatches')),
     getDocs(collection(db,'paid_pr_requests')),
     getDocs(collection(db,'discount_codes')),
-    getDoc(doc(db,'shopify_sync_meta','marketing_codes'))
+    getDoc(doc(db,'shopify_sync_meta','marketing_codes')),
+    getDoc(doc(db,'marketing_settings','niche_tags'))
   ]);
   const failed=[];
   if(cr.status==='fulfilled'){
@@ -516,6 +675,15 @@ async function loadMarketingCreators(){
     mktCodesLoaded=true;
   }else{mktCodesLoaded=false;failed.push('discount_codes');console.warn('[marketing] discount codes load failed',cod.reason);}
   if(cmeta.status==='fulfilled'){const m=cmeta.value;_mktCodesMeta=m&&typeof m.exists==='function'&&m.exists()?m.data():null;}
+  // The curated tag list is OPTIONAL — a refused or missing read leaves
+  // the picker exactly as it was before it existed (seed + in use), so
+  // nothing on the creator form depends on it.
+  if(tags.status==='fulfilled'){
+    const t=tags.value;
+    const d=t&&typeof t.exists==='function'&&t.exists()?t.data():null;
+    mktNicheTags=d&&Array.isArray(d.tags)?d.tags.filter(x=>String(x||'').trim()):[];
+    mktNicheTagsLoaded=true;
+  }else{mktNicheTagsLoaded=false;console.warn('[marketing] niche tags load failed',tags.reason);}
   if(failed.length)_mktLoadErr=failed;
   mktCreatorsLoaded=cr.status==='fulfilled';
   // Names for "added by" — the directory is small and its loader cannot reject.
@@ -557,6 +725,7 @@ function renderMarketingCreators(){
       <div class="mkt-actions">
         <button class="btn-outline" onclick="window.showPage('mkt-import')">Import from sheet</button>
         <button class="btn-outline" onclick="window.mktOpenIgBulk()">Fetch all from Instagram</button>
+        <button class="btn-outline" onclick="window.mktOpenNicheTags()">Niche tags</button>
         ${typeof canEditScoring==='function'&&canEditScoring()?`<button class="btn-outline" onclick="window.mktOpenScoring()">Scoring settings</button>`:''}
         <button class="btn-outline mkt-primary" onclick="window.mktOpenCreator('')">+ Add creator</button>
       </div>
@@ -676,12 +845,22 @@ window.mktOpenCreator=function(id){
   const c=id?mktCreators.find(x=>x.id===id):null;
   if(id&&!c){showToast('That creator is no longer in the list — refresh the page.',true);return;}
   const v=k=>_mktEsc(c&&c[k]!=null?c[k]:'');
-  const lib=mktNicheLibrary(mktCreators);
+  const lib=_mktLib();
   const has=t=>!!(c&&(c.niche||[]).some(x=>x.toLowerCase()===t.toLowerCase()));
   const cityKnown=!c||!c.city||MKT_PK_CITIES.indexOf(c.city)>=0;
   const cityOpts=['<option value="">—</option>']
     .concat(cityKnown?[]:[`<option value="${v('city')}" selected>${v('city')} (not on the list)</option>`])
     .concat(MKT_PK_CITIES.map(ct=>`<option value="${_mktEsc(ct)}"${c&&c.city===ct?' selected':''}>${_mktEsc(ct)}</option>`)).join('');
+  // Sizes: the stored free text is READ here, so opening a creator shows
+  // what it means and saving migrates it. Unreadable values are kept.
+  const topP=mktSizeParse(c&&c.top_size,MKT_TOP_SIZES),botP=mktSizeParse(c&&c.bottom_size,MKT_BOTTOM_SIZES);
+  const topNow={size:topP.size,keep:_mktSizeKeep(topP,c&&c.top_size,MKT_TOP_SIZES)};
+  const botNow={size:botP.size,keep:_mktSizeKeep(botP,c&&c.bottom_size,MKT_BOTTOM_SIZES)};
+  const waistNow=mktCanonWaist(c&&c.waist_size)||botP.waist||topP.waist||'';
+  const asTyped=[topNow.keep?'"'+topNow.keep+'" (top)':'',botNow.keep?'"'+botNow.keep+'" (bottom)':''].filter(Boolean);
+  const sizeOpts=(list,cur,keep)=>['<option value="">—</option>']
+    .concat(keep?[`<option value="${_mktEsc(keep)}" selected>${_mktEsc(keep)} (as typed)</option>`]:[])
+    .concat(list.map(s=>`<option value="${s}"${!keep&&cur===s?' selected':''}>${s}</option>`)).join('');
   const srcNow=(c&&c.data_source)||'manual';
   const ovTier=c&&c.tier_is_override?c.tier:'';
   const lifetime=c?`<div class="mkt-section">
@@ -708,7 +887,8 @@ window.mktOpenCreator=function(id){
       </div>
       <div class="field" style="margin-top:10px"><label>Niche</label>
         <div class="mkt-tags" id="mkt-f-niche">${lib.map((t,i)=>`<label class="mkt-tag"><input type="checkbox" id="mkt-f-niche-${i}" value="${_mktEsc(t)}"${has(t)?' checked':''}><span>${_mktEsc(t)}</span></label>`).join('')}</div>
-        <input id="mkt-f-niche-other" placeholder="Other tags, comma-separated" autocomplete="off" style="margin-top:8px">
+        <input id="mkt-f-niche-other" placeholder="Add a new tag, or several separated by commas" autocomplete="off" style="margin-top:8px">
+        <div class="mkt-note">A new tag is added to this creator AND to the tag list, so it is offered to everyone next time. Manage the list with <b>Niche tags</b> on the Creator Database.</div>
       </div>
     </div>
     <div class="mkt-section">
@@ -717,8 +897,10 @@ window.mktOpenCreator=function(id){
         <div class="field"><label for="mkt-f-city">City</label><select id="mkt-f-city">${cityOpts}</select></div>
         <div class="field"><label for="mkt-f-phone">Phone</label><input id="mkt-f-phone" value="${v('phone')}" inputmode="tel" autocomplete="off"></div>
         <div class="field" style="grid-column:1/-1"><label for="mkt-f-address">Address</label><input id="mkt-f-address" value="${v('address')}" autocomplete="off"></div>
-        <div class="field"><label for="mkt-f-top">Top size</label><input id="mkt-f-top" value="${v('top_size')}" autocomplete="off"></div>
-        <div class="field"><label for="mkt-f-bottom">Bottom size</label><input id="mkt-f-bottom" value="${v('bottom_size')}" autocomplete="off"></div>
+        <div class="field"><label for="mkt-f-top">Top size</label><select id="mkt-f-top">${sizeOpts(MKT_TOP_SIZES,topNow.size,topNow.keep)}</select></div>
+        <div class="field"><label for="mkt-f-bottom">Bottom size</label><select id="mkt-f-bottom">${sizeOpts(MKT_BOTTOM_SIZES,botNow.size,botNow.keep)}</select></div>
+        <div class="field"><label for="mkt-f-waist">Waist (bottoms)</label><select id="mkt-f-waist"><option value="">—</option>${MKT_WAIST_SIZES.map(w=>`<option value="${w}"${waistNow===w?' selected':''}>${w}</option>`).join('')}</select></div>
+        ${asTyped.length?`<div class="mkt-note" style="grid-column:1/-1">${_mktEsc(asTyped.join(' and '))} could not be read as a size and ${asTyped.length===1?'is':'are'} kept as typed — pick from the list to tidy ${asTyped.length===1?'it':'them'}.</div>`:''}
       </div>
     </div>
     <div class="mkt-section">
@@ -772,6 +954,7 @@ function _mktReadForm(){
     ig_handle:_mktVal('mkt-f-handle'),name:_mktVal('mkt-f-name'),tiktok_handle:_mktVal('mkt-f-tiktok'),
     status:_mktVal('mkt-f-status'),niche,city:_mktVal('mkt-f-city'),phone:_mktVal('mkt-f-phone'),
     address:_mktVal('mkt-f-address'),top_size:_mktVal('mkt-f-top'),bottom_size:_mktVal('mkt-f-bottom'),
+    waist_size:_mktVal('mkt-f-waist'),
     follower_count:_mktVal('mkt-f-followers'),avg_views:_mktVal('mkt-f-views'),
     avg_likes:_mktVal('mkt-f-likes'),avg_comments:_mktVal('mkt-f-comments'),
     tier_override:_mktVal('mkt-f-override'),tier_override_reason:_mktVal('mkt-f-reason'),
@@ -910,6 +1093,9 @@ window.mktSaveCreator=async function(){
     _mktCloseModal();
     showToast(existing?'Saved @'+built.handle:'Added @'+built.handle);
     if(typeof logActivity==='function')logActivity(existing?'Creator updated':'Creator added','@'+built.handle+(built.data.tier?' · tier '+built.data.tier:''));
+    // A tag typed in "Other tags" joins the managed list. Best effort and
+    // after the save, so it can never turn a saved creator into an error.
+    _mktRememberTags(built.data.niche).then(n=>{if(n)_mktRerenderPage();});
     _mktRerenderPage();
   }catch(e){
     if(e&&e.code==='mkt/duplicate'){
@@ -948,6 +1134,186 @@ async function mktWriteCreator(built){
     else tx.update(creatorRef,built.data);
   });
 }
+
+// ── Niche tags: the managed list ────────────────────────────────────────
+// Anyone in Marketing manages these — it is the Content Ops lead's own
+// vocabulary, not a permission boundary. Renaming and removing REWRITE
+// every creator carrying the tag, in batches, so both actions confirm
+// first and say how many records they touch.
+
+/** The tag list, written whole. Best effort where noted — never blocking. */
+async function _mktWriteTags(tags){
+  await setDoc(doc(db,'marketing_settings','niche_tags'),{
+    tags:tags.slice(0,300),
+    updated_at:Date.now(),
+    updated_by_user_id:(typeof session!=='undefined'&&session&&session.uid)||null
+  });
+  mktNicheTags=tags.slice(0,300);
+  mktNicheTagsLoaded=true;
+}
+
+/**
+ * A tag typed into the creator form's "Other tags" box joins the curated
+ * list, which is what makes that box do something lasting. Best effort:
+ * the creator is already saved, and failing to remember the tag must not
+ * be reported as a failed save.
+ */
+function _mktRememberTags(tags){
+  const have=new Set(mktNicheTags.concat(MKT_NICHE_SEED).map(t=>String(t).trim().toLowerCase()));
+  const add=[];
+  (tags||[]).forEach(t=>{
+    const k=String(t).trim().toLowerCase();
+    if(k&&!have.has(k)){have.add(k);add.push(String(t).trim());}
+  });
+  if(!add.length)return Promise.resolve(0);
+  return _mktWriteTags(mktNicheTags.concat(add)).then(()=>add.length).catch(e=>{
+    console.warn('[marketing] could not remember new niche tags',e);return 0;
+  });
+}
+
+/** Creator rewrites in batches of 400 — a rename can touch the whole list. */
+async function _mktApplyTagRewrite(changes){
+  const now=Date.now();
+  const uid=(typeof session!=='undefined'&&session&&session.uid)||null;
+  for(let i=0;i<changes.length;i+=400){
+    const b=writeBatch(db);
+    changes.slice(i,i+400).forEach(ch=>{
+      b.update(doc(db,'creators',ch.id),{niche:ch.niche,updated_at:now,updated_by_user_id:uid});
+    });
+    await b.commit();
+  }
+  const byId=new Map(changes.map(ch=>[ch.id,ch.niche]));
+  mktCreators=mktCreators.map(c=>byId.has(c.id)?Object.assign({},c,{niche:byId.get(c.id)}):c);
+}
+
+window.mktOpenNicheTags=function(){
+  if(typeof canAccessMarketing!=='function'||!canAccessMarketing()){showToast('Your account cannot manage niche tags.',true);return;}
+  _mktOpenModal(_mktTagsHTML(),true);
+};
+
+function _mktTagsHTML(){
+  const plan=mktTagPlan(mktCreators,mktNicheTags).sort((a,b)=>b.count-a.count||a.tag.localeCompare(b.tag));
+  const messy=plan.filter(t=>t.messy);
+  const rows=plan.map(t=>`<div class="mkt-tagrow">
+      <div class="mkt-tagrow-name"><b>${_mktEsc(t.tag)}</b>
+        <span class="mkt-muted">${t.count} creator${t.count===1?'':'s'}${t.seed?' · built in':(t.curated?'':' · only on creators')}</span>
+        ${t.messy?`<span class="mkt-warnchip">needs tidying → ${_mktEsc(t.tidy)}</span>`:''}</div>
+      <div class="mkt-tagrow-actions">
+        <button class="btn-outline" data-t="${_mktEsc(t.tag)}" onclick="window.mktRenameTag(this.dataset.t)">Rename</button>
+        <button class="btn-outline mkt-danger" data-t="${_mktEsc(t.tag)}" onclick="window.mktDeleteTag(this.dataset.t)">Remove</button>
+      </div>
+    </div>`).join('');
+  return`
+    <h3>Niche tags</h3>
+    <div class="sub">${plan.length} tag${plan.length===1?'':'s'} · renaming or removing one updates every creator that carries it</div>
+    ${mktNicheTagsLoaded?'':'<div class="mkt-warn">The saved tag list could not be read, so this shows the tags creators already carry. Adding or renaming will not stick until it loads.</div>'}
+    <div class="mkt-section">
+      <div class="mkt-section-title">Add a tag</div>
+      <div class="mkt-actions">
+        <input id="mkt-tag-new" placeholder="e.g. Streetwear" autocomplete="off" style="flex:1;min-width:0">
+        <button class="btn-outline mkt-primary" onclick="window.mktAddTag()">Add</button>
+      </div>
+    </div>
+    ${messy.length?`<div class="mkt-section">
+      <div class="mkt-section-title">Tidy up</div>
+      <div class="mkt-note">${messy.length} tag${messy.length===1?'':'s'} carr${messy.length===1?'ies':'y'} stray quotes from the sheet import — ${_mktEsc(messy.map(t=>t.tag).join(', '))}. Tidying rewrites every creator that carries them, merging any that become the same tag.</div>
+      <button class="btn-outline" style="margin-top:8px" onclick="window.mktTidyTags()">Tidy ${messy.length} tag${messy.length===1?'':'s'}</button>
+    </div>`:''}
+    <div class="mkt-section">
+      <div class="mkt-section-title">All tags</div>
+      <div id="mkt-taglist">${rows||'<div class="mkt-note">No tags yet.</div>'}</div>
+    </div>
+    <div id="mkt-f-error" class="mkt-error" hidden></div>
+    <div class="mkt-modal-actions"><button class="btn-outline" onclick="window.mktCloseModal()">Close</button></div>`;
+}
+
+function _mktTagsRepaint(){
+  const back=document.getElementById('mkt-modal-back');
+  if(back)_mktOpenModal(_mktTagsHTML(),true);
+  if(String(typeof currentPage!=='undefined'?currentPage:'')==='mkt-creators')_mktRerenderPage();
+}
+
+window.mktAddTag=async function(){
+  if(_mktSaving)return;
+  const raw=_mktVal('mkt-tag-new');
+  const t=mktTagTidy(raw);
+  if(!t){_mktFormError('Type the tag first.');return;}
+  if(t.length>40){_mktFormError('That tag is too long — keep it under 40 characters.');return;}
+  if(_mktLib().some(x=>x.toLowerCase()===t.toLowerCase())){_mktFormError('"'+t+'" is already on the list.');return;}
+  _mktSaving=true;
+  try{
+    await _mktWriteTags(mktNicheTags.concat([t]));
+    showToast('Added the tag "'+t+'"');
+    _mktTagsRepaint();
+  }catch(e){console.error('[marketing] add tag failed',e);_mktFormError('Could not save the tag list: '+((e&&e.message)||'unknown error')+'.');}
+  finally{_mktSaving=false;}
+};
+
+window.mktRenameTag=async function(tag){
+  if(_mktSaving)return;
+  const from=String(tag||'');
+  const to=mktTagTidy(prompt('Rename "'+from+'" to:',mktTagTidy(from)||from)||'');
+  if(!to||to===from)return;
+  if(to.length>40){showToast('That tag is too long.',true);return;}
+  const changes=mktTagRewrite(mktCreators,from,to);
+  const merging=_mktLib().some(x=>x.toLowerCase()===to.toLowerCase());
+  if(!confirm('Rename "'+from+'" to "'+to+'"?'+(merging?'\n\n"'+to+'" already exists, so the two will be merged.':'')
+      +'\n\nThis updates '+changes.length+' creator'+(changes.length===1?'':'s')+'.'))return;
+  _mktSaving=true;
+  try{
+    await _mktApplyTagRewrite(changes);
+    const kept=mktNicheTags.filter(x=>x.toLowerCase()!==from.toLowerCase());
+    if(!kept.some(x=>x.toLowerCase()===to.toLowerCase()))kept.push(to);
+    await _mktWriteTags(kept);
+    showToast('Renamed to "'+to+'" · '+changes.length+' creator'+(changes.length===1?'':'s')+' updated');
+    if(typeof logActivity==='function')logActivity('Niche tag renamed','"'+from+'" → "'+to+'" · '+changes.length+' creators');
+    _mktTagsRepaint();
+  }catch(e){console.error('[marketing] rename tag failed',e);_mktFormError('Could not rename: '+((e&&e.message)||'unknown error')+'.');}
+  finally{_mktSaving=false;}
+};
+
+window.mktDeleteTag=async function(tag){
+  if(_mktSaving)return;
+  const from=String(tag||'');
+  const changes=mktTagRewrite(mktCreators,from,'');
+  if(!confirm('Remove the tag "'+from+'"?\n\nIt will be taken off '+changes.length+' creator'+(changes.length===1?'':'s')+'. This cannot be undone.'))return;
+  _mktSaving=true;
+  try{
+    await _mktApplyTagRewrite(changes);
+    await _mktWriteTags(mktNicheTags.filter(x=>x.toLowerCase()!==from.toLowerCase()));
+    showToast('Removed "'+from+'" from '+changes.length+' creator'+(changes.length===1?'':'s'));
+    if(typeof logActivity==='function')logActivity('Niche tag removed','"'+from+'" · '+changes.length+' creators');
+    _mktTagsRepaint();
+  }catch(e){console.error('[marketing] delete tag failed',e);_mktFormError('Could not remove the tag: '+((e&&e.message)||'unknown error')+'.');}
+  finally{_mktSaving=false;}
+};
+
+window.mktTidyTags=async function(){
+  if(_mktSaving)return;
+  const messy=mktTagPlan(mktCreators,mktNicheTags).filter(t=>t.messy&&t.tidy);
+  if(!messy.length)return;
+  if(!confirm('Tidy '+messy.length+' tag'+(messy.length===1?'':'s')+'?\n\n'
+      +messy.map(t=>'"'+t.tag+'" → "'+t.tidy+'"').join('\n')+'\n\nEvery creator carrying them is updated.'))return;
+  _mktSaving=true;
+  try{
+    let touched=0;
+    for(const t of messy){
+      const changes=mktTagRewrite(mktCreators,t.tag,t.tidy);
+      await _mktApplyTagRewrite(changes);
+      touched+=changes.length;
+    }
+    let list=mktNicheTags.slice();
+    messy.forEach(t=>{
+      list=list.filter(x=>x.toLowerCase()!==t.tag.toLowerCase());
+      if(!list.some(x=>x.toLowerCase()===t.tidy.toLowerCase()))list.push(t.tidy);
+    });
+    await _mktWriteTags(list);
+    showToast('Tidied '+messy.length+' tag'+(messy.length===1?'':'s')+' · '+touched+' creator update'+(touched===1?'':'s'));
+    if(typeof logActivity==='function')logActivity('Niche tags tidied',messy.map(t=>t.tag+' → '+t.tidy).join(', '));
+    _mktTagsRepaint();
+  }catch(e){console.error('[marketing] tidy tags failed',e);_mktFormError('Could not tidy: '+((e&&e.message)||'unknown error')+'.');}
+  finally{_mktSaving=false;}
+};
 
 // ── Deleting a creator ──────────────────────────────────────────────────
 // Owners and the Content Ops lead — firestore.rules allows a creator delete
@@ -1045,6 +1411,7 @@ function mktCreatorAsForm(c){
   return{
     ig_handle:c.ig_handle,name:c.name||'',tiktok_handle:c.tiktok_handle||'',status:c.status||'active',
     niche:Array.isArray(c.niche)?c.niche.slice():[],city:c.city||'',address:c.address||'',phone:c.phone||'',
+    waist_size:c.waist_size||'',
     top_size:c.top_size||'',bottom_size:c.bottom_size||'',
     follower_count:c.follower_count,avg_views:c.avg_views,avg_likes:c.avg_likes,avg_comments:c.avg_comments,
     tier_override:c.tier_is_override?(c.tier||''):'',tier_override_reason:c.tier_override_reason||'',
@@ -1295,19 +1662,85 @@ window.mktSaveScoring=async function(){
 // points at a creator by id (never a retyped handle) and at Shopify
 // variants by id (never free text).
 
+// The four stages of the flow, IN ORDER — _mktStatusIdx compares against
+// this, which is what decides when shipped_at / content_received_at are
+// stamped. On hold is deliberately NOT one of them: it is a state a
+// dispatch sits in BEFORE it ships (stock or production is not ready),
+// and giving it an index would either stamp shipped_at on a parcel that
+// never left or wedge itself between two stages it does not belong to.
+// _mktStatusIdx therefore answers -1 for it, and every comparison in this
+// file already reads that as "not at this stage yet".
+const _MKT_STATUS_FLOW=['confirmed','in_transit','shipped','content_received'];
+// ── The drops (Sept 2026) ───────────────────────────────────────────────
+// NEWEST FIRST, and deliberately NOT alphabetical — do not re-sort this.
+// Lowkey Heat is the most recent drop and The Owners Drop was the first,
+// so the order IS the affordance: a dispatch is far more likely to be
+// logged against something recent, and that should be the first thing in
+// the list rather than something to scroll past "Afterdark" for.
+//
+// The field used to be free text with a datalist DERIVED from whatever
+// collections were already in use — which is why it offered exactly one
+// option, "Lowkey Heat": that was the only value any dispatch carried.
+const MKT_COLLECTIONS=[
+  'Lowkey Heat',
+  'Sunfaded',
+  'The Aim Drop',
+  'Live In Pants',
+  'The Jerseys Restock',
+  'Drop X',
+  'Rebirth Drop',
+  'Afterdark',
+  'The Originals Drop',
+  'The Ninja Drop',
+  'Vintage Drop',
+  'The Specials',
+  'Cultured Legacy VIII',
+  'Friends of GRVY',
+  'The Owners Drop'
+];
+/**
+ * What the dropdown offers: the known drops IN ORDER, then anything else
+ * already recorded on a dispatch (the sheet import wrote free text, and a
+ * value nobody can select again is a value that quietly disappears the
+ * next time that dispatch is saved). Case-insensitive, and the canonical
+ * spelling always wins. Pure.
+ */
+function mktCollectionOptions(dispatches,current){
+  const seen=new Map();
+  MKT_COLLECTIONS.forEach(c=>seen.set(c.toLowerCase(),c));
+  const extra=[];
+  const add=v=>{
+    const t=String(v==null?'':v).trim();
+    if(!t)return;
+    const k=t.toLowerCase();
+    if(seen.has(k))return;
+    seen.set(k,t);extra.push(t);
+  };
+  (dispatches||[]).forEach(d=>add(d&&d.collection_sent));
+  add(current);
+  return{known:MKT_COLLECTIONS.slice(),extra};
+}
+
 const MKT_DISPATCH_STATUSES=[
   {k:'confirmed',label:'Confirmed'},
   {k:'in_transit',label:'In transit'},
   {k:'shipped',label:'Shipped'},
-  {k:'content_received',label:'Content received'}
+  {k:'content_received',label:'Content received'},
+  // Sept 2026, at Daniyal's request: a dispatch that is agreed but cannot
+  // go out yet. It is excluded from Awaiting content and from the Day-7
+  // count by construction — neither reads a status outside the flow —
+  // and from the no-post reminders, which look for 'shipped'.
+  {k:'on_hold_stock',label:'On Hold — Stock/Production',off_flow:true}
 ];
+/** True for a status that is not a stage of the flow (today: on hold). */
+function mktStatusOffFlow(k){const x=MKT_DISPATCH_STATUSES.find(s=>s.k===k);return !!(x&&x.off_flow);}
 const _MKT_DAY_MS=86400000;
 // A catalog older than this is called out on the picker — the sync is
 // scheduled daily (netlify.toml, 04:00 UTC), so anything past ~30h means a
 // run was missed.
 const _MKT_CATALOG_STALE_MS=30*3600000;
 
-function _mktStatusIdx(k){return MKT_DISPATCH_STATUSES.findIndex(x=>x.k===k);}
+function _mktStatusIdx(k){return _MKT_STATUS_FLOW.indexOf(k);}
 function _mktDispStatusLabel(k){const x=MKT_DISPATCH_STATUSES.find(s=>s.k===k);return x?x.label:'—';}
 
 /** A Firestore Timestamp, a millisecond number or an ISO string → ms, else null. */
@@ -1585,7 +2018,7 @@ function renderMarketingDispatches(){
         <option value="all"${f.status==='all'?' selected':''}>Any status</option>
         ${MKT_DISPATCH_STATUSES.map(x=>`<option value="${x.k}"${f.status===x.k?' selected':''}>${x.label}</option>`).join('')}
         <option value="awaiting"${f.status==='awaiting'?' selected':''}>Awaiting content</option>
-        <option value="day7"${f.status==='day7'?' selected':''}>Day-7 capture due</option>
+        <option value="day7"${f.status==='day7'?' selected':''}>Performance snapshot due (day 7)</option>
       </select>
       <select id="mkt-df-month" class="mkt-select" onchange="window.mktDispFilter('month',this.value)" aria-label="Month">
         <option value="all"${f.month==='all'?' selected':''}>All months</option>
@@ -1606,12 +2039,14 @@ function _mktDispStatsHTML(){
   const out=mktDispatches.filter(d=>d.status==='shipped'||d.status==='in_transit').length;
   const due=mktDispatches.filter(d=>mktDay7(d,now).state==='due').length;
   const recv=mktDispatches.filter(d=>d.status==='content_received').length;
+  const hold=mktDispatches.filter(d=>d.status==='on_hold_stock').length;
   const tile=(label,val,sub,onclick)=>`<button class="mkt-stat" onclick="${onclick}"><span class="mkt-stat-label">${label}</span><span class="mkt-stat-val">${val}</span><span class="mkt-stat-sub">${sub}</span></button>`;
   return`<div class="mkt-stats">
     ${tile('Dispatched this week',thisWeek,'last 7 days, today included',"window.mktDispFilter('month','week')")}
     ${tile('Awaiting content',out,'in transit or shipped',"window.mktDispFilter('status','awaiting')")}
-    ${tile('Day-7 capture due',due,'snapshot not entered',"window.mktDispFilter('status','day7')")}
+    ${tile('Performance snapshot due',due,'7 days after the post',"window.mktDispFilter('status','day7')")}
     ${tile('Content received',recv,`of ${mktDispatches.length} dispatches`,"window.mktDispFilter('status','content_received')")}
+    ${tile('On hold',hold,'stock or production',"window.mktDispFilter('status','on_hold_stock')")}
   </div>`;
 }
 
@@ -1693,7 +2128,7 @@ window.mktOpenDispatch=function(id,creatorId){
   const d=id?mktDispatches.find(x=>x.id===id):null;
   if(id&&!d){showToast('That dispatch is no longer in the list — refresh the page.',true);return;}
   _mktDraft={creatorId:d?d.creator_id:(creatorId||''),products:d?JSON.parse(JSON.stringify(d.products||[])):[]};
-  const collections=Array.from(new Set(mktDispatches.map(x=>x.collection_sent).filter(Boolean))).sort();
+  const collections=mktCollectionOptions(mktDispatches,d?d.collection_sent:'');
   const perf=d&&d.performance_captured_at;
   const d7=d?mktDay7(d,Date.now()):{state:'none'};
   const stamps=d?[d.shipped_at?'Shipped '+_mktWhen(_mktMs(d.shipped_at)):'',d.content_received_at?'content received '+_mktWhen(_mktMs(d.content_received_at)):''].filter(Boolean).join(' · '):'';
@@ -1709,8 +2144,11 @@ window.mktOpenDispatch=function(id,creatorId){
       <div class="mkt-section-title">Shipment</div>
       <div class="form-grid">
         <div class="field"><label for="mkt-d-date">Dispatch date *</label><input id="mkt-d-date" type="date" value="${_mktEsc(d?d.date_of_dispatch||'':_mktDayStr(Date.now()))}"></div>
-        <div class="field"><label for="mkt-d-coll">Collection sent</label><input id="mkt-d-coll" list="mkt-d-coll-list" value="${_mktEsc(d?d.collection_sent||'':'')}" autocomplete="off" placeholder="e.g. Lowkey Heat">
-          <datalist id="mkt-d-coll-list">${collections.map(x=>`<option value="${_mktEsc(x)}"></option>`).join('')}</datalist></div>
+        <div class="field"><label for="mkt-d-coll">Collection sent</label><select id="mkt-d-coll">
+          <option value="">—</option>
+          ${collections.known.map(x=>`<option value="${_mktEsc(x)}"${(d&&d.collection_sent)===x?' selected':''}>${_mktEsc(x)}</option>`).join('')}
+          ${collections.extra.length?`<optgroup label="Recorded earlier">${collections.extra.map(x=>`<option value="${_mktEsc(x)}"${(d&&d.collection_sent)===x?' selected':''}>${_mktEsc(x)}</option>`).join('')}</optgroup>`:''}
+        </select></div>
         <div class="field"><label for="mkt-d-status">Status</label><select id="mkt-d-status">${d&&!d.status?'<option value="" selected>Not recorded (from the sheet)</option>':''}${MKT_DISPATCH_STATUSES.map(x=>`<option value="${x.k}"${(d?d.status:'confirmed')===x.k?' selected':''}>${x.label}</option>`).join('')}</select></div>
         <div class="field"><label for="mkt-d-link">Link to post</label><input id="mkt-d-link" value="${_mktEsc(d?d.link_to_post||'':'')}" placeholder="https://www.instagram.com/p/…" autocomplete="off" inputmode="url"></div>
       </div>
@@ -1733,6 +2171,7 @@ window.mktOpenDispatch=function(id,creatorId){
     </div>`:''}
     <div id="mkt-f-error" class="mkt-error" hidden></div>
     <div class="mkt-modal-actions">
+      ${d&&mktCanDeleteDispatches()&&!mktDispatchDeleteBlock(d,mktCodesLoaded)?`<button class="btn-outline mkt-danger" style="margin-right:auto" id="mkt-d-delete" onclick="window.mktDeleteDispatch()">Delete dispatch</button>`:''}
       <button class="btn-outline" onclick="window.mktCloseModal()">Cancel</button>
       <button class="btn-primary" id="mkt-d-save" onclick="window.mktSaveDispatch()">${d?'Save changes':'Log dispatch'}</button>
     </div>`,true);
@@ -1743,7 +2182,7 @@ window.mktOpenDispatch=function(id,creatorId){
 function _mktDraftCreatorHTML(locked){
   const c=_mktDraft&&_mktDraft.creatorId?_mktCreatorById(_mktDraft.creatorId):null;
   if(c){
-    const sizes=[c.top_size,c.bottom_size].filter(Boolean).join(' / ');
+    const sizes=[c.top_size,c.bottom_size,c.waist_size?'W'+c.waist_size:''].filter(Boolean).join(' / ');
     return`<div class="mkt-pick-chosen"><div><div class="mkt-name">${_mktEsc(c.name||'@'+c.ig_handle)}</div>
       <div class="mkt-handle">@${_mktEsc(c.ig_handle)}${c.city?' · '+_mktEsc(c.city):''}${sizes?' · sizes '+_mktEsc(sizes):''}</div>
       ${c.address||c.phone?`<div class="mkt-note" style="margin-top:2px">${_mktEsc([c.address,c.phone].filter(Boolean).join(' · '))}</div>`:''}</div>
@@ -1826,6 +2265,70 @@ async function mktWriteDispatch(built,rollups,creatorId){
   if(creatorId&&rollups)b.update(doc(db,'creators',creatorId),rollups);
   await b.commit();
 }
+
+// ── Deleting a dispatch (Sept 2026) ─────────────────────────────────────
+// Anyone in Marketing may remove an ORGANIC dispatch they logged in error.
+// Two shapes are refused outright, in the rules as well as here, because
+// each would leave another record pointing at nothing:
+//   · a paid_pr dispatch — it exists only because a Paid PR was approved,
+//     and that request carries its `dispatch_id`. An approved spend is not
+//     something a delete button should be able to unpick.
+//   · a dispatch carrying a discount code — `discount_codes/{id}` names it,
+//     and the redemption rollup counts against it nightly.
+// The creator's rollups are RECOMPUTED from what is left, never
+// decremented — the same rule the save path follows, and the only one that
+// survives an edited date.
+function mktCanDeleteDispatches(){
+  return typeof canAccessMarketing==='function'&&canAccessMarketing();
+}
+/** Why this dispatch cannot be deleted, or '' when it can. Pure. */
+function mktDispatchDeleteBlock(d,codesLoaded){
+  if(!d)return'That dispatch is no longer in the list — refresh the page.';
+  if((d.type||'organic')==='paid_pr')
+    return'This dispatch belongs to an approved Paid PR request, which records the spend and links to it. It cannot be deleted.';
+  if(!codesLoaded)
+    return'The discount codes did not load, so it cannot be checked whether a code points at this dispatch. Reload and try again.';
+  if(d.has_discount_code||d.discount_code_id)
+    return'A discount code was created for this dispatch and counts its redemptions against it. Deleting the dispatch would leave that code pointing at nothing.';
+  return'';
+}
+
+window.mktDeleteDispatch=async function(){
+  if(_mktSaving)return;
+  if(!mktCanDeleteDispatches()){_mktFormError('Your account cannot delete dispatches.');return;}
+  const id=_mktVal('mkt-d-id');
+  const d=id?mktDispatches.find(x=>x.id===id):null;
+  const block=mktDispatchDeleteBlock(d,mktCodesLoaded);
+  if(block){_mktFormError(block);return;}
+  const c=_mktCreatorById(d.creator_id);
+  const what=[c?'@'+c.ig_handle:'',d.date_of_dispatch?_mktDayLabel(d.date_of_dispatch):'no date',
+    (d.products||[]).length?(d.products||[]).length+' product'+((d.products||[]).length===1?'':'s'):(d.products_note||'no products')].filter(Boolean).join(' · ');
+  if(typeof confirm==='function'&&!confirm('Delete this dispatch?\n\n'+what
+    +'\n\nThe creator\u2019s lifetime counts are recalculated without it. This cannot be undone.'))return;
+  const remaining=mktDispatches.filter(x=>x.id!==d.id);
+  const rollups=c?mktCreatorRollups(d.creator_id,remaining,mktPaidPRsLoaded?mktPaidPRs:null):null;
+  const btn=document.getElementById('mkt-d-delete');
+  _mktSaving=true;if(btn){btn.disabled=true;btn.textContent='Deleting\u2026';}
+  try{
+    const b=writeBatch(db);
+    b.delete(doc(db,'dispatches',d.id));
+    if(rollups)b.update(doc(db,'creators',d.creator_id),rollups);
+    await b.commit();
+    mktDispatches=remaining;
+    if(rollups)mktCreators=mktCreators.map(x=>x.id===d.creator_id?Object.assign({},x,rollups):x);
+    _mktDraft=null;
+    _mktCloseModal();
+    showToast('Dispatch deleted'+(c?' for @'+c.ig_handle:''));
+    if(typeof logActivity==='function')logActivity('Dispatch deleted',what);
+    _mktRerenderPage();
+  }catch(e){
+    console.error('[marketing] dispatch delete failed',e);
+    _mktFormError('Could not delete it: '+((e&&e.message)||'unknown error')+'. Nothing was changed.');
+  }finally{
+    _mktSaving=false;
+    if(btn){btn.disabled=false;btn.textContent='Delete dispatch';}
+  }
+};
 
 window.mktSaveDispatch=async function(){
   if(_mktSaving||!_mktDraft)return;
@@ -1933,6 +2436,23 @@ const MKT_PAY_METHODS=['Bank transfer','JazzCash','Easypaisa','Cash','Other'];
 const MKT_PAYMENT_FIELDS=['payment_status','payment_method','payment_reference','payment_date','payment_logged_by_user_id','payment_logged_at','updated_at'];
 // And the only fields a still-pending request may have edited.
 const MKT_PR_EDIT_FIELDS=['deliverable','proposed_amount_pkr','timeline','rationale','updated_at','updated_by_user_id'];
+
+/**
+ * A Paid PR request can be WITHDRAWN while it is still pending, by an
+ * owner or by whoever raised it — and never once it has been decided.
+ * A decided request is the record of a spending decision: the approved
+ * amount can never change (rules), and it must not be able to vanish
+ * either, since the dispatch, the creator's rollups and any discount code
+ * are all built on it. Mirrors the delete clause in firestore.rules.
+ */
+function mktCanDeletePaidPR(r,uid){
+  if(!r||r.status!=='pending')return false;
+  if(typeof canAccessMarketing!=='function'||!canAccessMarketing())return false;
+  // `isOwner()` exists in firestore.rules, NOT in the client — the app
+  // reads session.role, as every other plain role check here does.
+  const owner=typeof session!=='undefined'&&session&&session.role==='owner';
+  return !!(owner||(uid&&r.requested_by_user_id===uid));
+}
 
 function _mktPKR(n){return n==null||!isFinite(n)?'—':'PKR '+Math.round(n).toLocaleString('en-US');}
 function _mktPrStatusLabel(k){const x=MKT_PR_STATUSES.find(s=>s.k===k);return x?x.label:'—';}
@@ -2189,10 +2709,43 @@ window.mktOpenPaidPR=function(id,creatorId){
     ${gate}${decided}${payment}
     <div id="mkt-f-error" class="mkt-error" hidden></div>
     <div class="mkt-modal-actions">
+      ${r&&mktCanDeletePaidPR(r,session&&session.uid)?`<button class="btn-outline mkt-danger" style="margin-right:auto" id="mkt-pr-del" onclick="window.mktDeletePaidPR()">Withdraw request</button>`:''}
       <button class="btn-outline" onclick="window.mktCloseModal()">${editable?'Cancel':'Close'}</button>
       ${editable?`<button class="btn-primary" id="mkt-pr-save" onclick="window.mktSavePaidPR()">${r?'Save changes':'Submit for approval'}</button>`:''}
     </div>`,true);
   if(!r&&!_mktDraft.creatorId)document.getElementById('mkt-d-csearch')?.focus();
+};
+
+window.mktDeletePaidPR=async function(){
+  if(_mktSaving)return;
+  const id=_mktVal('mkt-pr-id');
+  const r=id?mktPaidPRs.find(x=>x.id===id):null;
+  if(!r){_mktFormError('That request is no longer in the list — refresh the page.');return;}
+  if(!mktCanDeletePaidPR(r,session&&session.uid)){
+    _mktFormError(r.status==='pending'
+      ?'Only an owner, or the person who raised it, can withdraw a request.'
+      :'A request that has been decided cannot be withdrawn — it is the record of a spending decision.');
+    return;
+  }
+  const c=_mktCreatorById(r.creator_id);
+  if(!confirm('Withdraw this Paid PR request?\n\n'+(c?'@'+c.ig_handle+' · ':'')+r.deliverable+' · '+_mktPKR(r.proposed_amount_pkr)
+    +'\n\nIt is deleted outright. This cannot be undone.'))return;
+  const btn=document.getElementById('mkt-pr-del');
+  _mktSaving=true;if(btn){btn.disabled=true;btn.textContent='Withdrawing…';}
+  try{
+    await deleteDoc(doc(db,'paid_pr_requests',r.id));
+    mktPaidPRs=mktPaidPRs.filter(x=>x.id!==r.id);
+    _mktCloseModal();
+    showToast('Withdrew the request');
+    if(typeof logActivity==='function')logActivity('Paid PR request withdrawn',(c?'@'+c.ig_handle+' · ':'')+r.deliverable+' · '+_mktPKR(r.proposed_amount_pkr));
+    _mktRerenderPage();
+  }catch(e){
+    console.error('[marketing] withdraw failed',e);
+    _mktFormError('Could not withdraw it: '+((e&&e.message)||'unknown error')+'. Nothing was changed.');
+  }finally{
+    _mktSaving=false;
+    if(btn){btn.disabled=false;btn.textContent='Withdraw request';}
+  }
 };
 
 window.mktSavePaidPR=async function(){
@@ -2639,6 +3192,168 @@ function _mktLoadLineItems(){
 function _mktMonthLabel(key){const [y,m]=key.split('-').map(Number);return new Date(y,m-1,1).toLocaleDateString('en-GB',{month:'long',year:'numeric'});}
 function _mktWhoCell(c){return c?`<div class="mkt-name">${_mktEsc(c.name||'@'+c.ig_handle)}</div><div class="mkt-handle">@${_mktEsc(c.ig_handle)}</div>`:'<span class="mkt-muted">Unknown creator</span>';}
 
+// ════════════════════════════════════════════════════════════════════════
+// M8 — charts on Reports (Sept 2026)
+// ════════════════════════════════════════════════════════════════════════
+// Hand-drawn inline SVG. No charting library: this repo has held the
+// zero-new-deps line everywhere else (the Mood Boards canvas, the formula
+// parser, the colour picker), and five bars and a gridline do not justify
+// the first exception.
+//
+// Three rules the drawing code follows, each of which has bitten this app
+// somewhere else already:
+//
+//   · EVERY COLOUR IS A CSS VARIABLE, never a literal. A chart is chrome,
+//     and a literal hex is the dark-mode bug this codebase keeps shipping
+//     (the SLA panels, the priority chip, .cut-table th). The series
+//     palette maps to the semantic accent tokens, which already invert.
+//   · The SVG scales by `viewBox` and `width:100%`, so nothing depends on
+//     the width it happens to be rendered at — the phone gets the same
+//     chart, not a clipped one.
+//   · LABELS ARE ESCAPED. A creator's name and handle are drawn into the
+//     markup, and `<text>` is as interpolatable as a `<div>`. There is no
+//     `<title>` element anywhere here on purpose: it carries text but has
+//     no box, which the layout probe reads as invisible text — the chart
+//     is described with `role="img"` + `aria-label` instead.
+//
+// A chart NEVER replaces its table. The table is the number; the chart is
+// the shape. Reading one figure off a bar is guesswork, and these are
+// numbers people are paid against.
+
+const _MKT_CHART_W=720;          // viewBox units; the SVG itself is fluid
+const _MKT_SERIES=[
+  {token:'var(--accent-success)'},
+  {token:'var(--accent-warning)'},
+  {token:'var(--accent-urgent)'},
+  {token:'var(--muted)'}
+];
+function _mktSeriesColor(i){return _MKT_SERIES[i%_MKT_SERIES.length].token;}
+/** A short axis number: 45,000 → 45k, 1,200,000 → 1.2m. Pure. */
+function mktChartTick(n){
+  const v=Number(n)||0,a=Math.abs(v);
+  if(a>=1e6)return(Math.round(v/1e5)/10)+'m';
+  if(a>=1e3)return(Math.round(v/100)/10)+'k';
+  return String(Math.round(v));
+}
+/** Long labels are cut with a real ellipsis rather than overrunning. Pure. */
+function mktChartClip(s,max){
+  const t=String(s==null?'':s);
+  return t.length>max?t.slice(0,max-1)+'…':t;
+}
+/**
+ * The top of the axis: the largest value, rounded UP to something round,
+ * so the gridlines read as numbers rather than as fractions of the data.
+ * Always > 0, so an all-zero chart still draws its baseline. Pure.
+ */
+function mktChartMax(values){
+  const m=Math.max(0,...(values||[]).map(v=>Number(v)||0));
+  if(m<=0)return 1;
+  const mag=Math.pow(10,Math.floor(Math.log10(m)));
+  for(const step of [1,1.5,2,2.5,3,4,5,7.5,10]){
+    if(m<=step*mag)return step*mag;
+  }
+  return 10*mag;
+}
+function _mktLegend(series){
+  return`<div class="mkt-legend">${series.map((s,i)=>`<span><i style="background:${_mktSeriesColor(i)}"></i>${_mktEsc(s)}</span>`).join('')}</div>`;
+}
+
+/**
+ * Grouped vertical bars — one group per month, one bar per series.
+ * opts: {groups:[{label,values:[…]}], series:['Approved','Paid out'],
+ *        format:fn, caption:string}
+ */
+function mktChartBars(opts){
+  const o=opts||{},groups=o.groups||[],series=o.series||[];
+  if(!groups.length)return'';
+  const fmt=o.format||mktChartTick;
+  const H=210,padL=54,padR=10,padT=14,padB=34;
+  const plotW=_MKT_CHART_W-padL-padR,plotH=H-padT-padB;
+  const max=mktChartMax(groups.reduce((a,g)=>a.concat(g.values||[]),[]));
+  const band=plotW/groups.length;
+  const barW=Math.min(34,Math.max(6,(band-10)/Math.max(1,series.length)));
+  const y=v=>padT+plotH-(Math.max(0,Number(v)||0)/max)*plotH;
+  const grid=[0,.25,.5,.75,1].map(f=>{
+    const gy=padT+plotH-f*plotH;
+    return`<line x1="${padL}" y1="${gy}" x2="${_MKT_CHART_W-padR}" y2="${gy}" class="mkt-chart-grid"/>`
+      +`<text x="${padL-8}" y="${gy+4}" class="mkt-chart-tick" text-anchor="end">${_mktEsc(fmt(max*f))}</text>`;
+  }).join('');
+  const bars=groups.map((g,gi)=>{
+    const cx=padL+band*gi+band/2;
+    const total=series.length*barW+(series.length-1)*3;
+    return(g.values||[]).map((v,si)=>{
+      const x=cx-total/2+si*(barW+3);
+      const top=y(v),h=Math.max(0,padT+plotH-top);
+      return`<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${_mktSeriesColor(si)}"/>`;
+    }).join('')
+    +`<text x="${cx.toFixed(1)}" y="${H-12}" class="mkt-chart-lab" text-anchor="middle">${_mktEsc(mktChartClip(g.label,10))}</text>`;
+  }).join('');
+  return`<div class="mkt-chart">${series.length>1?_mktLegend(series):''}
+    <svg viewBox="0 0 ${_MKT_CHART_W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${_mktEsc(o.caption||'Bar chart')}">
+      ${grid}${bars}
+      <line x1="${padL}" y1="${padT+plotH}" x2="${_MKT_CHART_W-padR}" y2="${padT+plotH}" class="mkt-chart-axis"/>
+    </svg></div>`;
+}
+
+/**
+ * Ranked horizontal bars — one row per creator, label on the left and the
+ * value at the end of its bar.
+ * opts: {rows:[{label,sub,value}], format:fn, caption:string, series:0}
+ */
+function mktChartHBars(opts){
+  const o=opts||{},rows=o.rows||[];
+  if(!rows.length)return'';
+  const fmt=o.format||mktChartTick;
+  const labW=170,valW=74,rowH=26,padT=6;
+  const H=padT*2+rows.length*rowH;
+  const plotW=_MKT_CHART_W-labW-valW;
+  const max=mktChartMax(rows.map(r=>r.value));
+  const body=rows.map((r,i)=>{
+    const cy=padT+i*rowH,mid=cy+rowH/2;
+    const w=Math.max(2,(Math.max(0,Number(r.value)||0)/max)*plotW);
+    return`<text x="0" y="${mid+4}" class="mkt-chart-lab">${_mktEsc(mktChartClip(r.label,24))}</text>`
+      +`<rect x="${labW}" y="${cy+5}" width="${w.toFixed(1)}" height="${rowH-12}" rx="3" fill="${_mktSeriesColor(o.series||0)}"/>`
+      +`<text x="${_MKT_CHART_W}" y="${mid+4}" class="mkt-chart-val" text-anchor="end">${_mktEsc(fmt(r.value))}</text>`;
+  }).join('');
+  return`<div class="mkt-chart"><svg viewBox="0 0 ${_MKT_CHART_W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${_mktEsc(o.caption||'Ranked bar chart')}">${body}</svg></div>`;
+}
+
+/**
+ * Dispatches per month, split by type. Months with nothing are still
+ * emitted, so a gap in the log reads as a gap rather than closing up —
+ * the whole point of putting this on a time axis. Pure.
+ */
+function mktDispatchActivity(dispatches,months,nowMs){
+  const now=nowMs||Date.now();
+  const n=Math.max(1,months||6);
+  const keys=[];
+  const d0=new Date(now);
+  for(let i=n-1;i>=0;i--){
+    const d=new Date(d0.getFullYear(),d0.getMonth()-i,1);
+    keys.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));
+  }
+  const by=new Map(keys.map(k=>[k,{month:k,organic:0,paid:0,delivered:0}]));
+  (dispatches||[]).forEach(d=>{
+    const key=String(d.date_of_dispatch||'').slice(0,7);
+    const row=by.get(key);
+    if(!row)return;
+    if((d.type||'organic')==='paid_pr')row.paid++;else row.organic++;
+    if(d.status==='content_received'||String(d.link_to_post||'').trim())row.delivered++;
+  });
+  return keys.map(k=>by.get(k));
+}
+
+/** How many creators sit in each tier, in the order the app lists them. Pure. */
+function mktTierDistribution(creators){
+  const order=MKT_TIERS.concat(['unscored']);
+  const counts=new Map(order.map(k=>[k,0]));
+  (creators||[]).forEach(c=>{
+    const t=c&&c.tier&&counts.has(c.tier)?c.tier:'unscored';
+    counts.set(t,counts.get(t)+1);
+  });
+  return order.map(k=>({tier:k,label:k==='unscored'?'Unscored':k==='below_threshold'?'Below threshold':'Tier '+k,count:counts.get(k)}));
+}
+
 function renderMarketingReports(){
   if(typeof canAccessMarketing!=='function'||!canAccessMarketing())
     return'<div class="empty">Reports are limited to the owners and the Creator &amp; Content Operations Lead.</div>';
@@ -2651,20 +3366,70 @@ function renderMarketingReports(){
       <div class="page-sub">The Sales Team ▸ Marketing</div></div>
     </div>
     ${warn}
+    <div class="card"><div class="card-title">Dispatch activity</div>${_mktActivityHTML()}</div>
     <div class="card"><div class="card-title">Monthly PR spend</div>${_mktSpendHTML()}</div>
     <div class="card"><div class="card-title">Top ROI creators — Paid PR only</div>${_mktRoiHTML()}</div>
     <div class="card"><div class="card-title">Best performing — organic</div>${_mktOrganicHTML()}</div>
+    <div class="card"><div class="card-title">Creator tiers</div>${_mktTiersHTML()}</div>
     <div class="card"><div class="card-title">Sales lift on dispatched products</div><div id="mkt-rep-lift">${_mktLiftHTML()}</div></div>
     <div class="card"><div class="card-title">Shopify connection</div><div id="mkt-rep-shopify">${_mktShopifyHTML()}</div></div>
     <div class="card"><div class="card-title">Instagram connection</div><div id="mkt-rep-ig">${_mktIgConnHTML()}</div></div>
     <div style="height:80px"></div>`;
 }
 
+// Dispatches per month. The months picker is per VISIT, not stored — it is
+// how you are looking at the page, not a property of the data.
+let _mktActivityMonths=6;
+function _mktActivityHTML(){
+  if(!mktDispatchesLoaded)return'<div class="mkt-note">The dispatch log could not be read.</div>';
+  if(!mktDispatches.length)return'<div class="mkt-note">No dispatches logged yet.</div>';
+  const rows=mktDispatchActivity(mktDispatches,_mktActivityMonths,Date.now());
+  const picker=`<div class="mkt-chiprow" style="margin-bottom:10px">${[6,12,24].map(n=>`<button class="filter-chip${_mktActivityMonths===n?' active':''}" onclick="window.mktActivityMonths(${n})">Last ${n} months</button>`).join('')}</div>`;
+  const chart=mktChartBars({
+    groups:rows.map(r=>({label:_mktShortMonth(r.month),values:[r.organic,r.paid]})),
+    series:['Organic','Paid PR'],
+    format:n=>String(Math.round(n)),
+    caption:'Dispatches per month, organic against Paid PR'
+  });
+  const tot=rows.reduce((t,r)=>({organic:t.organic+r.organic,paid:t.paid+r.paid,delivered:t.delivered+r.delivered}),{organic:0,paid:0,delivered:0});
+  const sent=tot.organic+tot.paid;
+  const undated=mktDispatches.filter(d=>!String(d.date_of_dispatch||'').trim()).length;
+  return picker+chart+`<div class="mkt-note">${sent} dispatch${sent===1?'':'es'} in this window — ${tot.organic} organic, ${tot.paid} Paid PR — and ${tot.delivered} came back with a post (${sent?Math.round(tot.delivered/sent*100):0}%).`
+    +(undated?` ${undated} dispatch${undated===1?' carries':'es carry'} no date and cannot be placed on this chart.`:'')+`</div>`;
+}
+window.mktActivityMonths=function(n){if([6,12,24].indexOf(n)>=0){_mktActivityMonths=n;_mktRerenderPage();}};
+function _mktShortMonth(key){const [y,m]=String(key).split('-').map(Number);return new Date(y,(m||1)-1,1).toLocaleDateString('en-GB',{month:'short'})+(m===1?' '+String(y).slice(2):'');}
+
+// Creator tiers (new) — the shape of the list, which no table on this page
+// showed. Reads mktCreators, so it needs nothing loaded that the page did
+// not already need.
+function _mktTiersHTML(){
+  if(!mktCreatorsLoaded)return'<div class="mkt-note">The creator list could not be read.</div>';
+  if(!mktCreators.length)return'<div class="mkt-note">No creators yet.</div>';
+  const rows=mktTierDistribution(mktCreators);
+  const chart=mktChartHBars({
+    rows:rows.map(r=>({label:r.label,value:r.count})),
+    format:n=>String(Math.round(n)),
+    caption:'How many creators sit in each tier',
+    series:3
+  });
+  const unscored=(rows.find(r=>r.tier==='unscored')||{}).count||0;
+  return chart+`<div class="mkt-note">${mktCreators.length} creator${mktCreators.length===1?'':'s'} in the database.`
+    +(unscored?` ${unscored} ${unscored===1?'has':'have'} no tier yet — they are missing followers, avg likes or avg comments, and are listed under <b>Needs completion</b> on the Creator Database.`:'')+`</div>`;
+}
+
 function _mktSpendHTML(){
   const rows=mktMonthlySpend(mktPaidPRs);
   if(!rows.length)return'<div class="mkt-note">No approved Paid PRs yet.</div>';
   const tot=rows.reduce((t,r)=>({count:t.count+r.count,approved:t.approved+r.approved,paid:t.paid+r.paid,unpaid:t.unpaid+r.unpaid}),{count:0,approved:0,paid:0,unpaid:0});
-  return`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
+  // Oldest first for the chart — a time axis reads left to right — while
+  // the table below stays newest first, which is how a list is read.
+  const chart=mktChartBars({
+    groups:rows.slice(0,12).reverse().map(r=>({label:_mktShortMonth(r.month),values:[r.approved,r.paid]})),
+    series:['Approved','Paid out'],
+    caption:'Approved Paid PR spend against what has been paid out, by month'
+  });
+  return chart+`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
     <thead><tr><th>Month approved</th><th class="num">Paid PRs</th><th class="num">Approved</th><th class="num">Paid out</th><th class="num">Not yet paid</th></tr></thead>
     <tbody>${rows.map(r=>`<tr><td>${_mktMonthLabel(r.month)}</td><td class="num" data-label="Paid PRs">${r.count}</td><td class="num" data-label="Approved">${_mktPKR(r.approved)}</td><td class="num" data-label="Paid out">${_mktPKR(r.paid)}</td><td class="num" data-label="Not yet paid">${r.unpaid?`<span class="mkt-pay-unpaid">${_mktPKR(r.unpaid)}</span>`:_mktPKR(0)}</td></tr>`).join('')}
     <tr class="mkt-total"><td>Total</td><td class="num" data-label="Paid PRs">${tot.count}</td><td class="num" data-label="Approved">${_mktPKR(tot.approved)}</td><td class="num" data-label="Paid out">${_mktPKR(tot.paid)}</td><td class="num" data-label="Not yet paid">${_mktPKR(tot.unpaid)}</td></tr></tbody>
@@ -2675,12 +3440,21 @@ function _mktRoiHTML(){
   const haveCodes=mktCodesLoaded&&mktCodes.some(c=>c.dispatch_type==='paid_pr');
   const rows=mktPaidRoi(mktPaidPRs,mktCreators,haveCodes?mktRevenueByCreator(mktCodes,'paid_pr'):null);
   if(!rows.length)return'<div class="mkt-note">No approved Paid PRs yet.</div>';
-  if(haveCodes)return`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
+  // With codes the bars are the RATIO, which is the thing being ranked;
+  // without them they are spend, and the warning above says so.
+  const chart=mktChartHBars({
+    rows:rows.slice(0,10).map(r=>({label:r.creator?(r.creator.name||'@'+r.creator.ig_handle):'Unknown creator',
+      value:haveCodes?(r.roi==null?0:r.roi):r.spend})),
+    format:haveCodes?(n=>(Math.round(n*100)/100)+'×'):_mktPKR,
+    caption:haveCodes?'Paid PR creators by return on spend':'Paid PR creators by approved spend',
+    series:haveCodes?0:2
+  });
+  if(haveCodes)return chart+`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
     <thead><tr><th>Creator</th><th class="num">Paid PRs</th><th class="num">Spend</th><th class="num">Attributed revenue</th><th class="num">ROI</th></tr></thead>
     <tbody>${rows.map(r=>`<tr><td class="mkt-c-who">${_mktWhoCell(r.creator)}</td><td class="num" data-label="Paid PRs">${r.paidPrs}</td><td class="num" data-label="Spend">${_mktPKR(r.spend)}</td><td class="num" data-label="Revenue">${_mktPKR(r.revenue)}</td><td class="num" data-label="ROI">${r.roi==null?'—':`<b class="${r.roi>=1?'mkt-up':'mkt-down'}">${r.roi}×</b>`}</td></tr>`).join('')}</tbody>
   </table></div><div class="mkt-note">ROI = revenue from orders that used the creator's Paid PR codes ÷ approved Paid PR spend. Revenue is recounted nightly${_mktCodesMeta&&_mktCodesMeta.last_run_at?' (last: '+_mktWhen(_mktCodesMeta.last_run_at)+')':''}; a refund made after an order was synced is not deducted.</div>`;
   return`<div class="mkt-warn">ROI needs the revenue from each creator's Paid PR discount code, and no Paid PR has a code yet. Until one does, this ranks creators by Paid PR spend — it is not an ROI ranking.</div>
-  <div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
+  `+chart+`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
     <thead><tr><th>Creator</th><th class="num">Paid PRs</th><th class="num">Spend</th><th class="num">Attributed revenue</th><th class="num">ROI</th></tr></thead>
     <tbody>${rows.map(r=>`<tr><td class="mkt-c-who">${_mktWhoCell(r.creator)}</td><td class="num" data-label="Paid PRs">${r.paidPrs}</td><td class="num" data-label="Spend">${_mktPKR(r.spend)}</td><td class="num" data-label="Revenue"><span class="mkt-muted">not measurable yet</span></td><td class="num" data-label="ROI"><span class="mkt-muted">—</span></td></tr>`).join('')}</tbody>
   </table></div>`;
@@ -2690,7 +3464,14 @@ function _mktOrganicHTML(){
   const rows=mktOrganicPerformance(mktDispatches,mktCreators,_mktOrganicSort);
   const toggle=`<div class="mkt-chiprow" style="margin-bottom:10px"><button class="filter-chip${_mktOrganicSort==='views'?' active':''}" onclick="window.mktOrganicSort('views')">By reach (avg views)</button><button class="filter-chip${_mktOrganicSort==='engagement'?' active':''}" onclick="window.mktOrganicSort('engagement')">By engagement</button></div>`;
   if(!rows.length)return toggle+'<div class="mkt-note">No Day-7 captures on organic dispatches yet.</div>';
-  return toggle+`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
+  const chart=mktChartHBars({
+    rows:rows.slice(0,10).map(r=>({label:r.creator?(r.creator.name||'@'+r.creator.ig_handle):'Unknown creator',
+      value:_mktOrganicSort==='engagement'?Math.round(r.engagementRate*1000)/10:r.avgViews})),
+    format:_mktOrganicSort==='engagement'?(n=>(Math.round(n*10)/10)+'%'):mktChartTick,
+    caption:_mktOrganicSort==='engagement'?'Top creators by engagement rate':'Top creators by average views',
+    series:_mktOrganicSort==='engagement'?1:0
+  });
+  return toggle+chart+`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
     <thead><tr><th>#</th><th>Creator</th><th class="num">Posts captured</th><th class="num">Avg views</th><th class="num">Engagement</th></tr></thead>
     <tbody>${rows.slice(0,25).map((r,i)=>`<tr><td class="num">${i+1}</td><td class="mkt-c-who">${_mktWhoCell(r.creator)}</td><td class="num" data-label="Posts">${r.posts}</td><td class="num" data-label="Avg views">${_mktFmtNum(r.avgViews)}</td><td class="num" data-label="Engagement">${_mktPct(r.engagementRate)}</td></tr>`).join('')}</tbody>
   </table></div><div class="mkt-note">From the Day-7 snapshots. Engagement = (likes + comments + saves) ÷ views. Organic dispatches carry no cost, so this is performance, not ROI.</div>`;
@@ -2761,6 +3542,7 @@ function _mktHeaderKey(h){
   const k=String(h||'').toLowerCase().replace(/[^a-z]/g,'');
   return({tier:'tier',name:'name',ighandle:'ig_handle',handle:'ig_handle',instagram:'ig_handle',niche:'niche',city:'city',
     address:'address',phone:'phone',phoneno:'phone',topsize:'top_size',bottomsize:'bottom_size',
+    waist:'waist_size',waistsize:'waist_size',
     dateofdispatch:'date',date:'date',collectionsent:'collection',collection:'collection',
     productssent:'products',products:'products',status:'status',linktopost:'link',link:'link'})[k]||'';
 }
@@ -2797,6 +3579,7 @@ function mktParseMasterRecord(rec){
     address:_mktTrim(rec.address,300),
     phone:_mktTrim(rec.phone,30),
     top_size:_mktTrim(rec.top_size,20),
+    waist_size:_mktTrim(rec.waist_size,20),
     bottom_size:_mktTrim(rec.bottom_size,20),
     sheetTier:_mktTrim(rec.tier,20)
   };
@@ -2809,7 +3592,7 @@ function mktParseMasterRecord(rec){
     const sug=/\s/.test(n)?'':mktNormHandle(n);
     if(sug){out.problem='handle is in the Name column';out.suggestedHandle=sug;}
     // A row holding nothing but the old tier letter has nothing to import.
-    const content=['name','niche','city','address','phone','top_size','bottom_size'].some(k=>String(rec[k]==null?'':rec[k]).trim());
+    const content=['name','niche','city','address','phone','top_size','bottom_size','waist_size'].some(k=>String(rec[k]==null?'':rec[k]).trim());
     if(!content){out.problem='empty apart from the old tier letter';out.empty=true;}
   }
   return out;
@@ -3092,7 +3875,8 @@ window.mktImportRun=async function(){
     for(const r of rows){
       const now=Date.now();
       const built=mktBuildCreatorPayload({ig_handle:r.handle,name:r.name,niche:r.niche,city:r.cityUnmatched?'':r.city,
-        address:r.address,phone:r.phone,top_size:r.top_size,bottom_size:r.bottom_size,status:'active'},null,mktScoringConfig,now,uid);
+        address:r.address,phone:r.phone,top_size:r.top_size,bottom_size:r.bottom_size,
+        waist_size:r.waist_size,status:'active'},null,mktScoringConfig,now,uid);
       if(built.error){failed++;say('row '+r.row+' @'+r.handle+': '+built.error);continue;}
       if(r.cityUnmatched)built.data.city=r.city;
       built.data.imported_from=MKT_IMPORT_SOURCE;

@@ -49,10 +49,10 @@ async function loadActivity(){
 // script that validated this against every real logActivity() string).
 const _MONITOR_CATEGORIES=[
   {key:'auth',   label:'Sign-in',        color:'#6b7280', icon:'🔑', match:a=>/^Login$/.test(a)||/^Password/.test(a)},
-  {key:'delete', label:'Delete',         color:'#dc2626', icon:'🗑️', match:a=>/delet|remov|cleared|cleanup/i.test(a)},
+  {key:'delete', label:'Delete',         color:'#dc2626', icon:'🗑️', match:a=>/delet|remov|cleared|cleanup|withdraw/i.test(a)},
   {key:'money',  label:'Approve / Money',color:'#059669', icon:'💰', match:a=>/approv|rejected|paid|processed|^Loan |^Advance |withhold|billing/i.test(a)},
-  {key:'edit',   label:'Edit',           color:'#d97706', icon:'✎',  match:a=>/edit|correct|override|renamed|dedup|overwritten|reconstructed|policy chang/i.test(a)},
-  {key:'create', label:'Create',         color:'#2563eb', icon:'➕', match:a=>/^Fabric In$|created|issued|added|submitted|reserved|restocked|reported|import|recorded/i.test(a)},
+  {key:'edit',   label:'Edit',           color:'#d97706', icon:'✎',  match:a=>/edit|correct|override|renamed|updated|fetched|tidied|dedup|overwritten|reconstructed|policy chang/i.test(a)},
+  {key:'create', label:'Create',         color:'#2563eb', icon:'➕', match:a=>/^Fabric In$|created|issued|added|submitted|reserved|restocked|reported|import|recorded|logged|captured/i.test(a)},
   {key:'other',  label:'Process',        color:'#7c3aed', icon:'⚙️', match:()=>true}
 ];
 function _monitorCategorize(action){
@@ -60,18 +60,49 @@ function _monitorCategorize(action){
   return _MONITOR_CATEGORIES[_MONITOR_CATEGORIES.length-1];
 }
 
-// Rows matching this action set, from this specific person, get the red
-// ⚠ marker — his Sept 2026 grants. Scoped to him and these actions only;
-// not a blanket flag on every owner-level action by anyone. If another
-// grant like this happens later, add its logActivity() string(s) here and
-// widen _MONITOR_WATCH_USER to an array if watching more than one person.
+// Rows matching this action set, from one of these people, get the red
+// ⚠ marker. Scoped to them and these actions only — not a blanket flag on
+// every owner-level action by anyone.
+//
+// It was a single name until Sept 2026, when Marketing gained deletes
+// (a dispatch, a creator, a pending Paid PR, a niche tag). Those remove
+// business records that reports and rollups are built on, and they are
+// done by an account that is not an owner, which is exactly what this
+// panel exists to surface. **It is a LIST now** — the CLAUDE.md note said
+// several places assumed a string, and each of those is a call to
+// _monitorIsWatched / _monitorWatchLabel below.
 const _MONITOR_WATCH_ACTIONS=new Set([
   'Fabric In deleted','Fabric In edited','Fabric roll deleted','Fabric roll edited',
   'Fabric corrected','Fabric issue deleted','Fabric issue edited','Fabric issues cleared',
   'Loan created','Loan paused','Loan resumed',
-  'Payslip override','Payslip paid'
+  'Payslip override','Payslip paid',
+  // Marketing (Sept 2026) — removals only. Logging and editing a dispatch
+  // are ordinary daily work and are deliberately NOT watched.
+  'Dispatch deleted','Creator deleted','Paid PR request withdrawn','Niche tag removed'
 ]);
-const _MONITOR_WATCH_USER='Mustafa';
+// By USERNAME, with the display name kept only for matching rows written
+// before logActivity started carrying `u` (see Profiles in CLAUDE.md).
+const _MONITOR_WATCH_USERS=['mustafa','daniyal'];
+/** Is this activity row one of the watched people? Pure. */
+function _monitorIsWatchedUser(a){
+  if(!a)return false;
+  if(a.u)return _MONITOR_WATCH_USERS.indexOf(a.u)>=0;
+  const defs=(typeof USER_DEFS!=='undefined'?USER_DEFS:[]);
+  return _MONITOR_WATCH_USERS.some(u=>{
+    const d=defs.find(x=>x.u===u);
+    return !!(d&&d.name===a.user);
+  });
+}
+/** A watched row: the right person AND one of the watched actions. Pure. */
+function _monitorIsWatched(a){
+  return !!a&&_MONITOR_WATCH_ACTIONS.has(a.action)&&_monitorIsWatchedUser(a);
+}
+/** "Mustafa and Daniyal Tufail" — for the panel headings. */
+function _monitorWatchLabel(){
+  const defs=(typeof USER_DEFS!=='undefined'?USER_DEFS:[]);
+  const names=_MONITOR_WATCH_USERS.map(u=>{const d=defs.find(x=>x.u===u);return d?d.name:u;});
+  return names.length<2?(names[0]||''):names.slice(0,-1).join(', ')+' and '+names[names.length-1];
+}
 const _MONITOR_FETCH_LIMIT=1000; // single orderBy('ts','desc') query, no composite index needed
 const _MONITOR_WATCHED_PANEL_CAP=8;
 
@@ -193,7 +224,7 @@ function _monitorOverviewHTML(rangeItems){
     if(!byUser.has(key))byUser.set(key,[]);
     byUser.get(key).push(a);
   }
-  const watchedItems=rangeItems.filter(a=>a.user===_MONITOR_WATCH_USER&&_MONITOR_WATCH_ACTIONS.has(a.action));
+  const watchedItems=rangeItems.filter(_monitorIsWatched);
   const activePeople=byUser.size;
 
   const statsHTML=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
@@ -207,21 +238,21 @@ function _monitorOverviewHTML(rangeItems){
     </div>
     <div class="card" style="flex:1;min-width:120px;text-align:center;padding:14px 10px;${watchedItems.length?'border:1px solid var(--accent-urgent);background:var(--accent-urgent-soft)':''}">
       <div style="font-size:23px;font-weight:800;color:${watchedItems.length?'#dc2626':'inherit'}">${watchedItems.length}</div>
-      <div style="font-size:12px;color:${watchedItems.length?'#dc2626':'var(--muted)'};margin-top:2px;font-weight:${watchedItems.length?'700':'400'}">Watched (${_MONITOR_WATCH_USER})</div>
+      <div style="font-size:12px;color:${watchedItems.length?'#dc2626':'var(--muted)'};margin-top:2px;font-weight:${watchedItems.length?'700':'400'}">Watched (${_monitorEsc(_monitorWatchLabel())})</div>
     </div>
   </div>`;
 
   const watchedPanel=watchedItems.length?`<div class="card" style="margin-bottom:14px;border:1px solid var(--accent-urgent);background:var(--accent-urgent-soft)">
-    <div style="font-weight:700;font-size:14px;color:var(--accent-urgent);margin-bottom:8px">⚠ Recent watched activity — ${_MONITOR_WATCH_USER}</div>
+    <div style="font-weight:700;font-size:14px;color:var(--accent-urgent);margin-bottom:8px">⚠ Recent watched activity — ${_monitorEsc(_monitorWatchLabel())}</div>
     ${watchedItems.slice(0,_MONITOR_WATCHED_PANEL_CAP).map(a=>{
       const cat=_monitorCategorize(a.action);
-      return`<div style="cursor:pointer;padding:7px 0;border-bottom:1px solid var(--accent-urgent)" onclick="window.monitorOpenPerson('${_monitorEsc(_MONITOR_WATCH_USER)}')">
+      return`<div style="cursor:pointer;padding:7px 0;border-bottom:1px solid var(--accent-urgent)" onclick="window.monitorOpenPerson('${_monitorEsc(a.user||'')}')">
         <div style="font-size:13px">${cat.icon} <strong>${_monitorEsc(a.action||'')}</strong></div>
         <div style="font-size:12px;color:var(--muted)">${_monitorEsc(a.detail||'')}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:1px">${_monitorFmtTime(a)}</div>
       </div>`;
     }).join('')}
-    ${watchedItems.length>_MONITOR_WATCHED_PANEL_CAP?`<div style="font-size:12px;color:var(--muted);padding-top:6px">+${watchedItems.length-_MONITOR_WATCHED_PANEL_CAP} more — open ${_MONITOR_WATCH_USER}'s profile to see all</div>`:''}
+    ${watchedItems.length>_MONITOR_WATCHED_PANEL_CAP?`<div style="font-size:12px;color:var(--muted);padding-top:6px">+${watchedItems.length-_MONITOR_WATCHED_PANEL_CAP} more — open the person's card below to see all</div>`:''}
   </div>`:'';
 
   const searchHTML=`<div style="margin-bottom:14px"><input id="mon-search" value="${_monitorEsc(_monitorSearch)}" placeholder="Search people…" oninput="window.monitorSearchInput(this.value)" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;outline:none"></div>`;
@@ -244,7 +275,7 @@ function _monitorOverviewHTML(rangeItems){
     const catCounts=new Map();
     for(const a of actions){const c=_monitorCategorize(a.action);catCounts.set(c.key,(catCounts.get(c.key)||0)+1);}
     const chips=_MONITOR_CATEGORIES.filter(c=>catCounts.has(c.key)).map(c=>`<span style="font-size:11px;color:${c.color};font-weight:600;background:${c.color}18;padding:2px 7px;border-radius:10px;margin-right:4px">${c.icon} ${catCounts.get(c.key)}</span>`).join('');
-    const watchedN=name===_MONITOR_WATCH_USER?actions.filter(a=>_MONITOR_WATCH_ACTIONS.has(a.action)).length:0;
+    const watchedN=actions.filter(_monitorIsWatched).length;
     return`<div class="card" style="margin-bottom:10px;cursor:pointer;${watchedN?'border:1px solid var(--accent-urgent)':''}" onclick="window.monitorOpenPerson('${_monitorEsc(name)}')">
       <div style="display:flex;align-items:center;gap:10px">
         ${_monitorAvatar(name)}
@@ -288,7 +319,7 @@ function _monitorDrilldownHTML(rangeItems){
   }
 
   const entryRow=(a)=>{
-    const flagged=name===_MONITOR_WATCH_USER&&_MONITOR_WATCH_ACTIONS.has(a.action);
+    const flagged=_monitorIsWatched(a);
     const expanded=_monitorExpanded.has(a._id);
     return`<div style="padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;${flagged?'border-left:3px solid #dc2626;padding-left:8px;background:var(--accent-urgent-soft)':''}" onclick="window.monitorToggleEntry('${a._id}')">
       <div style="font-size:14px">${flagged?'<span style="color:var(--accent-urgent);font-weight:700">⚠ </span>':''}${_monitorEsc(a.action||'')}<span style="color:var(--muted);float:right;font-size:12px">${expanded?'▾':'▸'}</span></div>
@@ -380,10 +411,10 @@ async function _monitorPopulateDashboard(){
     const dayStart=new Date();dayStart.setHours(0,0,0,0);
     const snap=await _monitorWithTimeout(getDocs(query(collection(db,'activity'),orderBy('ts','desc'),limit(300))),12000);
     const items=snap.docs.map(d=>d.data()).filter(a=>a.ts>=dayStart.getTime());
-    const watched=items.filter(a=>a.user===_MONITOR_WATCH_USER&&_MONITOR_WATCH_ACTIONS.has(a.action));
+    const watched=items.filter(_monitorIsWatched);
     const activePeople=new Set(items.map(a=>a.user)).size;
     body.innerHTML=watched.length
-      ?`<span style="color:var(--accent-urgent);font-weight:700">⚠ ${watched.length} watched action${watched.length===1?'':'s'} from ${_MONITOR_WATCH_USER} today</span> · ${items.length} total · ${activePeople} active`
+      ?`<span style="color:var(--accent-urgent);font-weight:700">⚠ ${watched.length} watched action${watched.length===1?'':'s'} today</span> · ${items.length} total · ${activePeople} active`
       :`${items.length} action${items.length===1?'':'s'} today · ${activePeople} active · no watched activity`;
   }catch(e){
     const timedOut=e&&e.message==='timeout';

@@ -3854,6 +3854,215 @@ page's "Check Shopify access", which asks Shopify directly).
   (`mktIgBulkPlan(..,{repair:true})`) re-fetches creators whose tiering
   numbers are incomplete, ignoring the 24h skip, and reports how many
   Instagram still will not complete so those can be typed in by hand.
+### Marketing — the field round (18 Sept 2026)
+
+Five of the eight findings in Daniyal's report, shipped together because
+each is a field or a label rather than a new surface. **Issue 2 (deleting a
+dispatch, with Monitor) and Issue 7 (charts on Reports) are deliberately
+not here** — the first reverses rollups, the second is a milestone.
+
+- **Sizes are a vocabulary now, and the old free text is READ rather than
+  lost.** `top_size`/`bottom_size` were free text, so the live list holds
+  `medium/30` and `34/XL`; they are dropdowns (`MKT_TOP_SIZES` XXS–XXL,
+  `MKT_BOTTOM_SIZES` XXXS–XXL) plus a **third field, `waist_size`**
+  (26–40), because a bottom carries a garment size, a waist, or both and
+  squeezing the two into one string is what made the old values
+  unreadable. **Nothing is rewritten in place and there is no migration
+  pass:** `mktSizeParse` reads the stored string when the form OPENS, so
+  saving that creator migrates it, and a value it cannot read is kept and
+  shown as **"(as typed)"** — exactly what an off-list city already does.
+  A number typed under a TOP fills the waist rather than being dropped on
+  save (it is almost always a mis-entered bottom). `mktBuildSizes` is the
+  one implementation, so the form, the IG bulk run and the sheet importer
+  cannot disagree.
+- **`on_hold_stock` — "On Hold — Stock/Production" — is a status OUTSIDE
+  the flow, and that is the load-bearing part.** `_mktStatusIdx` compared
+  against the position in `MKT_DISPATCH_STATUSES`, and that array now has
+  a fifth entry; a status with an index past `shipped` would **stamp
+  `shipped_at` on a parcel that never left**. The four stages live in
+  their own ordered list (`_MKT_STATUS_FLOW`) and `_mktStatusIdx` answers
+  **-1** for anything else, which every comparison in the file already
+  reads as "not at this stage yet". Exclusion from Awaiting content, from
+  the Day-7 count and from the no-post reminders then falls out by
+  construction — none of the three reads a status outside the flow.
+  Verified by restoring the old `findIndex` and watching `shipped_at` get
+  stamped.
+- **A fifth Dispatch Log tile** (On hold) and **"Day-7 capture due" reads
+  "Performance snapshot due · 7 days after the post"**, in the tile and in
+  the status filter.
+- **Niche tags are a managed list.** They were DERIVED only, which is what
+  made the "Other tags" box feel broken: the box reads and saves
+  correctly — verified in the harness before changing anything, it was
+  never a no-op — but a tag typed there lived on that one creator, could
+  not be renamed or tidied, and vanished from the picker the moment that
+  creator lost it. `marketing_settings/niche_tags` is the curated half;
+  `mktNicheLibrary` returns **curated ∪ seed ∪ in use**, so a tag in use
+  can never be missing from the picker, including every malformed label
+  the sheet import left behind. A tag typed in the box now joins the list
+  (best effort, AFTER the save — remembering a tag must never turn a saved
+  creator into an error). **Niche tags**, beside Scoring settings, adds,
+  renames (merging when the new name already exists), removes, and offers
+  a one-click tidy for the `"Blogger"` / `Content Creator"` labels — each
+  rewriting every creator carrying the tag, in batches of 400, behind a
+  confirm that says how many records it touches. `mktTagRewrite` is pure
+  and returns only the creators that actually change.
+- **A pending Paid PR can be withdrawn** by an owner or by whoever raised
+  it; a decided one never can — the approved amount cannot change (rules)
+  and the dispatch, the rollups and any discount code are built on it.
+  Editing while pending already worked and is unchanged, which is what
+  Ammar confirmed it should be.
+- **There is NO client-side `isOwner()`** — it exists only in
+  `firestore.rules`; the app reads `session.role`. A `typeof
+  isOwner==='function'&&isOwner()` guard therefore fails CLOSED and looks
+  right in review. Caught by a test, not by reading.
+- **`firestore.rules` CHANGED — it needs a republish:** the new dispatch
+  status on create and update, the Paid PR delete clause, and the new
+  `marketing_settings` collection.
+
+### Marketing — the drops are a list, and FOUR bugs that were one (18 Sept 2026)
+
+**"Collection sent" offered exactly one option, "Lowkey Heat".** It was
+free text with a `<datalist>` DERIVED from whatever collections dispatches
+already carried, and that was the only value in the live data — so the
+feature looked broken while working exactly as written. It is a `<select>`
+over **`MKT_COLLECTIONS`**, the 15 real drops, **newest first and
+deliberately NOT alphabetical** — a dispatch is far more likely to be
+logged against something recent, so the order IS the affordance. Lowkey
+Heat is the most recent; The Owners Drop was the first. **Do not re-sort
+it**; a test asserts the literal order and fails on a well-meaning
+`.sort()`. Anything already recorded but not on the list (the sheet import
+wrote free text) is appended under "Recorded earlier" rather than being
+dropped — a value nobody can select again is one that vanishes the next
+time that dispatch is saved.
+
+**Four "Missing or insufficient permissions" reports, ONE cause: the rules
+were never republished.** Daniyal could not save a dispatch set to On Hold,
+could not withdraw his own pending Paid PR, could not remove a niche tag,
+and saw the tag panel's yellow "saved tag list could not be read" warning.
+No application code was wrong. Verified by diffing the repo's
+`firestore.rules` against the version last recorded as published
+(`af132bc`), not by reading the symptoms:
+
+| Symptom | Published rule | Repo rule |
+|---|---|---|
+| On Hold save | `status in ['','confirmed','in_transit','shipped','content_received']` | + `'on_hold_stock'` |
+| Withdraw a Paid PR | `allow delete: if isOwner() && status == 'pending'` | + `\|\| (isMarketing() && requested_by_user_id == request.auth.uid)` |
+| Remove a niche tag | **no `marketing_settings` match block at all** → default deny | `read, write: if isMarketing()` |
+
+**The yellow warning was the same cause, and that is provable rather than
+assumed.** `loadMarketingCreators` puts a MISSING document on the
+`fulfilled` branch (`mktNicheTags=[]`, `mktNicheTagsLoaded=true`, no
+warning); only a REJECTED read sets `mktNicheTagsLoaded=false`, which is
+the only thing that renders that strip. Default-deny on an unpublished
+collection is a rejection. **So the falsifiable test is: after a
+republish the warning disappears on its own, with no document needing to
+be created. If it is still there, it is a second, distinct bug.**
+
+**The lesson, since this is the second round in two days:** a generic
+`PERMISSION_DENIED` on a feature that shipped recently is a **deploy**
+question before it is a code question. `git log -- firestore.rules`
+against the md5 recorded under "Firestore rules" below answers it in one
+command, and `tests/invariants.test.js` cannot — it checks the repo file,
+and has no way to know what the Console holds.
+
+### Marketing — deleting a dispatch, and Monitor (18 Sept 2026)
+
+Issue 2 of Daniyal's report. A dispatch logged in error had no way out.
+
+- **Only the dispatches nothing else points at can go.**
+  `mktDispatchDeleteBlock` refuses a **`paid_pr`** dispatch (its approved
+  request carries the `dispatch_id`, and an approved spend is not something
+  a delete button should unpick) and any dispatch carrying a **discount
+  code** (`discount_codes/{id}` names it and the nightly rollup counts
+  against it). **Both are in `firestore.rules` as well**, so the UI guard is
+  not the boundary: delete is `isMarketing() && type == 'organic' &&
+  has_discount_code == false && discount_code_id == null`. That **narrows**
+  what an owner could do — the old rule was a bare `isOwner()` — and widens
+  who can do the safe case, which is the point.
+- **A codes read that FAILED refuses the delete rather than guessing**, the
+  same rule `mktCreatorDeleteBlock` already follows.
+- **The rollups are RECOMPUTED from what is left, never decremented** —
+  `mktCreatorRollups` over the remaining dispatches, in the same
+  `writeBatch` as the delete. An edited date can move first/last in either
+  direction and a decrement cannot tell. Verified by replacing it with a
+  decrement and watching the test fail.
+
+**Monitor — and the bug found while wiring it in.** The watched PERSON was
+a single name (`_MONITOR_WATCH_USER`), which CLAUDE.md flagged as assumed
+by "several places" — seven of them. It is **`_MONITOR_WATCH_USERS`, a
+list** now (`mustafa`, `daniyal`), and every site goes through one
+predicate, `_monitorIsWatched(row)`, which needs BOTH a watched person and
+a watched action. Matching is by **username** (`a.u`, which `logActivity`
+writes since Profiles) falling back to the display name for older rows.
+Watched Marketing actions are **removals only** — Dispatch deleted, Creator
+deleted, Paid PR request withdrawn, Niche tag removed. Logging and editing
+a dispatch are ordinary daily work and are deliberately not watched.
+
+- **Every Marketing verb had been landing in the generic "Process"
+  bucket since M2.** CLAUDE.md asks for a sanity-check whenever a new
+  `logActivity` verb appears and it was never run for this module:
+  `Dispatch logged`, `Dispatch updated`, `Creator updated`, `Profile
+  updated`, `Creator scoring updated`, `Creators fetched from Instagram`,
+  `Dispatch performance captured` and `Niche tags tidied` all fell through
+  to ⚙️. `create` gained `logged|captured`, `edit` gained
+  `updated|fetched|tidied`. **Checked the documented way** — all 126
+  `logActivity` strings in `js/*.js` categorised before and after:
+  **exactly 8 moved, every one of them out of `other`**, and genuinely
+  process-shaped actions (`Stage done`, `QC disposition`) stay in the
+  fallback. Asserted both ways.
+- **A withdrawal is a removal, not a payment.** "Paid PR request withdrawn"
+  contains the word *Paid*, so it landed under Approve / Money — which is
+  checked before Edit but after Delete. `/withdraw/` is in the Delete
+  matcher now, where a person looking for what was removed will find it.
+- `tests/monitor.test.js` is new (49 assertions) — there was no suite for
+  `js/activity.js` at all.
+
+### Marketing — charts on Reports (18 Sept 2026)
+
+Issue 7, built rather than estimated. Hand-drawn inline SVG: no charting
+library, the same zero-new-deps line the board canvas and the formula
+parser hold. Three rules the drawing code follows, each of which has cost
+this app something already:
+
+- **Every colour is a CSS variable.** A chart is chrome, and a literal hex
+  is the dark-mode bug this codebase keeps shipping (the SLA panels, the
+  priority chip, `.cut-table th`). Asserted: no `#rrggbb` reaches the SVG.
+- **It scales by `viewBox` + `width:100%`**, so the phone gets the same
+  chart rather than a clipped one.
+- **Labels are escaped** — a creator's name is drawn into `<text>`, which
+  is as interpolatable as a `<div>`. And there is **no `<title>` element
+  anywhere**: it carries text but has no box, which the layout probe reads
+  as invisible text. `role="img"` + `aria-label` instead.
+
+**A chart never REPLACES its table** — reading a figure off a bar is
+guesswork and these are numbers people are paid against. Asserted per
+section.
+
+- `mktChartMax` rounds the axis UP to something round, and **is never 0**,
+  so an all-zero chart still draws its baseline instead of dividing by
+  zero. `mktChartTick` shortens to `45k`/`1.2m`; `mktChartClip` cuts a long
+  handle rather than letting it overrun.
+- Two new cards: **Dispatch activity** (organic vs Paid PR per month, 6/12/24)
+  and **Creator tiers**. `mktDispatchActivity` **emits a month with nothing
+  in it** — a gap in the log has to read as a gap, which is the whole point
+  of a time axis — and says how many dispatches carry no date and cannot be
+  placed at all. `mktTierDistribution` counts an unknown tier as Unscored
+  rather than dropping it.
+- Charts were added above the three existing tables: spend (approved vs paid
+  out, **oldest first — a time axis reads left to right**, while the table
+  below stays newest first), ROI (the ratio when codes exist, spend when
+  they do not, matching what the warning above it already says), and the
+  organic ranking, which **follows the sort toggle**.
+- **A refused read never renders as an empty chart** — the Store lesson.
+
+**The layout probe named SVG findings as `[object SVGAnimatedString]`.**
+`className` on an SVG element is an `SVGAnimatedString`; CLAUDE.md records
+this being fixed once for the "covering element" report, and every OTHER
+finding still stringified it that way — so a chart label or an icon
+reported as an unidentifiable blob. One `clsOf()` helper now, used by all
+six sites. Found by deliberately breaking a chart colour and reading what
+came back; the same break now names `mkt-chart-lab`.
+
 - **Scoring settings are Ammar's alone** (17 Sept 2026). A third
   per-account flag, `canEditScoring` on Ammar's `USER_DEFS` entry
   (`canEditScoring()` in `js/auth.js`), mirrored by EMAIL in
@@ -5176,6 +5385,17 @@ firestore.rules` is the PR #71 commit (`creators` delete widened from
 `isOwner()` to `isMarketing()` so the Content Ops lead can delete
 creators). **No republish is outstanding as of that commit**; this
 supersedes the entries below.
+
+**REPUBLISH OUTSTANDING (18 Sept 2026):** two rounds, both waiting.
+The field round — `dispatches` gained `'on_hold_stock'` on create and
+update, `paid_pr_requests` delete now allows the requester as well as an
+owner (still pending-only), and `marketing_settings` is a new collection.
+Then the dispatch delete — `dispatches` delete went from a bare
+`isOwner()` to `isMarketing() && type == 'organic'` with no discount code,
+which both widens (the lead can tidy the log) and NARROWS (nobody can
+delete a Paid PR dispatch or one a code points at). Until the Console has
+it: putting a dispatch on hold, withdrawing a request, deleting a dispatch
+and saving the niche tag list are all refused.
 
 **No republish outstanding as of 18 Sept 2026.** Afnan confirmed
 ("rules done") from the repo file at `md5

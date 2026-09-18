@@ -447,7 +447,8 @@ service cloud.firestore {
             || getAfter(/databases/$(database)/documents/creators/$(resource.data.creatorId)).data.ig_handle != handle);
     }
     // Dispatches (M2). A paid_pr dispatch is created only by a Paid PR
-    // approval (M3). The empty status is for rows migrated from the sheet
+    // approval (M3). 'on_hold_stock' (Sept 2026) is a state OUTSIDE the
+    // four-stage flow — agreed but not shippable yet. The empty status is for rows migrated from the sheet
     // (M7), which recorded none — left blank rather than guessed; the app
     // shows it as "Not recorded". A dispatch never changes creator or type
     // once written:
@@ -461,7 +462,7 @@ service cloud.firestore {
       allow create: if isMarketing()
         && request.resource.data.creator_id is string
         && exists(/databases/$(database)/documents/creators/$(request.resource.data.creator_id))
-        && request.resource.data.status in ['','confirmed','in_transit','shipped','content_received']
+        && request.resource.data.status in ['','confirmed','in_transit','shipped','content_received','on_hold_stock']
         && (request.resource.data.type == 'organic'
             || (request.resource.data.type == 'paid_pr'
                 && isPaidPRApprover()
@@ -478,8 +479,18 @@ service cloud.firestore {
         && request.resource.data.get('has_discount_code', false) == resource.data.get('has_discount_code', false)
         && request.resource.data.get('discount_code_id', null) == resource.data.get('discount_code_id', null)
         && request.resource.data.get('code_lock_at', null) == resource.data.get('code_lock_at', null)
-        && request.resource.data.status in ['','confirmed','in_transit','shipped','content_received'];
-      allow delete: if isOwner();
+        && request.resource.data.status in ['','confirmed','in_transit','shipped','content_received','on_hold_stock'];
+      // Anyone in Marketing may remove an ORGANIC dispatch logged in error
+      // (Sept 2026 — widened from owners-only so the lead can tidy the log).
+      // Two shapes can never be deleted by anyone, because another record
+      // names them: a paid_pr dispatch, which its approved request links to
+      // with dispatch_id, and a dispatch carrying a discount code, which
+      // discount_codes/{id} points at and the nightly rollup counts against.
+      // Mirrored by mktDispatchDeleteBlock() in js/marketing.js.
+      allow delete: if isMarketing()
+        && resource.data.type == 'organic'
+        && resource.data.get('has_discount_code', false) == false
+        && resource.data.get('discount_code_id', null) == null;
     }
     // Paid PR requests (M3). Three kinds of write, each limited to the
     // fields it owns (the lists match MKT_PR_EDIT_FIELDS /
@@ -489,7 +500,9 @@ service cloud.firestore {
     //   · ONLY the approver decides it, once, from pending;
     //   · anyone in Marketing logs the payment on an approved one.
     // An approved amount can never change. Nothing is deleted except a
-    // still-pending request, by an owner.
+    // still-pending request, by an owner or by whoever raised it — a
+    // decided one is the record of a spending decision and the dispatch,
+    // the rollups and any discount code are built on it.
     match /paid_pr_requests/{id} {
       allow read: if isMarketing();
       allow create: if isMarketing()
@@ -526,7 +539,9 @@ service cloud.firestore {
           && request.resource.data.payment_status in ['unpaid','paid']
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['payment_status','payment_method','payment_reference','payment_date','payment_logged_by_user_id','payment_logged_at','updated_at']));
-      allow delete: if isOwner() && resource.data.status == 'pending';
+      allow delete: if resource.data.status == 'pending'
+        && (isOwner()
+            || (isMarketing() && resource.data.requested_by_user_id == request.auth.uid));
     }
     // Discount codes (M4). Created and counted ONLY server-side — the Shopify
     // secret lives there, and a redemption count is not something a browser
@@ -534,6 +549,14 @@ service cloud.firestore {
     match /discount_codes/{id} {
       allow read: if isMarketing();
       allow write: if false;
+    }
+    // Marketing's own settings. Today one document, niche_tags, holding
+    // the curated tag list the creator form offers. Anyone in Marketing
+    // edits it: it is the Content Ops lead's vocabulary, not a permission
+    // boundary, and a tag is only ever a label on a creator record.
+    match /marketing_settings/{doc} {
+      allow read: if isMarketing();
+      allow write: if isMarketing();
     }
     // The scoring bands and tier thresholds — one settings document,
     // edited in the app by the scoring admin only.
