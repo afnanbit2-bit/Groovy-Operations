@@ -1446,6 +1446,75 @@ cover full bleed, or the colour carrying its glyph, name on a scrim.
   Verified both ways, as are the cover-URL guard and the `ondblclick`
   placement.
 
+### Mood Boards — the board card is a SPINE (Sept 2026) — REVERSES option A
+
+Afnan lived with the cover tile for a day and then picked **option D off the
+same specimen**: *"i like D spine its perfect"*. Both sections above stand as
+the record of what A was and why; this is what shipped over it.
+
+**A said what a board IS. It could not say what is INSIDE one**, which is
+what a card standing in for a board is actually for. D is the most a card
+can say at once, 260×172:
+
+- **The board's FACE is a 46px spine down the left edge.** It paints the
+  **cover** when the board has one — a picture somebody chose for that board
+  is its identity and must not be demoted to a 30px chip in the strip below,
+  which is for contents — and otherwise the board's colour carrying its icon
+  or first letter. Still through **`_boardsFaceOf`**, so the card, the
+  gallery tile and the panel row cannot disagree about what a board looks
+  like. That decision survived the redesign unchanged, which is the payoff
+  for having made it once.
+- **The whole name, two clamped lines**, with the state and the counts under
+  it. `PRIVATE` / `TEAM` is from the specimen and cost nothing: visibility is
+  already on the document and the panel row already prints it.
+- **A strip of the board's own THUMBNAILS** (`_boardsBoardThumbs`), derived
+  from the child board's cards on every render exactly like the gallery
+  tile's live preview — nothing stored, nothing migrated, and it cannot go
+  stale against the board it describes. **Image cards only**: a file card's
+  page-1 thumbnail is best-effort by design (`_boardsPdfThumbUrl` hides
+  itself on error) and a strip with holes punched in it says less than a
+  shorter strip with none. **The +N chip counts the CARDS the strip could not
+  show**, not the pictures it left out. A board with no pictures gets no
+  strip rather than an empty row or a chip repeating the count above it.
+
+**THE HEADER GOES BACK TO BEING A HEADER, and that is the load-bearing half
+of the revert.** Under A it was a transparent bar with literal-white ink
+floated over the picture, which only worked because the surface under it was
+a photograph or a solid colour. Here the info column is the ordinary card
+surface and **follows the theme**, so that ink would be white-on-white in
+light mode — the failure this file keeps recording. Deleting the
+`.type-board .board-card-head` override is the whole fix; `.type-board` now
+wears the same strip as every other card. The name and meta moved from
+literal white to `var(--text)`/`var(--muted)` for the same reason.
+
+- **The +N chip is 13px, not the specimen's 11px.** It is card-internal
+  text, so it is multiplied by the board's zoom (11px at 84% is 9.2px). The
+  chip widens rather than clipping the number. `tests/invariants.test.js`
+  caught this on the first run.
+- **Existing cards are not resized on open** — the same rule A shipped under.
+  An old card is drawn at its stored size and grown by `_BOARDS_MIN_BODY_H`
+  if it is too short.
+- **The `far` LOD band now drops the meta line and the thumbnails**, not the
+  scrim (there is no scrim any more). At 25–35% the spine's colour is what
+  tells boards apart and the name is the only text still worth painting: the
+  meta is 3px there and a 30×22 thumbnail is 7×5.
+
+**Two things about verifying, both worth keeping.** Putting a literal `#fff`
+back on the title fails `smoke-layout` at **1:1 in light**, naming
+`board-subboard-title` — so the fragment does hold the ink. **What it does
+NOT hold, checked by removing it: the info column's `min-width:0`.** The
+title carries `word-break:break-word` and a two-line clamp, so it shrinks
+either way; the rule stays as a guard for whatever is added to that column
+next, and both the CSS comment and the fragment say so rather than leaving
+the claim standing. And the fragment had to be laid out in **two rows** — a
+card past the right edge of a 1280px viewport is clipped, and the hit-test
+then reports its controls as covered by whatever it finds at that point.
+
+**The CACHE_VERSION collision, benign shape:** `origin/main` had moved to
+Ammar's `v121` while this sat at `v120`. Merged, then bumped past both to
+**`v122`** — checked against the CURRENT `origin/main`, which is the half
+that keeps getting missed.
+
 ### Mood Boards — the board card says it opens (Sept 2026)
 
 Afnan: drop the Open pill, glow the corners in red while the card sits idle,
@@ -3040,6 +3109,13 @@ own buttons, so the two cannot drift apart.
 
 Afnan: the Save-as dialog took a while, so he pressed Download again and the
 file arrived twice.
+
+**CONFIRMED WORKING ON THE LIVE SITE by Afnan, 18 Sept 2026** — *"imagien
+download thing is solved"*. The guard, the cover and the progress text all
+behave on real files. **Do not re-open `_boardsDownloadAsset` on a hunch.**
+The still-OPEN question is the separate one below — whether
+`fl_attachment:<name>` preserves a chosen filename — and that is untested
+against Cloudinary, not broken.
 
 **WHY IT WAITS is structural, not a bug.** An `<a download>` pointing at a
 **cross-origin** URL is ignored by Chrome — it navigates instead — so the
