@@ -844,7 +844,6 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
   .board-below.with-panel .board-stage,
   .board-below.with-panel-collapsed .board-stage{margin-right:0}
   .board-tray,.board-tray.wide{width:100%;border-left:none}
-  .board-tray.collapsed{width:100%;height:44px;top:auto}
   .board-tray-reopen{flex-direction:row}
   .board-tray-reopen-label{writing-mode:horizontal-tb}
   .board-tray-list{grid-template-columns:1fr 1fr 1fr}
@@ -1803,10 +1802,21 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .rail-btn{position:relative}
 
 @media (max-width:560px){
-  .board-topbar{padding:6px 8px;gap:6px}
+  /* ONE row. Both groups stop wrapping, the back label is capped with an
+     ellipsis (it carries the parent board's whole name), the title takes
+     what is left, and the View button is just its zoom reading. Measured
+     before: 142px of a 667px screen; after: one row. */
+  .board-topbar{padding:6px 8px;gap:6px;flex-wrap:nowrap}
+  .board-topbar>div{flex-wrap:nowrap!important}
+  .board-topbar>div:first-child{flex:1 1 auto;min-width:0}
+  .board-topbar>div:last-child{flex:0 0 auto}
+  .board-topbar .back-btn{max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;line-height:32px}
+  .board-topbar #board-title-input{flex:1 1 auto;min-width:48px;width:auto}
+  .board-topbar .board-save-status,.board-topbar .board-peers{flex-shrink:0}
+  .board-topbar .tool-btn{padding:6px 8px;white-space:nowrap}
   /* Full width on a phone, above the docked rail rather than beside it. */
-  .board-ctrash-panel{left:10px;right:10px;width:auto;max-width:none;top:auto;bottom:96px;transform:none;max-height:min(58vh,420px)}
-  .board-topbar #board-title-input{max-width:110px;font-size:14.5px!important}
+  .board-ctrash-panel{left:10px;right:10px;width:auto;max-width:none;top:auto;bottom:calc(96px + env(safe-area-inset-bottom,0px));transform:none;max-height:min(58vh,420px)}
+  .board-topbar #board-title-input{max-width:none;font-size:14.5px!important}
   .board-topbar .back-btn{padding:5px 8px;font-size:13px}
   .board-topbar .pill{font-size:11px;padding:2px 6px}
   .board-menu-sep{height:1px;background:var(--border);margin:4px 0}
@@ -1816,7 +1826,53 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
      width, the right border and the square corners all come from the rule
      above now, so leaving any of them out docks a full-height column to the
      bottom of a phone. */
-  .board-rail{left:10px;right:10px;top:auto;bottom:12px;width:auto;flex-direction:row;max-height:none;overflow-x:auto;overflow-y:hidden;align-items:center;touch-action:pan-x;border:1px solid var(--border);border-radius:14px;padding:6px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.12)}
+  /* THE BOTTOM STACK, measured (Sept 2026 phone audit). Everything parked
+     above the docked rail is stacked off ONE number so it cannot drift
+     again: the rail is 75px tall at rest, so its top edge is 87px up, and
+     each thing above it adds env(safe-area-inset-bottom) the way the fmt
+     bar and the sheets already did — the rail itself did not, and in
+     standalone mode on an iPhone (viewport-fit=cover) it sat in the home
+     indicator zone. Before this: the bug FAB overlapped the rail's last
+     tool by 7px on every phone, Home's collapsed panel bar covered the
+     bottom 32px of every rail button, and the zoom pill sat on the rail's
+     top edge. All three were measured, not eyeballed. */
+  .board-rail{left:10px;right:10px;top:auto;bottom:calc(12px + env(safe-area-inset-bottom,0px));width:auto;flex-direction:row;max-height:none;overflow-x:auto;overflow-y:hidden;align-items:center;touch-action:pan-x;border:1px solid var(--border);border-radius:14px;padding:6px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.12)}
+  /* The two top-bar dropdowns (View, ⋯) dock as bottom sheets, exactly as
+     .board-ctx and .board-sheet already do. As dropdowns they were
+     position:absolute;right:0 inside a wrap that lands at the END of a
+     wrapped flex row ~144px wide — so at 390px the ⋯ menu rendered at
+     x −81..144 and View at −83..97: the first 80px of every entry was off
+     the left edge of the screen, and the ⋯ menu's 526px had no scroll.
+     Measured. View is the ONLY route to zoom, Fit and Snap on a phone. */
+  .board-menu{position:fixed;left:0!important;right:0;top:auto!important;bottom:0;width:100%;min-width:0;max-width:none;border-radius:16px 16px 0 0;border-left:none;border-right:none;border-bottom:none;padding:6px 0 env(safe-area-inset-bottom,0px);max-height:70%;overflow:auto;z-index:400;box-shadow:0 -8px 32px rgba(0,0,0,.18)}
+  .board-menu button{padding:13px 18px;font-size:16px;border-radius:0;border-bottom:1px solid var(--border);white-space:normal}
+  .board-menu button:last-child{border-bottom:none}
+  /* Home's collapsed panel bar sits ABOVE the rail, not under it. */
+  /* No native long-press callout on the canvas — the long-press is ours
+     now (see _boardsWireTouch). Fields keep theirs. */
+  .board-stage{-webkit-touch-callout:none}
+  .board-tray.collapsed{left:10px;right:10px;width:auto;height:44px;top:auto;bottom:calc(96px + env(safe-area-inset-bottom,0px));border:1px solid var(--border);border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.12)}
+  .board-tray.collapsed .board-tray-reopen{border-radius:12px}
+  /* The bug FAB is hidden while the canvas has the screen; "Report a bug"
+     is in the ⋯ sheet instead. It was painted over the rail's last tool and
+     over the open Boards panel — the same collision that retired the
+     minimap. */
+  body.board-fullscreen #bug-report-fab{display:none!important}
+  /* The Open pill on a sub-board card sat exactly over the 34px resize
+     grip in the same corner — the pill is phone-only, so this was a
+     phone-only bug. Hit-tested: the grip resolved to the pill. */
+  .board-subboard-open{right:44px;bottom:6px;min-height:32px;padding:6px 12px}
+  .board-card-del{padding:5px 8px;min-height:32px}
+  .board-tray-add .btn-sm,.board-tray-add .tool-btn,.board-tray-add label.btn-sm{min-height:32px;display:inline-flex;align-items:center}
+  /* Above Home's collapsed bar when that bar is there. */
+  .board-below.with-panel-collapsed .board-zoom-pill{bottom:calc(152px + env(safe-area-inset-bottom,0px))}
+  /* The zoom pill has nothing to say over a full-screen panel. */
+  .board-below:has(.board-tray:not(.collapsed)) .board-zoom-pill{display:none}
+  /* Touch targets the audit measured under 32px. */
+  .back-btn{min-height:32px}
+  .board-tray-del{width:32px;height:32px;top:2px;right:2px;font-size:16px}
+  .board-tray-head .tool-btn,.board-tray-add .btn-sm,.board-panel-tools .btn-sm,.board-panel-seg button,.board-panel-new,.board-panel-open,.board-panel-more,.board-panel-stray .btn-sm{min-height:32px}
+  .board-find .tool-btn{min-height:32px}
   .rail-grow{display:none}
   .rail-sep{width:1px;height:26px;margin:0 4px}
   .rail-swatches{grid-template-columns:repeat(6,1fr);padding:0 6px;gap:6px}
@@ -1831,7 +1887,7 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   .profile-dir-actions{margin-left:0}
   .profile-theme-row{grid-template-columns:1fr}
   .profile-dir{grid-template-columns:1fr}
-  .board-zoom-pill{bottom:84px}
+  .board-zoom-pill{bottom:calc(100px + env(safe-area-inset-bottom,0px))}
   .board-fmt{position:fixed;left:0;right:0;bottom:0;bottom:env(safe-area-inset-bottom,0);transform:none;border-radius:0;border-left:none;border-right:none;border-bottom:none;max-width:none;padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
   .board-fmt-row{justify-content:space-between}
   .board-fmt-btn{min-width:0;flex:1;height:44px}

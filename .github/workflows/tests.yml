@@ -63,6 +63,9 @@ jobs:
       - name: Layout smoke test
         run: node tests/smoke-layout.js
 
+      - name: Phone smoke test
+        run: node tests/smoke-phone.js
+
       - name: CACHE_VERSION was bumped
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then

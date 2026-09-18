@@ -1957,10 +1957,17 @@ function _renderBoardCanvasHTML(){
   // Breadcrumbs only appear on a nested board — on a root board the trail
   // would just read "Boards ›" next to a back button that says the same.
   const home=_boardsIsHome(b);
+  // ONE row on a phone. Measured: the desktop row wrapped to 142px of a
+  // 667px screen. Undo, Redo, Find and Comments live in the ⋯ sheet there
+  // (same ids, so _boardsSyncHistoryButtons needs no change); the visibility
+  // pill is dropped — the sheet's "Make Team/Private" says the state. The
+  // save status stays: it renders nothing unless a save FAILED or the phone
+  // is offline, and those are exactly the moments it must be seen.
+  const phone=_boardsIsPhone();
   const chain=home?[]:_boardsAncestors(b.id);
   const parent=chain.length?chain[chain.length-1]:null;
   const backLabel=home?'Creative Hub':(parent?(parent.title||'Untitled board'):(_boardsCameFromAll?'All boards':'Home'));
-  const crumbs=chain.length?`<div class="board-crumbs">
+  const crumbs=chain.length&&!phone?`<div class="board-crumbs">
       <button class="board-crumb" onclick="window.boardsGotoGallery()">Home</button>
       ${chain.map(a=>`<span class="board-crumb-sep">›</span><button class="board-crumb" onclick="window.boardsGoto('${a.id}')">${_boardsEsc(a.title||'Untitled board')}</button>`).join('')}
       <span class="board-crumb-sep">›</span>
@@ -1973,17 +1980,17 @@ function _renderBoardCanvasHTML(){
         ${home
           ?`<span style="font-size:15.5px;font-weight:700">Home</span>`
           :`<input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" placeholder="Untitled board" title="Click to rename this board" style="font-size:15.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
-        <span class="pill">${visLabel}</span>
+        ${phone?'':`<span class="pill">${visLabel}</span>`}
         ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}`}
         ${canEdit?`<span class="board-save-status" id="board-save-status"></span>`:''}
         <span class="board-peers" id="board-peers" style="display:none"></span>
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-        ${canEdit?`<button class="tool-btn" id="board-undo-btn" onclick="window.boardsUndoAction()" title="Undo (Ctrl+Z)" disabled>Undo</button>
+        ${phone?'':`${canEdit?`<button class="tool-btn" id="board-undo-btn" onclick="window.boardsUndoAction()" title="Undo (Ctrl+Z)" disabled>Undo</button>
         <button class="tool-btn" id="board-redo-btn" onclick="window.boardsRedoAction()" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
         <div class="tool-sep"></div>`:''}
         <button class="tool-btn${_boardsFindOpen?' on':''}" onclick="window.boardsToggleFind()" title="Find cards on this board">Find</button>
-        <button class="tool-btn${_boardsDrawerOpen?' on':''}" id="board-cmt-btn" onclick="window.boardsToggleDrawer()" title="Comments and activity on this board">Comments</button>
+        <button class="tool-btn${_boardsDrawerOpen?' on':''}" id="board-cmt-btn" onclick="window.boardsToggleDrawer()" title="Comments and activity on this board">Comments</button>`}
         ${home
           ?`<button class="tool-btn${_boardsHomePanelOpen()?' on':''}" onclick="window.boardsTogglePanel()" title="Show or hide the boards panel">Boards <span class="board-tray-tabn">${_boardsHomeList().length}</span></button>`
           :`<button class="tool-btn${_boardsTrayOpen?' on':''}" onclick="window.boardsToggleTray()" title="Unsorted — things collected but not placed yet">Unsorted${_editUnsorted.length?' '+_editUnsorted.length:''}</button>`}
@@ -1996,7 +2003,7 @@ function _renderBoardCanvasHTML(){
              #board-zoom-readout keeps its id, so _boardsApplyTransform
              needs no change at all. -->
         <div class="board-menu-wrap">
-          <button class="tool-btn${_boardsViewOpen?' on':''}" id="board-view-btn" onclick="window.boardsToggleViewMenu(event)" title="How this board is displayed — zoom, fit, snap, minimap">View <span class="zoom-readout" id="board-zoom-readout">${Math.round(b.zoom*100)}%</span></button>
+          <button class="tool-btn${_boardsViewOpen?' on':''}" id="board-view-btn" onclick="window.boardsToggleViewMenu(event)" title="How this board is displayed — zoom, fit, snap, minimap">${phone?'':'View '}<span class="zoom-readout" id="board-zoom-readout">${Math.round(b.zoom*100)}%</span></button>
           <div class="board-menu" id="board-view-menu" style="display:none">
             <button id="board-fit-btn" onclick="window.boardsToggleFit()">Fit</button>
             <button onclick="window.boardsResetView()">Zoom to 100%</button>
@@ -2011,6 +2018,11 @@ function _renderBoardCanvasHTML(){
         <div class="board-menu-wrap">
           <button class="tool-btn" onclick="window.boardsToggleMenu(event)" title="Board actions">⋯</button>
           <div class="board-menu" id="board-menu" style="display:none">
+            ${phone?`${canEdit?`<button id="board-undo-btn" onclick="window.boardsUndoAction()" disabled>Undo</button>
+            <button id="board-redo-btn" onclick="window.boardsRedoAction()" disabled>Redo</button>`:''}
+            <button onclick="window.boardsToggleFind()">${_boardsFindOpen?'Close find':'Find on this board'}</button>
+            <button id="board-cmt-btn" onclick="window.boardsToggleDrawer()">${_boardsDrawerOpen?'Close comments':'Comments and activity'}</button>
+            <div class="board-menu-sep"></div>`:''}
             ${_boardsIsPhone()&&!home?`<button onclick="window.boardsOpenColorPicker('board','${b.id}')">Board colour…</button>
             <button onclick="window.boardsOpenIconPicker('${b.id}')">Board icon…</button>
             <div class="board-menu-sep"></div>`:''}
@@ -2029,6 +2041,8 @@ function _renderBoardCanvasHTML(){
             ${canEdit&&!home?`<button onclick="window.boardsOpenShare()">Share with people…</button>`:''}
             ${canEdit&&!home?`<button onclick="window.boardsToggleVisibility()">Make ${b.visibility==='shared'?'Private':'Team'}</button>`:''}
             ${canEdit&&!home?`<button class="danger" onclick="window.boardsDelete()">Delete board</button>`:''}
+            ${phone&&typeof window.openBugReportModal==='function'?`<div class="board-menu-sep"></div>
+            <button onclick="window.openBugReportModal()">Report a bug</button>`:''}
           </div>
         </div>
       </div>
@@ -2066,7 +2080,9 @@ function _renderBoardCanvasHTML(){
       <div class="board-zoom-pill" id="board-zoom-pill">${Math.round(b.zoom*100)}%</div>
       ${canEdit?'<div class="board-dropzone" id="board-dropzone"><div>Drop files to add them to this board</div></div>':''}
       <div class="board-rail" id="board-rail"></div>
-      ${canEdit&&!_editCards.length?'<div class="board-empty-hint">Double-click anywhere to add a note · drop files in · paste an image with Ctrl+V<br>Drag to select · scroll or hold Space to pan</div>':''}
+      ${canEdit&&!_editCards.length?(_boardsIsPhone()
+        ?'<div class="board-empty-hint">Double-tap anywhere to add a note · tap a tool below to add one<br>Drag to pan · pinch to zoom · hold a card for its menu</div>'
+        :'<div class="board-empty-hint">Double-click anywhere to add a note · drop files in · paste an image with Ctrl+V<br>Drag to select · scroll or hold Space to pan</div>'):''}
     </div>
     <div class="board-fmt" id="board-fmt" style="display:none">
       <div class="board-fmt-swatches" id="board-fmt-swatches" style="display:none">
@@ -3430,6 +3446,12 @@ function _boardsOnViewportChange(){
     _boardsRenderCanvasAndWire();
     return;
   }
+  // The on-screen keyboard is a resize too (index.html asks for
+  // interactive-widget=resizes-content), and before this it panned the
+  // board by half the keyboard's height under the caret — up when it
+  // opened, back down when it closed. While anything is being edited the
+  // view rect is left alone as well, so the closing resize sees no delta.
+  if(_boardsEditingEl||_boardsIsEditableFocus())return;
   const stage=document.getElementById('board-stage');if(!stage)return;
   const r=stage.getBoundingClientRect();
   const prev=_boardsViewRect;
@@ -3613,31 +3635,96 @@ function _boardsPinchMove(){
   b.zoom=next;
   _boardsApplyTransform();
 }
+// Touch has neither a double-click nor a right-click of its own, and this
+// file leaned on both. The stage already pairs taps by hand for
+// double-tap-to-add (the module's own finding: dblclick is not dependable
+// once touch-action:none has taken the browser's gesture), but every card
+// body, to-do item, table cell and header still hung its edit on
+// `ondblclick` — so a note could only be typed into if the browser happened
+// to synthesize one. And the context menu hung on `contextmenu`, which
+// Android fires on a long-press and iOS Safari does not. Both are paired
+// here, once, for every element that carries the attribute — and each
+// GUARDS against the browser also doing it natively, so a phone that does
+// fire dblclick or contextmenu gets exactly one of each, not two.
+const _BOARDS_TAP_MS=300,_BOARDS_TAP_PX=28,_BOARDS_HOLD_MS=500,_BOARDS_HOLD_PX=10;
+let _boardsSynthDblAt=0,_boardsSynthCtxAt=0,_boardsHoldTimer=null,_boardsLastTap=null;
+function _boardsSynth(type,el,x,y){
+  const ev=new MouseEvent(type,{bubbles:true,cancelable:true,clientX:x,clientY:y,view:window});
+  if(type==='dblclick')_boardsSynthDblAt=Date.now();else _boardsSynthCtxAt=Date.now();
+  el.dispatchEvent(ev);
+}
+function _boardsHoldCancel(){if(_boardsHoldTimer){clearTimeout(_boardsHoldTimer);_boardsHoldTimer=null;}}
 function _boardsWireTouch(){
+  let press=null;
   function onDown(e){
     if(e.pointerType!=='touch'||currentPage!=='board-canvas')return;
     if(!(e.target&&e.target.closest&&e.target.closest('.board-stage')))return;
     _boardsTouches.set(e.pointerId,{x:e.clientX,y:e.clientY});
-    if(_boardsTouches.size===2)_boardsPinchStart();
+    if(_boardsTouches.size===2){_boardsPinchStart();_boardsHoldCancel();press=null;return;}
+    press={id:e.pointerId,x:e.clientX,y:e.clientY,t:Date.now(),target:e.target,moved:false};
+    _boardsHoldCancel();
+    // No long-press inside a field: the browser's own text callout belongs
+    // there, and the stage's contextmenu handler bails on it anyway.
+    if(e.target.closest('input,textarea,select,[contenteditable="true"]'))return;
+    _boardsHoldTimer=setTimeout(()=>{
+      _boardsHoldTimer=null;
+      if(!press||press.moved||_boardsTouches.size!==1)return;
+      try{if(navigator.vibrate)navigator.vibrate(12);}catch(err){}
+      _boardsSynth('contextmenu',press.target,press.x,press.y);
+      press=null;   // the release after a hold is not a tap
+    },_BOARDS_HOLD_MS);
   }
   function onMove(e){
     if(e.pointerType!=='touch')return;
+    if(press&&press.id===e.pointerId&&!press.moved&&
+       (Math.abs(e.clientX-press.x)>_BOARDS_HOLD_PX||Math.abs(e.clientY-press.y)>_BOARDS_HOLD_PX)){
+      press.moved=true;_boardsHoldCancel();
+    }
     if(!_boardsTouches.has(e.pointerId))return;
     _boardsTouches.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(_boardsPinch&&_boardsTouches.size>=2)_boardsPinchMove();
   }
   function onUp(e){
     if(e.pointerType!=='touch')return;
+    _boardsHoldCancel();
+    const p=press;press=null;
     if(!_boardsTouches.delete(e.pointerId))return;
     if(_boardsPinch&&_boardsTouches.size<2){
       _boardsPinch=null;
       _boardsSaveDebounced();   // pan/zoom are board fields, worth persisting
+      return;
     }
+    if(e.type!=='pointerup'||!p||p.moved||p.id!==e.pointerId)return;
+    // A tap. Pair it with the last one on the same [ondblclick] element.
+    const el=e.target&&e.target.closest&&e.target.closest('[ondblclick]');
+    if(!el){_boardsLastTap=null;return;}
+    const now=Date.now();
+    if(_boardsLastTap&&_boardsLastTap.el===el&&now-_boardsLastTap.t<_BOARDS_TAP_MS&&
+       Math.abs(e.clientX-_boardsLastTap.x)<_BOARDS_TAP_PX&&Math.abs(e.clientY-_boardsLastTap.y)<_BOARDS_TAP_PX){
+      _boardsLastTap=null;
+      _boardsSynth('dblclick',el,e.clientX,e.clientY);
+      return;
+    }
+    _boardsLastTap={el,t:now,x:e.clientX,y:e.clientY};
   }
   document.addEventListener('pointerdown',onDown,true);
   document.addEventListener('pointermove',onMove,true);
   document.addEventListener('pointerup',onUp,true);
   document.addEventListener('pointercancel',onUp,true);
+  // The guards. A browser that DOES synthesize its own dblclick from two
+  // taps fires it right after the second click — after ours — so a trusted
+  // one within the window is the duplicate and is dropped at the capture
+  // phase, before any inline handler sees it. Same for contextmenu; and a
+  // trusted contextmenu that arrives FIRST (Android's own long-press beat
+  // the timer) cancels the timer so ours never fires.
+  document.addEventListener('dblclick',e=>{
+    if(e.isTrusted&&Date.now()-_boardsSynthDblAt<600){e.stopPropagation();e.preventDefault();}
+  },true);
+  document.addEventListener('contextmenu',e=>{
+    if(!e.isTrusted)return;
+    _boardsHoldCancel();
+    if(Date.now()-_boardsSynthCtxAt<700){e.stopPropagation();e.preventDefault();}
+  },true);
 }
 _boardsWireTouch();
 // Where a new card should land when it isn't being placed by a click:
@@ -4067,9 +4154,13 @@ window.boardsCardDragStart=function(e,cardId){
   head.setPointerCapture(e.pointerId);
   function move(ev){
     if(_boardsPinch)return;   // two fingers down: zooming, not dragging a card
-    // One undo entry per gesture, pushed on the first actual movement —
-    // a plain click on the header shouldn't leave a no-op in the stack.
-    if(!pushed){_boardsPushUndo();pushed=true;}
+    // One undo entry per gesture, pushed on the first REAL movement —
+    // a plain click (or a finger that rolls a pixel) shouldn't leave a
+    // no-op in the stack or move the card.
+    if(!pushed){
+      if(Math.abs(ev.clientX-startX)<_BOARDS_DRAG_PX&&Math.abs(ev.clientY-startY)<_BOARDS_DRAG_PX)return;
+      _boardsPushUndo();pushed=true;
+    }
     let dx=(ev.clientX-startX)/b.zoom;
     let dy=(ev.clientY-startY)/b.zoom;
     if(_boardsSnapGrid){
@@ -4330,6 +4421,25 @@ const _BOARDS_RAIL_MEDIA=[
   {act:'imagepanel',label:'Image',icon:'image'},
   {act:'file',label:'File',icon:'file'}
 ];
+// The four tools a phone keeps on its bar (see _boardsRailItems). Note and
+// Board drag; Image and File open a picker, so they carry no drag flag —
+// the same rule the desktop lists follow.
+const _BOARDS_RAIL_PHONE=[
+  {act:'add:text',label:'Note',icon:'note',drag:true},
+  {act:'imagepanel',label:'Image',icon:'image'},
+  {act:'file',label:'File',icon:'file'},
+  {act:'add:board',label:'Board',icon:'board',drag:true}
+];
+// What the phone's More sheet lists: every add-tool the bar does not carry,
+// then the board-level actions the desktop rail keeps beside them.
+function _boardsRailPhoneOverflow(){
+  const onBar=new Set(_BOARDS_RAIL_PHONE.map(it=>it.act));
+  return _BOARDS_RAIL_MAIN.filter(it=>!onBar.has(it.act))
+    .concat(_BOARDS_RAIL_OVERFLOW)
+    .concat(_BOARDS_RAIL_MEDIA.filter(it=>!onBar.has(it.act)))
+    .concat([{act:'comment-board',label:'Comment'},{act:'fit',label:'Fit view'}])
+    .map(it=>({act:it.act,label:it.act==='line'?(_boardsLineMode?'Line tool: on':'Line tool'):it.label}));
+}
 function _boardsRailItems(){
   const canEdit=_boardsCanEdit(_editBoard);
   const sel=_boardsSelectedCards();
@@ -4389,6 +4499,20 @@ function _boardsRailItems(){
     // is what M6's note here was worried about when it said there would
     // never be one. Deleted cards really do go somewhere now, so the rail
     // needs a way in; it opens the panel and never deletes anything.
+    // A PHONE gets the same shape the selection rail already has: six
+    // targets and More. Measured before this: twelve tools = 698px in a
+    // 368px scroller, so Image, File, Comment, Fit, More and TRASH all sat
+    // off-screen with no fade, no hint and no visible scrollbar — the
+    // trash badge and its shake never appeared on a phone at all. The
+    // tools kept visible are the ones a board is made of (Note, Image,
+    // File, Board); everything else is one tap away behind More, which
+    // opens the same sheet the overflow already used.
+    if(_boardsIsPhone()){
+      return _BOARDS_RAIL_PHONE.concat([
+        {act:'more-tools',label:'More',icon:'more',on:false},
+        {act:'trash',label:'Trash',icon:'trash',badge:true,on:_boardsCardTrashOpen}
+      ]);
+    }
     const main=_BOARDS_RAIL_MAIN.map(it=>
       it.act==='line'?Object.assign({},it,{on:_boardsLineMode}):it);
     return main.concat([
@@ -4521,6 +4645,12 @@ function _boardsRenderRail(){
    the drag is simply abandoned. */
 let _boardsRailDrag=null;
 const _BOARDS_RAIL_DRAG_PX=5;
+// A CARD drag too. It had no dead zone at all: `pushed` went true on the
+// very first pointermove, so on a touch screen a slightly rolling tap pushed
+// an undo snapshot, swallowed the click and nudged the card 1-3px (or onto
+// the grid). The rail, the panel rows and the tray all had one; the card
+// drag was the odd one out. Found by reading, in the Sept 2026 phone audit.
+const _BOARDS_DRAG_PX=4;
 function _boardsRailDragStart(e){
   if(!_editBoard||!_boardsCanEdit(_editBoard))return;
   if(e.button!==undefined&&e.button!==0)return;
@@ -5978,14 +6108,16 @@ window.boardsPickStockImage=async function(i){
 };
 window.boardsMoreTools=function(){
   if(!_boardsCanEdit(_editBoard))return;
-  const items=_BOARDS_RAIL_OVERFLOW.map(it=>({act:it.act,label:it.label}));
   const btn=document.querySelector('#board-rail [data-act="more-tools"]');
   if(_boardsIsPhone()){
+    // Everything the phone bar left off, not just the desktop overflow.
+    const items=_boardsRailPhoneOverflow();
     _boardsOpenSheet('More tools',`<div class="board-sheet-list">${items.map(it=>
       `<button class="board-sheet-item" onclick="window.boardsSheetRun('${it.act}')">${_boardsEsc(it.label)}</button>`
     ).join('')}</div>`);
     return;
   }
+  const items=_BOARDS_RAIL_OVERFLOW.map(it=>({act:it.act,label:it.label}));
   const r=btn&&btn.getBoundingClientRect?btn.getBoundingClientRect():null;
   _boardsOpenCtx(r?r.right+6:120,r?r.top:120,items);
 };

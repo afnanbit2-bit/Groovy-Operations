@@ -1548,6 +1548,115 @@ the dark ramp fails the new fragment at **1.09:1** naming
 `board-rail-badge fill-3`. **Nobody has seen the shake or the ramp on a real
 screen** — the sandbox cannot sign in.
 
+### Mood Boards — the phone audit (Sept 2026)
+
+Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then
+*"Push the fixes … make sure everything in phone ui is crossed checked,
+every function, every motion, every logic."* Fourteen findings; everything
+below was either MEASURED in headless Chromium at 390×844, 390×667 and
+360×780 or read from the code, and every fix was verified by reverting it.
+
+**How it was measured, and the trap in it.** The existing `smoke-layout`
+probe measures FRAGMENTS in a padded `#main-content` at 420px — it had never
+seen the board canvas as a phone does: a `position:fixed` takeover with a
+top bar, a docked rail, a panel, the bug FAB and two dropdowns all
+competing for one screen. So the whole canvas was composed and measured,
+and that is `tests/smoke-phone.js` now (9 variants × 3 viewports, in CI).
+**The first run was worthless: headless Chromium clamps `--window-size` to
+500px wide**, so a "390px" run silently measured a tablet with the phone
+CSS applied. The page is rendered inside an `<iframe>` of the real width
+instead (media queries, `position:fixed` and `100dvh` all resolve against
+the iframe's viewport) and the probe posts its result to the parent, which
+is what `--dump-dom` returns. Check `r.vw` against the requested width —
+the runner does.
+
+**What was broken, and what holds each fix:**
+
+- **Both top-bar menus rendered 80px off the LEFT edge.** `.board-menu` was
+  `position:absolute;right:0` inside a wrap that lands at the END of a
+  wrapped flex row ~144px wide: the ⋯ menu at **x −81..144**, View at
+  **−83..97**, and the ⋯ menu 526px tall with no scroll. View is the only
+  route to zoom/Fit/Snap on a phone. They dock as bottom sheets now, the
+  `.board-ctx` pattern — the one popover in the module that had been missed.
+- **Half the rail was off-screen with nothing to say so.** Twelve tools =
+  698px in a 368px scroller; Image, File, Comment, Fit, More and **Trash**
+  needed a sideways scroll nobody was told about — the trash badge ramp and
+  shake never appeared on a phone. The add-mode rail on a phone is now
+  **Note · Image · File · Board · More · Trash** (`_BOARDS_RAIL_PHONE`), the
+  shape the selection rail already had, with everything else behind More
+  (`_boardsRailPhoneOverflow`, asserted to lose nothing and repeat nothing).
+- **The top bar was 142px tall** — 21% of a 667px screen — from seven
+  controls wrapping. It is ONE row (55px): back · title · Boards/Unsorted ·
+  zoom% · ⋯, with Undo, Redo, Find and Comments in the ⋯ sheet **under the
+  same ids**, so `_boardsSyncHistoryButtons` needed no change. Breadcrumbs
+  and the visibility pill are dropped on a phone; the save status stays
+  (it only ever shows a failure).
+- **The bug FAB sat on the rail's last tool and floated over the open
+  panels** (z-index 500, fixed) — the collision that retired the minimap.
+  Hidden while `body.board-fullscreen`; "Report a bug" is in the ⋯ sheet.
+- **Home's collapsed panel bar covered the bottom 32px of every rail
+  button** (bottom-anchored, z 130 over z 26). It sits above the rail now.
+- **The Open pill sat exactly on the sub-board card's resize grip** — a
+  phone-only bug by construction, since the pill exists only under
+  `_boardsIsPhone()`. Moved 44px left.
+- **The bottom chrome is one stack off ONE number now** — the rail's top
+  edge — and every piece adds `env(safe-area-inset-bottom)`, which the rail
+  itself never did while the fmt bar and the sheets already did: in
+  standalone mode on an iPhone it sat in the home-indicator zone.
+- **Touch targets under 32px**: the Unsorted item ✕ was 20×20; the back
+  button 25px; the panel's Hide/Close/+Team/Place all/All·Team·Private
+  26–29px; card ✕ 27px; every menu row 31px. All ≥32 now, and the probe
+  measures every chrome control.
+- **The empty-board hint was wrong in every clause on a phone** ("Double-
+  click … drop files … Ctrl+V … hold Space"). It speaks phone there.
+
+**The four TOUCH behaviours, all found by reading — no probe can drive a
+finger — and asserted in `tests/boards.test.js` by driving the recorded
+document listeners:**
+
+- **A note could only be edited by `dblclick`, and the module itself had
+  ruled dblclick unreliable on touch** — that is why the stage hand-pairs
+  taps. Card bodies, to-do items, table cells and headers all still hung
+  their edit on the attribute, and the More sheet offered a note no "Edit".
+  `_boardsWireTouch` now pairs two taps (300ms, 28px) on ANY `[ondblclick]`
+  element and dispatches a synthesized `dblclick` on it — one mechanism for
+  every card type, nothing per type. **A browser that does synthesize its
+  own dblclick fires it right after the second click, i.e. after ours, so a
+  TRUSTED one inside 600ms is dropped at the capture phase** before any
+  inline handler sees it: exactly one edit begins either way.
+- **There was no long-press at all** — the context menu hung on
+  `contextmenu`, which Android fires on a long-press and iOS Safari never
+  does for touch. A 500ms hold within 10px now synthesizes `contextmenu` at
+  the press point (with a buzz); a trusted `contextmenu` that arrives FIRST
+  cancels the timer, and one that arrives within 700ms after ours is
+  swallowed — so Android gets one menu, iOS gets one menu.
+  `-webkit-touch-callout:none` on the stage keeps the native callout out of
+  it; fields keep theirs.
+- **The on-screen keyboard panned the board under the caret.** `index.html`
+  asks for `interactive-widget=resizes-content`, so the keyboard is a
+  `resize`, and `_boardsOnViewportChange` recentred the pan by half the
+  keyboard's height — up on open, back on close. It returns early while
+  anything is being edited, and leaves `_boardsViewRect` alone too, so the
+  closing resize sees no delta.
+- **The card drag had no dead zone** — `pushed` went true on the very first
+  `pointermove`, so a slightly rolling tap pushed an undo snapshot,
+  swallowed the click and moved the card 1–3px (or onto the grid). The rail
+  had 5px and the panel/tray drags 4px; the card drag was the odd one out.
+  `_BOARDS_DRAG_PX` = 4 now.
+
+**`smoke-layout` lost its three top-bar fragments at 420px, deliberately.**
+They render the DESKTOP markup, and the phone CSS now lays the bar out as
+one non-wrapping row for the PHONE markup — which is what the real app
+renders at that width. A builder may return `{html,widths}` to opt out of a
+width; `smoke-phone.js` measures the phone bar instead, and far more
+thoroughly.
+
+**What is still NOT verified and only a phone can tell:** whether Chrome on
+Afnan's device fires its own `dblclick`/`contextmenu` (either way the
+guards give exactly one), the safe-area inset on a real iPhone, and the
+keyboard no longer moving a note mid-edit. **Nobody has looked at any of
+this on a real screen.**
+
 ### Mood Boards — the card is a wide rectangle, and the cue was switched off (Sept 2026)
 
 Two asks in one message: *"when ever a new board is crated i want the

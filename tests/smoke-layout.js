@@ -398,10 +398,10 @@ const FRAGMENTS={
       _boardsMenuOpen=false;_boardsViewOpen=false;_boardsTrayOpen=true;`);
     const full=app.run(`_renderBoardCanvasHTML()`);
     // The real wrap, so the tray resolves against the real containing block.
-    return Promise.resolve(
+    return Promise.resolve({widths:[1900,1280],html:
       '<div style="position:relative;height:620px;width:100%;overflow:hidden">'+
       full.replace('class="board-canvas-wrap"','class="board-canvas-wrap" style="position:absolute;height:100%"')+
-      '</div>');
+      '</div>'});
   },
   'boards — the board top bar':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
@@ -413,8 +413,8 @@ const FRAGMENTS={
     // intrinsic height, and pulling it in measures nothing useful.
     const i=full.indexOf('<div class="board-topbar">');
     const j=full.indexOf('<div class="board-stage"');
-    return Promise.resolve(
-      '<div style="position:relative;width:100%">'+full.slice(i,j)+'</div>');
+    return Promise.resolve({widths:[1900,1280],html:
+      '<div style="position:relative;width:100%">'+full.slice(i,j)+'</div>'});
   },
   // Home's top bar is a DIFFERENT bar — it drops share/rename/template and
   // grows the Boards button, which is the one route to the panel. Its count
@@ -433,8 +433,8 @@ const FRAGMENTS={
     const full=app.run(`_renderBoardCanvasHTML()`);
     const i=full.indexOf('<div class="board-topbar">');
     const j=full.indexOf('<div class="board-stage"');
-    return Promise.resolve(
-      '<div style="position:relative;width:100%">'+full.slice(i,j)+'</div>');
+    return Promise.resolve({widths:[1900,1280],html:
+      '<div style="position:relative;width:100%">'+full.slice(i,j)+'</div>'});
   },
   /* The trash badge's fill ramp. The whole point of four DISCRETE phases
      rather than a per-count colour is that they can be measured: this puts
@@ -1208,7 +1208,15 @@ document.getElementById('__out').textContent=JSON.stringify(bad);
 (async function main(){
   const cases=[];
   for(const [name,build] of Object.entries(FRAGMENTS)){
-    cases.push({name,html:await build()});
+    const built=await build();
+    // A builder may return {html,widths} to opt out of a width. The board
+    // TOP BAR fragments do: they render the DESKTOP markup (seven controls),
+    // and at 420px the phone CSS lays the bar out as ONE non-wrapping row
+    // for the PHONE markup — which the real app renders there, since
+    // _boardsIsPhone() is true. The phone bar is measured, comprehensively,
+    // by tests/smoke-phone.js instead.
+    if(built&&typeof built==='object')cases.push({name,html:built.html,widths:built.widths});
+    else cases.push({name,html:built});
   }
 
   const server=http.createServer((req,res)=>{
@@ -1243,7 +1251,7 @@ document.getElementById('__out').textContent=JSON.stringify(bad);
     console.log('smoke-layout: '+path.basename(browser)+', '+cases.length+
       ' fragment(s) × '+WIDTHS.length+' widths × 2 themes\n');
     const jobs=[];
-    cases.forEach((c,i)=>WIDTHS.forEach(w=>['light','dark'].forEach(t=>jobs.push({c,i,w,t}))));
+    cases.forEach((c,i)=>(c.widths||WIDTHS).forEach(w=>['light','dark'].forEach(t=>jobs.push({c,i,w,t}))));
     pending=jobs.length;
     // A bounded pool, not all at once: with 14 fragments that is 84 Chromes,
     // and on a developer's Windows machine most of them blew the 120s

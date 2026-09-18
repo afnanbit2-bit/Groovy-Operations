@@ -3608,6 +3608,170 @@ module.exports=function(){
     const tick=()=>new Promise(r=>setImmediate(r));
     const A4=`${240}x${Math.round(238*Math.SQRT2)+92}`;
 
+    /* ── The phone round (Sept 2026 audit) ──────────────────────────────
+       Every one of these came out of measuring the composed phone canvas in
+       headless Chromium (tests/smoke-phone.js holds the geometry); what is
+       asserted HERE is the logic behind each fix. */
+    s.section('phone: the rail is six targets and More');
+    {
+      const ph=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        currentPage:'board-canvas',phone:true});
+      const r=x=>ph.run(x);
+      r(`_editBoard={id:'X',title:'B',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+         _editCards=[];_editConnectors=[];_boardsSelection=new Set();_editUnsorted=[];
+         _boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;moodBoards=[];`);
+      s.eq('the add-mode bar',r(`_boardsRailItems().map(i=>i.act).join(',')`),
+        'add:text,imagepanel,file,add:board,more-tools,trash');
+      // More lists every add-tool the bar does not carry — nothing is lost,
+      // and nothing is listed twice.
+      const over=JSON.parse(r(`JSON.stringify(_boardsRailPhoneOverflow().map(i=>i.act))`));
+      const bar=JSON.parse(r(`JSON.stringify(_BOARDS_RAIL_PHONE.map(i=>i.act))`));
+      const allAdd=JSON.parse(r(`JSON.stringify(_BOARDS_RAIL_MAIN.concat(_BOARDS_RAIL_OVERFLOW,_BOARDS_RAIL_MEDIA).map(i=>i.act))`));
+      s.ok('More holds every tool the bar left off',allAdd.every(a=>bar.includes(a)||over.includes(a)),
+        allAdd.filter(a=>!bar.includes(a)&&!over.includes(a)).join(','));
+      s.ok('and none of the ones on the bar',!over.some(a=>bar.includes(a)));
+      s.ok('and the board-level actions',over.includes('comment-board')&&over.includes('fit'));
+      s.eq('nothing appears twice',new Set(over).size,over.length);
+      // Desktop is untouched: the full grouped column.
+      const dt=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},currentPage:'board-canvas'});
+      dt.run(`_editBoard={id:'X',title:'B',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+         _editCards=[];_editConnectors=[];_boardsSelection=new Set();_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;`);
+      const dacts=JSON.parse(dt.run(`JSON.stringify(_boardsRailItems().filter(i=>i.act).map(i=>i.act))`));
+      s.ok('the desktop rail still carries Line, Column and Comment inline',
+        dacts.includes('line')&&dacts.includes('add:column')&&dacts.includes('comment-board'));
+
+      s.section('phone: the top bar is one row and the ⋯ sheet holds the rest');
+      ph.run(`window.openBugReportModal=function(){};`);
+      const html=r(`_renderBoardCanvasHTML()`);
+      const topbar=html.slice(html.indexOf('class="board-topbar"'),html.indexOf('id="board-view-menu"'));
+      s.ok('no Undo button in the bar',!/id="board-undo-btn"/.test(topbar));
+      s.ok('no Find button in the bar',!/boardsToggleFind\(\)"[^>]*>Find</.test(topbar));
+      s.ok('no Comments button in the bar',!/id="board-cmt-btn"/.test(topbar));
+      s.ok('no visibility pill in the bar',!/class="pill">PRIVATE/.test(topbar));
+      const menu=html.slice(html.indexOf('id="board-menu"'));   // the ⋯ sheet is the last thing in the bar
+      s.ok('Undo keeps its id inside the sheet (so _boardsSyncHistoryButtons still finds it)',/id="board-undo-btn"/.test(menu));
+      s.ok('Redo too',/id="board-redo-btn"/.test(menu));
+      s.ok('Find is in the sheet',/boardsToggleFind/.test(menu));
+      s.ok('Comments is in the sheet, id intact',/id="board-cmt-btn"/.test(menu));
+      s.ok('Report a bug is in the sheet (the FAB is hidden on a phone)',/openBugReportModal/.test(menu));
+      s.eq('the Undo id appears exactly once in the whole render',(html.match(/id="board-undo-btn"/g)||[]).length,1);
+      const dhtml=dt.run(`_renderBoardCanvasHTML()`);
+      const dbar=dhtml.slice(dhtml.indexOf('class="board-topbar"'),dhtml.indexOf('id="board-view-menu"'));
+      s.ok('desktop keeps Undo in the bar',/id="board-undo-btn"/.test(dbar));
+      s.ok('and no Report a bug in its menu',!/openBugReportModal/.test(dhtml));
+
+      s.section('phone: the empty hint says what a finger can do');
+      s.ok('double-tap, not double-click',/Double-tap anywhere/.test(html));
+      s.ok('no Ctrl+V, no Space, no drop',!/Ctrl\+V|hold Space|drop files/.test(html));
+      s.ok('the desktop hint is unchanged',/Double-click anywhere/.test(dhtml)&&/Ctrl\+V/.test(dhtml));
+
+      s.section('phone: a card drag starts after 4px');
+      r(`_editCards=[{id:'n1',type:'text',text:'',x:40,y:60,w:170,h:100}];_boardsUndo=[];_boardsRedo=[];_boardsSelection=new Set();_boardsSuppressClick=false;`);
+      const drag=(x,y)=>r(`(function(){
+        const head=document.getElementById('drag-head');
+        window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
+          stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'n1');
+        const ev=t=>({type:t,clientX:${x},clientY:${y},altKey:false,shiftKey:false});
+        (head._ls.pointermove||[]).forEach(l=>l.fn(ev('pointermove')));
+        (head._ls.pointerup||[]).forEach(l=>l.fn(ev('pointerup')));
+        return true;})()`);
+      drag(2,3);
+      s.eq('a 2-3px roll pushes no undo entry',r(`_boardsUndo.length`),0);
+      s.eq('and moves nothing',r(`_editCards[0].x+','+_editCards[0].y`),'40,60');
+      s.ok('and does not swallow the click',!JSON.parse(r(`_boardsSuppressClick`)));
+      drag(9,0);
+      s.eq('9px is a drag: one undo entry',r(`_boardsUndo.length`),1);
+      s.eq('and the card moved',r(`_editCards[0].x`),49);
+
+      s.section('phone: the keyboard resize does not pan the board');
+      r(`_boardsWasPhone=null;_boardsViewRect={w:390,h:700};_editBoard.panX=0;_editBoard.panY=0;
+         document.getElementById('board-stage').getBoundingClientRect=function(){return{width:390,height:400,left:0,top:0};};
+         _boardsEditingEl={contains(){return false;}};`);
+      r(`_boardsOnViewportChange()`);
+      s.eq('while a card is being edited the pan is left alone',r(`_editBoard.panY`),0);
+      s.eq('and the remembered view rect too, so the closing resize sees no delta',r(`_boardsViewRect.h`),700);
+      r(`_boardsEditingEl=null;document.getElementById('board-stage').getBoundingClientRect=function(){return{width:390,height:700,left:0,top:0};};`);
+      r(`_boardsOnViewportChange()`);
+      s.eq('the keyboard closing after the edit ended is a no-op',r(`_editBoard.panY`),0);
+      r(`document.getElementById('board-stage').getBoundingClientRect=function(){return{width:390,height:400,left:0,top:0};};`);
+      r(`_boardsOnViewportChange()`);
+      s.eq('a real resize with nothing being edited still recentres',r(`_editBoard.panY`),-150);
+
+      s.section('phone: two taps on an [ondblclick] element are a double-click');
+      // The document listeners _boardsWireTouch registered at load are
+      // driven from here with plain objects; `target` answers closest()
+      // the way a card body inside the stage would.
+      const MouseEv=function(type,init){this.type=type;Object.assign(this,init||{});this.isTrusted=false;};
+      const tap=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        currentPage:'board-canvas',phone:true,globals:{MouseEvent:MouseEv}});
+      tap.run(`_editBoard={id:'X',title:'B',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};_editCards=[];_editConnectors=[];`);
+      const stage={id:'board-stage'};
+      const fired=[];
+      const el={id:'body-el',dispatchEvent(ev){fired.push(ev.type+'@'+ev.clientX+','+ev.clientY);}};
+      const target={closest(sel){if(/board-stage/.test(sel))return stage;if(sel==='[ondblclick]')return el;return null;},dispatchEvent(ev){fired.push(ev.type+'@'+ev.clientX+','+ev.clientY);}};
+      const ls=tap.state.listeners;
+      s.ok('the touch tracker is wired at load',!!(ls.pointerdown&&ls.pointerup&&ls.dblclick&&ls.contextmenu),Object.keys(ls).join(','));
+      const touch=(type,x,y,pointerType)=>{
+        const ev={type,pointerType:pointerType||'touch',pointerId:7,clientX:x,clientY:y,target,stopPropagation(){this._s=true;},preventDefault(){this._p=true;}};
+        (ls[type]||[]).forEach(fn=>fn(ev));return ev;
+      };
+      touch('pointerdown',100,100);touch('pointerup',100,100);
+      s.eq('one tap fires nothing',fired.length,0);
+      touch('pointerdown',104,102);touch('pointerup',104,102);
+      s.eq('the second tap within 300ms fires a dblclick at the tap point',fired.join('|'),'dblclick@104,102');
+      // A browser that synthesizes its own dblclick right after ours is
+      // dropped at the capture phase, so an inline handler never runs twice.
+      const dup={type:'dblclick',isTrusted:true,stopPropagation(){this._s=true;},preventDefault(){this._p=true;}};
+      ls.dblclick.forEach(fn=>fn(dup));
+      s.ok('a trusted dblclick within the window is swallowed',!!(dup._s&&dup._p));
+      // A tap that MOVED is not a tap.
+      fired.length=0;
+      touch('pointerdown',100,100);touch('pointermove',130,100);touch('pointerup',130,100);
+      touch('pointerdown',130,100);touch('pointerup',130,100);
+      s.eq('a drag then a tap is not a pair',fired.length,0);
+      // A mouse never goes through this path.
+      fired.length=0;
+      touch('pointerdown',1,1,'mouse');touch('pointerup',1,1,'mouse');
+      touch('pointerdown',1,1,'mouse');touch('pointerup',1,1,'mouse');
+      s.eq('mouse taps are ignored',fired.length,0);
+
+      _pending.push((async()=>{
+        // The long-press, driven against the real timer.
+        const hp=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+          currentPage:'board-canvas',phone:true,globals:{MouseEvent:MouseEv}});
+        hp.run(`_editBoard={id:'X',title:'B',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};_editCards=[];_editConnectors=[];`);
+        const hls=hp.state.listeners;
+        const got=[];
+        const tgt={closest(sel){return /board-stage/.test(sel)?stage:null;},dispatchEvent(ev){got.push(ev.type);}};
+        const t=(type,x,y)=>{const ev={type,pointerType:'touch',pointerId:3,clientX:x,clientY:y,target:tgt,stopPropagation(){},preventDefault(){}};(hls[type]||[]).forEach(fn=>fn(ev));};
+        const wait=ms=>new Promise(res=>setTimeout(res,ms));
+        t('pointerdown',50,50);await wait(560);
+        const held=got.join('|');
+        t('pointerup',50,50);
+        const afterUp=got.join('|');
+        got.length=0;
+        t('pointerdown',50,50);await wait(120);t('pointerup',50,50);await wait(500);
+        const early=got.join('|');
+        got.length=0;
+        t('pointerdown',50,50);await wait(120);t('pointermove',80,50);await wait(500);t('pointerup',80,50);
+        const moved=got.join('|');
+        got.length=0;
+        t('pointerdown',50,50);await wait(100);
+        const nat={type:'contextmenu',isTrusted:true,stopPropagation(){this._s=true;},preventDefault(){this._p=true;}};
+        hls.contextmenu.forEach(fn=>fn(nat));
+        await wait(560);t('pointerup',50,50);
+        const native=got.join('|');
+
+        s.section('phone: a long-press is the right-click');
+        s.eq('held still for 500ms → contextmenu at the press point',held,'contextmenu');
+        s.eq('and the release after a hold is not a tap',afterUp,'contextmenu');
+        s.eq('released early → nothing',early,'');
+        s.eq('moved during the hold → nothing',moved,'');
+        s.eq('a native long-press arriving first cancels ours',native,'');
+        s.ok('and that native one was let through (nothing of ours had fired)',!nat._s);
+      })());
+    }
+
     return Promise.all(_pending.concat([(async()=>{
       boot();
       s.section('the page-size maths');
