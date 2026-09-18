@@ -1952,5 +1952,61 @@ module.exports=async function(){
     s.ok('and so is an empty database',/No creators yet/.test(t.run('_mktTiersHTML()')));
   }
 
+  s.section('the collection dropdown carries every drop, newest first');
+  {
+    const t=app();
+    const list=t.run('MKT_COLLECTIONS');
+    // The ORDER is the feature — newest drop first, deliberately not
+    // alphabetical. Asserted literally so a well-meaning sort fails here.
+    s.eq('all fifteen drops, in the order given',J(list),J([
+      'Lowkey Heat','Sunfaded','The Aim Drop','Live In Pants','The Jerseys Restock',
+      'Drop X','Rebirth Drop','Afterdark','The Originals Drop','The Ninja Drop',
+      'Vintage Drop','The Specials','Cultured Legacy VIII','Friends of GRVY','The Owners Drop']));
+    s.eq('the newest is first',list[0],'Lowkey Heat');
+    s.eq('and the first drop is last',list[list.length-1],'The Owners Drop');
+    s.ok('it is NOT alphabetical',J(list)!==J(list.slice().sort()));
+    s.eq('no duplicates',new Set(list.map(x=>x.toLowerCase())).size,list.length);
+  }
+  {
+    const t=app();
+    const opts=(disp,cur)=>t.run('mktCollectionOptions('+J(disp)+','+J(cur||'')+')');
+    let o=opts([]);
+    s.eq('with no history the known drops are the whole list',J(o.known),J(t.run('MKT_COLLECTIONS')));
+    s.eq('and nothing is appended',o.extra.length,0);
+    // The sheet import wrote free text. A value nobody can select again is
+    // one that vanishes the next time that dispatch is saved.
+    o=opts([{collection_sent:'Some Old Capsule'},{collection_sent:'Lowkey Heat'}]);
+    s.eq('a value already recorded stays reachable',J(o.extra),J(['Some Old Capsule']));
+    s.ok('and a known drop is not repeated under it',o.extra.indexOf('Lowkey Heat')<0);
+    o=opts([{collection_sent:'lowkey heat'}]);
+    s.eq('matching is case-insensitive',o.extra.length,0);
+    o=opts([{collection_sent:'  '},{collection_sent:null},{}]);
+    s.eq('blanks are not offered',o.extra.length,0);
+    o=opts([{collection_sent:'Dup'},{collection_sent:'dup'}]);
+    s.eq('an extra is offered once',J(o.extra),J(['Dup']));
+    o=opts([],'Only On This Record');
+    s.eq('the value being edited is reachable even if no other dispatch has it',J(o.extra),J(['Only On This Record']));
+  }
+  {
+    const t=app();
+    t.run("mktCreators=[{id:'c1',ig_handle:'a',status:'active'}];mktCreatorsLoaded=true;mktDispatchesLoaded=true;mktCodesLoaded=true");
+    t.run("mktDispatches=[{id:'d1',creator_id:'c1',type:'organic',date_of_dispatch:'2026-09-01',collection_sent:'Sunfaded',products:[{variant_id:'v1'}]}]");
+    t.run("window.mktOpenDispatch('d1')");
+    const h=t.el('mkt-modal-back').innerHTML;
+    s.ok('the field is a dropdown, not free text',/<select id="mkt-d-coll"/.test(h)&&!/<input id="mkt-d-coll"/.test(h));
+    s.ok('every drop is offered',t.run('MKT_COLLECTIONS').every(c=>h.indexOf('>'+c+'<')>0));
+    s.ok('the stored one is selected',/<option value="Sunfaded" selected>/.test(h));
+    s.ok('and it can be cleared',/<option value="">—<\/option>/.test(h));
+    t.run('window.mktCloseModal()');
+  }
+  {
+    // Saving an edit keeps whatever the dropdown holds.
+    const t=app();
+    t.run("mktCreators=[{id:'c1',ig_handle:'a',status:'active'}];mktCreatorsLoaded=true;mktDispatchesLoaded=true;mktCodesLoaded=true");
+    t.run("mktDispatches=[{id:'d1',creator_id:'c1',type:'organic',date_of_dispatch:'2026-09-01',collection_sent:'Sunfaded',status:'confirmed',products:[{variant_id:'v1'}]}]");
+    const built=t.run("mktBuildDispatchPayload({creator_id:'c1',date_of_dispatch:'2026-09-01',collection_sent:'The Ninja Drop',status:'confirmed',products:[{variant_id:'v1'}]},mktDispatches[0],mktCreators,1,'u').data");
+    s.eq('the chosen drop is what gets written',built.collection_sent,'The Ninja Drop');
+  }
+
   return s;
 };
