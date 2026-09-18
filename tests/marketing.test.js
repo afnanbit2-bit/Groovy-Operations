@@ -548,7 +548,8 @@ module.exports=async function(){
     s.ok('against a creator that exists',/exists\(\/databases\/\$\(database\)\/documents\/creators\//.test(blk));
     s.ok('an update cannot move a dispatch to another creator',/creator_id == resource\.data\.creator_id/.test(blk));
     s.ok('or change its type',/type == resource\.data\.type/.test(blk));
-    s.ok('only owners delete',/allow delete: if isOwner\(\);/.test(blk));
+    s.ok('Marketing deletes an organic dispatch',/allow delete: if isMarketing\(\)\s*&& resource\.data\.type == 'organic'/.test(blk));
+    s.ok('never one carrying a discount code',/resource\.data\.get\('has_discount_code', false\) == false/.test(blk));
     const js=read('js/marketing.js');
     const statusesJs=((js.match(/const MKT_DISPATCH_STATUSES=\[([\s\S]*?)\];/)||['',''])[1].match(/k:'([a-z_]+)'/g)||[]).map(x=>x.slice(3,-1));
     const statusesRules=((blk.match(/status in \[([^\]]*)\]/)||['',''])[1].match(/'([a-z_]+)'/g)||[]).map(x=>x.replace(/'/g,''));
@@ -1785,6 +1786,170 @@ module.exports=async function(){
     s.eq('someone else\'s request is not deleted',dels.length,0);
     s.ok('and it says why',/Only an owner, or the person who raised it/.test(t.el('mkt-f-error').textContent));
     t.run('window.mktCloseModal()');
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Issue 2 — deleting a dispatch, and the Monitor trail
+  // ══════════════════════════════════════════════════════════════════════
+
+  s.section('a dispatch can be deleted, but only the ones nothing points at');
+  {
+    const t=app();
+    const block=(d,loaded)=>t.run('mktDispatchDeleteBlock('+J(d)+','+J(loaded===undefined?true:loaded)+')');
+    s.eq('an ordinary organic dispatch is deletable',block({id:'d1',type:'organic'}),'');
+    s.eq('one with no type at all is organic',block({id:'d1'}),'');
+    s.ok('a Paid PR dispatch is refused',/approved Paid PR request/.test(block({id:'d1',type:'paid_pr'})));
+    s.ok('so is one carrying a discount code',/discount code/.test(block({id:'d1',type:'organic',has_discount_code:true})));
+    s.ok('or merely naming one',/discount code/.test(block({id:'d1',type:'organic',discount_code_id:'c1'})));
+    s.ok('a failed codes read refuses rather than guessing',/did not load/.test(block({id:'d1',type:'organic'},false)));
+    s.ok('and a missing dispatch says so',/no longer in the list/.test(block(null)));
+  }
+  {
+    // The rollups are RECOMPUTED from what is left, never decremented.
+    const batches=[];
+    const t=app({globals:{writeBatch:()=>{const ops=[];batches.push(ops);
+      return{delete(r){ops.push({del:r});},update(r,d){ops.push({update:d});},set(){},commit:async()=>{}};}}});
+    t.run("mktCreators=[{id:'c1',ig_handle:'a',lifetime_organic_dispatches:2,lifetime_content_delivered:1}];mktCreatorsLoaded=true");
+    t.run("mktDispatchesLoaded=true;mktCodesLoaded=true;mktPaidPRsLoaded=true;mktPaidPRs=[]");
+    t.run("mktDispatches=[{id:'d1',creator_id:'c1',type:'organic',date_of_dispatch:'2026-09-01',link_to_post:'https://x/1',products:[{variant_id:'v1'}]},"
+      +"{id:'d2',creator_id:'c1',type:'organic',date_of_dispatch:'2026-09-05',products:[{variant_id:'v2'}]}]");
+    t.run("window.mktOpenDispatch('d2')");
+    s.ok('the modal offers Delete',/mktDeleteDispatch/.test(t.el('mkt-modal-back').innerHTML));
+    t.el('mkt-d-id').value='d2';
+    await t.run('window.mktDeleteDispatch()');
+    s.eq('one batch',batches.length,1);
+    s.eq('deleting the dispatch and rewriting the creator',batches[0].length,2);
+    s.eq('the list loses it',t.run('mktDispatches.map(d=>d.id).join(",")'),'d1');
+    const roll=batches[0].find(o=>o.update).update;
+    s.eq('the lifetime count is recomputed, not decremented',roll.lifetime_organic_dispatches,1);
+    s.eq('and so is what was delivered',roll.lifetime_content_delivered,1);
+    s.eq('the local copy follows',t.run('mktCreators[0].lifetime_organic_dispatches'),1);
+    s.ok('it is logged for Monitor',t.state.activity.some(a=>a.action==='Dispatch deleted'));
+  }
+  {
+    // The refusal is not only a hidden button.
+    const batches=[];
+    const t=app({globals:{writeBatch:()=>{const ops=[];batches.push(ops);
+      return{delete(){},update(){},set(){},commit:async()=>{}};}}});
+    t.run("mktCreators=[{id:'c1',ig_handle:'a'}];mktCreatorsLoaded=true;mktDispatchesLoaded=true;mktCodesLoaded=true");
+    t.run("mktDispatches=[{id:'d1',creator_id:'c1',type:'paid_pr',date_of_dispatch:'2026-09-01',products:[{variant_id:'v1'}]}]");
+    t.run("window.mktOpenDispatch('d1')");
+    s.ok('a Paid PR dispatch offers no Delete',!/mktDeleteDispatch/.test(t.el('mkt-modal-back').innerHTML));
+    t.el('mkt-d-id').value='d1';
+    await t.run('window.mktDeleteDispatch()');
+    s.eq('and calling it anyway writes nothing',batches.length,0);
+    s.ok('saying why',/approved Paid PR request/.test(t.el('mkt-f-error').textContent));
+    t.run('window.mktCloseModal()');
+  }
+  {
+    const lead=app({session:{uid:'uid-d',u:'daniyal',name:'Daniyal Tufail',role:'creator_content_ops_lead',email:'daniyal@groovy.op'}});
+    s.eq('the lead may delete dispatches',lead.run('mktCanDeleteDispatches()'),true);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Issue 7 — charts on Reports
+  // ══════════════════════════════════════════════════════════════════════
+
+  s.section('the chart kit');
+  {
+    const t=app();
+    s.eq('an axis rounds UP to something round',t.run('mktChartMax([42,17])'),50);
+    s.eq('and again an order of magnitude up',t.run('mktChartMax([4200,900])'),5000);
+    s.eq('an exact round number is not overshot',t.run('mktChartMax([100])'),100);
+    // An all-zero chart must still draw its baseline rather than divide by zero.
+    s.eq('all zeros still give a usable axis',t.run('mktChartMax([0,0])'),1);
+    s.eq('so does an empty one',t.run('mktChartMax([])'),1);
+    s.eq('ticks shorten thousands',t.run('mktChartTick(45000)'),'45k');
+    s.eq('and millions',t.run('mktChartTick(1200000)'),'1.2m');
+    s.eq('small numbers are left alone',t.run('mktChartTick(42)'),'42');
+    s.eq('a long label is cut, not overrun',t.run("mktChartClip('abcdefghij',5)"),'abcd…');
+    s.eq('a short one is untouched',t.run("mktChartClip('abc',5)"),'abc');
+  }
+  {
+    const t=app();
+    const svg=t.run("mktChartBars({groups:[{label:'Sep',values:[10,4]},{label:'Oct',values:[20,20]}],series:['A','B'],caption:'x'})");
+    s.ok('bars are drawn',(svg.match(/<rect /g)||[]).length===4);
+    s.ok('with a scaling viewBox',/viewBox="0 0 720 210"[\s\S]*preserveAspectRatio/.test(svg));
+    s.ok('described for a screen reader',/role="img" aria-label="x"/.test(svg));
+    // A <title> carries text with no box, which the layout probe reads as
+    // invisible text — the chart must never grow one.
+    s.ok('and carries no <title> element',!/<title/.test(svg));
+    s.ok('every colour is a token',!/#[0-9a-f]{3,6}/i.test(svg));
+    s.eq('no groups, no chart',t.run('mktChartBars({groups:[],series:["A"]})'),'');
+  }
+  {
+    const t=app();
+    const q=String.fromCharCode(34);
+    const svg=t.run('mktChartHBars({rows:[{label:'+J('<img src=x onerror=1>')+',value:5}],caption:"c"})');
+    s.ok('a label is escaped into the SVG',!/<img/.test(svg)&&/&lt;img/.test(svg));
+    s.ok('one bar per row',(svg.match(/<rect /g)||[]).length===1);
+    s.eq('no rows, no chart',t.run('mktChartHBars({rows:[]})'),'');
+  }
+  {
+    // A month with nothing must still appear, or a gap in the log closes up
+    // and the time axis lies.
+    const t=app();
+    const now=Date.UTC(2026,8,20);
+    const rows=t.run('mktDispatchActivity('+J([
+      {id:'a',type:'organic',date_of_dispatch:'2026-09-02',status:'content_received'},
+      {id:'b',type:'paid_pr',date_of_dispatch:'2026-09-09'},
+      {id:'c',type:'organic',date_of_dispatch:'2026-07-04'},
+      {id:'d',type:'organic',date_of_dispatch:''},
+      {id:'e',type:'organic',date_of_dispatch:'2019-01-01'}
+    ])+',3,'+now+')');
+    s.eq('three months, newest last',rows.map(r=>r.month).join(','),'2026-07,2026-08,2026-09');
+    s.eq('an empty month is still emitted',rows[1].organic+rows[1].paid,0);
+    s.eq('organic and paid are counted apart',rows[2].organic+'/'+rows[2].paid,'1/1');
+    s.eq('a post counts as delivered',rows[2].delivered,1);
+    s.eq('a dispatch outside the window is not counted',rows.reduce((n,r)=>n+r.organic+r.paid,0),3);
+  }
+  {
+    const t=app();
+    const rows=t.run('mktTierDistribution('+J([
+      {tier:'A'},{tier:'A'},{tier:'C'},{tier:'below_threshold'},{tier:null},{},{tier:'nonsense'}
+    ])+')');
+    s.eq('the tiers come back in the app order',rows.map(r=>r.tier).join(','),'A,B,C,below_threshold,unscored');
+    s.eq('counted',rows.map(r=>r.count).join(','),'2,0,1,1,3');
+    s.ok('an unknown tier is counted as unscored, never dropped',rows.reduce((n,r)=>n+r.count,0)===7);
+    s.eq('and the labels read as the app words them',rows[3].label+' / '+rows[4].label,'Below threshold / Unscored');
+  }
+  {
+    // The page renders its charts, and a chart NEVER replaces its table.
+    const t=app();
+    t.run("mktCreatorsLoaded=true;mktDispatchesLoaded=true;mktPaidPRsLoaded=true;mktCodesLoaded=true;mktCodes=[]");
+    t.run("mktCreators=[{id:'c1',ig_handle:'saritas',name:'Sarita',tier:'A'},{id:'c2',ig_handle:'nightf',tier:null}]");
+    t.run("mktDispatches=[{id:'d1',creator_id:'c1',type:'organic',date_of_dispatch:_mktDayStr(Date.now()),status:'content_received',performance_captured_at:Date.now(),performance_views:9000,performance_likes:400,performance_comments:20,performance_saves:10,products:[{variant_id:'v1'}]}]");
+    t.run("mktPaidPRs=[{id:'p1',creator_id:'c1',status:'approved',decided_at:Date.now(),proposed_amount_pkr:45000,payment_status:'paid',deliverable:'1 Reel'}]");
+    const page=t.run('renderMarketingReports()');
+    s.ok('Dispatch activity is a card',/Dispatch activity/.test(page));
+    s.ok('so is Creator tiers',/Creator tiers/.test(page));
+    s.ok('the page draws charts',(page.match(/class="mkt-chart"/g)||[]).length>=4);
+    // A chart never REPLACES its table — reading a figure off a bar is
+    // guesswork, and these are numbers people are paid against. Asserted
+    // per section rather than as a count: the lift table needs Shopify
+    // line items, which are not loaded here.
+    s.eq('the three sections with data each keep their table',(page.match(/mkt-table mkt-rep/g)||[]).length,3);
+    ['Monthly PR spend','Top ROI creators','Best performing'].forEach(name=>{
+      const card=page.slice(page.indexOf(name));
+      const end=card.indexOf('</div>\n    <div class="card"');
+      const body=end>0?card.slice(0,end):card;
+      s.ok(name+' shows a chart AND its table',/class="mkt-chart"/.test(body)&&/mkt-table mkt-rep/.test(body));
+    });
+    s.ok('the spend chart is labelled',/aria-label="Approved Paid PR spend/.test(page));
+    s.ok('the organic chart follows the sort',/aria-label="Top creators by average views"/.test(page));
+    t.run("_mktOrganicSort='engagement'");
+    s.ok('and changes with it',/aria-label="Top creators by engagement rate"/.test(t.run('renderMarketingReports()')));
+    t.run("_mktOrganicSort='views'");
+  }
+  {
+    // A refused read must not render as an empty chart.
+    const t=app();
+    t.run("mktCreatorsLoaded=false;mktDispatchesLoaded=false;mktDispatches=[];mktCreators=[]");
+    s.ok('activity says the read failed',/could not be read/.test(t.run('_mktActivityHTML()')));
+    s.ok('so does the tier chart',/could not be read/.test(t.run('_mktTiersHTML()')));
+    t.run("mktCreatorsLoaded=true;mktDispatchesLoaded=true");
+    s.ok('an empty log is a different sentence',/No dispatches logged yet/.test(t.run('_mktActivityHTML()')));
+    s.ok('and so is an empty database',/No creators yet/.test(t.run('_mktTiersHTML()')));
   }
 
   return s;

@@ -2118,6 +2118,7 @@ window.mktOpenDispatch=function(id,creatorId){
     </div>`:''}
     <div id="mkt-f-error" class="mkt-error" hidden></div>
     <div class="mkt-modal-actions">
+      ${d&&mktCanDeleteDispatches()&&!mktDispatchDeleteBlock(d,mktCodesLoaded)?`<button class="btn-outline mkt-danger" style="margin-right:auto" id="mkt-d-delete" onclick="window.mktDeleteDispatch()">Delete dispatch</button>`:''}
       <button class="btn-outline" onclick="window.mktCloseModal()">Cancel</button>
       <button class="btn-primary" id="mkt-d-save" onclick="window.mktSaveDispatch()">${d?'Save changes':'Log dispatch'}</button>
     </div>`,true);
@@ -2211,6 +2212,70 @@ async function mktWriteDispatch(built,rollups,creatorId){
   if(creatorId&&rollups)b.update(doc(db,'creators',creatorId),rollups);
   await b.commit();
 }
+
+// ── Deleting a dispatch (Sept 2026) ─────────────────────────────────────
+// Anyone in Marketing may remove an ORGANIC dispatch they logged in error.
+// Two shapes are refused outright, in the rules as well as here, because
+// each would leave another record pointing at nothing:
+//   · a paid_pr dispatch — it exists only because a Paid PR was approved,
+//     and that request carries its `dispatch_id`. An approved spend is not
+//     something a delete button should be able to unpick.
+//   · a dispatch carrying a discount code — `discount_codes/{id}` names it,
+//     and the redemption rollup counts against it nightly.
+// The creator's rollups are RECOMPUTED from what is left, never
+// decremented — the same rule the save path follows, and the only one that
+// survives an edited date.
+function mktCanDeleteDispatches(){
+  return typeof canAccessMarketing==='function'&&canAccessMarketing();
+}
+/** Why this dispatch cannot be deleted, or '' when it can. Pure. */
+function mktDispatchDeleteBlock(d,codesLoaded){
+  if(!d)return'That dispatch is no longer in the list — refresh the page.';
+  if((d.type||'organic')==='paid_pr')
+    return'This dispatch belongs to an approved Paid PR request, which records the spend and links to it. It cannot be deleted.';
+  if(!codesLoaded)
+    return'The discount codes did not load, so it cannot be checked whether a code points at this dispatch. Reload and try again.';
+  if(d.has_discount_code||d.discount_code_id)
+    return'A discount code was created for this dispatch and counts its redemptions against it. Deleting the dispatch would leave that code pointing at nothing.';
+  return'';
+}
+
+window.mktDeleteDispatch=async function(){
+  if(_mktSaving)return;
+  if(!mktCanDeleteDispatches()){_mktFormError('Your account cannot delete dispatches.');return;}
+  const id=_mktVal('mkt-d-id');
+  const d=id?mktDispatches.find(x=>x.id===id):null;
+  const block=mktDispatchDeleteBlock(d,mktCodesLoaded);
+  if(block){_mktFormError(block);return;}
+  const c=_mktCreatorById(d.creator_id);
+  const what=[c?'@'+c.ig_handle:'',d.date_of_dispatch?_mktDayLabel(d.date_of_dispatch):'no date',
+    (d.products||[]).length?(d.products||[]).length+' product'+((d.products||[]).length===1?'':'s'):(d.products_note||'no products')].filter(Boolean).join(' · ');
+  if(typeof confirm==='function'&&!confirm('Delete this dispatch?\n\n'+what
+    +'\n\nThe creator\u2019s lifetime counts are recalculated without it. This cannot be undone.'))return;
+  const remaining=mktDispatches.filter(x=>x.id!==d.id);
+  const rollups=c?mktCreatorRollups(d.creator_id,remaining,mktPaidPRsLoaded?mktPaidPRs:null):null;
+  const btn=document.getElementById('mkt-d-delete');
+  _mktSaving=true;if(btn){btn.disabled=true;btn.textContent='Deleting\u2026';}
+  try{
+    const b=writeBatch(db);
+    b.delete(doc(db,'dispatches',d.id));
+    if(rollups)b.update(doc(db,'creators',d.creator_id),rollups);
+    await b.commit();
+    mktDispatches=remaining;
+    if(rollups)mktCreators=mktCreators.map(x=>x.id===d.creator_id?Object.assign({},x,rollups):x);
+    _mktDraft=null;
+    _mktCloseModal();
+    showToast('Dispatch deleted'+(c?' for @'+c.ig_handle:''));
+    if(typeof logActivity==='function')logActivity('Dispatch deleted',what);
+    _mktRerenderPage();
+  }catch(e){
+    console.error('[marketing] dispatch delete failed',e);
+    _mktFormError('Could not delete it: '+((e&&e.message)||'unknown error')+'. Nothing was changed.');
+  }finally{
+    _mktSaving=false;
+    if(btn){btn.disabled=false;btn.textContent='Delete dispatch';}
+  }
+};
 
 window.mktSaveDispatch=async function(){
   if(_mktSaving||!_mktDraft)return;
@@ -3074,6 +3139,168 @@ function _mktLoadLineItems(){
 function _mktMonthLabel(key){const [y,m]=key.split('-').map(Number);return new Date(y,m-1,1).toLocaleDateString('en-GB',{month:'long',year:'numeric'});}
 function _mktWhoCell(c){return c?`<div class="mkt-name">${_mktEsc(c.name||'@'+c.ig_handle)}</div><div class="mkt-handle">@${_mktEsc(c.ig_handle)}</div>`:'<span class="mkt-muted">Unknown creator</span>';}
 
+// ════════════════════════════════════════════════════════════════════════
+// M8 — charts on Reports (Sept 2026)
+// ════════════════════════════════════════════════════════════════════════
+// Hand-drawn inline SVG. No charting library: this repo has held the
+// zero-new-deps line everywhere else (the Mood Boards canvas, the formula
+// parser, the colour picker), and five bars and a gridline do not justify
+// the first exception.
+//
+// Three rules the drawing code follows, each of which has bitten this app
+// somewhere else already:
+//
+//   · EVERY COLOUR IS A CSS VARIABLE, never a literal. A chart is chrome,
+//     and a literal hex is the dark-mode bug this codebase keeps shipping
+//     (the SLA panels, the priority chip, .cut-table th). The series
+//     palette maps to the semantic accent tokens, which already invert.
+//   · The SVG scales by `viewBox` and `width:100%`, so nothing depends on
+//     the width it happens to be rendered at — the phone gets the same
+//     chart, not a clipped one.
+//   · LABELS ARE ESCAPED. A creator's name and handle are drawn into the
+//     markup, and `<text>` is as interpolatable as a `<div>`. There is no
+//     `<title>` element anywhere here on purpose: it carries text but has
+//     no box, which the layout probe reads as invisible text — the chart
+//     is described with `role="img"` + `aria-label` instead.
+//
+// A chart NEVER replaces its table. The table is the number; the chart is
+// the shape. Reading one figure off a bar is guesswork, and these are
+// numbers people are paid against.
+
+const _MKT_CHART_W=720;          // viewBox units; the SVG itself is fluid
+const _MKT_SERIES=[
+  {token:'var(--accent-success)'},
+  {token:'var(--accent-warning)'},
+  {token:'var(--accent-urgent)'},
+  {token:'var(--muted)'}
+];
+function _mktSeriesColor(i){return _MKT_SERIES[i%_MKT_SERIES.length].token;}
+/** A short axis number: 45,000 → 45k, 1,200,000 → 1.2m. Pure. */
+function mktChartTick(n){
+  const v=Number(n)||0,a=Math.abs(v);
+  if(a>=1e6)return(Math.round(v/1e5)/10)+'m';
+  if(a>=1e3)return(Math.round(v/100)/10)+'k';
+  return String(Math.round(v));
+}
+/** Long labels are cut with a real ellipsis rather than overrunning. Pure. */
+function mktChartClip(s,max){
+  const t=String(s==null?'':s);
+  return t.length>max?t.slice(0,max-1)+'…':t;
+}
+/**
+ * The top of the axis: the largest value, rounded UP to something round,
+ * so the gridlines read as numbers rather than as fractions of the data.
+ * Always > 0, so an all-zero chart still draws its baseline. Pure.
+ */
+function mktChartMax(values){
+  const m=Math.max(0,...(values||[]).map(v=>Number(v)||0));
+  if(m<=0)return 1;
+  const mag=Math.pow(10,Math.floor(Math.log10(m)));
+  for(const step of [1,1.5,2,2.5,3,4,5,7.5,10]){
+    if(m<=step*mag)return step*mag;
+  }
+  return 10*mag;
+}
+function _mktLegend(series){
+  return`<div class="mkt-legend">${series.map((s,i)=>`<span><i style="background:${_mktSeriesColor(i)}"></i>${_mktEsc(s)}</span>`).join('')}</div>`;
+}
+
+/**
+ * Grouped vertical bars — one group per month, one bar per series.
+ * opts: {groups:[{label,values:[…]}], series:['Approved','Paid out'],
+ *        format:fn, caption:string}
+ */
+function mktChartBars(opts){
+  const o=opts||{},groups=o.groups||[],series=o.series||[];
+  if(!groups.length)return'';
+  const fmt=o.format||mktChartTick;
+  const H=210,padL=54,padR=10,padT=14,padB=34;
+  const plotW=_MKT_CHART_W-padL-padR,plotH=H-padT-padB;
+  const max=mktChartMax(groups.reduce((a,g)=>a.concat(g.values||[]),[]));
+  const band=plotW/groups.length;
+  const barW=Math.min(34,Math.max(6,(band-10)/Math.max(1,series.length)));
+  const y=v=>padT+plotH-(Math.max(0,Number(v)||0)/max)*plotH;
+  const grid=[0,.25,.5,.75,1].map(f=>{
+    const gy=padT+plotH-f*plotH;
+    return`<line x1="${padL}" y1="${gy}" x2="${_MKT_CHART_W-padR}" y2="${gy}" class="mkt-chart-grid"/>`
+      +`<text x="${padL-8}" y="${gy+4}" class="mkt-chart-tick" text-anchor="end">${_mktEsc(fmt(max*f))}</text>`;
+  }).join('');
+  const bars=groups.map((g,gi)=>{
+    const cx=padL+band*gi+band/2;
+    const total=series.length*barW+(series.length-1)*3;
+    return(g.values||[]).map((v,si)=>{
+      const x=cx-total/2+si*(barW+3);
+      const top=y(v),h=Math.max(0,padT+plotH-top);
+      return`<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${_mktSeriesColor(si)}"/>`;
+    }).join('')
+    +`<text x="${cx.toFixed(1)}" y="${H-12}" class="mkt-chart-lab" text-anchor="middle">${_mktEsc(mktChartClip(g.label,10))}</text>`;
+  }).join('');
+  return`<div class="mkt-chart">${series.length>1?_mktLegend(series):''}
+    <svg viewBox="0 0 ${_MKT_CHART_W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${_mktEsc(o.caption||'Bar chart')}">
+      ${grid}${bars}
+      <line x1="${padL}" y1="${padT+plotH}" x2="${_MKT_CHART_W-padR}" y2="${padT+plotH}" class="mkt-chart-axis"/>
+    </svg></div>`;
+}
+
+/**
+ * Ranked horizontal bars — one row per creator, label on the left and the
+ * value at the end of its bar.
+ * opts: {rows:[{label,sub,value}], format:fn, caption:string, series:0}
+ */
+function mktChartHBars(opts){
+  const o=opts||{},rows=o.rows||[];
+  if(!rows.length)return'';
+  const fmt=o.format||mktChartTick;
+  const labW=170,valW=74,rowH=26,padT=6;
+  const H=padT*2+rows.length*rowH;
+  const plotW=_MKT_CHART_W-labW-valW;
+  const max=mktChartMax(rows.map(r=>r.value));
+  const body=rows.map((r,i)=>{
+    const cy=padT+i*rowH,mid=cy+rowH/2;
+    const w=Math.max(2,(Math.max(0,Number(r.value)||0)/max)*plotW);
+    return`<text x="0" y="${mid+4}" class="mkt-chart-lab">${_mktEsc(mktChartClip(r.label,24))}</text>`
+      +`<rect x="${labW}" y="${cy+5}" width="${w.toFixed(1)}" height="${rowH-12}" rx="3" fill="${_mktSeriesColor(o.series||0)}"/>`
+      +`<text x="${_MKT_CHART_W}" y="${mid+4}" class="mkt-chart-val" text-anchor="end">${_mktEsc(fmt(r.value))}</text>`;
+  }).join('');
+  return`<div class="mkt-chart"><svg viewBox="0 0 ${_MKT_CHART_W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${_mktEsc(o.caption||'Ranked bar chart')}">${body}</svg></div>`;
+}
+
+/**
+ * Dispatches per month, split by type. Months with nothing are still
+ * emitted, so a gap in the log reads as a gap rather than closing up —
+ * the whole point of putting this on a time axis. Pure.
+ */
+function mktDispatchActivity(dispatches,months,nowMs){
+  const now=nowMs||Date.now();
+  const n=Math.max(1,months||6);
+  const keys=[];
+  const d0=new Date(now);
+  for(let i=n-1;i>=0;i--){
+    const d=new Date(d0.getFullYear(),d0.getMonth()-i,1);
+    keys.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));
+  }
+  const by=new Map(keys.map(k=>[k,{month:k,organic:0,paid:0,delivered:0}]));
+  (dispatches||[]).forEach(d=>{
+    const key=String(d.date_of_dispatch||'').slice(0,7);
+    const row=by.get(key);
+    if(!row)return;
+    if((d.type||'organic')==='paid_pr')row.paid++;else row.organic++;
+    if(d.status==='content_received'||String(d.link_to_post||'').trim())row.delivered++;
+  });
+  return keys.map(k=>by.get(k));
+}
+
+/** How many creators sit in each tier, in the order the app lists them. Pure. */
+function mktTierDistribution(creators){
+  const order=MKT_TIERS.concat(['unscored']);
+  const counts=new Map(order.map(k=>[k,0]));
+  (creators||[]).forEach(c=>{
+    const t=c&&c.tier&&counts.has(c.tier)?c.tier:'unscored';
+    counts.set(t,counts.get(t)+1);
+  });
+  return order.map(k=>({tier:k,label:k==='unscored'?'Unscored':k==='below_threshold'?'Below threshold':'Tier '+k,count:counts.get(k)}));
+}
+
 function renderMarketingReports(){
   if(typeof canAccessMarketing!=='function'||!canAccessMarketing())
     return'<div class="empty">Reports are limited to the owners and the Creator &amp; Content Operations Lead.</div>';
@@ -3086,20 +3313,70 @@ function renderMarketingReports(){
       <div class="page-sub">The Sales Team ▸ Marketing</div></div>
     </div>
     ${warn}
+    <div class="card"><div class="card-title">Dispatch activity</div>${_mktActivityHTML()}</div>
     <div class="card"><div class="card-title">Monthly PR spend</div>${_mktSpendHTML()}</div>
     <div class="card"><div class="card-title">Top ROI creators — Paid PR only</div>${_mktRoiHTML()}</div>
     <div class="card"><div class="card-title">Best performing — organic</div>${_mktOrganicHTML()}</div>
+    <div class="card"><div class="card-title">Creator tiers</div>${_mktTiersHTML()}</div>
     <div class="card"><div class="card-title">Sales lift on dispatched products</div><div id="mkt-rep-lift">${_mktLiftHTML()}</div></div>
     <div class="card"><div class="card-title">Shopify connection</div><div id="mkt-rep-shopify">${_mktShopifyHTML()}</div></div>
     <div class="card"><div class="card-title">Instagram connection</div><div id="mkt-rep-ig">${_mktIgConnHTML()}</div></div>
     <div style="height:80px"></div>`;
 }
 
+// Dispatches per month. The months picker is per VISIT, not stored — it is
+// how you are looking at the page, not a property of the data.
+let _mktActivityMonths=6;
+function _mktActivityHTML(){
+  if(!mktDispatchesLoaded)return'<div class="mkt-note">The dispatch log could not be read.</div>';
+  if(!mktDispatches.length)return'<div class="mkt-note">No dispatches logged yet.</div>';
+  const rows=mktDispatchActivity(mktDispatches,_mktActivityMonths,Date.now());
+  const picker=`<div class="mkt-chiprow" style="margin-bottom:10px">${[6,12,24].map(n=>`<button class="filter-chip${_mktActivityMonths===n?' active':''}" onclick="window.mktActivityMonths(${n})">Last ${n} months</button>`).join('')}</div>`;
+  const chart=mktChartBars({
+    groups:rows.map(r=>({label:_mktShortMonth(r.month),values:[r.organic,r.paid]})),
+    series:['Organic','Paid PR'],
+    format:n=>String(Math.round(n)),
+    caption:'Dispatches per month, organic against Paid PR'
+  });
+  const tot=rows.reduce((t,r)=>({organic:t.organic+r.organic,paid:t.paid+r.paid,delivered:t.delivered+r.delivered}),{organic:0,paid:0,delivered:0});
+  const sent=tot.organic+tot.paid;
+  const undated=mktDispatches.filter(d=>!String(d.date_of_dispatch||'').trim()).length;
+  return picker+chart+`<div class="mkt-note">${sent} dispatch${sent===1?'':'es'} in this window — ${tot.organic} organic, ${tot.paid} Paid PR — and ${tot.delivered} came back with a post (${sent?Math.round(tot.delivered/sent*100):0}%).`
+    +(undated?` ${undated} dispatch${undated===1?' carries':'es carry'} no date and cannot be placed on this chart.`:'')+`</div>`;
+}
+window.mktActivityMonths=function(n){if([6,12,24].indexOf(n)>=0){_mktActivityMonths=n;_mktRerenderPage();}};
+function _mktShortMonth(key){const [y,m]=String(key).split('-').map(Number);return new Date(y,(m||1)-1,1).toLocaleDateString('en-GB',{month:'short'})+(m===1?' '+String(y).slice(2):'');}
+
+// Creator tiers (new) — the shape of the list, which no table on this page
+// showed. Reads mktCreators, so it needs nothing loaded that the page did
+// not already need.
+function _mktTiersHTML(){
+  if(!mktCreatorsLoaded)return'<div class="mkt-note">The creator list could not be read.</div>';
+  if(!mktCreators.length)return'<div class="mkt-note">No creators yet.</div>';
+  const rows=mktTierDistribution(mktCreators);
+  const chart=mktChartHBars({
+    rows:rows.map(r=>({label:r.label,value:r.count})),
+    format:n=>String(Math.round(n)),
+    caption:'How many creators sit in each tier',
+    series:3
+  });
+  const unscored=(rows.find(r=>r.tier==='unscored')||{}).count||0;
+  return chart+`<div class="mkt-note">${mktCreators.length} creator${mktCreators.length===1?'':'s'} in the database.`
+    +(unscored?` ${unscored} ${unscored===1?'has':'have'} no tier yet — they are missing followers, avg likes or avg comments, and are listed under <b>Needs completion</b> on the Creator Database.`:'')+`</div>`;
+}
+
 function _mktSpendHTML(){
   const rows=mktMonthlySpend(mktPaidPRs);
   if(!rows.length)return'<div class="mkt-note">No approved Paid PRs yet.</div>';
   const tot=rows.reduce((t,r)=>({count:t.count+r.count,approved:t.approved+r.approved,paid:t.paid+r.paid,unpaid:t.unpaid+r.unpaid}),{count:0,approved:0,paid:0,unpaid:0});
-  return`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
+  // Oldest first for the chart — a time axis reads left to right — while
+  // the table below stays newest first, which is how a list is read.
+  const chart=mktChartBars({
+    groups:rows.slice(0,12).reverse().map(r=>({label:_mktShortMonth(r.month),values:[r.approved,r.paid]})),
+    series:['Approved','Paid out'],
+    caption:'Approved Paid PR spend against what has been paid out, by month'
+  });
+  return chart+`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
     <thead><tr><th>Month approved</th><th class="num">Paid PRs</th><th class="num">Approved</th><th class="num">Paid out</th><th class="num">Not yet paid</th></tr></thead>
     <tbody>${rows.map(r=>`<tr><td>${_mktMonthLabel(r.month)}</td><td class="num" data-label="Paid PRs">${r.count}</td><td class="num" data-label="Approved">${_mktPKR(r.approved)}</td><td class="num" data-label="Paid out">${_mktPKR(r.paid)}</td><td class="num" data-label="Not yet paid">${r.unpaid?`<span class="mkt-pay-unpaid">${_mktPKR(r.unpaid)}</span>`:_mktPKR(0)}</td></tr>`).join('')}
     <tr class="mkt-total"><td>Total</td><td class="num" data-label="Paid PRs">${tot.count}</td><td class="num" data-label="Approved">${_mktPKR(tot.approved)}</td><td class="num" data-label="Paid out">${_mktPKR(tot.paid)}</td><td class="num" data-label="Not yet paid">${_mktPKR(tot.unpaid)}</td></tr></tbody>
@@ -3110,12 +3387,21 @@ function _mktRoiHTML(){
   const haveCodes=mktCodesLoaded&&mktCodes.some(c=>c.dispatch_type==='paid_pr');
   const rows=mktPaidRoi(mktPaidPRs,mktCreators,haveCodes?mktRevenueByCreator(mktCodes,'paid_pr'):null);
   if(!rows.length)return'<div class="mkt-note">No approved Paid PRs yet.</div>';
-  if(haveCodes)return`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
+  // With codes the bars are the RATIO, which is the thing being ranked;
+  // without them they are spend, and the warning above says so.
+  const chart=mktChartHBars({
+    rows:rows.slice(0,10).map(r=>({label:r.creator?(r.creator.name||'@'+r.creator.ig_handle):'Unknown creator',
+      value:haveCodes?(r.roi==null?0:r.roi):r.spend})),
+    format:haveCodes?(n=>(Math.round(n*100)/100)+'×'):_mktPKR,
+    caption:haveCodes?'Paid PR creators by return on spend':'Paid PR creators by approved spend',
+    series:haveCodes?0:2
+  });
+  if(haveCodes)return chart+`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
     <thead><tr><th>Creator</th><th class="num">Paid PRs</th><th class="num">Spend</th><th class="num">Attributed revenue</th><th class="num">ROI</th></tr></thead>
     <tbody>${rows.map(r=>`<tr><td class="mkt-c-who">${_mktWhoCell(r.creator)}</td><td class="num" data-label="Paid PRs">${r.paidPrs}</td><td class="num" data-label="Spend">${_mktPKR(r.spend)}</td><td class="num" data-label="Revenue">${_mktPKR(r.revenue)}</td><td class="num" data-label="ROI">${r.roi==null?'—':`<b class="${r.roi>=1?'mkt-up':'mkt-down'}">${r.roi}×</b>`}</td></tr>`).join('')}</tbody>
   </table></div><div class="mkt-note">ROI = revenue from orders that used the creator's Paid PR codes ÷ approved Paid PR spend. Revenue is recounted nightly${_mktCodesMeta&&_mktCodesMeta.last_run_at?' (last: '+_mktWhen(_mktCodesMeta.last_run_at)+')':''}; a refund made after an order was synced is not deducted.</div>`;
   return`<div class="mkt-warn">ROI needs the revenue from each creator's Paid PR discount code, and no Paid PR has a code yet. Until one does, this ranks creators by Paid PR spend — it is not an ROI ranking.</div>
-  <div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
+  `+chart+`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
     <thead><tr><th>Creator</th><th class="num">Paid PRs</th><th class="num">Spend</th><th class="num">Attributed revenue</th><th class="num">ROI</th></tr></thead>
     <tbody>${rows.map(r=>`<tr><td class="mkt-c-who">${_mktWhoCell(r.creator)}</td><td class="num" data-label="Paid PRs">${r.paidPrs}</td><td class="num" data-label="Spend">${_mktPKR(r.spend)}</td><td class="num" data-label="Revenue"><span class="mkt-muted">not measurable yet</span></td><td class="num" data-label="ROI"><span class="mkt-muted">—</span></td></tr>`).join('')}</tbody>
   </table></div>`;
@@ -3125,7 +3411,14 @@ function _mktOrganicHTML(){
   const rows=mktOrganicPerformance(mktDispatches,mktCreators,_mktOrganicSort);
   const toggle=`<div class="mkt-chiprow" style="margin-bottom:10px"><button class="filter-chip${_mktOrganicSort==='views'?' active':''}" onclick="window.mktOrganicSort('views')">By reach (avg views)</button><button class="filter-chip${_mktOrganicSort==='engagement'?' active':''}" onclick="window.mktOrganicSort('engagement')">By engagement</button></div>`;
   if(!rows.length)return toggle+'<div class="mkt-note">No Day-7 captures on organic dispatches yet.</div>';
-  return toggle+`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
+  const chart=mktChartHBars({
+    rows:rows.slice(0,10).map(r=>({label:r.creator?(r.creator.name||'@'+r.creator.ig_handle):'Unknown creator',
+      value:_mktOrganicSort==='engagement'?Math.round(r.engagementRate*1000)/10:r.avgViews})),
+    format:_mktOrganicSort==='engagement'?(n=>(Math.round(n*10)/10)+'%'):mktChartTick,
+    caption:_mktOrganicSort==='engagement'?'Top creators by engagement rate':'Top creators by average views',
+    series:_mktOrganicSort==='engagement'?1:0
+  });
+  return toggle+chart+`<div class="mkt-tablewrap"><table class="mkt-table mkt-rep">
     <thead><tr><th>#</th><th>Creator</th><th class="num">Posts captured</th><th class="num">Avg views</th><th class="num">Engagement</th></tr></thead>
     <tbody>${rows.slice(0,25).map((r,i)=>`<tr><td class="num">${i+1}</td><td class="mkt-c-who">${_mktWhoCell(r.creator)}</td><td class="num" data-label="Posts">${r.posts}</td><td class="num" data-label="Avg views">${_mktFmtNum(r.avgViews)}</td><td class="num" data-label="Engagement">${_mktPct(r.engagementRate)}</td></tr>`).join('')}</tbody>
   </table></div><div class="mkt-note">From the Day-7 snapshots. Engagement = (likes + comments + saves) ÷ views. Organic dispatches carry no cost, so this is performance, not ROI.</div>`;

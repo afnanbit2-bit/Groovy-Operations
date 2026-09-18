@@ -3919,6 +3919,104 @@ not here** — the first reverses rollups, the second is a milestone.
   status on create and update, the Paid PR delete clause, and the new
   `marketing_settings` collection.
 
+### Marketing — deleting a dispatch, and Monitor (18 Sept 2026)
+
+Issue 2 of Daniyal's report. A dispatch logged in error had no way out.
+
+- **Only the dispatches nothing else points at can go.**
+  `mktDispatchDeleteBlock` refuses a **`paid_pr`** dispatch (its approved
+  request carries the `dispatch_id`, and an approved spend is not something
+  a delete button should unpick) and any dispatch carrying a **discount
+  code** (`discount_codes/{id}` names it and the nightly rollup counts
+  against it). **Both are in `firestore.rules` as well**, so the UI guard is
+  not the boundary: delete is `isMarketing() && type == 'organic' &&
+  has_discount_code == false && discount_code_id == null`. That **narrows**
+  what an owner could do — the old rule was a bare `isOwner()` — and widens
+  who can do the safe case, which is the point.
+- **A codes read that FAILED refuses the delete rather than guessing**, the
+  same rule `mktCreatorDeleteBlock` already follows.
+- **The rollups are RECOMPUTED from what is left, never decremented** —
+  `mktCreatorRollups` over the remaining dispatches, in the same
+  `writeBatch` as the delete. An edited date can move first/last in either
+  direction and a decrement cannot tell. Verified by replacing it with a
+  decrement and watching the test fail.
+
+**Monitor — and the bug found while wiring it in.** The watched PERSON was
+a single name (`_MONITOR_WATCH_USER`), which CLAUDE.md flagged as assumed
+by "several places" — seven of them. It is **`_MONITOR_WATCH_USERS`, a
+list** now (`mustafa`, `daniyal`), and every site goes through one
+predicate, `_monitorIsWatched(row)`, which needs BOTH a watched person and
+a watched action. Matching is by **username** (`a.u`, which `logActivity`
+writes since Profiles) falling back to the display name for older rows.
+Watched Marketing actions are **removals only** — Dispatch deleted, Creator
+deleted, Paid PR request withdrawn, Niche tag removed. Logging and editing
+a dispatch are ordinary daily work and are deliberately not watched.
+
+- **Every Marketing verb had been landing in the generic "Process"
+  bucket since M2.** CLAUDE.md asks for a sanity-check whenever a new
+  `logActivity` verb appears and it was never run for this module:
+  `Dispatch logged`, `Dispatch updated`, `Creator updated`, `Profile
+  updated`, `Creator scoring updated`, `Creators fetched from Instagram`,
+  `Dispatch performance captured` and `Niche tags tidied` all fell through
+  to ⚙️. `create` gained `logged|captured`, `edit` gained
+  `updated|fetched|tidied`. **Checked the documented way** — all 126
+  `logActivity` strings in `js/*.js` categorised before and after:
+  **exactly 8 moved, every one of them out of `other`**, and genuinely
+  process-shaped actions (`Stage done`, `QC disposition`) stay in the
+  fallback. Asserted both ways.
+- **A withdrawal is a removal, not a payment.** "Paid PR request withdrawn"
+  contains the word *Paid*, so it landed under Approve / Money — which is
+  checked before Edit but after Delete. `/withdraw/` is in the Delete
+  matcher now, where a person looking for what was removed will find it.
+- `tests/monitor.test.js` is new (49 assertions) — there was no suite for
+  `js/activity.js` at all.
+
+### Marketing — charts on Reports (18 Sept 2026)
+
+Issue 7, built rather than estimated. Hand-drawn inline SVG: no charting
+library, the same zero-new-deps line the board canvas and the formula
+parser hold. Three rules the drawing code follows, each of which has cost
+this app something already:
+
+- **Every colour is a CSS variable.** A chart is chrome, and a literal hex
+  is the dark-mode bug this codebase keeps shipping (the SLA panels, the
+  priority chip, `.cut-table th`). Asserted: no `#rrggbb` reaches the SVG.
+- **It scales by `viewBox` + `width:100%`**, so the phone gets the same
+  chart rather than a clipped one.
+- **Labels are escaped** — a creator's name is drawn into `<text>`, which
+  is as interpolatable as a `<div>`. And there is **no `<title>` element
+  anywhere**: it carries text but has no box, which the layout probe reads
+  as invisible text. `role="img"` + `aria-label` instead.
+
+**A chart never REPLACES its table** — reading a figure off a bar is
+guesswork and these are numbers people are paid against. Asserted per
+section.
+
+- `mktChartMax` rounds the axis UP to something round, and **is never 0**,
+  so an all-zero chart still draws its baseline instead of dividing by
+  zero. `mktChartTick` shortens to `45k`/`1.2m`; `mktChartClip` cuts a long
+  handle rather than letting it overrun.
+- Two new cards: **Dispatch activity** (organic vs Paid PR per month, 6/12/24)
+  and **Creator tiers**. `mktDispatchActivity` **emits a month with nothing
+  in it** — a gap in the log has to read as a gap, which is the whole point
+  of a time axis — and says how many dispatches carry no date and cannot be
+  placed at all. `mktTierDistribution` counts an unknown tier as Unscored
+  rather than dropping it.
+- Charts were added above the three existing tables: spend (approved vs paid
+  out, **oldest first — a time axis reads left to right**, while the table
+  below stays newest first), ROI (the ratio when codes exist, spend when
+  they do not, matching what the warning above it already says), and the
+  organic ranking, which **follows the sort toggle**.
+- **A refused read never renders as an empty chart** — the Store lesson.
+
+**The layout probe named SVG findings as `[object SVGAnimatedString]`.**
+`className` on an SVG element is an `SVGAnimatedString`; CLAUDE.md records
+this being fixed once for the "covering element" report, and every OTHER
+finding still stringified it that way — so a chart label or an icon
+reported as an unidentifiable blob. One `clsOf()` helper now, used by all
+six sites. Found by deliberately breaking a chart colour and reading what
+came back; the same break now names `mkt-chart-lab`.
+
 - **Scoring settings are Ammar's alone** (17 Sept 2026). A third
   per-account flag, `canEditScoring` on Ammar's `USER_DEFS` entry
   (`canEditScoring()` in `js/auth.js`), mirrored by EMAIL in
@@ -5242,12 +5340,16 @@ firestore.rules` is the PR #71 commit (`creators` delete widened from
 creators). **No republish is outstanding as of that commit**; this
 supersedes the entries below.
 
-**REPUBLISH OUTSTANDING (18 Sept 2026):** the Marketing field round —
-`dispatches` gained `'on_hold_stock'` on create and update,
-`paid_pr_requests` delete now allows the requester as well as an owner
-(still pending-only), and `marketing_settings` is a new collection. Until
-the Console has it, putting a dispatch on hold and withdrawing a request
-are both refused, and the niche tag list cannot be saved.
+**REPUBLISH OUTSTANDING (18 Sept 2026):** two rounds, both waiting.
+The field round — `dispatches` gained `'on_hold_stock'` on create and
+update, `paid_pr_requests` delete now allows the requester as well as an
+owner (still pending-only), and `marketing_settings` is a new collection.
+Then the dispatch delete — `dispatches` delete went from a bare
+`isOwner()` to `isMarketing() && type == 'organic'` with no discount code,
+which both widens (the lead can tidy the log) and NARROWS (nobody can
+delete a Paid PR dispatch or one a code points at). Until the Console has
+it: putting a dispatch on hold, withdrawing a request, deleting a dispatch
+and saving the niche tag list are all refused.
 
 **No republish outstanding as of 18 Sept 2026.** Afnan confirmed
 ("rules done") from the repo file at `md5
