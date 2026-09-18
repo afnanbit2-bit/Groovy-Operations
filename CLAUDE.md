@@ -2560,6 +2560,15 @@ order.
   grip is nearest it. **Verified by moving the toggle into that corner** —
   it fails, naming `svg.board-resize-handle`.
 
+**CONFIRMED WORKING ON THE LIVE SITE by Afnan, 18 Sept 2026** — a real
+paste, a real page, a real preview. That matters more than usual here: the
+sandbox cannot reach any external site, so the server fetch, the `og:`
+parsing and the Cloudinary mirror could only ever be exercised against a
+scripted `fetch` from a session. **Do not re-open the fetch path on a
+hunch** — if a preview comes back empty for one site, that is that site
+(no `og:` tags, a bot block, a timeout), not this code. The card still
+works and **Refresh preview** is on its right-click menu.
+
 **Two defects in the probe itself, found here.** Its far-zoom fragment never
 hydrated its link cards, so an empty `<a>` was a genuine 0×0 box reported as
 an unreachable control — the fragment measuring itself. And
