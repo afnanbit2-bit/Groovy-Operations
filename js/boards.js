@@ -4285,13 +4285,17 @@ function _boardsIcon(name){
    _MAIN is what stays on the rail, _OVERFLOW is what the "…" reveals, and
    _MEDIA is the group below the divider. The split follows Milanote's own:
    the things you reach for constantly stay out, the structural ones fold
-   away. Every entry carries `drag:true` — that is what makes it a drag
-   source in _boardsWireRailDrag; anything without it stays click-only. */
+   away. `drag:true` is what makes an entry a drag source; anything without
+   it stays click-only, and the three that lack it are the three that do not
+   PLACE anything: `line` is a mode, and `imagepanel`/`file` open a picker.
+   Board carries it as of Sept 2026 (Afnan, with the tool circled and an
+   arrow drawn onto the canvas) — it places a card like any other tool, it
+   just mints the board behind it first. */
 const _BOARDS_RAIL_MAIN=[
   {act:'add:text',label:'Note',icon:'note',drag:true},
   {act:'add:link',label:'Link',icon:'link',drag:true},
   {act:'add:todo',label:'To-do',icon:'todo',drag:true},
-  {act:'add:board',label:'Board',icon:'board'},
+  {act:'add:board',label:'Board',icon:'board',drag:true},
   {act:'add:column',label:'Column',icon:'stack',drag:true},
   {act:'line',label:'Line',icon:'line'}
 ];
@@ -4531,6 +4535,16 @@ function _boardsRailDragEnd(e){
   const r=stage.getBoundingClientRect();
   const inside=e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom;
   if(!inside)return;                            // dropped off the canvas: abandon
+  /* THE DROP POINT ONLY SURVIVES IF THE LAST RIGHT-CLICK IS FORGOTTEN, and
+     that is a real bug this fixed rather than a precaution. _boardsCtxWorld
+     is set when the context menu OPENS and is never cleared when it closes,
+     and _boardsCtxRun's own place() overwrites _boardsNextPlacement from it
+     — so after one right-click anywhere, every rail drag landed its card at
+     that point instead of under the pointer. The rail's CLICK path already
+     cleared it (see _boardsWireRail); the drag path was simply missed.
+     Measured before the fix: a drop at (300,300) landed at (-1089,-1039),
+     the stale point. */
+  _boardsCtxWorld=null;
   _boardsNextPlacement=_boardsScreenToWorld(e.clientX,e.clientY);
   _boardsCtxRun(d.act);
 }

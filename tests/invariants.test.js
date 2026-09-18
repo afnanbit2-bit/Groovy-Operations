@@ -213,6 +213,27 @@ module.exports=function(){
       cellSizes&&parseFloat(cellSizes)>=13,cellSizes+'px');
   }
 
+  /* ── The rail's drag cue advertises a gesture, so its SCOPE is load-bearing
+     ───────────────────────────────────────────────────────────────────────
+     Hovering a draggable tool slides a small line to the right. A tool that
+     places nothing (Line, Add image, Upload) must never show it: a cue that
+     promises a drag the tool does not accept is worse than no cue at all.
+     The layout probe cannot hold this — it cannot hover, and it measures
+     elements rather than pseudo-elements — so the scope is checked here. */
+  s.section('the rail drag cue stays on draggable tools only');
+  {
+    const css=read('css/main.css');
+    const rules=(css.match(/^[^{}\n]*::after\s*\{/gm)||[])
+      .filter(r=>/\.rail-btn/.test(r));
+    s.ok('the cue exists',rules.length>0,rules.join(' | ')||'(no .rail-btn ::after rule)');
+    const loose=rules.filter(r=>!/\.rail-draggable/.test(r));
+    s.eq('and every .rail-btn ::after rule is scoped to .rail-draggable',
+      loose.join(' | ')||'none','none');
+    // The class only reaches the DOM for entries carrying drag:true.
+    s.ok('which js/boards.js only emits for a drag source',
+      /it\.drag\?' rail-draggable':''/.test(read('js/boards.js')));
+  }
+
   // ── A helper that is CALLED but never DEFINED ──────────────────────────
   // js/boards.js calls _boardsCardTrashStart(b.id) on every board open and
   // that function has never existed — the real one is _boardsTrashStart.

@@ -1059,6 +1059,44 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   border-color:var(--text);opacity:1}
 .rail-btn.rail-draggable{cursor:grab}
 .rail-btn.rail-draggable:active{cursor:grabbing}
+/* ── The hover cue: a line that slides RIGHT (Sept 2026) ──────────────
+   Afnan, from Milanote: hovering a tool runs a small animation, "such as
+   line it mover to the right like its inicating the drag and drop process".
+   Built from that description — the sandbox cannot reach Milanote, so no
+   timing here is copied from it and none is claimed to be.
+
+   IT ONLY APPEARS ON A DRAGGABLE TOOL. The cue advertises a gesture, so a
+   tool that places nothing (Line, Add image, Upload — see _BOARDS_RAIL_MAIN)
+   must not show it; a cue that promises a drag the tool does not accept is
+   worse than no cue. That makes .rail-draggable the selector, the same class
+   the grab cursor already hangs off.
+
+   IT SITS BESIDE THE ICON, NOT THE MIDDLE OF THE BUTTON, and that was
+   MEASURED in headless Chromium rather than eyeballed. Inside a 58px
+   button the cue occupies x 44-54, y 14-16; every label sits at y 27-39,
+   so nothing overlaps — including Comment, whose label spans x 3-55 and
+   WOULD have been crossed by a bar on the middle row. The icon is ~x 20-37,
+   so the cue clears that too, and x1=54 keeps it inside the button.
+
+   `.cue-on` is the seam that measurement used: the layout probe cannot
+   hover, and it measures ELEMENTS, not pseudo-elements, so it cannot hold
+   this ground at all — the numbers above are a one-off measurement, not a
+   standing check. What IS checked (tests/invariants.test.js) is the
+   SCOPE: the rule may never widen to every .rail-btn.
+
+   pointer-events:none — it must never eat the press it is advertising. */
+.rail-btn.rail-draggable::after{content:"";position:absolute;right:4px;top:15px;
+  width:10px;height:2px;border-radius:1px;background:var(--muted);
+  opacity:0;transform:translate(-7px,-50%);pointer-events:none;
+  transition:transform .22s cubic-bezier(.22,.7,.3,1),opacity .16s ease-out}
+.rail-btn.rail-draggable:hover::after,
+.rail-btn.rail-draggable.cue-on::after{opacity:.85;transform:translate(0,-50%)}
+/* A touch screen has no hover, and the phone rail is a horizontal dock
+   where "to the right" means nothing. */
+@media (hover:none){.rail-btn.rail-draggable::after{display:none}}
+@media (prefers-reduced-motion:reduce){
+  .rail-btn.rail-draggable::after{transition:none}
+}
 /* The add-image panel. Upload is the FIRST thing, deliberately: it is the
    half that always works, and search may not be switched on at all. */
 .board-img-panel{padding:2px 2px 8px}

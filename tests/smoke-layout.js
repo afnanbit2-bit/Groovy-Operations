@@ -438,6 +438,14 @@ const FRAGMENTS={
     const inner=app.run(`document.getElementById('board-rail').innerHTML`);
     // 660px is a 768px-tall laptop minus the app top bar — the height at
     // which the old pill clipped.
+    /* THE HOVER CUE IS DELIBERATELY NOT MEASURED HERE, and the attempt is
+       worth recording. A second copy with .cue-on forced was tried: it
+       proves nothing, because the cue is an ::after and this probe
+       enumerates ELEMENTS, and at 420px the rail docks to the bottom of its
+       wrapper so two copies reported each other as covering the Image tool —
+       a false failure of the fragment, not of the layout. The cue's geometry
+       is a one-off measurement recorded in css/main.css; its SCOPE is held
+       by tests/invariants.test.js. */
     return Promise.resolve(
       '<div style="position:relative;height:640px;width:100%;overflow:hidden">'+
       '<div class="board-rail" id="board-rail">'+inner+'</div></div>');

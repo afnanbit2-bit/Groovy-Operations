@@ -2473,8 +2473,20 @@ module.exports=function(){
       const h=document.getElementById('board-rail');return h?h.innerHTML:'';})()`);
     s.ok('draggable tools are marked in the markup',/data-drag="1"/.test(html6));
     s.ok('and say so in their tooltip',/drag onto the board/.test(html6));
-    s.ok('a tool with no drag affordance is not marked',
-      run(`_BOARDS_RAIL_MAIN.filter(i=>i.act==='add:board')[0].drag===undefined`));
+    /* BOARD IS DRAGGABLE NOW (Sept 2026 — Afnan circled the tool and drew an
+       arrow onto the canvas). It places a card like every other tool; it
+       just mints the board behind it first. The three that are still
+       click-only are the three that place nothing. */
+    s.ok('the Board tool is a drag source',
+      run(`_BOARDS_RAIL_MAIN.filter(i=>i.act==='add:board')[0].drag===true`));
+    // The flag only matters if it reaches the DOM: _boardsRailDragStart
+    // starts a drag from [data-act][data-drag="1"] and nothing else.
+    s.ok('and the rendered rail marks it',
+      /data-act="add:board"[^>]*data-drag="1"|data-drag="1"[^>]*data-act="add:board"/.test(html6),
+      (html6.match(/<button[^>]*add:board[^>]*>/)||[])[0]||'(no Board button)');
+    s.ok('a tool that places nothing is not marked',
+      run(`_BOARDS_RAIL_MAIN.filter(i=>i.act==='line')[0].drag===undefined
+        &&_BOARDS_RAIL_MEDIA.every(i=>i.drag===undefined)`));
 
     s.section('the drag creates nothing until it is released on the canvas');
     boot();
@@ -2514,6 +2526,30 @@ module.exports=function(){
     s.ok('Escape abandons a drag in flight',run(`_boardsRailDrag===null`));
     run(`_boardsRailDragEnd(__ev(300,300))`);
     s.eq('and the abandoned drag cannot still land',run(`_editCards.length`),0);
+
+    /* THE DROP POINT ONLY SURVIVES IF THE LAST RIGHT-CLICK IS FORGOTTEN.
+       _boardsCtxWorld is set when the context menu OPENS and is never
+       cleared when it closes, and _boardsCtxRun's place() overwrites
+       _boardsNextPlacement from it — so after ONE right-click anywhere on
+       the canvas, every rail drag landed its card at that point instead of
+       under the pointer. Live since M6. The rail's CLICK path already
+       cleared it; the drag path was missed.
+       Verified by reverting: the drop below lands at -1089,-1039. */
+    s.section('a stale right-click cannot hijack the drop point');
+    boot();
+    run(`_boardsSelection=new Set();_editCards=[];_boardsNextPlacement=null;
+      _boardsCtxWorld={x:-999,y:-999};
+      __stage=document.getElementById('board-stage');
+      __stage.getBoundingClientRect=()=>({left:0,top:0,right:1000,bottom:800,width:1000,height:800});
+      __btn={getAttribute:()=>'add:text',getBoundingClientRect:()=>({left:0,top:0,right:40,bottom:40})};
+      __ev=(x,y)=>({clientX:x,clientY:y,button:0,target:{closest:()=>__btn}});
+      _boardsRailDragStart(__ev(20,20));_boardsRailDragMove(__ev(300,300));
+      _boardsRailDragEnd(__ev(300,300));`);
+    s.eq('the card lands where the pointer was released',
+      run(`JSON.stringify({x:_editCards[0].x,y:_editCards[0].y})`),
+      JSON.stringify({x:210,y:260}));
+    s.ok('and the stale point is dropped rather than left to fire again',
+      run(`_boardsCtxWorld===null`));
 
     s.section('a press that never moves is still a click');
     boot();
@@ -3559,6 +3595,65 @@ module.exports=function(){
       s.eq('and centred on the drop point',`${tc.x+tc.w/2},${tc.y+tc.h/2}`,'1000,1000');
       const d=JSON.parse(run(`JSON.stringify(_boardsCardFromTrayItem({id:'v',kind:'file',fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/a.docx',fileName:'a.docx'},{x:0,y:0}))`));
       s.eq('a Word file stays compact',`${d.w}x${d.h}`,'200x110');
+    })(),
+    /* THE BOARD TOOL, DRAGGED (Sept 2026). Its own loadApp instance: this is
+       a _pending block that sets up state and then awaits, and the
+       documented hazard is two of those clobbering each other's _editBoard.
+       Driven for real rather than grepped — the whole path lives in
+       _boardsRailDragEnd's closure, and the Board tool is the one that does
+       not just push a card: it mints the board first, so the placement has
+       to survive an await. */
+    (async()=>{
+      const bd=loadApp({files:['js/boards.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'}});
+      const r=x=>bd.run(x);
+      const drag=board=>r(`session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};
+        _editBoard=${board};moodBoards=[];
+        _editCards=[];_editConnectors=[];_boardsSelection=new Set();
+        _boardsNextPlacement=null;_boardsCtxWorld=null;
+        __stage=document.getElementById('board-stage');
+        __stage.getBoundingClientRect=()=>({left:0,top:0,right:1000,bottom:800,width:1000,height:800});
+        /* The stub HONOURS THE SELECTOR, and that is the point: a naive
+           closest() that always answers passes with drag:true reverted, so
+           it would prove the mechanics and not the flag. This reads the real
+           list, so dropping drag:true breaks this block too. */
+        __drag=_BOARDS_RAIL_MAIN.filter(i=>i.act==='add:board')[0].drag?'1':null;
+        __btn={getAttribute:k=>k==='data-drag'?__drag:'add:board',
+               getBoundingClientRect:()=>({left:0,top:0,right:40,bottom:40})};
+        __ev=(x,y)=>({clientX:x,clientY:y,button:0,
+          target:{closest:sel=>(/data-drag/.test(sel)&&!__drag)?null:__btn}});
+        _boardsRailDragStart(__ev(20,20));_boardsRailDragMove(__ev(420,320));
+        _boardsRailDragEnd(__ev(420,320));`);
+      // boardsAddChildBoard mints the board and THEN places the card, so the
+      // drop has to survive an await.
+      const settle=()=>new Promise(k=>setTimeout(k,30));
+      const shot=()=>r(`JSON.stringify(_editCards.map(c=>({type:c.type,board:!!c.boardId,x:c.x,y:c.y})))`);
+      /* EVERY AWAIT HAPPENS BEFORE THE FIRST ASSERTION, deliberately.
+         s.section sets state on the shared reporter, so a _pending block
+         that awaits BETWEEN its section and its assertions has the other
+         concurrent block's section land in the middle — the findings then
+         file themselves under a heading from a different test. Seen, not
+         guessed: these read as "out of the Unsorted tray / one card". */
+      drag(`{id:'B',title:'T',visibility:'shared',ownerUid:'u1',zoom:1,panX:0,panY:0}`);
+      await settle();
+      const onBoard=JSON.parse(shot());
+      drag(`{id:'H',title:'Home',isHome:true,visibility:'personal',ownerUid:'u1',zoom:1,panX:0,panY:0}`);
+      await settle();
+      const onHome=JSON.parse(shot());
+
+      s.section('the Board tool drags onto a board');
+      s.eq('one card',onBoard.length,1);
+      s.eq('and it is a board link',onBoard[0]&&onBoard[0].type,'board');
+      /* A card type that is a LINK to something must never be creatable
+         without the thing it links to — the orphan the rail used to mint. */
+      s.ok('pointing at a board that really exists',!!(onBoard[0]&&onBoard[0].board));
+      s.eq('placed where the pointer was released',
+        onBoard[0]?onBoard[0].x+','+onBoard[0].y:'(no card)','330,280');
+
+      s.section('and onto Home, where it is a NEW board rather than a sub-board');
+      s.eq('one card',onHome.length,1);
+      s.ok('linked to a real board',!!(onHome[0]&&onHome[0].type==='board'&&onHome[0].board));
+      s.eq('at the drop point too',
+        onHome[0]?onHome[0].x+','+onHome[0].y:'(no card)','330,280');
     })()])).then(()=>s);
   }
 };
