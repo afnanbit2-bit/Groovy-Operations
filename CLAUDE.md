@@ -2401,6 +2401,82 @@ and its context, not by re-running until it passed; the id is pinned now.
 **Any assertion that greps rendered markup for a short string has this
 shape** — scope it, or pin whatever carries a timestamp.
 
+### Mood Boards — Home's panel, rebuilt to Milanote (Sept 2026)
+
+Afnan, with ours beside Milanote's: the panel *"should be wider and always
+open and a funtion to soft close"*, a board should be read by its **picture**
+and its **whole name**, you should be able to set that picture yourself
+(upload or text), assign a colour with a picker, and the Team/Private split
+and the search should stay but improve.
+
+**Most of it already existed, and finding that was the first job.** Colour,
+icon, rename, duplicate, template, Team/Private and Trash have been on the
+gallery's right-click menu since it shipped, behind `_boardsGalleryCtxRun`,
+which acts on a board **by id** — exactly what a panel row is. So the row's
+`⋯` and its right-click open **that** menu rather than a second one. Picture
+and colour arrive in both surfaces at once and cannot drift. That is the
+rail-and-selection-bar mistake, not repeated.
+
+Four real gaps were left:
+
+1. **A board PICTURE (`b.coverUrl`).** `_boardsTileHTML` takes an uploaded
+   picture, then an emoji icon, then the first letter — a board always has
+   a tile and nothing migrates. **Only an ANCHORED
+   `https://res.cloudinary.com/` URL is accepted** (`_boardsCoverUrl`): the
+   string goes straight into an `<img src>`, and `res.cloudinary.com.evil.test`
+   must not pass. Same rule as `_profPhotoUrl`, duplicated rather than
+   shared because `profile.js` loads AFTER this file. **Cloudinary's own
+   answer is re-checked before it is written** — that is the moment not to
+   trust a URL, not the moment to relax.
+2. **Always open, with a SOFT close.** On Home the panel is always in the
+   DOM; Close **collapses** it to a rail carrying the board count and the
+   way back. That is what makes it soft — it does not vanish, and returning
+   is one click on something visible. Per viewer in `localStorage` like the
+   minimap and snap, defaulting to **expanded**, because a panel that
+   remembered itself shut would quietly undo "always open". A paste
+   un-collapses it: collecting into a panel nobody can see is the bug the
+   paste round just fixed.
+3. **The row.** 344px, a 54px picture, and the **whole name** on its own two
+   clamped lines, meta under it, actions on a line of their own. **The name
+   never shares a row with a button** — the Profile-directory rule, which
+   the 280px version broke exactly as that rule predicts: 30px of tile plus
+   a state word plus Open left nothing, and it rendered `WINTER D…`. A wider
+   panel alone would have postponed that, not fixed it.
+4. **The panel INSETS the stage** (`.board-below.with-panel`), on Home only.
+   Overlaying is right for a tray you open for a moment — it is what the
+   tool rail deliberately does — but a permanent 344px curtain would also
+   make **Fit fit the board to a width part of which nobody can see**:
+   `_boardsFitView` measures the stage rect, so shrinking the stage is what
+   makes Fit honest. Every pan/zoom/drag reads that rect live, so nothing
+   else changes.
+
+- **Search reaches CARD TEXT** now, through the same `_boardsMatchCount` the
+  gallery search uses so the two cannot disagree about what "matched" means,
+  and a row that matched on its cards rather than its name **says how many**
+  — a row appearing for a word that is nowhere on it reads as a broken
+  filter.
+- **`_boardsRerenderGallery` learned about Home.** Every identity change is
+  reachable from the panel now, and without that branch the menu appeared to
+  do nothing there: the write landed and the tile kept its old picture until
+  the next render. The dead-button shape, again.
+- `window.boardsToggleBoardsPanel` was deleted rather than left beside
+  `boardsTogglePanel`.
+
+**A lesson about verifying, worth more than the feature.** The layout
+fragment was checked by putting the name back on a shared flex row in a
+280px panel — and **the first attempt at that break did not apply**
+(a multiline string mismatch) and reported a clean pass, which reads
+exactly like "the fragment has no teeth". **Confirm the break actually
+landed before believing either answer.** Applied properly it fails, naming
+the overflowing row and the covered `⋯`.
+
+**And the CACHE_VERSION collision happened again, in its dangerous form.**
+Ammar's PR #77 shipped `v108`; this work picked `v108` too. The merge was
+clean and **`sw.js` was not in it at all** — both sides had written the
+identical line, so git had nothing to resolve while the two builds are
+entirely different bytes. `tests/check-cache-version.js` caught it. Bumped
+past both to **`v109`**.
+
 ### Mood Boards — the zoom floor is 25% (Sept 2026) — REVERSES parity
 
 Afnan, with a screenshot at 26%: *"zoom problem not fix yet, lock zoom out
