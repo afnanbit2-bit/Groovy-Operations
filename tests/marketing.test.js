@@ -552,7 +552,7 @@ module.exports=async function(){
     const js=read('js/marketing.js');
     const statusesJs=((js.match(/const MKT_DISPATCH_STATUSES=\[([\s\S]*?)\];/)||['',''])[1].match(/k:'([a-z_]+)'/g)||[]).map(x=>x.slice(3,-1));
     const statusesRules=((blk.match(/status in \[([^\]]*)\]/)||['',''])[1].match(/'([a-z_]+)'/g)||[]).map(x=>x.replace(/'/g,''));
-    s.ok('the statuses were found',statusesJs.length===4,J(statusesJs));
+    s.ok('the statuses were found',statusesJs.length===5,J(statusesJs));
     s.eq('rules and the app agree on the statuses',J(statusesRules),J(statusesJs));
   }
 
@@ -698,7 +698,8 @@ module.exports=async function(){
     s.ok('a request is created pending, by its requester',/status == 'pending'[\s\S]*requested_by_user_id == request\.auth\.uid/.test(blk));
     s.ok('only the approver decides',/\|\| \(isPaidPRApprover\(\)[\s\S]*status in \['approved','rejected'\]/.test(blk));
     s.ok('only from pending',/isPaidPRApprover\(\)\s*&& resource\.data\.status == 'pending'/.test(blk));
-    s.ok('a decided request is never deleted',/allow delete: if isOwner\(\) && resource\.data\.status == 'pending';/.test(blk));
+    s.ok('a decided request is never deleted',/allow delete: if resource\.data\.status == 'pending'/.test(blk));
+    s.ok('and a pending one only by an owner or its requester',/isOwner\(\)\s*\|\| \(isMarketing\(\) && resource\.data\.requested_by_user_id == request\.auth\.uid\)/.test(blk));
     const dblk=(rules.match(/match \/dispatches\/\{id\} \{[\s\S]*?\n    \}/)||[''])[0];
     s.ok('a paid_pr dispatch can only be created by the approver',/type == 'paid_pr'\s*&& isPaidPRApprover\(\)/.test(dblk));
     s.ok('for a request the same batch approves and links to it',/getAfter\(paidPRPath[\s\S]*status == 'approved'[\s\S]*dispatch_id == id/.test(dblk));
@@ -1058,7 +1059,7 @@ module.exports=async function(){
   {
     const rules=read('firestore.rules');
     const blk=(rules.match(/match \/dispatches\/\{id\} \{[\s\S]*?\n    \}/)||[''])[0];
-    s.eq('a blank status is allowed on create and on update',(blk.match(/status in \['','confirmed','in_transit','shipped','content_received'\]/g)||[]).length,2);
+    s.eq('a blank status is allowed on create and on update',(blk.match(/status in \['','confirmed','in_transit','shipped','content_received','on_hold_stock'\]/g)||[]).length,2);
   }
 
   s.section('the sheet\'s two odd row shapes');
@@ -1538,6 +1539,252 @@ module.exports=async function(){
     s.eq('leaving the number Instagram will not give empty',writes[0].avg_likes,null);
     s.eq('and counts it as needing a human',out.needManual,1);
     s.ok('naming the field in the log',/no avg likes/.test(t.run('_mktIgBulk.log.join(" ")')));
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Sept 2026 field round — sizes, on hold, niche tags, withdrawing a PR
+  // ══════════════════════════════════════════════════════════════════════
+
+  s.section('sizes are a vocabulary, and the old free text is READ not lost');
+  {
+    const t=app();
+    const canon=(v,l)=>t.run('mktCanonSize('+J(v)+','+l+')');
+    s.eq('a word becomes its size',canon('medium','MKT_TOP_SIZES'),'M');
+    s.eq('case and spacing do not matter',canon(' x-Large ','MKT_TOP_SIZES'),'XL');
+    s.eq('2XL is XXL',canon('2xl','MKT_BOTTOM_SIZES'),'XXL');
+    s.eq('XXXS is a bottom size only',canon('XXXS','MKT_BOTTOM_SIZES'),'XXXS');
+    s.eq('and not a top one',canon('XXXS','MKT_TOP_SIZES'),'');
+    s.eq('a waist is not a garment size',canon('30','MKT_BOTTOM_SIZES'),'');
+    s.eq('nonsense is refused',canon('smallish','MKT_TOP_SIZES'),'');
+    s.eq('a waist reads as a waist',t.run("mktCanonWaist('30')"),'30');
+    s.eq('with an inch mark',t.run("mktCanonWaist('34 in')"),'34');
+    s.eq('off the list it is not a waist',t.run("mktCanonWaist('52')"),'');
+    const parse=(v,l)=>t.run('mktSizeParse('+J(v)+','+l+')');
+    s.eq('"medium/30" is a size AND a waist',J(parse('medium/30','MKT_BOTTOM_SIZES')),J({size:'M',waist:'30',raw:'medium/30'}));
+    s.eq('"34/XL" reads either way round',J(parse('34/XL','MKT_BOTTOM_SIZES')),J({size:'XL',waist:'34',raw:'34/XL'}));
+    s.eq('a bare size still reads',parse('large','MKT_BOTTOM_SIZES').size,'L');
+    s.eq('and an unreadable one gives nothing',parse('ask her','MKT_BOTTOM_SIZES').size,'');
+  }
+  {
+    const t=app();
+    const build=(f,old)=>t.run('mktBuildCreatorPayload('+J(Object.assign({ig_handle:'x'},f))+','+J(old||null)+',null,1,"u").data');
+    let d=build({bottom_size:'medium/30'});
+    s.eq('saving migrates the free text — the garment size',d.bottom_size,'M');
+    s.eq('and the waist beside it',d.waist_size,'30');
+    d=build({top_size:'34/XL'});
+    s.eq('a number typed under a TOP is not thrown away',d.waist_size,'34');
+    s.eq('its size is still read',d.top_size,'XL');
+    d=build({bottom_size:'ask her'},{bottom_size:'ask her'});
+    s.eq('an unreadable size that is already stored is KEPT',d.bottom_size,'ask her');
+    d=build({bottom_size:'ask her'},{bottom_size:'M'});
+    s.eq('but nothing new can be typed past the list',d.bottom_size,'');
+    d=build({bottom_size:'M',waist_size:'99'});
+    s.eq('an off-list waist is dropped',d.waist_size,'');
+    t.run("mktCreators=[];mktCreatorsLoaded=true");
+    const form=(()=>{t.run("window.mktOpenCreator('')");const h=t.el('mkt-modal-back').innerHTML;t.run('window.mktCloseModal()');return h;})();
+    s.ok('the form offers a Top dropdown',/id="mkt-f-top"[^>]*>[\s\S]*?<option value="XXL"/.test(form)&&/<select id="mkt-f-top"/.test(form));
+    s.ok('a Bottom dropdown',/<select id="mkt-f-bottom"/.test(form));
+    s.ok('and a waist dropdown',/<select id="mkt-f-waist"[\s\S]*?<option value="26"/.test(form));
+    s.ok('none of them is a free-text input',!/<input id="mkt-f-(top|bottom|waist)"/.test(form));
+  }
+  {
+    // An unreadable stored size is offered back as itself, the way an
+    // off-list city already is, and the form says so.
+    const t=app();
+    t.run("mktCreators=[{id:'c1',ig_handle:'a',bottom_size:'ask her'}];mktCreatorsLoaded=true");
+    t.run("window.mktOpenCreator('c1')");
+    const h=t.el('mkt-modal-back').innerHTML;
+    s.ok('it is selected as typed',/<option value="ask her" selected>ask her \(as typed\)/.test(h));
+    s.ok('and the form says to tidy it',/could not be read as a size/.test(h));
+    t.run('window.mktCloseModal()');
+  }
+
+  s.section('On Hold is a status OUTSIDE the flow');
+  {
+    const t=app();
+    s.eq('it is not a stage',t.run("_mktStatusIdx('on_hold_stock')"),-1);
+    s.eq('the flow still knows its own stages',t.run("_mktStatusIdx('shipped')"),2);
+    s.eq('and it names itself off-flow',t.run("mktStatusOffFlow('on_hold_stock')"),true);
+    s.eq('unlike a real stage',t.run("mktStatusOffFlow('shipped')"),false);
+    // The bug this prevents: an index past 'shipped' would stamp shipped_at
+    // on a parcel that never left.
+    const d=t.run("mktBuildDispatchPayload({creator_id:'c1',date_of_dispatch:'2026-09-01',products:[{variant_id:'v1'}],status:'on_hold_stock'},null,[{id:'c1',ig_handle:'a',status:'active'}],1000,'u').data");
+    s.eq('putting a dispatch on hold never stamps shipped_at',d.shipped_at,null);
+    s.eq('nor content_received_at',d.content_received_at,null);
+    const held={id:'d1',creator_id:'c1',status:'on_hold_stock',date_of_dispatch:'2026-09-01'};
+    s.eq('it is never Day-7 due',t.run('mktDay7('+J(held)+',Date.now()).state'),'none');
+    s.eq('and never Awaiting content',t.run('mktFilteredDispatches(['+J(held)+'],[],{status:"awaiting"}).length'),0);
+    s.eq('its own filter finds it',t.run('mktFilteredDispatches(['+J(held)+'],[],{status:"on_hold_stock"}).length'),1);
+  }
+  {
+    const t=app();
+    t.run("mktCreators=[{id:'c1',ig_handle:'a'}];mktCreatorsLoaded=true;mktDispatchesLoaded=true");
+    t.run("mktDispatches=[{id:'d1',creator_id:'c1',status:'on_hold_stock',date_of_dispatch:'2026-09-01'},{id:'d2',creator_id:'c1',status:'shipped',date_of_dispatch:'2026-09-01'}]");
+    const tiles=t.run('_mktDispStatsHTML()');
+    s.ok('the Dispatch Log has an On hold tile',/On hold<\/span><span class="mkt-stat-val">1</.test(tiles));
+    s.ok('Awaiting content counts only the shipped one',/Awaiting content<\/span><span class="mkt-stat-val">1</.test(tiles));
+    s.ok('and Day-7 says what it means',/Performance snapshot due/.test(tiles)&&!/Day-7 capture due/.test(tiles));
+    s.ok('the tile filters to the held dispatch',/mktDispFilter\('status','on_hold_stock'\)/.test(tiles));
+  }
+
+  s.section('niche tags are a managed list');
+  {
+    const t=app();
+    s.eq('a tidy tag is left alone',t.run("mktTagTidy('Fashion Creator')"),'Fashion Creator');
+    s.eq('stray quotes come off',t.run('mktTagTidy(String.fromCharCode(34)+"Blogger"+String.fromCharCode(34))'),'Blogger');
+    s.eq('a trailing one too',t.run('mktTagTidy("Content Creator"+String.fromCharCode(34))'),'Content Creator');
+    s.eq('and it is flagged as messy',t.run('mktTagIsMessy("Content Creator"+String.fromCharCode(34))'),true);
+    s.eq('a clean tag is not',t.run("mktTagIsMessy('Blogger')"),false);
+    const creators=[{id:'a',niche:['Blogger','Fitness']},{id:'b',niche:['Fitness']},{id:'c',niche:[]}];
+    const plan=t.run('mktTagPlan('+J(creators)+',["Streetwear"])');
+    const by=n=>plan.find(x=>x.tag===n);
+    s.eq('the curated list is offered even with nobody using it',by('Streetwear').count,0);
+    s.eq('a tag in use is counted',by('Fitness').count,2);
+    s.eq('the seed is marked as built in',by('Blogger').seed,true);
+    s.ok('and every tag in use is present',['Blogger','Fitness','Streetwear'].every(by));
+  }
+  {
+    const t=app();
+    const creators=[{id:'a',niche:['Blogger','Fitness']},{id:'b',niche:['Fitness']},{id:'c',niche:['Skater']}];
+    const rw=(f,to)=>t.run('mktTagRewrite('+J(creators)+','+J(f)+','+J(to)+')');
+    s.eq('a rename touches only the creators carrying it',rw('Fitness','Gym').length,2);
+    s.eq('rewriting the tag',J(rw('Fitness','Gym')[0].niche),J(['Blogger','Gym']));
+    s.eq('a removal drops it',J(rw('Blogger','')[0].niche),J(['Fitness']));
+    // The merge case: renaming onto a tag the creator already has must not
+    // leave the same tag twice.
+    s.eq('renaming onto a tag already there MERGES',J(rw('Blogger','Fitness')[0].niche),J(['Fitness']));
+    s.eq('a tag nobody carries writes nothing',rw('Nope','X').length,0);
+    s.eq('and it is case-insensitive',rw('fitness','Gym').length,2);
+  }
+  {
+    // The library is the curated list AND whatever is in use, so a tag
+    // can never be missing from the picker.
+    const t=app();
+    const lib=t.run('mktNicheLibrary([{id:"a",niche:["Skater"]}],["Streetwear"])');
+    s.eq('the curated tag comes first',lib[0],'Streetwear');
+    s.ok('the seed is there',lib.indexOf('Blogger')>0);
+    s.ok('and so is a tag only a creator carries',lib.indexOf('Skater')>0);
+    s.eq('one spelling per tag',t.run('mktNicheLibrary([{id:"a",niche:["blogger"]}],[]).filter(x=>x.toLowerCase()==="blogger").length'),1);
+  }
+  {
+    // The "Other tags" box: the tag is saved on the creator AND joins the
+    // managed list, which is what it never did before.
+    const writes=[];const sets=[];
+    const t=app({globals:{
+      runTransaction:async(db,fn)=>fn({get:async()=>({exists:()=>false,data:()=>({})}),set(){},update(r,d){writes.push(d);},delete(){}}),
+      setDoc:async(ref,data)=>{sets.push(data);}
+    }});
+    t.run("mktCreators=[{id:'c1',ig_handle:'a',niche:[]}];mktCreatorsLoaded=true;mktNicheTags=[];mktNicheTagsLoaded=true");
+    t.run("window.mktOpenCreator('c1')");
+    t.el('mkt-f-id').value='c1';
+    t.el('mkt-f-handle').value='a';
+    t.el('mkt-f-niche-other').value='Streetwear';
+    await t.run('window.mktSaveCreator()');
+    s.ok('the tag is written on the creator',writes.length&&(writes[0].niche||[]).indexOf('Streetwear')>=0);
+    await t.run('Promise.resolve()');
+    s.eq('and joins the managed list',sets.length,1);
+    s.eq('which now offers it',J((sets[0]||{}).tags),J(['Streetwear']));
+  }
+  {
+    // A tag already on the list is not written again.
+    const sets=[];
+    const t=app({globals:{setDoc:async(ref,d)=>{sets.push(d);}}});
+    t.run("mktNicheTags=['Streetwear'];mktNicheTagsLoaded=true");
+    const n=await t.run("_mktRememberTags(['Streetwear','Blogger'])");
+    s.eq('nothing new, nothing written',sets.length,0);
+    s.eq('and it says so',n,0);
+  }
+  {
+    const t=app();
+    t.run("mktCreators=[{id:'a',ig_handle:'a',niche:['Fitness']}];mktCreatorsLoaded=true;mktNicheTags=['Streetwear'];mktNicheTagsLoaded=true");
+    s.ok('the Creator Database offers the control',/window\.mktOpenNicheTags\(\)/.test(t.run('renderMarketingCreators()')));
+    t.run('window.mktOpenNicheTags()');
+    const h=t.el('mkt-modal-back').innerHTML;
+    s.ok('the screen lists a tag with its count',/Fitness<\/b>\s*<span class="mkt-muted">1 creator/.test(h));
+    s.ok('offers a rename',/mktRenameTag/.test(h));
+    s.ok('and a removal',/mktDeleteTag/.test(h));
+    t.run('window.mktCloseModal()');
+  }
+  {
+    // Tidying is offered only when something is actually messy, and it
+    // rewrites the creators carrying it.
+    const batches=[];const sets=[];
+    const t=app({globals:{
+      setDoc:async(ref,d)=>{sets.push(d);},
+      writeBatch:()=>{const ops=[];return{update(r,d){ops.push(d);},set(){},delete(){},commit:async()=>{batches.push(ops);}};}
+    }});
+    t.run('mktCreators=[{id:"a",ig_handle:"a",niche:[String.fromCharCode(34)+"Blogger"+String.fromCharCode(34)]}];mktCreatorsLoaded=true;mktNicheTags=[];mktNicheTagsLoaded=true');
+    t.run('window.mktOpenNicheTags()');
+    s.ok('the messy tag is called out',/needs tidying/.test(t.el('mkt-modal-back').innerHTML));
+    await t.run('window.mktTidyTags()');
+    s.eq('one creator is rewritten',batches.length,1);
+    s.eq('to the tidy spelling',J(batches[0][0].niche),J(['Blogger']));
+    s.eq('and the list is saved',sets.length,1);
+  }
+  {
+    // Nothing is messy → no tidy-up offered.
+    const t=app();
+    t.run("mktCreators=[{id:'a',ig_handle:'a',niche:['Blogger']}];mktCreatorsLoaded=true;mktNicheTags=[];mktNicheTagsLoaded=true");
+    t.run('window.mktOpenNicheTags()');
+    s.ok('no tidy-up when nothing is messy',!/needs tidying/.test(t.el('mkt-modal-back').innerHTML));
+    t.run('window.mktCloseModal()');
+  }
+  {
+    // A refused read must not look like an empty list.
+    const t=app();
+    t.run("mktCreators=[{id:'a',ig_handle:'a',niche:['Blogger']}];mktCreatorsLoaded=true;mktNicheTags=[];mktNicheTagsLoaded=false");
+    t.run('window.mktOpenNicheTags()');
+    s.ok('it says the saved list could not be read',/could not be read/.test(t.el('mkt-modal-back').innerHTML));
+    t.run('window.mktCloseModal()');
+  }
+  {
+    const rules=read('firestore.rules');
+    const blk=(rules.match(/match \/marketing_settings\/\{doc\} \{[\s\S]*?\n    \}/)||[''])[0];
+    s.ok('marketing_settings has a rule at all',!!blk);
+    s.ok('read by Marketing',/allow read: if isMarketing\(\);/.test(blk));
+    s.ok('and written by Marketing',/allow write: if isMarketing\(\);/.test(blk));
+  }
+
+  s.section('withdrawing a Paid PR request');
+  {
+    const t=app();
+    const can=(r,uid)=>t.run('mktCanDeletePaidPR('+J(r)+','+J(uid)+')');
+    s.eq('an owner may withdraw a pending one',can({status:'pending',requested_by_user_id:'x'},'uid-ammar'),true);
+    s.eq('but never an approved one',can({status:'approved',requested_by_user_id:'uid-ammar'},'uid-ammar'),false);
+    s.eq('nor a rejected one',can({status:'rejected',requested_by_user_id:'uid-ammar'},'uid-ammar'),false);
+    const lead=app({session:{uid:'uid-d',u:'daniyal',name:'Daniyal',role:'creator_content_ops_lead',email:'daniyal@groovy.op'}});
+    const leadCan=(r,uid)=>lead.run('mktCanDeletePaidPR('+J(r)+','+J(uid)+')');
+    s.eq('the lead may withdraw their own',leadCan({status:'pending',requested_by_user_id:'uid-d'},'uid-d'),true);
+    s.eq('and not somebody else\'s',leadCan({status:'pending',requested_by_user_id:'uid-ammar'},'uid-d'),false);
+  }
+  {
+    const dels=[];
+    const t=app({globals:{deleteDoc:async(ref)=>{dels.push(ref);}}});
+    t.run("mktCreators=[{id:'c1',ig_handle:'a'}];mktCreatorsLoaded=true;mktPaidPRsLoaded=true");
+    t.run("mktPaidPRs=[{id:'p1',creator_id:'c1',status:'pending',deliverable:'1 Reel',proposed_amount_pkr:45000,requested_by_user_id:'uid-ammar'},{id:'p2',creator_id:'c1',status:'approved',deliverable:'1 Reel',proposed_amount_pkr:1000,requested_by_user_id:'uid-ammar'}]");
+    t.run("window.mktOpenPaidPR('p1')");
+    s.ok('a pending request offers Withdraw',/mktDeletePaidPR/.test(t.el('mkt-modal-back').innerHTML));
+    t.el('mkt-pr-id').value='p1';
+    await t.run('window.mktDeletePaidPR()');
+    s.eq('and it is deleted',dels.length,1);
+    s.eq('leaving the list without it',t.run('mktPaidPRs.length'),1);
+    t.run("window.mktOpenPaidPR('p2')");
+    s.ok('an approved one offers no Withdraw',!/mktDeletePaidPR/.test(t.el('mkt-modal-back').innerHTML));
+    t.run('window.mktCloseModal()');
+  }
+  {
+    // The refusal is not only a hidden button.
+    const dels=[];
+    const t=app({session:{uid:'uid-d',u:'daniyal',name:'Daniyal',role:'creator_content_ops_lead',email:'daniyal@groovy.op'},
+      globals:{deleteDoc:async(ref)=>{dels.push(ref);}}});
+    t.run("mktCreators=[{id:'c1',ig_handle:'a'}];mktCreatorsLoaded=true;mktPaidPRsLoaded=true");
+    t.run("mktPaidPRs=[{id:'p1',creator_id:'c1',status:'pending',deliverable:'1 Reel',proposed_amount_pkr:45000,requested_by_user_id:'uid-ammar'}]");
+    t.run("window.mktOpenPaidPR('p1')");
+    t.el('mkt-pr-id').value='p1';
+    await t.run('window.mktDeletePaidPR()');
+    s.eq('someone else\'s request is not deleted',dels.length,0);
+    s.ok('and it says why',/Only an owner, or the person who raised it/.test(t.el('mkt-f-error').textContent));
+    t.run('window.mktCloseModal()');
   }
 
   return s;

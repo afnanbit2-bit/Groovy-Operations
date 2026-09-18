@@ -3854,6 +3854,71 @@ page's "Check Shopify access", which asks Shopify directly).
   (`mktIgBulkPlan(..,{repair:true})`) re-fetches creators whose tiering
   numbers are incomplete, ignoring the 24h skip, and reports how many
   Instagram still will not complete so those can be typed in by hand.
+### Marketing — the field round (18 Sept 2026)
+
+Five of the eight findings in Daniyal's report, shipped together because
+each is a field or a label rather than a new surface. **Issue 2 (deleting a
+dispatch, with Monitor) and Issue 7 (charts on Reports) are deliberately
+not here** — the first reverses rollups, the second is a milestone.
+
+- **Sizes are a vocabulary now, and the old free text is READ rather than
+  lost.** `top_size`/`bottom_size` were free text, so the live list holds
+  `medium/30` and `34/XL`; they are dropdowns (`MKT_TOP_SIZES` XXS–XXL,
+  `MKT_BOTTOM_SIZES` XXXS–XXL) plus a **third field, `waist_size`**
+  (26–40), because a bottom carries a garment size, a waist, or both and
+  squeezing the two into one string is what made the old values
+  unreadable. **Nothing is rewritten in place and there is no migration
+  pass:** `mktSizeParse` reads the stored string when the form OPENS, so
+  saving that creator migrates it, and a value it cannot read is kept and
+  shown as **"(as typed)"** — exactly what an off-list city already does.
+  A number typed under a TOP fills the waist rather than being dropped on
+  save (it is almost always a mis-entered bottom). `mktBuildSizes` is the
+  one implementation, so the form, the IG bulk run and the sheet importer
+  cannot disagree.
+- **`on_hold_stock` — "On Hold — Stock/Production" — is a status OUTSIDE
+  the flow, and that is the load-bearing part.** `_mktStatusIdx` compared
+  against the position in `MKT_DISPATCH_STATUSES`, and that array now has
+  a fifth entry; a status with an index past `shipped` would **stamp
+  `shipped_at` on a parcel that never left**. The four stages live in
+  their own ordered list (`_MKT_STATUS_FLOW`) and `_mktStatusIdx` answers
+  **-1** for anything else, which every comparison in the file already
+  reads as "not at this stage yet". Exclusion from Awaiting content, from
+  the Day-7 count and from the no-post reminders then falls out by
+  construction — none of the three reads a status outside the flow.
+  Verified by restoring the old `findIndex` and watching `shipped_at` get
+  stamped.
+- **A fifth Dispatch Log tile** (On hold) and **"Day-7 capture due" reads
+  "Performance snapshot due · 7 days after the post"**, in the tile and in
+  the status filter.
+- **Niche tags are a managed list.** They were DERIVED only, which is what
+  made the "Other tags" box feel broken: the box reads and saves
+  correctly — verified in the harness before changing anything, it was
+  never a no-op — but a tag typed there lived on that one creator, could
+  not be renamed or tidied, and vanished from the picker the moment that
+  creator lost it. `marketing_settings/niche_tags` is the curated half;
+  `mktNicheLibrary` returns **curated ∪ seed ∪ in use**, so a tag in use
+  can never be missing from the picker, including every malformed label
+  the sheet import left behind. A tag typed in the box now joins the list
+  (best effort, AFTER the save — remembering a tag must never turn a saved
+  creator into an error). **Niche tags**, beside Scoring settings, adds,
+  renames (merging when the new name already exists), removes, and offers
+  a one-click tidy for the `"Blogger"` / `Content Creator"` labels — each
+  rewriting every creator carrying the tag, in batches of 400, behind a
+  confirm that says how many records it touches. `mktTagRewrite` is pure
+  and returns only the creators that actually change.
+- **A pending Paid PR can be withdrawn** by an owner or by whoever raised
+  it; a decided one never can — the approved amount cannot change (rules)
+  and the dispatch, the rollups and any discount code are built on it.
+  Editing while pending already worked and is unchanged, which is what
+  Ammar confirmed it should be.
+- **There is NO client-side `isOwner()`** — it exists only in
+  `firestore.rules`; the app reads `session.role`. A `typeof
+  isOwner==='function'&&isOwner()` guard therefore fails CLOSED and looks
+  right in review. Caught by a test, not by reading.
+- **`firestore.rules` CHANGED — it needs a republish:** the new dispatch
+  status on create and update, the Paid PR delete clause, and the new
+  `marketing_settings` collection.
+
 - **Scoring settings are Ammar's alone** (17 Sept 2026). A third
   per-account flag, `canEditScoring` on Ammar's `USER_DEFS` entry
   (`canEditScoring()` in `js/auth.js`), mirrored by EMAIL in
@@ -5176,6 +5241,13 @@ firestore.rules` is the PR #71 commit (`creators` delete widened from
 `isOwner()` to `isMarketing()` so the Content Ops lead can delete
 creators). **No republish is outstanding as of that commit**; this
 supersedes the entries below.
+
+**REPUBLISH OUTSTANDING (18 Sept 2026):** the Marketing field round —
+`dispatches` gained `'on_hold_stock'` on create and update,
+`paid_pr_requests` delete now allows the requester as well as an owner
+(still pending-only), and `marketing_settings` is a new collection. Until
+the Console has it, putting a dispatch on hold and withdrawing a request
+are both refused, and the niche tag list cannot be saved.
 
 **No republish outstanding as of 18 Sept 2026.** Afnan confirmed
 ("rules done") from the repo file at `md5

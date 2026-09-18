@@ -598,7 +598,15 @@ const FRAGMENTS={
       const fetched=app.bodyHtml('mkt-modal-back');
       app.run("window.mktOpenCreator('')");
       const blank=app.bodyHtml('mkt-modal-back');
-      return page+incomplete+fetched+blank;
+      // The niche tag screen. A row is a flexing name beside fixed-width
+      // buttons inside a modal — the exact shape that rendered every name
+      // in the Profile directory at 0px. The messy tag is in the fragment
+      // so the "needs tidying" chip is measured too.
+      app.run('mktNicheTags=["Streetwear"];mktNicheTagsLoaded=true');
+      app.run('mktCreators=mktCreators.concat([{id:"cr_messy",ig_handle:"x",niche:[String.fromCharCode(34)+"Blogger"+String.fromCharCode(34)]}])');
+      app.run('window.mktOpenNicheTags()');
+      const tags=app.bodyHtml('mkt-modal-back');
+      return page+incomplete+fetched+blank+tags;
     });
   },
 
