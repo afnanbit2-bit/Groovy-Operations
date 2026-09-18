@@ -779,6 +779,105 @@ module.exports=function(){
     s.eq('the card survives a partial load',run(`_editCards.length`),1);
   }
 
+  // ── Home's Boards panel ───────────────────────────────────────────────
+  // The panel is DERIVED from the same query the gallery reads, which is
+  // what lets "take a board off Home and it goes back to the list" need no
+  // bookkeeping — and what made auto-place-on-open have to go, since the
+  // two answered the same question in opposite directions.
+  {
+    const app=loadApp({files:FILES,session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'}});
+    const {run}=app;
+    const boot=()=>run(`session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};
+      boardsLoaded=true;_boardsTrash=[];_editConnectors=[];_boardsSelection=new Set();
+      _boardsUndo=[];_boardsRedo=[];_boardsPanelQuery='';_boardsPanelFilter='all';
+      _editBoard={id:'H',isHome:true,ownerUid:'u1',visibility:'personal',title:'Home',zoom:1,panX:0,panY:0};
+      _editCards=[];_editUnsorted=[];
+      moodBoards=[
+        {id:'H',isHome:true,ownerUid:'u1',title:'Home',cards:[],visibility:'personal'},
+        {id:'HX',isHome:true,ownerUid:'u9',title:'Home',cards:[],visibility:'personal'},
+        {id:'A',title:'Winter Drop',ownerUid:'u1',visibility:'shared',ownerName:'Afnan',cards:[],updatedAt:9},
+        {id:'B',title:'Fabric refs',ownerUid:'u2',visibility:'personal',ownerName:'Ammar',cards:[],updatedAt:5},
+        {id:'SUB',title:'Nested',ownerUid:'u1',visibility:'shared',parentId:'A',cards:[],updatedAt:1}
+      ];
+      moodBoards[2].cards=[{id:'link',type:'board',boardId:'SUB',x:0,y:0,w:200,h:104}];`);
+
+    s.section('opening Home no longer arranges it for you');
+    boot();
+    s.eq('sync places nothing',run(`_boardsHomeSync()`),0);
+    s.eq('so Home stays as it was left',run(`_editCards.length`),0);
+    // The safety net that makes that safe: the panel still lists them.
+    s.eq('and the panel holds both root boards',
+      run(`_boardsHomeList().map(b=>b.id).sort().join(',')`),'A,B');
+    s.ok('never a Home, never this board, never a nested sub-board',
+      run(`_boardsHomeList().every(b=>!b.isHome&&b.id!=='H'&&b.id!=='SUB')`));
+    s.ok('and a brand-new Home opens the panel on its Boards tab',
+      run(`_boardsHomeFirstRun()&&_boardsTrayOpen&&_boardsTrayTab==='boards'`));
+    run(`_editCards=[{id:'x',type:'text',text:'',x:0,y:0,w:170,h:100}]`);
+    s.ok('but a Home somebody has already used is left alone',run(`_boardsHomeFirstRun()`)===false);
+
+    s.section('filter and search');
+    boot();
+    s.eq('Team',run(`(_boardsPanelFilter='shared',_boardsPanelBoards().map(b=>b.id).join(','))`),'A');
+    s.eq('Private',run(`(_boardsPanelFilter='personal',_boardsPanelBoards().map(b=>b.id).join(','))`),'B');
+    s.eq('All, newest first',run(`(_boardsPanelFilter='all',_boardsPanelBoards().map(b=>b.id).join(','))`),'A,B');
+    s.eq('search matches the title',run(`(_boardsPanelQuery='fabric',_boardsPanelBoards().map(b=>b.id).join(','))`),'B');
+    s.eq('and the owner',run(`(_boardsPanelQuery='ammar',_boardsPanelBoards().map(b=>b.id).join(','))`),'B');
+    s.eq('a miss is a miss',run(`(_boardsPanelQuery='zzz',_boardsPanelBoards().length)`),0);
+    // Whose board it is, but only when it isn't yours.
+    boot();
+    s.ok('a row names someone else as the owner',/Ammar/.test(run(`_boardsPanelRowHTML(moodBoards[3],false,true)`)));
+    s.ok('and never reads your own name back at you',!/Afnan/.test(run(`_boardsPanelRowHTML(moodBoards[2],false,true)`)));
+
+    s.section('placing');
+    boot();
+    s.eq('nothing is on Home yet',run(`_boardsPanelUnplaced().length`),2);
+    run(`window.boardsPanelRowClick('A')`);
+    s.eq('clicking a row places that board',run(`_editCards.length`),1);
+    s.eq('as a board card pointing at it',run(`_editCards[0].type+':'+_editCards[0].boardId`),'board:A');
+    s.eq('and it is now "on Home"',run(`_boardsHomeCarded()['A']`),run(`_editCards[0].id`));
+    s.eq('so the panel stops offering it',run(`_boardsPanelUnplaced().map(b=>b.id).join(',')`),'B');
+    s.ok('placing is undoable, unlike the old automatic arrangement',run(`_boardsUndo.length>0`));
+    const before=run(`_editCards.length`);
+    run(`window.boardsPanelRowClick('A')`);
+    s.eq('clicking an already-placed row scrolls to it rather than placing twice',
+      run(`_editCards.length`),before);
+    run(`window.boardsHomePlaceAll()`);
+    s.eq('Place all takes the rest',run(`_editCards.filter(c=>c.type==='board').length`),2);
+    s.eq('and then has nothing left to do',run(`_boardsPanelUnplaced().length`),0);
+
+    s.section('taking a board off Home returns it to the panel, and leaves the board alone');
+    boot();
+    run(`window.boardsPanelRowClick('A');window.boardsDeleteCard(_editCards[0].id)`);
+    s.eq('the card is gone',run(`_editCards.length`),0);
+    s.ok('the board itself is untouched',run(`!!moodBoards.find(b=>b.id==='A'&&!b.deletedAt)`));
+    s.eq('and it is back in the panel',
+      run(`_boardsPanelUnplaced().map(b=>b.id).sort().join(',')`),'A,B');
+    s.ok('the toast says where it went',
+      /Boards panel/.test(app.state.toasts.join(' ')),app.state.toasts.slice(-1)[0]);
+    // ✕ no longer trashes the board, so trashing it needs its own route.
+    run(`_boardsSelection=new Set();window.boardsPanelRowClick('A');_boardsSelection=new Set([_editCards[0].id])`);
+    s.ok('and the card menu carries one',
+      JSON.stringify(run(`_boardsCardCtxItems(true)`)).indexOf('home-trash')>-1);
+
+    s.section('the panel never interpolates a board title into its HTML');
+    boot();
+    run(`moodBoards[3].title='<img src=x onerror=alert(1)>'`);
+    const rows=run(`_boardsPanelRowsHTML(true)`);
+    s.ok('no title in the markup at all',!/onerror|Winter Drop/.test(rows));
+    s.ok('only an empty node for it',/id="board-panel-n-A"><\/div>/.test(rows));
+
+    s.section('the tab strip is a Home thing');
+    boot();
+    run(`_boardsTrayOpen=true;_boardsTrayTab='boards'`);
+    const homeBar=run(`_renderBoardCanvasHTML()`);
+    s.ok('Home shows both tabs',/boardsTraySetTab\('unsorted'\)/.test(homeBar)&&/boardsTraySetTab\('boards'\)/.test(homeBar));
+    s.ok('and the top bar names the Boards panel',/boardsToggleBoardsPanel\(\)/.test(homeBar));
+    run(`_editBoard={id:'A',title:'Winter Drop',visibility:'shared',ownerUid:'u1',zoom:1,panX:0,panY:0}`);
+    const plainBar=run(`_renderBoardCanvasHTML()`);
+    s.ok('an ordinary board has no tab strip',!/boardsTraySetTab/.test(plainBar));
+    s.ok('and keeps the plain Unsorted button',/boardsToggleTray\(\)/.test(plainBar));
+  }
+
   {
     const app=loadApp({files:FILES,session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'}});
     const {run}=app;
@@ -1145,7 +1244,13 @@ module.exports=function(){
     run(`while(_editCards[0].rows[0].length>1)window.boardsTableDrop(_editCards[0].id,'col');
          window.boardsTableDrop(_editCards[0].id,'col')`);
     s.eq('and never below one column',run(`_editCards[0].rows[0].length`),1);
-    run(`_editCards[0].rows=[['Fabric','GSM'],['Drill','245']]`);
+    // The id is pinned because a card's real id carries Date.now(), and
+    // this assertion searches the WHOLE markup — where that id appears in
+    // `id`, `data-id` and every inline handler. A timestamp containing the
+    // digits 245 (1789724573410 did, on 18 Sept 2026) failed the check with
+    // nothing wrong in the app at all. Found by reading the match, not by
+    // re-running until it passed.
+    run(`_editCards[0].id='tblA';_editCards[0].rows=[['Fabric','GSM'],['Drill','245']]`);
     s.ok('cell text is searchable',/245/.test(run(`_boardsCardText(_editCards[0])`)));
     s.ok('the markup carries no cell text — hydrated after, like every other string',
       !/Fabric|245/.test(run(`_boardCardHTML(_editCards[0],true)`)));

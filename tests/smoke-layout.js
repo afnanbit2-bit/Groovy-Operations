@@ -318,6 +318,38 @@ const FRAGMENTS={
       '<div style="position:relative;height:640px;width:100%;overflow:hidden">'+
       '<div class="board-rail" id="board-rail">'+inner+'</div></div>');
   },
+  // Home's Boards panel: a row is a tile, a name that must ellipsize rather
+  // than collapse, a meta line, a state word and an Open button — the exact
+  // shape that crushed the Profile directory's names to 0px when the name
+  // shared a flex row with fixed-width actions.
+  'boards — Home’s Boards panel':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'H',isHome:true,title:'Home',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+      _editConnectors=[];_boardsSelection=new Set();_editUnsorted=[];
+      _boardsTrayOpen=true;_boardsTrayTab='boards';_boardsPanelQuery='';_boardsPanelFilter='all';
+      moodBoards=[
+        {id:'H',isHome:true,ownerUid:'u1',title:'Home',cards:[],visibility:'personal'},
+        {id:'A',title:'Winter Drop 2027 — fleece, outerwear and the full tech-pack reference dump',
+         ownerUid:'u1',ownerName:'Afnan',visibility:'shared',updatedAt:9,color:'#7C3AED',icon:'W',
+         cards:[{id:'i1',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/a.jpg',x:0,y:0,w:170,h:120},
+                {id:'f1',type:'file',fileUrl:'https://res.cloudinary.com/x/raw/upload/t.pdf',x:0,y:0,w:200,h:110}]},
+        {id:'B',title:'Fabric refs',ownerUid:'u2',ownerName:'Ammar',visibility:'personal',updatedAt:5,cards:[]}
+      ];
+      _editCards=[{id:'c1',type:'board',boardId:'B',x:0,y:0,w:200,h:124}];`);
+    app.run(`(function(){
+      const host=document.createElement('div');
+      host.id='board-panel-host';
+      host.innerHTML=_boardsTrayHTML(true);
+      document.body.appendChild(host);
+      _boardsPanelHydrate();
+      return true;})()`);
+    const inner=app.run(`document.getElementById('board-panel-host').innerHTML`);
+    // .board-tray is position:absolute inside the canvas wrap, so the
+    // fragment supplies that containing block rather than letting it escape
+    // to the page and measure nothing.
+    return Promise.resolve(
+      '<div style="position:relative;height:620px;width:100%;overflow:hidden">'+inner+'</div>');
+  },
   'boards — the trash panel':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};

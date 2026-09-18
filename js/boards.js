@@ -39,6 +39,11 @@ let _editConnectors=[];
 // else in this file, no subcollection at this app's scale.
 let _editUnsorted=[];
 const _BOARDS_TRAY_KEY='groovy-boards-tray';   // open/closed is per VIEWER, not board data
+// On HOME the same panel grows a second tab: every board you can see,
+// searchable, filterable by Team/Private, and draggable onto the canvas.
+// Which tab you were on is per VIEWER too — it is about this screen, not
+// about the board, the same rule the minimap and snap preferences follow.
+const _BOARDS_TRAY_TAB_KEY='groovy-boards-tray-tab';
 let _boardsSaveTimer=null;
 let _boardsCardSeq=0;
 let _boardsSelection=new Set(); // card ids currently selected (Stage 2: many, not one)
@@ -437,11 +442,14 @@ function _boardsHomePruneTrashed(){
   _editConnectors=_editConnectors.filter(cn=>!gone.has(cn.from)&&!gone.has(cn.to));
   return drop.length;
 }
-// Deliberately NOT undoable, which is the one exception to "every mutating
-// action pushes an undo entry first". It runs at open, immediately after
-// the history is reset, and undoing it would clear cards that reappear on
-// the next visit — a Ctrl+Z that looks broken. Arranging Home afterwards is
-// ordinary editing and is undoable like anything else.
+// Places every board that isn't on Home yet, in one go.
+//
+// This used to run automatically on every open, and it no longer does —
+// see _boardsHomeSync below for why. It is an explicit action now ("Place
+// all" in the Boards panel), which also settles the awkwardness the old
+// comment here recorded: an automatic arrangement could not be undoable
+// (Ctrl+Z would clear cards that reappeared on the next visit), whereas a
+// button you pressed is ordinary editing. The caller pushes the undo entry.
 function _boardsHomeAutoPlace(){
   if(!_boardsIsHome(_editBoard)||!boardsLoaded)return 0;
   const have=new Set(_editCards.filter(c=>c.type==='board'&&c.boardId).map(c=>c.boardId));
@@ -465,11 +473,38 @@ function _boardsHomeAutoPlace(){
   return missing.length;
 }
 // Everything Home reconciles on open, in the order that matters: collapse
-// duplicates first (so a duplicate isn't counted as "already placed"),
-// then drop cards for trashed boards, then place whatever is left over.
+// duplicates first (so a duplicate isn't counted as "already placed"), then
+// drop cards for trashed boards.
+//
+// AUTO-PLACE IS DELIBERATELY NOT PART OF THIS ANY MORE (Sept 2026). It used
+// to be, and it had to stop the moment Home grew a Boards panel, because
+// the two answer the same question and would have fought:
+//
+//   - Afnan asked for removing a board's card from Home to put that board
+//     back in the list. With auto-place on open, it came straight back on
+//     the next visit — which is exactly why boardsDeleteCard used to trash
+//     the whole BOARD on Home rather than offer something that undid itself.
+//   - Nothing is lost by not placing. The panel is derived from the same
+//     query the gallery reads (_boardsHomeList), so a board that is on
+//     nobody's Home is still one search away, and All boards still lists it.
+//     That is the Stage 4 safety net, untouched: a board is discoverable by
+//     QUERY, never only by a link.
+//
+// So Home is arranged by hand, "Place all" is one button in the panel, and
+// a board you take off Home stays off it.
 function _boardsHomeSync(){
-  const n=_boardsHomeDedupe()+_boardsHomePruneTrashed()+_boardsHomeAutoPlace();
-  return n;
+  return _boardsHomeDedupe()+_boardsHomePruneTrashed();
+}
+// A brand-new Home is an empty canvas, and now that boards are not placed
+// for you there is nothing on it saying where they went. Open the panel on
+// its Boards tab — but ONLY when Home is completely empty, so it never
+// overrides the preference of anyone who has arranged theirs, and
+// deliberately without persisting: it is a first-run nudge, not a setting.
+function _boardsHomeFirstRun(){
+  if(!_boardsIsHome(_editBoard)||!boardsLoaded)return false;
+  if(_editCards.length||!_boardsHomeList().length)return false;
+  _boardsTrayOpen=true;_boardsTrayTab='boards';
+  return true;
 }
 // The `boards` page is Home now. Renders the gallery instead — unchanged,
 // under the same page id it always had — if Home cannot be reached, so a
@@ -1776,6 +1811,7 @@ async function _boardsOpenCanvas(){
   _boardsCardTrash=[];_boardsCardTrashOpen=false;_boardsCardTrashTab='mine';
   _boardsPendingRemote=null;_boardsGestureActive=false;
   if(_boardsHomeSync())_boardsSaveDebounced();
+  _boardsHomeFirstRun();
   _boardsRenderCanvasAndWire();
   _boardsSubscribe(b.id);
   _boardsPresenceStart(b.id);
@@ -1791,6 +1827,7 @@ async function _boardsOpenCanvas(){
       // Home opened cold (a deep link, or a reload straight onto it) had no
       // board list to place from. Now it does.
       if(_boardsHomeSync())_boardsSaveDebounced();
+      _boardsHomeFirstRun();
       if(!_boardsIsEditableFocus())_boardsRenderCanvasAndWire();
     }).catch(()=>{});
   }
@@ -1806,6 +1843,7 @@ function _boardsRenderCanvasAndWire(){
   m.innerHTML=_renderBoardCanvasHTML();
   _boardsFullscreen(true);
   _boardsTrayHydrate();
+  _boardsPanelHydrate();
   {const st=document.getElementById('board-stage');
    if(st)st.classList.toggle('pan-ready',_boardsPanMode||_boardsSpaceDown);}
   // Seed the pill's last-seen value from the markup we just wrote, so
@@ -1863,7 +1901,9 @@ function _renderBoardCanvasHTML(){
         <div class="tool-sep"></div>`:''}
         <button class="tool-btn${_boardsFindOpen?' on':''}" onclick="window.boardsToggleFind()" title="Find cards on this board">Find</button>
         <button class="tool-btn${_boardsDrawerOpen?' on':''}" id="board-cmt-btn" onclick="window.boardsToggleDrawer()" title="Comments and activity on this board">Comments</button>
-        <button class="tool-btn${_boardsTrayOpen?' on':''}" onclick="window.boardsToggleTray()" title="Unsorted — things collected but not placed yet">Unsorted${_editUnsorted.length?' '+_editUnsorted.length:''}</button>
+        ${home
+          ?`<button class="tool-btn${_boardsTrayOpen&&_boardsTrayTab==='boards'?' on':''}" onclick="window.boardsToggleBoardsPanel()" title="Every board you can see — search one, or drag it onto Home">Boards ${_boardsHomeList().length}</button>`
+          :`<button class="tool-btn${_boardsTrayOpen?' on':''}" onclick="window.boardsToggleTray()" title="Unsorted — things collected but not placed yet">Unsorted${_editUnsorted.length?' '+_editUnsorted.length:''}</button>`}
         <div class="tool-sep"></div>
         <!-- View: everything about how the board is LOOKED AT, in one place,
              the way Milanote groups it. The row used to carry all seven of
@@ -6118,15 +6158,16 @@ function _boardsSyncLocalCards(){
 window.boardsDeleteCard=function(id){
   const c=_editCards.find(x=>x.id===id);
   if(c&&c.locked){showToast('That card is locked');return;}
-  // On Home a board card IS the board as far as anyone looking at it can
-  // tell, and removing just the card would be pointless anyway — auto-place
-  // puts it straight back on the next visit. So Home asks to trash the
-  // board, the way Milanote does, and it stays restorable from
-  // All boards → Trash. Everywhere else, deleting a board card unlinks a
-  // sub-board and leaves the board alone, exactly as before.
-  if(c&&c.type==='board'&&c.boardId&&_boardsIsHome(_editBoard)){
-    window.boardsTrashLinkedBoard(c.boardId,id);return;
-  }
+  // On Home, deleting a board card TAKES IT OFF HOME and leaves the board
+  // alone — Afnan's third answer, and the whole point of the Boards panel:
+  // the row is still there, it just stops saying On Home.
+  //
+  // This reverses the earlier behaviour, where Home asked to trash the
+  // whole BOARD. That was right at the time and is wrong now: it was only
+  // ever there because auto-place put the card straight back on the next
+  // visit, so "remove from Home" was an action that undid itself. Trashing
+  // the board is still one click away — "Move board to Trash" on the
+  // card's right-click menu — it just isn't what ✕ means any more.
   // Deleting a container must never destroy content. The cards are
   // RELEASED where they currently sit; "Delete column and its cards" is a
   // separate, confirmed action for when you really mean both.
@@ -6149,7 +6190,9 @@ window.boardsDeleteCard=function(id){
   if(released)showToast('Column removed — '+released+' card'+(released===1?'':'s')+' kept on the board');
   else if(c&&c.type==='board'){
     _boardsSyncLocalCards();
-    showToast('Link removed — the sub-board itself is back in the boards list');
+    showToast(_boardsIsHome(_editBoard)
+      ?'Taken off Home — it is still in the Boards panel'
+      :'Link removed — the sub-board itself is back in the boards list');
   }
   else _boardsUndoableToast(_boardsCardNoun(c)+' deleted');
   _boardsLogBoardActivity('deleted a card');
@@ -6204,7 +6247,9 @@ window.boardsDeleteSelection=function(){
   _boardsSaveDebounced();
   if(removable.some(c=>c.type==='board')){
     _boardsSyncLocalCards();
-    showToast('Sub-board links removed — those boards are back in the boards list');
+    showToast(_boardsIsHome(_editBoard)
+      ?'Taken off Home — they are still in the Boards panel'
+      :'Sub-board links removed — those boards are back in the boards list');
   }
   else if(!released)_boardsUndoableToast(removable.length+' card'+(removable.length===1?'':'s')+' deleted');
   if(removable.length<sel.length)showToast('Kept '+(sel.length-removable.length)+' locked card'+(sel.length-removable.length===1?'':'s'));
@@ -7338,6 +7383,16 @@ window.boardsToggleTray=function(){
   try{localStorage.setItem(_BOARDS_TRAY_KEY,_boardsTrayOpen?'1':'0');}catch(e){}
   _boardsRenderCanvasAndWire();
 };
+// On Home the top-bar button names the Boards tab, so it opens THAT tab
+// rather than whichever one you were last on — a button labelled Boards
+// that opens Unsorted is the kind of small lie that makes a UI feel broken.
+window.boardsToggleBoardsPanel=function(){
+  if(_boardsTrayOpen&&_boardsTrayTab==='boards'){window.boardsCloseTray();return;}
+  _boardsTrayTab='boards';
+  _boardsTrayOpen=true;
+  try{localStorage.setItem(_BOARDS_TRAY_TAB_KEY,'boards');localStorage.setItem(_BOARDS_TRAY_KEY,'1');}catch(e){}
+  _boardsRenderCanvasAndWire();
+};
 window.boardsCloseTray=function(){
   if(!_boardsTrayOpen)return;
   _boardsTrayOpen=false;
@@ -7347,13 +7402,27 @@ window.boardsCloseTray=function(){
 
 function _boardsTrayHTML(canEdit){
   if(!_boardsTrayOpen)return'';
+  const home=_boardsIsHome(_editBoard);
+  // Off Home there is one tab and no tab strip — a tab bar with a single
+  // tab in it is chrome that says nothing.
+  const tab=home?_boardsTrayTab:'unsorted';
   const n=_editUnsorted.length;
+  const head=home
+    ?`<div class="board-tray-tabs" role="tablist">
+        <button class="board-tray-tab${tab==='unsorted'?' on':''}" onclick="window.boardsTraySetTab('unsorted')" title="Things collected but not placed yet">Unsorted${n?`<span class="board-tray-tabn">${n}</span>`:''}</button>
+        <button class="board-tray-tab${tab==='boards'?' on':''}" onclick="window.boardsTraySetTab('boards')" title="Every board you can see">Boards<span class="board-tray-tabn">${_boardsHomeList().length}</span></button>
+      </div>`
+    :`<span class="board-tray-title">Unsorted${n?' · '+n:''}</span>`;
   return`<aside class="board-tray" id="board-tray">
     <div class="board-tray-head">
-      <span class="board-tray-title">Unsorted${n?' · '+n:''}</span>
-      <button class="tool-btn" onclick="window.boardsCloseTray()" title="Close the tray">Close</button>
+      ${head}
+      <button class="tool-btn" onclick="window.boardsCloseTray()" title="Close the panel">Close</button>
     </div>
-    ${canEdit?`<div class="board-tray-add">
+    ${tab==='boards'?_boardsPanelHTML(canEdit):_boardsTrayUnsortedHTML(canEdit,n)}
+  </aside>`;
+}
+function _boardsTrayUnsortedHTML(canEdit,n){
+  return`${canEdit?`<div class="board-tray-add">
       <button class="tool-btn" onclick="window.boardsTrayPick()">+ Add files</button>
       <span class="board-tray-hint">or paste, or drop files here</span>
     </div>`:''}
@@ -7365,9 +7434,260 @@ function _boardsTrayHTML(canEdit){
              until you drag it onto the board. It stays saved if you never do.
            </div>`}
     </div>
-    <input type="file" id="board-tray-picker" multiple style="display:none" onchange="window.boardsTrayFilesPicked(this)">
-  </aside>`;
+    <input type="file" id="board-tray-picker" multiple style="display:none" onchange="window.boardsTrayFilesPicked(this)">`;
 }
+
+/* ── Home's Boards panel (Sept 2026) ────────────────────────────────────
+   Milanote's home keeps every board in a scrollable side panel you drag
+   onto the canvas. Afnan asked for the same, holding BOTH Team and Private
+   boards with a way to pick between them, plus search and "take me to it".
+
+   THE LIST IS DERIVED FROM THE QUERY, NOT A STORED HOLDING PEN. That is
+   the one decision everything else falls out of:
+
+   - Nothing to keep in step. A board created on another device, by someone
+     else, or restored from Trash is in the list the moment loadBoardsData
+     sees it — no write, no reconciliation, no orphan state when a write
+     fails. Same discipline as frame membership, nesting and the label
+     library.
+   - "Remove a card from Home and the board goes back to the list" (Afnan's
+     third answer) needs no bookkeeping at all: the row is there either way,
+     it just stops saying On Home. That is also why auto-place had to go —
+     see _boardsHomeSync.
+   - A board can never be stranded. The panel, All boards and the gallery
+     search all read the same `moodBoards`, so there is no view in which a
+     board exists only as a card somebody deleted.
+
+   Placed / not placed is derived too (_boardsHomeCarded): a card on THIS
+   board pointing at that board id. Unsorted is the opposite kind of thing —
+   items that exist nowhere else and must be stored — which is why the two
+   tabs share a panel and nothing else. */
+let _boardsTrayTab=(function(){try{return localStorage.getItem('groovy-boards-tray-tab')==='boards'?'boards':'unsorted';}catch(e){return'unsorted';}})();
+let _boardsPanelQuery='';
+let _boardsPanelFilter='all';   // all | shared | personal
+let _boardsPanelTimer=null;
+window.boardsTraySetTab=function(t){
+  _boardsTrayTab=t==='boards'?'boards':'unsorted';
+  try{localStorage.setItem(_BOARDS_TRAY_TAB_KEY,_boardsTrayTab);}catch(e){}
+  _boardsRenderCanvasAndWire();
+};
+// Every board this person can see that could sit on Home: not a Home, not
+// this board, and not already nested under a real parent (a sub-board
+// belongs with its parent — putting it on Home too would be the same board
+// in two places with two different meanings).
+function _boardsHomeList(){
+  if(!Array.isArray(moodBoards))return[];
+  const nested=_boardsNestedIds();
+  return moodBoards.filter(b=>b&&!b.isHome&&(!_editBoard||b.id!==_editBoard.id)&&!nested.has(b.id));
+}
+// boardId → the id of the card on this board that points at it.
+function _boardsHomeCarded(){
+  const m=Object.create(null);
+  _editCards.forEach(c=>{if(c.type==='board'&&c.boardId&&!m[c.boardId])m[c.boardId]=c.id;});
+  return m;
+}
+function _boardsPanelMatch(b,q){
+  if(!q)return true;
+  const hay=[(b.title||''),(b.ownerName||''),(b.visibility==='shared'?'team':'private')].join(' ').toLowerCase();
+  return hay.indexOf(q)>-1;
+}
+function _boardsPanelBoards(){
+  const q=_boardsPanelQuery.trim().toLowerCase();
+  const f=_boardsPanelFilter;
+  return _boardsHomeList()
+    .filter(b=>f==='all'||(f==='shared'?b.visibility==='shared':b.visibility!=='shared'))
+    .filter(b=>_boardsPanelMatch(b,q))
+    .sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+}
+function _boardsPanelUnplaced(){
+  const on=_boardsHomeCarded();
+  return _boardsHomeList().filter(b=>!on[b.id]);
+}
+function _boardsPanelHTML(canEdit){
+  const f=_boardsPanelFilter;
+  const left=_boardsPanelUnplaced().length;
+  return`<div class="board-tray-add board-panel-tools">
+      <input type="search" class="board-panel-search" id="board-panel-search" placeholder="Search boards…"
+        value="${_boardsEsc(_boardsPanelQuery)}" oninput="window.boardsPanelSearch(this)">
+      <div class="board-panel-seg" id="board-panel-seg">${_boardsPanelSegHTML(f)}</div>
+      ${canEdit?`<div class="board-panel-new">
+        <button class="tool-btn" onclick="window.boardsCreate('shared')">+ Team board</button>
+        <button class="tool-btn" onclick="window.boardsCreate('personal')">+ Private board</button>
+        <button class="tool-btn" id="board-panel-place" onclick="window.boardsHomePlaceAll()" ${left?'':'style="display:none"'} title="Put every board that isn’t on Home onto Home">Place all${left?' ('+left+')':''}</button>
+      </div>`:''}
+    </div>
+    <div class="board-panel-list" id="board-panel-list">${_boardsPanelRowsHTML(canEdit)}</div>`;
+}
+function _boardsPanelSegHTML(f){
+  return['all','shared','personal'].map(k=>
+    `<button class="${f===k?'on':''}" onclick="window.boardsPanelSetFilter('${k}')">${k==='all'?'All':k==='shared'?'Team':'Private'}</button>`).join('');
+}
+function _boardsPanelRowsHTML(canEdit){
+  const rows=_boardsPanelBoards();
+  if(!rows.length){
+    return`<div class="board-tray-empty">${_boardsPanelQuery.trim()||_boardsPanelFilter!=='all'
+      ?'No board matched that.'
+      :'No boards yet. Make one with the buttons above — it lands here, and you drag it onto Home wherever you want it.'}</div>`;
+  }
+  const on=_boardsHomeCarded();
+  return rows.map(b=>_boardsPanelRowHTML(b,!!on[b.id],canEdit)).join('');
+}
+function _boardsPanelRowHTML(b,placed,canEdit){
+  const cards=b.cards||[];
+  const files=cards.filter(c=>(c.type==='file'&&c.fileUrl)||(c.type==='image'&&c.imageUrl)).length;
+  // Whose board it is, but only when it isn't yours — your own name read
+  // back at you is the noise the profile provenance line already avoids.
+  const mine=!!(typeof session!=='undefined'&&session&&b.ownerUid===session.uid);
+  const meta=(b.visibility==='shared'?'TEAM':'PRIVATE')+' · '+cards.length+' card'+(cards.length===1?'':'s')+
+    (files?' · '+files+' file'+(files===1?'':'s'):'')+
+    (!mine&&b.ownerName?' · '+b.ownerName:'');
+  // The title is written in by _boardsPanelHydrate with textContent —
+  // someone else named this board and it is drawn into this person's page.
+  return`<div class="board-panel-row${placed?' placed':''}" data-board="${_boardsEsc(b.id)}"
+      title="${placed?'On Home — click to go to it':(canEdit?'Drag onto Home to place it, or click':'Click to open')}"
+      ${canEdit?`onpointerdown="window.boardsPanelDragStart(event,'${_boardsEsc(b.id)}')"`:''}
+      onclick="window.boardsPanelRowClick('${_boardsEsc(b.id)}')">
+    ${_boardsTileHTML(b,30)}
+    <div class="board-panel-info">
+      <div class="board-panel-name" id="board-panel-n-${_boardsEsc(b.id)}"></div>
+      <div class="board-panel-meta">${_boardsEsc(meta)}</div>
+    </div>
+    <span class="board-panel-state">${placed?'On Home':(canEdit?'Place':'')}</span>
+    <button class="board-panel-open" onpointerdown="event.stopPropagation()"
+      onclick="event.stopPropagation();window.boardsPanelOpen('${_boardsEsc(b.id)}')" title="Open this board">Open</button>
+  </div>`;
+}
+function _boardsPanelHydrate(){
+  // Called from every canvas render, so it has to be free when the panel
+  // isn't on screen — which is every board that isn't Home.
+  if(!document.getElementById('board-panel-list'))return;
+  _boardsHomeList().forEach(b=>{
+    const el=document.getElementById('board-panel-n-'+b.id);
+    if(el)el.textContent=b.title||'Untitled board';
+  });
+}
+// Repaints the list ALONE. A keystroke must not rebuild the canvas: on a
+// 46-card board that redraws every card and every connector, and it would
+// also destroy the input the caret is in — the reason the Find bar does
+// not rerender either.
+function _boardsPanelRepaint(){
+  const list=document.getElementById('board-panel-list');
+  if(!list)return;
+  list.innerHTML=_boardsPanelRowsHTML(_boardsCanEdit(_editBoard));
+  _boardsPanelHydrate();
+  const seg=document.getElementById('board-panel-seg');
+  if(seg)seg.innerHTML=_boardsPanelSegHTML(_boardsPanelFilter);
+  const place=document.getElementById('board-panel-place');
+  if(place){
+    const left=_boardsPanelUnplaced().length;
+    place.style.display=left?'':'none';
+    place.textContent='Place all'+(left?' ('+left+')':'');
+  }
+}
+window.boardsPanelSearch=function(el){
+  _boardsPanelQuery=el.value||'';
+  clearTimeout(_boardsPanelTimer);
+  _boardsPanelTimer=setTimeout(_boardsPanelRepaint,180);
+};
+window.boardsPanelSetFilter=function(f){
+  _boardsPanelFilter=(f==='shared'||f==='personal')?f:'all';
+  _boardsPanelRepaint();
+};
+window.boardsPanelOpen=function(id){
+  if(!_boardsLiveById()[id]){showToast('That board is not available — it may have been deleted, or it is private to someone else');return;}
+  window.boardsOpen(id);
+};
+// Mints the card. `at` is a world point (the drop) or null for "wherever
+// new cards go". Shared by the drag-out, the click and Place all, so the
+// three cannot produce different cards.
+function _boardsHomePlaceOne(b,at){
+  const nc=_boardsNewCard('board');
+  nc.boardId=b.id;nc.boardTitle=b.title||'Untitled board';
+  nc.w=_BOARDS_HOME_W;nc.h=_BOARDS_HOME_H;
+  const p=at||_boardsPlacementPoint();
+  nc.x=Math.round(at?p.x-nc.w/2:p.x);
+  nc.y=Math.round(at?p.y-nc.h/2:p.y);
+  _editCards.push(nc);
+  return nc;
+}
+// Click a row: go to the card if the board is already on Home, otherwise
+// place it and go to it. Either way you end up looking at it, which is the
+// "search and scroll to view" half of what was asked for.
+window.boardsPanelRowClick=function(id){
+  const b=_boardsLiveById()[id];
+  if(!b){showToast('That board is not available — it may have been deleted, or it is private to someone else');return;}
+  const on=_boardsHomeCarded();
+  if(on[id]){_boardsFocusCard(on[id]);return;}
+  if(!_boardsCanEdit(_editBoard)){window.boardsPanelOpen(id);return;}
+  _boardsPushUndo();
+  const nc=_boardsHomePlaceOne(b,null);
+  _boardsRenderCanvasAndWire();
+  _boardsFocusCard(nc.id);
+  _boardsSaveDebounced();
+  showToast('“'+(b.title||'Untitled board')+'” placed on Home');
+};
+window.boardsHomePlaceAll=function(){
+  if(!_boardsCanEdit(_editBoard))return;
+  const left=_boardsPanelUnplaced().length;
+  if(!left){showToast('Every board is already on Home');return;}
+  _boardsPushUndo();
+  const n=_boardsHomeAutoPlace();
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast(n+' board'+(n===1?'':'s')+' placed on Home — Ctrl+Z to undo');
+};
+// Dragging a row onto the canvas, pointer-based like the Unsorted tray's
+// drag-out and for the same reason: the stage reads a native HTML5 drag as
+// "files from the desktop" (_boardsInternalDrag), so a second drag system
+// beside this one is how the two would eventually disagree.
+window.boardsPanelDragStart=function(e,id){
+  if(!_boardsCanEdit(_editBoard))return;
+  const b=_boardsLiveById()[id];
+  if(!b)return;
+  if(_boardsHomeCarded()[id])return;   // already on Home — the click scrolls to it
+  e.stopPropagation();
+  const startX=e.clientX,startY=e.clientY;
+  const host=e.currentTarget;
+  let ghost=null;
+  host.setPointerCapture(e.pointerId);
+  function move(ev){
+    if(!ghost){
+      if(Math.abs(ev.clientX-startX)<4&&Math.abs(ev.clientY-startY)<4)return;
+      ghost=document.createElement('div');
+      ghost.className='board-tray-ghost';
+      ghost.textContent=b.title||'Untitled board';
+      document.body.appendChild(ghost);
+      const stage=document.getElementById('board-stage');
+      if(stage)stage.classList.add('tray-target');
+    }
+    ghost.style.left=ev.clientX+'px';
+    ghost.style.top=ev.clientY+'px';
+  }
+  function up(ev){
+    host.removeEventListener('pointermove',move);
+    host.removeEventListener('pointerup',up);
+    host.removeEventListener('pointercancel',up);
+    const stage=document.getElementById('board-stage');
+    if(stage)stage.classList.remove('tray-target');
+    if(!ghost)return;                    // a plain click, not a drag
+    ghost.remove();ghost=null;
+    // The pointer was captured by this row, so the click that follows is
+    // retargeted here and would run boardsPanelRowClick — placing the board
+    // a second time. Same retargeting that broke the delete ✕.
+    _boardsSuppressClick=true;
+    const r=stage?stage.getBoundingClientRect():null;
+    const over=r&&ev.clientX>=r.left&&ev.clientX<=r.right&&ev.clientY>=r.top&&ev.clientY<=r.bottom;
+    if(!over)return;
+    _boardsPushUndo();
+    const nc=_boardsHomePlaceOne(b,_boardsScreenToWorld(ev.clientX,ev.clientY));
+    _boardsSetSelection([nc.id]);
+    _boardsRenderCanvasAndWire();
+    _boardsSaveDebounced();
+  }
+  host.addEventListener('pointermove',move);
+  host.addEventListener('pointerup',up);
+  host.addEventListener('pointercancel',up);
+};
 
 function _boardsTrayItemHTML(u,i,canEdit){
   let thumb;
@@ -8376,6 +8696,7 @@ function _boardsCtxRun(act){
     case'lock':window.boardsToggleLock();break;
     case'delete':window.boardsDeleteSelection();break;
     case'open-board':{const s=_boardsSelectedCards();if(s.length===1&&s[0].boardId)window.boardsGoto(s[0].boardId);break;}
+    case'home-trash':{const s=_boardsSelectedCards();if(s.length===1&&s[0].boardId)window.boardsTrashLinkedBoard(s[0].boardId,s[0].id);break;}
     case'cut':case'copy':{
       // Our copy/cut live on the real clipboard events (see _boardsOnCopy),
       // so the menu fires those rather than keeping a second code path.
@@ -8863,6 +9184,9 @@ function _boardsCardCtxItems(canEdit){
     }else if(one.type==='board'&&one.boardId){
       typed.push({act:'open-board',label:'Open this board'});
       typed.push({act:'copyasset',label:'Copy link to board'});
+      // ✕ takes a board off Home now, so trashing the board itself needs a
+      // route of its own — named so the two cannot be confused.
+      if(canEdit&&_boardsIsHome(_editBoard))typed.push({act:'home-trash',label:'Move board to Trash…',danger:true});
     }else if(one.type==='column'){
       if(canEdit)typed.push({act:'rename',label:'Rename column',hint:'Return'});
       typed.push({act:'selectinside',label:'Select contents'});
