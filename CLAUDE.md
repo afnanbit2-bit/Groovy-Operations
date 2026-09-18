@@ -1464,6 +1464,81 @@ cover full bleed, or the colour carrying its glyph, name on a scrim.
   Verified both ways, as are the cover-URL guard and the `ondblclick`
   placement.
 
+### Mood Boards — the Board tool drags, and the drop point survives (Sept 2026)
+
+Afnan, with the Board tool circled in the rail and an arrow drawn onto the
+canvas: *"drag and drop funtion for board from side task bar as well in home
++ in board as well"*.
+
+**`add:board` was the one content tool without `drag:true`.** Every other
+placing tool has had drag-to-place since M6. It places a card like the rest;
+it just mints the board behind it first, and the drop point survives that
+because `boardsAddChildBoard` consumes `_boardsPlacementPoint()` **before**
+its first `await`. One flag covers both halves of the ask — `_boardsRailItems`
+has no Home branch, so the rail is identical on Home and on a board, and on
+Home the same action already means "a NEW board, not a sub-board".
+
+**The three tools still click-only are the three that PLACE nothing**: `line`
+is a mode, `imagepanel` and `file` open a picker. The comment above
+`_BOARDS_RAIL_MAIN` used to claim every entry carried `drag:true`, which was
+never true; it says which do not and why now.
+
+**A LIVE BUG FOUND WHILE CHECKING, and it is the bigger half.**
+`_boardsCtxWorld` is set when the right-click menu **opens** and is never
+cleared when it closes, and `_boardsCtxRun`'s `place()` overwrites
+`_boardsNextPlacement` from it. The rail's **click** path cleared it; the
+**drag** path was missed. So after ONE right-click anywhere on the canvas,
+**every rail drag landed its card at that stale point** instead of under the
+pointer — live since M6, and invisible unless you happen to right-click
+first. Measured before the fix: a drop at (300,300) landed at
+**(-1089,-1039)**.
+
+### Mood Boards — the rail's hover cue (Sept 2026)
+
+Afnan: hovering a tool in Milanote's rail runs a small animation, *"such as
+line it mover to the right like its inicating the drag and drop process"*.
+**Built from that description.** The sandbox cannot reach Milanote, so no
+timing here is copied from it and none is claimed to be — the same care the
+M6 rail study recorded.
+
+- **It is scoped to `.rail-draggable`, and that is the load-bearing part.**
+  The cue advertises a gesture, so a tool that places nothing must never show
+  it: a cue promising a drag the tool does not accept is worse than no cue.
+- **MEASURED in headless Chromium rather than eyeballed.** Inside a 58px
+  button the cue occupies **x 44–54, y 14–16**; every label sits at
+  **y 27–39**, so nothing overlaps — including `Comment`, whose label spans
+  x 3–55 and **would** have been crossed by a bar on the middle row. That is
+  why it sits beside the ICON (~x 20–37) rather than centred. `x1=54` keeps
+  it inside the button, so it cannot paint over the canvas.
+- `pointer-events:none`, hidden under `(hover:none)` (a phone has no hover
+  and the rail there is a horizontal dock, where "to the right" means
+  nothing) and its transition dropped under `prefers-reduced-motion`.
+
+**What holds it, and what CANNOT.** `tests/smoke-layout.js` cannot: it cannot
+hover, and it enumerates **elements**, not pseudo-elements. A forced
+`.cue-on` copy of the rail fragment was tried and **removed** — at 420px the
+rail docks to the bottom of its wrapper, so the two copies reported each
+other as covering the Image tool, a false failure of the fragment rather than
+of the layout. The geometry above is a **one-off measurement**; the SCOPE is
+held by `tests/invariants.test.js` (no `.rail-btn` `::after` rule may exist
+unscoped from `.rail-draggable`), verified by widening it and watching it
+fail by name.
+
+**Two test lessons from this round, both found rather than reasoned:**
+
+- **A button stub must honour the selector.** The driven Board-drag block
+  first used `closest:()=>__btn`, which answers whatever is asked — so it
+  **passed with `drag:true` reverted**, proving the mechanics and not the
+  flag. It reads `_BOARDS_RAIL_MAIN` and returns `null` for a
+  `[data-drag="1"]` query now, so dropping the flag takes the block down too.
+- **A `_pending` block must do ALL its awaiting before its first assertion.**
+  `s.section` writes to the shared reporter, so a block that awaits *between*
+  its section and its assertions has a concurrent block's heading land in the
+  middle: these first reported under **"out of the Unsorted tray / one
+  card"**. Both drags run and their results are captured first, then the
+  sections and assertions run with no awaits between them. That is a third
+  face of the `_pending` hazard already recorded twice above.
+
 ### Mood Boards — the board card is a SPINE (Sept 2026) — REVERSES option A
 
 Afnan lived with the cover tile for a day and then picked **option D off the
