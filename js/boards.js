@@ -760,7 +760,7 @@ window.boardsBeginEdit=function(ev,elId){
   const host=el.closest?el.closest('.board-card-el,.board-frame'):null;
   const id=host&&host.dataset?host.dataset.id:null;
   const c=id?_editCards.find(x=>x.id===id):null;
-  if(c&&c.locked){showToast('Card is locked — unlock it to edit it');return;}
+  if(c&&c.locked){showToast(_boardsLockedMsg('edit'));return;}
   if(ev){ev.stopPropagation();ev.preventDefault();}
   if(_boardsEditingEl&&_boardsEditingEl!==el)_boardsEndEdit();
   el.setAttribute('contenteditable','true');
@@ -2444,7 +2444,7 @@ function _boardCardHTML(c,canEdit){
   return`<div class="board-card-el type-${c.type}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px" onclick="window.boardsSelectCard('${c.id}',event)">
     <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')" ondblclick="window.boardsHeadDblClick(event,'${c.id}')"`:''}>
       <span class="board-card-kind">
-        <span class="board-card-name" id="board-name-${c.id}" contenteditable="false" data-placeholder="${_boardsEsc(kind)}" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-name-${c.id}')"`:''} oninput="window.boardsCardName('${c.id}',this)" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()" title="Double-click to rename this card"></span>${c.locked?' · Locked':''}</span>
+        <span class="board-card-name" id="board-name-${c.id}" contenteditable="false" data-placeholder="${_boardsEsc(kind)}" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-name-${c.id}')"`:''} oninput="window.boardsCardName('${c.id}',this)" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()" title="Double-click to rename this card"></span>${c.locked?`<span class="board-card-lock" title="Position locked — unlock it from the ⋯ menu">${_boardsIcon('lock')}</span>`:''}</span>
       <span style="display:flex;align-items:center;gap:4px">
         <button class="board-cmt-badge" id="board-cmt-${c.id}" style="display:none" title="Comments on this card" onclick="event.stopPropagation();window.boardsOpenComments('${c.id}')" onpointerdown="event.stopPropagation()"></button>
         ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete">✕</button>`:''}
@@ -3290,13 +3290,46 @@ window.boardsReactionSearch=function(cardId,el){
 };
 
 // ── More ──
-// The same items the right-click menu builds, in the same router — one
-// definition, so the phone sheet and the desktop menu cannot drift apart.
+// THE ⋯ MENU IS DERIVED FROM THE RIGHT-CLICK MENU, MINUS WHAT THE RAIL
+// ALREADY CARRIES. One definition of what a card can do (_boardsCardCtxItems)
+// feeds three surfaces — the right-click menu, the desktop ⋯ popover and
+// the phone's More sheet — so they cannot drift apart; ⋯ only takes away
+// the acts the rail beside it already offers (Labels, Reactions, Comment,
+// the type's own tools) and the colour swatches, whose place is the Color
+// tile. Milanote's ⋯ (video, 99–107s) reads Convert to Document · Lock
+// Position · Bring to Front · Send to Back · "Created by you just now",
+// so the groups are ordered that way: the type's remaining actions first,
+// then Lock, then z-order, then the multi-select arranging, then the
+// clipboard block, and the provenance footer last.
+const _BOARDS_MORE_CLIP=['cut','copy','dup','delete','stash','card-link'];
+function _boardsMoreItems(canEdit){
+  const onRail=new Set(_boardsRailItems().map(i=>i.act).filter(Boolean));
+  const src=_boardsCardCtxItems(canEdit).filter(it=>it.act&&!onRail.has(it.act));
+  const who=_boardsCardCtxItems(canEdit).find(it=>it.who);
+  const is=(it,acts)=>acts.indexOf(it.act)>=0;
+  const arrange=it=>/^(align:|dist:)/.test(it.act)||is(it,['connectsel','stack','grid','wrapframe']);
+  const groups=[
+    src.filter(it=>!is(it,['lock','front','back'])&&!is(it,_BOARDS_MORE_CLIP)&&!arrange(it)),
+    src.filter(it=>it.act==='lock'),
+    src.filter(it=>is(it,['front','back'])),
+    src.filter(arrange),
+    src.filter(it=>is(it,_BOARDS_MORE_CLIP))
+  ].filter(g=>g.length);
+  const out=[];
+  groups.forEach((g,i)=>{if(i)out.push({sep:true});g.forEach(it=>out.push(it));});
+  if(who){out.push({sep:true});out.push(who);}
+  return out;
+}
 window.boardsOpenMore=function(){
-  const items=_boardsCardCtxItems(_boardsCanEdit(_editBoard));
+  const items=_boardsMoreItems(_boardsCanEdit(_editBoard));
+  // Desktop: a popover beside the ⋯ button, like Milanote's — the same
+  // .board-ctx the right-click opens, so it looks and closes the same way.
+  const r=_boardsSheetAnchorRect({act:'more'});
+  if(r){_boardsOpenCtx(r.right+10,r.top,items);return;}
   _boardsOpenSheet('More',`<div class="board-sheet-list">${items.map(it=>{
     if(it.sep)return'<div class="board-sheet-sep"></div>';
     if(it.title)return`<div class="board-sheet-label">${_boardsEsc(it.title)}</div>`;
+    if(it.who)return`<div class="board-ctx-who">${_boardsAvatarHTML(it.who)}<span>${_boardsEsc(_boardsWhoText(it))}</span></div>`;
     if(it.swatches||it.cellSwatches||it.connSwatches)return'';
     return`<button class="board-sheet-item${it.danger?' danger':''}" onclick="window.boardsSheetRun('${it.act}')">${_boardsEsc(it.label)}</button>`;
   }).join('')}</div>`);
@@ -4353,7 +4386,7 @@ window.boardsCardDragStart=function(e,cardId){
   // or the stage would start panning under the selection.
   if(_boardsEditingEl&&_boardsEditingEl.contains&&_boardsEditingEl.contains(e.target))return;
   const b=_editBoard;const c=_editCards.find(x=>x.id===cardId);if(!c)return;
-  if(c.locked){showToast('Card is locked — unlock it to move it');return;}
+  if(c.locked){showToast(_boardsLockedMsg('move'));return;}
   _boardsSelectCard(cardId,e.shiftKey||e.ctrlKey||e.metaKey);
   // Drag the whole selection when the grabbed card is part of one; locked
   // cards in that selection stay put rather than blocking the rest.
@@ -4468,7 +4501,7 @@ window.boardsCardDragStart=function(e,cardId){
 window.boardsResizeStart=function(e,cardId){
   e.stopPropagation();
   const b=_editBoard;const c=_editCards.find(x=>x.id===cardId);if(!c)return;
-  if(c.locked){showToast('Card is locked — unlock it to resize it');return;}
+  if(c.locked){showToast(_boardsLockedMsg('resize'));return;}
   const startX=e.clientX,startY=e.clientY,origW=c.w,origH=c.h;
   let pushed=false;
   const handle=e.currentTarget;handle.setPointerCapture(e.pointerId);
@@ -4805,10 +4838,17 @@ function _boardsRailItems(){
   // back-arrow the browser study saw fading in on the real rail's context
   // swap. Ours had no route back at all except clearing the selection.
   items.push({act:'deselect',label:'Back',icon:'back',rewind:true});
+  // MILANOTE'S SELECTION RAIL, read off the video (105s): Color · Labels ·
+  // Reactions · Comment, the type's own tools (Rename, Caption on an image
+  // at 112s), then ⋯. Duplicate / Front / Back / Lock / Delete used to sit
+  // here as same-weight tools; they live behind ⋯ now, which is what makes
+  // the rail read as a short list of things you do OFTEN. Delete keeps its
+  // key, its right-click entry and the ⋯ entry, and Trash at the foot of
+  // the add rail is still where a deleted card goes.
   if(canEdit)items.push({act:'color-panel',label:'Color',colorTile:true});
-  items.push({act:'card-comment',label:'Comment',icon:'comment'});
   if(canEdit)items.push({act:'labels',label:'Labels',icon:'labels'});
-  if(canEdit)items.push({act:'reactions',label:'React',icon:'reactions'});
+  if(canEdit)items.push({act:'reactions',label:'Reactions',icon:'reactions'});
+  items.push({act:'card-comment',label:'Comment',icon:'comment'});
   if(one){
     if(one.type==='table'&&canEdit)items.push({act:'caption',label:'Caption',icon:'caption'});
     if(one.type==='image'||one.type==='file'){
@@ -4829,21 +4869,9 @@ function _boardsRailItems(){
     }
     if(canEdit)items.push({act:one.type==='heading'?'renameheading':'rename',label:'Rename',icon:'rename'});
   }
-  if(!canEdit)return items;
-  if(sel.length>1){
-    items.push({sep:true});
-    items.push({act:'stack',label:'Column',icon:'stack'});
-    items.push({act:'grid',label:'Grid',icon:'grid'});
-    items.push({act:'wrapframe',label:'Frame',icon:'frame'});
-  }
-  items.push({sep:true});
-  items.push({act:'dup',label:'Duplicate',icon:'dup'});
-  items.push({act:'front',label:'Front',icon:'front'});
-  items.push({act:'back',label:'Back',icon:'back'});
-  const locked=sel.some(c=>c.locked);
-  items.push({act:'lock',label:locked?'Unlock':'Lock',icon:locked?'unlock':'lock'});
-  items.push({sep:true});
-  items.push({act:'delete',label:'Delete',icon:'trash',danger:true});
+  // ⋯ is on the rail whether or not you can edit: Copy, Copy link and the
+  // provenance footer are read-only actions.
+  items.push({act:'more',label:'More',icon:'more'});
   return items;
 }
 function _boardsRenderRail(){
@@ -6078,7 +6106,7 @@ window.boardsTableInput=function(id,r,i,el){
 window.boardsCellAction=function(what){
   const f=_boardsFocusedCell();
   if(!f||!_boardsCanEdit(_editBoard))return;
-  if(f.card.locked)return showToast('Card is locked — unlock it to edit it');
+  if(f.card.locked)return showToast(_boardsLockedMsg('edit'));
   const cur=f.cell;
   _boardsPushUndo();
   if(what==='bold')       _boardsCellWrite(f.card,f.r,f.i,{b:!_boardsCellAttr(cur,'b')});
@@ -6103,7 +6131,7 @@ window.boardsCellAction=function(what){
 window.boardsCellColor=function(name){
   const f=_boardsFocusedCell();
   if(!f||!_boardsCanEdit(_editBoard))return;
-  if(f.card.locked)return showToast('Card is locked — unlock it to edit it');
+  if(f.card.locked)return showToast(_boardsLockedMsg('edit'));
   // Anything not in the palette falls back to no colour rather than being
   // passed through — the same rule the connector colours follow.
   const ok=(name&&name!=='none'&&_BOARDS_COLORS.indexOf(name)>-1)?name:'';
@@ -6242,7 +6270,7 @@ window.boardsCellTypeMenu=function(){
 window.boardsCellSetType=function(t){
   const f=_boardsFocusedCell();
   if(!f||!_boardsCanEdit(_editBoard))return;
-  if(f.card.locked)return showToast('Card is locked — unlock it to edit it');
+  if(f.card.locked)return showToast(_boardsLockedMsg('edit'));
   if(_BOARDS_CELL_TYPES.indexOf(t)<0)return;
   _boardsPushUndo();
   // 'auto' is the ABSENCE of a type, so it clears rather than stores —
@@ -6499,7 +6527,7 @@ window.boardsCellFormulaHelp=function(){
 window.boardsCellInsertFormula=function(fn){
   const f=_boardsFocusedCell();
   if(!f||!_boardsCanEdit(_editBoard))return;
-  if(f.card.locked)return showToast('Card is locked — unlock it to edit it');
+  if(f.card.locked)return showToast(_boardsLockedMsg('edit'));
   _boardsPushUndo();
   _boardsCellWrite(f.card,f.r,f.i,{v:'='+fn+'()'});
   _boardsRenderCanvasAndWire();
@@ -6570,7 +6598,7 @@ function _boardsTableMinH(c){
 function _boardsTableEditable(id){
   const c=_editCards.find(x=>x.id===id);
   if(!c||c.type!=='table'||!_boardsCanEdit(_editBoard))return null;
-  if(c.locked){showToast('Card is locked — unlock it to edit it');return null;}
+  if(c.locked){showToast(_boardsLockedMsg('edit'));return null;}
   if(!Array.isArray(c.rows)||!c.rows.length)c.rows=[['','']];
   return c;
 }
@@ -6756,7 +6784,7 @@ window.boardsConvertToDocument=async function(){
   const sel=_boardsSelectedCards();
   const c=sel.length===1&&sel[0].type==='text'?sel[0]:null;
   if(!c){showToast('Select one note to convert');return;}
-  if(c.locked){showToast('Card is locked — unlock it to convert it');return;}
+  if(c.locked){showToast(_boardsLockedMsg('convert'));return;}
   const vis=_editBoard.visibility==='shared'?'shared':'personal';
   if(!confirm(`Turn this note into a Document page in Creative Hub (${vis==='shared'?'TEAM':'PRIVATE'})?\nThe note becomes a link to it. Ctrl+Z brings the note back; the page stays.`))return;
   const d=_boardsDocFromNote(c);
@@ -7563,6 +7591,14 @@ window.boardsSendToBack=function(){
 };
 // Lock stops a finished background image or header label being nudged by
 // accident. Locked cards stay selectable — that's how you unlock them.
+// "Lock position" is Milanote's name for it (video, 100s) and exactly what
+// it does: the card stays selectable, editable, commentable — it just will
+// not move or resize. Every refusal says where the unlock is, because the
+// lock lives behind ⋯ now and a card that "won't drag" with no reason on
+// screen reads as a bug.
+function _boardsLockedMsg(verb){
+  return'Position locked — unlock it from the ⋯ menu to '+verb+' it';
+}
 window.boardsToggleLock=function(){
   if(!_boardsCanEdit(_editBoard))return;
   const sel=_boardsSelectedCards();
@@ -7572,6 +7608,7 @@ window.boardsToggleLock=function(){
   sel.forEach(c=>{if(unlocking)delete c.locked;else c.locked=true;});
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
+  showToast(unlocking?'Position unlocked':(sel.length>1?sel.length+' cards stay':'Card stays')+' put — unlock from the ⋯ menu');
 };
 
 // ── Copy / cut / paste of cards ────────────────────────────────────────
@@ -10246,6 +10283,7 @@ function _boardsCtxHTML(items){
   return items.map(it=>{
     if(it.sep)return'<div class="board-ctx-sep"></div>';
     if(it.title)return`<div class="board-ctx-title">${_boardsEsc(it.title)}</div>`;
+    if(it.who)return`<div class="board-ctx-who">${_boardsAvatarHTML(it.who)}<span>${_boardsEsc(_boardsWhoText(it))}</span></div>`;
     if(it.tabs)return`<div class="board-ctx-tabs">${it.tabs.map(t=>`<button class="board-ctx-tab${t.on?' on':''}" data-act="${t.act}">${_boardsEsc(t.label)}</button>`).join('')}</div>`;
     if(it.note)return`<div class="board-ctx-note">${_boardsEsc(it.note)}</div>`;
     if(it.swatches)return`<div class="board-ctx-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}${it.current===c?' on':''}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
@@ -11034,11 +11072,15 @@ function _boardsCardCtxItems(canEdit){
   if(one&&one.by){
     items.push({sep:true});
     // "you", not your own name, when it is yours — the spec's wording, and
-    // the one that reads like a person wrote it.
+    // the one that reads like a person wrote it. Rendered as Milanote's
+    // footer (avatar · "Created by you just now") by _boardsCtxHTML.
     const mine=(typeof session!=='undefined'&&session&&session.name)===one.by;
-    items.push({title:'Added by '+(mine?'you':one.by)+(one.at?' · '+_boardsRelTime(one.at):'')});
+    items.push({who:one.by,mine:mine,at:one.at||0});
   }
   return items;
+}
+function _boardsWhoText(it){
+  return'Created by '+(it.mine?'you':it.who)+(it.at?' '+_boardsRelTime(it.at):'');
 }
 function _boardsWireContextMenu(stage){
   stage.addEventListener('contextmenu',e=>{

@@ -1314,6 +1314,11 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-card-el.locked{opacity:.92}
 .board-card-el.locked .board-card-head{cursor:default;background:var(--accent-warning-soft)}
 .board-card-el.locked .board-card-kind{color:var(--accent-warning)}
+/* The padlock beside a locked card's name — Milanote's "Lock Position" —
+   in the same ink as the LOCKED head strip. It sits in the header, so the
+   far level-of-detail band hides it with the rest of the chrome. */
+.board-card-lock{display:inline-flex;align-items:center;margin-left:4px;color:var(--accent-warning);vertical-align:middle}
+.board-card-lock svg{width:11px;height:11px;fill:currentColor}
 .board-dropzone{position:absolute;inset:14px;border:2px dashed var(--muted);border-radius:14px;background:var(--surface);opacity:.94;display:none;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:var(--text);pointer-events:none;z-index:30}
 .board-stage.dropping .board-dropzone{display:flex}
 .board-empty-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--muted);font-size:13.5px;text-align:center;pointer-events:none;padding:0 16px}
@@ -1542,6 +1547,10 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-ctx-hint{font-size:11px;color:var(--muted);flex-shrink:0}
 .board-ctx-sep{height:1px;background:var(--border);margin:4px 2px}
 .board-ctx-title{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:6px 9px 4px}
+/* Milanote's ⋯ footer: avatar · "Created by you just now". The avatar
+   is the comment bubble's, so the same person looks the same everywhere. */
+.board-ctx-who{display:flex;align-items:center;gap:9px;padding:7px 9px 5px;font-size:12.5px;color:var(--muted);white-space:nowrap}
+.board-ctx-who .board-avatar{width:24px;height:24px;font-size:10px}
 .board-ctx-swatches{display:flex;gap:5px;padding:7px 9px}
 /* The colour panel (Sept 2026): Background | Top strip tabs, a live grid. */
 .board-ctx-tabs{display:flex;gap:4px;padding:3px 3px 5px}

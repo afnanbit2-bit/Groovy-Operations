@@ -1824,6 +1824,70 @@ comments), frame strips at full resolution.
 **Nobody has seen the three panels on a real screen** — the sandbox cannot
 sign in.
 
+### Mood Boards — the ⋯ menu and Lock position, like Milanote's (Sept 2026)
+
+Afnan: *"now do the more menu and lock position like milanote."* Read off the
+same video (99–107s and 112s): the selection rail is **Color · Labels ·
+Reactions · Comment**, the type's own tools (Rename, Caption on an image),
+then **⋯**; ⋯ opens a popover beside the button reading **Convert to
+Document** (a note) · **Lock Position** · **Bring to Front** · **Send to
+Back** · a footer with an avatar, **"Created by you just now"**. **Lock was
+never actually applied in the video** — the menu still says "Lock Position"
+when it is reopened at 106s — so what a locked card LOOKS like there is not
+known from it; ours is built from the name.
+
+- **THE ⋯ LIST IS DERIVED, NOT WRITTEN.** `_boardsMoreItems(canEdit)` is the
+  right-click list (`_boardsCardCtxItems`) **minus whatever the rail beside
+  it already carries** (read live from `_boardsRailItems()`) and minus the
+  swatch rows, whose place is the Color tile. One definition of what a card
+  can do now feeds the right-click menu, the desktop ⋯ popover and the
+  phone's More sheet. The test holds the algebra rather than a list: nothing
+  on the rail repeats in ⋯, nothing the right-click offers is lost between
+  the two, and ⋯ offers nothing the right-click does not — so adding an
+  action in one place puts it in all three, and moving one onto the rail
+  drops it out of ⋯ on its own. Verified by dropping the rail filter (three
+  assertions fail by name) and by dropping ⋯ from the rail (two).
+- **The groups are Milanote's order:** the type's remaining actions (so
+  Convert to Document leads for a note), then Lock, then z-order, then the
+  multi-select arranging, then the clipboard block (Cut · Copy · Duplicate
+  · Delete · Move to Unsorted · Copy link), then the footer.
+- **Duplicate / Front / Back / Lock / Delete and the Column · Grid · Frame
+  trio LEFT the desktop rail** — they were same-weight tools beside Color
+  and Comment, and the rail read as a long list of everything rather than a
+  short list of what you do often. Delete keeps its key, its right-click
+  entry and the ⋯ entry; Trash at the foot of the add rail is still where a
+  deleted card goes. The selection rail is 7 buttons now and fits every
+  tier. `React` became `Reactions`, Milanote's label.
+- **⋯ is on the rail whether or not you can edit** — Copy text, Copy link
+  and the provenance footer are read-only actions, and a rail that ends in
+  nothing for a viewer invites the click anyway.
+- **Provenance is a `{who,mine,at}` item now, not a `title` string**, drawn
+  by `_boardsCtxHTML` as `.board-ctx-who` — the comment bubble's avatar
+  (`_boardsAvatarHTML`, initials on a `--cat-*` token) beside
+  `_boardsWhoText` ("Created by you just now" / "Created by Ammar 1m ago").
+  The right-click menu, ⋯ and the phone sheet all render it, so the same
+  person looks the same everywhere. The colour-panel layout fragment
+  measures it in both themes — verified by painting its ink `--surface`,
+  which fails all four jobs.
+- **Lock position.** Same `c.locked` semantics as before (selectable,
+  editable, commentable; will not move or resize; loses its ✕ and grip),
+  under Milanote's name — "Lock position" / "Unlock position" in ⋯ and the
+  right-click menu. Two things changed because the lock now lives behind
+  ⋯: **a padlock beside the card's name** (`.board-card-lock`, the locked
+  head strip's own ink) replaced the ` · Locked` text, and **every refusal
+  says where the unlock is** — `_boardsLockedMsg(verb)` is the one phrasing
+  ("Position locked — unlock it from the ⋯ menu to move it"), replacing
+  ten copies of "Card is locked — unlock it to …", and toggling it says so
+  out loud too. The padlock is in the header, so the `far` level-of-detail
+  band hides it with the rest of the chrome, on purpose.
+- **The desktop ⋯ is the same `.board-ctx` the right-click opens**, placed
+  at the button's right edge + 10px, top-aligned (`_boardsSheetAnchorRect`
+  finds the button; `_boardsOpenCtx` clamps to the viewport). On a phone
+  `boardsOpenMore` is still the bottom sheet.
+
+**Nobody has seen the popover or the padlock on a real screen** — the
+sandbox cannot sign in.
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then

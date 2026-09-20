@@ -3157,14 +3157,70 @@ module.exports=function(){
     s.section('provenance says "you" for your own card');
     boot();
     run(`_editCards[0].by='Afnan';_editCards[0].at=Date.now();_boardsSetSelection(['n'])`);
-    s.ok('mine reads as you',/Added by you/.test(run(`JSON.stringify(_boardsCardCtxItems(true))`)));
+    // Milanote's footer: avatar · "Created by you just now" (video, 99s).
+    const whoText=`(function(){const w=_boardsCardCtxItems(true).find(i=>i.who);return w?_boardsWhoText(w):'';})()`;
+    s.eq('mine reads as you',run(whoText),'Created by you just now');
     run(`_editCards[0].by='Ammar'`);
-    const other=run(`JSON.stringify(_boardsCardCtxItems(true))`);
-    s.ok('someone else keeps their name',/Added by Ammar/.test(other));
-    s.ok('and is not called you',!/Added by you/.test(other));
+    s.eq('someone else keeps their name',run(whoText),'Created by Ammar just now');
+    s.ok('the menu draws it with an avatar',/board-ctx-who[^]*board-avatar[^]*Created by Ammar/.test(run(`_boardsCtxHTML(_boardsCardCtxItems(true))`)));
     run(`delete _editCards[0].by`);
-    s.ok('a card with no provenance shows no line',
-      !/Added by/.test(run(`JSON.stringify(_boardsCardCtxItems(true))`)));
+    s.eq('a card with no provenance shows no line',run(whoText),'');
+    s.ok('and no footer',!/board-ctx-who/.test(run(`_boardsCtxHTML(_boardsCardCtxItems(true))`)));
+
+    // ── The ⋯ menu and Lock position, like Milanote's (Sept 2026) ─────────
+    s.section('the ⋯ menu is the right-click menu minus what the rail carries');
+    boot();
+    run(`_editCards[0].by='Afnan';_editCards[0].at=Date.now();_boardsSetSelection(['n'])`);
+    const railActs=JSON.parse(run(`JSON.stringify(_boardsRailItems().map(i=>i.act).filter(Boolean))`));
+    const ctxActs=JSON.parse(run(`JSON.stringify(_boardsCardCtxItems(true).map(i=>i.act).filter(Boolean))`));
+    const moreActs=JSON.parse(run(`JSON.stringify(_boardsMoreItems(true).map(i=>i.act).filter(Boolean))`));
+    s.eq('the desktop rail is Milanote\'s: Back · Color · Labels · Reactions · Comment · Rename · ⋯',
+      railActs.join(','),'deselect,color-panel,labels,reactions,card-comment,rename,more');
+    s.ok('nothing on the rail is repeated in ⋯',!moreActs.some(a=>railActs.indexOf(a)>=0),moreActs.join(','));
+    s.ok('and nothing the right-click offers is lost between the two',
+      ctxActs.every(a=>railActs.indexOf(a)>=0||moreActs.indexOf(a)>=0),
+      ctxActs.filter(a=>railActs.indexOf(a)<0&&moreActs.indexOf(a)<0).join(','));
+    s.ok('⋯ offers nothing the right-click does not',moreActs.every(a=>ctxActs.indexOf(a)>=0));
+    s.ok('Convert to Document leads for a note, then Lock, then z-order (Milanote\'s order)',
+      /^copytext,todoc,lock,front,back,/.test(moreActs.join(',')),moreActs.join(','));
+    s.ok('the clipboard block comes last',/cut,copy,dup,delete,stash,card-link$/.test(moreActs.join(',')),moreActs.join(','));
+    s.eq('lock reads as Milanote names it',run(`_boardsMoreItems(true).find(i=>i.act==='lock').label`),'Lock position');
+    s.ok('the provenance footer closes it',run(`JSON.stringify(_boardsMoreItems(true).slice(-1)[0])`).indexOf('"who":"Afnan"')>=0);
+    s.ok('no swatch row rides along — the Color tile is on the rail',!/swatches/.test(run(`JSON.stringify(_boardsMoreItems(true))`)));
+    s.ok('and the ⋯ delete keeps its danger flag',run(`_boardsMoreItems(true).find(i=>i.act==='delete').danger===true`));
+    s.eq('read-only still gets a ⋯ (copy text, copy link, provenance)',
+      run(`_boardsMoreItems(false).map(i=>i.act||(i.who?'who':'')).filter(Boolean).join(',')`),'copytext,card-link,who');
+    s.ok('read-only rail still ends in ⋯',/,more$/.test(run(`_boardsRailItems().map(i=>i.act).join(',')`)));
+
+    s.section('the desktop ⋯ opens as a popover beside the button');
+    run(`_boardsSheetAnchorRect=function(a){return a&&a.act==='more'?{left:20,top:300,right:112,bottom:374,width:92,height:74}:null;}`);
+    run(`_boardsOpenCtx=function(x,y,items){globalThis.__ctxAt={x:x,y:y,n:items.length};}`);
+    run(`window.boardsOpenMore()`);
+    s.eq('to the right of the rail, top-aligned with the button',run(`JSON.stringify(__ctxAt)`).replace(/"n":\d+/,'"n":N'),'{"x":122,"y":300,"n":N}');
+    s.ok('carrying the ⋯ list, not the whole right-click one',run(`__ctxAt.n`)===run(`_boardsMoreItems(true).length`));
+
+    s.section('Lock position');
+    boot();
+    run(`_boardsSetSelection(['n'])`);
+    state.toasts.length=0;
+    run(`window.boardsToggleLock()`);
+    s.ok('the card is locked',run(`_editCards[0].locked===true`));
+    s.ok('and the toast says where the unlock lives',/⋯/.test(state.toasts.join(' ')),state.toasts.join(' | '));
+    s.eq('the menu now offers Unlock position',run(`_boardsMoreItems(true).find(i=>i.act==='lock').label`),'Unlock position');
+    s.ok('the header carries a padlock, not a word',/board-card-lock/.test(run(`_boardCardHTML(_editCards[0],true)`))&&!/· Locked/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    // The header keeps its drag handler — the HANDLER refuses, with the
+    // reason — but the delete ✕ and the resize grip are gone, as before.
+    s.ok('and no delete ✕ or resize grip',!/board-card-del|board-resize-handle/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    state.toasts.length=0;
+    const before=run(`_editCards[0].x+','+_editCards[0].y`);
+    run(`window.boardsCardDragStart({clientX:0,clientY:0,button:0,pointerId:1,target:{setPointerCapture(){}},preventDefault(){},stopPropagation(){}},'n')`);
+    s.ok('a refused move names the ⋯ menu',/⋯ menu to move it/.test(state.toasts.join(' ')),state.toasts.join(' | '));
+    s.eq('the card did not move',run(`_editCards[0].x+','+_editCards[0].y`),before);
+    state.toasts.length=0;
+    run(`window.boardsToggleLock()`);
+    s.ok('unlocked again',run(`!_editCards[0].locked`));
+    s.ok('said out loud',/unlocked/i.test(state.toasts.join(' ')));
+    s.ok('and the padlock is gone',!/board-card-lock/.test(run(`_boardCardHTML(_editCards[0],true)`)));
   }
 
   // ── Trash: deleted cards go somewhere, and Ctrl+Z still works ─────────
@@ -3883,7 +3939,7 @@ module.exports=function(){
       s.eq('neither → an empty outline',r(`_boardsColorTileClass([{}])`),'none');
       s.eq('a name off the palette is not painted',r(`_boardsColorTileClass([{bg:'evil'}])`),'none');
       const acts=r(`_boardsRailItems().map(it=>it.act||(it.sep?'|':'?')).join(',')`);
-      s.ok('the selection rail carries the tile, not the inline grid',/^deselect,color-panel,card-comment/.test(acts)&&!/\?/.test(acts.replace(/\|/g,'')));
+      s.ok('the selection rail carries the tile, not the inline grid',/^deselect,color-panel,labels,reactions,card-comment/.test(acts)&&!/\?/.test(acts.replace(/\|/g,'')));
       r(`_boardsRenderRail()`);
       s.ok('and draws it with the current colour',/rail-color-tile sw-red/.test(r(`document.getElementById('board-rail').innerHTML`)));
 

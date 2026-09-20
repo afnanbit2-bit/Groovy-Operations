@@ -476,10 +476,14 @@ const FRAGMENTS={
     app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
       _editCards=[];_editConnectors=[];_boardsSelection=new Set();_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;`);
     const names=app.run(`_BOARDS_COLORS.slice(1)`);
-    const cards=names.map((n,i)=>app.run(`(function(){const c=Object.assign(_boardsNewCard('text'),{id:'bg${i}',x:${20+i*240},y:20,text:'Dye lot ${i}'});c.bg='${n}';c.color='${n}';_editCards.push(c);return _boardCardHTML(c,true);})()`)
+    const cards=names.map((n,i)=>app.run(`(function(){const c=Object.assign(_boardsNewCard('text'),{id:'bg${i}',x:${20+i*240},y:20,text:'Dye lot ${i}'});c.bg='${n}';c.color='${n}';if(${i}===${names.length-1})c.locked=true;_editCards.push(c);return _boardCardHTML(c,true);})()`)
       .replace('<div class="board-text-body"','<div class="board-text-body" data-fill="Dye lot and rib order for the ${n} card"'));
+    // The last card is LOCKED, so the padlock beside its name is measured
+    // against the locked head strip in both themes.
     app.run(`_boardsSelection=new Set(['bg0']);_boardsColorTab='bg'`);
     const panel=app.run(`_boardsCtxHTML(_boardsColorPanelItems())`);
+    // The ⋯ menu, with its provenance footer (avatar on a --cat-* token).
+    const more=app.run(`_editCards[0].by='Afnan';_editCards[0].at=Date.now();_boardsCtxHTML(_boardsMoreItems(true))`);
     const rail=app.run(`_boardsRenderRail();document.getElementById('board-rail').innerHTML`);
     return Promise.resolve({widths:[1900,1280],html:
       '<div class="board-stage" style="position:relative;height:130px;width:100%;overflow:hidden">'+
@@ -489,7 +493,8 @@ const FRAGMENTS={
       // The selection rail is 722px in the large tier (measured); the box is
       // sized so the whole fragment stays inside a 1000px window's viewport.
       '<div style="position:relative;height:calc(100vh - 180px);width:100px"><div class="board-rail" id="board-rail">'+rail+'</div></div>'+
-      '<div class="board-ctx" style="position:relative">'+panel+'</div></div>'});
+      '<div class="board-ctx" style="position:relative">'+panel+'</div>'+
+      '<div class="board-ctx" style="position:relative">'+more+'</div></div>'});
   },
   /* Labels, Reactions and Comments as popovers (Sept 2026). The comment
      rows put literal initials on --cat-* tokens with --on-dark ink, in both
