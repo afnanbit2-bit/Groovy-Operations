@@ -234,6 +234,33 @@ module.exports=function(){
       /it\.drag\?' rail-draggable':''/.test(read('js/boards.js')));
   }
 
+  /* ── The rail's hover tiles name real actions, and never invert ─────────
+     Each tool's icon fills a coloured tile on hover, keyed by its data-act.
+     A renamed act would silently lose its colour — the dead-hover shape
+     nothing on screen reports — so every selector must name an act that
+     js/boards.js emits. The tile carries a LITERAL white glyph, so its
+     --tool-* token must not be redefined for dark mode (the --count-accent
+     rule). And the large tier is by viewport HEIGHT and desktop WIDTH: the
+     phone dock's height is what the bottom stack is built off. */
+  s.section('the rail hover tiles');
+  {
+    const css=read('css/main.css'),js=read('js/boards.js');
+    const acts=new Set((js.match(/act:'([^']+)'/g)||[]).map(m=>m.slice(5,-1)));
+    const hovered=[...css.matchAll(/\.rail-btn\[data-act="([^"]+)"\]:hover svg/g)].map(m=>m[1]);
+    s.ok('hover colours exist',hovered.length>=10,hovered.length+' selectors');
+    s.eq('and every one names an act the rail emits',
+      hovered.filter(a=>!acts.has(a)).join(',')||'none','none');
+    const tokens=[...css.matchAll(/--tool-[a-z]+:/g)].map(m=>m[0]);
+    s.ok('the tile tokens are declared',tokens.length>=13,tokens.length+' declarations');
+    const dark=css.slice(css.indexOf('html[data-theme="dark"]{'),css.indexOf('color-scheme:dark}'));
+    s.eq('and none is redefined for dark mode (literal white sits on them)',
+      (dark.match(/--tool-[a-z]+:/g)||[]).join(',')||'none','none');
+    const tier=/@media \(min-width:561px\) and \(min-height:(\d+)px\)\{\s*\.board-rail\{width:92px/.exec(css);
+    s.ok('the large rail is scoped to desktop width AND a viewport height',!!tier,tier?tier[1]+'px':'no tier');
+    s.ok('and the tile changes no layout (padding cancelled by margin)',
+      /\.rail-btn svg\{box-sizing:content-box;padding:5px;margin:-5px/.test(css));
+  }
+
   // ── A helper that is CALLED but never DEFINED ──────────────────────────
   // js/boards.js calls _boardsCardTrashStart(b.id) on every board open and
   // that function has never existed — the real one is _boardsTrashStart.

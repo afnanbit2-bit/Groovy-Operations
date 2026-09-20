@@ -483,9 +483,25 @@ const FRAGMENTS={
        a false failure of the fragment, not of the layout. The cue's geometry
        is a one-off measurement recorded in css/main.css; its SCOPE is held
        by tests/invariants.test.js. */
-    return Promise.resolve(
-      '<div style="position:relative;height:640px;width:100%;overflow:hidden">'+
-      '<div class="board-rail" id="board-rail">'+inner+'</div></div>');
+    /* TWO TIERS, TWO WINDOW HEIGHTS (Sept 2026). The rail is sized by a
+       min-height media query — 22px icons and a 61px pitch from 880px of
+       viewport up, the compact rail below — so the wrapper is sized like
+       the real stage (the viewport minus the board's own top bar; the
+       canvas is a fixed takeover, so the app bar is not above it) and the
+       fragment is run at a 1000px window (large tier, ~808px of rail) AND
+       a 768px window (compact tier, ~623px of rail — the 768px laptop that
+       clipped the old pill). Each tier was measured once with
+       scratchpad/measure-rail.js; this is what keeps both true.
+       NOT at 420px: a wrapper one viewport tall plus the probe's own output
+       block overflows the page, the vertical scrollbar takes 15px off the
+       phone dock, and the Image tool then sits 4px past its right edge —
+       reported as "covered" by the wrapper. That dock scrolls sideways by
+       design and is measured at REAL phone widths (this probe's 420 is a
+       clamped 500) by tests/smoke-phone.js, the same reason the top-bar
+       fragments opt out. */
+    return Promise.resolve({widths:[1900,1280],heights:[1000,768],html:
+      '<div style="position:relative;height:calc(100vh - 50px);width:100%;overflow:hidden">'+
+      '<div class="board-rail" id="board-rail">'+inner+'</div></div>'});
   },
   // Home's Boards panel: a row is a tile, a name that must ellipsize rather
   // than collapse, a meta line, a state word and an Open button — the exact
@@ -1215,7 +1231,7 @@ document.getElementById('__out').textContent=JSON.stringify(bad);
     // for the PHONE markup — which the real app renders there, since
     // _boardsIsPhone() is true. The phone bar is measured, comprehensively,
     // by tests/smoke-phone.js instead.
-    if(built&&typeof built==='object')cases.push({name,html:built.html,widths:built.widths});
+    if(built&&typeof built==='object')cases.push({name,html:built.html,widths:built.widths,heights:built.heights});
     else cases.push({name,html:built});
   }
 
@@ -1251,7 +1267,10 @@ document.getElementById('__out').textContent=JSON.stringify(bad);
     console.log('smoke-layout: '+path.basename(browser)+', '+cases.length+
       ' fragment(s) × '+WIDTHS.length+' widths × 2 themes\n');
     const jobs=[];
-    cases.forEach((c,i)=>(c.widths||WIDTHS).forEach(w=>['light','dark'].forEach(t=>jobs.push({c,i,w,t}))));
+    // A builder may also return {heights}: extra WINDOW heights to measure
+    // at, for markup whose CSS keys off the viewport height (the tool rail
+    // has two tiers). The default is the one height every fragment gets.
+    cases.forEach((c,i)=>(c.widths||WIDTHS).forEach(w=>(c.heights||[1000]).forEach(h=>['light','dark'].forEach(t=>jobs.push({c,i,w,h,t})))));
     pending=jobs.length;
     // A bounded pool, not all at once: with 14 fragments that is 84 Chromes,
     // and on a developer's Windows machine most of them blew the 120s
@@ -1267,13 +1286,13 @@ document.getElementById('__out').textContent=JSON.stringify(bad);
         '--disable-background-networking','--disable-component-update','--disable-sync',
         '--disable-default-apps','--disable-extensions','--metrics-recording-only',
         '--mute-audio','--no-proxy-server',
-        '--window-size='+j.w+',1000',
-        '--user-data-dir='+profileDir+'-'+j.i+'-'+j.w+'-'+j.t,
+        '--window-size='+j.w+','+j.h,
+        '--user-data-dir='+profileDir+'-'+j.i+'-'+j.w+'-'+j.h+'-'+j.t,
         '--virtual-time-budget=8000','--dump-dom',
         'http://127.0.0.1:'+port+'/__frag/'+j.i+'?t='+j.t],
         {encoding:'utf8',maxBuffer:32*1024*1024,timeout:120000},
         (err,stdout)=>{
-          const label=j.c.name+' @ '+j.w+'px '+j.t;
+          const label=j.c.name+' @ '+j.w+'px '+(j.h!==1000?j.h+'px tall ':'')+j.t;
           checks++;
           const m=/<pre id="__out">([\s\S]*?)<\/pre>/.exec(stdout||'');
           if(!m||m[1].trim()==='running'){

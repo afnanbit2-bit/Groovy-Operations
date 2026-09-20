@@ -1548,6 +1548,81 @@ the dark ramp fails the new fragment at **1.09:1** naming
 `board-rail-badge fill-3`. **Nobody has seen the shake or the ramp on a real
 screen** — the sandbox cannot sign in.
 
+### Mood Boards — the rail, sized to Milanote's, and it colours on hover (Sept 2026)
+
+Afnan, with our rail circled on a 1080p screen: *"study the left tool bar
+its too small, hard to see animations and small texts … increase each
+icon size by 30%"*, then with Milanote's beside it: *"study milanote the
+size is perfect, look at the icons, the text size"*, and *"it uses colors
+and animation when you hover on each icon"*.
+
+**Milanote's numbers were READ OFF HIS SCREENSHOT, not visited** (the
+sandbox cannot reach Milanote): a ~68px rail, ~24px icons, ~12px labels,
+one tool every ~62px. Ours was 17px icons, 11px labels and a 48px pitch.
+Now, on a tall enough screen: **92px rail, 74px buttons, 22px icons, 13px
+labels, a 61px pitch** — the +30% he asked for, landing on Milanote's
+pitch.
+
+- **TWO TIERS BY VIEWPORT HEIGHT, and the threshold is measured.** The
+  large rail's natural height is **808px** (twelve tools: Milanote has
+  eleven, we carry Fit), and the rail check in `tests/smoke-layout.js`
+  says Trash must never scroll off. The board canvas loses only its own
+  **50px** top bar (measured — it is a fixed takeover, so the app bar is
+  not above it), so the large tier applies at `min-height:880px` of
+  viewport and a shorter screen keeps the compact rail. In practice:
+  **1080p gets the large rail; a 1440×900 laptop (~790px of viewport) and
+  a 768px laptop keep the compact one.** The compact rail's own natural
+  height is 623px, unchanged. **Phones are excluded outright** — the tier
+  is `(min-width:561px) and (min-height:…)` — because the phone dock's
+  height is the number the whole bottom stack is built off.
+- **THE HOVER TILE CHANGES NO LAYOUT.** Each tool's icon fills a coloured
+  tile with a white glyph, lifts 1px and grows 6% on hover; the tile is
+  the svg's own `padding:5px` cancelled by `margin:-5px`, so it paints
+  into the button's padding and the pitch is what it was on both tiers.
+  Colours are `--tool-*` tokens, one per tool, **declared once and never
+  redefined for dark mode** — the ink on them is literal white, so the
+  tile is literal too (the `--count-accent` rule). Every tile measured
+  ≥ **3.19:1** under white (Note is the palest). The label keeps
+  `var(--text)`. The drag cue still slides out beside the tile.
+- **The colours and the motion are built from Afnan's description**, not
+  copied — nothing here claims to match Milanote's palette or timing.
+- **The cue moved on BOTH tiers**, because the tile would otherwise sit
+  under it: compact x 45–57 (was 39–54; the tile ends at 43.3), large
+  x 56–71 on the icon's centre line, clear of a label at y 36–51. All
+  measured with the hover forced on (`scratchpad/measure-rail.js`).
+- The trash badge grows with the tier (19px, 13px ink) and the shake's
+  travel went up about 30% too (−14/12/−9/6/−4°) — the icon is bigger and
+  so is the ask.
+
+**Three things about verifying.**
+
+- **The first cut did nothing.** The tier block was written at line ~1130,
+  BEFORE the base `.rail-btn` rules at ~1280; a media query adds no
+  specificity, so the later rules won and the measurement came back at
+  17px/11px. Moved below the last rail rule. **A `@media` override of a
+  rule declared later in the file is silently ignored** — the LOD rules
+  learned the same lesson with `!important`.
+- **`tests/smoke-layout.js` builders may now return `heights`** (extra
+  window heights), and the rail fragment runs at 1000px AND 768px with a
+  wrapper of `calc(100vh - 50px)`, i.e. the real stage — verified by
+  lowering the tier to 600px, which fails all four 768px jobs at
+  `scroll:807, client:631`. **It opts out of 420px:** a wrapper one
+  viewport tall plus the probe's own `<pre>` overflows the page, the
+  vertical scrollbar takes 15px off the phone dock, and the Image tool then
+  sits 4px past its edge — reported as "covered" by the wrapper. Diagnosed
+  by rebuilding the probe's exact markup in the fixture (the dock's right
+  edge read 474 with the old 640px wrapper and 459 with the tall one), not
+  by guessing. The dock is measured at real phone widths by `smoke-phone`.
+- **`tests/invariants.test.js` guards the tiles**, and caught a dead
+  selector on its first run: every `.rail-btn[data-act="…"]:hover` must
+  name an act `js/boards.js` emits (the first cut wrote `comment`; the
+  selection rail's is `card-comment`), no `--tool-*` may appear in the
+  dark block, the tier must be scoped by width and height, and the tile
+  must keep its padding/margin pair. Verified by breaking each.
+
+**Nobody has seen the tiles, the colours or the larger rail on a real
+screen** — the sandbox cannot sign in.
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then

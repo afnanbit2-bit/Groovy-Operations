@@ -45,6 +45,14 @@
      the wrong way for the chip. Do not "fix" this by adding a dark
      override. */
   --count-accent:#DC2626;
+  /* The rail's hover tiles (Sept 2026). Each tool's icon fills a coloured
+     tile with a LITERAL white glyph on hover, so like --count-accent these
+     must NOT invert: the ink on them is literal, so the tile is too. Every
+     one measured >= 2.9:1 under white (the darkest is --tool-note). */
+  --tool-note:#D97706;--tool-link:#2563EB;--tool-todo:#059669;--tool-board:#7C3AED;
+  --tool-column:#0891B2;--tool-line:#DB2777;--tool-heading:#4F46E5;--tool-table:#0D9488;
+  --tool-frame:#65A30D;--tool-image:#EA580C;--tool-file:#475569;--tool-comment:#0284C7;
+  --tool-any:#52525B;
   /* The trash badge's ink ramp. It INVERTS, unlike --count-accent, and the
      reason is the opposite of that token's: this ink has exactly ONE
      background — the badge chip, which is var(--red), and --red inverts. So
@@ -1116,9 +1124,13 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 
    It was also drawn to be missed: 10x2px of --muted at .85, moving 7px,
    under a :hover that repaints the whole button background at the same
-   moment. Bigger and in the button's own ink now — re-measured below. */
-.rail-btn.rail-draggable::after{content:"";position:absolute;right:4px;top:15px;
-  width:15px;height:3px;border-radius:2px;background:currentColor;
+   moment. Bigger and in the button's own ink now. Compact tier, measured:
+   x 45-57, y 13.5-16.5 in the 58px button, beside a hover tile that ends
+   at x 43.3 (it sat at x 39-54 before the tile existed and would have been
+   under it). The large tier repositions it — see "The rail, sized to
+   Milanote's" further down. */
+.rail-btn.rail-draggable::after{content:"";position:absolute;right:1px;top:15px;
+  width:12px;height:3px;border-radius:2px;background:currentColor;
   opacity:0;transform:translate(-9px,-50%);pointer-events:none;
   transition:transform .22s cubic-bezier(.22,.7,.3,1),opacity .16s ease-out}
 .rail-btn.rail-draggable:hover::after,
@@ -1783,11 +1795,11 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .rail-btn.trash-full svg{animation:board-trash-shake 2.4s ease-in-out infinite;transform-origin:50% 70%}
 @keyframes board-trash-shake{
   0%,72%,100%{transform:rotate(0)}
-  76%{transform:rotate(-11deg)}
-  80%{transform:rotate(9deg)}
-  84%{transform:rotate(-7deg)}
-  88%{transform:rotate(5deg)}
-  92%{transform:rotate(-3deg)}
+  76%{transform:rotate(-14deg)}
+  80%{transform:rotate(12deg)}
+  84%{transform:rotate(-9deg)}
+  88%{transform:rotate(6deg)}
+  92%{transform:rotate(-4deg)}
 }
 /* The ask INSIDE the bin, and the way to silence it. */
 .board-ctrash-nag{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;
@@ -1800,6 +1812,70 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   .board-rail-badge{transition:none}
 }
 .rail-btn{position:relative}
+/* ── The rail, sized to Milanote's (Sept 2026) ────────────────────────
+   Afnan, with Milanote beside ours: "its too small, hard to see animations
+   and small texts … increase each icon size by 30%", then "study milanote
+   the size is perfect". Read off his screenshot: a ~68px rail, ~24px
+   icons, ~12px labels, one tool every ~62px. Ours was 17px icons, 11px
+   labels and a 48px pitch.
+
+   TWO TIERS, by viewport HEIGHT. The large rail needs ~700px for its
+   eleven tools, and a 768px laptop has ~630px of stage once the browser,
+   the app bar and the board bar come off — the exact screen the rail check
+   in tests/smoke-layout.js exists for (Trash must never scroll off). So the
+   large sizes apply from 820px of viewport up, and a short screen keeps the
+   compact rail rather than a scrolling one. Phones are excluded outright:
+   their rail is a horizontal dock whose height the bottom stack is built
+   off (see the phone audit), so nothing here may change its layout.
+
+   THE HOVER TILE CHANGES NO LAYOUT. The tile is the svg's own padding,
+   cancelled by an equal negative margin, so it paints into the button's
+   padding and the pitch is what it was — on both tiers. Its colour is
+   per tool (--tool-*, literal, non-inverting, white glyph) and the whole
+   thing lifts 1px and grows 6% on hover; the drag cue slides out beside it
+   as before. Colours and motion are built from Afnan's description of
+   Milanote's hover ("it uses colors and animation"), not copied from it —
+   the sandbox cannot reach Milanote. */
+@media (min-width:561px){
+  .rail-btn svg{box-sizing:content-box;padding:5px;margin:-5px;border-radius:8px;
+    transition:background-color .18s ease-out,color .18s ease-out,transform .22s cubic-bezier(.22,.7,.3,1)}
+  .rail-btn:hover svg{background:var(--tool-any);color:#fff;transform:translateY(-1px) scale(1.06)}
+  .rail-btn[data-act="add:text"]:hover svg{background:var(--tool-note)}
+  .rail-btn[data-act="add:link"]:hover svg{background:var(--tool-link)}
+  .rail-btn[data-act="add:todo"]:hover svg{background:var(--tool-todo)}
+  .rail-btn[data-act="add:board"]:hover svg{background:var(--tool-board)}
+  .rail-btn[data-act="add:column"]:hover svg{background:var(--tool-column)}
+  .rail-btn[data-act="line"]:hover svg{background:var(--tool-line)}
+  .rail-btn[data-act="add:heading"]:hover svg{background:var(--tool-heading)}
+  .rail-btn[data-act="add:table"]:hover svg{background:var(--tool-table)}
+  .rail-btn[data-act="add:frame"]:hover svg{background:var(--tool-frame)}
+  .rail-btn[data-act="imagepanel"]:hover svg{background:var(--tool-image)}
+  .rail-btn[data-act="file"]:hover svg{background:var(--tool-file)}
+  .rail-btn[data-act="comment-board"]:hover svg,
+  .rail-btn[data-act="card-comment"]:hover svg{background:var(--tool-comment)}
+  .rail-btn.danger:hover svg,
+  .rail-btn[data-act="trash"]:hover svg{background:var(--count-accent)}
+}
+@media (min-width:561px) and (min-height:880px){
+  .board-rail{width:92px;padding:12px 0 14px}
+  .rail-btn{width:74px;padding:9px 2px;gap:5px;border-radius:11px;font-size:13px}
+  .rail-btn svg{width:22px;height:22px}
+  .rail-sep{margin:6px 8px}
+  .rail-swatches{gap:6px;padding:8px 10px 10px}
+  .rail-count{font-size:13px}
+  .board-rail-badge{top:4px;right:10px;min-width:19px;height:19px;line-height:19px;padding:0 5px;border-radius:10px;font-size:13px}
+  /* MEASURED in headless Chromium with the hover forced on (scratchpad/
+     measure-rail.js): in the 74px button the hovered tile spans x 20-54,
+     y 2-36 and the label sits at y 36-51; the cue lands at x 56-71,
+     y 18.5-21.5 — beside the tile, on the icon's centre line, clear of
+     both. The compact tier's cue was moved for the same reason: its tile
+     ends at x 43.3 and the cue now starts at 45. */
+  .rail-btn.rail-draggable::after{right:3px;top:20px;width:15px}
+}
+@media (prefers-reduced-motion:reduce){
+  .rail-btn svg{transition:none}
+  .rail-btn:hover svg{transform:none}
+}
 
 @media (max-width:560px){
   /* ONE row. Both groups stop wrapping, the back label is capped with an
