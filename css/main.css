@@ -884,6 +884,13 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .board-text-body ul{list-style:disc;padding-left:18px;margin:2px 0}
 .board-text-body ol{list-style:decimal;padding-left:20px;margin:2px 0}
 .board-text-body li{margin:1px 0}
+/* The Text style menu's blocks (Sept 2026). Card-internal, so 13px is the
+   floor (the board's zoom multiplies these). */
+.board-text-body h2{font-size:22px;font-weight:800;line-height:1.25;margin:4px 0 2px}
+.board-text-body h3{font-size:17px;font-weight:700;line-height:1.3;margin:4px 0 2px}
+.board-text-body h6{font-size:13px;font-weight:400;color:var(--muted);margin:2px 0}
+.board-text-body pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:6px 8px;margin:4px 0;white-space:pre-wrap;word-break:break-word}
+.board-text-body blockquote{border-left:3px solid var(--border);margin:4px 0;padding:2px 10px;color:var(--muted)}
 .board-link-edit{display:flex;flex-direction:column;gap:5px;padding:8px}
 .board-link-edit input,.board-link-edit textarea{border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13.5px;font-family:inherit;resize:none;background:var(--surface-2);color:var(--text)}
 .board-link-edit textarea{flex:1;min-height:0}
@@ -1077,70 +1084,41 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   border-color:var(--text);opacity:1}
 .rail-btn.rail-draggable{cursor:grab}
 .rail-btn.rail-draggable:active{cursor:grabbing}
-/* ── The hover cue: a line that slides RIGHT (Sept 2026) ──────────────
-   Afnan, from Milanote: hovering a tool runs a small animation, "such as
-   line it mover to the right like its inicating the drag and drop process".
-   Built from that description — the sandbox cannot reach Milanote, so no
-   timing here is copied from it and none is claimed to be.
-
-   IT ONLY APPEARS ON A DRAGGABLE TOOL. The cue advertises a gesture, so a
-   tool that places nothing (Line, Add image, Upload — see _BOARDS_RAIL_MAIN)
-   must not show it; a cue that promises a drag the tool does not accept is
-   worse than no cue. That makes .rail-draggable the selector, the same class
-   the grab cursor already hangs off.
-
-   IT SITS BESIDE THE ICON, NOT THE MIDDLE OF THE BUTTON, and that was
-   MEASURED in headless Chromium rather than eyeballed. Inside a 58px
-   button the cue occupies x 39-54, y 13.5-16.5; every label sits at
-   y 27-39, so nothing overlaps — including Comment, whose label spans
-   x 3-55 and WOULD have been crossed by a bar on the middle row. The icon
-   is x 21-38, so the cue clears it by 1px where it comes to rest; where it
-   STARTS (translated -9px, x 30-45) it is behind the icon's right edge and
-   invisible, and sliding out from under it is the movement being
-   advertised. right:4px keeps it inside the button.
-
-   `.cue-on` is the seam that measurement used: the layout probe cannot
-   hover, and it measures ELEMENTS, not pseudo-elements, so it cannot hold
-   this ground at all — the numbers above are a one-off measurement, not a
-   standing check. What IS checked (tests/invariants.test.js) is the
-   SCOPE: the rule may never widen to every .rail-btn.
-
-   pointer-events:none — it must never eat the press it is advertising.
-
-   Sept 2026, reported as "not working". Two things were wrong and only the
-   second is a bug. The first: the cue is scoped to draggable tools, so
-   Image, File and Line — three of the eight in the rail, and Image is the
-   one people reach for most — correctly show nothing. The second:
-   @media (hover:none) SWITCHED IT OFF ENTIRELY on a touchscreen laptop.
-   Chrome answers that query on the PRIMARY pointer, so a machine with a
-   touch screen matches it while still having a mouse, and the rule was
-   never reached. Not a hypothesis: the measuring run reports
-   hover:none=true / hover:hover=false in headless Chromium on this very
-   build, so the cue was display:none there too — which is also why no
-   probe had ever seen it. The thing it was really guarding is the phone, where
-   the rail is a horizontal dock and "to the right" means nothing — so it
-   is the module's own phone breakpoint now, the one _boardsIsPhone keys
-   off, which is what was meant in the first place.
-
-   It was also drawn to be missed: 10x2px of --muted at .85, moving 7px,
-   under a :hover that repaints the whole button background at the same
-   moment. Bigger and in the button's own ink now. Compact tier, measured:
-   x 45-57, y 13.5-16.5 in the 58px button, beside a hover tile that ends
-   at x 43.3 (it sat at x 39-54 before the tile existed and would have been
-   under it). The large tier repositions it — see "The rail, sized to
-   Milanote's" further down. */
-.rail-btn.rail-draggable::after{content:"";position:absolute;right:1px;top:15px;
-  width:12px;height:3px;border-radius:2px;background:currentColor;
-  opacity:0;transform:translate(-9px,-50%);pointer-events:none;
-  transition:transform .22s cubic-bezier(.22,.7,.3,1),opacity .16s ease-out}
-.rail-btn.rail-draggable:hover::after,
-.rail-btn.rail-draggable.cue-on::after{opacity:.95;transform:translate(0,-50%)}
-/* The phone rail is a horizontal dock, where "to the right" means nothing —
-   and there is no hover there to trigger it anyway. Deliberately the
-   breakpoint and NOT (hover:none): see above. */
-@media (max-width:560px){.rail-btn.rail-draggable::after{display:none}}
+/* ── "Drag me" (Sept 2026) — the rail's hover cue, read off Afnan's video
+   of Milanote frame by frame: the icon does NOT move; about half a second
+   into a hover a dark bubble fades in to the right of the tile with a
+   small tail, and it goes the moment the pointer leaves. Positioned by
+   js/boards.js (fixed, beside the button) rather than as a ::after,
+   because .board-rail clips on the x axis and would cut it off. Literal
+   dark bubble with literal white ink, so it reads the same in both themes
+   (the rule: a literal white is correct only where the background is
+   literal too). Offered only by drag sources — see _boardsRailTipShow. */
+.board-rail-tip{position:fixed;z-index:600;pointer-events:none;transform:translate(-4px,-50%);
+  background:#2A2A2E;color:#fff;font-size:13px;font-weight:700;line-height:1;
+  padding:8px 11px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.28);
+  white-space:nowrap;opacity:0;transition:opacity .12s ease-out,transform .12s ease-out}
+.board-rail-tip::before{content:"";position:absolute;left:-5px;top:50%;margin-top:-5px;
+  border:5px solid transparent;border-right-color:#2A2A2E;border-left:0}
+.board-rail-tip.show{opacity:1;transform:translate(0,-50%)}
+/* The note's drag ghost is the CARD it becomes, at the board's zoom, its
+   top-left under the pointer (that is where the drop lands it). */
+.board-rail-ghost.note{transform:translate(2px,2px);padding:0;opacity:.92;
+  background:var(--surface);color:var(--muted);border:1px solid var(--border);
+  border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.28);overflow:hidden}
+.board-rail-ghost.note .ghost-ph{display:block;padding:.6em .7em;font-weight:500;font-size:inherit}
+.board-rail-ghost.note.over{border-color:var(--border);color:var(--muted);opacity:1}
+/* The rail's mode swap (add tools → selection → text tools) slides the
+   new column in, ~140ms, the way Milanote's does. Keyed on a MODE change
+   in js/boards.js, never on a plain repaint. */
+.board-rail.rail-swap{animation:rail-swap-in .14s ease-out}
+@keyframes rail-swap-in{from{opacity:.2;transform:translateX(-10px)}to{opacity:1;transform:none}}
+/* The text rail's glyph buttons (B, I, S, U) sit in the icon's box. */
+.rail-glyph{display:flex;align-items:center;justify-content:center;width:17px;height:17px;font-size:16px;line-height:1;font-weight:700}
+.rail-fmt-row{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;padding:4px 8px 6px;width:100%;box-sizing:border-box}
+.rail-fmt-row .board-fmt-sw{width:18px;height:18px}
 @media (prefers-reduced-motion:reduce){
-  .rail-btn.rail-draggable::after{transition:none}
+  .board-rail-tip{transition:none}
+  .board-rail.rail-swap{animation:none}
 }
 /* The add-image panel. Upload is the FIRST thing, deliberately: it is the
    half that always works, and search may not be switched on at all. */
@@ -1349,6 +1327,16 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-crumb{background:none;border:none;padding:0;font-family:inherit;font-size:13px;color:var(--muted);cursor:pointer;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .board-crumb:hover{color:var(--text);text-decoration:underline}
 .board-crumb-sep{color:var(--muted);font-size:13px}
+/* The trail (Sept 2026): a round chip with the GROOVY mark, Home, a slash,
+   the board's tile and name — Milanote's shape. The chip is the app's own
+   icon (a red-orange mark on transparency) on a soft round, so it reads in
+   both themes without a literal. */
+.board-home-chip{width:28px;height:28px;border-radius:50%;background:var(--soft);border:1px solid var(--border);display:inline-flex;align-items:center;justify-content:center;padding:0;cursor:pointer;flex-shrink:0}
+.board-home-chip:hover{background:var(--hover);border-color:var(--muted)}
+.board-home-chip img{width:18px;height:18px;display:block}
+.board-crumb.board-crumb-home{font-size:15px;font-weight:700;color:var(--text);max-width:none}
+.board-crumb-slash{color:var(--muted);font-size:15px;margin:0 3px}
+.board-crumbs .board-tile{flex-shrink:0;border-radius:6px;font-weight:700}
 
 /* Board actions dropdown */
 .board-menu-wrap{position:relative}
@@ -1832,14 +1820,14 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
    cancelled by an equal negative margin, so it paints into the button's
    padding and the pitch is what it was — on both tiers. Its colour is
    per tool (--tool-*, literal, non-inverting, white glyph) and the whole
-   thing lifts 1px and grows 6% on hover; the drag cue slides out beside it
-   as before. Colours and motion are built from Afnan's description of
-   Milanote's hover ("it uses colors and animation"), not copied from it —
-   the sandbox cannot reach Milanote. */
+   thing lifts 1px and grows 6% on hover; the "Drag me" tip (above) appears
+   beside it. The tile colours are built from Afnan's description of
+   Milanote's hover ("it uses colors and animation"); the tip is read off
+   his video of it. */
 @media (min-width:561px){
-  .rail-btn svg{box-sizing:content-box;padding:5px;margin:-5px;border-radius:8px;
+  .rail-btn svg,.rail-btn .rail-glyph{box-sizing:content-box;padding:5px;margin:-5px;border-radius:8px;
     transition:background-color .18s ease-out,color .18s ease-out,transform .22s cubic-bezier(.22,.7,.3,1)}
-  .rail-btn:hover svg{background:var(--tool-any);color:#fff;transform:translateY(-1px) scale(1.06)}
+  .rail-btn:hover svg,.rail-btn:hover .rail-glyph{background:var(--tool-any);color:#fff;transform:translateY(-1px) scale(1.06)}
   .rail-btn[data-act="add:text"]:hover svg{background:var(--tool-note)}
   .rail-btn[data-act="add:link"]:hover svg{background:var(--tool-link)}
   .rail-btn[data-act="add:todo"]:hover svg{background:var(--tool-todo)}
@@ -1864,17 +1852,11 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   .rail-swatches{gap:6px;padding:8px 10px 10px}
   .rail-count{font-size:13px}
   .board-rail-badge{top:4px;right:10px;min-width:19px;height:19px;line-height:19px;padding:0 5px;border-radius:10px;font-size:13px}
-  /* MEASURED in headless Chromium with the hover forced on (scratchpad/
-     measure-rail.js): in the 74px button the hovered tile spans x 20-54,
-     y 2-36 and the label sits at y 36-51; the cue lands at x 56-71,
-     y 18.5-21.5 — beside the tile, on the icon's centre line, clear of
-     both. The compact tier's cue was moved for the same reason: its tile
-     ends at x 43.3 and the cue now starts at 45. */
-  .rail-btn.rail-draggable::after{right:3px;top:20px;width:15px}
+  .rail-glyph{width:22px;height:22px;font-size:20px}
 }
 @media (prefers-reduced-motion:reduce){
-  .rail-btn svg{transition:none}
-  .rail-btn:hover svg{transform:none}
+  .rail-btn svg,.rail-btn .rail-glyph{transition:none}
+  .rail-btn:hover svg,.rail-btn:hover .rail-glyph{transform:none}
 }
 
 @media (max-width:560px){

@@ -213,25 +213,27 @@ module.exports=function(){
       cellSizes&&parseFloat(cellSizes)>=13,cellSizes+'px');
   }
 
-  /* ── The rail's drag cue advertises a gesture, so its SCOPE is load-bearing
-     ───────────────────────────────────────────────────────────────────────
-     Hovering a draggable tool slides a small line to the right. A tool that
-     places nothing (Line, Add image, Upload) must never show it: a cue that
-     promises a drag the tool does not accept is worse than no cue at all.
-     The layout probe cannot hold this — it cannot hover, and it measures
-     elements rather than pseudo-elements — so the scope is checked here. */
-  s.section('the rail drag cue stays on draggable tools only');
+  /* ── "Drag me" is offered only by drag sources ───────────────────────
+     The rail's hover cue is a tooltip now (read off Afnan's video of
+     Milanote: the icon does not move, a bubble fades in beside it). It
+     advertises a gesture, so a tool that places nothing (Line, Add image,
+     Upload) must never show it. The layout probe cannot hover, so the
+     scope is held here: the only thing that shows the tip is gated on
+     data-drag="1", both where it is armed and where it is drawn, and the
+     old ::after cue is gone rather than left beside it. */
+  s.section('the rail "Drag me" tip stays on draggable tools only');
   {
-    const css=read('css/main.css');
-    const rules=(css.match(/^[^{}\n]*::after\s*\{/gm)||[])
-      .filter(r=>/\.rail-btn/.test(r));
-    s.ok('the cue exists',rules.length>0,rules.join(' | ')||'(no .rail-btn ::after rule)');
-    const loose=rules.filter(r=>!/\.rail-draggable/.test(r));
-    s.eq('and every .rail-btn ::after rule is scoped to .rail-draggable',
-      loose.join(' | ')||'none','none');
+    const js=read('js/boards.js'),css=read('css/main.css');
+    s.ok('the tip exists in the stylesheet',/\.board-rail-tip\{/.test(css));
+    s.ok('arming it requires a data-drag button',
+      /closest\('\[data-act\]\[data-drag="1"\]'\);\s*if\(btn\)_boardsRailTipArm\(btn\)/.test(js));
+    s.ok('and drawing it re-checks data-drag',
+      /function _boardsRailTipShow\(btn\)\{\s*if\(!btn\|\|!btn\.getAttribute\|\|btn\.getAttribute\('data-drag'\)!=='1'\)return false;/.test(js));
+    const after=(css.match(/^[^{}\n]*::after\s*\{/gm)||[]).filter(r=>/\.rail-btn/.test(r));
+    s.eq('the old slide-out ::after cue is gone',after.join(' | ')||'none','none');
     // The class only reaches the DOM for entries carrying drag:true.
     s.ok('which js/boards.js only emits for a drag source',
-      /it\.drag\?' rail-draggable':''/.test(read('js/boards.js')));
+      /it\.drag\?' data-drag="1"':''/.test(js));
   }
 
   /* ── The rail's hover tiles name real actions, and never invert ─────────
@@ -258,7 +260,7 @@ module.exports=function(){
     const tier=/@media \(min-width:561px\) and \(min-height:(\d+)px\)\{\s*\.board-rail\{width:92px/.exec(css);
     s.ok('the large rail is scoped to desktop width AND a viewport height',!!tier,tier?tier[1]+'px':'no tier');
     s.ok('and the tile changes no layout (padding cancelled by margin)',
-      /\.rail-btn svg\{box-sizing:content-box;padding:5px;margin:-5px/.test(css));
+      /\.rail-btn svg,\.rail-btn \.rail-glyph\{box-sizing:content-box;padding:5px;margin:-5px/.test(css));
   }
 
   // ── A helper that is CALLED but never DEFINED ──────────────────────────

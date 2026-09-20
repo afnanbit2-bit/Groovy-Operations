@@ -166,9 +166,13 @@ const _BOARDS_IMG_W=170,_BOARDS_IMG_H=120;
 // is 133px - a two-line name, the meta line and a thumbnail strip - so 136
 // fits the worst case with nothing clipped. See _BOARDS_MIN_BODY_H.board.
 const _BOARDS_BOARD_W=340,_BOARDS_BOARD_H=136;
+// A note's birth size, named so the rail's drag ghost (drawn as the card
+// it will become, at the board's zoom) cannot drift from what lands. The
+// height is _boardsNewCard's default for a type it does not size itself.
+const _BOARDS_NOTE_W=220,_BOARDS_NOTE_H=100;
 function _boardsNewCard(type){
   const id='c'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
-  const w=type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?220:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?_BOARDS_BOARD_W:type==='image'?_BOARDS_IMG_W:type==='link'?_BOARDS_LINK_W:170;
+  const w=type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?_BOARDS_NOTE_W:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?_BOARDS_BOARD_W:type==='image'?_BOARDS_IMG_W:type==='link'?_BOARDS_LINK_W:170;
   const h=type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?_BOARDS_IMG_H:type==='link'?_BOARDS_LINK_H:type==='file'?_BOARDS_FILE_H:type==='todo'?170:type==='board'?_BOARDS_BOARD_H:100;
   const base={id,type,x:80,y:80,w,h};
   if(type==='image')base.imageUrl='';
@@ -762,6 +766,9 @@ window.boardsBeginEdit=function(ev,elId){
   el.setAttribute('contenteditable','true');
   _boardsEditingEl=el;
   el.focus();
+  // The rail's mode depends on this — a note in edit mode gets the text
+  // rail (desktop). focusin shows the bar on a phone.
+  if(_boardsIsRichField(el)&&!_boardsIsPhone()){_boardsFmtTarget=el;_boardsRenderRail();}
   // Put the caret where the double-click actually landed rather than at the
   // start of the text — anything else feels broken on a long note.
   try{
@@ -795,6 +802,8 @@ function _boardsEndEdit(){
   // caret has to stay put), so the recompute happens the moment you leave.
   _boardsRepaintFormulas(el);
   _boardsSaveDebounced();
+  // Leaving a note hands the rail back to whatever mode the selection asks for.
+  if(_boardsIsRichField(el)){_boardsFmtTarget=null;_boardsRenderRail();}
 }
 function _boardsRepaintFormulas(el){
   if(!el||!el.id||el.id.indexOf('board-td-')!==0)return;
@@ -941,6 +950,9 @@ document.addEventListener('pointerdown',e=>{
   if(!_boardsEditingEl)return;
   const t=e.target;
   if(t&&t.closest&&(t.closest('.board-fmt')||t.closest('.board-sheet')))return;
+  // The rail's formatting tools and the Text style menu act ON the caret:
+  // a press there must not end the edit it is formatting.
+  if(t&&t.closest&&_boardsIsRichField(_boardsEditingEl)&&(t.closest('[data-act^="fmt:"]')||t.closest('.rail-fmt-row')||t.closest('.board-ctx')))return;
   if(_boardsEditingEl.contains&&_boardsEditingEl.contains(t))return;
   _boardsEndEdit();
 },true);
@@ -1967,18 +1979,26 @@ function _renderBoardCanvasHTML(){
   const chain=home?[]:_boardsAncestors(b.id);
   const parent=chain.length?chain[chain.length-1]:null;
   const backLabel=home?'Creative Hub':(parent?(parent.title||'Untitled board'):(_boardsCameFromAll?'All boards':'Home'));
-  const crumbs=chain.length&&!phone?`<div class="board-crumbs">
-      <button class="board-crumb" onclick="window.boardsGotoGallery()">Home</button>
-      ${chain.map(a=>`<span class="board-crumb-sep">›</span><button class="board-crumb" onclick="window.boardsGoto('${a.id}')">${_boardsEsc(a.title||'Untitled board')}</button>`).join('')}
-      <span class="board-crumb-sep">›</span>
+  // THE TRAIL, Milanote's shape (Sept 2026): a round chip carrying the
+  // GROOVY mark, "Home", a slash, then each ancestor and finally the board's
+  // own tile and name. On a phone the one-row bar keeps its capped back
+  // button; on Home the chip and the word are the identity and the back
+  // button still leaves the module.
+  const crumbs=!phone?`<div class="board-crumbs">
+      <button class="board-home-chip" onclick="window.boardsGotoGallery()" title="Home"><img src="/assets/icons/icon-192.png" alt=""></button>
+      ${home?'<span class="board-crumb board-crumb-home">Home</span>'
+        :`<button class="board-crumb board-crumb-home" onclick="window.boardsGotoGallery()">Home</button>
+      ${_boardsCameFromAll&&!chain.length?`<span class="board-crumb-slash">/</span><button class="board-crumb" onclick="window.boardsShowAll()">All boards</button>`:''}
+      ${chain.map(a=>`<span class="board-crumb-slash">/</span><button class="board-crumb" onclick="window.boardsGoto('${a.id}')">${_boardsEsc(a.title||'Untitled board')}</button>`).join('')}
+      <span class="board-crumb-slash">/</span>${_boardsTileHTML(b,22)}`}
     </div>`:'';
   return`<div class="board-canvas-wrap">
     <div class="board-topbar">
       <div style="display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:wrap">
-        <button class="back-btn" style="margin:0" onclick="window.boardsBack()">← ${_boardsEsc(backLabel)}</button>
+        ${phone||home?`<button class="back-btn" style="margin:0" onclick="window.boardsBack()">← ${_boardsEsc(backLabel)}</button>`:''}
         ${crumbs}
         ${home
-          ?`<span style="font-size:15.5px;font-weight:700">Home</span>`
+          ?(phone?`<span style="font-size:15.5px;font-weight:700">Home</span>`:'')
           :`<input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" placeholder="Untitled board" title="Click to rename this board" style="font-size:15.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
         ${phone?'':`<span class="pill">${visLabel}</span>`}
         ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}`}
@@ -3160,7 +3180,34 @@ window.boardsSheetRun=function(act){
 // the PNG export all read it, and a card with no c.rich hydrates from it
 // with textContent exactly as it did before any of this existed.
 const _BOARDS_RICH_TAGS={B:'b',STRONG:'b',I:'i',EM:'i',U:'u',S:'s',STRIKE:'s',DEL:'s',
-  BR:'br',DIV:'div',P:'div',UL:'ul',OL:'ol',LI:'li',SPAN:'span',FONT:'span'};
+  BR:'br',DIV:'div',P:'div',UL:'ul',OL:'ol',LI:'li',SPAN:'span',FONT:'span',
+  // The Text style menu (Sept 2026): large / normal heading, small text,
+  // code and quote blocks. Every heading level folds onto the three we
+  // draw, so pasted markup cannot smuggle in a size the menu never offers.
+  H1:'h2',H2:'h2',H3:'h3',H4:'h3',H5:'h6',H6:'h6',PRE:'pre',BLOCKQUOTE:'blockquote'};
+// Highlight colours are an ALLOW-LIST of names → hex, not a validated hex:
+// the sanitiser keeps a background only when it is one of these, so a
+// pasted <span style="background:url(…)"> or any colour the menu never
+// offered is dropped. Light tints, so the card's own ink reads on them in
+// either theme (they are literal by design — a highlight is content, like
+// the text colours beside it).
+const _BOARDS_HILITE_COLORS=[
+  {hex:'#FDE68A',label:'Yellow'},
+  {hex:'#BBF7D0',label:'Green'},
+  {hex:'#BFDBFE',label:'Blue'},
+  {hex:'#FBCFE8',label:'Pink'},
+  {hex:'#FED7AA',label:'Orange'}
+];
+function _boardsRichBg(node){
+  let c='';
+  try{c=node.style&&node.style.backgroundColor?node.style.backgroundColor:'';}catch(e){}
+  c=String(c||'').trim().toLowerCase();
+  if(!c)return'';
+  const m=/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/.exec(c);
+  if(m)c='#'+[m[1],m[2],m[3]].map(n=>('0'+Number(n).toString(16)).slice(-2)).join('');
+  const hit=_BOARDS_HILITE_COLORS.find(h=>h.hex.toLowerCase()===c);
+  return hit?hit.hex:'';
+}
 function _boardsRichColor(node){
   // The only styling that survives is a literal colour. Anything else in a
   // style attribute (position, background images, url(), expressions) is
@@ -3189,7 +3236,8 @@ function _boardsSanitizeRich(html){
       if(!tag){walk(n,to,depth+1);return;}   // unknown element: keep its text, drop it
       const el=doc.createElement(tag);
       const col=_boardsRichColor(n);
-      if(col&&tag==='span')el.setAttribute('style','color:'+col);
+      const bg=tag==='span'?_boardsRichBg(n):'';
+      if(tag==='span'&&(col||bg))el.setAttribute('style',[col?'color:'+col:'',bg?'background-color:'+bg:''].filter(Boolean).join(';'));
       to.appendChild(el);
       if(tag!=='br')walk(n,el,depth+1);
     });
@@ -3496,10 +3544,72 @@ let _boardsFmtTarget=null;
 function _boardsIsRichField(el){
   return!!(el&&el.isContentEditable&&el.id&&el.id.indexOf('board-txt-')===0);
 }
+// Is a note body being edited, on a screen where the RAIL carries the
+// formatting tools? (Milanote swaps the rail for a text rail the moment a
+// note is in edit mode; a phone keeps the floating bar docked above the
+// keyboard, where a rail at the bottom of the screen would be under it.)
+function _boardsFmtActive(){
+  return!!(_boardsEditingEl&&_boardsIsRichField(_boardsEditingEl)&&!_boardsIsPhone()&&_editBoard&&_boardsCanEdit(_editBoard));
+}
 function _boardsShowFmtBar(el){
-  const bar=document.getElementById('board-fmt');if(!bar)return;
   _boardsFmtTarget=el;
+  // Desktop: the rail is the formatting surface; the floating bar stays
+  // hidden. Phone: the bar, docked above the keyboard.
+  if(!_boardsIsPhone()){_boardsRenderRail();return;}
+  const bar=document.getElementById('board-fmt');if(!bar)return;
   bar.style.display='block';
+}
+// ONE implementation of every formatting action, whichever surface asked.
+// `done`, `swatches` and `style` are surface actions; everything else is an
+// execCommand on the note body that currently holds the caret.
+const _BOARDS_FMT_BLOCKS=[
+  {tag:'h2',label:'Large heading'},
+  {tag:'h3',label:'Normal heading'},
+  {tag:'div',label:'Normal text'},
+  {tag:'h6',label:'Small text'},
+  {tag:'pre',label:'Code block'},
+  {tag:'blockquote',label:'Quote block'}
+];
+function _boardsFmtAct(act){
+  const target=_boardsFmtTarget||(_boardsIsRichField(_boardsEditingEl)?_boardsEditingEl:null);
+  if(act==='done'){
+    if(target&&target.blur)target.blur();
+    _boardsHideFmtBar();
+    if(_boardsEditingEl)_boardsEndEdit();
+    return;
+  }
+  if(act==='swatches'){
+    const sw=document.getElementById('board-fmt-swatches');
+    if(sw)sw.style.display=sw.style.display==='none'?'flex':'none';
+    return;
+  }
+  if(act==='style'){
+    // Milanote's Text style menu, anchored beside the rail button.
+    const btn=document.querySelector('.board-rail [data-act="fmt:style"]');
+    const r=btn&&btn.getBoundingClientRect?btn.getBoundingClientRect():{right:100,top:100};
+    _boardsOpenCtx(r.right+8,r.top,_BOARDS_FMT_BLOCKS.map(b=>({act:'fmt:block:'+b.tag,label:b.label})));
+    return;
+  }
+  if(!target)return;
+  if(target.focus)target.focus();
+  try{
+    // styleWithCSS matters per command: ON, a colour comes back as
+    // <span style="color:…"> which the sanitiser keeps; OFF, bold comes
+    // back as <b>, which it also keeps. The other way round, bold would
+    // become <span style="font-weight:bold"> and the sanitiser — which
+    // allow-lists colour and a highlight and nothing else — would quietly
+    // strip it.
+    const isColor=act.indexOf('color:')===0,isHilite=act.indexOf('hilite:')===0,isBlock=act.indexOf('block:')===0;
+    try{document.execCommand('styleWithCSS',false,isColor||isHilite);}catch(e2){}
+    if(isColor)document.execCommand('foreColor',false,act.slice(6));
+    else if(isHilite)document.execCommand('hiliteColor',false,act.slice(7));
+    else if(isBlock)document.execCommand('formatBlock',false,'<'+act.slice(6)+'>');
+    else document.execCommand(act,false,null);
+  }catch(err){}
+  // execCommand fires `input` in modern browsers, but not uniformly for
+  // every command — dispatching it ourselves is what actually guarantees
+  // the card is saved.
+  try{target.dispatchEvent(new Event('input',{bubbles:true}));}catch(err){}
 }
 function _boardsHideFmtBar(){
   const bar=document.getElementById('board-fmt');
@@ -3533,31 +3643,7 @@ function _boardsWireFmtBar(){
     const btn=e.target.closest&&e.target.closest('[data-fmt]');
     if(!btn)return;
     e.preventDefault();e.stopPropagation();
-    const act=btn.getAttribute('data-fmt');
-    const target=_boardsFmtTarget;
-    if(act==='done'){if(target&&target.blur)target.blur();_boardsHideFmtBar();return;}
-    if(act==='swatches'){
-      const sw=document.getElementById('board-fmt-swatches');
-      if(sw)sw.style.display=sw.style.display==='none'?'flex':'none';
-      return;
-    }
-    if(!target)return;
-    if(target.focus)target.focus();
-    try{
-      // styleWithCSS matters per command: ON, a colour comes back as
-      // <span style="color:…"> which the sanitiser keeps; OFF, bold comes
-      // back as <b>, which it also keeps. The other way round, bold would
-      // become <span style="font-weight:bold"> and the sanitiser — which
-      // allow-lists colour and nothing else — would quietly strip it.
-      const wantCss=act.indexOf('color:')===0;
-      try{document.execCommand('styleWithCSS',false,wantCss);}catch(e2){}
-      if(wantCss)document.execCommand('foreColor',false,act.slice(6));
-      else document.execCommand(act,false,null);
-    }catch(err){}
-    // execCommand fires `input` in modern browsers, but not uniformly for
-    // every command — dispatching it ourselves is what actually guarantees
-    // the card is saved.
-    try{target.dispatchEvent(new Event('input',{bubbles:true}));}catch(err){}
+    _boardsFmtAct(btn.getAttribute('data-fmt'));
   });
 }
 
@@ -4350,6 +4436,10 @@ window.boardsSelectAll=function(){_boardsSetSelection(_editCards.map(c=>c.id));}
    js/shared.js — that file is cross-track (see CLAUDE.md), and none of
    these are wanted anywhere else. */
 const _BOARDS_ICONS={
+  // The text rail (Sept 2026): Text style, bullets, numbers.
+  textstyle:'<path d="M2 3h9v2.5H8.8V13H6.2V5.5H2z"/><circle cx="12.5" cy="11.5" r="2.5"/>',
+  ul:'<circle cx="3" cy="4" r="1.3"/><circle cx="3" cy="8" r="1.3"/><circle cx="3" cy="12" r="1.3"/><path d="M6 3.2h8v1.6H6zM6 7.2h8v1.6H6zM6 11.2h8v1.6H6z"/>',
+  ol:'<path d="M2 2.5h1.6v3H2.4v-.9h.5V3.4H2zM2 7.3c0-.9.6-1.4 1.5-1.4s1.4.5 1.4 1.2c0 .5-.3.9-.9 1.3l-.7.6h1.7v.9H2v-.8l1.4-1.2c.4-.3.5-.5.5-.7 0-.3-.2-.4-.5-.4s-.5.2-.5.6zM2 11.6h1.5c.8 0 1.3.4 1.3 1s-.3.8-.7.9c.5.1.8.4.8.9 0 .7-.5 1.1-1.4 1.1H2v-.8h1.4c.4 0 .6-.2.6-.5s-.2-.4-.6-.4H2.8v-.7h.6c.3 0 .5-.2.5-.4s-.2-.4-.5-.4H2z"/><path d="M6 3.2h8v1.6H6zM6 7.2h8v1.6H6zM6 11.2h8v1.6H6z"/>',
   // Line-rail icons. Local to boards.js like the rest (js/shared.js is a
   // cross-track file and none of these are wanted elsewhere).
   linestart:'<path d="M2 8h11" stroke="currentColor" fill="none"/><path d="M6 4L2 8l4 4z"/>',
@@ -4443,6 +4533,26 @@ function _boardsRailPhoneOverflow(){
 function _boardsRailItems(){
   const canEdit=_boardsCanEdit(_editBoard);
   const sel=_boardsSelectedCards();
+  // A NOTE IN EDIT MODE is the rail's fifth mode (Sept 2026), read off
+  // Milanote's own: back, Text style, B, I, S, U, bullets, numbers — then
+  // the text colours and highlights the floating bar used to hold. It
+  // outranks every other mode: while the caret is in a note, that note is
+  // also the selection, and its card actions are one Back away.
+  if(_boardsFmtActive()){
+    return[
+      {act:'fmt:done',label:'Back',icon:'back',rewind:true},
+      {act:'fmt:style',label:'Text style',icon:'textstyle'},
+      {act:'fmt:bold',label:'Bold',glyph:'<b>B</b>'},
+      {act:'fmt:italic',label:'Italic',glyph:'<i>I</i>'},
+      {act:'fmt:strikeThrough',label:'Strike',glyph:'<s>S</s>'},
+      {act:'fmt:underline',label:'Underline',glyph:'<u>U</u>'},
+      {act:'fmt:insertUnorderedList',label:'Bullets',icon:'ul'},
+      {act:'fmt:insertOrderedList',label:'Numbers',icon:'ol'},
+      {sep:true},
+      {fmtSwatches:true},
+      {fmtHilite:true}
+    ];
+  }
   // A selected LINE is the rail's third mode. Milanote's own line rail is
   // Color / Start / End / Label / Dashed / Weight; these are the same
   // actions the right-click menu builds, through the same router, so the
@@ -4598,13 +4708,26 @@ function _boardsRenderRail(){
   const sel=_boardsSelectedCards();
   host.classList.toggle('selecting',!!sel.length||_boardsConnSel!==null);
   const items=_boardsRailItems();
+  // THE SWAP IS A MOTION, like Milanote's: when the rail changes MODE (add
+  // tools → a selection → a note's text tools) the new column slides in.
+  // Keyed on the mode, not on every repaint — a trash-count paint or a
+  // selection of a second card must not replay it.
+  const mode=_boardsFmtActive()?'text':(_boardsConnSel!==null&&!sel.length)?'line':_boardsFocusedCell()?'cell':sel.length?'sel':'add';
+  const prev=host.dataset?host.dataset.mode:'';
+  if(host.dataset)host.dataset.mode=mode;
+  host.classList.remove('rail-swap');
+  if(prev&&prev!==mode){void host.offsetWidth;host.classList.add('rail-swap');}
   host.innerHTML=(sel.length>1?`<div class="rail-count">${sel.length}</div>`:'')+items.map(it=>{
     if(it.sep)return'<div class="rail-sep"></div>';
+    if(it.fmtSwatches)return`<div class="rail-fmt-row" title="Text colour">${_BOARDS_TEXT_COLORS.map(c=>`<button class="board-fmt-sw" style="background:${c.hex}" title="${c.label}" data-act="fmt:color:${c.hex}"></button>`).join('')}</div>`;
+    if(it.fmtHilite)return`<div class="rail-fmt-row" title="Highlight">${_BOARDS_HILITE_COLORS.map(c=>`<button class="board-fmt-sw" style="background:${c.hex}" title="Highlight ${c.label}" data-act="fmt:hilite:${c.hex}"></button>`).join('')}</div>`;
     if(it.grow)return'<div class="rail-grow"></div>';
     if(it.swatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
     if(it.cellSwatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="cellbg:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
     if(it.connSwatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="ln:c:${c}" title="${c==='none'?'Default':c}"></button>`).join('')}</div>`;
-    return`<button class="rail-btn${it.on?' on':''}${it.danger?' danger':''}${it.done?' rail-done':''}${it.drag?' rail-draggable':''}" data-act="${it.act}"${it.drag?' data-drag="1"':''} title="${_boardsEsc(it.label)}${it.drag?' — click to place, or drag onto the board':''}">${_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span>${it.badge?'<span class="board-rail-badge" style="display:none"></span>':''}</button>`;
+    // `glyph` is static markup from the item lists above (a bold B, an
+    // italic I) — never user text, which is why it is not escaped.
+    return`<button class="rail-btn${it.on?' on':''}${it.danger?' danger':''}${it.done?' rail-done':''}${it.drag?' rail-draggable':''}" data-act="${it.act}"${it.drag?' data-drag="1"':''} title="${_boardsEsc(it.label)}${it.drag?' — click to place, or drag onto the board':''}">${it.glyph?`<span class="rail-glyph">${it.glyph}</span>`:_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span>${it.badge?'<span class="board-rail-badge" style="display:none"></span>':''}</button>`;
   }).join('');
   // The count is painted after the markup exists, and again whenever the
   // trash changes underneath — it is derived from what is actually
@@ -4615,7 +4738,31 @@ function _boardsRenderRail(){
   // One delegated listener on a host that survives innerHTML swaps — and
   // pointerdown must not reach the stage, or clicking the rail would start
   // a pan and clear the very selection you are acting on.
-  host.addEventListener('pointerdown',e=>{e.stopPropagation();_boardsRailDragStart(e);});
+  host.addEventListener('pointerdown',e=>{
+    e.stopPropagation();
+    _boardsRailTipHide();
+    // A formatting tool acts on the caret: taking focus would destroy the
+    // selection it is about to format, and the command would then silently
+    // do nothing. Same rule the floating bar holds.
+    const t=e.target;
+    if(t&&t.closest&&(t.closest('[data-act^="fmt:"]')||t.closest('.rail-fmt-row'))){e.preventDefault();return;}
+    _boardsRailDragStart(e);
+  });
+  // "Drag me" — Milanote's hover cue, read off the video frame by frame:
+  // the icon does not move; about half a second into the hover a dark
+  // bubble fades in to the right of the tile and goes on leave. Offered
+  // ONLY by a drag source (data-drag): a cue promising a drag the tool does
+  // not accept is worse than no cue. Mouse only — a finger has no hover.
+  host.addEventListener('pointerover',e=>{
+    if(e.pointerType&&e.pointerType!=='mouse')return;
+    const btn=e.target.closest&&e.target.closest('[data-act][data-drag="1"]');
+    if(btn)_boardsRailTipArm(btn);else _boardsRailTipHide();
+  });
+  host.addEventListener('pointerout',e=>{
+    const to=e.relatedTarget;
+    const btn=e.target.closest&&e.target.closest('[data-act][data-drag="1"]');
+    if(btn&&!(to&&btn.contains&&btn.contains(to)))_boardsRailTipHide();
+  });
   host.addEventListener('click',e=>{
     const btn=e.target.closest&&e.target.closest('[data-act]');
     if(!btn)return;
@@ -4713,13 +4860,63 @@ function _boardsRailDragCancel(){
 // rather than the per-type dimensions: those live in _boardsNewCard, which
 // is not pure (it mints an id), and a second copy of that table would be a
 // second thing to keep in step.
+const _BOARDS_TIP_ID='board-rail-tip',_BOARDS_TIP_DELAY=450;
+let _boardsRailTipTimer=null,_boardsRailTipEl=null;
+function _boardsRailTipArm(btn){
+  _boardsRailTipHide();
+  _boardsRailTipTimer=setTimeout(()=>{_boardsRailTipTimer=null;_boardsRailTipShow(btn);},_BOARDS_TIP_DELAY);
+}
+function _boardsRailTipShow(btn){
+  if(!btn||!btn.getAttribute||btn.getAttribute('data-drag')!=='1')return false;
+  if(_boardsRailDrag)return false;               // mid-drag: the ghost is the cue
+  let el=_boardsRailTipEl;
+  if(!el){
+    el=document.createElement('div');
+    el.id=_BOARDS_TIP_ID;
+    el.className='board-rail-tip';
+    el.textContent='Drag me';
+    document.body.appendChild(el);
+    _boardsRailTipEl=el;
+  }
+  const r=btn.getBoundingClientRect?btn.getBoundingClientRect():{right:0,top:0};
+  const ico=btn.querySelector&&btn.querySelector('svg,.rail-glyph');
+  const ir=ico&&ico.getBoundingClientRect?ico.getBoundingClientRect():r;
+  el.style.left=(r.right+8)+'px';
+  el.style.top=((ir.top+ir.bottom)/2)+'px';
+  el.classList.add('show');
+  return true;
+}
+function _boardsRailTipHide(){
+  if(_boardsRailTipTimer){clearTimeout(_boardsRailTipTimer);_boardsRailTipTimer=null;}
+  const el=_boardsRailTipEl;
+  _boardsRailTipEl=null;
+  if(el&&el.parentNode)el.parentNode.removeChild(el);
+}
 const _BOARDS_GHOST_ID='board-rail-ghost';
 function _boardsRailGhostShow(d){
   _boardsRailGhostHide();
+  _boardsRailTipHide();
   const el=document.createElement('div');
   el.id=_BOARDS_GHOST_ID;
   el.className='board-rail-ghost';
-  el.textContent=d.label||'';                   // textContent: it is a label, not markup
+  if(d.act==='add:text'){
+    // Milanote carries a Note as the CARD it will become — "Start typing…"
+    // at the board's zoom, its top-left under the pointer, which is exactly
+    // where the drop lands it (placement is by top-left). Other tools keep
+    // the chip: their cards' sizes live in _boardsNewCard, which is not
+    // pure, and this one is the note the round was about.
+    const z=(_editBoard&&_editBoard.zoom)||1;
+    el.className='board-rail-ghost note';
+    el.style.width=Math.round(_BOARDS_NOTE_W*z)+'px';
+    el.style.height=Math.round(_BOARDS_NOTE_H*z)+'px';
+    el.style.fontSize=Math.max(6,Math.round(15*z))+'px';
+    const ph=document.createElement('span');
+    ph.className='ghost-ph';
+    ph.textContent='Start typing…';
+    el.appendChild(ph);
+  }else{
+    el.textContent=d.label||'';                 // textContent: it is a label, not markup
+  }
   document.body.appendChild(el);
 }
 function _boardsRailGhostMove(x,y){
@@ -4731,10 +4928,14 @@ function _boardsRailGhostMove(x,y){
   const r=stage.getBoundingClientRect();
   const over=x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom;
   el.classList.toggle('over',over);
+  // Off the canvas (over the rail, the top bar) the pointer says so, the
+  // way Milanote's does: releasing there abandons the drag.
+  try{document.body.style.cursor=over?'':'not-allowed';}catch(e){}
 }
 function _boardsRailGhostHide(){
   const el=document.getElementById(_BOARDS_GHOST_ID);
   if(el&&el.parentNode)el.parentNode.removeChild(el);
+  try{document.body.style.cursor='';}catch(e){}
 }
 // Escape abandons a drag in flight, like it abandons everything else here.
 function _boardsRailDragEscape(e){
@@ -9697,6 +9898,9 @@ function _boardsOpenCtx(clientX,clientY,items,galleryId){
   el.id=_BOARDS_CTX_ID;
   el.className='board-ctx';
   el.innerHTML=_boardsCtxHTML(items);
+  // While a note is being formatted the menu must not take focus, or the
+  // selection it is about to format is gone before the command runs.
+  el.addEventListener('mousedown',ev=>{if(_boardsFmtActive())ev.preventDefault();});
   document.body.appendChild(el);
   // Clamp inside the viewport — a menu opened near the right or bottom
   // edge would otherwise run off-screen with no way to reach it.
@@ -9716,6 +9920,7 @@ function _boardsOpenCtx(clientX,clientY,items,galleryId){
 }
 function _boardsCtxRun(act){
   if(!_editBoard)return;
+  if(act.indexOf('fmt:')===0){_boardsFmtAct(act.slice(4));return;}
   const at=_boardsCtxWorld;
   const place=()=>{if(at)_boardsNextPlacement={x:at.x,y:at.y};};
   if(act.indexOf('add:')===0){place();window.boardsAddCard(act.slice(4));return;}

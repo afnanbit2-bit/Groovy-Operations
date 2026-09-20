@@ -1586,10 +1586,9 @@ pitch.
   `var(--text)`. The drag cue still slides out beside the tile.
 - **The colours and the motion are built from Afnan's description**, not
   copied — nothing here claims to match Milanote's palette or timing.
-- **The cue moved on BOTH tiers**, because the tile would otherwise sit
-  under it: compact x 45–57 (was 39–54; the tile ends at 43.3), large
-  x 56–71 on the icon's centre line, clear of a label at y 36–51. All
-  measured with the hover forced on (`scratchpad/measure-rail.js`).
+- **The slide-out cue was moved on both tiers to clear the tile — and then
+  REPLACED the same day** by Milanote's actual cue, a "Drag me" tooltip;
+  see the next section. The `::after` rules are gone.
 - The trash badge grows with the tier (19px, 13px ink) and the shake's
   travel went up about 30% too (−14/12/−9/6/−4°) — the icon is bigger and
   so is the ask.
@@ -1621,6 +1620,102 @@ pitch.
   must keep its padding/margin pair. Verified by breaking each.
 
 **Nobody has seen the tiles, the colours or the larger rail on a real
+screen** — the sandbox cannot sign in.
+
+### Mood Boards — the Note round, from the video (Sept 2026)
+
+Afnan sent a 115-second screen recording of Milanote (`f4c22d31-
+compressed.mp4`, 620×944 at 30fps) — *"study animation and how functions
+work from the side tool bar … we will first finish Notes and all animations
+of side tool bar"* — and asked for the top bar's Home to improve too.
+**Everything below was READ OFF THE FRAMES** (cv2, contact sheets per
+second, then zoomed strips at 10–30fps and a per-frame box-track of the Note
+tile), not remembered or inferred. The sandbox cannot open Milanote.
+
+**What the video shows, per feature:**
+
+- **Hover (6.0–7.5s):** the icon does NOT move — the tile's box stayed at
+  x 26–47 across the whole hover; its brightness rose ~2.5% (200→205
+  grey). About half a second in (6.5s, ~15 frames after entry) a dark
+  bubble reading **"Drag me"** fades in (~3 frames) to the RIGHT of the
+  tile, tail pointing left, centred on the icon; it goes on leave. **So the
+  slide-out bar shipped one commit earlier was wrong and is deleted** —
+  `.board-rail-tip` (`_boardsRailTipArm/Show/Hide`, 450ms delay, mouse
+  only) is the cue now. It is `position:fixed`, placed by JS: `.board-rail`
+  clips on the x axis and a `::after` would have been cut off.
+  `tests/invariants.test.js` holds the scope (armed AND drawn only for
+  `data-drag="1"`; no `.rail-btn ::after` may exist) — verified by dropping
+  the re-check.
+- **Drag (22.0–25.0s):** press on Note, and while still over the rail the
+  cursor is the **not-allowed** sign; over the canvas a **full note card
+  ghost** ("Start typing…", at the board's zoom) follows the pointer with
+  its top-left under it; the drop lands the card selected, "Saving…", and
+  straight into edit. Ours: a Note is carried as that card
+  (`_boardsRailGhostShow`, `_BOARDS_NOTE_W/H` = 220×100 — named so the
+  ghost and `_boardsNewCard` cannot drift; asserted), `body.cursor` is
+  `not-allowed` off the canvas. **Other tools keep the chip**: their sizes
+  live in `_boardsNewCard`, which is not pure, and this round was Notes.
+- **The rail SWAPS (24.60→24.80s, ~3 frames)** from the add tools to a
+  **text rail**: ← , Text style, B, I, S, U, bullets, numbers. That is the
+  rail's **fifth mode** now (`_boardsFmtActive()`: a `board-txt-*` body
+  holds the caret, desktop only) and it outranks the other four. Rendering
+  gained `glyph` items (a bold B, an italic I — static markup from the item
+  list, never user text) and two swatch rows (`fmtSwatches`, `fmtHilite`).
+  The swap is a **140ms slide-in keyed on a MODE change**
+  (`host.dataset.mode`), never on a plain repaint — a trash-count paint
+  must not replay it. **The floating bar stays on the PHONE**, docked above
+  the keyboard; on desktop `_boardsShowFmtBar` renders the rail instead.
+- **Text style (29s):** Large heading · Normal heading · Normal text ✓ ·
+  Small text · Code block · Callout · Quote block, then Color and Highlight
+  rows. Ours opens the same list beside the rail button through the
+  existing `_boardsOpenCtx` (`_BOARDS_FMT_BLOCKS` → `formatBlock`
+  h2/h3/div/h6/pre/blockquote); colours and highlights sit in the rail.
+  **Callout is deliberately not built** — it is a styled block with an
+  icon, and the sanitiser's allow-list is tags, not classes. **Small text
+  is `<h6>`**, styled small and muted: `formatBlock` takes block tags only,
+  and the sanitiser keys on tags — an honest hack, recorded as one.
+- **ONE implementation of every formatting action** (`_boardsFmtAct`):
+  the phone's bar buttons and the rail's `fmt:*` acts both reach it
+  through `_boardsCtxRun`. Asserted command by command (`styleWithCSS`
+  off for bold, on for a colour or highlight; `formatBlock:<h2>`).
+- **The sanitiser widened, and only by what the menu writes.** Every
+  heading level folds onto h2/h3/h6 (pasted `<h1>` cannot smuggle a size
+  the menu never offers), `pre` and `blockquote` survive, and a highlight
+  survives ONLY when its colour is on `_BOARDS_HILITE_COLORS` — an
+  allow-list of five, not a validated hex (the M1 cell-colour lesson):
+  reverting that to "any `#RRGGBB`" fails four assertions. The browser
+  writes `rgb(…)`, so that is normalised before the lookup.
+- **Pressing a formatting tool must not end the edit or move the caret.**
+  Three guards: the rail's `pointerdown` `preventDefault`s for `fmt:*`
+  (the floating bar's rule), the Text style menu `preventDefault`s its
+  `mousedown` while `_boardsFmtActive()`, and the document-level click-away
+  that calls `_boardsEndEdit` ignores `[data-act^="fmt:"]`, `.rail-fmt-row`
+  and `.board-ctx` while a note is being edited. **None of the three is
+  held by a test** — the harness cannot drive focus — so they are the first
+  thing to check if a rail button "does nothing" on a note.
+- **Selected, not editing (34–41s):** Color (the tile shows the card's
+  CURRENT colour), Labels, Reactions, Comment, ⋯ (Convert to Document, Lock
+  Position, Bring to Front, Send to Back, "Created by you"). Ours already
+  had this rail; **the current-colour tile, the Background/Top strip colour
+  panel and Convert to Document are NOT done** — recorded as the next gaps.
+- **The Home trail (every frame):** a round logo chip · **Home** · `/` ·
+  the board's colour tile · its name, with Saved/Saving under it. Ours was a
+  red "← Home" text link. It is `.board-home-chip` (the app's own
+  `icon-192.png` — a red-orange mark on transparency, measured — on a
+  `--soft` round, so no literal colour) · Home · `/` · ancestors ·
+  `_boardsTileHTML(b,22)` · the title input. "All boards" is a crumb when
+  that is where you came from. **Phone keeps the capped back button**; Home
+  keeps "← Creative Hub" beside the chip. The three top-bar layout
+  fragments hit-test and contrast the trail (164/164).
+
+**Measured before shipping** (`scratchpad/measure-rail-text.js`): the text
+rail is 580px in the compact tier and 654px in the large one, so it fits
+where the add rail fits; every glyph button hit-tests; the glyph gets the
+same hover tile as an svg. `tests/harness.js` gained property-boundary
+matching in its style stub — `background-color:` used to read as `color:`,
+which the sanitiser tests exposed on their first run.
+
+**Nobody has seen the tip, the ghost, the text rail or the trail on a real
 screen** — the sandbox cannot sign in.
 
 ### Mood Boards — the phone audit (Sept 2026)

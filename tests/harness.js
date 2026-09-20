@@ -121,7 +121,13 @@ function makeDomParser(){
       return{nodeType:1,tagName:String(tag).toUpperCase(),childNodes:[],attrs:{},style:{},
         appendChild(n){this.childNodes.push(n);return n;},
         setAttribute(k,v){this.attrs[k]=v;
-          if(k==='style'){const m=/color:\s*([^;]+)/.exec(v);if(m)this.style.color=m[1].trim();}},
+          // Property boundaries matter: `background-color:` is not `color:`
+          // (the sanitiser reads both, and a browser's style object never
+          // confuses them).
+          if(k==='style'){
+            const m=/(?:^|;)\s*color:\s*([^;]+)/.exec(v);if(m)this.style.color=m[1].trim();
+            const b=/(?:^|;)\s*background-color:\s*([^;]+)/.exec(v);if(b)this.style.backgroundColor=b[1].trim();
+          }},
         getAttribute(k){return this.attrs[k]!==undefined?this.attrs[k]:null;},
         get innerHTML(){return ser(this);},
         get textContent(){return txt(this);}};

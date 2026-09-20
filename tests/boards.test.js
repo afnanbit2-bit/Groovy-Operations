@@ -1726,7 +1726,11 @@ module.exports=function(){
     const nb=run(`_renderBoardCanvasHTML()`);
     s.ok('an ordinary board keeps all of it',
       /boardsDelete\(\)/.test(nb)&&/board-title-input/.test(nb)&&/boardsToggleVisibility/.test(nb));
-    s.ok('and its back button points at Home',/← Home/.test(nb));
+    // The trail replaced the "← Home" text (Sept 2026, Milanote's shape):
+    // a round chip with the GROOVY mark, then Home, both pointing at Home.
+    s.ok('and its trail starts at Home',/board-home-chip[^>]*onclick="window\.boardsGotoGallery\(\)"/.test(nb)&&/board-crumb-home[^>]*onclick="window\.boardsGotoGallery\(\)">Home</.test(nb));
+    s.ok('with the board\'s own tile before its name',/board-crumb-slash">\/<\/span><span class="board-tile/.test(nb));
+    s.ok('and no "← Home" text button beside it',!/← Home/.test(nb));
   }
 
   // ── attachments: preview and download ─────────────────────────────────
@@ -3770,6 +3774,88 @@ module.exports=function(){
         s.eq('a native long-press arriving first cancels ours',native,'');
         s.ok('and that native one was let through (nothing of ours had fired)',!nat._s);
       })());
+    }
+
+    // ── The rail's Note round (Sept 2026): "Drag me", the note ghost, the
+    // text rail, the Text style menu, and the Home trail. Read off Afnan's
+    // video of Milanote frame by frame; see CLAUDE.md.
+    {
+      const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      const r=app.run;
+      r(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:0.5,panX:0,panY:0};
+         _editCards=[];_editConnectors=[];_boardsSelection=new Set();_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;`);
+      s.section('"Drag me" is offered only by a drag source');
+      s.eq('a tool that places nothing gets no tip',r(`_boardsRailTipShow({getAttribute:()=>'0'})`),false);
+      s.eq('a drag source gets one',r(`_boardsRailTipShow({getAttribute:()=>'1',getBoundingClientRect:()=>({right:80,top:100,bottom:140}),querySelector:()=>null})`),true);
+      s.eq('placed beside the button, on the icon\'s centre line',r(`_boardsRailTipEl.style.left+' '+_boardsRailTipEl.style.top`),'88px 120px');
+      s.eq('and it says what Milanote\'s says',r(`_boardsRailTipEl.textContent`),'Drag me');
+      r(`_boardsRailTipHide()`);
+      s.eq('hide drops it',r(`_boardsRailTipEl`),null);
+      s.eq('and nothing is shown mid-drag',r(`(_boardsRailDrag={act:'add:text'},_boardsRailTipShow({getAttribute:()=>'1'}))`),false);
+      r(`_boardsRailDrag=null`);
+
+      s.section('a Note is carried as the card it becomes, at the board\'s zoom');
+      r(`_boardsRailGhostShow({act:'add:text',label:'Note'})`);
+      const g=r(`(function(){var g=document.getElementById('board-rail-ghost');return {cls:g.className,w:g.style.width,h:g.style.height,fs:g.style.fontSize,kids:g.children.length}})()`);
+      s.eq('a note ghost',g.cls,'board-rail-ghost note');
+      s.eq('220 wide at 50% zoom',g.w,'110px');
+      s.eq('100 tall at 50% zoom',g.h,'50px');
+      s.ok('with a placeholder inside',g.kids===1);
+      r(`_boardsRailGhostHide();_boardsRailGhostShow({act:'add:link',label:'Link'})`);
+      s.eq('any other tool keeps the chip',r(`document.getElementById('board-rail-ghost').className`),'board-rail-ghost');
+      r(`_boardsRailGhostHide()`);
+      s.eq('the ghost reads the same birth size _boardsNewCard mints',r(`_boardsNewCard('text').w+'x'+_boardsNewCard('text').h`),'220x100');
+
+      s.section('a note in edit mode is the rail\'s fifth mode');
+      r(`_boardsEditingEl={isContentEditable:true,id:'board-txt-c1',closest:()=>null}`);
+      s.ok('active while a note body holds the caret',r(`_boardsFmtActive()`));
+      const acts=r(`_boardsRailItems().map(it=>it.act||(it.sep?'|':it.fmtSwatches?'colours':it.fmtHilite?'highlights':'?')).join(',')`);
+      s.eq('back · Text style · B I S U · bullets · numbers · colours · highlights',acts,
+        'fmt:done,fmt:style,fmt:bold,fmt:italic,fmt:strikeThrough,fmt:underline,fmt:insertUnorderedList,fmt:insertOrderedList,|,colours,highlights');
+      r(`_boardsRenderRail()`);
+      s.eq('and the rail records that mode',r(`document.getElementById('board-rail').dataset.mode`),'text');
+      r(`_boardsEditingEl={isContentEditable:true,id:'board-td-c1-0-0',closest:()=>null}`);
+      s.ok('a table cell is not a note',!r(`_boardsFmtActive()`));
+      r(`_boardsEditingEl=null`);
+      const phone=loadApp({files:FILES,phone:true,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      phone.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};_editCards=[];_editConnectors=[];_boardsSelection=new Set();_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+        _boardsEditingEl={isContentEditable:true,id:'board-txt-c1',closest:()=>null}`);
+      s.ok('a phone keeps its floating bar instead',!phone.run(`_boardsFmtActive()`));
+
+      s.section('every formatting action goes through one implementation');
+      r(`__cmds=[];document.execCommand=(c,u,v)=>{__cmds.push(c+':'+v);return true};_boardsFmtTarget={focus(){},dispatchEvent(){}}`);
+      r(`_boardsCtxRun('fmt:bold')`);
+      s.eq('bold: styleWithCSS off, then the command',r(`__cmds.join(' ')`),'styleWithCSS:false bold:null');
+      r(`__cmds=[];_boardsCtxRun('fmt:hilite:#FDE68A')`);
+      s.eq('highlight: styleWithCSS on, then hiliteColor',r(`__cmds.join(' ')`),'styleWithCSS:true hiliteColor:#FDE68A');
+      r(`__cmds=[];_boardsCtxRun('fmt:block:h2')`);
+      s.eq('a Text style pick is a formatBlock',r(`__cmds.join(' ')`),'styleWithCSS:false formatBlock:<h2>');
+      r(`__cmds=[];_boardsCtxRun('fmt:color:#7B1F2A')`);
+      s.eq('a text colour is foreColor with CSS on',r(`__cmds.join(' ')`),'styleWithCSS:true foreColor:#7B1F2A');
+      s.eq('the Text style menu offers Milanote\'s blocks',r(`_BOARDS_FMT_BLOCKS.map(b=>b.label).join(' · ')`),
+        'Large heading · Normal heading · Normal text · Small text · Code block · Quote block');
+
+      s.section('the sanitiser keeps the blocks the menu writes, and only those');
+      s.eq('every heading level folds onto the three drawn',
+        r(`_boardsSanitizeRich('<h1>a</h1><h2>b</h2><h3>c</h3><h4>d</h4><h5>e</h5><h6>f</h6>')`),
+        '<h2>a</h2><h2>b</h2><h3>c</h3><h3>d</h3><h6>e</h6><h6>f</h6>');
+      s.eq('code and quote survive',r(`_boardsSanitizeRich('<pre>x</pre><blockquote>q</blockquote>')`),'<pre>x</pre><blockquote>q</blockquote>');
+      s.eq('a highlight from the list survives',r(`_boardsSanitizeRich('<span style="background-color:#FDE68A">h</span>')`),'<span style="background-color:#FDE68A">h</span>');
+      s.eq('as rgb, the way execCommand writes it',r(`_boardsSanitizeRich('<span style="background-color: rgb(253, 230, 138)">h</span>')`),'<span style="background-color:#FDE68A">h</span>');
+      s.eq('a highlight the menu never offered is dropped',r(`_boardsSanitizeRich('<span style="background-color:#ff0000">h</span>')`),'<span>h</span>');
+      s.eq('colour and highlight together',r(`_boardsSanitizeRich('<span style="color:#7B1F2A;background-color:#BBF7D0">h</span>')`),'<span style="color:#7B1F2A;background-color:#BBF7D0">h</span>');
+      s.eq('a colour alone carries no stray semicolon',r(`_boardsSanitizeRich('<span style="color:#7B1F2A">h</span>')`),'<span style="color:#7B1F2A">h</span>');
+
+      s.section('the top bar is a trail: chip, Home, slash, tile, name');
+      r(`_boardsCameFromAll=false;_editBoard={id:'b1',title:'Winter',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0,color:'#7C3AED'}`);
+      const bar=r(`_renderBoardCanvasHTML()`);
+      s.ok('the chip carries the app icon and goes Home',/board-home-chip[^>]*boardsGotoGallery[^>]*>\s*<img src="\/assets\/icons\/icon-192\.png"/.test(bar));
+      s.ok('Home, then a slash, then the board\'s tile',/board-crumb-home[^>]*>Home<\/button>[\s\S]*board-crumb-slash">\/<\/span><span class="board-tile"[^>]*background:#7C3AED/.test(bar));
+      r(`_boardsCameFromAll=true`);
+      s.ok('opened from All boards, that is a crumb too',/board-crumb-slash">\/<\/span><button class="board-crumb" onclick="window\.boardsShowAll\(\)">All boards<\/button>/.test(r(`_renderBoardCanvasHTML()`)));
+      r(`_boardsCameFromAll=false`);
+      const ph=phone.run(`_renderBoardCanvasHTML()`);
+      s.ok('a phone keeps its capped back button and no chip',/back-btn/.test(ph)&&!/board-home-chip/.test(ph));
     }
 
     return Promise.all(_pending.concat([(async()=>{
