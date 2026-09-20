@@ -700,11 +700,19 @@ const FRAGMENTS={
         {id:'fl',type:'file',x:10,y:210,w:200,h:140,caption:'Approved 12 Sep',
          fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/t.pdf',
          fileName:'winter-techpack-v4.pdf',fileSize:2841193},
-        {id:'or',type:'board',boardId:'',x:10,y:420,w:200,h:104}
+        {id:'or',type:'board',boardId:'',x:10,y:420,w:200,h:104},
+        // A note at EXACTLY its minimum height wearing a label and two
+        // reactions: the foot's chips have to fit under the text at that
+        // height, so a chrome constant that under-counts the foot clips them
+        // here (the note is placed at h:0 and grown by the render).
+        {id:'mn',type:'text',x:230,y:10,w:220,h:0,text:'Dye lot 4 — rib order',
+         labels:[{t:'see this',c:'green'}],reactions:{'A':['u2'],'B':['u1','u2']}}
       ];`);
     let html=app.run(`_editCards.map(c=>_boardCardHTML(c,true)).join('')`);
     // Hydrated at runtime with textContent; written in here so it can be measured.
     html=html.replace(/(id="board-label-sb-0"[^>]*>)/,'$1QA-LABEL')
+             .replace(/(id="board-label-mn-0"[^>]*>)/,'$1see this')
+             .replace(/(<div class="board-text-body" id="board-txt-mn"[^>]*>)/,'$1Dye lot 4 — rib order')
              .replace(/(id="board-cap-fl"[^>]*>)/,'$1Approved 12 Sep');
     return Promise.resolve(
       '<div style="position:relative;overflow:hidden;height:600px;width:100%">'+html+'</div>');

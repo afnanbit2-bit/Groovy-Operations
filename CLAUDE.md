@@ -1888,6 +1888,51 @@ known from it; ours is built from the name.
 **Nobody has seen the popover or the padlock on a real screen** — the
 sandbox cannot sign in.
 
+### Mood Boards — label chips and reactions ON the card, like Milanote's (Sept 2026)
+
+Afnan: *"now do the labels chips and reactions on the card like milanote."*
+Read off the video (56–59s, the note card tracked frame by frame): a label
+is a **small rounded chip INSIDE the card, bottom-left, under the text**,
+sentence case ("see this"), light green on the red note with dark green ink,
+and the card **grew 6px** (82×17 → 82×23 at that zoom) to make room for it.
+**No reaction was ever placed in the video** — the picker was opened and
+closed (the card is 82×23 before and after) — so the reaction pill is built
+from the label's shape, not copied.
+
+- **Labels and reactions are the card's FOOT now** (`_boardsCardFootHTML`,
+  `.board-card-foot`), rendered AFTER the body. They used to be an uppercase
+  boxed row wedged between the header and the body, and a `--soft` pill row
+  under it. A label is a 999px-radius chip, 13px (the card-text floor — it is
+  multiplied by the board zoom), weight 600, sentence case, soft tint of its
+  colour with the colour's own ink (`lc-green` = `--accent-success-soft` /
+  `--accent-success`, the video's pairing); blue and purple use the
+  `--cat-*-soft` tokens the colour panel already added, so every chip inverts
+  with the theme. A reaction is the same pill with the emoji and its count.
+  **Your own reaction is outlined in `--cat-notes`** rather than painted as a
+  `--dark` chip — a near-black pill on a note read as a button, not a tally.
+- **The class names did not change** (`.board-labels`, `.board-reactions`,
+  `board-label-<id>-<i>` ids): the `far` level-of-detail rules, the layout
+  probe's far-zoom contract and the hydrate all key on them. The foot itself
+  is hidden at `far` too, or its padding would stay as an empty band.
+- **`_BOARDS_CHROME_H.labels/.reactions` are 31, MEASURED** in headless
+  Chromium (`scratchpad/measure-foot.js`): a 21px chip row inside a foot
+  padded 3px above and 7px below. With both rows the foot's padding is
+  counted twice — 7px of deliberate slack, since a WRAPPED row of labels
+  still gets no extra height and a little air beats a clipped chip. Existing
+  cards are not resized on open, as ever; the render grows them.
+- **The layout fragment carries a note at h:0** wearing a label and two
+  reactions, so the render draws it at exactly its minimum height. Verified
+  by under-counting the foot (31 → 12): it fails at 420px naming the two
+  reaction chips as covered and the sub-board card's meta line at `h:0`.
+  **At 1280/1900 it does NOT fail** — there the note's BODY is what gets
+  crushed, and a note whose last line is cut off is deliberately not a
+  finding (see "the QA retest"). The sub-board card is the one that holds
+  the constant at every width.
+- The exporter draws neither labels nor reactions (checked, not assumed),
+  so nothing there moved.
+
+**Nobody has seen the chips on a real screen** — the sandbox cannot sign in.
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then

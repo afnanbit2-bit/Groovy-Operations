@@ -159,6 +159,22 @@ module.exports=function(){
     run(`_editCards[0].reactions={'B':['u2']};window.boardsToggleReaction('a','B')`);
     s.eq('joining someone else’s reaction appends',run(`JSON.stringify(_editCards[0].reactions['B'])`),'["u2","u1"]');
     s.ok('the chip is marked as mine',/board-reaction mine/.test(run(`_boardsReactionsHTML(_editCards[0])`)));
+
+    // The card's FOOT (Sept 2026): labels and reactions sit UNDER the
+    // content, inside the card, like Milanote's chips — not in a row wedged
+    // between the header and the body.
+    s.section('labels and reactions are the card\'s foot');
+    run(`_editCards[0].labels=[{t:'see this',c:'green'}]`);
+    const cardHtml=run(`_boardCardHTML(_editCards[0],true)`);
+    const iBody=cardHtml.indexOf('board-card-body'),iFoot=cardHtml.indexOf('board-card-foot'),iLab=cardHtml.indexOf('board-labels'),iRe=cardHtml.indexOf('board-reactions');
+    s.ok('the foot comes after the body',iBody>=0&&iFoot>iBody,iBody+' '+iFoot);
+    s.ok('and holds the labels and the reactions, labels first',iLab>iFoot&&iRe>iLab,iFoot+' '+iLab+' '+iRe);
+    s.ok('a label chip keeps its colour class',/board-label lc-green/.test(cardHtml));
+    run(`delete _editCards[0].labels;delete _editCards[0].reactions`);
+    s.ok('a bare card has no foot at all',!/board-card-foot/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    s.eq('the foot is counted once per row in the minimum height',
+      run(`_boardsMinCardH({type:'text',labels:[{t:'a',c:'grey'}],reactions:{'A':['u']}})-_boardsMinCardH({type:'text'})`),
+      run(`_BOARDS_CHROME_H.labels+_BOARDS_CHROME_H.reactions`));
   }
 
   // ── phone vs desktop ──────────────────────────────────────────────────

@@ -2450,9 +2450,8 @@ function _boardCardHTML(c,canEdit){
         ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete">✕</button>`:''}
       </span>
     </div>
-    ${_boardsLabelsHTML(c)}
     ${body}
-    ${_boardsReactionsHTML(c)}
+    ${_boardsCardFootHTML(c)}
     ${canEdit&&!c.locked?`<div class="board-link-handle" onpointerdown="window.boardsLinkStart(event,'${c.id}')" title="Drag to connect"></div>
     <div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
   </div>`;
@@ -2589,7 +2588,12 @@ const _BOARDS_REACTIONS=[
 // does — leave them behind and the body keeps its old share, which is how a
 // reactions row ends up painted over a sub-board card's "Open →" button
 // (caught by smoke-layout, not by reading the diff).
-const _BOARDS_CHROME_H={head:28,labels:25,reactions:28,caption:27};
+// labels/reactions: the card FOOT (Sept 2026) — one row of 21px chips inside
+// a foot padded 3px above and 7px below = 31, MEASURED in headless Chromium
+// (scratchpad/measure-foot.js). With both rows present the foot's padding is
+// counted twice, a 7px slack that is deliberate: a wrapped row of labels
+// still gets no extra height, and a little air beats a clipped chip.
+const _BOARDS_CHROME_H={head:28,labels:31,reactions:31,caption:27};
 // board:108 is MEASURED, not chosen. The spine card's tallest honest
 // content at the width a board card is born at (_BOARDS_BOARD_W) is a
 // two-line name + the meta line + a thumbnail strip = 107px of body; 108
@@ -2614,6 +2618,19 @@ function _boardsMinCardH(c){
 function _boardsGrowForChrome(c){
   const min=_boardsMinCardH(c);
   if(c&&c.h<min)c.h=min;
+}
+// THE CARD'S FOOT — labels and reactions, like Milanote's, read off the
+// video (56–59s): a label is a small rounded chip INSIDE the card, at the
+// bottom-left under the text, sentence case, on a soft tint of its colour.
+// It used to be an uppercase row wedged between the header and the body.
+// Reactions sit in the same foot as emoji-and-count pills; no reaction was
+// ever placed in the video, so their look is built from the label's, not
+// copied. Both keep their class names (.board-labels / .board-reactions):
+// the far level-of-detail rules and the layout probe key on them.
+function _boardsCardFootHTML(c){
+  const l=_boardsLabelsHTML(c),r=_boardsReactionsHTML(c);
+  if(!l&&!r)return'';
+  return`<div class="board-card-foot">${l}${r}</div>`;
 }
 function _boardsLabelsHTML(c){
   const ls=Array.isArray(c.labels)?c.labels:[];
