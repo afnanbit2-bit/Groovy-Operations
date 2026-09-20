@@ -1933,6 +1933,79 @@ from the label's shape, not copied.
 
 **Nobody has seen the chips on a real screen** — the sandbox cannot sign in.
 
+### Mood Boards — the image card, like Milanote's (Sept 2026)
+
+Afnan: *"now do the image card like milanote."* Read off the video at 34s
+and 112s (4× zoom of one photo card): **a photo is the whole card** — no
+strip, no border, no name text, corners reading as square-to-barely-rounded
+at that resolution — with **a small comment-count badge in its top-right
+corner** as the only chrome. Selected (112s), its rail is **Color · Labels ·
+Reactions · Comment · Rename · Caption · ⋯**. **Milanote's hover state on a
+photo is NOT in the video** — that half is built from our own heading card,
+and is not claimed to match.
+
+- **The head strip STAYS in the DOM and becomes an overlay** (`.photo`,
+  set by `_boardsIsPhotoCard(c)`: an image card that has its picture and
+  is not uploading). It is the drag handle a locked card still needs and
+  it holds the name, the padlock and the delete ✕, so removing it would
+  have been four features; overlaying it costs nothing. Literal white ink
+  on a **solid `rgba(0,0,0,.6)` floor** — the scrim lesson: a fade to
+  transparent measured **1:1 in light** over the white stand-in picture
+  (verified by putting the fade back). An EMPTY image card and one still
+  uploading keep the ordinary strip: a card whose only chrome shows on
+  hover is an invisible box until it has something to show.
+- **Hidden by VISIBILITY, not only opacity.** An `opacity:0` strip still
+  takes the pointer, so on a phone — no hover — a tap on a photo's top-right
+  corner would have reached an invisible delete ✕. `visibility:hidden` makes
+  it un-hit-testable; the first tap selects the card, which shows the strip
+  (`.selected`, the same class hover uses). **The heading card's overlay
+  still has the opacity-only shape** — same exposure, not touched here.
+- **THE CROP IS GONE, and that is the bigger half.** `_boardsFitImageCard`
+  sets `c.h` to the PICTURE's height, and the render then put a 28px strip
+  inside that height — so `object-fit:cover` cropped 28px off every fitted
+  picture since the day the fit shipped. **Measured in headless Chromium
+  (`scratchpad/measure-photo.js`): a 1000×1500 photo fitted to 240×360 drew
+  its picture at 238×332 before, 240×360 after.** `_boardsMinCardH` charges
+  a photo no head height now, the way it already charged a heading none;
+  caption, labels and reactions still grow it. **Existing cards are not
+  touched** — the box is the same size, only the picture fills it.
+- **The badge is emitted OUTSIDE the head on a photo**, pinned to the
+  picture's corner under the same `board-cmt-<id>` id the painter fills, so
+  `_boardsPaintCommentBadges` needed no change. **It cannot overhang the
+  corner the way Milanote's does** — the card clips its own content — and
+  it keeps the app's `--accent-warning` chip, not Milanote's blue.
+  **The layout probe found it sitting exactly on the ✕** in the strip (both
+  in the top-right); the strip carries `padding-right:30px` so the ✕ sits
+  left of the badge. Found by `smoke-layout` before shipping, not by a
+  screenshot after.
+- **A Top strip colour on a photo still paints.** The photo rules are the
+  SAME specificity as the tint rules and sit BEFORE them, so `.tint-<n>`
+  wins the background; a `[class*=" tint-"]` rule hands the ink back to
+  `var(--text)` for that case (white on a soft tint would be 1.3:1).
+  `.locked` (amber pair) and `.tint-custom` are later and higher, so they
+  win exactly as on any card — measured: green-soft/`#111`, amber-soft/
+  amber, in both themes.
+- **The rail for an image is Milanote's exactly**: Rename BEFORE Caption,
+  and **Replace / Download are off the rail** — not lost, because
+  `_boardsMoreItems` derives ⋯ from the right-click list minus the rail,
+  so taking them off the rail put them in ⋯ on its own (asserted, with the
+  "nothing lost between the two" algebra). **A file card's rail is
+  unchanged** — it was not in the video.
+- **The PNG/PDF export draws no strip on a photo** and clips it at the
+  same 4px radius, so the export is the shape the screen is; it used to
+  draw a 20px strip the screen drew at 28.
+
+`tests/boards.test.js` (+24) holds the predicate, the badge placement, the
+head cost and the rail; `tests/smoke-layout.js` gained **`boards — photo
+cards`** (three selected photos — plain, tinted, locked — a badge painted
+on an unselected one, the minimum-height photo with caption, label and
+reaction, and an empty image card), over a solid WHITE picture so a scrim
+that fades is caught. Verified both ways: restoring the head cost fails
+"a photo needs no head height" (`got 120, expected 92`); the fading scrim
+fails the fragment at 1:1 in light; dropping the padding fails it naming
+`board-cmt-badge on-photo` as the coverer. **Nobody has seen a photo card
+on a real screen** — the sandbox cannot sign in.
+
 ### Mood Boards — the colour panel, like Milanote's (Sept 2026)
 
 Afnan: *"now do the color panel on the card like milanote."* Read off the

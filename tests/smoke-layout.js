@@ -513,6 +513,42 @@ const FRAGMENTS={
       '<div class="board-ctx" style="position:relative">'+panel+'</div>'+
       '<div class="board-ctx" style="position:relative">'+more+'</div></div>'});
   },
+  /* The image card, like Milanote's (Sept 2026): a photo is the whole
+     card, its head strip an overlay that shows only on hover or selection.
+     The probe cannot hover, so the strip is measured on SELECTED cards
+     (the same class the app sets): a plain photo (literal white ink on the
+     literal scrim), a photo with a Top strip colour (theme ink on the
+     tint), a locked one (the amber pair), plus an unselected photo wearing
+     a comment badge painted onto the picture, a photo at h:0 with caption,
+     label and reaction (the minimum height the render grows it to), and
+     an EMPTY image card, which keeps the ordinary strip. Pictures are a
+     solid WHITE stand-in, so a scrim that ever faded to transparent would
+     read as white-on-white and fail. */
+  'boards — photo cards':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editConnectors=[];_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+      const PIC='https://res.cloudinary.com/x/image/upload/v1/a.jpg';
+      _editCards=[
+        {id:'p1',type:'image',imageUrl:PIC,name:'FRONT',x:10,y:10,w:240,h:180},
+        {id:'p2',type:'image',imageUrl:PIC,name:'BACK',color:'green',x:270,y:10,w:240,h:180},
+        {id:'p3',type:'image',imageUrl:PIC,name:'LOCKED',locked:true,x:530,y:10,w:240,h:180},
+        {id:'p4',type:'image',imageUrl:PIC,x:790,y:10,w:240,h:180},
+        {id:'p5',type:'image',imageUrl:PIC,caption:'Rib order',labels:[{t:'approved',c:'green'}],reactions:{'👍':['u1']},x:10,y:210,w:240,h:0},
+        {id:'p6',type:'image',x:270,y:210,w:170,h:120}
+      ];
+      _boardsSelection=new Set(['p1','p2','p3']);`);
+    const cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`)
+      .replace(/src="[^"]*cloudinary[^"]*"/g,
+        'src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'3\'%3E%3Crect width=\'4\' height=\'3\' fill=\'%23ffffff\'/%3E%3C/svg%3E"')
+      // The badge is filled by _boardsPaintCommentBadges, which needs the
+      // DOM; painted here the way it would be, on the unselected photo.
+      .replace(/(id="board-cmt-p4"[^>]*style=")display:none/,'$1display:inline-flex').replace(/(id="board-cmt-p4"[^>]*>)/,'$12')
+      .replace(/(id="board-cap-p5"[^>]*>)/,'$1Rib order').replace(/(id="board-label-p5-0"[^>]*>)/,'$1approved');
+    return Promise.resolve({widths:[1900,1280],html:
+      '<div class="board-stage" style="position:relative;height:460px;width:100%;overflow:hidden">'+
+      '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'});
+  },
   /* Labels, Reactions and Comments as popovers (Sept 2026). The comment
      rows put literal initials on --cat-* tokens with --on-dark ink, in both
      themes — the one place an avatar's ink could go unreadable — and every

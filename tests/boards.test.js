@@ -3208,6 +3208,57 @@ module.exports=function(){
       run(`_boardsMoreItems(false).map(i=>i.act||(i.who?'who':'')).filter(Boolean).join(',')`),'copytext,card-link,who');
     s.ok('read-only rail still ends in ⋯',/,more$/.test(run(`_boardsRailItems().map(i=>i.act).join(',')`)));
 
+    // ── The image card, like Milanote's (Sept 2026) ───────────────────────
+    // Read off the video (34s / 112s): a photo is the whole card — no strip,
+    // no border, only a small comment badge in its top-right corner — and
+    // its rail is Color · Labels · Reactions · Comment · Rename · Caption · ⋯.
+    s.section('a photo is the whole card');
+    run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();_boardsConnSel=null;_boardsCellFocus=null;`);
+    s.ok('an image card with a picture is a photo',run(`_boardsIsPhotoCard({type:'image',imageUrl:'https://res.cloudinary.com/x/a.jpg'})`));
+    s.ok('an empty image card is not',!run(`_boardsIsPhotoCard({type:'image'})`));
+    s.ok('nor one still uploading',!run(`_boardsIsPhotoCard({type:'image',imageUrl:'x',_uploading:true})`));
+    s.ok('nor a file card',!run(`_boardsIsPhotoCard({type:'file',fileUrl:'x',imageUrl:'x'})`));
+    const photoHtml=run(`_boardCardHTML({id:'ph',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360},true)`);
+    s.ok('the card wears .photo',/class="board-card-el type-image photo/.test(photoHtml));
+    s.ok('the head strip is still there (drag handle, name, ✕)',/board-card-head/.test(photoHtml)&&/board-card-name/.test(photoHtml)&&/board-card-del/.test(photoHtml));
+    // The head holds no nested div, so it ends at the first </div> after it.
+    const headOf=h=>(h.match(/<div class="board-card-head"[\s\S]*?<\/div>/)||[''])[0];
+    s.ok('the comment badge is NOT inside the head',!/board-cmt-/.test(headOf(photoHtml)),headOf(photoHtml).slice(0,200));
+    s.ok('it sits on the picture, under the id the painter fills',/board-cmt-badge on-photo" id="board-cmt-ph"/.test(photoHtml));
+    s.eq('exactly one badge per card',(photoHtml.match(/board-cmt-badge/g)||[]).length,1);
+    const emptyHtml=run(`_boardCardHTML({id:'em',type:'image',x:0,y:0,w:170,h:120},true)`);
+    s.ok('an empty image card keeps the ordinary strip',!/ photo/.test(emptyHtml));
+    s.ok('and its badge stays in the head',/board-cmt-/.test(headOf(emptyHtml)));
+    s.ok('so does one still uploading',!/ photo/.test(run(`_boardCardHTML({id:'up',type:'image',imageUrl:'x',_uploading:true,x:0,y:0,w:170,h:120},true)`)));
+
+    s.section('the overlaid strip costs the picture nothing — the crop is gone');
+    // Before this, _boardsFitImageCard set c.h to the picture's height and
+    // the render put a 28px strip INSIDE it, so object-fit:cover cropped
+    // every picture by 28px. Measured in headless Chromium: 238×332 drawn in
+    // a 240×360 card before, 240×360 after.
+    s.eq('a photo needs no head height',run(`_boardsMinCardH({type:'image',imageUrl:'x'})`),run(`_BOARDS_MIN_BODY_H.image`));
+    s.eq('an empty image card still does',run(`_boardsMinCardH({type:'image'})`),run(`_BOARDS_CHROME_H.head+_BOARDS_MIN_BODY_H.image`));
+    s.ok('a fitted portrait is drawn at exactly its own height',run(`(function(){const c=_boardsNewCard('image');c.imageUrl='x';
+      _boardsFitImageCard(c,{width:1000,height:1500});return Math.max(c.h,_boardsMinCardH(c))===c.h&&c.h===360;})()`));
+    s.eq('a caption and labels still grow it',run(`_boardsMinCardH({type:'image',imageUrl:'x',caption:'a',labels:[{t:'x',c:'grey'}]})-_boardsMinCardH({type:'image',imageUrl:'x'})`),
+      run(`_BOARDS_CHROME_H.caption+_BOARDS_CHROME_H.labels`));
+
+    s.section('the image rail is Milanote\'s, and Replace / Download went to ⋯');
+    run(`_editCards=[{id:'ph',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360,by:'Afnan',at:1},
+      {id:'fl',type:'file',fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/a.pdf',fileName:'a.pdf',x:0,y:0,w:240,h:200}];
+      _boardsSelection=new Set(['ph']);`);
+    s.eq('Color · Labels · Reactions · Comment · Rename · Caption · ⋯',run(`_boardsRailItems().map(i=>i.act).join(',')`),
+      'deselect,color-panel,labels,reactions,card-comment,rename,caption,more');
+    const imgMore=run(`_boardsMoreItems(true).map(i=>i.act).filter(Boolean).join(',')`);
+    s.ok('⋯ carries Replace, Download and Open original for the picture',/replace/.test(imgMore)&&/download/.test(imgMore)&&/openasset/.test(imgMore),imgMore);
+    s.ok('and nothing the right-click offers is lost',run(`(function(){const rail=_boardsRailItems().map(i=>i.act);const more=_boardsMoreItems(true).map(i=>i.act).filter(Boolean);
+      return _boardsCardCtxItems(true).map(i=>i.act).filter(Boolean).every(a=>rail.indexOf(a)>=0||more.indexOf(a)>=0);})()`));
+    run(`_boardsSelection=new Set(['fl'])`);
+    s.eq('a file card\'s rail is unchanged',run(`_boardsRailItems().map(i=>i.act).join(',')`),
+      'deselect,color-panel,labels,reactions,card-comment,caption,replace,download,rename,more');
+    run(`_boardsSelection=new Set()`);
+
     // ── The colour panel, like Milanote's (Sept 2026) ─────────────────────
     s.section('the palette is Milanote\'s grid and every name has a token');
     s.eq('none + eleven names in Milanote\'s order',run(`_BOARDS_COLORS.join(',')`),'none,grey,teal,green,tan,yellow,amber,red,pink,purple,sky,blue');

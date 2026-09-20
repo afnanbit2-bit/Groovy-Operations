@@ -2441,15 +2441,27 @@ function _boardCardHTML(c,canEdit){
   const lock=c.locked?' locked':'';
   const tint=_boardsCardColorClasses(c);
   const drawH=Math.max(c.h,_boardsMinCardH(c));
-  return`<div class="board-card-el type-${c.type}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle(c)}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px" onclick="window.boardsSelectCard('${c.id}',event)">
+  // A PHOTO IS THE WHOLE CARD, like Milanote's (read off the video at
+  // 34s/112s: the picture with nothing around it, and a small comment
+  // badge sitting in its top-right corner). The header strip stays in the
+  // DOM — it is the drag handle a locked card still needs, and it holds the
+  // name, the padlock and the delete ✕ — but on a photo it OVERLAYS the top
+  // of the picture and shows only on hover or selection, the heading card's
+  // own pattern. The comment badge is the one piece of chrome Milanote keeps
+  // visible, so on a photo it is emitted OUTSIDE the head, pinned to the
+  // corner of the picture, under the same id the painter looks up.
+  const photo=_boardsIsPhotoCard(c);
+  const badge=`<button class="board-cmt-badge${photo?' on-photo':''}" id="board-cmt-${c.id}" style="display:none" title="Comments on this card" onclick="event.stopPropagation();window.boardsOpenComments('${c.id}')" onpointerdown="event.stopPropagation()"></button>`;
+  return`<div class="board-card-el type-${c.type}${photo?' photo':''}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle(c)}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px" onclick="window.boardsSelectCard('${c.id}',event)">
     <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')" ondblclick="window.boardsHeadDblClick(event,'${c.id}')"`:''}>
       <span class="board-card-kind">
         <span class="board-card-name" id="board-name-${c.id}" contenteditable="false" data-placeholder="${_boardsEsc(kind)}" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-name-${c.id}')"`:''} oninput="window.boardsCardName('${c.id}',this)" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()" title="Double-click to rename this card"></span>${c.locked?`<span class="board-card-lock" title="Position locked — unlock it from the ⋯ menu">${_boardsIcon('lock')}</span>`:''}</span>
       <span style="display:flex;align-items:center;gap:4px">
-        <button class="board-cmt-badge" id="board-cmt-${c.id}" style="display:none" title="Comments on this card" onclick="event.stopPropagation();window.boardsOpenComments('${c.id}')" onpointerdown="event.stopPropagation()"></button>
+        ${photo?'':badge}
         ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete">✕</button>`:''}
       </span>
     </div>
+    ${photo?badge:''}
     ${body}
     ${_boardsCardFootHTML(c)}
     ${canEdit&&!c.locked?`<div class="board-link-handle" onpointerdown="window.boardsLinkStart(event,'${c.id}')" title="Drag to connect"></div>
@@ -2603,13 +2615,27 @@ const _BOARDS_CHROME_H={head:28,labels:31,reactions:31,caption:27};
 // this number had to cover the NARROWEST card anyone might drag to, which
 // is a different thing from the shortest a card should be allowed to be.
 const _BOARDS_MIN_BODY_H={board:108,image:92,file:100,link:104,todo:80,heading:36,text:52};
+// An image card that HAS its picture. An empty one ("Click, or paste an
+// image") and one still uploading keep the ordinary strip: a card whose
+// only chrome shows on hover would be an invisible box until it had
+// something to show.
+function _boardsIsPhotoCard(c){
+  return !!c&&c.type==='image'&&!!c.imageUrl&&!c._uploading;
+}
 function _boardsMinCardH(c){
   if(!c||c.type==='frame')return 60;
   if(c.type==='column')return c.h||_BOARDS_COL_MIN_H;   // derived by _boardsLayoutColumn
   if(c.type==='table')return Math.max(_boardsTableMinH(c),90);
   // A heading's head strip is absolutely positioned over the banner, so it
   // costs the column nothing.
-  let h=c.type==='heading'?0:_BOARDS_CHROME_H.head;
+  // A heading's head strip, and a PHOTO's, are absolutely positioned over
+  // the content, so neither costs the column anything. Before the photo
+  // card lost its strip, a fitted image card (c.h = the picture's height,
+  // _boardsFitImageCard) drew a 28px strip INSIDE that height, so
+  // object-fit:cover cropped 28px off every picture — measured, see
+  // tests/boards.test.js. The overlay is what makes the box the picture's
+  // exact shape again.
+  let h=(c.type==='heading'||_boardsIsPhotoCard(c))?0:_BOARDS_CHROME_H.head;
   if(Array.isArray(c.labels)&&c.labels.length)h+=_BOARDS_CHROME_H.labels;
   if(c.reactions&&Object.keys(c.reactions).length)h+=_BOARDS_CHROME_H.reactions;
   if((c.type==='image'||c.type==='file'||c.type==='table')&&c.caption!=null)h+=_BOARDS_CHROME_H.caption;
@@ -4882,7 +4908,7 @@ function _boardsRailItems(){
   items.push({act:'card-comment',label:'Comment',icon:'comment'});
   if(one){
     if(one.type==='table'&&canEdit)items.push({act:'caption',label:'Caption',icon:'caption'});
-    if(one.type==='image'||one.type==='file'){
+    if(one.type==='file'){
       if(canEdit)items.push({act:'caption',label:'Caption',icon:'caption'});
       if(canEdit)items.push({act:'replace',label:'Replace',icon:'replace'});
       items.push({act:'download',label:'Download',icon:'download'});
@@ -4899,6 +4925,14 @@ function _boardsRailItems(){
       }
     }
     if(canEdit)items.push({act:one.type==='heading'?'renameheading':'rename',label:'Rename',icon:'rename'});
+    // AN IMAGE'S RAIL IS MILANOTE'S EXACTLY (112s): Color · Labels ·
+    // Reactions · Comment · Rename · Caption · ⋯ — Rename BEFORE Caption,
+    // and no Replace / Download on the rail. Those two are not lost:
+    // _boardsMoreItems derives ⋯ from the right-click list minus whatever
+    // the rail carries, so taking them off the rail puts them in ⋯ on its
+    // own. A file card keeps its Replace / Download here — its rail was
+    // not in the video, and a document is reached for differently.
+    if(one.type==='image'&&canEdit)items.push({act:'caption',label:'Caption',icon:'caption'});
   }
   // ⋯ is on the rail whether or not you can edit: Copy, Copy link and the
   // provenance footer are read-only actions.
@@ -8437,15 +8471,21 @@ function _boardsDrawCard(ctx,c,img,P){
     ctx.restore();
     return;
   }
-  const headH=20,bx=c.x,by=c.y+headH,bw=c.w,bh=Math.max(0,c.h-headH);
+  // A photo has no strip on screen (its head overlays the picture and
+  // shows only on hover), so the export draws none either: the picture
+  // fills the card box, the same shape it is on screen.
+  const photo=_boardsIsPhotoCard(c);
+  const headH=photo?0:20,bx=c.x,by=c.y+headH,bw=c.w,bh=Math.max(0,c.h-headH);
   ctx.save();
-  _boardsRoundRect(ctx,c.x,c.y,c.w,c.h,10);
+  _boardsRoundRect(ctx,c.x,c.y,c.w,c.h,photo?4:10);
   ctx.clip();
   // The card's paper: a palette name's soft token, a literal, or white.
   ctx.fillStyle=(c.bg&&P.bgs[c.bg])||_boardsValidHex(c.bg)||'#ffffff';ctx.fillRect(c.x,c.y,c.w,c.h);
-  ctx.fillStyle=(c.color&&P.bgs[c.color])||_boardsValidHex(c.color)||P.soft;ctx.fillRect(c.x,c.y,c.w,headH);
-  ctx.fillStyle=P.muted;ctx.font='700 11px '+P.font;
-  ctx.fillText(String(c.name||_boardsExportKind(c)).toUpperCase()+(c.locked?' · LOCKED':''),c.x+8,c.y+13.5);
+  if(!photo){
+    ctx.fillStyle=(c.color&&P.bgs[c.color])||_boardsValidHex(c.color)||P.soft;ctx.fillRect(c.x,c.y,c.w,headH);
+    ctx.fillStyle=P.muted;ctx.font='700 11px '+P.font;
+    ctx.fillText(String(c.name||_boardsExportKind(c)).toUpperCase()+(c.locked?' · LOCKED':''),c.x+8,c.y+13.5);
+  }
 
   if(c.type==='image'){
     if(img){

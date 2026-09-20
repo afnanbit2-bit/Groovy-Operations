@@ -1266,6 +1266,38 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-todo-add{background:none;border:none;color:var(--muted);font-family:inherit;font-size:13.5px;cursor:pointer;padding:4px 0;text-align:left}
 .board-todo-add:hover{color:var(--text)}
 
+/* Photo cards — the picture IS the card, like Milanote's (Sept 2026, read
+   off the video at 34s/112s: a bare photo, no strip, no border, a small
+   comment badge in its top-right corner). The head strip is still in the
+   DOM (drag handle, name, padlock, delete ✕) but OVERLAYS the top of the
+   picture and shows only on hover or selection — the heading card's own
+   pattern. Its ink is a literal white because its scrim is a literal too
+   (a solid rgba floor, not a fade: a photo can be any colour, and the
+   board-card scrim lesson applies). These rules are deliberately of the
+   SAME specificity as the tint rules that follow and sit BEFORE them, so a
+   "Top strip" colour on a photo still paints its tint; the [class*=" tint-"]
+   rule hands the ink back to the theme for that case. .locked and
+   .tint-custom (later, higher) still win exactly as they do on any card.
+   Milanote's own hover state on a photo is NOT in the video — the overlay
+   is built from the heading card, not copied. */
+.board-card-el.type-image.photo{border:none;border-radius:4px}
+/* Hidden by VISIBILITY as well as opacity: an opacity:0 strip still takes
+   the pointer, so on a phone (no hover) a tap on the top-right corner of a
+   photo would have reached an invisible delete ✕. Hidden, the strip is
+   not hit-testable at all; the first tap selects the card, which shows it.
+   The right padding keeps the ✕ clear of the badge pinned in that corner —
+   the layout probe found the two on top of each other. */
+.type-image.photo .board-card-head{position:absolute;left:0;right:0;top:0;z-index:2;background:rgba(0,0,0,.6);border-bottom:none;padding-right:30px;opacity:0;visibility:hidden;transition:opacity .12s,visibility 0s .12s}
+.board-card-el.type-image.photo:hover .board-card-head,.board-card-el.type-image.photo.selected .board-card-head{opacity:1;visibility:visible;transition:opacity .12s,visibility 0s}
+.type-image.photo .board-card-kind,.type-image.photo .board-card-name,.type-image.photo .board-card-del,.type-image.photo .board-card-lock{color:#fff}
+.type-image.photo .board-card-del:hover{color:#fff;opacity:.75}
+.type-image.photo[class*=" tint-"] .board-card-kind,.type-image.photo[class*=" tint-"] .board-card-name,.type-image.photo[class*=" tint-"] .board-card-del,.type-image.photo[class*=" tint-"] .board-card-lock{color:var(--text)}
+/* The badge sits ON the picture, always visible, under the same id the
+   painter fills. Inside the card's own box (overflow:hidden), so it cannot
+   overhang the corner the way Milanote's does. */
+.board-cmt-badge.on-photo{position:absolute;top:6px;right:6px;z-index:3;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+@media (prefers-reduced-motion:reduce){.type-image.photo .board-card-head{transition:none}}
+
 /* Colour tags — status coding that reads at a glance on a big board */
 .board-card-el.tint-grey .board-card-head{background:var(--sw-grey-soft)}
 .board-card-el.tint-grey{border-color:var(--sw-grey)}
