@@ -184,7 +184,8 @@ module.exports=function(){
       '["color","labels","reactions","card-comment","more","deselect"]');
     desktop.run(`_editCards=[{id:'a',type:'text',text:'x',x:0,y:0,w:200,h:120}];_boardsSelection=new Set(['a'])`);
     const drail=desktop.run(`JSON.stringify(_boardsRailItems().map(i=>i.act||(i.swatches?'swatches':'sep')))`);
-    s.ok('desktop keeps its full rail',/labels/.test(drail)&&/reactions/.test(drail)&&/swatches/.test(drail));
+    // The inline swatch grid became the Color tile + panel (Sept 2026).
+    s.ok('desktop keeps its full rail',/labels/.test(drail)&&/reactions/.test(drail)&&/color-panel/.test(drail));
 
     s.section('More and the right-click menu share one item list');
     const menu=desktop.run(`JSON.stringify(_boardsCardCtxItems(true).map(i=>i.act||'').filter(Boolean))`);
@@ -3856,6 +3857,79 @@ module.exports=function(){
       r(`_boardsCameFromAll=false`);
       const ph=phone.run(`_renderBoardCanvasHTML()`);
       s.ok('a phone keeps its capped back button and no chip',/back-btn/.test(ph)&&!/board-home-chip/.test(ph));
+    }
+
+    // ── Colour: Background beside the Top strip, the rail's Color tile,
+    // and Convert to Document (Sept 2026). See CLAUDE.md.
+    {
+      const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      const r=app.run;
+      r(`_editBoard={id:'b1',title:'Winter',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+         _editCards=[Object.assign(_boardsNewCard('text'),{id:'n1',text:'Fabric plan\\nOrder the rib.\\n\\nCheck the dye lot.'}),Object.assign(_boardsNewCard('text'),{id:'n2',text:'b'})];
+         _editConnectors=[];_boardsSelection=new Set(['n1']);_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;_boardsUndo=[];`);
+      s.section('a card has a Background beside its Top strip');
+      r(`window.boardsSetBg('green')`);
+      s.eq('bg is a palette name on the card',r(`_editCards[0].bg`),'green');
+      s.eq('and the strip is untouched',r(`_editCards[0].color`),undefined);
+      r(`window.boardsSetColor('red')`);
+      s.ok('the card paints both as classes',/class="board-card-el type-text[^"]* tint-red bg-green"/.test(r(`_boardCardHTML(_editCards[0],true)`)));
+      r(`window.boardsSetBg('none')`);
+      s.eq('none clears it rather than storing "none"',r(`'bg' in _editCards[0]`),false);
+      s.eq('each change was undoable',r(`_boardsUndo.length`),3);
+
+      s.section('the rail\'s Color tile reads the card\'s current colour');
+      s.eq('strip only → the strip colour',r(`_boardsColorTileClass([{color:'red'}])`),'sw-red');
+      s.eq('background wins over the strip',r(`_boardsColorTileClass([{color:'red',bg:'blue'}])`),'bg-blue');
+      s.eq('neither → an empty outline',r(`_boardsColorTileClass([{}])`),'none');
+      s.eq('a name off the palette is not painted',r(`_boardsColorTileClass([{bg:'evil'}])`),'none');
+      const acts=r(`_boardsRailItems().map(it=>it.act||(it.sep?'|':'?')).join(',')`);
+      s.ok('the selection rail carries the tile, not the inline grid',/^deselect,color-panel,card-comment/.test(acts)&&!/\?/.test(acts.replace(/\|/g,'')));
+      r(`_boardsRenderRail()`);
+      s.ok('and draws it with the current colour',/rail-color-tile sw-red/.test(r(`document.getElementById('board-rail').innerHTML`)));
+
+      s.section('the colour panel: two tabs, live');
+      let items=r(`_boardsColorPanelItems()`);
+      s.eq('Background first',items[0].tabs.map(t=>t.label+(t.on?'*':'')).join(' | '),'Background* | Top strip');
+      s.ok('the Background tab shows bg swatches marking the current',items[1].bgSwatches===true&&items[1].current==='none');
+      r(`_boardsCtxRun('colortab:strip')`);
+      items=r(`_boardsColorPanelItems()`);
+      s.ok('Top strip shows the strip swatches marking red',items[1].swatches===true&&items[1].current==='red');
+      const html=r(`_boardsCtxHTML(_boardsColorPanelItems())`);
+      s.ok('tabs render as buttons routed through the menu',/board-ctx-tab on" data-act="colortab:strip"/.test(html));
+      s.ok('the current swatch is marked',/board-swatch sw-red on" data-act="color:red"/.test(html));
+      r(`_boardsCtxRun('bg:purple')`);
+      s.eq('bg: routes to the setter',r(`_editCards[0].bg`),'purple');
+
+      s.section('Convert to Document');
+      s.eq('a document from a note: first line is the title',r(`_boardsDocFromNote(_editCards[0]).title`),'Fabric plan');
+      s.eq('paragraphs split on blank lines',r(`_boardsDocFromNote(_editCards[0]).blocks.map(b=>b.type+':'+b.text).join('|')`),'paragraph:Order the rib.|paragraph:Check the dye lot.');
+      s.eq('an empty note still gets one empty paragraph',r(`_boardsDocFromNote({text:''}).blocks.length`),1);
+      r(`__c=0;confirm=()=>{__c++;return true};location={origin:'https://ops.example',pathname:'/',hash:''}`);
+      const menu=r(`_boardsCardCtxItems(true).map(i=>i.act).join(',')`);
+      s.ok('it is on the note\'s menu',/todoc/.test(menu));
+      const before=app.state.writes.length;
+      const p=r(`window.boardsConvertToDocument()`);
+      s.ok('it returns a promise',!!p&&typeof p.then==='function');
+      _pending.push(p.then(()=>{
+        const w=app.state.writes.slice(before).find(x=>x.op==='add');
+        s.section('Convert to Document (after the write)');
+        s.eq('one confirm asked',r(`__c`),1);
+        s.ok('a notes_pages doc was written',!!w);
+        s.eq('titled from the note, visibility from the board',w&&(w.data.title+' · '+w.data.visibility),'Fabric plan · shared');
+        s.eq('with the paragraphs',w&&w.data.blocks.length,2);
+        const c=r(`_editCards[0]`);
+        s.eq('the card is a link now',c.type,'link');
+        s.eq('to the document\'s deep link',c.linkUrl,'https://ops.example/#note=new');
+        s.eq('titled like the page',c.linkTitle,'Fabric plan');
+        s.ok('and the note text is gone from it',!('text' in c));
+        s.eq('undo restores the note',(r(`window.boardsUndoAction();_editCards[0].type+':'+_editCards[0].text.slice(0,11)`)),'text:Fabric plan');
+      }));
+
+      s.section('#note= is a deep link to the page');
+      r(`location={origin:'https://ops.example',pathname:'/',hash:'#note=abc'}`);
+      s.eq('parsed',JSON.stringify(r(`_boardsParseHash()`)),'{"note":"abc"}');
+      r(`location.hash='#board=b9&card=c1'`);
+      s.eq('a board link is unchanged',JSON.stringify(r(`_boardsParseHash()`)),'{"board":"b9","card":"c1"}');
     }
 
     return Promise.all(_pending.concat([(async()=>{

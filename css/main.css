@@ -24,6 +24,9 @@
      semantic accent palette above. Muted/dark to match this app's
      monochrome-with-restraint brand, not a rainbow. */
   --cat-notes:#35507A;--cat-boards:#7A4B7C;--cat-sops:#5C6B73;--cat-storage:#6B5738;--cat-chat:#3E6B6B;
+  /* Soft panels for the two category accents that had none — a card
+     BACKGROUND (Sept 2026) needs a surface the card's own ink reads on. */
+  --cat-notes-soft:#E3EAF6;--cat-boards-soft:#EFE3F0;
   /* Surfaces and chrome that used to be hardcoded. --surface-2 is the
      slightly-off-white used for inputs and striped rows; --on-dark is the
      text that sits ON a --dark/--red chip; --hover is a nav/row hover. */
@@ -86,6 +89,7 @@ html[data-theme="dark"]{
   --accent-warning:#E3B061;--accent-warning-soft:#3A2E18;
   --accent-success:#7FC49C;--accent-success-soft:#16301F;
   --cat-notes:#7FA0DA;--cat-boards:#C48FC6;--cat-storage:#C0A277;--cat-sops:#9AAEB8;--cat-chat:#7FBDBD;
+  --cat-notes-soft:#1F2A3D;--cat-boards-soft:#2E2233;
   /* Dark: the badge chip is the near-WHITE #EDEDED, so the ramp runs dark
      rather than light. Same journey, neutral ink to red, inverted with the
      chip under it. */
@@ -1233,6 +1237,35 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-card-el.tint-green{border-color:var(--accent-success)}
 .board-card-el.tint-blue{border-color:var(--cat-notes)}
 .board-card-el.tint-purple{border-color:var(--cat-boards)}
+/* BACKGROUND (Sept 2026): the card body, beside the strip. Soft tokens, so
+   the card's own ink (var(--text)) reads on it in both themes. A note's
+   editable body is transparent, so the card colour shows through. */
+.board-card-el.bg-red{background:var(--accent-urgent-soft)}
+.board-card-el.bg-amber{background:var(--accent-warning-soft)}
+.board-card-el.bg-green{background:var(--accent-success-soft)}
+.board-card-el.bg-blue{background:var(--cat-notes-soft)}
+.board-card-el.bg-purple{background:var(--cat-boards-soft)}
+.board-swatch.bg-none{background:var(--surface)}
+.board-swatch.bg-red{background:var(--accent-urgent-soft)}
+.board-swatch.bg-amber{background:var(--accent-warning-soft)}
+.board-swatch.bg-green{background:var(--accent-success-soft)}
+.board-swatch.bg-blue{background:var(--cat-notes-soft)}
+.board-swatch.bg-purple{background:var(--cat-boards-soft)}
+.board-swatch.on{outline:2px solid var(--text);outline-offset:1px}
+/* The rail's Color tile reads the card's CURRENT colour (Milanote's does):
+   the background when set, else the strip, else an empty outline. */
+.rail-color-tile{display:block;width:17px;height:17px;border-radius:5px;border:1px solid var(--border);background:var(--surface);box-sizing:border-box}
+.rail-color-tile.none{background:transparent;border:1.5px dashed var(--muted)}
+.rail-color-tile.sw-red{background:var(--accent-urgent)}
+.rail-color-tile.sw-amber{background:var(--accent-warning)}
+.rail-color-tile.sw-green{background:var(--accent-success)}
+.rail-color-tile.sw-blue{background:var(--cat-notes)}
+.rail-color-tile.sw-purple{background:var(--cat-boards)}
+.rail-color-tile.bg-red{background:var(--accent-urgent-soft)}
+.rail-color-tile.bg-amber{background:var(--accent-warning-soft)}
+.rail-color-tile.bg-green{background:var(--accent-success-soft)}
+.rail-color-tile.bg-blue{background:var(--cat-notes-soft)}
+.rail-color-tile.bg-purple{background:var(--cat-boards-soft)}
 .board-swatches{display:flex;gap:3px;padding:0 4px}
 .board-swatch{width:15px;height:15px;border-radius:50%;border:1px solid var(--border);cursor:pointer;padding:0}
 .board-swatch.sw-none{background:var(--surface)}
@@ -1510,6 +1543,14 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-ctx-sep{height:1px;background:var(--border);margin:4px 2px}
 .board-ctx-title{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:6px 9px 4px}
 .board-ctx-swatches{display:flex;gap:5px;padding:7px 9px}
+/* The colour panel (Sept 2026): Background | Top strip tabs, a live grid. */
+.board-ctx-tabs{display:flex;gap:4px;padding:3px 3px 5px}
+.board-ctx-tab{flex:1;padding:8px 8px;border:none;border-radius:8px;background:none;color:var(--muted);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.board-ctx-tab.on{background:var(--soft);color:var(--text)}
+.board-ctx-tab:hover{color:var(--text)}
+.board-ctx-tabs+.board-ctx-swatches .board-swatch{width:24px;height:24px;border-radius:7px}
+.board-ctx-note{font-size:11.5px;color:var(--muted);padding:2px 9px 7px}
+.board-sheet-label{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:8px 2px 4px}
 
 /* Deep-linked card — a brief, unmistakable flag on arrival, then gone */
 .board-card-el.linked,.board-frame.linked{outline:3px solid var(--accent-success);outline-offset:3px;animation:boardLinked 1.1s ease-in-out 2}
@@ -1853,6 +1894,7 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   .rail-count{font-size:13px}
   .board-rail-badge{top:4px;right:10px;min-width:19px;height:19px;line-height:19px;padding:0 5px;border-radius:10px;font-size:13px}
   .rail-glyph{width:22px;height:22px;font-size:20px}
+  .rail-color-tile{width:22px;height:22px;border-radius:6px}
 }
 @media (prefers-reduced-motion:reduce){
   .rail-btn svg,.rail-btn .rail-glyph{transition:none}

@@ -2439,7 +2439,7 @@ function _boardCardHTML(c,canEdit){
     :c.type==='table'?'Table':c.type==='column'?'Column':c.type==='frame'?'Frame':'Note';
   const sel=_boardsSelection.has(c.id)?' selected':'';
   const lock=c.locked?' locked':'';
-  const tint=c.color?' tint-'+c.color:'';
+  const tint=(c.color?' tint-'+c.color:'')+(c.bg?' bg-'+c.bg:'');
   const drawH=Math.max(c.h,_boardsMinCardH(c));
   return`<div class="board-card-el type-${c.type}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px" onclick="window.boardsSelectCard('${c.id}',event)">
     <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')" ondblclick="window.boardsHeadDblClick(event,'${c.id}')"`:''}>
@@ -4661,7 +4661,7 @@ function _boardsRailItems(){
   // back-arrow the browser study saw fading in on the real rail's context
   // swap. Ours had no route back at all except clearing the selection.
   items.push({act:'deselect',label:'Back',icon:'back',rewind:true});
-  if(canEdit)items.push({swatches:true});
+  if(canEdit)items.push({act:'color-panel',label:'Color',colorTile:true});
   items.push({act:'card-comment',label:'Comment',icon:'comment'});
   if(canEdit)items.push({act:'labels',label:'Labels',icon:'labels'});
   if(canEdit)items.push({act:'reactions',label:'React',icon:'reactions'});
@@ -4719,6 +4719,10 @@ function _boardsRenderRail(){
   if(prev&&prev!==mode){void host.offsetWidth;host.classList.add('rail-swap');}
   host.innerHTML=(sel.length>1?`<div class="rail-count">${sel.length}</div>`:'')+items.map(it=>{
     if(it.sep)return'<div class="rail-sep"></div>';
+    if(it.colorTile){
+      const cls=_boardsColorTileClass(sel);
+      return`<button class="rail-btn" data-act="${it.act}" title="Colour — background and top strip"><span class="rail-color-tile ${cls}"></span><span>${_boardsEsc(it.label)}</span></button>`;
+    }
     if(it.fmtSwatches)return`<div class="rail-fmt-row" title="Text colour">${_BOARDS_TEXT_COLORS.map(c=>`<button class="board-fmt-sw" style="background:${c.hex}" title="${c.label}" data-act="fmt:color:${c.hex}"></button>`).join('')}</div>`;
     if(it.fmtHilite)return`<div class="rail-fmt-row" title="Highlight">${_BOARDS_HILITE_COLORS.map(c=>`<button class="board-fmt-sw" style="background:${c.hex}" title="Highlight ${c.label}" data-act="fmt:hilite:${c.hex}"></button>`).join('')}</div>`;
     if(it.grow)return'<div class="rail-grow"></div>';
@@ -6572,6 +6576,110 @@ window.boardsSetColor=function(color){
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
 };
+/* ── Background and Top strip (Sept 2026) ────────────────────────────────
+   Milanote's colour panel has two tabs. `c.color` is what this card always
+   had — the TOP STRIP: the header band and the border. `c.bg` is new — the
+   BACKGROUND, the card body itself. Both are palette NAMES painted by a
+   class (bg-red / tint-red), never a stored hex, for the reason the table's
+   cell colours are: a name maps to a token that inverts with the theme,
+   where a literal would be light-on-light in dark mode. That is also why
+   there is no "Custom colour…" here, unlike a board's tile. */
+/* ── Convert to Document (Sept 2026) ─────────────────────────────────────
+   Milanote's ⋯ menu turns a note into a full document. Our document is a
+   Creative Hub NOTES PAGE (js/notes.js — block pages, TEAM or PRIVATE), so
+   converting writes one there from the note's text and turns the card into
+   a LINK to it, in place, same size. The page's visibility follows the
+   board's. Rich formatting is not carried (the page has its own blocks and
+   this module's markup would need mapping block by block) — the toast says
+   the text moved. Ctrl+Z restores the CARD; the page stays, and the toast
+   says that too, because a document that silently vanished with an undo
+   would be worse than one left behind. */
+function _boardsDocFromNote(c){
+  const text=String(c.text||'').replace(/\r/g,'');
+  const lines=text.split('\n');
+  const first=lines.find(l=>l.trim())||'';
+  const title=(first.trim()||'Untitled').slice(0,80);
+  const rest=lines.slice(lines.indexOf(first)+1).join('\n').split(/\n{2,}/).map(t=>t.trim()).filter(Boolean);
+  const mk=t=>{
+    const b=typeof _notesNewBlock==='function'?_notesNewBlock('paragraph'):{id:'b'+Date.now()+'_'+Math.floor(Math.random()*1e4),type:'paragraph',text:'',checked:false,imageUrl:''};
+    b.text=t;return b;
+  };
+  const blocks=rest.length?rest.map(mk):[mk('')];
+  return{title,blocks};
+}
+window.boardsConvertToDocument=async function(){
+  if(!_editBoard||!_boardsCanEdit(_editBoard))return;
+  const sel=_boardsSelectedCards();
+  const c=sel.length===1&&sel[0].type==='text'?sel[0]:null;
+  if(!c){showToast('Select one note to convert');return;}
+  if(c.locked){showToast('Card is locked — unlock it to convert it');return;}
+  const vis=_editBoard.visibility==='shared'?'shared':'personal';
+  if(!confirm(`Turn this note into a Document page in Creative Hub (${vis==='shared'?'TEAM':'PRIVATE'})?\nThe note becomes a link to it. Ctrl+Z brings the note back; the page stays.`))return;
+  const d=_boardsDocFromNote(c);
+  let ref;
+  try{
+    ref=await _qAdd(collection(db,'notes_pages'),{
+      title:d.title,icon:'📄',visibility:vis,
+      ownerUid:session.uid,ownerName:session.name,ownerUsername:session.u,
+      blocks:d.blocks,createdAt:Date.now(),updatedAt:Date.now(),updatedByName:session.name,
+      fromBoardId:_editBoard.id
+    });
+  }catch(e){showToast('Could not create the document: '+(e.message||e),true);return;}
+  if(typeof notesLoaded!=='undefined')notesLoaded=false;
+  _boardsPushUndo();
+  const live=_editCards.find(x=>x.id===c.id);
+  if(!live){showToast('Document created — the note has gone meanwhile');return;}
+  live.type='link';
+  live.linkUrl=location.origin+location.pathname+'#note='+encodeURIComponent(ref.id);
+  live.linkTitle=d.title;
+  live.linkDesc='Document · Creative Hub';
+  live.linkPreviewOff=true;
+  delete live.text;delete live.rich;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveNow();
+  try{logActivity('Note converted to document',`${session.name} converted a note on "${_editBoard.title||'Untitled board'}" into the document "${d.title}"`);}catch(e){}
+  showToast('Document created in Creative Hub — the note is a link to it now. Ctrl+Z restores the note; the page stays.');
+};
+window.boardsSetBg=function(color){
+  if(!_boardsCanEdit(_editBoard))return;
+  const sel=_boardsSelectedCards();
+  if(!sel.length)return;
+  _boardsPushUndo();
+  sel.forEach(c=>{if(color==='none')delete c.bg;else c.bg=color;});
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+// The Color tile in the rail shows the CARD'S CURRENT colour — Milanote's
+// does — so the button is a readout, not a generic icon. The background
+// wins over the strip when both are set (it is the bigger surface); a card
+// with neither shows an empty outlined tile.
+let _boardsColorTab='bg';
+function _boardsColorTileClass(cards){
+  const c=cards&&cards[0];
+  if(!c)return'none';
+  if(c.bg&&_BOARDS_COLORS.indexOf(c.bg)>0)return'bg-'+c.bg;
+  if(c.color&&_BOARDS_COLORS.indexOf(c.color)>0)return'sw-'+c.color;
+  return'none';
+}
+function _boardsColorPanelItems(){
+  const sel=_boardsSelectedCards(),one=sel[0]||{};
+  const tab=_boardsColorTab;
+  return[
+    {tabs:[{act:'colortab:bg',label:'Background',on:tab==='bg'},{act:'colortab:strip',label:'Top strip',on:tab==='strip'}]},
+    tab==='bg'?{bgSwatches:true,current:one.bg||'none'}:{swatches:true,current:one.color||'none'},
+    {note:'Palette colours follow light and dark mode.'}
+  ];
+}
+// Anchored beside the rail's Color tile and LIVE: picking a colour or a tab
+// repaints the panel in place rather than closing it, so trying three
+// colours is not three round trips (the same reason the board's look sheet
+// reopens after each choice).
+window.boardsOpenColorPanel=function(){
+  if(!_boardsCanEdit(_editBoard)||!_boardsSelectedCards().length)return;
+  const btn=document.querySelector('.board-rail [data-act="color-panel"]');
+  const r=btn&&btn.getBoundingClientRect?btn.getBoundingClientRect():{right:100,top:120};
+  _boardsOpenCtx(r.right+8,r.top,_boardsColorPanelItems,null,{keep:true});
+};
 
 // ── Tidy actions ───────────────────────────────────────────────────────
 // The roadmap listed "Columns (auto-stacking vertical lists)". A real
@@ -8260,6 +8368,7 @@ function _boardsParseHash(){
     const i=kv.indexOf('=');
     if(i>0){try{p[decodeURIComponent(kv.slice(0,i))]=decodeURIComponent(kv.slice(i+1));}catch(e){}}
   });
+  if(p.note)return{note:p.note};
   return p.board?{board:p.board,card:p.card||null}:null;
 }
 function _boardsConsumeDeepLink(){
@@ -8271,6 +8380,13 @@ function _boardsConsumeDeepLink(){
   // js/shared.js). Guarded with typeof so a shared.js that failed to parse
   // leaves the side door SHUT rather than open — fail closed.
   if(typeof _canSeeCreativeHub!=='function'||!_canSeeCreativeHub())return false;
+  // A document link (Convert to Document writes these): the Notes page.
+  if(link.note){
+    if(typeof window.notesOpenPage!=='function')return false;
+    if(currentPage==='note-detail'&&typeof _notesViewingId!=='undefined'&&_notesViewingId===link.note)return false;
+    window.notesOpenPage(link.note);
+    return true;
+  }
   if(currentPage==='board-canvas'&&_boardsViewingId===link.board&&!link.card)return false;
   _boardsPendingFocusCard=link.card||null;
   window.boardsOpen(link.board);
@@ -9887,17 +10003,25 @@ function _boardsCtxHTML(items){
   return items.map(it=>{
     if(it.sep)return'<div class="board-ctx-sep"></div>';
     if(it.title)return`<div class="board-ctx-title">${_boardsEsc(it.title)}</div>`;
-    if(it.swatches)return`<div class="board-ctx-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
+    if(it.tabs)return`<div class="board-ctx-tabs">${it.tabs.map(t=>`<button class="board-ctx-tab${t.on?' on':''}" data-act="${t.act}">${_boardsEsc(t.label)}</button>`).join('')}</div>`;
+    if(it.note)return`<div class="board-ctx-note">${_boardsEsc(it.note)}</div>`;
+    if(it.swatches)return`<div class="board-ctx-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}${it.current===c?' on':''}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
+    if(it.bgSwatches)return`<div class="board-ctx-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch bg-${c}${it.current===c?' on':''}" data-act="bg:${c}" title="${c==='none'?'No background':c}"></button>`).join('')}</div>`;
     if(it.connSwatches)return`<div class="board-ctx-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="ln:c:${c}" title="${c==='none'?'Default':c}"></button>`).join('')}</div>`;
     return`<button class="board-ctx-item${it.danger?' danger':''}" data-act="${it.act}">${_boardsEsc(it.label)}${it.hint?`<span class="board-ctx-hint">${_boardsEsc(it.hint)}</span>`:''}</button>`;
   }).join('');
 }
-function _boardsOpenCtx(clientX,clientY,items,galleryId){
+function _boardsOpenCtx(clientX,clientY,items,galleryId,opts){
   _boardsCloseCtx();
+  // `items` may be a FUNCTION and opts.keep true: the menu then rebuilds
+  // itself after each action instead of closing — the colour panel, where
+  // a pick must not throw the panel away.
+  const build=()=>typeof items==='function'?items():items;
+  const keep=!!(opts&&opts.keep);
   const el=document.createElement('div');
   el.id=_BOARDS_CTX_ID;
   el.className='board-ctx';
-  el.innerHTML=_boardsCtxHTML(items);
+  el.innerHTML=_boardsCtxHTML(build());
   // While a note is being formatted the menu must not take focus, or the
   // selection it is about to format is gone before the command runs.
   el.addEventListener('mousedown',ev=>{if(_boardsFmtActive())ev.preventDefault();});
@@ -9911,6 +10035,11 @@ function _boardsOpenCtx(clientX,clientY,items,galleryId){
     const btn=ev.target.closest&&ev.target.closest('[data-act]');
     if(!btn)return;
     const act=btn.getAttribute('data-act');
+    if(keep){
+      _boardsCtxRun(act);
+      if(el.parentNode)el.innerHTML=_boardsCtxHTML(build());
+      return;
+    }
     _boardsCloseCtx();
     // Gallery actions work on a board BY ID; canvas actions work on the
     // open board. One menu renderer, two routers.
@@ -9925,6 +10054,10 @@ function _boardsCtxRun(act){
   const place=()=>{if(at)_boardsNextPlacement={x:at.x,y:at.y};};
   if(act.indexOf('add:')===0){place();window.boardsAddCard(act.slice(4));return;}
   if(act.indexOf('color:')===0){window.boardsSetColor(act.slice(6));return;}
+  if(act.indexOf('bg:')===0){window.boardsSetBg(act.slice(3));return;}
+  if(act.indexOf('colortab:')===0){_boardsColorTab=act.slice(9)==='strip'?'strip':'bg';return;}
+  if(act==='color-panel'){window.boardsOpenColorPanel();return;}
+  if(act==='todoc'){window.boardsConvertToDocument();return;}
   if(act.indexOf('ln:')===0){_boardsConnAction(act.slice(3));return;}
   if(act.indexOf('cellbg:')===0){window.boardsCellColor(act.slice(7));return;}
   if(act==='more-tools'){window.boardsMoreTools();return;}
@@ -9981,7 +10114,9 @@ function _boardsCtxRun(act){
     case'comment-board':window.boardsOpenComments(null);break;
     case'card-comment':{const s=_boardsSelectedCards();if(s.length===1)window.boardsOpenComments(s[0].id);break;}
     case'color':{
-      _boardsOpenSheet('Colour',`<div class="board-sheet-swatches">${
+      _boardsOpenSheet('Colour',`<div class="board-sheet-label">Background</div><div class="board-sheet-swatches">${
+        _BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" title="${c==='none'?'No colour':c}" onclick="window.boardsSetBg('${c}');window.boardsCloseSheet()"></button>`).join('')}</div>
+        <div class="board-sheet-label">Top strip</div><div class="board-sheet-swatches">${
         _BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" title="${c==='none'?'No colour':c}" onclick="window.boardsSetColor('${c}');window.boardsCloseSheet()"></button>`).join('')}</div>`);
       break;
     }
@@ -10611,6 +10746,7 @@ function _boardsCardCtxItems(canEdit){
       typed.push({act:'untickall',label:'Untick all'});
     }else if(one.type==='text'&&one.text){
       typed.push({act:'copytext',label:'Copy text'});
+      if(canEdit)typed.push({act:'todoc',label:'Convert to Document'});
     }
   }
   if(typed.length){items.push({sep:true});typed.forEach(t=>items.push(t));}

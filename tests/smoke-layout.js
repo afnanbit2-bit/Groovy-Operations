@@ -466,6 +466,31 @@ const FRAGMENTS={
       '<div class="board-ctrash-panel" style="position:relative;display:flex;'+
       'inset:auto;width:320px;margin-top:14px">'+nag+'</div>');
   },
+  /* The colour panel and a card on each BACKGROUND (Sept 2026). A
+     background is the one place a card's own ink sits on a coloured
+     surface, so every palette entry is rendered with real text in both
+     themes and measured — a soft token that read in light only would fail
+     here by name. The panel's tabs and swatches are hit-tested too. */
+  'boards — card backgrounds and the colour panel':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;`);
+    const names=app.run(`_BOARDS_COLORS.slice(1)`);
+    const cards=names.map((n,i)=>app.run(`(function(){const c=Object.assign(_boardsNewCard('text'),{id:'bg${i}',x:${20+i*240},y:20,text:'Dye lot ${i}'});c.bg='${n}';c.color='${n}';_editCards.push(c);return _boardCardHTML(c,true);})()`)
+      .replace('<div class="board-text-body"','<div class="board-text-body" data-fill="Dye lot and rib order for the ${n} card"'));
+    app.run(`_boardsSelection=new Set(['bg0']);_boardsColorTab='bg'`);
+    const panel=app.run(`_boardsCtxHTML(_boardsColorPanelItems())`);
+    const rail=app.run(`_boardsRenderRail();document.getElementById('board-rail').innerHTML`);
+    return Promise.resolve({widths:[1900,1280],html:
+      '<div class="board-stage" style="position:relative;height:130px;width:100%;overflow:hidden">'+
+      '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards.join('')+'</div></div>'+
+      '<script>document.querySelectorAll("[data-fill]").forEach(function(e){e.textContent=e.getAttribute("data-fill")})</script>'+
+      '<div style="display:flex;gap:24px;align-items:flex-start;margin-top:14px">'+
+      // The selection rail is 722px in the large tier (measured); the box is
+      // sized so the whole fragment stays inside a 1000px window's viewport.
+      '<div style="position:relative;height:calc(100vh - 180px);width:100px"><div class="board-rail" id="board-rail">'+rail+'</div></div>'+
+      '<div class="board-ctx" style="position:relative">'+panel+'</div></div>'});
+  },
   'boards — the tool rail':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};

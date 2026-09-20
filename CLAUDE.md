@@ -1718,6 +1718,56 @@ which the sanitiser tests exposed on their first run.
 **Nobody has seen the tip, the ghost, the text rail or the trail on a real
 screen** — the sandbox cannot sign in.
 
+### Mood Boards — Background, the Color tile, and Convert to Document (Sept 2026)
+
+The three gaps the video round left, at Afnan's ask: *"now do the color
+tile, top strip panel and convert to document."*
+
+- **`c.color` was always the TOP STRIP** (the header band and border);
+  **`c.bg` is the BACKGROUND**, new, painted by `.bg-<name>` beside
+  `.tint-<name>`. Both are palette NAMES, never a stored hex — the table's
+  cell-colour rule: a name maps to a token that inverts with the theme,
+  where a literal is light-on-light in dark mode. **That is also why the
+  panel has no "Custom colour…"** unlike a board's tile: a card body with
+  text on it cannot take an arbitrary literal. Blue and purple had no soft
+  token, so `--cat-notes-soft` / `--cat-boards-soft` exist now in both
+  themes; the other three reuse the accent `*-soft` tokens. **Every
+  background is MEASURED with real text in both themes** by the new
+  `smoke-layout` fragment `boards — card backgrounds and the colour panel`.
+- **The rail's Color button is a READOUT** (`_boardsColorTileClass`): the
+  background when set, else the strip, else an empty dashed outline. A name
+  off the palette paints nothing — verified by dropping the check. It
+  replaced the inline swatch grid on the desktop selection rail; the phone's
+  Colour sheet gained a Background row above the Top strip row.
+- **The panel is Milanote's, and LIVE.** `Background | Top strip` tabs, the
+  swatch grid marking the current pick, anchored beside the tile.
+  `_boardsOpenCtx` learned `items` as a FUNCTION plus `{keep:true}`: an
+  action re-renders the menu in place instead of closing it, so trying
+  three colours is not three round trips (the board look sheet's reason).
+  **The live re-render is not held by a test** — the harness cannot drive
+  the menu's click listener — so if a pick closes the panel, that is the
+  first thing to check.
+- **Convert to Document = a Creative Hub NOTES PAGE.** Milanote's turns a
+  note into a full document; ours is `js/notes.js`'s block page, so
+  `boardsConvertToDocument` writes one (`notes_pages`, visibility from the
+  board, title = the note's first line, one paragraph per blank-line
+  gap, `fromBoardId` recorded) and turns the card into a **link card to
+  it, in place**, at the same size. **Rich formatting is not carried** —
+  the page has its own block model. **Ctrl+Z restores the CARD and the
+  page stays**, and the confirm and the toast both say so: a document that
+  vanished with an undo would be worse than one left behind. On the note's
+  right-click menu (and so the phone's More sheet).
+- **`#note=<id>` is a deep link now**, consumed by the same
+  `_boardsConsumeDeepLink` as `#board=` (same Creative Hub gate) and handed
+  to `window.notesOpenPage` behind a `typeof` guard. The link card's URL is
+  the app's own origin plus that hash, so `_boardsSafeHref` (https only)
+  passes it and the title opens the page in a new tab.
+
+Verified both ways: an off-palette tile name, the note link left unparsed,
+and the conversion leaving the note's text on the link card each fail by
+name. **Nobody has seen the panel, the tile or a converted note on a real
+screen** — the sandbox cannot sign in.
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then
