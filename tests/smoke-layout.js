@@ -476,8 +476,23 @@ const FRAGMENTS={
     app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
       _editCards=[];_editConnectors=[];_boardsSelection=new Set();_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;`);
     const names=app.run(`_BOARDS_COLORS.slice(1)`);
-    const cards=names.map((n,i)=>app.run(`(function(){const c=Object.assign(_boardsNewCard('text'),{id:'bg${i}',x:${20+i*240},y:20,text:'Dye lot ${i}'});c.bg='${n}';c.color='${n}';if(${i}===${names.length-1})c.locked=true;_editCards.push(c);return _boardCardHTML(c,true);})()`)
-      .replace('<div class="board-text-body"','<div class="board-text-body" data-fill="Dye lot and rib order for the ${n} card"'));
+    const themes=app.run(`JSON.stringify(_BOARDS_CARD_THEMES)`);
+    // Every palette name as paper AND strip, every paper-and-ink preset, a
+    // literal paper and a literal strip — five to a row, so no card is
+    // laid out past the right edge of a 1280px window and reported as
+    // covered by whatever the hit-test finds there.
+    const specs=names.map(n=>({bg:n,color:n,label:n}))
+      .concat(JSON.parse(themes).map(th=>({bg:th.bg,ink:th.ink,label:th.ink+' ink on '+th.bg})))
+      .concat([{bg:'#C8102E',label:'a literal paper'},{color:'#0F766E',label:'a literal strip'}]);
+    const cards=specs.map((sp,i)=>app.run(`(function(){const c=Object.assign(_boardsNewCard('text'),{id:'bg${i}',x:${20+(i%5)*240},y:${20+Math.floor(i/5)*130},text:'Dye lot ${i}'});
+      ${sp.bg?`c.bg='${sp.bg}';`:''}${sp.color?`c.color='${sp.color}';`:''}${sp.ink?`c.ink='${sp.ink}';`:''}if(${i}===${names.length-1})c.locked=true;_editCards.push(c);return _boardCardHTML(c,true);})()`)
+      // The body is hydrated with textContent at runtime, so the fragment
+      // fills it here. NOTE the real class list is "board-card-body
+      // board-text-body" — a match on the bare "board-text-body" never
+      // fired, and every paper was measured with an EMPTY body until Sept
+      // 2026 (found by breaking a token and watching only the A tile fail).
+      .replace('<div class="board-card-body board-text-body"','<div class="board-card-body board-text-body" data-fill="Dye lot and rib order — '+sp.label+'"'));
+    const stageH=20+Math.ceil(specs.length/5)*130;
     // The last card is LOCKED, so the padlock beside its name is measured
     // against the locked head strip in both themes.
     app.run(`_boardsSelection=new Set(['bg0']);_boardsColorTab='bg'`);
@@ -486,13 +501,15 @@ const FRAGMENTS={
     const more=app.run(`_editCards[0].by='Afnan';_editCards[0].at=Date.now();_boardsCtxHTML(_boardsMoreItems(true))`);
     const rail=app.run(`_boardsRenderRail();document.getElementById('board-rail').innerHTML`);
     return Promise.resolve({widths:[1900,1280],html:
-      '<div class="board-stage" style="position:relative;height:130px;width:100%;overflow:hidden">'+
+      '<div class="board-stage" style="position:relative;height:'+stageH+'px;width:100%;overflow:hidden">'+
       '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards.join('')+'</div></div>'+
       '<script>document.querySelectorAll("[data-fill]").forEach(function(e){e.textContent=e.getAttribute("data-fill")})</script>'+
       '<div style="display:flex;gap:24px;align-items:flex-start;margin-top:14px">'+
-      // The selection rail is 722px in the large tier (measured); the box is
-      // sized so the whole fragment stays inside a 1000px window's viewport.
-      '<div style="position:relative;height:calc(100vh - 180px);width:100px"><div class="board-rail" id="board-rail">'+rail+'</div></div>'+
+      // The selection rail is 7 buttons since the ⋯ round (Back · Color ·
+      // Labels · Reactions · Comment · Rename · ⋯); 520px holds it in the
+      // large tier, and the fragment must stay inside a 1000px window's
+      // viewport for the hit-test to reach every control.
+      '<div style="position:relative;height:520px;width:100px"><div class="board-rail" id="board-rail">'+rail+'</div></div>'+
       '<div class="board-ctx" style="position:relative">'+panel+'</div>'+
       '<div class="board-ctx" style="position:relative">'+more+'</div></div>'});
   },
@@ -712,7 +729,7 @@ const FRAGMENTS={
     // Hydrated at runtime with textContent; written in here so it can be measured.
     html=html.replace(/(id="board-label-sb-0"[^>]*>)/,'$1QA-LABEL')
              .replace(/(id="board-label-mn-0"[^>]*>)/,'$1see this')
-             .replace(/(<div class="board-text-body" id="board-txt-mn"[^>]*>)/,'$1Dye lot 4 — rib order')
+             .replace(/(<div class="board-card-body board-text-body"[^>]*id="board-txt-mn"[^>]*>)/,'$1Dye lot 4 — rib order')
              .replace(/(id="board-cap-fl"[^>]*>)/,'$1Approved 12 Sep');
     return Promise.resolve(
       '<div style="position:relative;overflow:hidden;height:600px;width:100%">'+html+'</div>');

@@ -1933,6 +1933,87 @@ from the label's shape, not copied.
 
 **Nobody has seen the chips on a real screen** — the sandbox cannot sign in.
 
+### Mood Boards — the colour panel, like Milanote's (Sept 2026)
+
+Afnan: *"now do the color panel on the card like milanote."* Read off the
+video at full resolution (36.6–37.6s): **Background | Top strip** tabs,
+each with a glyph (a filled tile; an outlined tile with a thick top edge);
+a **5-wide grid** of twelve tiles with the current pick ringed — default,
+grey, teal, green, tan, yellow, orange, red, pink, purple, sky, blue, and a
+checkerboard "transparent" — a divider; a row of seven **"A" tiles**, each
+a pastel paper with a coloured A; a divider; a row of colours **taken from
+the board's own pictures** (reds, browns and greys on that board); and
+**Custom color…** with a colour wheel. Picking red made the note red at
+once (38s).
+
+- **The palette IS Milanote's now: eleven names plus none**
+  (`_BOARDS_COLORS`), in the video's order. Orange keeps the name `amber`
+  because existing cards store it; **"transparent" is deliberately not
+  built** — our canvas is a plain surface, so it would be "none" twice.
+  Six new token PAIRS (`--sw-<name>` / `--sw-<name>-soft`, both themes)
+  join the five accents, and **`_BOARDS_COLOR_TOKENS` is the one
+  name→token map**: the CSS rules are generated from it and the exporter
+  reads it, so a name cannot paint on screen and vanish from the PNG. Blue
+  and purple gained the head band the other strips already had (they had
+  no soft token when they shipped). Every palette-keyed rule set — cell,
+  column, frame, strip, paper, swatch, rail tile, heading — carries all
+  eleven; the invariant that every `_boards*` helper is defined still holds.
+- **The "A" row is seven PAPER-AND-INK presets** (`_BOARDS_CARD_THEMES`),
+  each a paper name and an ink name from the same palette, so a pair
+  inverts with the theme like any single colour. `c.ink` is new and is
+  painted by `.ink-<name>` on the body; **it is set only by a preset, and a
+  plain paper pick clears it** — red ink kept across a pick of red paper is
+  the failure that rule prevents. Every preset was MEASURED with real text
+  in both themes: **5.30–8.46:1 light, 5.16–7.98:1 dark**; every paper
+  under `--text` reads ≥ 15:1 light / ≥ 11:1 dark. The strip tab has no
+  presets — a preset is paper plus ink, and the strip is neither.
+- **"From this board" is DERIVED at panel open** (`_boardsBoardPalette`):
+  the image cards already in the DOM are drawn onto a 16×16 canvas and
+  their pixels bucketed (`_boardsPaletteAccumulate` / `_boardsPalettePick`:
+  4-bit buckets, mean colour per bucket, near-twins folded, capped at
+  eight). Nothing is stored. They load with `crossorigin="anonymous"` — the
+  same CORS-enabled entry the exporter relies on — and a picture the host
+  would not let us read taints its canvas and is skipped, so one picture
+  costs one picture, never the row. Cached per set of pictures, since the
+  live panel repaints on every pick. **The row does not exist in the node
+  harness** (no canvas), which is asserted; the pixel maths is driven with
+  synthetic pixels instead.
+- **A LITERAL colour on a card is allowed now, and only through validation.**
+  A "from this board" tile or Custom colour… stores a `#RRGGBB` in `c.bg`
+  or `c.color` — `_boardsColorValue` is the one gate (a palette name, or
+  `_boardsValidHex`, else none). It paints as `.bg-custom` / `.tint-custom`
+  with the hex in `--card-bg` / `--card-strip` **and its ink computed by
+  `_boardsInkOn` in `--card-ink` / `--card-strip-ink`** — the board tile's
+  rule: a literal ink is right where the background is literal too, so it
+  reads in both themes without inverting. Nothing unvalidated reaches a
+  style attribute (`_boardsCardColorClasses` / `_boardsCardColorStyle`;
+  garbage stored on a card paints nothing, asserted). The rail's Color tile
+  reads a literal inline the same way. **This reverses the first colour
+  panel's "no Custom colour…"** — that note feared a literal paper under
+  `var(--text)`; the computed ink is what answers it.
+- **Custom colour… reuses the HSV sliders** through a third picker target,
+  `{kind:'card', id:'bg'|'strip'}`, routed by the existing
+  `_boardsColorCurrent` / `_boardsColorApply` pair rather than a second
+  picker; the sliders' "‹ Presets" reopens the panel on the tab it left.
+  The panel is a `.board-ctx` and the sliders are a sheet, so the panel
+  closes first.
+- **The phone's Colour sheet** gets the widened palette and the presets
+  row; the board-palette row and Custom colour… are desktop-only this
+  round.
+
+**The probe had been measuring EMPTY note bodies, found here.** The colour
+fragment filled its bodies by matching `class="board-text-body"`, but the
+real markup is `class="board-card-body board-text-body"` — the match never
+fired, so every paper in that fragment (and the min-height note in the
+labels fragment) was measured with no text at all, from the day it was
+written. Found by making `--sw-teal` equal to its soft and watching only the
+A tile fail. Both fills match the real class list now; the same break fails
+the card body at **1:1** as well. **A fragment that hydrates text must be
+checked by breaking the ink, not by reading the fill.**
+
+**Nobody has seen the panel, the presets or a literal-coloured card on a
+real screen** — the sandbox cannot sign in.
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then

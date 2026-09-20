@@ -3208,6 +3208,88 @@ module.exports=function(){
       run(`_boardsMoreItems(false).map(i=>i.act||(i.who?'who':'')).filter(Boolean).join(',')`),'copytext,card-link,who');
     s.ok('read-only rail still ends in ⋯',/,more$/.test(run(`_boardsRailItems().map(i=>i.act).join(',')`)));
 
+    // ── The colour panel, like Milanote's (Sept 2026) ─────────────────────
+    s.section('the palette is Milanote\'s grid and every name has a token');
+    s.eq('none + eleven names in Milanote\'s order',run(`_BOARDS_COLORS.join(',')`),'none,grey,teal,green,tan,yellow,amber,red,pink,purple,sky,blue');
+    s.ok('every name maps to a token',run(`_BOARDS_COLORS.slice(1).every(n=>/^--/.test(_BOARDS_COLOR_TOKENS[n]||''))`));
+    s.eq('a name is a colour value',run(`_boardsColorValue('teal')`),'teal');
+    s.eq('a hex is a colour value, uppercased',run(`_boardsColorValue('#c8102e')`),'#C8102E');
+    s.eq('none is not',run(`String(_boardsColorValue('none'))`),'null');
+    s.eq('junk is not',run(`String(_boardsColorValue('red; background:url(x)'))`),'null');
+    s.eq('every preset names a paper and an ink on the palette',
+      run(`_BOARDS_CARD_THEMES.filter(t=>_BOARDS_COLORS.indexOf(t.bg)>0&&_BOARDS_COLORS.indexOf(t.ink)>0).length`),run(`_BOARDS_CARD_THEMES.length`));
+    s.eq('seven of them, as in the video',run(`_BOARDS_CARD_THEMES.length`),7);
+
+    s.section('paper, ink and a literal on the card');
+    boot();
+    run(`_boardsSetSelection(['n'])`);
+    run(`window.boardsSetTheme(0)`);
+    s.eq('a preset sets paper and ink',run(`_editCards[0].bg+'/'+_editCards[0].ink`),'tan/red');
+    s.ok('and paints both as classes',/bg-tan/.test(run(`_boardsCardColorClasses(_editCards[0])`))&&/ink-red/.test(run(`_boardsCardColorClasses(_editCards[0])`)));
+    s.eq('a name puts nothing in the style',run(`_boardsCardColorStyle(_editCards[0])`),'');
+    run(`window.boardsSetBg('sky')`);
+    s.eq('a plain paper pick keeps the paper',run(`_editCards[0].bg`),'sky');
+    s.ok('and clears the ink — red ink on red paper is what that avoids',run(`_editCards[0].ink===undefined`));
+    run(`window.boardsSetBg('#c8102e')`);
+    s.eq('a literal paper is stored validated',run(`_editCards[0].bg`),'#C8102E');
+    s.ok('painted as bg-custom, never as a class carrying the hex',/ bg-custom/.test(run(`_boardsCardColorClasses(_editCards[0])`))&&!/#C8102E/.test(run(`_boardsCardColorClasses(_editCards[0])`)));
+    s.eq('with the hex and a computed ink in custom properties only',run(`_boardsCardColorStyle(_editCards[0])`),'--card-bg:#C8102E;--card-ink:#FFFFFF;');
+    run(`window.boardsSetColor('#F1E3D4')`);
+    s.eq('a literal strip too, with a dark ink on a pale band',run(`_boardsCardColorStyle(_editCards[0])`),'--card-bg:#C8102E;--card-ink:#FFFFFF;--card-strip:#F1E3D4;--card-strip-ink:#111111;');
+    run(`_editCards[0].bg='url(javascript:1)';_editCards[0].color='<b>'`);
+    s.eq('garbage stored on a card paints nothing',run(`_boardsCardColorClasses(_editCards[0])+'|'+_boardsCardColorStyle(_editCards[0])`),'|');
+    run(`window.boardsSetBg('none')`);
+    s.ok('none removes the paper',run(`_editCards[0].bg===undefined`));
+
+    s.section('the rail tile reads a literal too');
+    run(`_editCards[0].bg='#C8102E';delete _editCards[0].color`);
+    s.eq('class',run(`_boardsColorTileClass(_editCards)`),'custom');
+    s.eq('style',run(`_boardsColorTileStyle(_editCards)`),'background:#C8102E');
+    run(`_editCards[0].bg='teal'`);
+    s.eq('a name is a class and no style',run(`_boardsColorTileClass(_editCards)+'|'+_boardsColorTileStyle(_editCards)`),'bg-teal|');
+
+    s.section('the panel: tabs with glyphs, the grid, the presets, custom');
+    run(`_boardsColorTab='bg';_boardsSetSelection(['n'])`);
+    const pb=JSON.parse(run(`JSON.stringify(_boardsColorPanelItems())`));
+    s.eq('two tabs with glyphs',pb[0].tabs.map(t=>t.glyph).join(','),'bg,strip');
+    s.ok('the background grid, then the presets',pb[1].bgSwatches===true&&pb[1].grid===true&&pb[3].themes===true);
+    s.ok('and Custom colour… last, for the background',pb[pb.length-1].custom===true&&pb[pb.length-1].prop==='bg');
+    s.ok('no "from this board" row without pictures (the harness has none)',!pb.some(i=>i.ownSwatches));
+    run(`_boardsColorTab='strip'`);
+    const ps=JSON.parse(run(`JSON.stringify(_boardsColorPanelItems())`));
+    s.ok('the strip tab has no presets — a preset is paper plus ink',!ps.some(i=>i.themes)&&ps[1].swatches===true);
+    s.eq('its custom entry targets the strip',ps[ps.length-1].prop,'strip');
+    const html=run(`_boardsColorTab='bg';_boardsCtxHTML(_boardsColorPanelItems())`);
+    s.ok('the tabs draw their glyphs',/board-ctx-tabg-bg/.test(html)&&/board-ctx-tabg-strip/.test(html));
+    s.eq('twelve tiles in the grid',(html.match(/data-act="bg:/g)||[]).length,12);
+    s.eq('seven A tiles',(html.match(/data-act="theme:/g)||[]).length,7);
+    s.ok('each A tile paints with the card\'s own classes',/board-theme-sw bg-tan ink-red/.test(html));
+    s.ok('the current preset is ringed',/bg-tan ink-red on"/.test(run(`_editCards[0].bg='tan';_editCards[0].ink='red';_boardsCtxHTML(_boardsColorPanelItems())`)));
+
+    s.section('the router validates a literal on the way back');
+    run(`_editCards[0].bg='grey';delete _editCards[0].ink`);
+    run(`_boardsCtxRun('bghex:#0f766e')`);
+    s.eq('a good hex lands',run(`_editCards[0].bg`),'#0F766E');
+    run(`_boardsCtxRun('bghex:javascript:alert(1)')`);
+    s.ok('a bad one clears rather than passes through',run(`_editCards[0].bg===undefined`));
+    run(`_boardsCtxRun('theme:3')`);
+    s.eq('theme:<i> applies the preset',run(`_editCards[0].bg+'/'+_editCards[0].ink`),'teal/red');
+    run(`_boardsCtxRun('striphex:#C8102E')`);
+    s.eq('striphex sets the strip',run(`_editCards[0].color`),'#C8102E');
+
+    s.section('colours from this board are picked from pixels, deduped, capped');
+    const pix=run(`(function(){
+      const px=[];const put=(r,g,b,n)=>{for(let i=0;i<n;i++)px.push(r,g,b,255);};
+      put(200,16,46,50);put(202,18,44,30);put(15,118,110,20);put(240,240,240,10);put(0,0,0,5);put(10,10,10,4);
+      for(let i=0;i<9;i++)put(20*i+40,120,60,3);
+      const acc=_boardsPaletteAccumulate(px,{});
+      return _boardsPalettePick(acc,8).join(',');})()`);
+    s.ok('the dominant colour leads',/^#C[89]1[0-2][2-3][A-F0-9]/.test(pix),pix);
+    s.ok('a near twin is folded into it',!/#CA122C/.test(pix),pix);
+    s.ok('never more than eight',pix.split(',').length<=8,pix);
+    s.ok('transparent pixels are ignored',run(`_boardsPalettePick(_boardsPaletteAccumulate([255,0,0,10],{}),8).length`)===0);
+    s.eq('no pictures in the DOM → no row, no throw',run(`_boardsBoardPalette().length`),0);
+
     s.section('the desktop ⋯ opens as a popover beside the button');
     run(`_boardsSheetAnchorRect=function(a){return a&&a.act==='more'?{left:20,top:300,right:112,bottom:374,width:92,height:74}:null;}`);
     run(`_boardsOpenCtx=function(x,y,items){globalThis.__ctxAt={x:x,y:y,n:items.length};}`);

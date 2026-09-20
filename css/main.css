@@ -27,6 +27,17 @@
   /* Soft panels for the two category accents that had none — a card
      BACKGROUND (Sept 2026) needs a surface the card's own ink reads on. */
   --cat-notes-soft:#E3EAF6;--cat-boards-soft:#EFE3F0;
+  /* The card palette's six new names (Sept 2026, Milanote's grid): a solid
+     for a strip or an ink, a soft for a background. Each pair inverts with
+     the theme, like the accents above — a card body with text on it never
+     takes a literal. Every soft is measured under --text and every
+     preset ink under its paper by the layout probe. */
+  --sw-grey:#4F565F;--sw-grey-soft:#E7E9ED;
+  --sw-teal:#0E6B64;--sw-teal-soft:#D6F0EC;
+  --sw-tan:#7A4A1F;--sw-tan-soft:#F1E3D4;
+  --sw-yellow:#7A5D00;--sw-yellow-soft:#FAEFC0;
+  --sw-pink:#9B2A69;--sw-pink-soft:#FADFEC;
+  --sw-sky:#0B6A93;--sw-sky-soft:#D6ECF8;
   /* Surfaces and chrome that used to be hardcoded. --surface-2 is the
      slightly-off-white used for inputs and striped rows; --on-dark is the
      text that sits ON a --dark/--red chip; --hover is a nav/row hover. */
@@ -90,6 +101,12 @@ html[data-theme="dark"]{
   --accent-success:#7FC49C;--accent-success-soft:#16301F;
   --cat-notes:#7FA0DA;--cat-boards:#C48FC6;--cat-storage:#C0A277;--cat-sops:#9AAEB8;--cat-chat:#7FBDBD;
   --cat-notes-soft:#1F2A3D;--cat-boards-soft:#2E2233;
+  --sw-grey:#C3C8D0;--sw-grey-soft:#2A2E35;
+  --sw-teal:#79D6C9;--sw-teal-soft:#11332F;
+  --sw-tan:#DDB08A;--sw-tan-soft:#33261A;
+  --sw-yellow:#E8CF6A;--sw-yellow-soft:#383014;
+  --sw-pink:#F0A3CB;--sw-pink-soft:#3A1F30;
+  --sw-sky:#85C8EE;--sw-sky-soft:#12303F;
   /* Dark: the badge chip is the near-WHITE #EDEDED, so the ramp runs dark
      rather than light. Same journey, neutral ink to red, inverted with the
      chip under it. */
@@ -1053,11 +1070,17 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 /* A cell background is a palette NAME, never a stored hex: these variables
    invert with the theme, so a coloured cell reads in light and dark alike.
    Six classes is also a stricter allow-list than validating a hex. */
-.board-table .cell-bg-red{background:var(--accent-urgent-soft)}
-.board-table .cell-bg-amber{background:var(--accent-warning-soft)}
+.board-table .cell-bg-grey{background:var(--sw-grey-soft)}
+.board-table .cell-bg-teal{background:var(--sw-teal-soft)}
 .board-table .cell-bg-green{background:var(--accent-success-soft)}
-.board-table .cell-bg-blue{background:var(--cat-notes);color:var(--on-dark)}
+.board-table .cell-bg-tan{background:var(--sw-tan-soft)}
+.board-table .cell-bg-yellow{background:var(--sw-yellow-soft)}
+.board-table .cell-bg-amber{background:var(--accent-warning-soft)}
+.board-table .cell-bg-red{background:var(--accent-urgent-soft)}
+.board-table .cell-bg-pink{background:var(--sw-pink-soft)}
 .board-table .cell-bg-purple{background:var(--cat-boards);color:var(--on-dark)}
+.board-table .cell-bg-sky{background:var(--sw-sky-soft)}
+.board-table .cell-bg-blue{background:var(--cat-notes);color:var(--on-dark)}
 /* A checkbox cell is the one cell you operate with a single click, so it
    reads as a control: centred, a pointer cursor, and no caret. */
 .board-table .cell-t-check{cursor:pointer;user-select:none;-webkit-user-select:none;
@@ -1195,11 +1218,18 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-column-empty{position:absolute;left:0;right:0;top:38px;text-align:center;
   font-size:12px;color:var(--muted);opacity:.7;pointer-events:none}
 .board-column .board-resize-handle{pointer-events:auto;cursor:ew-resize}
-.board-column.tint-red{border-color:var(--accent-urgent)}
-.board-column.tint-amber{border-color:var(--accent-warning)}
+.board-column.tint-grey{border-color:var(--sw-grey)}
+.board-column.tint-teal{border-color:var(--sw-teal)}
 .board-column.tint-green{border-color:var(--accent-success)}
-.board-column.tint-blue{border-color:var(--cat-notes)}
+.board-column.tint-tan{border-color:var(--sw-tan)}
+.board-column.tint-yellow{border-color:var(--sw-yellow)}
+.board-column.tint-amber{border-color:var(--accent-warning)}
+.board-column.tint-red{border-color:var(--accent-urgent)}
+.board-column.tint-pink{border-color:var(--sw-pink)}
 .board-column.tint-purple{border-color:var(--cat-boards)}
+.board-column.tint-sky{border-color:var(--sw-sky)}
+.board-column.tint-blue{border-color:var(--cat-notes)}
+.board-column.tint-custom{border-color:var(--card-strip)}
 /* Where a dragged card will land. Inside .board-world, so it is positioned
    in world coordinates and needs no pan/zoom maths — the same trick the
    connector layer and the alignment guides use. */
@@ -1211,11 +1241,18 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-frame.locked .board-frame-head{cursor:default;background:var(--accent-warning-soft)}
 .board-frame-title{flex:1;min-width:0;border:none;outline:none;background:transparent;font-family:inherit;font-size:14px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
 .board-frame .board-resize-handle{pointer-events:auto}
-.board-frame.tint-red{border-color:var(--accent-urgent)}
-.board-frame.tint-amber{border-color:var(--accent-warning)}
+.board-frame.tint-grey{border-color:var(--sw-grey)}
+.board-frame.tint-teal{border-color:var(--sw-teal)}
 .board-frame.tint-green{border-color:var(--accent-success)}
-.board-frame.tint-blue{border-color:var(--cat-notes)}
+.board-frame.tint-tan{border-color:var(--sw-tan)}
+.board-frame.tint-yellow{border-color:var(--sw-yellow)}
+.board-frame.tint-amber{border-color:var(--accent-warning)}
+.board-frame.tint-red{border-color:var(--accent-urgent)}
+.board-frame.tint-pink{border-color:var(--sw-pink)}
 .board-frame.tint-purple{border-color:var(--cat-boards)}
+.board-frame.tint-sky{border-color:var(--sw-sky)}
+.board-frame.tint-blue{border-color:var(--cat-notes)}
+.board-frame.tint-custom{border-color:var(--card-strip)}
 
 /* To-do cards */
 .board-todo-body{padding:6px 8px;overflow:auto;touch-action:pan-y}
@@ -1230,51 +1267,118 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-todo-add:hover{color:var(--text)}
 
 /* Colour tags — status coding that reads at a glance on a big board */
-.board-card-el.tint-red .board-card-head{background:var(--accent-urgent-soft)}
-.board-card-el.tint-red{border-color:var(--accent-urgent)}
-.board-card-el.tint-amber .board-card-head{background:var(--accent-warning-soft)}
-.board-card-el.tint-amber{border-color:var(--accent-warning)}
+.board-card-el.tint-grey .board-card-head{background:var(--sw-grey-soft)}
+.board-card-el.tint-grey{border-color:var(--sw-grey)}
+.board-card-el.tint-teal .board-card-head{background:var(--sw-teal-soft)}
+.board-card-el.tint-teal{border-color:var(--sw-teal)}
 .board-card-el.tint-green .board-card-head{background:var(--accent-success-soft)}
 .board-card-el.tint-green{border-color:var(--accent-success)}
-.board-card-el.tint-blue{border-color:var(--cat-notes)}
+.board-card-el.tint-tan .board-card-head{background:var(--sw-tan-soft)}
+.board-card-el.tint-tan{border-color:var(--sw-tan)}
+.board-card-el.tint-yellow .board-card-head{background:var(--sw-yellow-soft)}
+.board-card-el.tint-yellow{border-color:var(--sw-yellow)}
+.board-card-el.tint-amber .board-card-head{background:var(--accent-warning-soft)}
+.board-card-el.tint-amber{border-color:var(--accent-warning)}
+.board-card-el.tint-red .board-card-head{background:var(--accent-urgent-soft)}
+.board-card-el.tint-red{border-color:var(--accent-urgent)}
+.board-card-el.tint-pink .board-card-head{background:var(--sw-pink-soft)}
+.board-card-el.tint-pink{border-color:var(--sw-pink)}
+.board-card-el.tint-purple .board-card-head{background:var(--cat-boards-soft)}
 .board-card-el.tint-purple{border-color:var(--cat-boards)}
+.board-card-el.tint-sky .board-card-head{background:var(--sw-sky-soft)}
+.board-card-el.tint-sky{border-color:var(--sw-sky)}
+.board-card-el.tint-blue .board-card-head{background:var(--cat-notes-soft)}
+.board-card-el.tint-blue{border-color:var(--cat-notes)}
+/* A LITERAL strip (from this board's pictures, or Custom colour…): the
+   hex sits in --card-strip and its ink in --card-strip-ink, both computed
+   by _boardsCardColorStyle — a literal ink on a literal band. */
+.board-card-el.tint-custom{border-color:var(--card-strip)}
+.board-card-el.tint-custom .board-card-head{background:var(--card-strip)}
+.board-card-el.tint-custom .board-card-kind,.board-card-el.tint-custom .board-card-name,.board-card-el.tint-custom .board-card-del,.board-card-el.tint-custom .board-card-lock{color:var(--card-strip-ink)}
 /* BACKGROUND (Sept 2026): the card body, beside the strip. Soft tokens, so
    the card's own ink (var(--text)) reads on it in both themes. A note's
    editable body is transparent, so the card colour shows through. */
-.board-card-el.bg-red{background:var(--accent-urgent-soft)}
-.board-card-el.bg-amber{background:var(--accent-warning-soft)}
+.board-card-el.bg-grey{background:var(--sw-grey-soft)}
+.board-card-el.bg-teal{background:var(--sw-teal-soft)}
 .board-card-el.bg-green{background:var(--accent-success-soft)}
-.board-card-el.bg-blue{background:var(--cat-notes-soft)}
+.board-card-el.bg-tan{background:var(--sw-tan-soft)}
+.board-card-el.bg-yellow{background:var(--sw-yellow-soft)}
+.board-card-el.bg-amber{background:var(--accent-warning-soft)}
+.board-card-el.bg-red{background:var(--accent-urgent-soft)}
+.board-card-el.bg-pink{background:var(--sw-pink-soft)}
 .board-card-el.bg-purple{background:var(--cat-boards-soft)}
+.board-card-el.bg-sky{background:var(--sw-sky-soft)}
+.board-card-el.bg-blue{background:var(--cat-notes-soft)}
+/* INK (Sept 2026): the text colour a paper-and-ink preset sets. A palette
+   name, painted by class, so it inverts with the paper under it. */
+.board-card-el.ink-grey .board-card-body,.board-card-el.ink-grey .board-todo-body,.board-card-el.ink-grey .board-todo-item{color:var(--sw-grey)}
+.board-card-el.ink-teal .board-card-body,.board-card-el.ink-teal .board-todo-body,.board-card-el.ink-teal .board-todo-item{color:var(--sw-teal)}
+.board-card-el.ink-green .board-card-body,.board-card-el.ink-green .board-todo-body,.board-card-el.ink-green .board-todo-item{color:var(--accent-success)}
+.board-card-el.ink-tan .board-card-body,.board-card-el.ink-tan .board-todo-body,.board-card-el.ink-tan .board-todo-item{color:var(--sw-tan)}
+.board-card-el.ink-yellow .board-card-body,.board-card-el.ink-yellow .board-todo-body,.board-card-el.ink-yellow .board-todo-item{color:var(--sw-yellow)}
+.board-card-el.ink-amber .board-card-body,.board-card-el.ink-amber .board-todo-body,.board-card-el.ink-amber .board-todo-item{color:var(--accent-warning)}
+.board-card-el.ink-red .board-card-body,.board-card-el.ink-red .board-todo-body,.board-card-el.ink-red .board-todo-item{color:var(--accent-urgent)}
+.board-card-el.ink-pink .board-card-body,.board-card-el.ink-pink .board-todo-body,.board-card-el.ink-pink .board-todo-item{color:var(--sw-pink)}
+.board-card-el.ink-purple .board-card-body,.board-card-el.ink-purple .board-todo-body,.board-card-el.ink-purple .board-todo-item{color:var(--cat-boards)}
+.board-card-el.ink-sky .board-card-body,.board-card-el.ink-sky .board-todo-body,.board-card-el.ink-sky .board-todo-item{color:var(--sw-sky)}
+.board-card-el.ink-blue .board-card-body,.board-card-el.ink-blue .board-todo-body,.board-card-el.ink-blue .board-todo-item{color:var(--cat-notes)}
+/* A LITERAL background: the card's own ink is computed from it. */
+.board-card-el.bg-custom{background:var(--card-bg)}
+.board-card-el.bg-custom .board-card-body,.board-card-el.bg-custom .board-todo-body,.board-card-el.bg-custom .board-todo-item,.board-card-el.bg-custom .board-caption,.board-card-el.bg-custom .board-subboard-title,.board-card-el.bg-custom .board-subboard-meta{color:var(--card-ink)}
 .board-swatch.bg-none{background:var(--surface)}
-.board-swatch.bg-red{background:var(--accent-urgent-soft)}
-.board-swatch.bg-amber{background:var(--accent-warning-soft)}
+.board-swatch.bg-grey{background:var(--sw-grey-soft)}
+.board-swatch.bg-teal{background:var(--sw-teal-soft)}
 .board-swatch.bg-green{background:var(--accent-success-soft)}
-.board-swatch.bg-blue{background:var(--cat-notes-soft)}
+.board-swatch.bg-tan{background:var(--sw-tan-soft)}
+.board-swatch.bg-yellow{background:var(--sw-yellow-soft)}
+.board-swatch.bg-amber{background:var(--accent-warning-soft)}
+.board-swatch.bg-red{background:var(--accent-urgent-soft)}
+.board-swatch.bg-pink{background:var(--sw-pink-soft)}
 .board-swatch.bg-purple{background:var(--cat-boards-soft)}
+.board-swatch.bg-sky{background:var(--sw-sky-soft)}
+.board-swatch.bg-blue{background:var(--cat-notes-soft)}
 .board-swatch.on{outline:2px solid var(--text);outline-offset:1px}
 /* The rail's Color tile reads the card's CURRENT colour (Milanote's does):
    the background when set, else the strip, else an empty outline. */
 .rail-color-tile{display:block;width:17px;height:17px;border-radius:5px;border:1px solid var(--border);background:var(--surface);box-sizing:border-box}
 .rail-color-tile.none{background:transparent;border:1.5px dashed var(--muted)}
-.rail-color-tile.sw-red{background:var(--accent-urgent)}
-.rail-color-tile.sw-amber{background:var(--accent-warning)}
+.rail-color-tile.sw-grey{background:var(--sw-grey)}
+.rail-color-tile.sw-teal{background:var(--sw-teal)}
 .rail-color-tile.sw-green{background:var(--accent-success)}
-.rail-color-tile.sw-blue{background:var(--cat-notes)}
+.rail-color-tile.sw-tan{background:var(--sw-tan)}
+.rail-color-tile.sw-yellow{background:var(--sw-yellow)}
+.rail-color-tile.sw-amber{background:var(--accent-warning)}
+.rail-color-tile.sw-red{background:var(--accent-urgent)}
+.rail-color-tile.sw-pink{background:var(--sw-pink)}
 .rail-color-tile.sw-purple{background:var(--cat-boards)}
-.rail-color-tile.bg-red{background:var(--accent-urgent-soft)}
-.rail-color-tile.bg-amber{background:var(--accent-warning-soft)}
+.rail-color-tile.sw-sky{background:var(--sw-sky)}
+.rail-color-tile.sw-blue{background:var(--cat-notes)}
+.rail-color-tile.bg-grey{background:var(--sw-grey-soft)}
+.rail-color-tile.bg-teal{background:var(--sw-teal-soft)}
 .rail-color-tile.bg-green{background:var(--accent-success-soft)}
-.rail-color-tile.bg-blue{background:var(--cat-notes-soft)}
+.rail-color-tile.bg-tan{background:var(--sw-tan-soft)}
+.rail-color-tile.bg-yellow{background:var(--sw-yellow-soft)}
+.rail-color-tile.bg-amber{background:var(--accent-warning-soft)}
+.rail-color-tile.bg-red{background:var(--accent-urgent-soft)}
+.rail-color-tile.bg-pink{background:var(--sw-pink-soft)}
 .rail-color-tile.bg-purple{background:var(--cat-boards-soft)}
+.rail-color-tile.bg-sky{background:var(--sw-sky-soft)}
+.rail-color-tile.bg-blue{background:var(--cat-notes-soft)}
+.rail-color-tile.custom{border-color:var(--border)}
 .board-swatches{display:flex;gap:3px;padding:0 4px}
 .board-swatch{width:15px;height:15px;border-radius:50%;border:1px solid var(--border);cursor:pointer;padding:0}
 .board-swatch.sw-none{background:var(--surface)}
-.board-swatch.sw-red{background:var(--accent-urgent)}
-.board-swatch.sw-amber{background:var(--accent-warning)}
+.board-swatch.sw-grey{background:var(--sw-grey)}
+.board-swatch.sw-teal{background:var(--sw-teal)}
 .board-swatch.sw-green{background:var(--accent-success)}
-.board-swatch.sw-blue{background:var(--cat-notes)}
+.board-swatch.sw-tan{background:var(--sw-tan)}
+.board-swatch.sw-yellow{background:var(--sw-yellow)}
+.board-swatch.sw-amber{background:var(--accent-warning)}
+.board-swatch.sw-red{background:var(--accent-urgent)}
+.board-swatch.sw-pink{background:var(--sw-pink)}
 .board-swatch.sw-purple{background:var(--cat-boards)}
+.board-swatch.sw-sky{background:var(--sw-sky)}
+.board-swatch.sw-blue{background:var(--cat-notes)}
 
 .board-stage.line-mode{cursor:crosshair}
 .board-conn-layer{color:var(--muted)}
@@ -1334,11 +1438,18 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-card-el.type-heading .board-card-kind,.board-card-el.type-heading .board-card-del{color:var(--on-dark)}
 .board-heading-body{background:var(--dark);color:var(--on-dark);display:flex;align-items:center;justify-content:center;text-align:center;padding:0 16px;font-size:17px;font-weight:700;letter-spacing:.03em;line-height:1.25;outline:none;overflow:hidden}
 .board-heading-body:empty:before{content:attr(data-placeholder);color:var(--on-dark);opacity:.55}
-.board-card-el.type-heading.tint-red .board-heading-body{background:var(--accent-urgent)}
-.board-card-el.type-heading.tint-amber .board-heading-body{background:var(--accent-warning)}
+.board-card-el.type-heading.tint-grey .board-heading-body{background:var(--sw-grey)}
+.board-card-el.type-heading.tint-teal .board-heading-body{background:var(--sw-teal)}
 .board-card-el.type-heading.tint-green .board-heading-body{background:var(--accent-success)}
-.board-card-el.type-heading.tint-blue .board-heading-body{background:var(--cat-notes)}
+.board-card-el.type-heading.tint-tan .board-heading-body{background:var(--sw-tan)}
+.board-card-el.type-heading.tint-yellow .board-heading-body{background:var(--sw-yellow)}
+.board-card-el.type-heading.tint-amber .board-heading-body{background:var(--accent-warning)}
+.board-card-el.type-heading.tint-red .board-heading-body{background:var(--accent-urgent)}
+.board-card-el.type-heading.tint-pink .board-heading-body{background:var(--sw-pink)}
 .board-card-el.type-heading.tint-purple .board-heading-body{background:var(--cat-boards)}
+.board-card-el.type-heading.tint-sky .board-heading-body{background:var(--sw-sky)}
+.board-card-el.type-heading.tint-blue .board-heading-body{background:var(--cat-notes)}
+.board-card-el.type-heading.tint-custom .board-heading-body{background:var(--card-strip);color:var(--card-strip-ink)}
 
 /* Captions — under an image or file, separate from the file's own name */
 .board-caption{flex-shrink:0;font-size:13px;line-height:1.4;color:var(--muted);padding:5px 9px;border-top:1px solid var(--border);outline:none;background:var(--surface);word-break:break-word}
@@ -1555,10 +1666,34 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-ctx-swatches{display:flex;gap:5px;padding:7px 9px}
 /* The colour panel (Sept 2026): Background | Top strip tabs, a live grid. */
 .board-ctx-tabs{display:flex;gap:4px;padding:3px 3px 5px}
-.board-ctx-tab{flex:1;padding:8px 8px;border:none;border-radius:8px;background:none;color:var(--muted);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.board-ctx-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:7px;padding:10px 8px 9px;border:none;border-radius:8px;background:none;color:var(--muted);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer}
 .board-ctx-tab.on{background:var(--soft);color:var(--text)}
 .board-ctx-tab:hover{color:var(--text)}
-.board-ctx-tabs+.board-ctx-swatches .board-swatch{width:24px;height:24px;border-radius:7px}
+/* The tab glyphs (video, 37s): a filled tile for Background, an outlined
+   tile with a thick top edge for Top strip. */
+.board-ctx-tabg{display:block;width:22px;height:16px;border-radius:4px;background:var(--muted);opacity:.85}
+.board-ctx-tabg-strip{background:transparent;border:2px solid var(--muted);border-top-width:5px}
+.board-ctx-tab.on .board-ctx-tabg{background:var(--text);opacity:1}
+.board-ctx-tab.on .board-ctx-tabg-strip{background:transparent;border-color:var(--text)}
+/* The 5-wide grid of 28px tiles, the picked one ringed. */
+.board-ctx-grid{display:grid;grid-template-columns:repeat(5,28px);gap:8px;padding:9px 9px}
+.board-ctx-grid .board-swatch{width:28px;height:28px;border-radius:7px}
+.board-ctx-themes{padding-top:2px}
+.board-theme-sw{display:inline-flex;align-items:center;justify-content:center;font-family:inherit;font-size:15px;font-weight:800;line-height:1}
+.board-sheet-swatches .board-theme-sw{width:28px;height:28px;border-radius:7px}
+.board-theme-sw.ink-grey{color:var(--sw-grey)}
+.board-theme-sw.ink-teal{color:var(--sw-teal)}
+.board-theme-sw.ink-green{color:var(--accent-success)}
+.board-theme-sw.ink-tan{color:var(--sw-tan)}
+.board-theme-sw.ink-yellow{color:var(--sw-yellow)}
+.board-theme-sw.ink-amber{color:var(--accent-warning)}
+.board-theme-sw.ink-red{color:var(--accent-urgent)}
+.board-theme-sw.ink-pink{color:var(--sw-pink)}
+.board-theme-sw.ink-purple{color:var(--cat-boards)}
+.board-theme-sw.ink-sky{color:var(--sw-sky)}
+.board-theme-sw.ink-blue{color:var(--cat-notes)}
+.board-ctx-custom{display:flex;align-items:center;gap:9px;width:calc(100% - 18px);margin:4px 9px 8px;padding:9px 10px;border:1px solid var(--border);border-radius:9px;background:none;font-family:inherit;font-size:13px;font-weight:600;color:var(--text);cursor:pointer}
+.board-ctx-custom:hover{background:var(--soft)}
 .board-ctx-note{font-size:11.5px;color:var(--muted);padding:2px 9px 7px}
 .board-sheet-label{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:8px 2px 4px}
 

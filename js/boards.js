@@ -2136,7 +2136,7 @@ function _boardCardHTML(c,canEdit){
   if(c.type==='column'){
     const sel=_boardsSelection.has(c.id)?' selected':'';
     const n=_boardsColumnChildren(c).length;
-    return`<div class="board-column${sel}${c.locked?' locked':''}${c.color?' tint-'+c.color:''}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px">
+    return`<div class="board-column${sel}${c.locked?' locked':''}${_boardsCardColorClasses({color:c.color})}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle({color:c.color})}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px">
       <div class="board-column-head" ${canEdit&&!c.locked?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''} onclick="window.boardsSelectCard('${c.id}',event)">
         <input type="text" class="board-column-title" value="${_boardsEsc(c.title||'')}" placeholder="Column" ${canEdit&&!c.locked?'':'readonly'} oninput="window.boardsFrameTitle('${c.id}',this.value)" onpointerdown="event.stopPropagation()">
         <span class="board-column-count">${n}</span>
@@ -2148,7 +2148,7 @@ function _boardCardHTML(c,canEdit){
   }
   if(c.type==='frame'){
     const sel=_boardsSelection.has(c.id)?' selected':'';
-    return`<div class="board-frame${sel}${c.locked?' locked':''}${c.color?' tint-'+c.color:''}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px">
+    return`<div class="board-frame${sel}${c.locked?' locked':''}${_boardsCardColorClasses({color:c.color})}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle({color:c.color})}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px">
       <div class="board-frame-head" ${canEdit&&!c.locked?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''} onclick="window.boardsSelectCard('${c.id}',event)">
         <input type="text" class="board-frame-title" value="${_boardsEsc(c.title||'')}" placeholder="Section name" ${canEdit&&!c.locked?'':'readonly'} oninput="window.boardsFrameTitle('${c.id}',this.value)" onpointerdown="event.stopPropagation()">
         ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete frame (cards inside are kept)">✕</button>`:''}
@@ -2439,9 +2439,9 @@ function _boardCardHTML(c,canEdit){
     :c.type==='table'?'Table':c.type==='column'?'Column':c.type==='frame'?'Frame':'Note';
   const sel=_boardsSelection.has(c.id)?' selected':'';
   const lock=c.locked?' locked':'';
-  const tint=(c.color?' tint-'+c.color:'')+(c.bg?' bg-'+c.bg:'');
+  const tint=_boardsCardColorClasses(c);
   const drawH=Math.max(c.h,_boardsMinCardH(c));
-  return`<div class="board-card-el type-${c.type}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px" onclick="window.boardsSelectCard('${c.id}',event)">
+  return`<div class="board-card-el type-${c.type}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle(c)}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px" onclick="window.boardsSelectCard('${c.id}',event)">
     <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')" ondblclick="window.boardsHeadDblClick(event,'${c.id}')"`:''}>
       <span class="board-card-kind">
         <span class="board-card-name" id="board-name-${c.id}" contenteditable="false" data-placeholder="${_boardsEsc(kind)}" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-name-${c.id}')"`:''} oninput="window.boardsCardName('${c.id}',this)" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()" title="Double-click to rename this card"></span>${c.locked?`<span class="board-card-lock" title="Position locked — unlock it from the ⋯ menu">${_boardsIcon('lock')}</span>`:''}</span>
@@ -2827,6 +2827,14 @@ function _boardsHsvToHex(h,sv,v){
 let _boardsColorTarget=null;   // {kind:'board', id} — who the picker is for
 window.boardsOpenColorPicker=function(kind,id){
   _boardsColorTarget={kind,id};
+  // A CARD's colours have their own panel (Milanote's) — the sliders'
+  // "‹ Presets" goes back to it, on the tab it came from.
+  if(kind==='card'){
+    window.boardsCloseSheet();
+    _boardsColorTab=id==='strip'?'strip':'bg';
+    window.boardsOpenColorPanel();
+    return;
+  }
   _boardsRenderColorSheet();
 };
 // The picker serves two kinds of target now: a BOARD's identity colour and
@@ -2834,12 +2842,18 @@ window.boardsOpenColorPicker=function(kind,id){
 // difference — the alternative was four of them each growing a branch.
 function _boardsColorCurrent(){
   const t=_boardsColorTarget;if(!t)return'';
+  if(t.kind==='card'){const c=_boardsSelectedCards()[0];return _boardsValidHex(c&&(t.id==='strip'?c.color:c.bg));}
   if(t.kind==='conn'){const cn=_boardsConnById(t.id);return _boardsValidHex(cn&&cn.color);}
   const b=moodBoards.find(x=>x.id===t.id);
   return _boardsValidHex(b&&b.color);
 }
 function _boardsColorApply(hex){
   const t=_boardsColorTarget;if(!t)return;
+  if(t.kind==='card'){
+    if(t.id==='strip')window.boardsSetColor(_boardsValidHex(hex)||'none');
+    else window.boardsSetBg(_boardsValidHex(hex)||'none');
+    return;
+  }
   if(t.kind==='conn'){window.boardsSetConn(t.id,{color:hex||null});return;}
   _boardsSaveIdentity(t.id,{color:hex||null});
 }
@@ -4909,8 +4923,8 @@ function _boardsRenderRail(){
   host.innerHTML=(sel.length>1?`<div class="rail-count">${sel.length}</div>`:'')+items.map(it=>{
     if(it.sep)return'<div class="rail-sep"></div>';
     if(it.colorTile){
-      const cls=_boardsColorTileClass(sel);
-      return`<button class="rail-btn" data-act="${it.act}" title="Colour — background and top strip"><span class="rail-color-tile ${cls}"></span><span>${_boardsEsc(it.label)}</span></button>`;
+      const cls=_boardsColorTileClass(sel),sty=_boardsColorTileStyle(sel);
+      return`<button class="rail-btn" data-act="${it.act}" title="Colour — background and top strip"><span class="rail-color-tile ${cls}"${sty?` style="${sty}"`:''}></span><span>${_boardsEsc(it.label)}</span></button>`;
     }
     if(it.fmtSwatches)return`<div class="rail-fmt-row" title="Text colour">${_BOARDS_TEXT_COLORS.map(c=>`<button class="board-fmt-sw" style="background:${c.hex}" title="${c.label}" data-act="fmt:color:${c.hex}"></button>`).join('')}</div>`;
     if(it.fmtHilite)return`<div class="rail-fmt-row" title="Highlight">${_BOARDS_HILITE_COLORS.map(c=>`<button class="board-fmt-sw" style="background:${c.hex}" title="Highlight ${c.label}" data-act="fmt:hilite:${c.hex}"></button>`).join('')}</div>`;
@@ -6755,13 +6769,64 @@ window.boardsTodoKey=function(ev,id,i){
 // ── Colour tagging ─────────────────────────────────────────────────────
 // Status coding at a glance on a 46-card board. Muted set, matching the
 // app's palette rather than bright primaries.
-const _BOARDS_COLORS=['none','red','amber','green','blue','purple'];
+/* THE PALETTE IS MILANOTE'S (video, 37s): grey · teal · green · tan · yellow
+   · orange · red · pink · purple · sky · blue, in that order, plus none.
+   Orange keeps the name `amber` because existing cards store it. Every
+   name maps to a TOKEN PAIR (solid for a strip or ink, soft for a
+   background) that inverts with the theme — the rule since the first
+   colour panel: a card body with text on it cannot take a literal that
+   would be light-on-light in dark mode. `_BOARDS_COLOR_TOKENS` is the one
+   name→token map; the exporter reads it too, so a name cannot paint on
+   screen and vanish from the PNG. */
+const _BOARDS_COLORS=['none','grey','teal','green','tan','yellow','amber','red','pink','purple','sky','blue'];
+const _BOARDS_COLOR_TOKENS={grey:'--sw-grey',teal:'--sw-teal',green:'--accent-success',tan:'--sw-tan',
+  yellow:'--sw-yellow',amber:'--accent-warning',red:'--accent-urgent',pink:'--sw-pink',
+  purple:'--cat-boards',sky:'--sw-sky',blue:'--cat-notes'};
+/* Milanote's "A" row — seven PAPER-AND-INK presets, read off the video as
+   pastel tile + coloured A (37s). Each is a background name and an ink
+   name from the palette above, so the pair inverts with the theme like
+   any single colour, and every pair is MEASURED with real text in both
+   themes by the layout probe. */
+const _BOARDS_CARD_THEMES=[
+  {bg:'tan',ink:'red'},{bg:'grey',ink:'blue'},{bg:'tan',ink:'green'},{bg:'teal',ink:'red'},
+  {bg:'pink',ink:'red'},{bg:'pink',ink:'purple'},{bg:'teal',ink:'teal'}
+];
+// A colour on a card is a palette NAME or a validated #RRGGBB (the "From
+// this board" row and Custom colour…); anything else is "none".
+function _boardsColorValue(v){
+  if(_BOARDS_COLORS.indexOf(v)>0)return v;
+  return _boardsValidHex(v)||null;
+}
+function _boardsThemeIndex(c){
+  if(!c||!c.bg||!c.ink)return-1;
+  return _BOARDS_CARD_THEMES.findIndex(t=>t.bg===c.bg&&t.ink===c.ink);
+}
+// The classes and the custom-property style a card's colours paint with.
+// A name is a class (tint-/bg-/ink-<name>); a literal goes ONLY into
+// --card-* custom properties, validated here, with its ink computed by
+// _boardsInkOn — the board tile's rule: a literal ink is right where the
+// background is literal too, and nothing unvalidated reaches a style.
+function _boardsCardColorClasses(c){
+  let s='';
+  if(c.color)s+=_BOARDS_COLORS.indexOf(c.color)>0?' tint-'+c.color:(_boardsValidHex(c.color)?' tint-custom':'');
+  if(c.bg)s+=_BOARDS_COLORS.indexOf(c.bg)>0?' bg-'+c.bg:(_boardsValidHex(c.bg)?' bg-custom':'');
+  if(c.ink&&_BOARDS_COLORS.indexOf(c.ink)>0)s+=' ink-'+c.ink;
+  return s;
+}
+function _boardsCardColorStyle(c){
+  const out=[];
+  const bg=_boardsValidHex(c.bg),st=_boardsValidHex(c.color);
+  if(bg)out.push('--card-bg:'+bg,'--card-ink:'+_boardsInkOn(bg));
+  if(st)out.push('--card-strip:'+st,'--card-strip-ink:'+_boardsInkOn(st));
+  return out.length?out.join(';')+';':'';
+}
 window.boardsSetColor=function(color){
   if(!_boardsCanEdit(_editBoard))return;
   const sel=_boardsSelectedCards();
   if(!sel.length)return;
   _boardsPushUndo();
-  sel.forEach(c=>{if(color==='none')delete c.color;else c.color=color;});
+  const v=_boardsColorValue(color);
+  sel.forEach(c=>{if(!v)delete c.color;else c.color=v;});
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
 };
@@ -6834,7 +6899,21 @@ window.boardsSetBg=function(color){
   const sel=_boardsSelectedCards();
   if(!sel.length)return;
   _boardsPushUndo();
-  sel.forEach(c=>{if(color==='none')delete c.bg;else c.bg=color;});
+  const v=_boardsColorValue(color);
+  // A plain paper pick is paper only: the ink a preset set goes with it,
+  // or red ink would sit on a red background the moment you picked one.
+  sel.forEach(c=>{if(!v)delete c.bg;else c.bg=v;delete c.ink;});
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+// One of the seven paper-and-ink presets — the only way `c.ink` is set.
+window.boardsSetTheme=function(i){
+  if(!_boardsCanEdit(_editBoard))return;
+  const t=_BOARDS_CARD_THEMES[i|0];
+  const sel=_boardsSelectedCards();
+  if(!t||!sel.length)return;
+  _boardsPushUndo();
+  sel.forEach(c=>{c.bg=t.bg;c.ink=t.ink;});
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
 };
@@ -6847,17 +6926,101 @@ function _boardsColorTileClass(cards){
   const c=cards&&cards[0];
   if(!c)return'none';
   if(c.bg&&_BOARDS_COLORS.indexOf(c.bg)>0)return'bg-'+c.bg;
+  if(_boardsValidHex(c.bg))return'custom';
   if(c.color&&_BOARDS_COLORS.indexOf(c.color)>0)return'sw-'+c.color;
+  if(_boardsValidHex(c.color))return'custom';
   return'none';
 }
+// A literal colour has no class to paint with; the tile takes it inline,
+// validated, the same way the card does.
+function _boardsColorTileStyle(cards){
+  const c=cards&&cards[0];
+  if(!c)return'';
+  const bg=_boardsValidHex(c.bg);
+  if(bg)return'background:'+bg;
+  if(_BOARDS_COLORS.indexOf(c.bg)>0)return'';
+  const st=_boardsValidHex(c.color);
+  return st?'background:'+st:'';
+}
+/* Milanote's colour panel, read off the video (36.6–37.6s): Background |
+   Top strip tabs with a glyph each, a 5-wide grid of the palette with the
+   current pick ringed, a divider, the seven "A" paper-and-ink presets
+   (Background only), a divider, the colours FROM THIS BOARD's own
+   pictures, and Custom colour… The strip tab has no presets: a preset is
+   paper plus ink, and the strip is neither. */
 function _boardsColorPanelItems(){
   const sel=_boardsSelectedCards(),one=sel[0]||{};
   const tab=_boardsColorTab;
-  return[
-    {tabs:[{act:'colortab:bg',label:'Background',on:tab==='bg'},{act:'colortab:strip',label:'Top strip',on:tab==='strip'}]},
-    tab==='bg'?{bgSwatches:true,current:one.bg||'none'}:{swatches:true,current:one.color||'none'},
-    {note:'Palette colours follow light and dark mode.'}
-  ];
+  const items=[{tabs:[{act:'colortab:bg',label:'Background',on:tab==='bg',glyph:'bg'},{act:'colortab:strip',label:'Top strip',on:tab==='strip',glyph:'strip'}]}];
+  if(tab==='bg'){
+    items.push({bgSwatches:true,grid:true,current:one.bg||'none'});
+    items.push({sep:true});
+    items.push({themes:true,current:_boardsThemeIndex(one)});
+  }else{
+    items.push({swatches:true,grid:true,current:one.color||'none'});
+  }
+  const own=_boardsBoardPalette();
+  if(own.length){
+    items.push({sep:true});
+    items.push({ownSwatches:own,prop:tab,current:_boardsValidHex(tab==='bg'?one.bg:one.color)});
+  }
+  items.push({custom:true,prop:tab});
+  return items;
+}
+/* "From this board" — the colours in the board's own pictures, the way
+   Milanote's third row reads. DERIVED at panel open from the image cards
+   already in the DOM (they load with crossorigin="anonymous", the same
+   CORS-enabled entry the exporter relies on): each is drawn onto a tiny
+   canvas and its pixels bucketed. Nothing is stored. A picture the host
+   would not let us read taints its canvas and is skipped — one picture
+   costs one picture, never the row. Cached per set of pictures, since
+   the live panel repaints on every pick. */
+const _BOARDS_OWN_MAX=8;
+let _boardsOwnPaletteCache={key:'',colors:[]};
+function _boardsPaletteAccumulate(data,acc){
+  // 4-bit buckets on each channel, weighted by count, mean colour per bucket.
+  for(let i=0;i+3<data.length;i+=4){
+    if(data[i+3]<200)continue;
+    const r=data[i],g=data[i+1],b=data[i+2];
+    const k=((r>>4)<<8)|((g>>4)<<4)|(b>>4);
+    const e=acc[k]||(acc[k]={n:0,r:0,g:0,b:0});
+    e.n++;e.r+=r;e.g+=g;e.b+=b;
+  }
+  return acc;
+}
+function _boardsPalettePick(acc,max){
+  const rows=Object.keys(acc).map(k=>{const e=acc[k];return{n:e.n,r:e.r/e.n,g:e.g/e.n,b:e.b/e.n};})
+    .sort((a,b)=>b.n-a.n);
+  const out=[];
+  const far=(a,b)=>Math.abs(a.r-b.r)+Math.abs(a.g-b.g)+Math.abs(a.b-b.b)>=90;
+  for(const c of rows){
+    if(out.every(o=>far(o,c)))out.push(c);
+    if(out.length>=(max||_BOARDS_OWN_MAX))break;
+  }
+  const hx=v=>('0'+Math.round(v).toString(16)).slice(-2).toUpperCase();
+  return out.map(c=>'#'+hx(c.r)+hx(c.g)+hx(c.b));
+}
+function _boardsBoardPalette(){
+  if(typeof document==='undefined'||!document.querySelectorAll||!document.createElement)return[];
+  const imgs=Array.from(document.querySelectorAll('.board-card-el.type-image img')).filter(im=>im&&im.complete&&im.naturalWidth>0);
+  if(!imgs.length)return[];
+  const key=imgs.map(im=>im.currentSrc||im.src).join('|');
+  if(key===_boardsOwnPaletteCache.key)return _boardsOwnPaletteCache.colors;
+  const cv=document.createElement('canvas');
+  const ctx=cv&&cv.getContext?cv.getContext('2d'):null;
+  if(!ctx)return[];
+  cv.width=16;cv.height=16;
+  const acc={};
+  imgs.slice(0,24).forEach(im=>{
+    try{
+      ctx.clearRect(0,0,16,16);
+      ctx.drawImage(im,0,0,16,16);
+      _boardsPaletteAccumulate(ctx.getImageData(0,0,16,16).data,acc);
+    }catch(e){/* tainted (no CORS) — skip this picture */}
+  });
+  const colors=_boardsPalettePick(acc,_BOARDS_OWN_MAX);
+  _boardsOwnPaletteCache={key,colors};
+  return colors;
 }
 // Anchored beside the rail's Color tile and LIVE: picking a colour or a tab
 // repaints the panel in place rather than closing it, so trying three
@@ -8159,13 +8322,10 @@ function _boardsExportPalette(){
     soft:_boardsCssVar('--soft','#f5f5f5'),
     surface:_boardsCssVar('--surface','#ffffff'),
     dark:_boardsCssVar('--dark','#111111'),
-    tint:{
-      red:_boardsCssVar('--accent-urgent','#c0392b'),
-      amber:_boardsCssVar('--accent-warning','#c98a10'),
-      green:_boardsCssVar('--accent-success','#2e8b57'),
-      blue:_boardsCssVar('--cat-notes','#4a67c8'),
-      purple:_boardsCssVar('--cat-boards','#8455c9')
-    }
+    // Every palette name, from the one name→token map — a name that
+    // paints on screen cannot be missing here.
+    tint:Object.keys(_BOARDS_COLOR_TOKENS).reduce((m,n)=>{m[n]=_boardsCssVar(_BOARDS_COLOR_TOKENS[n],'#888888');return m;},{}),
+    bgs:Object.keys(_BOARDS_COLOR_TOKENS).reduce((m,n)=>{m[n]=_boardsCssVar(_BOARDS_COLOR_TOKENS[n]+'-soft','#f0f0f0');return m;},{})
   };
 }
 function _boardsLoadImageEl(url){
@@ -8232,7 +8392,7 @@ function _boardsExportKind(c){
     :c.type==='heading'?'Heading':'Note';
 }
 function _boardsDrawCard(ctx,c,img,P){
-  const stroke=c.color&&P.tint[c.color]?P.tint[c.color]:P.border;
+  const stroke=c.color&&P.tint[c.color]?P.tint[c.color]:(_boardsValidHex(c.color)||P.border);
   if(c.type==='column'){
     ctx.fillStyle=P.soft;
     _boardsRoundRect(ctx,c.x,c.y,c.w,c.h,12);ctx.fill();
@@ -8281,8 +8441,9 @@ function _boardsDrawCard(ctx,c,img,P){
   ctx.save();
   _boardsRoundRect(ctx,c.x,c.y,c.w,c.h,10);
   ctx.clip();
-  ctx.fillStyle='#ffffff';ctx.fillRect(c.x,c.y,c.w,c.h);
-  ctx.fillStyle=P.soft;ctx.fillRect(c.x,c.y,c.w,headH);
+  // The card's paper: a palette name's soft token, a literal, or white.
+  ctx.fillStyle=(c.bg&&P.bgs[c.bg])||_boardsValidHex(c.bg)||'#ffffff';ctx.fillRect(c.x,c.y,c.w,c.h);
+  ctx.fillStyle=(c.color&&P.bgs[c.color])||_boardsValidHex(c.color)||P.soft;ctx.fillRect(c.x,c.y,c.w,headH);
   ctx.fillStyle=P.muted;ctx.font='700 11px '+P.font;
   ctx.fillText(String(c.name||_boardsExportKind(c)).toUpperCase()+(c.locked?' · LOCKED':''),c.x+8,c.y+13.5);
 
@@ -10301,10 +10462,17 @@ function _boardsCtxHTML(items){
     if(it.sep)return'<div class="board-ctx-sep"></div>';
     if(it.title)return`<div class="board-ctx-title">${_boardsEsc(it.title)}</div>`;
     if(it.who)return`<div class="board-ctx-who">${_boardsAvatarHTML(it.who)}<span>${_boardsEsc(_boardsWhoText(it))}</span></div>`;
-    if(it.tabs)return`<div class="board-ctx-tabs">${it.tabs.map(t=>`<button class="board-ctx-tab${t.on?' on':''}" data-act="${t.act}">${_boardsEsc(t.label)}</button>`).join('')}</div>`;
+    if(it.tabs)return`<div class="board-ctx-tabs">${it.tabs.map(t=>`<button class="board-ctx-tab${t.on?' on':''}" data-act="${t.act}">${t.glyph?`<span class="board-ctx-tabg board-ctx-tabg-${t.glyph}"></span>`:''}${_boardsEsc(t.label)}</button>`).join('')}</div>`;
     if(it.note)return`<div class="board-ctx-note">${_boardsEsc(it.note)}</div>`;
-    if(it.swatches)return`<div class="board-ctx-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}${it.current===c?' on':''}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
-    if(it.bgSwatches)return`<div class="board-ctx-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch bg-${c}${it.current===c?' on':''}" data-act="bg:${c}" title="${c==='none'?'No background':c}"></button>`).join('')}</div>`;
+    if(it.swatches)return`<div class="board-ctx-swatches${it.grid?' board-ctx-grid':''}">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}${it.current===c?' on':''}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
+    if(it.bgSwatches)return`<div class="board-ctx-swatches${it.grid?' board-ctx-grid':''}">${_BOARDS_COLORS.map(c=>`<button class="board-swatch bg-${c}${it.current===c?' on':''}" data-act="bg:${c}" title="${c==='none'?'No background':c}"></button>`).join('')}</div>`;
+    // The "A" is static markup, never user text; the tile paints with the
+    // same bg-/ink- classes the card does, so the preview cannot drift.
+    if(it.themes)return`<div class="board-ctx-swatches board-ctx-grid board-ctx-themes">${_BOARDS_CARD_THEMES.map((t,i)=>`<button class="board-swatch board-theme-sw bg-${t.bg} ink-${t.ink}${it.current===i?' on':''}" data-act="theme:${i}" title="${t.bg} paper, ${t.ink} ink">A</button>`).join('')}</div>`;
+    // Literal colours from the board's pictures — validated before they
+    // reach the style attribute, and again in the router on the way back.
+    if(it.ownSwatches)return`<div class="board-ctx-swatches board-ctx-grid board-ctx-own" title="Colours from this board">${it.ownSwatches.map(h=>_boardsValidHex(h)).filter(Boolean).map(h=>`<button class="board-swatch${it.current===h?' on':''}" style="background:${h}" data-act="${it.prop==='strip'?'striphex':'bghex'}:${h}" title="${h}"></button>`).join('')}</div>`;
+    if(it.custom)return`<button class="board-ctx-custom" data-act="customcolor:${it.prop==='strip'?'strip':'bg'}"><span class="board-custom-wheel"></span>Custom colour…</button>`;
     if(it.connSwatches)return`<div class="board-ctx-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="ln:c:${c}" title="${c==='none'?'Default':c}"></button>`).join('')}</div>`;
     return`<button class="board-ctx-item${it.danger?' danger':''}" data-act="${it.act}">${_boardsEsc(it.label)}${it.hint?`<span class="board-ctx-hint">${_boardsEsc(it.hint)}</span>`:''}</button>`;
   }).join('');
@@ -10353,6 +10521,18 @@ function _boardsCtxRun(act){
   if(act.indexOf('add:')===0){place();window.boardsAddCard(act.slice(4));return;}
   if(act.indexOf('color:')===0){window.boardsSetColor(act.slice(6));return;}
   if(act.indexOf('bg:')===0){window.boardsSetBg(act.slice(3));return;}
+  if(act.indexOf('theme:')===0){window.boardsSetTheme(act.slice(6));return;}
+  if(act.indexOf('bghex:')===0){window.boardsSetBg(_boardsValidHex(act.slice(6))||'none');return;}
+  if(act.indexOf('striphex:')===0){window.boardsSetColor(_boardsValidHex(act.slice(9))||'none');return;}
+  if(act.indexOf('customcolor:')===0){
+    // The HSV sliders, on the card's background or strip. The panel is a
+    // .board-ctx and the sliders are a sheet, so the panel closes first;
+    // the sheet's "‹ Presets" brings the panel back on the same tab.
+    _boardsCloseCtx();
+    _boardsColorTarget={kind:'card',id:act.slice(12)==='strip'?'strip':'bg'};
+    window.boardsOpenCustomColor();
+    return;
+  }
   if(act.indexOf('colortab:')===0){_boardsColorTab=act.slice(9)==='strip'?'strip':'bg';return;}
   if(act==='color-panel'){window.boardsOpenColorPanel();return;}
   if(act==='todoc'){window.boardsConvertToDocument();return;}
@@ -10414,6 +10594,8 @@ function _boardsCtxRun(act){
     case'color':{
       _boardsOpenSheet('Colour',`<div class="board-sheet-label">Background</div><div class="board-sheet-swatches">${
         _BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" title="${c==='none'?'No colour':c}" onclick="window.boardsSetBg('${c}');window.boardsCloseSheet()"></button>`).join('')}</div>
+        <div class="board-sheet-label">Paper and ink</div><div class="board-sheet-swatches">${
+        _BOARDS_CARD_THEMES.map((t,i)=>`<button class="board-swatch board-theme-sw bg-${t.bg} ink-${t.ink}" title="${t.bg} paper, ${t.ink} ink" onclick="window.boardsSetTheme(${i});window.boardsCloseSheet()">A</button>`).join('')}</div>
         <div class="board-sheet-label">Top strip</div><div class="board-sheet-swatches">${
         _BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" title="${c==='none'?'No colour':c}" onclick="window.boardsSetColor('${c}');window.boardsCloseSheet()"></button>`).join('')}</div>`);
       break;
