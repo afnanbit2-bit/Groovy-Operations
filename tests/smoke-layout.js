@@ -491,6 +491,36 @@ const FRAGMENTS={
       '<div style="position:relative;height:calc(100vh - 180px);width:100px"><div class="board-rail" id="board-rail">'+rail+'</div></div>'+
       '<div class="board-ctx" style="position:relative">'+panel+'</div></div>'});
   },
+  /* Labels, Reactions and Comments as popovers (Sept 2026). The comment
+     rows put literal initials on --cat-* tokens with --on-dark ink, in both
+     themes — the one place an avatar's ink could go unreadable — and every
+     checkbox row, category button and emoji is hit-tested. The label
+     text and comment bodies are hydrated in the browser, since the module
+     writes them with textContent. */
+  'boards — labels, reactions and comment panels':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan Bhatti',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'Winter Drop',ownerUid:'u1',visibility:'shared'};
+      _editCards=[Object.assign(_boardsNewCard('text'),{id:'n1',text:'a',labels:[{t:'Ready for printing',c:'green'},{t:'Pattern done',c:'blue'},{t:'Needs review',c:'red'}],reactions:{'🔥':['u1']}})];
+      _editConnectors=[];_boardsSelection=new Set(['n1']);_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+      _boardsComments=[{id:'c1',cardId:'n1',ts:Date.now()-60000,text:'follow this one',byName:'Afnan Bhatti',byUid:'u1'},{id:'c2',cardId:'n1',ts:Date.now(),replyTo:'c1',text:'on it',byName:'Daniyal Tufail',byUid:'u2'},{id:'c3',cardId:'n1',ts:Date.now(),text:'ok',byName:'Sami',byUid:'u3'},{id:'c4',cardId:'n1',ts:Date.now(),text:'x',byName:'Mustafa Khan',byUid:'u4'},{id:'c5',cardId:'n1',ts:Date.now(),text:'y',byName:'Ammar Shah',byUid:'u5'},{id:'c6',cardId:'n1',ts:Date.now(),text:'z',byName:'Umair',byUid:'u6'}];`);
+    const grab=()=>app.run(`document.getElementById('board-sheet').innerHTML`);
+    app.run(`_boardsRenderLabelSheet('n1','')`);const labels=grab();
+    app.run(`_boardsRenderReactionSheet('n1','')`);const reacts=grab();
+    app.run(`_boardsCommentPopCard='n1';_boardsRenderCommentPop()`);const cmts=grab();
+    const pop=(inner,w)=>'<div class="board-sheet board-pop" style="position:relative;left:auto;top:auto;width:'+w+'px;max-height:none;overflow:visible">'+inner+'</div>';
+    return Promise.resolve({widths:[1900,1280],html:
+      // The panes scroll in the app; here everything is laid out flat, or a
+      // scrolled-away emoji reads as "covered" (the documented false hit).
+      '<style>.board-emoji-pane{height:auto}.board-emoji-scroll,.board-emoji-cats,.board-cpop-list,.board-label-list{overflow:visible;max-height:none}</style>'+
+      // Stacked, not side by side: the app never shows two at once, and a
+      // row of three lets one panel's rows sit under another's emoji.
+      '<div style="display:flex;flex-direction:column;gap:28px;align-items:flex-start">'+pop(labels,330)+pop(reacts,380)+pop(cmts,320)+'</div>'+
+      '<script>'+
+      '["Ready for printing","Pattern done","Needs review"].forEach(function(t,i){var e=document.getElementById("board-lrow-"+i);if(e)e.textContent=t});'+
+      'var bn=document.getElementById("board-label-boardname");if(bn)bn.textContent="Winter Drop";'+
+      '[["c1","Afnan Bhatti","follow this one"],["c2","Daniyal Tufail","on it"],["c3","Sami","ok"],["c4","Mustafa Khan","x"],["c5","Ammar Shah","y"],["c6","Umair","z"]].forEach(function(c){var n=document.getElementById("board-cpop-name-"+c[0]);if(n)n.textContent=c[1];var t=document.getElementById("board-cpop-text-"+c[0]);if(t)t.textContent=c[2]});'+
+      '</script>'});
+  },
   'boards — the tool rail':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};

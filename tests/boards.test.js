@@ -3932,6 +3932,78 @@ module.exports=function(){
       s.eq('a board link is unchanged',JSON.stringify(r(`_boardsParseHash()`)),'{"board":"b9","card":"c1"}');
     }
 
+    // ── Labels, Reactions and Comments as Milanote's panels (Sept 2026).
+    {
+      const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan Bhatti',role:'owner',uid:'u1'}});
+      const r=app.run;
+      r(`_editBoard={id:'b1',title:'Winter',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+         _editCards=[Object.assign(_boardsNewCard('text'),{id:'n1',text:'a',labels:[{t:'Ready for printing',c:'green'}],reactions:{'🔥':['u1','u2'],'👀':['u1']}}),
+                     Object.assign(_boardsNewCard('text'),{id:'n2',text:'b',labels:[{t:'Pattern done',c:'blue'},{t:'Ready for printing',c:'green'}],reactions:{'🔥':['u3']}})];
+         _editConnectors=[];_boardsSelection=new Set(['n1']);_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;_boardsUndo=[];`);
+      s.section('the label panel: one field searches and creates, the board\'s list ticks');
+      let d=r(`_boardsLabelRowsFor('n1','')`);
+      s.eq('the whole library, most used first',d.rows.map(l=>l.t+(l.on?'*':'')).join(' | '),'Ready for printing* | Pattern done');
+      s.ok('nothing to create with an empty field',!d.create);
+      d=r(`_boardsLabelRowsFor('n1','pattern')`);
+      s.eq('typing filters',d.rows.map(l=>l.t).join(),'Pattern done');
+      s.ok('a partial match still offers to create the typed name',d.create&&!d.exact);
+      d=r(`_boardsLabelRowsFor('n1','pattern done')`);
+      s.ok('an exact match (any case) offers no twin',d.exact&&!d.create);
+      d=r(`_boardsLabelRowsFor('n1','see this')`);
+      s.ok('no results, and a create offer',d.rows.length===0&&d.create);
+      r(`window.boardsLabelToggle=window.boardsLabelToggle;_boardsLabelRows=_boardsLabelRowsFor('n1','').rows;document.getElementById('board-label-input').value='';window.boardsLabelToggle('n1',1)`);
+      s.eq('ticking a row puts that label on the card',r(`_editCards[0].labels.map(l=>l.t).join(',')`),'Ready for printing,Pattern done');
+      r(`_boardsLabelRows=_boardsLabelRowsFor('n1','').rows;window.boardsLabelToggle('n1',0)`);
+      s.eq('unticking takes it off',r(`_editCards[0].labels.map(l=>l.t).join(',')`),'Pattern done');
+
+      s.section('the reaction picker: categories, frequently used is derived');
+      s.eq('frequently used counts the board\'s reactions, most first',r(`_boardsFrequentEmoji().slice(0,2).join('')`),'🔥👀');
+      r(`_editCards.forEach(c=>delete c.reactions)`);
+      s.eq('with none on the board it falls back to the curated set',r(`_boardsFrequentEmoji().length`),14);
+      s.ok('the categories are Milanote\'s, in order',r(`_BOARDS_EMOJI_CATS.map(c=>c.n).join('·')`)==='Smileys & Emotions·People & Body·Animals & Nature·Food & Drink·Travel & Places·Activities·Objects·Symbols·Flags');
+      s.ok('every entry carries a keyword',r(`_BOARDS_EMOJI_CATS.every(c=>c.e.every(x=>x.e&&x.k))`));
+      s.eq('search by keyword',r(`_boardsEmojiSearch('tshirt')[0]`),'👕');
+      s.eq('search by the emoji itself',r(`_boardsEmojiSearch('👖')[0]`),'👖');
+      s.eq('no duplicates across the catalogue and the curated list',r(`(function(){const a=_boardsEmojiSearch('heart');return a.length===new Set(a).size})()`),true);
+      s.eq('an empty search matches nothing',r(`_boardsEmojiSearch('').length`),0);
+
+      s.section('comments: a thread with replies, avatars, and the popover');
+      const th=r(`_boardsThread([{id:'c2',ts:2,text:'b'},{id:'r1',ts:3,replyTo:'c1',text:'r'},{id:'c1',ts:1,text:'a'},{id:'orphan',ts:4,replyTo:'gone',text:'o'}]).map(c=>c.id+':'+c.depth).join(' ')`);
+      s.eq('parents in time order, each followed by its replies; an orphaned reply is kept',th,'c1:0 r1:1 c2:0 orphan:0');
+      s.eq('initials from first and last name',r(`_boardsInitials('Afnan Bhatti')`),'AB');
+      s.eq('one name → two letters',r(`_boardsInitials('daniyal')`),'DA');
+      s.ok('the avatar colour is a token, never a literal',/style="background:var\(--[a-z-]+\)"/.test(r(`_boardsAvatarHTML('Afnan Bhatti')`)));
+      s.eq('the same name always gets the same colour',r(`_boardsAvatarHTML('Sami')===_boardsAvatarHTML('Sami')`),true);
+      r(`window.innerWidth=1400;window.innerHeight=900`);
+      r(`_boardsOpenSheet('T','<b>x</b>',{anchor:{rect:{left:300,right:420,top:200,bottom:260}},width:320})`);
+      const pop=r(`(function(){var e=document.getElementById('board-sheet');return {cls:e.className,left:e.style.left,top:e.style.top,w:e.style.width}})()`);
+      s.eq('an anchored sheet is a popover beside its anchor',pop.cls+' '+pop.left+' '+pop.top+' '+pop.w,'board-sheet board-pop 434px 194px 320px');
+      r(`_boardsOpenSheet('T','x',{anchor:{rect:{left:1200,right:1300,top:200,bottom:260}},width:320})`);
+      s.ok('and flips to the left when there is no room on the right',r(`document.getElementById('board-sheet').classList.contains('tail-right')`)&&r(`document.getElementById('board-sheet').style.left`)==='866px');
+      r(`_boardsOpenSheet('T','x')`);
+      s.eq('no anchor → the bottom sheet, as before',r(`document.getElementById('board-sheet').className`),'board-sheet');
+      const phone=loadApp({files:FILES,phone:true,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      phone.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};_editCards=[];_boardsOpenSheet('T','x',{anchor:{rect:{left:0,right:10,top:0,bottom:10}}})`);
+      s.eq('a phone ignores the anchor and keeps the sheet',phone.run(`document.getElementById('board-sheet').className`),'board-sheet');
+      r(`_boardsComments=[{id:'c1',cardId:'n1',ts:1,text:'follow this',byName:'Afnan Bhatti',byUid:'u1'}];window.boardsOpenComments('n1')`);
+      s.eq('Comment on a card opens the popover on desktop',r(`_boardsCommentPopCard`),'n1');
+      s.ok('it holds the thread and a Send box',/board-cpop-row/.test(r(`document.getElementById('board-sheet').innerHTML`))&&/Write a comment/.test(r(`document.getElementById('board-sheet').innerHTML`)));
+      r(`window.boardsReplyTo('c1')`);
+      s.ok('Reply switches the box to a reply',/Write a reply/.test(r(`document.getElementById('board-sheet').innerHTML`)));
+      const before=app.state.writes.length;
+      r(`document.getElementById('board-cmt-input').value='abc'`);
+      _pending.push(r(`window.boardsAddComment()`).then(()=>{
+        const w=app.state.writes.slice(before).find(x=>x.op==='add');
+        s.section('comments (after the write)');
+        s.eq('a reply carries replyTo and the card',w&&(w.data.replyTo+' '+w.data.cardId+' '+w.data.text),'c1 n1 abc');
+        s.eq('and the reply state is cleared',r(`_boardsReplyTo`),null);
+      }));
+      r(`window.boardsCloseSheet()`);
+      s.eq('closing forgets the card',r(`_boardsCommentPopCard`),null);
+      phone.run(`_editCards=[Object.assign(_boardsNewCard('text'),{id:'n1'})];_boardsComments=[];window.boardsOpenComments('n1')`);
+      s.ok('a phone opens the drawer instead',phone.run(`_boardsDrawerOpen===true&&_boardsCommentPopCard===null`));
+    }
+
     return Promise.all(_pending.concat([(async()=>{
       boot();
       s.section('the page-size maths');

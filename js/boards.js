@@ -2488,6 +2488,51 @@ window.boardsImgFallback=function(img){
 // same person cannot stack a reaction and so "did I react?" is answerable
 // without a second field. Toggling is one uid in or out of one array.
 const _BOARDS_LABEL_COLORS=['grey','red','amber','green','blue','purple'];
+// The reaction picker's categories (Sept 2026). Curated, one keyword string
+// each, in Milanote's category order — not a Unicode dataset.
+const _BOARDS_EMOJI_CATS=[
+  {n:'Smileys & Emotions',e:[
+    {e:'😀',k:'grin smile happy'},{e:'😃',k:'smile happy big'},{e:'😄',k:'smile laugh'},{e:'😁',k:'grin beam'},{e:'😆',k:'laugh squint'},{e:'😅',k:'sweat laugh'},{e:'🤣',k:'rofl laugh'},{e:'😂',k:'joy laugh cry'},
+    {e:'🙂',k:'slight smile'},{e:'😉',k:'wink'},{e:'😊',k:'blush smile'},{e:'😍',k:'heart eyes love'},{e:'🤩',k:'star struck wow'},{e:'😘',k:'kiss'},{e:'😋',k:'yum tasty'},{e:'😜',k:'wink tongue'},
+    {e:'🤔',k:'thinking hmm'},{e:'🤨',k:'raised eyebrow suspicious'},{e:'😐',k:'neutral meh'},{e:'😏',k:'smirk'},{e:'🙄',k:'eye roll'},{e:'😬',k:'grimace awkward'},{e:'😴',k:'sleep tired'},{e:'😷',k:'mask sick'},
+    {e:'🤯',k:'mind blown'},{e:'😎',k:'cool sunglasses'},{e:'🥳',k:'party celebrate'},{e:'😢',k:'cry sad tear'},{e:'😭',k:'sob cry'},{e:'😡',k:'angry mad'},{e:'😱',k:'scream fear'},{e:'🤢',k:'sick nausea'},
+    {e:'😇',k:'angel halo'},{e:'🤗',k:'hug'},{e:'🤫',k:'shush quiet'},{e:'🤐',k:'zipper quiet'},{e:'🥰',k:'love hearts'},{e:'☹️',k:'frown sad'},{e:'😳',k:'flushed'},{e:'🫡',k:'salute'}]},
+  {n:'People & Body',e:[
+    {e:'👍',k:'thumbs up yes ok'},{e:'👎',k:'thumbs down no'},{e:'👏',k:'clap applause'},{e:'🙌',k:'hands raised praise'},{e:'🙏',k:'pray thanks please'},{e:'👋',k:'wave hello bye'},{e:'✌️',k:'peace victory'},{e:'🤞',k:'fingers crossed luck'},
+    {e:'👌',k:'ok perfect'},{e:'🤝',k:'handshake deal'},{e:'💪',k:'strong muscle'},{e:'👀',k:'eyes look review'},{e:'✍️',k:'writing hand'},{e:'👈',k:'point left'},{e:'👉',k:'point right'},{e:'☝️',k:'point up one'},
+    {e:'🧠',k:'brain idea'},{e:'🧵',k:'thread sewing'},{e:'🪡',k:'needle sewing'},{e:'🧑‍🎨',k:'artist designer'},{e:'🧑‍💻',k:'developer laptop'},{e:'🧑‍🏭',k:'factory worker'},{e:'🏃',k:'run fast'},{e:'🧍',k:'standing person'}]},
+  {n:'Animals & Nature',e:[
+    {e:'🐶',k:'dog puppy'},{e:'🐱',k:'cat kitten'},{e:'🦊',k:'fox'},{e:'🐻',k:'bear'},{e:'🐼',k:'panda'},{e:'🐨',k:'koala'},{e:'🦁',k:'lion'},{e:'🐯',k:'tiger'},
+    {e:'🐸',k:'frog'},{e:'🐵',k:'monkey'},{e:'🦄',k:'unicorn'},{e:'🐝',k:'bee'},{e:'🦋',k:'butterfly'},{e:'🐢',k:'turtle slow'},{e:'🐬',k:'dolphin'},{e:'🦅',k:'eagle'},
+    {e:'🌸',k:'blossom flower'},{e:'🌹',k:'rose flower'},{e:'🌻',k:'sunflower'},{e:'🌿',k:'herb leaf green'},{e:'🌳',k:'tree'},{e:'🍀',k:'clover luck'},{e:'🌊',k:'wave sea'},{e:'⭐',k:'star'},
+    {e:'🌙',k:'moon night'},{e:'☀️',k:'sun'},{e:'🌈',k:'rainbow'},{e:'⚡',k:'lightning bolt fast'},{e:'🔥',k:'fire hot'},{e:'❄️',k:'snow cold winter'},{e:'🌍',k:'earth globe world'},{e:'💧',k:'drop water'}]},
+  {n:'Food & Drink',e:[
+    {e:'🍎',k:'apple'},{e:'🍋',k:'lemon'},{e:'🍇',k:'grapes'},{e:'🍓',k:'strawberry'},{e:'🍉',k:'watermelon'},{e:'🥑',k:'avocado'},{e:'🌶️',k:'chili hot pepper'},{e:'🥐',k:'croissant'},
+    {e:'🍕',k:'pizza'},{e:'🍔',k:'burger'},{e:'🌮',k:'taco'},{e:'🍜',k:'noodles ramen'},{e:'🍣',k:'sushi'},{e:'🍰',k:'cake slice'},{e:'🎂',k:'birthday cake'},{e:'🍪',k:'cookie'},
+    {e:'☕',k:'coffee tea'},{e:'🍵',k:'tea'},{e:'🧃',k:'juice'},{e:'🥤',k:'drink cup'},{e:'🍺',k:'beer'},{e:'🍷',k:'wine'},{e:'🍾',k:'champagne celebrate'},{e:'🧁',k:'cupcake'}]},
+  {n:'Travel & Places',e:[
+    {e:'🚗',k:'car'},{e:'🚕',k:'taxi'},{e:'🚌',k:'bus'},{e:'🚚',k:'truck delivery'},{e:'🏍️',k:'motorbike'},{e:'🚲',k:'bicycle'},{e:'✈️',k:'plane flight'},{e:'🚀',k:'rocket launch'},
+    {e:'🚢',k:'ship boat'},{e:'🏠',k:'house home'},{e:'🏢',k:'office building'},{e:'🏭',k:'factory'},{e:'🏪',k:'shop store'},{e:'🏖️',k:'beach'},{e:'🏔️',k:'mountain'},{e:'🗺️',k:'map'},
+    {e:'📍',k:'pin location'},{e:'🧭',k:'compass'},{e:'🌆',k:'city sunset'},{e:'🕌',k:'mosque'},{e:'🏟️',k:'stadium'},{e:'⛺',k:'tent camp'},{e:'🛣️',k:'road'},{e:'🚦',k:'traffic light'}]},
+  {n:'Activities',e:[
+    {e:'⚽',k:'football soccer'},{e:'🏀',k:'basketball'},{e:'🏏',k:'cricket bat'},{e:'🎾',k:'tennis'},{e:'🏋️',k:'weights gym'},{e:'🧘',k:'yoga calm'},{e:'🎯',k:'target bullseye goal'},{e:'🎮',k:'game controller'},
+    {e:'🎨',k:'palette art paint'},{e:'🎬',k:'clapper film'},{e:'🎤',k:'mic sing'},{e:'🎧',k:'headphones music'},{e:'🎵',k:'music note'},{e:'🎉',k:'party tada celebrate'},{e:'🎊',k:'confetti'},{e:'🏆',k:'trophy win'},
+    {e:'🥇',k:'gold medal first'},{e:'🎁',k:'gift present'},{e:'🎈',k:'balloon'},{e:'🎟️',k:'ticket'},{e:'🎲',k:'dice'},{e:'♟️',k:'chess'},{e:'🧩',k:'puzzle piece'},{e:'📸',k:'camera photo shoot'}]},
+  {n:'Objects',e:[
+    {e:'👕',k:'tshirt tee shirt'},{e:'👖',k:'jeans pants denim'},{e:'🧥',k:'coat jacket'},{e:'👗',k:'dress'},{e:'🧢',k:'cap hat'},{e:'👟',k:'sneaker shoe'},{e:'🧦',k:'socks'},{e:'🧣',k:'scarf'},
+    {e:'👜',k:'bag handbag'},{e:'🎒',k:'backpack'},{e:'🕶️',k:'sunglasses'},{e:'💍',k:'ring'},{e:'✂️',k:'scissors cut'},{e:'📏',k:'ruler measure'},{e:'📐',k:'triangle ruler'},{e:'🧷',k:'safety pin'},
+    {e:'💡',k:'bulb idea'},{e:'🔧',k:'wrench fix'},{e:'🔨',k:'hammer'},{e:'⚙️',k:'gear settings'},{e:'🔒',k:'lock'},{e:'🔑',k:'key'},{e:'📦',k:'package box parcel'},{e:'🏷️',k:'label tag price'},
+    {e:'📝',k:'memo note'},{e:'📌',k:'pushpin pin'},{e:'📎',k:'paperclip'},{e:'📅',k:'calendar date'},{e:'⏰',k:'alarm clock time'},{e:'💰',k:'money bag'},{e:'💳',k:'card payment'},{e:'🖨️',k:'printer print'},
+    {e:'📱',k:'phone mobile'},{e:'💻',k:'laptop'},{e:'📧',k:'email'},{e:'🔍',k:'magnifier search'}]},
+  {n:'Symbols',e:[
+    {e:'❤️',k:'heart love red'},{e:'🧡',k:'orange heart'},{e:'💛',k:'yellow heart'},{e:'💚',k:'green heart'},{e:'💙',k:'blue heart'},{e:'💜',k:'purple heart'},{e:'🖤',k:'black heart'},{e:'💔',k:'broken heart'},
+    {e:'✅',k:'check tick done approved'},{e:'❌',k:'cross no wrong'},{e:'⭕',k:'circle hollow'},{e:'❗',k:'exclamation important'},{e:'❓',k:'question'},{e:'⚠️',k:'warning careful'},{e:'🚫',k:'prohibited no'},{e:'💯',k:'hundred perfect'},
+    {e:'✨',k:'sparkles new shiny'},{e:'💤',k:'zzz sleep'},{e:'🔴',k:'red circle'},{e:'🟠',k:'orange circle'},{e:'🟡',k:'yellow circle'},{e:'🟢',k:'green circle go'},{e:'🔵',k:'blue circle'},{e:'🟣',k:'purple circle'},
+    {e:'➕',k:'plus add'},{e:'➖',k:'minus remove'},{e:'➡️',k:'arrow right next'},{e:'⬅️',k:'arrow left back'},{e:'🔁',k:'repeat loop'},{e:'🔔',k:'bell notify'},{e:'♻️',k:'recycle'},{e:'🆕',k:'new'}]},
+  {n:'Flags',e:[
+    {e:'🏁',k:'chequered flag finish'},{e:'🚩',k:'red flag'},{e:'🏳️',k:'white flag'},{e:'🏴',k:'black flag'},{e:'🇵🇰',k:'pakistan flag'},{e:'🇬🇧',k:'uk britain flag'},{e:'🇺🇸',k:'usa america flag'},{e:'🇦🇪',k:'uae emirates flag'},
+    {e:'🇸🇦',k:'saudi flag'},{e:'🇹🇷',k:'turkey flag'},{e:'🇨🇳',k:'china flag'},{e:'🇮🇳',k:'india flag'}]}
+];
 // A curated set rather than a full emoji picker: a searchable index of
 // every emoji needs a name dataset this repo has no business shipping, and
 // these are the ones that actually get used on a working board.
@@ -3039,15 +3084,42 @@ window.boardsCloseSheet=function(){
   const bk=document.getElementById('board-sheet-back');
   if(el)el.remove();
   if(bk)bk.remove();
+  _boardsCommentPopCard=null;_boardsReplyTo=null;
 };
-function _boardsOpenSheet(title,html){
+/* ── A sheet, or a POPOVER (Sept 2026) ───────────────────────────────────
+   On a phone every one of these is a bottom sheet. On desktop, a caller
+   that names an ANCHOR — a rail action, or a rect (the card a comment
+   thread belongs to) — gets Milanote's shape instead: a panel floated
+   beside the anchor with a tail pointing at it, no dark backdrop, closed
+   by a click anywhere else. Same element, same Done, same body markup, so
+   Labels, Reactions and Comments are written once for both. Callers
+   without an anchor (the board look, the icon picker, More) are
+   unchanged. */
+function _boardsSheetAnchorRect(anchor){
+  if(!anchor||_boardsIsPhone())return null;
+  if(anchor.rect)return anchor.rect;
+  const btn=anchor.act&&document.querySelector?document.querySelector('.board-rail [data-act="'+anchor.act+'"]'):null;
+  return btn&&btn.getBoundingClientRect?btn.getBoundingClientRect():null;
+}
+function _boardsOpenSheet(title,html,opts){
   window.boardsCloseSheet();
+  const anchor=_boardsSheetAnchorRect(opts&&opts.anchor);
   const bk=document.createElement('div');
-  bk.id='board-sheet-back';bk.className='board-sheet-back';
+  bk.id='board-sheet-back';bk.className='board-sheet-back'+(anchor?' clear':'');
   bk.addEventListener('click',()=>window.boardsCloseSheet());
   document.body.appendChild(bk);
   const el=document.createElement('div');
-  el.id='board-sheet';el.className='board-sheet';
+  el.id='board-sheet';el.className='board-sheet'+(anchor?' board-pop':'');
+  if(anchor){
+    // Beside the anchor, on its right; clamped so it never runs off the
+    // bottom, and flipped to the left when there is no room on the right.
+    const W=(opts&&opts.width)||330,vw=window.innerWidth||1280,vh=window.innerHeight||800;
+    const left=anchor.right+14+W<=vw?anchor.right+14:Math.max(8,anchor.left-14-W);
+    el.style.left=left+'px';
+    el.style.top=Math.max(8,Math.min(anchor.top-6,vh-8-Math.min(vh*0.7,560)))+'px';
+    el.style.width=W+'px';
+    if(left<anchor.right)el.classList.add('tail-right');
+  }
   el.innerHTML=`<div class="board-sheet-head"><span>${_boardsEsc(title)}</span><button class="board-sheet-done" onclick="window.boardsCloseSheet()">Done</button></div><div class="board-sheet-body">${html}</div>`;
   document.body.appendChild(el);
   return el;
@@ -3063,45 +3135,60 @@ window.boardsOpenLabels=function(){
   if(!c){showToast('Select one card to label it');return;}
   _boardsRenderLabelSheet(c.id);
 };
-function _boardsRenderLabelSheet(cardId){
-  const c=_editCards.find(x=>x.id===cardId);if(!c)return;
-  const mine=Array.isArray(c.labels)?c.labels:[];
-  const lib=_boardsLabelLibrary().filter(l=>!mine.some(m=>String(m.t).toLowerCase()===l.t.toLowerCase()));
-  const el=_boardsOpenSheet('Labels',`
-    <div class="board-sheet-row" id="board-label-mine"></div>
-    ${lib.length?`<div class="board-sheet-label">Already on this board</div><div class="board-sheet-row" id="board-label-lib"></div>`:''}
-    <div class="board-sheet-label">New label</div>
-    <div class="board-label-new">
-      <input type="text" id="board-label-input" placeholder="Label name" maxlength="28" onkeydown="if(event.key==='Enter')window.boardsLabelCommit('${cardId}')">
-      <div class="board-label-swatches" id="board-label-swatches">${
-        _BOARDS_LABEL_COLORS.map((k,i)=>`<button class="board-label-sw lc-${k}${i===0?' on':''}" data-c="${k}" onclick="window.boardsLabelPickColor(this)" title="${k}"></button>`).join('')}</div>
-      <button class="btn-sm" onclick="window.boardsLabelCommit('${cardId}')">Add</button>
-    </div>`);
-  if(!el)return;
-  // Label text is written in, never interpolated.
-  const host=document.getElementById('board-label-mine');
-  if(host){
-    host.innerHTML=mine.length?mine.map((l,i)=>`<button class="board-label lc-${_BOARDS_LABEL_COLORS.indexOf(l&&l.c)>=0?l.c:'grey'} removable" id="board-lsheet-${i}" data-t=""></button>`).join(''):'<span class="board-sheet-empty">No labels on this card yet.</span>';
-    mine.forEach((l,i)=>{
-      const b=document.getElementById('board-lsheet-'+i);
-      if(!b)return;
-      b.textContent=(l.t||'')+'  ✕';
-      b.onclick=()=>{window.boardsRemoveLabel(cardId,l.t);_boardsRenderLabelSheet(cardId);};
-    });
-  }
-  const libHost=document.getElementById('board-label-lib');
-  if(libHost){
-    libHost.innerHTML=lib.map((l,i)=>`<button class="board-label lc-${l.c}" id="board-llib-${i}"></button>`).join('');
-    lib.forEach((l,i)=>{
-      const b=document.getElementById('board-llib-'+i);
-      if(!b)return;
-      b.textContent=l.t;
-      b.onclick=()=>{window.boardsAddLabel(cardId,l.t,l.c);_boardsRenderLabelSheet(cardId);};
-    });
-  }
-  const inp=document.getElementById('board-label-input');
-  if(inp)inp.focus();
+/* Milanote's label panel, read off the video (42–59s): ONE field at the
+   top ("Enter label name…") that both searches and creates; under it the
+   BOARD'S label list headed by the board's name, each row a checkbox and
+   the chip — ticked when it is on this card; typing filters the list, and
+   a name that matches nothing exactly offers "+ Create label 'x'"; no
+   matches at all says "There are no results". The library is derived from
+   the cards (see _boardsLabelLibrary) — nothing is stored to make the
+   list. _boardsLabelRowsFor is the pure half, so the filtering, the exact
+   match and the create offer are assertable without a DOM. */
+let _boardsLabelRows=[],_boardsLabelTimer=null;
+function _boardsLabelRowsFor(cardId,q){
+  const c=_editCards.find(x=>x.id===cardId);
+  const mine=c&&Array.isArray(c.labels)?c.labels:[];
+  const term=String(q||'').trim(),tl=term.toLowerCase();
+  const on=t=>mine.some(m=>String(m&&m.t).toLowerCase()===String(t).toLowerCase());
+  const rows=_boardsLabelLibrary().filter(l=>!tl||l.t.toLowerCase().indexOf(tl)>=0).map(l=>({t:l.t,c:l.c,on:on(l.t)}));
+  const exact=rows.some(l=>l.t.toLowerCase()===tl);
+  return{term,rows,exact,create:!!term&&!exact};
 }
+function _boardsRenderLabelSheet(cardId,q){
+  const c=_editCards.find(x=>x.id===cardId);if(!c)return;
+  const d=_boardsLabelRowsFor(cardId,q);
+  _boardsLabelRows=d.rows;
+  const el=_boardsOpenSheet('Labels',`
+    <input type="text" class="board-sheet-search board-label-q" id="board-label-input" placeholder="Enter label name…" maxlength="28" value="${_boardsEsc(d.term)}" oninput="window.boardsLabelSearch('${cardId}',this)" onkeydown="if(event.key==='Enter')window.boardsLabelCommit('${cardId}')">
+    ${d.create?`<button class="board-label-create" onclick="window.boardsLabelCommit('${cardId}')">+ Create label “<span id="board-label-create-t"></span>”</button>
+    <div class="board-label-swatches" id="board-label-swatches">${
+      _BOARDS_LABEL_COLORS.map((k,i)=>`<button class="board-label-sw lc-${k}${i===0?' on':''}" data-c="${k}" onclick="window.boardsLabelPickColor(this)" title="${k}"></button>`).join('')}</div>`:''}
+    <div class="board-sheet-label" id="board-label-boardname"></div>
+    <div class="board-label-list">${d.rows.map((l,i)=>`<label class="board-label-row"><input type="checkbox"${l.on?' checked':''} onchange="window.boardsLabelToggle('${cardId}',${i})"><span class="board-label lc-${_BOARDS_LABEL_COLORS.indexOf(l.c)>=0?l.c:'grey'}" id="board-lrow-${i}"></span></label>`).join('')}${
+      !d.rows.length?`<div class="board-sheet-empty">${d.term?'There are no results':'No labels on this board yet — type one above.'}</div>`:''}</div>`,
+    {anchor:{act:'labels'}});
+  if(!el)return;
+  // Label text and the board's name are written in, never interpolated.
+  const bn=document.getElementById('board-label-boardname');
+  if(bn)bn.textContent=(_editBoard&&_editBoard.title)||'This board';
+  const ct=document.getElementById('board-label-create-t');
+  if(ct)ct.textContent=d.term;
+  d.rows.forEach((l,i)=>{const b=document.getElementById('board-lrow-'+i);if(b)b.textContent=l.t;});
+  const inp=document.getElementById('board-label-input');
+  if(inp){inp.focus();try{inp.setSelectionRange(inp.value.length,inp.value.length);}catch(e){}}
+}
+window.boardsLabelSearch=function(cardId,el){
+  const v=el.value;
+  if(_boardsLabelTimer)clearTimeout(_boardsLabelTimer);
+  _boardsLabelTimer=setTimeout(()=>_boardsRenderLabelSheet(cardId,v),120);
+};
+window.boardsLabelToggle=function(cardId,i){
+  const l=_boardsLabelRows[i];if(!l)return;
+  const inp=document.getElementById('board-label-input');
+  const q=inp?inp.value:'';
+  if(l.on)window.boardsRemoveLabel(cardId,l.t);else window.boardsAddLabel(cardId,l.t,l.c);
+  _boardsRenderLabelSheet(cardId,q);
+};
 window.boardsLabelPickColor=function(btn){
   const host=document.getElementById('board-label-swatches');
   if(host)Array.prototype.forEach.call(host.children,b=>b.classList.remove('on'));
@@ -3113,8 +3200,15 @@ window.boardsLabelCommit=function(cardId){
   const on=host?host.querySelector('.on'):null;
   const t=inp?inp.value:'';
   if(!String(t).trim())return;
+  const d=_boardsLabelRowsFor(cardId,t);
+  if(d.exact){
+    // Enter on an existing name toggles it on rather than making a twin.
+    const hit=d.rows.find(l=>l.t.toLowerCase()===d.term.toLowerCase());
+    if(hit&&!hit.on)window.boardsAddLabel(cardId,hit.t,hit.c);
+    _boardsRenderLabelSheet(cardId,'');return;
+  }
   window.boardsAddLabel(cardId,t,on?on.getAttribute('data-c'):'grey');
-  _boardsRenderLabelSheet(cardId);
+  _boardsRenderLabelSheet(cardId,'');
 };
 
 // ── Reactions ──
@@ -3123,21 +3217,71 @@ window.boardsOpenReactions=function(){
   if(!c){showToast('Select one card to react to it');return;}
   _boardsRenderReactionSheet(c.id,'');
 };
+/* Milanote's reaction picker, read off the video (60–79s): a column of
+   CATEGORIES on the left (Frequently used · Smileys & Emotions · People &
+   Body · Animals & Nature · Food & Drink · Travel & Places · Activities ·
+   Objects · Symbols · Flags), the emoji on the right under their heading,
+   a search box at the foot. Ours is the same shape over a CURATED
+   catalogue (_BOARDS_EMOJI_CATS) — a few hundred with a keyword each, not
+   the full Unicode set with its name dataset. "Frequently used" is
+   DERIVED from the reactions already on this board's cards, nothing
+   stored; with none yet it falls back to _BOARDS_REACTIONS. Skin tones
+   are not built. Picking an emoji keeps the panel open, marking it. */
+function _boardsFrequentEmoji(){
+  const n=new Map();
+  _editCards.forEach(c=>{
+    const r=c.reactions&&typeof c.reactions==='object'?c.reactions:{};
+    Object.keys(r).forEach(e=>n.set(e,(n.get(e)||0)+(Array.isArray(r[e])?r[e].length:1)));
+  });
+  const top=Array.from(n.entries()).sort((a,b)=>b[1]-a[1]).slice(0,14).map(x=>x[0]);
+  return top.length?top:_BOARDS_REACTIONS.slice(0,14).map(r=>r.e);
+}
+function _boardsEmojiSearch(term){
+  const t=String(term||'').toLowerCase().trim();
+  if(!t)return[];
+  const out=[];
+  _BOARDS_EMOJI_CATS.forEach(cat=>cat.e.forEach(x=>{if((x.e===t||x.k.indexOf(t)>=0)&&out.indexOf(x.e)<0)out.push(x.e);}));
+  _BOARDS_REACTIONS.forEach(r=>{if((r.e===t||r.k.indexOf(t)>=0)&&out.indexOf(r.e)<0)out.push(r.e);});
+  return out;
+}
+let _boardsReactScroll=0;
 function _boardsRenderReactionSheet(cardId,q){
   const c=_editCards.find(x=>x.id===cardId);if(!c)return;
   const term=String(q||'').toLowerCase().trim();
-  const list=term?_BOARDS_REACTIONS.filter(r=>r.k.indexOf(term)>=0||r.e===term):_BOARDS_REACTIONS;
   const mine=c.reactions&&typeof c.reactions==='object'?Object.keys(c.reactions):[];
+  const btn=e=>`<button class="board-emoji${mine.indexOf(e)>=0?' on':''}" onclick="window.boardsReactionPick('${cardId}','${_boardsEsc(e)}')">${_boardsEsc(e)}</button>`;
+  const grid=list=>`<div class="board-emoji-grid">${list.length?list.map(btn).join(''):'<span class="board-sheet-empty">Nothing matches.</span>'}</div>`;
+  const cats=[{n:'Frequently used',e:_boardsFrequentEmoji()}].concat(_BOARDS_EMOJI_CATS.map(cat=>({n:cat.n,e:cat.e.map(x=>x.e)})));
+  const pane=term
+    ?`<div class="board-emoji-cat-h">Matching</div>${grid(_boardsEmojiSearch(term))}`
+    :cats.map((cat,i)=>`<div class="board-emoji-cat-h" id="board-ecat-${i}">${_boardsEsc(cat.n)}</div>${grid(cat.e)}`).join('');
   _boardsOpenSheet('Reactions',`
-    <input type="search" class="board-sheet-search" id="board-react-q" placeholder="Search reactions…" value="${_boardsEsc(q||'')}" oninput="window.boardsReactionSearch('${cardId}',this)">
-    ${mine.length?`<div class="board-sheet-label">On this card</div>
-    <div class="board-emoji-grid">${mine.map(e=>`<button class="board-emoji on" onclick="window.boardsToggleReaction('${cardId}','${_boardsEsc(e)}');window.boardsCloseSheet()">${_boardsEsc(e)}</button>`).join('')}</div>`:''}
-    <div class="board-sheet-label">${term?'Matching':'Frequently used'}</div>
-    <div class="board-emoji-grid">${list.length?list.map(r=>`<button class="board-emoji" onclick="window.boardsToggleReaction('${cardId}','${r.e}');window.boardsCloseSheet()">${r.e}</button>`).join(''):'<span class="board-sheet-empty">Nothing matches that.</span>'}</div>`);
+    <div class="board-emoji-pane">
+      <div class="board-emoji-cats">${cats.map((cat,i)=>`<button class="${i===0?'on':''}" onclick="window.boardsReactionCat(${i},this)">${_boardsEsc(cat.n)}</button>`).join('')}</div>
+      <div class="board-emoji-scroll" id="board-emoji-scroll">${pane}</div>
+    </div>
+    <input type="search" class="board-sheet-search board-emoji-search" id="board-react-q" placeholder="Search emojis…" value="${_boardsEsc(q||'')}" oninput="window.boardsReactionSearch('${cardId}',this)">`,
+    {anchor:{act:'reactions'},width:380});
+  const sc=document.getElementById('board-emoji-scroll');
+  if(sc&&!term&&_boardsReactScroll)sc.scrollTop=_boardsReactScroll;
   const inp=document.getElementById('board-react-q');
   // Same refocus-after-rerender pattern as every other search box here.
   if(inp&&term){inp.focus();try{inp.setSelectionRange(inp.value.length,inp.value.length);}catch(e){}}
 }
+window.boardsReactionPick=function(cardId,e){
+  const sc=document.getElementById('board-emoji-scroll');
+  _boardsReactScroll=sc?sc.scrollTop:0;
+  const inp=document.getElementById('board-react-q');
+  window.boardsToggleReaction(cardId,e);
+  _boardsRenderReactionSheet(cardId,inp?inp.value:'');
+};
+window.boardsReactionCat=function(i,btn){
+  const h=document.getElementById('board-ecat-'+i);
+  if(h&&h.scrollIntoView)h.scrollIntoView({block:'start'});
+  const host=btn&&btn.parentElement;
+  if(host)Array.prototype.forEach.call(host.children,b=>b.classList.remove('on'));
+  if(btn)btn.classList.add('on');
+};
 let _boardsReactTimer=null;
 window.boardsReactionSearch=function(cardId,el){
   const v=el.value;
@@ -9355,6 +9499,7 @@ function _boardsCommentsStart(boardId){
       snap.forEach(d=>_boardsComments.push({id:d.id,...d.data()}));
       _boardsPaintCommentBadges();
       _boardsRenderDrawer();
+      if(_boardsCommentPopCard)_boardsRenderCommentPop();
     },()=>{});
   }catch(e){/* noop */}
 }
@@ -9809,6 +9954,14 @@ function _boardsPaintCommentBadges(){
   }
 }
 window.boardsOpenComments=function(cardId){
+  // A card's thread on desktop is the popover beside the card; the whole
+  // board, and every phone, is the drawer.
+  if(cardId&&!_boardsIsPhone()&&document.getElementById('board-card-'+cardId)){
+    _boardsReplyTo=null;
+    _boardsCommentPopCard=cardId;
+    _boardsRenderCommentPop();
+    return;
+  }
   _boardsDrawerCard=cardId||null;
   _boardsDrawerTab='comments';
   _boardsDrawerOpen=true;
@@ -9824,13 +9977,100 @@ window.boardsToggleDrawer=function(){
 };
 window.boardsDrawerTab=function(tab){_boardsDrawerTab=tab;_boardsRenderDrawer();};
 window.boardsDrawerAll=function(){_boardsDrawerCard=null;_boardsRenderDrawer();};
+/* A thread: parents in time order, each followed by its replies in time
+   order (depth 1). A reply whose parent is gone is shown as a parent
+   rather than dropped — a comment must never vanish because of what it
+   answered. Replies are one level deep by construction. */
+function _boardsThread(rows){
+  const list=(rows||[]).slice().sort((a,b)=>(a.ts||0)-(b.ts||0));
+  const ids=new Set(list.map(c=>c.id));
+  const parents=list.filter(c=>!c.replyTo||!ids.has(c.replyTo));
+  const out=[];
+  parents.forEach(p=>{
+    out.push(Object.assign({depth:0},p));
+    list.filter(c=>c.replyTo===p.id).forEach(r=>out.push(Object.assign({depth:1},r)));
+  });
+  return out;
+}
+function _boardsInitials(name){
+  const parts=String(name||'').trim().split(/\s+/).filter(Boolean);
+  const s=parts.length>1?parts[0][0]+parts[parts.length-1][0]:(parts[0]||'?').slice(0,2);
+  return s.toUpperCase();
+}
+const _BOARDS_AVATAR_TOKENS=['--cat-notes','--cat-boards','--cat-sops','--cat-storage','--cat-chat','--accent-warning'];
+function _boardsAvatarHTML(name){
+  const str=String(name||'');
+  let h=0;for(let i=0;i<str.length;i++)h=(h*31+str.charCodeAt(i))>>>0;
+  const tok=_BOARDS_AVATAR_TOKENS[h%_BOARDS_AVATAR_TOKENS.length];
+  return`<span class="board-avatar" style="background:var(${tok})">${_boardsEsc(_boardsInitials(name))}</span>`;
+}
+/* Milanote's comment panel, read off the video (80–99s): a bubble beside
+   the CARD, tail pointing at it — avatar, "Write a comment…", Send; then
+   the thread (name · just now · text · Reply) and the count badge on the
+   card. On desktop that is what Comment opens now; the side drawer stays
+   for the whole-board view and for phones. It is the same sheet element
+   anchored to the card's rect, so it lives and dies like every other
+   panel. Incoming comments repaint it; a draft in the box survives that. */
+let _boardsCommentPopCard=null,_boardsReplyTo=null;
+function _boardsRenderCommentPop(){
+  const id=_boardsCommentPopCard;
+  if(!id)return;
+  const cardEl=document.getElementById('board-card-'+id);
+  const r=cardEl&&cardEl.getBoundingClientRect?cardEl.getBoundingClientRect():null;
+  if(!r){_boardsCommentPopCard=null;return;}
+  const prev=document.getElementById('board-cmt-input');
+  const draft=prev&&prev.value?prev.value:'';
+  const rows=_boardsThread(_boardsCardComments(id));
+  const canEdit=_boardsCanEdit(_editBoard);
+  const me=(typeof session!=='undefined'&&session)||{};
+  const replying=_boardsReplyTo?rows.find(c=>c.id===_boardsReplyTo):null;
+  // Opening the sheet closes the previous one, and closing forgets the
+  // reply target — so it is carried across the reopen by hand.
+  const reply=_boardsReplyTo;
+  _boardsOpenSheet('Comments',`
+    <div class="board-cpop-list">${rows.length?rows.map(c=>`
+      <div class="board-cpop-row${c.depth?' reply':''}${c.resolved?' resolved':''}">
+        ${_boardsAvatarHTML(c.byName)}
+        <div class="board-cpop-body">
+          <div class="board-cpop-meta"><strong id="board-cpop-name-${c.id}"></strong><span>${_boardsRelTime(c.ts)}</span></div>
+          <div class="board-cmt-text" id="board-cpop-text-${c.id}"></div>
+          <div class="board-cmt-actions">
+            ${canEdit&&!c.depth?`<button onclick="window.boardsReplyTo('${c.id}')">Reply</button>`:''}
+            ${canEdit?`<button onclick="window.boardsResolveComment('${c.id}',${c.resolved?'false':'true'})">${c.resolved?'Reopen':'Resolve'}</button>`:''}
+            ${(me.uid&&(c.byUid===me.uid||me.role==='owner'))?`<button onclick="window.boardsDeleteComment('${c.id}')">Delete</button>`:''}
+          </div>
+        </div>
+      </div>`).join(''):'<div class="board-sheet-empty">No comments on this card yet.</div>'}</div>
+    ${canEdit?`${replying?`<div class="board-cpop-replying">Replying to <strong id="board-cpop-replying-name"></strong> <button onclick="window.boardsReplyCancel()">cancel</button></div>`:''}
+    <div class="board-cpop-compose">
+      ${_boardsAvatarHTML(me.name)}
+      <input type="text" id="board-cmt-input" placeholder="${replying?'Write a reply…':'Write a comment…'}" maxlength="2000" onkeydown="if(event.key==='Enter'){event.preventDefault();window.boardsAddComment();}">
+      <button class="btn-sm" onclick="window.boardsAddComment()">Send</button>
+    </div>`:''}`,
+    {anchor:{rect:r},width:320});
+  _boardsCommentPopCard=id;
+  _boardsReplyTo=reply;
+  _boardsDrawerCard=id;
+  // Names and bodies are other people's text — written in, never
+  // interpolated. Same boundary as the drawer.
+  rows.forEach(c=>{
+    const n=document.getElementById('board-cpop-name-'+c.id);if(n)n.textContent=c.byName||'Someone';
+    const t=document.getElementById('board-cpop-text-'+c.id);if(t)t.textContent=c.text||'';
+  });
+  const rn=document.getElementById('board-cpop-replying-name');
+  if(rn&&replying)rn.textContent=replying.byName||'Someone';
+  const inp=document.getElementById('board-cmt-input');
+  if(inp){if(draft)inp.value=draft;inp.focus();}
+}
+window.boardsReplyTo=function(id){_boardsReplyTo=id;_boardsRenderCommentPop();};
+window.boardsReplyCancel=function(){_boardsReplyTo=null;_boardsRenderCommentPop();};
 function _boardsRenderDrawer(){
   const host=document.getElementById('board-drawer');
   if(!host)return;
   host.style.display=_boardsDrawerOpen?'flex':'none';
   if(!_boardsDrawerOpen)return;
   const scoped=_boardsDrawerCard?_boardsCardComments(_boardsDrawerCard):_boardsComments;
-  const rows=_boardsDrawerTab==='comments'?scoped:[];
+  const rows=_boardsDrawerTab==='comments'?_boardsThread(scoped):[];
   const canEdit=_boardsCanEdit(_editBoard);
   const scopeLabel=_boardsDrawerCard?'On one card':'Whole board';
   host.innerHTML=`
@@ -9848,7 +10088,7 @@ function _boardsRenderDrawer(){
       </div>
       <div class="board-drawer-list" id="board-drawer-list">
         ${rows.length?rows.map(c=>`
-          <div class="board-cmt${c.resolved?' resolved':''}">
+          <div class="board-cmt${c.resolved?' resolved':''}${c.depth?' reply':''}">
             <div class="board-cmt-meta">
               <strong>${_boardsEsc(c.byName||'Someone')}</strong>
               <span>${_boardsRelTime(c.ts)}</span>
@@ -9856,6 +10096,7 @@ function _boardsRenderDrawer(){
             </div>
             <div class="board-cmt-text" id="board-cmt-text-${c.id}"></div>
             <div class="board-cmt-actions">
+              ${canEdit&&!c.depth&&c.cardId?`<button onclick="window.boardsOpenComments('${c.cardId}');window.boardsReplyTo('${c.id}')">Reply</button>`:''}
               <button onclick="window.boardsResolveComment('${c.id}',${c.resolved?'false':'true'})">${c.resolved?'Reopen':'Resolve'}</button>
               ${(session&&(c.byUid===session.uid||session.role==='owner'))?`<button onclick="window.boardsDeleteComment('${c.id}')">Delete</button>`:''}
             </div>
@@ -9900,9 +10141,11 @@ window.boardsAddComment=async function(){
       cardId:_boardsDrawerCard||null,
       text:text.slice(0,2000),
       byUid:session.uid,byName:session.name||'',
-      ts:Date.now(),resolved:false
+      ts:Date.now(),resolved:false,
+      replyTo:_boardsReplyTo||null
     });
     if(input)input.value='';
+    _boardsReplyTo=null;
     _boardsLogBoardActivity(_boardsDrawerCard?'commented on a card':'commented on the board');
   }catch(e){showToast('Could not post comment: '+(e.message||e),true);}
 };

@@ -1687,6 +1687,51 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-sheet-search{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:9px;font-family:inherit;font-size:14px;background:var(--bg);color:var(--text);outline:none}
 .board-sheet-swatches{display:flex;flex-wrap:wrap;gap:10px;padding:4px 0}
 .board-sheet-list{display:flex;flex-direction:column}
+/* ── A sheet as a POPOVER beside its anchor (Sept 2026) ─────────────────
+   Milanote's Labels, Reactions and Comments float beside the rail button
+   or the card with a tail pointing at it; on a phone the same markup is
+   the bottom sheet above. No dark backdrop — the clear one only catches
+   the outside click that closes it. */
+.board-sheet-back.clear{background:transparent}
+.board-sheet.board-pop{bottom:auto;transform:none;max-height:min(70vh,560px);border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 14px 40px rgba(0,0,0,.22)}
+.board-sheet.board-pop::before{content:"";position:absolute;left:-7px;top:22px;border:7px solid transparent;border-right-color:var(--border);border-left:0}
+.board-sheet.board-pop::after{content:"";position:absolute;left:-6px;top:23px;border:6px solid transparent;border-right-color:var(--surface);border-left:0}
+.board-sheet.board-pop.tail-right::before{left:auto;right:-7px;border-right:0;border-left:7px solid var(--border)}
+.board-sheet.board-pop.tail-right::after{left:auto;right:-6px;border-right:0;border-left:6px solid var(--surface)}
+.board-sheet.board-pop .board-sheet-head{padding:10px 14px 6px;font-size:13px}
+/* Labels (Sept 2026): one field, the board's list with checkboxes. */
+.board-label-q{font-size:15px;padding:11px 12px}
+.board-label-create{display:block;width:100%;text-align:left;margin-top:8px;padding:9px 10px;border:none;border-radius:8px;background:var(--soft);color:var(--text);font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer}
+.board-label-create:hover{background:var(--hover)}
+.board-label-create+.board-label-swatches{margin-top:8px;padding-left:2px}
+.board-label-list{display:flex;flex-direction:column;max-height:min(44vh,320px);overflow:auto}
+.board-label-row{display:flex;align-items:center;gap:10px;padding:7px 2px;border-bottom:1px solid var(--border);cursor:pointer;min-height:36px}
+.board-label-row:last-child{border-bottom:none}
+.board-label-row input{width:18px;height:18px;margin:0;accent-color:var(--text);flex-shrink:0;cursor:pointer}
+/* Reactions (Sept 2026): categories left, the emoji right, search at the foot. */
+.board-emoji-pane{display:flex;gap:8px;height:min(46vh,380px)}
+.board-emoji-cats{display:flex;flex-direction:column;gap:2px;width:126px;flex-shrink:0;overflow:auto}
+.board-emoji-cats button{text-align:left;padding:8px 9px;border:none;background:none;border-radius:8px;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--muted);cursor:pointer;line-height:1.2}
+.board-emoji-cats button.on,.board-emoji-cats button:hover{background:var(--soft);color:var(--text)}
+.board-emoji-scroll{flex:1;min-width:0;overflow:auto;padding-right:2px}
+.board-emoji-cat-h{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding:6px 2px 4px}
+.board-emoji-scroll .board-emoji-grid{grid-template-columns:repeat(6,1fr)}
+.board-emoji-search{margin-top:8px}
+/* Comments beside the card (Sept 2026). */
+.board-avatar{width:30px;height:30px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--on-dark);flex-shrink:0;letter-spacing:.02em}
+.board-cpop-list{max-height:min(40vh,320px);overflow:auto}
+.board-cpop-row{display:flex;gap:9px;padding:8px 0;border-bottom:1px solid var(--border)}
+.board-cpop-row:last-child{border-bottom:none}
+.board-cpop-row.reply{padding-left:38px}
+.board-cpop-row.resolved{opacity:.55}
+.board-cpop-body{flex:1;min-width:0}
+.board-cpop-meta{display:flex;align-items:baseline;gap:7px;font-size:11px;color:var(--muted);margin-bottom:2px}
+.board-cpop-meta strong{color:var(--text);font-size:13px}
+.board-cpop-replying{font-size:12px;color:var(--muted);padding:8px 0 0}
+.board-cpop-replying button{background:none;border:none;padding:0 4px;font-family:inherit;font-size:12px;color:var(--accent-urgent);cursor:pointer}
+.board-cpop-compose{display:flex;align-items:center;gap:8px;padding-top:10px}
+.board-cpop-compose input{flex:1;min-width:0;padding:9px 11px;border:1px solid var(--border);border-radius:9px;font-family:inherit;font-size:14px;background:var(--bg);color:var(--text);outline:none}
+.board-cmt.reply{margin-left:22px}
 .board-sheet-item{text-align:left;background:none;border:none;border-bottom:1px solid var(--border);padding:13px 2px;font-family:inherit;font-size:15px;color:var(--text);cursor:pointer}
 .board-sheet-item:last-child{border-bottom:none}
 .board-sheet-item.danger{color:var(--accent-urgent)}

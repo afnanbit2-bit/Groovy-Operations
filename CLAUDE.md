@@ -1768,6 +1768,62 @@ and the conversion leaving the note's text on the link card each fail by
 name. **Nobody has seen the panel, the tile or a converted note on a real
 screen** — the sandbox cannot sign in.
 
+### Mood Boards — Labels, Reactions and Comments as Milanote's panels (Sept 2026)
+
+Afnan: *"now do the labels, reactions and comment panel like milanote."*
+Read off the same video (42–59s labels, 60–79s reactions, 80–99s
+comments), frame strips at full resolution.
+
+- **A sheet can be a POPOVER.** `_boardsOpenSheet(title,html,{anchor,
+  width})` — `anchor` is a rail action (`{act:'labels'}`) or a rect (the
+  card a thread belongs to). On desktop the same element floats beside the
+  anchor with a tail, no dark backdrop (a clear one still catches the
+  outside click), flipped to the left when the right has no room; on a
+  phone the anchor is ignored and it is the bottom sheet it always was.
+  **Fourteen callers pass no anchor and are unchanged.** The panels are
+  written ONCE for both surfaces.
+- **Labels** (`_boardsLabelRowsFor`, pure): one field at the top that both
+  searches and creates; under it the board's list headed by the board's
+  name, each row a checkbox and the chip, ticked when it is on the card;
+  a term matching nothing exactly offers "+ Create label 'x'" (with the
+  colour swatches under it); no rows says "There are no results". Enter on
+  an existing name ticks it rather than minting a twin. The library stays
+  DERIVED from the cards — nothing stored to make the list.
+- **Reactions**: Milanote's categories on the left (Frequently used ·
+  Smileys & Emotions · People & Body · Animals & Nature · Food & Drink ·
+  Travel & Places · Activities · Objects · Symbols · Flags), the emoji on
+  the right under headings in one scrolling pane, search at the foot. The
+  catalogue (`_BOARDS_EMOJI_CATS`) is **curated, ~230 with a keyword
+  each** — the zero-new-deps line; not the Unicode set and its name
+  dataset. **"Frequently used" is derived** from the reactions already on
+  this board's cards, falling back to `_BOARDS_REACTIONS`. **Skin tones
+  are not built.** Picking keeps the panel open, marking the emoji, and
+  the pane's scroll position survives the repaint.
+- **Comments are a bubble beside the CARD** on desktop (`boardsOpenComments`
+  → `_boardsRenderCommentPop`, anchored to the card's rect): avatar
+  initials, "Write a comment…", Send; the thread as name · time · text ·
+  Reply / Resolve / Delete; the count badge on the card as before. The side
+  drawer stays for the whole-board view and for phones. **Replies exist
+  now** (`replyTo` on the comment — the comments rule has no field
+  allow-list, so **no rules change**), one level deep; `_boardsThread`
+  orders parents by time with their replies under them and **keeps an
+  orphaned reply as a parent** rather than dropping it. Incoming
+  comments repaint the bubble and a draft in the box survives. **Opening
+  the sheet closes the previous one, and closing forgets the reply
+  target — so the render carries it across the reopen by hand** (the
+  first cut lost every reply that way; the test caught it).
+- **Avatar initials sit on `--cat-*`/`--accent-warning` tokens in
+  `--on-dark` ink**, chosen by a hash of the name — measured in both themes
+  by the new fragment `boards — labels, reactions and comment panels`,
+  which renders all three panels flat (their panes scroll in the app, and
+  a scrolled-away emoji reads as "covered" — the documented false hit) and
+  stacked (side by side, one panel's rows sat under another's emoji).
+- **Harness note:** `classList.add` does not update the stub's `className`;
+  assert through `classList.contains`.
+
+**Nobody has seen the three panels on a real screen** — the sandbox cannot
+sign in.
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then
