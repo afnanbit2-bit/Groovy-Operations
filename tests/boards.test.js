@@ -3266,14 +3266,278 @@ module.exports=function(){
     s.eq('a caption and labels still grow it',run(`_boardsMinCardH({type:'image',imageUrl:'x',caption:'a',labels:[{t:'x',c:'grey'}]})-_boardsMinCardH({type:'image',imageUrl:'x'})`),
       run(`_BOARDS_CHROME_H.caption+_BOARDS_CHROME_H.labels`));
 
-    s.section('the image rail is Milanote\'s, and Replace / Download went to ⋯');
+    // CORRECTED Sept 2026 from the frame at 82s at full resolution: the
+    // image rail is Color · Labels · Reactions · Comment · Draw on · Edit ·
+    // Background · Caption · ⋯, with NO Rename. The earlier "Rename before
+    // Caption" was read off the TO-DO card at 112s.
+
+    /* ── Draw on · Edit · Background (Sept 2026) ────────────────────────
+       The three tools on Milanote's image rail, READ OFF the second video
+       at 82s (the rail and its glyphs) and never once demonstrated there,
+       so everything below holds OUR behaviour rather than a copy of
+       theirs. The geometry is the half worth testing hardest: it is pure
+       arithmetic, and it was also MEASURED in real headless Chromium
+       (scratchpad/measure-imgtools.js) against the same five cases. */
+    s.section('a stroke is FLAT, because Firestore refuses a nested array');
+    boot();
+    run(`_editCards=[{id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',
+      x:0,y:0,w:240,h:360,imgW:1000,imgH:1500,
+      strokes:[{c:'red',w:4,p:[10,10,20,20,30,15]},{c:'blue',w:2,p:[50,50]}]}]`);
+    const nestedS=x=>{
+      if(Array.isArray(x))return x.some(v=>Array.isArray(v)||nestedS(v));
+      if(x&&typeof x==='object')return Object.keys(x).some(k=>nestedS(x[k]));
+      return false;
+    };
+    s.ok('the saved form nests no array in an array',
+      !nestedS(JSON.parse(run(`JSON.stringify(_boardsCardsForSave())`))));
+    s.ok('and the strokes survive the save untouched',
+      run(`JSON.stringify(_boardsCardsForSave()[0].strokes[0].p)`)==='[10,10,20,20,30,15]');
+    s.eq('a three-point stroke is one path',run(`_boardsStrokePath({p:[10,10,20,20,30,15]})`),'M10 10L20 20L30 15');
+    s.eq('a single tap is a dot, not nothing',run(`_boardsStrokePath({p:[5,6]})`),'M5 6L5.01 6');
+    s.eq('an empty stroke draws nothing',run(`_boardsStrokePath({p:[]})`),'');
+    s.eq('a stroke knows its own length in POINTS, not numbers',run(`_boardsStrokeLen({p:[1,2,3,4,5,6]})`),3);
+    const drawHtml=run(`_boardsDrawOverlayHTML(_editCards[0],true)`);
+    s.ok('the overlay is a DIV around the svg — an <svg> is replaced and will not stretch',
+      /^<div class="board-draw/.test(drawHtml)&&/<svg viewBox="0 0 100 100"/.test(drawHtml),drawHtml.slice(0,90));
+    s.ok('and it stops above the card foot',/style="bottom:0px"/.test(drawHtml),drawHtml.slice(0,140));
+    s.ok('a card with labels pushes it up by the foot',
+      /style="bottom:31px"/.test(run(`_boardsDrawOverlayHTML({id:'q',type:'text',strokes:[{c:'red',w:4,p:[1,1,2,2]}],labels:[{t:'x',c:'red'}]},true)`)));
+    s.eq('a card with no strokes and no pen on it draws no overlay',
+      run(`_boardsDrawOverlayHTML({id:'z',type:'text'},true)`),'');
+    s.ok('the strokes carry the palette TOKEN, never a literal',
+      /var\(--accent-urgent\)/.test(drawHtml)&&!/#/.test(drawHtml.replace(/&[a-z]+;/g,'')),drawHtml.slice(0,200));
+    /* DRIVEN, not written by hand: the fixture above could hold a flat
+       array while the handler pushed pairs, and the nested-array rule
+       would still read green. The pointer stream is faked because the
+       harness has no DOM — what matters is the SHAPE that comes out. */
+    const drawn=(function(){
+      run(`(function(){
+        _editCards=[{id:'d1',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360}];
+        _boardsSelection=new Set(['d1']);_boardsDrawOn='d1';_boardsDrawColor='red';_boardsDrawWidth=4;
+        _boardsUndo=[];_boardsRedo=[];
+        const svg={appendChild(){},querySelector(){return svg;},setAttribute(){},};
+        const host={
+          _ls:{},
+          querySelector(){return svg;},
+          getBoundingClientRect(){return{left:0,top:0,width:100,height:100};},
+          setPointerCapture(){},releasePointerCapture(){},
+          addEventListener(t,f){host._ls[t]=f;},removeEventListener(t){delete host._ls[t];}
+        };
+        window.boardsDrawStart({currentTarget:host,clientX:10,clientY:10,pointerId:1,
+          preventDefault(){},stopPropagation(){}},'d1');
+        host._ls.pointermove({clientX:40,clientY:60});
+        host._ls.pointermove({clientX:70,clientY:20});
+        host._ls.pointermove({clientX:70.2,clientY:20.1});   // below the min step — dropped
+        host._ls.pointerup();
+        return 0;
+      })()`);
+      return JSON.parse(run(`JSON.stringify(_editCards[0].strokes)`));
+    })();
+    s.eq('one stroke',drawn.length,1);
+    s.eq('its points are FLAT numbers, never [x,y] pairs',JSON.stringify(drawn[0].p),'[10,10,40,60,70,20]');
+    s.eq('and it carries the pen',drawn[0].c+'/'+drawn[0].w,'red/4');
+    s.ok('nothing the handler wrote nests an array',
+      !nestedS(JSON.parse(run(`JSON.stringify(_boardsCardsForSave())`))));
+    s.eq('it pushed exactly one undo entry for the stroke',run(`_boardsUndo.length`),1);
+    // Put the block's own fixture back — the drive above replaced _editCards.
+    run(`_editCards=[{id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',
+      x:0,y:0,w:240,h:360,imgW:1000,imgH:1500,
+      strokes:[{c:'red',w:4,p:[10,10,20,20,30,15]},{c:'blue',w:2,p:[50,50]}]}];
+      _boardsSelection=new Set(['p']);_boardsDrawOn=null;`);
+
+    s.section('the pen is a MODE, and it outranks every other rail');
+    run(`_boardsSelection=new Set(['p']);_boardsDrawOn=null;`);
+    s.ok('off, the image rail is the ordinary one',
+      run(`_boardsRailItems().map(i=>i.act).join(',')`).indexOf('img:draw')>=0);
+    run(`window.boardsDrawMode('p')`);
+    s.eq('on, the rail is the drawing tools and nothing else',
+      run(`_boardsRailItems().map(i=>i.act||(i.drawSwatches?'<swatches>':i.drawWidths?'<widths>':'?')).join(',')`),
+      'draw:done,<swatches>,<widths>,draw:undo,draw:clear');
+    s.ok('Undo stroke and Erase all are LIVE, because this card has strokes',
+      run(`_boardsRailItems().filter(i=>i.act==='draw:undo'||i.act==='draw:clear').every(i=>!i.off)`));
+    s.ok('and both are greyed on a card with none',run(`(function(){
+      _editCards.push({id:'p2',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/b.jpg',x:0,y:0,w:240,h:240});
+      _boardsDrawOn='p2';_boardsSelection=new Set(['p2']);
+      const r=_boardsRailItems().filter(i=>i.act==='draw:undo'||i.act==='draw:clear');
+      _editCards.pop();_boardsDrawOn='p';_boardsSelection=new Set(['p']);
+      return r.length===2&&r.every(i=>i.off);})()`));
+    s.ok('the card says it is being drawn on',/board-card-el type-image photo drawing/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    // Line mode survived leaving the board once and turned every later
+    // board into an arrow-drawing surface. A mode that is not reset is the
+    // same bug with a different name.
+    run(`_boardsSetSelection([])`);
+    s.eq('selecting something else ends it',run(`_boardsDrawOn`),null);
+    run(`window.boardsDrawMode('p')`);
+    s.eq('Escape ends it',(function(){run(`_boardsOnKeydown({key:'Escape',preventDefault(){},target:{tagName:'DIV'}})`);return run(`_boardsDrawOn`);})(),null);
+    /* Opening a board is async (_boardsOpenCanvas reads the document), so
+       this one assertion has to await — in its OWN app instance. The first
+       version of it shared this block's, and every later synchronous
+       section in the suite then ran BEFORE the await resolved and left
+       _boardsDrawOn in some other state: it passed with the reset deleted,
+       which is the documented _pending hazard wearing a third face. */
+    _pending.push((async()=>{
+      const a2=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      const r2=a2.run;
+      r2(`currentPage='board-canvas';boardsLoaded=true;_boardsTrash=[];moodBoards=[
+          {id:'B8',title:'First',ownerUid:'u1',visibility:'personal',zoom:1,cards:[
+            {id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360}],connectors:[]},
+          {id:'B9',title:'Another',ownerUid:'u1',visibility:'personal',zoom:1,cards:[],connectors:[]}];
+        _boardsViewingId='B8';`);
+      await r2(`_boardsOpenCanvas()`);
+      r2(`window.boardsDrawMode('p')`);
+      const was=r2(`_boardsDrawOn`);
+      r2(`_boardsViewingId='B9'`);
+      await r2(`_boardsOpenCanvas()`);
+      const now=r2(`_boardsDrawOn`);
+      s.section('the pen does not survive leaving the board');
+      s.eq('it was on',was,'p');
+      s.eq('and opening another board clears it',now,null);
+    })());
+
+    s.section('undo is per STROKE, not per drawing session');
+    boot();
+    run(`_editCards=[{id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360,
+      strokes:[{c:'red',w:4,p:[1,1,2,2]},{c:'blue',w:2,p:[3,3,4,4]}]}];
+      _boardsSelection=new Set(['p']);_boardsDrawOn='p';_boardsUndo=[];`);
+    run(`window.boardsDrawUndo()`);
+    s.eq('one stroke comes off',run(`_editCards[0].strokes.length`),1);
+    s.eq('and it pushed exactly one undo entry',run(`_boardsUndo.length`),1);
+    run(`window.boardsDrawUndo()`);
+    s.eq('the last one deletes the field rather than leaving an empty array',run(`_editCards[0].strokes===undefined`),true);
+
+    s.section('the picture geometry — MEASURED in Chromium, held here as arithmetic');
+    /* Each case below was rendered in real headless Chromium against the
+       real css/main.css and the <img>'s own bounding rect read back; the
+       numbers are what it measured. A .board-card-el.type-image.photo has
+       NO border (border:none), so its body is the full card box — getting
+       that wrong by 2px leaves a strip of the card showing through a
+       cropped picture, which is what the first cut did. */
+    s.eq('an unedited card needs no geometry at all',run(`_boardsImgGeom({type:'image',imageUrl:'x',imgW:1000,imgH:1500,w:240,h:360},240,360)`),null);
+    s.eq('nor does one whose natural size is unknown',run(`_boardsImgGeom({type:'image',imageUrl:'x',rotate:90,w:240,h:360},240,360)`),null);
+    s.eq('a photo card body is the FULL card box',run(`JSON.stringify(_boardsCardBodyBox({type:'image',imageUrl:'x',w:240,h:360}))`),'{"w":240,"h":360}');
+    s.eq('every other card loses its 1px borders',run(`JSON.stringify(_boardsCardBodyBox({type:'text',w:240,h:360}))`),'{"w":238,"h":358}');
+    s.eq('and a caption comes off the body, not the card',
+      run(`JSON.stringify(_boardsCardBodyBox({type:'image',imageUrl:'x',caption:'c',w:240,h:180}))`),'{"w":240,"h":150}');
+    const geom=(c,w,h)=>JSON.parse(run(`(function(){const g=_boardsImgGeom(${c},${w},${h});
+      return JSON.stringify({rot:g.rot,w:+g.w.toFixed(1),h:+g.h.toFixed(1),left:+g.left.toFixed(1),top:+g.top.toFixed(1)});})()`));
+    /* The element is laid out UNROTATED and turned about its own centre, so
+       the LAYOUT box is w×h and the VISUAL box after a quarter turn is
+       h×w. Both are asserted, because the visual one is what Chromium
+       measured and the layout one is what goes into the style attribute. */
+    const rot90=geom(`{type:'image',imageUrl:'x',imgW:1000,imgH:1500,rotate:90}`,360,240);
+    s.eq('rotated 90°, the layout box is the upright picture',
+      [rot90.w,rot90.h,rot90.left,rot90.top].join(','),'240,360,60,-60');
+    s.eq('and the VISUAL box after the turn is the card exactly — measured 360×240',
+      [rot90.h,rot90.w].join('x'),'360x240');
+    const cropMid=geom(`{type:'image',imageUrl:'x',imgW:1000,imgH:1500,crop:{x:0.25,y:0.25,w:0.5,h:0.5}}`,240,240);
+    s.eq('the middle half of a 1000×1500 fills a 240 square — measured 480×720 at -120,-240',
+      [cropMid.w,cropMid.h,cropMid.left,cropMid.top].join(','),'480,720,-120,-240');
+    const both=geom(`{type:'image',imageUrl:'x',imgW:1000,imgH:1500,rotate:90,crop:{x:0.1,y:0,w:0.4,h:1}}`,240,400);
+    s.eq('a crop of a rotated picture is in the ROTATED frame',
+      [both.w,both.h,both.left,both.top].join(','),'400,600,40,-100');
+    s.eq('and it measured 600×400 at -60,0 on screen',
+      [both.h,both.w,both.left+(both.w-both.h)/2,both.top+(both.h-both.w)/2].join(','),'600,400,-60,0');
+    s.ok('a crop of the whole picture is no crop',run(`_boardsCrop({crop:{x:0,y:0,w:1,h:1}})`)===null);
+    s.ok('a crop outside the picture is refused rather than clamped',
+      run(`_boardsCrop({crop:{x:0.5,y:0,w:0.9,h:1}})`)===null);
+    s.ok('an unknown rotation is upright',run(`_boardsRot({rotate:45})`)===0&&run(`_boardsRot({rotate:270})`)===270);
+
+    s.section('the editor rotates the CROP with the picture');
+    /* Turning the picture must not jump the framing to a different part of
+       it: a 90° turn maps (x,y,w,h) → (1-y-h, x, h, w). */
+    run(`_boardsEdit={id:'p',rot:0,crop:{x:0.1,y:0.2,w:0.3,h:0.4},nat:{w:1000,h:1500},url:'x'};
+      _boardsRenderImgEditor=function(){};`);
+    run(`window.boardsImgEditRotate(90)`);
+    s.eq('one turn right',run(`JSON.stringify(_boardsEdit.crop)`),JSON.stringify({x:1-0.2-0.4,y:0.1,w:0.4,h:0.3}));
+    s.eq('and the rotation with it',run(`_boardsEdit.rot`),90);
+    run(`window.boardsImgEditRotate(-90)`);
+    s.eq('turning back restores it exactly',run(`JSON.stringify(_boardsEdit.crop)`),JSON.stringify({x:0.1,y:0.2,w:0.3,h:0.4}));
+    s.eq('four turns is a full circle',(function(){
+      run(`_boardsEdit.crop={x:0.1,y:0.2,w:0.3,h:0.4};_boardsEdit.rot=0;`);
+      for(let i=0;i<4;i++)run(`window.boardsImgEditRotate(90)`);
+      return run(`JSON.stringify(_boardsEdit.crop)+'|'+_boardsEdit.rot`);})(),JSON.stringify({x:0.1,y:0.2,w:0.3,h:0.4})+'|0');
+
+    s.section('Apply stores the natural size and re-fits the card');
+    boot();
+    run(`_editCards=[{id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360}];
+      _boardsSelection=new Set(['p']);
+      _boardsEdit={id:'p',rot:90,crop:{x:0,y:0,w:1,h:1},nat:{w:1000,h:1500},url:'x'};`);
+    run(`window.boardsImgEditApply()`);
+    s.eq('the natural size is stored WITH the edit — the geometry is meaningless without it',
+      run(`_editCards[0].imgW+'x'+_editCards[0].imgH`),'1000x1500');
+    s.eq('the card is re-fitted to what it now shows',run(`_editCards[0].w+'x'+_editCards[0].h`),'240x160');
+    s.ok('and a whole-picture crop is not stored at all',run(`_editCards[0].crop===undefined`));
+    run(`_boardsEdit={id:'p',rot:0,crop:{x:0,y:0,w:1,h:1},nat:{w:1000,h:1500},url:'x'};window.boardsImgEditApply()`);
+    s.ok('Reset clears the rotation too',run(`_editCards[0].rotate===undefined&&!_boardsImgEdited(_editCards[0])`));
+
+    s.section('Background — the picture, and the board');
+    boot();
+    run(`_editCards=[{id:'p',type:'image',imageUrl:'https://res.cloudinary.com/demo/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360}];
+      _boardsSelection=new Set(['p']);`);
+    s.eq('removing a background is a DELIVERY component — nothing is re-uploaded',
+      run(`_boardsNoBgUrl('https://res.cloudinary.com/demo/image/upload/v1/a.jpg')`),
+      'https://res.cloudinary.com/demo/image/upload/e_background_removal/v1/a.jpg');
+    s.eq('a URL that is not Cloudinary is left alone',run(`_boardsNoBgUrl('https://other.test/a.jpg')`),'https://other.test/a.jpg');
+    run(`window.boardsImgNoBg('p')`);
+    s.eq('the card carries the flag',run(`_editCards[0].nobg`),true);
+    s.ok('the card asks Cloudinary for the stripped picture',
+      /e_background_removal/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    s.ok('and a failure clears the flag rather than leaving a broken picture',run(`(function(){
+      window.boardsNoBgFailed({},'p');return _editCards[0].nobg===undefined;})()`));
+    // The export must show what the SCREEN shows, or the background comes
+    // back in the PNG and the PDF only.
+    run(`_editCards[0].nobg=true`);
+    s.ok('the export reads the same delivery URL',/e_background_removal/.test(run(`_boardsExportImageUrl(_editCards[0])`)));
+    run(`delete _editCards[0].nobg`);
+    run(`window.boardsUseAsBoardBg('p')`);
+    s.eq('a board background is stored on the BOARD',run(`_editBoard.bgImage`),'https://res.cloudinary.com/demo/image/upload/v1/a.jpg');
+    s.eq('with a fit',run(`_editBoard.bgFit`),'cover');
+    // The string goes straight into a CSS url(), so the moment to check it
+    // is the moment it is WRITTEN. res.cloudinary.com.evil.test must not pass.
+    run(`_editBoard.bgImage=null;_editCards[0].imageUrl='https://res.cloudinary.com.evil.test/a.jpg';window.boardsUseAsBoardBg('p')`);
+    s.ok('a lookalike host is refused',run(`!_editBoard.bgImage`));
+    run(`_editCards[0].imageUrl='https://res.cloudinary.com/demo/image/upload/v1/a.jpg';window.boardsUseAsBoardBg('p');window.boardsClearBoardBg()`);
+    s.ok('and clearing it removes both fields',run(`_editBoard.bgImage===undefined&&_editBoard.bgFit===undefined`));
+    const bgItems=run(`JSON.stringify(_boardsImgBgItems('p').map(i=>i.act||i.title||i.note||(i.sep?'—':'?')))`);
+    s.ok('the menu says the add-on is needed rather than letting a broken picture say it',
+      /add-on/.test(bgItems),bgItems);
+
+    s.section('on a phone the pen settings go behind one button');
+    /* The phone rail is a horizontal dock. Six colour swatches beside
+       three width buttons and three labelled tools ran off the right edge
+       at 390 and at 360 — found by tests/smoke-phone.js, not by reading —
+       so they live in a bottom sheet, the pattern Colour, Labels and
+       Reactions already follow there. */
+    {
+      const ph=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},phone:true});
+      ph.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+        _editCards=[{id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360,
+          strokes:[{c:'red',w:4,p:[1,1,2,2]}]}];
+        _editConnectors=[];_boardsSelection=new Set(['p']);_boardsDrawOn='p';_boardsCellFocus=null;_boardsConnSel=null;`);
+      s.eq('four targets, no swatch rows',
+        ph.run(`_boardsRailItems().map(i=>i.act||'<row>').join(',')`),
+        'draw:done,draw:pen,draw:undo,draw:clear');
+      ph.run(`window.boardsDrawPenSheet()`);
+      const sheet=ph.run(`(document.getElementById('board-sheet')||{innerHTML:''}).innerHTML`);
+      s.ok('and the sheet carries every colour and every width',
+        (sheet.match(/data-act="draw:color:/g)||[]).length===6&&
+        (sheet.match(/data-act="draw:width:/g)||[]).length===3,
+        (sheet.match(/data-act="draw:(color|width):/g)||[]).join(' '));
+    }
+
+    s.section('the image rail is Milanote\'s, and Rename / Replace / Download went to ⋯');
     run(`_editCards=[{id:'ph',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360,by:'Afnan',at:1},
       {id:'fl',type:'file',fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/a.pdf',fileName:'a.pdf',x:0,y:0,w:240,h:200}];
       _boardsSelection=new Set(['ph']);`);
-    s.eq('Color · Labels · Reactions · Comment · Rename · Caption · ⋯',run(`_boardsRailItems().map(i=>i.act).join(',')`),
-      'deselect,color-panel,labels,reactions,card-comment,rename,caption,more');
+    s.eq('Color · Labels · Reactions · Comment · Draw on · Edit · Background · Caption · ⋯',run(`_boardsRailItems().map(i=>i.act).join(',')`),
+      'deselect,color-panel,labels,reactions,card-comment,img:draw,img:edit,img:bg,caption,more');
     const imgMore=run(`_boardsMoreItems(true).map(i=>i.act).filter(Boolean).join(',')`);
     s.ok('⋯ carries Replace, Download and Open original for the picture',/replace/.test(imgMore)&&/download/.test(imgMore)&&/openasset/.test(imgMore),imgMore);
+    // Rename left the rail, so the derive put it in ⋯ with no other edit —
+    // the same algebra that already moved Replace and Download there.
+    s.ok('and Rename, which left the rail, is in ⋯ on its own',/(^|,)rename(,|$)/.test(imgMore),imgMore);
+    s.ok('nothing on the rail repeats in ⋯',run(`(function(){const rail=_boardsRailItems().map(i=>i.act).filter(Boolean);
+      return _boardsMoreItems(true).map(i=>i.act).filter(Boolean).every(a=>rail.indexOf(a)<0);})()`));
     s.ok('and nothing the right-click offers is lost',run(`(function(){const rail=_boardsRailItems().map(i=>i.act);const more=_boardsMoreItems(true).map(i=>i.act).filter(Boolean);
       return _boardsCardCtxItems(true).map(i=>i.act).filter(Boolean).every(a=>rail.indexOf(a)>=0||more.indexOf(a)>=0);})()`));
     run(`_boardsSelection=new Set(['fl'])`);

@@ -2088,7 +2088,9 @@ does not snap to.
 picture is a drawing surface), **Edit** (crop and rotate is an image
 editor) and **Background** (removing a background needs a service). Each is
 its own feature, not a variant of one. The three are named here so nobody
-files them as missed.
+files them as missed. **SUPERSEDED the same week — all three shipped;** see
+"Draw on, Edit and Background" below, which also corrects the image rail
+recorded above (it carries no Rename).
 
 **What the video could not settle, and is recorded as unknown:** whether a
 non-image URL stays a link card rather than becoming an image card (only
@@ -2104,6 +2106,179 @@ painting a tint on the head fails it too; the old three-field link card
 fails five; and a colour panel that always shows tabs fails two.
 **Nobody has seen any of this on a real screen** — the sandbox cannot sign
 in.
+
+### Mood Boards — Draw on, Edit and Background (Sept 2026) — REVERSES "NOT BUILT"
+
+Afnan: *"now do draw on, edit and background"*. The three tools the round
+before had recorded as **NOT BUILT, and deliberately** ("annotating a
+picture is a drawing surface, crop and rotate is an image editor, removing
+a background needs a service"). Two of the three turn out to need neither a
+dependency nor a service; the third is honest about what it needs.
+
+**The rail was READ OFF THE FRAME at 82s** (second video, full resolution),
+and it CORRECTS what was written here a round earlier. A selected image
+card's rail in Milanote is
+
+    Color · Labels · Reactions · Comment · Draw on · Edit · Background ·
+    Caption · ⋯
+
+with **no Rename** — the "Rename before Caption" claim was read off the
+**to-do** card at 112s and applied to the wrong type. Rename is not lost:
+`_boardsMoreItems` derives ⋯ from the right-click list minus whatever the
+rail carries, so dropping it from the rail put it in ⋯ with no other edit,
+the same algebra that already moved Replace and Download there. **None of
+the three panels is ever demonstrated in either video** — the image card
+leaves the screen at 88s — so everything below is built from the names and
+the glyphs (a pen nib, crop marks with a rotate arrow, a dashed frame
+around a picture) and none of it claims to match theirs.
+
+**DRAW ON.** `c.strokes = [{c:<palette name>, w:<px>, p:[x0,y0,x1,y1,…]}]`,
+one SVG overlay per card.
+
+- **The points are FLAT, and that is not a style choice: FIRESTORE DOES NOT
+  SUPPORT NESTED ARRAYS.** A list of `[x,y]` pairs inside a card inside the
+  cards array is exactly the shape that meant a table's `rows` never
+  persisted at all — every save refused with "Nested arrays are not
+  supported", the only symptom a repeating "Save failed". Flat needs no
+  encode/decode boundary of its own, so there is nothing to keep in step.
+  The test **drives the real pointer handler** rather than reading a
+  hand-written fixture, because a fixture could be flat while the handler
+  pushed pairs and the rule would still read green.
+- **Normalized 0..100 of the card's BODY box**, with `preserveAspectRatio=
+  "none"`. The trade-off is stated rather than hidden: a stroke stretches
+  with the card, so resizing non-proportionally turns a circle into an
+  ellipse and slides an annotation off what it was circling. Glueing
+  strokes to the PICTURE instead needs the natural dimensions the Edit tool
+  goes and fetches, so it would be unusable on every card written before
+  this. The body is what you see and needs nothing stored.
+- **The overlay is a DIV wrapping the svg.** An `<svg>` is a REPLACED
+  element: given `top:0` and `bottom:N` with no height it takes the
+  viewBox's intrinsic 1:1 ratio instead of stretching — **MEASURED at 240
+  tall inside a 360 card**. A div stretches; the svg fills it.
+- It is a **SIBLING of the body**, not a child, so one rule covers every
+  card type: the head is an absolute overlay and the foot sits below the
+  body, so the body runs from the card's top edge down to
+  `_boardsCardChromeH(c)` above its bottom, which the render sets inline.
+  **z-index 3 — under the head strip's 4**, or it would swallow the delete
+  ✕; `pointer-events:none` unless the pen is on this card. `smoke-layout`
+  catches both (making it `auto` at z 9 fails naming `svg.board-draw
+  drawing` as covering the ✕).
+- **ONE UNDO ENTRY PER STROKE**, pushed before the stroke is appended. A
+  drawing tool where Ctrl+Z wipes the session is not a drawing tool, and
+  the rail's "Undo stroke" is the same action under a name you can see.
+- **It is the rail's SIXTH mode** (nothing selected / a card / a line / a
+  cell / text / drawing) and outranks all of them. Like line mode it is
+  **reset on board open** — a mode that survives leaving the board is the
+  bug the QA round found in `_boardsLineMode` — and on selecting anything
+  else, and on Escape (read BEFORE the editable bail, like Escape and
+  Alt+Arrow already are).
+- **On a PHONE the pen's settings go behind one button.** The rail there is
+  a horizontal dock, and six colour swatches beside three width buttons and
+  three labelled tools ran off the right edge at 390 and 360 — **found by
+  `tests/smoke-phone.js`, not by reading**. Phone rail: `Done · Pen · Undo ·
+  Erase`, with Pen opening a bottom sheet, the pattern Colour, Labels and
+  Reactions already follow there.
+- The PNG/PDF exporter draws the strokes from the same `c.strokes` — one
+  drawing, two renderers, the rule this module holds for connectors.
+
+**EDIT — crop and rotate, and deliberately NOT a Cloudinary transform.**
+`a_90/c_crop,x_…` was the obvious route and it is the wrong one here: the
+sandbox cannot reach `cloudinary.com` AT ALL, so the string could only be
+constructed and hoped for — the one thing this file's ground rule forbids.
+The arithmetic needs no service, no add-on and no network, and it is
+measurable in a browser from a session.
+
+- `c.rotate` ∈ {90,180,270} and `c.crop` = {x,y,w,h} normalized **within
+  the ROTATED frame**, so rotating after cropping does not rewrite the
+  crop. Both non-destructive: the stored `imageUrl` is never touched,
+  Reset puts the whole picture back, and a card with neither field renders
+  through the same plain `object-fit` path it always did — **nothing
+  migrates**.
+- **`_boardsImgGeom(c,boxW,boxH)` is the ONE definition**, pure, read by
+  the DOM render AND the export canvas, so a crop cannot look one way on
+  screen and another in the PNG. The element is laid out UNROTATED and
+  turned about its own centre, because that is the only placement CSS and
+  canvas agree on. **MEASURED in headless Chromium** (`scratchpad/
+  measure-imgtools.js`) against five cases, every one exact: a 90° turn of
+  a 1000×1500 covering a 360×240 card; the middle half drawn 480×720 at
+  −120,−240 in a 240 square; a crop of a rotated picture 600×400 at −60,0.
+- **`_boardsCardBodyBox` and the 2px that mattered.** `*{box-sizing:
+  border-box}` so `c.w` includes the card's 1px borders — **except on a
+  photo card, which has none** (`.board-card-el.type-image.photo{border:
+  none}`). The first cut subtracted 2 everywhere and left a 2px strip of
+  the card showing along one edge of every cropped picture. Measured both
+  ways: 240 for a photo card, 238 for everything else.
+- **`_BOARDS_CHROME_H.caption` was wrong: 27 → 30.** Re-measured while
+  building this: `.board-caption` is 13px at line-height 1.4 (18.2) + 5px
+  padding top and bottom + a 1px border-top = **29.2**, so a captioned card
+  at its minimum clipped 2px off its own caption. Rounded UP, because
+  over-counting a box costs a hair of a cover-fitted picture while
+  under-counting leaves a strip of the card showing through.
+- **Known slack, unchanged:** with BOTH a label row and a reaction row the
+  foot's padding is counted twice (the documented 7px), so the overlay and
+  the cover-fit are 7px conservative on such a card. Measured: a real foot
+  is 54.9 against the constants' 62.
+- **A fixed overlay, not an in-card editor** — a crop handle inside a 240px
+  card on a board at 40% is a target nobody can hit, and the card is where
+  you judge the RESULT. `100dvh`, not `inset:0`.
+- It **opens by loading the picture at its ORIGINAL url** and refuses
+  rather than guess if that fails: the natural size is what the whole
+  geometry is expressed in, and a card written before this carries none, so
+  the editor is what supplies `c.imgW`/`c.imgH`. Apply stores them WITH the
+  edit and **re-fits the card through the same `_BOARDS_IMG_CARD_W`/`MAX_H`/
+  `MIN` clamps a freshly uploaded picture goes through** — otherwise a
+  portrait crop of a landscape photo sits in a landscape box and is cropped
+  a second time by `object-fit`, the bug `_boardsFitImageCard` exists to
+  remove.
+- **Rotating carries the CROP with it** (a quarter turn maps (x,y,w,h) →
+  (1−y−h, x, h, w)), so the framing stays where it was instead of jumping
+  to a different part of the picture. Rounded to 6dp — `1-0.2-0.4` is
+  `0.39999999999999997`, and a round trip has to come back exactly.
+
+**BACKGROUND — two things on one menu**, the way the board look sheet put
+four ways to fill a tile on one sheet.
+
+1. **Remove the PICTURE's background** (`c.nobg`) — a Cloudinary
+   `e_background_removal` DELIVERY component, so nothing is re-uploaded and
+   clearing the flag puts the original straight back. It is a **PAID
+   ADD-ON and whether this account has it CANNOT be checked from a
+   session**; the menu says so in a note rather than letting a broken
+   picture say it, and `boardsNoBgFailed` clears the flag, repaints and
+   names the add-on when the `<img>` reports an error. The **export reads
+   the same delivery URL**, or the background would come back in the PNG
+   and the PDF only.
+2. **Use the picture as the BOARD's background** (`b.bgImage`/`b.bgFit`) —
+   "board backgrounds" has been on this file's deliberately-missing-vs-
+   Milanote list since the parity round, and a picture already on the board
+   is the obvious place to set one from. **`mood_boards`' update rule
+   carries no field allow-list, so this needs NO `firestore.rules` change
+   and no republish.** The URL is validated on the way in AND again in the
+   save payload with the anchored `_boardsCoverUrl` — it goes straight into
+   a CSS `url()`, and `res.cloudinary.com.evil.test` must not pass.
+   It paints on **its own element inside `.board-stage` and outside
+   `.board-world`**: the stage already carries a background-image (the
+   dot-grid cue) and two would fight, and a background that panned with the
+   cards would be a picture nobody could ever see the edge of.
+
+**Verified both ways**, each by reverting it: the photo-card border term
+(fails naming the body box, 238 vs 240), nested stroke points (fails with
+`[[10,10],[40,60],…]`), the undo-per-stroke push (0 vs 1), the board-open
+reset (`p` vs null), the crop rotation (the framing does not move), the
+export's nobg URL, the overlay's z-index and its div wrapper, the board
+background's validation, the phone pen rail (`draw:clear` off the right
+edge), and the editor's own ink (1:1 in both themes).
+
+**A test lesson, the `_pending` hazard wearing a THIRD face.** The
+board-open assertion first shared its block's app instance, so every later
+synchronous section in the suite ran before the await resolved and left
+`_boardsDrawOn` in some other state — **it passed with the reset deleted**.
+It has its own `loadApp` now. And `tests/smoke-phone.js` learned to skip a
+rail button the renderer greyed out: it carries no `data-act`, so
+hit-testing it reports the rail itself — a false positive of the same shape
+as a scrolled-away control.
+
+**Nobody has seen the pen, a cropped picture, the editor or a board
+background on a real screen** — the sandbox cannot sign in.
 
 ### Mood Boards — the image card, like Milanote's (Sept 2026)
 
@@ -2157,8 +2332,11 @@ and is not claimed to match.
   `.locked` (amber pair) and `.tint-custom` are later and higher, so they
   win exactly as on any card — measured: green-soft/`#111`, amber-soft/
   amber, in both themes.
-- **The rail for an image is Milanote's exactly**: Rename BEFORE Caption,
-  and **Replace / Download are off the rail** — not lost, because
+- **The rail for an image is Milanote's exactly**: ~~Rename BEFORE
+  Caption~~ — **WRONG, corrected the same week**: that was read off the
+  TO-DO card at 112s. The image rail carries **no Rename** and three tools
+  this note never saw (Draw on · Edit · Background); see "Draw on, Edit and
+  Background" above. **Replace / Download are off the rail** — not lost, because
   `_boardsMoreItems` derives ⋯ from the right-click list minus the rail,
   so taking them off the rail put them in ⋯ on its own (asserted, with the
   "nothing lost between the two" algebra). **A file card's rail is

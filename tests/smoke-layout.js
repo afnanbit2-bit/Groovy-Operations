@@ -580,6 +580,80 @@ const FRAGMENTS={
       '<div id="hovered" style="position:relative;height:600px;width:100%;overflow:hidden;margin-top:14px">'+
       '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'});
   },
+  /* Draw on · Edit · Background (Sept 2026). Three things no logic suite
+     can see: that the drawing overlay lands on the body rather than over
+     the card foot, that a cropped or rotated picture actually covers its
+     card, and that the pen rail and the Background menu can be clicked.
+     The pictures are a solid WHITE image, so a stroke or a scrim that ever
+     went white would read as white-on-white. */
+  'boards — drawing, a cropped picture and the Background menu':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editConnectors=[];_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+      const PIC='https://res.cloudinary.com/x/image/upload/v1/a.jpg';
+      _editCards=[
+        {id:'d1',type:'image',imageUrl:PIC,x:10,y:10,w:240,h:360,imgW:1000,imgH:1500,
+         strokes:[{c:'red',w:4,p:[10,12,40,55,72,30,90,80]},{c:'blue',w:8,p:[20,80,80,20]}]},
+        {id:'d2',type:'image',imageUrl:PIC,x:270,y:10,w:240,h:240,imgW:1000,imgH:1500,
+         crop:{x:0.25,y:0.25,w:0.5,h:0.5},caption:'Middle half'},
+        {id:'d3',type:'image',imageUrl:PIC,x:530,y:10,w:360,h:240,imgW:1000,imgH:1500,rotate:90},
+        {id:'d4',type:'image',imageUrl:PIC,x:910,y:10,w:240,h:200,imgW:1000,imgH:1500,
+         strokes:[{c:'green',w:2,p:[5,5,95,95]}],labels:[{t:'marked up',c:'green'}],reactions:{'👍':['u1']}}
+      ];
+      _boardsSelection=new Set(['d1']);_boardsDrawOn='d1';`);
+    const cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`)
+      .replace(/src="[^"]*cloudinary[^"]*"/g,
+        'src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'3\'%3E%3Crect width=\'4\' height=\'3\' fill=\'%23ffffff\'/%3E%3C/svg%3E"')
+      .replace(/(id="board-cap-d2"[^>]*>)/,'$1Middle half')
+      .replace(/(id="board-label-d4-0"[^>]*>)/,'$1marked up');
+    // The pen's own rail, and the Background menu, both rendered where
+    // they really open. A .board-ctx is position:fixed, so it is given a
+    // static position here or it would sit over the cards.
+    const rail=app.run(`_boardsRailItems()`);
+    const railHtml=app.run(`(function(){const items=_boardsRailItems();return items.map(it=>{
+      if(it.drawSwatches)return '<div class="rail-swatches">'+_BOARDS_DRAW_COLORS.map(c=>'<button class="board-swatch sw-'+c+(c===_boardsDrawColor?' on':'')+'" data-act="draw:color:'+c+'" title="'+c+'"></button>').join('')+'</div>';
+      if(it.drawWidths)return '<div class="rail-fmt-row">'+_BOARDS_DRAW_WIDTHS.map(x=>'<button class="board-pen-w'+(x.w===_boardsDrawWidth?' on':'')+'" data-act="draw:width:'+x.w+'" title="'+x.label+'"><span style="height:'+x.w+'px"></span></button>').join('')+'</div>';
+      return '<button class="rail-btn'+(it.off?' off':'')+(it.done?' rail-done':'')+'" data-act="'+(it.off?'':it.act)+'" title="'+it.label+'">'+_boardsIcon(it.icon)+'<span>'+it.label+'</span></button>';
+    }).join('');})()`);
+    const bgMenu=app.run(`_boardsCtxHTML(_boardsImgBgItems('d1'))`);
+    return Promise.resolve({widths:[1900,1280],html:
+      '<div class="board-stage" style="position:relative;height:430px;width:100%;overflow:hidden">'+
+      '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'+
+      '<div style="display:flex;gap:20px;align-items:flex-start;margin-top:16px">'+
+      '<div class="board-rail selecting" style="position:relative;left:auto;top:auto;transform:none">'+railHtml+'</div>'+
+      '<div class="board-ctx" style="position:relative;left:auto;top:auto;max-height:none">'+bgMenu+'</div></div>'});
+  },
+  /* The crop editor is a fixed full-viewport takeover, so it gets a
+     fragment to itself — dropped into another one it would cover every
+     control there and every hit-test would name it. */
+  'boards — the crop and rotate editor':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editCards=[{id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360}];
+      _boardsSelection=new Set(['p']);
+      _boardsEdit={id:'p',rot:90,crop:{x:0.2,y:0.15,w:0.55,h:0.6},nat:{w:1000,h:1500},url:'x'};`);
+    // The overlay is built with createElement, which the node harness
+    // stubs, so the markup is composed here exactly as _boardsRenderImgEditor
+    // writes it and then MEASURED for real.
+    const rn={w:1500,h:1000};
+    const q={x:0.2,y:0.15,w:0.55,h:0.6};
+    const poly='polygon(0% 0%,100% 0%,100% 100%,0% 100%,0% 0%,'+(q.x*100)+'% '+(q.y*100)+'%,'+(q.x*100)+'% '+((q.y+q.h)*100)+'%,'+((q.x+q.w)*100)+'% '+((q.y+q.h)*100)+'%,'+((q.x+q.w)*100)+'% '+(q.y*100)+'%,'+(q.x*100)+'% '+(q.y*100)+'%)';
+    const pic='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'3\'%3E%3Crect width=\'4\' height=\'3\' fill=\'%23ffffff\'/%3E%3C/svg%3E';
+    return Promise.resolve({widths:[1900,1280,420],html:
+      '<div class="board-imgedit" style="position:relative;height:520px">'+
+      '<div class="board-imgedit-bar"><strong>Crop and rotate</strong>'+
+      '<span class="board-imgedit-dims">825 × 600 px</span><span style="flex:1"></span>'+
+      '<button class="tool-btn" title="Rotate left">↺</button><button class="tool-btn" title="Rotate right">↻</button>'+
+      '<button class="tool-btn">Reset</button><button class="tool-btn">Cancel</button>'+
+      '<button class="tool-btn primary">Apply</button></div>'+
+      '<div class="board-imgedit-body"><div class="board-imgedit-pic" style="aspect-ratio:'+rn.w+' / '+rn.h+'">'+
+      '<img src="'+pic+'" alt="" style="transform:rotate(90deg);width:'+(rn.h/rn.w*100).toFixed(4)+'%;height:'+(rn.w/rn.h*100).toFixed(4)+'%;left:'+((1-rn.h/rn.w)*50).toFixed(4)+'%;top:'+((1-rn.w/rn.h)*50).toFixed(4)+'%">'+
+      '<div class="board-imgedit-shade" style="clip-path:'+poly+'"></div>'+
+      '<div class="board-imgedit-rect" style="left:'+(q.x*100)+'%;top:'+(q.y*100)+'%;width:'+(q.w*100)+'%;height:'+(q.h*100)+'%">'+
+      '<span class="board-imgedit-h nw"></span><span class="board-imgedit-h ne"></span>'+
+      '<span class="board-imgedit-h sw"></span><span class="board-imgedit-h se"></span></div></div></div>'+
+      '<div class="board-imgedit-foot">Drag inside the picture to choose what the card shows. Esc closes without changing anything.</div></div>'});
+  },
   'boards — photo cards':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};

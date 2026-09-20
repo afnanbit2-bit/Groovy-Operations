@@ -272,6 +272,50 @@ module.exports=function(){
       /it\.drag\?' data-drag="1"':''/.test(js));
   }
 
+  /* ── The image card's three tools (Sept 2026) ──────────────────────────
+     Draw on · Edit · Background. Three things that can only be checked
+     against the source, and each is a shape this file has been bitten by.
+     The overlay's z-index has to stay under the head strip's (4) so the
+     delete ✕ is still reachable, and over the card body — the "the whole
+     top bar was invisible behind a wrong z-index" class of bug. A stroke's
+     points must never be written as pairs: Firestore refuses a nested
+     array outright, which is how table content silently never persisted. */
+  s.section('draw on, edit and background');
+  {
+    const js=read('js/boards.js'),css=read('css/main.css');
+    // The strokes go into the cards array, which goes into a Firestore
+    // document. Nothing here may build a [[x,y],…].
+    s.ok('a stroke pushes NUMBERS, never a point array',
+      /stroke\.p\.push\(q\[0\],q\[1\]\)/.test(js)&&!/stroke\.p\.push\(q\)/.test(js));
+    s.ok('and it is seeded flat too',/p:\[first\[0\],first\[1\]\]/.test(js));
+    // An <svg> is a replaced element: given top and bottom with no height
+    // it takes the viewBox's intrinsic ratio instead of stretching, which
+    // was MEASURED at 240 tall inside a 360 card. The div is what stretches.
+    s.ok('the overlay is a div wrapping the svg, not a bare svg',
+      /<div class="board-draw\$\{live\?' drawing':''\}"/.test(js));
+    s.ok('and the svg fills it',/\.board-draw>svg\{display:block;width:100%;height:100%/.test(css));
+    const z=/\.board-draw\{[^}]*z-index:(\d+)/.exec(css);
+    s.ok('the overlay sits under the head strip, so the delete ✕ is still reachable',
+      !!z&&+z[1]<4,z?z[1]:'no z-index');
+    s.ok('and it is inert unless the pen is on this card',
+      /\.board-draw\{[^}]*pointer-events:none\}/.test(css)&&/\.board-draw\.drawing\{pointer-events:auto/.test(css));
+    // A board background goes straight into a CSS url(), so it is validated
+    // on the way IN — the _profPhotoUrl rule, and an anchored host test.
+    s.ok('a board background is validated before it is stored',
+      /_editBoard\.bgImage=u;/.test(js)&&/const u=_boardsCoverUrl\(c\.imageUrl\);/.test(js));
+    s.ok('and it is validated again on the way out of the save',
+      /bgImage:_boardsCoverUrl\(_editBoard\.bgImage\)\|\|null/.test(js));
+    // The board background must not fight the dot-grid cue or the pan/zoom
+    // transform: its own element, inside the stage and outside the world.
+    s.ok('it paints on its own element, not on .board-stage',
+      /\.board-bg\{position:absolute;inset:0/.test(css)&&/id="board-bg"/.test(js));
+    s.ok('and that element is inert',/\.board-bg\{[^}]*pointer-events:none/.test(css));
+    // Background removal is a Cloudinary add-on nobody can check from here,
+    // so the failure has to clear the flag rather than leave a broken card.
+    s.ok('a refused background removal clears the flag',
+      /window\.boardsNoBgFailed=function/.test(js)&&/delete c\.nobg;/.test(js));
+  }
+
   /* ── The rail's hover tiles name real actions, and never invert ─────────
      Each tool's icon fills a coloured tile on hover, keyed by its data-act.
      A renamed act would silently lose its colour — the dead-hover shape

@@ -1087,6 +1087,65 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   .board-preview-frame{border-radius:0}
 }
 
+/* ── The image card's three tools (Sept 2026) ──────────────────────────
+   Draw on · Edit · Background, the rail Milanote shows for a selected
+   image card (read off the second video at 82s). */
+
+/* DRAW ON. One SVG overlay per card, a SIBLING of the body so a single
+   rule covers every card type: the head is an absolute overlay and the
+   foot sits below the body, so the overlay runs from the card's top edge
+   down to _boardsCardChromeH(c) above its bottom — which the render sets
+   inline. It is inert unless the pen is on this card, or it would swallow
+   every click aimed at the picture underneath. */
+.board-draw{position:absolute;left:0;top:0;right:0;z-index:3;pointer-events:none}
+.board-draw>svg{display:block;width:100%;height:100%;overflow:visible}
+.board-draw.drawing{pointer-events:auto;cursor:crosshair;touch-action:none}
+.board-card-el.drawing{outline:2px solid var(--count-accent);outline-offset:-1px}
+/* The pen-width row: three bars, thickest last, marked when chosen. */
+.board-pen-w{display:flex;align-items:center;justify-content:center;width:30px;height:24px;
+  border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;padding:0}
+.board-pen-w span{display:block;width:16px;border-radius:4px;background:var(--text)}
+.board-pen-w.on{outline:2px solid var(--text);outline-offset:1px}
+
+/* THE BOARD'S BACKGROUND PICTURE. Inside .board-stage and outside
+   .board-world, so pan and zoom never move it, and its own element rather
+   than a background-image on the stage, which already carries one (the
+   dot-grid cue). Inert throughout. */
+.board-bg{position:absolute;inset:0;z-index:0;pointer-events:none;
+  background-position:center;background-repeat:no-repeat}
+
+/* EDIT — the crop and rotate overlay. A fixed takeover like the asset
+   preview: a crop handle inside a 240px card on a board at 40% is a target
+   nobody can hit. 100dvh, not inset:0 — 100vh is a lie on a phone. */
+.board-imgedit{position:fixed;left:0;top:0;right:0;height:100vh;height:100dvh;z-index:9991;
+  background:rgba(12,12,14,.9);display:flex;flex-direction:column}
+.board-imgedit-bar{display:flex;align-items:center;gap:8px;padding:8px 12px;flex-shrink:0;
+  background:var(--surface);border-bottom:1px solid var(--border);color:var(--text);font-size:14px;flex-wrap:wrap}
+.board-imgedit-dims{font-size:12px;color:var(--muted)}
+.board-imgedit-body{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:16px}
+/* The picture box carries the ROTATED aspect ratio inline, fills the
+   height, and lets aspect-ratio derive its width — capped by max-width,
+   which then pulls the height back down with it. Every crop coordinate is
+   a percentage of this box, so the editor needs no pixel maths at all. */
+.board-imgedit-pic{position:relative;height:100%;max-width:100%;max-height:100%;
+  touch-action:none;user-select:none}
+.board-imgedit-pic img{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;
+  transform-origin:50% 50%;-webkit-user-drag:none;user-select:none}
+.board-imgedit-shade{position:absolute;inset:0;background:rgba(0,0,0,.55);pointer-events:none}
+.board-imgedit-rect{position:absolute;outline:1px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.5);cursor:move}
+.board-imgedit-h{position:absolute;width:20px;height:20px;background:#fff;border-radius:50%;
+  box-shadow:0 0 0 1px rgba(0,0,0,.5)}
+.board-imgedit-h.nw{left:-10px;top:-10px;cursor:nwse-resize}
+.board-imgedit-h.ne{right:-10px;top:-10px;cursor:nesw-resize}
+.board-imgedit-h.sw{left:-10px;bottom:-10px;cursor:nesw-resize}
+.board-imgedit-h.se{right:-10px;bottom:-10px;cursor:nwse-resize}
+.board-imgedit-foot{flex-shrink:0;padding:10px 14px calc(10px + env(safe-area-inset-bottom));
+  color:#ECECEE;font-size:12px;text-align:center}
+@media (max-width:560px){
+  .board-imgedit-body{padding:8px}
+  .board-imgedit-bar{gap:6px}
+}
+
 /* Tables. The grid is a real <table> so the browser does the column
    sizing; cells stay contenteditable="false" until boardsBeginEdit turns
    exactly one on, which is what keeps a single click on the card a
@@ -2284,6 +2343,11 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   .rail-grow{display:none}
   .rail-sep{width:1px;height:26px;margin:0 4px}
   .rail-swatches{grid-template-columns:repeat(6,1fr);padding:0 6px;gap:6px}
+  /* The pen's width row. .rail-fmt-row is width:100% on the desktop rail,
+     which is a column; the phone rail is a horizontal dock, so it takes
+     only the room its three buttons need. (The text rail that also uses
+     this class is desktop-only, so nothing else is affected.) */
+  .rail-fmt-row{width:auto;flex-wrap:nowrap;padding:0 6px;gap:6px}
   .rail-btn{width:54px;flex-shrink:0}
   .rail-count{padding:0 6px}
   .board-gallery-grid{grid-template-columns:1fr 1fr}

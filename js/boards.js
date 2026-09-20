@@ -970,6 +970,11 @@ function _boardsOnKeydown(e){
   // Escape is the way OUT of edit mode, so it has to be read before the
   // editable-focus bail below — otherwise it is handed to the browser and
   // does nothing at all.
+  // Drawing is a mode, so Escape is its way out too — and read here, above
+  // the editable bail, for the same reason.
+  if(_boardsDrawOn&&(e.key==='Escape'||e.key==='Esc')){
+    e.preventDefault();window.boardsDrawEnd();return;
+  }
   if((_boardsEditingEl||_boardsCellFocus)&&(e.key==='Escape'||e.key==='Esc')){
     e.preventDefault();
     const hadCell=!!_boardsCellFocus;
@@ -1891,6 +1896,9 @@ async function _boardsOpenCanvas(){
   // ids persist with the next write that happens for a real reason.
   _boardsConnEnsureIds();
   _boardsConnSel=null;
+  // Drawing is a mode, like line mode, and a mode that survived leaving the
+  // board is exactly the bug the QA round found in _boardsLineMode.
+  _boardsDrawOn=null;
   _boardsConnBase=JSON.stringify(_editConnectors);
   _boardsPeers=[];_boardsComments=[];_boardsBoardActivity=[];
   _boardsCardTrash=[];_boardsCardTrashOpen=false;_boardsCardTrashTab='mine';
@@ -1944,6 +1952,7 @@ function _boardsRenderCanvasAndWire(){
   // Seed the pill's last-seen value from the markup we just wrote, so
   // opening a board doesn't flash a percentage nobody asked for.
   _boardsPillZoom=_editBoard?Math.round(_editBoard.zoom*100):null;
+  _boardsApplyBoardBg();
   _boardsApplyTransform();
   _boardsHydrateTextCards();
   _boardsDrawConnectors();
@@ -2081,6 +2090,11 @@ function _renderBoardCanvasHTML(){
          be a different bug. -->
     <div class="board-below${home?(_boardsHomePanelCollapsed?' with-panel-collapsed':' with-panel'):''}">
     <div class="board-stage" id="board-stage">
+      <!-- The board's own background picture. A sibling of .board-world,
+           so pan and zoom do not move it, and its own element rather than
+           a background-image on .board-stage, which already carries one
+           (the dot-grid placement cue). pointer-events:none throughout. -->
+      <div class="board-bg" id="board-bg" style="display:none"></div>
       <div class="board-world" id="board-world">
         <svg class="board-conn-layer" id="board-conn-layer" width="4000" height="3000"></svg>
         <div class="board-guide board-guide-v" id="board-guide-v"></div>
@@ -2215,10 +2229,18 @@ function _boardCardHTML(c,canEdit){
     </div>`;
     c._todoProgress=items.length?doneN+'/'+items.length:'';
   }else if(c.type==='image'){
+    // A CROPPED OR ROTATED picture is placed by _boardsImgGeom — absolute
+    // pixels inside the body box, rotated about its own centre — instead of
+    // object-fit, which can express neither. An UNEDITED card takes exactly
+    // the path it always did, so nothing migrates and nothing moves.
+    const _ib=c.imageUrl?_boardsCardBodyBox(c):null;
+    const _ig=_ib?_boardsImgGeom(c,_ib.w,_ib.h):null;
     body=c._uploading
       ?'<div class="board-card-empty">Uploading…</div>'
       :c.imageUrl
-      ?`<img src="${_boardsEsc(_boardsDisplayUrl(c.imageUrl,c.w))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" data-full="${_boardsEsc(c.imageUrl)}" style="width:100%;height:100%;object-fit:${c.fit==='contain'?'contain':'cover'};display:block">`
+      ?`<img src="${_boardsEsc(_boardsDisplayUrl(c.imageUrl,c.w,c))}" crossorigin="anonymous" draggable="false" onerror="${c.nobg?`window.boardsNoBgFailed(this,'${c.id}')`:'window.boardsImgFallback(this)'}" data-full="${_boardsEsc(c.imageUrl)}" style="${
+          _ig?`position:absolute;left:${_ig.left.toFixed(2)}px;top:${_ig.top.toFixed(2)}px;width:${_ig.w.toFixed(2)}px;height:${_ig.h.toFixed(2)}px;transform:rotate(${_ig.rot}deg);transform-origin:50% 50%;display:block`
+             :`width:100%;height:100%;object-fit:${c.fit==='contain'?'contain':'cover'};display:block`}">`
       :canEdit?`<label class="board-card-empty" for="board-file-${c.id}">Click, or paste an image (Ctrl+V)<input type="file" id="board-file-${c.id}" accept="image/*" onchange="window.boardsUploadToCard('${c.id}',this)" style="display:none"></label>`
               :`<div class="board-card-empty">No image</div>`;
     body=`<div class="board-card-body" style="padding:0"${bodyDrag}${c.imageUrl?` ondblclick="window.boardsFilePreview('${c.id}')"`:''}>${body}</div>`;
@@ -2521,7 +2543,7 @@ function _boardCardHTML(c,canEdit){
   // wrapping every card in a second clipping element, which is a structural
   // change to every card rule in the file for a few pixels of overhang.
   const pin=`<button class="board-cmt-badge pin" id="board-cmt-${c.id}" style="display:none" title="Comments on this card" onclick="event.stopPropagation();window.boardsOpenComments('${c.id}')" onpointerdown="event.stopPropagation()"></button>`;
-  return`<div class="board-card-el type-${c.type}${photo?' photo':''}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle(c)}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px" onclick="window.boardsSelectCard('${c.id}',event)">
+  return`<div class="board-card-el type-${c.type}${photo?' photo':''}${canEdit&&_boardsDrawOn===c.id?' drawing':''}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle(c)}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px" onclick="window.boardsSelectCard('${c.id}',event)">
     <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''}>
       <span class="board-card-kind">
         <span class="board-card-name" id="board-name-${c.id}" contenteditable="false" data-placeholder="${_boardsEsc(kind)}" oninput="window.boardsCardName('${c.id}',this)" onpointerdown="event.stopPropagation()"></span>${c.locked?`<span class="board-card-lock" title="Position locked — unlock it from the ⋯ menu">${_boardsIcon('lock')}</span>`:''}</span>
@@ -2532,6 +2554,7 @@ function _boardCardHTML(c,canEdit){
     ${pin}
     <span class="board-card-corner" aria-hidden="true"></span>
     ${body}
+    ${_boardsDrawOverlayHTML(c,canEdit)}
     ${_boardsCardFootHTML(c)}
     ${canEdit&&!c.locked?`<div class="board-link-handle" onpointerdown="window.boardsLinkStart(event,'${c.id}')" title="Drag to connect"></div>
     <div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
@@ -2564,6 +2587,344 @@ window.boardsImgFallback=function(img){
   const full=img.getAttribute('data-full')||img.src;
   img.removeAttribute('crossorigin');
   img.src=full;
+};
+
+/* ── The image card's three tools: Draw on · Edit · Background ──────────
+   READ OFF THE SECOND MILANOTE VIDEO at 82s, full resolution: a selected
+   image card's rail is
+
+       Color · Labels · Reactions · Comment · Draw on · Edit · Background ·
+       Caption · ⋯
+
+   with no Rename (the "Rename before Caption" recorded here a round earlier
+   was read off the TO-DO card at 112s, not the image one — corrected). The
+   glyphs are a pen nib, crop marks with a rotate arrow, and a dashed frame
+   around a picture.
+
+   NONE OF THE THREE IS EVER DEMONSTRATED IN EITHER VIDEO — the image card
+   leaves the screen at 88s and the panels never open — so everything below
+   is built from the names and the icons, exactly as the earlier note said
+   it would have to be. Nothing here claims to match Milanote's own panels.
+
+   They were recorded as NOT BUILT last round ("annotating a picture is a
+   drawing surface, crop and rotate is an image editor, removing a
+   background needs a service"). Two of the three turn out to need neither
+   a dependency nor a service; the third is honest about what it needs. */
+
+/* DRAW ON. c.strokes = [{c:<palette name>, w:<px>, p:[x0,y0,x1,y1,…]}] —
+   the points NORMALIZED to 0..100 of the card's BODY box and held FLAT,
+   drawn as one SVG overlay with viewBox="0 0 100 100" and
+   preserveAspectRatio="none".
+
+   FLAT, and that is not a style choice: FIRESTORE DOES NOT SUPPORT NESTED
+   ARRAYS. A list of [x,y] pairs inside a card inside the cards array is
+   exactly the shape that meant a table's rows never persisted at all (see
+   the table QA round) — every save would have been refused with "Nested
+   arrays are not supported" and the only symptom a repeating "Save failed".
+   A flat list needs no encode/decode boundary of its own, so there is
+   nothing to keep in step and nothing to get wrong later.
+
+   Normalized to the BODY, not to the picture, and the trade-off is worth
+   stating rather than hiding: a stroke stretches with the card, so resizing
+   a card non-proportionally turns a circle into an ellipse and slides an
+   annotation off the thing it was circling (the picture under object-fit:
+   cover re-crops rather than stretching). Glueing strokes to the picture
+   instead needs the natural dimensions the Edit tool goes and fetches, so
+   it would make Draw on unusable on every card written before this and on
+   any picture whose size never came back. The body is what you SEE, it
+   needs nothing stored, and it works on a card with no picture at all.
+
+   stroke-width carries vector-effect="non-scaling-stroke" so a width is a
+   width whatever the card's aspect — but it still rides the board's own
+   zoom transform, which is what you want: a drawing zooms with the board. */
+const _BOARDS_DRAW_COLORS=['red','blue','green','yellow','purple','grey'];
+const _BOARDS_DRAW_WIDTHS=[{w:2,label:'Thin'},{w:4,label:'Medium'},{w:8,label:'Thick'}];
+const _BOARDS_DRAW_MIN_PT=0.6;    // % of the body box — points closer than this are dropped
+let _boardsDrawOn=null;           // the card id being drawn on, or null
+let _boardsDrawColor='red';
+let _boardsDrawWidth=4;
+
+function _boardsStrokes(c){return Array.isArray(c&&c.strokes)?c.strokes:[];}
+function _boardsDrawColorOf(s){
+  const n=s&&s.c;
+  return _BOARDS_COLOR_TOKENS[n]?`var(${_BOARDS_COLOR_TOKENS[n]})`:`var(${_BOARDS_COLOR_TOKENS.red})`;
+}
+function _boardsStrokePath(s){
+  const p=Array.isArray(s&&s.p)?s.p:[];
+  if(p.length<2)return'';
+  // A single tap is a dot, and a zero-length path draws nothing at all even
+  // with a round cap, so it is closed onto itself a hair away.
+  if(p.length===2)return`M${p[0]} ${p[1]}L${p[0]+0.01} ${p[1]}`;
+  let d='M'+p[0]+' '+p[1];
+  for(let i=2;i+1<p.length;i+=2)d+='L'+p[i]+' '+p[i+1];
+  return d;
+}
+function _boardsStrokeLen(s){return Math.floor((Array.isArray(s&&s.p)?s.p.length:0)/2);}
+function _boardsDrawOverlayHTML(c,canEdit){
+  const ss=_boardsStrokes(c);
+  const live=canEdit&&_boardsDrawOn===c.id;
+  if(!ss.length&&!live)return'';
+  // The overlay is a SIBLING of the body, not a child of it, so one rule
+  // covers every card type: the head is an absolute overlay and the foot
+  // sits BELOW the body, so the body runs from the card's top edge down to
+  // _boardsCardChromeH(c) above its bottom.
+  // The SVG sits inside a plain DIV, and that is not decoration. An <svg>
+  // is a REPLACED element: given top:0 and bottom:N with no height, it
+  // takes its height from the viewBox's intrinsic 1:1 ratio instead of
+  // stretching — MEASURED at 240 tall inside a 360 card. A div stretches;
+  // the svg then fills it at 100%/100%.
+  return`<div class="board-draw${live?' drawing':''}" id="board-draw-${c.id}" style="bottom:${_boardsCardChromeH(c)}px"${
+    live?` onpointerdown="window.boardsDrawStart(event,'${c.id}')"`:''}><svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${
+    ss.map(s=>`<path d="${_boardsStrokePath(s)}" fill="none" stroke="${_boardsDrawColorOf(s)}" stroke-width="${+s.w||4}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`).join('')
+  }</svg></div>`;
+}
+
+/* EDIT — crop and rotate, and deliberately NOT through a Cloudinary
+   delivery transform. That was the obvious route (a_90/c_crop,…) and it is
+   the wrong one here: the sandbox cannot reach cloudinary.com AT ALL, so
+   the transform string could only ever be constructed and hoped for — the
+   one thing this project's ground rule forbids. Doing the arithmetic
+   ourselves needs no service, no add-on and no network, and it is
+   measurable in a browser from a session.
+
+   c.rotate ∈ {90,180,270} (absent = upright) and c.crop = {x,y,w,h}
+   normalized WITHIN THE ROTATED FRAME (absent = the whole picture), so
+   rotating after cropping does not have to rewrite the crop. Both are
+   non-destructive: the stored imageUrl is never touched, Reset puts the
+   whole picture back, and nothing migrates — a card with neither field
+   renders through the same plain object-fit path it always did. */
+function _boardsRot(c){const r=c&&+c.rotate;return(r===90||r===180||r===270)?r:0;}
+function _boardsCrop(c){
+  const q=c&&c.crop;
+  if(!q)return null;
+  const x=+q.x,y=+q.y,w=+q.w,h=+q.h;
+  if(!(x>=0&&y>=0&&w>0&&h>0))return null;
+  if(x+w>1.0001||y+h>1.0001)return null;
+  if(x===0&&y===0&&w>=0.9999&&h>=0.9999)return null;   // the whole picture is no crop
+  return{x:x,y:y,w:Math.min(w,1-x),h:Math.min(h,1-y)};
+}
+function _boardsImgNat(c){
+  const w=c&&+c.imgW,h=c&&+c.imgH;
+  return(w>0&&h>0)?{w:w,h:h}:null;
+}
+function _boardsImgEdited(c){return!!(_boardsRot(c)||_boardsCrop(c));}
+/* The chrome a card charges ABOVE its body — the part of _boardsMinCardH
+   that is not the body's own minimum. Pulled out because the picture
+   geometry needs the body's height in px and there is no other way to know
+   it: the body is a flex child, so only the sum of its siblings says how
+   tall it is. _boardsMinCardH reads it, so the two cannot drift. */
+function _boardsCardChromeH(c){
+  if(!c)return 0;
+  let h=0;
+  if(Array.isArray(c.labels)&&c.labels.length)h+=_BOARDS_CHROME_H.labels;
+  if(c.reactions&&Object.keys(c.reactions).length)h+=_BOARDS_CHROME_H.reactions;
+  if((c.type==='image'||c.type==='file'||c.type==='table')&&c.caption!=null)h+=_BOARDS_CHROME_H.caption;
+  if(c.type==='image'&&c.sourceUrl)h+=_BOARDS_CHROME_H.caption;
+  return h;
+}
+function _boardsCardBodyBox(c){
+  const drawH=Math.max(c.h,_boardsMinCardH(c));
+  // *{box-sizing:border-box}, so c.w/c.h INCLUDE .board-card-el's 1px
+  // borders — except on a photo card, which drops the border outright
+  // (.board-card-el.type-image.photo{border:none}). MEASURED both ways in
+  // headless Chromium: a 240-wide photo card's body is 240, and every
+  // other card's is 238. Getting this wrong by 2px leaves a 2px strip of
+  // the card uncovered along one edge of a cropped picture.
+  const b=_boardsIsPhotoCard(c)?0:2;
+  return{w:Math.max(0,c.w-b),h:Math.max(0,drawH-b-_boardsCardChromeH(c))};
+}
+/**
+ * Where the <img> goes so the card's box shows exactly the cropped, rotated
+ * picture. PURE, and the ONE definition of it: the DOM render and the
+ * PNG/PDF exporter both read it, so a crop cannot look one way on screen
+ * and another in the export — the rule _boardsConnGeom already holds for
+ * connectors. Returns null when the natural size is unknown, and every
+ * caller then falls back to the plain object-fit render.
+ *
+ * The element is laid out UNROTATED at w×h and rotated about its own
+ * centre, because that is the only placement CSS and canvas agree on
+ * without either of them knowing the other's box model.
+ */
+function _boardsImgGeom(c,boxW,boxH){
+  const nat=_boardsImgNat(c);
+  if(!nat||!(boxW>0)||!(boxH>0))return null;
+  const rot=_boardsRot(c),q=_boardsCrop(c)||{x:0,y:0,w:1,h:1};
+  if(!rot&&q.w===1&&q.h===1)return null;              // nothing to do
+  const swap=(rot===90||rot===270);
+  const NW=swap?nat.h:nat.w,NH=swap?nat.w:nat.h;      // the rotated picture
+  const SW=NW*q.w,SH=NH*q.h;                          // the crop, in picture px
+  const s=c.fit==='contain'?Math.min(boxW/SW,boxH/SH):Math.max(boxW/SW,boxH/SH);
+  // Top-left of the WHOLE rotated picture, in box coordinates, placed so
+  // that the crop rect lands centred on the box.
+  const L=(boxW-SW*s)/2-q.x*NW*s,T=(boxH-SH*s)/2-q.y*NH*s;
+  const w0=nat.w*s,h0=nat.h*s;
+  const cx=L+NW*s/2,cy=T+NH*s/2;
+  return{rot:rot,w:w0,h:h0,left:cx-w0/2,top:cy-h0/2,cx:cx,cy:cy,scale:s,
+         sw:SW,sh:SH,nw:NW,nh:NH};
+}
+/* The aspect a cropped, rotated picture wants its card to be — what Apply
+   re-fits the card to, through the same _BOARDS_IMG_CARD_W / MAX_H / MIN
+   clamps a freshly uploaded picture goes through. */
+function _boardsEditedAspect(c){
+  const nat=_boardsImgNat(c);
+  if(!nat)return null;
+  const rot=_boardsRot(c),q=_boardsCrop(c)||{x:0,y:0,w:1,h:1};
+  const swap=(rot===90||rot===270);
+  return{w:(swap?nat.h:nat.w)*q.w,h:(swap?nat.w:nat.h)*q.h};
+}
+
+/* BACKGROUND. The glyph is the standard "remove the background" mark and
+   that is one of the two things this button does; the other is the one
+   Milanote-vs-ours gap a picture card can actually close.
+
+   1. Remove the PICTURE's background (c.nobg) — a Cloudinary
+      e_background_removal delivery component. It is a PAID ADD-ON and this
+      account's is UNVERIFIED FROM HERE (the sandbox cannot reach
+      cloudinary.com at all, docs and support included), so the menu row
+      says so, and an account without it answers the URL with an error that
+      the <img> reports: _boardsNoBgFailed clears the flag, repaints and
+      says what is missing, rather than leaving a card stuck on a broken
+      picture. Nothing is uploaded and nothing is destroyed either way.
+   2. Use the picture as the BOARD's background — b.bgImage / b.bgFit,
+      board-level fields. "Board backgrounds" has been on this file's
+      "deliberately still missing vs Milanote" list since the parity round;
+      a picture already on the board is the obvious place to set one from.
+      mood_boards' update rule carries no field allow-list, so this needs
+      NO firestore.rules change and no republish. */
+function _boardsNoBgUrl(url){
+  const u=String(url||'');
+  if(!/res\.cloudinary\.com/.test(u)||u.indexOf('/upload/')===-1)return u;
+  return u.replace('/upload/','/upload/e_background_removal/');
+}
+window.boardsNoBgFailed=function(img,id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||!c.nobg)return;
+  delete c.nobg;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast('Cloudinary would not remove the background — that needs the background-removal add-on on the account. The picture is back as it was.');
+};
+
+/* Drawing is a MODE on one card, the way line mode is a mode on the stage:
+   while it is on, that card's overlay takes the pointer and the card cannot
+   be dragged from under it. Entering it selects the card and swaps the rail
+   for the drawing tools; Escape, Done, clicking another card or leaving the
+   board all end it.
+
+   ONE UNDO ENTRY PER STROKE, pushed before the stroke is appended — a
+   drawing tool where Ctrl+Z wipes the whole session is not a drawing tool,
+   and the rail's own "Undo stroke" is the same action under a name you can
+   see. Nothing is pushed for a mode change, so turning the tool on and off
+   leaves no no-op entries the way a plain click on a card would. */
+window.boardsDrawMode=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='image'||!_boardsCanEdit(_editBoard))return;
+  if(c.locked){showToast(_boardsLockedMsg('draw on it'));return;}
+  _boardsDrawOn=(_boardsDrawOn===id)?null:id;
+  if(_boardsDrawOn)_boardsSetSelection([id]);
+  _boardsRenderCanvasAndWire();
+  if(_boardsDrawOn)showToast('Drawing — drag on the picture. Esc or Done when you are finished.');
+};
+window.boardsDrawEnd=function(){
+  if(!_boardsDrawOn)return;
+  _boardsDrawOn=null;
+  _boardsRenderCanvasAndWire();
+};
+window.boardsDrawSetColor=function(name){
+  if(_BOARDS_COLOR_TOKENS[name])_boardsDrawColor=name;
+  _boardsRenderRail();
+  if(document.getElementById('board-sheet'))window.boardsDrawPenSheet();
+};
+window.boardsDrawSetWidth=function(w){
+  const n=+w;
+  if(_BOARDS_DRAW_WIDTHS.some(x=>x.w===n))_boardsDrawWidth=n;
+  _boardsRenderRail();
+  if(document.getElementById('board-sheet'))window.boardsDrawPenSheet();
+};
+/* The phone's pen settings. Re-opened after each pick rather than closed,
+   so trying three colours is not three round trips — the board look
+   sheet's reason, and the live colour panel's. */
+window.boardsDrawPenSheet=function(){
+  if(!_boardsDrawOn)return;
+  _boardsOpenSheet('Pen',
+    `<div class="board-sheet-row"><span>Colour</span></div>
+     <div class="rail-swatches">${_BOARDS_DRAW_COLORS.map(c=>`<button class="board-swatch sw-${c}${c===_boardsDrawColor?' on':''}" data-act="draw:color:${c}" title="${c}"></button>`).join('')}</div>
+     <div class="board-sheet-row"><span>Width</span></div>
+     <div class="rail-fmt-row">${_BOARDS_DRAW_WIDTHS.map(x=>`<button class="board-pen-w${x.w===_boardsDrawWidth?' on':''}" data-act="draw:width:${x.w}" title="${x.label}"><span style="height:${x.w}px"></span></button>`).join('')}</div>`);
+};
+window.boardsDrawUndo=function(){
+  const c=_editCards.find(x=>x.id===_boardsDrawOn);
+  if(!c||!_boardsStrokes(c).length)return;
+  _boardsPushUndo();
+  c.strokes=_boardsStrokes(c).slice(0,-1);
+  if(!c.strokes.length)delete c.strokes;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+window.boardsDrawClear=function(id){
+  const c=_editCards.find(x=>x.id===(id||_boardsDrawOn));
+  if(!c||!_boardsStrokes(c).length)return;
+  if(!confirm('Erase every mark drawn on this picture? Ctrl+Z undoes it.'))return;
+  _boardsPushUndo();
+  delete c.strokes;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast('Drawing erased — press Ctrl+Z to undo');
+};
+/* A point is in % of the body box, read off the SVG's own bounding rect —
+   which already carries the board's pan and zoom, so no _boardsScreenToWorld
+   is needed and the same code works at 25% and at 200%. */
+function _boardsDrawPoint(e,host){
+  const r=host.getBoundingClientRect();
+  if(!(r.width>0&&r.height>0))return null;
+  const x=(e.clientX-r.left)/r.width*100,y=(e.clientY-r.top)/r.height*100;
+  return[Math.round(Math.max(-2,Math.min(102,x))*100)/100,
+         Math.round(Math.max(-2,Math.min(102,y))*100)/100];
+}
+window.boardsDrawStart=function(e,id){
+  const c=_editCards.find(x=>x.id===id);
+  // currentTarget is the stretching DIV; the <svg> inside it is what the
+  // paths go into, and the two share a rect exactly (100%/100%).
+  const host=e.currentTarget;
+  const svg=host.querySelector?host.querySelector('svg'):null;
+  if(!svg)return;
+  if(!c||_boardsDrawOn!==id||!_boardsCanEdit(_editBoard))return;
+  e.preventDefault();e.stopPropagation();
+  const first=_boardsDrawPoint(e,host);
+  if(!first)return;
+  _boardsPushUndo();
+  const stroke={c:_boardsDrawColor,w:_boardsDrawWidth,p:[first[0],first[1]]};
+  c.strokes=_boardsStrokes(c).concat([stroke]);
+  const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('fill','none');
+  path.setAttribute('stroke',_boardsDrawColorOf(stroke));
+  path.setAttribute('stroke-width',String(stroke.w));
+  path.setAttribute('stroke-linecap','round');
+  path.setAttribute('stroke-linejoin','round');
+  path.setAttribute('vector-effect','non-scaling-stroke');
+  path.setAttribute('d',_boardsStrokePath(stroke));
+  svg.appendChild(path);
+  try{host.setPointerCapture(e.pointerId);}catch(err){}
+  const move=ev=>{
+    const q=_boardsDrawPoint(ev,host);
+    if(!q)return;
+    const n=stroke.p.length,lx=stroke.p[n-2],ly=stroke.p[n-1];
+    // Drop a point that has barely moved: a 3,000-point stroke is a
+    // document this board has to carry forever, and the line looks the same.
+    if(Math.abs(q[0]-lx)<_BOARDS_DRAW_MIN_PT&&Math.abs(q[1]-ly)<_BOARDS_DRAW_MIN_PT)return;
+    stroke.p.push(q[0],q[1]);
+    path.setAttribute('d',_boardsStrokePath(stroke));
+  };
+  const up=()=>{
+    host.removeEventListener('pointermove',move);
+    host.removeEventListener('pointerup',up);
+    host.removeEventListener('pointercancel',up);
+    try{host.releasePointerCapture(e.pointerId);}catch(err){}
+    _boardsSaveDebounced();
+  };
+  host.addEventListener('pointermove',move);
+  host.addEventListener('pointerup',up);
+  host.addEventListener('pointercancel',up);
 };
 
 // ── Labels and reactions ────────────────────────────────────────────────
@@ -2688,7 +3049,13 @@ const _BOARDS_REACTIONS=[
 // (scratchpad/measure-foot.js). With both rows present the foot's padding is
 // counted twice, a 7px slack that is deliberate: a wrapped row of labels
 // still gets no extra height, and a little air beats a clipped chip.
-const _BOARDS_CHROME_H={head:28,labels:31,reactions:31,caption:27,todoTitle:21,todoAsk:27};
+// caption: 27 → 30 (Sept 2026). RE-MEASURED while building the crop tool:
+// .board-caption is 13px at line-height 1.4 (18.2) + 5px padding top and
+// bottom + a 1px border-top = 29.2, so 27 UNDER-counted and a captioned
+// card at its minimum clipped 2px off its own caption. Rounded UP, because
+// over-counting a box only costs a hair of a cover-fitted picture while
+// under-counting leaves a strip of the card showing through.
+const _BOARDS_CHROME_H={head:28,labels:31,reactions:31,caption:30,todoTitle:21,todoAsk:27};
 // board:108 is MEASURED, not chosen. The spine card's tallest honest
 // content at the width a board card is born at (_BOARDS_BOARD_W) is a
 // two-line name + the meta line + a thumbnail strip = 107px of body; 108
@@ -2797,11 +3164,10 @@ function _boardsMinCardH(c){
   // what cropped 28px off a fitted picture. _BOARDS_CHROME_H.head is kept
   // as the strip's own height — the export canvas and the file-card fit
   // both need to know it.
-  let h=0;
-  if(Array.isArray(c.labels)&&c.labels.length)h+=_BOARDS_CHROME_H.labels;
-  if(c.reactions&&Object.keys(c.reactions).length)h+=_BOARDS_CHROME_H.reactions;
-  if((c.type==='image'||c.type==='file'||c.type==='table')&&c.caption!=null)h+=_BOARDS_CHROME_H.caption;
-  if(c.type==='image'&&c.sourceUrl)h+=_BOARDS_CHROME_H.caption;
+  // The chrome above the body is _boardsCardChromeH — one definition, so
+  // the picture geometry (which needs the body's height in px) and this
+  // minimum cannot disagree about what a card carries.
+  const h=_boardsCardChromeH(c);
   if(c.type==='todo')return h+_boardsTodoMinH(c);
   return h+(_BOARDS_MIN_BODY_H[c.type]||48);
 }
@@ -4837,6 +5203,9 @@ function _boardsSetSelection(ids){
   if(ids&&ids.length&&_boardsConnSel!==null){_boardsConnSel=null;_boardsDrawConnectors();}
   else if(_boardsConnSel!==null&&(!ids||!ids.length)){_boardsConnSel=null;_boardsDrawConnectors();}
   _boardsSelection=new Set(ids);
+  // Drawing belongs to ONE card. Selecting anything else ends it, so the
+  // rail can never offer the drawing tools for a card you are not on.
+  if(_boardsDrawOn&&!_boardsSelection.has(_boardsDrawOn))_boardsDrawOn=null;
   // A focused cell belongs to a selected table. Clicking empty canvas
   // clears the selection through here, and leaving the focus behind left
   // the ring and the cell rail up with no way out but the Done button.
@@ -4902,6 +5271,11 @@ const _BOARDS_ICONS={
   outdent:'<path d="M6 3.2h8v1.5H6zM6 7.3h8v1.5H6zM6 11.3h8v1.5H6z"/><path d="M4.3 5.2L1.8 8l2.5 2.8z"/>',
   drawon:'<path d="M2.6 13.4l.7-2.6 7-7 1.9 1.9-7 7z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M11 2.8l1.2-1.2 1.9 1.9L12.9 4.7z"/>',
   crop:'<path d="M4.2 1.6v10.2h10.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M1.6 4.2h10.2v10.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
+  // Background: the dashed frame around a picture, read off the rail at 82s.
+  nobg:'<rect x="1.8" y="2.4" width="12.4" height="11.2" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2.4 1.8"/><path d="M4 11.4l2.6-3.2 1.9 2.2 1.5-1.7 2 2.7z" /><circle cx="5.6" cy="5.9" r="1.1"/>',
+  // Drawing: the eraser, the swatch row's frame and the tick that ends the mode.
+  eraser:'<path d="M6.4 13.4H13v1.4H5.2z"/><path d="M2.3 9.9l5.2-5.2a1.4 1.4 0 0 1 2 0l2.6 2.6a1.4 1.4 0 0 1 0 2l-3.6 3.6H5.2L2.3 11.9a1.4 1.4 0 0 1 0-2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>',
+  undostroke:'<path d="M3.4 6.6h6.1a3.4 3.4 0 0 1 0 6.8H5.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M5.9 3.2L2.6 6.6l3.3 3.4z"/>',
   // The text rail (Sept 2026): Text style, bullets, numbers.
   textstyle:'<path d="M2 3h9v2.5H8.8V13H6.2V5.5H2z"/><circle cx="12.5" cy="11.5" r="2.5"/>',
   ul:'<circle cx="3" cy="4" r="1.3"/><circle cx="3" cy="8" r="1.3"/><circle cx="3" cy="12" r="1.3"/><path d="M6 3.2h8v1.6H6zM6 7.2h8v1.6H6zM6 11.2h8v1.6H6z"/>',
@@ -4999,6 +5373,33 @@ function _boardsRailPhoneOverflow(){
 function _boardsRailItems(){
   const canEdit=_boardsCanEdit(_editBoard);
   const sel=_boardsSelectedCards();
+  // DRAWING OUTRANKS EVERY OTHER MODE — while the pen is on one card the
+  // rail is that card's drawing tools and nothing else, the way the text
+  // rail takes over for a caret in a note. It is the rail's SIXTH mode
+  // (nothing selected / a card / a line / a cell / text / drawing).
+  if(canEdit&&_boardsDrawOn&&_editCards.some(c=>c.id===_boardsDrawOn)){
+    const c=_editCards.find(x=>x.id===_boardsDrawOn);
+    const empty=!_boardsStrokes(c).length;
+    // On a phone the rail is a horizontal dock, and six colour swatches
+    // beside three width buttons and three labelled tools does not fit —
+    // MEASURED by tests/smoke-phone.js, which reported the last tool off
+    // the right edge at 390 and 360. The pen's own settings go behind one
+    // button that opens a bottom sheet, which is the pattern Colour,
+    // Labels and Reactions already follow there.
+    if(_boardsIsPhone())return[
+      {act:'draw:done',label:'Done',icon:'done',done:true},
+      {act:'draw:pen',label:'Pen',icon:'drawon'},
+      {act:'draw:undo',label:'Undo',icon:'undostroke',off:empty},
+      {act:'draw:clear',label:'Erase',icon:'eraser',off:empty}
+    ];
+    return[
+      {act:'draw:done',label:'Done',icon:'done',done:true},
+      {drawSwatches:true},
+      {drawWidths:true},
+      {act:'draw:undo',label:'Undo stroke',icon:'undostroke',off:empty},
+      {act:'draw:clear',label:'Erase all',icon:'eraser',off:empty}
+    ];
+  }
   // A FOCUSED TO-DO outranks every other mode, and that is the second
   // video's structural finding: Milanote's rail follows what is FOCUSED,
   // not what is selected. The same to-do card gives one rail while a task
@@ -5191,14 +5592,26 @@ function _boardsRailItems(){
     // Labels, Reactions and Comment beside them because a to-do here is a
     // card like any other and there is nowhere else to reach those.
     if(one.type==='todo'&&canEdit)items.push({act:'todo:title',label:'Title',icon:'title',on:one.title!=null});
-    if(canEdit)items.push({act:one.type==='heading'?'renameheading':'rename',label:'Rename',icon:'rename'});
-    // AN IMAGE'S RAIL IS MILANOTE'S EXACTLY (112s): Color · Labels ·
-    // Reactions · Comment · Rename · Caption · ⋯ — Rename BEFORE Caption,
-    // and no Replace / Download on the rail. Those two are not lost:
-    // _boardsMoreItems derives ⋯ from the right-click list minus whatever
-    // the rail carries, so taking them off the rail puts them in ⋯ on its
-    // own. A file card keeps its Replace / Download here — its rail was
-    // not in the video, and a document is reached for differently.
+    // AN IMAGE'S RAIL IS MILANOTE'S EXACTLY, and this CORRECTS what was
+    // recorded here a round earlier. Read off the second video at 82s at
+    // full resolution, the rail for a selected image card is
+    //
+    //     Color · Labels · Reactions · Comment · Draw on · Edit ·
+    //     Background · Caption · ⋯
+    //
+    // with NO Rename. The "Rename before Caption" claim was read off the
+    // TO-DO card at 112s and applied to the wrong type. Rename is not lost
+    // — _boardsMoreItems derives ⋯ from the right-click list minus whatever
+    // the rail carries, so dropping it here puts it in ⋯ on its own, which
+    // is the same algebra that already moved Replace and Download there.
+    if(canEdit&&!(one.type==='image'&&one.imageUrl)){
+      items.push({act:one.type==='heading'?'renameheading':'rename',label:'Rename',icon:'rename'});
+    }
+    if(one.type==='image'&&one.imageUrl&&canEdit){
+      items.push({act:'img:draw',label:'Draw on',icon:'drawon',on:_boardsStrokes(one).length>0});
+      items.push({act:'img:edit',label:'Edit',icon:'crop',on:_boardsImgEdited(one)});
+      items.push({act:'img:bg',label:'Background',icon:'nobg',on:!!one.nobg});
+    }
     if(one.type==='image'&&canEdit)items.push({act:'caption',label:'Caption',icon:'caption'});
   }
   // ⋯ is on the rail whether or not you can edit: Copy, Copy link and the
@@ -5216,7 +5629,7 @@ function _boardsRenderRail(){
   // tools → a selection → a note's text tools) the new column slides in.
   // Keyed on the mode, not on every repaint — a trash-count paint or a
   // selection of a second card must not replay it.
-  const mode=_boardsFmtActive()?'text':(_boardsConnSel!==null&&!sel.length)?'line':_boardsFocusedCell()?'cell':sel.length?'sel':'add';
+  const mode=_boardsDrawOn?'draw':_boardsFmtActive()?'text':(_boardsConnSel!==null&&!sel.length)?'line':_boardsFocusedCell()?'cell':sel.length?'sel':'add';
   const prev=host.dataset?host.dataset.mode:'';
   if(host.dataset)host.dataset.mode=mode;
   host.classList.remove('rail-swap');
@@ -5233,6 +5646,11 @@ function _boardsRenderRail(){
     if(it.swatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
     if(it.cellSwatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="cellbg:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
     if(it.connSwatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="ln:c:${c}" title="${c==='none'?'Default':c}"></button>`).join('')}</div>`;
+    // The pen's own colour and width rows. The swatch carrying the current
+    // pick is marked, so the rail says what you are about to draw with
+    // rather than making you draw a line to find out.
+    if(it.drawSwatches)return`<div class="rail-swatches" title="Pen colour">${_BOARDS_DRAW_COLORS.map(c=>`<button class="board-swatch sw-${c}${c===_boardsDrawColor?' on':''}" data-act="draw:color:${c}" title="${c}"></button>`).join('')}</div>`;
+    if(it.drawWidths)return`<div class="rail-fmt-row" title="Pen width">${_BOARDS_DRAW_WIDTHS.map(x=>`<button class="board-pen-w${x.w===_boardsDrawWidth?' on':''}" data-act="draw:width:${x.w}" title="${x.label}"><span style="height:${x.w}px"></span></button>`).join('')}</div>`;
     // `glyph` is static markup from the item lists above (a bold B, an
     // italic I) — never user text, which is why it is not escaped.
     return`<button class="rail-btn${it.on?' on':''}${it.off?' off':''}${it.danger?' danger':''}${it.done?' rail-done':''}${it.drag?' rail-draggable':''}" data-act="${it.off?'':it.act}"${it.drag?' data-drag="1"':''} title="${_boardsEsc(it.label)}${it.drag?' — click to place, or drag onto the board':''}">${it.glyph?`<span class="rail-glyph">${it.glyph}</span>`:_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span>${it.badge?'<span class="board-rail-badge" style="display:none"></span>':''}</button>`;
@@ -7530,6 +7948,105 @@ window.boardsOpenColorPanel=function(){
   _boardsOpenCtx(r.right+8,r.top,_boardsColorPanelItems,null,{keep:true});
 };
 
+/* The Background menu — the two things this button does, on one list, the
+   way the board look sheet put four ways to fill a tile on one sheet
+   instead of behind four menu entries whose names you have to know. It is
+   a .board-ctx anchored to the rail button, the same machinery ⋯ and the
+   colour panel already open, and it stays open ({keep:true}) so the fit
+   can be tried both ways without reopening it. */
+function _boardsImgBgItems(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c)return[];
+  const b=_editBoard,on=!!(b&&_boardsCoverUrl(b.bgImage));
+  const mine=on&&b.bgImage===c.imageUrl;
+  const items=[
+    {title:'The picture'},
+    {act:'img:nobg',label:c.nobg?'Put the background back':'Remove the background',hint:c.nobg?'✓':''}
+  ];
+  // Said on the menu, not discovered by a broken picture: it is a paid
+  // Cloudinary add-on, and whether this account has it CANNOT be checked
+  // from a session (the sandbox cannot reach cloudinary.com at all).
+  if(!c.nobg)items.push({note:'Needs the background-removal add-on on the Cloudinary account. If it is not there the picture comes straight back.'});
+  items.push({sep:true});
+  items.push({title:'The board'});
+  if(mine)items.push({note:'This picture is the board background.'});
+  else items.push({act:'img:boardbg',label:'Use this picture as the board background'});
+  if(on){
+    items.push({act:'board:bgfit:cover',label:'Fill the board',hint:(b.bgFit!=='contain')?'✓':''});
+    items.push({act:'board:bgfit:contain',label:'Fit the whole picture',hint:(b.bgFit==='contain')?'✓':''});
+    items.push({act:'board:bg-off',label:'Remove the board background',danger:true});
+  }
+  return items;
+}
+window.boardsImgBgMenu=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='image'||!c.imageUrl||!_boardsCanEdit(_editBoard))return;
+  const r=_boardsSheetAnchorRect({act:'img:bg'})||{right:100,top:160};
+  _boardsOpenCtx((r.right||100)+8,r.top||160,()=>_boardsImgBgItems(id),null,{keep:true});
+};
+window.boardsImgNoBg=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='image'||!c.imageUrl||!_boardsCanEdit(_editBoard))return;
+  _boardsPushUndo();
+  if(c.nobg)delete c.nobg;else c.nobg=true;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast(c.nobg
+    ? 'Asking Cloudinary to remove the background — if the account has no background-removal add-on the picture comes straight back.'
+    : 'Background restored');
+};
+/* A BOARD BACKGROUND is a board-level field, and "board backgrounds" has
+   been on this file's deliberately-missing-vs-Milanote list since the
+   parity round. mood_boards' update rule carries NO field allow-list, so
+   this needs no firestore.rules change and no republish.
+
+   The URL is re-validated on the way IN through _boardsCoverUrl — anchored
+   https://res.cloudinary.com/ only, because the string goes straight into
+   a CSS url(). A card's imageUrl came from our own upload, but the moment
+   to check a URL is the moment it is written, not the moment it is
+   trusted. */
+window.boardsUseAsBoardBg=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||!_boardsCanEdit(_editBoard))return;
+  const u=_boardsCoverUrl(c.imageUrl);
+  if(!u){showToast('That picture is not hosted where a board background can come from.');return;}
+  _editBoard.bgImage=u;
+  if(!_editBoard.bgFit)_editBoard.bgFit='cover';
+  _boardsApplyBoardBg();
+  _boardsSaveNow();
+  showToast('Board background set');
+};
+window.boardsBoardBgFit=function(fit){
+  if(!_editBoard||!_boardsCanEdit(_editBoard))return;
+  _editBoard.bgFit=(fit==='contain')?'contain':'cover';
+  _boardsApplyBoardBg();
+  _boardsSaveNow();
+};
+window.boardsClearBoardBg=function(){
+  if(!_editBoard||!_boardsCanEdit(_editBoard))return;
+  delete _editBoard.bgImage;delete _editBoard.bgFit;
+  _boardsApplyBoardBg();
+  _boardsSaveNow();
+  showToast('Board background removed');
+};
+/* Painted on a dedicated element INSIDE .board-stage and OUTSIDE
+   .board-world, for two reasons: .board-stage already carries a
+   background-image (the dot-grid placement cue) and two would fight, and
+   the world is what pan and zoom transform — a background that panned with
+   the cards would be a very large picture nobody could ever see the edge
+   of. It is a fixed backdrop behind the board, which is what a wallpaper
+   is. pointer-events:none, so it changes nothing about panning, the
+   marquee or a drop. */
+function _boardsApplyBoardBg(){
+  const el=document.getElementById('board-bg');
+  if(!el)return;
+  const u=_boardsCoverUrl(_editBoard&&_editBoard.bgImage);
+  if(!u){el.style.backgroundImage='';el.style.display='none';return;}
+  el.style.display='block';
+  el.style.backgroundImage='url("'+u.replace(/"/g,'%22')+'")';
+  el.style.backgroundSize=(_editBoard.bgFit==='contain')?'contain':'cover';
+}
+
 // ── Tidy actions ───────────────────────────────────────────────────────
 // The roadmap listed "Columns (auto-stacking vertical lists)". A real
 // column container needs stored membership and would have to reposition
@@ -7800,10 +8317,13 @@ async function _boardsUploadAny(file){
 // same few URLs are reused and actually hit a cache; the STORED url is
 // never rewritten — this is derived at render time, so existing cards get
 // it for free and nothing has to migrate.
-function _boardsDisplayUrl(url,cardW){
+function _boardsDisplayUrl(url,cardW,card){
   const u=String(url||'');
   if(!/res\.cloudinary\.com/.test(u)||u.indexOf('/upload/')===-1)return u;
-  if(/\/upload\/(f_|q_|w_|c_|dpr_)/.test(u))return u;      // already transformed
+  if(/\/upload\/(f_|q_|w_|c_|dpr_|e_)/.test(u))return u;   // already transformed
+  // Background removal is a DELIVERY component, so nothing is re-uploaded
+  // and clearing the flag puts the original picture straight back.
+  if(card&&card.nobg)return u.replace('/upload/','/upload/e_background_removal/');
   const w=cardW<=250?400:cardW<=600?800:1200;
   return u.replace('/upload/','/upload/f_auto,q_auto,w_'+w+'/');
 }
@@ -8710,6 +9230,11 @@ async function _boardsSaveNow(){
     // the card merge: a tray item is never edited in place, only added and
     // removed, so last-writer-wins on the whole array is honest here.
     unsorted:_boardsUnsortedForSave(),
+    // The board's own background picture. Board-level like the title and
+    // the pan, and last-writer-wins for the same reason: it is never
+    // edited in place, only set and cleared.
+    bgImage:_boardsCoverUrl(_editBoard.bgImage)||null,
+    bgFit:(_editBoard.bgFit==='contain')?'contain':'cover',
     updatedAt:Date.now(),updatedByName:session.name
   };
   let wrote=null;
@@ -8841,7 +9366,35 @@ function _boardsLoadImageEl(url){
 // image on a board, so it loads with CORS and draws into the export exactly
 // as an image card does — which is most of why it is mirrored at all.
 function _boardsExportImageUrl(c){
-  return c.type==='image'?(c.imageUrl||''):c.type==='link'?(c.linkImage||''):'';
+  // A card whose background was removed exports the picture it SHOWS, so
+  // the same delivery URL — anything else would put the background back in
+  // the PNG and the PDF only.
+  if(c.type==='image')return c.imageUrl?(c.nobg?_boardsNoBgUrl(c.imageUrl):c.imageUrl):'';
+  return c.type==='link'?(c.linkImage||''):'';
+}
+/* Strokes on the export canvas, from the same c.strokes the SVG overlay
+   reads — one drawing, two renderers, the rule this module holds for the
+   board picture and for connectors. The x/y are % of the body box, and the
+   body box here is the card's width and _boardsCardBodyBox's height. */
+function _boardsDrawStrokesOnCanvas(ctx,c,P,bx,by,bw){
+  const ss=_boardsStrokes(c);
+  if(!ss.length)return;
+  const bodyH=_boardsCardBodyBox(c).h;
+  if(!(bw>0&&bodyH>0))return;
+  ctx.save();
+  ctx.lineCap='round';ctx.lineJoin='round';
+  ss.forEach(s=>{
+    const p=Array.isArray(s.p)?s.p:[];
+    if(p.length<2)return;
+    ctx.strokeStyle=P.tint[s.c]||P.tint.red||'#dc2626';
+    ctx.lineWidth=Math.max(0.5,+s.w||4);
+    ctx.beginPath();
+    ctx.moveTo(bx+p[0]/100*bw,by+p[1]/100*bodyH);
+    for(let i=2;i+1<p.length;i+=2)ctx.lineTo(bx+p[i]/100*bw,by+p[i+1]/100*bodyH);
+    if(p.length===2)ctx.lineTo(bx+p[0]/100*bw+0.01,by+p[1]/100*bodyH);
+    ctx.stroke();
+  });
+  ctx.restore();
 }
 async function _boardsPreloadImages(cards){
   const out={};
@@ -8956,12 +9509,28 @@ function _boardsDrawCard(ctx,c,img,P){
 
   if(c.type==='image'){
     if(img){
-      // cover-fit, same as the on-screen object-fit:cover
-      const ar=img.width/img.height,br=bw/(bh||1);
-      let sw,sh,sx,sy;
-      if(ar>br){sh=img.height;sw=sh*br;sx=(img.width-sw)/2;sy=0;}
-      else{sw=img.width;sh=sw/br;sx=0;sy=(img.height-sh)/2;}
-      try{ctx.drawImage(img,sx,sy,sw,sh,bx,by,bw,bh);}catch(e){/* drawn as empty */}
+      // A CROPPED OR ROTATED picture is placed by the very same
+      // _boardsImgGeom the DOM render reads, so a crop cannot look one way
+      // on screen and another in the export. The body box here is the
+      // card's box minus its own chrome, exactly as _boardsCardBodyBox
+      // computes it for the canvas.
+      const ebox=_boardsCardBodyBox(c);
+      const g=_boardsImgGeom(c,ebox.w,ebox.h);
+      if(g){
+        ctx.save();
+        ctx.beginPath();ctx.rect(bx,by,bw,ebox.h);ctx.clip();
+        ctx.translate(bx+g.cx,by+g.cy);
+        ctx.rotate(g.rot*Math.PI/180);
+        try{ctx.drawImage(img,-g.w/2,-g.h/2,g.w,g.h);}catch(e){/* drawn as empty */}
+        ctx.restore();
+      }else{
+        // cover-fit, same as the on-screen object-fit:cover
+        const ar=img.width/img.height,br=bw/(bh||1);
+        let sw,sh,sx,sy;
+        if(ar>br){sh=img.height;sw=sh*br;sx=(img.width-sw)/2;sy=0;}
+        else{sw=img.width;sh=sw/br;sx=0;sy=(img.height-sh)/2;}
+        try{ctx.drawImage(img,sx,sy,sw,sh,bx,by,bw,bh);}catch(e){/* drawn as empty */}
+      }
     }else{
       ctx.fillStyle=P.soft;ctx.fillRect(bx,by,bw,bh);
       ctx.fillStyle=P.muted;ctx.font='11px '+P.font;
@@ -9051,6 +9620,11 @@ function _boardsDrawCard(ctx,c,img,P){
     ctx.fillStyle=P.muted;ctx.font='11px '+P.font;
     ctx.fillText((_boardsWrapLines(ctx,c.caption,bw-16,1)[0])||'',bx+8,c.y+c.h-7);
   }
+  // Anything DRAWN ON the card, in the same order the screen paints it:
+  // over the content, under the coloured strip. The coordinates are % of
+  // the BODY box, so they map through exactly the same box the on-screen
+  // overlay is sized to.
+  _boardsDrawStrokesOnCanvas(ctx,c,P,bx,by,bw);
   // The coloured top strip, drawn LAST and still inside the clip so it sits
   // over the content exactly as .board-card-el::before does on screen.
   if(strip){ctx.fillStyle=strip;ctx.fillRect(c.x,c.y,c.w,4);}
@@ -11057,6 +11631,23 @@ function _boardsCtxRun(act){
   if(act.indexOf('todo:')===0){_boardsTodoAct(act.slice(5));return;}
   if(act.indexOf('lbl:')===0){_boardsLabelAct(act.slice(4));return;}
   if(act==='imgcrop'){const o=_boardsSelectedCards()[0];if(o)window.boardsImgCrop(o.id);return;}
+  // The image card's three tools. Every one of them goes through this
+  // router, so the rail, the right-click menu and the phone's More sheet
+  // reach the same implementation — the rule the rail and the old
+  // selection bar broke before they were merged.
+  if(act==='img:draw'){const o=_boardsSelectedCards()[0];if(o)window.boardsDrawMode(o.id);return;}
+  if(act==='img:edit'){const o=_boardsSelectedCards()[0];if(o)window.boardsImgEditOpen(o.id);return;}
+  if(act==='img:bg'){const o=_boardsSelectedCards()[0];if(o)window.boardsImgBgMenu(o.id);return;}
+  if(act==='img:nobg'){const o=_boardsSelectedCards()[0];if(o)window.boardsImgNoBg(o.id);return;}
+  if(act==='img:boardbg'){const o=_boardsSelectedCards()[0];if(o)window.boardsUseAsBoardBg(o.id);return;}
+  if(act==='board:bg-off'){window.boardsClearBoardBg();return;}
+  if(act.indexOf('board:bgfit:')===0){window.boardsBoardBgFit(act.slice(12));return;}
+  if(act==='draw:done'){window.boardsDrawEnd();return;}
+  if(act==='draw:pen'){window.boardsDrawPenSheet();return;}
+  if(act==='draw:undo'){window.boardsDrawUndo();return;}
+  if(act==='draw:clear'){window.boardsDrawClear();return;}
+  if(act.indexOf('draw:color:')===0){window.boardsDrawSetColor(act.slice(11));return;}
+  if(act.indexOf('draw:width:')===0){window.boardsDrawSetWidth(act.slice(11));return;}
   if(act==='linkimg'){const o=_boardsSelectedCards()[0];if(o)window.boardsLinkToImage(o.id);return;}
   if(act.indexOf('tddue:')===0||act.indexOf('tdwho:')===0){
     const f=_boardsTodoFocus();
@@ -11451,6 +12042,213 @@ function _boardsPreviewKey(e){if(e.key==='Escape'){e.stopPropagation();_boardsCl
    without a browser. The picture, the PDF iframe and the top bar are all
    deliberately NOT backdrop — clicking the thing you came to look at must
    never dismiss it. */
+
+/* ── EDIT: crop and rotate ──────────────────────────────────────────────
+   A fixed overlay, like the asset preview, rather than an in-card editor:
+   a crop handle inside a 240px card on a board zoomed to 40% is a target
+   nobody can hit, and the card is where you judge the RESULT, not where
+   you make it.
+
+   It opens by loading the picture at its ORIGINAL url — the natural size
+   is what the whole geometry is expressed in, and a card written before
+   this carries none, so the editor is what supplies c.imgW / c.imgH. It
+   refuses to open rather than guess if the picture will not load. */
+let _boardsEdit=null;   // {id,rot,crop:{x,y,w,h},nat:{w,h},url}
+
+window.boardsImgEditOpen=async function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='image'||!c.imageUrl||!_boardsCanEdit(_editBoard))return;
+  if(c.locked){showToast(_boardsLockedMsg('edit it'));return;}
+  showToast('Opening the picture…');
+  const im=await _boardsLoadImageEl(c.imageUrl);
+  if(!im||!(im.naturalWidth>0&&im.naturalHeight>0)){
+    showToast('That picture could not be opened for editing.');
+    return;
+  }
+  const q=_boardsCrop(c)||{x:0,y:0,w:1,h:1};
+  _boardsEdit={id:id,rot:_boardsRot(c),crop:{x:q.x,y:q.y,w:q.w,h:q.h},
+               nat:{w:im.naturalWidth,h:im.naturalHeight},url:c.imageUrl};
+  _boardsRenderImgEditor();
+};
+window.boardsImgEditClose=function(){
+  const w=document.getElementById('board-imgedit');
+  if(w&&w.parentNode)w.parentNode.removeChild(w);
+  document.removeEventListener('keydown',_boardsImgEditKey,true);
+  _boardsEdit=null;
+};
+function _boardsImgEditKey(e){
+  if(!_boardsEdit)return;
+  if(e.key==='Escape'||e.key==='Esc'){e.stopPropagation();window.boardsImgEditClose();}
+}
+/* The rotated picture's own size, in source pixels. Every coordinate in
+   the editor is in the ROTATED frame — that is what makes rotating after
+   cropping leave the crop where it was on screen. */
+function _boardsEditRotNat(){
+  const e=_boardsEdit;
+  const swap=(e.rot===90||e.rot===270);
+  return{w:swap?e.nat.h:e.nat.w,h:swap?e.nat.w:e.nat.h};
+}
+function _boardsRenderImgEditor(){
+  let wrap=document.getElementById('board-imgedit');
+  if(!wrap){
+    wrap=document.createElement('div');
+    wrap.id='board-imgedit';wrap.className='board-imgedit';
+    document.body.appendChild(wrap);
+    document.addEventListener('keydown',_boardsImgEditKey,true);
+  }
+  const e=_boardsEdit;
+  if(!e){window.boardsImgEditClose();return;}
+  const rn=_boardsEditRotNat();
+  // The stage is a fixed box; the picture is fitted inside it, so the crop
+  // rectangle can be positioned in plain percentages of the picture and
+  // needs no pixel maths of its own.
+  wrap.innerHTML=`
+    <div class="board-imgedit-bar">
+      <strong>Crop and rotate</strong>
+      <span class="board-imgedit-dims" id="board-imgedit-dims"></span>
+      <span style="flex:1"></span>
+      <button class="tool-btn" onclick="window.boardsImgEditRotate(-90)" title="Rotate left">↺</button>
+      <button class="tool-btn" onclick="window.boardsImgEditRotate(90)" title="Rotate right">↻</button>
+      <button class="tool-btn" onclick="window.boardsImgEditReset()">Reset</button>
+      <button class="tool-btn" onclick="window.boardsImgEditClose()">Cancel</button>
+      <button class="tool-btn primary" onclick="window.boardsImgEditApply()">Apply</button>
+    </div>
+    <div class="board-imgedit-body" id="board-imgedit-body">
+      <div class="board-imgedit-pic" id="board-imgedit-pic" style="aspect-ratio:${rn.w} / ${rn.h}">
+        <img src="${_boardsEsc(e.url)}" crossorigin="anonymous" draggable="false" alt=""
+             style="transform:rotate(${e.rot}deg)${(e.rot===90||e.rot===270)?`;width:${(rn.h/rn.w*100).toFixed(4)}%;height:${(rn.w/rn.h*100).toFixed(4)}%;left:${((1-rn.h/rn.w)*50).toFixed(4)}%;top:${((1-rn.w/rn.h)*50).toFixed(4)}%`:''}">
+        <div class="board-imgedit-shade" id="board-imgedit-shade"></div>
+        <div class="board-imgedit-rect" id="board-imgedit-rect">
+          <span class="board-imgedit-h nw" data-h="nw"></span><span class="board-imgedit-h ne" data-h="ne"></span>
+          <span class="board-imgedit-h sw" data-h="sw"></span><span class="board-imgedit-h se" data-h="se"></span>
+        </div>
+      </div>
+    </div>
+    <div class="board-imgedit-foot">Drag inside the picture to choose what the card shows. Esc closes without changing anything.</div>`;
+  _boardsPaintImgEditor();
+  _boardsWireImgEditor();
+}
+function _boardsPaintImgEditor(){
+  const e=_boardsEdit;if(!e)return;
+  const r=document.getElementById('board-imgedit-rect');
+  const sh=document.getElementById('board-imgedit-shade');
+  const d=document.getElementById('board-imgedit-dims');
+  const q=e.crop;
+  if(r){
+    r.style.left=(q.x*100)+'%';r.style.top=(q.y*100)+'%';
+    r.style.width=(q.w*100)+'%';r.style.height=(q.h*100)+'%';
+  }
+  // The shade is drawn as a single inset box-shadow rather than four
+  // divs — one element, and it can never leave a seam.
+  if(sh&&r)sh.style.clipPath=`polygon(0% 0%,100% 0%,100% 100%,0% 100%,0% 0%,${(q.x*100)}% ${(q.y*100)}%,${(q.x*100)}% ${((q.y+q.h)*100)}%,${((q.x+q.w)*100)}% ${((q.y+q.h)*100)}%,${((q.x+q.w)*100)}% ${(q.y*100)}%,${(q.x*100)}% ${(q.y*100)}%)`;
+  if(d){
+    const rn=_boardsEditRotNat();
+    d.textContent=Math.round(rn.w*q.w)+' × '+Math.round(rn.h*q.h)+' px';
+  }
+}
+function _boardsWireImgEditor(){
+  const pic=document.getElementById('board-imgedit-pic');
+  const rect=document.getElementById('board-imgedit-rect');
+  if(!pic||!rect)return;
+  const at=ev=>{
+    const b=pic.getBoundingClientRect();
+    if(!(b.width>0&&b.height>0))return null;
+    return{x:Math.max(0,Math.min(1,(ev.clientX-b.left)/b.width)),
+           y:Math.max(0,Math.min(1,(ev.clientY-b.top)/b.height))};
+  };
+  const MIN=0.04;   // a crop smaller than this is a handle you cannot grab back
+  const start=(ev,mode)=>{
+    const e=_boardsEdit;if(!e)return;
+    const p0=at(ev);if(!p0)return;
+    ev.preventDefault();ev.stopPropagation();
+    const q0={x:e.crop.x,y:e.crop.y,w:e.crop.w,h:e.crop.h};
+    const move=m=>{
+      const p=at(m);if(!p)return;
+      const dx=p.x-p0.x,dy=p.y-p0.y,q=e.crop;
+      if(mode==='move'){
+        q.x=Math.max(0,Math.min(1-q0.w,q0.x+dx));
+        q.y=Math.max(0,Math.min(1-q0.h,q0.y+dy));
+      }else if(mode==='new'){
+        q.x=Math.min(p0.x,p.x);q.y=Math.min(p0.y,p.y);
+        q.w=Math.max(MIN,Math.abs(p.x-p0.x));q.h=Math.max(MIN,Math.abs(p.y-p0.y));
+        q.w=Math.min(q.w,1-q.x);q.h=Math.min(q.h,1-q.y);
+      }else{
+        // A corner moves its own two edges and never past the opposite one.
+        const r0={l:q0.x,t:q0.y,r:q0.x+q0.w,b:q0.y+q0.h};
+        let l=r0.l,t=r0.t,rr=r0.r,bb=r0.b;
+        if(mode.indexOf('w')>=0)l=Math.max(0,Math.min(r0.r-MIN,r0.l+dx));
+        if(mode.indexOf('e')>=0)rr=Math.min(1,Math.max(r0.l+MIN,r0.r+dx));
+        if(mode.indexOf('n')>=0)t=Math.max(0,Math.min(r0.b-MIN,r0.t+dy));
+        if(mode.indexOf('s')>=0)bb=Math.min(1,Math.max(r0.t+MIN,r0.b+dy));
+        q.x=l;q.y=t;q.w=rr-l;q.h=bb-t;
+      }
+      _boardsPaintImgEditor();
+    };
+    const up=()=>{
+      document.removeEventListener('pointermove',move);
+      document.removeEventListener('pointerup',up);
+    };
+    document.addEventListener('pointermove',move);
+    document.addEventListener('pointerup',up);
+  };
+  rect.addEventListener('pointerdown',ev=>{
+    const h=ev.target&&ev.target.getAttribute&&ev.target.getAttribute('data-h');
+    start(ev,h||'move');
+  });
+  // Dragging on the picture OUTSIDE the rectangle draws a new one, which is
+  // how every crop tool behaves and is the only way back from a crop
+  // dragged into a corner.
+  pic.addEventListener('pointerdown',ev=>{if(ev.target===pic||ev.target.tagName==='IMG'||ev.target.id==='board-imgedit-shade')start(ev,'new');});
+}
+window.boardsImgEditRotate=function(delta){
+  const e=_boardsEdit;if(!e)return;
+  const before=e.rot;
+  e.rot=((e.rot+(+delta)) % 360 + 360) % 360;
+  // The crop travels with the rotation, so what is on screen keeps its
+  // framing instead of jumping to a different part of the picture. A 90°
+  // turn maps (x,y,w,h) → (1-y-h, x, h, w); anticlockwise is the inverse.
+  const turns=(((e.rot-before)/90) % 4 + 4) % 4;
+  const r6=n=>Math.round(n*1e6)/1e6;   // 1-0.2-0.4 is 0.39999999999999997
+  for(let i=0;i<turns;i++){
+    const q=e.crop;
+    e.crop={x:r6(1-q.y-q.h),y:r6(q.x),w:r6(q.h),h:r6(q.w)};
+  }
+  _boardsRenderImgEditor();
+};
+window.boardsImgEditReset=function(){
+  const e=_boardsEdit;if(!e)return;
+  e.rot=0;e.crop={x:0,y:0,w:1,h:1};
+  _boardsRenderImgEditor();
+};
+window.boardsImgEditApply=function(){
+  const e=_boardsEdit;if(!e)return;
+  const c=_editCards.find(x=>x.id===e.id);
+  if(!c){window.boardsImgEditClose();return;}
+  _boardsPushUndo();
+  // The natural size is stored WITH the edit, because the geometry is
+  // meaningless without it and a card written before this carries none.
+  c.imgW=e.nat.w;c.imgH=e.nat.h;
+  if(e.rot)c.rotate=e.rot;else delete c.rotate;
+  const whole=(e.crop.x<=0.0005&&e.crop.y<=0.0005&&e.crop.w>=0.9995&&e.crop.h>=0.9995);
+  if(whole)delete c.crop;
+  else c.crop={x:+e.crop.x.toFixed(5),y:+e.crop.y.toFixed(5),w:+e.crop.w.toFixed(5),h:+e.crop.h.toFixed(5)};
+  // The card is re-fitted to what it now shows, through the SAME clamps a
+  // freshly uploaded picture goes through — otherwise a portrait crop of a
+  // landscape photo sits in a landscape box and is cropped a second time
+  // by object-fit, which is the bug _boardsFitImageCard exists to remove.
+  const a=_boardsEditedAspect(c);
+  if(a){
+    let w=_BOARDS_IMG_CARD_W,h=Math.round(w*a.h/a.w);
+    if(h>_BOARDS_IMG_MAX_H){h=_BOARDS_IMG_MAX_H;w=Math.round(h*a.w/a.h);}
+    c.w=Math.max(_BOARDS_IMG_MIN,w);
+    c.h=Math.max(_BOARDS_IMG_MIN,h);
+    _boardsGrowForChrome(c);
+  }
+  window.boardsImgEditClose();
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast(_boardsImgEdited(c)?'Picture updated — press Ctrl+Z to undo':'Picture put back to the original');
+};
 function _boardsPreviewBackdrop(t,wrap){
   if(!t)return false;
   if(t===wrap)return true;
@@ -11717,6 +12515,12 @@ function _boardsCardCtxItems(canEdit){
       // Ours says what it does rather than naming a grid the card does not
       // snap to — the dot grid here is a placement cue, not a layout.
       if(canEdit)typed.push({act:'imgcrop',label:'Crop image to fill the card',hint:one.fit==='contain'?'':'✓'});
+      // The rail's three tools are in the right-click list too, so
+      // _boardsMoreItems (the right-click list MINUS the rail) keeps its
+      // algebra: nothing the menu offers is lost, and nothing repeats.
+      if(canEdit)typed.push({act:'img:draw',label:_boardsStrokes(one).length?'Draw on the picture':'Draw on the picture…'});
+      if(canEdit)typed.push({act:'img:edit',label:_boardsImgEdited(one)?'Edit — crop and rotate…':'Crop or rotate…'});
+      if(canEdit)typed.push({act:'img:bg',label:'Background…'});
       typed.push({act:'openasset',label:'Open original'});
     }else if(one.type==='image'&&canEdit){
       typed.push({act:'replace',label:'Add an image…'});

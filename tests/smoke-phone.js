@@ -69,10 +69,11 @@ function build(v){
     _boardsFindOpen=${v==='find'};
     _editCards=${home?`[{id:'k1',type:'board',boardId:'B1',x:20,y:20,w:340,h:136}]`:v==='empty'?'[]':`[
       {id:'t1',type:'text',text:'A note on the board',x:20,y:20,w:220,h:100},
-      {id:'i1',type:'image',imageUrl:'${COVER}',x:20,y:140,w:170,h:120},
+      {id:'i1',type:'image',imageUrl:'${COVER}',x:20,y:140,w:170,h:120,strokes:[{c:'red',w:4,p:[10,10,80,70]}]},
       {id:'k1',type:'board',boardId:'B1',x:20,y:280,w:340,h:136}
     ]`};
     ${v==='board-sel'?`_boardsSelection=new Set(['t1']);`:''}
+    ${v==='draw'?`_boardsSelection=new Set(['i1']);_boardsDrawOn='i1';`:`_boardsDrawOn=null;`}
   `);
   let html=app.run(`_renderBoardCanvasHTML()`);
   app.run(`_boardsRenderRail()`);
@@ -84,7 +85,9 @@ function build(v){
   if(v==='menu-more')extra='<style>#board-menu{display:flex!important}</style>';
   return html+extra+FAB;
 }
-const VARIANTS=['board','board-sel','empty','home-collapsed','home-open','tray-open','menu-view','menu-more','find'];
+// 'draw' is the pen rail — six colour swatches and three width buttons in
+// a horizontal dock, which is a shape the rail had never carried on a phone.
+const VARIANTS=['board','board-sel','empty','home-collapsed','home-open','tray-open','menu-view','menu-more','find','draw'];
 const MODAL={'home-open':1,'tray-open':1,'menu-view':1,'menu-more':1};
 const VIEWS=[[390,844],[390,667],[360,780]];
 
@@ -123,6 +126,10 @@ document.querySelectorAll('.board-card-el.type-board').forEach(card=>{const p=ca
 // 6. every chrome control is at least 32px tall and reachable
 const chrome='.board-topbar button, .board-rail .rail-btn, .board-tray-head button, .board-tray-add button, .board-tray-add label, .board-panel-new, .board-panel-open, .board-panel-more, .board-panel-seg button, .board-tray-del, .board-find button, .board-menu button, .board-subboard-open, .board-card-del';
 document.querySelectorAll(chrome).forEach(el=>{const cs=getComputedStyle(el);if(cs.display==='none'||cs.visibility==='hidden')return;
+  // A rail button the renderer greyed out carries no data-act — it is
+  // disabled by design, so hit-testing it reports the rail itself and is a
+  // false positive, the same shape as a scrolled-away control.
+  if(el.classList.contains('rail-btn')&&!el.getAttribute('data-act'))return;
   const r=el.getBoundingClientRect();if(r.width<1||r.height<1)return;
   const label=(el.textContent||el.title||el.className||'').toString().trim().slice(0,24);
   if(r.height<32)out.bad.push('target under 32px: "'+label+'" '+Math.round(r.width)+'x'+Math.round(r.height));
