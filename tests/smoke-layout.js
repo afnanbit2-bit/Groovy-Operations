@@ -524,6 +524,62 @@ const FRAGMENTS={
      an EMPTY image card, which keeps the ordinary strip. Pictures are a
      solid WHITE stand-in, so a scrim that ever faded to transparent would
      read as white-on-white and fail. */
+  /* The second Milanote video's round (Sept 2026): no card has a header
+     strip, so every type is measured at REST (the head is a hover overlay
+     and the probe cannot hover) and again SELECTED, which is the state
+     that shows the strip. The dark scrim carries literal white ink, so it
+     is measured on a to-do, a link and a table — three different papers
+     under it. The to-do's own additions (title, nested task, due chip,
+     assignee, the "Add a title" prompt) and the link card's one field and
+     in-card error are here too, plus a card at h:0 so the render draws it
+     at exactly the minimum the new chrome asks for. */
+  'boards — cards without a header':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editConnectors=[];_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+      _editCards=[
+        // Explicit heights, not h:0. _boardsTodoMinH counts ONE-LINE tasks —
+        // it cannot know that "Send the tech pack" wraps at this width, and
+        // the body scrolls when it does. The minimum-height contract is
+        // asserted in tests/boards.test.js instead; this fragment is here
+        // for the chrome, the contrast and the hit-testing. Same division
+        // the +Row/+Col strip settled on.
+        {id:'td',type:'todo',title:'MILE STONE',color:'red',x:10,y:10,w:300,h:200,
+         items:[{text:'Cut the fleece'},{text:'Rib order',depth:1,due:'2020-01-01',who:'Ammar Shah'},
+                {text:'Send the tech pack',done:true,depth:1,due:'2099-01-01',who:'Afnan'}]},
+        {id:'ta',type:'todo',x:330,y:10,w:300,h:200,items:[{text:'one'},{text:'two'},{text:'three'}]},
+        {id:'lk',type:'link',x:650,y:10,w:340,h:0},
+        {id:'le',type:'link',linkTitle:'ASHI',x:650,y:150,w:340,h:0,_linkErr:'Sorry, something went wrong. The page could not be read — the link still works.'},
+        {id:'im',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',
+         sourceUrl:'https://www.pinterest.com/pin/1/',name:'FLEECE',x:10,y:260,w:240,h:300},
+        {id:'nt',type:'text',text:'x',name:'WINTER NOTE',locked:true,color:'green',x:270,y:260,w:240,h:150},
+        {id:'tb',type:'table',rows:[['Fabric','GSM'],['Drill','245']],head:true,color:'blue',x:530,y:260,w:280,h:150}
+      ];
+      _boardsSelection=new Set(['td','im','nt','tb']);`);
+    const cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`)
+      .replace(/src="[^"]*cloudinary[^"]*"/g,
+        'src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'3\'%3E%3Crect width=\'4\' height=\'3\' fill=\'%23ffffff\'/%3E%3C/svg%3E"')
+      // Everything this module hydrates with textContent has to be filled in
+      // the REAL browser, or the fragment measures empty boxes — the defect
+      // the Home panel's rows hid for weeks.
+      .replace(/(id="board-tdtitle-td"[^>]*>)/,'$1MILE STONE')
+      .replace(/(id="board-todo-td-0"[^>]*>)/,'$1Cut the fleece')
+      .replace(/(id="board-todo-td-1"[^>]*>)/,'$1Rib order')
+      .replace(/(id="board-todo-td-2"[^>]*>)/,'$1Send the tech pack')
+      .replace(/(id="board-todo-ta-0"[^>]*>)/,'$1one').replace(/(id="board-todo-ta-1"[^>]*>)/,'$1two').replace(/(id="board-todo-ta-2"[^>]*>)/,'$1three')
+      .replace(/(id="board-linkt-le"[^>]*>)/,'$1ASHI')
+      .replace(/(id="board-name-im"[^>]*>)/,'$1FLEECE').replace(/(id="board-name-nt"[^>]*>)/,'$1WINTER NOTE')
+      .replace(/(id="board-txt-nt"[^>]*>)/,'$1Fleece weights for the winter drop');
+    return Promise.resolve({widths:[1900,1280],html:
+      '<div class="board-stage" style="position:relative;height:600px;width:100%;overflow:hidden">'+
+      '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'+
+      // The head is opacity:0/visibility:hidden until hover, and the probe
+      // cannot hover — so a second copy is forced visible. Without it the
+      // literal white ink on the literal scrim would never be measured.
+      '<style>#hovered .board-card-head{opacity:1!important;visibility:visible!important}</style>'+
+      '<div id="hovered" style="position:relative;height:600px;width:100%;overflow:hidden;margin-top:14px">'+
+      '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'});
+  },
   'boards — photo cards':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};

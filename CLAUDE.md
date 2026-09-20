@@ -1933,6 +1933,178 @@ from the label's shape, not copied.
 
 **Nobody has seen the chips on a real screen** — the sandbox cannot sign in.
 
+### Mood Boards — NO CARD HAS A HEADER (Sept 2026, the second video)
+
+Afnan sent a second 126-second Milanote recording (`12a361e8-
+next_too_compressed.mp4`, 760×950 at 30fps, the "Winter Drop 2027" board)
+and asked for all of it. **Everything below was READ OFF THE FRAMES** with
+cv2 — per-second contact sheets, then full-resolution stills and a
+frame-by-frame strip of each gesture — never remembered or inferred. The
+sandbox cannot open Milanote.
+
+**The headline: no card type in that video has a header strip.** Not the
+link card, the to-do card, the image card or the file card. A Milanote card
+is an optional coloured top strip, the content, and an optional caption.
+There is no type label, no name row and no delete ✕ anywhere on it.
+
+- **Ours keeps all four, one hover away.** `.board-card-head` is an
+  absolutely positioned dark scrim on EVERY type now, hidden by
+  **visibility** (not opacity alone — an opacity:0 strip still takes the
+  pointer, and on a phone a tap on the corner would reach an invisible ✕).
+  It is the photo card's treatment from a round earlier, generalised. At
+  rest a card is pure content the way Milanote's is.
+- **THE STRIP IS `pointer-events:none`, AND THAT IS THE LOAD-BEARING
+  PART.** It floats over the card's own first row, so anything it captured
+  would be a click somebody aimed at the content underneath. `smoke-layout`
+  caught exactly that on the first run: the head was eating a **link card's
+  own URL field**. Only the delete ✕ is re-enabled. **The card name is a
+  LABEL now** — it lost its `onclick`/`ondblclick`, because a clickable
+  name covers a to-do's first checkbox; renaming is the rail's Rename, F2
+  and the right-click menu, all three of which already existed.
+- **`window.boardsHeadDblClick` is GONE.** It existed because a heading's
+  drag strip sat over its banner and ate the first double-click (a QA
+  finding). An inert head removes the cause, so the banner — and every
+  other card body — receives that double-click itself.
+- **The coloured top strip is its own 4px bar** (`.board-card-el::before`),
+  no longer the header's background. Painting the two together meant a card
+  could not have both. The tint rules moved to `::before` and now carry the
+  FULL colour rather than its soft tint, which is what a 4px bar wants.
+- **The head costs the column nothing on any type.** `_boardsMinCardH`
+  charged 28px for every type but heading and photo; that is what cropped a
+  fitted picture, and it is gone for all of them. **`_BOARDS_FILE_CHROME_H`
+  is 66, re-MEASURED** (31 + 33 + 2) — it was 92 while the strip existed,
+  so every PDF card is 26px shorter and four page-maths assertions read the
+  constant now instead of a literal.
+- **The export draws no strip either**, just the 4px colour bar, so the PNG
+  and the PDF are the shape the screen is. The card's NAME is not lost — it
+  is in the PDF's card index.
+- **The selection handle is a white round dot on the corner and the comment
+  badge is a blue PIN** (a teardrop with the count, point down), both read
+  off the frames. In Milanote both OVERHANG the card's top edge; **ours
+  cannot** — `.board-card-el` clips its own content to round its corners,
+  and escaping that means wrapping every card in a second clipping element,
+  a change to every card rule in the file for a few pixels. They sit just
+  inside.
+- **A to-do's first-row ✕ yields while the strip shows.** The head's own ✕
+  lands on it and the two mean very different things — one removes a task,
+  the other the whole card. **The layout probe does NOT hold that one** (the
+  two centres happen not to overlap), so `tests/invariants.test.js` does,
+  and "Remove this task" is on the right-click menu.
+
+**THE RAIL FOLLOWS FOCUS, NOT SELECTION.** The video's structural finding:
+the same to-do card gives three different rails depending on where the
+caret is.
+
+| Focus | Milanote's rail | ours |
+|---|---|---|
+| a task | Color · Labels · Reactions · Comment · Title · Due date · Assign · indent · outdent | the same |
+| the list title | Color · Title · ⋯ | the same |
+| a comment box | Text style · B · I · S · link | the text rail (built earlier) |
+
+`_boardsTodoFocus()` reads `_boardsEditingEl`'s id, so nothing has to be
+tracked; a card id containing a dash still resolves (the `(.+)-(\d+)$`
+greedy match is asserted). Indent and outdent are **greyed rather than
+hidden** when they cannot apply, which is what the video shows — the rail
+renderer gained `it.off`, and an off button carries no act, so the router
+never sees it.
+
+**The to-do card, rebuilt.**
+
+- **A TITLE** (`c.title`), and Milanote **offers it inline**: once a list
+  has three tasks, "Add a title to this list? **Yes** / **No thanks**"
+  appears at the foot of the card. Either answer sets `titleAsked`, so it
+  is offered once and never nags. Both rows are MEASURED (21 and 27,
+  `scratchpad/measure-v2.js`) and **charged to the card**.
+- **Tasks NEST.** `it.depth`, capped at 4, 16px a level, and a task may only
+  go one level deeper than the one above it — otherwise a list opens with an
+  orphan at depth 3 under nothing. **Tab / Shift+Tab**, read before anything
+  else so the browser never moves focus out of the card. Outdenting to 0
+  deletes the field rather than storing a zero.
+- **A per-task DUE DATE and ASSIGNEE.** The date is a plain `YYYY-MM-DD`
+  string — the shape the Cutting registry's filter already compares, so it
+  sorts as text with no Date maths per row — shown as Today / Tomorrow / a
+  short date, and flagged when overdue and not ticked. The assignee is a
+  `USER_DEFS` name behind a `typeof` guard, drawn as initials.
+- **A TO-DO CARD IS AS TALL AS ITS LIST**, the way a table is as tall as its
+  rows. Found by `smoke-layout` on this round's very first run: with a flat
+  80px body a three-task list drew both "Add a task…" and the title prompt
+  outside the card. `_boardsTodoMinH` counts the real pieces (row 26, title
+  21, add 24, prompt 27, padding 12, border 2 — all measured) and **caps at
+  12 rows**, past which the body scrolls; a 40-task list must not mint a
+  1,100px card. **It counts ONE-LINE tasks** and cannot know that a long
+  task wraps, so the layout fragment sets explicit heights and
+  `tests/boards.test.js` holds the contract — the division the `+Row/+Col`
+  strip already settled.
+
+**A LINK CARD IS BORN AS ONE FIELD.** "Enter a link URL", Milanote's own.
+Ours was born as three inputs, which is exactly the raw form Afnan put
+beside theirs. The three-field form is still what "Edit link details" opens.
+
+- Traced frame by frame (69.6–80s): paste a Pinterest URL, a spinner
+  replaces the chain glyph, and within a second the card becomes a
+  **portrait image card already sized to the picture**, captioned **"From
+  Pinterest"** with the site name as an orange link back.
+- **Ours does NOT convert on its own.** The link card is confirmed working
+  on the live site, it keeps the URL clickable, and a silent conversion
+  would throw the page away. **"Turn into an image card" is an explicit
+  menu action**, and the page survives as `c.sourceUrl`, drawn as a "From
+  pinterest.com" line under the picture. Only `_boardsSafeHref` decides
+  whether that is a link at all.
+- **A failed fetch is said INSIDE the card**, the way Milanote's is (42s,
+  "Sorry, something went wrong…"), not in a toast that is gone before you
+  look up. Text that is not a URL is **kept as the title** rather than
+  thrown away — which is what Milanote did with "ASHI".
+- **The description is editable** with Milanote's own "Add a description"
+  placeholder. It was a read-only hydrated div.
+
+**The colour panel drops its tabs where there is no paper.** A file card's
+and a to-do card's panel in this video has **no tabs at all** — the
+top-strip palette, the board's own colours, Custom colour. Only the NOTE
+(the first video) gets Background | Top strip and the seven paper-and-ink
+presets, because only a note has a text body sitting on paper. Re-checked
+against the first video rather than trusting the earlier note.
+
+**The labels panel is headed "Recently created"**, not the board's name,
+and every row carries its own **⋯** — rename or remove, both board-wide,
+both saying how many cards they touched. The library is DERIVED from the
+cards, so a rename is a rewrite on every card carrying it.
+
+**The dot grid is a PLACEMENT CUE, not the background.** Measured: the
+canvas carries no dots at rest and they are painted for about 1.2s around
+the moment a card is placed — every other sample across the whole 126s
+reads zero texture. Ours painted them permanently. `_boardsFlashGrid` hangs
+off `_boardsPlacementPoint`, which every placing path already consumes, and
+is held for the duration of a card drag (which the video does NOT show; it
+follows from what the cue is for).
+
+**The image ⋯ menu is Milanote's order** — Download original image ·
+Replace image · **Crop image to fill the card ✓** · Open original. The crop
+entry is their "Crop Image to Fit Dot Grid": the cover/contain switch.
+`c.fit` stores only the exception, so a card with no field is cropped and
+nothing migrates. Ours says what it does rather than naming a grid the card
+does not snap to.
+
+**NOT BUILT, and deliberately:** the image rail's **Draw on** (annotating a
+picture is a drawing surface), **Edit** (crop and rotate is an image
+editor) and **Background** (removing a background needs a service). Each is
+its own feature, not a variant of one. The three are named here so nobody
+files them as missed.
+
+**What the video could not settle, and is recorded as unknown:** whether a
+non-image URL stays a link card rather than becoming an image card (only
+one URL was ever pasted); what a to-do rail looks like with the card
+selected and nothing focused (it never appears); and the file card's meta
+line, which is three short items I read as Download / Open / a size but
+could not resolve at six pixels tall, even after averaging eight frames.
+
+Verified both ways: restoring the head cost fails ten assertions by name;
+letting the head take pointer events fails the probe naming the link
+field; putting the dot grid back on `.board-stage` fails the invariant;
+painting a tint on the head fails it too; the old three-field link card
+fails five; and a colour panel that always shows tabs fails two.
+**Nobody has seen any of this on a real screen** — the sandbox cannot sign
+in.
+
 ### Mood Boards — the image card, like Milanote's (Sept 2026)
 
 Afnan: *"now do the image card like milanote."* Read off the video at 34s

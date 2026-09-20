@@ -384,9 +384,24 @@ module.exports=function(){
       const html=run(card(t));
       s.ok('a '+t+' card ships contenteditable="false"',
         /contenteditable="false"/.test(html)&&!/contenteditable="true"/.test(html));
-      s.ok('and offers a double-click to open it',/ondblclick="window\.boardsBeginEdit/.test(html));
     });
-    s.ok('the card name too',/board-card-name[^>]*ondblclick="window\.boardsBeginEdit/.test(run(card('image'))));
+    s.ok('a note offers a double-click to open it',/ondblclick="window\.boardsBeginEdit/.test(run(card('text'))));
+    s.ok('and so does a task',/board-todo-.*ondblclick="window\.boardsBeginEdit/.test(
+      run(`_boardCardHTML({id:'t9',type:'todo',items:[{text:'a'}],x:0,y:0,w:240,h:160},true)`)));
+    // THE CARD NAME IS A LABEL NOW, not a control. It lives in the head,
+    // which floats over the card's first row and is pointer-events:none —
+    // anything clickable in there would steal a click aimed at the content
+    // underneath (the probe caught it eating a link card's URL field).
+    // Renaming is the rail's Rename, F2 and the right-click menu.
+    const nameHtml=run(card('image'));
+    s.ok('the card name carries no click handlers',
+      !/board-card-name[^>]*on(click|dblclick)=/.test(nameHtml),(nameHtml.match(/board-card-name[^>]*/)||[''])[0]);
+    s.ok('and the head itself carries none either',
+      !/class="board-card-head"[^>]*ondblclick/.test(nameHtml));
+    s.ok('Rename still reaches it',run(`(function(){
+      var hit=null;window.boardsBeginEdit=function(ev,id){hit=id;};
+      _editCards=[{id:'r9',type:'image',x:0,y:0,w:200,h:200}];_boardsSelection=new Set(['r9']);
+      _boardsCtxRun('rename');return hit;})()`)==='board-name-r9');
 
     // Reported by Afnan with the item circled: double-clicking a to-do did
     // nothing. The handler was there — it never ran. The to-do body is a
@@ -556,17 +571,19 @@ module.exports=function(){
         r5(`String(_boardsMinCardH({type:'board',w:_BOARDS_HOME_W,h:_BOARDS_HOME_H}))`));
       // ...and still clear the content. MEASURED in headless Chromium with
       // the real stylesheet: the tallest a spine card's body ever gets is
-      // 107px (a two-line name + the meta line + a thumbnail strip), and
-      // the header strip is 28. Drop below this and the thumbnails are
-      // clipped off the bottom of every board that has a long name.
+      // 107px (a two-line name + the meta line + a thumbnail strip). The
+      // 28px header strip used to be charged on top of that; EVERY card's
+      // head is a hover overlay now, so the minimum is the body alone.
       s.ok('and still clears the measured content',
-        r5(`_boardsMinCardH({type:'board',w:_BOARDS_HOME_W,h:0})`)>=135,
+        r5(`_boardsMinCardH({type:'board',w:_BOARDS_HOME_W,h:0})`)>=107,
         r5(`String(_boardsMinCardH({type:'board',w:_BOARDS_HOME_W,h:0}))`));
       // Cards written at the old sizes are not rewritten on open — the
       // render grows them to the minimum instead, so nothing migrates.
       s.ok('an old card is drawn tall enough for the name',
-        r5(`_boardsMinCardH({type:'board',w:200,h:124})`)>=135,
+        r5(`_boardsMinCardH({type:'board',w:200,h:124})`)>=107,
         r5(`String(_boardsMinCardH({type:'board',w:200,h:124}))`));
+      s.eq('and no type is charged for a head strip any more',
+        r5(`String(_boardsMinCardH({type:'text'})-_BOARDS_MIN_BODY_H.text)`),'0');
     }
 
     /* ── One download per card ──────────────────────────────────────────
@@ -968,17 +985,16 @@ module.exports=function(){
     s.ok('it is armed by a drag that moved, not by every pointerdown',
       /if\(pushed\)_boardsSuppressClick=true;/.test(src));
 
-    s.section('double-clicking a header opens that card type\'s editable');
+    // boardsHeadDblClick is gone with the header strip. It existed because
+    // a heading's drag strip sat over its banner and ate the first
+    // double-click; the head is inert on every card now, so the banner gets
+    // that double-click itself — the workaround's own cause is removed.
+    s.section('the head strip swallows nothing');
     board();
-    run(`_editCards=[{id:'h',type:'heading',x:0,y:0,w:300,h:60},{id:'i',type:'image',x:0,y:0,w:200,h:200}]`);
-    run(`window.boardsBeginEdit=function(ev,id){globalThis.__opened=id;}`);
-    run(`window.boardsHeadDblClick(null,'h')`);
-    s.eq('a heading opens its banner text',run(`__opened`),'board-txt-h');
-    run(`window.boardsHeadDblClick(null,'i')`);
-    s.eq('an image opens its name',run(`__opened`),'board-name-i');
-    run(`_editCards[1].locked=true;globalThis.__opened=null`);
-    run(`window.boardsHeadDblClick(null,'i')`);
-    s.eq('a locked card opens nothing',run(`__opened`),null);
+    s.eq('the workaround is gone',run(`typeof window.boardsHeadDblClick`),'undefined');
+    s.ok('and a heading banner opens on its own double-click',
+      /board-heading-body[^>]*ondblclick="window\.boardsBeginEdit\(event,'board-txt-h9'\)"/.test(
+        run(`_boardCardHTML({id:'h9',type:'heading',x:0,y:0,w:300,h:60},true)`)));
 
     s.section('new cards never land exactly on an existing one');
     // The cascade repeats every 6, so the 7th card used to land exactly on
@@ -1332,7 +1348,11 @@ module.exports=function(){
       /board-link-preview" onpointerdown="window\.boardsCardDragStart/.test(card));
     // A card with no URL yet — the rail's Link tool — still needs the form.
     run(`_editCards=[{id:'lnk2',type:'link',linkUrl:'',linkTitle:'',linkDesc:'',x:0,y:0,w:170,h:120}]`);
-    s.ok('a blank link card is the form',/board-link-edit/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    // A blank link card is Milanote's ONE field now; the three-input form
+    // is what "Edit link details" opens.
+    const blankHtml=run(`_boardCardHTML(_editCards[0],true)`);
+    s.ok('a blank link card is one field',/board-link-new/.test(blankHtml)&&!/board-link-edit/.test(blankHtml));
+    s.ok('and it says what to type',/placeholder="Enter a link URL"/.test(blankHtml));
     run(`_editCards=[{id:'lnk3',type:'link',linkUrl:'https://a.test/',linkTitle:'a',_linkEdit:true,x:0,y:0,w:170,h:120}]`);
     s.ok('and so is one being edited on purpose',/board-link-edit/.test(run(`_boardCardHTML(_editCards[0],true)`)));
 
@@ -3225,11 +3245,13 @@ module.exports=function(){
     // The head holds no nested div, so it ends at the first </div> after it.
     const headOf=h=>(h.match(/<div class="board-card-head"[\s\S]*?<\/div>/)||[''])[0];
     s.ok('the comment badge is NOT inside the head',!/board-cmt-/.test(headOf(photoHtml)),headOf(photoHtml).slice(0,200));
-    s.ok('it sits on the picture, under the id the painter fills',/board-cmt-badge on-photo" id="board-cmt-ph"/.test(photoHtml));
+    s.ok('it sits on the picture, under the id the painter fills',/board-cmt-badge pin" id="board-cmt-ph"/.test(photoHtml));
     s.eq('exactly one badge per card',(photoHtml.match(/board-cmt-badge/g)||[]).length,1);
     const emptyHtml=run(`_boardCardHTML({id:'em',type:'image',x:0,y:0,w:170,h:120},true)`);
-    s.ok('an empty image card keeps the ordinary strip',!/ photo/.test(emptyHtml));
-    s.ok('and its badge stays in the head',/board-cmt-/.test(headOf(emptyHtml)));
+    s.ok('an empty image card is not a photo',!/ photo/.test(emptyHtml));
+    // NO card keeps its badge in the head now: every type wears the pin.
+    s.ok('and its badge is a pin too, outside the head',
+      !/board-cmt-/.test(headOf(emptyHtml))&&/board-cmt-badge pin/.test(emptyHtml));
     s.ok('so does one still uploading',!/ photo/.test(run(`_boardCardHTML({id:'up',type:'image',imageUrl:'x',_uploading:true,x:0,y:0,w:170,h:120},true)`)));
 
     s.section('the overlaid strip costs the picture nothing — the crop is gone');
@@ -3238,7 +3260,7 @@ module.exports=function(){
     // every picture by 28px. Measured in headless Chromium: 238×332 drawn in
     // a 240×360 card before, 240×360 after.
     s.eq('a photo needs no head height',run(`_boardsMinCardH({type:'image',imageUrl:'x'})`),run(`_BOARDS_MIN_BODY_H.image`));
-    s.eq('an empty image card still does',run(`_boardsMinCardH({type:'image'})`),run(`_BOARDS_CHROME_H.head+_BOARDS_MIN_BODY_H.image`));
+    s.eq('and an empty image card is charged none either',run(`_boardsMinCardH({type:'image'})`),run(`_BOARDS_MIN_BODY_H.image`));
     s.ok('a fitted portrait is drawn at exactly its own height',run(`(function(){const c=_boardsNewCard('image');c.imageUrl='x';
       _boardsFitImageCard(c,{width:1000,height:1500});return Math.max(c.h,_boardsMinCardH(c))===c.h&&c.h===360;})()`));
     s.eq('a caption and labels still grow it',run(`_boardsMinCardH({type:'image',imageUrl:'x',caption:'a',labels:[{t:'x',c:'grey'}]})-_boardsMinCardH({type:'image',imageUrl:'x'})`),
@@ -3258,6 +3280,177 @@ module.exports=function(){
     s.eq('a file card\'s rail is unchanged',run(`_boardsRailItems().map(i=>i.act).join(',')`),
       'deselect,color-panel,labels,reactions,card-comment,caption,replace,download,rename,more');
     run(`_boardsSelection=new Set()`);
+
+    /* ── The second Milanote video: no headers, the to-do card, the link
+       card's one field (Sept 2026) ─────────────────────────────────────
+       Read off "Winter Drop 2027": no card type has a header strip, the
+       rail follows what is FOCUSED rather than what is selected, a to-do
+       has a title and nesting and per-task dates and assignees, and a
+       link card is born as one field. */
+    s.section('no card type has a header strip');
+    run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();_boardsEditingEl=null;`);
+    // table is left out on purpose: _boardsMinCardH returns early for it
+    // (its height is derived per row), so it never saw the head charge.
+    ['text','todo','file','link','board','image','heading'].forEach(t=>{
+      s.eq(t+' is charged no head height',
+        run(`_boardsMinCardH({type:'${t}'})-(_BOARDS_MIN_BODY_H['${t}']||48)`),0);
+    });
+    const anyHtml=run(`_boardCardHTML({id:'n1',type:'text',text:'x',x:0,y:0,w:200,h:120},true)`);
+    s.ok('the head is still in the DOM — it is the drag handle',/board-card-head/.test(anyHtml));
+    s.ok('the comment pin is outside it',/board-cmt-badge pin/.test(anyHtml));
+    s.ok('and the corner handle is emitted',/board-card-corner/.test(anyHtml));
+    const headOnly=(anyHtml.match(/<div class="board-card-head"[\s\S]*?<\/div>/)||[''])[0];
+    s.ok('nothing but the name, the lock and the ✕ live in the head',
+      !/board-cmt-|board-card-corner/.test(headOnly));
+
+    s.section('a to-do card has a title, and asks for one');
+    const td=(items,extra)=>run(`_boardCardHTML(Object.assign({id:'td',type:'todo',items:${JSON.stringify(items)},x:0,y:0,w:240,h:160},${JSON.stringify(extra||{})}),true)`);
+    s.ok('no title, no title row',!/board-todo-title/.test(td([{text:'a'}])));
+    s.ok('a title renders its own row',/board-tdtitle-td/.test(td([{text:'a'}],{title:'MILE STONE'})));
+    s.ok('two tasks is too early to ask',!/board-todo-ask/.test(td([{text:'a'},{text:'b'}])));
+    s.ok('three tasks and it asks',/Add a title to this list\?/.test(td([{text:'a'},{text:'b'},{text:'c'}])));
+    s.ok('answered once, never asked again',!/board-todo-ask/.test(td([{text:'a'},{text:'b'},{text:'c'}],{titleAsked:true})));
+    s.ok('and a card that already has one is not asked',!/board-todo-ask/.test(td([{text:'a'},{text:'b'},{text:'c'}],{title:''})));
+    // A to-do card is as tall as its list — found by smoke-layout on this
+    // round's first run, with the add row and the prompt drawn outside it.
+    const tdh=(o)=>run(`_boardsMinCardH(Object.assign({type:'todo'},${JSON.stringify(o)}))`);
+    s.ok('a longer list makes a taller card',tdh({items:[{},{},{},{},{}]})>tdh({items:[{}]}));
+    s.eq('the title row is charged',tdh({items:[{},{}],title:'x'})-tdh({items:[{},{}]}),run(`_BOARDS_CHROME_H.todoTitle`));
+    s.eq('and so is the prompt',tdh({items:[{},{},{}]})-tdh({items:[{},{},{}],titleAsked:true}),run(`_BOARDS_CHROME_H.todoAsk`));
+    s.eq('a 40-task list is capped, not a 1,100px card',
+      tdh({items:new Array(40).fill({})}),tdh({items:new Array(12).fill({})}));
+    s.ok('and an empty list keeps the floor',tdh({items:[]})>=run(`_BOARDS_MIN_BODY_H.todo`));
+
+    s.section('tasks nest, and only one level at a time');
+    run(`_editCards=[{id:'td',type:'todo',items:[{text:'a'},{text:'b'},{text:'c'}],x:0,y:0,w:240,h:200}]`);
+    s.ok('the first task can never be indented',!run(`_boardsTodoCanIndent(_editCards[0],0)`));
+    s.ok('the second can',run(`_boardsTodoCanIndent(_editCards[0],1)`));
+    s.ok('nothing at depth 0 can be outdented',!run(`_boardsTodoCanOutdent(_editCards[0],1)`));
+    run(`window.boardsTodoIndent('td',1,1)`);
+    s.eq('one level deeper',run(`_boardsTodoDepth(_editCards[0].items[1])`),1);
+    s.ok('and not two in a row',!run(`_boardsTodoCanIndent(_editCards[0],1)`));
+    s.ok('but the one under it can follow',run(`_boardsTodoCanIndent(_editCards[0],2)`));
+    run(`window.boardsTodoIndent('td',1,-1)`);
+    s.eq('outdent clears the field rather than storing a zero',run(`String(_editCards[0].items[1].depth)`),'undefined');
+    s.eq('depth is clamped however it was stored',run(`_boardsTodoDepth({depth:99})`),run(`_BOARDS_TODO_MAX_DEPTH`));
+    s.eq('and junk reads as no depth',run(`_boardsTodoDepth({depth:'x'})`),0);
+
+    s.section('a task carries a due date and a person');
+    s.eq('a real date is kept',run(`_boardsTodoValidDue('2026-09-25')`),'2026-09-25');
+    s.eq('anything else is dropped',run(`String(_boardsTodoValidDue('next tuesday'))`),'null');
+    s.eq('today reads as Today',run(`_boardsDueLabel(_boardsTodayStr())`),'Today');
+    s.ok('an overdue task is flagged',/board-todo-due over/.test(run(`_boardsTodoMetaHTML({due:'2020-01-01'})`)));
+    s.ok('a ticked one is not',!/over/.test(run(`_boardsTodoMetaHTML({due:'2020-01-01',done:true})`)));
+    s.ok('an assignee shows initials, escaped',/board-todo-who/.test(run(`_boardsTodoMetaHTML({who:'Ammar Shah'})`)));
+    s.ok('and no meta at all when there is none',run(`_boardsTodoMetaHTML({text:'x'})`)==='');
+
+    s.section('the rail follows FOCUS, not just the selection');
+    run(`_editCards=[{id:'td',type:'todo',title:'T',items:[{text:'a'},{text:'b'}],x:0,y:0,w:240,h:200}];
+      _boardsSelection=new Set(['td']);_boardsIsPhone=()=>false;`);
+    run(`_boardsEditingEl={id:'board-todo-td-1'}`);
+    s.eq('a focused TASK gets the long rail',run(`_boardsRailItems().map(i=>i.act).join(',')`),
+      'deselect,color-panel,labels,reactions,card-comment,todo:title,todo:due,todo:assign,todo:indent,todo:outdent');
+    s.ok('outdent is greyed on a task at depth 0',run(`_boardsRailItems().find(i=>i.act==='todo:outdent').off===true`));
+    run(`_boardsEditingEl={id:'board-tdtitle-td'}`);
+    s.eq('a focused TITLE gets the short one',run(`_boardsRailItems().map(i=>i.act).join(',')`),
+      'deselect,color-panel,todo:title,more');
+    run(`_boardsEditingEl=null`);
+    s.ok('and with nothing focused it is the ordinary selection rail',
+      /rename/.test(run(`_boardsRailItems().map(i=>i.act).join(',')`)));
+    s.ok('which still offers Title',/todo:title/.test(run(`_boardsRailItems().map(i=>i.act).join(',')`)));
+    s.eq('a card id with a dash in it still resolves',
+      run(`(function(){_boardsEditingEl={id:'board-todo-a-b-c-3'};var f=_boardsTodoFocus();return f.id+'|'+f.i+'|'+f.what;})()`),'a-b-c|3|item');
+    run(`_boardsEditingEl=null`);
+
+    s.section('a link card is born as ONE field');
+    run(`_editCards=[{id:'lk',type:'link',x:0,y:0,w:340,h:120}];_boardsSelection=new Set(['lk']);`);
+    const lk=()=>run(`_boardCardHTML(_editCards[0],true)`);
+    s.ok('one field, not three',/board-link-new/.test(lk())&&!/board-link-edit/.test(lk()));
+    // Text that is not a URL is KEPT as the title, with the failure said in
+    // the card — Milanote's own behaviour with "ASHI".
+    run(`window.boardsLinkNewCommit('lk','ASHI')`);
+    s.eq('junk becomes the title',run(`_editCards[0].linkTitle`),'ASHI');
+    s.eq('and no URL is invented',run(`String(_editCards[0].linkUrl)`),'undefined');
+    s.ok('the failure is said inside the card',/board-link-err/.test(lk()));
+    s.ok('and the card is the preview shape now, not the field',!/board-link-new/.test(lk()));
+    s.ok('the description is editable, with Milanote\'s placeholder',
+      /data-placeholder="Add a description"/.test(lk()));
+    run(`_editCards=[{id:'lk2',type:'link',x:0,y:0,w:340,h:120}];_boardsLinkHydrate=()=>{__hydrated=true};__hydrated=false;`);
+    run(`window.boardsLinkNewCommit('lk2','https://example.test/a')`);
+    s.eq('a real URL is taken',run(`_editCards[0].linkUrl`),'https://example.test/a');
+    s.eq('the host seeds the title',run(`_editCards[0].linkTitle`),'example.test');
+    s.ok('and the fetch is started once',run(`__hydrated`));
+    s.ok('a javascript: URL is never taken as one',
+      run(`(function(){_editCards=[{id:'lk3',type:'link',x:0,y:0,w:340,h:120}];
+        window.boardsLinkNewCommit('lk3','javascript:alert(1)');
+        return String(_editCards[0].linkUrl)==='undefined'&&_editCards[0].linkTitle==='javascript:alert(1)';})()`));
+
+    s.section('turning a link into an image keeps the page');
+    run(`_editCards=[{id:'li',type:'link',linkUrl:'https://www.pinterest.com/pin/1/',linkTitle:'Pin',
+      linkImage:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:340,h:300}];
+      _boardsSelection=new Set(['li']);`);
+    run(`window.boardsLinkToImage('li')`);
+    s.eq('it is an image card now',run(`_editCards[0].type`),'image');
+    s.eq('carrying the picture',run(`_editCards[0].imageUrl`),'https://res.cloudinary.com/x/image/upload/v1/a.jpg');
+    s.eq('and the page it came from',run(`_editCards[0].sourceUrl`),'https://www.pinterest.com/pin/1/');
+    const srcHtml=run(`_boardCardHTML(_editCards[0],true)`);
+    s.ok('which is drawn as "From pinterest.com"',/board-card-source/.test(srcHtml)&&/pinterest\.com/.test(srcHtml));
+    s.eq('the source line is charged to the card',
+      run(`_boardsMinCardH({type:'image',imageUrl:'x',sourceUrl:'https://a.test/'})-_boardsMinCardH({type:'image',imageUrl:'x'})`),
+      run(`_BOARDS_CHROME_H.caption`));
+    s.ok('a javascript: source renders as plain text, never an href',
+      !/href/.test(run(`_boardCardHTML({id:'s2',type:'image',imageUrl:'x',sourceUrl:'javascript:alert(1)',x:0,y:0,w:200,h:200},true)`).match(/board-card-source[\s\S]*?<\/div>/)[0]));
+
+    s.section('the crop toggle, and Milanote\'s image menu order');
+    run(`_editCards=[{id:'im',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/a.jpg',x:0,y:0,w:240,h:300}];
+      _boardsSelection=new Set(['im']);`);
+    s.ok('cropped by default — nothing stored',/object-fit:cover/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    run(`window.boardsImgCrop('im')`);
+    s.eq('uncropped stores the exception only',run(`_editCards[0].fit`),'contain');
+    s.ok('and the picture is fitted whole',/object-fit:contain/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    run(`window.boardsImgCrop('im')`);
+    s.eq('cropping again clears it',run(`String(_editCards[0].fit)`),'undefined');
+    const imgMenu2=run(`_boardsCardCtxItems(true).map(i=>i.act).filter(Boolean).join(',')`);
+    s.ok('Download original, Replace, Crop — Milanote\'s order',
+      /download,replace,imgcrop/.test(imgMenu2),imgMenu2);
+    s.ok('and the crop entry carries its tick',
+      run(`_boardsCardCtxItems(true).find(i=>i.act==='imgcrop').hint`)==='✓');
+
+    s.section('the colour panel drops its tabs where there is no paper');
+    s.ok('a note has paper',run(`_boardsCardHasPaper({type:'text'})`));
+    s.ok('an image does not',!run(`_boardsCardHasPaper({type:'image'})`));
+    s.ok('nor a file',!run(`_boardsCardHasPaper({type:'file'})`));
+    s.ok('an image card\'s panel has no tabs',
+      !run(`JSON.stringify(_boardsColorPanelItems())`).includes('colortab:'));
+    s.ok('and it is the STRIP palette, never the background one',
+      run(`JSON.stringify(_boardsColorPanelItems())`).includes('swatches')&&
+      !run(`JSON.stringify(_boardsColorPanelItems())`).includes('bgSwatches'));
+    run(`_editCards=[{id:'n2',type:'text',text:'x',x:0,y:0,w:200,h:120}];_boardsSelection=new Set(['n2']);_boardsColorTab='bg';`);
+    s.ok('a note keeps both tabs',
+      run(`JSON.stringify(_boardsColorPanelItems())`).includes('colortab:strip'));
+    s.ok('and its paper presets',
+      run(`JSON.stringify(_boardsColorPanelItems())`).includes('themes'));
+
+    s.section('the labels panel is headed "Recently created"');
+    run(`_editCards=[{id:'c1',type:'text',text:'x',labels:[{t:'DONE',c:'green'}],x:0,y:0,w:200,h:120},
+                    {id:'c2',type:'text',text:'y',labels:[{t:'DONE',c:'green'}],x:0,y:0,w:200,h:120}];
+      _boardsSelection=new Set(['c1']);_boardsLabelRows=_boardsLabelRowsFor('c1','').rows;`);
+    s.eq('both cards carry it',run(`_boardsLabelCards('DONE').length`),2);
+    s.eq('and the match ignores case',run(`_boardsLabelCards('done').length`),2);
+    run(`globalThis.__prompt='SHIPPED';prompt=()=>__prompt;`);
+    run(`_boardsLabelAct('rename:0')`);
+    s.eq('renaming rewrites every card',
+      run(`_editCards.map(c=>c.labels[0].t).join(',')`),'SHIPPED,SHIPPED');
+    run(`_boardsLabelRows=_boardsLabelRowsFor('c1','').rows;confirm=()=>true;`);
+    run(`_boardsLabelAct('drop:0')`);
+    s.eq('and removing drops it from every card',
+      run(`_editCards.map(c=>c.labels.length).join(',')`),'0,0');
+
+    s.section('the dot grid is a placement cue, not the background');
+    s.ok('a helper flashes it',run(`typeof _boardsFlashGrid`)==='function');
+    s.ok('and placing a card asks for it',
+      /_boardsFlashGrid\(false\)/.test(run(`String(_boardsPlacementPoint)`)));
 
     // ── The colour panel, like Milanote's (Sept 2026) ─────────────────────
     s.section('the palette is Milanote\'s grid and every name has a token');
@@ -3816,7 +4009,7 @@ module.exports=function(){
     const pdf=`{name:'Denim Production Brief GROOVY.pdf',type:'application/pdf',size:1153433}`;
     const size=id=>run(`(c=>c.w+'x'+c.h)(_editCards.find(c=>c.id==='${id}'))`);
     const tick=()=>new Promise(r=>setImmediate(r));
-    const A4=`${240}x${Math.round(238*Math.SQRT2)+92}`;
+    const A4=`${240}x${Math.round(238*Math.SQRT2)+run(`_BOARDS_FILE_CHROME_H`)}`;
 
     /* ── The phone round (Sept 2026 audit) ──────────────────────────────
        Every one of these came out of measuring the composed phone canvas in
@@ -4212,10 +4405,10 @@ module.exports=function(){
     return Promise.all(_pending.concat([(async()=>{
       boot();
       s.section('the page-size maths');
-      s.eq('no size reported → A4 portrait',run(`_boardsPdfCardH()`),Math.round(238*Math.SQRT2)+92);
-      s.eq('US Letter (612×792)',run(`_boardsPdfCardH(792/612)`),Math.round(238*792/612)+92);
+      s.eq('no size reported → A4 portrait',run(`_boardsPdfCardH()`),Math.round(238*Math.SQRT2)+run(`_BOARDS_FILE_CHROME_H`));
+      s.eq('US Letter (612×792)',run(`_boardsPdfCardH(792/612)`),Math.round(238*792/612)+run(`_BOARDS_FILE_CHROME_H`));
       s.eq('garbage ratio falls back to A4',run(`_boardsPdfCardH(NaN)`),run(`_boardsPdfCardH()`));
-      s.eq('a sliver page is clamped, not a 4000px card',run(`_boardsPdfCardH(1000)`),238*4+92);
+      s.eq('a sliver page is clamped, not a 4000px card',run(`_boardsPdfCardH(1000)`),238*4+run(`_BOARDS_FILE_CHROME_H`));
       s.ok('a PDF is recognised by type',run(`_boardsIsPdfFile({type:'application/pdf',name:'x'})`));
       s.ok('or by name when the browser gives no type',run(`_boardsIsPdfFile({type:'',name:'Brief.PDF'})`));
       s.ok('a Word file is not a PDF',!run(`_boardsIsPdfFile({type:'',name:'brief.docx'})`));
@@ -4226,7 +4419,7 @@ module.exports=function(){
       s.eq('the placeholder is already A4-shaped',size(id),A4);
       run(`__uploads[0].ok({secure_url:'${IMG}',bytes:1153433,width:612,height:792})`);
       await tick();
-      s.eq('then fitted to the real page (Letter)',size(id),`240x${Math.round(238*792/612)+92}`);
+      s.eq('then fitted to the real page (Letter)',size(id),'240x'+(Math.round(238*792/612)+run(`_BOARDS_FILE_CHROME_H`)));
       s.eq('and it is a file card with its file',run(`_editCards[0].type+' '+_editCards[0].fileUrl`),`file ${IMG}`);
 
       s.section('a card someone sized is left alone');

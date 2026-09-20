@@ -609,7 +609,12 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .tool-btn:hover{border-color:var(--muted)}
 .zoom-readout{font-size:12px;color:var(--muted);min-width:34px;text-align:center;display:inline-block}
 .board-below{position:relative;flex:1;min-height:0;display:flex;flex-direction:column}
-.board-stage{position:relative;flex:1;overflow:hidden;cursor:crosshair;background-image:radial-gradient(#00000014 1px,transparent 1px);background-size:22px 22px;touch-action:none;overscroll-behavior:contain;-webkit-user-select:none}
+.board-stage{position:relative;flex:1;overflow:hidden;cursor:crosshair;background-size:22px 22px;touch-action:none;overscroll-behavior:contain;-webkit-user-select:none}
+/* The dot grid is a PLACEMENT CUE, not the canvas background — measured off
+   Milanote's own (see _boardsFlashGrid). At rest the canvas is plain. */
+.board-stage.grid-on{background-image:radial-gradient(#00000014 1px,transparent 1px)}
+:root[data-theme="dark"] .board-stage.grid-on{background-image:radial-gradient(#ffffff1f 1px,transparent 1px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .board-stage.grid-on{background-image:radial-gradient(#ffffff1f 1px,transparent 1px)}}
 .board-stage.panning{cursor:grabbing}
 .board-world{position:absolute;left:0;top:0;transform-origin:0 0}
 .board-conn-layer{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
@@ -885,15 +890,49 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
    It turns back into a hand whenever a pan route is armed — space held or
    the Hand toggle. (.board-stage.panning is already defined above.) */
 .board-stage.pan-ready{cursor:grab}
-.board-card-head{background:var(--soft);border-bottom:1px solid var(--border);padding:5px 8px;display:flex;align-items:center;justify-content:space-between;cursor:grab;user-select:none;flex-shrink:0}
+/* NO CARD HAS A HEADER STRIP (Sept 2026, from the second Milanote video).
+   A Milanote card is an optional coloured top strip, the content, and an
+   optional caption — no type label, no name, no delete. Ours keeps all of
+   those one hover away: the head OVERLAYS the card as a dark scrim and is
+   hidden by VISIBILITY until hover or selection. Visibility, not opacity
+   alone, because an opacity:0 strip still takes the pointer and on a phone
+   (no hover) a tap on the top-right corner would reach an invisible ✕.
+   The ink is a literal white because the scrim is a literal too — the
+   standing rule. The right padding keeps the ✕ clear of the corner handle
+   and the comment pin parked there. */
+/* THE STRIP ITSELF SWALLOWS NOTHING. It floats over the card's first row,
+   so anything it captured would be a click the person aimed at the content
+   underneath — found by tests/smoke-layout.js on this round's first run,
+   where the head ate a link card's own URL field. pointer-events:none on
+   the bar, auto on the one control in it; the name is display-only until
+   an explicit rename switches it on (the rail, F2 and the right-click menu
+   are the routes, and all three already existed). */
+.board-card-head{position:absolute;left:0;right:0;top:0;z-index:4;background:rgba(0,0,0,.72);border-bottom:none;padding:5px 46px 5px 8px;display:flex;align-items:center;justify-content:space-between;cursor:grab;user-select:none;pointer-events:none;opacity:0;visibility:hidden;transition:opacity .12s,visibility 0s .12s;border-top-left-radius:inherit;border-top-right-radius:inherit}
+.board-card-head .board-card-del{pointer-events:auto}
+.board-card-name[contenteditable="true"]{pointer-events:auto}
+.board-card-el:hover>.board-card-head,.board-card-el.selected>.board-card-head{opacity:1;visibility:visible;transition:opacity .12s,visibility 0s}
+.board-card-head .board-card-kind,.board-card-head .board-card-name,.board-card-head .board-card-del,.board-card-head .board-card-lock{color:#fff}
+.board-card-head .board-card-name:focus{background:rgba(255,255,255,.18);color:#fff;box-shadow:none}
+.board-card-head .board-card-del:hover{color:#fff;opacity:.72}
+/* THE COLOURED TOP STRIP IS ITS OWN BAR now, not the header's background.
+   Milanote draws both: a 4px colour strip at the very top, and (in ours)
+   the hover scrim above it. Painting the strip with the header meant a
+   card could not have both. */
+.board-card-el::before{content:'';position:absolute;left:0;right:0;top:0;height:4px;z-index:5;pointer-events:none;background:transparent;border-top-left-radius:inherit;border-top-right-radius:inherit}
+/* The selection handle: a white round dot ON the top-right corner, like
+   Milanote's. It cannot overhang the edge — the card clips its own content
+   to round its corners — so it sits just inside. Decorative only; the
+   resize grip is still the bottom-right corner. */
+.board-card-corner{position:absolute;top:2px;right:2px;width:9px;height:9px;border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.35);z-index:6;display:none;pointer-events:none}
+.board-card-el.selected>.board-card-corner{display:block}
+@media (prefers-reduced-motion:reduce){.board-card-head{transition:none}}
 .board-card-kind{font-size:13px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:3px;min-width:0}
 /* The card's name lives in its header: an editable label that falls back
    to the type (IMAGE / FILE / NOTE) via its placeholder when empty. */
 .board-card-name{outline:none;border-radius:4px;padding:1px 3px;margin:-1px -3px;max-width:190px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:text}
 .board-card-name:empty:before{content:attr(data-placeholder);color:var(--muted)}
-.board-card-name:hover{background:rgba(0,0,0,.06)}
-.board-card-name:focus{background:var(--surface);box-shadow:0 0 0 1px var(--border);color:var(--text)}
-.board-card-el.type-heading .board-card-name:hover,.board-card-el.type-heading .board-card-name:focus{background:rgba(255,255,255,.2)}
+.board-card-name:focus{background:rgba(255,255,255,.18);box-shadow:none}
+
 .board-card-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;line-height:1;padding:0 2px}
 .board-card-del:hover{color:var(--accent-urgent)}
 .board-card-body{flex:1;min-height:0;overflow:hidden;position:relative;font-size:15px}
@@ -913,13 +952,30 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .board-text-body h6{font-size:13px;font-weight:400;color:var(--muted);margin:2px 0}
 .board-text-body pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:6px 8px;margin:4px 0;white-space:pre-wrap;word-break:break-word}
 .board-text-body blockquote{border-left:3px solid var(--border);margin:4px 0;padding:2px 10px;color:var(--muted)}
+/* A LINK CARD IS BORN AS ONE FIELD — "Enter a link URL", Milanote's own.
+   The three-field form below is what "Edit link details" still opens. */
+/* The right inset clears the head's ✕, which floats over this row: without
+   it the far right of the URL field deletes the card instead of putting a
+   caret in it. */
+.board-link-new{display:flex;flex-direction:column;gap:6px;padding:9px 56px 9px 10px}
+.board-link-newrow{display:flex;align-items:center;gap:7px}
+.board-link-urlin{flex:1;min-width:0;border:none;background:none;outline:none;font-family:inherit;font-size:14px;color:var(--text);padding:2px 0}
+.board-link-urlin::placeholder{color:var(--muted)}
+/* A fetch that failed is said INSIDE the card, like Milanote's, not in a
+   toast that is gone before you look up. */
+.board-link-err{display:flex;align-items:flex-start;gap:6px;font-size:13px;line-height:1.35;color:var(--accent-warning);background:var(--accent-warning-soft);border-radius:7px;padding:5px 7px}
+.board-link-warn{flex-shrink:0;width:17px;height:17px;border-radius:50%;background:var(--accent-warning);color:var(--on-dark);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1}
+/* "From Pinterest" — an image card that came off a page keeps the page. */
+.board-card-source{flex-shrink:0;font-size:13px;color:var(--muted);padding:4px 9px;border-top:1px solid var(--border);background:var(--surface);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.board-card-source a{color:var(--link-accent);text-decoration:underline}
 .board-link-edit{display:flex;flex-direction:column;gap:5px;padding:8px}
 .board-link-edit input,.board-link-edit textarea{border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13.5px;font-family:inherit;resize:none;background:var(--surface-2);color:var(--text)}
 .board-link-edit textarea{flex:1;min-height:0}
 .board-link-done{align-self:flex-start;border:1px solid var(--border);background:var(--dark);color:var(--on-dark);
   font-family:inherit;font-size:13px;font-weight:600;padding:4px 12px;border-radius:7px;cursor:pointer}
 .link-title{padding:9px 10px 0;font-size:15px;font-weight:700;line-height:1.3}
-.link-desc{padding:2px 10px;font-size:13px;color:var(--muted);line-height:1.4}
+.link-desc{padding:2px 10px;font-size:13px;color:var(--muted);line-height:1.4;outline:none;-webkit-user-select:text;user-select:text}
+.link-desc:empty:before{content:attr(data-placeholder);color:var(--muted);opacity:.75}
 .link-url{padding:0 10px 8px;margin-top:auto;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* ── A link card with a preview (Sept 2026) ───────────────────────────
    The picture takes whatever height is left over and the text block sizes
@@ -1262,9 +1318,30 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-todo-text:empty:before{content:attr(data-placeholder);color:var(--muted)}
 .board-todo-text.done{text-decoration:line-through;color:var(--muted)}
 .board-todo-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:2px;opacity:0;flex-shrink:0}
+/* The head's own ✕ lands exactly here while the strip is showing, and the
+   two mean very different things — one removes a task, the other the whole
+   card. The first row yields; "Remove task" is on the right-click menu and
+   Backspace on an empty task still works. */
+.board-card-el:hover .board-todo-body>.board-todo-row:first-child .board-todo-del,
+.board-card-el.selected .board-todo-body>.board-todo-row:first-child .board-todo-del{display:none}
 .board-todo-row:hover .board-todo-del{opacity:1}
-.board-todo-add{background:none;border:none;color:var(--muted);font-family:inherit;font-size:13.5px;cursor:pointer;padding:4px 0;text-align:left}
+.board-todo-add{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13.5px;cursor:pointer;padding:3px 0;min-height:24px}
 .board-todo-add:hover{color:var(--text)}
+/* The add row is a greyed task, the way Milanote's "Add a task…" reads —
+   not a button, so the list has one shape all the way down. */
+.board-todo-addbox{width:13px;height:13px;border:1.5px solid var(--border);border-radius:3px;flex-shrink:0}
+/* A to-do card has a TITLE (Sept 2026, second video): bold, small, at the
+   top of the list, offered inline once the list has a few tasks. */
+.board-todo-title{font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text);padding:1px 0 5px;outline:none;word-break:break-word;-webkit-user-select:text;user-select:text}
+.board-todo-title:empty:before{content:attr(data-placeholder);color:var(--muted)}
+/* A task's due date and the person it is assigned to. Both are per-ITEM,
+   which is why the rail offers them only while that task holds the caret. */
+.board-todo-due{flex-shrink:0;font-size:13px;font-weight:600;color:var(--muted);background:var(--soft);border-radius:999px;padding:0 7px;line-height:19px;white-space:nowrap}
+.board-todo-due.over{color:var(--accent-urgent);background:var(--accent-urgent-soft)}
+.board-todo-who{flex-shrink:0;width:21px;height:21px;border-radius:50%;background:var(--cat-boards);color:var(--on-dark);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.board-todo-ask{font-size:13px;color:var(--muted);padding:6px 0 2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.board-todo-ask button{background:none;border:none;font-family:inherit;font-size:13px;font-weight:600;color:var(--cat-notes);cursor:pointer;padding:2px 3px;text-decoration:underline}
+.board-todo-ask button:last-child{color:var(--muted)}
 
 /* Photo cards — the picture IS the card, like Milanote's (Sept 2026, read
    off the video at 34s/112s: a bare photo, no strip, no border, a small
@@ -1281,52 +1358,42 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
    Milanote's own hover state on a photo is NOT in the video — the overlay
    is built from the heading card, not copied. */
 .board-card-el.type-image.photo{border:none;border-radius:4px}
-/* Hidden by VISIBILITY as well as opacity: an opacity:0 strip still takes
-   the pointer, so on a phone (no hover) a tap on the top-right corner of a
-   photo would have reached an invisible delete ✕. Hidden, the strip is
-   not hit-testable at all; the first tap selects the card, which shows it.
-   The right padding keeps the ✕ clear of the badge pinned in that corner —
-   the layout probe found the two on top of each other. */
-.type-image.photo .board-card-head{position:absolute;left:0;right:0;top:0;z-index:2;background:rgba(0,0,0,.6);border-bottom:none;padding-right:30px;opacity:0;visibility:hidden;transition:opacity .12s,visibility 0s .12s}
-.board-card-el.type-image.photo:hover .board-card-head,.board-card-el.type-image.photo.selected .board-card-head{opacity:1;visibility:visible;transition:opacity .12s,visibility 0s}
-.type-image.photo .board-card-kind,.type-image.photo .board-card-name,.type-image.photo .board-card-del,.type-image.photo .board-card-lock{color:#fff}
-.type-image.photo .board-card-del:hover{color:#fff;opacity:.75}
-.type-image.photo[class*=" tint-"] .board-card-kind,.type-image.photo[class*=" tint-"] .board-card-name,.type-image.photo[class*=" tint-"] .board-card-del,.type-image.photo[class*=" tint-"] .board-card-lock{color:var(--text)}
-/* The badge sits ON the picture, always visible, under the same id the
-   painter fills. Inside the card's own box (overflow:hidden), so it cannot
-   overhang the corner the way Milanote's does. */
-.board-cmt-badge.on-photo{position:absolute;top:6px;right:6px;z-index:3;box-shadow:0 1px 3px rgba(0,0,0,.35)}
-@media (prefers-reduced-motion:reduce){.type-image.photo .board-card-head{transition:none}}
+/* The comment badge is a PIN — a teardrop carrying the count, point down,
+   parked at the top-right of every card and always visible, like
+   Milanote's. Theirs overhangs the card's top edge; ours sits inside, for
+   the reason _boardCardHTML records. */
+.board-cmt-badge.pin{position:absolute;top:5px;right:14px;z-index:6;min-width:18px;height:18px;padding:0 4px;border-radius:9px 9px 9px 2px;background:var(--cat-notes);color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.board-cmt-badge.pin:after{content:'';position:absolute;left:2px;bottom:-4px;width:0;height:0;border-left:5px solid var(--cat-notes);border-bottom:5px solid transparent}
 
 /* Colour tags — status coding that reads at a glance on a big board */
-.board-card-el.tint-grey .board-card-head{background:var(--sw-grey-soft)}
+.board-card-el.tint-grey::before{background:var(--sw-grey)}
 .board-card-el.tint-grey{border-color:var(--sw-grey)}
-.board-card-el.tint-teal .board-card-head{background:var(--sw-teal-soft)}
+.board-card-el.tint-teal::before{background:var(--sw-teal)}
 .board-card-el.tint-teal{border-color:var(--sw-teal)}
-.board-card-el.tint-green .board-card-head{background:var(--accent-success-soft)}
+.board-card-el.tint-green::before{background:var(--accent-success)}
 .board-card-el.tint-green{border-color:var(--accent-success)}
-.board-card-el.tint-tan .board-card-head{background:var(--sw-tan-soft)}
+.board-card-el.tint-tan::before{background:var(--sw-tan)}
 .board-card-el.tint-tan{border-color:var(--sw-tan)}
-.board-card-el.tint-yellow .board-card-head{background:var(--sw-yellow-soft)}
+.board-card-el.tint-yellow::before{background:var(--sw-yellow)}
 .board-card-el.tint-yellow{border-color:var(--sw-yellow)}
-.board-card-el.tint-amber .board-card-head{background:var(--accent-warning-soft)}
+.board-card-el.tint-amber::before{background:var(--accent-warning)}
 .board-card-el.tint-amber{border-color:var(--accent-warning)}
-.board-card-el.tint-red .board-card-head{background:var(--accent-urgent-soft)}
+.board-card-el.tint-red::before{background:var(--accent-urgent)}
 .board-card-el.tint-red{border-color:var(--accent-urgent)}
-.board-card-el.tint-pink .board-card-head{background:var(--sw-pink-soft)}
+.board-card-el.tint-pink::before{background:var(--sw-pink)}
 .board-card-el.tint-pink{border-color:var(--sw-pink)}
-.board-card-el.tint-purple .board-card-head{background:var(--cat-boards-soft)}
+.board-card-el.tint-purple::before{background:var(--cat-boards)}
 .board-card-el.tint-purple{border-color:var(--cat-boards)}
-.board-card-el.tint-sky .board-card-head{background:var(--sw-sky-soft)}
+.board-card-el.tint-sky::before{background:var(--sw-sky)}
 .board-card-el.tint-sky{border-color:var(--sw-sky)}
-.board-card-el.tint-blue .board-card-head{background:var(--cat-notes-soft)}
+.board-card-el.tint-blue::before{background:var(--cat-notes)}
 .board-card-el.tint-blue{border-color:var(--cat-notes)}
 /* A LITERAL strip (from this board's pictures, or Custom colour…): the
    hex sits in --card-strip and its ink in --card-strip-ink, both computed
    by _boardsCardColorStyle — a literal ink on a literal band. */
 .board-card-el.tint-custom{border-color:var(--card-strip)}
-.board-card-el.tint-custom .board-card-head{background:var(--card-strip)}
-.board-card-el.tint-custom .board-card-kind,.board-card-el.tint-custom .board-card-name,.board-card-el.tint-custom .board-card-del,.board-card-el.tint-custom .board-card-lock{color:var(--card-strip-ink)}
+.board-card-el.tint-custom::before{background:var(--card-strip)}
+
 /* BACKGROUND (Sept 2026): the card body, beside the strip. Soft tokens, so
    the card's own ink (var(--text)) reads on it in both themes. A note's
    editable body is transparent, so the card colour shows through. */
@@ -1449,8 +1516,10 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .rail-count{font-size:11px;font-weight:700;color:var(--muted);text-align:center;padding:4px 0 2px}
 .tool-btn.on{background:var(--dark);color:var(--on-dark);border-color:var(--dark)}
 .board-card-el.locked{opacity:.92}
-.board-card-el.locked .board-card-head{cursor:default;background:var(--accent-warning-soft)}
-.board-card-el.locked .board-card-kind{color:var(--accent-warning)}
+.board-card-el.locked .board-card-head{cursor:default}
+/* A literal amber on the literal scrim — the same rule the white ink follows. */
+.board-card-el.locked .board-card-head .board-card-kind,.board-card-el.locked .board-card-head .board-card-lock{color:#FBBF24}
+.board-card-el.locked::before{background:var(--accent-warning)}
 /* The padlock beside a locked card's name — Milanote's "Lock Position" —
    in the same ink as the LOCKED head strip. It sits in the header, so the
    far level-of-detail band hides it with the rest of the chrome. */
@@ -1465,9 +1534,9 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .tool-btn:disabled{opacity:.4;cursor:not-allowed}
 /* Heading cards — the section banners Afnan's real board is organised by */
 .board-card-el.type-heading{border:none;box-shadow:0 1px 2px rgba(0,0,0,.06),0 4px 12px rgba(0,0,0,.10)}
-.board-card-el.type-heading .board-card-head{position:absolute;left:0;right:0;top:0;background:rgba(128,128,128,.28);border-bottom:none;opacity:0;transition:opacity .12s;z-index:2}
+
 .board-card-el.type-heading:hover .board-card-head,.board-card-el.type-heading.selected .board-card-head{opacity:1}
-.board-card-el.type-heading .board-card-kind,.board-card-el.type-heading .board-card-del{color:var(--on-dark)}
+
 .board-heading-body{background:var(--dark);color:var(--on-dark);display:flex;align-items:center;justify-content:center;text-align:center;padding:0 16px;font-size:17px;font-weight:700;letter-spacing:.03em;line-height:1.25;outline:none;overflow:hidden}
 .board-heading-body:empty:before{content:attr(data-placeholder);color:var(--on-dark);opacity:.55}
 .board-card-el.type-heading.tint-grey .board-heading-body{background:var(--sw-grey)}
@@ -1892,6 +1961,10 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-label-create+.board-label-swatches{margin-top:8px;padding-left:2px}
 .board-label-list{display:flex;flex-direction:column;max-height:min(44vh,320px);overflow:auto}
 .board-label-row{display:flex;align-items:center;gap:10px;padding:7px 2px;border-bottom:1px solid var(--border);cursor:pointer;min-height:36px}
+.board-label-row>label{display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer}
+/* Milanote gives every label its own ⋯ (rename / remove board-wide). */
+.board-label-more{flex-shrink:0;background:none;border:none;color:var(--muted);font-family:inherit;font-size:15px;line-height:1;cursor:pointer;padding:6px 8px;min-width:32px;min-height:32px;border-radius:6px}
+.board-label-more:hover{background:var(--hover);color:var(--text)}
 .board-label-row:last-child{border-bottom:none}
 .board-label-row input{width:18px;height:18px;margin:0;accent-color:var(--text);flex-shrink:0;cursor:pointer}
 /* Reactions (Sept 2026): categories left, the emoji right, search at the foot. */
@@ -2072,6 +2145,10 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   .board-rail-badge{transition:none}
 }
 .rail-btn{position:relative}
+/* A rail tool that cannot apply right now is greyed, not hidden — Milanote
+   greys indent and outdent on the first task of a list. It carries no act,
+   so the router never sees it. */
+.rail-btn.off{opacity:.38;cursor:default;pointer-events:none}
 /* ── The rail, sized to Milanote's (Sept 2026) ────────────────────────
    Afnan, with Milanote beside ours: "its too small, hard to see animations
    and small texts … increase each icon size by 30%", then "study milanote

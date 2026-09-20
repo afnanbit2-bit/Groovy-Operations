@@ -191,6 +191,42 @@ module.exports=function(){
   //
   // A future mechanical sweep will see these as ordinary sizes and may
   // treat 11 as acceptable again; this is what notices.
+  /* No card has a header strip (Sept 2026, from the second Milanote
+     video). The head is an overlay floating over the card's own first row,
+     so three rules are load-bearing and each was verified by breaking it. */
+  s.section('the head strip is an inert overlay');
+  {
+    const css=fs.readFileSync(path.join(ROOT,'css/main.css'),'utf8');
+    const head=(css.match(/\n\.board-card-head\{[^}]*\}/)||[''])[0];
+    s.ok('it is absolutely positioned over the card',/position:absolute/.test(head),head.slice(0,80));
+    // THE ONE THAT MATTERS: anything the bar captures is a click somebody
+    // aimed at the content underneath. smoke-layout caught it eating a link
+    // card's URL field; only the delete button may take events.
+    s.ok('and it takes no pointer events itself',/pointer-events:none/.test(head),head.slice(0,120));
+    s.ok('exactly one control in it is re-enabled',
+      /\.board-card-head \.board-card-del\{pointer-events:auto\}/.test(css));
+    // It becomes one only while an explicit rename has switched it on.
+    s.ok('the card name is a label until a rename switches it on',
+      /\.board-card-name\[contenteditable="true"\]\{pointer-events:auto\}/.test(css)&&
+      !/\.board-card-name\{[^}]*pointer-events:auto/.test(css));
+    const js=fs.readFileSync(path.join(ROOT,'js/boards.js'),'utf8');
+    s.ok('and it carries no click handler in the markup',
+      !/board-card-name[^>]{0,400}?on(click|dblclick)=/.test(js));
+    // The head's own ✕ lands on a to-do's first-row ✕, and the two mean
+    // very different things. The centres happen not to overlap, so the
+    // layout probe does NOT hold this one — this is what does.
+    s.ok('a to-do first row yields its ✕ while the strip shows',
+      /\.board-card-el\.selected \.board-todo-body>\.board-todo-row:first-child \.board-todo-del\{display:none\}/.test(css));
+    // The coloured top strip is its own bar, so a card can carry both.
+    s.ok('the colour strip is not the head background',
+      /\.board-card-el::before\{content:''/.test(css)&&!/\.board-card-el\.tint-[a-z]+ \.board-card-head\{/.test(css));
+    // The dot grid is a placement cue, not the canvas background.
+    s.ok('the dot grid is scoped to .grid-on',
+      /\.board-stage\.grid-on\{background-image:radial-gradient/.test(css));
+    const stage=(css.match(/\n\.board-stage\{[^}]*\}/)||[''])[0];
+    s.ok('and the stage carries none at rest',!/background-image/.test(stage),stage.slice(0,120));
+  }
+
   s.section('card-internal text holds a 13px floor');
   {
     // `.link-title`/`.link-desc`/`.link-url` are card-internal too and do NOT

@@ -2185,20 +2185,40 @@ function _boardCardHTML(c,canEdit){
     // sits on a DESCENDANT does not. The cost is the documented one — a
     // to-do card now drags by its header strip and the padding around its
     // rows, not by the item text, just as a table drags by its chrome.
+    // A to-do card is a list with a TITLE, and its tasks NEST — both read
+    // off the second Milanote video (Sept 2026). An item carries an optional
+    // due date and an optional assignee, and the rail offers those only
+    // while that item holds the caret, because they are per-ITEM and not
+    // per-card. Depth is a plain number on the item, so an older to-do
+    // reads as a flat list with no migration.
+    const title=(c.title!=null)
+      ?`<div class="board-todo-title" id="board-tdtitle-${c.id}" contenteditable="false" data-placeholder="New To-do List" onpointerdown="event.stopPropagation()" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-tdtitle-${c.id}')"`:''} oninput="window.boardsTodoTitle('${c.id}',this)"></div>`
+      :'';
+    // Milanote offers the title itself once a list has a few tasks, at the
+    // foot of the card, with Yes / No thanks. Answering either way sets
+    // titleAsked, so it is offered once and never nags again.
+    const ask=(canEdit&&c.title==null&&!c.titleAsked&&items.length>=3)
+      ? `<div class="board-todo-ask" onpointerdown="event.stopPropagation()">Add a title to this list?
+           <button onclick="event.stopPropagation();window.boardsTodoTitleOn('${c.id}')">Yes</button>
+           <button onclick="event.stopPropagation();window.boardsTodoNoTitle('${c.id}')">No thanks</button>
+         </div>` : '';
     body=`<div class="board-card-body board-todo-body"${bodyDrag}>
-      ${items.map((it,i)=>`<div class="board-todo-row">
+      ${title}
+      ${items.map((it,i)=>`<div class="board-todo-row" style="padding-left:${_boardsTodoIndentPx(it)}px">
         <input type="checkbox" ${it.done?'checked':''} ${canEdit?'':'disabled'} onpointerdown="event.stopPropagation()" onchange="window.boardsTodoToggle('${c.id}',${i},this.checked)">
         <div class="board-todo-text${it.done?' done':''}" id="board-todo-${c.id}-${i}" contenteditable="false" data-placeholder="To-do" onpointerdown="event.stopPropagation()" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-todo-${c.id}-${i}')"`:''} oninput="window.boardsTodoText('${c.id}',${i},this)" onkeydown="window.boardsTodoKey(event,'${c.id}',${i})"></div>
+        ${_boardsTodoMetaHTML(it)}
         ${canEdit?`<button class="board-todo-del" onpointerdown="event.stopPropagation()" onclick="window.boardsTodoRemove('${c.id}',${i})" title="Remove">✕</button>`:''}
       </div>`).join('')}
-      ${canEdit?`<button class="board-todo-add" onpointerdown="event.stopPropagation()" onclick="window.boardsTodoAdd('${c.id}')">+ Add item</button>`:''}
+      ${canEdit?`<div class="board-todo-add" onpointerdown="event.stopPropagation()" onclick="window.boardsTodoAdd('${c.id}')"><span class="board-todo-addbox"></span>Add a task…</div>`:''}
+      ${ask}
     </div>`;
     c._todoProgress=items.length?doneN+'/'+items.length:'';
   }else if(c.type==='image'){
     body=c._uploading
       ?'<div class="board-card-empty">Uploading…</div>'
       :c.imageUrl
-      ?`<img src="${_boardsEsc(_boardsDisplayUrl(c.imageUrl,c.w))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" data-full="${_boardsEsc(c.imageUrl)}" style="width:100%;height:100%;object-fit:cover;display:block">`
+      ?`<img src="${_boardsEsc(_boardsDisplayUrl(c.imageUrl,c.w))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" data-full="${_boardsEsc(c.imageUrl)}" style="width:100%;height:100%;object-fit:${c.fit==='contain'?'contain':'cover'};display:block">`
       :canEdit?`<label class="board-card-empty" for="board-file-${c.id}">Click, or paste an image (Ctrl+V)<input type="file" id="board-file-${c.id}" accept="image/*" onchange="window.boardsUploadToCard('${c.id}',this)" style="display:none"></label>`
               :`<div class="board-card-empty">No image</div>`;
     body=`<div class="board-card-body" style="padding:0"${bodyDrag}${c.imageUrl?` ondblclick="window.boardsFilePreview('${c.id}')"`:''}>${body}</div>`;
@@ -2207,8 +2227,27 @@ function _boardCardHTML(c,canEdit){
     // someone who asked to edit one. Everything else shows the PREVIEW —
     // before this, a link card was permanently three raw inputs, which is
     // exactly what Afnan put beside Milanote's picture-and-title card.
-    const editing=canEdit&&(c._linkEdit||!c.linkUrl);
-    if(editing){
+    // A LINK CARD IS BORN AS ONE FIELD, "Enter a link URL" — read off the
+    // second Milanote video (Sept 2026). Ours was born as three inputs
+    // (URL, Title, Description), which is exactly the raw-form card Afnan
+    // put beside Milanote's. The three-field form is still there behind
+    // "Edit link details", for fixing a title a fetch got wrong.
+    const blank=canEdit&&!c.linkUrl&&!c.linkTitle&&!c._linkEdit;
+    const editing=canEdit&&c._linkEdit;
+    if(blank){
+      // Enter commits, and so does leaving the field. Nothing is fetched
+      // per keystroke — a fetch per character would be a server request per
+      // character, the rule the Done button already followed.
+      body=`<div class="board-card-body board-link-new">
+          <div class="board-link-newrow">
+            <svg class="board-link-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 9.5a3 3 0 0 0 4.24 0l2-2a3 3 0 0 0-4.24-4.24l-.7.7M9.5 6.5a3 3 0 0 0-4.24 0l-2 2a3 3 0 0 0 4.24 4.24l.7-.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <input type="text" class="board-link-urlin" placeholder="Enter a link URL" value="${_boardsEsc(c.linkUrl)}"
+              onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()"
+              onkeydown="window.boardsLinkNewKey(event,'${c.id}')" onblur="window.boardsLinkNewCommit('${c.id}',this.value)">
+          </div>
+          ${_boardsLinkErrHTML(c)}
+        </div>`;
+    }else if(editing){
       body=`<div class="board-card-body board-link-edit">
           <input type="text" value="${_boardsEsc(c.linkUrl)}" placeholder="https://…" oninput="window.boardsLinkInput('${c.id}','linkUrl',this.value)">
           <input type="text" value="${_boardsEsc(c.linkTitle)}" placeholder="Title" oninput="window.boardsLinkInput('${c.id}','linkTitle',this.value)">
@@ -2248,8 +2287,9 @@ function _boardCardHTML(c,canEdit){
               ${c.linkImage&&canEdit?`<button class="board-link-eye${c.linkPreviewOff?' off':''}" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsLinkTogglePreview('${c.id}')" title="${c.linkPreviewOff?'Show the preview picture':'Hide the preview picture'}"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="3.3" width="12.4" height="9.4" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M1.8 10.5l3.4-3 3 2.6 2.2-2 3.8 3.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path class="eye-slash" d="M2 14L14 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>`:''}
             </div>
             <a class="link-title" id="board-linkt-${c.id}"${href?` href="${_boardsEsc(href)}" target="_blank" rel="noopener noreferrer"`:''} onpointerdown="event.stopPropagation()" title="Open this link in a new tab"></a>
-            <div class="link-desc" id="board-linkd-${c.id}"></div>
+            <div class="link-desc" id="board-linkd-${c.id}" contenteditable="false" data-placeholder="Add a description" onpointerdown="event.stopPropagation()" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-linkd-${c.id}')"`:''} oninput="window.boardsLinkInput('${c.id}','linkDesc',this.textContent)"></div>
           </div>
+          ${_boardsLinkErrHTML(c)}
           ${c._fetching?'<div class="board-link-loading">Loading preview…</div>':''}
         </div>`;
     }
@@ -2424,6 +2464,14 @@ function _boardCardHTML(c,canEdit){
   }else{
     body=`<div class="board-card-body board-text-body"${bodyDrag} contenteditable="false" id="board-txt-${c.id}" data-placeholder="Double-click to type…" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-txt-${c.id}')"`:''} oninput="window.boardsTextInput('${c.id}',this)"></div>`;
   }
+  // "From Pinterest" — Milanote captions an image it pulled off a page with
+  // the site name, linking back. Ours keeps the page URL in c.sourceUrl and
+  // draws the same line; _boardsSafeHref is what decides whether it is a
+  // link at all, so a stored javascript: URL renders as plain text.
+  if(c.type==='image'&&c.sourceUrl){
+    const sh=_boardsSafeHref(c.sourceUrl);
+    body+=`<div class="board-card-source">From ${sh?`<a href="${_boardsEsc(sh)}" target="_blank" rel="noopener noreferrer" onpointerdown="event.stopPropagation()">${_boardsEsc(_boardsHostOf(c.sourceUrl))}</a>`:_boardsEsc(_boardsHostOf(c.sourceUrl))}</div>`;
+  }
   if((c.type==='image'||c.type==='file'||c.type==='table')&&c.caption!=null){
     // Reported twice in QA as "the caption doesn't save". It always saved —
     // you could never TYPE. Card bodies are contenteditable="false" until
@@ -2451,17 +2499,38 @@ function _boardCardHTML(c,canEdit){
   // visible, so on a photo it is emitted OUTSIDE the head, pinned to the
   // corner of the picture, under the same id the painter looks up.
   const photo=_boardsIsPhotoCard(c);
-  const badge=`<button class="board-cmt-badge${photo?' on-photo':''}" id="board-cmt-${c.id}" style="display:none" title="Comments on this card" onclick="event.stopPropagation();window.boardsOpenComments('${c.id}')" onpointerdown="event.stopPropagation()"></button>`;
+  // NO CARD HAS A HEADER STRIP ANY MORE — read off the second Milanote
+  // video (Sept 2026, "Winter Drop 2027"): a link card, a to-do card, an
+  // image card and a file card all render as an optional coloured top
+  // strip, the content, and an optional caption. There is no type label,
+  // no name row and no delete ✕ anywhere on a Milanote card.
+  //
+  // Ours keeps all four, one hover away: the head OVERLAYS the top of the
+  // card as a dark scrim and is hidden by VISIBILITY until hover or
+  // selection — the treatment the photo card took a round earlier,
+  // generalised to every type. Nothing is removed; at rest a card is pure
+  // content the way Milanote's is. The coloured "top strip" is no longer
+  // the header's background: it is its own 4px bar (.board-card-el::before)
+  // so the two can coexist, which is exactly how Milanote draws it.
+  //
+  // The comment badge is a PIN (a teardrop with the count, point down),
+  // always visible at the top-right, and the selection handle is a white
+  // round dot ON the corner. In Milanote both OVERHANG the card's top edge;
+  // ours cannot, because .board-card-el clips its own content to get its
+  // rounded corners, so both sit just inside. Escaping that would mean
+  // wrapping every card in a second clipping element, which is a structural
+  // change to every card rule in the file for a few pixels of overhang.
+  const pin=`<button class="board-cmt-badge pin" id="board-cmt-${c.id}" style="display:none" title="Comments on this card" onclick="event.stopPropagation();window.boardsOpenComments('${c.id}')" onpointerdown="event.stopPropagation()"></button>`;
   return`<div class="board-card-el type-${c.type}${photo?' photo':''}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle(c)}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px" onclick="window.boardsSelectCard('${c.id}',event)">
-    <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')" ondblclick="window.boardsHeadDblClick(event,'${c.id}')"`:''}>
+    <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''}>
       <span class="board-card-kind">
-        <span class="board-card-name" id="board-name-${c.id}" contenteditable="false" data-placeholder="${_boardsEsc(kind)}" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-name-${c.id}')"`:''} oninput="window.boardsCardName('${c.id}',this)" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()" title="Double-click to rename this card"></span>${c.locked?`<span class="board-card-lock" title="Position locked — unlock it from the ⋯ menu">${_boardsIcon('lock')}</span>`:''}</span>
+        <span class="board-card-name" id="board-name-${c.id}" contenteditable="false" data-placeholder="${_boardsEsc(kind)}" oninput="window.boardsCardName('${c.id}',this)" onpointerdown="event.stopPropagation()"></span>${c.locked?`<span class="board-card-lock" title="Position locked — unlock it from the ⋯ menu">${_boardsIcon('lock')}</span>`:''}</span>
       <span style="display:flex;align-items:center;gap:4px">
-        ${photo?'':badge}
         ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete">✕</button>`:''}
       </span>
     </div>
-    ${photo?badge:''}
+    ${pin}
+    <span class="board-card-corner" aria-hidden="true"></span>
     ${body}
     ${_boardsCardFootHTML(c)}
     ${canEdit&&!c.locked?`<div class="board-link-handle" onpointerdown="window.boardsLinkStart(event,'${c.id}')" title="Drag to connect"></div>
@@ -2475,6 +2544,20 @@ function _boardCardHTML(c,canEdit){
 // trap. If the host turns out NOT to send the header, the image would fail
 // to load entirely, so this falls back once to a plain load: the picture
 // still shows, and only the export degrades (as it already did).
+// Milanote's "Crop Image to Fit Dot Grid", ticked by default. It is the
+// cover/contain switch: cropped, the picture fills the card and loses its
+// edges; uncropped it is fitted whole and the card shows through. Ours
+// stores only the exception — a card with no c.fit is cropped, so nothing
+// migrates and the default costs no bytes.
+window.boardsImgCrop=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='image'||!_boardsCanEdit(_editBoard))return;
+  _boardsPushUndo();
+  if(c.fit==='contain')delete c.fit;else c.fit='contain';
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast(c.fit==='contain'?'Showing the whole picture':'Cropped to fill the card');
+};
 window.boardsImgFallback=function(img){
   if(img.__fellBack)return;
   img.__fellBack=true;
@@ -2605,7 +2688,7 @@ const _BOARDS_REACTIONS=[
 // (scratchpad/measure-foot.js). With both rows present the foot's padding is
 // counted twice, a 7px slack that is deliberate: a wrapped row of labels
 // still gets no extra height, and a little air beats a clipped chip.
-const _BOARDS_CHROME_H={head:28,labels:31,reactions:31,caption:27};
+const _BOARDS_CHROME_H={head:28,labels:31,reactions:31,caption:27,todoTitle:21,todoAsk:27};
 // board:108 is MEASURED, not chosen. The spine card's tallest honest
 // content at the width a board card is born at (_BOARDS_BOARD_W) is a
 // two-line name + the meta line + a thumbnail strip = 107px of body; 108
@@ -2619,8 +2702,81 @@ const _BOARDS_MIN_BODY_H={board:108,image:92,file:100,link:104,todo:80,heading:3
 // image") and one still uploading keep the ordinary strip: a card whose
 // only chrome shows on hover would be an invisible box until it had
 // something to show.
+// A task's nesting depth, capped so a runaway indent cannot push the text
+// out of the card. 16px a level, measured against the checkbox's own width.
+const _BOARDS_TODO_MAX_DEPTH=4;
+function _boardsTodoDepth(it){
+  const d=it&&+it.depth;
+  return (d>0)?Math.min(_BOARDS_TODO_MAX_DEPTH,Math.round(d)):0;
+}
+function _boardsTodoIndentPx(it){ return 8+_boardsTodoDepth(it)*16; }
+// A due date is stored as a plain YYYY-MM-DD string — the same shape the
+// Cutting registry's filter compares, so it sorts and compares as text and
+// needs no Date maths per row. Anything else is ignored rather than shown.
+function _boardsTodoValidDue(v){
+  return (typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v))?v:null;
+}
+function _boardsTodayStr(){
+  const d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function _boardsDueLabel(v){
+  const t=_boardsTodayStr();
+  if(v===t)return'Today';
+  const d=new Date(v+'T00:00:00'),n=new Date(t+'T00:00:00');
+  const days=Math.round((d-n)/86400000);
+  if(days===1)return'Tomorrow';
+  if(days===-1)return'Yesterday';
+  const M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return d.getDate()+' '+M[d.getMonth()]+(d.getFullYear()!==n.getFullYear()?(' '+d.getFullYear()):'');
+}
+// The due chip and the assignee chip that sit after a task's text. Both are
+// escaped rather than hydrated: a date is ours and an assignee is a
+// USER_DEFS name, not a string anybody typed into this board.
+function _boardsTodoMetaHTML(it){
+  let h='';
+  const due=_boardsTodoValidDue(it&&it.due);
+  if(due){
+    const late=due<_boardsTodayStr()&&!(it&&it.done);
+    h+=`<span class="board-todo-due${late?' over':''}" title="Due ${_boardsEsc(due)}">${_boardsEsc(_boardsDueLabel(due))}</span>`;
+  }
+  const who=(it&&typeof it.who==='string')?it.who.trim():'';
+  if(who)h+=`<span class="board-todo-who" title="Assigned to ${_boardsEsc(who)}">${_boardsEsc(_boardsInitials(who))}</span>`;
+  return h;
+}
+// Which part of a to-do card holds the caret. The rail asks, because
+// Milanote's rail is different for a task (Due date, Assign, indent) and
+// for the list's title — it follows FOCUS, not just selection.
+function _boardsTodoFocus(){
+  const el=_boardsEditingEl;
+  if(!el||!el.id)return null;
+  let m=/^board-todo-(.+)-(\d+)$/.exec(el.id);
+  if(m)return{id:m[1],i:+m[2],what:'item'};
+  m=/^board-tdtitle-(.+)$/.exec(el.id);
+  if(m)return{id:m[1],what:'title'};
+  return null;
+}
 function _boardsIsPhotoCard(c){
   return !!c&&c.type==='image'&&!!c.imageUrl&&!c._uploading;
+}
+// A TO-DO CARD IS AS TALL AS ITS LIST, the way _boardsTableMinH already
+// makes a table as tall as its rows — and for the same reason: the card is
+// a fixed-height flex column that clips, so content it was never sized for
+// is simply drawn where nobody can see it. Found by tests/smoke-layout.js
+// on this round's very first run: with a flat 80px body a three-task list
+// pushed both "Add a task…" and the "Add a title to this list?" prompt out
+// of the card. Every piece is MEASURED (scratchpad/measure-v2.js): a task
+// row 26, the title 21, the add row 24, the prompt 27, the body's own
+// padding 12. Capped at _BOARDS_TODO_MAX_ROWS, past which the body scrolls
+// — a 40-task list must not mint a 1,100px card.
+const _BOARDS_TODO_ROW_H=26,_BOARDS_TODO_ADD_H=24,_BOARDS_TODO_PAD=12,_BOARDS_TODO_BORDER=2,_BOARDS_TODO_MAX_ROWS=12;
+function _boardsTodoMinH(c){
+  const items=Array.isArray(c&&c.items)?c.items:[];
+  const rows=Math.min(items.length,_BOARDS_TODO_MAX_ROWS);
+  let h=_BOARDS_TODO_PAD+_BOARDS_TODO_BORDER+rows*_BOARDS_TODO_ROW_H+_BOARDS_TODO_ADD_H;
+  if(c&&c.title!=null)h+=_BOARDS_CHROME_H.todoTitle;
+  if(c&&c.title==null&&!c.titleAsked&&items.length>=3)h+=_BOARDS_CHROME_H.todoAsk;
+  return Math.max(_BOARDS_MIN_BODY_H.todo,h);
 }
 function _boardsMinCardH(c){
   if(!c||c.type==='frame')return 60;
@@ -2635,10 +2791,18 @@ function _boardsMinCardH(c){
   // object-fit:cover cropped 28px off every picture — measured, see
   // tests/boards.test.js. The overlay is what makes the box the picture's
   // exact shape again.
-  let h=(c.type==='heading'||_boardsIsPhotoCard(c))?0:_BOARDS_CHROME_H.head;
+  // EVERY card's head strip is absolutely positioned over the content now
+  // (see _boardCardHTML), so none of them costs the column anything. It
+  // used to be charged for every type but heading and photo, and that is
+  // what cropped 28px off a fitted picture. _BOARDS_CHROME_H.head is kept
+  // as the strip's own height — the export canvas and the file-card fit
+  // both need to know it.
+  let h=0;
   if(Array.isArray(c.labels)&&c.labels.length)h+=_BOARDS_CHROME_H.labels;
   if(c.reactions&&Object.keys(c.reactions).length)h+=_BOARDS_CHROME_H.reactions;
   if((c.type==='image'||c.type==='file'||c.type==='table')&&c.caption!=null)h+=_BOARDS_CHROME_H.caption;
+  if(c.type==='image'&&c.sourceUrl)h+=_BOARDS_CHROME_H.caption;
+  if(c.type==='todo')return h+_boardsTodoMinH(c);
   return h+(_BOARDS_MIN_BODY_H[c.type]||48);
 }
 function _boardsGrowForChrome(c){
@@ -3211,6 +3375,47 @@ function _boardsLabelRowsFor(cardId,q){
   const exact=rows.some(l=>l.t.toLowerCase()===tl);
   return{term,rows,exact,create:!!term&&!exact};
 }
+// Milanote gives every label row its own ⋯. The library here is DERIVED
+// from the cards (nothing is stored to make the list), so renaming one
+// means rewriting it on every card that carries it and removing one means
+// dropping it from every card — both are board-wide, and both say how many
+// cards they touched rather than doing it silently.
+window.boardsLabelMenu=function(ev,cardId,i){
+  ev.preventDefault();ev.stopPropagation();
+  const l=_boardsLabelRows&&_boardsLabelRows[i];
+  if(!l||!_boardsCanEdit(_editBoard))return;
+  _boardsOpenCtx(ev.clientX,ev.clientY,[
+    {title:l.t},
+    {act:'lbl:rename:'+i,label:'Rename on every card…'},
+    {act:'lbl:drop:'+i,label:'Remove from every card',danger:true}
+  ]);
+};
+function _boardsLabelCards(t){
+  const tl=String(t).toLowerCase();
+  return _editCards.filter(c=>Array.isArray(c.labels)&&c.labels.some(m=>String(m&&m.t).toLowerCase()===tl));
+}
+function _boardsLabelAct(act){
+  const m=/^(rename|drop):(\d+)$/.exec(act);
+  if(!m)return;
+  const l=_boardsLabelRows&&_boardsLabelRows[+m[2]];
+  if(!l||!_boardsCanEdit(_editBoard))return;
+  const hits=_boardsLabelCards(l.t);
+  const tl=l.t.toLowerCase();
+  if(m[1]==='rename'){
+    const next=(prompt('Rename this label on all '+hits.length+' card'+(hits.length===1?'':'s'),l.t)||'').trim();
+    if(!next||next===l.t)return;
+    _boardsPushUndo();
+    hits.forEach(c=>c.labels.forEach(x=>{if(String(x&&x.t).toLowerCase()===tl)x.t=next;}));
+    showToast('Renamed on '+hits.length+' card'+(hits.length===1?'':'s'));
+  }else{
+    if(!confirm('Remove “'+l.t+'” from '+hits.length+' card'+(hits.length===1?'':'s')+'? Ctrl+Z undoes it.'))return;
+    _boardsPushUndo();
+    hits.forEach(c=>{c.labels=c.labels.filter(x=>String(x&&x.t).toLowerCase()!==tl);_boardsGrowForChrome(c);});
+    showToast('Removed from '+hits.length+' card'+(hits.length===1?'':'s'));
+  }
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
 function _boardsRenderLabelSheet(cardId,q){
   const c=_editCards.find(x=>x.id===cardId);if(!c)return;
   const d=_boardsLabelRowsFor(cardId,q);
@@ -3220,14 +3425,12 @@ function _boardsRenderLabelSheet(cardId,q){
     ${d.create?`<button class="board-label-create" onclick="window.boardsLabelCommit('${cardId}')">+ Create label “<span id="board-label-create-t"></span>”</button>
     <div class="board-label-swatches" id="board-label-swatches">${
       _BOARDS_LABEL_COLORS.map((k,i)=>`<button class="board-label-sw lc-${k}${i===0?' on':''}" data-c="${k}" onclick="window.boardsLabelPickColor(this)" title="${k}"></button>`).join('')}</div>`:''}
-    <div class="board-sheet-label" id="board-label-boardname"></div>
-    <div class="board-label-list">${d.rows.map((l,i)=>`<label class="board-label-row"><input type="checkbox"${l.on?' checked':''} onchange="window.boardsLabelToggle('${cardId}',${i})"><span class="board-label lc-${_BOARDS_LABEL_COLORS.indexOf(l.c)>=0?l.c:'grey'}" id="board-lrow-${i}"></span></label>`).join('')}${
+    <div class="board-sheet-label">Recently created</div>
+    <div class="board-label-list">${d.rows.map((l,i)=>`<div class="board-label-row"><label><input type="checkbox"${l.on?' checked':''} onchange="window.boardsLabelToggle('${cardId}',${i})"><span class="board-label lc-${_BOARDS_LABEL_COLORS.indexOf(l.c)>=0?l.c:'grey'}" id="board-lrow-${i}"></span></label><button class="board-label-more" onclick="window.boardsLabelMenu(event,'${cardId}',${i})" title="Rename or remove this label">⋯</button></div>`).join('')}${
       !d.rows.length?`<div class="board-sheet-empty">${d.term?'There are no results':'No labels on this board yet — type one above.'}</div>`:''}</div>`,
     {anchor:{act:'labels'}});
   if(!el)return;
   // Label text and the board's name are written in, never interpolated.
-  const bn=document.getElementById('board-label-boardname');
-  if(bn)bn.textContent=(_editBoard&&_editBoard.title)||'This board';
   const ct=document.getElementById('board-label-create-t');
   if(ct)ct.textContent=d.term;
   d.rows.forEach((l,i)=>{const b=document.getElementById('board-lrow-'+i);if(b)b.textContent=l.t;});
@@ -4055,7 +4258,28 @@ _boardsWireTouch();
 // every existing add path (menu, file picker, paste) inherits it without a
 // signature change.
 let _boardsNextPlacement=null;
+// THE DOT GRID IS A PLACEMENT CUE, NOT THE BACKGROUND. Measured off the
+// second Milanote video: the canvas carries no dots at rest, and they are
+// painted for about 1.2s around the moment a card is placed, then gone —
+// every other sample across the whole 126s reads zero texture. Ours used to
+// paint them permanently. Held during a card drag as well, which is NOT
+// something the video shows; it follows from what the cue is for.
+let _boardsGridTimer=null;
+function _boardsFlashGrid(hold){
+  const st=document.querySelector('.board-stage');
+  if(!st)return;
+  st.classList.add('grid-on');
+  if(_boardsGridTimer){clearTimeout(_boardsGridTimer);_boardsGridTimer=null;}
+  if(hold)return;
+  _boardsGridTimer=setTimeout(()=>{
+    _boardsGridTimer=null;
+    const el=document.querySelector('.board-stage');
+    if(el)el.classList.remove('grid-on');
+  },1200);
+}
+function _boardsHideGrid(){_boardsFlashGrid(false);}
 function _boardsPlacementPoint(){
+  _boardsFlashGrid(false);
   const b=_editBoard;
   if(_boardsNextPlacement){
     const p=_boardsNextPlacement;
@@ -4399,14 +4623,10 @@ document.addEventListener('click',e=>{
 // nothing and the text typed after it was lost — the heading's drag strip
 // sits over the top of the banner, so the first attempt lands on the strip
 // rather than the text. One rule for every type beats a special case.
-window.boardsHeadDblClick=function(ev,id){
-  const c=_editCards.find(x=>x.id===id);
-  if(!c||!_boardsCanEdit(_editBoard)||c.locked)return;
-  if(ev)ev.stopPropagation();
-  if(c.type==='heading'){window.boardsBeginEdit(ev,'board-txt-'+id);return;}
-  if(c.type==='text'){window.boardsBeginEdit(ev,'board-txt-'+id);return;}
-  window.boardsBeginEdit(ev,'board-name-'+id);
-};
+// window.boardsHeadDblClick is GONE. It existed because a heading's drag
+// strip sat over the top of its banner and swallowed the first
+// double-click; the head is pointer-events:none on every card now, so the
+// banner (and every other card body) receives that double-click itself.
 
 /* ── Dragging a board card back INTO the panel (Sept 2026) ─────────────
    Afnan drew the arrow the other way: the panel drops a board onto Home,
@@ -4480,6 +4700,7 @@ window.boardsCardDragStart=function(e,cardId){
     if(!pushed){
       if(Math.abs(ev.clientX-startX)<_BOARDS_DRAG_PX&&Math.abs(ev.clientY-startY)<_BOARDS_DRAG_PX)return;
       _boardsPushUndo();pushed=true;
+      _boardsFlashGrid(true);       // held for the gesture, released in up()
     }
     let dx=(ev.clientX-startX)/b.zoom;
     let dy=(ev.clientY-startY)/b.zoom;
@@ -4511,6 +4732,7 @@ window.boardsCardDragStart=function(e,cardId){
     _boardsShowColumnDrop(_boardsDropTargets(group,movingCols));
   }
   function up(ev){
+    _boardsHideGrid();
     head.removeEventListener('pointermove',move);head.removeEventListener('pointerup',up);
     _boardsHideGuides();
     _boardsHideColumnDrop();
@@ -4670,6 +4892,16 @@ window.boardsSelectAll=function(){_boardsSetSelection(_editCards.map(c=>c.id));}
    js/shared.js — that file is cross-track (see CLAUDE.md), and none of
    these are wanted anywhere else. */
 const _BOARDS_ICONS={
+  // The to-do rail (Sept 2026, from the second Milanote video): Title, Due
+  // date, Assign, Indent, Outdent — and the image rail's Draw on, Edit and
+  // Background beside them. Local to boards.js like the rest.
+  title:'<rect x="2" y="2.5" width="12" height="11" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4.2 5.4h7.6v1.5H4.2z"/>',
+  due:'<rect x="2" y="3.2" width="12" height="10.6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2 6.4h12" stroke="currentColor" stroke-width="1.4"/><path d="M5 1.6v2.6M11 1.6v2.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
+  assign:'<circle cx="8" cy="5.6" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3 13.4a5 5 0 0 1 10 0" fill="none" stroke="currentColor" stroke-width="1.4"/>',
+  indent:'<path d="M6 3.2h8v1.5H6zM6 7.3h8v1.5H6zM6 11.3h8v1.5H6z"/><path d="M1.8 5.2L4.3 8l-2.5 2.8z"/>',
+  outdent:'<path d="M6 3.2h8v1.5H6zM6 7.3h8v1.5H6zM6 11.3h8v1.5H6z"/><path d="M4.3 5.2L1.8 8l2.5 2.8z"/>',
+  drawon:'<path d="M2.6 13.4l.7-2.6 7-7 1.9 1.9-7 7z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M11 2.8l1.2-1.2 1.9 1.9L12.9 4.7z"/>',
+  crop:'<path d="M4.2 1.6v10.2h10.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M1.6 4.2h10.2v10.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
   // The text rail (Sept 2026): Text style, bullets, numbers.
   textstyle:'<path d="M2 3h9v2.5H8.8V13H6.2V5.5H2z"/><circle cx="12.5" cy="11.5" r="2.5"/>',
   ul:'<circle cx="3" cy="4" r="1.3"/><circle cx="3" cy="8" r="1.3"/><circle cx="3" cy="12" r="1.3"/><path d="M6 3.2h8v1.6H6zM6 7.2h8v1.6H6zM6 11.2h8v1.6H6z"/>',
@@ -4767,6 +4999,37 @@ function _boardsRailPhoneOverflow(){
 function _boardsRailItems(){
   const canEdit=_boardsCanEdit(_editBoard);
   const sel=_boardsSelectedCards();
+  // A FOCUSED TO-DO outranks every other mode, and that is the second
+  // video's structural finding: Milanote's rail follows what is FOCUSED,
+  // not what is selected. The same to-do card gives one rail while a task
+  // holds the caret (Due date, Assign, indent, outdent — all per-TASK) and
+  // a much shorter one while the list's title does.
+  const tdf=canEdit&&!_boardsIsPhone()?_boardsTodoFocus():null;
+  if(tdf){
+    const c=_boardsTodoCard(tdf.id);
+    if(c&&tdf.what==='title'){
+      return[
+        {act:'deselect',label:'Back',icon:'back',rewind:true},
+        {act:'color-panel',label:'Color',colorTile:true},
+        {act:'todo:title',label:'Title',icon:'title',on:true},
+        {act:'more',label:'More',icon:'more'}
+      ];
+    }
+    if(c&&c.items&&c.items[tdf.i]){
+      return[
+        {act:'deselect',label:'Back',icon:'back',rewind:true},
+        {act:'color-panel',label:'Color',colorTile:true},
+        {act:'labels',label:'Labels',icon:'labels'},
+        {act:'reactions',label:'Reactions',icon:'reactions'},
+        {act:'card-comment',label:'Comment',icon:'comment'},
+        {act:'todo:title',label:'Title',icon:'title',on:c.title!=null},
+        {act:'todo:due',label:'Due date',icon:'due'},
+        {act:'todo:assign',label:'Assign',icon:'assign'},
+        {act:'todo:indent',label:'Indent',icon:'indent',off:!_boardsTodoCanIndent(c,tdf.i)},
+        {act:'todo:outdent',label:'Outdent',icon:'outdent',off:!_boardsTodoCanOutdent(c,tdf.i)}
+      ];
+    }
+  }
   // A NOTE IN EDIT MODE is the rail's fifth mode (Sept 2026), read off
   // Milanote's own: back, Text style, B, I, S, U, bullets, numbers — then
   // the text colours and highlights the floating bar used to hold. It
@@ -4924,6 +5187,10 @@ function _boardsRailItems(){
         items.push({act:'board-rename',label:'Board name',icon:'rename'});
       }
     }
+    // Milanote's own selected-to-do rail is Color · Title · ⋯; ours keeps
+    // Labels, Reactions and Comment beside them because a to-do here is a
+    // card like any other and there is nowhere else to reach those.
+    if(one.type==='todo'&&canEdit)items.push({act:'todo:title',label:'Title',icon:'title',on:one.title!=null});
     if(canEdit)items.push({act:one.type==='heading'?'renameheading':'rename',label:'Rename',icon:'rename'});
     // AN IMAGE'S RAIL IS MILANOTE'S EXACTLY (112s): Color · Labels ·
     // Reactions · Comment · Rename · Caption · ⋯ — Rename BEFORE Caption,
@@ -4968,7 +5235,7 @@ function _boardsRenderRail(){
     if(it.connSwatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="ln:c:${c}" title="${c==='none'?'Default':c}"></button>`).join('')}</div>`;
     // `glyph` is static markup from the item lists above (a bold B, an
     // italic I) — never user text, which is why it is not escaped.
-    return`<button class="rail-btn${it.on?' on':''}${it.danger?' danger':''}${it.done?' rail-done':''}${it.drag?' rail-draggable':''}" data-act="${it.act}"${it.drag?' data-drag="1"':''} title="${_boardsEsc(it.label)}${it.drag?' — click to place, or drag onto the board':''}">${it.glyph?`<span class="rail-glyph">${it.glyph}</span>`:_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span>${it.badge?'<span class="board-rail-badge" style="display:none"></span>':''}</button>`;
+    return`<button class="rail-btn${it.on?' on':''}${it.off?' off':''}${it.danger?' danger':''}${it.done?' rail-done':''}${it.drag?' rail-draggable':''}" data-act="${it.off?'':it.act}"${it.drag?' data-drag="1"':''} title="${_boardsEsc(it.label)}${it.drag?' — click to place, or drag onto the board':''}">${it.glyph?`<span class="rail-glyph">${it.glyph}</span>`:_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span>${it.badge?'<span class="board-rail-badge" style="display:none"></span>':''}</button>`;
   }).join('');
   // The count is painted after the markup exists, and again whenever the
   // trash changes underneath — it is derived from what is actually
@@ -5627,6 +5894,68 @@ window.boardsLinkInput=function(id,field,val){const c=_editCards.find(x=>x.id===
 // Leaving the edit form fetches a preview for whatever URL is in it now.
 // Typing is NOT what triggers a fetch — that would fire a server request per
 // keystroke against a half-typed address.
+// A fetch that failed is reported INSIDE the card, the way Milanote's is
+// ("Sorry, something went wrong…" drawn in the card at 42s), not as a toast
+// that is gone before you look up. _-prefixed, so a save firing mid-fetch
+// can never persist it.
+function _boardsLinkErrHTML(c){
+  if(!c._linkErr)return'';
+  return`<div class="board-link-err"><span class="board-link-warn" aria-hidden="true">!</span><span>${_boardsEsc(c._linkErr)}</span></div>`;
+}
+function _boardsHostOf(u){
+  try{return new URL(String(u)).hostname.replace(/^www\./,'');}catch(e){return String(u||'').slice(0,40);}
+}
+window.boardsLinkNewKey=function(ev,id){
+  if(ev.key==='Enter'){ev.preventDefault();window.boardsLinkNewCommit(id,ev.target.value);}
+  if(ev.key==='Escape'){ev.preventDefault();ev.target.blur();}
+};
+// Committing the one field. A value that is not an http(s) URL is NOT
+// thrown away: Milanote keeps it as the card's TITLE and says the fetch
+// failed, which is what it did with "ASHI". Doing anything else would lose
+// what somebody typed.
+window.boardsLinkNewCommit=function(id,raw){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='link'||!_boardsCanEdit(_editBoard))return;
+  const val=String(raw||'').trim();
+  if(!val)return;
+  delete c._linkErr;
+  if(_boardsSafeHref(val)){
+    _boardsPushUndo();
+    c.linkUrl=val;
+    if(!c.linkTitle)c.linkTitle=_boardsHostOf(val);
+    c._linkFetched=val;
+    _boardsRenderCanvasAndWire();
+    _boardsSaveDebounced();
+    _boardsLinkHydrate(id);
+    return;
+  }
+  _boardsPushUndo();
+  c.linkTitle=val;
+  c._linkErr='That is not a web address, so there is nothing to fetch. It has been kept as the title.';
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+// Milanote turns an image-first page (a Pinterest pin) straight into an
+// IMAGE card captioned "From Pinterest". Ours does NOT do that on its own:
+// the link card is confirmed working on the live site, it keeps the URL
+// clickable, and a silent conversion would throw the page away. It is an
+// explicit action instead, and the page survives as c.sourceUrl.
+window.boardsLinkToImage=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='link'||!_boardsCanEdit(_editBoard))return;
+  if(!c.linkImage){showToast('This link has no picture to turn into a card.',true);return;}
+  _boardsPushUndo();
+  const url=c.linkUrl;
+  c.type='image';
+  c.imageUrl=c.linkImage;
+  c.sourceUrl=url||'';
+  delete c.linkImage;delete c.linkTitle;delete c.linkDesc;delete c.linkUrl;
+  delete c.linkSite;delete c.linkPreviewOff;delete c._linkEdit;delete c._linkErr;
+  _boardsGrowForChrome(c);
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast('Turned into an image card — press Ctrl+Z to undo');
+};
 window.boardsLinkDone=function(id){
   const c=_editCards.find(x=>x.id===id);
   if(!c||!_boardsCanEdit(_editBoard))return;
@@ -6756,6 +7085,125 @@ window.boardsFrameTitle=function(id,val){const c=_editCards.find(x=>x.id===id);i
 // reason as Notes' block editor); only structural changes — adding,
 // removing or ticking an item — rebuild, since those change the layout.
 function _boardsTodoCard(id){const c=_editCards.find(x=>x.id===id);return(c&&c.type==='todo')?c:null;}
+// The to-do rail's five actions. Each reads the FOCUSED task rather than
+// the selection, because that is what they act on; Title is the one that
+// belongs to the list. They route through _boardsCtxRun like every other
+// rail action, so the right-click menu and the phone sheet reach the same
+// implementation.
+function _boardsTodoAct(what){
+  const f=_boardsTodoFocus();
+  const sel=_boardsSelectedCards();
+  const c=f?_boardsTodoCard(f.id):(sel.length===1&&sel[0].type==='todo'?sel[0]:null);
+  if(!c||!_boardsCanEdit(_editBoard))return;
+  if(what==='title'){
+    if(c.title==null)window.boardsTodoTitleOn(c.id);
+    else{
+      _boardsPushUndo();
+      delete c.title;
+      _boardsRenderCanvasAndWire();
+      _boardsSaveDebounced();
+      showToast('Title removed');
+    }
+    return;
+  }
+  if(!f||f.what!=='item'||!c.items||!c.items[f.i]){showToast('Click a task first, then pick a date or a person.',true);return;}
+  const i=f.i;
+  if(what==='indent'||what==='outdent'){window.boardsTodoIndent(c.id,i,what==='indent'?1:-1);return;}
+  if(what==='rmtask'){window.boardsTodoRemove(c.id,i);return;}
+  if(what==='due'){
+    const t=_boardsTodayStr();
+    const plus=n=>{const d=new Date(t+'T00:00:00');d.setDate(d.getDate()+n);
+      return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+    const r=_boardsSheetAnchorRect({act:'todo:due'});
+    _boardsOpenCtx(r?r.right+8:120,r?r.top:120,[
+      {title:'Due date'},
+      {act:'tddue:'+t,label:'Today'},
+      {act:'tddue:'+plus(1),label:'Tomorrow'},
+      {act:'tddue:'+plus(7),label:'Next week'},
+      {sep:true},
+      {act:'tddue:pick',label:'Pick a date…'},
+      {act:'tddue:',label:'Clear',danger:true}
+    ]);
+    return;
+  }
+  if(what==='assign'){
+    const people=_boardsAssignees();
+    const r=_boardsSheetAnchorRect({act:'todo:assign'});
+    _boardsOpenCtx(r?r.right+8:120,r?r.top:120,
+      [{title:'Assign this task'}]
+        .concat(people.map(n=>({act:'tdwho:'+n,label:n,on:(c.items[i].who||'')===n})))
+        .concat([{sep:true},{act:'tdwho:',label:'Unassign',danger:true}]));
+    return;
+  }
+}
+window.boardsTodoTitle=function(id,el){
+  const c=_boardsTodoCard(id);if(!c)return;
+  c.title=el.textContent;
+  _boardsSaveDebounced();
+};
+window.boardsTodoTitleOn=function(id){
+  const c=_boardsTodoCard(id);if(!c||!_boardsCanEdit(_editBoard))return;
+  _boardsPushUndo();
+  if(c.title==null)c.title='';
+  c.titleAsked=true;
+  _boardsGrowForChrome(c);
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  window.boardsBeginEdit(null,'board-tdtitle-'+id);
+};
+window.boardsTodoNoTitle=function(id){
+  const c=_boardsTodoCard(id);if(!c||!_boardsCanEdit(_editBoard))return;
+  _boardsPushUndo();
+  c.titleAsked=true;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+// Indent and outdent, Milanote's two greyed rail buttons. A task may only
+// go one level deeper than the task above it — otherwise a list opens with
+// an orphan sitting at depth 3 under nothing, which reads as a bug.
+function _boardsTodoCanIndent(c,i){
+  if(!c||!c.items||!c.items[i]||i===0)return false;
+  return _boardsTodoDepth(c.items[i])<Math.min(_BOARDS_TODO_MAX_DEPTH,_boardsTodoDepth(c.items[i-1])+1);
+}
+function _boardsTodoCanOutdent(c,i){
+  return!!(c&&c.items&&c.items[i]&&_boardsTodoDepth(c.items[i])>0);
+}
+window.boardsTodoIndent=function(id,i,dir){
+  const c=_boardsTodoCard(id);if(!c||!c.items[i]||!_boardsCanEdit(_editBoard))return;
+  if(dir>0&&!_boardsTodoCanIndent(c,i))return;
+  if(dir<0&&!_boardsTodoCanOutdent(c,i))return;
+  _boardsPushUndo();
+  const d=_boardsTodoDepth(c.items[i])+(dir>0?1:-1);
+  if(d<=0)delete c.items[i].depth; else c.items[i].depth=d;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  window.boardsBeginEdit(null,'board-todo-'+id+'-'+i);
+};
+window.boardsTodoSetDue=function(id,i,v){
+  const c=_boardsTodoCard(id);if(!c||!c.items[i]||!_boardsCanEdit(_editBoard))return;
+  _boardsPushUndo();
+  const ok=_boardsTodoValidDue(v);
+  if(ok)c.items[i].due=ok; else delete c.items[i].due;
+  _boardsGrowForChrome(c);
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast(ok?('Due '+_boardsDueLabel(ok)):'Due date cleared');
+};
+window.boardsTodoSetWho=function(id,i,who){
+  const c=_boardsTodoCard(id);if(!c||!c.items[i]||!_boardsCanEdit(_editBoard))return;
+  _boardsPushUndo();
+  if(who)c.items[i].who=String(who); else delete c.items[i].who;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast(who?('Assigned to '+who):'Assignment cleared');
+};
+// The people a task can be assigned to are USER_DEFS, read live and behind
+// a typeof guard: js/auth.js loads before this file, but a build where it
+// failed to parse must offer an empty list rather than take the menu down.
+function _boardsAssignees(){
+  if(typeof USER_DEFS==='undefined'||!Array.isArray(USER_DEFS))return[];
+  return USER_DEFS.map(u=>u&&u.name).filter(Boolean);
+}
 window.boardsTodoText=function(id,i,el){
   const c=_boardsTodoCard(id);if(!c||!c.items[i])return;
   c.items[i].text=el.textContent;
@@ -6789,6 +7237,9 @@ window.boardsTodoKey=function(ev,id,i){
   // Enter adds the next item and jumps to it; Backspace on an empty row
   // removes it — the two things that make a checklist quick to type.
   if(ev.key==='Enter'){ev.preventDefault();window.boardsTodoAdd(id,i);return;}
+  // Tab nests the task, the convention every outliner uses. Read before
+  // anything else so the browser never moves focus out of the card.
+  if(ev.key==='Tab'){ev.preventDefault();window.boardsTodoIndent(id,i,ev.shiftKey?-1:1);return;}
   if(ev.key==='Backspace'&&!(ev.target.textContent||'').length){
     const c=_boardsTodoCard(id);
     if(c&&c.items.length>1){
@@ -6982,10 +7433,22 @@ function _boardsColorTileStyle(cards){
    (Background only), a divider, the colours FROM THIS BOARD's own
    pictures, and Custom colour… The strip tab has no presets: a preset is
    paper plus ink, and the strip is neither. */
+// Which card types have a PAPER to colour. Read off the second Milanote
+// video (Sept 2026): a file card's and a to-do card's colour panel has NO
+// tabs at all — just the top-strip palette, the board's own colours and
+// Custom colour. Only the note (the first video) gets Background | Top
+// strip and the seven paper-and-ink presets, because only a note has a
+// text body sitting on paper.
+function _boardsCardHasPaper(c){
+  return!!c&&(c.type==='text'||c.type==='todo'||c.type==='table');
+}
 function _boardsColorPanelItems(){
   const sel=_boardsSelectedCards(),one=sel[0]||{};
-  const tab=_boardsColorTab;
-  const items=[{tabs:[{act:'colortab:bg',label:'Background',on:tab==='bg',glyph:'bg'},{act:'colortab:strip',label:'Top strip',on:tab==='strip',glyph:'strip'}]}];
+  const paper=sel.length?sel.every(_boardsCardHasPaper):false;
+  const tab=paper?_boardsColorTab:'strip';
+  const items=paper
+    ?[{tabs:[{act:'colortab:bg',label:'Background',on:tab==='bg',glyph:'bg'},{act:'colortab:strip',label:'Top strip',on:tab==='strip',glyph:'strip'}]}]
+    :[];
   if(tab==='bg'){
     items.push({bgSwatches:true,grid:true,current:one.bg||'none'});
     items.push({sep:true});
@@ -7281,8 +7744,11 @@ function _boardsLinkHydrate(cardId){
     if(!c)return;
     delete c._fetching;
     if(c.linkUrl!==url){_boardsRenderSoon();return;}
-    if(meta)_boardsApplyLinkMeta(c,meta,img);
-    else c._linkNoPreview=true;
+    if(meta){_boardsApplyLinkMeta(c,meta,img);delete c._linkErr;}
+    else{
+      c._linkNoPreview=true;
+      c._linkErr='Sorry, something went wrong. The page could not be read — the link still works.';
+    }
     _boardsRenderCanvasAndWire();
     if(meta)_boardsSaveDebounced();
   })();
@@ -7354,7 +7820,7 @@ function _boardsIsImageFile(file){
 // thumbnail a ~20px strip — every attached brief had to be dragged open by
 // hand before anyone could see what it was.
 const _BOARDS_PDF_CARD_W=240;
-const _BOARDS_FILE_CHROME_H=92;   // header, name row and buttons, plus the 2px border — measured in Chrome
+const _BOARDS_FILE_CHROME_H=66;   // name row and buttons plus the 2px border — MEASURED in Chrome (31+33+2); it was 92 while the card still had a 28px header strip
 function _boardsIsPdfFile(file){
   return!!file&&(file.type==='application/pdf'||/\.pdf$/i.test(file.name||''));
 }
@@ -8475,17 +8941,18 @@ function _boardsDrawCard(ctx,c,img,P){
   // shows only on hover), so the export draws none either: the picture
   // fills the card box, the same shape it is on screen.
   const photo=_boardsIsPhotoCard(c);
-  const headH=photo?0:20,bx=c.x,by=c.y+headH,bw=c.w,bh=Math.max(0,c.h-headH);
+  // NO CARD DRAWS A HEADER STRIP, because none of them has one on screen
+  // any more: the head is a hover overlay. What the export draws instead is
+  // the card's 4px coloured TOP STRIP, exactly as the canvas does, and only
+  // when the card carries a colour. The card's name is not lost — it is in
+  // the PDF's card index.
+  const strip=(c.color&&P.bgs[c.color])||_boardsValidHex(c.color)||'';
+  const headH=0,bx=c.x,by=c.y,bw=c.w,bh=Math.max(0,c.h);
   ctx.save();
   _boardsRoundRect(ctx,c.x,c.y,c.w,c.h,photo?4:10);
   ctx.clip();
   // The card's paper: a palette name's soft token, a literal, or white.
   ctx.fillStyle=(c.bg&&P.bgs[c.bg])||_boardsValidHex(c.bg)||'#ffffff';ctx.fillRect(c.x,c.y,c.w,c.h);
-  if(!photo){
-    ctx.fillStyle=(c.color&&P.bgs[c.color])||_boardsValidHex(c.color)||P.soft;ctx.fillRect(c.x,c.y,c.w,headH);
-    ctx.fillStyle=P.muted;ctx.font='700 11px '+P.font;
-    ctx.fillText(String(c.name||_boardsExportKind(c)).toUpperCase()+(c.locked?' · LOCKED':''),c.x+8,c.y+13.5);
-  }
 
   if(c.type==='image'){
     if(img){
@@ -8503,21 +8970,30 @@ function _boardsDrawCard(ctx,c,img,P){
   }else if(c.type==='todo'){
     ctx.font='12px '+P.font;
     let y=by+14;
+    // The list's title, and each task's nesting, the way the card draws them.
+    if(c.title){
+      ctx.fillStyle=P.text;ctx.font='700 12px '+P.font;
+      ctx.fillText((_boardsWrapLines(ctx,String(c.title).toUpperCase(),bw-18,1)[0])||'',bx+8,y);
+      y+=18;ctx.font='12px '+P.font;
+    }
     (c.items||[]).forEach(it=>{
       if(y>by+bh-4)return;
+      // Nesting is a per-ITEM offset, so it is a local: bx and bw are const
+      // for the whole card and a cumulative += would both throw and drift.
+      const ix=bx+_boardsTodoDepth(it)*16,iw=bw-_boardsTodoDepth(it)*16;
       ctx.strokeStyle=P.muted;ctx.lineWidth=1;
-      ctx.strokeRect(bx+8.5,y-8.5,9,9);
+      ctx.strokeRect(ix+8.5,y-8.5,9,9);
       if(it.done){
-        ctx.beginPath();ctx.moveTo(bx+10,y-4);ctx.lineTo(bx+12.5,y-1.5);ctx.lineTo(bx+16.5,y-7);
+        ctx.beginPath();ctx.moveTo(ix+10,y-4);ctx.lineTo(ix+12.5,y-1.5);ctx.lineTo(ix+16.5,y-7);
         ctx.strokeStyle=P.text;ctx.lineWidth=1.4;ctx.stroke();
       }
       ctx.fillStyle=it.done?P.muted:P.text;
-      const line=_boardsWrapLines(ctx,it.text||'',bw-30,1)[0]||'';
-      ctx.fillText(line,bx+24,y);
+      const line=_boardsWrapLines(ctx,it.text||'',iw-30,1)[0]||'';
+      ctx.fillText(line,ix+24,y);
       if(it.done&&line){
         const w=ctx.measureText(line).width;
         ctx.strokeStyle=P.muted;ctx.lineWidth=1;
-        ctx.beginPath();ctx.moveTo(bx+24,y-3.5);ctx.lineTo(bx+24+w,y-3.5);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(ix+24,y-3.5);ctx.lineTo(ix+24+w,y-3.5);ctx.stroke();
       }
       y+=16;
     });
@@ -8575,6 +9051,9 @@ function _boardsDrawCard(ctx,c,img,P){
     ctx.fillStyle=P.muted;ctx.font='11px '+P.font;
     ctx.fillText((_boardsWrapLines(ctx,c.caption,bw-16,1)[0])||'',bx+8,c.y+c.h-7);
   }
+  // The coloured top strip, drawn LAST and still inside the clip so it sits
+  // over the content exactly as .board-card-el::before does on screen.
+  if(strip){ctx.fillStyle=strip;ctx.fillRect(c.x,c.y,c.w,4);}
   ctx.restore();
   ctx.strokeStyle=stroke;ctx.lineWidth=1;
   _boardsRoundRect(ctx,c.x+0.5,c.y+0.5,c.w-1,c.h-1,10);
@@ -10575,6 +11054,24 @@ function _boardsCtxRun(act){
   }
   if(act.indexOf('colortab:')===0){_boardsColorTab=act.slice(9)==='strip'?'strip':'bg';return;}
   if(act==='color-panel'){window.boardsOpenColorPanel();return;}
+  if(act.indexOf('todo:')===0){_boardsTodoAct(act.slice(5));return;}
+  if(act.indexOf('lbl:')===0){_boardsLabelAct(act.slice(4));return;}
+  if(act==='imgcrop'){const o=_boardsSelectedCards()[0];if(o)window.boardsImgCrop(o.id);return;}
+  if(act==='linkimg'){const o=_boardsSelectedCards()[0];if(o)window.boardsLinkToImage(o.id);return;}
+  if(act.indexOf('tddue:')===0||act.indexOf('tdwho:')===0){
+    const f=_boardsTodoFocus();
+    if(!f||f.what!=='item')return;
+    const v=act.slice(6);
+    if(act.indexOf('tddue:')===0){
+      // "Pick a date…" is a prompt rather than a date input: the menu is
+      // built as markup and a native picker inside it would need its own
+      // surface. prompt() is already this file's idiom for a one-value ask.
+      const val=(v==='pick')?(prompt('Due date (YYYY-MM-DD)',_boardsTodayStr())||''):v;
+      if(v==='pick'&&val&&!_boardsTodoValidDue(val.trim())){showToast('Use the form YYYY-MM-DD.',true);return;}
+      window.boardsTodoSetDue(f.id,f.i,val.trim?val.trim():val);
+    }else window.boardsTodoSetWho(f.id,f.i,v);
+    return;
+  }
   if(act==='todoc'){window.boardsConvertToDocument();return;}
   if(act.indexOf('ln:')===0){_boardsConnAction(act.slice(3));return;}
   if(act.indexOf('cellbg:')===0){window.boardsCellColor(act.slice(7));return;}
@@ -11214,8 +11711,12 @@ function _boardsCardCtxItems(canEdit){
   if(one){
     if(one.type==='image'&&one.imageUrl){
       if(canEdit)typed.push({act:'caption',label:one.caption==null?'Add a caption':'Edit caption'});
+      typed.push({act:'download',label:'Download original image'});
       if(canEdit)typed.push({act:'replace',label:'Replace image'});
-      typed.push({act:'download',label:'Download image'});
+      // Milanote's third entry, with its tick: "Crop Image to Fit Dot Grid".
+      // Ours says what it does rather than naming a grid the card does not
+      // snap to — the dot grid here is a placement cue, not a layout.
+      if(canEdit)typed.push({act:'imgcrop',label:'Crop image to fill the card',hint:one.fit==='contain'?'':'✓'});
       typed.push({act:'openasset',label:'Open original'});
     }else if(one.type==='image'&&canEdit){
       typed.push({act:'replace',label:'Add an image…'});
@@ -11229,6 +11730,7 @@ function _boardsCardCtxItems(canEdit){
       typed.push({act:'replace',label:'Choose a file…'});
     }else if(one.type==='link'&&one.linkUrl){
       typed.push({act:'openasset',label:'Open link'});
+      if(canEdit&&one.linkImage)typed.push({act:'linkimg',label:'Turn into an image card'});
       typed.push({act:'copyasset',label:'Copy URL'});
       if(canEdit){
         if(one.linkImage)typed.push({act:'link-preview',label:one.linkPreviewOff?'Show the preview picture':'Hide the preview picture'});
@@ -11262,6 +11764,18 @@ function _boardsCardCtxItems(canEdit){
       typed.push({act:'tbl:-col',label:'Remove last column'});
       typed.push({act:'tbl:head',label:one.head===false?'Use a header row':'No header row'});
     }else if(one.type==='todo'&&canEdit){
+      // The to-do rail is desktop-only (a phone's bar is six targets), so
+      // these have to exist in the menu too or a phone could never set a
+      // title, a due date or an assignee at all.
+      typed.push({act:'todo:title',label:one.title==null?'Add a list title':'Remove the list title'});
+      const tf=_boardsTodoFocus();
+      if(tf&&tf.what==='item'&&tf.id===one.id){
+        typed.push({act:'todo:due',label:'Due date…'});
+        typed.push({act:'todo:assign',label:'Assign…'});
+        if(_boardsTodoCanIndent(one,tf.i))typed.push({act:'todo:indent',label:'Indent task',hint:'Tab'});
+        if(_boardsTodoCanOutdent(one,tf.i))typed.push({act:'todo:outdent',label:'Outdent task',hint:'⇧Tab'});
+        typed.push({act:'todo:rmtask',label:'Remove this task',danger:true});
+      }
       typed.push({act:'tickall',label:'Tick all'});
       typed.push({act:'untickall',label:'Untick all'});
     }else if(one.type==='text'&&one.text){
