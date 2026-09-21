@@ -730,5 +730,48 @@ module.exports=function(){
     // could not be moved from anywhere.
   }
 
+  // ── Fabric issue → Embellishment job: the two call sites ─────────────
+  //  tests/embellishment-jobs.test.js DRIVES the entry points, which proves
+  //  what they do and nothing about whether anybody calls them. The chain is
+  //  cross-FILE (fabric.js and pos.js reach into Ammar's embellishments.js),
+  //  so what holds it here is that each caller exists, guards with `typeof`
+  //  and fails CLOSED — a build without the embellishments module behaves
+  //  exactly as it did before, the Pattern Hub's rule for js/pos.js.
+  s.section('the embellishment job is wired to the fabric issue and to cutting');
+  {
+    const fab=stripComments(read('js/fabric.js'));
+    const pos=stripComments(read('js/pos.js'));
+    const emb=stripComments(read('js/embellishments.js'));
+
+    s.ok('js/fabric.js calls embOnFabricIssued',/embOnFabricIssued\s*\(/.test(fab));
+    s.ok('behind a typeof guard that fails closed',
+      /typeof\s+embOnFabricIssued\s*===\s*'function'/.test(fab));
+    s.ok('and it hands over the gate-pass PAYLOAD, not a summary',
+      /embOnFabricIssued\(_poDoc,\s*payload\)/.test(fab));
+    s.ok('a failure there never breaks the issue that already landed',
+      /embOnFabricIssued\([^)]*\)\.catch\(/.test(fab));
+
+    s.ok('js/pos.js calls embOnCuttingDone',/embOnCuttingDone\s*\(/.test(pos));
+    s.ok('behind a typeof guard too',
+      /typeof\s+embOnCuttingDone\s*===\s*'function'/.test(pos));
+    s.ok('handing over the ACTUAL cut per size',
+      /embOnCuttingDone\([^)]*cutState\.actualQty[^)]*\)/.test(pos));
+
+    // The old entry point sized its job off po.qty/po.sizes — what was
+    // ORDERED — while the caller passed the real cut in and it was dropped.
+    // Both halves are gone; neither may come back.
+    s.eq('the ordered-qty entry point is gone',
+      /autoCreateEmbJob/.test(fab+pos+emb),false);
+    s.eq('and no job payload is built from the ORDERED sizes',
+      /sizeBreakdown:\s*po\.sizes/.test(emb),false);
+
+    // Both entry points must exist in the module the two callers reach into.
+    ['embOnFabricIssued','embOnCuttingDone','_embUpsertJob','_embSizesFromIssue',
+     '_embFabricFromIssue','_embDisplaySizes'].forEach(fn=>{
+      s.ok(fn+' is defined in js/embellishments.js',
+        new RegExp('function\\s+'+fn+'\\s*\\(').test(emb));
+    });
+  }
+
   return s;
 };

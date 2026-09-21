@@ -1096,7 +1096,10 @@ window.markCuttingDone=async function(fbKey){
     if(consumedFromInv)poUpdate.fabricConsumed=consumedFromInv;
     await updateDoc(doc(db,'pos',fbKey),poUpdate);
     await logActivity('Stage done',`PO ${po.id} · Cutting done — ${cutState.pendingBundles.length} bundles${consumedFromInv?` · consumed ${consumedFromInv.rollCodes.length} rolls`:''}`);
-    if(po.embellishment?.required)await autoCreateEmbJob({...po,cutQty:{...cutState.actualQty},bundleIds}).catch(()=>{});
+    // Tops up the embellishment job the fabric issue created with what was
+    // ACTUALLY cut per size (and creates one if no issue ever did). Guarded —
+    // no embellishments module, no change. See js/embellishments.js.
+    if(typeof embOnCuttingDone==='function')await embOnCuttingDone({...po,bundleIds},{...cutState.actualQty}).catch(()=>{});
     showToast(`Cutting done ✓ — ${cutState.pendingBundles.length} bundles${consumedFromInv?' · fabric deducted':''}`);await loadData();window.showPage('my-work');
   }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Mark Cutting Done ✓';}}
 };

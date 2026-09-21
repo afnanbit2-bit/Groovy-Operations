@@ -6555,6 +6555,99 @@ came back; the same break now names `mkt-chart-lab`.
   (st4rr.doll and shoaibkhn.t — Lowkey Heat; shadysaidthat — Live In
   Pants) migrate into `dispatches` with date and status left blank.
 
+## Fabric issue → Embellishment job (21 Sept 2026)
+
+Afnan: *"after issue registry the data is landed in embellishment department
+> embalishment job … connected to what po is cut then what fabric was picked
+and what is the article code and what is the article name and what sizes
+were cut per size."*
+
+**Half of this already existed, and the half that existed was wrong.**
+`autoCreateEmbJob` had created a `printing_jobs` record since the day the
+module shipped — but it fired from `markCuttingDone`, not from the fabric
+issue, and **it sized every job off what was ORDERED**:
+
+```js
+autoCreateEmbJob({...po, cutQty:{...cutState.actualQty}, bundleIds})  // caller
+totalQty: po.qty||0, sizeBreakdown: po.sizes||{}                      // payload
+```
+
+The caller passed the real cut in and the payload **threw it away**. Every
+auto-created job on the live site is sized off the order, not the cut. It
+carried no fabric information at all.
+
+**THE CHAIN NOW.** Fabric issued → job created (fabric + PLANNED cut) →
+cutting done → the SAME job topped up (ACTUAL cut).
+
+- **`embOnFabricIssued(po,gp)` / `embOnCuttingDone(po,actualSizes)` are the
+  two entry points**, both funnelling into `_embUpsertJob`. All the logic is
+  in `js/embellishments.js`; `js/fabric.js` and `js/pos.js` gained **one
+  `typeof`-guarded call each and nothing else** — the Pattern Hub's rule for
+  `js/pos.js`, so a build without the module behaves exactly as before.
+  `embellishments.js` loads at 6 and `fabric.js` at 11, so the bare name
+  resolves.
+- **PLANNED AND ACTUAL NEVER OVERWRITE EACH OTHER.** `plannedSizes`/
+  `plannedTotal` come from the issue, `actualSizes`/`actualTotal` from
+  cutting. A floor that cut 180 against a planned 200 is something printing
+  has to SEE, not a number to quietly replace. `totalQty`/`sizeBreakdown`
+  remain the DISPLAY pair — actual once known, else the plan — so **all four
+  existing readers of `sizeBreakdown` needed no change**.
+- **Not named `cutQty`/`cutSizes` on purpose**: `cutQty` on the PO document
+  is an OBJECT of per-size counts, and the same name meaning a NUMBER on a
+  different collection is the sort of collision this file keeps recording.
+- **SIZES ARE WHATEVER WAS CUT, and that cost nothing.** The issue records
+  free-text sizes as an ARRAY (`[{size:'30',qty:80}]`); the job stores an
+  OBJECT keyed by those labels. **Checked before designing anything: all
+  four readers iterate the object's own keys** (`Object.entries`/
+  `Object.keys`), so a denim job reads `30: 80 · 32: 120` with no reader
+  touched. Only `parseSizeBreakdown` — which serves the MANUAL form's
+  `"10:20:30"` string — is still XS–2XL, and that is correct for a field
+  whose format is positional.
+- **ONE JOB PER PO; a second issue ADDS to the plan.** A PO can be issued
+  fabric twice (a second colour, a top-up). `fabricIssues` is an array, the
+  planned sizes merge, and **the same gate pass arriving twice changes
+  nothing** (deduped on `gpId`) — a retry must not double the plan.
+- **A PO with no embellishment gets nothing, silently.** The gate is
+  `po.embellishment.required`, set at PO creation; a plain garment never
+  reaches the printing floor.
+- **A top-up never moves `currentStage`.** Cutting finishing must not reset
+  a job already in bulk printing; the stage-history line is appended at
+  whatever stage the job is on.
+- **Fabric carried:** per-fabric type/gsm/colour/rolls/qty (the issue's own
+  `fabrics` array, so a 2-tone issue keeps its split), the rib, the gate-pass
+  id, the date and the **cut master**.
+
+**TWO BEHAVIOUR CHANGES, named rather than buried.**
+
+1. **The PP-sample SLA clock starts EARLIER** — `addSLAEvent(...'pp_sample')`
+   fires on creation, which is now the fabric issue rather than cutting
+   completion. That is the point (printing prepares while cutting runs), but
+   SLA numbers will shift and **Ammar's track owns that file**.
+2. **Jobs already in Firestore keep their ordered-qty numbers.** Nothing
+   migrates — a correction pass over existing jobs is a separate, reviewable
+   job, not something to fold in silently.
+
+**KNOWN LIMIT, stated because it would otherwise read as a promise.** The
+issue screen takes free-text sizes, but `markCuttingDone` is driven by
+`PO_FLOW_SIZES`, which is **alpha-only** (CLAUDE.md, Pattern Hub: "four size
+axes exist and `PO_FLOW_SIZES` covers only one — deliberately left alone").
+So a denim PO's job carries waist sizes in its PLAN and alpha sizes in its
+ACTUAL, until that constant is widened. The display pair prefers actual, so
+**a waist-sized PO shows waist until cutting-done and alpha after it.**
+Widening `PO_FLOW_SIZES` is the fix and it is a cross-track change.
+
+`tests/embellishment-jobs.test.js` (43 assertions) **drives the entry
+points**, never the helpers — the `_boardsColumnForCard` lesson. Verified by
+reverting each piece: restoring `po.qty`/`po.sizes` fails 3 by name,
+overwriting the plan fails 2, dropping the gate-pass dedupe fails 4, making
+a second issue mint a second job fails 4, and removing the embellishment
+gate fails 2. **What that suite CANNOT prove is that anybody calls those
+entry points**, so `tests/invariants.test.js` holds the two call sites
+(present, `typeof`-guarded, handing over the payload and the actual cut) —
+verified by deleting the fabric.js site (4 fail) and the pos.js guard (1).
+
+**Nobody has issued fabric on a real screen** — the sandbox cannot sign in.
+
 ## Pattern Hub (Sept 2026)
 
 Physical sewing patterns — heavy craft paper, traced by Hassan and Alam,

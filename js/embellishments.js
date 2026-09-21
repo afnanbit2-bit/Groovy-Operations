@@ -2294,13 +2294,128 @@ async function addSLAEvent(jobId,poNumber,stage,priority,assignedTo,dueAt){
   try{const id=prntId();await setDoc(doc(db,'sla_events',id),ev);allSLAEvents.unshift({...ev,_id:id});}catch(_){}
 }
 
-// ── Auto-create embellishment job from PO (triggered on cutting completion) ──
-async function autoCreateEmbJob(po){
-  if(!po.embellishment?.required)return;
+// ── PO → Embellishment job: fabric issue, then cutting ───────────────────
+//  The job is created the moment FABRIC IS ISSUED for a PO that needs
+//  embellishment, carrying the fabric that was picked and the cut master's
+//  PLANNED cut, so printing can prepare while cutting is still running. When
+//  Uzaib marks cutting done the SAME job is topped up with the ACTUAL cut.
+//
+//  PLANNED AND ACTUAL NEVER OVERWRITE EACH OTHER. A floor that cut 180
+//  against a planned 200 is something the printing team has to see, not a
+//  number to quietly replace. `totalQty`/`sizeBreakdown` stay as the DISPLAY
+//  values — the actual cut once it is known, else the plan — so all four
+//  existing readers of `sizeBreakdown` work untouched.
+//
+//  SIZES ARE WHATEVER WAS CUT. The fabric issue records free-text sizes
+//  (waist 30/32 on denim, XS–2XL on tees) as an ARRAY; the job stores an
+//  OBJECT keyed by those same labels. Every reader iterates the object's own
+//  keys, so no reader needed changing — only `parseSizeBreakdown`, which
+//  serves the MANUAL create form's "10:20:30" string, is still XS–2XL.
+
+/* A fabric issue's size rows → the job's size object. Rows repeating a size
+   are summed rather than clobbering each other. */
+function _embSizesFromIssue(rows){
+  const out={};
+  (Array.isArray(rows)?rows:[]).forEach(r=>{
+    const sz=String((r&&r.size)||'').trim(); if(!sz)return;
+    out[sz]=(out[sz]||0)+(parseInt(r&&r.qty)||0);
+  });
+  return out;
+}
+function _embMergeSizes(a,b){
+  const out={};
+  Object.entries(a||{}).forEach(([k,v])=>{out[k]=(parseInt(v)||0);});
+  Object.entries(b||{}).forEach(([k,v])=>{out[k]=(out[k]||0)+(parseInt(v)||0);});
+  return out;
+}
+function _embSizesTotal(o){
+  return Object.values(o||{}).reduce((n,v)=>n+(parseInt(v)||0),0);
+}
+
+/* What the printing floor needs to know about the fabric it is printing on:
+   type, gsm and colour decide ink and cure, the roll codes are the trace back
+   to the issue. Read off the gate pass the fabric issue writes — `fabrics` is
+   already the per-fabric split for a 2-tone issue, so it carries through
+   nearly verbatim; the top-level fields are the fallback for an older issue
+   that predates that array. */
+function _embFabricFromIssue(gp){
+  if(!gp)return null;
+  const multi=Array.isArray(gp.fabrics)&&gp.fabrics.length;
+  const items=multi
+    ? gp.fabrics.map(f=>({type:f.fabType||'',gsm:f.gsm||0,color:f.color||'',unit:f.unit||gp.fabricUnit||'kg',qty:f.weight||0,rolls:Array.isArray(f.rollCodes)?f.rollCodes.slice():[]}))
+    : (gp.fabricType?[{type:gp.fabricType,gsm:gp.fabricGsm||0,color:gp.fabricColor||'',unit:gp.fabricUnit||'kg',qty:gp.fabricQty||0,rolls:Array.isArray(gp.rollCodes)?gp.rollCodes.slice():[]}]:[]);
+  return {
+    gpId:gp.id||'',date:gp.date||'',cutMaster:gp.cutMaster||'',
+    unit:gp.fabricUnit||'kg',qty:gp.fabricQty||0,items,
+    rib:gp.ribType?{type:gp.ribType,gsm:gp.ribGsm||0,color:gp.ribColor||'',weight:gp.ribWeight||0}:null
+  };
+}
+
+/* The display pair every existing screen reads. Actual once the floor has
+   reported it, else the plan — never a blank card while only a plan exists. */
+function _embDisplaySizes(actual,planned){
+  const a=actual&&_embSizesTotal(actual)?actual:null;
+  const show=a||planned||null;
+  return show?{sizeBreakdown:{...show},totalQty:_embSizesTotal(show)}:null;
+}
+
+/* Fabric issued for a PO. Creates the job, or tops up the one this PO
+   already has — a PO can be issued fabric more than once (a second colour, a
+   top-up run) and those are one job whose planned quantity adds up. */
+async function embOnFabricIssued(po,gp){
+  return _embUpsertJob(po,{issue:_embFabricFromIssue(gp),plannedSizes:_embSizesFromIssue(gp&&gp.sizeBreakdown)});
+}
+/* Cutting finished. Tops up the job with what was ACTUALLY cut per size, and
+   creates one if the fabric issue never did (a PO issued before this shipped,
+   or cut from fabric that never went through the issue screen). */
+async function embOnCuttingDone(po,actualSizes){
+  return _embUpsertJob(po,{actualSizes:{...(actualSizes||{})}});
+}
+
+async function _embUpsertJob(po,patch){
+  // A plain garment reaches the printing floor never: no job, no noise.
+  if(!po||!po.embellishment||!po.embellishment.required)return null;
   if(!printingDataLoaded)await loadPrintingData().catch(()=>{});
-  // Avoid duplicates
-  if(allPrintingJobs.find(j=>j.poNumber===po.id))return;
-  // Find recipe
+  const existing=allPrintingJobs.find(j=>j.poNumber===po.id);
+  return existing?_embTopUpJob(existing,patch):_embCreateJob(po,patch);
+}
+
+async function _embTopUpJob(job,patch){
+  const now=nowIso();
+  const upd={updatedAt:now};
+  const notes=[];
+  if(patch.issue){
+    const issues=(job.fabricIssues||[]).slice();
+    // The same gate pass reaching here twice must not double the plan.
+    if(issues.some(i=>i&&i.gpId&&i.gpId===patch.issue.gpId))return job;
+    issues.push(patch.issue);
+    upd.fabricIssues=issues;
+    upd.plannedSizes=_embMergeSizes(job.plannedSizes,patch.plannedSizes);
+    upd.plannedTotal=_embSizesTotal(upd.plannedSizes);
+    if(patch.issue.cutMaster)upd.cutMaster=patch.issue.cutMaster;
+    notes.push(`Fabric issued${patch.issue.gpId?` (${patch.issue.gpId})`:''} — planned ${_embSizesTotal(patch.plannedSizes)} pcs`);
+  }
+  if(patch.actualSizes){
+    upd.actualSizes={...patch.actualSizes};
+    upd.actualTotal=_embSizesTotal(upd.actualSizes);
+    notes.push(`Cutting done — ${upd.actualTotal} pcs actually cut`);
+  }
+  const disp=_embDisplaySizes(
+    'actualSizes' in upd?upd.actualSizes:job.actualSizes,
+    'plannedSizes' in upd?upd.plannedSizes:job.plannedSizes);
+  if(disp)Object.assign(upd,disp);
+  // Appended at the job's CURRENT stage — a fabric issue or a cutting report
+  // is provenance, and must never move a job already in bulk printing.
+  if(notes.length)upd.stageHistory=(job.stageHistory||[]).concat(
+    notes.map(note=>({stage:job.currentStage||'po_received',by:'System',at:now,note})));
+  try{
+    await updateDoc(doc(db,'printing_jobs',job._id),upd);
+    Object.assign(job,upd);
+    return job;
+  }catch(e){console.warn('_embTopUpJob failed:',e);return null;}
+}
+
+async function _embCreateJob(po,patch){
   const emb=po.embellishment;
   const recipe=emb.recipeId?allRecipes.find(r=>r._id===emb.recipeId):
     allRecipes.find(r=>(r.articleCode||'').toLowerCase()===(emb.articleCode||'').toLowerCase());
@@ -2309,13 +2424,23 @@ async function autoCreateEmbJob(po){
   const priority='normal';
   const now=nowIso();
   const id=prntId();
+  const plannedSizes=patch.plannedSizes||{};
+  const actualSizes=patch.actualSizes||null;
+  // The ORDERED sizes are the last resort only — a job sized off what was
+  // ordered rather than what was cut is what this round exists to stop.
+  const disp=_embDisplaySizes(actualSizes,_embSizesTotal(plannedSizes)?plannedSizes:(po.sizes||null))
+    ||{sizeBreakdown:{...(po.sizes||{})},totalQty:po.qty||0};
   const jobPayload={
     poId:id,poNumber:po.id,
     articleCode:emb.articleCode||po.code,
     articleName:emb.articleName||po.name,
     recipeId:recipe?._id||emb.recipeId||null,
     processType,departmentType:dept,vendorName:null,
-    totalQty:po.qty||0,sizeBreakdown:po.sizes||{},bundleDetails:'',
+    totalQty:disp.totalQty,sizeBreakdown:disp.sizeBreakdown,bundleDetails:'',
+    plannedSizes,plannedTotal:_embSizesTotal(plannedSizes),
+    actualSizes:actualSizes||null,actualTotal:actualSizes?_embSizesTotal(actualSizes):0,
+    fabricIssues:patch.issue?[patch.issue]:[],
+    cutMaster:(patch.issue&&patch.issue.cutMaster)||'',
     complexityTier:recipe?.printing?.complexityTier||emb.complexityTier||1,
     ratePerPiece:recipe?.printing?.ratePerPiece||emb.ratePerPiece||0,
     priority,currentStage:'po_received',status:'active',
@@ -2327,14 +2452,17 @@ async function autoCreateEmbJob(po){
     bulkStartedAt:null,bulkCompletedAt:null,finalQcStatus:null,
     recipeWarning:!recipe?'Recipe missing — PP blocked':recipe.status!=='locked'?'Recipe not locked yet':'',
     handoff:{forwardedToBundlingBy:null,forwardedToBundlingAt:null,acceptedByZohaibAt:null,forwardedToStitchingBy:null,forwardedToStitchingAt:null,acceptedByWaqasAt:null,stitchingForwardedToQcAt:null},
-    stageHistory:[{stage:'po_received',by:'System',at:now,note:`Auto-created when PO ${po.id} cutting completed`}]
+    stageHistory:[{stage:'po_received',by:'System',at:now,
+      note:patch.issue?`Auto-created when fabric was issued for PO ${po.id}${patch.issue.gpId?` (${patch.issue.gpId})`:''}`
+                      :`Auto-created when PO ${po.id} cutting completed`}]
   };
   try{
     await setDoc(doc(db,'printing_jobs',id),jobPayload);
     allPrintingJobs.unshift({...jobPayload,_id:id});
     await addSLAEvent(id,po.id,'pp_sample',priority,'asghar',calcDue('pp_sample',priority));
-    await logActivity('Embellishment job created',`${po.id} — ${jobPayload.articleCode} (auto from PO)`);
-  }catch(e){console.warn('autoCreateEmbJob failed:',e);}
+    await logActivity('Embellishment job created',`${po.id} — ${jobPayload.articleCode} (auto from ${patch.issue?'fabric issue':'PO'})`);
+    return {...jobPayload,_id:id};
+  }catch(e){console.warn('_embCreateJob failed:',e);return null;}
 }
 
 // ── Job list card (manager/QC view) ──────────────────────────────────

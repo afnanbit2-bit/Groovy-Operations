@@ -2727,6 +2727,14 @@ window.submitFabricIssue=async function(){
       catch(e){ showToast('Fabric issued, but rib decrement failed: '+e.message,true); }
     }
     await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to factory for ${po}${cutQty?` · cut ${cutQty} pcs / ${totalBundles} bundles`:''}${partialRolls.length?` · ${partialRolls.length} partial (roll kept in stock)`:''}${ribCodes.length?` · rib ${ribWeight}kg`:''} by ${session.name}`);
+    // The issue is what tells the Embellishment Department a job is coming:
+    // which PO, which fabric, which article and the planned cut per size. It
+    // does nothing for a PO with no embellishment, and a failure here must
+    // never undo an issue that already landed. See js/embellishments.js.
+    if(typeof embOnFabricIssued==='function'){
+      const _poDoc=(typeof allPOs!=='undefined'&&allPOs||[]).find(p=>p.id===po);
+      if(_poDoc)await embOnFabricIssued(_poDoc,payload).catch(e=>console.warn('embOnFabricIssued failed:',e));
+    }
     showToast(`${gpId} issued ✓ · ${rollCodes.length} rolls${ribCodes.length?` + ${ribCodes.length} rib`:''}`);
     _fabIssueRolls=[];_fabIssueKey=null;_fabIssueSizes=[{size:'',bundles:''}];_fabRibRolls=[];_fabRibKey=null;
     _fabBusyEnd();   // drop the overlay before the (slower) refresh so the UI never stays blocked
