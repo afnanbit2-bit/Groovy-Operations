@@ -2288,6 +2288,88 @@ pass. They have their own fragment now, sized to fit, and the same break
 fails naming `DIV.board-frame-body`. **A fragment taller than the window is
 a fragment that stops testing partway down.**
 
+### Mood Boards — the drag ghost carries the picture (Sept 2026)
+
+Afnan: *"now make the drag ghost show the actual image"* — the gap left
+open by the round above, where the tray got bigger and better pictures
+while the thing that flew out of it stayed a dark text chip.
+
+**The chip said what KIND of thing was in flight, never WHICH one.** Two
+model references a word apart in name produced an identical chip, beside a
+panel whose whole point is that you recognise an item by its picture. It is
+a small card now — the item's own picture with its name under it, shaped
+like the tray row it came from, so **what is in flight looks like what was
+grabbed**.
+
+**`_boardsTrayFace(u)` is ONE decision, and extracting it was the point of
+the round.** The row's thumbnail and the ghost both read it, so the picture
+following the pointer can never be a different picture from the one under
+it. It returns `{src, badge, cors}`:
+
+- **`badge` is both the no-picture case AND the fallback** if `src` fails
+  to load, so **nothing is ever faceless** — a ghost with neither picture
+  nor word would fly as an empty box. Asserted across every kind.
+- **`cors` picks which failure path the ROW takes**, preserving what each
+  already did rather than unifying them: a photo or a link's own picture
+  retries once WITHOUT the CORS attribute (`boardsImgFallback`, the
+  documented cache trick), while a PDF's page-1 render is best-effort by
+  design and falls back to the extension. **Reverting the row to its own
+  copy of the branch fails six PRE-EXISTING assertions**, which is what
+  proves the extraction changed no behaviour.
+- **The width is pinned to 400 on both sides.** `_boardsDisplayUrl`
+  buckets, so the ghost asks for the SAME url the row already loaded and
+  paints from cache instantly; a different bucket is a fresh request and
+  the ghost flies blank for the first moments of the drag. Asserted as a
+  string equality, because that is the only way to hold "same url".
+
+**`_boardsDragGhost(face,label)` is the one ghost, and Home's board rows
+use it too.** They shared the class and the look already, so leaving one
+behind was the drift this file keeps recording. A board supplies its face
+through **`_boardsFaceOf`** — the single definition the gallery tile, the
+panel row and the board card all read — so a board in flight looks like the
+board it is. With no cover it paints its stored literal colour with the ink
+**`_boardsInkOn` computes**, the board-tile rule: a literal ink is only
+right where the background is literal too.
+
+- **`pointer-events:none` is load-bearing, not cosmetic.** The drop is
+  decided by hit-testing the pointer, so a ghost that could be hit would be
+  a drop target flying under the very pointer it follows.
+- **`object-fit:contain`**, the rule the tray thumbnail just took: a ghost
+  that cropped would show a different part of the picture than the row the
+  pointer just left.
+- **Built with `createElement` and `textContent`**, never an HTML string —
+  a label is a filename or the first line of somebody's note. Asserted the
+  only way a node harness can: hand the builder a `<img src=x onerror=…>`
+  and it comes back as TEXT with nothing parsed out of it.
+
+**What holds what.** The ghost is built at drag time, so no fragment can
+render the real builder: `smoke-layout`'s new `boards — the drag ghost`
+measures the **CSS** (over a solid WHITE stand-in picture, so ink that
+stops reading over a light photograph shows up), and `tests/boards.test.js`
+pins the **class names** the builder emits, which is what keeps the two
+from drifting. Same division the trash ramp uses. Each ghost in the
+fragment gets its own `left`/`top` because the real thing is
+`position:fixed` and they would otherwise stack at 0,0 and report each
+other as covering — the documented false hit.
+
+**Verified by reverting each piece:** the chip restored (8 assertions), the
+CORS attribute dropped, a second size bucket, a faceless item, the label
+interpolated as markup, the ghost left behind on drop, and the row
+un-sharing the face. Both fragment breaks fail at **1:1** naming
+`board-tray-ghost-label` and `board-tray-ghost-badge`. **And the ghosts
+were looked at**, rendered in real Chromium — the one thing here that needs
+no sign-in.
+
+**A leak fixed in passing, in the exact path that bit this session.**
+`tests/smoke-browser.js` removes its Chrome profile in `finish()` but its
+launch-failure `catch` exited without doing so — and that is the path that
+fires when the disk is already full, so it made a bad state worse. It is
+what left the two orphans found while checking this round. Both other
+probes were checked and clean.
+
+**Nobody has dragged anything on a real screen** — the sandbox cannot sign
+in.
+
 ### Mood Boards — the Unsorted tray: bigger, sorted, and not cropped (Sept 2026)
 
 Afnan, with five items circled: *"make unsorted bigger for better drag to

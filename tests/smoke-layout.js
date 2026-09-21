@@ -117,6 +117,39 @@ const FRAGMENTS={
      measuring because its whole job is to be READ mid-gesture: the idle
      label is --muted on --surface and the armed one is --text on --hover,
      and both have to hold in either theme. */
+  /* The drag ghost. It is built with createElement at drag time, so no
+     fragment can render the REAL builder — what is measured here is the
+     CSS, and the class names are pinned on the other side by
+     tests/boards.test.js, which asserts the builder emits exactly these.
+     That is the same division the trash ramp uses: the colours are this
+     probe's, the mechanism is the suite's.
+
+     The picture is a solid WHITE stand-in, so ink that stops reading over
+     a light photograph shows up rather than hiding behind a dark sample.
+     Each ghost is given its own left/top because the real thing is
+     position:fixed and they would otherwise stack at 0,0 and report each
+     other as covering — the documented false hit. */
+  'boards — the drag ghost':()=>{
+    const WHITE="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Crect width='8' height='8' fill='%23fff'/%3E%3C/svg%3E";
+    const ghost=(x,y,inner,label)=>
+      '<div class="board-tray-ghost" style="left:'+x+'px;top:'+y+'px">'+
+        '<div class="board-tray-ghost-pic">'+inner+'</div>'+
+        '<div class="board-tray-ghost-label">'+label+'</div>'+
+      '</div>';
+    const badge=w=>'<div class="board-tray-ghost-badge">'+w+'</div>';
+    return Promise.resolve(
+      '<div style="position:relative;height:420px">'+
+      // A photograph, with the name under it.
+      ghost(90,110,'<img src="'+WHITE+'" alt="">','Model REF 1')+
+      // No picture: the word carries it, on the default --soft box.
+      ghost(260,110,badge('COLUMN'),'FABRIC &amp; TRIMS FOR WINTER')+
+      ghost(430,110,badge('PDF'),'winter-sequence-2026-techpack-final-v3.pdf')+
+      // A board with no cover paints its own literal colour, with the ink
+      // _boardsInkOn computes — light and dark case, both measured.
+      ghost(600,110,'<div class="board-tray-ghost-badge" style="background:#1A1A2E;color:#fff;width:100%;height:100%;display:flex;align-items:center;justify-content:center">W</div>','WINTER DUMP 2K27')+
+      ghost(770,110,'<div class="board-tray-ghost-badge" style="background:#F2E8C9;color:#111;width:100%;height:100%;display:flex;align-items:center;justify-content:center">D</div>','DENIM DUMP 2K27')+
+      '</div>');
+  },
   'boards — the Unsorted peek zone':()=>{
     const zone=on=>'<div style="position:relative;height:170px;width:100%;'+
       'background:var(--bg);border:1px solid var(--border);margin-bottom:10px">'+

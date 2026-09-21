@@ -5126,6 +5126,127 @@ module.exports=function(){
       (bare.match(/board-tray-empty/g)||[]).length===1);
   }
 
+  /* ── THE DRAG GHOST CARRIES THE ITEM'S OWN PICTURE (Sept 2026) ────────
+     Afnan: *"now make the drag ghost show the actual image"*. It was a
+     dark text chip, which said what KIND of thing was in flight but not
+     WHICH one — two model references a word apart in name produced an
+     identical chip — beside a tray whose whole point is that you know an
+     item by its picture. */
+  {
+    const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+      currentPage:'board-canvas'});
+    const {run}=app;
+    const IMG='https://res.cloudinary.com/x/image/upload/v1/model.jpg';
+    const ITEMS=`[
+      {id:'a',kind:'image',name:'Model REF 1',imageUrl:'${IMG}'},
+      {id:'b',kind:'link', linkUrl:'https://x.test/1',linkTitle:'x.test'},
+      {id:'c',kind:'link', linkUrl:'https://y.test/2',linkTitle:'y.test',linkImage:'https://res.cloudinary.com/x/image/upload/v1/og.png'},
+      {id:'d',kind:'file', fileName:'oil-wash.pdf',fileUrl:'https://res.cloudinary.com/x/image/upload/v1/o.pdf'},
+      {id:'e',kind:'file', fileName:'notes.docx',fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/n.docx'},
+      {id:'f',kind:'cards',name:'Fabric',cards:[{id:'k',type:'column',title:'Fabric'}]},
+      {id:'g',kind:'text',text:'a loose thought'}
+    ]`;
+    const boot=()=>run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+      moodBoards=[{id:'b1',ownerUid:'u1',visibility:'shared',title:'T',cards:[]}];
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();
+      _editUnsorted=${ITEMS};_boardsTrayFilter='all';_boardsTrayOpen=true;`);
+
+    s.section('one decision about what picture stands for an item');
+    boot();
+    const face=i=>JSON.parse(run(`JSON.stringify(_boardsTrayFace(_editUnsorted[${i}])||{})`));
+    s.ok('a photo is its own picture',!!face(0).src,JSON.stringify(face(0)));
+    s.ok('and it is fetched with CORS, like every other board image',face(0).cors===true);
+    s.eq('a link with no preview is a word',face(1).src||'(none)','(none)');
+    s.eq('which says what it is',face(1).badge,'LINK');
+    s.ok('a link WITH a preview is that picture',!!face(2).src,JSON.stringify(face(2)));
+    s.ok('a PDF is its page-1 render',/\.(jpg|png)|f_/.test(face(3).src||''),face(3).src||'(none)');
+    s.eq('and falls back to the extension',face(3).badge,'PDF');
+    s.eq('a file that cannot be rasterised is just the extension',face(4).src||'(none)','(none)');
+    s.eq('a stashed container says which type',face(5).badge,'COLUMN');
+    s.eq('a note is a note',face(6).badge,'NOTE');
+    // Every item has SOMETHING to show — a ghost with neither picture nor
+    // word would fly as an empty box.
+    s.ok('nothing is ever faceless',
+      JSON.parse(run(`JSON.stringify(_editUnsorted.map(u=>!!(_boardsTrayFace(u).src||_boardsTrayFace(u).badge)))`))
+        .every(Boolean));
+    s.ok('and neither is a missing item',!!run(`(_boardsTrayFace(null)||{}).badge`));
+
+    /* The anti-drift assertion, and the reason the helper exists at all:
+       the ROW and the GHOST must resolve to the same url. They were two
+       copies of the branch for about an hour. */
+    s.section('the row draws exactly the picture the ghost will carry');
+    boot();
+    const rowHtml=run(`_boardsTrayListHTML(true)`);
+    [0,2,3].forEach(i=>{
+      const f=face(i);
+      s.ok('item '+i+' — the row uses the face url',
+        rowHtml.indexOf(f.src)>=0,f.src);
+    });
+    // Pinned to the 400 bucket on BOTH sides, so the ghost paints from
+    // cache instead of flying blank while a second size downloads.
+    s.eq('and it is the same bucket, not a second request',
+      run(`_boardsTrayFace(_editUnsorted[0]).src`),
+      run(`_boardsDisplayUrl(_editUnsorted[0].imageUrl,400)`));
+
+    s.section('so the ghost really is the picture');
+    boot();
+    const ghostOf=(i)=>{
+      run(`document.getElementById('board-stage').getBoundingClientRect=
+        function(){return{left:0,top:0,right:1200,bottom:800};};`);
+      run(`(function(){const h=document.getElementById('tray-row');
+        window.boardsTrayDragStart({currentTarget:h,clientX:0,clientY:0,pointerId:1,
+          stopPropagation(){}},${i});})()`);
+      app.fire('tray-row','pointermove',{clientX:80,clientY:80,pointerId:1});
+      return (app.state.body||[]).filter(n=>n&&n.className==='board-tray-ghost').pop();
+    };
+    const drop=()=>app.fire('tray-row','pointerup',{clientX:-500,clientY:-500,pointerId:1});
+
+    const g0=ghostOf(0);
+    s.ok('a ghost was built at all',!!g0);
+    const pic0=g0&&(g0.children||[]).find(c=>c.className==='board-tray-ghost-pic');
+    const img0=pic0&&(pic0.children||[]).find(c=>c.tagName==='IMG');
+    s.ok('it holds a real <img>',!!img0,JSON.stringify((pic0||{}).children||[]));
+    s.eq('carrying the face url',img0&&img0.src,run(`_boardsTrayFace(_editUnsorted[0]).src`));
+    s.eq('with CORS set, so the export can still read it',img0&&img0.crossOrigin,'anonymous');
+    s.ok('it is not draggable, or the native drag would fight the pointer one',
+      img0&&img0.draggable===false);
+    const lab0=g0&&(g0.children||[]).find(c=>c.className==='board-tray-ghost-label');
+    s.eq('and it still says which one it is',lab0&&lab0.textContent,'Model REF 1');
+    drop();
+
+    // An item with no picture gets the word instead — never an empty box.
+    const g5=ghostOf(5);
+    const pic5=g5&&(g5.children||[]).find(c=>c.className==='board-tray-ghost-pic');
+    s.ok('a stashed column carries no <img>',
+      !!pic5&&!(pic5.children||[]).some(c=>c.tagName==='IMG'));
+    const bad5=pic5&&(pic5.children||[]).find(c=>c.className==='board-tray-ghost-badge');
+    s.eq('it carries its type word',bad5&&bad5.textContent,'COLUMN');
+    drop();
+
+    /* The label is somebody's filename or the first line of their note, so
+       it is written with textContent — never interpolated. Asserted the
+       only way a node harness can: the builder is handed a tag and the tag
+       comes back as TEXT, not as markup. */
+    s.section('a label is never markup');
+    boot();
+    run(`_editUnsorted[0].name='<img src=x onerror=alert(1)>'`);
+    const gx=ghostOf(0);
+    const labx=gx&&(gx.children||[]).find(c=>c.className==='board-tray-ghost-label');
+    s.eq('the tag is the text',labx&&labx.textContent,'<img src=x onerror=alert(1)>');
+    s.ok('and nothing was parsed out of it',
+      !labx||!(labx.children||[]).length);
+    drop();
+
+    s.section('and the ghost leaves when the drag does');
+    boot();
+    ghostOf(0);
+    const before=(app.state.body||[]).filter(n=>n&&n.className==='board-tray-ghost').length;
+    drop();
+    const after=(app.state.body||[]).filter(n=>n&&n.className==='board-tray-ghost').length;
+    s.ok('one ghost while dragging',before>=1,'before='+before);
+    s.ok('and none left behind after the drop',after===0,'after='+after);
+  }
+
   // ── a PDF card is sized to its page ─────────────────────────────────────
   // At the 200×110 file default the name row and the Open/Download buttons
   // left the page thumbnail a ~20px strip. Reported with a screenshot of a

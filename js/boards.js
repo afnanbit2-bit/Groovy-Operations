@@ -10886,10 +10886,14 @@ window.boardsPanelDragStart=function(e,id){
   function move(ev){
     if(!ghost){
       if(Math.abs(ev.clientX-startX)<4&&Math.abs(ev.clientY-startY)<4)return;
-      ghost=document.createElement('div');
-      ghost.className='board-tray-ghost';
-      ghost.textContent=b.title||'Untitled board';
-      document.body.appendChild(ghost);
+      // The board's OWN face, through _boardsFaceOf — the single
+      // definition the gallery tile, the panel row and the board card all
+      // read, so a board in flight looks like the board it is.
+      const bf=_boardsFaceOf(b)||{};
+      ghost=_boardsDragGhost(
+        bf.cover?{src:_boardsCoverUrl(bf.cover)?_boardsDisplayUrl(bf.cover,400):'',badge:bf.glyph||'BOARD',cors:true}
+                :{badge:bf.glyph||'BOARD',color:bf.color},
+        b.title||'Untitled board');
       const stage=document.getElementById('board-stage');
       if(stage)stage.classList.add('tray-target');
     }
@@ -10927,27 +10931,19 @@ function _boardsTrayItemHTML(u,i,canEdit){
   let thumb;
   if(u._uploading){
     thumb='<div class="board-tray-thumb board-tray-thumb-empty">Uploading…</div>';
-  }else if(u.kind==='image'&&u.imageUrl){
-    thumb=`<img class="board-tray-thumb" src="${_boardsEsc(_boardsDisplayUrl(u.imageUrl,400))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`;
-  }else if(u.kind==='file'){
-    const pdf=u.fileUrl?_boardsPdfThumbUrl(u.fileUrl):'';
-    thumb=pdf
-      ?`<img class="board-tray-thumb" src="${_boardsEsc(pdf)}" draggable="false" onerror="this.className='board-tray-thumb board-tray-thumb-empty';this.replaceWith(Object.assign(document.createElement('div'),{className:'board-tray-thumb board-tray-thumb-empty',textContent:'${_boardsEsc(_boardsFileExt(u.fileName))}'}))" alt="">`
-      :`<div class="board-tray-thumb board-tray-thumb-empty">${_boardsEsc(_boardsFileExt(u.fileName))}</div>`;
-  }else if(u.kind==='link'){
-    // Milanote's tray shows the page's own picture, which is the whole
-    // reason a collected link is recognisable at a glance.
-    thumb=u.linkImage
-      ?`<img class="board-tray-thumb" src="${_boardsEsc(_boardsDisplayUrl(u.linkImage,400))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`
-      :`<div class="board-tray-thumb board-tray-thumb-empty">${u._fetching?'…':'LINK'}</div>`;
-  }else if(Array.isArray(u.cards)){
-    // A stashed card that is not one of the four the tray has a picture
-    // for — a to-do, a table, a heading, a column, a frame. It says which,
-    // through the same type-to-word map the delete toast uses, so a row
-    // can never introduce itself as something it is not.
-    thumb=`<div class="board-tray-thumb board-tray-thumb-empty">${_boardsEsc(_boardsStashBadge(u))}</div>`;
   }else{
-    thumb='<div class="board-tray-thumb board-tray-thumb-empty">NOTE</div>';
+    // The face is decided ONCE, by _boardsTrayFace, because the drag ghost
+    // reads the same answer — see the note there.
+    const f=_boardsTrayFace(u);
+    thumb=!f.src
+      ?`<div class="board-tray-thumb board-tray-thumb-empty">${_boardsEsc(f.badge)}</div>`
+      :f.cors
+        // A photo or a link's own picture: retry once WITHOUT the CORS
+        // attribute, the documented cache trick, rather than giving up.
+        ?`<img class="board-tray-thumb" src="${_boardsEsc(f.src)}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`
+        // A PDF page-1 render is best-effort by design: an account that
+        // cannot rasterise falls back to the extension.
+        :`<img class="board-tray-thumb" src="${_boardsEsc(f.src)}" draggable="false" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'board-tray-thumb board-tray-thumb-empty',textContent:'${_boardsEsc(f.badge)}'}))" alt="">`;
   }
   // The label is written in with textContent by _boardsTrayHydrate — it can
   // be a filename or a line of someone's note, and this file never
@@ -10958,6 +10954,93 @@ function _boardsTrayItemHTML(u,i,canEdit){
     <div class="board-tray-label" id="board-tray-l-${i}"></div>
     ${canEdit?`<button class="board-tray-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsTrayRemove(${i})" title="Remove from Unsorted">✕</button>`:''}
   </div>`;
+}
+/* ── WHAT PICTURE STANDS FOR A TRAY ITEM ──────────────────────────────
+   ONE decision, read by the row's thumbnail AND by the drag ghost, so the
+   thing following the pointer can never be a different picture from the
+   one that was grabbed. It was two copies for about an hour and that is
+   exactly the shape this file keeps recording as drifting.
+
+   - `src`   the picture to draw, or nothing when there is none
+   - `badge` the word to draw INSTEAD, and also the fallback if `src`
+             fails to load — so every item has something to show
+   - `cors`  whether the picture is one of ours on Cloudinary, which
+             decides which of the two failure paths the row takes
+
+   The width is pinned to 400 deliberately: _boardsDisplayUrl buckets, so
+   the ghost asks for the SAME url the row already loaded and paints from
+   cache instantly. A different bucket would be a fresh request and the
+   ghost would fly blank for the first moments of the drag. */
+function _boardsTrayFace(u){
+  if(!u)return{badge:'NOTE'};
+  if(u.kind==='image'&&u.imageUrl)
+    return{src:_boardsDisplayUrl(u.imageUrl,400),badge:'IMAGE',cors:true};
+  if(u.kind==='link')
+    return u.linkImage?{src:_boardsDisplayUrl(u.linkImage,400),badge:'LINK',cors:true}
+                      :{badge:u._fetching?'…':'LINK'};
+  if(u.kind==='file'){
+    const pdf=u.fileUrl?_boardsPdfThumbUrl(u.fileUrl):'';
+    const ext=_boardsFileExt(u.fileName);
+    return pdf?{src:pdf,badge:ext}:{badge:ext};
+  }
+  // A stashed card the tray has no picture for — a to-do, a table, a
+  // heading, a column, a frame. It says WHICH, through the same
+  // type-to-word map the delete toast uses, so it can never introduce
+  // itself as something it is not.
+  if(Array.isArray(u.cards))return{badge:_boardsStashBadge(u)};
+  return{badge:'NOTE'};
+}
+/* ── THE THING THAT FOLLOWS THE POINTER ───────────────────────────────
+   It used to be a dark text chip. That said what KIND of thing was in
+   flight but not WHICH one — two model references a word apart in name
+   are the same chip — and it sat oddly beside a tray whose whole point is
+   that you recognise an item by its picture. It carries the picture now.
+
+   Built with createElement and textContent, never an HTML string: a label
+   is a filename or a line of somebody's note. `pointer-events:none` is
+   load-bearing rather than cosmetic — the drop is decided by hit-testing
+   the pointer, and a ghost that could be hit would be a target flying
+   under the very pointer it follows. */
+function _boardsDragGhost(face,label){
+  const g=document.createElement('div');
+  g.className='board-tray-ghost';
+  const pic=document.createElement('div');
+  pic.className='board-tray-ghost-pic';
+  const badge=()=>{
+    const d=document.createElement('div');
+    d.className='board-tray-ghost-badge';
+    d.textContent=(face&&face.badge)||'NOTE';
+    return d;
+  };
+  /* A board with no cover picture has a COLOUR and a glyph, and that is
+     what its tile paints. The colour is a stored literal, so its ink is
+     COMPUTED (_boardsInkOn) rather than taken from a theme token — the
+     board-tile rule: a literal ink is only right where the background is
+     literal too. An invalid colour paints nothing, as everywhere else. */
+  if(face&&face.color&&_boardsValidHex(face.color)){
+    pic.style.background=face.color;
+    pic.style.color=_boardsInkOn(face.color);
+  }
+  if(face&&face.src){
+    const img=document.createElement('img');
+    img.src=face.src;img.alt='';img.draggable=false;
+    if(face.cors)img.crossOrigin='anonymous';
+    // A picture that will not load must not leave an empty hole flying
+    // across the board — it falls back to the same word the row shows.
+    img.onerror=function(){try{img.replaceWith(badge());}catch(e){}};
+    pic.appendChild(img);
+  }else{
+    pic.appendChild(badge());
+  }
+  g.appendChild(pic);
+  if(label){
+    const t=document.createElement('div');
+    t.className='board-tray-ghost-label';
+    t.textContent=label;
+    g.appendChild(t);
+  }
+  document.body.appendChild(g);
+  return g;
 }
 function _boardsTrayHydrate(){
   _editUnsorted.forEach((u,i)=>{
@@ -11319,10 +11402,7 @@ window.boardsTrayDragStart=function(e,i){
   function move(ev){
     if(!ghost){
       if(Math.abs(ev.clientX-startX)<4&&Math.abs(ev.clientY-startY)<4)return;
-      ghost=document.createElement('div');
-      ghost.className='board-tray-ghost';
-      ghost.textContent=_boardsTrayLabel(u);
-      document.body.appendChild(ghost);
+      ghost=_boardsDragGhost(_boardsTrayFace(u),_boardsTrayLabel(u));
       _boardsTrayDrag={item:u,index:i};
       const stage=document.getElementById('board-stage');
       if(stage)stage.classList.add('tray-target');

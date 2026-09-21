@@ -153,6 +153,7 @@ function run(port){
       (err,stdout)=>{finish(err,stdout||'');});
   }catch(e){
     console.error('smoke-browser: could not launch the browser — '+(e.message||e));
+    try{fs.rmSync(profile,{recursive:true,force:true});}catch(e2){}
     server.close();process.exit(1);
   }
 }
