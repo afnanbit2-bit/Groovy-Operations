@@ -617,6 +617,34 @@ module.exports=function(){
      contrast and hit-testing, and a cropped picture is none of those — put
      `cover` back and all six of its Unsorted-tray jobs still pass, which
      is exactly why the rule lives here instead. */
+  /* ── The rail's drag ghost must not promise words the card will not say
+     (Sept 2026) ────────────────────────────────────────────────────────
+     The ghost draws a SILHOUETTE of the card it is about to place, because
+     the real _boardCardHTML emits ids and handlers and a second copy loose
+     in the document would hand every getElementById a duplicate. The cost
+     of a silhouette is that its placeholder text is a second copy of the
+     card's, free to drift.
+
+     IT HAD ALREADY DRIFTED, which is how this rule earned its place:
+     writing it is what found the Note ghost saying "Start typing…" while
+     the card that lands has said "Double-click to type…" since the day it
+     shipped. Every string the ghost draws must still appear in the card
+     markup. */
+  s.section('the drag ghost says what the card will say');
+  {
+    const js=read('js/boards.js');
+    const tbl=/_BOARDS_GHOST_PLACEHOLDERS=\{([\s\S]*?)\}/.exec(js);
+    s.ok('the ghost keeps its placeholders in one table',!!tbl);
+    const strings=tbl?(tbl[1].match(/'([^']+)'/g)||[]).map(x=>x.slice(1,-1)):[];
+    s.ok('and there are some',strings.length>=6,strings.join(' · '));
+    strings.forEach(str=>{
+      // Outside the table itself: the card markup has to carry it too.
+      const rest=js.replace(tbl[0],'');
+      s.ok('“'+str+'” is what the card really shows',rest.indexOf(str)>=0,
+        'the ghost draws it, no card renders it');
+    });
+  }
+
   s.section('the tray thumbnail shows the whole picture');
   {
     const css=read('css/main.css');

@@ -2288,6 +2288,89 @@ pass. They have their own fragment now, sized to fit, and the same break
 fails naming `DIV.board-frame-body`. **A fragment taller than the window is
 a fragment that stops testing partway down.**
 
+### Mood Boards — every rail tool carries the card it will place (Sept 2026)
+
+Afnan: *"now do the same for the rail drag ghost"*, after the Unsorted
+one. Only **Note** had ever done this; the other seven placing tools showed
+a generic chip that was the same size whatever you were about to drop, so a
+Frame and a Note looked identical in flight and neither told you whether
+the thing would fit where you were aiming.
+
+**THE BLOCKER WAS RECORDED HERE AND THIS ROUND REMOVED IT.** The Note round
+wrote: *"Other tools keep the chip: their sizes live in `_boardsNewCard`,
+which is not pure."* That is exactly right — **`_boardsNewCard` MINTS AN ID**,
+so it can never be called merely to ask how big a card would be, and the
+ghost had no way to find out. `_boardsNewCardSize(type)` is that question,
+pulled out as a pure function the card and the ghost both read, so **a ghost
+can never promise a footprint the drop does not land**. A test asserts the
+two agree for all ten types, and that asking twice mints nothing and moves
+no counter.
+
+It is written as the same ternary expressions rather than a lookup object
+on purpose: several of those constants are declared much further down the
+file, and a top-level object literal would read them **in the temporal dead
+zone**.
+
+**The ghost is a SILHOUETTE, deliberately, and the cost is named.** Drawing
+the real `_boardCardHTML` would be the strongest "one definition", and it
+is wrong here: that markup emits **ids and handlers**, and a second copy of
+a card loose in the document hands every `getElementById` in this file a
+duplicate to trip over. So the ghost draws the card's shape and its
+first-run placeholder, and an invariant checks each of those words still
+appears in the card markup — which is what stops the silhouette quietly
+lying.
+
+**WRITING THAT INVARIANT FOUND THE GHOST ALREADY LYING.** The Note ghost
+has said **"Start typing…"** since the day it shipped, while the card that
+lands says **"Double-click to type…"** — a placeholder that exists nowhere
+else in the file. Every string is the card's own now: `Section title`,
+`To-do` + `Add a task…`, `Enter a link URL`, `New Column` / `New Frame`,
+`Drag cards here`. Verified by putting the old string back: the invariant
+names it.
+
+**A tool that PLACES NOTHING still gets the chip, and must.** `line` is a
+mode and `imagepanel`/`file` open a picker, so there is no card to draw and
+a card-shaped ghost would promise one. Two guards: the act must match
+`add:<type>`, and `_boardsGhostBody` returns **null** for a type with
+nothing to draw.
+
+**Everything inside the ghost is sized in `em`** off the font-size
+`_boardsRailGhostShow` sets to `15 × zoom`, so one rule set draws it at 25%
+and at 300% with no per-zoom branches.
+
+**The probe found a real bug on its first run, and it is the scrim lesson
+again.** The frame ghost was `rgba(0,0,0,.05)` with no opaque base, because
+the REAL frame is see-through — it is a section of the canvas. **A ghost is
+not on the canvas.** It flies over whatever happens to be on screen (a
+photograph, the dark rail, the top bar), so a translucent-only ghost has no
+defined background and its title reads against pot luck: measured at
+**1.11:1** in light mode, falling through to the page. It keeps the
+`--surface` floor every other card ghost has and says "region" with a
+**dashed** border instead — the language the drop targets already use.
+
+**It is NOT merged with the tray's ghost, and that is deliberate.** They
+answer different questions: the tray's carries a picture that already
+exists, at a fixed size; the rail's carries a card that does not exist yet,
+at the board's zoom. Forcing one implementation would be a shared thing
+with two disjoint halves.
+
+**Verified by reverting each piece:** only Note getting a card ghost, the
+ghost inventing its own size, the size un-shared from `_boardsNewCard` (27
+failures), a picker given a card shape, the type tag dropped, the zoom
+ignored, and the size helper minting after all. Both fragment breaks fail
+naming `ghost-name` and the band.
+
+**Two lessons from my own tests, both already in this file and both caught
+again.** An assertion that did `/type-(\w+)/.exec(cls)[1]` **threw and took
+the suite down** instead of naming a finding — every new assertion is
+null-safe. And the "a picker gets a card shape" break **stayed green**:
+`imagepanel` never matches `add:` at all, so it exercised the outer guard
+and proved nothing about `_boardsGhostBody`'s own refusal, which is
+asserted directly now.
+
+**Nobody has dragged a tool on a real screen** — the sandbox cannot sign
+in. The eight ghosts were rendered in real Chromium and looked at.
+
 ### Mood Boards — the drag ghost carries the picture (Sept 2026)
 
 Afnan: *"now make the drag ghost show the actual image"* — the gap left

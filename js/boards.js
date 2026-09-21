@@ -175,10 +175,26 @@ const _BOARDS_NOTE_W=220,_BOARDS_NOTE_H=100;
 function _boardsMintCardId(){
   return 'c'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
 }
+/* THE SIZE A NEW CARD IS BORN AT — pure, and that is the whole point.
+   It used to be two ternary chains inside _boardsNewCard, which MINTS AN
+   ID and so can never be called just to ask a question. That is the exact
+   reason recorded above for why every rail tool but Note carried a generic
+   chip: the ghost had no way to find out how big the card would be. It is
+   one definition now, read by the card and by the ghost, so a ghost can
+   never promise a footprint the drop does not land.
+
+   Written as the same expressions rather than a lookup object: several of
+   these constants are declared further down the file, and a top-level
+   object literal would read them in the temporal dead zone. */
+function _boardsNewCardSize(type){
+  return{
+    w:type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?_BOARDS_NOTE_W:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?_BOARDS_BOARD_W:type==='image'?_BOARDS_IMG_W:type==='link'?_BOARDS_LINK_W:170,
+    h:type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?_BOARDS_IMG_H:type==='link'?_BOARDS_LINK_H:type==='file'?_BOARDS_FILE_H:type==='todo'?170:type==='board'?_BOARDS_BOARD_H:100
+  };
+}
 function _boardsNewCard(type){
   const id=_boardsMintCardId();
-  const w=type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?_BOARDS_NOTE_W:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?_BOARDS_BOARD_W:type==='image'?_BOARDS_IMG_W:type==='link'?_BOARDS_LINK_W:170;
-  const h=type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?_BOARDS_IMG_H:type==='link'?_BOARDS_LINK_H:type==='file'?_BOARDS_FILE_H:type==='todo'?170:type==='board'?_BOARDS_BOARD_H:100;
+  const {w,h}=_boardsNewCardSize(type);
   const base={id,type,x:80,y:80,w,h};
   if(type==='image')base.imageUrl='';
   if(type==='text')base.text='';
@@ -6176,28 +6192,102 @@ function _boardsRailTipHide(){
   if(el&&el.parentNode)el.parentNode.removeChild(el);
 }
 const _BOARDS_GHOST_ID='board-rail-ghost';
+/* WHAT A CARD OF THIS TYPE LOOKS LIKE BEFORE IT EXISTS.
+   Deliberately a SILHOUETTE, not the real card: _boardCardHTML emits ids
+   and handlers, and a second copy of a card's markup loose in the document
+   would hand every getElementById in this file a duplicate to trip over.
+   So the ghost draws the card's shape and its FIRST-RUN placeholder — the
+   words a freshly dropped card really shows — and an invariant checks each
+   of those strings still appears in the card markup, so renaming one there
+   cannot leave the ghost quietly lying.
+
+   Returns null for a type with nothing to draw, which is what puts a tool
+   back on the plain chip. */
+const _BOARDS_GHOST_PLACEHOLDERS={
+  text:'Double-click to type…',
+  heading:'Section title',
+  todoItem:'To-do',
+  todoAdd:'Add a task…',
+  link:'Enter a link URL',
+  column:'New Column',
+  frame:'New Frame',
+  columnBody:'Drag cards here'
+};
+function _boardsGhostBody(type){
+  const mk=(cls,text)=>{
+    const n=document.createElement('div');
+    n.className=cls;
+    if(text)n.textContent=text;            // textContent, as everywhere in this file
+    return n;
+  };
+  const ph=k=>_BOARDS_GHOST_PLACEHOLDERS[k]||'';
+  const frag=document.createElement('div');
+  frag.className='ghost-in';
+  if(type==='text'){
+    frag.appendChild(mk('ghost-ph',ph('text')));
+  }else if(type==='heading'){
+    frag.appendChild(mk('ghost-band',ph('heading')));
+  }else if(type==='todo'){
+    const row=mk('ghost-row');
+    row.appendChild(mk('ghost-check'));
+    row.appendChild(mk('ghost-item',ph('todoItem')));
+    frag.appendChild(row);
+    frag.appendChild(mk('ghost-ph',ph('todoAdd')));
+  }else if(type==='table'){
+    const g=mk('ghost-grid');
+    for(let i=0;i<12;i++)g.appendChild(mk('ghost-cell'));
+    frag.appendChild(g);
+  }else if(type==='column'||type==='frame'){
+    // Both wear the same title block on the canvas, so both wear it here.
+    const head=mk('ghost-head');
+    head.appendChild(mk('ghost-name',ph(type)));
+    head.appendChild(mk('ghost-sub','0 cards'));   // what a fresh container counts
+    frag.appendChild(head);
+    frag.appendChild(mk('ghost-panel',type==='column'?ph('columnBody'):''));
+  }else if(type==='board'){
+    frag.appendChild(mk('ghost-spine'));
+    const info=mk('ghost-info');
+    info.appendChild(mk('ghost-name','New board'));
+    info.appendChild(mk('ghost-sub','PRIVATE'));
+    frag.appendChild(info);
+  }else if(type==='link'){
+    frag.appendChild(mk('ghost-field',ph('link')));
+  }else{
+    return null;                            // image, file — they place nothing
+  }
+  return frag;
+}
 function _boardsRailGhostShow(d){
   _boardsRailGhostHide();
   _boardsRailTipHide();
   const el=document.createElement('div');
   el.id=_BOARDS_GHOST_ID;
-  el.className='board-rail-ghost';
-  if(d.act==='add:text'){
-    // Milanote carries a Note as the CARD it will become — "Start typing…"
-    // at the board's zoom, its top-left under the pointer, which is exactly
-    // where the drop lands it (placement is by top-left). Other tools keep
-    // the chip: their cards' sizes live in _boardsNewCard, which is not
-    // pure, and this one is the note the round was about.
+  /* EVERY PLACING TOOL CARRIES THE CARD IT WILL PLACE, at the board's own
+     zoom, its top-left under the pointer — which is exactly where the drop
+     lands it, since placement is by top-left. Only Note did this before;
+     the rest showed a chip that was the same size whatever you were about
+     to drop, so a Frame and a Note looked identical in flight and neither
+     told you whether the thing would fit where you were aiming.
+
+     A tool that PLACES NOTHING still gets the chip, and must: `line` is a
+     mode and `imagepanel`/`file` open a picker, so there is no card to
+     draw and a card-shaped ghost would promise one. They carry no
+     drag flag either, so this is belt and braces. */
+  const m=/^add:(.+)$/.exec(d.act||'');
+  const body=m?_boardsGhostBody(m[1]):null;
+  if(body){
     const z=(_editBoard&&_editBoard.zoom)||1;
-    el.className='board-rail-ghost note';
-    el.style.width=Math.round(_BOARDS_NOTE_W*z)+'px';
-    el.style.height=Math.round(_BOARDS_NOTE_H*z)+'px';
+    const sz=_boardsNewCardSize(m[1]);
+    el.className='board-rail-ghost card type-'+m[1];
+    el.style.width=Math.round(sz.w*z)+'px';
+    el.style.height=Math.round(sz.h*z)+'px';
+    // Everything inside is sized in em off this, so one rule set draws the
+    // ghost at 25% and at 300%. Floored so a deeply zoomed-out board still
+    // renders something rather than collapsing to nothing.
     el.style.fontSize=Math.max(6,Math.round(15*z))+'px';
-    const ph=document.createElement('span');
-    ph.className='ghost-ph';
-    ph.textContent='Start typing…';
-    el.appendChild(ph);
+    el.appendChild(body);
   }else{
+    el.className='board-rail-ghost';
     el.textContent=d.label||'';                 // textContent: it is a label, not markup
   }
   document.body.appendChild(el);

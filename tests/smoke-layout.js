@@ -129,6 +129,41 @@ const FRAGMENTS={
      Each ghost is given its own left/top because the real thing is
      position:fixed and they would otherwise stack at 0,0 and report each
      other as covering — the documented false hit. */
+  /* The RAIL's drag ghost — the card each placing tool will drop, at the
+     board's zoom. Drawn at zoom 1 with the real birth sizes, so what is
+     measured is the footprint a drop really lands. Same division as the
+     tray ghost: the CSS is this probe's, the class names and the sizes are
+     pinned in tests/boards.test.js against _boardsNewCardSize.
+
+     Each is position:fixed with its own left/top, because that is what the
+     real one is and they would otherwise stack at 0,0 and report each
+     other as covering — the documented false hit. */
+  'boards — the rail drag ghost':()=>{
+    const G=(x,y,w,h,type,inner)=>
+      '<div class="board-rail-ghost card type-'+type+'" style="left:'+x+'px;top:'+y+'px;'+
+        'width:'+w+'px;height:'+h+'px;font-size:15px">'+
+        '<div class="ghost-in">'+inner+'</div></div>';
+    const head=(name)=>'<div class="ghost-head"><div class="ghost-name">'+name+'</div>'+
+      '<div class="ghost-sub">0 cards</div></div>';
+    let cells='';for(let i=0;i<12;i++)cells+='<div class="ghost-cell"></div>';
+    return Promise.resolve(
+      '<div style="position:relative;height:640px">'+
+      G(30,40,220,100,'text','<div class="ghost-ph">Double-click to type…</div>')+
+      G(280,40,170,120,'link','<div class="ghost-field">Enter a link URL</div>')+
+      G(480,40,240,170,'todo',
+        '<div class="ghost-row"><div class="ghost-check"></div>'+
+        '<div class="ghost-item">To-do</div></div>'+
+        '<div class="ghost-ph">Add a task…</div>')+
+      G(760,40,340,136,'board','<div class="ghost-spine"></div>'+
+        '<div class="ghost-info"><div class="ghost-name">New board</div>'+
+        '<div class="ghost-sub">PRIVATE</div></div>')+
+      G(30,240,440,58,'heading','<div class="ghost-band">Section title</div>')+
+      G(500,240,280,160,'column',head('New Column')+
+        '<div class="ghost-panel">Drag cards here</div>')+
+      G(810,240,360,200,'table','<div class="ghost-grid">'+cells+'</div>')+
+      G(30,330,440,320,'frame',head('New Frame')+'<div class="ghost-panel"></div>')+
+      '</div>');
+  },
   'boards — the drag ghost':()=>{
     const WHITE="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Crect width='8' height='8' fill='%23fff'/%3E%3C/svg%3E";
     const ghost=(x,y,inner,label)=>

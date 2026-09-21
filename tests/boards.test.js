@@ -5455,17 +5455,72 @@ module.exports=function(){
       s.eq('and nothing is shown mid-drag',r(`(_boardsRailDrag={act:'add:text'},_boardsRailTipShow({getAttribute:()=>'1'}))`),false);
       r(`_boardsRailDrag=null`);
 
-      s.section('a Note is carried as the card it becomes, at the board\'s zoom');
+      /* EVERY placing tool is carried as the card it becomes, at the
+         board's zoom. This section used to assert the opposite for
+         everything but Note ("any other tool keeps the chip") — rewritten
+         to the new behaviour rather than deleted, since it is the record
+         of what changed. */
+      s.section('a tool is carried as the card it becomes, at the board\'s zoom');
       r(`_boardsRailGhostShow({act:'add:text',label:'Note'})`);
       const g=r(`(function(){var g=document.getElementById('board-rail-ghost');return {cls:g.className,w:g.style.width,h:g.style.height,fs:g.style.fontSize,kids:g.children.length}})()`);
-      s.eq('a note ghost',g.cls,'board-rail-ghost note');
+      s.eq('a card ghost, tagged with its type',g.cls,'board-rail-ghost card type-text');
       s.eq('220 wide at 50% zoom',g.w,'110px');
       s.eq('100 tall at 50% zoom',g.h,'50px');
-      s.ok('with a placeholder inside',g.kids===1);
-      r(`_boardsRailGhostHide();_boardsRailGhostShow({act:'add:link',label:'Link'})`);
-      s.eq('any other tool keeps the chip',r(`document.getElementById('board-rail-ghost').className`),'board-rail-ghost');
+      s.ok('with the card\'s own body inside',g.kids===1);
+      // The em basis every inner rule is sized off.
+      s.eq('and an em basis that follows the zoom',g.fs,'8px');
+
+      // Each placing tool, at the size _boardsNewCard would really mint.
+      const ghostOf=a=>{
+        r(`_boardsRailGhostHide();_boardsRailGhostShow({act:'${a}',label:'x'})`);
+        return r(`(function(){var g=document.getElementById('board-rail-ghost');
+          return {cls:g.className,w:g.style.width,h:g.style.height};})()`);
+      };
+      [['add:link','link'],['add:todo','todo'],['add:board','board'],
+       ['add:column','column'],['add:heading','heading'],['add:table','table'],
+       ['add:frame','frame']].forEach(([act,type])=>{
+        const gg=ghostOf(act);
+        s.ok(type+' is a card ghost, not a chip',/(^| )card( |$)/.test(gg.cls),gg.cls);
+        s.eq(type+' is tagged with its type',
+          (/type-([a-z]+)/.exec(gg.cls)||[])[1]||'(untagged)',type);
+        // THE ASSERTION THAT MATTERS: the ghost's footprint is the size the
+        // drop really lands, read from the one shared definition.
+        s.eq(type+' is as WIDE as the card is born',gg.w,
+          Math.round(r(`_boardsNewCardSize('${type}').w`)*0.5)+'px');
+        s.eq(type+' is as TALL as the card is born',gg.h,
+          Math.round(r(`_boardsNewCardSize('${type}').h`)*0.5)+'px');
+      });
+
+      // A tool that PLACES NOTHING must not wear a card shape — it would
+      // promise a card that never arrives.
+      r(`_boardsRailGhostHide();_boardsRailGhostShow({act:'line',label:'Line'})`);
+      s.eq('a mode keeps the plain chip',r(`document.getElementById('board-rail-ghost').className`),'board-rail-ghost');
+      s.eq('and says what it is',r(`document.getElementById('board-rail-ghost').textContent`),'Line');
+      r(`_boardsRailGhostHide();_boardsRailGhostShow({act:'imagepanel',label:'Image'})`);
+      s.eq('so does a picker',r(`document.getElementById('board-rail-ghost').className`),'board-rail-ghost');
       r(`_boardsRailGhostHide()`);
-      s.eq('the ghost reads the same birth size _boardsNewCard mints',r(`_boardsNewCard('text').w+'x'+_boardsNewCard('text').h`),'220x100');
+      s.eq('a card type with nothing to draw refuses outright',
+        r(`_boardsGhostBody('image')`),null);
+      s.eq('and so does a file',r(`_boardsGhostBody('file')`),null);
+      r(`_boardsRailGhostHide();_boardsRailGhostShow({act:'add:image',label:'Image'})`);
+      s.eq('so even an add: act for one keeps the chip',
+        r(`document.getElementById('board-rail-ghost').className`),'board-rail-ghost');
+      r(`_boardsRailGhostHide()`);
+
+      /* The size is ONE definition now. _boardsNewCard mints an id, so it
+         could never be called just to ask how big a card is — which is
+         exactly why every tool but Note carried a chip until this round. */
+      s.section('the ghost and the card read one size');
+      ['text','link','todo','board','column','heading','table','frame','image','file'].forEach(t=>{
+        s.eq(t+' agrees',
+          r(`_boardsNewCardSize('${t}').w+'x'+_boardsNewCardSize('${t}').h`),
+          r(`(function(){var c=_boardsNewCard('${t}');return c.w+'x'+c.h;})()`));
+      });
+      s.eq('and an unknown type still has a size',
+        r(`_boardsNewCardSize('nonsense').w+'x'+_boardsNewCardSize('nonsense').h`),'170x100');
+      s.ok('asking twice mints no card and moves no counter',
+        r(`(function(){var a=_boardsCardSeq;_boardsNewCardSize('text');_boardsNewCardSize('frame');
+          return _boardsCardSeq===a;})()`));
 
       s.section('a note in edit mode is the rail\'s fifth mode');
       r(`_boardsEditingEl={isContentEditable:true,id:'board-txt-c1',closest:()=>null}`);
