@@ -2288,6 +2288,86 @@ pass. They have their own fragment now, sized to fit, and the same break
 fails naming `DIV.board-frame-body`. **A fragment taller than the window is
 a fragment that stops testing partway down.**
 
+### Mood Boards — the selection rail says what the card already has (Sept 2026)
+
+Afnan: *"now do the same for the selection rail"*, after the tray and rail
+drag ghosts.
+
+**THERE IS NO GHOST HERE, and that was checked rather than assumed.**
+`drag:true` appears in exactly three places in the file — `_BOARDS_RAIL_MAIN`,
+`_OVERFLOW` and `_PHONE`, the add-tools — so nothing on the selection rail
+is a drag source: its buttons act on a card that is already placed. A test
+asserts that emptiness directly, so the premise of this round is on the
+record rather than in prose.
+
+What carries over is the PRINCIPLE the last two rounds were really about —
+**show the real thing, not a generic stand-in** — and the selection rail
+already had exactly one button obeying it: **Color**, whose `colorTile`
+paints the card's own colour. **Labels, Reactions and Comment were
+identical icons whether the card carried twelve or none**, so the only way
+to find out was to open each panel in turn. They carry the count now.
+
+- **`_boardsRailCounts(sel)` is DERIVED on every render**, never stored —
+  the rule the label library and frame membership already hold.
+- **LABELS ARE A SET; REACTIONS AND COMMENTS ARE TALLIES**, and the
+  difference is the question each answers. Twelve cards all wearing "see
+  this" are wearing **one** label — counting twelve would describe the
+  selection's size rather than its labels. A reaction and a comment are
+  each their own event, so those add up. Names are matched trimmed and
+  case-folded.
+- **`_boardsCommentCounts()` is THE definition of the comment count, and
+  extracting it is the point.** It counts the **unresolved** ones, and the
+  card's own corner badge reads it too — it used to be an inline loop
+  inside the badge painter — so **a card can never say 3 in the corner and
+  5 on the rail**.
+- **A zero paints no badge.** A "0" chip on every button is noise on a rail
+  whose whole point is being a short list of what you do often; an empty
+  count is said by saying nothing.
+- **The badge reuses `.board-rail-badge`**, the Trash count's own class, so
+  the two can never LOOK different — but the value is rendered inline where
+  Trash's is painted by id, because this count is on the card in memory
+  right now while Trash's arrives from a Firestore listener. One look, two
+  sources, and the sources genuinely differ.
+- **A comment arriving repaints the rail.** The snapshot handler already
+  repainted the card badges and the drawer; without adding
+  `_boardsRenderRail()` the rail's number would quietly lie until the next
+  render for some unrelated reason. It is an `innerHTML` swap on one
+  element, and the mode-swap animation is keyed on a MODE change rather
+  than a repaint, so this cannot replay it.
+- The phone's selection bar carries the same three counts.
+
+**Verified by reverting each piece:** the counts dropped from the rail,
+labels made a tally, resolved comments counted, reactions counted per emoji
+rather than per person, the malformed-card guard, and the null selection.
+The fragment fails at **1:1** naming `board-rail-badge` when the ink is set
+to its own chip. **And the rail was looked at**, rendered in real Chromium
+beside a card carrying nothing.
+
+**THE ASSERTION THAT MATTERED WAS THE ONE THAT FIRST HAD NO TEETH.**
+Un-sharing the count rule — the single most important claim here, that the
+corner badge and the rail cannot disagree — **stayed green**, because the
+painter writes into DOM nodes the node harness has none of, so nothing
+reached it. Registering those nodes and reading back what the painter wrote
+is what closes it; that break now fails with `got "3", expected "2"`.
+Asserting the shared map alone proved only that the map existed.
+
+**Two of my own assertions crashed the suite instead of naming a finding**
+(the malformed card and the null selection), and one section invented two
+helper functions that do not exist — `_boardsRailHTML` and
+`_boardsRailBtnHTML` — which threw and took the whole run down. The button
+markup is built inside `_boardsRenderRail`'s own map and is not callable in
+isolation, so the BADGE is smoke-layout's and the counts are this suite's,
+which is the division the last two rounds already settled. Every assertion
+goes through a try now.
+
+**The fragment opts out of 420px.** The rail docks as a horizontal bar at
+phone width, so two of them side by side land on top of each other and
+report each other as covering — the fragment measuring itself, the
+documented false hit. The phone bar is `tests/smoke-phone.js`'s.
+
+**Nobody has seen the counts on a real screen** — the sandbox cannot sign
+in.
+
 ### Mood Boards — every rail tool carries the card it will place (Sept 2026)
 
 Afnan: *"now do the same for the rail drag ghost"*, after the Unsorted

@@ -138,6 +138,39 @@ const FRAGMENTS={
      Each is position:fixed with its own left/top, because that is what the
      real one is and they would otherwise stack at 0,0 and report each
      other as covering — the documented false hit. */
+  /* The selection rail with its counts. The button is built inside
+     _boardsRenderRail's own map, so this renders the real rail through the
+     real module rather than a hand-written copy — which also makes it the
+     only place that can check a ZERO paints no badge at all.
+
+     The badge chip is var(--red) with var(--on-dark) ink: both invert
+     together, which is the documented correct pair, and this fragment is
+     what proves it rather than the arithmetic. */
+  'boards — the selection rail counts':()=>{
+    const app=loadApp({files:['js/boards.js']});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+      moodBoards=[{id:'b1',ownerUid:'u1',visibility:'shared',title:'T',cards:[]}];
+      _editConnectors=[];_boardsConnSel=null;_boardsDrawOn=null;
+      _boardsComments=[{id:'m1',cardId:'a'},{id:'m2',cardId:'a'},{id:'m3',cardId:'a',resolved:true}];
+      _editCards=[{id:'a',type:'text',x:0,y:0,w:220,h:100,
+         labels:[{t:'See this',c:'green'},{t:'Fabric',c:'blue'}],
+         reactions:{'👍':['u1','u2'],'🔥':['u3']}},
+        {id:'z',type:'text',x:300,y:0,w:220,h:100}];`);
+    const rail=who=>{
+      app.run(`_boardsSelection=new Set(['${who}'])`);
+      const items=JSON.parse(app.run(`JSON.stringify(_boardsRailItems().filter(i=>i&&i.act))`));
+      return items.map(it=>
+        '<button class="rail-btn" data-act="'+it.act+'" title="'+it.label+'">'+
+        '<span class="rail-glyph">•</span><span>'+it.label+'</span>'+
+        (it.count?'<span class="board-rail-badge">'+(it.count>99?'99+':it.count)+'</span>':'')+
+        '</button>').join('');
+    };
+    return Promise.resolve({widths:[1900,1280],html:
+      '<div style="display:flex;gap:24px;align-items:flex-start">'+
+      '<div class="board-rail" style="position:relative">'+rail('a')+'</div>'+
+      '<div class="board-rail" style="position:relative">'+rail('z')+'</div>'+
+      '</div>'});
+  },
   'boards — the rail drag ghost':()=>{
     const G=(x,y,w,h,type,inner)=>
       '<div class="board-rail-ghost card type-'+type+'" style="left:'+x+'px;top:'+y+'px;'+

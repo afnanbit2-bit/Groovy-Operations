@@ -5710,6 +5710,47 @@ function _boardsRailPhoneOverflow(){
     .concat([{act:'comment-board',label:'Comment'},{act:'fit',label:'Fit view'}])
     .map(it=>({act:it.act,label:it.act==='line'?(_boardsLineMode?'Line tool: on':'Line tool'):it.label}));
 }
+/* ── WHAT THE SELECTED CARD ALREADY HAS ───────────────────────────────
+   The selection rail said what you could DO and nothing about what was
+   already there: Labels, Reactions and Comment were identical icons
+   whether the card carried twelve or none, so the only way to find out was
+   to open each panel in turn. Color was the one button on that rail
+   already answering its own question — `colorTile` paints the card's real
+   colour — and this is the rest of that idea.
+
+   DERIVED on every render, never stored: the rule the label library and
+   frame membership already hold. */
+function _boardsCommentCounts(){
+  // UNRESOLVED only, and this is THE definition — the card's own corner
+  // badge reads it too, so a card can never say 3 in the corner and 5 on
+  // the rail. It used to be an inline loop inside the badge painter.
+  const m={};
+  (_boardsComments||[]).forEach(c=>{
+    if(c&&c.cardId&&!c.resolved)m[c.cardId]=(m[c.cardId]||0)+1;
+  });
+  return m;
+}
+function _boardsRailCounts(sel){
+  const cards=Array.isArray(sel)?sel:[];
+  const cc=_boardsCommentCounts();
+  // LABELS ARE A SET, the other two are tallies, and the difference is the
+  // question each answers. Twelve cards all carrying "see this" are wearing
+  // ONE label — counting twelve would describe the selection's size, not
+  // its labels. A reaction and a comment are each their own event, so those
+  // add up.
+  const labels=new Set();
+  let reactions=0,comments=0;
+  cards.forEach(c=>{
+    if(!c)return;
+    (Array.isArray(c.labels)?c.labels:[]).forEach(l=>{
+      if(l&&l.t)labels.add(String(l.t).trim().toLowerCase());
+    });
+    const r=c.reactions&&typeof c.reactions==='object'?c.reactions:{};
+    Object.keys(r).forEach(k=>{if(Array.isArray(r[k]))reactions+=r[k].length;});
+    comments+=cc[c.id]||0;
+  });
+  return{labels:labels.size,reactions,comments};
+}
 function _boardsRailItems(){
   const canEdit=_boardsCanEdit(_editBoard);
   const sel=_boardsSelectedCards();
@@ -5918,11 +5959,11 @@ function _boardsRailItems(){
   // it leaves out lives one tap away behind More, which renders the SAME
   // item list the right-click menu builds.
   if(_boardsIsPhone()){
-    const ph=[];
+    const ph=[],phHave=_boardsRailCounts(sel);
     if(canEdit)ph.push({act:'color',label:'Color',icon:'color'});
-    if(canEdit)ph.push({act:'labels',label:'Labels',icon:'labels'});
-    if(canEdit)ph.push({act:'reactions',label:'Reactions',icon:'reactions'});
-    if(one)ph.push({act:'card-comment',label:'Comment',icon:'comment'});
+    if(canEdit)ph.push({act:'labels',label:'Labels',icon:'labels',count:phHave.labels});
+    if(canEdit)ph.push({act:'reactions',label:'Reactions',icon:'reactions',count:phHave.reactions});
+    if(one)ph.push({act:'card-comment',label:'Comment',icon:'comment',count:phHave.comments});
     ph.push({act:'more',label:'More',icon:'more'});
     ph.push({act:'deselect',label:'Done',icon:'done',done:true});
     return ph;
@@ -5939,10 +5980,11 @@ function _boardsRailItems(){
   // the rail read as a short list of things you do OFTEN. Delete keeps its
   // key, its right-click entry and the ⋯ entry, and Trash at the foot of
   // the add rail is still where a deleted card goes.
+  const have=_boardsRailCounts(sel);
   if(canEdit)items.push({act:'color-panel',label:'Color',colorTile:true});
-  if(canEdit)items.push({act:'labels',label:'Labels',icon:'labels'});
-  if(canEdit)items.push({act:'reactions',label:'Reactions',icon:'reactions'});
-  items.push({act:'card-comment',label:'Comment',icon:'comment'});
+  if(canEdit)items.push({act:'labels',label:'Labels',icon:'labels',count:have.labels});
+  if(canEdit)items.push({act:'reactions',label:'Reactions',icon:'reactions',count:have.reactions});
+  items.push({act:'card-comment',label:'Comment',icon:'comment',count:have.comments});
   if(one){
     if(one.type==='table'&&canEdit)items.push({act:'caption',label:'Caption',icon:'caption'});
     if(one.type==='file'){
@@ -6026,7 +6068,7 @@ function _boardsRenderRail(){
     if(it.drawWidths)return`<div class="rail-fmt-row" title="Pen width">${_BOARDS_DRAW_WIDTHS.map(x=>`<button class="board-pen-w${x.w===_boardsDrawWidth?' on':''}" data-act="draw:width:${x.w}" title="${x.label}"><span style="height:${x.w}px"></span></button>`).join('')}</div>`;
     // `glyph` is static markup from the item lists above (a bold B, an
     // italic I) — never user text, which is why it is not escaped.
-    return`<button class="rail-btn${it.on?' on':''}${it.off?' off':''}${it.danger?' danger':''}${it.done?' rail-done':''}${it.drag?' rail-draggable':''}" data-act="${it.off?'':it.act}"${it.drag?' data-drag="1"':''} title="${_boardsEsc(it.label)}${it.drag?' — click to place, or drag onto the board':''}">${it.glyph?`<span class="rail-glyph">${it.glyph}</span>`:_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span>${it.badge?'<span class="board-rail-badge" style="display:none"></span>':''}</button>`;
+    return`<button class="rail-btn${it.on?' on':''}${it.off?' off':''}${it.danger?' danger':''}${it.done?' rail-done':''}${it.drag?' rail-draggable':''}" data-act="${it.off?'':it.act}"${it.drag?' data-drag="1"':''} title="${_boardsEsc(it.label)}${it.drag?' — click to place, or drag onto the board':''}">${it.glyph?`<span class="rail-glyph">${it.glyph}</span>`:_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span>${it.badge?'<span class="board-rail-badge" style="display:none"></span>':''}${it.count?`<span class="board-rail-badge">${it.count>99?'99+':it.count}</span>`:''}</button>`;
   }).join('');
   // The count is painted after the markup exists, and again whenever the
   // trash changes underneath — it is derived from what is actually
@@ -11674,6 +11716,13 @@ function _boardsCommentsStart(boardId){
       _boardsComments=[];
       snap.forEach(d=>_boardsComments.push({id:d.id,...d.data()}));
       _boardsPaintCommentBadges();
+      // The rail carries the unresolved count now, so a comment arriving
+      // from somebody else has to move it — otherwise the badge quietly
+      // lies until the next render for whatever other reason. Repainting
+      // the rail is an innerHTML swap on one element, and the mode-swap
+      // animation is keyed on a MODE change rather than on a repaint, so
+      // this cannot replay it.
+      _boardsRenderRail();
       _boardsRenderDrawer();
       if(_boardsCommentPopCard)_boardsRenderCommentPop();
     },()=>{});
@@ -12114,8 +12163,7 @@ function _boardsCardComments(cardId){
   return _boardsComments.filter(c=>(c.cardId||null)===(cardId||null));
 }
 function _boardsPaintCommentBadges(){
-  const counts={};
-  _boardsComments.forEach(c=>{if(c.cardId&&!c.resolved)counts[c.cardId]=(counts[c.cardId]||0)+1;});
+  const counts=_boardsCommentCounts();   // the rail reads this too
   _editCards.forEach(c=>{
     const el=document.getElementById('board-cmt-'+c.id);
     if(!el)return;

@@ -5247,6 +5247,130 @@ module.exports=function(){
     s.ok('and none left behind after the drop',after===0,'after='+after);
   }
 
+  /* ── THE SELECTION RAIL SAYS WHAT THE CARD ALREADY HAS (Sept 2026) ────
+     Afnan: *"now do the same for the selection rail"*, after the tray and
+     the rail drag ghosts. NOTHING on the selection rail drags — `drag:true`
+     appears only in the three add-tool lists — so there is no ghost here;
+     what carries over is the PRINCIPLE, and the rail's own Color tile was
+     already the one button answering its own question. */
+  {
+    const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+      currentPage:'board-canvas'});
+    const {run}=app;
+    const boot=()=>run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+      moodBoards=[{id:'b1',ownerUid:'u1',visibility:'shared',title:'T',cards:[]}];
+      _editConnectors=[];_boardsConnSel=null;_boardsDrawOn=null;_boardsComments=[];
+      _editCards=[
+        {id:'a',type:'text',x:0,y:0,w:220,h:100,
+         labels:[{t:'See this',c:'green'},{t:'Fabric',c:'blue'}],
+         reactions:{'👍':['u1','u2'],'🔥':['u3']}},
+        {id:'b',type:'text',x:300,y:0,w:220,h:100,
+         labels:[{t:'see this',c:'green'}],reactions:{'👍':['u1']}},
+        {id:'c',type:'text',x:600,y:0,w:220,h:100}
+      ];
+      _boardsSelection=new Set(['a']);`);
+
+    s.section('nothing on the selection rail drags, so there is no ghost');
+    boot();
+    // The premise of the round, asserted rather than asserted-in-prose: the
+    // drag flag lives only on the tools that PLACE something.
+    s.eq('no selection-rail item is a drag source',
+      run(`JSON.stringify(_boardsRailItems().filter(i=>i&&i.drag).map(i=>i.act))`),'[]');
+    s.ok('while the add rail is full of them',
+      run(`_BOARDS_RAIL_MAIN.filter(i=>i.drag).length`)>=5);
+
+    s.section('it carries what the card actually has');
+    boot();
+    const counts=()=>JSON.parse(run(`JSON.stringify(_boardsRailCounts(_boardsSelectedCards()))`));
+    s.eq('two labels on card a',counts().labels,2);
+    s.eq('three reactions on card a',counts().reactions,3);
+    s.eq('and no comments yet',counts().comments,0);
+
+    /* Labels are a SET and the tallies are sums, which is the one real
+       decision here: twelve cards wearing "see this" are wearing ONE
+       label, and counting twelve would describe the selection's size. */
+    s.section('labels are a set, reactions and comments are tallies');
+    boot();
+    run(`_boardsSelection=new Set(['a','b'])`);
+    s.eq('the shared label counts once, case and space ignored',counts().labels,2);
+    s.eq('but every reaction is its own',counts().reactions,4);
+    run(`_boardsSelection=new Set(['c'])`);
+    s.eq('a bare card has nothing',
+      counts().labels+','+counts().reactions+','+counts().comments,'0,0,0');
+
+    /* THE COUNT RULE IS SHARED WITH THE CARD'S OWN CORNER BADGE, so the
+       two can never disagree about the same card — which is the whole
+       reason it was extracted. */
+    s.section('comments count the unresolved ones, the card badge\'s own rule');
+    boot();
+    run(`_boardsComments=[
+      {id:'m1',cardId:'a',text:'x'},
+      {id:'m2',cardId:'a',text:'y'},
+      {id:'m3',cardId:'a',text:'z',resolved:true},
+      {id:'m4',cardId:'b',text:'q'},
+      {id:'m5',text:'board-level, no card'}
+    ]`);
+    s.eq('two unresolved on a, the resolved one skipped',counts().comments,2);
+    s.eq('and the shared map agrees',
+      run(`JSON.stringify(_boardsCommentCounts())`),'{"a":2,"b":1}');
+    s.ok('a board-level comment belongs to no card',
+      !JSON.parse(run(`JSON.stringify(_boardsCommentCounts())`)).hasOwnProperty('undefined'));
+    run(`_boardsSelection=new Set(['a','b'])`);
+    s.eq('a multi-selection adds them up',counts().comments,3);
+
+    /* AND THE PAINTER REALLY READS IT. Asserting the shared map alone left
+       the claim untested: un-sharing the rule kept every assertion green,
+       because the card's badge writes into DOM nodes the harness has none
+       of. Registering those nodes and reading back what the painter wrote
+       is what closes it — the corner badge and the rail now have to agree
+       about the same card or this fails. */
+    run(`['a','b','c'].forEach(function(id){
+      var n=document.createElement('span');n.id='board-cmt-'+id;document.body.appendChild(n);
+    });_boardsPaintCommentBadges();`);
+    const painted=id=>run(`(document.getElementById('board-cmt-${id}')||{}).textContent`);
+    run(`_boardsSelection=new Set(['a'])`);
+    s.eq('the corner badge says what the rail says',painted('a'),String(counts().comments));
+    run(`_boardsSelection=new Set(['b'])`);
+    s.eq('on the other card too',painted('b'),String(counts().comments));
+    run(`_boardsSelection=new Set(['c'])`);
+    s.eq('and a card with none paints nothing, which is zero',
+      painted('c')||'(empty)','(empty)');
+    s.eq('which is the count the rail carries',counts().comments,0);
+
+    s.section('the rail draws them, and absence IS zero');
+    boot();
+    run(`_boardsComments=[{id:'m1',cardId:'a',text:'x'}]`);
+    const item=a=>JSON.parse(run(`JSON.stringify(_boardsRailItems().find(i=>i&&i.act==='${a}')||null)`));
+    s.eq('Labels carries its count',(item('labels')||{}).count,2);
+    s.eq('Reactions carries its count',(item('reactions')||{}).count,3);
+    s.eq('Comment carries its count',(item('card-comment')||{}).count,1);
+    /* A zero must paint NO badge — a "0" chip on every button is noise on
+       a rail whose point is being a short list. The renderer keys on the
+       count being truthy, so what this suite can hold is that a bare card
+       really does report 0; the MARKUP is smoke-layout's, since the button
+       is built inside _boardsRenderRail's own map and needs a real DOM. */
+    run(`_boardsSelection=new Set(['c'])`);   // the card carrying nothing
+    s.eq('a bare card reports zero, which the renderer draws as nothing',
+      (item('labels')||{}).count,0);
+    s.eq('and so do the other two',
+      (item('reactions')||{}).count+','+(item('card-comment')||{}).count,'0,0');
+
+    s.section('and a malformed card cannot take the rail down');
+    boot();
+    run(`_editCards=[{id:'a',type:'text',labels:'not-an-array',reactions:'nope'},
+                    {id:'b',type:'text',labels:[null,{},{t:''}],reactions:{'x':'no'}}];
+         _boardsSelection=new Set(['a','b'])`);
+    // Both of these go through a try, so losing the guard NAMES the finding
+    // instead of taking the whole suite down with it — the lesson this
+    // file records, and the first cut of this block broke it twice.
+    const safe=expr=>{try{return run(expr);}catch(e){return 'THREW: '+(e&&e.message||e);}};
+    s.eq('garbage counts as nothing rather than throwing',
+      safe(`(function(){var n=_boardsRailCounts(_boardsSelectedCards());
+        return n.labels+','+n.reactions;})()`),'0,0');
+    s.eq('and a null selection is still answerable',
+      safe(`JSON.stringify(_boardsRailCounts(null))`),'{"labels":0,"reactions":0,"comments":0}');
+  }
+
   // ── a PDF card is sized to its page ─────────────────────────────────────
   // At the 200×110 file default the name row and the Open/Download buttons
   // left the page thumbnail a ~20px strip. Reported with a screenshot of a
