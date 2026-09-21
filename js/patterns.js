@@ -2549,7 +2549,11 @@ async function _ptnRecordRevision(p,reason){
   const notice={patternId:p.id,patternCode:p.code,patternName:p.name||'',revisionN:revN,
     articleCodes,summary:String(reason).trim(),changed:diff.count,lines,
     raisedBy:by,raisedByName:byName,raisedAt:now,status:'open',ackBy:'',ackAt:'',ackNote:''};
-  const recipients=_PATTERN_CUTTING_USERS.slice();
+  // Whoever actually holds ptn.cut right now, not a list baked in at load
+  // time — a stored grant can move it. Falls back to the default list if
+  // USER_DEFS has not loaded, so a notice is never silently sent to nobody.
+  const recipients=(typeof permHolders==='function'&&permHolders('ptn.cut').length)
+    ?permHolders('ptn.cut'):_PATTERN_CUTTING_USERS.slice();
   try{
     const batch=writeBatch(db);
     batch.set(doc(db,'patterns',p.id,'revisions',revId),rev);

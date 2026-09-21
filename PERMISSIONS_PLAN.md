@@ -119,13 +119,24 @@ backed *initially by exactly today's hardcoded lists*.
 > Without it, a 95-site hand edit is trust; with it, it is proof.
 
 **Phase 2 — the data.** `user_accounts/{uid}`; `can()` prefers a stored grant,
-falls back to the Phase-1 default. No rules change, no UI.
+falls back to the Phase-1 default. No UI.
+
+> **CORRECTION, found while building it: this DOES need a republish**, and
+> the claim under Phase 4 that it is "the only phase needing a Console
+> republish" was wrong. Two new collections (`user_accounts`,
+> `permission_presets`) are default-deny until they have a `match` block,
+> so reading your own grant is refused without one.
+> `tests/invariants.test.js` caught it — it fails on a collection the
+> client queries with no rule. Phase 4 is still where the ~10 BOUNDARY
+> mirrors change; this is a smaller, separate republish.
 
 **Phase 3 — the screen.** Permissions tab on the profile, owners only, with
 the boundary/nav distinction visible.
 
-**Phase 4 — the boundary.** Claims + the ~10 rules mirrors. **The only phase
-needing a Console republish.**
+**Phase 4 — the boundary.** Claims + the ~10 rules mirrors. ~~The only phase
+needing a Console republish.~~ — **wrong, see the correction under Phase 2.**
+It is the phase where the BOUNDARY capabilities change, which is the one
+that matters most, but not the only republish.
 
 **Phase 5 — accounts.** Create / disable / offboard; email login; retire
 `USER_DEFS` to identity only.

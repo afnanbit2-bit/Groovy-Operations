@@ -7672,6 +7672,68 @@ like. **`firestore.rules` is the only real boundary**, and the capabilities
 marked BOUNDARY in the rule table must be mirrored there. The rest decide
 what someone is OFFERED, not what the database will accept.
 
+### Phase 2 — a stored grant, per person (Sept 2026)
+
+The rule table is the **DEFAULT** now; a person can also carry a stored
+grant and `can()` prefers it. **Nothing has one yet**, so every answer
+still comes from the table — which is what keeps the parity snapshot green
+through this phase too.
+
+Three layers, most specific first: the person's own override
+(`user_accounts/{uid}.caps[cap]`) → their role preset
+(`permission_presets/{name}.caps[cap]`) → the rule table.
+
+- **`false` IS AN ANSWER, NOT AN ABSENCE, and this is the whole phase.**
+  An override has to be able to **revoke** a right the default grants, so
+  every lookup asks whether the key is PRESENT
+  (`hasOwnProperty`), never whether the value is truthy. Verified by
+  changing one lookup to `g.caps[cap]`: six assertions fail, and the
+  symptom is that **every revocation silently does nothing** — the worst
+  failure this module could have.
+- **`permExplain(cap, subject)` returns `{allowed, source, detail}`**, so
+  the admin screen can say *why* ("granted directly", "from the
+  floor-lead preset", "the default for this role") rather than showing a
+  bare tick. `can()` is its `allowed` field.
+- **Held in memory, keyed by uid, so `can()` stays SYNCHRONOUS.** It is
+  called from inside render functions; an async permission check would
+  mean rewriting every call site in the app. Keyed by **uid, not
+  username** — verified by making the lookup take the first grant in the
+  map, which fails "another account's grant does not reach this one".
+- **`permLoadGrants()` CANNOT REJECT and is NEVER AWAITED**, both for the
+  documented reasons. A denied or hanging read leaves every answer on the
+  built-in default — i.e. exactly today's behaviour — rather than on
+  "nobody can do anything". A missing document is a **normal** state, not
+  an error: it is every account today.
+- **It repaints only when an answer actually CHANGED.** `startApp`
+  compares `permsFor(session)` before and after, so a normal sign-in
+  (nothing stored) repaints nothing at all. The window between first paint
+  and the grant landing shows the built-in answer, which is not a hole —
+  `firestore.rules` is the boundary and this only decides what is offered.
+- **A rights list derived at LOAD time cannot see a grant written later.**
+  Phase 2 found one: `js/patterns.js` picked cutting-notice recipients
+  from `_PATTERN_CUTTING_USERS`, baked in when the file parses. It asks
+  `permHolders('ptn.cut')` at send time now, falling back to the static
+  list if `USER_DEFS` has not loaded, so a notice is never silently sent
+  to nobody. Same shape as the `_EDIT_APPROVERS` case in Phase 1 — **if
+  a third one appears, this is the pattern.**
+
+**`firestore.rules` CHANGED — IT NEEDS A REPUBLISH.** Two new collections.
+`user_accounts` is **read-self-only** (owners read all, for the admin
+screen) — a permission grant says what somebody is trusted with, which is
+not the directory-shaped thing `user_profiles` is — and **write is owners
+only on both**, because anyone who could write their own `user_accounts`
+document could grant themselves anything the client checks.
+`permission_presets` is readable by everyone signed in, since `can()`
+resolves a preset locally and holds no personal data.
+
+**The per-capability BOUNDARY mirrors elsewhere in the file are
+UNCHANGED, on purpose.** A stored grant does not yet widen any of them, so
+today a grant is nav and UI scoping only. Closing that gap is Phase 4,
+with its own republish. **`PERMISSIONS_PLAN.md` claimed Phase 4 was the
+only phase needing a republish; that was wrong and is corrected there** —
+`tests/invariants.test.js` caught it, because a collection the client
+queries with no `match` block is default-deny.
+
 **STILL INLINE, deliberately — Phase 1b.** 58 permission sites have no
 named helper and so have no "before" to snapshot: `po.create`/`po.edit`
 (the `session.canPO` flag), `intel.view` and `monitor.view` (nav-only, and

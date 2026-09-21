@@ -139,6 +139,26 @@ async function startApp(){
   // after the first paint. That is a flicker. The alternative was a blank
   // app. Nothing on the critical path may wait on the network.
   if(typeof profileBootstrap==='function'){try{profileBootstrap();}catch(_){}}
+  // Whatever permissions this person has been granted beyond the built-in
+  // defaults. SAME RULE — never awaited, for exactly the reason above.
+  //
+  // The cost of not awaiting is a window, between the first paint and the
+  // grant landing, where the nav shows the BUILT-IN answer. That is not a
+  // hole: firestore.rules is the boundary, and this only decides what is
+  // offered. When the grant does land and it changes an answer, the nav is
+  // rebuilt and the page repainted — and only then, so a normal sign-in
+  // (nothing stored, which is every account today) repaints nothing at all.
+  if(typeof permLoadGrants==='function'){
+    try{
+      const before=(typeof permsFor==='function')?permsFor(session).join(','):'';
+      permLoadGrants().then(()=>{
+        const after=(typeof permsFor==='function')?permsFor(session).join(','):'';
+        if(after===before)return;
+        try{if(typeof buildNav==='function')buildNav();}catch(_){}
+        try{if(typeof renderPage==='function'&&currentPage)renderPage(currentPage);}catch(_){}
+      }).catch(()=>{});
+    }catch(_){}
+  }
   // Marketing reminders + the lead's bell. Same rule: never awaited.
   if(typeof mktBootstrap==='function'){try{mktBootstrap();}catch(_){}}
   // Inject the notification bell for everyone (HRM notifs are routed by user/role).

@@ -202,5 +202,134 @@ module.exports=async function(){
         .every(c=>!a.run('can('+JSON.stringify(c)+')')));
   }
 
+  s.section('Phase 2 — a stored grant overrides the default');
+  {
+    setSubject('haris');
+    const U='uid-haris';
+    s.ok('with nothing stored, the built-in answer stands',
+      !a.run("can('pay.view')")&&!a.run("permGrantsLoaded()"));
+
+    // GRANT
+    a.run("permSetGrants({'"+U+"':{caps:{'pay.view':true},preset:'',username:'haris'}},{})");
+    s.ok('an override grants a right the default refuses',a.run("can('pay.view')"));
+    s.eq('and says where it came from',a.run("permExplain('pay.view').source"),'override');
+    s.ok('a capability the override does not mention falls through',
+      !a.run("can('pay.run')"));
+    s.eq('and says so',a.run("permExplain('pay.run').source"),'default');
+    // The original helper must move with it — this is what proves the
+    // grant reaches the app rather than only can().
+    s.ok('the ORIGINAL helper moves with it',a.run('_canViewPayroll()'));
+
+    // REVOKE — the half that is easy to get wrong
+    setSubject('afnan');
+    a.run("permSetGrants({'uid-afnan':{caps:{'pay.run':false},preset:'',username:'afnan'}},{})");
+    s.ok('an override can REVOKE a right the default grants',!a.run("can('pay.run')"));
+    s.eq('and it reads as an override, not a default',
+      a.run("permExplain('pay.run').source"),'override');
+    s.ok('the original helper is revoked too',!a.run('_canProcessPayroll()'));
+    // `false` and absent must never be confused: a revocation that is
+    // read as "not mentioned" silently does nothing, which is the worst
+    // failure this module could have.
+    s.ok('a revoked right is distinguishable from an unmentioned one',
+      a.run("permExplain('pay.run').source")!==a.run("permExplain('pay.view').source"));
+
+    // PRESETS
+    a.run("permSetGrants({'uid-haris':{caps:{},preset:'floor-lead',username:'haris'}},"+
+          "{'floor-lead':{caps:{'pay.view':true,'qc.work':false}}})");
+    setSubject('haris');
+    s.ok('a preset grants',a.run("can('pay.view')"));
+    s.ok('and a preset revokes',!a.run("can('qc.work')"));
+    s.eq('named in the explanation',a.run("permExplain('pay.view').detail"),'floor-lead');
+    a.run("permSetGrants({'uid-haris':{caps:{'pay.view':false},preset:'floor-lead',username:'haris'}},"+
+          "{'floor-lead':{caps:{'pay.view':true}}})");
+    s.ok('a personal override BEATS the preset',!a.run("can('pay.view')"));
+    s.eq('and says which layer won',a.run("permExplain('pay.view').source"),'override');
+    a.run("permSetGrants({'uid-haris':{caps:{},preset:'nope',username:'haris'}},{})");
+    s.ok('a preset that does not exist falls through to the default',
+      !a.run("can('pay.view')")&&a.run("permExplain('pay.view').source")==='default');
+
+    // A grant is keyed by UID, not username — the whole reason profiles
+    // are keyed that way. Somebody else's grant must not leak across.
+    a.run("permSetGrants({'uid-afnan':{caps:{'qc.work':true},preset:'',username:'afnan'}},{})");
+    setSubject('haris');
+    s.ok('another account\u2019s grant does not reach this one',
+      a.run("permExplain('qc.work').source")==='default');
+    s.ok('and the subject override reads THEIR grant, not the session\u2019s',
+      a.run("can('qc.work',{uid:'uid-afnan',u:'afnan',role:'owner'})"));
+
+    s.ok('permGrantFor returns a COPY',
+      a.run("(function(){var g=permGrantFor('uid-afnan');g.caps['qc.work']=false;"+
+            "return permGrantFor('uid-afnan').caps['qc.work']===true;})()"));
+    s.eq('an account with nothing stored has no grant',
+      a.run("permGrantFor('uid-nobody')"),null);
+    s.eq('permPresetNames lists what is held',
+      a.run("permSetGrants({},{b:{caps:{}},a:{caps:{}}});permPresetNames().join(',')"),'a,b');
+
+    // Back to nothing stored, so the parity section above stays true for
+    // any later block.
+    a.run("permSetGrants({},{})");
+  }
+
+  s.section('Phase 2 — the loader cannot reject');
+  {
+    const mk=extra=>harness.loadApp({files:FILES,globals:Object.assign({localStorage:LS},extra)});
+    // A denied read must leave every answer on the built-in default —
+    // i.e. exactly today's behaviour — never on "nobody can do anything".
+    const denied=mk({getDocs:async()=>{throw new Error('Missing or insufficient permissions');},
+                     getDoc:async()=>{throw new Error('Missing or insufficient permissions');}});
+    denied.run("session={uid:'uid-afnan',u:'afnan',name:'Afnan',role:'owner'}");
+    let threw=null;
+    await denied.run("permLoadGrants()").catch(e=>{threw=e&&e.message||String(e);});
+    s.eq('a denied read does not reject',threw,null);
+    s.ok('and the built-in answer still stands',denied.run("can('pay.run')"));
+    s.eq('reported as a default, not a grant',denied.run("permExplain('pay.run').source"),'default');
+
+    const ok=mk({
+      getDocs:async()=>({docs:[{id:'floor',data:()=>({caps:{'pay.view':true}})}]}),
+      getDoc:async()=>({exists:()=>true,data:()=>({uid:'uid-haris',preset:'floor',caps:{}})})
+    });
+    ok.run("session={uid:'uid-haris',u:'haris',name:'Haris',role:'worker'}");
+    await ok.run("permLoadGrants()");
+    s.ok('a real read applies the preset',ok.run("can('pay.view')"));
+    s.eq('from the preset layer',ok.run("permExplain('pay.view').source"),'preset');
+    s.ok('and it is marked loaded',ok.run('permGrantsLoaded()'));
+
+    // Missing document is a NORMAL state, not an error: it is every
+    // account today.
+    const none=mk({getDocs:async()=>({docs:[]}),getDoc:async()=>({exists:()=>false,data:()=>({})})});
+    none.run("session={uid:'uid-afnan',u:'afnan',name:'Afnan',role:'owner'}");
+    await none.run("permLoadGrants()");
+    s.ok('no stored document leaves the defaults intact',none.run("can('pay.run')"));
+    s.eq('and reads as a default',none.run("permExplain('pay.run').source"),'default');
+  }
+
+  s.section('Phase 2 — startApp loads it but never waits for it');
+  {
+    const src=require('fs').readFileSync(require('path').join(harness.ROOT,'js/auth.js'),'utf8');
+    const body=src.slice(src.indexOf('async function startApp()'),
+                         src.indexOf('async function startApp()')+3000);
+    s.ok('startApp calls permLoadGrants',/permLoadGrants\s*\(\s*\)/.test(body));
+    // The white-screen incident: an awaited read that never settles parks
+    // startApp forever and the app renders nothing. tests/smoke-startapp.js
+    // is the real guard; this one names the specific call.
+    s.ok('and does NOT await it',!/await\s+permLoadGrants/.test(body));
+    s.ok('it repaints only when an answer actually changed',
+      /after===before\)return/.test(body));
+  }
+
+  s.section('Phase 2 — nothing derives a rights list at load time any more');
+  {
+    const ptn=require('fs').readFileSync(require('path').join(harness.ROOT,'js/patterns.js'),'utf8');
+    // A list baked in when the file parses cannot see a grant written
+    // later. Both places that pick notification recipients ask at send
+    // time now; this is the one Phase 2 found.
+    s.ok('the cutting notice asks who holds ptn.cut at send time',
+      /permHolders\('ptn\.cut'\)/.test(ptn));
+    const store=require('fs').readFileSync(require('path').join(harness.ROOT,'js/store.js'),'utf8');
+    s.ok('and the store edit notice asks who holds store.approve',
+      /permHolders\('store\.approve'\)/.test(store));
+    s.ok('with no _EDIT_APPROVERS list left behind',!/_EDIT_APPROVERS/.test(store));
+  }
+
   return s;
 };

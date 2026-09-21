@@ -130,6 +130,103 @@ const PERM_PROFILE_PROTECTED=['afnan','ammar'];
 /** A COPY, like permRuleUsers — never a live reference to the table. */
 function permProtected(){ return PERM_PROFILE_PROTECTED.slice(); }
 
+/* ═══ PHASE 2 — a stored grant, per person ═══════════════════════════
+   The rule table above is the DEFAULT. A person can also carry a stored
+   grant, and can() prefers it. Nothing has one yet, so until something
+   writes to `user_accounts` every answer still comes from the table —
+   which is what keeps the parity snapshot green through this phase too.
+
+   Three layers, most specific first:
+     1. the person's OWN override   user_accounts/{uid}.caps[cap]
+     2. their role PRESET           permission_presets/{name}.caps[cap]
+     3. the rule table above
+
+   `false` IS AN ANSWER, not an absence. An override has to be able to
+   REVOKE a right the default grants, so every lookup asks whether the key
+   is PRESENT, never whether the value is truthy — `{'pay.view':false}` and
+   `{}` mean completely different things. Getting that wrong would make a
+   revocation silently do nothing, which is the worst failure this module
+   could have.
+
+   Held in memory, keyed by uid, so can() stays SYNCHRONOUS: it is called
+   from inside render functions, and an async permission check would mean
+   rewriting every call site in the app. */
+let _PERM_GRANTS={};    // uid  -> {caps:{}, preset:'', username:''}
+let _PERM_PRESETS={};   // name -> {caps:{}}
+let _PERM_GRANTS_LOADED=false;
+
+/* Where a person's answer to one capability actually comes from.
+   Returned as data so the admin screen can SAY why ("granted directly",
+   "from the Manager preset", "the default for this role") rather than
+   showing a bare tick. can() is this function's `allowed` field. */
+function permExplain(cap,subject){
+  const rule=PERM_RULES[cap];
+  if(!rule)return{allowed:false,source:'unknown',detail:'no such capability'};
+  if(subject===undefined)subject=(typeof session!=='undefined'&&session)?session:null;
+  const g=(subject&&subject.uid)?_PERM_GRANTS[subject.uid]:null;
+  if(g&&g.caps&&Object.prototype.hasOwnProperty.call(g.caps,cap))
+    return{allowed:!!g.caps[cap],source:'override',detail:'set on this account'};
+  if(g&&g.preset&&_PERM_PRESETS[g.preset]&&_PERM_PRESETS[g.preset].caps
+     &&Object.prototype.hasOwnProperty.call(_PERM_PRESETS[g.preset].caps,cap))
+    return{allowed:!!_PERM_PRESETS[g.preset].caps[cap],source:'preset',detail:g.preset};
+  return{allowed:!!_permEval(rule,subject),source:'default',detail:'the built-in rule'};
+}
+
+/* Replace what is held in memory. Phase 3's screen calls this after a
+   write so the UI updates without a reload; the loader below calls it
+   with what Firestore returned. Kept separate from the loader so a test
+   can drive the resolution chain with no Firestore at all. */
+function permSetGrants(grants,presets){
+  _PERM_GRANTS=grants||{};
+  _PERM_PRESETS=presets||{};
+  _PERM_GRANTS_LOADED=true;
+}
+function permGrantsLoaded(){ return _PERM_GRANTS_LOADED; }
+/** The stored grant for one account, or null. A COPY. */
+function permGrantFor(uid){
+  const g=uid&&_PERM_GRANTS[uid];
+  return g?JSON.parse(JSON.stringify(g)):null;
+}
+/** Every preset name currently held. */
+function permPresetNames(){ return Object.keys(_PERM_PRESETS).sort(); }
+
+/**
+ * Load the stored grants.
+ *
+ * CANNOT REJECT. It is called from startApp and is never awaited — see
+ * the note there, and "Loading must never hang" in CLAUDE.md. A refused
+ * or hanging read leaves every answer on the Phase-1 default, which is
+ * exactly today's behaviour, so the app degrades to "as it was" rather
+ * than to "nobody can do anything".
+ *
+ * `everyone` is for the admin screen; by default a person reads only
+ * their OWN account document, which is all the rules let them read.
+ */
+async function permLoadGrants(opts){
+  opts=opts||{};
+  const grants={},presets={};
+  const uid=opts.uid||((typeof session!=='undefined'&&session&&session.uid)||'');
+  try{
+    const snap=await getDocs(collection(db,'permission_presets'));
+    snap.docs.forEach(d=>{const v=d.data()||{};presets[d.id]={caps:v.caps||{}};});
+  }catch(e){ /* no presets is a normal state, not an error */ }
+  try{
+    if(opts.everyone){
+      const snap=await getDocs(collection(db,'user_accounts'));
+      snap.docs.forEach(d=>{const v=d.data()||{};
+        grants[d.id]={caps:v.caps||{},preset:v.preset||'',username:v.username||''};});
+    }else if(uid){
+      const d=await getDoc(doc(db,'user_accounts',uid));
+      if(d&&d.exists&&d.exists()){const v=d.data()||{};
+        grants[uid]={caps:v.caps||{},preset:v.preset||'',username:v.username||''};}
+    }
+  }catch(e){
+    try{console.warn('[permissions] could not read stored grants: '+(e&&e.message||e));}catch(_){}
+  }
+  permSetGrants(grants,presets);
+  return{grants,presets};
+}
+
 /* Evaluate one rule against a subject. `subject` is a session-shaped
    object — {u, role, …flags} — or null for nobody signed in. */
 function _permEval(rule,subject){
@@ -168,7 +265,10 @@ function can(cap,subject){
     return false;
   }
   if(subject===undefined)subject=(typeof session!=='undefined'&&session)?session:null;
-  return !!_permEval(rule,subject);
+  // Fast path: with nothing stored — which is every account until the
+  // admin screen writes one — this is the Phase-1 rule table, untouched.
+  if(!_PERM_GRANTS_LOADED)return !!_permEval(rule,subject);
+  return !!permExplain(cap,subject).allowed;
 }
 
 /**
@@ -210,3 +310,9 @@ window.permsFor=permsFor;
 window.permHolders=permHolders;
 window.permRuleUsers=permRuleUsers;
 window.permProtected=permProtected;
+window.permExplain=permExplain;
+window.permSetGrants=permSetGrants;
+window.permGrantsLoaded=permGrantsLoaded;
+window.permGrantFor=permGrantFor;
+window.permPresetNames=permPresetNames;
+window.permLoadGrants=permLoadGrants;

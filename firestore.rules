@@ -268,6 +268,43 @@ service cloud.firestore {
                     );
       allow delete: if isOwner();
     }
+
+    // ── Permissions (Sept 2026) ──────────────────────────────────────
+    // js/permissions.js answers "may this person do X?" through can(),
+    // over a built-in rule table. These two collections are the OPTIONAL
+    // layer on top of it: a per-account override, and a named preset
+    // several accounts can share. Nothing is stored in either yet, and
+    // while that is true every answer still comes from the built-in table.
+    //
+    // READ IS SELF-ONLY on user_accounts, deliberately. A permission grant
+    // says what somebody is trusted with, which is not the same kind of
+    // thing as the display name and job title in user_profiles above —
+    // that one is a directory and is readable by everyone signed in.
+    // Owners read the lot, because the admin screen has to show it.
+    //
+    // WRITE IS OWNERS ONLY, on both. This is the boundary for the
+    // permission system itself: if anyone could write their own
+    // user_accounts document they could grant themselves anything the
+    // client checks. The mirrors for the individual BOUNDARY capabilities
+    // are the existing per-collection rules elsewhere in this file, and
+    // they are unchanged — a stored grant does not yet widen any of them.
+    // Closing that gap is its own phase, with its own republish.
+    match /user_accounts/{uid} {
+      allow read:  if signedIn() && (uid == request.auth.uid || isOwner());
+      // The document id IS the account, and `uid` inside it must agree —
+      // the user_profiles rule above takes the same care, for the same
+      // reason: a payload claiming another uid must not be writable.
+      allow write: if isOwner() && request.resource.data.uid == uid;
+      allow delete: if isOwner();
+    }
+    // Readable by everyone signed in: can() resolves a person's preset
+    // locally, so the client needs the preset it was given. A preset holds
+    // no personal data — it is a named set of capabilities.
+    match /permission_presets/{name} {
+      allow read:  if signedIn();
+      allow write, delete: if isOwner();
+    }
+
     // Mood Boards (Phase 2 of the Notion+Milanote module, Sept 2026) — the
     // Milanote half, reached through the same Creative Hub. Same
     // TEAM/PRIVATE pattern as notes_pages above: 'shared' boards readable
