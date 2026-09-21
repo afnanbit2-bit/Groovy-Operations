@@ -607,6 +607,37 @@ module.exports=function(){
      - It must never be in the DOM at rest. It is built with createElement
        in _boardsStashZone, never written into any render, so there is no
        markup that could leave a 96px strip sitting over the canvas. */
+  /* ── The Unsorted tray's preview must not CROP (Sept 2026) ───────────
+     Afnan circled five items: a full-length model reference was rendering
+     as the strip across its middle — a pair of legs — because the
+     thumbnail was `object-fit:cover` in a fixed 84px box. A tray item is
+     looked at to RECOGNISE it, so nothing about it may be cropped away.
+
+     No layout fragment can hold this: smoke-layout measures geometry,
+     contrast and hit-testing, and a cropped picture is none of those — put
+     `cover` back and all six of its Unsorted-tray jobs still pass, which
+     is exactly why the rule lives here instead. */
+  s.section('the tray thumbnail shows the whole picture');
+  {
+    const css=read('css/main.css');
+    const rule=(css.match(/\.board-tray-thumb\{[^}]*\}/)||[''])[0];
+    s.ok('the thumbnail has a rule',rule.length>30,rule.slice(0,60));
+    s.ok('it is object-fit:contain',/object-fit:contain/.test(rule),rule);
+    s.ok('and never cover, which crops to the middle',!/object-fit:cover/.test(rule),rule);
+    // It also got bigger, which is half of "better drag to drop movement":
+    // the thumbnail IS the grab target.
+    const h=Number((rule.match(/height:(\d+)px/)||[])[1]||0);
+    s.ok('and it is a target worth aiming at',h>=120,'height:'+h+'px');
+    /* The rows must size to their CONTENT. The list is flex:1 in a flex
+       column, so it has a definite height, and its auto rows were taking an
+       equal share of it — latent while an 84px thumbnail happened to fit
+       that share, and the moment the picture grew every item was squashed
+       around it and each label laid out entirely outside its own
+       overflow:hidden card. */
+    const list=(css.match(/\.board-tray-list\{[^}]*\}/)||[''])[0];
+    s.ok('the list sizes its rows to content',/grid-auto-rows:min-content/.test(list),list);
+  }
+
   s.section('the Unsorted peek zone is inert and never rendered at rest');
   {
     const css=read('css/main.css'),src=read('js/boards.js');

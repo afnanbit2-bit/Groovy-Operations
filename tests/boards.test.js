@@ -4987,6 +4987,145 @@ module.exports=function(){
     }
   }
 
+  /* ── THE UNSORTED TRAY: BIGGER, SORTED, AND NOT CROPPED (Sept 2026) ───
+     Afnan, with five items circled: *"make unsorted bigger for better drag
+     to drop movement + unsorted should have sort by category option in it
+     as well ( links ) ( images ) ( files ) ( etc. etc. ) + the preview of
+     unsorted should be logically well as well as the current model preview
+     is not right."*
+
+     The third one was a real bug: the thumbnail was `object-fit:cover` in a
+     fixed 84px box, so a full-length model reference rendered as the strip
+     across its middle — a pair of legs. That half is CSS and is held by
+     tests/smoke-layout.js; this suite holds the filter, and in particular
+     the one thing a filtered list can get catastrophically wrong. */
+  {
+    const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+      currentPage:'board-canvas'});
+    const {run}=app;
+    const ITEMS=`[
+      {id:'a',kind:'image',name:'Model REF 1',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg'},
+      {id:'b',kind:'link', linkUrl:'https://x.test/1',linkTitle:'x.test'},
+      {id:'c',kind:'file', fileName:'oil-wash.pdf',fileUrl:'https://res.cloudinary.com/x/image/upload/v1/o.pdf'},
+      {id:'d',kind:'image',name:'Model Ref 3',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/d.jpg'},
+      {id:'e',kind:'link', linkUrl:'https://y.test/2',linkTitle:'y.test'},
+      {id:'f',kind:'cards',name:'Fabric · 2 cards',cards:[{id:'k',type:'column',title:'Fabric'}]}
+    ]`;
+    const boot=(items)=>run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+      moodBoards=[{id:'b1',ownerUid:'u1',visibility:'shared',title:'T',cards:[]}];
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();
+      _editUnsorted=${items||ITEMS};_boardsTrayFilter='all';_boardsTrayOpen=true;`);
+
+    s.section('every item lands in exactly one bucket');
+    boot();
+    s.eq('an image',run(`_boardsTrayKind(_editUnsorted[0])`),'image');
+    s.eq('a link',run(`_boardsTrayKind(_editUnsorted[1])`),'link');
+    s.eq('a file',run(`_boardsTrayKind(_editUnsorted[2])`),'file');
+    s.eq('a stashed container',run(`_boardsTrayKind(_editUnsorted[5])`),'cards');
+    // A stashed IMAGE card carries kind:'image' beside its `cards`, and it
+    // is a picture — it belongs where somebody looking for one would go.
+    s.eq('a stashed image card files under Images, not Cards',
+      run(`_boardsTrayKind({kind:'image',imageUrl:'x',cards:[{id:'k',type:'image'}]})`),'image');
+    s.eq('and something written before the kinds settled still buckets',
+      run(`_boardsTrayKind({id:'z'})`),'text');
+
+    s.section('the chips are derived from what is actually there');
+    boot();
+    s.eq('only the kinds present, with counts',
+      run(`JSON.stringify(_boardsTrayCats().map(c=>c.k+':'+c.n))`),
+      '["image:2","link:2","file:1","cards:1"]');
+    s.ok('no chip for a category holding nothing',
+      !JSON.parse(run(`JSON.stringify(_boardsTrayCats().map(c=>c.k))`)).includes('text'));
+    const chips=run(`_boardsTrayCatsHTML()`);
+    s.ok('All comes first and counts everything',/All<span[^>]*>6</.test(chips),chips.slice(0,120));
+    s.ok('and the active one is marked',/board-tray-cat on[^"]*"[^>]*>All/.test(chips));
+    // One kind of thing needs no way to narrow it.
+    boot(`[{id:'a',kind:'image',imageUrl:'x'},{id:'b',kind:'image',imageUrl:'y'}]`);
+    s.eq('one kind → no chip row at all',run(`_boardsTrayCatsHTML()`),'');
+
+    /* ── THE INDEX IS THE WHOLE RISK ─────────────────────────────────────
+       boardsTrayDragStart, boardsTrayRemove and _boardsTrayHydrate all
+       address an item by its position in `_editUnsorted`. A filtered list
+       that renumbered its rows would drag out, delete and label a
+       DIFFERENT item than the one under the pointer — silently, and worse
+       the more you filter. */
+    s.section('a filtered row still points at its own item');
+    boot();
+    run(`_boardsTrayFilter='link'`);
+    s.eq('two rows',run(`_boardsTrayRows().length`),2);
+    s.eq('carrying their ORIGINAL indexes',
+      run(`JSON.stringify(_boardsTrayRows().map(r=>r.i))`),'[1,4]');
+    s.eq('which are the links',
+      run(`JSON.stringify(_boardsTrayRows().map(r=>_editUnsorted[r.i].id))`),'["b","e"]');
+    const html=run(`_boardsTrayListHTML(true)`);
+    const idx=(html.match(/boardsTrayDragStart\(event,(\d+)\)/g)||[]).join(',');
+    s.eq('and the markup hands those indexes to the drag',
+      idx,'boardsTrayDragStart(event,1),boardsTrayDragStart(event,4)');
+    s.ok('the remove button agrees',
+      /boardsTrayRemove\(1\)/.test(html)&&/boardsTrayRemove\(4\)/.test(html));
+    s.ok('the label ids agree too, so the hydrate fills the right rows',
+      /board-tray-l-1"/.test(html)&&/board-tray-l-4"/.test(html));
+
+    s.section('and the drag really brings out the item you grabbed');
+    {
+      const dr=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        currentPage:'board-canvas'});
+      const r=x=>dr.run(x);
+      r(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+        moodBoards=[{id:'b1',ownerUid:'u1',visibility:'shared',title:'T',cards:[]}];
+        _editCards=[];_editConnectors=[];_boardsSelection=new Set();
+        _editUnsorted=${ITEMS};_boardsTrayFilter='link';_boardsTrayOpen=true;
+        document.getElementById('board-stage').getBoundingClientRect=
+          function(){return{left:0,top:0,right:1200,bottom:800};};`);
+      // Row 0 of the FILTERED list is _editUnsorted[1] — the first link.
+      const i=JSON.parse(r(`JSON.stringify(_boardsTrayRows().map(x=>x.i))`))[0];
+      r(`(function(){
+        const host=document.getElementById('tray-row');
+        window.boardsTrayDragStart({currentTarget:host,clientX:0,clientY:0,pointerId:1,
+          stopPropagation(){}},${i});})()`);
+      const host=dr.run(`document.getElementById('tray-row')`);
+      const ev=(x,y)=>({clientX:x,clientY:y,pointerId:1});
+      dr.fire('tray-row','pointermove',ev(60,60));
+      dr.fire('tray-row','pointerup',ev(400,300));
+      s.eq('one card came out',r(`_editCards.length`),1);
+      s.eq('and it is the link that was under the pointer',
+        r(`(_editCards[0]||{}).linkUrl||'(none)'`),'https://x.test/1');
+      s.eq('which left the tray',r(`_editUnsorted.length`),5);
+      s.ok('the other link is untouched',r(`_editUnsorted.some(u=>u.id==='e')`));
+    }
+
+    /* Drag the last link out and the filter points at a category that no
+       longer exists. A panel showing nothing, with no chip left to press,
+       reads as broken. */
+    s.section('a filter with nothing behind it heals itself');
+    boot();
+    run(`_boardsTrayFilter='link'`);
+    s.eq('while the links are there it holds',run(`_boardsTrayFilterNow()`),'link');
+    run(`_editUnsorted=_editUnsorted.filter(u=>u.kind!=='link')`);
+    s.eq('once they are gone it reads as all',run(`_boardsTrayFilterNow()`),'all');
+    s.eq('so every remaining item is still shown',run(`_boardsTrayRows().length`),4);
+    s.eq('and nothing was written to make that true',run(`_boardsTrayFilter`),'link');
+
+    /* There is deliberately NO "nothing in this category" screen. The heal
+       above means a filter whose category has emptied simply IS "all", so
+       an empty filtered list is unreachable while the tray holds anything
+       — the first cut carried a branch for it and this assertion is what
+       proved that branch was dead code. */
+    s.section('so an empty filtered list cannot happen');
+    boot();
+    run(`_boardsTrayFilter='text'`);   // a category with nothing in it
+    const none=run(`_boardsTrayListHTML(true)`);
+    s.ok('it shows everything rather than an empty shelf',
+      (none.match(/board-tray-item/g)||[]).length===6,
+      (none.match(/board-tray-item/g)||[]).length+' rows');
+    s.ok('and says nothing about categories',!/category/i.test(none));
+    boot(`[]`);
+    const bare=run(`_boardsTrayListHTML(true)`);
+    s.ok('an empty tray explains what the tray is for',/Nothing here yet/.test(bare));
+    s.ok('and that is the only empty screen there is',
+      (bare.match(/board-tray-empty/g)||[]).length===1);
+  }
+
   // ── a PDF card is sized to its page ─────────────────────────────────────
   // At the 200×110 file default the name row and the Open/Download buttons
   // left the page thumbnail a ~20px strip. Reported with a screenshot of a

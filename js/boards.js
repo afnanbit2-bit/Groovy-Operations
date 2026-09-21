@@ -10351,6 +10351,7 @@ function _boardsFocusCard(id){
 // Read at load, exactly like the minimap and snap preferences above.
 let _boardsTrayOpen=(function(){try{return localStorage.getItem('groovy-boards-tray')==='1';}catch(e){return false;}})();
 let _boardsTrayDrag=null;      // an item being dragged out onto the canvas
+let _boardsTrayFilter='all';   // all | image | link | file | text | cards
 // Drag-to-select (Sept 2026). Dragging empty canvas now draws a marquee,
 // the way Milanote does, so panning needs its own routes — see the note on
 // the stage pointerdown handler. `_boardsSpaceDown` is the held space bar;
@@ -10429,19 +10430,96 @@ function _boardsTrayHTML(canEdit){
     ${home?_boardsPanelHTML(canEdit):_boardsTrayUnsortedHTML(canEdit,n)}
   </aside>`;
 }
+/* ── SORTING THE TRAY BY CATEGORY (Sept 2026) ──────────────────────────
+   Afnan: *"unsorted should have sort by category option in it as well
+   ( links ) ( images ) ( files ) ( etc. etc. )"*.
+
+   ONE definition of which bucket an item is in, so the chips, their counts
+   and the filtered list cannot disagree. It is keyed on `u.kind` — the same
+   field the row's thumbnail already switches on — which means a STASHED
+   image card (kind:'image' beside its `cards`) files under Images, where a
+   person looking for a picture would go, rather than in a bucket of its
+   own. Only the last case is a fallback, for an item written before the
+   kinds settled. */
+const _BOARDS_TRAY_CATS=[
+  {k:'image',label:'Images'},
+  {k:'link', label:'Links'},
+  {k:'file', label:'Files'},
+  {k:'text', label:'Notes'},
+  {k:'cards',label:'Cards'}
+];
+function _boardsTrayKind(u){
+  const k=u&&u.kind;
+  if(_BOARDS_TRAY_CATS.some(c=>c.k===k))return k;
+  return Array.isArray(u&&u.cards)?'cards':'text';
+}
+/* Only the buckets that actually hold something, with their counts. A chip
+   for an empty category is a filter that leads nowhere, and the tray is
+   usually two or three kinds deep — showing all five would be mostly dead
+   chrome above a short list. */
+function _boardsTrayCats(){
+  return _BOARDS_TRAY_CATS
+    .map(c=>({k:c.k,label:c.label,n:_editUnsorted.filter(u=>_boardsTrayKind(u)===c.k).length}))
+    .filter(c=>c.n>0);
+}
+/* SELF-HEALING, and it has to be: drag the last link out and the filter is
+   pointing at a category that no longer exists. A panel showing nothing,
+   with no chip left to press, reads as broken — so a filter with nothing
+   behind it simply IS "all" until something lands in it again. Derived on
+   read; nothing is written to reconcile it. */
+function _boardsTrayFilterNow(){
+  const f=_boardsTrayFilter;
+  return _boardsTrayCats().some(c=>c.k===f)?f:'all';
+}
+/* The rows to draw, each carrying its index INTO `_editUnsorted` — never
+   its position in the filtered list. boardsTrayDragStart, boardsTrayRemove
+   and _boardsTrayHydrate all address an item BY THAT INDEX, so a filtered
+   list that renumbered them would drag out, delete and label the wrong
+   item. This is the whole reason the filter returns pairs. */
+function _boardsTrayRows(){
+  const f=_boardsTrayFilterNow();
+  return _editUnsorted.map((u,i)=>({u,i}))
+    .filter(r=>f==='all'||_boardsTrayKind(r.u)===f);
+}
+function _boardsTrayCatsHTML(){
+  const cats=_boardsTrayCats(),f=_boardsTrayFilterNow();
+  if(cats.length<2)return'';   // one kind of thing needs no way to narrow it
+  return[{k:'all',label:'All',n:_editUnsorted.length}].concat(cats).map(c=>
+    `<button class="board-tray-cat${f===c.k?' on':''}" onclick="window.boardsTraySetFilter('${c.k}')">`+
+    `${_boardsEsc(c.label)}<span class="board-tray-cat-n">${c.n}</span></button>`).join('');
+}
+window.boardsTraySetFilter=function(k){
+  _boardsTrayFilter=k||'all';
+  _boardsTrayRepaint();
+};
+/* Repaints the LIST and the chips alone, like the Boards panel's own
+   repaint — a full _boardsRenderCanvasAndWire() would redraw every card and
+   connector on a 46-card board to narrow a list of five. The hydrate has to
+   run after, because every label is written in with textContent. */
+function _boardsTrayRepaint(){
+  const list=document.getElementById('board-tray-list');
+  if(!list)return;
+  list.innerHTML=_boardsTrayListHTML(_boardsCanEdit(_editBoard));
+  const cats=document.getElementById('board-tray-cats');
+  if(cats)cats.innerHTML=_boardsTrayCatsHTML();
+  _boardsTrayHydrate();
+}
+function _boardsTrayListHTML(canEdit){
+  const rows=_boardsTrayRows();
+  if(rows.length)return rows.map(r=>_boardsTrayItemHTML(r.u,r.i,canEdit)).join('');
+  return`<div class="board-tray-empty">
+      Nothing here yet.<br><br>
+      Anything you paste or drop while this is open is kept here
+      until you drag it onto the board. It stays saved if you never do.
+    </div>`;
+}
 function _boardsTrayUnsortedHTML(canEdit,n){
   return`${canEdit?`<div class="board-tray-add">
       <button class="tool-btn" onclick="window.boardsTrayPick()">+ Add files</button>
       <span class="board-tray-hint">or paste, or drop files here</span>
     </div>`:''}
-    <div class="board-tray-list" id="board-tray-list">
-      ${n?_editUnsorted.map((u,i)=>_boardsTrayItemHTML(u,i,canEdit)).join('')
-         :`<div class="board-tray-empty">
-             Nothing here yet.<br><br>
-             Anything you paste or drop while this is open is kept here
-             until you drag it onto the board. It stays saved if you never do.
-           </div>`}
-    </div>
+    <div class="board-tray-cats" id="board-tray-cats">${_boardsTrayCatsHTML()}</div>
+    <div class="board-tray-list" id="board-tray-list">${_boardsTrayListHTML(canEdit)}</div>
     <input type="file" id="board-tray-picker" multiple style="display:none" onchange="window.boardsTrayFilesPicked(this)">`;
 }
 

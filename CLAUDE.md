@@ -2288,6 +2288,102 @@ pass. They have their own fragment now, sized to fit, and the same break
 fails naming `DIV.board-frame-body`. **A fragment taller than the window is
 a fragment that stops testing partway down.**
 
+### Mood Boards — the Unsorted tray: bigger, sorted, and not cropped (Sept 2026)
+
+Afnan, with five items circled: *"make unsorted bigger for better drag to
+drop movement + unsorted should have sort by category option in it as well
+( links ) ( images ) ( files ) ( etc. etc. ) + the preview of unsorted
+should be logically well as well as the current model preview is not
+right."*
+
+**THE PREVIEW WAS A REAL BUG, and it is the one that mattered.** The
+thumbnail was `object-fit:cover` in a fixed **84px** box, so a picture
+taller than it was wide rendered as the strip across its MIDDLE — a
+full-length model reference came out as a pair of legs, which is what was
+circled. A tray item is looked at to RECOGNISE it, so nothing about it may
+be cropped away: it is `object-fit:contain` in a **160px** box now, the
+whole frame on a `--soft` letterbox that reads as deliberate. The bigger
+box is also half of "better drag to drop movement" — **the thumbnail IS the
+grab target**.
+
+**280px → 380px**, with the grid still two columns, so every item goes from
+~125px wide to ~175px. The tray OVERLAYS the canvas off Home (it does not
+inset it, unlike Home's panel), so this costs canvas — which is the trade
+that was asked for.
+
+**SORT BY CATEGORY.** Chips rather than the Boards panel's segmented
+control: that one holds three fixed states, this holds however many kinds
+the tray happens to contain and has to wrap.
+
+- **`_boardsTrayKind` is ONE definition of which bucket an item is in**, so
+  the chips, their counts and the filtered list cannot disagree. It keys on
+  `u.kind` — the same field the row's thumbnail already switches on — which
+  means a **stashed image card** (`kind:'image'` beside its `cards`) files
+  under Images, where a person looking for a picture would go, rather than
+  in a bucket of its own.
+- **The chips are DERIVED from what is present**, with counts. A chip for an
+  empty category is a filter that leads nowhere, and with fewer than two
+  kinds the row does not render at all — one kind of thing needs no way to
+  narrow it.
+- **THE ROW CARRIES ITS INDEX INTO `_editUnsorted`, NEVER ITS POSITION IN
+  THE FILTERED LIST.** `boardsTrayDragStart`, `boardsTrayRemove` and
+  `_boardsTrayHydrate` all address an item BY THAT INDEX, so a filtered list
+  that renumbered its rows would drag out, delete and label a DIFFERENT item
+  than the one under the pointer — silently, and worse the more you filter.
+  That is the whole reason `_boardsTrayRows()` returns `{u,i}` pairs. The
+  test drives the real drag under an active filter and checks the card that
+  lands is the one that was grabbed; reverting to a renumbering filter fails
+  six assertions.
+- **The filter SELF-HEALS.** Drag the last link out and it points at a
+  category that no longer exists; a panel showing nothing with no chip left
+  to press reads as broken, so a filter with nothing behind it simply IS
+  "all" until something lands in it again. Derived on read —
+  `_boardsTrayFilter` is never rewritten.
+- **There is therefore NO "nothing in this category" screen**, and that is
+  not an omission: the heal makes an empty filtered list unreachable while
+  the tray holds anything. The first cut carried a branch for it and **the
+  test is what proved that branch was dead code** — a handled case that can
+  never run reads, in review, like a handled case.
+- Clicking a chip repaints the **list and the chips alone**
+  (`_boardsTrayRepaint`), like the Boards panel's own repaint: a full
+  `_boardsRenderCanvasAndWire()` would redraw every card and connector on a
+  46-card board to narrow a list of five. The hydrate runs after, because
+  every label is written in with `textContent`.
+
+**A LATENT BUG THE TALLER THUMBNAIL EXPOSED, and the probe caught it on the
+first run.** `.board-tray-list` is `flex:1` inside a flex column, so it has
+a DEFINITE height, and its auto rows were being sized to an equal share of
+it — **measured at exactly `(height − padding − gaps) / rows`**. With an
+84px thumbnail the content happened to fit that share, so nothing showed;
+the moment the picture grew, every item was squashed to **136px around a
+160px picture** and each label was laid out entirely outside its own
+`overflow:hidden` card. `grid-auto-rows:min-content` sizes the rows to
+their content, so the list SCROLLS instead of crushing what is in it —
+re-measured: rows 206/190/206, `scrollHeight` 643 against a 447px list.
+
+**The first fix for that was wrong and the measurement is what said so.**
+`aspect-ratio:1` on the thumbnail sizes circularly inside a grid item (the
+row height resolves before the ratio does) and produced the same clipped
+labels. A fixed height needs no circular sizing.
+
+**What holds what, and the gap that made an invariant necessary.**
+`smoke-layout` holds the geometry, the contrast and the hit-testing — its
+Unsorted-tray fragment fails 4 jobs with `grid-auto-rows` reverted and 6
+with the chip ink broken. **It cannot see a CROPPED picture**: put
+`object-fit:cover` back and all six of its jobs still pass, checked. So the
+no-crop rule — the actual reported bug — lives in
+`tests/invariants.test.js` instead, with the minimum height beside it so a
+future tidy-up cannot shrink the target back.
+
+**Verified by reverting each piece:** the renumbering filter, the heal, the
+derived chips, the stashed-image bucketing, the chips-under-two rule, the
+filter ignored outright, and all three CSS changes. **And the panel was
+looked at** — rendered in real Chromium with a portrait stand-in, which is
+what shows the whole figure where the old box showed a midsection.
+
+**Nobody has dragged out of it on a real screen** — the sandbox cannot
+sign in.
+
 ### Mood Boards — the Hand tool moves to the rail (Sept 2026)
 
 Afnan, with the View menu open and an arrow drawn from its Hand row down to
