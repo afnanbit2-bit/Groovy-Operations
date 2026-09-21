@@ -402,8 +402,8 @@ module.exports=function(){
   // decision, and this is what makes it show up in a diff review.
   const hubList=(sharedSrc.match(/_CREATIVE_HUB_USERS\s*=\s*\[([^\]]*)\]/)||[])[1]||'';
   const hubNames=(hubList.match(/'([^']+)'/g)||[]).map(x=>x.replace(/'/g,''));
-  s.eq('the Creative Hub audience is afnan, ammar, sami, mustafa',
-    hubNames.join(','),'afnan,ammar,sami,mustafa');
+  s.eq('the Creative Hub audience is afnan, ammar, sami, mustafa, abbas',
+    hubNames.join(','),'afnan,ammar,sami,mustafa,abbas');
   // Nothing may still gate the hub on a bare username — that is the shape
   // the helper replaced, and a leftover would silently outrank it.
   const strays=GATE_FILES

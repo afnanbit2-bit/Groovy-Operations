@@ -655,12 +655,26 @@ helper by bare name; both **guard with `typeof` and fail CLOSED**, so a
 `shared.js` that failed to parse hides the hub rather than opening the
 side door.
 
-**Audience: `afnan`, `ammar`, `sami`, `mustafa`** — Afnan dogfooded it alone
-while the module was being shaped and opened it to Ammar once the Trash/rail
-round landed; Sami (CSR Team Lead) was added 17 Sept 2026 at Ammar's request,
-and **Mustafa on 18 Sept 2026** (Afnan: "give mustafa creative hub and all
-its features"). The helper is called from **eight** routes: the six below
-plus the CSR Team Lead's own sidebar and phone "More" sheet.
+**Audience: `afnan`, `ammar`, `sami`, `mustafa`, `abbas`** — Afnan dogfooded
+it alone while the module was being shaped and opened it to Ammar once the
+Trash/rail round landed; Sami (CSR Team Lead) was added 17 Sept 2026 at
+Ammar's request, **Mustafa on 18 Sept 2026** (Afnan: "give mustafa creative
+hub and all its features") and **Abbas on 21 Sept 2026**. The helper is
+called from **eight** routes: the six below plus the CSR Team Lead's own
+sidebar and phone "More" sheet.
+
+**Abbas is the first WORKER on the list, and that is the only thing about
+him that is new.** He is `worker` (Washing/Rider), and a worker's phone nav
+is a fixed 3-button bar with **no More sheet** — so three of the eight
+routes cannot reach him and his phone route is the "Me" page button in
+`js/hrm.js`, which is exactly why that button exists. Verified by DRIVING
+rather than by reading the pushes: as Abbas the sidebar is
+`my-work, gatepass, creative-hub`, the phone bar is `My Work / Gate Pass /
+Me`, `renderMePage()` carries the button, and `showPage` sends him to all
+six hub pages unredirected (it scopes only `fulfillment`,
+`creator_content_ops_lead` and `csr_lead`). **Another worker — Asghar — is
+still false**, the same proof Arfat gives for the manager role: the gate is
+a list, not a role.
 
 Mustafa took **one word** — the list is the only gate, which is the whole
 point of the round that replaced six hardcoded usernames with it. He holds
