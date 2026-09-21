@@ -214,10 +214,16 @@ function _boardsNewCard(type){
 // special-casing is render order (frames paint first, so they sit behind
 // their contents) and drag (a frame takes its contents with it).
 function _boardsCardsInFrame(frame){
+  // A COLLAPSED frame is 63px of title block, and its contents have not
+  // moved — so membership is measured against the rect the frame had when
+  // it was folded, not the strip it is now. Without this a folded frame
+  // reports nothing inside it, which would mean it hid its cards, said
+  // "0 cards", and left them behind when it was dragged.
+  const h=(frame.collapsed&&frame.openH)||frame.h;
   return _editCards.filter(c=>{
     if(c.id===frame.id)return false;
     const cx=c.x+c.w/2,cy=c.y+c.h/2;   // centre-in-bounds: a card poking over the edge still counts
-    return cx>=frame.x&&cx<=frame.x+frame.w&&cy>=frame.y&&cy<=frame.y+frame.h;
+    return cx>=frame.x&&cx<=frame.x+frame.w&&cy>=frame.y&&cy<=frame.y+h;
   });
 }
 // Frames paint first so they never cover their own contents. This also
@@ -227,26 +233,53 @@ function _boardsCardsInFrame(frame){
 // to sit behind the cards it holds for the same reason, and behind nothing
 // else. Everything after that keeps its array order, which is the z-order
 // "bring to front" reorders (Stage 2).
+/* What a collapsed container is hiding. A COLUMN owns its children by
+   c.columnId; a FRAME owns whatever is geometrically inside it. One
+   function so the render, the count and the drag cannot disagree about
+   which cards a fold covers. */
+function _boardsHiddenByFolds(){
+  const hidden=new Set();
+  _editCards.forEach(c=>{
+    if(!c.collapsed)return;
+    if(_boardsIsColumn(c))_boardsColumnChildren(c).forEach(k=>hidden.add(k.id));
+    else if(c.type==='frame')_boardsCardsInFrame(c).forEach(k=>hidden.add(k.id));
+  });
+  return hidden;
+}
 function _boardsRenderOrder(){
   const rank=c=>c.type==='frame'?0:c.type==='column'?1:2;
-  // A collapsed column's children are not DRAWN. They are untouched in
+  // A collapsed container's contents are not DRAWN. They are untouched in
   // _editCards, so search, the exports, the reading order and the card
   // count all still see them — this hides them, it does not remove them.
-  const folded=new Set(_editCards.filter(c=>_boardsIsColumn(c)&&c.collapsed).map(c=>c.id));
-  const vis=folded.size?_editCards.filter(c=>!(c.columnId&&folded.has(c.columnId))):_editCards;
+  const hidden=_boardsHiddenByFolds();
+  const vis=hidden.size?_editCards.filter(c=>!hidden.has(c.id)):_editCards;
   return vis.filter(c=>rank(c)===0)
     .concat(vis.filter(c=>rank(c)===1))
     .concat(vis.filter(c=>rank(c)===2));
 }
-/* Collapse is undoable like any other mutation (the module's standing
-   contract: every mutating action pushes undo BEFORE it mutates), and it
-   rebuilds rather than repainting because the children leave the DOM. */
-window.boardsColumnFold=function(id){
+/* ── Folding a container, one implementation for both ────────────────────
+   Undoable like any other mutation (the module's standing contract: push
+   undo BEFORE mutating), and it rebuilds rather than repaints, because the
+   contents leave the DOM.
+
+   The height is where the two differ. A column's is DERIVED, so
+   _boardsLayoutColumn recomputes it on expand and nothing needs
+   remembering. A frame's is whatever somebody dragged it to, so folding
+   has to keep it (`openH`) or expanding would invent a size — and that
+   stored height is also what _boardsCardsInFrame measures against while
+   the frame is folded, so a folded frame still knows what it is hiding. */
+window.boardsFoldContainer=function(id){
   const c=_editCards.find(x=>x.id===id);
-  if(!c||!_boardsIsColumn(c))return;
-  if(!_boardsCanEdit(_editBoard))return;
+  if(!c||!(_boardsIsColumn(c)||c.type==='frame'))return;
+  if(!_boardsCanEdit(_editBoard)||c.locked)return;
   _boardsPushUndo();
-  if(c.collapsed)delete c.collapsed;else c.collapsed=true;
+  if(c.collapsed){
+    delete c.collapsed;
+    if(c.type==='frame'){c.h=c.openH||_boardsMinCardH(c);delete c.openH;}
+  }else{
+    if(c.type==='frame'){c.openH=Math.max(c.h,_boardsMinCardH(c));c.h=_BOARDS_COL_HEAD;}
+    c.collapsed=true;
+  }
   _boardsLayoutColumns();
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
@@ -2244,7 +2277,7 @@ function _boardCardHTML(c,canEdit){
         <div class="board-column-count">${n} ${n===1?'card':'cards'}</div>
         <div class="board-column-btns">
           ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete column (cards inside are released onto the board)">✕</button>`:''}
-          <button class="board-column-fold" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsColumnFold('${c.id}')" title="${c.collapsed?'Expand this column':'Collapse this column'}">${fold}</button>
+          <button class="board-column-fold" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsFoldContainer('${c.id}')" title="${c.collapsed?'Expand this column':'Collapse this column'}">${fold}</button>
         </div>
       </div>
       ${c.collapsed?'':`<div class="board-column-body">${n?'':'<div class="board-column-empty">Drag cards here</div>'}</div>`}
@@ -2254,12 +2287,26 @@ function _boardCardHTML(c,canEdit){
   }
   if(c.type==='frame'){
     const sel=_boardsSelection.has(c.id)?' selected':'';
-    return`<div class="board-frame${sel}${c.locked?' locked':''}${_boardsCardColorClasses({color:c.color})}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle({color:c.color})}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px">
+    // The SAME title block the column wears — the name centred with the
+    // count under it and a collapse minus in the corner. The one real
+    // difference is where the count comes from: a column OWNS its children
+    // (c.columnId) and a frame does not, so this is geometry, counted at
+    // render by _boardsCardsInFrame exactly as every other frame action
+    // counts it. Nothing is stored to make the number.
+    const inside=_boardsCardsInFrame(c).length;
+    const drawH=Math.max(c.h,_boardsMinCardH(c));
+    return`<div class="board-frame${sel}${c.collapsed?' collapsed':''}${c.locked?' locked':''}${_boardsCardColorClasses({color:c.color})}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle({color:c.color})}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px">
       <div class="board-frame-head" ${canEdit&&!c.locked?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''} onclick="window.boardsSelectCard('${c.id}',event)">
-        <input type="text" class="board-frame-title" value="${_boardsEsc(c.title||'')}" placeholder="Section name" ${canEdit&&!c.locked?'':'readonly'} oninput="window.boardsFrameTitle('${c.id}',this.value)" onpointerdown="event.stopPropagation()">
-        ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete frame (cards inside are kept)">✕</button>`:''}
+        <input type="text" class="board-frame-title" value="${_boardsEsc(c.title||'')}" placeholder="New Frame" ${canEdit&&!c.locked?'':'readonly'} oninput="window.boardsFrameTitle('${c.id}',this.value)" onpointerdown="event.stopPropagation()">
+        <div class="board-frame-count">${inside} ${inside===1?'card':'cards'}</div>
+        <div class="board-column-btns">
+          ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete frame (cards inside are kept)">✕</button>`:''}
+          <button class="board-column-fold" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsFoldContainer('${c.id}')" title="${c.collapsed?'Expand this frame':'Collapse this frame'}">${c.collapsed?'+':'—'}</button>
+        </div>
       </div>
-      ${canEdit&&!c.locked?`<div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
+      ${c.collapsed?'':`<div class="board-frame-body">${inside?'':'<div class="board-column-empty">Drop cards in this area</div>'}</div>`}
+      <span class="board-card-corner" aria-hidden="true"></span>
+      ${canEdit&&!c.locked&&!c.collapsed?`<div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
     </div>`;
   }
   // Image, file and sub-board cards hold nothing editable, so dragging one
@@ -3260,7 +3307,13 @@ function _boardsTodoMinH(c){
   return Math.max(_BOARDS_MIN_BODY_H.todo,h);
 }
 function _boardsMinCardH(c){
-  if(!c||c.type==='frame')return 60;
+  // A frame's floor used to be 60 — under the 63px title block, so a frame
+  // dragged to its minimum wore a header that overflowed its own box. It
+  // is a container with a region under the title now, the same shape a
+  // column has, so it takes the same floor. Existing frames are not
+  // rewritten: the RENDER grows a short one (drawH), the stored height
+  // catches up the next time it is resized.
+  if(!c||c.type==='frame')return _BOARDS_COL_MIN_H;
   if(c.type==='column')return c.h||_BOARDS_COL_MIN_H;   // derived by _boardsLayoutColumn
   if(c.type==='table')return Math.max(_boardsTableMinH(c),90);
   // A heading's head strip is absolutely positioned over the banner, so it

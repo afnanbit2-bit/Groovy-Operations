@@ -914,7 +914,11 @@ Structure: frames, to-do cards, freeform arrows, colour tags.
   them.
 - **A frame's body is `pointer-events:none`; only its header strip and
   resize grip are interactive.** Without that, the frame rectangle would
-  swallow panning, marquee-select and clicks on the cards inside it.
+  swallow panning, marquee-select and clicks on the cards inside it. Still
+  true of the title block it wears since Sept 2026 — see "the column,
+  rebuilt", where the frame took the column's header, a card count derived
+  from that same geometry, and a collapse that has to remember the height
+  its membership is measured against.
 - **"Columns" from the roadmap shipped as arrange-once actions instead**
   (`boardsStackSelection` / `boardsGridSelection`, plus
   `boardsFrameSelection`). **SUPERSEDED in Sept 2026 — `stack` builds a
@@ -2228,6 +2232,52 @@ buttons as unreachable — the fragment measuring itself.
 **Nobody has dropped a card into a column on a real screen** — the sandbox
 cannot sign in. The geometry, the drop rule and the collapse are measured;
 the feel is not.
+
+**THE FRAME WEARS THE SAME TITLE BLOCK** (*"now do the frame like the
+column"*). Same centred name, same count under it, same collapse minus,
+same corner ✕ on hover, same selection dot. The CSS is **one shared rule
+per piece** (`.board-column-head,.board-frame-head{…}` and so on) rather
+than a second copy — two copies drift the first time one is edited, and the
+frame's header would then sit at a different height from the constant that
+lays its contents out. An invariant fails if the sharing is undone.
+
+Where the two genuinely differ, and why:
+
+- **The count is GEOMETRY for a frame.** A column owns its children by
+  `c.columnId`; a frame owns whatever sits inside it, so the number comes
+  from `_boardsCardsInFrame` at render and nothing is stored — the
+  membership-free rule frames have held since Stage 3.
+- **A frame's region stays SEE-THROUGH** (`rgba(0,0,0,.05)` against the
+  column's `.14` over a solid surface). A frame is a section of the CANVAS,
+  often far larger than a column and holding cards spread across it; a
+  solid fill would black out the board underneath over a big area. It gets
+  the divider and the recess at a fraction of the weight.
+- **Folding a frame has to REMEMBER its height.** A column's is derived, so
+  expanding recomputes it; a frame's is whatever somebody dragged it to, so
+  the fold keeps it in `openH`. That stored height is also what
+  `_boardsCardsInFrame` measures against **while the frame is folded** —
+  without it a folded frame reports nothing inside, says "0 cards", and
+  **leaves its contents behind when it is dragged**. Asserted by driving a
+  collapsed frame's drag: the two cards it hides move with it, the card
+  outside it does not.
+- **`_boardsMinCardH` for a frame: 60 → `_BOARDS_COL_MIN_H`.** 60 is UNDER
+  the 63px title block, so a frame dragged to its minimum wore a header
+  that overflowed its own box. Existing frames are not rewritten — the
+  render grows a short one and the stored height catches up on the next
+  resize, the module's standing rule.
+- **`boardsColumnFold` became `boardsFoldContainer`** — one implementation
+  for both, so the render, the count and the drag cannot disagree about
+  what a fold covers (`_boardsHiddenByFolds`).
+
+**A probe lesson worth more than the fragment.** The frames were first
+added as more rows on the column fragment, which made that stack 1500px
+tall — and **the layout probe SKIPS hit-testing anything below the window**
+("off-screen at this width is a layout question, already covered above"),
+so at a 1000px window the frames were not being checked at all. Found by
+breaking the frame body to cover its own header and watching the probe
+pass. They have their own fragment now, sized to fit, and the same break
+fails naming `DIV.board-frame-body`. **A fragment taller than the window is
+a fragment that stops testing partway down.**
 
 ### Mood Boards — "to do not moving properly", and the guard that caused it (Sept 2026)
 

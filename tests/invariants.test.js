@@ -552,10 +552,18 @@ module.exports=function(){
     const head=/_BOARDS_COL_HEAD=(\d+)/.exec(js);
     // [;{]top: on purpose — a greedy [^}]*top: matches the `top` in
     // `border-top:1px` further along the same rule and reads 1.
-    const top=/\.board-column-body\{[^}]*?[;{]top:(\d+)px/.exec(css);
+    const top=/\.board-column-body,\.board-frame-body\{[^}]*?[;{]top:(\d+)px/.exec(css);
     s.ok('_BOARDS_COL_HEAD is declared',!!head,head&&head[1]);
-    s.ok('.board-column-body declares a top',!!top,top&&top[1]);
+    s.ok('the body panel declares a top',!!top,top&&top[1]);
     s.eq('and they are the same number',head&&head[1],top&&top[1]);
+    // A FRAME wears the same title block, so its header must come from the
+    // same rules — two copies would drift the first time one was edited,
+    // and the frame's head would then sit at a different height from the
+    // constant that lays its contents out.
+    s.ok('the frame shares the column head rule',
+      /\.board-column-head,\.board-frame-head\{/.test(css));
+    s.ok('and the title rule',/\.board-column-title,\.board-frame-title\{/.test(css));
+    s.ok('and the count rule',/\.board-column-count,\.board-frame-count\{/.test(css));
     // An empty column IS the drop target, so it has to be bigger than its
     // own header by enough to aim a card at.
     const min=/_BOARDS_COL_MIN_H=(\d+)/.exec(js);

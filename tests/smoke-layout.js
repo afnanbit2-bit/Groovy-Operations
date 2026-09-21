@@ -196,6 +196,32 @@ const FRAGMENTS={
     return Promise.resolve(
       '<div style="position:relative;overflow:hidden;height:580px;width:100%">'+html+'</div>');
   },
+  /* A FRAME wears the column's title block now, so it is measured beside
+     it rather than trusted to inherit it: same head, same count, same
+     corner buttons. Its count is GEOMETRY (the cards whose centres fall
+     inside) and its region stays see-through, which is the one place the
+     two deliberately differ.
+     ITS OWN FRAGMENT, not more rows on the column one: the probe SKIPS
+     hit-testing anything below the window, so a 1500px stack quietly stops
+     being checked at all — found by breaking the frame body to cover its
+     own header and watching the probe pass. */
+  'boards — frames wear the column title block':()=>{
+    const app=loadApp({files:['js/boards.js']});
+    app.run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
+      _editConnectors=[];moodBoards=[];
+      _editCards=[
+        {id:'fr',type:'frame',title:'Winter Drop 2027 — cut and sew',x:20,y:20,w:380,h:230},
+        {id:'fk',type:'text',text:'Lab dip approved',x:40,y:130,w:170,h:80},
+        {id:'frempty',type:'frame',title:'',x:20,y:280,w:380,h:190},
+        {id:'frfold',type:'frame',title:'Archived section',x:20,y:500,w:380,h:190,collapsed:true,openH:190},
+        {id:'hid',type:'text',text:'hidden by the fold',x:40,y:590,w:170,h:80}
+      ];
+      _boardsSelection=new Set(['fr']);`);
+    let html=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`);
+    html=html.replace(/(id="board-txt-fk"[^>]*>)/,'$1Lab dip approved');
+    return Promise.resolve(
+      '<div style="position:relative;overflow:hidden;height:720px;width:100%">'+html+'</div>');
+  },
   'boards — a column and its cards':()=>{
     const app=loadApp({files:['js/boards.js']});
     app.run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};

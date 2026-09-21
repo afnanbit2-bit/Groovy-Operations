@@ -2032,7 +2032,7 @@ module.exports=function(){
         _boardsLayoutColumns();`);
       const openH=Number(r(`_editCards[0].h`));
       const kidY=r(`_boardsColumnChildren(_editCards[0]).map(c=>c.y).join(',')`);
-      r(`window.boardsColumnFold('col')`);
+      r(`window.boardsFoldContainer('col')`);
       s.eq('it shrinks to exactly the header',r(`_editCards[0].h`),Number(r(`_BOARDS_COL_HEAD`)));
       s.eq('its children are not drawn',r(`_boardsRenderOrder().map(c=>c.id).join(',')`),'col');
       s.eq('but they are still on the board',r(`_boardsColumnChildren(_editCards[0]).length`),2);
@@ -2044,7 +2044,7 @@ module.exports=function(){
       s.ok('and the body panel is gone with them',!/board-column-body/.test(html));
       s.ok('a collapsed column takes no drops',
         !r(`_boardsColumnForCard({x:410,y:110,w:200,h:60})`));
-      r(`window.boardsColumnFold('col')`);
+      r(`window.boardsFoldContainer('col')`);
       s.eq('expanding puts the height back',r(`_editCards[0].h`),openH);
       s.eq('and the list back exactly as it was',
         r(`_boardsColumnChildren(_editCards[0]).map(c=>c.y).join(',')`),kidY);
@@ -2053,6 +2053,105 @@ module.exports=function(){
       s.eq('both folds are undoable',r(`_boardsUndo.length`),2);
       r(`window.boardsUndoAction()`);
       s.eq('undo folds it again',r(`!!_editCards[0].collapsed`),true);
+    }
+
+    /* ── A FRAME WEARS THE COLUMN'S TITLE BLOCK ─────────────────────────
+       Afnan: "now do the frame like the column". The same centred name,
+       the same count under it, the same collapse minus. The ONE real
+       difference is where the count comes from — a column owns its
+       children by c.columnId, a frame owns whatever is geometrically
+       inside it, so the frame's is counted at render and stores nothing. */
+    s.section('a frame wears the column title block');
+    {
+      const fr=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        currentPage:'board-canvas'});
+      const r=x=>fr.run(x);
+      r(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+        _editConnectors=[];_editUnsorted=[];_boardsUndo=[];_boardsRedo=[];_boardsSelection=new Set();
+        _editCards=[{id:'fr',type:'frame',title:'',x:100,y:100,w:400,h:300},
+                    {id:'a',type:'text',text:'A',x:130,y:150,w:170,h:80},
+                    {id:'b',type:'text',text:'B',x:330,y:150,w:170,h:80},
+                    {id:'out',type:'text',text:'OUT',x:700,y:150,w:170,h:80}];`);
+      const h=r(`_boardCardHTML(_editCards[0],true)`);
+      s.ok('the empty title reads "New Frame"',/placeholder="New Frame"/.test(h));
+      s.ok('the count is the cards geometrically inside it',
+        /board-frame-count">2 cards</.test(h),
+        (h.match(/board-frame-count">[^<]*/)||[''])[0]);
+      s.ok('the card outside it is not counted',r(`_boardsCardsInFrame(_editCards[0]).length`)===2);
+      s.ok('it carries the same collapse button',/board-column-fold[^>]*boardsFoldContainer/.test(h));
+      s.ok('delete is still reachable',/board-card-del[^>]*boardsDeleteCard/.test(h));
+      s.ok('and the same selection dot',/board-card-corner/.test(h));
+      s.ok('the header still starts the frame drag',
+        /board-frame-head"[^>]*boardsCardDragStart/.test(h));
+      s.ok('one card is singular',
+        /board-frame-count">1 card</.test(r(`(function(){
+          _editCards=_editCards.filter(c=>c.id!=='b');
+          return _boardCardHTML(_editCards[0],true);})()`)));
+      // The floor moved with the header: a frame could be dragged to 60px,
+      // which is UNDER the 63px title block, so its own header overflowed
+      // its box. Existing frames are not rewritten — the render grows them.
+      s.ok('a frame cannot be shorter than its own title block',
+        Number(r(`_boardsMinCardH({type:'frame'})`))>=Number(r(`_BOARDS_COL_HEAD`)));
+      s.ok('and a short stored height is grown by the render, not migrated',
+        /height:150px/.test(r(`(function(){_editCards[0].h=60;
+          return _boardCardHTML(_editCards[0],true);})()`))&&r(`_editCards[0].h`)===60);
+    }
+
+    /* ── Folding a frame, and the height it has to remember ─────────────
+       A column's height is DERIVED, so expanding recomputes it. A frame's
+       is whatever somebody dragged it to, so the fold keeps it — and that
+       kept height is also what membership is measured against while it is
+       folded, or a folded frame would report nothing inside it, say
+       "0 cards", and leave its contents behind when dragged. */
+    s.section('a frame collapses to its header');
+    {
+      const ff=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        currentPage:'board-canvas'});
+      const r=x=>ff.run(x);
+      const boot=()=>r(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+        _editConnectors=[];_editUnsorted=[];_boardsUndo=[];_boardsRedo=[];_boardsSelection=new Set();
+        _boardsSuppressClick=false;_boardsSnapGrid=false;
+        _editCards=[{id:'fr',type:'frame',title:'Archived',x:100,y:100,w:400,h:300},
+                    {id:'a',type:'text',text:'A',x:130,y:150,w:170,h:80},
+                    {id:'b',type:'text',text:'B',x:330,y:150,w:170,h:80},
+                    {id:'out',type:'text',text:'OUT',x:700,y:150,w:170,h:80}];`);
+      boot();
+      r(`window.boardsFoldContainer('fr')`);
+      s.eq('it shrinks to exactly the header',r(`_editCards[0].h`),Number(r(`_BOARDS_COL_HEAD`)));
+      s.eq('it remembers the height it had',r(`_editCards[0].openH`),300);
+      s.eq('its contents are not drawn',r(`_boardsRenderOrder().map(c=>c.id).join(',')`),'fr,out');
+      s.eq('but it still knows what it is hiding',r(`_boardsCardsInFrame(_editCards[0]).length`),2);
+      s.ok('and says so in the header',
+        /board-frame-count">2 cards</.test(r(`_boardCardHTML(_editCards[0],true)`)));
+      s.eq('nothing inside it moved',
+        r(`_editCards.filter(c=>c.type==='text').map(c=>c.x+','+c.y).join('|')`),
+        '130,150|330,150|700,150');
+      r(`window.boardsFoldContainer('fr')`);
+      s.eq('expanding puts the height back',r(`_editCards[0].h`),300);
+      s.eq('and forgets the remembered one',r(`_editCards[0].openH===undefined`),true);
+      s.eq('both folds are undoable',r(`_boardsUndo.length`),2);
+
+      // A frame takes its contents with it when dragged — and that must
+      // still be true when the contents are the ones it is hiding.
+      boot();
+      r(`window.boardsFoldContainer('fr');_boardsSelection=new Set(['fr']);
+        (function(){const h=document.getElementById('dh');
+          window.boardsCardDragStart({currentTarget:h,target:h,clientX:0,clientY:0,pointerId:1,
+            stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'fr');})()`);
+      const ev=t=>({type:t,clientX:200,clientY:0,pointerId:1,altKey:true,shiftKey:false});
+      (ff.state.listeners.pointermove||[]).slice().forEach(f=>f(ev('pointermove')));
+      (ff.state.listeners.pointerup||[]).slice().forEach(f=>f(ev('pointerup')));
+      s.eq('a collapsed frame still carries what it hides',
+        r(`_editCards.filter(c=>c.id==='a'||c.id==='b').map(c=>c.x).join(',')`),'330,530');
+      s.eq('and leaves the card outside it alone',r(`_editCards.find(c=>c.id==='out').x`),700);
+
+      // One implementation for both containers.
+      s.ok('a locked container refuses to fold',r(`(function(){
+        _editCards=[{id:'lk',type:'frame',title:'',x:0,y:0,w:300,h:300,locked:true}];
+        window.boardsFoldContainer('lk');return !_editCards[0].collapsed;})()`));
+      s.ok('and an ordinary card is not foldable at all',r(`(function(){
+        _editCards=[{id:'n',type:'text',text:'x',x:0,y:0,w:100,h:100}];
+        window.boardsFoldContainer('n');return !_editCards[0].collapsed;})()`));
     }
 
     /* ── The header Afnan drew ─────────────────────────────────────────── */
