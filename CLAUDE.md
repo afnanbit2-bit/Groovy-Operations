@@ -36,13 +36,43 @@ because of two real failures during the PWA work, both avoidable:
 
 | To check | Use |
 |---|---|
-| Deploy status + the **real** preview URL | GitHub MCP `pull_request_read`, `method:"get_status"` — returns Netlify's own `target_url` and pass/fail |
+| Deploy status + the **real** preview URL, **on a PR** | GitHub MCP `pull_request_read`, `method:"get_status"` — returns Netlify's own `target_url` and pass/fail |
+| Whether a push to `main` actually SHIPPED | **Ask the human for the Netlify deploy list.** There are NO commit statuses on direct pushes to this repo — checked against a commit that *was* published, and it has none either, so a clean status API says nothing |
+| Whether CI passed on a push | `api.github.com/repos/.../commits/<sha>/check-runs` (unauthenticated works; this repo is public) |
 | CI / check-run detail | `pull_request_read`, `method:"get_check_runs"` |
 | Whether something is merged | `git fetch` then `git merge-base --is-ancestor`, or `pull_request_read` `method:"get"` (`merged` field) |
 | Static files serve | `python3 -m http.server` at repo root + `curl -o /dev/null -w "%{http_code}"` |
 | JS parses | `node --check <file>` |
 | `netlify.toml` valid | `python3 -c "import tomllib;tomllib.load(open('netlify.toml','rb'))"` |
 | `manifest.json` valid | `python3 -c "import json;json.load(open('manifest.json'))"` |
+
+**A DEPLOY CAN BE SILENTLY SKIPPED, AND IT LOOKS EXACTLY LIKE A STALE
+CACHE (21 Sept 2026).** Afnan reported four rounds of Mood Boards work
+missing after a hard refresh. Measured from his screenshot in headless
+Chromium rather than guessed: the rail was 74px, the top bar 44px and the
+Unsorted tray 223px — all exactly 0.80x their CSS values, so the browser
+was at 80% zoom, and at that scale the tray's 223px is 279 CSS px. The
+shipped tray is 380; the PRE-change one was **280**. Three constants
+agreeing on one scale factor is what made it a measurement instead of a
+hunch, and the Hand tool being present pinned the build to exactly `v142`.
+
+The cause was neither the cache nor the code: Netlify had **skipped every
+deploy after `5ae868e` with "account credit usage exceeded"** — seven
+commits, across BOTH tracks, queued as Skipped rather than failing. The
+site served v142 because v143-v148 were never built. **Skipped deploys do
+not retry themselves**; once credits are restored someone has to press
+Trigger deploy on the newest commit.
+
+- **The tell:** a hard refresh that changes nothing, while `git` says the
+  work is on `origin/main`. A stale service worker and an unbuilt deploy
+  produce the identical symptom from the browser's side.
+- **The check is the Netlify deploy list, and only the human can see it** —
+  `*.netlify.app` is blocked here (re-verified, not inherited), and this
+  repo carries no Netlify commit statuses at all.
+- **Do not diagnose this from the code.** Nothing in `js/boards.js` or
+  `css/main.css` was ever wrong; both were verified against `origin/main`
+  before the deploy list was asked for, which is the only reason the
+  billing answer was recognisable when it arrived.
 
 ### Sandbox limits (verified, reproducible)
 
