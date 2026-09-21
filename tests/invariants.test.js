@@ -538,33 +538,78 @@ module.exports=function(){
     });
   }
 
-  // ── A dblclick on a DESCENDANT of a drag surface needs the guard ───────
-  // boardsCardDragStart calls setPointerCapture, and a captured pointer
-  // RETARGETS the following click and dblclick to the capturing element.
-  // A card whose ondblclick sits on the very element carrying the drag
-  // handler survives that (a note, a heading, an image body); one whose
-  // handler sits on a DESCENDANT does not — its handler simply never runs.
-  // That has now cost the delete X, the file card, a table cell, the link
-  // title and, Sept 2026, every to-do item: double-clicking one did
-  // nothing, and the dblclick bubbled to the stage instead. So: any tag
-  // that carries an ondblclick must either BE the drag element (it holds
-  // the bodyDrag interpolation) or stop pointerdown itself.
-  s.section('ondblclick inside a drag surface');
+  /* ── A CARD IS GRABBABLE, AND ITS CONTROLS ARE STILL CLICKABLE ────────
+     These two used to be in tension and the tension is what shipped bugs.
+
+     boardsCardDragStart USED TO call setPointerCapture on the pointerdown,
+     and a captured pointer RETARGETS the click and dblclick that follow to
+     the capturing element — so a press that never became a drag stole the
+     click from whatever was actually pressed. That cost the delete X, the
+     file card's Open, a table cell, the link title and every to-do item,
+     five times under five names, and each was patched by hanging an
+     onpointerdown stopPropagation guard on the descendant.
+
+     Then the guards became the bug. The head strip is an absolute overlay
+     across the card's first row and is pointer-events:none, so a press on
+     it falls through to that row — and on a to-do card the row is the task
+     text, which carried one of those guards. Measured with the real
+     stylesheet: 42% of the strip started a drag, and none of its middle.
+     Afnan: "to do not moving properly".
+
+     So the capture is LAZY now, and that is what is guarded here: a press
+     that stays put never captures, so a descendant's dblclick is never
+     retargeted and text needs no guard. Real CONTROLS keep theirs, for a
+     different reason that still holds — a drag must not begin on something
+     you are in the middle of pressing, and dragging to select the text in
+     a field must not move the card. */
+  s.section('the card drag captures lazily, and controls still guard');
   {
     const src=read('js/boards.js');
-    // Deliberate exceptions: elements that are not inside a drag surface at
-    // all, so there is no capture to escape. The caption sits OUTSIDE the
-    // card body, has no drag handler, and opens on a single click.
-    const EXEMPT=['board-caption'];
-    const tags=src.match(/<[a-zA-Z][^<>]*ondblclick[^<>]*>/g)||[];
-    s.ok('js/boards.js still wires double-clicks',tags.length>0,tags.length+' sites');
-    tags.forEach(t=>{
-      const cls=(t.match(/class="([a-z-]+)/)||[])[1]||t.slice(0,40);
-      if(EXEMPT.indexOf(cls)>=0)return;
-      s.ok('.'+cls+' is the drag element or stops pointerdown',
-        t.indexOf('onpointerdown')>=0||t.indexOf('bodyDrag')>=0,
+    const fn=src.slice(src.indexOf('window.boardsCardDragStart=function'),
+                       src.indexOf('window.boardsResizeStart=function'));
+    s.ok('boardsCardDragStart is found',fn.length>500,fn.length+' chars');
+    // The CALL, not the prose: the comment above it names the function
+    // while explaining why it no longer runs at pointerdown.
+    const cap=fn.indexOf('setPointerCapture('),thresh=fn.indexOf('_BOARDS_DRAG_PX');
+    s.ok('it takes the pointer only after the drag threshold',
+      cap>-1&&thresh>-1&&cap>thresh,'threshold at '+thresh+', capture at '+cap);
+    s.ok('and tracks on the document, since nothing is captured up front',
+      /document\.addEventListener\('pointermove'/.test(fn));
+
+    // The head strip cannot run a handler, so it must not carry one — a
+    // dead grip reads in review exactly like a working one.
+    const css=read('css/main.css');
+    s.ok('.board-card-head is pointer-events:none',
+      /\.board-card-head\{[^}]*pointer-events:none/.test(css));
+    s.ok('and js/boards.js hangs no handler on it',
+      !/class="board-card-head"[^>]*on[a-z]+=/.test(src),
+      (src.match(/class="board-card-head"[^>]*>/)||[''])[0].slice(0,90));
+    s.ok('only the delete ✕ takes pointer events back',
+      /\.board-card-head \.board-card-del\{pointer-events:auto\}/.test(css));
+
+    // Every text field a card renders. A drag beginning inside one would
+    // fight selecting its contents, which is why the link card was once
+    // excluded from body dragging altogether — and that exclusion left it
+    // with no way to be moved at all. The guard belongs on the field.
+    const cardFn=src.slice(src.indexOf('function _boardCardHTML'),
+                           src.indexOf('function _boardsCardFootHTML'));
+    s.ok('_boardCardHTML is found',cardFn.length>2000,cardFn.length+' chars');
+    // Text fields only: a hidden <input type="file"> is a picker the card
+    // never shows, and the checkbox is asserted on its own below.
+    const fields=(cardFn.match(/<(?:input|textarea)\b[^<>]*>/g)||[])
+      .filter(t=>/<textarea/.test(t)||!/type="/.test(t)||/type="text"/.test(t));
+    s.ok('a card renders text fields',fields.length>0,fields.length+' sites');
+    fields.forEach(t=>{
+      const id=(t.match(/class="([a-z-]+)/)||[])[1]||t.slice(0,34);
+      s.ok(id+' stops pointerdown',/onpointerdown="event\.stopPropagation\(\)"/.test(t),
         t.slice(0,110));
     });
+    s.ok("and so does a to-do's checkbox",
+      /<input type="checkbox"[^<>]*onpointerdown="event\.stopPropagation\(\)"/.test(cardFn));
+    // Which card bodies actually carry the drag is asserted against
+    // RENDERED markup in tests/boards.test.js — stronger than reading the
+    // interpolation out of the source, and it caught the link card that
+    // could not be moved from anywhere.
   }
 
   return s;

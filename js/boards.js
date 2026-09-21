@@ -2178,27 +2178,37 @@ function _boardCardHTML(c,canEdit){
   // to try, and it did nothing.
   // Every card body drags now, not just the three that hold nothing
   // editable: a note is only contenteditable while it is BEING edited
-  // (double-click), so a press on one is unambiguously a grab. Link cards
-  // are the exception — they are three form fields, and a drag starting in
-  // a text input would fight selecting the URL. boardsCardDragStart bails
-  // if the press lands inside whatever is currently being edited.
-  const bodyDrag=(canEdit&&!c.locked&&c.type!=='link')
+  // (double-click), so a press on one is unambiguously a grab.
+  //
+  // A LINK CARD USED TO BE EXCLUDED here, because its form is text inputs
+  // and a drag starting in one would fight selecting the URL. That left it
+  // with no drag surface at all once the head strip became inert —
+  // MEASURED at 0% of the card, not merely 0% of the strip: a link card in
+  // either form state could not be moved from anywhere. The fields
+  // themselves stop pointerdown, which is the guard that reason actually
+  // called for, so the body can carry the drag like every other type and
+  // the padding around the form is grabbable.
+  //
+  // boardsCardDragStart bails if the press lands inside whatever is
+  // currently being edited.
+  const bodyDrag=(canEdit&&!c.locked)
     ?` onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:'';
   let body;
   if(c.type==='todo'){
     const items=c.items||[];
     const doneN=items.filter(i=>i.done).length;
-    // Every item carries the onpointerdown guard, for the same reason the
-    // checkbox and the remove button beside it already did: this body is a
-    // drag surface, boardsCardDragStart calls setPointerCapture, and a
-    // captured pointer RETARGETS the following click and dblclick to the
-    // capturing element — so the item's own ondblclick never ran and a
-    // to-do could not be edited by double-clicking it. Exactly the table
-    // cell's bug: a card whose ondblclick sits on the very element holding
-    // the drag handler (a note, a heading) survives it; one whose handler
-    // sits on a DESCENDANT does not. The cost is the documented one — a
-    // to-do card now drags by its header strip and the padding around its
-    // rows, not by the item text, just as a table drags by its chrome.
+    // The task TEXT and the list TITLE are text, not controls, so they drag
+    // like a note body and carry no pointerdown guard. They used to: the
+    // drag captured the pointer on the pointerdown, which retargeted the
+    // dblclick away from the item and made it uneditable, and a guard was
+    // the patch. boardsCardDragStart captures LAZILY now (see the long note
+    // there), so a press that stays put is never retargeted and the guard
+    // has nothing left to protect — while REMOVING it is what gives the
+    // card back the drag surface under its own head strip, which is where
+    // the strip's grab cursor invites you to grab it.
+    // The checkbox, the remove ✕, "Add a task…" and the title prompt DO
+    // keep theirs: those act on a single click, and a drag must not begin
+    // on a control you are in the middle of pressing.
     // A to-do card is a list with a TITLE, and its tasks NEST — both read
     // off the second Milanote video (Sept 2026). An item carries an optional
     // due date and an optional assignee, and the rail offers those only
@@ -2206,21 +2216,21 @@ function _boardCardHTML(c,canEdit){
     // per-card. Depth is a plain number on the item, so an older to-do
     // reads as a flat list with no migration.
     const title=(c.title!=null)
-      ?`<div class="board-todo-title" id="board-tdtitle-${c.id}" contenteditable="false" data-placeholder="New To-do List" onpointerdown="event.stopPropagation()" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-tdtitle-${c.id}')"`:''} oninput="window.boardsTodoTitle('${c.id}',this)"></div>`
+      ?`<div class="board-todo-title" id="board-tdtitle-${c.id}" contenteditable="false" data-placeholder="New To-do List" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-tdtitle-${c.id}')"`:''} oninput="window.boardsTodoTitle('${c.id}',this)"></div>`
       :'';
     // Milanote offers the title itself once a list has a few tasks, at the
     // foot of the card, with Yes / No thanks. Answering either way sets
     // titleAsked, so it is offered once and never nags again.
     const ask=(canEdit&&c.title==null&&!c.titleAsked&&items.length>=3)
-      ? `<div class="board-todo-ask" onpointerdown="event.stopPropagation()">Add a title to this list?
-           <button onclick="event.stopPropagation();window.boardsTodoTitleOn('${c.id}')">Yes</button>
-           <button onclick="event.stopPropagation();window.boardsTodoNoTitle('${c.id}')">No thanks</button>
+      ? `<div class="board-todo-ask">Add a title to this list?
+           <button onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsTodoTitleOn('${c.id}')">Yes</button>
+           <button onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsTodoNoTitle('${c.id}')">No thanks</button>
          </div>` : '';
     body=`<div class="board-card-body board-todo-body"${bodyDrag}>
       ${title}
       ${items.map((it,i)=>`<div class="board-todo-row" style="padding-left:${_boardsTodoIndentPx(it)}px">
         <input type="checkbox" ${it.done?'checked':''} ${canEdit?'':'disabled'} onpointerdown="event.stopPropagation()" onchange="window.boardsTodoToggle('${c.id}',${i},this.checked)">
-        <div class="board-todo-text${it.done?' done':''}" id="board-todo-${c.id}-${i}" contenteditable="false" data-placeholder="To-do" onpointerdown="event.stopPropagation()" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-todo-${c.id}-${i}')"`:''} oninput="window.boardsTodoText('${c.id}',${i},this)" onkeydown="window.boardsTodoKey(event,'${c.id}',${i})"></div>
+        <div class="board-todo-text${it.done?' done':''}" id="board-todo-${c.id}-${i}" contenteditable="false" data-placeholder="To-do" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-todo-${c.id}-${i}')"`:''} oninput="window.boardsTodoText('${c.id}',${i},this)" onkeydown="window.boardsTodoKey(event,'${c.id}',${i})"></div>
         ${_boardsTodoMetaHTML(it)}
         ${canEdit?`<button class="board-todo-del" onpointerdown="event.stopPropagation()" onclick="window.boardsTodoRemove('${c.id}',${i})" title="Remove">✕</button>`:''}
       </div>`).join('')}
@@ -2260,7 +2270,7 @@ function _boardCardHTML(c,canEdit){
       // Enter commits, and so does leaving the field. Nothing is fetched
       // per keystroke — a fetch per character would be a server request per
       // character, the rule the Done button already followed.
-      body=`<div class="board-card-body board-link-new">
+      body=`<div class="board-card-body board-link-new"${bodyDrag}>
           <div class="board-link-newrow">
             <svg class="board-link-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 9.5a3 3 0 0 0 4.24 0l2-2a3 3 0 0 0-4.24-4.24l-.7.7M9.5 6.5a3 3 0 0 0-4.24 0l-2 2a3 3 0 0 0 4.24 4.24l.7-.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
             <input type="text" class="board-link-urlin" placeholder="Enter a link URL" value="${_boardsEsc(c.linkUrl)}"
@@ -2270,10 +2280,13 @@ function _boardCardHTML(c,canEdit){
           ${_boardsLinkErrHTML(c)}
         </div>`;
     }else if(editing){
-      body=`<div class="board-card-body board-link-edit">
-          <input type="text" value="${_boardsEsc(c.linkUrl)}" placeholder="https://…" oninput="window.boardsLinkInput('${c.id}','linkUrl',this.value)">
-          <input type="text" value="${_boardsEsc(c.linkTitle)}" placeholder="Title" oninput="window.boardsLinkInput('${c.id}','linkTitle',this.value)">
-          <textarea placeholder="Short description (optional)" oninput="window.boardsLinkInput('${c.id}','linkDesc',this.value)">${_boardsEsc(c.linkDesc)}</textarea>
+      // Each field stops pointerdown: dragging to select the URL must not
+      // move the card. That guard is what lets the BODY around them carry
+      // the drag, which is the only way this card can be moved at all.
+      body=`<div class="board-card-body board-link-edit"${bodyDrag}>
+          <input type="text" value="${_boardsEsc(c.linkUrl)}" placeholder="https://…" onpointerdown="event.stopPropagation()" oninput="window.boardsLinkInput('${c.id}','linkUrl',this.value)">
+          <input type="text" value="${_boardsEsc(c.linkTitle)}" placeholder="Title" onpointerdown="event.stopPropagation()" oninput="window.boardsLinkInput('${c.id}','linkTitle',this.value)">
+          <textarea placeholder="Short description (optional)" onpointerdown="event.stopPropagation()" oninput="window.boardsLinkInput('${c.id}','linkDesc',this.value)">${_boardsEsc(c.linkDesc)}</textarea>
           ${c.linkUrl?`<button class="board-link-done" onpointerdown="event.stopPropagation()" onclick="window.boardsLinkDone('${c.id}')">Done</button>`:''}
         </div>`;
     }else{
@@ -2281,7 +2294,7 @@ function _boardCardHTML(c,canEdit){
       // an image or file card does. That NARROWS the header-only rule rather
       // than overturning it: the rule exists for bodies holding a caret, and
       // the form branch above still keeps its own.
-      const drag=(canEdit&&!c.locked)?` onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:'';
+      const drag=bodyDrag;
       // Milanote's order exactly, which is what Afnan asked for: the URL on
       // top, then the TITLE AS THE LINK in accent colour so it is obviously
       // clickable, then the description.
@@ -2378,19 +2391,21 @@ function _boardCardHTML(c,canEdit){
           const st=_boardsCellStyle(cell,c);
           const foc=_boardsCellFocus&&_boardsCellFocus.id===c.id&&_boardsCellFocus.r===r&&_boardsCellFocus.i===i;
           const cls=`board-td${foc?' focused':''}${_boardsCellClass(cell,c)}`;
-          // THE CELL MUST STOP POINTERDOWN, or it can never be edited.
-          // boardsCardDragStart calls setPointerCapture on the card body,
-          // and a captured pointer RETARGETS the following click and
-          // dblclick to the capturing element. A note survives that because
-          // its ondblclick sits on the very element carrying the drag
-          // handler; a cell's sits on a descendant, so the cell's handler
-          // never ran and the dblclick bubbled to the stage — which is why
-          // double-clicking a table spawned a stray note instead of
-          // putting a caret in the cell. Same guard the delete X, the card
-          // name and the comment badge already carry.
-          // The cost: a table no longer drags by its cells. It drags by its
-          // header strip and by the A/B/C band and row gutter, which are
-          // chrome and deliberately keep the drag.
+          // A TEXT CELL LETS THE PRESS THROUGH; a checkbox cell does not.
+          // The cell used to stop pointerdown unconditionally, because the
+          // drag captured the pointer on the pointerdown and a captured
+          // pointer RETARGETS the following dblclick to the capturing
+          // element — so the cell's handler never ran and double-clicking a
+          // table spawned a stray note instead of putting a caret in it.
+          // The recorded cost was "a table no longer drags by its cells",
+          // and that cost turned out to be the to-do card's bug wearing
+          // another face: the grid inherits cursor:grab from the card body,
+          // so ~44% of a table card said grab-me and would not move
+          // (measured by the layout probe's grab-cursor check). The capture
+          // is deferred past the drag threshold now, so a press that stays
+          // put is never retargeted and the guard is not needed on text.
+          // A CHECKBOX CELL keeps it: it acts on a single click, and a drag
+          // must not begin on a control you are in the middle of pressing.
           const stopDown=canEdit?' onpointerdown="event.stopPropagation()"':'';
           // A checkbox toggles on a SINGLE click, so it needs the guard
           // every control inside a drag surface needs: without stopping
@@ -2399,7 +2414,7 @@ function _boardCardHTML(c,canEdit){
           if(_boardsCellType(cell)==='check'){
             return`<${tag} id="board-td-${c.id}-${r}-${i}" class="${cls}"${st?` style="${st}"`:''} title="${_boardsCellRef(r,i)}"${stopDown}${canEdit?` onclick="event.stopPropagation();window.boardsCellToggle('${c.id}',${r},${i})"`:''}></${tag}>`;
           }
-          return`<${tag} id="board-td-${c.id}-${r}-${i}" class="${cls}" contenteditable="false"${st?` style="${st}"`:''}${stopDown} ${canEdit?`ondblclick="window.boardsFocusCell(event,'${c.id}',${r},${i})"`:''} oninput="window.boardsTableInput('${c.id}',${r},${i},this)"></${tag}>`;
+          return`<${tag} id="board-td-${c.id}-${r}-${i}" class="${cls}" contenteditable="false"${st?` style="${st}"`:''} ${canEdit?`ondblclick="window.boardsFocusCell(event,'${c.id}',${r},${i})"`:''} oninput="window.boardsTableInput('${c.id}',${r},${i},this)"></${tag}>`;
         }).join('')}</tr>`).join('')}
       </table>
       </div>
@@ -2543,8 +2558,15 @@ function _boardCardHTML(c,canEdit){
   // wrapping every card in a second clipping element, which is a structural
   // change to every card rule in the file for a few pixels of overhang.
   const pin=`<button class="board-cmt-badge pin" id="board-cmt-${c.id}" style="display:none" title="Comments on this card" onclick="event.stopPropagation();window.boardsOpenComments('${c.id}')" onpointerdown="event.stopPropagation()"></button>`;
+  // THE HEAD CARRIES NO DRAG HANDLER, deliberately. It is an absolute
+  // overlay across the card's first row and it is pointer-events:none, so
+  // a handler on it could never fire — it had one anyway, dead since the
+  // strip became inert, which is exactly the sort of thing that reads as
+  // "the drag handle is right there" in review. The drag comes from the
+  // BODY underneath, which the press falls through to. Only the delete ✕
+  // takes pointer events back (css/main.css).
   return`<div class="board-card-el type-${c.type}${photo?' photo':''}${canEdit&&_boardsDrawOn===c.id?' drawing':''}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle(c)}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px" onclick="window.boardsSelectCard('${c.id}',event)">
-    <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''}>
+    <div class="board-card-head">
       <span class="board-card-kind">
         <span class="board-card-name" id="board-name-${c.id}" contenteditable="false" data-placeholder="${_boardsEsc(kind)}" oninput="window.boardsCardName('${c.id}',this)" onpointerdown="event.stopPropagation()"></span>${c.locked?`<span class="board-card-lock" title="Position locked — unlock it from the ⋯ menu">${_boardsIcon('lock')}</span>`:''}</span>
       <span style="display:flex;align-items:center;gap:4px">
@@ -5053,12 +5075,37 @@ window.boardsCardDragStart=function(e,cardId){
   // A column cannot be dropped into itself, or into a column travelling
   // with it.
   const movingCols=new Set(group.filter(x=>x.type==='column').map(x=>x.id));
-  const head=e.currentTarget;
+  const grip=e.currentTarget;
   const unplaceable=_boardsUnplaceDrag(group);
-  const startX=e.clientX,startY=e.clientY;
+  const startX=e.clientX,startY=e.clientY,ptr=e.pointerId;
   let pushed=false;
-  head.setPointerCapture(e.pointerId);
+  // ── THE CAPTURE IS LAZY, AND THAT IS THE LOAD-BEARING PART ───────────
+  // This used to call setPointerCapture right here, on the pointerdown.
+  // A captured pointer RETARGETS the click and dblclick that follow to the
+  // capturing element, so a press that never became a drag STOLE the click
+  // from whatever was actually pressed. This file has recorded that bug
+  // five times under five different names — the delete X, the file card's
+  // Open, a table cell, a to-do item, a link's own anchor — and each was
+  // patched by hanging an onpointerdown stopPropagation guard on the
+  // descendant.
+  //
+  // Those guards are what broke dragging. The head strip is an inert
+  // overlay (pointer-events:none, so it cannot eat a click aimed at the
+  // content beneath it), so a press on the strip falls through to the
+  // card's first row — and on a to-do card that row is the task text,
+  // which carried one of those guards. MEASURED with the real stylesheet
+  // in headless Chromium (scratchpad/measure-card-grab.js): only 42% of a
+  // to-do card's strip would start a drag, and none of the middle, where
+  // anyone aims. Grab the bar that shows a grab cursor and the card does
+  // not move.
+  //
+  // Capturing only once the gesture is REALLY a drag removes the cause
+  // instead of the symptoms: a plain click is never retargeted, so the
+  // guards are not needed on anything that is merely text. The listeners
+  // go on the document, because without a capture this element stops
+  // seeing the pointer the moment it leaves.
   function move(ev){
+    if(ev.pointerId!=null&&ev.pointerId!==ptr)return;  // a second finger is a pinch
     if(_boardsPinch)return;   // two fingers down: zooming, not dragging a card
     // One undo entry per gesture, pushed on the first REAL movement —
     // a plain click (or a finger that rolls a pixel) shouldn't leave a
@@ -5067,6 +5114,14 @@ window.boardsCardDragStart=function(e,cardId){
       if(Math.abs(ev.clientX-startX)<_BOARDS_DRAG_PX&&Math.abs(ev.clientY-startY)<_BOARDS_DRAG_PX)return;
       _boardsPushUndo();pushed=true;
       _boardsFlashGrid(true);       // held for the gesture, released in up()
+      // NOW it is a drag, so take the pointer. Anything the four pixels
+      // before this started selecting is dropped, or the card would drag
+      // with a smear of highlighted text across it.
+      try{if(grip.setPointerCapture)grip.setPointerCapture(ptr);}catch(err){}
+      if(!_boardsEditingEl&&document.getSelection){
+        try{document.getSelection().removeAllRanges();}catch(err){}
+      }
+      if(document.body&&document.body.classList)document.body.classList.add('board-dragging');
     }
     let dx=(ev.clientX-startX)/b.zoom;
     let dy=(ev.clientY-startY)/b.zoom;
@@ -5098,8 +5153,13 @@ window.boardsCardDragStart=function(e,cardId){
     _boardsShowColumnDrop(_boardsDropTargets(group,movingCols));
   }
   function up(ev){
+    if(ev&&ev.pointerId!=null&&ev.pointerId!==ptr)return;
     _boardsHideGrid();
-    head.removeEventListener('pointermove',move);head.removeEventListener('pointerup',up);
+    document.removeEventListener('pointermove',move);
+    document.removeEventListener('pointerup',up);
+    document.removeEventListener('pointercancel',up);
+    if(document.body&&document.body.classList)document.body.classList.remove('board-dragging');
+    try{if(grip.hasPointerCapture&&grip.hasPointerCapture(ptr))grip.releasePointerCapture(ptr);}catch(err){}
     _boardsHideGuides();
     _boardsHideColumnDrop();
     _boardsPanelDropTarget(false);
@@ -5140,8 +5200,9 @@ window.boardsCardDragStart=function(e,cardId){
       _boardsSaveDebounced();
     }
   }
-  head.addEventListener('pointermove',move);
-  head.addEventListener('pointerup',up);
+  document.addEventListener('pointermove',move);
+  document.addEventListener('pointerup',up);
+  document.addEventListener('pointercancel',up);
 };
 window.boardsResizeStart=function(e,cardId){
   e.stopPropagation();

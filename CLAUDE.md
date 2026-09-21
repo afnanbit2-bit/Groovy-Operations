@@ -1268,19 +1268,22 @@ to the body and the item's own handler was never reached. Exactly the table
 cell. The checkbox and the remove button in the same row already carried
 `onpointerdown="event.stopPropagation()"`; the text was missed.
 
-The cost is the documented one: **a to-do card drags by its header strip
-and the padding around its rows**, not by the item text, just as a table
-drags by its chrome.
+The cost was recorded as: ~~a to-do card drags by its header strip and the
+padding around its rows, not by the item text, just as a table drags by its
+chrome.~~ **THAT COST WAS THE NEXT BUG, and this whole section is
+SUPERSEDED** — the header strip became an inert overlay two rounds later,
+so "drags by its header strip" stopped being true and the guard below was
+all that was left holding the card still. Afnan reported it as *"to do not
+moving properly"*; see **"to do not moving properly", and the guard that
+caused it** above. The guard is gone from the item text, and the capture
+that made it necessary is deferred past the drag threshold instead.
 
-**`tests/invariants.test.js` generalises it, because this keeps
-happening.** Every tag in `js/boards.js` carrying an `ondblclick` must
-either BE the drag element (it holds the `bodyDrag` interpolation) or stop
-pointerdown itself. One deliberate exception, **`.board-caption`** — it
-sits outside the card body, has no drag handler at all, and opens on a
-single click. Ten sites today; the invariant names the offender. Verified
-both ways, as is a `tests/boards.test.js` block that renders a real
-two-item to-do and asserts the guard **and** that the body still starts a
-card drag (this is a per-control guard, not a removal of the drag).
+~~`tests/invariants.test.js` generalises it: every tag carrying an
+`ondblclick` must either BE the drag element or stop pointerdown itself.~~
+**Also superseded** — that rule's premise was the eager capture. The
+invariant now guards the mechanism (the capture must come after the
+threshold), which is what makes all five occurrences impossible at once
+rather than patching the sixth.
 
 ### Mood Boards — the panel counts are red (Sept 2026)
 
@@ -2106,6 +2109,121 @@ painting a tint on the head fails it too; the old three-field link card
 fails five; and a colour panel that always shows tabs fails two.
 **Nobody has seen any of this on a real screen** — the sandbox cannot sign
 in.
+
+### Mood Boards — "to do not moving properly", and the guard that caused it (Sept 2026)
+
+Afnan sent a 24-second screen recording of a to-do card on DENIM DUMP 2K27.
+**Read frame by frame with cv2** (900×952, 30fps): the card is grabbed by
+its head strip — the bar carrying its name, its ✕ and a **grab cursor** —
+and dragged, over and over, for **thirteen seconds**, and the card does not
+move one pixel. Tracked by the card's own fill colour: x stayed at 378 from
+frame 84 to frame 474 while the pointer left and returned eleven times. It
+moves normally before and after, which is what made it read as intermittent.
+
+**It is not intermittent. It is a dead grip, and three separate decisions
+built it, each of them correct on its own.**
+
+1. `boardsCardDragStart` called `setPointerCapture` **on the pointerdown**.
+   A captured pointer **RETARGETS the click and dblclick that follow to the
+   capturing element**, so a press that never became a drag stole the click
+   from whatever was really pressed. This file has recorded that bug
+   **five times under five names** — the delete ✕, the file card's Open, a
+   table cell, a to-do item, a link's own anchor — and **every one was
+   patched by hanging an `onpointerdown="event.stopPropagation()"` guard on
+   the descendant.**
+2. The second-video round made `.board-card-head` **`pointer-events:none`**,
+   correctly: it is an absolute overlay across the card's first row, and the
+   layout probe caught it eating a link card's URL field. **Its own
+   `onpointerdown` has therefore never fired since** — a dead handler that
+   reads in review exactly like a working grip.
+3. So a press on the strip falls through to the row underneath — and on a
+   to-do card that row is the task text, wearing one of the guards from (1).
+
+**MEASURED rather than reasoned** (`scratchpad/measure-card-grab.js`, real
+markup, real stylesheet, headless Chromium, hit-testing every point of the
+strip): **42% of a to-do card's strip would start a drag, and none of its
+middle.** The working 42% is an 8px sliver of left padding. And the exact
+point in the video — mid-strip — lands on `.board-todo-text`, **shows
+`cursor:grab`, and is BLOCKED**. That is the whole report, in one probe.
+
+**The same measurement found a worse one nobody had reported: a link card
+in either form state was draggable from NOWHERE — 0% of the whole card,
+not merely of the strip.** `bodyDrag` excluded `type==='link'` ("they are
+three form fields, and a drag starting in a text input would fight
+selecting the URL"), which was right while the head was a real handle and
+became a card that cannot be moved when it stopped being one.
+
+**THE FIX IS THE CAUSE, NOT THE SYMPTOMS: the capture is LAZY now.**
+`boardsCardDragStart` takes the pointer only once the gesture passes
+`_BOARDS_DRAG_PX`, inside `move()`. A press that stays put never captures,
+so a descendant's click and dblclick are never retargeted and **the guards
+have nothing left to protect.** The listeners moved to the **document** —
+without a capture the pressed element stops seeing the pointer the moment
+it leaves — with a `pointerId` check so a second finger is a pinch and not
+this drag, and `pointercancel` registered beside `pointerup` (a vertical
+swipe on a to-do body is claimed by `touch-action:pan-y` and cancels).
+
+What that let go of, and what it deliberately kept:
+
+- **Gone: the guard on anything that is merely TEXT** — the to-do task text
+  and list title, and a table's text cells. Each now drags like a note body
+  drags, and each still double-clicks to edit. The table was the second
+  instance the new probe found on its own: **~44% of a table card promised
+  a grab and would not move**, since the grid inherits `cursor:grab` from
+  the card body. The recorded cost of that guard — "a table drags by its
+  chrome, not its cells" — was this same bug, unrecognised.
+- **Kept: the guard on every real CONTROL** — the checkbox, the remove ✕,
+  "Add a task…", a checkbox cell, the ✕ and the form fields. Its reason is
+  different and still holds: a drag must not begin on something you are in
+  the middle of pressing, and dragging to select the text in a field must
+  not move the card.
+- **The head's dead `onpointerdown` is deleted** rather than left beside a
+  comment. The strip is chrome; the drag belongs to the body the press
+  falls through to.
+- **The link card gets `bodyDrag` like every other type**, and its edit
+  form's three fields get the pointerdown guard they never had — which is
+  what that exclusion was actually reaching for.
+- **`body.board-dragging .board-world{user-select:none}`** plus a
+  `removeAllRanges` at the threshold: the four pixels before the capture
+  can start a text selection the drag would otherwise smear across the card.
+
+**THE REGRESSION TEST IS THE INTERESTING PART, and the first version of it
+was the wrong test.** It began as "most of the head strip must be
+grabbable", which needs a threshold, and a threshold is an argument — it
+flagged link forms and locked cards, which are *correctly* not grabbable.
+The rule that needs no threshold and no list of card types is:
+
+> **Wherever a card paints `cursor:grab`, a press there must start the
+> drag.** Nothing else on a card may claim that cursor.
+
+`tests/smoke-layout.js` hit-tests every point of every card and checks
+exactly that. It is silent on a link form (its fields paint a text caret,
+so they promise nothing), on a locked card (`.board-card-el.locked
+.board-card-body{cursor:default}` — already there, which is the CSS
+independently agreeing with the rule) and on a card with the pen on
+(`cursor:crosshair`). **Verified by restoring the guard: it fails naming
+`board-todo-text`, 990 of 2912 points.** A new fragment, `boards — every
+card type can be grabbed`, renders all eight types selected so the strip is
+painted and reachable.
+
+`tests/invariants.test.js`'s old "ondblclick inside a drag surface needs the
+guard" rule is **replaced, not deleted** — its premise (an eager capture)
+is gone. What it guards now is the mechanism: the capture must come after
+the threshold, the tracking must be on the document, the head must carry no
+handler while it is `pointer-events:none`, and every text field a card
+renders must still stop pointerdown. **If `setPointerCapture` ever moves
+back onto the pointerdown, all five old bugs return at once**, which is
+what that assertion exists to catch.
+
+**`tests/harness.js`'s `document.removeEventListener` was a no-op** and had
+to become real: harmless while every document listener was registered once
+at load, and not harmless the moment a GESTURE registers them — a second
+drag in one test would fire the first drag's stale handlers.
+
+**Nobody has dragged a card on a real screen** — the sandbox cannot sign
+in. What IS measured, in a real browser, is that the exact point in Afnan's
+recording now resolves to "the card drags" where it resolved to "BLOCKED by
+.board-todo-text" before.
 
 ### Mood Boards — Draw on, Edit and Background (Sept 2026) — REVERSES "NOT BUILT"
 
@@ -3187,13 +3305,18 @@ fault at all — they had been broken since the table card shipped.**
   the very element carrying the drag handler; a table cell's sits on a
   DESCENDANT, so the cell's handler never ran and the dblclick bubbled to
   the stage — which is why double-clicking a table **spawned a stray note**
-  instead of putting a caret in the cell. The fix is the guard the delete ✕,
+  instead of putting a caret in the cell. The fix was the guard the delete ✕,
   the card-name span and the comment badge already carry:
   `onpointerdown="event.stopPropagation()"` on every data cell. **Anything
-  clickable inside a drag surface needs it — this is the third time.** The
-  cost is that a table no longer drags by its cells; it drags by its header
-  strip and by the A/B/C band and row gutter, which are chrome and keep the
-  drag deliberately.
+  clickable inside a drag surface needs it — this is the third time.**
+  ~~The cost is that a table no longer drags by its cells; it drags by its
+  header strip and by the A/B/C band and row gutter.~~ **SUPERSEDED, and
+  that "cost" was itself a bug** — the header strip became inert two rounds
+  later, and the grid inherits `cursor:grab` from the card body, so ~44% of
+  a table card promised a grab and would not move. A TEXT cell carries no
+  guard now and drags like a note body; a CHECKBOX cell keeps it. The
+  capture is deferred past the drag threshold instead — see **"to do not
+  moving properly", and the guard that caused it**.
 - **FIRESTORE DOES NOT SUPPORT NESTED ARRAYS, and `rows` is one.**
   `updateDoc` refused every board carrying a table outright — "Nested arrays
   are not supported" — so **table content had never persisted**, from the

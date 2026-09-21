@@ -654,6 +654,38 @@ const FRAGMENTS={
       '<span class="board-imgedit-h sw"></span><span class="board-imgedit-h se"></span></div></div></div>'+
       '<div class="board-imgedit-foot">Drag inside the picture to choose what the card shows. Esc closes without changing anything.</div></div>'});
   },
+  /* ── EVERY CARD TYPE CAN BE GRABBED BY ITS OWN HEAD STRIP ────────────
+     The strip is what a person aims at: it carries the card's name, the
+     delete ✕ and a grab cursor. It is also an absolute overlay over the
+     card's first row and is pointer-events:none, so what a press on it
+     really reaches is that row — and if the row guards its own pointerdown,
+     the card does not move. That is what Afnan reported for the to-do card
+     ("to do not moving properly"), and the link card was worse: no drag
+     surface anywhere on it at all. Every type is rendered SELECTED here, so
+     the strip is painted and the probe can hit-test it. */
+  'boards — every card type can be grabbed':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editConnectors=[];_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+      const PIC='https://res.cloudinary.com/x/image/upload/v1/a.jpg';
+      _editCards=[
+        {id:'c1',type:'todo',x:10,y:10,w:240,h:150,items:[{text:'Trace the pattern'},{text:'Cut the denim'}]},
+        {id:'c2',type:'text',text:'a note',x:270,y:10,w:220,h:110},
+        {id:'c3',type:'link',x:510,y:10,w:220,h:100},
+        {id:'c4',type:'link',linkUrl:'https://x.test',linkTitle:'T',_linkEdit:true,x:750,y:10,w:220,h:150},
+        {id:'c5',type:'table',rows:[['Size','Qty'],['M','40']],x:10,y:190,w:240,h:150},
+        {id:'c6',type:'image',imageUrl:PIC,x:270,y:190,w:220,h:150},
+        {id:'c7',type:'board',boardId:'B',x:510,y:190,w:240,h:150},
+        {id:'c8',type:'heading',text:'SECTION',x:750,y:190,w:220,h:80}
+      ];
+      _boardsSelection=new Set(_editCards.map(c=>c.id));`);
+    const cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`)
+      .replace(/src="[^"]*cloudinary[^"]*"/g,
+        'src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'3\'%3E%3Crect width=\'4\' height=\'3\' fill=\'%23ffffff\'/%3E%3C/svg%3E"');
+    return Promise.resolve({widths:[1900,1280],html:
+      '<div class="board-stage" style="position:relative;height:400px;width:100%;overflow:hidden">'+
+      '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'});
+  },
   'boards — photo cards':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
@@ -1467,6 +1499,56 @@ document.querySelectorAll('#main-content button, #main-content [onclick], #main-
         (clsOf(hit,70)||
          (hit.closest&&clsOf(hit.closest('[class]'),70))||'?')
         ).slice(0,70)});
+  }
+});
+// A CARD THAT SAYS GRAB ME AND THEN DOES NOT MOVE.
+// The rule is exact: wherever a card paints cursor:grab, a press there has
+// to start the drag. Nothing else on a card is allowed to claim that
+// cursor, so this needs no list of card types and no threshold.
+//
+// It is the shape of what Afnan reported as "to do not moving properly".
+// The head strip is an absolute overlay across the card's first row and it
+// is pointer-events:none, so both the CURSOR and the press come from
+// whatever sits underneath. On a to-do card that is the task text, which
+// inherits grab from .board-card-body and carried a stopPropagation guard
+// of its own - so the strip showed a grab hand over 58% of itself and the
+// card would not move. Every logic suite was green: the drag handler was
+// in the DOM the whole time.
+// A link card's form is correctly NOT flagged: its fields paint a text
+// caret, so they promise nothing.
+document.querySelectorAll('#main-content .board-card-el').forEach(card=>{
+  if(hiddenEl(card))return;
+  const r=card.getBoundingClientRect();
+  if(r.width<8||r.height<8)return;
+  if(r.bottom<0||r.top>innerHeight||r.right<0||r.left>innerWidth)return;
+  function reaches(el){
+    let n=el;
+    while(n&&n!==document.body){
+      const h=n.getAttribute&&n.getAttribute('onpointerdown');
+      if(h){
+        if(h.indexOf('stopPropagation')>=0)return false;
+        if(h.indexOf('DragStart')>=0)return true;
+      }
+      if(n===card)return false;
+      n=n.parentElement;
+    }
+    return false;
+  }
+  let lying=0,tot=0,worst='';
+  for(let dy=2;dy<r.height-2;dy+=4)for(let dx=3;dx<r.width-3;dx+=4){
+    const x=r.left+dx,y=r.top+dy;
+    if(x<0||y<0||x>=innerWidth||y>=innerHeight)continue;
+    const n=document.elementFromPoint(x,y);
+    if(!n||!card.contains(n))continue;
+    if(getComputedStyle(n).cursor!=='grab')continue;
+    tot++;
+    if(!reaches(n)){lying++;if(!worst)worst=clsOf(n,50)||n.tagName;}
+  }
+  if(lying>2){
+    bad.push({why:'the card paints a grab cursor where a press will not drag it',
+      card:clsOf(card,50),
+      points:lying+' of '+tot,
+      saysGrab:worst});
   }
 });
 document.getElementById('__out').textContent=JSON.stringify(bad);

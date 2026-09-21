@@ -909,6 +909,12 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
    are the routes, and all three already existed). */
 .board-card-head{position:absolute;left:0;right:0;top:0;z-index:4;background:rgba(0,0,0,.72);border-bottom:none;padding:5px 46px 5px 8px;display:flex;align-items:center;justify-content:space-between;cursor:grab;user-select:none;pointer-events:none;opacity:0;visibility:hidden;transition:opacity .12s,visibility 0s .12s;border-top-left-radius:inherit;border-top-right-radius:inherit}
 .board-card-head .board-card-del{pointer-events:auto}
+/* While a card is really being dragged. The drag takes the pointer only
+   once it has moved past the threshold (js/boards.js), so the four pixels
+   before that can start a text selection the drag would then smear across
+   the board. The ranges are cleared at the same moment; this stops any
+   more from forming. */
+body.board-dragging .board-world{-webkit-user-select:none;user-select:none}
 .board-card-name[contenteditable="true"]{pointer-events:auto}
 .board-card-el:hover>.board-card-head,.board-card-el.selected>.board-card-head{opacity:1;visibility:visible;transition:opacity .12s,visibility 0s}
 .board-card-head .board-card-kind,.board-card-head .board-card-name,.board-card-head .board-card-del,.board-card-head .board-card-lock{color:#fff}

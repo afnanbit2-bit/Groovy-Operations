@@ -374,10 +374,27 @@ module.exports=function(){
       const m=/<(?:div|a) class="board-card-body[^>]*>/g;
       return (html.match(m)||[]).some(tag=>/boardsCardDragStart/.test(tag));
     };
-    ['image','file','board','text','todo'].forEach(t=>{
+    const card2=lit=>`_boardCardHTML(${lit},true)`;
+    const bodyDrag2=lit=>{
+      const html=run(card2(lit));
+      return ((html.match(/<(?:div|a) class="board-card-body[^>]*>/g)||[])
+        .some(tag=>/boardsCardDragStart/.test(tag)));
+    };
+    ['image','file','board','text','todo','link'].forEach(t=>{
       s.ok('a '+t+' card does',bodyDrag(t));
     });
-    s.ok('a link card does NOT — it is three form fields',!bodyDrag('link'));
+    // The link card was the one exclusion, and it left that card with NO
+    // drag surface at all once the head strip became an inert overlay —
+    // measured at 0% of the whole card, not just of the strip. Its fields
+    // carry the pointerdown guard instead, which is what the exclusion was
+    // really reaching for, so the padding around the form drags.
+    s.ok('a link card in its edit form drags from the body too',
+      bodyDrag2(`{id:'l',type:'link',x:0,y:0,w:220,h:150,linkUrl:'https://x.test',linkTitle:'T',_linkEdit:true}`));
+    s.ok('and every field in that form stops pointerdown itself',
+      (run(card2(`{id:'l',type:'link',x:0,y:0,w:220,h:150,linkUrl:'https://x.test',linkTitle:'T',_linkEdit:true}`))
+        .match(/<(?:input|textarea)[^>]*>/g)||[]).every(t=>/stopPropagation/.test(t)));
+    s.ok('a brand-new link card drags from the body as well',
+      bodyDrag2(`{id:'l',type:'link',x:0,y:0,w:220,h:100}`));
 
     s.section('nothing is editable until it is double-clicked');
     ['text','todo'].forEach(t=>{
@@ -403,31 +420,74 @@ module.exports=function(){
       _editCards=[{id:'r9',type:'image',x:0,y:0,w:200,h:200}];_boardsSelection=new Set(['r9']);
       _boardsCtxRun('rename');return hit;})()`)==='board-name-r9');
 
-    // Reported by Afnan with the item circled: double-clicking a to-do did
-    // nothing. The handler was there — it never ran. The to-do body is a
-    // drag surface, boardsCardDragStart calls setPointerCapture, and a
-    // captured pointer retargets the following dblclick to the CAPTURING
-    // element. A note and a heading survive that because their ondblclick
-    // sits on the very element holding the drag handler; an item's sits on
-    // a descendant. The checkbox and the remove button beside it already
-    // carried the guard; the text was missed. Fifth occurrence of this bug.
-    s.section('a to-do item can actually be double-clicked');
+    /* ── A to-do item can be double-clicked AND the card can be grabbed ──
+       Reported by Afnan twice, and the second report is what settled it.
+       First: double-clicking a to-do did nothing, because the drag captured
+       the pointer on the pointerdown and a captured pointer retargets the
+       following dblclick to the CAPTURING element. That was patched by
+       hanging a stopPropagation guard on the item text.
+       Then: "to do not moving properly" — the card would not move at all
+       when grabbed by its head strip. The strip is an inert overlay, so the
+       press falls through to the first task's text, and that guard ate it.
+       MEASURED with the real stylesheet in headless Chromium
+       (scratchpad/measure-card-grab.js): 42% of the strip started a drag,
+       and none of its middle. Both reports are one cause — the eager
+       capture — so the capture is deferred past the drag threshold and the
+       guard is gone from anything that is merely text. */
+    s.section('a to-do item can be double-clicked, and the card still drags');
     {
-      const todo=run(`_boardCardHTML(${JSON.stringify({id:'td',type:'todo',x:0,y:0,w:240,h:170,
+      const todo=run(`_boardCardHTML(${JSON.stringify({id:'td',type:'todo',x:0,y:0,w:240,h:170,title:'Sampling',
         items:[{text:'Lab dip',done:false},{text:'Bulk',done:true}]})},true)`);
       const rows=todo.match(/<div class="board-todo-text[^>]*>/g)||[];
       s.eq('both items render',rows.length,2);
       rows.forEach((r,i)=>{
         s.ok('item '+i+' offers the double-click',
           /ondblclick="window\.boardsBeginEdit/.test(r),r.slice(0,90));
-        s.ok('item '+i+' stops pointerdown reaching the drag handler',
-          /onpointerdown="event\.stopPropagation\(\)"/.test(r),r.slice(0,90));
+        // No guard: the press has to reach the body's drag handler, or the
+        // head strip — which sits directly over this row — is a dead grip.
+        s.ok('item '+i+' lets the press through to the card drag',
+          !/onpointerdown=/.test(r),r.slice(0,90));
       });
-      // The guard is per-control, not a removal of the body drag — a to-do
-      // card still drags, by its header strip and the padding around its
-      // rows, exactly as a table drags by its chrome.
+      s.ok('the list title lets it through too',
+        !/<div class="board-todo-title[^>]*onpointerdown=/.test(todo),
+        (todo.match(/<div class="board-todo-title[^>]*>/)||[''])[0].slice(0,90));
+      // The real CONTROLS keep theirs: each acts on a single click, and a
+      // drag must not begin on one you are in the middle of pressing.
+      s.ok('the checkbox still stops pointerdown',
+        /<input type="checkbox"[^>]*onpointerdown="event\.stopPropagation\(\)"/.test(todo));
+      s.ok('the remove ✕ still stops pointerdown',
+        /<button class="board-todo-del"[^>]*onpointerdown="event\.stopPropagation\(\)"/.test(todo));
+      s.ok('and "Add a task…" still stops pointerdown',
+        /<div class="board-todo-add"[^>]*onpointerdown="event\.stopPropagation\(\)"/.test(todo));
       s.ok('the to-do body still starts a card drag',
         /<div class="board-card-body board-todo-body" onpointerdown="window\.boardsCardDragStart/.test(todo));
+    }
+
+    /* ── The capture is what made both bugs, so the mechanism is asserted ─
+       If setPointerCapture ever moves back onto the pointerdown, every
+       descendant's click is retargeted again and the guards come back with
+       it — which is how a to-do card became ungrabbable at its own grip.
+       The threshold check has to come FIRST. */
+    s.section('the drag takes the pointer only once it is a drag');
+    {
+      const src=require('fs').readFileSync(require('path').join(__dirname,'..','js','boards.js'),'utf8');
+      const fn=src.slice(src.indexOf('window.boardsCardDragStart=function'),
+                         src.indexOf('window.boardsResizeStart=function'));
+      // The CALL, not the prose — the comment above it names the function
+      // while explaining why it no longer runs there.
+      const cap=fn.indexOf('setPointerCapture(');
+      const thresh=fn.indexOf('_BOARDS_DRAG_PX');
+      s.ok('boardsCardDragStart captures the pointer somewhere',cap>-1);
+      s.ok('and only AFTER the drag threshold is passed',thresh>-1&&cap>thresh,
+        'threshold at '+thresh+', capture at '+cap);
+      // Without a capture at pointerdown the element stops seeing the
+      // pointer the moment it leaves, so the tracking must be document-wide.
+      s.ok('it tracks on the document, not on the pressed element',
+        /document\.addEventListener\('pointermove'/.test(fn)&&
+        /document\.addEventListener\('pointerup'/.test(fn));
+      s.ok('and it tears those listeners down again',
+        /document\.removeEventListener\('pointermove'/.test(fn)&&
+        /document\.removeEventListener\('pointerup'/.test(fn));
     }
 
     /* ── A board card is a SPINE (Sept 2026) ────────────────────────────
@@ -688,11 +748,21 @@ module.exports=function(){
     s.ok('and so does the frame ✕',
       /<button class="board-card-del" onpointerdown="event\.stopPropagation\(\)"/.test(frame));
 
-    s.section('every card still has its header handle');
+    /* ── The head strip is CHROME, not a handle ─────────────────────────
+       It is an absolute overlay across the card's first row and CSS gives
+       it pointer-events:none, so a click aimed at the content beneath it
+       still lands (the layout probe caught it eating a link card's URL
+       field). It carried a drag handler anyway — dead from the day the
+       strip became inert, and reading in review exactly like a working
+       grip. The drag belongs to the BODY the press falls through to. */
+    s.section('the head strip carries no handler it cannot run');
     ['image','file','board','text','todo','link'].forEach(t=>{
-      s.ok(t+' keeps the header drag',
-        /<div class="board-card-head" onpointerdown="window\.boardsCardDragStart/.test(run(card(t))));
+      const head=(run(card(t)).match(/<div class="board-card-head"[^>]*>/)||[''])[0];
+      s.ok(t+"'s head has no drag handler",!/onpointerdown=/.test(head),head);
     });
+    s.ok('and the strip really is inert in the stylesheet',
+      /\.board-card-head\{[^}]*pointer-events:none/.test(
+        require('fs').readFileSync(require('path').join(__dirname,'..','css','main.css'),'utf8')));
 
     s.section('a locked card is not draggable from anywhere');
     const locked=run(`_boardCardHTML(${JSON.stringify({id:'c2',type:'image',x:0,y:0,w:200,h:200,
@@ -1602,14 +1672,22 @@ module.exports=function(){
         // rect has no right/bottom, so it is given a real one.
         document.getElementById('board-tray').getBoundingClientRect=
           function(){return{left:800,right:1200,top:0,bottom:600};};`;
-      const drag=(x,y)=>r2(`(function(){
-        const head=document.getElementById('drag-head');
-        window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
-          stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'k1');
-        const ev=t=>({type:t,clientX:${x},clientY:${y},altKey:false,shiftKey:false});
-        (head._ls.pointermove||[]).forEach(l=>l.fn(ev('pointermove')));
-        (head._ls.pointerup||[]).forEach(l=>l.fn(ev('pointerup')));
-        return true;})()`);
+      // Driven through the DOCUMENT listeners — see the note on the phone
+      // threshold test: the capture is deferred, so the tracking is
+      // document-wide.
+      const fire=(x,y)=>{
+        const ev=t=>({type:t,clientX:x,clientY:y,pointerId:1,altKey:false,shiftKey:false});
+        (app2.state.listeners.pointermove||[]).slice().forEach(f=>f(ev('pointermove')));
+        (app2.state.listeners.pointerup||[]).slice().forEach(f=>f(ev('pointerup')));
+      };
+      const drag=(x,y)=>{
+        r2(`(function(){
+          const head=document.getElementById('drag-head');
+          window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
+            stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'k1');})()`);
+        fire(x,y);
+        return true;
+      };
 
       r2(setup);
       drag(900,300);                      // inside the panel
@@ -1639,11 +1717,8 @@ module.exports=function(){
       r2(`(function(){
         const head=document.getElementById('drag-head2');
         window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
-          stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'n1');
-        const ev=t=>({type:t,clientX:900,clientY:300,altKey:false,shiftKey:false});
-        (head._ls.pointermove||[]).forEach(l=>l.fn(ev('pointermove')));
-        (head._ls.pointerup||[]).forEach(l=>l.fn(ev('pointerup')));
-        return true;})()`);
+          stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'n1');})()`);
+      fire(900,300);
       s.eq('a note dropped on the panel is just a move',r2(`_editCards.length`),1);
       s.ok('and the predicate says so directly',
         r2(`_boardsUnplaceDrag([{type:'text'}])===false&&_boardsUnplaceDrag([{type:'board',boardId:'B'}])===true`));
@@ -2824,23 +2899,39 @@ module.exports=function(){
     s.eq('a column carries no type label to get wrong',kindOf('column'),'(none)');
     s.eq('nor does a frame',kindOf('frame'),'(none)');
 
-    s.section('a cell stops pointerdown, or it can never be edited');
-    // boardsCardDragStart calls setPointerCapture on the card body, and a
-    // captured pointer RETARGETS the following click and dblclick to the
-    // capturing element. A note survives that because its ondblclick is on
-    // the very element carrying the drag handler; a cell's is on a
-    // DESCENDANT, so the cell handler never ran and the dblclick bubbled to
-    // the stage — double-clicking a table spawned a stray note.
+    /* ── A cell double-clicks to edit AND the table drags by its grid ────
+       The cell used to stop pointerdown unconditionally: the drag captured
+       the pointer on the pointerdown, and a captured pointer retargets the
+       following dblclick to the capturing element, so the cell's handler
+       never ran and double-clicking a table spawned a stray note. The
+       recorded cost — "a table no longer drags by its cells" — turned out
+       to be the to-do card's bug in another place: the grid inherits
+       cursor:grab from the card body, so ~44% of a table card promised a
+       grab and would not move. The capture is deferred past the drag
+       threshold now, so the guard is needed only on cells that act on a
+       SINGLE click. */
+    s.section('a text cell drags, a checkbox cell does not');
     boot();
     const cellHtml=run(`_boardCardHTML(_editCards[0],true)`);
     const tds=cellHtml.match(/<t[dh] id="board-td-[^>]*>/g)||[];
-    s.ok('every data cell carries the guard',
-      tds.length>0&&tds.every(t=>t.indexOf('onpointerdown="event.stopPropagation()"')>-1),
-      tds.length+' cells');
-    s.ok('and still carries the handler that needs it',
-      tds.every(t=>/ondblclick|boardsCellToggle/.test(t)));
-    // The A/B/C band and the row gutter are chrome, not data — they keep the
-    // drag, so a table can still be grabbed by something other than its header.
+    const textCells=tds.filter(t=>/ondblclick/.test(t));
+    s.ok('the table renders text cells',textCells.length>0,tds.length+' cells');
+    s.ok('a text cell lets the press through to the card drag',
+      textCells.every(t=>t.indexOf('onpointerdown')<0),
+      (textCells.find(t=>t.indexOf('onpointerdown')>=0)||'').slice(0,110));
+    s.ok('and still offers the double-click that opens it',
+      textCells.every(t=>/ondblclick="window\.boardsFocusCell/.test(t)));
+    // A checkbox cell toggles on a single click, so a drag must not begin
+    // on it.
+    const checkHtml=run(`_boardCardHTML(Object.assign({},_editCards[0],
+      {rows:[[{v:'x',t:'check'}]]}),true)`);
+    const checks=(checkHtml.match(/<t[dh] id="board-td-[^>]*>/g)||[]).filter(t=>/boardsCellToggle/.test(t));
+    s.ok('a checkbox cell renders',checks.length>0,checks.length+' cells');
+    s.ok('and it keeps the pointerdown guard',
+      checks.every(t=>t.indexOf('onpointerdown="event.stopPropagation()"')>-1),
+      (checks[0]||'').slice(0,110));
+    // The A/B/C band and the row gutter are chrome, not data — they have
+    // always kept the drag, and still do.
     const coords=cellHtml.match(/<td class="board-coord[^>]*>/g)||[];
     s.ok('the coordinate chrome deliberately does NOT stop it',
       coords.length>0&&coords.every(t=>t.indexOf('onpointerdown')<0),coords.length+' coords');
@@ -4334,14 +4425,19 @@ module.exports=function(){
 
       s.section('phone: a card drag starts after 4px');
       r(`_editCards=[{id:'n1',type:'text',text:'',x:40,y:60,w:170,h:100}];_boardsUndo=[];_boardsRedo=[];_boardsSelection=new Set();_boardsSuppressClick=false;`);
-      const drag=(x,y)=>r(`(function(){
-        const head=document.getElementById('drag-head');
-        window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
-          stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'n1');
-        const ev=t=>({type:t,clientX:${x},clientY:${y},altKey:false,shiftKey:false});
-        (head._ls.pointermove||[]).forEach(l=>l.fn(ev('pointermove')));
-        (head._ls.pointerup||[]).forEach(l=>l.fn(ev('pointerup')));
-        return true;})()`);
+      // The gesture tracks on the DOCUMENT now: the drag does not capture
+      // the pointer until it has passed the threshold, so before that the
+      // pressed element stops seeing it the moment it leaves.
+      const drag=(x,y)=>{
+        r(`(function(){
+          const head=document.getElementById('drag-head');
+          window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
+            stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'n1');})()`);
+        const ev=t=>({type:t,clientX:x,clientY:y,pointerId:1,altKey:false,shiftKey:false});
+        (ph.state.listeners.pointermove||[]).slice().forEach(f=>f(ev('pointermove')));
+        (ph.state.listeners.pointerup||[]).slice().forEach(f=>f(ev('pointerup')));
+        return true;
+      };
       drag(2,3);
       s.eq('a 2-3px roll pushes no undo entry',r(`_boardsUndo.length`),0);
       s.eq('and moves nothing',r(`_editCards[0].x+','+_editCards[0].y`),'40,60');

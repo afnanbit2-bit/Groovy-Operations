@@ -96,7 +96,13 @@ function makeDom(state){
     };})(),
     querySelector:()=>null,querySelectorAll:()=>[],
     addEventListener(t,fn){(state.listeners[t]=state.listeners[t]||[]).push(fn);},
-    removeEventListener(){},
+    // It really removes. It used to be a no-op, which was harmless while
+    // every document listener in the app was registered once at load — and
+    // stopped being harmless the moment a GESTURE started registering them
+    // (the card drag, which now tracks on the document so it can follow a
+    // pointer that has left the card). A no-op there means a second drag in
+    // one test fires the first drag's stale handlers too.
+    removeEventListener(t,fn){if(state.listeners[t])state.listeners[t]=state.listeners[t].filter(x=>x!==fn);},
     execCommand(){state.execCommands.push([].slice.call(arguments));return true;},
     get activeElement(){return state.activeElement;}
   };
