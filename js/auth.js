@@ -55,13 +55,13 @@ function isCsrLead(){ return !!(session && session.role===CSR_LEAD_ROLE); }
 // last lists the EMAIL of every account carrying canApprovePaidPR; moving
 // the flag means moving that email too, and a test fails until you do).
 const MKT_LEAD_ROLE='creator_content_ops_lead';
-function isContentOpsLead(){ return !!(session && session.role===MKT_LEAD_ROLE); }
-function canAccessMarketing(){ return !!(session && (session.role==='owner' || session.role===MKT_LEAD_ROLE)); }
-function canApprovePaidPR(){ return !!(session && session.canApprovePaidPR===true); }
+function isContentOpsLead(){ return can('mkt.lead'); }
+function canAccessMarketing(){ return can('mkt.access'); }
+function canApprovePaidPR(){ return can('mkt.paidpr'); }
 // Scoring settings (the bands and tier thresholds every creator is scored
 // by) are another per-account FLAG — Ammar only, not the other owner and
 // not the lead. Mirrored in firestore.rules isScoringAdmin(), by email.
-function canEditScoring(){ return !!(session && session.canEditScoring===true); }
+function canEditScoring(){ return can('mkt.scoring'); }
 // Packing/dispatch role (Faizan) — receives finished pieces, runs QC handoff
 // reconciliation, and books stock transfers. Username/role gated.
 function isPacking(){ return !!(session && session.role==='packing'); }

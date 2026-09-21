@@ -12,20 +12,19 @@ let viewingRecipe=null, viewingPrintJob=null, viewingQCReport=null;
 let _recipeTab='all', _jobTab='active';
 
 // ── Permission helpers ────────────────────────────────────────────────
-function _pu(){ return session&&session.u; }
-function canManageRecipes(){    return _pu()&&['ammar','afnan','arfat'].includes(session.u); }
-function canLockRecipe(){       return _pu()&&session.u==='ammar'; }
-function canApproveNewPP(){     return _pu()&&['ammar','afnan','arfat'].includes(session.u); }
-function canApproveRepeatPP(){  return _pu()&&['ammar','afnan','arfat','mustafa','haris'].includes(session.u); }
-function canApproveUrgentBypass(){ return _pu()&&['ammar','afnan','arfat','mustafa'].includes(session.u); }
-function canApproveBilling(){   return _pu()&&['ammar','afnan','arfat','mustafa'].includes(session.u); }
+function canManageRecipes(){    return can('recipe.manage'); }
+function canLockRecipe(){       return can('recipe.lock'); }
+function canApproveNewPP(){     return can('pp.new'); }
+function canApproveRepeatPP(){  return can('pp.repeat'); }
+function canApproveUrgentBypass(){ return can('pp.urgent'); }
+function canApproveBilling(){   return can('bill.approve'); }
 function isObserver(){          return session&&(session.role==='owner'||session.role==='manager'); }
-function isPrintWorker(){       return _pu()&&session.u==='asghar'; }
-function isBundleWorker(){      return _pu()&&session.u==='zohaib'; }
-function isStitchWorker(){      return _pu()&&session.u==='waqas'; }
-function isQCWorker(){          return _pu()&&session.u==='haris'; }
-function canSeePrinting(){      return session&&(isObserver()||isPrintWorker()||isBundleWorker()||isStitchWorker()||isQCWorker()||session.u==='ammar'); }
-function canViewQCReport(){     return session&&(isObserver()||isQCWorker()||session.u==='haris'); }
+function isPrintWorker(){       return can('print.work'); }
+function isBundleWorker(){      return can('bundle.work'); }
+function isStitchWorker(){      return can('stitch.work'); }
+function isQCWorker(){          return can('qc.work'); }
+function canSeePrinting(){      return can('print.view'); }
+function canViewQCReport(){     return can('qc.view'); }
 
 // ── Constants ─────────────────────────────────────────────────────────
 const PROCESS_TYPES={

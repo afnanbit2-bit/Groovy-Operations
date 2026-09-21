@@ -44,16 +44,9 @@ const _CAT_PALETTE = ['#0f172a','#334155','#475569','#0369a1','#0891b2','#15803d
 function _catAccent(id){let h=0;for(const ch of String(id||'')){h=(h*31+ch.charCodeAt(0))>>>0;}return _CAT_PALETTE[h%_CAT_PALETTE.length];}
 
 // ── Permissions ──
-function _canViewCash(){
-  return session && (
-    ['afnan','ammar','mustafa','arfat','raees'].includes(session.u) ||
-    session.role === 'owner' || session.role === 'manager' || session.role === 'store'
-  );
-}
-function _canEntryCash(){ return _canViewCash(); }
-function _canAdminCash(){
-  return session && (['afnan','ammar'].includes(session.u) || session.role === 'owner');
-}
+function _canViewCash(){ return can('cash.view'); }
+function _canEntryCash(){ return can('cash.entry'); }
+function _canAdminCash(){ return can('cash.admin'); }
 
 // ── Format helpers ──
 function _scEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }

@@ -59,7 +59,11 @@ function buildProbe(){
   const want=['showPage','renderPage','buildNav','showToast','_icon','logActivity',
     'uploadToCloudinary','printDocument','startApp','doLogin','renderProfilePage',
     'loadProfiles','renderBoardsGallery','boardsCreate','renderNotesPage',
-    'renderPatternHub','ptnRenderPage','qrcode'];
+    'renderPatternHub','ptnRenderPage','qrcode',
+    // js/permissions.js — every module asks it can(...), so a build where
+    // it failed to load would leave the whole app answering "no" (or, for
+    // the two inverted rules, "yes"). Worth a global check of its own.
+    'can','permsFor','permHolders','permRuleUsers','permProtected'];
   return{srcs,html:`<!doctype html><meta charset="utf-8"><body><pre id="out">running</pre>
 <script>window.__errs=[];window.onerror=function(m,u,l){window.__errs.push(m+' @'+String(u||'').split('/').pop()+':'+l);};</script>
 ${srcs.map(s=>`<script src="${s}"></script>`).join('\n')}
@@ -71,6 +75,23 @@ function t(name,fn){try{r.push('OK   '+name+': '+fn());}catch(e){r.push('FAIL '+
 r.push((window.__errs.length?'FAIL':'OK   ')+'no uncaught errors: '+(window.__errs.join(' | ')||'none'));
 r.push((missing.length?'FAIL':'OK   ')+'expected globals: '+(missing.length?'MISSING '+missing.join(', '):'all '+want.length+' present'));
 r.push((typeof USER_DEFS!=='undefined'&&USER_DEFS.length?'OK   ':'FAIL ')+'USER_DEFS loaded: '+(typeof USER_DEFS!=='undefined'?USER_DEFS.length+' accounts':'UNDEFINED'));
+t('permissions answer in the real load order',function(){
+  // The rule table is only useful if it can see the session, which is a
+  // top-level let in js/shared.js - a different lexical scope from
+  // js/permissions.js. This is the check that the bare-name reach across
+  // two classic scripts actually works in a browser.
+  // (No backticks in here: this whole block lives inside a template
+  //  literal, and one would close it. CLAUDE.md records this trap twice.)
+  session={uid:'x',u:'afnan',name:'Afnan',role:'owner'};
+  if(can('pay.run')!==true)throw new Error('afnan should hold pay.run');
+  session={uid:'y',u:'haris',name:'Haris',role:'worker'};
+  if(can('pay.run')!==false)throw new Error('haris should not hold pay.run');
+  if(can('qc.work')!==true)throw new Error('haris should hold qc.work');
+  if(can('nope.nope')!==false)throw new Error('an unknown capability must be false');
+  var n=permHolders('prof.admin').length;
+  session=null;
+  return n+' profile admins, and can() reads session across files';
+});
 t('jsPDF writes a real PDF',function(){
   var d=new window.jspdf.jsPDF();d.text('GROOVY',20,20);
   var s=d.output('datauristring');

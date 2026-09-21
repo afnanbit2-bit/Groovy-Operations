@@ -1798,8 +1798,7 @@ function renderStoreSection(id){window.showPage('store-'+id);}
 // ══════════════════════════════════════════════════════════════════════
 // PO ISSUE REQUESTS · EDIT REQUESTS · SHORTFALLS · APPROVER INBOX
 // ══════════════════════════════════════════════════════════════════════
-const _EDIT_APPROVERS=['ammar','arfat','mustafa'];
-function _canApproveEdits(){return _EDIT_APPROVERS.includes(session&&session.u);}
+function _canApproveEdits(){return can('store.approve');}
 function _findItem(code){return allItems.find(i=>i.code===code);}
 function _itemStockOf(code){const it=_findItem(code);return it?getBalance(it):0;}
 function _lineId(){return 'L'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
@@ -1810,7 +1809,7 @@ async function _notifyStoreRole(payload){
 }
 async function _notifyApprovers(payload){
   if(typeof _hrmNotify!=='function')return;
-  for(const u of _EDIT_APPROVERS){await _hrmNotify({forUser:u,...payload});}
+  for(const u of permHolders('store.approve')){await _hrmNotify({forUser:u,...payload});}
 }
 
 async function _createPoIssueRequest(po,tpl){

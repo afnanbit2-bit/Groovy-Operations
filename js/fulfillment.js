@@ -383,8 +383,8 @@ function _fulfillVolumeBars(points,opts){
 }
 // Owners, managers, and the dedicated fulfilment account (Umair) may view
 // and record daily performance.
-function _canViewFulfillment(){return session&&(session.role==='owner'||session.role==='manager'||session.role==='fulfillment');}
-function _canEditFulfillment(){return _canViewFulfillment();}
+function _canViewFulfillment(){return can('fulfil.view');}
+function _canEditFulfillment(){return can('fulfil.edit');}
 
 // Jump straight to a tab/section (used by mobile nav + deep links).
 window.showFulfillTab=function(tab){

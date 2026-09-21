@@ -12,6 +12,32 @@ const path=require('path');
 const {suite,ROOT}=require('./harness');
 
 const read=f=>fs.readFileSync(path.join(ROOT,f),'utf8');
+
+/* js/permissions.js is the one place a username list lives now. Several
+   invariants below mirror one of those lists against firestore.rules or a
+   Netlify function, so they read it from the real file — evaluated, not
+   regexed, because a regex that stops matching returns an empty list and
+   an "is X absent?" assertion then passes for the wrong reason. Evaluating
+   throws instead, which is the direction to fail in. */
+const _permSrc=(()=>{
+  const ctx={console:{warn(){}},window:{}};
+  require('vm').createContext(ctx);
+  require('vm').runInContext(read('js/permissions.js'),ctx,{filename:'permissions.js'});
+  return ctx;
+})();
+const permRuleUsers=cap=>{
+  const l=_permSrc.permRuleUsers(cap);
+  if(!l.length)throw new Error('js/permissions.js has no user list for '+cap);
+  return l;
+};
+const permListLiteral=fnName=>{
+  // A top-level `const` in a vm script lives in the lexical scope, not on
+  // the context object, so it is read by evaluating the accessor rather
+  // than by property lookup.
+  const l=require('vm').runInContext(fnName+'()',_permSrc);
+  if(!Array.isArray(l)||!l.length)throw new Error('js/permissions.js has no '+fnName);
+  return l;
+};
 const exists=f=>fs.existsSync(path.join(ROOT,f));
 
 module.exports=function(){
@@ -400,8 +426,15 @@ module.exports=function(){
     /function\s+_canSeeCreativeHub\s*\(/.test(sharedSrc));
   // The audience itself. Deliberately asserted by name: widening it is a
   // decision, and this is what makes it show up in a diff review.
-  const hubList=(sharedSrc.match(/_CREATIVE_HUB_USERS\s*=\s*\[([^\]]*)\]/)||[])[1]||'';
-  const hubNames=(hubList.match(/'([^']+)'/g)||[]).map(x=>x.replace(/'/g,''));
+  // The list moved into js/permissions.js as the hub.view rule when the
+  // permission helpers were unified; js/shared.js reads it from there.
+  // Read it where it lives, and say so out loud if it cannot be found —
+  // an empty list compared against an expected one fails, but the message
+  // ("got \"\"") sends the next person hunting.
+  const hubNames=permRuleUsers('hub.view');
+  s.ok('the hub.view rule is readable in js/permissions.js',hubNames.length>0);
+  s.ok('and js/shared.js reads the list from there, keeping one copy',
+    /_CREATIVE_HUB_USERS\s*=\s*permRuleUsers\('hub\.view'\)/.test(sharedSrc));
   s.eq('the Creative Hub audience is afnan, ammar, sami, mustafa, abbas',
     hubNames.join(','),'afnan,ammar,sami,mustafa,abbas');
   // Nothing may still gate the hub on a bare username — that is the shape
@@ -428,10 +461,15 @@ module.exports=function(){
   {
     const prof=read('js/profile.js');
     const fn=read('netlify/functions/admin-reset-password.js');
-    const admins=(prof.match(/const _PROFILE_ADMINS=\[([^\]]*)\]/)||[])[1]||'';
-    const prot=(prof.match(/const _PROFILE_PROTECTED=\[([^\]]*)\]/)||[])[1]||'';
-    const names=t=>(t.match(/'([a-z]+)'/g)||[]).map(x=>x.replace(/'/g,'')).sort();
-    const adminNames=names(admins), protNames=names(prot);
+    // Both lists moved into js/permissions.js (the prof.admin rule and
+    // PERM_PROFILE_PROTECTED); js/profile.js reads them from there.
+    const adminNames=permRuleUsers('prof.admin').slice().sort();
+    const protNames=permListLiteral('permProtected').slice().sort();
+    s.ok('both lists are readable in js/permissions.js',
+      adminNames.length>0&&protNames.length>0);
+    s.ok('and js/profile.js reads them from there, keeping one copy of each',
+      /_PROFILE_ADMINS=permRuleUsers\('prof\.admin'\)/.test(prof)
+      &&/_PROFILE_PROTECTED=permProtected\(\)/.test(prof));
     s.eq('the client grants exactly afnan, ammar, mustafa',
       adminNames.join(','),'afnan,ammar,mustafa');
     s.eq('and protects exactly the two owners',

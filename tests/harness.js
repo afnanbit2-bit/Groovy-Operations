@@ -282,10 +282,23 @@ function loadApp(opts){
   ctx.globalThis=ctx;
   vm.createContext(ctx);
 
-  (opts.files||[]).forEach(f=>{
-    const p=path.join(ROOT,f);
-    vm.runInContext(fs.readFileSync(p,'utf8'),ctx,{filename:path.basename(p)});
-  });
+  // js/permissions.js is loaded FIRST, always, exactly as index.html loads
+  // it: it is the second script on the page, it has no dependencies, and
+  // every module now asks it `can(...)`. A test that lists one module in
+  // `files` is not opting out of the app's permission rules any more than
+  // the browser is.
+  //
+  // It is deliberately the REAL file rather than a stub. Stubbing can()
+  // would make every permission assertion in every suite meaningless —
+  // they would be testing the stub. Listing it in `files` as well is
+  // harmless; it is loaded once either way (its top-level `const`s would
+  // throw on a second run in the same context).
+  ['js/permissions.js'].concat(opts.files||[])
+    .filter((f,i,all)=>all.indexOf(f)===i)
+    .forEach(f=>{
+      const p=path.join(ROOT,f);
+      vm.runInContext(fs.readFileSync(p,'utf8'),ctx,{filename:path.basename(p)});
+    });
 
   return{
     ctx,state,nodes,

@@ -7590,7 +7590,114 @@ specifically**, since they hold the shell, the router, and the nav:
   track adds a `/js/*.js` or `/css/*.css` file, and `CACHE_VERSION` must be
   bumped on any shipped HTML/CSS/JS change. See "PWA / offline caching"
 
+## Permissions — one question, one answer (Sept 2026)
+
+`js/permissions.js` — **`can('<capability>')`**, over one rule table. It
+loads SECOND, right after `js/diagnostics.js` and before `js/shared.js`,
+and has no dependencies of its own.
+
+Before it, "may this person do X?" was answered in **38 helper functions
+across ten modules**, each carrying its own hardcoded username list.
+Widening a right meant finding every copy — the Creative Hub gate was six
+copies, one of them written INVERTED, which a grep for the positive form
+missed entirely.
+
+**PHASE 1 CHANGED NOTHING, AND THAT IS THE WHOLE CLAIM.** The rule table
+reproduces exactly what the app answered before it existed — same lists,
+same role tests, same quirks. It is rewiring, not policy.
+
+- **The proof is a snapshot, captured BEFORE the refactor.**
+  `tests/fixtures/permissions-parity.json` holds every account's answer to
+  every capability, taken from the pre-refactor tree (the commit it came
+  from is recorded inside it). `tests/permissions.test.js` asserts the live
+  app still answers identically — **16 subjects x 38 capabilities, twice
+  over = 1,216 answers.**
+- **Twice over is not belt-and-braces; it is the point.** Every capability
+  is checked through `can()` AND through the ORIGINAL helper name, because
+  the rest of the app calls the helper. Verified by wiring
+  `_canProcessPayroll()` to `pay.view`: **`can()` stayed green and the
+  helper half failed**, naming Mustafa. A single-path test would have
+  passed.
+- **The 16th subject is nobody signed in**, and it earns its place: two
+  rules are written as "not the CSR lead" rather than as a positive grant,
+  so `fabric.edit` and `qc.record` are **TRUE with no session**. Harmless
+  today (there is no UI before the login screen) and it is why `not` in
+  `_permEval` is deliberately NOT guarded by the no-session check every
+  positive form carries. Reverting that guard fails four assertions by name.
+- **A rule is DATA, not a function** (`{users:[…]}`, `{roles:[…]}`,
+  `{flag:'x'}`, `{cap:'x'}`, `{any:[…]}`, `{not:…}`), so a later admin
+  screen can EXPLAIN a grant rather than just report a boolean.
+- **An unknown capability is always false.** A typo must never open a door;
+  the warning fires once per NAME, not per call, or `permHolders()` buries
+  it under fifteen identical lines.
+- **`can(cap, subject)` takes an explicit subject**, so the admin screen can
+  preview what somebody else would see without signing in as them.
+- **`permHolders(cap)` is DERIVED from `USER_DEFS` on every call** — the
+  rule the label library and frame membership already follow. It replaced
+  `_EDIT_APPROVERS` in `js/store.js`, which existed only to notify the
+  approvers and was a second copy of the same list. An empty result means
+  "USER_DEFS has not loaded", not "nobody".
+- **`permRuleUsers(cap)` / `permProtected()` return a COPY.** The Pattern
+  Hub and Profile mirror their lists against `firestore.rules` and a test
+  asserts each pair names the same people, so those constants READ the rule
+  table (`_PATTERN_ADMIN_USERS`, `_PROFILE_ADMINS`, `_CREATIVE_HUB_USERS`,
+  …) instead of keeping a second copy. Handing back the live array would
+  let a caller edit the rule table; a test breaks if it does.
+- **`tests/invariants.test.js` reads those lists by EVALUATING
+  `js/permissions.js`, not by regexing it** — a regex that stops matching
+  returns an empty list, and an "is X absent?" assertion then passes for the
+  wrong reason. Evaluating throws instead, which is the direction to fail in.
+- **`tests/harness.js` loads `js/permissions.js` first, always**, exactly as
+  `index.html` does. It is the REAL file, never a stub: a stub would make
+  every permission assertion in every suite a test of the stub.
+- **`tests/smoke-browser.js` exercises it in real Chromium.** `can()` has to
+  read `session`, a top-level `let` in `js/shared.js` — a different lexical
+  scope — so this is the check that the bare-name reach across two classic
+  scripts actually works in a browser. It does.
+
+**FOUR THINGS THE PARITY TABLE SURFACED. None were changed — Phase 1 does
+not get to make policy quietly — and each is asserted so that changing one
+is a visible decision rather than a side effect of tidying the table.**
+
+| | |
+|---|---|
+| `store.approve` excludes **Afnan** | an owner cannot approve a store edit |
+| `cash.entry` and `fulfil.edit` are **aliases** of their `.view` twin | they grant nothing beyond it, so a store manager's "entry" right is just view |
+| **Mustafa** holds `pp.repeat`/`pp.urgent`/`bill.approve` but not `pp.new`/`recipe.manage` | **Arfat** holds the reverse pair |
+| `fabric.edit`/`qc.record` are true signed-out | the inversion above |
+
+**WHAT THIS IS NOT.** `js/permissions.js` is a PUBLIC static asset. Anyone
+can read it and anyone can call `can()` from a console with whatever they
+like. **`firestore.rules` is the only real boundary**, and the capabilities
+marked BOUNDARY in the rule table must be mirrored there. The rest decide
+what someone is OFFERED, not what the database will accept.
+
+**STILL INLINE, deliberately — Phase 1b.** 58 permission sites have no
+named helper and so have no "before" to snapshot: `po.create`/`po.edit`
+(the `session.canPO` flag), `intel.view` and `monitor.view` (nav-only, and
+`intel.view`'s honest expression is a four-way OR that spans `buildNav`,
+the CSR sidebar and the `showPage` scope). Converting those is where
+behaviour risk actually lives — each needs its own judgement and its own
+assertion, so none of them was folded into this round.
+
+**A trap walked into while writing the browser check, recorded here twice
+already: a BACKTICK in a comment closes the template literal.** The probe
+HTML in `tests/smoke-browser.js` is one, and `js/shared.js` is a different
+lexical scope, so the comment explaining that could not say so with
+backticks.
+
+**Nobody has signed in and used the app with this in place** — the sandbox
+cannot sign in. What IS verified: all 4,019 logic assertions, all 25
+scripts executing in real Chromium, and `can()` reading `session` there.
+
 ## Permission helpers
+
+**Every one of these now delegates to `can()` in `js/permissions.js`** —
+see the section above. They are kept as named functions because the rest of
+the app calls them by name, and because the parity test cross-checks each
+one against the capability it is supposed to ask for. **To widen a right,
+edit the rule in `js/permissions.js`, not the helper** — and mirror it in
+`firestore.rules` where the entry below says to.
 
 Username-gated (not just role-gated). The HRM-ops ones (`_canViewPayroll`
 etc.) live in `js/hrm.js`; the printing/role helpers (`isObserver`,

@@ -398,7 +398,7 @@ function _qcListCard(p){
   </div>`;
 }
 // Everyone who can reach the page may record, except the view-only CSR role.
-function _qcCanRecord(){return !(typeof isCsrLead==='function'&&isCsrLead());}
+function _qcCanRecord(){return can('qc.record');}
 const _QC_VIEW_ONLY='<div class="empty" style="padding:12px;text-align:center">View only — QC dispositions are recorded by the QC team.</div>';
 function _renderQCDetail(po){
   const rec=poReceivedBySize(po),pend=qcPendingBySize(po),rw=qcInReworkBySize(po);

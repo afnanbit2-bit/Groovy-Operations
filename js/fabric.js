@@ -52,7 +52,7 @@ function _fabBusyEnd(){_fabBusy=false;clearTimeout(_fabBusyTimer);_fabShowBusy(f
 // The tabs that ENTER data. A view-only account (the CSR Team Lead) sees the
 // rest; asking for one of these lands on Stock instead.
 const _FAB_WRITE_TABS=['fabricin','issue','drawstring','returns'];
-function _fabReadOnly(){return typeof isCsrLead==='function'&&isCsrLead();}
+function _fabReadOnly(){return !can('fabric.edit');}
 function renderFabricPage(){
   const tabs=[['stock','Stock'],['fabricin','Fabric In'],['issue','Issue'],['registry','Issue Registry'],
     ['drawstring','Drawstrings'],['returns','Returns'],['reports','Reports'],['log','Log']]
@@ -1211,7 +1211,7 @@ window.submitFabricEdit=async function(fabId){
 // 'manager' but does NOT get this). Every other manager/worker still goes
 // through the approval-request flow. Mirror in firestore.rules: fabricin
 // and fabric_inventory delete.
-function _fabCanDelete(){return !!(session&&(session.role==='owner'||session.u==='mustafa'));}
+function _fabCanDelete(){return can('fabric.delete');}
 // Who can label fabric-issue registry entries — owners plus Uzaib (field staff).
 function _fabCanLabel(){return !!(session&&(session.role==='owner'||session.u==='uzaib'));}
 

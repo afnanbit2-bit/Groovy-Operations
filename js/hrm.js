@@ -206,9 +206,9 @@ function _hrmFmtPKR(n){return'PKR '+(Number(n)||0).toLocaleString('en-PK');}
 // (override a value, mark one person paid) via _canManagePayslips — added
 // Sept 2026, scoped narrowly so his new power doesn't extend to running
 // payroll itself. Mirror in firestore.rules: payslips write.
-function _canViewPayroll(){ return session&&['afnan','ammar','mustafa'].includes(session.u); }
-function _canProcessPayroll(){ return session&&['afnan','ammar'].includes(session.u); }
-function _canManagePayslips(){ return session&&['afnan','ammar','mustafa'].includes(session.u); }
+function _canViewPayroll(){ return can('pay.view'); }
+function _canProcessPayroll(){ return can('pay.run'); }
+function _canManagePayslips(){ return can('pay.slip'); }
 // Session 4 — Advances / Loans / Policy: same view tier as Payroll.
 // Advances stay owner-only for approve/reject/mark-paid (_canApproveHRMOps,
 // unchanged) — not what was asked. Loans got their own explicit grant
@@ -216,10 +216,10 @@ function _canManagePayslips(){ return session&&['afnan','ammar','mustafa'].inclu
 // step in this app (loanSubmit creates them straight into 'active'), so
 // "approve a loan" here means create/pause/resume — mirror in
 // firestore.rules: loans write.
-function _canViewHRMOps(){ return session&&['afnan','ammar','mustafa'].includes(session.u); }
-function _canApproveHRMOps(){ return session&&['afnan','ammar'].includes(session.u); }
-function _canManageLoans(){ return session&&['afnan','ammar','mustafa'].includes(session.u); }
-function _canEditPolicy(){ return session&&['afnan','ammar'].includes(session.u); }
+function _canViewHRMOps(){ return can('hrm.ops'); }
+function _canApproveHRMOps(){ return can('hrm.approve'); }
+function _canManageLoans(){ return can('hrm.loans'); }
+function _canEditPolicy(){ return can('hrm.policy'); }
 function _hrmEstSalary(emp,monthSummary){
   if(!emp||!emp.basicSalary)return 0;
   const policies=hrmPolicies||HRM_DEFAULT_POLICIES;

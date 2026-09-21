@@ -59,8 +59,11 @@ const _PROFILE_DEPARTMENTS=['','Operations','Production','Cutting','Stitching',
 
 // Who may edit someone else's profile, and who they may not touch.
 // By username, deliberately — see the header note.
-const _PROFILE_ADMINS=['afnan','ammar','mustafa'];
-const _PROFILE_PROTECTED=['afnan','ammar'];   // only an owner edits an owner
+// Both lists live in js/permissions.js (the prof.admin rule and
+// PERM_PROFILE_PROTECTED) so there is one copy of each for the
+// firestore.rules mirror test to check.
+const _PROFILE_ADMINS=permRuleUsers('prof.admin');
+const _PROFILE_PROTECTED=permProtected();   // only an owner edits an owner
 
 // Preset name colours. Drawn from the palette already in css/main.css
 // (the semantic accents and the Creative Hub category accents) so a name
@@ -165,9 +168,7 @@ window.profileNameColor=function(username){
 };
 
 // ── Permissions ──
-function _profIsAdmin(){
-  return !!(session&&_PROFILE_ADMINS.indexOf(session.u)>=0);
-}
+function _profIsAdmin(){ return can('prof.admin'); }
 // May the signed-in person edit this account's profile?
 function _profCanEditUser(username){
   if(!session||!username)return false;

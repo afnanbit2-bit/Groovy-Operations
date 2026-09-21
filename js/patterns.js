@@ -62,14 +62,15 @@
 //                            PATTERN_ADMIN_EMAILS in the sync function)
 //   _PATTERN_CUTTING_USERS ⇄ firestore.rules isCutting()
 // tests/patterns.test.js asserts each pair names the same people.
-const _PATTERN_ADMIN_USERS=['afnan','ammar','mustafa'];
-const _PATTERN_CUTTING_USERS=['uzaib'];
+// The lists themselves live in js/permissions.js as the ptn.* rules; these
+// read them so there is one copy for the rules-mirror test to check.
+const _PATTERN_ADMIN_USERS=permRuleUsers('ptn.manage');
+const _PATTERN_CUTTING_USERS=permRuleUsers('ptn.cut');
 const _PATTERN_HUB_USERS=_PATTERN_ADMIN_USERS.concat(_PATTERN_CUTTING_USERS);
-function _ptnIs(list){ return !!(typeof session!=='undefined'&&session&&list.indexOf(session.u)>-1); }
-function _canSeePatternHub(){ return _ptnIs(_PATTERN_HUB_USERS); }
-function _canManagePatterns(){ return _ptnIs(_PATTERN_ADMIN_USERS); }
-function _isPatternCutting(){ return _ptnIs(_PATTERN_CUTTING_USERS); }
-function _canAckPatternNotice(){ return _canManagePatterns()||_isPatternCutting(); }
+function _canSeePatternHub(){ return can('ptn.view'); }
+function _canManagePatterns(){ return can('ptn.manage'); }
+function _isPatternCutting(){ return can('ptn.cut'); }
+function _canAckPatternNotice(){ return can('ptn.ack'); }
 
 // ── Registry shape — brands and categories, exactly as the TAC List ───────
 const _TAC_BRANDS={groovy:'GROOVY',cultured:'Cultured Legacy',against:'Against All Odds'};
