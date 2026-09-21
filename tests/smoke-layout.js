@@ -933,15 +933,36 @@ const FRAGMENTS={
        a false failure of the fragment, not of the layout. The cue's geometry
        is a one-off measurement recorded in css/main.css; its SCOPE is held
        by tests/invariants.test.js. */
-    /* TWO TIERS, TWO WINDOW HEIGHTS (Sept 2026). The rail is sized by a
+    /* TWO TIERS, TWO VIEWPORTS (Sept 2026). The rail is sized by a
        min-height media query — 22px icons and a 61px pitch from 880px of
        viewport up, the compact rail below — so the wrapper is sized like
        the real stage (the viewport minus the board's own top bar; the
        canvas is a fixed takeover, so the app bar is not above it) and the
-       fragment is run at a 1000px window (large tier, ~808px of rail) AND
-       a 768px window (compact tier, ~623px of rail — the 768px laptop that
-       clipped the old pill). Each tier was measured once with
-       scratchpad/measure-rail.js; this is what keeps both true.
+       fragment is run at a 1000px viewport (large tier, ~808px of rail) AND
+       a 768px viewport (compact tier, ~623px of rail). Each tier was
+       measured once with scratchpad/measure-rail.js.
+
+       THE HEIGHTS ARE VIEWPORT HEIGHTS, AND THAT TOOK A CI FAILURE TO GET
+       RIGHT. A fragment declaring heights is served inside an iframe of
+       exactly that box (see the server below), because --window-size sets
+       the WINDOW and the browser keeps an unpredictable slice of it: this
+       machine left 100vh at 681 for a 768px window and the CI runner left
+       647, so the same rail reported client:631 here and client:575 there
+       and failed only on CI — the probe measuring the runner's chrome.
+       Framed, the stage is exactly h-50: 950 and 718, everywhere.
+
+       What that costs, stated rather than buried: the old 631 was smaller
+       than the truth, so the check used to fire at 13 tools (673 compact)
+       and now fires at 14. The guard is still real — the rail must not
+       scroll — it is just no longer accidentally strict.
+
+       STILL OPEN, and deliberately not decided here: what a 768px-tall
+       LAPTOP really leaves. CLAUDE.md puts a 900px screen at ~790px of
+       viewport, i.e. ~110px of OS and browser chrome; the same subtraction
+       makes a 768px screen ~658px of viewport and a ~608px stage, which
+       the 623px compact rail would NOT fit. That is a product question
+       about the shortest screen we support, not a probe setting, so it is
+       flagged for a human rather than answered by choosing a number.
        NOT at 420px: a wrapper one viewport tall plus the probe's own output
        block overflows the page, the vertical scrollbar takes 15px off the
        phone dock, and the Image tool then sits 4px past its right edge —
@@ -1726,7 +1747,7 @@ document.querySelectorAll('#main-content .board-card-el').forEach(card=>{
       saysGrab:worst});
   }
 });
-document.getElementById('__out').textContent=JSON.stringify(bad);
+(window.parent!==window?window.parent.document:document).getElementById('__out').textContent=JSON.stringify(bad);
 `;
 
 (async function main(){
@@ -1748,7 +1769,27 @@ document.getElementById('__out').textContent=JSON.stringify(bad);
     const m=/^\/__frag\/(\d+)$/.exec(url);
     if(m){
       const c=cases[Number(m[1])];
+      const q=new URLSearchParams(req.url.split('?')[1]||'');
       res.writeHead(200,{'Content-Type':'text/html'});
+      // A fragment that declares heights is measured INSIDE AN IFRAME of
+      // exactly that viewport, the same device tests/smoke-phone.js uses and
+      // for the same reason: --window-size sets the WINDOW, not the viewport,
+      // and how much of it the browser keeps for itself differs per Chrome
+      // build. The tool rail is sized by a min-height media query and its
+      // wrapper is a calc() off 100vh, so on the CI runner both resolved
+      // ~120px shorter than here and the rail reported that it had to scroll
+      // - a measurement of the runner's chrome, not of the app. An iframe has
+      // a viewport of exactly its own box, so 100vh and the tier query are
+      // the numbers the fragment asks for, on every machine. The inner page
+      // is served byte-identical to the unframed one so nothing else moves,
+      // and the probe writes its result up into the shell's own __out.
+      if(c.heights&&q.get('vh')&&!q.get('inner')){
+        return res.end(`<!doctype html><html><body style="margin:0">`+
+          `<iframe src="/__frag/${Number(m[1])}?t=${q.get('t')==='dark'?'dark':'light'}&inner=1" `+
+          `style="border:0;display:block;width:${Number(q.get('vw'))||1280}px;`+
+          `height:${Number(q.get('vh'))}px"></iframe>`+
+          `<pre id="__out">running</pre></body></html>`);
+      }
       return res.end(`<!doctype html><html><head>
 <script>document.documentElement.setAttribute('data-theme',new URL(location).searchParams.get('t')||'light');<\/script>
 <link rel="stylesheet" href="/css/main.css"></head><body>
@@ -1798,7 +1839,8 @@ document.getElementById('__out').textContent=JSON.stringify(bad);
         '--window-size='+j.w+','+j.h,
         '--user-data-dir='+j.dir,
         '--virtual-time-budget=8000','--dump-dom',
-        'http://127.0.0.1:'+port+'/__frag/'+j.i+'?t='+j.t],
+        'http://127.0.0.1:'+port+'/__frag/'+j.i+'?t='+j.t+
+         (j.c.heights?'&vw='+j.w+'&vh='+j.h:'')],
         {encoding:'utf8',maxBuffer:32*1024*1024,timeout:120000},
         (err,stdout)=>{
           const label=j.c.name+' @ '+j.w+'px '+(j.h!==1000?j.h+'px tall ':'')+j.t;

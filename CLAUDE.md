@@ -8068,6 +8068,36 @@ Chrome.
   `FRAGMENTS` when a page grows a layout worth protecting** — it is cheap,
   and this class of bug (see also the board's z-index) has cost this app
   more than any logic error.
+
+  **A fragment that declares `heights` is measured inside an IFRAME of
+  exactly that viewport (Sept 2026), and it took a CI failure to learn
+  why.** `--window-size` sets the WINDOW; how much of it the browser keeps
+  is per-build. At a 768px window this sandbox left `100vh` at 681 and the
+  GitHub runner left 647, so the tool rail measured `client:631` here and
+  `client:575` there — and the rail check, which says the rail must never
+  need vertical scrolling, **failed only on CI, on every push, while
+  passing locally.** It was measuring the runner's chrome. Framed, the
+  stage is exactly `h - 50` (950 and 718) on every machine. `tests/
+  smoke-phone.js` had already solved this the same way and said so in its
+  header; `smoke-layout`'s `heights` feature simply never adopted it.
+  Verified both ways by forcing a 620px window: the pre-fix code fails all
+  eight rail jobs at `scroll:623, client:483`, the fixed one passes all
+  eight. **Cost, stated rather than buried:** the old 631 was smaller than
+  the truth, so the check used to fire at 13 tools (673 compact) and now
+  fires at 14 — still a real guard, just no longer accidentally strict.
+  **And it was red for a while before anyone looked** — `410af08` failed
+  "4 of 206" before that day's five pushes, each of which went onto an
+  already-red CI. **Check the check-runs on a push, not just the local
+  run; "green here" is not the claim CI makes.**
+
+  **OPEN, and deliberately not decided by picking a number:** what a
+  768px-tall LAPTOP really leaves. This file puts a 900px screen at ~790px
+  of viewport, i.e. ~110px of OS and browser chrome; the same subtraction
+  makes a 768px screen ~658px of viewport and a ~608px stage, which the
+  623px compact rail would NOT fit. If that subtraction is right, the rail
+  overflows the shortest screen we claim to support. That is a product
+  question about the shortest supported screen, so it is flagged here
+  rather than answered in a probe setting.
 - **`tests/check-cache-version.js`** — a CI guard rather than a suite,
   because it needs git history. If a precached file changed between the base
   ref and HEAD, `CACHE_VERSION` must have changed too. Forgetting it fails
