@@ -229,10 +229,28 @@ function _boardsCardsInFrame(frame){
 // "bring to front" reorders (Stage 2).
 function _boardsRenderOrder(){
   const rank=c=>c.type==='frame'?0:c.type==='column'?1:2;
-  return _editCards.filter(c=>rank(c)===0)
-    .concat(_editCards.filter(c=>rank(c)===1))
-    .concat(_editCards.filter(c=>rank(c)===2));
+  // A collapsed column's children are not DRAWN. They are untouched in
+  // _editCards, so search, the exports, the reading order and the card
+  // count all still see them — this hides them, it does not remove them.
+  const folded=new Set(_editCards.filter(c=>_boardsIsColumn(c)&&c.collapsed).map(c=>c.id));
+  const vis=folded.size?_editCards.filter(c=>!(c.columnId&&folded.has(c.columnId))):_editCards;
+  return vis.filter(c=>rank(c)===0)
+    .concat(vis.filter(c=>rank(c)===1))
+    .concat(vis.filter(c=>rank(c)===2));
 }
+/* Collapse is undoable like any other mutation (the module's standing
+   contract: every mutating action pushes undo BEFORE it mutates), and it
+   rebuilds rather than repainting because the children leave the DOM. */
+window.boardsColumnFold=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||!_boardsIsColumn(c))return;
+  if(!_boardsCanEdit(_editBoard))return;
+  _boardsPushUndo();
+  if(c.collapsed)delete c.collapsed;else c.collapsed=true;
+  _boardsLayoutColumns();
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
 
 /* ── Columns: the one REAL container ────────────────────────────────────
    This reverses the Stage 3 decision recorded in CLAUDE.md, deliberately.
@@ -256,7 +274,19 @@ function _boardsRenderOrder(){
    A `columnId` pointing at a column that no longer exists is INERT: the
    card renders as an ordinary free card. Nothing has to be reconciled on
    read, and no failed write can strand a card inside an invisible box. */
-const _BOARDS_COL_PAD=12,_BOARDS_COL_HEAD=30,_BOARDS_COL_GAP=10,_BOARDS_COL_MIN_H=120;
+/* _BOARDS_COL_HEAD is the height of the column's title block — the name,
+   the card count and the corner buttons — and it is what the first child is
+   laid out below. It is MEASURED against the real stylesheet
+   (scratchpad/measure-column.js reports 63 for the block Afnan drew), not
+   counted up from paddings, because getting it wrong puts the first card
+   under the title rather than below it. .board-column-body's `top` is the
+   same number and must move with it.
+   _BOARDS_COL_MIN_H is what an EMPTY column stands at, and it is the size
+   of the target you are asked to drop into: 150 leaves 87px of body under
+   the 63px head. At the old 120 the drop zone was 57px — smaller than most
+   of the cards being aimed at it, which is part of why dropping into one
+   felt like a coin toss. */
+const _BOARDS_COL_PAD=12,_BOARDS_COL_HEAD=63,_BOARDS_COL_GAP=10,_BOARDS_COL_MIN_H=150;
 function _boardsIsColumn(c){return!!(c&&c.type==='column');}
 // The column a card belongs to, or null — including when columnId is stale.
 function _boardsColumnOf(c){
@@ -276,6 +306,14 @@ function _boardsColumnChildren(col){
 function _boardsLayoutColumn(col){
   if(!_boardsIsColumn(col))return false;
   const kids=_boardsColumnChildren(col);
+  // COLLAPSED: the column is just its header, and its children keep the
+  // positions they already had. Nothing is moved and nothing is unlinked,
+  // so expanding puts the list back exactly as it was — collapse is a way
+  // of LOOKING at a column, not an edit to it.
+  if(col.collapsed){
+    if(col.h!==_BOARDS_COL_HEAD){col.h=_BOARDS_COL_HEAD;return true;}
+    return false;
+  }
   const innerW=Math.max(60,col.w-_BOARDS_COL_PAD*2);
   let y=col.y+_BOARDS_COL_HEAD+_BOARDS_COL_PAD;
   let changed=false;
@@ -309,6 +347,47 @@ function _boardsColumnAt(wx,wy,skip){
   }
   return null;
 }
+/* ── WHICH COLUMN A DRAGGED CARD WOULD JOIN ──────────────────────────────
+   This used to be `_boardsColumnAt(centre of the card)`, and Afnan reported
+   dropping into a column as not working properly. MEASURED before changing
+   it (scratchpad/probe-drop-overlap.js, the real drag driven end to end):
+   of 272 drop positions where the card VISIBLY overlapped an empty column
+   by a quarter or more, 90 were refused — and a card sitting 45% inside a
+   column still would not drop.
+
+   That is not a bug in one line, it is the wrong rule. A centre point is
+   invisible; what a person aims with is the card, and the card is nearly as
+   big as an empty column, so "is the middle pixel inside" reads as random.
+   The rule is OVERLAP now: the column sharing the most area with the card
+   wins, as long as that shared area is a real share of whichever of the two
+   is SMALLER. min() is what makes both directions work — a small card well
+   inside a big column, and a big card dropped squarely on top of a small
+   column, are both obviously deliberate. The centre still counts on its own
+   so nothing that used to work stops working. */
+const _BOARDS_COL_DROP_SHARE=0.3;
+function _boardsRectOverlap(a,b){
+  const w=Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x);
+  const h=Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y);
+  return w>0&&h>0?w*h:0;
+}
+function _boardsColumnForCard(card,skip){
+  let best=null,bestArea=0;
+  _editCards.filter(_boardsIsColumn).forEach(col=>{
+    if(skip&&skip.has(col.id))return;
+    if(col.locked)return;
+    if(col.collapsed)return;      // a collapsed column shows no slots to aim at
+    const over=_boardsRectOverlap(card,col);
+    if(!over)return;
+    const share=over/Math.max(1,Math.min(card.w*card.h,col.w*col.h));
+    const cx=card.x+card.w/2,cy=card.y+card.h/2;
+    const centreIn=cx>=col.x&&cx<=col.x+col.w&&cy>=col.y&&cy<=col.y+col.h;
+    if(!centreIn&&share<_BOARDS_COL_DROP_SHARE)return;
+    // Ties go to the topmost, which is the later one in the array — the
+    // same "later paints on top" order _boardsColumnAt walks backwards.
+    if(over>=bestArea){best=col;bestArea=over;}
+  });
+  return best;
+}
 // Where a card dropped at world-y `wy` would land, and the y that puts it
 // there. Returning a y (rather than an index) is what lets the drop reuse
 // the ordinary "sort children by y" rule with no special-casing.
@@ -337,7 +416,7 @@ function _boardsDropTargets(group,movingCols){
     if(c.columnId&&movingCols&&movingCols.has(c.columnId))return false;
     return true;
   }).map(card=>{
-    const col=_boardsColumnAt(card.x+card.w/2,card.y+card.h/2,movingCols);
+    const col=_boardsColumnForCard(card,movingCols);
     return{card,col,slot:col?_boardsColumnSlot(col,card.y+card.h/2,card.id):null};
   });
 }
@@ -2150,14 +2229,27 @@ function _boardCardHTML(c,canEdit){
   if(c.type==='column'){
     const sel=_boardsSelection.has(c.id)?' selected':'';
     const n=_boardsColumnChildren(c).length;
-    return`<div class="board-column${sel}${c.locked?' locked':''}${_boardsCardColorClasses({color:c.color})}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle({color:c.color})}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px">
+    /* The header is the card's TITLE BLOCK, not a toolbar strip: the name
+       centred on its own line with the count under it, the way Afnan drew
+       it. The two buttons are absolutely positioned in the corner rather
+       than being flex siblings, or the title would centre against whatever
+       is left over and shift the moment the ✕ appeared on hover.
+       _BOARDS_COL_HEAD must equal this block's real height — it is what
+       _boardsLayoutColumn puts the first child below — so it is MEASURED
+       (scratchpad/measure-column.js), never guessed. */
+    const fold=c.collapsed?'+':'—';
+    return`<div class="board-column${sel}${c.collapsed?' collapsed':''}${c.locked?' locked':''}${_boardsCardColorClasses({color:c.color})}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle({color:c.color})}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px">
       <div class="board-column-head" ${canEdit&&!c.locked?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''} onclick="window.boardsSelectCard('${c.id}',event)">
-        <input type="text" class="board-column-title" value="${_boardsEsc(c.title||'')}" placeholder="Column" ${canEdit&&!c.locked?'':'readonly'} oninput="window.boardsFrameTitle('${c.id}',this.value)" onpointerdown="event.stopPropagation()">
-        <span class="board-column-count">${n}</span>
-        ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete column (cards inside are released onto the board)">✕</button>`:''}
+        <input type="text" class="board-column-title" value="${_boardsEsc(c.title||'')}" placeholder="New Column" ${canEdit&&!c.locked?'':'readonly'} oninput="window.boardsFrameTitle('${c.id}',this.value)" onpointerdown="event.stopPropagation()">
+        <div class="board-column-count">${n} ${n===1?'card':'cards'}</div>
+        <div class="board-column-btns">
+          ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete column (cards inside are released onto the board)">✕</button>`:''}
+          <button class="board-column-fold" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsColumnFold('${c.id}')" title="${c.collapsed?'Expand this column':'Collapse this column'}">${fold}</button>
+        </div>
       </div>
-      ${n?'':'<div class="board-column-empty">Drag cards in</div>'}
-      ${canEdit&&!c.locked?`<div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')" title="Drag to set the column width"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
+      ${c.collapsed?'':`<div class="board-column-body">${n?'':'<div class="board-column-empty">Drag cards here</div>'}</div>`}
+      <span class="board-card-corner" aria-hidden="true"></span>
+      ${canEdit&&!c.locked&&!c.collapsed?`<div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')" title="Drag to set the column width"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
     </div>`;
   }
   if(c.type==='frame'){
@@ -8359,13 +8451,49 @@ function _boardsTrayLinkHydrate(itemId){
     if(meta)_boardsSaveDebounced();
   })();
 }
+/* ── THE UPLOAD SIZE LIMIT ───────────────────────────────────────────────
+   35 MB, asked for by Afnan. It is checked HERE because this is the one
+   function every upload path goes through — the drop, the file picker, the
+   Replace action, the Unsorted tray, a board's cover picture and the link
+   preview mirror. A guard on any one of those is a guard four other routes
+   walk straight past.
+
+   IT IS OUR LIMIT, NOT CLOUDINARY'S, and the two are not the same number.
+   Cloudinary caps an unsigned upload by PLAN — 10 MB on the free tier — and
+   `cloudinary.com` is unreachable from the build sandbox entirely, so which
+   cap this account carries CANNOT be checked from a session and is not
+   claimed here. What this does is refuse a file we already know is too big
+   BEFORE it is sent (a 40 MB upload that fails after a minute of waiting is
+   the worst version of this), and, when Cloudinary refuses one that passed,
+   pass ITS message through with a line saying where that limit is set. */
+const _BOARDS_MAX_UPLOAD_MB=35;
+const _BOARDS_MAX_UPLOAD=_BOARDS_MAX_UPLOAD_MB*1024*1024;
+// A File or a Blob has a size; _boardsMirrorPreviewImage hands this a remote
+// URL STRING, which has no size to check and is fetched by Cloudinary itself.
+function _boardsTooBig(file){
+  const n=file&&typeof file==='object'&&+file.size;
+  return n>0&&n>_BOARDS_MAX_UPLOAD;
+}
+function _boardsTooBigMsg(file){
+  return'"'+((file&&file.name)||'That file')+'" is '+_boardsFormatBytes(file&&file.size)+
+    ' — the limit is '+_BOARDS_MAX_UPLOAD_MB+' MB.';
+}
 async function _boardsUploadAny(file){
+  if(_boardsTooBig(file))throw new Error(_boardsTooBigMsg(file));
   const fd=new FormData();
   fd.append('file',file);
   fd.append('upload_preset','groovy-ops');
   const r=await fetch('https://api.cloudinary.com/v1_1/deww4lpym/auto/upload',{method:'POST',body:fd});
   const d=await r.json();
-  if(!d.secure_url)throw new Error((d.error&&d.error.message)||'Upload failed');
+  if(!d.secure_url){
+    let m=(d.error&&d.error.message)||'Upload failed';
+    // Cloudinary's own words, then where that number lives — the account's
+    // plan, which nothing in this app can raise.
+    if(/file size|too large|maximum is/i.test(m))
+      m+=' (that is Cloudinary\'s own cap for this account\'s plan, not the '+
+         _BOARDS_MAX_UPLOAD_MB+' MB one this app sets)';
+    throw new Error(m);
+  }
   return d;
 }
 // PDF page-1 thumbnail via a Cloudinary delivery transform. Best effort by
@@ -8533,7 +8661,19 @@ async function _boardsUploadFileToCard(cardId,file){
 // Drop (or pick) any number of files at once: one card each, laid out in a
 // grid from the drop point rather than all landing on the same spot, then
 // uploaded in parallel with each card showing its own "Uploading…" state.
+/* Split a drop into what we will send and what we will not, and SAY which.
+   Dropping eight files where one is 60 MB must add the other seven rather
+   than refusing the lot — and must not leave the eighth as a card stuck on
+   "Uploading…" that quietly fails a minute later. */
+function _boardsSizeFilter(files){
+  const ok=[],big=files.filter(f=>_boardsTooBig(f)||!ok.push(f));
+  if(big.length===1)showToast(_boardsTooBigMsg(big[0]),true);
+  else if(big.length)showToast(big.length+' files are over the '+_BOARDS_MAX_UPLOAD_MB+
+    ' MB limit and were not added: '+big.map(f=>f.name||'?').join(', '),true);
+  return ok;
+}
 function _boardsAddFiles(files,at){
+  files=_boardsSizeFilter(files||[]);
   if(!_boardsCanEdit(_editBoard)||!files.length)return;
   _boardsPushUndo();
   const perRow=Math.min(4,Math.ceil(Math.sqrt(files.length)));
@@ -10555,6 +10695,7 @@ window.boardsTrayFilesPicked=function(inputEl){
   _boardsTrayAddFiles(files);
 };
 function _boardsTrayAddFiles(files){
+  files=_boardsSizeFilter(files||[]);
   if(!_boardsCanEdit(_editBoard)||!files.length)return;
   files.forEach(f=>{
     const item={id:_boardsTrayItemId(),kind:_boardsIsImageFile(f)?'image':'file',

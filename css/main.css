@@ -1328,16 +1328,47 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   background:var(--soft);pointer-events:none;transition:border-color .12s,box-shadow .12s}
 .board-column.selected{outline:2px solid var(--text);outline-offset:1px}
 .board-column.drop-into{border-color:var(--text);box-shadow:0 0 0 3px var(--hover)}
-.board-column-head{position:absolute;left:-1px;right:-1px;top:-1px;height:30px;display:flex;
-  align-items:center;gap:6px;padding:0 6px 0 10px;background:var(--surface);
-  border:1px solid var(--border);border-radius:12px 12px 0 0;cursor:grab;pointer-events:auto}
+/* The selection dot, same as a card's, so a selected column reads the same
+   way a selected card does. */
+.board-column.selected>.board-card-corner{display:block}
+/* THE HEAD IS A TITLE BLOCK, not a toolbar strip — the name centred on its
+   own line with the count under it. Its rendered height is what
+   _BOARDS_COL_HEAD has to equal (js/boards.js lays the first child out
+   below it), so anything changed here must be re-measured with
+   scratchpad/measure-column.js. */
+.board-column-head{position:absolute;left:0;right:0;top:0;
+  padding:11px 12px 10px;background:transparent;border:none;border-radius:12px 12px 0 0;
+  cursor:grab;pointer-events:auto;text-align:center}
 .board-column.locked .board-column-head{cursor:default;background:var(--accent-warning-soft)}
-.board-column-title{flex:1;min-width:0;border:none;outline:none;background:transparent;
-  font-family:inherit;font-size:13px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
-.board-column-count{flex-shrink:0;font-size:11px;font-weight:700;color:var(--muted);
-  background:var(--surface-2);border-radius:9px;padding:1px 6px;min-width:18px;text-align:center}
-.board-column-empty{position:absolute;left:0;right:0;top:38px;text-align:center;
-  font-size:12px;color:var(--muted);opacity:.7;pointer-events:none}
+.board-column-title{display:block;width:100%;border:none;outline:none;background:transparent;
+  font-family:inherit;font-size:17px;font-weight:700;line-height:1.25;color:var(--text);
+  text-align:center;padding:0}
+.board-column-title::placeholder{color:var(--muted);opacity:.85}
+.board-column-count{font-size:13px;line-height:1.3;color:var(--muted);margin-top:2px}
+/* The two buttons sit in the corner rather than in the flow, so the title
+   stays centred on the CARD and does not shift when the ✕ fades in. */
+/* top:12 clears the selection dot, which sits at 2,2 exactly as it does on
+   a card — the two would otherwise overlap on a selected column. */
+.board-column-btns{position:absolute;top:12px;right:8px;display:flex;align-items:center;gap:2px}
+.board-column-fold{border:none;background:transparent;color:var(--muted);cursor:pointer;
+  font-size:15px;line-height:1;width:24px;height:24px;border-radius:6px;padding:0}
+.board-column-fold:hover{color:var(--text);background:var(--hover)}
+/* Delete is the destructive one, so it is the one that waits to be asked
+   for. The collapse minus is always there; the ✕ appears on hover or once
+   the column is selected — the same rule the card head follows. */
+.board-column-btns .board-card-del{opacity:0;transition:opacity .12s}
+.board-column:hover .board-column-btns .board-card-del,
+.board-column.selected .board-column-btns .board-card-del{opacity:1}
+/* The body is the DROP ZONE and it says so: a recessed panel under the
+   divider, which lights up while a card is held over the column. */
+.board-column-body{position:absolute;left:0;right:0;bottom:0;top:63px;
+  border-top:1px solid var(--line);background:rgba(0,0,0,.14);
+  border-radius:0 0 11px 11px;pointer-events:none;transition:background .12s,box-shadow .12s}
+.board-column.drop-into .board-column-body{background:var(--hover);
+  box-shadow:inset 0 0 0 2px var(--text)}
+.board-column.collapsed{background:var(--surface)}
+.board-column-empty{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);
+  text-align:center;font-size:13px;color:var(--muted);opacity:.7;pointer-events:none}
 .board-column .board-resize-handle{pointer-events:auto;cursor:ew-resize}
 .board-column.tint-grey{border-color:var(--sw-grey)}
 .board-column.tint-teal{border-color:var(--sw-teal)}

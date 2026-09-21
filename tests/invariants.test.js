@@ -538,6 +538,31 @@ module.exports=function(){
     });
   }
 
+  /* ── The column's head height lives in TWO files and must agree ───────
+     _BOARDS_COL_HEAD (js/boards.js) is what the first child is laid out
+     below; .board-column-body's `top` (css/main.css) is where the drop
+     zone starts. They describe the same edge of the same box, so a header
+     redesign that moves one and not the other either paints the panel over
+     the first card or leaves a band of dead space above it — and neither
+     shows up in a logic suite. The number itself is MEASURED against the
+     real stylesheet by scratchpad/measure-column.js. */
+  s.section('the column head height agrees across js and css');
+  {
+    const js=read('js/boards.js'),css=read('css/main.css');
+    const head=/_BOARDS_COL_HEAD=(\d+)/.exec(js);
+    // [;{]top: on purpose — a greedy [^}]*top: matches the `top` in
+    // `border-top:1px` further along the same rule and reads 1.
+    const top=/\.board-column-body\{[^}]*?[;{]top:(\d+)px/.exec(css);
+    s.ok('_BOARDS_COL_HEAD is declared',!!head,head&&head[1]);
+    s.ok('.board-column-body declares a top',!!top,top&&top[1]);
+    s.eq('and they are the same number',head&&head[1],top&&top[1]);
+    // An empty column IS the drop target, so it has to be bigger than its
+    // own header by enough to aim a card at.
+    const min=/_BOARDS_COL_MIN_H=(\d+)/.exec(js);
+    s.ok('an empty column leaves at least 80px of drop zone',
+      min&&head&&(+min[1]-+head[1])>=80,min&&head&&(+min[1]-+head[1])+'px');
+  }
+
   /* ── A CARD IS GRABBABLE, AND ITS CONTROLS ARE STILL CLICKABLE ────────
      These two used to be in tension and the tension is what shipped bugs.
 

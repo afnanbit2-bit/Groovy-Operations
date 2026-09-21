@@ -204,13 +204,43 @@ const FRAGMENTS={
         {id:'col',type:'column',title:'Winter fabric',x:20,y:20,w:260,h:160},
         {id:'a',type:'text',text:'Cotton drill 8.5oz',x:0,y:0,w:170,h:90,columnId:'col'},
         {id:'b',type:'file',fileName:'swatch-card.pdf',fileSize:20480,
-         fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/s.pdf',x:0,y:0,w:170,h:130,columnId:'col'}
+         fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/s.pdf',x:0,y:0,w:170,h:130,columnId:'col'},
+        // The header Afnan drew: the name centred with the count under it
+        // and a collapse minus in the corner. An EMPTY column is the one
+        // that matters here — it is the drop target, and its whole body is
+        // the "Drag cards here" panel, so a title block that overran it
+        // would cover the thing you are aiming at. One selected (the ✕
+        // shows beside the minus only then, or on hover), one collapsed to
+        // its header, one with a name long enough to need the room.
+        // ONE COLUMN of columns, and that is not cosmetic: a 280px column
+        // at x=300 sits past the right edge of the 420px viewport, where
+        // the wrapper clips it and the hit-test then reports its own
+        // buttons as unreachable — the fragment measuring itself. Same
+        // reason the board-card fragment stacked.
+        {id:'empty',type:'column',title:'',x:20,y:360,w:280,h:150},
+        {id:'sel',type:'column',title:'Lowkey Heat drop — sampling',x:20,y:530,w:280,h:150},
+        {id:'fold',type:'column',title:'Archived',x:20,y:700,w:280,h:150,collapsed:true},
+        {id:'f1',type:'text',text:'hidden by the fold',x:0,y:0,w:256,h:90,columnId:'fold'}
       ];
+      _boardsSelection=new Set(['sel']);
       _boardsLayoutColumns();`);
     let html=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`);
     html=html.replace(/(id="board-txt-a"[^>]*>)/,'$1Cotton drill 8.5oz');
+    // A second copy of the EMPTY column with the drop highlight forced on.
+    // The probe cannot drag, and that highlight is the only feedback a
+    // person gets while aiming a card at a column, so it would otherwise
+    // never be measured. Only the empty one, re-homed to the top-left: a
+    // copy of the whole set needs a wrapper as tall as the first, and a
+    // column hanging past a clipping wrapper reports its own controls as
+    // covered — the fragment measuring itself rather than the layout.
+    const empty=/(<div class="board-column[^]*?)(?=<div class="board-column|$)/;
+    const one=(html.match(/<div class="board-column"[^>]*id="board-card-empty"[^]*?<\/div>\s*(?=<div class="board-card-el|<div class="board-column|$)/)||[''])[0];
+    const lit=one.replace('class="board-column"','class="board-column drop-into"')
+                 .replace(/id="board-card-empty"/,'id="board-card-lit"')
+                 .replace(/left:\d+px;top:\d+px/,'left:20px;top:20px');
     return Promise.resolve(
-      '<div style="position:relative;overflow:hidden;height:600px;width:100%">'+html+'</div>');
+      '<div style="position:relative;overflow:hidden;height:800px;width:100%">'+html+'</div>'+
+      '<div style="position:relative;overflow:hidden;height:200px;width:100%">'+lit+'</div>');
   },
   // The trash panel is a list of rows that each pair a long, unbounded
   // string (the card preview) with fixed-width chrome and two buttons —

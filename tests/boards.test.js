@@ -1898,11 +1898,203 @@ module.exports=function(){
       run(`_editCards[0].items===undefined&&_editCards[0].cards===undefined`));
     s.eq('children are found by columnId',run(`_boardsColumnChildren(_editCards[0]).map(c=>c.id).join(',')`),'a,b');
 
+    /* ── THE 35 MB UPLOAD LIMIT ─────────────────────────────────────────
+       Checked inside _boardsUploadAny, because that is the one function
+       every upload route goes through — the drop, the picker, Replace, the
+       Unsorted tray, a board's cover and the link-preview mirror. A guard
+       on any one of those is a guard the other five walk past. The drop and
+       the tray ALSO pre-check, so an oversized file never mints a card that
+       sits on "Uploading…" and fails a minute later. */
+    s.section('a file over 35 MB is refused before it is sent');
+    {
+      const MB=1024*1024;
+      const up=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        currentPage:'board-canvas',
+        globals:{fetch:async()=>{throw new Error('the upload must not be attempted');}}});
+      const r=x=>up.run(x);
+      r(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+        _editCards=[];_editConnectors=[];_editUnsorted=[];_boardsUndo=[];_boardsSelection=new Set();
+        _boardsPlacementPoint=function(){return{x:0,y:0};};`);
+      s.eq('the limit is 35 MB',r(`_BOARDS_MAX_UPLOAD_MB`),35);
+      s.eq('and in bytes',r(`_BOARDS_MAX_UPLOAD`),35*MB);
+      s.ok('35 MB exactly is allowed',!r(`_boardsTooBig({name:'a',size:${35*MB}})`));
+      s.ok('a byte over is not',!!r(`_boardsTooBig({name:'a',size:${35*MB+1}})`));
+      // _boardsMirrorPreviewImage hands this a remote URL STRING, which has
+      // no size and is fetched by Cloudinary itself — it must pass.
+      s.ok('a remote URL string is not size-checked',
+        !r(`_boardsTooBig('https://example.test/a.jpg')`));
+      s.ok('a file with no size at all is not refused',!r(`_boardsTooBig({name:'a'})`));
+
+      // Dropping several files must add the ones that fit, not refuse the lot.
+      r(`_boardsAddFiles([{name:'a.png',size:${2*MB},type:'image/png'},
+        {name:'huge.mov',size:${60*MB},type:'video/quicktime'},
+        {name:'b.png',size:${3*MB},type:'image/png'}],{x:0,y:0})`);
+      s.eq('the files that fit are still added',r(`_editCards.length`),2);
+      s.ok('and the one that does not is NAMED',
+        /huge\.mov/.test(up.state.toasts.join(' '))&&/35 MB/.test(up.state.toasts.join(' ')),
+        up.state.toasts.slice(-1)[0]);
+      s.ok('no card was minted for it',
+        !/huge/.test(r(`JSON.stringify(_editCards.map(c=>c.fileName||''))`)));
+      // The tray is the other bulk path.
+      r(`_editUnsorted=[];`);
+      r(`_boardsTrayAddFiles([{name:'big.zip',size:${40*MB}},{name:'ok.png',size:${MB},type:'image/png'}])`);
+      s.eq('the tray collects only what fits',r(`_editUnsorted.length`),1);
+
+      // The message names the file and the limit, so a refusal is
+      // actionable rather than "upload failed".
+      const msg=r(`_boardsTooBigMsg({name:'huge.mov',size:${60*MB}})`);
+      s.ok('the refusal names the file, its size and the limit',
+        /huge\.mov/.test(msg)&&/60\.0 MB/.test(msg)&&/35 MB/.test(msg),msg);
+      // And the gate itself refuses without ever reaching the network — the
+      // stubbed fetch throws if it is called at all. Awaited through
+      // _pending, never a `return` in the middle of the module: that ends
+      // the function and silently drops every block below it (the bug that
+      // once took the assertion total DOWN when tests were added).
+      _pending.push((async()=>{
+        const said=await r(`(async function(){try{
+          await _boardsUploadAny({name:'huge.mov',size:${60*MB}});return'no error';
+        }catch(e){return e.message;}})()`);
+        s.section('the upload gate refuses without making a request');
+        s.ok('it throws before fetch is reached',
+          /huge\.mov/.test(said)&&/35 MB/.test(said),said);
+      })());
+    }
+
+    /* ── DROPPING INTO A COLUMN IS AN OVERLAP TEST, NOT A CENTRE POINT ──
+       Afnan: dropping into a column "does not work properly". Measured
+       before changing anything (scratchpad/probe-drop-overlap.js, driving
+       the real drag): of 272 positions where the card VISIBLY overlapped an
+       empty column by a quarter or more, 90 were refused, and a card
+       sitting 45% inside one still would not drop. The old rule asked
+       whether an invisible centre pixel was inside; a person aims with the
+       card, and the card is nearly as big as an empty column. */
+    s.section('a card joins the column it overlaps');
+    {
+      const cd=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      const r=x=>cd.run(x);
+      r(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1};
+        _editConnectors=[];_boardsSelection=new Set();
+        _editCards=[{id:'col',type:'column',title:'',x:400,y:100,w:280,h:150}];`);
+      // 45% of the card inside — the exact case the probe reported refused.
+      s.ok('a card 45% inside joins it',
+        !!r(`_boardsColumnForCard({x:420,y:45,w:220,h:100})`),
+        'card y45..145 against a column at y100');
+      s.ok('a card barely brushing the edge does NOT',
+        !r(`_boardsColumnForCard({x:420,y:-5,w:220,h:100})`));
+      s.ok('and a card fully inside obviously does',
+        !!r(`_boardsColumnForCard({x:410,y:110,w:200,h:60})`));
+      // min(card, column) is what makes both directions work: a big card
+      // dropped squarely on a small column is as deliberate as the reverse.
+      r(`_editCards=[{id:'small',type:'column',title:'',x:400,y:100,w:160,h:150}];`);
+      s.ok('a card much bigger than the column still lands on it',
+        r(`(_boardsColumnForCard({x:380,y:80,w:600,h:400})||{}).id`),'small');
+      // Two columns overlapping the card: the one it is most over wins.
+      r(`_editCards=[{id:'left',type:'column',title:'',x:0,y:100,w:300,h:200},
+                     {id:'right',type:'column',title:'',x:300,y:100,w:300,h:200}];`);
+      s.eq('the column it overlaps MOST wins',
+        r(`(_boardsColumnForCard({x:220,y:120,w:200,h:100})||{}).id`),'right');
+      s.eq('and the other way round',
+        r(`(_boardsColumnForCard({x:180,y:120,w:200,h:100})||{}).id`),'left');
+      // A locked column is not a target, and neither is one being dragged.
+      r(`_editCards=[{id:'lk',type:'column',title:'',x:400,y:100,w:280,h:150,locked:true}];`);
+      s.ok('a locked column takes no drops',!r(`_boardsColumnForCard({x:410,y:110,w:200,h:60})`));
+      r(`_editCards=[{id:'me',type:'column',title:'',x:400,y:100,w:280,h:150}];`);
+      s.ok('and a column being dragged is not its own target',
+        !r(`_boardsColumnForCard({x:410,y:110,w:200,h:60},new Set(['me']))`));
+
+      // Through the path the DRAG actually takes. Asserting the helper
+      // alone proves the helper: it stays green with _boardsDropTargets
+      // still wired to the old centre-point rule, which is the thing being
+      // replaced. Verified by putting that call back — this is what fails.
+      r(`_editCards=[{id:'col',type:'column',title:'',x:400,y:100,w:280,h:150},
+                     {id:'n',type:'text',text:'x',x:420,y:45,w:220,h:100}];`);
+      const drop=r(`(function(){const n=_editCards.find(c=>c.id==='n');
+        return (_boardsDropTargets([n],new Set()).find(d=>d.card.id==='n')||{}).col;})()`);
+      s.ok('the drag path itself lands a 45%-overlapping card in the column',
+        !!drop&&drop.id==='col',drop?drop.id:'nothing');
+    }
+
+    /* ── COLLAPSE ────────────────────────────────────────────────────────
+       The minus in Afnan's drawing. It is a way of LOOKING at a column, not
+       an edit to it: the children stay in _editCards, keep their positions
+       and keep counting, so search, the exports and the reading order are
+       untouched — they are simply not drawn. */
+    s.section('a column collapses to its header');
+    {
+      const cf=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        currentPage:'board-canvas'});
+      const r=x=>cf.run(x);
+      r(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+        _editConnectors=[];_editUnsorted=[];_boardsUndo=[];_boardsRedo=[];_boardsSelection=new Set();
+        _editCards=[{id:'col',type:'column',title:'Sampling',x:400,y:100,w:280,h:150},
+                    {id:'a',type:'text',text:'A',x:0,y:0,w:256,h:90,columnId:'col'},
+                    {id:'b',type:'text',text:'B',x:0,y:0,w:256,h:90,columnId:'col'}];
+        _boardsLayoutColumns();`);
+      const openH=Number(r(`_editCards[0].h`));
+      const kidY=r(`_boardsColumnChildren(_editCards[0]).map(c=>c.y).join(',')`);
+      r(`window.boardsColumnFold('col')`);
+      s.eq('it shrinks to exactly the header',r(`_editCards[0].h`),Number(r(`_BOARDS_COL_HEAD`)));
+      s.eq('its children are not drawn',r(`_boardsRenderOrder().map(c=>c.id).join(',')`),'col');
+      s.eq('but they are still on the board',r(`_boardsColumnChildren(_editCards[0]).length`),2);
+      s.eq('and they have not been moved',
+        r(`_boardsColumnChildren(_editCards[0]).map(c=>c.y).join(',')`),kidY);
+      const html=r(`_boardCardHTML(_editCards[0],true)`);
+      s.ok('the header still says how many are inside',/board-column-count">2 cards/.test(html));
+      s.ok('the glyph flips to +',/board-column-fold[^>]*>\+</.test(html));
+      s.ok('and the body panel is gone with them',!/board-column-body/.test(html));
+      s.ok('a collapsed column takes no drops',
+        !r(`_boardsColumnForCard({x:410,y:110,w:200,h:60})`));
+      r(`window.boardsColumnFold('col')`);
+      s.eq('expanding puts the height back',r(`_editCards[0].h`),openH);
+      s.eq('and the list back exactly as it was',
+        r(`_boardsColumnChildren(_editCards[0]).map(c=>c.y).join(',')`),kidY);
+      // Every mutating action pushes undo BEFORE it mutates — the module's
+      // standing contract.
+      s.eq('both folds are undoable',r(`_boardsUndo.length`),2);
+      r(`window.boardsUndoAction()`);
+      s.eq('undo folds it again',r(`!!_editCards[0].collapsed`),true);
+    }
+
+    /* ── The header Afnan drew ─────────────────────────────────────────── */
+    s.section('the column header is a title block');
+    {
+      const ch=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      ch.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1};
+        _editConnectors=[];_boardsSelection=new Set();
+        _editCards=[{id:'col',type:'column',title:'',x:0,y:0,w:280,h:150}];`);
+      const h=ch.run(`_boardCardHTML(_editCards[0],true)`);
+      s.ok('the empty title reads "New Column"',/placeholder="New Column"/.test(h));
+      s.ok('the count is words, not a chip',/board-column-count">0 cards</.test(h));
+      s.ok('one card is singular',
+        /board-column-count">1 card</.test(ch.run(`(function(){
+          _editCards.push({id:'k',type:'text',text:'x',x:0,y:0,w:10,h:10,columnId:'col'});
+          return _boardCardHTML(_editCards[0],true);})()`)));
+      s.ok('the header still starts the column drag',
+        /board-column-head"[^>]*boardsCardDragStart/.test(h));
+      s.ok('the title does not — it is a field',
+        /board-column-title[^>]*onpointerdown="event\.stopPropagation\(\)"/.test(h));
+      s.ok('delete is still reachable',/board-card-del[^>]*boardsDeleteCard/.test(h));
+      s.ok('and a selected column wears the same dot a card does',
+        /board-card-corner/.test(h));
+    }
+
     s.section('layout derives position, width and the column height');
     s.eq('children share the column x',run(`_editCards[1].x+','+_editCards[2].x`),'112,112');
-    s.eq('and are stacked in order',run(`_editCards[1].y+','+_editCards[2].y`),'142,252');
+    // Read off the CONSTANTS, not written as literals. The title block grew
+    // from a 30px strip to the 63px name-and-count block Afnan drew, and a
+    // hardcoded 142 here would have to be re-derived by hand every time the
+    // header changes — the same reason the file card's page maths reads
+    // _BOARDS_FILE_CHROME_H instead of 66.
+    const HEAD=Number(run(`_BOARDS_COL_HEAD`)),PAD=Number(run(`_BOARDS_COL_PAD`)),
+          GAP=Number(run(`_BOARDS_COL_GAP`));
+    const firstY=100+HEAD+PAD;                       // the column sits at y=100
+    s.eq('and are stacked in order',run(`_editCards[1].y+','+_editCards[2].y`),
+      firstY+','+(firstY+100+GAP));
     s.eq('width comes from the column, not the card',run(`_editCards[1].w+','+_editCards[2].w`),'256,256');
-    s.eq('height is derived from the contents',run(`_editCards[0].h`),284);
+    // head + pad + every child and the gaps between them + pad
+    const kidH=JSON.parse(run(`JSON.stringify(_boardsColumnChildren(_editCards[0]).map(c=>c.h))`));
+    s.eq('height is derived from the contents',run(`_editCards[0].h`),
+      HEAD+PAD+kidH.reduce((a,b)=>a+b,0)+GAP*(kidH.length-1)+PAD);
     // Idempotence is load-bearing: opening a board must not mark every
     // card as locally changed and trigger a write for a correct layout.
     s.eq('running layout again changes nothing',run(`_boardsLayoutColumns()`),false);

@@ -2110,6 +2110,125 @@ fails five; and a colour panel that always shows tabs fails two.
 **Nobody has seen any of this on a real screen** — the sandbox cannot sign
 in.
 
+### Mood Boards — the column, rebuilt; and a 35 MB upload limit (Sept 2026)
+
+Three asks in one message, with a drawing of the column Afnan wants:
+*"increase file upload size to 35 MB MAX … this is how i want the collum to
+look like … + improve function of drag and dop in collum as it does not
+work properly"*.
+
+**THE UPLOAD LIMIT IS 35 MB, AND IT IS CHECKED IN ONE PLACE.**
+`_boardsUploadAny` is the single function every upload route goes through —
+the drop, the file picker, Replace, the Unsorted tray, a board's cover
+picture and the link-preview mirror — so the gate lives there. A guard on
+any one of those six is a guard the other five walk straight past. There
+was **no size check anywhere before this**; an oversized file was sent, and
+Cloudinary's refusal came back a minute later as a card stuck on
+"Uploading…".
+
+- **It is OUR limit, not Cloudinary's, and the two are different numbers.**
+  Cloudinary caps an unsigned upload by PLAN (10 MB on the free tier) and
+  `cloudinary.com` is unreachable from the sandbox **entirely**, so which
+  cap this account carries **cannot be checked from a session and is not
+  claimed here**. What the code does is refuse what we already know is too
+  big before sending it, and, when Cloudinary refuses something that
+  passed, pass ITS message through with a line saying that number lives in
+  the account's plan and nothing in this app can raise it.
+- **The drop and the tray also PRE-check** (`_boardsSizeFilter`), so an
+  oversized file never mints a card at all. Dropping eight files where one
+  is 60 MB adds the other seven and **names** the one it left out — refusing
+  the whole drop, or silently swallowing one, are both worse.
+- **A remote URL STRING is not size-checked.** `_boardsMirrorPreviewImage`
+  hands the same function a link-preview image's address, which has no size
+  and is fetched by Cloudinary itself. Asserted, because a naive
+  `file.size>MAX` would have broken link previews.
+
+**THE COLUMN LOOKS LIKE THE DRAWING.** It was a 30px toolbar strip — an
+uppercase muted name, a count chip and a ✕ in one flex row. It is a TITLE
+BLOCK now: the name centred on its own line at 17px, `N cards` under it, a
+divider, and the body as a recessed panel that says "Drag cards here".
+
+- **The two corner buttons are absolutely positioned, not flex siblings.**
+  Otherwise the title centres against whatever space is left and **shifts
+  the moment the ✕ fades in**. They sit at `top:12px` so they clear the
+  selection dot at 2,2 — a column wears the same dot a card does now.
+- **The minus COLLAPSES, it does not delete.** A minus that deleted would
+  be a worse lie than no button. `c.collapsed`: the column shrinks to its
+  header, its children are **not drawn** and are otherwise untouched — they
+  stay in `_editCards`, keep their positions, and the header still says
+  "2 cards", so search, the exports and the reading order never notice.
+  Expanding puts the list back exactly as it was. It is a way of LOOKING at
+  a column, not an edit to it, and it pushes undo like every other
+  mutation. **Delete keeps its ✕**, which appears on hover or once the
+  column is selected — the rule the card head already follows.
+- **`_BOARDS_COL_HEAD` 30 → 63, MEASURED** (`scratchpad/measure-column.js`,
+  the real markup against the real stylesheet), never counted up from
+  paddings: it is what the first child is laid out below, so a wrong value
+  paints the panel over the first card. **It lives in two files** — the
+  constant in `js/boards.js` and `.board-column-body`'s `top` in
+  `css/main.css` — and `tests/invariants.test.js` now fails if they
+  disagree. The test that hardcoded `142,252` reads the constants instead.
+- **`_BOARDS_COL_MIN_H` 120 → 150.** An empty column IS the drop target, and
+  at 120 with a 63px head its body was 57px — smaller than most of the cards
+  being aimed at it. 87px now.
+
+**DRAG AND DROP: THE RULE WAS AN INVISIBLE CENTRE POINT, AND THAT IS WHY IT
+FELT RANDOM.** `_boardsColumnAt(card centre)` decided everything. MEASURED
+before changing a line (`scratchpad/probe-drop-overlap.js`, driving the real
+drag end to end): of **272 drop positions where the card visibly overlapped
+an empty column by a quarter or more, 90 were refused — and a card sitting
+45% inside a column still would not drop.**
+
+That is not a bug in one line, it is the wrong rule. A person aims with the
+CARD, and a card is nearly as big as an empty column, so "is the middle
+pixel inside" reads as a coin toss.
+
+- **`_boardsColumnForCard` picks the column sharing the most AREA with the
+  card**, as long as that share is at least 30% of whichever of the two is
+  **smaller**. `min()` is what makes both directions work: a small card well
+  inside a big column, and a big card dropped squarely on a small column,
+  are both obviously deliberate. The centre still counts on its own, so
+  nothing that used to work stopped working. Re-measured after: **90
+  refusals → 38, and every position from 30% overlap upward now drops.**
+- **The trade, stated rather than hidden:** a card must now be dragged about
+  **200px** — roughly 70% of its own size past the edge — to LEAVE a column,
+  where the old rule let it fall out as soon as its middle crossed. That is
+  the right way round: a nudge should not empty a column, and leaving one
+  should be something you meant.
+- **The indicator and the rule cannot disagree**, because the drop line and
+  the `drop-into` highlight are both computed from the same
+  `_boardsDropTargets`. The highlight moved onto the **body panel** — the
+  border glow was mostly hidden under the card being dragged.
+- A **collapsed** column takes no drops: it shows no slots to aim at, so the
+  card lands on the canvas instead of vanishing into a fold.
+
+**Verified by reverting each one:** the centre-point rule fails "the drag
+path itself lands a 45%-overlapping card in the column"; dropping the size
+gate fails the upload assertion; drifting the CSS `top` from the constant
+fails the new invariant naming both numbers; and drawing a collapsed
+column's children fails "its children are not drawn".
+
+**A test lesson, and it is one this file already records.** The first drop
+assertions called `_boardsColumnForCard` directly — and **stayed green with
+`_boardsDropTargets` still wired to the old centre-point rule**, which is
+the thing being replaced. Asserting a helper proves the helper. There is an
+assertion that goes through the path the drag actually takes now. And the
+first attempt at breaking the layout fragment **did not land** (the rule's
+later `pointer-events:none` overrode the edit) and reported a clean pass,
+which reads exactly like "the fragment has no teeth" — confirm the break
+landed before believing either answer.
+
+`tests/smoke-layout.js`'s column fragment grew the empty, the selected, the
+long-named and the collapsed column, plus a second copy with the drop
+highlight forced on, since the probe cannot drag. It is **one column of
+columns**: a 280px column at x=300 sits past the right edge of the 420px
+viewport, where the wrapper clips it and the hit-test reports its own
+buttons as unreachable — the fragment measuring itself.
+
+**Nobody has dropped a card into a column on a real screen** — the sandbox
+cannot sign in. The geometry, the drop rule and the collapse are measured;
+the feel is not.
+
 ### Mood Boards — "to do not moving properly", and the guard that caused it (Sept 2026)
 
 Afnan sent a 24-second screen recording of a to-do card on DENIM DUMP 2K27.
@@ -3114,6 +3233,13 @@ ORDER and position its children from it, so membership is stored.
   read naively that is "dropped on empty canvas" and **every card falls out
   the moment you move the column**, or move a frame around it.
   `_boardsDropTargets` skips them; a test guards it.
+- **Which column a dragged card joins is an OVERLAP test, not the card's
+  centre point** (Sept 2026 — see "the column, rebuilt" above). The centre
+  rule refused a card sitting 45% inside a column, measured; the rule is
+  now the column sharing the most area, at ≥30% of whichever box is
+  smaller. `_BOARDS_COL_HEAD` is 63 and is MEASURED — it lives in
+  `js/boards.js` and in `.board-column-body`'s `top`, and an invariant
+  fails if the two drift apart.
 - **A column's height is derived and a child's width comes from the
   column**, so neither axis is draggable — a handle that silently snaps
   back is worse than not offering that axis. Resizing reflows by writing
