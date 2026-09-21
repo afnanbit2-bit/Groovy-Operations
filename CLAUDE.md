@@ -2288,6 +2288,73 @@ pass. They have their own fragment now, sized to fit, and the same break
 fails naming `DIV.board-frame-body`. **A fragment taller than the window is
 a fragment that stops testing partway down.**
 
+### Mood Boards — the Hand tool moves to the rail (Sept 2026)
+
+Afnan, with the View menu open and an arrow drawn from its Hand row down to
+the foot of the rail: *"i want this hand funtion to sit on side bar as it is
+used very often."*
+
+It was a row inside **View** — two clicks for a mode you flip constantly,
+and **no state visible anywhere until you opened the menu again**. It is a
+rail button now, directly after Fit, carrying the `.on` chip the Line tool
+already uses. **It left the View menu rather than appearing in both**: a
+toggle in two places is two things to find and two labels to keep in step,
+the same "two surfaces for one action" rule that merged the rail and the old
+selection bar.
+
+**COMMENT CAME OFF THE RAIL TO MAKE ROOM, and that was FORCED rather than
+chosen.** MEASURED with `scratchpad/measure-rail-hand.js` against the real
+stylesheet in headless Chromium — never counted up from paddings, the
+mistake this file records the rail making once already:
+
+| tools | large tier | compact tier |
+|---|---|---|
+| 12 (before, and after) | 810px | 626px |
+| 13 (Hand added outright) | 871px | 673px |
+
+A 768px-tall laptop leaves about **631px** of stage (the canvas is a fixed
+takeover, so only its own 50px top bar is above it). **Thirteen does not fit
+and twelve does** — the `smoke-layout` rail check caught it on the first run
+at both tiers (`scroll:868 client:863` large, `scroll:670 client:631`
+compact) before any of this was reasoned about.
+
+Given that, the tool to lose is the one **already sitting one click away on
+a button you can always see**. The rail's `comment-board` opens
+`boardsOpenComments(null)` — the board drawer — which is exactly what the
+top bar's **Comments** button opens, and that button is permanently visible,
+labelled, carries its own on-state and TOGGLES (the rail's only ever opened
+it). It is also `${phone?'':…}`, so it exists at precisely the widths this
+rail branch serves. **The phone keeps its own copy** in
+`_boardsRailPhoneOverflow`, untouched.
+
+- **Hand is NOT in `_BOARDS_RAIL_MAIN`, and that is what keeps it off the
+  phone.** That list is the add-tools — it drives the "…" overflow, the
+  drag-to-place flag, and **everything in it reaches the phone's More
+  sheet**. A touch drag already pans unconditionally (`pointerType==='touch'`
+  is the FIRST term of `wantPan`), so on a phone the toggle would be a
+  control that changes nothing. Keeping it out of that list makes the
+  exclusion structural rather than a branch somebody has to remember; the
+  test asserts both the absence and the reason.
+- **It takes no `--tool-*` hover colour, and neither does Fit.** The content
+  tools are colour-coded because you pick one to *place a thing*; these two
+  change how you *look* at the board. For a mode the affordance that matters
+  is the `on` chip, not the hover tile.
+- **The View menu's separator is now conditional.** Hand was the one row
+  under it that always rendered, so a read-only viewer on a phone — no Snap,
+  no Minimap — would have been left with a rule hanging off the bottom of
+  the menu. Checked across all four role/width combinations, not reasoned
+  about.
+
+**Verified by reverting each piece**: Hand off the rail (8 assertions, one
+naming `fit,trash` where `fit,pan` belongs), Hand before Fit, the `on` flag
+dropped, the router case deleted, the View row restored, Comment put back
+(`got 13, expected 12`), and Hand moved into `_BOARDS_RAIL_MAIN` (which the
+phone assertions catch by name). **And the rail was looked at**, rendered to
+a screenshot in real Chromium with the mode on — the one thing about this
+round that could be seen from a session, since it needs no sign-in.
+
+**Nobody has pressed it on a real screen** — the sandbox cannot sign in.
+
 ### Mood Boards — drag anything into Unsorted (Sept 2026)
 
 Afnan: *"when inside a board you can drag anything link file image collum
@@ -4003,6 +4070,9 @@ Milanote splits its header into identity (breadcrumb), the board title, and
 actions grouped by kind, with everything about how the board is *looked at*
 behind one **View ⌄**. Ours is now
 `Undo Redo │ Find Comments Unsorted │ View·100% │ ⋯` — seven controls.
+**The Hand toggle left View again in Sept 2026** — see "the Hand tool moves
+to the rail"; it is a mode you flip constantly, and a menu row showed its
+state only once you reopened the menu.
 
 - **`#board-zoom-readout` keeps its id and moves INSIDE the View button.**
   `_boardsApplyTransform` writes that element on every pan and zoom;

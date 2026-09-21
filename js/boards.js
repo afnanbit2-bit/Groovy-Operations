@@ -2174,8 +2174,7 @@ function _renderBoardCanvasHTML(){
             <button onclick="window.boardsResetView()">Zoom to 100%</button>
             <button onclick="window.boardsZoomBy(1.25)">Zoom in</button>
             <button onclick="window.boardsZoomBy(0.8)">Zoom out</button>
-            <div class="board-menu-sep"></div>
-            <button onclick="window.boardsTogglePan()">Hand (drag to pan): ${_boardsPanMode?'on':'off'}</button>
+            ${(canEdit||!_boardsIsPhone())?'<div class="board-menu-sep"></div>':''}
             ${canEdit?`<button id="board-snap-btn" onclick="window.boardsToggleSnap()">Snap to grid: ${_boardsSnapGrid?'on':'off'}</button>`:''}
             ${_boardsIsPhone()?'':`<button onclick="window.boardsToggleMinimap()">Minimap: ${_boardsMinimapOn?'on':'off'}</button>`}
           </div>
@@ -5642,7 +5641,8 @@ const _BOARDS_ICONS={
   reactions:'<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6.6" r=".9"/><circle cx="10" cy="6.6" r=".9"/><path d="M5.4 9.6a3.2 3.2 0 005.2 0" fill="none" stroke="currentColor" stroke-width="1.3"/>',
   more:'<circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/>',
   done:'<path d="M3 8.5l3.2 3.2L13 5" fill="none" stroke="currentColor" stroke-width="1.8"/>',
-  fit:'<path d="M2 5.5V2h3.5M14 5.5V2h-3.5M2 10.5V14h3.5M14 10.5V14h-3.5" fill="none" stroke="currentColor" stroke-width="1.3"/>'
+  fit:'<path d="M2 5.5V2h3.5M14 5.5V2h-3.5M2 10.5V14h3.5M14 10.5V14h-3.5" fill="none" stroke="currentColor" stroke-width="1.3"/>',
+  hand:'<path d="M5.6 8.2V4.3a1 1 0 012 0v2.4m0-.2V3.3a1 1 0 012 0v3.4m0-.4V4.4a1 1 0 012 0v3.3m0-1.1a1 1 0 012 0v3.1a4 4 0 01-4 4H8.8a3 3 0 01-2.2-1L3.9 9.9a1 1 0 011.5-1.3l1.3 1.3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'
 };
 function _boardsIcon(name){
   return`<svg viewBox="0 0 16 16" aria-hidden="true">${_BOARDS_ICONS[name]||_BOARDS_ICONS.note}</svg>`;
@@ -5853,8 +5853,41 @@ function _boardsRailItems(){
       {sep:true}
     ]).concat(_BOARDS_RAIL_MEDIA).concat([
       {sep:true},
-      {act:'comment-board',label:'Comment',icon:'comment'},
+      /* COMMENT CAME OFF THE RAIL TO MAKE ROOM, and it cost nothing.
+         `comment-board` opens `boardsOpenComments(null)` — the board
+         drawer — which is exactly what the top bar's `Comments` button
+         opens, and that button is permanently visible, labelled, carries
+         its own on-state and TOGGLES (the rail's only ever opened). It is
+         also `${phone?'':…}`, so it exists at precisely the widths this
+         rail branch serves; the phone keeps its own copy in
+         `_boardsRailPhoneOverflow`, untouched.
+
+         This was forced, not chosen: MEASURED with
+         scratchpad/measure-rail-hand.js against the real stylesheet, a
+         13-tool rail is 871px large / 673px compact, and a 768px-tall
+         laptop gives about 631px of stage. Thirteen does not fit and
+         twelve does. Given that, the tool to lose is the one already
+         sitting one click away on a button you can see — the same
+         "two surfaces for one action" rule that took Hand OUT of the
+         View menu in the same round. */
       {act:'fit',label:'Fit',icon:'fit'},
+      /* HAND SITS HERE, NOT IN _BOARDS_RAIL_MAIN, and that is deliberate
+         twice over.
+
+         It is not an add-tool: that list is what places cards, it is what
+         the "…" overflow and the drag-to-place flag are built around, and
+         everything in it appears in the PHONE's More sheet — where Hand
+         would do NOTHING. A touch drag already pans unconditionally
+         (`_boardsOnStageDown`: `pointerType==='touch'` is the first term of
+         wantPan), so the toggle is a desktop concept and offering it on a
+         phone would be a control that changes nothing.
+
+         Beside Fit because both change how you LOOK at the board rather
+         than what is on it, which is also why neither takes a --tool-*
+         colour: the content tools are colour-coded because you pick one to
+         place a thing. Its `on` chip is the affordance that matters for a
+         mode, the same one Line carries. */
+      {act:'pan',label:'Hand',icon:'hand',on:_boardsPanMode},
       // Pinned to the floor of the column, where Milanote keeps it — far
       // from the add-tools, so a Trash button is never next to a tool you
       // reach for constantly.
@@ -12302,6 +12335,7 @@ function _boardsCtxRun(act){
     case'paste':place();_boardsCtxPaste();break;
     case'selectall':window.boardsSelectAll();break;
     case'fit':window.boardsFitView();break;
+    case'pan':window.boardsTogglePan();break;
     case'reset':window.boardsResetView();break;
     case'comment-board':window.boardsOpenComments(null);break;
     case'card-comment':{const s=_boardsSelectedCards();if(s.length===1)window.boardsOpenComments(s[0].id);break;}

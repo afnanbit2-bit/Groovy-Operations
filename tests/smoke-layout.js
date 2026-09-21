@@ -1677,7 +1677,8 @@ document.getElementById('__out').textContent=JSON.stringify(bad);
     // A builder may also return {heights}: extra WINDOW heights to measure
     // at, for markup whose CSS keys off the viewport height (the tool rail
     // has two tiers). The default is the one height every fragment gets.
-    cases.forEach((c,i)=>(c.widths||WIDTHS).forEach(w=>(c.heights||[1000]).forEach(h=>['light','dark'].forEach(t=>jobs.push({c,i,w,h,t})))));
+    cases.forEach((c,i)=>(c.widths||WIDTHS).forEach(w=>(c.heights||[1000]).forEach(h=>['light','dark'].forEach(t=>
+      jobs.push({c,i,w,h,t,dir:profileDir+'-'+i+'-'+w+'-'+h+'-'+t})))));
     pending=jobs.length;
     // A bounded pool, not all at once: with 14 fragments that is 84 Chromes,
     // and on a developer's Windows machine most of them blew the 120s
@@ -1694,7 +1695,7 @@ document.getElementById('__out').textContent=JSON.stringify(bad);
         '--disable-default-apps','--disable-extensions','--metrics-recording-only',
         '--mute-audio','--no-proxy-server',
         '--window-size='+j.w+','+j.h,
-        '--user-data-dir='+profileDir+'-'+j.i+'-'+j.w+'-'+j.h+'-'+j.t,
+        '--user-data-dir='+j.dir,
         '--virtual-time-budget=8000','--dump-dom',
         'http://127.0.0.1:'+port+'/__frag/'+j.i+'?t='+j.t],
         {encoding:'utf8',maxBuffer:32*1024*1024,timeout:120000},
@@ -1725,8 +1726,27 @@ document.getElementById('__out').textContent=JSON.stringify(bad);
 
   function finish(){
     server.close();
-    try{WIDTHS.forEach(w=>cases.forEach((c,i)=>['light','dark'].forEach(t=>
-      fs.rmSync(profileDir+'-'+i+'-'+w+'-'+t,{recursive:true,force:true}))));}catch(e){}
+    /* SWEEP BY PREFIX, because reconstructing the paths is what was broken.
+       This used to rebuild them from WIDTHS/cases/themes and LEFT OUT THE
+       HEIGHT, so it matched nothing: every ~8MB Chrome profile was orphaned
+       in /tmp, roughly 900MB per run. That is what exhausted this sandbox's
+       disk allowance mid-session, and the symptom was the probe reporting
+       "the probe never ran" — a disk failure wearing a browser failure's
+       clothes.
+
+       The second attempt read the job list, and could not work either:
+       `jobs` lives inside the server.listen callback and finish() is
+       declared outside it, so it threw a ReferenceError straight into this
+       catch and stayed silent. Reading the DIRECTORY is what removes both
+       failure modes — it needs nothing in scope but `profileDir`, it takes
+       the mkdtemp base as well as the per-job siblings, and no future
+       change to the job path can desync it. */
+    try{
+      const base=path.basename(profileDir),parent=path.dirname(profileDir);
+      fs.readdirSync(parent).forEach(n=>{
+        if(n===base||n.indexOf(base+'-')===0)fs.rmSync(path.join(parent,n),{recursive:true,force:true});
+      });
+    }catch(e){}
     console.log('');
     if(failures){
       console.log('\x1b[31m'+failures+' of '+checks+' layout checks failed\x1b[0m');

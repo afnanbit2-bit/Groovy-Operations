@@ -4885,6 +4885,108 @@ module.exports=function(){
     }
   }
 
+  /* ── THE HAND TOOL MOVES TO THE RAIL (Sept 2026) ─────────────────────
+     Afnan, with the View menu open and an arrow drawn to the foot of the
+     rail: *"i want this hand funtion to sit on side bar as it is used very
+     often"*. It was a row inside View — two clicks for a mode you flip
+     constantly, and no state visible until you opened the menu again. */
+  {
+    const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+      currentPage:'board-canvas'});
+    const {run}=app;
+    const boot=()=>run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+      moodBoards=[{id:'b1',ownerUid:'u1',visibility:'personal',title:'T',cards:[]}];
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();
+      _boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+      _boardsPanMode=false;_boardsLineMode=false;`);
+    const acts=()=>JSON.parse(run(`JSON.stringify(_boardsRailItems().filter(i=>i.act).map(i=>i.act))`));
+    const item=a=>JSON.parse(run(`JSON.stringify(_boardsRailItems().find(i=>i.act===${JSON.stringify(a)})||null)`));
+
+    s.section('Hand is on the rail, next to Fit');
+    boot();
+    const a=acts();
+    s.ok('the rail carries it',a.includes('pan'),a.join(','));
+    s.eq('directly after Fit — both change how you LOOK at the board',
+      a.slice(a.indexOf('fit'),a.indexOf('fit')+2).join(','),'fit,pan');
+    s.eq('and it is labelled',(item('pan')||{}).label,'Hand');
+    s.ok('with an icon of its own',!!(item('pan')||{}).icon);
+
+    /* A MODE NEEDS ITS STATE ON THE BUTTON. That is the whole reason the
+       menu row was a bad home: it only said "on" once you reopened it. */
+    s.section('the button says whether the mode is on');
+    s.eq('off by default',String((item('pan')||{}).on),'false');
+    run(`_boardsPanMode=true`);
+    s.eq('and on once it is',String((item('pan')||{}).on),'true');
+    s.ok('which the renderer paints as a class',
+      /class="rail-btn on[^"]*" data-act="pan"/.test(run(`(function(){
+        _boardsRenderRail();return document.getElementById('board-rail').innerHTML;})()`)),
+      'no .on class on the Hand button');
+    run(`_boardsPanMode=false`);
+
+    s.section('pressing it toggles the mode');
+    boot();
+    run(`_boardsCtxRun('pan')`);
+    s.ok('one press turns it on',run(`_boardsPanMode===true`));
+    run(`_boardsCtxRun('pan')`);
+    s.ok('and the next turns it off',run(`_boardsPanMode===false`));
+
+    /* ONE SURFACE, NOT TWO — the rule that merged the rail and the old
+       selection bar, and the same one that took Comment off the rail in
+       this round. A toggle in two places is two things to find and two
+       labels to keep in step. */
+    s.section('and it left the View menu');
+    boot();
+    const bar=run(`_renderBoardCanvasHTML()`);
+    s.ok('no Hand row in View',!/Hand \(drag to pan\)/.test(bar));
+    s.ok('boardsTogglePan is reached from the rail, not a menu button',
+      !/onclick="window\.boardsTogglePan\(\)"/.test(bar));
+    s.ok('View still carries the things it is for',
+      /Snap to grid/.test(bar)&&/Zoom to 100%/.test(bar)&&/Minimap/.test(bar));
+
+    /* THE SWAP, AND WHY IT WAS FORCED. Measured with
+       scratchpad/measure-rail-hand.js against the real stylesheet: a
+       13-tool rail is 871px in the large tier and 673px compact, and a
+       768px-tall laptop leaves about 631px of stage. Twelve fits, thirteen
+       does not — so Hand took a place rather than adding one, and the
+       place it took was the tool already sitting one click away on a
+       button you can always see. */
+    s.section('Comment went to the top bar, and nothing was lost');
+    boot();
+    s.eq('the rail is twelve tools, the measured capacity',acts().length,12);
+    s.ok('Comment is not one of them',!acts().includes('comment-board'));
+    s.ok('but the top bar still opens the same drawer',
+      /id="board-cmt-btn"[^>]*onclick="window\.boardsToggleDrawer\(\)"/.test(bar),
+      'no Comments button in the top bar');
+    s.ok('and that button shows whether the drawer is open',
+      /board-cmt-btn/.test(bar)&&/tool-btn\$\{_boardsDrawerOpen/.test(
+        require('fs').readFileSync(ROOT+'/js/boards.js','utf8')));
+
+    /* NOT ON A PHONE, and this is not an oversight. A touch drag already
+       pans unconditionally, so the toggle would be a control that changes
+       nothing there. Keeping it out of _BOARDS_RAIL_MAIN is what enforces
+       that by construction — everything in that list reaches the phone's
+       More sheet. */
+    s.section('a phone never sees it, because a touch drag already pans');
+    {
+      const ph=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        phone:true,currentPage:'board-canvas'});
+      ph.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+        _editCards=[];_editConnectors=[];_boardsSelection=new Set();
+        _boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;`);
+      const pacts=JSON.parse(ph.run(`JSON.stringify(_boardsRailItems().filter(i=>i.act).map(i=>i.act))`));
+      const pover=JSON.parse(ph.run(`JSON.stringify(_boardsRailPhoneOverflow().map(i=>i.act))`));
+      s.ok('not on the phone dock',!pacts.includes('pan'),pacts.join(','));
+      s.ok('nor behind its More sheet',!pover.includes('pan'),pover.join(','));
+      s.ok('it is not an add-tool, which is what keeps it off both',
+        !JSON.parse(ph.run(`JSON.stringify(_BOARDS_RAIL_MAIN.map(i=>i.act))`)).includes('pan'));
+      // The reason, asserted rather than left in a comment: touch is the
+      // FIRST term of wantPan, so it pans whatever the toggle says.
+      s.ok('a touch drag pans with the toggle off',
+        /const wantPan=\(e\.pointerType==='touch'\)\|\|/.test(
+          require('fs').readFileSync(ROOT+'/js/boards.js','utf8')));
+    }
+  }
+
   // ── a PDF card is sized to its page ─────────────────────────────────────
   // At the 200×110 file default the name row and the Open/Download buttons
   // left the page thumbnail a ~20px strip. Reported with a screenshot of a
@@ -4933,8 +5035,10 @@ module.exports=function(){
       dt.run(`_editBoard={id:'X',title:'B',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
          _editCards=[];_editConnectors=[];_boardsSelection=new Set();_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;`);
       const dacts=JSON.parse(dt.run(`JSON.stringify(_boardsRailItems().filter(i=>i.act).map(i=>i.act))`));
-      s.ok('the desktop rail still carries Line, Column and Comment inline',
-        dacts.includes('line')&&dacts.includes('add:column')&&dacts.includes('comment-board'));
+      s.ok('the desktop rail still carries Line and Column inline',
+        dacts.includes('line')&&dacts.includes('add:column'));
+      s.ok('and Comment is on the phone sheet even though it left the desktop rail',
+        over.includes('comment-board')&&!dacts.includes('comment-board'));
 
       s.section('phone: the top bar is one row and the ⋯ sheet holds the rest');
       ph.run(`window.openBugReportModal=function(){};`);

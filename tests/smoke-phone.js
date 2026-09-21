@@ -172,7 +172,18 @@ server.listen(0,'127.0.0.1',()=>{
   console.log('smoke-phone: '+path.basename(browser)+', '+VARIANTS.length+' variants × '+VIEWS.length+' viewports\n');
   const LIMIT=Math.max(1,Number(process.env.SMOKE_LAYOUT_CONCURRENCY)||Math.min(6,Math.max(2,os.cpus().length)));
   let i=0,active=0,done=0;
-  const finish=()=>{server.close();console.log('\n'+(failures?failures+' of '+checks+' phone checks failed':'all '+checks+' phone checks passed'));process.exit(failures?1:0);};
+  /* Each Chrome job writes an ~8MB --user-data-dir beside `dir`, and this
+     probe removed NONE of them — the same leak tests/smoke-layout.js had,
+     smaller only because there are fewer jobs. Swept by prefix off the
+     mkdtemp base, which needs nothing else in scope and cannot desync from
+     however the per-job path is built. */
+  const sweep=()=>{try{
+    const base=path.basename(dir),parent=path.dirname(dir);
+    fs.readdirSync(parent).forEach(n=>{
+      if(n===base||n.indexOf(base+'-')===0)fs.rmSync(path.join(parent,n),{recursive:true,force:true});
+    });
+  }catch(e){}};
+  const finish=()=>{server.close();sweep();console.log('\n'+(failures?failures+' of '+checks+' phone checks failed':'all '+checks+' phone checks passed'));process.exit(failures?1:0);};
   const next=()=>{
     while(active<LIMIT&&i<jobs.length){
       const j=jobs[i++];active++;
