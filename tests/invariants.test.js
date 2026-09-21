@@ -595,6 +595,32 @@ module.exports=function(){
      different reason that still holds — a drag must not begin on something
      you are in the middle of pressing, and dragging to select the text in
      a field must not move the card. */
+  /* ── The Unsorted peek zone (Sept 2026) ──────────────────────────────
+     It exists only while a card is being dragged and the tray is shut, so
+     no probe can reach it through the module and no logic suite can see a
+     CSS rule. Two things about it are load-bearing:
+
+     - pointer-events:none. The drag runs on document-level listeners and
+       decides the drop by comparing the pointer to the zone's RECT, so a
+       zone that intercepted anything would be a zone able to swallow the
+       gesture it exists to serve.
+     - It must never be in the DOM at rest. It is built with createElement
+       in _boardsStashZone, never written into any render, so there is no
+       markup that could leave a 96px strip sitting over the canvas. */
+  s.section('the Unsorted peek zone is inert and never rendered at rest');
+  {
+    const css=read('css/main.css'),src=read('js/boards.js');
+    const rule=(css.match(/\.board-stash-zone\{[^}]*\}/)||[''])[0];
+    s.ok('the zone has a rule',rule.length>40,rule.slice(0,60));
+    s.ok('and it is pointer-events:none',/pointer-events:none/.test(rule),rule);
+    s.ok('nothing renders it into markup',
+      !/class="board-stash-zone/.test(src),
+      (src.match(/class="board-stash-zone[^"]*"/)||[''])[0]);
+    s.ok('only _boardsStashZone builds it',
+      (src.match(/board-stash-zone/g)||[]).length>0&&
+      src.indexOf("z.id='board-stash-zone'")>-1);
+  }
+
   s.section('the card drag captures lazily, and controls still guard');
   {
     const src=read('js/boards.js');

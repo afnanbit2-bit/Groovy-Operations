@@ -811,7 +811,26 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 
    Everything here is suppressed under prefers-reduced-motion, below. */
 .board-tray.panel-drop{outline:2px dashed var(--text);outline-offset:-6px}
-.board-tray.panel-drop .board-panel-list{background:var(--hover)}
+.board-tray.panel-drop .board-panel-list,
+.board-tray.panel-drop .board-tray-list{background:var(--hover)}
+/* The Unsorted peek zone (Sept 2026). Built by _boardsStashZone only
+   while a card is being dragged and the tray is SHUT — off Home a closed
+   tray is not in the DOM at all, so without this there is nothing to aim
+   at. It is pointer-events:none because the drag runs on document-level
+   listeners and hit-tests by rect; a zone that intercepted anything would
+   be a zone that could swallow the gesture it exists to serve. Narrow on
+   purpose: it has to be reachable without burying the board you are
+   dragging across. It wears .panel-drop, the same dashed outline the Home
+   panel drop uses, so there is one drop-target look both ways round. */
+.board-stash-zone{position:absolute;top:0;right:0;bottom:0;width:96px;z-index:129;
+  display:flex;align-items:center;justify-content:center;pointer-events:none;
+  background:var(--surface);border-left:1px solid var(--border);
+  box-shadow:-8px 0 24px rgba(0,0,0,.10);
+  outline:2px dashed var(--border);outline-offset:-8px}
+.board-stash-zone-label{writing-mode:vertical-rl;font-size:13px;font-weight:700;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.board-stash-zone.panel-drop{outline-color:var(--text);background:var(--hover)}
+.board-stash-zone.panel-drop .board-stash-zone-label{color:var(--text)}
 .board-tray,.board-panel-row{transition:outline-color .12s,background .18s,border-color .18s}
 @keyframes board-panel-flash{
   0%{background:var(--soft);border-color:var(--count-accent);transform:translateX(6px)}

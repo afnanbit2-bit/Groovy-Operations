@@ -786,7 +786,11 @@ re-deriving it.
   `_boardsStateSnapshot` / `_boardsApplySnapshot`), not a command/inverse
   pattern: a board is tens of cards, so a JSON clone is cheap and EVERY
   mutation becomes undoable without each one maintaining its own inverse.
-  Snapshots cover cards + connectors only — **not** pan/zoom (undoing a
+  ~~Snapshots cover cards + connectors only~~ — **SUPERSEDED Sept 2026:
+  they cover the Unsorted tray too**, because stashing moves data between
+  the board and the tray and an undo covering one half produced the same
+  card in both places; see "drag anything into Unsorted". Still **not**
+  pan/zoom (undoing a
   deliberate pan is more surprising than useful) and **not** typing (the
   browser's own contenteditable undo already handles text inside a card,
   and `_boardsOnKeydown` deliberately does not intercept Ctrl+Z while
@@ -1253,8 +1257,13 @@ Three things Afnan asked for in one round. The first two were bugs.
   say "only while the tray is OPEN"; see "Paste always collects" below for
   the reversal and for how the objection that rule protected is answered.
   "Move to Unsorted" on the card menu is the reverse
-  of dragging one out; frames and sub-board links are excluded (a frame has
-  no content of its own, a board link belongs with its parent). Labels are
+  of dragging one out. ~~frames and sub-board links are excluded (a frame
+  has no content of its own, a board link belongs with its parent)~~ —
+  **SUPERSEDED Sept 2026: a frame and a column both go now, carrying their
+  contents, and a card can be DRAGGED onto the tray rather than only sent
+  there from a menu**; only a board link is still refused, and the item
+  carries the whole card rather than a summary that turned a to-do into an
+  empty note. See "drag anything into Unsorted". Labels are
   hydrated with `textContent` like every other user string in this file.
 
 ### Mood Boards — a to-do item can be double-clicked (Sept 2026)
@@ -2278,6 +2287,135 @@ breaking the frame body to cover its own header and watching the probe
 pass. They have their own fragment now, sized to fit, and the same break
 fails naming `DIV.board-frame-body`. **A fragment taller than the window is
 a fragment that stops testing partway down.**
+
+### Mood Boards — drag anything into Unsorted (Sept 2026)
+
+Afnan: *"when inside a board you can drag anything link file image collum
+etc and save it in unsorted so the board remains clean."*
+
+The gesture is the small half. The big half is that **stashing was lossy
+and nobody had noticed**, because the only route to it was a menu entry
+and the four card types it could actually carry are the four people used
+it on.
+
+**A TRAY ITEM CARRIES THE WHOLE CARD NOW (`u.cards`), not a summary.** It
+used to be hand-mapped — `imageUrl`, or `fileUrl`/`fileName`, or the link
+fields, **else `{kind:'text',text:c.text}`**. A to-do has no `c.text` and
+neither has a table, so "Move to Unsorted" on either turned it into an
+**empty note**: a live data-loss bug reachable from the menu, not merely a
+limit on the new gesture. Cards go through the same `_boardsEncodeRows`
+boundary the trash uses — `rows` is an array of arrays, **Firestore
+refuses those outright**, and `unsorted` is saved on the board document
+exactly like `cards` is, so a stashed table is the same shape in the same
+place. The old display fields are still written *beside* the card because
+they are what the row's thumbnail and label read; they are a VIEW of the
+card now, never the record of it. A row for a type the tray has no picture
+for says which type it is (`COLUMN`, `TO-DO`, `TABLE`) through
+`_boardsCardNoun`, the same type→word map the delete toast uses.
+
+- **A CONTAINER TAKES ITS CONTENTS**, which is what "collum etc" asks for:
+  a column parked without its children is an empty box, and children left
+  behind are loose cards that used to be organised. Expansion happens
+  inside `boardsTrayStashCards`, not in the callers, so the menu (which
+  hands over one id) and the drag (which hands over a group it already
+  expanded) cannot give different answers.
+- **ONE ROW PER TOP-LEVEL CARD.** `_boardsStashRoots` decides which
+  members of a group are the *reason* the others are there — by stored
+  `columnId` for a column, by geometry for a frame, walking up so a column
+  inside a frame rides with the frame. Five loose cards are five rows you
+  can bring back one at a time; one column is one row that brings it back
+  whole. Rolling a multi-selection into a single row would make the tray a
+  place things disappear into.
+- **Positions are stored RELATIVE to the root**, so the group lands in the
+  shape it left in wherever it is dropped.
+- **IDS ARE KEPT WHERE THEY ARE FREE.** A card's comments live at
+  `mood_boards/{board}/comments` keyed by card id, so a card that goes to
+  Unsorted and comes back keeps its thread. An id already taken — a remote
+  merge put that card back while the item sat in the tray — is remapped,
+  and `columnId` and the connectors are rewritten through the SAME map, so
+  there is no branch that only runs in the rare case.
+- **The lines come back too**, but only those with BOTH ends going: the
+  trash's rule, since one whose other end stayed on the board has nothing
+  to return to.
+
+**THE UNDO SNAPSHOT HAD TO WIDEN, and that REVERSES the Stage 1 note
+above.** `_boardsStateSnapshot` was cards and connectors only, which was
+right while nothing moved data *between* the board and the tray. Stashing
+broke it: Ctrl+Z restored the cards and left the copy in Unsorted, so the
+same card existed twice — **an undo that duplicates is worse than no undo
+at all**, and the toast promising Ctrl+Z would have been a lie. It also
+closes one that was already there and had no symptom anyone would report:
+the drag OUT of the tray pushes undo too, and Ctrl+Z used to take the card
+off the board **without putting the item back** — the thing was simply
+gone. Pan/zoom and typing are still deliberately outside it.
+`boardsTrayRemove` still pushes no undo and still says "cannot be undone",
+so that confirm stays true.
+
+**THE GESTURE.** Dropping a dragged card on the Unsorted panel stashes it,
+through `window.boardsTrayStashCards` — the SAME implementation the menu
+calls, not a second stash path beside it. It is the Home panel drop
+pointing the other way and wears the same `.panel-drop` dashed outline, so
+there is one drop-target look whichever direction a card travels. The
+drag's own undo entry is **popped** before the stash pushes its own, or
+Ctrl+Z would put the cards back where they were *dropped* and need a
+second press — the Home precedent exactly.
+
+- **NOT ON HOME** (it has no Unsorted, and its panel drop already means
+  "take this board off Home") and **NOT ON A PHONE** (the tray is the full
+  width of the screen there, so it covers the canvas outright and there is
+  no board left to drag a card across — the route stays the More sheet,
+  which is what the phone audit settled for every gesture that does not
+  survive 390px).
+- **A board link is refused, and a group holding one is refused WHOLE.**
+  Stashing a sub-board link would surface the child back in the boards
+  list, which that card's own ✕ already does under a name that says so;
+  and half-doing a mixed selection is worse than not offering the gesture.
+  The target simply does not light up, so the refusal is visible before
+  the pointer comes up rather than silent after it.
+- **Locked cards stay put and are COUNTED** in the toast — the bulk-delete
+  rule.
+- **The menu also stopped offering this on Home**, where it pushed an item
+  onto a board with no tray: saved on the document and reachable from
+  nowhere, the stray-item state the panel has to apologise for. A small
+  pre-existing bug, fixed in passing.
+
+**THE PEEK ZONE, because a closed tray is not in the DOM at all.** Off Home
+`_boardsTrayHTML` returns `''` when shut, so there would be nothing to aim
+at. `_boardsStashZone` builds a 96px strip with `createElement` once the
+gesture passes the drag threshold and removes it in the drag's own `up()`
+(which runs on `pointercancel` too), so nothing sits over the canvas at
+rest and a mid-drag render takes it with its container rather than
+orphaning it. It is **`pointer-events:none`**: the drag runs on
+document-level listeners and decides the drop by comparing the pointer to
+the zone's RECT, so a zone that intercepted anything could swallow the
+gesture it exists to serve. `tests/invariants.test.js` holds that, and
+that no markup anywhere renders the class — verified by making it
+`pointer-events:auto` and watching it fail by name.
+
+**Verified by reverting each piece**, which is the only reason any of it
+is claimed: the widened snapshot (both shapes — the true pre-change one
+leaves the card in *both* places, which is the bug itself), the item's
+`cards`, the container expansion, the drop hit test, the undo pop, the
+board-link refusal, the both-ends connector filter, the row encoding, the
+id remap and the container's card count each fail by name. Three of them
+first crashed the suite instead of naming a finding, which is a blunter
+failure than it should be, so every new assertion is null-safe.
+
+**Two test lessons, both already in this file and both caught again.**
+The undo assertion first ran against an EMPTY tray, where an undo that
+wrongly wipes the whole array is indistinguishable from one that correctly
+removes the row it just added — it seeds a row now. And breaking
+`.board-tray-thumb-empty` by inserting a colour at the START of the rule
+did nothing, because the rule declares its own `color` LATER and won;
+reported as a clean pass, which reads exactly like "the fragment has no
+teeth". **Confirm the break landed before believing either answer.**
+
+`tests/smoke-layout.js` gained `boards — the Unsorted peek zone` (idle and
+armed, both themes) and the tray fragment grew two stashed rows, one of
+them a column with the longest label the tray produces.
+
+**Nobody has dragged a card into Unsorted on a real screen** — the sandbox
+cannot sign in.
 
 ### Mood Boards — "to do not moving properly", and the guard that caused it (Sept 2026)
 

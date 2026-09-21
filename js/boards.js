@@ -170,8 +170,13 @@ const _BOARDS_BOARD_W=340,_BOARDS_BOARD_H=136;
 // it will become, at the board's zoom) cannot drift from what lands. The
 // height is _boardsNewCard's default for a type it does not size itself.
 const _BOARDS_NOTE_W=220,_BOARDS_NOTE_H=100;
+// One definition of a card id. _boardsCardsFromTrayItem needs to mint one
+// when an item comes back out of Unsorted onto an id that is taken.
+function _boardsMintCardId(){
+  return 'c'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
+}
 function _boardsNewCard(type){
-  const id='c'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
+  const id=_boardsMintCardId();
   const w=type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?_BOARDS_NOTE_W:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?_BOARDS_BOARD_W:type==='image'?_BOARDS_IMG_W:type==='link'?_BOARDS_LINK_W:170;
   const h=type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?_BOARDS_IMG_H:type==='link'?_BOARDS_LINK_H:type==='file'?_BOARDS_FILE_H:type==='todo'?170:type==='board'?_BOARDS_BOARD_H:100;
   const base={id,type,x:80,y:80,w,h};
@@ -815,8 +820,26 @@ function _boardsMatchCount(b,q){
 // leave a no-op entry and Ctrl+Z would appear to do nothing.
 let _boardsUndo=[],_boardsRedo=[];
 const _BOARDS_UNDO_MAX=50;
+/* THE SNAPSHOT COVERS THE UNSORTED TRAY, and it has to since Sept 2026.
+   It used to be cards and connectors only, which was right while nothing
+   moved data BETWEEN the board and the tray: the tray is saved in `head`
+   beside the title and the pan, and boardsTrayRemove says out loud that
+   it cannot be undone.
+
+   Stashing broke that. Ctrl+Z after a stash restored the cards and left
+   the copy sitting in Unsorted, so the same card existed twice — and an
+   undo that duplicates is worse than no undo at all.
+
+   It also closes one that was already there and had no symptom anyone
+   would report: dragging an item OUT of the tray pushes undo, and Ctrl+Z
+   then took the card off the board WITHOUT putting the item back. The
+   thing was simply gone.
+
+   Still NOT covered, deliberately: pan and zoom (undoing a deliberate pan
+   is more surprising than useful) and typing (contenteditable has its
+   own undo). */
 function _boardsStateSnapshot(){
-  return JSON.stringify({cards:_editCards,connectors:_editConnectors});
+  return JSON.stringify({cards:_editCards,connectors:_editConnectors,unsorted:_editUnsorted});
 }
 function _boardsPushUndo(){
   _boardsUndo.push(_boardsStateSnapshot());
@@ -828,6 +851,7 @@ function _boardsApplySnapshot(json){
   const s=JSON.parse(json);
   _editCards=s.cards||[];
   _editConnectors=s.connectors||[];
+  _editUnsorted=s.unsorted||[];
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
   _boardsSyncHistoryButtons();
@@ -5179,15 +5203,85 @@ document.addEventListener('click',e=>{
 function _boardsUnplaceDrag(group){
   return _boardsIsHome(_editBoard)&&group.length===1&&group[0].type==='board'&&!!group[0].boardId;
 }
-function _boardsOverPanel(ev){
-  const el=document.getElementById('board-tray');
-  if(!el||el.classList.contains('collapsed'))return false;
+function _boardsOverEl(el,ev){
+  if(!el||!ev)return false;
   const r=el.getBoundingClientRect();
   return ev.clientX>=r.left&&ev.clientX<=r.right&&ev.clientY>=r.top&&ev.clientY<=r.bottom;
+}
+function _boardsOverPanel(ev){
+  const el=document.getElementById('board-tray');
+  return!!el&&!el.classList.contains('collapsed')&&_boardsOverEl(el,ev);
 }
 function _boardsPanelDropTarget(on){
   const el=document.getElementById('board-tray');
   if(el)el.classList.toggle('panel-drop',!!on);
+}
+
+/* ── Dragging a card INTO Unsorted (Sept 2026) ─────────────────────────
+   Afnan: drag anything — a link, a file, an image, a column — onto
+   Unsorted, "so the board remains clean". The menu's Move to Unsorted was
+   the only route, and a menu is not the gesture anyone tries.
+
+   It is the same shape as the Home panel drop directly above, pointing
+   the other way, and it lands on the SAME implementation the menu uses
+   (window.boardsTrayStashCards) rather than a second stash path beside
+   it — the rule that keeps the toast, the undo entry and what a container
+   does with its contents from drifting apart.
+
+   NOT ON HOME: Home has no Unsorted, and its panel drop already means
+   "take this board off Home". NOT ON A PHONE: the tray is the full width
+   of the screen there, so it covers the canvas outright and there is no
+   board left to drag a card across — the route there stays the More
+   sheet, which is what the phone audit settled for every other gesture
+   that does not survive a 390px screen.
+
+   A BOARD LINK IS REFUSED, and a group holding one is refused WHOLE.
+   Stashing a sub-board link would surface the child back in the boards
+   list, which that card's own ✕ already does under a name that says so;
+   and half-doing a mixed selection is worse than not offering the
+   gesture at all. The target simply does not light up, so a refusal is
+   visible before the pointer comes up rather than silent after it. */
+function _boardsStashDrag(group){
+  if(!group||!group.length)return false;
+  if(!_boardsCanEdit(_editBoard))return false;
+  if(_boardsIsHome(_editBoard)||_boardsIsPhone())return false;
+  return!group.some(c=>c.type==='board');
+}
+/* The zone exists ONLY while a card is being dragged and the tray is
+   shut, because off Home a closed tray is not in the DOM at all and there
+   would be nothing to aim at. Built with createElement and removed in the
+   drag's own up() — which runs on pointercancel too — so nothing is left
+   sitting over the canvas at rest, and a full canvas render mid-drag
+   takes it with the container rather than orphaning it. */
+function _boardsStashZone(on){
+  const old=document.getElementById('board-stash-zone');
+  if(!on){if(old&&old.remove)old.remove();return null;}
+  if(old)return old;
+  const host=document.querySelector('.board-below')||document.querySelector('.board-canvas-wrap');
+  if(!host||!document.createElement)return null;
+  const z=document.createElement('div');
+  z.id='board-stash-zone';
+  z.className='board-stash-zone';
+  const lab=document.createElement('span');
+  lab.className='board-stash-zone-label';
+  lab.textContent='Unsorted';
+  z.appendChild(lab);
+  host.appendChild(z);
+  return z;
+}
+// The open tray when there is one, else the peek zone. Exactly one of the
+// two exists at a time, so there is never a second target to disagree with.
+function _boardsStashTargetEl(){
+  const tray=document.getElementById('board-tray');
+  if(tray&&!tray.classList.contains('collapsed'))return tray;
+  return document.getElementById('board-stash-zone');
+}
+function _boardsOverStash(ev){return _boardsOverEl(_boardsStashTargetEl(),ev);}
+// The same dashed outline the Home panel drop uses, deliberately: one
+// drop-target look, whichever direction a card is travelling.
+function _boardsStashDropTarget(on){
+  const el=_boardsStashTargetEl();
+  if(el&&el.classList)el.classList.toggle('panel-drop',!!on);
 }
 window.boardsCardDragStart=function(e,cardId){
   e.stopPropagation();
@@ -5222,6 +5316,7 @@ window.boardsCardDragStart=function(e,cardId){
   const movingCols=new Set(group.filter(x=>x.type==='column').map(x=>x.id));
   const grip=e.currentTarget;
   const unplaceable=_boardsUnplaceDrag(group);
+  const stashable=_boardsStashDrag(group);
   const startX=e.clientX,startY=e.clientY,ptr=e.pointerId;
   let pushed=false;
   // ── THE CAPTURE IS LAZY, AND THAT IS THE LOAD-BEARING PART ───────────
@@ -5267,6 +5362,9 @@ window.boardsCardDragStart=function(e,cardId){
         try{document.getSelection().removeAllRanges();}catch(err){}
       }
       if(document.body&&document.body.classList)document.body.classList.add('board-dragging');
+      // Only when there is no target already — an OPEN tray is the target
+      // and a zone beside it would be a second one.
+      if(stashable&&!_boardsStashTargetEl())_boardsStashZone(true);
     }
     let dx=(ev.clientX-startX)/b.zoom;
     let dy=(ev.clientY-startY)/b.zoom;
@@ -5295,6 +5393,8 @@ window.boardsCardDragStart=function(e,cardId){
     // A lone board card held over the panel is a "take it off Home", so the
     // panel says so before the pointer comes up rather than after.
     if(unplaceable)_boardsPanelDropTarget(_boardsOverPanel(ev));
+    // Held over Unsorted, the drop says so before the pointer comes up.
+    if(stashable)_boardsStashDropTarget(_boardsOverStash(ev));
     _boardsShowColumnDrop(_boardsDropTargets(group,movingCols));
   }
   function up(ev){
@@ -5308,6 +5408,11 @@ window.boardsCardDragStart=function(e,cardId){
     _boardsHideGuides();
     _boardsHideColumnDrop();
     _boardsPanelDropTarget(false);
+    _boardsStashDropTarget(false);
+    // Read the hit test BEFORE the zone is taken away — when the tray is
+    // shut, the zone IS the target.
+    const overStash=pushed&&stashable&&_boardsOverStash(ev);
+    _boardsStashZone(false);
     // `pushed` is set on the first real pointermove, so it is exactly
     // "this was a drag, not a click".
     if(pushed)_boardsSuppressClick=true;
@@ -5323,6 +5428,19 @@ window.boardsCardDragStart=function(e,cardId){
       _boardsSyncHistoryButtons();
       _boardsPanelFlash=group[0].boardId;
       window.boardsDeleteCard(group[0].id);
+      return;
+    }
+    // Dropped on Unsorted: the cards come off the board and are kept. Put
+    // them back where the gesture STARTED and discard the drag's own undo
+    // entry first — boardsTrayStashCards pushes its own, and without this
+    // Ctrl+Z would restore the cards at the spot they were dropped and
+    // need a second press to put them back. _boardsUndo is a plain stack
+    // of snapshots, so popping the one this gesture pushed is exact.
+    if(overStash){
+      origins.forEach(o=>{o.card.x=o.ox;o.card.y=o.oy;});
+      _boardsUndo.pop();
+      _boardsSyncHistoryButtons();
+      window.boardsTrayStashCards(group.map(c=>c.id));
       return;
     }
     if(pushed){
@@ -10623,7 +10741,7 @@ window.boardsHomeFlushUnsorted=function(){
   const n=_editUnsorted.length;
   _editUnsorted.forEach(u=>{
     const p=_boardsPlacementPoint();
-    _editCards.push(_boardsCardFromTrayItem(u,{x:p.x+_BOARDS_HOME_W/2,y:p.y+_BOARDS_HOME_H/2}));
+    _boardsCardsFromTrayItem(u,{x:p.x+_BOARDS_HOME_W/2,y:p.y+_BOARDS_HOME_H/2}).cards.forEach(c=>_editCards.push(c));
   });
   _editUnsorted=[];
   _boardsRenderCanvasAndWire();
@@ -10711,6 +10829,12 @@ function _boardsTrayItemHTML(u,i,canEdit){
     thumb=u.linkImage
       ?`<img class="board-tray-thumb" src="${_boardsEsc(_boardsDisplayUrl(u.linkImage,400))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`
       :`<div class="board-tray-thumb board-tray-thumb-empty">${u._fetching?'…':'LINK'}</div>`;
+  }else if(Array.isArray(u.cards)){
+    // A stashed card that is not one of the four the tray has a picture
+    // for — a to-do, a table, a heading, a column, a frame. It says which,
+    // through the same type-to-word map the delete toast uses, so a row
+    // can never introduce itself as something it is not.
+    thumb=`<div class="board-tray-thumb board-tray-thumb-empty">${_boardsEsc(_boardsStashBadge(u))}</div>`;
   }else{
     thumb='<div class="board-tray-thumb board-tray-thumb-empty">NOTE</div>';
   }
@@ -10776,27 +10900,191 @@ function _boardsTrayAddFiles(files){
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
 }
-// A card the user no longer wants placed. The reverse of dragging one out.
-window.boardsTrayStash=function(cardId){
-  const c=_editCards.find(x=>x.id===cardId);
-  if(!c||!_boardsCanEdit(_editBoard))return;
+/* ── PUTTING A CARD BACK IN THE TRAY (Sept 2026) ───────────────────────
+   Afnan: "when inside a board you can drag anything link file image
+   collum etc and save it in unsorted so the board remains clean."
+
+   "Move to Unsorted" already existed on the card menu, and two things
+   about it were wrong for that ask.
+
+   IT FLATTENED EVERYTHING IT DID NOT RECOGNISE. A tray item was a
+   hand-mapped summary — imageUrl, or fileUrl/fileName, or the link
+   fields, else `{kind:'text',text:c.text}`. A to-do has no `c.text` and
+   neither has a table, so stashing either turned it into an EMPTY note.
+   That is a live data-loss bug reachable from the menu today, not merely
+   a limit on the new gesture.
+
+   So a stashed item carries the WHOLE CARD (`u.cards`), stripped of its
+   `_`-prefixed transients and put through the same _boardsEncodeRows
+   boundary the trash uses: a table's `rows` is an array of arrays,
+   Firestore refuses those OUTRIGHT, and `unsorted` is saved on the board
+   document exactly like `cards` is. Every type round-trips with no
+   per-type mapping to keep in step. The old display fields (kind,
+   imageUrl, fileName, linkImage…) are still written beside it because
+   they are what the row's thumbnail and label read — a VIEW of the card
+   now, never the record of it.
+
+   A CONTAINER TAKES ITS CONTENTS, and "collum etc" is the whole point: a
+   column parked without its children is an empty box, and children left
+   behind are loose cards that used to be organised. Expansion happens
+   HERE rather than in the callers, so the menu (which hands over one id)
+   and the drag (which hands over a group it already expanded) cannot
+   give different answers.
+
+   ONE ROW PER TOP-LEVEL CARD. Drag five loose cards and you get five
+   rows to bring back one at a time; drag one column and you get one row
+   that brings it back whole. Rolling a multi-selection into a single row
+   would make the tray a place things disappear into. */
+
+// Which members of a group are top-level: everything not owned by a
+// container travelling with it. Returns [{root,cards}], each `cards`
+// beginning with its own root.
+function _boardsStashRoots(group){
+  const ids=new Set(group.map(c=>c.id));
+  const owner={};                       // childId → the container it rides with
+  group.forEach(c=>{
+    const kids=_boardsIsColumn(c)?_boardsColumnChildren(c)
+      :c.type==='frame'?_boardsCardsInFrame(c):[];
+    kids.forEach(k=>{if(ids.has(k.id)&&k.id!==c.id)owner[k.id]=c.id;});
+  });
+  // A container inside a container rides with the outer one, so walk up
+  // before deciding. The visited set is the cycle guard _boardsAncestors
+  // already uses: only reachable by hand-editing Firestore, but a loop
+  // here would take the board down.
+  const rootOf=id=>{
+    const seen=new Set();
+    let cur=id;
+    while(owner[cur]&&!seen.has(cur)){seen.add(cur);cur=owner[cur];}
+    return cur;
+  };
+  const out=[],byRoot={};
+  group.forEach(c=>{
+    const r=rootOf(c.id);
+    if(!byRoot[r]){byRoot[r]={root:group.find(x=>x.id===r)||c,cards:[]};out.push(byRoot[r]);}
+    const g=byRoot[r];
+    if(g.root.id===c.id)g.cards.unshift(c);else g.cards.push(c);
+  });
+  return out.filter(g=>g.cards.length);
+}
+// What the row shows. The full card is in `cards`; this is only the
+// thumbnail's choice of renderer.
+function _boardsStashKind(root){
+  const t=root&&root.type;
+  return t==='image'?'image':t==='file'?'file':t==='link'?'link':t==='text'?'text':'cards';
+}
+function _boardsStashBadge(u){
+  const root=Array.isArray(u&&u.cards)&&u.cards[0];
+  return String(_boardsCardNoun(root||null)).toUpperCase();
+}
+// What a stashed row is called. A container says HOW MANY cards came with
+// it, because that is the thing you are deciding about when you look at
+// the row — so it is built here for every type rather than only when the
+// card had no name of its own, or a titled column would never show a count.
+function _boardsStashName(root,n){
+  const noun=_boardsCardNoun(root);
+  if(!root)return noun;
+  if(root.type==='column'||root.type==='frame'){
+    const kids=Math.max(0,n-1);
+    return (root.title||root.name||noun)+(kids?' · '+kids+' card'+(kids===1?'':'s'):'');
+  }
+  // The first thing the card actually SHOWS, in the order it shows it.
+  // Deliberately NOT _boardsCardText: that is a lowercased search index of
+  // every field at once and reads as gibberish on a row.
+  const first=root.name||root.title||root.fileName||root.linkTitle||root.caption||root.text||
+    (Array.isArray(root.items)&&root.items.length&&root.items[0]&&root.items[0].t)||
+    root.boardTitle||'';
+  const line=String(first||'').replace(/\s+/g,' ').trim();
+  return line?line.slice(0,60):noun;
+}
+// One tray item from a root card and everything riding with it. Positions
+// are stored RELATIVE to the root, so bringing it back puts the group
+// down in the shape it left in, wherever it is dropped.
+function _boardsStashItem(cards,conns){
+  const root=cards[0];
+  const ids=new Set(cards.map(c=>c.id));
+  const item={
+    id:_boardsTrayItemId(),at:Date.now(),
+    by:(typeof session!=='undefined'&&session&&session.name)||'',
+    name:_boardsStashName(root,cards.length),
+    kind:_boardsStashKind(root),
+    cards:cards.map(c=>{
+      const plain={};
+      Object.keys(c).forEach(k=>{if(k.charAt(0)!=='_')plain[k]=c[k];});
+      plain.x=(c.x||0)-(root.x||0);
+      plain.y=(c.y||0)-(root.y||0);
+      return _boardsEncodeRows(plain);
+    })
+  };
+  // Only the lines with BOTH ends going. One whose other end stays on the
+  // board has nothing to come back to — the trash's rule.
+  const keep=(conns||[]).filter(cn=>cn&&ids.has(cn.from)&&ids.has(cn.to)).map(cn=>({...cn}));
+  if(keep.length)item.conns=keep;
+  // Display only — see the header note.
+  if(root.type==='image'&&root.imageUrl)item.imageUrl=root.imageUrl;
+  else if(root.type==='file'){item.fileUrl=root.fileUrl||'';item.fileName=root.fileName||'';item.fileSize=root.fileSize||0;}
+  else if(root.type==='link'){
+    item.linkUrl=root.linkUrl||'';item.linkTitle=root.linkTitle||'';
+    if(root.linkImage)item.linkImage=root.linkImage;
+    if(root.linkSite)item.linkSite=root.linkSite;
+  }
+  return item;
+}
+function _boardsStashToast(items,locked){
+  let m=items.length===1
+    ?'“'+_boardsTrayLabel(items[0])+'” moved to Unsorted'
+    :items.length+' cards moved to Unsorted';
+  if(locked)m+=' · '+locked+' locked card'+(locked===1?'':'s')+' kept on the board';
+  return m+' — Ctrl+Z to undo';
+}
+/* THE one implementation. The card menu's single-card action, the phone
+   More sheet and the drag onto the tray all come here, so the toast, the
+   undo entry and what a container does with its contents cannot drift
+   apart. Returns how many rows it made. */
+window.boardsTrayStashCards=function(ids){
+  if(!_boardsCanEdit(_editBoard))return 0;
+  // Home has no Unsorted (it is the board OF boards), so an item pushed
+  // there would be saved on the document and reachable from nowhere —
+  // the stray-item state the panel has to apologise for.
+  if(_boardsIsHome(_editBoard))return 0;
+  const want=new Set((Array.isArray(ids)?ids:[ids]).filter(Boolean));
+  if(!want.size)return 0;
+  let grew=true,guard=0;
+  while(grew&&guard++<8){
+    grew=false;
+    _editCards.filter(c=>want.has(c.id)).forEach(c=>{
+      const kids=_boardsIsColumn(c)?_boardsColumnChildren(c)
+        :c.type==='frame'?_boardsCardsInFrame(c):[];
+      kids.forEach(k=>{if(!want.has(k.id)){want.add(k.id);grew=true;}});
+    });
+  }
+  const group=_editCards.filter(c=>want.has(c.id));
+  if(!group.length)return 0;
+  // Locked cards stay put and are COUNTED, the bulk-delete rule: silently
+  // dropping half an action is worse than doing less and saying so.
+  const locked=group.filter(c=>c.locked).length;
+  const move=group.filter(c=>!c.locked);
+  if(!move.length){showToast(_boardsLockedMsg('move'),true);return 0;}
+  const moveIds=new Set(move.map(c=>c.id));
+  // Captured BEFORE _editConnectors is filtered — afterwards there is
+  // nothing left to record.
+  const conns=_editConnectors.filter(cn=>cn&&(moveIds.has(cn.from)||moveIds.has(cn.to)));
   _boardsPushUndo();
-  const item={id:_boardsTrayItemId(),at:Date.now(),
-    by:(typeof session!=='undefined'&&session&&session.name)||'',name:c.name||''};
-  if(c.type==='image'){item.kind='image';item.imageUrl=c.imageUrl;}
-  else if(c.type==='file'){item.kind='file';item.fileUrl=c.fileUrl;item.fileName=c.fileName;item.fileSize=c.fileSize;}
-  else if(c.type==='link'){item.kind='link';item.linkUrl=c.linkUrl;item.linkTitle=c.linkTitle;item.text=c.linkDesc||'';
-    if(c.linkImage)item.linkImage=c.linkImage;
-    if(c.linkSite)item.linkSite=c.linkSite;}
-  else{item.kind='text';item.text=c.text||'';item.rich=c.rich||'';}
-  _editUnsorted.push(item);
-  _editCards=_editCards.filter(x=>x.id!==cardId);
-  _editConnectors=_editConnectors.filter(cn=>cn.from!==cardId&&cn.to!==cardId);
-  _boardsSelection.delete(cardId);
-  if(!_boardsTrayOpen)window.boardsToggleTray();else _boardsRenderCanvasAndWire();
+  const items=_boardsStashRoots(move).map(g=>_boardsStashItem(g.cards,conns));
+  items.forEach(it=>_editUnsorted.push(it));
+  _editCards=_editCards.filter(c=>!moveIds.has(c.id));
+  _editConnectors=_editConnectors.filter(cn=>!(cn&&(moveIds.has(cn.from)||moveIds.has(cn.to))));
+  move.forEach(c=>_boardsSelection.delete(c.id));
+  _boardsLayoutColumns();
+  // Collecting must never be invisible — the same helper a paste uses.
+  _boardsCollectInto();
+  _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
-  showToast('Moved to Unsorted');
+  showToast(_boardsStashToast(items,locked));
+  return items.length;
 };
+// The reverse of dragging one out, for one card. A thin wrapper on
+// purpose: two implementations is how the two would disagree.
+window.boardsTrayStash=function(cardId){return window.boardsTrayStashCards([cardId]);};
 window.boardsTrayRemove=function(i){
   const u=_editUnsorted[i];
   if(!u||!_boardsCanEdit(_editBoard))return;
@@ -10832,6 +11120,48 @@ function _boardsCardFromTrayItem(u,at){
   else{c.text=u.text||'';if(u.rich)c.rich=u.rich;}
   c.x=at.x-c.w/2;c.y=at.y-c.h/2;   // after sizing, so it centres on the drop
   return c;
+}
+/* One tray item back onto the board, as WHATEVER it was.
+
+   An item collected from OUTSIDE (a paste, a dropped file, a link) has no
+   `cards` and is built into one card by _boardsCardFromTrayItem above,
+   exactly as before. A STASHED item carries the real cards and comes back
+   as what it was — a to-do with its tasks, a table with its rows, a
+   column with its children in order.
+
+   IDS ARE KEPT WHERE THEY ARE FREE. A card's comments live at
+   mood_boards/{board}/comments keyed by card id, so a card that goes to
+   Unsorted and comes back keeps its thread rather than orphaning it. An
+   id already on the board — a remote merge put that card back while the
+   item sat in the tray — is remapped, and `columnId` and the connectors
+   are rewritten through the SAME map. One code path covers both cases, so
+   there is no branch that only ever runs in the rare one. */
+function _boardsCardsFromTrayItem(u,at){
+  if(!u||!Array.isArray(u.cards)||!u.cards.length)
+    return{cards:[_boardsCardFromTrayItem(u,at)],conns:[]};
+  const taken=new Set(_editCards.map(c=>c.id));
+  const map={};
+  const cards=u.cards.map(raw=>{
+    const c=_boardsDecodeCard({...raw});
+    const was=c.id;
+    const id=(!was||taken.has(was))?_boardsMintCardId():was;
+    if(was)map[was]=id;
+    c.id=id;taken.add(id);
+    return c;
+  });
+  const root=cards[0];
+  const ox=at.x-(root.w||0)/2,oy=at.y-(root.h||0)/2;
+  cards.forEach(c=>{
+    c.x=ox+(c.x||0);c.y=oy+(c.y||0);
+    if(c.columnId)c.columnId=map[c.columnId]||c.columnId;
+  });
+  // A connector is only restored when BOTH of its cards came back, and it
+  // is minted a fresh id so a paste of the same item twice cannot produce
+  // two lines claiming to be one.
+  const conns=(Array.isArray(u.conns)?u.conns:[]).filter(cn=>cn&&map[cn.from]&&map[cn.to])
+    .map(cn=>({...cn,id:'k'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4),
+      from:map[cn.from],to:map[cn.to]}));
+  return{cards,conns};
 }
 // Returns true when it consumed the paste. Mirrors _boardsOnPaste's own
 // order of preference — an image always wins, then a URL, then plain text.
@@ -10903,10 +11233,12 @@ window.boardsTrayDragStart=function(e,i){
     const over=r&&ev.clientX>=r.left&&ev.clientX<=r.right&&ev.clientY>=r.top&&ev.clientY<=r.bottom;
     if(!over)return;
     _boardsPushUndo();
-    const c=_boardsCardFromTrayItem(u,_boardsScreenToWorld(ev.clientX,ev.clientY));
-    _editCards.push(c);
+    const made=_boardsCardsFromTrayItem(u,_boardsScreenToWorld(ev.clientX,ev.clientY));
+    made.cards.forEach(c=>_editCards.push(c));
+    made.conns.forEach(cn=>_editConnectors.push(cn));
     _editUnsorted=_editUnsorted.filter(x=>x.id!==u.id);
-    _boardsSetSelection([c.id]);
+    _boardsLayoutColumns();
+    _boardsSetSelection([made.cards[0].id]);
     _boardsRenderCanvasAndWire();
     _boardsSaveDebounced();
   }
@@ -11961,8 +12293,7 @@ function _boardsCtxRun(act){
   if(act.indexOf('align:')===0){window.boardsAlignSelection(act.slice(6));return;}
   if(act.indexOf('dist:')===0){window.boardsDistributeSelection(act.slice(5));return;}
   if(act==='stash'){
-    const one=_boardsSelectedCards();
-    if(one.length===1)window.boardsTrayStash(one[0].id);
+    window.boardsTrayStashCards(_boardsSelectedCards().map(c=>c.id));
     return;
   }
   switch(act){
@@ -12745,12 +13076,22 @@ function _boardsCardCtxItems(canEdit){
     items.push({sep:true});
     items.push({act:'labels',label:(Array.isArray(one.labels)&&one.labels.length)?'Labels…':'Add a label…'});
     items.push({act:'reactions',label:'React…'});
-    // The reverse of dragging one out of the tray: take it off the board
-    // but keep it. Frames and sub-boards are not stashable — a frame has
-    // no content of its own, and a board link belongs with its parent.
-    if(one.type!=='frame'&&one.type!=='board'&&one.type!=='column'){
-      items.push({act:'stash',label:'Move to Unsorted'});
-    }
+  }
+  /* The reverse of dragging one out of the tray: take it off the board
+     but keep it. It covers a whole SELECTION now and it covers containers
+     — a column or a frame goes with its contents, which is the thing the
+     drag onto Unsorted is for. Two exclusions remain:
+
+     - HOME has no Unsorted, so an item pushed there would be saved on the
+       document and reachable from nowhere. This used to be offered there
+       and did exactly that.
+     - A BOARD LINK belongs with its parent, and that card's own ✕ already
+       unlinks it under a name that says so. A mixed selection is refused
+       whole rather than half-done — the same rule the drag follows, so
+       the menu and the gesture agree about what is stashable. */
+  if(canEdit&&sel.length&&!_boardsIsHome(_editBoard)&&!sel.some(c=>c.type==='board')){
+    if(!one)items.push({sep:true});
+    items.push({act:'stash',label:one?'Move to Unsorted':'Move '+sel.length+' cards to Unsorted'});
   }
 
   // ── type-specific ──

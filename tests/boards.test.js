@@ -2297,7 +2297,7 @@ module.exports=function(){
     s.ok('ungroup',/col-release/.test(m));
     s.ok('delete both, marked dangerous',/col-delete-all/.test(m));
     s.ok('select contents',/selectinside/.test(m));
-    s.ok('a column is never stashable to Unsorted',!/stash/.test(m));
+    s.ok('a column IS stashable now, children and all',/stash/.test(m));
     run(`_boardsSetSelection(['a'])`);
     const m2=run(`JSON.stringify(_boardsCardCtxItems(true).map(i=>i.act||'').filter(Boolean))`);
     s.ok('a child can be taken out',/col-out/.test(m2));
@@ -4636,6 +4636,253 @@ module.exports=function(){
     s.eq('Escape is consumed',run(`__stopped`),1);
     run(`_boardsPreviewKey({key:'a',stopPropagation(){__stopped++;}})`);
     s.eq('any other key is left alone',run(`__stopped`),1);
+  }
+
+  /* ── DRAGGING ANYTHING INTO UNSORTED (Sept 2026) ──────────────────────
+     Afnan: "when inside a board you can drag anything link file image
+     collum etc and save it in unsorted so the board remains clean."
+
+     The half worth testing hardest is not the gesture — it is what a
+     stashed card KEEPS. The old tray item was a hand-mapped summary, so
+     a to-do or a table came back as an empty note. */
+  {
+    const app=loadApp({files:FILES,globals:{requestAnimationFrame:()=>0}});
+    const {run,state}=app;
+    const boot=(extra)=>run(`
+      _editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
+      moodBoards=[{id:'b1',ownerUid:'u1',visibility:'shared',title:'T',cards:[]}];
+      _editCards=[];_editConnectors=[];_editUnsorted=[];_boardsSelection=new Set();
+      _boardsUndo=[];_boardsRedo=[];_boardsTrayOpen=false;
+      `+(extra||''));
+    const back=(i,x,y)=>run(`JSON.stringify(_boardsCardsFromTrayItem(_editUnsorted[${i||0}],{x:${x||0},y:${y||0}}))`);
+
+    s.section('a stashed card keeps everything it was');
+    boot(`_editCards=[{id:'t1',type:'todo',x:10,y:20,w:240,h:170,title:'Cutting',
+      items:[{t:'trace',done:true},{t:'bundle',depth:1}]}];`);
+    run(`window.boardsTrayStashCards(['t1'])`);
+    s.eq('it left the board',run(`_editCards.length`),0);
+    s.eq('and there is one row in Unsorted',run(`_editUnsorted.length`),1);
+    // The bug this replaces: a to-do has no c.text, so the old mapping
+    // wrote {kind:'text',text:''} and the card came back EMPTY.
+    const todo=JSON.parse(back(0,500,500));
+    s.eq('it comes back a to-do, not a note',(todo.cards[0]||{}).type,'todo');
+    const ti=(todo.cards[0]||{}).items||[];
+    s.eq('with its tasks',ti.map(i=>i.t).join('+'),'trace+bundle');
+    s.ok('and their state',!!(ti[0]&&ti[0].done===true&&ti[1]&&ti[1].depth===1));
+    s.eq('centred on the drop point',(todo.cards[0]||{}).x+','+(todo.cards[0]||{}).y,'380,415');
+
+    /* A table's `rows` is an array of arrays and FIRESTORE REFUSES THOSE
+       OUTRIGHT — the bug that meant table content never persisted at all.
+       `unsorted` is saved on the board document exactly like `cards`, so
+       a stashed table is the same shape in the same place. The assertion
+       is the RULE, not the field: nothing a save produces may nest an
+       array inside an array. */
+    s.section('a stashed table cannot nest an array in an array');
+    boot(`_editCards=[{id:'tb',type:'table',x:0,y:0,w:360,h:200,head:true,
+      rows:[['Size','Qty'],['M','40']]}];`);
+    run(`window.boardsTrayStashCards(['tb'])`);
+    const nested=run(`(function(){
+      let bad=0;
+      const walk=v=>{
+        if(!Array.isArray(v))return v&&typeof v==='object'?Object.keys(v).forEach(k=>walk(v[k])):0;
+        v.forEach(x=>{if(Array.isArray(x))bad++;walk(x);});
+      };
+      walk(_boardsUnsortedForSave());
+      return bad;})()`);
+    s.eq('no array directly inside an array',nested,0);
+    const tbl=JSON.parse(back(0,0,0));
+    s.eq('and it decodes back to real rows',JSON.stringify((tbl.cards[0]||{}).rows),'[["Size","Qty"],["M","40"]]');
+    s.eq('the row says TABLE, not NOTE',
+      (run(`_boardsTrayItemHTML(_editUnsorted[0],0,true)`).match(/thumb-empty">([^<]*)/)||[])[1],'TABLE');
+
+    /* "collum etc" is the whole point: a column parked without its
+       children is an empty box, and children left behind are loose cards
+       that used to be organised. */
+    s.section('a column goes as ONE row, children and all');
+    boot(`_editCards=[
+      {id:'col',type:'column',x:100,y:100,w:280,h:400,title:'Fabric'},
+      {id:'a',type:'text',text:'one',columnId:'col',x:112,y:175,w:256,h:100},
+      {id:'b',type:'text',text:'two',columnId:'col',x:112,y:285,w:256,h:100},
+      {id:'free',type:'text',text:'loose',x:700,y:100,w:170,h:100}];
+      _editConnectors=[{id:'k1',from:'a',to:'b',arrow:true},{id:'k2',from:'b',to:'free',arrow:true}];`);
+    // Only the column is asked for — expansion happens inside the stash,
+    // so the menu (one id) and the drag (an expanded group) agree.
+    run(`window.boardsTrayStashCards(['col'])`);
+    s.eq('one row, not three',run(`_editUnsorted.length`),1);
+    s.eq('carrying three cards',run(`((_editUnsorted[0]||{}).cards||[]).length`),3);
+    s.eq('the loose card stayed',run(`_editCards.map(c=>c.id).join()`),'free');
+    s.eq('the row names the column and counts them',run(`_boardsTrayLabel(_editUnsorted[0])`),'Fabric · 2 cards');
+    // Both ends going → the line rides along. One end left behind has
+    // nothing to come back to — the trash's rule.
+    s.eq('the internal line rode along',run(`((_editUnsorted[0]||{}).conns||[]).map(c=>c.id).join()`),'k1');
+    s.eq('and the one reaching outside did not',run(`_editConnectors.length`),0);
+    const col=JSON.parse(back(0,1000,1000));
+    s.eq('it comes back a column with both children',
+      (col.cards||[]).map(c=>c.type).join(),'column,text,text');
+    s.ok('the children still point at it',
+      (col.cards||[]).length>1&&col.cards.slice(1).every(c=>c.columnId===col.cards[0].id));
+    s.eq('in the order they were in',(col.cards||[]).slice(1).map(c=>c.text).join(),'one,two');
+    s.eq('and the line came back too',(col.conns||[]).length,1);
+    const cc=col.cards||[],k0=(col.conns||[])[0]||{};
+    s.ok('remapped through the same ids',
+      !!(cc[1]&&cc[2]&&k0.from===cc[1].id&&k0.to===cc[2].id));
+    // Relative geometry: the group lands in the shape it left in.
+    s.eq('the children keep their offsets from the column',
+      cc.length>2?(cc[1].y-cc[0].y)+','+(cc[2].y-cc[0].y):'(only '+cc.length+' cards)','75,185');
+
+    s.section('a frame takes whatever is sitting inside it');
+    boot(`_editCards=[
+      {id:'f',type:'frame',x:0,y:0,w:400,h:400,title:'Denim'},
+      {id:'in',type:'text',text:'inside',x:50,y:50,w:100,h:100},
+      {id:'out',type:'text',text:'outside',x:900,y:50,w:100,h:100}];`);
+    run(`window.boardsTrayStashCards(['f'])`);
+    s.eq('one row',run(`_editUnsorted.length`),1);
+    s.eq('with the frame and its card',run(`((_editUnsorted[0]||{}).cards||[]).map(c=>c.id).join()`),'f,in');
+    s.eq('the card outside stayed',run(`_editCards.map(c=>c.id).join()`),'out');
+
+    s.section('several loose cards are several rows');
+    boot(`_editCards=[{id:'p',type:'text',text:'a',x:0,y:0,w:170,h:100},
+      {id:'q',type:'text',text:'b',x:200,y:0,w:170,h:100},
+      {id:'r',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:400,y:0,w:170,h:120}];`);
+    run(`window.boardsTrayStashCards(['p','q','r'])`);
+    s.eq('three rows you can bring back one at a time',run(`_editUnsorted.length`),3);
+    s.eq('the picture row still shows its picture',run(`(_editUnsorted[2]||{}).kind`),'image');
+    s.ok('through the thumbnail, not a badge',
+      /board-tray-thumb" src=/.test(run(`_boardsTrayItemHTML(_editUnsorted[2],2,true)`)));
+
+    /* A card's comments live at mood_boards/{board}/comments keyed by card
+       id, so a card that goes to Unsorted and comes back must keep its
+       thread. An id already taken is remapped, and columnId and the
+       connectors go through the same map. */
+    s.section('ids are kept where they are free, remapped where they are not');
+    boot(`_editCards=[{id:'keepme',type:'text',text:'x',x:0,y:0,w:170,h:100}];`);
+    run(`window.boardsTrayStashCards(['keepme'])`);
+    s.eq('a free id comes back unchanged',(JSON.parse(back(0,0,0)).cards[0]||{}).id,'keepme');
+    run(`_editCards=[{id:'keepme',type:'text',text:'other',x:0,y:0,w:170,h:100}]`);
+    const clash=JSON.parse(back(0,0,0));
+    s.ok('a taken id is remapped instead of colliding',(clash.cards[0]||{}).id!=='keepme');
+    s.ok('and it is a real card id',/^c\d+_/.test((clash.cards[0]||{}).id||''));
+
+    s.section('what is NOT stashable, and it is refused whole');
+    boot(`_editCards=[{id:'bl',type:'board',boardId:'B',x:0,y:0,w:340,h:136},
+      {id:'n',type:'text',text:'n',x:400,y:0,w:170,h:100}];
+      _boardsSelection=new Set(['bl','n']);`);
+    s.ok('a board link is not a drop target',run(`_boardsStashDrag([{type:'board',boardId:'B'}])===false`));
+    s.ok('nor is a group holding one',
+      run(`_boardsStashDrag([{type:'text'},{type:'board',boardId:'B'}])===false`));
+    s.ok('an ordinary group is',run(`_boardsStashDrag([{type:'text'},{type:'column'}])===true`));
+    s.ok('the menu agrees with the gesture',
+      !/stash/.test(run(`JSON.stringify(_boardsCardCtxItems(true).map(i=>i.act||''))`)));
+    // HOME has no Unsorted, so an item pushed there would be saved on the
+    // document and reachable from nowhere. This used to be offered.
+    run(`_editBoard.isHome=true;_boardsSelection=new Set(['n'])`);
+    s.ok('and Home offers it at all',
+      !/stash/.test(run(`JSON.stringify(_boardsCardCtxItems(true).map(i=>i.act||''))`)));
+    s.eq('nor does the call do anything there',run(`window.boardsTrayStashCards(['n'])`),0);
+    s.eq('nothing was collected',run(`_editUnsorted.length`),0);
+    s.ok('and the gesture is off on Home and on a phone',
+      run(`_boardsStashDrag([{type:'text'}])===false`));
+
+    s.section('a locked card is kept on the board, and counted');
+    boot(`_editCards=[
+      {id:'col',type:'column',x:0,y:0,w:280,h:400,title:'Fabric'},
+      {id:'a',type:'text',text:'one',columnId:'col',x:12,y:75,w:256,h:100},
+      {id:'b',type:'text',text:'two',columnId:'col',x:12,y:185,w:256,h:100,locked:true}];`);
+    run(`window.boardsTrayStashCards(['col'])`);
+    s.eq('the locked one stayed',run(`_editCards.map(c=>c.id).join()`),'b');
+    s.ok('and the toast says so rather than dropping it silently',
+      /1 locked card kept on the board/.test(state.toasts.slice(-1)[0]),state.toasts.slice(-1)[0]);
+
+    s.section('collecting is never invisible, and it is undoable');
+    boot(`_editCards=[{id:'z',type:'text',text:'z',x:0,y:0,w:170,h:100}];
+      _editUnsorted=[{id:'old',kind:'text',text:'was here already'}];`);
+    s.ok('the tray starts shut',run(`_boardsTrayOpen===false`));
+    run(`window.boardsTrayStashCards(['z'])`);
+    s.ok('stashing opens it',run(`_boardsTrayOpen===true`));
+    s.eq('two rows now',run(`_editUnsorted.length`),2);
+    s.eq('one undo entry',run(`_boardsUndo.length`),1);
+    run(`window.boardsUndoAction()`);
+    s.eq('and undo puts the card back',run(`_editCards.length+':'+(_editCards[0]||{}).id`),'1:z');
+    /* THE HALF THAT MADE THE SNAPSHOT CHANGE NECESSARY. The undo snapshot
+       was cards and connectors only, so Ctrl+Z restored the card and left
+       the copy in Unsorted — the same card in two places, which is worse
+       than no undo at all. */
+    s.eq('and takes back only the row it added',run(`_editUnsorted.map(u=>u.id).join()`),'old');
+    /* The same widening closes one that was already there and had no
+       symptom anyone would report: the drag OUT of the tray pushes undo
+       too, and Ctrl+Z used to take the card off the board WITHOUT putting
+       the item back. The thing was simply gone. */
+    boot(`_editUnsorted=[{id:'u1',kind:'text',text:'collected'}];`);
+    run(`_boardsPushUndo();
+      _editCards.push(_boardsCardsFromTrayItem(_editUnsorted[0],{x:0,y:0}).cards[0]);
+      _editUnsorted=[]`);
+    run(`window.boardsUndoAction()`);
+    s.eq('undoing a drag OUT of the tray puts the item back',run(`_editUnsorted.length`),1);
+    s.eq('and takes the card off the board',run(`_editCards.length`),0);
+
+    /* The GESTURE, driven for real — boardsCardDragStart, a pointermove to
+       make it a drag rather than a click, then a pointerup over the tray.
+       Everything that decides the drop lives in that handler's closure, so
+       grepping the source proves nothing about what it does. */
+    s.section('the drag itself puts a card in Unsorted');
+    {
+      const app2=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        currentPage:'board-canvas',globals:{requestAnimationFrame:()=>0}});
+      const r2=x=>app2.run(x);
+      const setup=`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
+        moodBoards=[{id:'b1',ownerUid:'u1',visibility:'shared',title:'T',cards:[]}];
+        _editCards=[{id:'n1',type:'text',text:'keep me',x:40,y:60,w:170,h:100}];
+        _editConnectors=[];_editUnsorted=[];_boardsSelection=new Set(['n1']);
+        _boardsUndo=[];_boardsRedo=[];_boardsTrayOpen=true;_boardsSuppressClick=false;
+        // The open tray is the right-hand strip. The harness's default rect
+        // has no right/bottom, so it is given a real one.
+        document.getElementById('board-tray').getBoundingClientRect=
+          function(){return{left:800,right:1200,top:0,bottom:600};};`;
+      // Driven through the DOCUMENT listeners: the capture is deferred past
+      // the drag threshold, so the tracking is document-wide.
+      const fire=(x,y)=>{
+        const ev=t=>({type:t,clientX:x,clientY:y,pointerId:1,altKey:false,shiftKey:false});
+        (app2.state.listeners.pointermove||[]).slice().forEach(f=>f(ev('pointermove')));
+        (app2.state.listeners.pointerup||[]).slice().forEach(f=>f(ev('pointerup')));
+      };
+      const drag=(x,y)=>{
+        r2(`(function(){
+          const head=document.getElementById('drag-body');
+          window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
+            stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'n1');})()`);
+        fire(x,y);
+      };
+
+      r2(setup);
+      drag(900,300);                         // over the tray
+      s.eq('the card is off the board',r2(`_editCards.length`),0);
+      s.eq('and in Unsorted',r2(`_editUnsorted.length`),1);
+      s.eq('still itself',r2(`(((_editUnsorted[0]||{}).cards||[])[0]||{}).text||'(nothing collected)'`),'keep me');
+      // ONE entry: the drag's own is popped before boardsTrayStashCards
+      // pushes its own, or Ctrl+Z would put the card back where it was
+      // DROPPED and need a second press.
+      s.eq('one undo entry, not two',r2(`_boardsUndo.length`),1);
+      r2(`window.boardsUndoAction()`);
+      s.eq('undo brings it back',r2(`_editCards.length`),1);
+      s.eq('exactly where it started',r2(`_editCards[0].x+','+_editCards[0].y`),'40,60');
+      s.eq('and out of Unsorted',r2(`_editUnsorted.length`),0);
+
+      r2(setup);
+      drag(300,300);                         // over the canvas
+      s.eq('a drop on the canvas is an ordinary move',r2(`_editCards.length`),1);
+      s.eq('and collects nothing',r2(`_editUnsorted.length`),0);
+
+      // A board link dropped on the tray is a move like any other.
+      r2(setup+`_editCards=[{id:'k1',type:'board',boardId:'B',x:40,y:60,w:340,h:136}];
+        _boardsSelection=new Set(['k1']);`);
+      r2(`(function(){
+        const head=document.getElementById('drag-body2');
+        window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
+          stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'k1');})()`);
+      fire(900,300);
+      s.eq('a board link dropped on the tray stays on the board',r2(`_editCards.length`),1);
+      s.eq('and nothing was collected',r2(`_editUnsorted.length`),0);
+    }
   }
 
   // ── a PDF card is sized to its page ─────────────────────────────────────

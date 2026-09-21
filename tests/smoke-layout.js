@@ -92,19 +92,37 @@ const FRAGMENTS={
       {id:'u1',kind:'text',text:'A note with a fairly long first line that has to wrap somewhere'},
       {id:'u2',kind:'file',fileName:'winter-sequence-2026-techpack-final-v3.pdf',fileSize:2400000},
       {id:'u3',kind:'link',linkUrl:'https://example.test/a',linkTitle:'example.test'},
-      {id:'u4',kind:'file',fileName:'a.pdf'}
+      {id:'u4',kind:'file',fileName:'a.pdf'},
+      {id:'u5',kind:'cards',name:'FABRIC & TRIMS FOR WINTER · 12 cards',
+        cards:[{id:'c1',type:'column',title:'FABRIC & TRIMS FOR WINTER'}]},
+      {id:'u6',kind:'cards',name:'Table',cards:[{id:'c2',type:'table'}]}
     ]`);
     let html=app.run('_boardsTrayHTML(true)');
     app.run('_boardsTrayHydrate()');
     // Same reason as above: hydration goes into the harness's stub nodes, so
     // the labels are written in here for the measurement.
     ['A note with a fairly long first line that has to wrap somewhere',
-     'winter-sequence-2026-techpack-final-v3.pdf','example.test','a.pdf'].forEach((t,i)=>{
+     'winter-sequence-2026-techpack-final-v3.pdf','example.test','a.pdf',
+     'FABRIC & TRIMS FOR WINTER · 12 cards','Table'].forEach((t,i)=>{
       html=html.replace(new RegExp('(id="board-tray-l-'+i+'"[^>]*>)'),'$1'+t);
     });
     // The tray is position:absolute against the canvas wrap; give it one.
     return Promise.resolve(
       '<div style="position:relative;height:600px;width:100%">'+html+'</div>');
+  },
+  /* ── THE UNSORTED PEEK ZONE ──────────────────────────────────────────
+     Built by _boardsStashZone only while a card is being dragged and the
+     tray is shut, so the probe cannot reach it through the module — it is
+     composed here from the same markup that function writes. Worth
+     measuring because its whole job is to be READ mid-gesture: the idle
+     label is --muted on --surface and the armed one is --text on --hover,
+     and both have to hold in either theme. */
+  'boards — the Unsorted peek zone':()=>{
+    const zone=on=>'<div style="position:relative;height:170px;width:100%;'+
+      'background:var(--bg);border:1px solid var(--border);margin-bottom:10px">'+
+      '<div class="board-stash-zone'+(on?' panel-drop':'')+'">'+
+      '<span class="board-stash-zone-label">Unsorted</span></div></div>';
+    return Promise.resolve(zone(false)+zone(true));
   },
   // Cards carrying every piece of chrome at once — the shape QA reported
   // twice: a label and a reaction row stealing the body's height until the
