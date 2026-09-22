@@ -26,13 +26,20 @@ that. Only one of them is recommended.
 ===========================================================================
 
 WHAT TO BUY
-  • Any Raspberry Pi (a Pi Zero 2 W or a Pi 3/4/5 are all plenty)
-  • Its power supply
-  • A microSD card, 16 GB or more
-  • Ethernet cable if you are not using Wi-Fi (more reliable — prefer it)
+  • A Raspberry Pi 4 (2GB) or a Pi 3 Model B+ — anything with a real
+    ethernet port. The work is trivial; do not pay for RAM or cores.
+  • Its official power supply (cheap chargers cause SD corruption)
+  • A HIGH-ENDURANCE microSD card, 32 GB (SanDisk Max Endurance, Samsung
+    PRO Endurance or similar — the sort sold for dashcams and CCTV)
+  • Ethernet cable — prefer it over Wi-Fi for something nobody watches
 
 The Pi must be able to reach BOTH the clock on the local network AND the
 internet.
+
+  BEFORE BUYING: an old laptop or mini PC does this job just as well, and a
+  laptop is BETTER here, because its battery means the nightly power cut is
+  a clean shutdown instead of a yank. pull.js is only a Node script. If one
+  is spare, use it and skip the shopping.
 
 ONE-TIME SETUP
   1. Flash "Raspberry Pi OS Lite (64-bit)" to the SD card with the
@@ -57,6 +64,47 @@ ONE-TIME SETUP
   4. That is all. The installer sets the timezone, installs Node, checks the
      clock answers, and registers the puller as a service that starts on
      every boot and restarts itself if it ever crashes.
+
+MAKE IT SURVIVE THE NIGHTLY POWER CUT  ← DO NOT SKIP THIS
+  The department's power is cut every evening and switched on every morning.
+  That is roughly 250 hard power-offs a year on a running Linux box, and it
+  WILL corrupt an ordinary SD card — usually within months. This is the most
+  common way a Raspberry Pi dies, and here it is guaranteed rather than bad
+  luck.
+
+  The fix is to make the card read-only, so a power cut has nothing to
+  damage. Raspberry Pi OS has this built in. AFTER running setup-pi.sh and
+  confirming the pill goes green:
+
+    sudo raspi-config
+      → Performance Options → Overlay File System
+      → enable the overlay, and set the boot partition read-only
+      → reboot
+
+  From then on every write goes to RAM and is thrown away at power-off. The
+  card is never written to, so it cannot be corrupted by losing power.
+
+  WHAT THIS COSTS, AND WHY IT IS FINE
+  • last_pull.json is discarded each night, so every morning the puller
+    falls back to its 24-hour window and re-sends punches the app already
+    has. This is harmless: each punch is stored under its own timestamp, so
+    re-sending overwrites it with itself. It cannot create duplicates.
+    (tests/attendance-puller.test.js pins that — if it ever stops being
+    true, this setup stops being safe with it.)
+  • Log history is lost on reboot, so `journalctl` only shows today. You do
+    not need it for "is it alive" — the app's sync pill answers that, and it
+    is visible from anywhere.
+
+  TO CHANGE ANYTHING LATER (update the code, change the clock's IP), turn
+  the overlay OFF in raspi-config, reboot, make the change, turn it back on,
+  reboot. Forgetting to turn it back on is the easy mistake: the Pi will run
+  fine for months and then eat its card.
+
+  NOTHING IS LOST OVERNIGHT. The clock keeps its own punches in its own
+  memory, so anything recorded while the Pi is off — or in the minute it
+  takes to boot — is picked up on the next pull. Nobody has to be careful
+  about the order things are switched on.
+
 
 CHECK IT IS WORKING
   Open the app → Attendance page. The sync pill in the top-right should go

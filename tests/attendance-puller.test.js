@@ -217,6 +217,54 @@ module.exports=async function(){
     https.request=real;
   }
 
+  s.section('REPLAY — the department cuts power nightly, so mornings re-send');
+  {
+    // There is no UPS: the Pi is hard-powered off every evening. The SD card
+    // survives that only with a read-only root, which discards last_pull.json,
+    // so every morning the puller falls back to its 24h window and re-sends
+    // punches the app already has. That is only safe because each punch keys
+    // on its own timestamp — replaying overwrites itself instead of stacking
+    // duplicates. If this ever stops being true, the read-only Pi setup in
+    // attendance-sync/README.txt stops being safe with it.
+    Object.keys(rtdb).forEach(k=>delete rtdb[k]);
+    const {lines}=pull.buildLines([
+      punch('7','2026-09-22 09:14:03'),
+      punch('7','2026-09-22 13:00:00'),
+      punch('7','2026-09-22 18:30:00')
+    ],empty);
+    const send=async()=>{
+      await withStubs(async()=>{
+        await iclock.handler({
+          httpMethod:'POST',path:'/iclock/cdata',
+          queryStringParameters:{SN:'PULLER-pi',table:'ATTLOG'},
+          body:lines.join('\n')
+        });
+      });
+    };
+    await send();
+    const firstKeys=Object.keys(rtdb).sort().join('|');
+    const firstData=JSON.stringify(rtdb['attendance/2026-09-22/7/2026-09-22-09-14-03']);
+    await send();
+    await send();
+    s.eq('three sends touch the same paths as one',Object.keys(rtdb).sort().join('|'),firstKeys);
+    s.eq('  and the stored punch is unchanged',
+      JSON.stringify(rtdb['attendance/2026-09-22/7/2026-09-22-09-14-03']),firstData);
+    s.eq('one path per punch, not one per send',
+      Object.keys(rtdb).filter(k=>k.startsWith('attendance/2026-09-22/7/')).length,3);
+    // Replaying a day in order must leave presence on the LAST punch, not on
+    // whichever one happened to be written last by some other ordering.
+    const live=(rtdb['attendance/live/7']||{}).v;
+    s.eq('presence ends on the final punch of the day',live&&live.lastSeen,'2026-09-22 18:30');
+  }
+
+  s.section('a boot with no state file only reaches back one day');
+  {
+    // The 24h fallback is what bounds the morning replay. Without it a cold
+    // boot would re-send the clock's entire history every single day.
+    const src=require('fs').readFileSync(PULL,'utf8');
+    s.ok('the cold-start cutoff is 24h',/prev\.last \|\| fmt\(new Date\(Date\.now\(\) - 86400000\)\)/.test(src));
+  }
+
   s.section('the source still holds the guards');
   {
     const src=require('fs').readFileSync(PULL,'utf8');
