@@ -48,6 +48,10 @@ function withStubs(fn){
 const at=str=>({t:new Date(str)});
 const punch=(id,str)=>({id,t:new Date(str)});
 const fields=line=>line.split('\t');
+// Null-safe on purpose: a broken chunk loop must NAME the finding, not take
+// the whole run down on `undefined.split` — the lesson CLAUDE.md records.
+const nlines=b=>String(b==null?'':b).split('\n').filter(Boolean).length;
+const readState=f=>{try{return JSON.parse(require('fs').readFileSync(f,'utf8'));}catch{return null;}};
 
 module.exports=async function(){
   const s=suite('attendance-puller');
@@ -257,12 +261,152 @@ module.exports=async function(){
     s.eq('presence ends on the final punch of the day',live&&live.lastSeen,'2026-09-22 18:30');
   }
 
-  s.section('a boot with no state file only reaches back one day');
+  s.section('the cold start is bounded, and the send is chunked');
   {
-    // The 24h fallback is what bounds the morning replay. Without it a cold
-    // boot would re-send the clock's entire history every single day.
+    // Both matter because of the same fact: with the SD card read-only the
+    // state file is gone every morning, so the cold-start replay is the
+    // DAILY path. Unbounded, it would re-send the clock's whole history;
+    // unchunked, ~112 punches (28 staff x 4) become one request making up
+    // to ~224 sequential RTDB writes inside a 10s Netlify function.
+    s.eq('cold start reaches back 48h by default',pull.BACKFILL_HOURS,48);
+    s.eq('and sends 50 punches per request',pull.CHUNK,50);
     const src=require('fs').readFileSync(PULL,'utf8');
-    s.ok('the cold-start cutoff is 24h',/prev\.last \|\| fmt\(new Date\(Date\.now\(\) - 86400000\)\)/.test(src));
+    s.ok('the cutoff is derived from BACKFILL_HOURS, not a literal',
+      /prev\.last \|\| fmt\(new Date\(Date\.now\(\) - BACKFILL_HOURS \* 3600000\)\)/.test(src));
+    s.ok('the cursor is saved inside the chunk loop',
+      /for \(let i = 0; i < fresh\.length; i \+= CHUNK\)[\s\S]{0,900}saveState\(state\)/.test(src));
+  }
+
+  s.section('DRIVEN — a morning replay, end to end');
+  {
+    // The whole point of chunking is only provable through pull() itself:
+    // buildLines is chunk-agnostic and would pass either way.
+    const fs=require('fs');
+    const os=require('os');
+    const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'zk-'));
+    const stateFile=path.join(tmp,'last_pull.json');
+
+    // 120 punches across 28 people, all today, oldest first.
+    const base=new Date(); base.setHours(9,0,0,0);
+    const records=[];
+    for(let i=0;i<120;i++){
+      records.push({deviceUserId:String((i%28)+1),
+        recordTime:new Date(base.getTime()+i*5*60000)});  // 5 min apart
+    }
+
+    const https=require('https');
+    const realReq=https.request;
+    const bodies=[];
+    https.request=(opts,cb)=>{
+      const req=new EventEmitter();
+      req.setTimeout=()=>{};
+      let buf='';
+      req.write=c=>{buf+=c;};
+      req.end=()=>{
+        bodies.push(buf);
+        const n=buf.split('\n').filter(Boolean).length;
+        const res=new EventEmitter(); res.statusCode=200;
+        cb(res); res.emit('data',`OK: ${n}`); res.emit('end');
+      };
+      return req;
+    };
+
+    process.env.ZK_STATE_FILE=stateFile;
+    let driven;
+    withStubs(()=>{
+      delete require.cache[require.resolve(PULL)];
+      Module._load=(function(orig){return function(r){
+        if(r==='node-zklib')return function(){
+          return {createSocket:async()=>{},disconnect:async()=>{},
+                  getAttendances:async()=>({data:records})};
+        };
+        if(r==='firebase-admin')return adminStub;
+        return orig.apply(this,arguments);
+      };})(Module._load);
+      driven=require(PULL);
+    });
+    await driven.pull();
+    https.request=realReq;
+    delete process.env.ZK_STATE_FILE;
+
+    s.eq('120 punches went as 3 requests, not 1',bodies.length,3);
+    s.eq('  first batch is capped at CHUNK',nlines(bodies[0]),50);
+    s.eq('  second batch too',nlines(bodies[1]),50);
+    s.eq('  and the remainder follows',nlines(bodies[2]),20);
+    const total=bodies.reduce((n,b)=>n+nlines(b),0);
+    s.eq('every punch was sent exactly once',total,120);
+
+    const saved=readState(stateFile);
+    s.ok('a state file was written at all',!!saved);
+    s.eq('the cursor landed on the last punch',saved&&saved.last,driven.fmt(records[119].recordTime));
+    s.eq('and the per-person parity was persisted',Object.keys((saved&&saved.users)||{}).length,28);
+
+    fs.rmSync(tmp,{recursive:true,force:true});
+  }
+
+  s.section('DRIVEN — a batch that fails keeps the batches before it');
+  {
+    const fs=require('fs');
+    const os=require('os');
+    const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'zk-'));
+    const stateFile=path.join(tmp,'last_pull.json');
+
+    const base=new Date(); base.setHours(9,0,0,0);
+    const records=[];
+    for(let i=0;i<120;i++){
+      records.push({deviceUserId:String((i%28)+1),
+        recordTime:new Date(base.getTime()+i*5*60000)});
+    }
+
+    const https=require('https');
+    const realReq=https.request;
+    let call=0;
+    https.request=(opts,cb)=>{
+      const req=new EventEmitter();
+      req.setTimeout=()=>{};
+      let buf='';
+      req.write=c=>{buf+=c;};
+      req.end=()=>{
+        call++;
+        const res=new EventEmitter();
+        const n=buf.split('\n').filter(Boolean).length;
+        // Netlify falls over on the second batch.
+        res.statusCode = call===2 ? 502 : 200;
+        cb(res);
+        res.emit('data',call===2?'Bad gateway':`OK: ${n}`);
+        res.emit('end');
+      };
+      return req;
+    };
+
+    process.env.ZK_STATE_FILE=stateFile;
+    let driven;
+    withStubs(()=>{
+      delete require.cache[require.resolve(PULL)];
+      Module._load=(function(orig){return function(r){
+        if(r==='node-zklib')return function(){
+          return {createSocket:async()=>{},disconnect:async()=>{},
+                  getAttendances:async()=>({data:records})};
+        };
+        if(r==='firebase-admin')return adminStub;
+        return orig.apply(this,arguments);
+      };})(Module._load);
+      driven=require(PULL);
+    });
+    await driven.pull();          // must not throw — pull() catches
+    https.request=realReq;
+    delete process.env.ZK_STATE_FILE;
+
+    s.eq('it stopped at the failing batch',call,2);
+    const saved=readState(stateFile);
+    // The first 50 are banked; the cursor sits on the 50th, so the retry
+    // resumes there rather than replaying the whole window.
+    s.ok('the batch that landed was banked before the failure',!!saved);
+    s.eq('  cursor sits on the last punch of batch 1',saved&&saved.last,driven.fmt(records[49].recordTime));
+    s.ok('  and did not advance past the failure',
+      !!saved&&saved.last<driven.fmt(records[50].recordTime));
+
+    fs.rmSync(tmp,{recursive:true,force:true});
   }
 
   s.section('the source still holds the guards');

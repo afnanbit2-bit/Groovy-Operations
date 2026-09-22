@@ -105,6 +105,32 @@ MAKE IT SURVIVE THE NIGHTLY POWER CUT  ← DO NOT SKIP THIS
   takes to boot — is picked up on the next pull. Nobody has to be careful
   about the order things are switched on.
 
+  THE HOURS THIS IS SIZED FOR
+  The department opens between 9am and 11am and closes between 8pm and
+  midnight, so the Pi is off for somewhere between 9 and 15 hours. A cold
+  start reaches back 48 HOURS, which clears the longest overnight gap, and
+  a weekend, with room to spare. It is not longer than that because with a
+  read-only card this replay runs EVERY morning, and it is sent to the app
+  in batches of 50 punches — the receiver writes each punch to the database
+  one at a time inside a function call capped at ten seconds, so a whole
+  morning in a single request would time out, fail, and retry forever.
+
+  IF THE PI IS DOWN FOR MORE THAN 48 HOURS
+  (card died, unplugged, left off over a long holiday while people were
+  still punching.) The clock still has every punch, but a normal cold start
+  only reaches back two days, so the app would be missing the rest. You
+  will know this happened because the sync pill sits orange the whole time.
+  To catch up, reach back further just once:
+
+    sudo systemctl stop groovy-attendance
+    cd ~/Groovy-Operations/attendance-sync
+    ZK_BACKFILL_HOURS=720 node pull.js        # 720h = 30 days
+    # wait for one "forwarded N punch(es)" line, then press Ctrl+C
+    sudo systemctl start groovy-attendance
+
+  Re-sending punches the app already has is harmless — they overwrite
+  themselves — so it is always safe to reach back further than you need.
+
 
 CHECK IT IS WORKING
   Open the app → Attendance page. The sync pill in the top-right should go
@@ -138,10 +164,12 @@ IF SOMETHING IS WRONG
 
 TO RESET THE CURSOR (if records seem stuck)
   sudo systemctl stop groovy-attendance
-  rm last_pull.json
+  rm -f last_pull.json
   sudo systemctl start groovy-attendance
-  It will re-pull the last 24 hours. Re-sending a punch is harmless — each
+  It will re-pull the last 48 hours. Re-sending a punch is harmless — each
   one is stored under its own timestamp, so a repeat overwrites itself.
+  (With the read-only overlay on, the file is already discarded at every
+  power cut, so this happens by itself every morning.)
 
 
 KNOWN LIMITATION — IN vs OUT IS A GUESS

@@ -46,8 +46,20 @@ const SN = `PULLER-${HOST_TAG}`;
 const ENDPOINT =
   "https://groovyoperations.netlify.app/iclock/cdata" +
   `?SN=${encodeURIComponent(SN)}&table=ATTLOG&Stamp=9999`;
-const STATE_FILE = path.join(__dirname, "last_pull.json");
+const STATE_FILE = process.env.ZK_STATE_FILE || path.join(__dirname, "last_pull.json");
 const INTERVAL_MS = 60000;
+// How far back a COLD START reaches. With the SD card read-only (see
+// README.txt) the state file is discarded at every power cut, so this runs
+// every morning, not just on the first install. 48h clears the longest
+// overnight or weekend gap with room to spare while keeping the replay
+// small. A longer outage is recovered by hand — see the README.
+const BACKFILL_HOURS = parseInt(process.env.ZK_BACKFILL_HOURS || "48", 10);
+// Punches per POST. The receiver writes each punch to RTDB sequentially —
+// up to two round trips each — inside one Netlify function call, and that
+// call is capped at 10s. 28 staff replayed over 48h is a few hundred
+// punches, which as ONE request would run past the cap, fail, and retry
+// forever every 60s. Chunking bounds the work per request instead.
+const CHUNK = parseInt(process.env.ZK_CHUNK || "50", 10);
 const POST_TIMEOUT_MS = 20000;
 // Same user, two reads inside this window = one punch. A double-tap on the
 // reader would otherwise flip the in/out parity for the rest of that day.
@@ -163,7 +175,7 @@ async function pull() {
     const recs = (res && res.data) || [];
     const prev = loadState();
     // First run: only the last 24h, so we don't replay the clock's whole log.
-    const cutoff = prev.last || fmt(new Date(Date.now() - 86400000));
+    const cutoff = prev.last || fmt(new Date(Date.now() - BACKFILL_HOURS * 3600000));
     const fresh = recs
       .map((r) => ({
         id: String(r.deviceUserId != null ? r.deviceUserId : r.userId != null ? r.userId : r.uid || "").trim(),
@@ -178,16 +190,32 @@ async function pull() {
       return;
     }
 
-    const { lines, state } = buildLines(fresh, prev);
-    const accepted = await post(lines);
-    if (lines.length && accepted < lines.length) {
-      console.warn(`[${stamp()}] receiver stored ${accepted} of ${lines.length} rows — the rest failed to parse`);
+    // Send in chunks, saving the cursor after each one. A chunk that fails
+    // stops the run with everything before it already banked, so the retry
+    // resumes from there instead of replaying the whole window again.
+    let st = prev;
+    let sent = 0;
+    let chunks = 0;
+    for (let i = 0; i < fresh.length; i += CHUNK) {
+      const { lines, state } = buildLines(fresh.slice(i, i + CHUNK), st);
+      if (lines.length) {
+        const accepted = await post(lines);
+        if (accepted < lines.length) {
+          console.warn(`[${stamp()}] receiver stored ${accepted} of ${lines.length} rows — the rest failed to parse`);
+        }
+        sent += lines.length;
+        chunks++;
+      }
+      // Saved even when every punch in the chunk was deduped, so the cursor
+      // still moves past them and they are not re-read on the next tick.
+      saveState(state);
+      st = state;
     }
-    saveState(state);
     console.log(
-      `[${stamp()}] forwarded ${lines.length} punch(es)` +
-        (fresh.length !== lines.length ? ` (${fresh.length - lines.length} deduped)` : "") +
-        ` · cursor ${state.last}`
+      `[${stamp()}] forwarded ${sent} punch(es)` +
+        (chunks > 1 ? ` in ${chunks} batches` : "") +
+        (fresh.length !== sent ? ` (${fresh.length - sent} deduped)` : "") +
+        ` · cursor ${st.last}`
     );
   } catch (e) {
     // Nothing is saved on this path, so the same punches are retried next tick.
@@ -202,10 +230,11 @@ async function pull() {
 
 if (require.main === module) {
   console.log(`K40 puller → ${DEVICE_IP}:${DEVICE_PORT} every ${INTERVAL_MS / 1000}s`);
+  console.log(`cold start reaches back ${BACKFILL_HOURS}h · ${CHUNK} punches per batch`);
   console.log(`reporting as ${SN} → ${new URL(ENDPOINT).host}`);
   console.log(`state file: ${STATE_FILE}`);
   pull();
   setInterval(pull, INTERVAL_MS);
 }
 
-module.exports = { buildLines, fmt, post, DEDUPE_MS };
+module.exports = { buildLines, fmt, post, pull, DEDUPE_MS, CHUNK, BACKFILL_HOURS, STATE_FILE };
