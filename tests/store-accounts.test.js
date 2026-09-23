@@ -16,6 +16,7 @@ const fs=require('fs');
 const path=require('path');
 const harness=require('./harness');
 const {suite,ROOT}=harness;
+const read=f=>fs.readFileSync(path.join(ROOT,f),'utf8');
 
 const FILES=['js/store.js','js/store-accounts.js'];
 const LS={getItem:()=>null,setItem(){},removeItem(){}};
@@ -709,6 +710,88 @@ module.exports=async function(){
     c.el('acct-s-pd-1').checked=false;c.el('acct-s-pd-4').checked=false;
     await c.run('window.acctSaveSettings()');
     s.eq('none ticked → back to Wed and Sat, never an empty list',J(c.run('acctSettings.payDays')),J([3,6]));
+  }
+
+  s.section('the daily log prints as a PDF through the print engine');
+  {
+    // Afnan (23 Sept 2026): after a bill is logged there should be a PDF of
+    // the log — what happened on each day, plus the total billing.
+    const a=app({session:RAEES});
+    const gas=V('gas',{name:'Amin Gas',kind:'consumable',meter:{type:'weighed',unit:'kg',rate:350},terms:{mode:'monthly',billDay:1}});
+    const m=a.run('_acctThisMonth()');const today=a.run('_acctToday()');
+    const d=n=>m+'-'+String(n).padStart(2,'0');
+    const logs=[{date:d(1),vendorId:'gas',month:m,qty:20,residual:5,byName:'Raees',note:'first cylinder'},{date:d(2),vendorId:'gas',month:m,qty:10,residual:0,rate:400,byName:'Raees',note:''}];
+    a.seed([],[gas]);
+    const data=a.run(`_acctConsPdfData(_acctVendor('gas'),'${m}',${J(logs)})`);
+    s.eq('weighed: net = delivered − returned, day 1',data.rows[0].net,15);
+    s.eq('a per-log rate wins over the meter rate, day 2',data.rows[1].amount,4000);
+    s.eq('the month total is the sum of the logged days',J([data.totalQty,data.totalAmount,data.daysLogged]),J([25,5250+4000,2]));
+    s.ok('every day up to today is a row, logged or not',data.rows.length===parseInt(today.slice(8))&&data.rows[2].qty===null);
+    s.ok('a row names its day and weekday',data.rows[0].day===1&&/^[A-Z][a-z]{2}$/.test(data.rows[0].weekday));
+    s.eq('no bill yet → null, and the PDF says so',data.bill,null);
+    s.ok('English-only, and the vendor kind is carried',data.urduLevel==='none'&&data.weighed===true&&data.unit==='kg'&&data.rate===350);
+    // with a bill on the account
+    const key='gas_'+m;
+    a.run("acctEntries.push(Object.assign(_acctBase('purchase'),{_id:'b1',vendorId:'gas',vendorName:'Amin Gas',source:'credit',amount:9250,date:'"+today+"',month:'"+m+"',lines:[],meterKey:'"+key+"',vendorBillAmount:9500}))");
+    const d2=a.run(`_acctConsPdfData(_acctVendor('gas'),'${m}',${J(logs)})`);
+    s.eq('the bill is carried with the vendor\'s own figure and the variance',J([d2.bill.amount,d2.bill.vendorBillAmount,d2.bill.variance]),J([9250,9500,250]));
+    s.ok('a voided bill does not count',(()=>{a.run("acctEntries.find(e=>e._id==='b1').status='void'");const d3=a.run(`_acctConsPdfData(_acctVendor('gas'),'${m}',${J(logs)})`);a.run("acctEntries.find(e=>e._id==='b1').status='posted'");return d3.bill===null;})());
+    // the action goes through the engine, never jsPDF
+    const calls=[];a.ctx.window.printDocument=o=>calls.push(o);
+    a.run(`_acctMeterCache['gas|${m}']=${J(logs)}`);
+    await a.run(`window.acctConsPdf('gas','${m}')`);
+    s.eq('one printDocument call, the consumable-log variant',J([calls.length,calls[0]&&calls[0].type]),J([1,'consumable-log']));
+    s.ok('the filename names the vendor and the month',calls[0]&&calls[0].filename==='consumable-log-amin-gas-'+m+'.pdf');
+    s.eq('the data is the builder\'s',calls[0]&&calls[0].data.totalAmount,9250);
+    s.ok('and it is logged',a.state.activity.some(x=>/Consumable log printed/.test(x.action)));
+    s.ok('the source never calls jsPDF directly',!/new\s+jsPDF|jspdf\.jsPDF|jsPDF\(/.test(read('js/store-accounts.js')));
+    // no engine → said, not thrown
+    a.ctx.window.printDocument=undefined;
+    await a.run(`window.acctConsPdf('gas','${m}')`);
+    s.ok('a missing engine is said out loud',a.state.toasts.some(t=>/print engine/.test(String(t))));
+    // the buttons
+    const foot=a.run(`_acctConsFoot(_acctVendor('gas'),'${m}',${J(logs)})`);
+    s.ok('the consumables foot offers Print log once a bill exists',foot.indexOf("acctConsPdf('gas','"+m+"')")>-1&&/Print log/.test(foot));
+    a.run("acctEntries=acctEntries.filter(e=>e._id!=='b1')");
+    s.ok('…and before a bill too, when there is a log',/acctConsPdf/.test(a.run(`_acctConsFoot(_acctVendor('gas'),'${m}',${J(logs)})`)));
+    s.ok('…but not on an empty month',!/acctConsPdf/.test(a.run(`_acctConsFoot(_acctVendor('gas'),'${m}',[])`)));
+    a.run("acctEntries.push(Object.assign(_acctBase('purchase'),{_id:'b2',vendorId:'gas_x',vendorName:'Amin Gas',source:'credit',amount:1,date:'"+today+"',month:'"+m+"',lines:[],meterKey:'gas_x_"+m+"'}))");
+    a.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    a.run("window.acctOpenEntry('b2')");
+    s.ok('the bill\'s own detail (what the vendor page opens) offers Print log with the month read off the LAST 7 chars, so an underscore in a vendor id is safe',new RegExp("acctConsPdf\\('gas_x','"+m+"'\\)").test(a.run('window.__cap.f')));
+  }
+
+  s.section('the print engine draws the log');
+  {
+    let eng=null;
+    try{eng=harness.loadApp({files:['js/print-engine.js'],currentPage:'acct-consumables'});}catch(e){s.ok('print-engine.js loads in the harness',false,String(e.message||e));}
+    if(eng){
+      const src=read('js/print-engine.js');
+      s.ok('the variant is registered, labelled and English-only by default',/'consumable-log': _renderConsumableLog/.test(src)&&/'consumable-log': 'Consumable Log'/.test(src)&&/'consumable-log': 'minimal'/.test(src)&&/'pattern-label', 'consumable-log', 'generic'\]/.test(src));
+      eng.run(`fakeDoc=function(){const calls={text:[],rect:[],pages:1};return{calls,internal:{pageSize:{getWidth:()=>595,getHeight:()=>842}},
+        addPage(){calls.pages++;},setFont(){},setFontSize(){},setTextColor(){},setDrawColor(){},setLineWidth(){},setFillColor(){},getTextWidth(t){return String(t).length*5;},
+        line(){},rect(x,y,w,h,st){calls.rect.push([x,y,w,h,st||'']);},
+        text(t,x,y,o){calls.text.push({t:Array.isArray(t)?t.join('|'):String(t),x,y,align:o&&o.align,page:calls.pages});},
+        splitTextToSize(t,w){return String(t).split('\\n');},__groovyFonts:{}};}`);
+      const rows=Array.from({length:30},(_,i)=>({day:i+1,weekday:'Mon',qty:i%3===0?null:10+i,residual:2,net:8+i,amount:(8+i)*350,byName:'Raees',note:i===4?'a very long note that will not fit in the column and has to be clipped':''}));
+      const data={vendorName:'Amin Gas',monthLabel:'September 2026',unit:'kg',weighed:true,rate:350,rows,totalQty:51,totalAmount:17850,daysLogged:20,bill:{amount:17850,date:'23-Sept-26',vendorBillAmount:18000,variance:150},issuedBy:'Raees'};
+      const calls=eng.run('(function(){const d=fakeDoc();_renderConsumableLog(d,'+J(data)+');return d.calls;})()');
+      const texts=calls.text.map(t=>t.t);
+      s.ok('every day is drawn, logged or not',rows.every(r=>texts.some(t=>t===r.day+' Mon')));
+      s.ok('an unlogged day reads as a dash, a logged one carries its numbers',texts.filter(t=>t==='—').length>=10&&texts.includes('17,850'));
+      s.ok('the month total and the billing block are drawn',texts.includes('TOTAL')&&texts.includes('20 days logged')&&texts.some(t=>/Bill generated:\s+Rs 17,850/.test(t))&&texts.some(t=>/vendor bills Rs 150 MORE/.test(t)));
+      s.ok('no column head is clipped',['Day','Delivered','Returned','Net','Amount (Rs)','Logged by','Note'].every(h=>texts.includes(h)));
+      s.ok('a whole month fits its table on page 1; the billing block may follow on page 2',calls.text.filter(t=>t.t==='TOTAL')[0].page===1&&calls.pages<=2);
+      // more rows than a month has — the only way to exercise the page break
+      const many=Array.from({length:45},(_,i)=>Object.assign({},rows[i%30],{day:i+1}));
+      const c3=eng.run('(function(){const d=fakeDoc();_renderConsumableLog(d,'+J(Object.assign({},data,{rows:many}))+');return d.calls;})()');
+      s.ok('past the page the table breaks and the column heads repeat',c3.pages>=2&&c3.text.filter(t=>t.t==='Day').length===2&&c3.text.filter(t=>t.t==='Day')[1].page===2);
+      s.ok('a long note is clipped rather than run across the columns',texts.some(t=>/…$/.test(t))&&!texts.some(t=>/has to be clipped/.test(t)));
+      s.ok('everything lands inside A4',calls.text.every(t=>t.x>=0&&t.x<=595&&t.y>=0&&t.y<=842));
+      const c2=eng.run('(function(){const d=fakeDoc();_renderConsumableLog(d,'+J(Object.assign({},data,{weighed:false,unit:'bottle',bill:null,rows:rows.slice(0,5)}))+');return d.calls;})()');
+      const t2=c2.text.map(t=>t.t);
+      s.ok('a counted vendor has no delivered/returned columns and says there is no bill yet',t2.includes('Received')&&!t2.some(t=>/Returned|Delivered/.test(t))&&t2.some(t=>/No bill generated/.test(t))&&t2.some(t=>/51 bottles/.test(t)));
+    }
   }
 
   s.section('firestore.rules mirrors the code');

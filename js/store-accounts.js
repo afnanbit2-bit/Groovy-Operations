@@ -863,12 +863,14 @@ function _acctConsFoot(v,month,logs){
       <div><div class="acct-tile-l">Vendor's bill</div><div style="font-weight:700">${bill.vendorBillAmount!=null?_acctPKR(bill.vendorBillAmount):'not entered'}${diff!=null?(diff===0?' <span class="acct-chip ok">matches ✓</span>':` <span class="acct-chip urgent">${diff>0?'vendor bills '+_acctPKR(diff)+' MORE':'vendor bills '+_acctPKR(-diff)+' LESS'}</span>`):''}</div></div>
       <button class="btn-outline" onclick="window.acctOpenEntry('${bill._id}')">Open bill</button>
       ${_acctCanEntry()?`<button class="btn-outline" onclick="window.acctConsCompare('${bill._id}')">Enter vendor's bill amount</button>`:''}
+      <button class="btn-outline" onclick="window.acctConsPdf('${v._id}','${month}')">Print log (PDF)</button>
     </div>`;
   }
   const can=_acctCanEntry()&&!_acctMonthClosed(month)&&logs.length;
   return `<div style="padding:14px 16px;border-top:1px solid var(--border);display:flex;gap:16px;flex-wrap:wrap;align-items:center">
     <div><div class="acct-tile-l">Expected bill for ${_acctMonthLabel(month)}</div><div style="font-weight:700">${tot} ${_acctEsc(m.unit)}${m.type==='weighed'?'':'s'} × ${_acctPKR(m.rate)} = ${_acctPKR(amt)}</div></div>
     ${can?`<button class="btn-primary" style="width:auto;margin:0;padding:9px 14px" onclick="window.acctConsGenerate('${v._id}','${month}')">Generate bill → on ${_acctEsc(v.name)}'s account</button>`:`<span style="font-size:13px;color:var(--muted)">${logs.length?'':'Log at least one day first.'}</span>`}
+    ${logs.length?`<button class="btn-outline" onclick="window.acctConsPdf('${v._id}','${month}')">Print log (PDF)</button>`:''}
   </div>`;
 }
 window.acctConsSave=async function(vendorId,date){
@@ -918,6 +920,44 @@ window.acctConsCompare=async function(entryId){
   const n=parseInt(String(v).replace(/[^0-9]/g,''));if(isNaN(n)){showToast('Enter a number.',true);return;}
   const ok=await _acctPatch(entryId,{vendorBillAmount:n});
   if(ok){showToast(n===Math.round(e.amount)?'Matches our log ✓':'Recorded — variance '+_acctPKR(n-Math.round(e.amount)));_acctRerender();}
+};
+
+// ── The month's log as a PDF (Afnan, 23 Sept 2026: "after a bill is logged
+// … there should be a logic to print PDF with log as well — what happened
+// on each day + total billing"). Every day up to today, logged or not, the
+// month total, and the bill as it stands on the account. Pure builder so
+// the numbers are asserted here; the drawing is the print engine's
+// `consumable-log` variant (the standing rule: no new print feature calls
+// jsPDF directly). The month key on a bill is `<vendorId>_<YYYY-MM>`, and a
+// vendor id may itself carry an underscore, so the month is the LAST seven
+// characters, never a split on '_'.
+function _acctConsPdfData(v,month,logs){
+  const m=v.meter||{type:'count',unit:'unit',rate:0};const weighed=m.type==='weighed';
+  const byDate={};for(const l of logs||[])byDate[l.date]=l;
+  const today=_acctToday();const days=_acctDaysInMonth(month);
+  const rows=[];let totalQty=0,totalAmount=0,daysLogged=0;
+  for(let d=1;d<=days;d++){
+    const date=month+'-'+_acctPad(d);if(date>today)break;
+    const l=byDate[date]||{};const logged=l.qty!=null&&l.qty!=='';
+    const net=logged?_acctConsNet(m,l):0;const rate=l.rate!=null?l.rate:(m.rate||0);const amount=logged?Math.round(net*rate):0;
+    if(logged){totalQty+=net;totalAmount+=amount;daysLogged++;}
+    rows.push({day:d,weekday:new Date(date+'T00:00:00').toLocaleDateString('en-PK',{weekday:'short'}),date,qty:logged?l.qty:null,residual:logged?(l.residual||0):null,net,amount,byName:l.byName||'',note:l.note||''});
+  }
+  const bill=acctEntries.find(e=>e.meterKey===v._id+'_'+month&&e.status!=='void')||null;
+  return {vendorName:v.name,month,monthLabel:_acctMonthLabel(month),unit:m.unit||'unit',weighed,rate:m.rate||0,rows,totalQty,totalAmount,daysLogged,
+    bill:bill?{amount:bill.amount,date:_acctDateLabel(bill.date),vendorBillAmount:bill.vendorBillAmount!=null?bill.vendorBillAmount:null,variance:bill.vendorBillAmount!=null?Math.round(bill.vendorBillAmount)-Math.round(bill.amount):0}:null,
+    issuedBy:_acctUser().byName,urduLevel:'none'};
+}
+window.acctConsPdf=async function(vendorId,month){
+  const v=_acctVendor(vendorId);if(!v){showToast('Vendor not found.',true);return;}
+  if(!month&&typeof vendorId==='string')month=_acctConsMonth||_acctThisMonth();
+  if(typeof window.printDocument!=='function'){showToast('The print engine is not loaded — reload the app and try again.',true);return;}
+  let logs;
+  try{logs=await _acctMeterLogs(vendorId,month);}catch(e){showToast('Could not read the daily log: '+(e.message||e),true);return;}
+  const data=_acctConsPdfData(v,month,logs);
+  const safe=String(v.name||'vendor').replace(/[^A-Za-z0-9]+/g,'-').replace(/^-|-$/g,'').toLowerCase()||'vendor';
+  window.printDocument({type:'consumable-log',data,filename:`consumable-log-${safe}-${month}.pdf`});
+  _acctLog('Consumable log printed',`${v.name} · ${_acctMonthLabel(month)}`);
 };
 
 /* ── REVIEW & CLOSE (owners) ── */
@@ -1597,6 +1637,10 @@ window.acctOpenEntry=function(id){
     e.status==='pending'&&_acctCanEntry()?`<button class="btn-primary" style="width:auto;margin:0;padding:9px 14px" onclick="window.acctConfirmCashIn('${e._id}')">Confirm received</button>`:'',
     e.needsReview&&!e.reviewedAt&&e.status!=='void'&&_acctCanAdmin()?`<button class="btn-outline" onclick="window.acctReview('${e._id}');window.acctModalClose()">Clear review</button>`:'',
     e.status!=='void'&&_acctCanEntry()?`<button class="btn-outline" style="color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.acctVoid('${e._id}')">Void…</button>`:'',
+    // A bill generated from a daily log carries its month in meterKey; the
+    // PDF is the same one the consumables page prints, reachable from the
+    // vendor page's statement through this detail.
+    e.meterKey&&e.vendorId?`<button class="btn-outline" onclick="window.acctConsPdf('${e.vendorId}','${_acctEsc(String(e.meterKey).slice(-7))}')">Print log (PDF)</button>`:'',
     `<button class="btn-outline" onclick="window.acctModalClose()">Close</button>`
   ].filter(Boolean).join('');
   _acctModal(_acctEsc(_acctParticulars(e)),body,foot,{width:620});

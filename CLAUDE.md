@@ -448,7 +448,10 @@ do not call jsPDF directly for new print features.**
   carrying text; `_renderMoodBoard`). The mood-board picture is rasterised
   by the CALLER (`js/boards.js` draws the board onto a 2D canvas and
   passes a JPEG data URL) so the variant stays synchronous like every
-  other one and the engine never learns how a board is drawn. Still not
+  other one and the engine never learns how a board is drawn. ✅
+  **`consumable-log`** (23 Sept 2026 — a metered vendor's daily log for
+  one month plus its billing; `_renderConsumableLog`, `urduLevel`
+  `minimal`; see "Store Accounts"). Still not
   built: `embroidery-vendor`, `sublimation-vendor`, `placement-sheet`,
   `qc-report` — any of those (or an unknown type) logs a `console.warn`
   and renders the generic fallback (header + optional hero title +
@@ -6109,12 +6112,38 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
   placeholder clipped, the expense block 660px wide. Verified by
   reverting: dropping the flag fails 3 by name, the vendor default 3, the
   amount 5.
+- **The daily log prints as a PDF (23 Sept 2026).** Afnan, on the Daily
+  Consumable page: *"after a bill is logged in vender page there should be
+  a logic to print PDF with log as well (this contans what happened on each
+  day + total billing)"*. **Print log (PDF)** sits on the consumables page
+  (billed or not, as soon as a day is logged) and on the bill's own entry
+  detail, which is what the vendor page opens — the month is read off the
+  **last 7 chars** of `meterKey` (`vendorId_YYYY-MM`), never a split on
+  `_`, so a vendor id carrying an underscore is safe (asserted with
+  `gas_x`). `window.acctConsPdf(vendorId,month)` re-reads the month's
+  `acct_meter_logs` and hands a pure builder's output
+  (`_acctConsPdfData`) to **`printDocument({type:'consumable-log'})`** —
+  the standing rule, no jsPDF here (asserted: the file makes no jsPDF
+  call). The page carries one row per calendar day up to today (a day with
+  no log prints as dashes, so a gap reads as a gap), a **TOTAL** row with
+  the days logged, and a **Billing** section: month total, the bill
+  generated (amount, date, on whose account), the vendor's own figure and
+  the variance in words, or "No bill generated for this month yet" — a
+  **voided** bill is ignored. Weighed vendors get Delivered / Returned /
+  Net columns, counted ones a single Received column; the unit sits in the
+  subtitle so the heads stay short enough not to clip. The head repeats
+  after a page break. Engine side: `_renderConsumableLog` in
+  `js/print-engine.js`, `urduLevel` default `minimal`, registered in
+  `known`, `_PRINT_DOC_LABELS`, `_VARIANTS`. Verified by reverting: the
+  voided-bill check, the head repeat and the entry-detail button each fail
+  one assertion by name. **Nobody has opened the PDF** — the engine test
+  is a recording fake jsPDF, and the sandbox cannot sign in.
 - **`firestore.rules` changed** (`acct_*` blocks + `isStoreAccounts()`; the
   `store_cash_*` blocks became owner-write) — **published by Afnan, 23 Sept
   2026**; see "Firestore rules" below.
 
 **Nobody has recorded a purchase on a real screen** — the sandbox cannot
-sign in. 302 assertions hold the logic; the layout probe holds the shape.
+sign in. 331 assertions hold the logic; the layout probe holds the shape.
 
 ## The Sales Team ▸ Marketing (Sept 2026)
 

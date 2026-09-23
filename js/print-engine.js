@@ -95,6 +95,7 @@ const _PRINT_DOC_LABELS = {
   'stock-transfer': 'Stock Transfer',
   'mood-board': 'Mood Board',
   'pattern-label': 'Pattern Label',
+  'consumable-log': 'Consumable Log',
   'generic': 'Document'
 };
 
@@ -120,7 +121,8 @@ const _PRINT_URDU_DEFAULTS = {
   'sublimation-vendor': 'full',
   'qc-report': 'full',
   'placement-sheet': 'full',
-  'pattern-label': 'none'
+  'pattern-label': 'none',
+  'consumable-log': 'minimal'
 };
 
 /* Urdu footer tail, keyed by the English documentType label so each
@@ -1353,6 +1355,128 @@ function _renderDailyPerformance(doc, data) {
   doc.__groovyY = y;
 }
 
+/* ── Consumable Log variant ────────────────────────────────────────────────
+   Store Accounts (js/store-accounts.js): one daily-consumable vendor
+   (bottled water, gas) for one month — every day's entry, the month total,
+   and the bill that was generated from it, so the sheet that goes to the
+   vendor or into the file says what happened on each day AND what it cost.
+   English-only: an internal reconciliation sheet.
+
+   data: { vendorName, monthLabel, unit, weighed, rate,
+           rows:[{day, weekday, qty, residual, net, amount, byName, note}],
+           totalQty, totalAmount, daysLogged,
+           bill:{amount, date, vendorBillAmount, variance} | null,
+           issuedBy, issuedDate } */
+function _renderConsumableLog(doc, data) {
+  data = data || {};
+  const L = PRINT_LAYOUT.marginLeft;
+  const W = PRINT_LAYOUT.contentWidth;
+  const unit = String(data.unit || 'unit');
+  const weighed = !!data.weighed;
+  const today = new Date().toLocaleDateString('en-GB');
+
+  _renderHeader(doc, {
+    documentType: 'Consumable Log',
+    documentNumber: (data.vendorName || '') + (data.monthLabel ? ' · ' + data.monthLabel : ''),
+    issuedDate: data.issuedDate || today,
+    issuedBy: data.issuedBy || '—'
+  });
+  _renderTitleBlock(doc, {
+    title: data.vendorName || 'Consumable',
+    subtitle: (data.monthLabel || '') + '  ·  ' + (weighed ? 'weighed, net = delivered − returned' : 'counted') +
+      '  ·  Rs ' + _dpNum(data.rate) + ' / ' + unit,
+    startY: doc.__groovyY
+  });
+  _renderSectionHeader(doc, { titleEn: 'Daily log' });
+
+  // Columns sum to the content width (523). A weighed vendor carries two
+  // more numbers (delivered, returned) than a counted one.
+  // The unit is in the subtitle, so the heads stay short enough for their
+  // columns (a head that clips to "Delivered …" says nothing).
+  const cols = weighed
+    ? [{ w: 56, h: 'Day' }, { w: 66, h: 'Delivered', a: 'right' }, { w: 66, h: 'Returned', a: 'right' },
+       { w: 56, h: 'Net', a: 'right' }, { w: 76, h: 'Amount (Rs)', a: 'right' }, { w: 88, h: 'Logged by' }, { w: 115, h: 'Note' }]
+    : [{ w: 56, h: 'Day' }, { w: 84, h: 'Received', a: 'right' }, { w: 90, h: 'Amount (Rs)', a: 'right' },
+       { w: 110, h: 'Logged by' }, { w: 183, h: 'Note' }];
+  const xs = []; let acc = L; cols.forEach((c) => { xs.push(acc); acc += c.w; });
+  const rowH = 18;
+  const line = _pc(PRINT_COLORS.greyLine);
+  const shade = _pc(PRINT_COLORS.greyShade);
+  const white = _pc(PRINT_COLORS.white);
+  const maxY = PRINT_LAYOUT.pageHeight - PRINT_LAYOUT.marginBottom - 24;
+  let y = (doc.__groovyY || PRINT_LAYOUT.marginTop) + 2;
+
+  const clip = (txt, w) => {
+    txt = String(txt == null ? '' : txt);
+    const maxChars = Math.max(3, Math.floor((w - 10) / 4.8));   // ~4.8pt per char at 10pt Aptos
+    return txt.length > maxChars ? txt.slice(0, maxChars - 1) + '…' : txt;
+  };
+  const drawRow = (cells, opts) => {
+    opts = opts || {};
+    const bg = opts.head ? shade : white;
+    doc.setFillColor(bg[0], bg[1], bg[2]);
+    doc.rect(L, y, W, rowH, 'F');
+    doc.setDrawColor(line[0], line[1], line[2]);
+    doc.setLineWidth(opts.total ? 0.8 : 0.25);
+    doc.rect(L, y, W, rowH, 'S');
+    cells.forEach((txt, i) => {
+      const c = cols[i];
+      const bold = opts.head || opts.total;
+      _setFont(doc, PRINT_FONTS.bodyRegular, bold ? 'bold' : 'normal',
+        opts.head ? PRINT_SIZES.bodySmall : PRINT_SIZES.bodySmall, opts.head ? PRINT_COLORS.greyAccent : PRINT_COLORS.text);
+      const tx = c.a === 'right' ? xs[i] + c.w - 5 : xs[i] + 5;
+      doc.text(clip(txt, c.w), tx, y + 12, { align: c.a === 'right' ? 'right' : 'left' });
+    });
+    y += rowH;
+  };
+  const head = () => drawRow(cols.map((c) => c.h), { head: true });
+  head();
+  (data.rows || []).forEach((r) => {
+    if (y + rowH > maxY) { doc.addPage(); y = PRINT_LAYOUT.marginTop; head(); }
+    const logged = r.qty != null && r.qty !== '';
+    const day = String(r.day) + (r.weekday ? ' ' + r.weekday : '');
+    if (weighed) {
+      drawRow([day, logged ? _dpNum(r.qty) : '—', logged ? _dpNum(r.residual || 0) : '—',
+        logged ? _dpNum(r.net) : '', logged ? _dpNum(r.amount) : '', r.byName || '', r.note || '']);
+    } else {
+      drawRow([day, logged ? _dpNum(r.qty) : '—', logged ? _dpNum(r.amount) : '', r.byName || '', r.note || '']);
+    }
+  });
+  if (y + rowH > maxY) { doc.addPage(); y = PRINT_LAYOUT.marginTop; head(); }
+  const totalCells = weighed
+    ? ['TOTAL', '', '', _dpNum(data.totalQty), _dpNum(data.totalAmount), (data.daysLogged || 0) + ' days logged', '']
+    : ['TOTAL', _dpNum(data.totalQty), _dpNum(data.totalAmount), (data.daysLogged || 0) + ' days logged', ''];
+  drawRow(totalCells, { total: true });
+  doc.__groovyY = y;
+
+  // Billing — what the log came to and what was actually put on the account.
+  if (y + 110 > maxY) { doc.addPage(); doc.__groovyY = PRINT_LAYOUT.marginTop; }
+  _renderSectionHeader(doc, { titleEn: 'Billing' });
+  y = (doc.__groovyY || PRINT_LAYOUT.marginTop) + 14;
+  const lines = [
+    'Month total:  ' + _dpNum(data.totalQty) + ' ' + unit + (weighed ? '' : 's') + '  ×  Rs ' + _dpNum(data.rate) + '  =  Rs ' + _dpNum(data.totalAmount)
+  ];
+  const b = data.bill;
+  if (b) {
+    lines.push('Bill generated:  Rs ' + _dpNum(b.amount) + (b.date ? '  on ' + b.date : '') + '  ·  on ' + (data.vendorName || 'the vendor') + "'s account");
+    if (b.vendorBillAmount != null) {
+      const v = Number(b.variance || 0);
+      lines.push("Vendor's own bill:  Rs " + _dpNum(b.vendorBillAmount) + '  ·  ' +
+        (v === 0 ? 'matches our log' : (v > 0 ? 'vendor bills Rs ' + _dpNum(v) + ' MORE than our log' : 'vendor bills Rs ' + _dpNum(-v) + ' LESS than our log')));
+    } else {
+      lines.push("Vendor's own bill:  not entered yet");
+    }
+  } else {
+    lines.push('No bill generated for this month yet.');
+  }
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+  lines.forEach((l, i) => {
+    _setFont(doc, PRINT_FONTS.bodyRegular, i === 0 ? 'bold' : 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+    doc.text(l, L, y); y += 16;
+  });
+  doc.__groovyY = y;
+}
+
 /* ── Mood Board variant ────────────────────────────────────────────────────
    A board exported for people who are not in the app — a vendor, the
    factory floor, a partner. Two parts: the board itself as one picture,
@@ -1877,7 +2001,7 @@ window.printDocument = async function (opts) {
 
   const known = ['po', 'embroidery-vendor', 'sublimation-vendor',
     'gate-pass', 'placement-sheet', 'qc-report', 'payslip',
-    'daily-performance', 'stock-transfer', 'mood-board', 'pattern-label', 'generic'];
+    'daily-performance', 'stock-transfer', 'mood-board', 'pattern-label', 'consumable-log', 'generic'];
   const _VARIANTS = {
     'po': _renderPO,
     'gate-pass': _renderGatePass,
@@ -1885,7 +2009,8 @@ window.printDocument = async function (opts) {
     'daily-performance': _renderDailyPerformance,
     'stock-transfer': _renderStockTransfer,
     'mood-board': _renderMoodBoard,
-    'pattern-label': _renderPatternLabel
+    'pattern-label': _renderPatternLabel,
+    'consumable-log': _renderConsumableLog
   };
   const render = _VARIANTS[type] || _renderGeneric;
   if (known.indexOf(type) === -1) {
