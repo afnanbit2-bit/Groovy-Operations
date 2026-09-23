@@ -793,7 +793,7 @@ function buildNav(){
   const storeSubItems=[];
   if(!isWorker){
     storeSubItems.push({id:'store-dashboard',label:'Dashboard'});
-    if(typeof _canViewCash==='function'&&_canViewCash())storeSubItems.push({id:'store-cash-ledger',label:'💰 Cash Ledger'});
+    if(typeof _canViewCash==='function'&&_canViewCash())storeSubItems.push({id:'acct-ledger',label:'Accounts'});
     storeSubItems.push({id:'store-inventory',label:'Inventory'});
     storeSubItems.push({id:'store-receive',label:'Receive Stock'});
     storeSubItems.push({id:'store-issue',label:'Issue Stock'});
@@ -971,7 +971,7 @@ function _updateMobNavActive(pageId){
     'po-create':'po','po-registry':'po','po-detail':'po','po-edit':'po','stage-work':'po',
     'attendance':'hrm','hrm-employees':'hrm','hrm-payroll':'hrm','hrm-advances':'hrm','hrm-loans':'hrm','hrm-policy':'hrm',
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
-    'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more','store-cash-ledger':'more',
+    'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more','acct-ledger':'more','acct-vendors':'more','acct-vendor':'more','acct-consumables':'more','acct-review':'more',
     'activity':'more','monitor':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more','pattern-hub':'more','pattern-reconcile':'more','pattern-blocks':'more','pattern-block':'more','pattern-unassigned':'more','pattern-poms':'more','pattern-notices':'more',
     'mkt-creators':'more','mkt-dispatches':'more','mkt-paid-pr':'more','mkt-reports':'more','mkt-import':'more',
     'creative-hub':'more','notes':'more','note-detail':'more','boards':'more','boards-all':'more','board-canvas':'more',
@@ -1113,7 +1113,7 @@ window.openStoreSubSheet=function(){
     {iconName:'tray',label:'Issue Stock',pageId:'store-issue'},
     {iconName:'activity',label:'Stock Log',pageId:'store-log'}
   ];
-  if(typeof _canViewCash==='function'&&_canViewCash())items.push({iconName:'activity',label:'💰 Cash Ledger',pageId:'store-cash-ledger'});
+  if(typeof _canViewCash==='function'&&_canViewCash())items.push({iconName:'activity',label:'Accounts',pageId:'acct-ledger'});
   items.push(
     {iconName:'activity',label:'Analytics',pageId:'store-analytics'},
     {iconName:'list',label:'Trim Templates',pageId:'store-templates'},
@@ -1126,7 +1126,7 @@ window.openStoreSubSheet=function(){
 
 window.openStoreMoreSheet=function(){
   const items=[];
-  if(typeof _canViewCash==='function'&&_canViewCash())items.push({iconName:'activity',label:'💰 Cash Ledger',pageId:'store-cash-ledger'});
+  if(typeof _canViewCash==='function'&&_canViewCash())items.push({iconName:'activity',label:'Accounts',pageId:'acct-ledger'});
   items.push(
     {iconName:'activity',label:'Stock Log',pageId:'store-log'},
     {iconName:'activity',label:'Analytics',pageId:'store-analytics'},
@@ -1185,7 +1185,7 @@ window.showPage=async function(id){
   if(typeof _updateMobNavActive==='function')_updateMobNavActive(id);
   if(typeof closeMobSheet==='function')window.closeMobSheet();
   // Auto-open dropdowns when navigating to sub-pages
-  if(id.startsWith('store-')||id.startsWith('po-issue-')||id==='po-edit-inbox'){
+  if(id.startsWith('store-')||id.startsWith('acct-')||id.startsWith('po-issue-')||id==='po-edit-inbox'){
     const sub=document.getElementById('store-subnav');
     const arrow=document.getElementById('store-nav-arrow');
     if(sub&&sub.style.maxHeight==='0px'){sub.style.maxHeight='300px';if(arrow)arrow.textContent='▾';}
@@ -1203,7 +1203,7 @@ window.showPage=async function(id){
   // Lazy-load store data on first store page visit. _storeDataLoaded() rather
   // than !allItems.length, so a read that FAILED does not re-run the whole
   // loader on every subsequent navigation.
-  if((id.startsWith('store-')||id.startsWith('po-issue-')||id==='po-edit-inbox')
+  if((id.startsWith('store-')||id.startsWith('acct-')||id.startsWith('po-issue-')||id==='po-edit-inbox')
      &&!(typeof _storeDataLoaded==='function'?_storeDataLoaded():allItems.length)){await loadStoreData();}
   // The movement history is thousands of documents. Only the three pages that
   // actually read it pay for it, and the Dashboard — which renders the last
@@ -1268,7 +1268,8 @@ function renderPage(id){
   else if(id==='store-templates'){m.innerHTML=renderStoreTemplates();const _si=document.getElementById('tpl-prod-search');if(_si){_si.addEventListener('input',()=>filterTplProd(_si.value));_si.addEventListener('focus',()=>filterTplProd(_si.value));}}
   else if(id==='store-log'){_ilPage=1;_ilQ='';_ilPO='';m.innerHTML=renderStoreLog();refreshIssueLog();}
   else if(id==='store-analytics')m.innerHTML=renderStoreAnalytics();
-  else if(id==='store-cash-ledger'){if(!cashDataLoaded){m.innerHTML=gvSkeleton(6);loadStoreCashData().then(()=>{if(currentPage===id)m.innerHTML=renderStoreCashLedger();});}else m.innerHTML=renderStoreCashLedger();}
+  // Store Accounts — every acct-* page routes through one function (js/store-accounts.js).
+  else if(id.startsWith('acct-'))acctRenderPage(id,m);
   else if(id==='po-issue-list'){if(!allItems.length){m.innerHTML=gvSkeleton(6);loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoIssueList();});}else m.innerHTML=renderPoIssueList();}
   else if(id==='po-issue-detail'){if(!allItems.length){m.innerHTML=gvSkeleton(6);loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoIssuePickList();});}else m.innerHTML=renderPoIssuePickList();}
   else if(id==='po-edit-inbox'){if(!allItems.length){m.innerHTML=gvSkeleton(6);loadStoreData().then(()=>{if(currentPage===id)m.innerHTML=renderPoEditInbox();});}else m.innerHTML=renderPoEditInbox();}
@@ -1346,7 +1347,11 @@ const BUG_PAGE_NAMES={
   'store-issue':'Store Issue',
   'store-templates':'Trim Templates',
   'store-log':'Store Log',
-  'store-cash-ledger':'Cash Ledger',
+  'acct-ledger':'Accounts',
+  'acct-vendors':'Accounts · Vendors',
+  'acct-vendor':'Accounts · Vendor',
+  'acct-consumables':'Accounts · Consumables',
+  'acct-review':'Accounts · Review',
   'recipe-directory':'Recipe Directory',
   'recipe-create':'Recipe Create',
   'recipe-detail':'Recipe Detail',

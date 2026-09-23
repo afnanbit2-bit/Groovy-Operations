@@ -469,9 +469,9 @@ window.addGPItemRow=function(name='',qty='',returnable=false){
 
 function _gpPopulateSaleAccounts(){
   const sel=document.getElementById('gp-sale-acc');if(!sel||sel.dataset.filled)return;
-  let accs=(typeof allCashAccounts!=='undefined'&&allCashAccounts&&allCashAccounts.length)?allCashAccounts:[];
-  if(!accs.length&&typeof CASH_ACCOUNTS!=='undefined')accs=CASH_ACCOUNTS.map(a=>({_id:a.key,label:a.label}));
-  sel.innerHTML=(accs.length?accs:[{_id:'cash',label:'Cash drawer'}]).map(a=>`<option value="${a._id||a.key}">${_gpEsc(a.label||a.key)}</option>`).join('');
+  // Store Accounts (js/store-accounts.js) holds two money accounts: Cash and MCB.
+  const accs=(typeof ACCT_ACCOUNTS!=='undefined')?ACCT_ACCOUNTS.map(a=>({_id:a.key,label:a.label})):[{_id:'cash',label:'Cash in hand'},{_id:'mcb',label:'MCB Bank'}];
+  sel.innerHTML=accs.map(a=>`<option value="${a._id||a.key}">${_gpEsc(a.label||a.key)}</option>`).join('');
   sel.dataset.filled='1';
 }
 
@@ -603,13 +603,16 @@ window.submitGP=async function(){
     await setDoc(doc(db,'gatepasses',gpId),payload);
     if(inventoryUpdate)await _fabInvUpsert(inventoryUpdate);
     if(isSale&&saleObj&&saleObj.amount>0){
+      // The sale's money lands in Store Accounts (js/store-accounts.js) as a
+      // cash-in against the customer. typeof-guarded: a build without the
+      // module still issues the pass, and says the sale was not recorded.
       try{
-        if(typeof loadStoreCashData==='function'&&typeof cashDataLoaded!=='undefined'&&!cashDataLoaded)await loadStoreCashData();
-        if(typeof _cashPost==='function'){
-          const row=await _cashPost({kind:'income',account:saleObj.account,amount:saleObj.amount,category:'Fabric sale',note:`${gpId} · ${saleObj.customer} · ${article}`,ref:gpId,by:session.name,ts:Date.now(),date:base.date||(typeof todayStr==='function'?todayStr():'')});
+        if(typeof acctPostSale==='function'){
+          const row=await acctPostSale({account:saleObj.account,amount:saleObj.amount,customer:saleObj.customer,ref:gpId,note:`${article} · ${saleObj.unit==='kg'?(payload.fabricQty||0)+' kg':(payload.totalUnits||0)+' pcs'} @ ₨${saleObj.rate}`,date:base.date||''});
           if(row&&row._id)await updateDoc(doc(db,'gatepasses',gpId),{cashLedgerId:row._id});
-        }
-      }catch(e){showToast('Pass saved, but cash post failed: '+e.message,true);}
+          else showToast('Pass saved — record the sale in Store Accounts (it was not posted).',true);
+        }else showToast('Pass saved — Store Accounts is not loaded, record the sale there.',true);
+      }catch(e){showToast('Pass saved, but the sale was not posted to Accounts: '+e.message,true);}
     }
     await logActivity('Gate pass issued',`${gpId} — ${article} · ${GP_REASON_LABEL[reason]||reason} → ${destFinal}${kind==='fabric'?' (fabric · '+_gpOutwardFabRolls.length+' rolls)':''}${isSale?' · sale Rs '+(saleObj?saleObj.amount:0):''}`);
     await loadData();

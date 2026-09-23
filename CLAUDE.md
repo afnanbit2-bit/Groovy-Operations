@@ -149,6 +149,14 @@ verification needs the human, a phone, or Claude in Chrome.
                      payroll, advances, loans, policy, HRM notifications.
 /js/store.js         store items/transactions/log/templates, fabric
                      inventory, REST helpers, store notifications.
+/js/store-accounts.js Store Accounts (Sept 2026, replaces js/store-cash.js):
+                     purchasing with rates → inventory, vendor accounts
+                     (terms, FIFO aging, statement, rate card, Excel),
+                     metered consumables (water/gas daily log → generated
+                     bill), runner floats, Cash + MCB, month close, owner
+                     review. Pages `acct-*`, one renderPage line. Loaded
+                     right after store.js. See "Store Accounts" below and
+                     ACCOUNTS_PLAN.md.
 /js/gatepass.js      gate passes, returns, fabric-in, GP edit/approval,
                      generateGPPdf, generateJobSheetPDF.
 /js/fulfillment.js   Daily Performance track: per-day dispatch & returns
@@ -5944,6 +5952,90 @@ bright line straight across the card in dark mode) and `setILDir` wrote a
 literal `#fff` background under a themed foreground — both leftovers the
 property-qualified dark-mode sweep didn't reach.
 
+## Store Accounts (Sept 2026) — REPLACES the Store Cash Ledger
+
+Afnan: *"set up accounts for Groovy in Groovy Ops … the first wave is petty
+cash: petty cash is managed by Raees in store."* Then, explaining Raees's
+actual job, it turned out to be **purchasing + accounts payable + metered
+consumables** with a cash drawer inside it — vendors on credit or cash
+terms, monthly bills, Noman the rider buying with floats, every purchase
+carrying a **rate**, water and gas **metered daily** and billed monthly,
+Excel by date range, a **uniform** log. He declined a question round
+(*"think better than I do and start building"*), so every decision is
+Claude's and is recorded in **`ACCOUNTS_PLAN.md`** to be overruled there.
+
+**`js/store-cash.js` is DELETED, not patched.** Its study (23 Sept 2026)
+found ten defects, the load-bearing ones: four equal wallets and no
+petty-cash model; the primary "→ Issue" button posted `kind:'issue'` with
+`category:null`, so that spend never appeared in any report; a stored
+`balance` on each account doc rewritten on **every page open** from a
+5,000-row capped replay (past 5,000 rows every open would write a wrong
+number); no void — tapping a row cloned it into a new entry; every entry
+stamped UTC-today; categories welded to vendors. The new module is
+`js/store-accounts.js`; the old collections are read-only history behind
+an owner-only **Import legacy** button (idempotent, `legacyId`).
+
+- **ONE entry shape, `acct_entries`, effects DERIVED.** `_acctEffect(e)` is
+  the single definition of what an entry does to Cash, MCB, a vendor's
+  payable and a runner's float; the ledger, both books, the vendor
+  statement, the KPI tiles and every Excel sheet read it. **No balance is
+  stored anywhere.** Types: `purchase | payment | cash_in | transfer |
+  float_out | float_in | adjust | opening`.
+- **Two money accounts, `cash` and `mcb`** — Afnan: "other bank options
+  are irrelevant". The gate-pass fabric sale (`js/gatepass.js`) posts a
+  `cash_in` through `window.acctPostSale()` (typeof-guarded); it used to
+  post to the old ledger and would have silently no-op'd.
+- **Void, never edit.** A voided row stays in the log struck through with
+  who/when/why; `firestore.rules` lets an entry's **control fields only**
+  change (`hasOnly([...])`) and never deletes one. `tests/store-accounts.test.js`
+  asserts every key `_acctPatch` writes is in that list — widen both or
+  neither.
+- **A purchase line naming a store item IS a Store Receive**: `store_items`
+  balance/sizes ↑ and a `store_transactions` `received` row carrying the
+  vendor as `supplier` and the `rate`. The money entry is written FIRST;
+  a stock failure leaves `stockPosted:false` + `stockError` on it with a
+  Retry — never a lost purchase. **Voiding does not reverse stock** (the
+  confirm says so).
+- **The rate card is derived from purchase lines** (last / min / max /
+  count per item per vendor). `window.acctLatestRate(code)` exposes the
+  latest for the Store's own use. Nothing is stored on the item.
+- **Aging is FIFO** (`_acctVendorAging`): payments settle the oldest
+  credit purchases first; unpaid older than `terms.creditDays` is overdue.
+  Vendor terms: `cash` · `credit` (days, optional limit) · `monthly` (bill
+  day, expected amount); consumables carry a `meter` (`count` | `weighed`,
+  unit, rate). The vendor **wizard** branches on those answers.
+- **Consumables** (`acct_meter_logs/{vendorId}_{date}`): weighed net = kg
+  delivered − kg left in the returned cylinder. **Generate bill** creates
+  ONE credit purchase per vendor-month (`meterKey`), then the vendor's
+  own figure is recorded beside it and the variance shown.
+- **Warn, never block.** `approvalLimit` / `receiptRequiredAbove`
+  (`acct_settings/main`) set `needsReview` + `reviewFlags`; owners clear
+  from Review. An owner-recorded cash-in is **pending** until Raees
+  confirms; pending never counts.
+- **Month close** (`acct_closes/{YYYY-MM}`): counted vs book, variance →
+  an `adjust` entry dated the last day, checkpoint stores the balance
+  AFTER the count plus a payables map. **A closed month refuses new
+  entries and voids**; the loader range-queries `month >=` the month
+  after the last close and `_acctLive()` skips anything at or before it,
+  so a checkpoint is never double-counted (found by the test on the first
+  run, both halves).
+- **Dates are local and settable** (`_acctToday`, never the UTC ISO
+  string); the test scans the source for `toISOString`.
+- **Audience:** view owners/managers/`store`; entry owners + `store`
+  (Raees); admin owners. Rules: `isStoreAccounts()` = owners + Raees.
+- **Excel** (vendored SheetJS): cash statement by date range (Summary ·
+  Cash book · MCB book · All entries), vendor workbook (Profile ·
+  Statement · Purchase lines · Rate card), payables as of today.
+- **Tokens only** — the module has no literal colour (asserted). Two
+  `smoke-layout` fragments measure the tiles, alerts, books table, vendor
+  page, consumables grid and the purchase form; the tables opt out of
+  420px (they scroll inside their wrapper, the Marketing rule).
+- **`firestore.rules` CHANGED — it needs a republish** (`acct_*` blocks +
+  `isStoreAccounts()`; the `store_cash_*` blocks became owner-write).
+
+**Nobody has recorded a purchase on a real screen** — the sandbox cannot
+sign in. 200 assertions hold the logic; the layout probe holds the shape.
+
 ## The Sales Team ▸ Marketing (Sept 2026)
 
 Replaces the **Content Tracker 2026** Google Sheet (Master List + monthly
@@ -7647,6 +7739,11 @@ etc.) live in `js/hrm.js`; the printing/role helpers (`isObserver`,
   `@groovy.op` (and `admin-seed-profiles.js` accepts only that domain), so
   `@groovy.op` was used — **the Firebase Auth account must match it
   exactly** or login fails. `tests/csr-lead.test.js`.
+- `_acctCanView()` / `_acctCanEntry()` / `_acctCanAdmin()` (`js/store-accounts.js`)
+  → view: owners + managers + `store`; entry: owners + `store` (Raees);
+  admin: owners. `_canViewCash()` is kept as an alias so `js/shared.js`'s
+  four nav sites did not change name. Mirror: `firestore.rules`
+  `isStoreAccounts()`.
 - **Inventory Intel nav item** (`js/shared.js`, `buildNav()` +
   `openMoreSheet()`) → owners, **+ mustafa by username** (Sept 2026 grant,
   he's Ecom Manager). Nav-only, same shape as the Notes staged-rollout gate —
@@ -7993,6 +8090,13 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 `pattern_notices`, `isPatternCutting()`, `settings`), Mood Boards Trash
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
+
+**REPUBLISH OUTSTANDING (23 Sept 2026) — Store Accounts.** `acct_entries`,
+`acct_vendors`, `acct_meter_logs`, `acct_settings`, `acct_closes` and the
+`isStoreAccounts()` function are new; the six `store_cash_*` blocks went
+from open write to owner-only. Until the Console has it, every Store
+Accounts write is refused with "Missing or insufficient permissions" and
+the module's load-error card names the collection.
 
 **Known mismatch, deliberately parked** (Afnan: "leave daniyals ituation for
 rn"): `isContentOpsLead()` lists `daniyal@groovy.op`, while this file

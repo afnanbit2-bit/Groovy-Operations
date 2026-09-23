@@ -55,6 +55,44 @@ function findBrowser(){
   return null;
 }
 
+
+// Store Accounts fixture: a small, realistic ledger — an overdue credit
+// vendor, a cash-terms walk-in, a consumable (gas) vendor, an aged runner
+// float, a void row, a pending cash-in and a review flag.
+function _acctFixture(){
+  const LS={getItem:()=>null,setItem(){},removeItem(){}};
+  const pad=n=>String(n).padStart(2,'0');
+  const day=n=>{const d=new Date();d.setDate(d.getDate()-n);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());};
+  let seq=0;
+  const E=(type,o)=>Object.assign({_id:'e'+(++seq),type,date:day(0),month:day(0).slice(0,7),ts:1000+seq,by:'raees',byName:'Raees',vendorId:null,vendorName:'',person:'',account:null,toAccount:null,source:null,floatId:null,amount:0,lines:[],category:'',ref:'',note:'',photo:null,status:'posted',needsReview:false,reviewFlags:[]},o||{});
+  const V=(id,o)=>Object.assign({_id:id,name:id,kind:'goods',terms:{mode:'credit',creditDays:30,creditLimit:0,billDay:0,expectedAmount:0},meter:null,contact:{person:'',phone:'',address:''},supplies:[],notes:'',active:true,openingBalance:0},o||{});
+  const app=loadApp({files:['js/store.js','js/store-accounts.js'],currentPage:'acct-ledger',globals:{
+    allItems:[{code:'TH1',name:'Thread white 40/2',unit:'cone',balance:20,sizeSpecific:false,_id:'TH1'}],allTransactions:[],allTemplates:[],allRequests:[],allActivePOs:[],
+    allStoreCategories:[],allPoIssueRequests:[],allPoEditRequests:[],allPoShortfalls:[],
+    auth:{currentUser:{getIdToken:async()=>'tok'}},localStorage:LS,
+    _ilPage:1,_ilQ:'',_ilPO:'',_ilDir:'',IL_PER:15,IL_MAX_PAGES:1000,_invFilterCat:'all',_invSearchQ:'',_invSort:'category'}});
+  const entries=[
+    E('cash_in',{account:'cash',amount:40000,date:day(40),via:'cash',person:'Afnan'}),
+    E('cash_in',{account:'mcb',amount:150000,date:day(40),via:'mcb',person:'Ammar',ref:'TRX-88121'}),
+    E('purchase',{source:'credit',amount:18000,vendorId:'thread',vendorName:'Karachi Thread House',date:day(38),ref:'INV-2291',category:'Store purchase',lines:[{itemCode:'TH1',desc:'Thread white 40/2',qty:60,unit:'cone',rate:210,total:12600},{itemCode:'TH2',desc:'Thread black 40/2',qty:24,unit:'cone',rate:225,total:5400}],photo:'https://res.cloudinary.com/x/y.jpg',stockPosted:true}),
+    E('payment',{account:'mcb',amount:13000,vendorId:'thread',vendorName:'Karachi Thread House',date:day(20),ref:'TRX-88400',photo:'https://res.cloudinary.com/x/z.jpg'}),
+    E('purchase',{source:'cash',account:'cash',amount:1450,vendorId:'walk',vendorName:'Walk-in / direct',date:day(6),category:'Maintenance & repairs',lines:[{itemCode:'',desc:'Plumber — washroom tap',qty:1,unit:'',rate:1450,total:1450}]}),
+    E('float_out',{_id:'flt1',account:'cash',amount:5000,person:'Noman',date:day(9),note:'packing + thread run'}),
+    E('purchase',{source:'float',floatId:'flt1',person:'Noman',amount:3200,vendorId:'walk',vendorName:'Walk-in / direct',date:day(8),category:'Store purchase',lines:[{itemCode:'',desc:'Packing tape ×24',qty:24,unit:'roll',rate:133.33,total:3200}]}),
+    E('purchase',{source:'cash',account:'cash',amount:800,vendorId:'walk',vendorName:'Walk-in / direct',date:day(5),status:'void',voidReason:'entered twice',voidedBy:'raees',lines:[{itemCode:'',desc:'Tea & biscuits',qty:1,unit:'',rate:800,total:800}]}),
+    E('transfer',{account:'mcb',toAccount:'cash',amount:20000,date:day(3),note:'ATM withdrawal for the drawer'}),
+    E('purchase',{source:'cash',account:'cash',amount:12500,vendorId:'walk',vendorName:'Walk-in / direct',date:day(2),category:'Maintenance & repairs',needsReview:true,reviewFlags:['over limit','no receipt'],lines:[{itemCode:'',desc:'Generator service',qty:1,unit:'',rate:12500,total:12500}]}),
+    E('cash_in',{account:'cash',amount:10000,status:'pending',date:day(1),via:'cash',person:'Afnan',by:'afnan',byName:'Afnan'})
+  ];
+  const vendors=[
+    V('thread',{name:'Karachi Thread House',contact:{person:'Bilal',phone:'0300-1234567',address:'Shershah, Karachi'},supplies:['Thread','Elastic'],terms:{mode:'credit',creditDays:30,creditLimit:50000,billDay:0,expectedAmount:0}}),
+    V('walk',{name:'Walk-in / direct',terms:{mode:'cash',creditDays:0,creditLimit:0,billDay:0,expectedAmount:0}}),
+    V('gas',{name:'Pak Gas Agency',kind:'consumable',terms:{mode:'monthly',creditDays:0,creditLimit:0,billDay:5,expectedAmount:30000},meter:{type:'weighed',unit:'kg',rate:300,label:'Gas'},contact:{person:'',phone:'021-1234567',address:''}})
+  ];
+  const seed=a=>a.run(`acctEntries=${JSON.stringify(entries)};acctVendors=${JSON.stringify(vendors)};acctCloses=[];acctSettings={approvalLimit:10000,receiptRequiredAbove:2000,floatWarnDays:3,floatRedDays:7,categories:ACCT_DEFAULTS.categories,runners:['Noman']};_acctLoaded=true;_storeLoadAttempted=true;_acctSort(acctEntries);1`);
+  return {app,seed};
+}
+
 // ── the fragments under test ─────────────────────────────────────────────
 // Each returns real HTML from the real module. Names are filled in here
 // because the modules hydrate them with textContent at runtime, which the
@@ -242,6 +280,37 @@ const FRAGMENTS={
   // column's background, which is behaviour no layout measurement sees.
   // The store category chips — the control Afnan reported as unreadable in
   // dark mode, and the shape the same bug took in eight other files.
+  // Store Accounts (js/store-accounts.js): the KPI tiles, the alert strip,
+  // the ledger toolbar and the books table with a running balance, the
+  // vendor profile, the consumables grid and the purchase form. The table
+  // is allowed to scroll sideways inside its own wrapper on a phone (the
+  // Marketing rule), so the table fragments opt out of 420px, where the
+  // probe would read a row scrolled out of the wrapper as covered; the
+  // tiles and the form are measured at every width.
+  'store accounts — ledger, vendor, consumables':()=>{
+    const {app,seed}=_acctFixture();
+    seed(app);
+    app.run("currentPage='acct-ledger';_acctView='cash';_acctPeriod={preset:'all'}");
+    const ledger=app.run("_acctPageHead('acct-ledger')+_acctLedgerPage()");
+    app.run("_acctVendorId='thread';_acctVendorTab='aging';currentPage='acct-vendor'");
+    const vendor=app.run("_acctVendorPage()");
+    const m=app.run('_acctThisMonth()');
+    const logs=[{date:m+'-01',qty:45,residual:5,byName:'Raees'},{date:m+'-02',qty:45,residual:7,byName:'Raees',note:'late delivery'}];
+    const cons=app.run(`(()=>{const v=_acctVendor('gas');return '<div class="card" style="padding:0;overflow:hidden">'+_acctConsGrid(v,'${m}',${JSON.stringify(logs)})+_acctConsFoot(v,'${m}',${JSON.stringify(logs)})+'</div>';})()`);
+    return Promise.resolve({widths:[1900,1280],html:ledger+vendor+cons});
+  },
+  'store accounts — tiles, alerts and the purchase form':()=>{
+    const {app,seed}=_acctFixture();
+    seed(app);
+    app.run("currentPage='acct-ledger';_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    const tiles=app.run("_acctPageHead('acct-ledger')+(()=>{const b=_acctBalances();const f=_acctOpenFloats();return '<div class=\"acct-tiles\">'+_acctTile('Cash in hand',b.cash)+_acctTile('MCB Bank',b.mcb)+_acctTile('Owed to vendors',_acctTotalPayables(),{danger:true,sub:'₨5,000 overdue'})+_acctTile('With runners',f.reduce((s,x)=>s+x.left,0),{danger:true,sub:'1 open float'})+'</div>'+_acctAlerts(f);})()");
+    app.run("window.acctForm('purchase',{vendorId:'thread'})");
+    app.run("_acctFormLines=[{itemCode:'TH1',desc:'Thread white 40/2',qty:'12',unit:'cone',rate:'210',hint:'Last bought @ ₨210 on 01 Sep 26 from Karachi Thread House · in stock now: 20 cone'},{itemCode:'',desc:'Rickshaw to Shershah',qty:'1',unit:'',rate:'300',hint:''}]");
+    const body=app.run('window.__cap.b');
+    const lines=app.run("_acctFormLines.map((l,i)=>`<div class=\"acct-line\"><input class=\"li\" value=\"${l.itemCode}\" placeholder=\"Item code\"><input class=\"ld\" value=\"${l.desc}\"><input class=\"ln\" type=\"number\" value=\"${l.qty}\"><input class=\"lu\" value=\"${l.unit}\" placeholder=\"unit\"><input class=\"ln\" type=\"number\" value=\"${l.rate}\"><span class=\"lt\">${_acctPKR(l.qty*l.rate)}</span><button type=\"button\" class=\"acct-x\">×</button><div class=\"acct-line-sub\">${l.hint?'<div class=\"acct-line-hint\">'+l.hint+'</div>':''}</div></div>`).join('')");
+    const form='<div class="acct-modal" style="position:static;max-width:720px;margin-top:14px"><div class="acct-modal-head"><span>Record purchase</span><button class="acct-x">×</button></div><div class="acct-modal-body">'+body.replace('<div id="acct-lines"></div>','<div id="acct-lines">'+lines+'</div>')+'</div><div class="acct-modal-foot"><button class="btn-outline">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px">Record purchase</button></div></div>';
+    return Promise.resolve(tiles+form);
+  },
   'store — inventory category chips':()=>{
     const app=loadApp({files:['js/store.js'],globals:{
       allItems:[],_invFilterCat:'all',_invSearchQ:'',_invSort:'category',

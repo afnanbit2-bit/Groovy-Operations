@@ -38,6 +38,9 @@ service cloud.firestore {
     // notice — nothing else. Mirror in js/patterns.js
     // _PATTERN_CUTTING_USERS.
     function isPatternCutting() { return signedIn() && userEmail() == 'uzaib@groovy.op'; }
+    // Store Accounts (Sept 2026): Raees enters, owners enter and administer.
+    // Mirror in js/store-accounts.js _acctCanEntry().
+    function isStoreAccounts() { return isOwner() || (signedIn() && userEmail() == 'raees@groovy.op'); }
 
     // ── Operational data (POs, gate passes, returns, fabric in) ──
     match /pos/{doc}                  { allow read, write: if signedIn(); }
@@ -111,17 +114,31 @@ service cloud.firestore {
     match /po_edit_requests/{doc}     { allow read, write: if signedIn(); }
     match /po_shortfalls/{doc}        { allow read, write: if signedIn(); }
 
-    // ── Store Cash Ledger ──
-    // All signed-in users may read (Raees for entry, owners for insights).
-    // Write is open to any signed-in user — app-layer permissions enforce who
-    // can post which entry kinds. Ledger rows are append-only by convention;
-    // updates/deletes are disallowed at the rules layer.
-    match /store_cash_ledger/{doc}    { allow read: if signedIn(); allow create: if signedIn(); allow update, delete: if isOwner(); }
-    match /store_cash_accounts/{doc}  { allow read, write: if signedIn(); }
-    match /store_cash_floats/{doc}    { allow read, write: if signedIn(); }
-    match /store_cash_categories/{doc}{ allow read, write: if signedIn(); }
-    match /store_cash_vendors/{doc}   { allow read, write: if signedIn(); }
-    match /store_cash_snapshots/{doc} { allow read, write: if isOM(); }
+    // ── Store Accounts (Sept 2026 — replaces the Store Cash Ledger) ──
+    // Entry is Raees (the store role) + owners; everyone signed in reads.
+    // Mirror: js/store-accounts.js _acctCanEntry(). The ledger is APPEND-ONLY:
+    // an entry is created, and afterwards only its control fields may change
+    // (void / review / confirm / stock posting / the vendor's bill figure) —
+    // never its amount, date, vendor or lines. Nothing is ever deleted.
+    match /acct_entries/{doc} {
+      allow read: if signedIn();
+      allow create: if isStoreAccounts();
+      allow update: if isStoreAccounts()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','voidedAt','voidedBy','voidReason','needsReview','reviewFlags','reviewedAt','reviewedBy','confirmedAt','confirmedBy','stockPosted','stockError','stockTx','vendorBillAmount']);
+      allow delete: if false;
+    }
+    match /acct_vendors/{doc}     { allow read: if signedIn(); allow create, update: if isStoreAccounts(); allow delete: if false; }
+    match /acct_meter_logs/{doc}  { allow read: if signedIn(); allow write: if isStoreAccounts(); }
+    match /acct_settings/{doc}    { allow read: if signedIn(); allow write: if isOwner(); }
+    match /acct_closes/{doc}      { allow read: if signedIn(); allow create: if isOwner(); allow update, delete: if false; }
+    // Legacy Store Cash Ledger — read-only history. Kept so the owner-only
+    // one-time import in js/store-accounts.js can read it.
+    match /store_cash_ledger/{doc}    { allow read: if signedIn(); allow write: if isOwner(); }
+    match /store_cash_accounts/{doc}  { allow read: if signedIn(); allow write: if isOwner(); }
+    match /store_cash_floats/{doc}    { allow read: if signedIn(); allow write: if isOwner(); }
+    match /store_cash_categories/{doc}{ allow read: if signedIn(); allow write: if isOwner(); }
+    match /store_cash_vendors/{doc}   { allow read: if signedIn(); allow write: if isOwner(); }
+    match /store_cash_snapshots/{doc} { allow read: if signedIn(); allow write: if isOwner(); }
 
     // ── Embellishments / printing ──
     match /article_recipes/{doc}      { allow read, write: if signedIn(); }
