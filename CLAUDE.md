@@ -6002,8 +6002,16 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
 - **Aging is FIFO** (`_acctVendorAging`): payments settle the oldest
   credit purchases first; unpaid older than `terms.creditDays` is overdue.
   Vendor terms: `cash` · `credit` (days, optional limit) · `monthly` (bill
-  day, expected amount); consumables carry a `meter` (`count` | `weighed`,
-  unit, rate). The vendor **wizard** branches on those answers.
+  day, expected amount) · **`weekly`** (bill weekday `billWeekday` 0–6,
+  Sunday=0, expected amount — Afnan, 23 Sept 2026: *"make an option of
+  weekly billing as well"*; a 7-day aging window; the ledger alert is due
+  on the most recent occurrence of that weekday, `_acctLastWeekday`, and
+  counts a purchase from that day onward as recorded); consumables carry
+  a `meter` (`count` | `weighed`, unit, rate). The vendor **wizard**
+  branches on those answers. The `utility` kind reads "Recurring bill"
+  now, not "Monthly bill". **Known limit:** a consumable's *Generate bill*
+  is still one bill per vendor-MONTH whatever the terms say — weekly
+  terms on a metered vendor set the reminder cadence, not the bill's.
 - **Consumables** (`acct_meter_logs/{vendorId}_{date}`): weighed net = kg
   delivered − kg left in the returned cylinder. **Generate bill** creates
   ONE credit purchase per vendor-month (`meterKey`), then the vendor's

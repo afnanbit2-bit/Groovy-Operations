@@ -60,14 +60,16 @@ const ACCT_TYPES={
 const ACCT_VENDOR_KINDS=[
   {key:'goods',      label:'Store items',      hint:'Thread, trims, packing — things that go on a shelf'},
   {key:'service',    label:'Services & work',  hint:'Maintenance, repairs, transport, labour'},
-  {key:'utility',    label:'Monthly bill',     hint:'Water supply, internet, electricity'},
+  {key:'utility',    label:'Recurring bill',   hint:'Water supply, internet, electricity — weekly or monthly'},
   {key:'consumable', label:'Daily consumable', hint:'Bottled water, gas — counted or weighed every day'}
 ];
 const ACCT_TERM_MODES=[
   {key:'cash',    label:'Cash on delivery',  hint:'Paid when it arrives — never a balance'},
   {key:'credit',  label:'Credit',            hint:'Paid after N days; a running balance'},
-  {key:'monthly', label:'Monthly account',   hint:'One bill a month, on a fixed day'}
+  {key:'monthly', label:'Monthly account',   hint:'One bill a month, on a fixed day'},
+  {key:'weekly',  label:'Weekly account',    hint:'One bill a week, on a fixed weekday'}
 ];
+const _ACCT_WEEKDAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const ACCT_DEFAULTS={
   approvalLimit:0,            // 0 = off
   receiptRequiredAbove:2000,  // purchase/payment above this with no photo → needs review
@@ -97,6 +99,10 @@ function _acctMonthOf(date){return String(date||'').slice(0,7);}
 function _acctThisMonth(){return _acctMonthOf(_acctToday());}
 function _acctAddDays(date,n){const d=new Date(date+'T00:00:00');d.setDate(d.getDate()+n);return _acctDayStr(d);}
 function _acctDaysBetween(a,b){return Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/86400000);}
+function _acctDayAdd(d,n){const x=new Date(d+'T00:00:00');x.setDate(x.getDate()+n);return _acctDayStr(x);}
+function _acctWeekdayOf(d){return new Date(d+'T00:00:00').getDay();}
+// The most recent date on or before `today` that falls on `weekday` (0=Sunday).
+function _acctLastWeekday(today,weekday){const back=(_acctWeekdayOf(today)-weekday+7)%7;return _acctDayAdd(today,-back);}
 function _acctMonthAdd(mo,n){const [y,m]=mo.split('-').map(Number);const d=new Date(y,m-1+n,1);return d.getFullYear()+'-'+_acctPad(d.getMonth()+1);}
 function _acctMonthLabel(mo){const d=new Date(mo+'-01T00:00:00');return isNaN(d)?mo:d.toLocaleDateString('en-PK',{month:'long',year:'numeric'});}
 function _acctDateLabel(date){const d=new Date(date+'T00:00:00');return isNaN(d)?date:d.toLocaleDateString('en-PK',{day:'2-digit',month:'short',year:'2-digit'});}
@@ -220,7 +226,8 @@ function _acctVendorBalance(vendorId){const b=_acctBalances();return Math.round(
 // unpaid purchases with how much of each is still open, and the overdue total.
 function _acctVendorAging(vendorId){
   const v=_acctVendor(vendorId);
-  const days=v&&v.terms&&v.terms.mode==='credit'?(parseInt(v.terms.creditDays)||0):(v&&v.terms&&v.terms.mode==='monthly'?30:0);
+  const mode=v&&v.terms&&v.terms.mode;
+  const days=mode==='credit'?(parseInt(v.terms.creditDays)||0):(mode==='monthly'?30:(mode==='weekly'?7:0));
   const cl=_acctLastClose();
   const items=[];
   let opening=cl?(cl.payables&&cl.payables[vendorId]||0):0;
@@ -450,6 +457,7 @@ function _acctTermsLabel(v){
   const t=(v&&v.terms)||{};
   if(t.mode==='credit')return 'Credit · '+(t.creditDays||0)+' days'+(t.creditLimit?' · limit '+_acctPKR(t.creditLimit):'');
   if(t.mode==='monthly')return 'Monthly · bill day '+(t.billDay||'—')+(t.expectedAmount?' · ~'+_acctPKR(t.expectedAmount):'');
+  if(t.mode==='weekly')return 'Weekly · every '+(_ACCT_WEEKDAYS[parseInt(t.billWeekday)]||'—')+(t.expectedAmount?' · ~'+_acctPKR(t.expectedAmount):'');
   return 'Cash on delivery';
 }
 
@@ -563,6 +571,13 @@ function _acctAlerts(floats){
       const billed=acctEntries.some(e=>e.vendorId===v._id&&e.type==='purchase'&&e.month===mo&&e.status!=='void');
       const day=parseInt(v.terms.billDay)||1;
       if(!billed&&parseInt(today.slice(8))>=day)items.push({k:'warn',t:`<b>${_acctEsc(v.name)}</b> — monthly bill not recorded yet for ${_acctMonthLabel(mo)} (due day ${day})`,go:`window.acctOpenVendor('${v._id}')`});
+    }
+    if(v.terms&&v.terms.mode==='weekly'&&v.active!==false){
+      // The bill is due on the most recent occurrence of its weekday; it is
+      // "recorded" once a purchase from that day onward exists.
+      const wd=parseInt(v.terms.billWeekday);const due=_acctLastWeekday(today,isNaN(wd)?_acctWeekdayOf(today):wd);
+      const billed=acctEntries.some(e=>e.vendorId===v._id&&e.type==='purchase'&&e.date>=due&&e.date<=today&&e.status!=='void');
+      if(!billed)items.push({k:'warn',t:`<b>${_acctEsc(v.name)}</b> — weekly bill not recorded yet for ${_acctDateLabel(due)} (every ${_ACCT_WEEKDAYS[isNaN(wd)?_acctWeekdayOf(today):wd]})`,go:`window.acctOpenVendor('${v._id}')`});
     }
     if(v.kind==='consumable'&&v.active!==false){
       const billed=acctEntries.some(e=>e.meterKey===v._id+'_'+_acctMonthAdd(mo,-1)&&e.status!=='void');
@@ -1327,7 +1342,7 @@ function _acctPurchaseForm(pre){
   const v=_acctVendor(pre.vendorId);
   _acctFormLines=[];
   const floats=_acctOpenFloats();
-  const defSource=v&&v.terms&&v.terms.mode==='credit'?'credit':(v&&v.terms&&v.terms.mode==='monthly'?'credit':'cash');
+  const defSource=v&&v.terms&&['credit','monthly','weekly'].includes(v.terms.mode)?'credit':'cash';
   const src=[{key:'cash',label:'Cash'},{key:'mcb',label:'MCB'},{key:'credit',label:'On credit',sub:'adds to what they are owed'}].concat(floats.map(f=>({key:'float:'+f.id,label:'Float · '+f.person,sub:_acctPKR(f.left)+' left'})));
   const body=`<div class="form-grid">
     <div class="field" style="grid-column:1/-1"><label>Vendor *</label><select id="f-vendor" onchange="window.acctPurchaseVendorChanged(this.value)">${_acctVendorOptions(pre.vendorId)}</select><div id="f-vendor-hint" style="font-size:13px;color:var(--muted);margin-top:4px">${v?_acctEsc(_acctTermsLabel(v))+(_acctVendorBalance(v._id)?' · owed '+_acctPKR(_acctVendorBalance(v._id)):''):''}</div></div>
@@ -1511,7 +1526,7 @@ window.acctVendorWizard=function(vendorId,presetKind,opts){
   if(!_acctCanEntry())return;
   const v=vendorId?_acctVendor(vendorId):null;
   _acctWizard={step:0,editing:!!v,id:vendorId||null,then:opts&&opts.then||null,
-    data:v?JSON.parse(JSON.stringify(v)):{name:'',kind:presetKind||'',terms:{mode:'',creditDays:30,creditLimit:'',billDay:'',expectedAmount:''},meter:{type:'count',unit:'',rate:'',label:''},contact:{person:'',phone:'',address:''},supplies:[],notes:'',openingBalance:0,openingDate:_acctToday(),active:true}};
+    data:v?JSON.parse(JSON.stringify(v)):{name:'',kind:presetKind||'',terms:{mode:'',creditDays:30,creditLimit:'',billDay:'',billWeekday:'',expectedAmount:''},meter:{type:'count',unit:'',rate:'',label:''},contact:{person:'',phone:'',address:''},supplies:[],notes:'',openingBalance:0,openingDate:_acctToday(),active:true}};
   if(!_acctWizard.data.terms)_acctWizard.data.terms={mode:'cash'};
   if(!v&&presetKind&&!_acctWizard.data.terms.mode)_acctWizard.data.terms.mode=_acctWzDefaultMode(presetKind);
   if(!_acctWizard.data.meter)_acctWizard.data.meter={type:'count',unit:'',rate:'',label:''};
@@ -1544,7 +1559,7 @@ function _acctWizardRender(){
       ${(d.supplies||[]).length?`<div class="acct-kv"><span>Products</span><b>${_acctEsc(d.supplies.join(', '))}</b></div>`:''}
       ${!w.editing?`<div class="acct-kv"><span>Opening balance</span><b>${_acctPKR(d.openingBalance||0)}${d.openingBalance?' as of '+_acctDateLabel(d.openingDate):''}</b></div>`:''}
     </div>
-    <div style="font-size:13px;color:var(--muted);margin-top:10px">${d.terms.mode==='credit'?`Purchases from ${_acctEsc(d.name)} will default to <b>on credit</b>; bills older than ${d.terms.creditDays||0} days show as overdue.`:d.terms.mode==='monthly'?`The ledger will remind you when ${_acctEsc(d.name)}'s bill for the month has not been recorded by day ${d.terms.billDay||'—'}.`:`Purchases from ${_acctEsc(d.name)} will default to <b>paid in cash</b>.`}${d.kind==='consumable'?' A daily log page is created for them under Consumables.':''}</div>`;
+    <div style="font-size:13px;color:var(--muted);margin-top:10px">${d.terms.mode==='credit'?`Purchases from ${_acctEsc(d.name)} will default to <b>on credit</b>; bills older than ${d.terms.creditDays||0} days show as overdue.`:d.terms.mode==='monthly'?`The ledger will remind you when ${_acctEsc(d.name)}'s bill for the month has not been recorded by day ${d.terms.billDay||'—'}.`:d.terms.mode==='weekly'?`The ledger will remind you each ${_ACCT_WEEKDAYS[parseInt(d.terms.billWeekday)]||'week'} when ${_acctEsc(d.name)}'s bill for that week has not been recorded.`:`Purchases from ${_acctEsc(d.name)} will default to <b>paid in cash</b>.`}${d.kind==='consumable'?' A daily log page is created for them under Consumables.':''}</div>`;
   }
   const last=s===5;
   const foot=`${s>0?`<button class="btn-outline" onclick="window.acctWzNav(-1)">← Back</button>`:`<button class="btn-outline" onclick="window.acctModalClose()">Cancel</button>`}<button class="btn-primary" style="width:auto;margin:0;padding:10px 18px" id="wz-next" onclick="window.acctWzNav(1)">${last?(w.editing?'Save profile':'Create vendor'):'Next →'}</button>`;
@@ -1554,6 +1569,7 @@ function _acctWzTermsHTML(d){
   const t=d.terms||{};
   if(t.mode==='credit')return `<div class="field"><label>Paid within (days) *</label><input id="wz-days" type="number" min="0" value="${_acctEsc(t.creditDays!=null?t.creditDays:30)}"></div><div class="field"><label>Credit limit (₨, optional)</label><input id="wz-limit" type="number" min="0" value="${_acctEsc(t.creditLimit||'')}" placeholder="warn when the balance passes this"></div>`;
   if(t.mode==='monthly')return `<div class="field"><label>Bill arrives on day *</label><input id="wz-billday" type="number" min="1" max="28" value="${_acctEsc(t.billDay||'')}" placeholder="1–28"></div><div class="field"><label>Typical amount (₨, optional)</label><input id="wz-expected" type="number" min="0" value="${_acctEsc(t.expectedAmount||'')}"></div>`;
+  if(t.mode==='weekly')return `<div class="field"><label>Bill arrives every *</label><select id="wz-weekday">${_ACCT_WEEKDAYS.map((n,i)=>`<option value="${i}"${String(t.billWeekday)===String(i)?' selected':''}>${n}</option>`).join('')}</select></div><div class="field"><label>Typical amount (₨, optional)</label><input id="wz-expected" type="number" min="0" value="${_acctEsc(t.expectedAmount||'')}"></div>`;
   return '';
 }
 function _acctWzDefaultMode(kind){return (kind==='utility'||kind==='consumable')?'monthly':'';}
@@ -1574,6 +1590,7 @@ window.acctWzNav=async function(dir){
       if(!d.terms.mode){showToast('Pick how you pay them.',true);return;}
       if(d.terms.mode==='credit'){d.terms.creditDays=parseInt(g('wz-days'));if(isNaN(d.terms.creditDays)||d.terms.creditDays<0){showToast('Enter the credit days.',true);return;}d.terms.creditLimit=parseInt(g('wz-limit'))||0;}
       if(d.terms.mode==='monthly'){d.terms.billDay=parseInt(g('wz-billday'));if(!(d.terms.billDay>=1&&d.terms.billDay<=28)){showToast('Bill day must be 1–28.',true);return;}d.terms.expectedAmount=parseInt(g('wz-expected'))||0;}
+      if(d.terms.mode==='weekly'){d.terms.billWeekday=parseInt(g('wz-weekday'));if(!(d.terms.billWeekday>=0&&d.terms.billWeekday<=6)){showToast('Pick the weekday the bill arrives.',true);return;}d.terms.expectedAmount=parseInt(g('wz-expected'))||0;}
       if(d.kind==='consumable'){d.meter.unit=(g('wz-munit')||'').trim();d.meter.rate=parseFloat(g('wz-mrate'));d.meter.label=(g('wz-mlabel')||'').trim()||d.name;if(!d.meter.unit||!(d.meter.rate>=0)){showToast('Enter the unit and rate.',true);return;}}
     }
     if(w.step===3){d.contact={person:(g('wz-person')||'').trim(),phone:(g('wz-phone')||'').trim(),address:(g('wz-address')||'').trim()};d.supplies=String(g('wz-supplies')||'').split(',').map(x=>x.trim()).filter(Boolean);d.notes=(g('wz-notes')||'').trim();}
@@ -1586,7 +1603,7 @@ window.acctWzNav=async function(dir){
 async function _acctWzSave(){
   const w=_acctWizard;const d=w.data;
   const btn=document.getElementById('wz-next');if(btn){btn.disabled=true;btn.textContent='Saving…';}
-  const doc={name:d.name,kind:d.kind,terms:{mode:d.terms.mode,creditDays:d.terms.mode==='credit'?(d.terms.creditDays||0):0,creditLimit:d.terms.mode==='credit'?(d.terms.creditLimit||0):0,billDay:d.terms.mode==='monthly'?(d.terms.billDay||0):0,expectedAmount:d.terms.mode==='monthly'?(d.terms.expectedAmount||0):0},
+  const doc={name:d.name,kind:d.kind,terms:{mode:d.terms.mode,creditDays:d.terms.mode==='credit'?(d.terms.creditDays||0):0,creditLimit:d.terms.mode==='credit'?(d.terms.creditLimit||0):0,billDay:d.terms.mode==='monthly'?(d.terms.billDay||0):0,billWeekday:d.terms.mode==='weekly'?(parseInt(d.terms.billWeekday)||0):null,expectedAmount:(d.terms.mode==='monthly'||d.terms.mode==='weekly')?(d.terms.expectedAmount||0):0},
     meter:d.kind==='consumable'?{type:d.meter.type||'count',unit:d.meter.unit,rate:Number(d.meter.rate)||0,label:d.meter.label||d.name}:null,
     contact:d.contact,supplies:d.supplies||[],notes:d.notes||'',active:d.active!==false,updatedAt:Date.now()};
   try{

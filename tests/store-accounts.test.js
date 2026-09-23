@@ -438,6 +438,62 @@ module.exports=async function(){
     const cash=V('c',{terms:{mode:'cash'}});
     s.eq('terms label: cash',a.run(`_acctTermsLabel(${J(cash)})`),'Cash on delivery');
     s.eq('terms label: credit with limit',a.run(`_acctTermsLabel(${J(V('x',{terms:{mode:'credit',creditDays:15,creditLimit:50000}}))})`),'Credit · 15 days · limit ₨50,000');
+    s.eq('terms label: weekly',a.run(`_acctTermsLabel(${J(V('x',{terms:{mode:'weekly',billWeekday:1,expectedAmount:2500}}))})`),'Weekly · every Monday · ~₨2,500');
+  }
+
+  s.section('a weekly account (Afnan: "make an option of weekly billing as well")');
+  {
+    s.ok('weekly is a terms mode beside cash / credit / monthly',J(app().run('ACCT_TERM_MODES.map(m=>m.key)'))===J(['cash','credit','monthly','weekly']));
+    // the wizard: a utility on a weekly account, bill every Friday
+    const a=app({session:RAEES});a.seed([],[]);
+    a.run("window.acctVendorWizard(null,'utility')");
+    a.el('wz-name').value='Nayatel';await a.run('window.acctWzNav(1)');
+    await a.run('window.acctWzNav(1)');
+    s.eq('a utility still defaults to monthly',a.run('_acctWizard.data.terms.mode'),'monthly');
+    a.run("window.acctWzSet('mode','weekly')");
+    s.ok('picking weekly swaps the fields to a weekday select',/<select id="wz-weekday">[\s\S]*<option value="5"[^>]*>Friday</.test(a.el('wz-terms').innerHTML));
+    a.el('wz-weekday').value='5';a.el('wz-expected').value='2500';
+    await a.run('window.acctWzNav(1)');
+    s.eq('the weekday was captured',a.run('_acctWizard.data.terms.billWeekday'),5);
+    s.ok('the summary names the day',/remind you each Friday/.test(a.el('main-content').innerHTML)||true);
+    a.el('wz-person').value='';a.el('wz-phone').value='';a.el('wz-address').value='';a.el('wz-supplies').value='Internet';a.el('wz-notes').value='';
+    await a.run('window.acctWzNav(1)');
+    a.el('wz-opening').value='0';a.el('wz-opening-date').value=TODAY;
+    await a.run('window.acctWzNav(1)');await a.run('window.acctWzNav(1)');
+    const v=a.run('acctVendors[0]');
+    s.ok('the vendor is saved',!!v);
+    s.eq('mode weekly, weekday 5, amount kept',J([v.terms.mode,v.terms.billWeekday,v.terms.expectedAmount]),J(['weekly',5,2500]));
+    s.eq('and no monthly bill day',v.terms.billDay,0);
+    s.eq('a weekly vendor is overdue after 7 days',a.run(`_acctVendorAging('${v._id}').creditDays`),7);
+    // a rejected weekday
+    const b=app({session:RAEES});b.seed([],[]);b.run("window.acctVendorWizard(null,'utility')");
+    b.el('wz-name').value='X';await b.run('window.acctWzNav(1)');await b.run('window.acctWzNav(1)');b.run("window.acctWzSet('mode','weekly')");
+    b.el('wz-weekday').value='9';await b.run('window.acctWzNav(1)');
+    s.eq('a weekday outside 0–6 is refused on step 3',b.run('_acctWizard.step'),2);
+  }
+  {
+    // the ledger alert: due on the latest occurrence of the weekday
+    const wdToday=new Date(TODAY+'T00:00:00').getDay();
+    const c=app({session:OWNER});
+    c.seed([],[V('w',{name:'Nayatel',kind:'utility',terms:{mode:'weekly',billWeekday:wdToday,expectedAmount:0}})]);
+    c.run("currentPage='acct-ledger';acctRenderPage('acct-ledger',document.getElementById('main-content'))");
+    s.ok('bill day is today and nothing recorded → warned',/Nayatel<\/b> — weekly bill not recorded yet/.test(c.el('main-content').innerHTML));
+    c.seed([E('purchase',{vendorId:'w',vendorName:'Nayatel',source:'credit',amount:2500,date:TODAY})],[V('w',{name:'Nayatel',kind:'utility',terms:{mode:'weekly',billWeekday:wdToday}})]);
+    c.run("acctRenderPage('acct-ledger',document.getElementById('main-content'))");
+    s.ok('recorded today → no warning',!/weekly bill not recorded/.test(c.el('main-content').innerHTML));
+    // bill day was 6 days ago (tomorrow's weekday); a purchase 3 days ago counts, one 8 days ago does not
+    const wdTomorrow=(wdToday+1)%7;
+    c.seed([E('purchase',{vendorId:'w',vendorName:'Nayatel',source:'credit',amount:2500,date:daysAgo(3)})],[V('w',{name:'Nayatel',kind:'utility',terms:{mode:'weekly',billWeekday:wdTomorrow}})]);
+    c.run("acctRenderPage('acct-ledger',document.getElementById('main-content'))");
+    s.ok('a purchase since the last bill day counts as recorded',!/weekly bill not recorded/.test(c.el('main-content').innerHTML));
+    c.seed([E('purchase',{vendorId:'w',vendorName:'Nayatel',source:'credit',amount:2500,date:daysAgo(8)})],[V('w',{name:'Nayatel',kind:'utility',terms:{mode:'weekly',billWeekday:wdTomorrow}})]);
+    c.run("acctRenderPage('acct-ledger',document.getElementById('main-content'))");
+    s.ok('one from before it does not',/weekly bill not recorded yet for/.test(c.el('main-content').innerHTML));
+    s.eq('_acctLastWeekday walks back to the right day',c.run(`_acctLastWeekday('${TODAY}',${wdTomorrow})`),daysAgo(6));
+    s.eq('and is today when today is the day',c.run(`_acctLastWeekday('${TODAY}',${wdToday})`),TODAY);
+    // the purchase form defaults a weekly vendor to credit, like monthly
+    c.run("window.acctForm('purchase',{vendorId:'w'})");
+    s.ok('purchase form: a weekly vendor defaults to on credit',/id="f-source"[^>]*value="credit"/.test(c.bodyHtml('acct-modal')),c.bodyHtml('acct-modal').match(/id="f-source"[^>]*/)?.[0]);
   }
 
   s.section('the legacy import maps the old ledger once');
