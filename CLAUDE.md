@@ -6175,12 +6175,28 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
     ticked (they are the address book). **The pass stops at the first
     refusal** and says how far it got, so a rules problem cannot
     half-empty the ledger silently. Inventory untouched.
+  - **Delete vendor…** (same evening — Afnan, with Amin's page open:
+    *"option to delete vendor as well"*): on a vendor's page, red, beside
+    Deactivate. **REFUSED while any entry names the vendor** — in memory
+    AND by a `fsQueryWhere('acct_entries','vendorId',…)` read, because
+    the live window starts after the last close and an entry whose vendor
+    is gone would still move Cash while dropping out of every statement,
+    the payables tile and the rate card. A failed history read refuses
+    rather than guesses (the Store lesson). Deactivate is the tool for a
+    vendor with history; delete is for one entered by mistake. A
+    consumable vendor's `acct_meter_logs` go first and **the vendor
+    document goes LAST**, so a refusal part-way leaves the vendor intact
+    and the toast says how many logs went. Its `_acctMeterCache` keys are
+    dropped, the other vendors' kept. No rules change — `acct_vendors`
+    delete was already `isAcctSuper()` and is published.
   - Rules: `acct_entries` update is `isAcctSuper() || (isStoreAccounts()
     && hasOnly[...])`, delete `isAcctSuper()`; `acct_closes` and
     `acct_vendors` delete `isAcctSuper()`. The old test "entries can never
     be deleted" was **toothless** — its lazy `[\s\S]*?` ran on to whichever
     later block carried `allow delete: if false` — and is block-scoped now.
   - Verified by reverting: the gate made role-wide (3 fail naming Ammar),
+    the vendor delete's in-memory guard (3), its history query (2), the
+    vendor deleted before its logs (1), its gate made owner-wide (1),
     the rule's super clause dropped, the month not following the date (3),
     the typed word ignored (deletes on a wrong word). `smoke-layout` gained
     `store accounts — admin tools, edit and reset` (the whole review page,
@@ -6194,7 +6210,7 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
   below.
 
 **Nobody has recorded a purchase on a real screen** — the sandbox cannot
-sign in. 385 assertions hold the logic; the layout probe holds the shape.
+sign in. 402 assertions hold the logic; the layout probe holds the shape.
 
 ## The Sales Team ▸ Marketing (Sept 2026)
 
@@ -7905,8 +7921,8 @@ etc.) live in `js/hrm.js`; the printing/role helpers (`isObserver`,
   four nav sites did not change name. Mirror: `firestore.rules`
   `isStoreAccounts()`.
 - `_acctIsSuper()` (`js/store-accounts.js`, `_ACCT_SUPER_USERS`) → **afnan
-  by username** — edit an entry in place, delete one, reopen the last
-  closed month, reset the module. Ammar (same `owner` role) gets none of
+  by username** — edit an entry in place, delete one, delete a vendor
+  with no entries, reopen the last closed month, reset the module. Ammar (same `owner` role) gets none of
   it. Mirror: `firestore.rules` `isAcctSuper()`. See "Afnan's correction
   tools" under Store Accounts.
 - **Inventory Intel nav item** (`js/shared.js`, `buildNav()` +

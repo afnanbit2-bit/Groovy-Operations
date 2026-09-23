@@ -940,6 +940,46 @@ module.exports=async function(){
       s.ok(name+': the entry is still there',!!n.run("_acctById('p1')"));
     }
 
+    // delete a vendor: afnan only, refused while any entry names it, the
+    // vendor document goes last, meter logs go with a consumable vendor
+    const vpage=sess=>{const a=app({session:sess});a.seed([],[V('A')]);a.run("_acctVendorId='A';currentPage='acct-vendor';acctRenderPage('acct-vendor',document.getElementById('main-content'))");return a.el('main-content').innerHTML;};
+    s.ok('the vendor page offers Delete vendor to afnan',/acctVendorDelete\('A'\)/.test(vpage(OWNER)));
+    s.ok('and not to ammar (an owner)',!/acctVendorDelete/.test(vpage(AMMAR)));
+    s.ok('and not to raees',!/acctVendorDelete/.test(vpage(RAEES)));
+    // a fetch that answers runQuery with what we tell it, and records DELETEs
+    const vmk=(o)=>{const t=app({session:(o&&o.session)||OWNER,globals:{fetch:async(url,init)=>{
+      t.state.fetches.push({url:String(url),init:init||{}});const u=String(url);
+      if(init&&init.method==='DELETE'){if(o&&o.refuse)return{ok:false,status:403,json:async()=>({error:{message:'Missing or insufficient permissions.'}})};return{ok:true,status:200,json:async()=>({})};}
+      if(/:runQuery$/.test(u)){const q=JSON.parse(init.body).structuredQuery;const col=q.from[0].collectionId;const rows=(o&&o.q&&o.q[col])||[];return{ok:true,status:200,json:async()=>rows.map(id=>({document:{name:'projects/x/databases/(default)/documents/'+col+'/'+id,fields:{vendorId:{stringValue:'A'}}}}))};}
+      return{ok:true,status:200,json:async()=>({documents:[]})};}}});return t;};
+    const vdels=t=>t.state.fetches.filter(f=>f.init.method==='DELETE').map(f=>f.url.replace(/^.*\/documents\//,''));
+    const v1=vmk();v1.seed([E('purchase',{_id:'p1',vendorId:'A',vendorName:'A',amount:100})],[V('A')]);
+    await v1.run("window.acctVendorDelete('A')");
+    s.eq('a vendor with a live entry is refused — nothing deleted',vdels(v1).length,0);
+    s.ok('… and the toast counts the entries and points at Deactivate',v1.state.toasts.some(t=>/1 ledger entry/.test(t.msg||t)&&/Deactivate/.test(t.msg||t)));
+    s.ok('the vendor is still there',!!v1.run("_acctVendor('A')"));
+    const v2=vmk({q:{acct_entries:['old1']}});v2.seed([],[V('A')]);
+    await v2.run("window.acctVendorDelete('A')");
+    s.eq('an entry in a CLOSED month (not in memory) also refuses it',vdels(v2).length,0);
+    s.ok('… naming the closed month',v2.state.toasts.some(t=>/closed month/.test(t.msg||t)));
+    const v3=vmk({q:{acct_meter_logs:['A_2026-09-01','A_2026-09-02']}});v3.seed([],[V('A',{kind:'consumable',meter:{type:'weighed',unit:'kg',rate:350}}),V('B')]);
+    v3.run("_acctMeterCache['A|2026-09']=[{}];_acctMeterCache['B|2026-09']=[{}]");
+    await v3.run("window.acctVendorDelete('A')");
+    s.eq('a clean consumable vendor: its meter logs go, then the vendor, in that order',vdels(v3).join(','),'acct_meter_logs/A_2026-09-01,acct_meter_logs/A_2026-09-02,acct_vendors/A');
+    s.eq('gone from memory',v3.run("_acctVendor('A')"),null);
+    s.ok('the other vendor is untouched',!!v3.run("_acctVendor('B')"));
+    s.eq('its cached meter logs are dropped, the other vendor\'s kept',v3.run("Object.keys(_acctMeterCache).join(',')"),'B|2026-09');
+    s.ok('a confirm was asked and says there is no undo',v3.state.confirms.some(c=>/no undo/.test(c)&&/consumable logs/.test(c)));
+    s.ok('logged as an admin delete with the log count',v3.state.activity.some(x=>/vendor deleted \(admin\)/.test(x.action)&&/2 meter logs/.test(x.detail)));
+    const v4=vmk({refuse:true});v4.seed([],[V('A')]);
+    await v4.run("window.acctVendorDelete('A')");
+    s.ok('a refused delete keeps the vendor and names the refusal',!!v4.run("_acctVendor('A')")&&v4.state.toasts.some(t=>/Delete refused/.test(t.msg||t)));
+    for(const [name,sess] of [['ammar',AMMAR],['raees',RAEES]]){
+      const n=vmk({session:sess});n.seed([],[V('A')]);const bn=n.state.fetches.length;
+      await n.run("window.acctVendorDelete('A')");
+      s.ok(name+': deleting a vendor is a no-op — no read, no write, no confirm',n.state.fetches.length===bn&&!!n.run("_acctVendor('A')")&&n.state.confirms.length===0);
+    }
+
     // reopen: only the LATEST close, by deleting its checkpoint
     const r=app({session:OWNER});r.seed([],[],{closes:[{_id:monthAdd(LAST,-1),month:monthAdd(LAST,-1)},{_id:LAST,month:LAST}]});
     const br=r.state.fetches.length;

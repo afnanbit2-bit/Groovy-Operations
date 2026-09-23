@@ -735,6 +735,7 @@ function _acctVendorPage(){
       ${v.kind==='consumable'?`<button class="btn-outline" onclick="window.acctOpenConsumable('${v._id}')">Daily log</button>`:''}
       <button class="btn-outline" onclick="window.acctExportVendor('${v._id}',_acctVendorRange.from,_acctVendorRange.to)">⬇ Excel</button>
       ${_acctCanAdmin()?`<button class="btn-outline" onclick="window.acctVendorToggleActive('${v._id}')">${v.active===false?'Reactivate':'Deactivate'}</button>`:''}
+      ${_acctIsSuper()?`<button class="btn-outline acct-super" style="color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.acctVendorDelete('${v._id}')">Delete vendor…</button>`:''}
     </div>
   </div>`;
   const tabs=[['statement','Statement'],['rates','Rate card'],['aging','Unpaid bills']];
@@ -1748,6 +1749,43 @@ window.acctAdminDelete=async function(id){
   acctEntries=acctEntries.filter(x=>x._id!==id);
   _acctLog('Accounts entry deleted (admin)',`${_acctParticulars(e)} ${_acctPKR(e.amount)} · ${_acctDateLabel(e.date)} · entered by ${e.byName||e.by}`);
   showToast('Entry deleted.');window.acctModalClose();_acctRerender();
+};
+// Delete a vendor (Afnan only; rules: acct_vendors delete is isAcctSuper()).
+// REFUSED while any entry names the vendor — in memory (the live window)
+// AND in Firestore (closed months are not loaded), because an entry whose
+// vendor is gone drops out of every statement, the payables tile and the
+// rate card while still moving Cash. Deactivate is the right tool for a
+// vendor with history; delete is for one entered by mistake. A consumable
+// vendor's daily meter logs go with it, and the vendor document goes LAST,
+// so a refusal part-way leaves the vendor intact and says how far it got.
+window.acctVendorDelete=async function(id){
+  if(!_acctIsSuper())return;
+  const v=_acctVendor(id);if(!v){showToast('Vendor not found.',true);return;}
+  const live=acctEntries.filter(e=>e.vendorId===id).length;
+  if(live){showToast(`${v.name} has ${live} ledger entr${live===1?'y':'ies'} — delete or void those first, or Deactivate the vendor instead.`,true);return;}
+  let older;
+  try{older=await fsQueryWhere('acct_entries','vendorId',id,1);}
+  catch(err){showToast('Could not check this vendor\'s history ('+(err.message||err)+') — not deleting.',true);return;}
+  if(older.length){showToast(`${v.name} has entries in a closed month — Deactivate the vendor instead, or reopen and delete those first.`,true);return;}
+  const meterNote=v.kind==='consumable'?'\n\nTheir daily consumable logs are removed with them.':'';
+  if(!confirm(`Delete vendor ${v.name} for good?\n\nThey have no ledger entries. The profile, terms and contact details are gone with no undo.${meterNote}`))return;
+  let logs=0;
+  try{
+    if(v.kind==='consumable'){
+      const rows=await fsQueryWhere('acct_meter_logs','vendorId',id,1000);
+      for(const r of rows){await fsDelete('acct_meter_logs',r._id);logs++;}
+    }
+    await fsDelete('acct_vendors',id);
+  }catch(err){
+    showToast(`Delete refused${logs?` after ${logs} log${logs===1?'':'s'}`:''}: ${err.message||err}`,true);return;
+  }
+  acctVendors=acctVendors.filter(x=>x._id!==id);
+  for(const k of Object.keys(_acctMeterCache))if(k.startsWith(id+'|'))delete _acctMeterCache[k];
+  _acctLog('Accounts vendor deleted (admin)',`${v.name} · ${v.kind}${logs?` · ${logs} meter log${logs===1?'':'s'} removed`:''}`);
+  showToast(`Vendor ${v.name} deleted.`);
+  window.acctModalClose();
+  if(_acctVendorId===id)_acctVendorId=null;
+  window.acctGo('acct-vendors');
 };
 // Reopen a closed month: delete its checkpoint. Only the LATEST close can
 // go — the loader reads from the month after the last close, so reopening

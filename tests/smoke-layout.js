@@ -327,13 +327,17 @@ const FRAGMENTS={
     seed(app);
     app.run("session.u='afnan';session.role='owner';currentPage='acct-review';acctCloses=[{_id:'2026-08',month:'2026-08',cashBook:12000,cashCounted:12000,variance:0,closedByName:'Afnan'}];_acctModal=function(t,b,f){window.__cap={t,b,f};}");
     const review=app.run("_acctReviewPage()");
+    // the vendor page's HEAD card as afnan carries the Delete vendor button the other
+    // fragment never sees; the statement table under it is that fragment's, and it
+    // opts out of 420px (it scrolls inside its wrapper), so only the head is taken here
+    const vendor=app.run("(()=>{const h=_acctVendorId='gas',p=(_acctVendorTab='statement',_acctVendorPage());const i=p.indexOf('<div class=\"card\"',10);return i>0?p.slice(0,i):p;})()");
     const modal=(t,b,f)=>'<div class="acct-modal" style="position:static;max-width:640px;margin-top:14px"><div class="acct-modal-head"><span>'+t+'</span><button class="acct-x">×</button></div><div class="acct-modal-body">'+b+'</div><div class="acct-modal-foot">'+f+'</div></div>';
     app.run("window.acctAdminEdit(acctEntries.find(e=>e.type==='purchase')._id)");
     const edit=app.run("modal=window.__cap;JSON.stringify(modal)");
     app.run("window.acctAdminResetPrompt()");
     const reset=app.run("JSON.stringify(window.__cap)");
     const e=JSON.parse(edit),r=JSON.parse(reset);
-    return Promise.resolve(review+modal(e.t,e.b,e.f)+modal(r.t,r.b,r.f));
+    return Promise.resolve(review+vendor+modal(e.t,e.b,e.f)+modal(r.t,r.b,r.f));
   },
   'store — inventory category chips':()=>{
     const app=loadApp({files:['js/store.js'],globals:{
