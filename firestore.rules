@@ -129,7 +129,15 @@ service cloud.firestore {
     }
     match /acct_vendors/{doc}     { allow read: if signedIn(); allow create, update: if isStoreAccounts(); allow delete: if false; }
     match /acct_meter_logs/{doc}  { allow read: if signedIn(); allow write: if isStoreAccounts(); }
-    match /acct_settings/{doc}    { allow read: if signedIn(); allow write: if isOwner(); }
+    // Owners set everything. Raees may add a CATEGORY from the purchase form
+    // and nothing else — the review limits on his own entries stay owner-only.
+    // The three fields mirror _ACCT_CAT_FIELDS in js/store-accounts.js.
+    match /acct_settings/{doc} {
+      allow read: if signedIn();
+      allow create: if isOwner() || (isStoreAccounts() && request.resource.data.keys().hasOnly(['categories','updatedAt','updatedBy']));
+      allow update: if isOwner() || (isStoreAccounts() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['categories','updatedAt','updatedBy']));
+      allow delete: if isOwner();
+    }
     match /acct_closes/{doc}      { allow read: if signedIn(); allow create: if isOwner(); allow update, delete: if false; }
     // Legacy Store Cash Ledger — read-only history. Kept so the owner-only
     // one-time import in js/store-accounts.js can read it.

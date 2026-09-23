@@ -1143,7 +1143,60 @@ window.acctChip=function(name,v){
   if(name==='f-source')window.acctPurchaseSourceChanged();
   if(name==='f-acc'&&document.getElementById('f-proof-wrap'))document.getElementById('f-proof-wrap').style.display=v==='mcb'?'block':'none';
 };
-function _acctCatOptions(sel){return _acctSettings().categories.map(c=>`<option${sel===c?' selected':''}>${_acctEsc(c)}</option>`).join('');}
+// The category list is the settings list ∪ every category already on a
+// purchase in memory — so a name Raees added from the form, or one the
+// legacy import wrote, is never missing from the picker even when the
+// settings write below was refused. Deduped case-insensitively, first
+// spelling wins, settings order first.
+function _acctCategories(){
+  const out=[];const seen=new Set();
+  const add=c=>{c=String(c||'').trim();if(!c)return;const k=c.toLowerCase();if(seen.has(k))return;seen.add(k);out.push(c);};
+  _acctSettings().categories.forEach(add);
+  (acctEntries||[]).forEach(e=>{if(e&&e.type==='purchase')add(e.category);});
+  return out;
+}
+const _ACCT_NEW_CAT='__new__';
+const _ACCT_CAT_FIELDS=['categories','updatedAt','updatedBy']; // mirrored in firestore.rules acct_settings
+function _acctCatOptions(sel){
+  return _acctCategories().map(c=>`<option${sel===c?' selected':''}>${_acctEsc(c)}</option>`).join('')
+    +`<option value="${_ACCT_NEW_CAT}">+ New category…</option>`;
+}
+// "+ New category…" on the purchase form's Category select. Asks for a
+// name, adds it to the list and selects it; an empty answer puts the
+// previous pick back. A name already on the list (any case) selects the
+// existing spelling rather than minting a twin.
+window.acctCatChange=function(sel){
+  if(!sel)return;
+  if(sel.value!==_ACCT_NEW_CAT){sel.dataset.prev=sel.value;return;}
+  const prev=sel.dataset.prev||_acctCategories()[0]||'';
+  const name=String(prompt('New category name')||'').trim();
+  const pick=name?_acctAddCategory(name):null;
+  sel.innerHTML=_acctCatOptions(pick||prev);
+  sel.value=pick||prev;sel.dataset.prev=sel.value;
+};
+function _acctAddCategory(name){
+  name=String(name||'').trim();if(!name)return null;
+  const have=_acctCategories().find(c=>c.toLowerCase()===name.toLowerCase());
+  if(have)return have;
+  const cats=_acctSettings().categories.slice();cats.push(name);
+  acctSettings=Object.assign({_id:'main'},acctSettings||{},{categories:cats});
+  _acctSaveCategories(cats,name); // best effort, never awaited — the form keeps the name either way
+  return name;
+}
+// Writes ONLY the categories field (an updateMask), so Raees's write can
+// never carry a stale approvalLimit over the owner's, and the rule holds
+// him to exactly _ACCT_CAT_FIELDS. Owners' full settings save is
+// acctSaveSettings, unchanged.
+async function _acctSaveCategories(cats,name){
+  try{
+    const tok=await getStoreToken();
+    const mask=_ACCT_CAT_FIELDS.map(f=>'updateMask.fieldPaths='+f).join('&');
+    const r=await fetch(`${_FS_BASE}/acct_settings/main?${mask}`,{method:'PATCH',headers:{Authorization:`Bearer ${tok}`,'Content-Type':'application/json'},
+      body:JSON.stringify({fields:toFsFields({categories:cats,updatedAt:Date.now(),updatedBy:_acctUser().by})})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error((e.error&&e.error.message)||('HTTP '+r.status));}
+    _acctLog('Accounts category added',name);
+  }catch(e){showToast('Category kept for this entry, but the list could not be saved: '+e.message,true);}
+}
 function _acctDateField(id,val){return `<div class="field"><label>Date</label><input id="${id}" type="date" value="${_acctEsc(val||_acctToday())}" max="${_acctToday()}"></div>`;}
 
 window.acctForm=function(type,pre){
@@ -1280,7 +1333,7 @@ function _acctPurchaseForm(pre){
     <div class="field" style="grid-column:1/-1"><label>Vendor *</label><select id="f-vendor" onchange="window.acctPurchaseVendorChanged(this.value)">${_acctVendorOptions(pre.vendorId)}</select><div id="f-vendor-hint" style="font-size:13px;color:var(--muted);margin-top:4px">${v?_acctEsc(_acctTermsLabel(v))+(_acctVendorBalance(v._id)?' · owed '+_acctPKR(_acctVendorBalance(v._id)):''):''}</div></div>
     ${_acctDateField('f-date')}
     <div class="field"><label>Vendor's bill / invoice no.</label><input id="f-ref" placeholder="optional"></div>
-    <div class="field"><label>Category</label><select id="f-cat">${_acctCatOptions(v&&v.kind==='utility'?'Utilities':(v&&v.kind==='service'?'Maintenance & repairs':'Store purchase'))}</select></div>
+    <div class="field"><label>Category</label><select id="f-cat" onchange="window.acctCatChange(this)">${_acctCatOptions(v&&v.kind==='utility'?'Utilities':(v&&v.kind==='service'?'Maintenance & repairs':'Store purchase'))}</select></div>
     <div class="field"><label>Note</label><input id="f-note" placeholder="optional"></div>
   </div>
   <div class="acct-lines-head"><span>Lines · pick a store item to post it into inventory, or type a description</span><button type="button" class="btn-outline" style="padding:4px 10px;font-size:12px" onclick="window.acctLineAdd()">+ Line</button></div>

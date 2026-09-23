@@ -6030,6 +6030,25 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
   `smoke-layout` fragments measure the tiles, alerts, books table, vendor
   page, consumables grid and the purchase form; the tables opt out of
   420px (they scroll inside their wrapper, the Marketing rule).
+- **A new category from the purchase form (23 Sept 2026).** Afnan, with
+  the Category dropdown open: *"option to create new category"*. The
+  select ends in **"+ New category…"** (`window.acctCatChange`): a name
+  is asked for, added and selected; an empty answer restores the previous
+  pick; a name already on the list in any case selects the existing
+  spelling rather than minting a twin. **The list is DERIVED** —
+  `_acctCategories()` is settings ∪ every category already on a purchase
+  in memory, so a name Raees added, or one the legacy import wrote, is on
+  the picker even when the settings write is refused (a cash-in's
+  `Fabric sale` is deliberately not a purchase category). **The write is
+  an `updateMask` PATCH of exactly `_ACCT_CAT_FIELDS`**
+  (`categories, updatedAt, updatedBy`), never `fsSet`'s full-document
+  replace: Raees's write can never carry a stale `approvalLimit` over the
+  owner's, and `firestore.rules` `acct_settings` holds him to those three
+  keys on create (`keys().hasOnly`) and update (`affectedKeys().hasOnly`)
+  while owners keep the full write. The test asserts the JS list and both
+  rule lists are the same three names — verified by widening the rule
+  (fails naming `approvalLimit`), dropping the mask, and dropping the
+  entries union. A refused save keeps the name on the form and says so.
 - **`firestore.rules` changed** (`acct_*` blocks + `isStoreAccounts()`; the
   `store_cash_*` blocks became owner-write) — **published by Afnan, 23 Sept
   2026**; see "Firestore rules" below.
@@ -8092,7 +8111,15 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
 
-**No republish outstanding as of 23 Sept 2026.** Afnan confirmed
+**REPUBLISH OUTSTANDING (23 Sept 2026, later the same day) — the
+category write.** `acct_settings` went from `allow write: if isOwner()` to
+a field-limited create/update for `isStoreAccounts()` (only
+`categories, updatedAt, updatedBy`). Until the Console has it, Raees's
+"+ New category…" still works on the form (the name is kept for the entry
+and the picker derives it from memory) but the toast says the list could
+not be saved.
+
+**No republish outstanding as of 23 Sept 2026 (morning).** Afnan confirmed
 ("published") from the repo file at `md5 fdd5c186a696f66f30120436f356e7af`
 — `git log --oneline -1 -- firestore.rules` is `48fca7e` (Store Accounts:
 `acct_entries`, `acct_vendors`, `acct_meter_logs`, `acct_settings`,

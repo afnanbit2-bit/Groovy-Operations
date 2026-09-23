@@ -30,6 +30,7 @@ const MONTH=TODAY.slice(0,7);
 const monthAdd=(mo,n)=>{const [y,m]=mo.split('-').map(Number);const d=new Date(y,m-1+n,1);return d.getFullYear()+'-'+pad(d.getMonth()+1);};
 const LAST=monthAdd(MONTH,-1);
 const J=v=>JSON.stringify(v);
+const ACCT_DEFAULT_CATS=['Store purchase','Maintenance & repairs','Utilities','Transport & fuel','Refreshments','Office & stationery','Wages & labour','Other'];
 
 const BASE={
   allItems:[],allTransactions:[],allTemplates:[],allRequests:[],allActivePOs:[],
@@ -469,6 +470,71 @@ module.exports=async function(){
     s.eq('a second run imports nothing',a.run('acctEntries.length'),4);
   }
 
+  s.section('a new category from the purchase form');
+  {
+    // the list is settings ∪ purchase categories in memory, deduped by case
+    const a=app({session:RAEES});
+    a.seed([E('purchase',{category:'dyeing'}),E('purchase',{category:'Dyeing'}),E('purchase',{category:'Store purchase'}),E('cash_in',{category:'Fabric sale'})],[V('A')],{settings:{_id:'main',categories:['Store purchase','Other']}});
+    s.eq('settings first, then what purchases already carry, once (case-folded)',J(a.run('_acctCategories()').map(c=>c.toLowerCase())),J(['store purchase','other','dyeing']));
+    s.ok('a cash-in category is not a purchase category',!a.run('_acctCategories()').includes('Fabric sale'));
+    a.run("window.acctForm('purchase')");const html=a.bodyHtml('acct-modal');
+    s.ok('the select offers "+ New category…"',/value="__new__">\+ New category…</.test(html));
+    s.ok('and routes its change to acctCatChange',/id="f-cat" onchange="window\.acctCatChange\(this\)"/.test(html));
+  }
+  {
+    // drive it: Raees adds "Dyeing", it is selected, and only the
+    // categories field is written — with an updateMask, never a full doc
+    const a=app({session:RAEES,globals:{prompt:()=>' Dyeing '}});
+    a.run("allItems=[]");a.seed([],[V('A')],{settings:{_id:'main',approvalLimit:5000,receiptRequiredAbove:2000,categories:['Store purchase','Other']}});
+    a.run("window.acctForm('purchase')");
+    const sel=a.el('f-cat');sel.value='Store purchase';a.run("window.acctCatChange(document.getElementById('f-cat'))");
+    sel.value='__new__';a.run("window.acctCatChange(document.getElementById('f-cat'))");
+    await new Promise(r=>setTimeout(r,0)); // the settings write awaits the token first
+    s.eq('the new name is selected, trimmed',sel.value,'Dyeing');
+    s.ok('the select was rebuilt with it',/<option selected>Dyeing<\/option>/.test(sel.innerHTML));
+    s.eq('it joined the in-memory settings list',J(a.run('acctSettings.categories')),J(['Store purchase','Other','Dyeing']));
+    s.eq('the other settings survive in memory',a.run('acctSettings.approvalLimit'),5000);
+    const w=a.state.fetches.filter(f=>/acct_settings\/main/.test(f.url));
+    s.eq('exactly one settings write',w.length,1);
+    s.eq('it is a PATCH',w[0]&&w[0].init.method,'PATCH');
+    const mask=w[0]?(w[0].url.match(/updateMask\.fieldPaths=([a-zA-Z]+)/g)||[]).map(x=>x.split('=')[1]).sort():[];
+    s.eq('the updateMask names only categories/updatedAt/updatedBy',J(mask),J(['categories','updatedAt','updatedBy']));
+    const body=w[0]?JSON.parse(w[0].init.body).fields:{};
+    s.eq('and the body carries no other field (no approvalLimit ride-along)',J(Object.keys(body).sort()),J(['categories','updatedAt','updatedBy']));
+    s.eq('the categories written include the new one',J((body.categories.arrayValue.values||[]).map(v=>v.stringValue)),J(['Store purchase','Other','Dyeing']));
+    // the purchase then records it
+    a.el('f-vendor').value='A';a.el('f-date').value=TODAY;a.el('f-source').value='cash';
+    a.run("_acctFormLines="+J([{itemCode:'',desc:'Dye',qty:'1',unit:'',rate:'900'}]));
+    await a.run('window.acctSubmitPurchase()');
+    s.eq('the entry carries the new category',a.run('acctEntries[0].category'),'Dyeing');
+    s.ok('an activity line was logged',a.state.activity.some(x=>/category added/i.test(x.action)));
+  }
+  {
+    // an empty answer puts the previous pick back and writes nothing
+    const a=app({session:RAEES,globals:{prompt:()=>''}});
+    a.seed([],[V('A')]);a.run("window.acctForm('purchase')");
+    const sel=a.el('f-cat');sel.value='Utilities';a.run("window.acctCatChange(document.getElementById('f-cat'))");
+    sel.value='__new__';a.run("window.acctCatChange(document.getElementById('f-cat'))");
+    s.eq('cancel → the previous category',sel.value,'Utilities');
+    s.eq('nothing written',a.state.fetches.filter(f=>/acct_settings/.test(f.url)).length,0);
+    // an existing name in another case selects the existing spelling
+    const b=app({session:RAEES,globals:{prompt:()=>'utilities'}});
+    b.seed([],[V('A')]);b.run("window.acctForm('purchase')");
+    const sb=b.el('f-cat');sb.value='__new__';b.run("window.acctCatChange(document.getElementById('f-cat'))");
+    s.eq('a twin in another case picks the existing one',sb.value,'Utilities');
+    s.eq('and writes nothing',b.state.fetches.filter(f=>/acct_settings/.test(f.url)).length,0);
+    s.eq('the list did not grow',b.run('_acctCategories().length'),ACCT_DEFAULT_CATS.length);
+  }
+  {
+    // a refused settings write keeps the name on the form and says so
+    const a=app({session:RAEES,globals:{prompt:()=>'Dyeing',fetch:async(url,init)=>{a.state.fetches.push({url:String(url),init:init||{}});return /acct_settings/.test(String(url))?{ok:false,status:403,json:async()=>({error:{message:'Missing or insufficient permissions.'}})}:{ok:true,status:200,json:async()=>({documents:[]})};}}});
+    a.seed([],[V('A')]);a.run("window.acctForm('purchase')");
+    const sel=a.el('f-cat');sel.value='__new__';a.run("window.acctCatChange(document.getElementById('f-cat'))");
+    await new Promise(r=>setTimeout(r,0));
+    s.eq('the name stays selected',sel.value,'Dyeing');
+    s.ok('the refusal is said out loud, naming the reason',a.state.toasts.some(t=>/could not be saved.*insufficient/i.test(String(t))));
+    s.ok('and the picker still lists it (derived from memory, not the write)',a.run('_acctCategories()').includes('Dyeing'));
+  }
   s.section('firestore.rules mirrors the code');
   {
     const rules=fs.readFileSync(path.join(ROOT,'firestore.rules'),'utf8');
@@ -485,6 +551,16 @@ module.exports=async function(){
     for(const col of ['acct_entries','acct_vendors','acct_meter_logs','acct_settings','acct_closes'])
       s.ok(col+' has a match block',new RegExp('match /'+col+'/\\{doc\\}').test(rules));
     s.ok('entries can never be deleted',/match \/acct_entries\/\{doc\}[\s\S]*?allow delete: if false;/.test(rules));
+    // the category write: the fields the JS masks == the fields the rules allow Raees
+    const jsCat=/const _ACCT_CAT_FIELDS=\[([^\]]*)\]/.exec(src);
+    const jsFields=(jsCat?jsCat[1]:'').split(',').map(x=>x.trim().replace(/'/g,'')).sort();
+    const setBlock=/match \/acct_settings\/\{doc\} \{([\s\S]*?)\n    \}/.exec(rules);
+    const ruleLists=setBlock?(setBlock[1].match(/hasOnly\(\[([^\]]*)\]\)/g)||[]).map(m=>m.replace(/hasOnly\(\[|\]\)/g,'').split(',').map(x=>x.trim().replace(/'/g,'')).sort().join(',')):[];
+    s.eq('acct_settings has a create and an update clause for the category write',ruleLists.length,2);
+    s.ok('both allow exactly the fields the JS writes',ruleLists.every(l=>l===jsFields.join(',')),ruleLists.join(' | ')+' vs '+jsFields.join(','));
+    s.ok('the category clause is gated on isStoreAccounts()',setBlock&&/isStoreAccounts\(\) && request\.resource\.data\.keys\(\)\.hasOnly/.test(setBlock[1])&&/isStoreAccounts\(\) && request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)\.hasOnly/.test(setBlock[1]));
+    s.ok('owners keep the full write',setBlock&&/allow create: if isOwner\(\) \|\|/.test(setBlock[1])&&/allow update: if isOwner\(\) \|\|/.test(setBlock[1]));
+    s.ok('the masked write uses exactly those fields in its updateMask',/_ACCT_CAT_FIELDS\.map\(f=>'updateMask\.fieldPaths='\+f\)/.test(src));
     // every key _acctPatch writes must be in the rules' hasOnly list
     const m=/acct_entries[\s\S]*?hasOnly\(\[([^\]]*)\]\)/.exec(rules);
     const allowed=new Set((m?m[1]:'').split(',').map(x=>x.trim().replace(/'/g,'')));
