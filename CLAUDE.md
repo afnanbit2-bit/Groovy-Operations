@@ -6190,7 +6190,8 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
 - **`firestore.rules` changed** (`acct_*` blocks + `isStoreAccounts()`; the
   `store_cash_*` blocks became owner-write) — **published by Afnan, 23 Sept
   2026**; see "Firestore rules" below. **Changed AGAIN the same evening
-  (`isAcctSuper()`) — republish outstanding**, see below.
+  (`isAcctSuper()`) — published by Afnan, 23 Sept 2026 (evening)**, see
+  below.
 
 **Nobody has recorded a purchase on a real screen** — the sandbox cannot
 sign in. 385 assertions hold the logic; the layout probe holds the shape.
@@ -8255,15 +8256,18 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
 
-**REPUBLISH OUTSTANDING (23 Sept 2026, evening).** The repo file is at
-`md5 8b9db4a06a677f3bd022044b75ed5145`: a new `isAcctSuper()`
-(`afnan@groovy.op` alone) and, gated on it, `acct_entries` update without
-the field allow-list plus delete, `acct_closes` delete and `acct_vendors`
-delete — the Store Accounts correction tools. Until the Console has it,
-**Edit (admin) is refused by the rules** (the hasOnly clause still holds),
-**Delete (admin), Reopen and Reset are refused outright**, and the app
-says "refused" rather than failing silently. Nothing else in the file
-moved. This supersedes the afternoon entry below.
+**No republish outstanding as of 23 Sept 2026 (evening).** Afnan
+confirmed ("rules pushed") from the repo file at
+`md5 8b9db4a06a677f3bd022044b75ed5145` — `git log --oneline -1 --
+firestore.rules` is `b084a47`: a new `isAcctSuper()` (`afnan@groovy.op`
+alone) and, gated on it, `acct_entries` update without the field
+allow-list plus delete, `acct_closes` delete and `acct_vendors` delete —
+the Store Accounts correction tools (Edit / Delete on an entry, Reopen and
+Reset on Review & close). Nothing else in the file moved. The Console's
+acceptance was reported by the human; it could not be checked from a
+session. If an admin action is still refused after this, check the
+signed-in Auth email is exactly `afnan@groovy.op` before reopening the
+code. This supersedes the afternoon entry below.
 
 **No republish outstanding as of 23 Sept 2026 (afternoon).** Afnan
 confirmed ("published") from the repo file at
