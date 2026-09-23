@@ -330,7 +330,8 @@ function _acctParticulars(e){
     case 'purchase':{
       const ls=e.lines||[];
       let s;
-      if(ls.length===1)s=(ls[0].desc||ls[0].itemCode||'Purchase')+(ls[0].qty?' · '+ls[0].qty+' '+(ls[0].unit||'')+(ls[0].rate?' @ '+_acctPKR(ls[0].rate):''):'');
+      if(e.expense)s=(ls[0]&&ls[0].desc)||'Expense';
+      else if(ls.length===1)s=(ls[0].desc||ls[0].itemCode||'Purchase')+(ls[0].qty?' · '+ls[0].qty+' '+(ls[0].unit||'')+(ls[0].rate?' @ '+_acctPKR(ls[0].rate):''):'');
       else if(ls.length>1)s=ls.length+' items · '+ls.slice(0,2).map(l=>l.desc||l.itemCode).join(', ')+(ls.length>2?'…':'');
       else s='Purchase';
       if(e.meterKey)s=(e.lines&&e.lines[0]&&e.lines[0].desc)||'Monthly bill';
@@ -1358,22 +1359,57 @@ window.acctSubmit=async function(type){
 };
 
 /* ── PURCHASE FORM (lines with rates → inventory) ── */
+// A purchase is one of two things (Afnan, 23 Sept 2026: "the logic is wrong
+// … if its not a inventory, like its maintenance work for paint job, how
+// will we record them as they have nothing to do with inventory"):
+//   stock   — lines with a quantity and a rate; a store item posts to inventory
+//   expense — work or a service: what was done and what it cost, nothing else
+// Both are `type:'purchase'` on the ledger (one uniform log); an expense is
+// stored as one description line at qty 1 with `expense:true`, so every
+// reader — the statement, aging, the Excel sheets — needs no second shape.
+const ACCT_PURCHASE_KINDS=[
+  {key:'stock',  label:'Stock purchase',   sub:'items with a quantity and a rate'},
+  {key:'expense',label:'Expense / service',sub:'work, repairs, transport — no inventory'}
+];
+function _acctPurchaseKindFor(v){return v&&(v.kind==='service'||v.kind==='utility')?'expense':'stock';}
+function _acctKindChips(sel){
+  return `<div class="acct-chips" id="f-kind-chips">${ACCT_PURCHASE_KINDS.map(k=>`<button type="button" class="acct-chipbtn${sel===k.key?' on':''}" data-v="${k.key}" onclick="window.acctPurchaseKind('${k.key}')">${k.label}<small>${k.sub}</small></button>`).join('')}<input type="hidden" id="f-kind" value="${_acctEsc(sel)}"></div>`;
+}
+window.acctPurchaseKind=function(k){
+  if(!ACCT_PURCHASE_KINDS.some(x=>x.key===k))k='stock';
+  const h=document.getElementById('f-kind');if(h)h.value=k;
+  document.querySelectorAll('#f-kind-chips .acct-chipbtn').forEach(b=>b.classList.toggle('on',b.dataset.v===k));
+  const st=document.getElementById('acct-stock-wrap'),ex=document.getElementById('acct-expense-wrap');
+  if(st)st.style.display=k==='stock'?'':'none';
+  if(ex)ex.style.display=k==='expense'?'':'none';
+  _acctTotalPaint();
+  if(k==='expense')setTimeout(()=>document.getElementById('f-exp-desc')?.focus(),20);
+};
 function _acctPurchaseForm(pre){
   const v=_acctVendor(pre.vendorId);
   _acctFormLines=[];
   const floats=_acctOpenFloats();
   const defSource=v&&v.terms&&['credit','monthly','weekly'].includes(v.terms.mode)?'credit':'cash';
   const src=[{key:'cash',label:'Cash'},{key:'mcb',label:'MCB'},{key:'credit',label:'On credit',sub:'adds to what they are owed'}].concat(floats.map(f=>({key:'float:'+f.id,label:'Float · '+f.person,sub:_acctPKR(f.left)+' left'})));
+  const kind=pre.kind||_acctPurchaseKindFor(v);
   const body=`<div class="form-grid">
     <div class="field" style="grid-column:1/-1"><label>Vendor *</label><select id="f-vendor" onchange="window.acctPurchaseVendorChanged(this.value)">${_acctVendorOptions(pre.vendorId)}</select><div id="f-vendor-hint" style="font-size:13px;color:var(--muted);margin-top:4px">${v?_acctEsc(_acctTermsLabel(v))+(_acctVendorBalance(v._id)?' · owed '+_acctPKR(_acctVendorBalance(v._id)):''):''}</div></div>
     ${_acctDateField('f-date')}
     <div class="field"><label>Vendor's bill / invoice no.</label><input id="f-ref" placeholder="optional"></div>
     <div class="field"><label>Category</label><select id="f-cat" onchange="window.acctCatChange(this)">${_acctCatOptions(v&&v.kind==='utility'?'Utilities':(v&&v.kind==='service'?'Maintenance & repairs':'Store purchase'))}</select></div>
     <div class="field"><label>Note</label><input id="f-note" placeholder="optional"></div>
+    <div class="field" style="grid-column:1/-1"><label>What is this? *</label>${_acctKindChips(kind)}</div>
   </div>
+  <div id="acct-expense-wrap" class="form-grid" style="${kind==='expense'?'':'display:none'}">
+    <div class="field" style="grid-column:1/-1"><label>What was done *</label><input id="f-exp-desc" placeholder="e.g. paint job for the studio" value="${_acctEsc(pre.desc||'')}"></div>
+    <div class="field"><label>Amount (₨) *</label><input id="f-exp-amount" type="number" inputmode="numeric" min="1" step="1" placeholder="0" value="${_acctEsc(pre.amount||'')}" oninput="_acctTotalPaint()"></div>
+    <div class="field" style="align-self:end;font-size:13px;color:var(--muted)">Nothing goes into inventory — this is money spent on work or a service.</div>
+  </div>
+  <div id="acct-stock-wrap" style="${kind==='stock'?'':'display:none'}">
   <div class="acct-lines-head"><span>Lines · pick a store item to post it into inventory, or type a description</span><button type="button" class="btn-outline" style="padding:4px 10px;font-size:12px" onclick="window.acctLineAdd()">+ Line</button></div>
   <datalist id="acct-items-dl">${(typeof allItems!=='undefined'?allItems:[]).map(i=>`<option value="${_acctEsc(i.code)}">${_acctEsc(i.name)}${i.unit?' ('+_acctEsc(i.unit)+')':''}</option>`).join('')}</datalist>
   <div id="acct-lines"></div>
+  </div>
   <div class="acct-total"><span>Total</span><b id="f-total">₨0</b></div>
   <div class="form-grid" style="margin-top:12px">
     <div class="field" style="grid-column:1/-1"><label>Paid via *</label>${_acctAccountChips('f-source',defSource,src.slice(2))}</div>
@@ -1390,6 +1426,7 @@ window.acctPurchaseVendorChanged=function(v){
   const vd=_acctVendor(v);const el=document.getElementById('f-vendor-hint');
   if(el)el.innerHTML=vd?_acctEsc(_acctTermsLabel(vd))+(_acctVendorBalance(vd._id)?' · owed '+_acctPKR(_acctVendorBalance(vd._id)):''):'';
   if(vd&&vd.terms)window.acctChip('f-source',vd.terms.mode==='cash'?'cash':'credit');
+  if(vd)window.acctPurchaseKind(_acctPurchaseKindFor(vd));
   // refresh rate hints on existing lines
   _acctFormLines.forEach((l,i)=>window.acctLineItem(i,l.itemCode,true));
 };
@@ -1403,24 +1440,34 @@ window.acctPurchaseSourceChanged=function(){
   }
   if(req)req.textContent=rr?`(needed above ${_acctPKR(rr)} or it is flagged for review)`:'';
 };
+// A new line starts at quantity 1: a service bill ("paint job for the
+// studio") has no quantity of its own, so its amount goes in Rate and the
+// line's total IS the amount. A store item's real quantity is typed over it.
+function _acctNewLine(){return {itemCode:'',desc:'',qty:'1',unit:'',rate:'',sizes:null,sizeSpecific:false};}
 window.acctLineAdd=function(){
-  _acctFormLines.push({itemCode:'',desc:'',qty:'',unit:'',rate:'',sizes:null,sizeSpecific:false});
+  _acctFormLines.push(_acctNewLine());
   _acctLinesRender();
   const n=_acctFormLines.length-1;setTimeout(()=>document.getElementById('l-item-'+n)?.focus(),20);
 };
-window.acctLineRemove=function(i){_acctFormLines.splice(i,1);if(!_acctFormLines.length)_acctFormLines.push({itemCode:'',desc:'',qty:'',unit:'',rate:'',sizes:null});_acctLinesRender();};
-function _acctLinesRender(){
-  const box=document.getElementById('acct-lines');if(!box)return;
-  box.innerHTML=_acctFormLines.map((l,i)=>`<div class="acct-line" id="l-row-${i}">
-    <input id="l-item-${i}" class="li" list="acct-items-dl" placeholder="Item code (or leave blank)" value="${_acctEsc(l.itemCode)}" onchange="window.acctLineItem(${i},this.value)" title="Store item code">
-    <input id="l-desc-${i}" class="ld" placeholder="Description" value="${_acctEsc(l.desc)}" oninput="window.acctLineSet(${i},'desc',this.value)">
+window.acctLineRemove=function(i){_acctFormLines.splice(i,1);if(!_acctFormLines.length)_acctFormLines.push(_acctNewLine());_acctLinesRender();};
+// One line of the purchase form. Pure (no DOM), so the layout probe can
+// render the REAL row — it used to hand-roll a copy with a shorter
+// placeholder than the one shipped, and measured that instead.
+function _acctLineHTML(l,i){
+  return `<div class="acct-line" id="l-row-${i}">
+    <input id="l-item-${i}" class="li" list="acct-items-dl" placeholder="Item code" value="${_acctEsc(l.itemCode)}" onchange="window.acctLineItem(${i},this.value)" title="Store item code — leave blank for anything that is not a store item">
+    <input id="l-desc-${i}" class="ld" placeholder="What was bought — e.g. paint job for studio" value="${_acctEsc(l.desc)}" oninput="window.acctLineSet(${i},'desc',this.value)">
     <input id="l-qty-${i}" class="ln" type="number" inputmode="decimal" min="0" step="any" placeholder="Qty" value="${_acctEsc(l.qty)}" oninput="window.acctLineSet(${i},'qty',this.value)" ${l.sizeSpecific?'readonly title="Sum of the sizes below"':''}>
     <input id="l-unit-${i}" class="lu" placeholder="unit" value="${_acctEsc(l.unit)}" oninput="window.acctLineSet(${i},'unit',this.value)">
     <input id="l-rate-${i}" class="ln" type="number" inputmode="decimal" min="0" step="any" placeholder="Rate ₨" value="${_acctEsc(l.rate)}" oninput="window.acctLineSet(${i},'rate',this.value)">
     <span class="lt" id="l-tot-${i}">${_acctPKR((Number(l.qty)||0)*(Number(l.rate)||0))}</span>
     <button type="button" class="acct-x" onclick="window.acctLineRemove(${i})" title="Remove line">×</button>
     <div class="acct-line-sub" id="l-sub-${i}">${_acctLineSubHTML(l,i)}</div>
-  </div>`).join('');
+  </div>`;
+}
+function _acctLinesRender(){
+  const box=document.getElementById('acct-lines');if(!box)return;
+  box.innerHTML=_acctFormLines.map(_acctLineHTML).join('');
   _acctTotalPaint();
 }
 function _acctLineSubHTML(l,i){
@@ -1456,26 +1503,46 @@ window.acctLineItem=function(i,code,keep){
 };
 window.acctLineSet=function(i,k,v){const l=_acctFormLines[i];if(!l)return;l[k]=v;const t=document.getElementById('l-tot-'+i);if(t)t.textContent=_acctPKR((Number(l.qty)||0)*(Number(l.rate)||0));_acctTotalPaint();};
 window.acctLineSize=function(i,sz,v){const l=_acctFormLines[i];if(!l||!l.sizes)return;l.sizes[sz]=v;const sum=Object.values(l.sizes).reduce((s,x)=>s+(Number(x)||0),0);l.qty=sum||'';const q=document.getElementById('l-qty-'+i);if(q)q.value=l.qty;window.acctLineSet(i,'qty',l.qty);};
-function _acctTotalPaint(){const t=document.getElementById('f-total');if(t)t.textContent=_acctPKR(_acctFormLines.reduce((s,l)=>s+Math.round((Number(l.qty)||0)*(Number(l.rate)||0)),0));}
+function _acctFormTotal(){
+  const kind=document.getElementById('f-kind')?.value||'stock';
+  if(kind==='expense')return Math.round(Number(document.getElementById('f-exp-amount')?.value)||0);
+  return _acctFormLines.reduce((s,l)=>s+Math.round((Number(l.qty)||0)*(Number(l.rate)||0)),0);
+}
+function _acctTotalPaint(){const t=document.getElementById('f-total');if(t)t.textContent=_acctPKR(_acctFormTotal());}
 window.acctSubmitPurchase=async function(){
   const g=id=>{const el=document.getElementById(id);return el?el.value:'';};
   const v=_acctVendor(g('f-vendor'));if(!v){showToast('Pick a vendor.',true);return;}
-  const lines=[];
-  for(const l of _acctFormLines){
-    const qty=Number(l.qty)||0,rate=Number(l.rate)||0;
-    if(!l.itemCode&&!(l.desc||'').trim())continue;
-    if(qty<=0){showToast(`Enter a quantity for ${l.desc||l.itemCode}.`,true);return;}
+  const kind=g('f-kind')||'stock';
+  const lines=[];let expense=false;
+  if(kind==='expense'){
+    const desc=(g('f-exp-desc')||'').trim();const amt=Math.round(Number(g('f-exp-amount'))||0);
+    if(!desc){showToast('Say what the work or service was.',true);return;}
+    if(amt<=0){showToast('Enter the amount.',true);return;}
+    lines.push({itemCode:'',desc,qty:1,unit:'',rate:amt,total:amt});expense=true;
+  }else for(const [i,l] of _acctFormLines.entries()){
+    const rate=Number(l.rate)||0;
+    // A blank quantity beside an amount is a lump sum (a service bill):
+    // the amount IS the total, so the quantity is one.
+    const qty=String(l.qty==null?'':l.qty).trim()===''?(rate>0?1:0):(Number(l.qty)||0);
+    let desc=(l.desc||l.itemCode||'').trim();
+    if(!l.itemCode&&!desc){
+      if(rate<=0)continue;                 // an untouched line
+      // Never drop a line that carries an amount.
+      showToast(`Line ${i+1} has an amount but no description — say what it was for (or switch to Expense / service).`,true);return;
+    }
+    if(qty<=0){showToast(`Enter a quantity for ${desc}.`,true);return;}
     if(rate<0){showToast('A rate cannot be negative.',true);return;}
-    const line={itemCode:l.itemCode||'',desc:(l.desc||l.itemCode||'').trim(),qty,unit:(l.unit||'').trim(),rate,total:Math.round(qty*rate)};
+    const line={itemCode:l.itemCode||'',desc,qty,unit:(l.unit||'').trim(),rate,total:Math.round(qty*rate)};
     if(l.sizeSpecific&&l.sizes){line.sizes={};for(const [k,x] of Object.entries(l.sizes)){if(Number(x))line.sizes[k]=Number(x);}}
     lines.push(line);
   }
-  if(!lines.length){showToast('Add at least one line.',true);return;}
+  if(!lines.length){showToast('Add at least one line — or switch to Expense / service if nothing was bought for stock.',true);return;}
   const amount=lines.reduce((s,l)=>s+l.total,0);
-  if(amount<=0){showToast('The total is zero — enter rates.',true);return;}
+  if(amount<=0){showToast('The total is zero — enter each line\'s rate (or, for a service, its amount).',true);return;}
   const src=g('f-source')||'cash';
   const e=_acctBase('purchase');
   e.vendorId=v._id;e.vendorName=v.name;e.date=g('f-date')||_acctToday();e.ref=(g('f-ref')||'').trim();e.category=g('f-cat')||'';e.note=(g('f-note')||'').trim();e.photo=window._acctPhoto['f-photo']||null;e.lines=lines;e.amount=amount;
+  if(expense)e.expense=true;
   if(src==='credit'){e.source='credit';e.account=null;
     const lim=v.terms&&parseInt(v.terms.creditLimit)||0;
     if(lim&&_acctVendorBalance(v._id)+amount>lim&&!confirm(`This takes ${v.name}'s balance to ${_acctPKR(_acctVendorBalance(v._id)+amount)}, over the ${_acctPKR(lim)} credit limit. Record anyway?`))return;
@@ -1502,7 +1569,9 @@ window.acctOpenEntry=function(id){
   const fx=_acctEffect(Object.assign({},e,{status:'posted'}));
   const kv=(k,v)=>v?`<div class="acct-kv"><span>${k}</span><b>${v}</b></div>`:'';
   let lines='';
-  if(e.lines&&e.lines.length){
+  if(e.expense&&e.lines&&e.lines[0]){
+    lines=`<div class="acct-kv-grid" style="margin-top:8px">${kv('Work / service',_acctEsc(e.lines[0].desc||''))}${kv('Amount',_acctPKR(e.lines[0].total))}</div>`;
+  }else if(e.lines&&e.lines.length){
     lines=`<table class="acct-table" style="margin-top:10px"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Total</th></tr></thead><tbody>${e.lines.map(l=>`<tr><td class="part">${_acctEsc(l.desc||l.itemCode)}${l.itemCode?` <span class="ref">${_acctEsc(l.itemCode)}</span>`:''}${l.sizes?`<div style="font-size:12px;color:var(--muted)">${Object.entries(l.sizes).map(([k,v])=>k+': '+v).join(' · ')}</div>`:''}</td><td class="num">${l.qty} ${_acctEsc(l.unit||'')}</td><td class="num">${_acctPKR(l.rate)}</td><td class="num bal">${_acctPKR(l.total)}</td></tr>`).join('')}</tbody></table>`;
   }
   let float='';

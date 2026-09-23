@@ -6072,12 +6072,49 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
   rule lists are the same three names — verified by widening the rule
   (fails naming `approvalLimit`), dropping the mask, and dropping the
   entries union. A refused save keeps the name on the form and says so.
+- **An EXPENSE is a purchase with no inventory (23 Sept 2026).** Afnan,
+  with the Record purchase form open on "PAINT JOB FOR STUDIO" typed into
+  Note, the line row empty and Total ₨0: *"the logic is wrong in record a
+  purchase if its not a inventory … maintenance work for paint job, how
+  will we record them as they have nothing to do with inventory."* He was
+  right — the form only spoke stock (item code · qty · unit · rate), so a
+  service bill had nowhere to put its amount. The form now asks **What is
+  this?** — `Stock purchase` (the lines grid, as before) or `Expense /
+  service` (**What was done** + **Amount**, and a line saying nothing goes
+  into inventory) — `ACCT_PURCHASE_KINDS`, `window.acctPurchaseKind`. The
+  default follows the vendor: a `service` or `utility` vendor opens in
+  Expense, `goods`/`consumable` in Stock (`_acctPurchaseKindFor`), and
+  changing the vendor flips it. **It is still `type:'purchase'` on the one
+  uniform ledger** — stored as ONE description line at qty 1 (`rate` =
+  `total` = the amount) with `expense:true`, so `_acctEffect`, FIFO aging,
+  the statement, the rate card (which keys on `itemCode`, so an expense
+  never enters it) and every Excel sheet needed no second shape; only the
+  ledger particulars (`_acctParticulars` → the description alone, never
+  "· 1  @ ₨15,000") and the entry detail (Work / service + Amount instead
+  of a qty/rate table) read the flag. No `firestore.rules` change — the
+  `acct_entries` create rule has no field allow-list. Two smaller fixes in
+  the same round: a new stock line is born at **qty 1** (`_acctNewLine`),
+  a blank qty beside a rate is read as 1, and a line carrying an amount
+  with no description is **refused by name**, never silently dropped;
+  and `_acctLineHTML` is a pure function so the layout probe renders the
+  REAL row (it used to hand-roll a copy with a shorter placeholder than
+  the one shipped — "Item code (or leave blank)" was clipped to "Item
+  code (o" in the screenshot; it is "Item code" now, with the hint in the
+  title). `.acct-modal` is capped at **860px** on desktop (it was
+  `width:100%` with no cap), and between 601 and 820px of viewport the
+  line row is **two rows** (what · where, then the numbers — `grid-
+  template-areas` by child position) because at ~760px the seven-column
+  row left the description ~180px. Measured at 760 in headless Chromium
+  (`scratchpad/measure-purchase-760.js`, screenshot looked at): no
+  placeholder clipped, the expense block 660px wide. Verified by
+  reverting: dropping the flag fails 3 by name, the vendor default 3, the
+  amount 5.
 - **`firestore.rules` changed** (`acct_*` blocks + `isStoreAccounts()`; the
   `store_cash_*` blocks became owner-write) — **published by Afnan, 23 Sept
   2026**; see "Firestore rules" below.
 
 **Nobody has recorded a purchase on a real screen** — the sandbox cannot
-sign in. 200 assertions hold the logic; the layout probe holds the shape.
+sign in. 302 assertions hold the logic; the layout probe holds the shape.
 
 ## The Sales Team ▸ Marketing (Sept 2026)
 

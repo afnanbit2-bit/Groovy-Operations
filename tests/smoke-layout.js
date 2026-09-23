@@ -306,10 +306,16 @@ const FRAGMENTS={
     app.run("currentPage='acct-ledger';_acctModal=function(t,b,f){window.__cap={t,b,f};}");
     const tiles=app.run("_acctPageHead('acct-ledger')+(()=>{const b=_acctBalances();const f=_acctOpenFloats();return '<div class=\"acct-tiles\">'+_acctTile('Cash in hand',b.cash)+_acctTile('MCB Bank',b.mcb)+_acctTile('Owed to vendors',_acctTotalPayables(),{danger:true,sub:'₨5,000 overdue'})+_acctTile('With runners',f.reduce((s,x)=>s+x.left,0),{danger:true,sub:'1 open float'})+'</div>'+_acctAlerts(f);})()");
     app.run("window.acctForm('purchase',{vendorId:'thread'})");
-    app.run("_acctFormLines=[{itemCode:'TH1',desc:'Thread white 40/2',qty:'12',unit:'cone',rate:'210',hint:'Last bought @ ₨210 on 01 Sep 26 from Karachi Thread House · in stock now: 20 cone'},{itemCode:'',desc:'Rickshaw to Shershah',qty:'1',unit:'',rate:'300',hint:''}]");
+    app.run("_acctFormLines=[{itemCode:'TH1',desc:'Thread white 40/2',qty:'12',unit:'cone',rate:'210',hint:'Last bought @ ₨210 on 01 Sep 26 from Karachi Thread House · in stock now: 20 cone'},{itemCode:'',desc:'Rickshaw to Shershah',qty:'1',unit:'',rate:'300',hint:''},_acctNewLine()]");
     const body=app.run('window.__cap.b');
-    const lines=app.run("_acctFormLines.map((l,i)=>`<div class=\"acct-line\"><input class=\"li\" value=\"${l.itemCode}\" placeholder=\"Item code\"><input class=\"ld\" value=\"${l.desc}\"><input class=\"ln\" type=\"number\" value=\"${l.qty}\"><input class=\"lu\" value=\"${l.unit}\" placeholder=\"unit\"><input class=\"ln\" type=\"number\" value=\"${l.rate}\"><span class=\"lt\">${_acctPKR(l.qty*l.rate)}</span><button type=\"button\" class=\"acct-x\">×</button><div class=\"acct-line-sub\">${l.hint?'<div class=\"acct-line-hint\">'+l.hint+'</div>':''}</div></div>`).join('')");
-    const form='<div class="acct-modal" style="position:static;max-width:720px;margin-top:14px"><div class="acct-modal-head"><span>Record purchase</span><button class="acct-x">×</button></div><div class="acct-modal-body">'+body.replace('<div id="acct-lines"></div>','<div id="acct-lines">'+lines+'</div>')+'</div><div class="acct-modal-foot"><button class="btn-outline">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px">Record purchase</button></div></div>';
+    // The REAL row (`_acctLineHTML`), placeholders included — a hand-rolled copy
+    // here once measured a shorter placeholder than the one that shipped.
+    const lines=app.run("_acctFormLines.map((l,i)=>_acctLineHTML(l,i)).join('')");
+    const modal=(b)=>'<div class="acct-modal" style="position:static;max-width:720px;margin-top:14px"><div class="acct-modal-head"><span>Record purchase</span><button class="acct-x">×</button></div><div class="acct-modal-body">'+b+'</div><div class="acct-modal-foot"><button class="btn-outline">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px">Record purchase</button></div></div>';
+    // the same form opened for a service vendor: Expense mode, the stock block hidden
+    app.run("window.acctForm('purchase',{vendorId:'net'})");
+    const expBody=app.run('window.__cap.b');
+    const form=modal(body.replace('<div id="acct-lines"></div>','<div id="acct-lines">'+lines+'</div>'))+modal(expBody);
     return Promise.resolve(tiles+form);
   },
   'store — inventory category chips':()=>{

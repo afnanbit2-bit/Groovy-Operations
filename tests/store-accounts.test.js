@@ -271,6 +271,67 @@ module.exports=async function(){
     s.eq('recorded by Raees himself it posts at once',r.run('acctEntries[0].status'),'posted');
   }
 
+  s.section('an expense — work or a service — is a purchase with no inventory');
+  {
+    // Afnan's screenshot (23 Sept 2026): "PAINT JOB FOR STUDIO" typed into
+    // Note, the line row empty, Total ₨0 — "the logic is wrong … if its not
+    // a inventory … they have nothing to do with inventory".
+    const a=app({session:RAEES});a.run('allItems=[]');a.seed([],[V('N',{name:'Noman 2',kind:'service'})]);
+    a.run("window.acctForm('purchase',{vendorId:'N'})");
+    const form=a.bodyHtml('acct-modal')||'';
+    s.ok('a service vendor opens the form in Expense mode',/id="f-kind"[^>]*value="expense"/.test(form));
+    s.ok('the expense block asks what was done and the amount',/id="f-exp-desc"/.test(form)&&/id="f-exp-amount"/.test(form));
+    s.ok('the stock block is hidden in expense mode',/id="acct-stock-wrap" style="display:none"/.test(form));
+    s.ok('the two kinds are offered as chips',/data-v="stock"/.test(form)&&/data-v="expense"/.test(form));
+    a.el('f-vendor').value='N';a.el('f-date').value=TODAY;a.el('f-source').value='cash';a.el('f-cat').value='Maintenance & repairs';
+    a.el('f-kind').value='expense';a.el('f-exp-desc').value='Paint job for studio';a.el('f-exp-amount').value='15000';
+    a.run("_acctFormLines=[_acctNewLine()]");
+    await a.run('window.acctSubmitPurchase()');
+    const e=a.run('acctEntries[0]');
+    s.ok('the purchase is recorded — one uniform ledger, still type purchase',!!e&&e.type==='purchase');
+    s.eq('flagged as an expense',e&&e.expense,true);
+    s.eq('the amount is what was typed',e&&e.amount,15000);
+    s.eq('stored as one description line at qty 1, so every reader works unchanged',e&&J(e.lines),J([{itemCode:'',desc:'Paint job for studio',qty:1,unit:'',rate:15000,total:15000}]));
+    s.eq('cash went down by it',a.run('_acctBalances().cash'),-15000);
+    s.eq('nothing posted into inventory',a.state.fetches.filter(f=>/\/store_transactions\//.test(f.url)).length,0);
+    s.eq('the ledger reads the work, not "· 1  @ ₨15,000"',a.run("_acctParticulars(acctEntries[0])"),'Paint job for studio');
+    s.ok('the entry detail shows work and amount, not a qty/rate table',/Work \/ service/.test(a.run("(()=>{let __h='';_acctModal=function(t,b){__h=b;};window.acctOpenEntry(acctEntries[0]._id);return __h;})()")));
+    // refusals
+    const b=app({session:RAEES});b.run('allItems=[]');b.seed([],[V('N',{kind:'service'})]);
+    b.el('f-vendor').value='N';b.el('f-date').value=TODAY;b.el('f-source').value='cash';b.el('f-kind').value='expense';b.el('f-exp-desc').value='';b.el('f-exp-amount').value='500';
+    await b.run('window.acctSubmitPurchase()');
+    s.eq('no description → nothing written',b.run('acctEntries.length'),0);
+    s.ok('and it says so',b.state.toasts.some(t=>/Say what the work or service was/.test(String(t))));
+    b.el('f-exp-desc').value='Paint';b.el('f-exp-amount').value='0';
+    await b.run('window.acctSubmitPurchase()');
+    s.eq('no amount → nothing written',b.run('acctEntries.length'),0);
+    // the default follows the vendor's kind
+    const c=app({session:RAEES});c.run('allItems=[]');c.seed([],[V('G',{name:'Thread house',kind:'goods'}),V('U',{name:'Nayatel',kind:'utility'})]);
+    s.eq('a goods vendor defaults to stock',c.run("_acctPurchaseKindFor(_acctVendor('G'))"),'stock');
+    s.eq('a recurring-bill vendor defaults to expense',c.run("_acctPurchaseKindFor(_acctVendor('U'))"),'expense');
+    s.eq('no vendor yet → stock',c.run("_acctPurchaseKindFor(null)"),'stock');
+    c.run("window.acctForm('purchase',{vendorId:'G'})");
+    s.ok('a goods vendor opens in stock mode with the lines visible',/id="f-kind"[^>]*value="stock"/.test(c.bodyHtml('acct-modal')||'')&&/id="acct-expense-wrap" class="form-grid" style="display:none"/.test(c.bodyHtml('acct-modal')||''));
+    // a stock line with an amount and no description is refused, never dropped
+    c.el('f-vendor').value='G';c.el('f-date').value=TODAY;c.el('f-source').value='cash';c.el('f-kind').value='stock';
+    c.run("_acctFormLines="+J([{itemCode:'',desc:'',qty:'',unit:'',rate:'500'}]));
+    await c.run('window.acctSubmitPurchase()');
+    s.eq('nothing written',c.run('acctEntries.length'),0);
+    s.ok('and it names the line and points at Expense / service',c.state.toasts.some(t=>/Line 1 has an amount but no description/.test(String(t))));
+    // a blank quantity beside a rate is a lump sum (qty 1); an untouched line is skipped
+    c.state.toasts.length=0;
+    c.run("_acctFormLines=["+J({itemCode:'',desc:'Rickshaw',qty:'',unit:'',rate:'300'})+",_acctNewLine()]");
+    await c.run('window.acctSubmitPurchase()');
+    s.eq('a blank qty beside an amount is one',c.run('acctEntries[0]&&acctEntries[0].lines[0].qty'),1);
+    s.eq('the empty second line is dropped',c.run('acctEntries[0]&&acctEntries[0].lines.length'),1);
+    s.eq('a new line starts at qty 1',c.run("_acctNewLine().qty"),'1');
+    c.run("_acctFormLines=[];window.acctLineAdd()");
+    s.eq('the + Line button mints the same line',c.run("_acctFormLines[0].qty"),'1');
+    const row=c.run("_acctLineHTML({itemCode:'',desc:'',qty:'1',unit:'',rate:''},0)");
+    s.ok('the item placeholder fits its box',/placeholder="Item code"/.test(row));
+    s.ok('the description placeholder says what to type',/placeholder="What was bought/.test(row));
+  }
+
   s.section('a purchase with rates posts stock into inventory');
   {
     const a=app({session:RAEES});

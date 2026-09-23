@@ -2757,7 +2757,7 @@ input.acct-sel{flex:1 1 160px}
 .acct-modal-body{padding:16px 18px;overflow:auto;flex:1}
 .acct-modal-foot{padding:12px 18px max(12px,env(safe-area-inset-bottom));border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 .acct-x{background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--muted);padding:4px 8px;min-width:32px;min-height:32px;font-family:inherit}
-@media(min-width:601px){.acct-modal-back{align-items:center;padding:16px}.acct-modal{border-radius:14px;max-height:90vh}}
+@media(min-width:601px){.acct-modal-back{align-items:center;padding:16px}.acct-modal{border-radius:14px;max-height:90vh;max-width:860px}}
 .acct-menu{display:grid;gap:8px}
 .acct-menu-item{display:flex;flex-direction:column;gap:2px;text-align:left;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface);cursor:pointer;font-family:inherit;color:var(--text);font-size:15px}
 .acct-menu-item:hover{border-color:var(--dark)}
@@ -2776,6 +2776,16 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
 .acct-line input.ln{text-align:right}
 .acct-line .lt{text-align:right;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
 .acct-line-sub{grid-column:1/-1}
+/* In a narrow desktop window (a split screen, ~760px — Afnan's screenshot,
+   23 Sept 2026) the seven-column row left the description ~180px and
+   clipped its own placeholder. Two rows there: what · where, then the
+   numbers. Children by position: item, desc, qty, unit, rate, total, ×, sub. */
+@media(min-width:601px) and (max-width:820px){
+  .acct-line{grid-template-columns:90px 80px 1fr 110px 32px;grid-template-areas:"item item desc desc x" "qty unit rate tot x" "sub sub sub sub sub";row-gap:6px}
+  .acct-line>:nth-child(1){grid-area:item}.acct-line>:nth-child(2){grid-area:desc}.acct-line>:nth-child(3){grid-area:qty}.acct-line>:nth-child(4){grid-area:unit}
+  .acct-line>:nth-child(5){grid-area:rate}.acct-line>:nth-child(6){grid-area:tot}.acct-line>:nth-child(7){grid-area:x;align-self:center}.acct-line>:nth-child(8){grid-area:sub}
+  .acct-line{padding-bottom:6px;border-bottom:1px dashed var(--border)}
+}
 .acct-line-hint{font-size:12px;color:var(--muted);padding:0 2px 4px}
 .acct-sizes{display:flex;flex-wrap:wrap;gap:6px;padding:2px 0 6px}
 .acct-sizes label{display:flex;flex-direction:column;font-size:11px;font-weight:700;color:var(--muted);gap:2px}
