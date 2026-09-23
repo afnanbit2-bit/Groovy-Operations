@@ -6030,8 +6030,9 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
   `smoke-layout` fragments measure the tiles, alerts, books table, vendor
   page, consumables grid and the purchase form; the tables opt out of
   420px (they scroll inside their wrapper, the Marketing rule).
-- **`firestore.rules` CHANGED — it needs a republish** (`acct_*` blocks +
-  `isStoreAccounts()`; the `store_cash_*` blocks became owner-write).
+- **`firestore.rules` changed** (`acct_*` blocks + `isStoreAccounts()`; the
+  `store_cash_*` blocks became owner-write) — **published by Afnan, 23 Sept
+  2026**; see "Firestore rules" below.
 
 **Nobody has recorded a purchase on a real screen** — the sandbox cannot
 sign in. 200 assertions hold the logic; the layout probe holds the shape.
@@ -8091,12 +8092,15 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
 
-**REPUBLISH OUTSTANDING (23 Sept 2026) — Store Accounts.** `acct_entries`,
-`acct_vendors`, `acct_meter_logs`, `acct_settings`, `acct_closes` and the
-`isStoreAccounts()` function are new; the six `store_cash_*` blocks went
-from open write to owner-only. Until the Console has it, every Store
-Accounts write is refused with "Missing or insufficient permissions" and
-the module's load-error card names the collection.
+**No republish outstanding as of 23 Sept 2026.** Afnan confirmed
+("published") from the repo file at `md5 fdd5c186a696f66f30120436f356e7af`
+— `git log --oneline -1 -- firestore.rules` is `48fca7e` (Store Accounts:
+`acct_entries`, `acct_vendors`, `acct_meter_logs`, `acct_settings`,
+`acct_closes`, `isStoreAccounts()`; the six `store_cash_*` blocks went from
+open write to owner-only). The Console's acceptance was reported by the
+human; it could not be checked from a session. If a Store Accounts write
+is still refused after this, that is new evidence — check Raees's Auth
+email is exactly `raees@groovy.op` before reopening the code.
 
 **Known mismatch, deliberately parked** (Afnan: "leave daniyals ituation for
 rn"): `isContentOpsLead()` lists `daniyal@groovy.op`, while this file
