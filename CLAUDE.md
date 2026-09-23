@@ -8134,13 +8134,15 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
 
-**REPUBLISH OUTSTANDING (23 Sept 2026, later the same day) — the
-category write.** `acct_settings` went from `allow write: if isOwner()` to
-a field-limited create/update for `isStoreAccounts()` (only
-`categories, updatedAt, updatedBy`). Until the Console has it, Raees's
-"+ New category…" still works on the form (the name is kept for the entry
-and the picker derives it from memory) but the toast says the list could
-not be saved.
+**No republish outstanding as of 23 Sept 2026 (afternoon).** Afnan
+confirmed ("published") from the repo file at
+`md5 d2683e26b4199e8637e57f339edf7e8e` — `git log --oneline -1 --
+firestore.rules` is `714166a`: `acct_settings` went from `allow write: if
+isOwner()` to a field-limited create/update for `isStoreAccounts()` (only
+`categories, updatedAt, updatedBy`), so Raees's "+ New category…" now
+saves the list. The Console's acceptance was reported by the human; it
+could not be checked from a session. This supersedes the morning entry
+below.
 
 **No republish outstanding as of 23 Sept 2026 (morning).** Afnan confirmed
 ("published") from the repo file at `md5 fdd5c186a696f66f30120436f356e7af`
