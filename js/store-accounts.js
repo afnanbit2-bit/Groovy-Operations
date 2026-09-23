@@ -85,6 +85,13 @@ const ACCT_PAGE_SIZE=40;
 function _acctCanView(){return !!session&&(session.role==='owner'||session.role==='manager'||session.role==='store');}
 function _acctCanEntry(){return !!session&&(session.role==='owner'||session.role==='store');}
 function _acctCanAdmin(){return !!session&&session.role==='owner';}
+// SUPER — Afnan alone, by USERNAME (the Sept 2026 grant shape: never a
+// role, or Ammar would inherit it). The one person who may EDIT an entry
+// in place, DELETE one, reopen a closed month, or wipe the module. Every
+// route through here is a correction tool, not a workflow: Raees voids,
+// owners review, Afnan repairs. Mirror: firestore.rules isAcctSuper().
+const _ACCT_SUPER_USERS=['afnan'];
+function _acctIsSuper(){return !!session&&_ACCT_SUPER_USERS.includes(session.u);}
 // Kept under the old name so js/shared.js's four nav sites need no rename.
 function _canViewCash(){return _acctCanView();}
 
@@ -990,6 +997,16 @@ function _acctReviewPage(){
     <button class="btn-primary" style="width:auto;padding:10px 16px" onclick="window.acctCloseMonth('${closable}')">Close ${_acctMonthLabel(closable)}</button>`}
     ${acctCloses.length?`<div style="margin-top:14px;font-size:13px"><b>Closed months:</b> ${acctCloses.slice().reverse().map(c=>`<span class="acct-chip ok">${c.month}</span>`).join(' ')}</div>`:''}
   </div>`;
+  if(_acctIsSuper()){
+    h+=`<div class="card acct-super-card">
+    <div class="card-title">Admin tools · Afnan only</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:10px">Correction tools, not the daily workflow. Open any entry to <b>Edit (admin)</b> or <b>Delete (admin)</b> it. Reopen the last closed month here, or reset the module to start again.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${lastClose?`<button class="btn-outline" onclick="window.acctAdminReopen('${lastClose.month}')">Reopen ${_acctMonthLabel(lastClose.month)}</button>`:''}
+      <button class="btn-outline" style="color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.acctAdminResetPrompt()">Reset Store Accounts…</button>
+    </div>
+  </div>`;
+  }
   h+=`<div class="card">
     <div class="card-title">Settings</div>
     <div class="form-grid">
@@ -1641,9 +1658,157 @@ window.acctOpenEntry=function(id){
     // PDF is the same one the consumables page prints, reachable from the
     // vendor page's statement through this detail.
     e.meterKey&&e.vendorId?`<button class="btn-outline" onclick="window.acctConsPdf('${e.vendorId}','${_acctEsc(String(e.meterKey).slice(-7))}')">Print log (PDF)</button>`:'',
+    _acctIsSuper()?`<button class="btn-outline acct-super" onclick="window.acctAdminEdit('${e._id}')">Edit (admin)…</button><button class="btn-outline acct-super" style="color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.acctAdminDelete('${e._id}')">Delete (admin)…</button>`:'',
     `<button class="btn-outline" onclick="window.acctModalClose()">Close</button>`
   ].filter(Boolean).join('');
   _acctModal(_acctEsc(_acctParticulars(e)),body,foot,{width:620});
+};
+
+/* ════════════════════════ ADMIN TOOLS (Afnan only) ════════════════════════
+   Afnan: "put a button in afnan view only to reset + edit + delete record
+   of things." The module's standing rule is void-never-edit and
+   nothing-is-deleted, and that rule stays for everyone else — these are
+   the owner's own correction tools, gated on _acctIsSuper() here and on
+   isAcctSuper() in firestore.rules, so a UI leak is not a boundary leak.
+   None of them touch inventory: a purchase that posted stock keeps its
+   store_transactions rows, and every confirm says so. */
+// The fields an admin edit may rewrite. Effects are DERIVED from these at
+// render (_acctEffect), so changing an amount or an account re-balances
+// every book without a stored balance to fix. `month` follows `date`
+// because the loader range-queries on it.
+const _ACCT_ADMIN_FIELDS=['date','amount','vendorId','person','account','toAccount','source','category','ref','note'];
+window.acctAdminEdit=function(id){
+  if(!_acctIsSuper())return;
+  const e=_acctById(id);if(!e){showToast('Entry not found.',true);return;}
+  const T=ACCT_TYPES[e.type]||{label:e.type};
+  const accOpts=sel=>`<option value="">— none —</option>`+ACCT_ACCOUNTS.map(a=>`<option value="${a.key}"${sel===a.key?' selected':''}>${_acctEsc(a.label)}</option>`).join('');
+  const srcOpts=sel=>['','cash','mcb','credit','float'].map(k=>`<option value="${k}"${(sel||'')===k?' selected':''}>${k||'— none —'}</option>`).join('');
+  const body=`
+    <div class="acct-alert info" style="cursor:default;margin-bottom:10px">Admin correction of a <b>${_acctEsc(T.label)}</b> entered by ${_acctEsc(e.byName||e.by)}. The change is written in place and logged under your name. ${e.stockPosted===true?'<b>Inventory is not touched</b> — the stock this purchase posted stays as it is.':''}${e.status==='void'?' This entry is VOID; editing does not un-void it.':''}</div>
+    <div class="form-grid">
+      <div class="field"><label>Date</label><input id="ae-date" type="date" value="${_acctEsc(e.date||'')}"></div>
+      <div class="field"><label>Amount (₨)${e.type==='adjust'?' — signed':''}</label><input id="ae-amount" type="number" inputmode="numeric" value="${Math.round(e.amount||0)}"></div>
+      <div class="field"><label>Vendor</label><select id="ae-vendor"><option value="">— none —</option>${acctVendors.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(v=>`<option value="${v._id}"${e.vendorId===v._id?' selected':''}>${_acctEsc(v.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>Person</label><input id="ae-person" value="${_acctEsc(e.person||'')}"></div>
+      <div class="field"><label>Account</label><select id="ae-account">${accOpts(e.account)}</select></div>
+      <div class="field"><label>To account (transfer)</label><select id="ae-to">${accOpts(e.toAccount)}</select></div>
+      <div class="field"><label>Source (purchase)</label><select id="ae-source">${srcOpts(e.source)}</select></div>
+      <div class="field"><label>Category</label><input id="ae-category" value="${_acctEsc(e.category||'')}"></div>
+      <div class="field"><label>Ref</label><input id="ae-ref" value="${_acctEsc(e.ref||'')}"></div>
+      <div class="field" style="grid-column:1/-1"><label>Note</label><input id="ae-note" value="${_acctEsc(e.note||'')}"></div>
+    </div>`;
+  _acctModal('Edit entry (admin)',body,`<button class="btn-outline" onclick="window.acctOpenEntry('${e._id}')">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px" id="ae-submit" onclick="window.acctAdminSave('${e._id}')">Save changes</button>`,{sticky:true,width:640});
+};
+// Pure: the patch an admin save writes, from the form's raw values. Only
+// the fields that CHANGED are returned, so the activity line names them
+// and an untouched entry writes nothing. `month` rides along with `date`.
+function _acctAdminPatch(e,vals){
+  const p={};
+  const date=String(vals.date||'').trim();
+  if(date&&date!==e.date){p.date=date;p.month=_acctMonthOf(date);}
+  const amt=parseInt(vals.amount);
+  if(!isNaN(amt)&&amt!==Math.round(e.amount||0))p.amount=amt;
+  const vid=vals.vendorId||null;
+  if(vid!==(e.vendorId||null)){p.vendorId=vid;p.vendorName=vid?((_acctVendor(vid)||{}).name||''):'';}
+  const str=(k,v)=>{v=String(v||'').trim();if(v!==String(e[k]||''))p[k]=v;};
+  str('person',vals.person);str('category',vals.category);str('ref',vals.ref);str('note',vals.note);
+  const nul=(k,v)=>{v=v||null;if(v!==(e[k]||null))p[k]=v;};
+  nul('account',vals.account);nul('toAccount',vals.toAccount);nul('source',vals.source);
+  // an expense is one description line whose rate and total ARE the amount
+  if(p.amount!=null&&e.expense&&e.lines&&e.lines[0])p.lines=[Object.assign({},e.lines[0],{rate:p.amount,total:p.amount})];
+  return p;
+}
+window.acctAdminSave=async function(id){
+  if(!_acctIsSuper())return;
+  const e=_acctById(id);if(!e)return;
+  const g=k=>{const el=document.getElementById('ae-'+k);return el?el.value:'';};
+  const vals={date:g('date'),amount:g('amount'),vendorId:g('vendor'),person:g('person'),account:g('account'),toAccount:g('to'),source:g('source'),category:g('category'),ref:g('ref'),note:g('note')};
+  if(vals.date&&vals.date>_acctToday()){showToast('The date cannot be in the future.',true);return;}
+  if(e.type!=='adjust'&&!(parseInt(vals.amount)>0)){showToast('Enter an amount above zero.',true);return;}
+  const p=_acctAdminPatch(e,vals);
+  if(!Object.keys(p).length){showToast('Nothing changed.');window.acctOpenEntry(id);return;}
+  const u=_acctUser();
+  Object.assign(p,{editedAt:Date.now(),editedBy:u.by});
+  const doc=Object.assign({},e,p);delete doc._id;
+  const btn=document.getElementById('ae-submit');if(btn)btn.disabled=true;
+  try{await fsSet('acct_entries',id,doc);}
+  catch(err){if(btn)btn.disabled=false;showToast('Edit refused: '+(err.message||err),true);return;}
+  const changed=Object.keys(p).filter(k=>!/^(editedAt|editedBy|month|vendorName|lines)$/.test(k));
+  Object.assign(e,p);_acctSort(acctEntries);
+  _acctLog('Accounts entry edited (admin)',`${_acctParticulars(e)} ${_acctPKR(e.amount)} — ${changed.join(', ')}`);
+  showToast('Entry updated.');window.acctModalClose();_acctRerender();
+};
+window.acctAdminDelete=async function(id){
+  if(!_acctIsSuper())return;
+  const e=_acctById(id);if(!e)return;
+  const stock=e.stockPosted===true?'\n\nThis purchase posted stock into inventory. Deleting the money entry does NOT reverse that — correct the Store side by hand if needed.':'';
+  if(!confirm(`Delete this ${(ACCT_TYPES[e.type]||{}).label||e.type} of ${_acctPKR(e.amount)} dated ${_acctDateLabel(e.date)} for good?\n\nUnlike a void, a deleted entry leaves NO trace on the ledger. There is no undo.${stock}`))return;
+  try{await fsDelete('acct_entries',id);}
+  catch(err){showToast('Delete refused: '+(err.message||err),true);return;}
+  acctEntries=acctEntries.filter(x=>x._id!==id);
+  _acctLog('Accounts entry deleted (admin)',`${_acctParticulars(e)} ${_acctPKR(e.amount)} · ${_acctDateLabel(e.date)} · entered by ${e.byName||e.by}`);
+  showToast('Entry deleted.');window.acctModalClose();_acctRerender();
+};
+// Reopen a closed month: delete its checkpoint. Only the LATEST close can
+// go — the loader reads from the month after the last close, so reopening
+// an earlier one would leave a later checkpoint counting a month that has
+// come back into the live ledger. Entries at or before that month reload.
+window.acctAdminReopen=async function(month){
+  if(!_acctIsSuper())return;
+  const last=_acctLastClose();
+  if(!last||last.month!==month){showToast('Only the most recently closed month can be reopened.',true);return;}
+  if(!confirm(`Reopen ${_acctMonthLabel(month)}?\n\nIts closing checkpoint is deleted, its entries come back into the live ledger, and it can be edited, voided and closed again.`))return;
+  try{await fsDelete('acct_closes',month);}
+  catch(err){showToast('Reopen refused: '+(err.message||err),true);return;}
+  _acctLog('Accounts month reopened (admin)',_acctMonthLabel(month));
+  showToast(_acctMonthLabel(month)+' reopened — reloading the ledger…');
+  try{await loadAccountsData(true);}catch(_){}
+  _acctRerender();
+};
+// RESET — wipe the module. Entries, daily meter logs and month closes
+// always; vendors only when asked (they are the address book, and a reset
+// after a test run usually wants to keep them). Every document is removed
+// one by one over REST — js/store.js has no batch endpoint — with a live
+// count, and the pass stops at the first refusal so a rules problem cannot
+// half-empty the ledger silently. Confirmed by typing RESET.
+const _ACCT_RESET_COLS=['acct_entries','acct_meter_logs','acct_closes'];
+window.acctAdminResetPrompt=function(){
+  if(!_acctIsSuper())return;
+  const body=`
+    <div class="acct-alert urgent" style="cursor:default;margin-bottom:10px"><b>This removes every Store Accounts record.</b> All entries (purchases, payments, cash in, floats, adjustments), every daily consumable log and every month close — for good. Inventory (<code>store_items</code>, <code>store_transactions</code>) is not touched. There is no undo.</div>
+    <div class="field" style="margin-bottom:10px"><label><input type="checkbox" id="ar-vendors"> Also remove the vendors</label></div>
+    <div class="field"><label>Type <b>RESET</b> to confirm</label><input id="ar-word" autocomplete="off" autofocus></div>
+    <div id="ar-progress" style="font-size:13px;color:var(--muted);margin-top:8px;min-height:18px"></div>`;
+  _acctModal('Reset Store Accounts (admin)',body,`<button class="btn-outline" onclick="window.acctModalClose()">Cancel</button><button class="btn-primary" id="ar-go" style="width:auto;margin:0;padding:10px 18px;background:var(--accent-urgent)" onclick="window.acctAdminReset()">Reset everything</button>`,{sticky:true,width:560});
+};
+window.acctAdminReset=async function(){
+  if(!_acctIsSuper())return;
+  const word=(document.getElementById('ar-word')||{}).value||'';
+  if(word.trim()!=='RESET'){showToast('Type RESET to confirm.',true);return;}
+  const vendorsToo=!!(document.getElementById('ar-vendors')||{}).checked;
+  const cols=_ACCT_RESET_COLS.concat(vendorsToo?['acct_vendors']:[]);
+  const btn=document.getElementById('ar-go');if(btn)btn.disabled=true;
+  const prog=document.getElementById('ar-progress');const say=t=>{if(prog)prog.textContent=t;};
+  let done=0;
+  try{
+    for(const col of cols){
+      say(`Reading ${col}…`);
+      const docs=await _fsListAll(col);
+      for(const d of docs){await fsDelete(col,d._id);done++;say(`Removed ${done} record${done===1?'':'s'}… (${col})`);}
+    }
+  }catch(err){
+    say('');if(btn)btn.disabled=false;
+    showToast(`Reset stopped after ${done} record${done===1?'':'s'}: ${err.message||err}`,true);
+    _acctLog('Accounts reset (admin) — stopped',`${done} removed · ${err.message||err}`);
+    try{await loadAccountsData(true);}catch(_){}
+    _acctRerender();return;
+  }
+  _acctMeterCache={};
+  _acctLog('Accounts reset (admin)',`${done} record${done===1?'':'s'} removed · ${cols.join(', ')}`);
+  showToast(`Store Accounts reset — ${done} record${done===1?'':'s'} removed.`);
+  window.acctModalClose();
+  try{await loadAccountsData(true);}catch(_){}
+  _acctRerender();
 };
 window.acctExportPrompt=function(){
   const b=_acctPeriodBounds();

@@ -6138,12 +6138,62 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
   voided-bill check, the head repeat and the entry-detail button each fail
   one assertion by name. **Nobody has opened the PDF** — the engine test
   is a recording fake jsPDF, and the sandbox cannot sign in.
+- **Afnan's correction tools (23 Sept 2026): edit, delete, reopen, reset.**
+  Afnan: *"put a button in afnan view only to reset + edit + delete record
+  of things."* The module's rule stays **void-never-edit, nothing deleted**
+  for everyone else; these are ONE person's repair tools.
+  `_ACCT_SUPER_USERS=['afnan']` / `_acctIsSuper()` — **by USERNAME, never
+  the owner role** (Ammar is an owner and gets none of it; asserted), the
+  Sept 2026 grant shape — mirrored in `firestore.rules` **`isAcctSuper()`**
+  (`afnan@groovy.op`), so a UI leak is not a boundary leak. Every route
+  checks the gate first and is a no-op for anyone else (asserted for Ammar
+  and Raees: no write, no modal).
+  - **Edit (admin)…** on any entry's detail: `acctAdminEdit` → a form of
+    the plain fields (`_ACCT_ADMIN_FIELDS`: date, amount, vendor, person,
+    account, to-account, source, category, ref, note). `_acctAdminPatch`
+    is PURE and returns only what CHANGED — an untouched form writes
+    nothing; `month` follows `date` because the loader range-queries on
+    it; a new vendor carries its name; an expense's single line follows
+    its amount. The save is one full-document PATCH (**not `_acctPatch`**,
+    whose keys are held to the rules' `hasOnly` list by a test) stamped
+    `editedAt`/`editedBy`, logged with the field names. Effects are
+    DERIVED, so an edited amount re-balances every book with no stored
+    balance to fix. **Inventory is never touched** — a purchase that
+    posted stock keeps its `store_transactions` rows, and the form says so.
+    A future date is refused before any write.
+  - **Delete (admin)…**: a real DELETE, gone from memory, confirm says
+    "no undo" and, on a stock-posting purchase, that stock is not
+    reversed. A 403 keeps the entry and names the refusal.
+  - **Reopen <month>** on the review page's **Admin tools** card: deletes
+    the close checkpoint and reloads. **Only the LATEST close** — the
+    loader reads from the month after the last close, so reopening an
+    earlier one would leave a later checkpoint counting a month that had
+    come back live.
+  - **Reset Store Accounts…**: typed `RESET`, then every document in
+    `_ACCT_RESET_COLS` (`acct_entries`, `acct_meter_logs`, `acct_closes`)
+    is removed one DELETE at a time with a live count; vendors only when
+    ticked (they are the address book). **The pass stops at the first
+    refusal** and says how far it got, so a rules problem cannot
+    half-empty the ledger silently. Inventory untouched.
+  - Rules: `acct_entries` update is `isAcctSuper() || (isStoreAccounts()
+    && hasOnly[...])`, delete `isAcctSuper()`; `acct_closes` and
+    `acct_vendors` delete `isAcctSuper()`. The old test "entries can never
+    be deleted" was **toothless** — its lazy `[\s\S]*?` ran on to whichever
+    later block carried `allow delete: if false` — and is block-scoped now.
+  - Verified by reverting: the gate made role-wide (3 fail naming Ammar),
+    the rule's super clause dropped, the month not following the date (3),
+    the typed word ignored (deletes on a wrong word). `smoke-layout` gained
+    `store accounts — admin tools, edit and reset` (the whole review page,
+    never measured before, plus both modals) — fails 6 jobs with the
+    card's ink set to `--surface`. **Nobody has pressed any of it on a real
+    screen** — the sandbox cannot sign in.
 - **`firestore.rules` changed** (`acct_*` blocks + `isStoreAccounts()`; the
   `store_cash_*` blocks became owner-write) — **published by Afnan, 23 Sept
-  2026**; see "Firestore rules" below.
+  2026**; see "Firestore rules" below. **Changed AGAIN the same evening
+  (`isAcctSuper()`) — republish outstanding**, see below.
 
 **Nobody has recorded a purchase on a real screen** — the sandbox cannot
-sign in. 331 assertions hold the logic; the layout probe holds the shape.
+sign in. 385 assertions hold the logic; the layout probe holds the shape.
 
 ## The Sales Team ▸ Marketing (Sept 2026)
 
@@ -7853,6 +7903,11 @@ etc.) live in `js/hrm.js`; the printing/role helpers (`isObserver`,
   admin: owners. `_canViewCash()` is kept as an alias so `js/shared.js`'s
   four nav sites did not change name. Mirror: `firestore.rules`
   `isStoreAccounts()`.
+- `_acctIsSuper()` (`js/store-accounts.js`, `_ACCT_SUPER_USERS`) → **afnan
+  by username** — edit an entry in place, delete one, reopen the last
+  closed month, reset the module. Ammar (same `owner` role) gets none of
+  it. Mirror: `firestore.rules` `isAcctSuper()`. See "Afnan's correction
+  tools" under Store Accounts.
 - **Inventory Intel nav item** (`js/shared.js`, `buildNav()` +
   `openMoreSheet()`) → owners, **+ mustafa by username** (Sept 2026 grant,
   he's Ecom Manager). Nav-only, same shape as the Notes staged-rollout gate —
@@ -8199,6 +8254,16 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 `pattern_notices`, `isPatternCutting()`, `settings`), Mood Boards Trash
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
+
+**REPUBLISH OUTSTANDING (23 Sept 2026, evening).** The repo file is at
+`md5 8b9db4a06a677f3bd022044b75ed5145`: a new `isAcctSuper()`
+(`afnan@groovy.op` alone) and, gated on it, `acct_entries` update without
+the field allow-list plus delete, `acct_closes` delete and `acct_vendors`
+delete — the Store Accounts correction tools. Until the Console has it,
+**Edit (admin) is refused by the rules** (the hasOnly clause still holds),
+**Delete (admin), Reopen and Reset are refused outright**, and the app
+says "refused" rather than failing silently. Nothing else in the file
+moved. This supersedes the afternoon entry below.
 
 **No republish outstanding as of 23 Sept 2026 (afternoon).** Afnan
 confirmed ("published") from the repo file at

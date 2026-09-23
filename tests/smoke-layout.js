@@ -318,6 +318,23 @@ const FRAGMENTS={
     const form=modal(body.replace('<div id="acct-lines"></div>','<div id="acct-lines">'+lines+'</div>'))+modal(expBody);
     return Promise.resolve(tiles+form);
   },
+  // Afnan's correction tools: the Admin tools card on the review page (the
+  // whole page, which had never been measured), the admin edit modal and
+  // the reset modal. The fixture's session is made afnan by name — the card
+  // and the buttons are gated on the username, not the owner role.
+  'store accounts — admin tools, edit and reset':()=>{
+    const {app,seed}=_acctFixture();
+    seed(app);
+    app.run("session.u='afnan';session.role='owner';currentPage='acct-review';acctCloses=[{_id:'2026-08',month:'2026-08',cashBook:12000,cashCounted:12000,variance:0,closedByName:'Afnan'}];_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    const review=app.run("_acctReviewPage()");
+    const modal=(t,b,f)=>'<div class="acct-modal" style="position:static;max-width:640px;margin-top:14px"><div class="acct-modal-head"><span>'+t+'</span><button class="acct-x">×</button></div><div class="acct-modal-body">'+b+'</div><div class="acct-modal-foot">'+f+'</div></div>';
+    app.run("window.acctAdminEdit(acctEntries.find(e=>e.type==='purchase')._id)");
+    const edit=app.run("modal=window.__cap;JSON.stringify(modal)");
+    app.run("window.acctAdminResetPrompt()");
+    const reset=app.run("JSON.stringify(window.__cap)");
+    const e=JSON.parse(edit),r=JSON.parse(reset);
+    return Promise.resolve(review+modal(e.t,e.b,e.f)+modal(r.t,r.b,r.f));
+  },
   'store — inventory category chips':()=>{
     const app=loadApp({files:['js/store.js'],globals:{
       allItems:[],_invFilterCat:'all',_invSearchQ:'',_invSort:'category',

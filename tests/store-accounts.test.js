@@ -809,7 +809,10 @@ module.exports=async function(){
     s.eq('_acctCanView: a manager',app({session:MUSTAFA}).run('_acctCanView()'),true);
     for(const col of ['acct_entries','acct_vendors','acct_meter_logs','acct_settings','acct_closes'])
       s.ok(col+' has a match block',new RegExp('match /'+col+'/\\{doc\\}').test(rules));
-    s.ok('entries can never be deleted',/match \/acct_entries\/\{doc\}[\s\S]*?allow delete: if false;/.test(rules));
+    // scoped to the block — a lazy [\s\S]*? used to run on to whichever later
+    // block carried the phrase, and passed whatever this one said
+    const entriesBlock=(/match \/acct_entries\/\{doc\} \{([\s\S]*?)\n    \}/.exec(rules)||[])[1]||'';
+    s.ok('entries are deleted by isAcctSuper() alone — never Raees, never the other owner',/allow delete: if isAcctSuper\(\);/.test(entriesBlock)&&!/allow delete: if (false|isOwner\(\)|isStoreAccounts\(\))/.test(entriesBlock));
     // the category write: the fields the JS masks == the fields the rules allow Raees
     const jsCat=/const _ACCT_CAT_FIELDS=\[([^\]]*)\]/.exec(src);
     const jsFields=(jsCat?jsCat[1]:'').split(',').map(x=>x.trim().replace(/'/g,'')).sort();
@@ -860,6 +863,128 @@ module.exports=async function(){
     const m=app({session:MUSTAFA});m.seed([],[]);
     m.run("acctRenderPage('acct-review',document.getElementById('main-content'))");
     s.ok('a manager gets no review page',/Owners only/.test(m.el('main-content').innerHTML));
+  }
+
+  // Afnan: "put a button in afnan view only to reset + edit + delete record
+  // of things." Edit-in-place, hard delete, reopen a closed month and a
+  // full reset — for ONE username, mirrored in firestore.rules isAcctSuper().
+  s.section('admin tools — Afnan only: edit, delete, reopen, reset');
+  {
+    const AMMAR={uid:'u2',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'};
+    s.eq('afnan is super',app({session:OWNER}).run('_acctIsSuper()'),true);
+    s.eq('the other owner is NOT — it is a username, not the owner role',app({session:AMMAR}).run('_acctIsSuper()'),false);
+    s.eq('raees is not',app({session:RAEES}).run('_acctIsSuper()'),false);
+    s.eq('a manager is not',app({session:MUSTAFA}).run('_acctIsSuper()'),false);
+    s.eq('the list is exactly afnan',app().run('JSON.stringify(_ACCT_SUPER_USERS)'),'["afnan"]');
+
+    // the buttons exist for afnan and for nobody else
+    const seedOne=a=>a.seed([E('purchase',{_id:'p1',vendorId:'A',vendorName:'A',source:'credit',amount:5000,category:'Store purchase',lines:[{itemCode:'',desc:'thread',qty:1,unit:'',rate:5000,total:5000}]})],[V('A'),V('B')]);
+    const foot=(sess)=>{const a=app({session:sess});seedOne(a);a.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");a.run("window.acctOpenEntry('p1')");return a.run('window.__cap.f')||'';};
+    s.ok('afnan\'s entry detail offers Edit (admin) and Delete (admin)',/acctAdminEdit\('p1'\)/.test(foot(OWNER))&&/acctAdminDelete\('p1'\)/.test(foot(OWNER)));
+    s.ok('ammar\'s does not',!/acctAdmin/.test(foot(AMMAR)));
+    s.ok('raees\'s does not',!/acctAdmin/.test(foot(RAEES)));
+    const review=sess=>{const a=app({session:sess});a.seed([],[],{closes:[{_id:LAST,month:LAST,cashBook:0,cashCounted:0,variance:0}]});a.run("currentPage='acct-review';acctRenderPage('acct-review',document.getElementById('main-content'))");return a.el('main-content').innerHTML;};
+    s.ok('the review page carries the Admin tools card for afnan, with Reopen and Reset',/Admin tools/.test(review(OWNER))&&new RegExp("acctAdminReopen\\('"+LAST+"'\\)").test(review(OWNER))&&/acctAdminResetPrompt/.test(review(OWNER)));
+    s.ok('and not for ammar',!/Admin tools|acctAdmin/.test(review(AMMAR)));
+
+    // the patch builder is pure and writes only what changed
+    const a=app({session:OWNER});seedOne(a);
+    const base={date:TODAY,amount:'5000',vendorId:'A',person:'',account:'',toAccount:'',source:'credit',category:'Store purchase',ref:'',note:''};
+    s.eq('an untouched form changes nothing',a.run(`JSON.stringify(_acctAdminPatch(_acctById('p1'),${J(base)}))`),'{}');
+    const d=daysAgo(40);
+    const p1=JSON.parse(a.run(`JSON.stringify(_acctAdminPatch(_acctById('p1'),${J(Object.assign({},base,{date:d,amount:'6500',vendorId:'B',note:'fixed'}))}))`));
+    s.eq('a new date carries its month',p1.month,d.slice(0,7));
+    s.eq('the amount',p1.amount,6500);
+    s.eq('a new vendor carries its name',p1.vendorName,'B');
+    s.eq('the note',p1.note,'fixed');
+    s.ok('nothing else is in the patch',Object.keys(p1).sort().join(',')==='amount,date,month,note,vendorId,vendorName',Object.keys(p1).join(','));
+    a.run("acctEntries.push("+J(E('purchase',{_id:'x1',expense:true,vendorId:'A',vendorName:'A',source:'cash',account:'cash',amount:15000,lines:[{itemCode:'',desc:'paint job',qty:1,unit:'',rate:15000,total:15000}]}))+")");
+    const px=JSON.parse(a.run(`JSON.stringify(_acctAdminPatch(_acctById('x1'),${J({date:TODAY,amount:'12000',vendorId:'A',source:'cash',account:'cash'})}))`));
+    s.ok('an expense\'s single line follows its amount (rate = total = amount)',px.lines&&px.lines.length===1&&px.lines[0].rate===12000&&px.lines[0].total===12000&&px.lines[0].desc==='paint job');
+
+    // the save goes over REST as a full PATCH and re-sorts the ledger
+    a.run("window.acctAdminEdit('p1')");
+    a.el('ae-date').value=d;a.el('ae-amount').value='6500';a.el('ae-vendor').value='B';a.el('ae-person').value='';a.el('ae-account').value='';a.el('ae-to').value='';a.el('ae-source').value='credit';a.el('ae-category').value='Store purchase';a.el('ae-ref').value='';a.el('ae-note').value='fixed';
+    const before=a.state.fetches.length;
+    await a.run("window.acctAdminSave('p1')");
+    const w=a.state.fetches.slice(before).find(f=>/\/acct_entries\/p1$/.test(f.url)&&f.init.method==='PATCH');
+    s.ok('the edit is one PATCH of the whole document to acct_entries/p1',!!w);
+    s.ok('it carries the new amount, date and vendor',w&&/6500/.test(w.init.body)&&w.init.body.includes(d)&&/"B"/.test(w.init.body));
+    s.ok('and stamps who edited it',w&&/editedBy/.test(w.init.body)&&/afnan/.test(w.init.body));
+    s.eq('the entry in memory is updated',a.run("_acctById('p1').amount+'|'+_acctById('p1').vendorName+'|'+_acctById('p1').month"),'6500|B|'+d.slice(0,7));
+    s.ok('the activity log names the fields that moved',a.state.activity.some(x=>/edited \(admin\)/.test(x.action)&&/amount/.test(x.detail)&&/vendorId/.test(x.detail)));
+    a.run("window.acctAdminEdit('p1')");a.el('ae-date').value=daysAgo(-3);a.el('ae-amount').value='6500';a.el('ae-vendor').value='B';a.el('ae-source').value='credit';a.el('ae-category').value='Store purchase';a.el('ae-note').value='fixed';
+    const b2=a.state.fetches.length;await a.run("window.acctAdminSave('p1')");
+    s.eq('a future date is refused before any write',a.state.fetches.length-b2,0);
+    s.ok('… and says so',a.state.toasts.some(t=>/future/.test(t.msg||t)));
+
+    // delete: a real DELETE, gone from memory, refused cleanly on 403
+    const b3=a.state.fetches.length;
+    await a.run("window.acctAdminDelete('x1')");
+    s.ok('delete is a DELETE to acct_entries/x1',a.state.fetches.slice(b3).some(f=>/\/acct_entries\/x1$/.test(f.url)&&f.init.method==='DELETE'));
+    s.eq('the entry is gone from memory',a.run("_acctById('x1')"),null);
+    s.ok('a confirm was asked, and it says there is no undo',a.state.confirms.some(c=>/no undo/i.test(c)));
+    s.ok('logged as an admin delete',a.state.activity.some(x=>/deleted \(admin\)/.test(x.action)));
+    const den=app({session:OWNER,globals:{fetch:async(url,init)=>{den.state.fetches.push({url:String(url),init:init||{}});return (init&&init.method==='DELETE')?{ok:false,status:403,json:async()=>({error:{message:'Missing or insufficient permissions.'}})}:{ok:true,status:200,json:async()=>({documents:[]})};}}});
+    seedOne(den);
+    await den.run("window.acctAdminDelete('p1')");
+    s.ok('a refused delete keeps the entry',!!den.run("_acctById('p1')"));
+    s.ok('and names the refusal',den.state.toasts.some(t=>/Delete refused/.test(t.msg||t)));
+
+    // nobody else can reach any of it, whatever the DOM says
+    for(const [name,sess] of [['ammar',AMMAR],['raees',RAEES]]){
+      const n=app({session:sess});seedOne(n);n.seed([E('purchase',{_id:'p1',amount:100})],[],{closes:[{_id:LAST,month:LAST}]});
+      const bn=n.state.fetches.length;
+      await n.run(`window.acctAdminDelete('p1');window.acctAdminSave('p1');window.acctAdminReopen('${LAST}');window.acctAdminReset();window.acctAdminEdit('p1');window.acctAdminResetPrompt()`);
+      s.eq(name+': every admin route is a no-op — no write, no modal',n.state.fetches.length-bn,0);
+      s.ok(name+': the entry is still there',!!n.run("_acctById('p1')"));
+    }
+
+    // reopen: only the LATEST close, by deleting its checkpoint
+    const r=app({session:OWNER});r.seed([],[],{closes:[{_id:monthAdd(LAST,-1),month:monthAdd(LAST,-1)},{_id:LAST,month:LAST}]});
+    const br=r.state.fetches.length;
+    await r.run(`window.acctAdminReopen('${monthAdd(LAST,-1)}')`);
+    s.eq('an earlier close cannot be reopened',r.state.fetches.slice(br).filter(f=>f.init.method==='DELETE').length,0);
+    s.ok('and it says only the latest can',r.state.toasts.some(t=>/most recently closed/.test(t.msg||t)));
+    await r.run(`window.acctAdminReopen('${LAST}')`);
+    s.ok('the latest close is DELETEd from acct_closes',r.state.fetches.slice(br).some(f=>new RegExp('/acct_closes/'+LAST+'$').test(f.url)&&f.init.method==='DELETE'));
+    s.ok('and the ledger is reloaded (the loader re-reads acct_entries)',r.state.fetches.slice(br).some(f=>/acct_entries/.test(f.url)&&f.init.method!=='DELETE'));
+
+    // reset: typed RESET, every document in the three collections, vendors only when ticked, stops at a refusal
+    const docs={acct_entries:['e1','e2','e3'],acct_meter_logs:['g_1','g_2'],acct_closes:[LAST],acct_vendors:['A']};
+    const fsDocs=(col)=>({documents:docs[col].map(id=>({name:'projects/x/databases/(default)/documents/'+col+'/'+id,fields:{}}))});
+    const mk=(sess,refuseAt)=>{const t=app({session:sess,globals:{fetch:async(url,init)=>{
+      t.state.fetches.push({url:String(url),init:init||{}});const u=String(url);
+      if(init&&init.method==='DELETE'){t.deleted=(t.deleted||0)+1;if(refuseAt&&t.deleted>=refuseAt)return{ok:false,status:403,json:async()=>({error:{message:'Missing or insufficient permissions.'}})};return{ok:true,status:200,json:async()=>({})};}
+      const col=Object.keys(docs).find(c=>new RegExp('/'+c+'(\\?|$)').test(u));
+      return{ok:true,status:200,json:async()=>col?fsDocs(col):{documents:[]}};}}});t.seed([],[]);return t;};
+    const t1=mk(OWNER);t1.run("window.acctAdminResetPrompt()");
+    t1.el('ar-word').value='reset';await t1.run("window.acctAdminReset()");
+    s.eq('a wrong word deletes nothing',t1.state.fetches.filter(f=>f.init.method==='DELETE').length,0);
+    t1.el('ar-word').value='RESET';t1.el('ar-vendors').checked=false;await t1.run("window.acctAdminReset()");
+    const dels=t1.state.fetches.filter(f=>f.init.method==='DELETE').map(f=>f.url.replace(/.*documents\//,''));
+    s.eq('every entry, meter log and close is removed, one DELETE each',dels.filter(u=>!/acct_vendors/.test(u)).sort().join(','),['acct_closes/'+LAST,'acct_entries/e1','acct_entries/e2','acct_entries/e3','acct_meter_logs/g_1','acct_meter_logs/g_2'].join(','));
+    s.eq('vendors are kept unless ticked',dels.filter(u=>/acct_vendors/.test(u)).length,0);
+    s.ok('the toast says how many went',t1.state.toasts.some(t=>/6 records removed/.test(t.msg||t)));
+    s.ok('logged',t1.state.activity.some(x=>x.action==='Accounts reset (admin)'&&/6 records/.test(x.detail)));
+    const t2=mk(OWNER);t2.run("window.acctAdminResetPrompt()");t2.el('ar-word').value='RESET';t2.el('ar-vendors').checked=true;await t2.run("window.acctAdminReset()");
+    s.eq('ticked, the vendors go too',t2.state.fetches.filter(f=>f.init.method==='DELETE'&&/acct_vendors\/A$/.test(f.url)).length,1);
+    const t3=mk(OWNER,3);t3.run("window.acctAdminResetPrompt()");t3.el('ar-word').value='RESET';await t3.run("window.acctAdminReset()");
+    s.eq('a refusal stops the pass at that document',t3.state.fetches.filter(f=>f.init.method==='DELETE').length,3);
+    s.ok('and says how far it got',t3.state.toasts.some(t=>/Reset stopped after 2 records/.test(t.msg||t)));
+
+    // firestore.rules mirrors all of it
+    const rules=read('firestore.rules');
+    const src=read('js/store-accounts.js');
+    s.ok('isAcctSuper() names afnan alone',/function isAcctSuper\(\) \{ return signedIn\(\) && userEmail\(\) == 'afnan@groovy\.op'; \}/.test(rules));
+    s.ok('… and never isOwner()',!/function isAcctSuper\(\)[^\n]*isOwner/.test(rules));
+    const entries=/match \/acct_entries\/\{doc\} \{([\s\S]*?)\n    \}/.exec(rules);
+    s.ok('acct_entries: delete is isAcctSuper() only',entries&&/allow delete: if isAcctSuper\(\);/.test(entries[1]));
+    s.ok('acct_entries: the admin edit bypasses the hasOnly list, everyone else is still held to it',entries&&/allow update: if isAcctSuper\(\) \|\| \(isStoreAccounts\(\)\s*&& request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)\.hasOnly\(/.test(entries[1]));
+    s.ok('acct_closes: delete is isAcctSuper(), update still never',/match \/acct_closes\/\{doc\}[^\n]*allow update: if false; allow delete: if isAcctSuper\(\);/.test(rules));
+    s.ok('acct_vendors: delete is isAcctSuper()',/match \/acct_vendors\/\{doc\}[^\n]*allow delete: if isAcctSuper\(\);/.test(rules));
+    s.ok('the JS list and the rule name the same person',/const _ACCT_SUPER_USERS=\['afnan'\]/.test(src));
+    s.ok('the reset removes exactly entries, meter logs and closes by default',/const _ACCT_RESET_COLS=\['acct_entries','acct_meter_logs','acct_closes'\]/.test(src));
   }
 
   return s;

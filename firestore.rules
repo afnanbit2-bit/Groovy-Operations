@@ -41,6 +41,11 @@ service cloud.firestore {
     // Store Accounts (Sept 2026): Raees enters, owners enter and administer.
     // Mirror in js/store-accounts.js _acctCanEntry().
     function isStoreAccounts() { return isOwner() || (signedIn() && userEmail() == 'raees@groovy.op'); }
+    // Store Accounts correction tools (23 Sept 2026): Afnan ALONE may edit an
+    // entry in place, delete one, reopen a closed month or reset the module.
+    // By person, never isOwner() — Ammar keeps the void/review workflow only.
+    // Mirror in js/store-accounts.js _ACCT_SUPER_USERS / _acctIsSuper().
+    function isAcctSuper() { return signedIn() && userEmail() == 'afnan@groovy.op'; }
 
     // ── Operational data (POs, gate passes, returns, fabric in) ──
     match /pos/{doc}                  { allow read, write: if signedIn(); }
@@ -119,15 +124,17 @@ service cloud.firestore {
     // Mirror: js/store-accounts.js _acctCanEntry(). The ledger is APPEND-ONLY:
     // an entry is created, and afterwards only its control fields may change
     // (void / review / confirm / stock posting / the vendor's bill figure) —
-    // never its amount, date, vendor or lines. Nothing is ever deleted.
+    // never its amount, date, vendor or lines. Nothing is ever deleted —
+    // except by isAcctSuper() (Afnan), whose admin edit rewrites any field
+    // and whose admin delete and reset remove documents outright.
     match /acct_entries/{doc} {
       allow read: if signedIn();
       allow create: if isStoreAccounts();
-      allow update: if isStoreAccounts()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','voidedAt','voidedBy','voidReason','needsReview','reviewFlags','reviewedAt','reviewedBy','confirmedAt','confirmedBy','stockPosted','stockError','stockTx','vendorBillAmount']);
-      allow delete: if false;
+      allow update: if isAcctSuper() || (isStoreAccounts()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','voidedAt','voidedBy','voidReason','needsReview','reviewFlags','reviewedAt','reviewedBy','confirmedAt','confirmedBy','stockPosted','stockError','stockTx','vendorBillAmount']));
+      allow delete: if isAcctSuper();
     }
-    match /acct_vendors/{doc}     { allow read: if signedIn(); allow create, update: if isStoreAccounts(); allow delete: if false; }
+    match /acct_vendors/{doc}     { allow read: if signedIn(); allow create, update: if isStoreAccounts(); allow delete: if isAcctSuper(); }
     match /acct_meter_logs/{doc}  { allow read: if signedIn(); allow write: if isStoreAccounts(); }
     // Owners set everything. Raees may add a CATEGORY from the purchase form
     // and nothing else — the review limits on his own entries stay owner-only.
@@ -138,7 +145,7 @@ service cloud.firestore {
       allow update: if isOwner() || (isStoreAccounts() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['categories','updatedAt','updatedBy']));
       allow delete: if isOwner();
     }
-    match /acct_closes/{doc}      { allow read: if signedIn(); allow create: if isOwner(); allow update, delete: if false; }
+    match /acct_closes/{doc}      { allow read: if signedIn(); allow create: if isOwner(); allow update: if false; allow delete: if isAcctSuper(); }
     // Legacy Store Cash Ledger — read-only history. Kept so the owner-only
     // one-time import in js/store-accounts.js can read it.
     match /store_cash_ledger/{doc}    { allow read: if signedIn(); allow write: if isOwner(); }
