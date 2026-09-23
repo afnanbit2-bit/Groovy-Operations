@@ -6188,7 +6188,11 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
     document goes LAST**, so a refusal part-way leaves the vendor intact
     and the toast says how many logs went. Its `_acctMeterCache` keys are
     dropped, the other vendors' kept. No rules change — `acct_vendors`
-    delete was already `isAcctSuper()` and is published.
+    delete was already `isAcctSuper()` and is published. **CONFIRMED
+    WORKING ON THE LIVE SITE by Afnan, 23 Sept 2026** (*"vendor deleted,
+    works fine"*) — the only piece of the correction tools anyone has
+    pressed on a real screen; the rules publish, the gate and the DELETE
+    all hold end to end. Do not re-open it on a hunch.
   - Rules: `acct_entries` update is `isAcctSuper() || (isStoreAccounts()
     && hasOnly[...])`, delete `isAcctSuper()`; `acct_closes` and
     `acct_vendors` delete `isAcctSuper()`. The old test "entries can never
