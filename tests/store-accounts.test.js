@@ -438,7 +438,9 @@ module.exports=async function(){
     const cash=V('c',{terms:{mode:'cash'}});
     s.eq('terms label: cash',a.run(`_acctTermsLabel(${J(cash)})`),'Cash on delivery');
     s.eq('terms label: credit with limit',a.run(`_acctTermsLabel(${J(V('x',{terms:{mode:'credit',creditDays:15,creditLimit:50000}}))})`),'Credit · 15 days · limit ₨50,000');
-    s.eq('terms label: weekly',a.run(`_acctTermsLabel(${J(V('x',{terms:{mode:'weekly',billWeekday:1,expectedAmount:2500}}))})`),'Weekly · every Monday · ~₨2,500');
+    s.eq('terms label: weekly, two days',a.run(`_acctTermsLabel(${J(V('x',{terms:{mode:'weekly',billWeekdays:[3,6],expectedAmount:2500}}))})`),'Weekly · every Wednesday & Saturday · ~₨2,500');
+    s.eq('terms label: a legacy single billWeekday still reads',a.run(`_acctTermsLabel(${J(V('x',{terms:{mode:'weekly',billWeekday:1}}))})`),'Weekly · every Monday');
+    s.eq('terms label: weekly with no days named = the payable days',a.run(`_acctTermsLabel(${J(V('x',{terms:{mode:'weekly'}}))})`),'Weekly · every Wednesday & Saturday');
   }
 
   s.section('a weekly account (Afnan: "make an option of weekly billing as well")');
@@ -451,10 +453,12 @@ module.exports=async function(){
     await a.run('window.acctWzNav(1)');
     s.eq('a utility still defaults to monthly',a.run('_acctWizard.data.terms.mode'),'monthly');
     a.run("window.acctWzSet('mode','weekly')");
-    s.ok('picking weekly swaps the fields to a weekday select',/<select id="wz-weekday">[\s\S]*<option value="5"[^>]*>Friday</.test(a.el('wz-terms').innerHTML));
-    a.el('wz-weekday').value='5';a.el('wz-expected').value='2500';
+    const wz=a.el('wz-terms').innerHTML;
+    s.ok('picking weekly swaps the fields to seven weekday boxes',/id="wz-wd-0"/.test(wz)&&/id="wz-wd-6"/.test(wz));
+    s.ok('with the payable days (Wednesday, Saturday) ticked by default',/id="wz-wd-3" checked/.test(wz)&&/id="wz-wd-6" checked/.test(wz)&&!/id="wz-wd-5" checked/.test(wz));
+    a.el('wz-wd-5').checked=true;a.el('wz-expected').value='2500';
     await a.run('window.acctWzNav(1)');
-    s.eq('the weekday was captured',a.run('_acctWizard.data.terms.billWeekday'),5);
+    s.eq('the ticked days were captured',J(a.run('_acctWizard.data.terms.billWeekdays')),J([5]));
     s.ok('the summary names the day',/remind you each Friday/.test(a.el('main-content').innerHTML)||true);
     a.el('wz-person').value='';a.el('wz-phone').value='';a.el('wz-address').value='';a.el('wz-supplies').value='Internet';a.el('wz-notes').value='';
     await a.run('window.acctWzNav(1)');
@@ -462,14 +466,14 @@ module.exports=async function(){
     await a.run('window.acctWzNav(1)');await a.run('window.acctWzNav(1)');
     const v=a.run('acctVendors[0]');
     s.ok('the vendor is saved',!!v);
-    s.eq('mode weekly, weekday 5, amount kept',J([v.terms.mode,v.terms.billWeekday,v.terms.expectedAmount]),J(['weekly',5,2500]));
+    s.eq('mode weekly, Friday, amount kept',J([v.terms.mode,v.terms.billWeekdays,v.terms.expectedAmount]),J(['weekly',[5],2500]));
     s.eq('and no monthly bill day',v.terms.billDay,0);
     s.eq('a weekly vendor is overdue after 7 days',a.run(`_acctVendorAging('${v._id}').creditDays`),7);
     // a rejected weekday
     const b=app({session:RAEES});b.seed([],[]);b.run("window.acctVendorWizard(null,'utility')");
     b.el('wz-name').value='X';await b.run('window.acctWzNav(1)');await b.run('window.acctWzNav(1)');b.run("window.acctWzSet('mode','weekly')");
-    b.el('wz-weekday').value='9';await b.run('window.acctWzNav(1)');
-    s.eq('a weekday outside 0–6 is refused on step 3',b.run('_acctWizard.step'),2);
+    await b.run('window.acctWzNav(1)');
+    s.eq('no day ticked is refused on step 3',b.run('_acctWizard.step'),2);
   }
   {
     // the ledger alert: due on the latest occurrence of the weekday
@@ -491,6 +495,18 @@ module.exports=async function(){
     s.ok('one from before it does not',/weekly bill not recorded yet for/.test(c.el('main-content').innerHTML));
     s.eq('_acctLastWeekday walks back to the right day',c.run(`_acctLastWeekday('${TODAY}',${wdTomorrow})`),daysAgo(6));
     s.eq('and is today when today is the day',c.run(`_acctLastWeekday('${TODAY}',${wdToday})`),TODAY);
+    // two bill days: due is the most recent of either
+    c.seed([E('purchase',{vendorId:'w',vendorName:'Nayatel',source:'credit',amount:2500,date:daysAgo(3)})],[V('w',{name:'Nayatel',kind:'utility',terms:{mode:'weekly',billWeekdays:[wdTomorrow,new Date(daysAgo(2)+'T00:00:00').getDay()]}})]);
+    c.run("acctRenderPage('acct-ledger',document.getElementById('main-content'))");
+    s.ok('two days: the later one (2 days ago) is due, and a purchase 3 days ago is before it',/Nayatel<\/b> — weekly bill not recorded yet for/.test(c.el('main-content').innerHTML));
+    // and the due DATE is the later occurrence even when its weekday number
+    // is the larger one — pick a pair where the older day sorts first
+    {const wdOf=d=>new Date(d+'T00:00:00').getDay();let pair=null;
+      for(let kNew=1;kNew<=5&&!pair;kNew++)for(let kOld=kNew+1;kOld<=6&&!pair;kOld++)if(wdOf(daysAgo(kOld))<wdOf(daysAgo(kNew)))pair=[kNew,kOld];
+      c.seed([],[V('w',{name:'Nayatel',kind:'utility',terms:{mode:'weekly',billWeekdays:[wdOf(daysAgo(pair[0])),wdOf(daysAgo(pair[1]))]}})]);
+      c.run("acctRenderPage('acct-ledger',document.getElementById('main-content'))");
+      const due=c.run(`_acctDateLabel('${daysAgo(pair[0])}')`);
+      s.ok('the due date printed is the LATEST of the two days, not the first by number',c.el('main-content').innerHTML.includes('weekly bill not recorded yet for '+due),'pair '+pair.join('/'));}
     // the purchase form defaults a weekly vendor to credit, like monthly
     c.run("window.acctForm('purchase',{vendorId:'w'})");
     s.ok('purchase form: a weekly vendor defaults to on credit',/id="f-source"[^>]*value="credit"/.test(c.bodyHtml('acct-modal')),c.bodyHtml('acct-modal').match(/id="f-source"[^>]*/)?.[0]);
@@ -591,6 +607,49 @@ module.exports=async function(){
     s.ok('the refusal is said out loud, naming the reason',a.state.toasts.some(t=>/could not be saved.*insufficient/i.test(String(t))));
     s.ok('and the picker still lists it (derived from memory, not the write)',a.run('_acctCategories()').includes('Dyeing'));
   }
+  s.section('payable days are Wednesday and Saturday');
+  {
+    const a=app({session:OWNER});a.seed([],[]);
+    s.eq('the default payable days',J(a.run('_acctPayDays()')),J([3,6]));
+    s.eq('a settings list wins, sorted and cleaned',J(a.run("acctSettings={_id:'main',payDays:[6,1,9]};_acctPayDays()")),J([1,6]));
+    s.eq('an empty list falls back to the default',J(a.run("acctSettings={_id:'main',payDays:[]};_acctPayDays()")),J([3,6]));
+    a.run("acctSettings=null");
+    // next pay day walks forward from any day of the week
+    for(let i=0;i<7;i++){const d=daysAgo(-i);const wd=new Date(d+'T00:00:00').getDay();const exp=[3,6].includes(wd)?d:null;
+      const got=a.run(`_acctNextPayDay('${d}')`);const gwd=new Date(got+'T00:00:00').getDay();
+      s.ok('next pay day from '+d+' is on a Wed/Sat, not before it',(exp?got===exp:true)&&[3,6].includes(gwd)&&got>=d,got);}
+    const wdToday=new Date(TODAY+'T00:00:00').getDay();
+    // the ledger says so on a pay day, with what is owed
+    const b=app({session:OWNER});
+    b.seed([E('purchase',{vendorId:'x',vendorName:'X',source:'credit',amount:1200}),E('purchase',{vendorId:'y',vendorName:'Y',source:'credit',amount:800,date:daysAgo(45)})],[V('x'),V('y')],{settings:{_id:'main',payDays:[wdToday]}});
+    b.run("currentPage='acct-ledger';acctRenderPage('acct-ledger',document.getElementById('main-content'))");
+    let led=b.el('main-content').innerHTML;
+    s.ok('pay day today → the alert names the total and the vendor count',/<b>Pay day<\/b> \([A-Z][a-z]+\) — ₨2,000 owed to 2 vendors/.test(led),led.match(/Pay day[^<]*/)?.[0]);
+    s.ok('and the overdue part of it',/₨800 overdue/.test(led));
+    s.ok('the vendors tile says pay day is today',/pay day today/.test(led));
+    b.seed([],[V('x')],{settings:{_id:'main',payDays:[wdToday]}});
+    b.run("acctRenderPage('acct-ledger',document.getElementById('main-content'))");
+    s.ok('nothing owed → says so rather than a zero',/Pay day<\/b> \([A-Z][a-z]+\) — nothing owed/.test(b.el('main-content').innerHTML));
+    b.seed([E('purchase',{vendorId:'x',vendorName:'X',source:'credit',amount:1200})],[V('x')],{settings:{_id:'main',payDays:[(wdToday+2)%7]}});
+    b.run("acctRenderPage('acct-ledger',document.getElementById('main-content'))");
+    led=b.el('main-content').innerHTML;
+    s.ok('not a pay day → no pay-day alert',!/Pay day<\/b>/.test(led));
+    s.ok('but the tile names the next one',new RegExp('pay day '+['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][(wdToday+2)%7]).test(led));
+    b.run("_acctVendorId='x';currentPage='acct-vendor';acctRenderPage('acct-vendor',document.getElementById('main-content'))");
+    s.ok('the vendor page names the next pay day',/next pay day [A-Z][a-z]+day \d\d/.test(b.el('main-content').innerHTML),(b.el('main-content').innerHTML.match(/next pay day[^<]{0,40}/)||[''])[0]);
+    // settings save reads the boxes; owners only
+    const c=app({session:OWNER});c.seed([],[]);c.run("currentPage='acct-review';acctRenderPage('acct-review',document.getElementById('main-content'))");
+    s.ok('the settings card offers the seven boxes with Wed and Sat ticked',/id="acct-s-pd-3" checked/.test(c.el('main-content').innerHTML)&&/id="acct-s-pd-6" checked/.test(c.el('main-content').innerHTML));
+    c.el('acct-s-pd-1').checked=true;c.el('acct-s-pd-4').checked=true;c.el('acct-s-cats').value='A, B';c.el('acct-s-runners').value='Noman';
+    await c.run('window.acctSaveSettings()');
+    s.eq('saved payDays = the ticked boxes',J(c.run('acctSettings.payDays')),J([1,4]));
+    const w=c.state.fetches.filter(f=>/acct_settings\/main/.test(f.url));
+    s.ok('and the write carries them',w.length===1&&/payDays/.test(w[0].init.body));
+    c.el('acct-s-pd-1').checked=false;c.el('acct-s-pd-4').checked=false;
+    await c.run('window.acctSaveSettings()');
+    s.eq('none ticked → back to Wed and Sat, never an empty list',J(c.run('acctSettings.payDays')),J([3,6]));
+  }
+
   s.section('firestore.rules mirrors the code');
   {
     const rules=fs.readFileSync(path.join(ROOT,'firestore.rules'),'utf8');

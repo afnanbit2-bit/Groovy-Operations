@@ -6002,16 +6002,31 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
 - **Aging is FIFO** (`_acctVendorAging`): payments settle the oldest
   credit purchases first; unpaid older than `terms.creditDays` is overdue.
   Vendor terms: `cash` · `credit` (days, optional limit) · `monthly` (bill
-  day, expected amount) · **`weekly`** (bill weekday `billWeekday` 0–6,
-  Sunday=0, expected amount — Afnan, 23 Sept 2026: *"make an option of
-  weekly billing as well"*; a 7-day aging window; the ledger alert is due
-  on the most recent occurrence of that weekday, `_acctLastWeekday`, and
-  counts a purchase from that day onward as recorded); consumables carry
-  a `meter` (`count` | `weighed`, unit, rate). The vendor **wizard**
-  branches on those answers. The `utility` kind reads "Recurring bill"
-  now, not "Monthly bill". **Known limit:** a consumable's *Generate bill*
-  is still one bill per vendor-MONTH whatever the terms say — weekly
-  terms on a metered vendor set the reminder cadence, not the bill's.
+  day, expected amount) · **`weekly`** (Afnan, 23 Sept 2026: *"make an
+  option of weekly billing as well"*, then *"payable days are wednesday
+  and saturday"*). A weekly account bills on **several weekdays**
+  (`billWeekdays`, 0–6 with Sunday=0, ticked boxes in the wizard, the
+  store's payable days ticked by default; `_acctBillDays` also reads a
+  legacy single `billWeekday`, and an empty list means the payable
+  days); a 7-day aging window; the ledger alert is due on the **most
+  recent occurrence of ANY of those days** (`_acctLastWeekday` over each,
+  the latest date wins — asserted with a pair whose older day sorts first
+  by number) and counts a purchase from that day onward as recorded.
+  Consumables carry a `meter` (`count` | `weighed`, unit, rate). The
+  vendor **wizard** branches on those answers. The `utility` kind reads
+  "Recurring bill" now, not "Monthly bill". **Known limit:** a
+  consumable's *Generate bill* is still one bill per vendor-MONTH whatever
+  the terms say — weekly terms on a metered vendor set the reminder
+  cadence, not the bill's.
+- **Payable days** — `acct_settings.payDays`, default **`[3,6]`
+  (Wednesday, Saturday)**, seven boxes on the settings card (owners;
+  none ticked falls back to the default, never an empty list).
+  `_acctPayDays` / `_acctIsPayDay` / `_acctNextPayDay`. On a pay day the
+  ledger's alert strip leads with **Pay day (Wednesday) — ₨X owed to N
+  vendors · ₨Y overdue** (or "nothing owed", never a zero); the "Owed to
+  vendors" tile and a vendor's page name the next pay day otherwise.
+  Nothing is scheduled or written on a pay day — it is a reminder of what
+  the drawer has to cover.
 - **Consumables** (`acct_meter_logs/{vendorId}_{date}`): weighed net = kg
   delivered − kg left in the returned cylinder. **Generate bill** creates
   ONE credit purchase per vendor-month (`meterKey`), then the vendor's

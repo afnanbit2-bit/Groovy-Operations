@@ -87,7 +87,7 @@ function _acctFixture(){
   const vendors=[
     V('thread',{name:'Karachi Thread House',contact:{person:'Bilal',phone:'0300-1234567',address:'Shershah, Karachi'},supplies:['Thread','Elastic'],terms:{mode:'credit',creditDays:30,creditLimit:50000,billDay:0,expectedAmount:0}}),
     V('walk',{name:'Walk-in / direct',terms:{mode:'cash',creditDays:0,creditLimit:0,billDay:0,expectedAmount:0}}),
-    V('net',{name:'Nayatel',kind:'utility',terms:{mode:'weekly',creditDays:0,creditLimit:0,billDay:0,billWeekday:1,expectedAmount:2500},contact:{person:'',phone:'',address:''}}),
+    V('net',{name:'Nayatel',kind:'utility',terms:{mode:'weekly',creditDays:0,creditLimit:0,billDay:0,billWeekdays:[3,6],expectedAmount:2500},contact:{person:'',phone:'',address:''}}),
     V('gas',{name:'Pak Gas Agency',kind:'consumable',terms:{mode:'monthly',creditDays:0,creditLimit:0,billDay:5,expectedAmount:30000},meter:{type:'weighed',unit:'kg',rate:300,label:'Gas'},contact:{person:'',phone:'021-1234567',address:''}})
   ];
   const seed=a=>a.run(`acctEntries=${JSON.stringify(entries)};acctVendors=${JSON.stringify(vendors)};acctCloses=[];acctSettings={approvalLimit:10000,receiptRequiredAbove:2000,floatWarnDays:3,floatRedDays:7,categories:ACCT_DEFAULTS.categories,runners:['Noman']};_acctLoaded=true;_storeLoadAttempted=true;_acctSort(acctEntries);1`);
