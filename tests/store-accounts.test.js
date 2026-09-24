@@ -31,7 +31,7 @@ const MONTH=TODAY.slice(0,7);
 const monthAdd=(mo,n)=>{const [y,m]=mo.split('-').map(Number);const d=new Date(y,m-1+n,1);return d.getFullYear()+'-'+pad(d.getMonth()+1);};
 const LAST=monthAdd(MONTH,-1);
 const J=v=>JSON.stringify(v);
-const ACCT_DEFAULT_CATS=['Store purchase','Maintenance & repairs','Utilities','Transport & fuel','Refreshments','Office & stationery','Wages & labour','Other'];
+const ACCT_DEFAULT_CATS=['Store purchase','Maintenance & repairs','Wages','Advances','Office & stationery','Fuel & transport','Utilities','Other'];
 
 const BASE={
   allItems:[],allTransactions:[],allTemplates:[],allRequests:[],allActivePOs:[],
@@ -399,10 +399,10 @@ module.exports=async function(){
     await new Promise(r=>setTimeout(r,5)); // the settings PATCH is fired, never awaited
     s.ok('a new category joins the list',n.run('_acctCategories()').includes('Small items'));
     s.ok('…through the field-limited settings PATCH',n.state.fetches.slice(f0).some(f=>/acct_settings\/main\?updateMask/.test(f.url)&&f.init.method==='PATCH'));
-    const n2=app({session:RAEES,globals:{prompt:()=>'transport & fuel'}});n2.seed([],[V('w')]);
+    const n2=app({session:RAEES,globals:{prompt:()=>'fuel & transport'}});n2.seed([],[V('w')]);
     const f1=n2.state.fetches.length;
     n2.run('window.acctCategoryNew()');
-    s.ok('a name already on the list (any case) is not minted twice',n2.run('_acctCategories()').filter(c=>/transport/i.test(c)).length===1&&n2.state.fetches.length===f1);
+    s.ok('a name already on the list (any case) is not minted twice',n2.run('_acctCategories()').filter(c=>/fuel/i.test(c)).length===1&&n2.state.fetches.length===f1);
     const n3=app({session:MUSTAFA,globals:{prompt:()=>'Nope'}});n3.seed([],[V('w')]);
     n3.run('window.acctCategoryNew()');
     s.ok('a viewer\'s call is a no-op',!n3.run('_acctCategories()').includes('Nope')&&n3.state.prompts.length===0);
@@ -550,6 +550,179 @@ module.exports=async function(){
     s.eq('the money is recorded',b.run('acctEntries.length'),1);
     s.eq('but stockPosted is false',b.run('acctEntries[0].stockPosted'),false);
     s.ok('naming the item',/NOPE/.test(b.run('acctEntries[0].stockError')));
+  }
+
+  s.section('a runner who spends over the float is owed the difference — until it is settled');
+  {
+    // Afnan, 24 Sept 2026: "if its not the same as give less or more logic
+    // should be there … it is a credit transaction until it is settled by anyone"
+    const a=app({session:RAEES});a.run('allItems=[]');
+    a.seed([
+      E('cash_in',{account:'cash',amount:20000}),
+      E('float_out',{_id:'f1',account:'cash',amount:2000,person:'Noman',category:'Fuel & transport',date:daysAgo(2)}),
+      E('purchase',{_id:'b1',source:'float',floatId:'f1',person:'Noman',payee:'PSO pump',amount:2600,category:'Fuel & transport',expense:true,lines:[{desc:'Petrol',qty:1,unit:'',rate:2600,total:2600}]})
+    ],[V('w',{terms:{mode:'cash'}})]);
+    s.eq('an overspent float is closed to more bills',a.run('_acctOpenFloats().length'),0);
+    const owed=a.run("_acctRunnerOwed()['noman']");
+    s.ok('the excess is owed to the runner — derived, nothing stored',!!owed&&owed.over===600&&owed.paid===0&&owed.owed===600,J(owed));
+    s.eq('…by name',a.run("_acctRunnerOwedTo('NOMAN')"),600);
+    s.eq('…and in total',a.run('_acctTotalRunnerOwed()'),600);
+    s.eq('cash moved only by the float, never by the over-spend',a.run('_acctBalances().cash'),18000);
+    const st=a.run("_acctRunnerStats().find(r=>r.name==='Noman')");
+    s.ok('the runner\'s figures carry it',!!st&&st.owed===600&&st.openLeft===0,J(st));
+    a.run("currentPage='acct-vendors';acctRenderPage('acct-vendors',document.getElementById('main-content'))");
+    s.ok('the Runners card has an Owed-to-runner column',/Owed to runner/.test(a.el('main-content').innerHTML||'')&&/₨600/.test(a.el('main-content').innerHTML||''));
+    a.run("currentPage='acct-ledger';acctRenderPage('acct-ledger',document.getElementById('main-content'))");
+    const led=a.el('main-content').innerHTML||'';
+    s.ok('the With-runners tile says what is owed',/owed to runners ₨600/.test(led));
+    s.ok('the alert strip names him and the amount',/<b>Noman<\/b> is owed ₨600/.test(led));
+    a.run("_acctRunnerId='Noman';currentPage='acct-runner';acctRenderPage('acct-runner',document.getElementById('main-content'))");
+    const rp=a.el('main-content').innerHTML||'';
+    s.ok('the runner page has an Owed tile and a Settle button',/Owed to runner/.test(rp)&&/Settle ₨600/.test(rp)&&/acctForm\('runner_pay',\{person:&quot;Noman&quot;\}\)/.test(rp));
+    const det=a.run("(()=>{let __h='';_acctModal=function(t,b){__h=b;};window.acctOpenEntry('f1');return __h;})()")||'';
+    s.ok('the float\'s detail says it went over, and to whom',/over by ₨600 — owed to Noman/.test(det));
+    // the settle form
+    a.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    a.run("window.acctForm('runner_pay',{person:'Noman'})");
+    const form=a.run('window.__cap.b')||'';
+    s.ok('the form lists the runner with what is owed and prefills the amount',/<option value="Noman" selected>Noman · owed ₨600</.test(form)&&/id="f-amount"[^>]*value="600"/.test(form));
+    s.ok('Paid from offers Cash, MCB and Other',/data-v="cash"/.test(form)&&/data-v="mcb"/.test(form)&&/data-v="other"/.test(form));
+    s.ok('the New-entry menu offers it',/acctForm\('runner_pay'\)/.test(a.run("window.acctNewMenu();window.__cap.b")||''));
+    // over-settling is refused
+    a.el('f-person').value='Noman';a.el('f-amount').value='700';a.el('f-date').value=TODAY;a.el('f-acc').value='cash';a.el('f-note').value='';
+    await a.run("window.acctSubmit('runner_pay')");
+    s.ok('more than is owed is refused',a.state.toasts.some(t=>/owed only ₨600/.test(String(t))));
+    s.eq('…and nothing written',a.run("acctEntries.filter(e=>e.type==='runner_pay').length"),0);
+    // Other needs the note; MCB needs the proof
+    a.el('f-amount').value='600';a.el('f-acc').value='other';
+    await a.run("window.acctSubmit('runner_pay')");
+    s.ok('Other without a note is refused',a.state.toasts.some(t=>/how this was settled/.test(String(t))));
+    a.el('f-acc').value='mcb';
+    await a.run("window.acctSubmit('runner_pay')");
+    s.ok('MCB without proof is refused',a.state.toasts.some(t=>/transfer proof/.test(String(t))));
+    // settled from cash
+    a.el('f-acc').value='cash';
+    await a.run("window.acctSubmit('runner_pay')");
+    const pay=a.run("acctEntries.find(e=>e.type==='runner_pay')");
+    s.ok('the settlement is written',!!pay&&pay.person==='Noman'&&pay.amount===600&&pay.account==='cash',J(pay));
+    s.eq('cash paid it',a.run('_acctBalances().cash'),17400);
+    s.eq('nothing is owed any more',a.run("_acctRunnerOwedTo('Noman')"),0);
+    s.ok('the effect names it',J(a.run("_acctEffect(acctEntries.find(e=>e.type==='runner_pay'))")).includes('"runnerPaid":600'));
+    s.eq('the ledger reads it',a.run("_acctParticulars(acctEntries.find(e=>e.type==='runner_pay'))"),'Settled with Noman');
+    s.ok('it is on the runner\'s own log',a.run("_acctRunnerEntries('noman').some(e=>e.type==='runner_pay')"));
+    s.ok('the Settle button is gone once nothing is owed',!/Settle ₨/.test(a.run("acctRenderPage('acct-runner',document.getElementById('main-content'));document.getElementById('main-content').innerHTML")||''));
+    // settled from Other: the debt drops, no money moves
+    const o=app({session:RAEES});o.run('allItems=[]');
+    o.seed([E('float_out',{_id:'f1',account:'cash',amount:1000,person:'Abbas',category:'Other'}),E('purchase',{_id:'b1',source:'float',floatId:'f1',person:'Abbas',payee:'x',amount:1500,expense:true,lines:[{desc:'x',qty:1,unit:'',rate:1500,total:1500}]})],[]);
+    o.el('f-person').value='Abbas';o.el('f-amount').value='500';o.el('f-date').value=TODAY;o.el('f-acc').value='other';o.el('f-note').value='Afnan paid him from his pocket';
+    await o.run("window.acctSubmit('runner_pay')");
+    s.eq('Other settles it',o.run("_acctRunnerOwedTo('Abbas')"),0);
+    s.eq('…moving neither Cash nor MCB',J(o.run("(()=>{const b=_acctBalances();return [b.cash,b.mcb];})()")),J([-1000,0]));
+    s.ok('the source column says so',/Other · settled outside/.test(o.run("_acctSourceLabel(acctEntries.find(e=>e.type==='runner_pay'))")||''));
+    // voiding the bill takes the debt with it — derived, never stored
+    o.run("acctEntries.find(e=>e._id==='b1').status='void'");
+    s.eq('a voided bill owes nothing',o.run("_acctRunnerOwed()['abbas']?_acctRunnerOwed()['abbas'].over:0"),0);
+    // nobody owed → the form refuses
+    const n=app({session:RAEES});n.seed([E('float_out',{_id:'f1',account:'cash',amount:1000,person:'Noman',category:'Other'})],[]);
+    n.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");n.run("window.acctForm('runner_pay',{})");
+    s.ok('with every bill inside its float the settle form says there is nothing to settle',n.state.toasts.some(t=>/No runner is owed anything/.test(String(t)))&&!n.run('window.__cap'));
+    // the purchase confirm says what the over-spend means
+    const c=app({session:RAEES});c.run('allItems=[]');c.seed([E('float_out',{_id:'f1',account:'cash',amount:1000,person:'Noman',category:'Fuel & transport'})],[]);
+    c.el('f-hasv').value='no';c.el('f-payee').value='PSO pump';c.el('f-date').value=TODAY;c.el('f-source').value='float:f1';c.el('f-kind').value='expense';c.el('f-exp-desc').value='Petrol';c.el('f-exp-amount').value='1300';c.el('f-cat').value='Fuel & transport';
+    c.run("window._acctPhoto['f-photo']='https://res.cloudinary.com/x/bill.jpg'");
+    await c.run('window.acctSubmitPurchase()');
+    s.ok('recording a bill over the float asks, saying the extra is owed to the runner',c.state.confirms.some(m=>/₨300 more than the ₨1,000 left on Noman's float\. The extra will be owed to Noman/.test(m)),c.state.confirms.join('|'));
+    s.eq('…and records it',c.run("_acctRunnerOwedTo('Noman')"),300);
+    // Excel: the statement summary carries it
+    c.run("window.acctExportStatement('"+daysAgo(1)+"','"+TODAY+"')");
+    const sum=(c.xlsx[0]||{sheets:[]}).sheets.find(x=>x[0]==='Summary');
+    s.ok('the statement summary has an Owed-to-runners row',!!sum&&sum[1].some(r=>r[0]==='Owed to runners'&&r[2]===300),sum?J(sum[1].filter(r=>/runners/.test(r[0]))):'no sheet');
+  }
+
+  s.section('a bill with no vendor — Paid to, nothing on credit, the bill photo above ₨1,000');
+  {
+    // Afnan, 24 Sept 2026: categories such as maintenance, wages, advances,
+    // stationery, fuel, utilities "should not have a vendor based logic …
+    // it should be does it have a vendor or not, if not proof of transaction
+    // which is the bill should be mandatory" — "take a photo above 1000 RS
+    // other then that its optional".
+    const a=app({session:RAEES});a.run('allItems=[]');a.seed([],[V('w',{terms:{mode:'cash'}})]);
+    s.eq('the default categories are the ones asked for',J(a.run('ACCT_DEFAULTS.categories')),J(ACCT_DEFAULT_CATS));
+    s.ok('Store purchase and Other are vendor-based; the rest are not',a.run("_acctCatHasVendor('Store purchase')&&_acctCatHasVendor('Other')&&_acctCatHasVendor('store PURCHASE')&&!_acctCatHasVendor('Wages')&&!_acctCatHasVendor('Advances')&&!_acctCatHasVendor('Fuel & transport')&&!_acctCatHasVendor('Maintenance & repairs')&&!_acctCatHasVendor('')"));
+    s.eq('the photo threshold is ₨1,000',a.run('ACCT_NOVENDOR_PHOTO_ABOVE'),1000);
+    a.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    a.run("window.acctForm('purchase',{category:'Maintenance & repairs'})");
+    let form=a.run('window.__cap.b')||'';
+    s.ok('the form asks whether there is a vendor',/id="f-hasv-chips"/.test(form)&&/data-v="yes"/.test(form)&&/data-v="no"/.test(form));
+    s.ok('a repairs bill starts on No',/id="f-hasv" value="no"/.test(form));
+    s.ok('…with the vendor select hidden and Paid to shown',/id="f-vendor-wrap"/.test(form)&&/grid-column:1\/-1;display:none" id="f-vendor-wrap"/.test(form)&&/grid-column:1\/-1" id="f-payee-wrap"/.test(form));
+    s.ok('…and the ₨1,000 rule under it',/required above ₨1,000/.test(form));
+    a.run("window.acctForm('purchase',{vendorId:'w',category:'Maintenance & repairs'})");
+    form=a.run('window.__cap.b')||'';
+    s.ok('opened from a vendor it starts on Yes whatever the category',/id="f-hasv" value="yes"/.test(form)&&/display:none" id="f-payee-wrap"/.test(form));
+    a.run("window.acctForm('purchase',{})");
+    s.ok('a plain Store purchase starts on Yes',/id="f-hasv" value="yes"/.test(a.run('window.__cap.b')||''));
+    a.run("window.acctForm('purchase',{category:'Fuel & transport',source:'float:x'})");
+    s.ok('a bill from a runner\'s float for fuel starts on No',/id="f-hasv" value="no"/.test(a.run('window.__cap.b')||''));
+    // a small bill, no photo, no vendor
+    a.el('f-hasv').value='no';a.el('f-payee').value='Ali electrician';a.el('f-date').value=TODAY;a.el('f-source').value='cash';a.el('f-kind').value='expense';a.el('f-exp-desc').value='Fan rewiring';a.el('f-exp-amount').value='900';a.el('f-cat').value='Maintenance & repairs';
+    a.run("delete window._acctPhoto['f-photo']");
+    await a.run('window.acctSubmitPurchase()');
+    const e=a.run('acctEntries[0]');
+    s.ok('written with the payee and no vendor',!!e&&e.payee==='Ali electrician'&&e.vendorId===null&&e.vendorName===''&&e.amount===900,J(e));
+    s.eq('below ₨1,000 the photo is optional',e&&e.photo,null);
+    s.eq('the payee reads where a vendor\'s name would',a.run('_acctVendorName(acctEntries[0])'),'Ali electrician');
+    s.ok('no payable is opened for anybody',!Object.keys(a.run('_acctBalances().payables')).length);
+    s.eq('cash paid it',a.run('_acctBalances().cash'),-900);
+    s.ok('the entry detail says Paid to, with no vendor link',(()=>{const d=a.run("(()=>{let __h='';_acctModal=function(t,b){__h=b;};window.acctOpenEntry(acctEntries[0]._id);return __h;})()")||'';return /Paid to<\/span><b>Ali electrician <span class="acct-chip">no vendor account/.test(d)&&!/acctOpenVendor/.test(d);})());
+    s.ok('the payee is offered next time',J(a.run('_acctPayees()'))===J(['Ali electrician']));
+    a.run("currentPage='acct-category';_acctCategoryId='Maintenance & repairs';acctRenderPage('acct-category',document.getElementById('main-content'))");
+    s.ok('the category page lists it under the payee',/Ali electrician/.test(a.el('main-content').innerHTML||''));
+    // above ₨1,000 the photo is required
+    a.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    a.el('f-exp-amount').value='1500';a.el('f-payee').value='Ali electrician';
+    await a.run('window.acctSubmitPurchase()');
+    s.ok('₨1,500 with no photo is refused by name',a.state.toasts.some(t=>/Attach the bill photo — it is required above ₨1,000 when there is no vendor/.test(String(t))));
+    s.eq('…and nothing written',a.run('acctEntries.length'),1);
+    a.el('f-exp-amount').value='1000';
+    await a.run('window.acctSubmitPurchase()');
+    s.eq('exactly ₨1,000 is not above it',a.run('acctEntries.length'),2);
+    a.el('f-exp-amount').value='1500';a.run("window._acctPhoto['f-photo']='https://res.cloudinary.com/x/bill.jpg'");
+    await a.run('window.acctSubmitPurchase()');
+    s.ok('with the photo it goes through',a.run('acctEntries.length')===3&&a.run('acctEntries[0].photo')==='https://res.cloudinary.com/x/bill.jpg');
+    // nothing on credit without a vendor
+    a.el('f-source').value='credit';a.el('f-exp-amount').value='500';
+    await a.run('window.acctSubmitPurchase()');
+    s.ok('credit with no vendor is refused',a.state.toasts.some(t=>/Nothing can go on credit without a vendor/.test(String(t))));
+    s.eq('…nothing written',a.run('acctEntries.length'),3);
+    // Yes without picking one
+    a.el('f-hasv').value='yes';a.el('f-vendor').value='';a.el('f-source').value='cash';
+    await a.run('window.acctSubmitPurchase()');
+    s.ok('Yes without a vendor picked says so',a.state.toasts.some(t=>/Pick a vendor — or say it has none/.test(String(t))));
+    a.el('f-hasv').value='no';a.el('f-payee').value='';
+    await a.run('window.acctSubmitPurchase()');
+    s.ok('No without a payee says so',a.state.toasts.some(t=>/Who was paid\? Fill in Paid to/.test(String(t))));
+    // a vendor bill is untouched by all this
+    a.el('f-hasv').value='yes';a.el('f-vendor').value='w';a.el('f-payee').value='';a.el('f-exp-amount').value='5000';a.run("delete window._acctPhoto['f-photo']");
+    await a.run('window.acctSubmitPurchase()');
+    const ve=a.run('acctEntries[0]');
+    s.ok('a ₨5,000 vendor bill with no photo is still only FLAGGED, never refused',!!ve&&ve.vendorId==='w'&&!ve.payee&&(ve.reviewFlags||[]).includes('no receipt'),J(ve));
+    // the vendor-less rows read through the Excel export
+    a.run("window.acctExportStatement('"+daysAgo(1)+"','"+TODAY+"')");
+    const all=(a.xlsx[0]||{sheets:[]}).sheets.find(x=>x[0]==='All entries');
+    s.ok('the All-entries sheet names the payee in the Vendor / Person column',!!all&&all[1].some(r=>r[3]==='Ali electrician'));
+    // the admin edit can correct a payee
+    s.eq('the admin patch carries payee',J(a.run("_acctAdminPatch({payee:'Ali electrician',amount:900},{payee:'Ali Electric Works',amount:'900'})")),J({payee:'Ali Electric Works'}));
+    s.ok('and the field list names it',a.run("_ACCT_ADMIN_FIELDS.includes('payee')"));
+    // the switch itself: turning the vendor off drops a credit pick back to Cash
+    const b=app({session:RAEES});b.run('allItems=[]');b.seed([],[V('w')]);
+    b.run("window.acctForm('purchase',{vendorId:'w'})");
+    s.ok('a credit vendor opens on credit',/id="f-source" value="credit"/.test(b.run('window.__cap?window.__cap.b:document.getElementById("acct-modal").innerHTML')||b.bodyHtml('acct-modal')||''));
+    // the harness's DOM does not carry a hidden input's value out of innerHTML; set it as the chip would
+    b.el('f-source').value='credit';b.el('f-hasv').value='yes';
+    b.run("window.acctPurchaseHasVendor(false)");
+    s.eq('saying No moves Paid via off credit',b.el('f-source').value,'cash');
+    s.eq('…and the hidden answer follows',b.el('f-hasv').value,'no');
   }
 
   s.section('runner floats');
@@ -799,7 +972,7 @@ module.exports=async function(){
     s.ok('a cash-in category is not a purchase category',!a.run('_acctCategories()').includes('Fabric sale'));
     a.run("window.acctForm('purchase')");const html=a.bodyHtml('acct-modal');
     s.ok('the select offers "+ New category…"',/value="__new__">\+ New category…</.test(html));
-    s.ok('and routes its change to acctCatChange',/id="f-cat" onchange="window\.acctCatChange\(this\)"/.test(html));
+    s.ok('and routes its change to acctCatChange',/id="f-cat" onchange="window\.acctCatChange\(this\);window\.acctPurchaseCatChanged\(\)"/.test(html));
   }
   {
     // drive it: Raees adds "Dyeing", it is selected, and only the

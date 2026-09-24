@@ -78,6 +78,11 @@ function _acctFixture(){
     E('payment',{account:'mcb',amount:13000,vendorId:'thread',vendorName:'Karachi Thread House',date:day(20),ref:'TRX-88400',photo:'https://res.cloudinary.com/x/z.jpg'}),
     E('purchase',{source:'cash',account:'cash',amount:1450,vendorId:'walk',vendorName:'Walk-in / direct',date:day(6),category:'Maintenance & repairs',lines:[{itemCode:'',desc:'Plumber — washroom tap',qty:1,unit:'',rate:1450,total:1450}]}),
     E('float_out',{_id:'flt1',account:'cash',amount:5000,person:'Noman',date:day(9),note:'packing + thread run'}),
+    // a float Abbas OVERSPENT — the excess is owed to him until settled — and
+    // a bill with no vendor account at all, paid to a named person
+    E('float_out',{_id:'flt2',account:'cash',amount:2000,person:'Abbas',date:day(4),category:'Fuel & transport',note:'petrol for the Shershah run'}),
+    E('purchase',{source:'float',floatId:'flt2',person:'Abbas',amount:2600,payee:'PSO pump, Korangi',date:day(3),category:'Fuel & transport',expense:true,photo:'https://res.cloudinary.com/x/z.jpg',lines:[{itemCode:'',desc:'Petrol — 2 round trips',qty:1,unit:'',rate:2600,total:2600}]}),
+    E('purchase',{source:'cash',account:'cash',amount:900,payee:'Ali electrician',date:day(1),category:'Maintenance & repairs',expense:true,lines:[{itemCode:'',desc:'Fan rewiring, cutting hall',qty:1,unit:'',rate:900,total:900}]}),
     E('purchase',{source:'float',floatId:'flt1',person:'Noman',amount:3200,vendorId:'walk',vendorName:'Walk-in / direct',date:day(8),category:'Store purchase',lines:[{itemCode:'',desc:'Packing tape ×24',qty:24,unit:'roll',rate:133.33,total:3200}]}),
     E('purchase',{source:'cash',account:'cash',amount:800,vendorId:'walk',vendorName:'Walk-in / direct',date:day(5),status:'void',voidReason:'entered twice',voidedBy:'raees',lines:[{itemCode:'',desc:'Tea & biscuits',qty:1,unit:'',rate:800,total:800}]}),
     E('transfer',{account:'mcb',toAccount:'cash',amount:20000,date:day(3),note:'ATM withdrawal for the drawer'}),
@@ -325,7 +330,14 @@ const FRAGMENTS={
     // the hint under it is shown, since the chip is what reveals it
     app.run("window.acctForm('payment',{vendorId:'thread'})");
     const payBody=(app.run('window.__cap.b')||'').replace('class="acct-chipbtn on" data-v="cash"','class="acct-chipbtn" data-v="cash"').replace('class="acct-chipbtn" data-v="other"','class="acct-chipbtn on" data-v="other"').replace('id="f-acc-hint" style="font-size:13px;color:var(--muted);margin-top:4px;display:none"','id="f-acc-hint" style="font-size:13px;color:var(--muted);margin-top:4px;display:block"');
-    const form=modal(body.replace('<div id="acct-lines"></div>','<div id="acct-lines">'+lines+'</div>'))+modal(expBody)+modal(payBody);
+    // the same form with NO vendor: "Paid to" shown, the vendor select and the
+    // On-credit chip hidden, the ₨1,000 photo rule under the label
+    app.run("window.acctForm('purchase',{category:'Maintenance & repairs',desc:'Fan rewiring, cutting hall',amount:900})");
+    const noVendorBody=app.run('window.__cap.b');
+    // and settling with a runner who spent over the float, Other selected
+    app.run("window.acctForm('runner_pay',{person:'Abbas'})");
+    const settleBody=(app.run('window.__cap.b')||'').replace('class="acct-chipbtn on" data-v="cash"','class="acct-chipbtn" data-v="cash"').replace('class="acct-chipbtn" data-v="other"','class="acct-chipbtn on" data-v="other"').replace('id="f-acc-hint" style="font-size:13px;color:var(--muted);margin-top:4px;display:none"','id="f-acc-hint" style="font-size:13px;color:var(--muted);margin-top:4px;display:block"');
+    const form=modal(body.replace('<div id="acct-lines"></div>','<div id="acct-lines">'+lines+'</div>'))+modal(expBody)+modal(payBody)+modal(noVendorBody)+modal(settleBody);
     return Promise.resolve(tiles+form);
   },
   // Afnan's correction tools: the Admin tools card on the review page (the

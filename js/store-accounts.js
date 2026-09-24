@@ -64,6 +64,7 @@ const ACCT_TYPES={
   transfer:{label:'Transfer',        verb:'Transfer Cash ↔ MCB'},
   float_out:{label:'Float out',      verb:'Give a float to a runner'},
   float_in:{label:'Float returned',  verb:'Change back from a runner'},
+  runner_pay:{label:'Runner settled', verb:'Settle with a runner'},
   adjust:{label:'Adjustment',        verb:'Adjustment (owner)'},
   opening:{label:'Opening balance',  verb:''}
 };
@@ -85,11 +86,24 @@ const ACCT_DEFAULTS={
   receiptRequiredAbove:2000,  // purchase/payment above this with no photo → needs review
   floatWarnDays:3,
   floatRedDays:7,
-  categories:['Store purchase','Maintenance & repairs','Utilities','Transport & fuel','Refreshments','Office & stationery','Wages & labour','Other'],
+  categories:['Store purchase','Maintenance & repairs','Wages','Advances','Office & stationery','Fuel & transport','Utilities','Other'],
   runners:['Noman'],
   payDays:[3,6]               // weekdays the store settles vendors on: Wednesday and Saturday (Afnan, 23 Sept 2026)
 };
 const ACCT_PAGE_SIZE=40;
+// Which categories are VENDOR-based (Afnan, 24 Sept 2026, ticking Store
+// purchase and Other on a screenshot and crossing out the rest): a bill
+// under any other category is asked "does it have a vendor?" and may name
+// a free-text payee instead. Advances is a plain category for now — to be
+// connected to HRM advances later. Matched case-folded; a category not on
+// this list (one Raees added) defaults to no vendor, and the form still asks.
+const ACCT_VENDOR_CATS=['Store purchase','Other'];
+function _acctCatHasVendor(cat){const k=String(cat||'').trim().toLowerCase();return ACCT_VENDOR_CATS.some(c=>c.toLowerCase()===k);}
+// A bill with NO vendor must carry its photo above this — the bill is the
+// only proof of the transaction (Afnan: "take a photo above 1000 RS other
+// then that its optional"). Separate from receiptRequiredAbove, which only
+// flags for review; this one refuses.
+const ACCT_NOVENDOR_PHOTO_ABOVE=1000;
 
 // ── Permissions (nav/UI; firestore.rules `isStoreAccounts()` is the boundary) ──
 function _acctCanView(){return !!session&&(session.role==='owner'||session.role==='manager'||session.role==='store');}
@@ -139,7 +153,10 @@ function _acctAccount(key){return ACCT_ACCOUNTS.find(a=>a.key===key)||null;}
 function _acctAccountLabel(key){const a=_acctAccount(key);return a?a.short:(key===ACCT_OTHER.key?ACCT_OTHER.short:(key||'—'));}
 function _acctIsMoney(key){return !!_acctAccount(key);}
 function _acctVendor(id){return acctVendors.find(v=>v._id===id)||null;}
-function _acctVendorName(e){return e.vendorName||(_acctVendor(e.vendorId)||{}).name||'';}
+// A bill with no vendor names who it was paid to (`payee`, free text); it
+// reads through the same helper so the ledger, the category page and the
+// Excel sheets show it where a vendor's name would sit.
+function _acctVendorName(e){return e.vendorName||(_acctVendor(e.vendorId)||{}).name||e.payee||'';}
 function _acctById(id){return acctEntries.find(e=>e._id===id)||null;}
 function _acctUser(){return {by:(session&&(session.u||session.name))||'',byName:(session&&session.name)||''};}
 function _acctIsPhone(){try{return window.matchMedia('(max-width:600px)').matches;}catch(_){return false;}}
@@ -203,7 +220,7 @@ async function _acctMeterLogs(vendorId,month,force){
 // runner's float. ONE definition: the ledger table, both cash books, the
 // vendor statement, the KPI tiles and the Excel exports all read this.
 function _acctEffect(e){
-  const fx={cash:0,mcb:0,payable:0,floatOut:0,floatUsed:0,floatBack:0};
+  const fx={cash:0,mcb:0,payable:0,floatOut:0,floatUsed:0,floatBack:0,runnerPaid:0};
   if(!e||e.status==='void'||e.status==='pending')return fx;
   const a=Math.round(e.amount||0);
   const acc=e.account;
@@ -219,6 +236,8 @@ function _acctEffect(e){
     case 'transfer':  if(_acctIsMoney(acc))fx[acc]-=a; if(_acctIsMoney(e.toAccount))fx[e.toAccount]+=a; break;
     case 'float_out': if(_acctIsMoney(acc))fx[acc]-=a; fx.floatOut+=a; break;
     case 'float_in':  if(_acctIsMoney(acc))fx[acc]+=a; fx.floatBack+=a; break;
+    // paying a runner back what they spent over the float; 'other' settles it with no money movement
+    case 'runner_pay':if(_acctIsMoney(acc))fx[acc]-=a; fx.runnerPaid+=a; break;
     case 'adjust':    if(_acctIsMoney(acc))fx[acc]+=Math.round(e.amount||0); break;   // signed
     case 'opening':   fx.payable+=a; break;
   }
@@ -248,6 +267,31 @@ function _acctOpenFloats(){
   const b=_acctBalances();
   return Object.values(b.floats).map(f=>Object.assign({},f,{left:f.out-f.used-f.back})).filter(f=>f.left>0).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
 }
+// What the store OWES each runner: every bill paid from a float beyond
+// what the float held (Afnan, 24 Sept 2026: "it is a credit transaction
+// until it is settled by anyone"), less what has since been settled with
+// them (`runner_pay`). DERIVED like every other balance — nothing stored.
+// An overspent float has left<0, so it is already closed to more bills;
+// the excess lives here. Keyed by the runner's case-folded name; the
+// display name is the float's own spelling.
+function _acctRunnerOwed(upToDate){
+  const b=_acctBalances(upToDate);
+  const out={};
+  const slot=(name)=>{const k=_acctRunnerKey(name);if(!k)return null;return out[k]=out[k]||{key:k,name,over:0,paid:0,owed:0};};
+  for(const f of Object.values(b.floats)){
+    const over=Math.max(0,f.used+f.back-f.out);
+    if(over){const r=slot(f.person);if(r)r.over+=over;}
+  }
+  for(const e of _acctLive()){
+    if(e.type!=='runner_pay')continue;
+    if(upToDate&&e.date>upToDate)continue;
+    const r=slot(e.person);if(r)r.paid+=Math.round(e.amount||0);
+  }
+  for(const r of Object.values(out))r.owed=Math.max(0,r.over-r.paid);
+  return out;
+}
+function _acctRunnerOwedTo(name){const r=_acctRunnerOwed()[_acctRunnerKey(name)];return r?r.owed:0;}
+function _acctTotalRunnerOwed(){return Object.values(_acctRunnerOwed()).reduce((s,r)=>s+r.owed,0);}
 function _acctTotalPayables(){const b=_acctBalances();return Object.values(b.payables).reduce((s,v)=>s+Math.max(0,v),0);}
 function _acctVendorBalance(vendorId){const b=_acctBalances();return Math.round(b.payables[vendorId]||0);}
 
@@ -361,13 +405,14 @@ function _acctParticulars(e){
     case 'transfer':  return 'Transfer '+_acctAccountLabel(e.account)+' → '+_acctAccountLabel(e.toAccount);
     case 'float_out': return 'Float to '+(e.person||'runner')+(e.category?' · '+e.category:'')+(e.note?' · '+e.note:'');
     case 'float_in':  return 'Change back from '+(e.person||'runner');
+    case 'runner_pay':return 'Settled with '+(e.person||'runner')+(e.note?' · '+e.note:'');
     case 'adjust':    return 'Adjustment · '+(e.note||'');
     case 'opening':   return 'Opening balance · '+vn;
   }
   return e.type;
 }
 function _acctSourceLabel(e){
-  if(e.type==='payment'&&e.account===ACCT_OTHER.key)return ACCT_OTHER.label+' · '+ACCT_OTHER.sub;
+  if((e.type==='payment'||e.type==='runner_pay')&&e.account===ACCT_OTHER.key)return ACCT_OTHER.label+' · '+ACCT_OTHER.sub;
   if(e.type!=='purchase')return e.account?_acctAccountLabel(e.account):'';
   if(e.source==='credit')return 'Credit';
   if(e.source==='float')return 'Float · '+(e.person||'');
@@ -447,7 +492,7 @@ window.acctExportStatement=function(from,to){
   if(to>'9999-01-01')to=_acctToday();
   const b0=_acctBalances(_acctAddDays(from,-1)),b1=_acctBalances(to);
   const summary=[['Groovy Operations — Store Accounts statement'],['Period',from+' to '+to],['Generated',new Date().toLocaleString('en-PK')],['By',(session&&session.name)||''],[],
-    ['Account','Opening','Closing'],['Cash in hand',b0.cash,b1.cash],['MCB Bank',b0.mcb,b1.mcb],['Vendor payables',Object.values(b0.payables).reduce((s,v)=>s+Math.max(0,v),0),Object.values(b1.payables).reduce((s,v)=>s+Math.max(0,v),0)],[],
+    ['Account','Opening','Closing'],['Cash in hand',b0.cash,b1.cash],['MCB Bank',b0.mcb,b1.mcb],['Vendor payables',Object.values(b0.payables).reduce((s,v)=>s+Math.max(0,v),0),Object.values(b1.payables).reduce((s,v)=>s+Math.max(0,v),0)],['Owed to runners',Object.values(_acctRunnerOwed(_acctAddDays(from,-1))).reduce((s,r)=>s+r.owed,0),Object.values(_acctRunnerOwed(to)).reduce((s,r)=>s+r.owed,0)],[],
     ['Payables by vendor as of '+to,'Balance']].concat(acctVendors.filter(v=>(b1.payables[v._id]||0)!==0).map(v=>[v.name,Math.round(b1.payables[v._id]||0)]));
   const ok=_acctXlsx([['Summary',summary],['Cash book',_acctBookRows('cash',from,to)],['MCB book',_acctBookRows('mcb',from,to)],['All entries',_acctAllRows(from,to)]],'Groovy-Cash-Statement-'+from+'_'+to);
   if(ok){showToast('Statement exported ✓');_acctLog('Cash statement exported',from+' → '+to);}
@@ -562,6 +607,7 @@ function _acctLedgerPage(){
   const b=_acctBalances();
   const floats=_acctOpenFloats();
   const floatSum=floats.reduce((s,f)=>s+f.left,0);
+  const runnerOwed=_acctTotalRunnerOwed();
   const payables=_acctTotalPayables();
   const overdue=acctVendors.reduce((s,v)=>s+_acctVendorAging(v._id).overdue,0);
   const {rows,opening,closing}=_acctRows();
@@ -570,7 +616,7 @@ function _acctLedgerPage(){
     ${_acctTile('Cash in hand',b.cash,{danger:b.cash<0,onclick:"window.acctSetView('cash')"})}
     ${_acctTile('MCB Bank',b.mcb,{danger:b.mcb<0,onclick:"window.acctSetView('mcb')"})}
     ${_acctTile('Owed to vendors',payables,{danger:overdue>0,sub:(overdue>0?_acctPKR(overdue)+' overdue':(payables?'nothing overdue':''))+(payables?' · pay day '+(_acctIsPayDay(_acctToday())?'today':_ACCT_WEEKDAYS[_acctWeekdayOf(_acctNextPayDay(_acctToday()))].slice(0,3)+' '+_acctDateLabel(_acctNextPayDay(_acctToday()))):''),onclick:"window.acctSetView('payables')"})}
-    ${_acctTile('With runners',floatSum,{danger:floats.some(f=>_acctDaysBetween(f.date,_acctToday())>_acctSettings().floatRedDays),sub:floats.length?floats.length+' open float'+(floats.length>1?'s':''):'no open floats',onclick:"window.acctSetFilter('type','float_out')"})}
+    ${_acctTile('With runners',floatSum,{danger:floats.some(f=>_acctDaysBetween(f.date,_acctToday())>_acctSettings().floatRedDays),sub:(floats.length?floats.length+' open float'+(floats.length>1?'s':''):'no open floats')+(runnerOwed?' · owed to runners '+_acctPKR(runnerOwed):''),onclick:"window.acctSetFilter('type','float_out')"})}
   </div>`;
   h+=_acctAlerts(floats);
   const views=[['all','All entries'],['cash','Cash book'],['mcb','MCB book'],['payables','Payables']];
@@ -628,6 +674,11 @@ function _acctAlerts(floats){
   for(const f of floats){
     const age=_acctDaysBetween(f.date,today);
     if(age>=s.floatWarnDays)items.push({k:age>=s.floatRedDays?'urgent':'warn',t:`<b>${_acctEsc(f.person)}</b> holds ${_acctPKR(f.left)} of a float from ${_acctDateLabel(f.date)} — ${age} day${age===1?'':'s'}`,go:`window.acctOpenEntry('${f.id}')`});
+  }
+  // A runner who paid more than the float out of their own pocket is owed
+  // the difference until someone settles it.
+  for(const r of Object.values(_acctRunnerOwed())){
+    if(r.owed>0)items.push({k:'warn',t:`<b>${_acctEsc(r.name)}</b> is owed ${_acctPKR(r.owed)} — bills over the float, not yet settled`,go:`window.acctOpenRunner(${JSON.stringify(r.name).replace(/"/g,'&quot;')})`});
   }
   for(const e of acctEntries){
     if(e.status==='pending'&&_acctCanEntry())items.push({k:'warn',t:`Cash in of ${_acctPKR(e.amount)} (${e.via==='mcb'?'MCB transfer':'cash'}) recorded by ${_acctEsc(e.byName||e.by)} — <b>confirm you received it</b>`,go:`window.acctOpenEntry('${e._id}')`});
@@ -746,7 +797,7 @@ function _acctRunnerEntries(name){
   const k=_acctRunnerKey(name);if(!k)return [];
   const live=acctEntries.filter(e=>e&&e.status!=='void'&&e.status!=='pending');
   const floatIds=new Set(live.filter(e=>e.type==='float_out'&&_acctRunnerKey(e.person)===k).map(e=>e._id));
-  return live.filter(e=>(e.type==='float_out'&&_acctRunnerKey(e.person)===k)||(e.floatId&&floatIds.has(e.floatId)));
+  return live.filter(e=>((e.type==='float_out'||e.type==='runner_pay')&&_acctRunnerKey(e.person)===k)||(e.floatId&&floatIds.has(e.floatId)));
 }
 function _acctRunnerStats(){
   const open=_acctOpenFloats();
@@ -758,8 +809,9 @@ function _acctRunnerStats(){
     const k=_acctRunnerKey(name);
     const openLeft=open.filter(f=>_acctRunnerKey(f.person)===k).reduce((s,f)=>s+f.left,0);
     const last=rows.filter(e=>e.type==='float_out').reduce((m,e)=>(!m||e.date>m)?e.date:m,'');
-    return {name,count:rows.length,given,spent,back,openLeft,last};
-  }).sort((a,b)=>b.openLeft-a.openLeft||b.given-a.given||a.name.localeCompare(b.name));
+    const owed=_acctRunnerOwedTo(name);
+    return {name,count:rows.length,given,spent,back,openLeft,owed,last};
+  }).sort((a,b)=>b.openLeft-a.openLeft||b.owed-a.owed||b.given-a.given||a.name.localeCompare(b.name));
 }
 function _acctRunnersCard(){
   const stats=_acctRunnerStats();
@@ -768,7 +820,7 @@ function _acctRunnersCard(){
       <div style="flex:1"><div style="font-weight:700">${stats.length} runner${stats.length===1?'':'s'}</div><div style="font-size:13px;color:var(--muted)">Everyone who takes a float, each with their own log. A new runner is added by typing their name on the float form.</div></div>
     </div>
     <div class="acct-table-wrap"><table class="acct-table">
-      <thead><tr><th>Runner</th><th class="num">Floats given</th><th class="num">Spent on bills</th><th class="num">Change back</th><th class="num">Still to account for</th><th class="num">Last float</th></tr></thead><tbody>`;
+      <thead><tr><th>Runner</th><th class="num">Floats given</th><th class="num">Spent on bills</th><th class="num">Change back</th><th class="num">Still to account for</th><th class="num">Owed to runner</th><th class="num">Last float</th></tr></thead><tbody>`;
   for(const r of stats){
     h+=`<tr data-r="${_acctEsc(r.name)}" onclick="window.acctOpenRunner(this.dataset.r)">
       <td class="part"><b>${_acctEsc(r.name)}</b></td>
@@ -776,6 +828,7 @@ function _acctRunnersCard(){
       <td class="num">${r.spent?_acctPKR(r.spent):'—'}</td>
       <td class="num">${r.back?_acctPKR(r.back):'—'}</td>
       <td class="num ${r.openLeft>0?'out':''}">${r.openLeft>0?_acctPKR(r.openLeft):'—'}</td>
+      <td class="num ${r.owed>0?'out':''}">${r.owed>0?_acctPKR(r.owed):'—'}</td>
       <td class="num">${r.last?_acctDateLabel(r.last):'—'}</td>
     </tr>`;
   }
@@ -790,19 +843,23 @@ function _acctRunnerPage(){
   const name=_acctRunners().find(r=>_acctRunnerKey(r)===_acctRunnerKey(_acctRunnerId))||'';
   if(!name)return `<div class="card"><div class="empty">Runner not found. <button class="btn-outline" onclick="window.acctGo('acct-vendors')">Back to vendors</button></div></div>`;
   const rows=_acctRunnerEntries(name).sort((a,b)=>String(b.date).localeCompare(String(a.date))||(b.ts||0)-(a.ts||0));
-  const st=_acctRunnerStats().find(r=>r.name===name)||{given:0,spent:0,back:0,openLeft:0};
+  const st=_acctRunnerStats().find(r=>r.name===name)||{given:0,spent:0,back:0,openLeft:0,owed:0};
   const cl=_acctLastClose();
   let h=`<div class="card">
     <button class="btn-outline" style="padding:4px 10px;font-size:12px;margin-bottom:8px" onclick="window.acctGo('acct-vendors')">← Vendors</button>
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
       <div><div style="font-size:19px;font-weight:800">${_acctEsc(name)}</div><div style="font-size:13px;color:var(--muted)">Runner · every float given, every bill paid from one and every change back${cl?` · since the ${_acctMonthLabel(cl.month)} close`:''}</div></div>
-      ${_acctCanEntry()?`<button class="btn-primary" style="width:auto;margin:0;padding:9px 14px" onclick="window.acctForm('float_out',{person:${JSON.stringify(name).replace(/"/g,'&quot;')}})">Give a float</button>`:''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${_acctCanEntry()&&st.owed>0?`<button class="btn-outline" onclick="window.acctForm('runner_pay',{person:${JSON.stringify(name).replace(/"/g,'&quot;')}})">Settle ${_acctPKR(st.owed)}</button>`:''}
+        ${_acctCanEntry()?`<button class="btn-primary" style="width:auto;margin:0;padding:9px 14px" onclick="window.acctForm('float_out',{person:${JSON.stringify(name).replace(/"/g,'&quot;')}})">Give a float</button>`:''}
+      </div>
     </div>
     <div class="acct-tiles" style="margin-top:12px">
       ${_acctTile('Floats given',st.given)}
       ${_acctTile('Spent on bills',st.spent)}
       ${_acctTile('Change back',st.back)}
       ${_acctTile('Still to account for',st.openLeft,{danger:st.openLeft>0})}
+      ${_acctTile('Owed to runner',st.owed,{danger:st.owed>0,sub:st.owed>0?'spent over the float — settle it':'nothing over the float'})}
     </div>
   </div>`;
   h+=`<div class="card" style="padding:0;overflow:hidden"><div class="acct-table-wrap"><table class="acct-table">
@@ -815,7 +872,7 @@ function _acctRunnerPage(){
       <td class="part">${type} ${_acctEsc(_acctParticulars(e))}</td>
       <td>${_acctEsc(e.category||'')}</td>
       <td>${_acctEsc(_acctVendorName(e))}</td>
-      <td class="num ${e.type==='float_out'?'out':''}">${_acctPKR(e.amount)}</td>
+      <td class="num ${e.type==='float_out'||e.type==='runner_pay'?'out':''}">${_acctPKR(e.amount)}</td>
     </tr>`;
   }
   h+=`</tbody></table></div></div>`;
@@ -1297,7 +1354,7 @@ function _acctBase(type){
 function _acctReviewFlags(e){
   const s=_acctSettings();const f=[];
   if(s.approvalLimit>0&&Math.abs(e.amount||0)>s.approvalLimit&&e.type!=='cash_in'&&e.type!=='transfer'&&e.type!=='float_in')f.push('over limit');
-  if(s.receiptRequiredAbove>0&&(e.type==='purchase'||e.type==='payment')&&Math.abs(e.amount||0)>s.receiptRequiredAbove&&!e.photo&&!e.meterKey)f.push('no receipt');
+  if(s.receiptRequiredAbove>0&&(e.type==='purchase'||e.type==='payment'||e.type==='runner_pay')&&Math.abs(e.amount||0)>s.receiptRequiredAbove&&!e.photo&&!e.meterKey)f.push('no receipt');
   if(e.type==='adjust')f.push('adjustment');
   return f;
 }
@@ -1422,7 +1479,7 @@ window.acctClearPhoto=function(id){delete window._acctPhoto[id];const i=document
 /* ════════════════════════ NEW ENTRY MENU ════════════════════════ */
 window.acctNewMenu=function(){
   if(!_acctCanEntry())return;
-  const items=[['purchase','Purchase','Goods or a bill from a vendor — paid now, on credit, or from a runner\'s float'],['payment','Payment to vendor','Settle what a vendor is owed — from Cash, from MCB, or settled some other way'],['cash_in','Cash in','Money arriving — physical cash or an MCB transfer'],['transfer','Transfer','Move between Cash and MCB'],['float_out','Float to a runner','Hand cash to Noman (or anyone) to buy with'],['float_in','Change back','A runner returns what was left of a float']];
+  const items=[['purchase','Purchase','Goods or a bill from a vendor — paid now, on credit, or from a runner\'s float'],['payment','Payment to vendor','Settle what a vendor is owed — from Cash, from MCB, or settled some other way'],['cash_in','Cash in','Money arriving — physical cash or an MCB transfer'],['transfer','Transfer','Move between Cash and MCB'],['float_out','Float to a runner','Hand cash to Noman (or anyone) to buy with'],['float_in','Change back','A runner returns what was left of a float'],['runner_pay','Settle with a runner','A runner paid bills over the float — pay them back from Cash, MCB, or settle it some other way']];
   if(_acctCanAdmin())items.push(['adjust','Adjustment','Owner-only correction of a cash or MCB balance, with a reason']);
   _acctModal('New entry',`<div class="acct-menu">${items.map(i=>`<button class="acct-menu-item" onclick="window.acctForm('${i[0]}')"><b>${i[1]}</b><span>${i[2]}</span></button>`).join('')}</div>`,'',{width:460});
 };
@@ -1561,6 +1618,19 @@ window.acctForm=function(type,pre){
       <div class="field" style="grid-column:1/-1"><label>Into *</label>${_acctAccountChips('f-acc','cash')}</div>
       <div class="field" style="grid-column:1/-1"><label>Note</label><input id="f-note" placeholder="optional"></div>
     </div>`;
+  }else if(type==='runner_pay'){
+    const owedAll=Object.values(_acctRunnerOwed()).filter(r=>r.owed>0).sort((a,b)=>b.owed-a.owed);
+    if(!owedAll.length){showToast('No runner is owed anything — every bill fits its float.',true);return;}
+    const cur=owedAll.find(r=>r.key===_acctRunnerKey(pre.person))||owedAll[0];
+    body=`<div class="form-grid">
+      <div class="field" style="grid-column:1/-1"><label>Runner *</label><select id="f-person" onchange="window.acctRunnerPayPick(this.value)">${owedAll.map(r=>`<option value="${_acctEsc(r.name)}"${r.key===cur.key?' selected':''}>${_acctEsc(r.name)} · owed ${_acctPKR(r.owed)}</option>`).join('')}</select><div id="f-owed" style="font-size:13px;color:var(--muted);margin-top:4px">Spent ${_acctPKR(cur.over)} over the float${cur.paid?`, ${_acctPKR(cur.paid)} already settled`:''} — <b>${_acctPKR(cur.owed)}</b> still owed.</div></div>
+      <div class="field"><label>Amount (₨) *</label><input id="f-amount" type="number" inputmode="numeric" min="1" value="${cur.owed}" placeholder="0" autofocus></div>
+      ${_acctDateField('f-date')}
+      <div class="field" style="grid-column:1/-1"><label>Paid from *</label>${_acctAccountChips('f-acc','cash',[ACCT_OTHER])}<div id="f-acc-hint" style="font-size:13px;color:var(--muted);margin-top:4px;display:none">Other: what the runner is owed drops, but no Cash or MCB movement is recorded — say how it was settled in the note.</div></div>
+      <div class="field"><label>Ref</label><input id="f-ref" placeholder="optional"></div>
+      <div class="field"><label>Note</label><input id="f-note" placeholder="optional"></div>
+      <div class="field" style="grid-column:1/-1" id="f-proof-wrap" style="display:none"><label>Payment proof (required for MCB)</label>${_acctPhotoField('f-photo','Attach transfer screenshot / receipt')}</div>
+    </div>`;
   }else if(type==='adjust'){
     body=`<div class="form-grid">
       <div class="field" style="grid-column:1/-1"><label>Account *</label>${_acctAccountChips('f-acc','cash')}</div>
@@ -1571,7 +1641,13 @@ window.acctForm=function(type,pre){
     </div>`;
   }
   _acctModal(T.verb,body,`<button class="btn-outline" onclick="window.acctModalClose()">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px" id="f-submit" onclick="window.acctSubmit('${type}')">Record</button>`,{sticky:true});
-  if(type==='payment')window.acctChip('f-acc','cash');
+  if(type==='payment'||type==='runner_pay')window.acctChip('f-acc','cash');
+};
+window.acctRunnerPayPick=function(name){
+  const r=_acctRunnerOwed()[_acctRunnerKey(name)];const el=document.getElementById('f-owed');const a=document.getElementById('f-amount');
+  if(!r){if(el)el.textContent='';return;}
+  if(el)el.innerHTML=`Spent ${_acctPKR(r.over)} over the float${r.paid?`, ${_acctPKR(r.paid)} already settled`:''} — <b>${_acctPKR(r.owed)}</b> still owed.`;
+  if(a)a.value=r.owed;
 };
 window.acctPayVendorChanged=function(v){
   if(v==='__new__'){window.acctVendorWizard(null,null,{then:id=>window.acctForm('payment',{vendorId:id})});return;}
@@ -1617,6 +1693,15 @@ window.acctSubmit=async function(type){
     const f=_acctOpenFloats().find(x=>x.id===g('f-float'));if(!f){showToast('Pick a float.',true);return;}
     if(amount>f.left){showToast(`Only ${_acctPKR(f.left)} is outstanding on that float.`,true);return;}
     e.floatId=f.id;e.person=f.person;e.account=g('f-acc')||'cash';
+  }else if(type==='runner_pay'){
+    e.person=(g('f-person')||'').trim();e.account=g('f-acc')||'cash';
+    const owed=_acctRunnerOwedTo(e.person);
+    if(!e.person||!owed){showToast('Pick a runner who is owed something.',true);return;}
+    if(!_acctIsMoney(e.account)&&e.account!==ACCT_OTHER.key){showToast('Pick where it was paid from.',true);return;}
+    if(e.account==='mcb'&&!e.photo){showToast('Attach the transfer proof for an MCB payment.',true);return;}
+    if(e.account===ACCT_OTHER.key&&!e.note){showToast('Say in the note how this was settled — nothing else records it.',true);return;}
+    // never over-settle: a runner is owed exactly the excess, no more
+    if(amount>owed){showToast(`${e.person} is owed only ${_acctPKR(owed)}.`,true);return;}
   }else if(type==='adjust'){
     e.account=g('f-acc')||'cash';if(!e.note){showToast('A reason is required.',true);return;}
   }
@@ -1663,11 +1748,19 @@ function _acctPurchaseForm(pre){
   const defSource=pre.source||(v&&v.terms&&['credit','monthly','weekly'].includes(v.terms.mode)?'credit':'cash');
   const src=[{key:'cash',label:'Cash'},{key:'mcb',label:'MCB'},{key:'credit',label:'On credit',sub:'adds to what they are owed'}].concat(floats.map(f=>({key:'float:'+f.id,label:'Float · '+f.person,sub:_acctPKR(f.left)+' left'})));
   const kind=pre.kind||_acctPurchaseKindFor(v);
+  const cat=pre.category||(v&&v.kind==='utility'?'Utilities':(v&&v.kind==='service'?'Maintenance & repairs':'Store purchase'));
+  // Does it have a vendor? A vendor picked (or the form opened from a
+  // vendor's page) says yes; otherwise the category's own default decides
+  // (ACCT_VENDOR_CATS), and the chips let either answer be changed.
+  const hasV=pre.hasVendor!=null?!!pre.hasVendor:(v?true:_acctCatHasVendor(cat));
+  const payees=_acctPayees();
   const body=`<div class="form-grid">
-    <div class="field" style="grid-column:1/-1"><label>Vendor *</label><select id="f-vendor" onchange="window.acctPurchaseVendorChanged(this.value)">${_acctVendorOptions(pre.vendorId)}</select><div id="f-vendor-hint" style="font-size:13px;color:var(--muted);margin-top:4px">${v?_acctEsc(_acctTermsLabel(v))+(_acctVendorBalance(v._id)?' · owed '+_acctPKR(_acctVendorBalance(v._id)):''):''}</div></div>
+    <div class="field" style="grid-column:1/-1"><label>Does it have a vendor? *</label><div class="acct-chips" id="f-hasv-chips"><button type="button" class="acct-chipbtn${hasV?' on':''}" data-v="yes" onclick="window.acctPurchaseHasVendor(true)">Yes — a vendor account<small>store purchase, a regular supplier</small></button><button type="button" class="acct-chipbtn${hasV?'':' on'}" data-v="no" onclick="window.acctPurchaseHasVendor(false)">No — just a bill<small>repairs, wages, fuel, stationery…</small></button><input type="hidden" id="f-hasv" value="${hasV?'yes':'no'}"></div></div>
+    <div class="field" style="grid-column:1/-1${hasV?'':';display:none'}" id="f-vendor-wrap"><label>Vendor *</label><select id="f-vendor" onchange="window.acctPurchaseVendorChanged(this.value)">${_acctVendorOptions(pre.vendorId)}</select><div id="f-vendor-hint" style="font-size:13px;color:var(--muted);margin-top:4px">${v?_acctEsc(_acctTermsLabel(v))+(_acctVendorBalance(v._id)?' · owed '+_acctPKR(_acctVendorBalance(v._id)):''):''}</div></div>
+    <div class="field" style="grid-column:1/-1${hasV?';display:none':''}" id="f-payee-wrap"><label>Paid to *</label><input id="f-payee" list="acct-payees" placeholder="Who was paid — e.g. Ali electrician, PSO pump" value="${_acctEsc(pre.payee||'')}"><datalist id="acct-payees">${payees.map(n=>`<option value="${_acctEsc(n)}">`).join('')}</datalist><div style="font-size:13px;color:var(--muted);margin-top:4px">No vendor account — nothing goes on credit, and the bill photo is <b>required above ${_acctPKR(ACCT_NOVENDOR_PHOTO_ABOVE)}</b>.</div></div>
     ${_acctDateField('f-date')}
-    <div class="field"><label>Vendor's bill / invoice no.</label><input id="f-ref" placeholder="optional"></div>
-    <div class="field"><label>Category</label><select id="f-cat" onchange="window.acctCatChange(this)">${_acctCatOptions(pre.category||(v&&v.kind==='utility'?'Utilities':(v&&v.kind==='service'?'Maintenance & repairs':'Store purchase')))}</select></div>
+    <div class="field"><label>Bill / invoice no.</label><input id="f-ref" placeholder="optional"></div>
+    <div class="field"><label>Category</label><select id="f-cat" onchange="window.acctCatChange(this);window.acctPurchaseCatChanged()">${_acctCatOptions(cat)}</select></div>
     <div class="field"><label>Note</label><input id="f-note" placeholder="optional"></div>
     <div class="field" style="grid-column:1/-1"><label>What is this? *</label>${_acctKindChips(kind)}</div>
   </div>
@@ -1690,8 +1783,38 @@ function _acctPurchaseForm(pre){
   _acctModal('Record purchase',body,`<button class="btn-outline" onclick="window.acctModalClose()">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px" id="f-submit" onclick="window.acctSubmitPurchase()">Record purchase</button>`,{sticky:true,width:720});
   // The chip builder paints ONLY cash/mcb balances; strip those from credit/float chips' labels — already handled (no balance key).
   window.acctLineAdd();
-  window.acctPurchaseSourceChanged();
+  window.acctPurchaseHasVendor(hasV);
 }
+// Everyone a vendor-less bill was paid to, most recent first — the
+// datalist behind "Paid to", derived from the entries like the runner list.
+function _acctPayees(){
+  const out=[];const seen=new Set();
+  for(const e of (acctEntries||[])){if(!e||e.status==='void'||!e.payee)continue;const k=String(e.payee).trim().toLowerCase();if(!k||seen.has(k))continue;seen.add(k);out.push(String(e.payee).trim());}
+  return out;
+}
+// The vendor / no-vendor switch on the purchase form. With no vendor the
+// vendor select hides and "Paid to" shows; "On credit" disappears from
+// Paid via (nobody to owe) and a credit pick falls back to Cash.
+window.acctPurchaseHasVendor=function(yes){
+  yes=!!yes;
+  const h=document.getElementById('f-hasv');if(h)h.value=yes?'yes':'no';
+  document.querySelectorAll('#f-hasv-chips .acct-chipbtn').forEach(b=>b.classList.toggle('on',(b.dataset.v==='yes')===yes));
+  const vw=document.getElementById('f-vendor-wrap'),pw=document.getElementById('f-payee-wrap');
+  if(vw)vw.style.display=yes?'':'none';
+  if(pw)pw.style.display=yes?'none':'';
+  const credit=document.querySelector('#f-source-chips .acct-chipbtn[data-v="credit"]');
+  if(credit)credit.style.display=yes?'':'none';
+  const src=document.getElementById('f-source');
+  if(!yes&&src&&src.value==='credit')window.acctChip('f-source','cash');   // repaints the hint itself
+  else window.acctPurchaseSourceChanged();
+};
+// The category decides the DEFAULT answer; a vendor already picked keeps it.
+window.acctPurchaseCatChanged=function(){
+  const c=document.getElementById('f-cat');if(!c||c.value===_ACCT_NEW_CAT)return;
+  const v=document.getElementById('f-vendor');
+  if(v&&v.value&&v.value!=='__new__')return;
+  window.acctPurchaseHasVendor(_acctCatHasVendor(c.value));
+};
 window.acctPurchaseVendorChanged=function(v){
   if(v==='__new__'){window.acctVendorWizard(null,null,{then:id=>window.acctForm('purchase',{vendorId:id})});return;}
   const vd=_acctVendor(v);const el=document.getElementById('f-vendor-hint');
@@ -1713,7 +1836,8 @@ window.acctPurchaseSourceChanged=function(){
       if(f&&f.category&&cat&&_acctCategories().includes(f.category)){cat.value=f.category;cat.dataset.prev=f.category;}}
     else el.innerHTML='';
   }
-  if(req)req.textContent=rr?`(needed above ${_acctPKR(rr)} or it is flagged for review)`:'';
+  const noV=(document.getElementById('f-hasv')||{}).value==='no';
+  if(req)req.textContent=noV?`(required above ${_acctPKR(ACCT_NOVENDOR_PHOTO_ABOVE)} — the bill is the only proof)`:(rr?`(needed above ${_acctPKR(rr)} or it is flagged for review)`:'');
 };
 // A new line starts at quantity 1: a service bill ("paint job for the
 // studio") has no quantity of its own, so its amount goes in Rate and the
@@ -1786,7 +1910,11 @@ function _acctFormTotal(){
 function _acctTotalPaint(){const t=document.getElementById('f-total');if(t)t.textContent=_acctPKR(_acctFormTotal());}
 window.acctSubmitPurchase=async function(){
   const g=id=>{const el=document.getElementById(id);return el?el.value:'';};
-  const v=_acctVendor(g('f-vendor'));if(!v){showToast('Pick a vendor.',true);return;}
+  const hasV=g('f-hasv')!=='no';
+  const v=hasV?_acctVendor(g('f-vendor')):null;
+  if(hasV&&!v){showToast('Pick a vendor — or say it has none.',true);return;}
+  const payee=hasV?'':(g('f-payee')||'').trim();
+  if(!hasV&&!payee){showToast('Who was paid? Fill in Paid to.',true);return;}
   const kind=g('f-kind')||'stock';
   const lines=[];let expense=false;
   if(kind==='expense'){
@@ -1816,14 +1944,19 @@ window.acctSubmitPurchase=async function(){
   if(amount<=0){showToast('The total is zero — enter each line\'s rate (or, for a service, its amount).',true);return;}
   const src=g('f-source')||'cash';
   const e=_acctBase('purchase');
-  e.vendorId=v._id;e.vendorName=v.name;e.date=g('f-date')||_acctToday();e.ref=(g('f-ref')||'').trim();e.category=g('f-cat')||'';e.note=(g('f-note')||'').trim();e.photo=window._acctPhoto['f-photo']||null;e.lines=lines;e.amount=amount;
+  if(v){e.vendorId=v._id;e.vendorName=v.name;}else e.payee=payee;
+  e.date=g('f-date')||_acctToday();e.ref=(g('f-ref')||'').trim();e.category=g('f-cat')||'';e.note=(g('f-note')||'').trim();e.photo=window._acctPhoto['f-photo']||null;e.lines=lines;e.amount=amount;
   if(expense)e.expense=true;
+  // No vendor: the bill IS the record, so above the threshold it must be attached.
+  if(!v&&amount>ACCT_NOVENDOR_PHOTO_ABOVE&&!e.photo){showToast(`Attach the bill photo — it is required above ${_acctPKR(ACCT_NOVENDOR_PHOTO_ABOVE)} when there is no vendor.`,true);return;}
+  if(src==='credit'&&!v){showToast('Nothing can go on credit without a vendor — pay it from Cash, MCB or a float.',true);return;}
   if(src==='credit'){e.source='credit';e.account=null;
     const lim=v.terms&&parseInt(v.terms.creditLimit)||0;
     if(lim&&_acctVendorBalance(v._id)+amount>lim&&!confirm(`This takes ${v.name}'s balance to ${_acctPKR(_acctVendorBalance(v._id)+amount)}, over the ${_acctPKR(lim)} credit limit. Record anyway?`))return;
   }else if(src.startsWith('float:')){
     const f=_acctOpenFloats().find(x=>'float:'+x.id===src);if(!f){showToast('That float is no longer open.',true);return;}
-    if(amount>f.left&&!confirm(`This bill (${_acctPKR(amount)}) is more than the ${_acctPKR(f.left)} left on ${f.person}'s float. Record anyway?`))return;
+    // Over the float: the excess is owed to the runner until it is settled
+    if(amount>f.left&&!confirm(`This bill (${_acctPKR(amount)}) is ${_acctPKR(amount-f.left)} more than the ${_acctPKR(f.left)} left on ${f.person}'s float. The extra will be owed to ${f.person} until it is settled. Record it?`))return;
     e.source='float';e.floatId=f.id;e.person=f.person;e.account=null;
   }else{e.source=src;e.account=src;
     const b=_acctBalances();if(amount>b[src]&&!confirm(`${_acctAccountLabel(src)} shows only ${_acctPKR(b[src])}. Record anyway?`))return;
@@ -1850,15 +1983,15 @@ window.acctOpenEntry=function(id){
     lines=`<table class="acct-table" style="margin-top:10px"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Total</th></tr></thead><tbody>${e.lines.map(l=>`<tr><td class="part">${_acctEsc(l.desc||l.itemCode)}${l.itemCode?` <span class="ref">${_acctEsc(l.itemCode)}</span>`:''}${l.sizes?`<div style="font-size:12px;color:var(--muted)">${Object.entries(l.sizes).map(([k,v])=>k+': '+v).join(' · ')}</div>`:''}</td><td class="num">${l.qty} ${_acctEsc(l.unit||'')}</td><td class="num">${_acctPKR(l.rate)}</td><td class="num bal">${_acctPKR(l.total)}</td></tr>`).join('')}</tbody></table>`;
   }
   let float='';
-  if(e.type==='float_out'){const f=_acctBalances().floats[e._id];if(f){const left=f.out-f.used-f.back;float=`<div class="acct-kv-grid" style="margin-top:8px">${kv('Spent on bills',_acctPKR(f.used))}${kv('Change returned',_acctPKR(f.back))}${kv('Still to account for',left>0?`<span style="color:var(--accent-urgent)">${_acctPKR(left)}</span>`:'<span style="color:var(--accent-success)">closed ✓</span>')}</div>${left>0&&_acctCanEntry()&&e.status!=='void'?`<div style="display:flex;gap:8px;margin-top:8px"><button class="btn-outline" onclick="window.acctModalClose();window.acctForm('purchase',{source:'float:${e._id}',category:_acctById('${e._id}')?.category||''})">Record a bill from it</button><button class="btn-outline" onclick="window.acctModalClose();window.acctForm('float_in',{floatId:'${e._id}'})">Change back</button></div>`:''}`;}}
+  if(e.type==='float_out'){const f=_acctBalances().floats[e._id];if(f){const left=f.out-f.used-f.back;float=`<div class="acct-kv-grid" style="margin-top:8px">${kv('Spent on bills',_acctPKR(f.used))}${kv('Change returned',_acctPKR(f.back))}${kv('Still to account for',left>0?`<span style="color:var(--accent-urgent)">${_acctPKR(left)}</span>`:(left<0?`<span style="color:var(--accent-urgent)">over by ${_acctPKR(-left)} — owed to ${_acctEsc(f.person)}</span>`:'<span style="color:var(--accent-success)">closed ✓</span>'))}</div>${left>0&&_acctCanEntry()&&e.status!=='void'?`<div style="display:flex;gap:8px;margin-top:8px"><button class="btn-outline" onclick="window.acctModalClose();window.acctForm('purchase',{source:'float:${e._id}',category:_acctById('${e._id}')?.category||''})">Record a bill from it</button><button class="btn-outline" onclick="window.acctModalClose();window.acctForm('float_in',{floatId:'${e._id}'})">Change back</button></div>`:''}`;}}
   const body=`
     <div class="acct-kv-grid">
       ${kv('Type',ACCT_TYPES[e.type]?ACCT_TYPES[e.type].label:e.type)}${kv('Date',_acctDateLabel(e.date))}${kv('Amount',_acctPKR(e.amount))}
-      ${kv('Vendor',_acctVendorName(e)?`<a class="acct-link" onclick="window.acctModalClose();window.acctOpenVendor('${e.vendorId}')">${_acctEsc(_acctVendorName(e))}</a>`:'')}${kv('Person',_acctEsc(e.person))}
+      ${kv('Vendor',e.vendorId&&_acctVendorName(e)?`<a class="acct-link" onclick="window.acctModalClose();window.acctOpenVendor('${e.vendorId}')">${_acctEsc(_acctVendorName(e))}</a>`:'')}${kv('Paid to',!e.vendorId&&e.payee?_acctEsc(e.payee)+' <span class="acct-chip">no vendor account</span>':'')}${kv('Person',e.type==='runner_pay'||e.type==='float_out'||e.type==='float_in'?`<a class="acct-link" onclick="window.acctModalClose();window.acctOpenRunner(this.textContent)">${_acctEsc(e.person)}</a>`:_acctEsc(e.person))}
       ${kv('Source / account',_acctEsc(_acctSourceLabel(e)))}${e.toAccount?kv('To',_acctAccountLabel(e.toAccount)):''}
       ${kv('Ref',_acctEsc(e.ref))}${kv('Category',e.category?`<a class="acct-link" onclick="window.acctModalClose();window.acctOpenCategory(this.textContent)">${_acctEsc(e.category)}</a>`:'')}${kv('Note',_acctEsc(e.note))}
       ${kv('Entered by',_acctEsc(e.byName||e.by)+' · '+new Date(e.ts||0).toLocaleString('en-PK'))}
-      ${kv('Effect',[fx.cash?'Cash '+_acctSigned(fx.cash):'',fx.mcb?'MCB '+_acctSigned(fx.mcb):'',fx.payable?'Owed to vendor '+_acctSigned(fx.payable):'',fx.floatUsed?'Float used '+_acctPKR(fx.floatUsed):'',fx.floatBack?'Float returned '+_acctPKR(fx.floatBack):''].filter(Boolean).join(' · '))}
+      ${kv('Effect',[fx.cash?'Cash '+_acctSigned(fx.cash):'',fx.mcb?'MCB '+_acctSigned(fx.mcb):'',fx.payable?'Owed to vendor '+_acctSigned(fx.payable):'',fx.floatUsed?'Float used '+_acctPKR(fx.floatUsed):'',fx.floatBack?'Float returned '+_acctPKR(fx.floatBack):'',fx.runnerPaid?'Owed to runner '+_acctSigned(-fx.runnerPaid):''].filter(Boolean).join(' · '))}
       ${e.vendorBillAmount!=null?kv("Vendor's bill",_acctPKR(e.vendorBillAmount)+(Math.round(e.vendorBillAmount)===Math.round(e.amount)?' <span class="acct-chip ok">matches</span>':` <span class="acct-chip urgent">${_acctSigned(Math.round(e.vendorBillAmount)-Math.round(e.amount))} vs ours</span>`)):''}
       ${e.stockPosted===true?kv('Inventory','<span class="acct-chip ok">stock posted ✓</span>'):(e.stockPosted===false?kv('Inventory',`<span class="acct-chip urgent">not posted</span> ${_acctEsc(e.stockError||'')} ${_acctCanEntry()&&e.status!=='void'?`<button class="btn-outline" style="padding:3px 8px;font-size:12px" onclick="window.acctRetryStock('${e._id}')">Retry</button>`:''}`):'')}
       ${e.status==='pending'?kv('Status','<span class="acct-chip warn">pending confirmation</span>'):''}
@@ -1894,7 +2027,7 @@ window.acctOpenEntry=function(id){
 // render (_acctEffect), so changing an amount or an account re-balances
 // every book without a stored balance to fix. `month` follows `date`
 // because the loader range-queries on it.
-const _ACCT_ADMIN_FIELDS=['date','amount','vendorId','person','account','toAccount','source','category','ref','note'];
+const _ACCT_ADMIN_FIELDS=['date','amount','vendorId','payee','person','account','toAccount','source','category','ref','note'];
 window.acctAdminEdit=function(id){
   if(!_acctIsSuper())return;
   const e=_acctById(id);if(!e){showToast('Entry not found.',true);return;}
@@ -1908,8 +2041,9 @@ window.acctAdminEdit=function(id){
       <div class="field"><label>Date</label><input id="ae-date" type="date" value="${_acctEsc(e.date||'')}"></div>
       <div class="field"><label>Amount (₨)${e.type==='adjust'?' — signed':''}</label><input id="ae-amount" type="number" inputmode="numeric" value="${Math.round(e.amount||0)}"></div>
       <div class="field"><label>Vendor</label><select id="ae-vendor"><option value="">— none —</option>${acctVendors.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(v=>`<option value="${v._id}"${e.vendorId===v._id?' selected':''}>${_acctEsc(v.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>Paid to (no vendor)</label><input id="ae-payee" value="${_acctEsc(e.payee||'')}"></div>
       <div class="field"><label>Person</label><input id="ae-person" value="${_acctEsc(e.person||'')}"></div>
-      <div class="field"><label>Account</label><select id="ae-account">${accOpts(e.account,e.type==='payment')}</select></div>
+      <div class="field"><label>Account</label><select id="ae-account">${accOpts(e.account,e.type==='payment'||e.type==='runner_pay')}</select></div>
       <div class="field"><label>To account (transfer)</label><select id="ae-to">${accOpts(e.toAccount)}</select></div>
       <div class="field"><label>Source (purchase)</label><select id="ae-source">${srcOpts(e.source)}</select></div>
       <div class="field"><label>Category</label><input id="ae-category" value="${_acctEsc(e.category||'')}"></div>
@@ -1930,7 +2064,7 @@ function _acctAdminPatch(e,vals){
   const vid=vals.vendorId||null;
   if(vid!==(e.vendorId||null)){p.vendorId=vid;p.vendorName=vid?((_acctVendor(vid)||{}).name||''):'';}
   const str=(k,v)=>{v=String(v||'').trim();if(v!==String(e[k]||''))p[k]=v;};
-  str('person',vals.person);str('category',vals.category);str('ref',vals.ref);str('note',vals.note);
+  str('person',vals.person);str('payee',vals.payee);str('category',vals.category);str('ref',vals.ref);str('note',vals.note);
   const nul=(k,v)=>{v=v||null;if(v!==(e[k]||null))p[k]=v;};
   nul('account',vals.account);nul('toAccount',vals.toAccount);nul('source',vals.source);
   // an expense is one description line whose rate and total ARE the amount
@@ -1941,7 +2075,7 @@ window.acctAdminSave=async function(id){
   if(!_acctIsSuper())return;
   const e=_acctById(id);if(!e)return;
   const g=k=>{const el=document.getElementById('ae-'+k);return el?el.value:'';};
-  const vals={date:g('date'),amount:g('amount'),vendorId:g('vendor'),person:g('person'),account:g('account'),toAccount:g('to'),source:g('source'),category:g('category'),ref:g('ref'),note:g('note')};
+  const vals={date:g('date'),amount:g('amount'),vendorId:g('vendor'),payee:g('payee'),person:g('person'),account:g('account'),toAccount:g('to'),source:g('source'),category:g('category'),ref:g('ref'),note:g('note')};
   if(vals.date&&vals.date>_acctToday()){showToast('The date cannot be in the future.',true);return;}
   if(e.type!=='adjust'&&!(parseInt(vals.amount)>0)){showToast('Enter an amount above zero.',true);return;}
   const p=_acctAdminPatch(e,vals);

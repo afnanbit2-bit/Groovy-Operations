@@ -6311,6 +6311,77 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
     `max-height:none` now, so every control is laid out and measured
     rather than scrolled away: the documented false hit, closed at its
     source.
+- **Over the float is a credit owed to the runner; and a bill need not
+  have a vendor (24 Sept 2026).** Afnan, with three screenshots: *"the cash
+  alocated to them if its not the same as give less or more logic should
+  be there … credit/ debit logic"*, and categories such as maintenance,
+  wages, advances, stationery, fuel, utilities *"should not have a vendor
+  based logic entirely … does it have a vendor or not if not proff of
+  trasnsstion with is the bill should be mandatory"*. His answers to the
+  four questions: *"it is a credit transection untill it is settled by
+  anyone"*, Paid to as free text — yes, *"take a photo above 1000 RS other
+  then that its optional"*, Advances *"currently plain catagory will be
+  connected later on"*.
+  - **`_acctRunnerOwed()` is DERIVED like every other balance.** Per float,
+    `max(0, used + back − out)` is the runner's over-spend (the bill form
+    already confirmed it; the confirm now says the extra is owed to the
+    runner); summed per case-folded name, minus every live `runner_pay`
+    entry naming that runner. Nothing is stored — a voided bill takes its
+    debt with it. An overspent float has `left<0`, so `_acctOpenFloats`
+    already closes it to more bills and to change back. `_acctRunnerStats`
+    carries `owed`; the Runners card has an *Owed to runner* column, the
+    runner page a tile and a **Settle ₨X** button, the ledger's
+    *With runners* tile says *owed to runners ₨X*, the alert strip names
+    the runner, the float's detail reads *over by ₨X — owed to N*, and the
+    statement summary carries an *Owed to runners* row. **Known limit:** a
+    month close checkpoints vendor payables only, so an over-spend whose
+    settlement lands after a close is read from the live window like a
+    float's own leftover is — the same limit floats already have.
+  - **`runner_pay` is the settlement** — *Settle with a runner* on the New
+    entry menu (refused with a toast when nobody is owed): pick the runner
+    (owed ones only, amount prefilled), Paid from **Cash / MCB / Other**
+    (Other needs the note, MCB the proof — the payment form's rules), and
+    **never more than is owed** (`X is owed only ₨Y`). `_acctEffect`:
+    money out when the account is Cash/MCB, `runnerPaid` either way.
+    Listed on the runner's page (`_acctRunnerEntries` matches it by
+    name), flagged *no receipt* above the review threshold like a payment,
+    Other offered on the admin edit's Account select for it.
+  - **Does it have a vendor?** is the purchase form's first question
+    (`f-hasv` chips). `ACCT_VENDOR_CATS=['Store purchase','Other']`
+    (`_acctCatHasVendor`, case-folded) decides the DEFAULT — a vendor
+    already picked, or the form opened from a vendor's page, says Yes;
+    changing the category re-decides unless a vendor is picked
+    (`acctPurchaseCatChanged`). `ACCT_DEFAULTS.categories` is now *Store
+    purchase · Maintenance & repairs · Wages · Advances · Office &
+    stationery · Fuel & transport · Utilities · Other*; the old names
+    (`Transport & fuel`, `Wages & labour`, `Refreshments`) survive on the
+    picker through the derived list wherever an entry or the settings doc
+    still carries them.
+  - **No vendor → `e.payee`** (free text, required; `_acctPayees()` offers
+    past ones), `vendorId` null. `_acctVendorName` falls back to it, so
+    the ledger's Vendor / person column, the category page and the Excel
+    sheets read the payee with no second branch — while payables, aging
+    and the rate card key on `vendorId` and never see it. The entry detail
+    shows *Paid to … no vendor account* instead of a vendor link.
+    **Nothing on credit without a vendor** (the chip is hidden and a
+    submit is refused — nobody to owe), and **the bill photo is REQUIRED
+    above `ACCT_NOVENDOR_PHOTO_ABOVE` = ₨1,000** — a refusal, not a
+    review flag, because the bill is the only proof of a payment nobody
+    has a statement for; at or below it the photo is optional, and a
+    ₨5,000 VENDOR bill with no photo is still only flagged. `payee` is on
+    `_ACCT_ADMIN_FIELDS`. No `firestore.rules` change — the `acct_entries`
+    create rule has no field allow-list and `_acctPatch`'s keys did not
+    move.
+  - Verified by reverting: settlements not deducted (3), over-settling
+    allowed (7), the photo rule dropped (5), the payee not read as the
+    name (3), `runner_pay` moving no money (1), the category default
+    ignored (3); the credit-without-vendor guard **crashes the suite
+    rather than naming a finding** when removed (the guard IS the null
+    check the credit branch relies on). The form fragment renders the
+    no-vendor form and the settle form with Other selected — fails 6 jobs
+    at 1:1 with the settle hint's ink set to `--surface`. **Nobody has
+    settled with a runner or recorded a vendor-less bill on a real
+    screen** — the sandbox cannot sign in.
 - **`firestore.rules` changed** (`acct_*` blocks + `isStoreAccounts()`; the
   `store_cash_*` blocks became owner-write) — **published by Afnan, 23 Sept
   2026**; see "Firestore rules" below. **Changed AGAIN the same evening
@@ -6318,7 +6389,7 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
   below.
 
 **Nobody has recorded a purchase on a real screen** — the sandbox cannot
-sign in. 469 assertions hold the logic; the layout probe holds the shape.
+sign in. 535 assertions hold the logic; the layout probe holds the shape.
 
 ## The Sales Team ▸ Marketing (Sept 2026)
 
