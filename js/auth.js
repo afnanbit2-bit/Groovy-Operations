@@ -29,6 +29,15 @@ const USER_DEFS=[
   // Customer support (Sept 2026). A scoped, VIEW-ONLY role — see
   // CSR_LEAD_PAGES below and "CSR Team Lead" in CLAUDE.md.
   {u:'sami',   email:'sami@groovy.op',   name:'Sami',   role:'csr_lead', title:'CSR Team Lead',     canPO:false,canFabric:true,  stages:[]},
+  // The Board (Sept 2026). Saim is a graphic designer: he needs the board
+  // and nothing else, so he gets a role of his own rather than `manager`
+  // (POs, gate passes, HRM, store) or `viewer` (a fixed 3-button phone nav
+  // with no More sheet, and My Work, which means nothing to him). Scoped in
+  // showPage to tb-* + the chrome pages; see DESIGNER_PAGES below.
+  // NOTE the handle: `saim`, one letter from the existing `sami`. They are
+  // two different people. Sami is not a Board user and is therefore never a
+  // mention candidate inside The Board, so the two never appear in one list.
+  {u:'saim',   email:'saim@groovy.op',   name:'Saim',   role:'designer', title:'Graphic Designer',  canPO:false,canFabric:false, stages:[]},
 ];
 
 // ── CSR Team Lead (Sept 2026) ──
@@ -44,6 +53,34 @@ const CSR_LEAD_ROLE='csr_lead';
 const CSR_LEAD_PAGES=['dashboard','qc-disposition','bstock','fabric-inventory','shopify-intel',
   'creative-hub','notes','note-detail','boards','boards-all','board-canvas'];
 function isCsrLead(){ return !!(session && session.role===CSR_LEAD_ROLE); }
+
+// == Designer (Sept 2026) ==
+// One page list, one role, added for The Board. Everything tb-* plus the
+// chrome pages (profile, bug tracker) that every role reaches. showPage
+// (js/shared.js) rewrites anything else to the board's home, the same shape
+// the fulfilment and CSR scopes use. Deliberately NOT given Creative Hub:
+// widening that audience is one name in _CREATIVE_HUB_USERS (js/shared.js)
+// plus its invariants assertion, and it has not been asked for.
+const DESIGNER_ROLE='designer';
+function isDesigner(){ return !!(session && session.role===DESIGNER_ROLE); }
+
+// == The Board (Sept 2026) ==
+// Audience by USERNAME here, mirrored BY EMAIL in firestore.rules
+// (isBoardUser / isBoardOwner). A test in tests/theboard.test.js fails if
+// the two ever disagree -- the guard isPaidPRApprover() and isScoringAdmin()
+// already carry, and the only thing that keeps a nav grant and a rules
+// grant from drifting apart.
+//
+// BOARD_OWNERS is not the app's `owner` role: it is who can override a
+// lock, manage access and run the seed. It happens to be the same two
+// people today, and is a separate list so that stays a decision rather
+// than a coincidence.
+//
+// To widen: add the username here AND the email in firestore.rules.
+const BOARD_OWNERS=['ammar','afnan'];
+const BOARD_USERS=['ammar','afnan','daniyal','mustafa','saim'];
+function isBoardUser(){  return !!(typeof session!=='undefined' && session && BOARD_USERS.indexOf(session.u)>-1); }
+function isBoardOwner(){ return !!(typeof session!=='undefined' && session && BOARD_OWNERS.indexOf(session.u)>-1); }
 
 // ── The Sales Team ▸ Marketing (Sept 2026) ──
 // Access keys off ROLE, never a name: whoever holds creator_content_ops_lead

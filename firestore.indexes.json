@@ -4,48 +4,162 @@
       "collectionGroup": "shopify_line_items",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "order_created_at", "order": "ASCENDING" },
-        { "fieldPath": "size", "order": "ASCENDING" }
+        {
+          "fieldPath": "order_created_at",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "size",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "shopify_line_items",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "order_created_at", "order": "ASCENDING" },
-        { "fieldPath": "color", "order": "ASCENDING" }
+        {
+          "fieldPath": "order_created_at",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "color",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "shopify_line_items",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "order_created_at", "order": "ASCENDING" },
-        { "fieldPath": "product_type", "order": "ASCENDING" }
+        {
+          "fieldPath": "order_created_at",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "product_type",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "shopify_line_items",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "order_created_at", "order": "ASCENDING" },
-        { "fieldPath": "sku", "order": "ASCENDING" }
+        {
+          "fieldPath": "order_created_at",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sku",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "shopify_line_items",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "sku", "order": "ASCENDING" },
-        { "fieldPath": "order_created_at", "order": "DESCENDING" }
+        {
+          "fieldPath": "sku",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "order_created_at",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "shopify_orders",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "created_at", "order": "DESCENDING" },
-        { "fieldPath": "financial_status", "order": "ASCENDING" }
+        {
+          "fieldPath": "created_at",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "financial_status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "board_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "assigneeUids",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "board_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "assigneeUids",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "board_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "visibility",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "board_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "board_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "listId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
       ]
     }
   ],

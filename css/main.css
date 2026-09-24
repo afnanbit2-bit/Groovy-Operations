@@ -45,6 +45,9 @@
      the wrong way for the chip. Do not "fix" this by adding a dark
      override. */
   --count-accent:#DC2626;
+  /* Spec s10 (The Board): dates and counts want tabular figures so a
+     column of them lines up. The app had no monospace token before this. */
+  --font-mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;
   --radius-card:14px;--radius-bubble:16px;color-scheme:light}
 
 /* ── Dark mode (Sept 2026) ────────────────────────────────────────────
@@ -222,6 +225,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
   body{padding-bottom:0}
   #mob-nav{display:grid !important;grid-template-columns:repeat(5,1fr)}
   #mob-nav.cols-3{grid-template-columns:repeat(3,1fr) !important}
+  #mob-nav.cols-4{grid-template-columns:repeat(4,1fr) !important}
   .job-board{grid-template-columns:1fr}
   .item-grid{grid-template-columns:1fr 1fr}
   .kpi-grid{grid-template-columns:repeat(3,1fr)}
@@ -1929,3 +1933,48 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   .mkt-table .mkt-niche{flex:1 1 100%;max-width:none}
   .mkt-table .mkt-c-last{flex:1 1 100%}
 }
+
+/* ── The Board (Sept 2026) ────────────────────────────────────────────
+   Namespace .tb-* -- NOT .board-*, which js/boards.js (Mood Boards) owns
+   259 rules of. See the header of js/theboard.js for why.
+
+   Spec s10: one primary action per screen, 44px rows on desktop and 48 on
+   mobile, colour carries meaning and nothing is decorative, and the only
+   red in the product is the overdue count. Motion is 150ms ease-out and
+   only on the things that move. Labels are lowercase. */
+.tb-wrap{display:flex;align-items:flex-start;gap:18px}
+.tb-rail{display:flex;flex-direction:column;gap:2px;flex:0 0 156px;position:sticky;top:64px}
+.tb-railbtn{display:block;width:100%;text-align:left;min-height:44px;padding:0 12px;
+  background:none;border:none;border-radius:8px;cursor:pointer;
+  font-family:inherit;font-size:14px;font-weight:600;color:var(--muted);
+  transition:background .15s ease-out,color .15s ease-out}
+.tb-railbtn:hover{background:var(--hover);color:var(--text)}
+.tb-railbtn.on{background:var(--dark);color:var(--on-dark)}
+.tb-main{flex:1;min-width:0}
+
+/* The unread badge on the sidebar tab. Empty until phase 4 fills it, and
+   hidden while empty rather than rendering an empty chip. --count-accent
+   is the app's one real red and deliberately does not invert, because this
+   sits on a transparent row AND on the --dark chip of .nav-item.on, and
+   --dark swaps between themes. Same reasoning as the Boards panel counts. */
+.tb-navbadge{margin-left:7px;font-size:11px;font-weight:700;color:var(--count-accent);font-family:var(--font-mono)}
+.tb-navbadge:empty{display:none}
+
+.tb-empty{padding:40px 4px;max-width:520px}
+.tb-empty-h{font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px}
+.tb-empty-p{font-size:14px;color:var(--muted);line-height:1.6}
+
+@media(max-width:600px){
+  /* The rail docks as a horizontal scroller, the way the Mood Boards tool
+     rail does on a phone -- #mob-nav is full for owners and managers and
+     cannot give up a slot. The designer's role gets the real four-tab bar
+     instead (_renderMobNav, js/shared.js). */
+  .tb-wrap{flex-direction:column;gap:12px}
+  .tb-rail{flex:0 0 auto;flex-direction:row;width:100%;position:static;
+    overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .tb-rail::-webkit-scrollbar{display:none}
+  .tb-railbtn{width:auto;flex:0 0 auto;min-height:48px;white-space:nowrap}
+  .tb-main{width:100%}
+  .tb-empty{padding:28px 0}
+}
+@media(prefers-reduced-motion:reduce){.tb-railbtn{transition:none}}

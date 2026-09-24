@@ -61,6 +61,29 @@ function findBrowser(){
 // node harness's stub DOM records but does not put into the markup — the
 // hydration itself is covered by tests/profile.test.js.
 const FRAGMENTS={
+  // The Board's shell. The rail is NAVIGATION CHROME and the only route
+  // between the four screens, so every button has to be reachable at every
+  // width -- the lesson the Mood Boards tool rail cost. At phone width it
+  // docks as a HORIZONTAL scroller, which is why the rail check in this
+  // file is scoped to the vertical axis: a scrollable axis has moved a
+  // control, not hidden it.
+  'the board — shell and rail':()=>{
+    const app=loadApp({
+      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-dash',
+      session:{uid:'uid-ammar',u:'ammar',name:'Ammar',role:'owner',
+               title:'Co-founder',email:'ammar@groovy.op'},
+      // js/auth.js reads localStorage at load time (the remembered user).
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+    });
+    // js/auth.js declares `session` at top level, so it CLOBBERS the
+    // harness's session option when it loads. Set it after, the way every
+    // logic suite does -- without this the fragment renders the module's
+    // "you do not have access" message and measures a single div, which
+    // passes every check while proving nothing.
+    app.run("session={uid:'uid-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+    app.run("tbRenderPage('tb-dash')");
+    return app.el('main-content').innerHTML;
+  },
   'profile page (owner, mixed profiles)':()=>{
     const app=loadApp({
       files:['js/boards.js','js/profile.js'],currentPage:'profile',

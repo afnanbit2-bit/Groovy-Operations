@@ -708,13 +708,36 @@ const _CREATIVE_HUB_USERS=['afnan','ammar','sami'];
 function _canSeeCreativeHub(){
   return !!(typeof session!=='undefined'&&session&&_CREATIVE_HUB_USERS.indexOf(session.u)>-1);
 }
+/* The Board's sidebar entry (Sept 2026). Five routes render it: the main
+   sidebar, the Marketing lead's sidebar, the designer's sidebar, the
+   owner/manager More sheet and the designer's phone nav. One builder, so
+   they cannot drift apart -- the mistake the Creative Hub gate cost six
+   edits to undo.
+
+   isBoardUser() lives in js/auth.js, which loads AFTER this file, so every
+   caller guards with typeof and FAILS CLOSED: an auth.js that did not parse
+   hides the tab rather than opening a side door. */
+function _canSeeTheBoard(){
+  return !!(typeof isBoardUser==='function' && isBoardUser());
+}
+function _tbNavLabel(){ return (typeof TB_NAME!=='undefined'&&TB_NAME)||'the board'; }
+function _tbNavHome(){  return (typeof TB_HOME!=='undefined'&&TB_HOME)||'tb-dash'; }
+/* The unread badge (spec s2) is filled in phase 4; the span ships now so
+   the count has somewhere to land and CSS hides it while it is empty. */
+function _tbNavItemHTML(on){
+  return'<div class="nav-item'+(on?' on':'')+'" id="nav-'+_tbNavHome()+'" onclick="window.showPage(\''+_tbNavHome()+'\')">'
+    +_tbNavLabel()+'<span class="tb-navbadge" id="tb-nav-badge"></span></div>';
+}
 function buildNav(){
   // Creator & Content Operations Lead — The Sales Team ▸ Marketing plus a
   // view-only Inventory Intel. Scoped in showPage below as well; the page
   // list itself comes from the same groups the owners see.
   if(session.role==='creator_content_ops_lead'){
     const sb=document.getElementById('sidebar');
-    if(sb)sb.innerHTML=_salesTeamNavHTML(_salesTeamGroups()).replace(/^\s*<div class="nav-divider"><\/div>/,'')
+    // The Board sits FIRST for him too -- it is the same tab everyone else
+    // sees, not a Marketing sub-page.
+    const tbTop=_canSeeTheBoard()?_tbNavItemHTML(String(currentPage||'').startsWith('tb-'))+'<div class="nav-divider"></div>':'';
+    if(sb)sb.innerHTML=tbTop+_salesTeamNavHTML(_salesTeamGroups()).replace(/^\s*<div class="nav-divider"><\/div>/,'')
       +`<div class="nav-divider"></div><div class="nav-item" id="nav-shopify-intel" onclick="window.showPage('shopify-intel')">Inventory Intel</div>`;
     _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
     return;
@@ -726,6 +749,16 @@ function buildNav(){
     if(sb)sb.innerHTML=item('dashboard','Dashboard')+item('qc-disposition','QC Disposition')+item('bstock','B-Stock')
       +item('fabric-inventory','Fabric Inventory')+item('shopify-intel','Inventory Intel')
       +(_canSeeCreativeHub()?item('creative-hub','Creative Hub'):'');
+    _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
+    return;
+  }
+  // Designer (Saim) — a single-purpose nav: the board and nothing else.
+  // Scoped in showPage too. If he is ever given Creative Hub, add `saim` to
+  // _CREATIVE_HUB_USERS and a second item here.
+  if(session.role==='designer'){
+    const sb=document.getElementById('sidebar');
+    if(sb)sb.innerHTML=_canSeeTheBoard()?_tbNavItemHTML(true)
+      :'<div class="nav-item on">no pages</div>';
     _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
     return;
   }
@@ -747,6 +780,10 @@ function buildNav(){
   const isOwner=session.role==='owner',canPO=session.canPO,isWorker=session.role==='worker',isViewer=session.role==='viewer',isStore=session.role==='store';
   const om=isOwner||session.role==='manager';
   const mainItems=[];
+  // The Board is the FIRST item in the sidebar (spec s2) -- above Dashboard,
+  // deliberately. It is rendered from _tbNavItemHTML rather than as a plain
+  // mainItems entry because it carries the unread badge.
+  if(_canSeeTheBoard())mainItems.push({id:_tbNavHome(),label:_tbNavLabel(),html:_tbNavItemHTML(currentPage===_tbNavHome())});
   if(!isWorker&&!isStore)mainItems.push({id:'dashboard',label:'Dashboard'});
   if(canPO)mainItems.push({id:'po-create',label:'New PO'});
   if(!isWorker&&!isStore)mainItems.push({id:'po-registry',label:'PO Registry'});
@@ -809,7 +846,9 @@ function buildNav(){
   // entitled to instead of a navless sidebar.
   const printSubItems=isStore?[]:printItems;
 
-  const mainNav=mainItems.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('');
+  // An item may supply its own `html` (The Board does, for its unread
+  // badge); everything else renders the plain row it always did.
+  const mainNav=mainItems.map(i=>i.html||`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')">${i.label}</div>`).join('');
   const storeOpen=currentPage.startsWith('store-')||isStore;
   // Workers have very few printing items, so default the section open for them
   // (one extra tap to discover their only printing-jobs link feels punitive).
@@ -900,11 +939,14 @@ function _renderMobNav(ctx){
     // Five buttons — #mob-nav's own 5-column default.
     mob.className='';
     mob.style.gridTemplateColumns='';
+    // #mob-nav is a fixed 5-column grid, so adding the board means Intel
+    // moves behind a More sheet rather than becoming a squeezed sixth
+    // button. Nothing he could reach before is unreachable now.
     mob.innerHTML=_mobNavBtn('mkt-creators','people','Creators',"window.showPage('mkt-creators')")
                  +_mobNavBtn('mkt-dispatches','box','Dispatches',"window.showPage('mkt-dispatches')")
                  +_mobNavBtn('mkt-paid-pr','money','Paid PR',"window.showPage('mkt-paid-pr')")
                  +_mobNavBtn('mkt-reports','activity','Reports',"window.showPage('mkt-reports')")
-                 +_mobNavBtn('shopify-intel','shop','Intel',"window.showPage('shopify-intel')");
+                 +_mobNavBtn('more','more','More','window.openMktMoreSheet()');
     _updateMobNavActive(currentPage);
     return;
   }
@@ -917,6 +959,20 @@ function _renderMobNav(ctx){
                  +_mobNavBtn('bstock','tray','B-Stock',"window.showPage('bstock')")
                  +_mobNavBtn('fabric-inventory','box','Fabric',"window.showPage('fabric-inventory')")
                  +_mobNavBtn('more','more','More','window.openCsrMoreSheet()');
+    _updateMobNavActive(currentPage);
+    return;
+  }
+  if(session&&session.role==='designer'){
+    // Spec s7: on a phone the Board's four screens ARE the bottom tab bar.
+    // For everyone else those four live in the in-page .tb-rail, which docks
+    // as a horizontal scroller at phone width -- the app's own #mob-nav
+    // already carries their other modules and cannot give up a slot.
+    mob.className='cols-4';
+    mob.style.gridTemplateColumns='';
+    mob.innerHTML=_mobNavBtn('tb-dash','home','Board',"window.showPage('tb-dash')")
+                 +_mobNavBtn('tb-calendar','clock','Calendar',"window.showPage('tb-calendar')")
+                 +_mobNavBtn('tb-lists','list','Lists',"window.showPage('tb-lists')")
+                 +_mobNavBtn('tb-inbox','tray','Inbox',"window.showPage('tb-inbox')");
     _updateMobNavActive(currentPage);
     return;
   }
@@ -975,6 +1031,9 @@ function _updateMobNavActive(pageId){
     'activity':'more','monitor':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more','pattern-hub':'more','pattern-reconcile':'more','pattern-blocks':'more','pattern-block':'more','pattern-unassigned':'more','pattern-poms':'more','pattern-notices':'more',
     'mkt-creators':'more','mkt-dispatches':'more','mkt-paid-pr':'more','mkt-reports':'more','mkt-import':'more',
     'creative-hub':'more','notes':'more','note-detail':'more','boards':'more','boards-all':'more','board-canvas':'more',
+    // The Board: on the owner/manager phone nav it lives behind More; the
+    // designer has direct buttons, which _updateMobNavActive matches first.
+    'tb-dash':'more','tb-calendar':'more','tb-lists':'more','tb-inbox':'more',
     'my-work':'my-work'
   };
   const grp=groups[pageId];
@@ -1076,10 +1135,19 @@ window.openHRMSheet=function(){
   window.openMobSheet('HRM',items);
 };
 
+window.openMktMoreSheet=function(){
+  const items=[{iconName:'shop',label:'Inventory Intel',pageId:'shopify-intel'}];
+  if(_canSeeTheBoard())items.unshift({label:_tbNavLabel(),pageId:_tbNavHome()});
+  window.openMobSheet('More',items);
+};
+
 window.openMoreSheet=function(){
   const isOwner=session.role==='owner';
   const om=isOwner||session.role==='manager';
   const items=[];
+  // First in the sheet, as it is first in the sidebar. No icon -- same
+  // deliberate choice as Creative Hub and Pattern Hub.
+  if(_canSeeTheBoard())items.push({label:_tbNavLabel(),pageId:_tbNavHome()});
   if(session.canPO)items.push({iconName:'plus',label:'New PO',pageId:'po-create'});
   items.push({iconName:'po',label:'PO Registry',pageId:'po-registry'});
   if(om||session.canFabric)items.push({iconName:'box',label:'Fabric Inventory',pageId:'fabric-inventory'});
@@ -1173,7 +1241,10 @@ window.showPage=async function(id){
   // allowed ONLY because that page never writes — if it ever gains a write
   // action this grant must be revisited (logged in the Inventory
   // Intelligence change request).
-  if(session&&session.role==='creator_content_ops_lead'&&!String(id).startsWith('mkt-')&&id!=='shopify-intel'&&_CHROME_PAGES.indexOf(id)<0)id='mkt-creators';
+  if(session&&session.role==='creator_content_ops_lead'&&!String(id).startsWith('mkt-')&&!String(id).startsWith('tb-')&&id!=='shopify-intel'&&_CHROME_PAGES.indexOf(id)<0)id='mkt-creators';
+  // Designer (Saim): the board and the chrome pages, nothing else. Same
+  // rewrite-the-id shape as the scopes above.
+  if(session&&session.role==='designer'&&!String(id).startsWith('tb-')&&_CHROME_PAGES.indexOf(id)<0)id='tb-dash';
   // CSR Team Lead: CSR_LEAD_PAGES (js/auth.js, which loads after this file —
   // hence typeof; an unparsed auth.js fails CLOSED to the dashboard).
   if(session&&session.role==='csr_lead'&&_CHROME_PAGES.indexOf(id)<0
@@ -1243,6 +1314,11 @@ function renderPage(id){
   // failed read renders its own error card with Retry.
   else if(id.startsWith('mkt-')){if(typeof mktRenderPage==='function')mktRenderPage(id);else m.innerHTML='<div class="empty">The Marketing module did not load — refresh the page.</div>';}
   else if(id==='creative-hub')m.innerHTML=renderCreativeHub();
+  // Every tb-* page goes through tbRenderPage (js/theboard.js), so The Board
+  // never needs another line in this file for a screen added later -- the
+  // rule js/marketing.js and js/patterns.js already follow. The module
+  // re-checks the audience itself; a deep link is not a way in.
+  else if(id.startsWith('tb-')){if(typeof tbRenderPage==='function')tbRenderPage(id);else m.innerHTML='<div class="empty">The Board did not load — refresh the page.</div>';}
   // Every pattern-* page goes through ptnRenderPage (js/patterns.js), so a
   // new Pattern Hub page never needs a line here — the mkt-* rule. Its
   // loaders cannot reject; a failed read renders its own error card.
@@ -1366,6 +1442,10 @@ const BUG_PAGE_NAMES={
   'creative-hub':'Creative Hub',
   'notes':'Notes',
   'note-detail':'Note Detail',
+  'tb-dash':'the board — dashboard',
+  'tb-calendar':'the board — calendar',
+  'tb-lists':'the board — lists',
+  'tb-inbox':'the board — inbox',
   'boards':'Mood Boards (Home)',
   'boards-all':'Mood Boards — All boards',
   'board-canvas':'Mood Board Canvas',
