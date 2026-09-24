@@ -314,7 +314,10 @@ const FRAGMENTS={
     // The REAL row (`_acctLineHTML`), placeholders included — a hand-rolled copy
     // here once measured a shorter placeholder than the one that shipped.
     const lines=app.run("_acctFormLines.map((l,i)=>_acctLineHTML(l,i)).join('')");
-    const modal=(b)=>'<div class="acct-modal" style="position:static;max-width:720px;margin-top:14px"><div class="acct-modal-head"><span>Record purchase</span><button class="acct-x">×</button></div><div class="acct-modal-body">'+b+'</div><div class="acct-modal-foot"><button class="btn-outline">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px">Record purchase</button></div></div>';
+    // max-height:none — the real modal is a 92dvh scroll box, and a control
+    // scrolled out of its body reads as "covered by the foot" (the documented
+    // false hit); it flipped between passing and failing with font timing
+    const modal=(b)=>'<div class="acct-modal" style="position:static;max-width:720px;margin-top:14px;max-height:none"><div class="acct-modal-head"><span>Record purchase</span><button class="acct-x">×</button></div><div class="acct-modal-body">'+b+'</div><div class="acct-modal-foot"><button class="btn-outline">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px">Record purchase</button></div></div>';
     // the same form opened for a service vendor: Expense mode, the stock block hidden
     app.run("window.acctForm('purchase',{vendorId:'net'})");
     const expBody=app.run('window.__cap.b');

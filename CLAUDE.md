@@ -6299,15 +6299,18 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
     fragment now renders both cards and both pages. **Nobody has given a
     float with a category, or opened a runner's log, on a real screen** —
     the sandbox cannot sign in.
-  - **A probe job flaked during this round and it is NOT this change:**
-    `store accounts — tiles, alerts and the purchase form @ 420px` failed
-    once in light and once in dark (the Paid-via chips "covered by"
-    `.acct-modal-foot` / `.acct-modal-head`), then passed. The fragment's
-    markup was dumped from this tree and from the committed one and is
-    **byte-identical (18,477 bytes, no diff)**, so the hit-test is
-    catching the sticky modal foot at a scroll position it does not always
-    land on. If it shows up again, that fragment's sticky foot is the
-    thing to look at, not the form.
+  - **A probe job flaked during this round, and the cause was the
+    fragment, not the form.** `store accounts — tiles, alerts and the
+    purchase form @ 420px` failed in light, then in dark, then in both (the
+    Paid-via chips "covered by" `.acct-modal-foot`), while the fragment's
+    markup dumped from this tree and from the committed one was
+    **byte-identical (18,477 bytes)**. `.acct-modal` is a `92dvh` scroll
+    box, so whether the first form's bottom row is scrolled out of its body
+    — and so under the sticky foot — turns on font metrics at measurement
+    time (`font-display:swap`). The fragment's wrapper carries
+    `max-height:none` now, so every control is laid out and measured
+    rather than scrolled away: the documented false hit, closed at its
+    source.
 - **`firestore.rules` changed** (`acct_*` blocks + `isStoreAccounts()`; the
   `store_cash_*` blocks became owner-write) — **published by Afnan, 23 Sept
   2026**; see "Firestore rules" below. **Changed AGAIN the same evening
