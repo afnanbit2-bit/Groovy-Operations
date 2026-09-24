@@ -27,7 +27,7 @@ const read=f=>fs.readFileSync(path.join(__dirname,'..',f),'utf8');
 const FILES=['js/shared.js','js/auth.js','js/theboard.js'];
 // The full owner sidebar reaches helpers in the HRM and store-cash modules,
 // so the nav section loads those too. Scoped roles return early and do not.
-const NAV_FILES=['js/shared.js','js/auth.js','js/embellishments.js','js/hrm.js','js/store.js','js/store-cash.js','js/marketing.js','js/patterns.js','js/theboard.js'];
+const NAV_FILES=['js/shared.js','js/auth.js','js/embellishments.js','js/hrm.js','js/store.js','js/store-accounts.js','js/marketing.js','js/patterns.js','js/theboard.js'];
 const AMMAR  ={uid:'u-ammar', u:'ammar',  name:'Ammar',  role:'owner',   email:'ammar@groovy.op',  canPO:true,canFabric:true};
 const DANIYAL={uid:'u-dani',  u:'daniyal',name:'Daniyal',role:'creator_content_ops_lead',email:'daniyal@groovy.op'};
 const SAIM   ={uid:'u-saim',  u:'saim',   name:'Saim',   role:'designer',email:'saim@groovy.op'};

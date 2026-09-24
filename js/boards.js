@@ -156,10 +156,45 @@ function _boardsCanEdit(b){
 const _BOARDS_FILE_W=200,_BOARDS_FILE_H=110;
 // The size an image card is born at, before its picture has landed.
 const _BOARDS_IMG_W=170,_BOARDS_IMG_H=120;
+// The size a BOARD card is born at, wherever it is minted — the rail, the
+// sub-board action, Home's auto-place, the Boards panel. It used to be two
+// different numbers (200x104 from _boardsNewCard, 260x172 on Home), so the
+// same card was a different shape depending on how you made it. Afnan drew
+// the shape he wanted on a screenshot: a wide rectangle. MEASURED rather
+// than guessed at (headless Chromium, the real markup and the real
+// stylesheet): the tallest a spine card's content ever gets at this width
+// is 133px - a two-line name, the meta line and a thumbnail strip - so 136
+// fits the worst case with nothing clipped. See _BOARDS_MIN_BODY_H.board.
+const _BOARDS_BOARD_W=340,_BOARDS_BOARD_H=136;
+// A note's birth size, named so the rail's drag ghost (drawn as the card
+// it will become, at the board's zoom) cannot drift from what lands. The
+// height is _boardsNewCard's default for a type it does not size itself.
+const _BOARDS_NOTE_W=220,_BOARDS_NOTE_H=100;
+// One definition of a card id. _boardsCardsFromTrayItem needs to mint one
+// when an item comes back out of Unsorted onto an id that is taken.
+function _boardsMintCardId(){
+  return 'c'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
+}
+/* THE SIZE A NEW CARD IS BORN AT — pure, and that is the whole point.
+   It used to be two ternary chains inside _boardsNewCard, which MINTS AN
+   ID and so can never be called just to ask a question. That is the exact
+   reason recorded above for why every rail tool but Note carried a generic
+   chip: the ghost had no way to find out how big the card would be. It is
+   one definition now, read by the card and by the ghost, so a ghost can
+   never promise a footprint the drop does not land.
+
+   Written as the same expressions rather than a lookup object: several of
+   these constants are declared further down the file, and a top-level
+   object literal would read them in the temporal dead zone. */
+function _boardsNewCardSize(type){
+  return{
+    w:type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?_BOARDS_NOTE_W:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?_BOARDS_BOARD_W:type==='image'?_BOARDS_IMG_W:type==='link'?_BOARDS_LINK_W:170,
+    h:type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?_BOARDS_IMG_H:type==='link'?_BOARDS_LINK_H:type==='file'?_BOARDS_FILE_H:type==='todo'?170:type==='board'?_BOARDS_BOARD_H:100
+  };
+}
 function _boardsNewCard(type){
-  const id='c'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4);
-  const w=type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?220:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?200:type==='image'?_BOARDS_IMG_W:type==='link'?_BOARDS_LINK_W:170;
-  const h=type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?_BOARDS_IMG_H:type==='link'?_BOARDS_LINK_H:type==='file'?_BOARDS_FILE_H:type==='todo'?170:type==='board'?104:100;
+  const id=_boardsMintCardId();
+  const {w,h}=_boardsNewCardSize(type);
   const base={id,type,x:80,y:80,w,h};
   if(type==='image')base.imageUrl='';
   if(type==='text')base.text='';
@@ -200,10 +235,16 @@ function _boardsNewCard(type){
 // special-casing is render order (frames paint first, so they sit behind
 // their contents) and drag (a frame takes its contents with it).
 function _boardsCardsInFrame(frame){
+  // A COLLAPSED frame is 63px of title block, and its contents have not
+  // moved — so membership is measured against the rect the frame had when
+  // it was folded, not the strip it is now. Without this a folded frame
+  // reports nothing inside it, which would mean it hid its cards, said
+  // "0 cards", and left them behind when it was dragged.
+  const h=(frame.collapsed&&frame.openH)||frame.h;
   return _editCards.filter(c=>{
     if(c.id===frame.id)return false;
     const cx=c.x+c.w/2,cy=c.y+c.h/2;   // centre-in-bounds: a card poking over the edge still counts
-    return cx>=frame.x&&cx<=frame.x+frame.w&&cy>=frame.y&&cy<=frame.y+frame.h;
+    return cx>=frame.x&&cx<=frame.x+frame.w&&cy>=frame.y&&cy<=frame.y+h;
   });
 }
 // Frames paint first so they never cover their own contents. This also
@@ -213,12 +254,57 @@ function _boardsCardsInFrame(frame){
 // to sit behind the cards it holds for the same reason, and behind nothing
 // else. Everything after that keeps its array order, which is the z-order
 // "bring to front" reorders (Stage 2).
+/* What a collapsed container is hiding. A COLUMN owns its children by
+   c.columnId; a FRAME owns whatever is geometrically inside it. One
+   function so the render, the count and the drag cannot disagree about
+   which cards a fold covers. */
+function _boardsHiddenByFolds(){
+  const hidden=new Set();
+  _editCards.forEach(c=>{
+    if(!c.collapsed)return;
+    if(_boardsIsColumn(c))_boardsColumnChildren(c).forEach(k=>hidden.add(k.id));
+    else if(c.type==='frame')_boardsCardsInFrame(c).forEach(k=>hidden.add(k.id));
+  });
+  return hidden;
+}
 function _boardsRenderOrder(){
   const rank=c=>c.type==='frame'?0:c.type==='column'?1:2;
-  return _editCards.filter(c=>rank(c)===0)
-    .concat(_editCards.filter(c=>rank(c)===1))
-    .concat(_editCards.filter(c=>rank(c)===2));
+  // A collapsed container's contents are not DRAWN. They are untouched in
+  // _editCards, so search, the exports, the reading order and the card
+  // count all still see them — this hides them, it does not remove them.
+  const hidden=_boardsHiddenByFolds();
+  const vis=hidden.size?_editCards.filter(c=>!hidden.has(c.id)):_editCards;
+  return vis.filter(c=>rank(c)===0)
+    .concat(vis.filter(c=>rank(c)===1))
+    .concat(vis.filter(c=>rank(c)===2));
 }
+/* ── Folding a container, one implementation for both ────────────────────
+   Undoable like any other mutation (the module's standing contract: push
+   undo BEFORE mutating), and it rebuilds rather than repaints, because the
+   contents leave the DOM.
+
+   The height is where the two differ. A column's is DERIVED, so
+   _boardsLayoutColumn recomputes it on expand and nothing needs
+   remembering. A frame's is whatever somebody dragged it to, so folding
+   has to keep it (`openH`) or expanding would invent a size — and that
+   stored height is also what _boardsCardsInFrame measures against while
+   the frame is folded, so a folded frame still knows what it is hiding. */
+window.boardsFoldContainer=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||!(_boardsIsColumn(c)||c.type==='frame'))return;
+  if(!_boardsCanEdit(_editBoard)||c.locked)return;
+  _boardsPushUndo();
+  if(c.collapsed){
+    delete c.collapsed;
+    if(c.type==='frame'){c.h=c.openH||_boardsMinCardH(c);delete c.openH;}
+  }else{
+    if(c.type==='frame'){c.openH=Math.max(c.h,_boardsMinCardH(c));c.h=_BOARDS_COL_HEAD;}
+    c.collapsed=true;
+  }
+  _boardsLayoutColumns();
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
 
 /* ── Columns: the one REAL container ────────────────────────────────────
    This reverses the Stage 3 decision recorded in CLAUDE.md, deliberately.
@@ -242,7 +328,19 @@ function _boardsRenderOrder(){
    A `columnId` pointing at a column that no longer exists is INERT: the
    card renders as an ordinary free card. Nothing has to be reconciled on
    read, and no failed write can strand a card inside an invisible box. */
-const _BOARDS_COL_PAD=12,_BOARDS_COL_HEAD=30,_BOARDS_COL_GAP=10,_BOARDS_COL_MIN_H=120;
+/* _BOARDS_COL_HEAD is the height of the column's title block — the name,
+   the card count and the corner buttons — and it is what the first child is
+   laid out below. It is MEASURED against the real stylesheet
+   (scratchpad/measure-column.js reports 63 for the block Afnan drew), not
+   counted up from paddings, because getting it wrong puts the first card
+   under the title rather than below it. .board-column-body's `top` is the
+   same number and must move with it.
+   _BOARDS_COL_MIN_H is what an EMPTY column stands at, and it is the size
+   of the target you are asked to drop into: 150 leaves 87px of body under
+   the 63px head. At the old 120 the drop zone was 57px — smaller than most
+   of the cards being aimed at it, which is part of why dropping into one
+   felt like a coin toss. */
+const _BOARDS_COL_PAD=12,_BOARDS_COL_HEAD=63,_BOARDS_COL_GAP=10,_BOARDS_COL_MIN_H=150;
 function _boardsIsColumn(c){return!!(c&&c.type==='column');}
 // The column a card belongs to, or null — including when columnId is stale.
 function _boardsColumnOf(c){
@@ -262,6 +360,14 @@ function _boardsColumnChildren(col){
 function _boardsLayoutColumn(col){
   if(!_boardsIsColumn(col))return false;
   const kids=_boardsColumnChildren(col);
+  // COLLAPSED: the column is just its header, and its children keep the
+  // positions they already had. Nothing is moved and nothing is unlinked,
+  // so expanding puts the list back exactly as it was — collapse is a way
+  // of LOOKING at a column, not an edit to it.
+  if(col.collapsed){
+    if(col.h!==_BOARDS_COL_HEAD){col.h=_BOARDS_COL_HEAD;return true;}
+    return false;
+  }
   const innerW=Math.max(60,col.w-_BOARDS_COL_PAD*2);
   let y=col.y+_BOARDS_COL_HEAD+_BOARDS_COL_PAD;
   let changed=false;
@@ -295,6 +401,47 @@ function _boardsColumnAt(wx,wy,skip){
   }
   return null;
 }
+/* ── WHICH COLUMN A DRAGGED CARD WOULD JOIN ──────────────────────────────
+   This used to be `_boardsColumnAt(centre of the card)`, and Afnan reported
+   dropping into a column as not working properly. MEASURED before changing
+   it (scratchpad/probe-drop-overlap.js, the real drag driven end to end):
+   of 272 drop positions where the card VISIBLY overlapped an empty column
+   by a quarter or more, 90 were refused — and a card sitting 45% inside a
+   column still would not drop.
+
+   That is not a bug in one line, it is the wrong rule. A centre point is
+   invisible; what a person aims with is the card, and the card is nearly as
+   big as an empty column, so "is the middle pixel inside" reads as random.
+   The rule is OVERLAP now: the column sharing the most area with the card
+   wins, as long as that shared area is a real share of whichever of the two
+   is SMALLER. min() is what makes both directions work — a small card well
+   inside a big column, and a big card dropped squarely on top of a small
+   column, are both obviously deliberate. The centre still counts on its own
+   so nothing that used to work stops working. */
+const _BOARDS_COL_DROP_SHARE=0.3;
+function _boardsRectOverlap(a,b){
+  const w=Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x);
+  const h=Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y);
+  return w>0&&h>0?w*h:0;
+}
+function _boardsColumnForCard(card,skip){
+  let best=null,bestArea=0;
+  _editCards.filter(_boardsIsColumn).forEach(col=>{
+    if(skip&&skip.has(col.id))return;
+    if(col.locked)return;
+    if(col.collapsed)return;      // a collapsed column shows no slots to aim at
+    const over=_boardsRectOverlap(card,col);
+    if(!over)return;
+    const share=over/Math.max(1,Math.min(card.w*card.h,col.w*col.h));
+    const cx=card.x+card.w/2,cy=card.y+card.h/2;
+    const centreIn=cx>=col.x&&cx<=col.x+col.w&&cy>=col.y&&cy<=col.y+col.h;
+    if(!centreIn&&share<_BOARDS_COL_DROP_SHARE)return;
+    // Ties go to the topmost, which is the later one in the array — the
+    // same "later paints on top" order _boardsColumnAt walks backwards.
+    if(over>=bestArea){best=col;bestArea=over;}
+  });
+  return best;
+}
 // Where a card dropped at world-y `wy` would land, and the y that puts it
 // there. Returning a y (rather than an index) is what lets the drop reuse
 // the ordinary "sort children by y" rule with no special-casing.
@@ -323,7 +470,7 @@ function _boardsDropTargets(group,movingCols){
     if(c.columnId&&movingCols&&movingCols.has(c.columnId))return false;
     return true;
   }).map(card=>{
-    const col=_boardsColumnAt(card.x+card.w/2,card.y+card.h/2,movingCols);
+    const col=_boardsColumnForCard(card,movingCols);
     return{card,col,slot:col?_boardsColumnSlot(col,card.y+card.h/2,card.id):null};
   });
 }
@@ -435,13 +582,22 @@ async function _boardsHomeId(){
 // a board sitting on someone's Home is NOT "nested" (see _boardsNestedIds,
 // which only ever follows a real parentId), so it still lists at root in
 // All boards and still reaches every other person's Home.
-/* A board card is a COVER TILE (Sept 2026 — Afnan picked option A from the
-   specimen). It was 200x124 of grey chrome: a type label, a truncated
-   title, a count and a button, identical for every board — while the board
-   itself already stored a picture, a colour and a letter that only the
-   Boards panel ever drew. 240x180 gives the picture a shape worth looking
-   at and the name two lines to live on. */
-const _BOARDS_HOME_COLS=4,_BOARDS_HOME_W=240,_BOARDS_HOME_H=180;
+/* A board card is a SPINE CARD (Sept 2026 — Afnan picked option D from the
+   specimen, after living with option A's cover tile for a day: "i like D
+   spine its perfect").
+
+   It was 200x124 of grey chrome: a type label, a truncated title, a count
+   and a button, identical for every board. A took the other extreme — the
+   picture full bleed with the name on a scrim over it — and the thing it
+   could not do is say what is INSIDE. D is the most a card can say at
+   once: the board's colour (or its picture) as a spine down the left, the
+   WHOLE name on two lines, the state and the counts, and a strip of the
+   board's own thumbnails.
+
+   The SIZE moved again in Sept 2026, at Afnan's request and with the shape
+   drawn on a screenshot: a board card is born a wide rectangle now, and
+   it is the same rectangle wherever it is minted - see _BOARDS_BOARD_W. */
+const _BOARDS_HOME_COLS=4,_BOARDS_HOME_W=_BOARDS_BOARD_W,_BOARDS_HOME_H=_BOARDS_BOARD_H;
 // Afnan's own line, kept. It is chrome, so no emoji (the module's rule)
 // and it is a literal rather than a card's data, so it is safe in the
 // template; every string that comes off a BOARD still goes through
@@ -680,8 +836,26 @@ function _boardsMatchCount(b,q){
 // leave a no-op entry and Ctrl+Z would appear to do nothing.
 let _boardsUndo=[],_boardsRedo=[];
 const _BOARDS_UNDO_MAX=50;
+/* THE SNAPSHOT COVERS THE UNSORTED TRAY, and it has to since Sept 2026.
+   It used to be cards and connectors only, which was right while nothing
+   moved data BETWEEN the board and the tray: the tray is saved in `head`
+   beside the title and the pan, and boardsTrayRemove says out loud that
+   it cannot be undone.
+
+   Stashing broke that. Ctrl+Z after a stash restored the cards and left
+   the copy sitting in Unsorted, so the same card existed twice — and an
+   undo that duplicates is worse than no undo at all.
+
+   It also closes one that was already there and had no symptom anyone
+   would report: dragging an item OUT of the tray pushes undo, and Ctrl+Z
+   then took the card off the board WITHOUT putting the item back. The
+   thing was simply gone.
+
+   Still NOT covered, deliberately: pan and zoom (undoing a deliberate pan
+   is more surprising than useful) and typing (contenteditable has its
+   own undo). */
 function _boardsStateSnapshot(){
-  return JSON.stringify({cards:_editCards,connectors:_editConnectors});
+  return JSON.stringify({cards:_editCards,connectors:_editConnectors,unsorted:_editUnsorted});
 }
 function _boardsPushUndo(){
   _boardsUndo.push(_boardsStateSnapshot());
@@ -693,6 +867,7 @@ function _boardsApplySnapshot(json){
   const s=JSON.parse(json);
   _editCards=s.cards||[];
   _editConnectors=s.connectors||[];
+  _editUnsorted=s.unsorted||[];
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
   _boardsSyncHistoryButtons();
@@ -737,12 +912,15 @@ window.boardsBeginEdit=function(ev,elId){
   const host=el.closest?el.closest('.board-card-el,.board-frame'):null;
   const id=host&&host.dataset?host.dataset.id:null;
   const c=id?_editCards.find(x=>x.id===id):null;
-  if(c&&c.locked){showToast('Card is locked — unlock it to edit it');return;}
+  if(c&&c.locked){showToast(_boardsLockedMsg('edit'));return;}
   if(ev){ev.stopPropagation();ev.preventDefault();}
   if(_boardsEditingEl&&_boardsEditingEl!==el)_boardsEndEdit();
   el.setAttribute('contenteditable','true');
   _boardsEditingEl=el;
   el.focus();
+  // The rail's mode depends on this — a note in edit mode gets the text
+  // rail (desktop). focusin shows the bar on a phone.
+  if(_boardsIsRichField(el)&&!_boardsIsPhone()){_boardsFmtTarget=el;_boardsRenderRail();}
   // Put the caret where the double-click actually landed rather than at the
   // start of the text — anything else feels broken on a long note.
   try{
@@ -776,6 +954,8 @@ function _boardsEndEdit(){
   // caret has to stay put), so the recompute happens the moment you leave.
   _boardsRepaintFormulas(el);
   _boardsSaveDebounced();
+  // Leaving a note hands the rail back to whatever mode the selection asks for.
+  if(_boardsIsRichField(el)){_boardsFmtTarget=null;_boardsRenderRail();}
 }
 function _boardsRepaintFormulas(el){
   if(!el||!el.id||el.id.indexOf('board-td-')!==0)return;
@@ -922,6 +1102,9 @@ document.addEventListener('pointerdown',e=>{
   if(!_boardsEditingEl)return;
   const t=e.target;
   if(t&&t.closest&&(t.closest('.board-fmt')||t.closest('.board-sheet')))return;
+  // The rail's formatting tools and the Text style menu act ON the caret:
+  // a press there must not end the edit it is formatting.
+  if(t&&t.closest&&_boardsIsRichField(_boardsEditingEl)&&(t.closest('[data-act^="fmt:"]')||t.closest('.rail-fmt-row')||t.closest('.board-ctx')))return;
   if(_boardsEditingEl.contains&&_boardsEditingEl.contains(t))return;
   _boardsEndEdit();
 },true);
@@ -939,6 +1122,11 @@ function _boardsOnKeydown(e){
   // Escape is the way OUT of edit mode, so it has to be read before the
   // editable-focus bail below — otherwise it is handed to the browser and
   // does nothing at all.
+  // Drawing is a mode, so Escape is its way out too — and read here, above
+  // the editable bail, for the same reason.
+  if(_boardsDrawOn&&(e.key==='Escape'||e.key==='Esc')){
+    e.preventDefault();window.boardsDrawEnd();return;
+  }
   if((_boardsEditingEl||_boardsCellFocus)&&(e.key==='Escape'||e.key==='Esc')){
     e.preventDefault();
     const hadCell=!!_boardsCellFocus;
@@ -1860,6 +2048,9 @@ async function _boardsOpenCanvas(){
   // ids persist with the next write that happens for a real reason.
   _boardsConnEnsureIds();
   _boardsConnSel=null;
+  // Drawing is a mode, like line mode, and a mode that survived leaving the
+  // board is exactly the bug the QA round found in _boardsLineMode.
+  _boardsDrawOn=null;
   _boardsConnBase=JSON.stringify(_editConnectors);
   _boardsPeers=[];_boardsComments=[];_boardsBoardActivity=[];
   _boardsCardTrash=[];_boardsCardTrashOpen=false;_boardsCardTrashTab='mine';
@@ -1913,6 +2104,7 @@ function _boardsRenderCanvasAndWire(){
   // Seed the pill's last-seen value from the markup we just wrote, so
   // opening a board doesn't flash a percentage nobody asked for.
   _boardsPillZoom=_editBoard?Math.round(_editBoard.zoom*100):null;
+  _boardsApplyBoardBg();
   _boardsApplyTransform();
   _boardsHydrateTextCards();
   _boardsDrawConnectors();
@@ -1938,33 +2130,48 @@ function _renderBoardCanvasHTML(){
   // Breadcrumbs only appear on a nested board — on a root board the trail
   // would just read "Boards ›" next to a back button that says the same.
   const home=_boardsIsHome(b);
+  // ONE row on a phone. Measured: the desktop row wrapped to 142px of a
+  // 667px screen. Undo, Redo, Find and Comments live in the ⋯ sheet there
+  // (same ids, so _boardsSyncHistoryButtons needs no change); the visibility
+  // pill is dropped — the sheet's "Make Team/Private" says the state. The
+  // save status stays: it renders nothing unless a save FAILED or the phone
+  // is offline, and those are exactly the moments it must be seen.
+  const phone=_boardsIsPhone();
   const chain=home?[]:_boardsAncestors(b.id);
   const parent=chain.length?chain[chain.length-1]:null;
   const backLabel=home?'Creative Hub':(parent?(parent.title||'Untitled board'):(_boardsCameFromAll?'All boards':'Home'));
-  const crumbs=chain.length?`<div class="board-crumbs">
-      <button class="board-crumb" onclick="window.boardsGotoGallery()">Home</button>
-      ${chain.map(a=>`<span class="board-crumb-sep">›</span><button class="board-crumb" onclick="window.boardsGoto('${a.id}')">${_boardsEsc(a.title||'Untitled board')}</button>`).join('')}
-      <span class="board-crumb-sep">›</span>
+  // THE TRAIL, Milanote's shape (Sept 2026): a round chip carrying the
+  // GROOVY mark, "Home", a slash, then each ancestor and finally the board's
+  // own tile and name. On a phone the one-row bar keeps its capped back
+  // button; on Home the chip and the word are the identity and the back
+  // button still leaves the module.
+  const crumbs=!phone?`<div class="board-crumbs">
+      <button class="board-home-chip" onclick="window.boardsGotoGallery()" title="Home"><img src="/assets/icons/icon-192.png" alt=""></button>
+      ${home?'<span class="board-crumb board-crumb-home">Home</span>'
+        :`<button class="board-crumb board-crumb-home" onclick="window.boardsGotoGallery()">Home</button>
+      ${_boardsCameFromAll&&!chain.length?`<span class="board-crumb-slash">/</span><button class="board-crumb" onclick="window.boardsShowAll()">All boards</button>`:''}
+      ${chain.map(a=>`<span class="board-crumb-slash">/</span><button class="board-crumb" onclick="window.boardsGoto('${a.id}')">${_boardsEsc(a.title||'Untitled board')}</button>`).join('')}
+      <span class="board-crumb-slash">/</span>${_boardsTileHTML(b,22)}`}
     </div>`:'';
   return`<div class="board-canvas-wrap">
     <div class="board-topbar">
       <div style="display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:wrap">
-        <button class="back-btn" style="margin:0" onclick="window.boardsBack()">← ${_boardsEsc(backLabel)}</button>
+        ${phone||home?`<button class="back-btn" style="margin:0" onclick="window.boardsBack()">← ${_boardsEsc(backLabel)}</button>`:''}
         ${crumbs}
         ${home
-          ?`<span style="font-size:15.5px;font-weight:700">Home</span>`
+          ?(phone?`<span style="font-size:15.5px;font-weight:700">Home</span>`:'')
           :`<input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" placeholder="Untitled board" title="Click to rename this board" style="font-size:15.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
-        <span class="pill">${visLabel}</span>
+        ${phone?'':`<span class="pill">${visLabel}</span>`}
         ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}`}
         ${canEdit?`<span class="board-save-status" id="board-save-status"></span>`:''}
         <span class="board-peers" id="board-peers" style="display:none"></span>
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-        ${canEdit?`<button class="tool-btn" id="board-undo-btn" onclick="window.boardsUndoAction()" title="Undo (Ctrl+Z)" disabled>Undo</button>
+        ${phone?'':`${canEdit?`<button class="tool-btn" id="board-undo-btn" onclick="window.boardsUndoAction()" title="Undo (Ctrl+Z)" disabled>Undo</button>
         <button class="tool-btn" id="board-redo-btn" onclick="window.boardsRedoAction()" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
         <div class="tool-sep"></div>`:''}
         <button class="tool-btn${_boardsFindOpen?' on':''}" onclick="window.boardsToggleFind()" title="Find cards on this board">Find</button>
-        <button class="tool-btn${_boardsDrawerOpen?' on':''}" id="board-cmt-btn" onclick="window.boardsToggleDrawer()" title="Comments and activity on this board">Comments</button>
+        <button class="tool-btn${_boardsDrawerOpen?' on':''}" id="board-cmt-btn" onclick="window.boardsToggleDrawer()" title="Comments and activity on this board">Comments</button>`}
         ${home
           ?`<button class="tool-btn${_boardsHomePanelOpen()?' on':''}" onclick="window.boardsTogglePanel()" title="Show or hide the boards panel">Boards <span class="board-tray-tabn">${_boardsHomeList().length}</span></button>`
           :`<button class="tool-btn${_boardsTrayOpen?' on':''}" onclick="window.boardsToggleTray()" title="Unsorted — things collected but not placed yet">Unsorted${_editUnsorted.length?' '+_editUnsorted.length:''}</button>`}
@@ -1977,14 +2184,13 @@ function _renderBoardCanvasHTML(){
              #board-zoom-readout keeps its id, so _boardsApplyTransform
              needs no change at all. -->
         <div class="board-menu-wrap">
-          <button class="tool-btn${_boardsViewOpen?' on':''}" id="board-view-btn" onclick="window.boardsToggleViewMenu(event)" title="How this board is displayed — zoom, fit, snap, minimap">View <span class="zoom-readout" id="board-zoom-readout">${Math.round(b.zoom*100)}%</span></button>
+          <button class="tool-btn${_boardsViewOpen?' on':''}" id="board-view-btn" onclick="window.boardsToggleViewMenu(event)" title="How this board is displayed — zoom, fit, snap, minimap">${phone?'':'View '}<span class="zoom-readout" id="board-zoom-readout">${Math.round(b.zoom*100)}%</span></button>
           <div class="board-menu" id="board-view-menu" style="display:none">
             <button id="board-fit-btn" onclick="window.boardsToggleFit()">Fit</button>
             <button onclick="window.boardsResetView()">Zoom to 100%</button>
             <button onclick="window.boardsZoomBy(1.25)">Zoom in</button>
             <button onclick="window.boardsZoomBy(0.8)">Zoom out</button>
-            <div class="board-menu-sep"></div>
-            <button onclick="window.boardsTogglePan()">Hand (drag to pan): ${_boardsPanMode?'on':'off'}</button>
+            ${(canEdit||!_boardsIsPhone())?'<div class="board-menu-sep"></div>':''}
             ${canEdit?`<button id="board-snap-btn" onclick="window.boardsToggleSnap()">Snap to grid: ${_boardsSnapGrid?'on':'off'}</button>`:''}
             ${_boardsIsPhone()?'':`<button onclick="window.boardsToggleMinimap()">Minimap: ${_boardsMinimapOn?'on':'off'}</button>`}
           </div>
@@ -1992,6 +2198,11 @@ function _renderBoardCanvasHTML(){
         <div class="board-menu-wrap">
           <button class="tool-btn" onclick="window.boardsToggleMenu(event)" title="Board actions">⋯</button>
           <div class="board-menu" id="board-menu" style="display:none">
+            ${phone?`${canEdit?`<button id="board-undo-btn" onclick="window.boardsUndoAction()" disabled>Undo</button>
+            <button id="board-redo-btn" onclick="window.boardsRedoAction()" disabled>Redo</button>`:''}
+            <button onclick="window.boardsToggleFind()">${_boardsFindOpen?'Close find':'Find on this board'}</button>
+            <button id="board-cmt-btn" onclick="window.boardsToggleDrawer()">${_boardsDrawerOpen?'Close comments':'Comments and activity'}</button>
+            <div class="board-menu-sep"></div>`:''}
             ${_boardsIsPhone()&&!home?`<button onclick="window.boardsOpenColorPicker('board','${b.id}')">Board colour…</button>
             <button onclick="window.boardsOpenIconPicker('${b.id}')">Board icon…</button>
             <div class="board-menu-sep"></div>`:''}
@@ -2010,6 +2221,8 @@ function _renderBoardCanvasHTML(){
             ${canEdit&&!home?`<button onclick="window.boardsOpenShare()">Share with people…</button>`:''}
             ${canEdit&&!home?`<button onclick="window.boardsToggleVisibility()">Make ${b.visibility==='shared'?'Private':'Team'}</button>`:''}
             ${canEdit&&!home?`<button class="danger" onclick="window.boardsDelete()">Delete board</button>`:''}
+            ${phone&&typeof window.openBugReportModal==='function'?`<div class="board-menu-sep"></div>
+            <button onclick="window.openBugReportModal()">Report a bug</button>`:''}
           </div>
         </div>
       </div>
@@ -2028,6 +2241,11 @@ function _renderBoardCanvasHTML(){
          be a different bug. -->
     <div class="board-below${home?(_boardsHomePanelCollapsed?' with-panel-collapsed':' with-panel'):''}">
     <div class="board-stage" id="board-stage">
+      <!-- The board's own background picture. A sibling of .board-world,
+           so pan and zoom do not move it, and its own element rather than
+           a background-image on .board-stage, which already carries one
+           (the dot-grid placement cue). pointer-events:none throughout. -->
+      <div class="board-bg" id="board-bg" style="display:none"></div>
       <div class="board-world" id="board-world">
         <svg class="board-conn-layer" id="board-conn-layer" width="4000" height="3000"></svg>
         <div class="board-guide board-guide-v" id="board-guide-v"></div>
@@ -2047,7 +2265,9 @@ function _renderBoardCanvasHTML(){
       <div class="board-zoom-pill" id="board-zoom-pill">${Math.round(b.zoom*100)}%</div>
       ${canEdit?'<div class="board-dropzone" id="board-dropzone"><div>Drop files to add them to this board</div></div>':''}
       <div class="board-rail" id="board-rail"></div>
-      ${canEdit&&!_editCards.length?'<div class="board-empty-hint">Double-click anywhere to add a note · drop files in · paste an image with Ctrl+V<br>Drag to select · scroll or hold Space to pan</div>':''}
+      ${canEdit&&!_editCards.length?(_boardsIsPhone()
+        ?'<div class="board-empty-hint">Double-tap anywhere to add a note · tap a tool below to add one<br>Drag to pan · pinch to zoom · hold a card for its menu</div>'
+        :'<div class="board-empty-hint">Double-click anywhere to add a note · drop files in · paste an image with Ctrl+V<br>Drag to select · scroll or hold Space to pan</div>'):''}
     </div>
     <div class="board-fmt" id="board-fmt" style="display:none">
       <div class="board-fmt-swatches" id="board-fmt-swatches" style="display:none">
@@ -2081,24 +2301,51 @@ function _boardCardHTML(c,canEdit){
   if(c.type==='column'){
     const sel=_boardsSelection.has(c.id)?' selected':'';
     const n=_boardsColumnChildren(c).length;
-    return`<div class="board-column${sel}${c.locked?' locked':''}${c.color?' tint-'+c.color:''}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px">
+    /* The header is the card's TITLE BLOCK, not a toolbar strip: the name
+       centred on its own line with the count under it, the way Afnan drew
+       it. The two buttons are absolutely positioned in the corner rather
+       than being flex siblings, or the title would centre against whatever
+       is left over and shift the moment the ✕ appeared on hover.
+       _BOARDS_COL_HEAD must equal this block's real height — it is what
+       _boardsLayoutColumn puts the first child below — so it is MEASURED
+       (scratchpad/measure-column.js), never guessed. */
+    const fold=c.collapsed?'+':'—';
+    return`<div class="board-column${sel}${c.collapsed?' collapsed':''}${c.locked?' locked':''}${_boardsCardColorClasses({color:c.color})}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle({color:c.color})}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px">
       <div class="board-column-head" ${canEdit&&!c.locked?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''} onclick="window.boardsSelectCard('${c.id}',event)">
-        <input type="text" class="board-column-title" value="${_boardsEsc(c.title||'')}" placeholder="Column" ${canEdit&&!c.locked?'':'readonly'} oninput="window.boardsFrameTitle('${c.id}',this.value)" onpointerdown="event.stopPropagation()">
-        <span class="board-column-count">${n}</span>
-        ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete column (cards inside are released onto the board)">✕</button>`:''}
+        <input type="text" class="board-column-title" value="${_boardsEsc(c.title||'')}" placeholder="New Column" ${canEdit&&!c.locked?'':'readonly'} oninput="window.boardsFrameTitle('${c.id}',this.value)" onpointerdown="event.stopPropagation()">
+        <div class="board-column-count">${n} ${n===1?'card':'cards'}</div>
+        <div class="board-column-btns">
+          ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete column (cards inside are released onto the board)">✕</button>`:''}
+          <button class="board-column-fold" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsFoldContainer('${c.id}')" title="${c.collapsed?'Expand this column':'Collapse this column'}">${fold}</button>
+        </div>
       </div>
-      ${n?'':'<div class="board-column-empty">Drag cards in</div>'}
-      ${canEdit&&!c.locked?`<div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')" title="Drag to set the column width"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
+      ${c.collapsed?'':`<div class="board-column-body">${n?'':'<div class="board-column-empty">Drag cards here</div>'}</div>`}
+      <span class="board-card-corner" aria-hidden="true"></span>
+      ${canEdit&&!c.locked&&!c.collapsed?`<div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')" title="Drag to set the column width"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
     </div>`;
   }
   if(c.type==='frame'){
     const sel=_boardsSelection.has(c.id)?' selected':'';
-    return`<div class="board-frame${sel}${c.locked?' locked':''}${c.color?' tint-'+c.color:''}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px">
+    // The SAME title block the column wears — the name centred with the
+    // count under it and a collapse minus in the corner. The one real
+    // difference is where the count comes from: a column OWNS its children
+    // (c.columnId) and a frame does not, so this is geometry, counted at
+    // render by _boardsCardsInFrame exactly as every other frame action
+    // counts it. Nothing is stored to make the number.
+    const inside=_boardsCardsInFrame(c).length;
+    const drawH=Math.max(c.h,_boardsMinCardH(c));
+    return`<div class="board-frame${sel}${c.collapsed?' collapsed':''}${c.locked?' locked':''}${_boardsCardColorClasses({color:c.color})}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle({color:c.color})}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px">
       <div class="board-frame-head" ${canEdit&&!c.locked?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:''} onclick="window.boardsSelectCard('${c.id}',event)">
-        <input type="text" class="board-frame-title" value="${_boardsEsc(c.title||'')}" placeholder="Section name" ${canEdit&&!c.locked?'':'readonly'} oninput="window.boardsFrameTitle('${c.id}',this.value)" onpointerdown="event.stopPropagation()">
-        ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete frame (cards inside are kept)">✕</button>`:''}
+        <input type="text" class="board-frame-title" value="${_boardsEsc(c.title||'')}" placeholder="New Frame" ${canEdit&&!c.locked?'':'readonly'} oninput="window.boardsFrameTitle('${c.id}',this.value)" onpointerdown="event.stopPropagation()">
+        <div class="board-frame-count">${inside} ${inside===1?'card':'cards'}</div>
+        <div class="board-column-btns">
+          ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete frame (cards inside are kept)">✕</button>`:''}
+          <button class="board-column-fold" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsFoldContainer('${c.id}')" title="${c.collapsed?'Expand this frame':'Collapse this frame'}">${c.collapsed?'+':'—'}</button>
+        </div>
       </div>
-      ${canEdit&&!c.locked?`<div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
+      ${c.collapsed?'':`<div class="board-frame-body">${inside?'':'<div class="board-column-empty">Drop cards in this area</div>'}</div>`}
+      <span class="board-card-corner" aria-hidden="true"></span>
+      ${canEdit&&!c.locked&&!c.collapsed?`<div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
     </div>`;
   }
   // Image, file and sub-board cards hold nothing editable, so dragging one
@@ -2109,41 +2356,79 @@ function _boardCardHTML(c,canEdit){
   // to try, and it did nothing.
   // Every card body drags now, not just the three that hold nothing
   // editable: a note is only contenteditable while it is BEING edited
-  // (double-click), so a press on one is unambiguously a grab. Link cards
-  // are the exception — they are three form fields, and a drag starting in
-  // a text input would fight selecting the URL. boardsCardDragStart bails
-  // if the press lands inside whatever is currently being edited.
-  const bodyDrag=(canEdit&&!c.locked&&c.type!=='link')
+  // (double-click), so a press on one is unambiguously a grab.
+  //
+  // A LINK CARD USED TO BE EXCLUDED here, because its form is text inputs
+  // and a drag starting in one would fight selecting the URL. That left it
+  // with no drag surface at all once the head strip became inert —
+  // MEASURED at 0% of the card, not merely 0% of the strip: a link card in
+  // either form state could not be moved from anywhere. The fields
+  // themselves stop pointerdown, which is the guard that reason actually
+  // called for, so the body can carry the drag like every other type and
+  // the padding around the form is grabbable.
+  //
+  // boardsCardDragStart bails if the press lands inside whatever is
+  // currently being edited.
+  const bodyDrag=(canEdit&&!c.locked)
     ?` onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:'';
   let body;
   if(c.type==='todo'){
     const items=c.items||[];
     const doneN=items.filter(i=>i.done).length;
-    // Every item carries the onpointerdown guard, for the same reason the
-    // checkbox and the remove button beside it already did: this body is a
-    // drag surface, boardsCardDragStart calls setPointerCapture, and a
-    // captured pointer RETARGETS the following click and dblclick to the
-    // capturing element — so the item's own ondblclick never ran and a
-    // to-do could not be edited by double-clicking it. Exactly the table
-    // cell's bug: a card whose ondblclick sits on the very element holding
-    // the drag handler (a note, a heading) survives it; one whose handler
-    // sits on a DESCENDANT does not. The cost is the documented one — a
-    // to-do card now drags by its header strip and the padding around its
-    // rows, not by the item text, just as a table drags by its chrome.
+    // The task TEXT and the list TITLE are text, not controls, so they drag
+    // like a note body and carry no pointerdown guard. They used to: the
+    // drag captured the pointer on the pointerdown, which retargeted the
+    // dblclick away from the item and made it uneditable, and a guard was
+    // the patch. boardsCardDragStart captures LAZILY now (see the long note
+    // there), so a press that stays put is never retargeted and the guard
+    // has nothing left to protect — while REMOVING it is what gives the
+    // card back the drag surface under its own head strip, which is where
+    // the strip's grab cursor invites you to grab it.
+    // The checkbox, the remove ✕, "Add a task…" and the title prompt DO
+    // keep theirs: those act on a single click, and a drag must not begin
+    // on a control you are in the middle of pressing.
+    // A to-do card is a list with a TITLE, and its tasks NEST — both read
+    // off the second Milanote video (Sept 2026). An item carries an optional
+    // due date and an optional assignee, and the rail offers those only
+    // while that item holds the caret, because they are per-ITEM and not
+    // per-card. Depth is a plain number on the item, so an older to-do
+    // reads as a flat list with no migration.
+    const title=(c.title!=null)
+      ?`<div class="board-todo-title" id="board-tdtitle-${c.id}" contenteditable="false" data-placeholder="New To-do List" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-tdtitle-${c.id}')"`:''} oninput="window.boardsTodoTitle('${c.id}',this)"></div>`
+      :'';
+    // Milanote offers the title itself once a list has a few tasks, at the
+    // foot of the card, with Yes / No thanks. Answering either way sets
+    // titleAsked, so it is offered once and never nags again.
+    const ask=(canEdit&&c.title==null&&!c.titleAsked&&items.length>=3)
+      ? `<div class="board-todo-ask">Add a title to this list?
+           <button onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsTodoTitleOn('${c.id}')">Yes</button>
+           <button onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsTodoNoTitle('${c.id}')">No thanks</button>
+         </div>` : '';
     body=`<div class="board-card-body board-todo-body"${bodyDrag}>
-      ${items.map((it,i)=>`<div class="board-todo-row">
+      ${title}
+      ${items.map((it,i)=>`<div class="board-todo-row" style="padding-left:${_boardsTodoIndentPx(it)}px">
         <input type="checkbox" ${it.done?'checked':''} ${canEdit?'':'disabled'} onpointerdown="event.stopPropagation()" onchange="window.boardsTodoToggle('${c.id}',${i},this.checked)">
-        <div class="board-todo-text${it.done?' done':''}" id="board-todo-${c.id}-${i}" contenteditable="false" data-placeholder="To-do" onpointerdown="event.stopPropagation()" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-todo-${c.id}-${i}')"`:''} oninput="window.boardsTodoText('${c.id}',${i},this)" onkeydown="window.boardsTodoKey(event,'${c.id}',${i})"></div>
+        <div class="board-todo-text${it.done?' done':''}" id="board-todo-${c.id}-${i}" contenteditable="false" data-placeholder="To-do" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-todo-${c.id}-${i}')"`:''} oninput="window.boardsTodoText('${c.id}',${i},this)" onkeydown="window.boardsTodoKey(event,'${c.id}',${i})"></div>
+        ${_boardsTodoMetaHTML(it)}
         ${canEdit?`<button class="board-todo-del" onpointerdown="event.stopPropagation()" onclick="window.boardsTodoRemove('${c.id}',${i})" title="Remove">✕</button>`:''}
       </div>`).join('')}
-      ${canEdit?`<button class="board-todo-add" onpointerdown="event.stopPropagation()" onclick="window.boardsTodoAdd('${c.id}')">+ Add item</button>`:''}
+      ${canEdit?`<div class="board-todo-add" onpointerdown="event.stopPropagation()" onclick="window.boardsTodoAdd('${c.id}')"><span class="board-todo-addbox"></span>Add a task…</div>`:''}
+      ${ask}
     </div>`;
     c._todoProgress=items.length?doneN+'/'+items.length:'';
   }else if(c.type==='image'){
+    // A CROPPED OR ROTATED picture is placed by _boardsImgGeom — absolute
+    // pixels inside the body box, rotated about its own centre — instead of
+    // object-fit, which can express neither. An UNEDITED card takes exactly
+    // the path it always did, so nothing migrates and nothing moves.
+    const _ib=c.imageUrl?_boardsCardBodyBox(c):null;
+    const _ig=_ib?_boardsImgGeom(c,_ib.w,_ib.h):null;
     body=c._uploading
       ?'<div class="board-card-empty">Uploading…</div>'
       :c.imageUrl
-      ?`<img src="${_boardsEsc(_boardsDisplayUrl(c.imageUrl,c.w))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" data-full="${_boardsEsc(c.imageUrl)}" style="width:100%;height:100%;object-fit:cover;display:block">`
+      ?`<img src="${_boardsEsc(_boardsDisplayUrl(c.imageUrl,c.w,c))}" crossorigin="anonymous" draggable="false" onerror="${c.nobg?`window.boardsNoBgFailed(this,'${c.id}')`:'window.boardsImgFallback(this)'}" data-full="${_boardsEsc(c.imageUrl)}" style="${
+          _ig?`position:absolute;left:${_ig.left.toFixed(2)}px;top:${_ig.top.toFixed(2)}px;width:${_ig.w.toFixed(2)}px;height:${_ig.h.toFixed(2)}px;transform:rotate(${_ig.rot}deg);transform-origin:50% 50%;display:block`
+             :`width:100%;height:100%;object-fit:${c.fit==='contain'?'contain':'cover'};display:block`}">`
       :canEdit?`<label class="board-card-empty" for="board-file-${c.id}">Click, or paste an image (Ctrl+V)<input type="file" id="board-file-${c.id}" accept="image/*" onchange="window.boardsUploadToCard('${c.id}',this)" style="display:none"></label>`
               :`<div class="board-card-empty">No image</div>`;
     body=`<div class="board-card-body" style="padding:0"${bodyDrag}${c.imageUrl?` ondblclick="window.boardsFilePreview('${c.id}')"`:''}>${body}</div>`;
@@ -2152,12 +2437,34 @@ function _boardCardHTML(c,canEdit){
     // someone who asked to edit one. Everything else shows the PREVIEW —
     // before this, a link card was permanently three raw inputs, which is
     // exactly what Afnan put beside Milanote's picture-and-title card.
-    const editing=canEdit&&(c._linkEdit||!c.linkUrl);
-    if(editing){
-      body=`<div class="board-card-body board-link-edit">
-          <input type="text" value="${_boardsEsc(c.linkUrl)}" placeholder="https://…" oninput="window.boardsLinkInput('${c.id}','linkUrl',this.value)">
-          <input type="text" value="${_boardsEsc(c.linkTitle)}" placeholder="Title" oninput="window.boardsLinkInput('${c.id}','linkTitle',this.value)">
-          <textarea placeholder="Short description (optional)" oninput="window.boardsLinkInput('${c.id}','linkDesc',this.value)">${_boardsEsc(c.linkDesc)}</textarea>
+    // A LINK CARD IS BORN AS ONE FIELD, "Enter a link URL" — read off the
+    // second Milanote video (Sept 2026). Ours was born as three inputs
+    // (URL, Title, Description), which is exactly the raw-form card Afnan
+    // put beside Milanote's. The three-field form is still there behind
+    // "Edit link details", for fixing a title a fetch got wrong.
+    const blank=canEdit&&!c.linkUrl&&!c.linkTitle&&!c._linkEdit;
+    const editing=canEdit&&c._linkEdit;
+    if(blank){
+      // Enter commits, and so does leaving the field. Nothing is fetched
+      // per keystroke — a fetch per character would be a server request per
+      // character, the rule the Done button already followed.
+      body=`<div class="board-card-body board-link-new"${bodyDrag}>
+          <div class="board-link-newrow">
+            <svg class="board-link-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 9.5a3 3 0 0 0 4.24 0l2-2a3 3 0 0 0-4.24-4.24l-.7.7M9.5 6.5a3 3 0 0 0-4.24 0l-2 2a3 3 0 0 0 4.24 4.24l.7-.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <input type="text" class="board-link-urlin" placeholder="Enter a link URL" value="${_boardsEsc(c.linkUrl)}"
+              onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()"
+              onkeydown="window.boardsLinkNewKey(event,'${c.id}')" onblur="window.boardsLinkNewCommit('${c.id}',this.value)">
+          </div>
+          ${_boardsLinkErrHTML(c)}
+        </div>`;
+    }else if(editing){
+      // Each field stops pointerdown: dragging to select the URL must not
+      // move the card. That guard is what lets the BODY around them carry
+      // the drag, which is the only way this card can be moved at all.
+      body=`<div class="board-card-body board-link-edit"${bodyDrag}>
+          <input type="text" value="${_boardsEsc(c.linkUrl)}" placeholder="https://…" onpointerdown="event.stopPropagation()" oninput="window.boardsLinkInput('${c.id}','linkUrl',this.value)">
+          <input type="text" value="${_boardsEsc(c.linkTitle)}" placeholder="Title" onpointerdown="event.stopPropagation()" oninput="window.boardsLinkInput('${c.id}','linkTitle',this.value)">
+          <textarea placeholder="Short description (optional)" onpointerdown="event.stopPropagation()" oninput="window.boardsLinkInput('${c.id}','linkDesc',this.value)">${_boardsEsc(c.linkDesc)}</textarea>
           ${c.linkUrl?`<button class="board-link-done" onpointerdown="event.stopPropagation()" onclick="window.boardsLinkDone('${c.id}')">Done</button>`:''}
         </div>`;
     }else{
@@ -2165,7 +2472,7 @@ function _boardCardHTML(c,canEdit){
       // an image or file card does. That NARROWS the header-only rule rather
       // than overturning it: the rule exists for bodies holding a caret, and
       // the form branch above still keeps its own.
-      const drag=(canEdit&&!c.locked)?` onpointerdown="window.boardsCardDragStart(event,'${c.id}')"`:'';
+      const drag=bodyDrag;
       // Milanote's order exactly, which is what Afnan asked for: the URL on
       // top, then the TITLE AS THE LINK in accent colour so it is obviously
       // clickable, then the description.
@@ -2193,8 +2500,9 @@ function _boardCardHTML(c,canEdit){
               ${c.linkImage&&canEdit?`<button class="board-link-eye${c.linkPreviewOff?' off':''}" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsLinkTogglePreview('${c.id}')" title="${c.linkPreviewOff?'Show the preview picture':'Hide the preview picture'}"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="3.3" width="12.4" height="9.4" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M1.8 10.5l3.4-3 3 2.6 2.2-2 3.8 3.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path class="eye-slash" d="M2 14L14 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>`:''}
             </div>
             <a class="link-title" id="board-linkt-${c.id}"${href?` href="${_boardsEsc(href)}" target="_blank" rel="noopener noreferrer"`:''} onpointerdown="event.stopPropagation()" title="Open this link in a new tab"></a>
-            <div class="link-desc" id="board-linkd-${c.id}"></div>
+            <div class="link-desc" id="board-linkd-${c.id}" contenteditable="false" data-placeholder="Add a description" onpointerdown="event.stopPropagation()" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-linkd-${c.id}')"`:''} oninput="window.boardsLinkInput('${c.id}','linkDesc',this.textContent)"></div>
           </div>
+          ${_boardsLinkErrHTML(c)}
           ${c._fetching?'<div class="board-link-loading">Loading preview…</div>':''}
         </div>`;
     }
@@ -2261,19 +2569,21 @@ function _boardCardHTML(c,canEdit){
           const st=_boardsCellStyle(cell,c);
           const foc=_boardsCellFocus&&_boardsCellFocus.id===c.id&&_boardsCellFocus.r===r&&_boardsCellFocus.i===i;
           const cls=`board-td${foc?' focused':''}${_boardsCellClass(cell,c)}`;
-          // THE CELL MUST STOP POINTERDOWN, or it can never be edited.
-          // boardsCardDragStart calls setPointerCapture on the card body,
-          // and a captured pointer RETARGETS the following click and
-          // dblclick to the capturing element. A note survives that because
-          // its ondblclick sits on the very element carrying the drag
-          // handler; a cell's sits on a descendant, so the cell's handler
-          // never ran and the dblclick bubbled to the stage — which is why
-          // double-clicking a table spawned a stray note instead of
-          // putting a caret in the cell. Same guard the delete X, the card
-          // name and the comment badge already carry.
-          // The cost: a table no longer drags by its cells. It drags by its
-          // header strip and by the A/B/C band and row gutter, which are
-          // chrome and deliberately keep the drag.
+          // A TEXT CELL LETS THE PRESS THROUGH; a checkbox cell does not.
+          // The cell used to stop pointerdown unconditionally, because the
+          // drag captured the pointer on the pointerdown and a captured
+          // pointer RETARGETS the following dblclick to the capturing
+          // element — so the cell's handler never ran and double-clicking a
+          // table spawned a stray note instead of putting a caret in it.
+          // The recorded cost was "a table no longer drags by its cells",
+          // and that cost turned out to be the to-do card's bug wearing
+          // another face: the grid inherits cursor:grab from the card body,
+          // so ~44% of a table card said grab-me and would not move
+          // (measured by the layout probe's grab-cursor check). The capture
+          // is deferred past the drag threshold now, so a press that stays
+          // put is never retargeted and the guard is not needed on text.
+          // A CHECKBOX CELL keeps it: it acts on a single click, and a drag
+          // must not begin on a control you are in the middle of pressing.
           const stopDown=canEdit?' onpointerdown="event.stopPropagation()"':'';
           // A checkbox toggles on a SINGLE click, so it needs the guard
           // every control inside a drag surface needs: without stopping
@@ -2282,7 +2592,7 @@ function _boardCardHTML(c,canEdit){
           if(_boardsCellType(cell)==='check'){
             return`<${tag} id="board-td-${c.id}-${r}-${i}" class="${cls}"${st?` style="${st}"`:''} title="${_boardsCellRef(r,i)}"${stopDown}${canEdit?` onclick="event.stopPropagation();window.boardsCellToggle('${c.id}',${r},${i})"`:''}></${tag}>`;
           }
-          return`<${tag} id="board-td-${c.id}-${r}-${i}" class="${cls}" contenteditable="false"${st?` style="${st}"`:''}${stopDown} ${canEdit?`ondblclick="window.boardsFocusCell(event,'${c.id}',${r},${i})"`:''} oninput="window.boardsTableInput('${c.id}',${r},${i},this)"></${tag}>`;
+          return`<${tag} id="board-td-${c.id}-${r}-${i}" class="${cls}" contenteditable="false"${st?` style="${st}"`:''} ${canEdit?`ondblclick="window.boardsFocusCell(event,'${c.id}',${r},${i})"`:''} oninput="window.boardsTableInput('${c.id}',${r},${i},this)"></${tag}>`;
         }).join('')}</tr>`).join('')}
       </table>
       </div>
@@ -2308,15 +2618,26 @@ function _boardCardHTML(c,canEdit){
     // board" line with no way forward, so the card could only be deleted.
     // A card that links to something must either link to it or offer to
     // create it.
-    // THE CARD IS THE BOARD'S PICTURE. Cover full bleed, or the board's
-    // colour carrying its icon/letter — the same face the gallery tile and
-    // the panel row draw, through the same _boardsFaceOf, so the three can
-    // never disagree about what a board looks like. The name sits on a
-    // scrim over it rather than in a grey strip beside it.
+    /* THE CARD IS A SPINE, A NAME AND WHAT IS INSIDE (option D). The
+       board's face runs down the left edge, the whole name gets two lines
+       beside it, and a strip of the board's own thumbnails says what it
+       holds. The face still comes from _boardsFaceOf, the one place that
+       decides what a board looks like, so the card, the gallery tile and
+       the panel row can never disagree.
+
+       The spine paints the COVER when there is one. The picture is the
+       identity a person chose for that board, and it must not be demoted to
+       a 30px chip in the strip below — the strip is for contents. With no
+       cover it is the board's colour carrying its icon or first letter,
+       which is what the specimen showed. */
     const face=_boardsFaceOf(child);
     const files=child?_boardsCountFiles(child.cards):0;
+    const th=child?_boardsBoardThumbs(child):{urls:[],rest:0};
+    /* The state word is from the specimen and costs nothing — visibility is
+       already on the board document and the panel row already prints it. */
+    const state=child?(child.visibility==='shared'?'TEAM':'PRIVATE'):'';
     const meta=child
-      ?n+' card'+(n===1?'':'s')+(files?' · '+files+' file'+(files===1?'':'s'):'')
+      ?[state,n+' card'+(n===1?'':'s')].concat(files?[files+' file'+(files===1?'':'s')]:[]).join(' · ')
       :(c.boardId?'Not available — deleted, or private to someone else':'No board linked yet');
     /* NO "Open" PILL ON A POINTER DEVICE (Sept 2026 — Afnan: "open text is
        not required"). Double-click opens it, the idle corner glow says the
@@ -2330,12 +2651,15 @@ function _boardCardHTML(c,canEdit){
     const open=c.boardId
       ?(child&&_boardsIsPhone()?`<button class="board-subboard-open" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsGoto('${c.boardId}')">Open</button>`:'')
       :(canEdit?`<button class="board-subboard-open" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsRepairBoardCard('${c.id}')">Create</button>`:'');
-    // A picture is drawn with the same three guards every board image
-    // carries: a sized derivative, CORS (so the PNG/PDF export can read it
-    // back) and no native HTML5 drag.
-    const facePaint=face.cover
-      ?`<img class="board-subboard-cover" src="${_boardsEsc(_boardsDisplayUrl(face.cover,Math.max(400,Math.round(c.w*2))))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`
-      :`<div class="board-subboard-fill" style="background:${face.color||'var(--soft)'};color:${face.color?_boardsInkOn(face.color):'var(--muted)'}"><span class="board-subboard-glyph">${_boardsEsc(face.glyph)}</span></div>`;
+    // Every picture here is drawn with the same three guards every board
+    // image carries: a sized derivative, CORS (so the PNG/PDF export can
+    // read it back) and no native HTML5 drag.
+    const spine=face.cover
+      ?`<div class="board-subboard-spine has-cover" style="background:${face.color||'var(--soft)'}"><img src="${_boardsEsc(_boardsDisplayUrl(face.cover,400))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt=""></div>`
+      :`<div class="board-subboard-spine" style="background:${face.color||'var(--soft)'};color:${face.color?_boardsInkOn(face.color):'var(--muted)'}"><span class="board-subboard-glyph">${_boardsEsc(face.glyph)}</span></div>`;
+    const thumbs=th.urls.length
+      ?`<div class="board-subboard-thumbs">${th.urls.map(u=>`<span class="board-subboard-thumb"><img src="${_boardsEsc(_boardsDisplayUrl(u,400))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt=""></span>`).join('')}${th.rest?`<span class="board-subboard-thumb board-subboard-more">+${th.rest}</span>`:''}</div>`
+      :'';
     // Double-click opens it. The handler sits on the very element carrying
     // the drag handler, so the pointer capture cannot retarget it away —
     // the rule the to-do item and the table cell both learned the hard way.
@@ -2343,16 +2667,25 @@ function _boardCardHTML(c,canEdit){
        board that is gone or not linked yet gets neither — nothing should
        invite a double-click that cannot do anything. */
     body=`<div class="board-card-body board-subboard-body${child?' openable':''}"${bodyDrag}${child?` ondblclick="window.boardsGoto('${c.boardId}')"`:''}>
-      ${facePaint}
-      <div class="board-subboard-scrim">
+      ${spine}
+      <div class="board-subboard-info">
         <div class="board-subboard-title">${_boardsEsc(title)}</div>
         <div class="board-subboard-meta">${_boardsEsc(meta)}</div>
+        ${thumbs}
       </div>
       ${child?`<div class="board-subboard-cta"><span>${_BOARDS_OPEN_PHRASE}</span></div>`:''}
       ${open}
     </div>`;
   }else{
     body=`<div class="board-card-body board-text-body"${bodyDrag} contenteditable="false" id="board-txt-${c.id}" data-placeholder="Double-click to type…" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-txt-${c.id}')"`:''} oninput="window.boardsTextInput('${c.id}',this)"></div>`;
+  }
+  // "From Pinterest" — Milanote captions an image it pulled off a page with
+  // the site name, linking back. Ours keeps the page URL in c.sourceUrl and
+  // draws the same line; _boardsSafeHref is what decides whether it is a
+  // link at all, so a stored javascript: URL renders as plain text.
+  if(c.type==='image'&&c.sourceUrl){
+    const sh=_boardsSafeHref(c.sourceUrl);
+    body+=`<div class="board-card-source">From ${sh?`<a href="${_boardsEsc(sh)}" target="_blank" rel="noopener noreferrer" onpointerdown="event.stopPropagation()">${_boardsEsc(_boardsHostOf(c.sourceUrl))}</a>`:_boardsEsc(_boardsHostOf(c.sourceUrl))}</div>`;
   }
   if((c.type==='image'||c.type==='file'||c.type==='table')&&c.caption!=null){
     // Reported twice in QA as "the caption doesn't save". It always saved —
@@ -2369,20 +2702,60 @@ function _boardCardHTML(c,canEdit){
     :c.type==='table'?'Table':c.type==='column'?'Column':c.type==='frame'?'Frame':'Note';
   const sel=_boardsSelection.has(c.id)?' selected':'';
   const lock=c.locked?' locked':'';
-  const tint=c.color?' tint-'+c.color:'';
+  const tint=_boardsCardColorClasses(c);
   const drawH=Math.max(c.h,_boardsMinCardH(c));
-  return`<div class="board-card-el type-${c.type}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px" onclick="window.boardsSelectCard('${c.id}',event)">
-    <div class="board-card-head" ${canEdit?`onpointerdown="window.boardsCardDragStart(event,'${c.id}')" ondblclick="window.boardsHeadDblClick(event,'${c.id}')"`:''}>
+  // A PHOTO IS THE WHOLE CARD, like Milanote's (read off the video at
+  // 34s/112s: the picture with nothing around it, and a small comment
+  // badge sitting in its top-right corner). The header strip stays in the
+  // DOM — it is the drag handle a locked card still needs, and it holds the
+  // name, the padlock and the delete ✕ — but on a photo it OVERLAYS the top
+  // of the picture and shows only on hover or selection, the heading card's
+  // own pattern. The comment badge is the one piece of chrome Milanote keeps
+  // visible, so on a photo it is emitted OUTSIDE the head, pinned to the
+  // corner of the picture, under the same id the painter looks up.
+  const photo=_boardsIsPhotoCard(c);
+  // NO CARD HAS A HEADER STRIP ANY MORE — read off the second Milanote
+  // video (Sept 2026, "Winter Drop 2027"): a link card, a to-do card, an
+  // image card and a file card all render as an optional coloured top
+  // strip, the content, and an optional caption. There is no type label,
+  // no name row and no delete ✕ anywhere on a Milanote card.
+  //
+  // Ours keeps all four, one hover away: the head OVERLAYS the top of the
+  // card as a dark scrim and is hidden by VISIBILITY until hover or
+  // selection — the treatment the photo card took a round earlier,
+  // generalised to every type. Nothing is removed; at rest a card is pure
+  // content the way Milanote's is. The coloured "top strip" is no longer
+  // the header's background: it is its own 4px bar (.board-card-el::before)
+  // so the two can coexist, which is exactly how Milanote draws it.
+  //
+  // The comment badge is a PIN (a teardrop with the count, point down),
+  // always visible at the top-right, and the selection handle is a white
+  // round dot ON the corner. In Milanote both OVERHANG the card's top edge;
+  // ours cannot, because .board-card-el clips its own content to get its
+  // rounded corners, so both sit just inside. Escaping that would mean
+  // wrapping every card in a second clipping element, which is a structural
+  // change to every card rule in the file for a few pixels of overhang.
+  const pin=`<button class="board-cmt-badge pin" id="board-cmt-${c.id}" style="display:none" title="Comments on this card" onclick="event.stopPropagation();window.boardsOpenComments('${c.id}')" onpointerdown="event.stopPropagation()"></button>`;
+  // THE HEAD CARRIES NO DRAG HANDLER, deliberately. It is an absolute
+  // overlay across the card's first row and it is pointer-events:none, so
+  // a handler on it could never fire — it had one anyway, dead since the
+  // strip became inert, which is exactly the sort of thing that reads as
+  // "the drag handle is right there" in review. The drag comes from the
+  // BODY underneath, which the press falls through to. Only the delete ✕
+  // takes pointer events back (css/main.css).
+  return`<div class="board-card-el type-${c.type}${photo?' photo':''}${canEdit&&_boardsDrawOn===c.id?' drawing':''}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle(c)}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px" onclick="window.boardsSelectCard('${c.id}',event)">
+    <div class="board-card-head">
       <span class="board-card-kind">
-        <span class="board-card-name" id="board-name-${c.id}" contenteditable="false" data-placeholder="${_boardsEsc(kind)}" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-name-${c.id}')"`:''} oninput="window.boardsCardName('${c.id}',this)" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()" title="Double-click to rename this card"></span>${c.locked?' · Locked':''}</span>
+        <span class="board-card-name" id="board-name-${c.id}" contenteditable="false" data-placeholder="${_boardsEsc(kind)}" oninput="window.boardsCardName('${c.id}',this)" onpointerdown="event.stopPropagation()"></span>${c.locked?`<span class="board-card-lock" title="Position locked — unlock it from the ⋯ menu">${_boardsIcon('lock')}</span>`:''}</span>
       <span style="display:flex;align-items:center;gap:4px">
-        <button class="board-cmt-badge" id="board-cmt-${c.id}" style="display:none" title="Comments on this card" onclick="event.stopPropagation();window.boardsOpenComments('${c.id}')" onpointerdown="event.stopPropagation()"></button>
         ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete">✕</button>`:''}
       </span>
     </div>
-    ${_boardsLabelsHTML(c)}
+    ${pin}
+    <span class="board-card-corner" aria-hidden="true"></span>
     ${body}
-    ${_boardsReactionsHTML(c)}
+    ${_boardsDrawOverlayHTML(c,canEdit)}
+    ${_boardsCardFootHTML(c)}
     ${canEdit&&!c.locked?`<div class="board-link-handle" onpointerdown="window.boardsLinkStart(event,'${c.id}')" title="Drag to connect"></div>
     <div class="board-resize-handle" onpointerdown="window.boardsResizeStart(event,'${c.id}')"><svg viewBox="0 0 16 16"><path d="M14 2L2 14M14 8L8 14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`:''}
   </div>`;
@@ -2394,12 +2767,364 @@ function _boardCardHTML(c,canEdit){
 // trap. If the host turns out NOT to send the header, the image would fail
 // to load entirely, so this falls back once to a plain load: the picture
 // still shows, and only the export degrades (as it already did).
+// Milanote's "Crop Image to Fit Dot Grid", ticked by default. It is the
+// cover/contain switch: cropped, the picture fills the card and loses its
+// edges; uncropped it is fitted whole and the card shows through. Ours
+// stores only the exception — a card with no c.fit is cropped, so nothing
+// migrates and the default costs no bytes.
+window.boardsImgCrop=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='image'||!_boardsCanEdit(_editBoard))return;
+  _boardsPushUndo();
+  if(c.fit==='contain')delete c.fit;else c.fit='contain';
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast(c.fit==='contain'?'Showing the whole picture':'Cropped to fill the card');
+};
 window.boardsImgFallback=function(img){
   if(img.__fellBack)return;
   img.__fellBack=true;
   const full=img.getAttribute('data-full')||img.src;
   img.removeAttribute('crossorigin');
   img.src=full;
+};
+
+/* ── The image card's three tools: Draw on · Edit · Background ──────────
+   READ OFF THE SECOND MILANOTE VIDEO at 82s, full resolution: a selected
+   image card's rail is
+
+       Color · Labels · Reactions · Comment · Draw on · Edit · Background ·
+       Caption · ⋯
+
+   with no Rename (the "Rename before Caption" recorded here a round earlier
+   was read off the TO-DO card at 112s, not the image one — corrected). The
+   glyphs are a pen nib, crop marks with a rotate arrow, and a dashed frame
+   around a picture.
+
+   NONE OF THE THREE IS EVER DEMONSTRATED IN EITHER VIDEO — the image card
+   leaves the screen at 88s and the panels never open — so everything below
+   is built from the names and the icons, exactly as the earlier note said
+   it would have to be. Nothing here claims to match Milanote's own panels.
+
+   They were recorded as NOT BUILT last round ("annotating a picture is a
+   drawing surface, crop and rotate is an image editor, removing a
+   background needs a service"). Two of the three turn out to need neither
+   a dependency nor a service; the third is honest about what it needs. */
+
+/* DRAW ON. c.strokes = [{c:<palette name>, w:<px>, p:[x0,y0,x1,y1,…]}] —
+   the points NORMALIZED to 0..100 of the card's BODY box and held FLAT,
+   drawn as one SVG overlay with viewBox="0 0 100 100" and
+   preserveAspectRatio="none".
+
+   FLAT, and that is not a style choice: FIRESTORE DOES NOT SUPPORT NESTED
+   ARRAYS. A list of [x,y] pairs inside a card inside the cards array is
+   exactly the shape that meant a table's rows never persisted at all (see
+   the table QA round) — every save would have been refused with "Nested
+   arrays are not supported" and the only symptom a repeating "Save failed".
+   A flat list needs no encode/decode boundary of its own, so there is
+   nothing to keep in step and nothing to get wrong later.
+
+   Normalized to the BODY, not to the picture, and the trade-off is worth
+   stating rather than hiding: a stroke stretches with the card, so resizing
+   a card non-proportionally turns a circle into an ellipse and slides an
+   annotation off the thing it was circling (the picture under object-fit:
+   cover re-crops rather than stretching). Glueing strokes to the picture
+   instead needs the natural dimensions the Edit tool goes and fetches, so
+   it would make Draw on unusable on every card written before this and on
+   any picture whose size never came back. The body is what you SEE, it
+   needs nothing stored, and it works on a card with no picture at all.
+
+   stroke-width carries vector-effect="non-scaling-stroke" so a width is a
+   width whatever the card's aspect — but it still rides the board's own
+   zoom transform, which is what you want: a drawing zooms with the board. */
+const _BOARDS_DRAW_COLORS=['red','blue','green','yellow','purple','grey'];
+const _BOARDS_DRAW_WIDTHS=[{w:2,label:'Thin'},{w:4,label:'Medium'},{w:8,label:'Thick'}];
+const _BOARDS_DRAW_MIN_PT=0.6;    // % of the body box — points closer than this are dropped
+let _boardsDrawOn=null;           // the card id being drawn on, or null
+let _boardsDrawColor='red';
+let _boardsDrawWidth=4;
+
+function _boardsStrokes(c){return Array.isArray(c&&c.strokes)?c.strokes:[];}
+function _boardsDrawColorOf(s){
+  const n=s&&s.c;
+  return _BOARDS_COLOR_TOKENS[n]?`var(${_BOARDS_COLOR_TOKENS[n]})`:`var(${_BOARDS_COLOR_TOKENS.red})`;
+}
+function _boardsStrokePath(s){
+  const p=Array.isArray(s&&s.p)?s.p:[];
+  if(p.length<2)return'';
+  // A single tap is a dot, and a zero-length path draws nothing at all even
+  // with a round cap, so it is closed onto itself a hair away.
+  if(p.length===2)return`M${p[0]} ${p[1]}L${p[0]+0.01} ${p[1]}`;
+  let d='M'+p[0]+' '+p[1];
+  for(let i=2;i+1<p.length;i+=2)d+='L'+p[i]+' '+p[i+1];
+  return d;
+}
+function _boardsStrokeLen(s){return Math.floor((Array.isArray(s&&s.p)?s.p.length:0)/2);}
+function _boardsDrawOverlayHTML(c,canEdit){
+  const ss=_boardsStrokes(c);
+  const live=canEdit&&_boardsDrawOn===c.id;
+  if(!ss.length&&!live)return'';
+  // The overlay is a SIBLING of the body, not a child of it, so one rule
+  // covers every card type: the head is an absolute overlay and the foot
+  // sits BELOW the body, so the body runs from the card's top edge down to
+  // _boardsCardChromeH(c) above its bottom.
+  // The SVG sits inside a plain DIV, and that is not decoration. An <svg>
+  // is a REPLACED element: given top:0 and bottom:N with no height, it
+  // takes its height from the viewBox's intrinsic 1:1 ratio instead of
+  // stretching — MEASURED at 240 tall inside a 360 card. A div stretches;
+  // the svg then fills it at 100%/100%.
+  return`<div class="board-draw${live?' drawing':''}" id="board-draw-${c.id}" style="bottom:${_boardsCardChromeH(c)}px"${
+    live?` onpointerdown="window.boardsDrawStart(event,'${c.id}')"`:''}><svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${
+    ss.map(s=>`<path d="${_boardsStrokePath(s)}" fill="none" stroke="${_boardsDrawColorOf(s)}" stroke-width="${+s.w||4}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`).join('')
+  }</svg></div>`;
+}
+
+/* EDIT — crop and rotate, and deliberately NOT through a Cloudinary
+   delivery transform. That was the obvious route (a_90/c_crop,…) and it is
+   the wrong one here: the sandbox cannot reach cloudinary.com AT ALL, so
+   the transform string could only ever be constructed and hoped for — the
+   one thing this project's ground rule forbids. Doing the arithmetic
+   ourselves needs no service, no add-on and no network, and it is
+   measurable in a browser from a session.
+
+   c.rotate ∈ {90,180,270} (absent = upright) and c.crop = {x,y,w,h}
+   normalized WITHIN THE ROTATED FRAME (absent = the whole picture), so
+   rotating after cropping does not have to rewrite the crop. Both are
+   non-destructive: the stored imageUrl is never touched, Reset puts the
+   whole picture back, and nothing migrates — a card with neither field
+   renders through the same plain object-fit path it always did. */
+function _boardsRot(c){const r=c&&+c.rotate;return(r===90||r===180||r===270)?r:0;}
+function _boardsCrop(c){
+  const q=c&&c.crop;
+  if(!q)return null;
+  const x=+q.x,y=+q.y,w=+q.w,h=+q.h;
+  if(!(x>=0&&y>=0&&w>0&&h>0))return null;
+  if(x+w>1.0001||y+h>1.0001)return null;
+  if(x===0&&y===0&&w>=0.9999&&h>=0.9999)return null;   // the whole picture is no crop
+  return{x:x,y:y,w:Math.min(w,1-x),h:Math.min(h,1-y)};
+}
+function _boardsImgNat(c){
+  const w=c&&+c.imgW,h=c&&+c.imgH;
+  return(w>0&&h>0)?{w:w,h:h}:null;
+}
+function _boardsImgEdited(c){return!!(_boardsRot(c)||_boardsCrop(c));}
+/* The chrome a card charges ABOVE its body — the part of _boardsMinCardH
+   that is not the body's own minimum. Pulled out because the picture
+   geometry needs the body's height in px and there is no other way to know
+   it: the body is a flex child, so only the sum of its siblings says how
+   tall it is. _boardsMinCardH reads it, so the two cannot drift. */
+function _boardsCardChromeH(c){
+  if(!c)return 0;
+  let h=0;
+  if(Array.isArray(c.labels)&&c.labels.length)h+=_BOARDS_CHROME_H.labels;
+  if(c.reactions&&Object.keys(c.reactions).length)h+=_BOARDS_CHROME_H.reactions;
+  if((c.type==='image'||c.type==='file'||c.type==='table')&&c.caption!=null)h+=_BOARDS_CHROME_H.caption;
+  if(c.type==='image'&&c.sourceUrl)h+=_BOARDS_CHROME_H.caption;
+  return h;
+}
+function _boardsCardBodyBox(c){
+  const drawH=Math.max(c.h,_boardsMinCardH(c));
+  // *{box-sizing:border-box}, so c.w/c.h INCLUDE .board-card-el's 1px
+  // borders — except on a photo card, which drops the border outright
+  // (.board-card-el.type-image.photo{border:none}). MEASURED both ways in
+  // headless Chromium: a 240-wide photo card's body is 240, and every
+  // other card's is 238. Getting this wrong by 2px leaves a 2px strip of
+  // the card uncovered along one edge of a cropped picture.
+  const b=_boardsIsPhotoCard(c)?0:2;
+  return{w:Math.max(0,c.w-b),h:Math.max(0,drawH-b-_boardsCardChromeH(c))};
+}
+/**
+ * Where the <img> goes so the card's box shows exactly the cropped, rotated
+ * picture. PURE, and the ONE definition of it: the DOM render and the
+ * PNG/PDF exporter both read it, so a crop cannot look one way on screen
+ * and another in the export — the rule _boardsConnGeom already holds for
+ * connectors. Returns null when the natural size is unknown, and every
+ * caller then falls back to the plain object-fit render.
+ *
+ * The element is laid out UNROTATED at w×h and rotated about its own
+ * centre, because that is the only placement CSS and canvas agree on
+ * without either of them knowing the other's box model.
+ */
+function _boardsImgGeom(c,boxW,boxH){
+  const nat=_boardsImgNat(c);
+  if(!nat||!(boxW>0)||!(boxH>0))return null;
+  const rot=_boardsRot(c),q=_boardsCrop(c)||{x:0,y:0,w:1,h:1};
+  if(!rot&&q.w===1&&q.h===1)return null;              // nothing to do
+  const swap=(rot===90||rot===270);
+  const NW=swap?nat.h:nat.w,NH=swap?nat.w:nat.h;      // the rotated picture
+  const SW=NW*q.w,SH=NH*q.h;                          // the crop, in picture px
+  const s=c.fit==='contain'?Math.min(boxW/SW,boxH/SH):Math.max(boxW/SW,boxH/SH);
+  // Top-left of the WHOLE rotated picture, in box coordinates, placed so
+  // that the crop rect lands centred on the box.
+  const L=(boxW-SW*s)/2-q.x*NW*s,T=(boxH-SH*s)/2-q.y*NH*s;
+  const w0=nat.w*s,h0=nat.h*s;
+  const cx=L+NW*s/2,cy=T+NH*s/2;
+  return{rot:rot,w:w0,h:h0,left:cx-w0/2,top:cy-h0/2,cx:cx,cy:cy,scale:s,
+         sw:SW,sh:SH,nw:NW,nh:NH};
+}
+/* The aspect a cropped, rotated picture wants its card to be — what Apply
+   re-fits the card to, through the same _BOARDS_IMG_CARD_W / MAX_H / MIN
+   clamps a freshly uploaded picture goes through. */
+function _boardsEditedAspect(c){
+  const nat=_boardsImgNat(c);
+  if(!nat)return null;
+  const rot=_boardsRot(c),q=_boardsCrop(c)||{x:0,y:0,w:1,h:1};
+  const swap=(rot===90||rot===270);
+  return{w:(swap?nat.h:nat.w)*q.w,h:(swap?nat.w:nat.h)*q.h};
+}
+
+/* BACKGROUND. The glyph is the standard "remove the background" mark and
+   that is one of the two things this button does; the other is the one
+   Milanote-vs-ours gap a picture card can actually close.
+
+   1. Remove the PICTURE's background (c.nobg) — a Cloudinary
+      e_background_removal delivery component. It is a PAID ADD-ON and this
+      account's is UNVERIFIED FROM HERE (the sandbox cannot reach
+      cloudinary.com at all, docs and support included), so the menu row
+      says so, and an account without it answers the URL with an error that
+      the <img> reports: _boardsNoBgFailed clears the flag, repaints and
+      says what is missing, rather than leaving a card stuck on a broken
+      picture. Nothing is uploaded and nothing is destroyed either way.
+   2. Use the picture as the BOARD's background — b.bgImage / b.bgFit,
+      board-level fields. "Board backgrounds" has been on this file's
+      "deliberately still missing vs Milanote" list since the parity round;
+      a picture already on the board is the obvious place to set one from.
+      mood_boards' update rule carries no field allow-list, so this needs
+      NO firestore.rules change and no republish. */
+function _boardsNoBgUrl(url){
+  const u=String(url||'');
+  if(!/res\.cloudinary\.com/.test(u)||u.indexOf('/upload/')===-1)return u;
+  return u.replace('/upload/','/upload/e_background_removal/');
+}
+window.boardsNoBgFailed=function(img,id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||!c.nobg)return;
+  delete c.nobg;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast('Cloudinary would not remove the background — that needs the background-removal add-on on the account. The picture is back as it was.');
+};
+
+/* Drawing is a MODE on one card, the way line mode is a mode on the stage:
+   while it is on, that card's overlay takes the pointer and the card cannot
+   be dragged from under it. Entering it selects the card and swaps the rail
+   for the drawing tools; Escape, Done, clicking another card or leaving the
+   board all end it.
+
+   ONE UNDO ENTRY PER STROKE, pushed before the stroke is appended — a
+   drawing tool where Ctrl+Z wipes the whole session is not a drawing tool,
+   and the rail's own "Undo stroke" is the same action under a name you can
+   see. Nothing is pushed for a mode change, so turning the tool on and off
+   leaves no no-op entries the way a plain click on a card would. */
+window.boardsDrawMode=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='image'||!_boardsCanEdit(_editBoard))return;
+  if(c.locked){showToast(_boardsLockedMsg('draw on it'));return;}
+  _boardsDrawOn=(_boardsDrawOn===id)?null:id;
+  if(_boardsDrawOn)_boardsSetSelection([id]);
+  _boardsRenderCanvasAndWire();
+  if(_boardsDrawOn)showToast('Drawing — drag on the picture. Esc or Done when you are finished.');
+};
+window.boardsDrawEnd=function(){
+  if(!_boardsDrawOn)return;
+  _boardsDrawOn=null;
+  _boardsRenderCanvasAndWire();
+};
+window.boardsDrawSetColor=function(name){
+  if(_BOARDS_COLOR_TOKENS[name])_boardsDrawColor=name;
+  _boardsRenderRail();
+  if(document.getElementById('board-sheet'))window.boardsDrawPenSheet();
+};
+window.boardsDrawSetWidth=function(w){
+  const n=+w;
+  if(_BOARDS_DRAW_WIDTHS.some(x=>x.w===n))_boardsDrawWidth=n;
+  _boardsRenderRail();
+  if(document.getElementById('board-sheet'))window.boardsDrawPenSheet();
+};
+/* The phone's pen settings. Re-opened after each pick rather than closed,
+   so trying three colours is not three round trips — the board look
+   sheet's reason, and the live colour panel's. */
+window.boardsDrawPenSheet=function(){
+  if(!_boardsDrawOn)return;
+  _boardsOpenSheet('Pen',
+    `<div class="board-sheet-row"><span>Colour</span></div>
+     <div class="rail-swatches">${_BOARDS_DRAW_COLORS.map(c=>`<button class="board-swatch sw-${c}${c===_boardsDrawColor?' on':''}" data-act="draw:color:${c}" title="${c}"></button>`).join('')}</div>
+     <div class="board-sheet-row"><span>Width</span></div>
+     <div class="rail-fmt-row">${_BOARDS_DRAW_WIDTHS.map(x=>`<button class="board-pen-w${x.w===_boardsDrawWidth?' on':''}" data-act="draw:width:${x.w}" title="${x.label}"><span style="height:${x.w}px"></span></button>`).join('')}</div>`);
+};
+window.boardsDrawUndo=function(){
+  const c=_editCards.find(x=>x.id===_boardsDrawOn);
+  if(!c||!_boardsStrokes(c).length)return;
+  _boardsPushUndo();
+  c.strokes=_boardsStrokes(c).slice(0,-1);
+  if(!c.strokes.length)delete c.strokes;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+window.boardsDrawClear=function(id){
+  const c=_editCards.find(x=>x.id===(id||_boardsDrawOn));
+  if(!c||!_boardsStrokes(c).length)return;
+  if(!confirm('Erase every mark drawn on this picture? Ctrl+Z undoes it.'))return;
+  _boardsPushUndo();
+  delete c.strokes;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast('Drawing erased — press Ctrl+Z to undo');
+};
+/* A point is in % of the body box, read off the SVG's own bounding rect —
+   which already carries the board's pan and zoom, so no _boardsScreenToWorld
+   is needed and the same code works at 25% and at 200%. */
+function _boardsDrawPoint(e,host){
+  const r=host.getBoundingClientRect();
+  if(!(r.width>0&&r.height>0))return null;
+  const x=(e.clientX-r.left)/r.width*100,y=(e.clientY-r.top)/r.height*100;
+  return[Math.round(Math.max(-2,Math.min(102,x))*100)/100,
+         Math.round(Math.max(-2,Math.min(102,y))*100)/100];
+}
+window.boardsDrawStart=function(e,id){
+  const c=_editCards.find(x=>x.id===id);
+  // currentTarget is the stretching DIV; the <svg> inside it is what the
+  // paths go into, and the two share a rect exactly (100%/100%).
+  const host=e.currentTarget;
+  const svg=host.querySelector?host.querySelector('svg'):null;
+  if(!svg)return;
+  if(!c||_boardsDrawOn!==id||!_boardsCanEdit(_editBoard))return;
+  e.preventDefault();e.stopPropagation();
+  const first=_boardsDrawPoint(e,host);
+  if(!first)return;
+  _boardsPushUndo();
+  const stroke={c:_boardsDrawColor,w:_boardsDrawWidth,p:[first[0],first[1]]};
+  c.strokes=_boardsStrokes(c).concat([stroke]);
+  const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('fill','none');
+  path.setAttribute('stroke',_boardsDrawColorOf(stroke));
+  path.setAttribute('stroke-width',String(stroke.w));
+  path.setAttribute('stroke-linecap','round');
+  path.setAttribute('stroke-linejoin','round');
+  path.setAttribute('vector-effect','non-scaling-stroke');
+  path.setAttribute('d',_boardsStrokePath(stroke));
+  svg.appendChild(path);
+  try{host.setPointerCapture(e.pointerId);}catch(err){}
+  const move=ev=>{
+    const q=_boardsDrawPoint(ev,host);
+    if(!q)return;
+    const n=stroke.p.length,lx=stroke.p[n-2],ly=stroke.p[n-1];
+    // Drop a point that has barely moved: a 3,000-point stroke is a
+    // document this board has to carry forever, and the line looks the same.
+    if(Math.abs(q[0]-lx)<_BOARDS_DRAW_MIN_PT&&Math.abs(q[1]-ly)<_BOARDS_DRAW_MIN_PT)return;
+    stroke.p.push(q[0],q[1]);
+    path.setAttribute('d',_boardsStrokePath(stroke));
+  };
+  const up=()=>{
+    host.removeEventListener('pointermove',move);
+    host.removeEventListener('pointerup',up);
+    host.removeEventListener('pointercancel',up);
+    try{host.releasePointerCapture(e.pointerId);}catch(err){}
+    _boardsSaveDebounced();
+  };
+  host.addEventListener('pointermove',move);
+  host.addEventListener('pointerup',up);
+  host.addEventListener('pointercancel',up);
 };
 
 // ── Labels and reactions ────────────────────────────────────────────────
@@ -2418,6 +3143,51 @@ window.boardsImgFallback=function(img){
 // same person cannot stack a reaction and so "did I react?" is answerable
 // without a second field. Toggling is one uid in or out of one array.
 const _BOARDS_LABEL_COLORS=['grey','red','amber','green','blue','purple'];
+// The reaction picker's categories (Sept 2026). Curated, one keyword string
+// each, in Milanote's category order — not a Unicode dataset.
+const _BOARDS_EMOJI_CATS=[
+  {n:'Smileys & Emotions',e:[
+    {e:'😀',k:'grin smile happy'},{e:'😃',k:'smile happy big'},{e:'😄',k:'smile laugh'},{e:'😁',k:'grin beam'},{e:'😆',k:'laugh squint'},{e:'😅',k:'sweat laugh'},{e:'🤣',k:'rofl laugh'},{e:'😂',k:'joy laugh cry'},
+    {e:'🙂',k:'slight smile'},{e:'😉',k:'wink'},{e:'😊',k:'blush smile'},{e:'😍',k:'heart eyes love'},{e:'🤩',k:'star struck wow'},{e:'😘',k:'kiss'},{e:'😋',k:'yum tasty'},{e:'😜',k:'wink tongue'},
+    {e:'🤔',k:'thinking hmm'},{e:'🤨',k:'raised eyebrow suspicious'},{e:'😐',k:'neutral meh'},{e:'😏',k:'smirk'},{e:'🙄',k:'eye roll'},{e:'😬',k:'grimace awkward'},{e:'😴',k:'sleep tired'},{e:'😷',k:'mask sick'},
+    {e:'🤯',k:'mind blown'},{e:'😎',k:'cool sunglasses'},{e:'🥳',k:'party celebrate'},{e:'😢',k:'cry sad tear'},{e:'😭',k:'sob cry'},{e:'😡',k:'angry mad'},{e:'😱',k:'scream fear'},{e:'🤢',k:'sick nausea'},
+    {e:'😇',k:'angel halo'},{e:'🤗',k:'hug'},{e:'🤫',k:'shush quiet'},{e:'🤐',k:'zipper quiet'},{e:'🥰',k:'love hearts'},{e:'☹️',k:'frown sad'},{e:'😳',k:'flushed'},{e:'🫡',k:'salute'}]},
+  {n:'People & Body',e:[
+    {e:'👍',k:'thumbs up yes ok'},{e:'👎',k:'thumbs down no'},{e:'👏',k:'clap applause'},{e:'🙌',k:'hands raised praise'},{e:'🙏',k:'pray thanks please'},{e:'👋',k:'wave hello bye'},{e:'✌️',k:'peace victory'},{e:'🤞',k:'fingers crossed luck'},
+    {e:'👌',k:'ok perfect'},{e:'🤝',k:'handshake deal'},{e:'💪',k:'strong muscle'},{e:'👀',k:'eyes look review'},{e:'✍️',k:'writing hand'},{e:'👈',k:'point left'},{e:'👉',k:'point right'},{e:'☝️',k:'point up one'},
+    {e:'🧠',k:'brain idea'},{e:'🧵',k:'thread sewing'},{e:'🪡',k:'needle sewing'},{e:'🧑‍🎨',k:'artist designer'},{e:'🧑‍💻',k:'developer laptop'},{e:'🧑‍🏭',k:'factory worker'},{e:'🏃',k:'run fast'},{e:'🧍',k:'standing person'}]},
+  {n:'Animals & Nature',e:[
+    {e:'🐶',k:'dog puppy'},{e:'🐱',k:'cat kitten'},{e:'🦊',k:'fox'},{e:'🐻',k:'bear'},{e:'🐼',k:'panda'},{e:'🐨',k:'koala'},{e:'🦁',k:'lion'},{e:'🐯',k:'tiger'},
+    {e:'🐸',k:'frog'},{e:'🐵',k:'monkey'},{e:'🦄',k:'unicorn'},{e:'🐝',k:'bee'},{e:'🦋',k:'butterfly'},{e:'🐢',k:'turtle slow'},{e:'🐬',k:'dolphin'},{e:'🦅',k:'eagle'},
+    {e:'🌸',k:'blossom flower'},{e:'🌹',k:'rose flower'},{e:'🌻',k:'sunflower'},{e:'🌿',k:'herb leaf green'},{e:'🌳',k:'tree'},{e:'🍀',k:'clover luck'},{e:'🌊',k:'wave sea'},{e:'⭐',k:'star'},
+    {e:'🌙',k:'moon night'},{e:'☀️',k:'sun'},{e:'🌈',k:'rainbow'},{e:'⚡',k:'lightning bolt fast'},{e:'🔥',k:'fire hot'},{e:'❄️',k:'snow cold winter'},{e:'🌍',k:'earth globe world'},{e:'💧',k:'drop water'}]},
+  {n:'Food & Drink',e:[
+    {e:'🍎',k:'apple'},{e:'🍋',k:'lemon'},{e:'🍇',k:'grapes'},{e:'🍓',k:'strawberry'},{e:'🍉',k:'watermelon'},{e:'🥑',k:'avocado'},{e:'🌶️',k:'chili hot pepper'},{e:'🥐',k:'croissant'},
+    {e:'🍕',k:'pizza'},{e:'🍔',k:'burger'},{e:'🌮',k:'taco'},{e:'🍜',k:'noodles ramen'},{e:'🍣',k:'sushi'},{e:'🍰',k:'cake slice'},{e:'🎂',k:'birthday cake'},{e:'🍪',k:'cookie'},
+    {e:'☕',k:'coffee tea'},{e:'🍵',k:'tea'},{e:'🧃',k:'juice'},{e:'🥤',k:'drink cup'},{e:'🍺',k:'beer'},{e:'🍷',k:'wine'},{e:'🍾',k:'champagne celebrate'},{e:'🧁',k:'cupcake'}]},
+  {n:'Travel & Places',e:[
+    {e:'🚗',k:'car'},{e:'🚕',k:'taxi'},{e:'🚌',k:'bus'},{e:'🚚',k:'truck delivery'},{e:'🏍️',k:'motorbike'},{e:'🚲',k:'bicycle'},{e:'✈️',k:'plane flight'},{e:'🚀',k:'rocket launch'},
+    {e:'🚢',k:'ship boat'},{e:'🏠',k:'house home'},{e:'🏢',k:'office building'},{e:'🏭',k:'factory'},{e:'🏪',k:'shop store'},{e:'🏖️',k:'beach'},{e:'🏔️',k:'mountain'},{e:'🗺️',k:'map'},
+    {e:'📍',k:'pin location'},{e:'🧭',k:'compass'},{e:'🌆',k:'city sunset'},{e:'🕌',k:'mosque'},{e:'🏟️',k:'stadium'},{e:'⛺',k:'tent camp'},{e:'🛣️',k:'road'},{e:'🚦',k:'traffic light'}]},
+  {n:'Activities',e:[
+    {e:'⚽',k:'football soccer'},{e:'🏀',k:'basketball'},{e:'🏏',k:'cricket bat'},{e:'🎾',k:'tennis'},{e:'🏋️',k:'weights gym'},{e:'🧘',k:'yoga calm'},{e:'🎯',k:'target bullseye goal'},{e:'🎮',k:'game controller'},
+    {e:'🎨',k:'palette art paint'},{e:'🎬',k:'clapper film'},{e:'🎤',k:'mic sing'},{e:'🎧',k:'headphones music'},{e:'🎵',k:'music note'},{e:'🎉',k:'party tada celebrate'},{e:'🎊',k:'confetti'},{e:'🏆',k:'trophy win'},
+    {e:'🥇',k:'gold medal first'},{e:'🎁',k:'gift present'},{e:'🎈',k:'balloon'},{e:'🎟️',k:'ticket'},{e:'🎲',k:'dice'},{e:'♟️',k:'chess'},{e:'🧩',k:'puzzle piece'},{e:'📸',k:'camera photo shoot'}]},
+  {n:'Objects',e:[
+    {e:'👕',k:'tshirt tee shirt'},{e:'👖',k:'jeans pants denim'},{e:'🧥',k:'coat jacket'},{e:'👗',k:'dress'},{e:'🧢',k:'cap hat'},{e:'👟',k:'sneaker shoe'},{e:'🧦',k:'socks'},{e:'🧣',k:'scarf'},
+    {e:'👜',k:'bag handbag'},{e:'🎒',k:'backpack'},{e:'🕶️',k:'sunglasses'},{e:'💍',k:'ring'},{e:'✂️',k:'scissors cut'},{e:'📏',k:'ruler measure'},{e:'📐',k:'triangle ruler'},{e:'🧷',k:'safety pin'},
+    {e:'💡',k:'bulb idea'},{e:'🔧',k:'wrench fix'},{e:'🔨',k:'hammer'},{e:'⚙️',k:'gear settings'},{e:'🔒',k:'lock'},{e:'🔑',k:'key'},{e:'📦',k:'package box parcel'},{e:'🏷️',k:'label tag price'},
+    {e:'📝',k:'memo note'},{e:'📌',k:'pushpin pin'},{e:'📎',k:'paperclip'},{e:'📅',k:'calendar date'},{e:'⏰',k:'alarm clock time'},{e:'💰',k:'money bag'},{e:'💳',k:'card payment'},{e:'🖨️',k:'printer print'},
+    {e:'📱',k:'phone mobile'},{e:'💻',k:'laptop'},{e:'📧',k:'email'},{e:'🔍',k:'magnifier search'}]},
+  {n:'Symbols',e:[
+    {e:'❤️',k:'heart love red'},{e:'🧡',k:'orange heart'},{e:'💛',k:'yellow heart'},{e:'💚',k:'green heart'},{e:'💙',k:'blue heart'},{e:'💜',k:'purple heart'},{e:'🖤',k:'black heart'},{e:'💔',k:'broken heart'},
+    {e:'✅',k:'check tick done approved'},{e:'❌',k:'cross no wrong'},{e:'⭕',k:'circle hollow'},{e:'❗',k:'exclamation important'},{e:'❓',k:'question'},{e:'⚠️',k:'warning careful'},{e:'🚫',k:'prohibited no'},{e:'💯',k:'hundred perfect'},
+    {e:'✨',k:'sparkles new shiny'},{e:'💤',k:'zzz sleep'},{e:'🔴',k:'red circle'},{e:'🟠',k:'orange circle'},{e:'🟡',k:'yellow circle'},{e:'🟢',k:'green circle go'},{e:'🔵',k:'blue circle'},{e:'🟣',k:'purple circle'},
+    {e:'➕',k:'plus add'},{e:'➖',k:'minus remove'},{e:'➡️',k:'arrow right next'},{e:'⬅️',k:'arrow left back'},{e:'🔁',k:'repeat loop'},{e:'🔔',k:'bell notify'},{e:'♻️',k:'recycle'},{e:'🆕',k:'new'}]},
+  {n:'Flags',e:[
+    {e:'🏁',k:'chequered flag finish'},{e:'🚩',k:'red flag'},{e:'🏳️',k:'white flag'},{e:'🏴',k:'black flag'},{e:'🇵🇰',k:'pakistan flag'},{e:'🇬🇧',k:'uk britain flag'},{e:'🇺🇸',k:'usa america flag'},{e:'🇦🇪',k:'uae emirates flag'},
+    {e:'🇸🇦',k:'saudi flag'},{e:'🇹🇷',k:'turkey flag'},{e:'🇨🇳',k:'china flag'},{e:'🇮🇳',k:'india flag'}]}
+];
 // A curated set rather than a full emoji picker: a searchable index of
 // every emoji needs a name dataset this repo has no business shipping, and
 // these are the ones that actually get used on a working board.
@@ -2474,23 +3244,155 @@ const _BOARDS_REACTIONS=[
 // does — leave them behind and the body keeps its old share, which is how a
 // reactions row ends up painted over a sub-board card's "Open →" button
 // (caught by smoke-layout, not by reading the diff).
-const _BOARDS_CHROME_H={head:28,labels:25,reactions:28,caption:27};
-const _BOARDS_MIN_BODY_H={board:124,image:92,file:100,link:104,todo:80,heading:36,text:52};
+// labels/reactions: the card FOOT (Sept 2026) — one row of 21px chips inside
+// a foot padded 3px above and 7px below = 31, MEASURED in headless Chromium
+// (scratchpad/measure-foot.js). With both rows present the foot's padding is
+// counted twice, a 7px slack that is deliberate: a wrapped row of labels
+// still gets no extra height, and a little air beats a clipped chip.
+// caption: 27 → 30 (Sept 2026). RE-MEASURED while building the crop tool:
+// .board-caption is 13px at line-height 1.4 (18.2) + 5px padding top and
+// bottom + a 1px border-top = 29.2, so 27 UNDER-counted and a captioned
+// card at its minimum clipped 2px off its own caption. Rounded UP, because
+// over-counting a box only costs a hair of a cover-fitted picture while
+// under-counting leaves a strip of the card showing through.
+const _BOARDS_CHROME_H={head:28,labels:31,reactions:31,caption:30,todoTitle:21,todoAsk:27};
+// board:108 is MEASURED, not chosen. The spine card's tallest honest
+// content at the width a board card is born at (_BOARDS_BOARD_W) is a
+// two-line name + the meta line + a thumbnail strip = 107px of body; 108
+// clears it. It came down from 124 when the card became a wide rectangle,
+// and it only stayed honest because the meta line is now a single
+// ellipsized line (css/main.css, .board-subboard-meta) - while it wrapped,
+// this number had to cover the NARROWEST card anyone might drag to, which
+// is a different thing from the shortest a card should be allowed to be.
+const _BOARDS_MIN_BODY_H={board:108,image:92,file:100,link:104,todo:80,heading:36,text:52};
+// An image card that HAS its picture. An empty one ("Click, or paste an
+// image") and one still uploading keep the ordinary strip: a card whose
+// only chrome shows on hover would be an invisible box until it had
+// something to show.
+// A task's nesting depth, capped so a runaway indent cannot push the text
+// out of the card. 16px a level, measured against the checkbox's own width.
+const _BOARDS_TODO_MAX_DEPTH=4;
+function _boardsTodoDepth(it){
+  const d=it&&+it.depth;
+  return (d>0)?Math.min(_BOARDS_TODO_MAX_DEPTH,Math.round(d)):0;
+}
+function _boardsTodoIndentPx(it){ return 8+_boardsTodoDepth(it)*16; }
+// A due date is stored as a plain YYYY-MM-DD string — the same shape the
+// Cutting registry's filter compares, so it sorts and compares as text and
+// needs no Date maths per row. Anything else is ignored rather than shown.
+function _boardsTodoValidDue(v){
+  return (typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v))?v:null;
+}
+function _boardsTodayStr(){
+  const d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function _boardsDueLabel(v){
+  const t=_boardsTodayStr();
+  if(v===t)return'Today';
+  const d=new Date(v+'T00:00:00'),n=new Date(t+'T00:00:00');
+  const days=Math.round((d-n)/86400000);
+  if(days===1)return'Tomorrow';
+  if(days===-1)return'Yesterday';
+  const M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return d.getDate()+' '+M[d.getMonth()]+(d.getFullYear()!==n.getFullYear()?(' '+d.getFullYear()):'');
+}
+// The due chip and the assignee chip that sit after a task's text. Both are
+// escaped rather than hydrated: a date is ours and an assignee is a
+// USER_DEFS name, not a string anybody typed into this board.
+function _boardsTodoMetaHTML(it){
+  let h='';
+  const due=_boardsTodoValidDue(it&&it.due);
+  if(due){
+    const late=due<_boardsTodayStr()&&!(it&&it.done);
+    h+=`<span class="board-todo-due${late?' over':''}" title="Due ${_boardsEsc(due)}">${_boardsEsc(_boardsDueLabel(due))}</span>`;
+  }
+  const who=(it&&typeof it.who==='string')?it.who.trim():'';
+  if(who)h+=`<span class="board-todo-who" title="Assigned to ${_boardsEsc(who)}">${_boardsEsc(_boardsInitials(who))}</span>`;
+  return h;
+}
+// Which part of a to-do card holds the caret. The rail asks, because
+// Milanote's rail is different for a task (Due date, Assign, indent) and
+// for the list's title — it follows FOCUS, not just selection.
+function _boardsTodoFocus(){
+  const el=_boardsEditingEl;
+  if(!el||!el.id)return null;
+  let m=/^board-todo-(.+)-(\d+)$/.exec(el.id);
+  if(m)return{id:m[1],i:+m[2],what:'item'};
+  m=/^board-tdtitle-(.+)$/.exec(el.id);
+  if(m)return{id:m[1],what:'title'};
+  return null;
+}
+function _boardsIsPhotoCard(c){
+  return !!c&&c.type==='image'&&!!c.imageUrl&&!c._uploading;
+}
+// A TO-DO CARD IS AS TALL AS ITS LIST, the way _boardsTableMinH already
+// makes a table as tall as its rows — and for the same reason: the card is
+// a fixed-height flex column that clips, so content it was never sized for
+// is simply drawn where nobody can see it. Found by tests/smoke-layout.js
+// on this round's very first run: with a flat 80px body a three-task list
+// pushed both "Add a task…" and the "Add a title to this list?" prompt out
+// of the card. Every piece is MEASURED (scratchpad/measure-v2.js): a task
+// row 26, the title 21, the add row 24, the prompt 27, the body's own
+// padding 12. Capped at _BOARDS_TODO_MAX_ROWS, past which the body scrolls
+// — a 40-task list must not mint a 1,100px card.
+const _BOARDS_TODO_ROW_H=26,_BOARDS_TODO_ADD_H=24,_BOARDS_TODO_PAD=12,_BOARDS_TODO_BORDER=2,_BOARDS_TODO_MAX_ROWS=12;
+function _boardsTodoMinH(c){
+  const items=Array.isArray(c&&c.items)?c.items:[];
+  const rows=Math.min(items.length,_BOARDS_TODO_MAX_ROWS);
+  let h=_BOARDS_TODO_PAD+_BOARDS_TODO_BORDER+rows*_BOARDS_TODO_ROW_H+_BOARDS_TODO_ADD_H;
+  if(c&&c.title!=null)h+=_BOARDS_CHROME_H.todoTitle;
+  if(c&&c.title==null&&!c.titleAsked&&items.length>=3)h+=_BOARDS_CHROME_H.todoAsk;
+  return Math.max(_BOARDS_MIN_BODY_H.todo,h);
+}
 function _boardsMinCardH(c){
-  if(!c||c.type==='frame')return 60;
+  // A frame's floor used to be 60 — under the 63px title block, so a frame
+  // dragged to its minimum wore a header that overflowed its own box. It
+  // is a container with a region under the title now, the same shape a
+  // column has, so it takes the same floor. Existing frames are not
+  // rewritten: the RENDER grows a short one (drawH), the stored height
+  // catches up the next time it is resized.
+  if(!c||c.type==='frame')return _BOARDS_COL_MIN_H;
   if(c.type==='column')return c.h||_BOARDS_COL_MIN_H;   // derived by _boardsLayoutColumn
   if(c.type==='table')return Math.max(_boardsTableMinH(c),90);
   // A heading's head strip is absolutely positioned over the banner, so it
   // costs the column nothing.
-  let h=c.type==='heading'?0:_BOARDS_CHROME_H.head;
-  if(Array.isArray(c.labels)&&c.labels.length)h+=_BOARDS_CHROME_H.labels;
-  if(c.reactions&&Object.keys(c.reactions).length)h+=_BOARDS_CHROME_H.reactions;
-  if((c.type==='image'||c.type==='file'||c.type==='table')&&c.caption!=null)h+=_BOARDS_CHROME_H.caption;
+  // A heading's head strip, and a PHOTO's, are absolutely positioned over
+  // the content, so neither costs the column anything. Before the photo
+  // card lost its strip, a fitted image card (c.h = the picture's height,
+  // _boardsFitImageCard) drew a 28px strip INSIDE that height, so
+  // object-fit:cover cropped 28px off every picture — measured, see
+  // tests/boards.test.js. The overlay is what makes the box the picture's
+  // exact shape again.
+  // EVERY card's head strip is absolutely positioned over the content now
+  // (see _boardCardHTML), so none of them costs the column anything. It
+  // used to be charged for every type but heading and photo, and that is
+  // what cropped 28px off a fitted picture. _BOARDS_CHROME_H.head is kept
+  // as the strip's own height — the export canvas and the file-card fit
+  // both need to know it.
+  // The chrome above the body is _boardsCardChromeH — one definition, so
+  // the picture geometry (which needs the body's height in px) and this
+  // minimum cannot disagree about what a card carries.
+  const h=_boardsCardChromeH(c);
+  if(c.type==='todo')return h+_boardsTodoMinH(c);
   return h+(_BOARDS_MIN_BODY_H[c.type]||48);
 }
 function _boardsGrowForChrome(c){
   const min=_boardsMinCardH(c);
   if(c&&c.h<min)c.h=min;
+}
+// THE CARD'S FOOT — labels and reactions, like Milanote's, read off the
+// video (56–59s): a label is a small rounded chip INSIDE the card, at the
+// bottom-left under the text, sentence case, on a soft tint of its colour.
+// It used to be an uppercase row wedged between the header and the body.
+// Reactions sit in the same foot as emoji-and-count pills; no reaction was
+// ever placed in the video, so their look is built from the label's, not
+// copied. Both keep their class names (.board-labels / .board-reactions):
+// the far level-of-detail rules and the layout probe key on them.
+function _boardsCardFootHTML(c){
+  const l=_boardsLabelsHTML(c),r=_boardsReactionsHTML(c);
+  if(!l&&!r)return'';
+  return`<div class="board-card-foot">${l}${r}</div>`;
 }
 function _boardsLabelsHTML(c){
   const ls=Array.isArray(c.labels)?c.labels:[];
@@ -2630,6 +3532,27 @@ function _boardsFaceOf(b){
     glyph:icon||letter
   };
 }
+/* The strip of real thumbnails at the foot of a board card — the half of
+   option D that says what is INSIDE a board rather than only what it is
+   called. DERIVED from the child board's own cards on every render, exactly
+   like the gallery tile's live preview, so it cannot go stale against the
+   board it describes; nothing new is stored and nothing migrates.
+
+   Image cards only. A file card's page-1 thumbnail is best-effort by design
+   (see _boardsPdfThumbUrl — the <img> carries an onerror that hides it), and
+   a strip with holes punched in it says less than a shorter strip with
+   none. `rest` counts the cards the strip could not show, so the +N chip
+   answers "and what else", not "and how many pictures". */
+const _BOARDS_THUMB_MAX=3;
+function _boardsBoardThumbs(child){
+  const cards=(child&&child.cards)||[];
+  const urls=[];
+  for(let i=0;i<cards.length&&urls.length<_BOARDS_THUMB_MAX;i++){
+    const c=cards[i];
+    if(c&&c.type==='image'&&c.imageUrl)urls.push(c.imageUrl);
+  }
+  return{urls:urls,rest:Math.max(0,cards.length-urls.length)};
+}
 function _boardsTileHTML(b,size){
   const px=size||36;
   const f=_boardsFaceOf(b);
@@ -2666,6 +3589,14 @@ function _boardsHsvToHex(h,sv,v){
 let _boardsColorTarget=null;   // {kind:'board', id} — who the picker is for
 window.boardsOpenColorPicker=function(kind,id){
   _boardsColorTarget={kind,id};
+  // A CARD's colours have their own panel (Milanote's) — the sliders'
+  // "‹ Presets" goes back to it, on the tab it came from.
+  if(kind==='card'){
+    window.boardsCloseSheet();
+    _boardsColorTab=id==='strip'?'strip':'bg';
+    window.boardsOpenColorPanel();
+    return;
+  }
   _boardsRenderColorSheet();
 };
 // The picker serves two kinds of target now: a BOARD's identity colour and
@@ -2673,12 +3604,18 @@ window.boardsOpenColorPicker=function(kind,id){
 // difference — the alternative was four of them each growing a branch.
 function _boardsColorCurrent(){
   const t=_boardsColorTarget;if(!t)return'';
+  if(t.kind==='card'){const c=_boardsSelectedCards()[0];return _boardsValidHex(c&&(t.id==='strip'?c.color:c.bg));}
   if(t.kind==='conn'){const cn=_boardsConnById(t.id);return _boardsValidHex(cn&&cn.color);}
   const b=moodBoards.find(x=>x.id===t.id);
   return _boardsValidHex(b&&b.color);
 }
 function _boardsColorApply(hex){
   const t=_boardsColorTarget;if(!t)return;
+  if(t.kind==='card'){
+    if(t.id==='strip')window.boardsSetColor(_boardsValidHex(hex)||'none');
+    else window.boardsSetBg(_boardsValidHex(hex)||'none');
+    return;
+  }
   if(t.kind==='conn'){window.boardsSetConn(t.id,{color:hex||null});return;}
   _boardsSaveIdentity(t.id,{color:hex||null});
 }
@@ -2940,15 +3877,42 @@ window.boardsCloseSheet=function(){
   const bk=document.getElementById('board-sheet-back');
   if(el)el.remove();
   if(bk)bk.remove();
+  _boardsCommentPopCard=null;_boardsReplyTo=null;
 };
-function _boardsOpenSheet(title,html){
+/* ── A sheet, or a POPOVER (Sept 2026) ───────────────────────────────────
+   On a phone every one of these is a bottom sheet. On desktop, a caller
+   that names an ANCHOR — a rail action, or a rect (the card a comment
+   thread belongs to) — gets Milanote's shape instead: a panel floated
+   beside the anchor with a tail pointing at it, no dark backdrop, closed
+   by a click anywhere else. Same element, same Done, same body markup, so
+   Labels, Reactions and Comments are written once for both. Callers
+   without an anchor (the board look, the icon picker, More) are
+   unchanged. */
+function _boardsSheetAnchorRect(anchor){
+  if(!anchor||_boardsIsPhone())return null;
+  if(anchor.rect)return anchor.rect;
+  const btn=anchor.act&&document.querySelector?document.querySelector('.board-rail [data-act="'+anchor.act+'"]'):null;
+  return btn&&btn.getBoundingClientRect?btn.getBoundingClientRect():null;
+}
+function _boardsOpenSheet(title,html,opts){
   window.boardsCloseSheet();
+  const anchor=_boardsSheetAnchorRect(opts&&opts.anchor);
   const bk=document.createElement('div');
-  bk.id='board-sheet-back';bk.className='board-sheet-back';
+  bk.id='board-sheet-back';bk.className='board-sheet-back'+(anchor?' clear':'');
   bk.addEventListener('click',()=>window.boardsCloseSheet());
   document.body.appendChild(bk);
   const el=document.createElement('div');
-  el.id='board-sheet';el.className='board-sheet';
+  el.id='board-sheet';el.className='board-sheet'+(anchor?' board-pop':'');
+  if(anchor){
+    // Beside the anchor, on its right; clamped so it never runs off the
+    // bottom, and flipped to the left when there is no room on the right.
+    const W=(opts&&opts.width)||330,vw=window.innerWidth||1280,vh=window.innerHeight||800;
+    const left=anchor.right+14+W<=vw?anchor.right+14:Math.max(8,anchor.left-14-W);
+    el.style.left=left+'px';
+    el.style.top=Math.max(8,Math.min(anchor.top-6,vh-8-Math.min(vh*0.7,560)))+'px';
+    el.style.width=W+'px';
+    if(left<anchor.right)el.classList.add('tail-right');
+  }
   el.innerHTML=`<div class="board-sheet-head"><span>${_boardsEsc(title)}</span><button class="board-sheet-done" onclick="window.boardsCloseSheet()">Done</button></div><div class="board-sheet-body">${html}</div>`;
   document.body.appendChild(el);
   return el;
@@ -2964,45 +3928,99 @@ window.boardsOpenLabels=function(){
   if(!c){showToast('Select one card to label it');return;}
   _boardsRenderLabelSheet(c.id);
 };
-function _boardsRenderLabelSheet(cardId){
-  const c=_editCards.find(x=>x.id===cardId);if(!c)return;
-  const mine=Array.isArray(c.labels)?c.labels:[];
-  const lib=_boardsLabelLibrary().filter(l=>!mine.some(m=>String(m.t).toLowerCase()===l.t.toLowerCase()));
-  const el=_boardsOpenSheet('Labels',`
-    <div class="board-sheet-row" id="board-label-mine"></div>
-    ${lib.length?`<div class="board-sheet-label">Already on this board</div><div class="board-sheet-row" id="board-label-lib"></div>`:''}
-    <div class="board-sheet-label">New label</div>
-    <div class="board-label-new">
-      <input type="text" id="board-label-input" placeholder="Label name" maxlength="28" onkeydown="if(event.key==='Enter')window.boardsLabelCommit('${cardId}')">
-      <div class="board-label-swatches" id="board-label-swatches">${
-        _BOARDS_LABEL_COLORS.map((k,i)=>`<button class="board-label-sw lc-${k}${i===0?' on':''}" data-c="${k}" onclick="window.boardsLabelPickColor(this)" title="${k}"></button>`).join('')}</div>
-      <button class="btn-sm" onclick="window.boardsLabelCommit('${cardId}')">Add</button>
-    </div>`);
-  if(!el)return;
-  // Label text is written in, never interpolated.
-  const host=document.getElementById('board-label-mine');
-  if(host){
-    host.innerHTML=mine.length?mine.map((l,i)=>`<button class="board-label lc-${_BOARDS_LABEL_COLORS.indexOf(l&&l.c)>=0?l.c:'grey'} removable" id="board-lsheet-${i}" data-t=""></button>`).join(''):'<span class="board-sheet-empty">No labels on this card yet.</span>';
-    mine.forEach((l,i)=>{
-      const b=document.getElementById('board-lsheet-'+i);
-      if(!b)return;
-      b.textContent=(l.t||'')+'  ✕';
-      b.onclick=()=>{window.boardsRemoveLabel(cardId,l.t);_boardsRenderLabelSheet(cardId);};
-    });
-  }
-  const libHost=document.getElementById('board-label-lib');
-  if(libHost){
-    libHost.innerHTML=lib.map((l,i)=>`<button class="board-label lc-${l.c}" id="board-llib-${i}"></button>`).join('');
-    lib.forEach((l,i)=>{
-      const b=document.getElementById('board-llib-'+i);
-      if(!b)return;
-      b.textContent=l.t;
-      b.onclick=()=>{window.boardsAddLabel(cardId,l.t,l.c);_boardsRenderLabelSheet(cardId);};
-    });
-  }
-  const inp=document.getElementById('board-label-input');
-  if(inp)inp.focus();
+/* Milanote's label panel, read off the video (42–59s): ONE field at the
+   top ("Enter label name…") that both searches and creates; under it the
+   BOARD'S label list headed by the board's name, each row a checkbox and
+   the chip — ticked when it is on this card; typing filters the list, and
+   a name that matches nothing exactly offers "+ Create label 'x'"; no
+   matches at all says "There are no results". The library is derived from
+   the cards (see _boardsLabelLibrary) — nothing is stored to make the
+   list. _boardsLabelRowsFor is the pure half, so the filtering, the exact
+   match and the create offer are assertable without a DOM. */
+let _boardsLabelRows=[],_boardsLabelTimer=null;
+function _boardsLabelRowsFor(cardId,q){
+  const c=_editCards.find(x=>x.id===cardId);
+  const mine=c&&Array.isArray(c.labels)?c.labels:[];
+  const term=String(q||'').trim(),tl=term.toLowerCase();
+  const on=t=>mine.some(m=>String(m&&m.t).toLowerCase()===String(t).toLowerCase());
+  const rows=_boardsLabelLibrary().filter(l=>!tl||l.t.toLowerCase().indexOf(tl)>=0).map(l=>({t:l.t,c:l.c,on:on(l.t)}));
+  const exact=rows.some(l=>l.t.toLowerCase()===tl);
+  return{term,rows,exact,create:!!term&&!exact};
 }
+// Milanote gives every label row its own ⋯. The library here is DERIVED
+// from the cards (nothing is stored to make the list), so renaming one
+// means rewriting it on every card that carries it and removing one means
+// dropping it from every card — both are board-wide, and both say how many
+// cards they touched rather than doing it silently.
+window.boardsLabelMenu=function(ev,cardId,i){
+  ev.preventDefault();ev.stopPropagation();
+  const l=_boardsLabelRows&&_boardsLabelRows[i];
+  if(!l||!_boardsCanEdit(_editBoard))return;
+  _boardsOpenCtx(ev.clientX,ev.clientY,[
+    {title:l.t},
+    {act:'lbl:rename:'+i,label:'Rename on every card…'},
+    {act:'lbl:drop:'+i,label:'Remove from every card',danger:true}
+  ]);
+};
+function _boardsLabelCards(t){
+  const tl=String(t).toLowerCase();
+  return _editCards.filter(c=>Array.isArray(c.labels)&&c.labels.some(m=>String(m&&m.t).toLowerCase()===tl));
+}
+function _boardsLabelAct(act){
+  const m=/^(rename|drop):(\d+)$/.exec(act);
+  if(!m)return;
+  const l=_boardsLabelRows&&_boardsLabelRows[+m[2]];
+  if(!l||!_boardsCanEdit(_editBoard))return;
+  const hits=_boardsLabelCards(l.t);
+  const tl=l.t.toLowerCase();
+  if(m[1]==='rename'){
+    const next=(prompt('Rename this label on all '+hits.length+' card'+(hits.length===1?'':'s'),l.t)||'').trim();
+    if(!next||next===l.t)return;
+    _boardsPushUndo();
+    hits.forEach(c=>c.labels.forEach(x=>{if(String(x&&x.t).toLowerCase()===tl)x.t=next;}));
+    showToast('Renamed on '+hits.length+' card'+(hits.length===1?'':'s'));
+  }else{
+    if(!confirm('Remove “'+l.t+'” from '+hits.length+' card'+(hits.length===1?'':'s')+'? Ctrl+Z undoes it.'))return;
+    _boardsPushUndo();
+    hits.forEach(c=>{c.labels=c.labels.filter(x=>String(x&&x.t).toLowerCase()!==tl);_boardsGrowForChrome(c);});
+    showToast('Removed from '+hits.length+' card'+(hits.length===1?'':'s'));
+  }
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+function _boardsRenderLabelSheet(cardId,q){
+  const c=_editCards.find(x=>x.id===cardId);if(!c)return;
+  const d=_boardsLabelRowsFor(cardId,q);
+  _boardsLabelRows=d.rows;
+  const el=_boardsOpenSheet('Labels',`
+    <input type="text" class="board-sheet-search board-label-q" id="board-label-input" placeholder="Enter label name…" maxlength="28" value="${_boardsEsc(d.term)}" oninput="window.boardsLabelSearch('${cardId}',this)" onkeydown="if(event.key==='Enter')window.boardsLabelCommit('${cardId}')">
+    ${d.create?`<button class="board-label-create" onclick="window.boardsLabelCommit('${cardId}')">+ Create label “<span id="board-label-create-t"></span>”</button>
+    <div class="board-label-swatches" id="board-label-swatches">${
+      _BOARDS_LABEL_COLORS.map((k,i)=>`<button class="board-label-sw lc-${k}${i===0?' on':''}" data-c="${k}" onclick="window.boardsLabelPickColor(this)" title="${k}"></button>`).join('')}</div>`:''}
+    <div class="board-sheet-label">Recently created</div>
+    <div class="board-label-list">${d.rows.map((l,i)=>`<div class="board-label-row"><label><input type="checkbox"${l.on?' checked':''} onchange="window.boardsLabelToggle('${cardId}',${i})"><span class="board-label lc-${_BOARDS_LABEL_COLORS.indexOf(l.c)>=0?l.c:'grey'}" id="board-lrow-${i}"></span></label><button class="board-label-more" onclick="window.boardsLabelMenu(event,'${cardId}',${i})" title="Rename or remove this label">⋯</button></div>`).join('')}${
+      !d.rows.length?`<div class="board-sheet-empty">${d.term?'There are no results':'No labels on this board yet — type one above.'}</div>`:''}</div>`,
+    {anchor:{act:'labels'}});
+  if(!el)return;
+  // Label text and the board's name are written in, never interpolated.
+  const ct=document.getElementById('board-label-create-t');
+  if(ct)ct.textContent=d.term;
+  d.rows.forEach((l,i)=>{const b=document.getElementById('board-lrow-'+i);if(b)b.textContent=l.t;});
+  const inp=document.getElementById('board-label-input');
+  if(inp){inp.focus();try{inp.setSelectionRange(inp.value.length,inp.value.length);}catch(e){}}
+}
+window.boardsLabelSearch=function(cardId,el){
+  const v=el.value;
+  if(_boardsLabelTimer)clearTimeout(_boardsLabelTimer);
+  _boardsLabelTimer=setTimeout(()=>_boardsRenderLabelSheet(cardId,v),120);
+};
+window.boardsLabelToggle=function(cardId,i){
+  const l=_boardsLabelRows[i];if(!l)return;
+  const inp=document.getElementById('board-label-input');
+  const q=inp?inp.value:'';
+  if(l.on)window.boardsRemoveLabel(cardId,l.t);else window.boardsAddLabel(cardId,l.t,l.c);
+  _boardsRenderLabelSheet(cardId,q);
+};
 window.boardsLabelPickColor=function(btn){
   const host=document.getElementById('board-label-swatches');
   if(host)Array.prototype.forEach.call(host.children,b=>b.classList.remove('on'));
@@ -3014,8 +4032,15 @@ window.boardsLabelCommit=function(cardId){
   const on=host?host.querySelector('.on'):null;
   const t=inp?inp.value:'';
   if(!String(t).trim())return;
+  const d=_boardsLabelRowsFor(cardId,t);
+  if(d.exact){
+    // Enter on an existing name toggles it on rather than making a twin.
+    const hit=d.rows.find(l=>l.t.toLowerCase()===d.term.toLowerCase());
+    if(hit&&!hit.on)window.boardsAddLabel(cardId,hit.t,hit.c);
+    _boardsRenderLabelSheet(cardId,'');return;
+  }
   window.boardsAddLabel(cardId,t,on?on.getAttribute('data-c'):'grey');
-  _boardsRenderLabelSheet(cardId);
+  _boardsRenderLabelSheet(cardId,'');
 };
 
 // ── Reactions ──
@@ -3024,21 +4049,71 @@ window.boardsOpenReactions=function(){
   if(!c){showToast('Select one card to react to it');return;}
   _boardsRenderReactionSheet(c.id,'');
 };
+/* Milanote's reaction picker, read off the video (60–79s): a column of
+   CATEGORIES on the left (Frequently used · Smileys & Emotions · People &
+   Body · Animals & Nature · Food & Drink · Travel & Places · Activities ·
+   Objects · Symbols · Flags), the emoji on the right under their heading,
+   a search box at the foot. Ours is the same shape over a CURATED
+   catalogue (_BOARDS_EMOJI_CATS) — a few hundred with a keyword each, not
+   the full Unicode set with its name dataset. "Frequently used" is
+   DERIVED from the reactions already on this board's cards, nothing
+   stored; with none yet it falls back to _BOARDS_REACTIONS. Skin tones
+   are not built. Picking an emoji keeps the panel open, marking it. */
+function _boardsFrequentEmoji(){
+  const n=new Map();
+  _editCards.forEach(c=>{
+    const r=c.reactions&&typeof c.reactions==='object'?c.reactions:{};
+    Object.keys(r).forEach(e=>n.set(e,(n.get(e)||0)+(Array.isArray(r[e])?r[e].length:1)));
+  });
+  const top=Array.from(n.entries()).sort((a,b)=>b[1]-a[1]).slice(0,14).map(x=>x[0]);
+  return top.length?top:_BOARDS_REACTIONS.slice(0,14).map(r=>r.e);
+}
+function _boardsEmojiSearch(term){
+  const t=String(term||'').toLowerCase().trim();
+  if(!t)return[];
+  const out=[];
+  _BOARDS_EMOJI_CATS.forEach(cat=>cat.e.forEach(x=>{if((x.e===t||x.k.indexOf(t)>=0)&&out.indexOf(x.e)<0)out.push(x.e);}));
+  _BOARDS_REACTIONS.forEach(r=>{if((r.e===t||r.k.indexOf(t)>=0)&&out.indexOf(r.e)<0)out.push(r.e);});
+  return out;
+}
+let _boardsReactScroll=0;
 function _boardsRenderReactionSheet(cardId,q){
   const c=_editCards.find(x=>x.id===cardId);if(!c)return;
   const term=String(q||'').toLowerCase().trim();
-  const list=term?_BOARDS_REACTIONS.filter(r=>r.k.indexOf(term)>=0||r.e===term):_BOARDS_REACTIONS;
   const mine=c.reactions&&typeof c.reactions==='object'?Object.keys(c.reactions):[];
+  const btn=e=>`<button class="board-emoji${mine.indexOf(e)>=0?' on':''}" onclick="window.boardsReactionPick('${cardId}','${_boardsEsc(e)}')">${_boardsEsc(e)}</button>`;
+  const grid=list=>`<div class="board-emoji-grid">${list.length?list.map(btn).join(''):'<span class="board-sheet-empty">Nothing matches.</span>'}</div>`;
+  const cats=[{n:'Frequently used',e:_boardsFrequentEmoji()}].concat(_BOARDS_EMOJI_CATS.map(cat=>({n:cat.n,e:cat.e.map(x=>x.e)})));
+  const pane=term
+    ?`<div class="board-emoji-cat-h">Matching</div>${grid(_boardsEmojiSearch(term))}`
+    :cats.map((cat,i)=>`<div class="board-emoji-cat-h" id="board-ecat-${i}">${_boardsEsc(cat.n)}</div>${grid(cat.e)}`).join('');
   _boardsOpenSheet('Reactions',`
-    <input type="search" class="board-sheet-search" id="board-react-q" placeholder="Search reactions…" value="${_boardsEsc(q||'')}" oninput="window.boardsReactionSearch('${cardId}',this)">
-    ${mine.length?`<div class="board-sheet-label">On this card</div>
-    <div class="board-emoji-grid">${mine.map(e=>`<button class="board-emoji on" onclick="window.boardsToggleReaction('${cardId}','${_boardsEsc(e)}');window.boardsCloseSheet()">${_boardsEsc(e)}</button>`).join('')}</div>`:''}
-    <div class="board-sheet-label">${term?'Matching':'Frequently used'}</div>
-    <div class="board-emoji-grid">${list.length?list.map(r=>`<button class="board-emoji" onclick="window.boardsToggleReaction('${cardId}','${r.e}');window.boardsCloseSheet()">${r.e}</button>`).join(''):'<span class="board-sheet-empty">Nothing matches that.</span>'}</div>`);
+    <div class="board-emoji-pane">
+      <div class="board-emoji-cats">${cats.map((cat,i)=>`<button class="${i===0?'on':''}" onclick="window.boardsReactionCat(${i},this)">${_boardsEsc(cat.n)}</button>`).join('')}</div>
+      <div class="board-emoji-scroll" id="board-emoji-scroll">${pane}</div>
+    </div>
+    <input type="search" class="board-sheet-search board-emoji-search" id="board-react-q" placeholder="Search emojis…" value="${_boardsEsc(q||'')}" oninput="window.boardsReactionSearch('${cardId}',this)">`,
+    {anchor:{act:'reactions'},width:380});
+  const sc=document.getElementById('board-emoji-scroll');
+  if(sc&&!term&&_boardsReactScroll)sc.scrollTop=_boardsReactScroll;
   const inp=document.getElementById('board-react-q');
   // Same refocus-after-rerender pattern as every other search box here.
   if(inp&&term){inp.focus();try{inp.setSelectionRange(inp.value.length,inp.value.length);}catch(e){}}
 }
+window.boardsReactionPick=function(cardId,e){
+  const sc=document.getElementById('board-emoji-scroll');
+  _boardsReactScroll=sc?sc.scrollTop:0;
+  const inp=document.getElementById('board-react-q');
+  window.boardsToggleReaction(cardId,e);
+  _boardsRenderReactionSheet(cardId,inp?inp.value:'');
+};
+window.boardsReactionCat=function(i,btn){
+  const h=document.getElementById('board-ecat-'+i);
+  if(h&&h.scrollIntoView)h.scrollIntoView({block:'start'});
+  const host=btn&&btn.parentElement;
+  if(host)Array.prototype.forEach.call(host.children,b=>b.classList.remove('on'));
+  if(btn)btn.classList.add('on');
+};
 let _boardsReactTimer=null;
 window.boardsReactionSearch=function(cardId,el){
   const v=el.value;
@@ -3047,13 +4122,46 @@ window.boardsReactionSearch=function(cardId,el){
 };
 
 // ── More ──
-// The same items the right-click menu builds, in the same router — one
-// definition, so the phone sheet and the desktop menu cannot drift apart.
+// THE ⋯ MENU IS DERIVED FROM THE RIGHT-CLICK MENU, MINUS WHAT THE RAIL
+// ALREADY CARRIES. One definition of what a card can do (_boardsCardCtxItems)
+// feeds three surfaces — the right-click menu, the desktop ⋯ popover and
+// the phone's More sheet — so they cannot drift apart; ⋯ only takes away
+// the acts the rail beside it already offers (Labels, Reactions, Comment,
+// the type's own tools) and the colour swatches, whose place is the Color
+// tile. Milanote's ⋯ (video, 99–107s) reads Convert to Document · Lock
+// Position · Bring to Front · Send to Back · "Created by you just now",
+// so the groups are ordered that way: the type's remaining actions first,
+// then Lock, then z-order, then the multi-select arranging, then the
+// clipboard block, and the provenance footer last.
+const _BOARDS_MORE_CLIP=['cut','copy','dup','delete','stash','card-link'];
+function _boardsMoreItems(canEdit){
+  const onRail=new Set(_boardsRailItems().map(i=>i.act).filter(Boolean));
+  const src=_boardsCardCtxItems(canEdit).filter(it=>it.act&&!onRail.has(it.act));
+  const who=_boardsCardCtxItems(canEdit).find(it=>it.who);
+  const is=(it,acts)=>acts.indexOf(it.act)>=0;
+  const arrange=it=>/^(align:|dist:)/.test(it.act)||is(it,['connectsel','stack','grid','wrapframe']);
+  const groups=[
+    src.filter(it=>!is(it,['lock','front','back'])&&!is(it,_BOARDS_MORE_CLIP)&&!arrange(it)),
+    src.filter(it=>it.act==='lock'),
+    src.filter(it=>is(it,['front','back'])),
+    src.filter(arrange),
+    src.filter(it=>is(it,_BOARDS_MORE_CLIP))
+  ].filter(g=>g.length);
+  const out=[];
+  groups.forEach((g,i)=>{if(i)out.push({sep:true});g.forEach(it=>out.push(it));});
+  if(who){out.push({sep:true});out.push(who);}
+  return out;
+}
 window.boardsOpenMore=function(){
-  const items=_boardsCardCtxItems(_boardsCanEdit(_editBoard));
+  const items=_boardsMoreItems(_boardsCanEdit(_editBoard));
+  // Desktop: a popover beside the ⋯ button, like Milanote's — the same
+  // .board-ctx the right-click opens, so it looks and closes the same way.
+  const r=_boardsSheetAnchorRect({act:'more'});
+  if(r){_boardsOpenCtx(r.right+10,r.top,items);return;}
   _boardsOpenSheet('More',`<div class="board-sheet-list">${items.map(it=>{
     if(it.sep)return'<div class="board-sheet-sep"></div>';
     if(it.title)return`<div class="board-sheet-label">${_boardsEsc(it.title)}</div>`;
+    if(it.who)return`<div class="board-ctx-who">${_boardsAvatarHTML(it.who)}<span>${_boardsEsc(_boardsWhoText(it))}</span></div>`;
     if(it.swatches||it.cellSwatches||it.connSwatches)return'';
     return`<button class="board-sheet-item${it.danger?' danger':''}" onclick="window.boardsSheetRun('${it.act}')">${_boardsEsc(it.label)}</button>`;
   }).join('')}</div>`);
@@ -3081,7 +4189,34 @@ window.boardsSheetRun=function(act){
 // the PNG export all read it, and a card with no c.rich hydrates from it
 // with textContent exactly as it did before any of this existed.
 const _BOARDS_RICH_TAGS={B:'b',STRONG:'b',I:'i',EM:'i',U:'u',S:'s',STRIKE:'s',DEL:'s',
-  BR:'br',DIV:'div',P:'div',UL:'ul',OL:'ol',LI:'li',SPAN:'span',FONT:'span'};
+  BR:'br',DIV:'div',P:'div',UL:'ul',OL:'ol',LI:'li',SPAN:'span',FONT:'span',
+  // The Text style menu (Sept 2026): large / normal heading, small text,
+  // code and quote blocks. Every heading level folds onto the three we
+  // draw, so pasted markup cannot smuggle in a size the menu never offers.
+  H1:'h2',H2:'h2',H3:'h3',H4:'h3',H5:'h6',H6:'h6',PRE:'pre',BLOCKQUOTE:'blockquote'};
+// Highlight colours are an ALLOW-LIST of names → hex, not a validated hex:
+// the sanitiser keeps a background only when it is one of these, so a
+// pasted <span style="background:url(…)"> or any colour the menu never
+// offered is dropped. Light tints, so the card's own ink reads on them in
+// either theme (they are literal by design — a highlight is content, like
+// the text colours beside it).
+const _BOARDS_HILITE_COLORS=[
+  {hex:'#FDE68A',label:'Yellow'},
+  {hex:'#BBF7D0',label:'Green'},
+  {hex:'#BFDBFE',label:'Blue'},
+  {hex:'#FBCFE8',label:'Pink'},
+  {hex:'#FED7AA',label:'Orange'}
+];
+function _boardsRichBg(node){
+  let c='';
+  try{c=node.style&&node.style.backgroundColor?node.style.backgroundColor:'';}catch(e){}
+  c=String(c||'').trim().toLowerCase();
+  if(!c)return'';
+  const m=/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/.exec(c);
+  if(m)c='#'+[m[1],m[2],m[3]].map(n=>('0'+Number(n).toString(16)).slice(-2)).join('');
+  const hit=_BOARDS_HILITE_COLORS.find(h=>h.hex.toLowerCase()===c);
+  return hit?hit.hex:'';
+}
 function _boardsRichColor(node){
   // The only styling that survives is a literal colour. Anything else in a
   // style attribute (position, background images, url(), expressions) is
@@ -3110,7 +4245,8 @@ function _boardsSanitizeRich(html){
       if(!tag){walk(n,to,depth+1);return;}   // unknown element: keep its text, drop it
       const el=doc.createElement(tag);
       const col=_boardsRichColor(n);
-      if(col&&tag==='span')el.setAttribute('style','color:'+col);
+      const bg=tag==='span'?_boardsRichBg(n):'';
+      if(tag==='span'&&(col||bg))el.setAttribute('style',[col?'color:'+col:'',bg?'background-color:'+bg:''].filter(Boolean).join(';'));
       to.appendChild(el);
       if(tag!=='br')walk(n,el,depth+1);
     });
@@ -3367,6 +4503,12 @@ function _boardsOnViewportChange(){
     _boardsRenderCanvasAndWire();
     return;
   }
+  // The on-screen keyboard is a resize too (index.html asks for
+  // interactive-widget=resizes-content), and before this it panned the
+  // board by half the keyboard's height under the caret — up when it
+  // opened, back down when it closed. While anything is being edited the
+  // view rect is left alone as well, so the closing resize sees no delta.
+  if(_boardsEditingEl||_boardsIsEditableFocus())return;
   const stage=document.getElementById('board-stage');if(!stage)return;
   const r=stage.getBoundingClientRect();
   const prev=_boardsViewRect;
@@ -3411,10 +4553,72 @@ let _boardsFmtTarget=null;
 function _boardsIsRichField(el){
   return!!(el&&el.isContentEditable&&el.id&&el.id.indexOf('board-txt-')===0);
 }
+// Is a note body being edited, on a screen where the RAIL carries the
+// formatting tools? (Milanote swaps the rail for a text rail the moment a
+// note is in edit mode; a phone keeps the floating bar docked above the
+// keyboard, where a rail at the bottom of the screen would be under it.)
+function _boardsFmtActive(){
+  return!!(_boardsEditingEl&&_boardsIsRichField(_boardsEditingEl)&&!_boardsIsPhone()&&_editBoard&&_boardsCanEdit(_editBoard));
+}
 function _boardsShowFmtBar(el){
-  const bar=document.getElementById('board-fmt');if(!bar)return;
   _boardsFmtTarget=el;
+  // Desktop: the rail is the formatting surface; the floating bar stays
+  // hidden. Phone: the bar, docked above the keyboard.
+  if(!_boardsIsPhone()){_boardsRenderRail();return;}
+  const bar=document.getElementById('board-fmt');if(!bar)return;
   bar.style.display='block';
+}
+// ONE implementation of every formatting action, whichever surface asked.
+// `done`, `swatches` and `style` are surface actions; everything else is an
+// execCommand on the note body that currently holds the caret.
+const _BOARDS_FMT_BLOCKS=[
+  {tag:'h2',label:'Large heading'},
+  {tag:'h3',label:'Normal heading'},
+  {tag:'div',label:'Normal text'},
+  {tag:'h6',label:'Small text'},
+  {tag:'pre',label:'Code block'},
+  {tag:'blockquote',label:'Quote block'}
+];
+function _boardsFmtAct(act){
+  const target=_boardsFmtTarget||(_boardsIsRichField(_boardsEditingEl)?_boardsEditingEl:null);
+  if(act==='done'){
+    if(target&&target.blur)target.blur();
+    _boardsHideFmtBar();
+    if(_boardsEditingEl)_boardsEndEdit();
+    return;
+  }
+  if(act==='swatches'){
+    const sw=document.getElementById('board-fmt-swatches');
+    if(sw)sw.style.display=sw.style.display==='none'?'flex':'none';
+    return;
+  }
+  if(act==='style'){
+    // Milanote's Text style menu, anchored beside the rail button.
+    const btn=document.querySelector('.board-rail [data-act="fmt:style"]');
+    const r=btn&&btn.getBoundingClientRect?btn.getBoundingClientRect():{right:100,top:100};
+    _boardsOpenCtx(r.right+8,r.top,_BOARDS_FMT_BLOCKS.map(b=>({act:'fmt:block:'+b.tag,label:b.label})));
+    return;
+  }
+  if(!target)return;
+  if(target.focus)target.focus();
+  try{
+    // styleWithCSS matters per command: ON, a colour comes back as
+    // <span style="color:…"> which the sanitiser keeps; OFF, bold comes
+    // back as <b>, which it also keeps. The other way round, bold would
+    // become <span style="font-weight:bold"> and the sanitiser — which
+    // allow-lists colour and a highlight and nothing else — would quietly
+    // strip it.
+    const isColor=act.indexOf('color:')===0,isHilite=act.indexOf('hilite:')===0,isBlock=act.indexOf('block:')===0;
+    try{document.execCommand('styleWithCSS',false,isColor||isHilite);}catch(e2){}
+    if(isColor)document.execCommand('foreColor',false,act.slice(6));
+    else if(isHilite)document.execCommand('hiliteColor',false,act.slice(7));
+    else if(isBlock)document.execCommand('formatBlock',false,'<'+act.slice(6)+'>');
+    else document.execCommand(act,false,null);
+  }catch(err){}
+  // execCommand fires `input` in modern browsers, but not uniformly for
+  // every command — dispatching it ourselves is what actually guarantees
+  // the card is saved.
+  try{target.dispatchEvent(new Event('input',{bubbles:true}));}catch(err){}
 }
 function _boardsHideFmtBar(){
   const bar=document.getElementById('board-fmt');
@@ -3448,31 +4652,7 @@ function _boardsWireFmtBar(){
     const btn=e.target.closest&&e.target.closest('[data-fmt]');
     if(!btn)return;
     e.preventDefault();e.stopPropagation();
-    const act=btn.getAttribute('data-fmt');
-    const target=_boardsFmtTarget;
-    if(act==='done'){if(target&&target.blur)target.blur();_boardsHideFmtBar();return;}
-    if(act==='swatches'){
-      const sw=document.getElementById('board-fmt-swatches');
-      if(sw)sw.style.display=sw.style.display==='none'?'flex':'none';
-      return;
-    }
-    if(!target)return;
-    if(target.focus)target.focus();
-    try{
-      // styleWithCSS matters per command: ON, a colour comes back as
-      // <span style="color:…"> which the sanitiser keeps; OFF, bold comes
-      // back as <b>, which it also keeps. The other way round, bold would
-      // become <span style="font-weight:bold"> and the sanitiser — which
-      // allow-lists colour and nothing else — would quietly strip it.
-      const wantCss=act.indexOf('color:')===0;
-      try{document.execCommand('styleWithCSS',false,wantCss);}catch(e2){}
-      if(wantCss)document.execCommand('foreColor',false,act.slice(6));
-      else document.execCommand(act,false,null);
-    }catch(err){}
-    // execCommand fires `input` in modern browsers, but not uniformly for
-    // every command — dispatching it ourselves is what actually guarantees
-    // the card is saved.
-    try{target.dispatchEvent(new Event('input',{bubbles:true}));}catch(err){}
+    _boardsFmtAct(btn.getAttribute('data-fmt'));
   });
 }
 
@@ -3550,31 +4730,96 @@ function _boardsPinchMove(){
   b.zoom=next;
   _boardsApplyTransform();
 }
+// Touch has neither a double-click nor a right-click of its own, and this
+// file leaned on both. The stage already pairs taps by hand for
+// double-tap-to-add (the module's own finding: dblclick is not dependable
+// once touch-action:none has taken the browser's gesture), but every card
+// body, to-do item, table cell and header still hung its edit on
+// `ondblclick` — so a note could only be typed into if the browser happened
+// to synthesize one. And the context menu hung on `contextmenu`, which
+// Android fires on a long-press and iOS Safari does not. Both are paired
+// here, once, for every element that carries the attribute — and each
+// GUARDS against the browser also doing it natively, so a phone that does
+// fire dblclick or contextmenu gets exactly one of each, not two.
+const _BOARDS_TAP_MS=300,_BOARDS_TAP_PX=28,_BOARDS_HOLD_MS=500,_BOARDS_HOLD_PX=10;
+let _boardsSynthDblAt=0,_boardsSynthCtxAt=0,_boardsHoldTimer=null,_boardsLastTap=null;
+function _boardsSynth(type,el,x,y){
+  const ev=new MouseEvent(type,{bubbles:true,cancelable:true,clientX:x,clientY:y,view:window});
+  if(type==='dblclick')_boardsSynthDblAt=Date.now();else _boardsSynthCtxAt=Date.now();
+  el.dispatchEvent(ev);
+}
+function _boardsHoldCancel(){if(_boardsHoldTimer){clearTimeout(_boardsHoldTimer);_boardsHoldTimer=null;}}
 function _boardsWireTouch(){
+  let press=null;
   function onDown(e){
     if(e.pointerType!=='touch'||currentPage!=='board-canvas')return;
     if(!(e.target&&e.target.closest&&e.target.closest('.board-stage')))return;
     _boardsTouches.set(e.pointerId,{x:e.clientX,y:e.clientY});
-    if(_boardsTouches.size===2)_boardsPinchStart();
+    if(_boardsTouches.size===2){_boardsPinchStart();_boardsHoldCancel();press=null;return;}
+    press={id:e.pointerId,x:e.clientX,y:e.clientY,t:Date.now(),target:e.target,moved:false};
+    _boardsHoldCancel();
+    // No long-press inside a field: the browser's own text callout belongs
+    // there, and the stage's contextmenu handler bails on it anyway.
+    if(e.target.closest('input,textarea,select,[contenteditable="true"]'))return;
+    _boardsHoldTimer=setTimeout(()=>{
+      _boardsHoldTimer=null;
+      if(!press||press.moved||_boardsTouches.size!==1)return;
+      try{if(navigator.vibrate)navigator.vibrate(12);}catch(err){}
+      _boardsSynth('contextmenu',press.target,press.x,press.y);
+      press=null;   // the release after a hold is not a tap
+    },_BOARDS_HOLD_MS);
   }
   function onMove(e){
     if(e.pointerType!=='touch')return;
+    if(press&&press.id===e.pointerId&&!press.moved&&
+       (Math.abs(e.clientX-press.x)>_BOARDS_HOLD_PX||Math.abs(e.clientY-press.y)>_BOARDS_HOLD_PX)){
+      press.moved=true;_boardsHoldCancel();
+    }
     if(!_boardsTouches.has(e.pointerId))return;
     _boardsTouches.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(_boardsPinch&&_boardsTouches.size>=2)_boardsPinchMove();
   }
   function onUp(e){
     if(e.pointerType!=='touch')return;
+    _boardsHoldCancel();
+    const p=press;press=null;
     if(!_boardsTouches.delete(e.pointerId))return;
     if(_boardsPinch&&_boardsTouches.size<2){
       _boardsPinch=null;
       _boardsSaveDebounced();   // pan/zoom are board fields, worth persisting
+      return;
     }
+    if(e.type!=='pointerup'||!p||p.moved||p.id!==e.pointerId)return;
+    // A tap. Pair it with the last one on the same [ondblclick] element.
+    const el=e.target&&e.target.closest&&e.target.closest('[ondblclick]');
+    if(!el){_boardsLastTap=null;return;}
+    const now=Date.now();
+    if(_boardsLastTap&&_boardsLastTap.el===el&&now-_boardsLastTap.t<_BOARDS_TAP_MS&&
+       Math.abs(e.clientX-_boardsLastTap.x)<_BOARDS_TAP_PX&&Math.abs(e.clientY-_boardsLastTap.y)<_BOARDS_TAP_PX){
+      _boardsLastTap=null;
+      _boardsSynth('dblclick',el,e.clientX,e.clientY);
+      return;
+    }
+    _boardsLastTap={el,t:now,x:e.clientX,y:e.clientY};
   }
   document.addEventListener('pointerdown',onDown,true);
   document.addEventListener('pointermove',onMove,true);
   document.addEventListener('pointerup',onUp,true);
   document.addEventListener('pointercancel',onUp,true);
+  // The guards. A browser that DOES synthesize its own dblclick from two
+  // taps fires it right after the second click — after ours — so a trusted
+  // one within the window is the duplicate and is dropped at the capture
+  // phase, before any inline handler sees it. Same for contextmenu; and a
+  // trusted contextmenu that arrives FIRST (Android's own long-press beat
+  // the timer) cancels the timer so ours never fires.
+  document.addEventListener('dblclick',e=>{
+    if(e.isTrusted&&Date.now()-_boardsSynthDblAt<600){e.stopPropagation();e.preventDefault();}
+  },true);
+  document.addEventListener('contextmenu',e=>{
+    if(!e.isTrusted)return;
+    _boardsHoldCancel();
+    if(Date.now()-_boardsSynthCtxAt<700){e.stopPropagation();e.preventDefault();}
+  },true);
 }
 _boardsWireTouch();
 // Where a new card should land when it isn't being placed by a click:
@@ -3585,7 +4830,28 @@ _boardsWireTouch();
 // every existing add path (menu, file picker, paste) inherits it without a
 // signature change.
 let _boardsNextPlacement=null;
+// THE DOT GRID IS A PLACEMENT CUE, NOT THE BACKGROUND. Measured off the
+// second Milanote video: the canvas carries no dots at rest, and they are
+// painted for about 1.2s around the moment a card is placed, then gone —
+// every other sample across the whole 126s reads zero texture. Ours used to
+// paint them permanently. Held during a card drag as well, which is NOT
+// something the video shows; it follows from what the cue is for.
+let _boardsGridTimer=null;
+function _boardsFlashGrid(hold){
+  const st=document.querySelector('.board-stage');
+  if(!st)return;
+  st.classList.add('grid-on');
+  if(_boardsGridTimer){clearTimeout(_boardsGridTimer);_boardsGridTimer=null;}
+  if(hold)return;
+  _boardsGridTimer=setTimeout(()=>{
+    _boardsGridTimer=null;
+    const el=document.querySelector('.board-stage');
+    if(el)el.classList.remove('grid-on');
+  },1200);
+}
+function _boardsHideGrid(){_boardsFlashGrid(false);}
 function _boardsPlacementPoint(){
+  _boardsFlashGrid(false);
   const b=_editBoard;
   if(_boardsNextPlacement){
     const p=_boardsNextPlacement;
@@ -3929,14 +5195,10 @@ document.addEventListener('click',e=>{
 // nothing and the text typed after it was lost — the heading's drag strip
 // sits over the top of the banner, so the first attempt lands on the strip
 // rather than the text. One rule for every type beats a special case.
-window.boardsHeadDblClick=function(ev,id){
-  const c=_editCards.find(x=>x.id===id);
-  if(!c||!_boardsCanEdit(_editBoard)||c.locked)return;
-  if(ev)ev.stopPropagation();
-  if(c.type==='heading'){window.boardsBeginEdit(ev,'board-txt-'+id);return;}
-  if(c.type==='text'){window.boardsBeginEdit(ev,'board-txt-'+id);return;}
-  window.boardsBeginEdit(ev,'board-name-'+id);
-};
+// window.boardsHeadDblClick is GONE. It existed because a heading's drag
+// strip sat over the top of its banner and swallowed the first
+// double-click; the head is pointer-events:none on every card now, so the
+// banner (and every other card body) receives that double-click itself.
 
 /* ── Dragging a board card back INTO the panel (Sept 2026) ─────────────
    Afnan drew the arrow the other way: the panel drops a board onto Home,
@@ -3956,15 +5218,85 @@ window.boardsHeadDblClick=function(ev,id){
 function _boardsUnplaceDrag(group){
   return _boardsIsHome(_editBoard)&&group.length===1&&group[0].type==='board'&&!!group[0].boardId;
 }
-function _boardsOverPanel(ev){
-  const el=document.getElementById('board-tray');
-  if(!el||el.classList.contains('collapsed'))return false;
+function _boardsOverEl(el,ev){
+  if(!el||!ev)return false;
   const r=el.getBoundingClientRect();
   return ev.clientX>=r.left&&ev.clientX<=r.right&&ev.clientY>=r.top&&ev.clientY<=r.bottom;
+}
+function _boardsOverPanel(ev){
+  const el=document.getElementById('board-tray');
+  return!!el&&!el.classList.contains('collapsed')&&_boardsOverEl(el,ev);
 }
 function _boardsPanelDropTarget(on){
   const el=document.getElementById('board-tray');
   if(el)el.classList.toggle('panel-drop',!!on);
+}
+
+/* ── Dragging a card INTO Unsorted (Sept 2026) ─────────────────────────
+   Afnan: drag anything — a link, a file, an image, a column — onto
+   Unsorted, "so the board remains clean". The menu's Move to Unsorted was
+   the only route, and a menu is not the gesture anyone tries.
+
+   It is the same shape as the Home panel drop directly above, pointing
+   the other way, and it lands on the SAME implementation the menu uses
+   (window.boardsTrayStashCards) rather than a second stash path beside
+   it — the rule that keeps the toast, the undo entry and what a container
+   does with its contents from drifting apart.
+
+   NOT ON HOME: Home has no Unsorted, and its panel drop already means
+   "take this board off Home". NOT ON A PHONE: the tray is the full width
+   of the screen there, so it covers the canvas outright and there is no
+   board left to drag a card across — the route there stays the More
+   sheet, which is what the phone audit settled for every other gesture
+   that does not survive a 390px screen.
+
+   A BOARD LINK IS REFUSED, and a group holding one is refused WHOLE.
+   Stashing a sub-board link would surface the child back in the boards
+   list, which that card's own ✕ already does under a name that says so;
+   and half-doing a mixed selection is worse than not offering the
+   gesture at all. The target simply does not light up, so a refusal is
+   visible before the pointer comes up rather than silent after it. */
+function _boardsStashDrag(group){
+  if(!group||!group.length)return false;
+  if(!_boardsCanEdit(_editBoard))return false;
+  if(_boardsIsHome(_editBoard)||_boardsIsPhone())return false;
+  return!group.some(c=>c.type==='board');
+}
+/* The zone exists ONLY while a card is being dragged and the tray is
+   shut, because off Home a closed tray is not in the DOM at all and there
+   would be nothing to aim at. Built with createElement and removed in the
+   drag's own up() — which runs on pointercancel too — so nothing is left
+   sitting over the canvas at rest, and a full canvas render mid-drag
+   takes it with the container rather than orphaning it. */
+function _boardsStashZone(on){
+  const old=document.getElementById('board-stash-zone');
+  if(!on){if(old&&old.remove)old.remove();return null;}
+  if(old)return old;
+  const host=document.querySelector('.board-below')||document.querySelector('.board-canvas-wrap');
+  if(!host||!document.createElement)return null;
+  const z=document.createElement('div');
+  z.id='board-stash-zone';
+  z.className='board-stash-zone';
+  const lab=document.createElement('span');
+  lab.className='board-stash-zone-label';
+  lab.textContent='Unsorted';
+  z.appendChild(lab);
+  host.appendChild(z);
+  return z;
+}
+// The open tray when there is one, else the peek zone. Exactly one of the
+// two exists at a time, so there is never a second target to disagree with.
+function _boardsStashTargetEl(){
+  const tray=document.getElementById('board-tray');
+  if(tray&&!tray.classList.contains('collapsed'))return tray;
+  return document.getElementById('board-stash-zone');
+}
+function _boardsOverStash(ev){return _boardsOverEl(_boardsStashTargetEl(),ev);}
+// The same dashed outline the Home panel drop uses, deliberately: one
+// drop-target look, whichever direction a card is travelling.
+function _boardsStashDropTarget(on){
+  const el=_boardsStashTargetEl();
+  if(el&&el.classList)el.classList.toggle('panel-drop',!!on);
 }
 window.boardsCardDragStart=function(e,cardId){
   e.stopPropagation();
@@ -3973,7 +5305,7 @@ window.boardsCardDragStart=function(e,cardId){
   // or the stage would start panning under the selection.
   if(_boardsEditingEl&&_boardsEditingEl.contains&&_boardsEditingEl.contains(e.target))return;
   const b=_editBoard;const c=_editCards.find(x=>x.id===cardId);if(!c)return;
-  if(c.locked){showToast('Card is locked — unlock it to move it');return;}
+  if(c.locked){showToast(_boardsLockedMsg('move'));return;}
   _boardsSelectCard(cardId,e.shiftKey||e.ctrlKey||e.metaKey);
   // Drag the whole selection when the grabbed card is part of one; locked
   // cards in that selection stay put rather than blocking the rest.
@@ -3997,16 +5329,58 @@ window.boardsCardDragStart=function(e,cardId){
   // A column cannot be dropped into itself, or into a column travelling
   // with it.
   const movingCols=new Set(group.filter(x=>x.type==='column').map(x=>x.id));
-  const head=e.currentTarget;
+  const grip=e.currentTarget;
   const unplaceable=_boardsUnplaceDrag(group);
-  const startX=e.clientX,startY=e.clientY;
+  const stashable=_boardsStashDrag(group);
+  const startX=e.clientX,startY=e.clientY,ptr=e.pointerId;
   let pushed=false;
-  head.setPointerCapture(e.pointerId);
+  // ── THE CAPTURE IS LAZY, AND THAT IS THE LOAD-BEARING PART ───────────
+  // This used to call setPointerCapture right here, on the pointerdown.
+  // A captured pointer RETARGETS the click and dblclick that follow to the
+  // capturing element, so a press that never became a drag STOLE the click
+  // from whatever was actually pressed. This file has recorded that bug
+  // five times under five different names — the delete X, the file card's
+  // Open, a table cell, a to-do item, a link's own anchor — and each was
+  // patched by hanging an onpointerdown stopPropagation guard on the
+  // descendant.
+  //
+  // Those guards are what broke dragging. The head strip is an inert
+  // overlay (pointer-events:none, so it cannot eat a click aimed at the
+  // content beneath it), so a press on the strip falls through to the
+  // card's first row — and on a to-do card that row is the task text,
+  // which carried one of those guards. MEASURED with the real stylesheet
+  // in headless Chromium (scratchpad/measure-card-grab.js): only 42% of a
+  // to-do card's strip would start a drag, and none of the middle, where
+  // anyone aims. Grab the bar that shows a grab cursor and the card does
+  // not move.
+  //
+  // Capturing only once the gesture is REALLY a drag removes the cause
+  // instead of the symptoms: a plain click is never retargeted, so the
+  // guards are not needed on anything that is merely text. The listeners
+  // go on the document, because without a capture this element stops
+  // seeing the pointer the moment it leaves.
   function move(ev){
+    if(ev.pointerId!=null&&ev.pointerId!==ptr)return;  // a second finger is a pinch
     if(_boardsPinch)return;   // two fingers down: zooming, not dragging a card
-    // One undo entry per gesture, pushed on the first actual movement —
-    // a plain click on the header shouldn't leave a no-op in the stack.
-    if(!pushed){_boardsPushUndo();pushed=true;}
+    // One undo entry per gesture, pushed on the first REAL movement —
+    // a plain click (or a finger that rolls a pixel) shouldn't leave a
+    // no-op in the stack or move the card.
+    if(!pushed){
+      if(Math.abs(ev.clientX-startX)<_BOARDS_DRAG_PX&&Math.abs(ev.clientY-startY)<_BOARDS_DRAG_PX)return;
+      _boardsPushUndo();pushed=true;
+      _boardsFlashGrid(true);       // held for the gesture, released in up()
+      // NOW it is a drag, so take the pointer. Anything the four pixels
+      // before this started selecting is dropped, or the card would drag
+      // with a smear of highlighted text across it.
+      try{if(grip.setPointerCapture)grip.setPointerCapture(ptr);}catch(err){}
+      if(!_boardsEditingEl&&document.getSelection){
+        try{document.getSelection().removeAllRanges();}catch(err){}
+      }
+      if(document.body&&document.body.classList)document.body.classList.add('board-dragging');
+      // Only when there is no target already — an OPEN tray is the target
+      // and a zone beside it would be a second one.
+      if(stashable&&!_boardsStashTargetEl())_boardsStashZone(true);
+    }
     let dx=(ev.clientX-startX)/b.zoom;
     let dy=(ev.clientY-startY)/b.zoom;
     if(_boardsSnapGrid){
@@ -4034,13 +5408,26 @@ window.boardsCardDragStart=function(e,cardId){
     // A lone board card held over the panel is a "take it off Home", so the
     // panel says so before the pointer comes up rather than after.
     if(unplaceable)_boardsPanelDropTarget(_boardsOverPanel(ev));
+    // Held over Unsorted, the drop says so before the pointer comes up.
+    if(stashable)_boardsStashDropTarget(_boardsOverStash(ev));
     _boardsShowColumnDrop(_boardsDropTargets(group,movingCols));
   }
   function up(ev){
-    head.removeEventListener('pointermove',move);head.removeEventListener('pointerup',up);
+    if(ev&&ev.pointerId!=null&&ev.pointerId!==ptr)return;
+    _boardsHideGrid();
+    document.removeEventListener('pointermove',move);
+    document.removeEventListener('pointerup',up);
+    document.removeEventListener('pointercancel',up);
+    if(document.body&&document.body.classList)document.body.classList.remove('board-dragging');
+    try{if(grip.hasPointerCapture&&grip.hasPointerCapture(ptr))grip.releasePointerCapture(ptr);}catch(err){}
     _boardsHideGuides();
     _boardsHideColumnDrop();
     _boardsPanelDropTarget(false);
+    _boardsStashDropTarget(false);
+    // Read the hit test BEFORE the zone is taken away — when the tray is
+    // shut, the zone IS the target.
+    const overStash=pushed&&stashable&&_boardsOverStash(ev);
+    _boardsStashZone(false);
     // `pushed` is set on the first real pointermove, so it is exactly
     // "this was a drag, not a click".
     if(pushed)_boardsSuppressClick=true;
@@ -4056,6 +5443,19 @@ window.boardsCardDragStart=function(e,cardId){
       _boardsSyncHistoryButtons();
       _boardsPanelFlash=group[0].boardId;
       window.boardsDeleteCard(group[0].id);
+      return;
+    }
+    // Dropped on Unsorted: the cards come off the board and are kept. Put
+    // them back where the gesture STARTED and discard the drag's own undo
+    // entry first — boardsTrayStashCards pushes its own, and without this
+    // Ctrl+Z would restore the cards at the spot they were dropped and
+    // need a second press to put them back. _boardsUndo is a plain stack
+    // of snapshots, so popping the one this gesture pushed is exact.
+    if(overStash){
+      origins.forEach(o=>{o.card.x=o.ox;o.card.y=o.oy;});
+      _boardsUndo.pop();
+      _boardsSyncHistoryButtons();
+      window.boardsTrayStashCards(group.map(c=>c.id));
       return;
     }
     if(pushed){
@@ -4078,13 +5478,14 @@ window.boardsCardDragStart=function(e,cardId){
       _boardsSaveDebounced();
     }
   }
-  head.addEventListener('pointermove',move);
-  head.addEventListener('pointerup',up);
+  document.addEventListener('pointermove',move);
+  document.addEventListener('pointerup',up);
+  document.addEventListener('pointercancel',up);
 };
 window.boardsResizeStart=function(e,cardId){
   e.stopPropagation();
   const b=_editBoard;const c=_editCards.find(x=>x.id===cardId);if(!c)return;
-  if(c.locked){showToast('Card is locked — unlock it to resize it');return;}
+  if(c.locked){showToast(_boardsLockedMsg('resize'));return;}
   const startX=e.clientX,startY=e.clientY,origW=c.w,origH=c.h;
   let pushed=false;
   const handle=e.currentTarget;handle.setPointerCapture(e.pointerId);
@@ -4141,6 +5542,9 @@ function _boardsSetSelection(ids){
   if(ids&&ids.length&&_boardsConnSel!==null){_boardsConnSel=null;_boardsDrawConnectors();}
   else if(_boardsConnSel!==null&&(!ids||!ids.length)){_boardsConnSel=null;_boardsDrawConnectors();}
   _boardsSelection=new Set(ids);
+  // Drawing belongs to ONE card. Selecting anything else ends it, so the
+  // rail can never offer the drawing tools for a card you are not on.
+  if(_boardsDrawOn&&!_boardsSelection.has(_boardsDrawOn))_boardsDrawOn=null;
   // A focused cell belongs to a selected table. Clicking empty canvas
   // clears the selection through here, and leaving the focus behind left
   // the ring and the cell rail up with no way out but the Done button.
@@ -4196,6 +5600,25 @@ window.boardsSelectAll=function(){_boardsSetSelection(_editCards.map(c=>c.id));}
    js/shared.js — that file is cross-track (see CLAUDE.md), and none of
    these are wanted anywhere else. */
 const _BOARDS_ICONS={
+  // The to-do rail (Sept 2026, from the second Milanote video): Title, Due
+  // date, Assign, Indent, Outdent — and the image rail's Draw on, Edit and
+  // Background beside them. Local to boards.js like the rest.
+  title:'<rect x="2" y="2.5" width="12" height="11" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4.2 5.4h7.6v1.5H4.2z"/>',
+  due:'<rect x="2" y="3.2" width="12" height="10.6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2 6.4h12" stroke="currentColor" stroke-width="1.4"/><path d="M5 1.6v2.6M11 1.6v2.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
+  assign:'<circle cx="8" cy="5.6" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3 13.4a5 5 0 0 1 10 0" fill="none" stroke="currentColor" stroke-width="1.4"/>',
+  indent:'<path d="M6 3.2h8v1.5H6zM6 7.3h8v1.5H6zM6 11.3h8v1.5H6z"/><path d="M1.8 5.2L4.3 8l-2.5 2.8z"/>',
+  outdent:'<path d="M6 3.2h8v1.5H6zM6 7.3h8v1.5H6zM6 11.3h8v1.5H6z"/><path d="M4.3 5.2L1.8 8l2.5 2.8z"/>',
+  drawon:'<path d="M2.6 13.4l.7-2.6 7-7 1.9 1.9-7 7z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M11 2.8l1.2-1.2 1.9 1.9L12.9 4.7z"/>',
+  crop:'<path d="M4.2 1.6v10.2h10.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M1.6 4.2h10.2v10.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
+  // Background: the dashed frame around a picture, read off the rail at 82s.
+  nobg:'<rect x="1.8" y="2.4" width="12.4" height="11.2" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2.4 1.8"/><path d="M4 11.4l2.6-3.2 1.9 2.2 1.5-1.7 2 2.7z" /><circle cx="5.6" cy="5.9" r="1.1"/>',
+  // Drawing: the eraser, the swatch row's frame and the tick that ends the mode.
+  eraser:'<path d="M6.4 13.4H13v1.4H5.2z"/><path d="M2.3 9.9l5.2-5.2a1.4 1.4 0 0 1 2 0l2.6 2.6a1.4 1.4 0 0 1 0 2l-3.6 3.6H5.2L2.3 11.9a1.4 1.4 0 0 1 0-2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>',
+  undostroke:'<path d="M3.4 6.6h6.1a3.4 3.4 0 0 1 0 6.8H5.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M5.9 3.2L2.6 6.6l3.3 3.4z"/>',
+  // The text rail (Sept 2026): Text style, bullets, numbers.
+  textstyle:'<path d="M2 3h9v2.5H8.8V13H6.2V5.5H2z"/><circle cx="12.5" cy="11.5" r="2.5"/>',
+  ul:'<circle cx="3" cy="4" r="1.3"/><circle cx="3" cy="8" r="1.3"/><circle cx="3" cy="12" r="1.3"/><path d="M6 3.2h8v1.6H6zM6 7.2h8v1.6H6zM6 11.2h8v1.6H6z"/>',
+  ol:'<path d="M2 2.5h1.6v3H2.4v-.9h.5V3.4H2zM2 7.3c0-.9.6-1.4 1.5-1.4s1.4.5 1.4 1.2c0 .5-.3.9-.9 1.3l-.7.6h1.7v.9H2v-.8l1.4-1.2c.4-.3.5-.5.5-.7 0-.3-.2-.4-.5-.4s-.5.2-.5.6zM2 11.6h1.5c.8 0 1.3.4 1.3 1s-.3.8-.7.9c.5.1.8.4.8.9 0 .7-.5 1.1-1.4 1.1H2v-.8h1.4c.4 0 .6-.2.6-.5s-.2-.4-.6-.4H2.8v-.7h.6c.3 0 .5-.2.5-.4s-.2-.4-.5-.4H2z"/><path d="M6 3.2h8v1.6H6zM6 7.2h8v1.6H6zM6 11.2h8v1.6H6z"/>',
   // Line-rail icons. Local to boards.js like the rest (js/shared.js is a
   // cross-track file and none of these are wanted elsewhere).
   linestart:'<path d="M2 8h11" stroke="currentColor" fill="none"/><path d="M6 4L2 8l4 4z"/>',
@@ -4234,7 +5657,8 @@ const _BOARDS_ICONS={
   reactions:'<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6.6" r=".9"/><circle cx="10" cy="6.6" r=".9"/><path d="M5.4 9.6a3.2 3.2 0 005.2 0" fill="none" stroke="currentColor" stroke-width="1.3"/>',
   more:'<circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/>',
   done:'<path d="M3 8.5l3.2 3.2L13 5" fill="none" stroke="currentColor" stroke-width="1.8"/>',
-  fit:'<path d="M2 5.5V2h3.5M14 5.5V2h-3.5M2 10.5V14h3.5M14 10.5V14h-3.5" fill="none" stroke="currentColor" stroke-width="1.3"/>'
+  fit:'<path d="M2 5.5V2h3.5M14 5.5V2h-3.5M2 10.5V14h3.5M14 10.5V14h-3.5" fill="none" stroke="currentColor" stroke-width="1.3"/>',
+  hand:'<path d="M5.6 8.2V4.3a1 1 0 012 0v2.4m0-.2V3.3a1 1 0 012 0v3.4m0-.4V4.4a1 1 0 012 0v3.3m0-1.1a1 1 0 012 0v3.1a4 4 0 01-4 4H8.8a3 3 0 01-2.2-1L3.9 9.9a1 1 0 011.5-1.3l1.3 1.3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'
 };
 function _boardsIcon(name){
   return`<svg viewBox="0 0 16 16" aria-hidden="true">${_BOARDS_ICONS[name]||_BOARDS_ICONS.note}</svg>`;
@@ -4244,13 +5668,17 @@ function _boardsIcon(name){
    _MAIN is what stays on the rail, _OVERFLOW is what the "…" reveals, and
    _MEDIA is the group below the divider. The split follows Milanote's own:
    the things you reach for constantly stay out, the structural ones fold
-   away. Every entry carries `drag:true` — that is what makes it a drag
-   source in _boardsWireRailDrag; anything without it stays click-only. */
+   away. `drag:true` is what makes an entry a drag source; anything without
+   it stays click-only, and the three that lack it are the three that do not
+   PLACE anything: `line` is a mode, and `imagepanel`/`file` open a picker.
+   Board carries it as of Sept 2026 (Afnan, with the tool circled and an
+   arrow drawn onto the canvas) — it places a card like any other tool, it
+   just mints the board behind it first. */
 const _BOARDS_RAIL_MAIN=[
   {act:'add:text',label:'Note',icon:'note',drag:true},
   {act:'add:link',label:'Link',icon:'link',drag:true},
   {act:'add:todo',label:'To-do',icon:'todo',drag:true},
-  {act:'add:board',label:'Board',icon:'board'},
+  {act:'add:board',label:'Board',icon:'board',drag:true},
   {act:'add:column',label:'Column',icon:'stack',drag:true},
   {act:'line',label:'Line',icon:'line'}
 ];
@@ -4263,9 +5691,147 @@ const _BOARDS_RAIL_MEDIA=[
   {act:'imagepanel',label:'Image',icon:'image'},
   {act:'file',label:'File',icon:'file'}
 ];
+// The four tools a phone keeps on its bar (see _boardsRailItems). Note and
+// Board drag; Image and File open a picker, so they carry no drag flag —
+// the same rule the desktop lists follow.
+const _BOARDS_RAIL_PHONE=[
+  {act:'add:text',label:'Note',icon:'note',drag:true},
+  {act:'imagepanel',label:'Image',icon:'image'},
+  {act:'file',label:'File',icon:'file'},
+  {act:'add:board',label:'Board',icon:'board',drag:true}
+];
+// What the phone's More sheet lists: every add-tool the bar does not carry,
+// then the board-level actions the desktop rail keeps beside them.
+function _boardsRailPhoneOverflow(){
+  const onBar=new Set(_BOARDS_RAIL_PHONE.map(it=>it.act));
+  return _BOARDS_RAIL_MAIN.filter(it=>!onBar.has(it.act))
+    .concat(_BOARDS_RAIL_OVERFLOW)
+    .concat(_BOARDS_RAIL_MEDIA.filter(it=>!onBar.has(it.act)))
+    .concat([{act:'comment-board',label:'Comment'},{act:'fit',label:'Fit view'}])
+    .map(it=>({act:it.act,label:it.act==='line'?(_boardsLineMode?'Line tool: on':'Line tool'):it.label}));
+}
+/* ── WHAT THE SELECTED CARD ALREADY HAS ───────────────────────────────
+   The selection rail said what you could DO and nothing about what was
+   already there: Labels, Reactions and Comment were identical icons
+   whether the card carried twelve or none, so the only way to find out was
+   to open each panel in turn. Color was the one button on that rail
+   already answering its own question — `colorTile` paints the card's real
+   colour — and this is the rest of that idea.
+
+   DERIVED on every render, never stored: the rule the label library and
+   frame membership already hold. */
+function _boardsCommentCounts(){
+  // UNRESOLVED only, and this is THE definition — the card's own corner
+  // badge reads it too, so a card can never say 3 in the corner and 5 on
+  // the rail. It used to be an inline loop inside the badge painter.
+  const m={};
+  (_boardsComments||[]).forEach(c=>{
+    if(c&&c.cardId&&!c.resolved)m[c.cardId]=(m[c.cardId]||0)+1;
+  });
+  return m;
+}
+function _boardsRailCounts(sel){
+  const cards=Array.isArray(sel)?sel:[];
+  const cc=_boardsCommentCounts();
+  // LABELS ARE A SET, the other two are tallies, and the difference is the
+  // question each answers. Twelve cards all carrying "see this" are wearing
+  // ONE label — counting twelve would describe the selection's size, not
+  // its labels. A reaction and a comment are each their own event, so those
+  // add up.
+  const labels=new Set();
+  let reactions=0,comments=0;
+  cards.forEach(c=>{
+    if(!c)return;
+    (Array.isArray(c.labels)?c.labels:[]).forEach(l=>{
+      if(l&&l.t)labels.add(String(l.t).trim().toLowerCase());
+    });
+    const r=c.reactions&&typeof c.reactions==='object'?c.reactions:{};
+    Object.keys(r).forEach(k=>{if(Array.isArray(r[k]))reactions+=r[k].length;});
+    comments+=cc[c.id]||0;
+  });
+  return{labels:labels.size,reactions,comments};
+}
 function _boardsRailItems(){
   const canEdit=_boardsCanEdit(_editBoard);
   const sel=_boardsSelectedCards();
+  // DRAWING OUTRANKS EVERY OTHER MODE — while the pen is on one card the
+  // rail is that card's drawing tools and nothing else, the way the text
+  // rail takes over for a caret in a note. It is the rail's SIXTH mode
+  // (nothing selected / a card / a line / a cell / text / drawing).
+  if(canEdit&&_boardsDrawOn&&_editCards.some(c=>c.id===_boardsDrawOn)){
+    const c=_editCards.find(x=>x.id===_boardsDrawOn);
+    const empty=!_boardsStrokes(c).length;
+    // On a phone the rail is a horizontal dock, and six colour swatches
+    // beside three width buttons and three labelled tools does not fit —
+    // MEASURED by tests/smoke-phone.js, which reported the last tool off
+    // the right edge at 390 and 360. The pen's own settings go behind one
+    // button that opens a bottom sheet, which is the pattern Colour,
+    // Labels and Reactions already follow there.
+    if(_boardsIsPhone())return[
+      {act:'draw:done',label:'Done',icon:'done',done:true},
+      {act:'draw:pen',label:'Pen',icon:'drawon'},
+      {act:'draw:undo',label:'Undo',icon:'undostroke',off:empty},
+      {act:'draw:clear',label:'Erase',icon:'eraser',off:empty}
+    ];
+    return[
+      {act:'draw:done',label:'Done',icon:'done',done:true},
+      {drawSwatches:true},
+      {drawWidths:true},
+      {act:'draw:undo',label:'Undo stroke',icon:'undostroke',off:empty},
+      {act:'draw:clear',label:'Erase all',icon:'eraser',off:empty}
+    ];
+  }
+  // A FOCUSED TO-DO outranks every other mode, and that is the second
+  // video's structural finding: Milanote's rail follows what is FOCUSED,
+  // not what is selected. The same to-do card gives one rail while a task
+  // holds the caret (Due date, Assign, indent, outdent — all per-TASK) and
+  // a much shorter one while the list's title does.
+  const tdf=canEdit&&!_boardsIsPhone()?_boardsTodoFocus():null;
+  if(tdf){
+    const c=_boardsTodoCard(tdf.id);
+    if(c&&tdf.what==='title'){
+      return[
+        {act:'deselect',label:'Back',icon:'back',rewind:true},
+        {act:'color-panel',label:'Color',colorTile:true},
+        {act:'todo:title',label:'Title',icon:'title',on:true},
+        {act:'more',label:'More',icon:'more'}
+      ];
+    }
+    if(c&&c.items&&c.items[tdf.i]){
+      return[
+        {act:'deselect',label:'Back',icon:'back',rewind:true},
+        {act:'color-panel',label:'Color',colorTile:true},
+        {act:'labels',label:'Labels',icon:'labels'},
+        {act:'reactions',label:'Reactions',icon:'reactions'},
+        {act:'card-comment',label:'Comment',icon:'comment'},
+        {act:'todo:title',label:'Title',icon:'title',on:c.title!=null},
+        {act:'todo:due',label:'Due date',icon:'due'},
+        {act:'todo:assign',label:'Assign',icon:'assign'},
+        {act:'todo:indent',label:'Indent',icon:'indent',off:!_boardsTodoCanIndent(c,tdf.i)},
+        {act:'todo:outdent',label:'Outdent',icon:'outdent',off:!_boardsTodoCanOutdent(c,tdf.i)}
+      ];
+    }
+  }
+  // A NOTE IN EDIT MODE is the rail's fifth mode (Sept 2026), read off
+  // Milanote's own: back, Text style, B, I, S, U, bullets, numbers — then
+  // the text colours and highlights the floating bar used to hold. It
+  // outranks every other mode: while the caret is in a note, that note is
+  // also the selection, and its card actions are one Back away.
+  if(_boardsFmtActive()){
+    return[
+      {act:'fmt:done',label:'Back',icon:'back',rewind:true},
+      {act:'fmt:style',label:'Text style',icon:'textstyle'},
+      {act:'fmt:bold',label:'Bold',glyph:'<b>B</b>'},
+      {act:'fmt:italic',label:'Italic',glyph:'<i>I</i>'},
+      {act:'fmt:strikeThrough',label:'Strike',glyph:'<s>S</s>'},
+      {act:'fmt:underline',label:'Underline',glyph:'<u>U</u>'},
+      {act:'fmt:insertUnorderedList',label:'Bullets',icon:'ul'},
+      {act:'fmt:insertOrderedList',label:'Numbers',icon:'ol'},
+      {sep:true},
+      {fmtSwatches:true},
+      {fmtHilite:true}
+    ];
+  }
   // A selected LINE is the rail's third mode. Milanote's own line rail is
   // Color / Start / End / Label / Dashed / Weight; these are the same
   // actions the right-click menu builds, through the same router, so the
@@ -4322,6 +5888,20 @@ function _boardsRailItems(){
     // is what M6's note here was worried about when it said there would
     // never be one. Deleted cards really do go somewhere now, so the rail
     // needs a way in; it opens the panel and never deletes anything.
+    // A PHONE gets the same shape the selection rail already has: six
+    // targets and More. Measured before this: twelve tools = 698px in a
+    // 368px scroller, so Image, File, Comment, Fit, More and TRASH all sat
+    // off-screen with no fade, no hint and no visible scrollbar — the
+    // trash badge and its shake never appeared on a phone at all. The
+    // tools kept visible are the ones a board is made of (Note, Image,
+    // File, Board); everything else is one tap away behind More, which
+    // opens the same sheet the overflow already used.
+    if(_boardsIsPhone()){
+      return _BOARDS_RAIL_PHONE.concat([
+        {act:'more-tools',label:'More',icon:'more',on:false},
+        {act:'trash',label:'Trash',icon:'trash',badge:true,on:_boardsCardTrashOpen}
+      ]);
+    }
     const main=_BOARDS_RAIL_MAIN.map(it=>
       it.act==='line'?Object.assign({},it,{on:_boardsLineMode}):it);
     return main.concat([
@@ -4330,8 +5910,41 @@ function _boardsRailItems(){
       {sep:true}
     ]).concat(_BOARDS_RAIL_MEDIA).concat([
       {sep:true},
-      {act:'comment-board',label:'Comment',icon:'comment'},
+      /* COMMENT CAME OFF THE RAIL TO MAKE ROOM, and it cost nothing.
+         `comment-board` opens `boardsOpenComments(null)` — the board
+         drawer — which is exactly what the top bar's `Comments` button
+         opens, and that button is permanently visible, labelled, carries
+         its own on-state and TOGGLES (the rail's only ever opened). It is
+         also `${phone?'':…}`, so it exists at precisely the widths this
+         rail branch serves; the phone keeps its own copy in
+         `_boardsRailPhoneOverflow`, untouched.
+
+         This was forced, not chosen: MEASURED with
+         scratchpad/measure-rail-hand.js against the real stylesheet, a
+         13-tool rail is 871px large / 673px compact, and a 768px-tall
+         laptop gives about 631px of stage. Thirteen does not fit and
+         twelve does. Given that, the tool to lose is the one already
+         sitting one click away on a button you can see — the same
+         "two surfaces for one action" rule that took Hand OUT of the
+         View menu in the same round. */
       {act:'fit',label:'Fit',icon:'fit'},
+      /* HAND SITS HERE, NOT IN _BOARDS_RAIL_MAIN, and that is deliberate
+         twice over.
+
+         It is not an add-tool: that list is what places cards, it is what
+         the "…" overflow and the drag-to-place flag are built around, and
+         everything in it appears in the PHONE's More sheet — where Hand
+         would do NOTHING. A touch drag already pans unconditionally
+         (`_boardsOnStageDown`: `pointerType==='touch'` is the first term of
+         wantPan), so the toggle is a desktop concept and offering it on a
+         phone would be a control that changes nothing.
+
+         Beside Fit because both change how you LOOK at the board rather
+         than what is on it, which is also why neither takes a --tool-*
+         colour: the content tools are colour-coded because you pick one to
+         place a thing. Its `on` chip is the affordance that matters for a
+         mode, the same one Line carries. */
+      {act:'pan',label:'Hand',icon:'hand',on:_boardsPanMode},
       // Pinned to the floor of the column, where Milanote keeps it — far
       // from the add-tools, so a Trash button is never next to a tool you
       // reach for constantly.
@@ -4346,11 +5959,11 @@ function _boardsRailItems(){
   // it leaves out lives one tap away behind More, which renders the SAME
   // item list the right-click menu builds.
   if(_boardsIsPhone()){
-    const ph=[];
+    const ph=[],phHave=_boardsRailCounts(sel);
     if(canEdit)ph.push({act:'color',label:'Color',icon:'color'});
-    if(canEdit)ph.push({act:'labels',label:'Labels',icon:'labels'});
-    if(canEdit)ph.push({act:'reactions',label:'Reactions',icon:'reactions'});
-    if(one)ph.push({act:'card-comment',label:'Comment',icon:'comment'});
+    if(canEdit)ph.push({act:'labels',label:'Labels',icon:'labels',count:phHave.labels});
+    if(canEdit)ph.push({act:'reactions',label:'Reactions',icon:'reactions',count:phHave.reactions});
+    if(one)ph.push({act:'card-comment',label:'Comment',icon:'comment',count:phHave.comments});
     ph.push({act:'more',label:'More',icon:'more'});
     ph.push({act:'deselect',label:'Done',icon:'done',done:true});
     return ph;
@@ -4360,13 +5973,21 @@ function _boardsRailItems(){
   // back-arrow the browser study saw fading in on the real rail's context
   // swap. Ours had no route back at all except clearing the selection.
   items.push({act:'deselect',label:'Back',icon:'back',rewind:true});
-  if(canEdit)items.push({swatches:true});
-  items.push({act:'card-comment',label:'Comment',icon:'comment'});
-  if(canEdit)items.push({act:'labels',label:'Labels',icon:'labels'});
-  if(canEdit)items.push({act:'reactions',label:'React',icon:'reactions'});
+  // MILANOTE'S SELECTION RAIL, read off the video (105s): Color · Labels ·
+  // Reactions · Comment, the type's own tools (Rename, Caption on an image
+  // at 112s), then ⋯. Duplicate / Front / Back / Lock / Delete used to sit
+  // here as same-weight tools; they live behind ⋯ now, which is what makes
+  // the rail read as a short list of things you do OFTEN. Delete keeps its
+  // key, its right-click entry and the ⋯ entry, and Trash at the foot of
+  // the add rail is still where a deleted card goes.
+  const have=_boardsRailCounts(sel);
+  if(canEdit)items.push({act:'color-panel',label:'Color',colorTile:true});
+  if(canEdit)items.push({act:'labels',label:'Labels',icon:'labels',count:have.labels});
+  if(canEdit)items.push({act:'reactions',label:'Reactions',icon:'reactions',count:have.reactions});
+  items.push({act:'card-comment',label:'Comment',icon:'comment',count:have.comments});
   if(one){
     if(one.type==='table'&&canEdit)items.push({act:'caption',label:'Caption',icon:'caption'});
-    if(one.type==='image'||one.type==='file'){
+    if(one.type==='file'){
       if(canEdit)items.push({act:'caption',label:'Caption',icon:'caption'});
       if(canEdit)items.push({act:'replace',label:'Replace',icon:'replace'});
       items.push({act:'download',label:'Download',icon:'download'});
@@ -4382,23 +6003,35 @@ function _boardsRailItems(){
         items.push({act:'board-rename',label:'Board name',icon:'rename'});
       }
     }
-    if(canEdit)items.push({act:one.type==='heading'?'renameheading':'rename',label:'Rename',icon:'rename'});
+    // Milanote's own selected-to-do rail is Color · Title · ⋯; ours keeps
+    // Labels, Reactions and Comment beside them because a to-do here is a
+    // card like any other and there is nowhere else to reach those.
+    if(one.type==='todo'&&canEdit)items.push({act:'todo:title',label:'Title',icon:'title',on:one.title!=null});
+    // AN IMAGE'S RAIL IS MILANOTE'S EXACTLY, and this CORRECTS what was
+    // recorded here a round earlier. Read off the second video at 82s at
+    // full resolution, the rail for a selected image card is
+    //
+    //     Color · Labels · Reactions · Comment · Draw on · Edit ·
+    //     Background · Caption · ⋯
+    //
+    // with NO Rename. The "Rename before Caption" claim was read off the
+    // TO-DO card at 112s and applied to the wrong type. Rename is not lost
+    // — _boardsMoreItems derives ⋯ from the right-click list minus whatever
+    // the rail carries, so dropping it here puts it in ⋯ on its own, which
+    // is the same algebra that already moved Replace and Download there.
+    if(canEdit&&!(one.type==='image'&&one.imageUrl)){
+      items.push({act:one.type==='heading'?'renameheading':'rename',label:'Rename',icon:'rename'});
+    }
+    if(one.type==='image'&&one.imageUrl&&canEdit){
+      items.push({act:'img:draw',label:'Draw on',icon:'drawon',on:_boardsStrokes(one).length>0});
+      items.push({act:'img:edit',label:'Edit',icon:'crop',on:_boardsImgEdited(one)});
+      items.push({act:'img:bg',label:'Background',icon:'nobg',on:!!one.nobg});
+    }
+    if(one.type==='image'&&canEdit)items.push({act:'caption',label:'Caption',icon:'caption'});
   }
-  if(!canEdit)return items;
-  if(sel.length>1){
-    items.push({sep:true});
-    items.push({act:'stack',label:'Column',icon:'stack'});
-    items.push({act:'grid',label:'Grid',icon:'grid'});
-    items.push({act:'wrapframe',label:'Frame',icon:'frame'});
-  }
-  items.push({sep:true});
-  items.push({act:'dup',label:'Duplicate',icon:'dup'});
-  items.push({act:'front',label:'Front',icon:'front'});
-  items.push({act:'back',label:'Back',icon:'back'});
-  const locked=sel.some(c=>c.locked);
-  items.push({act:'lock',label:locked?'Unlock':'Lock',icon:locked?'unlock':'lock'});
-  items.push({sep:true});
-  items.push({act:'delete',label:'Delete',icon:'trash',danger:true});
+  // ⋯ is on the rail whether or not you can edit: Copy, Copy link and the
+  // provenance footer are read-only actions.
+  items.push({act:'more',label:'More',icon:'more'});
   return items;
 }
 function _boardsRenderRail(){
@@ -4407,13 +6040,35 @@ function _boardsRenderRail(){
   const sel=_boardsSelectedCards();
   host.classList.toggle('selecting',!!sel.length||_boardsConnSel!==null);
   const items=_boardsRailItems();
+  // THE SWAP IS A MOTION, like Milanote's: when the rail changes MODE (add
+  // tools → a selection → a note's text tools) the new column slides in.
+  // Keyed on the mode, not on every repaint — a trash-count paint or a
+  // selection of a second card must not replay it.
+  const mode=_boardsDrawOn?'draw':_boardsFmtActive()?'text':(_boardsConnSel!==null&&!sel.length)?'line':_boardsFocusedCell()?'cell':sel.length?'sel':'add';
+  const prev=host.dataset?host.dataset.mode:'';
+  if(host.dataset)host.dataset.mode=mode;
+  host.classList.remove('rail-swap');
+  if(prev&&prev!==mode){void host.offsetWidth;host.classList.add('rail-swap');}
   host.innerHTML=(sel.length>1?`<div class="rail-count">${sel.length}</div>`:'')+items.map(it=>{
     if(it.sep)return'<div class="rail-sep"></div>';
+    if(it.colorTile){
+      const cls=_boardsColorTileClass(sel),sty=_boardsColorTileStyle(sel);
+      return`<button class="rail-btn" data-act="${it.act}" title="Colour — background and top strip"><span class="rail-color-tile ${cls}"${sty?` style="${sty}"`:''}></span><span>${_boardsEsc(it.label)}</span></button>`;
+    }
+    if(it.fmtSwatches)return`<div class="rail-fmt-row" title="Text colour">${_BOARDS_TEXT_COLORS.map(c=>`<button class="board-fmt-sw" style="background:${c.hex}" title="${c.label}" data-act="fmt:color:${c.hex}"></button>`).join('')}</div>`;
+    if(it.fmtHilite)return`<div class="rail-fmt-row" title="Highlight">${_BOARDS_HILITE_COLORS.map(c=>`<button class="board-fmt-sw" style="background:${c.hex}" title="Highlight ${c.label}" data-act="fmt:hilite:${c.hex}"></button>`).join('')}</div>`;
     if(it.grow)return'<div class="rail-grow"></div>';
     if(it.swatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
     if(it.cellSwatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="cellbg:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
     if(it.connSwatches)return`<div class="rail-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="ln:c:${c}" title="${c==='none'?'Default':c}"></button>`).join('')}</div>`;
-    return`<button class="rail-btn${it.on?' on':''}${it.danger?' danger':''}${it.done?' rail-done':''}${it.drag?' rail-draggable':''}" data-act="${it.act}"${it.drag?' data-drag="1"':''} title="${_boardsEsc(it.label)}${it.drag?' — click to place, or drag onto the board':''}">${_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span>${it.badge?'<span class="board-rail-badge" style="display:none"></span>':''}</button>`;
+    // The pen's own colour and width rows. The swatch carrying the current
+    // pick is marked, so the rail says what you are about to draw with
+    // rather than making you draw a line to find out.
+    if(it.drawSwatches)return`<div class="rail-swatches" title="Pen colour">${_BOARDS_DRAW_COLORS.map(c=>`<button class="board-swatch sw-${c}${c===_boardsDrawColor?' on':''}" data-act="draw:color:${c}" title="${c}"></button>`).join('')}</div>`;
+    if(it.drawWidths)return`<div class="rail-fmt-row" title="Pen width">${_BOARDS_DRAW_WIDTHS.map(x=>`<button class="board-pen-w${x.w===_boardsDrawWidth?' on':''}" data-act="draw:width:${x.w}" title="${x.label}"><span style="height:${x.w}px"></span></button>`).join('')}</div>`;
+    // `glyph` is static markup from the item lists above (a bold B, an
+    // italic I) — never user text, which is why it is not escaped.
+    return`<button class="rail-btn${it.on?' on':''}${it.off?' off':''}${it.danger?' danger':''}${it.done?' rail-done':''}${it.drag?' rail-draggable':''}" data-act="${it.off?'':it.act}"${it.drag?' data-drag="1"':''} title="${_boardsEsc(it.label)}${it.drag?' — click to place, or drag onto the board':''}">${it.glyph?`<span class="rail-glyph">${it.glyph}</span>`:_boardsIcon(it.icon)}<span>${_boardsEsc(it.label)}</span>${it.badge?'<span class="board-rail-badge" style="display:none"></span>':''}${it.count?`<span class="board-rail-badge">${it.count>99?'99+':it.count}</span>`:''}</button>`;
   }).join('');
   // The count is painted after the markup exists, and again whenever the
   // trash changes underneath — it is derived from what is actually
@@ -4424,7 +6079,31 @@ function _boardsRenderRail(){
   // One delegated listener on a host that survives innerHTML swaps — and
   // pointerdown must not reach the stage, or clicking the rail would start
   // a pan and clear the very selection you are acting on.
-  host.addEventListener('pointerdown',e=>{e.stopPropagation();_boardsRailDragStart(e);});
+  host.addEventListener('pointerdown',e=>{
+    e.stopPropagation();
+    _boardsRailTipHide();
+    // A formatting tool acts on the caret: taking focus would destroy the
+    // selection it is about to format, and the command would then silently
+    // do nothing. Same rule the floating bar holds.
+    const t=e.target;
+    if(t&&t.closest&&(t.closest('[data-act^="fmt:"]')||t.closest('.rail-fmt-row'))){e.preventDefault();return;}
+    _boardsRailDragStart(e);
+  });
+  // "Drag me" — Milanote's hover cue, read off the video frame by frame:
+  // the icon does not move; about half a second into the hover a dark
+  // bubble fades in to the right of the tile and goes on leave. Offered
+  // ONLY by a drag source (data-drag): a cue promising a drag the tool does
+  // not accept is worse than no cue. Mouse only — a finger has no hover.
+  host.addEventListener('pointerover',e=>{
+    if(e.pointerType&&e.pointerType!=='mouse')return;
+    const btn=e.target.closest&&e.target.closest('[data-act][data-drag="1"]');
+    if(btn)_boardsRailTipArm(btn);else _boardsRailTipHide();
+  });
+  host.addEventListener('pointerout',e=>{
+    const to=e.relatedTarget;
+    const btn=e.target.closest&&e.target.closest('[data-act][data-drag="1"]');
+    if(btn&&!(to&&btn.contains&&btn.contains(to)))_boardsRailTipHide();
+  });
   host.addEventListener('click',e=>{
     const btn=e.target.closest&&e.target.closest('[data-act]');
     if(!btn)return;
@@ -4454,6 +6133,12 @@ function _boardsRenderRail(){
    the drag is simply abandoned. */
 let _boardsRailDrag=null;
 const _BOARDS_RAIL_DRAG_PX=5;
+// A CARD drag too. It had no dead zone at all: `pushed` went true on the
+// very first pointermove, so on a touch screen a slightly rolling tap pushed
+// an undo snapshot, swallowed the click and nudged the card 1-3px (or onto
+// the grid). The rail, the panel rows and the tray all had one; the card
+// drag was the odd one out. Found by reading, in the Sept 2026 phone audit.
+const _BOARDS_DRAG_PX=4;
 function _boardsRailDragStart(e){
   if(!_editBoard||!_boardsCanEdit(_editBoard))return;
   if(e.button!==undefined&&e.button!==0)return;
@@ -4490,6 +6175,16 @@ function _boardsRailDragEnd(e){
   const r=stage.getBoundingClientRect();
   const inside=e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom;
   if(!inside)return;                            // dropped off the canvas: abandon
+  /* THE DROP POINT ONLY SURVIVES IF THE LAST RIGHT-CLICK IS FORGOTTEN, and
+     that is a real bug this fixed rather than a precaution. _boardsCtxWorld
+     is set when the context menu OPENS and is never cleared when it closes,
+     and _boardsCtxRun's own place() overwrites _boardsNextPlacement from it
+     — so after one right-click anywhere, every rail drag landed its card at
+     that point instead of under the pointer. The rail's CLICK path already
+     cleared it (see _boardsWireRail); the drag path was simply missed.
+     Measured before the fix: a drop at (300,300) landed at (-1089,-1039),
+     the stale point. */
+  _boardsCtxWorld=null;
   _boardsNextPlacement=_boardsScreenToWorld(e.clientX,e.clientY);
   _boardsCtxRun(d.act);
 }
@@ -4506,13 +6201,137 @@ function _boardsRailDragCancel(){
 // rather than the per-type dimensions: those live in _boardsNewCard, which
 // is not pure (it mints an id), and a second copy of that table would be a
 // second thing to keep in step.
+const _BOARDS_TIP_ID='board-rail-tip',_BOARDS_TIP_DELAY=450;
+let _boardsRailTipTimer=null,_boardsRailTipEl=null;
+function _boardsRailTipArm(btn){
+  _boardsRailTipHide();
+  _boardsRailTipTimer=setTimeout(()=>{_boardsRailTipTimer=null;_boardsRailTipShow(btn);},_BOARDS_TIP_DELAY);
+}
+function _boardsRailTipShow(btn){
+  if(!btn||!btn.getAttribute||btn.getAttribute('data-drag')!=='1')return false;
+  if(_boardsRailDrag)return false;               // mid-drag: the ghost is the cue
+  let el=_boardsRailTipEl;
+  if(!el){
+    el=document.createElement('div');
+    el.id=_BOARDS_TIP_ID;
+    el.className='board-rail-tip';
+    el.textContent='Drag me';
+    document.body.appendChild(el);
+    _boardsRailTipEl=el;
+  }
+  const r=btn.getBoundingClientRect?btn.getBoundingClientRect():{right:0,top:0};
+  const ico=btn.querySelector&&btn.querySelector('svg,.rail-glyph');
+  const ir=ico&&ico.getBoundingClientRect?ico.getBoundingClientRect():r;
+  el.style.left=(r.right+8)+'px';
+  el.style.top=((ir.top+ir.bottom)/2)+'px';
+  el.classList.add('show');
+  return true;
+}
+function _boardsRailTipHide(){
+  if(_boardsRailTipTimer){clearTimeout(_boardsRailTipTimer);_boardsRailTipTimer=null;}
+  const el=_boardsRailTipEl;
+  _boardsRailTipEl=null;
+  if(el&&el.parentNode)el.parentNode.removeChild(el);
+}
 const _BOARDS_GHOST_ID='board-rail-ghost';
+/* WHAT A CARD OF THIS TYPE LOOKS LIKE BEFORE IT EXISTS.
+   Deliberately a SILHOUETTE, not the real card: _boardCardHTML emits ids
+   and handlers, and a second copy of a card's markup loose in the document
+   would hand every getElementById in this file a duplicate to trip over.
+   So the ghost draws the card's shape and its FIRST-RUN placeholder — the
+   words a freshly dropped card really shows — and an invariant checks each
+   of those strings still appears in the card markup, so renaming one there
+   cannot leave the ghost quietly lying.
+
+   Returns null for a type with nothing to draw, which is what puts a tool
+   back on the plain chip. */
+const _BOARDS_GHOST_PLACEHOLDERS={
+  text:'Double-click to type…',
+  heading:'Section title',
+  todoItem:'To-do',
+  todoAdd:'Add a task…',
+  link:'Enter a link URL',
+  column:'New Column',
+  frame:'New Frame',
+  columnBody:'Drag cards here'
+};
+function _boardsGhostBody(type){
+  const mk=(cls,text)=>{
+    const n=document.createElement('div');
+    n.className=cls;
+    if(text)n.textContent=text;            // textContent, as everywhere in this file
+    return n;
+  };
+  const ph=k=>_BOARDS_GHOST_PLACEHOLDERS[k]||'';
+  const frag=document.createElement('div');
+  frag.className='ghost-in';
+  if(type==='text'){
+    frag.appendChild(mk('ghost-ph',ph('text')));
+  }else if(type==='heading'){
+    frag.appendChild(mk('ghost-band',ph('heading')));
+  }else if(type==='todo'){
+    const row=mk('ghost-row');
+    row.appendChild(mk('ghost-check'));
+    row.appendChild(mk('ghost-item',ph('todoItem')));
+    frag.appendChild(row);
+    frag.appendChild(mk('ghost-ph',ph('todoAdd')));
+  }else if(type==='table'){
+    const g=mk('ghost-grid');
+    for(let i=0;i<12;i++)g.appendChild(mk('ghost-cell'));
+    frag.appendChild(g);
+  }else if(type==='column'||type==='frame'){
+    // Both wear the same title block on the canvas, so both wear it here.
+    const head=mk('ghost-head');
+    head.appendChild(mk('ghost-name',ph(type)));
+    head.appendChild(mk('ghost-sub','0 cards'));   // what a fresh container counts
+    frag.appendChild(head);
+    frag.appendChild(mk('ghost-panel',type==='column'?ph('columnBody'):''));
+  }else if(type==='board'){
+    frag.appendChild(mk('ghost-spine'));
+    const info=mk('ghost-info');
+    info.appendChild(mk('ghost-name','New board'));
+    info.appendChild(mk('ghost-sub','PRIVATE'));
+    frag.appendChild(info);
+  }else if(type==='link'){
+    frag.appendChild(mk('ghost-field',ph('link')));
+  }else{
+    return null;                            // image, file — they place nothing
+  }
+  return frag;
+}
 function _boardsRailGhostShow(d){
   _boardsRailGhostHide();
+  _boardsRailTipHide();
   const el=document.createElement('div');
   el.id=_BOARDS_GHOST_ID;
-  el.className='board-rail-ghost';
-  el.textContent=d.label||'';                   // textContent: it is a label, not markup
+  /* EVERY PLACING TOOL CARRIES THE CARD IT WILL PLACE, at the board's own
+     zoom, its top-left under the pointer — which is exactly where the drop
+     lands it, since placement is by top-left. Only Note did this before;
+     the rest showed a chip that was the same size whatever you were about
+     to drop, so a Frame and a Note looked identical in flight and neither
+     told you whether the thing would fit where you were aiming.
+
+     A tool that PLACES NOTHING still gets the chip, and must: `line` is a
+     mode and `imagepanel`/`file` open a picker, so there is no card to
+     draw and a card-shaped ghost would promise one. They carry no
+     drag flag either, so this is belt and braces. */
+  const m=/^add:(.+)$/.exec(d.act||'');
+  const body=m?_boardsGhostBody(m[1]):null;
+  if(body){
+    const z=(_editBoard&&_editBoard.zoom)||1;
+    const sz=_boardsNewCardSize(m[1]);
+    el.className='board-rail-ghost card type-'+m[1];
+    el.style.width=Math.round(sz.w*z)+'px';
+    el.style.height=Math.round(sz.h*z)+'px';
+    // Everything inside is sized in em off this, so one rule set draws the
+    // ghost at 25% and at 300%. Floored so a deeply zoomed-out board still
+    // renders something rather than collapsing to nothing.
+    el.style.fontSize=Math.max(6,Math.round(15*z))+'px';
+    el.appendChild(body);
+  }else{
+    el.className='board-rail-ghost';
+    el.textContent=d.label||'';                 // textContent: it is a label, not markup
+  }
   document.body.appendChild(el);
 }
 function _boardsRailGhostMove(x,y){
@@ -4524,10 +6343,14 @@ function _boardsRailGhostMove(x,y){
   const r=stage.getBoundingClientRect();
   const over=x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom;
   el.classList.toggle('over',over);
+  // Off the canvas (over the rail, the top bar) the pointer says so, the
+  // way Milanote's does: releasing there abandons the drag.
+  try{document.body.style.cursor=over?'':'not-allowed';}catch(e){}
 }
 function _boardsRailGhostHide(){
   const el=document.getElementById(_BOARDS_GHOST_ID);
   if(el&&el.parentNode)el.parentNode.removeChild(el);
+  try{document.body.style.cursor='';}catch(e){}
 }
 // Escape abandons a drag in flight, like it abandons everything else here.
 function _boardsRailDragEscape(e){
@@ -4978,6 +6801,68 @@ window.boardsLinkInput=function(id,field,val){const c=_editCards.find(x=>x.id===
 // Leaving the edit form fetches a preview for whatever URL is in it now.
 // Typing is NOT what triggers a fetch — that would fire a server request per
 // keystroke against a half-typed address.
+// A fetch that failed is reported INSIDE the card, the way Milanote's is
+// ("Sorry, something went wrong…" drawn in the card at 42s), not as a toast
+// that is gone before you look up. _-prefixed, so a save firing mid-fetch
+// can never persist it.
+function _boardsLinkErrHTML(c){
+  if(!c._linkErr)return'';
+  return`<div class="board-link-err"><span class="board-link-warn" aria-hidden="true">!</span><span>${_boardsEsc(c._linkErr)}</span></div>`;
+}
+function _boardsHostOf(u){
+  try{return new URL(String(u)).hostname.replace(/^www\./,'');}catch(e){return String(u||'').slice(0,40);}
+}
+window.boardsLinkNewKey=function(ev,id){
+  if(ev.key==='Enter'){ev.preventDefault();window.boardsLinkNewCommit(id,ev.target.value);}
+  if(ev.key==='Escape'){ev.preventDefault();ev.target.blur();}
+};
+// Committing the one field. A value that is not an http(s) URL is NOT
+// thrown away: Milanote keeps it as the card's TITLE and says the fetch
+// failed, which is what it did with "ASHI". Doing anything else would lose
+// what somebody typed.
+window.boardsLinkNewCommit=function(id,raw){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='link'||!_boardsCanEdit(_editBoard))return;
+  const val=String(raw||'').trim();
+  if(!val)return;
+  delete c._linkErr;
+  if(_boardsSafeHref(val)){
+    _boardsPushUndo();
+    c.linkUrl=val;
+    if(!c.linkTitle)c.linkTitle=_boardsHostOf(val);
+    c._linkFetched=val;
+    _boardsRenderCanvasAndWire();
+    _boardsSaveDebounced();
+    _boardsLinkHydrate(id);
+    return;
+  }
+  _boardsPushUndo();
+  c.linkTitle=val;
+  c._linkErr='That is not a web address, so there is nothing to fetch. It has been kept as the title.';
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+// Milanote turns an image-first page (a Pinterest pin) straight into an
+// IMAGE card captioned "From Pinterest". Ours does NOT do that on its own:
+// the link card is confirmed working on the live site, it keeps the URL
+// clickable, and a silent conversion would throw the page away. It is an
+// explicit action instead, and the page survives as c.sourceUrl.
+window.boardsLinkToImage=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='link'||!_boardsCanEdit(_editBoard))return;
+  if(!c.linkImage){showToast('This link has no picture to turn into a card.',true);return;}
+  _boardsPushUndo();
+  const url=c.linkUrl;
+  c.type='image';
+  c.imageUrl=c.linkImage;
+  c.sourceUrl=url||'';
+  delete c.linkImage;delete c.linkTitle;delete c.linkDesc;delete c.linkUrl;
+  delete c.linkSite;delete c.linkPreviewOff;delete c._linkEdit;delete c._linkErr;
+  _boardsGrowForChrome(c);
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast('Turned into an image card — press Ctrl+Z to undo');
+};
 window.boardsLinkDone=function(id){
   const c=_editCards.find(x=>x.id===id);
   if(!c||!_boardsCanEdit(_editBoard))return;
@@ -5522,7 +7407,7 @@ window.boardsTableInput=function(id,r,i,el){
 window.boardsCellAction=function(what){
   const f=_boardsFocusedCell();
   if(!f||!_boardsCanEdit(_editBoard))return;
-  if(f.card.locked)return showToast('Card is locked — unlock it to edit it');
+  if(f.card.locked)return showToast(_boardsLockedMsg('edit'));
   const cur=f.cell;
   _boardsPushUndo();
   if(what==='bold')       _boardsCellWrite(f.card,f.r,f.i,{b:!_boardsCellAttr(cur,'b')});
@@ -5547,7 +7432,7 @@ window.boardsCellAction=function(what){
 window.boardsCellColor=function(name){
   const f=_boardsFocusedCell();
   if(!f||!_boardsCanEdit(_editBoard))return;
-  if(f.card.locked)return showToast('Card is locked — unlock it to edit it');
+  if(f.card.locked)return showToast(_boardsLockedMsg('edit'));
   // Anything not in the palette falls back to no colour rather than being
   // passed through — the same rule the connector colours follow.
   const ok=(name&&name!=='none'&&_BOARDS_COLORS.indexOf(name)>-1)?name:'';
@@ -5686,7 +7571,7 @@ window.boardsCellTypeMenu=function(){
 window.boardsCellSetType=function(t){
   const f=_boardsFocusedCell();
   if(!f||!_boardsCanEdit(_editBoard))return;
-  if(f.card.locked)return showToast('Card is locked — unlock it to edit it');
+  if(f.card.locked)return showToast(_boardsLockedMsg('edit'));
   if(_BOARDS_CELL_TYPES.indexOf(t)<0)return;
   _boardsPushUndo();
   // 'auto' is the ABSENCE of a type, so it clears rather than stores —
@@ -5901,14 +7786,16 @@ window.boardsPickStockImage=async function(i){
 };
 window.boardsMoreTools=function(){
   if(!_boardsCanEdit(_editBoard))return;
-  const items=_BOARDS_RAIL_OVERFLOW.map(it=>({act:it.act,label:it.label}));
   const btn=document.querySelector('#board-rail [data-act="more-tools"]');
   if(_boardsIsPhone()){
+    // Everything the phone bar left off, not just the desktop overflow.
+    const items=_boardsRailPhoneOverflow();
     _boardsOpenSheet('More tools',`<div class="board-sheet-list">${items.map(it=>
       `<button class="board-sheet-item" onclick="window.boardsSheetRun('${it.act}')">${_boardsEsc(it.label)}</button>`
     ).join('')}</div>`);
     return;
   }
+  const items=_BOARDS_RAIL_OVERFLOW.map(it=>({act:it.act,label:it.label}));
   const r=btn&&btn.getBoundingClientRect?btn.getBoundingClientRect():null;
   _boardsOpenCtx(r?r.right+6:120,r?r.top:120,items);
 };
@@ -5941,7 +7828,7 @@ window.boardsCellFormulaHelp=function(){
 window.boardsCellInsertFormula=function(fn){
   const f=_boardsFocusedCell();
   if(!f||!_boardsCanEdit(_editBoard))return;
-  if(f.card.locked)return showToast('Card is locked — unlock it to edit it');
+  if(f.card.locked)return showToast(_boardsLockedMsg('edit'));
   _boardsPushUndo();
   _boardsCellWrite(f.card,f.r,f.i,{v:'='+fn+'()'});
   _boardsRenderCanvasAndWire();
@@ -6012,7 +7899,7 @@ function _boardsTableMinH(c){
 function _boardsTableEditable(id){
   const c=_editCards.find(x=>x.id===id);
   if(!c||c.type!=='table'||!_boardsCanEdit(_editBoard))return null;
-  if(c.locked){showToast('Card is locked — unlock it to edit it');return null;}
+  if(c.locked){showToast(_boardsLockedMsg('edit'));return null;}
   if(!Array.isArray(c.rows)||!c.rows.length)c.rows=[['','']];
   return c;
 }
@@ -6105,6 +7992,125 @@ window.boardsFrameTitle=function(id,val){const c=_editCards.find(x=>x.id===id);i
 // reason as Notes' block editor); only structural changes — adding,
 // removing or ticking an item — rebuild, since those change the layout.
 function _boardsTodoCard(id){const c=_editCards.find(x=>x.id===id);return(c&&c.type==='todo')?c:null;}
+// The to-do rail's five actions. Each reads the FOCUSED task rather than
+// the selection, because that is what they act on; Title is the one that
+// belongs to the list. They route through _boardsCtxRun like every other
+// rail action, so the right-click menu and the phone sheet reach the same
+// implementation.
+function _boardsTodoAct(what){
+  const f=_boardsTodoFocus();
+  const sel=_boardsSelectedCards();
+  const c=f?_boardsTodoCard(f.id):(sel.length===1&&sel[0].type==='todo'?sel[0]:null);
+  if(!c||!_boardsCanEdit(_editBoard))return;
+  if(what==='title'){
+    if(c.title==null)window.boardsTodoTitleOn(c.id);
+    else{
+      _boardsPushUndo();
+      delete c.title;
+      _boardsRenderCanvasAndWire();
+      _boardsSaveDebounced();
+      showToast('Title removed');
+    }
+    return;
+  }
+  if(!f||f.what!=='item'||!c.items||!c.items[f.i]){showToast('Click a task first, then pick a date or a person.',true);return;}
+  const i=f.i;
+  if(what==='indent'||what==='outdent'){window.boardsTodoIndent(c.id,i,what==='indent'?1:-1);return;}
+  if(what==='rmtask'){window.boardsTodoRemove(c.id,i);return;}
+  if(what==='due'){
+    const t=_boardsTodayStr();
+    const plus=n=>{const d=new Date(t+'T00:00:00');d.setDate(d.getDate()+n);
+      return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+    const r=_boardsSheetAnchorRect({act:'todo:due'});
+    _boardsOpenCtx(r?r.right+8:120,r?r.top:120,[
+      {title:'Due date'},
+      {act:'tddue:'+t,label:'Today'},
+      {act:'tddue:'+plus(1),label:'Tomorrow'},
+      {act:'tddue:'+plus(7),label:'Next week'},
+      {sep:true},
+      {act:'tddue:pick',label:'Pick a date…'},
+      {act:'tddue:',label:'Clear',danger:true}
+    ]);
+    return;
+  }
+  if(what==='assign'){
+    const people=_boardsAssignees();
+    const r=_boardsSheetAnchorRect({act:'todo:assign'});
+    _boardsOpenCtx(r?r.right+8:120,r?r.top:120,
+      [{title:'Assign this task'}]
+        .concat(people.map(n=>({act:'tdwho:'+n,label:n,on:(c.items[i].who||'')===n})))
+        .concat([{sep:true},{act:'tdwho:',label:'Unassign',danger:true}]));
+    return;
+  }
+}
+window.boardsTodoTitle=function(id,el){
+  const c=_boardsTodoCard(id);if(!c)return;
+  c.title=el.textContent;
+  _boardsSaveDebounced();
+};
+window.boardsTodoTitleOn=function(id){
+  const c=_boardsTodoCard(id);if(!c||!_boardsCanEdit(_editBoard))return;
+  _boardsPushUndo();
+  if(c.title==null)c.title='';
+  c.titleAsked=true;
+  _boardsGrowForChrome(c);
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  window.boardsBeginEdit(null,'board-tdtitle-'+id);
+};
+window.boardsTodoNoTitle=function(id){
+  const c=_boardsTodoCard(id);if(!c||!_boardsCanEdit(_editBoard))return;
+  _boardsPushUndo();
+  c.titleAsked=true;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+// Indent and outdent, Milanote's two greyed rail buttons. A task may only
+// go one level deeper than the task above it — otherwise a list opens with
+// an orphan sitting at depth 3 under nothing, which reads as a bug.
+function _boardsTodoCanIndent(c,i){
+  if(!c||!c.items||!c.items[i]||i===0)return false;
+  return _boardsTodoDepth(c.items[i])<Math.min(_BOARDS_TODO_MAX_DEPTH,_boardsTodoDepth(c.items[i-1])+1);
+}
+function _boardsTodoCanOutdent(c,i){
+  return!!(c&&c.items&&c.items[i]&&_boardsTodoDepth(c.items[i])>0);
+}
+window.boardsTodoIndent=function(id,i,dir){
+  const c=_boardsTodoCard(id);if(!c||!c.items[i]||!_boardsCanEdit(_editBoard))return;
+  if(dir>0&&!_boardsTodoCanIndent(c,i))return;
+  if(dir<0&&!_boardsTodoCanOutdent(c,i))return;
+  _boardsPushUndo();
+  const d=_boardsTodoDepth(c.items[i])+(dir>0?1:-1);
+  if(d<=0)delete c.items[i].depth; else c.items[i].depth=d;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  window.boardsBeginEdit(null,'board-todo-'+id+'-'+i);
+};
+window.boardsTodoSetDue=function(id,i,v){
+  const c=_boardsTodoCard(id);if(!c||!c.items[i]||!_boardsCanEdit(_editBoard))return;
+  _boardsPushUndo();
+  const ok=_boardsTodoValidDue(v);
+  if(ok)c.items[i].due=ok; else delete c.items[i].due;
+  _boardsGrowForChrome(c);
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast(ok?('Due '+_boardsDueLabel(ok)):'Due date cleared');
+};
+window.boardsTodoSetWho=function(id,i,who){
+  const c=_boardsTodoCard(id);if(!c||!c.items[i]||!_boardsCanEdit(_editBoard))return;
+  _boardsPushUndo();
+  if(who)c.items[i].who=String(who); else delete c.items[i].who;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast(who?('Assigned to '+who):'Assignment cleared');
+};
+// The people a task can be assigned to are USER_DEFS, read live and behind
+// a typeof guard: js/auth.js loads before this file, but a build where it
+// failed to parse must offer an empty list rather than take the menu down.
+function _boardsAssignees(){
+  if(typeof USER_DEFS==='undefined'||!Array.isArray(USER_DEFS))return[];
+  return USER_DEFS.map(u=>u&&u.name).filter(Boolean);
+}
 window.boardsTodoText=function(id,i,el){
   const c=_boardsTodoCard(id);if(!c||!c.items[i])return;
   c.items[i].text=el.textContent;
@@ -6138,6 +8144,9 @@ window.boardsTodoKey=function(ev,id,i){
   // Enter adds the next item and jumps to it; Backspace on an empty row
   // removes it — the two things that make a checklist quick to type.
   if(ev.key==='Enter'){ev.preventDefault();window.boardsTodoAdd(id,i);return;}
+  // Tab nests the task, the convention every outliner uses. Read before
+  // anything else so the browser never moves focus out of the card.
+  if(ev.key==='Tab'){ev.preventDefault();window.boardsTodoIndent(id,i,ev.shiftKey?-1:1);return;}
   if(ev.key==='Backspace'&&!(ev.target.textContent||'').length){
     const c=_boardsTodoCard(id);
     if(c&&c.items.length>1){
@@ -6152,16 +8161,380 @@ window.boardsTodoKey=function(ev,id,i){
 // ── Colour tagging ─────────────────────────────────────────────────────
 // Status coding at a glance on a 46-card board. Muted set, matching the
 // app's palette rather than bright primaries.
-const _BOARDS_COLORS=['none','red','amber','green','blue','purple'];
+/* THE PALETTE IS MILANOTE'S (video, 37s): grey · teal · green · tan · yellow
+   · orange · red · pink · purple · sky · blue, in that order, plus none.
+   Orange keeps the name `amber` because existing cards store it. Every
+   name maps to a TOKEN PAIR (solid for a strip or ink, soft for a
+   background) that inverts with the theme — the rule since the first
+   colour panel: a card body with text on it cannot take a literal that
+   would be light-on-light in dark mode. `_BOARDS_COLOR_TOKENS` is the one
+   name→token map; the exporter reads it too, so a name cannot paint on
+   screen and vanish from the PNG. */
+const _BOARDS_COLORS=['none','grey','teal','green','tan','yellow','amber','red','pink','purple','sky','blue'];
+const _BOARDS_COLOR_TOKENS={grey:'--sw-grey',teal:'--sw-teal',green:'--accent-success',tan:'--sw-tan',
+  yellow:'--sw-yellow',amber:'--accent-warning',red:'--accent-urgent',pink:'--sw-pink',
+  purple:'--cat-boards',sky:'--sw-sky',blue:'--cat-notes'};
+/* Milanote's "A" row — seven PAPER-AND-INK presets, read off the video as
+   pastel tile + coloured A (37s). Each is a background name and an ink
+   name from the palette above, so the pair inverts with the theme like
+   any single colour, and every pair is MEASURED with real text in both
+   themes by the layout probe. */
+const _BOARDS_CARD_THEMES=[
+  {bg:'tan',ink:'red'},{bg:'grey',ink:'blue'},{bg:'tan',ink:'green'},{bg:'teal',ink:'red'},
+  {bg:'pink',ink:'red'},{bg:'pink',ink:'purple'},{bg:'teal',ink:'teal'}
+];
+// A colour on a card is a palette NAME or a validated #RRGGBB (the "From
+// this board" row and Custom colour…); anything else is "none".
+function _boardsColorValue(v){
+  if(_BOARDS_COLORS.indexOf(v)>0)return v;
+  return _boardsValidHex(v)||null;
+}
+function _boardsThemeIndex(c){
+  if(!c||!c.bg||!c.ink)return-1;
+  return _BOARDS_CARD_THEMES.findIndex(t=>t.bg===c.bg&&t.ink===c.ink);
+}
+// The classes and the custom-property style a card's colours paint with.
+// A name is a class (tint-/bg-/ink-<name>); a literal goes ONLY into
+// --card-* custom properties, validated here, with its ink computed by
+// _boardsInkOn — the board tile's rule: a literal ink is right where the
+// background is literal too, and nothing unvalidated reaches a style.
+function _boardsCardColorClasses(c){
+  let s='';
+  if(c.color)s+=_BOARDS_COLORS.indexOf(c.color)>0?' tint-'+c.color:(_boardsValidHex(c.color)?' tint-custom':'');
+  if(c.bg)s+=_BOARDS_COLORS.indexOf(c.bg)>0?' bg-'+c.bg:(_boardsValidHex(c.bg)?' bg-custom':'');
+  if(c.ink&&_BOARDS_COLORS.indexOf(c.ink)>0)s+=' ink-'+c.ink;
+  return s;
+}
+function _boardsCardColorStyle(c){
+  const out=[];
+  const bg=_boardsValidHex(c.bg),st=_boardsValidHex(c.color);
+  if(bg)out.push('--card-bg:'+bg,'--card-ink:'+_boardsInkOn(bg));
+  if(st)out.push('--card-strip:'+st,'--card-strip-ink:'+_boardsInkOn(st));
+  return out.length?out.join(';')+';':'';
+}
 window.boardsSetColor=function(color){
   if(!_boardsCanEdit(_editBoard))return;
   const sel=_boardsSelectedCards();
   if(!sel.length)return;
   _boardsPushUndo();
-  sel.forEach(c=>{if(color==='none')delete c.color;else c.color=color;});
+  const v=_boardsColorValue(color);
+  sel.forEach(c=>{if(!v)delete c.color;else c.color=v;});
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
 };
+/* ── Background and Top strip (Sept 2026) ────────────────────────────────
+   Milanote's colour panel has two tabs. `c.color` is what this card always
+   had — the TOP STRIP: the header band and the border. `c.bg` is new — the
+   BACKGROUND, the card body itself. Both are palette NAMES painted by a
+   class (bg-red / tint-red), never a stored hex, for the reason the table's
+   cell colours are: a name maps to a token that inverts with the theme,
+   where a literal would be light-on-light in dark mode. That is also why
+   there is no "Custom colour…" here, unlike a board's tile. */
+/* ── Convert to Document (Sept 2026) ─────────────────────────────────────
+   Milanote's ⋯ menu turns a note into a full document. Our document is a
+   Creative Hub NOTES PAGE (js/notes.js — block pages, TEAM or PRIVATE), so
+   converting writes one there from the note's text and turns the card into
+   a LINK to it, in place, same size. The page's visibility follows the
+   board's. Rich formatting is not carried (the page has its own blocks and
+   this module's markup would need mapping block by block) — the toast says
+   the text moved. Ctrl+Z restores the CARD; the page stays, and the toast
+   says that too, because a document that silently vanished with an undo
+   would be worse than one left behind. */
+function _boardsDocFromNote(c){
+  const text=String(c.text||'').replace(/\r/g,'');
+  const lines=text.split('\n');
+  const first=lines.find(l=>l.trim())||'';
+  const title=(first.trim()||'Untitled').slice(0,80);
+  const rest=lines.slice(lines.indexOf(first)+1).join('\n').split(/\n{2,}/).map(t=>t.trim()).filter(Boolean);
+  const mk=t=>{
+    const b=typeof _notesNewBlock==='function'?_notesNewBlock('paragraph'):{id:'b'+Date.now()+'_'+Math.floor(Math.random()*1e4),type:'paragraph',text:'',checked:false,imageUrl:''};
+    b.text=t;return b;
+  };
+  const blocks=rest.length?rest.map(mk):[mk('')];
+  return{title,blocks};
+}
+window.boardsConvertToDocument=async function(){
+  if(!_editBoard||!_boardsCanEdit(_editBoard))return;
+  const sel=_boardsSelectedCards();
+  const c=sel.length===1&&sel[0].type==='text'?sel[0]:null;
+  if(!c){showToast('Select one note to convert');return;}
+  if(c.locked){showToast(_boardsLockedMsg('convert'));return;}
+  const vis=_editBoard.visibility==='shared'?'shared':'personal';
+  if(!confirm(`Turn this note into a Document page in Creative Hub (${vis==='shared'?'TEAM':'PRIVATE'})?\nThe note becomes a link to it. Ctrl+Z brings the note back; the page stays.`))return;
+  const d=_boardsDocFromNote(c);
+  let ref;
+  try{
+    ref=await _qAdd(collection(db,'notes_pages'),{
+      title:d.title,icon:'📄',visibility:vis,
+      ownerUid:session.uid,ownerName:session.name,ownerUsername:session.u,
+      blocks:d.blocks,createdAt:Date.now(),updatedAt:Date.now(),updatedByName:session.name,
+      fromBoardId:_editBoard.id
+    });
+  }catch(e){showToast('Could not create the document: '+(e.message||e),true);return;}
+  if(typeof notesLoaded!=='undefined')notesLoaded=false;
+  _boardsPushUndo();
+  const live=_editCards.find(x=>x.id===c.id);
+  if(!live){showToast('Document created — the note has gone meanwhile');return;}
+  live.type='link';
+  live.linkUrl=location.origin+location.pathname+'#note='+encodeURIComponent(ref.id);
+  live.linkTitle=d.title;
+  live.linkDesc='Document · Creative Hub';
+  live.linkPreviewOff=true;
+  delete live.text;delete live.rich;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveNow();
+  try{logActivity('Note converted to document',`${session.name} converted a note on "${_editBoard.title||'Untitled board'}" into the document "${d.title}"`);}catch(e){}
+  showToast('Document created in Creative Hub — the note is a link to it now. Ctrl+Z restores the note; the page stays.');
+};
+window.boardsSetBg=function(color){
+  if(!_boardsCanEdit(_editBoard))return;
+  const sel=_boardsSelectedCards();
+  if(!sel.length)return;
+  _boardsPushUndo();
+  const v=_boardsColorValue(color);
+  // A plain paper pick is paper only: the ink a preset set goes with it,
+  // or red ink would sit on a red background the moment you picked one.
+  sel.forEach(c=>{if(!v)delete c.bg;else c.bg=v;delete c.ink;});
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+// One of the seven paper-and-ink presets — the only way `c.ink` is set.
+window.boardsSetTheme=function(i){
+  if(!_boardsCanEdit(_editBoard))return;
+  const t=_BOARDS_CARD_THEMES[i|0];
+  const sel=_boardsSelectedCards();
+  if(!t||!sel.length)return;
+  _boardsPushUndo();
+  sel.forEach(c=>{c.bg=t.bg;c.ink=t.ink;});
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+};
+// The Color tile in the rail shows the CARD'S CURRENT colour — Milanote's
+// does — so the button is a readout, not a generic icon. The background
+// wins over the strip when both are set (it is the bigger surface); a card
+// with neither shows an empty outlined tile.
+let _boardsColorTab='bg';
+function _boardsColorTileClass(cards){
+  const c=cards&&cards[0];
+  if(!c)return'none';
+  if(c.bg&&_BOARDS_COLORS.indexOf(c.bg)>0)return'bg-'+c.bg;
+  if(_boardsValidHex(c.bg))return'custom';
+  if(c.color&&_BOARDS_COLORS.indexOf(c.color)>0)return'sw-'+c.color;
+  if(_boardsValidHex(c.color))return'custom';
+  return'none';
+}
+// A literal colour has no class to paint with; the tile takes it inline,
+// validated, the same way the card does.
+function _boardsColorTileStyle(cards){
+  const c=cards&&cards[0];
+  if(!c)return'';
+  const bg=_boardsValidHex(c.bg);
+  if(bg)return'background:'+bg;
+  if(_BOARDS_COLORS.indexOf(c.bg)>0)return'';
+  const st=_boardsValidHex(c.color);
+  return st?'background:'+st:'';
+}
+/* Milanote's colour panel, read off the video (36.6–37.6s): Background |
+   Top strip tabs with a glyph each, a 5-wide grid of the palette with the
+   current pick ringed, a divider, the seven "A" paper-and-ink presets
+   (Background only), a divider, the colours FROM THIS BOARD's own
+   pictures, and Custom colour… The strip tab has no presets: a preset is
+   paper plus ink, and the strip is neither. */
+// Which card types have a PAPER to colour. Read off the second Milanote
+// video (Sept 2026): a file card's and a to-do card's colour panel has NO
+// tabs at all — just the top-strip palette, the board's own colours and
+// Custom colour. Only the note (the first video) gets Background | Top
+// strip and the seven paper-and-ink presets, because only a note has a
+// text body sitting on paper.
+function _boardsCardHasPaper(c){
+  return!!c&&(c.type==='text'||c.type==='todo'||c.type==='table');
+}
+function _boardsColorPanelItems(){
+  const sel=_boardsSelectedCards(),one=sel[0]||{};
+  const paper=sel.length?sel.every(_boardsCardHasPaper):false;
+  const tab=paper?_boardsColorTab:'strip';
+  const items=paper
+    ?[{tabs:[{act:'colortab:bg',label:'Background',on:tab==='bg',glyph:'bg'},{act:'colortab:strip',label:'Top strip',on:tab==='strip',glyph:'strip'}]}]
+    :[];
+  if(tab==='bg'){
+    items.push({bgSwatches:true,grid:true,current:one.bg||'none'});
+    items.push({sep:true});
+    items.push({themes:true,current:_boardsThemeIndex(one)});
+  }else{
+    items.push({swatches:true,grid:true,current:one.color||'none'});
+  }
+  const own=_boardsBoardPalette();
+  if(own.length){
+    items.push({sep:true});
+    items.push({ownSwatches:own,prop:tab,current:_boardsValidHex(tab==='bg'?one.bg:one.color)});
+  }
+  items.push({custom:true,prop:tab});
+  return items;
+}
+/* "From this board" — the colours in the board's own pictures, the way
+   Milanote's third row reads. DERIVED at panel open from the image cards
+   already in the DOM (they load with crossorigin="anonymous", the same
+   CORS-enabled entry the exporter relies on): each is drawn onto a tiny
+   canvas and its pixels bucketed. Nothing is stored. A picture the host
+   would not let us read taints its canvas and is skipped — one picture
+   costs one picture, never the row. Cached per set of pictures, since
+   the live panel repaints on every pick. */
+const _BOARDS_OWN_MAX=8;
+let _boardsOwnPaletteCache={key:'',colors:[]};
+function _boardsPaletteAccumulate(data,acc){
+  // 4-bit buckets on each channel, weighted by count, mean colour per bucket.
+  for(let i=0;i+3<data.length;i+=4){
+    if(data[i+3]<200)continue;
+    const r=data[i],g=data[i+1],b=data[i+2];
+    const k=((r>>4)<<8)|((g>>4)<<4)|(b>>4);
+    const e=acc[k]||(acc[k]={n:0,r:0,g:0,b:0});
+    e.n++;e.r+=r;e.g+=g;e.b+=b;
+  }
+  return acc;
+}
+function _boardsPalettePick(acc,max){
+  const rows=Object.keys(acc).map(k=>{const e=acc[k];return{n:e.n,r:e.r/e.n,g:e.g/e.n,b:e.b/e.n};})
+    .sort((a,b)=>b.n-a.n);
+  const out=[];
+  const far=(a,b)=>Math.abs(a.r-b.r)+Math.abs(a.g-b.g)+Math.abs(a.b-b.b)>=90;
+  for(const c of rows){
+    if(out.every(o=>far(o,c)))out.push(c);
+    if(out.length>=(max||_BOARDS_OWN_MAX))break;
+  }
+  const hx=v=>('0'+Math.round(v).toString(16)).slice(-2).toUpperCase();
+  return out.map(c=>'#'+hx(c.r)+hx(c.g)+hx(c.b));
+}
+function _boardsBoardPalette(){
+  if(typeof document==='undefined'||!document.querySelectorAll||!document.createElement)return[];
+  const imgs=Array.from(document.querySelectorAll('.board-card-el.type-image img')).filter(im=>im&&im.complete&&im.naturalWidth>0);
+  if(!imgs.length)return[];
+  const key=imgs.map(im=>im.currentSrc||im.src).join('|');
+  if(key===_boardsOwnPaletteCache.key)return _boardsOwnPaletteCache.colors;
+  const cv=document.createElement('canvas');
+  const ctx=cv&&cv.getContext?cv.getContext('2d'):null;
+  if(!ctx)return[];
+  cv.width=16;cv.height=16;
+  const acc={};
+  imgs.slice(0,24).forEach(im=>{
+    try{
+      ctx.clearRect(0,0,16,16);
+      ctx.drawImage(im,0,0,16,16);
+      _boardsPaletteAccumulate(ctx.getImageData(0,0,16,16).data,acc);
+    }catch(e){/* tainted (no CORS) — skip this picture */}
+  });
+  const colors=_boardsPalettePick(acc,_BOARDS_OWN_MAX);
+  _boardsOwnPaletteCache={key,colors};
+  return colors;
+}
+// Anchored beside the rail's Color tile and LIVE: picking a colour or a tab
+// repaints the panel in place rather than closing it, so trying three
+// colours is not three round trips (the same reason the board's look sheet
+// reopens after each choice).
+window.boardsOpenColorPanel=function(){
+  if(!_boardsCanEdit(_editBoard)||!_boardsSelectedCards().length)return;
+  const btn=document.querySelector('.board-rail [data-act="color-panel"]');
+  const r=btn&&btn.getBoundingClientRect?btn.getBoundingClientRect():{right:100,top:120};
+  _boardsOpenCtx(r.right+8,r.top,_boardsColorPanelItems,null,{keep:true});
+};
+
+/* The Background menu — the two things this button does, on one list, the
+   way the board look sheet put four ways to fill a tile on one sheet
+   instead of behind four menu entries whose names you have to know. It is
+   a .board-ctx anchored to the rail button, the same machinery ⋯ and the
+   colour panel already open, and it stays open ({keep:true}) so the fit
+   can be tried both ways without reopening it. */
+function _boardsImgBgItems(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c)return[];
+  const b=_editBoard,on=!!(b&&_boardsCoverUrl(b.bgImage));
+  const mine=on&&b.bgImage===c.imageUrl;
+  const items=[
+    {title:'The picture'},
+    {act:'img:nobg',label:c.nobg?'Put the background back':'Remove the background',hint:c.nobg?'✓':''}
+  ];
+  // Said on the menu, not discovered by a broken picture: it is a paid
+  // Cloudinary add-on, and whether this account has it CANNOT be checked
+  // from a session (the sandbox cannot reach cloudinary.com at all).
+  if(!c.nobg)items.push({note:'Needs the background-removal add-on on the Cloudinary account. If it is not there the picture comes straight back.'});
+  items.push({sep:true});
+  items.push({title:'The board'});
+  if(mine)items.push({note:'This picture is the board background.'});
+  else items.push({act:'img:boardbg',label:'Use this picture as the board background'});
+  if(on){
+    items.push({act:'board:bgfit:cover',label:'Fill the board',hint:(b.bgFit!=='contain')?'✓':''});
+    items.push({act:'board:bgfit:contain',label:'Fit the whole picture',hint:(b.bgFit==='contain')?'✓':''});
+    items.push({act:'board:bg-off',label:'Remove the board background',danger:true});
+  }
+  return items;
+}
+window.boardsImgBgMenu=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='image'||!c.imageUrl||!_boardsCanEdit(_editBoard))return;
+  const r=_boardsSheetAnchorRect({act:'img:bg'})||{right:100,top:160};
+  _boardsOpenCtx((r.right||100)+8,r.top||160,()=>_boardsImgBgItems(id),null,{keep:true});
+};
+window.boardsImgNoBg=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='image'||!c.imageUrl||!_boardsCanEdit(_editBoard))return;
+  _boardsPushUndo();
+  if(c.nobg)delete c.nobg;else c.nobg=true;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast(c.nobg
+    ? 'Asking Cloudinary to remove the background — if the account has no background-removal add-on the picture comes straight back.'
+    : 'Background restored');
+};
+/* A BOARD BACKGROUND is a board-level field, and "board backgrounds" has
+   been on this file's deliberately-missing-vs-Milanote list since the
+   parity round. mood_boards' update rule carries NO field allow-list, so
+   this needs no firestore.rules change and no republish.
+
+   The URL is re-validated on the way IN through _boardsCoverUrl — anchored
+   https://res.cloudinary.com/ only, because the string goes straight into
+   a CSS url(). A card's imageUrl came from our own upload, but the moment
+   to check a URL is the moment it is written, not the moment it is
+   trusted. */
+window.boardsUseAsBoardBg=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||!_boardsCanEdit(_editBoard))return;
+  const u=_boardsCoverUrl(c.imageUrl);
+  if(!u){showToast('That picture is not hosted where a board background can come from.');return;}
+  _editBoard.bgImage=u;
+  if(!_editBoard.bgFit)_editBoard.bgFit='cover';
+  _boardsApplyBoardBg();
+  _boardsSaveNow();
+  showToast('Board background set');
+};
+window.boardsBoardBgFit=function(fit){
+  if(!_editBoard||!_boardsCanEdit(_editBoard))return;
+  _editBoard.bgFit=(fit==='contain')?'contain':'cover';
+  _boardsApplyBoardBg();
+  _boardsSaveNow();
+};
+window.boardsClearBoardBg=function(){
+  if(!_editBoard||!_boardsCanEdit(_editBoard))return;
+  delete _editBoard.bgImage;delete _editBoard.bgFit;
+  _boardsApplyBoardBg();
+  _boardsSaveNow();
+  showToast('Board background removed');
+};
+/* Painted on a dedicated element INSIDE .board-stage and OUTSIDE
+   .board-world, for two reasons: .board-stage already carries a
+   background-image (the dot-grid placement cue) and two would fight, and
+   the world is what pan and zoom transform — a background that panned with
+   the cards would be a very large picture nobody could ever see the edge
+   of. It is a fixed backdrop behind the board, which is what a wallpaper
+   is. pointer-events:none, so it changes nothing about panning, the
+   marquee or a drop. */
+function _boardsApplyBoardBg(){
+  const el=document.getElementById('board-bg');
+  if(!el)return;
+  const u=_boardsCoverUrl(_editBoard&&_editBoard.bgImage);
+  if(!u){el.style.backgroundImage='';el.style.display='none';return;}
+  el.style.display='block';
+  el.style.backgroundImage='url("'+u.replace(/"/g,'%22')+'")';
+  el.style.backgroundSize=(_editBoard.bgFit==='contain')?'contain':'cover';
+}
 
 // ── Tidy actions ───────────────────────────────────────────────────────
 // The roadmap listed "Columns (auto-stacking vertical lists)". A real
@@ -6377,8 +8750,11 @@ function _boardsLinkHydrate(cardId){
     if(!c)return;
     delete c._fetching;
     if(c.linkUrl!==url){_boardsRenderSoon();return;}
-    if(meta)_boardsApplyLinkMeta(c,meta,img);
-    else c._linkNoPreview=true;
+    if(meta){_boardsApplyLinkMeta(c,meta,img);delete c._linkErr;}
+    else{
+      c._linkNoPreview=true;
+      c._linkErr='Sorry, something went wrong. The page could not be read — the link still works.';
+    }
     _boardsRenderCanvasAndWire();
     if(meta)_boardsSaveDebounced();
   })();
@@ -6411,13 +8787,49 @@ function _boardsTrayLinkHydrate(itemId){
     if(meta)_boardsSaveDebounced();
   })();
 }
+/* ── THE UPLOAD SIZE LIMIT ───────────────────────────────────────────────
+   35 MB, asked for by Afnan. It is checked HERE because this is the one
+   function every upload path goes through — the drop, the file picker, the
+   Replace action, the Unsorted tray, a board's cover picture and the link
+   preview mirror. A guard on any one of those is a guard four other routes
+   walk straight past.
+
+   IT IS OUR LIMIT, NOT CLOUDINARY'S, and the two are not the same number.
+   Cloudinary caps an unsigned upload by PLAN — 10 MB on the free tier — and
+   `cloudinary.com` is unreachable from the build sandbox entirely, so which
+   cap this account carries CANNOT be checked from a session and is not
+   claimed here. What this does is refuse a file we already know is too big
+   BEFORE it is sent (a 40 MB upload that fails after a minute of waiting is
+   the worst version of this), and, when Cloudinary refuses one that passed,
+   pass ITS message through with a line saying where that limit is set. */
+const _BOARDS_MAX_UPLOAD_MB=35;
+const _BOARDS_MAX_UPLOAD=_BOARDS_MAX_UPLOAD_MB*1024*1024;
+// A File or a Blob has a size; _boardsMirrorPreviewImage hands this a remote
+// URL STRING, which has no size to check and is fetched by Cloudinary itself.
+function _boardsTooBig(file){
+  const n=file&&typeof file==='object'&&+file.size;
+  return n>0&&n>_BOARDS_MAX_UPLOAD;
+}
+function _boardsTooBigMsg(file){
+  return'"'+((file&&file.name)||'That file')+'" is '+_boardsFormatBytes(file&&file.size)+
+    ' — the limit is '+_BOARDS_MAX_UPLOAD_MB+' MB.';
+}
 async function _boardsUploadAny(file){
+  if(_boardsTooBig(file))throw new Error(_boardsTooBigMsg(file));
   const fd=new FormData();
   fd.append('file',file);
   fd.append('upload_preset','groovy-ops');
   const r=await fetch('https://api.cloudinary.com/v1_1/deww4lpym/auto/upload',{method:'POST',body:fd});
   const d=await r.json();
-  if(!d.secure_url)throw new Error((d.error&&d.error.message)||'Upload failed');
+  if(!d.secure_url){
+    let m=(d.error&&d.error.message)||'Upload failed';
+    // Cloudinary's own words, then where that number lives — the account's
+    // plan, which nothing in this app can raise.
+    if(/file size|too large|maximum is/i.test(m))
+      m+=' (that is Cloudinary\'s own cap for this account\'s plan, not the '+
+         _BOARDS_MAX_UPLOAD_MB+' MB one this app sets)';
+    throw new Error(m);
+  }
   return d;
 }
 // PDF page-1 thumbnail via a Cloudinary delivery transform. Best effort by
@@ -6430,10 +8842,13 @@ async function _boardsUploadAny(file){
 // same few URLs are reused and actually hit a cache; the STORED url is
 // never rewritten — this is derived at render time, so existing cards get
 // it for free and nothing has to migrate.
-function _boardsDisplayUrl(url,cardW){
+function _boardsDisplayUrl(url,cardW,card){
   const u=String(url||'');
   if(!/res\.cloudinary\.com/.test(u)||u.indexOf('/upload/')===-1)return u;
-  if(/\/upload\/(f_|q_|w_|c_|dpr_)/.test(u))return u;      // already transformed
+  if(/\/upload\/(f_|q_|w_|c_|dpr_|e_)/.test(u))return u;   // already transformed
+  // Background removal is a DELIVERY component, so nothing is re-uploaded
+  // and clearing the flag puts the original picture straight back.
+  if(card&&card.nobg)return u.replace('/upload/','/upload/e_background_removal/');
   const w=cardW<=250?400:cardW<=600?800:1200;
   return u.replace('/upload/','/upload/f_auto,q_auto,w_'+w+'/');
 }
@@ -6450,7 +8865,7 @@ function _boardsIsImageFile(file){
 // thumbnail a ~20px strip — every attached brief had to be dragged open by
 // hand before anyone could see what it was.
 const _BOARDS_PDF_CARD_W=240;
-const _BOARDS_FILE_CHROME_H=92;   // header, name row and buttons, plus the 2px border — measured in Chrome
+const _BOARDS_FILE_CHROME_H=66;   // name row and buttons plus the 2px border — MEASURED in Chrome (31+33+2); it was 92 while the card still had a 28px header strip
 function _boardsIsPdfFile(file){
   return!!file&&(file.type==='application/pdf'||/\.pdf$/i.test(file.name||''));
 }
@@ -6582,7 +8997,19 @@ async function _boardsUploadFileToCard(cardId,file){
 // Drop (or pick) any number of files at once: one card each, laid out in a
 // grid from the drop point rather than all landing on the same spot, then
 // uploaded in parallel with each card showing its own "Uploading…" state.
+/* Split a drop into what we will send and what we will not, and SAY which.
+   Dropping eight files where one is 60 MB must add the other seven rather
+   than refusing the lot — and must not leave the eighth as a card stuck on
+   "Uploading…" that quietly fails a minute later. */
+function _boardsSizeFilter(files){
+  const ok=[],big=files.filter(f=>_boardsTooBig(f)||!ok.push(f));
+  if(big.length===1)showToast(_boardsTooBigMsg(big[0]),true);
+  else if(big.length)showToast(big.length+' files are over the '+_BOARDS_MAX_UPLOAD_MB+
+    ' MB limit and were not added: '+big.map(f=>f.name||'?').join(', '),true);
+  return ok;
+}
 function _boardsAddFiles(files,at){
+  files=_boardsSizeFilter(files||[]);
   if(!_boardsCanEdit(_editBoard)||!files.length)return;
   _boardsPushUndo();
   const perRow=Math.min(4,Math.ceil(Math.sqrt(files.length)));
@@ -6901,6 +9328,14 @@ window.boardsSendToBack=function(){
 };
 // Lock stops a finished background image or header label being nudged by
 // accident. Locked cards stay selectable — that's how you unlock them.
+// "Lock position" is Milanote's name for it (video, 100s) and exactly what
+// it does: the card stays selectable, editable, commentable — it just will
+// not move or resize. Every refusal says where the unlock is, because the
+// lock lives behind ⋯ now and a card that "won't drag" with no reason on
+// screen reads as a bug.
+function _boardsLockedMsg(verb){
+  return'Position locked — unlock it from the ⋯ menu to '+verb+' it';
+}
 window.boardsToggleLock=function(){
   if(!_boardsCanEdit(_editBoard))return;
   const sel=_boardsSelectedCards();
@@ -6910,6 +9345,7 @@ window.boardsToggleLock=function(){
   sel.forEach(c=>{if(unlocking)delete c.locked;else c.locked=true;});
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
+  showToast(unlocking?'Position unlocked':(sel.length>1?sel.length+' cards stay':'Card stays')+' put — unlock from the ⋯ menu');
 };
 
 // ── Copy / cut / paste of cards ────────────────────────────────────────
@@ -7331,6 +9767,11 @@ async function _boardsSaveNow(){
     // the card merge: a tray item is never edited in place, only added and
     // removed, so last-writer-wins on the whole array is honest here.
     unsorted:_boardsUnsortedForSave(),
+    // The board's own background picture. Board-level like the title and
+    // the pan, and last-writer-wins for the same reason: it is never
+    // edited in place, only set and cleared.
+    bgImage:_boardsCoverUrl(_editBoard.bgImage)||null,
+    bgFit:(_editBoard.bgFit==='contain')?'contain':'cover',
     updatedAt:Date.now(),updatedByName:session.name
   };
   let wrote=null;
@@ -7443,13 +9884,10 @@ function _boardsExportPalette(){
     soft:_boardsCssVar('--soft','#f5f5f5'),
     surface:_boardsCssVar('--surface','#ffffff'),
     dark:_boardsCssVar('--dark','#111111'),
-    tint:{
-      red:_boardsCssVar('--accent-urgent','#c0392b'),
-      amber:_boardsCssVar('--accent-warning','#c98a10'),
-      green:_boardsCssVar('--accent-success','#2e8b57'),
-      blue:_boardsCssVar('--cat-notes','#4a67c8'),
-      purple:_boardsCssVar('--cat-boards','#8455c9')
-    }
+    // Every palette name, from the one name→token map — a name that
+    // paints on screen cannot be missing here.
+    tint:Object.keys(_BOARDS_COLOR_TOKENS).reduce((m,n)=>{m[n]=_boardsCssVar(_BOARDS_COLOR_TOKENS[n],'#888888');return m;},{}),
+    bgs:Object.keys(_BOARDS_COLOR_TOKENS).reduce((m,n)=>{m[n]=_boardsCssVar(_BOARDS_COLOR_TOKENS[n]+'-soft','#f0f0f0');return m;},{})
   };
 }
 function _boardsLoadImageEl(url){
@@ -7465,7 +9903,35 @@ function _boardsLoadImageEl(url){
 // image on a board, so it loads with CORS and draws into the export exactly
 // as an image card does — which is most of why it is mirrored at all.
 function _boardsExportImageUrl(c){
-  return c.type==='image'?(c.imageUrl||''):c.type==='link'?(c.linkImage||''):'';
+  // A card whose background was removed exports the picture it SHOWS, so
+  // the same delivery URL — anything else would put the background back in
+  // the PNG and the PDF only.
+  if(c.type==='image')return c.imageUrl?(c.nobg?_boardsNoBgUrl(c.imageUrl):c.imageUrl):'';
+  return c.type==='link'?(c.linkImage||''):'';
+}
+/* Strokes on the export canvas, from the same c.strokes the SVG overlay
+   reads — one drawing, two renderers, the rule this module holds for the
+   board picture and for connectors. The x/y are % of the body box, and the
+   body box here is the card's width and _boardsCardBodyBox's height. */
+function _boardsDrawStrokesOnCanvas(ctx,c,P,bx,by,bw){
+  const ss=_boardsStrokes(c);
+  if(!ss.length)return;
+  const bodyH=_boardsCardBodyBox(c).h;
+  if(!(bw>0&&bodyH>0))return;
+  ctx.save();
+  ctx.lineCap='round';ctx.lineJoin='round';
+  ss.forEach(s=>{
+    const p=Array.isArray(s.p)?s.p:[];
+    if(p.length<2)return;
+    ctx.strokeStyle=P.tint[s.c]||P.tint.red||'#dc2626';
+    ctx.lineWidth=Math.max(0.5,+s.w||4);
+    ctx.beginPath();
+    ctx.moveTo(bx+p[0]/100*bw,by+p[1]/100*bodyH);
+    for(let i=2;i+1<p.length;i+=2)ctx.lineTo(bx+p[i]/100*bw,by+p[i+1]/100*bodyH);
+    if(p.length===2)ctx.lineTo(bx+p[0]/100*bw+0.01,by+p[1]/100*bodyH);
+    ctx.stroke();
+  });
+  ctx.restore();
 }
 async function _boardsPreloadImages(cards){
   const out={};
@@ -7516,7 +9982,7 @@ function _boardsExportKind(c){
     :c.type==='heading'?'Heading':'Note';
 }
 function _boardsDrawCard(ctx,c,img,P){
-  const stroke=c.color&&P.tint[c.color]?P.tint[c.color]:P.border;
+  const stroke=c.color&&P.tint[c.color]?P.tint[c.color]:(_boardsValidHex(c.color)||P.border);
   if(c.type==='column'){
     ctx.fillStyle=P.soft;
     _boardsRoundRect(ctx,c.x,c.y,c.w,c.h,12);ctx.fill();
@@ -7561,23 +10027,47 @@ function _boardsDrawCard(ctx,c,img,P){
     ctx.restore();
     return;
   }
-  const headH=20,bx=c.x,by=c.y+headH,bw=c.w,bh=Math.max(0,c.h-headH);
+  // A photo has no strip on screen (its head overlays the picture and
+  // shows only on hover), so the export draws none either: the picture
+  // fills the card box, the same shape it is on screen.
+  const photo=_boardsIsPhotoCard(c);
+  // NO CARD DRAWS A HEADER STRIP, because none of them has one on screen
+  // any more: the head is a hover overlay. What the export draws instead is
+  // the card's 4px coloured TOP STRIP, exactly as the canvas does, and only
+  // when the card carries a colour. The card's name is not lost — it is in
+  // the PDF's card index.
+  const strip=(c.color&&P.bgs[c.color])||_boardsValidHex(c.color)||'';
+  const headH=0,bx=c.x,by=c.y,bw=c.w,bh=Math.max(0,c.h);
   ctx.save();
-  _boardsRoundRect(ctx,c.x,c.y,c.w,c.h,10);
+  _boardsRoundRect(ctx,c.x,c.y,c.w,c.h,photo?4:10);
   ctx.clip();
-  ctx.fillStyle='#ffffff';ctx.fillRect(c.x,c.y,c.w,c.h);
-  ctx.fillStyle=P.soft;ctx.fillRect(c.x,c.y,c.w,headH);
-  ctx.fillStyle=P.muted;ctx.font='700 11px '+P.font;
-  ctx.fillText(String(c.name||_boardsExportKind(c)).toUpperCase()+(c.locked?' · LOCKED':''),c.x+8,c.y+13.5);
+  // The card's paper: a palette name's soft token, a literal, or white.
+  ctx.fillStyle=(c.bg&&P.bgs[c.bg])||_boardsValidHex(c.bg)||'#ffffff';ctx.fillRect(c.x,c.y,c.w,c.h);
 
   if(c.type==='image'){
     if(img){
-      // cover-fit, same as the on-screen object-fit:cover
-      const ar=img.width/img.height,br=bw/(bh||1);
-      let sw,sh,sx,sy;
-      if(ar>br){sh=img.height;sw=sh*br;sx=(img.width-sw)/2;sy=0;}
-      else{sw=img.width;sh=sw/br;sx=0;sy=(img.height-sh)/2;}
-      try{ctx.drawImage(img,sx,sy,sw,sh,bx,by,bw,bh);}catch(e){/* drawn as empty */}
+      // A CROPPED OR ROTATED picture is placed by the very same
+      // _boardsImgGeom the DOM render reads, so a crop cannot look one way
+      // on screen and another in the export. The body box here is the
+      // card's box minus its own chrome, exactly as _boardsCardBodyBox
+      // computes it for the canvas.
+      const ebox=_boardsCardBodyBox(c);
+      const g=_boardsImgGeom(c,ebox.w,ebox.h);
+      if(g){
+        ctx.save();
+        ctx.beginPath();ctx.rect(bx,by,bw,ebox.h);ctx.clip();
+        ctx.translate(bx+g.cx,by+g.cy);
+        ctx.rotate(g.rot*Math.PI/180);
+        try{ctx.drawImage(img,-g.w/2,-g.h/2,g.w,g.h);}catch(e){/* drawn as empty */}
+        ctx.restore();
+      }else{
+        // cover-fit, same as the on-screen object-fit:cover
+        const ar=img.width/img.height,br=bw/(bh||1);
+        let sw,sh,sx,sy;
+        if(ar>br){sh=img.height;sw=sh*br;sx=(img.width-sw)/2;sy=0;}
+        else{sw=img.width;sh=sw/br;sx=0;sy=(img.height-sh)/2;}
+        try{ctx.drawImage(img,sx,sy,sw,sh,bx,by,bw,bh);}catch(e){/* drawn as empty */}
+      }
     }else{
       ctx.fillStyle=P.soft;ctx.fillRect(bx,by,bw,bh);
       ctx.fillStyle=P.muted;ctx.font='11px '+P.font;
@@ -7586,21 +10076,30 @@ function _boardsDrawCard(ctx,c,img,P){
   }else if(c.type==='todo'){
     ctx.font='12px '+P.font;
     let y=by+14;
+    // The list's title, and each task's nesting, the way the card draws them.
+    if(c.title){
+      ctx.fillStyle=P.text;ctx.font='700 12px '+P.font;
+      ctx.fillText((_boardsWrapLines(ctx,String(c.title).toUpperCase(),bw-18,1)[0])||'',bx+8,y);
+      y+=18;ctx.font='12px '+P.font;
+    }
     (c.items||[]).forEach(it=>{
       if(y>by+bh-4)return;
+      // Nesting is a per-ITEM offset, so it is a local: bx and bw are const
+      // for the whole card and a cumulative += would both throw and drift.
+      const ix=bx+_boardsTodoDepth(it)*16,iw=bw-_boardsTodoDepth(it)*16;
       ctx.strokeStyle=P.muted;ctx.lineWidth=1;
-      ctx.strokeRect(bx+8.5,y-8.5,9,9);
+      ctx.strokeRect(ix+8.5,y-8.5,9,9);
       if(it.done){
-        ctx.beginPath();ctx.moveTo(bx+10,y-4);ctx.lineTo(bx+12.5,y-1.5);ctx.lineTo(bx+16.5,y-7);
+        ctx.beginPath();ctx.moveTo(ix+10,y-4);ctx.lineTo(ix+12.5,y-1.5);ctx.lineTo(ix+16.5,y-7);
         ctx.strokeStyle=P.text;ctx.lineWidth=1.4;ctx.stroke();
       }
       ctx.fillStyle=it.done?P.muted:P.text;
-      const line=_boardsWrapLines(ctx,it.text||'',bw-30,1)[0]||'';
-      ctx.fillText(line,bx+24,y);
+      const line=_boardsWrapLines(ctx,it.text||'',iw-30,1)[0]||'';
+      ctx.fillText(line,ix+24,y);
       if(it.done&&line){
         const w=ctx.measureText(line).width;
         ctx.strokeStyle=P.muted;ctx.lineWidth=1;
-        ctx.beginPath();ctx.moveTo(bx+24,y-3.5);ctx.lineTo(bx+24+w,y-3.5);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(ix+24,y-3.5);ctx.lineTo(ix+24+w,y-3.5);ctx.stroke();
       }
       y+=16;
     });
@@ -7658,6 +10157,14 @@ function _boardsDrawCard(ctx,c,img,P){
     ctx.fillStyle=P.muted;ctx.font='11px '+P.font;
     ctx.fillText((_boardsWrapLines(ctx,c.caption,bw-16,1)[0])||'',bx+8,c.y+c.h-7);
   }
+  // Anything DRAWN ON the card, in the same order the screen paints it:
+  // over the content, under the coloured strip. The coordinates are % of
+  // the BODY box, so they map through exactly the same box the on-screen
+  // overlay is sized to.
+  _boardsDrawStrokesOnCanvas(ctx,c,P,bx,by,bw);
+  // The coloured top strip, drawn LAST and still inside the clip so it sits
+  // over the content exactly as .board-card-el::before does on screen.
+  if(strip){ctx.fillStyle=strip;ctx.fillRect(c.x,c.y,c.w,4);}
   ctx.restore();
   ctx.strokeStyle=stroke;ctx.lineWidth=1;
   _boardsRoundRect(ctx,c.x+0.5,c.y+0.5,c.w-1,c.h-1,10);
@@ -7850,6 +10357,7 @@ function _boardsParseHash(){
     const i=kv.indexOf('=');
     if(i>0){try{p[decodeURIComponent(kv.slice(0,i))]=decodeURIComponent(kv.slice(i+1));}catch(e){}}
   });
+  if(p.note)return{note:p.note};
   return p.board?{board:p.board,card:p.card||null}:null;
 }
 function _boardsConsumeDeepLink(){
@@ -7861,6 +10369,13 @@ function _boardsConsumeDeepLink(){
   // js/shared.js). Guarded with typeof so a shared.js that failed to parse
   // leaves the side door SHUT rather than open — fail closed.
   if(typeof _canSeeCreativeHub!=='function'||!_canSeeCreativeHub())return false;
+  // A document link (Convert to Document writes these): the Notes page.
+  if(link.note){
+    if(typeof window.notesOpenPage!=='function')return false;
+    if(currentPage==='note-detail'&&typeof _notesViewingId!=='undefined'&&_notesViewingId===link.note)return false;
+    window.notesOpenPage(link.note);
+    return true;
+  }
   if(currentPage==='board-canvas'&&_boardsViewingId===link.board&&!link.card)return false;
   _boardsPendingFocusCard=link.card||null;
   window.boardsOpen(link.board);
@@ -7968,6 +10483,7 @@ function _boardsFocusCard(id){
 // Read at load, exactly like the minimap and snap preferences above.
 let _boardsTrayOpen=(function(){try{return localStorage.getItem('groovy-boards-tray')==='1';}catch(e){return false;}})();
 let _boardsTrayDrag=null;      // an item being dragged out onto the canvas
+let _boardsTrayFilter='all';   // all | image | link | file | text | cards
 // Drag-to-select (Sept 2026). Dragging empty canvas now draws a marquee,
 // the way Milanote does, so panning needs its own routes — see the note on
 // the stage pointerdown handler. `_boardsSpaceDown` is the held space bar;
@@ -8046,19 +10562,96 @@ function _boardsTrayHTML(canEdit){
     ${home?_boardsPanelHTML(canEdit):_boardsTrayUnsortedHTML(canEdit,n)}
   </aside>`;
 }
+/* ── SORTING THE TRAY BY CATEGORY (Sept 2026) ──────────────────────────
+   Afnan: *"unsorted should have sort by category option in it as well
+   ( links ) ( images ) ( files ) ( etc. etc. )"*.
+
+   ONE definition of which bucket an item is in, so the chips, their counts
+   and the filtered list cannot disagree. It is keyed on `u.kind` — the same
+   field the row's thumbnail already switches on — which means a STASHED
+   image card (kind:'image' beside its `cards`) files under Images, where a
+   person looking for a picture would go, rather than in a bucket of its
+   own. Only the last case is a fallback, for an item written before the
+   kinds settled. */
+const _BOARDS_TRAY_CATS=[
+  {k:'image',label:'Images'},
+  {k:'link', label:'Links'},
+  {k:'file', label:'Files'},
+  {k:'text', label:'Notes'},
+  {k:'cards',label:'Cards'}
+];
+function _boardsTrayKind(u){
+  const k=u&&u.kind;
+  if(_BOARDS_TRAY_CATS.some(c=>c.k===k))return k;
+  return Array.isArray(u&&u.cards)?'cards':'text';
+}
+/* Only the buckets that actually hold something, with their counts. A chip
+   for an empty category is a filter that leads nowhere, and the tray is
+   usually two or three kinds deep — showing all five would be mostly dead
+   chrome above a short list. */
+function _boardsTrayCats(){
+  return _BOARDS_TRAY_CATS
+    .map(c=>({k:c.k,label:c.label,n:_editUnsorted.filter(u=>_boardsTrayKind(u)===c.k).length}))
+    .filter(c=>c.n>0);
+}
+/* SELF-HEALING, and it has to be: drag the last link out and the filter is
+   pointing at a category that no longer exists. A panel showing nothing,
+   with no chip left to press, reads as broken — so a filter with nothing
+   behind it simply IS "all" until something lands in it again. Derived on
+   read; nothing is written to reconcile it. */
+function _boardsTrayFilterNow(){
+  const f=_boardsTrayFilter;
+  return _boardsTrayCats().some(c=>c.k===f)?f:'all';
+}
+/* The rows to draw, each carrying its index INTO `_editUnsorted` — never
+   its position in the filtered list. boardsTrayDragStart, boardsTrayRemove
+   and _boardsTrayHydrate all address an item BY THAT INDEX, so a filtered
+   list that renumbered them would drag out, delete and label the wrong
+   item. This is the whole reason the filter returns pairs. */
+function _boardsTrayRows(){
+  const f=_boardsTrayFilterNow();
+  return _editUnsorted.map((u,i)=>({u,i}))
+    .filter(r=>f==='all'||_boardsTrayKind(r.u)===f);
+}
+function _boardsTrayCatsHTML(){
+  const cats=_boardsTrayCats(),f=_boardsTrayFilterNow();
+  if(cats.length<2)return'';   // one kind of thing needs no way to narrow it
+  return[{k:'all',label:'All',n:_editUnsorted.length}].concat(cats).map(c=>
+    `<button class="board-tray-cat${f===c.k?' on':''}" onclick="window.boardsTraySetFilter('${c.k}')">`+
+    `${_boardsEsc(c.label)}<span class="board-tray-cat-n">${c.n}</span></button>`).join('');
+}
+window.boardsTraySetFilter=function(k){
+  _boardsTrayFilter=k||'all';
+  _boardsTrayRepaint();
+};
+/* Repaints the LIST and the chips alone, like the Boards panel's own
+   repaint — a full _boardsRenderCanvasAndWire() would redraw every card and
+   connector on a 46-card board to narrow a list of five. The hydrate has to
+   run after, because every label is written in with textContent. */
+function _boardsTrayRepaint(){
+  const list=document.getElementById('board-tray-list');
+  if(!list)return;
+  list.innerHTML=_boardsTrayListHTML(_boardsCanEdit(_editBoard));
+  const cats=document.getElementById('board-tray-cats');
+  if(cats)cats.innerHTML=_boardsTrayCatsHTML();
+  _boardsTrayHydrate();
+}
+function _boardsTrayListHTML(canEdit){
+  const rows=_boardsTrayRows();
+  if(rows.length)return rows.map(r=>_boardsTrayItemHTML(r.u,r.i,canEdit)).join('');
+  return`<div class="board-tray-empty">
+      Nothing here yet.<br><br>
+      Anything you paste or drop while this is open is kept here
+      until you drag it onto the board. It stays saved if you never do.
+    </div>`;
+}
 function _boardsTrayUnsortedHTML(canEdit,n){
   return`${canEdit?`<div class="board-tray-add">
       <button class="tool-btn" onclick="window.boardsTrayPick()">+ Add files</button>
       <span class="board-tray-hint">or paste, or drop files here</span>
     </div>`:''}
-    <div class="board-tray-list" id="board-tray-list">
-      ${n?_editUnsorted.map((u,i)=>_boardsTrayItemHTML(u,i,canEdit)).join('')
-         :`<div class="board-tray-empty">
-             Nothing here yet.<br><br>
-             Anything you paste or drop while this is open is kept here
-             until you drag it onto the board. It stays saved if you never do.
-           </div>`}
-    </div>
+    <div class="board-tray-cats" id="board-tray-cats">${_boardsTrayCatsHTML()}</div>
+    <div class="board-tray-list" id="board-tray-list">${_boardsTrayListHTML(canEdit)}</div>
     <input type="file" id="board-tray-picker" multiple style="display:none" onchange="window.boardsTrayFilesPicked(this)">`;
 }
 
@@ -8391,7 +10984,7 @@ window.boardsHomeFlushUnsorted=function(){
   const n=_editUnsorted.length;
   _editUnsorted.forEach(u=>{
     const p=_boardsPlacementPoint();
-    _editCards.push(_boardsCardFromTrayItem(u,{x:p.x+_BOARDS_HOME_W/2,y:p.y+_BOARDS_HOME_H/2}));
+    _boardsCardsFromTrayItem(u,{x:p.x+_BOARDS_HOME_W/2,y:p.y+_BOARDS_HOME_H/2}).cards.forEach(c=>_editCards.push(c));
   });
   _editUnsorted=[];
   _boardsRenderCanvasAndWire();
@@ -8425,10 +11018,14 @@ window.boardsPanelDragStart=function(e,id){
   function move(ev){
     if(!ghost){
       if(Math.abs(ev.clientX-startX)<4&&Math.abs(ev.clientY-startY)<4)return;
-      ghost=document.createElement('div');
-      ghost.className='board-tray-ghost';
-      ghost.textContent=b.title||'Untitled board';
-      document.body.appendChild(ghost);
+      // The board's OWN face, through _boardsFaceOf — the single
+      // definition the gallery tile, the panel row and the board card all
+      // read, so a board in flight looks like the board it is.
+      const bf=_boardsFaceOf(b)||{};
+      ghost=_boardsDragGhost(
+        bf.cover?{src:_boardsCoverUrl(bf.cover)?_boardsDisplayUrl(bf.cover,400):'',badge:bf.glyph||'BOARD',cors:true}
+                :{badge:bf.glyph||'BOARD',color:bf.color},
+        b.title||'Untitled board');
       const stage=document.getElementById('board-stage');
       if(stage)stage.classList.add('tray-target');
     }
@@ -8466,21 +11063,19 @@ function _boardsTrayItemHTML(u,i,canEdit){
   let thumb;
   if(u._uploading){
     thumb='<div class="board-tray-thumb board-tray-thumb-empty">Uploading…</div>';
-  }else if(u.kind==='image'&&u.imageUrl){
-    thumb=`<img class="board-tray-thumb" src="${_boardsEsc(_boardsDisplayUrl(u.imageUrl,400))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`;
-  }else if(u.kind==='file'){
-    const pdf=u.fileUrl?_boardsPdfThumbUrl(u.fileUrl):'';
-    thumb=pdf
-      ?`<img class="board-tray-thumb" src="${_boardsEsc(pdf)}" draggable="false" onerror="this.className='board-tray-thumb board-tray-thumb-empty';this.replaceWith(Object.assign(document.createElement('div'),{className:'board-tray-thumb board-tray-thumb-empty',textContent:'${_boardsEsc(_boardsFileExt(u.fileName))}'}))" alt="">`
-      :`<div class="board-tray-thumb board-tray-thumb-empty">${_boardsEsc(_boardsFileExt(u.fileName))}</div>`;
-  }else if(u.kind==='link'){
-    // Milanote's tray shows the page's own picture, which is the whole
-    // reason a collected link is recognisable at a glance.
-    thumb=u.linkImage
-      ?`<img class="board-tray-thumb" src="${_boardsEsc(_boardsDisplayUrl(u.linkImage,400))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`
-      :`<div class="board-tray-thumb board-tray-thumb-empty">${u._fetching?'…':'LINK'}</div>`;
   }else{
-    thumb='<div class="board-tray-thumb board-tray-thumb-empty">NOTE</div>';
+    // The face is decided ONCE, by _boardsTrayFace, because the drag ghost
+    // reads the same answer — see the note there.
+    const f=_boardsTrayFace(u);
+    thumb=!f.src
+      ?`<div class="board-tray-thumb board-tray-thumb-empty">${_boardsEsc(f.badge)}</div>`
+      :f.cors
+        // A photo or a link's own picture: retry once WITHOUT the CORS
+        // attribute, the documented cache trick, rather than giving up.
+        ?`<img class="board-tray-thumb" src="${_boardsEsc(f.src)}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`
+        // A PDF page-1 render is best-effort by design: an account that
+        // cannot rasterise falls back to the extension.
+        :`<img class="board-tray-thumb" src="${_boardsEsc(f.src)}" draggable="false" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'board-tray-thumb board-tray-thumb-empty',textContent:'${_boardsEsc(f.badge)}'}))" alt="">`;
   }
   // The label is written in with textContent by _boardsTrayHydrate — it can
   // be a filename or a line of someone's note, and this file never
@@ -8491,6 +11086,93 @@ function _boardsTrayItemHTML(u,i,canEdit){
     <div class="board-tray-label" id="board-tray-l-${i}"></div>
     ${canEdit?`<button class="board-tray-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsTrayRemove(${i})" title="Remove from Unsorted">✕</button>`:''}
   </div>`;
+}
+/* ── WHAT PICTURE STANDS FOR A TRAY ITEM ──────────────────────────────
+   ONE decision, read by the row's thumbnail AND by the drag ghost, so the
+   thing following the pointer can never be a different picture from the
+   one that was grabbed. It was two copies for about an hour and that is
+   exactly the shape this file keeps recording as drifting.
+
+   - `src`   the picture to draw, or nothing when there is none
+   - `badge` the word to draw INSTEAD, and also the fallback if `src`
+             fails to load — so every item has something to show
+   - `cors`  whether the picture is one of ours on Cloudinary, which
+             decides which of the two failure paths the row takes
+
+   The width is pinned to 400 deliberately: _boardsDisplayUrl buckets, so
+   the ghost asks for the SAME url the row already loaded and paints from
+   cache instantly. A different bucket would be a fresh request and the
+   ghost would fly blank for the first moments of the drag. */
+function _boardsTrayFace(u){
+  if(!u)return{badge:'NOTE'};
+  if(u.kind==='image'&&u.imageUrl)
+    return{src:_boardsDisplayUrl(u.imageUrl,400),badge:'IMAGE',cors:true};
+  if(u.kind==='link')
+    return u.linkImage?{src:_boardsDisplayUrl(u.linkImage,400),badge:'LINK',cors:true}
+                      :{badge:u._fetching?'…':'LINK'};
+  if(u.kind==='file'){
+    const pdf=u.fileUrl?_boardsPdfThumbUrl(u.fileUrl):'';
+    const ext=_boardsFileExt(u.fileName);
+    return pdf?{src:pdf,badge:ext}:{badge:ext};
+  }
+  // A stashed card the tray has no picture for — a to-do, a table, a
+  // heading, a column, a frame. It says WHICH, through the same
+  // type-to-word map the delete toast uses, so it can never introduce
+  // itself as something it is not.
+  if(Array.isArray(u.cards))return{badge:_boardsStashBadge(u)};
+  return{badge:'NOTE'};
+}
+/* ── THE THING THAT FOLLOWS THE POINTER ───────────────────────────────
+   It used to be a dark text chip. That said what KIND of thing was in
+   flight but not WHICH one — two model references a word apart in name
+   are the same chip — and it sat oddly beside a tray whose whole point is
+   that you recognise an item by its picture. It carries the picture now.
+
+   Built with createElement and textContent, never an HTML string: a label
+   is a filename or a line of somebody's note. `pointer-events:none` is
+   load-bearing rather than cosmetic — the drop is decided by hit-testing
+   the pointer, and a ghost that could be hit would be a target flying
+   under the very pointer it follows. */
+function _boardsDragGhost(face,label){
+  const g=document.createElement('div');
+  g.className='board-tray-ghost';
+  const pic=document.createElement('div');
+  pic.className='board-tray-ghost-pic';
+  const badge=()=>{
+    const d=document.createElement('div');
+    d.className='board-tray-ghost-badge';
+    d.textContent=(face&&face.badge)||'NOTE';
+    return d;
+  };
+  /* A board with no cover picture has a COLOUR and a glyph, and that is
+     what its tile paints. The colour is a stored literal, so its ink is
+     COMPUTED (_boardsInkOn) rather than taken from a theme token — the
+     board-tile rule: a literal ink is only right where the background is
+     literal too. An invalid colour paints nothing, as everywhere else. */
+  if(face&&face.color&&_boardsValidHex(face.color)){
+    pic.style.background=face.color;
+    pic.style.color=_boardsInkOn(face.color);
+  }
+  if(face&&face.src){
+    const img=document.createElement('img');
+    img.src=face.src;img.alt='';img.draggable=false;
+    if(face.cors)img.crossOrigin='anonymous';
+    // A picture that will not load must not leave an empty hole flying
+    // across the board — it falls back to the same word the row shows.
+    img.onerror=function(){try{img.replaceWith(badge());}catch(e){}};
+    pic.appendChild(img);
+  }else{
+    pic.appendChild(badge());
+  }
+  g.appendChild(pic);
+  if(label){
+    const t=document.createElement('div');
+    t.className='board-tray-ghost-label';
+    t.textContent=label;
+    g.appendChild(t);
+  }
+  document.body.appendChild(g);
+  return g;
 }
 function _boardsTrayHydrate(){
   _editUnsorted.forEach((u,i)=>{
@@ -8516,6 +11198,7 @@ window.boardsTrayFilesPicked=function(inputEl){
   _boardsTrayAddFiles(files);
 };
 function _boardsTrayAddFiles(files){
+  files=_boardsSizeFilter(files||[]);
   if(!_boardsCanEdit(_editBoard)||!files.length)return;
   files.forEach(f=>{
     const item={id:_boardsTrayItemId(),kind:_boardsIsImageFile(f)?'image':'file',
@@ -8543,27 +11226,191 @@ function _boardsTrayAddFiles(files){
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
 }
-// A card the user no longer wants placed. The reverse of dragging one out.
-window.boardsTrayStash=function(cardId){
-  const c=_editCards.find(x=>x.id===cardId);
-  if(!c||!_boardsCanEdit(_editBoard))return;
+/* ── PUTTING A CARD BACK IN THE TRAY (Sept 2026) ───────────────────────
+   Afnan: "when inside a board you can drag anything link file image
+   collum etc and save it in unsorted so the board remains clean."
+
+   "Move to Unsorted" already existed on the card menu, and two things
+   about it were wrong for that ask.
+
+   IT FLATTENED EVERYTHING IT DID NOT RECOGNISE. A tray item was a
+   hand-mapped summary — imageUrl, or fileUrl/fileName, or the link
+   fields, else `{kind:'text',text:c.text}`. A to-do has no `c.text` and
+   neither has a table, so stashing either turned it into an EMPTY note.
+   That is a live data-loss bug reachable from the menu today, not merely
+   a limit on the new gesture.
+
+   So a stashed item carries the WHOLE CARD (`u.cards`), stripped of its
+   `_`-prefixed transients and put through the same _boardsEncodeRows
+   boundary the trash uses: a table's `rows` is an array of arrays,
+   Firestore refuses those OUTRIGHT, and `unsorted` is saved on the board
+   document exactly like `cards` is. Every type round-trips with no
+   per-type mapping to keep in step. The old display fields (kind,
+   imageUrl, fileName, linkImage…) are still written beside it because
+   they are what the row's thumbnail and label read — a VIEW of the card
+   now, never the record of it.
+
+   A CONTAINER TAKES ITS CONTENTS, and "collum etc" is the whole point: a
+   column parked without its children is an empty box, and children left
+   behind are loose cards that used to be organised. Expansion happens
+   HERE rather than in the callers, so the menu (which hands over one id)
+   and the drag (which hands over a group it already expanded) cannot
+   give different answers.
+
+   ONE ROW PER TOP-LEVEL CARD. Drag five loose cards and you get five
+   rows to bring back one at a time; drag one column and you get one row
+   that brings it back whole. Rolling a multi-selection into a single row
+   would make the tray a place things disappear into. */
+
+// Which members of a group are top-level: everything not owned by a
+// container travelling with it. Returns [{root,cards}], each `cards`
+// beginning with its own root.
+function _boardsStashRoots(group){
+  const ids=new Set(group.map(c=>c.id));
+  const owner={};                       // childId → the container it rides with
+  group.forEach(c=>{
+    const kids=_boardsIsColumn(c)?_boardsColumnChildren(c)
+      :c.type==='frame'?_boardsCardsInFrame(c):[];
+    kids.forEach(k=>{if(ids.has(k.id)&&k.id!==c.id)owner[k.id]=c.id;});
+  });
+  // A container inside a container rides with the outer one, so walk up
+  // before deciding. The visited set is the cycle guard _boardsAncestors
+  // already uses: only reachable by hand-editing Firestore, but a loop
+  // here would take the board down.
+  const rootOf=id=>{
+    const seen=new Set();
+    let cur=id;
+    while(owner[cur]&&!seen.has(cur)){seen.add(cur);cur=owner[cur];}
+    return cur;
+  };
+  const out=[],byRoot={};
+  group.forEach(c=>{
+    const r=rootOf(c.id);
+    if(!byRoot[r]){byRoot[r]={root:group.find(x=>x.id===r)||c,cards:[]};out.push(byRoot[r]);}
+    const g=byRoot[r];
+    if(g.root.id===c.id)g.cards.unshift(c);else g.cards.push(c);
+  });
+  return out.filter(g=>g.cards.length);
+}
+// What the row shows. The full card is in `cards`; this is only the
+// thumbnail's choice of renderer.
+function _boardsStashKind(root){
+  const t=root&&root.type;
+  return t==='image'?'image':t==='file'?'file':t==='link'?'link':t==='text'?'text':'cards';
+}
+function _boardsStashBadge(u){
+  const root=Array.isArray(u&&u.cards)&&u.cards[0];
+  return String(_boardsCardNoun(root||null)).toUpperCase();
+}
+// What a stashed row is called. A container says HOW MANY cards came with
+// it, because that is the thing you are deciding about when you look at
+// the row — so it is built here for every type rather than only when the
+// card had no name of its own, or a titled column would never show a count.
+function _boardsStashName(root,n){
+  const noun=_boardsCardNoun(root);
+  if(!root)return noun;
+  if(root.type==='column'||root.type==='frame'){
+    const kids=Math.max(0,n-1);
+    return (root.title||root.name||noun)+(kids?' · '+kids+' card'+(kids===1?'':'s'):'');
+  }
+  // The first thing the card actually SHOWS, in the order it shows it.
+  // Deliberately NOT _boardsCardText: that is a lowercased search index of
+  // every field at once and reads as gibberish on a row.
+  const first=root.name||root.title||root.fileName||root.linkTitle||root.caption||root.text||
+    (Array.isArray(root.items)&&root.items.length&&root.items[0]&&root.items[0].t)||
+    root.boardTitle||'';
+  const line=String(first||'').replace(/\s+/g,' ').trim();
+  return line?line.slice(0,60):noun;
+}
+// One tray item from a root card and everything riding with it. Positions
+// are stored RELATIVE to the root, so bringing it back puts the group
+// down in the shape it left in, wherever it is dropped.
+function _boardsStashItem(cards,conns){
+  const root=cards[0];
+  const ids=new Set(cards.map(c=>c.id));
+  const item={
+    id:_boardsTrayItemId(),at:Date.now(),
+    by:(typeof session!=='undefined'&&session&&session.name)||'',
+    name:_boardsStashName(root,cards.length),
+    kind:_boardsStashKind(root),
+    cards:cards.map(c=>{
+      const plain={};
+      Object.keys(c).forEach(k=>{if(k.charAt(0)!=='_')plain[k]=c[k];});
+      plain.x=(c.x||0)-(root.x||0);
+      plain.y=(c.y||0)-(root.y||0);
+      return _boardsEncodeRows(plain);
+    })
+  };
+  // Only the lines with BOTH ends going. One whose other end stays on the
+  // board has nothing to come back to — the trash's rule.
+  const keep=(conns||[]).filter(cn=>cn&&ids.has(cn.from)&&ids.has(cn.to)).map(cn=>({...cn}));
+  if(keep.length)item.conns=keep;
+  // Display only — see the header note.
+  if(root.type==='image'&&root.imageUrl)item.imageUrl=root.imageUrl;
+  else if(root.type==='file'){item.fileUrl=root.fileUrl||'';item.fileName=root.fileName||'';item.fileSize=root.fileSize||0;}
+  else if(root.type==='link'){
+    item.linkUrl=root.linkUrl||'';item.linkTitle=root.linkTitle||'';
+    if(root.linkImage)item.linkImage=root.linkImage;
+    if(root.linkSite)item.linkSite=root.linkSite;
+  }
+  return item;
+}
+function _boardsStashToast(items,locked){
+  let m=items.length===1
+    ?'“'+_boardsTrayLabel(items[0])+'” moved to Unsorted'
+    :items.length+' cards moved to Unsorted';
+  if(locked)m+=' · '+locked+' locked card'+(locked===1?'':'s')+' kept on the board';
+  return m+' — Ctrl+Z to undo';
+}
+/* THE one implementation. The card menu's single-card action, the phone
+   More sheet and the drag onto the tray all come here, so the toast, the
+   undo entry and what a container does with its contents cannot drift
+   apart. Returns how many rows it made. */
+window.boardsTrayStashCards=function(ids){
+  if(!_boardsCanEdit(_editBoard))return 0;
+  // Home has no Unsorted (it is the board OF boards), so an item pushed
+  // there would be saved on the document and reachable from nowhere —
+  // the stray-item state the panel has to apologise for.
+  if(_boardsIsHome(_editBoard))return 0;
+  const want=new Set((Array.isArray(ids)?ids:[ids]).filter(Boolean));
+  if(!want.size)return 0;
+  let grew=true,guard=0;
+  while(grew&&guard++<8){
+    grew=false;
+    _editCards.filter(c=>want.has(c.id)).forEach(c=>{
+      const kids=_boardsIsColumn(c)?_boardsColumnChildren(c)
+        :c.type==='frame'?_boardsCardsInFrame(c):[];
+      kids.forEach(k=>{if(!want.has(k.id)){want.add(k.id);grew=true;}});
+    });
+  }
+  const group=_editCards.filter(c=>want.has(c.id));
+  if(!group.length)return 0;
+  // Locked cards stay put and are COUNTED, the bulk-delete rule: silently
+  // dropping half an action is worse than doing less and saying so.
+  const locked=group.filter(c=>c.locked).length;
+  const move=group.filter(c=>!c.locked);
+  if(!move.length){showToast(_boardsLockedMsg('move'),true);return 0;}
+  const moveIds=new Set(move.map(c=>c.id));
+  // Captured BEFORE _editConnectors is filtered — afterwards there is
+  // nothing left to record.
+  const conns=_editConnectors.filter(cn=>cn&&(moveIds.has(cn.from)||moveIds.has(cn.to)));
   _boardsPushUndo();
-  const item={id:_boardsTrayItemId(),at:Date.now(),
-    by:(typeof session!=='undefined'&&session&&session.name)||'',name:c.name||''};
-  if(c.type==='image'){item.kind='image';item.imageUrl=c.imageUrl;}
-  else if(c.type==='file'){item.kind='file';item.fileUrl=c.fileUrl;item.fileName=c.fileName;item.fileSize=c.fileSize;}
-  else if(c.type==='link'){item.kind='link';item.linkUrl=c.linkUrl;item.linkTitle=c.linkTitle;item.text=c.linkDesc||'';
-    if(c.linkImage)item.linkImage=c.linkImage;
-    if(c.linkSite)item.linkSite=c.linkSite;}
-  else{item.kind='text';item.text=c.text||'';item.rich=c.rich||'';}
-  _editUnsorted.push(item);
-  _editCards=_editCards.filter(x=>x.id!==cardId);
-  _editConnectors=_editConnectors.filter(cn=>cn.from!==cardId&&cn.to!==cardId);
-  _boardsSelection.delete(cardId);
-  if(!_boardsTrayOpen)window.boardsToggleTray();else _boardsRenderCanvasAndWire();
+  const items=_boardsStashRoots(move).map(g=>_boardsStashItem(g.cards,conns));
+  items.forEach(it=>_editUnsorted.push(it));
+  _editCards=_editCards.filter(c=>!moveIds.has(c.id));
+  _editConnectors=_editConnectors.filter(cn=>!(cn&&(moveIds.has(cn.from)||moveIds.has(cn.to))));
+  move.forEach(c=>_boardsSelection.delete(c.id));
+  _boardsLayoutColumns();
+  // Collecting must never be invisible — the same helper a paste uses.
+  _boardsCollectInto();
+  _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
-  showToast('Moved to Unsorted');
+  showToast(_boardsStashToast(items,locked));
+  return items.length;
 };
+// The reverse of dragging one out, for one card. A thin wrapper on
+// purpose: two implementations is how the two would disagree.
+window.boardsTrayStash=function(cardId){return window.boardsTrayStashCards([cardId]);};
 window.boardsTrayRemove=function(i){
   const u=_editUnsorted[i];
   if(!u||!_boardsCanEdit(_editBoard))return;
@@ -8599,6 +11446,48 @@ function _boardsCardFromTrayItem(u,at){
   else{c.text=u.text||'';if(u.rich)c.rich=u.rich;}
   c.x=at.x-c.w/2;c.y=at.y-c.h/2;   // after sizing, so it centres on the drop
   return c;
+}
+/* One tray item back onto the board, as WHATEVER it was.
+
+   An item collected from OUTSIDE (a paste, a dropped file, a link) has no
+   `cards` and is built into one card by _boardsCardFromTrayItem above,
+   exactly as before. A STASHED item carries the real cards and comes back
+   as what it was — a to-do with its tasks, a table with its rows, a
+   column with its children in order.
+
+   IDS ARE KEPT WHERE THEY ARE FREE. A card's comments live at
+   mood_boards/{board}/comments keyed by card id, so a card that goes to
+   Unsorted and comes back keeps its thread rather than orphaning it. An
+   id already on the board — a remote merge put that card back while the
+   item sat in the tray — is remapped, and `columnId` and the connectors
+   are rewritten through the SAME map. One code path covers both cases, so
+   there is no branch that only ever runs in the rare one. */
+function _boardsCardsFromTrayItem(u,at){
+  if(!u||!Array.isArray(u.cards)||!u.cards.length)
+    return{cards:[_boardsCardFromTrayItem(u,at)],conns:[]};
+  const taken=new Set(_editCards.map(c=>c.id));
+  const map={};
+  const cards=u.cards.map(raw=>{
+    const c=_boardsDecodeCard({...raw});
+    const was=c.id;
+    const id=(!was||taken.has(was))?_boardsMintCardId():was;
+    if(was)map[was]=id;
+    c.id=id;taken.add(id);
+    return c;
+  });
+  const root=cards[0];
+  const ox=at.x-(root.w||0)/2,oy=at.y-(root.h||0)/2;
+  cards.forEach(c=>{
+    c.x=ox+(c.x||0);c.y=oy+(c.y||0);
+    if(c.columnId)c.columnId=map[c.columnId]||c.columnId;
+  });
+  // A connector is only restored when BOTH of its cards came back, and it
+  // is minted a fresh id so a paste of the same item twice cannot produce
+  // two lines claiming to be one.
+  const conns=(Array.isArray(u.conns)?u.conns:[]).filter(cn=>cn&&map[cn.from]&&map[cn.to])
+    .map(cn=>({...cn,id:'k'+(++_boardsCardSeq)+'_'+Date.now()+'_'+Math.floor(Math.random()*1e4),
+      from:map[cn.from],to:map[cn.to]}));
+  return{cards,conns};
 }
 // Returns true when it consumed the paste. Mirrors _boardsOnPaste's own
 // order of preference — an image always wins, then a URL, then plain text.
@@ -8645,10 +11534,7 @@ window.boardsTrayDragStart=function(e,i){
   function move(ev){
     if(!ghost){
       if(Math.abs(ev.clientX-startX)<4&&Math.abs(ev.clientY-startY)<4)return;
-      ghost=document.createElement('div');
-      ghost.className='board-tray-ghost';
-      ghost.textContent=_boardsTrayLabel(u);
-      document.body.appendChild(ghost);
+      ghost=_boardsDragGhost(_boardsTrayFace(u),_boardsTrayLabel(u));
       _boardsTrayDrag={item:u,index:i};
       const stage=document.getElementById('board-stage');
       if(stage)stage.classList.add('tray-target');
@@ -8670,10 +11556,12 @@ window.boardsTrayDragStart=function(e,i){
     const over=r&&ev.clientX>=r.left&&ev.clientX<=r.right&&ev.clientY>=r.top&&ev.clientY<=r.bottom;
     if(!over)return;
     _boardsPushUndo();
-    const c=_boardsCardFromTrayItem(u,_boardsScreenToWorld(ev.clientX,ev.clientY));
-    _editCards.push(c);
+    const made=_boardsCardsFromTrayItem(u,_boardsScreenToWorld(ev.clientX,ev.clientY));
+    made.cards.forEach(c=>_editCards.push(c));
+    made.conns.forEach(cn=>_editConnectors.push(cn));
     _editUnsorted=_editUnsorted.filter(x=>x.id!==u.id);
-    _boardsSetSelection([c.id]);
+    _boardsLayoutColumns();
+    _boardsSetSelection([made.cards[0].id]);
     _boardsRenderCanvasAndWire();
     _boardsSaveDebounced();
   }
@@ -8828,7 +11716,15 @@ function _boardsCommentsStart(boardId){
       _boardsComments=[];
       snap.forEach(d=>_boardsComments.push({id:d.id,...d.data()}));
       _boardsPaintCommentBadges();
+      // The rail carries the unresolved count now, so a comment arriving
+      // from somebody else has to move it — otherwise the badge quietly
+      // lies until the next render for whatever other reason. Repainting
+      // the rail is an innerHTML swap on one element, and the mode-swap
+      // animation is keyed on a MODE change rather than on a repaint, so
+      // this cannot replay it.
+      _boardsRenderRail();
       _boardsRenderDrawer();
+      if(_boardsCommentPopCard)_boardsRenderCommentPop();
     },()=>{});
   }catch(e){/* noop */}
 }
@@ -8949,12 +11845,79 @@ function _boardsConnsTouching(ids){
   const set=ids instanceof Set?ids:new Set(ids);
   return _editConnectors.filter(cn=>cn&&(set.has(cn.from)||set.has(cn.to)));
 }
+/* ── The trash badge fills up, and then it asks (Sept 2026) ────────────
+   Afnan: the number gets darker as the count rises — white through a
+   gradient of phases to red — and at 30 the bin animates to say empty me,
+   with a way to ignore that for 24 hours.
+
+   PHASES, NOT A CONTINUOUS GRADIENT. Four discrete steps are auditable and
+   MEASURABLE: each one is a class the layout probe can render and check for
+   contrast in both themes, where a per-count interpolated colour could only
+   ever be spot-checked. _boardsTrashPhase is the single definition, so the
+   badge, the panel and the tests cannot disagree about what "nearly full"
+   means. */
+const _BOARDS_TRASH_FULL=30;          // where the bin starts asking
+const _BOARDS_TRASH_PHASES=[
+  {at:0, cls:''},                     // the badge exactly as it was
+  {at:10,cls:'fill-1'},
+  {at:20,cls:'fill-2'},
+  {at:_BOARDS_TRASH_FULL,cls:'fill-3'}
+];
+function _boardsTrashPhase(n){
+  let cls='';
+  for(const p of _BOARDS_TRASH_PHASES)if(n>=p.at)cls=p.cls;
+  return cls;
+}
+/* THE SNOOZE IS PER VIEWER AND PER BOARD, in localStorage — the same rule
+   the minimap, snap and the tray's open state follow. It is about this
+   person being nagged on this board, not about the board, so it must never
+   travel to someone else's screen; and a board's trash is its own, so one
+   global snooze would silence a board you have not looked at.
+   Expired entries are pruned on write, so the key cannot grow forever. */
+const _BOARDS_TRASH_SNOOZE_KEY='groovy-boards-trash-snooze';
+const _BOARDS_TRASH_SNOOZE_MS=24*60*60*1000;
+function _boardsTrashSnoozeMap(){
+  try{const m=JSON.parse(localStorage.getItem(_BOARDS_TRASH_SNOOZE_KEY)||'{}');
+    return (m&&typeof m==='object'&&!Array.isArray(m))?m:{};}catch(e){return {};}
+}
+function _boardsTrashSnoozedUntil(id){
+  const t=_boardsTrashSnoozeMap()[id];
+  return (typeof t==='number'&&t>Date.now())?t:0;
+}
+function _boardsTrashSnoozed(){
+  return !!(_editBoard&&_boardsTrashSnoozedUntil(_editBoard.id));
+}
+/* WHETHER THE BIN SHOULD ASK, extracted from the painting so it can be
+   asserted at all: the node harness's querySelector returns null, so
+   _boardsPaintTrashCount bails there and no logic suite can reach the
+   decision through it. Same reason _boardsPreviewBackdrop was pulled out of
+   its overlay. */
+function _boardsTrashAlarm(n){
+  return n>=_BOARDS_TRASH_FULL&&!_boardsTrashSnoozed();
+}
+window.boardsTrashSnooze=function(){
+  if(!_editBoard)return;
+  const now=Date.now(),m=_boardsTrashSnoozeMap(),next={};
+  Object.keys(m).forEach(k=>{if(typeof m[k]==='number'&&m[k]>now)next[k]=m[k];});
+  next[_editBoard.id]=now+_BOARDS_TRASH_SNOOZE_MS;
+  try{localStorage.setItem(_BOARDS_TRASH_SNOOZE_KEY,JSON.stringify(next));}catch(e){}
+  _boardsPaintTrashCount();
+  _boardsRenderTrash();
+  showToast('The bin will stop asking for 24 hours');
+};
 function _boardsPaintTrashCount(){
   const el=document.querySelector('#board-rail [data-act="trash"] .board-rail-badge');
   if(!el)return;
   const n=_boardsTrashLive().length;
   el.textContent=n?String(n):'';
   el.style.display=n?'':'none';
+  el.className='board-rail-badge'+(n?' '+_boardsTrashPhase(n):'').trimEnd();
+  /* THE SHAKE IS ON THE BUTTON, NOT THE BADGE — it is the BIN that should
+     catch your eye, and a 15px chip twitching on its own reads as a
+     rendering fault rather than as a prompt. Driven by a class the paint
+     sets, so nothing animates on a timer that could be left running. */
+  const btn=el.closest&&el.closest('.rail-btn');
+  if(btn)btn.classList.toggle('trash-full',_boardsTrashAlarm(n));
 }
 window.boardsToggleTrash=function(){
   _boardsCardTrashOpen=!_boardsCardTrashOpen;
@@ -9007,6 +11970,7 @@ function _boardsRenderTrash(){
     <div class="board-ctrash-list">
       ${rows.length?body:`<div class="empty">${_boardsCardTrashTab==='mine'?'You haven’t deleted anything on this board.':'Nobody else has deleted anything here.'}</div>`}
     </div>
+    ${_boardsTrashNagHTML(rows.length)}
     ${purgeable?`<button class="board-ctrash-empty" onclick="window.boardsTrashEmpty()">Empty trash</button>`:''}`;
   // Card text and the person's name are other people's strings — written
   // in with textContent after the structure exists, never interpolated.
@@ -9016,6 +11980,31 @@ function _boardsRenderTrash(){
     const b=document.getElementById('board-ctrash-by-'+e.id);
     if(b)b.textContent=_boardsTrashMine(e)?'You':(e.byName||'Someone');
   });
+}
+/* The ask, INSIDE the bin, where the person who opened it is already
+   looking — and the way to silence it. It says the count rather than
+   "the trash is full", because 30 is a nudge and not a limit: nothing
+   stops working, and a message implying otherwise would be a lie.
+   While snoozed the strip still SHOWS, saying until when; the alarm is
+   what is silenced, not the fact. Hiding it outright would leave the
+   button with no way back. */
+function _boardsTrashNagHTML(n){
+  if(n<_BOARDS_TRASH_FULL)return '';
+  const until=_editBoard?_boardsTrashSnoozedUntil(_editBoard.id):0;
+  if(until){
+    return `<div class="board-ctrash-nag snoozed">Not asking again until `+
+      `${_boardsEsc(_boardsTrashSnoozeLabel(until))}.</div>`;
+  }
+  return `<div class="board-ctrash-nag">
+      <span>${n} deleted cards are being kept here.</span>
+      <button class="btn-sm" onclick="window.boardsTrashSnooze()">Ignore for 24 hours</button>
+    </div>`;
+}
+function _boardsTrashSnoozeLabel(ts){
+  try{
+    const d=new Date(ts);
+    return d.toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'});
+  }catch(e){return 'tomorrow';}
 }
 // What a row shows of the card it is holding. Falls back to the card's own
 // name, then to nothing — a row is identified by its type chip and its day
@@ -9174,8 +12163,7 @@ function _boardsCardComments(cardId){
   return _boardsComments.filter(c=>(c.cardId||null)===(cardId||null));
 }
 function _boardsPaintCommentBadges(){
-  const counts={};
-  _boardsComments.forEach(c=>{if(c.cardId&&!c.resolved)counts[c.cardId]=(counts[c.cardId]||0)+1;});
+  const counts=_boardsCommentCounts();   // the rail reads this too
   _editCards.forEach(c=>{
     const el=document.getElementById('board-cmt-'+c.id);
     if(!el)return;
@@ -9190,6 +12178,14 @@ function _boardsPaintCommentBadges(){
   }
 }
 window.boardsOpenComments=function(cardId){
+  // A card's thread on desktop is the popover beside the card; the whole
+  // board, and every phone, is the drawer.
+  if(cardId&&!_boardsIsPhone()&&document.getElementById('board-card-'+cardId)){
+    _boardsReplyTo=null;
+    _boardsCommentPopCard=cardId;
+    _boardsRenderCommentPop();
+    return;
+  }
   _boardsDrawerCard=cardId||null;
   _boardsDrawerTab='comments';
   _boardsDrawerOpen=true;
@@ -9205,13 +12201,100 @@ window.boardsToggleDrawer=function(){
 };
 window.boardsDrawerTab=function(tab){_boardsDrawerTab=tab;_boardsRenderDrawer();};
 window.boardsDrawerAll=function(){_boardsDrawerCard=null;_boardsRenderDrawer();};
+/* A thread: parents in time order, each followed by its replies in time
+   order (depth 1). A reply whose parent is gone is shown as a parent
+   rather than dropped — a comment must never vanish because of what it
+   answered. Replies are one level deep by construction. */
+function _boardsThread(rows){
+  const list=(rows||[]).slice().sort((a,b)=>(a.ts||0)-(b.ts||0));
+  const ids=new Set(list.map(c=>c.id));
+  const parents=list.filter(c=>!c.replyTo||!ids.has(c.replyTo));
+  const out=[];
+  parents.forEach(p=>{
+    out.push(Object.assign({depth:0},p));
+    list.filter(c=>c.replyTo===p.id).forEach(r=>out.push(Object.assign({depth:1},r)));
+  });
+  return out;
+}
+function _boardsInitials(name){
+  const parts=String(name||'').trim().split(/\s+/).filter(Boolean);
+  const s=parts.length>1?parts[0][0]+parts[parts.length-1][0]:(parts[0]||'?').slice(0,2);
+  return s.toUpperCase();
+}
+const _BOARDS_AVATAR_TOKENS=['--cat-notes','--cat-boards','--cat-sops','--cat-storage','--cat-chat','--accent-warning'];
+function _boardsAvatarHTML(name){
+  const str=String(name||'');
+  let h=0;for(let i=0;i<str.length;i++)h=(h*31+str.charCodeAt(i))>>>0;
+  const tok=_BOARDS_AVATAR_TOKENS[h%_BOARDS_AVATAR_TOKENS.length];
+  return`<span class="board-avatar" style="background:var(${tok})">${_boardsEsc(_boardsInitials(name))}</span>`;
+}
+/* Milanote's comment panel, read off the video (80–99s): a bubble beside
+   the CARD, tail pointing at it — avatar, "Write a comment…", Send; then
+   the thread (name · just now · text · Reply) and the count badge on the
+   card. On desktop that is what Comment opens now; the side drawer stays
+   for the whole-board view and for phones. It is the same sheet element
+   anchored to the card's rect, so it lives and dies like every other
+   panel. Incoming comments repaint it; a draft in the box survives that. */
+let _boardsCommentPopCard=null,_boardsReplyTo=null;
+function _boardsRenderCommentPop(){
+  const id=_boardsCommentPopCard;
+  if(!id)return;
+  const cardEl=document.getElementById('board-card-'+id);
+  const r=cardEl&&cardEl.getBoundingClientRect?cardEl.getBoundingClientRect():null;
+  if(!r){_boardsCommentPopCard=null;return;}
+  const prev=document.getElementById('board-cmt-input');
+  const draft=prev&&prev.value?prev.value:'';
+  const rows=_boardsThread(_boardsCardComments(id));
+  const canEdit=_boardsCanEdit(_editBoard);
+  const me=(typeof session!=='undefined'&&session)||{};
+  const replying=_boardsReplyTo?rows.find(c=>c.id===_boardsReplyTo):null;
+  // Opening the sheet closes the previous one, and closing forgets the
+  // reply target — so it is carried across the reopen by hand.
+  const reply=_boardsReplyTo;
+  _boardsOpenSheet('Comments',`
+    <div class="board-cpop-list">${rows.length?rows.map(c=>`
+      <div class="board-cpop-row${c.depth?' reply':''}${c.resolved?' resolved':''}">
+        ${_boardsAvatarHTML(c.byName)}
+        <div class="board-cpop-body">
+          <div class="board-cpop-meta"><strong id="board-cpop-name-${c.id}"></strong><span>${_boardsRelTime(c.ts)}</span></div>
+          <div class="board-cmt-text" id="board-cpop-text-${c.id}"></div>
+          <div class="board-cmt-actions">
+            ${canEdit&&!c.depth?`<button onclick="window.boardsReplyTo('${c.id}')">Reply</button>`:''}
+            ${canEdit?`<button onclick="window.boardsResolveComment('${c.id}',${c.resolved?'false':'true'})">${c.resolved?'Reopen':'Resolve'}</button>`:''}
+            ${(me.uid&&(c.byUid===me.uid||me.role==='owner'))?`<button onclick="window.boardsDeleteComment('${c.id}')">Delete</button>`:''}
+          </div>
+        </div>
+      </div>`).join(''):'<div class="board-sheet-empty">No comments on this card yet.</div>'}</div>
+    ${canEdit?`${replying?`<div class="board-cpop-replying">Replying to <strong id="board-cpop-replying-name"></strong> <button onclick="window.boardsReplyCancel()">cancel</button></div>`:''}
+    <div class="board-cpop-compose">
+      ${_boardsAvatarHTML(me.name)}
+      <input type="text" id="board-cmt-input" placeholder="${replying?'Write a reply…':'Write a comment…'}" maxlength="2000" onkeydown="if(event.key==='Enter'){event.preventDefault();window.boardsAddComment();}">
+      <button class="btn-sm" onclick="window.boardsAddComment()">Send</button>
+    </div>`:''}`,
+    {anchor:{rect:r},width:320});
+  _boardsCommentPopCard=id;
+  _boardsReplyTo=reply;
+  _boardsDrawerCard=id;
+  // Names and bodies are other people's text — written in, never
+  // interpolated. Same boundary as the drawer.
+  rows.forEach(c=>{
+    const n=document.getElementById('board-cpop-name-'+c.id);if(n)n.textContent=c.byName||'Someone';
+    const t=document.getElementById('board-cpop-text-'+c.id);if(t)t.textContent=c.text||'';
+  });
+  const rn=document.getElementById('board-cpop-replying-name');
+  if(rn&&replying)rn.textContent=replying.byName||'Someone';
+  const inp=document.getElementById('board-cmt-input');
+  if(inp){if(draft)inp.value=draft;inp.focus();}
+}
+window.boardsReplyTo=function(id){_boardsReplyTo=id;_boardsRenderCommentPop();};
+window.boardsReplyCancel=function(){_boardsReplyTo=null;_boardsRenderCommentPop();};
 function _boardsRenderDrawer(){
   const host=document.getElementById('board-drawer');
   if(!host)return;
   host.style.display=_boardsDrawerOpen?'flex':'none';
   if(!_boardsDrawerOpen)return;
   const scoped=_boardsDrawerCard?_boardsCardComments(_boardsDrawerCard):_boardsComments;
-  const rows=_boardsDrawerTab==='comments'?scoped:[];
+  const rows=_boardsDrawerTab==='comments'?_boardsThread(scoped):[];
   const canEdit=_boardsCanEdit(_editBoard);
   const scopeLabel=_boardsDrawerCard?'On one card':'Whole board';
   host.innerHTML=`
@@ -9229,7 +12312,7 @@ function _boardsRenderDrawer(){
       </div>
       <div class="board-drawer-list" id="board-drawer-list">
         ${rows.length?rows.map(c=>`
-          <div class="board-cmt${c.resolved?' resolved':''}">
+          <div class="board-cmt${c.resolved?' resolved':''}${c.depth?' reply':''}">
             <div class="board-cmt-meta">
               <strong>${_boardsEsc(c.byName||'Someone')}</strong>
               <span>${_boardsRelTime(c.ts)}</span>
@@ -9237,6 +12320,7 @@ function _boardsRenderDrawer(){
             </div>
             <div class="board-cmt-text" id="board-cmt-text-${c.id}"></div>
             <div class="board-cmt-actions">
+              ${canEdit&&!c.depth&&c.cardId?`<button onclick="window.boardsOpenComments('${c.cardId}');window.boardsReplyTo('${c.id}')">Reply</button>`:''}
               <button onclick="window.boardsResolveComment('${c.id}',${c.resolved?'false':'true'})">${c.resolved?'Reopen':'Resolve'}</button>
               ${(session&&(c.byUid===session.uid||session.role==='owner'))?`<button onclick="window.boardsDeleteComment('${c.id}')">Delete</button>`:''}
             </div>
@@ -9281,9 +12365,11 @@ window.boardsAddComment=async function(){
       cardId:_boardsDrawerCard||null,
       text:text.slice(0,2000),
       byUid:session.uid,byName:session.name||'',
-      ts:Date.now(),resolved:false
+      ts:Date.now(),resolved:false,
+      replyTo:_boardsReplyTo||null
     });
     if(input)input.value='';
+    _boardsReplyTo=null;
     _boardsLogBoardActivity(_boardsDrawerCard?'commented on a card':'commented on the board');
   }catch(e){showToast('Could not post comment: '+(e.message||e),true);}
 };
@@ -9384,17 +12470,36 @@ function _boardsCtxHTML(items){
   return items.map(it=>{
     if(it.sep)return'<div class="board-ctx-sep"></div>';
     if(it.title)return`<div class="board-ctx-title">${_boardsEsc(it.title)}</div>`;
-    if(it.swatches)return`<div class="board-ctx-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
+    if(it.who)return`<div class="board-ctx-who">${_boardsAvatarHTML(it.who)}<span>${_boardsEsc(_boardsWhoText(it))}</span></div>`;
+    if(it.tabs)return`<div class="board-ctx-tabs">${it.tabs.map(t=>`<button class="board-ctx-tab${t.on?' on':''}" data-act="${t.act}">${t.glyph?`<span class="board-ctx-tabg board-ctx-tabg-${t.glyph}"></span>`:''}${_boardsEsc(t.label)}</button>`).join('')}</div>`;
+    if(it.note)return`<div class="board-ctx-note">${_boardsEsc(it.note)}</div>`;
+    if(it.swatches)return`<div class="board-ctx-swatches${it.grid?' board-ctx-grid':''}">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}${it.current===c?' on':''}" data-act="color:${c}" title="${c==='none'?'No colour':c}"></button>`).join('')}</div>`;
+    if(it.bgSwatches)return`<div class="board-ctx-swatches${it.grid?' board-ctx-grid':''}">${_BOARDS_COLORS.map(c=>`<button class="board-swatch bg-${c}${it.current===c?' on':''}" data-act="bg:${c}" title="${c==='none'?'No background':c}"></button>`).join('')}</div>`;
+    // The "A" is static markup, never user text; the tile paints with the
+    // same bg-/ink- classes the card does, so the preview cannot drift.
+    if(it.themes)return`<div class="board-ctx-swatches board-ctx-grid board-ctx-themes">${_BOARDS_CARD_THEMES.map((t,i)=>`<button class="board-swatch board-theme-sw bg-${t.bg} ink-${t.ink}${it.current===i?' on':''}" data-act="theme:${i}" title="${t.bg} paper, ${t.ink} ink">A</button>`).join('')}</div>`;
+    // Literal colours from the board's pictures — validated before they
+    // reach the style attribute, and again in the router on the way back.
+    if(it.ownSwatches)return`<div class="board-ctx-swatches board-ctx-grid board-ctx-own" title="Colours from this board">${it.ownSwatches.map(h=>_boardsValidHex(h)).filter(Boolean).map(h=>`<button class="board-swatch${it.current===h?' on':''}" style="background:${h}" data-act="${it.prop==='strip'?'striphex':'bghex'}:${h}" title="${h}"></button>`).join('')}</div>`;
+    if(it.custom)return`<button class="board-ctx-custom" data-act="customcolor:${it.prop==='strip'?'strip':'bg'}"><span class="board-custom-wheel"></span>Custom colour…</button>`;
     if(it.connSwatches)return`<div class="board-ctx-swatches">${_BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" data-act="ln:c:${c}" title="${c==='none'?'Default':c}"></button>`).join('')}</div>`;
     return`<button class="board-ctx-item${it.danger?' danger':''}" data-act="${it.act}">${_boardsEsc(it.label)}${it.hint?`<span class="board-ctx-hint">${_boardsEsc(it.hint)}</span>`:''}</button>`;
   }).join('');
 }
-function _boardsOpenCtx(clientX,clientY,items,galleryId){
+function _boardsOpenCtx(clientX,clientY,items,galleryId,opts){
   _boardsCloseCtx();
+  // `items` may be a FUNCTION and opts.keep true: the menu then rebuilds
+  // itself after each action instead of closing — the colour panel, where
+  // a pick must not throw the panel away.
+  const build=()=>typeof items==='function'?items():items;
+  const keep=!!(opts&&opts.keep);
   const el=document.createElement('div');
   el.id=_BOARDS_CTX_ID;
   el.className='board-ctx';
-  el.innerHTML=_boardsCtxHTML(items);
+  el.innerHTML=_boardsCtxHTML(build());
+  // While a note is being formatted the menu must not take focus, or the
+  // selection it is about to format is gone before the command runs.
+  el.addEventListener('mousedown',ev=>{if(_boardsFmtActive())ev.preventDefault();});
   document.body.appendChild(el);
   // Clamp inside the viewport — a menu opened near the right or bottom
   // edge would otherwise run off-screen with no way to reach it.
@@ -9405,6 +12510,11 @@ function _boardsOpenCtx(clientX,clientY,items,galleryId){
     const btn=ev.target.closest&&ev.target.closest('[data-act]');
     if(!btn)return;
     const act=btn.getAttribute('data-act');
+    if(keep){
+      _boardsCtxRun(act);
+      if(el.parentNode)el.innerHTML=_boardsCtxHTML(build());
+      return;
+    }
     _boardsCloseCtx();
     // Gallery actions work on a board BY ID; canvas actions work on the
     // open board. One menu renderer, two routers.
@@ -9414,10 +12524,62 @@ function _boardsOpenCtx(clientX,clientY,items,galleryId){
 }
 function _boardsCtxRun(act){
   if(!_editBoard)return;
+  if(act.indexOf('fmt:')===0){_boardsFmtAct(act.slice(4));return;}
   const at=_boardsCtxWorld;
   const place=()=>{if(at)_boardsNextPlacement={x:at.x,y:at.y};};
   if(act.indexOf('add:')===0){place();window.boardsAddCard(act.slice(4));return;}
   if(act.indexOf('color:')===0){window.boardsSetColor(act.slice(6));return;}
+  if(act.indexOf('bg:')===0){window.boardsSetBg(act.slice(3));return;}
+  if(act.indexOf('theme:')===0){window.boardsSetTheme(act.slice(6));return;}
+  if(act.indexOf('bghex:')===0){window.boardsSetBg(_boardsValidHex(act.slice(6))||'none');return;}
+  if(act.indexOf('striphex:')===0){window.boardsSetColor(_boardsValidHex(act.slice(9))||'none');return;}
+  if(act.indexOf('customcolor:')===0){
+    // The HSV sliders, on the card's background or strip. The panel is a
+    // .board-ctx and the sliders are a sheet, so the panel closes first;
+    // the sheet's "‹ Presets" brings the panel back on the same tab.
+    _boardsCloseCtx();
+    _boardsColorTarget={kind:'card',id:act.slice(12)==='strip'?'strip':'bg'};
+    window.boardsOpenCustomColor();
+    return;
+  }
+  if(act.indexOf('colortab:')===0){_boardsColorTab=act.slice(9)==='strip'?'strip':'bg';return;}
+  if(act==='color-panel'){window.boardsOpenColorPanel();return;}
+  if(act.indexOf('todo:')===0){_boardsTodoAct(act.slice(5));return;}
+  if(act.indexOf('lbl:')===0){_boardsLabelAct(act.slice(4));return;}
+  if(act==='imgcrop'){const o=_boardsSelectedCards()[0];if(o)window.boardsImgCrop(o.id);return;}
+  // The image card's three tools. Every one of them goes through this
+  // router, so the rail, the right-click menu and the phone's More sheet
+  // reach the same implementation — the rule the rail and the old
+  // selection bar broke before they were merged.
+  if(act==='img:draw'){const o=_boardsSelectedCards()[0];if(o)window.boardsDrawMode(o.id);return;}
+  if(act==='img:edit'){const o=_boardsSelectedCards()[0];if(o)window.boardsImgEditOpen(o.id);return;}
+  if(act==='img:bg'){const o=_boardsSelectedCards()[0];if(o)window.boardsImgBgMenu(o.id);return;}
+  if(act==='img:nobg'){const o=_boardsSelectedCards()[0];if(o)window.boardsImgNoBg(o.id);return;}
+  if(act==='img:boardbg'){const o=_boardsSelectedCards()[0];if(o)window.boardsUseAsBoardBg(o.id);return;}
+  if(act==='board:bg-off'){window.boardsClearBoardBg();return;}
+  if(act.indexOf('board:bgfit:')===0){window.boardsBoardBgFit(act.slice(12));return;}
+  if(act==='draw:done'){window.boardsDrawEnd();return;}
+  if(act==='draw:pen'){window.boardsDrawPenSheet();return;}
+  if(act==='draw:undo'){window.boardsDrawUndo();return;}
+  if(act==='draw:clear'){window.boardsDrawClear();return;}
+  if(act.indexOf('draw:color:')===0){window.boardsDrawSetColor(act.slice(11));return;}
+  if(act.indexOf('draw:width:')===0){window.boardsDrawSetWidth(act.slice(11));return;}
+  if(act==='linkimg'){const o=_boardsSelectedCards()[0];if(o)window.boardsLinkToImage(o.id);return;}
+  if(act.indexOf('tddue:')===0||act.indexOf('tdwho:')===0){
+    const f=_boardsTodoFocus();
+    if(!f||f.what!=='item')return;
+    const v=act.slice(6);
+    if(act.indexOf('tddue:')===0){
+      // "Pick a date…" is a prompt rather than a date input: the menu is
+      // built as markup and a native picker inside it would need its own
+      // surface. prompt() is already this file's idiom for a one-value ask.
+      const val=(v==='pick')?(prompt('Due date (YYYY-MM-DD)',_boardsTodayStr())||''):v;
+      if(v==='pick'&&val&&!_boardsTodoValidDue(val.trim())){showToast('Use the form YYYY-MM-DD.',true);return;}
+      window.boardsTodoSetDue(f.id,f.i,val.trim?val.trim():val);
+    }else window.boardsTodoSetWho(f.id,f.i,v);
+    return;
+  }
+  if(act==='todoc'){window.boardsConvertToDocument();return;}
   if(act.indexOf('ln:')===0){_boardsConnAction(act.slice(3));return;}
   if(act.indexOf('cellbg:')===0){window.boardsCellColor(act.slice(7));return;}
   if(act==='more-tools'){window.boardsMoreTools();return;}
@@ -9460,8 +12622,7 @@ function _boardsCtxRun(act){
   if(act.indexOf('align:')===0){window.boardsAlignSelection(act.slice(6));return;}
   if(act.indexOf('dist:')===0){window.boardsDistributeSelection(act.slice(5));return;}
   if(act==='stash'){
-    const one=_boardsSelectedCards();
-    if(one.length===1)window.boardsTrayStash(one[0].id);
+    window.boardsTrayStashCards(_boardsSelectedCards().map(c=>c.id));
     return;
   }
   switch(act){
@@ -9470,11 +12631,16 @@ function _boardsCtxRun(act){
     case'paste':place();_boardsCtxPaste();break;
     case'selectall':window.boardsSelectAll();break;
     case'fit':window.boardsFitView();break;
+    case'pan':window.boardsTogglePan();break;
     case'reset':window.boardsResetView();break;
     case'comment-board':window.boardsOpenComments(null);break;
     case'card-comment':{const s=_boardsSelectedCards();if(s.length===1)window.boardsOpenComments(s[0].id);break;}
     case'color':{
-      _boardsOpenSheet('Colour',`<div class="board-sheet-swatches">${
+      _boardsOpenSheet('Colour',`<div class="board-sheet-label">Background</div><div class="board-sheet-swatches">${
+        _BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" title="${c==='none'?'No colour':c}" onclick="window.boardsSetBg('${c}');window.boardsCloseSheet()"></button>`).join('')}</div>
+        <div class="board-sheet-label">Paper and ink</div><div class="board-sheet-swatches">${
+        _BOARDS_CARD_THEMES.map((t,i)=>`<button class="board-swatch board-theme-sw bg-${t.bg} ink-${t.ink}" title="${t.bg} paper, ${t.ink} ink" onclick="window.boardsSetTheme(${i});window.boardsCloseSheet()">A</button>`).join('')}</div>
+        <div class="board-sheet-label">Top strip</div><div class="board-sheet-swatches">${
         _BOARDS_COLORS.map(c=>`<button class="board-swatch sw-${c}" title="${c==='none'?'No colour':c}" onclick="window.boardsSetColor('${c}');window.boardsCloseSheet()"></button>`).join('')}</div>`);
       break;
     }
@@ -9792,6 +12958,213 @@ function _boardsPreviewKey(e){if(e.key==='Escape'){e.stopPropagation();_boardsCl
    without a browser. The picture, the PDF iframe and the top bar are all
    deliberately NOT backdrop — clicking the thing you came to look at must
    never dismiss it. */
+
+/* ── EDIT: crop and rotate ──────────────────────────────────────────────
+   A fixed overlay, like the asset preview, rather than an in-card editor:
+   a crop handle inside a 240px card on a board zoomed to 40% is a target
+   nobody can hit, and the card is where you judge the RESULT, not where
+   you make it.
+
+   It opens by loading the picture at its ORIGINAL url — the natural size
+   is what the whole geometry is expressed in, and a card written before
+   this carries none, so the editor is what supplies c.imgW / c.imgH. It
+   refuses to open rather than guess if the picture will not load. */
+let _boardsEdit=null;   // {id,rot,crop:{x,y,w,h},nat:{w,h},url}
+
+window.boardsImgEditOpen=async function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='image'||!c.imageUrl||!_boardsCanEdit(_editBoard))return;
+  if(c.locked){showToast(_boardsLockedMsg('edit it'));return;}
+  showToast('Opening the picture…');
+  const im=await _boardsLoadImageEl(c.imageUrl);
+  if(!im||!(im.naturalWidth>0&&im.naturalHeight>0)){
+    showToast('That picture could not be opened for editing.');
+    return;
+  }
+  const q=_boardsCrop(c)||{x:0,y:0,w:1,h:1};
+  _boardsEdit={id:id,rot:_boardsRot(c),crop:{x:q.x,y:q.y,w:q.w,h:q.h},
+               nat:{w:im.naturalWidth,h:im.naturalHeight},url:c.imageUrl};
+  _boardsRenderImgEditor();
+};
+window.boardsImgEditClose=function(){
+  const w=document.getElementById('board-imgedit');
+  if(w&&w.parentNode)w.parentNode.removeChild(w);
+  document.removeEventListener('keydown',_boardsImgEditKey,true);
+  _boardsEdit=null;
+};
+function _boardsImgEditKey(e){
+  if(!_boardsEdit)return;
+  if(e.key==='Escape'||e.key==='Esc'){e.stopPropagation();window.boardsImgEditClose();}
+}
+/* The rotated picture's own size, in source pixels. Every coordinate in
+   the editor is in the ROTATED frame — that is what makes rotating after
+   cropping leave the crop where it was on screen. */
+function _boardsEditRotNat(){
+  const e=_boardsEdit;
+  const swap=(e.rot===90||e.rot===270);
+  return{w:swap?e.nat.h:e.nat.w,h:swap?e.nat.w:e.nat.h};
+}
+function _boardsRenderImgEditor(){
+  let wrap=document.getElementById('board-imgedit');
+  if(!wrap){
+    wrap=document.createElement('div');
+    wrap.id='board-imgedit';wrap.className='board-imgedit';
+    document.body.appendChild(wrap);
+    document.addEventListener('keydown',_boardsImgEditKey,true);
+  }
+  const e=_boardsEdit;
+  if(!e){window.boardsImgEditClose();return;}
+  const rn=_boardsEditRotNat();
+  // The stage is a fixed box; the picture is fitted inside it, so the crop
+  // rectangle can be positioned in plain percentages of the picture and
+  // needs no pixel maths of its own.
+  wrap.innerHTML=`
+    <div class="board-imgedit-bar">
+      <strong>Crop and rotate</strong>
+      <span class="board-imgedit-dims" id="board-imgedit-dims"></span>
+      <span style="flex:1"></span>
+      <button class="tool-btn" onclick="window.boardsImgEditRotate(-90)" title="Rotate left">↺</button>
+      <button class="tool-btn" onclick="window.boardsImgEditRotate(90)" title="Rotate right">↻</button>
+      <button class="tool-btn" onclick="window.boardsImgEditReset()">Reset</button>
+      <button class="tool-btn" onclick="window.boardsImgEditClose()">Cancel</button>
+      <button class="tool-btn primary" onclick="window.boardsImgEditApply()">Apply</button>
+    </div>
+    <div class="board-imgedit-body" id="board-imgedit-body">
+      <div class="board-imgedit-pic" id="board-imgedit-pic" style="aspect-ratio:${rn.w} / ${rn.h}">
+        <img src="${_boardsEsc(e.url)}" crossorigin="anonymous" draggable="false" alt=""
+             style="transform:rotate(${e.rot}deg)${(e.rot===90||e.rot===270)?`;width:${(rn.h/rn.w*100).toFixed(4)}%;height:${(rn.w/rn.h*100).toFixed(4)}%;left:${((1-rn.h/rn.w)*50).toFixed(4)}%;top:${((1-rn.w/rn.h)*50).toFixed(4)}%`:''}">
+        <div class="board-imgedit-shade" id="board-imgedit-shade"></div>
+        <div class="board-imgedit-rect" id="board-imgedit-rect">
+          <span class="board-imgedit-h nw" data-h="nw"></span><span class="board-imgedit-h ne" data-h="ne"></span>
+          <span class="board-imgedit-h sw" data-h="sw"></span><span class="board-imgedit-h se" data-h="se"></span>
+        </div>
+      </div>
+    </div>
+    <div class="board-imgedit-foot">Drag inside the picture to choose what the card shows. Esc closes without changing anything.</div>`;
+  _boardsPaintImgEditor();
+  _boardsWireImgEditor();
+}
+function _boardsPaintImgEditor(){
+  const e=_boardsEdit;if(!e)return;
+  const r=document.getElementById('board-imgedit-rect');
+  const sh=document.getElementById('board-imgedit-shade');
+  const d=document.getElementById('board-imgedit-dims');
+  const q=e.crop;
+  if(r){
+    r.style.left=(q.x*100)+'%';r.style.top=(q.y*100)+'%';
+    r.style.width=(q.w*100)+'%';r.style.height=(q.h*100)+'%';
+  }
+  // The shade is drawn as a single inset box-shadow rather than four
+  // divs — one element, and it can never leave a seam.
+  if(sh&&r)sh.style.clipPath=`polygon(0% 0%,100% 0%,100% 100%,0% 100%,0% 0%,${(q.x*100)}% ${(q.y*100)}%,${(q.x*100)}% ${((q.y+q.h)*100)}%,${((q.x+q.w)*100)}% ${((q.y+q.h)*100)}%,${((q.x+q.w)*100)}% ${(q.y*100)}%,${(q.x*100)}% ${(q.y*100)}%)`;
+  if(d){
+    const rn=_boardsEditRotNat();
+    d.textContent=Math.round(rn.w*q.w)+' × '+Math.round(rn.h*q.h)+' px';
+  }
+}
+function _boardsWireImgEditor(){
+  const pic=document.getElementById('board-imgedit-pic');
+  const rect=document.getElementById('board-imgedit-rect');
+  if(!pic||!rect)return;
+  const at=ev=>{
+    const b=pic.getBoundingClientRect();
+    if(!(b.width>0&&b.height>0))return null;
+    return{x:Math.max(0,Math.min(1,(ev.clientX-b.left)/b.width)),
+           y:Math.max(0,Math.min(1,(ev.clientY-b.top)/b.height))};
+  };
+  const MIN=0.04;   // a crop smaller than this is a handle you cannot grab back
+  const start=(ev,mode)=>{
+    const e=_boardsEdit;if(!e)return;
+    const p0=at(ev);if(!p0)return;
+    ev.preventDefault();ev.stopPropagation();
+    const q0={x:e.crop.x,y:e.crop.y,w:e.crop.w,h:e.crop.h};
+    const move=m=>{
+      const p=at(m);if(!p)return;
+      const dx=p.x-p0.x,dy=p.y-p0.y,q=e.crop;
+      if(mode==='move'){
+        q.x=Math.max(0,Math.min(1-q0.w,q0.x+dx));
+        q.y=Math.max(0,Math.min(1-q0.h,q0.y+dy));
+      }else if(mode==='new'){
+        q.x=Math.min(p0.x,p.x);q.y=Math.min(p0.y,p.y);
+        q.w=Math.max(MIN,Math.abs(p.x-p0.x));q.h=Math.max(MIN,Math.abs(p.y-p0.y));
+        q.w=Math.min(q.w,1-q.x);q.h=Math.min(q.h,1-q.y);
+      }else{
+        // A corner moves its own two edges and never past the opposite one.
+        const r0={l:q0.x,t:q0.y,r:q0.x+q0.w,b:q0.y+q0.h};
+        let l=r0.l,t=r0.t,rr=r0.r,bb=r0.b;
+        if(mode.indexOf('w')>=0)l=Math.max(0,Math.min(r0.r-MIN,r0.l+dx));
+        if(mode.indexOf('e')>=0)rr=Math.min(1,Math.max(r0.l+MIN,r0.r+dx));
+        if(mode.indexOf('n')>=0)t=Math.max(0,Math.min(r0.b-MIN,r0.t+dy));
+        if(mode.indexOf('s')>=0)bb=Math.min(1,Math.max(r0.t+MIN,r0.b+dy));
+        q.x=l;q.y=t;q.w=rr-l;q.h=bb-t;
+      }
+      _boardsPaintImgEditor();
+    };
+    const up=()=>{
+      document.removeEventListener('pointermove',move);
+      document.removeEventListener('pointerup',up);
+    };
+    document.addEventListener('pointermove',move);
+    document.addEventListener('pointerup',up);
+  };
+  rect.addEventListener('pointerdown',ev=>{
+    const h=ev.target&&ev.target.getAttribute&&ev.target.getAttribute('data-h');
+    start(ev,h||'move');
+  });
+  // Dragging on the picture OUTSIDE the rectangle draws a new one, which is
+  // how every crop tool behaves and is the only way back from a crop
+  // dragged into a corner.
+  pic.addEventListener('pointerdown',ev=>{if(ev.target===pic||ev.target.tagName==='IMG'||ev.target.id==='board-imgedit-shade')start(ev,'new');});
+}
+window.boardsImgEditRotate=function(delta){
+  const e=_boardsEdit;if(!e)return;
+  const before=e.rot;
+  e.rot=((e.rot+(+delta)) % 360 + 360) % 360;
+  // The crop travels with the rotation, so what is on screen keeps its
+  // framing instead of jumping to a different part of the picture. A 90°
+  // turn maps (x,y,w,h) → (1-y-h, x, h, w); anticlockwise is the inverse.
+  const turns=(((e.rot-before)/90) % 4 + 4) % 4;
+  const r6=n=>Math.round(n*1e6)/1e6;   // 1-0.2-0.4 is 0.39999999999999997
+  for(let i=0;i<turns;i++){
+    const q=e.crop;
+    e.crop={x:r6(1-q.y-q.h),y:r6(q.x),w:r6(q.h),h:r6(q.w)};
+  }
+  _boardsRenderImgEditor();
+};
+window.boardsImgEditReset=function(){
+  const e=_boardsEdit;if(!e)return;
+  e.rot=0;e.crop={x:0,y:0,w:1,h:1};
+  _boardsRenderImgEditor();
+};
+window.boardsImgEditApply=function(){
+  const e=_boardsEdit;if(!e)return;
+  const c=_editCards.find(x=>x.id===e.id);
+  if(!c){window.boardsImgEditClose();return;}
+  _boardsPushUndo();
+  // The natural size is stored WITH the edit, because the geometry is
+  // meaningless without it and a card written before this carries none.
+  c.imgW=e.nat.w;c.imgH=e.nat.h;
+  if(e.rot)c.rotate=e.rot;else delete c.rotate;
+  const whole=(e.crop.x<=0.0005&&e.crop.y<=0.0005&&e.crop.w>=0.9995&&e.crop.h>=0.9995);
+  if(whole)delete c.crop;
+  else c.crop={x:+e.crop.x.toFixed(5),y:+e.crop.y.toFixed(5),w:+e.crop.w.toFixed(5),h:+e.crop.h.toFixed(5)};
+  // The card is re-fitted to what it now shows, through the SAME clamps a
+  // freshly uploaded picture goes through — otherwise a portrait crop of a
+  // landscape photo sits in a landscape box and is cropped a second time
+  // by object-fit, which is the bug _boardsFitImageCard exists to remove.
+  const a=_boardsEditedAspect(c);
+  if(a){
+    let w=_BOARDS_IMG_CARD_W,h=Math.round(w*a.h/a.w);
+    if(h>_BOARDS_IMG_MAX_H){h=_BOARDS_IMG_MAX_H;w=Math.round(h*a.w/a.h);}
+    c.w=Math.max(_BOARDS_IMG_MIN,w);
+    c.h=Math.max(_BOARDS_IMG_MIN,h);
+    _boardsGrowForChrome(c);
+  }
+  window.boardsImgEditClose();
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast(_boardsImgEdited(c)?'Picture updated — press Ctrl+Z to undo':'Picture put back to the original');
+};
 function _boardsPreviewBackdrop(t,wrap){
   if(!t)return false;
   if(t===wrap)return true;
@@ -10033,12 +13406,22 @@ function _boardsCardCtxItems(canEdit){
     items.push({sep:true});
     items.push({act:'labels',label:(Array.isArray(one.labels)&&one.labels.length)?'Labels…':'Add a label…'});
     items.push({act:'reactions',label:'React…'});
-    // The reverse of dragging one out of the tray: take it off the board
-    // but keep it. Frames and sub-boards are not stashable — a frame has
-    // no content of its own, and a board link belongs with its parent.
-    if(one.type!=='frame'&&one.type!=='board'&&one.type!=='column'){
-      items.push({act:'stash',label:'Move to Unsorted'});
-    }
+  }
+  /* The reverse of dragging one out of the tray: take it off the board
+     but keep it. It covers a whole SELECTION now and it covers containers
+     — a column or a frame goes with its contents, which is the thing the
+     drag onto Unsorted is for. Two exclusions remain:
+
+     - HOME has no Unsorted, so an item pushed there would be saved on the
+       document and reachable from nowhere. This used to be offered there
+       and did exactly that.
+     - A BOARD LINK belongs with its parent, and that card's own ✕ already
+       unlinks it under a name that says so. A mixed selection is refused
+       whole rather than half-done — the same rule the drag follows, so
+       the menu and the gesture agree about what is stashable. */
+  if(canEdit&&sel.length&&!_boardsIsHome(_editBoard)&&!sel.some(c=>c.type==='board')){
+    if(!one)items.push({sep:true});
+    items.push({act:'stash',label:one?'Move to Unsorted':'Move '+sel.length+' cards to Unsorted'});
   }
 
   // ── type-specific ──
@@ -10052,8 +13435,18 @@ function _boardsCardCtxItems(canEdit){
   if(one){
     if(one.type==='image'&&one.imageUrl){
       if(canEdit)typed.push({act:'caption',label:one.caption==null?'Add a caption':'Edit caption'});
+      typed.push({act:'download',label:'Download original image'});
       if(canEdit)typed.push({act:'replace',label:'Replace image'});
-      typed.push({act:'download',label:'Download image'});
+      // Milanote's third entry, with its tick: "Crop Image to Fit Dot Grid".
+      // Ours says what it does rather than naming a grid the card does not
+      // snap to — the dot grid here is a placement cue, not a layout.
+      if(canEdit)typed.push({act:'imgcrop',label:'Crop image to fill the card',hint:one.fit==='contain'?'':'✓'});
+      // The rail's three tools are in the right-click list too, so
+      // _boardsMoreItems (the right-click list MINUS the rail) keeps its
+      // algebra: nothing the menu offers is lost, and nothing repeats.
+      if(canEdit)typed.push({act:'img:draw',label:_boardsStrokes(one).length?'Draw on the picture':'Draw on the picture…'});
+      if(canEdit)typed.push({act:'img:edit',label:_boardsImgEdited(one)?'Edit — crop and rotate…':'Crop or rotate…'});
+      if(canEdit)typed.push({act:'img:bg',label:'Background…'});
       typed.push({act:'openasset',label:'Open original'});
     }else if(one.type==='image'&&canEdit){
       typed.push({act:'replace',label:'Add an image…'});
@@ -10067,6 +13460,7 @@ function _boardsCardCtxItems(canEdit){
       typed.push({act:'replace',label:'Choose a file…'});
     }else if(one.type==='link'&&one.linkUrl){
       typed.push({act:'openasset',label:'Open link'});
+      if(canEdit&&one.linkImage)typed.push({act:'linkimg',label:'Turn into an image card'});
       typed.push({act:'copyasset',label:'Copy URL'});
       if(canEdit){
         if(one.linkImage)typed.push({act:'link-preview',label:one.linkPreviewOff?'Show the preview picture':'Hide the preview picture'});
@@ -10100,10 +13494,23 @@ function _boardsCardCtxItems(canEdit){
       typed.push({act:'tbl:-col',label:'Remove last column'});
       typed.push({act:'tbl:head',label:one.head===false?'Use a header row':'No header row'});
     }else if(one.type==='todo'&&canEdit){
+      // The to-do rail is desktop-only (a phone's bar is six targets), so
+      // these have to exist in the menu too or a phone could never set a
+      // title, a due date or an assignee at all.
+      typed.push({act:'todo:title',label:one.title==null?'Add a list title':'Remove the list title'});
+      const tf=_boardsTodoFocus();
+      if(tf&&tf.what==='item'&&tf.id===one.id){
+        typed.push({act:'todo:due',label:'Due date…'});
+        typed.push({act:'todo:assign',label:'Assign…'});
+        if(_boardsTodoCanIndent(one,tf.i))typed.push({act:'todo:indent',label:'Indent task',hint:'Tab'});
+        if(_boardsTodoCanOutdent(one,tf.i))typed.push({act:'todo:outdent',label:'Outdent task',hint:'⇧Tab'});
+        typed.push({act:'todo:rmtask',label:'Remove this task',danger:true});
+      }
       typed.push({act:'tickall',label:'Tick all'});
       typed.push({act:'untickall',label:'Untick all'});
     }else if(one.type==='text'&&one.text){
       typed.push({act:'copytext',label:'Copy text'});
+      if(canEdit)typed.push({act:'todoc',label:'Convert to Document'});
     }
   }
   if(typed.length){items.push({sep:true});typed.forEach(t=>items.push(t));}
@@ -10148,11 +13555,15 @@ function _boardsCardCtxItems(canEdit){
   if(one&&one.by){
     items.push({sep:true});
     // "you", not your own name, when it is yours — the spec's wording, and
-    // the one that reads like a person wrote it.
+    // the one that reads like a person wrote it. Rendered as Milanote's
+    // footer (avatar · "Created by you just now") by _boardsCtxHTML.
     const mine=(typeof session!=='undefined'&&session&&session.name)===one.by;
-    items.push({title:'Added by '+(mine?'you':one.by)+(one.at?' · '+_boardsRelTime(one.at):'')});
+    items.push({who:one.by,mine:mine,at:one.at||0});
   }
   return items;
+}
+function _boardsWhoText(it){
+  return'Created by '+(it.mine?'you':it.who)+(it.at?' '+_boardsRelTime(it.at):'');
 }
 function _boardsWireContextMenu(stage){
   stage.addEventListener('contextmenu',e=>{

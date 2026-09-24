@@ -159,6 +159,22 @@ module.exports=function(){
     run(`_editCards[0].reactions={'B':['u2']};window.boardsToggleReaction('a','B')`);
     s.eq('joining someone else’s reaction appends',run(`JSON.stringify(_editCards[0].reactions['B'])`),'["u2","u1"]');
     s.ok('the chip is marked as mine',/board-reaction mine/.test(run(`_boardsReactionsHTML(_editCards[0])`)));
+
+    // The card's FOOT (Sept 2026): labels and reactions sit UNDER the
+    // content, inside the card, like Milanote's chips — not in a row wedged
+    // between the header and the body.
+    s.section('labels and reactions are the card\'s foot');
+    run(`_editCards[0].labels=[{t:'see this',c:'green'}]`);
+    const cardHtml=run(`_boardCardHTML(_editCards[0],true)`);
+    const iBody=cardHtml.indexOf('board-card-body'),iFoot=cardHtml.indexOf('board-card-foot'),iLab=cardHtml.indexOf('board-labels'),iRe=cardHtml.indexOf('board-reactions');
+    s.ok('the foot comes after the body',iBody>=0&&iFoot>iBody,iBody+' '+iFoot);
+    s.ok('and holds the labels and the reactions, labels first',iLab>iFoot&&iRe>iLab,iFoot+' '+iLab+' '+iRe);
+    s.ok('a label chip keeps its colour class',/board-label lc-green/.test(cardHtml));
+    run(`delete _editCards[0].labels;delete _editCards[0].reactions`);
+    s.ok('a bare card has no foot at all',!/board-card-foot/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    s.eq('the foot is counted once per row in the minimum height',
+      run(`_boardsMinCardH({type:'text',labels:[{t:'a',c:'grey'}],reactions:{'A':['u']}})-_boardsMinCardH({type:'text'})`),
+      run(`_BOARDS_CHROME_H.labels+_BOARDS_CHROME_H.reactions`));
   }
 
   // ── phone vs desktop ──────────────────────────────────────────────────
@@ -184,7 +200,8 @@ module.exports=function(){
       '["color","labels","reactions","card-comment","more","deselect"]');
     desktop.run(`_editCards=[{id:'a',type:'text',text:'x',x:0,y:0,w:200,h:120}];_boardsSelection=new Set(['a'])`);
     const drail=desktop.run(`JSON.stringify(_boardsRailItems().map(i=>i.act||(i.swatches?'swatches':'sep')))`);
-    s.ok('desktop keeps its full rail',/labels/.test(drail)&&/reactions/.test(drail)&&/swatches/.test(drail));
+    // The inline swatch grid became the Color tile + panel (Sept 2026).
+    s.ok('desktop keeps its full rail',/labels/.test(drail)&&/reactions/.test(drail)&&/color-panel/.test(drail));
 
     s.section('More and the right-click menu share one item list');
     const menu=desktop.run(`JSON.stringify(_boardsCardCtxItems(true).map(i=>i.act||'').filter(Boolean))`);
@@ -357,51 +374,127 @@ module.exports=function(){
       const m=/<(?:div|a) class="board-card-body[^>]*>/g;
       return (html.match(m)||[]).some(tag=>/boardsCardDragStart/.test(tag));
     };
-    ['image','file','board','text','todo'].forEach(t=>{
+    const card2=lit=>`_boardCardHTML(${lit},true)`;
+    const bodyDrag2=lit=>{
+      const html=run(card2(lit));
+      return ((html.match(/<(?:div|a) class="board-card-body[^>]*>/g)||[])
+        .some(tag=>/boardsCardDragStart/.test(tag)));
+    };
+    ['image','file','board','text','todo','link'].forEach(t=>{
       s.ok('a '+t+' card does',bodyDrag(t));
     });
-    s.ok('a link card does NOT — it is three form fields',!bodyDrag('link'));
+    // The link card was the one exclusion, and it left that card with NO
+    // drag surface at all once the head strip became an inert overlay —
+    // measured at 0% of the whole card, not just of the strip. Its fields
+    // carry the pointerdown guard instead, which is what the exclusion was
+    // really reaching for, so the padding around the form drags.
+    s.ok('a link card in its edit form drags from the body too',
+      bodyDrag2(`{id:'l',type:'link',x:0,y:0,w:220,h:150,linkUrl:'https://x.test',linkTitle:'T',_linkEdit:true}`));
+    s.ok('and every field in that form stops pointerdown itself',
+      (run(card2(`{id:'l',type:'link',x:0,y:0,w:220,h:150,linkUrl:'https://x.test',linkTitle:'T',_linkEdit:true}`))
+        .match(/<(?:input|textarea)[^>]*>/g)||[]).every(t=>/stopPropagation/.test(t)));
+    s.ok('a brand-new link card drags from the body as well',
+      bodyDrag2(`{id:'l',type:'link',x:0,y:0,w:220,h:100}`));
 
     s.section('nothing is editable until it is double-clicked');
     ['text','todo'].forEach(t=>{
       const html=run(card(t));
       s.ok('a '+t+' card ships contenteditable="false"',
         /contenteditable="false"/.test(html)&&!/contenteditable="true"/.test(html));
-      s.ok('and offers a double-click to open it',/ondblclick="window\.boardsBeginEdit/.test(html));
     });
-    s.ok('the card name too',/board-card-name[^>]*ondblclick="window\.boardsBeginEdit/.test(run(card('image'))));
+    s.ok('a note offers a double-click to open it',/ondblclick="window\.boardsBeginEdit/.test(run(card('text'))));
+    s.ok('and so does a task',/board-todo-.*ondblclick="window\.boardsBeginEdit/.test(
+      run(`_boardCardHTML({id:'t9',type:'todo',items:[{text:'a'}],x:0,y:0,w:240,h:160},true)`)));
+    // THE CARD NAME IS A LABEL NOW, not a control. It lives in the head,
+    // which floats over the card's first row and is pointer-events:none —
+    // anything clickable in there would steal a click aimed at the content
+    // underneath (the probe caught it eating a link card's URL field).
+    // Renaming is the rail's Rename, F2 and the right-click menu.
+    const nameHtml=run(card('image'));
+    s.ok('the card name carries no click handlers',
+      !/board-card-name[^>]*on(click|dblclick)=/.test(nameHtml),(nameHtml.match(/board-card-name[^>]*/)||[''])[0]);
+    s.ok('and the head itself carries none either',
+      !/class="board-card-head"[^>]*ondblclick/.test(nameHtml));
+    s.ok('Rename still reaches it',run(`(function(){
+      var hit=null;window.boardsBeginEdit=function(ev,id){hit=id;};
+      _editCards=[{id:'r9',type:'image',x:0,y:0,w:200,h:200}];_boardsSelection=new Set(['r9']);
+      _boardsCtxRun('rename');return hit;})()`)==='board-name-r9');
 
-    // Reported by Afnan with the item circled: double-clicking a to-do did
-    // nothing. The handler was there — it never ran. The to-do body is a
-    // drag surface, boardsCardDragStart calls setPointerCapture, and a
-    // captured pointer retargets the following dblclick to the CAPTURING
-    // element. A note and a heading survive that because their ondblclick
-    // sits on the very element holding the drag handler; an item's sits on
-    // a descendant. The checkbox and the remove button beside it already
-    // carried the guard; the text was missed. Fifth occurrence of this bug.
-    s.section('a to-do item can actually be double-clicked');
+    /* ── A to-do item can be double-clicked AND the card can be grabbed ──
+       Reported by Afnan twice, and the second report is what settled it.
+       First: double-clicking a to-do did nothing, because the drag captured
+       the pointer on the pointerdown and a captured pointer retargets the
+       following dblclick to the CAPTURING element. That was patched by
+       hanging a stopPropagation guard on the item text.
+       Then: "to do not moving properly" — the card would not move at all
+       when grabbed by its head strip. The strip is an inert overlay, so the
+       press falls through to the first task's text, and that guard ate it.
+       MEASURED with the real stylesheet in headless Chromium
+       (scratchpad/measure-card-grab.js): 42% of the strip started a drag,
+       and none of its middle. Both reports are one cause — the eager
+       capture — so the capture is deferred past the drag threshold and the
+       guard is gone from anything that is merely text. */
+    s.section('a to-do item can be double-clicked, and the card still drags');
     {
-      const todo=run(`_boardCardHTML(${JSON.stringify({id:'td',type:'todo',x:0,y:0,w:240,h:170,
+      const todo=run(`_boardCardHTML(${JSON.stringify({id:'td',type:'todo',x:0,y:0,w:240,h:170,title:'Sampling',
         items:[{text:'Lab dip',done:false},{text:'Bulk',done:true}]})},true)`);
       const rows=todo.match(/<div class="board-todo-text[^>]*>/g)||[];
       s.eq('both items render',rows.length,2);
       rows.forEach((r,i)=>{
         s.ok('item '+i+' offers the double-click',
           /ondblclick="window\.boardsBeginEdit/.test(r),r.slice(0,90));
-        s.ok('item '+i+' stops pointerdown reaching the drag handler',
-          /onpointerdown="event\.stopPropagation\(\)"/.test(r),r.slice(0,90));
+        // No guard: the press has to reach the body's drag handler, or the
+        // head strip — which sits directly over this row — is a dead grip.
+        s.ok('item '+i+' lets the press through to the card drag',
+          !/onpointerdown=/.test(r),r.slice(0,90));
       });
-      // The guard is per-control, not a removal of the body drag — a to-do
-      // card still drags, by its header strip and the padding around its
-      // rows, exactly as a table drags by its chrome.
+      s.ok('the list title lets it through too',
+        !/<div class="board-todo-title[^>]*onpointerdown=/.test(todo),
+        (todo.match(/<div class="board-todo-title[^>]*>/)||[''])[0].slice(0,90));
+      // The real CONTROLS keep theirs: each acts on a single click, and a
+      // drag must not begin on one you are in the middle of pressing.
+      s.ok('the checkbox still stops pointerdown',
+        /<input type="checkbox"[^>]*onpointerdown="event\.stopPropagation\(\)"/.test(todo));
+      s.ok('the remove ✕ still stops pointerdown',
+        /<button class="board-todo-del"[^>]*onpointerdown="event\.stopPropagation\(\)"/.test(todo));
+      s.ok('and "Add a task…" still stops pointerdown',
+        /<div class="board-todo-add"[^>]*onpointerdown="event\.stopPropagation\(\)"/.test(todo));
       s.ok('the to-do body still starts a card drag',
         /<div class="board-card-body board-todo-body" onpointerdown="window\.boardsCardDragStart/.test(todo));
     }
 
-    /* ── A board card IS the board's picture (Sept 2026) ────────────────
-       Afnan picked option A off the specimen. The card was 200x124 of grey
-       chrome while the board already stored a cover, a colour and a letter
-       that only the Boards panel ever drew. */
+    /* ── The capture is what made both bugs, so the mechanism is asserted ─
+       If setPointerCapture ever moves back onto the pointerdown, every
+       descendant's click is retargeted again and the guards come back with
+       it — which is how a to-do card became ungrabbable at its own grip.
+       The threshold check has to come FIRST. */
+    s.section('the drag takes the pointer only once it is a drag');
+    {
+      const src=require('fs').readFileSync(require('path').join(__dirname,'..','js','boards.js'),'utf8');
+      const fn=src.slice(src.indexOf('window.boardsCardDragStart=function'),
+                         src.indexOf('window.boardsResizeStart=function'));
+      // The CALL, not the prose — the comment above it names the function
+      // while explaining why it no longer runs there.
+      const cap=fn.indexOf('setPointerCapture(');
+      const thresh=fn.indexOf('_BOARDS_DRAG_PX');
+      s.ok('boardsCardDragStart captures the pointer somewhere',cap>-1);
+      s.ok('and only AFTER the drag threshold is passed',thresh>-1&&cap>thresh,
+        'threshold at '+thresh+', capture at '+cap);
+      // Without a capture at pointerdown the element stops seeing the
+      // pointer the moment it leaves, so the tracking must be document-wide.
+      s.ok('it tracks on the document, not on the pressed element',
+        /document\.addEventListener\('pointermove'/.test(fn)&&
+        /document\.addEventListener\('pointerup'/.test(fn));
+      s.ok('and it tears those listeners down again',
+        /document\.removeEventListener\('pointermove'/.test(fn)&&
+        /document\.removeEventListener\('pointerup'/.test(fn));
+    }
+
+    /* ── A board card is a SPINE (Sept 2026) ────────────────────────────
+       Afnan lived with option A (the cover full bleed) for a day and then
+       picked option D: "i like D spine its perfect". The face runs down the
+       left edge, the whole name sits beside it, and a strip of the board's
+       own thumbnails says what is inside. */
     s.section('a board card wears the board’s face');
     {
       const app5=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
@@ -415,28 +508,56 @@ module.exports=function(){
 
       setB(`,coverUrl:'${COVER}',color:'#C2410C',icon:'W'`);
       const withCover=r5(`_boardCardHTML(_editCards[0],true)`);
-      s.ok('the cover is drawn full bleed',/class="board-subboard-cover"/.test(withCover));
+      // THE SPINE PAINTS THE COVER. A picture somebody chose for a board is
+      // its identity and must not be demoted to a 30px chip in the strip
+      // below, which is for contents.
+      s.ok('the cover fills the spine',/class="board-subboard-spine has-cover"/.test(withCover));
       s.ok('as a sized derivative, not the original',
-        /board-subboard-cover[^>]*f_auto/.test(withCover),withCover.slice(0,0)||'');
+        /board-subboard-spine has-cover[^>]*>\s*<img[^>]*f_auto/.test(withCover));
       s.ok('with CORS, so the PNG export can read it back',
-        /board-subboard-cover[^>]*crossorigin="anonymous"/.test(withCover));
-      s.ok('and no native HTML5 drag',/board-subboard-cover[^>]*draggable="false"/.test(withCover));
-      s.ok('the name is on the scrim',/board-subboard-scrim/.test(withCover)&&/WINTER DUMP 2K27/.test(withCover));
-      s.ok('the meta counts cards AND files',/3 cards · 2 files/.test(withCover),
+        /board-subboard-spine has-cover[^>]*>\s*<img[^>]*crossorigin="anonymous"/.test(withCover));
+      s.ok('and no native HTML5 drag',
+        /board-subboard-spine has-cover[^>]*>\s*<img[^>]*draggable="false"/.test(withCover));
+      s.ok('the whole name sits beside it',
+        /board-subboard-info/.test(withCover)&&/WINTER DUMP 2K27/.test(withCover));
+      s.ok('the meta names the state and counts cards AND files',
+        /PRIVATE · 3 cards · 2 files/.test(withCover),
         (withCover.match(/board-subboard-meta">([^<]*)/)||[])[1]);
       s.ok('the type strip is gone from the body',!/board-subboard-open">Open →/.test(withCover));
+
+      /* THE THUMBNAIL STRIP is the half of D that says what is INSIDE, and
+         it is DERIVED from the child board's cards on every render — nothing
+         is stored and nothing migrates. The +N counts the cards the strip
+         could not show, not the pictures it left out. */
+      s.eq('one image card makes one thumbnail',
+        (withCover.match(/board-subboard-thumb"/g)||[]).length,1);
+      s.ok('and the rest of the board is a +N chip',
+        /board-subboard-more">\+2</.test(withCover),
+        (withCover.match(/board-subboard-more">([^<]*)/)||[])[1]);
+      s.ok('a thumbnail carries the same three guards every board image does',
+        /board-subboard-thumb"><img[^>]*f_auto[^>]*crossorigin="anonymous"[^>]*draggable="false"/.test(withCover));
 
       // No cover → the board's colour carrying its icon or first letter.
       setB(`,color:'#C2410C',icon:'W'`);
       const noCover=r5(`_boardCardHTML(_editCards[0],true)`);
       s.ok('no cover falls back to the colour field',
-        /class="board-subboard-fill"[^>]*background:#C2410C/.test(noCover));
+        /class="board-subboard-spine"[^>]*background:#C2410C/.test(noCover));
       s.ok('carrying the icon',/board-subboard-glyph">W</.test(noCover));
-      s.ok('and no <img> at all',!/board-subboard-cover/.test(noCover));
+      s.ok('and no cover <img> at all',!/board-subboard-spine has-cover/.test(noCover));
       setB(``);
       const bare=r5(`_boardCardHTML(_editCards[0],true)`);
       s.ok('no icon falls back to the first letter',/board-subboard-glyph">W</.test(bare));
       s.ok('and no colour falls back to a neutral',/background:var\(--soft\)/.test(bare));
+      // A board with no pictures in it gets no strip at all, rather than an
+      // empty row or a chip that only repeats the count above it.
+      r5(`moodBoards[0].cards=[{id:'t',type:'text'}];`);
+      s.ok('a board with no pictures shows no strip',
+        !/board-subboard-thumbs/.test(r5(`_boardCardHTML(_editCards[0],true)`)));
+      s.eq('and the helper agrees',
+        r5(`JSON.stringify(_boardsBoardThumbs({cards:[{type:'text'},{type:'text'}]}))`),
+        JSON.stringify({urls:[],rest:2}));
+      s.eq('the strip is capped at three',
+        r5(`_boardsBoardThumbs({cards:[1,2,3,4,5].map(i=>({type:'image',imageUrl:'u'+i}))}).urls.length`),3);
 
       // ONE decision about what a board looks like — the gallery tile, the
       // panel row and the card all read it, so they cannot disagree.
@@ -494,13 +615,35 @@ module.exports=function(){
       s.ok('nor is an orphan',!/openable/.test(orphan)&&!/board-subboard-cta/.test(orphan));
       s.ok('but the orphan keeps its repair button',/>Create</.test(orphan));
 
-      s.eq('a new board card is 240x180',
-        r5(`_BOARDS_HOME_W+'x'+_BOARDS_HOME_H`),'240x180');
-      // Cards written at the old 200x124 are not rewritten on open — the
+      // A board card is born a WIDE RECTANGLE, at Afnan's request and to
+      // the shape he drew on a screenshot.
+      s.eq('a new board card is 340x136',
+        r5(`_BOARDS_HOME_W+'x'+_BOARDS_HOME_H`),'340x136');
+      // ONE definition of that size. It used to be two — 200x104 from
+      // _boardsNewCard and 260x172 on Home — so the same card came out a
+      // different shape depending on which way you made it.
+      s.eq('and the same size wherever it is minted',
+        r5(`(function(){var c=_boardsNewCard('board');return c.w+'x'+c.h;})()`),'340x136');
+      // The birth height has to clear the render's own minimum, or every
+      // new card is silently grown and the shape asked for never appears.
+      s.ok('the birth height is not grown by the render',
+        r5(`_boardsMinCardH({type:'board',w:_BOARDS_HOME_W,h:_BOARDS_HOME_H})`)<=136,
+        r5(`String(_boardsMinCardH({type:'board',w:_BOARDS_HOME_W,h:_BOARDS_HOME_H}))`));
+      // ...and still clear the content. MEASURED in headless Chromium with
+      // the real stylesheet: the tallest a spine card's body ever gets is
+      // 107px (a two-line name + the meta line + a thumbnail strip). The
+      // 28px header strip used to be charged on top of that; EVERY card's
+      // head is a hover overlay now, so the minimum is the body alone.
+      s.ok('and still clears the measured content',
+        r5(`_boardsMinCardH({type:'board',w:_BOARDS_HOME_W,h:0})`)>=107,
+        r5(`String(_boardsMinCardH({type:'board',w:_BOARDS_HOME_W,h:0}))`));
+      // Cards written at the old sizes are not rewritten on open — the
       // render grows them to the minimum instead, so nothing migrates.
       s.ok('an old card is drawn tall enough for the name',
-        r5(`_boardsMinCardH({type:'board',w:200,h:124})`)>=150,
+        r5(`_boardsMinCardH({type:'board',w:200,h:124})`)>=107,
         r5(`String(_boardsMinCardH({type:'board',w:200,h:124}))`));
+      s.eq('and no type is charged for a head strip any more',
+        r5(`String(_boardsMinCardH({type:'text'})-_BOARDS_MIN_BODY_H.text)`),'0');
     }
 
     /* ── One download per card ──────────────────────────────────────────
@@ -605,11 +748,21 @@ module.exports=function(){
     s.ok('and so does the frame ✕',
       /<button class="board-card-del" onpointerdown="event\.stopPropagation\(\)"/.test(frame));
 
-    s.section('every card still has its header handle');
+    /* ── The head strip is CHROME, not a handle ─────────────────────────
+       It is an absolute overlay across the card's first row and CSS gives
+       it pointer-events:none, so a click aimed at the content beneath it
+       still lands (the layout probe caught it eating a link card's URL
+       field). It carried a drag handler anyway — dead from the day the
+       strip became inert, and reading in review exactly like a working
+       grip. The drag belongs to the BODY the press falls through to. */
+    s.section('the head strip carries no handler it cannot run');
     ['image','file','board','text','todo','link'].forEach(t=>{
-      s.ok(t+' keeps the header drag',
-        /<div class="board-card-head" onpointerdown="window\.boardsCardDragStart/.test(run(card(t))));
+      const head=(run(card(t)).match(/<div class="board-card-head"[^>]*>/)||[''])[0];
+      s.ok(t+"'s head has no drag handler",!/onpointerdown=/.test(head),head);
     });
+    s.ok('and the strip really is inert in the stylesheet',
+      /\.board-card-head\{[^}]*pointer-events:none/.test(
+        require('fs').readFileSync(require('path').join(__dirname,'..','css','main.css'),'utf8')));
 
     s.section('a locked card is not draggable from anywhere');
     const locked=run(`_boardCardHTML(${JSON.stringify({id:'c2',type:'image',x:0,y:0,w:200,h:200,
@@ -902,17 +1055,16 @@ module.exports=function(){
     s.ok('it is armed by a drag that moved, not by every pointerdown',
       /if\(pushed\)_boardsSuppressClick=true;/.test(src));
 
-    s.section('double-clicking a header opens that card type\'s editable');
+    // boardsHeadDblClick is gone with the header strip. It existed because
+    // a heading's drag strip sat over its banner and ate the first
+    // double-click; the head is inert on every card now, so the banner gets
+    // that double-click itself — the workaround's own cause is removed.
+    s.section('the head strip swallows nothing');
     board();
-    run(`_editCards=[{id:'h',type:'heading',x:0,y:0,w:300,h:60},{id:'i',type:'image',x:0,y:0,w:200,h:200}]`);
-    run(`window.boardsBeginEdit=function(ev,id){globalThis.__opened=id;}`);
-    run(`window.boardsHeadDblClick(null,'h')`);
-    s.eq('a heading opens its banner text',run(`__opened`),'board-txt-h');
-    run(`window.boardsHeadDblClick(null,'i')`);
-    s.eq('an image opens its name',run(`__opened`),'board-name-i');
-    run(`_editCards[1].locked=true;globalThis.__opened=null`);
-    run(`window.boardsHeadDblClick(null,'i')`);
-    s.eq('a locked card opens nothing',run(`__opened`),null);
+    s.eq('the workaround is gone',run(`typeof window.boardsHeadDblClick`),'undefined');
+    s.ok('and a heading banner opens on its own double-click',
+      /board-heading-body[^>]*ondblclick="window\.boardsBeginEdit\(event,'board-txt-h9'\)"/.test(
+        run(`_boardCardHTML({id:'h9',type:'heading',x:0,y:0,w:300,h:60},true)`)));
 
     s.section('new cards never land exactly on an existing one');
     // The cascade repeats every 6, so the 7th card used to land exactly on
@@ -1266,7 +1418,11 @@ module.exports=function(){
       /board-link-preview" onpointerdown="window\.boardsCardDragStart/.test(card));
     // A card with no URL yet — the rail's Link tool — still needs the form.
     run(`_editCards=[{id:'lnk2',type:'link',linkUrl:'',linkTitle:'',linkDesc:'',x:0,y:0,w:170,h:120}]`);
-    s.ok('a blank link card is the form',/board-link-edit/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    // A blank link card is Milanote's ONE field now; the three-input form
+    // is what "Edit link details" opens.
+    const blankHtml=run(`_boardCardHTML(_editCards[0],true)`);
+    s.ok('a blank link card is one field',/board-link-new/.test(blankHtml)&&!/board-link-edit/.test(blankHtml));
+    s.ok('and it says what to type',/placeholder="Enter a link URL"/.test(blankHtml));
     run(`_editCards=[{id:'lnk3',type:'link',linkUrl:'https://a.test/',linkTitle:'a',_linkEdit:true,x:0,y:0,w:170,h:120}]`);
     s.ok('and so is one being edited on purpose',/board-link-edit/.test(run(`_boardCardHTML(_editCards[0],true)`)));
 
@@ -1516,14 +1672,22 @@ module.exports=function(){
         // rect has no right/bottom, so it is given a real one.
         document.getElementById('board-tray').getBoundingClientRect=
           function(){return{left:800,right:1200,top:0,bottom:600};};`;
-      const drag=(x,y)=>r2(`(function(){
-        const head=document.getElementById('drag-head');
-        window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
-          stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'k1');
-        const ev=t=>({type:t,clientX:${x},clientY:${y},altKey:false,shiftKey:false});
-        (head._ls.pointermove||[]).forEach(l=>l.fn(ev('pointermove')));
-        (head._ls.pointerup||[]).forEach(l=>l.fn(ev('pointerup')));
-        return true;})()`);
+      // Driven through the DOCUMENT listeners — see the note on the phone
+      // threshold test: the capture is deferred, so the tracking is
+      // document-wide.
+      const fire=(x,y)=>{
+        const ev=t=>({type:t,clientX:x,clientY:y,pointerId:1,altKey:false,shiftKey:false});
+        (app2.state.listeners.pointermove||[]).slice().forEach(f=>f(ev('pointermove')));
+        (app2.state.listeners.pointerup||[]).slice().forEach(f=>f(ev('pointerup')));
+      };
+      const drag=(x,y)=>{
+        r2(`(function(){
+          const head=document.getElementById('drag-head');
+          window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
+            stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'k1');})()`);
+        fire(x,y);
+        return true;
+      };
 
       r2(setup);
       drag(900,300);                      // inside the panel
@@ -1553,11 +1717,8 @@ module.exports=function(){
       r2(`(function(){
         const head=document.getElementById('drag-head2');
         window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
-          stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'n1');
-        const ev=t=>({type:t,clientX:900,clientY:300,altKey:false,shiftKey:false});
-        (head._ls.pointermove||[]).forEach(l=>l.fn(ev('pointermove')));
-        (head._ls.pointerup||[]).forEach(l=>l.fn(ev('pointerup')));
-        return true;})()`);
+          stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'n1');})()`);
+      fire(900,300);
       s.eq('a note dropped on the panel is just a move',r2(`_editCards.length`),1);
       s.ok('and the predicate says so directly',
         r2(`_boardsUnplaceDrag([{type:'text'}])===false&&_boardsUnplaceDrag([{type:'board',boardId:'B'}])===true`));
@@ -1677,7 +1838,11 @@ module.exports=function(){
     const nb=run(`_renderBoardCanvasHTML()`);
     s.ok('an ordinary board keeps all of it',
       /boardsDelete\(\)/.test(nb)&&/board-title-input/.test(nb)&&/boardsToggleVisibility/.test(nb));
-    s.ok('and its back button points at Home',/← Home/.test(nb));
+    // The trail replaced the "← Home" text (Sept 2026, Milanote's shape):
+    // a round chip with the GROOVY mark, then Home, both pointing at Home.
+    s.ok('and its trail starts at Home',/board-home-chip[^>]*onclick="window\.boardsGotoGallery\(\)"/.test(nb)&&/board-crumb-home[^>]*onclick="window\.boardsGotoGallery\(\)">Home</.test(nb));
+    s.ok('with the board\'s own tile before its name',/board-crumb-slash">\/<\/span><span class="board-tile/.test(nb));
+    s.ok('and no "← Home" text button beside it',!/← Home/.test(nb));
   }
 
   // ── attachments: preview and download ─────────────────────────────────
@@ -1733,11 +1898,302 @@ module.exports=function(){
       run(`_editCards[0].items===undefined&&_editCards[0].cards===undefined`));
     s.eq('children are found by columnId',run(`_boardsColumnChildren(_editCards[0]).map(c=>c.id).join(',')`),'a,b');
 
+    /* ── THE 35 MB UPLOAD LIMIT ─────────────────────────────────────────
+       Checked inside _boardsUploadAny, because that is the one function
+       every upload route goes through — the drop, the picker, Replace, the
+       Unsorted tray, a board's cover and the link-preview mirror. A guard
+       on any one of those is a guard the other five walk past. The drop and
+       the tray ALSO pre-check, so an oversized file never mints a card that
+       sits on "Uploading…" and fails a minute later. */
+    s.section('a file over 35 MB is refused before it is sent');
+    {
+      const MB=1024*1024;
+      const up=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        currentPage:'board-canvas',
+        globals:{fetch:async()=>{throw new Error('the upload must not be attempted');}}});
+      const r=x=>up.run(x);
+      r(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+        _editCards=[];_editConnectors=[];_editUnsorted=[];_boardsUndo=[];_boardsSelection=new Set();
+        _boardsPlacementPoint=function(){return{x:0,y:0};};`);
+      s.eq('the limit is 35 MB',r(`_BOARDS_MAX_UPLOAD_MB`),35);
+      s.eq('and in bytes',r(`_BOARDS_MAX_UPLOAD`),35*MB);
+      s.ok('35 MB exactly is allowed',!r(`_boardsTooBig({name:'a',size:${35*MB}})`));
+      s.ok('a byte over is not',!!r(`_boardsTooBig({name:'a',size:${35*MB+1}})`));
+      // _boardsMirrorPreviewImage hands this a remote URL STRING, which has
+      // no size and is fetched by Cloudinary itself — it must pass.
+      s.ok('a remote URL string is not size-checked',
+        !r(`_boardsTooBig('https://example.test/a.jpg')`));
+      s.ok('a file with no size at all is not refused',!r(`_boardsTooBig({name:'a'})`));
+
+      // Dropping several files must add the ones that fit, not refuse the lot.
+      r(`_boardsAddFiles([{name:'a.png',size:${2*MB},type:'image/png'},
+        {name:'huge.mov',size:${60*MB},type:'video/quicktime'},
+        {name:'b.png',size:${3*MB},type:'image/png'}],{x:0,y:0})`);
+      s.eq('the files that fit are still added',r(`_editCards.length`),2);
+      s.ok('and the one that does not is NAMED',
+        /huge\.mov/.test(up.state.toasts.join(' '))&&/35 MB/.test(up.state.toasts.join(' ')),
+        up.state.toasts.slice(-1)[0]);
+      s.ok('no card was minted for it',
+        !/huge/.test(r(`JSON.stringify(_editCards.map(c=>c.fileName||''))`)));
+      // The tray is the other bulk path.
+      r(`_editUnsorted=[];`);
+      r(`_boardsTrayAddFiles([{name:'big.zip',size:${40*MB}},{name:'ok.png',size:${MB},type:'image/png'}])`);
+      s.eq('the tray collects only what fits',r(`_editUnsorted.length`),1);
+
+      // The message names the file and the limit, so a refusal is
+      // actionable rather than "upload failed".
+      const msg=r(`_boardsTooBigMsg({name:'huge.mov',size:${60*MB}})`);
+      s.ok('the refusal names the file, its size and the limit',
+        /huge\.mov/.test(msg)&&/60\.0 MB/.test(msg)&&/35 MB/.test(msg),msg);
+      // And the gate itself refuses without ever reaching the network — the
+      // stubbed fetch throws if it is called at all. Awaited through
+      // _pending, never a `return` in the middle of the module: that ends
+      // the function and silently drops every block below it (the bug that
+      // once took the assertion total DOWN when tests were added).
+      _pending.push((async()=>{
+        const said=await r(`(async function(){try{
+          await _boardsUploadAny({name:'huge.mov',size:${60*MB}});return'no error';
+        }catch(e){return e.message;}})()`);
+        s.section('the upload gate refuses without making a request');
+        s.ok('it throws before fetch is reached',
+          /huge\.mov/.test(said)&&/35 MB/.test(said),said);
+      })());
+    }
+
+    /* ── DROPPING INTO A COLUMN IS AN OVERLAP TEST, NOT A CENTRE POINT ──
+       Afnan: dropping into a column "does not work properly". Measured
+       before changing anything (scratchpad/probe-drop-overlap.js, driving
+       the real drag): of 272 positions where the card VISIBLY overlapped an
+       empty column by a quarter or more, 90 were refused, and a card
+       sitting 45% inside one still would not drop. The old rule asked
+       whether an invisible centre pixel was inside; a person aims with the
+       card, and the card is nearly as big as an empty column. */
+    s.section('a card joins the column it overlaps');
+    {
+      const cd=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      const r=x=>cd.run(x);
+      r(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1};
+        _editConnectors=[];_boardsSelection=new Set();
+        _editCards=[{id:'col',type:'column',title:'',x:400,y:100,w:280,h:150}];`);
+      // 45% of the card inside — the exact case the probe reported refused.
+      s.ok('a card 45% inside joins it',
+        !!r(`_boardsColumnForCard({x:420,y:45,w:220,h:100})`),
+        'card y45..145 against a column at y100');
+      s.ok('a card barely brushing the edge does NOT',
+        !r(`_boardsColumnForCard({x:420,y:-5,w:220,h:100})`));
+      s.ok('and a card fully inside obviously does',
+        !!r(`_boardsColumnForCard({x:410,y:110,w:200,h:60})`));
+      // min(card, column) is what makes both directions work: a big card
+      // dropped squarely on a small column is as deliberate as the reverse.
+      r(`_editCards=[{id:'small',type:'column',title:'',x:400,y:100,w:160,h:150}];`);
+      s.ok('a card much bigger than the column still lands on it',
+        r(`(_boardsColumnForCard({x:380,y:80,w:600,h:400})||{}).id`),'small');
+      // Two columns overlapping the card: the one it is most over wins.
+      r(`_editCards=[{id:'left',type:'column',title:'',x:0,y:100,w:300,h:200},
+                     {id:'right',type:'column',title:'',x:300,y:100,w:300,h:200}];`);
+      s.eq('the column it overlaps MOST wins',
+        r(`(_boardsColumnForCard({x:220,y:120,w:200,h:100})||{}).id`),'right');
+      s.eq('and the other way round',
+        r(`(_boardsColumnForCard({x:180,y:120,w:200,h:100})||{}).id`),'left');
+      // A locked column is not a target, and neither is one being dragged.
+      r(`_editCards=[{id:'lk',type:'column',title:'',x:400,y:100,w:280,h:150,locked:true}];`);
+      s.ok('a locked column takes no drops',!r(`_boardsColumnForCard({x:410,y:110,w:200,h:60})`));
+      r(`_editCards=[{id:'me',type:'column',title:'',x:400,y:100,w:280,h:150}];`);
+      s.ok('and a column being dragged is not its own target',
+        !r(`_boardsColumnForCard({x:410,y:110,w:200,h:60},new Set(['me']))`));
+
+      // Through the path the DRAG actually takes. Asserting the helper
+      // alone proves the helper: it stays green with _boardsDropTargets
+      // still wired to the old centre-point rule, which is the thing being
+      // replaced. Verified by putting that call back — this is what fails.
+      r(`_editCards=[{id:'col',type:'column',title:'',x:400,y:100,w:280,h:150},
+                     {id:'n',type:'text',text:'x',x:420,y:45,w:220,h:100}];`);
+      const drop=r(`(function(){const n=_editCards.find(c=>c.id==='n');
+        return (_boardsDropTargets([n],new Set()).find(d=>d.card.id==='n')||{}).col;})()`);
+      s.ok('the drag path itself lands a 45%-overlapping card in the column',
+        !!drop&&drop.id==='col',drop?drop.id:'nothing');
+    }
+
+    /* ── COLLAPSE ────────────────────────────────────────────────────────
+       The minus in Afnan's drawing. It is a way of LOOKING at a column, not
+       an edit to it: the children stay in _editCards, keep their positions
+       and keep counting, so search, the exports and the reading order are
+       untouched — they are simply not drawn. */
+    s.section('a column collapses to its header');
+    {
+      const cf=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        currentPage:'board-canvas'});
+      const r=x=>cf.run(x);
+      r(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+        _editConnectors=[];_editUnsorted=[];_boardsUndo=[];_boardsRedo=[];_boardsSelection=new Set();
+        _editCards=[{id:'col',type:'column',title:'Sampling',x:400,y:100,w:280,h:150},
+                    {id:'a',type:'text',text:'A',x:0,y:0,w:256,h:90,columnId:'col'},
+                    {id:'b',type:'text',text:'B',x:0,y:0,w:256,h:90,columnId:'col'}];
+        _boardsLayoutColumns();`);
+      const openH=Number(r(`_editCards[0].h`));
+      const kidY=r(`_boardsColumnChildren(_editCards[0]).map(c=>c.y).join(',')`);
+      r(`window.boardsFoldContainer('col')`);
+      s.eq('it shrinks to exactly the header',r(`_editCards[0].h`),Number(r(`_BOARDS_COL_HEAD`)));
+      s.eq('its children are not drawn',r(`_boardsRenderOrder().map(c=>c.id).join(',')`),'col');
+      s.eq('but they are still on the board',r(`_boardsColumnChildren(_editCards[0]).length`),2);
+      s.eq('and they have not been moved',
+        r(`_boardsColumnChildren(_editCards[0]).map(c=>c.y).join(',')`),kidY);
+      const html=r(`_boardCardHTML(_editCards[0],true)`);
+      s.ok('the header still says how many are inside',/board-column-count">2 cards/.test(html));
+      s.ok('the glyph flips to +',/board-column-fold[^>]*>\+</.test(html));
+      s.ok('and the body panel is gone with them',!/board-column-body/.test(html));
+      s.ok('a collapsed column takes no drops',
+        !r(`_boardsColumnForCard({x:410,y:110,w:200,h:60})`));
+      r(`window.boardsFoldContainer('col')`);
+      s.eq('expanding puts the height back',r(`_editCards[0].h`),openH);
+      s.eq('and the list back exactly as it was',
+        r(`_boardsColumnChildren(_editCards[0]).map(c=>c.y).join(',')`),kidY);
+      // Every mutating action pushes undo BEFORE it mutates — the module's
+      // standing contract.
+      s.eq('both folds are undoable',r(`_boardsUndo.length`),2);
+      r(`window.boardsUndoAction()`);
+      s.eq('undo folds it again',r(`!!_editCards[0].collapsed`),true);
+    }
+
+    /* ── A FRAME WEARS THE COLUMN'S TITLE BLOCK ─────────────────────────
+       Afnan: "now do the frame like the column". The same centred name,
+       the same count under it, the same collapse minus. The ONE real
+       difference is where the count comes from — a column owns its
+       children by c.columnId, a frame owns whatever is geometrically
+       inside it, so the frame's is counted at render and stores nothing. */
+    s.section('a frame wears the column title block');
+    {
+      const fr=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        currentPage:'board-canvas'});
+      const r=x=>fr.run(x);
+      r(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+        _editConnectors=[];_editUnsorted=[];_boardsUndo=[];_boardsRedo=[];_boardsSelection=new Set();
+        _editCards=[{id:'fr',type:'frame',title:'',x:100,y:100,w:400,h:300},
+                    {id:'a',type:'text',text:'A',x:130,y:150,w:170,h:80},
+                    {id:'b',type:'text',text:'B',x:330,y:150,w:170,h:80},
+                    {id:'out',type:'text',text:'OUT',x:700,y:150,w:170,h:80}];`);
+      const h=r(`_boardCardHTML(_editCards[0],true)`);
+      s.ok('the empty title reads "New Frame"',/placeholder="New Frame"/.test(h));
+      s.ok('the count is the cards geometrically inside it',
+        /board-frame-count">2 cards</.test(h),
+        (h.match(/board-frame-count">[^<]*/)||[''])[0]);
+      s.ok('the card outside it is not counted',r(`_boardsCardsInFrame(_editCards[0]).length`)===2);
+      s.ok('it carries the same collapse button',/board-column-fold[^>]*boardsFoldContainer/.test(h));
+      s.ok('delete is still reachable',/board-card-del[^>]*boardsDeleteCard/.test(h));
+      s.ok('and the same selection dot',/board-card-corner/.test(h));
+      s.ok('the header still starts the frame drag',
+        /board-frame-head"[^>]*boardsCardDragStart/.test(h));
+      s.ok('one card is singular',
+        /board-frame-count">1 card</.test(r(`(function(){
+          _editCards=_editCards.filter(c=>c.id!=='b');
+          return _boardCardHTML(_editCards[0],true);})()`)));
+      // The floor moved with the header: a frame could be dragged to 60px,
+      // which is UNDER the 63px title block, so its own header overflowed
+      // its box. Existing frames are not rewritten — the render grows them.
+      s.ok('a frame cannot be shorter than its own title block',
+        Number(r(`_boardsMinCardH({type:'frame'})`))>=Number(r(`_BOARDS_COL_HEAD`)));
+      s.ok('and a short stored height is grown by the render, not migrated',
+        /height:150px/.test(r(`(function(){_editCards[0].h=60;
+          return _boardCardHTML(_editCards[0],true);})()`))&&r(`_editCards[0].h`)===60);
+    }
+
+    /* ── Folding a frame, and the height it has to remember ─────────────
+       A column's height is DERIVED, so expanding recomputes it. A frame's
+       is whatever somebody dragged it to, so the fold keeps it — and that
+       kept height is also what membership is measured against while it is
+       folded, or a folded frame would report nothing inside it, say
+       "0 cards", and leave its contents behind when dragged. */
+    s.section('a frame collapses to its header');
+    {
+      const ff=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        currentPage:'board-canvas'});
+      const r=x=>ff.run(x);
+      const boot=()=>r(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+        _editConnectors=[];_editUnsorted=[];_boardsUndo=[];_boardsRedo=[];_boardsSelection=new Set();
+        _boardsSuppressClick=false;_boardsSnapGrid=false;
+        _editCards=[{id:'fr',type:'frame',title:'Archived',x:100,y:100,w:400,h:300},
+                    {id:'a',type:'text',text:'A',x:130,y:150,w:170,h:80},
+                    {id:'b',type:'text',text:'B',x:330,y:150,w:170,h:80},
+                    {id:'out',type:'text',text:'OUT',x:700,y:150,w:170,h:80}];`);
+      boot();
+      r(`window.boardsFoldContainer('fr')`);
+      s.eq('it shrinks to exactly the header',r(`_editCards[0].h`),Number(r(`_BOARDS_COL_HEAD`)));
+      s.eq('it remembers the height it had',r(`_editCards[0].openH`),300);
+      s.eq('its contents are not drawn',r(`_boardsRenderOrder().map(c=>c.id).join(',')`),'fr,out');
+      s.eq('but it still knows what it is hiding',r(`_boardsCardsInFrame(_editCards[0]).length`),2);
+      s.ok('and says so in the header',
+        /board-frame-count">2 cards</.test(r(`_boardCardHTML(_editCards[0],true)`)));
+      s.eq('nothing inside it moved',
+        r(`_editCards.filter(c=>c.type==='text').map(c=>c.x+','+c.y).join('|')`),
+        '130,150|330,150|700,150');
+      r(`window.boardsFoldContainer('fr')`);
+      s.eq('expanding puts the height back',r(`_editCards[0].h`),300);
+      s.eq('and forgets the remembered one',r(`_editCards[0].openH===undefined`),true);
+      s.eq('both folds are undoable',r(`_boardsUndo.length`),2);
+
+      // A frame takes its contents with it when dragged — and that must
+      // still be true when the contents are the ones it is hiding.
+      boot();
+      r(`window.boardsFoldContainer('fr');_boardsSelection=new Set(['fr']);
+        (function(){const h=document.getElementById('dh');
+          window.boardsCardDragStart({currentTarget:h,target:h,clientX:0,clientY:0,pointerId:1,
+            stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'fr');})()`);
+      const ev=t=>({type:t,clientX:200,clientY:0,pointerId:1,altKey:true,shiftKey:false});
+      (ff.state.listeners.pointermove||[]).slice().forEach(f=>f(ev('pointermove')));
+      (ff.state.listeners.pointerup||[]).slice().forEach(f=>f(ev('pointerup')));
+      s.eq('a collapsed frame still carries what it hides',
+        r(`_editCards.filter(c=>c.id==='a'||c.id==='b').map(c=>c.x).join(',')`),'330,530');
+      s.eq('and leaves the card outside it alone',r(`_editCards.find(c=>c.id==='out').x`),700);
+
+      // One implementation for both containers.
+      s.ok('a locked container refuses to fold',r(`(function(){
+        _editCards=[{id:'lk',type:'frame',title:'',x:0,y:0,w:300,h:300,locked:true}];
+        window.boardsFoldContainer('lk');return !_editCards[0].collapsed;})()`));
+      s.ok('and an ordinary card is not foldable at all',r(`(function(){
+        _editCards=[{id:'n',type:'text',text:'x',x:0,y:0,w:100,h:100}];
+        window.boardsFoldContainer('n');return !_editCards[0].collapsed;})()`));
+    }
+
+    /* ── The header Afnan drew ─────────────────────────────────────────── */
+    s.section('the column header is a title block');
+    {
+      const ch=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      ch.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1};
+        _editConnectors=[];_boardsSelection=new Set();
+        _editCards=[{id:'col',type:'column',title:'',x:0,y:0,w:280,h:150}];`);
+      const h=ch.run(`_boardCardHTML(_editCards[0],true)`);
+      s.ok('the empty title reads "New Column"',/placeholder="New Column"/.test(h));
+      s.ok('the count is words, not a chip',/board-column-count">0 cards</.test(h));
+      s.ok('one card is singular',
+        /board-column-count">1 card</.test(ch.run(`(function(){
+          _editCards.push({id:'k',type:'text',text:'x',x:0,y:0,w:10,h:10,columnId:'col'});
+          return _boardCardHTML(_editCards[0],true);})()`)));
+      s.ok('the header still starts the column drag',
+        /board-column-head"[^>]*boardsCardDragStart/.test(h));
+      s.ok('the title does not — it is a field',
+        /board-column-title[^>]*onpointerdown="event\.stopPropagation\(\)"/.test(h));
+      s.ok('delete is still reachable',/board-card-del[^>]*boardsDeleteCard/.test(h));
+      s.ok('and a selected column wears the same dot a card does',
+        /board-card-corner/.test(h));
+    }
+
     s.section('layout derives position, width and the column height');
     s.eq('children share the column x',run(`_editCards[1].x+','+_editCards[2].x`),'112,112');
-    s.eq('and are stacked in order',run(`_editCards[1].y+','+_editCards[2].y`),'142,252');
+    // Read off the CONSTANTS, not written as literals. The title block grew
+    // from a 30px strip to the 63px name-and-count block Afnan drew, and a
+    // hardcoded 142 here would have to be re-derived by hand every time the
+    // header changes — the same reason the file card's page maths reads
+    // _BOARDS_FILE_CHROME_H instead of 66.
+    const HEAD=Number(run(`_BOARDS_COL_HEAD`)),PAD=Number(run(`_BOARDS_COL_PAD`)),
+          GAP=Number(run(`_BOARDS_COL_GAP`));
+    const firstY=100+HEAD+PAD;                       // the column sits at y=100
+    s.eq('and are stacked in order',run(`_editCards[1].y+','+_editCards[2].y`),
+      firstY+','+(firstY+100+GAP));
     s.eq('width comes from the column, not the card',run(`_editCards[1].w+','+_editCards[2].w`),'256,256');
-    s.eq('height is derived from the contents',run(`_editCards[0].h`),284);
+    // head + pad + every child and the gaps between them + pad
+    const kidH=JSON.parse(run(`JSON.stringify(_boardsColumnChildren(_editCards[0]).map(c=>c.h))`));
+    s.eq('height is derived from the contents',run(`_editCards[0].h`),
+      HEAD+PAD+kidH.reduce((a,b)=>a+b,0)+GAP*(kidH.length-1)+PAD);
     // Idempotence is load-bearing: opening a board must not mark every
     // card as locally changed and trigger a write for a correct layout.
     s.eq('running layout again changes nothing',run(`_boardsLayoutColumns()`),false);
@@ -1841,7 +2297,7 @@ module.exports=function(){
     s.ok('ungroup',/col-release/.test(m));
     s.ok('delete both, marked dangerous',/col-delete-all/.test(m));
     s.ok('select contents',/selectinside/.test(m));
-    s.ok('a column is never stashable to Unsorted',!/stash/.test(m));
+    s.ok('a column IS stashable now, children and all',/stash/.test(m));
     run(`_boardsSetSelection(['a'])`);
     const m2=run(`JSON.stringify(_boardsCardCtxItems(true).map(i=>i.act||'').filter(Boolean))`);
     s.ok('a child can be taken out',/col-out/.test(m2));
@@ -2436,6 +2892,80 @@ module.exports=function(){
       /&lt;img src=x/.test(stockHtml)&&/&quot;&gt;&lt;script&gt;/.test(stockHtml));
     s.ok('but the picture is still offered',/board-img-hit/.test(stockHtml));
 
+    /* ── The bin fills up (Sept 2026) ─────────────────────────────────
+       Afnan: the number darkens as the count rises, white through phases to
+       red, and at 30 the bin animates to ask to be emptied — with a way to
+       ignore that for 24 hours.
+
+       WHAT HOLDS WHAT. The COLOURS are smoke-layout's: the ink sits on a
+       chip that INVERTS, and no logic suite can see a colour. The DOM toggle
+       itself is held by neither — the harness's querySelector returns null,
+       so _boardsPaintTrashCount bails there — which is exactly why the
+       decision it paints was extracted into _boardsTrashAlarm. This holds
+       the boundaries, the threshold and the snooze. */
+    s.section('the badge phases are exact at their boundaries');
+    {
+      const store={};
+      const ls={getItem:k=>(k in store?store[k]:null),
+                setItem:(k,v)=>{store[k]=String(v);},removeItem:k=>{delete store[k];}};
+      const t=loadApp({files:['js/boards.js'],globals:{localStorage:ls},
+        session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      const tr=x=>t.run(x);
+      const phase=n=>tr(`_boardsTrashPhase(${n})`);
+      // Off by one at either end is the whole risk in a banded scale.
+      s.eq('nothing at all below the first band',[0,1,9].map(phase).join('|'),'||');
+      s.eq('the first band starts at 10',[10,19].map(phase).join('|'),'fill-1|fill-1');
+      s.eq('the second at 20',[20,29].map(phase).join('|'),'fill-2|fill-2');
+      s.eq('and the last exactly at the threshold',
+        [30,31,500].map(phase).join('|'),'fill-3|fill-3|fill-3');
+      s.eq('which is the same 30 the alarm uses',tr(`_BOARDS_TRASH_FULL`),30);
+
+      s.section('the bin only asks once it is actually full');
+      tr(`session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};
+        _editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+        _editCards=[];_editConnectors=[];_boardsCardTrash=[];`);
+      s.ok('29 does not shake',!tr(`_boardsTrashAlarm(29)`));
+      s.ok('30 does',tr(`_boardsTrashAlarm(30)`));
+      s.ok('and so does anything past it',tr(`_boardsTrashAlarm(400)`));
+
+      s.section('ignore for 24 hours');
+      const nagFull=tr(`_boardsTrashNagHTML(30)`);
+      s.ok('the ask only appears at the threshold',
+        tr(`_boardsTrashNagHTML(29)`)===''&&nagFull.length>0);
+      s.ok('and it offers the snooze',/boardsTrashSnooze/.test(nagFull));
+      // It states the COUNT, not "full": 30 is a nudge, not a limit, and
+      // nothing stops working at it. A message implying otherwise would lie.
+      s.ok('it states the count rather than claiming a limit',
+        /30 deleted cards/.test(nagFull)&&!/full/i.test(nagFull),nagFull);
+      tr(`window.boardsTrashSnooze()`);
+      s.ok('taking it silences the alarm',!tr(`_boardsTrashAlarm(30)`));
+      // The count is still 30 — only the nagging stopped.
+      s.eq('but the badge still reads as full',phase(30),'fill-3');
+      const snoozed=tr(`_boardsTrashNagHTML(30)`);
+      s.ok('and the strip says so rather than vanishing',
+        /Not asking again until/.test(snoozed)&&!/boardsTrashSnooze/.test(snoozed),snoozed);
+      const until=tr(`_boardsTrashSnoozedUntil('b1')`);
+      s.eq('for 24 hours',Math.round((until-Date.now())/3600000),24);
+      // PER BOARD: a board you have not looked at must not be silenced too.
+      s.eq('another board is untouched',tr(`_boardsTrashSnoozedUntil('other')`),0);
+
+      s.section('an expired snooze is ignored, and pruned on the next write');
+      tr(`localStorage.setItem('groovy-boards-trash-snooze',
+        JSON.stringify({old:Date.now()-1000,b1:Date.now()-1000}))`);
+      s.eq('a stale entry does not count',tr(`_boardsTrashSnoozedUntil('b1')`),0);
+      s.ok('so the bin asks again',tr(`_boardsTrashAlarm(30)`));
+      tr(`window.boardsTrashSnooze()`);
+      s.eq('and the next write drops the dead key',
+        tr(`Object.keys(JSON.parse(localStorage.getItem('groovy-boards-trash-snooze'))).join(',')`),
+        'b1');
+      // A corrupt value must not take the module down on a read path.
+      tr(`localStorage.setItem('groovy-boards-trash-snooze','not json')`);
+      s.eq('and junk in the key reads as no snooze',tr(`_boardsTrashSnoozedUntil('b1')`),0);
+      // Nothing here is board data: it is about being nagged, on this
+      // device. The same rule the minimap, snap and the tray follow.
+      s.eq('nothing was written to Firestore',t.state.writes.length,0);
+    }
+
     s.section('drag-to-place — click-to-place is unchanged');
     // The spec's single-click-then-click-to-place is NOT built: a browser
     // session could not reproduce it in the real product or find any armed
@@ -2444,8 +2974,20 @@ module.exports=function(){
       const h=document.getElementById('board-rail');return h?h.innerHTML:'';})()`);
     s.ok('draggable tools are marked in the markup',/data-drag="1"/.test(html6));
     s.ok('and say so in their tooltip',/drag onto the board/.test(html6));
-    s.ok('a tool with no drag affordance is not marked',
-      run(`_BOARDS_RAIL_MAIN.filter(i=>i.act==='add:board')[0].drag===undefined`));
+    /* BOARD IS DRAGGABLE NOW (Sept 2026 — Afnan circled the tool and drew an
+       arrow onto the canvas). It places a card like every other tool; it
+       just mints the board behind it first. The three that are still
+       click-only are the three that place nothing. */
+    s.ok('the Board tool is a drag source',
+      run(`_BOARDS_RAIL_MAIN.filter(i=>i.act==='add:board')[0].drag===true`));
+    // The flag only matters if it reaches the DOM: _boardsRailDragStart
+    // starts a drag from [data-act][data-drag="1"] and nothing else.
+    s.ok('and the rendered rail marks it',
+      /data-act="add:board"[^>]*data-drag="1"|data-drag="1"[^>]*data-act="add:board"/.test(html6),
+      (html6.match(/<button[^>]*add:board[^>]*>/)||[])[0]||'(no Board button)');
+    s.ok('a tool that places nothing is not marked',
+      run(`_BOARDS_RAIL_MAIN.filter(i=>i.act==='line')[0].drag===undefined
+        &&_BOARDS_RAIL_MEDIA.every(i=>i.drag===undefined)`));
 
     s.section('the drag creates nothing until it is released on the canvas');
     boot();
@@ -2485,6 +3027,30 @@ module.exports=function(){
     s.ok('Escape abandons a drag in flight',run(`_boardsRailDrag===null`));
     run(`_boardsRailDragEnd(__ev(300,300))`);
     s.eq('and the abandoned drag cannot still land',run(`_editCards.length`),0);
+
+    /* THE DROP POINT ONLY SURVIVES IF THE LAST RIGHT-CLICK IS FORGOTTEN.
+       _boardsCtxWorld is set when the context menu OPENS and is never
+       cleared when it closes, and _boardsCtxRun's place() overwrites
+       _boardsNextPlacement from it — so after ONE right-click anywhere on
+       the canvas, every rail drag landed its card at that point instead of
+       under the pointer. Live since M6. The rail's CLICK path already
+       cleared it; the drag path was missed.
+       Verified by reverting: the drop below lands at -1089,-1039. */
+    s.section('a stale right-click cannot hijack the drop point');
+    boot();
+    run(`_boardsSelection=new Set();_editCards=[];_boardsNextPlacement=null;
+      _boardsCtxWorld={x:-999,y:-999};
+      __stage=document.getElementById('board-stage');
+      __stage.getBoundingClientRect=()=>({left:0,top:0,right:1000,bottom:800,width:1000,height:800});
+      __btn={getAttribute:()=>'add:text',getBoundingClientRect:()=>({left:0,top:0,right:40,bottom:40})};
+      __ev=(x,y)=>({clientX:x,clientY:y,button:0,target:{closest:()=>__btn}});
+      _boardsRailDragStart(__ev(20,20));_boardsRailDragMove(__ev(300,300));
+      _boardsRailDragEnd(__ev(300,300));`);
+    s.eq('the card lands where the pointer was released',
+      run(`JSON.stringify({x:_editCards[0].x,y:_editCards[0].y})`),
+      JSON.stringify({x:210,y:260}));
+    s.ok('and the stale point is dropped rather than left to fire again',
+      run(`_boardsCtxWorld===null`));
 
     s.section('a press that never moves is still a click');
     boot();
@@ -2624,23 +3190,39 @@ module.exports=function(){
     s.eq('a column carries no type label to get wrong',kindOf('column'),'(none)');
     s.eq('nor does a frame',kindOf('frame'),'(none)');
 
-    s.section('a cell stops pointerdown, or it can never be edited');
-    // boardsCardDragStart calls setPointerCapture on the card body, and a
-    // captured pointer RETARGETS the following click and dblclick to the
-    // capturing element. A note survives that because its ondblclick is on
-    // the very element carrying the drag handler; a cell's is on a
-    // DESCENDANT, so the cell handler never ran and the dblclick bubbled to
-    // the stage — double-clicking a table spawned a stray note.
+    /* ── A cell double-clicks to edit AND the table drags by its grid ────
+       The cell used to stop pointerdown unconditionally: the drag captured
+       the pointer on the pointerdown, and a captured pointer retargets the
+       following dblclick to the capturing element, so the cell's handler
+       never ran and double-clicking a table spawned a stray note. The
+       recorded cost — "a table no longer drags by its cells" — turned out
+       to be the to-do card's bug in another place: the grid inherits
+       cursor:grab from the card body, so ~44% of a table card promised a
+       grab and would not move. The capture is deferred past the drag
+       threshold now, so the guard is needed only on cells that act on a
+       SINGLE click. */
+    s.section('a text cell drags, a checkbox cell does not');
     boot();
     const cellHtml=run(`_boardCardHTML(_editCards[0],true)`);
     const tds=cellHtml.match(/<t[dh] id="board-td-[^>]*>/g)||[];
-    s.ok('every data cell carries the guard',
-      tds.length>0&&tds.every(t=>t.indexOf('onpointerdown="event.stopPropagation()"')>-1),
-      tds.length+' cells');
-    s.ok('and still carries the handler that needs it',
-      tds.every(t=>/ondblclick|boardsCellToggle/.test(t)));
-    // The A/B/C band and the row gutter are chrome, not data — they keep the
-    // drag, so a table can still be grabbed by something other than its header.
+    const textCells=tds.filter(t=>/ondblclick/.test(t));
+    s.ok('the table renders text cells',textCells.length>0,tds.length+' cells');
+    s.ok('a text cell lets the press through to the card drag',
+      textCells.every(t=>t.indexOf('onpointerdown')<0),
+      (textCells.find(t=>t.indexOf('onpointerdown')>=0)||'').slice(0,110));
+    s.ok('and still offers the double-click that opens it',
+      textCells.every(t=>/ondblclick="window\.boardsFocusCell/.test(t)));
+    // A checkbox cell toggles on a single click, so a drag must not begin
+    // on it.
+    const checkHtml=run(`_boardCardHTML(Object.assign({},_editCards[0],
+      {rows:[[{v:'x',t:'check'}]]}),true)`);
+    const checks=(checkHtml.match(/<t[dh] id="board-td-[^>]*>/g)||[]).filter(t=>/boardsCellToggle/.test(t));
+    s.ok('a checkbox cell renders',checks.length>0,checks.length+' cells');
+    s.ok('and it keeps the pointerdown guard',
+      checks.every(t=>t.indexOf('onpointerdown="event.stopPropagation()"')>-1),
+      (checks[0]||'').slice(0,110));
+    // The A/B/C band and the row gutter are chrome, not data — they have
+    // always kept the drag, and still do.
     const coords=cellHtml.match(/<td class="board-coord[^>]*>/g)||[];
     s.ok('the coordinate chrome deliberately does NOT stop it',
       coords.length>0&&coords.every(t=>t.indexOf('onpointerdown')<0),coords.length+' coords');
@@ -2993,14 +3575,640 @@ module.exports=function(){
     s.section('provenance says "you" for your own card');
     boot();
     run(`_editCards[0].by='Afnan';_editCards[0].at=Date.now();_boardsSetSelection(['n'])`);
-    s.ok('mine reads as you',/Added by you/.test(run(`JSON.stringify(_boardsCardCtxItems(true))`)));
+    // Milanote's footer: avatar · "Created by you just now" (video, 99s).
+    const whoText=`(function(){const w=_boardsCardCtxItems(true).find(i=>i.who);return w?_boardsWhoText(w):'';})()`;
+    s.eq('mine reads as you',run(whoText),'Created by you just now');
     run(`_editCards[0].by='Ammar'`);
-    const other=run(`JSON.stringify(_boardsCardCtxItems(true))`);
-    s.ok('someone else keeps their name',/Added by Ammar/.test(other));
-    s.ok('and is not called you',!/Added by you/.test(other));
+    s.eq('someone else keeps their name',run(whoText),'Created by Ammar just now');
+    s.ok('the menu draws it with an avatar',/board-ctx-who[^]*board-avatar[^]*Created by Ammar/.test(run(`_boardsCtxHTML(_boardsCardCtxItems(true))`)));
     run(`delete _editCards[0].by`);
-    s.ok('a card with no provenance shows no line',
-      !/Added by/.test(run(`JSON.stringify(_boardsCardCtxItems(true))`)));
+    s.eq('a card with no provenance shows no line',run(whoText),'');
+    s.ok('and no footer',!/board-ctx-who/.test(run(`_boardsCtxHTML(_boardsCardCtxItems(true))`)));
+
+    // ── The ⋯ menu and Lock position, like Milanote's (Sept 2026) ─────────
+    s.section('the ⋯ menu is the right-click menu minus what the rail carries');
+    boot();
+    run(`_editCards[0].by='Afnan';_editCards[0].at=Date.now();_boardsSetSelection(['n'])`);
+    const railActs=JSON.parse(run(`JSON.stringify(_boardsRailItems().map(i=>i.act).filter(Boolean))`));
+    const ctxActs=JSON.parse(run(`JSON.stringify(_boardsCardCtxItems(true).map(i=>i.act).filter(Boolean))`));
+    const moreActs=JSON.parse(run(`JSON.stringify(_boardsMoreItems(true).map(i=>i.act).filter(Boolean))`));
+    s.eq('the desktop rail is Milanote\'s: Back · Color · Labels · Reactions · Comment · Rename · ⋯',
+      railActs.join(','),'deselect,color-panel,labels,reactions,card-comment,rename,more');
+    s.ok('nothing on the rail is repeated in ⋯',!moreActs.some(a=>railActs.indexOf(a)>=0),moreActs.join(','));
+    s.ok('and nothing the right-click offers is lost between the two',
+      ctxActs.every(a=>railActs.indexOf(a)>=0||moreActs.indexOf(a)>=0),
+      ctxActs.filter(a=>railActs.indexOf(a)<0&&moreActs.indexOf(a)<0).join(','));
+    s.ok('⋯ offers nothing the right-click does not',moreActs.every(a=>ctxActs.indexOf(a)>=0));
+    s.ok('Convert to Document leads for a note, then Lock, then z-order (Milanote\'s order)',
+      /^copytext,todoc,lock,front,back,/.test(moreActs.join(',')),moreActs.join(','));
+    s.ok('the clipboard block comes last',/cut,copy,dup,delete,stash,card-link$/.test(moreActs.join(',')),moreActs.join(','));
+    s.eq('lock reads as Milanote names it',run(`_boardsMoreItems(true).find(i=>i.act==='lock').label`),'Lock position');
+    s.ok('the provenance footer closes it',run(`JSON.stringify(_boardsMoreItems(true).slice(-1)[0])`).indexOf('"who":"Afnan"')>=0);
+    s.ok('no swatch row rides along — the Color tile is on the rail',!/swatches/.test(run(`JSON.stringify(_boardsMoreItems(true))`)));
+    s.ok('and the ⋯ delete keeps its danger flag',run(`_boardsMoreItems(true).find(i=>i.act==='delete').danger===true`));
+    s.eq('read-only still gets a ⋯ (copy text, copy link, provenance)',
+      run(`_boardsMoreItems(false).map(i=>i.act||(i.who?'who':'')).filter(Boolean).join(',')`),'copytext,card-link,who');
+    s.ok('read-only rail still ends in ⋯',/,more$/.test(run(`_boardsRailItems().map(i=>i.act).join(',')`)));
+
+    // ── The image card, like Milanote's (Sept 2026) ───────────────────────
+    // Read off the video (34s / 112s): a photo is the whole card — no strip,
+    // no border, only a small comment badge in its top-right corner — and
+    // its rail is Color · Labels · Reactions · Comment · Rename · Caption · ⋯.
+    s.section('a photo is the whole card');
+    run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();_boardsConnSel=null;_boardsCellFocus=null;`);
+    s.ok('an image card with a picture is a photo',run(`_boardsIsPhotoCard({type:'image',imageUrl:'https://res.cloudinary.com/x/a.jpg'})`));
+    s.ok('an empty image card is not',!run(`_boardsIsPhotoCard({type:'image'})`));
+    s.ok('nor one still uploading',!run(`_boardsIsPhotoCard({type:'image',imageUrl:'x',_uploading:true})`));
+    s.ok('nor a file card',!run(`_boardsIsPhotoCard({type:'file',fileUrl:'x',imageUrl:'x'})`));
+    const photoHtml=run(`_boardCardHTML({id:'ph',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360},true)`);
+    s.ok('the card wears .photo',/class="board-card-el type-image photo/.test(photoHtml));
+    s.ok('the head strip is still there (drag handle, name, ✕)',/board-card-head/.test(photoHtml)&&/board-card-name/.test(photoHtml)&&/board-card-del/.test(photoHtml));
+    // The head holds no nested div, so it ends at the first </div> after it.
+    const headOf=h=>(h.match(/<div class="board-card-head"[\s\S]*?<\/div>/)||[''])[0];
+    s.ok('the comment badge is NOT inside the head',!/board-cmt-/.test(headOf(photoHtml)),headOf(photoHtml).slice(0,200));
+    s.ok('it sits on the picture, under the id the painter fills',/board-cmt-badge pin" id="board-cmt-ph"/.test(photoHtml));
+    s.eq('exactly one badge per card',(photoHtml.match(/board-cmt-badge/g)||[]).length,1);
+    const emptyHtml=run(`_boardCardHTML({id:'em',type:'image',x:0,y:0,w:170,h:120},true)`);
+    s.ok('an empty image card is not a photo',!/ photo/.test(emptyHtml));
+    // NO card keeps its badge in the head now: every type wears the pin.
+    s.ok('and its badge is a pin too, outside the head',
+      !/board-cmt-/.test(headOf(emptyHtml))&&/board-cmt-badge pin/.test(emptyHtml));
+    s.ok('so does one still uploading',!/ photo/.test(run(`_boardCardHTML({id:'up',type:'image',imageUrl:'x',_uploading:true,x:0,y:0,w:170,h:120},true)`)));
+
+    s.section('the overlaid strip costs the picture nothing — the crop is gone');
+    // Before this, _boardsFitImageCard set c.h to the picture's height and
+    // the render put a 28px strip INSIDE it, so object-fit:cover cropped
+    // every picture by 28px. Measured in headless Chromium: 238×332 drawn in
+    // a 240×360 card before, 240×360 after.
+    s.eq('a photo needs no head height',run(`_boardsMinCardH({type:'image',imageUrl:'x'})`),run(`_BOARDS_MIN_BODY_H.image`));
+    s.eq('and an empty image card is charged none either',run(`_boardsMinCardH({type:'image'})`),run(`_BOARDS_MIN_BODY_H.image`));
+    s.ok('a fitted portrait is drawn at exactly its own height',run(`(function(){const c=_boardsNewCard('image');c.imageUrl='x';
+      _boardsFitImageCard(c,{width:1000,height:1500});return Math.max(c.h,_boardsMinCardH(c))===c.h&&c.h===360;})()`));
+    s.eq('a caption and labels still grow it',run(`_boardsMinCardH({type:'image',imageUrl:'x',caption:'a',labels:[{t:'x',c:'grey'}]})-_boardsMinCardH({type:'image',imageUrl:'x'})`),
+      run(`_BOARDS_CHROME_H.caption+_BOARDS_CHROME_H.labels`));
+
+    // CORRECTED Sept 2026 from the frame at 82s at full resolution: the
+    // image rail is Color · Labels · Reactions · Comment · Draw on · Edit ·
+    // Background · Caption · ⋯, with NO Rename. The earlier "Rename before
+    // Caption" was read off the TO-DO card at 112s.
+
+    /* ── Draw on · Edit · Background (Sept 2026) ────────────────────────
+       The three tools on Milanote's image rail, READ OFF the second video
+       at 82s (the rail and its glyphs) and never once demonstrated there,
+       so everything below holds OUR behaviour rather than a copy of
+       theirs. The geometry is the half worth testing hardest: it is pure
+       arithmetic, and it was also MEASURED in real headless Chromium
+       (scratchpad/measure-imgtools.js) against the same five cases. */
+    s.section('a stroke is FLAT, because Firestore refuses a nested array');
+    boot();
+    run(`_editCards=[{id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',
+      x:0,y:0,w:240,h:360,imgW:1000,imgH:1500,
+      strokes:[{c:'red',w:4,p:[10,10,20,20,30,15]},{c:'blue',w:2,p:[50,50]}]}]`);
+    const nestedS=x=>{
+      if(Array.isArray(x))return x.some(v=>Array.isArray(v)||nestedS(v));
+      if(x&&typeof x==='object')return Object.keys(x).some(k=>nestedS(x[k]));
+      return false;
+    };
+    s.ok('the saved form nests no array in an array',
+      !nestedS(JSON.parse(run(`JSON.stringify(_boardsCardsForSave())`))));
+    s.ok('and the strokes survive the save untouched',
+      run(`JSON.stringify(_boardsCardsForSave()[0].strokes[0].p)`)==='[10,10,20,20,30,15]');
+    s.eq('a three-point stroke is one path',run(`_boardsStrokePath({p:[10,10,20,20,30,15]})`),'M10 10L20 20L30 15');
+    s.eq('a single tap is a dot, not nothing',run(`_boardsStrokePath({p:[5,6]})`),'M5 6L5.01 6');
+    s.eq('an empty stroke draws nothing',run(`_boardsStrokePath({p:[]})`),'');
+    s.eq('a stroke knows its own length in POINTS, not numbers',run(`_boardsStrokeLen({p:[1,2,3,4,5,6]})`),3);
+    const drawHtml=run(`_boardsDrawOverlayHTML(_editCards[0],true)`);
+    s.ok('the overlay is a DIV around the svg — an <svg> is replaced and will not stretch',
+      /^<div class="board-draw/.test(drawHtml)&&/<svg viewBox="0 0 100 100"/.test(drawHtml),drawHtml.slice(0,90));
+    s.ok('and it stops above the card foot',/style="bottom:0px"/.test(drawHtml),drawHtml.slice(0,140));
+    s.ok('a card with labels pushes it up by the foot',
+      /style="bottom:31px"/.test(run(`_boardsDrawOverlayHTML({id:'q',type:'text',strokes:[{c:'red',w:4,p:[1,1,2,2]}],labels:[{t:'x',c:'red'}]},true)`)));
+    s.eq('a card with no strokes and no pen on it draws no overlay',
+      run(`_boardsDrawOverlayHTML({id:'z',type:'text'},true)`),'');
+    s.ok('the strokes carry the palette TOKEN, never a literal',
+      /var\(--accent-urgent\)/.test(drawHtml)&&!/#/.test(drawHtml.replace(/&[a-z]+;/g,'')),drawHtml.slice(0,200));
+    /* DRIVEN, not written by hand: the fixture above could hold a flat
+       array while the handler pushed pairs, and the nested-array rule
+       would still read green. The pointer stream is faked because the
+       harness has no DOM — what matters is the SHAPE that comes out. */
+    const drawn=(function(){
+      run(`(function(){
+        _editCards=[{id:'d1',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360}];
+        _boardsSelection=new Set(['d1']);_boardsDrawOn='d1';_boardsDrawColor='red';_boardsDrawWidth=4;
+        _boardsUndo=[];_boardsRedo=[];
+        const svg={appendChild(){},querySelector(){return svg;},setAttribute(){},};
+        const host={
+          _ls:{},
+          querySelector(){return svg;},
+          getBoundingClientRect(){return{left:0,top:0,width:100,height:100};},
+          setPointerCapture(){},releasePointerCapture(){},
+          addEventListener(t,f){host._ls[t]=f;},removeEventListener(t){delete host._ls[t];}
+        };
+        window.boardsDrawStart({currentTarget:host,clientX:10,clientY:10,pointerId:1,
+          preventDefault(){},stopPropagation(){}},'d1');
+        host._ls.pointermove({clientX:40,clientY:60});
+        host._ls.pointermove({clientX:70,clientY:20});
+        host._ls.pointermove({clientX:70.2,clientY:20.1});   // below the min step — dropped
+        host._ls.pointerup();
+        return 0;
+      })()`);
+      return JSON.parse(run(`JSON.stringify(_editCards[0].strokes)`));
+    })();
+    s.eq('one stroke',drawn.length,1);
+    s.eq('its points are FLAT numbers, never [x,y] pairs',JSON.stringify(drawn[0].p),'[10,10,40,60,70,20]');
+    s.eq('and it carries the pen',drawn[0].c+'/'+drawn[0].w,'red/4');
+    s.ok('nothing the handler wrote nests an array',
+      !nestedS(JSON.parse(run(`JSON.stringify(_boardsCardsForSave())`))));
+    s.eq('it pushed exactly one undo entry for the stroke',run(`_boardsUndo.length`),1);
+    // Put the block's own fixture back — the drive above replaced _editCards.
+    run(`_editCards=[{id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',
+      x:0,y:0,w:240,h:360,imgW:1000,imgH:1500,
+      strokes:[{c:'red',w:4,p:[10,10,20,20,30,15]},{c:'blue',w:2,p:[50,50]}]}];
+      _boardsSelection=new Set(['p']);_boardsDrawOn=null;`);
+
+    s.section('the pen is a MODE, and it outranks every other rail');
+    run(`_boardsSelection=new Set(['p']);_boardsDrawOn=null;`);
+    s.ok('off, the image rail is the ordinary one',
+      run(`_boardsRailItems().map(i=>i.act).join(',')`).indexOf('img:draw')>=0);
+    run(`window.boardsDrawMode('p')`);
+    s.eq('on, the rail is the drawing tools and nothing else',
+      run(`_boardsRailItems().map(i=>i.act||(i.drawSwatches?'<swatches>':i.drawWidths?'<widths>':'?')).join(',')`),
+      'draw:done,<swatches>,<widths>,draw:undo,draw:clear');
+    s.ok('Undo stroke and Erase all are LIVE, because this card has strokes',
+      run(`_boardsRailItems().filter(i=>i.act==='draw:undo'||i.act==='draw:clear').every(i=>!i.off)`));
+    s.ok('and both are greyed on a card with none',run(`(function(){
+      _editCards.push({id:'p2',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/b.jpg',x:0,y:0,w:240,h:240});
+      _boardsDrawOn='p2';_boardsSelection=new Set(['p2']);
+      const r=_boardsRailItems().filter(i=>i.act==='draw:undo'||i.act==='draw:clear');
+      _editCards.pop();_boardsDrawOn='p';_boardsSelection=new Set(['p']);
+      return r.length===2&&r.every(i=>i.off);})()`));
+    s.ok('the card says it is being drawn on',/board-card-el type-image photo drawing/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    // Line mode survived leaving the board once and turned every later
+    // board into an arrow-drawing surface. A mode that is not reset is the
+    // same bug with a different name.
+    run(`_boardsSetSelection([])`);
+    s.eq('selecting something else ends it',run(`_boardsDrawOn`),null);
+    run(`window.boardsDrawMode('p')`);
+    s.eq('Escape ends it',(function(){run(`_boardsOnKeydown({key:'Escape',preventDefault(){},target:{tagName:'DIV'}})`);return run(`_boardsDrawOn`);})(),null);
+    /* Opening a board is async (_boardsOpenCanvas reads the document), so
+       this one assertion has to await — in its OWN app instance. The first
+       version of it shared this block's, and every later synchronous
+       section in the suite then ran BEFORE the await resolved and left
+       _boardsDrawOn in some other state: it passed with the reset deleted,
+       which is the documented _pending hazard wearing a third face. */
+    _pending.push((async()=>{
+      const a2=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      const r2=a2.run;
+      r2(`currentPage='board-canvas';boardsLoaded=true;_boardsTrash=[];moodBoards=[
+          {id:'B8',title:'First',ownerUid:'u1',visibility:'personal',zoom:1,cards:[
+            {id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360}],connectors:[]},
+          {id:'B9',title:'Another',ownerUid:'u1',visibility:'personal',zoom:1,cards:[],connectors:[]}];
+        _boardsViewingId='B8';`);
+      await r2(`_boardsOpenCanvas()`);
+      r2(`window.boardsDrawMode('p')`);
+      const was=r2(`_boardsDrawOn`);
+      r2(`_boardsViewingId='B9'`);
+      await r2(`_boardsOpenCanvas()`);
+      const now=r2(`_boardsDrawOn`);
+      s.section('the pen does not survive leaving the board');
+      s.eq('it was on',was,'p');
+      s.eq('and opening another board clears it',now,null);
+    })());
+
+    s.section('undo is per STROKE, not per drawing session');
+    boot();
+    run(`_editCards=[{id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360,
+      strokes:[{c:'red',w:4,p:[1,1,2,2]},{c:'blue',w:2,p:[3,3,4,4]}]}];
+      _boardsSelection=new Set(['p']);_boardsDrawOn='p';_boardsUndo=[];`);
+    run(`window.boardsDrawUndo()`);
+    s.eq('one stroke comes off',run(`_editCards[0].strokes.length`),1);
+    s.eq('and it pushed exactly one undo entry',run(`_boardsUndo.length`),1);
+    run(`window.boardsDrawUndo()`);
+    s.eq('the last one deletes the field rather than leaving an empty array',run(`_editCards[0].strokes===undefined`),true);
+
+    s.section('the picture geometry — MEASURED in Chromium, held here as arithmetic');
+    /* Each case below was rendered in real headless Chromium against the
+       real css/main.css and the <img>'s own bounding rect read back; the
+       numbers are what it measured. A .board-card-el.type-image.photo has
+       NO border (border:none), so its body is the full card box — getting
+       that wrong by 2px leaves a strip of the card showing through a
+       cropped picture, which is what the first cut did. */
+    s.eq('an unedited card needs no geometry at all',run(`_boardsImgGeom({type:'image',imageUrl:'x',imgW:1000,imgH:1500,w:240,h:360},240,360)`),null);
+    s.eq('nor does one whose natural size is unknown',run(`_boardsImgGeom({type:'image',imageUrl:'x',rotate:90,w:240,h:360},240,360)`),null);
+    s.eq('a photo card body is the FULL card box',run(`JSON.stringify(_boardsCardBodyBox({type:'image',imageUrl:'x',w:240,h:360}))`),'{"w":240,"h":360}');
+    s.eq('every other card loses its 1px borders',run(`JSON.stringify(_boardsCardBodyBox({type:'text',w:240,h:360}))`),'{"w":238,"h":358}');
+    s.eq('and a caption comes off the body, not the card',
+      run(`JSON.stringify(_boardsCardBodyBox({type:'image',imageUrl:'x',caption:'c',w:240,h:180}))`),'{"w":240,"h":150}');
+    const geom=(c,w,h)=>JSON.parse(run(`(function(){const g=_boardsImgGeom(${c},${w},${h});
+      return JSON.stringify({rot:g.rot,w:+g.w.toFixed(1),h:+g.h.toFixed(1),left:+g.left.toFixed(1),top:+g.top.toFixed(1)});})()`));
+    /* The element is laid out UNROTATED and turned about its own centre, so
+       the LAYOUT box is w×h and the VISUAL box after a quarter turn is
+       h×w. Both are asserted, because the visual one is what Chromium
+       measured and the layout one is what goes into the style attribute. */
+    const rot90=geom(`{type:'image',imageUrl:'x',imgW:1000,imgH:1500,rotate:90}`,360,240);
+    s.eq('rotated 90°, the layout box is the upright picture',
+      [rot90.w,rot90.h,rot90.left,rot90.top].join(','),'240,360,60,-60');
+    s.eq('and the VISUAL box after the turn is the card exactly — measured 360×240',
+      [rot90.h,rot90.w].join('x'),'360x240');
+    const cropMid=geom(`{type:'image',imageUrl:'x',imgW:1000,imgH:1500,crop:{x:0.25,y:0.25,w:0.5,h:0.5}}`,240,240);
+    s.eq('the middle half of a 1000×1500 fills a 240 square — measured 480×720 at -120,-240',
+      [cropMid.w,cropMid.h,cropMid.left,cropMid.top].join(','),'480,720,-120,-240');
+    const both=geom(`{type:'image',imageUrl:'x',imgW:1000,imgH:1500,rotate:90,crop:{x:0.1,y:0,w:0.4,h:1}}`,240,400);
+    s.eq('a crop of a rotated picture is in the ROTATED frame',
+      [both.w,both.h,both.left,both.top].join(','),'400,600,40,-100');
+    s.eq('and it measured 600×400 at -60,0 on screen',
+      [both.h,both.w,both.left+(both.w-both.h)/2,both.top+(both.h-both.w)/2].join(','),'600,400,-60,0');
+    s.ok('a crop of the whole picture is no crop',run(`_boardsCrop({crop:{x:0,y:0,w:1,h:1}})`)===null);
+    s.ok('a crop outside the picture is refused rather than clamped',
+      run(`_boardsCrop({crop:{x:0.5,y:0,w:0.9,h:1}})`)===null);
+    s.ok('an unknown rotation is upright',run(`_boardsRot({rotate:45})`)===0&&run(`_boardsRot({rotate:270})`)===270);
+
+    s.section('the editor rotates the CROP with the picture');
+    /* Turning the picture must not jump the framing to a different part of
+       it: a 90° turn maps (x,y,w,h) → (1-y-h, x, h, w). */
+    run(`_boardsEdit={id:'p',rot:0,crop:{x:0.1,y:0.2,w:0.3,h:0.4},nat:{w:1000,h:1500},url:'x'};
+      _boardsRenderImgEditor=function(){};`);
+    run(`window.boardsImgEditRotate(90)`);
+    s.eq('one turn right',run(`JSON.stringify(_boardsEdit.crop)`),JSON.stringify({x:1-0.2-0.4,y:0.1,w:0.4,h:0.3}));
+    s.eq('and the rotation with it',run(`_boardsEdit.rot`),90);
+    run(`window.boardsImgEditRotate(-90)`);
+    s.eq('turning back restores it exactly',run(`JSON.stringify(_boardsEdit.crop)`),JSON.stringify({x:0.1,y:0.2,w:0.3,h:0.4}));
+    s.eq('four turns is a full circle',(function(){
+      run(`_boardsEdit.crop={x:0.1,y:0.2,w:0.3,h:0.4};_boardsEdit.rot=0;`);
+      for(let i=0;i<4;i++)run(`window.boardsImgEditRotate(90)`);
+      return run(`JSON.stringify(_boardsEdit.crop)+'|'+_boardsEdit.rot`);})(),JSON.stringify({x:0.1,y:0.2,w:0.3,h:0.4})+'|0');
+
+    s.section('Apply stores the natural size and re-fits the card');
+    boot();
+    run(`_editCards=[{id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360}];
+      _boardsSelection=new Set(['p']);
+      _boardsEdit={id:'p',rot:90,crop:{x:0,y:0,w:1,h:1},nat:{w:1000,h:1500},url:'x'};`);
+    run(`window.boardsImgEditApply()`);
+    s.eq('the natural size is stored WITH the edit — the geometry is meaningless without it',
+      run(`_editCards[0].imgW+'x'+_editCards[0].imgH`),'1000x1500');
+    s.eq('the card is re-fitted to what it now shows',run(`_editCards[0].w+'x'+_editCards[0].h`),'240x160');
+    s.ok('and a whole-picture crop is not stored at all',run(`_editCards[0].crop===undefined`));
+    run(`_boardsEdit={id:'p',rot:0,crop:{x:0,y:0,w:1,h:1},nat:{w:1000,h:1500},url:'x'};window.boardsImgEditApply()`);
+    s.ok('Reset clears the rotation too',run(`_editCards[0].rotate===undefined&&!_boardsImgEdited(_editCards[0])`));
+
+    s.section('Background — the picture, and the board');
+    boot();
+    run(`_editCards=[{id:'p',type:'image',imageUrl:'https://res.cloudinary.com/demo/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360}];
+      _boardsSelection=new Set(['p']);`);
+    s.eq('removing a background is a DELIVERY component — nothing is re-uploaded',
+      run(`_boardsNoBgUrl('https://res.cloudinary.com/demo/image/upload/v1/a.jpg')`),
+      'https://res.cloudinary.com/demo/image/upload/e_background_removal/v1/a.jpg');
+    s.eq('a URL that is not Cloudinary is left alone',run(`_boardsNoBgUrl('https://other.test/a.jpg')`),'https://other.test/a.jpg');
+    run(`window.boardsImgNoBg('p')`);
+    s.eq('the card carries the flag',run(`_editCards[0].nobg`),true);
+    s.ok('the card asks Cloudinary for the stripped picture',
+      /e_background_removal/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    s.ok('and a failure clears the flag rather than leaving a broken picture',run(`(function(){
+      window.boardsNoBgFailed({},'p');return _editCards[0].nobg===undefined;})()`));
+    // The export must show what the SCREEN shows, or the background comes
+    // back in the PNG and the PDF only.
+    run(`_editCards[0].nobg=true`);
+    s.ok('the export reads the same delivery URL',/e_background_removal/.test(run(`_boardsExportImageUrl(_editCards[0])`)));
+    run(`delete _editCards[0].nobg`);
+    run(`window.boardsUseAsBoardBg('p')`);
+    s.eq('a board background is stored on the BOARD',run(`_editBoard.bgImage`),'https://res.cloudinary.com/demo/image/upload/v1/a.jpg');
+    s.eq('with a fit',run(`_editBoard.bgFit`),'cover');
+    // The string goes straight into a CSS url(), so the moment to check it
+    // is the moment it is WRITTEN. res.cloudinary.com.evil.test must not pass.
+    run(`_editBoard.bgImage=null;_editCards[0].imageUrl='https://res.cloudinary.com.evil.test/a.jpg';window.boardsUseAsBoardBg('p')`);
+    s.ok('a lookalike host is refused',run(`!_editBoard.bgImage`));
+    run(`_editCards[0].imageUrl='https://res.cloudinary.com/demo/image/upload/v1/a.jpg';window.boardsUseAsBoardBg('p');window.boardsClearBoardBg()`);
+    s.ok('and clearing it removes both fields',run(`_editBoard.bgImage===undefined&&_editBoard.bgFit===undefined`));
+    const bgItems=run(`JSON.stringify(_boardsImgBgItems('p').map(i=>i.act||i.title||i.note||(i.sep?'—':'?')))`);
+    s.ok('the menu says the add-on is needed rather than letting a broken picture say it',
+      /add-on/.test(bgItems),bgItems);
+
+    s.section('on a phone the pen settings go behind one button');
+    /* The phone rail is a horizontal dock. Six colour swatches beside
+       three width buttons and three labelled tools ran off the right edge
+       at 390 and at 360 — found by tests/smoke-phone.js, not by reading —
+       so they live in a bottom sheet, the pattern Colour, Labels and
+       Reactions already follow there. */
+    {
+      const ph=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},phone:true});
+      ph.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+        _editCards=[{id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360,
+          strokes:[{c:'red',w:4,p:[1,1,2,2]}]}];
+        _editConnectors=[];_boardsSelection=new Set(['p']);_boardsDrawOn='p';_boardsCellFocus=null;_boardsConnSel=null;`);
+      s.eq('four targets, no swatch rows',
+        ph.run(`_boardsRailItems().map(i=>i.act||'<row>').join(',')`),
+        'draw:done,draw:pen,draw:undo,draw:clear');
+      ph.run(`window.boardsDrawPenSheet()`);
+      const sheet=ph.run(`(document.getElementById('board-sheet')||{innerHTML:''}).innerHTML`);
+      s.ok('and the sheet carries every colour and every width',
+        (sheet.match(/data-act="draw:color:/g)||[]).length===6&&
+        (sheet.match(/data-act="draw:width:/g)||[]).length===3,
+        (sheet.match(/data-act="draw:(color|width):/g)||[]).join(' '));
+    }
+
+    s.section('the image rail is Milanote\'s, and Rename / Replace / Download went to ⋯');
+    run(`_editCards=[{id:'ph',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360,by:'Afnan',at:1},
+      {id:'fl',type:'file',fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/a.pdf',fileName:'a.pdf',x:0,y:0,w:240,h:200}];
+      _boardsSelection=new Set(['ph']);`);
+    s.eq('Color · Labels · Reactions · Comment · Draw on · Edit · Background · Caption · ⋯',run(`_boardsRailItems().map(i=>i.act).join(',')`),
+      'deselect,color-panel,labels,reactions,card-comment,img:draw,img:edit,img:bg,caption,more');
+    const imgMore=run(`_boardsMoreItems(true).map(i=>i.act).filter(Boolean).join(',')`);
+    s.ok('⋯ carries Replace, Download and Open original for the picture',/replace/.test(imgMore)&&/download/.test(imgMore)&&/openasset/.test(imgMore),imgMore);
+    // Rename left the rail, so the derive put it in ⋯ with no other edit —
+    // the same algebra that already moved Replace and Download there.
+    s.ok('and Rename, which left the rail, is in ⋯ on its own',/(^|,)rename(,|$)/.test(imgMore),imgMore);
+    s.ok('nothing on the rail repeats in ⋯',run(`(function(){const rail=_boardsRailItems().map(i=>i.act).filter(Boolean);
+      return _boardsMoreItems(true).map(i=>i.act).filter(Boolean).every(a=>rail.indexOf(a)<0);})()`));
+    s.ok('and nothing the right-click offers is lost',run(`(function(){const rail=_boardsRailItems().map(i=>i.act);const more=_boardsMoreItems(true).map(i=>i.act).filter(Boolean);
+      return _boardsCardCtxItems(true).map(i=>i.act).filter(Boolean).every(a=>rail.indexOf(a)>=0||more.indexOf(a)>=0);})()`));
+    run(`_boardsSelection=new Set(['fl'])`);
+    s.eq('a file card\'s rail is unchanged',run(`_boardsRailItems().map(i=>i.act).join(',')`),
+      'deselect,color-panel,labels,reactions,card-comment,caption,replace,download,rename,more');
+    run(`_boardsSelection=new Set()`);
+
+    /* ── The second Milanote video: no headers, the to-do card, the link
+       card's one field (Sept 2026) ─────────────────────────────────────
+       Read off "Winter Drop 2027": no card type has a header strip, the
+       rail follows what is FOCUSED rather than what is selected, a to-do
+       has a title and nesting and per-task dates and assignees, and a
+       link card is born as one field. */
+    s.section('no card type has a header strip');
+    run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();_boardsEditingEl=null;`);
+    // table is left out on purpose: _boardsMinCardH returns early for it
+    // (its height is derived per row), so it never saw the head charge.
+    ['text','todo','file','link','board','image','heading'].forEach(t=>{
+      s.eq(t+' is charged no head height',
+        run(`_boardsMinCardH({type:'${t}'})-(_BOARDS_MIN_BODY_H['${t}']||48)`),0);
+    });
+    const anyHtml=run(`_boardCardHTML({id:'n1',type:'text',text:'x',x:0,y:0,w:200,h:120},true)`);
+    s.ok('the head is still in the DOM — it is the drag handle',/board-card-head/.test(anyHtml));
+    s.ok('the comment pin is outside it',/board-cmt-badge pin/.test(anyHtml));
+    s.ok('and the corner handle is emitted',/board-card-corner/.test(anyHtml));
+    const headOnly=(anyHtml.match(/<div class="board-card-head"[\s\S]*?<\/div>/)||[''])[0];
+    s.ok('nothing but the name, the lock and the ✕ live in the head',
+      !/board-cmt-|board-card-corner/.test(headOnly));
+
+    s.section('a to-do card has a title, and asks for one');
+    const td=(items,extra)=>run(`_boardCardHTML(Object.assign({id:'td',type:'todo',items:${JSON.stringify(items)},x:0,y:0,w:240,h:160},${JSON.stringify(extra||{})}),true)`);
+    s.ok('no title, no title row',!/board-todo-title/.test(td([{text:'a'}])));
+    s.ok('a title renders its own row',/board-tdtitle-td/.test(td([{text:'a'}],{title:'MILE STONE'})));
+    s.ok('two tasks is too early to ask',!/board-todo-ask/.test(td([{text:'a'},{text:'b'}])));
+    s.ok('three tasks and it asks',/Add a title to this list\?/.test(td([{text:'a'},{text:'b'},{text:'c'}])));
+    s.ok('answered once, never asked again',!/board-todo-ask/.test(td([{text:'a'},{text:'b'},{text:'c'}],{titleAsked:true})));
+    s.ok('and a card that already has one is not asked',!/board-todo-ask/.test(td([{text:'a'},{text:'b'},{text:'c'}],{title:''})));
+    // A to-do card is as tall as its list — found by smoke-layout on this
+    // round's first run, with the add row and the prompt drawn outside it.
+    const tdh=(o)=>run(`_boardsMinCardH(Object.assign({type:'todo'},${JSON.stringify(o)}))`);
+    s.ok('a longer list makes a taller card',tdh({items:[{},{},{},{},{}]})>tdh({items:[{}]}));
+    s.eq('the title row is charged',tdh({items:[{},{}],title:'x'})-tdh({items:[{},{}]}),run(`_BOARDS_CHROME_H.todoTitle`));
+    s.eq('and so is the prompt',tdh({items:[{},{},{}]})-tdh({items:[{},{},{}],titleAsked:true}),run(`_BOARDS_CHROME_H.todoAsk`));
+    s.eq('a 40-task list is capped, not a 1,100px card',
+      tdh({items:new Array(40).fill({})}),tdh({items:new Array(12).fill({})}));
+    s.ok('and an empty list keeps the floor',tdh({items:[]})>=run(`_BOARDS_MIN_BODY_H.todo`));
+
+    s.section('tasks nest, and only one level at a time');
+    run(`_editCards=[{id:'td',type:'todo',items:[{text:'a'},{text:'b'},{text:'c'}],x:0,y:0,w:240,h:200}]`);
+    s.ok('the first task can never be indented',!run(`_boardsTodoCanIndent(_editCards[0],0)`));
+    s.ok('the second can',run(`_boardsTodoCanIndent(_editCards[0],1)`));
+    s.ok('nothing at depth 0 can be outdented',!run(`_boardsTodoCanOutdent(_editCards[0],1)`));
+    run(`window.boardsTodoIndent('td',1,1)`);
+    s.eq('one level deeper',run(`_boardsTodoDepth(_editCards[0].items[1])`),1);
+    s.ok('and not two in a row',!run(`_boardsTodoCanIndent(_editCards[0],1)`));
+    s.ok('but the one under it can follow',run(`_boardsTodoCanIndent(_editCards[0],2)`));
+    run(`window.boardsTodoIndent('td',1,-1)`);
+    s.eq('outdent clears the field rather than storing a zero',run(`String(_editCards[0].items[1].depth)`),'undefined');
+    s.eq('depth is clamped however it was stored',run(`_boardsTodoDepth({depth:99})`),run(`_BOARDS_TODO_MAX_DEPTH`));
+    s.eq('and junk reads as no depth',run(`_boardsTodoDepth({depth:'x'})`),0);
+
+    s.section('a task carries a due date and a person');
+    s.eq('a real date is kept',run(`_boardsTodoValidDue('2026-09-25')`),'2026-09-25');
+    s.eq('anything else is dropped',run(`String(_boardsTodoValidDue('next tuesday'))`),'null');
+    s.eq('today reads as Today',run(`_boardsDueLabel(_boardsTodayStr())`),'Today');
+    s.ok('an overdue task is flagged',/board-todo-due over/.test(run(`_boardsTodoMetaHTML({due:'2020-01-01'})`)));
+    s.ok('a ticked one is not',!/over/.test(run(`_boardsTodoMetaHTML({due:'2020-01-01',done:true})`)));
+    s.ok('an assignee shows initials, escaped',/board-todo-who/.test(run(`_boardsTodoMetaHTML({who:'Ammar Shah'})`)));
+    s.ok('and no meta at all when there is none',run(`_boardsTodoMetaHTML({text:'x'})`)==='');
+
+    s.section('the rail follows FOCUS, not just the selection');
+    run(`_editCards=[{id:'td',type:'todo',title:'T',items:[{text:'a'},{text:'b'}],x:0,y:0,w:240,h:200}];
+      _boardsSelection=new Set(['td']);_boardsIsPhone=()=>false;`);
+    run(`_boardsEditingEl={id:'board-todo-td-1'}`);
+    s.eq('a focused TASK gets the long rail',run(`_boardsRailItems().map(i=>i.act).join(',')`),
+      'deselect,color-panel,labels,reactions,card-comment,todo:title,todo:due,todo:assign,todo:indent,todo:outdent');
+    s.ok('outdent is greyed on a task at depth 0',run(`_boardsRailItems().find(i=>i.act==='todo:outdent').off===true`));
+    run(`_boardsEditingEl={id:'board-tdtitle-td'}`);
+    s.eq('a focused TITLE gets the short one',run(`_boardsRailItems().map(i=>i.act).join(',')`),
+      'deselect,color-panel,todo:title,more');
+    run(`_boardsEditingEl=null`);
+    s.ok('and with nothing focused it is the ordinary selection rail',
+      /rename/.test(run(`_boardsRailItems().map(i=>i.act).join(',')`)));
+    s.ok('which still offers Title',/todo:title/.test(run(`_boardsRailItems().map(i=>i.act).join(',')`)));
+    s.eq('a card id with a dash in it still resolves',
+      run(`(function(){_boardsEditingEl={id:'board-todo-a-b-c-3'};var f=_boardsTodoFocus();return f.id+'|'+f.i+'|'+f.what;})()`),'a-b-c|3|item');
+    run(`_boardsEditingEl=null`);
+
+    s.section('a link card is born as ONE field');
+    run(`_editCards=[{id:'lk',type:'link',x:0,y:0,w:340,h:120}];_boardsSelection=new Set(['lk']);`);
+    const lk=()=>run(`_boardCardHTML(_editCards[0],true)`);
+    s.ok('one field, not three',/board-link-new/.test(lk())&&!/board-link-edit/.test(lk()));
+    // Text that is not a URL is KEPT as the title, with the failure said in
+    // the card — Milanote's own behaviour with "ASHI".
+    run(`window.boardsLinkNewCommit('lk','ASHI')`);
+    s.eq('junk becomes the title',run(`_editCards[0].linkTitle`),'ASHI');
+    s.eq('and no URL is invented',run(`String(_editCards[0].linkUrl)`),'undefined');
+    s.ok('the failure is said inside the card',/board-link-err/.test(lk()));
+    s.ok('and the card is the preview shape now, not the field',!/board-link-new/.test(lk()));
+    s.ok('the description is editable, with Milanote\'s placeholder',
+      /data-placeholder="Add a description"/.test(lk()));
+    run(`_editCards=[{id:'lk2',type:'link',x:0,y:0,w:340,h:120}];_boardsLinkHydrate=()=>{__hydrated=true};__hydrated=false;`);
+    run(`window.boardsLinkNewCommit('lk2','https://example.test/a')`);
+    s.eq('a real URL is taken',run(`_editCards[0].linkUrl`),'https://example.test/a');
+    s.eq('the host seeds the title',run(`_editCards[0].linkTitle`),'example.test');
+    s.ok('and the fetch is started once',run(`__hydrated`));
+    s.ok('a javascript: URL is never taken as one',
+      run(`(function(){_editCards=[{id:'lk3',type:'link',x:0,y:0,w:340,h:120}];
+        window.boardsLinkNewCommit('lk3','javascript:alert(1)');
+        return String(_editCards[0].linkUrl)==='undefined'&&_editCards[0].linkTitle==='javascript:alert(1)';})()`));
+
+    s.section('turning a link into an image keeps the page');
+    run(`_editCards=[{id:'li',type:'link',linkUrl:'https://www.pinterest.com/pin/1/',linkTitle:'Pin',
+      linkImage:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:340,h:300}];
+      _boardsSelection=new Set(['li']);`);
+    run(`window.boardsLinkToImage('li')`);
+    s.eq('it is an image card now',run(`_editCards[0].type`),'image');
+    s.eq('carrying the picture',run(`_editCards[0].imageUrl`),'https://res.cloudinary.com/x/image/upload/v1/a.jpg');
+    s.eq('and the page it came from',run(`_editCards[0].sourceUrl`),'https://www.pinterest.com/pin/1/');
+    const srcHtml=run(`_boardCardHTML(_editCards[0],true)`);
+    s.ok('which is drawn as "From pinterest.com"',/board-card-source/.test(srcHtml)&&/pinterest\.com/.test(srcHtml));
+    s.eq('the source line is charged to the card',
+      run(`_boardsMinCardH({type:'image',imageUrl:'x',sourceUrl:'https://a.test/'})-_boardsMinCardH({type:'image',imageUrl:'x'})`),
+      run(`_BOARDS_CHROME_H.caption`));
+    s.ok('a javascript: source renders as plain text, never an href',
+      !/href/.test(run(`_boardCardHTML({id:'s2',type:'image',imageUrl:'x',sourceUrl:'javascript:alert(1)',x:0,y:0,w:200,h:200},true)`).match(/board-card-source[\s\S]*?<\/div>/)[0]));
+
+    s.section('the crop toggle, and Milanote\'s image menu order');
+    run(`_editCards=[{id:'im',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/a.jpg',x:0,y:0,w:240,h:300}];
+      _boardsSelection=new Set(['im']);`);
+    s.ok('cropped by default — nothing stored',/object-fit:cover/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    run(`window.boardsImgCrop('im')`);
+    s.eq('uncropped stores the exception only',run(`_editCards[0].fit`),'contain');
+    s.ok('and the picture is fitted whole',/object-fit:contain/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    run(`window.boardsImgCrop('im')`);
+    s.eq('cropping again clears it',run(`String(_editCards[0].fit)`),'undefined');
+    const imgMenu2=run(`_boardsCardCtxItems(true).map(i=>i.act).filter(Boolean).join(',')`);
+    s.ok('Download original, Replace, Crop — Milanote\'s order',
+      /download,replace,imgcrop/.test(imgMenu2),imgMenu2);
+    s.ok('and the crop entry carries its tick',
+      run(`_boardsCardCtxItems(true).find(i=>i.act==='imgcrop').hint`)==='✓');
+
+    s.section('the colour panel drops its tabs where there is no paper');
+    s.ok('a note has paper',run(`_boardsCardHasPaper({type:'text'})`));
+    s.ok('an image does not',!run(`_boardsCardHasPaper({type:'image'})`));
+    s.ok('nor a file',!run(`_boardsCardHasPaper({type:'file'})`));
+    s.ok('an image card\'s panel has no tabs',
+      !run(`JSON.stringify(_boardsColorPanelItems())`).includes('colortab:'));
+    s.ok('and it is the STRIP palette, never the background one',
+      run(`JSON.stringify(_boardsColorPanelItems())`).includes('swatches')&&
+      !run(`JSON.stringify(_boardsColorPanelItems())`).includes('bgSwatches'));
+    run(`_editCards=[{id:'n2',type:'text',text:'x',x:0,y:0,w:200,h:120}];_boardsSelection=new Set(['n2']);_boardsColorTab='bg';`);
+    s.ok('a note keeps both tabs',
+      run(`JSON.stringify(_boardsColorPanelItems())`).includes('colortab:strip'));
+    s.ok('and its paper presets',
+      run(`JSON.stringify(_boardsColorPanelItems())`).includes('themes'));
+
+    s.section('the labels panel is headed "Recently created"');
+    run(`_editCards=[{id:'c1',type:'text',text:'x',labels:[{t:'DONE',c:'green'}],x:0,y:0,w:200,h:120},
+                    {id:'c2',type:'text',text:'y',labels:[{t:'DONE',c:'green'}],x:0,y:0,w:200,h:120}];
+      _boardsSelection=new Set(['c1']);_boardsLabelRows=_boardsLabelRowsFor('c1','').rows;`);
+    s.eq('both cards carry it',run(`_boardsLabelCards('DONE').length`),2);
+    s.eq('and the match ignores case',run(`_boardsLabelCards('done').length`),2);
+    run(`globalThis.__prompt='SHIPPED';prompt=()=>__prompt;`);
+    run(`_boardsLabelAct('rename:0')`);
+    s.eq('renaming rewrites every card',
+      run(`_editCards.map(c=>c.labels[0].t).join(',')`),'SHIPPED,SHIPPED');
+    run(`_boardsLabelRows=_boardsLabelRowsFor('c1','').rows;confirm=()=>true;`);
+    run(`_boardsLabelAct('drop:0')`);
+    s.eq('and removing drops it from every card',
+      run(`_editCards.map(c=>c.labels.length).join(',')`),'0,0');
+
+    s.section('the dot grid is a placement cue, not the background');
+    s.ok('a helper flashes it',run(`typeof _boardsFlashGrid`)==='function');
+    s.ok('and placing a card asks for it',
+      /_boardsFlashGrid\(false\)/.test(run(`String(_boardsPlacementPoint)`)));
+
+    // ── The colour panel, like Milanote's (Sept 2026) ─────────────────────
+    s.section('the palette is Milanote\'s grid and every name has a token');
+    s.eq('none + eleven names in Milanote\'s order',run(`_BOARDS_COLORS.join(',')`),'none,grey,teal,green,tan,yellow,amber,red,pink,purple,sky,blue');
+    s.ok('every name maps to a token',run(`_BOARDS_COLORS.slice(1).every(n=>/^--/.test(_BOARDS_COLOR_TOKENS[n]||''))`));
+    s.eq('a name is a colour value',run(`_boardsColorValue('teal')`),'teal');
+    s.eq('a hex is a colour value, uppercased',run(`_boardsColorValue('#c8102e')`),'#C8102E');
+    s.eq('none is not',run(`String(_boardsColorValue('none'))`),'null');
+    s.eq('junk is not',run(`String(_boardsColorValue('red; background:url(x)'))`),'null');
+    s.eq('every preset names a paper and an ink on the palette',
+      run(`_BOARDS_CARD_THEMES.filter(t=>_BOARDS_COLORS.indexOf(t.bg)>0&&_BOARDS_COLORS.indexOf(t.ink)>0).length`),run(`_BOARDS_CARD_THEMES.length`));
+    s.eq('seven of them, as in the video',run(`_BOARDS_CARD_THEMES.length`),7);
+
+    s.section('paper, ink and a literal on the card');
+    boot();
+    run(`_boardsSetSelection(['n'])`);
+    run(`window.boardsSetTheme(0)`);
+    s.eq('a preset sets paper and ink',run(`_editCards[0].bg+'/'+_editCards[0].ink`),'tan/red');
+    s.ok('and paints both as classes',/bg-tan/.test(run(`_boardsCardColorClasses(_editCards[0])`))&&/ink-red/.test(run(`_boardsCardColorClasses(_editCards[0])`)));
+    s.eq('a name puts nothing in the style',run(`_boardsCardColorStyle(_editCards[0])`),'');
+    run(`window.boardsSetBg('sky')`);
+    s.eq('a plain paper pick keeps the paper',run(`_editCards[0].bg`),'sky');
+    s.ok('and clears the ink — red ink on red paper is what that avoids',run(`_editCards[0].ink===undefined`));
+    run(`window.boardsSetBg('#c8102e')`);
+    s.eq('a literal paper is stored validated',run(`_editCards[0].bg`),'#C8102E');
+    s.ok('painted as bg-custom, never as a class carrying the hex',/ bg-custom/.test(run(`_boardsCardColorClasses(_editCards[0])`))&&!/#C8102E/.test(run(`_boardsCardColorClasses(_editCards[0])`)));
+    s.eq('with the hex and a computed ink in custom properties only',run(`_boardsCardColorStyle(_editCards[0])`),'--card-bg:#C8102E;--card-ink:#FFFFFF;');
+    run(`window.boardsSetColor('#F1E3D4')`);
+    s.eq('a literal strip too, with a dark ink on a pale band',run(`_boardsCardColorStyle(_editCards[0])`),'--card-bg:#C8102E;--card-ink:#FFFFFF;--card-strip:#F1E3D4;--card-strip-ink:#111111;');
+    run(`_editCards[0].bg='url(javascript:1)';_editCards[0].color='<b>'`);
+    s.eq('garbage stored on a card paints nothing',run(`_boardsCardColorClasses(_editCards[0])+'|'+_boardsCardColorStyle(_editCards[0])`),'|');
+    run(`window.boardsSetBg('none')`);
+    s.ok('none removes the paper',run(`_editCards[0].bg===undefined`));
+
+    s.section('the rail tile reads a literal too');
+    run(`_editCards[0].bg='#C8102E';delete _editCards[0].color`);
+    s.eq('class',run(`_boardsColorTileClass(_editCards)`),'custom');
+    s.eq('style',run(`_boardsColorTileStyle(_editCards)`),'background:#C8102E');
+    run(`_editCards[0].bg='teal'`);
+    s.eq('a name is a class and no style',run(`_boardsColorTileClass(_editCards)+'|'+_boardsColorTileStyle(_editCards)`),'bg-teal|');
+
+    s.section('the panel: tabs with glyphs, the grid, the presets, custom');
+    run(`_boardsColorTab='bg';_boardsSetSelection(['n'])`);
+    const pb=JSON.parse(run(`JSON.stringify(_boardsColorPanelItems())`));
+    s.eq('two tabs with glyphs',pb[0].tabs.map(t=>t.glyph).join(','),'bg,strip');
+    s.ok('the background grid, then the presets',pb[1].bgSwatches===true&&pb[1].grid===true&&pb[3].themes===true);
+    s.ok('and Custom colour… last, for the background',pb[pb.length-1].custom===true&&pb[pb.length-1].prop==='bg');
+    s.ok('no "from this board" row without pictures (the harness has none)',!pb.some(i=>i.ownSwatches));
+    run(`_boardsColorTab='strip'`);
+    const ps=JSON.parse(run(`JSON.stringify(_boardsColorPanelItems())`));
+    s.ok('the strip tab has no presets — a preset is paper plus ink',!ps.some(i=>i.themes)&&ps[1].swatches===true);
+    s.eq('its custom entry targets the strip',ps[ps.length-1].prop,'strip');
+    const html=run(`_boardsColorTab='bg';_boardsCtxHTML(_boardsColorPanelItems())`);
+    s.ok('the tabs draw their glyphs',/board-ctx-tabg-bg/.test(html)&&/board-ctx-tabg-strip/.test(html));
+    s.eq('twelve tiles in the grid',(html.match(/data-act="bg:/g)||[]).length,12);
+    s.eq('seven A tiles',(html.match(/data-act="theme:/g)||[]).length,7);
+    s.ok('each A tile paints with the card\'s own classes',/board-theme-sw bg-tan ink-red/.test(html));
+    s.ok('the current preset is ringed',/bg-tan ink-red on"/.test(run(`_editCards[0].bg='tan';_editCards[0].ink='red';_boardsCtxHTML(_boardsColorPanelItems())`)));
+
+    s.section('the router validates a literal on the way back');
+    run(`_editCards[0].bg='grey';delete _editCards[0].ink`);
+    run(`_boardsCtxRun('bghex:#0f766e')`);
+    s.eq('a good hex lands',run(`_editCards[0].bg`),'#0F766E');
+    run(`_boardsCtxRun('bghex:javascript:alert(1)')`);
+    s.ok('a bad one clears rather than passes through',run(`_editCards[0].bg===undefined`));
+    run(`_boardsCtxRun('theme:3')`);
+    s.eq('theme:<i> applies the preset',run(`_editCards[0].bg+'/'+_editCards[0].ink`),'teal/red');
+    run(`_boardsCtxRun('striphex:#C8102E')`);
+    s.eq('striphex sets the strip',run(`_editCards[0].color`),'#C8102E');
+
+    s.section('colours from this board are picked from pixels, deduped, capped');
+    const pix=run(`(function(){
+      const px=[];const put=(r,g,b,n)=>{for(let i=0;i<n;i++)px.push(r,g,b,255);};
+      put(200,16,46,50);put(202,18,44,30);put(15,118,110,20);put(240,240,240,10);put(0,0,0,5);put(10,10,10,4);
+      for(let i=0;i<9;i++)put(20*i+40,120,60,3);
+      const acc=_boardsPaletteAccumulate(px,{});
+      return _boardsPalettePick(acc,8).join(',');})()`);
+    s.ok('the dominant colour leads',/^#C[89]1[0-2][2-3][A-F0-9]/.test(pix),pix);
+    s.ok('a near twin is folded into it',!/#CA122C/.test(pix),pix);
+    s.ok('never more than eight',pix.split(',').length<=8,pix);
+    s.ok('transparent pixels are ignored',run(`_boardsPalettePick(_boardsPaletteAccumulate([255,0,0,10],{}),8).length`)===0);
+    s.eq('no pictures in the DOM → no row, no throw',run(`_boardsBoardPalette().length`),0);
+
+    s.section('the desktop ⋯ opens as a popover beside the button');
+    run(`_boardsSheetAnchorRect=function(a){return a&&a.act==='more'?{left:20,top:300,right:112,bottom:374,width:92,height:74}:null;}`);
+    run(`_boardsOpenCtx=function(x,y,items){globalThis.__ctxAt={x:x,y:y,n:items.length};}`);
+    run(`window.boardsOpenMore()`);
+    s.eq('to the right of the rail, top-aligned with the button',run(`JSON.stringify(__ctxAt)`).replace(/"n":\d+/,'"n":N'),'{"x":122,"y":300,"n":N}');
+    s.ok('carrying the ⋯ list, not the whole right-click one',run(`__ctxAt.n`)===run(`_boardsMoreItems(true).length`));
+
+    s.section('Lock position');
+    boot();
+    run(`_boardsSetSelection(['n'])`);
+    state.toasts.length=0;
+    run(`window.boardsToggleLock()`);
+    s.ok('the card is locked',run(`_editCards[0].locked===true`));
+    s.ok('and the toast says where the unlock lives',/⋯/.test(state.toasts.join(' ')),state.toasts.join(' | '));
+    s.eq('the menu now offers Unlock position',run(`_boardsMoreItems(true).find(i=>i.act==='lock').label`),'Unlock position');
+    s.ok('the header carries a padlock, not a word',/board-card-lock/.test(run(`_boardCardHTML(_editCards[0],true)`))&&!/· Locked/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    // The header keeps its drag handler — the HANDLER refuses, with the
+    // reason — but the delete ✕ and the resize grip are gone, as before.
+    s.ok('and no delete ✕ or resize grip',!/board-card-del|board-resize-handle/.test(run(`_boardCardHTML(_editCards[0],true)`)));
+    state.toasts.length=0;
+    const before=run(`_editCards[0].x+','+_editCards[0].y`);
+    run(`window.boardsCardDragStart({clientX:0,clientY:0,button:0,pointerId:1,target:{setPointerCapture(){}},preventDefault(){},stopPropagation(){}},'n')`);
+    s.ok('a refused move names the ⋯ menu',/⋯ menu to move it/.test(state.toasts.join(' ')),state.toasts.join(' | '));
+    s.eq('the card did not move',run(`_editCards[0].x+','+_editCards[0].y`),before);
+    state.toasts.length=0;
+    run(`window.boardsToggleLock()`);
+    s.ok('unlocked again',run(`!_editCards[0].locked`));
+    s.ok('said out loud',/unlocked/i.test(state.toasts.join(' ')));
+    s.ok('and the padlock is gone',!/board-card-lock/.test(run(`_boardCardHTML(_editCards[0],true)`)));
   }
 
   // ── Trash: deleted cards go somewhere, and Ctrl+Z still works ─────────
@@ -3430,6 +4638,739 @@ module.exports=function(){
     s.eq('any other key is left alone',run(`__stopped`),1);
   }
 
+  /* ── DRAGGING ANYTHING INTO UNSORTED (Sept 2026) ──────────────────────
+     Afnan: "when inside a board you can drag anything link file image
+     collum etc and save it in unsorted so the board remains clean."
+
+     The half worth testing hardest is not the gesture — it is what a
+     stashed card KEEPS. The old tray item was a hand-mapped summary, so
+     a to-do or a table came back as an empty note. */
+  {
+    const app=loadApp({files:FILES,globals:{requestAnimationFrame:()=>0}});
+    const {run,state}=app;
+    const boot=(extra)=>run(`
+      _editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
+      moodBoards=[{id:'b1',ownerUid:'u1',visibility:'shared',title:'T',cards:[]}];
+      _editCards=[];_editConnectors=[];_editUnsorted=[];_boardsSelection=new Set();
+      _boardsUndo=[];_boardsRedo=[];_boardsTrayOpen=false;
+      `+(extra||''));
+    const back=(i,x,y)=>run(`JSON.stringify(_boardsCardsFromTrayItem(_editUnsorted[${i||0}],{x:${x||0},y:${y||0}}))`);
+
+    s.section('a stashed card keeps everything it was');
+    boot(`_editCards=[{id:'t1',type:'todo',x:10,y:20,w:240,h:170,title:'Cutting',
+      items:[{t:'trace',done:true},{t:'bundle',depth:1}]}];`);
+    run(`window.boardsTrayStashCards(['t1'])`);
+    s.eq('it left the board',run(`_editCards.length`),0);
+    s.eq('and there is one row in Unsorted',run(`_editUnsorted.length`),1);
+    // The bug this replaces: a to-do has no c.text, so the old mapping
+    // wrote {kind:'text',text:''} and the card came back EMPTY.
+    const todo=JSON.parse(back(0,500,500));
+    s.eq('it comes back a to-do, not a note',(todo.cards[0]||{}).type,'todo');
+    const ti=(todo.cards[0]||{}).items||[];
+    s.eq('with its tasks',ti.map(i=>i.t).join('+'),'trace+bundle');
+    s.ok('and their state',!!(ti[0]&&ti[0].done===true&&ti[1]&&ti[1].depth===1));
+    s.eq('centred on the drop point',(todo.cards[0]||{}).x+','+(todo.cards[0]||{}).y,'380,415');
+
+    /* A table's `rows` is an array of arrays and FIRESTORE REFUSES THOSE
+       OUTRIGHT — the bug that meant table content never persisted at all.
+       `unsorted` is saved on the board document exactly like `cards`, so
+       a stashed table is the same shape in the same place. The assertion
+       is the RULE, not the field: nothing a save produces may nest an
+       array inside an array. */
+    s.section('a stashed table cannot nest an array in an array');
+    boot(`_editCards=[{id:'tb',type:'table',x:0,y:0,w:360,h:200,head:true,
+      rows:[['Size','Qty'],['M','40']]}];`);
+    run(`window.boardsTrayStashCards(['tb'])`);
+    const nested=run(`(function(){
+      let bad=0;
+      const walk=v=>{
+        if(!Array.isArray(v))return v&&typeof v==='object'?Object.keys(v).forEach(k=>walk(v[k])):0;
+        v.forEach(x=>{if(Array.isArray(x))bad++;walk(x);});
+      };
+      walk(_boardsUnsortedForSave());
+      return bad;})()`);
+    s.eq('no array directly inside an array',nested,0);
+    const tbl=JSON.parse(back(0,0,0));
+    s.eq('and it decodes back to real rows',JSON.stringify((tbl.cards[0]||{}).rows),'[["Size","Qty"],["M","40"]]');
+    s.eq('the row says TABLE, not NOTE',
+      (run(`_boardsTrayItemHTML(_editUnsorted[0],0,true)`).match(/thumb-empty">([^<]*)/)||[])[1],'TABLE');
+
+    /* "collum etc" is the whole point: a column parked without its
+       children is an empty box, and children left behind are loose cards
+       that used to be organised. */
+    s.section('a column goes as ONE row, children and all');
+    boot(`_editCards=[
+      {id:'col',type:'column',x:100,y:100,w:280,h:400,title:'Fabric'},
+      {id:'a',type:'text',text:'one',columnId:'col',x:112,y:175,w:256,h:100},
+      {id:'b',type:'text',text:'two',columnId:'col',x:112,y:285,w:256,h:100},
+      {id:'free',type:'text',text:'loose',x:700,y:100,w:170,h:100}];
+      _editConnectors=[{id:'k1',from:'a',to:'b',arrow:true},{id:'k2',from:'b',to:'free',arrow:true}];`);
+    // Only the column is asked for — expansion happens inside the stash,
+    // so the menu (one id) and the drag (an expanded group) agree.
+    run(`window.boardsTrayStashCards(['col'])`);
+    s.eq('one row, not three',run(`_editUnsorted.length`),1);
+    s.eq('carrying three cards',run(`((_editUnsorted[0]||{}).cards||[]).length`),3);
+    s.eq('the loose card stayed',run(`_editCards.map(c=>c.id).join()`),'free');
+    s.eq('the row names the column and counts them',run(`_boardsTrayLabel(_editUnsorted[0])`),'Fabric · 2 cards');
+    // Both ends going → the line rides along. One end left behind has
+    // nothing to come back to — the trash's rule.
+    s.eq('the internal line rode along',run(`((_editUnsorted[0]||{}).conns||[]).map(c=>c.id).join()`),'k1');
+    s.eq('and the one reaching outside did not',run(`_editConnectors.length`),0);
+    const col=JSON.parse(back(0,1000,1000));
+    s.eq('it comes back a column with both children',
+      (col.cards||[]).map(c=>c.type).join(),'column,text,text');
+    s.ok('the children still point at it',
+      (col.cards||[]).length>1&&col.cards.slice(1).every(c=>c.columnId===col.cards[0].id));
+    s.eq('in the order they were in',(col.cards||[]).slice(1).map(c=>c.text).join(),'one,two');
+    s.eq('and the line came back too',(col.conns||[]).length,1);
+    const cc=col.cards||[],k0=(col.conns||[])[0]||{};
+    s.ok('remapped through the same ids',
+      !!(cc[1]&&cc[2]&&k0.from===cc[1].id&&k0.to===cc[2].id));
+    // Relative geometry: the group lands in the shape it left in.
+    s.eq('the children keep their offsets from the column',
+      cc.length>2?(cc[1].y-cc[0].y)+','+(cc[2].y-cc[0].y):'(only '+cc.length+' cards)','75,185');
+
+    s.section('a frame takes whatever is sitting inside it');
+    boot(`_editCards=[
+      {id:'f',type:'frame',x:0,y:0,w:400,h:400,title:'Denim'},
+      {id:'in',type:'text',text:'inside',x:50,y:50,w:100,h:100},
+      {id:'out',type:'text',text:'outside',x:900,y:50,w:100,h:100}];`);
+    run(`window.boardsTrayStashCards(['f'])`);
+    s.eq('one row',run(`_editUnsorted.length`),1);
+    s.eq('with the frame and its card',run(`((_editUnsorted[0]||{}).cards||[]).map(c=>c.id).join()`),'f,in');
+    s.eq('the card outside stayed',run(`_editCards.map(c=>c.id).join()`),'out');
+
+    s.section('several loose cards are several rows');
+    boot(`_editCards=[{id:'p',type:'text',text:'a',x:0,y:0,w:170,h:100},
+      {id:'q',type:'text',text:'b',x:200,y:0,w:170,h:100},
+      {id:'r',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:400,y:0,w:170,h:120}];`);
+    run(`window.boardsTrayStashCards(['p','q','r'])`);
+    s.eq('three rows you can bring back one at a time',run(`_editUnsorted.length`),3);
+    s.eq('the picture row still shows its picture',run(`(_editUnsorted[2]||{}).kind`),'image');
+    s.ok('through the thumbnail, not a badge',
+      /board-tray-thumb" src=/.test(run(`_boardsTrayItemHTML(_editUnsorted[2],2,true)`)));
+
+    /* A card's comments live at mood_boards/{board}/comments keyed by card
+       id, so a card that goes to Unsorted and comes back must keep its
+       thread. An id already taken is remapped, and columnId and the
+       connectors go through the same map. */
+    s.section('ids are kept where they are free, remapped where they are not');
+    boot(`_editCards=[{id:'keepme',type:'text',text:'x',x:0,y:0,w:170,h:100}];`);
+    run(`window.boardsTrayStashCards(['keepme'])`);
+    s.eq('a free id comes back unchanged',(JSON.parse(back(0,0,0)).cards[0]||{}).id,'keepme');
+    run(`_editCards=[{id:'keepme',type:'text',text:'other',x:0,y:0,w:170,h:100}]`);
+    const clash=JSON.parse(back(0,0,0));
+    s.ok('a taken id is remapped instead of colliding',(clash.cards[0]||{}).id!=='keepme');
+    s.ok('and it is a real card id',/^c\d+_/.test((clash.cards[0]||{}).id||''));
+
+    s.section('what is NOT stashable, and it is refused whole');
+    boot(`_editCards=[{id:'bl',type:'board',boardId:'B',x:0,y:0,w:340,h:136},
+      {id:'n',type:'text',text:'n',x:400,y:0,w:170,h:100}];
+      _boardsSelection=new Set(['bl','n']);`);
+    s.ok('a board link is not a drop target',run(`_boardsStashDrag([{type:'board',boardId:'B'}])===false`));
+    s.ok('nor is a group holding one',
+      run(`_boardsStashDrag([{type:'text'},{type:'board',boardId:'B'}])===false`));
+    s.ok('an ordinary group is',run(`_boardsStashDrag([{type:'text'},{type:'column'}])===true`));
+    s.ok('the menu agrees with the gesture',
+      !/stash/.test(run(`JSON.stringify(_boardsCardCtxItems(true).map(i=>i.act||''))`)));
+    // HOME has no Unsorted, so an item pushed there would be saved on the
+    // document and reachable from nowhere. This used to be offered.
+    run(`_editBoard.isHome=true;_boardsSelection=new Set(['n'])`);
+    s.ok('and Home offers it at all',
+      !/stash/.test(run(`JSON.stringify(_boardsCardCtxItems(true).map(i=>i.act||''))`)));
+    s.eq('nor does the call do anything there',run(`window.boardsTrayStashCards(['n'])`),0);
+    s.eq('nothing was collected',run(`_editUnsorted.length`),0);
+    s.ok('and the gesture is off on Home and on a phone',
+      run(`_boardsStashDrag([{type:'text'}])===false`));
+
+    s.section('a locked card is kept on the board, and counted');
+    boot(`_editCards=[
+      {id:'col',type:'column',x:0,y:0,w:280,h:400,title:'Fabric'},
+      {id:'a',type:'text',text:'one',columnId:'col',x:12,y:75,w:256,h:100},
+      {id:'b',type:'text',text:'two',columnId:'col',x:12,y:185,w:256,h:100,locked:true}];`);
+    run(`window.boardsTrayStashCards(['col'])`);
+    s.eq('the locked one stayed',run(`_editCards.map(c=>c.id).join()`),'b');
+    s.ok('and the toast says so rather than dropping it silently',
+      /1 locked card kept on the board/.test(state.toasts.slice(-1)[0]),state.toasts.slice(-1)[0]);
+
+    s.section('collecting is never invisible, and it is undoable');
+    boot(`_editCards=[{id:'z',type:'text',text:'z',x:0,y:0,w:170,h:100}];
+      _editUnsorted=[{id:'old',kind:'text',text:'was here already'}];`);
+    s.ok('the tray starts shut',run(`_boardsTrayOpen===false`));
+    run(`window.boardsTrayStashCards(['z'])`);
+    s.ok('stashing opens it',run(`_boardsTrayOpen===true`));
+    s.eq('two rows now',run(`_editUnsorted.length`),2);
+    s.eq('one undo entry',run(`_boardsUndo.length`),1);
+    run(`window.boardsUndoAction()`);
+    s.eq('and undo puts the card back',run(`_editCards.length+':'+(_editCards[0]||{}).id`),'1:z');
+    /* THE HALF THAT MADE THE SNAPSHOT CHANGE NECESSARY. The undo snapshot
+       was cards and connectors only, so Ctrl+Z restored the card and left
+       the copy in Unsorted — the same card in two places, which is worse
+       than no undo at all. */
+    s.eq('and takes back only the row it added',run(`_editUnsorted.map(u=>u.id).join()`),'old');
+    /* The same widening closes one that was already there and had no
+       symptom anyone would report: the drag OUT of the tray pushes undo
+       too, and Ctrl+Z used to take the card off the board WITHOUT putting
+       the item back. The thing was simply gone. */
+    boot(`_editUnsorted=[{id:'u1',kind:'text',text:'collected'}];`);
+    run(`_boardsPushUndo();
+      _editCards.push(_boardsCardsFromTrayItem(_editUnsorted[0],{x:0,y:0}).cards[0]);
+      _editUnsorted=[]`);
+    run(`window.boardsUndoAction()`);
+    s.eq('undoing a drag OUT of the tray puts the item back',run(`_editUnsorted.length`),1);
+    s.eq('and takes the card off the board',run(`_editCards.length`),0);
+
+    /* The GESTURE, driven for real — boardsCardDragStart, a pointermove to
+       make it a drag rather than a click, then a pointerup over the tray.
+       Everything that decides the drop lives in that handler's closure, so
+       grepping the source proves nothing about what it does. */
+    s.section('the drag itself puts a card in Unsorted');
+    {
+      const app2=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        currentPage:'board-canvas',globals:{requestAnimationFrame:()=>0}});
+      const r2=x=>app2.run(x);
+      const setup=`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
+        moodBoards=[{id:'b1',ownerUid:'u1',visibility:'shared',title:'T',cards:[]}];
+        _editCards=[{id:'n1',type:'text',text:'keep me',x:40,y:60,w:170,h:100}];
+        _editConnectors=[];_editUnsorted=[];_boardsSelection=new Set(['n1']);
+        _boardsUndo=[];_boardsRedo=[];_boardsTrayOpen=true;_boardsSuppressClick=false;
+        // The open tray is the right-hand strip. The harness's default rect
+        // has no right/bottom, so it is given a real one.
+        document.getElementById('board-tray').getBoundingClientRect=
+          function(){return{left:800,right:1200,top:0,bottom:600};};`;
+      // Driven through the DOCUMENT listeners: the capture is deferred past
+      // the drag threshold, so the tracking is document-wide.
+      const fire=(x,y)=>{
+        const ev=t=>({type:t,clientX:x,clientY:y,pointerId:1,altKey:false,shiftKey:false});
+        (app2.state.listeners.pointermove||[]).slice().forEach(f=>f(ev('pointermove')));
+        (app2.state.listeners.pointerup||[]).slice().forEach(f=>f(ev('pointerup')));
+      };
+      const drag=(x,y)=>{
+        r2(`(function(){
+          const head=document.getElementById('drag-body');
+          window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
+            stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'n1');})()`);
+        fire(x,y);
+      };
+
+      r2(setup);
+      drag(900,300);                         // over the tray
+      s.eq('the card is off the board',r2(`_editCards.length`),0);
+      s.eq('and in Unsorted',r2(`_editUnsorted.length`),1);
+      s.eq('still itself',r2(`(((_editUnsorted[0]||{}).cards||[])[0]||{}).text||'(nothing collected)'`),'keep me');
+      // ONE entry: the drag's own is popped before boardsTrayStashCards
+      // pushes its own, or Ctrl+Z would put the card back where it was
+      // DROPPED and need a second press.
+      s.eq('one undo entry, not two',r2(`_boardsUndo.length`),1);
+      r2(`window.boardsUndoAction()`);
+      s.eq('undo brings it back',r2(`_editCards.length`),1);
+      s.eq('exactly where it started',r2(`_editCards[0].x+','+_editCards[0].y`),'40,60');
+      s.eq('and out of Unsorted',r2(`_editUnsorted.length`),0);
+
+      r2(setup);
+      drag(300,300);                         // over the canvas
+      s.eq('a drop on the canvas is an ordinary move',r2(`_editCards.length`),1);
+      s.eq('and collects nothing',r2(`_editUnsorted.length`),0);
+
+      // A board link dropped on the tray is a move like any other.
+      r2(setup+`_editCards=[{id:'k1',type:'board',boardId:'B',x:40,y:60,w:340,h:136}];
+        _boardsSelection=new Set(['k1']);`);
+      r2(`(function(){
+        const head=document.getElementById('drag-body2');
+        window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
+          stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'k1');})()`);
+      fire(900,300);
+      s.eq('a board link dropped on the tray stays on the board',r2(`_editCards.length`),1);
+      s.eq('and nothing was collected',r2(`_editUnsorted.length`),0);
+    }
+  }
+
+  /* ── THE HAND TOOL MOVES TO THE RAIL (Sept 2026) ─────────────────────
+     Afnan, with the View menu open and an arrow drawn to the foot of the
+     rail: *"i want this hand funtion to sit on side bar as it is used very
+     often"*. It was a row inside View — two clicks for a mode you flip
+     constantly, and no state visible until you opened the menu again. */
+  {
+    const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+      currentPage:'board-canvas'});
+    const {run}=app;
+    const boot=()=>run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+      moodBoards=[{id:'b1',ownerUid:'u1',visibility:'personal',title:'T',cards:[]}];
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();
+      _boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+      _boardsPanMode=false;_boardsLineMode=false;`);
+    const acts=()=>JSON.parse(run(`JSON.stringify(_boardsRailItems().filter(i=>i.act).map(i=>i.act))`));
+    const item=a=>JSON.parse(run(`JSON.stringify(_boardsRailItems().find(i=>i.act===${JSON.stringify(a)})||null)`));
+
+    s.section('Hand is on the rail, next to Fit');
+    boot();
+    const a=acts();
+    s.ok('the rail carries it',a.includes('pan'),a.join(','));
+    s.eq('directly after Fit — both change how you LOOK at the board',
+      a.slice(a.indexOf('fit'),a.indexOf('fit')+2).join(','),'fit,pan');
+    s.eq('and it is labelled',(item('pan')||{}).label,'Hand');
+    s.ok('with an icon of its own',!!(item('pan')||{}).icon);
+
+    /* A MODE NEEDS ITS STATE ON THE BUTTON. That is the whole reason the
+       menu row was a bad home: it only said "on" once you reopened it. */
+    s.section('the button says whether the mode is on');
+    s.eq('off by default',String((item('pan')||{}).on),'false');
+    run(`_boardsPanMode=true`);
+    s.eq('and on once it is',String((item('pan')||{}).on),'true');
+    s.ok('which the renderer paints as a class',
+      /class="rail-btn on[^"]*" data-act="pan"/.test(run(`(function(){
+        _boardsRenderRail();return document.getElementById('board-rail').innerHTML;})()`)),
+      'no .on class on the Hand button');
+    run(`_boardsPanMode=false`);
+
+    s.section('pressing it toggles the mode');
+    boot();
+    run(`_boardsCtxRun('pan')`);
+    s.ok('one press turns it on',run(`_boardsPanMode===true`));
+    run(`_boardsCtxRun('pan')`);
+    s.ok('and the next turns it off',run(`_boardsPanMode===false`));
+
+    /* ONE SURFACE, NOT TWO — the rule that merged the rail and the old
+       selection bar, and the same one that took Comment off the rail in
+       this round. A toggle in two places is two things to find and two
+       labels to keep in step. */
+    s.section('and it left the View menu');
+    boot();
+    const bar=run(`_renderBoardCanvasHTML()`);
+    s.ok('no Hand row in View',!/Hand \(drag to pan\)/.test(bar));
+    s.ok('boardsTogglePan is reached from the rail, not a menu button',
+      !/onclick="window\.boardsTogglePan\(\)"/.test(bar));
+    s.ok('View still carries the things it is for',
+      /Snap to grid/.test(bar)&&/Zoom to 100%/.test(bar)&&/Minimap/.test(bar));
+
+    /* THE SWAP, AND WHY IT WAS FORCED. Measured with
+       scratchpad/measure-rail-hand.js against the real stylesheet: a
+       13-tool rail is 871px in the large tier and 673px compact, and a
+       768px-tall laptop leaves about 631px of stage. Twelve fits, thirteen
+       does not — so Hand took a place rather than adding one, and the
+       place it took was the tool already sitting one click away on a
+       button you can always see. */
+    s.section('Comment went to the top bar, and nothing was lost');
+    boot();
+    s.eq('the rail is twelve tools, the measured capacity',acts().length,12);
+    s.ok('Comment is not one of them',!acts().includes('comment-board'));
+    s.ok('but the top bar still opens the same drawer',
+      /id="board-cmt-btn"[^>]*onclick="window\.boardsToggleDrawer\(\)"/.test(bar),
+      'no Comments button in the top bar');
+    s.ok('and that button shows whether the drawer is open',
+      /board-cmt-btn/.test(bar)&&/tool-btn\$\{_boardsDrawerOpen/.test(
+        require('fs').readFileSync(ROOT+'/js/boards.js','utf8')));
+
+    /* NOT ON A PHONE, and this is not an oversight. A touch drag already
+       pans unconditionally, so the toggle would be a control that changes
+       nothing there. Keeping it out of _BOARDS_RAIL_MAIN is what enforces
+       that by construction — everything in that list reaches the phone's
+       More sheet. */
+    s.section('a phone never sees it, because a touch drag already pans');
+    {
+      const ph=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        phone:true,currentPage:'board-canvas'});
+      ph.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+        _editCards=[];_editConnectors=[];_boardsSelection=new Set();
+        _boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;`);
+      const pacts=JSON.parse(ph.run(`JSON.stringify(_boardsRailItems().filter(i=>i.act).map(i=>i.act))`));
+      const pover=JSON.parse(ph.run(`JSON.stringify(_boardsRailPhoneOverflow().map(i=>i.act))`));
+      s.ok('not on the phone dock',!pacts.includes('pan'),pacts.join(','));
+      s.ok('nor behind its More sheet',!pover.includes('pan'),pover.join(','));
+      s.ok('it is not an add-tool, which is what keeps it off both',
+        !JSON.parse(ph.run(`JSON.stringify(_BOARDS_RAIL_MAIN.map(i=>i.act))`)).includes('pan'));
+      // The reason, asserted rather than left in a comment: touch is the
+      // FIRST term of wantPan, so it pans whatever the toggle says.
+      s.ok('a touch drag pans with the toggle off',
+        /const wantPan=\(e\.pointerType==='touch'\)\|\|/.test(
+          require('fs').readFileSync(ROOT+'/js/boards.js','utf8')));
+    }
+  }
+
+  /* ── THE UNSORTED TRAY: BIGGER, SORTED, AND NOT CROPPED (Sept 2026) ───
+     Afnan, with five items circled: *"make unsorted bigger for better drag
+     to drop movement + unsorted should have sort by category option in it
+     as well ( links ) ( images ) ( files ) ( etc. etc. ) + the preview of
+     unsorted should be logically well as well as the current model preview
+     is not right."*
+
+     The third one was a real bug: the thumbnail was `object-fit:cover` in a
+     fixed 84px box, so a full-length model reference rendered as the strip
+     across its middle — a pair of legs. That half is CSS and is held by
+     tests/smoke-layout.js; this suite holds the filter, and in particular
+     the one thing a filtered list can get catastrophically wrong. */
+  {
+    const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+      currentPage:'board-canvas'});
+    const {run}=app;
+    const ITEMS=`[
+      {id:'a',kind:'image',name:'Model REF 1',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg'},
+      {id:'b',kind:'link', linkUrl:'https://x.test/1',linkTitle:'x.test'},
+      {id:'c',kind:'file', fileName:'oil-wash.pdf',fileUrl:'https://res.cloudinary.com/x/image/upload/v1/o.pdf'},
+      {id:'d',kind:'image',name:'Model Ref 3',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/d.jpg'},
+      {id:'e',kind:'link', linkUrl:'https://y.test/2',linkTitle:'y.test'},
+      {id:'f',kind:'cards',name:'Fabric · 2 cards',cards:[{id:'k',type:'column',title:'Fabric'}]}
+    ]`;
+    const boot=(items)=>run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+      moodBoards=[{id:'b1',ownerUid:'u1',visibility:'shared',title:'T',cards:[]}];
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();
+      _editUnsorted=${items||ITEMS};_boardsTrayFilter='all';_boardsTrayOpen=true;`);
+
+    s.section('every item lands in exactly one bucket');
+    boot();
+    s.eq('an image',run(`_boardsTrayKind(_editUnsorted[0])`),'image');
+    s.eq('a link',run(`_boardsTrayKind(_editUnsorted[1])`),'link');
+    s.eq('a file',run(`_boardsTrayKind(_editUnsorted[2])`),'file');
+    s.eq('a stashed container',run(`_boardsTrayKind(_editUnsorted[5])`),'cards');
+    // A stashed IMAGE card carries kind:'image' beside its `cards`, and it
+    // is a picture — it belongs where somebody looking for one would go.
+    s.eq('a stashed image card files under Images, not Cards',
+      run(`_boardsTrayKind({kind:'image',imageUrl:'x',cards:[{id:'k',type:'image'}]})`),'image');
+    s.eq('and something written before the kinds settled still buckets',
+      run(`_boardsTrayKind({id:'z'})`),'text');
+
+    s.section('the chips are derived from what is actually there');
+    boot();
+    s.eq('only the kinds present, with counts',
+      run(`JSON.stringify(_boardsTrayCats().map(c=>c.k+':'+c.n))`),
+      '["image:2","link:2","file:1","cards:1"]');
+    s.ok('no chip for a category holding nothing',
+      !JSON.parse(run(`JSON.stringify(_boardsTrayCats().map(c=>c.k))`)).includes('text'));
+    const chips=run(`_boardsTrayCatsHTML()`);
+    s.ok('All comes first and counts everything',/All<span[^>]*>6</.test(chips),chips.slice(0,120));
+    s.ok('and the active one is marked',/board-tray-cat on[^"]*"[^>]*>All/.test(chips));
+    // One kind of thing needs no way to narrow it.
+    boot(`[{id:'a',kind:'image',imageUrl:'x'},{id:'b',kind:'image',imageUrl:'y'}]`);
+    s.eq('one kind → no chip row at all',run(`_boardsTrayCatsHTML()`),'');
+
+    /* ── THE INDEX IS THE WHOLE RISK ─────────────────────────────────────
+       boardsTrayDragStart, boardsTrayRemove and _boardsTrayHydrate all
+       address an item by its position in `_editUnsorted`. A filtered list
+       that renumbered its rows would drag out, delete and label a
+       DIFFERENT item than the one under the pointer — silently, and worse
+       the more you filter. */
+    s.section('a filtered row still points at its own item');
+    boot();
+    run(`_boardsTrayFilter='link'`);
+    s.eq('two rows',run(`_boardsTrayRows().length`),2);
+    s.eq('carrying their ORIGINAL indexes',
+      run(`JSON.stringify(_boardsTrayRows().map(r=>r.i))`),'[1,4]');
+    s.eq('which are the links',
+      run(`JSON.stringify(_boardsTrayRows().map(r=>_editUnsorted[r.i].id))`),'["b","e"]');
+    const html=run(`_boardsTrayListHTML(true)`);
+    const idx=(html.match(/boardsTrayDragStart\(event,(\d+)\)/g)||[]).join(',');
+    s.eq('and the markup hands those indexes to the drag',
+      idx,'boardsTrayDragStart(event,1),boardsTrayDragStart(event,4)');
+    s.ok('the remove button agrees',
+      /boardsTrayRemove\(1\)/.test(html)&&/boardsTrayRemove\(4\)/.test(html));
+    s.ok('the label ids agree too, so the hydrate fills the right rows',
+      /board-tray-l-1"/.test(html)&&/board-tray-l-4"/.test(html));
+
+    s.section('and the drag really brings out the item you grabbed');
+    {
+      const dr=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        currentPage:'board-canvas'});
+      const r=x=>dr.run(x);
+      r(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+        moodBoards=[{id:'b1',ownerUid:'u1',visibility:'shared',title:'T',cards:[]}];
+        _editCards=[];_editConnectors=[];_boardsSelection=new Set();
+        _editUnsorted=${ITEMS};_boardsTrayFilter='link';_boardsTrayOpen=true;
+        document.getElementById('board-stage').getBoundingClientRect=
+          function(){return{left:0,top:0,right:1200,bottom:800};};`);
+      // Row 0 of the FILTERED list is _editUnsorted[1] — the first link.
+      const i=JSON.parse(r(`JSON.stringify(_boardsTrayRows().map(x=>x.i))`))[0];
+      r(`(function(){
+        const host=document.getElementById('tray-row');
+        window.boardsTrayDragStart({currentTarget:host,clientX:0,clientY:0,pointerId:1,
+          stopPropagation(){}},${i});})()`);
+      const host=dr.run(`document.getElementById('tray-row')`);
+      const ev=(x,y)=>({clientX:x,clientY:y,pointerId:1});
+      dr.fire('tray-row','pointermove',ev(60,60));
+      dr.fire('tray-row','pointerup',ev(400,300));
+      s.eq('one card came out',r(`_editCards.length`),1);
+      s.eq('and it is the link that was under the pointer',
+        r(`(_editCards[0]||{}).linkUrl||'(none)'`),'https://x.test/1');
+      s.eq('which left the tray',r(`_editUnsorted.length`),5);
+      s.ok('the other link is untouched',r(`_editUnsorted.some(u=>u.id==='e')`));
+    }
+
+    /* Drag the last link out and the filter points at a category that no
+       longer exists. A panel showing nothing, with no chip left to press,
+       reads as broken. */
+    s.section('a filter with nothing behind it heals itself');
+    boot();
+    run(`_boardsTrayFilter='link'`);
+    s.eq('while the links are there it holds',run(`_boardsTrayFilterNow()`),'link');
+    run(`_editUnsorted=_editUnsorted.filter(u=>u.kind!=='link')`);
+    s.eq('once they are gone it reads as all',run(`_boardsTrayFilterNow()`),'all');
+    s.eq('so every remaining item is still shown',run(`_boardsTrayRows().length`),4);
+    s.eq('and nothing was written to make that true',run(`_boardsTrayFilter`),'link');
+
+    /* There is deliberately NO "nothing in this category" screen. The heal
+       above means a filter whose category has emptied simply IS "all", so
+       an empty filtered list is unreachable while the tray holds anything
+       — the first cut carried a branch for it and this assertion is what
+       proved that branch was dead code. */
+    s.section('so an empty filtered list cannot happen');
+    boot();
+    run(`_boardsTrayFilter='text'`);   // a category with nothing in it
+    const none=run(`_boardsTrayListHTML(true)`);
+    s.ok('it shows everything rather than an empty shelf',
+      (none.match(/board-tray-item/g)||[]).length===6,
+      (none.match(/board-tray-item/g)||[]).length+' rows');
+    s.ok('and says nothing about categories',!/category/i.test(none));
+    boot(`[]`);
+    const bare=run(`_boardsTrayListHTML(true)`);
+    s.ok('an empty tray explains what the tray is for',/Nothing here yet/.test(bare));
+    s.ok('and that is the only empty screen there is',
+      (bare.match(/board-tray-empty/g)||[]).length===1);
+  }
+
+  /* ── THE DRAG GHOST CARRIES THE ITEM'S OWN PICTURE (Sept 2026) ────────
+     Afnan: *"now make the drag ghost show the actual image"*. It was a
+     dark text chip, which said what KIND of thing was in flight but not
+     WHICH one — two model references a word apart in name produced an
+     identical chip — beside a tray whose whole point is that you know an
+     item by its picture. */
+  {
+    const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+      currentPage:'board-canvas'});
+    const {run}=app;
+    const IMG='https://res.cloudinary.com/x/image/upload/v1/model.jpg';
+    const ITEMS=`[
+      {id:'a',kind:'image',name:'Model REF 1',imageUrl:'${IMG}'},
+      {id:'b',kind:'link', linkUrl:'https://x.test/1',linkTitle:'x.test'},
+      {id:'c',kind:'link', linkUrl:'https://y.test/2',linkTitle:'y.test',linkImage:'https://res.cloudinary.com/x/image/upload/v1/og.png'},
+      {id:'d',kind:'file', fileName:'oil-wash.pdf',fileUrl:'https://res.cloudinary.com/x/image/upload/v1/o.pdf'},
+      {id:'e',kind:'file', fileName:'notes.docx',fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/n.docx'},
+      {id:'f',kind:'cards',name:'Fabric',cards:[{id:'k',type:'column',title:'Fabric'}]},
+      {id:'g',kind:'text',text:'a loose thought'}
+    ]`;
+    const boot=()=>run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+      moodBoards=[{id:'b1',ownerUid:'u1',visibility:'shared',title:'T',cards:[]}];
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();
+      _editUnsorted=${ITEMS};_boardsTrayFilter='all';_boardsTrayOpen=true;`);
+
+    s.section('one decision about what picture stands for an item');
+    boot();
+    const face=i=>JSON.parse(run(`JSON.stringify(_boardsTrayFace(_editUnsorted[${i}])||{})`));
+    s.ok('a photo is its own picture',!!face(0).src,JSON.stringify(face(0)));
+    s.ok('and it is fetched with CORS, like every other board image',face(0).cors===true);
+    s.eq('a link with no preview is a word',face(1).src||'(none)','(none)');
+    s.eq('which says what it is',face(1).badge,'LINK');
+    s.ok('a link WITH a preview is that picture',!!face(2).src,JSON.stringify(face(2)));
+    s.ok('a PDF is its page-1 render',/\.(jpg|png)|f_/.test(face(3).src||''),face(3).src||'(none)');
+    s.eq('and falls back to the extension',face(3).badge,'PDF');
+    s.eq('a file that cannot be rasterised is just the extension',face(4).src||'(none)','(none)');
+    s.eq('a stashed container says which type',face(5).badge,'COLUMN');
+    s.eq('a note is a note',face(6).badge,'NOTE');
+    // Every item has SOMETHING to show — a ghost with neither picture nor
+    // word would fly as an empty box.
+    s.ok('nothing is ever faceless',
+      JSON.parse(run(`JSON.stringify(_editUnsorted.map(u=>!!(_boardsTrayFace(u).src||_boardsTrayFace(u).badge)))`))
+        .every(Boolean));
+    s.ok('and neither is a missing item',!!run(`(_boardsTrayFace(null)||{}).badge`));
+
+    /* The anti-drift assertion, and the reason the helper exists at all:
+       the ROW and the GHOST must resolve to the same url. They were two
+       copies of the branch for about an hour. */
+    s.section('the row draws exactly the picture the ghost will carry');
+    boot();
+    const rowHtml=run(`_boardsTrayListHTML(true)`);
+    [0,2,3].forEach(i=>{
+      const f=face(i);
+      s.ok('item '+i+' — the row uses the face url',
+        rowHtml.indexOf(f.src)>=0,f.src);
+    });
+    // Pinned to the 400 bucket on BOTH sides, so the ghost paints from
+    // cache instead of flying blank while a second size downloads.
+    s.eq('and it is the same bucket, not a second request',
+      run(`_boardsTrayFace(_editUnsorted[0]).src`),
+      run(`_boardsDisplayUrl(_editUnsorted[0].imageUrl,400)`));
+
+    s.section('so the ghost really is the picture');
+    boot();
+    const ghostOf=(i)=>{
+      run(`document.getElementById('board-stage').getBoundingClientRect=
+        function(){return{left:0,top:0,right:1200,bottom:800};};`);
+      run(`(function(){const h=document.getElementById('tray-row');
+        window.boardsTrayDragStart({currentTarget:h,clientX:0,clientY:0,pointerId:1,
+          stopPropagation(){}},${i});})()`);
+      app.fire('tray-row','pointermove',{clientX:80,clientY:80,pointerId:1});
+      return (app.state.body||[]).filter(n=>n&&n.className==='board-tray-ghost').pop();
+    };
+    const drop=()=>app.fire('tray-row','pointerup',{clientX:-500,clientY:-500,pointerId:1});
+
+    const g0=ghostOf(0);
+    s.ok('a ghost was built at all',!!g0);
+    const pic0=g0&&(g0.children||[]).find(c=>c.className==='board-tray-ghost-pic');
+    const img0=pic0&&(pic0.children||[]).find(c=>c.tagName==='IMG');
+    s.ok('it holds a real <img>',!!img0,JSON.stringify((pic0||{}).children||[]));
+    s.eq('carrying the face url',img0&&img0.src,run(`_boardsTrayFace(_editUnsorted[0]).src`));
+    s.eq('with CORS set, so the export can still read it',img0&&img0.crossOrigin,'anonymous');
+    s.ok('it is not draggable, or the native drag would fight the pointer one',
+      img0&&img0.draggable===false);
+    const lab0=g0&&(g0.children||[]).find(c=>c.className==='board-tray-ghost-label');
+    s.eq('and it still says which one it is',lab0&&lab0.textContent,'Model REF 1');
+    drop();
+
+    // An item with no picture gets the word instead — never an empty box.
+    const g5=ghostOf(5);
+    const pic5=g5&&(g5.children||[]).find(c=>c.className==='board-tray-ghost-pic');
+    s.ok('a stashed column carries no <img>',
+      !!pic5&&!(pic5.children||[]).some(c=>c.tagName==='IMG'));
+    const bad5=pic5&&(pic5.children||[]).find(c=>c.className==='board-tray-ghost-badge');
+    s.eq('it carries its type word',bad5&&bad5.textContent,'COLUMN');
+    drop();
+
+    /* The label is somebody's filename or the first line of their note, so
+       it is written with textContent — never interpolated. Asserted the
+       only way a node harness can: the builder is handed a tag and the tag
+       comes back as TEXT, not as markup. */
+    s.section('a label is never markup');
+    boot();
+    run(`_editUnsorted[0].name='<img src=x onerror=alert(1)>'`);
+    const gx=ghostOf(0);
+    const labx=gx&&(gx.children||[]).find(c=>c.className==='board-tray-ghost-label');
+    s.eq('the tag is the text',labx&&labx.textContent,'<img src=x onerror=alert(1)>');
+    s.ok('and nothing was parsed out of it',
+      !labx||!(labx.children||[]).length);
+    drop();
+
+    s.section('and the ghost leaves when the drag does');
+    boot();
+    ghostOf(0);
+    const before=(app.state.body||[]).filter(n=>n&&n.className==='board-tray-ghost').length;
+    drop();
+    const after=(app.state.body||[]).filter(n=>n&&n.className==='board-tray-ghost').length;
+    s.ok('one ghost while dragging',before>=1,'before='+before);
+    s.ok('and none left behind after the drop',after===0,'after='+after);
+  }
+
+  /* ── THE SELECTION RAIL SAYS WHAT THE CARD ALREADY HAS (Sept 2026) ────
+     Afnan: *"now do the same for the selection rail"*, after the tray and
+     the rail drag ghosts. NOTHING on the selection rail drags — `drag:true`
+     appears only in the three add-tool lists — so there is no ghost here;
+     what carries over is the PRINCIPLE, and the rail's own Color tile was
+     already the one button answering its own question. */
+  {
+    const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+      currentPage:'board-canvas'});
+    const {run}=app;
+    const boot=()=>run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+      moodBoards=[{id:'b1',ownerUid:'u1',visibility:'shared',title:'T',cards:[]}];
+      _editConnectors=[];_boardsConnSel=null;_boardsDrawOn=null;_boardsComments=[];
+      _editCards=[
+        {id:'a',type:'text',x:0,y:0,w:220,h:100,
+         labels:[{t:'See this',c:'green'},{t:'Fabric',c:'blue'}],
+         reactions:{'👍':['u1','u2'],'🔥':['u3']}},
+        {id:'b',type:'text',x:300,y:0,w:220,h:100,
+         labels:[{t:'see this',c:'green'}],reactions:{'👍':['u1']}},
+        {id:'c',type:'text',x:600,y:0,w:220,h:100}
+      ];
+      _boardsSelection=new Set(['a']);`);
+
+    s.section('nothing on the selection rail drags, so there is no ghost');
+    boot();
+    // The premise of the round, asserted rather than asserted-in-prose: the
+    // drag flag lives only on the tools that PLACE something.
+    s.eq('no selection-rail item is a drag source',
+      run(`JSON.stringify(_boardsRailItems().filter(i=>i&&i.drag).map(i=>i.act))`),'[]');
+    s.ok('while the add rail is full of them',
+      run(`_BOARDS_RAIL_MAIN.filter(i=>i.drag).length`)>=5);
+
+    s.section('it carries what the card actually has');
+    boot();
+    const counts=()=>JSON.parse(run(`JSON.stringify(_boardsRailCounts(_boardsSelectedCards()))`));
+    s.eq('two labels on card a',counts().labels,2);
+    s.eq('three reactions on card a',counts().reactions,3);
+    s.eq('and no comments yet',counts().comments,0);
+
+    /* Labels are a SET and the tallies are sums, which is the one real
+       decision here: twelve cards wearing "see this" are wearing ONE
+       label, and counting twelve would describe the selection's size. */
+    s.section('labels are a set, reactions and comments are tallies');
+    boot();
+    run(`_boardsSelection=new Set(['a','b'])`);
+    s.eq('the shared label counts once, case and space ignored',counts().labels,2);
+    s.eq('but every reaction is its own',counts().reactions,4);
+    run(`_boardsSelection=new Set(['c'])`);
+    s.eq('a bare card has nothing',
+      counts().labels+','+counts().reactions+','+counts().comments,'0,0,0');
+
+    /* THE COUNT RULE IS SHARED WITH THE CARD'S OWN CORNER BADGE, so the
+       two can never disagree about the same card — which is the whole
+       reason it was extracted. */
+    s.section('comments count the unresolved ones, the card badge\'s own rule');
+    boot();
+    run(`_boardsComments=[
+      {id:'m1',cardId:'a',text:'x'},
+      {id:'m2',cardId:'a',text:'y'},
+      {id:'m3',cardId:'a',text:'z',resolved:true},
+      {id:'m4',cardId:'b',text:'q'},
+      {id:'m5',text:'board-level, no card'}
+    ]`);
+    s.eq('two unresolved on a, the resolved one skipped',counts().comments,2);
+    s.eq('and the shared map agrees',
+      run(`JSON.stringify(_boardsCommentCounts())`),'{"a":2,"b":1}');
+    s.ok('a board-level comment belongs to no card',
+      !JSON.parse(run(`JSON.stringify(_boardsCommentCounts())`)).hasOwnProperty('undefined'));
+    run(`_boardsSelection=new Set(['a','b'])`);
+    s.eq('a multi-selection adds them up',counts().comments,3);
+
+    /* AND THE PAINTER REALLY READS IT. Asserting the shared map alone left
+       the claim untested: un-sharing the rule kept every assertion green,
+       because the card's badge writes into DOM nodes the harness has none
+       of. Registering those nodes and reading back what the painter wrote
+       is what closes it — the corner badge and the rail now have to agree
+       about the same card or this fails. */
+    run(`['a','b','c'].forEach(function(id){
+      var n=document.createElement('span');n.id='board-cmt-'+id;document.body.appendChild(n);
+    });_boardsPaintCommentBadges();`);
+    const painted=id=>run(`(document.getElementById('board-cmt-${id}')||{}).textContent`);
+    run(`_boardsSelection=new Set(['a'])`);
+    s.eq('the corner badge says what the rail says',painted('a'),String(counts().comments));
+    run(`_boardsSelection=new Set(['b'])`);
+    s.eq('on the other card too',painted('b'),String(counts().comments));
+    run(`_boardsSelection=new Set(['c'])`);
+    s.eq('and a card with none paints nothing, which is zero',
+      painted('c')||'(empty)','(empty)');
+    s.eq('which is the count the rail carries',counts().comments,0);
+
+    s.section('the rail draws them, and absence IS zero');
+    boot();
+    run(`_boardsComments=[{id:'m1',cardId:'a',text:'x'}]`);
+    const item=a=>JSON.parse(run(`JSON.stringify(_boardsRailItems().find(i=>i&&i.act==='${a}')||null)`));
+    s.eq('Labels carries its count',(item('labels')||{}).count,2);
+    s.eq('Reactions carries its count',(item('reactions')||{}).count,3);
+    s.eq('Comment carries its count',(item('card-comment')||{}).count,1);
+    /* A zero must paint NO badge — a "0" chip on every button is noise on
+       a rail whose point is being a short list. The renderer keys on the
+       count being truthy, so what this suite can hold is that a bare card
+       really does report 0; the MARKUP is smoke-layout's, since the button
+       is built inside _boardsRenderRail's own map and needs a real DOM. */
+    run(`_boardsSelection=new Set(['c'])`);   // the card carrying nothing
+    s.eq('a bare card reports zero, which the renderer draws as nothing',
+      (item('labels')||{}).count,0);
+    s.eq('and so do the other two',
+      (item('reactions')||{}).count+','+(item('card-comment')||{}).count,'0,0');
+
+    s.section('and a malformed card cannot take the rail down');
+    boot();
+    run(`_editCards=[{id:'a',type:'text',labels:'not-an-array',reactions:'nope'},
+                    {id:'b',type:'text',labels:[null,{},{t:''}],reactions:{'x':'no'}}];
+         _boardsSelection=new Set(['a','b'])`);
+    // Both of these go through a try, so losing the guard NAMES the finding
+    // instead of taking the whole suite down with it — the lesson this
+    // file records, and the first cut of this block broke it twice.
+    const safe=expr=>{try{return run(expr);}catch(e){return 'THREW: '+(e&&e.message||e);}};
+    s.eq('garbage counts as nothing rather than throwing',
+      safe(`(function(){var n=_boardsRailCounts(_boardsSelectedCards());
+        return n.labels+','+n.reactions;})()`),'0,0');
+    s.eq('and a null selection is still answerable',
+      safe(`JSON.stringify(_boardsRailCounts(null))`),'{"labels":0,"reactions":0,"comments":0}');
+  }
+
   // ── a PDF card is sized to its page ─────────────────────────────────────
   // At the 200×110 file default the name row and the Open/Download buttons
   // left the page thumbnail a ~20px strip. Reported with a screenshot of a
@@ -3447,15 +5388,468 @@ module.exports=function(){
     const pdf=`{name:'Denim Production Brief GROOVY.pdf',type:'application/pdf',size:1153433}`;
     const size=id=>run(`(c=>c.w+'x'+c.h)(_editCards.find(c=>c.id==='${id}'))`);
     const tick=()=>new Promise(r=>setImmediate(r));
-    const A4=`${240}x${Math.round(238*Math.SQRT2)+92}`;
+    const A4=`${240}x${Math.round(238*Math.SQRT2)+run(`_BOARDS_FILE_CHROME_H`)}`;
+
+    /* ── The phone round (Sept 2026 audit) ──────────────────────────────
+       Every one of these came out of measuring the composed phone canvas in
+       headless Chromium (tests/smoke-phone.js holds the geometry); what is
+       asserted HERE is the logic behind each fix. */
+    s.section('phone: the rail is six targets and More');
+    {
+      const ph=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        currentPage:'board-canvas',phone:true});
+      const r=x=>ph.run(x);
+      r(`_editBoard={id:'X',title:'B',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+         _editCards=[];_editConnectors=[];_boardsSelection=new Set();_editUnsorted=[];
+         _boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;moodBoards=[];`);
+      s.eq('the add-mode bar',r(`_boardsRailItems().map(i=>i.act).join(',')`),
+        'add:text,imagepanel,file,add:board,more-tools,trash');
+      // More lists every add-tool the bar does not carry — nothing is lost,
+      // and nothing is listed twice.
+      const over=JSON.parse(r(`JSON.stringify(_boardsRailPhoneOverflow().map(i=>i.act))`));
+      const bar=JSON.parse(r(`JSON.stringify(_BOARDS_RAIL_PHONE.map(i=>i.act))`));
+      const allAdd=JSON.parse(r(`JSON.stringify(_BOARDS_RAIL_MAIN.concat(_BOARDS_RAIL_OVERFLOW,_BOARDS_RAIL_MEDIA).map(i=>i.act))`));
+      s.ok('More holds every tool the bar left off',allAdd.every(a=>bar.includes(a)||over.includes(a)),
+        allAdd.filter(a=>!bar.includes(a)&&!over.includes(a)).join(','));
+      s.ok('and none of the ones on the bar',!over.some(a=>bar.includes(a)));
+      s.ok('and the board-level actions',over.includes('comment-board')&&over.includes('fit'));
+      s.eq('nothing appears twice',new Set(over).size,over.length);
+      // Desktop is untouched: the full grouped column.
+      const dt=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},currentPage:'board-canvas'});
+      dt.run(`_editBoard={id:'X',title:'B',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+         _editCards=[];_editConnectors=[];_boardsSelection=new Set();_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;`);
+      const dacts=JSON.parse(dt.run(`JSON.stringify(_boardsRailItems().filter(i=>i.act).map(i=>i.act))`));
+      s.ok('the desktop rail still carries Line and Column inline',
+        dacts.includes('line')&&dacts.includes('add:column'));
+      s.ok('and Comment is on the phone sheet even though it left the desktop rail',
+        over.includes('comment-board')&&!dacts.includes('comment-board'));
+
+      s.section('phone: the top bar is one row and the ⋯ sheet holds the rest');
+      ph.run(`window.openBugReportModal=function(){};`);
+      const html=r(`_renderBoardCanvasHTML()`);
+      const topbar=html.slice(html.indexOf('class="board-topbar"'),html.indexOf('id="board-view-menu"'));
+      s.ok('no Undo button in the bar',!/id="board-undo-btn"/.test(topbar));
+      s.ok('no Find button in the bar',!/boardsToggleFind\(\)"[^>]*>Find</.test(topbar));
+      s.ok('no Comments button in the bar',!/id="board-cmt-btn"/.test(topbar));
+      s.ok('no visibility pill in the bar',!/class="pill">PRIVATE/.test(topbar));
+      const menu=html.slice(html.indexOf('id="board-menu"'));   // the ⋯ sheet is the last thing in the bar
+      s.ok('Undo keeps its id inside the sheet (so _boardsSyncHistoryButtons still finds it)',/id="board-undo-btn"/.test(menu));
+      s.ok('Redo too',/id="board-redo-btn"/.test(menu));
+      s.ok('Find is in the sheet',/boardsToggleFind/.test(menu));
+      s.ok('Comments is in the sheet, id intact',/id="board-cmt-btn"/.test(menu));
+      s.ok('Report a bug is in the sheet (the FAB is hidden on a phone)',/openBugReportModal/.test(menu));
+      s.eq('the Undo id appears exactly once in the whole render',(html.match(/id="board-undo-btn"/g)||[]).length,1);
+      const dhtml=dt.run(`_renderBoardCanvasHTML()`);
+      const dbar=dhtml.slice(dhtml.indexOf('class="board-topbar"'),dhtml.indexOf('id="board-view-menu"'));
+      s.ok('desktop keeps Undo in the bar',/id="board-undo-btn"/.test(dbar));
+      s.ok('and no Report a bug in its menu',!/openBugReportModal/.test(dhtml));
+
+      s.section('phone: the empty hint says what a finger can do');
+      s.ok('double-tap, not double-click',/Double-tap anywhere/.test(html));
+      s.ok('no Ctrl+V, no Space, no drop',!/Ctrl\+V|hold Space|drop files/.test(html));
+      s.ok('the desktop hint is unchanged',/Double-click anywhere/.test(dhtml)&&/Ctrl\+V/.test(dhtml));
+
+      s.section('phone: a card drag starts after 4px');
+      r(`_editCards=[{id:'n1',type:'text',text:'',x:40,y:60,w:170,h:100}];_boardsUndo=[];_boardsRedo=[];_boardsSelection=new Set();_boardsSuppressClick=false;`);
+      // The gesture tracks on the DOCUMENT now: the drag does not capture
+      // the pointer until it has passed the threshold, so before that the
+      // pressed element stops seeing it the moment it leaves.
+      const drag=(x,y)=>{
+        r(`(function(){
+          const head=document.getElementById('drag-head');
+          window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
+            stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'n1');})()`);
+        const ev=t=>({type:t,clientX:x,clientY:y,pointerId:1,altKey:false,shiftKey:false});
+        (ph.state.listeners.pointermove||[]).slice().forEach(f=>f(ev('pointermove')));
+        (ph.state.listeners.pointerup||[]).slice().forEach(f=>f(ev('pointerup')));
+        return true;
+      };
+      drag(2,3);
+      s.eq('a 2-3px roll pushes no undo entry',r(`_boardsUndo.length`),0);
+      s.eq('and moves nothing',r(`_editCards[0].x+','+_editCards[0].y`),'40,60');
+      s.ok('and does not swallow the click',!JSON.parse(r(`_boardsSuppressClick`)));
+      drag(9,0);
+      s.eq('9px is a drag: one undo entry',r(`_boardsUndo.length`),1);
+      s.eq('and the card moved',r(`_editCards[0].x`),49);
+
+      s.section('phone: the keyboard resize does not pan the board');
+      r(`_boardsWasPhone=null;_boardsViewRect={w:390,h:700};_editBoard.panX=0;_editBoard.panY=0;
+         document.getElementById('board-stage').getBoundingClientRect=function(){return{width:390,height:400,left:0,top:0};};
+         _boardsEditingEl={contains(){return false;}};`);
+      r(`_boardsOnViewportChange()`);
+      s.eq('while a card is being edited the pan is left alone',r(`_editBoard.panY`),0);
+      s.eq('and the remembered view rect too, so the closing resize sees no delta',r(`_boardsViewRect.h`),700);
+      r(`_boardsEditingEl=null;document.getElementById('board-stage').getBoundingClientRect=function(){return{width:390,height:700,left:0,top:0};};`);
+      r(`_boardsOnViewportChange()`);
+      s.eq('the keyboard closing after the edit ended is a no-op',r(`_editBoard.panY`),0);
+      r(`document.getElementById('board-stage').getBoundingClientRect=function(){return{width:390,height:400,left:0,top:0};};`);
+      r(`_boardsOnViewportChange()`);
+      s.eq('a real resize with nothing being edited still recentres',r(`_editBoard.panY`),-150);
+
+      s.section('phone: two taps on an [ondblclick] element are a double-click');
+      // The document listeners _boardsWireTouch registered at load are
+      // driven from here with plain objects; `target` answers closest()
+      // the way a card body inside the stage would.
+      const MouseEv=function(type,init){this.type=type;Object.assign(this,init||{});this.isTrusted=false;};
+      const tap=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        currentPage:'board-canvas',phone:true,globals:{MouseEvent:MouseEv}});
+      tap.run(`_editBoard={id:'X',title:'B',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};_editCards=[];_editConnectors=[];`);
+      const stage={id:'board-stage'};
+      const fired=[];
+      const el={id:'body-el',dispatchEvent(ev){fired.push(ev.type+'@'+ev.clientX+','+ev.clientY);}};
+      const target={closest(sel){if(/board-stage/.test(sel))return stage;if(sel==='[ondblclick]')return el;return null;},dispatchEvent(ev){fired.push(ev.type+'@'+ev.clientX+','+ev.clientY);}};
+      const ls=tap.state.listeners;
+      s.ok('the touch tracker is wired at load',!!(ls.pointerdown&&ls.pointerup&&ls.dblclick&&ls.contextmenu),Object.keys(ls).join(','));
+      const touch=(type,x,y,pointerType)=>{
+        const ev={type,pointerType:pointerType||'touch',pointerId:7,clientX:x,clientY:y,target,stopPropagation(){this._s=true;},preventDefault(){this._p=true;}};
+        (ls[type]||[]).forEach(fn=>fn(ev));return ev;
+      };
+      touch('pointerdown',100,100);touch('pointerup',100,100);
+      s.eq('one tap fires nothing',fired.length,0);
+      touch('pointerdown',104,102);touch('pointerup',104,102);
+      s.eq('the second tap within 300ms fires a dblclick at the tap point',fired.join('|'),'dblclick@104,102');
+      // A browser that synthesizes its own dblclick right after ours is
+      // dropped at the capture phase, so an inline handler never runs twice.
+      const dup={type:'dblclick',isTrusted:true,stopPropagation(){this._s=true;},preventDefault(){this._p=true;}};
+      ls.dblclick.forEach(fn=>fn(dup));
+      s.ok('a trusted dblclick within the window is swallowed',!!(dup._s&&dup._p));
+      // A tap that MOVED is not a tap.
+      fired.length=0;
+      touch('pointerdown',100,100);touch('pointermove',130,100);touch('pointerup',130,100);
+      touch('pointerdown',130,100);touch('pointerup',130,100);
+      s.eq('a drag then a tap is not a pair',fired.length,0);
+      // A mouse never goes through this path.
+      fired.length=0;
+      touch('pointerdown',1,1,'mouse');touch('pointerup',1,1,'mouse');
+      touch('pointerdown',1,1,'mouse');touch('pointerup',1,1,'mouse');
+      s.eq('mouse taps are ignored',fired.length,0);
+
+      _pending.push((async()=>{
+        // The long-press, driven against the real timer.
+        const hp=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+          currentPage:'board-canvas',phone:true,globals:{MouseEvent:MouseEv}});
+        hp.run(`_editBoard={id:'X',title:'B',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};_editCards=[];_editConnectors=[];`);
+        const hls=hp.state.listeners;
+        const got=[];
+        const tgt={closest(sel){return /board-stage/.test(sel)?stage:null;},dispatchEvent(ev){got.push(ev.type);}};
+        const t=(type,x,y)=>{const ev={type,pointerType:'touch',pointerId:3,clientX:x,clientY:y,target:tgt,stopPropagation(){},preventDefault(){}};(hls[type]||[]).forEach(fn=>fn(ev));};
+        const wait=ms=>new Promise(res=>setTimeout(res,ms));
+        t('pointerdown',50,50);await wait(560);
+        const held=got.join('|');
+        t('pointerup',50,50);
+        const afterUp=got.join('|');
+        got.length=0;
+        t('pointerdown',50,50);await wait(120);t('pointerup',50,50);await wait(500);
+        const early=got.join('|');
+        got.length=0;
+        t('pointerdown',50,50);await wait(120);t('pointermove',80,50);await wait(500);t('pointerup',80,50);
+        const moved=got.join('|');
+        got.length=0;
+        t('pointerdown',50,50);await wait(100);
+        const nat={type:'contextmenu',isTrusted:true,stopPropagation(){this._s=true;},preventDefault(){this._p=true;}};
+        hls.contextmenu.forEach(fn=>fn(nat));
+        await wait(560);t('pointerup',50,50);
+        const native=got.join('|');
+
+        s.section('phone: a long-press is the right-click');
+        s.eq('held still for 500ms → contextmenu at the press point',held,'contextmenu');
+        s.eq('and the release after a hold is not a tap',afterUp,'contextmenu');
+        s.eq('released early → nothing',early,'');
+        s.eq('moved during the hold → nothing',moved,'');
+        s.eq('a native long-press arriving first cancels ours',native,'');
+        s.ok('and that native one was let through (nothing of ours had fired)',!nat._s);
+      })());
+    }
+
+    // ── The rail's Note round (Sept 2026): "Drag me", the note ghost, the
+    // text rail, the Text style menu, and the Home trail. Read off Afnan's
+    // video of Milanote frame by frame; see CLAUDE.md.
+    {
+      const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      const r=app.run;
+      r(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:0.5,panX:0,panY:0};
+         _editCards=[];_editConnectors=[];_boardsSelection=new Set();_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;`);
+      s.section('"Drag me" is offered only by a drag source');
+      s.eq('a tool that places nothing gets no tip',r(`_boardsRailTipShow({getAttribute:()=>'0'})`),false);
+      s.eq('a drag source gets one',r(`_boardsRailTipShow({getAttribute:()=>'1',getBoundingClientRect:()=>({right:80,top:100,bottom:140}),querySelector:()=>null})`),true);
+      s.eq('placed beside the button, on the icon\'s centre line',r(`_boardsRailTipEl.style.left+' '+_boardsRailTipEl.style.top`),'88px 120px');
+      s.eq('and it says what Milanote\'s says',r(`_boardsRailTipEl.textContent`),'Drag me');
+      r(`_boardsRailTipHide()`);
+      s.eq('hide drops it',r(`_boardsRailTipEl`),null);
+      s.eq('and nothing is shown mid-drag',r(`(_boardsRailDrag={act:'add:text'},_boardsRailTipShow({getAttribute:()=>'1'}))`),false);
+      r(`_boardsRailDrag=null`);
+
+      /* EVERY placing tool is carried as the card it becomes, at the
+         board's zoom. This section used to assert the opposite for
+         everything but Note ("any other tool keeps the chip") — rewritten
+         to the new behaviour rather than deleted, since it is the record
+         of what changed. */
+      s.section('a tool is carried as the card it becomes, at the board\'s zoom');
+      r(`_boardsRailGhostShow({act:'add:text',label:'Note'})`);
+      const g=r(`(function(){var g=document.getElementById('board-rail-ghost');return {cls:g.className,w:g.style.width,h:g.style.height,fs:g.style.fontSize,kids:g.children.length}})()`);
+      s.eq('a card ghost, tagged with its type',g.cls,'board-rail-ghost card type-text');
+      s.eq('220 wide at 50% zoom',g.w,'110px');
+      s.eq('100 tall at 50% zoom',g.h,'50px');
+      s.ok('with the card\'s own body inside',g.kids===1);
+      // The em basis every inner rule is sized off.
+      s.eq('and an em basis that follows the zoom',g.fs,'8px');
+
+      // Each placing tool, at the size _boardsNewCard would really mint.
+      const ghostOf=a=>{
+        r(`_boardsRailGhostHide();_boardsRailGhostShow({act:'${a}',label:'x'})`);
+        return r(`(function(){var g=document.getElementById('board-rail-ghost');
+          return {cls:g.className,w:g.style.width,h:g.style.height};})()`);
+      };
+      [['add:link','link'],['add:todo','todo'],['add:board','board'],
+       ['add:column','column'],['add:heading','heading'],['add:table','table'],
+       ['add:frame','frame']].forEach(([act,type])=>{
+        const gg=ghostOf(act);
+        s.ok(type+' is a card ghost, not a chip',/(^| )card( |$)/.test(gg.cls),gg.cls);
+        s.eq(type+' is tagged with its type',
+          (/type-([a-z]+)/.exec(gg.cls)||[])[1]||'(untagged)',type);
+        // THE ASSERTION THAT MATTERS: the ghost's footprint is the size the
+        // drop really lands, read from the one shared definition.
+        s.eq(type+' is as WIDE as the card is born',gg.w,
+          Math.round(r(`_boardsNewCardSize('${type}').w`)*0.5)+'px');
+        s.eq(type+' is as TALL as the card is born',gg.h,
+          Math.round(r(`_boardsNewCardSize('${type}').h`)*0.5)+'px');
+      });
+
+      // A tool that PLACES NOTHING must not wear a card shape — it would
+      // promise a card that never arrives.
+      r(`_boardsRailGhostHide();_boardsRailGhostShow({act:'line',label:'Line'})`);
+      s.eq('a mode keeps the plain chip',r(`document.getElementById('board-rail-ghost').className`),'board-rail-ghost');
+      s.eq('and says what it is',r(`document.getElementById('board-rail-ghost').textContent`),'Line');
+      r(`_boardsRailGhostHide();_boardsRailGhostShow({act:'imagepanel',label:'Image'})`);
+      s.eq('so does a picker',r(`document.getElementById('board-rail-ghost').className`),'board-rail-ghost');
+      r(`_boardsRailGhostHide()`);
+      s.eq('a card type with nothing to draw refuses outright',
+        r(`_boardsGhostBody('image')`),null);
+      s.eq('and so does a file',r(`_boardsGhostBody('file')`),null);
+      r(`_boardsRailGhostHide();_boardsRailGhostShow({act:'add:image',label:'Image'})`);
+      s.eq('so even an add: act for one keeps the chip',
+        r(`document.getElementById('board-rail-ghost').className`),'board-rail-ghost');
+      r(`_boardsRailGhostHide()`);
+
+      /* The size is ONE definition now. _boardsNewCard mints an id, so it
+         could never be called just to ask how big a card is — which is
+         exactly why every tool but Note carried a chip until this round. */
+      s.section('the ghost and the card read one size');
+      ['text','link','todo','board','column','heading','table','frame','image','file'].forEach(t=>{
+        s.eq(t+' agrees',
+          r(`_boardsNewCardSize('${t}').w+'x'+_boardsNewCardSize('${t}').h`),
+          r(`(function(){var c=_boardsNewCard('${t}');return c.w+'x'+c.h;})()`));
+      });
+      s.eq('and an unknown type still has a size',
+        r(`_boardsNewCardSize('nonsense').w+'x'+_boardsNewCardSize('nonsense').h`),'170x100');
+      s.ok('asking twice mints no card and moves no counter',
+        r(`(function(){var a=_boardsCardSeq;_boardsNewCardSize('text');_boardsNewCardSize('frame');
+          return _boardsCardSeq===a;})()`));
+
+      s.section('a note in edit mode is the rail\'s fifth mode');
+      r(`_boardsEditingEl={isContentEditable:true,id:'board-txt-c1',closest:()=>null}`);
+      s.ok('active while a note body holds the caret',r(`_boardsFmtActive()`));
+      const acts=r(`_boardsRailItems().map(it=>it.act||(it.sep?'|':it.fmtSwatches?'colours':it.fmtHilite?'highlights':'?')).join(',')`);
+      s.eq('back · Text style · B I S U · bullets · numbers · colours · highlights',acts,
+        'fmt:done,fmt:style,fmt:bold,fmt:italic,fmt:strikeThrough,fmt:underline,fmt:insertUnorderedList,fmt:insertOrderedList,|,colours,highlights');
+      r(`_boardsRenderRail()`);
+      s.eq('and the rail records that mode',r(`document.getElementById('board-rail').dataset.mode`),'text');
+      r(`_boardsEditingEl={isContentEditable:true,id:'board-td-c1-0-0',closest:()=>null}`);
+      s.ok('a table cell is not a note',!r(`_boardsFmtActive()`));
+      r(`_boardsEditingEl=null`);
+      const phone=loadApp({files:FILES,phone:true,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      phone.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};_editCards=[];_editConnectors=[];_boardsSelection=new Set();_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+        _boardsEditingEl={isContentEditable:true,id:'board-txt-c1',closest:()=>null}`);
+      s.ok('a phone keeps its floating bar instead',!phone.run(`_boardsFmtActive()`));
+
+      s.section('every formatting action goes through one implementation');
+      r(`__cmds=[];document.execCommand=(c,u,v)=>{__cmds.push(c+':'+v);return true};_boardsFmtTarget={focus(){},dispatchEvent(){}}`);
+      r(`_boardsCtxRun('fmt:bold')`);
+      s.eq('bold: styleWithCSS off, then the command',r(`__cmds.join(' ')`),'styleWithCSS:false bold:null');
+      r(`__cmds=[];_boardsCtxRun('fmt:hilite:#FDE68A')`);
+      s.eq('highlight: styleWithCSS on, then hiliteColor',r(`__cmds.join(' ')`),'styleWithCSS:true hiliteColor:#FDE68A');
+      r(`__cmds=[];_boardsCtxRun('fmt:block:h2')`);
+      s.eq('a Text style pick is a formatBlock',r(`__cmds.join(' ')`),'styleWithCSS:false formatBlock:<h2>');
+      r(`__cmds=[];_boardsCtxRun('fmt:color:#7B1F2A')`);
+      s.eq('a text colour is foreColor with CSS on',r(`__cmds.join(' ')`),'styleWithCSS:true foreColor:#7B1F2A');
+      s.eq('the Text style menu offers Milanote\'s blocks',r(`_BOARDS_FMT_BLOCKS.map(b=>b.label).join(' · ')`),
+        'Large heading · Normal heading · Normal text · Small text · Code block · Quote block');
+
+      s.section('the sanitiser keeps the blocks the menu writes, and only those');
+      s.eq('every heading level folds onto the three drawn',
+        r(`_boardsSanitizeRich('<h1>a</h1><h2>b</h2><h3>c</h3><h4>d</h4><h5>e</h5><h6>f</h6>')`),
+        '<h2>a</h2><h2>b</h2><h3>c</h3><h3>d</h3><h6>e</h6><h6>f</h6>');
+      s.eq('code and quote survive',r(`_boardsSanitizeRich('<pre>x</pre><blockquote>q</blockquote>')`),'<pre>x</pre><blockquote>q</blockquote>');
+      s.eq('a highlight from the list survives',r(`_boardsSanitizeRich('<span style="background-color:#FDE68A">h</span>')`),'<span style="background-color:#FDE68A">h</span>');
+      s.eq('as rgb, the way execCommand writes it',r(`_boardsSanitizeRich('<span style="background-color: rgb(253, 230, 138)">h</span>')`),'<span style="background-color:#FDE68A">h</span>');
+      s.eq('a highlight the menu never offered is dropped',r(`_boardsSanitizeRich('<span style="background-color:#ff0000">h</span>')`),'<span>h</span>');
+      s.eq('colour and highlight together',r(`_boardsSanitizeRich('<span style="color:#7B1F2A;background-color:#BBF7D0">h</span>')`),'<span style="color:#7B1F2A;background-color:#BBF7D0">h</span>');
+      s.eq('a colour alone carries no stray semicolon',r(`_boardsSanitizeRich('<span style="color:#7B1F2A">h</span>')`),'<span style="color:#7B1F2A">h</span>');
+
+      s.section('the top bar is a trail: chip, Home, slash, tile, name');
+      r(`_boardsCameFromAll=false;_editBoard={id:'b1',title:'Winter',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0,color:'#7C3AED'}`);
+      const bar=r(`_renderBoardCanvasHTML()`);
+      s.ok('the chip carries the app icon and goes Home',/board-home-chip[^>]*boardsGotoGallery[^>]*>\s*<img src="\/assets\/icons\/icon-192\.png"/.test(bar));
+      s.ok('Home, then a slash, then the board\'s tile',/board-crumb-home[^>]*>Home<\/button>[\s\S]*board-crumb-slash">\/<\/span><span class="board-tile"[^>]*background:#7C3AED/.test(bar));
+      r(`_boardsCameFromAll=true`);
+      s.ok('opened from All boards, that is a crumb too',/board-crumb-slash">\/<\/span><button class="board-crumb" onclick="window\.boardsShowAll\(\)">All boards<\/button>/.test(r(`_renderBoardCanvasHTML()`)));
+      r(`_boardsCameFromAll=false`);
+      const ph=phone.run(`_renderBoardCanvasHTML()`);
+      s.ok('a phone keeps its capped back button and no chip',/back-btn/.test(ph)&&!/board-home-chip/.test(ph));
+    }
+
+    // ── Colour: Background beside the Top strip, the rail's Color tile,
+    // and Convert to Document (Sept 2026). See CLAUDE.md.
+    {
+      const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      const r=app.run;
+      r(`_editBoard={id:'b1',title:'Winter',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+         _editCards=[Object.assign(_boardsNewCard('text'),{id:'n1',text:'Fabric plan\\nOrder the rib.\\n\\nCheck the dye lot.'}),Object.assign(_boardsNewCard('text'),{id:'n2',text:'b'})];
+         _editConnectors=[];_boardsSelection=new Set(['n1']);_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;_boardsUndo=[];`);
+      s.section('a card has a Background beside its Top strip');
+      r(`window.boardsSetBg('green')`);
+      s.eq('bg is a palette name on the card',r(`_editCards[0].bg`),'green');
+      s.eq('and the strip is untouched',r(`_editCards[0].color`),undefined);
+      r(`window.boardsSetColor('red')`);
+      s.ok('the card paints both as classes',/class="board-card-el type-text[^"]* tint-red bg-green"/.test(r(`_boardCardHTML(_editCards[0],true)`)));
+      r(`window.boardsSetBg('none')`);
+      s.eq('none clears it rather than storing "none"',r(`'bg' in _editCards[0]`),false);
+      s.eq('each change was undoable',r(`_boardsUndo.length`),3);
+
+      s.section('the rail\'s Color tile reads the card\'s current colour');
+      s.eq('strip only → the strip colour',r(`_boardsColorTileClass([{color:'red'}])`),'sw-red');
+      s.eq('background wins over the strip',r(`_boardsColorTileClass([{color:'red',bg:'blue'}])`),'bg-blue');
+      s.eq('neither → an empty outline',r(`_boardsColorTileClass([{}])`),'none');
+      s.eq('a name off the palette is not painted',r(`_boardsColorTileClass([{bg:'evil'}])`),'none');
+      const acts=r(`_boardsRailItems().map(it=>it.act||(it.sep?'|':'?')).join(',')`);
+      s.ok('the selection rail carries the tile, not the inline grid',/^deselect,color-panel,labels,reactions,card-comment/.test(acts)&&!/\?/.test(acts.replace(/\|/g,'')));
+      r(`_boardsRenderRail()`);
+      s.ok('and draws it with the current colour',/rail-color-tile sw-red/.test(r(`document.getElementById('board-rail').innerHTML`)));
+
+      s.section('the colour panel: two tabs, live');
+      let items=r(`_boardsColorPanelItems()`);
+      s.eq('Background first',items[0].tabs.map(t=>t.label+(t.on?'*':'')).join(' | '),'Background* | Top strip');
+      s.ok('the Background tab shows bg swatches marking the current',items[1].bgSwatches===true&&items[1].current==='none');
+      r(`_boardsCtxRun('colortab:strip')`);
+      items=r(`_boardsColorPanelItems()`);
+      s.ok('Top strip shows the strip swatches marking red',items[1].swatches===true&&items[1].current==='red');
+      const html=r(`_boardsCtxHTML(_boardsColorPanelItems())`);
+      s.ok('tabs render as buttons routed through the menu',/board-ctx-tab on" data-act="colortab:strip"/.test(html));
+      s.ok('the current swatch is marked',/board-swatch sw-red on" data-act="color:red"/.test(html));
+      r(`_boardsCtxRun('bg:purple')`);
+      s.eq('bg: routes to the setter',r(`_editCards[0].bg`),'purple');
+
+      s.section('Convert to Document');
+      s.eq('a document from a note: first line is the title',r(`_boardsDocFromNote(_editCards[0]).title`),'Fabric plan');
+      s.eq('paragraphs split on blank lines',r(`_boardsDocFromNote(_editCards[0]).blocks.map(b=>b.type+':'+b.text).join('|')`),'paragraph:Order the rib.|paragraph:Check the dye lot.');
+      s.eq('an empty note still gets one empty paragraph',r(`_boardsDocFromNote({text:''}).blocks.length`),1);
+      r(`__c=0;confirm=()=>{__c++;return true};location={origin:'https://ops.example',pathname:'/',hash:''}`);
+      const menu=r(`_boardsCardCtxItems(true).map(i=>i.act).join(',')`);
+      s.ok('it is on the note\'s menu',/todoc/.test(menu));
+      const before=app.state.writes.length;
+      const p=r(`window.boardsConvertToDocument()`);
+      s.ok('it returns a promise',!!p&&typeof p.then==='function');
+      _pending.push(p.then(()=>{
+        const w=app.state.writes.slice(before).find(x=>x.op==='add');
+        s.section('Convert to Document (after the write)');
+        s.eq('one confirm asked',r(`__c`),1);
+        s.ok('a notes_pages doc was written',!!w);
+        s.eq('titled from the note, visibility from the board',w&&(w.data.title+' · '+w.data.visibility),'Fabric plan · shared');
+        s.eq('with the paragraphs',w&&w.data.blocks.length,2);
+        const c=r(`_editCards[0]`);
+        s.eq('the card is a link now',c.type,'link');
+        s.eq('to the document\'s deep link',c.linkUrl,'https://ops.example/#note=new');
+        s.eq('titled like the page',c.linkTitle,'Fabric plan');
+        s.ok('and the note text is gone from it',!('text' in c));
+        s.eq('undo restores the note',(r(`window.boardsUndoAction();_editCards[0].type+':'+_editCards[0].text.slice(0,11)`)),'text:Fabric plan');
+      }));
+
+      s.section('#note= is a deep link to the page');
+      r(`location={origin:'https://ops.example',pathname:'/',hash:'#note=abc'}`);
+      s.eq('parsed',JSON.stringify(r(`_boardsParseHash()`)),'{"note":"abc"}');
+      r(`location.hash='#board=b9&card=c1'`);
+      s.eq('a board link is unchanged',JSON.stringify(r(`_boardsParseHash()`)),'{"board":"b9","card":"c1"}');
+    }
+
+    // ── Labels, Reactions and Comments as Milanote's panels (Sept 2026).
+    {
+      const app=loadApp({files:FILES,session:{u:'afnan',name:'Afnan Bhatti',role:'owner',uid:'u1'}});
+      const r=app.run;
+      r(`_editBoard={id:'b1',title:'Winter',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+         _editCards=[Object.assign(_boardsNewCard('text'),{id:'n1',text:'a',labels:[{t:'Ready for printing',c:'green'}],reactions:{'🔥':['u1','u2'],'👀':['u1']}}),
+                     Object.assign(_boardsNewCard('text'),{id:'n2',text:'b',labels:[{t:'Pattern done',c:'blue'},{t:'Ready for printing',c:'green'}],reactions:{'🔥':['u3']}})];
+         _editConnectors=[];_boardsSelection=new Set(['n1']);_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;_boardsUndo=[];`);
+      s.section('the label panel: one field searches and creates, the board\'s list ticks');
+      let d=r(`_boardsLabelRowsFor('n1','')`);
+      s.eq('the whole library, most used first',d.rows.map(l=>l.t+(l.on?'*':'')).join(' | '),'Ready for printing* | Pattern done');
+      s.ok('nothing to create with an empty field',!d.create);
+      d=r(`_boardsLabelRowsFor('n1','pattern')`);
+      s.eq('typing filters',d.rows.map(l=>l.t).join(),'Pattern done');
+      s.ok('a partial match still offers to create the typed name',d.create&&!d.exact);
+      d=r(`_boardsLabelRowsFor('n1','pattern done')`);
+      s.ok('an exact match (any case) offers no twin',d.exact&&!d.create);
+      d=r(`_boardsLabelRowsFor('n1','see this')`);
+      s.ok('no results, and a create offer',d.rows.length===0&&d.create);
+      r(`window.boardsLabelToggle=window.boardsLabelToggle;_boardsLabelRows=_boardsLabelRowsFor('n1','').rows;document.getElementById('board-label-input').value='';window.boardsLabelToggle('n1',1)`);
+      s.eq('ticking a row puts that label on the card',r(`_editCards[0].labels.map(l=>l.t).join(',')`),'Ready for printing,Pattern done');
+      r(`_boardsLabelRows=_boardsLabelRowsFor('n1','').rows;window.boardsLabelToggle('n1',0)`);
+      s.eq('unticking takes it off',r(`_editCards[0].labels.map(l=>l.t).join(',')`),'Pattern done');
+
+      s.section('the reaction picker: categories, frequently used is derived');
+      s.eq('frequently used counts the board\'s reactions, most first',r(`_boardsFrequentEmoji().slice(0,2).join('')`),'🔥👀');
+      r(`_editCards.forEach(c=>delete c.reactions)`);
+      s.eq('with none on the board it falls back to the curated set',r(`_boardsFrequentEmoji().length`),14);
+      s.ok('the categories are Milanote\'s, in order',r(`_BOARDS_EMOJI_CATS.map(c=>c.n).join('·')`)==='Smileys & Emotions·People & Body·Animals & Nature·Food & Drink·Travel & Places·Activities·Objects·Symbols·Flags');
+      s.ok('every entry carries a keyword',r(`_BOARDS_EMOJI_CATS.every(c=>c.e.every(x=>x.e&&x.k))`));
+      s.eq('search by keyword',r(`_boardsEmojiSearch('tshirt')[0]`),'👕');
+      s.eq('search by the emoji itself',r(`_boardsEmojiSearch('👖')[0]`),'👖');
+      s.eq('no duplicates across the catalogue and the curated list',r(`(function(){const a=_boardsEmojiSearch('heart');return a.length===new Set(a).size})()`),true);
+      s.eq('an empty search matches nothing',r(`_boardsEmojiSearch('').length`),0);
+
+      s.section('comments: a thread with replies, avatars, and the popover');
+      const th=r(`_boardsThread([{id:'c2',ts:2,text:'b'},{id:'r1',ts:3,replyTo:'c1',text:'r'},{id:'c1',ts:1,text:'a'},{id:'orphan',ts:4,replyTo:'gone',text:'o'}]).map(c=>c.id+':'+c.depth).join(' ')`);
+      s.eq('parents in time order, each followed by its replies; an orphaned reply is kept',th,'c1:0 r1:1 c2:0 orphan:0');
+      s.eq('initials from first and last name',r(`_boardsInitials('Afnan Bhatti')`),'AB');
+      s.eq('one name → two letters',r(`_boardsInitials('daniyal')`),'DA');
+      s.ok('the avatar colour is a token, never a literal',/style="background:var\(--[a-z-]+\)"/.test(r(`_boardsAvatarHTML('Afnan Bhatti')`)));
+      s.eq('the same name always gets the same colour',r(`_boardsAvatarHTML('Sami')===_boardsAvatarHTML('Sami')`),true);
+      r(`window.innerWidth=1400;window.innerHeight=900`);
+      r(`_boardsOpenSheet('T','<b>x</b>',{anchor:{rect:{left:300,right:420,top:200,bottom:260}},width:320})`);
+      const pop=r(`(function(){var e=document.getElementById('board-sheet');return {cls:e.className,left:e.style.left,top:e.style.top,w:e.style.width}})()`);
+      s.eq('an anchored sheet is a popover beside its anchor',pop.cls+' '+pop.left+' '+pop.top+' '+pop.w,'board-sheet board-pop 434px 194px 320px');
+      r(`_boardsOpenSheet('T','x',{anchor:{rect:{left:1200,right:1300,top:200,bottom:260}},width:320})`);
+      s.ok('and flips to the left when there is no room on the right',r(`document.getElementById('board-sheet').classList.contains('tail-right')`)&&r(`document.getElementById('board-sheet').style.left`)==='866px');
+      r(`_boardsOpenSheet('T','x')`);
+      s.eq('no anchor → the bottom sheet, as before',r(`document.getElementById('board-sheet').className`),'board-sheet');
+      const phone=loadApp({files:FILES,phone:true,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      phone.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};_editCards=[];_boardsOpenSheet('T','x',{anchor:{rect:{left:0,right:10,top:0,bottom:10}}})`);
+      s.eq('a phone ignores the anchor and keeps the sheet',phone.run(`document.getElementById('board-sheet').className`),'board-sheet');
+      r(`_boardsComments=[{id:'c1',cardId:'n1',ts:1,text:'follow this',byName:'Afnan Bhatti',byUid:'u1'}];window.boardsOpenComments('n1')`);
+      s.eq('Comment on a card opens the popover on desktop',r(`_boardsCommentPopCard`),'n1');
+      s.ok('it holds the thread and a Send box',/board-cpop-row/.test(r(`document.getElementById('board-sheet').innerHTML`))&&/Write a comment/.test(r(`document.getElementById('board-sheet').innerHTML`)));
+      r(`window.boardsReplyTo('c1')`);
+      s.ok('Reply switches the box to a reply',/Write a reply/.test(r(`document.getElementById('board-sheet').innerHTML`)));
+      const before=app.state.writes.length;
+      r(`document.getElementById('board-cmt-input').value='abc'`);
+      _pending.push(r(`window.boardsAddComment()`).then(()=>{
+        const w=app.state.writes.slice(before).find(x=>x.op==='add');
+        s.section('comments (after the write)');
+        s.eq('a reply carries replyTo and the card',w&&(w.data.replyTo+' '+w.data.cardId+' '+w.data.text),'c1 n1 abc');
+        s.eq('and the reply state is cleared',r(`_boardsReplyTo`),null);
+      }));
+      r(`window.boardsCloseSheet()`);
+      s.eq('closing forgets the card',r(`_boardsCommentPopCard`),null);
+      phone.run(`_editCards=[Object.assign(_boardsNewCard('text'),{id:'n1'})];_boardsComments=[];window.boardsOpenComments('n1')`);
+      s.ok('a phone opens the drawer instead',phone.run(`_boardsDrawerOpen===true&&_boardsCommentPopCard===null`));
+    }
 
     return Promise.all(_pending.concat([(async()=>{
       boot();
       s.section('the page-size maths');
-      s.eq('no size reported → A4 portrait',run(`_boardsPdfCardH()`),Math.round(238*Math.SQRT2)+92);
-      s.eq('US Letter (612×792)',run(`_boardsPdfCardH(792/612)`),Math.round(238*792/612)+92);
+      s.eq('no size reported → A4 portrait',run(`_boardsPdfCardH()`),Math.round(238*Math.SQRT2)+run(`_BOARDS_FILE_CHROME_H`));
+      s.eq('US Letter (612×792)',run(`_boardsPdfCardH(792/612)`),Math.round(238*792/612)+run(`_BOARDS_FILE_CHROME_H`));
       s.eq('garbage ratio falls back to A4',run(`_boardsPdfCardH(NaN)`),run(`_boardsPdfCardH()`));
-      s.eq('a sliver page is clamped, not a 4000px card',run(`_boardsPdfCardH(1000)`),238*4+92);
+      s.eq('a sliver page is clamped, not a 4000px card',run(`_boardsPdfCardH(1000)`),238*4+run(`_BOARDS_FILE_CHROME_H`));
       s.ok('a PDF is recognised by type',run(`_boardsIsPdfFile({type:'application/pdf',name:'x'})`));
       s.ok('or by name when the browser gives no type',run(`_boardsIsPdfFile({type:'',name:'Brief.PDF'})`));
       s.ok('a Word file is not a PDF',!run(`_boardsIsPdfFile({type:'',name:'brief.docx'})`));
@@ -3466,7 +5860,7 @@ module.exports=function(){
       s.eq('the placeholder is already A4-shaped',size(id),A4);
       run(`__uploads[0].ok({secure_url:'${IMG}',bytes:1153433,width:612,height:792})`);
       await tick();
-      s.eq('then fitted to the real page (Letter)',size(id),`240x${Math.round(238*792/612)+92}`);
+      s.eq('then fitted to the real page (Letter)',size(id),'240x'+(Math.round(238*792/612)+run(`_BOARDS_FILE_CHROME_H`)));
       s.eq('and it is a file card with its file',run(`_editCards[0].type+' '+_editCards[0].fileUrl`),`file ${IMG}`);
 
       s.section('a card someone sized is left alone');
@@ -3530,6 +5924,65 @@ module.exports=function(){
       s.eq('and centred on the drop point',`${tc.x+tc.w/2},${tc.y+tc.h/2}`,'1000,1000');
       const d=JSON.parse(run(`JSON.stringify(_boardsCardFromTrayItem({id:'v',kind:'file',fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/a.docx',fileName:'a.docx'},{x:0,y:0}))`));
       s.eq('a Word file stays compact',`${d.w}x${d.h}`,'200x110');
+    })(),
+    /* THE BOARD TOOL, DRAGGED (Sept 2026). Its own loadApp instance: this is
+       a _pending block that sets up state and then awaits, and the
+       documented hazard is two of those clobbering each other's _editBoard.
+       Driven for real rather than grepped — the whole path lives in
+       _boardsRailDragEnd's closure, and the Board tool is the one that does
+       not just push a card: it mints the board first, so the placement has
+       to survive an await. */
+    (async()=>{
+      const bd=loadApp({files:['js/boards.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'}});
+      const r=x=>bd.run(x);
+      const drag=board=>r(`session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};
+        _editBoard=${board};moodBoards=[];
+        _editCards=[];_editConnectors=[];_boardsSelection=new Set();
+        _boardsNextPlacement=null;_boardsCtxWorld=null;
+        __stage=document.getElementById('board-stage');
+        __stage.getBoundingClientRect=()=>({left:0,top:0,right:1000,bottom:800,width:1000,height:800});
+        /* The stub HONOURS THE SELECTOR, and that is the point: a naive
+           closest() that always answers passes with drag:true reverted, so
+           it would prove the mechanics and not the flag. This reads the real
+           list, so dropping drag:true breaks this block too. */
+        __drag=_BOARDS_RAIL_MAIN.filter(i=>i.act==='add:board')[0].drag?'1':null;
+        __btn={getAttribute:k=>k==='data-drag'?__drag:'add:board',
+               getBoundingClientRect:()=>({left:0,top:0,right:40,bottom:40})};
+        __ev=(x,y)=>({clientX:x,clientY:y,button:0,
+          target:{closest:sel=>(/data-drag/.test(sel)&&!__drag)?null:__btn}});
+        _boardsRailDragStart(__ev(20,20));_boardsRailDragMove(__ev(420,320));
+        _boardsRailDragEnd(__ev(420,320));`);
+      // boardsAddChildBoard mints the board and THEN places the card, so the
+      // drop has to survive an await.
+      const settle=()=>new Promise(k=>setTimeout(k,30));
+      const shot=()=>r(`JSON.stringify(_editCards.map(c=>({type:c.type,board:!!c.boardId,x:c.x,y:c.y})))`);
+      /* EVERY AWAIT HAPPENS BEFORE THE FIRST ASSERTION, deliberately.
+         s.section sets state on the shared reporter, so a _pending block
+         that awaits BETWEEN its section and its assertions has the other
+         concurrent block's section land in the middle — the findings then
+         file themselves under a heading from a different test. Seen, not
+         guessed: these read as "out of the Unsorted tray / one card". */
+      drag(`{id:'B',title:'T',visibility:'shared',ownerUid:'u1',zoom:1,panX:0,panY:0}`);
+      await settle();
+      const onBoard=JSON.parse(shot());
+      drag(`{id:'H',title:'Home',isHome:true,visibility:'personal',ownerUid:'u1',zoom:1,panX:0,panY:0}`);
+      await settle();
+      const onHome=JSON.parse(shot());
+
+      s.section('the Board tool drags onto a board');
+      s.eq('one card',onBoard.length,1);
+      s.eq('and it is a board link',onBoard[0]&&onBoard[0].type,'board');
+      /* A card type that is a LINK to something must never be creatable
+         without the thing it links to — the orphan the rail used to mint. */
+      s.ok('pointing at a board that really exists',!!(onBoard[0]&&onBoard[0].board));
+      s.eq('placed where the pointer was released',
+        onBoard[0]?onBoard[0].x+','+onBoard[0].y:'(no card)','330,280');
+
+      s.section('and onto Home, where it is a NEW board rather than a sub-board');
+      s.eq('one card',onHome.length,1);
+      s.ok('linked to a real board',!!(onHome[0]&&onHome[0].type==='board'&&onHome[0].board));
+      s.eq('at the drop point too',
+        onHome[0]?onHome[0].x+','+onHome[0].y:'(no card)','330,280');
     })()])).then(()=>s);
   }
 };

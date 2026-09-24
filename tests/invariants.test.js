@@ -191,6 +191,42 @@ module.exports=function(){
   //
   // A future mechanical sweep will see these as ordinary sizes and may
   // treat 11 as acceptable again; this is what notices.
+  /* No card has a header strip (Sept 2026, from the second Milanote
+     video). The head is an overlay floating over the card's own first row,
+     so three rules are load-bearing and each was verified by breaking it. */
+  s.section('the head strip is an inert overlay');
+  {
+    const css=fs.readFileSync(path.join(ROOT,'css/main.css'),'utf8');
+    const head=(css.match(/\n\.board-card-head\{[^}]*\}/)||[''])[0];
+    s.ok('it is absolutely positioned over the card',/position:absolute/.test(head),head.slice(0,80));
+    // THE ONE THAT MATTERS: anything the bar captures is a click somebody
+    // aimed at the content underneath. smoke-layout caught it eating a link
+    // card's URL field; only the delete button may take events.
+    s.ok('and it takes no pointer events itself',/pointer-events:none/.test(head),head.slice(0,120));
+    s.ok('exactly one control in it is re-enabled',
+      /\.board-card-head \.board-card-del\{pointer-events:auto\}/.test(css));
+    // It becomes one only while an explicit rename has switched it on.
+    s.ok('the card name is a label until a rename switches it on',
+      /\.board-card-name\[contenteditable="true"\]\{pointer-events:auto\}/.test(css)&&
+      !/\.board-card-name\{[^}]*pointer-events:auto/.test(css));
+    const js=fs.readFileSync(path.join(ROOT,'js/boards.js'),'utf8');
+    s.ok('and it carries no click handler in the markup',
+      !/board-card-name[^>]{0,400}?on(click|dblclick)=/.test(js));
+    // The head's own ✕ lands on a to-do's first-row ✕, and the two mean
+    // very different things. The centres happen not to overlap, so the
+    // layout probe does NOT hold this one — this is what does.
+    s.ok('a to-do first row yields its ✕ while the strip shows',
+      /\.board-card-el\.selected \.board-todo-body>\.board-todo-row:first-child \.board-todo-del\{display:none\}/.test(css));
+    // The coloured top strip is its own bar, so a card can carry both.
+    s.ok('the colour strip is not the head background',
+      /\.board-card-el::before\{content:''/.test(css)&&!/\.board-card-el\.tint-[a-z]+ \.board-card-head\{/.test(css));
+    // The dot grid is a placement cue, not the canvas background.
+    s.ok('the dot grid is scoped to .grid-on',
+      /\.board-stage\.grid-on\{background-image:radial-gradient/.test(css));
+    const stage=(css.match(/\n\.board-stage\{[^}]*\}/)||[''])[0];
+    s.ok('and the stage carries none at rest',!/background-image/.test(stage),stage.slice(0,120));
+  }
+
   s.section('card-internal text holds a 13px floor');
   {
     // `.link-title`/`.link-desc`/`.link-url` are card-internal too and do NOT
@@ -211,6 +247,100 @@ module.exports=function(){
       .exec(read('js/boards.js'))||[])[1];
     s.ok('the small table cell is at the floor too',
       cellSizes&&parseFloat(cellSizes)>=13,cellSizes+'px');
+  }
+
+  /* ── "Drag me" is offered only by drag sources ───────────────────────
+     The rail's hover cue is a tooltip now (read off Afnan's video of
+     Milanote: the icon does not move, a bubble fades in beside it). It
+     advertises a gesture, so a tool that places nothing (Line, Add image,
+     Upload) must never show it. The layout probe cannot hover, so the
+     scope is held here: the only thing that shows the tip is gated on
+     data-drag="1", both where it is armed and where it is drawn, and the
+     old ::after cue is gone rather than left beside it. */
+  s.section('the rail "Drag me" tip stays on draggable tools only');
+  {
+    const js=read('js/boards.js'),css=read('css/main.css');
+    s.ok('the tip exists in the stylesheet',/\.board-rail-tip\{/.test(css));
+    s.ok('arming it requires a data-drag button',
+      /closest\('\[data-act\]\[data-drag="1"\]'\);\s*if\(btn\)_boardsRailTipArm\(btn\)/.test(js));
+    s.ok('and drawing it re-checks data-drag',
+      /function _boardsRailTipShow\(btn\)\{\s*if\(!btn\|\|!btn\.getAttribute\|\|btn\.getAttribute\('data-drag'\)!=='1'\)return false;/.test(js));
+    const after=(css.match(/^[^{}\n]*::after\s*\{/gm)||[]).filter(r=>/\.rail-btn/.test(r));
+    s.eq('the old slide-out ::after cue is gone',after.join(' | ')||'none','none');
+    // The class only reaches the DOM for entries carrying drag:true.
+    s.ok('which js/boards.js only emits for a drag source',
+      /it\.drag\?' data-drag="1"':''/.test(js));
+  }
+
+  /* ── The image card's three tools (Sept 2026) ──────────────────────────
+     Draw on · Edit · Background. Three things that can only be checked
+     against the source, and each is a shape this file has been bitten by.
+     The overlay's z-index has to stay under the head strip's (4) so the
+     delete ✕ is still reachable, and over the card body — the "the whole
+     top bar was invisible behind a wrong z-index" class of bug. A stroke's
+     points must never be written as pairs: Firestore refuses a nested
+     array outright, which is how table content silently never persisted. */
+  s.section('draw on, edit and background');
+  {
+    const js=read('js/boards.js'),css=read('css/main.css');
+    // The strokes go into the cards array, which goes into a Firestore
+    // document. Nothing here may build a [[x,y],…].
+    s.ok('a stroke pushes NUMBERS, never a point array',
+      /stroke\.p\.push\(q\[0\],q\[1\]\)/.test(js)&&!/stroke\.p\.push\(q\)/.test(js));
+    s.ok('and it is seeded flat too',/p:\[first\[0\],first\[1\]\]/.test(js));
+    // An <svg> is a replaced element: given top and bottom with no height
+    // it takes the viewBox's intrinsic ratio instead of stretching, which
+    // was MEASURED at 240 tall inside a 360 card. The div is what stretches.
+    s.ok('the overlay is a div wrapping the svg, not a bare svg',
+      /<div class="board-draw\$\{live\?' drawing':''\}"/.test(js));
+    s.ok('and the svg fills it',/\.board-draw>svg\{display:block;width:100%;height:100%/.test(css));
+    const z=/\.board-draw\{[^}]*z-index:(\d+)/.exec(css);
+    s.ok('the overlay sits under the head strip, so the delete ✕ is still reachable',
+      !!z&&+z[1]<4,z?z[1]:'no z-index');
+    s.ok('and it is inert unless the pen is on this card',
+      /\.board-draw\{[^}]*pointer-events:none\}/.test(css)&&/\.board-draw\.drawing\{pointer-events:auto/.test(css));
+    // A board background goes straight into a CSS url(), so it is validated
+    // on the way IN — the _profPhotoUrl rule, and an anchored host test.
+    s.ok('a board background is validated before it is stored',
+      /_editBoard\.bgImage=u;/.test(js)&&/const u=_boardsCoverUrl\(c\.imageUrl\);/.test(js));
+    s.ok('and it is validated again on the way out of the save',
+      /bgImage:_boardsCoverUrl\(_editBoard\.bgImage\)\|\|null/.test(js));
+    // The board background must not fight the dot-grid cue or the pan/zoom
+    // transform: its own element, inside the stage and outside the world.
+    s.ok('it paints on its own element, not on .board-stage',
+      /\.board-bg\{position:absolute;inset:0/.test(css)&&/id="board-bg"/.test(js));
+    s.ok('and that element is inert',/\.board-bg\{[^}]*pointer-events:none/.test(css));
+    // Background removal is a Cloudinary add-on nobody can check from here,
+    // so the failure has to clear the flag rather than leave a broken card.
+    s.ok('a refused background removal clears the flag',
+      /window\.boardsNoBgFailed=function/.test(js)&&/delete c\.nobg;/.test(js));
+  }
+
+  /* ── The rail's hover tiles name real actions, and never invert ─────────
+     Each tool's icon fills a coloured tile on hover, keyed by its data-act.
+     A renamed act would silently lose its colour — the dead-hover shape
+     nothing on screen reports — so every selector must name an act that
+     js/boards.js emits. The tile carries a LITERAL white glyph, so its
+     --tool-* token must not be redefined for dark mode (the --count-accent
+     rule). And the large tier is by viewport HEIGHT and desktop WIDTH: the
+     phone dock's height is what the bottom stack is built off. */
+  s.section('the rail hover tiles');
+  {
+    const css=read('css/main.css'),js=read('js/boards.js');
+    const acts=new Set((js.match(/act:'([^']+)'/g)||[]).map(m=>m.slice(5,-1)));
+    const hovered=[...css.matchAll(/\.rail-btn\[data-act="([^"]+)"\]:hover svg/g)].map(m=>m[1]);
+    s.ok('hover colours exist',hovered.length>=10,hovered.length+' selectors');
+    s.eq('and every one names an act the rail emits',
+      hovered.filter(a=>!acts.has(a)).join(',')||'none','none');
+    const tokens=[...css.matchAll(/--tool-[a-z]+:/g)].map(m=>m[0]);
+    s.ok('the tile tokens are declared',tokens.length>=13,tokens.length+' declarations');
+    const dark=css.slice(css.indexOf('html[data-theme="dark"]{'),css.indexOf('color-scheme:dark}'));
+    s.eq('and none is redefined for dark mode (literal white sits on them)',
+      (dark.match(/--tool-[a-z]+:/g)||[]).join(',')||'none','none');
+    const tier=/@media \(min-width:561px\) and \(min-height:(\d+)px\)\{\s*\.board-rail\{width:92px/.exec(css);
+    s.ok('the large rail is scoped to desktop width AND a viewport height',!!tier,tier?tier[1]+'px':'no tier');
+    s.ok('and the tile changes no layout (padding cancelled by margin)',
+      /\.rail-btn svg,\.rail-btn \.rail-glyph\{box-sizing:content-box;padding:5px;margin:-5px/.test(css));
   }
 
   // ── A helper that is CALLED but never DEFINED ──────────────────────────
@@ -272,7 +402,8 @@ module.exports=function(){
   // decision, and this is what makes it show up in a diff review.
   const hubList=(sharedSrc.match(/_CREATIVE_HUB_USERS\s*=\s*\[([^\]]*)\]/)||[])[1]||'';
   const hubNames=(hubList.match(/'([^']+)'/g)||[]).map(x=>x.replace(/'/g,''));
-  s.eq('the Creative Hub audience is afnan, ammar, sami',hubNames.join(','),'afnan,ammar,sami');
+  s.eq('the Creative Hub audience is afnan, ammar, sami, mustafa, abbas',
+    hubNames.join(','),'afnan,ammar,sami,mustafa,abbas');
   // Nothing may still gate the hub on a bare username — that is the shape
   // the helper replaced, and a leftover would silently outrank it.
   const strays=GATE_FILES
@@ -407,32 +538,238 @@ module.exports=function(){
     });
   }
 
-  // ── A dblclick on a DESCENDANT of a drag surface needs the guard ───────
-  // boardsCardDragStart calls setPointerCapture, and a captured pointer
-  // RETARGETS the following click and dblclick to the capturing element.
-  // A card whose ondblclick sits on the very element carrying the drag
-  // handler survives that (a note, a heading, an image body); one whose
-  // handler sits on a DESCENDANT does not — its handler simply never runs.
-  // That has now cost the delete X, the file card, a table cell, the link
-  // title and, Sept 2026, every to-do item: double-clicking one did
-  // nothing, and the dblclick bubbled to the stage instead. So: any tag
-  // that carries an ondblclick must either BE the drag element (it holds
-  // the bodyDrag interpolation) or stop pointerdown itself.
-  s.section('ondblclick inside a drag surface');
+  /* ── The column's head height lives in TWO files and must agree ───────
+     _BOARDS_COL_HEAD (js/boards.js) is what the first child is laid out
+     below; .board-column-body's `top` (css/main.css) is where the drop
+     zone starts. They describe the same edge of the same box, so a header
+     redesign that moves one and not the other either paints the panel over
+     the first card or leaves a band of dead space above it — and neither
+     shows up in a logic suite. The number itself is MEASURED against the
+     real stylesheet by scratchpad/measure-column.js. */
+  s.section('the column head height agrees across js and css');
+  {
+    const js=read('js/boards.js'),css=read('css/main.css');
+    const head=/_BOARDS_COL_HEAD=(\d+)/.exec(js);
+    // [;{]top: on purpose — a greedy [^}]*top: matches the `top` in
+    // `border-top:1px` further along the same rule and reads 1.
+    const top=/\.board-column-body,\.board-frame-body\{[^}]*?[;{]top:(\d+)px/.exec(css);
+    s.ok('_BOARDS_COL_HEAD is declared',!!head,head&&head[1]);
+    s.ok('the body panel declares a top',!!top,top&&top[1]);
+    s.eq('and they are the same number',head&&head[1],top&&top[1]);
+    // A FRAME wears the same title block, so its header must come from the
+    // same rules — two copies would drift the first time one was edited,
+    // and the frame's head would then sit at a different height from the
+    // constant that lays its contents out.
+    s.ok('the frame shares the column head rule',
+      /\.board-column-head,\.board-frame-head\{/.test(css));
+    s.ok('and the title rule',/\.board-column-title,\.board-frame-title\{/.test(css));
+    s.ok('and the count rule',/\.board-column-count,\.board-frame-count\{/.test(css));
+    // An empty column IS the drop target, so it has to be bigger than its
+    // own header by enough to aim a card at.
+    const min=/_BOARDS_COL_MIN_H=(\d+)/.exec(js);
+    s.ok('an empty column leaves at least 80px of drop zone',
+      min&&head&&(+min[1]-+head[1])>=80,min&&head&&(+min[1]-+head[1])+'px');
+  }
+
+  /* ── A CARD IS GRABBABLE, AND ITS CONTROLS ARE STILL CLICKABLE ────────
+     These two used to be in tension and the tension is what shipped bugs.
+
+     boardsCardDragStart USED TO call setPointerCapture on the pointerdown,
+     and a captured pointer RETARGETS the click and dblclick that follow to
+     the capturing element — so a press that never became a drag stole the
+     click from whatever was actually pressed. That cost the delete X, the
+     file card's Open, a table cell, the link title and every to-do item,
+     five times under five names, and each was patched by hanging an
+     onpointerdown stopPropagation guard on the descendant.
+
+     Then the guards became the bug. The head strip is an absolute overlay
+     across the card's first row and is pointer-events:none, so a press on
+     it falls through to that row — and on a to-do card the row is the task
+     text, which carried one of those guards. Measured with the real
+     stylesheet: 42% of the strip started a drag, and none of its middle.
+     Afnan: "to do not moving properly".
+
+     So the capture is LAZY now, and that is what is guarded here: a press
+     that stays put never captures, so a descendant's dblclick is never
+     retargeted and text needs no guard. Real CONTROLS keep theirs, for a
+     different reason that still holds — a drag must not begin on something
+     you are in the middle of pressing, and dragging to select the text in
+     a field must not move the card. */
+  /* ── The Unsorted peek zone (Sept 2026) ──────────────────────────────
+     It exists only while a card is being dragged and the tray is shut, so
+     no probe can reach it through the module and no logic suite can see a
+     CSS rule. Two things about it are load-bearing:
+
+     - pointer-events:none. The drag runs on document-level listeners and
+       decides the drop by comparing the pointer to the zone's RECT, so a
+       zone that intercepted anything would be a zone able to swallow the
+       gesture it exists to serve.
+     - It must never be in the DOM at rest. It is built with createElement
+       in _boardsStashZone, never written into any render, so there is no
+       markup that could leave a 96px strip sitting over the canvas. */
+  /* ── The Unsorted tray's preview must not CROP (Sept 2026) ───────────
+     Afnan circled five items: a full-length model reference was rendering
+     as the strip across its middle — a pair of legs — because the
+     thumbnail was `object-fit:cover` in a fixed 84px box. A tray item is
+     looked at to RECOGNISE it, so nothing about it may be cropped away.
+
+     No layout fragment can hold this: smoke-layout measures geometry,
+     contrast and hit-testing, and a cropped picture is none of those — put
+     `cover` back and all six of its Unsorted-tray jobs still pass, which
+     is exactly why the rule lives here instead. */
+  /* ── The rail's drag ghost must not promise words the card will not say
+     (Sept 2026) ────────────────────────────────────────────────────────
+     The ghost draws a SILHOUETTE of the card it is about to place, because
+     the real _boardCardHTML emits ids and handlers and a second copy loose
+     in the document would hand every getElementById a duplicate. The cost
+     of a silhouette is that its placeholder text is a second copy of the
+     card's, free to drift.
+
+     IT HAD ALREADY DRIFTED, which is how this rule earned its place:
+     writing it is what found the Note ghost saying "Start typing…" while
+     the card that lands has said "Double-click to type…" since the day it
+     shipped. Every string the ghost draws must still appear in the card
+     markup. */
+  s.section('the drag ghost says what the card will say');
+  {
+    const js=read('js/boards.js');
+    const tbl=/_BOARDS_GHOST_PLACEHOLDERS=\{([\s\S]*?)\}/.exec(js);
+    s.ok('the ghost keeps its placeholders in one table',!!tbl);
+    const strings=tbl?(tbl[1].match(/'([^']+)'/g)||[]).map(x=>x.slice(1,-1)):[];
+    s.ok('and there are some',strings.length>=6,strings.join(' · '));
+    strings.forEach(str=>{
+      // Outside the table itself: the card markup has to carry it too.
+      const rest=js.replace(tbl[0],'');
+      s.ok('“'+str+'” is what the card really shows',rest.indexOf(str)>=0,
+        'the ghost draws it, no card renders it');
+    });
+  }
+
+  s.section('the tray thumbnail shows the whole picture');
+  {
+    const css=read('css/main.css');
+    const rule=(css.match(/\.board-tray-thumb\{[^}]*\}/)||[''])[0];
+    s.ok('the thumbnail has a rule',rule.length>30,rule.slice(0,60));
+    s.ok('it is object-fit:contain',/object-fit:contain/.test(rule),rule);
+    s.ok('and never cover, which crops to the middle',!/object-fit:cover/.test(rule),rule);
+    // It also got bigger, which is half of "better drag to drop movement":
+    // the thumbnail IS the grab target.
+    const h=Number((rule.match(/height:(\d+)px/)||[])[1]||0);
+    s.ok('and it is a target worth aiming at',h>=120,'height:'+h+'px');
+    /* The rows must size to their CONTENT. The list is flex:1 in a flex
+       column, so it has a definite height, and its auto rows were taking an
+       equal share of it — latent while an 84px thumbnail happened to fit
+       that share, and the moment the picture grew every item was squashed
+       around it and each label laid out entirely outside its own
+       overflow:hidden card. */
+    const list=(css.match(/\.board-tray-list\{[^}]*\}/)||[''])[0];
+    s.ok('the list sizes its rows to content',/grid-auto-rows:min-content/.test(list),list);
+  }
+
+  s.section('the Unsorted peek zone is inert and never rendered at rest');
+  {
+    const css=read('css/main.css'),src=read('js/boards.js');
+    const rule=(css.match(/\.board-stash-zone\{[^}]*\}/)||[''])[0];
+    s.ok('the zone has a rule',rule.length>40,rule.slice(0,60));
+    s.ok('and it is pointer-events:none',/pointer-events:none/.test(rule),rule);
+    s.ok('nothing renders it into markup',
+      !/class="board-stash-zone/.test(src),
+      (src.match(/class="board-stash-zone[^"]*"/)||[''])[0]);
+    s.ok('only _boardsStashZone builds it',
+      (src.match(/board-stash-zone/g)||[]).length>0&&
+      src.indexOf("z.id='board-stash-zone'")>-1);
+  }
+
+  s.section('the card drag captures lazily, and controls still guard');
   {
     const src=read('js/boards.js');
-    // Deliberate exceptions: elements that are not inside a drag surface at
-    // all, so there is no capture to escape. The caption sits OUTSIDE the
-    // card body, has no drag handler, and opens on a single click.
-    const EXEMPT=['board-caption'];
-    const tags=src.match(/<[a-zA-Z][^<>]*ondblclick[^<>]*>/g)||[];
-    s.ok('js/boards.js still wires double-clicks',tags.length>0,tags.length+' sites');
-    tags.forEach(t=>{
-      const cls=(t.match(/class="([a-z-]+)/)||[])[1]||t.slice(0,40);
-      if(EXEMPT.indexOf(cls)>=0)return;
-      s.ok('.'+cls+' is the drag element or stops pointerdown',
-        t.indexOf('onpointerdown')>=0||t.indexOf('bodyDrag')>=0,
+    const fn=src.slice(src.indexOf('window.boardsCardDragStart=function'),
+                       src.indexOf('window.boardsResizeStart=function'));
+    s.ok('boardsCardDragStart is found',fn.length>500,fn.length+' chars');
+    // The CALL, not the prose: the comment above it names the function
+    // while explaining why it no longer runs at pointerdown.
+    const cap=fn.indexOf('setPointerCapture('),thresh=fn.indexOf('_BOARDS_DRAG_PX');
+    s.ok('it takes the pointer only after the drag threshold',
+      cap>-1&&thresh>-1&&cap>thresh,'threshold at '+thresh+', capture at '+cap);
+    s.ok('and tracks on the document, since nothing is captured up front',
+      /document\.addEventListener\('pointermove'/.test(fn));
+
+    // The head strip cannot run a handler, so it must not carry one — a
+    // dead grip reads in review exactly like a working one.
+    const css=read('css/main.css');
+    s.ok('.board-card-head is pointer-events:none',
+      /\.board-card-head\{[^}]*pointer-events:none/.test(css));
+    s.ok('and js/boards.js hangs no handler on it',
+      !/class="board-card-head"[^>]*on[a-z]+=/.test(src),
+      (src.match(/class="board-card-head"[^>]*>/)||[''])[0].slice(0,90));
+    s.ok('only the delete ✕ takes pointer events back',
+      /\.board-card-head \.board-card-del\{pointer-events:auto\}/.test(css));
+
+    // Every text field a card renders. A drag beginning inside one would
+    // fight selecting its contents, which is why the link card was once
+    // excluded from body dragging altogether — and that exclusion left it
+    // with no way to be moved at all. The guard belongs on the field.
+    const cardFn=src.slice(src.indexOf('function _boardCardHTML'),
+                           src.indexOf('function _boardsCardFootHTML'));
+    s.ok('_boardCardHTML is found',cardFn.length>2000,cardFn.length+' chars');
+    // Text fields only: a hidden <input type="file"> is a picker the card
+    // never shows, and the checkbox is asserted on its own below.
+    const fields=(cardFn.match(/<(?:input|textarea)\b[^<>]*>/g)||[])
+      .filter(t=>/<textarea/.test(t)||!/type="/.test(t)||/type="text"/.test(t));
+    s.ok('a card renders text fields',fields.length>0,fields.length+' sites');
+    fields.forEach(t=>{
+      const id=(t.match(/class="([a-z-]+)/)||[])[1]||t.slice(0,34);
+      s.ok(id+' stops pointerdown',/onpointerdown="event\.stopPropagation\(\)"/.test(t),
         t.slice(0,110));
+    });
+    s.ok("and so does a to-do's checkbox",
+      /<input type="checkbox"[^<>]*onpointerdown="event\.stopPropagation\(\)"/.test(cardFn));
+    // Which card bodies actually carry the drag is asserted against
+    // RENDERED markup in tests/boards.test.js — stronger than reading the
+    // interpolation out of the source, and it caught the link card that
+    // could not be moved from anywhere.
+  }
+
+  // ── Fabric issue → Embellishment job: the two call sites ─────────────
+  //  tests/embellishment-jobs.test.js DRIVES the entry points, which proves
+  //  what they do and nothing about whether anybody calls them. The chain is
+  //  cross-FILE (fabric.js and pos.js reach into Ammar's embellishments.js),
+  //  so what holds it here is that each caller exists, guards with `typeof`
+  //  and fails CLOSED — a build without the embellishments module behaves
+  //  exactly as it did before, the Pattern Hub's rule for js/pos.js.
+  s.section('the embellishment job is wired to the fabric issue and to cutting');
+  {
+    const fab=stripComments(read('js/fabric.js'));
+    const pos=stripComments(read('js/pos.js'));
+    const emb=stripComments(read('js/embellishments.js'));
+
+    s.ok('js/fabric.js calls embOnFabricIssued',/embOnFabricIssued\s*\(/.test(fab));
+    s.ok('behind a typeof guard that fails closed',
+      /typeof\s+embOnFabricIssued\s*===\s*'function'/.test(fab));
+    s.ok('and it hands over the gate-pass PAYLOAD, not a summary',
+      /embOnFabricIssued\(_poDoc,\s*payload\)/.test(fab));
+    s.ok('a failure there never breaks the issue that already landed',
+      /embOnFabricIssued\([^)]*\)\.catch\(/.test(fab));
+
+    s.ok('js/pos.js calls embOnCuttingDone',/embOnCuttingDone\s*\(/.test(pos));
+    s.ok('behind a typeof guard too',
+      /typeof\s+embOnCuttingDone\s*===\s*'function'/.test(pos));
+    s.ok('handing over the ACTUAL cut per size',
+      /embOnCuttingDone\([^)]*cutState\.actualQty[^)]*\)/.test(pos));
+
+    // The old entry point sized its job off po.qty/po.sizes — what was
+    // ORDERED — while the caller passed the real cut in and it was dropped.
+    // Both halves are gone; neither may come back.
+    s.eq('the ordered-qty entry point is gone',
+      /autoCreateEmbJob/.test(fab+pos+emb),false);
+    s.eq('and no job payload is built from the ORDERED sizes',
+      /sizeBreakdown:\s*po\.sizes/.test(emb),false);
+
+    // Both entry points must exist in the module the two callers reach into.
+    ['embOnFabricIssued','embOnCuttingDone','_embUpsertJob','_embSizesFromIssue',
+     '_embFabricFromIssue','_embDisplaySizes'].forEach(fn=>{
+      s.ok(fn+' is defined in js/embellishments.js',
+        new RegExp('function\\s+'+fn+'\\s*\\(').test(emb));
     });
   }
 

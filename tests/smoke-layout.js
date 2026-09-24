@@ -55,6 +55,50 @@ function findBrowser(){
   return null;
 }
 
+
+// Store Accounts fixture: a small, realistic ledger — an overdue credit
+// vendor, a cash-terms walk-in, a consumable (gas) vendor, an aged runner
+// float, a void row, a pending cash-in and a review flag.
+function _acctFixture(){
+  const LS={getItem:()=>null,setItem(){},removeItem(){}};
+  const pad=n=>String(n).padStart(2,'0');
+  const day=n=>{const d=new Date();d.setDate(d.getDate()-n);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());};
+  let seq=0;
+  const E=(type,o)=>Object.assign({_id:'e'+(++seq),type,date:day(0),month:day(0).slice(0,7),ts:1000+seq,by:'raees',byName:'Raees',vendorId:null,vendorName:'',person:'',account:null,toAccount:null,source:null,floatId:null,amount:0,lines:[],category:'',ref:'',note:'',photo:null,status:'posted',needsReview:false,reviewFlags:[]},o||{});
+  const V=(id,o)=>Object.assign({_id:id,name:id,kind:'goods',terms:{mode:'credit',creditDays:30,creditLimit:0,billDay:0,expectedAmount:0},meter:null,contact:{person:'',phone:'',address:''},supplies:[],notes:'',active:true,openingBalance:0},o||{});
+  const app=loadApp({files:['js/store.js','js/store-accounts.js'],currentPage:'acct-ledger',globals:{
+    allItems:[{code:'TH1',name:'Thread white 40/2',unit:'cone',balance:20,sizeSpecific:false,_id:'TH1'}],allTransactions:[],allTemplates:[],allRequests:[],allActivePOs:[],
+    allStoreCategories:[],allPoIssueRequests:[],allPoEditRequests:[],allPoShortfalls:[],
+    auth:{currentUser:{getIdToken:async()=>'tok'}},localStorage:LS,
+    _ilPage:1,_ilQ:'',_ilPO:'',_ilDir:'',IL_PER:15,IL_MAX_PAGES:1000,_invFilterCat:'all',_invSearchQ:'',_invSort:'category'}});
+  const entries=[
+    E('cash_in',{account:'cash',amount:40000,date:day(40),via:'cash',person:'Afnan'}),
+    E('cash_in',{account:'mcb',amount:150000,date:day(40),via:'mcb',person:'Ammar',ref:'TRX-88121'}),
+    E('purchase',{source:'credit',amount:18000,vendorId:'thread',vendorName:'Karachi Thread House',date:day(38),ref:'INV-2291',category:'Store purchase',lines:[{itemCode:'TH1',desc:'Thread white 40/2',qty:60,unit:'cone',rate:210,total:12600},{itemCode:'TH2',desc:'Thread black 40/2',qty:24,unit:'cone',rate:225,total:5400}],photo:'https://res.cloudinary.com/x/y.jpg',stockPosted:true}),
+    E('payment',{account:'mcb',amount:13000,vendorId:'thread',vendorName:'Karachi Thread House',date:day(20),ref:'TRX-88400',photo:'https://res.cloudinary.com/x/z.jpg'}),
+    E('purchase',{source:'cash',account:'cash',amount:1450,vendorId:'walk',vendorName:'Walk-in / direct',date:day(6),category:'Maintenance & repairs',lines:[{itemCode:'',desc:'Plumber — washroom tap',qty:1,unit:'',rate:1450,total:1450}]}),
+    E('float_out',{_id:'flt1',account:'cash',amount:5000,person:'Noman',date:day(9),note:'packing + thread run'}),
+    // a float Abbas OVERSPENT — the excess is owed to him until settled — and
+    // a bill with no vendor account at all, paid to a named person
+    E('float_out',{_id:'flt2',account:'cash',amount:2000,person:'Abbas',date:day(4),category:'Fuel & transport',note:'petrol for the Shershah run'}),
+    E('purchase',{source:'float',floatId:'flt2',person:'Abbas',amount:2600,payee:'PSO pump, Korangi',date:day(3),category:'Fuel & transport',expense:true,photo:'https://res.cloudinary.com/x/z.jpg',lines:[{itemCode:'',desc:'Petrol — 2 round trips',qty:1,unit:'',rate:2600,total:2600}]}),
+    E('purchase',{source:'cash',account:'cash',amount:900,payee:'Ali electrician',date:day(1),category:'Maintenance & repairs',expense:true,lines:[{itemCode:'',desc:'Fan rewiring, cutting hall',qty:1,unit:'',rate:900,total:900}]}),
+    E('purchase',{source:'float',floatId:'flt1',person:'Noman',amount:3200,vendorId:'walk',vendorName:'Walk-in / direct',date:day(8),category:'Store purchase',lines:[{itemCode:'',desc:'Packing tape ×24',qty:24,unit:'roll',rate:133.33,total:3200}]}),
+    E('purchase',{source:'cash',account:'cash',amount:800,vendorId:'walk',vendorName:'Walk-in / direct',date:day(5),status:'void',voidReason:'entered twice',voidedBy:'raees',lines:[{itemCode:'',desc:'Tea & biscuits',qty:1,unit:'',rate:800,total:800}]}),
+    E('transfer',{account:'mcb',toAccount:'cash',amount:20000,date:day(3),note:'ATM withdrawal for the drawer'}),
+    E('purchase',{source:'cash',account:'cash',amount:12500,vendorId:'walk',vendorName:'Walk-in / direct',date:day(2),category:'Maintenance & repairs',needsReview:true,reviewFlags:['over limit','no receipt'],lines:[{itemCode:'',desc:'Generator service',qty:1,unit:'',rate:12500,total:12500}]}),
+    E('cash_in',{account:'cash',amount:10000,status:'pending',date:day(1),via:'cash',person:'Afnan',by:'afnan',byName:'Afnan'})
+  ];
+  const vendors=[
+    V('thread',{name:'Karachi Thread House',contact:{person:'Bilal',phone:'0300-1234567',address:'Shershah, Karachi'},supplies:['Thread','Elastic'],terms:{mode:'credit',creditDays:30,creditLimit:50000,billDay:0,expectedAmount:0}}),
+    V('walk',{name:'Walk-in / direct',terms:{mode:'cash',creditDays:0,creditLimit:0,billDay:0,expectedAmount:0}}),
+    V('net',{name:'Nayatel',kind:'utility',terms:{mode:'weekly',creditDays:0,creditLimit:0,billDay:0,billWeekdays:[3,6],expectedAmount:2500},contact:{person:'',phone:'',address:''}}),
+    V('gas',{name:'Pak Gas Agency',kind:'consumable',terms:{mode:'monthly',creditDays:0,creditLimit:0,billDay:5,expectedAmount:30000},meter:{type:'weighed',unit:'kg',rate:300,label:'Gas'},contact:{person:'',phone:'021-1234567',address:''}})
+  ];
+  const seed=a=>a.run(`acctEntries=${JSON.stringify(entries)};acctVendors=${JSON.stringify(vendors)};acctCloses=[];acctSettings={approvalLimit:10000,receiptRequiredAbove:2000,floatWarnDays:3,floatRedDays:7,categories:ACCT_DEFAULTS.categories,runners:['Noman']};_acctLoaded=true;_storeLoadAttempted=true;_acctSort(acctEntries);1`);
+  return {app,seed};
+}
+
 // ── the fragments under test ─────────────────────────────────────────────
 // Each returns real HTML from the real module. Names are filled in here
 // because the modules hydrate them with textContent at runtime, which the
@@ -115,19 +159,138 @@ const FRAGMENTS={
       {id:'u1',kind:'text',text:'A note with a fairly long first line that has to wrap somewhere'},
       {id:'u2',kind:'file',fileName:'winter-sequence-2026-techpack-final-v3.pdf',fileSize:2400000},
       {id:'u3',kind:'link',linkUrl:'https://example.test/a',linkTitle:'example.test'},
-      {id:'u4',kind:'file',fileName:'a.pdf'}
+      {id:'u4',kind:'file',fileName:'a.pdf'},
+      {id:'u5',kind:'cards',name:'FABRIC & TRIMS FOR WINTER · 12 cards',
+        cards:[{id:'c1',type:'column',title:'FABRIC & TRIMS FOR WINTER'}]},
+      {id:'u6',kind:'cards',name:'Table',cards:[{id:'c2',type:'table'}]}
     ]`);
     let html=app.run('_boardsTrayHTML(true)');
     app.run('_boardsTrayHydrate()');
     // Same reason as above: hydration goes into the harness's stub nodes, so
     // the labels are written in here for the measurement.
     ['A note with a fairly long first line that has to wrap somewhere',
-     'winter-sequence-2026-techpack-final-v3.pdf','example.test','a.pdf'].forEach((t,i)=>{
+     'winter-sequence-2026-techpack-final-v3.pdf','example.test','a.pdf',
+     'FABRIC & TRIMS FOR WINTER · 12 cards','Table'].forEach((t,i)=>{
       html=html.replace(new RegExp('(id="board-tray-l-'+i+'"[^>]*>)'),'$1'+t);
     });
     // The tray is position:absolute against the canvas wrap; give it one.
     return Promise.resolve(
       '<div style="position:relative;height:600px;width:100%">'+html+'</div>');
+  },
+  /* ── THE UNSORTED PEEK ZONE ──────────────────────────────────────────
+     Built by _boardsStashZone only while a card is being dragged and the
+     tray is shut, so the probe cannot reach it through the module — it is
+     composed here from the same markup that function writes. Worth
+     measuring because its whole job is to be READ mid-gesture: the idle
+     label is --muted on --surface and the armed one is --text on --hover,
+     and both have to hold in either theme. */
+  /* The drag ghost. It is built with createElement at drag time, so no
+     fragment can render the REAL builder — what is measured here is the
+     CSS, and the class names are pinned on the other side by
+     tests/boards.test.js, which asserts the builder emits exactly these.
+     That is the same division the trash ramp uses: the colours are this
+     probe's, the mechanism is the suite's.
+
+     The picture is a solid WHITE stand-in, so ink that stops reading over
+     a light photograph shows up rather than hiding behind a dark sample.
+     Each ghost is given its own left/top because the real thing is
+     position:fixed and they would otherwise stack at 0,0 and report each
+     other as covering — the documented false hit. */
+  /* The RAIL's drag ghost — the card each placing tool will drop, at the
+     board's zoom. Drawn at zoom 1 with the real birth sizes, so what is
+     measured is the footprint a drop really lands. Same division as the
+     tray ghost: the CSS is this probe's, the class names and the sizes are
+     pinned in tests/boards.test.js against _boardsNewCardSize.
+
+     Each is position:fixed with its own left/top, because that is what the
+     real one is and they would otherwise stack at 0,0 and report each
+     other as covering — the documented false hit. */
+  /* The selection rail with its counts. The button is built inside
+     _boardsRenderRail's own map, so this renders the real rail through the
+     real module rather than a hand-written copy — which also makes it the
+     only place that can check a ZERO paints no badge at all.
+
+     The badge chip is var(--red) with var(--on-dark) ink: both invert
+     together, which is the documented correct pair, and this fragment is
+     what proves it rather than the arithmetic. */
+  'boards — the selection rail counts':()=>{
+    const app=loadApp({files:['js/boards.js']});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'shared',zoom:1,panX:0,panY:0};
+      moodBoards=[{id:'b1',ownerUid:'u1',visibility:'shared',title:'T',cards:[]}];
+      _editConnectors=[];_boardsConnSel=null;_boardsDrawOn=null;
+      _boardsComments=[{id:'m1',cardId:'a'},{id:'m2',cardId:'a'},{id:'m3',cardId:'a',resolved:true}];
+      _editCards=[{id:'a',type:'text',x:0,y:0,w:220,h:100,
+         labels:[{t:'See this',c:'green'},{t:'Fabric',c:'blue'}],
+         reactions:{'👍':['u1','u2'],'🔥':['u3']}},
+        {id:'z',type:'text',x:300,y:0,w:220,h:100}];`);
+    const rail=who=>{
+      app.run(`_boardsSelection=new Set(['${who}'])`);
+      const items=JSON.parse(app.run(`JSON.stringify(_boardsRailItems().filter(i=>i&&i.act))`));
+      return items.map(it=>
+        '<button class="rail-btn" data-act="'+it.act+'" title="'+it.label+'">'+
+        '<span class="rail-glyph">•</span><span>'+it.label+'</span>'+
+        (it.count?'<span class="board-rail-badge">'+(it.count>99?'99+':it.count)+'</span>':'')+
+        '</button>').join('');
+    };
+    return Promise.resolve({widths:[1900,1280],html:
+      '<div style="display:flex;gap:24px;align-items:flex-start">'+
+      '<div class="board-rail" style="position:relative">'+rail('a')+'</div>'+
+      '<div class="board-rail" style="position:relative">'+rail('z')+'</div>'+
+      '</div>'});
+  },
+  'boards — the rail drag ghost':()=>{
+    const G=(x,y,w,h,type,inner)=>
+      '<div class="board-rail-ghost card type-'+type+'" style="left:'+x+'px;top:'+y+'px;'+
+        'width:'+w+'px;height:'+h+'px;font-size:15px">'+
+        '<div class="ghost-in">'+inner+'</div></div>';
+    const head=(name)=>'<div class="ghost-head"><div class="ghost-name">'+name+'</div>'+
+      '<div class="ghost-sub">0 cards</div></div>';
+    let cells='';for(let i=0;i<12;i++)cells+='<div class="ghost-cell"></div>';
+    return Promise.resolve(
+      '<div style="position:relative;height:640px">'+
+      G(30,40,220,100,'text','<div class="ghost-ph">Double-click to type…</div>')+
+      G(280,40,170,120,'link','<div class="ghost-field">Enter a link URL</div>')+
+      G(480,40,240,170,'todo',
+        '<div class="ghost-row"><div class="ghost-check"></div>'+
+        '<div class="ghost-item">To-do</div></div>'+
+        '<div class="ghost-ph">Add a task…</div>')+
+      G(760,40,340,136,'board','<div class="ghost-spine"></div>'+
+        '<div class="ghost-info"><div class="ghost-name">New board</div>'+
+        '<div class="ghost-sub">PRIVATE</div></div>')+
+      G(30,240,440,58,'heading','<div class="ghost-band">Section title</div>')+
+      G(500,240,280,160,'column',head('New Column')+
+        '<div class="ghost-panel">Drag cards here</div>')+
+      G(810,240,360,200,'table','<div class="ghost-grid">'+cells+'</div>')+
+      G(30,330,440,320,'frame',head('New Frame')+'<div class="ghost-panel"></div>')+
+      '</div>');
+  },
+  'boards — the drag ghost':()=>{
+    const WHITE="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Crect width='8' height='8' fill='%23fff'/%3E%3C/svg%3E";
+    const ghost=(x,y,inner,label)=>
+      '<div class="board-tray-ghost" style="left:'+x+'px;top:'+y+'px">'+
+        '<div class="board-tray-ghost-pic">'+inner+'</div>'+
+        '<div class="board-tray-ghost-label">'+label+'</div>'+
+      '</div>';
+    const badge=w=>'<div class="board-tray-ghost-badge">'+w+'</div>';
+    return Promise.resolve(
+      '<div style="position:relative;height:420px">'+
+      // A photograph, with the name under it.
+      ghost(90,110,'<img src="'+WHITE+'" alt="">','Model REF 1')+
+      // No picture: the word carries it, on the default --soft box.
+      ghost(260,110,badge('COLUMN'),'FABRIC &amp; TRIMS FOR WINTER')+
+      ghost(430,110,badge('PDF'),'winter-sequence-2026-techpack-final-v3.pdf')+
+      // A board with no cover paints its own literal colour, with the ink
+      // _boardsInkOn computes — light and dark case, both measured.
+      ghost(600,110,'<div class="board-tray-ghost-badge" style="background:#1A1A2E;color:#fff;width:100%;height:100%;display:flex;align-items:center;justify-content:center">W</div>','WINTER DUMP 2K27')+
+      ghost(770,110,'<div class="board-tray-ghost-badge" style="background:#F2E8C9;color:#111;width:100%;height:100%;display:flex;align-items:center;justify-content:center">D</div>','DENIM DUMP 2K27')+
+      '</div>');
+  },
+  'boards — the Unsorted peek zone':()=>{
+    const zone=on=>'<div style="position:relative;height:170px;width:100%;'+
+      'background:var(--bg);border:1px solid var(--border);margin-bottom:10px">'+
+      '<div class="board-stash-zone'+(on?' panel-drop':'')+'">'+
+      '<span class="board-stash-zone-label">Unsorted</span></div></div>';
+    return Promise.resolve(zone(false)+zone(true));
   },
   // Cards carrying every piece of chrome at once — the shape QA reported
   // twice: a label and a reaction row stealing the body's height until the
@@ -146,6 +309,81 @@ const FRAGMENTS={
   // column's background, which is behaviour no layout measurement sees.
   // The store category chips — the control Afnan reported as unreadable in
   // dark mode, and the shape the same bug took in eight other files.
+  // Store Accounts (js/store-accounts.js): the KPI tiles, the alert strip,
+  // the ledger toolbar and the books table with a running balance, the
+  // vendor profile, the consumables grid and the purchase form. The table
+  // is allowed to scroll sideways inside its own wrapper on a phone (the
+  // Marketing rule), so the table fragments opt out of 420px, where the
+  // probe would read a row scrolled out of the wrapper as covered; the
+  // tiles and the form are measured at every width.
+  'store accounts — ledger, vendor, consumables':()=>{
+    const {app,seed}=_acctFixture();
+    seed(app);
+    app.run("currentPage='acct-ledger';_acctView='cash';_acctPeriod={preset:'all'}");
+    const ledger=app.run("_acctPageHead('acct-ledger')+_acctLedgerPage()");
+    app.run("_acctVendorId='thread';_acctVendorTab='aging';currentPage='acct-vendor'");
+    const vendor=app.run("_acctVendorPage()");
+    // the Runners and Categories cards on the Vendors tab, and a page of each
+    const cards=app.run("_acctRunnersCard()+_acctCategoriesCard()");
+    const pages=app.run("(()=>{_acctCategoryId=_acctCategoryStats()[0].name;_acctRunnerId=_acctRunners()[0];return _acctCategoryPage()+_acctRunnerPage();})()");
+    const m=app.run('_acctThisMonth()');
+    const logs=[{date:m+'-01',qty:45,residual:5,byName:'Raees'},{date:m+'-02',qty:45,residual:7,byName:'Raees',note:'late delivery'}];
+    const cons=app.run(`(()=>{const v=_acctVendor('gas');return '<div class="card" style="padding:0;overflow:hidden">'+_acctConsGrid(v,'${m}',${JSON.stringify(logs)})+_acctConsFoot(v,'${m}',${JSON.stringify(logs)})+'</div>';})()`);
+    return Promise.resolve({widths:[1900,1280],html:ledger+vendor+cards+pages+cons});
+  },
+  'store accounts — tiles, alerts and the purchase form':()=>{
+    const {app,seed}=_acctFixture();
+    seed(app);
+    app.run("currentPage='acct-ledger';_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    const tiles=app.run("_acctPageHead('acct-ledger')+(()=>{const b=_acctBalances();const f=_acctOpenFloats();return '<div class=\"acct-tiles\">'+_acctTile('Cash in hand',b.cash)+_acctTile('MCB Bank',b.mcb)+_acctTile('Owed to vendors',_acctTotalPayables(),{danger:true,sub:'₨5,000 overdue'})+_acctTile('With runners',f.reduce((s,x)=>s+x.left,0),{danger:true,sub:'1 open float'})+'</div>'+_acctAlerts(f);})()");
+    app.run("window.acctForm('purchase',{vendorId:'thread'})");
+    app.run("_acctFormLines=[{itemCode:'TH1',desc:'Thread white 40/2',qty:'12',unit:'cone',rate:'210',hint:'Last bought @ ₨210 on 01 Sep 26 from Karachi Thread House · in stock now: 20 cone'},{itemCode:'',desc:'Rickshaw to Shershah',qty:'1',unit:'',rate:'300',hint:''},_acctNewLine()]");
+    const body=app.run('window.__cap.b');
+    // The REAL row (`_acctLineHTML`), placeholders included — a hand-rolled copy
+    // here once measured a shorter placeholder than the one that shipped.
+    const lines=app.run("_acctFormLines.map((l,i)=>_acctLineHTML(l,i)).join('')");
+    // max-height:none — the real modal is a 92dvh scroll box, and a control
+    // scrolled out of its body reads as "covered by the foot" (the documented
+    // false hit); it flipped between passing and failing with font timing
+    const modal=(b)=>'<div class="acct-modal" style="position:static;max-width:720px;margin-top:14px;max-height:none"><div class="acct-modal-head"><span>Record purchase</span><button class="acct-x">×</button></div><div class="acct-modal-body">'+b+'</div><div class="acct-modal-foot"><button class="btn-outline">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px">Record purchase</button></div></div>';
+    // the same form opened for a service vendor: Expense mode, the stock block hidden
+    app.run("window.acctForm('purchase',{vendorId:'net'})");
+    const expBody=app.run('window.__cap.b');
+    // and the payment form with its third Paid-from chip, OTHER, selected —
+    // the hint under it is shown, since the chip is what reveals it
+    app.run("window.acctForm('payment',{vendorId:'thread'})");
+    const payBody=(app.run('window.__cap.b')||'').replace('class="acct-chipbtn on" data-v="cash"','class="acct-chipbtn" data-v="cash"').replace('class="acct-chipbtn" data-v="other"','class="acct-chipbtn on" data-v="other"').replace('id="f-acc-hint" style="font-size:13px;color:var(--muted);margin-top:4px;display:none"','id="f-acc-hint" style="font-size:13px;color:var(--muted);margin-top:4px;display:block"');
+    // the same form with NO vendor: "Paid to" shown, the vendor select and the
+    // On-credit chip hidden, the ₨1,000 photo rule under the label
+    app.run("window.acctForm('purchase',{category:'Maintenance & repairs',desc:'Fan rewiring, cutting hall',amount:900})");
+    const noVendorBody=app.run('window.__cap.b');
+    // and settling with a runner who spent over the float, Other selected
+    app.run("window.acctForm('runner_pay',{person:'Abbas'})");
+    const settleBody=(app.run('window.__cap.b')||'').replace('class="acct-chipbtn on" data-v="cash"','class="acct-chipbtn" data-v="cash"').replace('class="acct-chipbtn" data-v="other"','class="acct-chipbtn on" data-v="other"').replace('id="f-acc-hint" style="font-size:13px;color:var(--muted);margin-top:4px;display:none"','id="f-acc-hint" style="font-size:13px;color:var(--muted);margin-top:4px;display:block"');
+    const form=modal(body.replace('<div id="acct-lines"></div>','<div id="acct-lines">'+lines+'</div>'))+modal(expBody)+modal(payBody)+modal(noVendorBody)+modal(settleBody);
+    return Promise.resolve(tiles+form);
+  },
+  // Afnan's correction tools: the Admin tools card on the review page (the
+  // whole page, which had never been measured), the admin edit modal and
+  // the reset modal. The fixture's session is made afnan by name — the card
+  // and the buttons are gated on the username, not the owner role.
+  'store accounts — admin tools, edit and reset':()=>{
+    const {app,seed}=_acctFixture();
+    seed(app);
+    app.run("session.u='afnan';session.role='owner';currentPage='acct-review';acctCloses=[{_id:'2026-08',month:'2026-08',cashBook:12000,cashCounted:12000,variance:0,closedByName:'Afnan'}];_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    const review=app.run("_acctReviewPage()");
+    // the vendor page's HEAD card as afnan carries the Delete vendor button the other
+    // fragment never sees; the statement table under it is that fragment's, and it
+    // opts out of 420px (it scrolls inside its wrapper), so only the head is taken here
+    const vendor=app.run("(()=>{const h=_acctVendorId='gas',p=(_acctVendorTab='statement',_acctVendorPage());const i=p.indexOf('<div class=\"card\"',10);return i>0?p.slice(0,i):p;})()");
+    const modal=(t,b,f)=>'<div class="acct-modal" style="position:static;max-width:640px;margin-top:14px"><div class="acct-modal-head"><span>'+t+'</span><button class="acct-x">×</button></div><div class="acct-modal-body">'+b+'</div><div class="acct-modal-foot">'+f+'</div></div>';
+    app.run("window.acctAdminEdit(acctEntries.find(e=>e.type==='purchase')._id)");
+    const edit=app.run("modal=window.__cap;JSON.stringify(modal)");
+    app.run("window.acctAdminResetPrompt()");
+    const reset=app.run("JSON.stringify(window.__cap)");
+    const e=JSON.parse(edit),r=JSON.parse(reset);
+    return Promise.resolve(review+vendor+modal(e.t,e.b,e.f)+modal(r.t,r.b,r.f));
+  },
   'store — inventory category chips':()=>{
     const app=loadApp({files:['js/store.js'],globals:{
       allItems:[],_invFilterCat:'all',_invSearchQ:'',_invSort:'category',
@@ -219,6 +457,32 @@ const FRAGMENTS={
     return Promise.resolve(
       '<div style="position:relative;overflow:hidden;height:580px;width:100%">'+html+'</div>');
   },
+  /* A FRAME wears the column's title block now, so it is measured beside
+     it rather than trusted to inherit it: same head, same count, same
+     corner buttons. Its count is GEOMETRY (the cards whose centres fall
+     inside) and its region stays see-through, which is the one place the
+     two deliberately differ.
+     ITS OWN FRAGMENT, not more rows on the column one: the probe SKIPS
+     hit-testing anything below the window, so a 1500px stack quietly stops
+     being checked at all — found by breaking the frame body to cover its
+     own header and watching the probe pass. */
+  'boards — frames wear the column title block':()=>{
+    const app=loadApp({files:['js/boards.js']});
+    app.run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
+      _editConnectors=[];moodBoards=[];
+      _editCards=[
+        {id:'fr',type:'frame',title:'Winter Drop 2027 — cut and sew',x:20,y:20,w:380,h:230},
+        {id:'fk',type:'text',text:'Lab dip approved',x:40,y:130,w:170,h:80},
+        {id:'frempty',type:'frame',title:'',x:20,y:280,w:380,h:190},
+        {id:'frfold',type:'frame',title:'Archived section',x:20,y:500,w:380,h:190,collapsed:true,openH:190},
+        {id:'hid',type:'text',text:'hidden by the fold',x:40,y:590,w:170,h:80}
+      ];
+      _boardsSelection=new Set(['fr']);`);
+    let html=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`);
+    html=html.replace(/(id="board-txt-fk"[^>]*>)/,'$1Lab dip approved');
+    return Promise.resolve(
+      '<div style="position:relative;overflow:hidden;height:720px;width:100%">'+html+'</div>');
+  },
   'boards — a column and its cards':()=>{
     const app=loadApp({files:['js/boards.js']});
     app.run(`_editBoard={id:'b1',zoom:1,panX:0,panY:0,visibility:'shared',ownerUid:'u1',title:'T'};
@@ -227,13 +491,43 @@ const FRAGMENTS={
         {id:'col',type:'column',title:'Winter fabric',x:20,y:20,w:260,h:160},
         {id:'a',type:'text',text:'Cotton drill 8.5oz',x:0,y:0,w:170,h:90,columnId:'col'},
         {id:'b',type:'file',fileName:'swatch-card.pdf',fileSize:20480,
-         fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/s.pdf',x:0,y:0,w:170,h:130,columnId:'col'}
+         fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/s.pdf',x:0,y:0,w:170,h:130,columnId:'col'},
+        // The header Afnan drew: the name centred with the count under it
+        // and a collapse minus in the corner. An EMPTY column is the one
+        // that matters here — it is the drop target, and its whole body is
+        // the "Drag cards here" panel, so a title block that overran it
+        // would cover the thing you are aiming at. One selected (the ✕
+        // shows beside the minus only then, or on hover), one collapsed to
+        // its header, one with a name long enough to need the room.
+        // ONE COLUMN of columns, and that is not cosmetic: a 280px column
+        // at x=300 sits past the right edge of the 420px viewport, where
+        // the wrapper clips it and the hit-test then reports its own
+        // buttons as unreachable — the fragment measuring itself. Same
+        // reason the board-card fragment stacked.
+        {id:'empty',type:'column',title:'',x:20,y:360,w:280,h:150},
+        {id:'sel',type:'column',title:'Lowkey Heat drop — sampling',x:20,y:530,w:280,h:150},
+        {id:'fold',type:'column',title:'Archived',x:20,y:700,w:280,h:150,collapsed:true},
+        {id:'f1',type:'text',text:'hidden by the fold',x:0,y:0,w:256,h:90,columnId:'fold'}
       ];
+      _boardsSelection=new Set(['sel']);
       _boardsLayoutColumns();`);
     let html=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`);
     html=html.replace(/(id="board-txt-a"[^>]*>)/,'$1Cotton drill 8.5oz');
+    // A second copy of the EMPTY column with the drop highlight forced on.
+    // The probe cannot drag, and that highlight is the only feedback a
+    // person gets while aiming a card at a column, so it would otherwise
+    // never be measured. Only the empty one, re-homed to the top-left: a
+    // copy of the whole set needs a wrapper as tall as the first, and a
+    // column hanging past a clipping wrapper reports its own controls as
+    // covered — the fragment measuring itself rather than the layout.
+    const empty=/(<div class="board-column[^]*?)(?=<div class="board-column|$)/;
+    const one=(html.match(/<div class="board-column"[^>]*id="board-card-empty"[^]*?<\/div>\s*(?=<div class="board-card-el|<div class="board-column|$)/)||[''])[0];
+    const lit=one.replace('class="board-column"','class="board-column drop-into"')
+                 .replace(/id="board-card-empty"/,'id="board-card-lit"')
+                 .replace(/left:\d+px;top:\d+px/,'left:20px;top:20px');
     return Promise.resolve(
-      '<div style="position:relative;overflow:hidden;height:600px;width:100%">'+html+'</div>');
+      '<div style="position:relative;overflow:hidden;height:800px;width:100%">'+html+'</div>'+
+      '<div style="position:relative;overflow:hidden;height:200px;width:100%">'+lit+'</div>');
   },
   // The trash panel is a list of rows that each pair a long, unbounded
   // string (the card preview) with fixed-width chrome and two buttons —
@@ -271,13 +565,24 @@ const FRAGMENTS={
   // What this holds: the far board must still be free of clipped text and
   // unreachable controls once the chrome is hidden, which is the risk in
   // hiding a flex sibling (the body grows into its space).
-  /* A board card is the board's PICTURE now, so white ink sits on a scrim
-     over something this fragment cannot predict. The worst case is a LIGHT
-     cover, so the covers here are swapped for a solid WHITE image: if the
-     scrim ever goes back to fading to transparent, the contrast check reads
-     white on white and says so. It also measures the two-line name, and
-     hit-tests the Open pill, which now sits in the same corner as the
-     resize grip. */
+  /* A board card is a SPINE now (option D): the board's face down the left
+     edge, the whole name and meta on the CARD SURFACE beside it, and a strip
+     of the board's own thumbnails at the foot. Three things this has to
+     hold, and none of them is visible to a logic suite:
+
+     - the name and meta take their ink from tokens now (they used to sit on
+       a literal black scrim), so the contrast check has to see them in BOTH
+       themes — a literal white left behind would be white-on-white in light;
+     - the long-name card wraps to the clamped two lines rather than
+       overflowing. Note what this does NOT prove, checked by removing it:
+       the info column's min-width:0. The title carries word-break, so it
+       shrinks either way — that rule is a guard for whatever is added to
+       the column next, not something a measurement here can hold;
+     - the thumbnail strip and the phone Open pill share the foot of the
+       card, and the pill is hit-tested.
+
+     The covers are swapped for a solid WHITE image: the probe has no
+     network, and an <img> that never loads measures as nothing. */
   'boards — a board card wears the board’s face':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     const COVER='https://res.cloudinary.com/deww4lpym/image/upload/v1/cover.jpg';
@@ -292,19 +597,29 @@ const FRAGMENTS={
         {id:'B4',title:'Old card, never resized',ownerUid:'u1',visibility:'personal',color:'#14532D',cards:[{id:'d'}]}
       ];
       _editCards=[
-        {id:'k1',type:'board',boardId:'B1',x:10,y:10,w:240,h:180},
-        {id:'k2',type:'board',boardId:'B2',x:280,y:10,w:240,h:180},
-        {id:'k3',type:'board',boardId:'B3',x:550,y:10,w:240,h:180},
-        // The size every board card was written at before the redesign —
-        // not migrated, so the render has to grow it rather than clip it.
-        {id:'k4',type:'board',boardId:'B4',x:820,y:10,w:200,h:124},
+        // ONE COLUMN, and that is not cosmetic. A card laid out past the
+        // right edge is CLIPPED, and the hit-test then reports its own
+        // controls as covered by whatever the probe finds at that point —
+        // a false failure of the fragment, not of the layout. The narrowest
+        // width checked is 420px, i.e. 388px of content, so every card has
+        // to fit inside that. It cost two rows when a board card was 260
+        // wide; at 340 it costs a column.
+        // The birth size: a wide rectangle, 340x136.
+        {id:'k1',type:'board',boardId:'B1',x:10,y:10,w:340,h:136},
+        {id:'k2',type:'board',boardId:'B2',x:10,y:200,w:340,h:136},
+        {id:'k3',type:'board',boardId:'B3',x:10,y:390,w:340,h:136},
+        // The sizes board cards were written at before the redesign and
+        // before the rectangle — not migrated, so the render has to grow
+        // them rather than clip them.
+        {id:'k4',type:'board',boardId:'B4',x:10,y:580,w:200,h:124},
+        {id:'k7',type:'board',boardId:'B2',x:10,y:770,w:260,h:172},
         // A board this viewer cannot read, and an orphan with no boardId.
-        {id:'k5',type:'board',boardId:'GONE',x:1070,y:10,w:240,h:180},
-        {id:'k6',type:'board',boardId:'',x:1330,y:10,w:240,h:180}
+        {id:'k5',type:'board',boardId:'GONE',x:10,y:990,w:340,h:136},
+        {id:'k6',type:'board',boardId:'',x:10,y:1180,w:340,h:136}
       ];`);
     const cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`)
-      // A solid WHITE stand-in for the cover: the probe has no network, and
-      // an <img> that never loads would measure the scrim against nothing.
+      // A solid WHITE stand-in for every picture: the probe has no network,
+      // and an <img> that never loads measures as nothing at all.
       .replace(/src="[^"]*cloudinary[^"]*"/g,
         'src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'3\'%3E%3Crect width=\'4\' height=\'3\' fill=\'%23ffffff\'/%3E%3C/svg%3E"');
     // The hover line is opacity:0 until :hover, and the probe cannot hover —
@@ -312,9 +627,9 @@ const FRAGMENTS={
     // most legible thing on the card (white on a dark wash over an unknown
     // photograph) would never be measured at all.
     return Promise.resolve(
-      '<div style="position:relative;overflow:hidden;height:230px;width:100%">'+
+      '<div style="position:relative;overflow:hidden;height:1350px;width:100%">'+
         '<div class="board-world" data-lod="near">'+cards+'</div></div>'+
-      '<div style="position:relative;overflow:hidden;height:230px;width:100%;margin-top:12px">'+
+      '<div style="position:relative;overflow:hidden;height:1350px;width:100%;margin-top:12px">'+
         '<div class="board-world" data-lod="near" id="hovered">'+cards+'</div></div>'+
       '<style>#hovered .board-subboard-cta{opacity:1}</style>');
   },
@@ -400,10 +715,10 @@ const FRAGMENTS={
       _boardsMenuOpen=false;_boardsViewOpen=false;_boardsTrayOpen=true;`);
     const full=app.run(`_renderBoardCanvasHTML()`);
     // The real wrap, so the tray resolves against the real containing block.
-    return Promise.resolve(
+    return Promise.resolve({widths:[1900,1280],html:
       '<div style="position:relative;height:620px;width:100%;overflow:hidden">'+
       full.replace('class="board-canvas-wrap"','class="board-canvas-wrap" style="position:absolute;height:100%"')+
-      '</div>');
+      '</div>'});
   },
   'boards — the board top bar':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
@@ -415,8 +730,8 @@ const FRAGMENTS={
     // intrinsic height, and pulling it in measures nothing useful.
     const i=full.indexOf('<div class="board-topbar">');
     const j=full.indexOf('<div class="board-stage"');
-    return Promise.resolve(
-      '<div style="position:relative;width:100%">'+full.slice(i,j)+'</div>');
+    return Promise.resolve({widths:[1900,1280],html:
+      '<div style="position:relative;width:100%">'+full.slice(i,j)+'</div>'});
   },
   // Home's top bar is a DIFFERENT bar — it drops share/rename/template and
   // grows the Boards button, which is the one route to the panel. Its count
@@ -435,8 +750,313 @@ const FRAGMENTS={
     const full=app.run(`_renderBoardCanvasHTML()`);
     const i=full.indexOf('<div class="board-topbar">');
     const j=full.indexOf('<div class="board-stage"');
+    return Promise.resolve({widths:[1900,1280],html:
+      '<div style="position:relative;width:100%">'+full.slice(i,j)+'</div>'});
+  },
+  /* The trash badge's fill ramp. The whole point of four DISCRETE phases
+     rather than a per-count colour is that they can be measured: this puts
+     the badge on the real rail button at every phase, so the contrast check
+     reads each one against the chip it actually sits on, in BOTH themes.
+     The chip is var(--red), which INVERTS, so a ramp that only worked in
+     light mode would fail here rather than in production.
+     The panel's ask is rendered beside it for the same reason. */
+  'boards — the trash badge fills up':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();
+      _boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+      _boardsRenderRail();`);
+    const inner=app.run(`document.getElementById('board-rail').innerHTML`);
+    // The real trash button, lifted out of the real rail, once per phase.
+    const btn=(inner.match(/<button[^>]*data-act="trash"[\s\S]*?<\/button>/)||[])[0]||'';
+    const counts=[3,12,24,30];
+    const cells=counts.map(n=>{
+      const cls=app.run(`_boardsTrashPhase(${n})`);
+      const one=btn.replace(/<span class="board-rail-badge"[^>]*><\/span>/,
+        `<span class="board-rail-badge ${cls}">${n}</span>`);
+      return '<div style="position:relative;width:58px">'+one+'</div>';
+    }).join('');
+    const nag=app.run(`_boardsTrashNagHTML(30)`);
     return Promise.resolve(
-      '<div style="position:relative;width:100%">'+full.slice(i,j)+'</div>');
+      '<div class="board-rail" style="position:relative;inset:auto;height:auto;'+
+      'flex-direction:row;width:auto;display:flex;gap:6px">'+cells+'</div>'+
+      '<div class="board-ctrash-panel" style="position:relative;display:flex;'+
+      'inset:auto;width:320px;margin-top:14px">'+nag+'</div>');
+  },
+  /* The colour panel and a card on each BACKGROUND (Sept 2026). A
+     background is the one place a card's own ink sits on a coloured
+     surface, so every palette entry is rendered with real text in both
+     themes and measured — a soft token that read in light only would fail
+     here by name. The panel's tabs and swatches are hit-tested too. */
+  'boards — card backgrounds and the colour panel':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;`);
+    const names=app.run(`_BOARDS_COLORS.slice(1)`);
+    const themes=app.run(`JSON.stringify(_BOARDS_CARD_THEMES)`);
+    // Every palette name as paper AND strip, every paper-and-ink preset, a
+    // literal paper and a literal strip — five to a row, so no card is
+    // laid out past the right edge of a 1280px window and reported as
+    // covered by whatever the hit-test finds there.
+    const specs=names.map(n=>({bg:n,color:n,label:n}))
+      .concat(JSON.parse(themes).map(th=>({bg:th.bg,ink:th.ink,label:th.ink+' ink on '+th.bg})))
+      .concat([{bg:'#C8102E',label:'a literal paper'},{color:'#0F766E',label:'a literal strip'}]);
+    const cards=specs.map((sp,i)=>app.run(`(function(){const c=Object.assign(_boardsNewCard('text'),{id:'bg${i}',x:${20+(i%5)*240},y:${20+Math.floor(i/5)*130},text:'Dye lot ${i}'});
+      ${sp.bg?`c.bg='${sp.bg}';`:''}${sp.color?`c.color='${sp.color}';`:''}${sp.ink?`c.ink='${sp.ink}';`:''}if(${i}===${names.length-1})c.locked=true;_editCards.push(c);return _boardCardHTML(c,true);})()`)
+      // The body is hydrated with textContent at runtime, so the fragment
+      // fills it here. NOTE the real class list is "board-card-body
+      // board-text-body" — a match on the bare "board-text-body" never
+      // fired, and every paper was measured with an EMPTY body until Sept
+      // 2026 (found by breaking a token and watching only the A tile fail).
+      .replace('<div class="board-card-body board-text-body"','<div class="board-card-body board-text-body" data-fill="Dye lot and rib order — '+sp.label+'"'));
+    const stageH=20+Math.ceil(specs.length/5)*130;
+    // The last card is LOCKED, so the padlock beside its name is measured
+    // against the locked head strip in both themes.
+    app.run(`_boardsSelection=new Set(['bg0']);_boardsColorTab='bg'`);
+    const panel=app.run(`_boardsCtxHTML(_boardsColorPanelItems())`);
+    // The ⋯ menu, with its provenance footer (avatar on a --cat-* token).
+    const more=app.run(`_editCards[0].by='Afnan';_editCards[0].at=Date.now();_boardsCtxHTML(_boardsMoreItems(true))`);
+    const rail=app.run(`_boardsRenderRail();document.getElementById('board-rail').innerHTML`);
+    return Promise.resolve({widths:[1900,1280],html:
+      '<div class="board-stage" style="position:relative;height:'+stageH+'px;width:100%;overflow:hidden">'+
+      '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards.join('')+'</div></div>'+
+      '<script>document.querySelectorAll("[data-fill]").forEach(function(e){e.textContent=e.getAttribute("data-fill")})</script>'+
+      '<div style="display:flex;gap:24px;align-items:flex-start;margin-top:14px">'+
+      // The selection rail is 7 buttons since the ⋯ round (Back · Color ·
+      // Labels · Reactions · Comment · Rename · ⋯); 520px holds it in the
+      // large tier, and the fragment must stay inside a 1000px window's
+      // viewport for the hit-test to reach every control.
+      '<div style="position:relative;height:520px;width:100px"><div class="board-rail" id="board-rail">'+rail+'</div></div>'+
+      '<div class="board-ctx" style="position:relative">'+panel+'</div>'+
+      '<div class="board-ctx" style="position:relative">'+more+'</div></div>'});
+  },
+  /* The image card, like Milanote's (Sept 2026): a photo is the whole
+     card, its head strip an overlay that shows only on hover or selection.
+     The probe cannot hover, so the strip is measured on SELECTED cards
+     (the same class the app sets): a plain photo (literal white ink on the
+     literal scrim), a photo with a Top strip colour (theme ink on the
+     tint), a locked one (the amber pair), plus an unselected photo wearing
+     a comment badge painted onto the picture, a photo at h:0 with caption,
+     label and reaction (the minimum height the render grows it to), and
+     an EMPTY image card, which keeps the ordinary strip. Pictures are a
+     solid WHITE stand-in, so a scrim that ever faded to transparent would
+     read as white-on-white and fail. */
+  /* The second Milanote video's round (Sept 2026): no card has a header
+     strip, so every type is measured at REST (the head is a hover overlay
+     and the probe cannot hover) and again SELECTED, which is the state
+     that shows the strip. The dark scrim carries literal white ink, so it
+     is measured on a to-do, a link and a table — three different papers
+     under it. The to-do's own additions (title, nested task, due chip,
+     assignee, the "Add a title" prompt) and the link card's one field and
+     in-card error are here too, plus a card at h:0 so the render draws it
+     at exactly the minimum the new chrome asks for. */
+  'boards — cards without a header':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editConnectors=[];_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+      _editCards=[
+        // Explicit heights, not h:0. _boardsTodoMinH counts ONE-LINE tasks —
+        // it cannot know that "Send the tech pack" wraps at this width, and
+        // the body scrolls when it does. The minimum-height contract is
+        // asserted in tests/boards.test.js instead; this fragment is here
+        // for the chrome, the contrast and the hit-testing. Same division
+        // the +Row/+Col strip settled on.
+        {id:'td',type:'todo',title:'MILE STONE',color:'red',x:10,y:10,w:300,h:200,
+         items:[{text:'Cut the fleece'},{text:'Rib order',depth:1,due:'2020-01-01',who:'Ammar Shah'},
+                {text:'Send the tech pack',done:true,depth:1,due:'2099-01-01',who:'Afnan'}]},
+        {id:'ta',type:'todo',x:330,y:10,w:300,h:200,items:[{text:'one'},{text:'two'},{text:'three'}]},
+        {id:'lk',type:'link',x:650,y:10,w:340,h:0},
+        {id:'le',type:'link',linkTitle:'ASHI',x:650,y:150,w:340,h:0,_linkErr:'Sorry, something went wrong. The page could not be read — the link still works.'},
+        {id:'im',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',
+         sourceUrl:'https://www.pinterest.com/pin/1/',name:'FLEECE',x:10,y:260,w:240,h:300},
+        {id:'nt',type:'text',text:'x',name:'WINTER NOTE',locked:true,color:'green',x:270,y:260,w:240,h:150},
+        {id:'tb',type:'table',rows:[['Fabric','GSM'],['Drill','245']],head:true,color:'blue',x:530,y:260,w:280,h:150}
+      ];
+      _boardsSelection=new Set(['td','im','nt','tb']);`);
+    const cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`)
+      .replace(/src="[^"]*cloudinary[^"]*"/g,
+        'src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'3\'%3E%3Crect width=\'4\' height=\'3\' fill=\'%23ffffff\'/%3E%3C/svg%3E"')
+      // Everything this module hydrates with textContent has to be filled in
+      // the REAL browser, or the fragment measures empty boxes — the defect
+      // the Home panel's rows hid for weeks.
+      .replace(/(id="board-tdtitle-td"[^>]*>)/,'$1MILE STONE')
+      .replace(/(id="board-todo-td-0"[^>]*>)/,'$1Cut the fleece')
+      .replace(/(id="board-todo-td-1"[^>]*>)/,'$1Rib order')
+      .replace(/(id="board-todo-td-2"[^>]*>)/,'$1Send the tech pack')
+      .replace(/(id="board-todo-ta-0"[^>]*>)/,'$1one').replace(/(id="board-todo-ta-1"[^>]*>)/,'$1two').replace(/(id="board-todo-ta-2"[^>]*>)/,'$1three')
+      .replace(/(id="board-linkt-le"[^>]*>)/,'$1ASHI')
+      .replace(/(id="board-name-im"[^>]*>)/,'$1FLEECE').replace(/(id="board-name-nt"[^>]*>)/,'$1WINTER NOTE')
+      .replace(/(id="board-txt-nt"[^>]*>)/,'$1Fleece weights for the winter drop');
+    return Promise.resolve({widths:[1900,1280],html:
+      '<div class="board-stage" style="position:relative;height:600px;width:100%;overflow:hidden">'+
+      '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'+
+      // The head is opacity:0/visibility:hidden until hover, and the probe
+      // cannot hover — so a second copy is forced visible. Without it the
+      // literal white ink on the literal scrim would never be measured.
+      '<style>#hovered .board-card-head{opacity:1!important;visibility:visible!important}</style>'+
+      '<div id="hovered" style="position:relative;height:600px;width:100%;overflow:hidden;margin-top:14px">'+
+      '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'});
+  },
+  /* Draw on · Edit · Background (Sept 2026). Three things no logic suite
+     can see: that the drawing overlay lands on the body rather than over
+     the card foot, that a cropped or rotated picture actually covers its
+     card, and that the pen rail and the Background menu can be clicked.
+     The pictures are a solid WHITE image, so a stroke or a scrim that ever
+     went white would read as white-on-white. */
+  'boards — drawing, a cropped picture and the Background menu':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editConnectors=[];_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+      const PIC='https://res.cloudinary.com/x/image/upload/v1/a.jpg';
+      _editCards=[
+        {id:'d1',type:'image',imageUrl:PIC,x:10,y:10,w:240,h:360,imgW:1000,imgH:1500,
+         strokes:[{c:'red',w:4,p:[10,12,40,55,72,30,90,80]},{c:'blue',w:8,p:[20,80,80,20]}]},
+        {id:'d2',type:'image',imageUrl:PIC,x:270,y:10,w:240,h:240,imgW:1000,imgH:1500,
+         crop:{x:0.25,y:0.25,w:0.5,h:0.5},caption:'Middle half'},
+        {id:'d3',type:'image',imageUrl:PIC,x:530,y:10,w:360,h:240,imgW:1000,imgH:1500,rotate:90},
+        {id:'d4',type:'image',imageUrl:PIC,x:910,y:10,w:240,h:200,imgW:1000,imgH:1500,
+         strokes:[{c:'green',w:2,p:[5,5,95,95]}],labels:[{t:'marked up',c:'green'}],reactions:{'👍':['u1']}}
+      ];
+      _boardsSelection=new Set(['d1']);_boardsDrawOn='d1';`);
+    const cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`)
+      .replace(/src="[^"]*cloudinary[^"]*"/g,
+        'src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'3\'%3E%3Crect width=\'4\' height=\'3\' fill=\'%23ffffff\'/%3E%3C/svg%3E"')
+      .replace(/(id="board-cap-d2"[^>]*>)/,'$1Middle half')
+      .replace(/(id="board-label-d4-0"[^>]*>)/,'$1marked up');
+    // The pen's own rail, and the Background menu, both rendered where
+    // they really open. A .board-ctx is position:fixed, so it is given a
+    // static position here or it would sit over the cards.
+    const rail=app.run(`_boardsRailItems()`);
+    const railHtml=app.run(`(function(){const items=_boardsRailItems();return items.map(it=>{
+      if(it.drawSwatches)return '<div class="rail-swatches">'+_BOARDS_DRAW_COLORS.map(c=>'<button class="board-swatch sw-'+c+(c===_boardsDrawColor?' on':'')+'" data-act="draw:color:'+c+'" title="'+c+'"></button>').join('')+'</div>';
+      if(it.drawWidths)return '<div class="rail-fmt-row">'+_BOARDS_DRAW_WIDTHS.map(x=>'<button class="board-pen-w'+(x.w===_boardsDrawWidth?' on':'')+'" data-act="draw:width:'+x.w+'" title="'+x.label+'"><span style="height:'+x.w+'px"></span></button>').join('')+'</div>';
+      return '<button class="rail-btn'+(it.off?' off':'')+(it.done?' rail-done':'')+'" data-act="'+(it.off?'':it.act)+'" title="'+it.label+'">'+_boardsIcon(it.icon)+'<span>'+it.label+'</span></button>';
+    }).join('');})()`);
+    const bgMenu=app.run(`_boardsCtxHTML(_boardsImgBgItems('d1'))`);
+    return Promise.resolve({widths:[1900,1280],html:
+      '<div class="board-stage" style="position:relative;height:430px;width:100%;overflow:hidden">'+
+      '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'+
+      '<div style="display:flex;gap:20px;align-items:flex-start;margin-top:16px">'+
+      '<div class="board-rail selecting" style="position:relative;left:auto;top:auto;transform:none">'+railHtml+'</div>'+
+      '<div class="board-ctx" style="position:relative;left:auto;top:auto;max-height:none">'+bgMenu+'</div></div>'});
+  },
+  /* The crop editor is a fixed full-viewport takeover, so it gets a
+     fragment to itself — dropped into another one it would cover every
+     control there and every hit-test would name it. */
+  'boards — the crop and rotate editor':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editCards=[{id:'p',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360}];
+      _boardsSelection=new Set(['p']);
+      _boardsEdit={id:'p',rot:90,crop:{x:0.2,y:0.15,w:0.55,h:0.6},nat:{w:1000,h:1500},url:'x'};`);
+    // The overlay is built with createElement, which the node harness
+    // stubs, so the markup is composed here exactly as _boardsRenderImgEditor
+    // writes it and then MEASURED for real.
+    const rn={w:1500,h:1000};
+    const q={x:0.2,y:0.15,w:0.55,h:0.6};
+    const poly='polygon(0% 0%,100% 0%,100% 100%,0% 100%,0% 0%,'+(q.x*100)+'% '+(q.y*100)+'%,'+(q.x*100)+'% '+((q.y+q.h)*100)+'%,'+((q.x+q.w)*100)+'% '+((q.y+q.h)*100)+'%,'+((q.x+q.w)*100)+'% '+(q.y*100)+'%,'+(q.x*100)+'% '+(q.y*100)+'%)';
+    const pic='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'3\'%3E%3Crect width=\'4\' height=\'3\' fill=\'%23ffffff\'/%3E%3C/svg%3E';
+    return Promise.resolve({widths:[1900,1280,420],html:
+      '<div class="board-imgedit" style="position:relative;height:520px">'+
+      '<div class="board-imgedit-bar"><strong>Crop and rotate</strong>'+
+      '<span class="board-imgedit-dims">825 × 600 px</span><span style="flex:1"></span>'+
+      '<button class="tool-btn" title="Rotate left">↺</button><button class="tool-btn" title="Rotate right">↻</button>'+
+      '<button class="tool-btn">Reset</button><button class="tool-btn">Cancel</button>'+
+      '<button class="tool-btn primary">Apply</button></div>'+
+      '<div class="board-imgedit-body"><div class="board-imgedit-pic" style="aspect-ratio:'+rn.w+' / '+rn.h+'">'+
+      '<img src="'+pic+'" alt="" style="transform:rotate(90deg);width:'+(rn.h/rn.w*100).toFixed(4)+'%;height:'+(rn.w/rn.h*100).toFixed(4)+'%;left:'+((1-rn.h/rn.w)*50).toFixed(4)+'%;top:'+((1-rn.w/rn.h)*50).toFixed(4)+'%">'+
+      '<div class="board-imgedit-shade" style="clip-path:'+poly+'"></div>'+
+      '<div class="board-imgedit-rect" style="left:'+(q.x*100)+'%;top:'+(q.y*100)+'%;width:'+(q.w*100)+'%;height:'+(q.h*100)+'%">'+
+      '<span class="board-imgedit-h nw"></span><span class="board-imgedit-h ne"></span>'+
+      '<span class="board-imgedit-h sw"></span><span class="board-imgedit-h se"></span></div></div></div>'+
+      '<div class="board-imgedit-foot">Drag inside the picture to choose what the card shows. Esc closes without changing anything.</div></div>'});
+  },
+  /* ── EVERY CARD TYPE CAN BE GRABBED BY ITS OWN HEAD STRIP ────────────
+     The strip is what a person aims at: it carries the card's name, the
+     delete ✕ and a grab cursor. It is also an absolute overlay over the
+     card's first row and is pointer-events:none, so what a press on it
+     really reaches is that row — and if the row guards its own pointerdown,
+     the card does not move. That is what Afnan reported for the to-do card
+     ("to do not moving properly"), and the link card was worse: no drag
+     surface anywhere on it at all. Every type is rendered SELECTED here, so
+     the strip is painted and the probe can hit-test it. */
+  'boards — every card type can be grabbed':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editConnectors=[];_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+      const PIC='https://res.cloudinary.com/x/image/upload/v1/a.jpg';
+      _editCards=[
+        {id:'c1',type:'todo',x:10,y:10,w:240,h:150,items:[{text:'Trace the pattern'},{text:'Cut the denim'}]},
+        {id:'c2',type:'text',text:'a note',x:270,y:10,w:220,h:110},
+        {id:'c3',type:'link',x:510,y:10,w:220,h:100},
+        {id:'c4',type:'link',linkUrl:'https://x.test',linkTitle:'T',_linkEdit:true,x:750,y:10,w:220,h:150},
+        {id:'c5',type:'table',rows:[['Size','Qty'],['M','40']],x:10,y:190,w:240,h:150},
+        {id:'c6',type:'image',imageUrl:PIC,x:270,y:190,w:220,h:150},
+        {id:'c7',type:'board',boardId:'B',x:510,y:190,w:240,h:150},
+        {id:'c8',type:'heading',text:'SECTION',x:750,y:190,w:220,h:80}
+      ];
+      _boardsSelection=new Set(_editCards.map(c=>c.id));`);
+    const cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`)
+      .replace(/src="[^"]*cloudinary[^"]*"/g,
+        'src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'3\'%3E%3Crect width=\'4\' height=\'3\' fill=\'%23ffffff\'/%3E%3C/svg%3E"');
+    return Promise.resolve({widths:[1900,1280],html:
+      '<div class="board-stage" style="position:relative;height:400px;width:100%;overflow:hidden">'+
+      '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'});
+  },
+  'boards — photo cards':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editConnectors=[];_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+      const PIC='https://res.cloudinary.com/x/image/upload/v1/a.jpg';
+      _editCards=[
+        {id:'p1',type:'image',imageUrl:PIC,name:'FRONT',x:10,y:10,w:240,h:180},
+        {id:'p2',type:'image',imageUrl:PIC,name:'BACK',color:'green',x:270,y:10,w:240,h:180},
+        {id:'p3',type:'image',imageUrl:PIC,name:'LOCKED',locked:true,x:530,y:10,w:240,h:180},
+        {id:'p4',type:'image',imageUrl:PIC,x:790,y:10,w:240,h:180},
+        {id:'p5',type:'image',imageUrl:PIC,caption:'Rib order',labels:[{t:'approved',c:'green'}],reactions:{'👍':['u1']},x:10,y:210,w:240,h:0},
+        {id:'p6',type:'image',x:270,y:210,w:170,h:120}
+      ];
+      _boardsSelection=new Set(['p1','p2','p3']);`);
+    const cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`)
+      .replace(/src="[^"]*cloudinary[^"]*"/g,
+        'src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'3\'%3E%3Crect width=\'4\' height=\'3\' fill=\'%23ffffff\'/%3E%3C/svg%3E"')
+      // The badge is filled by _boardsPaintCommentBadges, which needs the
+      // DOM; painted here the way it would be, on the unselected photo.
+      .replace(/(id="board-cmt-p4"[^>]*style=")display:none/,'$1display:inline-flex').replace(/(id="board-cmt-p4"[^>]*>)/,'$12')
+      .replace(/(id="board-cap-p5"[^>]*>)/,'$1Rib order').replace(/(id="board-label-p5-0"[^>]*>)/,'$1approved');
+    return Promise.resolve({widths:[1900,1280],html:
+      '<div class="board-stage" style="position:relative;height:460px;width:100%;overflow:hidden">'+
+      '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'});
+  },
+  /* Labels, Reactions and Comments as popovers (Sept 2026). The comment
+     rows put literal initials on --cat-* tokens with --on-dark ink, in both
+     themes — the one place an avatar's ink could go unreadable — and every
+     checkbox row, category button and emoji is hit-tested. The label
+     text and comment bodies are hydrated in the browser, since the module
+     writes them with textContent. */
+  'boards — labels, reactions and comment panels':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan Bhatti',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'Winter Drop',ownerUid:'u1',visibility:'shared'};
+      _editCards=[Object.assign(_boardsNewCard('text'),{id:'n1',text:'a',labels:[{t:'Ready for printing',c:'green'},{t:'Pattern done',c:'blue'},{t:'Needs review',c:'red'}],reactions:{'🔥':['u1']}})];
+      _editConnectors=[];_boardsSelection=new Set(['n1']);_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+      _boardsComments=[{id:'c1',cardId:'n1',ts:Date.now()-60000,text:'follow this one',byName:'Afnan Bhatti',byUid:'u1'},{id:'c2',cardId:'n1',ts:Date.now(),replyTo:'c1',text:'on it',byName:'Daniyal Tufail',byUid:'u2'},{id:'c3',cardId:'n1',ts:Date.now(),text:'ok',byName:'Sami',byUid:'u3'},{id:'c4',cardId:'n1',ts:Date.now(),text:'x',byName:'Mustafa Khan',byUid:'u4'},{id:'c5',cardId:'n1',ts:Date.now(),text:'y',byName:'Ammar Shah',byUid:'u5'},{id:'c6',cardId:'n1',ts:Date.now(),text:'z',byName:'Umair',byUid:'u6'}];`);
+    const grab=()=>app.run(`document.getElementById('board-sheet').innerHTML`);
+    app.run(`_boardsRenderLabelSheet('n1','')`);const labels=grab();
+    app.run(`_boardsRenderReactionSheet('n1','')`);const reacts=grab();
+    app.run(`_boardsCommentPopCard='n1';_boardsRenderCommentPop()`);const cmts=grab();
+    const pop=(inner,w)=>'<div class="board-sheet board-pop" style="position:relative;left:auto;top:auto;width:'+w+'px;max-height:none;overflow:visible">'+inner+'</div>';
+    return Promise.resolve({widths:[1900,1280],html:
+      // The panes scroll in the app; here everything is laid out flat, or a
+      // scrolled-away emoji reads as "covered" (the documented false hit).
+      '<style>.board-emoji-pane{height:auto}.board-emoji-scroll,.board-emoji-cats,.board-cpop-list,.board-label-list{overflow:visible;max-height:none}</style>'+
+      // Stacked, not side by side: the app never shows two at once, and a
+      // row of three lets one panel's rows sit under another's emoji.
+      '<div style="display:flex;flex-direction:column;gap:28px;align-items:flex-start">'+pop(labels,330)+pop(reacts,380)+pop(cmts,320)+'</div>'+
+      '<script>'+
+      '["Ready for printing","Pattern done","Needs review"].forEach(function(t,i){var e=document.getElementById("board-lrow-"+i);if(e)e.textContent=t});'+
+      'var bn=document.getElementById("board-label-boardname");if(bn)bn.textContent="Winter Drop";'+
+      '[["c1","Afnan Bhatti","follow this one"],["c2","Daniyal Tufail","on it"],["c3","Sami","ok"],["c4","Mustafa Khan","x"],["c5","Ammar Shah","y"],["c6","Umair","z"]].forEach(function(c){var n=document.getElementById("board-cpop-name-"+c[0]);if(n)n.textContent=c[1];var t=document.getElementById("board-cpop-text-"+c[0]);if(t)t.textContent=c[2]});'+
+      '</script>'});
   },
   'boards — the tool rail':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
@@ -447,9 +1067,54 @@ const FRAGMENTS={
     const inner=app.run(`document.getElementById('board-rail').innerHTML`);
     // 660px is a 768px-tall laptop minus the app top bar — the height at
     // which the old pill clipped.
-    return Promise.resolve(
-      '<div style="position:relative;height:640px;width:100%;overflow:hidden">'+
-      '<div class="board-rail" id="board-rail">'+inner+'</div></div>');
+    /* THE HOVER CUE IS DELIBERATELY NOT MEASURED HERE, and the attempt is
+       worth recording. A second copy with .cue-on forced was tried: it
+       proves nothing, because the cue is an ::after and this probe
+       enumerates ELEMENTS, and at 420px the rail docks to the bottom of its
+       wrapper so two copies reported each other as covering the Image tool —
+       a false failure of the fragment, not of the layout. The cue's geometry
+       is a one-off measurement recorded in css/main.css; its SCOPE is held
+       by tests/invariants.test.js. */
+    /* TWO TIERS, TWO VIEWPORTS (Sept 2026). The rail is sized by a
+       min-height media query — 22px icons and a 61px pitch from 880px of
+       viewport up, the compact rail below — so the wrapper is sized like
+       the real stage (the viewport minus the board's own top bar; the
+       canvas is a fixed takeover, so the app bar is not above it) and the
+       fragment is run at a 1000px viewport (large tier, ~808px of rail) AND
+       a 768px viewport (compact tier, ~623px of rail). Each tier was
+       measured once with scratchpad/measure-rail.js.
+
+       THE HEIGHTS ARE VIEWPORT HEIGHTS, AND THAT TOOK A CI FAILURE TO GET
+       RIGHT. A fragment declaring heights is served inside an iframe of
+       exactly that box (see the server below), because --window-size sets
+       the WINDOW and the browser keeps an unpredictable slice of it: this
+       machine left 100vh at 681 for a 768px window and the CI runner left
+       647, so the same rail reported client:631 here and client:575 there
+       and failed only on CI — the probe measuring the runner's chrome.
+       Framed, the stage is exactly h-50: 950 and 718, everywhere.
+
+       What that costs, stated rather than buried: the old 631 was smaller
+       than the truth, so the check used to fire at 13 tools (673 compact)
+       and now fires at 14. The guard is still real — the rail must not
+       scroll — it is just no longer accidentally strict.
+
+       STILL OPEN, and deliberately not decided here: what a 768px-tall
+       LAPTOP really leaves. CLAUDE.md puts a 900px screen at ~790px of
+       viewport, i.e. ~110px of OS and browser chrome; the same subtraction
+       makes a 768px screen ~658px of viewport and a ~608px stage, which
+       the 623px compact rail would NOT fit. That is a product question
+       about the shortest screen we support, not a probe setting, so it is
+       flagged for a human rather than answered by choosing a number.
+       NOT at 420px: a wrapper one viewport tall plus the probe's own output
+       block overflows the page, the vertical scrollbar takes 15px off the
+       phone dock, and the Image tool then sits 4px past its right edge —
+       reported as "covered" by the wrapper. That dock scrolls sideways by
+       design and is measured at REAL phone widths (this probe's 420 is a
+       clamped 500) by tests/smoke-phone.js, the same reason the top-bar
+       fragments opt out. */
+    return Promise.resolve({widths:[1900,1280],heights:[1000,768],html:
+      '<div style="position:relative;height:calc(100vh - 50px);width:100%;overflow:hidden">'+
+      '<div class="board-rail" id="board-rail">'+inner+'</div></div>'});
   },
   // Home's Boards panel: a row is a tile, a name that must ellipsize rather
   // than collapse, a meta line, a state word and an Open button — the exact
@@ -588,11 +1253,19 @@ const FRAGMENTS={
         {id:'fl',type:'file',x:10,y:210,w:200,h:140,caption:'Approved 12 Sep',
          fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/t.pdf',
          fileName:'winter-techpack-v4.pdf',fileSize:2841193},
-        {id:'or',type:'board',boardId:'',x:10,y:420,w:200,h:104}
+        {id:'or',type:'board',boardId:'',x:10,y:420,w:200,h:104},
+        // A note at EXACTLY its minimum height wearing a label and two
+        // reactions: the foot's chips have to fit under the text at that
+        // height, so a chrome constant that under-counts the foot clips them
+        // here (the note is placed at h:0 and grown by the render).
+        {id:'mn',type:'text',x:230,y:10,w:220,h:0,text:'Dye lot 4 — rib order',
+         labels:[{t:'see this',c:'green'}],reactions:{'A':['u2'],'B':['u1','u2']}}
       ];`);
     let html=app.run(`_editCards.map(c=>_boardCardHTML(c,true)).join('')`);
     // Hydrated at runtime with textContent; written in here so it can be measured.
     html=html.replace(/(id="board-label-sb-0"[^>]*>)/,'$1QA-LABEL')
+             .replace(/(id="board-label-mn-0"[^>]*>)/,'$1see this')
+             .replace(/(<div class="board-card-body board-text-body"[^>]*id="board-txt-mn"[^>]*>)/,'$1Dye lot 4 — rib order')
              .replace(/(id="board-cap-fl"[^>]*>)/,'$1Approved 12 Sep');
     return Promise.resolve(
       '<div style="position:relative;overflow:hidden;height:600px;width:100%">'+html+'</div>');
@@ -1166,13 +1839,71 @@ document.querySelectorAll('#main-content button, #main-content [onclick], #main-
         ).slice(0,70)});
   }
 });
-document.getElementById('__out').textContent=JSON.stringify(bad);
+// A CARD THAT SAYS GRAB ME AND THEN DOES NOT MOVE.
+// The rule is exact: wherever a card paints cursor:grab, a press there has
+// to start the drag. Nothing else on a card is allowed to claim that
+// cursor, so this needs no list of card types and no threshold.
+//
+// It is the shape of what Afnan reported as "to do not moving properly".
+// The head strip is an absolute overlay across the card's first row and it
+// is pointer-events:none, so both the CURSOR and the press come from
+// whatever sits underneath. On a to-do card that is the task text, which
+// inherits grab from .board-card-body and carried a stopPropagation guard
+// of its own - so the strip showed a grab hand over 58% of itself and the
+// card would not move. Every logic suite was green: the drag handler was
+// in the DOM the whole time.
+// A link card's form is correctly NOT flagged: its fields paint a text
+// caret, so they promise nothing.
+document.querySelectorAll('#main-content .board-card-el').forEach(card=>{
+  if(hiddenEl(card))return;
+  const r=card.getBoundingClientRect();
+  if(r.width<8||r.height<8)return;
+  if(r.bottom<0||r.top>innerHeight||r.right<0||r.left>innerWidth)return;
+  function reaches(el){
+    let n=el;
+    while(n&&n!==document.body){
+      const h=n.getAttribute&&n.getAttribute('onpointerdown');
+      if(h){
+        if(h.indexOf('stopPropagation')>=0)return false;
+        if(h.indexOf('DragStart')>=0)return true;
+      }
+      if(n===card)return false;
+      n=n.parentElement;
+    }
+    return false;
+  }
+  let lying=0,tot=0,worst='';
+  for(let dy=2;dy<r.height-2;dy+=4)for(let dx=3;dx<r.width-3;dx+=4){
+    const x=r.left+dx,y=r.top+dy;
+    if(x<0||y<0||x>=innerWidth||y>=innerHeight)continue;
+    const n=document.elementFromPoint(x,y);
+    if(!n||!card.contains(n))continue;
+    if(getComputedStyle(n).cursor!=='grab')continue;
+    tot++;
+    if(!reaches(n)){lying++;if(!worst)worst=clsOf(n,50)||n.tagName;}
+  }
+  if(lying>2){
+    bad.push({why:'the card paints a grab cursor where a press will not drag it',
+      card:clsOf(card,50),
+      points:lying+' of '+tot,
+      saysGrab:worst});
+  }
+});
+(window.parent!==window?window.parent.document:document).getElementById('__out').textContent=JSON.stringify(bad);
 `;
 
 (async function main(){
   const cases=[];
   for(const [name,build] of Object.entries(FRAGMENTS)){
-    cases.push({name,html:await build()});
+    const built=await build();
+    // A builder may return {html,widths} to opt out of a width. The board
+    // TOP BAR fragments do: they render the DESKTOP markup (seven controls),
+    // and at 420px the phone CSS lays the bar out as ONE non-wrapping row
+    // for the PHONE markup — which the real app renders there, since
+    // _boardsIsPhone() is true. The phone bar is measured, comprehensively,
+    // by tests/smoke-phone.js instead.
+    if(built&&typeof built==='object')cases.push({name,html:built.html,widths:built.widths,heights:built.heights});
+    else cases.push({name,html:built});
   }
 
   const server=http.createServer((req,res)=>{
@@ -1180,7 +1911,27 @@ document.getElementById('__out').textContent=JSON.stringify(bad);
     const m=/^\/__frag\/(\d+)$/.exec(url);
     if(m){
       const c=cases[Number(m[1])];
+      const q=new URLSearchParams(req.url.split('?')[1]||'');
       res.writeHead(200,{'Content-Type':'text/html'});
+      // A fragment that declares heights is measured INSIDE AN IFRAME of
+      // exactly that viewport, the same device tests/smoke-phone.js uses and
+      // for the same reason: --window-size sets the WINDOW, not the viewport,
+      // and how much of it the browser keeps for itself differs per Chrome
+      // build. The tool rail is sized by a min-height media query and its
+      // wrapper is a calc() off 100vh, so on the CI runner both resolved
+      // ~120px shorter than here and the rail reported that it had to scroll
+      // - a measurement of the runner's chrome, not of the app. An iframe has
+      // a viewport of exactly its own box, so 100vh and the tier query are
+      // the numbers the fragment asks for, on every machine. The inner page
+      // is served byte-identical to the unframed one so nothing else moves,
+      // and the probe writes its result up into the shell's own __out.
+      if(c.heights&&q.get('vh')&&!q.get('inner')){
+        return res.end(`<!doctype html><html><body style="margin:0">`+
+          `<iframe src="/__frag/${Number(m[1])}?t=${q.get('t')==='dark'?'dark':'light'}&inner=1" `+
+          `style="border:0;display:block;width:${Number(q.get('vw'))||1280}px;`+
+          `height:${Number(q.get('vh'))}px"></iframe>`+
+          `<pre id="__out">running</pre></body></html>`);
+      }
       return res.end(`<!doctype html><html><head>
 <script>document.documentElement.setAttribute('data-theme',new URL(location).searchParams.get('t')||'light');<\/script>
 <link rel="stylesheet" href="/css/main.css"></head><body>
@@ -1207,7 +1958,11 @@ document.getElementById('__out').textContent=JSON.stringify(bad);
     console.log('smoke-layout: '+path.basename(browser)+', '+cases.length+
       ' fragment(s) × '+WIDTHS.length+' widths × 2 themes\n');
     const jobs=[];
-    cases.forEach((c,i)=>WIDTHS.forEach(w=>['light','dark'].forEach(t=>jobs.push({c,i,w,t}))));
+    // A builder may also return {heights}: extra WINDOW heights to measure
+    // at, for markup whose CSS keys off the viewport height (the tool rail
+    // has two tiers). The default is the one height every fragment gets.
+    cases.forEach((c,i)=>(c.widths||WIDTHS).forEach(w=>(c.heights||[1000]).forEach(h=>['light','dark'].forEach(t=>
+      jobs.push({c,i,w,h,t,dir:profileDir+'-'+i+'-'+w+'-'+h+'-'+t})))));
     pending=jobs.length;
     // A bounded pool, not all at once: with 14 fragments that is 84 Chromes,
     // and on a developer's Windows machine most of them blew the 120s
@@ -1223,13 +1978,14 @@ document.getElementById('__out').textContent=JSON.stringify(bad);
         '--disable-background-networking','--disable-component-update','--disable-sync',
         '--disable-default-apps','--disable-extensions','--metrics-recording-only',
         '--mute-audio','--no-proxy-server',
-        '--window-size='+j.w+',1000',
-        '--user-data-dir='+profileDir+'-'+j.i+'-'+j.w+'-'+j.t,
+        '--window-size='+j.w+','+j.h,
+        '--user-data-dir='+j.dir,
         '--virtual-time-budget=8000','--dump-dom',
-        'http://127.0.0.1:'+port+'/__frag/'+j.i+'?t='+j.t],
+        'http://127.0.0.1:'+port+'/__frag/'+j.i+'?t='+j.t+
+         (j.c.heights?'&vw='+j.w+'&vh='+j.h:'')],
         {encoding:'utf8',maxBuffer:32*1024*1024,timeout:120000},
         (err,stdout)=>{
-          const label=j.c.name+' @ '+j.w+'px '+j.t;
+          const label=j.c.name+' @ '+j.w+'px '+(j.h!==1000?j.h+'px tall ':'')+j.t;
           checks++;
           const m=/<pre id="__out">([\s\S]*?)<\/pre>/.exec(stdout||'');
           if(!m||m[1].trim()==='running'){
@@ -1255,8 +2011,27 @@ document.getElementById('__out').textContent=JSON.stringify(bad);
 
   function finish(){
     server.close();
-    try{WIDTHS.forEach(w=>cases.forEach((c,i)=>['light','dark'].forEach(t=>
-      fs.rmSync(profileDir+'-'+i+'-'+w+'-'+t,{recursive:true,force:true}))));}catch(e){}
+    /* SWEEP BY PREFIX, because reconstructing the paths is what was broken.
+       This used to rebuild them from WIDTHS/cases/themes and LEFT OUT THE
+       HEIGHT, so it matched nothing: every ~8MB Chrome profile was orphaned
+       in /tmp, roughly 900MB per run. That is what exhausted this sandbox's
+       disk allowance mid-session, and the symptom was the probe reporting
+       "the probe never ran" — a disk failure wearing a browser failure's
+       clothes.
+
+       The second attempt read the job list, and could not work either:
+       `jobs` lives inside the server.listen callback and finish() is
+       declared outside it, so it threw a ReferenceError straight into this
+       catch and stayed silent. Reading the DIRECTORY is what removes both
+       failure modes — it needs nothing in scope but `profileDir`, it takes
+       the mkdtemp base as well as the per-job siblings, and no future
+       change to the job path can desync it. */
+    try{
+      const base=path.basename(profileDir),parent=path.dirname(profileDir);
+      fs.readdirSync(parent).forEach(n=>{
+        if(n===base||n.indexOf(base+'-')===0)fs.rmSync(path.join(parent,n),{recursive:true,force:true});
+      });
+    }catch(e){}
     console.log('');
     if(failures){
       console.log('\x1b[31m'+failures+' of '+checks+' layout checks failed\x1b[0m');
