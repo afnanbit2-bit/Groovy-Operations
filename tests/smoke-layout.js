@@ -315,7 +315,11 @@ const FRAGMENTS={
     // the same form opened for a service vendor: Expense mode, the stock block hidden
     app.run("window.acctForm('purchase',{vendorId:'net'})");
     const expBody=app.run('window.__cap.b');
-    const form=modal(body.replace('<div id="acct-lines"></div>','<div id="acct-lines">'+lines+'</div>'))+modal(expBody);
+    // and the payment form with its third Paid-from chip, OTHER, selected —
+    // the hint under it is shown, since the chip is what reveals it
+    app.run("window.acctForm('payment',{vendorId:'thread'})");
+    const payBody=(app.run('window.__cap.b')||'').replace('class="acct-chipbtn on" data-v="cash"','class="acct-chipbtn" data-v="cash"').replace('class="acct-chipbtn" data-v="other"','class="acct-chipbtn on" data-v="other"').replace('id="f-acc-hint" style="font-size:13px;color:var(--muted);margin-top:4px;display:none"','id="f-acc-hint" style="font-size:13px;color:var(--muted);margin-top:4px;display:block"');
+    const form=modal(body.replace('<div id="acct-lines"></div>','<div id="acct-lines">'+lines+'</div>'))+modal(expBody)+modal(payBody);
     return Promise.resolve(tiles+form);
   },
   // Afnan's correction tools: the Admin tools card on the review page (the

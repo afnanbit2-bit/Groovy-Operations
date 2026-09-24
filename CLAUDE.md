@@ -6207,6 +6207,34 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
     never measured before, plus both modals) — fails 6 jobs with the
     card's ink set to `--surface`. **Nobody has pressed any of it on a real
     screen** — the sandbox cannot sign in.
+- **A vendor can be paid from OTHER (24 Sept 2026).** Afnan, with the Pay
+  a vendor modal open and an empty third slot circled beside Cash / MCB:
+  *"OTHER should be here as well but there is no credit debit account of
+  other it is settled without a record"* — a director paying from his own
+  pocket, a set-off, someone else covering the bill. `ACCT_OTHER`
+  (`key:'other'`) is a third **Paid from** chip on the payment form and
+  **deliberately NOT in `ACCT_ACCOUNTS`**: it has no balance, no book and no
+  tile, and the chip shows *settled outside Cash / MCB* where the other two
+  show a balance. `_acctIsMoney(key)` is what the engine asks now — a
+  payment with `account:'other'` lowers the vendor's payable (FIFO aging,
+  statement, payables tile, Excel all follow, since every one reads
+  `_acctEffect`) and moves **neither** Cash nor MCB; the same guard covers
+  every type, so a stray `other` on a cash-in mints nothing (it used to be
+  `if(acc)fx[acc]-=a`, which would have written a phantom `fx.other`).
+  **The note is required for an Other payment** — it is the only record of
+  HOW it was settled — and no MCB proof is asked for. The ledger's Source
+  column and the entry detail read *Other · settled outside Cash / MCB*;
+  the admin edit's Account select offers Other on a **payment only**
+  (offering it on a cash-in would create money from nowhere). Only the
+  payment form and that select carry it; cash-in, transfer, float and
+  adjustment forms are unchanged. No `firestore.rules` change — the
+  `acct_entries` create rule has no field allow-list. Verified by
+  reverting: the engine guard (fails naming the phantom `other` key), the
+  required note (3), the chip (2), the payment-only select (1); the
+  purchase-form layout fragment now renders the payment form with Other
+  selected and its hint shown, and fails 6 jobs with the hint's ink set to
+  `--surface`. **Nobody has paid a vendor from Other on a real screen** —
+  the sandbox cannot sign in.
 - **`firestore.rules` changed** (`acct_*` blocks + `isStoreAccounts()`; the
   `store_cash_*` blocks became owner-write) — **published by Afnan, 23 Sept
   2026**; see "Firestore rules" below. **Changed AGAIN the same evening
@@ -6214,7 +6242,7 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
   below.
 
 **Nobody has recorded a purchase on a real screen** — the sandbox cannot
-sign in. 402 assertions hold the logic; the layout probe holds the shape.
+sign in. 423 assertions hold the logic; the layout probe holds the shape.
 
 ## The Sales Team ▸ Marketing (Sept 2026)
 

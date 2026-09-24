@@ -272,6 +272,58 @@ module.exports=async function(){
     s.eq('recorded by Raees himself it posts at once',r.run('acctEntries[0].status'),'posted');
   }
 
+  s.section('a payment can be settled from OTHER — the payable drops, no money moves');
+  {
+    // Afnan, 23 Sept 2026: "OTHER should be here as well but there is no
+    // credit debit account of other it is settled without a record."
+    const a=app({session:RAEES});
+    const fx=t=>a.run(`_acctEffect(${J(t)})`);
+    const o=fx(E('payment',{account:'other',amount:8000,vendorId:'Y'}));
+    s.eq('an Other payment lowers the payable',o.payable,-8000);
+    s.ok('and moves neither Cash nor MCB',o.cash===0&&o.mcb===0);
+    s.ok('and mints no phantom "other" balance on the effect',!('other' in o),Object.keys(o).join(','));
+    s.ok('Other is NOT a money account (no tile, no book)',a.run("ACCT_ACCOUNTS.some(x=>x.key==='other')")===false&&a.run("_acctIsMoney('other')")===false);
+    s.ok('the engine ignores a stray Other on any other type too (nothing created from nowhere)',fx(E('cash_in',{account:'other',amount:500})).cash===0&&fx(E('cash_in',{account:'other',amount:500})).mcb===0&&!('other' in fx(E('cash_in',{account:'other',amount:500}))));
+    s.eq('its label reads Other',a.run("_acctAccountLabel('other')"),'Other');
+    s.ok('the source column says it was settled outside the books',/Other · settled outside Cash \/ MCB/.test(a.run(`_acctSourceLabel(${J(E('payment',{account:'other',amount:1}))})`)));
+
+    a.seed([E('purchase',{_id:'c1',vendorId:'Y',vendorName:'Yahya Asim',source:'credit',amount:25302,date:daysAgo(40),month:daysAgo(40).slice(0,7),lines:[{desc:'thread',qty:1,unit:'',rate:25302,total:25302}]})],[V('Y',{name:'Yahya Asim'})]);
+    a.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    a.run("window.acctForm('payment',{vendorId:'Y'})");
+    const body=a.run('window.__cap.b')||'';
+    s.ok('the payment form offers Cash, MCB AND Other',/data-v="cash"/.test(body)&&/data-v="mcb"/.test(body)&&/data-v="other"/.test(body));
+    s.ok('the Other chip says what it means instead of showing a balance',/data-v="other"[^<]*>Other<small>settled outside Cash \/ MCB<\/small>/.test(body));
+    s.ok('the cash-in form does NOT offer it — that would mint money from nowhere',(()=>{a.run("window.acctForm('cash_in',{})");return !/data-v="other"/.test(a.run('window.__cap.b')||'');})());
+    s.ok('nor does the transfer form',(()=>{a.run("window.acctForm('transfer',{})");return !/data-v="other"/.test(a.run('window.__cap.b')||'');})());
+
+    // drive the real save
+    a.run("window.acctForm('payment',{vendorId:'Y'})");
+    a.el('f-vendor').value='Y';a.el('f-acc').value='other';a.el('f-amount').value='8000';a.el('f-date').value=TODAY;a.el('f-note').value='';
+    const t0=a.state.toasts.length,n0=a.run('acctEntries.length');
+    await a.run("window.acctSubmit('payment')");
+    s.eq('with no note it is refused — the note is the only record of how',a.run('acctEntries.length'),n0);
+    s.ok('…and says so',a.state.toasts.slice(t0).some(t=>/how this was settled/.test(t.msg||t.text||JSON.stringify(t))));
+    a.el('f-note').value='Afnan paid Yahya from his own pocket';
+    await a.run("window.acctSubmit('payment')");
+    const e=a.run('acctEntries.find(x=>x.type==="payment")');
+    s.ok('with a note it saves with account "other"',e&&e.account==='other'&&e.amount===8000&&e.vendorId==='Y');
+    s.ok('no MCB proof was demanded for it',!!e&&e.photo===null);
+    const b=a.run('JSON.stringify(_acctBalances())');const B=JSON.parse(b);
+    s.ok('Cash and MCB are untouched',B.cash===0&&B.mcb===0,b);
+    s.eq('the vendor now owes 25,302 − 8,000',a.run("_acctVendorBalance('Y')"),17302);
+    s.ok('it is in the payables view and in neither book',a.run(`(()=>{const e=acctEntries.find(x=>x.type==='payment');return _acctInView(e,'payables')&&!_acctInView(e,'cash')&&!_acctInView(e,'mcb');})()`)===true);
+    s.ok('the vendor statement lists it as a payment settled outside the books',/Other · settled outside/.test(a.run("(_acctVendorId='Y',_acctVendorTab='statement',_acctVendorPage())")));
+
+    // the admin edit select can move a PAYMENT onto Other, and nothing else
+    const n=app({session:OWNER});
+    n.seed([E('payment',{_id:'p1',vendorId:'Y',vendorName:'Y',account:'cash',amount:100}),E('cash_in',{_id:'i1',account:'cash',via:'cash',amount:100})],[V('Y')]);
+    n.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    n.run("window.acctAdminEdit('p1')");
+    s.ok('admin edit of a payment offers Other in the Account select',/<option value="other"/.test(n.run('window.__cap.b')||''));
+    n.run("window.acctAdminEdit('i1')");
+    s.ok('admin edit of a cash-in does not',!/<option value="other"/.test(n.run('window.__cap.b')||''));
+  }
+
   s.section('an expense — work or a service — is a purchase with no inventory');
   {
     // Afnan's screenshot (23 Sept 2026): "PAINT JOB FOR STUDIO" typed into
