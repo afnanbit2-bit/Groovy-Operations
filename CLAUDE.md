@@ -7076,6 +7076,44 @@ the living record** — read it before touching this module.
   `database` key (RTDB rules still go in by hand). `firebase deploy --only
   firestore` replaces the Console paste.
 
+**Phase 2 (items, lists, Dashboard cards 1-8, the drawer, the seed).**
+
+- **Every DECISION is a pure function and the writers are thin wrappers.**
+  `tbParseQuickAdd`, `tbNewItem`, `tbItemPatch`, `tbVisibilityFor`,
+  `tbHandoverPlan`, `tbDonePlan` and the eight Dashboard selectors take
+  arguments and return values, so a rule about what an item becomes is
+  assertable with no database and exists exactly once.
+- **An item and its activity row land in ONE batch.** Counting the writes
+  does NOT prove this -- splitting the log into its own `setDoc` still
+  totals two. The assertion has to read the batch's CONTENTS, which was
+  found by breaking it and watching the first version pass.
+- **`0 || 9` is 9.** `_TB_KIND_ORDER.gate` is 0, so a `||` default sorted
+  gates LAST -- the exact opposite of "gates first". Caught by a test, not
+  by reading. Any rank table with a zero needs `!= null`, not `||`.
+- **`js/shared.js` defines its own `showToast`, which SHADOWS the harness
+  stub.** So `state.toasts` is ALWAYS EMPTY in any suite that loads
+  shared.js, and a test asserting on it passes vacuously. Capture toasts
+  explicitly after load instead (`tests/theboard.test.js`, `catchToasts`).
+  This affects every suite in the repo that loads shared.js, not just this
+  one.
+- **Row titles WRAP to two lines rather than ellipsizing.** The class
+  matches the layout probe's `[class*="-row"]` selector, and an ellipsized
+  element ALWAYS reports `scrollWidth > clientWidth` -- so it failed at
+  1280px and 420px. Renaming the class to dodge the check would have hidden
+  every real overflow in those rows too. Wrapping is also better here: the
+  seeded milestone titles are long enough that one truncated line is a task
+  you cannot read. MEASURED both ways -- a title that cannot shrink
+  overflows the row by 361px at 420px and the probe names it.
+- **`min-width:0` stopped being load-bearing once the title wrapped**, and
+  the comment claiming it was got corrected rather than left standing.
+  Checked by removing it.
+- **The seed is idempotent by DETERMINISTIC ID** (`tb_<lane>_<slug>`), not
+  by "does a row with this title exist", and a re-run never touches `date`,
+  `status`, `steps`, `notes`, `myDay`, `assigneeUids`, `locked` or
+  `dateHistory` -- so re-seeding after someone moved a date does not move it
+  back. It requires `firebase-admin` INSIDE the run, not at the top, because
+  CI installs nothing and a top-level require would make it untestable.
+
 **A layout fragment that proved nothing, and how it showed up.** The first
 `smoke-layout` fragment for the rail PASSED two deliberate breaks — covering
 the rail, and painting the active tab's ink the same colour as its chip.

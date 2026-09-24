@@ -203,6 +203,18 @@ And one this module adds:
   the real-Chromium script load and the rendered geometry of the shell are
   tested.
 - Phase 1 screens are honest placeholders, not loading states.
+- **Comments, @mentions and file attachments are phase 4.** The drawer
+  has no thread yet; handover still posts its note as a comment document,
+  which the thread will pick up when it lands.
+- The calendar is phase 3, and the inbox screen is phase 4 — board
+  notifications already reach the bell.
+- **`tests/store-accounts.test.js:1196` fails on Windows only.** Its regex
+  matches a bare `
+` while git checks `js/shared.js` out with CRLF here;
+  CI (Linux, LF) passes. One character fixes it (`
+` → `?
+`). Not
+  this module's file, so it is left alone.
 
 ---
 
@@ -212,7 +224,8 @@ And one this module adds:
 |---|---|
 | 0 — inventory + plan | done |
 | 1 — foundations | **done** — audience, gating, nav, rules, indexes, routing, empty screens |
-| 2 — items, lists, dashboard, drawer | next |
+| 2 — items, lists, dashboard, drawer | **done** — item CRUD, quick-add grammar, cards 1–8, the drawer, the seed |
+| 3 — calendar | next |
 | 3 — calendar | |
 | 4 — comments, mentions, files, inbox | |
 | 4b — scheduled reminder (Netlify) | |
@@ -222,6 +235,63 @@ Cuts agreed for the Sep 28 date: Dashboard ships cards 1–8 in phase 2 (9–12
 move to phase 5); the calendar ships month + week, filters and pointer drag
 with lock enforcement in phase 3 (rows-by-person and the unscheduled tray move
 to phase 5).
+
+## Running the seed
+
+```bash
+node scripts/seed-board.js            # dry run — prints what it would do
+node scripts/seed-board.js --write    # actually writes
+```
+
+Run it **locally, as an owner**. It uses the Admin SDK, which bypasses
+security rules by design and must never be reachable from a browser. It
+needs `FIREBASE_SERVICE_ACCOUNT` (the JSON) or `GOOGLE_APPLICATION_CREDENTIALS`
+(a path to the key file), and it needs every one of the five Auth accounts to
+exist — including Saim's, or it stops and says so rather than seeding a
+half-populated board.
+
+It writes `board_config/markers`, the **Winter Drop 2027** list and 42
+milestones.
+
+**Re-running is safe, by deterministic id rather than by "does a row with
+this title exist".** The id is `tb_<lane>_<title-slug>`, so a re-run
+addresses the same documents and merges. It also **never undoes real work**:
+`date`, `status`, `steps`, `notes`, `myDay`, `assigneeUids`, `locked` and
+`dateHistory` are written once, on create, and left alone after that — so
+re-seeding after someone has moved a date does not move it back.
+
+Two milestones are seeded with **no date** on purpose (denim and knit bulk
+landing). They appear in Ammar's and Afnan's "needs a date" card on day one.
+
+## Phase 2 — what shipped, and the decisions inside it
+
+- **Every decision is a pure function; the writers are thin.**
+  `tbParseQuickAdd`, `tbNewItem`, `tbItemPatch`, `tbVisibilityFor`,
+  `tbHandoverPlan`, `tbDonePlan`, `tbItemColorKey` and the eight Dashboard
+  selectors take arguments and return values. A rule about what an item
+  becomes is therefore assertable without a database, and exists once.
+- **An item and its activity row land in ONE batch.** A log written
+  separately is one that goes missing when the item write fails.
+- **Quick add**: `@handle`, `#lane`, `!`/`!!`, and dates (`today`,
+  `tomorrow`, `mon…sun`, `oct 5`, `5 oct`, `5/10`). First date match wins.
+  Two deliberate calls: **`5/10` is D/M**, the fifth of October, because
+  this is a Pakistani team; and **`!` only counts as a standalone token**,
+  so "fix this!" is not silently a priority. An **unknown handle stays in
+  the title** — `@baber` is a real person, just not on the board — and the
+  preview line says so.
+- **Row titles wrap to two lines rather than truncating.** A deliberate
+  reading of §10's "44px rows": the row keeps 44px as a *minimum*. Measured
+  — the real seed titles are long enough that one truncated line is a task
+  you cannot read.
+- **Dashboard cards 1–8 do not double-count.** "My day" excludes what is
+  already overdue or due today; "assigned to me" excludes all three above
+  it. Card 8 (deadlines) is deliberately **not** filtered by assignee — it
+  is the drop's critical path, whoever owns each gate.
+- **Completing the last step does not complete the item** (§8.3). The
+  drawer shows a hint and waits for a human to review.
+- **A refused write says so and re-reads** rather than leaving a row
+  looking done. A permission error names the rules deploy as the likely
+  cause, because that is what it usually is.
 
 ## Acceptance script
 
