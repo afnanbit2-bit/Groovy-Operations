@@ -349,7 +349,14 @@ module.exports=async function(){
     s.ok('and Inventory Intel',/Inventory Intel/.test(side));
     s.ok('and nothing else',!/Dashboard|PO Registry|Gate Pass|Payroll/.test(side));
     const mob=full.el('mob-nav').innerHTML;
-    s.ok('the phone nav has Creators and Intel',/mkt-creators/.test(mob)&&/shopify-intel/.test(mob));
+    s.ok('the phone nav has Creators',/mkt-creators/.test(mob));
+    // Sept 2026: The Board took the fifth slot, so Inventory Intel moved
+    // behind More rather than becoming a squeezed sixth button -- #mob-nav
+    // is a fixed 5-column grid. It is still reachable, which is what this
+    // assertion actually cares about.
+    s.ok('and Intel behind More, not as a direct button',/More/.test(mob)&&!/shopify-intel/.test(mob));
+    full.run('window.openMktMoreSheet()');
+    s.ok('reachable from that sheet',/shopify-intel/.test(full.el('mob-sheet-items').innerHTML));
 
     full.run('session='+J({uid:'1',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op',canPO:true}));
     full.run('buildNav()');

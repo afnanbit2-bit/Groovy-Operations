@@ -10,7 +10,7 @@
  * Bump CACHE_VERSION on every deploy that changes a precached file; the
  * activate handler deletes every cache from a prior version.
  */
-const CACHE_VERSION = 'v157';
+const CACHE_VERSION = 'v158';
 const STATIC_CACHE = `groovy-ops-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `groovy-ops-runtime-${CACHE_VERSION}`;
 // Deliberately NOT version-scoped: a Cloudinary delivery URL is immutable
@@ -56,6 +56,7 @@ const PRECACHE_URLS = [
   '/assets/vendor/jsbarcode-3.11.6.all.min.js',
   '/assets/vendor/qrcode-generator-2.0.4.js',
   '/js/activity.js',
+  '/js/theboard.js',
   '/js/marketing.js',
   '/js/patterns.js',
   '/assets/icons/icon-192.png',

@@ -1,0 +1,238 @@
+# The Board
+
+One shared calendar and one set of task lists, over **one object: an item**.
+An item with a date is on the calendar. An item in a list is a to-do. An item
+can be both. There is deliberately no second model.
+
+UI label: `the board` — from `TB_NAME` in [js/theboard.js](js/theboard.js),
+the only place that string is written.
+
+---
+
+## Why everything is prefixed `tb`
+
+`js/boards.js` (Mood Boards, ~10,400 lines) already owns the word "board" in
+this codebase: page ids `boards` / `boards-all` / `board-canvas`, **259
+`.board-*` CSS classes** and ~400 `boards*` / `_boards*` globals. These are
+classic scripts sharing **one lexical scope**, so a top-level `const` or a
+`.board-item` class declared here would not merely be confusing — a duplicate
+top-level `const` across two classic scripts is a parse error that takes the
+whole app down, and `tests/smoke-browser.js` is what catches it.
+
+So: **`tb` for every JS name, `.tb-` for every CSS class, `tb-` for every page
+id.** Firestore names do not share JS scope, so the collections keep the
+spec's `board_` prefix and read naturally.
+
+The two modules are different levels and are not being merged: Mood Boards
+lives inside Creative Hub; The Board is a top-level tab.
+
+---
+
+## Data model
+
+All collections top-level, prefixed `board_`. Day dates are `YYYY-MM-DD`
+strings in Asia/Karachi, so calendar queries are string range queries with no
+timezone arithmetic.
+
+| Collection | Holds |
+|---|---|
+| `board_lists/{listId}` | a shared list (admin + members) or a private one |
+| `board_items/{itemId}` | the item — calendar entry, to-do, or both |
+| `board_items/{itemId}/comments/{id}` | the thread |
+| `board_items/{itemId}/activity/{id}` | append-only log |
+| `board_config/{doc}` | launch markers the calendar draws |
+
+Full field lists are in the build spec. Phase 1 ships the rules and indexes
+for all of them; phase 2 ships the writers.
+
+**There is no `board_notifications` collection**, on purpose — see
+Notifications below.
+
+### Reads are two queries, never one
+
+Every read rule is a **two-clause** condition (`visibility == 'shared'` **or**
+`ownerUid == uid`). Firestore rules are **not a query filter**: a single broad
+query whose safety depends on a field outside its `where()` is **rejected
+outright** rather than silently returning less. So each clause gets its own
+single-field query, merged client-side — exactly what `loadNotesData()` and
+`loadBoardsData()` already do. Do not "simplify" this into one query.
+
+---
+
+## Access
+
+| | |
+|---|---|
+| **Board users** | ammar, afnan, daniyal, mustafa, saim |
+| **Board owners** | ammar, afnan — override any lock, manage access, run the seed |
+
+`BOARD_USERS` / `BOARD_OWNERS` live in [js/auth.js](js/auth.js) and are
+mirrored **by email** as `isBoardUser()` / `isBoardOwner()` in
+[firestore.rules](firestore.rules). `tests/theboard.test.js` fails if the two
+lists ever name different people — the same guard `isPaidPRApprover()` and
+`isScoringAdmin()` carry, and the only thing that stops a nav grant and a
+rules grant from drifting apart.
+
+**Board owner is not the app's `owner` role.** It is who may override a lock.
+Same two people today; a separate list so that stays a decision rather than a
+coincidence.
+
+**To add someone:** add the username to `BOARD_USERS` **and** the email to
+`isBoardUser()` in the rules, then republish the rules. One without the other
+fails the test.
+
+### Roles and where they land
+
+| Role | Sidebar | Lands on |
+|---|---|---|
+| `owner` / `manager` | the board **first**, above Dashboard | their usual page |
+| `creator_content_ops_lead` (Daniyal) | the board first, then his Marketing pages | `mkt-creators` |
+| `designer` (Saim) | the board only | `tb-dash` |
+
+`designer` is new. Saim is a graphic designer who needs the board and nothing
+else: `manager` would have handed him POs, gate passes, HRM and the store, and
+`viewer` gives a fixed 3-button phone nav with no More sheet plus a My Work
+page that means nothing to him.
+
+**Saim is deliberately NOT given Creative Hub.** If that is wanted, it is one
+name in `_CREATIVE_HUB_USERS` ([js/shared.js](js/shared.js)) plus its
+assertion in `tests/invariants.test.js`, and a second item in his nav branch.
+
+⚠️ **`saim` and `sami` are two different people**, one letter apart. Sami is
+the CSR Team Lead and is **not** a Board user, so the two never appear in one
+mention list. A test holds that.
+
+---
+
+## Adding the user (Saim)
+
+There is no in-app account creation — it was removed because it shipped
+passwords to the browser — and `USER_DEFS` is a served static file, so a new
+account is a **code change** either way. No Cloud Function avoids that.
+
+1. **Firebase Console → Authentication → Add user.** Email **must** be
+   `saim@groovy.op`; `admin-seed-profiles.js` accepts only that domain and
+   login matches on it exactly.
+2. The `USER_DEFS` entry is already in [js/auth.js](js/auth.js) (shipped in
+   phase 1).
+3. **Profile page → Team card → "Sync accounts"** (owners + Mustafa). This
+   resolves the email to a uid and writes `user_profiles/{uid}` with
+   `{merge:true}` — it seeds, it never resets.
+
+Step 3 matters: profiles are keyed by Firebase uid, and until that row exists
+nobody can edit his profile and `boardColor` has nowhere to live.
+
+---
+
+## Deploying the rules
+
+```bash
+firebase deploy --only firestore
+```
+
+`firebase.json` is scoped to **rules and indexes only** — no `hosting` key, so
+a deploy cannot touch the Netlify site, and no `database` key, so
+`database.rules.json` (RTDB) still has to be pasted into the Console by hand
+if it ever changes.
+
+**Phase 1 changed `firestore.rules`, so it needs deploying before anyone can
+use the board.** Note there were already two undeployed Marketing commits
+outstanding before this work — that deploy carries them too, which is
+expected and correct.
+
+---
+
+## Notifications
+
+**The Board has no collection of its own.** It writes into
+`hrm_notifications`, the bell every other module already uses (addressed by
+`forUser`, deterministic ids) — `js/marketing.js` does the same without
+touching `js/hrm.js`. That buys the top bar and the unread badge for nothing,
+with one store instead of two. The Dashboard's inbox card reads the same
+collection filtered on `source: 'tb'`.
+
+**The price, and why `tbNotifPayload()` is the only way in:**
+`_hrmNotifCardHTML` (js/hrm.js) prints `title` and `message` into HTML
+**raw**. Every Board notification is escaped in that helper before it is
+written. Nothing may bypass it, and a test asserts a tag in a title cannot
+reach the bell.
+
+Id shape: `tb_{type}_{itemId}_{fromUid}_{10-minute bucket}` — so several
+devices or a double click produce one row, and a dismissed notification is
+never raised again.
+
+---
+
+## Rules that this module holds to
+
+Three the codebase learned the hard way, now part of the spec:
+
+1. **Pointer events only, never HTML5 drag.** The Mood Boards stage reads a
+   native `dragstart` as "files from the desktop"; a native drag also cancels
+   the pointer stream a card drag runs on.
+2. **Anything clickable inside a drag surface needs
+   `onpointerdown="event.stopPropagation()"`.** A captured pointer retargets
+   the following `click` to the capturing element. This has bitten five times
+   in `js/boards.js` — the delete ✕, a file card, a table cell, a to-do item,
+   a link.
+3. **User text is hydrated with `textContent`, never interpolated.** For
+   markdown-lite that means the `DOMParser`-into-an-inert-document allow-list
+   rebuild, sanitising on **read and write** — a body written by an older
+   build or by hand in the Console is cleaned before it is ever shown.
+
+And one this module adds:
+
+4. **Never `toISOString().slice(0,10)` for a day.** It is UTC, and in PKT
+   (UTC+5) it names the *previous* day between midnight and 5am. Use `_tbDay`.
+
+---
+
+## Known gaps and follow-ups
+
+- **Three live UTC day-string bugs elsewhere in the app**, left alone
+  deliberately (not this module's to fix):
+  `js/embellishments.js:4028` (the main dashboard's "Today" PO count — reads
+  0 before 5am), `js/embellishments.js:3002` and `js/embellishments.js:3075`
+  (date inputs defaulting to yesterday before 5am).
+- **Firebase billing plan was not verified.** The sandbox cannot reach the
+  console. It does not gate anything here: the 08:00 PKT reminder is a
+  scheduled **Netlify** function with the service account, not a Cloud
+  Function, so there is no Blaze dependency in this build.
+- **Nothing here has been seen in a browser signed in.** The sandbox cannot
+  sign in (gstatic is blocked), so the visual is unverified as usual. Logic,
+  the real-Chromium script load and the rendered geometry of the shell are
+  tested.
+- Phase 1 screens are honest placeholders, not loading states.
+
+---
+
+## Phase status
+
+| Phase | State |
+|---|---|
+| 0 — inventory + plan | done |
+| 1 — foundations | **done** — audience, gating, nav, rules, indexes, routing, empty screens |
+| 2 — items, lists, dashboard, drawer | next |
+| 3 — calendar | |
+| 4 — comments, mentions, files, inbox | |
+| 4b — scheduled reminder (Netlify) | |
+| 5 — responsive, polish, acceptance | |
+
+Cuts agreed for the Sep 28 date: Dashboard ships cards 1–8 in phase 2 (9–12
+move to phase 5); the calendar ships month + week, filters and pointer drag
+with lock enforcement in phase 3 (rows-by-person and the unscheduled tray move
+to phase 5).
+
+## Acceptance script
+
+The 15-step script in the build spec, run manually as two users in two
+browsers. Not yet run — it needs phases 2–4. Results get recorded here.
+
+## Tests
+
+```bash
+node tests/run.js theboard      # this module
+node tests/run.js               # everything
+node tests/smoke-browser.js     # every script loads in real Chromium
+node tests/smoke-layout.js      # the shell's geometry and contrast
+```

@@ -7032,6 +7032,61 @@ came back; the same break now names `mkt-chart-lab`.
   (st4rr.doll and shoaibkhn.t — Lowkey Heat; shadysaidthat — Live In
   Pants) migrate into `dispatches` with date and status left blank.
 
+## The Board (Sept 2026) — `js/theboard.js`
+
+One shared calendar and one set of task lists over **one object: an item**.
+An item with a date is on the calendar, an item in a list is a to-do, an item
+can be both. Top-level sidebar tab, first, audience `BOARD_USERS`. The build
+spec is Ammar's `the-board-build-prompt.md`; **`BOARD.md` at the repo root is
+the living record** — read it before touching this module.
+
+- **EVERYTHING IS PREFIXED `tb`, AND THAT IS LOAD-BEARING.** `js/boards.js`
+  (Mood Boards) owns page ids `boards`/`boards-all`/`board-canvas`, **259
+  `.board-*` CSS classes** and ~400 `boards*`/`_boards*` globals. These are
+  classic scripts in ONE lexical scope, so a top-level `const BOARD_NAME` or
+  a `.board-item` class here is a parse error that takes the whole app down,
+  not a naming nuisance. `tb` for JS, `.tb-` for CSS, `tb-` for page ids.
+  Firestore names do not share JS scope, so the collections keep `board_`.
+  A test asserts no `board-` class can reach the DOM from this file.
+- **The audience is mirrored, not shared.** `BOARD_USERS`/`BOARD_OWNERS` by
+  username in `js/auth.js`; `isBoardUser()`/`isBoardOwner()` by EMAIL in
+  `firestore.rules`. `tests/theboard.test.js` fails if they name different
+  people — the `isPaidPRApprover()` guard, again. **Board owner is not the
+  app's `owner` role**: it is who may override a lock.
+- **`designer` is a new role (Saim).** No existing role fit: `manager` hands
+  over POs, gate passes, HRM and the store; `viewer` gives a fixed 3-button
+  phone nav with no More sheet. Scoped in `showPage` to `tb-*` + the chrome
+  pages. **Daniyal's scope gained `tb-*`** — without that edit to
+  `js/shared.js` he could not reach the tab at all, since his role rewrites
+  every non-`mkt-` id.
+- **Daniyal's phone nav changed**: `#mob-nav` is a fixed 5-column grid, so
+  Inventory Intel moved behind a More sheet rather than becoming a squeezed
+  sixth button. Nothing he could reach before is unreachable.
+- **No `board_notifications` collection.** The Board writes into
+  `hrm_notifications` like Marketing does, so it inherits the bell and the
+  badge for free. **The price: `_hrmNotifCardHTML` prints `title`/`message`
+  into HTML RAW**, so every row goes through `tbNotifPayload()`, which
+  escapes both. Nothing may bypass it; a test holds it.
+- **`_tbDay`, never `toISOString().slice(0,10)`.** The latter is UTC and in
+  PKT names the PREVIOUS day between midnight and 5am. Three live call sites
+  in this repo already have that bug (listed in `BOARD.md`, deliberately not
+  fixed here).
+- **`firebase.json` + `.firebaserc` are new**, scoped to firestore rules and
+  indexes ONLY — no `hosting` key (a deploy must not touch Netlify) and no
+  `database` key (RTDB rules still go in by hand). `firebase deploy --only
+  firestore` replaces the Console paste.
+
+**A layout fragment that proved nothing, and how it showed up.** The first
+`smoke-layout` fragment for the rail PASSED two deliberate breaks — covering
+the rail, and painting the active tab's ink the same colour as its chip.
+Neither is a probe limitation: **`js/auth.js` declares `session` at top
+level, so it CLOBBERS the harness's `session` option when it loads**, the
+gate failed closed and the fragment was measuring the module's "you do not
+have access" div — one element, no buttons, no contrast problem. Set
+`session` with `app.run(...)` AFTER `loadApp`, the way every logic suite
+does. With that fixed the ink break fails at 1:1 naming `tb-railbtn on`.
+**This is the "fragment measuring itself" trap in a new place — confirm a
+break actually bites before believing a fragment has teeth.**
 ## Fabric issue → Embellishment job (21 Sept 2026)
 
 Afnan: *"after issue registry the data is landed in embellishment department
