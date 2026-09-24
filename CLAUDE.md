@@ -6379,9 +6379,13 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
     rather than naming a finding** when removed (the guard IS the null
     check the credit branch relies on). The form fragment renders the
     no-vendor form and the settle form with Other selected — fails 6 jobs
-    at 1:1 with the settle hint's ink set to `--surface`. **Nobody has
-    settled with a runner or recorded a vendor-less bill on a real
-    screen** — the sandbox cannot sign in.
+    at 1:1 with the settle hint's ink set to `--surface`. **CONFIRMED
+    WORKING ON THE LIVE SITE by Afnan, 24 Sept 2026** (*"deployed fine,
+    runner settle works"*) — the deploy of `7c3f238` (v157) built, and the
+    settle path holds end to end on a real screen. Do not re-open
+    `runner_pay` or `_acctRunnerOwed` on a hunch. **The vendor-less bill
+    and its ₨1,000 photo rule have not been reported on either way** —
+    still unseen on a real screen.
 - **`firestore.rules` changed** (`acct_*` blocks + `isStoreAccounts()`; the
   `store_cash_*` blocks became owner-write) — **published by Afnan, 23 Sept
   2026**; see "Firestore rules" below. **Changed AGAIN the same evening
