@@ -324,6 +324,140 @@ module.exports=async function(){
     s.ok('admin edit of a cash-in does not',!/<option value="other"/.test(n.run('window.__cap.b')||''));
   }
 
+  s.section('a float carries the purpose it was given for — categories, and a page per category');
+  {
+    // Afnan, 24 Sept 2026: "when a runner is send for a job it can be for
+    // many purposes such as mantance work … a catagory of fuel … option to
+    // create new catagory … those catagory will fall in vendor mangement"
+    const a=app({session:RAEES});
+    a.seed([E('cash_in',{account:'cash',amount:20000})],[V('w',{terms:{mode:'cash'}})]);
+    a.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    a.run("window.acctForm('float_out',{})");
+    const body=a.run('window.__cap.b')||'';
+    s.ok('the float form asks for a category',/<select id="f-cat"/.test(body));
+    s.ok('…starting on a blank row that says what it is for',/<option value="" selected>— what is the runner sent for\? —<\/option>/.test(body));
+    s.ok('…with + New category… on the same select',/\+ New category…/.test(body));
+    a.el('f-person').value='Noman';a.el('f-amount').value='3000';a.el('f-date').value=TODAY;a.el('f-acc').value='cash';a.el('f-cat').value='';a.el('f-note').value='petrol for the round trip';
+    const t0=a.state.toasts.length;
+    await a.run("window.acctSubmit('float_out')");
+    s.eq('with no category the float is refused',a.run('acctEntries.length'),1);
+    s.ok('…and says so',a.state.toasts.slice(t0).some(t=>/what is the runner sent for/.test(JSON.stringify(t))));
+    a.el('f-cat').value='Transport & fuel';
+    await a.run("window.acctSubmit('float_out')");
+    const fl=a.run("acctEntries.find(e=>e.type==='float_out')");
+    s.eq('with one it saves the category on the float',fl&&fl.category,'Transport & fuel');
+    s.ok('the particulars name the purpose',/Float to Noman · Transport & fuel · petrol/.test(a.run(`_acctParticulars(_acctById('${fl._id}'))`)));
+    s.eq('the open float carries it',a.run('_acctOpenFloats()[0].category'),'Transport & fuel');
+
+    // a bill paid from the float starts in the float's category
+    a.run("window.acctForm('purchase',{vendorId:'w'})");
+    a.el('f-source').value='float:'+fl._id;a.el('f-cat').value='Store purchase';
+    a.run('window.acctPurchaseSourceChanged()');
+    s.eq('picking the float as the source moves the purchase into its category',a.el('f-cat').value,'Transport & fuel');
+    a.el('f-source').value='cash';a.el('f-cat').value='Refreshments';
+    a.run('window.acctPurchaseSourceChanged()');
+    s.eq('picking cash leaves the category alone',a.el('f-cat').value,'Refreshments');
+    // "Record a bill from it" on the float's detail preselects the float and its category
+    a.run("window.acctForm('purchase',{vendorId:'w',source:'float:"+fl._id+"',category:'Transport & fuel'})");
+    const pb=a.run('window.__cap.b')||'';
+    s.ok('the purchase form can open with the float already picked',new RegExp('class="acct-chipbtn on" data-v="float:'+fl._id+'"').test(pb));
+    s.ok('…and the category already picked',/<option selected>Transport &amp; fuel<\/option>/.test(pb));
+    s.ok('the float detail opens the purchase form that way',/acctForm\('purchase',\{source:'float:[^']+',category:_acctById/.test(a.run("(()=>{let __b='';_acctModal=function(t,b){__b=b;};window.acctOpenEntry('"+fl._id+"');return __b;})()")));
+    a.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    // a category used only by a float is still on the list
+    a.run("acctEntries.push("+J(E('float_out',{_id:'f9',account:'cash',amount:500,person:'Noman',category:'Fuel'}))+")");
+    s.ok('a category a float introduced is on the picker',a.run('_acctCategories()').includes('Fuel'));
+
+    // the Vendors tab lists the categories, with what was spent under each
+    a.run("acctEntries.push("+J(E('purchase',{_id:'p9',vendorId:'w',vendorName:'w',source:'cash',account:'cash',amount:1200,category:'transport & FUEL',lines:[{desc:'Diesel',qty:1,unit:'',rate:1200,total:1200}]}))+")");
+    a.run("currentPage='acct-vendors';acctRenderPage('acct-vendors',document.getElementById('main-content'))");
+    const vp=a.el('main-content').innerHTML;
+    s.ok('the Vendors tab carries a Categories card',/categor(y|ies)<\/div>/.test(vp)&&/data-c="Transport &amp; fuel"/.test(vp));
+    const st=a.run("_acctCategoryStats().find(c=>c.name==='Transport & fuel')");
+    s.ok('a category counts its purchases and its floats separately',st&&st.spent===1200&&st.floats===3000&&st.count===2,JSON.stringify(st));
+    s.ok('…matching the name whatever its case',st&&st.count===2);
+    s.ok('Raees can add a category from there',/acctCategoryNew\(\)/.test(vp));
+    const m=app({session:MUSTAFA});m.seed([],[V('w')]);
+    m.run("currentPage='acct-vendors';acctRenderPage('acct-vendors',document.getElementById('main-content'))");
+    s.ok('a manager (view only) cannot',!/acctCategoryNew\(\)/.test(m.el('main-content').innerHTML)&&/Categories|categor/.test(m.el('main-content').innerHTML));
+
+    // the category page
+    a.run("_acctCategoryId='transport & fuel';currentPage='acct-category';acctRenderPage('acct-category',document.getElementById('main-content'))");
+    const cp=a.el('main-content').innerHTML;
+    s.ok('the category page lists the purchase and the float under it',/Diesel/.test(cp)&&/Float to Noman/.test(cp));
+    s.ok('…and totals them',/₨4,200/.test(cp));
+    s.ok('…under the list\'s own spelling',/<div style="font-size:19px;font-weight:800">Transport &amp; fuel<\/div>/.test(cp));
+    s.ok('a float in another category is not on it',!/· Fuel/.test(cp));
+    s.ok('the Vendors tab is the active one',/class="gp-tab active" onclick="window.acctGo\('acct-vendors'\)"/.test(a.run("_acctPageHead('acct-category')")));
+    a.run("_acctCategoryId='Nowhere';acctRenderPage('acct-category',document.getElementById('main-content'))");
+    s.ok('an unknown category says so instead of an empty table',/Category not found/.test(a.el('main-content').innerHTML));
+
+    // + New category from the Vendors tab
+    const n=app({session:RAEES,globals:{prompt:()=>'Small items'}});n.seed([],[V('w')]);
+    const f0=n.state.fetches.length;
+    n.run('window.acctCategoryNew()');
+    await new Promise(r=>setTimeout(r,5)); // the settings PATCH is fired, never awaited
+    s.ok('a new category joins the list',n.run('_acctCategories()').includes('Small items'));
+    s.ok('…through the field-limited settings PATCH',n.state.fetches.slice(f0).some(f=>/acct_settings\/main\?updateMask/.test(f.url)&&f.init.method==='PATCH'));
+    const n2=app({session:RAEES,globals:{prompt:()=>'transport & fuel'}});n2.seed([],[V('w')]);
+    const f1=n2.state.fetches.length;
+    n2.run('window.acctCategoryNew()');
+    s.ok('a name already on the list (any case) is not minted twice',n2.run('_acctCategories()').filter(c=>/transport/i.test(c)).length===1&&n2.state.fetches.length===f1);
+    const n3=app({session:MUSTAFA,globals:{prompt:()=>'Nope'}});n3.seed([],[V('w')]);
+    n3.run('window.acctCategoryNew()');
+    s.ok('a viewer\'s call is a no-op',!n3.run('_acctCategories()').includes('Nope')&&n3.state.prompts.length===0);
+  }
+
+  s.section('more than one runner — each with a log of their own');
+  {
+    // Afnan, 24 Sept 2026: "there can be more then 1 runner so log created
+    // by name of other runner as well such as ABBAS"
+    const a=app({session:RAEES});
+    a.seed([
+      E('cash_in',{account:'cash',amount:20000}),
+      E('float_out',{_id:'f1',account:'cash',amount:3000,person:'Noman',category:'Store purchase',date:daysAgo(3)}),
+      E('float_out',{_id:'f2',account:'cash',amount:2000,person:'ABBAS',category:'Transport & fuel',date:daysAgo(2)}),
+      E('purchase',{_id:'b1',vendorId:'w',vendorName:'w',source:'float',floatId:'f1',person:'Noman',amount:500,category:'Store purchase',lines:[{desc:'Thread',qty:1,unit:'',rate:500,total:500}]}),
+      E('purchase',{_id:'b2',vendorId:'w',vendorName:'w',source:'float',floatId:'f2',person:'ABBAS',amount:1500,category:'Transport & fuel',lines:[{desc:'Petrol',qty:1,unit:'',rate:1500,total:1500}]}),
+      E('float_in',{_id:'r2',account:'cash',amount:300,floatId:'f2',person:'ABBAS'}),
+      E('float_out',{_id:'f3',account:'cash',amount:100,person:'abbas',status:'void',category:'Other'})
+    ],[V('w',{terms:{mode:'cash'}})]);
+    const runners=a.run('_acctRunners()');
+    s.ok('the runners are the settings list plus everyone a float was given to',runners.includes('Noman')&&runners.includes('ABBAS'),runners.join(','));
+    s.eq('a name typed in another case is the same runner',runners.filter(r=>/abbas/i.test(r)).length,1);
+    a.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    a.run("window.acctForm('float_out',{})");
+    let body=a.run('window.__cap.b')||'';
+    s.ok('the float form offers both names',/<option value="Noman">/.test(body)&&/<option value="ABBAS">/.test(body));
+    s.ok('with two runners known, Given to starts blank rather than assuming Noman',/id="f-person" list="acct-runners"[^>]*value=""/.test(body));
+    a.run("window.acctForm('float_out',{person:'ABBAS'})");
+    s.ok('a runner page can open the form on its runner',/id="f-person"[^>]*value="ABBAS"/.test(a.run('window.__cap.b')||''));
+    const one=app({session:RAEES});one.seed([],[V('w')]);one.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");one.run("window.acctForm('float_out',{})");
+    s.ok('with one runner known it is still prefilled',/id="f-person"[^>]*value="Noman"/.test(one.run('window.__cap.b')||''));
+
+    const st=a.run("_acctRunnerStats().find(r=>r.name==='ABBAS')");
+    s.ok('a runner\'s figures: given, spent from the floats, change back, still open',st&&st.given===2000&&st.spent===1500&&st.back===300&&st.openLeft===200,JSON.stringify(st));
+    s.eq('…counting the float, the bill and the change back, not the voided float',st&&st.count,3);
+    const nm=a.run("_acctRunnerStats().find(r=>r.name==='Noman')");
+    s.ok('and Noman\'s are his own',nm&&nm.given===3000&&nm.spent===500&&nm.openLeft===2500,JSON.stringify(nm));
+    a.run("currentPage='acct-vendors';acctRenderPage('acct-vendors',document.getElementById('main-content'))");
+    const vp=a.el('main-content').innerHTML;
+    s.ok('the Vendors tab carries a Runners card naming both',/2 runners/.test(vp)&&/data-r="ABBAS"/.test(vp)&&/data-r="Noman"/.test(vp));
+
+    a.run("_acctRunnerId='abbas';currentPage='acct-runner';acctRenderPage('acct-runner',document.getElementById('main-content'))");
+    const rp=a.el('main-content').innerHTML;
+    s.ok('the runner page lists his float, his bill and his change back',/Float to ABBAS/.test(rp)&&/Petrol/.test(rp)&&/Change back from ABBAS/.test(rp));
+    s.ok('…and none of Noman\'s',!/Float to Noman/.test(rp)&&!/Thread/.test(rp));
+    s.ok('…under the runner\'s own spelling',/<div style="font-size:19px;font-weight:800">ABBAS<\/div>/.test(rp));
+    s.ok('…with a button to give him another float',/acctForm\('float_out',\{person:&quot;ABBAS&quot;\}\)/.test(rp));
+    s.ok('the Vendors tab is the active one',/class="gp-tab active" onclick="window.acctGo\('acct-vendors'\)"/.test(a.run("_acctPageHead('acct-runner')")));
+    a.run("_acctRunnerId='Nobody';acctRenderPage('acct-runner',document.getElementById('main-content'))");
+    s.ok('an unknown runner says so',/Runner not found/.test(a.el('main-content').innerHTML));
+    const m=app({session:MUSTAFA});m.seed([E('float_out',{_id:'f1',account:'cash',amount:3000,person:'Noman',category:'Other'})],[V('w')]);
+    m.run("_acctRunnerId='Noman';currentPage='acct-runner';acctRenderPage('acct-runner',document.getElementById('main-content'))");
+    s.ok('a manager sees the log but no Give a float button',/Float to Noman/.test(m.el('main-content').innerHTML)&&!/Give a float/.test(m.el('main-content').innerHTML));
+  }
+
   s.section('an expense — work or a service — is a purchase with no inventory');
   {
     // Afnan's screenshot (23 Sept 2026): "PAINT JOB FOR STUDIO" typed into
@@ -422,7 +556,7 @@ module.exports=async function(){
   {
     const a=app({session:RAEES});
     a.seed([],[V('w',{terms:{mode:'cash'}})]);
-    a.el('f-person').value='Noman';a.el('f-amount').value='3000';a.el('f-date').value=TODAY;a.el('f-acc').value='cash';a.el('f-note').value='thread run';
+    a.el('f-person').value='Noman';a.el('f-amount').value='3000';a.el('f-date').value=TODAY;a.el('f-acc').value='cash';a.el('f-cat').value='Store purchase';a.el('f-note').value='thread run';
     await a.run("window.acctSubmit('float_out')");
     const fid=a.run('acctEntries[0]._id');
     s.eq('a float is open',a.run('_acctOpenFloats().length'),1);

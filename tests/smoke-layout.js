@@ -295,10 +295,13 @@ const FRAGMENTS={
     const ledger=app.run("_acctPageHead('acct-ledger')+_acctLedgerPage()");
     app.run("_acctVendorId='thread';_acctVendorTab='aging';currentPage='acct-vendor'");
     const vendor=app.run("_acctVendorPage()");
+    // the Runners and Categories cards on the Vendors tab, and a page of each
+    const cards=app.run("_acctRunnersCard()+_acctCategoriesCard()");
+    const pages=app.run("(()=>{_acctCategoryId=_acctCategoryStats()[0].name;_acctRunnerId=_acctRunners()[0];return _acctCategoryPage()+_acctRunnerPage();})()");
     const m=app.run('_acctThisMonth()');
     const logs=[{date:m+'-01',qty:45,residual:5,byName:'Raees'},{date:m+'-02',qty:45,residual:7,byName:'Raees',note:'late delivery'}];
     const cons=app.run(`(()=>{const v=_acctVendor('gas');return '<div class="card" style="padding:0;overflow:hidden">'+_acctConsGrid(v,'${m}',${JSON.stringify(logs)})+_acctConsFoot(v,'${m}',${JSON.stringify(logs)})+'</div>';})()`);
-    return Promise.resolve({widths:[1900,1280],html:ledger+vendor+cons});
+    return Promise.resolve({widths:[1900,1280],html:ledger+vendor+cards+pages+cons});
   },
   'store accounts — tiles, alerts and the purchase form':()=>{
     const {app,seed}=_acctFixture();

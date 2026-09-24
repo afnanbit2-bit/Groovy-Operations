@@ -34,6 +34,8 @@ let _acctPeriod={preset:'month',from:'',to:''};
 let _acctFilter={type:'',vendor:'',q:''};
 let _acctPage=0;
 let _acctVendorId=null;
+let _acctCategoryId=null;        // the category page (acct-category) being looked at
+let _acctRunnerId=null;          // the runner page (acct-runner) being looked at
 let _acctVendorTab='statement';
 let _acctVendorRange={from:'',to:''};
 let _acctConsVendor=null;
@@ -236,7 +238,7 @@ function _acctBalances(upToDate){
     const fx=_acctEffect(e);
     b.cash+=fx.cash;b.mcb+=fx.mcb;
     if(e.vendorId&&fx.payable)b.payables[e.vendorId]=(b.payables[e.vendorId]||0)+fx.payable;
-    if(e.type==='float_out'){const f=b.floats[e._id]=b.floats[e._id]||{id:e._id,person:e.person,date:e.date,out:0,used:0,back:0};f.out+=fx.floatOut;}
+    if(e.type==='float_out'){const f=b.floats[e._id]=b.floats[e._id]||{id:e._id,person:e.person,date:e.date,category:e.category||'',out:0,used:0,back:0};f.out+=fx.floatOut;}
     if(e.floatId&&(fx.floatUsed||fx.floatBack)){const f=b.floats[e.floatId]=b.floats[e.floatId]||{id:e.floatId,person:e.person,date:e.date,out:0,used:0,back:0};f.used+=fx.floatUsed;f.back+=fx.floatBack;}
   }
   b.cash=Math.round(b.cash);b.mcb=Math.round(b.mcb);
@@ -357,7 +359,7 @@ function _acctParticulars(e){
     case 'payment':   return 'Payment to '+(vn||'vendor');
     case 'cash_in':   return 'Cash in'+(e.via==='mcb'?' · MCB transfer':' · cash')+(e.person?' from '+e.person:'');
     case 'transfer':  return 'Transfer '+_acctAccountLabel(e.account)+' → '+_acctAccountLabel(e.toAccount);
-    case 'float_out': return 'Float to '+(e.person||'runner')+(e.note?' · '+e.note:'');
+    case 'float_out': return 'Float to '+(e.person||'runner')+(e.category?' · '+e.category:'')+(e.note?' · '+e.note:'');
     case 'float_in':  return 'Change back from '+(e.person||'runner');
     case 'adjust':    return 'Adjustment · '+(e.note||'');
     case 'opening':   return 'Opening balance · '+vn;
@@ -508,6 +510,8 @@ function acctRenderPage(id,m){
   if(id==='acct-ledger')h+=_acctLedgerPage();
   else if(id==='acct-vendors')h+=_acctVendorsPage();
   else if(id==='acct-vendor')h+=_acctVendorPage();
+  else if(id==='acct-category')h+=_acctCategoryPage();
+  else if(id==='acct-runner')h+=_acctRunnerPage();
   else if(id==='acct-consumables')h+=_acctConsumablesPage();
   else if(id==='acct-review')h+=_acctReviewPage();
   else h+='<div class="empty">Unknown accounts page.</div>';
@@ -529,7 +533,7 @@ window.acctGo=function(id){_acctPage=0;window.showPage(id);};
 function _acctPageHead(id){
   const tabs=[['acct-ledger','Ledger'],['acct-vendors','Vendors'],['acct-consumables','Consumables']];
   if(_acctCanAdmin())tabs.push(['acct-review','Review & close']);
-  const active=id==='acct-vendor'?'acct-vendors':id;
+  const active=(id==='acct-vendor'||id==='acct-category'||id==='acct-runner')?'acct-vendors':id;
   const b=_acctBalances();
   const review=_acctCanAdmin()?acctEntries.filter(e=>e.needsReview&&!e.reviewedAt&&e.status!=='void').length:0;
   return `<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
@@ -715,6 +719,197 @@ function _acctVendorsPage(){
       <td class="num">${last?_acctDateLabel(last.date):'—'}</td>
     </tr>`;
   }
+  h+=`</tbody></table></div></div>`;
+  h+=_acctRunnersCard();
+  h+=_acctCategoriesCard();
+  return h;
+}
+// ── Runners — everyone who takes a float, each with their own log ──
+// Afnan (24 Sept 2026): "there can be more then 1 runner so log created by
+// name of other runner as well such as ABBAS". The list is DERIVED — the
+// settings' runners ∪ every name a float was ever given to — so typing a
+// new name on the float form IS how a runner is added; nothing has to be
+// written to settings (whose runners field only owners may write). A
+// runner's log is every float given to them, every bill paid from one of
+// those floats and every change-back, matched by name (case-folded) and
+// by the float the bill was paid from.
+function _acctRunnerKey(n){return String(n||'').trim().toLowerCase();}
+function _acctRunners(){
+  const out=[];const seen=new Set();
+  const add=n=>{n=String(n||'').trim();if(!n)return;const k=n.toLowerCase();if(seen.has(k))return;seen.add(k);out.push(n);};
+  (_acctSettings().runners||[]).forEach(add);
+  // newest first, so the spelling last used is the one shown; a voided float names nobody
+  (acctEntries||[]).forEach(e=>{if(e&&e.type==='float_out'&&e.status!=='void')add(e.person);});
+  return out;
+}
+function _acctRunnerEntries(name){
+  const k=_acctRunnerKey(name);if(!k)return [];
+  const live=acctEntries.filter(e=>e&&e.status!=='void'&&e.status!=='pending');
+  const floatIds=new Set(live.filter(e=>e.type==='float_out'&&_acctRunnerKey(e.person)===k).map(e=>e._id));
+  return live.filter(e=>(e.type==='float_out'&&_acctRunnerKey(e.person)===k)||(e.floatId&&floatIds.has(e.floatId)));
+}
+function _acctRunnerStats(){
+  const open=_acctOpenFloats();
+  return _acctRunners().map(name=>{
+    const rows=_acctRunnerEntries(name);
+    const given=rows.filter(e=>e.type==='float_out').reduce((s,e)=>s+Math.round(e.amount||0),0);
+    const spent=rows.filter(e=>e.type==='purchase').reduce((s,e)=>s+Math.round(e.amount||0),0);
+    const back=rows.filter(e=>e.type==='float_in').reduce((s,e)=>s+Math.round(e.amount||0),0);
+    const k=_acctRunnerKey(name);
+    const openLeft=open.filter(f=>_acctRunnerKey(f.person)===k).reduce((s,f)=>s+f.left,0);
+    const last=rows.filter(e=>e.type==='float_out').reduce((m,e)=>(!m||e.date>m)?e.date:m,'');
+    return {name,count:rows.length,given,spent,back,openLeft,last};
+  }).sort((a,b)=>b.openLeft-a.openLeft||b.given-a.given||a.name.localeCompare(b.name));
+}
+function _acctRunnersCard(){
+  const stats=_acctRunnerStats();
+  let h=`<div class="card" style="padding:0;overflow:hidden">
+    <div class="acct-toolbar">
+      <div style="flex:1"><div style="font-weight:700">${stats.length} runner${stats.length===1?'':'s'}</div><div style="font-size:13px;color:var(--muted)">Everyone who takes a float, each with their own log. A new runner is added by typing their name on the float form.</div></div>
+    </div>
+    <div class="acct-table-wrap"><table class="acct-table">
+      <thead><tr><th>Runner</th><th class="num">Floats given</th><th class="num">Spent on bills</th><th class="num">Change back</th><th class="num">Still to account for</th><th class="num">Last float</th></tr></thead><tbody>`;
+  for(const r of stats){
+    h+=`<tr data-r="${_acctEsc(r.name)}" onclick="window.acctOpenRunner(this.dataset.r)">
+      <td class="part"><b>${_acctEsc(r.name)}</b></td>
+      <td class="num">${r.given?_acctPKR(r.given):'—'}</td>
+      <td class="num">${r.spent?_acctPKR(r.spent):'—'}</td>
+      <td class="num">${r.back?_acctPKR(r.back):'—'}</td>
+      <td class="num ${r.openLeft>0?'out':''}">${r.openLeft>0?_acctPKR(r.openLeft):'—'}</td>
+      <td class="num">${r.last?_acctDateLabel(r.last):'—'}</td>
+    </tr>`;
+  }
+  h+=`</tbody></table></div></div>`;
+  return h;
+}
+window.acctOpenRunner=function(name){
+  name=String(name||'').trim();if(!name)return;
+  _acctRunnerId=name;_acctPage=0;window.showPage('acct-runner');
+};
+function _acctRunnerPage(){
+  const name=_acctRunners().find(r=>_acctRunnerKey(r)===_acctRunnerKey(_acctRunnerId))||'';
+  if(!name)return `<div class="card"><div class="empty">Runner not found. <button class="btn-outline" onclick="window.acctGo('acct-vendors')">Back to vendors</button></div></div>`;
+  const rows=_acctRunnerEntries(name).sort((a,b)=>String(b.date).localeCompare(String(a.date))||(b.ts||0)-(a.ts||0));
+  const st=_acctRunnerStats().find(r=>r.name===name)||{given:0,spent:0,back:0,openLeft:0};
+  const cl=_acctLastClose();
+  let h=`<div class="card">
+    <button class="btn-outline" style="padding:4px 10px;font-size:12px;margin-bottom:8px" onclick="window.acctGo('acct-vendors')">← Vendors</button>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+      <div><div style="font-size:19px;font-weight:800">${_acctEsc(name)}</div><div style="font-size:13px;color:var(--muted)">Runner · every float given, every bill paid from one and every change back${cl?` · since the ${_acctMonthLabel(cl.month)} close`:''}</div></div>
+      ${_acctCanEntry()?`<button class="btn-primary" style="width:auto;margin:0;padding:9px 14px" onclick="window.acctForm('float_out',{person:${JSON.stringify(name).replace(/"/g,'&quot;')}})">Give a float</button>`:''}
+    </div>
+    <div class="acct-tiles" style="margin-top:12px">
+      ${_acctTile('Floats given',st.given)}
+      ${_acctTile('Spent on bills',st.spent)}
+      ${_acctTile('Change back',st.back)}
+      ${_acctTile('Still to account for',st.openLeft,{danger:st.openLeft>0})}
+    </div>
+  </div>`;
+  h+=`<div class="card" style="padding:0;overflow:hidden"><div class="acct-table-wrap"><table class="acct-table">
+    <thead><tr><th>Date</th><th>Particulars</th><th>Category</th><th>Vendor</th><th class="num">Amount</th></tr></thead><tbody>`;
+  if(!rows.length)h+=`<tr><td colspan="5" class="empty" style="padding:28px">No floats given to ${_acctEsc(name)} yet.</td></tr>`;
+  for(const e of rows){
+    const type=`<span class="acct-type">${_acctEsc(ACCT_TYPES[e.type]?ACCT_TYPES[e.type].label:e.type)}</span>`;
+    h+=`<tr onclick="window.acctOpenEntry('${e._id}')">
+      <td class="date">${_acctDateLabel(e.date)}</td>
+      <td class="part">${type} ${_acctEsc(_acctParticulars(e))}</td>
+      <td>${_acctEsc(e.category||'')}</td>
+      <td>${_acctEsc(_acctVendorName(e))}</td>
+      <td class="num ${e.type==='float_out'?'out':''}">${_acctPKR(e.amount)}</td>
+    </tr>`;
+  }
+  h+=`</tbody></table></div></div>`;
+  return h;
+}
+
+// ── Categories — what money is spent ON, beside WHO it is paid to ──
+// Afnan (24 Sept 2026): a runner is sent for many purposes (fuel for round
+// trips, maintenance work, small items), so a float carries a category,
+// and the Vendors tab lists every category with everything recorded under
+// it. The list is DERIVED (_acctCategories: settings ∪ in use) and the
+// figures are derived from the entries — nothing is stored per category.
+function _acctCategoryKey(c){return String(c||'').trim().toLowerCase();}
+function _acctCategoryEntries(cat){
+  const k=_acctCategoryKey(cat);if(!k)return [];
+  return acctEntries.filter(e=>e&&e.status!=='void'&&e.status!=='pending'&&(e.type==='purchase'||e.type==='float_out')&&_acctCategoryKey(e.category)===k);
+}
+function _acctCategoryStats(){
+  return _acctCategories().map(name=>{
+    const rows=_acctCategoryEntries(name);
+    const spent=rows.filter(e=>e.type==='purchase').reduce((s,e)=>s+Math.round(e.amount||0),0);
+    const floats=rows.filter(e=>e.type==='float_out').reduce((s,e)=>s+Math.round(e.amount||0),0);
+    const last=rows.reduce((m,e)=>(!m||e.date>m)?e.date:m,'');
+    return {name,count:rows.length,spent,floats,last};
+  }).sort((a,b)=>(b.spent+b.floats)-(a.spent+a.floats)||a.name.localeCompare(b.name));
+}
+function _acctCategoriesCard(){
+  const stats=_acctCategoryStats();
+  let h=`<div class="card" style="padding:0;overflow:hidden">
+    <div class="acct-toolbar">
+      <div style="flex:1"><div style="font-weight:700">${stats.length} categor${stats.length===1?'y':'ies'}</div><div style="font-size:13px;color:var(--muted)">What the money was spent on — purchases and runner floats by purpose. Open one to see every entry under it.</div></div>
+      ${_acctCanEntry()?`<button class="btn-outline" onclick="window.acctCategoryNew()">+ New category</button>`:''}
+    </div>
+    <div class="acct-table-wrap"><table class="acct-table">
+      <thead><tr><th>Category</th><th class="num">Entries</th><th class="num">Spent (purchases)</th><th class="num">Floats given</th><th class="num">Last entry</th></tr></thead><tbody>`;
+  for(const c of stats){
+    h+=`<tr data-c="${_acctEsc(c.name)}" onclick="window.acctOpenCategory(this.dataset.c)">
+      <td class="part"><b>${_acctEsc(c.name)}</b></td>
+      <td class="num">${c.count||'—'}</td>
+      <td class="num">${c.spent?_acctPKR(c.spent):'—'}</td>
+      <td class="num">${c.floats?_acctPKR(c.floats):'—'}</td>
+      <td class="num">${c.last?_acctDateLabel(c.last):'—'}</td>
+    </tr>`;
+  }
+  h+=`</tbody></table></div></div>`;
+  return h;
+}
+window.acctOpenCategory=function(name){
+  name=String(name||'').trim();if(!name)return;
+  _acctCategoryId=name;_acctPage=0;window.showPage('acct-category');
+};
+window.acctCategoryNew=function(){
+  if(!_acctCanEntry())return;
+  const name=String(prompt('New category name (what money gets spent on — e.g. Fuel, Small items)')||'').trim();
+  if(!name)return;
+  const have=_acctCategories().find(c=>c.toLowerCase()===name.toLowerCase());
+  if(have){showToast(`"${have}" is already on the list.`);return;}
+  _acctAddCategory(name);
+  showToast(`Category "${name}" added.`);
+  _acctRerender();
+};
+function _acctCategoryPage(){
+  const name=_acctCategories().find(c=>_acctCategoryKey(c)===_acctCategoryKey(_acctCategoryId))||_acctCategoryId;
+  const rows=_acctCategoryEntries(name);
+  if(!name||(!rows.length&&!_acctCategories().some(c=>_acctCategoryKey(c)===_acctCategoryKey(name))))return `<div class="card"><div class="empty">Category not found. <button class="btn-outline" onclick="window.acctGo('acct-vendors')">Back to vendors</button></div></div>`;
+  rows.sort((a,b)=>String(b.date).localeCompare(String(a.date))||(b.ts||0)-(a.ts||0));
+  const spent=rows.filter(e=>e.type==='purchase').reduce((s,e)=>s+Math.round(e.amount||0),0);
+  const floats=rows.filter(e=>e.type==='float_out').reduce((s,e)=>s+Math.round(e.amount||0),0);
+  const cl=_acctLastClose();
+  let h=`<div class="card">
+    <button class="btn-outline" style="padding:4px 10px;font-size:12px;margin-bottom:8px" onclick="window.acctGo('acct-vendors')">← Vendors</button>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+      <div><div style="font-size:19px;font-weight:800">${_acctEsc(name)}</div><div style="font-size:13px;color:var(--muted)">Category · every purchase and runner float recorded under it${cl?` · since the ${_acctMonthLabel(cl.month)} close`:''}</div></div>
+    </div>
+    <div class="acct-tiles" style="margin-top:12px">
+      ${_acctTile('Spent on purchases',spent)}
+      ${_acctTile('Floats given',floats)}
+      ${_acctTile('Entries',rows.length)}
+    </div>
+  </div>`;
+  h+=`<div class="card" style="padding:0;overflow:hidden"><div class="acct-table-wrap"><table class="acct-table">
+    <thead><tr><th>Date</th><th>Particulars</th><th>Vendor / person</th><th>Source</th><th class="num">Amount</th></tr></thead><tbody>`;
+  if(!rows.length)h+=`<tr><td colspan="5" class="empty" style="padding:28px">Nothing recorded under this category yet. A purchase's Category, or a float's, puts it here.</td></tr>`;
+  for(const e of rows){
+    const type=`<span class="acct-type">${_acctEsc(ACCT_TYPES[e.type]?ACCT_TYPES[e.type].label:e.type)}</span>`;
+    h+=`<tr onclick="window.acctOpenEntry('${e._id}')">
+      <td class="date">${_acctDateLabel(e.date)}</td>
+      <td class="part">${type} ${_acctEsc(_acctParticulars(e))}</td>
+      <td>${_acctEsc(_acctVendorName(e)||e.person||'')}</td>
+      <td>${_acctEsc(_acctSourceLabel(e))}</td>
+      <td class="num">${_acctPKR(e.amount)}</td>
+    </tr>`;
+  }
+  if(rows.length)h+=`<tr class="tot"><td colspan="4">Total</td><td class="num"><b>${_acctPKR(spent+floats)}</b></td></tr>`;
   h+=`</tbody></table></div></div>`;
   return h;
 }
@@ -1258,13 +1453,14 @@ function _acctCategories(){
   const out=[];const seen=new Set();
   const add=c=>{c=String(c||'').trim();if(!c)return;const k=c.toLowerCase();if(seen.has(k))return;seen.add(k);out.push(c);};
   _acctSettings().categories.forEach(add);
-  (acctEntries||[]).forEach(e=>{if(e&&e.type==='purchase')add(e.category);});
+  (acctEntries||[]).forEach(e=>{if(e&&(e.type==='purchase'||e.type==='float_out'))add(e.category);});
   return out;
 }
 const _ACCT_NEW_CAT='__new__';
 const _ACCT_CAT_FIELDS=['categories','updatedAt','updatedBy']; // mirrored in firestore.rules acct_settings
-function _acctCatOptions(sel){
-  return _acctCategories().map(c=>`<option${sel===c?' selected':''}>${_acctEsc(c)}</option>`).join('')
+function _acctCatOptions(sel,blank){
+  return (blank?`<option value=""${!sel?' selected':''}>${_acctEsc(blank)}</option>`:'')
+    +_acctCategories().map(c=>`<option${sel===c?' selected':''}>${_acctEsc(c)}</option>`).join('')
     +`<option value="${_ACCT_NEW_CAT}">+ New category…</option>`;
 }
 // "+ New category…" on the purchase form's Category select. Asks for a
@@ -1346,14 +1542,15 @@ window.acctForm=function(type,pre){
       <div class="field" style="grid-column:1/-1"><label>Note</label><input id="f-note" placeholder="e.g. ATM withdrawal for the drawer"></div>
     </div>`;
   }else if(type==='float_out'){
-    const runners=_acctSettings().runners;
+    const runners=_acctRunners();
     body=`<div class="form-grid">
-      <div class="field" style="grid-column:1/-1"><label>Given to *</label><input id="f-person" list="acct-runners" placeholder="Name" value="${_acctEsc(runners[0]||'')}" autofocus><datalist id="acct-runners">${runners.map(r=>`<option value="${_acctEsc(r)}">`).join('')}</datalist></div>
+      <div class="field" style="grid-column:1/-1"><label>Given to *</label><input id="f-person" list="acct-runners" placeholder="Name — pick a runner or type a new one" value="${_acctEsc(pre.person||(runners.length===1?runners[0]:''))}" autofocus><datalist id="acct-runners">${runners.map(r=>`<option value="${_acctEsc(r)}">`).join('')}</datalist></div>
       <div class="field"><label>Amount (₨) *</label><input id="f-amount" type="number" inputmode="numeric" min="1" placeholder="0"></div>
       ${_acctDateField('f-date')}
       <div class="field" style="grid-column:1/-1"><label>From *</label>${_acctAccountChips('f-acc','cash')}</div>
-      <div class="field" style="grid-column:1/-1"><label>What for</label><input id="f-note" placeholder="e.g. thread + packing from Shershah"></div>
-      <div style="grid-column:1/-1;font-size:13px;color:var(--muted);background:var(--surface-2);border-radius:8px;padding:8px 10px">When the bills come back, record each as a <b>Purchase</b> paid <b>from this float</b>; then record the <b>change back</b>. The float closes itself when it is fully accounted for.</div>
+      <div class="field"><label>Category *</label><select id="f-cat" onchange="window.acctCatChange(this)">${_acctCatOptions(pre.category||'','— what is the runner sent for? —')}</select></div>
+      <div class="field"><label>What for</label><input id="f-note" placeholder="e.g. thread + packing from Shershah"></div>
+      <div style="grid-column:1/-1;font-size:13px;color:var(--muted);background:var(--surface-2);border-radius:8px;padding:8px 10px">When the bills come back, record each as a <b>Purchase</b> paid <b>from this float</b> — it starts in this category; then record the <b>change back</b>. The float closes itself when it is fully accounted for.</div>
     </div>`;
   }else if(type==='float_in'){
     if(!floats.length){showToast('No open floats.',true);return;}
@@ -1411,8 +1608,9 @@ window.acctSubmit=async function(type){
     e.account=g('f-acc');e.toAccount=g('f-to');
     if(!e.account||!e.toAccount||e.account===e.toAccount){showToast('From and To must be different accounts.',true);return;}
   }else if(type==='float_out'){
-    e.person=(g('f-person')||'').trim();e.account=g('f-acc')||'cash';
+    e.person=(g('f-person')||'').trim();e.account=g('f-acc')||'cash';e.category=(g('f-cat')||'').trim();
     if(!e.person){showToast('Who is taking the float?',true);return;}
+    if(!e.category||e.category===_ACCT_NEW_CAT){showToast('Pick a category — what is the runner sent for?',true);return;}
     const b=_acctBalances();
     if(amount>b[e.account]&&!confirm(`${_acctAccountLabel(e.account)} shows only ${_acctPKR(b[e.account])}. Record anyway?`))return;
   }else if(type==='float_in'){
@@ -1462,14 +1660,14 @@ function _acctPurchaseForm(pre){
   const v=_acctVendor(pre.vendorId);
   _acctFormLines=[];
   const floats=_acctOpenFloats();
-  const defSource=v&&v.terms&&['credit','monthly','weekly'].includes(v.terms.mode)?'credit':'cash';
+  const defSource=pre.source||(v&&v.terms&&['credit','monthly','weekly'].includes(v.terms.mode)?'credit':'cash');
   const src=[{key:'cash',label:'Cash'},{key:'mcb',label:'MCB'},{key:'credit',label:'On credit',sub:'adds to what they are owed'}].concat(floats.map(f=>({key:'float:'+f.id,label:'Float · '+f.person,sub:_acctPKR(f.left)+' left'})));
   const kind=pre.kind||_acctPurchaseKindFor(v);
   const body=`<div class="form-grid">
     <div class="field" style="grid-column:1/-1"><label>Vendor *</label><select id="f-vendor" onchange="window.acctPurchaseVendorChanged(this.value)">${_acctVendorOptions(pre.vendorId)}</select><div id="f-vendor-hint" style="font-size:13px;color:var(--muted);margin-top:4px">${v?_acctEsc(_acctTermsLabel(v))+(_acctVendorBalance(v._id)?' · owed '+_acctPKR(_acctVendorBalance(v._id)):''):''}</div></div>
     ${_acctDateField('f-date')}
     <div class="field"><label>Vendor's bill / invoice no.</label><input id="f-ref" placeholder="optional"></div>
-    <div class="field"><label>Category</label><select id="f-cat" onchange="window.acctCatChange(this)">${_acctCatOptions(v&&v.kind==='utility'?'Utilities':(v&&v.kind==='service'?'Maintenance & repairs':'Store purchase'))}</select></div>
+    <div class="field"><label>Category</label><select id="f-cat" onchange="window.acctCatChange(this)">${_acctCatOptions(pre.category||(v&&v.kind==='utility'?'Utilities':(v&&v.kind==='service'?'Maintenance & repairs':'Store purchase')))}</select></div>
     <div class="field"><label>Note</label><input id="f-note" placeholder="optional"></div>
     <div class="field" style="grid-column:1/-1"><label>What is this? *</label>${_acctKindChips(kind)}</div>
   </div>
@@ -1508,7 +1706,11 @@ window.acctPurchaseSourceChanged=function(){
   const rr=_acctSettings().receiptRequiredAbove;
   if(el){
     if(s==='credit')el.innerHTML=`<span style="color:var(--accent-warning)">Goes on the vendor's account — pay it later from their page.</span>`;
-    else if(s.startsWith('float:')){const f=_acctOpenFloats().find(x=>'float:'+x.id===s);el.innerHTML=f?`Paid out of <b>${_acctEsc(f.person)}</b>'s float (${_acctPKR(f.left)} still to account for).`:'';}
+    else if(s.startsWith('float:')){const f=_acctOpenFloats().find(x=>'float:'+x.id===s);el.innerHTML=f?`Paid out of <b>${_acctEsc(f.person)}</b>'s float (${_acctPKR(f.left)} still to account for)${f.category?` · started as <b>${_acctEsc(f.category)}</b>`:''}.`:'';
+      // a bill paid from a float starts in the float's own category — the
+      // purpose the runner was sent for — and the pick can still be changed
+      const cat=document.getElementById('f-cat');
+      if(f&&f.category&&cat&&_acctCategories().includes(f.category)){cat.value=f.category;cat.dataset.prev=f.category;}}
     else el.innerHTML='';
   }
   if(req)req.textContent=rr?`(needed above ${_acctPKR(rr)} or it is flagged for review)`:'';
@@ -1648,13 +1850,13 @@ window.acctOpenEntry=function(id){
     lines=`<table class="acct-table" style="margin-top:10px"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Total</th></tr></thead><tbody>${e.lines.map(l=>`<tr><td class="part">${_acctEsc(l.desc||l.itemCode)}${l.itemCode?` <span class="ref">${_acctEsc(l.itemCode)}</span>`:''}${l.sizes?`<div style="font-size:12px;color:var(--muted)">${Object.entries(l.sizes).map(([k,v])=>k+': '+v).join(' · ')}</div>`:''}</td><td class="num">${l.qty} ${_acctEsc(l.unit||'')}</td><td class="num">${_acctPKR(l.rate)}</td><td class="num bal">${_acctPKR(l.total)}</td></tr>`).join('')}</tbody></table>`;
   }
   let float='';
-  if(e.type==='float_out'){const f=_acctBalances().floats[e._id];if(f){const left=f.out-f.used-f.back;float=`<div class="acct-kv-grid" style="margin-top:8px">${kv('Spent on bills',_acctPKR(f.used))}${kv('Change returned',_acctPKR(f.back))}${kv('Still to account for',left>0?`<span style="color:var(--accent-urgent)">${_acctPKR(left)}</span>`:'<span style="color:var(--accent-success)">closed ✓</span>')}</div>${left>0&&_acctCanEntry()&&e.status!=='void'?`<div style="display:flex;gap:8px;margin-top:8px"><button class="btn-outline" onclick="window.acctModalClose();window.acctForm('purchase',{})">Record a bill from it</button><button class="btn-outline" onclick="window.acctModalClose();window.acctForm('float_in',{floatId:'${e._id}'})">Change back</button></div>`:''}`;}}
+  if(e.type==='float_out'){const f=_acctBalances().floats[e._id];if(f){const left=f.out-f.used-f.back;float=`<div class="acct-kv-grid" style="margin-top:8px">${kv('Spent on bills',_acctPKR(f.used))}${kv('Change returned',_acctPKR(f.back))}${kv('Still to account for',left>0?`<span style="color:var(--accent-urgent)">${_acctPKR(left)}</span>`:'<span style="color:var(--accent-success)">closed ✓</span>')}</div>${left>0&&_acctCanEntry()&&e.status!=='void'?`<div style="display:flex;gap:8px;margin-top:8px"><button class="btn-outline" onclick="window.acctModalClose();window.acctForm('purchase',{source:'float:${e._id}',category:_acctById('${e._id}')?.category||''})">Record a bill from it</button><button class="btn-outline" onclick="window.acctModalClose();window.acctForm('float_in',{floatId:'${e._id}'})">Change back</button></div>`:''}`;}}
   const body=`
     <div class="acct-kv-grid">
       ${kv('Type',ACCT_TYPES[e.type]?ACCT_TYPES[e.type].label:e.type)}${kv('Date',_acctDateLabel(e.date))}${kv('Amount',_acctPKR(e.amount))}
       ${kv('Vendor',_acctVendorName(e)?`<a class="acct-link" onclick="window.acctModalClose();window.acctOpenVendor('${e.vendorId}')">${_acctEsc(_acctVendorName(e))}</a>`:'')}${kv('Person',_acctEsc(e.person))}
       ${kv('Source / account',_acctEsc(_acctSourceLabel(e)))}${e.toAccount?kv('To',_acctAccountLabel(e.toAccount)):''}
-      ${kv('Ref',_acctEsc(e.ref))}${kv('Category',_acctEsc(e.category))}${kv('Note',_acctEsc(e.note))}
+      ${kv('Ref',_acctEsc(e.ref))}${kv('Category',e.category?`<a class="acct-link" onclick="window.acctModalClose();window.acctOpenCategory(this.textContent)">${_acctEsc(e.category)}</a>`:'')}${kv('Note',_acctEsc(e.note))}
       ${kv('Entered by',_acctEsc(e.byName||e.by)+' · '+new Date(e.ts||0).toLocaleString('en-PK'))}
       ${kv('Effect',[fx.cash?'Cash '+_acctSigned(fx.cash):'',fx.mcb?'MCB '+_acctSigned(fx.mcb):'',fx.payable?'Owed to vendor '+_acctSigned(fx.payable):'',fx.floatUsed?'Float used '+_acctPKR(fx.floatUsed):'',fx.floatBack?'Float returned '+_acctPKR(fx.floatBack):''].filter(Boolean).join(' · '))}
       ${e.vendorBillAmount!=null?kv("Vendor's bill",_acctPKR(e.vendorBillAmount)+(Math.round(e.vendorBillAmount)===Math.round(e.amount)?' <span class="acct-chip ok">matches</span>':` <span class="acct-chip urgent">${_acctSigned(Math.round(e.vendorBillAmount)-Math.round(e.amount))} vs ours</span>`)):''}

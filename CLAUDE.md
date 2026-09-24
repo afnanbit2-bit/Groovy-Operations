@@ -6235,6 +6235,79 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
   selected and its hint shown, and fails 6 jobs with the hint's ink set to
   `--surface`. **Nobody has paid a vendor from Other on a real screen** —
   the sandbox cannot sign in.
+- **Categories and runners, each with a log (24 Sept 2026).** Afnan, with
+  the Give-a-float form open: *"when a runner is send for a job it can be
+  for many purposes such as mantance work … a catagory of fuel … option to
+  create new catagory as well > those catagory will fall in vendor
+  mangement"*, then *"there can be more then 1 runner so log created by
+  name of other runner as well such as ABBAS"*. Two derived lists, two
+  cards on the Vendors tab, two pages — nothing new is stored beyond the
+  `category` on a float.
+  - **A float carries a `category`, and it is REQUIRED** — the same
+    `_acctCatOptions` select the purchase form uses (with `+ New
+    category…`), starting on a blank *"what is the runner sent for?"* row;
+    a float with none is refused by name. `_acctCategories()` now reads
+    `float_out` entries too, so a category a float introduced is on every
+    picker. `_acctParticulars` prints it (*Float to Noman · Transport &
+    fuel · petrol*). **A bill paid from a float starts in the float's
+    category**: `acctPurchaseSourceChanged` moves the purchase form's
+    Category to the float's the moment a float is picked as the source
+    (still changeable), and the float detail's *Record a bill from it*
+    opens the form with **that float and that category preselected**
+    (`pre.source` / `pre.category` on `_acctPurchaseForm` — it used to open
+    a blank form and leave the float to be found in the chips).
+  - **The Vendors tab carries a Categories card** (`_acctCategoriesCard`,
+    from `_acctCategoryStats`: entries, spent on purchases, floats given,
+    last entry — matched case-folded through `_acctCategoryKey`) and a
+    **Runners card** (`_acctRunnersCard` / `_acctRunnerStats`: floats
+    given, spent on bills, change back, still to account for). Each row
+    opens a page: **`acct-category`** (`_acctCategoryId`, every purchase
+    and float under it, totalled) and **`acct-runner`** (`_acctRunnerId`,
+    every float given, every bill paid from one and every change back,
+    with a *Give a float* button for entry users that opens the form on
+    that runner). Both say *since the <month> close* when a close exists —
+    they read what is in memory, and the loader starts after the last
+    close. `js/shared.js` gained the two page ids in the phone `groups`
+    map and `BUG_PAGE_NAMES` (a cross-track file; two additive entries).
+  - **The runner list is DERIVED**: the settings' `runners` ∪ every name a
+    live float was given to, newest first so the spelling last used is the
+    one shown, a voided float naming nobody. **Typing a new name on the
+    float form IS how a runner is added** — no settings write, which is
+    the point: `firestore.rules` holds Raees's `acct_settings` write to
+    `categories, updatedAt, updatedBy`, so a "+ New runner" button would
+    have needed a rules change and a republish for something the float
+    already records. With more than one runner known the *Given to* field
+    starts blank rather than assuming Noman; with exactly one it is still
+    prefilled.
+  - **A bill is matched to a runner by the FLOAT it was paid from**
+    (`e.floatId` against that runner's float ids), never by the `person`
+    string on the bill — a bill recorded against Abbas's float is Abbas's
+    whatever was typed. Categories match case-folded, so `transport &
+    FUEL` typed on a purchase counts under *Transport & fuel*.
+  - **+ New category on the Vendors tab** (`acctCategoryNew`, entry users
+    only) goes through the same `_acctAddCategory` → field-limited
+    settings PATCH as the purchase form's select; a name already on the
+    list in any case is not minted twice. No `firestore.rules` change
+    anywhere in this round.
+  - Verified by reverting: the required category (2), the float's category
+    off the list (1), the purchase not moved into the float's category (1),
+    case-sensitive matching (5), the button shown to viewers (1), the
+    `acctCategoryNew` gate (1), floats not counted on the page (1); the
+    runner list from settings only (10), bills matched by name (4), a
+    voided float naming a runner (7), *Give a float* shown to viewers (1).
+    The wide-only `store accounts — ledger, vendor, consumables` layout
+    fragment now renders both cards and both pages. **Nobody has given a
+    float with a category, or opened a runner's log, on a real screen** —
+    the sandbox cannot sign in.
+  - **A probe job flaked during this round and it is NOT this change:**
+    `store accounts — tiles, alerts and the purchase form @ 420px` failed
+    once in light and once in dark (the Paid-via chips "covered by"
+    `.acct-modal-foot` / `.acct-modal-head`), then passed. The fragment's
+    markup was dumped from this tree and from the committed one and is
+    **byte-identical (18,477 bytes, no diff)**, so the hit-test is
+    catching the sticky modal foot at a scroll position it does not always
+    land on. If it shows up again, that fragment's sticky foot is the
+    thing to look at, not the form.
 - **`firestore.rules` changed** (`acct_*` blocks + `isStoreAccounts()`; the
   `store_cash_*` blocks became owner-write) — **published by Afnan, 23 Sept
   2026**; see "Firestore rules" below. **Changed AGAIN the same evening
@@ -6242,7 +6315,7 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
   below.
 
 **Nobody has recorded a purchase on a real screen** — the sandbox cannot
-sign in. 423 assertions hold the logic; the layout probe holds the shape.
+sign in. 469 assertions hold the logic; the layout probe holds the shape.
 
 ## The Sales Team ▸ Marketing (Sept 2026)
 
