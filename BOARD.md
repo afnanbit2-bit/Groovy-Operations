@@ -208,9 +208,17 @@ And one this module adds:
   the real-Chromium script load and the rendered geometry of the shell are
   tested.
 - Phase 1 screens are honest placeholders, not loading states.
-- **Dashboard cards 10–12** (team today, activity, my lists) are phase 5.
-  Card 9 (inbox) shipped in phase 4 because §13 names it as one of the
-  three surfaces a notification has to reach.
+- **Phase 4b** — the 08:00 PKT reminder — is the only piece of the build
+  spec not built. It is a scheduled Netlify function with the service
+  account (not a Cloud Function, so there is no Blaze dependency), and it
+  writes `due_today` / `overdue` rows through the same
+  `hrm_notifications` shape `_tbNotify` uses. It is deliberately last:
+  a reminder that writes into a board nobody can read yet is untestable.
+- **The Dashboard activity card does not show step ticks, file adds, lock
+  changes or handovers.** It is derived from the items in memory, not from
+  the activity subcollections — see phase 5 below for why. Those events
+  are all in the item drawer's own activity section, which reads the real
+  log.
 - **The calendar's month grid hides a marker's LABEL at phone width.** A
   ~50px day square crushed it to 1px (measured). The left bar stays, so
   the day is still visibly marked, and the week view carries the word.
@@ -233,8 +241,8 @@ And one this module adds:
 | 2 — items, lists, dashboard, drawer | **done** — item CRUD, quick-add grammar, cards 1–8, the drawer, the seed |
 | 3 — calendar | **done** — month + week, filters, pointer drag with lock enforcement |
 | 4 — comments, mentions, files, inbox | **done** — the thread, @ ranking, Cloudinary files, the live inbox |
-| 4b — scheduled reminder (Netlify) | |
-| 5 — responsive, polish, acceptance | |
+| 5 — responsive, shortcuts, search, cards 10–12 | **done** — see below |
+| 4b — scheduled reminder (Netlify) | the last piece; needs the rules deployed first |
 
 Cuts agreed for the Sep 28 date: Dashboard ships cards 1–8 in phase 2 (9–12
 move to phase 5); the calendar ships month + week, filters and pointer drag
@@ -432,10 +440,127 @@ is broken.
 **Nobody has typed a comment, mentioned anyone or uploaded a file on a
 real screen** — the sandbox cannot sign in.
 
+## Phase 5 — the phone, the keyboard, search, the last cards
+
+The end of the build spec bar 4b. **No `firestore.rules` change, no new
+index, and no cross-track file touched at all** — phase 5 is
+`js/theboard.js`, `css/main.css` and the tests.
+
+- **Spec §11's breakpoints replaced the module's own.** It shipped on
+  900/600 through phases 1–4; the bands are **≥1024 desktop · 640–1023
+  tablet · <640 phone** now, and `_tbIsPhone()` moved 600 → 639 with them.
+  A 620px screen was being given the month grid it cannot render.
+- **The rail does NOT collapse to icons in the tablet band, deliberately.**
+  §11 asks for icons; this module has none, on purpose — the Creative Hub
+  precedent, where the nav entry is plain text and the `notebook` glyph was
+  removed again once it became icon-less. Inventing an icon set for four
+  words would be a second UI vocabulary. It docks as a horizontal strip
+  instead, which is what the phone already did.
+- **A search is a MODE, not a fifth page.** One box, in the rail so it is
+  on every screen; a query takes the screen over and clearing puts you
+  back where you were. It covers titles, notes, steps and lanes over the
+  loaded set — and **comments only in threads that have been opened this
+  session**, which the result row and the empty state both say out loud. A
+  thread is a subcollection read when a drawer opens; claiming otherwise
+  would be a filter that lies.
+- **A title hit outranks one buried in notes**, because somebody searching
+  a word is far more often looking for the thing named after it.
+- **`tbShortcutFor` is the whole keyboard in one pure function** — it
+  returns an action's name and never performs it, so every branch is
+  assertable without a keyboard. **Escape is read BEFORE the editable
+  bail**, or it is handed to the browser and does nothing; its precedence
+  is shortcut-list → drawer → search. Modified keys are the OS's. The
+  listener is registered ONCE at load and bails unless a `tb-` page is on
+  screen, so `d` cannot navigate away from somebody typing on another one.
+  A test asserts every key the `?` overlay advertises is a key that does
+  something.
+- **A RENDER FUNCTION MUST NOT WRITE**, and the tests caught this one:
+  `boardLastSeenAt` started life inside `_tbDashboard`, which turned every
+  repaint into a round trip — the create test went from two documents to
+  three. It is written from `tbRenderPage` on Dashboard OPEN now,
+  throttled to once every ten minutes, `set` with `{merge:true}` carrying
+  `uid` for the reason the mention stats are.
+- **Card 11 (activity) is DERIVED from the items already in memory** —
+  created, moved and done. Both of the spec's own examples fall straight
+  out of fields the item already carries, so this needs no
+  collection-group query, no new index, **no `firestore.rules` change**
+  and nothing that can go stale. What it therefore does not cover is
+  stated on the card's own comment and in the gaps list above.
+- **A card with nothing to SAY is hidden, not rendered empty** (§7.1).
+  Five team rows reading "0 open" answers no question — and it would
+  suppress the empty state, which §10 says is one sentence plus one
+  action. Cards 10 and 12 hide when nothing is open.
+- **No row is an accusation.** Card 10's "has not opened the board today"
+  dot reads `null` — unknown, and draws nothing — for somebody with no
+  profile row, because never having signed in since Profiles shipped is
+  not the same as not having looked.
+- **ONE predicate serves the calendar grid and the unscheduled tray**
+  (`_tbCalPass`, extracted here). A second copy is how a chip comes to say
+  4 while the tray draws 3.
+- **Rows-by-person is a way of reading the WEEK**, so it only appears on a
+  week and never on a phone: seven columns times five people is not 390px.
+  Each row runs the same filter the grid does with the person pinned, so
+  "everyone's week" cannot disagree with the week you were just on.
+- **On a phone a pill is HELD, not dragged** (§11). A 4px threshold aimed
+  at a ~50px day square is not a gesture a thumb can land, and the tray
+  exists precisely to be moved FROM. A 500ms hold opens a move-to sheet
+  with today / tomorrow / next week and a date field; a finger that
+  travels more than 8px is a scroll and cancels it. The lock is checked
+  before the sheet opens, not after.
+
+Verified by reverting each: Escape after the editable bail (1 fails), the
+tray un-sharing the grid's predicate (4), private items in the shared
+activity feed (1), last-seen removed from the page open (4) and moved back
+into the render (3, including the create test), the phone long-press (4),
+the unknown-seen state flattened to false (1), and the search ranking (1).
+The three new `smoke-layout` fragments cover the search screen and cards
+10–12, the tray and the person week, and the two overlays.
+
+**AMMAR IS A BOARD OWNER AND OVERRIDES ANY LOCK.** That premise has now
+been got wrong in the first draft of a test in phases 3, 4 and 5. If a
+lock assertion is about a refusal, the person in it is Daniyal.
+
 ## Acceptance script
 
-The 15-step script in the build spec, run manually as two users in two
-browsers. Not yet run — it needs phases 2–4. Results get recorded here.
+The 15-step script from the build spec (§15), run manually as two users in
+two browsers. **NOT RUN — the sandbox cannot sign in** (gstatic is
+blocked, so `__bootApp()` never runs and the app stops at the login
+screen's static HTML). It also cannot run until the three steps under
+"Deploying the rules" are done, because there is no readable board before
+them.
+
+Record pass/fail here as it is worked through.
+
+| # | Step | Needs | Result |
+|---|---|---|---|
+| 1 | a non-Board user signs in: no tab, a direct URL redirects | rules deployed | |
+| 2 | Ammar creates a private item "test" → invisible to Afnan | rules | |
+| 3 | Ammar assigns it to Afnan → it appears on Afnan's Dashboard and calendar | rules | |
+| 4 | Afnan drags it to tomorrow → Ammar gets `moved`; activity shows it; "was" date shows | rules | |
+| 5 | Ammar locks it → Daniyal's drag and `[` / `]` are refused "locked by ammar"; Afnan can move it and it logs as an override | rules | |
+| 6 | Afnan presses Request move → a comment mentioning Ammar; Ammar's badge increments | rules | |
+| 7 | Afnan adds 3 steps, completes 2 → "2/3" on every row | rules | |
+| 8 | Afnan attaches an image → thumbnail renders; Ammar can open the full file | rules + Cloudinary | |
+| 9 | Afnan hands over to Mustafa with a note → Mustafa notified, Afnan off it, comment posted | rules | |
+| 10 | Mustafa marks done → off the Dashboard and calendar; Ammar notified; the list's Done section has it | rules | |
+| 11 | quick add `denim samples @afnan #denim oct 5 !` → Oct 5, Afnan, denim, high | rules | |
+| 12 | Ammar types `@` → the people he mentions most; typing `d` shows Daniyal | rules + a few real mentions | |
+| 13 | phone: all four screens usable; drawer as a sheet; long-press move works | rules | |
+| 14 | the seed re-run duplicates nothing | seed run once already | |
+| 14b | the 08:00 PKT reminder writes one `due_today` per assignee | **phase 4b, not built** | — |
+| 15 | tests pass; nothing outside the Board changed | — | **pass** (below) |
+
+**Step 15 is the one that can be answered from here, and it is.**
+`node tests/run.js` is 5,227 assertions with one failure, and that failure
+is the pre-existing Windows-only CRLF assertion in
+`tests/store-accounts.test.js:1196` recorded under Known gaps — CI on
+Linux passes it. Outside its own files the whole module has touched
+exactly: `js/auth.js` (`USER_DEFS` + `BOARD_USERS`/`BOARD_OWNERS` + the
+`designer` role), `js/shared.js` (the nav entry on five routes, one
+`renderPage` line, the `tb-*` scope in `showPage`, the phone `groups`
+map), `firestore.rules`, `firestore.indexes.json`, `index.html`, `sw.js`
+and `css/main.css`. **Phase 5 touched none of them** beyond the
+`CACHE_VERSION` bump.
 
 ## Tests
 
