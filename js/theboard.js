@@ -757,14 +757,16 @@ function _tbDashboard(){
   const right=[
     _tbCard('assigned by me',R(tbAssignedByMe(tbItems,me))),
     _tbCard('deadlines',R(tbDeadlines(tbItems,today,14)),{cls:'tb-deadlines'}),
-    // Card 9. Cards 10-12 are phase 5; this one is here because spec s13
-    // names the Dashboard inbox as one of the three surfaces a
-    // notification has to reach, which is this phase's definition of done.
-    _tbInboxCard()
+    _tbInboxCard(),       // card 9
+    _tbTeamCard(),        // card 10
+    _tbActivityCard(),    // card 11
+    _tbListsCard()        // card 12
   ].join('');
   const empty=(!left&&!right)
     ?'<div class="tb-empty"><div class="tb-empty-h">nothing on the board today</div>'
-     +'<div class="tb-empty-p">add something above, or open the calendar.</div></div>':'';
+     +'<div class="tb-empty-p">add something above, or open the calendar.</div>'
+     +'<button class="btn-outline" onclick="window.showPage(\'tb-calendar\')">open the calendar</button>'
+     +'</div>':'';
   const warn=_tbLoadErrors.length&&!_tbLoadFailed('board_items')
     ?'<div class="tb-warn">'+_tbEsc(_tbLoadErrors.join(', '))+' could not be read — some of this may be incomplete.</div>':'';
   return _tbHeaderStrip(today)+warn+empty
@@ -1332,22 +1334,25 @@ function tbWeekLabel(day){
 // The filters are ONE predicate, used by the month, the week and the
 // counts — so a chip can never say 4 while the grid draws 3.
 /** Pure. `scope` is 'me' or 'all'; an empty filter field means no filter. */
+/** Everything the calendar's chips say, EXCEPT the date test. Extracted
+ *  in phase 5 so the grid and the unscheduled tray read one predicate: a
+ *  second copy is how a chip comes to say 4 while the tray draws 3. */
+function _tbCalPass(i,f,uid){
+  if(!i)return false;
+  if(f.hideDone&&i.status==='done')return false;
+  // 'me' is what I am ON, not what I own — the calendar answers "what is
+  // my week", and something I set for someone else is not my week.
+  if(f.scope!=='all'&&(i.assigneeUids||[]).indexOf(uid)<0)return false;
+  if(f.scope==='all'&&i.visibility!=='shared'&&i.ownerUid!==uid)return false;
+  if(f.person&&(i.assigneeUids||[]).indexOf(f.person)<0)return false;
+  if(f.list&&i.listId!==f.list)return false;
+  if(f.lane&&(i.lane||'')!==f.lane)return false;
+  if(f.color&&tbItemColorKey(i,tbLists,tbUserColors())!==f.color)return false;
+  return true;
+}
 function tbCalFilter(items,o){
   const f=o||{},uid=f.uid||'';
-  const lanes=f.lane?[f.lane]:null;
-  return(items||[]).filter(i=>{
-    if(!i||!i.date)return false;                       // undated is phase 5's tray
-    if(f.hideDone&&i.status==='done')return false;
-    // 'me' is what I am ON, not what I own — the calendar answers "what is
-    // my week", and something I set for someone else is not my week.
-    if(f.scope!=='all'&&(i.assigneeUids||[]).indexOf(uid)<0)return false;
-    if(f.scope==='all'&&i.visibility!=='shared'&&i.ownerUid!==uid)return false;
-    if(f.person&&(i.assigneeUids||[]).indexOf(f.person)<0)return false;
-    if(f.list&&i.listId!==f.list)return false;
-    if(lanes&&lanes.indexOf(i.lane||'')<0)return false;
-    if(f.color&&tbItemColorKey(i,tbLists,tbUserColors())!==f.color)return false;
-    return true;
-  });
+  return(items||[]).filter(i=>!!(i&&i.date)&&_tbCalPass(i,f,uid));
 }
 /** day → items, each day sorted gates-first then events then tasks. Pure. */
 function tbItemsByDay(items){
@@ -1420,7 +1425,9 @@ const _TB_CAL_KEY='groovy-tb-cal';
  *  else. Only a DEFAULT: a saved preference is the person's own
  *  choice and outranks it. */
 function _tbIsPhone(){
-  try{ return !!(window.matchMedia&&window.matchMedia('(max-width:600px)').matches); }
+  // Spec s11's phone band is < 640. It was 600 through phases 3 and 4,
+  // which left a 620px screen on the month grid it cannot render.
+  try{ return !!(window.matchMedia&&window.matchMedia('(max-width:639px)').matches); }
   catch(e){ return false; }
 }
 function _tbCalLoadPrefs(){
@@ -1432,10 +1439,13 @@ function _tbCalLoadPrefs(){
     if(o.view==='week'||o.view==='month')_tbCalView=o.view;
     if(o.filters&&typeof o.filters==='object')
       _tbCalFilters=Object.assign({scope:'me',person:'',list:'',lane:'',color:'',hideDone:false},o.filters);
+    if(typeof o.tray==='boolean')_tbTrayOpen=o.tray;
+    if(typeof o.rows==='boolean')_tbCalRows=o.rows;
   }catch(e){}                      // a corrupt or blocked store is not an error
 }
 function _tbCalSavePrefs(){
-  try{ localStorage.setItem(_TB_CAL_KEY,JSON.stringify({view:_tbCalView,filters:_tbCalFilters})); }catch(e){}
+  try{ localStorage.setItem(_TB_CAL_KEY,JSON.stringify(
+    {view:_tbCalView,filters:_tbCalFilters,tray:_tbTrayOpen,rows:_tbCalRows})); }catch(e){}
 }
 
 // ── Rendering ─────────────────────────────────────────────────────────
@@ -1481,7 +1491,14 @@ function _tbCalHead(){
       +'<button class="tb-calbtn" onclick="window.tbCalStep(1)" title="forward">&rsaquo;</button>'
       +'<span class="tb-callabel">'+_tbEsc(label)+'</span>'
     +'</div>'
-    +'<div class="tb-calseg">'+seg('month','month')+seg('week','week')+'</div>'
+    +'<div class="tb-calseg">'+seg('month','month')+seg('week','week')
+      // Rows-by-person is a way of reading the WEEK, so it lives beside
+      // the view segment and only appears when a week is on screen.
+      +(_tbCalView==='week'&&!_tbIsPhone()
+        ?'<button class="tb-seg'+(_tbCalRows?' on':'')+'"'
+          +' onclick="window.tbCalRows('+(_tbCalRows?'false':'true')+')">by person</button>'
+        :'')
+    +'</div>'
     +'<div class="tb-calseg">'+scope('me','me')+scope('all','everyone')+'</div>'
     +'<div class="tb-calfilters">'
       +'<select onchange="window.tbCalFilter(\'person\',this.value)">'
@@ -1539,7 +1556,9 @@ function _tbCalendar(){
   _tbCalMarks=tbMarkersByDay(tbConfig);
   const dow='<div class="tb-dowrow">'+TB_DOW_LABELS.map(d=>'<div class="tb-dow">'+_tbEsc(d)+'</div>').join('')+'</div>';
   let grid='';
-  if(_tbCalView==='week'){
+  if(_tbCalView==='week'&&_tbCalRows&&!_tbIsPhone()){
+    grid=_tbPersonWeek(tbWeekDays(_tbCalAnchor),today);
+  }else if(_tbCalView==='week'){
     const days=tbWeekDays(_tbCalAnchor);
     grid='<div class="tb-weekgrid">'
       +days.map(d=>_tbDayCell(d,byDay[d]||[],today,{})).join('')+'</div>';
@@ -1552,9 +1571,16 @@ function _tbCalendar(){
   const count=shown.length;
   const note='<div class="tb-calnote">'+count+' item'+(count===1?'':'s')+' shown'
     +(_tbCalActive()?' · filtered':'')
-    +' · drag a pill to move it'
+    +(_tbIsPhone()?' · hold a pill to give it a date':' · drag a pill to move it')
     +'</div>';
-  return _tbCalHead()+dow+grid+note;
+  // The dow header belongs to the seven-column grids only; rows-by-person
+  // draws its own, and the phone's week is a vertical agenda.
+  const heads=(_tbCalView==='month'||(_tbCalView==='week'&&!_tbCalRows&&!_tbIsPhone()))?dow:'';
+  return _tbCalHead()
+    +'<div class="tb-calbody">'
+      +'<div class="tb-calgrid">'+heads+grid+note+'</div>'
+      +_tbTray()
+    +'</div>';
 }
 
 // ── View controls ─────────────────────────────────────────────────────
@@ -1653,6 +1679,29 @@ window.tbPillDown=function(e,id){
   if(!it)return;
   if(!tbCanMoveDate(it,_tbMe(),_tbIsBoardOwner())){
     _tbToast('locked by '+tbUser(it.lockedBy).name);
+    return;
+  }
+  // SPEC s11: on a phone the drag is replaced by a move-to date picker on
+  // long press. A 4px threshold aimed at a ~50px day square is not a
+  // gesture a thumb can land, and the tray exists to be moved FROM.
+  if(_tbIsPhone()){
+    const hold=setTimeout(function(){
+      if(typeof navigator!=='undefined'&&navigator.vibrate)try{navigator.vibrate(8);}catch(err){}
+      _tbDragMoved=true;                    // so the release does not open the drawer
+      window.tbOpenMove(id);
+    },500);
+    const stop=function(){
+      clearTimeout(hold);
+      document.removeEventListener('pointerup',stop,true);
+      document.removeEventListener('pointercancel',stop,true);
+      document.removeEventListener('pointermove',moved,true);
+    };
+    const moved=function(ev){
+      if(Math.abs(ev.clientX-e.clientX)>8||Math.abs(ev.clientY-e.clientY)>8)stop();
+    };
+    document.addEventListener('pointerup',stop,true);
+    document.addEventListener('pointercancel',stop,true);
+    document.addEventListener('pointermove',moved,true);
     return;
   }
   const startX=e.clientX,startY=e.clientY,pid=e.pointerId;
@@ -2783,6 +2832,460 @@ function _tbInboxCard(){
   };
 })();
 
+// ══ PHASE 5 — RESPONSIVE, SHORTCUTS, SEARCH, THE LAST CARDS ═══════════
+// What is left of the spec: the phone, the keyboard, search, Dashboard
+// cards 10–12, and the two things phase 3 deferred (the unscheduled tray
+// and the week read as rows by person). Same rule as every phase before
+// it: the decisions are pure functions and the handlers are wrappers.
+
+// ── Search (spec §10) ─────────────────────────────────────────────────
+// ONE BOX, over the LOADED SET. There is no server search in v1 and there
+// does not need to be: the whole shared board is already in memory (a few
+// hundred items at most), which is also why this can search notes and
+// steps rather than only titles.
+let _tbQuery='';
+let _tbSearchTimer=null;
+
+/** Does this item match, and WHERE? The `where` is what lets a result row
+ *  say "matched in notes" — a row that appears for a word nowhere on it
+ *  reads as a broken filter, the lesson the Boards panel search records.
+ *  Pure; the thread is passed in rather than read, so it is assertable. */
+function tbSearchMatch(item,q,thread){
+  const it=item||{};
+  const needle=String(q||'').trim().toLowerCase();
+  if(!needle)return null;
+  const where=[];
+  const has=v=>String(v==null?'':v).toLowerCase().indexOf(needle)>-1;
+  if(has(it.title))where.push('title');
+  if(has(it.notes))where.push('notes');
+  if((it.steps||[]).some(st=>has(st&&st.title)))where.push('steps');
+  if(has(it.lane))where.push('lane');
+  // COMMENTS ARE ONLY SEARCHED WHERE THE THREAD HAS BEEN READ, and that is
+  // the honest limit of "over the loaded set": a thread is a subcollection
+  // read when a drawer opens, so a comment in an item nobody has opened
+  // this session is not in memory to search. The result row says so.
+  if(((thread&&thread.comments)||[]).some(c=>has(c&&c.body)))where.push('comments');
+  return where.length?{item:it,where:where}:null;
+}
+/** Every match, best first: a title hit outranks a hit buried in notes. */
+function tbSearchItems(items,q,threads){
+  const th=threads||{};
+  const out=[];
+  (items||[]).forEach(function(i){
+    const m=tbSearchMatch(i,q,th[i&&i.id]);
+    if(m)out.push(m);
+  });
+  out.sort(function(a,b){
+    const rank=m=>m.where.indexOf('title')>-1?0:1;
+    return (rank(a)-rank(b))||_tbByDate(a.item,b.item);
+  });
+  return out;
+}
+
+window.tbSearchInput=function(v){
+  _tbQuery=String(v==null?'':v);
+  if(_tbSearchTimer)clearTimeout(_tbSearchTimer);
+  // Debounced, then the caret is put back — the pattern fabInvSetSearch
+  // and the Boards panel already use. A repaint per keystroke would
+  // rebuild main-content and destroy the field being typed into.
+  _tbSearchTimer=setTimeout(function(){
+    _tbSearchTimer=null;
+    _tbSearchFocus=true;
+    _tbRepaint();
+  },180);
+};
+window.tbSearchClear=function(){
+  _tbQuery='';_tbSearchFocus=true;_tbRepaint();
+};
+window.tbFocusSearch=function(){
+  const el=document.getElementById('tb-search');
+  if(el&&el.focus)el.focus();
+  if(el&&el.select)el.select();
+};
+let _tbSearchFocus=false;
+
+function _tbSearchBox(){
+  return'<div class="tb-searchwrap">'
+    +'<input id="tb-search" class="tb-search" type="search" autocomplete="off"'
+      +' placeholder="search titles, notes and steps"'
+      +' value="'+_tbEsc(_tbQuery)+'"'
+      +' oninput="window.tbSearchInput(this.value)">'
+    +(_tbQuery?'<button class="tb-searchx" title="clear" onclick="window.tbSearchClear()">&times;</button>':'')
+  +'</div>';
+}
+
+function _tbSearchScreen(){
+  const today=_tbToday();
+  const hits=tbSearchItems(tbItems,_tbQuery,_tbThreads);
+  if(!hits.length){
+    return'<div class="tb-empty"><div class="tb-empty-h">nothing matches “'+_tbEsc(_tbQuery)+'”</div>'
+      +'<div class="tb-empty-p">search covers titles, notes, steps and lanes. '
+      +'Comments are searched only in threads you have opened this session.</div>'
+      +'<button class="btn-outline" onclick="window.tbSearchClear()">clear search</button></div>';
+  }
+  return'<div class="tb-sechead">'+hits.length+' result'+(hits.length===1?'':'s')
+      +' for “'+_tbEsc(_tbQuery)+'”'
+      +'<button class="tb-calbtn" onclick="window.tbSearchClear()">clear</button></div>'
+    +hits.map(function(h){
+      return'<div class="tb-hit">'+_tbRow(h.item,today)
+        +'<div class="tb-hitwhere">matched in '+_tbEsc(h.where.join(', '))+'</div></div>';
+    }).join('');
+}
+
+// ── Keyboard (spec §10) ───────────────────────────────────────────────
+// Registered ONCE at load, never per render — a listener added during a
+// repaint piles up, which is the mistake js/boards.js records for its
+// outside-click closers.
+const TB_SHORTCUTS=[
+  {k:'n',  what:'new item'},
+  {k:'/',  what:'search'},
+  {k:'d',  what:'dashboard'},
+  {k:'c',  what:'calendar'},
+  {k:'l',  what:'lists'},
+  {k:'i',  what:'inbox'},
+  {k:'?',  what:'this list'},
+  {k:'esc',what:'close the drawer, this list, or the search'}
+];
+let _tbHelpOpen=false;
+
+/** Is the caret somewhere the keys belong to the browser? */
+function _tbEditableFocus(){
+  const el=(typeof document!=='undefined'&&document.activeElement)||null;
+  if(!el)return false;
+  const tag=String(el.tagName||'').toUpperCase();
+  return tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||!!el.isContentEditable;
+}
+/** What a keystroke means. PURE, so every branch is assertable without a
+ *  keyboard: it returns the action's name, never performs it. */
+function tbShortcutFor(e,ctx){
+  const c=ctx||{};
+  if(!e)return'';
+  if(e.metaKey||e.ctrlKey||e.altKey)return'';       // those belong to the OS
+  // ESCAPE IS READ BEFORE THE EDITABLE BAIL, or it is handed to the
+  // browser and does nothing — the rule js/boards.js had to learn twice.
+  if(e.key==='Escape'){
+    if(c.helpOpen)return'help-close';
+    if(c.drawerOpen)return'close-drawer';
+    if(c.query)return'clear-search';
+    return'';
+  }
+  if(c.editable)return'';
+  if(e.key==='?'||(e.key==='/'&&e.shiftKey))return'help';
+  if(e.key==='/')return'search';
+  if(e.key==='n')return'new';
+  if(e.key==='d')return'go:tb-dash';
+  if(e.key==='c')return'go:tb-calendar';
+  if(e.key==='l')return'go:tb-lists';
+  if(e.key==='i')return'go:tb-inbox';
+  return'';
+}
+
+function _tbOnKeydown(e){
+  // Only while the Board is on screen: `d` must not navigate away from
+  // somebody typing a PO number on another page.
+  if(String((typeof currentPage!=='undefined'&&currentPage)||'').indexOf('tb-')!==0)return;
+  const act=tbShortcutFor(e,{
+    editable:_tbEditableFocus(),
+    drawerOpen:!!_tbOpenItemId,
+    helpOpen:_tbHelpOpen,
+    query:_tbQuery
+  });
+  if(!act)return;
+  if(e.preventDefault)e.preventDefault();
+  if(act==='help-close'){ _tbHelpOpen=false; _tbRepaint(); return; }
+  if(act==='help'){ _tbHelpOpen=!_tbHelpOpen; _tbRepaint(); return; }
+  if(act==='close-drawer'){ window.tbCloseItem(); return; }
+  if(act==='clear-search'){ window.tbSearchClear(); return; }
+  if(act==='search'){ window.tbFocusSearch(); return; }
+  if(act==='new'){
+    const qa=document.getElementById('tb-qa');
+    if(qa&&qa.focus){ qa.focus(); return; }
+    // Off the Dashboard and the list detail there is no quick-add field,
+    // so `n` goes where one is rather than doing nothing.
+    if(typeof showPage==='function')showPage(TB_HOME);
+    else window.showPage(TB_HOME);
+    return;
+  }
+  if(act.indexOf('go:')===0){
+    const id=act.slice(3);
+    if(typeof showPage==='function')showPage(id); else window.showPage(id);
+  }
+}
+window.tbToggleHelp=function(){ _tbHelpOpen=!_tbHelpOpen; _tbRepaint(); };
+
+function _tbHelpOverlay(){
+  if(!_tbHelpOpen)return'';
+  return'<div class="tb-help" onclick="window.tbToggleHelp()">'
+    +'<div class="tb-helpcard" onclick="event.stopPropagation()">'
+      +'<div class="tb-dsech">keyboard</div>'
+      +TB_SHORTCUTS.map(function(s){
+        return'<div class="tb-helprow"><kbd class="tb-kbd">'+_tbEsc(s.k)+'</kbd>'
+          +'<span class="tb-helpwhat">'+_tbEsc(s.what)+'</span></div>';
+      }).join('')
+      +'<button class="btn-outline" onclick="window.tbToggleHelp()">close</button>'
+    +'</div></div>';
+}
+
+// ── boardLastSeenAt (spec §5) ─────────────────────────────────────────
+/** Throttled to once every ten minutes, so opening the Dashboard five
+ *  times in a row is one write. Pure. */
+const _TB_SEEN_MS=10*60*1000;
+function tbSeenDue(lastAt,now){
+  return Number(now||0)-Number(lastAt||0)>=_TB_SEEN_MS;
+}
+let _tbSeenAt=0;
+async function _tbTouchSeen(){
+  const me=_tbMe();
+  if(!me)return;
+  const now=_tbNow();
+  if(!tbSeenDue(_tbSeenAt,now))return;
+  _tbSeenAt=now;
+  // set-with-merge and carrying `uid`, for the reason the mention stats
+  // do: a profile row that does not exist yet must not throw here.
+  try{ await setDoc(doc(db,'user_profiles',me),{uid:me,boardLastSeenAt:now},{merge:true}); }
+  catch(e){ console.warn('[the board] last-seen write failed',e); }
+  const p=_tbProfiles().filter(x=>x&&x.uid===me)[0];
+  if(p)p.boardLastSeenAt=now;
+}
+
+// ── Dashboard cards 10–12 ─────────────────────────────────────────────
+/** Card 10. One row per Board user: what is on them, and whether they
+ *  have opened the board today. The team is five people and the drop is
+ *  why we are here, so this is visible to everyone (spec §7.1). Pure. */
+function tbTeamToday(items,uids,today,profiles){
+  const byUid={};
+  (profiles||[]).forEach(function(p){ if(p&&p.uid)byUid[p.uid]=p; });
+  return (uids||[]).map(function(uid){
+    const mine=(items||[]).filter(i=>i&&(i.assigneeUids||[]).indexOf(uid)>-1&&i.status!=='done');
+    const seen=Number((byUid[uid]||{}).boardLastSeenAt||0);
+    return{
+      uid:uid,
+      open:mine.length,
+      due:mine.filter(i=>i.date===today).length,
+      overdue:mine.filter(i=>i.date&&i.date<today).length,
+      // NO ROW IS AN ACCUSATION. A person with no profile row has never
+      // signed in since Profiles shipped, which is not the same as "has
+      // not opened the board today" — so it reads as unknown, not absent.
+      seenToday:seen?_tbDay(new Date(seen))===today:null
+    };
+  });
+}
+
+/** Card 11. DERIVED FROM THE ITEMS ALREADY IN MEMORY — created, moved and
+ *  done — rather than from a collection-group query over every item's
+ *  activity subcollection.
+ *
+ *  Both of the spec's own examples ("mustafa completed 'earmark KG'",
+ *  "afnan moved 'pricing tiers' oct 17 → oct 18") fall straight out of
+ *  fields the item already carries, so this needs no new read, no new
+ *  index, no firestore.rules change and nothing that can go stale.
+ *
+ *  WHAT IT THEREFORE DOES NOT COVER, stated rather than implied: step
+ *  ticks, file adds, lock changes and handovers. Those are in the item
+ *  drawer's own activity section, which reads the real log. Putting them
+ *  on this card would mean a `{path=**}/activity` collection-group rule
+ *  and a republish for a card that is a glance. Pure. */
+function tbRecentActivity(items,limit){
+  const rows=[];
+  (items||[]).forEach(function(i){
+    if(!i||i.visibility!=='shared')return;
+    if(i.createdAt)rows.push({at:Number(i.createdAt),item:i,
+      row:{type:'created',byUid:i.ownerUid,payload:{}}});
+    (i.dateHistory||[]).forEach(function(h){
+      if(!h||!h.at)return;
+      rows.push({at:Number(h.at),item:i,
+        row:{type:h.from==null?'date_set':'moved',byUid:h.byUid,
+             payload:{from:h.from,to:h.to,reason:h.reason,override:!!h.override}}});
+    });
+    if(i.status==='done'&&i.completedAt)rows.push({at:Number(i.completedAt),item:i,
+      row:{type:'done',byUid:i.completedByUid,payload:{}}});
+  });
+  rows.sort((a,b)=>b.at-a.at);
+  return rows.slice(0,Number(limit||15));
+}
+
+/** Card 12. Lists with what is open on them, for the person looking. */
+function tbMyLists(items,lists,uid){
+  return (lists||[]).filter(l=>l&&!l.archived).map(function(l){
+    return{
+      id:l.id,title:l.title||'untitled',color:l.color||'slate',kind:l.kind,
+      open:(items||[]).filter(i=>i&&i.listId===l.id&&i.status!=='done').length,
+      mine:(items||[]).filter(i=>i&&i.listId===l.id&&i.status!=='done'
+        &&(i.assigneeUids||[]).indexOf(uid)>-1).length
+    };
+  }).sort((a,b)=>b.open-a.open||String(a.title).localeCompare(String(b.title)));
+}
+
+function _tbTeamCard(){
+  const today=_tbToday();
+  const uids=_tbBoardUsernames().map(h=>tbHandleMap()[h]).filter(Boolean);
+  const rows=tbTeamToday(tbItems,uids,today,_tbProfiles());
+  if(!rows.length||!rows.some(r=>r.open))return'';
+  return _tbCard('team today',rows.map(function(r){
+    const u=tbUser(r.uid);
+    const bits=[r.open+' open']
+      .concat(r.due?[r.due+' due today']:[])
+      .concat(r.overdue?[r.overdue+' overdue']:[]);
+    return'<div class="tb-teamrow">'
+      +'<span class="tb-av">'+_tbEsc(u.initial)+'</span>'
+      +_tbSlot(u.name,'tb-teamname')
+      +'<span class="tb-teamn'+(r.overdue?' over':'')+'">'+_tbEsc(bits.join(' · '))+'</span>'
+      +(r.seenToday===false?'<span class="tb-teamdot" title="has not opened the board today"></span>':'')
+    +'</div>';
+  }));
+}
+
+function _tbActivityCard(){
+  const today=_tbToday();
+  const rows=tbRecentActivity(tbItems,15);
+  if(!rows.length)return'';
+  return _tbCard('activity',rows.map(function(r){
+    // tbActivityLine is the ONE definition of how a log entry reads, so
+    // the card and the drawer can never word the same event differently.
+    return'<div class="tb-act">'
+      +_tbSlot(tbActivityLine(r.row,d=>tbDayLabel(d,today))+' — '+(r.item.title||'untitled'),'tb-acttext')
+      +'<span class="tb-cmtwhen">'+_tbEsc(_tbAgo(r.at))+'</span></div>';
+  }),{cls:'tb-actcard'});
+}
+
+function _tbListsCard(){
+  const rows=tbMyLists(tbItems,tbLists,_tbMe());
+  if(!rows.length||!rows.some(l=>l.open))return'';
+  // ONE CHIP PER ROW, not one joined string: _tbCard's count chip reads
+  // rows.length, so a single joined blob would have the card say "1"
+  // however many lists there are. The chips are inline-flex, so they
+  // still flow into a strip.
+  return _tbCard('my lists',rows.map(function(l){
+    return'<button class="tb-listchip" onclick="window.tbGoList(\''+_tbEsc(l.id)+'\')">'
+      +'<span class="tb-dot tb-c-'+_tbEsc(TB_COLORS[l.color]?l.color:'slate')+'"></span>'
+      +_tbSlot(l.title,'tb-chipname')
+      +'<span class="tb-listn">'+l.open+'</span></button>';
+  }),{cls:'tb-chipcard'});
+}
+window.tbGoList=function(id){
+  _tbListId=id;
+  if(typeof showPage==='function')showPage('tb-lists'); else window.showPage('tb-lists');
+};
+
+// ── The unscheduled tray (spec §7.2) ──────────────────────────────────
+// ONE PREDICATE serves the grid and the tray, so a chip can never say 4
+// while the tray draws 3 — the rule phase 3 already holds for the grid.
+let _tbTrayOpen=true;
+
+/** Everything the calendar's filters allow that has no date yet. Pure. */
+function tbUnscheduled(items,o){
+  const f=o||{},uid=f.uid||'';
+  return (items||[]).filter(i=>i&&!i.date&&_tbCalPass(i,f,uid)).sort(_tbByKind);
+}
+
+function _tbTray(){
+  const me=_tbMe();
+  const rows=tbUnscheduled(tbItems,Object.assign({uid:me},_tbCalFilters));
+  return'<div class="tb-tray'+(_tbTrayOpen?' open':'')+'">'
+    +'<button class="tb-trayhead" onclick="window.tbTrayToggle()">'
+      +'unscheduled<span class="tb-count">'+rows.length+'</span>'
+      +'<span class="tb-traychev">'+(_tbTrayOpen?'&rsaquo;':'&lsaquo;')+'</span></button>'
+    +(_tbTrayOpen
+      ?'<div class="tb-traybody">'
+        +(rows.length
+          ?rows.map(i=>_tbPill(i,_tbToday())).join('')
+          :'<div class="tb-hint">nothing without a date</div>')
+        +'<div class="tb-hint tb-trayhint">'
+        +(_tbIsPhone()?'hold a pill to give it a date':'drag one onto a day')+'</div>'
+      +'</div>'
+      :'')
+  +'</div>';
+}
+window.tbTrayToggle=function(){ _tbTrayOpen=!_tbTrayOpen; _tbCalSavePrefs(); _tbRepaint(); };
+
+// ── The week as rows by person (spec §7.2) ────────────────────────────
+// "The everyone's week the founders read on Monday mornings." Desktop
+// only: seven columns times five people does not fit a phone, and the
+// phone already has the vertical agenda.
+let _tbCalRows=false;
+window.tbCalRows=function(v){ _tbCalRows=!!v; _tbCalSavePrefs(); _tbRepaint(); };
+
+function _tbPersonWeek(days,today){
+  const uids=_tbBoardUsernames().map(h=>tbHandleMap()[h]).filter(Boolean);
+  const me=_tbMe();
+  const head='<div class="tb-prow tb-prowhead"><div class="tb-pname"></div>'
+    +days.map(function(d){
+      return'<div class="tb-pday'+(d===today?' today':'')+'">'
+        +_tbEsc(TB_DOW_LABELS[(_tbDow(d)+6)%7])+' '+Number(String(d).slice(8))+'</div>';
+    }).join('')+'</div>';
+  return'<div class="tb-personweek">'+head+uids.map(function(uid){
+    // Each person's row reads the SAME filter the grid does, with the
+    // person pinned — so "everyone's week" cannot disagree with the week
+    // you were just looking at.
+    const mine=tbCalFilter(tbItems,Object.assign({},_tbCalFilters,{uid:me,scope:'all',person:uid}));
+    const byDay=tbItemsByDay(mine);
+    const u=tbUser(uid);
+    return'<div class="tb-prow">'
+      +'<div class="tb-pname"><span class="tb-av">'+_tbEsc(u.initial)+'</span>'
+        +_tbSlot(u.name,'tb-pnametext')+'</div>'
+      +days.map(function(d){
+        return'<div class="tb-pday tb-day'+(d===today?' today':'')+'" data-day="'+_tbEsc(d)+'">'
+          +(byDay[d]||[]).map(i=>_tbPill(i,today)).join('')+'</div>';
+      }).join('')
+    +'</div>';
+  }).join('')+'</div>';
+}
+
+// ── Phone: a long press gives a date (spec §11) ───────────────────────
+// "Drag & drop replaced by a move-to date picker on long-press." A 250ms
+// pointer drag is not a gesture a thumb can aim on a ~50px day square,
+// and the tray exists precisely to be moved FROM — so on a phone the
+// pill is held rather than dragged, and the same tbMoveItem runs at the
+// end of it.
+let _tbMoveId=null;
+window.tbOpenMove=function(id){
+  const it=tbItems.filter(x=>x.id===id)[0];
+  if(!it)return;
+  if(!tbCanMoveDate(it,_tbMe(),_tbIsBoardOwner())){
+    _tbToast('locked by '+tbUser(it.lockedBy).name);
+    return;
+  }
+  _tbMoveId=id;_tbRepaint();
+};
+window.tbCloseMove=function(){ _tbMoveId=null; _tbRepaint(); };
+window.tbMoveTo=function(){
+  const el=document.getElementById('tb-move-date');
+  const id=_tbMoveId;
+  const day=el&&el.value;
+  _tbMoveId=null;
+  if(!id||!day){ _tbRepaint(); return; }
+  window.tbMoveItem(id,day);
+};
+function _tbMoveSheet(){
+  if(!_tbMoveId)return'';
+  const it=tbItems.filter(x=>x.id===_tbMoveId)[0];
+  if(!it)return'';
+  const today=_tbToday();
+  const quick=(d,l)=>'<button class="tb-calbtn" onclick="window.tbMoveItem(\''+_tbEsc(it.id)
+    +'\',\''+_tbEsc(d)+'\');window.tbCloseMove()">'+_tbEsc(l)+'</button>';
+  return'<div class="tb-sheet" onclick="window.tbCloseMove()">'
+    +'<div class="tb-sheetcard" onclick="event.stopPropagation()">'
+      +'<div class="tb-dsech">move to</div>'
+      +_tbSlot(it.title||'untitled','tb-sheettitle')
+      +'<div class="tb-sheetquick">'+quick(today,'today')
+        +quick(_tbDayAdd(today,1),'tomorrow')
+        +quick(_tbDayAdd(today,7),'next week')+'</div>'
+      +'<input type="date" id="tb-move-date" value="'+_tbEsc(it.date||today)+'">'
+      +'<div class="tb-sheetfoot">'
+        +'<button class="btn-outline" onclick="window.tbCloseMove()">cancel</button>'
+        +'<button class="btn-primary" onclick="window.tbMoveTo()">move</button>'
+      +'</div>'
+    +'</div></div>';
+}
+
+// Registered ONCE at load. A document listener added during a repaint
+// piles up -- the mistake js/boards.js records for its outside-click
+// closers -- and the board repaints on every action.
+(function(){
+  if(typeof document==='undefined'||!document.addEventListener)return;
+  document.addEventListener('keydown',_tbOnKeydown);
+})();
+
 // ── Routing ───────────────────────────────────────────────────────────
 // ONE entry point for every tb-* page, so js/shared.js holds a single line
 // for this whole module no matter how many screens it grows.
@@ -2797,6 +3300,12 @@ function tbRenderPage(id){
     return;
   }
   _tbPage=TB_PAGES.indexOf(id)>-1?id:TB_HOME;
+  // Spec s5: written on Dashboard OPEN, throttled to once every ten
+  // minutes -- it is what card 10's "has not opened the board today" dot
+  // reads. Deliberately here and not in _tbDashboard: a render function
+  // that writes turns every repaint into a round trip, which is what the
+  // create test caught when it went from two documents to three.
+  if(_tbPage===TB_HOME)_tbTouchSeen();
   // Idempotent — the startApp wrap normally gets there first. This is the
   // route for a session that reached a tb-* page some other way (a deep
   // link, a reload) without the wrap having fired.
@@ -2822,7 +3331,7 @@ function _tbRepaint(reload){
   if(reload&&!tbLoaded){ tbRenderPage(_tbPage); return; }
   _tbHydrateQueue=[];
   const body=_tbScreen(_tbPage);
-  m.innerHTML=_tbShell(_tbPage,body)+_tbDrawer();
+  m.innerHTML=_tbShell(_tbPage,body)+_tbDrawer()+_tbMoveSheet()+_tbHelpOverlay();
   _tbHydrate();
   _tbPaintBadges();
   _tbPaintMentions();
@@ -2830,6 +3339,15 @@ function _tbRepaint(reload){
   // focus loses it — and posting a comment repaints. Put the caret back
   // at the end of what is there, the way the search inputs in this app
   // already do after their own rerender.
+  if(_tbSearchFocus){
+    _tbSearchFocus=false;
+    const q=document.getElementById('tb-search');
+    if(q&&q.focus){
+      q.focus();
+      const n=String(q.value||'').length;
+      if(q.setSelectionRange)try{q.setSelectionRange(n,n);}catch(e){}
+    }
+  }
   if(_tbCompFocus){
     _tbCompFocus=false;
     const c=document.getElementById('tb-comp');
@@ -2852,12 +3370,21 @@ function _tbShell(page,body){
     +'</button>'
   ).join('');
   return'<div class="tb-wrap">'
-    +'<div class="tb-rail">'+tabs+'</div>'
+    +'<div class="tb-rail">'+tabs
+      // Spec s10: ONE box. It lives in the rail so it is on every screen,
+      // and `/` focuses it from anywhere on the board.
+      +_tbSearchBox()
+      +'<button class="tb-helpbtn" title="keyboard shortcuts"'
+        +' onclick="window.tbToggleHelp()">?</button>'
+    +'</div>'
     +'<div class="tb-main">'+body+'</div>'
     +'</div>';
 }
 
 function _tbScreen(page){
+  // A search is a MODE, not a fifth page: it answers "where is that item"
+  // from wherever you were, and clearing it puts you back.
+  if(String(_tbQuery||'').trim())return _tbSearchScreen();
   if(page==='tb-lists')return _tbListsScreen();
   if(page==='tb-calendar')return _tbCalendar();
   if(page==='tb-inbox')return _tbInboxScreen();

@@ -2738,7 +2738,7 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .tb-empty-h{font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px}
 .tb-empty-p{font-size:14px;color:var(--muted);line-height:1.6}
 
-@media(max-width:600px){
+@media(max-width:1023px){
   /* The rail docks as a horizontal scroller, the way the Mood Boards tool
      rail does on a phone -- #mob-nav is full for owners and managers and
      cannot give up a slot. The designer's role gets the real four-tab bar
@@ -2750,6 +2750,8 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   .tb-railbtn{width:auto;flex:0 0 auto;min-height:48px;white-space:nowrap}
   .tb-main{width:100%}
   .tb-empty{padding:28px 0}
+  .tb-searchwrap{flex:1 1 180px;min-width:140px}
+  .tb-helpbtn{display:none}     /* no keyboard to shortcut */
 }
 @media(prefers-reduced-motion:reduce){.tb-railbtn{transition:none}}
 /* ── Store Accounts (js/store-accounts.js, Sept 2026) ──
@@ -3033,8 +3035,8 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
 .tb-warn{padding:10px 12px;margin-bottom:12px;background:var(--accent-warning-soft);
   border:1px solid var(--border);border-radius:10px;font-size:13px;color:var(--text)}
 
-@media(max-width:900px){.tb-cols{grid-template-columns:1fr}}
-@media(max-width:600px){
+@media(max-width:1023px){.tb-cols{grid-template-columns:1fr}}
+@media(max-width:639px){
   .tb-row{min-height:48px}
   .tb-check{width:20px;height:20px}
   .tb-stripcount{margin-left:0;width:100%}
@@ -3153,10 +3155,10 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
   border:1px solid var(--text);box-shadow:0 6px 18px rgba(0,0,0,.18);
   font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-@media(max-width:900px){
+@media(max-width:1023px){
   .tb-calfilters{margin-left:0;width:100%}
 }
-@media(max-width:600px){
+@media(max-width:639px){
   /* A 7-column month on a phone gives ~50px a day, which fits a number
      and nothing else. The week view is the phone's calendar — one column,
      a vertical agenda, which is what spec s11 asks for — and the month
@@ -3285,10 +3287,128 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
 .tb-nf::before{content:"";flex:0 0 auto;width:6px;height:6px}
 .tb-card .tb-nf{padding:6px 0;border-top:1px solid var(--border)}
 
-@media(max-width:600px){
+@media(max-width:639px){
   .tb-nf{min-height:48px}
   .tb-mentions.on{max-height:180px}
 }
 @media(prefers-reduced-motion:reduce){
   .tb-file,.tb-nf,.tb-mrow,.tb-addfile{transition:none}
+}
+
+/* ── THE BOARD — phase 5: search, shortcuts, the tray, rows by person ──
+   Spec s11's bands: >=1024 desktop, 640-1023 tablet, <640 phone. Tokens
+   only; the single red stays the overdue count. */
+
+/* search (spec s10: ONE box, in the rail, so it is on every screen) */
+.tb-searchwrap{position:relative;margin-top:10px}
+.tb-search{width:100%;box-sizing:border-box;min-height:40px;padding:0 28px 0 10px;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
+  font-family:inherit;font-size:13px;color:var(--text);outline:none}
+.tb-search:focus{border-color:var(--text)}
+.tb-searchx{position:absolute;right:2px;top:50%;transform:translateY(-50%);
+  min-height:32px;padding:0 8px;background:none;border:none;cursor:pointer;
+  font-family:inherit;font-size:16px;color:var(--muted);border-radius:6px}
+.tb-searchx:hover{background:var(--hover);color:var(--text)}
+.tb-sechead{display:flex;align-items:center;gap:10px;margin-bottom:10px;
+  font-size:13px;font-weight:600;color:var(--muted)}
+.tb-sechead .tb-calbtn{margin-left:auto}
+.tb-hit{margin-bottom:2px}
+.tb-hitwhere{padding:0 0 6px 34px;font-size:11px;color:var(--muted)}
+
+/* the ? overlay */
+.tb-helpbtn{margin-top:8px;min-height:32px;width:32px;background:none;
+  border:1px solid var(--border);border-radius:8px;cursor:pointer;
+  font-family:inherit;font-size:13px;font-weight:700;color:var(--muted)}
+.tb-helpbtn:hover{background:var(--hover);color:var(--text)}
+.tb-help{position:fixed;inset:0;z-index:998;display:flex;align-items:center;
+  justify-content:center;padding:16px;background:rgba(0,0,0,.45)}
+.tb-helpcard{width:100%;max-width:360px;padding:18px;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--radius-card);
+  box-shadow:0 18px 48px rgba(0,0,0,.28)}
+.tb-helprow{display:flex;align-items:center;gap:10px;min-height:32px}
+.tb-kbd{flex:0 0 auto;min-width:34px;padding:2px 6px;text-align:center;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:6px;
+  font-family:var(--font-mono);font-size:12px;color:var(--text)}
+.tb-helpwhat{font-size:13px;color:var(--muted)}
+.tb-helpcard .btn-outline{margin-top:12px;width:100%}
+
+/* cards 10-12 */
+.tb-teamrow{display:flex;align-items:center;gap:9px;min-height:44px;padding:2px 0}
+.tb-teamname{flex:1;min-width:0;font-size:14px;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-teamn{font-family:var(--font-mono);font-size:12px;color:var(--muted);white-space:nowrap}
+/* The ONE red on this module is the overdue count, so a person carrying
+   overdue work reads in it too -- it is the same fact, one card over. */
+.tb-teamn.over{color:var(--count-accent)}
+.tb-teamdot{flex:0 0 auto;width:7px;height:7px;border-radius:50%;
+  background:var(--border);border:1px solid var(--muted)}
+.tb-actcard .tb-act{border-top:1px solid var(--border)}
+.tb-actcard .tb-act:first-of-type{border-top:none}
+.tb-chipcard{display:block}
+.tb-listchip{display:inline-flex;align-items:center;gap:7px;min-height:36px;
+  margin:0 6px 6px 0;padding:0 11px;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:18px;cursor:pointer;
+  font-family:inherit;font-size:13px;color:var(--text)}
+.tb-listchip:hover{background:var(--hover)}
+.tb-chipname{max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* the unscheduled tray, on the right edge of the calendar (spec s7.2) */
+.tb-calbody{display:flex;align-items:flex-start;gap:14px}
+.tb-calgrid{flex:1;min-width:0}
+.tb-tray{flex:0 0 auto;width:34px;transition:width .15s ease-out}
+.tb-tray.open{width:212px}
+.tb-trayhead{display:flex;align-items:center;gap:6px;width:100%;min-height:36px;
+  padding:0 8px;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:8px;cursor:pointer;font-family:inherit;font-size:12px;
+  font-weight:700;letter-spacing:.05em;color:var(--muted);white-space:nowrap;overflow:hidden}
+.tb-trayhead:hover{background:var(--hover);color:var(--text)}
+.tb-traychev{margin-left:auto;font-size:14px}
+.tb-tray:not(.open) .tb-trayhead{writing-mode:vertical-rl;min-height:120px;justify-content:flex-start}
+.tb-traybody{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+.tb-trayhint{margin-top:4px}
+
+/* the week as rows by person (spec s7.2) */
+.tb-personweek{display:flex;flex-direction:column;gap:2px}
+.tb-prow{display:grid;grid-template-columns:132px repeat(7,1fr);gap:2px}
+.tb-pname{display:flex;align-items:center;gap:7px;padding:4px 6px;min-width:0}
+.tb-pnametext{min-width:0;font-size:13px;font-weight:600;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-pday{min-height:58px;padding:4px;background:var(--surface);
+  border:1px solid var(--border);border-radius:7px;
+  display:flex;flex-direction:column;gap:3px}
+.tb-prowhead .tb-pday{min-height:0;border:none;background:none;padding:2px 4px;
+  font-family:var(--font-mono);font-size:11px;color:var(--muted)}
+.tb-pday.today{border-color:var(--text)}
+.tb-prowhead .tb-pday.today{color:var(--text);font-weight:700}
+
+/* the phone's move-to sheet (spec s11) */
+.tb-sheet{position:fixed;inset:0;z-index:998;display:flex;align-items:flex-end;
+  justify-content:center;background:rgba(0,0,0,.45)}
+.tb-sheetcard{width:100%;max-width:420px;padding:18px;background:var(--surface);
+  border:1px solid var(--border);border-radius:16px 16px 0 0;
+  padding-bottom:calc(18px + env(safe-area-inset-bottom))}
+.tb-sheettitle{display:block;margin-bottom:12px;font-size:15px;font-weight:700;color:var(--text)}
+.tb-sheetquick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.tb-sheetcard input[type=date]{width:100%;box-sizing:border-box;min-height:44px;
+  padding:0 10px;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:8px;font-family:inherit;font-size:14px;color:var(--text)}
+.tb-sheetfoot{display:flex;gap:8px;margin-top:14px}
+.tb-sheetfoot button{flex:1}
+@media(min-width:640px){
+  .tb-sheet{align-items:center}
+  .tb-sheetcard{border-radius:16px;padding-bottom:18px}
+}
+
+@media(max-width:1023px){
+  /* The tray goes UNDER the grid rather than beside it: 212px out of a
+     tablet's width is a column the calendar cannot spare. */
+  .tb-calbody{flex-direction:column}
+  .tb-tray,.tb-tray.open{width:100%}
+  .tb-tray:not(.open) .tb-trayhead{writing-mode:horizontal-tb;min-height:36px}
+  .tb-traybody{flex-direction:row;flex-wrap:wrap}
+  .tb-traybody .tb-pill{flex:0 0 auto;max-width:220px}
+  .tb-trayhint{flex:1 1 100%}
+}
+@media(prefers-reduced-motion:reduce){
+  .tb-tray,.tb-search,.tb-listchip,.tb-helpbtn{transition:none}
 }

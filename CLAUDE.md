@@ -7211,6 +7211,44 @@ memory.
   pass, which reads exactly like "the assertion has no teeth". Normalise,
   or break one line at a time.
 
+**Phase 5 (the phone, the keyboard, search, cards 10-12).** No
+`firestore.rules` change, no new index, and **no cross-track file touched
+at all** -- `js/theboard.js`, `css/main.css` and the tests.
+
+- **Spec s11's bands replaced the module's own**: >=1024 desktop, 640-1023
+  tablet, <640 phone (it shipped on 900/600). `_tbIsPhone()` moved with
+  them -- a 620px screen was being given the month grid it cannot render.
+- **The rail does NOT collapse to icons in the tablet band.** s11 asks for
+  icons; this module has none on purpose, the Creative Hub precedent. It
+  docks horizontally instead, which is what the phone already did.
+- **A search is a MODE, not a fifth page**, and it says what it covers:
+  comments are searched only in threads opened this session, because a
+  thread is a subcollection read when a drawer opens. A filter that
+  implied otherwise would be a filter that lies.
+- **`tbShortcutFor` is the whole keyboard in one pure function** -- it
+  names an action and never performs one. **Escape is read BEFORE the
+  editable bail**, the rule js/boards.js had to learn twice. The document
+  listener is registered once at load and bails unless a `tb-` page is up.
+- **A RENDER FUNCTION MUST NOT WRITE.** `boardLastSeenAt` started inside
+  `_tbDashboard`, which turned every repaint into a round trip -- the
+  create test caught it going from two documents to three. It writes from
+  `tbRenderPage` on page OPEN now.
+- **Dashboard card 11 is DERIVED from the items in memory** (created,
+  moved, done) rather than from a collection-group query over every
+  item's activity subcollection: both of the spec's own examples fall out
+  of fields the item already carries, so it needs no new read, no index
+  and no rules change. What it cannot show is written down rather than
+  implied.
+- **A card with nothing to SAY is hidden**, or five team rows reading
+  "0 open" would suppress the empty state entirely.
+- **ONE predicate serves the calendar grid and the unscheduled tray.** A
+  second copy is how a chip comes to say 4 while the tray draws 3.
+- **On a phone a pill is HELD, not dragged** (s11). A 4px threshold aimed
+  at a ~50px day square is not a gesture a thumb can land.
+- **AMMAR IS A BOARD OWNER AND OVERRIDES ANY LOCK.** The first draft of a
+  lock test got this wrong in phases 3, 4 AND 5. If the assertion is about
+  a refusal, the person in it is Daniyal.
+
 **A layout fragment that proved nothing, and how it showed up.** The first
 `smoke-layout` fragment for the rail PASSED two deliberate breaks — covering
 the rail, and painting the active tab's ink the same colour as its chip.
