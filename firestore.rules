@@ -70,11 +70,11 @@ service cloud.firestore {
     // Store Accounts (Sept 2026): Raees enters, owners enter and administer.
     // Mirror in js/store-accounts.js _acctCanEntry().
     function isStoreAccounts() { return isOwner() || (signedIn() && userEmail() == 'raees@groovy.op'); }
-    // Store Accounts correction tools (23 Sept 2026): Afnan ALONE may edit an
-    // entry in place, delete one, reopen a closed month or reset the module.
-    // By person, never isOwner() — Ammar keeps the void/review workflow only.
+    // Store Accounts correction tools (23 Sept 2026; Ammar added 25 Sept):
+    // Afnan and Ammar may edit an entry in place, delete one, delete a vendor,
+    // reopen a closed month or reset the module. By person, never isOwner().
     // Mirror in js/store-accounts.js _ACCT_SUPER_USERS / _acctIsSuper().
-    function isAcctSuper() { return signedIn() && userEmail() == 'afnan@groovy.op'; }
+    function isAcctSuper() { return signedIn() && userEmail() in ['afnan@groovy.op','ammar@groovy.op']; }
 
     // ── Operational data (POs, gate passes, returns, fabric in) ──
     match /pos/{doc}                  { allow read, write: if signedIn(); }
@@ -154,7 +154,7 @@ service cloud.firestore {
     // an entry is created, and afterwards only its control fields may change
     // (void / review / confirm / stock posting / the vendor's bill figure) —
     // never its amount, date, vendor or lines. Nothing is ever deleted —
-    // except by isAcctSuper() (Afnan), whose admin edit rewrites any field
+    // except by isAcctSuper() (Afnan, Ammar), whose admin edit rewrites any field
     // and whose admin delete and reset remove documents outright.
     match /acct_entries/{doc} {
       allow read: if signedIn();

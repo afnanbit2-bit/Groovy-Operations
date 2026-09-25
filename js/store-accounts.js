@@ -109,12 +109,13 @@ const ACCT_NOVENDOR_PHOTO_ABOVE=1000;
 function _acctCanView(){return !!session&&(session.role==='owner'||session.role==='manager'||session.role==='store');}
 function _acctCanEntry(){return !!session&&(session.role==='owner'||session.role==='store');}
 function _acctCanAdmin(){return !!session&&session.role==='owner';}
-// SUPER — Afnan alone, by USERNAME (the Sept 2026 grant shape: never a
-// role, or Ammar would inherit it). The one person who may EDIT an entry
-// in place, DELETE one, reopen a closed month, or wipe the module. Every
-// route through here is a correction tool, not a workflow: Raees voids,
-// owners review, Afnan repairs. Mirror: firestore.rules isAcctSuper().
-const _ACCT_SUPER_USERS=['afnan'];
+// SUPER — Afnan and Ammar, by USERNAME (the Sept 2026 grant shape: never
+// a role — widened to Ammar on 25 Sept 2026, Afnan: "give ammar the same
+// access as i do"). The people who may EDIT an entry in place, DELETE one,
+// delete a vendor, reopen a closed month, or wipe the module. Every route
+// through here is a correction tool, not a workflow: Raees voids, owners
+// review, these two repair. Mirror: firestore.rules isAcctSuper().
+const _ACCT_SUPER_USERS=['afnan','ammar'];
 function _acctIsSuper(){return !!session&&_ACCT_SUPER_USERS.includes(session.u);}
 // Kept under the old name so js/shared.js's four nav sites need no rename.
 function _canViewCash(){return _acctCanView();}
@@ -1263,7 +1264,7 @@ function _acctReviewPage(){
   </div>`;
   if(_acctIsSuper()){
     h+=`<div class="card acct-super-card">
-    <div class="card-title">Admin tools · Afnan only</div>
+    <div class="card-title">Admin tools · Afnan &amp; Ammar only</div>
     <div style="font-size:13px;color:var(--muted);margin-bottom:10px">Correction tools, not the daily workflow. Open any entry to <b>Edit (admin)</b> or <b>Delete (admin)</b> it. Reopen the last closed month here, or reset the module to start again.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       ${lastClose?`<button class="btn-outline" onclick="window.acctAdminReopen('${lastClose.month}')">Reopen ${_acctMonthLabel(lastClose.month)}</button>`:''}
@@ -2015,7 +2016,7 @@ window.acctOpenEntry=function(id){
   _acctModal(_acctEsc(_acctParticulars(e)),body,foot,{width:620});
 };
 
-/* ════════════════════════ ADMIN TOOLS (Afnan only) ════════════════════════
+/* ════════════════════════ ADMIN TOOLS (Afnan + Ammar) ════════════════════════
    Afnan: "put a button in afnan view only to reset + edit + delete record
    of things." The module's standing rule is void-never-edit and
    nothing-is-deleted, and that rule stays for everyone else — these are
@@ -2102,7 +2103,7 @@ window.acctAdminDelete=async function(id){
   _acctLog('Accounts entry deleted (admin)',`${_acctParticulars(e)} ${_acctPKR(e.amount)} · ${_acctDateLabel(e.date)} · entered by ${e.byName||e.by}`);
   showToast('Entry deleted.');window.acctModalClose();_acctRerender();
 };
-// Delete a vendor (Afnan only; rules: acct_vendors delete is isAcctSuper()).
+// Delete a vendor (Afnan + Ammar; rules: acct_vendors delete is isAcctSuper()).
 // REFUSED while any entry names the vendor — in memory (the live window)
 // AND in Firestore (closed months are not loaded), because an entry whose
 // vendor is gone drops out of every statement, the payables tile and the

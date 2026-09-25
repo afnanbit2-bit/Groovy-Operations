@@ -1252,7 +1252,7 @@ function renderStoreDashboard(){
     </div>`).join('')}
     ${lowStock.length>10?`<div style="font-size:12px;color:var(--muted);padding-top:6px">+${lowStock.length-10} more items below threshold</div>`:''}
   </div>`:'<div class="alert-banner alert-green">All items are in stock ✓</div>'}
-  ${(session.u==='afnan')?`<div class="card" style="border-left:3px solid #dc2626">
+  ${_storeIsSuper()?`<div class="card" style="border-left:3px solid #dc2626">
     <div class="card-title">⚠ Admin — Danger Zone</div>
     <div style="font-size:13px;color:var(--muted);margin-bottom:10px">Overwrites ALL live balances with the hardcoded master list (${INITIAL_ITEMS.length} items). Wipes any unrecorded updates Raees has made. Use only after a verified full physical count.</div>
     <button class="btn-primary" onclick="window.syncStoreItems()">⟳ Apply Stock Update</button>
@@ -1280,8 +1280,15 @@ function renderStoreDashboard(){
   <div style="height:80px"></div>`;
 }
 
+// The Store danger zone (full stock overwrite, reconstruct-from-log) —
+// Afnan and Ammar, by USERNAME, never the owner role (widened to Ammar on
+// 25 Sept 2026: "give ammar the same access as i do"). App-layer only:
+// store_items is signedIn()-writable in firestore.rules.
+const _STORE_SUPER_USERS=['afnan','ammar'];
+function _storeIsSuper(){return !!(typeof session!=='undefined'&&session&&_STORE_SUPER_USERS.includes(session.u));}
+
 async function syncStoreItems(){
-  if(!session||session.u!=='afnan'){showToast('Only Afnan can run a full stock overwrite.',true);return;}
+  if(!_storeIsSuper()){showToast('Only Afnan or Ammar can run a full stock overwrite.',true);return;}
   const phrase=prompt(`⚠ DANGER — Full Stock Overwrite\n\nThis REPLACES all live balances for ${INITIAL_ITEMS.length} items with the hardcoded master list. Any of Raees's recent updates that are not in the master list will be permanently lost.\n\nType OVERWRITE STOCK (in caps) to confirm:`);
   if(phrase!=='OVERWRITE STOCK'){showToast('Cancelled — phrase did not match.',true);return;}
   if(!confirm(`Last chance. Overwrite ${INITIAL_ITEMS.length} items with master values now?`))return;
@@ -1347,7 +1354,7 @@ function _reconstructFromTxns(txns){
 }
 
 window.reconstructStockPreview=async function(){
-  if(!session||session.u!=='afnan'){showToast('Restricted to Afnan',true);return;}
+  if(!_storeIsSuper()){showToast('Restricted to Afnan and Ammar',true);return;}
   showToast('Loading all transactions…');
   let txns;
   try{txns=await _fsListAll('store_transactions');}
@@ -1435,7 +1442,7 @@ window._exportReconCsv=function(){
 };
 
 window._applyReconstruction=async function(){
-  if(!session||session.u!=='afnan'){showToast('Restricted to Afnan',true);return;}
+  if(!_storeIsSuper()){showToast('Restricted to Afnan and Ammar',true);return;}
   const recon=window._reconMap;if(!recon||!recon.size){showToast('Nothing to apply.',true);return;}
   const phrase=prompt(`⚠ APPLY RECONSTRUCTION\n\nThis will overwrite the live balances of ${recon.size} items with the reconstructed values. Items missing from the seed are left untouched.\n\nType APPLY RECONSTRUCTION (in caps) to confirm:`);
   if(phrase!=='APPLY RECONSTRUCTION'){showToast('Cancelled — phrase did not match.',true);return;}
