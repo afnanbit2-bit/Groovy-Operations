@@ -66,6 +66,13 @@ function _whsIsOwner(){const s=_whsSession();return !!(s&&s.role==='owner');}
 // The Store Accounts correction pair (afnan, ammar). Fails CLOSED if
 // js/store-accounts.js did not load.
 function _whsIsSuper(){return typeof _acctIsSuper==='function'&&!!_acctIsSuper();}
+// WHO did something is read from the USERNAME, which firestore.rules binds
+// to the signed-in email (createdByU, voidedBy, reviewedBy); the stored name
+// beside it is only a fallback for a username USER_DEFS does not know.
+function _whsWho(u,name){
+  const d=typeof USER_DEFS!=='undefined'&&Array.isArray(USER_DEFS)?USER_DEFS.find(x=>x&&x.u===u):null;
+  return (d&&d.name)||String(name||'')||String(u||'');
+}
 function _whsUid(){
   try{if(typeof auth!=='undefined'&&auth&&auth.currentUser&&auth.currentUser.uid)return auth.currentUser.uid;}catch(_){}
   const s=_whsSession();return (s&&s.uid)||'';
@@ -74,12 +81,17 @@ function _whsUid(){
 // ── Rules ────────────────────────────────────────────────────────────────
 const WHS_MAX_DISCOUNT_PCT=20;
 const WHS_MAX_UPLOAD_MB=15;
+const WHS_MAX_QTY=9999;
 const WHS_PAID_VIA=[{key:'cash',label:'Cash'},{key:'bank',label:'Bank transfer'}];
 // The only fields an update may touch. firestore.rules holds the same two
 // lists in hasOnly(), and tests/warehouse-sales.test.js asserts they agree.
 const _WHS_VOID_FIELDS=['status','voidedAt','voidedBy','voidedByName','voidReason'];
 const _WHS_REVIEW_FIELDS=['needsReview','reviewedAt','reviewedBy','reviewedByName'];
 const _WHS_PAGE=40;
+// The ledger read is capped. Past it the oldest sales — the pay-later bills
+// most likely to be overdue — drop out of every total, so reaching the cap
+// is SAID on screen rather than silently under-counted.
+const _WHS_LOAD_CAP=1000;
 const _WHS_CATALOG_STALE_MS=30*3600000;
 // The Shopify SKU grammar (shopify-catalog-sync.js ARTICLE_SKU_RE): article
 // code, then an optional size — GP092-M → GP092.
@@ -90,6 +102,7 @@ let whSales=[];            // newest first
 let whSalesLoaded=false;
 let _whsLoadErr=null;      // {code,message} when the read FAILED — never shown as an empty list
 let _whsLoading=null;
+let _whsTruncated=false;   // the read came back at _WHS_LOAD_CAP — older sales are not in whSales
 let _whsCatalog=null,_whsCatalogErr=null,_whsCatalogLoading=null,_whsCatalogAt=null;
 let _whsFilter='all',_whsQuery='',_whsShown=_WHS_PAGE;
 let _whsQueryTimer=null;
@@ -129,13 +142,34 @@ function whsOrderId(raw){
   const s=String(raw==null?'':raw).trim().toUpperCase().replace(/\s+/g,'');
   return /^[A-Z0-9][A-Z0-9._-]{1,39}$/.test(s)?s:'';
 }
-/** A Pakistani phone number as digits starting 0 (0300… or 021…), or ''. */
+/**
+ * A Pakistani phone number as digits starting 0, or ''. A MOBILE (03…) is
+ * exactly 11 digits — ten would be a number with a digit missing, which
+ * looks valid and reaches nobody. A landline (021…, 051…) is 10 or 11.
+ */
 function whsPhone(raw){
   let d=String(raw==null?'':raw).replace(/\D/g,'');
   if(/^0092\d{10}$/.test(d))d='0'+d.slice(4);
   else if(/^92\d{10}$/.test(d))d='0'+d.slice(2);
   else if(/^3\d{9}$/.test(d))d='0'+d;
-  return /^0\d{9,10}$/.test(d)?d:'';
+  if(/^03/.test(d))return /^03\d{9}$/.test(d)?d:'';
+  return /^0[1-9]\d{8,9}$/.test(d)?d:'';
+}
+/**
+ * The digits of a search query that IS a phone number, in the stored form
+ * (a leading +92 / 0092 becomes 0), or '' when it is not one. An order
+ * number carries digits too — SO0334 — and 0334 is the start of half the
+ * mobile numbers in Pakistan, so a query with a letter in it never searches
+ * by phone.
+ */
+function _whsPhoneQuery(q){
+  const raw=String(q==null?'':q).trim();
+  if(!raw||!/^[\d\s()+.\-]+$/.test(raw))return '';
+  let d=raw.replace(/\D/g,'');
+  if(/^0092/.test(d))d='0'+d.slice(4);
+  else if(/^\+/.test(raw)&&/^92/.test(d))d='0'+d.slice(2);
+  else if(/^92\d{10}$/.test(d))d='0'+d.slice(2);
+  return d.length>=4?d:'';
 }
 function whsFmtPhone(p){const d=String(p||'');return /^03\d{9}$/.test(d)?d.slice(0,4)+'-'+d.slice(4):d;}
 /** Only an anchored Cloudinary delivery URL — it goes into src/href. */
@@ -248,9 +282,10 @@ function whsManualLine(){return{manual:true,variantId:'',sku:'',code:'',title:''
 function whsLineTotals(lines){
   let qty=0,subtotal=0;
   for(const l of lines||[]){
-    const q=Number(l&&l.qty),p=Number(l&&l.price);
-    if(Number.isInteger(q)&&q>0)qty+=q;
-    if(Number.isInteger(q)&&q>0&&isFinite(p)&&p>0)subtotal+=Math.round(p)*q;
+    const q=Number(l&&l.qty),p=Math.round(Number(l&&l.price));
+    const okQ=Number.isInteger(q)&&q>0&&q<=WHS_MAX_QTY;
+    if(okQ)qty+=q;
+    if(okQ&&isFinite(p)&&p>=1)subtotal+=p*q;
   }
   return{qty,subtotal};
 }
@@ -286,11 +321,13 @@ function whsBuildSale(f,ctx){
     if(!l.manual&&!l.variantId)return{error:'"'+label+'" is not linked to the catalog — remove it and pick it again.'};
     const qtyRaw=String(l.qty==null?'':l.qty).trim();
     const qty=Number(qtyRaw);
-    if(qtyRaw===''||!Number.isInteger(qty)||qty<1||qty>9999)return{error:'The quantity for "'+label+'" must be a whole number, 1 or more.'};
+    if(qtyRaw===''||!Number.isInteger(qty)||qty<1||qty>WHS_MAX_QTY)return{error:'The quantity for "'+label+'" must be a whole number from 1 to '+WHS_MAX_QTY.toLocaleString('en-US')+'.'};
     const priceRaw=String(l.price==null?'':l.price).trim();
     const price=Number(priceRaw);
-    if(priceRaw===''||!isFinite(price)||price<=0)return{error:'The price for "'+label+'" must be more than 0.'};
-    const p=Math.round(price);
+    // Checked on the ROUNDED rupee that is stored: 0.4 passes "more than 0"
+    // and is saved as Rs 0.
+    const p=isFinite(price)?Math.round(price):NaN;
+    if(priceRaw===''||!isFinite(p)||p<1)return{error:'The price for "'+label+'" must be at least Rs 1.'};
     const cat=l.manual||l.catalogPrice==null||l.catalogPrice===''?null:Math.round(Number(l.catalogPrice));
     const priceEdited=cat!=null&&isFinite(cat)&&cat>0&&p!==cat;
     const line={
@@ -359,7 +396,7 @@ const WHS_FILTERS=[['all','All sales'],['paid','Paid'],['later','Pay later'],['o
 function whsFilterSales(sales,filter,q,today){
   const t=today||whsToday();
   const words=String(q||'').trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const digits=String(q||'').replace(/\D/g,'');
+  const digits=_whsPhoneQuery(q);
   return (sales||[]).filter(s=>{
     if(filter==='void'){if(s.status!=='void')return false;}
     else if(filter&&filter!=='all'){
@@ -372,7 +409,7 @@ function whsFilterSales(sales,filter,q,today){
     if(!words.length)return true;
     const hay=[s.orderNo,s._id,s.customerName,s.customerPhone,s.note].concat((s.lines||[]).map(l=>(l.title||'')+' '+(l.variant||'')+' '+(l.sku||''))).join(' ').toLowerCase();
     if(words.every(w=>hay.indexOf(w)>=0))return true;
-    return digits.length>=4&&String(s.customerPhone||'').indexOf(digits)>=0;
+    return !!digits&&String(s.customerPhone||'').indexOf(digits)>=0;
   });
 }
 /** Past customers, newest spelling of each name, keyed by phone. Derived. */
@@ -396,8 +433,9 @@ function loadWhSales(force){
   if(_whsLoading)return _whsLoading;
   _whsLoading=(async()=>{
     try{
-      const snap=await getDocs(query(collection(db,'wh_sales'),orderBy('createdAt','desc'),limit(1000)));
+      const snap=await getDocs(query(collection(db,'wh_sales'),orderBy('createdAt','desc'),limit(_WHS_LOAD_CAP)));
       whSales=snap.docs.map(d=>Object.assign({},d.data(),{_id:d.id}));
+      _whsTruncated=snap.docs.length>=_WHS_LOAD_CAP;
       _whsSort();
       _whsLoadErr=null;
     }catch(e){
@@ -476,6 +514,7 @@ function whsSectionHTML(){
   if(sum.reviewCount&&_whsIsOwner())alerts.push(`<div class="acct-alert warn" onclick="window.whsSetFilter('review')">${sum.reviewCount} sale${sum.reviewCount===1?'':'s'} to review — a price that differs from the catalog, or an article that is not in it.</div>`);
   return `<div id="whs-root">
     ${_whsLoadErr?_whsErrorCard():''}
+    ${_whsTruncated?`<div class="acct-alert warn" style="cursor:default;margin-bottom:12px">Only the newest ${_WHS_LOAD_CAP.toLocaleString('en-US')} sales are loaded. Anything older is left out of the totals, the overdue count, the list and the export below.</div>`:''}
     <div class="acct-tiles">
       ${_whsTile('Today',_whsRs(sum.todayTotal),sum.todayCount+' sale'+(sum.todayCount===1?'':'s'))}
       ${_whsTile('This month',_whsRs(sum.monthTotal),sum.monthCount+' sale'+(sum.monthCount===1?'':'s'))}
@@ -583,13 +622,41 @@ function _whsFormHTML(){
     <div id="whs-sum" class="whs-sum">${_whsSummaryHTML()}</div>
   </div>`;
 }
-window.whsNewSale=function(){
+// fromId: a VOIDED sale to record again — the correction for a bill that
+// was entered wrong. The form opens holding everything the voided entry
+// held (bill, customer, articles, payment), so only what was wrong needs
+// changing.
+window.whsNewSale=function(fromId){
   if(!whsCanEntry())return;
-  _whsDraft={lines:[],discMode:'none',terms:'',paidVia:'',bill:null,uploading:false};
+  const from=fromId?_whsById(fromId):null;
+  const again=!!(from&&from.status==='void');
+  _whsDraft={lines:[],discMode:'none',terms:'',paidVia:'',bill:null,uploading:false,billSeq:0,autoPhone:'',fromVoid:again?from._id:''};
+  if(again){
+    _whsDraft.lines=(from.lines||[]).filter(Boolean).map(l=>({
+      manual:!!l.manual||!l.variantId,variantId:String(l.variantId||''),sku:String(l.sku||''),code:String(l.code||''),
+      title:String(l.title||''),variant:String(l.variant||''),price:String(l.price==null?'':l.price),
+      catalogPrice:l.catalogPrice==null?null:l.catalogPrice,qty:l.qty
+    }));
+    if(Number(from.discount)>0)_whsDraft.discMode='rs';
+    _whsDraft.terms=from.terms==='later'?'later':from.terms==='paid'?'paid':'';
+    _whsDraft.paidVia=WHS_PAID_VIA.some(v=>v.key===from.paidVia)?from.paidVia:'';
+    if(whsBillUrl(from.billUrl))_whsDraft.bill={url:from.billUrl,kind:from.billKind==='pdf'?'pdf':'image',name:String(from.billName||'')};
+  }
+  // The previous form's search results must not survive into this one, or
+  // a stray Enter (a scanner sends one) adds an article nobody searched for.
+  _whsHits=[];
   _whsLoadCatalog();
-  _whsModal('Record a customer purchase',_whsFormHTML(),
+  _whsModal(again?'Record '+_whsEsc(from._id)+' again':'Record a customer purchase',_whsFormHTML(),
     `<button class="btn-outline" onclick="window.whsModalClose()">Cancel</button><button class="btn-primary" id="whs-save" onclick="window.whsSaveSale()">Save sale</button>`,
     {sticky:true,width:760});
+  if(again){
+    const set=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v==null?'':String(v);};
+    set('whs-order',from.orderNo||from._id);set('whs-date',from.date);
+    set('whs-name',from.customerName);set('whs-phone',whsFmtPhone(from.customerPhone));
+    if(Number(from.discount)>0)set('whs-disc',from.discount);
+    set('whs-due',from.dueDate||'');set('whs-note',from.note||'');
+    window.whsPaintSummary();
+  }
 };
 window.whsChip=function(group,v){
   if(!_whsDraft)return;
@@ -615,11 +682,20 @@ window.whsPhoneBlur=function(v){
   const known=whsCustomers(whSales).get(p);
   if(nm&&known&&!String(nm.value||'').trim())nm.value=known;
 };
+// This runs on every keystroke, so a new customer whose name STARTS with a
+// known one ("Ali" on the way to "Ali Raza") matches for a moment. The fill
+// is therefore reversible: a phone this handler put in is taken back out the
+// moment the name stops matching — unless it has been edited since, in which
+// case it is Umair's and stays.
 window.whsNameInput=function(v){
   const ph=document.getElementById('whs-phone');
-  if(!ph||String(ph.value||'').trim())return;
-  const want=String(v||'').trim().toLowerCase();if(!want)return;
-  for(const [p,n] of whsCustomers(whSales)){if(String(n).trim().toLowerCase()===want){ph.value=whsFmtPhone(p);break;}}
+  if(!ph||!_whsDraft)return;
+  const want=String(v||'').trim().toLowerCase();
+  let hit='';
+  if(want)for(const [p,n] of whsCustomers(whSales)){if(String(n).trim().toLowerCase()===want){hit=whsFmtPhone(p);break;}}
+  const cur=String(ph.value||'').trim();
+  if(_whsDraft.autoPhone&&cur===_whsDraft.autoPhone&&cur!==hit){ph.value='';_whsDraft.autoPhone='';}
+  if(hit&&!String(ph.value||'').trim()){ph.value=hit;_whsDraft.autoPhone=hit;}
 };
 
 // ── The bill ─────────────────────────────────────────────────────────────
@@ -657,20 +733,33 @@ window.whsBillPicked=async function(inp){
   if(!isPdf&&!isImg){_whsDraft.billError='That file is neither a photo nor a PDF.';inp.value='';_whsPaintBill();return;}
   if(file.size>WHS_MAX_UPLOAD_MB*1024*1024){_whsDraft.billError=`That file is ${(file.size/1048576).toFixed(1)} MB — ${WHS_MAX_UPLOAD_MB} MB at most.`;inp.value='';_whsPaintBill();return;}
   const draft=_whsDraft;
+  // THE LATEST PICK WINS. Two uploads can be in flight at once (a photo of
+  // the wrong paper, then the right PDF straight after), and they can finish
+  // in either order; an upload that is no longer the latest pick — or was
+  // removed while it ran — changes nothing when it lands, and only the
+  // latest one ends "Uploading…".
+  const seq=draft.billSeq=(draft.billSeq||0)+1;
   draft.uploading=true;_whsPaintBill();
   try{
     const res=await _whsUpload(file);
-    draft.bill={url:res.url,kind:isPdf||/^pdf$/i.test(res.format)?'pdf':'image',name:String(file.name||'')};
+    if(draft.billSeq===seq)draft.bill={url:res.url,kind:isPdf||/^pdf$/i.test(res.format)?'pdf':'image',name:String(file.name||'')};
   }catch(e){
-    draft.bill=null;
-    draft.billError='The bill did not upload: '+((e&&e.message)||e)+'. Try again.';
+    if(draft.billSeq===seq){
+      draft.bill=null;
+      draft.billError='The bill did not upload: '+((e&&e.message)||e)+'. Try again.';
+    }
   }finally{
-    draft.uploading=false;
+    if(draft.billSeq===seq)draft.uploading=false;
     try{inp.value='';}catch(_){}
     if(_whsDraft===draft)_whsPaintBill();
   }
 };
-window.whsBillClear=function(){if(!_whsDraft)return;_whsDraft.bill=null;_whsDraft.billError='';_whsPaintBill();};
+window.whsBillClear=function(){
+  if(!_whsDraft)return;
+  _whsDraft.billSeq=(_whsDraft.billSeq||0)+1;  // an upload still running is now stale
+  _whsDraft.bill=null;_whsDraft.billError='';_whsDraft.uploading=false;
+  _whsPaintBill();
+};
 
 // ── Articles ─────────────────────────────────────────────────────────────
 function _whsCatalogNoteHTML(){
@@ -697,7 +786,8 @@ window.whsSearchKey=function(e){
   if(!e)return;
   if(e.key==='Enter'){
     e.preventDefault&&e.preventDefault();
-    if(_whsHits[0])window.whsPick(_whsHits[0].id);
+    const q=(document.getElementById('whs-q')||{}).value||'';
+    if(String(q).trim()&&_whsHits[0])window.whsPick(_whsHits[0].id);
   }else if(e.key==='Escape'){
     const q=document.getElementById('whs-q');if(q)q.value='';
     _whsPaintSearch();
@@ -726,8 +816,8 @@ window.whsLineSet=function(i,k,v){
   window.whsPaintSummary();
 };
 function _whsLineTotalText(l){
-  const q=Number(l.qty),p=Number(l.price);
-  return Number.isInteger(q)&&q>0&&isFinite(p)&&p>0?_whsRs(Math.round(p)*q):'—';
+  const q=Number(l.qty),p=Math.round(Number(l.price));
+  return Number.isInteger(q)&&q>0&&q<=WHS_MAX_QTY&&isFinite(p)&&p>=1?_whsRs(p*q):'—';
 }
 function _whsLineFlagHTML(l){
   if(l.manual)return '<span class="whs-flag">Not in the catalog — flagged for the owners to review.</span>';
@@ -772,12 +862,28 @@ window.whsPaintSummary=function(){
 
 // ── Saving ───────────────────────────────────────────────────────────────
 function _whsDupMsg(s){
-  const who=s&&(s.createdByName||s.createdByU);
-  return `Order ${s&&(s.orderNo||s._id)} is already recorded${s&&s.date?' ('+_whsFmtDay(s.date)+(who?', by '+who:'')+')':''}. One bill, one sale — open it from the list if something needs correcting.`;
+  const who=s&&_whsWho(s.createdByU,s.createdByName);
+  return `Order ${s&&(s.orderNo||s._id)} is already recorded${s&&s.date?' ('+_whsFmtDay(s.date)+(who?', by '+who:'')+')':''}. One bill, one sale — if it was entered wrong, open it from the list, void it, and record the bill again.`;
+}
+// The record of a voided entry, kept on the sale that replaces it. Only
+// plain values — no nested arrays, which Firestore refuses outright — and
+// every earlier entry carried forward as it is, because firestore.rules
+// requires the history to grow by exactly one.
+function _whsPriorVoids(old){
+  const prev=Array.isArray(old&&old.priorVoids)?old.priorVoids.slice():[];
+  const t=v=>String(v==null?'':v);
+  prev.push({
+    date:t(old.date),customerName:t(old.customerName),customerPhone:t(old.customerPhone),
+    total:Number(old.total)||0,qtyTotal:Number(old.qtyTotal)||0,
+    createdAt:_whsMs(old.createdAt)||0,createdByU:t(old.createdByU),createdByName:t(old.createdByName),
+    voidedAt:_whsMs(old.voidedAt)||0,voidedBy:t(old.voidedBy),voidedByName:t(old.voidedByName),voidReason:t(old.voidReason).slice(0,200),
+    billUrl:whsBillUrl(old.billUrl)?old.billUrl:''
+  });
+  return prev;
 }
 function _whsWriteErrMsg(e){
   const c=String((e&&e.code)||'')+' '+String((e&&e.message)||'');
-  if(/permission/i.test(c))return 'The save was refused. The Firestore rules for warehouse sales may not be published yet — ask Afnan to republish firestore.rules.';
+  if(/permission/i.test(c))return 'The server refused this sale. Either the Firestore rules for warehouse sales are not published yet (ask Afnan to republish firestore.rules), or the sale broke one of their checks — send Afnan a screenshot of this.';
   if(/unavailable|offline|network|failed-precondition/i.test(c))return 'No connection. A sale is checked against the server for a duplicate bill, so it needs to be online — try again when connected.';
   return 'The sale was not saved: '+((e&&e.message)||e);
 }
@@ -794,17 +900,26 @@ window.whsSaveSale=async function(){
     bill:_whsDraft.bill||{}
   },{today:whsToday(),uid:_whsUid(),name:s.name,u:s.u,now:Date.now()});
   if(r.error){showToast(r.error,true);return;}
+  // ONE BILL, ONE SALE — except that a VOIDED entry is not a sale. Void,
+  // never edit, means the correction for a bill entered wrong is to void it
+  // and record the bill again, so a voided order number is free to take the
+  // new entry; the voided one is kept in the new entry's history.
   const local=whSales.find(x=>x._id===r.id);
-  if(local){showToast(_whsDupMsg(local),true);return;}
+  if(local&&local.status!=='void'){showToast(_whsDupMsg(local),true);return;}
+  if(local&&_whsDraft.fromVoid!==r.id&&!confirm(`${r.id} was recorded before and voided${local.voidReason?' ('+local.voidReason+')':''}.\n\nRecord this bill again? The voided entry is kept in its history.`))return;
   _whsBusy=true;_whsSaveBtn(false,'Saving…');
+  let written=r.data,again=false;
   try{
     await runTransaction(db,async tx=>{
       const ref=doc(db,'wh_sales',r.id);
       const snap=await tx.get(ref);
+      written=r.data;again=false;
       if(snap&&typeof snap.exists==='function'&&snap.exists()){
-        const e=new Error('duplicate');e.dup=Object.assign({_id:r.id},snap.data()||{});throw e;
+        const old=snap.data()||{};
+        if(old.status!=='void'){const e=new Error('duplicate');e.dup=Object.assign({_id:r.id},old);throw e;}
+        written=Object.assign({},r.data,{priorVoids:_whsPriorVoids(old)});again=true;
       }
-      tx.set(ref,r.data);
+      tx.set(ref,written);
     });
   }catch(e){
     _whsBusy=false;_whsSaveBtn(true,'Save sale');
@@ -812,17 +927,26 @@ window.whsSaveSale=async function(){
     return;
   }
   _whsBusy=false;
-  whSales.unshift(Object.assign({},r.data,{_id:r.id}));
+  whSales=whSales.filter(x=>x._id!==r.id);
+  whSales.unshift(Object.assign({},written,{_id:r.id}));
   _whsSort();
-  try{logActivity('Warehouse sale recorded',`${r.id} · ${r.data.customerName} · ${_whsRs(r.data.total)}${r.data.terms==='later'?' · pay later, due '+r.data.dueDate:''}`);}catch(_){}
+  try{logActivity(again?'Warehouse sale recorded again':'Warehouse sale recorded',`${r.id} · ${r.data.customerName} · ${_whsRs(r.data.total)}${r.data.terms==='later'?' · pay later, due '+r.data.dueDate:''}`);}catch(_){}
   window.whsModalClose();
   _whsDraft=null;
-  showToast(`Sale ${r.id} recorded — ${_whsRs(r.data.total)}${r.data.needsReview?' · flagged for review':''}`);
+  showToast(`Sale ${r.id} ${again?'recorded again':'recorded'} — ${_whsRs(r.data.total)}${r.data.needsReview?' · flagged for review':''}`);
   _whsRepaint();
 };
 
 // ── One sale ─────────────────────────────────────────────────────────────
 function _whsById(id){return whSales.find(s=>s._id===String(id))||null;}
+function _whsHistoryHTML(s){
+  const h=Array.isArray(s&&s.priorVoids)?s.priorVoids.filter(x=>x&&typeof x==='object'):[];
+  if(!h.length)return '';
+  return `<div class="whs-hist"><div class="whs-h" style="margin-top:14px">Recorded before and voided</div>${h.map(p=>`<div class="whs-hist-row">
+    <b>${_whsRs(p.total)}</b> · ${_whsEsc(_whsFmtDay(p.date))} · recorded by ${_whsEsc(_whsWho(p.createdByU,p.createdByName))}
+    <div class="whs-muted">Voided by ${_whsEsc(_whsWho(p.voidedBy,p.voidedByName))}${p.voidedAt?' · '+_whsEsc(new Date(p.voidedAt).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})):''} — ${_whsEsc(p.voidReason||'no reason given')}</div>
+  </div>`).join('')}</div>`;
+}
 function _whsKV(k,v){return `<div class="acct-kv"><span>${k}</span><b>${v}</b></div>`;}
 window.whsOpen=function(id){
   const s=_whsById(id);if(!s)return;
@@ -843,16 +967,16 @@ window.whsOpen=function(id){
       <td class="num">${_whsRs(l.total)}</td></tr>`).join('');
   const recorded=_whsMs(s.createdAt);
   const body=`
-    ${s.status==='void'?`<div class="acct-alert urgent" style="cursor:default;margin-bottom:12px">Void — ${_whsEsc(s.voidReason||'')} (${_whsEsc(s.voidedByName||s.voidedBy||'')}${_whsMs(s.voidedAt)?', '+_whsEsc(new Date(_whsMs(s.voidedAt)).toLocaleString('en-GB')):''})</div>`:''}
+    ${s.status==='void'?`<div class="acct-alert urgent" style="cursor:default;margin-bottom:12px">Void — ${_whsEsc(s.voidReason||'')} (${_whsEsc(_whsWho(s.voidedBy,s.voidedByName))}${_whsMs(s.voidedAt)?', '+_whsEsc(new Date(_whsMs(s.voidedAt)).toLocaleString('en-GB')):''})${whsCanEntry()?'<div style="margin-top:6px;font-weight:400">If this bill was entered wrong, record it again below — this entry is kept in its history.</div>':''}</div>`:''}
     ${s.status!=='void'&&s.needsReview?`<div class="acct-alert warn" style="cursor:default;margin-bottom:12px">Needs review: ${_whsEsc((s.reviewFlags||[]).join(' · ')||'flagged')}</div>`:''}
-    ${!s.needsReview&&s.reviewedBy?`<div class="whs-muted" style="margin-bottom:10px">Reviewed by ${_whsEsc(s.reviewedByName||s.reviewedBy)}.</div>`:''}
+    ${!s.needsReview&&s.reviewedBy?`<div class="whs-muted" style="margin-bottom:10px">Reviewed by ${_whsEsc(_whsWho(s.reviewedBy,s.reviewedByName))}.</div>`:''}
     <div class="acct-kv-grid">
       ${_whsKV('Order #',_whsEsc(s.orderNo||s._id))}
       ${_whsKV('Date',_whsEsc(_whsFmtDay(s.date)))}
       ${_whsKV('Customer',_whsEsc(s.customerName))}
       ${_whsKV('Phone',_whsEsc(whsFmtPhone(s.customerPhone)))}
       ${_whsKV('Payment',pay)}
-      ${_whsKV('Recorded by',_whsEsc(s.createdByName||s.createdByU||'')+(recorded?' · '+_whsEsc(new Date(recorded).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})):''))}
+      ${_whsKV('Recorded by',_whsEsc(_whsWho(s.createdByU,s.createdByName))+(recorded?' · '+_whsEsc(new Date(recorded).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})):''))}
     </div>
     <div class="acct-table-wrap" style="margin-top:14px"><table class="acct-table whs-lt-table"><thead><tr><th>Article</th><th>Barcode</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Total</th></tr></thead><tbody>${lines}</tbody></table></div>
     <div class="whs-sum" style="margin-top:10px">
@@ -861,8 +985,10 @@ window.whsOpen=function(id){
       <div class="acct-total"><span>Total</span><b>${_whsRs(s.total)}</b></div>
     </div>
     ${s.note?`<div style="margin-top:10px;font-size:14px"><span class="whs-muted">Note:</span> ${_whsEsc(s.note)}</div>`:''}
-    <div style="margin-top:12px">${bill}</div>`;
+    <div style="margin-top:12px">${bill}</div>
+    ${_whsHistoryHTML(s)}`;
   const acts=[];
+  if(s.status==='void'&&whsCanEntry())acts.push(`<button class="btn-sm" onclick="window.whsNewSale('${_whsEsc(s._id)}')">Record this bill again</button>`);
   if(s.status!=='void'&&_whsIsOwner()&&s.needsReview)acts.push(`<button class="btn-sm" onclick="window.whsMarkReviewed('${_whsEsc(s._id)}')">Mark reviewed</button>`);
   if(s.status!=='void'&&whsCanEntry())acts.push(`<button class="btn-sm btn-outline" onclick="window.whsVoid('${_whsEsc(s._id)}')">Void this sale…</button>`);
   if(_whsIsSuper())acts.push(`<button class="btn-sm btn-outline whs-danger" onclick="window.whsDelete('${_whsEsc(s._id)}')">Delete (admin)…</button>`);
@@ -913,7 +1039,7 @@ window.whsExport=function(){
   const list=whsFilterSales(whSales,_whsFilter,_whsQuery,today);
   if(!list.length){showToast('Nothing to export for this filter.',true);return;}
   const sales=[['Date','Order #','Customer','Phone','Items','Subtotal','Discount','Discount %','Total','Payment','Paid via','Due date','Overdue','Status','Needs review','Recorded by','Bill','Note']]
-    .concat(list.map(s=>[s.date,s.orderNo||s._id,s.customerName,whsFmtPhone(s.customerPhone),Number(s.qtyTotal)||0,Number(s.subtotal)||0,Number(s.discount)||0,Number(s.discountPct)||0,Number(s.total)||0,s.terms==='later'?'Pay later':'Paid',s.paidVia||'',s.dueDate||'',whsIsOverdue(s,today)?'yes':'',s.status==='void'?'void':'active',s.needsReview?(s.reviewFlags||[]).join('; '):'',s.createdByName||s.createdByU||'',s.billUrl||'',s.note||'']));
+    .concat(list.map(s=>[s.date,s.orderNo||s._id,s.customerName,whsFmtPhone(s.customerPhone),Number(s.qtyTotal)||0,Number(s.subtotal)||0,Number(s.discount)||0,Number(s.discountPct)||0,Number(s.total)||0,s.terms==='later'?'Pay later':'Paid',s.paidVia||'',s.dueDate||'',whsIsOverdue(s,today)?'yes':'',s.status==='void'?'void':'active',s.needsReview?(s.reviewFlags||[]).join('; '):'',_whsWho(s.createdByU,s.createdByName),s.billUrl||'',s.note||'']));
   const lines=[['Date','Order #','Customer','Article','Variant','Barcode','Article code','Qty','Price','Line total','Catalog price','Flag']];
   for(const s of list)for(const l of s.lines||[])
     lines.push([s.date,s.orderNo||s._id,s.customerName,l.title||'',l.variant||'',l.sku||'',l.code||'',Number(l.qty)||0,Number(l.price)||0,Number(l.total)||0,l.catalogPrice==null?'':l.catalogPrice,l.manual?'not in the catalog':l.priceEdited?'price changed':'']);

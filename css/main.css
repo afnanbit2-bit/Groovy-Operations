@@ -218,9 +218,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .info-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:14px}
 .info-row:last-child{border-bottom:none}
 .info-label{color:var(--muted);font-size:12px;font-weight:500}
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--dark);color:var(--on-dark);padding:10px 20px;border-radius:30px;font-size:14px;font-weight:500;opacity:0;transition:all .2s;pointer-events:none;white-space:nowrap;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.18)}
+/* The toast WRAPS rather than running off both edges of a phone: a refusal
+   that names the order, who recorded it and what to do next is ~850px of
+   text, and nowrap centred on a 390px screen cut the start and the end off.
+   max-content keeps a short toast on one line at any width. */
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--dark);color:var(--on-dark);padding:10px 20px;border-radius:30px;font-size:14px;font-weight:500;opacity:0;transition:all .2s;pointer-events:none;width:max-content;max-width:calc(100vw - 32px);box-sizing:border-box;text-align:center;line-height:1.4;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.18)}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.err{background:#dc2626}
+@media (max-width:600px){.toast{border-radius:18px}}
 .empty{text-align:center;padding:2.5rem 1rem;color:var(--muted);font-size:14px}
 .dest-chip{padding:4px 10px;border:1px solid var(--border);border-radius:16px;background:var(--surface);font-size:12px;cursor:pointer;font-family:inherit;color:var(--muted)}
 .dest-chip:hover{border-color:var(--dark);color:var(--dark)}
@@ -2882,6 +2887,9 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
 .whs-badges{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}
 .whs-row.void .whs-cust,.whs-row.void .whs-amt{text-decoration:line-through;color:var(--muted)}
 .whs-foot-note{font-size:13px;color:var(--muted);margin:10px 2px 0;line-height:1.45}
+/* A sale recorded again over a voided entry: what was voided before. */
+.whs-hist-row{font-size:14px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);margin-top:6px;line-height:1.4}
+.whs-hist-row .whs-muted{font-size:13px;margin-top:2px}
 
 /* the new-sale form */
 .whs-h{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:16px 0 7px}

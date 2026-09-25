@@ -183,7 +183,7 @@ module.exports=async function(){
     for(let sub=1;sub<=5000;sub+=37){for(const p of [0,1,5,12.5,19.99,20]){const r=d(sub,'pct',String(p));if(r.error||r.amount*100>sub*20){ok=false;bad=sub+'@'+p;}}}
     s.ok('every percentage up to 20 on every subtotal passes discount*100 <= subtotal*20',ok,bad||undefined);
     s.eq('WHS_MAX_DISCOUNT_PCT is 20',a.run('WHS_MAX_DISCOUNT_PCT'),20);
-    s.ok('firestore.rules holds the same 20',/request\.resource\.data\.discount \* 100 <= request\.resource\.data\.subtotal \* 20/.test(read('firestore.rules')));
+    s.ok('firestore.rules holds the same 20',/d\.discount \* 100 <= d\.subtotal \* 20/.test((/function whSaleValid\(d, orderNo\) \{([\s\S]*?)\n    \}/.exec(read('firestore.rules'))||[])[1]||''));
   }
 
   // ── building the sale ──────────────────────────────────────────────────
@@ -407,8 +407,17 @@ module.exports=async function(){
     s.ok('only an owner may clear a review flag',/\|\| \(isOwner\(\)\s*&& request\.resource\.data\.diff/.test(block));
     s.ok('delete is the correction pair',/allow delete: if isAcctSuper\(\);/.test(block));
     s.ok('read is the audience',/allow read: if isWhSales\(\);/.test(block));
-    s.ok('create requires the bill, the uid, a pay-later due date and the exact total',
-      /billUrl\.matches\('\^https:\/\/res\[\.\]cloudinary\[\.\]com\/\.\+'\)/.test(block)&&/createdBy == request\.auth\.uid/.test(block)&&/terms == 'paid' \|\| request\.resource\.data\.dueDate is string/.test(block)&&/total == request\.resource\.data\.subtotal - request\.resource\.data\.discount/.test(block));
+    // One definition of a valid sale, used by the create AND by recording a
+    // bill again over a void — a re-record is held to every create check.
+    const valid=(/function whSaleValid\(d, orderNo\) \{([\s\S]*?)\n    \}/.exec(rules)||[])[1]||'';
+    s.ok('a valid sale requires the bill, the uid, a pay-later due date and the exact total',
+      /billUrl\.matches\('\^https:\/\/res\[\.\]cloudinary\[\.\]com\/\.\+'\)/.test(valid)&&/d\.createdBy == request\.auth\.uid/.test(valid)&&/d\.terms == 'paid' \|\| d\.dueDate is string/.test(valid)&&/d\.total == d\.subtotal - d\.discount/.test(valid)&&/d\.status == 'active'/.test(valid)&&/d\.orderNo == orderNo/.test(valid));
+    s.ok('and binds who recorded it to the signed-in email',/d\.createdByU \+ '@groovy\.op' == userEmail\(\)/.test(valid));
+    s.ok('the create goes through it',/allow create: if isWhSales\(\)\s*&& orderNo\.matches\([^)]*\)\s*&& whSaleValid\(request\.resource\.data, orderNo\);/.test(block));
+    s.ok('recording again is only over a VOID, through the same checks, and the history grows by one',
+      /resource\.data\.status == 'void'\s*&& whSaleValid\(request\.resource\.data, orderNo\)\s*&& request\.resource\.data\.priorVoids is list\s*&& request\.resource\.data\.priorVoids\.size\(\) == resource\.data\.get\('priorVoids', \[\]\)\.size\(\) \+ 1/.test(block));
+    s.ok('a void and a review are bound to the signed-in email too',
+      /request\.resource\.data\.voidedBy \+ '@groovy\.op' == userEmail\(\)/.test(block)&&/request\.resource\.data\.reviewedBy \+ '@groovy\.op' == userEmail\(\)/.test(block));
 
     const writes=[];
     const mk=sess=>{const x=app({session:sess,globals:{doc:(db,col,id)=>({col,id}),updateDoc:async(ref,p)=>{writes.push({ref,p});},deleteDoc:async ref=>{writes.push({ref,del:true});}}});x.seed([sale({_id:'SO1',needsReview:true,reviewFlags:['price changed on 1 article']})],CATALOG);return x;};
@@ -539,6 +548,187 @@ module.exports=async function(){
     a.run('renderPage=function(id){globalThis.__got=id;}');
     await a.run("window.showPage('users')");
     s.eq('umair is still scoped to his one page',a.run('__got'),'fulfillment');
+  }
+  // ── the adversarial review (25 Sept 2026): each confirmed finding ─────
+  s.section('review: a voided bill can be recorded again — the one correction Umair has');
+  {
+    // an in-memory wh_sales the transaction reads and writes, so a save, a
+    // void and a second save are one story
+    const store={};const sets=[];
+    const tx={get:async ref=>({exists:()=>!!store[ref.id],data:()=>store[ref.id]}),set:(ref,data)=>{sets.push({ref,data});store[ref.id]=JSON.parse(J(data));}};
+    const a=app({globals:{doc:(db,col,id)=>({col,id}),runTransaction:async(db,fn)=>fn(tx),
+      updateDoc:async(ref,p)=>{Object.assign(store[ref.id],p);}}});
+    a.seed([],CATALOG);
+    const fill=(qty)=>{
+      a.run('window.whsNewSale()');
+      a.run("window.whsPick('v1')");a.run(`window.whsLineSet(0,'qty','${qty}')`);
+      a.run("window.whsChip('terms','paid')");a.run("window.whsChip('via','cash')");
+      a.el('whs-order').value='SO0334';a.el('whs-date').value='2026-09-18';
+      a.el('whs-name').value='Sheikh Bilal';a.el('whs-phone').value='03009225227';
+      a.run(`_whsDraft.bill=${J(BILL)}`);
+    };
+    fill(3);await a.run('window.whsSaveSale()');
+    s.eq('the first entry is written',sets.length,1);
+    a.ctx.prompt=()=>'wrong qty';
+    await a.run("window.whsVoid('SO0334')");
+    s.eq('and voided',store.SO0334&&store.SO0334.status,'void');
+    a.run("window.whsOpen('SO0334')");
+    const detail=a.bodyHtml('whs-modal');
+    s.ok('the voided sale offers "Record this bill again"',/whsNewSale\('SO0334'\)/.test(detail)&&/Record this bill again/.test(detail));
+    a.run("window.whsNewSale('SO0334')");
+    s.eq('which opens the form holding the voided entry',a.el('whs-order').value,'SO0334');
+    s.ok('its customer, articles, payment and bill',a.el('whs-name').value==='Sheikh Bilal'&&a.run('_whsDraft.lines.length')===1&&a.run('_whsDraft.terms')==='paid'&&a.run('_whsDraft.bill.url')===BILL.url);
+    a.run("window.whsLineSet(0,'qty','1')");
+    const conf=a.state.confirms.length;
+    await a.run('window.whsSaveSale()');
+    s.eq('the corrected entry is written over the void',sets.length,2);
+    s.ok('as an active sale with the right quantity',store.SO0334.status==='active'&&store.SO0334.qtyTotal===1);
+    const pv=(store.SO0334&&Array.isArray(store.SO0334.priorVoids))?store.SO0334.priorVoids:[];
+    s.eq('carrying the voided entry in its history',pv.length,1);
+    s.ok('which says what was voided and why',!!pv[0]&&pv[0].qtyTotal===3&&pv[0].voidReason==='wrong qty'&&pv[0].voidedBy==='umair',J(pv[0]));
+    s.ok('no nested arrays in the history (Firestore refuses them)',pv.length>0&&!pv.some(x=>Object.values(x).some(Array.isArray)));
+    s.eq('opened from the void, it does not ask again',a.state.confirms.length,conf);
+    s.eq('the list holds ONE SO0334',a.run("whSales.filter(x=>x._id==='SO0334').length"),1);
+    s.ok('logged as recorded again',a.state.activity.some(x=>x.action==='Warehouse sale recorded again'));
+    a.run("window.whsOpen('SO0334')");
+    s.ok('and the detail shows the history',/Recorded before and voided/.test(a.bodyHtml('whs-modal'))&&/wrong qty/.test(a.bodyHtml('whs-modal')));
+    // an ACTIVE sale is still one bill, one sale
+    fill(2);const n=sets.length;await a.run('window.whsSaveSale()');
+    s.ok('recording over an ACTIVE sale is still refused by name',sets.length===n&&a.state.toasts.some(t=>/SO0334 is already recorded/.test(t)&&/void it, and record the bill again/.test(t)));
+    // typed in from scratch over a void: asked first, and a no writes nothing
+    a.ctx.prompt=()=>'typo';await a.run("window.whsVoid('SO0334')");
+    const asked=[];a.ctx.confirm=q=>{asked.push(String(q));return false;};
+    fill(1);const m=sets.length;await a.run('window.whsSaveSale()');
+    s.eq('typed over a void, it asks first — and no means nothing is written',sets.length,m);
+    s.ok('the question names the void and its reason',asked.length===1&&/SO0334 was recorded before and voided \(typo\)/.test(asked[0]),J(asked));
+  }
+  s.section('review: the order-number search no longer matches phone numbers');
+  {
+    const a=app();
+    const sales=[sale({_id:'SO0334',orderNo:'SO0334',customerPhone:'03009225227'}),sale({_id:'SO0101',orderNo:'SO0101',customerPhone:'03341234567'}),sale({_id:'SO0102',orderNo:'SO0102',customerPhone:'03001112222'})];
+    a.seed(sales,CATALOG);
+    const f=q=>a.run(`whsFilterSales(whSales,'all',${J(q)},'2026-09-25').map(x=>x._id).sort().join(',')`);
+    s.eq('SO0334 finds SO0334 only',f('SO0334'),'SO0334');
+    s.eq('an order never recorded finds nothing',f('SO0300'),'');
+    s.eq('a phone still finds its sale',f('0300 9225227'),'SO0334');
+    s.eq('and in +92 form',f('+92 300 9225227'),'SO0334');
+    s.eq('and 0092 form',f('0092-300-9225227'),'SO0334');
+    s.eq('and a tail of digits',f('9225227'),'SO0334');
+    s.eq('a phone-only fragment matches the phone',f('1234567'),'SO0101');
+    s.eq('0334 finds the order that says 0334 and the phone that starts with it — both honest',f('0334'),'SO0101,SO0334');
+  }
+  s.section('review: the name autofill takes its phone back when the name moves on');
+  {
+    const a=app();a.seed([sale({customerName:'Ali',customerPhone:'03001112222'})],CATALOG);
+    a.run('window.whsNewSale()');a.el('whs-phone').value='';
+    for(const v of ['A','Al','Ali','Ali ','Ali R','Ali Raza']){a.el('whs-name').value=v;a.run(`window.whsNameInput(${J(v)})`);}
+    s.eq('typing a new customer "Ali Raza" leaves the phone empty',a.el('whs-phone').value,'');
+    a.el('whs-name').value='Ali';a.run("window.whsNameInput('Ali')");
+    s.eq('the known customer "Ali" still fills it',a.el('whs-phone').value,'0300-1112222');
+    a.el('whs-phone').value='0300-5555555';
+    a.run("window.whsNameInput('Ali R')");
+    s.eq('a phone Umair edited is his and stays',a.el('whs-phone').value,'0300-5555555');
+  }
+  s.section('review: two bill uploads in flight — the latest pick wins');
+  {
+    class FD{constructor(){this.p=[];}append(k,v){this.p.push([k,v]);}}
+    const pending=[];
+    const a=app({globals:{FormData:FD,fetch:(u,init)=>new Promise(res=>{pending.push(url=>res({ok:true,status:200,json:async()=>({secure_url:url,format:/pdf$/.test(url)?'pdf':'jpg'})}));})}});
+    a.seed([],CATALOG);a.run('window.whsNewSale()');
+    const pick=a.run('window.whsBillPicked');
+    const first=pick({files:[{name:'wrong.jpg',type:'image/jpeg',size:1000}],value:''});
+    const second=pick({files:[{name:'SO0334.pdf',type:'application/pdf',size:1000}],value:''});
+    await new Promise(r=>setTimeout(r,0));
+    pending[1]('https://res.cloudinary.com/x/image/upload/SO0334.pdf');await second;
+    s.eq('the PDF (picked last) lands',a.run('_whsDraft.bill.name'),'SO0334.pdf');
+    s.eq('and it is no longer uploading',a.run('_whsDraft.uploading'),false);
+    pending[0]('https://res.cloudinary.com/x/image/upload/wrong.jpg');await first;
+    s.eq('the earlier photo finishing late does not replace it',a.run('_whsDraft.bill.name'),'SO0334.pdf');
+    // while the first of two is still running, it is still uploading
+    const b=app({globals:{FormData:FD,fetch:(u,init)=>new Promise(res=>{pending.push(url=>res({ok:true,status:200,json:async()=>({secure_url:url,format:'jpg'})}));})}});
+    b.seed([],CATALOG);b.run('window.whsNewSale()');
+    const p0=pending.length;const pk=b.run('window.whsBillPicked');
+    const x1=pk({files:[{name:'a.jpg',type:'image/jpeg',size:1000}],value:''});
+    const x2=pk({files:[{name:'b.jpg',type:'image/jpeg',size:1000}],value:''});
+    await new Promise(r=>setTimeout(r,0));
+    pending[p0]('https://res.cloudinary.com/x/image/upload/a.jpg');await x1;
+    s.eq('the earlier upload finishing does not end "uploading" — the latest is still running',b.run('_whsDraft.uploading'),true);
+    b.run('window.whsBillClear()');
+    pending[p0+1]('https://res.cloudinary.com/x/image/upload/b.jpg');await x2;
+    s.eq('removed mid-upload, the bill does not come back when it lands',b.run('_whsDraft.bill'),null);
+  }
+  s.section('review: prices, quantities and phones say what the rule really is');
+  {
+    const a=app();
+    const b=o=>a.run('JSON.stringify(whsBuildSale('+J(form(o))+','+J(CTX)+'))');
+    const one=(price,qty)=>({lines:[{variantId:'v1',sku:'GP092-M',title:'T',variant:'M',price,catalogPrice:3490,qty:qty||1}]});
+    s.ok('Rs 0.4 is refused — it would be stored as Rs 0',/at least Rs 1/.test(JSON.parse(b(one('0.4'))).error||''));
+    s.ok('Rs 0.6 rounds to Rs 1 and is accepted',JSON.parse(b(one('0.6'))).data&&JSON.parse(b(one('0.6'))).data.subtotal===1);
+    s.ok('a quantity of 10,000 names the cap',/from 1 to 9,999/.test(JSON.parse(b(one('10',10000))).error||''));
+    s.eq('the summary does not total a quantity the save refuses',a.run(`JSON.stringify(whsLineTotals([{qty:10000,price:10}]))`),J({qty:0,subtotal:0}));
+    const ph=v=>a.run('whsPhone('+J(v)+')');
+    s.eq('a mobile with a digit missing is refused',ph('0300123456'),'');
+    s.eq('a 10-digit landline is kept',ph('051-1234567'),'0511234567');
+    s.eq('an 11-digit landline is kept',ph('021-34567890'),'02134567890');
+    s.eq('a number starting 00 is refused',ph('0012345678'),'');
+  }
+  s.section('review: a stray Enter in a fresh form adds nothing');
+  {
+    const a=app();a.seed([],CATALOG);
+    a.run('window.whsNewSale()');a.el('whs-q').value='GP092-M';a.run('window.whsSearchInput()');
+    a.run('window.whsModalClose()');
+    a.run('window.whsNewSale()');
+    s.eq('a new form starts with no search results left over',a.run('_whsHits.length'),0);
+    a.el('whs-q').value='';
+    a.run('window.whsSearchKey')({key:'Enter',preventDefault(){}});
+    s.eq('the previous form\'s hit is not added',a.run('_whsDraft.lines.length'),0);
+    a.run(`_whsHits=${J([CATALOG[0]])}`);
+    a.run('window.whsSearchKey')({key:'Enter',preventDefault(){}});
+    s.eq('and Enter on an EMPTY box adds nothing, whatever hits are held',a.run('_whsDraft.lines.length'),0);
+    a.el('whs-q').value='GP092-M';a.run('window.whsSearchInput()');
+    a.run('window.whsSearchKey')({key:'Enter',preventDefault(){}});
+    s.eq('a real scan still adds',a.run('_whsDraft.lines.length'),1);
+  }
+  s.section('review: the load cap is said, and who did it is read from the bound username');
+  {
+    const docs=Array.from({length:1000},(_,i)=>({id:'SO'+i,data:()=>sale({_id:undefined,orderNo:'SO'+i,createdAt:i})}));
+    const a=app({globals:{getDocs:async()=>({docs}),query:()=>({}),collection:()=>({}),orderBy:()=>({}),limit:()=>({})}});
+    await a.run('loadWhSales(true)');a.run("_fulfillSection='accounts'");
+    s.ok('a read that hits the cap says older sales are left out',/Only the newest 1,000 sales are loaded/.test(a.run('whsSectionHTML()')));
+    const b=app();b.seed([sale()],CATALOG);
+    s.ok('an ordinary ledger says nothing about a cap',!/Only the newest/.test((b.run("_fulfillSection='accounts'"),b.run('whsSectionHTML()'))));
+    const c=app();
+    c.run(`globalThis.USER_DEFS=${J([{u:'umair',name:'Umair'},{u:'afnan',name:'Afnan'}])}`);
+    c.seed([sale({_id:'SO9',orderNo:'SO9',createdByU:'umair',createdByName:'Afnan',status:'void',voidedBy:'umair',voidedByName:'Afnan',voidReason:'x'})],CATALOG);
+    c.run("window.whsOpen('SO9')");
+    const h=c.bodyHtml('whs-modal');
+    s.ok('"Recorded by" names the username the rules bind, not the free-text name',/Recorded by<\/span><b>Umair/.test(h)&&!/Recorded by<\/span><b>Afnan/.test(h));
+    s.ok('and so does the void line',/\(Umair/.test(h));
+  }
+  s.section('review: Umair\'s page — a render error is not swallowed, and the highlight follows the page');
+  {
+    const a=app();a.seed([],CATALOG);
+    a.run('fulfillReportsLoaded=true');
+    a.run("window.showPage=async function(id){renderPage(id);};renderPage=function(id){document.getElementById('main-content').innerHTML=renderFulfillmentPage();}");
+    a.run("whsSectionHTML=function(){throw new Error('render boom');}");
+    let rejected=null;
+    try{await a.run("window.showFulfillTab('accounts')");}catch(e){rejected=e;}
+    s.ok('the tap\'s promise rejects with the render error (so diagnostics records it)',rejected&&/render boom/.test(rejected.message));
+    const src=read('js/fulfillment.js');
+    s.ok('showFulfillTab no longer catches',!/showPage\('fulfillment'\)\)\.then\(/.test(src));
+    const b=app();b.seed([],CATALOG);b.run("_fulfillSection='accounts'");
+    const acc=b.el('nav-fulfillment-accounts'),cp=b.el('nav-fulfillment');
+    cp.classList.add('on');acc.classList.remove('on');   // what showPage does, via the logo
+    b.run('renderFulfillmentPage()');
+    s.ok('rendering the Accounts section lights Accounts, however it was reached',acc.classList.contains('on')&&!cp.classList.contains('on'));
+  }
+  s.section('review: a toast wraps on a phone instead of running off both edges');
+  {
+    const css=read('css/main.css');
+    const rule=(/\n\.toast\{([^}]*)\}/.exec(css)||[])[1]||'';
+    s.ok('the toast no longer refuses to wrap',rule&&!/white-space:nowrap/.test(rule));
+    s.ok('and is kept inside the screen',/max-width:calc\(100vw - 32px\)/.test(rule)&&/width:max-content/.test(rule));
+    s.ok('a long toast stays up longer, and a new one cancels the old timer',/clearTimeout\(_toastTimer\)/.test(read('js/shared.js'))&&/length\*60/.test(read('js/shared.js')));
   }
   s.section('the shell: the file is wired into index.html and the service worker');
   {

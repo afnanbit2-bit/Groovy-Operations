@@ -183,35 +183,53 @@ service cloud.firestore {
     // One document per ERP order, and the document id IS the order number,
     // so a second entry of the same bill is not a second sale: writing to an
     // id that already exists is an UPDATE here, and an update may only VOID
-    // the sale (isWhSales) or clear its review flag (owners) — the two
-    // hasOnly lists mirror _WHS_VOID_FIELDS / _WHS_REVIEW_FIELDS. The money
-    // rules are enforced HERE, not only in the form: the bill is attached, the
-    // discount is at most 20% (whole rupees, so the arithmetic is exact),
-    // the total is the subtotal less the discount, and pay later carries a
-    // due date. Delete is the Store Accounts correction pair.
+    // the sale (isWhSales), clear its review flag (owners), or — once it is
+    // void — RECORD THE BILL AGAIN over it (void, never edit: re-recording is
+    // the correction for a bill entered wrong). A re-record is held to every
+    // create check and must carry the voided entry forward in priorVoids,
+    // which grows by exactly one. The two hasOnly lists mirror
+    // _WHS_VOID_FIELDS / _WHS_REVIEW_FIELDS. The money rules are enforced
+    // HERE, not only in the form: the bill is attached, the discount is at
+    // most 20% (whole rupees, so the arithmetic is exact), the total is the
+    // subtotal less the discount, and pay later carries a due date. WHO did
+    // it is bound to the signed-in email (createdByU, voidedBy, reviewedBy
+    // are usernames, and every account is <username>@groovy.op), because
+    // those are what the ledger shows the owners. Delete is the Store
+    // Accounts correction pair.
+    function whSaleValid(d, orderNo) {
+      return d.orderNo == orderNo
+        && d.status == 'active'
+        && d.createdBy == request.auth.uid
+        && d.createdByU is string && d.createdByU + '@groovy.op' == userEmail()
+        && d.customerName is string && d.customerName.size() > 0
+        && d.customerPhone is string && d.customerPhone.size() > 0
+        && d.billUrl is string
+        && d.billUrl.matches('^https://res[.]cloudinary[.]com/.+')
+        && d.lines is list && d.lines.size() > 0
+        && d.subtotal is number && d.subtotal > 0
+        && d.discount is number && d.discount >= 0
+        && d.discount * 100 <= d.subtotal * 20
+        && d.total == d.subtotal - d.discount
+        && d.terms in ['paid','later']
+        && (d.terms == 'paid' || d.dueDate is string);
+    }
     match /wh_sales/{orderNo} {
       allow read: if isWhSales();
       allow create: if isWhSales()
         && orderNo.matches('^[A-Z0-9][A-Z0-9._-]{1,39}$')
-        && request.resource.data.orderNo == orderNo
-        && request.resource.data.status == 'active'
-        && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.customerName is string && request.resource.data.customerName.size() > 0
-        && request.resource.data.customerPhone is string && request.resource.data.customerPhone.size() > 0
-        && request.resource.data.billUrl is string
-        && request.resource.data.billUrl.matches('^https://res[.]cloudinary[.]com/.+')
-        && request.resource.data.lines is list && request.resource.data.lines.size() > 0
-        && request.resource.data.subtotal is number && request.resource.data.subtotal > 0
-        && request.resource.data.discount is number && request.resource.data.discount >= 0
-        && request.resource.data.discount * 100 <= request.resource.data.subtotal * 20
-        && request.resource.data.total == request.resource.data.subtotal - request.resource.data.discount
-        && request.resource.data.terms in ['paid','later']
-        && (request.resource.data.terms == 'paid' || request.resource.data.dueDate is string);
+        && whSaleValid(request.resource.data, orderNo);
       allow update: if (isWhSales()
           && resource.data.status == 'active' && request.resource.data.status == 'void'
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','voidedAt','voidedBy','voidedByName','voidReason']))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','voidedAt','voidedBy','voidedByName','voidReason'])
+          && request.resource.data.voidedBy is string && request.resource.data.voidedBy + '@groovy.op' == userEmail())
         || (isOwner()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['needsReview','reviewedAt','reviewedBy','reviewedByName']));
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['needsReview','reviewedAt','reviewedBy','reviewedByName'])
+          && request.resource.data.reviewedBy is string && request.resource.data.reviewedBy + '@groovy.op' == userEmail())
+        || (isWhSales()
+          && resource.data.status == 'void'
+          && whSaleValid(request.resource.data, orderNo)
+          && request.resource.data.priorVoids is list
+          && request.resource.data.priorVoids.size() == resource.data.get('priorVoids', []).size() + 1);
       allow delete: if isAcctSuper();
     }
     // Legacy Store Cash Ledger — read-only history. Kept so the owner-only

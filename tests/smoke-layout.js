@@ -536,7 +536,9 @@ const FRAGMENTS={
       S('SO0335',{customerName:'Ayesha Khan',lines:[L('EFFORTLESS TEE | DEEP BLUE','Mint Green / L','GP092-L',2,3490),L('LIVE IN PANTS | CHARCOAL','Charcoal / 32','GLP004-32',1,4990)],qtyTotal:3,subtotal:11970,discount:1197,discountPct:10,total:10773,paidVia:'bank'}),
       S('SO0321',{date:day(12),customerName:'Muhammad Abdullah Siddiqui, for the Karachi Streetwear Collective pop-up at Dolmen Mall Clifton',terms:'later',paidVia:null,dueDate:day(3),total:21940,subtotal:21940,qtyTotal:6}),
       S('SO0330',{date:day(2),customerName:'Hamza',needsReview:true,reviewFlags:['price changed on 1 article'],lines:[L('EFFORTLESS TEE | CLOUD','White / M','GP090-M',1,3000,{catalogPrice:3290,priceEdited:true})],subtotal:3000,total:3000}),
-      S('SO0310',{date:day(9),customerName:'Bilal',status:'void',voidReason:'entered twice'})
+      S('SO0310',{date:day(9),customerName:'Bilal',status:'void',voidReason:'entered twice',voidedBy:'umair',voidedByName:'Umair',voidedAt:Date.now()}),
+      // a bill recorded again over a voided entry: its history is drawn
+      S('SO0340',{date:day(1),customerName:'Zainab',priorVoids:[{date:day(1),customerName:'Zainab',customerPhone:'03001112222',total:10470,qtyTotal:3,createdAt:Date.now()-7200000,createdByU:'umair',createdByName:'Umair',voidedAt:Date.now()-3600000,voidedBy:'umair',voidedByName:'Umair',voidReason:'the bill says one tee, not three — entered the quantity wrong',billUrl:bill}]})
     ];
     const catalog=[
       {id:'v1',sku:'GP092-M',title:'EFFORTLESS TEE | DEEP BLUE',variant:'Mint Green / M',price:3490,status:'active'},
@@ -559,9 +561,11 @@ const FRAGMENTS={
     const modal=(title,b,foot)=>'<div class="acct-modal" style="position:static;max-width:760px;margin-top:14px;max-height:none"><div class="acct-modal-head"><span>'+title+'</span><button class="acct-x">×</button></div><div class="acct-modal-body">'+b+'</div><div class="acct-modal-foot">'+foot+'</div></div>';
     const form=modal('Record a customer purchase',body,'<button class="btn-outline">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px">Save sale</button>');
     // one sale opened: two lines, a discount, paid by bank
-    app.run("window.whsOpen('SO0335')");
-    const det=app.bodyHtml('whs-modal');
-    return Promise.resolve(page+form+det.replace('class="acct-modal"','class="acct-modal" style="position:static;max-width:680px;margin-top:14px;max-height:none"'));
+    const opened=id=>{app.run(`window.whsOpen('${id}')`);return app.bodyHtml('whs-modal').replace('class="acct-modal"','class="acct-modal" style="position:static;max-width:680px;margin-top:14px;max-height:none"');};
+    // one sale opened: two lines, a discount, paid by bank; a voided one
+    // (its banner and "Record this bill again"); and one recorded again,
+    // carrying the voided entry in its history
+    return Promise.resolve(page+form+opened('SO0335')+opened('SO0310')+opened('SO0340'));
   },
   // Afnan's correction tools: the Admin tools card on the review page (the
   // whole page, which had never been measured), the admin edit modal and
